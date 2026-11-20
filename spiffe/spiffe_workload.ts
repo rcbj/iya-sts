@@ -137,6 +137,7 @@ import ca = require('./spiffe_ca');
 import registry = require('./spiffe_registry');
 import rpc = require('./spiffe_grpc');
 import auth = require('./spiffe_auth');
+import SpiffeModel = require('./spiffe_model');
 
 // What `SpiffeWorkload` needs from the rest of the service: the modules this
 // file used to reach for itself, passed in so that the composition root can
@@ -884,24 +885,18 @@ class SpiffeWorkload {
       const audiences = (request.audience || []).map(function (a) {
         return String(a || '').trim();
       }).filter(Boolean);
-      if (!audiences.length) {
-        errorCodes.mark(call, 'STS-SPIFFE-0027');
-        throw rpc.invalidArgument('FetchJWTSVID requires at least one ' +
-                                  'audience. A JWT-SVID is a bearer ' +
-                                  'credential — whoever holds it can present ' +
-                                  'it — so the audience is what stops one ' +
-                                  'issued for service A being replayed ' +
-                                  'against service B. Every conforming ' +
-                                  'Workload API refuses this call without ' +
-                                  'one.');
+      // The refusal's status, code and sentence are the model's
+      // (models/spiffe/workload.tsp, JWTSVIDRequest).
+      if (SpiffeModel.isEmpty(audiences)) {
+        throw rpc.refuseField(call, 'JWTSVIDRequest', 'audience', 'empty');
       }
       const wanted = String(request.spiffe_id || '').trim();
       let entries = self.entitledEntries(call.spiffeCaller);
       if (wanted) {
         const parsed = spiffeId.parse(wanted);
         if (!parsed.ok) {
-          errorCodes.mark(call, 'STS-SPIFFE-0028');
-          throw rpc.invalidArgument('spiffe_id: ' + parsed.reason);
+          throw rpc.refuseField(call, 'JWTSVIDRequest', 'spiffe_id',
+                                'malformed', undefined, parsed.reason);
         }
         entries = entries.filter(function (entry) {
           return entry.spiffeId === parsed.id;

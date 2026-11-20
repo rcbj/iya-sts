@@ -72,6 +72,7 @@ import helpers = require('./helpers');
 import config = require('./config');
 import crypto = require('./crypto');
 import InstanceSlot = require('./instance_slot');
+import appPasswordDoors = require('./app_password_doors');
 
 // The thirty-two characters, declared here rather than imported from
 // `backup_codes.ts` for the reason that file declares its own apart from
@@ -94,31 +95,15 @@ const ID_LENGTH = 4;
 const LENGTH = 24;
 const GROUP = 4;
 
-// THE FIVE DOORS, and the only five. Each is a place a person's password is
-// taken with no way to ask for more; the ids are what a door passes to
-// `credentials.verify()` as `door`, what `authn.passwordAloneDoors` lists and
-// what a record's scope names.
-/**
- * The five password-only doors an app password may be scoped to: LDAP bind,
- * WS-Trust, SCIM, Shared Signals and EST.
- */
-const DOORS = [
-  { id: 'ldap', label: 'LDAP bind',
-    what: 'an LDAP simple bind on 389 or 636 (RFC 4513)' },
-  { id: 'wstrust', label: 'WS-Trust',
-    what: 'a WS-Security UsernameToken sent to the security token service' },
-  { id: 'scim', label: 'SCIM',
-    what: 'HTTP Basic at /scim/v2 (RFC 7617)' },
-  { id: 'ssf', label: 'Shared Signals',
-    what: 'HTTP Basic at the /ssf endpoints (RFC 7617)' },
-  { id: 'est', label: 'EST',
-    what: 'HTTP Basic at /.well-known/est (RFC 7030 section 3.2.3)' }
-];
+// THE FIVE DOORS, and the only five: `common/app_password_doors.js`, a data
+// leaf the model reads too (#1579), so the Account API's `door_<id>` members
+// are written from the same table this module decides with.
+const DOORS = appPasswordDoors.DOORS;
 
 /**
  * The ids of the five doors, in the table's order.
  */
-const DOOR_IDS = DOORS.map(function (one) { return one.id; });
+const DOOR_IDS = appPasswordDoors.DOOR_IDS;
 
 /**
  * The longest name a person may give an app password.

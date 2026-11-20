@@ -563,6 +563,22 @@
     "en": "b0f0da21ac461ad3",
     "text": "Hanggang magbago ang directory at may lookup na hindi tumama; hindi naghihintay ng rebuild ang hit sa isang kasalukuyang entry. Isang index bawat realm."
   },
+  "caches.store.ldap.gate-usernames.title": {
+    "en": "689e1e6184e6baf0",
+    "text": "Mga username ng gate ng console"
+  },
+  "caches.store.ldap.gate-usernames.description": {
+    "en": "06f13f021c4a27e4",
+    "text": "Sa isang prosesong may hawak na window ng directory, ang sagot kung sino ang may hawak ng isang username (kasama ang walang sinuman) na itinanong ng gate ng /admin-api sa labas ng event loop, para hindi na magtanong sa store ang mga synchronous na pagsusuri nito. Binabasa lamang ng mga pagsusuring iyon; ang isang paggawa ay laging nagtatanong sa store."
+  },
+  "caches.store.ldap.gate-usernames.bound": {
+    "en": "953882a7c140627a",
+    "text": "Ipinapatupad: 64 na username bawat realm; inaalis muna ang pinakamatagal nang hindi itinatanong."
+  },
+  "caches.store.ldap.gate-usernames.lifetime": {
+    "en": "43a85e1731c71231",
+    "text": "Hanggang may maisulat dito, o maikopya mula sa ibang proseso, sa, sa ilalim o sa itaas ng ou=users ng realm; magtatanong muli ang susunod na pag-warm ng gate."
+  },
   "caches.store.ldap.group-index.title": {
     "en": "ed4018229dabe2c1",
     "text": "Index ng group sa directory"
@@ -726,6 +742,26 @@
   "caches.store.oauth2.access-token-status-lists.hitMeaning": {
     "en": "48214c6b54f10691",
     "text": "na-serve ang isang listahan nang hindi ito sina-sign muli"
+  },
+  "caches.store.oauth2.access-token-status-packed.title": {
+    "en": "41a83d2bb80a2918",
+    "text": "Mga naka-pack na access-token status list"
+  },
+  "caches.store.oauth2.access-token-status-packed.description": {
+    "en": "b67a46cbdc14089f",
+    "text": "Ang naka-compress na access-token status list na huling binuo ng process na ito para sa bawat realm, ginagamit muli hanggang magbago ang isang invalid bit o mag-expire ang pinakamaaga."
+  },
+  "caches.store.oauth2.access-token-status-packed.bound": {
+    "en": "93bd023bcc902515",
+    "text": "Istruktural: isang naka-compress na listahan bawat realm. Ang realm na wala na, o ang listahan na nag-expire na ang pinakamaagang invalid bit, ay inaalis ng caches job."
+  },
+  "caches.store.oauth2.access-token-status-packed.lifetime": {
+    "en": "86b51b8d0239fd45",
+    "text": "hanggang magbago ang isang invalid bit, o mag-expire ang pinakamaaga."
+  },
+  "caches.store.oauth2.access-token-status-packed.hitMeaning": {
+    "en": "29707643b235dbd9",
+    "text": "na-serve ang isang listahan nang hindi ito pina-pack o kino-compress muli"
   },
   "caches.store.oauth2.attestation-challenges.title": {
     "en": "f19e208930fddc5c",
@@ -984,8 +1020,8 @@
     "text": "Register ng wallet sign-in"
   },
   "caches.store.oid4vp.sign-in-register.description": {
-    "en": "91808833ee8c6a0c",
-    "text": "Ang mga credential na in-issue ng realm na ito para sa isang tao batay sa isang access token na na-verify nito, na siya lamang mga puwedeng gamitin ng isang wallet para mag-sign in — naka-key sa isang digest ng issuer-signed JWT, o para sa ldp_vc ay sa holder key at sa tao."
+    "en": "979c99c562007a1c",
+    "text": "Ang mga credential na in-issue ng realm na ito para sa isang tao batay sa isang access token na na-verify nito, na siya lamang mga puwedeng gamitin ng isang wallet para mag-sign in — naka-key sa isang digest ng issuer-signed JWT (para sa mdoc, ng payload ng issuerAuth), o para sa ldp_vc ay sa holder key at sa tao."
   },
   "caches.store.oid4vp.sign-in-register.bound": {
     "en": "89a00ee69a340570",
@@ -1570,6 +1606,22 @@
   "caches.store.xacml.parsed-policies.lifetime": {
     "en": "6ba64c6240c222a0",
     "text": "Walang expiry: naka-key sa nilalaman, kaya bagong entry ang na-edit na policy at nawawala ang lumang parse nito kapag ito na ang pinakamatagal nang hindi nagagamit."
+  },
+  "caches.store.xacml.pep-tickets.title": {
+    "en": "d8dab9277ae943e0",
+    "text": "Mga Basic ticket ng remote PEP"
+  },
+  "caches.store.xacml.pep-tickets.description": {
+    "en": "1cdd4ca49053b643",
+    "text": "Ang mga ticket na ibinigay ng isang wastong POST /xacml/pep/basic sa isang remote PEP, nakatala sa SHA-256 ng bawat isa; hindi iniimbak ang ticket mismo."
+  },
+  "caches.store.xacml.pep-tickets.bound": {
+    "en": "4dead9c8be3539ac",
+    "text": "Ipinapatupad: 10000 bawat realm, inaalis ang pinakaluma; bina-validate muli ng PEP ang Basic credential."
+  },
+  "caches.store.xacml.pep-tickets.hitMeaning": {
+    "en": "484401484f6f539d",
+    "text": "may natagpuang ticket sa pamamagitan ng digest nito"
   },
   "caches.lru.default.description": {
     "en": "777e71be96460478",

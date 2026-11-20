@@ -35,7 +35,7 @@
 //     mirror-contexts.sh, which prints the whole list);
 //  6. build-container.yml names a context for every FROM of the root
 //     Dockerfile, each pointing at a listed path;
-//  7. what push-stack-images.sh pushes is what run-tests.sh names.
+//  7. what stack-images.sh hands between CI jobs is what run-tests.sh names.
 //
 // WHY IN PROCESS, which tests/CLAUDE.md asks first: every claim is a
 // comparison between FILES in this repository — readme_ports.js's shape. A
@@ -59,7 +59,7 @@ const COMPOSE_DOCKERFILES = ['Dockerfile', 'tests/Dockerfile',
   'xacml-pep/Dockerfile', 'tests/saml-peers/shibboleth/Dockerfile',
   'tests/saml-peers/simplesamlphp/Dockerfile',
   'tests/saml-peers/pysaml2/Dockerfile', 'tests/saml-peers/keycloak/Dockerfile',
-  'tests/peer/Dockerfile'];
+  'tests/peer/Dockerfile', 'companion/Dockerfile'];
 
 function read(rel) {
   log.debug("Entering read(). " + rel);
@@ -285,7 +285,13 @@ function run(t) {
   }
   const rootFroms = externalRefs(read('Dockerfile'))
     .concat(externalRefs(read('xacml-pep/Dockerfile')));
+  // This project's OWN published images are not third-party and are not
+  // mirrored — check 4's rule. Since #1717 the root Dockerfile's default
+  // debugger image is one (ghcr.io/rcbj/id-proto-debugger-embedded).
   const uncovered = rootFroms.filter(function (ref) {
+    if (ref.indexOf('ghcr.io/rcbj/') === 0) {
+      return false;
+    }
     const target = wf[contextKey(ref)];
     return !target || target.indexOf(MIRROR) !== 0 ||
            !paths.has(target.slice(MIRROR.length));
@@ -295,7 +301,8 @@ function run(t) {
           'XACML PEP Dockerfiles to a listed mirror path',
           JSON.stringify(wf) + ' uncovered: ' + uncovered.join(', '));
 
-  // 7. what is pushed is what run-tests.sh names.
+  // 7. what CI's build job saves is what run-tests.sh names (2026-11-14:
+  // it was what tests.yml pushed, until CI stopped publishing anything).
   const launcher = read('run-tests.sh');
   const named = [];
   const re = /\$\{IMAGE_REGISTRY\}\/([a-z0-9-]+):\$\{imageTag\}/g;
@@ -303,13 +310,13 @@ function run(t) {
   while ((m = re.exec(launcher)) !== null) {
     named.push(m[1]);
   }
-  const push = read('.github/scripts/push-stack-images.sh');
-  const listed = ((/^NAMES="([^"]*)"/m.exec(push) || ['', ''])[1])
+  const saver = read('.github/scripts/stack-images.sh');
+  const listed = ((/^NAMES="([^"]*)"/m.exec(saver) || ['', ''])[1])
     .split(/\s+/).filter(Boolean);
   t.check(named.length > 0 &&
           named.slice().sort().join(',') === listed.slice().sort().join(','),
-          'push-stack-images.sh pushes exactly the images run-tests.sh names',
-          'named ' + named.join(',') + ' / pushed ' + listed.join(','));
+          'stack-images.sh saves exactly the images run-tests.sh names',
+          'named ' + named.join(',') + ' / saved ' + listed.join(','));
   log.debug("Leaving run().");
 }
 

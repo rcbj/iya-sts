@@ -79,6 +79,8 @@ import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 import realms = require('../common/realms');
+// A token register row as the model says it means (#1579).
+import DomainClasses = require('../common/domain_classes');
 import applications = require('../common/applications');
 import errorCodes = require('../common/error_codes');
 import audit = require('../common/audit');
@@ -86,6 +88,7 @@ import mode = require('../common/mode');
 import fedHttp = require('../federation/federation_http');
 import clusterClaims = require('../cluster/cluster_claims');
 import outbound = require('./outbound_delivery');
+import Classes = require('../common/domain_classes');
 
 type Json = any;
 type Req = import('express').Request;
@@ -685,16 +688,13 @@ class ProviderCommands {
         const cap = this.setting('oauth2.commandMetadataMaxGroups');
         out.groups = directory.allGroupEntries().slice(0, cap)
           .map(function (group: Json) {
-            const a = group.attributes || {};
-            const first = function (name: string): string {
-              const v = a[name];
-              return String((Array.isArray(v) ? v[0] : v) || '');
-            };
-            const one: Json = { id: first('cn') || String(group.dn),
-                                display: first('displayName') || first('cn') ||
+            // What a group is called and says is its concept's (#1579).
+            const held = Classes.Group.fromEntry(group.attributes || {});
+            const one: Json = { id: held.name || String(group.dn),
+                                display: held.displayName || held.name ||
                                          String(group.dn) };
-            if (first('description')) {
-              one.description = first('description');
+            if (held.description) {
+              one.description = held.description;
             }
             return one;
           });
@@ -1470,9 +1470,11 @@ class ProviderCommands {
       const stats = this.deps.stats();
       const key = String(stats.identityKeyOf(username) || username);
       // This person's records, through the register's index (#820 part 3).
+      // Each register row read through the `IssuedToken` concept (#1579).
       stats.tokenList(username).forEach(function (record: Json) {
-        const who = String(record.username || record.subject || '');
-        const client = String(record.clientId || record.client_id || '');
+        const token = DomainClasses.IssuedToken.fromRecord(record);
+        const who = String(token.username || '');
+        const client = String(token.clientId || '');
         if (client && who && (who === username ||
             String(stats.identityKeyOf(who) || who) === key)) {
           out[client] = true;

@@ -167,8 +167,10 @@
 
 const ModelTables = require('../common/model_tables');
 
-// Closed lists written once, in models/directory/federation_relationship.tsp.
-const LISTS = ModelTables.facts('federationRelationship').lists;
+// Closed lists, their terms and the pairing between two of them, written once
+// in models/directory/federation_relationship.tsp.
+const FACTS = ModelTables.facts('federationRelationship');
+const LISTS = FACTS.lists;
 const config = require('./../common/config');
 const { log, nowSec, randomId } = require('./../common/helpers');
 // The release index below is per trust realm. A LEAF requiring only `config`,
@@ -491,68 +493,11 @@ function roleRow(id) {
  * for a partner (`fedAuthnMechanism`): six mechanisms, one of them another
  * federation relationship.
  */
-const MECHANISMS = [
-  { mechanism: 'password', label: 'Username and password',
-    what: 'This service\'s own sign-in screen: a username and a password, ' +
-          'the password verified in product mode and not in development ' +
-          'mode. The ordinary case, and what an unset mechanism falls ' +
-          'through to once nothing else has an opinion.' },
-  { mechanism: 'password-mfa', label: 'Username and password, with MFA',
-    what: 'The same screen with the second-factor box ticked and locked, so ' +
-          'the WebAuthn ceremony runs after the password step and the ' +
-          'session records amr ["pwd","hwk"] and acr "mfa". It is the same ' +
-          'demand a RequestedAuthnContext can make; a protocol asking for it ' +
-          'and a relationship configuring it produce one screen, not two.' },
-  { mechanism: 'webauthn', label: 'WebAuthn, passwordless',
-    what: 'A security key ALONE — no password is presented, so the session ' +
-          'records amr ["hwk"] and ONE factor. That is why it cannot satisfy ' +
-          'a caller that demanded a second factor: see forceMfa in authn.js, ' +
-          'which wins over this and says so in the log.' },
-  { mechanism: 'federation', label: 'Another federation relationship',
-    what: 'THE BROKER CASE. `fedAuthnRelationship` names a ' +
-          'SERVICE-PROVIDER-side relationship in this same realm and the ' +
-          'person is sent there, so this service consumes somebody else\'s ' +
-          'assertion and then issues its own to the partner that asked. The ' +
-          'two protocols need not match and usually do not — that is the ' +
-          'whole of what an identity bridge is.' },
-  // THE FIFTH, ADDED 2026-08-26, AND IT IS THE FIRST ONE THAT IS NEITHER THIS
-  // SERVICE'S SCREEN NOR SOMEBODY ELSE'S. The other four are a page here or a
-  // redirect to a partner; this one is a CREDENTIAL THE BROWSER ALREADY HOLDS,
-  // which is what "integrated authentication" has always meant. It is also the
-  // only value in this table that can be switched off service-wide — see
-  // authn.js's declaredMechanismFor(), which reports a relationship or an
-  // application naming it while krb5.spnegoAuthentication is false rather than
-  // letting somebody meet a 403 halfway through a sign-in.
-  { mechanism: 'spnego', label: 'Kerberos ticket (SPNEGO)',
-    what: 'INTEGRATED AUTHENTICATION. The person is sent to /authn/spnego, ' +
-          'which answers 401 with WWW-Authenticate: Negotiate and signs them ' +
-          'in on the service ticket their client sends back (RFC 4559 over ' +
-          'RFC 4178 over RFC 4121). Nothing is typed and no screen is drawn. ' +
-          'Like a security key or a wallet, it rests on a credential this ' +
-          'service verifies in every mode — the sign-in screen\'s password ' +
-          'is verified only in product mode — and what the session then ' +
-          'claims is read off the ' +
-          'TICKET\'s own flags: amr ["pwd"] for pre-authent, ["hwk"] for ' +
-          'hw-authent, both for both, and NOTHING at all for a ticket that ' +
-          'claims neither. A client that cannot get a ticket meets a page ' +
-          'with the sign-in screen linked from it, because a bare 401 ' +
-          'Negotiate is a dead end in every browser that is not configured ' +
-          'for this host.' },
-  // THE SIXTH, ADDED 2026-09-17 (#38's follow-ups): a WALLET. Like `spnego`
-  // it is a credential the person already holds rather than a screen, and
-  // like `spnego` it can be switched off service-wide — `oid4vp.signIn` —
-  // which authn.ts's declaredMechanismFor() reports rather than sending
-  // somebody to a door that is shut.
-  { mechanism: 'wallet', label: 'Wallet (OpenID4VP)',
-    what: 'The person is sent to /authn/wallet, which asks their wallet — ' +
-          'through the Digital Credentials API, or on this device by link — ' +
-          'for a credential this realm issued them, and signs them in as the ' +
-          'directory entry it was issued for once a fresh holder proof ' +
-          'verifies. amr ["pop"] and acr "1" for one factor; a caller that ' +
-          'demanded two is asked for a second factor afterwards (or has one ' +
-          'already, where the credential\'s key attestation says so), so this ' +
-          'mechanism does not lose to forceMfa the way spnego does.' }
-];
+// The rows are written in models/directory/federation_relationship.tsp, as
+// its `mechanisms` terms (#1579); what each one DOES is authn.ts's.
+const MECHANISMS = FACTS.terms.mechanisms.map(function (row) {
+  return { mechanism: row.id, label: row.label, what: row.what };
+});
 
 /**
  * The mechanism names, in `MECHANISMS` order.
@@ -576,22 +521,12 @@ const MECHANISM_IDS = LISTS.mechanisms;
  * The four values of `fedSubjectPolicy`, which people a partner may assert, in
  * the order they are offered.
  */
-const SUBJECT_POLICIES = [
-  { policy: 'link-at-first-sign-in', label: 'Link at first sign-in (default)',
-    what: 'A linked subject signs in. An unlinked one naming an existing ' +
-          'person signs in HERE as that person first, and is then linked.' },
-  { policy: 'pre-linked', label: 'Pre-linked only',
-    what: 'Only a link made beforehand — on the console, through ' +
-          '/admin-api or SCIM — signs anybody in.' },
-  { policy: 'jit-namespaced', label: 'Just-in-time, namespaced',
-    what: 'An unlinked subject gets a new entry named ' +
-          '<relationship>~<name>, linked at creation, never an existing ' +
-          'person.' },
-  { policy: 'any-existing', label: 'Any existing person, by name ' +
-                                    '(development only)',
-    what: 'The name the partner sends is matched onto a local person. ' +
-          'Refused in product mode.' }
-];
+// The rows are written in models/directory/federation_relationship.tsp, as
+// its `subjectPolicies` terms (#1579); what each one DOES is
+// `federation_sp.ts`'s `subjectDecision()`.
+const SUBJECT_POLICIES = FACTS.terms.subjectPolicies.map(function (row) {
+  return { policy: row.id, label: row.label, what: row.what };
+});
 
 /**
  * The subject policy names, in `SUBJECT_POLICIES` order.
@@ -909,16 +844,12 @@ const JOSE_CONTENT_ENCRYPTION = LISTS.joseContentEncryption;
 const REFUSED_ALGORITHMS = ['aes128-cbc', 'aes192-cbc', 'aes256-cbc',
                             'rsa-1_5', 'RSA1_5', 'A128CBC-HS256',
                             'A192CBC-HS384', 'A256CBC-HS512'];
-// Which management algorithms a key of each type can do.
 /**
- * The key management algorithms each key type can do.
+ * The key management algorithms each key type can do, in both families:
+ * the model's `keyManagementForKeyType` pairing, which the build holds to the
+ * key type and management lists (#1579).
  */
-const MANAGEMENT_FOR_KEY = {
-  'rsa-3072': ['rsa-oaep', 'RSA-OAEP-256', 'RSA-OAEP'],
-  'ec-p256': ['ecdh-es', 'ECDH-ES', 'ECDH-ES+A128KW', 'ECDH-ES+A256KW'],
-  'x-wing': ['HPKE-10-KE'],
-  'ml-kem-768': ['ML-KEM-768']
-};
+const MANAGEMENT_FOR_KEY = FACTS.pairings.keyManagementForKeyType.values;
 
 /**
  * The `ou=federations` entry schema: one row per attribute, the whole
@@ -927,109 +858,11 @@ const MANAGEMENT_FOR_KEY = {
 // The table is written in models/directory/federation_relationship.tsp (#1390).
 const SCHEMA = ModelTables.schema('federationRelationship');
 
-// ---------------------------------------------------------------------------
-// WHAT A CONSOLE MAY CHANGE, which is a different question from what an entry
-// carries — the same DERIVED-versus-DECLARED split `applications.js` draws, and
-// it lands differently here because almost everything on these entries is
-// declared.
-//
-// Everything a relationship is CONFIGURED with is editable. The six counters
-// and the two error fields are not: a form that could rewrite them would make
-// this page lie about what actually happened, and the lie would be
-// indistinguishable from a bug in the recording.
-//
-// `fedId`, `fedRole` and `fedProtocol` are NOT editable either, and that is a
-// third category rather than an oversight. They are the entry's identity: the
-// id is the RDN, and the role and the protocol decide which of the fields
-// above even apply. Changing one of them on an existing entry would leave a
-// SAML relationship carrying a token endpoint, which no form could then draw.
-// Delete it and make another; there is no state to lose but the counters.
-//
-// LDAP can still change every one of them, exactly as it can on an application
-// entry, and that is the same line: an operator with an ldapmodify is doing
-// something deliberate.
-// ---------------------------------------------------------------------------
-const EDITABLE = {
-  fedName: 'set',
-  fedPeer: 'set',
-  fedLocalEntityId: 'set',
-  fedEnabled: 'set',
-  fedSsoUrl: 'set',
-  fedTokenUrl: 'set',
-  fedUserinfoUrl: 'set',
-  fedJwksUri: 'set',
-  fedEmailsUrl: 'set',
-  fedJwks: 'set',
-  fedTrustAnchor: 'set',
-  fedSigningCertificate: 'set',
-  fedClientId: 'set',
-  fedClientSecret: 'set',
-  fedTokenAuth: 'set',
-  fedAuthorizeParams: 'multi',
-  fedResponseMode: 'set',
-  fedAllowedTenants: 'multi',
-  fedTeamId: 'set',
-  fedKeyId: 'set',
-  fedClientSigningKey: 'set',
-  fedScope: 'set',
-  fedResponseType: 'set',
-  fedIdTokenSignedResponseAlg: 'set',
-  fedUserinfoSignedResponseAlg: 'set',
-  fedRefreshTokens: 'set',
-  fedRefreshEverySeconds: 'set',
-  fedRegister: 'set',
-  fedRegisteredIssuer: 'set',
-  fedRequestObject: 'set',
-  fedRequestObjectSigningAlg: 'set',
-  fedWebFinger: 'set',
-  fedDiscovery: 'set',
-  fedInitiateLogin: 'set',
-  fedBinding: 'set',
-  fedSignRequest: 'set',
-  fedUsernameSource: 'set',
-  fedSubjectClaim: 'set',
-  fedAutocreateUsers: 'set',
-  fedUpdateUserAttributes: 'set',
-  fedProvisionGroups: 'set',
-  fedProvisionCap: 'set',
-  fedProvisionIdleMinutes: 'set',
-  fedSubjectPolicy: 'set',
-  fedSubjectPattern: 'set',
-  fedMayAssertAdministrators: 'set',
-  fedSignalEmailMatch: 'set',
-  fedSignalsEnabled: 'set',
-  fedSignalsIssuer: 'set',
-  fedSignalsDelivery: 'set',
-  fedSignalsTokenUrl: 'set',
-  fedSignalsClientId: 'set',
-  fedSignalsClientSecret: 'set',
-  fedSignalsScope: 'set',
-  fedSignalsBearer: 'set',
-  fedSignalsEvents: 'multi',
-  fedAllowUnsolicited: 'set',
-  fedEncryptionKeyType: 'set',
-  fedKeyManagementAlgorithm: 'set',
-  fedContentEncryptionAlgorithm: 'set',
-  fedAllowUnencrypted: 'set',
-  fedSloUrl: 'set',
-  fedSloBinding: 'set',
-  fedEndSessionUrl: 'set',
-  fedAcceptSignout: 'set',
-  fedRequireSignedLogout: 'set',
-  fedApplication: 'set',
-  fedAuthnMechanism: 'set',
-  fedAuthnRelationship: 'set',
-  fedAttributeMap: 'multi',
-  fedSubjectGroup: 'multi',
-  fedSubjectDomain: 'multi',
-  fedHomeRealmDomain: 'multi',
-  fedRelease: 'multi',
-  description: 'multi'
-};
-
-SCHEMA.attributes.forEach(function (row) {
-  row.editable = EDITABLE[row.name] || false;
-});
+// WHAT A CONSOLE MAY CHANGE is each row's `editable` (`set`, `multi` or
+// false), written in the model beside the row with the reasoning that used to
+// head a table here (#1579). One table answers "what is this attribute?" and
+// "may I change it?": the console builds its two selects from it and the
+// action validates against the same thing.
 
 const ATTRIBUTE_BY_NAME = {};
 SCHEMA.attributes.forEach(function (row) {
@@ -1805,6 +1638,18 @@ function readinessOf(record) {
                    'token is a JWT)');
     }
   }
+  // RFC 8705's tls_client_auth (#931) authenticates with the client
+  // certificate only a FAPI 1.0 Advanced relationship holds; named anywhere
+  // else it would be a token request that authenticates with nothing.
+  if (record.fedRole === 'service-provider' &&
+      String(record.fedTokenAuth || '') === 'tls_client_auth' &&
+      !(record.fedProtocol === 'oidc' &&
+        String(record.fedFapi || '').trim() === '1-advanced' &&
+        !String(record.fedTrustAnchor || '').trim())) {
+    missing.push('fedFapi=1-advanced (fedTokenAuth tls_client_auth ' +
+                 'authenticates with the client certificate only that ' +
+                 'profile holds)');
+  }
   // THE KEY A PARTNER HAS TO ENCRYPT TO (#168), where plaintext would be
   // refused: without one nothing could be accepted, which is a relationship
   // that half-works — refused by name like any other missing field.
@@ -2295,6 +2140,72 @@ function writeEncryptionKeys(id, rows, why) {
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// THE CLIENT CERTIFICATE (#931, rcbj's decision of 2026-11-13): a FAPI 1.0
+// Advanced relationship's TLS client certificate, one JSON row on
+// `fedClientCertificate`. `federation_client_certificate.ts` owns what is
+// DONE with it — issuing, sealing, renewing, presenting; this module owns
+// the attribute, so the read and the one write are here beside the
+// encryption key table's.
+// ---------------------------------------------------------------------------
+/**
+ * Returns a relationship's client certificate row, parsed, private key
+ * included; null when it holds none or the value is not JSON.
+ *
+ * @param record - the federation relationship
+ * @returns the row, or null
+ */
+function clientCertificateOf(record) {
+  log.debug("Entering clientCertificateOf().");
+  const raw = String((record && record.fedClientCertificate) || '').trim();
+  if (!raw) {
+    log.debug("Leaving clientCertificateOf(). None.");
+    return null;
+  }
+  try {
+    const row = JSON.parse(raw);
+    if (row && row.certificate && row.privateKey) {
+      log.debug("Leaving clientCertificateOf().");
+      return row;
+    }
+  } catch (e) {
+    log.warn('federation: ' + ((record && record.fedId) || '') + ' holds ' +
+             'a fedClientCertificate value that is not JSON, and it is ' +
+             'ignored: ' + ((e && e.message) || e));
+  }
+  log.debug("Leaving clientCertificateOf(). Unusable.");
+  return null;
+}
+
+/**
+ * Writes a relationship's client certificate row and audits it; the one
+ * writer, for `federation_client_certificate.ts`.
+ *
+ * @param id - the relationship id
+ * @param row - the row, private key sealed by the caller
+ * @param why - the audit sentence
+ * @returns whether the directory took it
+ */
+function writeClientCertificate(id, row, why) {
+  log.debug("Entering writeClientCertificate(). id=" + id);
+  const record = get(id);
+  if (!record) {
+    log.debug("Leaving writeClientCertificate(). No such relationship.");
+    return false;
+  }
+  record.fedClientCertificate = JSON.stringify(row);
+  if (!persist(record)) {
+    log.debug("Leaving writeClientCertificate(). The directory refused it.");
+    return false;
+  }
+  recordChange('federation.client-certificate', record,
+               why + ' on the federation relationship ' + id,
+               { serial: String(row.serialHex || ''),
+                 notAfter: String(row.notAfter || '') });
+  log.debug("Leaving writeClientCertificate().");
+  return true;
+}
+
 /**
  * Says whether an operator enabled a relationship.
  *
@@ -2574,6 +2485,24 @@ function refreshesTokens(record) {
   log.debug("Leaving refreshesTokens().");
   return !!record && record.fedProtocol === 'oidc' &&
          boolOf(record.fedRefreshTokens, false);
+}
+
+/**
+ * Says whether an OpenID Connect relationship asks the partner's UserInfo
+ * endpoint, at sign-in and at a refresh (`fedUserinfo`, #931's third run).
+ * On by default. Off, the person's claims are the ID Token's alone: OpenID
+ * Connect Core 1.0 section 5.3 makes UserInfo something a relying party MAY
+ * ask, and a FAPI 1.0 Advanced partner may publish a UserInfo alias it does
+ * not serve to a certificate-bound client (federation/CLAUDE.md, *WHAT THE
+ * THIRD RUN FOUND*). A value that is neither true nor false reads as on.
+ *
+ * @param record - the relationship
+ * @returns whether it does
+ */
+function asksUserinfo(record) {
+  log.debug("Entering asksUserinfo().");
+  log.debug("Leaving asksUserinfo().");
+  return !!record && boolOf(record.fedUserinfo, true);
 }
 
 /**
@@ -4040,6 +3969,13 @@ function update(id, change) {
       row.name === 'fedAllowUnencrypted') {
     record[field] = boolText(boolOf(record[field], false));
   }
+  // fedUserinfo defaults ON (#931's third run), so an empty value stays
+  // empty — the default — where the switches above would write FALSE;
+  // anything else reaches the entry as TRUE or FALSE.
+  if (row.name === 'fedUserinfo') {
+    const given = String(record[field] == null ? '' : record[field]).trim();
+    record[field] = given === '' ? '' : boolText(boolOf(given, true));
+  }
   if (row.name === 'fedProvisionCap' ||
       row.name === 'fedProvisionIdleMinutes') {
     record[field] = String(record[field] || '').trim();
@@ -4843,10 +4779,13 @@ module.exports = {
   responseTypeOf: responseTypeOf,
   responseTypeParts: responseTypeParts,
   discovers: discovers,
+  asksUserinfo: asksUserinfo,
   registers: registers,
   webFingers: webFingers,
   DISCOVERED_FIELDS: DISCOVERED_FIELDS,
   writeEncryptionKeys: writeEncryptionKeys,
+  clientCertificateOf: clientCertificateOf,
+  writeClientCertificate: writeClientCertificate,
   remove: remove,
   recordUse: recordUse,
   recordFailure: recordFailure,

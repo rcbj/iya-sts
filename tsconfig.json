@@ -9,7 +9,8 @@
     "strict": false,
     "skipLibCheck": true,
     "types": ["node"],
-    "typeRoots": ["./tests/node_modules/@types"]
+    "typeRoots": ["./tests/node_modules/@types"],
+    "paths": { "express": ["./tests/node_modules/@types/express"] }
   },
   "include": [
     "server.js", "sts_metadata.ts", "types/**/*.d.ts",

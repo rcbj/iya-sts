@@ -114,6 +114,7 @@
   "notAfterPlaceholder": "(Inte före + giltighet)",
   "slowToGenerate": " — långsam att generera",
   "cannotSign": " — bara subjektnyckel, kan inte signera",
+  "notForTls": " — kan inte användas av TLS-klienter",
   "keyPair": "Nyckelpar",
   "keyPairNote": "Nyckelparet som nästa certifikat certifierar &mdash; och, för en självsignerad profil, nyckeln som signerar det. Det genereras <strong>här, i den här tjänsten</strong>, vilket är det enda som skiljer sidan i grunden från felsökarens: den sidan genererar i webbläsaren eftersom hela dess löfte är att nyckeln aldrig lämnar den, och den här håller certifikatutfärdaren, så nyckeln hör hemma i processen som signerar. Det är samma modul i båda fallen (<code>common/crypto_impl/key_material.js</code>), så algoritmerna, PEM/JWK-konverteringen och nyckellagerformaten är identiska snarare än lika.",
   "keyPairNoteTitle": "Var det här paret kommer ifrån",

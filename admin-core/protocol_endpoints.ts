@@ -409,6 +409,10 @@ class ProtocolEndpoints {
         '/xacml', '/xacml/pdp', '/xacml/policies',
         '/xacml/pep/register', '/xacml/pep/policies',
         '/xacml/pep/authzen-catalogue', '/xacml/pep/authzen-callers',
+        '/xacml/pep/proxy', '/xacml/pep/settings',
+        '/xacml/pep/listener-certificate',
+        '/xacml/pep/introspect', '/xacml/pep/basic',
+        '/xacml/pep/saml', '/xacml/pep/session', '/xacml/pep/identity',
         '/xacml/pep/heartbeat', '/xacml/pip'
       ].map(route),
       '/admin/scim': [
@@ -462,7 +466,10 @@ class ProtocolEndpoints {
       '/admin/kerberos': [this.socket('kdc'), this.route('/KdcProxy'),
                           this.route('/authn/spnego')],
       '/admin/ldap': [this.socket('ldap')],
-      '/admin/wstrust': ['/sts', '/sts/cert'].map(route),
+      '/admin/wstrust': ['/sts', '/sts/metadata',
+                         '/sts/metadata/capabilities',
+                         '/sts/metadata/capabilities.xsd', '/sts/mex',
+                         '/sts/cert'].map(route),
       '/admin/wsfed': ['/wsfed',
                        '/FederationMetadata/2007-06/FederationMetadata.xml',
                        '/wsfed/metadata/:rp',

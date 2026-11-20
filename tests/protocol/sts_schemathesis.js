@@ -16,6 +16,12 @@
 // from the running router. `schemathesis_kit.js` holds the PLAN and the run;
 // `tests/schemathesis_plan.js` asserts the PLAN in process without a stack.
 //
+// AND THE REMOTE XACML PEP (2026-11-16): every documented endpoint of the
+// four documents models/pep/ generates — the control plane in each realm
+// profile, as a PEP of its own and with no credential, and the stack's PEP
+// container's API, AuthZEN edge PDP and proxy paths in a lane of their own —
+// in this same job and verdict. `schemathesis_pep.js` holds that half.
+//
 // It expects a DEDICATED, network-isolated product stack — the `fuzz` mode of
 // run-tests.sh — because it uses any method and any input and the stack must
 // not reach an external URL. It needs STS_ADMIN_API_TOKEN (the launcher mints
@@ -83,7 +89,7 @@ async function test() {
     expectation.declineToRun(log, "not the fuzz mode: STS_TEST_FUZZ is " +
       "unset, so this is the ordinary suite stack and not the dedicated, " +
       "network-isolated product stack this job needs. Run it with " +
-      "`./run-tests.sh --modes=fuzz --only=schemathesis`.");
+      "`./run-tests.sh --modes=fuzz` (or a bare run, whose last mode it is).");
     log.debug("Leaving test(). Skipped.");
     return;
   }

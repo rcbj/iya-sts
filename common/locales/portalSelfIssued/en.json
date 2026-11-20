@@ -48,6 +48,7 @@
   "proofIssued": "Published by this realm; key downloaded, not yet proved",
   "pubHeading": "DIDs this realm publishes for you",
   "pubSub": "A did:web this realm publishes for you, at an address made of random characters, so nobody can find your account by guessing and two of your DIDs cannot be linked. Every change of its keys is kept as a new version, and removing it leaves its address answering that it is deactivated.",
+  "pubPublic": "This document is public. Anyone who learns the DID can resolve it and recognise you by it, including across applications, so publish one only when you want a public signing identity. Prove a key your wallet holds that is not already enrolled here for sign-in: a sign-in key is not put on this document. The DID keeps the address it is published at. A later change of this realm's public address does not move it, and it stops resolving if that address no longer reaches this realm.",
   "pubCustodyWallet": "Your wallet holds the key: this realm publishes only its public half. Each change of keys takes two proofs with your wallet: one signed as the DID with a key it names now, then one with the new key.",
   "pubCustodyRealm": "This realm generates the key and keeps it sealed. The DID can be your preferred DID, but it cannot sign you in or be bound to a credential, because no wallet holds its key.",
   "pubCustodyDownload": "This realm generates the key, shows you the private key once and keeps only the public half. Prove the key with your wallet before you sign in with the DID or have a credential bound to it.",

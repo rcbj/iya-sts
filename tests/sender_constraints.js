@@ -218,6 +218,19 @@ function checkTheDecisions(t) {
   t.equal(inRealm('sc-at-dpop', function () {
     return sc.accessTokenRefusal({ boundJkt: 'k', proofOk: true });
   }), null, '1x. a proved bound token passes');
+  // #28: /admin-api passes the setting as read in the realm that ISSUED the
+  // token, so a realm's switch does not refuse the service-wide API
+  // client's bearer, and the default realm's switch still holds it.
+  t.equal(inRealm('sc-at-dpop', function () {
+    return sc.accessTokenRefusal({ where: 'the management API',
+                                   dpopRequired: false, boundJkt: '' });
+  }), null, '1x-ii. a bearer token whose issuing realm does not require ' +
+            'DPoP passes in a realm that does (#28)');
+  const issuerRequires = sc.accessTokenRefusal({ dpopRequired: true,
+                                                 boundJkt: '' });
+  t.equal(issuerRequires && issuerRequires.errorCode, 'STS-OAUTH-0528',
+          '1x-iii. and one whose issuing realm requires it is refused ' +
+          'wherever it is presented (#28)');
 
   const unboundAt = inRealm('sc-at-mtls', function () {
     return sc.accessTokenRefusal({ mtlsAvailable: true, boundThumbprint: '' });
@@ -265,10 +278,23 @@ function checkTheExemption(t) {
   // THE ADMIN CONSOLE AS A PUBLIC CLIENT (#446), AND THE PORTAL (#568):
   // DPoP-bound by a rule about those two clients, with every setting off.
   t.equal(sc.DPOP_BOUND_PUBLIC_CLIENTS.join(','),
-          'sts-admin-console,sts-user-portal,sts-report',
+          'sts-admin-console,sts-user-portal,sts-report,sts-remote-pep',
           '2e-i. the clients DPoP-bound as public clients are the admin ' +
-          'console, the user portal and the reports application, nothing ' +
-          'else');
+          'console, the user portal, the reports application and (#1827\'s ' +
+          'follow-up) the remote PEP\'s client, nothing else');
+  // Phase 4 of #1827's follow-up: no client's DPoP binding stands for a
+  // declared certificate binding any more; the exception is gone.
+  t.equal(sc.dpopStandsForCertificate, undefined,
+          '2e-i-b. no client\'s DPoP binding stands for a certificate ' +
+          'binding any more (phase 4 retired the exception)');
+  t.equal(sc.REMOTE_PEP_CLIENT, 'sts-remote-pep',
+          '2e-i-b2. the remote PEP\'s client is named for its own refusal');
+  const pepNoProof = sc.publicClientIssuanceRefusal({
+    clientId: 'sts-remote-pep', method: 'none', dpopJkt: '',
+    grant: 'urn:ietf:params:oauth:grant-type:jwt-bearer' });
+  t.equal(pepNoProof && pepNoProof.errorCode, 'STS-OAUTH-1012',
+          '2e-i-c. a remote PEP\'s token request without a proof is refused ' +
+          'under its own code');
   t.check(hosted.indexOf(sc.DPOP_BOUND_PUBLIC_CLIENTS[0]) >= 0,
           '2e-ii. and it is one of this service\'s own surfaces');
   t.equal(sc.dpopBoundPublicClient('sts-admin-console', 'none'), true,

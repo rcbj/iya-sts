@@ -827,9 +827,16 @@ function documentedActions(doc) {
 //                    refused there with 403 by design, so a replay would only
 //                    ever measure that. Exercised in `sts_devices.js`, with a
 //                    feed client that declares the scope.
+//   * `pep-audit` (2026-11-16, #1827) — a remote PEP's decision records
+//                    take the `xacml:pep-audit` scope on a token whose
+//                    subject is the PEP's own entry in REMOTE_PEPS, the MDM
+//                    feed's shape; this run's admin:write token is refused
+//                    there with 403 by design, so a replay would only ever
+//                    measure that.
 const REPLAY_HELD_BACK = [/^\/realms\//, /^\/rbac\//, /^\/spiffe\/rotate$/,
                           /^\/tls\/trust\//, /^\/kerberos\/principals\//,
-                          /^\/pki\/build-root$/, /^\/device-compliance$/];
+                          /^\/pki\/build-root$/, /^\/device-compliance$/,
+                          /^\/pep-audit$/];
 
 async function everyDocumentedExampleIsAccepted(doc) {
   log.debug("Entering everyDocumentedExampleIsAccepted().");
@@ -4046,6 +4053,69 @@ async function theDirectoryAndSignOutDoorsRoundTrip() {
 }
 
 // ---------------------------------------------------------------------------
+// A PERSON DELETED (rcbj, 2026-11-16): `POST /users/delete`, the directory's
+// one person delete. The documented example names somebody nobody is, so the
+// replay above meets only its referent refusal; this is the real round trip:
+// a person made and holding a token, deleted, read back through the users
+// listing (gone), their token introspected inactive, a second delete refused
+// about its referent, and nothing named refused about its shape.
+// ---------------------------------------------------------------------------
+async function thePersonDeleteRoundTrip() {
+  log.debug("Entering thePersonDeleteRoundTrip().");
+  log.info("=== Users: a person deleted ===");
+  const username = names.usernameFor("stsapi-deleted");
+  await ok("/users/create", {
+    username: username, invent: false,
+    attributes: { cn: "Deleted " + username, givenName: "Deleted",
+                  sn: username, displayName: "Deleted " + username,
+                  mail: username + "@admin-api-operations.test" },
+    credential: "password", password: MINT_PASSWORD
+  }, "created the person to delete");
+  // Made here, so ensureTokenParties() must not make them again (it would
+  // be refused, one entry per person): the arrangement of
+  // theDirectoryAndSignOutDoorsRoundTrip(), which this one lacked.
+  mintedParties["realm:user:" + username] = true;
+  const tokens = await mintTokens(username, "logout-client-" + REALM);
+  assert.ok(await introspectActive(tokens.access),
+    "the person's access token should introspect active before the delete");
+  const deleted = await ok("/users/delete", { user: username },
+                           "deleted the person");
+  assert.strictEqual(deleted.username, username,
+    "the delete should answer the username it deleted; it answered " +
+    JSON.stringify(deleted));
+  assert.ok(String(deleted.dn || "").indexOf("dc=" + REALM + ",") > 0,
+    "and the DN, in THIS realm's directory; it answered " + deleted.dn);
+  const listed = await get("/users?q=" + encodeURIComponent(username));
+  assert.strictEqual(listed.status, 200,
+    "GET /users?q=… should answer 200; it answered " + listed.status);
+  const still = (listed.body.users || []).filter(function (row) {
+    return row.inDirectory === true &&
+           (row.name === username || row.key === username);
+  });
+  assert.strictEqual(still.length, 0,
+    "the deleted person should no longer be listed as an entry the " +
+    "directory holds; read back through the users listing, they are: " +
+    JSON.stringify(still));
+  let active = true;
+  for (let i = 0; i < 20 && active; i += 1) {
+    active = await introspectActive(tokens.access);
+    if (active) {
+      await new Promise(function (r) { setTimeout(r, 150); });
+    }
+  }
+  assert.strictEqual(active, false,
+    "everything the person held is ended after the delete, so the access " +
+    "token minted for them should introspect inactive");
+  await refused("/users/delete", { user: username }, /Nobody called/,
+    "a second delete of somebody no longer here — about the referent");
+  await refused("/users/delete", { user: "" }, /Name the person/,
+    "a delete naming nobody");
+  log.info("[users/delete] OK — deleted, gone from the listing, the token " +
+           "inactive, and a second delete refused about its referent.");
+  log.debug("Leaving thePersonDeleteRoundTrip().");
+}
+
+// ---------------------------------------------------------------------------
 // THE CLIENT-CERTIFICATE TRUSTSTORE (2026-09-12): add a freshly minted CA,
 // read it back, remove it, read back its absence — and touch nothing else.
 //
@@ -4600,7 +4670,29 @@ async function theAdminRolesRoundTrip() {
       "`members` / `claimed` lists, which are the rows `grants` pages.");
 
   const grantedBefore = before.body.grantCount;
+  // A CONSOLE ROLE IS GRANTED ONLY TO SOMEBODY WHO EXISTS (rcbj, 2026-11-11,
+  // STS-ADMIN-0920): a name with no entry is refused in a sentence naming
+  // them, before the directory is asked to write a member that names
+  // nothing (#1624) — and the roster does not move.
+  const nobody = names.usernameFor("stsapi-role-nobody");
+  await refused("/rbac/grant", { username: nobody, role: rolesAvailable[0] },
+    /Nobody called .* is in this realm's directory/,
+    "a console role for a name with no directory entry");
+  const unmoved = await get("/rbac");
+  assert.strictEqual(unmoved.body.grantCount, grantedBefore,
+    "a refused grant should write nothing; the roster reads " +
+    unmoved.body.grantCount + " grant(s) against " + grantedBefore + ".");
   const subject = names.usernameFor("stsapi-role");
+  await ok("/users/create", {
+    username: subject, invent: false,
+    attributes: { cn: "Operations " + subject, givenName: "Operations",
+                  sn: subject, mail: subject + "@admin-api-operations.test" }
+  }, "created the person a console role is granted to");
+  // Every write here is read back through its resource's own read.
+  const subjectBack = await get("/users?user=" + encodeURIComponent(subject));
+  assert.strictEqual(subjectBack.status, 200,
+    "GET /users?user=" + subject + " should read the person just created; " +
+    "it answered " + subjectBack.status);
   const granted = await ok("/rbac/grant",
     { username: subject, role: rolesAvailable[0] },
     "granted a console role");
@@ -5362,6 +5454,19 @@ const NOT_DRIVEN_HERE = {
   // grace period and not after it, and the retirement job removes it.
   "POST /federation/rotate-key": "sts_federation_encryption.js drives it, " +
     "and checks the grace period and the retirement",
+  // AN APPLICATION'S WS-TRUST DECRYPTION KEY PAIR (#1668). Driven by
+  // `sts_wstrust_decryption_key.js`, which checks what each did: a request
+  // encrypted to the issued or uploaded certificate is answered, one to the
+  // realm's key refused, and after the removal answered again.
+  "POST /applications/issue-wstrust-decryption-key":
+    "sts_wstrust_decryption_key.js drives it, and sends a request " +
+    "encrypted to the certificate it issued",
+  "POST /applications/upload-wstrust-decryption-key":
+    "sts_wstrust_decryption_key.js drives it with a client-made pair, " +
+    "and its refusal of a mismatched key",
+  "POST /applications/remove-wstrust-decryption-key":
+    "sts_wstrust_decryption_key.js drives it, and checks the realm's key " +
+    "opens a request again",
   // A PARTNER'S DISCOVERY AND DYNAMIC REGISTRATION (#930). Both DIAL the
   // partner — its discovery document and JWKS, its registration endpoint —
   // so a walk with no partner could drive only their refusals.
@@ -5387,6 +5492,15 @@ const NOT_DRIVEN_HERE = {
   // scope and reads the CAEP event it sends off a poll stream.
   "POST /device-compliance": "sts_devices.js drives it with an MDM client " +
     "holding the device:compliance scope, and checks the event it sends",
+  // A REMOTE PEP'S DECISION RECORDS (#1827). Its token carries
+  // xacml:pep-audit and nothing else, its subject the PEP's own entry in
+  // REMOTE_PEPS, so this run's admin:write token is refused there by
+  // design. The PEP containers push them: sts_xacml_pep_proxy_cluster.js
+  // reads each member's pushed rows back off the audit log, and
+  // sts_admin_closed_sets.js mints a PEP's token to probe its body.
+  "POST /pep-audit": "the remote PEP containers push it, and " +
+    "sts_xacml_pep_proxy_cluster.js reads the rows they pushed back off " +
+    "the audit log",
   // A RISK DATASET UPLOAD (#215). Driven by `sts_admin_risk_upload.js`: the
   // body is the dataset FILE itself, streamed and never parsed as JSON, so
   // this file's example-replaying walk has no shape to send it in, and what
@@ -5890,6 +6004,7 @@ async function test() {
     await theTokenDoorsRoundTrip();
     await theIssuedListGroupsByIssuance();
     await theDirectoryAndSignOutDoorsRoundTrip();
+    await thePersonDeleteRoundTrip();
     await theAdminRolesRoundTrip();
     await theTruststoreRoundTrips();
     await theCertificateDetailsAnswer();

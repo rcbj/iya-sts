@@ -1559,9 +1559,8 @@ function readWsSecuritySignature(xml) {
   const signedInfo = directChildByLocal(sigEl, 'SignedInfo', DS_NS);
   if (!signedInfo) {
     // A ds:Signature with no SignedInfo signs nothing: it is not a
-    // signature over the request, and is read as none. One shape carries it
-    // on purpose — WS-Trust's `?encrypt=1` test control, which reads the
-    // recipient certificate out of a bare KeyInfo there.
+    // signature over the request, and is read as none. A KeyInfo that is
+    // not part of a signature is not a certificate the signature names.
     log.debug("Leaving readWsSecuritySignature(). A KeyInfo, no SignedInfo.");
     return { present: false };
   }
@@ -2081,8 +2080,9 @@ function verifyQueryString(queryString, opts) {
 //
 // So this is centralization by MOVE. It was already one implementation with two
 // callers; it is now one implementation in the module where the other three
-// crypto families live, and `saml/saml2.ts` re-exports it so WS-Trust's
-// `?encrypt=1` path is untouched.
+// crypto families live, and `saml/saml2.ts` re-exports it. WS-Trust encrypts
+// through `encryptElement()` with `bare`, so the result is an EncryptedData
+// and not a SAML wrapper.
 // ---------------------------------------------------------------------------
 
 // Every block cipher this service will encrypt with or decrypt, by its
@@ -2351,8 +2351,9 @@ function artifact(opts, what, stage, value) {
  * @param xml - the element to encrypt
  * @param certPem - the recipient's certificate
  * @param opts - `wrapper` (`saml:EncryptedAssertion` by default),
- *   `algorithm`, `keyTransport`, `keyWrap` and `logArtifact`
- * @returns the wrapper element's XML
+ *   `bare` (the EncryptedData alone, no wrapper), `algorithm`,
+ *   `keyTransport`, `keyWrap` and `logArtifact`
+ * @returns the wrapper element's XML, or the EncryptedData when `bare`
  */
 function encryptElement(xml, certPem, opts) {
   log.debug("Entering encryptElement().");
@@ -2366,7 +2367,8 @@ function encryptElement(xml, certPem, opts) {
     !mode.allowsLegacyHashes() ? 'rsa-oaep' : named;
   const transport = KEY_TRANSPORTS[transportName];
   const wrapName = KEY_WRAPS[opts.keyWrap] ? opts.keyWrap : 'kw-aes256';
-  artifact(opts, 'SAML 2.0 ' + wrapper, 'before encryption', xml);
+  const label = opts.bare ? 'XML Encryption' : ('SAML 2.0 ' + wrapper);
+  artifact(opts, label, 'before encryption', xml);
 
   // WHICH KIND OF KEY THE RECIPIENT HOLDS decides between transport and
   // agreement (#168): an EC certificate has no RSA key to wrap to, and
@@ -2385,7 +2387,8 @@ function encryptElement(xml, certPem, opts) {
   c.update(forge.util.createBuffer(forge.util.encodeUtf8(xml)));
   if (!c.finish()) {
     log.debug("Leaving encryptElement(). The cipher refused.");
-    throw new Error('SAML encryption failed in ' + cipher.mode);
+    throw new Error((opts.bare ? 'XML Encryption' : 'SAML encryption') +
+                    ' failed in ' + cipher.mode);
   }
   const body = cipher.tagBytes
     ? iv + c.output.getBytes() + c.mode.tag.getBytes()
@@ -2489,8 +2492,7 @@ function encryptElement(xml, certPem, opts) {
     how = 'key wrapped with ' + transportName;
   }
 
-  const encrypted =
-    '<' + wrapper + ' xmlns:saml="' + NS_SAML + '">' +
+  const encryptedData =
     '<xenc:EncryptedData xmlns:xenc="' + XENC_NS + '" Type="' + XENC_NS +
     'Element"><xenc:EncryptionMethod ' +
       'Algorithm="' + cipher.uri + '"/>' +
@@ -2498,9 +2500,14 @@ function encryptElement(xml, certPem, opts) {
       '</ds:KeyInfo>' +
       '<xenc:CipherData><xenc:CipherValue>' + forge.util.encode64(body) +
       '</xenc:CipherValue></xenc:CipherData>' +
-    '</xenc:EncryptedData></' + wrapper + '>';
+    '</xenc:EncryptedData>';
+  // `bare` is the element itself. The SAML wrapper stays the default so a
+  // caller that encrypts an assertion is unchanged.
+  const encrypted = opts.bare ? encryptedData
+    : ('<' + wrapper + ' xmlns:saml="' + NS_SAML + '">' + encryptedData +
+       '</' + wrapper + '>');
 
-  artifact(opts, 'SAML 2.0 ' + wrapper,
+  artifact(opts, label,
            'after encryption (' + cipher.name + ', ' +
            how + ')',
            encrypted);
@@ -2560,7 +2567,13 @@ function encryptAssertion(assertionXml, certPem, opts) {
 // fail is it rubbish. What this service ITSELF emits is self-contained — see
 // subjectFor() in saml2_sso.js — but somebody else's document is not this
 // service's to dictate.
-function parsesAsFragment(xml) {
+//
+// `namespaces` (#1668) is the prefix-to-URI map in scope where the ciphertext
+// stood, as a WS-Security receiver has it: a SOAP header or Body content
+// encrypted by Apache Santuario relies on declarations on the Envelope, which
+// are not the SAML prefixes below. Only well-formed `xmlns`/`xmlns:p` pairs
+// are written, each value escaped, so it adds no markup of the sender's.
+function parsesAsFragment(xml, namespaces) {
   log.debug("Entering parsesAsFragment().");
   const ok = function (doc) {
     log.debug("Entering ok().");
@@ -2578,9 +2591,16 @@ function parsesAsFragment(xml) {
     // a fragment, and a genuine syntax error fails that too.
     log.debug("Caught in parsesAsFragment(): " + ((e && e.message) || e));
   }
-  const wrapped = '<x xmlns:saml="' + NS_SAML +
-    '" xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol"' +
-    ' xmlns:ds="' + DS_NS + '" xmlns:xenc="' + XENC_NS + '">' + xml + '</x>';
+  const inScope = Object.assign({ 'xmlns:saml': NS_SAML,
+    'xmlns:samlp': 'urn:oasis:names:tc:SAML:2.0:protocol',
+    'xmlns:ds': DS_NS, 'xmlns:xenc': XENC_NS }, namespaces || {});
+  const declared = Object.keys(inScope).filter(function (name) {
+    return /^xmlns(:[A-Za-z_][\w.-]*)?$/.test(name);
+  }).map(function (name) {
+    return ' ' + name + '="' + String(inScope[name]).replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;').replace(/</g, '&lt;') + '"';
+  }).join('');
+  const wrapped = '<x' + declared + '>' + xml + '</x>';
   try {
     log.debug("Leaving parsesAsFragment().");
     return ok(new DOMParser().parseFromString(wrapped, 'text/xml'));
@@ -2778,7 +2798,7 @@ const CBC_REFUSAL = 'the AES-CBC ciphertext did not decrypt to a ' +
   'Encryption 1.1 section 6.1.3). AES-CBC is unauthenticated; AES-GCM ' +
   'would have detected an altered ciphertext';
 
-function cbcPlaintextUsable(opened) {
+function cbcPlaintextUsable(opened, namespaces) {
   log.debug("Entering cbcPlaintextUsable().");
   const padOk = !!(opened && opened.padOk);
   const bytes = opened ? opened.plain : Buffer.alloc(0);
@@ -2793,7 +2813,7 @@ function cbcPlaintextUsable(opened) {
   }
   // Parsed whether or not the two checks above held, so the three failures
   // cost the same work up to the parser's own.
-  const xmlOk = parsesAsFragment(text);
+  const xmlOk = parsesAsFragment(text, namespaces);
   const ok = padOk && utf8Ok && xmlOk && !!opened;
   log.debug("Leaving cbcPlaintextUsable(). " + ok);
   return { ok: ok, text: text };
@@ -2879,7 +2899,8 @@ function openXmlContent(cipher, key, raw) {
  * @param xml - the encrypted element's XML
  * @param privateKeyPem - the private key it was encrypted to
  * @param opts - `allowedCiphers`, `allowedKeyManagement`,
- *   `allowedOaepDigests` and `logArtifact`
+ *   `allowedOaepDigests`, `logArtifact`, and `namespaces`: the `xmlns`
+ *   declarations in scope where the element stood (#1668)
  * @returns `{ ok, xml, why, algorithm, keyTransport }`
  */
 function decryptElement(xml, privateKeyPem, opts) {
@@ -3150,7 +3171,7 @@ function decryptElement(xml, privateKeyPem, opts) {
     if (!cipher.tagBytes) {
       // AES-CBC: ONE REFUSAL FOR THE PADDING, THE ENCODING AND THE PARSE.
       // See cbcPlaintextUsable() for why.
-      const usable = cbcPlaintextUsable(opened);
+      const usable = cbcPlaintextUsable(opened, options.namespaces);
       if (!usable.ok) {
         log.debug("Leaving decryptElement(). CBC did not yield a document.");
         return errorCodes.mark({ ok: false, why: CBC_REFUSAL },
@@ -3187,7 +3208,7 @@ function decryptElement(xml, privateKeyPem, opts) {
     // For GCM (authenticated) a plaintext that is not XML is the sender's
     // bug and is named as such. For CBC the same question is asked inside
     // cbcPlaintextUsable(), above, and answered as one refusal.
-    if (!parsesAsFragment(plain)) {
+    if (!parsesAsFragment(plain, options.namespaces)) {
       log.debug("Leaving decryptElement(). The plaintext is not XML.");
       return errorCodes.mark({ ok: false, why: 'the decryption produced ' +
                'something that is not well-formed XML' }, 'STS-KEYS-0023');
@@ -4475,6 +4496,19 @@ function verifyJws(token, key, opts) {
       log.debug('Leaving verifyJws(). ' + weak);
       throw new Error('this JWS cannot be verified with ' + weak + '.');
     }
+  }
+  // THE LIBRARY PATH PASSES THE ACCEPT CHOKEPOINT TOO (2026-11-14, found by
+  // #444's D12). `prepareVerification()` asks it for every algorithm the
+  // shared verifier checks, and this path — RS, PS, ES and HS, through
+  // jsonwebtoken — never did: under `keys.acceptedSigningAlgorithms=RS256`
+  // an ES256 `private_key_jwt` was still accepted and STS-KEYS-0179 never
+  // recorded, while discovery published RS256 alone. Asked after the
+  // caller's own list (jsonwebtoken checks that below), before the
+  // signature, as there.
+  if (peeked && typeof peeked.alg === 'string' &&
+      (!Array.isArray(options.algorithms) ||
+       options.algorithms.indexOf(peeked.alg) >= 0)) {
+    refuseUnacceptableJws(peeked.alg);
   }
   const verifyOptions = Object.assign({}, options);
   if (verifyOptions.algorithms === undefined) {
@@ -8340,6 +8374,250 @@ function certificateThumbprint(certificate, opts) {
 }
 
 // ---------------------------------------------------------------------------
+// THE X.509 TOKEN PROFILE'S THUMBPRINT REFERENCE (#1668). WS-Security 1.1's
+// `#ThumbprintSHA1` KeyIdentifier names a certificate by the base64 SHA-1 of
+// its DER, and the Basic Security Profile (R5426) has an EncryptedKey's
+// KeyInfo be a SecurityTokenReference, so an encrypted WS-Trust answer names
+// the requester's certificate this way for WSS4J and WCF to find their key.
+// It is an IDENTIFIER the profile fixes, compared for equality and never
+// trusted for integrity, as the Kerberos Token Profile's below is, so
+// `digest()`'s list, which refuses SHA-1 to anything new, is not widened.
+// ---------------------------------------------------------------------------
+/**
+ * Returns the X.509 Token Profile 1.1 `#ThumbprintSHA1` of a certificate:
+ * the base64 SHA-1 of its DER.
+ *
+ * @param certificate - PEM, or base64 DER
+ * @returns the base64 identifier
+ */
+function wssThumbprintSha1(certificate) {
+  log.debug("Entering wssThumbprintSha1().");
+  const first = String(certificate == null ? '' : certificate).match(
+    /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/);
+  const der = Buffer.from(stripPem(first ? first[0] : certificate), 'base64');
+  const out = nodeCrypto.createHash('sha1').update(der).digest('base64');
+  log.debug("Leaving wssThumbprintSha1().");
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// AN APPLICATION'S OWN WS-TRUST DECRYPTION KEY PAIR (#1668, rcbj's request of
+// 2026-11-19): what a requester's EncryptedKey may name it by, and whether an
+// uploaded certificate and private key are one pair this service can decrypt
+// with.
+//
+// THE HANDLES are the four forms the X.509 Token Profile 1.1 (sections 3.2
+// and 3.3) and XML Signature's X509Data give a recipient: the certificate's
+// `#ThumbprintSHA1`, its Subject Key Identifier, its issuer and serial, or
+// the certificate itself (whose thumbprint is the first). Each is an
+// IDENTIFIER compared for equality and never trusted for anything: the key
+// it chooses still has to open the ciphertext. An issuer is compared with
+// its RDNs in any order, each `type=value` upper-cased, so `CN=a, O=b` and
+// `o=B,cn=A` are one name; the serial must match as well.
+//
+// THE PAIR CHECK reads both halves with node and asks node whether the
+// private key is the certificate's (`X509Certificate#checkPrivateKey`). The
+// key kinds are the ones `decryptElement()` unwraps a content key with:
+// RSA of at least 2048 bits (key transport), and EC on P-256, P-384 or P-521
+// (ECDH-ES agreement, `XML_EC_CURVES`). A certificate whose keyUsage leaves
+// out keyEncipherment (RSA) or keyAgreement (EC) is refused, as
+// `pki.pinSigner()` refuses one; a certificate with no keyUsage may
+// encrypt (RFC 5280 section 4.2.1.3).
+// ---------------------------------------------------------------------------
+const DECRYPTION_KEY_CURVES = { 'prime256v1': 'P-256',
+                                'secp384r1': 'P-384',
+                                'secp521r1': 'P-521' };
+const DECRYPTION_KEY_RSA_MIN_BITS = 2048;
+
+/**
+ * Normalises an X.509 issuer name for an issuer-and-serial comparison: its
+ * RDNs, each `TYPE=value` upper-cased with the space around the separator
+ * removed, sorted and joined with commas.
+ *
+ * @param name - the name, RFC 4514 or RFC 2253 text
+ * @returns the normalised name
+ */
+function wssIssuerName(name) {
+  log.debug("Entering wssIssuerName().");
+  const out = String(name == null ? '' : name)
+    .split(/,(?=\s*[A-Za-z0-9.]+\s*=)/)
+    .map(function (rdn) {
+      const at = rdn.indexOf('=');
+      return at < 0 ? rdn.trim().toUpperCase()
+        : rdn.slice(0, at).trim().toUpperCase() + '=' +
+          rdn.slice(at + 1).trim().toUpperCase();
+    })
+    .filter(function (rdn) {
+      return rdn !== '';
+    })
+    .sort()
+    .join(',');
+  log.debug("Leaving wssIssuerName().");
+  return out;
+}
+
+/**
+ * Returns the handles an EncryptedKey's KeyInfo may name a recipient
+ * certificate by: `sha1:<hex>` (its `#ThumbprintSHA1`, and the certificate
+ * itself), `ski:<hex>` where it has a Subject Key Identifier, and
+ * `is:<serialHex>:<issuer>`. Never throws.
+ *
+ * @param certificate - PEM, or base64 DER
+ * @returns the handles; empty for anything that is not a certificate
+ */
+function wssCertificateHandles(certificate) {
+  log.debug("Entering wssCertificateHandles().");
+  const out = [];
+  try {
+    const parsed = parseCertificate(String(certificate || '').indexOf(
+      '-----BEGIN') >= 0 ? String(certificate)
+      : Buffer.from(String(certificate || ''), 'base64'));
+    out.push('sha1:' + nodeCrypto.createHash('sha1').update(parsed.raw)
+      .digest('hex'));
+    const ids = pkinitCertificateIds(Buffer.from(parsed.raw));
+    if (ids.ski && ids.ski.length) {
+      out.push('ski:' + Buffer.from(ids.ski).toString('hex'));
+    }
+    const named = certificateIdentifiers(parsed.toString());
+    if (named.serial) {
+      out.push(wssIssuerSerialHandle(named.issuer, named.serial));
+    }
+  } catch (e) {
+    log.debug("Caught in wssCertificateHandles(): " +
+              ((e && e.message) || e));
+    // Not a certificate: it is named by nothing, and so chosen by nothing.
+    log.debug("Leaving wssCertificateHandles(). Not a certificate.");
+    return [];
+  }
+  log.debug("Leaving wssCertificateHandles(). " + out.length + ".");
+  return out;
+}
+
+/**
+ * Returns the issuer-and-serial handle `wssCertificateHandles()` gives a
+ * certificate, from an X509IssuerSerial's two values.
+ *
+ * @param issuer - the issuer name
+ * @param serialHex - the serial number, hex
+ * @returns `is:<serialHex>:<normalised issuer>`
+ */
+function wssIssuerSerialHandle(issuer, serialHex) {
+  log.debug("Entering wssIssuerSerialHandle().");
+  const serial = String(serialHex || '').toLowerCase()
+    .replace(/[^0-9a-f]/g, '').replace(/^0+(?=[0-9a-f])/, '');
+  log.debug("Leaving wssIssuerSerialHandle().");
+  return 'is:' + serial + ':' + wssIssuerName(issuer);
+}
+
+/**
+ * Checks that a certificate and a private key are one key pair this service
+ * can decrypt an XML Encryption key with: one PEM certificate, an
+ * unencrypted PEM private key that is its private half, RSA of at least 2048
+ * bits or EC on P-256, P-384 or P-521, a keyUsage that permits it, and a
+ * validity that has not ended. Never throws.
+ *
+ * @param certificatePem - the certificate
+ * @param privateKeyPem - the private key
+ * @returns `{ ok: true, keyType, keyDetail, certificatePem }`, or
+ *   `{ ok: false, problem, why }` where `problem` is `certificate`, `key`,
+ *   `mismatch`, `algorithm`, `usage` or `expired`
+ */
+function decryptionKeyPairProblem(certificatePem, privateKeyPem) {
+  log.debug("Entering decryptionKeyPairProblem().");
+  const refuse = function (problem, why) {
+    log.debug("Entering refuse().");
+    log.debug("Leaving refuse().");
+    log.debug("Leaving decryptionKeyPairProblem(). " + problem);
+    return { ok: false, problem: problem, why: why };
+  };
+  const blocks = String(certificatePem || '').match(
+    /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) || [];
+  if (blocks.length !== 1) {
+    return refuse('certificate', 'the certificate must be exactly one PEM ' +
+      'CERTIFICATE block; ' + blocks.length + ' were given');
+  }
+  let cert;
+  try {
+    cert = parseCertificate(blocks[0]);
+  } catch (e) {
+    log.debug("Caught in decryptionKeyPairProblem(): " +
+              ((e && e.message) || e));
+    return refuse('certificate', 'the certificate does not parse as ' +
+      'X.509');
+  }
+  const keyText = String(privateKeyPem || '');
+  if (/-----BEGIN ENCRYPTED PRIVATE KEY-----/.test(keyText) ||
+      /Proc-Type:\s*4,ENCRYPTED/.test(keyText)) {
+    return refuse('key', 'the private key is encrypted; give it as an ' +
+      'unencrypted PEM private key');
+  }
+  let key;
+  try {
+    key = privateKeyFrom(keyText);
+  } catch (e) {
+    log.debug("Caught in decryptionKeyPairProblem(): " +
+              ((e && e.message) || e));
+    return refuse('key', 'the private key does not parse as a PEM ' +
+      'private key');
+  }
+  const type = String(key.asymmetricKeyType || '');
+  const details = key.asymmetricKeyDetails || {};
+  let detail = '';
+  if (type === 'rsa') {
+    const bits = Number(details.modulusLength || 0);
+    if (bits < DECRYPTION_KEY_RSA_MIN_BITS) {
+      return refuse('algorithm', 'the RSA key has ' + bits + ' bits, and ' +
+        'this service decrypts with RSA keys of at least ' +
+        DECRYPTION_KEY_RSA_MIN_BITS + ' bits');
+    }
+    detail = 'RSA ' + bits;
+  } else if (type === 'ec' &&
+             DECRYPTION_KEY_CURVES[String(details.namedCurve || '')]) {
+    detail = 'EC ' + DECRYPTION_KEY_CURVES[String(details.namedCurve)];
+  } else {
+    return refuse('algorithm', 'the key is ' + (type || 'of no known type') +
+      (details.namedCurve ? ' on ' + details.namedCurve : '') + ', and ' +
+      'XML Encryption here unwraps a content key only with RSA (key ' +
+      'transport) or EC on P-256, P-384 or P-521 (ECDH-ES)');
+  }
+  let matches = false;
+  try {
+    matches = cert.checkPrivateKey(key);
+  } catch (e) {
+    log.debug("Caught in decryptionKeyPairProblem(): " +
+              ((e && e.message) || e));
+    matches = false;
+  }
+  if (!matches) {
+    return refuse('mismatch', 'the private key is not the private half of ' +
+      'the certificate');
+  }
+  let facts = null;
+  try {
+    facts = certificateFacts(cert);
+  } catch (e) {
+    log.debug("Caught in decryptionKeyPairProblem(): " +
+              ((e && e.message) || e));
+    return refuse('certificate', 'the certificate does not parse as ' +
+      'X.509');
+  }
+  const needed = type === 'rsa' ? 'keyEncipherment' : 'keyAgreement';
+  if (Array.isArray(facts.keyUsage) && facts.keyUsage.indexOf(needed) < 0) {
+    return refuse('usage', 'the certificate\'s keyUsage (' +
+      facts.keyUsage.join(', ') + ') does not include ' + needed + ', ' +
+      'which a key ' + (type === 'rsa' ? 'transporting' : 'agreeing') +
+      ' a content key needs');
+  }
+  if (!(facts.notAfter > Date.now())) {
+    return refuse('expired', 'the certificate\'s validity ended at ' +
+      cert.validTo);
+  }
+  log.debug("Leaving decryptionKeyPairProblem(). " + detail);
+  return { ok: true, keyType: type, keyDetail: detail,
+           certificatePem: blocks[0] + '\n' };
+}
+
+// ---------------------------------------------------------------------------
 // A CERTIFICATE'S KEY, NOT THE CERTIFICATE: SHA-256 over the DER of its
 // SubjectPublicKeyInfo, base64url (#164, 2026-09-26).
 //
@@ -8371,6 +8649,23 @@ function certificateThumbprint(certificate, opts) {
  */
 function certificateSpkiThumbprint(certificate) {
   log.debug("Entering certificateSpkiThumbprint().");
+  const spkiDer = certificateSpkiDer(certificate);
+  log.debug("Leaving certificateSpkiThumbprint().");
+  return nodeCrypto.createHash('sha256').update(spkiDer).digest('base64url');
+}
+
+// The SubjectPublicKeyInfo DER itself, read the way the thumbprint above reads
+// it — asn1js, the bytes as the issuer signed them — so a post-quantum key a
+// node `X509Certificate` cannot load is still a key here (#1713).
+/**
+ * Returns a certificate's SubjectPublicKeyInfo, as the DER the issuer signed.
+ *
+ * @param certificate - the certificate, PEM or base64 DER
+ * @returns the DER
+ * @throws Error for anything that is not a certificate
+ */
+function certificateSpkiDer(certificate) {
+  log.debug("Entering certificateSpkiDer().");
   const text = String(certificate == null ? '' : certificate);
   const first = text.match(
     /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/);
@@ -8387,7 +8682,7 @@ function certificateSpkiThumbprint(certificate) {
   const spki = fields[versioned ? 6 : 5];
   if (!spki || !spki.idBlock || spki.idBlock.tagNumber !== 16 ||
       !spki.valueBlock || (spki.valueBlock.value || []).length !== 2) {
-    log.debug("Leaving certificateSpkiThumbprint(). Not a certificate.");
+    log.debug("Leaving certificateSpkiDer(). Not a certificate.");
     throw new Error('this is not a DER X.509 certificate with a ' +
                     'SubjectPublicKeyInfo where RFC 5280 puts it.');
   }
@@ -8395,8 +8690,48 @@ function certificateSpkiThumbprint(certificate) {
   const spkiDer = view && view.byteLength
     ? Buffer.from(view.buffer, view.byteOffset, view.byteLength)
     : Buffer.from(spki.toBER(false));
-  log.debug("Leaving certificateSpkiThumbprint().");
-  return nodeCrypto.createHash('sha256').update(spkiDer).digest('base64url');
+  log.debug("Leaving certificateSpkiDer().");
+  return spkiDer;
+}
+
+// ---------------------------------------------------------------------------
+// A COMPACT JWS VERIFIED WITH THE KEY IN A CERTIFICATE (#1713): what a
+// document whose `x5c[0]` names its signer is checked with. The certificate's
+// SubjectPublicKeyInfo is read by `certificateSpkiDer()` and
+// `publicKeyFromSpki()`, so an ML-DSA leaf this service's own post-quantum
+// Issuing CA certified verifies too: its public key is the BIT STRING's
+// octets (RFC 9881), handed to `verifyCompactJws()` as `{ pub }`. Whether the
+// CERTIFICATE is to be relied on is the validation door's question, never
+// this function's.
+// ---------------------------------------------------------------------------
+/**
+ * Verifies a compact JWS with the public key a certificate holds.
+ *
+ * @param token - the compact JWS
+ * @param certificate - the signer's certificate, PEM or base64 DER
+ * @param opts - as for `verifyCompactJws()`; `algorithms` is required
+ * @returns `{ header, claims }`, as `verifyCompactJws()`
+ * @throws Error when the key cannot be read or the signature does not verify
+ */
+function verifyCompactJwsWithCertificate(token, certificate, opts) {
+  log.debug("Entering verifyCompactJwsWithCertificate().");
+  const read = publicKeyFromSpki(certificateSpkiDer(certificate));
+  // A KeyObject, or for a post-quantum key `{ pub }`: what
+  // `verifyCompactJws()` takes for each family.
+  /** @type {any} */
+  let key = read.key;
+  if (read.kind === 'pq') {
+    const decoded = pqcX509.decodeSpki(new Uint8Array(read.spki));
+    key = { pub: Buffer.from(decoded.pub).toString('base64url') };
+  }
+  if (!key) {
+    log.debug("Leaving verifyCompactJwsWithCertificate(). No key.");
+    throw new Error('the certificate holds no key this service can verify ' +
+                    'a signature with.');
+  }
+  const out = verifyCompactJws(token, key, opts);
+  log.debug("Leaving verifyCompactJwsWithCertificate().");
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -9625,16 +9960,17 @@ const ARGON2_LIMITS = Object.freeze({
   passes: Object.freeze({ min: 2, max: 16, dflt: 2 }),
   parallelism: Object.freeze({ min: 1, max: 16, dflt: 1 })
 });
-// THE DEFAULT IS THE PRE-#847 SCRYPT, 2^15 WITH r=8 AND p=1 (rcbj,
-// 2026-10-22, #820): every password already stored is that, so a default of
-// anything else rehashes the whole directory at its next sign-ins — on 8081
-// that was every sign-in of the load. It is below OWASP's table, which is
-// why OWASP's pairs are no longer a floor here; making OWASP's minimum the
-// default again is #872.
+// THE DEFAULT IS SCRYPT AT 2^15, r=8, p=3 (#872, 2026-11-11): one of OWASP's
+// pairs. #889 priced that pair at about 250 ms against the previous 2^15 p=1
+// at about 97 ms; 2^17 p=1 was measured at about 460 ms and was not chosen.
+// p's field minimum stays 1, so a stored hash at p=1 still verifies.
+// `passwordHashSpec()` raises a NEW write to the table. A directory that
+// already holds the cheaper hash pays one extra hash at the next verified
+// sign-in, and only where that hash is weaker (`credentials.ts`).
 const SCRYPT_PASSWORD_LIMITS = Object.freeze({
   logN: Object.freeze({ min: 13, max: 20, dflt: 15 }),
   r: Object.freeze({ min: 8, max: 16, dflt: 8 }),
-  p: Object.freeze({ min: 1, max: 16, dflt: 1 })
+  p: Object.freeze({ min: 1, max: 16, dflt: 3 })
 });
 // OWASP's scrypt table, by log2 N: the least p it lists at r=8. 2^17 and up
 // need p=1.
@@ -9683,8 +10019,8 @@ function argon2Available() {
  * ceilings above: the algorithm and its parameters.
  *
  * argon2id, when asked for, where this runtime has it, and scrypt otherwise
- * (said once, STS-KEYS-0155). An absent spec is scrypt at 2^15, r=8, p=1
- * (#820; #872 makes OWASP's minimum the default).
+ * (said once, STS-KEYS-0155). An absent spec is scrypt at 2^15, r=8, p=3
+ * (#872).
  *
  * @param spec - `{ algorithm, memory, passes, parallelism }` or
  *   `{ algorithm: 'scrypt', logN, r, p }`
@@ -9721,10 +10057,10 @@ function passwordHashSpec(spec) {
   const S = SCRYPT_PASSWORD_LIMITS;
   const logN = clampInt(asked.logN, S.logN.min, S.logN.max, S.logN.dflt);
   const r = clampInt(asked.r, S.r.min, S.r.max, S.r.dflt);
-  // p IS TAKEN AS ASKED (2026-10-22, #820): OWASP's floor
-  // (`scryptOwaspMinP()`) is off while the default is below it; #872 puts
-  // it back.
-  const p = clampInt(asked.p, S.p.min, S.p.max, S.p.dflt);
+  // Raised to OWASP's table for this N (#872). The field minimum stays 1,
+  // so a stored hash below the table still verifies; a new hash does not.
+  const askedP = clampInt(asked.p, S.p.min, S.p.max, S.p.dflt);
+  const p = Math.min(S.p.max, Math.max(askedP, scryptOwaspMinP(logN)));
   log.debug("Leaving passwordHashSpec(). scrypt.");
   return { algorithm: 'scrypt', logN: logN, r: r, p: p };
 }
@@ -9952,6 +10288,40 @@ function storedSecretMatchesSpec(stored, spec) {
       held.keylen === SCRYPT_KEYLEN;
   log.debug("Leaving storedSecretMatchesSpec(). " + same);
   return same;
+}
+
+/**
+ * Says whether a stored password hash costs strictly less than a new one
+ * under this spec, or names a different algorithm.
+ *
+ * Cost is N·r·p for scrypt and memory·passes for argon2id. An equal cost
+ * with different parameters is not weaker, and an unreadable value is not
+ * weaker. The upgrade on sign-in asks this when the parameters differ
+ * (#872): a stronger hash is not rewritten down, and a change of algorithm
+ * still is.
+ *
+ * @param stored - the stored form
+ * @param spec - the policy's hash spec
+ * @returns true when hashing again would raise the cost, or change algorithm
+ */
+function storedSecretIsWeaker(stored, spec) {
+  log.debug("Entering storedSecretIsWeaker().");
+  const held = storedSecretParameters(stored);
+  const want = passwordHashSpec(spec);
+  if (!held) {
+    log.debug("Leaving storedSecretIsWeaker(). Unreadable.");
+    return false;
+  }
+  if (held.algorithm !== want.algorithm) {
+    log.debug("Leaving storedSecretIsWeaker(). Another algorithm.");
+    return true;
+  }
+  const weaker = want.algorithm === 'argon2id'
+    ? held.memory * held.passes < want.memory * want.passes
+    : Math.pow(2, held.logN) * held.r * held.p <
+      Math.pow(2, want.logN) * want.r * want.p;
+  log.debug("Leaving storedSecretIsWeaker(). " + weaker);
+  return weaker;
 }
 
 /**
@@ -18256,6 +18626,8 @@ module.exports = {
   credentialDigest: credentialDigest,
   hkdf: hkdf,
   publicKeyFromJwk: publicKeyFromJwk,
+  certificateSpkiDer: certificateSpkiDer,
+  verifyCompactJwsWithCertificate: verifyCompactJwsWithCertificate,
   publicKeyOf: publicKeyOf,
   spkiDerOf: spkiDerOf,
   // --- section 14: HTTP Message Signatures and Content-Digest (#178) ---
@@ -18460,6 +18832,11 @@ module.exports = {
   SIGNING_JWK_PAIR_ALGS: SIGNING_JWK_PAIR_ALGS,
   generateSigningJwkPair: generateSigningJwkPair,
   certificateThumbprint: certificateThumbprint,
+  wssThumbprintSha1: wssThumbprintSha1,
+  wssIssuerName: wssIssuerName,
+  wssCertificateHandles: wssCertificateHandles,
+  wssIssuerSerialHandle: wssIssuerSerialHandle,
+  decryptionKeyPairProblem: decryptionKeyPairProblem,
   certificateSpkiThumbprint: certificateSpkiThumbprint,
   publicKeySpkiThumbprint: publicKeySpkiThumbprint,
   constantTimeEquals: constantTimeEquals,
@@ -18507,6 +18884,7 @@ module.exports = {
   hashPasswordAsync: hashPasswordAsync,
   storedSecretParameters: storedSecretParameters,
   storedSecretMatchesSpec: storedSecretMatchesSpec,
+  storedSecretIsWeaker: storedSecretIsWeaker,
   // --- section 8: raw signatures and TPM 2.0 (#40) ---
   RAW_SIGNATURE_FAMILIES: RAW_SIGNATURE_FAMILIES,
   publicKeyFromSpki: publicKeyFromSpki,

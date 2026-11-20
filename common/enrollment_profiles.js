@@ -97,6 +97,27 @@ const REFUSED_PROFILES = [
          'this authority.' }
 ];
 
+// THE PROFILE A DEVICE ENTRY'S CERTIFICATE IS ISSUED UNDER (#164), which only
+// EST and SCEP issue (`cert_enrollment.ts` decides that). It is here beside
+// the nine because the model reads both (#1579): the Account API's
+// `changeCertificates` takes one of them as a new SCEP challenge's `profile`,
+// and `models/lib/api_lib.mjs` writes that enumeration from this file
+// (`$enumFrom`) during the image build. A profile is added here and nowhere
+// else.
+/**
+ * The profile a device entry's certificate is issued under.
+ *
+ * @type {string}
+ */
+const DEVICE_PROFILE = 'device';
+
+/**
+ * The profiles a new SCEP challenge may be for: the nine, and the device's.
+ *
+ * @type {string[]}
+ */
+const CHALLENGE_PROFILE_IDS = PROFILE_IDS.concat([DEVICE_PROFILE]);
+
 // Every name `est/est.ts` reads as a LABEL — an issued profile, or a refused
 // one it answers 403 for rather than 404. A trust realm may not be called
 // any of these (`realms.validateId()`, STS-CORE-0107), and a realm that was
@@ -114,5 +135,7 @@ const EST_LABELS = PROFILE_IDS.concat(REFUSED_PROFILES.map(function (one) {
 module.exports = {
   PROFILE_IDS: PROFILE_IDS,
   REFUSED_PROFILES: REFUSED_PROFILES,
+  DEVICE_PROFILE: DEVICE_PROFILE,
+  CHALLENGE_PROFILE_IDS: CHALLENGE_PROFILE_IDS,
   EST_LABELS: EST_LABELS
 };

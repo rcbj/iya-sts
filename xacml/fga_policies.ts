@@ -835,24 +835,36 @@ class FgaPolicies {
     const self = this;
     const { log, store, applications } = this.deps;
     log.debug("Entering FgaPolicies.ownedPolicies().");
-    const groups: Record<string, { application: string; known: boolean;
-                                   enforced: boolean;
-                                   policies: OwnedRow[] }> = {};
+    // A MAP, NOT A `{}` (Schemathesis run 14, 2026-11-11). The key is an
+    // application identifier, which is any string a client_id may be, and
+    // `constructor`, `toString` or `valueOf` is one: in a plain object it
+    // found Object.prototype's function, was taken for a group already
+    // made, and `.policies.push` threw — GET /admin-api/xacml/policies
+    // answered 500 (STS-API-0140) for the whole realm while that
+    // application lived. The identifier is legal, so nothing is refused at
+    // the write; the table it keys has no prototype to collide with.
+    // `tests/fga_owned_policy_names.js` holds it.
+    const groups = new Map<string, { application: string; known: boolean;
+                                     enforced: boolean;
+                                     policies: OwnedRow[] }>();
     store.fgaPolicies().forEach(function (row: PolicyRow): void {
       const owner = String(row.application);
-      if (!groups[owner]) {
+      let group = groups.get(owner);
+      if (!group) {
         const state = applications.fgaStateOf(owner);
-        groups[owner] = { application: owner, known: state.known,
-                          enforced: state.known && state.enforced,
-                          policies: [] };
+        group = { application: owner, known: state.known,
+                  enforced: state.known && state.enforced,
+                  policies: [] };
+        groups.set(owner, group);
       }
-      groups[owner].policies.push({
+      group.policies.push({
         name: row.name, policyId: row.id, version: row.version,
         enabled: row.enabled, orphanedAt: row.orphanedAt || null,
         referenced: self.holderOf(row) === owner });
     });
-    const out = Object.keys(groups).sort().map(function (key: string) {
-      return groups[key];
+    const out = Array.from(groups.values()).sort(function (a, b): number {
+      return a.application < b.application ? -1
+        : (a.application > b.application ? 1 : 0);
     });
     log.debug("Leaving FgaPolicies.ownedPolicies(). " + out.length);
     return out;

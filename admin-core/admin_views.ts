@@ -174,6 +174,9 @@ import passwordPolicy = require('../common/password_policy');
 // THE KINDS OF POLICY ON THAT PAGE (#64): the password policy, the
 // authentication policy, and whatever is defined next. A library.
 import policyKinds = require('./policy_kinds');
+// POLICY EXPORT AND IMPORT (#1713): the transfer view of the Export and
+// import tab. A library; it registers nothing.
+import policyTransfer = require('./policy_transfer');
 // THE PROSE THE SERVER TRANSLATES (#543): `fill()` for the keys and notes
 // built as templates below. A library that requires nothing of this file.
 import serverProse = require('../common/server_prose');
@@ -259,6 +262,9 @@ import consumerProviders = require('../federation/consumer_providers');
 import fedLinks = require('../federation/federation_links');
 // What a partner encrypts to (#168), for the relationship's page and API.
 import fedEncryption = require('../federation/federation_encryption');
+// A FAPI 1.0 Advanced relationship's TLS client certificate (#931): its
+// public half, for the partner to register.
+import fedClientCert = require('../federation/federation_client_certificate');
 // The receiver half of Shared Signals, which the three reports below draw
 // this service's own registered streams from.
 import signals = require('../ssf/ssf_receivers');
@@ -351,6 +357,10 @@ const CHOOSER_HITS = WebKit.CHOOSER_HITS;
  * Rows per page when the query names none.
  */
 const DEFAULT_PER_PAGE = 50;
+// A person's two lists of authentications on Directory → Users — How they
+// authenticated on the Overview tab and the Authentication attempts tab —
+// default to ten rows a page (rcbj, #1844, 2026-11-16).
+const USER_EVENTS_PER_PAGE = 10;
 // HOW MANY OPEN VERIFICATIONS THE VERIFIER REQUEST TAB AND `GET
 // /admin-api/verifications` LIST (#587). A transaction lives for
 // oid4vp.presentationRequestTtlS and the store is bounded by
@@ -521,6 +531,17 @@ const NOT_A_VIEW = ['format', 'notice', 'error'];
  * Rows per page for a list whose row is itself a table.
  */
 const DEFAULT_BLOCKS_PER_PAGE = 5;
+
+// Rows per page for every TABLE on a person's Sessions & tokens tab (rcbj,
+// 2026-11-16): a session's tokens, the tokens on ended sessions, the tokens
+// with no session and the other artifacts. At DEFAULT_PER_PAGE a remote PEP
+// with a few hundred RFC 7523 tokens showed one table fifty rows long and no
+// pager until the fifty-first; ten puts the pager on the page as soon as the
+// list is longer than a screen. `?per=` overrides it, as everywhere.
+/**
+ * Rows per page for each table on a person's Sessions & tokens tab.
+ */
+const DEFAULT_ACTIVITY_PER_PAGE = 10;
 
 // ---------------------------------------------------------------------------
 // THE TWO PICTURES' KEYS, AS PROSE (#543 phase 2b). `delegationMapKey()` and
@@ -914,6 +935,7 @@ interface AdminViewsDeps {
   roles: typeof roles;
   passwordPolicy: typeof passwordPolicy;
   policyKinds: typeof policyKinds;
+  policyTransfer: typeof policyTransfer;
   auditLog: typeof auditLog;
   errorCodes: typeof errorCodes;
   usedAssertions: typeof usedAssertions;
@@ -1139,6 +1161,7 @@ class AdminViews {
       roles: roles,
       passwordPolicy: passwordPolicy,
       policyKinds: policyKinds,
+      policyTransfer: policyTransfer,
       auditLog: auditLog,
       errorCodes: errorCodes,
       usedAssertions: usedAssertions,
@@ -1684,13 +1707,15 @@ class AdminViews {
       throw new Error('the sign-on sessions could not be read');
     }
     matched.forEach(function (session) {
-      const id = session && session.id;
+      // The row is the `Session` concept (#1579); the WS-Federation realms
+      // and the device binding are their owners' own.
+      const view = DomainClasses.Session.fromRecord(session);
       rows.push(Object.assign({
-        id: id,
-        username: (session.user && session.user.username) || '',
-        sub: (session.user && session.user.sub) || '',
-        amr: (session.amr || []).join(', '),
-        acr: session.acr || '',
+        id: view.id,
+        username: view.username || '',
+        sub: view.sub || '',
+        amr: (view.methods || []).join(', '),
+        acr: view.assuranceLevel || '',
         // TWO INSTANTS SINCE 2026-09-14, and they stopped being one when a
         // session learned to hold several authentications: `startedAt` is when
         // it BEGAN (its first event) and `authTime` the MOST RECENT
@@ -1698,11 +1723,11 @@ class AdminViews {
         // "Signed in" drawn from `authTime` showed an hour-old session as a
         // minute old.
         startedAt: sessionStartedAt(session),
-        authTime: (session.authTime || 0) * 1000,
-        authentications: (Array.isArray(session.events)
-          ? session.events.length : 1) + (session.eventsDropped || 0),
-        expires: session.expires || 0,
-        expired: !!session.expires && session.expires <= nowMs,
+        authTime: (view.authTime || 0) * 1000,
+        authentications: (view.events ? view.events.length : 1) +
+          (view.eventsDropped || 0),
+        expires: view.expires || 0,
+        expired: !!view.expires && view.expires <= nowMs,
         // Which WS-Federation relying parties this session signed into. It is
         // the list wsignout1.0 has to fan out to, and seeing it is the only way
         // to know in advance what a sign-out is about to do.
@@ -1715,8 +1740,7 @@ class AdminViews {
       // THE BROWSER'S ACCOUNT SET IT BELONGS TO (#561), where it is in one —
       // several signed-in accounts in one browser, `authn/CLAUDE.md`. Only
       // then, so a row is unchanged with `authn.multipleAccounts` off.
-      session.accountSetId ? { accountSet: String(session.accountSetId) }
-                           : {}));
+      view.accountSetId ? { accountSet: String(view.accountSetId) } : {}));
     });
     rows.sort(function (a, b) { return b.startedAt - a.startedAt; });
     log.debug("Leaving AdminViews.signOnSessionRows(). " + rows.length +
@@ -1742,7 +1766,7 @@ class AdminViews {
    *
    * @returns a promise of the snapshot and what the page draws from it
    */
-  async metricsJsonAsync() {
+  async metricsJsonAsync(): Promise<IyaApi.AdminAnswer<'getMetrics'>> {
     const { log, stats } = this.deps;
     log.debug("Entering AdminViews.metricsJsonAsync().");
     const page = typeof authn.liveSessionPageAsync === 'function'
@@ -1824,7 +1848,7 @@ class AdminViews {
    * @param query - the query, whose `id` names the set
    * @returns a promise of what `tokenSetView()` answers
    */
-  async tokenSetViewAsync(query) {
+  async tokenSetViewAsync(query): Promise<IyaApi.AdminView<'getIssuedSet'>> {
     const { log, stats } = this.deps;
     log.debug("Entering AdminViews.tokenSetViewAsync().");
     const asked = String((query && query.id) || '').trim();
@@ -1915,7 +1939,7 @@ class AdminViews {
    * @param req - the request; only its query and realm are read
    * @returns the report
    */
-  cryptoView(req) {
+  cryptoView(req): IyaApi.AdminAnswer<'getCryptoMetadata'> {
     const { log, baseUrlOf } = this.deps;
     log.debug("Entering AdminViews.cryptoView().");
     if (!cryptoReporter) {
@@ -1937,7 +1961,7 @@ class AdminViews {
    * @param req - the request; only its query and realm are read
    * @returns the inventory
    */
-  keysView(req) {
+  keysView(req): IyaApi.AdminAnswer<'getKeys'> {
     const { log, baseUrlOf } = this.deps;
     log.debug("Entering AdminViews.keysView().");
     if (!cryptoReporter) {
@@ -1980,7 +2004,7 @@ class AdminViews {
    * @param req - the request
    * @returns the view, or the no-XACML answer when the module is not loaded
    */
-  xacmlView(req) {
+  xacmlView(req): IyaApi.AdminAnswer<'getXacml'> {
     const { log, noXacml } = this.deps;
     log.debug('Entering AdminViews.xacmlView().');
     const json = xacmlPages ? xacmlPages.overview(req) : noXacml();
@@ -1994,7 +2018,7 @@ class AdminViews {
    * @param req - the request
    * @returns the view, or the no-XACML answer when the module is not loaded
    */
-  xacmlPoliciesView(req) {
+  xacmlPoliciesView(req): IyaApi.AdminAnswer<'getXacmlPolicies'> {
     const { log, noXacml } = this.deps;
     log.debug('Entering AdminViews.xacmlPoliciesView().');
     const json = xacmlPages ? xacmlPages.policies(req) : noXacml();
@@ -2008,7 +2032,7 @@ class AdminViews {
    * @param req - the request
    * @returns the view, or the no-XACML answer when the module is not loaded
    */
-  xacmlEditorView(req) {
+  xacmlEditorView(req): IyaApi.AdminAnswer<'getXacmlEditor'> {
     const { log, noXacml } = this.deps;
     log.debug('Entering AdminViews.xacmlEditorView().');
     const json = xacmlPages
@@ -2023,11 +2047,26 @@ class AdminViews {
    * @param req - the request
    * @returns the view, or the no-XACML answer when the module is not loaded
    */
-  xacmlPepsView(req) {
+  xacmlPepsView(req): IyaApi.AdminAnswer<'getXacmlPeps'> {
     const { log, noXacml } = this.deps;
     log.debug('Entering AdminViews.xacmlPepsView().');
     const json = xacmlPages ? xacmlPages.peps(req) : noXacml();
     log.debug('Leaving AdminViews.xacmlPepsView().');
+    return json;
+  }
+
+  /**
+   * Returns the remote PEP clusters from the XACML pages (#1760).
+   *
+   * @param req - the request
+   * @returns the view, or the no-XACML answer when the module is not loaded
+   */
+  xacmlPepClustersView(req): IyaApi.AdminAnswer<'getXacmlPepClusters'> {
+    const { log, noXacml } = this.deps;
+    log.debug('Entering AdminViews.xacmlPepClustersView().');
+    const json = xacmlPages && typeof xacmlPages.clusters === 'function'
+      ? xacmlPages.clusters(req) : noXacml();
+    log.debug('Leaving AdminViews.xacmlPepClustersView().');
     return json;
   }
 
@@ -2037,7 +2076,7 @@ class AdminViews {
    * @param req - the request
    * @returns the view, or the no-XACML answer when the module is not loaded
    */
-  xacmlDecideView(req) {
+  xacmlDecideView(req): IyaApi.AdminAnswer<'getXacmlDecision'> {
     const { log, noXacml } = this.deps;
     log.debug('Entering AdminViews.xacmlDecideView().');
     const json = xacmlPages ? xacmlPages.decide(req.query || {}) : noXacml();
@@ -2055,7 +2094,7 @@ class AdminViews {
    * @param req - the request (unused)
    * @returns the view, or the no-XACML answer when the module is not loaded
    */
-  xacmlMonitorView(req) {
+  xacmlMonitorView(req): IyaApi.AdminAnswer<'getXacmlMonitor'> {
     const { log, noXacml } = this.deps;
     log.debug('Entering AdminViews.xacmlMonitorView().');
     const json = xacmlPages ? xacmlPages.monitor() : noXacml();
@@ -2232,7 +2271,7 @@ class AdminViews {
    * @param req - the request
    * @returns a promise of the view, `consentPageView()`'s shape
    */
-  async consentPageViewAsync(req) {
+  async consentPageViewAsync(req): Promise<IyaApi.AdminView<'getConsent'>> {
     const { log, applications, consent: consentStore } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.consentPageViewAsync().");
@@ -2479,7 +2518,7 @@ class AdminViews {
    * @param query - the query: `q` and the roles' paging
    * @returns the view
    */
-  rolesView(query?) {
+  rolesView(query?): IyaApi.AdminAnswer<'getRoles'> {
     const { log, applications } = this.deps;
     log.debug("Entering AdminViews.rolesView().");
     const q0 = query || {};
@@ -2858,7 +2897,7 @@ class AdminViews {
    * @param query - the request's query
    * @returns a promise of the page's JSON
    */
-  async policiesViewAsync(query) {
+  async policiesViewAsync(query): Promise<IyaApi.AdminAnswer<'getPolicies'>> {
     const { log, policyKinds } = this.deps;
     log.debug("Entering AdminViews.policiesViewAsync().");
     const out = this.policiesView(query);
@@ -2893,7 +2932,7 @@ class AdminViews {
    * @param query - the query, naming the application and the subject
    * @returns the decision and what it rested on
    */
-  rolesPreview(query) {
+  rolesPreview(query): IyaApi.AdminAnswer<'previewRoleIssuance'> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.rolesPreview().");
     const asked = query || {};
@@ -3217,7 +3256,7 @@ class AdminViews {
    * @param previewUser - the person to preview
    * @returns the JSON
    */
-  claimsJson(previewUser) {
+  claimsJson(previewUser): IyaApi.AdminAnswer<'getClaims'> {
     const { log, stats } = this.deps;
     log.debug("Entering AdminViews.claimsJson(). previewUser=" + previewUser);
     const json = Object.assign(
@@ -3242,7 +3281,7 @@ class AdminViews {
    * @param previewUser - the person to preview
    * @returns the JSON
    */
-  samlAttributesJson(previewUser) {
+  samlAttributesJson(previewUser): IyaApi.AdminAnswer<'getSamlAttributes'> {
     const { log, stats } = this.deps;
     log.debug("Entering AdminViews.samlAttributesJson(). previewUser=" +
               previewUser);
@@ -3277,7 +3316,7 @@ class AdminViews {
    * @param previewUser - the person to preview
    * @returns the JSON
    */
-  kerberosClaimsJson(previewUser) {
+  kerberosClaimsJson(previewUser): IyaApi.AdminAnswer<'getKerberosPacClaims'> {
     const { log, stats, config, claimAttributes } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.kerberosClaimsJson(). previewUser=" +
@@ -3382,7 +3421,7 @@ class AdminViews {
    * @param previewUser - the person to preview
    * @returns the JSON
    */
-  vcJson(previewUser) {
+  vcJson(previewUser): IyaApi.AdminAnswer<'getCredentialClaims'> {
     const { log, vcClaims } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.vcJson(). previewUser=" + previewUser);
@@ -3459,7 +3498,7 @@ class AdminViews {
    *
    * @returns the JSON
    */
-  vpConfigJson() {
+  vpConfigJson(): IyaApi.AdminAnswer<'getVerifierRequest'> {
     const { log, vpConfig } = this.deps;
     log.debug("Entering AdminViews.vpConfigJson().");
     const format = vpConfig.defaultFormatId();
@@ -3530,7 +3569,7 @@ class AdminViews {
    * @returns `{ found, ...outcome }` for a state, or `{ verifications,
    *   total, limit }`
    */
-  presentationVerificationsJson(req) {
+  presentationVerificationsJson(req): IyaApi.AdminAnswer<'getVerifications'> {
     const { log, vcVerifier } = this.deps;
     log.debug("Entering AdminViews.presentationVerificationsJson().");
     const query = (req && req.query) || {};
@@ -3696,7 +3735,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  realmsJson(req) {
+  realmsJson(req): IyaApi.AdminAnswer<'getRealms'> {
     const { log, config, realms } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.realmsJson().");
@@ -3757,7 +3796,7 @@ class AdminViews {
    *
    * @returns the JSON
    */
-  tokenLifetimesJson() {
+  tokenLifetimesJson(): IyaApi.AdminAnswer<'getTokenLifetimes'> {
     const { log, config, stats, configSettingFor, applications } = this.deps;
     log.debug("Entering AdminViews.tokenLifetimesJson().");
     // No user counts are read here (#820).
@@ -3827,7 +3866,7 @@ class AdminViews {
    *
    * @returns the JSON
    */
-  samlAssertionsJson() {
+  samlAssertionsJson(): IyaApi.AdminAnswer<'getSamlAssertions'> {
     const { log, config, stats, configSettingFor } = this.deps;
     log.debug("Entering AdminViews.samlAssertionsJson().");
     // No user counts are read here (#820).
@@ -3969,7 +4008,7 @@ class AdminViews {
    * @param req - the request
    * @returns a promise of the JSON
    */
-  scimJsonAcrossCells(req) {
+  scimJsonAcrossCells(req): Promise<IyaApi.AdminAnswer<'getScim'>> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.scimJsonAcrossCells().");
     const out = this.scimJson(req);
@@ -4106,7 +4145,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  scimMonitorJson(req) {
+  scimMonitorJson(req): IyaApi.AdminAnswer<'getScimMonitor'> {
     const { log, stats } = this.deps;
     log.debug("Entering AdminViews.scimMonitorJson().");
     const counters = stats.scimMonitorSnapshot();
@@ -4367,7 +4406,7 @@ class AdminViews {
    * @param realmId - the realm's id, or the ambient realm's
    * @returns the history
    */
-  signingHistoryView(query, realmId?) {
+  signingHistoryView(query, realmId?): IyaApi.AdminAnswer<'getKeyHistory'> {
     const { log, realms, signingHistory: history } = this.deps;
     log.debug("Entering AdminViews.signingHistoryView().");
     const q = query || {};
@@ -4654,7 +4693,7 @@ class AdminViews {
    * @param query - the request's query
    * @returns a promise of the view `tokensView()` answers
    */
-  async tokensViewAsync(query) {
+  async tokensViewAsync(query): Promise<IyaApi.AdminView<'getIssued'>> {
     const { log, stats } = this.deps;
     log.debug("Entering AdminViews.tokensViewAsync().");
     if (typeof stats.issuedSetsAsync !== 'function') {
@@ -4884,7 +4923,7 @@ class AdminViews {
    * @param req - the request
    * @returns a promise of the view
    */
-  async sessionsViewAsync(req) {
+  async sessionsViewAsync(req): Promise<IyaApi.AdminView<'getSessions'>> {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.sessionsViewAsync().");
@@ -5009,7 +5048,7 @@ class AdminViews {
    * @param query - the request's query
    * @returns the view
    */
-  usedAssertionsView(query) {
+  usedAssertionsView(query): Promise<IyaApi.AdminView<'getUsedAssertions'>> {
     const { log, usedAssertions } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.usedAssertionsView().");
@@ -5074,7 +5113,8 @@ class AdminViews {
   // is the table FILTERED and PAGED, with one column the documentation page
   // cannot have — how many rows in this realm's audit log carry each code right
   // now. That column is what makes the page worth having beside
-  // `docs/error-codes.md`: the page answers *what does STS-FED-0012 mean* and
+  // `docs/v1.1.0/error-codes.md`: the page answers *what does STS-FED-0012
+  // mean* and
   // *which failures has this service actually been producing*, and only a
   // running service can answer the second.
   //
@@ -5095,7 +5135,7 @@ class AdminViews {
    * @param query - the request's query
    * @returns the view
    */
-  errorCodesView(query) {
+  errorCodesView(query): IyaApi.AdminView<'getErrorCodes'> {
     const { log, auditLog, errorCodes } = this.deps;
     log.debug("Entering AdminViews.errorCodesView().");
     const wantedSubsystem = String(query.subsystem || '').trim().toUpperCase();
@@ -5178,7 +5218,7 @@ class AdminViews {
                   seen: wantedSeen || null },
         page: paging.page, pages: paging.pages, perPage: paging.perPage,
         firstRow: paging.firstRow, lastRow: paging.lastRow,
-        documentation: 'docs/error-codes.md',
+        documentation: 'docs/v1.1.0/error-codes.md',
         neverSentToClients: true,
         subsystems: subsystems,
         unregisteredSeen: unregisteredSeen,
@@ -5201,7 +5241,7 @@ class AdminViews {
    * @param query - the request's query
    * @returns the view
    */
-  auditView(query) {
+  auditView(query): IyaApi.AdminView<'getAudit'> {
     const { log, auditLog } = this.deps;
     log.debug("Entering AdminViews.auditView().");
     const wantedCategory = String(query.category || '');
@@ -5222,7 +5262,10 @@ class AdminViews {
     const all = auditLog.list();
     const needle = wantedText.toLowerCase();
     const actorNeedle = wantedActor.toLowerCase();
-    const filtered = all.filter(function (row) {
+    // EACH ROW IS DECIDED ON THROUGH THE `AuditEvent` CONCEPT (#1579); the
+    // rows answered are the log's own, whose shape the API publishes.
+    const filtered = all.filter(function (held) {
+      const row = DomainClasses.AuditEvent.fromRecord(held);
       if (wantedCategory && row.category !== wantedCategory) return false;
       if (wantedAction && row.action !== wantedAction) return false;
       if (wantedOutcome && row.outcome !== wantedOutcome) return false;
@@ -5741,6 +5784,16 @@ class AdminViews {
   // server), and the markup of the drawing. So the answer is the page's own
   // JSON — the graph, the filter, the counts — with `looks` and `svg` added.
   //
+  // SINCE #444's PHASE 2b (2026-11-14) THE BROWSER LAYS IT OUT: the console
+  // hands `nodes`, `edges` (`graph` on the other six pictures) and `looks` to
+  // `admin-ui/web_delegation_map.ts`, the code `delegationMap.render()` runs
+  // here, so the one fact about the realm that code needs is answered as
+  // data — `drawing.verifiesCredentials`, the mode's answer, which one
+  // tooltip sentence turns on. `svg` is still answered, drawn by the same
+  // code. When the request names a language, the API redraws it from the
+  // translated graph (`admin-ui/picture_svg.ts`, #1768), so the member is
+  // the picture the console draws. With no language it is these bytes.
+  //
   // IT IS THE SAME FOUR CALLS THE PAGE'S ROUTE MAKES, in its order, and
   // deliberately not yet the route's own source of them: the route is left as
   // it is until its page is converted (#446 step 3), when both will be this.
@@ -5759,7 +5812,7 @@ class AdminViews {
    *   with no links in it, as `?format=svg` answers
    * @returns the page's JSON with `summary`, `looks`, `label` and `svg`
    */
-  delegationMapModel(query, options?) {
+  delegationMapModel(query, options?): IyaApi.AdminAnswer<'getDelegationMap'> {
     const { log, delegationMap } = this.deps;
     log.debug("Entering AdminViews.delegationMapModel().");
     const view = this.delegationView(query || {});
@@ -5776,7 +5829,8 @@ class AdminViews {
       held: view.summary.held,
       summary: view.summary,
       drawing: { width: drawn.width, height: drawn.height,
-                 failed: drawn.failed || null },
+                 failed: drawn.failed || null,
+                 verifiesCredentials: mode.verifiesCredentials() },
       looks: look.looks,
       label: label,
       svg: drawn.svg
@@ -5824,7 +5878,8 @@ class AdminViews {
    *   with no links in it, as `?format=svg` answers
    * @returns the chain, its acts and graph, and the drawing
    */
-  delegationChainModel(query, options?) {
+  delegationChainModel(query, options?):
+    IyaApi.AdminAnswer<'getDelegationChain'> {
     const { log, delegation, delegationMap } = this.deps;
     log.debug("Entering AdminViews.delegationChainModel().");
     const wanted = String((query || {}).chain || '');
@@ -5848,7 +5903,8 @@ class AdminViews {
       acts: acts, graph: graph,
       held: summary.held, maxRecords: summary.maxRecords,
       drawing: { width: drawn.width, height: drawn.height,
-                 failed: drawn.failed || null },
+                 failed: drawn.failed || null,
+                 verifiesCredentials: mode.verifiesCredentials() },
       looks: look.looks, label: label, svg: drawn.svg
     };
     if (!(options && options.links === false)) {
@@ -5878,7 +5934,9 @@ class AdminViews {
    *   with no links in it, as `?format=svg` answers
    * @returns the application, its acts and graph, and the drawing
    */
-  delegationApplicationModel(query, options?) {
+  delegationApplicationModel(query, options?):
+    IyaApi.AdminAnswer<'getDelegationApplication' |
+      'getConsoleDelegationApplication'> {
     const { log, delegation, delegationMap, applications } = this.deps;
     log.debug("Entering AdminViews.delegationApplicationModel().");
     const asked = String((query || {}).application || '').trim();
@@ -5931,7 +5989,8 @@ class AdminViews {
       held: summary.held, maxRecords: summary.maxRecords,
       roles: delegation.ROLES,
       drawing: { width: drawn.width, height: drawn.height,
-                 failed: drawn.failed || null },
+                 failed: drawn.failed || null,
+                 verifiesCredentials: mode.verifiesCredentials() },
       looks: look.looks, label: label, svg: drawn.svg
     };
     if (!(options && options.links === false)) {
@@ -5965,7 +6024,8 @@ class AdminViews {
    * @returns the person, their credentials, flows, acts and graph, and the
    *   drawing
    */
-  delegationUserModel(query, options?) {
+  delegationUserModel(query, options?):
+    IyaApi.AdminAnswer<'getDelegationUser' | 'getConsoleDelegationUser'> {
     const { log, stats, delegation, delegationMap, userGraph } = this.deps;
     log.debug("Entering AdminViews.delegationUserModel().");
     const asked = String((query || {}).user || '').trim();
@@ -6053,7 +6113,8 @@ class AdminViews {
       // False when `users` is not every identity (#820): the reader is told.
       usersComplete: listed.complete,
       drawing: { width: drawn.width, height: drawn.height,
-                 failed: drawn.failed || null },
+                 failed: drawn.failed || null,
+                 verifiesCredentials: mode.verifiesCredentials() },
       looks: look.looks, label: label, svg: drawn.svg
     };
     if (!(options && options.links === false)) {
@@ -6086,7 +6147,8 @@ class AdminViews {
    *   with no links in it, as `?format=svg` answers
    * @returns the lineage, the graph and the drawing
    */
-  credentialLineageModel(query, options?) {
+  credentialLineageModel(query, options?):
+    IyaApi.AdminAnswer<'getCredentialLineage'> {
     const { log, stats, delegation, delegationMap, userGraph,
             credentialGraph } = this.deps;
     log.debug("Entering AdminViews.credentialLineageModel().");
@@ -6137,7 +6199,8 @@ class AdminViews {
       graph: graph,
       maxGenerations: credentialGraph.MAX_GENERATIONS,
       drawing: { width: drawn.width, height: drawn.height,
-                 failed: drawn.failed || null },
+                 failed: drawn.failed || null,
+                 verifiesCredentials: mode.verifiesCredentials() },
       looks: look.looks, label: label, svg: drawn.svg
     };
     const credential = model.credential;
@@ -6211,7 +6274,7 @@ class AdminViews {
    * @param query - the page's query
    * @returns the register, its list state, the applications and settings
    */
-  delegationSettingsModel(query) {
+  delegationSettingsModel(query): IyaApi.AdminAnswer<'getDelegationSettings'> {
     const { log, applications } = this.deps;
     log.debug("Entering AdminViews.delegationSettingsModel().");
     const permissions = this.permissionsView();
@@ -6256,7 +6319,8 @@ class AdminViews {
    *   with no links in it, as `?format=svg` answers
    * @returns the graph, the groups, the register and the drawing
    */
-  delegationAllowedModel(query, options?) {
+  delegationAllowedModel(query, options?):
+    IyaApi.AdminAnswer<'getDelegationAllowed'> {
     const { log, delegationMap } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.delegationAllowedModel().");
@@ -6284,7 +6348,8 @@ class AdminViews {
       groupCounts: groups.counts,
       groupsPaging: this.pagingJson(groupPage.paging),
       drawing: { width: drawn.width, height: drawn.height,
-                 failed: drawn.failed || null },
+                 failed: drawn.failed || null,
+                 verifiesCredentials: mode.verifiesCredentials() },
       looks: look.looks, label: label, svg: drawn.svg
     };
     if (!(options && options.links === false)) {
@@ -6319,7 +6384,8 @@ class AdminViews {
    *   with no links in it, as `?format=svg` answers
    * @returns the group, its pages, the chooser's data and the drawing
    */
-  delegationClusterModel(query, options?) {
+  delegationClusterModel(query, options?):
+    IyaApi.AdminAnswer<'getDelegationCluster'> {
     const { log, delegationMap, appPermissions } = this.deps;
     log.debug("Entering AdminViews.delegationClusterModel().");
     const asked = String((query || {}).application || '').trim();
@@ -6340,7 +6406,8 @@ class AdminViews {
       this.permissionGroupsView(query || {}, permissions), {
         asked: asked, graph: graph,
         drawing: { width: drawn.width, height: drawn.height,
-                   failed: drawn.failed || null },
+                   failed: drawn.failed || null,
+                   verifiesCredentials: mode.verifiesCredentials() },
         looks: look.looks, label: label, svg: drawn.svg
       });
     if (!(options && options.links === false)) {
@@ -6383,7 +6450,7 @@ class AdminViews {
    *   and every list's page
    * @returns the acts and everything the page draws beside them
    */
-  delegationPageModel(query) {
+  delegationPageModel(query): IyaApi.AdminAnswer<'getDelegation'> {
     const { log, delegation, userGraph, applications } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.delegationPageModel().");
@@ -6615,6 +6682,15 @@ class AdminViews {
   // on the server. The page's own JSON, with the vocabulary its filter
   // offers, the drawing, its size, and the key — markup drawn by the
   // diagram's own renderer, as `delegationMapKey()` is.
+  //
+  // THE BROWSER LAYS IT OUT SINCE #444's PHASE 2b (2026-11-14), with
+  // `admin-ui/web_federation_diagram.ts`, the code `render()` runs here. So
+  // the answer carries everything that code reads off the graph: each node's
+  // `realm` and `realmName` (the hexagon) or `application` and `peer` (a
+  // partner), each edge's relationship row by its `relationship` (in
+  // `relationships`), where each box links (`looks`, as the delegation
+  // pictures answer it), and the realm's mode (`drawing.verifiesCredentials`).
+  // `svg` is still answered, drawn by the same code.
   // ---------------------------------------------------------------------------
   /**
    * Builds `/admin/federation/map`'s answer.
@@ -6624,7 +6700,7 @@ class AdminViews {
    *   with no links in it, as `?format=svg` answers
    * @returns the realm's relationships, the graph and the drawing
    */
-  federationMapModel(query, options?) {
+  federationMapModel(query, options?): IyaApi.AdminAnswer<'getFederationMap'> {
     const { log, federation, federationGraph, federationDiagram } = this.deps;
     log.debug("Entering AdminViews.federationMapModel().");
     const q = query || {};
@@ -6646,8 +6722,17 @@ class AdminViews {
       empty: graph.empty, filtered: graph.filtered,
       relationships: graph.relationships,
       nodes: graph.nodes.map(function (node) {
-        return { id: node.id, kind: node.kind, label: node.label,
-                 relationships: node.relationships || [] };
+        const one: any = { id: node.id, kind: node.kind, label: node.label,
+                           relationships: node.relationships || [] };
+        // What the drawing reads off a box beyond those (#444 phase 2b),
+        // only where the graph has it.
+        ['realm', 'realmName', 'application', 'peer'].forEach(
+          function (name) {
+            if (typeof node[name] === 'string') {
+              one[name] = node[name];
+            }
+          });
+        return one;
       }),
       edges: graph.edges.map(function (edge) {
         return { id: edge.id, from: edge.from, to: edge.to,
@@ -6657,8 +6742,9 @@ class AdminViews {
                  use: edge.use || null };
       }),
       drawing: { width: drawn.width, height: drawn.height,
-                 failed: drawn.failed || null },
-      label: label, svg: drawn.svg
+                 failed: drawn.failed || null,
+                 verifiesCredentials: mode.verifiesCredentials() },
+      looks: look.looks, label: label, svg: drawn.svg
     };
     if (!(options && options.links === false)) {
       model.roles = federation.ROLES;
@@ -7029,7 +7115,7 @@ class AdminViews {
    * @param query - the request's query
    * @returns the view
    */
-  delegationPolicyView(query) {
+  delegationPolicyView(query): IyaApi.AdminView<'getDelegationPolicy'> {
     const { log, delegationPolicy } = this.deps;
     log.debug("Entering AdminViews.delegationPolicyView().");
     const q = query || {};
@@ -7112,7 +7198,8 @@ class AdminViews {
    * @param view - the register, when already built
    * @returns the clusters, or the one asked for
    */
-  permissionGroupsView(query, view?) {
+  permissionGroupsView(query, view?):
+    IyaApi.AdminAnswer<'getPermissionGroups'> {
     const { log, appPermissions } = this.deps;
     log.debug("Entering AdminViews.permissionGroupsView().");
     const permissions = view || this.permissionsView();
@@ -7355,7 +7442,8 @@ class AdminViews {
    * @param raw - the `claims` parameter to preview
    * @returns the JSON
    */
-  userinfoClaimsJson(previewUser, raw) {
+  userinfoClaimsJson(previewUser, raw):
+    IyaApi.AdminAnswer<'getUserInfoClaims'> {
     const { log, stats, userFor } = this.deps;
     log.debug("Entering AdminViews.userinfoClaimsJson(). previewUser=" +
               previewUser);
@@ -7394,7 +7482,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  signalsJson(req) {
+  signalsJson(req): IyaApi.AdminAnswer<'getSignals'> {
     const { log, signals } = this.deps;
     log.debug("Entering AdminViews.signalsJson().");
     // THE CONSOLE SEES EVERYTHING IN THE REALM IT IS READING, which is the
@@ -7473,7 +7561,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  pkiTrustJson(req) {
+  pkiTrustJson(req): IyaApi.AdminAnswer<'getPkiTrust'> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.pkiTrustJson().");
     // Lazily: libraries, and this module is loaded long before any of them.
@@ -7542,7 +7630,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  truststoreJson(req) {
+  truststoreJson(req): IyaApi.AdminAnswer<'getTruststore'> {
     const { log, adminActions } = this.deps;
     log.debug("Entering AdminViews.truststoreJson().");
     // THE TWO GATED DOORS, AND THE ONLY ONES: the open test controls
@@ -7649,7 +7737,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  kerberosPrincipalsJson(req) {
+  kerberosPrincipalsJson(req): IyaApi.AdminAnswer<'getKerberosPrincipals'> {
     const { log, config, realms, krb5Principals, krb5PersonKeys,
       adminActions, mode } = this.deps;
     log.debug("Entering AdminViews.kerberosPrincipalsJson().");
@@ -7797,7 +7885,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  kerberosTrustsJson(req) {
+  kerberosTrustsJson(req): IyaApi.AdminAnswer<'getKerberosTrusts'> {
     const { log, config, realms, krb5Principals, krb5Trusts, mode,
       adminActions } = this.deps;
     log.debug("Entering AdminViews.kerberosTrustsJson().");
@@ -7890,7 +7978,7 @@ class AdminViews {
    * @param req - the request
    * @returns the report
    */
-  ssfJson(req) {
+  ssfJson(req): IyaApi.AdminAnswer<'getSsf'> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.ssfJson().");
     if (!signalsReporter) {
@@ -8037,7 +8125,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  ssfDeadLettersJson(req) {
+  ssfDeadLettersJson(req): IyaApi.AdminAnswer<'getSsfDeadLetters'> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.ssfDeadLettersJson().");
     if (!signalsReporter || typeof signalsReporter.deadLetters !== 'function') {
@@ -8080,7 +8168,7 @@ class AdminViews {
    * @param req - the request
    * @returns the report
    */
-  caepJson(req) {
+  caepJson(req): IyaApi.AdminAnswer<'getCaep'> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.caepJson().");
     if (!caepReporter) {
@@ -8228,7 +8316,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  caepSessionsJson(req) {
+  caepSessionsJson(req): IyaApi.AdminAnswer<'getCaepSessions'> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.caepSessionsJson().");
     const json = this.caepJson(req);
@@ -8279,7 +8367,7 @@ class AdminViews {
    * @param req - the request
    * @returns the report
    */
-  riscJson(req) {
+  riscJson(req): IyaApi.AdminAnswer<'getRisc'> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.riscJson().");
     if (!riscReporter) {
@@ -8386,7 +8474,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  riscAccountsJson(req) {
+  riscAccountsJson(req): IyaApi.AdminAnswer<'getRiscAccounts'> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.riscAccountsJson().");
     const json = this.riscJson(req);
@@ -8462,7 +8550,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  spiffeJson(req) {
+  spiffeJson(req): IyaApi.AdminAnswer<'getSpiffe'> {
     const { log, config, spiffeRegistry, spiffeCa, spiffeAuth } = this.deps;
     log.debug("Entering AdminViews.spiffeJson().");
     const state = spiffeCa.state();
@@ -8567,7 +8655,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  spiffeEntriesJson(req) {
+  spiffeEntriesJson(req): IyaApi.AdminView<'getSpiffeEntries'> {
     const { log, spiffeRegistry } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.spiffeEntriesJson().");
@@ -8629,7 +8717,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  spiffeBrokersJson(req) {
+  spiffeBrokersJson(req): IyaApi.AdminView<'getSpiffeBrokers'> {
     const { log, config, spiffeAuth } = this.deps;
     log.debug("Entering AdminViews.spiffeBrokersJson().");
     const q = String(req.query.q || '').trim().toLowerCase();
@@ -8670,7 +8758,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  spiffeAgentsJson(req) {
+  spiffeAgentsJson(req): IyaApi.AdminView<'getSpiffeAgents'> {
     const { log, spiffeRegistry } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.spiffeAgentsJson().");
@@ -8840,7 +8928,9 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  newApplicationJson(req) {
+  newApplicationJson(req):
+    IyaApi.AdminAnswer<'getNewApplicationForm' |
+      'getConsoleNewApplicationForm'> {
     const { log, realms, applications, mode } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.newApplicationJson().");
@@ -9055,7 +9145,7 @@ class AdminViews {
    * @param prefill - values to fill the form with
    * @returns the JSON
    */
-  newUserJson(req, prefill?) {
+  newUserJson(req, prefill?): IyaApi.AdminAnswer<'getNewUserForm'> {
     const { log, credentials, mode, realms, vcClaims, applications } =
       this.deps;
     log.debug("Entering AdminViews.newUserJson().");
@@ -9146,9 +9236,10 @@ class AdminViews {
   }
 
   // WHERE A USER CREATED ON THIS PAGE LANDS, in the realm the page is being
-  // read in. `directoryReader('')` is the same slot the drill-down uses, asked
-  // with no name: it answers about the DIRECTORY rather than about a person,
-  // which is what a note above an empty form has to do.
+  // read in. It is `ou=users` of that realm. It used to ask
+  // `directoryReader('')` — `objectFor('')`, which counts the realm
+  // (`realmEntryCount()`, one synchronous `count` per windowed container)
+  // to answer a note that only needs the DN (#798).
   /**
    * Returns the container a new user lands in, in the ambient realm.
    *
@@ -9162,9 +9253,13 @@ class AdminViews {
                 "loaded.");
       return 'ou=users,' + realms.baseDnOf(realms.current());
     }
-    const info = directoryReader('');
-    log.debug("Leaving AdminViews.newUserContainer(). " + info.usersDn);
-    return info.usersDn;
+    // Required inside the function: `ldap/ldap_server.js` registers its
+    // routes when it is required, and this file loads before it (rule 1).
+    // A request runs after the stack is up, so the require is a cache hit.
+    const ldapMod = require('../ldap/ldap_server');
+    const dn = ldapMod.usersDn();
+    log.debug("Leaving AdminViews.newUserContainer(). " + dn);
+    return dn;
   }
 
   // ---------------------------------------------------------------------------
@@ -9183,7 +9278,9 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  rbacListJson(req) {
+  // A promise while the directory is read, the view itself once it is.
+  rbacListJson(req): IyaApi.AdminView<'getAdminRoles'> |
+    Promise<IyaApi.AdminView<'getAdminRoles'>> {
     const { log, realms, rbac, stats } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.rbacListJson().");
@@ -9943,9 +10040,16 @@ class AdminViews {
                  declared: !keys || keys.indexOf(key(value)) >= 0 };
       });
     };
-    const nonEmpty = function (name) {
-      const values = listOf(name);
-      return values.length ? values : null;
+    // THE DECLARED LISTS ARE THE OAuthClient's (#1579). The observed ones
+    // are read by name on purpose: the answer is keyed by the attribute,
+    // which the console draws each list beside.
+    const oauth = DomainClasses.OAuthClient.fromEntry(fields || {});
+    const declared = function (values: string[] | undefined): string[] {
+      return (values || []).filter(function (one) { return one !== ''; });
+    };
+    const nonEmpty = function (values: string[] | undefined) {
+      const kept = declared(values);
+      return kept.length ? kept : null;
     };
     let certificate = null;
     const observedCertificate = String(
@@ -9971,7 +10075,7 @@ class AdminViews {
     // The declared scopes: `oauthAllowedScope`, and what the client's
     // delegated permission grants declare — still null where nothing is
     // listed in `oauthAllowedScope`, since an empty list restricts nothing.
-    let declaredScopes = nonEmpty('oauthAllowedScope');
+    let declaredScopes = nonEmpty(oauth.allowedScope);
     if (declaredScopes) {
       let delegated: string[] = [];
       try {
@@ -9985,7 +10089,7 @@ class AdminViews {
         delegated = [];
       }
       declaredScopes = declaredScopes
-        .concat(listOf('oauthDelegatedPermission'), delegated);
+        .concat(declared(oauth.delegatedPermission), delegated);
     }
     // THE TOKEN RESPONSE TYPES ENABLED ON THIS APPLICATION (#1296), and
     // whether the realm honours them: `enforced` is RFC 9700 mode, `waived`
@@ -10004,7 +10108,7 @@ class AdminViews {
       bcpState = { enforced: false, waived: false };
     }
     const tokenResponseTypes = {
-      enabled: listOf('oauthAllowedTokenResponseTypes')
+      enabled: declared(oauth.allowedTokenResponseTypes)
         .map(applications.canonicalResponseType),
       enforced: bcpState.enforced,
       waived: bcpState.waived
@@ -10012,11 +10116,11 @@ class AdminViews {
     const signed = String(fields.samlAuthnRequestSigned || '');
     const out = {
       oauthGrantTypeObserved: marked('oauthGrantTypeObserved',
-                                     nonEmpty('oauthGrantType')),
+                                     nonEmpty(oauth.grantTypes)),
       oauthResponseTypeObserved: marked('oauthResponseTypeObserved',
-        nonEmpty('oauthResponseType'), applications.canonicalResponseType),
+        nonEmpty(oauth.responseTypes), applications.canonicalResponseType),
       appRedirectUriObserved: marked('appRedirectUriObserved',
-                                     listOf('oauthRedirectUri')),
+                                     declared(oauth.redirectUris)),
       oauthScope: marked('oauthScope', declaredScopes),
       appAuthorizationServer: marked('appAuthorizationServer', null),
       samlNameIdFormat: marked('samlNameIdFormat', null),
@@ -10178,7 +10282,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  saml2Json(req) {
+  saml2Json(req): IyaApi.AdminAnswer<'getSaml2ServiceProviders'> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.saml2Json().");
     const wanted = String((req.query || {}).sp || '').trim();
@@ -10381,7 +10485,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  saml11Json(req) {
+  saml11Json(req): IyaApi.AdminAnswer<'getSaml11RelyingParties'> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.saml11Json().");
     const wanted = String((req.query || {}).rp || '').trim();
@@ -10469,8 +10573,8 @@ class AdminViews {
   // too.
   //
   // **THE LINK IS `/launch/{app}?protocol=…`**, the one URL
-  // docs/idp-initiated-sso.md gives a person and the portal's Sign in link
-  // uses (`LaunchLinks.launchUrl()`, built where the sign-in service is
+  // docs/v1.1.0/idp-initiated-sso.md gives a person and the portal's Sign in
+  // link uses (`LaunchLinks.launchUrl()`, built where the sign-in service is
   // advertised, realm prefix included); the protocol's own endpoint
   // (`/saml2/unsolicited/{sp}`, `/saml11/sso/{rp}`) rides beside it, as it
   // does on the launch card, for a partner who wants the native form.
@@ -10492,7 +10596,8 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  samlIdpInitiatedJson(req) {
+  samlIdpInitiatedJson(req):
+    IyaApi.AdminAnswer<'getSamlIdpInitiatedApplications'> {
     const { log, baseUrlOf, applications, config } = this.deps;
     log.debug("Entering AdminViews.samlIdpInitiatedJson().");
     const base = baseUrlOf(req);
@@ -10553,6 +10658,27 @@ class AdminViews {
       idpInitiatedPaging: this.pagingJson(paged.paging),
       realmSwitches: realm
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // DIRECTORY → POLICIES → EXPORT AND IMPORT (#1713), the read rule 7 and
+  // `sts_admin_api_operations`' read-back owe the three transfer acts: the
+  // algorithm an export is signed with, this realm's Policy Export Signing
+  // CA (whose fingerprint another realm trusts), the paranoid row, and the
+  // signers this realm has trusted. `admin-core/policy_transfer.ts` owns
+  // every fact; this is the door both surfaces read it through.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds `GET /admin-api/policies/transfer`'s answer for the ambient realm.
+   *
+   * @returns the transfer view
+   */
+  policyTransferJson(): IyaApi.AdminAnswer<'getPolicyTransfer'> {
+    const { log, policyTransfer } = this.deps;
+    log.debug("Entering AdminViews.policyTransferJson().");
+    const out = policyTransfer.view();
+    log.debug("Leaving AdminViews.policyTransferJson().");
+    return out;
   }
 
   // WHAT /admin/authorization-servers ANSWERS: the profiles, and one of them.
@@ -10643,7 +10769,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  authorizationServersJson(req) {
+  authorizationServersJson(req): IyaApi.AdminAnswer<'getAuthorizationServers'> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.authorizationServersJson().");
     const wanted = String((req.query || {}).profile || '').trim();
@@ -10896,7 +11022,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  groupsJson(req) {
+  groupsJson(req): IyaApi.AdminAnswer<'getGroups'> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.groupsJson().");
     if (!groupReader) {
@@ -11125,6 +11251,8 @@ class AdminViews {
       Object.keys(copy).forEach(function (name) {
         if (names.indexOf(name) >= 0) {
           copy[name] = self.maskedCredential(copy[name]);
+        } else if (name === 'appRegistrationJson') {
+          copy[name] = self.maskedRegistrationJson(copy[name]);
         }
       });
       out[member] = copy;
@@ -11147,10 +11275,69 @@ class AdminViews {
     const names = this.sensitiveApplicationAttributes();
     log.debug("Leaving AdminViews.maskedAttributeRows().");
     return rows.map(function (one) {
+      if (one.name === 'appRegistrationJson') {
+        return Object.assign({}, one,
+          { values: self.maskedRegistrationJson(one.values) });
+      }
       return names.indexOf(one.name) >= 0
         ? Object.assign({}, one, { values: self.maskedCredential(one.values) })
         : one;
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE REGISTRATION DOCUMENT CARRIES TWO CREDENTIALS (2026-11-14, found by
+  // #444's D12). `appRegistrationJson` is the RFC 7591 registration response
+  // kept as it was answered, and that answer holds the `client_secret` and
+  // the RFC 7592 `registration_access_token`. The attribute is not a
+  // credential, so it was answered whole to every Admin Read caller while
+  // `appRegistrationAccessToken` beside it was masked. The two members are
+  // masked as the attribute is; the rest of the document stands. A value
+  // that is not a JSON object is answered as it is: there is nothing in it
+  // this could find.
+  // ---------------------------------------------------------------------------
+  /**
+   * Masks the credentials an RFC 7591 registration document carries.
+   *
+   * @param value - the attribute's value or values (JSON text)
+   * @returns the same shape, `client_secret` and
+   *   `registration_access_token` masked
+   */
+  maskedRegistrationJson(value) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.maskedRegistrationJson().");
+    if (Array.isArray(value)) {
+      log.debug("Leaving AdminViews.maskedRegistrationJson(). Values.");
+      return value.map(function (one) {
+        return self.maskedRegistrationJson(one);
+      });
+    }
+    if (typeof value !== 'string' || !value) {
+      log.debug("Leaving AdminViews.maskedRegistrationJson(). Nothing.");
+      return value;
+    }
+    let document = null;
+    try {
+      document = JSON.parse(value);
+    } catch (e) {
+      log.debug("Caught in AdminViews.maskedRegistrationJson(): " +
+                ((e && e.message) || e));
+      document = null;
+    }
+    if (!document || typeof document !== 'object' ||
+        Array.isArray(document)) {
+      log.debug("Leaving AdminViews.maskedRegistrationJson(). Not an " +
+                "object.");
+      return value;
+    }
+    ['client_secret', 'registration_access_token'].forEach(function (name) {
+      if (Object.prototype.hasOwnProperty.call(document, name)) {
+        document[name] = self.maskedCredential(document[name]);
+      }
+    });
+    log.debug("Leaving AdminViews.maskedRegistrationJson().");
+    return JSON.stringify(document);
   }
 
   // What one attribute of an application entry IS, as the drill-down's third
@@ -11260,6 +11447,31 @@ class AdminViews {
    */
   // #488: an application's wstrustJwtScope warnings, or none when the policy
   // cannot be asked (a view must still draw).
+  /**
+   * The routes of this realm's remote PEPs that front an application (#1760).
+   *
+   * @param identifier - the application
+   * @returns `{ pep, route, path, mechanisms }` rows; none where the XACML
+   *   family is not loaded
+   */
+  pepRoutesFronting(identifier) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.pepRoutesFronting().");
+    let out = [];
+    try {
+      // Lazily: the XACML family is 23c, after this module.
+      out = require('../xacml/xacml_pep_proxy').routesFronting(
+        String(identifier || ''));
+    } catch (e) {
+      log.debug("Caught in AdminViews.pepRoutesFronting(): " +
+                ((e && e.message) || e));
+      // No XACML family in this process: no PEP fronts anything.
+      out = [];
+    }
+    log.debug("Leaving AdminViews.pepRoutesFronting(). " + out.length);
+    return out;
+  }
+
   applicationScopeWarnings(identifier) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.applicationScopeWarnings().");
@@ -11351,9 +11563,9 @@ class AdminViews {
     const self = this;
     log.debug("Entering AdminViews.applicationPageData().");
     const fields = row.fields || {};
-    const listOf = function (name) {
-      return [].concat(fields[name] || []).map(String)
-        .filter(function (one) { return one !== ''; });
+    // The lists below are their concepts' (#1579), the empty values gone.
+    const listOf = function (values: string[] | undefined): string[] {
+      return (values || []).filter(function (one) { return one !== ''; });
     };
     // The configuration tab's fields: every field but the credentials and
     // those a tab of their own edits (#392: the CORS origins are the
@@ -11431,12 +11643,14 @@ class AdminViews {
       // endpoint, … } }`, the same URL the user portal links and the door
       // answers.
       launchUrls: LaunchLinks.linksFor(row, base),
-      cors: listOf('appCorsOrigin').map(function (stored) {
+      cors: listOf(DomainClasses.Application.fromEntry(fields).corsOrigin)
+            .map(function (stored) {
         return { stored: stored,
                  canonical: applications.corsOriginsOf(
                    { appCorsOrigin: [stored] })[0] || '' };
       }),
-      accessTypes: listOf('oauthAuthorizationDetailsType').map(
+      accessTypes: listOf(DomainClasses.OAuthClient.fromEntry(fields)
+        .authorizationDetailsType).map(
         function (stored) {
           return Object.assign({ stored: stored },
                                applications.authorizationDetailsTypeOf(stored));
@@ -11514,6 +11728,10 @@ class AdminViews {
     // ITS OWNERS (#604), resolved, for the Owners tab.
     (out as any).owners = applications.ownersOf(row);
     (out as any).maxOwners = applications.MAX_OWNERS;
+    // THE REMOTE PEP ROUTES THAT FRONT IT (#1760, D10): the reference only —
+    // which PEP, which route, its path and mechanisms — never what the pull
+    // reads off this entry for them.
+    (out as any).pepRoutes = self.pepRoutesFronting(row.identifier);
     // Closed to its owners, and why (#607).
     (out as any).ownership = self.ownershipOf('application', row.identifier);
     (out.config as any).fieldWarnings = scopeWarnings.length
@@ -11605,15 +11823,104 @@ class AdminViews {
     };
   }
 
+  // RFC 4514 subjects of the certificates this person holds, so a handshake
+  // row filed under that DN still appears on their Authentication attempts
+  // tab. `helpers.dnRfc4514` is the spelling the handshake wrote. The
+  // comma-joined subject the certificate lists draw, and the forward
+  // subject the next issued certificate would carry, are different
+  // spellings and are not added. A PEM that will not parse is skipped:
+  // one unreadable certificate must not drop the rest of the tab.
+  private certificateAuthenticationNames(key: string): string[] {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.certificateAuthenticationNames().");
+    const names: string[] = [];
+    const seen: Record<string, boolean> = {};
+    const add = function (value: string): void {
+      log.debug("Entering add().");
+      const text = String(value || '').trim();
+      if (text && seen[text] !== true) {
+        seen[text] = true;
+        names.push(text);
+      }
+      log.debug("Leaving add().");
+    };
+    const addPem = function (pem: string): void {
+      log.debug("Entering addPem().");
+      const text = String(pem || '').trim();
+      if (text.indexOf('-----BEGIN CERTIFICATE-----') < 0) {
+        log.debug("Leaving addPem(). Not a certificate.");
+        return;
+      }
+      try {
+        const cert = stsCrypto.parseCertificate(text);
+        add(helpers.dnRfc4514(cert.subject));
+      } catch (e) {
+        // A list row whose PEM is not a certificate. The tab still lists
+        // the other certificates and the username.
+        log.debug("Caught in addPem(): " + ((e && e.message) || e));
+      }
+      log.debug("Leaving addPem().");
+    };
+    try {
+      const issued = require('./admin_actions').tlsClientCertificatesOf(key);
+      ((issued && issued.certificates) || []).forEach(function (cert) {
+        addPem(cert && cert.certificatePem);
+      });
+    } catch (e) {
+      // No certificate authority in this process: nothing issued.
+      log.debug("Caught in AdminViews.certificateAuthenticationNames(): " +
+                ((e && e.message) || e));
+    }
+    try {
+      const signing = require('./admin_actions').signingCertificatesOf(
+        'person', key);
+      ((signing && signing.certificates) || []).forEach(function (cert) {
+        addPem(cert && cert.certificatePem);
+      });
+    } catch (e) {
+      // The signing register is not built. The issued and stored
+      // certificates still match.
+      log.debug("Caught in AdminViews.certificateAuthenticationNames(): " +
+                ((e && e.message) || e));
+    }
+    try {
+      const stored = require('../ldap/ldap_server')
+        .storedCertificatesOf('person', key);
+      ((stored && stored.certificates) || []).forEach(function (one) {
+        if (!one || !one.der) {
+          return;
+        }
+        try {
+          const cert = stsCrypto.parseCertificate(one.der);
+          add(helpers.dnRfc4514(cert.subject));
+        } catch (e) {
+          // DER that is not a certificate. The username's rows still list.
+          log.debug("Caught in AdminViews.certificateAuthenticationNames(): " +
+                    ((e && e.message) || e));
+        }
+      });
+    } catch (e) {
+      // The directory is not loaded, or the person has no entry. The
+      // username, the subject and the seen forms still match.
+      log.debug("Caught in AdminViews.certificateAuthenticationNames(): " +
+                ((e && e.message) || e));
+    }
+    log.debug("Leaving AdminViews.certificateAuthenticationNames(). " +
+              names.length + ".");
+    return names;
+  }
+
   // THE AUTHENTICATION ATTEMPTS FOR ONE PERSON (#955).
   //
   // The same list an application's tab reads, selected by who tried rather
   // than by which application. The names are the page's key, the record's
-  // name, the subject's urn, and every form the register has seen them
-  // under: an acceptance stores the key as the actor and the subject in
-  // detail.sub, and a session refused before a subject was known stores
-  // the username as the actor. The whole capped ring is listed. The
-  // portal's window is a different question and is not applied here.
+  // name, the subject's urn, every form the register has seen them under,
+  // and the RFC 4514 subject of each certificate the entry holds: an
+  // acceptance stores the key as the actor and the subject in detail.sub,
+  // a session refused before a subject was known stores the username as
+  // the actor, and a handshake recorded before the actor became the
+  // username stored the certificate's DN. The whole capped ring is listed.
+  // The portal's window is a different question and is not applied here.
   //
   // The member the caller publishes is `authenticationEvents` and not
   // `authentications`. The view already publishes `authentications` as the
@@ -11639,9 +11946,15 @@ class AdminViews {
     ((row && row.forms) || []).forEach(function (form) {
       names.push(String((form && form.form) || ''));
     });
+    this.certificateAuthenticationNames(String(key || '')).forEach(
+      function (dn) {
+        names.push(dn);
+      });
     const events = auditLog.authenticationEventsForPerson(names);
+    // Ten a page by default (rcbj, #1844); a `per` still changes it.
     const paged = this.pagedRows((req && req.query) || {}, events, {
-      name: 'authentications', noun: 'attempts'
+      name: 'authentications', noun: 'attempts',
+      defaultPer: USER_EVENTS_PER_PAGE
     });
     const known = this.knownUserKeys();
     const knownActors: Record<string, boolean> = {};
@@ -11651,12 +11964,15 @@ class AdminViews {
       }
     });
     const summary = auditLog.summary();
+    // Counted over every row matched, not the page (rcbj, 2026-11-16).
+    const withoutActivity = this.authenticationsWithoutActivity(events);
     log.debug("Leaving AdminViews.userAuthenticationEvents(). " +
               paged.shown.length + " of " + events.length + ".");
     return {
       events: paged.shown,
       paging: this.pagingJson(paged.paging),
       matched: events.length,
+      withoutActivity: withoutActivity,
       knownActors: knownActors,
       log: {
         held: summary.held, recorded: summary.recorded,
@@ -12469,10 +12785,13 @@ class AdminViews {
   }
 
   // THE TOKEN LIFETIMES IN FORCE FOR AN APPLICATION (2026-10-01): its OAuth
-  // tab's Token lifetimes section. The four settings it may override, each
-  // with the value in force (`applications.settingFor()`, which is what the
-  // token endpoint reads), the realm's value, and where the value came from;
-  // and the realm's clock skew, which stays realm-wide.
+  // tab's Token lifetimes section. The four token settings it may override,
+  // and the maximum authentication age (#825), which is not a token
+  // lifetime and is not on /admin/token-lifetimes. Each row carries the
+  // value in force, the realm number it is compared with, and where the
+  // value came from. The clock skew stays realm-wide. No extra member is
+  // added: the closed token-lifetime row is setting, attribute, label,
+  // value, realmValue and source.
   /**
    * Answers the token lifetimes in force for an application.
    *
@@ -12493,16 +12812,26 @@ class AdminViews {
         label: 'Refresh token' },
       { key: 'oauth2.refreshIdleSeconds',
         attribute: 'oauthRefreshIdleSeconds',
-        label: 'Refresh chain idle limit (RFC 9700 mode)' }
+        label: 'Refresh chain idle limit (RFC 9700 mode)' },
+      { key: 'oauth2.maxAuthAgeS', attribute: 'oauthMaxAuthAgeS',
+        label: 'Maximum authentication age' }
     ];
+    const hosted = applications.isHostedSessionClient(id);
     const rows = keys.map(function (one) {
       const own = String([].concat(fields[one.attribute] || [])[0] || '')
         .trim();
+      // The three hosted surfaces show the shorter of their bound and the
+      // cap. Their maximum authentication age is compared with the sign-on
+      // session lifetime, not with oauth2.maxAuthAgeS.
+      const capped = hosted && one.key === 'oauth2.maxAuthAgeS';
+      const bound = applications.hostedBoundAttribute(one.attribute);
       return {
         setting: one.key, attribute: one.attribute, label: one.label,
-        value: Number(applications.settingFor(id, one.key, config)),
-        realmValue: Number(config.value(one.key)),
-        source: own ? 'application' : 'realm'
+        value: Number(applications.hostedEffective(id, one.key, config)),
+        realmValue: Number(config.value(capped
+          ? 'authn.sessionLifetimeS' : one.key)),
+        source: own ? 'application'
+          : (hosted && bound ? 'shipped' : 'realm')
       };
     });
     const skew = Number(config.value('oauth2.clockSkewS'));
@@ -12517,12 +12846,21 @@ class AdminViews {
     log.debug("Entering AdminViews.applicationCredentialsState(). identifier=" +
               (row && row.identifier));
     const fields = (row && row.fields) || {};
+    // BY NAME FOR THE TABLES (#1579): `one()` reads the attributes the key
+    // pair and certificate subject tables name, and the answer carries
+    // those names back for the page to label each row with. The fixed
+    // settings below are the OAuthClient's and the Application's; the
+    // registration access token is named because the page shows it.
     const one = function (name) {
       log.debug("Entering one().");
       const value = name ? fields[name] : undefined;
       log.debug("Leaving one().");
       return Array.isArray(value) ? value.join('\n') : String(value || '');
     };
+    const oauth = DomainClasses.OAuthClient.fromEntry(fields);
+    const registered = DomainClasses.Application.fromEntry(fields,
+      { secrets: ['registrationAccessToken'] });
+    const authMethods = (oauth.tokenEndpointAuthMethods || []).join('\n');
     const chainAvailable = pki.hasChain();
     const described = chainAvailable ? pki.describe() : null;
     const purposes = pki.PURPOSES.map(function (purpose) {
@@ -12591,11 +12929,12 @@ class AdminViews {
           Number(config.value('oauth2.clientSecretLifetimeDays')) || 0,
         overlapS: Number(config.value('oauth2.clientSecretOverlapS')) || 0,
         // Every declared method (2026-10-01), as one line.
-        authMethod: one('oauthTokenEndpointAuthMethod').split('\n')
+        authMethod: authMethods.split('\n')
           .filter(function (m) { return m !== ''; }).join(', '),
         registered: !!row.registered,
-        registrationAccessTokenHeld: !!one('appRegistrationAccessToken'),
-        registrationAccessToken: one('appRegistrationAccessToken'),
+        registrationAccessTokenHeld: !!registered.registrationAccessToken,
+        registrationAccessToken: String(registered.registrationAccessToken ||
+                                        ''),
         // When the PRIMARY expires (seconds, 0 never).
         expiresAt: applications.secretExpiryOf(row.fields || {})
       },
@@ -12607,14 +12946,18 @@ class AdminViews {
         leafLifetimeDays: pki.leafLifetimeDays()
       },
       sources: applications.KEY_SOURCES.slice(),
-      mtls: this.applicationMtlsState(row, one, chainAvailable),
+      mtls: this.applicationMtlsState(row, one, chainAvailable, oauth),
       signing: this.applicationSigningState(row, chainAvailable),
       // THE CERTIFICATES STORED ON THE ENTRY (#1227), as the person's page
       // carries theirs (#1061): a certificate from an outside authority
       // authenticates the application only while it is stored here and on
       // no other entry. Required when drawn, for `userPageData()`'s reason.
       stored: require('./admin_actions').applicationStoredCertificatesOf(
-        String(row.identifier || ''))
+        String(row.identifier || '')),
+      // THE APPLICATION'S OWN WS-TRUST DECRYPTION KEY PAIR (#1668): the
+      // certificate a request for it is encrypted to, and never the private
+      // key. Required when drawn: a library, so the require moves no route.
+      wstrustDecryption: require('../ws-trust/ws_decryption_key').state(row)
     };
     state.json = {
       clientSecret: { held: state.clientSecret.held,
@@ -12638,7 +12981,8 @@ class AdminViews {
       sources: state.sources,
       mtls: state.mtls,
       signing: state.signing,
-      stored: state.stored
+      stored: state.stored,
+      wstrustDecryption: state.wstrustDecryption
     };
     log.debug("Leaving AdminViews.applicationCredentialsState().");
     return state;
@@ -12656,7 +13000,8 @@ class AdminViews {
   // EST or SCEP authenticate it too and are listed on those protocols' pages,
   // not here — this section issues and lists its own.
   // ---------------------------------------------------------------------------
-  private applicationMtlsState(row, one, caAvailable) {
+  private applicationMtlsState(row, one, caAvailable,
+      oauth: IyaDomain.OAuthClient) {
     const { log, applications, tlsClientCertificates, certificateSubject,
       mtls } = this.deps;
     log.debug("Entering AdminViews.applicationMtlsState().");
@@ -12685,7 +13030,7 @@ class AdminViews {
     });
     // Several since 2026-10-01: a certificate method among them is what the
     // page reports.
-    const methods = String(one('oauthTokenEndpointAuthMethod') || '')
+    const methods = (oauth.tokenEndpointAuthMethods || []).join('\n')
       .split('\n').filter(function (m) { return m !== ''; });
     const certificate = methods.filter(function (m) {
       return mtls.CERTIFICATE_METHODS.indexOf(m) >= 0;
@@ -12717,7 +13062,7 @@ class AdminViews {
       // bound to its certificate — a certificate method among its methods,
       // or the section 3.4 flag.
       adminApiBound: !!certificate || boundTokens,
-      selfSignedThumbprint: one('oauthTlsClientCertificateThumbprint'),
+      selfSignedThumbprint: String(oauth.tlsClientCertificateThumbprint || ''),
       bindingAvailable: mtls.available(),
       caAvailable: !!caAvailable,
       keyAlgorithms: tlsClientCertificates.KEY_ALGS.slice(),
@@ -12935,7 +13280,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  applicationsJson(req) {
+  applicationsJson(req): IyaApi.AdminAnswer<'getApplications'> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.applicationsJson().");
     const wanted = String((req.query || {}).application || '').trim();
@@ -13235,6 +13580,10 @@ class AdminViews {
     // WHAT A PARTNER ENCRYPTS TO (#168): the policy, the public key table,
     // and the two places it is published.
     const encryption = fedEncryption.viewOf(record);
+    // THE CLIENT CERTIFICATE A FAPI 1.0 ADVANCED RELATIONSHIP PRESENTS
+    // (#931): its public half, its subject DN and x5t#S256, for the
+    // partner to register; null for every other relationship.
+    const clientCertificate = fedClientCert.viewOf(record);
     const jwks = row.protocol === 'oidc' && row.role === 'service-provider'
       ? base + federation.PATHS.jwks + '/' + encodeURIComponent(row.id)
       : null;
@@ -13259,7 +13608,7 @@ class AdminViews {
               'fedRequireSignedLogout', 'fedAllowUnencrypted',
               // #930's two OpenID Connect switches.
               'fedDiscovery', 'fedInitiateLogin', 'fedRefreshTokens',
-              'fedRegister', 'fedWebFinger']
+              'fedRegister', 'fedWebFinger', 'fedUserinfo']
         .indexOf(field.name) === -1 &&
         // A Trust Anchor to discover the OP through (#134) is OpenID
         // Connect's alone.
@@ -13341,7 +13690,7 @@ class AdminViews {
     return {
       record: record, row: row, base: base, acs: acs, login: login,
       metadata: metadata, loginPath: loginPath, jwks: jwks,
-      encryption: encryption,
+      encryption: encryption, clientCertificate: clientCertificate,
       signOut: row.role === 'service-provider' ? signOut : {},
       setFields: setFields, multiFields: multiFields, linkPage: linkPage,
       unmapped: unmapped, signalSetFields: signalSetFields,
@@ -13390,6 +13739,7 @@ class AdminViews {
           signalArrivals: arrivals,
           outboundSignals: outbound,
           encryption: encryption,
+          clientCertificate: clientCertificate,
           // Who this partner's subjects are linked to (#109): the page, and
           // the paging a caller walks it with.
           links: linkPage.shown,
@@ -13437,7 +13787,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  federationJson(req) {
+  federationJson(req): IyaApi.AdminAnswer<'getFederationRelationships'> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.federationJson().");
     const wanted = String((req.query || {}).relationship || '').trim();
@@ -13512,7 +13862,9 @@ class AdminViews {
    * @param req - the request
    * @param opts - optional; `directoryFirst`, as `peopleRows()` takes it,
    *   or `population` and `census` asked already (#621,
-   *   `peopleAndCensusAsync()`)
+   *   `peopleAndCensusAsync()`); `serviceNames`, the service-account
+   *   roster asked already (#798) — an empty array is a roster, and is
+   *   not asked again
    * @returns the JSON
    */
   usersListJson(req, opts?) {
@@ -13539,10 +13891,14 @@ class AdminViews {
     // for everybody else. One read of the flag's holders, not one per row.
     const wantedKind = ['service', 'person'].indexOf(
       String(req.query.kind || '')) >= 0 ? String(req.query.kind) : '';
-    const serviceNames = new Set(this.deps.serviceAccounts.names()
-      .map(function (name) {
-        return String(name).toLowerCase();
-      }));
+    // Asked already, asynchronously, by a caller that could wait (#798).
+    // An empty array is a roster: `serviceNames || names()` would ask the
+    // store again for a realm that has no service account.
+    const listed = opts && Array.isArray(opts.serviceNames)
+      ? opts.serviceNames : this.deps.serviceAccounts.names();
+    const serviceNames = new Set(listed.map(function (name) {
+      return String(name).toLowerCase();
+    }));
     all.forEach(function (row) {
       row.serviceAccount = serviceNames.has(String(row.key).toLowerCase());
     });
@@ -14170,7 +14526,9 @@ class AdminViews {
    * one pass for the counts (`peopleCensus()`).
    *
    * @param opts - optional; `directoryFirst`, the directory's first names
-   *   asked already (#616), handed to `secondFactorPopulation()`
+   *   asked already (#616), handed to `secondFactorPopulation()`;
+   *   `directoryPeople`, the count asked already (#798) — present,
+   *   including null, means it was asked
    * @returns the rows, the population's reporting, and `spellings`
    */
   peopleRows(opts?) {
@@ -14192,10 +14550,20 @@ class AdminViews {
       byKey.set(row.key, row);
     });
 
+    const populationOpts: any = {
+      directoryFirst: (opts && opts.directoryFirst) || null
+    };
+    // `hasOwnProperty`, not `opts.directoryPeople`: null means the count
+    // was asked and failed, and omitting it is what lets the synchronous
+    // count still run (#798).
+    if (opts &&
+        Object.prototype.hasOwnProperty.call(opts, 'directoryPeople')) {
+      populationOpts.directoryPeople = opts.directoryPeople;
+    }
     const holders = credentials.secondFactorPopulation(
       seen.map(function (row) {
         return row.key;
-      }), { directoryFirst: (opts && opts.directoryFirst) || null });
+      }), populationOpts);
     // Row key -> the population rows (spellings) folded into it, in the order
     // the fold meets them, which is the order `mergeFactors()` used to be
     // applied in — so decorating later unites them exactly as this did.
@@ -14458,9 +14826,22 @@ class AdminViews {
 
   // The build `peopleAndCensusAsync()` keeps.
   private async buildPeopleAndCensusAsync() {
-    const { log } = this.deps;
+    const { log, credentials } = this.deps;
     log.debug("Entering AdminViews.buildPeopleAndCensusAsync().");
-    const first = await this.directoryFirstNames();
+    // The first names and the people count together (#616, #798): the
+    // count was `personCount()`, one synchronous `count` of `ou=users`,
+    // asked inside `secondFactorPopulation()` on this same build.
+    const askedCount = await Promise.all([
+      this.directoryFirstNames(),
+      credentials && typeof credentials.directoryPeopleCount === 'function'
+        ? credentials.directoryPeopleCount() : undefined
+    ]);
+    const first = askedCount[0];
+    const counted = askedCount[1];
+    const rowOpts: any = { directoryFirst: first };
+    if (counted !== undefined) {
+      rowOpts.directoryPeople = counted;
+    }
     // The register's subjects resolved asynchronously (#790): on 8081 they
     // were ~228,000, asked synchronously, and the request spent its
     // directory budget and answered 503.
@@ -14473,12 +14854,12 @@ class AdminViews {
     // 66,976 on 8081, on the worker that serves sign-ins.
     const stats = this.deps.stats;
     const build = () => {
-      return this.peopleRows({ directoryFirst: first,
-                               seen: stats.userRows() });
+      return this.peopleRows(Object.assign({ seen: stats.userRows() },
+                                            rowOpts));
     };
     const population = typeof stats.withSubjectsResolvedAsync === 'function'
       ? await stats.withSubjectsResolvedAsync(build)
-      : this.peopleRows({ directoryFirst: first });
+      : this.peopleRows(rowOpts);
     const census = await this.peopleCensusAsync(population, population.rows);
     log.debug("Leaving AdminViews.peopleAndCensusAsync().");
     return { population: population, census: census };
@@ -14733,7 +15114,7 @@ class AdminViews {
    * @param query - the request's query (`page`, `per`, `failing`)
    * @returns the page's JSON
    */
-  serviceAccountsMonitorJson(query) {
+  serviceAccountsMonitorJson(query): IyaApi.AdminAnswer<'getServiceAccounts'> {
     const { log, serviceAccounts, serviceAccountPolicy } = this.deps;
     log.debug("Entering AdminViews.serviceAccountsMonitorJson().");
     const q = query || {};
@@ -14968,31 +15349,41 @@ class AdminViews {
     // sharing `per` — see pagingOf() for why it is that way round.
     //
     // What is deliberately NOT paged here: the names this identity has been
-    // seen under, the protocols it authenticated through, and the
-    // authentication events. The first two are bounded by how many spellings
-    // and protocols exist, and the third is capped at stats.MAX_EVENTS_PER_USER
-    // — fifty — by the registry itself, which is the note authenticationTable()
-    // already prints. Paging a list that cannot exceed fifty would buy a
-    // control nobody will see, and it would cost something real: all three live
-    // on `row`, which goes out whole as this reply's `user`, so slicing them
-    // for the table would either corrupt that object or duplicate it, and
-    // leaving the JSON whole while the table paged is the console-and-API
-    // disagreement this file keeps warning about.
+    // seen under and the protocols it authenticated through, both bounded by
+    // how many spellings and protocols exist.
+    //
+    // THE AUTHENTICATION EVENTS ARE PAGED SINCE #1844 (rcbj, 2026-11-16: ten
+    // a page). They are capped at stats.MAX_EVENTS_PER_USER by the registry,
+    // and that was the argument for drawing them whole until then; ten a page
+    // is what the Overview tab is read at. They live on `row`, which goes
+    // out whole as this reply's `user` and stays whole (a caller of 1.x reads
+    // `user.events`), so the page is a COPY, most recent first, under
+    // `authenticationHistory` with its `authenticationHistoryPaging` — and
+    // the table draws that, so the table and the reply's page agree.
+    const historyPage = this.pagedRows(req.query,
+      ((row && row.events) || []).slice().reverse(),
+      { name: 'authenticationHistory', noun: 'events',
+        defaultPer: USER_EVENTS_PER_PAGE });
     const sessionPage = this.pagedRows(req.query, sessionRows,
       { name: 'sessions', noun: 'sessions',
         defaultPer: DEFAULT_BLOCKS_PER_PAGE });
     const sessionTokenPages = sessionPage.shown.map(function (session) {
       return self.pagedRows(req.query, split.held[session.id] || [],
-                            { name: 'session-' + session.id, noun: 'tokens' });
+                            { name: 'session-' + session.id, noun: 'tokens',
+                              defaultPer: DEFAULT_ACTIVITY_PER_PAGE });
     });
     const endedPage = this.pagedRows(req.query, split.ended,
                                      { name: 'tokensOnEndedSessions',
-                                       noun: 'tokens' });
+                                       noun: 'tokens',
+                                       defaultPer: DEFAULT_ACTIVITY_PER_PAGE });
     const sessionlessPage = this.pagedRows(req.query, split.sessionless,
                                            { name: 'tokensWithNoSession',
-                                             noun: 'tokens' });
+                                             noun: 'tokens',
+                                             defaultPer:
+                                               DEFAULT_ACTIVITY_PER_PAGE });
     const artifactPage = this.pagedRows(req.query, detail.artifacts,
-                                   { name: 'artifacts', noun: 'artifacts' });
+                                   { name: 'artifacts', noun: 'artifacts',
+                                     defaultPer: DEFAULT_ACTIVITY_PER_PAGE });
     // THE PARTNERS' SUBJECTS THIS PERSON IS LINKED TO (#109), paged like the
     // five lists above. Read off the entry, one row per federationLink value,
     // with whether the relationship it names is still registered here — a
@@ -15020,6 +15411,7 @@ class AdminViews {
     // person across every application and protocol. Read once, for the
     // page and this reply.
     const attempts = this.userAuthenticationEvents(req, key, row);
+    const withoutActivity = attempts.withoutActivity;
     log.debug("Leaving AdminViews.userDetailJson().");
     const answer = {
       detail: detail, row: row, sessionRows: sessionRows, live: live,
@@ -15118,7 +15510,14 @@ class AdminViews {
           authenticationEventsPaging: attempts.paging,
           authenticationEventsMatched: attempts.matched,
           authenticationEventsKnownActors: attempts.knownActors,
-          authenticationEventsLog: attempts.log
+          authenticationEventsLog: attempts.log,
+          // THE AUTHENTICATIONS SESSIONS & TOKENS HAS NOTHING TO SHOW FOR
+          // (rcbj, 2026-11-16), counted for its summary line.
+          authenticationsWithoutActivity: withoutActivity,
+          // HOW THEY AUTHENTICATED (#1844): one page of `user.events`, most
+          // recent first, paged as `authenticationHistoryPage`.
+          authenticationHistory: historyPage.shown,
+          authenticationHistoryPaging: self.pagingJson(historyPage.paging)
       };
       }())
     };
@@ -15206,6 +15605,9 @@ class AdminViews {
         signing: Object.assign(
           require('./admin_actions').signingCertificatesOf('person', key),
           { caAvailable: !!this.deps.pki.hasChain() }),
+        // The TLS client certificates issued to them from this realm's
+        // CA, with the subject the next one would carry.
+        tls: require('./admin_actions').tlsClientCertificatesOf(key),
         // The address and the emailed second factor (#64), and the account
         // ids clients know them by (#148).
         mail: {
@@ -15235,7 +15637,7 @@ class AdminViews {
       back: view.back,
       params: view.params,
       blocksPerPage: DEFAULT_BLOCKS_PER_PAGE,
-      perPage: DEFAULT_PER_PAGE,
+      perPage: DEFAULT_ACTIVITY_PER_PAGE,
       maxEventsPerUser: stats.MAX_EVENTS_PER_USER,
       directoryLoaded: !!directoryReader,
       mfa: mfa,
@@ -15336,6 +15738,24 @@ class AdminViews {
     return first;
   }
 
+  // THE SERVICE-ACCOUNT ROSTER, ASKED ASYNCHRONOUSLY (#798).
+  // `usersListJson()` reads `serviceAccounts.names()`, which on a cold
+  // cache is a synchronous `withAttribute` per windowed container.
+  /**
+   * The service-account roster, asked asynchronously.
+   *
+   * @returns a promise of the usernames
+   */
+  async serviceAccountNamesAsync() {
+    const { log, serviceAccounts } = this.deps;
+    log.debug("Entering AdminViews.serviceAccountNamesAsync().");
+    const names = typeof serviceAccounts.namesAsync === 'function'
+      ? await serviceAccounts.namesAsync() : serviceAccounts.names();
+    log.debug("Leaving AdminViews.serviceAccountNamesAsync(). " +
+              names.length + ".");
+    return names;
+  }
+
   /**
    * `mfaRosterJson()`, with the directory's first names asked
    * asynchronously.
@@ -15343,19 +15763,26 @@ class AdminViews {
    * @param req - the request
    * @returns a promise of the JSON
    */
-  async mfaRosterJsonAsync(req) {
+  async mfaRosterJsonAsync(req): Promise<IyaApi.AdminAnswer<'getMultiFactor'>> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.mfaRosterJsonAsync().");
     // The population AND its census (#621): the census was 5,000
     // synchronous store questions here in a windowed process.
-    const asked = await this.peopleAndCensusAsync({
-      mayBeStale: AdminViews.unfiltered(req) });
+    // The population, and the service-account roster beside it (#798):
+    // the roster was a synchronous `withAttribute` inside the view.
+    const prepared = await Promise.all([
+      this.peopleAndCensusAsync({
+        mayBeStale: AdminViews.unfiltered(req) }),
+      this.serviceAccountNamesAsync()
+    ]);
+    const asked = prepared[0];
     // The tiles too (2026-10-21), for `usersJsonAsync()`'s reason, and the
     // shown rows (#820).
     const list = await this.usersListTilesAsync(
       await this.usersListRowsAsync(this.usersListJson(req,
         Object.assign({}, asked, { deferTiles: true,
-                                   deferDecoration: true }))));
+                                   deferDecoration: true,
+                                   serviceNames: prepared[1] }))));
     log.debug("Leaving AdminViews.mfaRosterJsonAsync().");
     return this.mfaRosterJson(req, Object.assign({}, asked, { list: list }));
   }
@@ -15371,7 +15798,8 @@ class AdminViews {
    * @param risk - the person's risk standing, for the drill-down
    * @returns a promise of the JSON
    */
-  async usersJsonAsync(req, risk?: any) {
+  async usersJsonAsync(req, risk?: any):
+    Promise<IyaApi.AdminAnswer<'getUsers'>> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.usersJsonAsync().");
     const wanted = String((req.query || {}).user || '').trim();
@@ -15380,14 +15808,20 @@ class AdminViews {
       log.debug("Leaving AdminViews.usersJsonAsync(). One person.");
       return this.usersJson(req, risk, null);
     }
-    const asked = await this.peopleAndCensusAsync({
-      mayBeStale: AdminViews.unfiltered(req) });
+    // The population, and the service-account roster beside it (#798).
+    const prepared = await Promise.all([
+      this.peopleAndCensusAsync({
+        mayBeStale: AdminViews.unfiltered(req) }),
+      this.serviceAccountNamesAsync()
+    ]);
+    const asked = prepared[0];
     // The shown rows decorated together and asynchronously (#820), then
     // the tiles, which fill each shown row's live sessions.
     const view = await this.usersListTilesAsync(
       await this.usersListRowsAsync(this.usersListJson(req,
         Object.assign({}, asked, { deferTiles: true,
-                                   deferDecoration: true }))));
+                                   deferDecoration: true,
+                                   serviceNames: prepared[1] }))));
     log.debug("Leaving AdminViews.usersJsonAsync().");
     return view.json;
   }
@@ -15630,7 +16064,7 @@ class AdminViews {
    * @param query - the request's query
    * @returns the JSON
    */
-  appPasswordsJson(query) {
+  appPasswordsJson(query): IyaApi.AdminAnswer<'getUserAppPasswords'> {
     const { log, credentials, appPasswords } = this.deps;
     log.debug("Entering AdminViews.appPasswordsJson().");
     const who = String((query && (query.user || query.username)) || '').trim();
@@ -15674,7 +16108,7 @@ class AdminViews {
    * @param query - the request's query
    * @returns the JSON
    */
-  verificationsJson(query) {
+  verificationsJson(query): IyaApi.AdminAnswer<'getUserVerifications'> {
     const { log, identityAssurance } = this.deps;
     log.debug("Entering AdminViews.verificationsJson().");
     const who = String((query && (query.user || query.username)) || '').trim();
@@ -15712,7 +16146,8 @@ class AdminViews {
    * @param query - the request's query
    * @returns the JSON
    */
-  selfIssuedSubjectsJson(query) {
+  selfIssuedSubjectsJson(query):
+    IyaApi.AdminAnswer<'getUserSelfIssuedSubjects'> {
     const { log, siop, config } = this.deps;
     log.debug("Entering AdminViews.selfIssuedSubjectsJson().");
     const who = String((query && (query.user || query.username)) || '').trim();
@@ -15741,7 +16176,7 @@ class AdminViews {
    * @param query - the request's query
    * @returns the JSON
    */
-  publishedDidsJson(query) {
+  publishedDidsJson(query): IyaApi.AdminAnswer<'getUserPublishedDids'> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.publishedDidsJson().");
     // LAZILY: `person_did.ts` is built with the verifiable credentials
@@ -15775,7 +16210,7 @@ class AdminViews {
    * @param query - the request's query
    * @returns the JSON
    */
-  devicesJson(query) {
+  devicesJson(query): IyaApi.AdminAnswer<'getUserDevices'> {
     const { log, devices, oauth2, config } = this.deps;
     log.debug("Entering AdminViews.devicesJson().");
     const who = String((query && (query.user || query.username)) || '').trim();
@@ -15840,6 +16275,67 @@ class AdminViews {
     });
     log.debug("Leaving AdminViews.queryWith().");
     return parts.length ? '?' + parts.join('&') : '';
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE AUTHENTICATIONS THAT LEAVE NOTHING ON SESSIONS & TOKENS (rcbj,
+  // 2026-11-16).
+  //
+  // A remote PEP authenticates with its TLS client certificate on every
+  // policy pull, dozens of times, and each one is an authentication with no
+  // sign-on session and nothing issued — so its Sessions & tokens tab was
+  // empty and read as broken. The tab now says how many of those there are
+  // and by what. The methods are the ones
+  // that by construction start no session and issue nothing: a client
+  // certificate on a request to the main port, an LDAP bind, and a SCIM or
+  // SPIFFE caller's credential. Anything else that started no session
+  // issued something, which the tab lists itself.
+  //
+  // COUNTED FROM THE ROWS THE AUTHENTICATIONS TAB LISTS, so the line and
+  // the tab cannot disagree: the register's per-method counts file an LDAP
+  // bind under the DN it named, not under the person, and would have said
+  // none. What it counts is what the audit log still holds.
+  // ---------------------------------------------------------------------------
+  /**
+   * Counts one person's accepted authentications that start no session
+   * and issue nothing, by protocol and method.
+   *
+   * @param events - the person's authentication attempts (audit rows)
+   * @returns `{ total, methods: [{ protocol, method, count }] }`
+   */
+  authenticationsWithoutActivity(events) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.authenticationsWithoutActivity().");
+    const byKey = new Map();
+    let total = 0;
+    (events || []).forEach(function (event) {
+      if (!event || event.action !== 'authentication') {
+        return;
+      }
+      const protocol = String(event.protocol || '');
+      const method = String((event.detail && event.detail.method) || '');
+      const leavesNothing =
+        (protocol === 'TLS' &&
+         /^client certificate on the main port/.test(method)) ||
+        /^ldaps?$/i.test(protocol) || protocol === 'SCIM' ||
+        protocol === 'SPIFFE';
+      if (!leavesNothing) {
+        return;
+      }
+      const key = protocol + ' ' + method;
+      const held = byKey.get(key) ||
+                   { protocol: protocol, method: method, count: 0 };
+      held.count += 1;
+      byKey.set(key, held);
+      total += 1;
+    });
+    const methods = Array.from(byKey.values());
+    methods.sort(function (a, b) {
+      return b.count - a.count;
+    });
+    log.debug("Leaving AdminViews.authenticationsWithoutActivity(). " +
+              total + ".");
+    return { total: total, methods: methods };
   }
 
   // The live sign-on sessions belonging to one user. Sessions are keyed by an
@@ -16239,10 +16735,12 @@ export = {
   installInstance: (instance: AdminViews): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   logoutInventoryFor: slot.forward('logoutInventoryFor'),
+  pepRoutesFronting: slot.forward('pepRoutesFronting'),
   logoutFamilies: slot.forward('logoutFamilies'),
   logoutJson: slot.forward('logoutJson'),
   mfaRosterJson: slot.forward('mfaRosterJson'),
   DEFAULT_BLOCKS_PER_PAGE: DEFAULT_BLOCKS_PER_PAGE,
+  DEFAULT_ACTIVITY_PER_PAGE: DEFAULT_ACTIVITY_PER_PAGE,
   queryWith: slot.forward('queryWith'),
   sessionRowsFor: slot.forward('sessionRowsFor'),
   tokensBySession: slot.forward('tokensBySession'),
@@ -16310,6 +16808,7 @@ export = {
   saml11Json: slot.forward('saml11Json'),
   saml11ListJson: slot.forward('saml11ListJson'),
   samlIdpInitiatedJson: slot.forward('samlIdpInitiatedJson'),
+  policyTransferJson: slot.forward('policyTransferJson'),
   saml2ServiceProviders: slot.forward('saml2ServiceProviders'),
   saml2Facts: slot.forward('saml2Facts'),
   valuesFor: slot.forward('valuesFor'),
@@ -16435,6 +16934,7 @@ export = {
   xacmlPoliciesView: slot.forward('xacmlPoliciesView'),
   xacmlEditorView: slot.forward('xacmlEditorView'),
   xacmlPepsView: slot.forward('xacmlPepsView'),
+  xacmlPepClustersView: slot.forward('xacmlPepClustersView'),
   xacmlDecideView: slot.forward('xacmlDecideView'),
   xacmlMonitorView: slot.forward('xacmlMonitorView'),
   directoryPageJson: slot.forward('directoryPageJson'),

@@ -20,6 +20,9 @@
 //   GET  /                 the start page: every demonstration's links
 //   GET  /companion.css    the one stylesheet
 //   GET  /healthz          JSON: up, and whether the service answered
+//   /social, /social/*     a dummy of each named social provider (#1689)
+//   /pep-app, /pep-app/*   the application the remote XACML PEP protects as
+//                          a reverse proxy (#1760), echoing what reached it
 //   ...                    each demonstration's own routes (`DEMOS`)
 //
 // **A DEMONSTRATION IS A MODULE WITH `describe()` AND `mount(router)`.** The
@@ -37,7 +40,14 @@
 // where it is read, so nothing here runs on a timer.
 //
 // **EVERY POST IS BOUND**: its form's `csrf` must be the session's token,
-// and an `Origin` it carries must be the companion's own.
+// and an `Origin` it carries must be the companion's own. A POST under
+// `/social` is the exception, dispatched before that check: the service,
+// not a browser, posts the token request, Steam's check and Bluesky's
+// push, and it carries no session cookie. `companion/CLAUDE.md` argues it.
+// `/pep-app` (#1760) is dispatched before the SESSION as well: the remote
+// PEP, not a browser, sends those requests, and the application echoes
+// every header it received, so a session cookie set on its answers would
+// be one more header for the protocol job to explain.
 // ===========================================================================
 
 const http = require("http");
@@ -46,6 +56,8 @@ const util = require("./companion_util.js");
 const { StsClient } = require("./sts_client.js");
 const { Oid4vcDemo } = require("./demo_oid4vc.js");
 const { KerberosDemo } = require("./demo_kerberos.js");
+const { SocialIdps } = require("./social_idps.js");
+const pepApp = require("./pep_app.js");
 
 const log = util.logger("iya-sts-companion");
 
@@ -67,8 +79,8 @@ function settingsFrom(env) {
                               "https://localhost:8081");
   const out = {
     port: port,
-    publicUrl: String(env.COMPANION_PUBLIC_URL ||
-                      "http://localhost:" + port).replace(/\/+$/, ""),
+    publicUrl: util.stripTrailingSlashes(env.COMPANION_PUBLIC_URL ||
+      ("http://localhost:" + port)),
     stsUrl: String(env.COMPANION_STS_URL || stsPublicUrl),
     stsPublicUrl: stsPublicUrl,
     caFile: String(env.COMPANION_STS_CA_FILE || ""),
@@ -159,8 +171,13 @@ class Companion {
       servicePort: settings.krb5ServicePort === undefined
         ? null : settings.krb5ServicePort,
       keytabDir: settings.krb5KeytabDir, gss: deps && deps.gss });
-    // THE DEMONSTRATIONS.
-    this.demos = [oid4vc, kerberos];
+    const social = new SocialIdps({ publicUrl: settings.publicUrl });
+    this.social = social;
+    // #1760: the remote PEP's upstream application, dispatched by prefix.
+    this.pepApp = new pepApp.PepApp({ caFile: settings.caFile,
+                                      insecure: settings.insecure });
+    // THE DEMONSTRATIONS. oid4vc stays first: /healthz's demos[0] is it.
+    this.demos = [oid4vc, kerberos, social, this.pepApp];
     const router = {
       get: (path, handler) => {
         this.routes.GET.set(path, handler);
@@ -231,8 +248,26 @@ class Companion {
    */
   async handle(req, res) {
     log.debug("Entering Companion.handle(). " + req.method + " " +
-              String(req.url).replace(/\?.*$/, ""));
+              util.stripQuery(req.url));
     const url = new URL(req.url, "http://companion.invalid");
+    // #1760: by the RAW path, before the session, so a dot segment the
+    // proxy forwarded reaches the echo as it was sent.
+    if (pepApp.owns(req.url)) {
+      try {
+        await this.pepApp.handle(req, res);
+      } catch (e) {
+        log.debug("Caught in Companion.handle(): " + ((e && e.message) || e));
+        log.error("companion: pep-app " + req.method + " " +
+                  pepApp.rawPathOf(req.url) + " failed: " +
+                  ((e && e.stack) || e));
+        if (!res.headersSent) {
+          util.sendJson(res, 500, { app: "pep-app",
+                                    error: String((e && e.message) || e) });
+        }
+      }
+      log.debug("Leaving Companion.handle(). pep-app.");
+      return;
+    }
     const found = this.sessions.of(req);
     if (found.fresh) {
       res.setHeader("Set-Cookie", COOKIE + "=" + found.session.id +
@@ -255,6 +290,10 @@ class Companion {
                                   demos: this.demos.map(function (d) {
                                     return d.describe().id;
                                   }) });
+      } else if (url.pathname === "/social" ||
+                 url.pathname.indexOf("/social/") === 0) {
+        // Before the CSRF check. The service posts here with no cookie.
+        await this.social.handle(req, res);
       } else if (this.routes[req.method] &&
                  this.routes[req.method].has(url.pathname)) {
         if (req.method === "POST") {

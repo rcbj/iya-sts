@@ -563,6 +563,22 @@
     "en": "b0f0da21ac461ad3",
     "text": "直到目錄變更且查詢未命中為止；命中目前項目時不必等待重建。每個領域一個索引。"
   },
+  "caches.store.ldap.gate-usernames.title": {
+    "en": "689e1e6184e6baf0",
+    "text": "主控台關卡的使用者名稱"
+  },
+  "caches.store.ldap.gate-usernames.description": {
+    "en": "06f13f021c4a27e4",
+    "text": "在持有目錄視窗的程序中，/admin-api 關卡在事件迴圈之外詢問過的「誰持有某使用者名稱」（包括無人持有）的答案，使其同步檢查無須詢問儲存區。僅供這些檢查讀取；建立操作一律詢問儲存區。"
+  },
+  "caches.store.ldap.gate-usernames.bound": {
+    "en": "953882a7c140627a",
+    "text": "強制：每個領域 64 個使用者名稱，最久未被詢問的最先捨棄。"
+  },
+  "caches.store.ldap.gate-usernames.lifetime": {
+    "en": "43a85e1731c71231",
+    "text": "直到領域的 ou=users 處、其下或其上的任何內容在此寫入或從另一程序複製過來；關卡的下一次預熱會重新詢問。"
+  },
   "caches.store.ldap.group-index.title": {
     "en": "ed4018229dabe2c1",
     "text": "目錄群組索引"
@@ -726,6 +742,26 @@
   "caches.store.oauth2.access-token-status-lists.hitMeaning": {
     "en": "48214c6b54f10691",
     "text": "未重新簽署即提供清單"
+  },
+  "caches.store.oauth2.access-token-status-packed.title": {
+    "en": "41a83d2bb80a2918",
+    "text": "已壓縮的存取權杖狀態清單"
+  },
+  "caches.store.oauth2.access-token-status-packed.description": {
+    "en": "b67a46cbdc14089f",
+    "text": "此程序為每個領域最近建立的壓縮存取權杖狀態清單，在無效位元變更或最早的一個過期之前重複使用。"
+  },
+  "caches.store.oauth2.access-token-status-packed.bound": {
+    "en": "93bd023bcc902515",
+    "text": "結構性：每個領域一份壓縮清單。已消失的領域，或最早的無效位元已過期的清單，由快取工作捨棄。"
+  },
+  "caches.store.oauth2.access-token-status-packed.lifetime": {
+    "en": "86b51b8d0239fd45",
+    "text": "直到某個無效位元變更，或最早的一個過期。"
+  },
+  "caches.store.oauth2.access-token-status-packed.hitMeaning": {
+    "en": "29707643b235dbd9",
+    "text": "未再次打包或壓縮即提供清單"
   },
   "caches.store.oauth2.attestation-challenges.title": {
     "en": "f19e208930fddc5c",
@@ -984,8 +1020,8 @@
     "text": "錢包登入登錄"
   },
   "caches.store.oid4vp.sign-in-register.description": {
-    "en": "91808833ee8c6a0c",
-    "text": "此領域根據其已驗證的存取權杖為某人簽發的憑證，這些是錢包唯一可用來登入的憑證——以簽發者簽署之 JWT 的摘要為鍵，若為 ldp_vc 則以持有者金鑰與該人為鍵。"
+    "en": "979c99c562007a1c",
+    "text": "此領域根據其已驗證的存取權杖為某人簽發的憑證，這些是錢包唯一可用來登入的憑證——以簽發者簽署之 JWT 的摘要（若為 mdoc，則為 issuerAuth 酬載的摘要）為鍵，若為 ldp_vc 則以持有者金鑰與該人為鍵。"
   },
   "caches.store.oid4vp.sign-in-register.bound": {
     "en": "89a00ee69a340570",
@@ -1570,6 +1606,22 @@
   "caches.store.xacml.parsed-policies.lifetime": {
     "en": "6ba64c6240c222a0",
     "text": "不會過期：以內容為鍵，因此編輯過的原則是新項目，其舊的剖析結果在成為最久未使用者時移除。"
+  },
+  "caches.store.xacml.pep-tickets.title": {
+    "en": "d8dab9277ae943e0",
+    "text": "遠端 PEP 的 Basic 票證"
+  },
+  "caches.store.xacml.pep-tickets.description": {
+    "en": "1cdd4ca49053b643",
+    "text": "有效的 POST /xacml/pep/basic 交給遠端 PEP 的票證，依各自的 SHA-256 保存；票證本身不儲存。"
+  },
+  "caches.store.xacml.pep-tickets.bound": {
+    "en": "4dead9c8be3539ac",
+    "text": "強制執行：每個領域 10000 個，捨棄最舊的；PEP 會再次驗證 Basic 認證。"
+  },
+  "caches.store.xacml.pep-tickets.hitMeaning": {
+    "en": "484401484f6f539d",
+    "text": "依摘要找到了一個票證"
   },
   "caches.lru.default.description": {
     "en": "777e71be96460478",

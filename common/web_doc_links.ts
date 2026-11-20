@@ -8,13 +8,16 @@
 // ---------------------------------------------------------------------------
 // A LINK TO THE PUBLIC DOCUMENTATION, ON EVERY CONSOLE AND PORTAL PAGE (#895).
 //
-// The pages are https://rcbj.github.io/iya-sts/ (the front door already
-// names that origin). A link is absolute so it works from any deployment.
-// Pages are published from main; a heading that exists only on develop
-// still opens the page, and the fragment resolves once that heading is
-// published. The fragment is a kramdown id of the local markdown: lower
-// case, anything but a letter, a digit, a space or a hyphen removed, spaces
-// turned into hyphens, repeated hyphens kept.
+// The pages are https://rcbj.github.io/iya-sts/v1.1.0/: the site is
+// versioned, and a build links to its OWN version's folder, not the
+// landing page or the latest (docs/CLAUDE.md, *The versioned site*; the
+// front door and the footer name the same folder). A link is absolute so
+// it works from any deployment. Pages are published from main; a heading
+// that exists only on develop still opens the page, and the fragment
+// resolves once that heading is published. The fragment is a kramdown id
+// of the local markdown: lower case, anything but a letter, a digit, a
+// space or a hyphen removed, spaces turned into hyphens, repeated hyphens
+// kept.
 //
 // WHERE IT IS DRAWN. A tabbed page holds one link at the top of each leaf
 // panel, so the tab the reader is in names the page that explains it. A
@@ -183,6 +186,15 @@ const CONSOLE: Record<string, string> = {
   '/admin/kerberos': 'kerberos.html',
   '/admin/xacml': 'xacml.html',
   '/admin/xacml/monitor': 'xacml.html',
+  // One remote PEP's page (#1760); its tabs follow the page's slug.
+  '/admin/xacml/pep': 'remote-pep.html#its-page-on-the-console',
+  '/admin/xacml/pep/route': 'remote-pep.html#a-routes-own-page',
+  '/admin/xacml/pep-cluster': 'remote-pep.html#remote-pep-clusters',
+  '/admin/xacml/pep-cluster/route': 'remote-pep.html#remote-pep-clusters',
+  '/admin/xacml/pep/listener': 'remote-pep.html#a-listeners-own-page',
+  // Monitoring → Remote PEPs: the figures a PEP reports, not its settings.
+  '/admin/xacml/pep/monitor':
+    'remote-pep.html#what-a-remote-pep-is-serving',
   '/admin/backup-codes': 'authentication.html#recovery-codes',
   '/admin/persistence': 'persistence.html',
   '/admin/totp': 'authentication.html#totp-mfa',
@@ -223,6 +235,14 @@ const EXACT: Record<string, string> = {
     'admin-console.html#verifier-request-tab--adminvcvc-tab-verifier-request',
   'xacml-tab-settings': 'configure-xacml.html',
   'xacml-tab-peps': 'remote-pep.html',
+  'xacml-tab-pep-clusters': 'remote-pep.html#remote-pep-clusters',
+  // An application's page: the remote PEP routes in front of it (#1760).
+  'tab-pep-routes': 'remote-pep.html',
+  // A remote PEP's page (#1760): its settings and its reverse proxy.
+  'xacml-pep-tab-settings':
+    'remote-pep.html#the-settings-this-service-sets-for-it',
+  'xacml-pep-tab-proxy':
+    'remote-pep.html#in-front-of-an-application-the-reverse-proxy-1760',
   'xacml-tab-authzen': 'authzen.html',
   'ssf-tab-caep': 'caep-events.html',
   'ssf-tab-risc': 'signals-received.html',
@@ -260,6 +280,7 @@ const EXACT: Record<string, string> = {
   'tab-attributes':
     'configure-scim.html#the-attribute-policy-in-product-mode',
   'tab-profiles': 'policies.html#all-profiles',
+  'tab-transfer': 'policies.html#export-and-import',
   'cfg-families': 'applications.html#the-console-page-and-the-api',
   'cfg-every': 'applications.html#the-console-page-and-the-api',
   'cfg-oauth': 'oauth-oidc.html',
@@ -317,12 +338,16 @@ const EXACT: Record<string, string> = {
   'ucred-password': 'authentication.html#passwords',
   'ucred-service': 'service-accounts.html',
   'ucred-keys': 'pki.html#a-persons-credentials-on-their-own-page',
+  'ucred-self-issued': 'oid4vp.html#self-issued-id-tokens-siopv2',
   'ucred-kerberos': 'kerberos.html',
   'utab-federation': 'federation.html',
   'utab-gnap': 'gnap.html',
   'utab-uma': 'uma.html#the-console',
   'utab-entry': 'admin-console.html#the-persons-directory-entry',
+  'utab-import-export':
+    'admin-console.html#exporting-and-importing-a-person-as-ldif',
   'utab-signout': 'signing-out.html',
+  'utab-delete': 'admin-console.html#deleting-a-person',
   'gtab-group': 'admin-console.html#groups--admingroups',
   'gtab-owners': 'management-api.html#owners',
   'rtab-role': 'admin-console.html#roles--adminroles',
@@ -405,9 +430,10 @@ Object.keys(CONSOLE).forEach(function (consolePath) {
  */
 class WebDocLinks {
   /**
-   * The published documentation site, with its trailing slash.
+   * This version's folder of the published documentation site, with its
+   * trailing slash.
    */
-  static readonly ORIGIN = 'https://rcbj.github.io/iya-sts/';
+  static readonly ORIGIN = 'https://rcbj.github.io/iya-sts/v1.1.0/';
 
   /**
    * Turns a site-relative page into an absolute URL. An absolute URL is

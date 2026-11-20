@@ -115,6 +115,7 @@ import roles = require('../common/roles');
 // The claim sets' attribute claims (#94), whose attributes a directory write
 // can move. `claim_attributes` already requires it, so this closes no cycle.
 import stats = require('../common/admin_stats');
+import Classes = require('../common/domain_classes');
 
 // One register row. See `blankRow()`.
 interface CaepRow {
@@ -443,6 +444,10 @@ class CaepRegister {
     if (asked.kind === 'updated') {
       const before = asked.before || {};
       const after = asked.after || {};
+      // BY NAME ON PURPOSE (#1579): the two loops below walk the claim
+      // catalogue and the claim sets, whose rows name the attribute each
+      // claim is read from. The names are configuration, not one field of
+      // a concept; the fixed reads further down use the concepts.
       const valuesAt = function (map: Record<string, any>, name: string) {
         return (map[name] || []).map(String);
       };
@@ -485,20 +490,27 @@ class CaepRegister {
       });
       // A person's own `memberOf` is read live as their groups, so writing it
       // moves the groups claim exactly as a group's `member` does.
-      groupsMoved = JSON.stringify(valuesAt(before, 'memberof')) !==
-                    JSON.stringify(valuesAt(after, 'memberof'));
+      // The groups are DirectoryEntry's memberOf (#1579).
+      const groupsAt = function (map: Record<string, any>): string[] {
+        return Classes.DirectoryEntry.fromEntry(map).memberOf || [];
+      };
+      groupsMoved = JSON.stringify(groupsAt(before)) !==
+                    JSON.stringify(groupsAt(after));
       // `email_verified` (#238) is not an attribute of its own: it is whether
       // `stsMailVerified` names the address `mail` holds, which is what
       // `oauth2.ts`'s emailVerified() reads through the mail channel. Either
       // half moving can move it — the address changed, or it was proved.
+      // The address is the User's and its proof the PersonRecord's
+      // (#1579).
       const verifiedAt = function (map: Record<string, any>): boolean {
-        const mail = String(valuesAt(map, 'mail')[0] || '').toLowerCase();
-        const proved = String(valuesAt(map, 'stsmailverified')[0] || '')
+        const mail = String(Classes.User.fromEntry(map).email || '')
           .toLowerCase();
+        const proved = String(Classes.PersonRecord.fromEntry(map)
+          .mailVerified || '').toLowerCase();
         return !!mail && mail === proved;
       };
       if (verifiedAt(before) !== verifiedAt(after) &&
-          valuesAt(after, 'mail').length) {
+          Classes.User.fromEntry(after).email !== undefined) {
         claims.email_verified = verifiedAt(after);
       }
     }

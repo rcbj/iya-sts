@@ -496,6 +496,38 @@ const DATA_CLASSES = [
          'to seal. All three are named in `common/mode.js`’s `NOT_YET` ' +
          'rather than left to be discovered, because *not stored* and *not ' +
          'protected* read the same from outside and are not the same thing.'
+  },
+  // Last rather than beside `federation-encryption-key`, because a row's
+  // translations are keyed by its place in this list (#931).
+  {
+    label: 'federation-client-certificate',
+    what: 'A FAPI 1.0 Advanced federation relationship’s TLS client ' +
+          'certificate private key (#931) — what this service presents to ' +
+          'the partner’s token and UserInfo endpoints, in ' +
+          '`fedClientCertificate`',
+    where: 'the relationship’s own entry under `ou=federations`',
+    sealed: true,
+    why: 'Whoever holds it can authenticate to that partner as this ' +
+         'service (`tls_client_auth`) and present the access tokens the ' +
+         'partner bound to the certificate. Sealed at rest wherever keys ' +
+         'persist, and withheld — ciphertext included — from every LDAP ' +
+         'search, page and `/admin-api` reply, which carry the certificate ' +
+         'only.'
+  },
+  // Last, for the reason the row above is (#1668).
+  {
+    label: 'wstrust-decryption-key',
+    what: 'An application’s own WS-Trust decryption private key (#1668) — ' +
+          '`wstrustDecryptionPrivateKey`: what a WS-Trust request for that ' +
+          'application, encrypted to its certificate, is decrypted with',
+    where: 'an attribute on the application’s own entry under ' +
+           '`ou=applications`',
+    sealed: true,
+    why: 'Whoever holds it reads every request encrypted to that ' +
+         'application — the credentials and claims the encryption keeps ' +
+         'off the wire. Sealed at rest wherever keys persist, and withheld ' +
+         '— ciphertext included — from every LDAP search, page and ' +
+         '`/admin-api` reply, which carry the certificate only.'
   }
 ];
 
@@ -562,7 +594,7 @@ const NOTES = Object.freeze({
     'That layer is the operator\'s — LUKS or an encrypted ZFS dataset ' +
     'under PGDATA, a cloud disk with a customer-managed key, or one of ' +
     'the PostgreSQL forks that has TDE, since the community build has ' +
-    'none. docs/encryption-at-rest.md is this repository\'s write-up ' +
+    'none. docs/v1.1.0/encryption-at-rest.md is this repository\'s write-up ' +
     'of the options.',
   keyResidency:
     'AND THE KEY MUST NOT LIVE ON THE DISK IT PROTECTS. A key file on ' +

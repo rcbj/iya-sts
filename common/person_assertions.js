@@ -199,6 +199,7 @@ const config = require('./config');
 // A leaf. The refusal objects below carry `errorCode` for the caller that
 // sends the response; it is never part of anything serialised.
 const errorCodes = require('./error_codes');
+const DomainClasses = require('./domain_classes');
 // CAEP credential-change when this file changes a person's credential
 // (#145), through `ssf/account_signals.ts` — required LAZILY, when an event
 // is due. This file is loaded from `app.js`'s own chain, before the
@@ -700,8 +701,12 @@ function recordOf(name, raw, openKeys) {
     return one.state === 'valid';
   };
   const out = { username: name,
-                issuers: valuesOf(raw[ISSUER_ATTRIBUTE]),
-                samlIssuers: valuesOf(raw[SAML_ISSUER_ATTRIBUTE]),
+                // The Credential's (#1579); the key tables above read the
+                // attributes each kind names, and write them back.
+                issuers: valuesOf(DomainClasses.Credential.fromEntry(raw)
+                  .assertionIssuer),
+                samlIssuers: valuesOf(DomainClasses.Credential.fromEntry(raw)
+                  .samlAssertionIssuer),
                 keys: keys,
                 hasKeyPair: keys.jwt.some(valid),
                 hasSamlKeyPair: keys.saml.some(valid),
@@ -1230,6 +1235,112 @@ function write(username, record, opts) {
                                               !!record.privateKeyPem }) };
 }
 
+// Whether a person by that name has an entry in the ambient realm: the
+// question a door asks before it asks anything else about them, kept apart
+// from "holds nothing", which `recordFor()` answers by opening every private
+// key.
+/**
+ * Whether a person by that name has an entry in this realm's ou=users.
+ *
+ * @param username - the person's username
+ * @returns true where the directory finds the entry
+ */
+function entryExists(username) {
+  log.debug('Entering entryExists().');
+  const name = String(username || '');
+  const found = !!(directory && name && directory.read(name));
+  log.debug('Leaving entryExists(). ' + found);
+  return found;
+}
+
+// ---------------------------------------------------------------------------
+// A KEY THE PERSON GENERATED, CERTIFIED FROM THEIR REQUEST (#1827's phase 3,
+// rcbj 2026-11-16: "the service never holds the PEP's private key").
+//
+// The one door from a PKCS #10 request to a registered RFC 7523 key: the
+// realm's Issuing CA certifies the public key in it
+// (`pki.certifySigningRequest()`, which checks the proof of possession and
+// ignores the request's names), and `write()` above adds the leaf to the
+// entry's `stsAssertionKeyPair` exactly as an issued key pair is added — a
+// `kid`, the JWK with its `x5c`, the serial and the authority that signed it,
+// so `revoke()` puts it on that authority's list — with `source`
+// `issued-from-csr` and NO private value: there is none here to seal.
+//
+// The entry and the cap are asked BEFORE anything is certified, for
+// `issueToPerson()`'s reason: a leaf certified only for `write()` to refuse is
+// a certificate in the authority's register that no entry holds. `pki.js` is
+// required LAZILY, for `revocation()`'s reason above.
+// ---------------------------------------------------------------------------
+/**
+ * Certifies the key in a person's own PKCS #10 request as an RFC 7523
+ * signing key and adds it to their entry, with no private half anywhere.
+ *
+ * Refused for no directory (STS-OAUTH-0085), nobody by that name
+ * (STS-PKI-0109), at the cap (STS-PKI-0223), a bad label (STS-PKI-0225), and
+ * whatever `pki.certifySigningRequest()` refuses.
+ *
+ * @param username - the person's username
+ * @param csr - the request, PEM or base64 DER
+ * @param opts - `serviceAccount` (the entry's flag), `label`, `days`,
+ *   `skipCap` (the caller makes room itself), and `initiatingEntity` and
+ *   `via` for the event
+ * @returns a promise of `{ ok: true, key, issued }` — the key pair as
+ *   written and `pki.js`'s record — or `{ ok: false, errorCode, errors }`
+ */
+async function certifyRequest(username, csr, opts) {
+  log.debug('Entering certifyRequest(). username=' + username);
+  const name = String(username || '');
+  const options = opts || {};
+  if (!directory) {
+    log.debug('Leaving certifyRequest(). No directory.');
+    return { ok: false, errorCode: 'STS-OAUTH-0085',
+             errors: ['This process has no directory, so there is nowhere ' +
+                      'to register a person\'s assertion key.'] };
+  }
+  if (!name || !directory.read(name)) {
+    log.debug('Leaving certifyRequest(). Nobody by that name.');
+    return { ok: false, errorCode: 'STS-PKI-0109',
+             errors: ['There is nobody called "' + name + '" in this realm, ' +
+                      'so there is no entry to certify a key for.'] };
+  }
+  const label = String(options.label || '').trim();
+  const labelSaid = labelProblem(label);
+  if (labelSaid) {
+    log.debug('Leaving certifyRequest(). Label refused.');
+    return { ok: false, errorCode: 'STS-PKI-0225', errors: [labelSaid] };
+  }
+  if (!options.skipCap && atCap(name, 'jwt')) {
+    log.debug('Leaving certifyRequest(). At the cap.');
+    return { ok: false, errorCode: 'STS-PKI-0223',
+             errors: ['"' + name + '" already holds ' + maxPerPerson() +
+                      ' valid RFC 7523 key pairs, which is ' +
+                      'pki.personSigningKeyMax. Revoke one that is no ' +
+                      'longer used and ask again.'] };
+  }
+  const certified = await require('./pki').certifySigningRequest(undefined, {
+    identifier: name,
+    csr: csr,
+    serviceAccount: options.serviceAccount,
+    days: options.days
+  });
+  if (!certified.ok) {
+    log.debug('Leaving certifyRequest(). Not certified.');
+    return { ok: false,
+             errorCode: errorCodes.codeOf(certified) || 'STS-PKI-0278',
+             errors: (certified.errors || []).slice() };
+  }
+  const written = write(name, certified.issued, {
+    purpose: 'jwt', label: label,
+    initiatingEntity: options.initiatingEntity || 'admin',
+    via: options.via || '' });
+  if (!written.ok) {
+    log.debug('Leaving certifyRequest(). The write failed.');
+    return written;
+  }
+  log.debug('Leaving certifyRequest(). kid=' + certified.issued.kid);
+  return { ok: true, key: written.key, issued: certified.issued };
+}
+
 // A row back to what is stored: the state, the revocation the authority's
 // list answered and the private-key flag are READ, never written — the list
 // is the authority's, and a stored copy would be a second answer to it. What
@@ -1563,6 +1674,8 @@ module.exports = {
   issuerFor: issuerFor,
   subjectIsSelf: subjectIsSelf,
   write: write,
+  certifyRequest: certifyRequest,
+  entryExists: entryExists,
   revoke: revoke,
   keyPairState: keyPairState,
   holders: holders,

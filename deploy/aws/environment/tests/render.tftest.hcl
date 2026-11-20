@@ -483,3 +483,98 @@ run "no_cloudfront_by_default" {
     error_message = "Nothing changes without cloudfront_enabled."
   }
 }
+
+# CLOUDFRONT IN A MULTI-CELL ENVIRONMENT (#1341): one distribution, the
+# primary's, in its `full` phase; the cells' tree at the direct name, which is
+# the distribution's origin; every cell admitting the edges and reading the
+# global tier's replica of the origin secret.
+run "globalidp_primary_holds_the_distribution" {
+  command = plan
+  variables {
+    environment        = "globalidp"
+    cell               = "usw2"
+    cloudfront_enabled = true
+    direct_hostname    = "direct.global-idp.iyasec.io"
+  }
+  override_data {
+    target = data.terraform_remote_state.global[0]
+    values = { outputs = {
+      primary_address = "p", db_port = 5432, db_name = "sts", db_app_user = "sts_app",
+      read_addresses  = {}, master_secret_arn = "m", edge_secret = "s3cret",
+      secret_arns     = { usw2 = { "edge-secret" = "arn:aws:secretsmanager:us-west-2:111122223333:secret:iya-sts/globalidp/edge-secret" } }
+    } }
+  }
+  assert {
+    condition     = length(aws_cloudfront_distribution.main) == 1 && one([for o in aws_cloudfront_distribution.main[0].origin : o.domain_name]) == "direct.global-idp.iyasec.io"
+    error_message = "The primary's distribution has the cells' tree, at the direct name, as its origin."
+  }
+  assert {
+    condition     = length(aws_route53_record.default) == 1 && aws_route53_record.default[0].name == "global-idp.iyasec.io" && aws_route53_record.default[0].alias[0].evaluate_target_health == false
+    error_message = "The public name's default is the distribution."
+  }
+  assert {
+    condition     = aws_route53_record.direct_default[0].name == "direct.global-idp.iyasec.io" && aws_route53_record.direct_default[0].alias[0].name == "cells.direct.global-idp.iyasec.io" && aws_route53_record.latency[0].name == "cells.direct.global-idp.iyasec.io"
+    error_message = "The tree is at the direct name."
+  }
+  assert {
+    condition     = length(aws_route53_record.direct) == 0 && length(aws_route53_record.direct_inside) == 1 && length(random_password.edge_secret) == 0
+    error_message = "A cell's direct name outside is the tree, and its secret is the global tier's."
+  }
+  assert {
+    condition     = contains([for s in local.node_secrets : s.valueFrom if s.name == "STS_EDGE_SECRET"], "arn:aws:secretsmanager:us-west-2:111122223333:secret:iya-sts/globalidp/edge-secret")
+    error_message = "The nodes read the global tier's replica of the origin secret."
+  }
+}
+
+run "globalidp_primary_base_has_no_distribution" {
+  command = plan
+  variables {
+    environment        = "globalidp"
+    cell               = "usw2"
+    cell_phase         = "base"
+    cloudfront_enabled = true
+    direct_hostname    = "direct.global-idp.iyasec.io"
+  }
+  assert {
+    condition     = length(aws_cloudfront_distribution.main) == 0 && length(aws_route53_record.default) == 0 && length(aws_route53_record.direct_default) == 1
+    error_message = "No distribution before the global tier holds its secret; the direct name's tree is written already."
+  }
+  assert {
+    condition     = length([for s in local.node_secrets : s if s.name == "STS_EDGE_SECRET"]) == 0
+    error_message = "An empty valueFrom is dropped in `base`."
+  }
+}
+
+run "globalidp_cell_behind_cloudfront" {
+  command = plan
+  variables {
+    environment        = "globalidp"
+    cell               = "euc1"
+    cloudfront_enabled = true
+    direct_hostname    = "direct.global-idp.iyasec.io"
+  }
+  override_data {
+    target = data.terraform_remote_state.global[0]
+    values = { outputs = {
+      primary_address = "p", db_port = 5432, db_name = "sts", db_app_user = "sts_app",
+      read_addresses  = {}, master_secret_arn = "m", edge_secret = "s3cret",
+      secret_arns     = { euc1 = { "edge-secret" = "arn:aws:secretsmanager:eu-central-1:111122223333:secret:iya-sts/globalidp/edge-secret" } }
+    } }
+  }
+  assert {
+    condition     = length(aws_cloudfront_distribution.main) == 0 && length(aws_wafv2_web_acl.allowlist) == 0 && length(aws_route53_record.default) == 0
+    error_message = "Only the primary writes the distribution."
+  }
+  assert {
+    condition     = aws_route53_record.pinned["DE"].name == "direct.global-idp.iyasec.io" && aws_route53_record.pinned["DE"].alias[0].name == "eu.cells.direct.global-idp.iyasec.io"
+    error_message = "The pins are at the direct name."
+  }
+  assert {
+    condition     = length(aws_security_group.nlb_cloudfront) == 1 && local.node_environment.STS_TRUST_PROXY == "true" && local.node_environment.STS_EDGE_PROXIES == "192.0.2.0/24"
+    error_message = "Every cell admits and believes the edges."
+  }
+  assert {
+    condition     = contains([for s in local.node_secrets : s.valueFrom if s.name == "STS_EDGE_SECRET"], "arn:aws:secretsmanager:eu-central-1:111122223333:secret:iya-sts/globalidp/edge-secret")
+    error_message = "A cell reads the replica in its own region."
+  }
+}

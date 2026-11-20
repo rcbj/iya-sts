@@ -170,23 +170,25 @@ class SignInAppearancePage {
         t.html(key + (passes ? 'contrast.pass' : 'contrast.fail')) +
         '</span></td></tr>';
     }).join('');
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab's
+    // content after its heading, each h3 block a frame inside it.
     return '<h2 id="colours" data-tab="colours">' +
       t.html(key + 'colours.heading') + '</h2>' +
-      kit.note(t.html(key + 'colours.lead')) +
+      kit.frame(kit.note(t.html(key + 'colours.lead')) +
       '<form method="post" action="' + PAGE + '" id="sia-colours">' +
       '<input type="hidden" name="action" value="save">' + rows +
       '<div class="formrow"><button type="submit"' + off + '>' +
       t.html(key + 'colours.save') + '</button></div></form>' +
-      '<h3>' + t.html(key + 'contrast.heading') + '</h3>' +
+      kit.frame('<h3>' + t.html(key + 'contrast.heading') + '</h3>' +
       '<table><thead><tr><th>' + t.html(key + 'contrast.thPair') +
       '</th><th>' + t.html(key + 'contrast.thRatio') + '</th><th>' +
       t.html(key + 'contrast.thVerdict') + '</th></tr></thead><tbody>' +
-      checks + '</tbody></table>' +
-      '<h3>' + t.html(key + 'derived.heading') + '</h3>' +
+      checks + '</tbody></table>') +
+      kit.frame('<h3>' + t.html(key + 'derived.heading') + '</h3>' +
       kit.note(t.html(key + 'derived.lead')) +
       '<table><thead><tr><th>' + t.html(key + 'derived.thName') +
       '</th><th>' + t.html(key + 'derived.thColour') + '</th></tr>' +
-      '</thead><tbody>' + tones + '</tbody></table>';
+      '</thead><tbody>' + tones + '</tbody></table>'));
   }
 
   /**
@@ -277,9 +279,10 @@ class SignInAppearancePage {
         '<button type="submit" class="danger"' + off + '>' +
         t.html(key + 'logo.remove') + '</button></form>'
       : '';
+    // FRAMED (`secframe`, rcbj 2026-11-16): as the Colours tab.
     return '<h2 id="layout" data-tab="layout">' +
       t.html(key + 'layout.heading') + '</h2>' +
-      '<form method="post" action="' + PAGE + '" id="sia-layout">' +
+      kit.frame('<form method="post" action="' + PAGE + '" id="sia-layout">' +
       '<input type="hidden" name="action" value="save">' +
       '<fieldset><legend>' + t.html(key + 'layout.legend') + '</legend>' +
       choices + '</fieldset>' +
@@ -294,7 +297,7 @@ class SignInAppearancePage {
         key + 'layout.logoLinkHint', v.logoLinkUrl, off) +
       '<div class="formrow"><button type="submit"' + off + '>' +
       t.html(key + 'layout.save') + '</button></div></form>' +
-      '<h3>' + t.html(key + 'logo.heading') + '</h3>' +
+      kit.frame('<h3>' + t.html(key + 'logo.heading') + '</h3>' +
       SignInAppearancePage.storedLogo(t, v) +
       '<form method="post" action="' + PAGE + '" id="sia-upload" ' +
       'enctype="multipart/form-data">' +
@@ -307,7 +310,7 @@ class SignInAppearancePage {
       SignInAppearancePage.textRow(t, 'sia-upload-alt', 'alt', 'text', 160,
         key + 'logo.alt', key + 'layout.logoAltHint', v.logoAlt, off) +
       '<div class="formrow"><button type="submit"' + off + '>' +
-      t.html(key + 'logo.upload') + '</button></div></form>' + remove;
+      t.html(key + 'logo.upload') + '</button></div></form>' + remove));
   }
 
   /**
@@ -331,7 +334,8 @@ class SignInAppearancePage {
     }).join('');
     return '<h2 id="preview" data-tab="preview">' +
       t.html(key + 'preview.heading') + '</h2>' +
-      kit.note(t.html(key + 'preview.lead')) +
+      // FRAMED (`secframe`, rcbj 2026-11-16): the tab's content.
+      kit.frame(kit.note(t.html(key + 'preview.lead')) +
       '<form method="get" action="' + esc(target) + '" target="_blank" ' +
       'id="sia-preview">' + rows +
       '<div class="formrow"><label for="sia-pv-layout">' +
@@ -342,7 +346,7 @@ class SignInAppearancePage {
           '</option>';
       }).join('') + '</select></div>' +
       '<div class="formrow"><button type="submit">' +
-      t.html(key + 'preview.open') + '</button></div></form>';
+      t.html(key + 'preview.open') + '</button></div></form>');
   }
 
   /**

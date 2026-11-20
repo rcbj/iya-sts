@@ -108,7 +108,15 @@ const STANDALONE = {
   // at a stack's first start, in the secret store's own container, which
   // holds no service to load crypto.js from. Its compose command runs it;
   // nothing in the service requires it.
-  'openbao/generate-seal.js': 'the secret store container\'s first-start tool'
+  'openbao/generate-seal.js': 'the secret store container\'s first-start tool',
+  // The operator's remote PEP registration tool (2026-11-16): a client of
+  // the management API, run from the image or a checkout with no
+  // CONFIG_FILE, where crypto.js cannot load. It reads the serial and the
+  // public key of the certificate it wrote, to tell whether the key in its
+  // output directory is already registered; its key and request come from
+  // the X.509 engine (utilities/pep-assertion-request.js). Nothing in the
+  // service requires it.
+  'utilities/register-remote-pep.js': 'an operator\'s management API client'
 };
 
 // Node's module, by either spelling, required or imported for a value.

@@ -634,13 +634,13 @@ function childMain() {
          JSON.stringify(cq.claims) === JSON.stringify([{ path: ['sub'] }]),
          '2i. the signed request asks for this issuer\'s SD-JWT VC and its ' +
          'subject only', JSON.stringify(cq));
-    note(queries.length === 3 &&
+    note(queries.length === 4 &&
          queries.map(function (q) { return q.format; }).join(',') ===
-           'dc+sd-jwt,jwt_vc_json,ldp_vc' &&
+           'dc+sd-jwt,jwt_vc_json,ldp_vc,mso_mdoc' &&
          sets.length === 1 && sets[0].required === true &&
          JSON.stringify(sets[0].options) === JSON.stringify(
            queries.map(function (q) { return [q.id]; })),
-         '2i-ii. and for the other two formats beside it, with a ' +
+         '2i-ii. and for the other three formats beside it, with a ' +
          'credential_set saying any ONE of them answers',
          JSON.stringify(ro.dcql_query));
     // THE PLAIN QR CODE IS OFF BY DEFAULT IN BOTH MODES (#38's follow-ups).

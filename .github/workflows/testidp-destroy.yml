@@ -79,7 +79,7 @@ jobs:
     timeout-minutes: ${{ github.event.inputs.environment == 'testidp' && 90 || 180 }}
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Build terraform image
         run: docker build -t "${TF_IMAGE}" -f deploy/aws/Dockerfile .

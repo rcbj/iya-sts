@@ -438,7 +438,9 @@ pub fn parse(value: &Value) -> Result<Row, Problem> {
 }
 
 /// Every value read: a value that is not a row, and a second row for one
-/// object and property, left out and named — as `rowsOf()` does.
+/// object and property, left out and named — as `rowsOf()` does. Only the
+/// tests read a whole list this way; the pull reads row by row.
+#[cfg(test)]
 pub fn rows_of(values: &[Value]) -> (Vec<Row>, Vec<String>) {
     let mut rows: Vec<Row> = Vec::new();
     let mut problems = Vec::new();

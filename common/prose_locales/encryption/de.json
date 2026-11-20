@@ -1,0 +1,266 @@
+{
+  "encryption.classes.0.what": {
+    "en": "d399be3f14078933",
+    "text": "Die Datenverschlüsselungsschlüssel selbst (#391): einer je Vertrauensbereich je Datenklasse unten, jeder unter dem Schlüsselverschlüsselungsschlüssel gewrappt und entwrappt"
+  },
+  "encryption.classes.0.why": {
+    "en": "c64ba380863f421f",
+    "text": "Umschlagverschlüsselung: jeder Wert wird unter einem Datenverschlüsselungsschlüssel verschlüsselt, und nur die Datenverschlüsselungsschlüssel werden unter dem Schlüsselverschlüsselungsschlüssel verschlüsselt. Ein Wrap zählt hier als Verschlüsselung und ein Unwrap als Entschlüsselung; ein Prozess entwrappt jeden Schlüssel einmal und hält ihn, sodass diese Zahlen klein bleiben, was auch immer versiegelt ist."
+  },
+  "encryption.classes.1.what": {
+    "en": "b2a1853e19175df3",
+    "text": "Die eigenen Signaturschlüssel dieses Dienstes, eine Zeile je Vertrauensbereich — und, in derselben Zeile seit 2026-09-12, der Schlüssel dieses Vertrauensbereichs zur Verschlüsselung von OpenID4VCI-Credential-Requests"
+  },
+  "encryption.classes.1.why": {
+    "en": "a96fe1e5eca13faa",
+    "text": "Ein privater Schlüssel, der den Prozess überdauert. Im Produktmodus werden diese EINMAL erzeugt und bei jedem Start zurückgelesen, was ein gestern ausgestelltes Token heute prüfbar macht — und genau deshalb darf die Zeile nicht im Klartext liegen. Was in diesem Prozess resident ist, ist das CHIFFRAT: `keys.plaintextRetention` entscheidet, wie lange ein entschlüsselter Schlüssel gehalten wird, nachdem er verwendet wurde."
+  },
+  "encryption.classes.2.what": {
+    "en": "5dc1b06d84c0a8bb",
+    "text": "Die Zertifizierungsstelle: die Root des Dienstes, jedes Intermediate und jede Issuing CA"
+  },
+  "encryption.classes.2.why": {
+    "en": "0b4e9e4389e15af0",
+    "text": "Private Schlüssel der CA, die diesen Prozess überhaupt nie verlassen. Sie liegen bewusst in DERSELBEN Zeilenfamilie und unter demselben Schlüssel: ein eigener Speicher von `pki.js` wäre eine zweite Antwort auf *wo dieser Dienst einen privaten Schlüssel aufbewahrt* gewesen, und die zweite Antwort ist die, an deren Rotation sich niemand erinnert."
+  },
+  "encryption.classes.3.what": {
+    "en": "5917a6ac9980dde0",
+    "text": "Die Signaturschlüsselpaare für Assertions, die `/admin/pki` an Anwendungen ausstellt — `oauthAssertionPrivateKey` und `oauthSamlAssertionPrivateKey`"
+  },
+  "encryption.classes.3.why": {
+    "en": "47344247ad9ff787",
+    "text": "Dies war das LETZTE private Schlüsselmaterial in diesem Dienst, das im Klartext lag, bis 2026-09-10. Es ist IM RUHEZUSTAND versiegelt und wird für einen Leser geöffnet, der über `applications.js` kam — sodass `/admin/applications` einem Betreiber weiterhin das PEM aushändigt, das er abholen wollte, während ein `ldapsearch` auf TCP 389, eine LDIF-Datei, eine Datenbankzeile und eine Sicherung von jedem davon `$aesgcm$…` enthalten."
+  },
+  "encryption.classes.4.what": {
+    "en": "bbcc91c001c3bfeb",
+    "text": "Die OAuth-Client-Geheimnisse einer Anwendung — `oauthClientSecret`, ein versiegelter Datensatz je Geheimnis (das Geheimnis, seine id, der Ablauf und die Beschreibung)"
+  },
+  "encryption.classes.4.why": {
+    "en": "e21bb0e650710ccc",
+    "text": "Wer eines besitzt, authentifiziert sich als dieser Client, und es ist außerdem der HMAC-Schlüssel von `client_secret_jwt` und von HS256-ID-Tokens. Im Ruhezustand versiegelt seit 2026-10-01 unter einem dauerhaften Schlüsselverschlüsselungsschlüssel, geöffnet für einen Leser, der über `applications.js` kam, und LDAP-Lesern im Produktmodus vorenthalten. Ein zuvor geschriebener Wert bleibt im Klartext, bis das Geheimnis das nächste Mal geschrieben wird."
+  },
+  "encryption.classes.5.what": {
+    "en": "559f7039f565c204",
+    "text": "Das Registrierungs-Zugriffstoken einer Anwendung nach RFC 7592 — `appRegistrationAccessToken`"
+  },
+  "encryption.classes.5.why": {
+    "en": "5d25ce57f65bf038",
+    "text": "Wer es besitzt, liest, ändert oder löscht die Registrierung des Clients, und das Lesen gibt das Client-Geheimnis zurück. Im Ruhezustand versiegelt seit 2026-10-01 unter einem dauerhaften Schlüsselverschlüsselungsschlüssel, geöffnet für die Endpunkte nach RFC 7592 und für einen Leser, der über `applications.js` kam."
+  },
+  "encryption.classes.6.what": {
+    "en": "acfdd9ca414f7095",
+    "text": "Das Client-Geheimnis einer Föderationsbeziehung — `fedClientSecret`, die eigenen Anmeldedaten dieses Dienstes am Token-Endpunkt des Partners"
+  },
+  "encryption.classes.6.why": {
+    "en": "29ed6d1af2973686",
+    "text": "Es wird an den Dienst von jemand anderem GESENDET, also muss es wiederherstellbar sein — versiegelt, nicht gehasht. Im Ruhezustand versiegelt seit 2026-10-01 unter einem dauerhaften Schlüsselverschlüsselungsschlüssel; keine Seite und keine API-Antwort gibt es zurück."
+  },
+  "encryption.classes.7.what": {
+    "en": "8aad62eb2111bd46",
+    "text": "Die Attribute jedes Verzeichniseintrags, vollständig — Personen, Gruppen, Anwendungen, Geräte, Föderationsbeziehungen"
+  },
+  "encryption.classes.7.why": {
+    "en": "f76be51ab5de798c",
+    "text": "Die Entscheidung von rcbj zu #391 (Phase 6): eine Kopie der Verzeichnistabelle ist keine Liste von Personen. Der DN bleibt lesbar, und ebenso die NAMEN der Attribute; die Werte, die eine Suche vergleicht, werden als schlüsselgebundene Digests neben dem Blob gehalten. Ein für sich versiegelter Wert (ein TOTP-Geheimnis, Kerberos-Schlüssel) wird darin noch einmal versiegelt. Ein Dateispeicher (ldif) hält Einträge so, wie das Dateisystem sie schützt."
+  },
+  "encryption.classes.8.what": {
+    "en": "c42c65a1fdcd313f",
+    "text": "Der NAME, unter dem eine geprägte Zeile abgelegt ist — oft die Anmeldedaten selbst: eine Sitzungs-ID, ein SAML-Artifact, eine Token-ID"
+  },
+  "encryption.classes.8.why": {
+    "en": "dd193b55de743ced",
+    "text": "Eine Sitzungs-ID ist der Cookie, und ein Artifact wird eingelöst, indem man es vorlegt, also war ein Name im Klartext in einem Dump ein verwendbares Anmeldedatum. Seit #222 wird die Zeile über den schlüsselgebundenen Digest des Namens gefunden, und der Name ist versiegelt, geöffnet nur durch den Leser einer Wiederherstellung oder einer Änderung."
+  },
+  "encryption.classes.9.what": {
+    "en": "abb557bd115925f0",
+    "text": "Issuer, Assertion-ID, Client und Subject der Historie verwendeter Assertions — wer welches Dokument nach RFC 7523 oder RFC 7522 über wen vorgelegt hat"
+  },
+  "encryption.classes.9.why": {
+    "en": "3cc9cdb0826aa148",
+    "text": "Sie nennen Personen und Beziehungen in einer Tabelle, die jeder Knoten teilt. Versiegelt seit #222; die Zeile wird weiterhin über ihren Digest-Schlüssel gefunden, und die Textsuche der Konsole geschieht im Speicher über die neuesten Zeilen. Ein Dateispeicher (ldif) hält sie so, wie das Dateisystem sie schützt: er liest sie zurück, bevor der Keystore gestartet ist."
+  },
+  "encryption.classes.10.what": {
+    "en": "7b8b23e52ee52b44",
+    "text": "Eine geheime Einstellung, die geändert wird, während der Dienst läuft — heute `scim.digestPassword`, das HTTP-Digest-Passwort, das sich alle SCIM-Benutzernamen teilen"
+  },
+  "encryption.classes.10.why": {
+    "en": "924b96a39ab65db1",
+    "text": "Eine als geheim markierte Einstellung ist ein Anmeldedatum, und die gespeicherten Einstellungen sind ansonsten reines JSON. Versiegelt dort, wo sie niedergeschrieben wird, seit #222 (`persistence/sealed_settings.js`); die laufende Konfiguration, die Konsole und die API sehen sie wie zuvor."
+  },
+  "encryption.classes.11.what": {
+    "en": "eebf5962dd8ef694",
+    "text": "Die Identitätsprüfungen einer Person — `stsIdaVerification` (OpenID Connect for Identity Assurance), deren Nachweise Dokumentnummern tragen"
+  },
+  "encryption.classes.11.why": {
+    "en": "99fb2fa2cd725153",
+    "text": "Kein Anmeldedatum, aber personenbezogene Daten, die keine Sicherung lesbar enthalten sollte. Im Ruhezustand versiegelt seit 2026-10-01 unter einem dauerhaften Schlüsselverschlüsselungsschlüssel — dem der Home Cell, wo es eine gibt — und jedem LDAP-Lesezugriff vorenthalten."
+  },
+  "encryption.classes.12.what": {
+    "en": "2b2be31256607b69",
+    "text": "Das gemeinsame Geheimnis einer GNAP-Client-Instanz für eine Schlüsselreferenz — `gnapSymmetricKey` (RFC 9635 section 7.1.1)"
+  },
+  "encryption.classes.12.why": {
+    "en": "98504fa1a9510296",
+    "text": "Wer es besitzt, kann GNAP-Anfragen ALS diese Client-Instanz signieren: ein HMAC-Schlüssel ist beide Hälften der Anmeldedaten. Im Ruhezustand unter dem Schlüsselverschlüsselungsschlüssel des Prozesses versiegelt, wenn Schlüssel fortbestehen, geöffnet für einen Leser, der über `applications.js` kam, und LDAP-Lesern im Produktmodus vorenthalten."
+  },
+  "encryption.classes.13.what": {
+    "en": "96524e903d1e171f",
+    "text": "Der Macaroon-Root-Schlüssel eines GNAP-Resource-Servers — `gnapMacaroonKey` (RFC 9767 section 2.2)"
+  },
+  "encryption.classes.13.why": {
+    "en": "8a6121d6ef649bf6",
+    "text": "Ein Macaroon wird mit seinem ROOT-Schlüssel geprüft, und derselbe Schlüssel kann eines prägen: wer ihn besitzt, kann Tokens ausstellen, die dieser Resource Server akzeptieren wird. Der Schlüssel wird je Resource Server aus dem Geheimnis des Vertrauensbereichs abgeleitet und auf den Eintrag geschrieben — versiegelt — nur damit der Betreiber des Resource Servers einen Ort hat, ihn abzuholen."
+  },
+  "encryption.classes.14.what": {
+    "en": "67237833f9db7d7d",
+    "text": "Die Schreib-Anmeldedaten eines geheimen Push-Ziels — `secretDestCredential` (#221): der Schlüssel, das Token oder das Dienstkonto, mit dem dieser Dienst das rotierte Passwort eines Dienstkontos an einen Secrets Manager schreibt"
+  },
+  "encryption.classes.14.why": {
+    "en": "18016a10df899acb",
+    "text": "Wer sie besitzt, kann die Passwörter schreiben, die andere Systeme lesen. Im Ruhezustand versiegelt, wenn Schlüssel fortbestehen, und — anders als der Signaturschlüssel einer Anwendung — auch JEDEM Leser VORENTHALTEN: sie werden nur für den Push geöffnet, der sie verwendet, und von `/admin-api` nie dargestellt, offengelegt oder zurückgegeben."
+  },
+  "encryption.classes.15.what": {
+    "en": "73eda9e1ac32915e",
+    "text": "Die Anmeldedaten eines ausgehenden SCIM-Clients (#552) — `scimClientPassword`, `scimClientOAuthClientSecret` und `scimClientTlsPrivateKey`: womit sich dieser Dienst bei einem entfernten SCIM-Service-Provider oder dessen Token-Endpunkt authentifiziert"
+  },
+  "encryption.classes.15.why": {
+    "en": "836f7447d4525fef",
+    "text": "Wer sie besitzt, kann Konten beim entfernten Identity Provider anlegen, ändern und löschen. Im Ruhezustand versiegelt, wenn Schlüssel fortbestehen, und JEDEM Leser VORENTHALTEN, wie die Anmeldedaten eines geheimen Ziels: geöffnet nur für die Anfrage, die sie verwendet."
+  },
+  "encryption.classes.16.what": {
+    "en": "21f9b2a70d049b08",
+    "text": "Die Signaturschlüsselpaare für Assertions, die `/admin/pki` an eine PERSON ausstellt — `stsAssertionPrivateKey` (2026-09-11) und, für RFC 7522, `stsSamlAssertionPrivateKey` (2026-09-13)"
+  },
+  "encryption.classes.16.why": {
+    "en": "bf3106460f293d79",
+    "text": "Derselbe Mechanismus wie der der Anwendung oben und bewusst kein neuer, mit einem Unterschied, der eine Tatsache über die beiden Inhaber ist: der private Schlüssel einer Anwendung wird für einen Leser GEÖFFNET, der über `applications.js` kam, und nichts stellt den Eintrag einer Person über ein Modul dar, das den ihren öffnen würde — also wird dieser EINMAL übergeben, durch den Vorgang, der ihn erzeugt, und ist danach überall Chiffrat. Eine Konsolenseite, die bei jedem Besuch den privaten Schlüssel einer Person druckte, war die Alternative."
+  },
+  "encryption.classes.17.what": {
+    "en": "fb498dbfc77eeee5",
+    "text": "Der private Verschlüsselungsschlüssel einer Föderationsbeziehung (#168) — womit eine verschlüsselte Assertion oder ein ID Token eines Partners entschlüsselt wird, eine Zeile je Schlüssel in `fedEncryptionKey`"
+  },
+  "encryption.classes.17.why": {
+    "en": "03fb569f6f619e76",
+    "text": "Wer ihn besitzt, liest jede Assertion, die dieser Partner an diesen Dienst verschlüsselt hat — den Bezeichner und die Attribute der Person, genau das, was die Verschlüsselung aus dem Browser heraushält. Im Ruhezustand versiegelt, wo immer Schlüssel fortbestehen, und vorenthalten — einschließlich des Chiffrats — jeder LDAP-Suche, jeder Seite und jeder `/admin-api`-Antwort, die nur das Zertifikat und den öffentlichen Schlüssel tragen."
+  },
+  "encryption.classes.18.what": {
+    "en": "680819379ae6d968",
+    "text": "Gespeicherte langfristige Kerberos-Schlüssel — die einer Person im Verzeichnis, abgeleitet aus ihrem eigenen Passwort (`stsKrb5Keys`), und die zufälligen eines Service Principal (`krb5ServiceKeys`) (2026-09-12)"
+  },
+  "encryption.classes.18.why": {
+    "en": "f9d4bc06d2c651a9",
+    "text": "PASSWORTÄQUIVALENT: ein langfristiger Kerberos-Schlüssel ist das, worin das Passwort umgewandelt wird, und wer ihn besitzt, kann Tickets als dieser Principal erlangen, ohne das Passwort zu kennen. Also ist er versiegelt, wo immer der Schlüsselverschlüsselungsschlüssel den Prozess überdauert, der Name und ein Stempel des Passwort-Hashs werden MIT ihm versiegelt, damit ein Wert nicht auf einen anderen Eintrag verschoben oder über eine Passwortänderung hinaus behalten werden kann, und er wird VORENTHALTEN — einschließlich des Chiffrats — jeder Seite, jeder LDAP-Suche und jeder `/admin-api`-Antwort. Der Schlüssel eines Service Principal verlässt diesen Dienst einmal, als das Keytab, das sein Anlegen oder Rotieren übergibt."
+  },
+  "encryption.classes.19.what": {
+    "en": "e55e7d85efe6daee",
+    "text": "Das gemeinsame Geheimnis nach RFC 6238 aller, die eine Authenticator-App registriert haben — `stsTotpCredential`"
+  },
+  "encryption.classes.19.why": {
+    "en": "802b93a062aa9979",
+    "text": "DAS EINE ANMELDEDATUM IN DIESEM VERZEICHNIS, DAS ZURÜCKGELESEN WERDEN KANN. Einen Code zu prüfen heißt, ihn zu BERECHNEN, also kann dies nicht so gehasht werden, wie `userPassword` gehasht wird — und `/admin/ldap/directory` druckt absichtlich jedes Attribut jedes Eintrags, sodass ein Verzeichnisauszug ohne die Versiegelung einen funktionierenden zweiten Faktor drucken würde."
+  },
+  "encryption.classes.20.what": {
+    "en": "a9a823b9d709ff2d",
+    "text": "Der Satz einmaliger Wiederherstellungscodes, der beim Registrieren eines zweiten Faktors ausgestellt wird"
+  },
+  "encryption.classes.20.why": {
+    "en": "964101791de4c908",
+    "text": "Verschlüsselt STATT GEHASHT, und der Grund ist eine Produktentscheidung, keine kryptografische: eine Person darf ihre verbleibenden Codes unter `/portal/mfa` zurücklesen. **Das wurde am 2026-09-11 umgekehrt, und diese Zeile wird für die zuvor geschriebenen Sätze behalten** — ein neuer Satz wird mit scrypt GEHASHT und überhaupt nicht versiegelt, weil ein Hash kein Geheimnis ist. Die ANZAHLEN stehen außerhalb des versiegelten Blobs, sodass jede Seite, die *7 von 10 ungenutzt* meldet, das ohne Öffnen tun kann — auch für einen Satz, den dieser Prozess nicht entschlüsseln kann."
+  },
+  "encryption.classes.21.what": {
+    "en": "6836bd875ee52cca",
+    "text": "Alles, was dieser Prozess PRÄGT — Sitzungen, Tokens, Autorisierungscodes, Artifacts, Kerberos-Principals, die Replay-Caches, die Zähler und das Audit-Log"
+  },
+  "encryption.classes.21.why": {
+    "en": "25d6b8acb6d8b413",
+    "text": "Das neueste und dem Volumen nach größte. Es gilt nur für Produkt und Postgres, weil das die einzige Konfiguration ist, in der überhaupt etwas davon fortbesteht: der Entwicklungsmodus erzeugt den Signaturschlüssel bei jedem Start neu, sodass ein wiederhergestelltes Token gegen nichts geprüft würde, und der Speicher `ldif` schreibt je Flush ganze Dateien und hält davon in keinem Modus etwas."
+  },
+  "encryption.classes.22.what": {
+    "en": "f0949ec788a0b1e0",
+    "text": "Passwörter — `userPassword` und die Aktivierungstoken daneben"
+  },
+  "encryption.classes.22.why": {
+    "en": "c7400a8445e91887",
+    "text": "GEHASHT, nicht verschlüsselt, und das ist stärker, nicht schwächer. scrypt mit N bei 2^15, und nichts in diesem Dienst kann eines zurücklesen — das ist die Regel: ein Geheimnis, das dieser Dienst PRÜFT, wird gehasht, und ein Geheimnis, das er VORLEGEN muss, wird verschlüsselt. Die beiden Mechanismen oben sind die zweite Art und sagen das."
+  },
+  "encryption.classes.23.what": {
+    "en": "1944d354bdd3c34a",
+    "text": "Client-Geheimnisse, Registrierungs-Zugriffstokens nach RFC 7592 und Föderations-Client-Geheimnisse, OHNE einen dauerhaften Schlüsselverschlüsselungsschlüssel"
+  },
+  "encryption.classes.23.why": {
+    "en": "0f9a7b47936962f5",
+    "text": "Im Klartext nur dort, wo der Prozess keinen dauerhaften Schlüsselverschlüsselungsschlüssel hält — Entwicklungsmodus oder ein Vertrauensbereich im Produktmodus auf einem Entwicklungscontainer — weil das Versiegeln unter einem flüchtigen Schlüssel Anmeldedaten hinterließe, die sich nach einem Neustart zu nichts öffnen. Mit einem dauerhaften Schlüssel sind alle drei versiegelt: siehe ihre Zeilen oben."
+  },
+  "encryption.classes.24.what": {
+    "en": "17eed1879e4edb92",
+    "text": "Die elf Post-Quantum-Schlüssel je Vertrauensbereich, das TLS-Serverzertifikat und die SPIFFE-Autoritäten"
+  },
+  "encryption.classes.24.why": {
+    "en": "3d4cea483bdd4763",
+    "text": "ÜBERHAUPT NICHT PERSISTIERT, in keinem der beiden Modi, sodass es im Ruhezustand nichts zu versiegeln gibt. Alle drei sind in `NOT_YET` von `common/mode.js` genannt, statt der Entdeckung überlassen zu werden, weil *nicht gespeichert* und *nicht geschützt* von außen gleich klingen und nicht dasselbe sind."
+  },
+  "encryption.classes.25.what": {
+    "en": "676f5f32f70780f8",
+    "text": "Der private Schlüssel des TLS-Client-Zertifikats einer Föderationsbeziehung nach FAPI 1.0 Advanced (#931) — was dieser Dienst den Token- und UserInfo-Endpunkten des Partners vorlegt, in `fedClientCertificate`"
+  },
+  "encryption.classes.25.why": {
+    "en": "7aa85457f3f98d8b",
+    "text": "Wer ihn besitzt, kann sich bei diesem Partner als dieser Dienst authentifizieren (`tls_client_auth`) und die Access Tokens vorlegen, die der Partner an das Zertifikat gebunden hat. Im Ruhezustand versiegelt, wo immer Schlüssel fortbestehen, und vorenthalten — einschließlich des Chiffrats — jeder LDAP-Suche, jeder Seite und jeder `/admin-api`-Antwort, die nur das Zertifikat tragen."
+  },
+  "encryption.classes.26.what": {
+    "en": "6b9f0476194b0ed3",
+    "text": "Der eigene private WS-Trust-Entschlüsselungsschlüssel einer Anwendung (#1668) — `wstrustDecryptionPrivateKey`: womit eine WS-Trust-Anfrage für diese Anwendung, an ihr Zertifikat verschlüsselt, entschlüsselt wird"
+  },
+  "encryption.classes.26.why": {
+    "en": "d1b5cf75485762fa",
+    "text": "Wer ihn besitzt, liest jede an diese Anwendung verschlüsselte Anfrage — die Anmeldedaten und Claims, die die Verschlüsselung von der Leitung fernhält. Im Ruhezustand versiegelt, wo immer Schlüssel dauerhaft gespeichert werden, und — einschließlich Chiffretext — jeder LDAP-Suche, jeder Seite und jeder `/admin-api`-Antwort vorenthalten, die nur das Zertifikat tragen."
+  },
+  "encryption.notes.what": {
+    "en": "69ba4b884ae9c0f6",
+    "text": "Was dieser Dienst IM RUHEZUSTAND verschlüsselt, mit welchem Schlüssel, unter welchem Algorithmus und wie viel davon in diesem Prozess geschehen ist."
+  },
+  "encryption.notes.keyPersisted": {
+    "en": "94d90e26c576478c",
+    "text": "Der Schlüsselverschlüsselungsschlüssel wird beim Start aus dem oben genannten Provider gelesen, bevor der Listener bindet. Dieser Dienst erzeugt ihn nie und schreibt ihn nie nieder, und ein Dienst, der ihn nicht lesen kann, startet NICHT — er erzeugt keinen Ersatz und macht nicht weiter, weil das jedes Token, das er je ausgestellt hat, stillschweigend bei der Relying Party von jemand anderem nicht mehr prüfbar machen würde."
+  },
+  "encryption.notes.keyEphemeral": {
+    "en": "f133c6e93d2de1a0",
+    "text": "Dieser Dienst ist im Entwicklungsmodus, also überdauert nichts, was er hält, den Prozess, und der Schlüsselverschlüsselungsschlüssel ist FLÜCHTIG: je Lauf erzeugt, nie niedergeschrieben und nur verwendet, damit der Request-Worker-Pool geprägte Zeilen innerhalb eines Laufs teilen kann. Ein Verzeichnisattribut darunter zu versiegeln wäre SCHLIMMER als der Klartext — der Eintrag überdauert einen Neustart in den Speichern `ldif` und `postgres`, der Schlüssel nicht, also käme der Wert als dauerhafter Müll zurück. Deshalb ist die Prüfung an jeder Schreibstelle `keystore.persists()` und nicht `keystore.sealed()`."
+  },
+  "encryption.notes.algorithmNote": {
+    "en": "99f7c97dca3f634c",
+    "text": "AES-256-GCM und bewusst nicht CBC: GCM ist AUTHENTIFIZIERT, sodass ein Chiffrat, das jemand verändert hat, sich nicht entschlüsseln lässt, statt einen subtil anderen Schlüssel zu ergeben. Ein Signaturschlüssel, der zu den falschen Bytes entschlüsselte, würde Signaturen erzeugen, die nichts prüfen kann, und der Fehler erschiene bei einer Relying Party als „die Signatur ist ungültig“ — so weit von der Ursache entfernt, wie es nur möglich ist. Der Schlüsselverschlüsselungsschlüssel VERSCHLÜSSELT NIE EINEN WERT (#391): jeder Wert wird unter einem Datenverschlüsselungsschlüssel verschlüsselt — 256 Zufallsbits, einer je Vertrauensbereich je Datenklasse — und die Datenverschlüsselungsschlüssel sind das, was der Schlüsselverschlüsselungsschlüssel wrappt. Ein Prozess entwrappt jeden einmal und hält ihn, sodass ein Schlüssel in einem Key-Management-Dienst je Datenschlüssel gefragt wird, nie je Wert, und das Rotieren des Schlüsselverschlüsselungsschlüssels eine Handvoll Schlüssel neu wrappt, statt den Speicher neu zu verschlüsseln."
+  },
+  "encryption.notes.realms": {
+    "en": "1294d82604ed7a46",
+    "text": "ES GIBT EINEN SCHLÜSSELVERSCHLÜSSELUNGSSCHLÜSSEL FÜR DIESEN DIENST, NICHT EINEN JE VERTRAUENSBEREICH, UND EINEN DATENVERSCHLÜSSELUNGSSCHLÜSSEL JE VERTRAUENSBEREICH JE DATENKLASSE (#391). Kein Datenverschlüsselungsschlüssel wird zwischen Vertrauensbereichen geteilt, sodass ein Wert eines Vertrauensbereichs nie unter einem Schlüssel versiegelt wird, unter dem die Werte eines anderen Vertrauensbereichs liegen. Aber jeder Datenverschlüsselungsschlüssel ist unter dem einen Schlüsselverschlüsselungsschlüssel gewrappt, sodass ein Vertrauensbereich im Ruhezustand KEINE unabhängige Grenze ist: wer diesen Schlüssel lesen kann, kann die Datenschlüssel jedes Vertrauensbereichs entwrappen, und das Rotieren wrappt die jedes Vertrauensbereichs auf einmal neu."
+  },
+  "encryption.notes.storage": {
+    "en": "ee0a54241e7767c7",
+    "text": "ALLES, WAS NICHT IN DER TABELLE OBEN STEHT, IST KLARTEXT IM SPEICHER — die Verzeichniseinträge, die Gruppen, die Anwendungen, die Vertrauensbereiche und die Einstellungen, und im Entwicklungsmodus nahezu alles davon. Dieser Dienst versiegelt Anmeldedaten und private Schlüssel und sonst nichts, bewusst: Verschlüsselung auf Spaltenebene lässt den Klartext im Write-Ahead-Log, in temporären Dateien, wenn eine Sortierung überläuft, in einem pg_dump, auf Replikaten und in Abfrageprotokollen, also gehört die Schicht, die einen ganzen Speicher abdeckt, UNTER die Datenbank und nicht in sie. Diese Schicht ist die des Betreibers — LUKS oder ein verschlüsseltes ZFS-Dataset unter PGDATA, eine Cloud-Platte mit einem vom Kunden verwalteten Schlüssel oder einer der PostgreSQL-Forks, der TDE hat, da der Community-Build keines hat. docs/v1.1.0/encryption-at-rest.md ist die Ausarbeitung der Optionen in diesem Repository."
+  },
+  "encryption.notes.keyResidency": {
+    "en": "612d0883b63631fd",
+    "text": "UND DER SCHLÜSSEL DARF NICHT AUF DER PLATTE LEBEN, DIE ER SCHÜTZT. Eine Schlüsseldatei auf demselben unverschlüsselten Volume wie der Speicher händigt beide Hälften dem aus, der das Volume an sich nimmt; das ist für einen Entwicklungsstack in Ordnung und der Grund, warum der Provider `file` der Standard ist, und es ist kein Deployment. keys.kekProvider wählt stattdessen einen Secret Store."
+  },
+  "encryption.notes.accountingNote": {
+    "en": "4e3af979f8ed8bd7",
+    "text": "Gezählt an dem EINEN Trichter, durch den beide Operationen gehen — `encryptWithDek()` und `decryptWithDek()` von `crypto.js`, mit den eigenen Wraps und Unwraps der Datenverschlüsselungsschlüssel unter `data-keys` — und nicht an den Aufrufstellen, weil eine aus Aufrufstellen zusammengesetzte Summe falsch ist, sobald jemand eine weitere hinzufügt, und sie ist STILLSCHWEIGEND falsch. Die Aufschlüsselung unten erfolgt nach einem LABEL, das jede Aufrufstelle übergibt; ein Aufrufer, der keines übergibt, wird trotzdem gezählt, unter `(unlabelled)`. DIESE SIND PROZESSWEIT UND NICHT JE VERTRAUENSBEREICH — ein Schlüsselverschlüsselungsschlüssel gehört zum Prozess, also würde das Aufteilen der Zählung nach Vertrauensbereich den Vertrauensbereich zählen, in dem eine Anfrage zufällig lag — und sie liegen im Speicher, also ist ein Neustart der Weg, wie Sie eine leere erhalten."
+  },
+  "encryption.notes.failuresNote": {
+    "en": "b705f797ef83316c",
+    "text": "EIN FEHLER IST FAST IMMER DER FALSCHE SCHLÜSSELVERSCHLÜSSELUNGSSCHLÜSSEL — ein rotiertes Geheimnis oder ein zwischen Deployments übertragener Speicher — und er ist eine eigene Zahl, statt in die Entschlüsselungen gefaltet zu werden, weil neunhundert Entschlüsselungen und neunhundert Entschlüsselungen mit vierhundert Fehlern sehr verschiedene Berichte sind. Was als Nächstes geschieht, hängt davon ab, was gelesen wurde: ein Signaturschlüssel, der sich nicht öffnen lässt, ist beim Start FATAL, eine Sitzungszeile wird verworfen, und ein zweiter Faktor, der sich nicht öffnen lässt, macht diese Person unfähig, sich anzumelden, bis ein Betreiber die Registrierung löscht — niemals stillschweigend abwesend, was eine Sicherheitskontrolle entfernen würde."
+  },
+  "encryption.notes.noSamples": {
+    "en": "ddd1754e8de4f6a7",
+    "text": "Weder ein versiegelter noch ein geöffneter Wert erscheint irgendwo auf dieser Seite oder in diesem Dokument. Ein versiegelter Wert ist ein privater Schlüssel, ein gemeinsames Geheimnis oder die Wiederherstellungscodes von jemandem, und das Drucken einer der beiden Hälften würde genau das aushändigen, was die Versiegelung schützen soll. /admin/ldap/directory ist der Ort, an dem ein Umschlag `$aesgcm$…` zu sehen ist, unter einer Überschrift, die sagt, es sei der Speicher, wie das Verzeichnis ihn sieht."
+  },
+  "encryption.notes.storeNote": {
+    "en": "41927a69521b626c",
+    "text": "Versiegeln schützt, was NIEDERGESCHRIEBEN ist, also entscheidet das, was der Speicher hält, wie viel der Tabelle oben für irgendjemanden überhaupt erreichbar ist. Ein `memory`-Speicher schreibt nichts, also überdauert nichts darin diesen Prozess, um gelesen zu werden."
+  },
+  "encryption.notes.dataKeysNote": {
+    "en": "85bc1ebe46dff738",
+    "text": "Ein Datenverschlüsselungsschlüssel je Vertrauensbereich und Datenklasse versiegelt jeden Wert dieser Klasse; der Schlüsselverschlüsselungsschlüssel wrappt nur die Datenschlüssel. Ein ROTIERTER Datenschlüssel ist abgelöst: er öffnet weiterhin, was er versiegelt hat, nichts Neues wird unter ihm versiegelt, und der Neuverschlüsselungsjob versiegelt neu, was er versiegelt hat, und zerstört ihn dann. Ein ABGELEITETER Schlüssel wird je Lauf aus dem Schlüsselverschlüsselungsschlüssel gebildet, wo nichts den Prozess überdauert, und wird nie gespeichert oder rotiert."
+  }
+}

@@ -303,8 +303,6 @@ async function thePageAndTheApiAgree(consoleClient) {
     const readStarted = Date.now();
     json = await report();
     pageJson = await consoleClient.get("/admin/scheduler?format=json&per=200");
-    readEndedMs = Date.now();
-    readGapMs = readEndedMs - readStarted;
     // EVERY PAGE, as report() reads the API's (2026-09-23): a comparison of
     // all the API's jobs with one page of the console's would fail on a
     // service with more than 200 job rows, about pages drawing exactly what
@@ -317,6 +315,20 @@ async function thePageAndTheApiAgree(consoleClient) {
       pageJson.body.jobs = pageJson.body.jobs.concat((more.body || {}).jobs ||
                                                      []);
     }
+    // THE READS END WITH THE PAGE'S LAST JSON PAGE, NOT ITS FIRST (run 29,
+    // memory, 2026-11-14). The nextRunAt check compares every job of both
+    // sides, and a job on page two or later of the console's JSON was read
+    // by that later request. The stamp was taken after page one, so
+    // process.memory-report (5 min, a per-process job whose nextRunAt is
+    // the next slot boundary after the instant asked, `slotAt()`) read
+    // 21:25:00 on the API, before the boundary, and 21:30:00 on a later
+    // page of the console's JSON, fetched after it — while readEndedMs said
+    // 21:24:56.6, so `earlier <= readEndedMs` was false and a correct pair
+    // of answers failed. The service was right both times; the window was
+    // short. The HTML pages below are not compared by that check, so they
+    // stay outside it.
+    readEndedMs = Date.now();
+    readGapMs = readEndedMs - readStarted;
     // **`per=200` HERE TOO, AND IT IS THE POINT RATHER THAN A CONVENIENCE**
     // (2026-09-22). The jobs table is PAGED now — `admin-ui/CLAUDE.md`, *every
     // list that can grow without a bound is paged*; a REALM job has a row per
@@ -325,11 +337,26 @@ async function thePageAndTheApiAgree(consoleClient) {
     // big enough to hold them: without this it failed on `signing.rotate`,
     // which sorts onto the second page, about a page that was drawing exactly
     // what it should. The JSON fetch above already asks the same way.
+    // THE DRAWN PAGE IS A THIRD READ, AND IT JOINS THE AGREEMENT (run #551,
+    // memory, 2026-11-19). It is not the page JSON above drawn: the console
+    // client asks the operation again for each page and draws that answer.
+    // In run #551 the API and the page's JSON agreed, and then
+    // `svcd-mwo2zegimq15i` was removed (21:47:30.223) while this walk was
+    // under way — every row behind it moved up by that realm's rows, so the
+    // ones at the head of the next page landed on a page already read, and
+    // `report.retention.here@<realm>` "had no row" on a page that drew
+    // exactly what it was answered. So the rows the drawn pages were drawn
+    // FROM are compared with the API's like the JSON's, and read again on
+    // the same terms; the check below still asks for a row per job.
     html = await consoleClient.get("/admin/scheduler?per=200");
-    for (let page = 2; page <= pagesOf; page++) {
-      const more = await consoleClient.get("/admin/scheduler?per=200&jobsPage=" +
-                                    page);
+    let htmlJobs = (html.body || {}).jobs || [];
+    const htmlPagesOf = Number(((html.body || {}).jobsPaging || {}).pages) ||
+                        1;
+    for (let page = 2; page <= htmlPagesOf; page++) {
+      const more = await consoleClient.get(
+        "/admin/scheduler?per=200&jobsPage=" + page);
       html.text += more.text;
+      htmlJobs = htmlJobs.concat((more.body || {}).jobs || []);
     }
     ids = json.jobs.map(function (j) { return j.id + "@" + j.realm; })
       .sort();
@@ -337,7 +364,11 @@ async function thePageAndTheApiAgree(consoleClient) {
     pageIds = unique((pageJson.body.jobs || []).map(function (j) {
       return j.id + "@" + j.realm;
     }));
-    if (JSON.stringify(ids) === JSON.stringify(pageIds)) {
+    const htmlIds = unique(htmlJobs.map(function (j) {
+      return j.id + "@" + j.realm;
+    }));
+    if (JSON.stringify(ids) === JSON.stringify(pageIds) &&
+        JSON.stringify(ids) === JSON.stringify(htmlIds)) {
       break;
     }
     // A REALM CREATED DURING THE WALK LOSES THE ROWS THAT LAND BEHIND IT
@@ -350,19 +381,33 @@ async function thePageAndTheApiAgree(consoleClient) {
     // five readings need not find a quiet moment. Such a row is set aside
     // ONLY where its realm is on both sides and its job is listed for some
     // other realm on both sides: a job a process never registered is missing
-    // for every realm or is a service-wide row, and still fails below.
+    // for every realm or is a service-wide row, and still fails below. The
+    // drawn pages' walk is held to the same rule, against the API's.
     const settled = settleRealmWalk(ids, pageIds);
-    if (settled.agree) {
-      log.info("the API and the page agree but for " + settled.setAside.length +
+    const settledDrawn = settleRealmWalk(ids, htmlIds);
+    if (settled.agree && settledDrawn.agree) {
+      const aside = unique(settled.setAside.concat(settledDrawn.setAside));
+      const kept = function (row) {
+        log.debug("Entering kept().");
+        log.debug("Leaving kept().");
+        return aside.indexOf(row) < 0;
+      };
+      log.info("the API and the page agree but for " + aside.length +
                " row(s) of realms created during the walk, set aside: " +
-               settled.setAside.join(", "));
-      walkSetAside = settled.setAside;
-      ids = settled.ids;
-      pageIds = settled.pageIds;
+               aside.join(", "));
+      walkSetAside = aside;
+      ids = ids.filter(kept);
+      pageIds = pageIds.filter(kept);
       break;
     }
+    // Which read moved is named, so a log shows whether it was the JSON or
+    // the drawn pages' walk that a reread was for.
     log.info("the API and the page were read while the job list moved " +
-             "(attempt " + attempt + "); reading both again");
+             "(attempt " + attempt + "; " +
+             (settled.agree ? "" : "the page's JSON differs") +
+             (settled.agree || settledDrawn.agree ? "" : ", ") +
+             (settledDrawn.agree ? "" : "the drawn pages differ") +
+             "); reading both again");
     await new Promise(function (resolve) { setTimeout(resolve, 2000); });
   }
   check("the API lists the two jobs P1 moved and the scheduler's own",
@@ -389,6 +434,21 @@ async function thePageAndTheApiAgree(consoleClient) {
         function () {
           json.jobs.forEach(function (j) {
             const other = jobOf(pageJson.body, j.id, j.realm);
+            // A DUE RUN BETWEEN THE TWO READS (2026-11-16): a job with no
+            // next run once it has run — persistence.granting-key-backfill
+            // (#1311) — read due on the API (02:28:00, read at 02:28:22 in
+            // a GitHub cluster run) and finished by the page's read, which
+            // said null. A time already past on one read and null on the
+            // other is that run, not a disagreement.
+            const due = function (at) {
+              log.debug("Entering due().");
+              log.debug("Leaving due().");
+              return at !== null && Date.parse(at) <= Date.now();
+            };
+            if ((j.nextRunAt === null && due(other.nextRunAt)) ||
+                (other.nextRunAt === null && due(j.nextRunAt))) {
+              return;
+            }
             if (j.nextRunAt === null || other.nextRunAt === null) {
               assert.strictEqual(j.nextRunAt, other.nextRunAt, j.id);
               return;
@@ -657,8 +717,20 @@ async function theClusterAgrees() {
                          "authn.session-expiry&outcome=succeeded&per=500");
   check("every slot of the session-expiry job is one succeeded run",
         function () {
+          // ZERO RUNS IS A FAILURE (2026-11-14). Counting doubles among no
+          // runs finds none, so this check passed on an empty answer and
+          // asserted nothing about #883 until #1764 made a job-filtered
+          // report read that job's own slots. The job runs every few
+          // minutes and the stack has been up longer than one, so an
+          // empty list means the report is not reading them.
+          assert.strictEqual(runs.status, 200, runs.text.slice(0, 300));
+          const list = (runs.body && runs.body.runs) || [];
+          assert.ok(list.length > 0,
+                    "no succeeded run of authn.session-expiry was " +
+                    "reported, so no slot could be checked for a double " +
+                    "run: " + runs.text.slice(0, 300));
           const bySlot = {};
-          runs.body.runs.forEach(function (r) {
+          list.forEach(function (r) {
             bySlot[r.dueAt] = (bySlot[r.dueAt] || 0) + 1;
           });
           const doubles = Object.keys(bySlot).filter(function (k) {

@@ -261,10 +261,18 @@ async function theMainPortHolds() {
   log.info("  paranoid PKI mode: " + trust.json.master.inForce + " (" +
            trust.json.master.decidedBy + "); tls-client row in force: " +
            tlsRow.inForce);
+  // EVERY CHECK BELOW ASKS WHAT THE HANDSHAKE VERIFIED, so it reads
+  // `handshakeVerified` (#37, 2026-11-15). Since #37 `verified` is the
+  // service's verdict, the handshake's AND not refused on revocation, and a
+  // product stack consulting revocation refuses this job's own leaves, which
+  // no list names: run #300 saw `verified: false, handshakeVerified: true`
+  // for the CA leaf before the master was set, and failed the first check.
+  // `sts_paranoid_pki_own_ca.js` made the same change in b16ab1b65.
   const verified = function (view) {
     log.debug("Entering verified().");
     log.debug("Leaving verified().");
-    return view.clientCertificate && view.clientCertificate.verified;
+    return view.clientCertificate &&
+      view.clientCertificate.handshakeVerified;
   };
   // A SETTING REACHES THE HANDSHAKE WHEN THE FRONT PROCESS HAS IT (2026-11-10).
   // `/admin-api/config/set` and `/pki/trust/set-row` are answered by a request

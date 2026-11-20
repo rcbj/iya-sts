@@ -108,31 +108,6 @@ class ScepAdmin {
     };
   }
 
-  /**
-   * Refuses a page request whose query string the view model does not accept,
-   * with a 400 (STS-SCEP-0060).
-   *
-   * @param req - the request
-   * @param res - the response
-   * @returns true when it refused
-   */
-  queryRefused(req, res) {
-    const { log, consoleModel, errorCodes } = this.deps;
-    log.debug("Entering ScepAdmin.queryRefused().");
-    const query = consoleModel.queryOf(req);
-    if (!query.ok) {
-      errorCodes.mark(res, 'STS-SCEP-0060');
-      res.status(400)
-         .type('text/plain')
-         .set('Cache-Control', 'no-store')
-         .send(query.detail);
-      log.debug("Leaving ScepAdmin.queryRefused(). Refused.");
-      return true;
-    }
-    log.debug("Leaving ScepAdmin.queryRefused().");
-    return false;
-  }
-
   // THE ROUTES, registered where they always were: the module exports
   // this, and `common/protocol_stack.ts` calls it (#50, R1) at the point
   // where requiring the module used to register them, so the route order

@@ -1277,8 +1277,46 @@ function realmTextErrors(spec) {
   return errors;
 }
 
-function create(spec) {
-  log.debug("Entering create(). id=" + (spec || {}).id);
+// A STORED REALM'S OVERRIDES, EACH RE-CHECKED AS THE PROCESS-WIDE ONES ARE
+// (2026-11-15, #39). `config.applyPersistedOverrides()` reports and skips a
+// saved value that no longer passes its row. A realm's went whole through
+// `checkOverrides()`, which refuses the REALM for one bad value, so a bound
+// added to a row after the value was written — `saml2.assertionLifetimeMin`'s
+// and `saml11.assertionLifetimeMin`'s `min: 1`, where 0 had been accepted and
+// read as sixty — would cost a restored or replicated realm itself
+// (persistence's STS-STORE-0007). For a realm read back (`restored`) or
+// arriving from another process (`replicated`) the one value is reported
+// under STS-CORE-0008 and left out, so the realm reads the row's default;
+// the stored row is not rewritten. A write made here is still refused whole.
+function restorableOverrides(id, overrides) {
+  log.debug("Entering restorableOverrides(). id=" + id);
+  const kept = {};
+  Object.keys(overrides || {}).forEach(function (key) {
+    // `true`: what the value IS, not what is beside it (run #300) — see
+    // config.js's checkStoredOverride().
+    const problem = checkRealmOverride(key, overrides[key], true);
+    if (problem) {
+      log.warn(errorCodes.tag('STS-CORE-0008') + 'realms: the saved ' +
+               'override "' + key + '" of the realm "' + id + '" was not ' +
+               'applied: ' + problem + ' It is left in the store.');
+      return;
+    }
+    kept[key] = overrides[key];
+  });
+  log.debug("Leaving restorableOverrides().");
+  return kept;
+}
+
+function create(given) {
+  log.debug("Entering create(). id=" + (given || {}).id);
+  // Read back or replicated: a stored value no longer valid is skipped,
+  // not the realm (restorableOverrides()).
+  const spec = given && (given.restored || given.replicated) &&
+    given.overrides
+    ? Object.assign({}, given, {
+      overrides: restorableOverrides(String(given.id || ''), given.overrides)
+    })
+    : given;
   const id = String((spec || {}).id || '').trim().toLowerCase();
   const errors = validateId(id);
   if (errors.length) {
@@ -1302,7 +1340,13 @@ function create(spec) {
     return errorCodes.mark({ ok: false, errors: textErrors },
                            errorCodes.codeOf(textErrors));
   }
-  const overrideErrors = checkOverrides((spec || {}).overrides);
+  // A REALM READ BACK OR REPLICATED IS NOT RE-JUDGED AS A WHOLE (run #300):
+  // restorableOverrides() above has checked each value for what it is, and
+  // the rules between settings were the writing door's to ask. Asked again
+  // here, a pair that door took one at a time — a chosen algorithm, then a
+  // list without it — refused the REALM, so a replica or a restart lost it.
+  const overrideErrors = given && (given.restored || given.replicated)
+    ? [] : checkOverrides((spec || {}).overrides);
   if (overrideErrors.length) {
     log.debug("Leaving create(). Refused for its overrides.");
     return errorCodes.mark({ ok: false, errors: overrideErrors },
@@ -1398,7 +1442,12 @@ function update(id, changes) {
         'is defined.'] },
                            'STS-CORE-0013');
   }
-  const spec = changes || {};
+  // Replicated: a stored value no longer valid is skipped, not the change
+  // (restorableOverrides(), #39).
+  const spec = changes && changes.replicated && changes.overrides
+    ? Object.assign({}, changes, {
+      overrides: restorableOverrides(String(id), changes.overrides) })
+    : (changes || {});
   // FIXED AT CREATION — see the domain's note above. The same value again is
   // not a change, which is what lets a replicated update carry the whole row.
   if (spec.domain !== undefined && spec.domain !== null &&
@@ -1420,7 +1469,19 @@ function update(id, changes) {
                            errorCodes.codeOf(textErrors));
   }
   if (spec.overrides !== undefined) {
-    const overrideErrors = checkOverrides(spec.overrides);
+    // A REPLICATED UPDATE IS NOT RE-JUDGED AS A WHOLE (2026-11-15, GitHub
+    // Actions run #300), for the reason the mode and Kerberos rules below
+    // are not asked of it: the process that took the write judged it.
+    // restorableOverrides() has checked each value for what it is. The rule
+    // between settings that cfa8ca851 made this check apply (#444's D12)
+    // judged a pair the writer had taken one setting at a time —
+    // `oauth2.accessTokenSigningAlg=ES256`, then `keys.signingAlgorithms=
+    // PS256,RS256` — refused it STS-KEYS-0192, and the replica kept its old
+    // overrides with nothing said: a client_credentials token signed RS256
+    // there, and its stale copy was later written back over the store
+    // (sts_signature_policy H, in every mode with request workers).
+    const overrideErrors = spec.replicated ? []
+      : checkOverrides(spec.overrides);
     if (overrideErrors.length) {
       log.debug("Leaving update(). Refused for its overrides.");
       return errorCodes.mark({ ok: false, errors: overrideErrors },
@@ -1508,7 +1569,7 @@ function update(id, changes) {
 // `isPerProcess()` and not a copy of it, for the reason this whole function
 // exists: the reading end and the writing end of one rule, written separately,
 // disagreed within the hour.
-function checkRealmOverride(key, raw) {
+function checkRealmOverride(key, raw, stored) {
   log.debug("Entering checkRealmOverride().");
   if (String(key || '').indexOf('realms.') === 0) {
     log.debug("Leaving checkRealmOverride().");
@@ -1536,8 +1597,10 @@ function checkRealmOverride(key, raw) {
   // restart-only (it derives `global.https`, and a listener's scheme is
   // settled when it is bound) is not a reason a realm cannot carry it.
   // Everything else that is restart-only is still refused here, in the same
-  // sentence as before.
-  return config.checkOverride(key, raw, true);
+  // sentence as before. `stored`: a value read back or replicated, checked
+  // without the rules between settings (restorableOverrides()).
+  return stored ? config.checkStoredOverride(key, raw, true)
+                : config.checkOverride(key, raw, true);
 }
 
 // WHICH CONDITION checkRealmOverride() REFUSED FOR, in its order: the two rules
@@ -1581,11 +1644,36 @@ function setOverride(id, key, raw) {
         'is defined.'] },
                            'STS-CORE-0013');
   }
-  const problem = checkRealmOverride(key, raw);
+  // A RULE BETWEEN SETTINGS READS THIS REALM'S COMPANION, not the caller's
+  // (2026-11-14, found by #444's D12): the realm's overrides with this value
+  // in them are the write batch, so `oauth2.accessTokenSigningAlg=ES256` is
+  // judged against the realm's own `keys.signingAlgorithms`, as the realm's
+  // `/admin-api/config/set` judges it (STS-KEYS-0192). A setting the realm
+  // does not carry is read at the value it inherits. checkOverrides()'s rule.
+  //
+  // **AND THE OTHER VALUES OF THE WRITE THIS ONE IS PART OF** (2026-11-15,
+  // GitHub Actions run #287): a caller that writes several settings of the
+  // ambient realm one by one inside `config.withWriteBatch()` — `Branding.
+  // saveSettings()`, a realm's `set-many` — had its batch REPLACED by this
+  // one for the length of the check, so the first of a pair legal only
+  // together (a dark card, then its light text) was judged against the
+  // realm's OLD value of the second and refused. The enclosing batch sits
+  // between the stored overrides and this value. It is taken only for a
+  // write into the ambient realm, which is the realm such a caller writes.
+  const ambient = current();
+  const enclosing = ambient && ambient.id === realm.id
+    ? config.currentWriteBatch()
+    : null;
+  const batch = Object.assign({}, realm.overrides, enclosing || {},
+                              { [key]: raw });
+  const checked = config.withWriteBatch(batch, function () {
+    return { problem: checkRealmOverride(key, raw),
+             code: checkRealmOverrideCode(key, raw) };
+  });
+  const problem = checked.problem;
   if (problem) {
     log.debug("Leaving setOverride(). Refused: " + problem);
-    return errorCodes.mark({ ok: false, errors: [problem] },
-                           checkRealmOverrideCode(key, raw));
+    return errorCodes.mark({ ok: false, errors: [problem] }, checked.code);
   }
   // THE MODE RULE, ASKED IN THE REALM THE WRITE LANDS IN (#171): a
   // TLS-verification skip may not be turned on in a product realm. Asked
@@ -1719,9 +1807,31 @@ function pinnedSignerClearProblems(realm, after) {
 // same all-or-nothing rule config.js's checkOverride() exists for: a realm that
 // took three of four settings and refused the fourth would be a realm nobody
 // asked for.
+//
+// **THE OTHER OVERRIDES OF THE SAME WRITE ARE WHAT A RULE BETWEEN SETTINGS
+// READS (2026-11-14, found by #444's D12).** A realm's overrides arrive as one
+// object, and each key was checked alone, so a rule naming a companion
+// setting (STS-KEYS-0192: an algorithm chosen outside the list that governs
+// it) read the companion's value in force — the caller's realm's — and not
+// the one beside it: `oauth2.accessTokenSigningAlg=ES256` was taken under
+// `keys.signingAlgorithms=RS256` in the same object, which the realm's own
+// `/admin-api/config/set` refuses. The keys are checked inside
+// `config.withWriteBatch()`, which is how `set-many` hands a rule the values
+// posted together. A key the object does not carry is the default realm's,
+// which is what the realm inherits for it: the object REPLACES the realm's
+// overrides.
 function checkOverrides(overrides) {
   log.debug("Entering checkOverrides().");
   const errors = [];
+  config.withWriteBatch(overrides || {}, function () {
+    checkEachOverride(overrides, errors);
+  });
+  log.debug("Leaving checkOverrides().");
+  return errors;
+}
+
+function checkEachOverride(overrides, errors) {
+  log.debug("Entering checkEachOverride().");
   Object.keys(overrides || {}).forEach(function (key) {
     // checkRealmOverride() and not config.checkOverride(), so that the two
     // `realms.*` settings are refused on a create and an update exactly as they
@@ -1734,8 +1844,7 @@ function checkOverrides(overrides) {
       firstCode(errors, checkRealmOverrideCode(key, overrides[key]));
     }
   });
-  log.debug("Leaving checkOverrides().");
-  return errors;
+  log.debug("Leaving checkEachOverride().");
 }
 
 // ---------------------------------------------------------------------------
@@ -2737,6 +2846,21 @@ function declareHandle(options, shape, accessors) {
     // -----------------------------------------------------------------------
     tombstone: options.tombstone === true,
     mergeRow: typeof options.mergeRow === 'function' ? options.mergeRow : null,
+    // -----------------------------------------------------------------------
+    // `mergeOnApply: true` (2026-11-17, the cells mode's
+    // `sts_jar_admin_client`): another process's row is MERGED into the copy
+    // this process holds, through `mergeRow`, rather than put over it
+    // (`persistence_minted.js`'s `applyLocally()`). A row is read when its
+    // change-log page is prepared and applied later, so the row that arrives
+    // can be older than a write this process committed meanwhile, or than
+    // one it has not flushed yet; replaced whole, that write is gone from
+    // here, and a pending one is then flushed as the older row. Only for a
+    // store whose merge never keeps an older state over a newer one — a
+    // state that only moves forward, removals as tombstones — which is what
+    // a request reading the row straight after its own write needs.
+    // -----------------------------------------------------------------------
+    mergeOnApply: options.mergeOnApply === true &&
+      typeof options.mergeRow === 'function',
     // ---------------------------------------------------------------------
     // `observation: true` (2026-09-15, #46): a write to this store is a TALLY
     // of what a request did — a decision counted — and not a thing the
@@ -2814,6 +2938,17 @@ function declareHandle(options, shape, accessors) {
     // ---------------------------------------------------------------------
     restoreInWorkers: options.restoreInWorkers !== false,
     // ---------------------------------------------------------------------
+    // `restoreExpiring: false` (#883, 2026-11-11): a start reads this
+    // store's rows whose `expires_at` is NULL and leaves the rest. For a
+    // store whose bulk is short-lived history and whose live rows — a
+    // leader, a queued or running run — carry no expiry. The expiring rows
+    // stay in the table until the expiry purge; they are not decrypted into
+    // this process. `scheduler.runs` is the store that says so. A worker
+    // that also declares `restoreInWorkers: false` still skips the WHOLE
+    // store (`skipHandles`); this only narrows what the front reads.
+    // ---------------------------------------------------------------------
+    restoreExpiring: options.restoreExpiring !== false,
+    // ---------------------------------------------------------------------
     // `onDemand` (#820, 2026-10-21): the store is NOT read back whole at a
     // start. A process holds a bounded set of its rows and reads one it does
     // not hold from `sts_minted` by key when it is asked for (see map()
@@ -2833,8 +2968,11 @@ function declareHandle(options, shape, accessors) {
     // by `written_at`, which has only a BRIN: a btree on `written_at`
     // would make every update of `sts_minted` non-HOT
     // (`persistence/CLAUDE.md`, *The newest rows by an index*).
-    sortOf: options.onDemand && typeof options.sortBy === 'function'
-      ? options.sortBy : null,
+    // NOT GATED ON `onDemand` (#883): a store the front still holds, minus
+    // its expiring rows, has the same need — `/admin/scheduler` asks for a
+    // newest window of runs it does not keep. `owesMark` stays an index or
+    // an expiry backfill, so a sort alone does not start one.
+    sortOf: typeof options.sortBy === 'function' ? options.sortBy : null,
     // A store whose rows written before it declared an `expiresAt` have
     // none (#820 part 2): how long after its write such a row lives, in
     // ms. The store is read back whole until those rows are given one
@@ -3186,6 +3324,7 @@ class IndexedMap extends Map {
  *
  * @param {any} [options]
  * @returns {Map<any, any> & { realmMap: (id?: any) => Map<any, any>,
+ *   dropHeld: (realmId: string, key: string) => boolean,
  *   lookup: (indexKey: string) => any[], onDemandLive: () => boolean,
  *   lookupEntries: (indexKey: string) =>
  *     { key: any, origin: string, own: boolean, value: any }[],
@@ -3549,6 +3688,24 @@ function map(options) {
   }
 
   const facade = {
+    // FORGET A HELD ROW WITHOUT JOURNALING A DELETE (#883). The flush reads
+    // a journalled key from this map and writes a delete when it is gone, so
+    // a key the journal still holds is left where it is. A store with no
+    // reader is not journalled. Returns whether the bare map lost the key.
+    dropHeld: function (realmId, key) {
+      log.debug("Entering dropHeld().");
+      const id = partitionId(realmId);
+      const k = key === undefined || key === null ? '' : String(key);
+      if (onDemandReader &&
+          typeof onDemandReader.journalled === 'function' &&
+          onDemandReader.journalled(handleName, id, k)) {
+        log.debug("Leaving dropHeld(). Still journalled.");
+        return false;
+      }
+      const gone = per.of(id).delete(k);
+      log.debug("Leaving dropHeld(). " + gone);
+      return gone;
+    },
     // The keys of the ambient realm's records filed under one index key
     // (`options.indexBy`, #766); empty for a store that has no index. On
     // demand, the index's rows as well (#820): each kept as it is read, a
@@ -5295,6 +5452,9 @@ module.exports = {
   run: run,
   bind: bind,
   get: get,
+  // For `keystore.js` (2026-11-18): a key set or row of a realm this process
+  // removed is neither adopted nor written.
+  acceptsRows: acceptsRows,
   list: list,
   count: count,
   create: create,

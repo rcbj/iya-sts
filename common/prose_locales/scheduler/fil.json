@@ -95,6 +95,14 @@
     "en": "af65a7bf379c0b71",
     "text": "Dina-download ang Android key attestation status list ng Google mula sa devices.androidStatusUrl at nilo-load ito bilang risk dataset na android.attestation-status: kung aling mga attestation certificate ang revoked o suspended. Araw-araw (devices.androidStatusRefreshS); walang nilo-load ang list na kapareho ng aktibo."
   },
+  "sched.jobs.federation.client-certificate-renew.title": {
+    "en": "f37b7eff9973c660",
+    "text": "Pag-renew ng federation client certificate"
+  },
+  "sched.jobs.federation.client-certificate-renew.describe": {
+    "en": "655fd604e686a4d3",
+    "text": "Naglalabas ng TLS client certificate sa bawat FAPI 1.0 Advanced na federation relationship na wala pang hawak, at ng bago na may parehong subject sa bawat isa na ang certificate ay mag-e-expire sa loob ng federation.clientCertificateRenewDays."
+  },
   "sched.jobs.federation.encryption-key-retire.title": {
     "en": "0c323ec372941184",
     "text": "Pag-retire ng federation encryption key"

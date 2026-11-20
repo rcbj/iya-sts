@@ -397,7 +397,7 @@ ticket-granting ticket.
 Kerberos policed delegation from msDS-* fields on its own principal table; it
 now asks the issuance policy that decides WS-Trust and RFC 8693 too, over the
 common controls on the directory's entries (`../common/CLAUDE.md` rule 3az,
-`../docs/delegation.md`). `krb5_delegation.ts` is the Kerberos side, and it
+`../docs/v1.1.0/delegation.md`). `krb5_delegation.ts` is the Kerberos side, and it
 decides nothing: it names the parties (a service is the application entry
 whose identifier is its `SPN@REALM`, a person their entry), asks
 `delegation_policy.ts`, and holds the two pieces of machinery that are not
@@ -423,7 +423,7 @@ policy. rcbj's decisions on #186, each load-bearing:
   than a mismatch — an S4U2Proxy ticket carries the chain in its PAC
   (S4U_DELEGATION_INFO), and an exchanged token with no `act` carries none —
   and the console's Kerberos rows say it under their mode
-  (`web_delegation.ts`'s `kerberosModeNote()`), as `docs/delegation.md` and
+  (`web_delegation.ts`'s `kerberosModeNote()`), as `docs/v1.1.0/delegation.md` and
   the chain jobs' headers do.
 * **FORWARDABLE EVIDENCE FOR BOTH ROUTES, AND THE REPLY'S FLAG (#492).**
   [MS-SFU] 3.2.5.2.1 refuses non-forwardable evidence for classic delegation
@@ -547,6 +547,18 @@ The feature sections below still carry the *COPY closure* / *COPY set* notes
 they were written with ("no new require reaches…", "owed…"); they are
 history, and none of them is owed.
 
+**What those jobs assert is held HERE too, in process, since 2026-11-14**:
+`../tests/kerberos_as_exchange.js` (from `krb5_as_exchange.js`: salts,
+flags, the session key in both copies, the client's enctype order, every AS
+refusal with its number, e-text and stime, TCP and UDP on one port),
+`../tests/kerberos_tgs_exchange.js` (the KDC half of `krb5_tgs_ap.js`: the
+service ticket, the PAC under the right keys, PA-PAC-REQUEST, the partner
+realm's referral, renewal and the TGS refusals) and
+`../tests/kerberos_acceptor.js` (its AP half and `krb5_spnego_http.js`, through
+`krb5_service.accept()` and `spnego_exchange.negotiate()`, which no HTTP door
+reaches with their options since #595). They were written on 2026-10-22 and
+recovered on 2026-11-14; the parent's copies are its own business.
+
 ---
 
 ## A logout stops a ticket-granting ticket, and it is the only thing a KDC can honestly do
@@ -651,8 +663,9 @@ null could not win the merge below — but writes `signOutClearedAt`, an instant
 that beats every stamp not later than itself.
 
 **#111 ADDED NO REQUIRE** to `krb5_kdc.js` or `krb5_principals.js` — the wait, the
-boundary, the horizon and the merge are functions in files the parent's four
-in-process jobs already load — so the `sts/` COPY set is unchanged. Its tests are
+boundary, the horizon and the merge are functions in files the KDC already
+loads. (That kept the parent project's `sts/` COPY set unchanged, an
+obligation until #1280; history now.) Its tests are
 `tests/kerberos_signout_instant.js` (in process: the arithmetic, the merge, and
 the exchanges in one second and under a clock offset, with its mutants) and
 `tests/protocol/sts_kerberos_signout.js` (over TCP 88, both modes).
@@ -662,6 +675,66 @@ principal here, and stamping one into existence would put an account in the
 database because somebody typed a name at a logout screen. That is the opposite
 of `findOrCreateUser()`'s rule, which creates a CLIENT because an AS-REQ named
 one, and `/logout` reports the absence rather than a success it did not have.
+
+## A REQUESTED RENEW-TILL (#897)
+
+Until #897 an AS-REQ's `rtime`, and a TGS-REQ's, were not read. `RENEWABLE`
+set renew-till to `kdcTime(krb5.renewLifetimeSeconds)` — seven days, whatever
+the client asked — and a service ticket copied the presented ticket's
+renew-till. A client that asked for three hours renewable was given seven
+days, which is why a test that renewal stops at renew-till had to forge a
+ticket: no request could produce a short one.
+
+`decideRenewTill()` in `krb5_kdc.js` is the rule for a ticket being issued.
+A renewal does not call it. RFC 4120 section 3.1.3's earliest-of is, here,
+the requested instant when one was sent, starttime plus
+`krb5.renewLifetimeSeconds` (this service has no per-principal maximum
+renewable life), and on a TGS exchange the presented ticket's own
+renew-till. A ticket that is not renewable cannot buy one that is.
+
+**The choices that are MIT krb5's `kdc_get_ticket_renewtime`, said here so
+they are not rediscovered as bugs.** An explicit `RENEWABLE` with an `rtime`
+at or before endtime still sets the flag and that renew-till: the renewal
+then cannot extend the ticket (the existing `STS-KRB-0045` once that instant
+has passed). `RENEWABLE-OK` (option 27, unread until now) sets the flag only
+when the requested `till` was shortened to the endtime being issued and the
+capped renew-till is strictly later than that endtime; renew-till is then
+the requested endtime, still under the caps above. No `rtime` with
+`RENEWABLE` is the realm maximum, which is what MIT's "infinity, then the
+cap" becomes with one realm maximum. No new error code: a short or past
+`rtime` is issued, not refused.
+
+**One choice is NOT MIT's.** MIT clears an inherited `RENEWABLE` flag, so a
+service ticket is renewable only when the TGS-REQ asks or qualifies for
+`RENEWABLE-OK`, and only when the TGT is renewable. This KDC still inherits
+the flag from a renewable TGT when the TGS-REQ does not repeat the option.
+`tests/kerberos_person_keys.js` obtains a service ticket with an empty
+`kdcOptions` list and then renews it; dropping the flag would make that
+renewal `STS-KRB-0043`. A present `rtime` is still honoured on that
+inherited ticket, and it still cannot pass the TGT's renew-till.
+`RENEWABLE-OK` on a TGS exchange therefore adds nothing the inherited flag
+did not already add, and it cannot make a service ticket renewable when the
+TGT is not.
+
+A renewal copies renew-till and ignores any `rtime` on the RENEW request,
+longer or shorter. Anonymous tickets (`answerAnonymousAsReq()`) and
+`mintTicket()` stay non-renewable. The sign-out horizon stays the setting
+plus the skew, not the ticket's own renew-till.
+
+**A PKINIT TGT's renew-till is capped at the client certificate's notAfter
+too** (the review of #897, 2026-11-13; `spec.notAfter`). RFC 4556 section
+3.2.3's "MUST NOT exceed" the key pair's lifetime was applied to endtime
+alone, so a renewal could carry the ticket up to seven days past the
+certificate. Where that cap brings renew-till to endtime or before, the
+ticket is issued NOT renewable whatever was asked — the one departure from
+"an explicit RENEWABLE keeps the flag", which is about an rtime the CLIENT
+chose. A service ticket inherits the cap through the TGT's renew-till.
+`tests/kerberos_pkinit.js` section 4b holds it.
+
+The in-process guard is `tests/kerberos_renew_till.js`. The wire half is an
+interop client (`kinit -r`); the protocol jobs that already send
+`rtime` of now plus 24 hours take a 24-hour renew-till instead of seven
+days, and their renewals are inside that window.
 
 
 ## The SPNEGO sign-in has both halves of its test, and they are in different repositories on purpose
@@ -1440,6 +1513,27 @@ silent. **A collision the old allocators already made is not repaired** — renu
 change a SID already in somebody's ticket or ACL — and is reported by that same code the
 next time the row is restored.
 
+**A DELETED PERSON'S RID IS NEVER A NAMESAKE'S (2026-11-16, #1612's rule: a person
+deleted and made again under the same name inherits nothing).** The principal record
+under `name@REALM`, with its RID, outlived the delete — it has to, because it carries the
+sign-out stamp that refuses the deleted person's tickets (#111) — so the next person
+under the name found it and was given the same SID. Now: the delete RETIRES the record
+(`retirePerson()`, from `ldap_server.js`'s `forgetPersonHoldings()`, one key; the record
+and its stamps stay, its RID joins `retiredRids`); a retired record is never reused —
+`directoryUser()`, `certificatePerson()` and a development-mode create make a new record
+whose RID `autoRidFor()` draws past every RID the name ever had (the count of them is in
+the digest, so a namesake starts elsewhere, and all of them are taken), carrying the
+stamps and the retired list over; and a product record is BOUND to its entry's
+`entryUUID` (the key source reads it, aliases included), so a record bound to an entry
+the name no longer names is retired at its next lookup even where the delete's retirement
+never reached it. **Backwards compatible**: a record from before this keeps its RID and
+is bound to the entry at its first lookup (the lazy migration), so no existing SID
+changes; a person deleted before the upgrade and made again before that first lookup
+cannot be told apart and keeps the old binding. A configured principal (the development
+fixtures) is built from settings and never retired. **The taken-set is still a walk of
+the realm's principal records** — `autoRidFor()`'s, as before, once per record created,
+never per ticket. `tests/kerberos_namesake_rid.js` holds it.
+
 **NO NEW REQUIRE REACHES THE PARENT PROJECT'S COPY SET.** `krb5_kdc.js`, `krb5_service.js`
 and `spnego_exchange.js` now require `common/mode.js` and `common/config.js`, both already
 in that closure through `common/helpers.js`.
@@ -1793,6 +1887,24 @@ operation that moves a stamp backwards, the development-only
 `restore-kerberos`, does it with an instant of its own that merges the same
 way.
 
+**EVERY KDC REQUEST, AND BOTH RULES, SINCE 2026-11-19 (GitHub run #569,
+cluster mode).** The catch-up was gated on `logout.kerberosSignOut`, on the
+claim that nothing else here reads replicated state, and the KDC's reply was
+sent before what its request wrote had committed. Samba's
+`fast_tests.test_fast_ad_fx_fast_armor` made an AS-REQ for a fresh name on node
+A — the development KDC creates the principal on first sight, a
+`krb5.principals` row — and its TGS-REQ 22 ms later reached node B, which did
+not have the row: "not in the principal table; issuing a service ticket with
+NO PAC", and the test's PAC assertion failed. Single-node passed. Now, in
+`handleMessage()`, every AS-REQ and TGS-REQ in active-active first goes
+through `cluster_barrier.catchUp()` (rule 1, LDAP's arrangement since run
+#510, whatever the setting; STS-KRB-0118 is still logged beside the barrier's
+STS-CLUSTER-0018 when the setting is on), and its reply is held by
+`cluster_barrier.commitAnswered()` until what it wrote has committed (rule 2,
+wherever `holds()`: a database store or active-active). A commit that fails
+is KDC_ERR_SVC_UNAVAILABLE (29) under STS-KRB-0259, which clients retry. A
+store with no database is unchanged.
+
 The two requires are LAZY and guarded. `cluster/cluster_barrier.js` is already
 in the parent project's COPY closure through `common/app.js`, and
 `cluster/cluster.js` with it (the barrier requires it lazily); if that set does
@@ -1965,7 +2077,8 @@ decisions a reader needs here:
   * RSA key transport (section 3.2.3.2) is not implemented at all,
     KDC_ERR_PUBLIC_KEY_ENCRYPTION_NOT_SUPPORTED: no forward secrecy.
   * DH keys are never reused.
-  * The ticket ends no later than the certificate.
+  * The ticket ends no later than the certificate, and renews no later
+    than it either (the review of #897).
   * The AuthPack is spent once across the cluster
     (`krb5.pkinit-authpack`).
 * **AD-INITIAL-VERIFIED-CAS** goes into the TGT inside AD-IF-RELEVANT, after
@@ -2237,7 +2350,7 @@ keeps its password-derived development krbtgt exactly as before.
 **PQC.** No post-quantum Kerberos enctype is standardised; the strongest registered are
 aes256-cts-hmac-sha384-192 (20) and aes256-cts-hmac-sha1-96 (18), and Grover leaves
 AES-256 at about 128 bits, so the rotation needs no new enctype. PKINIT's public-key key
-agreement is the quantum-exposed part and is #179. `docs/kerberos.md` says so.
+agreement is the quantum-exposed part and is #179. `docs/v1.1.0/kerberos.md` says so.
 
 **TESTS.** `tests/kerberos_krbtgt_rotation.js` (three children: product first start —
 creation, a TGT across a rotation, the timing, FAST armor and cookie across one, the
@@ -2364,9 +2477,13 @@ registered just before `krb5_kdc.js` is required (require order 14c): it
 unframes the KDC-PROXY-MESSAGE, finds the client, relays the whole request to
 its home over the inter-cell channel, and calls `next()` for everything else —
 after which the KDC's own handler runs unchanged. It sits IN FRONT of the KDC
-rather than inside `krb5_kdc.js` so that the KDC's require closure, which the
-parent's tests image copies, does not grow. It requires the codec
-and `krb5_principals.js` and edits none of them; nothing in the COPY closure requires it, so **the closure is unchanged**.
+rather than inside `krb5_kdc.js` so that placement stays a concern of cells
+and the KDC knows nothing of them: a single-cell service and every in-process
+loader of the KDC run exactly the code they ran before. It requires the codec
+and `krb5_principals.js` and edits none of them, and none of them requires it.
+(It was first placed here to keep the KDC's require closure, which the parent
+project's tests image copied, from growing; that was owed until #1280 and is
+history now.)
 
 * **AS-REQ**: the body's `cname`, one component, in the realm's own Kerberos
   realm. A FAST-armored AS-REQ is routed by its OUTER body — the inner cannot be
@@ -2389,8 +2506,9 @@ port 88 and whose packets reached a visiting cell was answered THERE — an
 unknown principal in product (their keys are at home), a freshly made one in
 development. #317 on the parent project asked for the seam while the KDC was
 believed to be the parent's; #585 corrected that reading, and the work moved
-here as #588, **which supersedes rcbj/id-proto-debugger#317** (rcbj closes it
-there). The seam is two exports of `krb5_kdc.js` and nothing else in it:
+here as #588, **which supersedes rcbj/id-proto-debugger#317** (closed
+there on 2026-11-17). The seam is two exports of `krb5_kdc.js` and nothing
+else in it:
 
 * **`setMessageRouter(fn)`.** `startTcp()` and `startUdp()` call
   `answerFromSocket()`, which awaits `fn(bytes, { transport: 'tcp' | 'udp',
@@ -2433,9 +2551,10 @@ home that cannot be reached, or answers nothing, is `KDC_ERR_SVC_UNAVAILABLE`
 (29, `STS-KRB-0207`), fail-closed as a relayed MS-KKDCP request is 503 —
 answering it here instead would be the exception this closed.
 
-**The parent project's COPY closure is unchanged**: `krb5_kdc.js` gained two
-exports (and exports `errorReply` and `answerFromSocket` beside them) and no
-require. The parent's four in-process Kerberos jobs set no router.
+**`krb5_kdc.js` gained two exports** (and exports `errorReply` and
+`answerFromSocket` beside them) **and no require**: the router is
+`krb5_home.ts`'s, so a loader that installs none — the parent project's
+in-process Kerberos jobs among them — gets the sockets exactly as before.
 
 Tested in process with stubbed routing and channel by `tests/cell_handlers_c.js`
 — MS-KKDCP, and since #588 the real TCP and UDP listeners on an ephemeral port
@@ -2453,7 +2572,7 @@ two-cell stack, `tests/protocol/sts_cells_kerberos.js` (`--modes=cells`, TCP).
 are the sixth claim set of `common/admin_stats.js`, `kerberos-pac`, with a
 per-application override applied to SERVICE tickets; claim ids are
 `ad://ext/<name>:<hex>`; roles go as claims and never as extraSids; a claims
-set is never compressed. `docs/kerberos.md`, *PAC claims*, is the user's half.
+set is never compressed. `docs/v1.1.0/kerberos.md`, *PAC claims*, is the user's half.
 
 **THE CODEC IS THE PARENT'S, AS EVER.** The NDR encoder and decoder for
 `CLAIMS_SET_METADATA` / `CLAIMS_SET` and the XPRESS Huffman decompressor are in
@@ -2626,8 +2745,9 @@ every requirement under both names to get round it.
   of the armor TGT ... against the AllowedToAuthenticateTo"), is AD's own
   mechanism, and neither document says which "user" that is under S4U. If
   a reader wants to argue a default from it, the words "the PAC of the
-  user" lean toward `user`, the default rcbj chose. No require was added (`config` was already
-  required), so the parent's COPY closure is unchanged.
+  user" lean toward `user`, the default rcbj chose. No require was added
+  (`config` was already required); that kept the parent's COPY closure
+  unchanged, which was owed until #1280 and is history now.
 * `tests/kerberos_service_roles.js` holds all of it: the `SPN@REALM` entry
   refused and issued, the bare entry unchanged and preferred, another
   realm's entry not applying, the AS, and K5 — S4U2Self, classic and RBCD
@@ -2739,8 +2859,11 @@ than moved.
   `SERVICE_PORT` and the `lastExchange` view (`acceptRaw` is now the same
   function as `accept`, kept for its in-process callers). `spnego.js` keeps
   the sign-in's `page()` and `checksTable()` and registers nothing.
-  `spnego_exchange.js` keeps the options only the page passed (`supported`,
-  `wantMic`, `mutualOff`) for the in-process tests.
+  `spnego_exchange.js` keeps `supported` and `wantMic` for the in-process
+  tests. `mutualOff` is one of those, and since #896
+  `GET /authn/spnego?mutual=off` passes it where the test controls are open:
+  the ticket is accepted, the AP-REP is withheld, and no session is started.
+  Product answers 403 (STS-KRB-0258) before the ticket is accepted.
 * **WHAT WENT.** `krb5.servicePort` (the row, the env files, `SETTING_HOMES`
   needed nothing), its listener row, the `tcp://` row on the Kerberos page,
   the `/krb5` and `/spnego` placements and hosted prefixes, `server.js`'s
@@ -2831,9 +2954,10 @@ WS-Trust (7) and `oauth2` (9) are required before it (15).
 * **`factorsFor()` MOVED HERE** from `spnego_authn.ts`, which now asks it: a
   Kerberos token's `amr` / `acr` is read exactly as a SPNEGO ticket's.
 
-**THE PARENT PROJECT'S COPY CLOSURE IS UNCHANGED.** `krb5_kdc.js` and
-`krb5_service.js` gained code and no require; `krb5_tokens.ts` is reached
-only from WS-Trust and the token endpoint, neither in the closure.
+**`krb5_kdc.js` and `krb5_service.js` gained code and no require**;
+`krb5_tokens.ts` is reached only from WS-Trust and the token endpoint. (That
+kept the parent project's COPY closure unchanged, an obligation until #1280;
+history now.)
 
 `tests/kerberos_tokens.js` holds it in process (W, D, O, X, S, R), and
 `tests/protocol/sts_kerberos_tokens.js` over TCP 88. The interop jobs (MIT

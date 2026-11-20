@@ -505,7 +505,9 @@ class EmailFactor {
 
   // A refusal that ends the page (what `endPage()` drew): the title and the
   // sentence, English, for the browser to draw; never an error code.
-  private endAnswer(res: any, status: number, title: string,
+  private endAnswer(res: IyaApi.AuthnAnswering<'sendEmailedFactor' |
+                      'checkEmailedCode' | 'spendEmailedLink'>, status: number,
+                    title: string,
                     sentence: string): void {
     const { log, authn } = this.deps;
     log.debug("Entering EmailFactor.endAnswer(). " + status);
@@ -776,7 +778,8 @@ class EmailFactor {
    * @param kind - `code` or `link`
    * @returns a promise settled when the answer is sent
    */
-  async sendAct(req: any, res: any, mfaId: string,
+  async sendAct(req: any, res: IyaApi.AuthnAnswering<'sendEmailedFactor'>,
+                mfaId: string,
                 kind: Kind): Promise<void> {
     const { log, errorCodes, authn } = this.deps;
     log.debug("Entering EmailFactor.sendAct(). " + kind);
@@ -807,7 +810,8 @@ class EmailFactor {
    * @param code - the code as typed
    * @returns a promise settled when the answer is sent
    */
-  async codeAct(req: any, res: any, mfaId: string,
+  async codeAct(req: any, res: IyaApi.AuthnAnswering<'checkEmailedCode'>,
+                mfaId: string,
                 code: string): Promise<void> {
     const { log, errorCodes, websecurity, mailFactor, now } = this.deps;
     log.debug("Entering EmailFactor.codeAct().");
@@ -867,7 +871,8 @@ class EmailFactor {
    * @param token - the link's `t`
    * @returns a promise settled when the answer is sent
    */
-  async openAct(req: any, res: any, mfaId: string,
+  async openAct(req: any, res: IyaApi.AuthnAnswering<'spendEmailedLink'>,
+                mfaId: string,
                 token: string): Promise<void> {
     const { log, errorCodes, websecurity, mailFactor, now } = this.deps;
     log.debug("Entering EmailFactor.openAct().");

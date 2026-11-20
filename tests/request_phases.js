@@ -9,19 +9,23 @@
 // WHERE A DISPATCHED REQUEST'S TIME GOES (2026-10-22, #820).
 //
 // `common/request_phases.js` keeps a one-minute window of each route's
-// phases; the front process times the ticket and barrier waits and the round
-// trip, the worker's commit barrier reports its handler, commit hold and the
-// time its loop was blocked in synchronous store reads.
+// phases; the front process times the ticket and barrier waits and how long
+// it waited for a socket, the worker's commit barrier reports its handler,
+// commit hold, the time its loop was blocked in synchronous store reads, and
+// when its middleware started, which the front turns into the loop wait.
 //
 //   Q1. a route is the method and two path segments, without a realm or a
 //       query;
 //   Q2. the worker's header encodes and decodes, and anything else is none;
+//       the middleware instant is optional, and the two waits it splits the
+//       old queue into are `connect` and `loop` (#887);
 //   Q3. the window closes on the first record after it ends, and reports
 //       each phase's p50, p95 and mean; a phase no request reported is
 //       absent; past the route cap a new path is counted as `other`;
 //   Q4. a real one-worker pool: the front asks the worker, the worker's
 //       answer reaches the client WITHOUT the phases header, and the window
-//       carries the worker's numbers and the front's waits;
+//       carries the worker's numbers and the front's waits. A worker that
+//       says its middleware started late is `loop`, not `connect`;
 //   Q5. a client's own question is not passed to the worker as its own: the
 //       front replaces it;
 //   Q6. in a worker thread, the commit barrier answers the question with the
@@ -74,12 +78,30 @@ function checkTheModule(t) {
   t.equal(phases.routeOf('GET', '/admin-api/users/alice/devices'),
           'GET /admin-api/users', 'Q1. and only two segments');
   const value = phases.encode(40.4, 25, 7);
+  const withAt = phases.encode(40.4, 25, 7, 1700000000123.6);
   const back = phases.decode(value);
+  const dated = phases.decode(withAt);
   t.check(value === 'h=40;c=25;b=7' && back && back.handler === 40 &&
           back.commit === 25 && back.bridge === 7 &&
+          back.arrived === undefined &&
+          withAt === 'h=40;c=25;b=7;a=1700000000124' &&
+          dated && dated.handler === 40 && dated.arrived === 1700000000124 &&
           phases.decode('h=1;c=x;b=2') === null && phases.decode('') === null,
           'Q2. the worker\'s header round-trips, and anything else is none',
-          JSON.stringify({ value: value, back: back }));
+          JSON.stringify({ value: value, withAt: withAt, back: back,
+                           dated: dated }));
+  const split = phases.connectionWaits(1000, 1040, 1115);
+  const noSocket = phases.connectionWaits(1000, 0, 1115);
+  const noArrival = phases.connectionWaits(1000, 1040, 0);
+  const backwards = phases.connectionWaits(1000, 1100, 1050);
+  t.check(split.connect === 40 && split.loop === 75 &&
+          noSocket.connect === undefined && noSocket.loop === undefined &&
+          noArrival.connect === 40 && noArrival.loop === undefined &&
+          backwards.connect === 100 && backwards.loop === 0,
+          'Q2. connect is until the socket and loop is until middleware, ' +
+          'and a missing instant is absent',
+          JSON.stringify({ split: split, noSocket: noSocket,
+                           noArrival: noArrival, backwards: backwards }));
 
   phases.reset();
   const t0 = Date.now();
@@ -100,8 +122,8 @@ function checkTheModule(t) {
           JSON.stringify(closed));
   // A flush's phases (2026-10-22): `prepare`, `db` and `rows` are kept.
   phases.reset();
-  phases.record('FLUSH minted', { prepare: 4, queue: 1, db: 30, rows: 7,
-                                  total: 35 }, t0 + 1);
+  phases.record('FLUSH minted', { prepare: 4, db: 30, rows: 7, total: 35 },
+                t0 + 1);
   phases.record('GET /y', { total: 1 }, t0 + phases.WINDOW_MS + 5);
   const flushed = phases.stats() && phases.stats().routes['FLUSH minted'];
   t.check(flushed && flushed.prepare.p50 === 4 && flushed.db.p50 === 30 &&
@@ -131,12 +153,17 @@ const STUB = [
   "  if (m && m.stop) { process.exit(0); }",
   "  if (!m || !m.begin) { return; }",
   "  const server = http.createServer(function (req, res) {",
+  "    const slow = String(req.url).indexOf('slow-loop') >= 0;",
   "    setTimeout(function () {",
-  "      res.setHeader('x-sts-pool-phases', 'h=40;c=15;b=7');",
-  "      res.setHeader('x-asked', String(req.headers[" +
+  "      const started = Date.now();",
+  "      setTimeout(function () {",
+  "        res.setHeader('x-sts-pool-phases',",
+  "                      'h=40;c=15;b=7;a=' + started);",
+  "        res.setHeader('x-asked', String(req.headers[" +
     "'x-sts-pool-phases-wanted'] || ''));",
-  "      res.end('ok');",
-  "    }, 60);",
+  "        res.end('ok');",
+  "      }, 60);",
+  "    }, slow ? 90 : 0);",
   "  });",
   "  server.listen(m.socket, function () {",
   "    wt.parentPort.postMessage({ ready: true });",
@@ -195,27 +222,47 @@ async function checkThePool(t) {
         answers.push(await get(port, '/oauth2/userinfo',
           { 'x-sts-pool-phases-wanted': 'a client asking' }));
       }
+      const slow = [];
+      for (let i = 0; i < 5; i++) {
+        slow.push(await get(port, '/oauth2/slow-loop',
+          { 'x-sts-pool-phases-wanted': 'a client asking' }));
+      }
       phases.record('GET /close', { total: 0 },
                     Date.now() + phases.WINDOW_MS + 5);
       const window = phases.stats();
       const route = window && window.routes['GET /oauth2/userinfo'];
-      t.check(answers.every(function (one) {
+      const delayed = window && window.routes['GET /oauth2/slow-loop'];
+      const seen = answers.concat(slow);
+      t.check(seen.every(function (one) {
         return one.status === 200 &&
           one.headers['x-sts-pool-phases'] === undefined;
       }), 'Q4. the worker\'s phases do not reach the client',
               JSON.stringify(answers[0] && answers[0].headers));
-      t.check(answers.every(function (one) {
+      t.check(seen.every(function (one) {
         return one.headers['x-asked'] === '1';
       }), 'Q5. the worker is asked by the front, not by the client',
-              JSON.stringify(answers.map(function (one) {
+              JSON.stringify(seen.map(function (one) {
                 return one.headers['x-asked'];
               })));
       t.check(route && route.n === 5 && route.handler.p50 === 40 &&
               route.commit.p50 === 15 && route.bridge.p50 === 7 &&
               route.ticket.p50 === 0 && route.barrier.p50 === 0 &&
-              route.queue.p50 >= 0 && route.total.p50 >= 55,
+              route.queue === undefined &&
+              typeof route.connect.p50 === 'number' &&
+              typeof route.loop.p50 === 'number' &&
+              route.total.p50 >= 55,
               'Q4. the window carries the worker\'s numbers and the ' +
-              'front\'s waits and round trip', JSON.stringify(route));
+              'front\'s waits, split into connect and loop',
+              JSON.stringify(route));
+      t.check(delayed && delayed.n === 5 &&
+              delayed.loop.p50 >= 60 &&
+              delayed.loop.p50 > route.loop.p50 + 40 &&
+              delayed.connect.p50 + 40 < delayed.loop.p50,
+              'Q4. a middleware that starts late is loop, not connect',
+              JSON.stringify({ fast: route && route.loop,
+                               slow: delayed &&
+                                 { connect: delayed.connect,
+                                   loop: delayed.loop } }));
       t.check(pool.stats().phases === window,
               'Q4. and the pool\'s stats() reports it', '');
     } finally {
@@ -286,10 +333,14 @@ async function checkTheWorkerHalf(t) {
   const reported = phases.decode(answer.a && answer.a['x-sts-pool-phases']);
   // `commit` is whatever the stand-in store's pending writes cost (the
   // barrier holds the answer for them); only that it is a number is asked.
+  // `arrived` is the middleware's own clock, the same process.
+  const now = Date.now();
   t.check(answer.aEnded && reported && reported.handler >= 45 &&
-          typeof reported.commit === 'number' && reported.bridge === 9,
+          typeof reported.commit === 'number' && reported.bridge === 9 &&
+          reported.arrived <= now && reported.arrived >= now - 10000,
           'Q6. a worker answers the front\'s question with the handler\'s ' +
-          'time and the time blocked in store reads meanwhile',
+          'time, the time blocked in store reads meanwhile, and when its ' +
+          'middleware started',
           JSON.stringify(answer));
   t.check(answer.bEnded && answer.b &&
           answer.b['x-sts-pool-phases'] === undefined,
@@ -327,7 +378,8 @@ async function run(t) {
 module.exports = {
   name: 'request_phases',
   describe: 'where a dispatched request\'s time goes: the front\'s waits, ' +
-            'the worker\'s handler, commit hold and blocked store reads, ' +
-            'summarised per route per minute (#820)',
+            'the socket wait and the worker-loop wait, the worker\'s ' +
+            'handler, commit hold and blocked store reads, summarised per ' +
+            'route per minute (#820, #887)',
   run: run
 };

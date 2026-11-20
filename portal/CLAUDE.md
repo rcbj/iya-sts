@@ -710,7 +710,7 @@ What that changed, and why each piece is the way it is:
   the key's algorithm under the person's selected profile — the same
   question the sign-in asks, so the page and the refusal cannot disagree —
   and the page draws `#passkey-post-quantum-refused` with
-  `portal.keys.postQuantumRefused` (seven languages; a warning, not a
+  `portal.keys.postQuantumRefused` (every base catalog; a warning, not a
   refusal, so it is translated as `syncedRefused` is). Under
   `registration-and-sign-in` the armed ceremony offers only ML-DSA and,
   with both lanes on, `lanes` is `["pqc"]`, so the page asks nothing and
@@ -2444,7 +2444,7 @@ federation half.
 The Overview's "Bound to this browser" row already said yes or no
 (#725). A sign-on whose fact is `skipped` says "binding skipped" and the
 reason tokens the session stored (`overview.deviceBoundSkipped`,
-`{reasons}`, in the seven base catalogs). `fact` and `reasons` are
+`{reasons}`, in every base catalog). `fact` and `reasons` are
 language-free on the account answer; the browser translates. `pending`,
 `timedout` and `none` stay "No". The portal is this origin, so it does
 not use a site-scoped or federated DBSC session.

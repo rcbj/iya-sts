@@ -33,7 +33,6 @@
   "refusal.STS-KEYS-0070": "LogoutRequest:ens EncryptedID använder en nyckeltransport som tjänsten inte packar upp (rsa-1_5). Inget avslutades: du är fortfarande inloggad.",
   "refusal.STS-REG-0049": "Adressen som svaret skulle levereras till har setts förut men har inte bekräftats för det här programmet, så den används inte.",
   "refusal.STS-SAML-0025": "Den här inloggningen har gått ut: den hölls kvar medan du var på inloggningssidan, och den hölls för länge.",
-  "refusal.STS-SAML-0026": "Den här länken anger en annan profil än de två webbläsarprofilerna i SAML 1.1, post och artifact.",
   "refusal.STS-SAML-0028": "Adressen som svaret skulle levereras till (shire) är inte registrerad för den här förlitande parten, eller så är ingen registrerad.",
   "refusal.STS-SAML-0029": "Adressen som svaret skulle levereras till är inte en absolut http- eller https-URL.",
   "refusal.STS-SAML-0030": "Den här länken anger inte vilken förlitande part den gäller: den har inget providerId och inget TARGET att härleda en från.",

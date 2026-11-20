@@ -8,31 +8,28 @@
 // meant to be edited to configure a deployment — it is the BASE LAYER that the
 // file CONFIG_FILE names is unioned on top of.
 //
-// Why it exists. Since 2026-08-24 this service REFUSES TO START when a setting
-// has no value in the appconfig layer and no environment variable: a value that
-// nobody configured, arriving from a constant buried in a module, is the thing
-// that makes "what is this service configured with?" unanswerable. But the same
-// rule read literally would mean that a file which is not this service's — the
-// parent project's in-process Kerberos jobs point CONFIG_FILE at the TEST
-// suite's own config — could no longer load these modules at all, and that a
-// setting added to the table tomorrow would break every existing config file in
-// the world on the day it was added.
+// Why it exists. Every value the shipped image runs on is written in a file
+// an operator can read: common/config.js reads THIS file first and the
+// operator's file over it, key by key, and the operator's value wins wherever
+// the two overlap. So an operator's file may carry as few or as many keys as
+// it likes, and a file which is not this service's at all — the parent
+// project's in-process Kerberos jobs point CONFIG_FILE at the TEST suite's
+// own config — still loads every module.
 //
-// The union is what makes both true at once. common/config.js reads THIS file
-// first and the operator's file over it, key by key, and the operator's value
-// wins wherever the two overlap. So every setting always has an appconfig-layer
-// value, an operator's file may carry as few or as many keys as it likes, and
-// the startup refusal fires on the one case it is actually for: a setting in
-// the table with no row here, which is a setting somebody added and did not
-// finish adding.
+// IT IS NOT THE LAST WORD, SINCE 2026-11-16. Beneath it is the table's own
+// default, in the image, so a copy of this file from an earlier release —
+// an env/ directory mounted over the image's, say — cannot stop a newer image
+// over a setting it does not carry. The start says so instead (STS-CORE-0177
+// for a setting this file lacks, STS-CORE-0178 for one whose value here is
+// not the image's default), and docs/v1.1.0/configuration.md says what to do.
 //
 // THE VALUES HERE ARE THE `dflt` COLUMN OF config.js's TABLE, and this file is
 // GENERATED from it — do not hand-edit a value. Changing a default means
 // changing the table, which is the one place that also carries the reasoning
 // for what the default is; a value edited only here would disagree with what
 // /admin/config reports as the default, with the OpenAPI document's `default`
-// property, and with docs/configuration.md's table, all three of which read
-// the table.
+// property, and with docs/v1.1.0/configuration.md's table, all three of which
+// read the table.
 //
 // FOUR SETTINGS ARE DELIBERATELY ABSENT: global.https, oid4vp.walletUrl,
 // krb5.serviceDomains and adminApi.audience are DERIVED from a neighbour (from
@@ -42,8 +39,9 @@
 // this file was written, so they resolve through their neighbour instead and
 // are exempt from the startup refusal for that reason.
 //
-// See common/CLAUDE.md, and docs/configuration.md's *Every setting*, which
-// lists every setting, its environment variable and its default in one table.
+// See common/CLAUDE.md, and docs/v1.1.0/configuration.md's *Every setting*,
+// which lists every setting, its environment variable and its default in one
+// table.
 // ---------------------------------------------------------------------------
 var config = {
   // --- The log level ---------------------------------------------------
@@ -236,6 +234,7 @@ var config = {
     accessTokenTtlS: 3600,                         // Access token lifetime (s)
     idTokenTtlS: 3600,                             // ID Token lifetime (s)
     refreshTokenTtlS: 86400,                       // Refresh token lifetime (s)
+    maxAuthAgeS: 0,                                // Maximum authentication age (s)
     expiredTokenRetentionS: 86400,                 // Keep an expired token on /admin/tokens for (seconds)
     accessTokenStatusListTtlS: 60,                 // Access-token status list time to live (s)
     accessTokenStatusListLifetimeS: 3600,          // Access-token status list lifetime (s)
@@ -315,7 +314,8 @@ var config = {
     jwtAlgorithms: "RS256,RS384,RS512,PS256,PS384,PS512,ES256,ES384,ES512",  // Algorithms accepted on a partner's JWT
     spNameIdFormat: "urn:oasis:names:tc:SAML:2.0:nameid-format:unspecified", // NameIDFormat in this service's SP metadata
     atprotoPlcDirectory: "https://plc.directory",                            // PLC directory for Bluesky sign-ins
-    encryptionKeyGraceS: 86400                                               // Previous encryption key kept for (seconds)
+    encryptionKeyGraceS: 86400,                                              // Previous encryption key kept for (seconds)
+    clientCertificateRenewDays: 30                                           // Renew a FAPI client certificate this many days before it expires
   },
 
   // --- Persistence -----------------------------------------------------
@@ -461,15 +461,17 @@ var config = {
     returnPolicyIdList: false,               // Always return the applicable policy identifiers
     remotePeps: true,                        // Remote Policy Enforcement Points may register
     pepRequireCertificate: true,             // A registering PEP must present a client certificate
+    pepAuthentication: "token",              // How a remote PEP authenticates
+    pepPlainHttpProxyListeners: false,       // A remote PEP may define a plain-HTTP reverse-proxy listener
     pipMaxPerWindow: 600,                    // PIP queries one caller may make per rate-limit window
     pipMaxDesignators: 50,                   // Attributes one PIP query may ask about
     maxPeps: 50,                             // Remote PEPs the register may hold
     pepStaleAfterS: 300,                     // Seconds before a registered PEP is reported stale
     pepNotify: true,                         // Nudge a registered PEP when the repository changes
     pepNotifyAllowedHosts: "",               // Notify endpoint allowlist
-    pepNotifyAllowHttp: false,               // Allow http:// for a nudge (development only)
-    pepNotifySkipTlsVerification: false,     // Skip TLS verification for a nudge (development only)
-    pepNotifyCaFile: "",                     // CA certificates for a nudge
+    pepNotifyAllowHttp: false,               // Allow http:// for a nudge (retired, ignored)
+    pepNotifySkipTlsVerification: false,     // Skip TLS verification for a nudge (retired, ignored)
+    pepNotifyCaFile: "",                     // More CA certificates for a nudge
     pepNotifyTimeoutMs: 2000,                // Nudge timeout (ms)
     signalResponsePolicy: "signal-response", // The policy a received signal is answered with
     riskResponsePolicy: "risk-response",     // The policy a change of risk is answered with
@@ -578,6 +580,7 @@ var config = {
     plaintextRetention: "timed",       // How long a decrypted private key is kept
     plaintextTtlS: 300,                // Decrypted key idle timeout (seconds)
     signerModel: "per-algorithm",      // Signer model
+    credentialSigner: "dedicated",     // Credential signing key
     encryptionKemAlgs: "",             // Post-quantum / hybrid decryption keys
     offerKemEncryption: false,         // Offer post-quantum / hybrid encryption to clients
     postQuantumSigning: true,          // Post-quantum signing
@@ -713,6 +716,8 @@ var config = {
     paranoidAnchorAdmission: true,              // Paranoid: admission to a truststore
     paranoidRevocationSigner: true,             // Paranoid: an OCSP responder or CRL signer
     paranoidFidoMds: true,                      // Paranoid: the FIDO Metadata Service BLOB signer
+    paranoidPolicySigner: true,                 // Paranoid: the signer of a policy export
+    policyExportAlgorithm: "RS256",             // Policy export signing algorithm
     signerTrustAnchorsFile: "",                 // Signer truststore: a PEM file of anchors and intermediates; restart to apply
     pinnedCertificateWarningDays: 30            // Pinned certificate expiry warning (days)
   },
@@ -740,6 +745,7 @@ var config = {
     batchQueueTimeoutS: 60,                                                                // Longest a batch request waits (seconds)
     maxSockets: 64,                                                                        // Connections per request worker; restart to apply
     readYourWrite: "session",                                                              // Read-your-write across request workers
+    readBarrierTimeoutMs: 30000,                                                           // Read barrier wait (ms)
     socketDir: ""                                                                          // Request worker socket directory; restart to apply
   },
 
@@ -905,13 +911,19 @@ var config = {
 
   // --- WS-Trust --------------------------------------------------------
   wstrust: {
-    tokenLifetimeMin: 60,          // Token lifetime (minutes)
-    maxTokenLifetimeMin: 1440,     // Longest lifetime a request may ask for (minutes)
-    jwtAlgorithm: "RS256",         // JWT signature algorithm
-    jwtCertificateHeader: "x5u",   // JWT certificate header
-    acceptClientCertificate: true, // Accept the TLS client certificate as the requester's credential
-    acceptKerberos: true,          // Accept a Kerberos token
-    issueKerberos: false           // Issue Kerberos tokens
+    tokenLifetimeMin: 60,                    // Token lifetime (minutes)
+    maxTokenLifetimeMin: 1440,               // Longest lifetime a request may ask for (minutes)
+    jwtAlgorithm: "RS256",                   // JWT signature algorithm
+    jwtCertificateHeader: "x5u",             // JWT certificate header
+    acceptClientCertificate: true,           // Accept the TLS client certificate as the requester's credential
+    acceptKerberos: true,                    // Accept a Kerberos token
+    issueKerberos: false,                    // Issue Kerberos tokens
+    encryptRequest: false,                   // Require the named elements of a request encrypted
+    acceptEncryptedElements: false,          // Accept encrypted elements no map names
+    advertiseEndpointIdentity: false,        // Advertise the encryption certificate as each port's identity
+    encryptResponse: false,                  // Encrypt the named elements of a response
+    encryptionAlgorithm: "aes256-gcm",       // Response encryption algorithm
+    keyTransportAlgorithm: "rsa-oaep-mgf1p"  // Response key transport algorithm
   },
 
   // --- WS-Federation ---------------------------------------------------
@@ -969,83 +981,92 @@ var config = {
 
   // --- OID4VCI ---------------------------------------------------------
   oid4vci: {
-    walletUrl: "",                                  // Web wallet URL
-    walletInvocation: "openid-credential-offer",    // How a wallet app is handed an offer
-    authorizationServer: "",                        // Authorization server
-    batchSize: 4,                                   // Batch size
-    deferredReadyMs: 4000,                          // Deferred: ready after (ms)
-    deferredIntervalS: 2,                           // Deferred: poll interval (s)
-    offerUsername: "diploma.student",               // Offer username
-    requestEncryptionRequired: false,               // Require encrypted credential requests
-    txCodeLength: 5,                                // Transaction Code length (digits)
-    txCodeMaxAttempts: 5,                           // Wrong Transaction Codes before the code is spent (product)
-    offerTtlS: 600,                                 // Credential Offer lifetime (s)
-    walletIssuancePath: "",                         // Web wallet issuance page
-    requestEncryptionEncValues: "A128GCM,A256GCM",  // Request encryption: enc values
-    responseEncryptionEncValues: "A128GCM,A256GCM", // Response encryption: enc values
-    responseEncryptionRequired: false,              // Require encrypted credential responses
-    credentialLifetimeS: 2592000,                   // Issued credential lifetime (s)
-    credentialSigningAlgorithm: "RS256",            // Algorithm credentials are signed with
-    credentialCertificateHeader: "x5c",             // Credential certificate header
-    trustedListCertificateHeader: "x5c",            // Trusted list certificate header
-    trustedListTerritory: "",                       // Trusted list scheme territory
-    trustedListLifetimeH: 24,                       // Trusted list lifetime (hours)
-    signedMetadataCertificateHeader: "x5u",         // Issuer signed_metadata certificate header
-    proofIatWindowS: 600,                           // Proof of possession iat window (s)
-    cNonceTtlS: 300,                                // c_nonce lifetime (s)
-    cNonceCacheSize: 10000,                         // c_nonce values held (per realm)
-    issuerDisplayName: "Iya STS Credential Issuer", // Issuer display name
-    domainLinkageLifetimeS: 31536000,               // Domain Linkage Credential lifetime (s)
-    sdJwtIssuerDid: false,                          // Name the SD-JWT VC issuer by DID; restart to apply
-    ldpVcIssuerDid: false,                          // Name the ldp_vc issuer by DID; restart to apply
-    statusListTtlS: 300,                            // Status list time to live (s)
-    statusListLifetimeS: 86400,                     // Status list lifetime (s)
-    keyAttestationRequired: false,                  // Require a key attestation
-    keyAttestationTrustedCertificates: "",          // Trusted key attesters (PEM)
-    didHolderBinding: ""                            // Bind to the person's DID
+    walletUrl: "",                                                     // Web wallet URL
+    walletInvocation: "openid-credential-offer",                       // How a wallet app is handed an offer
+    authorizationServer: "",                                           // Authorization server
+    batchSize: 4,                                                      // Batch size
+    deferredReadyMs: 4000,                                             // Deferred: ready after (ms)
+    deferredIntervalS: 2,                                              // Deferred: poll interval (s)
+    offerUsername: "diploma.student",                                  // Offer username
+    requestEncryptionRequired: false,                                  // Require encrypted credential requests
+    txCodeLength: 5,                                                   // Transaction Code length (digits)
+    txCodeMaxAttempts: 5,                                              // Wrong Transaction Codes before the code is spent (product)
+    offerTtlS: 600,                                                    // Credential Offer lifetime (s)
+    walletIssuancePath: "",                                            // Web wallet issuance page
+    requestEncryptionEncValues: "A128GCM,A256GCM",                     // Request encryption: enc values
+    responseEncryptionEncValues: "A128GCM,A256GCM",                    // Response encryption: enc values
+    responseEncryptionRequired: false,                                 // Require encrypted credential responses
+    credentialLifetimeS: 2592000,                                      // Issued credential lifetime (s)
+    credentialSigningAlgorithm: "RS256",                               // Algorithm credentials are signed with
+    mdocDoctype: "urn:iya:sts:mdoc:identity",                          // mdoc document type
+    mdocNamespace: "urn:iya:sts:mdoc",                                 // mdoc data namespace
+    mdocValidityDays: 365,                                             // mdoc validity (days)
+    mdocAgeThresholds: "18,21",                                        // mdoc age-over thresholds
+    mdocIssuingCountry: "US",                                          // mdoc issuing country
+    mdocIssuingAuthority: "Iya STS",                                   // mdoc issuing authority
+    credentialCertificateHeader: "x5c",                                // Credential certificate header
+    trustedListCertificateHeader: "x5c",                               // Trusted list certificate header
+    trustedListTerritory: "",                                          // Trusted list scheme territory
+    trustedListLifetimeH: 24,                                          // Trusted list lifetime (hours)
+    signedMetadataCertificateHeader: "x5u",                            // Issuer signed_metadata certificate header
+    proofIatWindowS: 600,                                              // Proof of possession iat window (s)
+    cNonceTtlS: 300,                                                   // c_nonce lifetime (s)
+    cNonceCacheSize: 10000,                                            // c_nonce values held (per realm)
+    issuerDisplayName: "Iya STS Credential Issuer",                    // Issuer display name
+    domainLinkageLifetimeS: 31536000,                                  // Domain Linkage Credential lifetime (s)
+    sdJwtIssuerDid: false,                                             // Name the SD-JWT VC issuer by DID; restart to apply
+    ldpVcIssuerDid: false,                                             // Name the ldp_vc issuer by DID; restart to apply
+    ldpVcMandatoryPointers: "/issuer,/type,/validFrom,/validUntil",    // ldp_vc mandatory JSON pointers
+    ldpVcDidMandatoryPointers: "/issuer,/type,/validFrom,/validUntil", // ldp_vc (did:web) mandatory JSON pointers
+    statusListTtlS: 300,                                               // Status list time to live (s)
+    statusListLifetimeS: 86400,                                        // Status list lifetime (s)
+    keyAttestationRequired: false,                                     // Require a key attestation
+    keyAttestationTrustedCertificates: "",                             // Trusted key attesters (PEM)
+    didHolderBinding: ""                                               // Bind to the person's DID
   },
 
   // --- OID4VP ----------------------------------------------------------
   oid4vp: {
-    clientId: "sts-verifier",                        // Verifier client ID
-    walletInvocation: "openid4vp",                   // How a wallet app is handed a request
-    requestObjectCertificateHeader: "x5u",           // Request Object certificate header
-    kbMaxAgeS: 600,                                  // Key Binding max age (s)
-    signInSelfIssued: false,                         // Sign in with a self-issued ID (SIOPv2)
-    siopIdTokenMaxAgeS: 300,                         // Self-issued ID Token max age (s)
-    clientIdPrefix: "pre-registered",                // Client Identifier prefix of a signed request
-    x509DnsName: "",                                 // DNS name of the x509_san_dns Client Identifier
-    x509SigningAlgorithm: "ES256",                   // Signing algorithm of an x509 Client Identifier request
-    requestObjectSigningAlgorithm: "RS256",          // Signing algorithm of a signed request
-    verifierAttestation: "",                         // Verifier Attestation JWT
-    claims: "given_name,family_name",                // Requested claims
-    presentationRequestTtlS: 600,                    // Presentation request lifetime (s)
-    maxTransactions: 5000,                           // Presentation requests waiting (per realm)
-    signInRegisterMaxEntries: 10000,                 // Wallet sign-in register size (per realm)
-    walletPresentationPath: "",                      // Web wallet presentation page
-    allowedWalletUrls: "",                           // Other wallet URLs a request link may name (product)
-    trustedIssuerCertificates: "",                   // Other trusted credential issuers (PEM)
-    expectedVct: "urn:iya:sts:sd-jwt-vc:identity",   // Expected SD-JWT VC type (vct)
-    mdocTrustAnchors: "",                            // Trusted mdoc issuing authorities (IACA certificates, PEM)
-    expectedDoctype: "org.iso.18013.5.1.mDL",        // Expected mdoc document type (docType)
-    mdocNamespace: "org.iso.18013.5.1",              // mdoc namespace the requested claims are read from
-    maxRequestedClaims: 40,                          // Claims one request may ask for
-    signIn: true,                                    // Sign in with a wallet
-    signInClientIdPrefix: "x509_hash",               // Wallet sign-in: Client Identifier prefix
-    signInResponseMode: "direct_post.jwt",           // Wallet sign-in: response mode
-    signInTtlS: 300,                                 // Wallet sign-in lifetime (s)
-    signInPollS: 3,                                  // Wallet sign-in page refresh (s)
-    signInCrossDevice: false,                        // Wallet sign-in QR code (cross-device, relayable)
-    signInFormats: "dc+sd-jwt,jwt_vc_json,ldp_vc",   // Wallet sign-in credential formats
-    signInDcApiResponseMode: "dc_api.jwt",           // Digital Credentials API response mode
-    responseEncryptionKeyAlgs: "HPKE-10-KE,ECDH-ES", // Encrypted response: key algorithms offered
-    statusListMaxCacheS: 3600,                       // Longest a fetched status list is kept (s)
-    requireStatusReference: "all",                   // Require a status reference on every presented credential
-    statusOptionalIssuers: ""                        // Trusted issuers exempt from the status reference
+    clientId: "sts-verifier",                               // Verifier client ID
+    walletInvocation: "openid4vp",                          // How a wallet app is handed a request
+    requestObjectCertificateHeader: "x5u",                  // Request Object certificate header
+    kbMaxAgeS: 600,                                         // Key Binding max age (s)
+    signInSelfIssued: false,                                // Sign in with a self-issued ID (SIOPv2)
+    siopIdTokenMaxAgeS: 300,                                // Self-issued ID Token max age (s)
+    clientIdPrefix: "pre-registered",                       // Client Identifier prefix of a signed request
+    x509DnsName: "",                                        // DNS name of the x509_san_dns Client Identifier
+    x509SigningAlgorithm: "ES256",                          // Signing algorithm of an x509 Client Identifier request
+    requestObjectSigningAlgorithm: "RS256",                 // Signing algorithm of a signed request
+    verifierAttestation: "",                                // Verifier Attestation JWT
+    claims: "given_name,family_name",                       // Requested claims
+    presentationRequestTtlS: 600,                           // Presentation request lifetime (s)
+    maxTransactions: 5000,                                  // Presentation requests waiting (per realm)
+    signInRegisterMaxEntries: 10000,                        // Wallet sign-in register size (per realm)
+    walletPresentationPath: "",                             // Web wallet presentation page
+    allowedWalletUrls: "",                                  // Other wallet URLs a request link may name (product)
+    trustedIssuerCertificates: "",                          // Other trusted credential issuers (PEM)
+    expectedVct: "urn:iya:sts:sd-jwt-vc:identity",          // Expected SD-JWT VC type (vct)
+    mdocTrustAnchors: "",                                   // Trusted mdoc issuing authorities (IACA certificates, PEM)
+    expectedDoctype: "urn:iya:sts:mdoc:identity",           // Expected mdoc document type (docType)
+    mdocNamespace: "urn:iya:sts:mdoc",                      // mdoc namespace the requested claims are read from
+    maxRequestedClaims: 40,                                 // Claims one request may ask for
+    signIn: true,                                           // Sign in with a wallet
+    signInClientIdPrefix: "x509_hash",                      // Wallet sign-in: Client Identifier prefix
+    signInResponseMode: "direct_post.jwt",                  // Wallet sign-in: response mode
+    signInTtlS: 300,                                        // Wallet sign-in lifetime (s)
+    signInPollS: 3,                                         // Wallet sign-in page refresh (s)
+    signInCrossDevice: false,                               // Wallet sign-in QR code (cross-device, relayable)
+    signInFormats: "dc+sd-jwt,jwt_vc_json,ldp_vc,mso_mdoc", // Wallet sign-in credential formats
+    signInDcApiResponseMode: "dc_api.jwt",                  // Digital Credentials API response mode
+    responseEncryptionKeyAlgs: "HPKE-10-KE,ECDH-ES",        // Encrypted response: key algorithms offered
+    statusListMaxCacheS: 3600,                              // Longest a fetched status list is kept (s)
+    requireStatusReference: "all",                          // Require a status reference on every presented credential
+    statusOptionalIssuers: ""                               // Trusted issuers exempt from the status reference
   },
 
   // --- OID4VCI ---------------------------------------------------------
   oid4vc: {
+    bbs2023LegacyFormat: false, // Use the pre-1.1 bbs-2023 format
     walletCompatibility: false  // Wallet compatibility mode
   },
 

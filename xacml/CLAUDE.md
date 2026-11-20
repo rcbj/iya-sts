@@ -41,10 +41,16 @@ and the nudge.
 | `fga_policies.ts` | **An application's fine-grained authorization policy and its lifecycle (#564).** `ensure`, `enable`, `disable`, `retire`, `resolve`; fills `common/applications.js`'s `setFgaLifecycle()` slot when wired at 23c. A LIBRARY. See *Application-scoped fine-grained authorization* below. |
 | `xacml_editor.ts` | The editor's GRAMMAR: what may be added where, and how one edit is applied. **No DOM** — which is what lets the menus be asserted in node. |
 | `xacml_alfa.ts` | ALFA read and written — the third rendering, and the one people want to look at. **No DOM.** |
+| `xacml_pep_credential.ts` | `issue-pep-credential` (#1827's follow-up, phase 3): the key in a remote PEP's OWN PKCS #10 request certified by the realm's Issuing CA as `urn:sts:sa:<name>` and registered as the entry's RFC 7523 key (`person_assertions.certifyRequest()`); the entry must exist, be a service account and hold REMOTE_PEPS. No private key anywhere. A library; `xacml_admin.ts` routes the act. |
+| `pep_token.ts` | A remote PEP's DPoP-bound access token from `sts-remote-pep`, read for the PEP door (`/xacml/pep`, `xacml:pep`) and the AuthZEN door (`/access/v1`, `authzen:evaluate`): ours, the PEP's client, this audience and scope, a DPoP proof that holds, one `ou=users` entry. Writes no response (#1827's follow-up). |
 | `xacml_pep_registry.ts` | The register of REMOTE enforcement points. `ou=peps` IS the store, and the sync token is computed here. |
+| `xacml_pep_settings.ts` | **A remote PEP's managed settings (#1760)**: the table, `set-pep-settings`' validation, `GET /xacml/pep/settings`' body and the reading of what the PEP reports in force. A LIBRARY. See *A remote PEP's own page* below. |
+| `xacml_pep_listeners.ts` | **A remote PEP's listeners (#1760)**: the environment's four, the ones defined on its page (`xacmlPepListeners`), their validation, the pull's section and the reading of what the PEP reports (`xacmlPepListenersInUse`). A LIBRARY. See *A remote PEP's listeners* below. |
+| `xacml_pep_route_policies.ts` | **A reverse-proxy route's policy (#1760)**: the save's checks of a route's authorization choice, the simple and public routes' generated policies (ALFA through the store's validating write, marked `xacmlPepRoute`), their removal, the default resource and the application's home page. A LIBRARY. See *A ROUTE'S AUTHORIZATION* below. |
 | `xacml_pep_http.ts` | **The THIRD outbound request in this repository** — the nudge. Argued rather than cited. |
-| `xacml_pep_tls.ts` | **A remote PEP's HTTPS listener certificate (2026-09-13).** Issues a REGISTERED PEP a `serverAuth` key pair from its realm's `pep-tls` Issuing CA through `common/pki.js`, naming the PEP and its notify host, and hands the private key back once. A LIBRARY — `xacml_admin.ts` draws the control and answers the action. See *The remote PEP's HTTPS listener* below. |
+| `xacml_pep_tls.ts` | **A remote PEP's HTTPS listener certificate (2026-09-13).** Issues a REGISTERED PEP a `serverAuth` key pair from its realm's `pep-tls` Issuing CA through `common/pki.js`, naming the PEP, the hostname it reports and its notify host, and hands the private key back once. A LIBRARY — `xacml_admin.ts` draws the control and answers the action. See *The remote PEP's HTTPS listener* below. |
 | `xacml_admin.ts` | The five `/admin/xacml` console pages and their actions, and `/admin/xacml/monitor`'s body. |
+| `web_pep_picture.ts` | **A remote PEP drawn (rcbj, 2026-11-15)**: the Reverse proxy tab's Visual sub-tab, the PEP, its listeners and its routes as a tree by path, laid out in the browser from the PEP page's answer. A `web_` module; see *THE VISUAL SUB-TAB* below. |
 | `xacml_monitor.ts` | The decision and enforcement counters behind `/admin/xacml/monitor`. A LEAF. See *`/admin/xacml/monitor`* below. |
 | `xacml_access_pep.ts`, `xacml_role_pep.ts` | The two embedded PEPs that decide THIS service's own access and issuance. See *AND SINCE 2026-09-05 IT DECIDES THIS SERVICE'S OWN ISSUANCE* below. |
 | `xacml_risk_pep.ts`, `xacml_signal_pep.ts` | **The two embedded PEPs for REACTIONS (#62, 2026-09-22)**, each asking a built-in policy one question per reaction, where a Permit means do it. `risk-response` covers what a change of a person's risk leads to (`risk/CLAUDE.md`). `signal-response` covers whether this service's own console or portal ends its own sessions on a CAEP or RISC event it RECEIVED and verified, and what a federation partner's verified event does — since #432 including `signal-revoke-grants`, a person's GNAP and OAuth grants and tokens, behind `ssf.signalsRevokeGrants` (`ssf/CLAUDE.md`). Both are libraries, reached lazily and built at 23c. |
@@ -179,6 +185,155 @@ own, changes this answer with everything else. `xacml.enforceAccess` turns the
 layer off and the old `xacml.pepRequireCertificate` refusal is what answers
 underneath.
 
+### A TOKEN IN PLACE OF THE CERTIFICATE (#1827's follow-up, rcbj-approved plan, 2026-11-16, phase 1)
+
+**Links 1 and 2 have a second answer: a DPoP-bound access token from
+`sts-remote-pep`.** The PEP signs an RFC 7523 self-assertion with ONE key,
+presents it through that public client with a DPoP proof by the same key,
+and is issued, per audience, a token bound to it: `xacml:pep` on
+`sts-xacml-pep-api` (audience the realm's `/xacml/pep`) for every
+`/xacml/pep/*` call and `POST /xacml/pip`; `xacml:pep-audit` for the push;
+`authzen:evaluate` for the forward. REMOTE_PEPS authorizes `xacml:pep` at
+issuance (`roles.js`'s row names a list now) and links 3 and 4 decide on
+every call, unchanged.
+
+* **ONE READING, `pep_token.ts`**, shared with the AuthZEN door: this
+  realm's token, issued to `sts-remote-pep` (`STS-XACML-0294` otherwise),
+  for this path (`0293`) and scope while the client holds the grant (`0295`),
+  `cnf.jkt` and sent as DPoP (`0292`), a proof `dpop.verifyProof()` accepts
+  — replay, `ath`, the server nonce (`0296`, with `use_dpop_nonce` and a
+  `DPoP-Nonce` when it wanted one) — and a `sub` that is exactly one
+  `ou=users` entry (`0297`). Anything else about the token is `0291`. Each is
+  a 401 with a `DPoP` challenge; the policy's refusal stays a 403.
+* **`pepIdentity()` IS THE PEP DOOR, `callerIdentity()` STAYS THE
+  HANDSHAKE.** `pepAccess()`, `validationDoor()` and the PIP read
+  `pepIdentity()`, which reads the token or the certificate as
+  `xacml.pepAuthentication` (per realm, `token` by default since phase 4;
+  `either` until then) allows, once per request (a proof is good for one
+  request). `xacmlAccess()` and the AuthZEN
+  certificate door read `callerIdentity()`, which never reads a header.
+  **A token, where one is presented and accepted, DECIDES** — a refused one
+  is not passed over for the certificate underneath. `token` refuses a
+  request carrying none (`0289`); `certificate` does not read the header and
+  refuses a token-only request (`0290`).
+* **PHASE 4 (rcbj, 2026-11-16): `token` IS THE DEFAULT, `certificate` AND
+  `either` ARE OPT-INS FOR GOOD.** The PEP image no longer presents a client
+  certificate (`xacml-pep/CLAUDE.md`, `STS-XPEP-0135`), so `certificate`
+  admits only an older PEP image or another implementation. **The upgrade is
+  the compatibility question**: a 1.0.0 deployment's PEPs authenticate by a
+  certificate, and the new default refuses them. A value an operator stored
+  (console, `/admin-api/config/set`, a realm's overrides) or set in an
+  appconfig file wins as every value does; with neither, the operator sets
+  `either` before upgrading (`docs/v1.1.0/release-notes.md`, `docs/v1.1.0/remote-pep.md`
+  *Upgrading a deployment whose PEPs use a certificate*), and the upgrade
+  script does that for a SQL store (below). So the refusal is
+  never silent: where the refused request presented a certificate that
+  VERIFIES, `0289`'s description says `either` would accept it and names
+  `PEP_ASSERTION_KEY`, and `warnCertificateRefused()` logs a warning under
+  `0289` once per realm and process. **The upgrade script writes `either`
+  for every realm with a row under its `ou=peps`** (rcbj, 2026-11-16:
+  "create a migration script"; `postgres/upgrade-1.0.0.sql`,
+  `mariadb/upgrade-1.0.0.sql`, argued in `postgres/CLAUDE.md`), since every
+  PEP 1.0.0 registered authenticated by certificate; the manual step is left
+  for a store the script does not reach (LDIF, a split cell database). An
+  anonymous request is now `0289`'s 401 where it was the policy's 403
+  (`STS-XACML-0007`) under `either`.
+* **THE NAME IS THE USERNAME**, `commonName` of the identity — what a
+  certificate this service issued carried — so the `ou=peps` row, the
+  heartbeat's row and a cluster's membership are unchanged; the row's
+  `thumbprint` is the DPoP key's RFC 7638 thumbprint, `certificateSubject`
+  empty.
+* **WHAT IT COSTS** (measured in process by `tests/remote_pep_token_door.js`
+  C1): every call verifies one ES256 proof and writes its `jti` — the
+  cluster claim `dpop.proofClaims()` takes on arrival and a `dpop.seenJtis`
+  row. On a store, the second makes a pull or a PIP query a WRITING response
+  that the barrier holds until it commits, where with a certificate it was a
+  read.
+
+`tests/remote_pep_token_door.js` drives it in process over plain HTTP (X14
+the default, X13/X15 the opt-ins); `tests/authzen_evaluation.js` K0/K0a hold
+the default's refusal of a verified certificate over a real handshake, and
+K2a/K2b the precedence under `either`. `tests/stored_certificates.js` and
+`tests/xacml_pep_proxy.js` opt in to `either`, since they drive the
+certificate door.
+
+### PROVISIONING THE KEY: `issue-pep-credential` (phase 3, rcbj 2026-11-16)
+
+**The service never holds the PEP's private key** (rcbj), and the
+certificate is **issued by the realm's internal CA** (decision 4). The PEP or
+`tests/tools/pep-credential.js --assertion` generates the key and sends a
+PKCS #10 request; `xacml_pep_credential.ts` checks the entry and hands the
+request to `person_assertions.certifyRequest()`, the one CSR door for a
+person's RFC 7523 key (`common/CLAUDE.md` 3ab).
+
+* **WHO.** `name` (or `pep`) is a USERNAME under this realm's `ou=users`, not
+  an `ou=peps` row — a PEP is provisioned before it ever registers. Refused:
+  no such entry (`STS-XACML-0298`), not a service account (`0299`), not
+  holding REMOTE_PEPS (`0301`), asked of `roles.rolesOf()` by DN as
+  `pepAccess()` asks. A key for an entry every PEP door refuses would read as
+  a broken PEP rather than a missing membership.
+* **WHAT.** The leaf names the entry (`urn:sts:sa:<name>`, CN the username);
+  the request's subject and SANs are read for nothing. EC P-256 or RSA ≥ 2048
+  (`STS-PKI-0281`); a request that does not prove possession is the
+  enrollment reader's `STS-ENROLL-0033`.
+* **ROTATION ADDS** (#1290's rule for a person's keys): the old key keeps
+  working until the PEP is moved; `revokePrevious: true` revokes the entry's
+  other valid RFC 7523 keys after the new one is written, or before it when
+  the entry is at `pki.personSigningKeyMax`. A failed revocation is `0302`
+  with the new key registered.
+* **THE ANSWER** is public material and the environment (`PEP_NAME`,
+  `PEP_CLIENT_ID`, `PEP_ASSERTION_KEY` as a reminder, not a path); audited as
+  `xacml.pep.credential` without the certificate. On the console: a form on
+  the PEP's Overview and one under the Remote PEPs table (with a name field),
+  the answer drawn once by `WebAnswers.pepCredential()`.
+* **THE STACKS** generate the key (`--assertion --csr-only`) and mount it
+  as `PEP_ASSERTION_KEY`; `sts_xacml_remote_pep.js` sends the request once it
+  has made the PEP's entry in its realm, and the PEP's token fetches succeed
+  from then on (it retries every five seconds). Since phase 4 they mint no
+  client certificate for the PEP at all, and nothing carries its calls until
+  the key is registered.
+
+`tests/pep_assertion_credential.js` holds it in process.
+
+### The entry is a SERVICE ACCOUNT, owned by the realm's administrators (#1760)
+
+rcbj: "The user that a remote PEP uses to map its client cert to and connect
+to the STS needs to be flagged as a service account. The realm admin can be
+listed as the owner." `common/service_accounts.ts`'s *A REMOTE PEP'S IDENTITY
+IS A SERVICE ACCOUNT* is the design; `common/CLAUDE.md` 3cd has the rule. What
+this family needs to know:
+
+* **ONE CHOKEPOINT, THE MEMBERSHIP WRITE.** `ldap_server.js`'s
+  `noteMembershipChange()` — which every write of a group's members tells —
+  hands each PERSON who joins the group `roles.remotePepGroup` names to
+  `designateRemotePep()`. Not the registration: an entry designated by being
+  granted REMOTE_PEPS is one before any PEP knocks, and the gate stays a
+  read. The seed and the entries that predate this are
+  `designateRemotePeps()`, run at startup after each realm's bootstrap
+  administrator (`server.js`, inside the bootstrap claim) and at a realm's
+  create (`admin_actions.ts`). An application holding REMOTE_PEPS, and an
+  entry already a service account, are left as they are.
+* **THE OWNER** is the realm's Admin Write group, else its bootstrap
+  administrator, in the same write as the flag, else a deferral
+  (`STS-SVCACCT-0051`) — never an ownerless write, whatever `requireOwner`
+  says.
+* **NO DOOR IS ON THIS PATH, AND NONE WAS ADDED.** The four links above ask no
+  password and start no session: `callerIdentity()` reads the handshake and
+  names the entry, `pepAccess()` asks `roles.rolesOf()` and the access
+  policy. `credentials.serviceAccountDoorRefusal()` and
+  `secondFactorRefusal()` are asked inside `credentials.verifyPrepare()` /
+  `verify()` (a password), and the browser door in `authn.startSession()`;
+  none of `/xacml/pep/*`, `/xacml/pip`, the settings, the listener
+  certificate or the proxy's validation and identity doors reaches either
+  for the PEP's own entry — `basic()` verifies an END USER's password, and
+  `identity()` issues about the end user. A browser sign-in as the PEP's
+  entry is refused, which is wanted. `tests/xacml_pep_proxy.js` B0s/B1
+  registers and pulls as one; `tests/remote_pep_service_accounts.js` holds
+  the rest.
+* **THE PAGE** draws it on the PEP's Overview (`pepServiceAccount()`), from
+  `identityAccount` on each row of `pepsJson()`, read where it is
+  (`service_accounts.identityOf()`), never stored on `ou=peps`.
+
 ### This service's own policies are never pushed
 
 `GET /xacml/pep/policies` withholds the documents named by `xacml.accessPolicy`
@@ -253,6 +408,18 @@ useful refusal in the parser, because a typo in an attribute name is otherwise
 a policy that quietly matches nothing and looks exactly like one that is
 working and denying you.
 
+A designator's **MustBePresent and Issuer** are not a dialect choice: ALFA
+writes them after the short name where the attribute is used, as Axiomatics'
+reference spells them — `role[mustbepresent]`, `role[issuer="..."]`,
+`role[mustbepresent issuer="..."]`. Until 2026-11-13 the emitter dropped both
+and the parser built every designator optional with no issuer, so a round
+trip turned a missing attribute's Indeterminate into NotApplicable and let an
+attribute from any issuer match; and `operatorFor()` took the first matching
+suffix, so `-greater-than-or-equal` and `-less-than-or-equal` were written as
+`==`. Through ALFA and back, 59 of the 447 OASIS mandatory policies that load
+decided differently; none do now. `tests/xacml_alfa.js`
+`checkOperatorsAndQualifiers()` holds both.
+
 ## The console
 
 ```
@@ -324,7 +491,18 @@ grammar is what this whole directory is arranged to avoid.
 edit loads the document, applies one change, serializes and writes back. There
 is nothing to lose when a browser closes and no second copy that could disagree
 with the stored one. The cost is that editing is LIVE, so the page says so and
-puts the disable control one click away.
+puts the disable control one click away — and since 2026-11-15 (rcbj) says
+first, above the chooser, that there is no overall Save: each Update writes
+its own row at once, the PDP decides with it from the next request and the
+remote PEPs are nudged (`editor.noSave`). **A route's generated policy
+(`xacmlPepRoute`) carries a warning** (`editor.generatedRoute`, from the
+answer's `policy.pepRoute`): `PepRoutePolicies.write()` writes it again
+whenever the text it would generate differs — at Generate the policy again
+and at EVERY save of that PEP's routes, since `proxyAction()` writes every
+simple or public route's policy, so a Save on any route tab (not only
+Authorization), another route's save or a manifest save replaces a hand
+edit, and re-enables it. A hand-written policy belongs to the route's
+existing-policy choice.
 
 **An expression edit names an expression.** The six `set-expression-*` actions
 replace the node at the path. A path that resolves to a Match, a rule, a
@@ -508,6 +686,28 @@ READING, and three readings are three chances to disagree with the PDP at the
 far end — which for authorization means a decision nobody can reproduce. It is
 also what makes ALFA cheap when it lands: a parser and an emitter, not a second
 policy system.
+
+## A NAME A POLICY OR A CALLER CHOSE IS AN OWN MEMBER, OR IT IS ABSENT (2026-11-12)
+
+Every table this directory looks a chosen name up in — the function library,
+the combiners, the datatypes and their short names, the legacy datatype
+aliases, a policy's variables, the repository a reference resolves through,
+ALFA's categories, algorithms, function names and declared attributes, the
+row grammar's categories and datatypes, GNAP's drop and interaction words —
+is a plain object, and `table[name]` follows the prototype chain. So
+`constructor`, `toString` or `__proto__` answered a function or
+`Object.prototype` where an unknown name answers nothing: an FGA or AuthZEN
+row accepted `category: "constructor"`, a JSON request's `DataType:
+"toString"` escaped its refusal, a VariableId `toString` was "defined twice",
+a reference to `constructor` was a cycle, a FunctionId `toString` "takes 0
+arguments", an interaction word `constructor` stopped asking for the person.
+**Every such read goes through `common/own_members.ts`** (`read()`, `has()`),
+and every write into a map read that way through its `put()`, so a name
+called `__proto__` is a member rather than the map's prototype (a
+VariableId `__proto__` was refused before and is a variable now; a policy
+id `__proto__` in `XacmlStore.repository()` resolves as it did).
+`XacmlEditor.ownStep()` (#1664) is that file's `has()`. An own member
+answers what it answered before. `tests/own_members.js`.
 
 ## Where it stands against the conformance suite
 
@@ -749,28 +949,75 @@ credential and not even the new sync token. Every PEP converges without it. So:
 * a refusal is worth RECORDING and never worth escalating.
 
 **If a future change puts something in that body a PEP cannot get any other
-way, the whole argument goes with it.** The body is three members; keep it that
-way or move the argument.
+way, the whole argument goes with it.** The body is three members, and a
+fourth, `full`, on a Sync (2026-11-16): a flag asking the PEP to pull every
+document whole, which carries no content. Keep it that way or move the
+argument.
 
 Its four bounds are `ssf.push*`'s four, deliberately — an off switch, a host
-allowlist empty by default meaning any, an https-only rule with an escape in
-development only, and a timeout — because two families making one outbound
-request each should be
-configured the same way or the second is a surprise to anybody who read the
-first. The timeout is SHORTER (2s against SSF's 10s) and that is the difference
-that follows from the argument: a lost push is a lost event, so SSF waits; a
-lost nudge costs one polling interval, so waiting is the expensive mistake.
+allowlist empty by default meaning any, https, and a timeout — because two
+families making one outbound request each should be configured the same way
+or the second is a surprise to anybody who read the first. The timeout is
+SHORTER (2s against SSF's 10s) and that is the difference that follows from
+the argument: a lost push is a lost event, so SSF waits; a lost nudge costs
+one polling interval, so waiting is the expensive mistake.
 
-**The https rule is `common/outbound_tls.ts`'s since #171 (2026-09-23)**, shared
-with GNAP, SSF and federation. `xacml.pepNotifyAllowInsecure` allowed plain
-http AND turned the PEP's certificate check off, and product mode honoured it.
-Three settings now: `xacml.pepNotifyAllowHttp` (development only; product
-refuses a plain-http nudge, `STS-XACML-0073`), `xacml.pepNotifySkipTlsVerification`
-(development only; ignored in product, `STS-XACML-0074`, and refused on write,
-`STS-CORE-0103`) and `xacml.pepNotifyCaFile` (a PEP certified by a private CA,
-beside node's store; unreadable refuses the nudge, `STS-CORE-0104`).
-`GET /admin-api/xacml/peps`' `notify.transport` reports the three as they are
-IN FORCE, so a skip stored in a product realm reads false there.
+**THE NUDGE IS HTTPS ONLY, AND ALWAYS VERIFIED, IN EVERY MODE (2026-11-14,
+rcbj: "The listener for Remote PEP notify URLs should be HTTPS. Let's assume
+always HTTPS").** Until then the https rule was `common/outbound_tls.ts`'s
+(#171), with `xacml.pepNotifyAllowHttp` and
+`xacml.pepNotifySkipTlsVerification` as the development-mode escapes, and an
+https nudge verified against node's store and `xacml.pepNotifyCaFile` alone —
+so the compose demonstration's nudge to the PEP's realm-issued listener was
+refused "self-signed certificate in certificate chain" (`STS-XACML-0070`)
+unless an operator copied the service Root into a CA file. Now:
+
+* **No plain http.** `urlVerdict()` refuses an `http://` URL in both modes
+  (`STS-XACML-0259`), with a sentence short enough for the console's reason;
+  the PEP converges by polling, as one with no notify URL always has. The
+  PEP's Settings tab refuses an `http://` `notifyUrl` (`STS-XACML-0239`), and
+  the PEP refuses `POST /notify` over plain HTTP (`xacml-pep/CLAUDE.md`).
+* **The trust needs no setting.** A PEP's HTTPS listener certificate is
+  issued by the `pep-tls` Issuing CA of the realm it registered to
+  (`xacml_pep_tls.ts`, the issue and the CSR paths), so `trust()` puts THAT
+  CHAIN — the Issuing CA, the realm's Intermediate and the service Root,
+  `pki.useCaseChainPems()` — beside node's store and the CA file, with the
+  RFC 9525 host check against the notify URL's host and the path rules
+  (`OutboundTls.verifiedOptions()`).
+* **And the pin.** The Root vouches for every Issuing CA of every realm, so
+  a chain that reaches this service's Root must have been issued, at the
+  leaf, by THIS realm's `pep-tls` CA (`pinProblem()`, compared by SHA-256
+  fingerprint because every realm's `pep-tls` CA has the same subject;
+  `STS-XACML-0260`). A chain to the CA file or node's store is not this
+  service's to judge further.
+* **`xacml.pepNotifyCaFile` stays**, as an ADDITIONAL anchor for a PEP
+  certified elsewhere; an unusable file still refuses (`STS-CORE-0104`).
+* **The two escapes are RETIRED, NOT REMOVED** — backwards compatibility. The
+  rows stay, so an appconfig file, the environment or a stored value naming
+  either still loads, and the value is ignored; one that is on is logged once
+  per process with `STS-XACML-0258` the first time a nudge would have read it.
+  `REPLACED_SETTINGS`, which refuses to start, is the pre-1.0 pattern and the
+  wrong one for a setting whose only effect was to weaken something.
+  `notify.transport` keeps its four members: `allowHttp` and
+  `skipTlsVerification` read `false`, `skipTlsVerificationSet` still says one
+  is stored. `STS-XACML-0073` and `0074` are retired.
+* **Paranoid PKI mode** holds the handshake through the door's
+  `tls-server-outbound` purpose, which already named this nudge; the realm's
+  chain is the dialer's own `ca`, so no new purpose row was owed.
+* **`tests/outbound_tls.js` no longer lists XACML among its families**: what
+  it asserts of a family — the escapes honoured in development — is what was
+  removed. `tests/pep_listener_certificate.js` section F holds the trust:
+  this realm's leaf with no CA file, a foreign CA refused and accepted by the
+  file, another Issuing CA under the same Root and another realm's `pep-tls`
+  leaf refused by the pin, plain http with the retired setting on.
+
+**THE CONSOLE'S NOTIFY CELL IS SHORT (2026-11-14).** It drew the service's
+whole sentence about an unusable URL, and the last nudge's, inline; it draws
+*usable*, *unusable* with a one-line reason (read from the URL where it can
+be, from the sentence for the allowlist, so the API grew no member), or
+*none*, and two words for the last nudge, with the sentences in a
+`<details>` — no script, `admin-ui/CLAUDE.md`'s rule. The PEP page's
+Overview draws the same cell. `tests/xacml_pep_console.js`.
 
 **On an active-active node the nudge waits for the COMMIT, and only there
 (2026-09-15, #46).** It is fired from inside `xacml_store.write()`, and the PEP
@@ -1108,6 +1355,110 @@ Three decisions on the row that each prevent a specific wrong reading:
 * **A failed nudge does not move `lastSeen`.** A nudge that failed is evidence
   the PEP is NOT reachable, and letting it stamp liveness would make an
   unreachable PEP look freshly seen.
+* **The reverse proxy's signal-stream health is a SNAPSHOT, held to counts and
+  ages (#1760).** A PEP whose proxy built CAEP/RISC receivers sends `GET /`'s
+  `proxy.signals` on each heartbeat as `signals`; the row keeps it in
+  `xacmlPepSignals` (OID 753, a JSON document; the concept's `signals`).
+  `PepRegistry.signalsOf()` keeps ONLY the twelve members and the library
+  stores' five, each a non-negative integer or 0, and stamps `at` with when
+  it arrived, whatever the PEP said: the PEP promises no client id, URL or
+  error text, and this is the end that makes a `REMOTE_PEPS` holder unable
+  to put text on an administrator's page. The same function reads the stored
+  value, so an `ldapmodify` cannot get round it. **An absent member keeps the
+  snapshot** (an older PEP, and the pull's own `heartbeat(name, {})`), `null`
+  clears it, and a registration drops it, because a registration is a new
+  process whose receivers the old numbers do not describe. A row with none
+  answers `signals: null` and the console draws "not reported", which is a
+  different fact from a proxy with no streams. Backwards compatibility both
+  ways: an older PEP sends no member, and an older service's heartbeat reads
+  the members it names and ignores this one.
+
+## A heartbeat writes the entry only when something durable changed (#1882)
+
+**rcbj: "not every PEP heartbeat needs a directory write".** Until
+2026-11-17 every heartbeat, and every pull naming a registered PEP (which
+calls `heartbeat(name, {})`), REPLACED the whole entry: at the PEP's defaults
+(a pull every 15 s, a heartbeat every 60 s) five rewrites a minute per PEP,
+each a directory write, a persistence flush, a change-log row every node
+applies and an audit `entry.update` row — about 1,900 of them on 8081, nearly
+all changing nothing but `lastSeen` and the counters. And the write made a
+pull, a GET, a request the cluster barrier holds.
+
+* **DURABLE, in the entry, written when one changes**: identity, certificate
+  subject, thumbprint, authenticated, notify URL, bias, resource, version,
+  hostname, enabled, registration date, description, the administrator's
+  proxy, settings and listener definitions, the sync token and policy count
+  the PEP holds (being current is a fact an operator acts on, and it moves
+  only when the repository does), the settings in force without their
+  arrival stamp, and each listener's state, reason, address, port, renewal,
+  certificate and POOL BOUNDS (`stats.pool.min` and `max`: the
+  `threadPoolMin` and `threadPoolMax` in force, which move only when a
+  tuning is applied). `PepRegistry.durableOf()` is the comparison; it is made
+  against the ENTRY as stored, never the joined row.
+* **The pool bounds were volatile until run #500 (2026-11-18)**, with the
+  rest of the pool. A PEP reports a pulled settings token on a heartbeat
+  that can come before its listeners are re-tuned; that heartbeat wrote the
+  entry with the old pool and the next carried the new bounds as volatile,
+  held in the receiving process for up to a journal interval. In a cluster
+  the other node drew the old bounds for a minute, and
+  `sts_xacml_pep_proxy_cluster` gave up on `api-http.threadPoolMax` after
+  60 s, about a second before the record was due.
+* **VOLATILE, in the minted store `xacml_pep_registry.liveness`**
+  (`VOLATILE_ATTRIBUTES`): `lastSeen`, the four counters, the signal-stream
+  health (counts and ages), the in-use reports' stamps, per-listener pool
+  figures but its bounds and the connection figures, memory and path
+  counts, and the last nudge's outcome — `recordNotify()` writes the store,
+  never the entry, since a nudge
+  goes to every PEP on every policy change. These move on every heartbeat
+  of a PEP serving traffic, and none of them is a change to what the PEP is.
+* **EVERY READER IS UNCHANGED**: `all()` and `read()` join the entry with
+  the newest record of the SAME registration (`registeredAt`) seen LATER
+  than the entry was written (`withLiveness()`); a tie is the entry's, so a
+  registration in the same millisecond still drops what a new process has
+  not reported, and a heartbeat in the same millisecond as the last is
+  stamped a millisecond on. The console's PEP pages, `/admin-api/xacml/peps`,
+  the clusters, the monitor, `notifiable()` and `stale` all read the join.
+  The LDAP browser's `/admin/ldap/peps` puts the joined values over the
+  entry's (`ldap_server.js`'s `withPepLiveness()`); `ldapsearch` on 389
+  reads the entry as stored, as of its last durable write.
+* **THE STORE IS AN OBSERVATION, MERGED BY RECORD, AND GLOBAL-TIER.**
+  `observation: true`, so a heartbeat no longer makes a pull a writing
+  request (`cluster/CLAUDE.md`, *A decision counted is not a write
+  either*); `mergeRow` (`mergeLiveness()`) keeps the later registration's
+  record whole, else the later-seen half and the later nudge, and
+  `mergeOnApply` keeps an older arrival from going over a newer record held
+  here. Global in `persistence/tiers.js`, because the entry is and every
+  cell's console saw every heartbeat until then; a row is a component's
+  times and counts.
+* **JOURNALLED AT ONCE WHEN THE COUNTERS OR THE SIGNAL HEALTH'S EVENTS
+  MOVED, OTHERWISE ONCE AN INTERVAL.** The events are every count and flag
+  of the snapshot without its `at`, `oldestSuccessAgeMs` and each stream's
+  times and poll count (`signalEvents()`). Counting the four counters alone
+  held a set accepted in the receiving process for up to a minute, so in a
+  dispatched service the worker answering `/admin-api/xacml/peps` drew the
+  older snapshot and `sts_xacml_remote_pep` gave up after 40 s (run #478,
+  single-node, mariadb and cluster). The interval is `journalIntervalMs()`,
+  a fifth of `xacml.pepStaleAfterS` between 1 s and 60 s, measured from the newer of the entry's and the
+  journalled record's `lastSeen`, which every process reads, so a node's
+  workers and a cluster's nodes share one interval. The receiving process
+  holds its newest record in `latest` (per process, per realm, a row per
+  PEP) and reads it exactly; any other reads a `lastSeen` at most one
+  interval old, a fifth of the stale threshold, which is why **the stale
+  determination does not move** — it is still `(now - lastSeen) >
+  xacml.pepStaleAfterS`, over the newest record. Derived rather than a
+  setting, so the two cannot be set against each other. No timer flushes
+  `latest`: the next heartbeat or pull journals it once due, and a process
+  that stops takes at most the last interval's `lastSeen` with it.
+* **Measured** (`tests/xacml_pep_heartbeat_writes.js`): 25 heartbeats and 5
+  pulls that change nothing durable are 0 entry writes and 0 journalled rows
+  (were 30 entry writes and 30 audit rows); a counter change is 1 minted
+  row; a version, listener-state or sync-token change is exactly 1 entry
+  write.
+* **Backwards compatible**: an entry written before is read as it was until
+  its PEP's next heartbeat, an older PEP's heartbeat is unchanged on the
+  wire, a durable write still carries the newest volatile values into the
+  entry, and no setting was added or renamed. A refused write is still 507,
+  now only for a heartbeat that changed something durable.
 
 ## The sync token is a digest of what would be SENT
 
@@ -1131,6 +1482,64 @@ token that moves when nothing sent moved costs a re-pull and no more.)
 
 `current` is therefore a COMPARISON this service performs rather than a claim
 the PEP makes about itself.
+
+## What modelling the control plane corrected (#1830, 2026-11-16)
+
+`models/pep/pep_control_plane.tsp` describes every `/xacml/pep/*` answer and
+`POST /xacml/pip` (`xacml-pep/CLAUDE.md`, *THE MODEL OF EVERY ENDPOINT*), and
+writing it found seven places where the service was irregular; an eighth
+came from the PEP's side. Each is fixed, and each keeps what a deployed PEP
+relies on — it treats any answer but 200, 201 and 304 as a failure and reads
+only the members the model names:
+
+* **A pull touches the CERTIFICATE's row.** `GET /xacml/pep/policies?pep=`
+  moved that row's `lastSeen` whatever the certificate said, so any
+  `REMOTE_PEPS` holder could keep another PEP looking alive after it had
+  gone. The name is `pepNameOf()`'s now, as on every other door: `?pep=` is
+  read only with no certificate. A PEP sends its own name, which is its
+  certificate's. (`authzen_evaluation.js` X11.)
+* **`If-None-Match` is read on all five pulls** (`unchanged()`): RFC 9110
+  section 13.1.2, `*` or a list, weak comparison. Only `?since=` answered
+  304 before, so the header the PEP sends on the settings and proxy pulls
+  was answered 200 with the whole body every time. `?since=` stays. (X12.)
+* **Register and heartbeat answer the registry's status**, carried on every
+  refusal and argued at `PepResult` in `xacml_pep_registry.ts`: 400 a bad
+  name or hostname, 404 a heartbeat from no row, **503** no directory
+  (`STS-XACML-0026`), **507** the directory refused the write — which
+  `writePep()` does only at `xacml.maxPeps` or the entry cap (`0027`).
+  Register answered every refusal 400 and the heartbeat every one 404, so a
+  fault of this service's read as the PEP's. (`xacml_pep.js` 4, X13.)
+* **`POST /xacml/pip` answers EVERY refusal as a `<PIPError>`** — the gate's
+  403 (`error="access_denied"`) and the off switches' 501
+  (`not_implemented`) as well as its own 400 and 429 — through an `xml` flag
+  on `offCheck()`, `remotePepOffCheck()` and `pepAccess()` that only the PIP
+  passes. The codes recorded are unchanged; every other door stays JSON.
+  (X14; `sts_xacml_endpoints.js` reads the two members out of the XML.)
+* **The listener certificate's 200 carries no `ok`**, which was
+  `issueForListener()`'s own flag sent whole. (`xacml_pep_proxy.js` L9b.)
+* **The nudge's `pdp` names the realm's PDP**: every caller passed `''`, so
+  it was always empty. An empty issuer asks `PepNotifier`'s `pdpIdentity()`
+  — the base `/xacml/pep/*` is served under, pinned where a listener or
+  `global.publicBaseUrl` pins it, else that of the request that made the
+  change (`helpers.urlOf()`), realm prefix included; `''` only with neither,
+  the rule every request-less URL here follows. KEPT rather than removed,
+  because the model and the PEP's generated type require it; the PEP reads
+  nothing in the body but `full`. (`pep_listener_certificate.js` F1d.)
+* **A route may not be `/.iya-pep` or under `/.iya-pep/`** (`STS-XACML-0300`,
+  `PepProxy.reservedPath()`): the proxy keeps that prefix for its callback
+  and sign-out and answers 404 (`STS-XPEP-0134`) to the rest, and an updated
+  PEP refuses the whole configuration holding such a route and keeps its
+  last good one. A document stored before this fails the pull's validation
+  like any stored document the grammar refuses — logged `STS-XACML-0200`,
+  pulled as `configured: false`, so the proxy answers 404 until an
+  administrator saves it again. (`xacml_pep_proxy.js` A3, A6, C9b.)
+* **Every validation door answers ONE 429 shape**: `{ error:
+  "too_many_requests", error_description, retryAfterS }`, with `Retry-After`.
+  `basic`'s own lockout (`STS-XACML-0205`) answered `{ valid: false,
+  retryAfterS }` and the doors' shared limiter (`0215`) an `Error` with no
+  wait in the body, so one status had two bodies. The PEP reads
+  `retryAfterS`, else the header, from any 429, so a deployed one reads the
+  new body as it read the old. (`xacml_pep_proxy.js` G3.)
 
 ## `GET /xacml/pep/authzen-catalogue` — the pull's other half (#1179)
 
@@ -1217,6 +1626,586 @@ out; what belongs here is the door.
   reason; `/admin/sts-metadata` and `/admin/xacml`'s protocol-endpoint table
   do.
 
+## The remote PEP as a reverse proxy (#1760, phase 1)
+
+A registered PEP may stand in front of an application. Its configuration is
+ONE attribute on its own `ou=peps` entry, `xacmlPepProxy` (OID 752, a JSON
+document; the concept's `proxy`), so a registration and a heartbeat carry it
+(`register()` keeps the existing value, `attributesOf()` writes it when set)
+and Forget removes it with the row. `xacml_pep_proxy.ts` is everything the
+service decides about it; `xacml.ts` answers the doors and `xacml_admin.ts`
+the two actions.
+
+* **ONE GRAMMAR, ASKED TWICE.** `validate()` is the issue's D2, closed (a
+  member it does not name is refused by name), each refusal its own code
+  (`STS-XACML-0184`–`0199`). `set-pep-proxy` stores what it normalised; the
+  pull validates the stored text again, so a value an `ldapmodify` wrote that
+  does not validate is pulled as `configured: false` and logged
+  (`STS-XACML-0200`). In product `publicBaseUrl` must be https
+  (`mode.servesProxyBrowsersInTheClear()`).
+* **HOW THE IDENTITY REACHES THE APPLICATION IS A ROUTE'S `identity` (D11)**,
+  `{ mode, headers: [{ name, claim }], separator }`, default mode `headers`
+  with no header (`subjectHeader` and `mechanismHeader` are gone, refused as
+  members the grammar does not name). At most 16 headers; a name is an RFC
+  9110 token, unique without case, and not a hop-by-hop or framing header,
+  `Authorization`, `Cookie`, `Set-Cookie`, `Host`, `Forwarded` or
+  `X-Forwarded-*`; a claim is one of `sub`, `username`, `email`, `name`,
+  `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr`; the
+  separator one printable ASCII character that is not a letter or a
+  number (`STS-XACML-0224`-`0227`). Mode `saml` names no header and needs
+  the application's `samlEntityId` and a registered
+  `samlAssertionConsumerService` (`0228`), mode `jwt` an audience (`0218`).
+  The normalised form keeps an empty `headers` in every mode, so a saved
+  document validates again; a public route accepts only that default.
+* **`GET /xacml/pep/proxy`** is the AuthZEN pulls' shape: `pepAccess()` READ,
+  its own sync token over exactly the body (ETag, `?since=` 304), `no-store`,
+  no nudge. The PEP is named by its certificate, the registration's rule.
+  A policy write does not move the token.
+* **THE FOUR DOORS** (`introspect`, `basic`, `saml`, `session`, all POST) go
+  through `validationDoor()`: the PIP's rate limit and ceiling
+  (`xacml.pipMaxPerWindow`, before the gate), `pepAccess()` READ, one audit
+  row `xacml.pep.validate` naming the PEP, the mechanism and the outcome and
+  never the credential, `no-store`, and a closed answer. Basic is
+  `credentials.verifyAsync()` behind door limits `xacml-pep-basic` (they
+  count only where passwords are verified, product) and the password door
+  `xacml-pep`, the sixth app-password door: in product a person who holds or
+  owes a second factor (everybody, by default) presents an app password
+  scoped to `xacml-pep`, never their own password. Introspection is
+  `oauth2.introspectionFor()` (`introspectionOf()`, no client
+  authentication and no section 5 narrowing — the PEP checks `aud`). SAML
+  requires the signature at the ROOT assertion with its reference naming the
+  root's ID, so a signed assertion nested in an unsigned one is refused.
+* **A ROUTE NAMES AN APPLICATION (D10)** by its identifier in the realm's
+  registry (`application`, required on a non-public route, refused on a
+  public one) and the configuration copies nothing from it: `resolveRoute()`
+  reads, at the save and again at every pull, the audiences an access token
+  for it carries (`oauthAudience` and `oauthPermissionBaseUri`; there is no
+  `audience` member), its `samlEntityId`, and for a session route its
+  confidential OIDC client (`client_secret_basic` or `client_secret_post`,
+  the code grant, `<publicBaseUrl>/.iya-pep/callback` registered, an
+  unexpired secret; `STS-XACML-0217`–`0223`). The pull carries each route's
+  `resolved` and `realm.clients[clientId] = { clientSecret,
+  tokenEndpointAuthMethod, redirectUri, scopes }` with the secret OPENED, and
+  `realm.tlsCaChain` (`tls_server.listenerChainPem()`, the bundle
+  `GET /tls/server-certificate` answers). The token is a digest of that
+  body, so a rotated secret or an edited application reaches the PEP on its
+  poll; an application deleted or no longer qualifying leaves its route
+  `usable: false`. The secret is on no console page and in no `/admin-api`
+  answer: a PEP's row carries `proxyRoutes` (`route`, `application`,
+  `usable`, `why`), and the application's page (`pepRoutes`) the routes
+  that front it. Nothing is created for a PEP; a session route needs an
+  https `publicBaseUrl`, and `signals` (default true) says whether its
+  sign-out reaches the proxy by CAEP/RISC or by `POST /xacml/pep/session`.
+* **THE BASIC TICKET AND `POST /xacml/pep/identity` (D11).** A valid Basic
+  answers `ticket` as well: 256 random bits, kept under its SHA-256 in
+  `xacml.pepTickets` (a `realms.map`, persisted and cell-tier, its expiry on
+  the row, 10000 per realm with the oldest dropped, on `/admin/caches` as
+  `xacml.pep-tickets`), bound to the PEP and the subject, 120 s, not
+  single-use. The fifth door, through `validationDoor()`, takes `{ route,
+  evidence: { kind, value }, claims? }`: the route must be a non-public route
+  of THIS PEP's stored configuration (`0230`), and the evidence is validated
+  again: an access token active in this realm and issued to or for the
+  route's application, a SAML assertion through `saml()` with the
+  application's entity ID as the audience, or a ticket handed to this PEP and
+  unexpired (`0231`, `0232`). Mode headers answers `{ claims }` off the
+  directory entry (`saml/person_attributes.ts`, `groupsOfUser()` as a
+  list), narrowed by `claims` to the route's own (`0229` otherwise); mode jwt
+  `{ accessToken, tokenType: "Bearer", expiresIn }` through
+  `oauth2.accessTokenAsync()` after `gate.check()` at `issue-access-token`
+  (so it is in the token register); mode saml `{ samlResponse, acsUrl,
+  notOnOrAfter }` from `saml2_sso.pepProxyResponse()`, the unsolicited
+  Response's builder, policy and encryption rules with no InResponseTo. A
+  policy refusal is 403 (`0234`), anything that cannot be issued 422
+  (`0233`, `0235`); every answer is audited as `xacml.pep.validate`.
+* **THE CONSOLE EDITS THE DOCUMENT WHOLE**: the Remote PEPs tab draws each
+  PEP's routes as a table and the document in a textarea; a route is added,
+  removed or moved by editing the list. **A route's identity is edited on
+  the route's own page** (since 2026-11-14, rcbj: the per-route sections
+  under the tab's table moved to the route drill-down), in the identity part
+  of its `set-pep-route` form: a mode choice, a header/claim table (the
+  route's rows and two empty ones) and the separator, read by
+  `identityFromForm()`. `set-pep-route-identity` still replaces one route's
+  `identity` alone for `/admin-api`, saved through `set-pep-proxy`'s checks;
+  no console form posts it now, and the tab draws no identity form.
+
+`tests/xacml_pep_proxy.js` holds all of it in a child process.
+
+## A remote PEP's decision records (#1827, 2026-11-16)
+
+**A remote PEP decides in its own process, so until #1827 the only record of
+what it decided was a line on its own standard output**: the heartbeat
+carried the counts and nothing else, and a removed container took its
+decisions with it. Now the PEP queues a record per decision it MADE — a
+`/protected` enforcement, an AuthZEN evaluation decided at the edge (never
+one it forwarded: the service decided that one and wrote its own
+`authzen.decision` row), and a reverse-proxy request to a route — and pushes
+them in order, at least once, to `POST /admin-api/pep-audit`
+(`mgmt-api/CLAUDE.md` argues the door, the scope, the role and the token).
+`xacml/pep_audit.ts` turns each into one audit row:
+`xacml.remote.enforcement`, `authzen.remote.decision` or
+`xacml.remote.proxy`.
+
+* **ONLY A PEP REGISTERED IN THIS REALM'S `ou=peps`**, under the name its
+  token's subject carries (`STS-XACML-0287`, 404) — the heartbeat's rule. A
+  cluster member is registered as itself, so its rows name the member.
+* **TWO TIMES.** A row's `at` is when the service received it, because the
+  audit chain is the order this process wrote rows in; `decidedAt` in the
+  detail is the PEP's. Neither is rewritten into the other.
+* **A REPEAT IS RECOGNISABLE, NOT SUPPRESSED.** The PEP removes a record only
+  once `acknowledged` (the highest `seq` of the batch) covers it, so an
+  answer lost on the way back sends it again; every row names the PEP, its
+  process `instance` and the record's `seq`. Suppressing repeats across the
+  nodes of a cluster would need a mark on the `ou=peps` entry — a new
+  attribute, its OID and a catalog in every language — and was left out on that cost.
+* **WHAT A ROW CARRIES** is what the PEP's log line carries: never a property
+  value or an id an AuthZEN caller sent (decision 9 on #563), never a query
+  string, cookie or token from a proxied request. The PEP's error code goes
+  on the row where the table knows it, and the rows are `summarised`: the
+  PEP logged each already.
+* **A RECORD THE SERVICE CANNOT READ** (no positive integer `seq`, a kind it
+  does not know) is counted `ignored` and logged once a push
+  (`STS-XACML-0288`); a body that is no push is 400 (`STS-XACML-0286`) and
+  the PEP drops that batch rather than send it forever.
+* **NOTHING CHANGES ON THE ROW OR THE MONITOR**: the heartbeat's counters
+  are still the source of the counts on `/admin/xacml/peps` and
+  `/admin/xacml/monitor`.
+
+## A remote PEP's own page, and the settings it manages (#1760)
+
+**Each row of the Remote PEPs tab opens the PEP's own page**,
+`/admin/xacml/pep?pep=<name>` (`admin-ui/web_pages.ts`' row, drawn by
+`web_xacml.ts`'s `pepDetail()`), the application page's arrangement: the same
+operation, `GET /admin-api/xacml/peps`, asked with `pep`, answers that row
+alone and `found`. Its trail leads back to `/admin/xacml#xacml-tab-peps` (the
+row's `upTo`, which the runtime reads so a drill-down whose list is another
+page's tab has that page's crumb and nav). Six tabs: Overview (identity,
+registration, version, state, notify URL, the two row actions), Decisions,
+Settings, Listener (every listener, below; it was Listener certificate, with
+the issue control that left the table, which it still carries), Reverse proxy
+(the whole section that was on the tab, moved, with the route forms below)
+and Signal streams (a table, one row per stream, below). The table keeps a Reverse proxy column: the route count, off,
+or an unusable route.
+
+**THE SETTINGS** (`xacml_pep_settings.ts`): every setting the container read
+only from its environment, except the minimum to connect the first time, may
+be set there. One attribute, `xacmlPepSettings` (OID 754, the concept's
+`settings`), holds ONLY what is set; `set-pep-settings` REPLACES it from
+`settings` (an object, a member it does not name refused by name) or from
+the members on the body (the console's form, an empty box "not set"),
+validated whole: `STS-XACML-0236` (not an object, an unknown member), `0237`
+(type, closed set), `0238` (bounds), `0239` (text, URL, origin), `0240`
+(product refuses `proxyUpstreamInsecure` and `proxyRpAllowInsecure` true —
+`mode.skipsOutboundTlsVerification()` and `dialsPlainHttpOutbound()`), `0241`
+(the directory refused). `clear-pep-settings` removes it. A registration and
+a heartbeat keep it, as they keep the proxy.
+
+* **`GET /xacml/pep/settings`** is the proxy pull's shape: `pepAccess()`
+  READ, its own token over the body (ETag, `?since=` 304), `no-store`, no
+  nudge, the PEP named by its certificate. A stored value that no longer
+  validates is pulled as `configured: false` (`STS-XACML-0242`).
+* **THE PRECEDENCE IS THE SERVICE'S VALUE, THEN THE ENVIRONMENT'S, THEN THE
+  DEFAULT**, applied at the PEP (`xacml-pep/CLAUDE.md`, *Configuration*).
+  Backwards compatible both ways: an older PEP never asks; a newer PEP's 404
+  from an older service is its environment.
+* **WHAT THE PEP HAS IN FORCE** arrives on its heartbeat as `settings` and is
+  kept in `xacmlPepSettingsInUse` (OID 755) by `PepSettings.inUseOf()`, the
+  signal health's rule: only the table's settings, each value of its type,
+  each source one of `service`, `environment`, `default`, stamped on
+  arrival; absent keeps, `null` clears, a registration drops. The row's
+  `settingsCurrent` compares its token with what would be pulled now.
+* **THE NOTIFY URL SET HERE IS THE ONE THE NUDGE DIALS**: `notifiable()`
+  answers each row with `notifyUrlOf()`, so `xacml_pep_http.ts` is unchanged;
+  the registered URL stays on the row as the PEP reported it.
+* **NO PROSE IN THE CATALOGUE**: `settingsCatalogue` on the answer is keys,
+  variables, types, bounds, defaults, when a change applies and whether the
+  mode refuses `true`; the console's catalog says what each means.
+
+`tests/xacml_pep_proxy.js` S holds all of it; `cargo test -p xacml-pep` the
+PEP's half.
+
+## A remote PEP's listeners (#1760)
+
+rcbj (2026-11-14): the Listener tab "modelled after Server configuration →
+Listeners", the HTTPS listener that exists as the default, and "an arbitrary
+# of listeners (HTTP, HTTPS)". `xacml_pep_listeners.ts`.
+
+* **THE ENVIRONMENT'S FOUR ARE THE BUILT-IN ROWS** (`BOOTSTRAP`: `api-http`,
+  `api-https`, `proxy-http`, `proxy-https`, with the variables that bind
+  them): what lets the PEP connect first, so read-only, and their ids are
+  reserved. Their HTTPS pair is still `issue-pep-certificate`'s.
+  **The two plain-HTTP ones are off by default** (rcbj 2026-11-14,
+  `xacml-pep/CLAUDE.md` has the PEP's switch and precedence): each row
+  carries `enable`, the variable that binds it (`PEP_HTTP`,
+  `PEP_PROXY_HTTP`; `''` for the HTTPS two), a PEP reports one nobody turned
+  on as `off` with the reason `http-off`, and the tab draws it without the
+  alert, naming the switch. **A row reported `off` holds no port**
+  (`environmentOf()`), so a listener defined here may take 9090 — the
+  managed way to serve plain HTTP; one not reported holds its default.
+* **THE DEFINED ONES ARE ONE ATTRIBUTE**, `xacmlPepListeners` (OID 756), a
+  JSON array validated WHOLE on every write: `STS-XACML-0243` (shape, a
+  stray member, more than 32), `0244` (id, reserved, twice), `0245`
+  (protocol, purpose), `0246` (address, port), `0247` (an address and port
+  another holds — a wildcard overlaps every address — including the
+  environment's as the PEP last REPORTED them, or the container's defaults
+  where it reported none), `0248` (certificate names on plain HTTP, more
+  than 16, a name a certificate cannot carry, a key outside `ec-p256`,
+  `ec-p384`, `rsa-2048`, `rsa-3072`), `0249` (product), `0250` (an unknown
+  or environment id; renewing plain HTTP), `0251` (the directory refused).
+  `set-pep-listener` adds or replaces by id (an edit keeps `renew`),
+  `remove-pep-listener` removes, `renew-pep-listener-certificate` moves
+  `renew`. A registration and a heartbeat keep the attribute.
+* **THE PULL CARRIES THEM** as `listeners` on `GET /xacml/pep/settings`,
+  under the settings' token, only when there are some (so a PEP with none
+  pulls the body it always did). A stored list is read again WITHOUT the
+  environment clash — the report can move after the write, and the PEP
+  refuses a clash by failing to bind — and one that does not validate sends
+  none (`STS-XACML-0252`).
+* **THE KEY NEVER COMES HERE.** `POST /xacml/pep/listener-certificate`
+  (`pepAccess()` WRITE, the heartbeat's gate) takes `{ listener, csr }`;
+  `xacml_pep_tls.ts`'s `issueForListener()` reads the request through
+  `cert_enrollment.ts`'s `parseCsr()` (the proof of possession verified),
+  and issues from `pep-tls` through `pki.issueTlsServerKeyPair()`, which
+  since #1760 takes a `publicKeyPem` and then generates and returns no key.
+  The names are the PEP's derived ones and the definition's, never the
+  request's; the slot is `<pep>/<id>`. The same key asked again, with the
+  same names and a third of its life left, is answered the certificate held
+  (`issued: false`); otherwise a new one supersedes it. `STS-XACML-0253`
+  (no such HTTPS listener of this PEP), `0254` (the request), `0255` (the
+  issue). The answer is `no-store` and audited as
+  `xacml.pep.listener.certificate`.
+* **WHAT THE PEP REPORTS** arrives on the heartbeat as `listeners` and is
+  kept in `xacmlPepListenersInUse` (OID 757) by `inUseOf()`, the signal
+  health's rule: the closed sets (`source`, `protocol`, `purpose`, `state`
+  listening/waiting/failed/off, `reason` from ten), a reason that is not one
+  read as `other`, the certificate's seven members as text without a control
+  character, stamped on arrival; absent keeps, `null` clears, a registration
+  drops. **No operating-system sentence is kept**: a `REMOTE_PEPS` holder
+  writes it and an administrator reads it. **A reported `purpose` may be
+  `crl`** as well as the two a definition may name (`REPORTED_PURPOSES`,
+  2026-11-15): the PEP's CRL-only plain listener on `PEP_PORT`, which the
+  console drew as the decision API. Every drawing asks
+  `PepPicture.purposeOf()` — the Configured Listeners table, the listener's
+  page and the picture — which reads an older PEP's `api` with the reason
+  `crl-only` the same way; `tests/xacml_pep_console.js` LP.
+* **THE PAGE** answers `listeners` (the definitions as the pull reads them),
+  `listenersProblem`, `listenersInUse` and `listenerRows` — every listener,
+  the environment's first, joined to its report and, for a defined HTTPS
+  one, the certificate the realm issued it — and `listenersCatalogue`.
+* **`requireClientCertificate` NEEDS A TRUST SOURCE** (2026-11-16,
+  `xacml_pep_listener_tuning.ts`'s `parse()`, `STS-XACML-0281`, on
+  `set-pep-listener` and `set-pep-environment-tuning` alike): a
+  `trustAnchorsFile`, or — on an API listener — `trustIssuedClientCertificates`.
+  The PEP's API listener had asked nobody and admitted everybody while it
+  reported the requirement, and its proxy listener had asked everybody and
+  admitted nobody; the cluster job's listener table found the first. What
+  this service cannot see — `trustIssuedClientCertificates` with no
+  `PEP_AUTHZEN_CLIENT_CA` in the PEP's environment, or an anchors file the
+  PEP cannot read — the PEP refuses itself, fail-closed (`STS-XPEP-0137`,
+  `xacml-pep/CLAUDE.md`). A stored tuning saved before this is not
+  re-validated; the PEP holds it to the same rule.
+* **PRODUCT MODE REFUSES A PLAIN-HTTP PROXY LISTENER** unless
+  `xacml.pepPlainHttpProxyListeners` is on (`STS-XACML-0249`): the question
+  is `mode.servesProxyBrowsersInTheClear()`, the proxy's public base URL's,
+  and the setting is the administrator saying TLS ends in front of it.
+  `xacml-pep/CLAUDE.md` argues why the environment's `PEP_PROXY_PORT` is
+  not held to it.
+
+### The routes one at a time, and the streams one per row
+
+* **`set-pep-route`, `remove-pep-route`, `set-pep-route-application`**
+  (`xacml_admin.ts`'s `withRoute()`) build the whole document from the
+  stored one and hand it to the same `validate()` and `resolutionProblem()`
+  as `set-pep-proxy` — one validator. `set-pep-route` takes `route` (an
+  object) or the form's members (the authorization's are `authz*`, below),
+  replaces a route of the same id where it stands keeping its `identity`
+  and its `authorization` where the form says nothing of them, and inserts
+  at `position`. A missing route
+  object, a missing application or a position outside the list is
+  `STS-XACML-0256`. The page carries `applicationChoices`, which names the
+  chosen application and `routeDetailOf()` resolves against.
+* **THE APPLICATION FIELD IS A SEARCH** (rcbj 2026-11-15: "an application
+  name search field, results field, and the ability to choose a search
+  result"), on Create a New Route and the route's page alike
+  (`XacmlPage.applicationChooser()`), where it was a text box over a
+  `<datalist>` of every application. It is the field search (#459) in a
+  plain form, the person page's push destination's arrangement (#602,
+  `admin-ui/CLAUDE.md`): a hidden `application` shown as a link, Clear, a
+  box and Find asking `GET /admin-api/applications` five to a page (rule 7:
+  no new operation), each result a Use. The presses (`fgsearch`, `fgadd`
+  on `/admin/xacml/peps`, `WebAnswers.isFieldSearch()`) are answered in the
+  browser by `ConsoleRuntime.pepRouteSearch()` and never sent; the form is
+  drawn again from its draft in `state.pepRoute`
+  (`WebAnswers.pepRouteState()`, `XacmlPage.routeOfDraft()`), keyed by the
+  form (`new`, `page-<from>`), so nothing typed is lost. Each form's first
+  button is a hidden default save, so Enter in a box saves and Enter in the
+  search box is a Find. `tests/xacml_pep_console.js` A1–A8.
+* **THE MANIFEST'S FOUR BUTTONS ARE ONE ROW** (rcbj 2026-11-15: "add a
+  download button ... easy to save and transfer between remote PEPs. Put
+  all of the buttons on the same row"), `XacmlPage.manifestButtons()`:
+  Save (the editor form's, by `form=`), Remove (its own form, behind the
+  route page's required checkbox), Download and Load from file. Download
+  is a `data:` link with `download="<pep>-proxy.json"` (the certificate
+  downloads' arrangement, `kit.base64Utf8()`) of the stored document from
+  the answer the page holds, pretty-printed: no operation, and no secret,
+  because the document's members are closed, its URLs carry no userinfo
+  and a session route's client secret is read off the application at the
+  pull. Load from file is `ConsoleRuntime.wireFileLoads()` (a
+  `button[data-load-file]` opening a hidden file input whose
+  `data-load-into` names the box): the file's text goes into the editor
+  and nothing is sent until Save, whose `set-pep-proxy` takes another
+  PEP's file only where every route's application resolves in this realm
+  (`STS-XACML-0217` otherwise). `tests/xacml_pep_console.js` M1–M4,
+  `tests/xacml_pep_proxy.js` M1–M3.
+* **METHODS HAS A NONE AND AN ALL BOX on both route forms** (rcbj
+  2026-11-15: "Clicking None deselects everything else. Clicking All
+  deselects None and selects all other options"), drawn by
+  `routeFields()` ahead of the seven methods, ticked to match the route.
+  They carry NO NAME, so they are never posted and the route's `methods`
+  is the list of real methods ticked. `ConsoleRuntime.wireCheckAll()`
+  does the ticking (`data-check-none` beside the Policies checklists'
+  `data-check-all`): both switches of a form and name share one refresh,
+  so each shows the state — None when no method is ticked, All when
+  every one is — and unticking None with nothing ticked leaves it ticked.
+  **NONE IS DENY-ALL (rcbj 2026-11-15: "None should mean no methods
+  allowed, essentially deny all")**: the empty list is stored, the route
+  still matches its path, and the PEP refuses every request on it with 403
+  AFTER asking the route's policy (`STS-XPEP-0116` where it permitted,
+  `0086` where it denied) — so the decision is
+  still made in XACML and counted, and a hand-written policy that permits
+  too much cannot open a route that states no method; a simple or public
+  route's generated policy is then the deny rule alone. **Any method is
+  stated**: All stores the seven. A route with no `methods` member is
+  refused (`STS-XACML-0262`), so the form posts `methodsGiven`, which makes
+  no box ticked the empty list. The routes table draws *none (deny all)*.
+  `tests/xacml_pep_console.js` B1–B8, `tests/xacml_pep_route_policies.js`
+  1, 2.6–2.7, 4.4.
+* **A ROUTE'S AUTHORIZATION (#1760, rcbj 2026-11-15)**: "the authorization
+  section to have two approaches to the XACML policy: 1) select an existing
+  XACML policy ... 2) provide the parameters for a very simple (and common
+  policy)", and then "force them to pick one of these two policies or
+  Public. But, that still results in a generated XACML policy representing
+  the public access for this path. All authorization decisions are made in
+  XACML." So `authorization` is a REQUIRED route member, `{ kind, policy,
+  resource, actionModel, roles }` (`STS-XACML-0263` for none or a kind
+  outside `policy | simple | public`, `0264` for a member of the wrong
+  shape), and it REPLACED `public`, `resource` and `action`, with no
+  backwards compatibility: the proxy is unreleased, and the validator
+  refuses the old members as members it does not name. `kind: public` is
+  what `public: true` was (no mechanism, no application, no identity).
+  * **EVERY ROUTE NAMES ONE POLICY, AND THE PEP DECIDES IT WITH THAT POLICY
+    ALONE**, never the realm's root: `policy` is a policy ENTRY'S NAME, the
+    `name` of a row of `GET /xacml/pep/policies`, because a route is
+    configured by name and a PolicyId is the document's. For `simple` and
+    `public` it is always `pep-<pep>-<route>` (`PepProxy.
+    generatedPolicyName()`; `validate(doc, pep)` writes it, so a document
+    loaded from another PEP's file names THIS PEP's policy once saved). A
+    policy the PEP does not hold refuses every request on the route
+    (`STS-XPEP-0117`, whatever the bias). `xacml-pep/CLAUDE.md` has the
+    PEP's half.
+  * **THE SAVE ASKS MORE THAN THE GRAMMAR** (`xacml_pep_route_policies.ts`'s
+    `problem()`, after `resolutionProblem()`): an existing policy held,
+    enabled and SENT to a PEP — `pepPull()` withholds `access-control`,
+    `role-issuance` and every application's policy (`0265`); a simple
+    route's roles CONFIGURED roles of the realm, because the PIP answers
+    `urn:sts:xacml:role` with configured roles only (rule 3bq, `0266`); a
+    generated name not held by a policy without this route's mark
+    (`0267`). The pull asks none of it again: a role deleted since must
+    not take the whole route table down; the generated policy says what it
+    said, and the route page reports a policy missing, disabled or
+    withheld (`routeDetail.authorization.policy.problem`, and each row of
+    `proxyRoutes`).
+  * **THE GENERATED POLICY** is ALFA (`alfaFor()`) read by `xacml_alfa.ts`,
+    written by `xacml_xml.ts` and stored by `XacmlStore.write()` — the
+    editor's and `import-alfa`'s door, so it is statically validated like
+    every other. First-applicable: one Permit per action with the route's
+    roles (any of them), the resource-id `anyURI-equal` and the action-id;
+    a public route's one Permit names the methods and no subject; and a
+    LAST UNTARGETED DENY, because a route's policy is the route's whole
+    decision and a permit-biased PEP would admit a NotApplicable. Its
+    entry carries `xacmlPepRoute` = `<pep>/<route>` (OID 759, the
+    concept's `pepRoute`), kept by every rewrite as `xacmlApplication` is,
+    so `root()` never takes it (the "only enabled policy" fallback would
+    otherwise make a realm's one route the root) and `write()` refuses it
+    as the root (`STS-XACML-0267`). Every save of a simple or public route
+    writes it again (unchanged text is not rewritten); before the document,
+    so a PEP pulling the new table finds its policies.
+  * **THE LIFECYCLE** (`XacmlAdmin.afterRouteSave()`): a rename removes the
+    old route's generated policy (the new one was just written); a remove
+    needs `removePolicy: true` when there is one (`0268`, rcbj: "ask for
+    confirmation on remove") and takes it; a switch to an existing policy,
+    and a route a whole-document save dropped, LEAVE it, unreferenced, and
+    the answer's `policies.unreferenced` names it — an edit that did not
+    ask never deletes a policy. `clear-pep-proxy` leaves them too.
+    `generate-pep-route-policy` writes one again from the route as saved.
+  * **THE RESOURCE.** A simple or public route's `resource` must be an
+    absolute http(s) URL; empty, the save fills `defaultResource()`: the
+    proxy's `publicBaseUrl` and the path, else the PEP's environment HTTPS
+    proxy listener, `https://<the hostname it reports, else its name>:<the
+    port it reported for proxy-https, else 9543>` — the address the
+    configuration states first, then the one the PEP itself serves. An
+    existing-policy route's empty resource is the request's normalised
+    path, so a hand-written policy can still decide by path (the 8081
+    demo's `pep-demo-routes` does). **The application's URL is
+    `appHomePageUrl`**, its declared home page — where a person reaches it,
+    so where the proxy stands — whose origin and the route's path is
+    offered beside the default (`applicationUrl()`, a Use on the form) with
+    a different origin flagged; redirect URIs are callbacks, not front
+    doors, as the attribute's own row argues.
+  * **THE ACTION** is `actionModel`: `method` (the HTTP method; an existing
+    policy's default), `crud` (GET/HEAD/OPTIONS read, POST create,
+    PUT/PATCH update, DELETE delete) or `read-write` (read, and write for
+    the rest). A simple route is `crud` or `read-write`, a public route
+    `method`. `PepProxy.METHOD_ACTIONS` is the table; the PEP's
+    `ActionModel::action_for()` is its copy, both held by tests.
+  * **THE CONSOLE** (`XacmlPage.authorizationFields()`): one selector,
+    `authzKind`, with an empty first option on a new route, and each
+    choice's fields a panel the runtime shows for the value
+    (`ConsoleRuntime.wireChoicePanels()`, `select[data-panels]`); the
+    shared Resource box with the default as its placeholder and where it
+    comes from; the existing-policy chooser (`authzPolicy`, asking
+    `GET /admin-api/xacml/policies?routable=true`, which gained `q`, `per`,
+    `page` and `routable`, unchanged without them) and the action sent;
+    the simple panel's model select (its own panels show that model's
+    actions) and a box and a role chooser per action (`authzRole.<action>`,
+    several roles, each with a Remove, asking `GET /admin-api/roles`); the
+    route page's policy state and **Generate the policy again**. The
+    choosers are the application chooser's presses on more attributes
+    (`WebAnswers.pepRouteState()`, `pepRouteKindOf()`), answered in the
+    browser and never sent; `find.attribute` keeps each chooser's results
+    to itself. `set-pep-route-authorization` sets the choice alone for
+    `/admin-api`.
+  * **AN OLDER PEP AND A NEWER ONE DO NOT MIX**, deliberately: a PEP older
+    than this reads no `authorization` and defaults `public` to false, so a
+    table holding a public route is refused whole there (it keeps what it
+    held); one holding none is accepted and decided by the root by path and
+    method, with an empty `methods` read as any. Upgrade the PEP with the
+    service. A newer PEP refuses an older service's document whole.
+  `tests/xacml_pep_route_policies.js` holds it all through the real engine;
+  `tests/xacml_pep_proxy.js` reads its older fixtures into this shape
+  (`shaped()`).
+* **A ROUTE'S OWN PAGE** (rcbj 2026-11-14: "click on a route name and go to
+  another page and be able to update all the configuration values"),
+  `/admin/xacml/pep/route?pep=&route=`: `getXacmlPeps` with `route` adds
+  `routeDetail` (`routeDetailOf()`: the normalised route, its position and
+  the count, usable and why from the resolution, the application as a
+  reference and whether the chooser knows it, and every proxy listener with
+  what the PEP reported — a route table is the proxy's, so every proxy
+  listener serves every route). Its one form is `set-pep-route` with
+  **`from`**, the route's current id: `withRoute()` takes only `from` out, so
+  a rename to an id another route holds is the validator's own
+  `STS-XACML-0192` and an unknown `from` is `0230`; and with **`mode`** the
+  form's identity members become the route's identity
+  (`identityFromForm()`, the one reading `set-pep-route-identity` shares).
+  No per-route upstream exists in the model; the page says so. A PEP still
+  holding the old document asks `/xacml/pep/identity` for the old id until
+  its next poll, which is the rename's one cost. **Its sections are a fourth
+  row of tabs** (rcbj 2026-11-15), `kit.subTabbedPanels()` inside the
+  Configured Routes panel: Metadata (Effective state and Listeners that
+  serve it), Settings (id, Matching's path and match, the application,
+  Order), Authentication (mechanisms, signals, multiple accounts),
+  Authorization (Methods with None/All, the choice and its fields,
+  Generate the policy again), Identity sent to backend (credential
+  forwarding and the identity), Remove the route (`XacmlPage.ROUTE_*_TAB`,
+  rcbj: "Split the 'Edit the route' into a Settings tab ..."). They are
+  fragments of the route's page, so the runtime's tab tree ends the trail
+  at the open one and `markOpenTabs()` marks it while the rows above keep
+  theirs (`tests/xacml_pep_console.js` RT). The old `#xacml-route-tab-edit`
+  is an empty anchor at the top of Settings, so an old link opens Settings
+  by the runtime's anchor-inside-a-tab rule, with no alias table.
+  **EACH EDITING TAB IS ITS OWN FORM, AND SENDS `part`** (`settings`,
+  `authentication`, `authorization`, `identity`): `withRoute()` reads only
+  that part's members off the form (`XacmlAdmin.ROUTE_PARTS`) and keeps
+  every other member of the stored route, so a Save on one tab cannot
+  change or lose another's. Without `part` the members are the whole
+  route, as before (backwards compatible); `part` on a route that does not
+  exist is `0230`, an unknown one `0256`. The tabs other than Settings
+  post the id unchanged, so a rename is Settings' alone and the landing
+  reads `id`. A save lands on `#xacml-route-tab-<part>`
+  (`WebAnswers.landing()`; no part, Settings). A chooser press keeps a
+  draft PER TAB (`state.pepRoute.drafts`, `WebAnswers.pepRouteState()`,
+  laid over the route by `XacmlPage.routeOfDraft()` for that tab's
+  members), so a Find on one tab keeps what was typed on another.
+* **THE VISUAL SUB-TAB** (rcbj 2026-11-15: "a new tab labeled Visual ...
+  the remote PEP and a hierarchy of every configured path, its
+  corresponding application object, and which role is allowed to access
+  it. Show the configured listeners as well"), the Reverse proxy tab's
+  fourth and last (`XacmlPage.PROXY_VISUAL_TAB`,
+  `#xacml-pep-proxy-visual`), drawn by `web_pep_picture.ts` from the row
+  the PEP page already holds — `name`, `hostname`, `listenerRows`, `proxy`
+  and `proxyRoutes` — so the answer grew no member and no operation was
+  added (rule 7). It is the console's pictures' arrangement
+  (`admin-ui/CLAUDE.md`, *THE PICTURES ARE LAID OUT IN THE BROWSER*): inline
+  SVG from the bundle, the delegation picture's palette, hexagon and text
+  metric, `role="img"` with a title and a desc, a key, and the same tree as
+  nested lists for a text alternative. The layout is by hand, no dagre: the
+  PEP, its listeners (a green line from every proxy listener to the proxy,
+  since every proxy listener serves every route), and the routes as a path
+  trie (`PepPicture.tree()`, a segment no route stops at a chip, a run of
+  them merged) whose rows own both coordinates, so it grows down with the
+  routes. Below the console's 56rem breakpoint a stacked drawing is shown
+  instead (`.pep-picture-stacked`), **laid out 240 wide whatever the tree**
+  (2026-11-15: at 390px its boxes ran past the card): every box ends at one
+  right edge, the step in shrinks for a deep tree so the deepest route keeps
+  140, and its text wraps inside its box (a path breaking before a `/`)
+  rather than being cut; the box's padding is thinner there and, only
+  narrower than a phone, the SVG is scaled to it. `tests/xacml_pep_picture.js`
+  W bounds every box and line. **What each kind draws**: a simple
+  route every action of its model with its roles (each a link to
+  `/admin/roles?q=`; none is *nobody*); a public route *Public*; an
+  existing policy its NAME, linked to the editor, and no roles — reading
+  them would mean interpreting arbitrary XACML in the browser, and a guess
+  drawn as a fact is worse than the link; no methods *deny all* and
+  *nobody*, whatever the kind. Each box links to its page (a route's, a
+  listener's); the console runtime follows an SVG `<a>` (whose `tagName` is
+  `a`) as it does an HTML one since this change, which the delegation and
+  federation pictures' boxes gain too. `tests/xacml_pep_picture.js`.
+* **AN XACML TAB IS NEVER A PAGE** (rcbj 2026-11-15: the Deciding policy
+  link answered "/admin/xacml/editor is not a page of this console").
+  `/admin/xacml/{policies,editor,peps,decide,authzen}` are written as paths
+  by the renderers and moved onto `/admin/xacml?…#xacml-tab-…` by
+  `WebPages.xacmlTabLinks()`, the one mapping, which `WebPages.render()`
+  runs on every page's links and GET forms; a POST form keeps its action,
+  which `WebForms.resolve()` and `WebAnswers.PEP_ROUTES_PAGE` read
+  (`tests/xacml_pep_console.js` XL, `tests/console_web_bundle.js` F0x).
+* **`multipleAccounts`** (#1760, rcbj: "support multiple authenticated
+  users within a tab"), a route member, false by default and normalised
+  onto every route; true needs the `session` mechanism (`STS-XACML-0257`).
+  The PEP's half, its pages and its bound (`proxyMaxAccounts`, a managed
+  setting) are `xacml-pep/CLAUDE.md`'s. An older PEP ignores the member.
+* **A PEP REPORTS ONE ROW PER STREAM** inside `signals` as `streams` on its
+  heartbeat (never on its `GET /`, which answers anybody): the client id,
+  the transmitter's stream id, running, healthy, the AGES of its start,
+  last poll and last success, and its counters. `signalsOf()` keeps them,
+  the two ids held to a charset, and turns the ages into times by the
+  arrival, ignoring any time the PEP sends. `pepsJson()` joins each to the
+  routes and applications whose resolved client it is, and answers a client
+  this PEP's routes do not name as empty rather than echoing it.
+
+`tests/xacml_pep_proxy.js` L, R and T hold it.
+
+## Sync, and the Clustered column (rcbj, 2026-11-16)
+
+**THE TABLE'S CLUSTERED COLUMN** reads `cluster` off each row, which
+`XacmlPepClusters.effectiveRow()` sets on a member only. It needs no new member,
+so `GET /admin-api/xacml/peps` already answered it.
+
+**SYNC IS A NUDGE TO ONE PEP, AWAITED.** rcbj asked for a button that "pushes"
+the policies, the instance's configuration and the cluster's. This service
+pushes nothing, so `sync-pep` (`XacmlAdmin.syncPep()`) is one nudge to that PEP
+alone, at the URL `notifiable()` would dial. A member's pulls are its cluster's
+documents. **The nudge carries `full: true`** (rcbj, 2026-11-16), and the PEP
+then asks for every document without its token, so each is sent whole and loaded
+again. The PEP honours that at most once a poll interval (`STS-XPEP-0120`
+otherwise), because `/notify` is not authenticated; `xacml-pep/CLAUDE.md` has
+its half. **It dials a PEP whose change nudges are stopped**: Stop nudging is
+about the change nudge, and Sync is a person asking for this one. Unlike the
+change nudge it waits for the answer, because a person pressed a button. It
+writes nothing, so there is no commit to wait for. It refuses before dialling
+with `STS-XACML-0282` (remote PEPs or nudging off) or `0284` (no usable notify
+URL); `0283`, the stopped-nudging refusal, is retired. An undelivered nudge is
+`0285`, recorded on the row like every nudge. It is a PROMISE, like
+`issue-pep-certificate`. It is not a `MEMBER_REFUSED` action.
+
 ## What the console page is NOT
 
 `/admin/xacml/peps` reaches into no other process. "Stop nudging" stops this
@@ -1240,9 +2229,25 @@ realm's `pep-tls` Issuing CA.
   this PEP belongs to, and it carries the notify URL the default name comes
   from.
 * **THE NAMES** are the PEP's registered name (where it is a DNS name), the
-  host of its notify URL (an IP host becomes an IP subjectAltName), and what
-  the caller adds. Added, never replacing: the notify host is where this
-  service would dial the PEP.
+  hostname it reports, the host of its notify URL (an IP host becomes an IP
+  subjectAltName), and what the caller adds, each once. Added, never
+  replacing: the notify host is where this service would dial the PEP.
+* **THE HOSTNAME (#1760)** is what the PEP's notify-URL derivation looks for
+  in the certificate, and a PEP that derives its URL registers with none
+  until it holds one — so without it a fresh install's first certificate
+  named the registered name alone and the derivation picked that, which
+  nothing resolves. The PEP sends `hostname` (`HOSTNAME`, the kernel's,
+  `/etc/hostname`, and only a DNS name) on its registration and heartbeat;
+  `PepRegistry.hostnameOf()` holds it to a DNS name of at most 253
+  characters that is not an IP literal, lower-cased, and refuses anything
+  else with 400 `STS-XACML-0261`. It is `xacmlPepHostname` (OID 758, the
+  concept's `hostname`): a registration without it drops it, a heartbeat
+  without it keeps it. `derivedNames()` adds it, so the environment pair
+  (`issue()`) and a defined listener's CSR (`issueForListener()`) both name
+  it. Backwards compatible both ways: an older PEP sends none and the
+  defaults are as before; an older service ignores the member. The PEP
+  page's Overview draws it. `tests/pep_listener_certificate.js` E2 and
+  `tests/xacml_pep.js` hold it.
 * **THE KEY IS IN ONE REPLY.** Nothing writes it onto the PEP's entry — this
   service is never party to a handshake between the PEP and its clients, so a
   copy would be a server key held by something with no use for it. The console

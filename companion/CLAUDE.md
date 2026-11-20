@@ -10,7 +10,7 @@ directory from its copy of the tree (`rm -rf … ./companion`), and the
 companion is built from this directory alone (`context: ./companion`), so
 nothing crosses in either direction.
 
-`docs/docker-compose.md` (*The companion*) is how a user starts it; this file
+`docs/v1.1.0/docker-compose.md` (*The companion*) is how a user starts it; this file
 is why it is shaped the way it is.
 
 ## What it is
@@ -23,8 +23,13 @@ is why it is shaped the way it is.
 | `demo_oid4vc.js` | The OpenID4VC demonstration: `/issuer`, `/issuer/offer`, `/verifier`, `POST /verifier/start`, `/verifier/wait`, `/verifier/done` |
 | `demo_kerberos.js` | The Kerberos and SPNEGO demonstration (#595): `/spnego`, `/spnego/protected`, `/krb5/service`, and the protected TCP service on `COMPANION_KRB5_SERVICE_PORT` (8888) |
 | `krb5_error.js` | The one Kerberos message the companion writes itself: the KRB-ERROR its TCP service answers a refusal with |
+| `social_idps.js` | A dummy of each of the 39 named social providers (#1689), at `/social/{id}` |
+| `pep_app.js` | The application the remote XACML PEP protects as a reverse proxy (#1760), at `/pep-app`: every page echoes what reached it as JSON |
+| `pep_app_identity.js` | What `/pep-app` reads of the identity the proxy forwards (#1760, D11): a Bearer JWT decoded and checked, and the application's SAML ACS |
 
-Node built-ins, `bunyan`, `qrcode` and `kerberos`, pinned and installed from
+Node built-ins, `bunyan`, `qrcode`, `kerberos`, and since #1760 `xml-crypto`
+and `@xmldom/xmldom` (the ACS's XML signature check, at the versions the
+service uses, required lazily), pinned and installed from
 the committed lockfile. Plain JavaScript and no build of its own: the
 service's TypeScript conversion (#50) is about the service. `kerberos` is a
 native module, built from source in the image's first stage against Debian's
@@ -163,7 +168,9 @@ customer's**:
   sentence — what a real operator sees — and takes no knobs. A context is
   one request: a ticket's exchange completes in one round trip and nothing is
   kept between requests. The negotiation's own diagnostics stay in the
-  service, at `/authn/spnego`.
+  service, at `/authn/spnego`. In development that door honours
+  `?mutual=off`: it accepts the ticket, withholds the AP-REP and starts no
+  session (#896). This acceptor still takes no such knob.
 * **THE TCP SERVICE** speaks the framing the service's did: a 4-byte length,
   then a GSS InitialContextToken carrying an AP-REQ (RFC 4121 section 4.1).
   Accepted with mutual authentication, the GSS-wrapped AP-REP goes back;
@@ -176,8 +183,107 @@ customer's**:
 * **TWO SERVICES, ONE HOST NAME, IS THE ONE THING TO WATCH.** A browser on the
   laptop reaches both the service and the companion at `localhost`, and
   Kerberos names a service by host, not port: both would be
-  `HTTP/localhost`. `docs/docker-compose.md` tells a user to give the
+  `HTTP/localhost`. `docs/v1.1.0/docker-compose.md` tells a user to give the
   companion a host of its own.
+
+## Dummy social identity providers (#1689)
+
+The catalogue names 39 social providers, plus two generic profiles that are
+not providers. A live sign-in needs an application and an account at each,
+and none is kept. `social_idps.js` serves a dummy of each named one at
+`/social/{id}`: one fixed person, and the client authentication and PKCE
+that profile asks for. Steam's OpenID 2.0 check, DiscourseConnect and
+Bluesky's DPoP push are the three that are not a code grant. The two
+generic profiles are not served. The document each dummy follows is
+`docs/v1.1.0/federation-consumer-providers.md` (*The companion dummy of each
+provider*): the profile's recorded document, and the extra protocol
+page where that document is not the whole answer.
+
+Each page lists the relationship fields that point a development
+relationship at that dummy. The addresses are this companion's public URL.
+A service in another container dials the companion by that address, not
+localhost. Enable the relationship last.
+
+**THE SERVICE POSTS HERE, AND THOSE POSTS ARE NOT CSRF-BOUND.** The token
+request, Steam's `check_authentication` and Bluesky's pushed authorization
+request are the service, not a browser, so they carry no session cookie.
+`Companion.handle()` dispatches `/social` before the CSRF check. Every
+other POST stays bound. The dummy reads its own body, because two of those
+requests can be in flight and the shell must not keep one body for both.
+
+**A NEGATIVE FIXTURE REFUSES WHAT A PROVIDER WOULD (#1689's review,
+2026-11-13).** A token request whose `redirect_uri` is not the one the code
+was issued to, or names none, is `invalid_grant` and spends the code (RFC
+6749 section 4.1.3), on every code-grant dummy and on Bluesky's pushed one.
+Steam's `check_authentication` confirms a nonce once: a nonce that checked is
+deleted, so a replayed assertion is `is_valid:false`; a check that failed
+keeps it, so the right check after it still confirms.
+`tests/social_idp_refusals.js` holds both.
+
+No timer. The code, token, push and Steam-nonce maps are capped on insert
+and nothing is swept.
+
+## The application the remote PEP protects (#1760)
+
+The remote PEP container can be a reverse proxy in front of one upstream
+application (`xacml-pep/CLAUDE.md`). rcbj's direction on #1760: the dummy
+application its protocol job drives is built INTO the companion, not into
+the job or the test peer (`tests/peer/`). `pep_app.js` serves it at
+`/pep-app`:
+
+| Path | Page | What it is for |
+|---|---|---|
+| `GET /pep-app/_hits` | — | `{ total, byPath }`: how many requests reached each path. Not counted itself. The job reads it DIRECTLY, never through the proxy, to prove a refused or unrouted request never reached the application |
+| `/pep-app/public[/…]` | `public` | the public route |
+| `GET /pep-app/public/hop` | `hop` | answers `Connection: x-upstream-secret`, `X-Upstream-Secret` and `Keep-Alive` beside an end-to-end `X-Upstream-Visible`, so the job can assert the proxy drops a response's hop-by-hop headers (RFC 9110 section 7.6.1) |
+| `/pep-app/protected[/…]` | `protected` | the session route |
+| `GET /pep-app/api/items` | `items` | the OAuth 2.0 and Basic route's read |
+| `GET /pep-app/whoami[/…]` | `whoami` | beside the echo, `whoami`: the identity headers the proxy forwarded and the listener the request came through (`via`: host, port and scheme of `X-Forwarded-Host` and `X-Forwarded-Proto`), for `sts_xacml_pep_proxy_cluster.js`'s route on a listener of its own (2026-11-16) |
+| `POST /pep-app/api/items` | `item-created` (201) | the write: allowed and refused methods |
+| `GET /pep-app/slow?ms=` | `slow` | answered after `ms`, at most 30 s: the proxy's upstream timeout (504) |
+| `POST /pep-app/saml/acs` | `saml-acs` | the application's own SAML ACS, where the proxy POSTs the assertion in D11's `saml` mode |
+| `POST /pep-app/saml/_setup` | — | `{ audience, metadataUrl?, certificates?, jwksUrl? }`: what the ACS and the JWT check trust. Not counted |
+| anything else under `/pep-app` | `other` | e.g. the SAML route's pages |
+
+Every page answers one JSON shape: `{ app: "pep-app", page, method, path,
+query, headers, hit }`, plus `body: { length, sha256 }` when a body was
+sent (always for POST, PUT and PATCH). **`path` is the RAW request
+target**, dot segments as sent, so a traversal the proxy forwarded would
+show; `headers` is every header node received, names lower-cased, so the
+job reads the identity headers the proxy added and the `Authorization` and
+proxy cookie it must have stripped. A body over 8 MiB is the application's
+own 413, well past any `maxBodyBytes` the job sets.
+
+**THE IDENTITY THE PROXY FORWARDS IS READ, NOT ONLY ECHOED (D11).** A
+route sends it as headers it names, as a JWT access token the service
+issued for the application, or as a SAML assertion the service issued for
+it, which the proxy POSTs to this ACS server-side before forwarding the
+request with the cookie it set. So every echo also carries `jwt` — the
+header and payload of a `Bearer` JWT as sent, `verified` against the
+realm's JWKS (`_setup`'s `jwksUrl`, else the token's `iss` +
+`/oauth2/jwks`; RS, PS, ES and EdDSA with node's crypto) and `expired` —
+and `saml` (`{ nameId, attributes, issuer, sessionIndex }`) when the
+request's `pep_app_saml` cookie names a live ACS session. **The ACS reads
+the assertion from what the signature COVERS** (xml-crypto's signed
+references), never from the document around it, so a wrapped assertion is
+not read; it checks the signature under the realm's certificate (from the
+IdP metadata `_setup` named, or the certificates it was handed), the
+audience against the configured SP entity, and the conditions' window.
+**`_setup` is unauthenticated**, like everything in this container: the job
+calls it once its realm exists, which no environment variable could name
+when the stack started. Mutation-tested: the audience check removed fails
+10f; ignoring `checkSignature()`'s answer is equivalent, because xml-crypto
+6 throws on a signature that does not verify.
+
+**DISPATCHED BEFORE THE SESSION AND THE CSRF CHECK**, by the raw path. The
+proxy, not a browser, sends these requests, with no companion session; a
+`companion_sid` set on every answer would be one more header for the job to
+explain, and a write bound to a form token could not be proxied at all.
+**Nothing here is authorization**: it trusts every header, because deciding
+is the proxy's job and echoing is this one's. The counter is capped on
+insert (2000 paths); the slow page's delay is one request's. It needs
+nothing of the service, so the test stack's companion runs with no
+bootstrap secret and its Kerberos TCP service off.
 
 ## The pages carry no script
 
@@ -191,7 +297,8 @@ after a submission that Chrome would hold to `form-action`.
 
 Every POST is bound: the form's `csrf` must be the session's token
 (constant-time), a fresh session is refused, and an `Origin`, when sent, must
-be the companion's own. The session cookie is `HttpOnly; SameSite=Lax`, and
+be the companion's own. A POST under `/social` is the exception in the
+section above: the service posts there with no session cookie. The session cookie is `HttpOnly; SameSite=Lax`, and
 `Secure` when `COMPANION_PUBLIC_URL` is https. **`Referrer-Policy: same-origin`, not
 `no-referrer`**: under `no-referrer` Chrome posts a form with `Origin: null`,
 and the Origin check refused the companion's own start — found driving the
@@ -217,9 +324,25 @@ for #595, the Kerberos demonstration with a stand-in acceptor and
 `sts_client.js`'s own provisioning over a stubbed `/admin-api` (create, then
 rotate when held; the keytab's file and mode; the RFC 4559 exchange's
 headers; the TCP framing; the KRB-ERROR, read back by the service's vendored
-codec). No protocol job needs the companion — every job uses the service's
-own doors (`/admin-api`, `/account-api`, the protocol endpoints) — so it is
-not on the test stack. End to end the OpenID4VC half was driven over CDP
+codec). `tests/social_idp_signins.js` signs in through each dummy social
+provider as its own assertion, against this module on a loopback port, and
+`tests/companion.js` holds that a token POST under `/social` is that dummy
+and not the CSRF page; section 9 holds `/pep-app`'s echo, its raw path, the
+write's digest, the hop-by-hop page, the slow page and the counter, and
+section 10 the identity half: `_setup`, a JWT verified and a changed one
+not, the ACS accepting a signed response for its audience and setting
+`pep_app_saml`, the next echo carrying the session, and a tampered,
+foreign-audience or unsigned response refused with no cookie.
+
+**ONE PROTOCOL JOB NEEDS THE COMPANION SINCE #1760**, and so it is on the
+test stack: `docker-compose-run-tests.yml`'s `companion`, in every local
+mode, pinned at `.49`, with `XACML_PEP_UPSTREAM_URL=http://companion:9700`
+handed to the runner. `tests/protocol/sts_xacml_remote_pep.js` section 10
+puts the remote PEP's proxy in front of `/pep-app`; when that job starts
+its own PEP (no launcher) it builds this image and starts it beside the
+PEP. Every other job still uses the service's own doors. The companion
+remains development-only on that stack too: the service image never
+carries this directory. End to end the OpenID4VC half was driven over CDP
 against a private stack, and the Kerberos half with MIT `kinit` and
 `curl --negotiate` from a throwaway container against the companion and the
 service's KDC.

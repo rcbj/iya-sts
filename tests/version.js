@@ -126,9 +126,10 @@ function run(t) {
   t.check(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)\s*$/.test(raw),
           'the repo-root VERSION file is M.N.O and nothing else',
           'read ' + JSON.stringify(raw));
-  t.equal(raw.trim(), '1.0.0',
-          'and it says 1.0.0, the release rcbj named on #1298 — change this ' +
-          'line with the file when the release is bumped');
+  t.equal(raw.trim(), '1.1.0',
+          'and it says 1.1.0, the release rcbj named on 2026-11-13 (an ' +
+          'upgrade script from 1.0.0 makes it a minor release) — change ' +
+          'this line with the file when the release is bumped');
 
   const record = version.resolve();
   t.equal([record.major, record.minor, record.patch].join('.'), raw.trim(),
@@ -295,6 +296,89 @@ function run(t) {
             released.stdout.trim() === raw.trim() + '.0',
             'and with BUILD_NUMBER=0 it exits 0 printing ' + raw.trim() + '.0',
             'status ' + released.status + ': ' + released.stdout.trim());
+  });
+
+  // -----------------------------------------------------------------------
+  // 2b. THE RELEASE A BUILD OF main CARRIES (2026-11-11): STS_VERSION_RELEASE.
+  //
+  //     The workflow works the next patch out from the git tags and hands it
+  //     to the stamp; set, it is the release recorded in place of VERSION's,
+  //     and it must be M.N.O exactly. ABSENT, NOTHING CHANGES — rcbj's
+  //     backwards-compatibility rule — which is asserted against the same
+  //     stamp with the variable unset, empty and blank.
+  // -----------------------------------------------------------------------
+  t.log.info('=== STS_VERSION_RELEASE: the release a build stamps ===');
+  withTempDir(function (dir) {
+    const named = version.stamp(dir, { STS_VERSION_RELEASE: '1.0.7' });
+    t.check(/^1\.0\.7\.\d{14}$/.test(named.version) &&
+            named.major === '1' && named.minor === '0' &&
+            named.patch === '7' && named.release === false,
+            'STS_VERSION_RELEASE=1.0.7 stamps release 1.0.7, broken out as ' +
+            'major, minor and patch, numbered by the instant',
+            JSON.stringify(named));
+    t.check(version.load(dir).version === named.version,
+            'and the stamp on disk is that version', version.load(dir).version);
+    const both = version.stamp(dir, { STS_VERSION_RELEASE: ' 2.3.4 ',
+                                      STS_RELEASE: 'true',
+                                      BUILD_NUMBER: '0' });
+    t.check(both.version === '2.3.4.0' && both.release === true,
+            'trimmed, and with a release build\'s number as well it is ' +
+            '2.3.4.0', both.version);
+    [undefined, '', '   '].forEach(function (absent) {
+      const env = absent === undefined ? {} :
+        { STS_VERSION_RELEASE: absent };
+      const plain = version.stamp(dir, env);
+      t.check(plain.version === raw.trim() + '.' + plain.build &&
+              [plain.major, plain.minor, plain.patch].join('.') ===
+                raw.trim(),
+              'with STS_VERSION_RELEASE ' + (absent === undefined ? 'unset' :
+                JSON.stringify(absent)) + ' the release is VERSION\'s, as ' +
+              'before it existed', plain.version);
+    });
+    t.check(version.releaseFrom({}).ok === true &&
+            version.releaseFrom({}).parts === null,
+            'releaseFrom() answers no release of its own when unset');
+
+    fs.rmSync(path.join(dir, version.STAMP_FILE));
+    const refusals = ['v1.0.1', '1.0', '1.0.1.0', '01.0.1', '1.0.01',
+                      '1.0.1-rc.1', 'latest', '-1.0.0'].map(function (bad) {
+      try {
+        version.stamp(dir, { STS_VERSION_RELEASE: bad });
+        return bad + ' -> stamped';
+      } catch (e) {
+        log.debug("Caught in run(): " + ((e && e.message) || e));
+        const ok = e.errorCode === 'STS-CORE-0175' &&
+          /STS_VERSION_RELEASE/.test(e.message);
+        return bad + (ok ? ' -> refused' : ' -> ' + e.message);
+      }
+    });
+    t.check(refusals.every(function (r) { return / -> refused$/.test(r); }),
+            'an STS_VERSION_RELEASE that is not M.N.O exactly is REFUSED ' +
+            'with STS-CORE-0175, naming the variable', refusals.join('; '));
+    t.check(!fs.existsSync(path.join(dir, version.STAMP_FILE)),
+            'and a refused stamp writes nothing');
+  });
+
+  withTempDir(function (dir) {
+    const cp = require('child_process');
+    const cli = path.join(ROOT, 'common', 'version.js');
+    const env = Object.assign({}, process.env, { STS_VERSION_RELEASE: '1.0' });
+    delete env.STS_RELEASE;
+    delete env.BUILD_NUMBER;
+    const refused = cp.spawnSync(process.execPath, [cli, '--stamp', dir],
+                                 { env: env, encoding: 'utf8' });
+    t.check(refused.status !== 0 && /STS-CORE-0175/.test(refused.stderr) &&
+            !fs.existsSync(path.join(dir, version.STAMP_FILE)),
+            '`--stamp` with a malformed STS_VERSION_RELEASE exits non-zero ' +
+            'naming the code, and writes nothing',
+            'status ' + refused.status + ': ' + refused.stderr.trim());
+    env.STS_VERSION_RELEASE = '1.0.1';
+    const stamped = cp.spawnSync(process.execPath, [cli, '--stamp', dir],
+                                 { env: env, encoding: 'utf8' });
+    const last = stamped.stdout.trim().split('\n').pop();
+    t.check(stamped.status === 0 && /^1\.0\.1\.\d{14}$/.test(last),
+            'and with STS_VERSION_RELEASE=1.0.1 it exits 0 printing ' +
+            '1.0.1.<instant>', 'status ' + stamped.status + ': ' + last);
   });
 
   t.log.info('=== GIT_COMMIT, buildInfo() and buildId() ===');
@@ -479,9 +563,11 @@ function run(t) {
   // 5. ONE SOURCE FOR EVERY SURFACE.
   //
   //    This is the assertion that would have caught the state this module
-  //    replaced. Five modules draw a version — the front page, the console's
-  //    shell, the portal's shell, the management API and the service metadata
-  //    page — and until this existed two of them read `package.json`, whose
+  //    replaced. Five modules REPORT a version — the front page's view, the
+  //    console's shell answer, the portal's `/account-api/me`, the management
+  //    API and the service metadata page (and the reports index) — and since
+  //    2026-11-14 the page footer is the one place a page DRAWS it. Until
+  //    this existed two of them read `package.json`, whose
   //    third component is a placeholder. The check is on the SOURCE and not on
   //    the rendered string, because two pages reading two different sources
   //    agree perfectly right up until the moment they stop.
@@ -503,6 +589,59 @@ function run(t) {
               .test(src),
             rel + ' does not read the version out of package.json');
   });
+  // THE PAGE FOOTER (2026-11-14) draws the version on every static
+  // surface's shell and on the error page, and is in `common/` beside the
+  // module, so its require is `./version`. The browser's redraw reads the
+  // facts this module put on the footer, never a version of its own.
+  const footerSrc = codeOf('common/page_footer.ts');
+  t.check(/require\((['"])\.\/version\1\)/.test(footerSrc) &&
+          /version\.load\(\)/.test(footerSrc) &&
+          /version\.buildInfo\(/.test(footerSrc),
+          'common/page_footer.ts takes the version and its build line from ' +
+          'common/version.js');
+  t.check(!/package\.json/.test(footerSrc) &&
+          !/require\(/.test(codeOf('common/web_footer.ts')),
+          'and the footer\'s browser half requires nothing, so the only ' +
+          'version it can draw is the one the server put on the footer');
+
+  // ONE VERSION LINE ON A PAGE (rcbj, 2026-11-14): the front door, the
+  // console, the portal and the reports application each drew a version
+  // line of their own inside their content, beside the footer's. Those
+  // lines are gone, so the footer above is the one place a page DRAWS the
+  // version; the four answers in the drawers list still CARRY it, for
+  // machines. A renderer that draws it again would be a second drawing
+  // that the source check above cannot see, because it reads the version
+  // off an answer rather than off common/version.js.
+  const ONE_LINE_RENDERERS = {
+    'home/web_home_front.ts': [/class="ver"/, /'home\.version'/,
+                               /\bv\.version\b/, /\bv\.build\b/],
+    'admin-ui/web_shell.ts': [/shell\.version\./,
+                              /'console\.shell\.version'/,
+                              /'console\.shell\.notStamped'/],
+    'portal/web_portal_shell.ts': [/class="ver"/, /\.version\b/,
+                                   /buildInfo/],
+    'portal/web_portal_runtime.ts': [/\.version\b/],
+    'report/web_report_pages.ts': [/'report\.version'/, /class="foot"/,
+                                   /chrome\.version/]
+  };
+  Object.keys(ONE_LINE_RENDERERS).forEach(function (rel) {
+    const src = codeOf(rel);
+    const found = ONE_LINE_RENDERERS[rel].filter(function (re) {
+      return re.test(src);
+    });
+    t.check(found.length === 0,
+            rel + ' draws no version line of its own: the page footer is ' +
+            'the one place a page shows the version',
+            found.map(String).join(', '));
+  });
+  // And the facts every footer is drawn from are the shell's, from the one
+  // source: `data-sts-footer-version` and `-build`, written by the footer's
+  // builder from page_footer.ts's version.load() and buildInfo().
+  const footerBrowserSrc = codeOf('common/web_footer.ts');
+  t.check(/data-sts-footer-version/.test(footerBrowserSrc) &&
+          /data-sts-footer-build/.test(footerBrowserSrc),
+          'the footer carries its version and build line as facts on the ' +
+          'shell, which the four runtimes redraw from');
 
   // The three outbound requesters say who is calling and which build. Same
   // argument as above: the string is built in one place, so the check is that

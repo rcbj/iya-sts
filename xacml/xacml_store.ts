@@ -86,6 +86,7 @@ import ModelTables = require('../common/model_tables');
 import DomainClasses = require('../common/domain_classes');
 import crypto = require('../common/crypto');
 import helpers = require('../common/helpers');
+import ownMembers = require('../common/own_members');
 // The error-code registry (a leaf). A refused write's code is marked on the
 // RESULT as a non-enumerable property, so the console and `/admin-api` can mark
 // their response with it and no serialisation of the result carries it out.
@@ -127,6 +128,9 @@ interface PolicyRow {
   // policy; and when that application was deleted, or null.
   application: string | null;
   orphanedAt: string | null;
+  // The reverse-proxy route the policy was generated for (#1760), as
+  // `<pep>/<route>`, or null for a policy somebody wrote.
+  pepRoute: string | null;
 }
 
 // What `write()` is told besides the document.
@@ -137,6 +141,8 @@ interface WriteOptions {
   // #564. Absent means "keep what the entry already says": see write().
   application?: string | null;
   orphanedAt?: string | null;
+  // #1760. Absent means "keep what the entry already says", as above.
+  pepRoute?: string | null;
 }
 
 // What `write()` answers.
@@ -607,7 +613,8 @@ class XacmlStore {
         isRoot: policy.isRoot === true,
         document: policy.document || '',
         application: policy.application || null,
-        orphanedAt: policy.orphanedAt || null
+        orphanedAt: policy.orphanedAt || null,
+        pepRoute: policy.pepRoute || null
       };
     });
     log.debug('Leaving XacmlStore.all(). ' + rows.length + ' policy(ies).');
@@ -714,6 +721,11 @@ class XacmlStore {
   // `xacmlApplication` is therefore invisible to both halves, including one
   // somebody flagged `xacmlIsRoot` with an `ldapmodify`, which `write()`
   // refuses (STS-FGA-0001) and LDAP cannot be stopped from doing.
+  //
+  // **A POLICY GENERATED FOR A REVERSE-PROXY ROUTE IS NOT ONE EITHER
+  // (#1760)**, for the same fallback: saving one route's simple or public
+  // choice writes one, enabled, so a realm whose only policy is a route's
+  // would otherwise have made that route's policy the PDP's root.
   // -------------------------------------------------------------------------
   /**
    * Returns the repository's root: the one enabled policy flagged root, or
@@ -725,7 +737,7 @@ class XacmlStore {
     const { log } = this.deps;
     log.debug('Entering XacmlStore.root().');
     const enabled = this.all().filter(function (row) {
-      return row.enabled && !row.application;
+      return row.enabled && !row.application && !row.pepRoute;
     });
     const roots = enabled.filter(function (row) {
       return row.isRoot;
@@ -781,7 +793,10 @@ class XacmlStore {
         return;
       }
       try {
-        map[row.id] = self.parseDocument(row.document);
+        // An own member, `__proto__` included (2026-11-12): the PDP reads a
+        // reference through `common/own_members.ts`, and an assignment of
+        // `__proto__` would make the policy the map's PROTOTYPE instead.
+        ownMembers.put(map, row.id, self.parseDocument(row.document));
       } catch (error) {
         log.debug('Caught in XacmlStore.repository(): ' +
                   ((error && error.message) || error));
@@ -870,6 +885,18 @@ class XacmlStore {
     const orphanedAt = settings.orphanedAt !== undefined
       ? (settings.orphanedAt ? String(settings.orphanedAt) : null)
       : (before ? before.orphanedAt : null);
+    const pepRoute = settings.pepRoute !== undefined
+      ? (settings.pepRoute ? String(settings.pepRoute) : null)
+      : (before ? before.pepRoute : null);
+    if (settings.isRoot && pepRoute) {
+      log.debug('Leaving XacmlStore.write(). A route\'s policy as the root.');
+      return errorCodes.mark({ ok: false,
+               why: 'Policy "' + name + '" was generated for the remote ' +
+                    'PEP route ' + pepRoute + ' (xacmlPepRoute) and decides ' +
+                    'that route alone. It cannot be the root of this ' +
+                    'repository; make an ordinary policy the root instead.' },
+               'STS-XACML-0267');
+    }
     if (settings.isRoot && application) {
       log.debug('Leaving XacmlStore.write(). An application\'s policy as ' +
                 'the root.');
@@ -915,6 +942,9 @@ class XacmlStore {
     }
     if (orphanedAt) {
       attributes.xacmlOrphanedAt = orphanedAt;
+    }
+    if (pepRoute) {
+      attributes.xacmlPepRoute = pepRoute;
     }
     const written = directory.writePolicy(name, attributes);
     if (written) {

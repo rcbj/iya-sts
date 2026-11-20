@@ -38,3 +38,11 @@ output "peerings" {
   description = "Every half of every inter-cell peering."
   value       = sort(keys(azurerm_virtual_network_peering.cells))
 }
+
+# The primary cell's Front Door profile sends it (#1341); every cell's nodes
+# read the copy in their own vault.
+output "edge_secret" {
+  description = "Front Door's origin secret, for the primary cell's profile."
+  value       = random_password.edge_secret.result
+  sensitive   = true
+}

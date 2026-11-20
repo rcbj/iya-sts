@@ -128,6 +128,12 @@ declare namespace IyaDomain {
     actor?: string;
     target?: string;
     summary: string;
+    origin?: string;
+    actorForm?: string;
+    protocol?: string;
+    channel?: string;
+    address?: string;
+    detail?: Record<string, unknown>;
   }
 
   /**
@@ -289,6 +295,7 @@ declare namespace IyaDomain {
    * What the directory keeps about any entry.
    */
   interface DirectoryEntry {
+    entryUuid?: string;
     createTimestamp?: string;
     modifyTimestamp?: string;
     entryDN?: string;
@@ -332,6 +339,7 @@ declare namespace IyaDomain {
     responseType?: string;
     idTokenSignedResponseAlg?: string;
     userinfoSignedResponseAlg?: string;
+    userinfo?: string;
     refreshTokens?: string;
     refreshEverySeconds?: string;
     register?: string;
@@ -340,6 +348,7 @@ declare namespace IyaDomain {
     requestObjectSigningAlg?: string;
     webFinger?: string;
     discovery?: string;
+    fapi?: string;
     initiateLogin?: string;
     binding?: string;
     signRequest?: string;
@@ -377,6 +386,7 @@ declare namespace IyaDomain {
     contentEncryptionAlgorithm?: string;
     allowUnencrypted?: string;
     encryptionKey?: string[];
+    clientCertificate?: string;
     allowUnsolicited?: string;
     application?: string;
     authnMechanism?: string;
@@ -440,6 +450,8 @@ declare namespace IyaDomain {
     stsPostLoginPolicy?: string;
     stsAttributePolicy?: string;
     federationRelationship?: string[];
+    email?: string;
+    displayName?: string;
   }
 
   /**
@@ -458,6 +470,11 @@ declare namespace IyaDomain {
     sessionId?: string;
     grantId?: string;
     revoked: boolean;
+    username?: string;
+    issuedAt: number;
+    revocable: boolean;
+    dpopThumbprint?: string;
+    state?: string;
   }
 
   /**
@@ -597,6 +614,7 @@ declare namespace IyaDomain {
     idTokenTtlS?: string;
     refreshTokenTtlS?: string;
     refreshIdleSeconds?: string;
+    maxAuthAgeS?: string;
     claimsAccessToken?: string;
     claimsIdToken?: string;
     claimsUserinfo?: string;
@@ -730,6 +748,8 @@ declare namespace IyaDomain {
     mayAct?: string;
     delegationSemantics?: string[];
     defaultDelegationSemantics?: string;
+    authzenApplication?: string[];
+    authzenCallbackUri?: string[];
     mailVerified?: string;
     audSub?: string[];
   }
@@ -932,6 +952,16 @@ declare namespace IyaDomain {
     expires: number;
     lastSeenAt: number;
     events: AuthenticationEvent[];
+    eventsDropped?: number;
+    sub?: string;
+    derivedFrom?: string;
+    relyingPartySurface?: string;
+    relyingPartyLabel?: string;
+    relyingPartyClientId?: string;
+    relyingPartyRenewals?: number;
+    relyingPartyRenewedAt?: number;
+    apiCalls?: number;
+    accountSetId?: string;
   }
 
   /**
@@ -1101,6 +1131,19 @@ declare namespace IyaDomain {
   interface WsTrustRelyingParty {
     appliesTo?: string[];
     jwtScope?: string[];
+    encryptRequest?: string;
+    acceptEncryptedElements?: string;
+    requestElements?: string[];
+    encryptResponse?: string;
+    responseElements?: string[];
+    encryptionAlgorithm?: string;
+    encryptionCertificate?: string;
+    keyTransportAlgorithm?: string;
+    responseRecipientXPath?: string;
+    decryptionCertificate?: string;
+    decryptionCertificateChain?: string;
+    decryptionPrivateKey?: string;
+    decryptionKeySource?: string;
   }
 
   /**
@@ -1124,7 +1167,26 @@ declare namespace IyaDomain {
     refused?: number;
     undischargeable?: number;
     version?: string;
+    hostname?: string;
     lastNotify?: string;
+    proxy?: string;
+    signals?: string;
+    settings?: string;
+    settingsInUse?: string;
+    listeners?: string;
+    listenersInUse?: string;
+    description?: string[];
+  }
+
+  /**
+   * A logical cluster of remote policy enforcement points sharing one
+   * configuration.
+   */
+  interface XacmlPepCluster {
+    proxy?: string;
+    settings?: string;
+    listeners?: string;
+    members?: string;
     description?: string[];
   }
 
@@ -1143,6 +1205,7 @@ declare namespace IyaDomain {
     description?: string[];
     application?: string;
     orphanedAt?: string;
+    pepRoute?: string;
   }
 
   interface Concepts {
@@ -1186,6 +1249,7 @@ declare namespace IyaDomain {
     WsFederationRelyingParty: WsFederationRelyingParty;
     WsTrustRelyingParty: WsTrustRelyingParty;
     XacmlPep: XacmlPep;
+    XacmlPepCluster: XacmlPepCluster;
     XacmlPolicy: XacmlPolicy;
   }
 }

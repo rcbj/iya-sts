@@ -30,6 +30,8 @@ import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
+type AccountAnswering<K extends keyof IyaApi.Account.Operations> =
+  import('../types/account-api').AccountAnswering<K>;
 type AccountContext = import('../types/account-api').AccountContext;
 type AccountCaller = import('../types/account-api').AccountCaller;
 
@@ -116,7 +118,8 @@ class PortalDelegate {
    * @param body - the checked body
    * @returns nothing
    */
-  change(ctx: AccountContext, res: Json, caller: AccountCaller,
+  change(ctx: AccountContext, res: AccountAnswering<'setDelegate'>,
+         caller: AccountCaller,
          body: Json): unknown {
     const { log, credentials } = this.deps;
     log.debug("Entering PortalDelegate.change().");
@@ -163,7 +166,8 @@ class PortalDelegate {
    * @param query - the checked query
    * @returns a promise of nothing
    */
-  async search(ctx: AccountContext, req: Json, res: Json,
+  async search(ctx: AccountContext, req: Json,
+               res: AccountAnswering<'findDelegateCandidates'>,
                caller: AccountCaller, query: Json): Promise<unknown> {
     const { log, credentials } = this.deps;
     log.debug("Entering PortalDelegate.search().");
@@ -238,21 +242,21 @@ class PortalDelegate {
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/delegate',
         operationId: 'getDelegate', access: 'person', query: ModelZod.query('account', 'getDelegate'),
-        handler: function (req: Json, res: Json,
+        handler: function (req, res,
                            caller: AccountCaller): unknown {
           return ctx.json(res, 200, self.view(caller.username));
         } },
       { method: 'GET', path: ctx.BASE + '/delegate/candidates',
         operationId: 'findDelegateCandidates', access: 'person',
         query: SEARCH_QUERY,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return self.search(ctx, req, res, caller, input.query);
         } },
       { method: 'POST', path: ctx.BASE + '/delegate',
         operationId: 'setDelegate', access: 'person', body: DELEGATE_FORM,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return self.change(ctx, res, caller, input.body);
         } }
     ];

@@ -91,4 +91,12 @@
              schemaLocation="ws-federation.xsd"/>
   <xs:import namespace="http://docs.oasis-open.org/wsfed/authorization/200706"
              schemaLocation="ws-authorization.xsd"/>
+  <!-- WSDL 1.1 and its SOAP 1.1 and 1.2 bindings: what GET /sts/metadata is
+       written in (tests/wstrust_metadata.js W). -->
+  <xs:import namespace="http://schemas.xmlsoap.org/wsdl/"
+             schemaLocation="wsdl.xsd"/>
+  <xs:import namespace="http://schemas.xmlsoap.org/wsdl/soap/"
+             schemaLocation="wsdl-soap.xsd"/>
+  <xs:import namespace="http://schemas.xmlsoap.org/wsdl/soap12/"
+             schemaLocation="wsdl11soap12.xsd"/>
 </xs:schema>

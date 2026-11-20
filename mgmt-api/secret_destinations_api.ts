@@ -17,6 +17,8 @@
 // table, as it does the attribute source operations'.
 // ---------------------------------------------------------------------------
 
+// Types a row of actions by its own actions' operations (#1579).
+import ApiRows = require('../common/api_rows');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
@@ -147,7 +149,12 @@ class SecretDestinationsApi {
    * @param status - the HTTP status
    * @param body - the body, serialised with indentation
    */
-  sendJson(res: Res, status: number, body: Json): void {
+  // TYPED BY THE OPERATION (#1579): through a handler's response, the
+  // answer is held to the model's at a literal 2xx status
+  // (`types/api-handlers.d.ts`).
+  sendJson<R, S extends number>(res: R, status: S,
+           body: IyaApi.AnswerOf<R, S>): void;
+  sendJson(res: any, status: number, body: any): void {
     const { log } = this.deps;
     log.debug("Entering SecretDestinationsApi.sendJson(). status=" + status);
     res.status(status).type('application/json')
@@ -168,7 +175,7 @@ class SecretDestinationsApi {
     const self = this;
     log.debug("Entering SecretDestinationsApi.buildRoutes().");
     const PROPS = destinationProperties();
-    const ROUTES = [
+    const ROUTES: IyaApi.AdminRow[] = [
       { method: 'GET', path: BASE + '/secret-destinations',
         tag: 'Directory', operationId: 'getSecretDestinations',
         mirrors: 'GET /admin/secret-destinations',
@@ -187,7 +194,7 @@ class SecretDestinationsApi {
             schema: { type: 'integer', minimum: 1, examples: [10] },
             description: 'Rows per page. Capped, like every list here.' }
         ],
-        handler: function (req: Req, res: Res): void {
+        handler: function (req, res): void {
           log.debug("Entering the management API secret destinations " +
                     "endpoint.");
           // THE REGISTER IS PAGED (#313), on `destinationsPage`: an
@@ -214,19 +221,22 @@ class SecretDestinationsApi {
                     "endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/secret-destinations/:action',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/secret-destinations/:action',
         tag: 'Directory', mirrors: 'POST /admin/secret-destinations',
-        handler: function (req: Req, res: Res): void {
+        handler: function (req, res): void {
           log.debug("Entering the management API secret destinations " +
                     "action.");
           const body = Object.assign({}, parseBody(req),
                                      { action: String(req.params.action ||
                                                       '') });
+          // THE CALLER is the subject of the token the gate verified
+          // (#446), handed to the act beside the body and never in it
+          // (rcbj on #1579, 2026-11-11).
+          const caller = res.locals && res.locals.apiCaller;
+          const actor = String((caller && caller.name) || '');
           Promise.resolve().then(function (): Json {
-            // THE CALLER, which the route wrapper put in the body's
-            // `actor` after its schema passed (`nameActor()`, #446).
-            return loadDestinations().act(body, {
-              via: 'api', actor: String(body.actor || '') });
+            return loadDestinations().act(body, { via: 'api', actor: actor });
           }).then(function (result: Json): void {
             if (!result.ok) {
               // error-code: none — the act's own code, read off the result
@@ -255,7 +265,7 @@ class SecretDestinationsApi {
           { action: 'remove-destination',
             operationId: 'removeSecretDestination' },
           { action: 'test-push', operationId: 'testSecretDestination' }
-        ] }
+        ] })
     ];
     log.debug("Leaving SecretDestinationsApi.buildRoutes().");
     return ROUTES;

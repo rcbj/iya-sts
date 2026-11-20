@@ -770,6 +770,132 @@ async function registration() {
   log.debug("Leaving registration().");
 }
 
+// ---------------------------------------------------------------------------
+// 8. THE CODES EACH REFUSAL ABOVE RECORDED (D12, #444): `tests/oauth21_mode.js`
+// asks `oauth21.js` for each decision's error code in process; here the
+// same refusals were driven at the endpoints by sections 2–7, in realms this
+// job made, so each code must now be on THAT realm's audit log — a code is
+// recorded, never sent. Two refusals no earlier section drives, the
+// sign-out addresses, are driven here first. Two codes differ from the
+// in-process claim, because an earlier rule refuses first on the wire:
+// STS-OAUTH-0277 (STS-OAUTH-0019) and STS-OAUTH-0282 (STS-OAUTH-0198).
+// Not carried: STS-OAUTH-0272
+// (redirect URIs that development only OBSERVED, in a realm switched to
+// product afterwards) — owed; the realm-switch shape is
+// `sts_unregistered_applications`'s.
+// ---------------------------------------------------------------------------
+async function codeRows(prefix, code) {
+  log.debug("Entering codeRows(). " + code);
+  const r = await send(base + prefix + "/admin-api/audit?per=500&code=" +
+                       encodeURIComponent(code));
+  log.debug("Leaving codeRows().");
+  return Number((r.body && r.body.matched) || 0);
+}
+
+async function theRecordedCodes() {
+  log.debug("Entering theRecordedCodes().");
+  log.info("=== 8. the codes each refusal recorded ===");
+  const meta = (await send(base + PREFIX +
+                           "/.well-known/openid-configuration")).body;
+  const endSession = String(meta.end_session_endpoint || "");
+  assert.ok(endSession, "no end_session_endpoint");
+  const noOwn = await send(endSession + "?" + form({ client_id: LOCKED,
+    post_logout_redirect_uri: "https://rp.o21.example/bye" }));
+  check("a post_logout_redirect_uri for a client that registered none of " +
+        "its own is not followed", function () {
+    assert.ok(!/^https:\/\/rp\.o21\.example/.test(noOwn.location),
+              noOwn.status + " " + noOwn.location);
+  });
+  const privateUse = await send(endSession + "?" + form({ client_id: PUBLIC,
+    post_logout_redirect_uri: "com.example.o21:/bye" }));
+  check("nor a private-use one the client never registered", function () {
+    assert.ok(!/^com\.example\.o21:/.test(privateUse.location),
+              privateUse.status + " " + privateUse.location);
+  });
+  const publicCcCode = (await facts.isProduct(base + PREFIX + "/admin-api"))
+    ? "STS-OAUTH-0552" : "STS-OAUTH-0289";
+  const expected = [
+    [BCP_PREFIX, "STS-OAUTH-0147", "RFC 9700 mode: the token request " +
+     "omitted the redirect_uri the authorization request carried"],
+    [PREFIX, "STS-OAUTH-0271", "a client with no redirect URI of its own"],
+    [PREFIX, "STS-OAUTH-0273", "no redirect_uri, and several registered"],
+    [PREFIX, "STS-OAUTH-0275", "a confidential client with no PKCE and no " +
+     "nonce"],
+    [PREFIX, "STS-OAUTH-0276", "a code_challenge with no method"],
+    // The wire's code, not oauth21.js's: an exempt code redeemed with no
+    // client authentication is refused by client authentication first —
+    // a client_secret_post client presenting no secret (STS-OAUTH-0019) —
+    // so STS-OAUTH-0277 is not reached over the wire.
+    [PREFIX, "STS-OAUTH-0019", "a code with no challenge redeemed without " +
+     "the exemption's client authentication: no client_secret"],
+    [PREFIX, "STS-OAUTH-0278", "a token request naming a client that " +
+     "declares nothing"],
+    [PREFIX, "STS-OAUTH-0279", "client_credentials from a client that did " +
+     "not authenticate"],
+    [PREFIX, "STS-OAUTH-0280", "a credential presented that verifies " +
+     "against nothing on file"],
+    [PREFIX, "STS-OAUTH-0281", "two client authentication methods"],
+    // Likewise SAML bearer client authentication is refused as a method the
+    // realm's metadata no longer advertises (STS-OAUTH-0198) before
+    // STS-OAUTH-0282's own rule.
+    [PREFIX, "STS-OAUTH-0198", "SAML bearer client authentication, a " +
+     "method the realm does not advertise"],
+    [PREFIX, "STS-OAUTH-0285", "a repeated parameter"],
+    [PREFIX, "STS-OAUTH-0286", "a sign-out address for a client that " +
+     "registered none"],
+    [PREFIX, "STS-OAUTH-0287", "a registration asking for saml2_bearer"],
+    // In product the mode's own rule refuses a public client the client
+    // credentials grant first (STS-OAUTH-0552, oauth2_bcp.js), so OAuth
+    // 2.1's STS-OAUTH-0289 is reached only in development (run #300).
+    [PREFIX, publicCcCode, "a registration asking for " +
+     "client_credentials as a public client"],
+    [PREFIX, "STS-OAUTH-0290", "a private-use sign-out address the client " +
+     "never registered"]
+  ];
+  for (const row of expected) {
+    let n = await codeRows(row[0], row[1]);
+    for (let i = 0; i < 10 && n < 1; i += 1) {
+      await new Promise(function (resolve) {
+        setTimeout(resolve, 200);
+      });
+      n = await codeRows(row[0], row[1]);
+    }
+    if (n < 1) {
+      const all = await send(base + row[0] + "/admin-api/audit?per=500");
+      const seen = {};
+      ((all.body && all.body.events) || []).forEach(function (one) {
+        if (one.errorCode) {
+          seen[one.errorCode] = String(one.summary).slice(0, 90);
+        }
+      });
+      log.info("codes recorded in " + row[0] + ": " + JSON.stringify(seen));
+    }
+    check(row[1] + " is on the realm's audit log: " + row[2], function () {
+      assert.ok(n >= 1, row[1] + " rows in " + row[0] + ": " + n);
+    });
+  }
+  log.debug("Leaving theRecordedCodes().");
+}
+
+// REMOVAL IS OPT-IN: with STS_TEST_REMOVE_REALMS=1 (a private probe that
+// would otherwise fill its directory) the two realms are removed at the end,
+// pass or fail. A suite run leaves them standing (tests/CLAUDE.md, *No job
+// removes a realm*).
+async function removeRealms() {
+  log.debug("Entering removeRealms().");
+  if (process.env.STS_TEST_REMOVE_REALMS !== "1") {
+    log.debug("Leaving removeRealms(). Not asked to.");
+    return;
+  }
+  for (const id of [REALM, BCP_REALM]) {
+    const r = await send(api + "/realms/remove", { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: id }) });
+    log.info("removed the realm " + id + " (" + r.status + ")");
+  }
+  log.debug("Leaving removeRealms().");
+}
+
 async function test() {
   log.debug("Entering test().");
   log.info("Driving " + base + " in the realms \"" + REALM + "\" and \"" +
@@ -783,7 +909,8 @@ async function test() {
   await theUnnamedClient();
   await theSecretLimit();
   await registration();
-  assert.ok(checks >= 30,
+  await theRecordedCodes();
+  assert.ok(checks >= 48,
     "only " + checks + " checks ran; a section has stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
@@ -805,7 +932,16 @@ program
       "base url (unused: this test needs no browser)"))
   .parse(process.argv);
 
-test().catch(function (e) {
+test().then(function () {
+  return removeRealms();
+}, function (e) {
   log.error(e.stack || e.message);
-  process.exit(1);
+  return removeRealms().then(function () {
+    process.exit(1);
+  }, function (inner) {
+    log.debug("Caught removing realms: " + ((inner && inner.message) ||
+                                             inner));
+    // The failure above is the verdict; a removal that fails changes none.
+    process.exit(1);
+  });
 });

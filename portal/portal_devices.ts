@@ -60,6 +60,8 @@ import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
+type AccountAnswering<K extends keyof IyaApi.Account.Operations> =
+  import('../types/account-api').AccountAnswering<K>;
 type AccountContext = import('../types/account-api').AccountContext;
 type AccountCaller = import('../types/account-api').AccountCaller;
 
@@ -300,7 +302,8 @@ class PortalDevices {
    * @param body - the checked body
    * @returns nothing
    */
-  async act(ctx: AccountContext, req: Json, res: Json,
+  async act(ctx: AccountContext, req: Json,
+            res: AccountAnswering<'actOnDevices'>,
             caller: AccountCaller, body: Json): Promise<unknown> {
     const { log, devices, deviceEnrolment, authn } = this.deps;
     log.debug("Entering PortalDevices.act().");
@@ -496,7 +499,8 @@ class PortalDevices {
    * @param caller - the signed-in person
    * @returns nothing
    */
-  challenge(ctx: AccountContext, req: Json, res: Json,
+  challenge(ctx: AccountContext, req: Json,
+            res: AccountAnswering<'deviceChallenge'>,
             caller: AccountCaller): unknown {
     const { log, deviceEnrolment } = this.deps;
     log.debug("Entering PortalDevices.challenge().");
@@ -531,7 +535,8 @@ class PortalDevices {
    * @param b - the checked body
    * @returns nothing
    */
-  async proof(ctx: AccountContext, req: Json, res: Json,
+  async proof(ctx: AccountContext, req: Json,
+              res: AccountAnswering<'deviceProof'>,
               caller: AccountCaller, b: Json): Promise<unknown> {
     const { log, devices, deviceEnrolment } = this.deps;
     log.debug("Entering PortalDevices.proof().");
@@ -579,29 +584,29 @@ class PortalDevices {
       { method: 'GET', path: ctx.BASE + '/devices',
         operationId: 'getDevices', access: 'person',
         query: ModelZod.query('account', 'getDevices'),
-        handler: function (req: Json, res: Json,
+        handler: function (req, res,
                            caller: AccountCaller): unknown {
           return ctx.json(res, 200, self.view(ctx, req, caller));
         } },
       { method: 'POST', path: ctx.BASE + '/devices',
         operationId: 'actOnDevices', access: 'person',
         body: FORM,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return self.act(ctx, req, res, caller, input.body);
         } },
       { method: 'POST', path: ctx.BASE + '/devices/challenge',
         operationId: 'deviceChallenge', access: 'person',
         body: JSON_CHALLENGE,
-        handler: function (req: Json, res: Json,
+        handler: function (req, res,
                            caller: AccountCaller): unknown {
           return self.challenge(ctx, req, res, caller);
         } },
       { method: 'POST', path: ctx.BASE + '/devices/proof',
         operationId: 'deviceProof', access: 'person',
         body: JSON_PROOF,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return self.proof(ctx, req, res, caller, input.body);
         } }
     ];

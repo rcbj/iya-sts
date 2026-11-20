@@ -726,6 +726,29 @@ async function createPerson(realm, username) {
   log.debug("Leaving createPerson().");
 }
 
+// The SAML 1.1 relying party's metadata: each assertion consumer WITH its
+// profile, which is what the shire a request names is answered by.
+function saml11Metadata(w) {
+  log.debug("Entering saml11Metadata().");
+  const acs = function (index, profile, location) {
+    log.debug("Entering acs().");
+    log.debug("Leaving acs().");
+    return "<md:AssertionConsumerService index=\"" + index + "\" " +
+      "Binding=\"urn:oasis:names:tc:SAML:1.0:profiles:" + profile + "\" " +
+      "Location=\"" + location + "\"/>";
+  };
+  log.debug("Leaving saml11Metadata().");
+  return "<md:EntityDescriptor xmlns:md=\"urn:oasis:names:tc:SAML:2.0:" +
+    "metadata\" entityID=\"" + w.rp11 + "\"><md:SPSSODescriptor " +
+    "protocolSupportEnumeration=\"urn:oasis:names:tc:SAML:1.1:protocol\">" +
+    "<md:KeyDescriptor use=\"signing\"><ds:KeyInfo xmlns:ds=\"" +
+    "http://www.w3.org/2000/09/xmldsig#\"><ds:X509Data>" +
+    "<ds:X509Certificate>" + SIGNER.certB64 + "</ds:X509Certificate>" +
+    "</ds:X509Data></ds:KeyInfo></md:KeyDescriptor>" +
+    acs(1, "browser-post", w.acs11) + acs(2, "artifact-01", w.art11) +
+    "</md:SPSSODescriptor></md:EntityDescriptor>";
+}
+
 async function createApplication(realm, identifier, protocols, fields) {
   log.debug("Entering createApplication(). " + identifier);
   const r = await api(realm, "POST", "/applications/create",
@@ -839,6 +862,10 @@ async function makeWorld(mode) {
   w.slo = w.sp.replace(/\/saml$/, "/slo");
   w.acsEnc = w.spEnc.replace(/\/saml$/, "/acs");
   w.acs11 = w.rp11.replace(/\/shibboleth$/, "/SAML/POST");
+  // Its Browser/Artifact consumer: the binding registered for the shire
+  // picks the profile, so the two have their own Locations, as a
+  // Shibboleth SP's do.
+  w.art11 = w.rp11.replace(/\/shibboleth$/, "/SAML/Artifact");
   w.wsReply = w.wsRp + "signin";
   await createPerson(realm, w.person);
   await createPerson(realm, w.other);
@@ -861,8 +888,10 @@ async function makeWorld(mode) {
     samlEncryptionCertificate: ENCRYPTER.certPem,
     saml2EncryptAssertion: "TRUE", saml2EncryptLogoutNameId: "TRUE" });
   await createApplication(realm, w.rp11, ["saml11"], {
-    samlEntityId: [w.rp11], samlAssertionConsumerService: [w.acs11],
-    samlSigningCertificate: signing });
+    samlEntityId: [w.rp11],
+    samlAssertionConsumerService: [w.acs11, w.art11],
+    samlSigningCertificate: signing,
+    samlSpMetadata: saml11Metadata(w) });
   // #186: the delegated assertion is issued for a second WS-Trust relying
   // party, S, which delegates to the AppliesTo, R; R accepts the requester
   // as an actor. S and R are two applications because since #459 no
@@ -1171,14 +1200,16 @@ async function saml11(w) {
   log.debug("Entering saml11().");
   log.info("=== " + w.mode + ": SAML 1.1 ===");
   const cookies = jar();
-  const start = function (profile) {
+  // Shibboleth's request profile; the shire's registered binding picks
+  // Browser/POST or Browser/Artifact.
+  const start = function (shire) {
     log.debug("Entering start().");
     log.debug("Leaving start().");
     return w.rb + "/saml11/sso?" + new URLSearchParams({
-      providerId: w.rp11, shire: w.acs11, TARGET: w.acs11 + "?t=1",
-      profile: profile }).toString();
+      providerId: w.rp11, shire: shire, target: w.acs11 + "?t=1",
+      time: String(Math.floor(Date.now() / 1000)) }).toString();
   };
-  const post = await browse(cookies, start("post"), w.person);
+  const post = await browse(cookies, start(w.acs11), w.person);
   let assertionId = "";
   for (const m of await capturedOne("the Browser/POST Response", post,
                                     "SAMLResponse", "post")) {
@@ -1186,7 +1217,7 @@ async function saml11(w) {
                   assertionId;
     await validate(w.mode + " SAML 1.1 Browser/POST Response", m.xml, m.from);
   }
-  const art = await browse(cookies, start("artifact"), w.person);
+  const art = await browse(cookies, start(w.art11), w.person);
   for (const m of await capturedOne("the Browser/Artifact artifact", art,
                                     "SAMLart")) {
     await responder11(w, "the artifact's Response",
@@ -1231,13 +1262,7 @@ function rst(o) {
   const security = o.username
     ? "<wsse:Security xmlns:wsse=\"" + NS.wsse + "\"><wsse:UsernameToken>" +
       "<wsse:Username>" + o.username + "</wsse:Username><wsse:Password>" +
-      o.password + "</wsse:Password></wsse:UsernameToken>" +
-      // The certificate `?encrypt=1` encrypts to: the endpoint takes one from
-      // the requester's own Security header, outside any assertion (a
-      // WS-Security signature's KeyInfo in a real client, #747).
-      (o.recipientCertB64 ? "<ds:X509Data xmlns:ds=\"http://www.w3.org/" +
-        "2000/09/xmldsig#\"><ds:X509Certificate>" + o.recipientCertB64 +
-        "</ds:X509Certificate></ds:X509Data>" : "") + "</wsse:Security>"
+      o.password + "</wsse:Password></wsse:UsernameToken></wsse:Security>"
     : "";
   const body = "<wst:RequestSecurityToken xmlns:wst=\"" + ns + "\">" +
     (o.tokenType ? "<wst:TokenType>" + o.tokenType + "</wst:TokenType>" : "") +
@@ -1296,15 +1321,46 @@ async function wsTrust(w) {
   await sts(w, "1.3 Validate with no token (status invalid)", {
     trustNs: NS.wst13, soap: "1.2", op: "Validate", username: w.person,
     password: PASSWORD, inner: "<wst:ValidateTarget/>" });
-  // An assertion encrypted to the relying party's registered certificate —
-  // `?encrypt=1`, the non-spec control this endpoint has for it.
-  const enc = await sts(w, "1.3 Issue, encrypted to the AppliesTo", {
+  // The issued assertion, encrypted to the application's own certificate.
+  // A recipient expression may select only a certificate an accepted
+  // WS-Security signature covers (#1908, STS-WSTRUST-0081), and this request
+  // is a UsernameToken. The answer carries the EncryptedKey in its security
+  // header, validated with the rest. It is removed before ActAs, which must
+  // stay in the clear.
+  const assertionXPath = "//*[local-name()='Assertion' and " +
+    "namespace-uri()='urn:oasis:names:tc:SAML:2.0:assertion']";
+  const wrote = await api(w.realm, "POST", "/applications/set", {
+    application: w.wsRp, attribute: "wstrustEncryptResponse",
+    value: "true" });
+  const added = await api(w.realm, "POST", "/applications/add", {
+    application: w.wsRp, attribute: "wstrustEncryptResponseElements",
+    value: assertionXPath });
+  const named = await api(w.realm, "POST", "/applications/set", {
+    application: w.wsRp, attribute: "wstrustEncryptionCertificate",
+    value: ENCRYPTER.certB64 });
+  const enc = await sts(w, "1.3 Issue, the assertion encrypted", {
     trustNs: NS.wst13, soap: "1.2", op: "Issue", username: w.person,
-    password: PASSWORD, appliesTo: w.wsRp,
-    recipientCertB64: ENCRYPTER.certB64 }, "?encrypt=1");
-  await check(w.mode + " the encrypted Issue carries an EncryptedAssertion",
+    password: PASSWORD, appliesTo: w.wsRp });
+  await api(w.realm, "POST", "/applications/set", {
+    application: w.wsRp, attribute: "wstrustEncryptResponse", value: "" });
+  await api(w.realm, "POST", "/applications/remove", {
+    application: w.wsRp, attribute: "wstrustEncryptResponseElements",
+    value: assertionXPath });
+  await api(w.realm, "POST", "/applications/set", {
+    application: w.wsRp, attribute: "wstrustEncryptionCertificate",
+    value: "" });
+  await check(w.mode + " the encrypted Issue carries EncryptedData, " +
+              "announced in its security header",
               async function () {
-    if (!/EncryptedAssertion/.test(enc.body)) {
+    if (wrote.status !== 200 || added.status !== 200 ||
+        named.status !== 200) {
+      throw new Error("the application was not configured: " +
+        wrote.status + " " + added.status + " " + named.status);
+    }
+    if (enc.status !== 200 || !/EncryptedData/.test(enc.body) ||
+        /EncryptedAssertion/.test(enc.body) ||
+        !/<wsse:Security[^>]*><xenc:EncryptedKey[^>]*Id="iya-ek-1"/
+          .test(enc.body)) {
       throw new Error("HTTP " + enc.status + " " + enc.body.slice(0, 400));
     }
   });

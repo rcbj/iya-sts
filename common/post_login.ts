@@ -762,6 +762,32 @@ class PostLogin {
     log.debug("Leaving PostLogin.forget(). " + held);
     return held;
   }
+
+  // A DELETED PERSON'S PROGRESS GOES WITH THEM (2026-11-16, rcbj's rule on
+  // #1612). The row is keyed by the NAME, so a person made again under it
+  // started with the deleted one's activity done, put off or past its
+  // deadline. The directory's one person delete (`removePersonEntry()`)
+  // calls this for every activity there is (`ACTIVITIES`, one today): a
+  // key per activity, never a walk of the store. A re-homing keeps it.
+  /**
+   * Forgets a deleted person's progress on every activity.
+   *
+   * @param username - the deleted person's name
+   * @returns how many rows were held
+   */
+  forgetPerson(username: string): number {
+    const { log, postLoginPolicy } = this.deps;
+    log.debug("Entering PostLogin.forgetPerson().");
+    let held = 0;
+    ((postLoginPolicy && postLoginPolicy.ACTIVITIES) || [PQC_MIGRATION])
+      .forEach((activity: string) => {
+        if (this.forget(username, activity)) {
+          held += 1;
+        }
+      });
+    log.debug("Leaving PostLogin.forgetPerson(). " + held);
+    return held;
+  }
 }
 
 const slot = new InstanceSlot<PostLogin>(
@@ -800,5 +826,6 @@ export = {
   noteMailed: slot.forward('noteMailed'),
   eachProgressAsync: slot.forward('eachProgressAsync'),
   graceOf: slot.forward('graceOf'),
-  forget: slot.forward('forget')
+  forget: slot.forward('forget'),
+  forgetPerson: slot.forward('forgetPerson')
 };

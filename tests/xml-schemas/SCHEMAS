@@ -72,6 +72,16 @@ ws-trust-1.3.xsd                           df63c2b592f0e13549b61c166a20d5bbbb354
 ws-trust-1.4.xsd                           0b65fa824e05f3cb44ba1911c6f10cbd498ce4280e5a0c47be80519338499633  https://docs.oasis-open.org/ws-sx/ws-trust/v1.4/cd/ws-trust.xsd
 ws-securitypolicy-1.2.xsd                  096b354c729f95027778de8b9c72b02043dadb8a4f531659d5287cf152e9dcd5  https://docs.oasis-open.org/ws-sx/ws-securitypolicy/200702/ws-securitypolicy-1.2.xsd
 
+# --- WSDL 1.1 and its SOAP 1.1 and 1.2 bindings (the WS-Trust WSDL, #958) -----
+# The W3C Note's schema, as schemas.xmlsoap.org serves the namespace; the
+# SOAP 1.2 binding is the W3C submission's wsdl11soap12.xsd. Neither imports
+# anything by location. WS-Addressing Metadata's ws-addr-metadata.xsd is NOT
+# here: it refers to the WS-Policy 1.5 draft namespace without importing it,
+# so no processor compiles it, and the test checks wsam:Action itself.
+wsdl.xsd                                   5ba4c0d0c2804572f1afca3ecda2e9c66b98601d781519e404136fdf766573e6  http://schemas.xmlsoap.org/wsdl/
+wsdl-soap.xsd                              6117ca139e72bee366ca0e523a5eeefb12d85e20ebcf60557f18a6fbb26bb9b8  http://schemas.xmlsoap.org/wsdl/soap/
+wsdl11soap12.xsd                           01ec1f55fd3aca2d1ed7a29f95fe6fbae659ce45fe71085259203b143b0fddac  http://schemas.xmlsoap.org/wsdl/soap12/wsdl11soap12.xsd
+
 # --- OASIS WS-Federation 1.2 ----------------------------------------------------
 ws-federation.xsd                          04e2fb3a2807f887e4ab5ab4e1c48b3831b16bf0de6fd97b13e9ff390d1a27a2  https://docs.oasis-open.org/wsfed/federation/v1.2/os/ws-federation.xsd
 ws-authorization.xsd                       90ccf81de1b2aa5d5f30b5afac91320fd98b180e5c93c125fe9546c65566cb7f  https://docs.oasis-open.org/wsfed/authorization/v1.2/os/ws-authorization.xsd

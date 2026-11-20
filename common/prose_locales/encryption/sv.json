@@ -199,6 +199,22 @@
     "en": "3d4cea483bdd4763",
     "text": "INTE BESTÄNDIGA ALLS, i något av lägena, så det finns ingenting i vila att försegla. Alla tre namnges i `common/mode.js`:s `NOT_YET` snarare än att lämnas att upptäckas, eftersom *inte lagrad* och *inte skyddad* ser likadana ut utifrån och inte är samma sak."
   },
+  "encryption.classes.25.what": {
+    "en": "676f5f32f70780f8",
+    "text": "Den privata nyckeln till TLS-klientcertifikatet för en FAPI 1.0 Advanced-federationsrelation (#931) — det som denna tjänst visar upp för partnerns token- och UserInfo-slutpunkter, i `fedClientCertificate`"
+  },
+  "encryption.classes.25.why": {
+    "en": "7aa85457f3f98d8b",
+    "text": "Den som har den kan autentisera sig mot den partnern som denna tjänst (`tls_client_auth`) och visa upp de åtkomsttoken som partnern bundit till certifikatet. Förseglad i vila överallt där nycklar sparas, och undanhållen — chiffertext inräknad — från varje LDAP-sökning, sida och `/admin-api`-svar, som bara bär certifikatet."
+  },
+  "encryption.classes.26.what": {
+    "en": "6b9f0476194b0ed3",
+    "text": "Ett programs egen privata nyckel för WS-Trust-dekryptering (#1668) — `wstrustDecryptionPrivateKey`: det som en WS-Trust-begäran för programmet, krypterad till dess certifikat, dekrypteras med"
+  },
+  "encryption.classes.26.why": {
+    "en": "d1b5cf75485762fa",
+    "text": "Den som har den läser varje begäran som krypterats till programmet — de inloggningsuppgifter och claims som krypteringen håller borta från nätet. Förseglad i vila överallt där nycklar sparas varaktigt, och undanhållen — chiffertext inräknad — från varje LDAP-sökning, sida och `/admin-api`-svar, som bara bär certifikatet."
+  },
   "encryption.notes.what": {
     "en": "69ba4b884ae9c0f6",
     "text": "Vad den här tjänsten krypterar I VILA, med vilken nyckel, under vilken algoritm och hur mycket av det som har skett i den här processen."
@@ -220,8 +236,8 @@
     "text": "DET FINNS EN NYCKELKRYPTERINGSNYCKEL FÖR DEN HÄR TJÄNSTEN, INTE EN PER FÖRTROENDESFÄR, OCH EN DATAKRYPTERINGSNYCKEL PER SFÄR PER DATAKLASS (#391). Ingen datakrypteringsnyckel delas mellan sfärer, så ett värde i en sfär förseglas aldrig under en nyckel som en annan sfärs värden förseglas under. Men varje datakrypteringsnyckel omsluts under den enda nyckelkrypteringsnyckeln, så en sfär är INTE en oberoende gräns i vila: den som kan läsa den nyckeln kan avomsluta varje sfärs datanycklar, och att rotera den omsluter varje sfärs på en gång."
   },
   "encryption.notes.storage": {
-    "en": "18686e2b1d638124",
-    "text": "ALLT SOM INTE FINNS I TABELLEN OVAN ÄR KLARTEXT I LAGRET — katalogposterna, grupperna, applikationerna, sfärerna och inställningarna, och i utvecklingsläge nästan allt. Den här tjänsten förseglar autentiseringsuppgifter och privata nycklar och ingenting annat, avsiktligt: kryptering på kolumnnivå lämnar klartexten i write-ahead-loggen, i temporära filer när en sortering spiller över, i en pg_dump, på repliker och i frågeloggar, så det lager som täcker ett helt lager hör hemma UNDER databasen snarare än inuti den. Det lagret är operatörens — LUKS eller en krypterad ZFS-datamängd under PGDATA, en molndisk med en kundhanterad nyckel, eller någon av de PostgreSQL-förgreningar som har TDE, eftersom community-bygget inte har någon. docs/encryption-at-rest.md är det här förrådets genomgång av alternativen."
+    "en": "ee0a54241e7767c7",
+    "text": "ALLT SOM INTE FINNS I TABELLEN OVAN ÄR KLARTEXT I LAGRET — katalogposterna, grupperna, applikationerna, sfärerna och inställningarna, och i utvecklingsläge nästan allt. Den här tjänsten förseglar autentiseringsuppgifter och privata nycklar och ingenting annat, avsiktligt: kryptering på kolumnnivå lämnar klartexten i write-ahead-loggen, i temporära filer när en sortering spiller över, i en pg_dump, på repliker och i frågeloggar, så det lager som täcker ett helt lager hör hemma UNDER databasen snarare än inuti den. Det lagret är operatörens — LUKS eller en krypterad ZFS-datamängd under PGDATA, en molndisk med en kundhanterad nyckel, eller någon av de PostgreSQL-förgreningar som har TDE, eftersom community-bygget inte har någon. docs/v1.1.0/encryption-at-rest.md är det här förrådets genomgång av alternativen."
   },
   "encryption.notes.keyResidency": {
     "en": "612d0883b63631fd",

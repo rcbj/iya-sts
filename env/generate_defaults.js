@@ -8,10 +8,13 @@
 //
 //     node env/generate_defaults.js
 //
-// Run it after adding, removing or re-defaulting a row in that table — and the
-// service will tell you when you have forgotten, because a row with no entry in
-// env/defaults.js and no environment variable is what requireComplete() refuses
-// to start over.
+// Run it after adding, removing or re-defaulting a row in that table — and
+// tests/config_defaults_layer.js will tell you when you have forgotten, because
+// it fails while this file and the table disagree in either direction. (Until
+// 2026-11-16 the SERVICE told you, by refusing to start over a row with no
+// entry here; it now takes the row's own default and warns, STS-CORE-0177,
+// because an operator's older copy of this file met the same refusal on an
+// upgrade — common/CLAUDE.md, *The image's floor*.)
 //
 // WHY GENERATE IT RATHER THAN KEEP IT BY HAND. env/defaults.js is the base
 // appconfig layer: it has to carry the `dflt` of every non-derived setting, and
@@ -19,18 +22,19 @@
 // explaining why it is the default. Two copies of a default is one copy that
 // will be wrong — and wrong in the quietest possible way, since the service
 // would then RUN on one value while /admin/config, the OpenAPI document's
-// `default` property and docs/configuration.md's table all reported the
+// `default` property and docs/v1.1.0/configuration.md's table all reported the
 // other.
 //
-// THE process.exit STUB IS THE POINT OF THE FILE, not a workaround around it.
-// Requiring config.js runs requireComplete(), which exits when a setting has no
-// value anywhere — and regenerating this file is the one moment when that is
-// EXPECTED, because the row that has no default yet is precisely the row being
-// generated. So the exit is neutralised for the length of that require and put
-// straight back. It is done here, in a build tool, rather than as a flag in
-// config.js on purpose: a bypass in the service is a bypass somebody can leave
-// on in production, and then the rule the service is meant to enforce is one
-// environment variable away from not existing.
+// THE process.exit STUB. Requiring config.js runs requireComplete(), which
+// exits when a setting has no value anywhere. Since 2026-11-16 that is only a
+// row with no `dflt` at all, which this file could not write a value for
+// either, but a row being added may be half-written when this runs, and the
+// regeneration is the one moment that is EXPECTED. So the exit is neutralised
+// for the length of that require and put straight back. It is done here, in a
+// build tool, rather than as a flag in config.js on purpose: a bypass in the
+// service is a bypass somebody can leave on in production, and then the rule
+// the service is meant to enforce is one environment variable away from not
+// existing.
 //
 // FOUR SETTINGS ARE SKIPPED — the `derived` ones. See env/defaults.js's own
 // header, and common/config.js's.
@@ -70,31 +74,28 @@ const header = `// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
 // meant to be edited to configure a deployment — it is the BASE LAYER that the
 // file CONFIG_FILE names is unioned on top of.
 //
-// Why it exists. Since 2026-08-24 this service REFUSES TO START when a setting
-// has no value in the appconfig layer and no environment variable: a value that
-// nobody configured, arriving from a constant buried in a module, is the thing
-// that makes "what is this service configured with?" unanswerable. But the same
-// rule read literally would mean that a file which is not this service's — the
-// parent project's in-process Kerberos jobs point CONFIG_FILE at the TEST
-// suite's own config — could no longer load these modules at all, and that a
-// setting added to the table tomorrow would break every existing config file in
-// the world on the day it was added.
+// Why it exists. Every value the shipped image runs on is written in a file
+// an operator can read: common/config.js reads THIS file first and the
+// operator's file over it, key by key, and the operator's value wins wherever
+// the two overlap. So an operator's file may carry as few or as many keys as
+// it likes, and a file which is not this service's at all — the parent
+// project's in-process Kerberos jobs point CONFIG_FILE at the TEST suite's
+// own config — still loads every module.
 //
-// The union is what makes both true at once. common/config.js reads THIS file
-// first and the operator's file over it, key by key, and the operator's value
-// wins wherever the two overlap. So every setting always has an appconfig-layer
-// value, an operator's file may carry as few or as many keys as it likes, and
-// the startup refusal fires on the one case it is actually for: a setting in
-// the table with no row here, which is a setting somebody added and did not
-// finish adding.
+// IT IS NOT THE LAST WORD, SINCE 2026-11-16. Beneath it is the table's own
+// default, in the image, so a copy of this file from an earlier release —
+// an env/ directory mounted over the image's, say — cannot stop a newer image
+// over a setting it does not carry. The start says so instead (STS-CORE-0177
+// for a setting this file lacks, STS-CORE-0178 for one whose value here is
+// not the image's default), and docs/v1.1.0/configuration.md says what to do.
 //
 // THE VALUES HERE ARE THE \`dflt\` COLUMN OF config.js's TABLE, and this file is
 // GENERATED from it — do not hand-edit a value. Changing a default means
 // changing the table, which is the one place that also carries the reasoning
 // for what the default is; a value edited only here would disagree with what
 // /admin/config reports as the default, with the OpenAPI document's \`default\`
-// property, and with docs/configuration.md's table, all three of which read
-// the table.
+// property, and with docs/v1.1.0/configuration.md's table, all three of which
+// read the table.
 //
 // FOUR SETTINGS ARE DELIBERATELY ABSENT: global.https, oid4vp.walletUrl,
 // krb5.serviceDomains and adminApi.audience are DERIVED from a neighbour (from
@@ -104,8 +105,9 @@ const header = `// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
 // this file was written, so they resolve through their neighbour instead and
 // are exempt from the startup refusal for that reason.
 //
-// See common/CLAUDE.md, and docs/configuration.md's *Every setting*, which
-// lists every setting, its environment variable and its default in one table.
+// See common/CLAUDE.md, and docs/v1.1.0/configuration.md's *Every setting*,
+// which lists every setting, its environment variable and its default in one
+// table.
 // ---------------------------------------------------------------------------
 var config = {
 `;
@@ -115,7 +117,7 @@ const lines = [];
 let lastGroup = null;
 
 // Order: the table's own order, which is the order /admin/config renders and
-// the order docs/configuration.md's table is generated in.
+// the order docs/v1.1.0/configuration.md's table is generated in.
 const rows = c.SETTINGS.filter(function (s) { return !s.derived; });
 
 // Group by the appconfig path's first segment, since that is what the file's

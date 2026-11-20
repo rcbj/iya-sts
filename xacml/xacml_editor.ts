@@ -72,6 +72,7 @@
 
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
+import ownMembers = require('../common/own_members');
 import model = require('./xacml_model');
 import datatypes = require('./xacml_datatypes');
 import functions = require('./xacml_functions');
@@ -414,8 +415,41 @@ class XacmlEditor {
     });
   }
 
+  /**
+   * Whether one step of a path names a member the node itself holds: an
+   * array's index (digits, below its length) or an object's own member, never
+   * one it inherits. See `nodeAt()`.
+   *
+   * @param node - the node the step leaves
+   * @param key - the step
+   * @returns true where the step may be taken
+   */
+  static ownStep(node: ModelNode, key: string): boolean {
+    helpers.log.debug("Entering XacmlEditor.ownStep().");
+    // The rule is `common/own_members.ts`'s (2026-11-12): one place, which
+    // every read of a name a caller chose goes through.
+    const own = ownMembers.has(node, key);
+    helpers.log.debug("Leaving XacmlEditor.ownStep(). " + own);
+    return own;
+  }
+
   // Resolve a path to `{ node, parent, key }`, or null. `parent` and `key` are
   // what a REMOVE needs — you cannot delete a node from itself.
+  //
+  // **EVERY STEP IS AN OWN MEMBER OF THE NODE IT LEAVES, OR THE PATH DOES NOT
+  // RESOLVE (2026-11-12).** The path arrives from a caller — the console's
+  // form and `/admin-api/xacml/*`'s `path` — and the walk was `node[key]`,
+  // which follows the prototype chain. The fuzz stage of a full run sent
+  // `add-rule` a path that reached `Object.prototype` (`__proto__`, or
+  // `constructor.prototype`): `node.rules = node.rules || []` then gave EVERY
+  // object in that process an enumerable inherited `rules`, the edit wrote the
+  // unchanged policy and answered "Rule added.", and from that moment every
+  // closed response model refused every answer (additionalProperties
+  // "rules", because ajv reads members with `for…in`), and every compile of
+  // one recursed without end (each rule object inherits `rules` again):
+  // 1911 answers turned into 500s in seven minutes, and the change-log reader
+  // overflowed beside them. An index into an array is digits below its
+  // length; anything else must be the node's own member.
   /**
    * Resolves a path in a policy model.
    * @param policy - the policy model
@@ -438,6 +472,10 @@ class XacmlEditor {
       }
       parent = node;
       key = segments[i];
+      if (!XacmlEditor.ownStep(node, key)) {
+        log.debug('Leaving XacmlEditor.nodeAt(). Not an own member: ' + key);
+        return null;
+      }
       node = Array.isArray(node) ? node[Number(key)] : node[key];
     }
     if (node === null || node === undefined) {
@@ -1081,12 +1119,13 @@ class XacmlEditor {
       }
       if (!id) {
         let n = Object.keys(node.variables).length + 1;
-        while (node.variables['v' + n]) {
+        while (ownMembers.has(node.variables, 'v' + n)) {
           n += 1;
         }
         id = 'v' + n;
       }
-      if (node.variables[id]) {
+      // Own members only (2026-11-12): `toString` is not already defined.
+      if (ownMembers.read(node.variables, id)) {
         // The reader refuses a document with two definitions of one id, so
         // producing one here would write a policy this service cannot load
         // back.
@@ -1099,11 +1138,11 @@ class XacmlEditor {
       // same starting expression `add-condition` uses and for the same reason —
       // a VariableDefinition with no expression is a document that will not
       // load.
-      node.variables[id] = {
+      ownMembers.put(node.variables, id, {
         kind: 'designator', category: model.CATEGORY.ACCESS_SUBJECT,
         attributeId: 'employeeType', dataType: TYPE.STRING,
         issuer: null, mustBePresent: false
-      };
+      });
       log.debug('Leaving XacmlEditor.applyEdit(). Variable added.');
       return { ok: true, what: 'Variable $' + id + ' added.' };
     }
@@ -1122,7 +1161,7 @@ class XacmlEditor {
         return { ok: true, what: 'Unchanged.' };
       }
       const variables = holder && holder.variables;
-      if (variables && variables[renamed]) {
+      if (variables && ownMembers.read(variables, renamed)) {
         log.debug('Leaving XacmlEditor.applyEdit(). Duplicate variable id.');
         return { ok: false,
                  why: 'This policy already defines $' + renamed + '.' };
@@ -1132,7 +1171,7 @@ class XacmlEditor {
       // resolves. Copying that miss stored `undefined`, and writePolicy then
       // threw reading `.kind` (STS-API-0140, #1403). A policy set has no
       // variables map, and reading it threw the same way.
-      const defined = variables && variables[wasCalled];
+      const defined = variables && ownMembers.read(variables, wasCalled);
       if (!defined || !defined.kind) {
         log.debug('Leaving XacmlEditor.applyEdit(). No such variable.');
         return { ok: false,
@@ -1145,7 +1184,7 @@ class XacmlEditor {
       // rename that left the references behind would produce a document that
       // does not load, and the store would refuse the write with a message
       // about a variable that no longer exists.
-      holder.variables[renamed] = defined;
+      ownMembers.put(holder.variables, renamed, defined);
       delete holder.variables[wasCalled];
       const rewritten = self.renameVariableReferences(holder, wasCalled,
                                                       renamed);
@@ -1244,6 +1283,12 @@ class XacmlEditor {
         lexical = node.value.lexical;
       } else {
         lexical = String(given.value);
+      }
+      const badMatchValue = self.lexicalRefusal(type, lexical);
+      if (badMatchValue) {
+        log.debug('Leaving XacmlEditor.applyEdit(). Match value is not of ' +
+                  'its type.');
+        return badMatchValue;
       }
       node.matchId = matchId;
       node.value = { kind: 'value', type: type, lexical: lexical };
@@ -1452,9 +1497,17 @@ class XacmlEditor {
     }
 
     if (action === 'edit-value') {
-      node.type = given.type || node.type;
-      node.lexical = given.lexical === undefined ? node.lexical
-                                                 : String(given.lexical);
+      const nextType = given.type || node.type;
+      const nextLexical = given.lexical === undefined ? node.lexical
+                                                      : String(given.lexical);
+      const badValue = self.lexicalRefusal(nextType, nextLexical);
+      if (badValue) {
+        log.debug('Leaving XacmlEditor.applyEdit(). Value is not of its ' +
+                  'type.');
+        return badValue;
+      }
+      node.type = nextType;
+      node.lexical = nextLexical;
       if (given.xpathCategory !== undefined) {
         node.xpathCategory = String(given.xpathCategory) || null;
       }
@@ -1606,6 +1659,30 @@ class XacmlEditor {
     log.debug("Leaving XacmlEditor.flagOf().");
     return given === true || given === 'true' || given === 'on' ||
            given === '1';
+  }
+
+  // THE LITERAL MUST BE A VALUE OF ITS DATATYPE. An integer-equal Match
+  // whose literal is "notanint" used to be stored, and only the decision
+  // said so, as a syntax-error status that a deny-unless-permit policy
+  // turns into a plain Deny. Refused here instead, before anything is
+  // written. An xpathExpression is checked by the PDP against its
+  // category, so it is not parsed here.
+  private lexicalRefusal(type: string, lexical: string): EditResult | null {
+    const { log } = this.deps;
+    log.debug("Entering XacmlEditor.lexicalRefusal().");
+    if (model.canonicalType(type) === TYPE.XPATH_EXPRESSION) {
+      log.debug("Leaving XacmlEditor.lexicalRefusal(). XPath.");
+      return null;
+    }
+    try {
+      datatypes.parseValue(type, lexical);
+    } catch (error) {
+      const why = (error && (error as Error).message) || String(error);
+      log.debug("Leaving XacmlEditor.lexicalRefusal(). " + why);
+      return { ok: false, why: why };
+    }
+    log.debug("Leaving XacmlEditor.lexicalRefusal(). Valid.");
+    return null;
   }
 
   // Rewrite every <VariableReference> naming `from` to name `to`, within one

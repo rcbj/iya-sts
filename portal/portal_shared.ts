@@ -37,6 +37,8 @@ import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
+type AccountAnswering<K extends keyof IyaApi.Account.Operations> =
+  import('../types/account-api').AccountAnswering<K>;
 type AccountContext = import('../types/account-api').AccountContext;
 type AccountCaller = import('../types/account-api').AccountCaller;
 
@@ -232,7 +234,8 @@ class PortalShared {
    * @param body - the checked body
    * @returns nothing
    */
-  act(ctx: AccountContext, req: Json, res: Json, caller: AccountCaller,
+  act(ctx: AccountContext, req: Json, res: AccountAnswering<'actShared'>,
+      caller: AccountCaller,
       body: Json): unknown {
     const { log } = this.deps;
     log.debug("Entering PortalShared.act(). " + body.action);
@@ -330,23 +333,23 @@ class PortalShared {
       { method: 'GET', path: ctx.BASE + '/shared', operationId: 'getShared',
         access: 'person',
         query: QUERY,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return viewOrRefuse(res, self.view(caller.username,
                                              input.query.page || 1));
         } },
       { method: 'POST', path: ctx.BASE + '/shared', operationId: 'actShared',
         access: 'person',
         body: SHARE_FORM,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return self.act(ctx, req, res, caller, input.body);
         } },
       { method: 'GET', path: ctx.BASE + '/shared-with-me',
         operationId: 'getSharedWithMe', access: 'person',
         query: QUERY,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return ctx.json(res, 200, self.withMe(caller.username,
                                                 input.query.page || 1));
         } }

@@ -18,9 +18,14 @@
 //            worker to be reported committed (`awaitCommitConfirmations()`);
 //   barrier  the front, for the chosen worker to catch up with the change
 //            log when it is behind (`barrier()`, read-your-write);
-//   queue    between the front sending it and the worker's answer, less
-//            what the worker itself reports: the socket, and the worker's
-//            event loop busy with other requests;
+//   connect  the front, from asking the per-worker agent for a socket until
+//            it gives it one (`workers.maxSockets`, #887). Until then one
+//            `queue` phase covered this and `loop` together, and a high
+//            p95 could not say which;
+//   loop     from that socket until the worker's middleware started: the
+//            worker's listen backlog and its event loop busy with other
+//            requests (#887). The worker reports the instant; the front
+//            subtracts;
 //   handler  the worker, from the request reaching the commit barrier's
 //            middleware to the handler ending its response;
 //   commit   the worker, holding that response until its writes committed
@@ -29,10 +34,13 @@
 //            synchronous store reads (`common/sync_query.ts`) — every
 //            request on that worker waited through those, not this one only.
 //
-// The front times the first three; the worker reports the rest in
-// `PHASES_HEADER` on its answer, which the front takes off before the answer
-// goes out, and only when the front asked for it with `ASK_HEADER` (which it
-// takes off what a client sent first).
+// The front times ticket, barrier and connect. The worker reports the rest
+// in `PHASES_HEADER` on its answer — handler, commit, bridge, and the
+// instant its middleware started, which the front turns into `loop`. The
+// front takes the header off before the answer goes out, and only when it
+// asked with `ASK_HEADER` (which it takes off what a client sent first).
+// The trip back, from the worker sending the answer to the front reading
+// it, stays in `total` only: it is not one of the waits.
 //
 // **NO TIMER, NO LINE PER REQUEST** (the scheduler rule, and *No per-event
 // failure logs*): each finished request adds its numbers to the current
@@ -69,9 +77,9 @@ const REPORTED_ROUTES = 12;
 // that flushes — a request worker's own window and lines.
 // `directory`, `minted` and `keys` are a response's commit wait, by the part
 // it waited on (#820): `COMMIT through`, beside `FLUSH directory`.
-const PHASES = ['ticket', 'barrier', 'queue', 'handler', 'commit', 'bridge',
-                'prepare', 'db', 'rows', 'directory', 'minted', 'keys',
-                'total'];
+const PHASES = ['ticket', 'barrier', 'connect', 'loop', 'handler', 'commit',
+                'bridge', 'prepare', 'db', 'rows', 'directory', 'minted',
+                'keys', 'total'];
 
 // Milliseconds the event loop spent blocked in synchronous store reads since
 // the process started (`noteBlocked()`).
@@ -103,31 +111,69 @@ function blockedTotal() {
 }
 
 /**
- * The worker's half, as the header value: handler, commit and bridge ms.
+ * The worker's half, as the header value: handler, commit and bridge ms,
+ * and, when the worker took it, the instant its middleware started.
  *
  * @param handlerMs - arrival to the handler ending its response
  * @param commitMs - the hold until the response's writes committed
  * @param bridgeMs - blocked in synchronous store reads meanwhile
+ * @param arrivedAt - `Date.now()` when the middleware started (#887), or
+ *   omitted when the worker did not take it
  * @returns the value of `PHASES_HEADER`
  */
 // Hot path: every dispatched response. No Entering/Leaving pair.
-function encode(handlerMs, commitMs, bridgeMs) {
-  return 'h=' + Math.max(0, Math.round(handlerMs)) +
+function encode(handlerMs, commitMs, bridgeMs, arrivedAt) {
+  let value = 'h=' + Math.max(0, Math.round(handlerMs)) +
     ';c=' + Math.max(0, Math.round(commitMs)) +
     ';b=' + Math.max(0, Math.round(bridgeMs));
+  if (typeof arrivedAt === 'number' && isFinite(arrivedAt)) {
+    value += ';a=' + Math.max(0, Math.round(arrivedAt));
+  }
+  return value;
 }
 
 /**
  * Reads a worker's `PHASES_HEADER`.
  *
  * @param value - the header's value
- * @returns `{ handler, commit, bridge }`, or null when it is not one
+ * @returns `{ handler, commit, bridge, arrived }`, or null when it is not
+ *   one. `arrived` is absent when the worker did not send it.
  */
 // Hot path: every dispatched response. No Entering/Leaving pair.
 function decode(value) {
-  const match = /^h=(\d+);c=(\d+);b=(\d+)$/.exec(String(value || ''));
-  return match ? { handler: Number(match[1]), commit: Number(match[2]),
-                   bridge: Number(match[3]) } : null;
+  const match = /^h=(\d+);c=(\d+);b=(\d+)(?:;a=(\d+))?$/
+    .exec(String(value || ''));
+  if (!match) {
+    return null;
+  }
+  const out = { handler: Number(match[1]), commit: Number(match[2]),
+                bridge: Number(match[3]) };
+  if (match[4] !== undefined) {
+    out.arrived = Number(match[4]);
+  }
+  return out;
+}
+
+/**
+ * The two waits one `queue` phase used to cover (#887).
+ *
+ * `connect` is from asking the agent for a socket until it gave one.
+ * `loop` is from that socket until the worker's middleware started.
+ * A missing instant leaves its phase out. A clock that steps backwards
+ * reports 0 rather than a negative wait.
+ *
+ * @param askedAt - when the front asked the agent for a socket
+ * @param socketAt - when it was given one, or 0
+ * @param arrivedAt - when the worker's middleware started, or 0
+ * @returns `{ connect, loop }`, each a number or undefined
+ */
+// Hot path: every dispatched request. No Entering/Leaving pair.
+function connectionWaits(askedAt, socketAt, arrivedAt) {
+  const connect = socketAt > 0
+    ? Math.max(0, socketAt - askedAt) : undefined;
+  const loop = socketAt > 0 && arrivedAt > 0
+    ? Math.max(0, arrivedAt - socketAt) : undefined;
+  return { connect: connect, loop: loop };
 }
 
 /**
@@ -209,8 +255,8 @@ function report(now) {
  * when it has run out.
  *
  * @param route - `routeOf()`'s answer
- * @param phases - any of `ticket`, `barrier`, `queue`, `handler`, `commit`,
- *   `bridge` and `total`, in ms
+ * @param phases - any of `ticket`, `barrier`, `connect`, `loop`, `handler`,
+ *   `commit`, `bridge` and `total`, in ms
  * @param now - the instant, for the tests; defaults to now
  */
 // Hot path: every dispatched request. No Entering/Leaving pair.
@@ -284,6 +330,7 @@ module.exports = {
   blockedTotal: blockedTotal,
   encode: encode,
   decode: decode,
+  connectionWaits: connectionWaits,
   routeOf: routeOf,
   record: record,
   stats: stats,

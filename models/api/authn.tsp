@@ -207,6 +207,15 @@ using IyaSts.Api.Common;
 namespace IyaSts.Api.Authn {
   
 
+// THE ID A SIGN-IN, A PASSWORD CHANGE, A STEP AND A CONSENT ARE NAMED BY IN A
+// PATH (#1579): what `authn/authn_api.ts` held each `{id}` to by hand.
+@js(#{
+    `minLength`:1,
+    `maxLength`:4096,
+    `pattern`:"^[A-Za-z0-9_-]+$",
+    `description`:"The sign-in's, the step's or the consent's id: base64url with no padding."
+  }) @component scalar SignInId extends string;
+
 @endpoint("/authn-api",
   "get",
   #{
@@ -386,7 +395,7 @@ op `getOpenApi`(`responses/200/content/application~1json/schema`: {
     `security`:#[],
     `x-mirrors`:"GET /authn/login"
   })
-op `getScreen`(`parameters/0/schema`: string,
+op `getScreen`(`parameters/0/schema`: SignInId,
   `responses/200/content/application~1json/schema`: {
     `ok`?: boolean;
     `csrf`?: string;
@@ -473,7 +482,7 @@ op `getScreen`(`parameters/0/schema`: string,
     `security`:#[],
     `x-mirrors`:"GET /authn/select-idp"
   })
-op `getPartners`(`parameters/0/schema`: string,
+op `getPartners`(`parameters/0/schema`: SignInId,
   `responses/200/content/application~1json/schema`: {
     `ok`?: boolean;
     `csrf`?: string;
@@ -570,7 +579,7 @@ op `getPartners`(`parameters/0/schema`: string,
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`username`:"nobody-example",`password`:"not-the-password"}}}},
     `x-mirrors`:"POST /authn/login"
   })
-op `signInWithPassword`(`parameters/0/schema`: string,
+op `signInWithPassword`(`parameters/0/schema`: SignInId,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {
     `username`?: EmptyTextOrStringMin1Max256;
@@ -655,7 +664,7 @@ op `signInWithPassword`(`parameters/0/schema`: string,
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{}}}},
     `x-mirrors`:"POST /authn/login"
   })
-op `cancelSignIn`(`parameters/0/schema`: string,
+op `cancelSignIn`(`parameters/0/schema`: SignInId,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {},
   @js(#{
@@ -735,7 +744,7 @@ op `cancelSignIn`(`parameters/0/schema`: string,
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`remember_browser`:"0"}}}},
     `x-mirrors`:"POST /authn/login"
   })
-op `continueAnonymously`(`parameters/0/schema`: string,
+op `continueAnonymously`(`parameters/0/schema`: SignInId,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: WithRememberBrowserMaxLengthPatternEtc4,
   @js(#{
@@ -815,7 +824,7 @@ op `continueAnonymously`(`parameters/0/schema`: string,
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`remember_browser`:"0"}}}},
     `x-mirrors`:"POST /authn/login"
   })
-op `continueWithCertificate`(`parameters/0/schema`: string,
+op `continueWithCertificate`(`parameters/0/schema`: SignInId,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: WithRememberBrowserMaxLengthPatternEtc4,
   @js(#{
@@ -899,7 +908,7 @@ op `continueWithCertificate`(`parameters/0/schema`: string,
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`username`:"nobody-example",`kind`:"code"}}}},
     `x-mirrors`:"POST /authn/login"
   })
-op `signInByEmail`(`parameters/0/schema`: string,
+op `signInByEmail`(`parameters/0/schema`: SignInId,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {
     `username`?: EmptyTextOrStringMin1Max256;
@@ -982,7 +991,7 @@ op `signInByEmail`(`parameters/0/schema`: string,
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{}}}},
     `x-mirrors`:"POST /authn/login"
   })
-op `passkeyOptions`(`parameters/0/schema`: string,
+op `passkeyOptions`(`parameters/0/schema`: SignInId,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {},
   `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc8,
@@ -1051,7 +1060,7 @@ op `passkeyOptions`(`parameters/0/schema`: string,
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`credential`:"{}"}}}},
     `x-mirrors`:"POST /authn/login"
   })
-op `signInWithPasskey`(`parameters/0/schema`: string,
+op `signInWithPasskey`(`parameters/0/schema`: SignInId,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {
     @js(#{`maxLength`:65536}) `credential`?: string;
@@ -1113,7 +1122,7 @@ op `signInWithPasskey`(`parameters/0/schema`: string,
     `security`:#[],
     `x-mirrors`:"GET /authn/password-change"
   })
-op `getPasswordChange`(`parameters/0/schema`: string,
+op `getPasswordChange`(`parameters/0/schema`: SignInId,
   `responses/200/content/application~1json/schema`: {
     `ok`?: boolean;
     `csrf`?: string;
@@ -1183,7 +1192,7 @@ op `getPasswordChange`(`parameters/0/schema`: string,
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`new_password`:"not",`confirm_password`:"equal"}}}},
     `x-mirrors`:"POST /authn/password-change"
   })
-op `changePassword`(`parameters/0/schema`: string,
+op `changePassword`(`parameters/0/schema`: SignInId,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {
     @js(#{`maxLength`:1024}) `new_password`?: string;
@@ -1263,7 +1272,7 @@ op `changePassword`(`parameters/0/schema`: string,
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{}}}},
     `x-mirrors`:"POST /authn/password-change"
   })
-op `startOverFromPasswordChange`(`parameters/0/schema`: string,
+op `startOverFromPasswordChange`(`parameters/0/schema`: SignInId,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {},
   @js(#{
@@ -1335,7 +1344,7 @@ op `startOverFromPasswordChange`(`parameters/0/schema`: string,
     `security`:#[],
     `x-mirrors`:"GET /authn/totp, /authn/webauthn, /authn/backup-code, /authn/password-factor, /authn/mfa-setup, /authn/email-code, /authn/email-link, /authn/email-link/open, /authn/post-login"
   })
-op `getStep`(`parameters/0/schema`: string,
+op `getStep`(`parameters/0/schema`: SignInId,
   @js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`enum`:#["totp","webauthn","backup-code","password","setup","email-code","email-link","email-link-open","post-login"]}]}}) `parameters/1/schema`: unknown,
   @js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`minLength`:1,`maxLength`:4096,`pattern`:"^[A-Za-z0-9_-]+$"}]}}) `parameters/2/schema`: unknown,
   `responses/200/content/application~1json/schema`: WithOkCsrfUiLocalesEtc82,
@@ -1399,7 +1408,7 @@ op `getStep`(`parameters/0/schema`: string,
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`code`:"000000"}}}},
     `x-mirrors`:"POST /authn/totp"
   })
-op `checkCode`(`parameters/0/schema`: string,
+op `checkCode`(`parameters/0/schema`: SignInId,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: WithMaxLengthCode,
   @js(#{
@@ -1476,7 +1485,7 @@ op `checkCode`(`parameters/0/schema`: string,
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`code`:"no-such-code"}}}},
     `x-mirrors`:"POST /authn/backup-code"
   })
-op `spendRecoveryCode`(`parameters/0/schema`: string,
+op `spendRecoveryCode`(`parameters/0/schema`: SignInId,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {@js(#{`maxLength`:64}) `code`?: string},
   @js(#{
@@ -1553,7 +1562,7 @@ op `spendRecoveryCode`(`parameters/0/schema`: string,
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`password`:"not-the-password"}}}},
     `x-mirrors`:"POST /authn/password-factor"
   })
-op `checkFactorPassword`(`parameters/0/schema`: string,
+op `checkFactorPassword`(`parameters/0/schema`: SignInId,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {@js(#{`maxLength`:1024}) `password`?: string},
   @js(#{
@@ -1648,7 +1657,7 @@ op `checkFactorPassword`(`parameters/0/schema`: string,
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`lane`:"classical"}}}},
     `x-mirrors`:"POST /authn/webauthn"
   })
-op `passkeyStepOptions`(`parameters/0/schema`: string,
+op `passkeyStepOptions`(`parameters/0/schema`: SignInId,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {
     `key`?: EmptyTextOrStringMin1Max4096Matchinga5aa8a2;
@@ -1719,7 +1728,7 @@ op `passkeyStepOptions`(`parameters/0/schema`: string,
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`credential`:"{}"}}}},
     `x-mirrors`:"POST /authn/webauthn"
   })
-op `finishPasskeyStep`(`parameters/0/schema`: string,
+op `finishPasskeyStep`(`parameters/0/schema`: SignInId,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {@js(#{`maxLength`:65536}) `credential`?: string},
   @js(#{
@@ -1796,7 +1805,7 @@ op `finishPasskeyStep`(`parameters/0/schema`: string,
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{}}}},
     `x-mirrors`:"POST /authn/mfa-setup"
   })
-op `beginAppEnrolment`(`parameters/0/schema`: string,
+op `beginAppEnrolment`(`parameters/0/schema`: SignInId,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {},
   @js(#{
@@ -1873,7 +1882,7 @@ op `beginAppEnrolment`(`parameters/0/schema`: string,
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`code`:"000000"}}}},
     `x-mirrors`:"POST /authn/mfa-setup"
   })
-op `confirmAppEnrolment`(`parameters/0/schema`: string,
+op `confirmAppEnrolment`(`parameters/0/schema`: SignInId,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: WithMaxLengthCode,
   @js(#{
@@ -1950,7 +1959,7 @@ op `confirmAppEnrolment`(`parameters/0/schema`: string,
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{}}}},
     `x-mirrors`:"POST /authn/mfa-setup"
   })
-op `beginKeyEnrolment`(`parameters/0/schema`: string,
+op `beginKeyEnrolment`(`parameters/0/schema`: SignInId,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {},
   @js(#{
@@ -2027,7 +2036,7 @@ op `beginKeyEnrolment`(`parameters/0/schema`: string,
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{}}}},
     `x-mirrors`:"POST /authn/mfa-setup"
   })
-op `ignoreOffer`(`parameters/0/schema`: string,
+op `ignoreOffer`(`parameters/0/schema`: SignInId,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {},
   @js(#{
@@ -2104,7 +2113,7 @@ op `ignoreOffer`(`parameters/0/schema`: string,
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{}}}},
     `x-mirrors`:"POST /authn/post-login"
   })
-op `registerPostLoginPasskey`(`parameters/0/schema`: string,
+op `registerPostLoginPasskey`(`parameters/0/schema`: SignInId,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {},
   @js(#{
@@ -2181,7 +2190,7 @@ op `registerPostLoginPasskey`(`parameters/0/schema`: string,
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{}}}},
     `x-mirrors`:"POST /authn/post-login"
   })
-op `skipPostLoginActivity`(`parameters/0/schema`: string,
+op `skipPostLoginActivity`(`parameters/0/schema`: SignInId,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {},
   @js(#{
@@ -2258,7 +2267,7 @@ op `skipPostLoginActivity`(`parameters/0/schema`: string,
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`kind`:"code"}}}},
     `x-mirrors`:"POST /authn/email-code, /authn/email-link"
   })
-op `sendEmailedFactor`(`parameters/0/schema`: string,
+op `sendEmailedFactor`(`parameters/0/schema`: SignInId,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {`kind`: "code" | "link"},
   @js(#{
@@ -2335,7 +2344,7 @@ op `sendEmailedFactor`(`parameters/0/schema`: string,
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`code`:"000000"}}}},
     `x-mirrors`:"POST /authn/email-code"
   })
-op `checkEmailedCode`(`parameters/0/schema`: string,
+op `checkEmailedCode`(`parameters/0/schema`: SignInId,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: WithMaxLengthCode,
   @js(#{
@@ -2416,7 +2425,7 @@ op `checkEmailedCode`(`parameters/0/schema`: string,
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`t`:"noSuchLinkTokenExample"}}}},
     `x-mirrors`:"POST /authn/email-link/open"
   })
-op `spendEmailedLink`(`parameters/0/schema`: string,
+op `spendEmailedLink`(`parameters/0/schema`: SignInId,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {`t`?: EmptyTextOrStringMin1Max4096Matchinga5aa8a2},
   @js(#{
@@ -2493,7 +2502,7 @@ op `spendEmailedLink`(`parameters/0/schema`: string,
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{}}}},
     `x-mirrors`:"POST /authn/totp, /authn/webauthn, /authn/backup-code, /authn/password-factor, /authn/mfa-setup, /authn/email-code, /authn/email-link, /authn/email-link/open"
   })
-op `startOver`(`parameters/0/schema`: string,
+op `startOver`(`parameters/0/schema`: SignInId,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {},
   @js(#{
@@ -3392,7 +3401,7 @@ op `chooseSignOutAccount`(`parameters/0/schema`: string,
     `security`:#[],
     `x-mirrors`:"GET /authn/accounts"
   })
-op `getAccountChoice`(`parameters/0/schema`: string,
+op `getAccountChoice`(`parameters/0/schema`: SignInId,
   `responses/200/content/application~1json/schema`: {
     `ok`?: boolean;
     `csrf`?: string;
@@ -3483,7 +3492,7 @@ op `getAccountChoice`(`parameters/0/schema`: string,
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`account`:"name:nobody-example"}}}},
     `x-mirrors`:"POST /authn/accounts"
   })
-op `selectAccount`(`parameters/0/schema`: string,
+op `selectAccount`(`parameters/0/schema`: SignInId,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: WithMinLengthMaxLengthAccount,
   @js(#{
@@ -3574,7 +3583,7 @@ op `selectAccount`(`parameters/0/schema`: string,
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{}}}},
     `x-mirrors`:"POST /authn/accounts"
   })
-op `useAnotherAccount`(`parameters/0/schema`: string,
+op `useAnotherAccount`(`parameters/0/schema`: SignInId,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {},
   @js(#{
@@ -3665,7 +3674,7 @@ op `useAnotherAccount`(`parameters/0/schema`: string,
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`account`:"name:nobody-example"}}}},
     `x-mirrors`:"POST /authn/accounts"
   })
-op `forgetAccount`(`parameters/0/schema`: string,
+op `forgetAccount`(`parameters/0/schema`: SignInId,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: WithMinLengthMaxLengthAccount,
   @js(#{
@@ -3781,7 +3790,7 @@ op `getAccounts`(`responses/200/content/application~1json/schema`: {
     `security`:#[],
     `x-mirrors`:"GET /oauth2/consent"
   })
-op `getConsent`(`parameters/0/schema`: string,
+op `getConsent`(`parameters/0/schema`: SignInId,
   `responses/200/content/application~1json/schema`: {
     `ok`?: boolean;
     `csrf`?: string;
@@ -3885,9 +3894,19 @@ op `getConsent`(`parameters/0/schema`: string,
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`action`:"deny"}}}},
     `x-mirrors`:"POST /oauth2/consent"
   })
-op `answerConsent`(`parameters/0/schema`: string,
+op `answerConsent`(`parameters/0/schema`: SignInId,
   `parameters/1/schema`: string,
-  @js(#{`$open`:true}) `requestBody/content/application~1json/schema`: {`action`: "allow" | "deny"},
+  @js(#{
+    `patternProperties`:#{
+      `^lim_t0r[0-9]{1,3}_(amount|count|receiver|receiverShown|interval|notBefore|notAfter)$`:#{
+        `description`:"A limit control the page drew under an RFC 9396 detail (`common/web_limits_form.ts`): a string, or a receiver's boxes as a list.",
+        `oneOf`:#[
+          #{`type`:"string",`maxLength`:1024},
+          #{`type`:"array",`maxItems`:64,`items`:#{`type`:"string",`maxLength`:1024}}
+        ]
+      }
+    }
+  }) `requestBody/content/application~1json/schema`: {`action`: "allow" | "deny"},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
   }) `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc13,

@@ -449,6 +449,17 @@ they live rather than here:
   argued there; what matters here is the shape of the failure, because any
   future family whose thing is a FILE DESCRIPTOR rather than a row will fail the
   same way and will not be caught by anything this file does.
+* **WS-Federation, a realm with several sign-out addresses** (2026-11-15, for
+  1.1.0). A realm that declares several `wsfedSignOutUri` values (#747) is
+  ONE sign-in on the session, drawn as one row per address: `<sid>|<realm>`
+  for the first and `<sid>|<realm>|<n>` for each later one. Ending ANY of its
+  rows sends a `wsignoutcleanup1.0` to EVERY address and forgets the realm
+  once, and a sibling row ended afterwards reports it already forgotten. The
+  rows are not separate sign-ins, so ending one address and keeping another
+  would mean nothing. Until this, a later row read its realm as `<realm>|1`.
+  It matched nothing, sent nothing and reported success, and only the first
+  address was ever sent a cleanup, because the realm was gone by the time a
+  later row looked. `tests/logout_api.js` 6k holds both halves.
 
 And two that are whole specifications: **OpenID Connect Front-Channel Logout
 1.0**, in `oauth-oidc/frontchannel_logout.ts`, and **OpenID Connect
@@ -711,6 +722,14 @@ three would read as "unknown" on a page that is about exactly this distinction.
 The browser row reads `session.authenticated !== false`, which is
 `authn.js`'s field. `!== false` because a session made before that field
 existed is one somebody signed into.
+
+**AN ARRIVAL IS NOT THAT ROW (#888).** `chosen === false` is left out of
+`liveSessions()` before `authenticated` is ever set on it: a browser that
+reached a front door and has not signed in is not somebody who continued
+without signing in, and it is not on the Unauthenticated tab as a row or a
+count. The tab says so. Listing the rows would be the cookie-less flood this
+function already refuses, and a count would scan `sts_sessions` with no index
+on `NOT chosen`.
 
 **What consumes it is a SECTION on `/admin/sessions` rather than a column**,
 and `admin-ui/CLAUDE.md` argues why. The reason it is computed here rather than

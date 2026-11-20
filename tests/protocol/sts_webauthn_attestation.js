@@ -25,7 +25,10 @@
 //      `/admin/users` row; `/admin/webauthn` and `GET /admin-api/webauthn`
 //      report the policy in force — `by-mode` is verify-if-present in
 //      product and off in development, which is the one assertion here that
-//      differs by mode.
+//      differs by mode;
+//   4. the verifier's rules format by format, in a realm of its own (D12,
+//      #444: carried from `tests/webauthn_attestation.js`) — see section
+//      4's own header below.
 //
 // `local: true`: the portal, the API and the console are this repository's.
 // It carries its own AUTHENTICATOR (the CBOR, the authenticator data, the
@@ -744,11 +747,559 @@ async function test() {
                          JSON.stringify(status.attestationFormats));
     });
 
-  assert.ok(checks >= 13,
+  const matrix = await attestationMatrix();
+  try {
+    await matrix.removeRealms();
+  } catch (e) {
+    log.debug("Caught in test(): " + ((e && e.message) || e));
+    // A realm left behind is not a failed assertion.
+    log.warn("removing this run's realms failed: " + e.message);
+  }
+  assert.ok(checks >= 30,
     "only " + checks + " checks ran; a section has stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
   log.debug("Leaving test().");
+}
+
+// ---------------------------------------------------------------------------
+// 4. THE VERIFIER'S RULES, FORMAT BY FORMAT (D12, #444: the wire half of
+// `tests/webauthn_attestation.js`, deleted at the cutover).
+//
+// In a realm of its own, every registration is a real one at the portal's
+// `/account-api/keys` — begun, the armed ceremony read back, finished with
+// a credential this section builds over THAT ceremony's challenge and RP
+// ID — and every refusal is read back as the code on `/admin-api/audit`,
+// never off the answer. The statements are
+// `tests/webauthn_attestation_kit.js`'s eight formats, written from the
+// specification (every key and certificate made at run time); **the kit
+// must move beside this job when the in-process files are deleted** (it
+// is required from `../`).
+//
+//   4A. section 7.1: a credential algorithm the realm did not offer
+//       (STS-AUTHN-0228), a 1024-byte credential id (0229), BS without BE
+//       (0230), and the controls beside each;
+//   4B. every algorithm the verifier knows registers AND signs its person
+//       in at the typed passkey step; RS1 only behind
+//       `webauthn.insecureAlgorithms`, and its assertion refused once the
+//       flag is off (STS-AUTHN-0294);
+//   4C. each format valid and wrong in one way — packed, tpm, android-key,
+//       android-safetynet, fido-u2f, none, apple, compound, and a format
+//       section 8 does not define (0231, 0232, 0233, 0234), what each valid
+//       one proved read off `GET /admin-api/users`;
+//   4D. the policy by mode: development's `off` takes a statement that does
+//       not verify and records it unverified; product's by-mode refuses it
+//       (0233); `off` is refused at the write in product (STS-CORE-0103);
+//       a realm requiring a trusted statement ASKS for `direct`.
+//
+// NOT CARRIED (class (d)): the FIDO Metadata Service (E: a BLOB imported
+// through the risk datasets, a stubbed download, `risk.mds-refresh` — I),
+// Google's attestation status list (C16b/c: a dataset import), the
+// revocation of an attestation chain (needs a CRL the chain names and a
+// reachable distribution point), `credentials.addKey()`'s record (H1) and
+// the formats table (H2, H3: the report's eight formats are section 3's).
+// ---------------------------------------------------------------------------
+const attKit = require("../webauthn_attestation_kit.js");
+const wire = require("./passkey_wire_kit.js");
+
+// A credential over the armed ceremony `c` (`challenge`, `rpId`), its
+// attestation made by `fmt(ctx)` over the authenticator data and client
+// data — the kit's builders read `authData`, `clientDataHash`, `aaguid`
+// and `credential`.
+async function builtCredential(c, o) {
+  log.debug("Entering builtCredential().");
+  const opts = o || {};
+  const cred = opts.credential || await attKit.credential(opts.alg || -7);
+  const id = opts.credentialId || cred.id;
+  const aaguid = opts.aaguid || nodeCrypto.randomBytes(16);
+  const count = Buffer.alloc(4);
+  const idLen = Buffer.alloc(2);
+  idLen.writeUInt16BE(id.length, 0);
+  const authData = Buffer.concat([
+    sha256(Buffer.from(c.rpId || RP_ID, "utf8")),
+    Buffer.from([opts.flags === undefined ? 0x45 : opts.flags]), count,
+    aaguid, idLen, id, attKit.cbor(cred.cose)]);
+  const clientDataJSON = Buffer.from(JSON.stringify({
+    type: "webauthn.create", challenge: c.challenge, origin: ORIGIN,
+    crossOrigin: false }));
+  const ctx = { credential: cred, rpId: c.rpId || RP_ID, origin: ORIGIN,
+                challenge: c.challenge, aaguid: aaguid, authData: authData,
+                clientDataJSON: clientDataJSON,
+                clientDataHash: sha256(clientDataJSON) };
+  const made = opts.fmt ? await opts.fmt(ctx) : attKit.none();
+  const idText = id.toString("base64url");
+  log.debug("Leaving builtCredential().");
+  return { cred: cred, id: idText, credential: {
+    id: idText, rawId: idText, type: "public-key",
+    authenticatorAttachment: "cross-platform",
+    clientExtensionResults: { credProps: { rk: true } },
+    response: {
+      attestationObject: attKit.cbor(new Map([["fmt", made.fmt],
+        ["attStmt", made.attStmt], ["authData", authData]]))
+        .toString("base64url"),
+      clientDataJSON: clientDataJSON.toString("base64url"),
+      transports: ["usb"] } } };
+}
+
+// An assertion by `cred` (a kit credential) over `challenge`.
+function assertionBy(cred, id, challenge, rpId) {
+  log.debug("Entering assertionBy().");
+  const count = Buffer.alloc(4);
+  count.writeUInt32BE(1, 0);
+  const authData = Buffer.concat([sha256(Buffer.from(rpId || RP_ID,
+                                                     "utf8")),
+                                  Buffer.from([0x05]), count]);
+  const cdj = Buffer.from(JSON.stringify({ type: "webauthn.get",
+    challenge: challenge, origin: ORIGIN, crossOrigin: false }));
+  const signature = cred.sign(Buffer.concat([authData, sha256(cdj)]));
+  log.debug("Leaving assertionBy().");
+  return { id: id, rawId: id, type: "public-key",
+           authenticatorAttachment: "cross-platform",
+           response: { authenticatorData: authData.toString("base64url"),
+                       clientDataJSON: cdj.toString("base64url"),
+                       signature: Buffer.from(signature)
+                         .toString("base64url"),
+                       userHandle: null } };
+}
+
+async function attestationMatrix() {
+  log.debug("Entering attestationMatrix().");
+  const k = wire.kit("sts_webauthn_attestation", { log: log });
+  const realm = await k.realm("wa105m", "development");
+  const who = ("wa105m-" + k.STAMP).slice(0, 30);
+  await k.person(realm, who, PASSWORD);
+  await k.client(realm);
+  await k.mustSet(realm, "webauthn.maxKeysPerPerson", 50);
+  const portal = await portalSignin.signInToThePortal(realm.base, who, null,
+    { password: PASSWORD });
+
+  // The newest audit row's `at` in the realm, and the codes of the rows
+  // after it: two reads per registration rather than two per code. BY TIME
+  // (#465): `seq` is not one order across processes, so a row a request
+  // worker numbered from a lower block was missed (run #325, 4A1, 4A3).
+  const newestAt = async function () {
+    log.debug("Entering newestAt().");
+    const r = await k.call(realm, "GET", "/audit?per=1");
+    log.debug("Leaving newestAt().");
+    return Number((((r.body && r.body.events) || [])[0] || {}).at || 0);
+  };
+  const codesAfter = async function (since, watched) {
+    log.debug("Entering codesAfter().");
+    let found = "";
+    for (let i = 0; i < 20 && !found; i += 1) {
+      const r = await k.call(realm, "GET", "/audit?per=100");
+      ((r.body && r.body.events) || []).forEach(function (row) {
+        if (!found && Number(row.at) > since &&
+            watched.indexOf(row.errorCode) >= 0) {
+          found = row.errorCode;
+        }
+      });
+      if (!found) {
+        await k.sleep(150);
+      }
+      if (i >= 9 && !found) {
+        // Ten reads, a second and a half: the row is written as the
+        // answer leaves.
+        break;
+      }
+    }
+    log.debug("Leaving codesAfter(). " + found);
+    return found;
+  };
+
+  // One registration: begun, armed, finished with `o`'s credential. The
+  // finish's answer and the code it recorded (`code` the one of `codes`
+  // on a row written after the finish began).
+  const enrolOne = async function (o, codes) {
+    log.debug("Entering enrolOne().");
+    const watched = codes || [];
+    await portal.api("POST", "/account-api/keys", { action: "cancel" });
+    const begun = await portal.api("POST", "/account-api/keys",
+      { action: "begin", kind: "security-key" });
+    assert.ok(begun.status === 200, "begin answered " + begun.status + " " +
+              JSON.stringify(begun.json).slice(0, 300));
+    const page = await portal.api("GET", "/account-api/keys");
+    const pending = (page.json && page.json.enrol &&
+                     page.json.enrol.pending) || {};
+    const built = await builtCredential(pending, o);
+    const since = await newestAt();
+    const done = await portal.api("POST", "/account-api/keys",
+      { action: "finish", enrolment_id: pending.id,
+        credential: JSON.stringify(built.credential) });
+    const refusedHere = !(done.status === 200 && done.json &&
+                          done.json.ok !== false);
+    const code = refusedHere && watched.length
+      ? await codesAfter(since, watched) : "";
+    log.debug("Leaving enrolOne(). " + done.status + " " + code);
+    return { done: done, code: code, built: built, pending: pending };
+  };
+  const ALL = ["STS-AUTHN-0228", "STS-AUTHN-0229", "STS-AUTHN-0230",
+               "STS-AUTHN-0231", "STS-AUTHN-0232", "STS-AUTHN-0233",
+               "STS-AUTHN-0234"];
+  const accepted = function (r) {
+    return r.done.status === 200 && r.done.json && r.done.json.ok !== false;
+  };
+  const keyRow = async function (id) {
+    log.debug("Entering keyRow().");
+    const keys = await k.keysOf(realm, who);
+    log.debug("Leaving keyRow().");
+    return keys.filter(function (one) {
+      return one.credentialId === id;
+    })[0] || null;
+  };
+
+  log.info("=== 4A. section 7.1: alg offered, 1024 bytes, BE and BS ===");
+  await k.mustSet(realm, "webauthn.algorithms", "RS256");
+  const notOffered = await enrolOne({ alg: -7 }, ALL);
+  check("4A1. an ES256 credential when only RS256 was offered is refused " +
+        "(STS-AUTHN-0228)", function () {
+    assert.ok(!accepted(notOffered), JSON.stringify(notOffered.done.json));
+    assert.strictEqual(notOffered.code, "STS-AUTHN-0228");
+  });
+  await k.mustSet(realm, "webauthn.algorithms", "ES256,RS256");
+  const offered = await enrolOne({ alg: -7 }, ALL);
+  check("4A2. and taken once ES256 is offered", function () {
+    assert.ok(accepted(offered), JSON.stringify(offered.done.json));
+  });
+  const long = await enrolOne({ alg: -7,
+    credentialId: nodeCrypto.randomBytes(1024) }, ALL);
+  check("4A3. a credential id of 1024 bytes is refused (STS-AUTHN-0229)",
+    function () {
+      assert.ok(!accepted(long), JSON.stringify(long.done.json));
+      assert.strictEqual(long.code, "STS-AUTHN-0229");
+    });
+  const bsOnly = await enrolOne({ alg: -7, flags: 0x45 | 0x10 }, ALL);
+  check("4A4. BS set without BE is refused (STS-AUTHN-0230)", function () {
+    assert.ok(!accepted(bsOnly), JSON.stringify(bsOnly.done.json));
+    assert.strictEqual(bsOnly.code, "STS-AUTHN-0230");
+  });
+  const both = await enrolOne({ alg: -7, flags: 0x45 | 0x18 }, ALL);
+  check("4A5. and BS with BE is taken", function () {
+    assert.ok(accepted(both), JSON.stringify(both.done.json));
+  });
+  await k.reset(realm, "webauthn.algorithms");
+
+  log.info("=== 4B. every algorithm registers and signs in ===");
+  const ALGS = { "-7": "ES256", "-35": "ES384", "-36": "ES512",
+                 "-8": "EdDSA", "-257": "RS256", "-37": "PS256",
+                 "-48": "ML-DSA-44", "-49": "ML-DSA-65",
+                 "-50": "ML-DSA-87" };
+  await k.mustSet(realm, "webauthn.algorithms",
+                  Object.keys(ALGS).map(function (a) {
+                    return ALGS[a];
+                  }).join(","));
+  const made = [];
+  for (const alg of Object.keys(ALGS)) {
+    const r = await enrolOne({ alg: Number(alg) }, ALL);
+    made.push({ alg: alg, r: r });
+  }
+  check("4B1. a credential of each of " + Object.keys(ALGS).length +
+        " algorithms is registered", function () {
+    made.forEach(function (one) {
+      assert.ok(accepted(one.r), ALGS[one.alg] + ": " +
+                JSON.stringify(one.r.done.json).slice(0, 300) + " " +
+                one.r.code);
+    });
+  });
+  const signedIn = [];
+  for (const one of made) {
+    const t = await k.typed(realm, who, { password: PASSWORD });
+    let answer = t.answer;
+    if (t.step) {
+      answer = await k.ceremony(t.step, function (c) {
+        return assertionBy(one.r.built.cred, one.r.built.id, c.challenge,
+                           c.rpId);
+      }, (t.step.view && t.step.view.webauthn &&
+          (t.step.view.webauthn.choices || []).length)
+        ? one.r.built.id : undefined);
+    }
+    signedIn.push({ alg: ALGS[one.alg], next: answer.next,
+                    said: k.said(answer).slice(0, 200) });
+  }
+  check("4B2. and each one's assertion answers the passkey step of its " +
+        "person's sign-in", function () {
+    signedIn.forEach(function (one) {
+      assert.strictEqual(one.next, "redirect", JSON.stringify(one));
+    });
+  });
+  await k.mustSet(realm, "webauthn.algorithms", "ES256,RS1");
+  const rs1Off = await enrolOne({ alg: -65535 }, ALL);
+  await k.mustSet(realm, "webauthn.insecureAlgorithms", true);
+  const rs1On = await enrolOne({ alg: -65535 }, ALL);
+  check("4B3. RS1 is not offered, so not taken, while " +
+        "webauthn.insecureAlgorithms is off — and is taken behind it in " +
+        "development", function () {
+    assert.ok(!accepted(rs1Off), JSON.stringify(rs1Off.done.json));
+    assert.strictEqual(rs1Off.code, "STS-AUTHN-0228");
+    assert.ok(accepted(rs1On), JSON.stringify(rs1On.done.json) + " " +
+              rs1On.code);
+  });
+  await k.reset(realm, "webauthn.insecureAlgorithms");
+  const before0294 = await k.codeCount(realm, "STS-AUTHN-0294");
+  const t1 = await k.typed(realm, who, { password: PASSWORD });
+  let rs1Answer = t1.answer;
+  if (t1.step) {
+    rs1Answer = await k.ceremony(t1.step, function (c) {
+      return assertionBy(rs1On.built.cred, rs1On.built.id, c.challenge,
+                         c.rpId);
+    }, (t1.step.view && t1.step.view.webauthn &&
+        (t1.step.view.webauthn.choices || []).length)
+      ? rs1On.built.id : undefined);
+  }
+  const n0294 = await k.newCodes(realm, "STS-AUTHN-0294", before0294);
+  check("4B4. with the flag off again, the RS1 key's assertion is refused " +
+        "(STS-AUTHN-0294)", function () {
+    assert.notStrictEqual(rs1Answer.next, "redirect",
+                          k.said(rs1Answer).slice(0, 300));
+    assert.ok(n0294 >= 1, "STS-AUTHN-0294 rows: " + n0294);
+  });
+  await k.reset(realm, "webauthn.algorithms");
+
+  log.info("=== 4C. each format, valid and wrong in one way ===");
+  const vendorRoot = await attKit.root("Synthetic Vendor " + k.STAMP);
+  const tpmCa = await attKit.root("Synthetic TPM " + k.STAMP, "rsa");
+  const google = await attKit.root("Synthetic Google " + k.STAMP);
+  const apple = await attKit.root("Synthetic Apple " + k.STAMP);
+  await k.mustSet(realm, "webauthn.attestationPolicy", "verify-if-present");
+  await k.mustSet(realm, "webauthn.attestationTrustAnchors",
+    [vendorRoot, tpmCa, google, apple].map(function (r) {
+      return r.pem;
+    }).join(""));
+  const CASES = [
+    ["packed, Basic, trusted", function (c) {
+      return attKit.packed(c, vendorRoot);
+    }, "", { type: "basic", trusted: true }],
+    ["packed, the signature over something else", function (c) {
+      return attKit.packed(c, vendorRoot, "signature");
+    }, "STS-AUTHN-0233"],
+    ["packed, the subject OU is not Authenticator Attestation", function (c) {
+      return attKit.packed(c, vendorRoot, "ou");
+    }, "STS-AUTHN-0234"],
+    ["packed, the AAGUID extension names another model", function (c) {
+      return attKit.packed(c, vendorRoot, "aaguid-extension");
+    }, "STS-AUTHN-0234"],
+    ["packed, the attestation certificate is a CA", function (c) {
+      return attKit.packed(c, vendorRoot, "ca");
+    }, "STS-AUTHN-0234"],
+    ["packed self attestation, untrusted", function (c) {
+      return attKit.packedSelf(c);
+    }, "", { type: "self", trusted: false }],
+    ["packed self, alg not the credential's", function (c) {
+      return attKit.packedSelf(c, "alg");
+    }, "STS-AUTHN-0234"],
+    ["packed self, the signature over something else", function (c) {
+      return attKit.packedSelf(c, "signature");
+    }, "STS-AUTHN-0233"],
+    ["packed with a member the format does not define", async function (c) {
+      const m = await attKit.packed(c, vendorRoot);
+      m.attStmt.extra = Buffer.from([1]);
+      return m;
+    }, "STS-AUTHN-0232"],
+    ["tpm, AttCA, trusted", function (c) {
+      return attKit.tpm(c, tpmCa);
+    }, "", { type: "attca", trusted: true }],
+    ["tpm with the bare signature Windows sends", function (c) {
+      return attKit.tpm(c, tpmCa, "bare-signature");
+    }, "", { type: "attca", trusted: true }]
+  ];
+  ["extra-data", "name", "magic", "eku", "subject", "key"].forEach(
+    function (spoil) {
+      CASES.push(["tpm, " + spoil + " wrong", function (c) {
+        return attKit.tpm(c, tpmCa, spoil);
+      }, "STS-AUTHN-0234"]);
+    });
+  CASES.push(["tpm, the signature over something else", function (c) {
+    return attKit.tpm(c, tpmCa, "signature");
+  }, "STS-AUTHN-0233"]);
+  CASES.push(["android-key, Basic, trusted", function (c) {
+    return attKit.androidKey(c, google);
+  }, "", { type: "basic", trusted: true }]);
+  CASES.push(["android-key, a certificate for another key", function (c) {
+    return attKit.androidKey(c, google, "key");
+  }, "STS-AUTHN-0233"]);
+  ["challenge", "all-applications", "purpose", "software-origin"].forEach(
+    function (spoil) {
+      CASES.push(["android-key, " + spoil, function (c) {
+        return attKit.androidKey(c, google, spoil);
+      }, "STS-AUTHN-0234"]);
+    });
+  CASES.push(["android-safetynet, verified and untrusted while " +
+              "attestationAllowSafetynet is off", function (c) {
+    return attKit.safetynet(c, google);
+  }, "", { type: "basic", trusted: false }]);
+  ["nonce", "cts", "stale", "host"].forEach(function (spoil) {
+    CASES.push(["android-safetynet, " + spoil, function (c) {
+      return attKit.safetynet(c, google, spoil);
+    }, "STS-AUTHN-0234"]);
+  });
+  CASES.push(["android-safetynet, a changed signature", function (c) {
+    return attKit.safetynet(c, google, "signature");
+  }, "STS-AUTHN-0233"]);
+  CASES.push(["fido-u2f, Basic, trusted", function (c) {
+    return attKit.fidoU2f(c, vendorRoot);
+  }, "", { type: "basic", trusted: true }, { aaguid: Buffer.alloc(16) }]);
+  CASES.push(["fido-u2f, the signature over another message", function (c) {
+    return attKit.fidoU2f(c, vendorRoot, "signature");
+  }, "STS-AUTHN-0233", null, { aaguid: Buffer.alloc(16) }]);
+  CASES.push(["fido-u2f with two certificates", function (c) {
+    return attKit.fidoU2f(c, vendorRoot, "two-certificates");
+  }, "STS-AUTHN-0232", null, { aaguid: Buffer.alloc(16) }]);
+  CASES.push(["none, untrusted", function () {
+    return attKit.none();
+  }, "", { type: "none", trusted: false }]);
+  CASES.push(["none carrying anything", function () {
+    return { fmt: "none", attStmt: { sig: Buffer.from([1]) } };
+  }, "STS-AUTHN-0232"]);
+  CASES.push(["apple, AnonCA, trusted", function (c) {
+    return attKit.apple(c, apple);
+  }, "", { type: "anonca", trusted: true }]);
+  CASES.push(["apple, the nonce of another ceremony", function (c) {
+    return attKit.apple(c, apple, "nonce");
+  }, "STS-AUTHN-0234"]);
+  CASES.push(["apple, a certificate for another key", function (c) {
+    return attKit.apple(c, apple, "key");
+  }, "STS-AUTHN-0234"]);
+  CASES.push(["compound of packed and tpm, trusted", async function (c) {
+    const a = await attKit.packed(c, vendorRoot);
+    const b = await attKit.tpm(c, tpmCa);
+    return { fmt: "compound", attStmt: [
+      { fmt: a.fmt, attStmt: a.attStmt }, { fmt: b.fmt, attStmt: b.attStmt }
+    ] };
+  }, "", { type: "compound", trusted: true }]);
+  CASES.push(["compound with one member that does not verify",
+    async function (c) {
+      const a = await attKit.packed(c, vendorRoot);
+      const b = await attKit.tpm(c, tpmCa, "signature");
+      return { fmt: "compound", attStmt: [
+        { fmt: a.fmt, attStmt: a.attStmt },
+        { fmt: b.fmt, attStmt: b.attStmt }] };
+    }, "STS-AUTHN-0233"]);
+  CASES.push(["compound of one statement", async function (c) {
+    const a = await attKit.packed(c, vendorRoot);
+    return { fmt: "compound", attStmt: [{ fmt: a.fmt, attStmt: a.attStmt }] };
+  }, "STS-AUTHN-0232"]);
+  CASES.push(["compound inside compound", async function (c) {
+    const a = await attKit.packed(c, vendorRoot);
+    return { fmt: "compound", attStmt: [{ fmt: a.fmt, attStmt: a.attStmt },
+      { fmt: "compound", attStmt: [] }] };
+  }, "STS-AUTHN-0232"]);
+  CASES.push(["a format section 8 does not define", function () {
+    return { fmt: "packed2", attStmt: {} };
+  }, "STS-AUTHN-0231"]);
+  const results = [];
+  for (const one of CASES) {
+    const r = await enrolOne(Object.assign({ fmt: one[1] }, one[4] || {}),
+                             ALL);
+    const row = accepted(r) ? await keyRow(r.built.id) : null;
+    results.push({ label: one[0], want: one[2], expect: one[3], r: r,
+                   row: row });
+  }
+  check("4C1. every statement that is wrong in one way is refused, each " +
+        "under its own code (0231, 0232, 0233, 0234 off the audit log)",
+    function () {
+      results.filter(function (one) {
+        return one.want;
+      }).forEach(function (one) {
+        assert.ok(!accepted(one.r), one.label + " was taken");
+        assert.strictEqual(one.r.code, one.want, one.label + ": " +
+          JSON.stringify(one.r.done.json).slice(0, 300));
+      });
+    });
+  check("4C2. every valid one is taken, and its key's row says what it " +
+        "proved: verified, the type, trusted or not", function () {
+    results.filter(function (one) {
+      return !one.want;
+    }).forEach(function (one) {
+      assert.ok(accepted(one.r), one.label + ": " +
+        JSON.stringify(one.r.done.json).slice(0, 300) + " " + one.r.code);
+      const a = (one.row && one.row.attestation) || {};
+      assert.ok(a.verified === true && a.type === one.expect.type &&
+                a.trusted === one.expect.trusted,
+                one.label + ": " + JSON.stringify(one.row).slice(0, 400));
+    });
+  });
+  check("4C3. no answer names a code", function () {
+    results.forEach(function (one) {
+      assert.ok(!/STS-[A-Z]+-\d{4}/.test(JSON.stringify(one.r.done.json)),
+                one.label);
+    });
+  });
+  await k.mustSet(realm, "webauthn.attestationAllowSafetynet", true);
+  const safetyOn = await enrolOne({ fmt: function (c) {
+    return attKit.safetynet(c, google);
+  } }, ALL);
+  const safetyRow = accepted(safetyOn) ? await keyRow(safetyOn.built.id)
+                                       : null;
+  check("4C4. android-safetynet is trusted where " +
+        "webauthn.attestationAllowSafetynet is on", function () {
+    assert.ok(safetyRow && safetyRow.attestation &&
+              safetyRow.attestation.trusted === true,
+              JSON.stringify(safetyRow || safetyOn.done.json).slice(0, 400));
+  });
+  await k.reset(realm, "webauthn.attestationAllowSafetynet");
+  await k.mustSet(realm, "webauthn.attestationAndroidSoftwareKeys", true);
+  const software = await enrolOne({ fmt: function (c) {
+    return attKit.androidKey(c, google, "software-origin");
+  } }, ALL);
+  check("4C5. an android-key origin only the software list states is taken " +
+        "where webauthn.attestationAndroidSoftwareKeys says", function () {
+    assert.ok(accepted(software), JSON.stringify(software.done.json) + " " +
+              software.code);
+  });
+  await k.reset(realm, "webauthn.attestationAndroidSoftwareKeys");
+
+  log.info("=== 4D. the policy, by mode ===");
+  await k.reset(realm, "webauthn.attestationPolicy");
+  const devBad = await enrolOne({ fmt: function (c) {
+    return attKit.packed(c, vendorRoot, "signature");
+  } }, ALL);
+  const devRow = accepted(devBad) ? await keyRow(devBad.built.id) : null;
+  check("4D1. development's by-mode policy is off: a statement that does " +
+        "not verify is taken, and recorded as unverified", function () {
+    assert.ok(accepted(devBad), JSON.stringify(devBad.done.json));
+    assert.ok(devRow && devRow.attestation &&
+              devRow.attestation.verified !== true,
+              JSON.stringify(devRow).slice(0, 400));
+  });
+  await k.mustSet(realm, "webauthn.attestationPolicy", "require-trusted");
+  await portal.api("POST", "/account-api/keys", { action: "cancel" });
+  await portal.api("POST", "/account-api/keys",
+                   { action: "begin", kind: "security-key" });
+  const asking = await portal.api("GET", "/account-api/keys");
+  const pend = (asking.json && asking.json.enrol &&
+                asking.json.enrol.pending) || {};
+  await portal.api("POST", "/account-api/keys", { action: "cancel" });
+  check("4D2. a realm that requires a trusted statement ASKS for one: the " +
+        "ceremony's conveyance is direct", function () {
+    const opts = pend.options || pend.publicKey || {};
+    assert.strictEqual(opts.attestation, "direct",
+                       JSON.stringify(pend).slice(0, 600));
+  });
+  await k.reset(realm, "webauthn.attestationPolicy");
+  const set = await k.send("POST", k.root + "/admin-api/realms/set",
+    { id: realm.id, key: "global.mode", value: "product" });
+  assert.strictEqual(set.status, 200, set.raw.slice(0, 300));
+  const prodBad = await enrolOne({ fmt: function (c) {
+    return attKit.packed(c, vendorRoot, "signature");
+  } }, ALL);
+  check("4D3. product's by-mode policy verifies: the same statement is " +
+        "refused (STS-AUTHN-0233)", function () {
+    assert.ok(!accepted(prodBad), JSON.stringify(prodBad.done.json));
+    assert.strictEqual(prodBad.code, "STS-AUTHN-0233");
+  });
+  const before0103 = await k.codeCount(realm, "STS-CORE-0103");
+  const offWrite = await k.setting(realm, "webauthn.attestationPolicy",
+                                   "off");
+  const n0103 = await k.newCodes(realm, "STS-CORE-0103", before0103);
+  check("4D4. writing off in product is refused (STS-CORE-0103)",
+    function () {
+      assert.ok(offWrite.status === 400 ||
+                (offWrite.body && offWrite.body.ok === false),
+                offWrite.status + " " + offWrite.raw.slice(0, 300));
+      assert.ok(n0103 >= 1, "STS-CORE-0103 rows: " + n0103);
+    });
+  log.debug("Leaving attestationMatrix().");
+  return k;
 }
 
 const program = new Command();

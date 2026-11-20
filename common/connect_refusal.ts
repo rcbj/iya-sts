@@ -89,6 +89,7 @@ export = class ConnectRefusal {
   static answer(req: any, resOrSocket: any, label: string): void {
     log.debug("Entering ConnectRefusal.answer().");
     ConnectRefusal.record(req, label);
+    ConnectRefusal.audited(req, label);
     if (resOrSocket && typeof resOrSocket.writeHead === 'function') {
       errorCodes.mark(resOrSocket, 'STS-HTTP-0025');
       resOrSocket.writeHead(501, {
@@ -116,6 +117,42 @@ export = class ConnectRefusal {
                'X-Content-Type-Options: nosniff\r\n' +
                'Connection: close\r\n\r\n' + BODY);
     log.debug("Leaving ConnectRefusal.answer(). HTTP/1.1.");
+  }
+
+  /**
+   * Writes a refused CONNECT's audit row (2026-11-14, found by #444's D12):
+   * the refusal is made on the server's `connect` event, which no express
+   * middleware sees, so the call log never wrote one. Its log line is
+   * `record()`'s, counted, so the row's own line is suppressed.
+   *
+   * @param req - the request
+   * @param label - the listener
+   */
+  static audited(req: any, label: string): void {
+    log.debug("Entering ConnectRefusal.audited().");
+    // Required here, lazily: this module is loaded with the server, ahead of
+    // the stores the audit log writes to.
+    const audit = require('./audit');
+    const target = String((req && (req.authority || req.url)) || '');
+    let address = '';
+    try {
+      address = req ? String(require('./client_address')
+        .clientAddressOf(req) || '') : '';
+    } catch (e) {
+      // A CONNECT's request is not an express one; an address that cannot
+      // be read is left out rather than stopping the row.
+      log.debug("Caught in ConnectRefusal.audited(): " +
+                ((e && e.message) || e));
+      address = '';
+    }
+    audit.failure('STS-HTTP-0025', {
+      protocol: 'HTTP', channel: label, address: address,
+      target: target.slice(0, 200),
+      summary: 'A CONNECT on ' + label + ' was answered 501: this service ' +
+               'is not a proxy.',
+      outcome: 'refused', summarised: true
+    });
+    log.debug("Leaving ConnectRefusal.audited().");
   }
 
   /**

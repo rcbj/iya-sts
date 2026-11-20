@@ -185,6 +185,11 @@ function configureTenant(state, id, asked) {
     saml2Login: plain + "/saml2/login",
     saml2Acs: plain + "/saml2/acs",
     saml11Acs: plain + "/saml11/acs",
+    // The Browser/Artifact consumer, at a Location of its own: the identity
+    // provider answers the binding registered for the shire, so one
+    // address cannot be both (a Shibboleth SP's /SAML/POST and
+    // /SAML/Artifact).
+    saml11Artifact: plain + "/saml11/artifact",
     wsfedReply: plain + "/wsfed"
   };
   const samlAsked = body.saml || {};
@@ -290,6 +295,10 @@ async function route(state, request) {
     }
     if (rest === "saml11/acs") {
       log.debug("Leaving route(). SAML 1.1 ACS.");
+      return saml.saml11Acs(tenant, request.method, request.query, form);
+    }
+    if (rest === "saml11/artifact" && request.method === "GET") {
+      log.debug("Leaving route(). SAML 1.1 artifact consumer.");
       return saml.saml11Acs(tenant, request.method, request.query, form);
     }
     if (rest === "wsfed" && request.method === "POST") {

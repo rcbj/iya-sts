@@ -1,0 +1,21 @@
+{
+  "reauth.title": "Ihre Sitzung ist beendet.",
+  "reauth.text": "Melden Sie sich erneut an, um fortzufahren. Diese Seite und das, was Sie eingegeben haben, bleiben unverändert, und das, was Sie gedrückt haben, wird gesendet, sobald Sie zurück sind.",
+  "reauth.again": "Erneut anmelden",
+  "reauth.here": "Auf dieser Seite anmelden",
+  "reauth.hereInstead": "Stattdessen auf dieser Seite anmelden",
+  "reauth.noPopup": "Dieser Browser kann eine Anmeldung nicht aus einem anderen Fenster zurückgeben, daher melden Sie sich auf dieser Seite an.",
+  "reauth.finish": "Schließen Sie die Anmeldung in dem Fenster ab, das sich geöffnet hat.",
+  "otherPerson.waiting": "Eine andere Person hat sich angemeldet, daher wurde das, was auf dieser Seite wartete, nicht gesendet.",
+  "otherPerson.typed": "Eine andere Person hat sich angemeldet, daher wurde das, was zuvor auf dieser Seite eingegeben wurde, nicht wieder eingesetzt.",
+  "restored": "Sie sind wieder angemeldet. Was Sie auf dieser Seite eingegeben hatten, wurde wieder eingesetzt, und nichts wurde gesendet: Drücken Sie die Schaltfläche erneut, um es zu senden.",
+  "restored.unplaced": " {n, plural, one {{n} Wert konnte nicht wieder eingesetzt werden, weil die Seite keinen Platz mehr dafür hat.} other {{n} Werte konnten nicht wieder eingesetzt werden, weil die Seite keinen Platz mehr dafür hat.}}",
+  "signedInAgain": "Wieder angemeldet",
+  "signedInAgain.text": "Die Konsole macht dort weiter, wo Sie waren. Dieses Fenster kann geschlossen werden.",
+  "openConsole": "Die Konsole öffnen",
+  "copied": "Kopiert",
+  "accounts.unsaved": "Diese Seite hat Änderungen, die nicht gespeichert wurden. Trotzdem das Konto wechseln? Sie gehen verloren.",
+  "accounts.otherAccount": "Diese Anmeldung galt einem anderen Konto, daher hat dieser Tab sie nicht übernommen. Melden Sie sich erneut als {user} an, oder wechseln Sie das Konto über das Kontomenü.",
+  "accounts.refused.title": "Die Konsole öffnet sich für dieses Konto nicht",
+  "accounts.refused.text": "Die Verwaltungs-API hat mit {status} für das Konto geantwortet, mit dem dieser Tab angemeldet ist."
+}

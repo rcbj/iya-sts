@@ -33,6 +33,27 @@
 //     in RFC 9700 mode, turned on in this realm only, the old secret is refused
 //     `invalid_client` and the new one is accepted.
 //
+// D12 (#444): `chainRules()` carries over the chain rules
+// tests/application_credentials.js held through `pki.registerCertificate()`,
+// over `POST /admin-api/pki/upload-certificate` with hierarchies this job
+// builds, each refusal's code read off the realm's audit log: no PEM
+// (STS-PKI-0142); a self-signed leaf, naming oauthJwks, and an incomplete
+// chain naming the issuer nothing vouched for (STS-PKI-0147); a CA as the
+// leaf (STS-PKI-0144); a certificate off the path, by name (STS-PKI-0148);
+// a chain through an end-entity certificate, and one breaking a root's
+// pathLen 0 (STS-PKI-0151); an expired leaf (STS-PKI-0145); a 1024-bit RSA
+// key (STS-PKI-0146); Ed25519 and secp256k1 (ES256K) accepted for RFC 7523
+// and RFC 7522; the stored path in path order and the JWK's x5c, kid and
+// alg; another realm's leaf with its branch refused by the realm path check
+// (STS-PKI-0021); target=person naming nobody (STS-PKI-0109); a refused
+// upload changing nothing; a revoke clearing the provenance; a provenance
+// nothing produces (STS-REG-0060); and a secret written through the generic
+// set quoted in neither the reply nor the audit log. Its paranoid-mode
+// upload (a process-wide setting) and the pinned management client
+// (STS-REG-0061, the default realm's own client) stay in process (d).
+// The application and the second realm it adds are removed at its end only
+// when STS_TEST_REMOVE_REALMS=1.
+//
 // `local: true`, on `tests/CLAUDE.md`'s first question: the thing under test is
 // a control on this repository's own console and its `/admin-api` operation,
 // and the assertion spans that door and `/oauth2/token`.
@@ -276,6 +297,361 @@ async function externalHierarchy() {
            leafPrivatePem: leafPair.privatePem };
 }
 
+// A certificate this job's own authority signs. `issuer` is the signer's
+// { certificatePem, privateKeyPem, keyAlg }, or a key pair alone for a
+// self-signed one.
+async function certificate(cn, publicPem, issuer, options) {
+  log.debug("Entering certificate(). " + cn);
+  const opts = options || {};
+  const extensions = Object.assign({}, opts.extensions || {
+    basicConstraints: { present: true, critical: true, ca: false },
+    keyUsage: { present: true, critical: true,
+                usages: ["digitalSignature"] }
+  });
+  const list = issuer.certificatePem ? LISTS[issuer.certificatePem] : null;
+  if (list) {
+    extensions.cRLDistributionPoints = { present: true, critical: false,
+                                         urls: [list] };
+  }
+  const made = await x509.issueCertificate(Object.assign({
+    subject: [{ name: "CN", value: cn }],
+    subjectPublicKey: publicPem,
+    signatureAlg: issuer.keyAlg === "ec-p256" ? "sha256-ecdsa"
+                                               : "sha256-rsa",
+    profile: opts.profile || "digital-signature",
+    issuer: issuer,
+    extensions: extensions
+  }, opts.validity || {}));
+  log.debug("Leaving certificate().");
+  return made.pem;
+}
+
+// THE LIST EACH OF SECTION 6'S AUTHORITIES PUBLISHES (run #300), keyed by
+// the authority's certificate: a certificate `certificate()` issues under
+// one names it. Product refuses, under hard-fail and
+// pki.revocationRequireDistributionPoint=auto, a foreign certificate naming
+// no list — nobody could ever revoke it — which is not the rule section 6
+// asks about, so its authorities publish an empty list as
+// externalHierarchy()'s do (#174).
+const LISTS = {};
+
+async function publishesAList(pem, privateKeyPem, label) {
+  log.debug("Entering publishesAList(). " + label);
+  const list = await require("./test_crl_host.js").reserve(label);
+  await list.publish({ pem: pem, privateKeyPem: privateKeyPem });
+  LISTS[pem] = list.url;
+  log.debug("Leaving publishesAList().");
+}
+
+function caExtensions(pathLen, usages) {
+  log.debug("Entering caExtensions().");
+  log.debug("Leaving caExtensions().");
+  return {
+    basicConstraints: { present: true, critical: true, ca: true,
+                        pathLen: pathLen },
+    keyUsage: { present: true, critical: true,
+                usages: usages || ["keyCertSign", "cRLSign"] }
+  };
+}
+
+function spki(keyObject) {
+  log.debug("Entering spki().");
+  log.debug("Leaving spki().");
+  return keyObject.export({ type: "spki", format: "pem" });
+}
+
+async function codeRows(code) {
+  log.debug("Entering codeRows(). " + code);
+  const r = await get(realmApi + "/audit?per=500&code=" +
+                      encodeURIComponent(code));
+  log.debug("Leaving codeRows().");
+  return ((r.body && r.body.events) || []).length;
+}
+
+// An upload, and whether the realm's audit log gained a row carrying
+// `code` (a code is never sent).
+async function upload(body, code) {
+  log.debug("Entering upload(). " + (code || "accepted"));
+  const before = code ? await codeRows(code) : 0;
+  const r = await post(realmApi + "/pki/upload-certificate", body);
+  let recorded = !code;
+  for (let i = 0; code && i < 20 && !recorded; i += 1) {
+    recorded = (await codeRows(code)) > before;
+    if (!recorded) {
+      await new Promise(function (resolve) { setTimeout(resolve, 100); });
+    }
+  }
+  r.recorded = recorded;
+  r.said = ((r.body && r.body.errors) || []).join(" ") ||
+           String((r.body && r.body.why) || "");
+  log.debug("Leaving upload(). " + r.status);
+  return r;
+}
+
+async function chainRules() {
+  log.debug("Entering chainRules().");
+  log.info("=== 6. the chain rules (tests/application_credentials.js) ===");
+  const APP = "appcreds-chains";
+  await ok(realmApi + "/applications/create",
+           { identifier: APP, protocols: ["oauth2"],
+             fields: { oauthClientId: APP,
+                       oauthClientSecret: APP + "-typed-secret" } },
+           "created the application the chains are uploaded to");
+  const rootPair = await keys.generateKeyPair("rsa-2048");
+  const rootSigner = { privateKeyPem: rootPair.privatePem,
+                       keyAlg: "rsa-2048" };
+  const rootPem = await certificate("Chains Foreign Root",
+    rootPair.publicPem, rootSigner,
+    { profile: "root-ca", extensions: caExtensions(null) });
+  await publishesAList(rootPem, rootPair.privatePem, "chains-root");
+  const interPair = await keys.generateKeyPair("rsa-2048");
+  const interPem = await certificate("Chains Foreign Intermediate",
+    interPair.publicPem,
+    Object.assign({ certificatePem: rootPem }, rootSigner),
+    { profile: "intermediate-ca", extensions: caExtensions(0) });
+  await publishesAList(interPem, interPair.privatePem,
+                       "chains-intermediate");
+  const interSigner = { certificatePem: interPem,
+                        privateKeyPem: interPair.privatePem,
+                        keyAlg: "rsa-2048" };
+  const leafPair = await keys.generateKeyPair("ec-p256");
+  const leafPem = await certificate("chains-leaf", leafPair.publicPem,
+                                    interSigner);
+  const jwt = function (certificatePem, chain, extra) {
+    return Object.assign({ identifier: APP, purpose: "jwt",
+                           certificate: certificatePem, chain: chain || "" },
+                         extra || {});
+  };
+
+  const nothing = await upload(jwt("not a certificate"), "STS-PKI-0142");
+  check("text with no PEM certificate in it is refused (STS-PKI-0142)",
+        function () {
+    assert.ok(nothing.status === 400 && nothing.recorded, nothing.said);
+  });
+  const selfPair = await keys.generateKeyPair("ec-p256");
+  const selfLeaf = await certificate("chains-self-signed",
+    selfPair.publicPem, { privateKeyPem: selfPair.privatePem,
+                          keyAlg: "ec-p256" });
+  const selfSigned = await upload(jwt(selfLeaf), "STS-PKI-0147");
+  check("a self-signed leaf is refused (STS-PKI-0147), naming the attribute " +
+        "that registers a key by value", function () {
+    assert.ok(selfSigned.status === 400 && selfSigned.recorded,
+              selfSigned.said);
+    assert.ok(/oauthJwks/.test(selfSigned.said), selfSigned.said);
+  });
+  const caAsLeaf = await upload(jwt(interPem, rootPem), "STS-PKI-0144");
+  check("a certificate authority uploaded as the leaf is refused " +
+        "(STS-PKI-0144)", function () {
+    assert.ok(caAsLeaf.status === 400 && caAsLeaf.recorded, caAsLeaf.said);
+  });
+  const alone = await upload(jwt(leafPem), "STS-PKI-0147");
+  check("an external leaf alone is an incomplete chain (STS-PKI-0147), " +
+        "naming the issuer nothing vouched for", function () {
+    assert.ok(alone.status === 400 && alone.recorded, alone.said);
+    assert.ok(/Chains Foreign Intermediate/.test(alone.said), alone.said);
+  });
+  const strayPair = await keys.generateKeyPair("rsa-2048");
+  const stray = await certificate("chains-unrelated", strayPair.publicPem,
+    { privateKeyPem: strayPair.privatePem, keyAlg: "rsa-2048" },
+    { profile: "root-ca", extensions: caExtensions(null) });
+  const extra = await upload(jwt(leafPem, interPem + rootPem + stray),
+                             "STS-PKI-0148");
+  check("a certificate not on the path is refused by name (STS-PKI-0148)",
+        function () {
+    assert.ok(extra.status === 400 && extra.recorded, extra.said);
+    assert.ok(/chains-unrelated/.test(extra.said), extra.said);
+  });
+
+  const eePair = await keys.generateKeyPair("rsa-2048");
+  const endEntity = await certificate("Chains End Entity As Issuer",
+    eePair.publicPem, Object.assign({ certificatePem: rootPem }, rootSigner),
+    { extensions: {
+      basicConstraints: { present: true, critical: true, ca: false },
+      keyUsage: { present: true, critical: true,
+                  usages: ["digitalSignature", "keyCertSign"] } } });
+  const underEe = await certificate("chains-under-end-entity",
+    leafPair.publicPem, { certificatePem: endEntity,
+                          privateKeyPem: eePair.privatePem,
+                          keyAlg: "rsa-2048" });
+  const throughEe = await upload(jwt(underEe, endEntity + rootPem),
+                                 "STS-PKI-0151");
+  check("a chain through an end-entity certificate is refused " +
+        "(STS-PKI-0151), though every signature verifies", function () {
+    assert.ok(throughEe.status === 400 && throughEe.recorded,
+              throughEe.said);
+    assert.ok(/End Entity As Issuer/.test(throughEe.said), throughEe.said);
+  });
+  const tightPair = await keys.generateKeyPair("rsa-2048");
+  const tightSigner = { privateKeyPem: tightPair.privatePem,
+                        keyAlg: "rsa-2048" };
+  const tightRoot = await certificate("Chains Tight Root",
+    tightPair.publicPem, tightSigner,
+    { profile: "root-ca", extensions: caExtensions(0) });
+  const tightInter = await certificate("Chains Tight Intermediate",
+    interPair.publicPem,
+    Object.assign({ certificatePem: tightRoot }, tightSigner),
+    { profile: "intermediate-ca", extensions: caExtensions(0) });
+  const tightLeaf = await certificate("chains-tight-leaf",
+    leafPair.publicPem, { certificatePem: tightInter,
+                          privateKeyPem: interPair.privatePem,
+                          keyAlg: "rsa-2048" });
+  const tooDeep = await upload(jwt(tightLeaf, tightInter + tightRoot),
+                               "STS-PKI-0151");
+  check("a root whose pathLen is 0 cannot have an intermediate below it " +
+        "(STS-PKI-0151)", function () {
+    assert.ok(tooDeep.status === 400 && tooDeep.recorded, tooDeep.said);
+    assert.ok(/Tight Root/.test(tooDeep.said), tooDeep.said);
+  });
+  const expiredPem = await certificate("chains-expired", leafPair.publicPem,
+    interSigner, { validity: {
+      notBefore: new Date(Date.now() - 3 * 86400000).toISOString(),
+      notAfter: new Date(Date.now() - 86400000).toISOString() } });
+  const expired = await upload(jwt(expiredPem, interPem + rootPem),
+                               "STS-PKI-0145");
+  check("an expired leaf is refused (STS-PKI-0145)", function () {
+    assert.ok(expired.status === 400 && expired.recorded, expired.said);
+  });
+  const shortRsa = nodeCrypto.generateKeyPairSync("rsa",
+                                                  { modulusLength: 1024 });
+  const shortLeaf = await certificate("chains-short-rsa",
+    spki(shortRsa.publicKey), interSigner);
+  const short = await upload(jwt(shortLeaf, interPem + rootPem),
+                             "STS-PKI-0146");
+  check("a 1024-bit RSA key is refused (STS-PKI-0146)", function () {
+    assert.ok(short.status === 400 && short.recorded, short.said);
+  });
+  const ed = nodeCrypto.generateKeyPairSync("ed25519");
+  const edLeaf = await certificate("chains-ed25519", spki(ed.publicKey),
+                                   interSigner);
+  const k1 = nodeCrypto.generateKeyPairSync("ec",
+                                            { namedCurve: "secp256k1" });
+  const k1Leaf = await certificate("chains-secp256k1", spki(k1.publicKey),
+                                   interSigner);
+  const edJwt = await upload(jwt(edLeaf, interPem + rootPem));
+  const edSaml = await upload(jwt(edLeaf, interPem + rootPem,
+                                  { purpose: "saml" }));
+  const k1Jwt = await upload(jwt(k1Leaf, interPem + rootPem));
+  const k1Saml = await upload(jwt(k1Leaf, interPem + rootPem,
+                                  { purpose: "saml" }));
+  check("an Ed25519 key is accepted for RFC 7523 and RFC 7522", function () {
+    assert.strictEqual(edJwt.status, 200, edJwt.said);
+    assert.strictEqual(edSaml.status, 200, edSaml.said);
+  });
+  const k1Keys = JSON.parse((await applicationView(APP)).fields
+    .oauthAssertionJwks || "{}").keys || [];
+  check("a secp256k1 key is ES256K for RFC 7523 and accepted for RFC 7522",
+        function () {
+    assert.strictEqual(k1Jwt.status, 200, k1Jwt.said);
+    assert.strictEqual((k1Keys[0] || {}).alg, "ES256K",
+                       JSON.stringify(k1Keys).slice(0, 300));
+    assert.strictEqual(k1Saml.status, 200, k1Saml.said);
+  });
+
+  const external = await upload(jwt(leafPem, rootPem + "\n" + interPem));
+  const view = await applicationView(APP);
+  const pair = keyPairOf(view, "jwt");
+  const jwks = JSON.parse(view.fields.oauthAssertionJwks || "{}");
+  const jwk = (jwks.keys || [])[0] || {};
+  check("a full external chain pasted root-first is accepted, its path " +
+        "stored in path order", function () {
+    assert.strictEqual(external.status, 200, external.said);
+    assert.strictEqual(pair.source, "uploaded-external-ca");
+    assert.strictEqual(pair.privateKeyHeld, false);
+    assert.deepStrictEqual((pair.chain || []).map(function (one) {
+      return one.subject;
+    }), ["CN=Chains Foreign Intermediate", "CN=Chains Foreign Root"]);
+  });
+  check("its JWK is public, names the curve's alg, carries the whole path " +
+        "in x5c and an application kid", function () {
+    assert.ok(/^app-/.test(jwk.kid || ""), JSON.stringify(jwk).slice(0, 200));
+    assert.strictEqual(jwk.alg, "ES256");
+    assert.strictEqual((jwk.x5c || []).length, 3);
+    assert.ok(!jwk.d, "a private member in the JWK");
+    assert.strictEqual(view.fields.oauthAssertionKid, jwk.kid);
+  });
+  const refusedWrite = await upload(jwt(leafPem), "STS-PKI-0147");
+  const afterRefusal = keyPairOf(await applicationView(APP), "jwt");
+  check("a refused upload changes nothing on the entry", function () {
+    assert.strictEqual(refusedWrite.status, 400, refusedWrite.said);
+    assert.strictEqual(afterRefusal.source, "uploaded-external-ca");
+    assert.strictEqual(afterRefusal.handle, jwk.kid);
+  });
+  const person = await upload(jwt(leafPem, interPem + rootPem,
+                                  { target: "person" }), "STS-PKI-0109");
+  check("target=person looks the name up among people, where an " +
+        "application's identifier is nobody (STS-PKI-0109)", function () {
+    assert.ok(person.status === 400 && person.recorded, person.said);
+  });
+
+  const OTHER = (REALM.slice(0, 24) + "-other").slice(0, 31);
+  const otherApi = base + "/realm/" + OTHER + "/admin-api";
+  await ok(api + "/realms/create", { id: OTHER,
+    domain: OTHER + ".example.net", name: "Application credentials (other)" },
+    "created a second realm");
+  await ok(otherApi + "/pki/build", { organisation: "Chains Other" },
+           "built its certificate authority");
+  await ok(otherApi + "/applications/create", { identifier: APP,
+    protocols: ["oauth2"], fields: { oauthClientId: APP } },
+    "created the same application there");
+  await ok(otherApi + "/pki/issue", { identifier: APP, purpose: "jwt" },
+           "issued it a key pair there");
+  const otherFields = (await get(otherApi + "/applications?application=" +
+                                 encodeURIComponent(APP))).body.fields;
+  const otherUpload = await upload(jwt(otherFields.oauthAssertionCertificate,
+    otherFields.oauthAssertionCertificateChain), "STS-PKI-0021");
+  check("another realm's leaf, uploaded with its branch, is refused by the " +
+        "realm path check (STS-PKI-0021)", function () {
+    assert.ok(otherUpload.status === 400 && otherUpload.recorded,
+              otherUpload.said);
+  });
+
+  await ok(realmApi + "/pki/revoke", { identifier: APP, purpose: "jwt" },
+           "took the key pair off");
+  const taken = await applicationView(APP);
+  check("taking the key pair off clears the provenance with it",
+        function () {
+    assert.ok(!taken.fields.oauthAssertionKeySource,
+              String(taken.fields.oauthAssertionKeySource));
+  });
+  const before = await codeRows("STS-REG-0060");
+  const bogus = await post(realmApi + "/applications/set", { application: APP,
+    attribute: "oauthAssertionKeySource", value: "trust-me" });
+  let bogusRecorded = false;
+  for (let i = 0; i < 20 && !bogusRecorded; i += 1) {
+    bogusRecorded = (await codeRows("STS-REG-0060")) > before;
+    if (!bogusRecorded) {
+      await new Promise(function (resolve) { setTimeout(resolve, 100); });
+    }
+  }
+  check("a provenance nothing in this service produces is refused " +
+        "(STS-REG-0060)", function () {
+    assert.strictEqual(bogus.status, 400, JSON.stringify(bogus.body));
+    assert.ok(bogusRecorded, "no STS-REG-0060 row");
+  });
+  const TYPED = APP + "-second-typed-secret";
+  const typed = await ok(realmApi + "/applications/set", { application: APP,
+    attribute: "oauthClientSecret", value: TYPED }, "set a secret");
+  const auditText = (await get(realmApi + "/audit?per=500")).raw;
+  // The reply's MESSAGE, as in process. The reply's `application` member
+  // still carries the entry, its stored secret record with it (reported
+  // to #444 as a Node defect, not asserted either way here).
+  check("a secret written through the generic set is quoted in neither " +
+        "the reply's message nor the audit log", function () {
+    assert.ok(String(typed.message).indexOf(TYPED) < 0,
+              String(typed.message));
+    assert.ok(auditText.indexOf(TYPED) < 0, "the secret is in the audit log");
+  });
+  // What this section added goes again only when STS_TEST_REMOVE_REALMS=1:
+  // a suite run keeps its realms (tests/CLAUDE.md, *No job removes a
+  // realm*); a private probe shared with other runs asks for them gone.
+  if (process.env.STS_TEST_REMOVE_REALMS === "1") {
+    await post(realmApi + "/applications/forget", { application: APP });
+    await post(api + "/realms/remove", { id: OTHER });
+    log.info("removed the application " + APP + " and the realm " + OTHER);
+  }
+  log.debug("Leaving chainRules().");
+}
+
 async function test() {
   log.debug("Entering test().");
   log.info("Driving " + base + " in the trust realm \"" + REALM + "\".");
@@ -517,6 +893,8 @@ async function test() {
         function () {
           assert.strictEqual(unknown.status, 400);
         });
+
+  await chainRules();
 
   assert.ok(checks >= 18,
     "only " + checks + " checks ran; a section has stopped being called.");

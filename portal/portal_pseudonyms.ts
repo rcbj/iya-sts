@@ -31,6 +31,8 @@ import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
+type AccountAnswering<K extends keyof IyaApi.Account.Operations> =
+  import('../types/account-api').AccountAnswering<K>;
 type AccountContext = import('../types/account-api').AccountContext;
 type AccountCaller = import('../types/account-api').AccountCaller;
 
@@ -182,7 +184,8 @@ class PortalPseudonyms {
    * @param body - the checked body
    * @returns nothing
    */
-  async post(ctx: AccountContext, req: Json, res: Json,
+  async post(ctx: AccountContext, req: Json,
+             res: AccountAnswering<'postPseudonyms'>,
              caller: AccountCaller, body: Json): Promise<unknown> {
     const { log, mail } = this.deps;
     const { errorCodes, websecurity } = ctx;
@@ -281,7 +284,9 @@ class PortalPseudonyms {
    * @param spend - true for the POST
    * @returns nothing
    */
-  async verify(ctx: AccountContext, req: Json, res: Json, link: Json,
+  async verify(ctx: AccountContext, req: Json,
+               res: AccountAnswering<'getPseudonymVerification' |
+                 'verifyPseudonym'>, link: Json,
                spend: boolean): Promise<unknown> {
     const { log } = this.deps;
     const { errorCodes, websecurity } = ctx;
@@ -347,7 +352,7 @@ class PortalPseudonyms {
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/pseudonyms',
         operationId: 'getPseudonyms', access: 'person', query: ModelZod.query('account', 'getPseudonyms'),
-        handler: function (req: Json, res: Json,
+        handler: function (req, res,
                            caller: AccountCaller): unknown {
           const view = self.listView(caller.username);
           if (!view) {
@@ -358,23 +363,23 @@ class PortalPseudonyms {
         } },
       { method: 'POST', path: ctx.BASE + '/pseudonyms',
         operationId: 'postPseudonyms', access: 'person', body: FORM,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return self.post(ctx, req, res, caller, input.body);
         } },
       { method: 'GET', path: ctx.BASE + '/verify-pseudonym',
         operationId: 'getPseudonymVerification', access: 'link',
         query: LINK_QUERY,
-        handler: function (req: Json, res: Json, caller: Json,
-                           input: Json): unknown {
+        handler: function (req, res, caller,
+                           input): unknown {
           return self.verify(ctx, req, res, Object.assign({}, input.query,
             { token: String(req.headers['x-link-token'] || '') }), false);
         } },
       { method: 'POST', path: ctx.BASE + '/verify-pseudonym',
         operationId: 'verifyPseudonym', access: 'link',
         body: LINK,
-        handler: function (req: Json, res: Json, caller: Json,
-                           input: Json): unknown {
+        handler: function (req, res, caller,
+                           input): unknown {
           return self.verify(ctx, req, res, input.body, true);
         } }
     ];

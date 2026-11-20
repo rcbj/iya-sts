@@ -29,6 +29,10 @@
 //     as PostgreSQL's is: build the schema once with `mariadb/schema.sql`.
 //     (`CREATE … IF NOT EXISTS` on an object that exists is ALSO refused to
 //     such a role on MariaDB 11.8, which is why existence is asked first.)
+//   * AN INDEX THE MODEL MARKS `online` (#882) is left to the driver when
+//     it asks (`open()`'s third argument): it is built in place in the
+//     background (`online_indexes.js`), so an account that may not alter
+//     `sts_sessions` still starts.
 //   * NOTHING OLDER IS BROUGHT FORWARD: every MariaDB store is built at its
 //     schema version (`mariadb/CLAUDE.md`), so there are no columns, upgrades
 //     or storage parameters to apply, and no triggers — the driver keeps the
@@ -126,9 +130,14 @@ function checkChangeLogDense(pool, log) {
  *
  * @param pool - the store's pool (a StorePool on the mariadb engine)
  * @param log - the driver's logger
+ * @param online - when given, an array this open fills with the missing
+ *   objects the model marks `online` (#882), which it then does NOT
+ *   create: the driver builds them in place in the background
+ *   (`online_indexes.js`), so a role that may not alter the table still
+ *   starts. Left out, every missing object is created here, as before.
  * @returns a promise of the names this process created
  */
-function open(pool, log) {
+function open(pool, log, online) {
   log.debug("Entering open() (MariaDB).");
   const created = [];
   log.debug("Leaving open() (MariaDB).");
@@ -145,11 +154,20 @@ function open(pool, log) {
     const indexes = new Set((answers[1].rows || []).map(function (row) {
       return String(row.tbl) + '.' + String(row.name);
     }));
-    const missing = schemaMariadb.SCHEMA_OBJECTS.filter(function (object) {
+    const absent = schemaMariadb.SCHEMA_OBJECTS.filter(function (object) {
       if (/^CREATE TABLE/i.test(object.statement)) {
         return !tables.has(object.name);
       }
       return !indexes.has(indexTable(object.statement) + '.' + object.name);
+    });
+    // AN ONLINE INDEX IS THE DRIVER'S TO BUILD, after this open (#882).
+    const deferred = Array.isArray(online);
+    const missing = absent.filter(function (object) {
+      if (deferred && object.online === true) {
+        online.push(object);
+        return false;
+      }
+      return true;
     });
     if (!missing.length) {
       log.debug('open() (MariaDB): every object in the schema is present; ' +

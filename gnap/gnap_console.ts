@@ -585,8 +585,8 @@ class GnapConsole {
               'server')
           : 'client',
         registered: !!app.registered,
-        finishUris: grants.fieldValues(app, 'gnapFinishUri'),
-        webApplication: grants.fieldValues(app, 'gnapFinishUri').length > 0,
+        finishUris: grants.fieldValues(app, 'finishUri'),
+        webApplication: grants.fieldValues(app, 'finishUri').length > 0,
         grantsHeld: { total: mine.length,
                       pending: mine.filter(function (g) {
                         return g.state === 'pending';

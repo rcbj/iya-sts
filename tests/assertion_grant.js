@@ -349,6 +349,22 @@ async function run(t) {
           'and the encryption is REPORTED, so the console and the delegation ' +
           'register can say the assertion arrived encrypted');
 
+  // TO THE REALM'S `use: enc` KEYS (2026-11-14, #444's D12): RFC 7517
+  // section 4.2 says a sender encrypts to the key marked `enc`, and only the
+  // signing keys used to be tried. Both families, named by their kid.
+  const encKeys = require('../common/helpers').requestObjectKeysFor();
+  for (const pair of [['RSA-OAEP-256', encKeys.rsa],
+                      ['ECDH-ES+A256KW', encKeys.ec]]) {
+    const toEnc = stsCrypto.encryptJweCompact(inner, {
+      alg: pair[0], enc: 'A256GCM', cty: 'JWT',
+      jwk: pair[1].publicJwk });
+    const openedEnc = await assertionGrant.unwrapAssertion(toEnc, {});
+    t.check(openedEnc.ok && openedEnc.jws === inner,
+            'an assertion encrypted ' + pair[0] + ' to the realm\'s use:enc ' +
+            'key ' + pair[1].publicJwk.kid + ' is decrypted',
+            openedEnc.description || '');
+  }
+
   const plain = await assertionGrant.unwrapAssertion(inner, {});
   t.check(plain.ok && !plain.encrypted && plain.jws === inner,
           'a THREE-part assertion comes back untouched — every client that ' +

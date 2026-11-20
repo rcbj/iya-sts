@@ -222,7 +222,8 @@ function body(t) {
       .userDetailJson({ query: {}, headers: {} }, 'nsso-alice').json.page.mfa));
   const ctxOf = require('../admin-ui/web_kit').context;
   const drawn = UsersPage.mfaSection(ctxOf({}, true).t,
-    { name: 'nsso-alice' }, 'nsso-alice', { write: true }, '', mfaData);
+    { name: 'nsso-alice' }, 'nsso-alice', { write: true }, '', mfaData)
+    .factors;
   t.check(/<h3>Devices<\/h3>/.test(drawn) &&
           /value="remove-device"/.test(drawn) &&
           drawn.indexOf(second.device.id) >= 0,

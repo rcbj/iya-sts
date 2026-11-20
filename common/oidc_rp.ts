@@ -395,12 +395,10 @@ const SURFACES: Record<SurfaceId, Surface> = {
   // and the roster that decides who may use the debugger is the default
   // realm's.
   //
-  // THE FOURTH SCOPE IS THE DEBUGGER API'S PERMISSION, written out here for
-  // the reason `applications.js` writes it out — this library is read by
-  // every hosted surface and must not depend on a feature directory — and
-  // compared with `debugger/debugger_access.ts` by `tests/debugger_access.js`.
-  // The authorization server takes it off the grant for anybody who is not a
-  // console administrator, and the debugger's gate reports that.
+  // THE SAME FOUR SCOPES AS THE OTHER SURFACES (#1717, 2026-11-13). There
+  // was a fifth, the separate debugger api's permission, which the debugger's
+  // gate checked the session's access token for; the UI and its api are one
+  // client now, and the gate asks who the session's person is instead.
   debugger: {
     id: 'debugger',
     clientId: 'sts-debugger-ui',
@@ -409,8 +407,7 @@ const SURFACES: Record<SurfaceId, Surface> = {
     cookie: 'sts_debugger',
     flowRealm: 'default',
     sessionRealm: 'default',
-    scopes: ['openid', 'profile', 'email', 'offline_access',
-             'urn:sts:debugger-api:debugger']
+    scopes: ['openid', 'profile', 'email', 'offline_access']
   }
 };
 
@@ -2936,7 +2933,10 @@ class OidcRelyingParty {
       // for this redemption becomes the key the session keeps (#34).
       const tokens = self.tokensFrom(tokenAnswer.json, claims, parentRealm,
                                      host, { dpop: dpop });
-      const refreshTtlS = Number(applications.settingFor(
+      // #825: the three hosted session clients take the shorter of their
+      // own refresh lifetime and the realm. The debugger is not one of
+      // them, so this stays the client's own setting for that surface.
+      const refreshTtlS = Number(applications.hostedEffective(
         surface.clientId, 'oauth2.refreshTokenTtlS', config));
       const renewableUntil = tokens.refreshToken && isFinite(refreshTtlS) &&
                              refreshTtlS > 0

@@ -17,7 +17,7 @@ namespace IyaSts.Directory;
   container: "",
   ownContainer: true,
   authored: true,
-  section: "docs/ldap-schema.md Operational attributes",
+  section: "docs/v1.1.0/ldap-schema.md Operational attributes",
   note: "Returned or computed for an entry. Not a container.",
   objectClasses: #[]
 })
@@ -30,8 +30,8 @@ model Operational {
   modifyTimestamp?: string;
   @attr(#{what: "RFC 5020. Computed at search time."})
   entryDN?: string;
-  @attr(#{what: "The losing entryUUID of a two-process create race."})
+  @attr(#{kind: "multi", what: "The losing entryUUID of a two-process create race."})
   stsEntryUuidAlias?: (string)[];
-  @attr(#{what: "A person's groups, derived from member. Never stored."})
+  @attr(#{kind: "multi", what: "A person's groups, derived from member. Never stored."})
   memberOf?: (DirectoryDn)[];
 }

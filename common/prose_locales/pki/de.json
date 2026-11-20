@@ -1,0 +1,138 @@
+{
+  "pki.tiers.root.what": {
+    "en": "d3b9a79ec853e6d9",
+    "text": "Der Vertrauensanker. Selbstsigniert, der langlebigste der drei und das einzige Zertifikat in der Hierarchie, das einer vertrauenden Seite auf anderem Weg übergeben werden muss — alles darunter wird in der Kette mitgeführt."
+  },
+  "pki.tiers.intermediate.what": {
+    "en": "064ff6bd043cbe53",
+    "text": "Vom Root signiert. Es existiert, damit der Schlüssel des Root einmal verwendet und dann in Ruhe gelassen werden kann: eine Kompromittierung hier wird behoben, indem diese Stufe neu ausgestellt wird, und eine Kompromittierung des Root wird überhaupt nicht behoben. pathLen ist 1, daher darf es eine weitere CA signieren und nicht tiefer."
+  },
+  "pki.tiers.issuing.what": {
+    "en": "d7dedc1376dafa20",
+    "text": "Von der Intermediate signiert, und die einzige Stufe, die etwas signiert, das dieser Dienst ausgibt. pathLen ist 0 — sie signiert BLÄTTER und keine weitere CA, und genau das macht \"ein Anwendungszertifikat kann nicht dazu verwendet werden, ein weiteres zu prägen\" zu einer Eigenschaft der Kodierung und nicht der Umgangsformen dieses Dienstes."
+  },
+  "pki.useCases.jose.what": {
+    "en": "ec6f7e78016f2a84",
+    "text": "Die Schlüssel, mit denen dieser Vertrauensbereich JWTs signiert — der RSA-Schlüssel hinter RS256, die vier ECDSA-Kurven, beide Edwards-Kurven und die elf Post-Quantum-Schlüssel, sobald sie erzeugt werden. Das, wogegen ein Client /oauth2/jwks prüft."
+  },
+  "pki.useCases.xml.what": {
+    "en": "465884d059de6f91",
+    "text": "Was ein XML-Dokument signiert: Assertionen und Antworten von SAML 2.0 und 1.1, WS-Federation, WS-Trust und die Metadaten je Dienstanbieter. Es ist eine GETRENNTE Stelle gegenüber der oben, auch wenn heute ein RSA-Schlüssel beide Aufgaben erledigt — eine vertrauende Seite, die diesem Dienst für SAML vertraut, hat damit nichts über seine OAuth-Token gesagt, und zwei ausstellende CAs sind die Art, das auszusprechen."
+  },
+  "pki.useCases.assertions.what": {
+    "en": "d6943f0dbaa03982",
+    "text": "Die Signierschlüsselpaare, die an ANWENDUNGEN für RFC 7521 und RFC 7523 ausgegeben werden — eine Client-Assertion oder ein JWT-Bearer-Authorization-Grant. Das ist die ausstellende CA, die dieses Modul hatte, bevor die Hierarchie die übrigen bekam, unter einem Namen, der sagt, welche der fünf sie ist."
+  },
+  "pki.useCases.tls.what": {
+    "en": "e7f68465ad94a1a4",
+    "text": "Das Zertifikat, das auf LDAPS 636 ausgeliefert wird, auf dem Hauptport, wenn global.https eingeschaltet ist, und auf dem Listener des eingebetteten Debuggers — die Listener auf 8443 und 9443, nach denen dieser Anwendungsfall noch benannt ist, wurden am 2026-09-16 gelöscht. PROZESSWEIT, weil es diese Sockets sind: ein Zertifikat antwortet für jeden Vertrauensbereich, sodass eine Intermediate eines Vertrauensbereichs, die es signiert, einen Vertrauensbereich für die Haustür jedes anderen Vertrauensbereichs bürgen ließe."
+  },
+  "pki.useCases.cell.what": {
+    "en": "6ea9ce404b74101b",
+    "text": "Die Zertifikate, die sich die Knoten eines als Zellen betriebenen Dienstes auf dem Kanal zwischen den Zellen (cells.port) gegenseitig vorlegen, als Server und als Client, wobei jeder seine Zelle in einem subjectAltName urn:sts:cell: nennt. Kurzlebig, von jedem Knoten neu geprägt und niemals aufgezeichnet. Ein Peer wird nur mit einem Blatt dieser Stelle akzeptiert. Im Einzelzellenmodus unbenutzt."
+  },
+  "pki.useCases.spiffe.what": {
+    "en": "980d1687ef429d40",
+    "text": "Die X.509-Stelle, von der jedes in diesem Vertrauensbereich geprägte X509-SVID signiert wird. Seit dem 2026-09-11 BEREICHSWEIT — zuvor lag sie unter der Intermediate des Prozesses, selbstsigniert und ganz außerhalb dieses Baums. Der VertrauensANKER bleibt von der Verschiebung unberührt, und das ist der Sinn: das Bundle veröffentlicht den Root des Dienstes, den jeder Vertrauensbereich teilt, sodass ein SVID, das die Stelle eines beliebigen Vertrauensbereichs signiert hat, gegen einen Anker geprüft wird, während seine Kette weiterhin sagt, welcher Vertrauensbereich es ausgestellt hat."
+  },
+  "pki.useCases.pep-tls.what": {
+    "en": "2cc1533100cf8089",
+    "text": "Die Zertifikate, die ein entfernter XACML Policy Enforcement Point auf seinem HTTPS-Listener ausliefert. BEREICHSWEIT, weil sich ein entfernter PEP bei einem Vertrauensbereich registriert und die Richtlinie dieses Vertrauensbereichs durchsetzt, sodass die Stelle, die für seine Haustür bürgt, die dieses Vertrauensbereichs ist. Ausgegeben an einen REGISTRIERTEN PEP über /admin/xacml/peps oder POST /admin-api/xacml/issue-pep-certificate; der private Schlüssel wird einmal übergeben, und dieser Dienst behält keine Kopie."
+  },
+  "pki.useCases.realm-tls.what": {
+    "en": "fc795fc96445b5c0",
+    "text": "Die Zertifikate, die ein benutzerdefinierter HTTPS-Listener vorlegt (#472: listeners.custom für die des Dienstes, listeners.realm für die eines Vertrauensbereichs), wenn seine Definition keine Zertifikatsdateien nennt, für seine Hostnamen. BEREICHSWEIT, weil ein Listener zu einem Vertrauensbereich gehört — zum Standard-Vertrauensbereich bei denen des Dienstes. Eines je Listener und Knoten; der private Schlüssel verlässt niemals den Knoten, der ihn ausliefert."
+  },
+  "pki.useCases.kdc.what": {
+    "en": "6c38964d23084a64",
+    "text": "Das Zertifikat, mit dem der KDC dieses Vertrauensbereichs seine PKINIT-Antworten signiert (RFC 4556): id-pkinit-KPKdc in der erweiterten Schlüsselverwendung und der Ticket-Granting-Dienst des Vertrauensbereichs, krbtgt/REALM@REALM, in einem id-pkinit-san. Eines je Prozess, erzeugt, wenn PKINIT zum ersten Mal benutzt wird; der private Schlüssel verlässt niemals den Prozess, der ihn erzeugt hat."
+  },
+  "pki.useCases.acme.what": {
+    "en": "2f0eeec1390c0623",
+    "text": "Zertifikate, die über ACME (RFC 8555) unter /enroll/acme an einen Personen- oder Anwendungseintrag ausgegeben werden, für den ein Schlüssel für External Account Binding ausgegeben wurde. Jedes Blatt nennt diesen Eintrag in einem subjectAltName urn:sts:person: (urn:sts:sa: für ein Dienstkonto) oder urn:sts:application:."
+  },
+  "pki.useCases.est.what": {
+    "en": "20925fe97c792b47",
+    "text": "Zertifikate, die über EST (RFC 7030) unter /.well-known/est an den Eintrag ausgegeben werden, den ein Passwort, ein Client-Geheimnis oder ein von diesem Vertrauensbereich ausgestelltes Clientzertifikat authentifiziert hat, oder — für einen Administrator — an den Eintrag, den die Anfrage nennt. Der einzige Registrierungspfad, auf dem dieser Dienst das Schlüsselpaar erzeugen darf (/serverkeygen)."
+  },
+  "pki.useCases.scep.what": {
+    "en": "bbd8c5da9ecc9982",
+    "text": "Zertifikate, die über SCEP (RFC 8894) unter /enroll/scep an den Eintrag ausgegeben werden, für den ein einmaliges Challenge-Passwort ausgegeben wurde. Das RA-Zertifikat, an das SCEP Anfragen verschlüsselt, ist ebenfalls ein Blatt dieser CA, mit einem RSA-Schlüssel, weil der Schlüsseltransport von SCEP RSA ist."
+  },
+  "pki.useCases.tls-client.what": {
+    "en": "1b378238cd4bc7ec",
+    "text": "Die TLS-Clientzertifikate, die Personen sich selbst im Benutzerportal ausstellen: clientAuth, der Name urn:sts:person: der Person (urn:sts:sa: eines Dienstkontos) und ein privater Schlüssel, der einmal als PKCS#12 übergeben wird. Ein Zertifikat dieser Stelle meldet seinen Inhaber unter GET /tls/sign-in am Hauptport in diesem Vertrauensbereich an; ein Zertifikat jeder anderen Stelle dieses Dienstes tut das nicht, obwohl jedes von ihnen an denselben Root kettet."
+  },
+  "pki.useCases.message-signing.what": {
+    "en": "f585bff7b006f247",
+    "text": "Die Zertifikate, mit denen eine Person oder eine Anwendung eine WS-Trust-Anfrage signiert (eine Signatur nach WS-Security 1.1 über den SOAP Body und den Timestamp): nur digitalSignature, der Name urn:sts:person:, urn:sts:sa: (ein Dienstkonto) oder urn:sts:application: des Inhabers und ein privater Schlüssel, der einmal als PKCS#12 übergeben wird. Ausgestellt von einem Administrator über die Konsole oder /admin-api. Ein Zertifikat dieser Stelle authentifiziert seinen Inhaber als Anfragenden eines signierten RST in diesem Vertrauensbereich; ein TLS-Clientzertifikat dieses Dienstes tut das nicht, und dieses hier meldet niemanden über TLS an."
+  },
+  "pki.useCases.policy-signing.what": {
+    "en": "9dd7e80fa0d8f1eb",
+    "text": "Die Zertifikate, unter denen ein Richtlinienexport aus Verzeichnis → Richtlinien signiert wird (#1713): ein frischer Schlüssel je Export, nur digitalSignature, sein Zertifikat und diese ganze Kette im x5c des Exports. Ein Vertrauensbereich, der den Export importiert, vertraut ihm sofort, wenn dies seine eigene Stelle ist, und fragt einen Administrator, bevor er der eines anderen Vertrauensbereichs vertraut; dabei fügt er die Kette jenes Vertrauensbereichs seinem Vertrauensspeicher für Signierer für diese Verwendung und keine andere hinzu."
+  },
+  "pki.subjectKinds.application.what": {
+    "en": "52037236b4cfff5f",
+    "text": "Ein registrierter OAuth-Client oder eine vertrauende Seite. Sein Schlüsselpaar wird auf seinen eigenen Eintrag in ou=applications geschrieben."
+  },
+  "pki.subjectKinds.person.what": {
+    "en": "1f2cc5cf53e071de",
+    "text": "Jemand in ou=users. Dessen Schlüsselpaar signiert eine Assertion nach RFC 7523 Abschnitt 2.1 ÜBER SICH SELBST und über niemand sonst — siehe common/person_assertions.js, dort wird die Ablehnung begründet."
+  },
+  "pki.purposes.jwt.what": {
+    "en": "2032fd197c3ec5dc",
+    "text": "Ein JWS-Signierschlüssel. Seine öffentliche Hälfte wird als JWKS (oauthAssertionJwks) auf die Anwendung geschrieben und trägt die Zertifikatskette in x5c; so registriert RFC 7523 einen Schlüssel."
+  },
+  "pki.purposes.saml.what": {
+    "en": "dfc27a7edcecb724",
+    "text": "Ein Schlüssel für XML Signature. Sein Zertifikat wird als PEM (oauthSamlAssertionCertificate) auf die Anwendung geschrieben, weil SAML kein JWKS hat und das, was eine Seite für dieses Profil registriert, EIN Zertifikat IST."
+  },
+  "pki.report.encoder": {
+    "en": "67a724697c0f501e",
+    "text": "common/crypto_impl/x509.js — der eigene PKI-Code des übergeordneten Projekts, byte-identisch, auf pkijs und asn1js. Ein Encoder für diesen Dienst und für die Seite PKI / X.509 jenes Projekts."
+  },
+  "pki.report.residencyPersisted": {
+    "en": "f0cab37351af3948",
+    "text": "Die privaten Schlüssel der CA liegen im Persistenzspeicher, versiegelt unter demselben Schlüsselverschlüsselungsschlüssel wie die Signierschlüssel, und überstehen einen Neustart."
+  },
+  "pki.report.residencyMemory": {
+    "en": "4b64a414cc7a232b",
+    "text": "Die privaten Schlüssel der CA werden nur im Arbeitsspeicher gehalten. Dieser Dienst ist im Entwicklungsmodus, in dem Schlüsselmaterial je Start erzeugt wird — eine jetzt aufgebaute Hierarchie ist fort, wenn dieser Prozess endet."
+  },
+  "revocation.reasons.unspecified.what": {
+    "en": "8533e2cd14062648",
+    "text": "Kein Grund angegeben. RFC 5280 Abschnitt 5.3.1 sagt, die Erweiterung für den Grundcode SHOULD bei diesem Wert weggelassen werden, sodass ein so widerrufener Eintrag überhaupt keinen Grund trägt — das bedeutet \"unspecified\" auf der Leitung."
+  },
+  "revocation.reasons.keyCompromise.what": {
+    "en": "d3d30f54c816aaac",
+    "text": "Der private Schlüssel ist bekanntermaßen oder vermutlich in den Händen eines anderen. Der einzige Grund, der sagt, das Zertifikat war nie sicher, statt lediglich nicht mehr erwünscht."
+  },
+  "revocation.reasons.cACompromise.what": {
+    "en": "9cbe4efd15bcf347",
+    "text": "Der eigene Schlüssel der CA ist kompromittiert. Verwendet für eine Intermediate oder eine ausstellende CA, und alles darunter ist ebenfalls als kompromittiert zu behandeln."
+  },
+  "revocation.reasons.affiliationChanged.what": {
+    "en": "bfe35ec20df10454",
+    "text": "Name oder Zugehörigkeit des Subjekts haben sich geändert, sodass das Zertifikat nichts mehr sagt, das wahr ist."
+  },
+  "revocation.reasons.superseded.what": {
+    "en": "2193fffd5b8b0e7e",
+    "text": "Ein Ersatz wurde ausgestellt. **Das verwendet dieser Dienst, wenn ein Zertifikat rotiert oder neu ausgestellt wird**, und das ist der häufigste Eintrag auf jeder dieser Listen."
+  },
+  "revocation.reasons.cessationOfOperation.what": {
+    "en": "f70d9cd7cdaae1b3",
+    "text": "Das Subjekt hat aufgehört, das zu tun, wofür das Zertifikat da war."
+  },
+  "revocation.reasons.certificateHold.what": {
+    "en": "b3f34d2a6fd5033b",
+    "text": "Vorübergehend ausgesetzt. **Der einzige Grund, der RÜCKGÄNGIG GEMACHT werden kann** — alles andere ist dauerhaft, und ein Prüfer darf einen dauerhaften Widerruf so lange zwischenspeichern, wie die CRL ihn als aktuell bezeichnet."
+  },
+  "revocation.reasons.privilegeWithdrawn.what": {
+    "en": "68e9b6f92f423e5f",
+    "text": "Das Subjekt ist nicht mehr zu dem berechtigt, was das Zertifikat behauptet."
+  },
+  "revocation.reasons.aACompromise.what": {
+    "en": "4689cd1f43e80f58",
+    "text": "Der Schlüssel einer Attributautorität ist kompromittiert. Der Vollständigkeit halber hier: dieser Dienst stellt keine Attributzertifikate aus."
+  }
+}

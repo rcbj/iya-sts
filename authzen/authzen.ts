@@ -59,6 +59,7 @@ import callers = require('./authzen_caller');
 import search = require('./authzen_search');
 import exchange = require('./authzen_exchange');
 import accessRequests = require('./authzen_access_request');
+import authzenModel = require('./authzen_model');
 
 const { log } = helpers;
 
@@ -84,13 +85,18 @@ const METADATA_PATH = '/.well-known/authzen-configuration';
 // The three searches (#1175), at the specification's default paths.
 const SEARCH_PATH = '/access/v1/search/';
 
-// The three batch semantics (section 7.1.2), the first the default.
-const SEMANTICS = Object.freeze(['execute_all', 'deny_on_first_deny',
-                                 'permit_on_first_permit']);
+// The batch semantics (section 7.1.2) and the one meant when none is
+// named: the model's (`models/authzen/authzen.tsp`, #1579).
+const SEMANTIC_FIELD = authzenModel.fieldOf('evaluations',
+                                            'options.evaluations_semantic');
+const SEMANTICS = Object.freeze(SEMANTIC_FIELD.values.slice(0));
 
-// The members a batch request may carry.
-const BATCH_MEMBERS = Object.freeze(['subject', 'action', 'resource',
-                                     'context', 'evaluations', 'options']);
+// The members a batch item overrides WHOLE (section 7.1.1): an
+// evaluation's, as the model declares them.
+const ITEM_MEMBERS = Object.freeze(authzenModel.request('evaluation').fields
+  .map(function (field: any) {
+    return field.name;
+  }));
 
 // A request id this service will echo.
 const REQUEST_ID = /^[\x21-\x7e]{1,128}$/;
@@ -292,6 +298,58 @@ class AuthzenSurface {
     res.set('X-Request-ID', sent);
     log.debug("Leaving AuthzenSurface.requestId().");
     return sent;
+  }
+
+  /**
+   * Refuses a request whose `Content-Type` is not `application/json`
+   * (#936): 415, STS-AUTHZEN-0117.
+   *
+   * AuthZEN 1.0 section 10.1: "Requests MUST include a `Content-Type`
+   * header with the value `application/json`". The section does not say
+   * what a PDP answers otherwise, and RFC 9110 section 15.5.16 does: 415
+   * Unsupported Media Type. A parameter (`; charset=utf-8`) is allowed, and
+   * the media type is compared case-insensitively (RFC 9110 section
+   * 8.3.1). An absent header is refused too, since the MUST is to include
+   * it. Until #936 this API read any body as JSON whatever it was labelled
+   * (`app.js`'s text parser takes every type), so a `text/plain` request
+   * was answered 200, which the OpenID Foundation's
+   * `*-reject-non-json-content-type` modules fail.
+   *
+   * The check is the TRANSPORT's, not the body's, so it is here rather
+   * than in `models/authzen/authzen.tsp`, which reads members. It runs
+   * after the caller is admitted, so a stranger is told 401 first, and
+   * before anything reads the body.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @returns true when the request was refused
+   */
+  notJson(req: Req, res: Res): boolean {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AuthzenSurface.notJson().");
+    if (AuthzenSurface.isJsonType(req.headers['content-type'])) {
+      log.debug("Leaving AuthzenSurface.notJson(). JSON.");
+      return false;
+    }
+    errorCodes.mark(res, 'STS-AUTHZEN-0117');
+    callers.send(res, 415, 'The request must carry Content-Type: ' +
+                 'application/json (AuthZEN 1.0 section 10.1).');
+    log.debug("Leaving AuthzenSurface.notJson(). Refused.");
+    return true;
+  }
+
+  /**
+   * Whether a `Content-Type` value names `application/json`, with or
+   * without parameters.
+   *
+   * @param value - the header's value, or undefined
+   * @returns true for application/json
+   */
+  static isJsonType(value: unknown): boolean {
+    log.debug("Entering AuthzenSurface.isJsonType().");
+    const type = String(value || '').split(';')[0].trim().toLowerCase();
+    log.debug("Leaving AuthzenSurface.isJsonType(). " + type);
+    return type === 'application/json';
   }
 
   /**
@@ -1183,7 +1241,8 @@ class AuthzenSurface {
       return;
     }
     res.status(200).type('application/json').set('Cache-Control', 'no-store')
-       .send(JSON.stringify(self.metadata(req), null, 2));
+       .send(JSON.stringify(authzenModel.held('metadata', self.metadata(req),
+                                              METADATA_PATH), null, 2));
     log.debug("Leaving AuthzenSurface.sendMetadata().");
   }
 
@@ -1197,13 +1256,13 @@ class AuthzenSurface {
    */
   static merged(defaults: any, item: unknown): any {
     log.debug("Entering AuthzenSurface.merged().");
-    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+    if (authzenModel.item('evaluations', 'evaluations', item)) {
       log.debug("Leaving AuthzenSurface.merged(). Not an object.");
       return null;
     }
     const given: any = item;
     const out: any = {};
-    ['subject', 'action', 'resource', 'context'].forEach(function (key) {
+    ITEM_MEMBERS.forEach(function (key: string) {
       const value = given[key] !== undefined ? given[key] : defaults[key];
       if (value !== undefined) {
         out[key] = value;
@@ -1212,13 +1271,28 @@ class AuthzenSurface {
     // A member the item carries beyond the four is the item's own mistake,
     // and the mapping refuses it for that item alone.
     Object.keys(given).forEach(function (key: string) {
-      if (out[key] === undefined && ['subject', 'action', 'resource',
-                                     'context'].indexOf(key) < 0) {
+      if (out[key] === undefined && ITEM_MEMBERS.indexOf(key) < 0) {
         out[key] = given[key];
       }
     });
     log.debug("Leaving AuthzenSurface.merged().");
     return out;
+  }
+
+  /**
+   * A batch item that is not an evaluation's object, refused alone with
+   * the model's sentence (section 7.2).
+   *
+   * @param item - the item
+   * @returns the item's result
+   */
+  static itemRefused(item: unknown): ItemResult {
+    log.debug("Entering AuthzenSurface.itemRefused().");
+    const refusal = authzenModel.item('evaluations', 'evaluations', item) ||
+      { status: 400, code: 'STS-AUTHZEN-0001', message: '' };
+    log.debug("Leaving AuthzenSurface.itemRefused().");
+    return { status: refusal.status, decision: false, code: refusal.code,
+             error: { status: refusal.status, message: refusal.message } };
   }
 
   /**
@@ -1254,43 +1328,19 @@ class AuthzenSurface {
       log.debug("Leaving AuthzenSurface.batch(). Too large.");
       return;
     }
+    // THE SHAPE IS THE MODEL'S (#1579): `EvaluationsRequest`, its members,
+    // `evaluations` an array and `options` an object whose semantic is one
+    // of its values.
     const body: any = AuthzenSurface.bodyOf(req);
-    if (!body || typeof body !== 'object' || Array.isArray(body)) {
-      refuse('STS-AUTHZEN-0001', 'An access evaluations request is a JSON ' +
-             'object.');
-      log.debug("Leaving AuthzenSurface.batch(). Not an object.");
-      return;
-    }
-    const stray = Object.keys(body).filter(function (key: string) {
-      return BATCH_MEMBERS.indexOf(key) < 0;
-    })[0];
-    if (stray) {
-      refuse('STS-AUTHZEN-0009', 'An access evaluations request has no ' +
-             'member "' + stray.slice(0, 64) + '"; it takes ' +
-             BATCH_MEMBERS.join(', ') + '.');
-      log.debug("Leaving AuthzenSurface.batch(). An unknown member.");
-      return;
-    }
-    if (body.evaluations !== undefined && !Array.isArray(body.evaluations)) {
-      refuse('STS-AUTHZEN-0003', 'evaluations must be an array.');
-      log.debug("Leaving AuthzenSurface.batch(). Not an array.");
-      return;
-    }
-    if (body.options !== undefined && (!body.options ||
-        typeof body.options !== 'object' || Array.isArray(body.options))) {
-      refuse('STS-AUTHZEN-0003', 'options must be a JSON object.');
-      log.debug("Leaving AuthzenSurface.batch(). Bad options.");
+    const shape = authzenModel.read('evaluations', body);
+    if (shape) {
+      refuse(shape.code, shape.message);
+      log.debug("Leaving AuthzenSurface.batch(). " + shape.code);
       return;
     }
     const options = body.options || {};
     const semantic = options.evaluations_semantic === undefined
-      ? SEMANTICS[0] : String(options.evaluations_semantic);
-    if (SEMANTICS.indexOf(semantic) < 0) {
-      refuse('STS-AUTHZEN-0036', 'options.evaluations_semantic must be one ' +
-             'of ' + SEMANTICS.join(', ') + '.');
-      log.debug("Leaving AuthzenSurface.batch(). Unknown semantic.");
-      return;
-    }
+      ? SEMANTIC_FIELD.default : String(options.evaluations_semantic);
     const items = body.evaluations || [];
     const most = Number(config.value('authzen.maxEvaluations'));
     if (items.length > most) {
@@ -1317,9 +1367,9 @@ class AuthzenSurface {
       }
       res.status(200).type('application/json')
          .set('Cache-Control', 'no-store')
-         .send(JSON.stringify(one.context
-           ? { decision: one.decision, context: one.context }
-           : { decision: one.decision }));
+         .send(JSON.stringify(authzenModel.held('evaluation-response',
+           one.context ? { decision: one.decision, context: one.context }
+                       : { decision: one.decision }, EVALUATIONS_PATH)));
       log.debug("Leaving AuthzenSurface.batch(). One.");
       return;
     }
@@ -1339,9 +1389,7 @@ class AuthzenSurface {
     for (let i = 0; i < items.length; i += 1) {
       const request = requests[i];
       const one = request === null
-        ? { status: 400, decision: false, code: 'STS-AUTHZEN-0001',
-            error: { status: 400, message: 'An evaluation is a JSON ' +
-                                           'object.' } }
+        ? AuthzenSurface.itemRefused(items[i])
         : self.evaluateOne(request, caller, rows,
                            batchId + '#' + i, where, plan, i, req);
       // AN ITEM'S FAILURE IS ITS OWN, said in its own context.error and
@@ -1362,7 +1410,8 @@ class AuthzenSurface {
       }
     }
     res.status(200).type('application/json').set('Cache-Control', 'no-store')
-       .send(JSON.stringify({ evaluations: out }));
+       .send(JSON.stringify(authzenModel.held('evaluations-response',
+         { evaluations: out }, EVALUATIONS_PATH)));
     log.debug("Leaving AuthzenSurface.batch(). " + out.length + " of " +
               items.length + " answered.");
   }
@@ -1392,6 +1441,10 @@ class AuthzenSurface {
         log.debug('Leaving POST ' + EVALUATION_PATH + '. Not admitted.');
         return;
       }
+      if (self.notJson(req, res)) {
+        log.debug('Leaving POST ' + EVALUATION_PATH + '. Not JSON.');
+        return;
+      }
       const body = AuthzenSurface.bodyOf(req);
       const result = self.evaluateOne(body === undefined ? null : body,
                                       caller, self.rows(), id,
@@ -1408,7 +1461,8 @@ class AuthzenSurface {
         answer.context = result.context;
       }
       res.status(200).type('application/json').set('Cache-Control', 'no-store')
-         .send(JSON.stringify(answer));
+         .send(JSON.stringify(authzenModel.held('evaluation-response', answer,
+                                                EVALUATION_PATH)));
       log.debug('Leaving POST ' + EVALUATION_PATH + '. ' + result.decision);
     });
 
@@ -1433,6 +1487,10 @@ class AuthzenSurface {
       const caller = self.admit(req, res);
       if (!caller) {
         log.debug('Leaving POST ' + EVALUATIONS_PATH + '. Not admitted.');
+        return;
+      }
+      if (self.notJson(req, res)) {
+        log.debug('Leaving POST ' + EVALUATIONS_PATH + '. Not JSON.');
         return;
       }
       self.batch(req, res, caller, id);
@@ -1463,6 +1521,10 @@ class AuthzenSurface {
           log.debug('Leaving POST ' + path + '. Not admitted.');
           return;
         }
+        if (self.notJson(req, res)) {
+          log.debug('Leaving POST ' + path + '. Not JSON.');
+          return;
+        }
         const body = AuthzenSurface.bodyOf(req);
         const result = self.runSearch(kind, body === undefined ? null : body,
                                       caller, { where: 'POST ' + path,
@@ -1476,7 +1538,8 @@ class AuthzenSurface {
         }
         res.status(200).type('application/json')
            .set('Cache-Control', 'no-store')
-           .send(JSON.stringify(result.body));
+           .send(JSON.stringify(authzenModel.held('search-response',
+             result.body, path)));
         log.debug('Leaving POST ' + path + '.');
       });
     });
@@ -1578,8 +1641,15 @@ class AuthzenSurface {
         next();
         return;
       }
-      realms.run(named, function () {
+      // Once the realm's keys are made and certified: the path's prefix
+      // named no realm, so `app.js` prepared none (`runInPreparedRealm()`).
+      self.deps.helpers.runInPreparedRealm(named, function () {
         self.sendMetadata(req, res);
+      }).catch(function (e: any) {
+        log.debug('Caught in GET ' + METADATA_PATH + '/*: ' +
+                  ((e && e.message) || e));
+        // Express's error path; its declared type here takes no argument.
+        (next as any)(e);
       });
       log.debug('Leaving GET ' + METADATA_PATH + '/*.');
     });

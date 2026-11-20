@@ -1,0 +1,14 @@
+{
+  "sentencePq": "Post-Quanten-Schlüsselpaar: {label}",
+  "sentenceComposite": "Zusammengesetztes Post-Quanten-Schlüsselpaar: {label} — beide Hälften müssen die Prüfung bestehen",
+  "sentenceKem": "Post-Quanten-Schlüssel für die Schlüsselvereinbarung: {label} — er signiert nichts",
+  "sentenceHybrid": "Hybrid: ein klassischer Schlüssel, dessen Zertifikat Folgendes trägt: {label}",
+  "sentenceOther": "Post-Quanten: {label}",
+  "legendPq": " kennzeichnet ein Schlüsselpaar, das einen Post-Quanten-Algorithmus verwendet",
+  "legendPqAfter": " — ML-DSA oder SLH-DSA. ",
+  "legendComposite": " ist ein COMPOSITE: ein Schlüssel mit einer Post-Quanten-Hälfte und einer klassischen Hälfte, die beide die Prüfung bestehen müssen. ",
+  "legendKem": " ist ein Post-Quanten-Schlüssel für die SCHLÜSSELVEREINBARUNG, der nichts signiert. ",
+  "legendHybridLabel": "alternativer ML-DSA-65-Schlüssel",
+  "legendHybrid": " ist ein KLASSISCHER Schlüssel, dessen Zertifikat außerdem einen alternativen Post-Quanten-Schlüssel trägt — der Schlüssel selbst ist nicht Post-Quanten. Bewegen Sie den Mauszeiger über ein Symbol, um den Algorithmus zu sehen. Ein Schlüssel ohne Symbol ist klassisch (RSA, ECDSA oder EdDSA). Entscheidend ist der eigene Algorithmus des Schlüssels, nicht die Signatur auf seinem Zertifikat: ein von einer RSA-CA zertifizierter ML-DSA-Schlüssel wird gekennzeichnet, und ein von einer ML-DSA-CA zertifizierter RSA-Schlüssel nicht.",
+  "legendTitle": "Post-Quanten-Schlüsselpaare"
+}

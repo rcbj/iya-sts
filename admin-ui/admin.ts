@@ -65,9 +65,10 @@
 // The console gate is UNCONDITIONAL. Every page and every form under /admin
 // needs a session of the console's own — got through the OIDC code flow
 // against this service's authorization server (`common/oidc_rp.ts`, since
-// 2026-09-06) — and one of two roles — Admin Read and Admin Write — held as
-// two ordinary groups in the embedded directory of the realm the person
-// signed in through (per realm since 2026-09-14, #32; admin-ui/CLAUDE.md 8d).
+// 2026-09-06) — and one of three roles — Admin Read, Admin Write and
+// Security Administrator (#645) — held as ordinary groups in the embedded
+// directory of the realm the person signed in through (per realm since
+// 2026-09-14, #32; admin-ui/CLAUDE.md 8d).
 // The gate is one `app.use('/admin', ...)` further down this file and the
 // roles are `./admin_rbac.js`; both have headers of their own.
 //
@@ -2046,6 +2047,19 @@ const SECTIONS = [
                'refusal is the <a href="/admin/audit">audit log</a>, and the ' +
                'policies these decisions are made with are under ' +
                '<a href="/admin/xacml">Protocols</a>.' },
+      // A remote PEP's own traffic, beside the decision counts above: what
+      // each listener and its thread pool are doing, which paths are being
+      // asked, and the process's memory. The figures are the PEP's, reported
+      // on its heartbeat. Configuring a listener stays under Protocols.
+      { path: '/admin/xacml/pep/monitor', label: 'Remote PEPs',
+        blurb: 'What each remote PEP is serving rather than how it is ' +
+               'configured: every listener\'s accepted, open and refused ' +
+               'connections, its thread pool, the requests it has counted ' +
+               'per path, and the process\'s memory. The figures are ' +
+               '<strong>reported by the PEP</strong> on its heartbeat and ' +
+               'are cumulative since that process started. A PEP that has ' +
+               'not reported them yet says so. The listeners themselves ' +
+               'are set under <a href="/admin/xacml">Protocols</a>.' },
       // GNAP's traffic, filed here beside XACML's for the same reason: what the
       // applications using it have DONE is a monitoring question, and the
       // configuration is on Protocols -> GNAP.
@@ -2453,7 +2467,7 @@ const SECTIONS = [
       // service can draw, how often this realm's held rows carry each code, is
       // an account of what this service has DONE. A catalogue with no such
       // column would belong in the documentation, which is where the rest of
-      // this table is published (`docs/error-codes.md`).
+      // this table is published (`docs/v1.1.0/error-codes.md`).
       { path: '/admin/error-codes', label: 'Error codes',
         blurb: 'Every way this service can fail or refuse, by subsystem, ' +
                'with what the client is told instead and how many rows in ' +
@@ -2586,19 +2600,22 @@ const SECTIONS = [
                'new tab before anything is saved. The admin console keeps ' +
                'its own look.' },
       { path: '/admin/rbac', label: 'Admin roles',
-        blurb: 'Who holds the two roles that grant this console — Admin ' +
-               'Read and Admin Write — granted and revoked here. They are ' +
-               'ORDINARY GROUPS in the shared directory rather than a store ' +
-               'of the console\'s own, so this page, ' +
-               '<code>/admin-api</code>, an <code>ldapmodify</code> on 389 ' +
-               'or 636 and a SCIM PATCH are four doors onto one membership ' +
-               '— which is the point, since a role no test can grant is a ' +
-               'role no test can exercise. While NEITHER group has a member, ' +
-               'anybody who signs in holds both.' },
+        blurb: 'Who holds the roles that grant this console — Admin ' +
+               'Read, Admin Write and Security Administrator — granted ' +
+               'and revoked here. They are ORDINARY GROUPS in the shared ' +
+               'directory rather than a store of the console\'s own, so ' +
+               'this page, <code>/admin-api</code>, an ' +
+               '<code>ldapmodify</code> on 389 or 636 and a SCIM PATCH ' +
+               'are four doors onto one membership — which is the point, ' +
+               'since a role no test can grant is a role no test can ' +
+               'exercise. Until the realm\'s bootstrap administrator ' +
+               'first signs in, anybody who signs in holds the roles ' +
+               'that account holds: all three in the default realm, and ' +
+               'Admin Read and Admin Write in a trust realm.' },
       // THE EMBEDDED PROTOCOL DEBUGGER (2026-09-13), beside Admin roles and
       // for the reason it is in this section at all: the question it answers
       // is whether this service is set up to serve the debugger and to whom,
-      // and "to whom" is the two roles on the page above. `debugger/
+      // and "to whom" is the console roles on the page above. `debugger/
       // debugger_admin.js` draws it.
       { path: '/admin/debugger', label: 'Protocol debugger',
         blurb: 'The identity protocol debugger this service can serve on a ' +
@@ -2606,11 +2623,10 @@ const SECTIONS = [
                'origin it answers on, the api process it forwards /api to ' +
                'and what that process may dial, and its settings. It is ' +
                'signed in to through this service\'s own authorization ' +
-               'server as <code>sts-debugger-ui</code>, and its api needs an ' +
-               'access token carrying ' +
-               '<code>urn:sts:debugger-api:debugger</code> — issued to ' +
-               'console administrators and nobody else. There is no setting ' +
-               'that opens it.' },
+               'server as <code>sts-debugger-ui</code>, one confidential ' +
+               'client for the UI and its api, and the sign-in session ' +
+               'admits console administrators and nobody else. There is no ' +
+               'setting that opens it.' },
       { path: '/admin/sts-metadata', label: 'Service metadata',
         blurb: 'Every endpoint this process registered, read off the LIVE ' +
                'express router, with the specification each one claims and ' +
@@ -2904,7 +2920,8 @@ const USER_TAB_IDS = ['utab-overview', 'utab-authentications',
 // `tests/person_fields.js` now holds every sub-tab the page draws to this
 // list.
 const USER_SUB_TAB_IDS = ['ucred-factors', 'ucred-password', 'ucred-service',
-  'ucred-keys', 'ucred-kerberos'].concat(personEditor.FIELD_GROUPS.map(function (group) {
+  'ucred-keys', 'ucred-self-issued', 'ucred-kerberos'].concat(
+  personEditor.FIELD_GROUPS.map(function (group) {
   return 'ufg-' + group.id;
 }));
 
@@ -4076,7 +4093,11 @@ class AdminConsole {
       'textarea{width:100%;min-height:7rem;font-family:ui-monospace,' +
       'SFMono-Regular,Menlo,monospace}.formrow{display:flex;flex-wrap:wrap;' +
       'gap:8px;align-items:center;margin:.5em 0}.formrow ' +
-      'label{font-size:.78em;font-weight:600;color:#555}' +
+      // `.formlabel` is a row's label that labels a GROUP rather than one
+      // control (a `role="group"`'s name: the PEP route forms' Methods and
+      // Mechanisms), drawn exactly as a row's `<label>` is.
+      'label,.formrow .formlabel{font-size:.78em;font-weight:600;' +
+      'color:#555}' +
 
       // ---------------------------------------------------------------------
       // THE SEARCH PANE UNDER A CHOOSER (chooserPane()). `max-height` with
@@ -4132,6 +4153,29 @@ class AdminConsole {
       // about four screens of empty box. They are sized by their `rows`
       // attribute here instead, which is what the markup already says.
       // ---------------------------------------------------------------------
+      // A SECTION FRAME: a box around a block of a panel that holds its own
+      // heading, table and forms, so a reader can see which fields belong to
+      // which block. A frame inside a frame is white on the outer's tint, and
+      // a third level tinted again, so the nesting reads without a heavier
+      // border. Drawn around every section of a person's Credentials > Key
+      // pairs: the RFC 7523/7522 key pairs (each profile a frame inside, each
+      // Add form a frame inside that), and the stored, message-signing and
+      // TLS client certificates (each Add or Issue form a frame inside).
+      //
+      // **THE BORDER IS #c5c5d3 ON #f6f6fa, HEAVIER THAN `.pki-col`'s
+      // #e2e2ea ON #fbfbfd**: a `.pki-col` sits beside two others, and the
+      // columns themselves show the boundary; a frame here is stacked in a
+      // white card, and at the lighter pair its edge and tint were hard to
+      // tell from the card. The tint is the tab lists'. The console has
+      // one (light) theme, with no `prefers-color-scheme` rule anywhere, so
+      // the frame needs no second set of colours.
+      '.secframe{border:1px solid #c5c5d3;border-radius:8px;padding:10px ' +
+      '14px 12px;margin:0 0 16px;background:#f6f6fa;min-width:0}' +
+      '.secframe .secframe{background:#fff;margin:.7em 0 0}' +
+      '.secframe .secframe .secframe{background:#f6f6fa}' +
+      '.secframe>h2:first-child,.secframe>h3:first-child,' +
+      '.secframe>h4:first-child{margin-top:0}' +
+      '.secframe>:last-child{margin-bottom:0}' +
       '.pki-cols{display:grid;grid-template-columns:repeat(auto-fit,' +
       'minmax(22rem,1fr));gap:14px;margin:.6em 0 ' +
       '1em;align-items:start}.pki-col{border:1px solid ' +
@@ -4366,6 +4410,18 @@ class AdminConsole {
       // box, because a diagram scaled down is one whose labels have stopped
       // being legible while still looking as though they should be.
       '.diagram svg{display:block;max-width:none}' +
+      // THE PEP PICTURE (`xacml/web_pep_picture.ts`) is drawn twice: three
+      // columns, and stacked below the console's breakpoint, where three
+      // columns would open on the PEP alone. The stacked one is laid out
+      // 240 wide to fit a phone's card (2026-11-15: at 390px its boxes ran
+      // past the card's edge), so its box keeps a thinner padding, and only
+      // on a screen narrower than any phone it was laid out for is it scaled
+      // down to the box — the one picture here allowed to be, because there
+      // it is that or a sideways scroll on the device it was drawn for.
+      '.pep-picture-stacked{display:none}' +
+      '@media (max-width:56rem){.pep-picture-wide{display:none}' +
+      '.pep-picture-stacked{display:block;padding:6px}' +
+      '.pep-picture-stacked svg{max-width:100%;height:auto}}' +
       // The key. A table like every other, with the shape column sized to the
       // swatches rather than to its heading.
       'table.key td.art{width:5.5rem;text-align:center;vertical-align:middle;' +
@@ -4622,7 +4678,8 @@ class AdminConsole {
        'vc-tab-claims', 'vc-tab-oid4vp',
        'vc-tab-verifier-request', 'xacml-tab-metadata',
        'xacml-tab-settings', 'xacml-tab-policies', 'xacml-tab-editor',
-       'xacml-tab-peps', 'xacml-tab-decide', 'xacml-tab-authzen',
+       'xacml-tab-peps', 'xacml-tab-pep-clusters', 'xacml-tab-decide',
+       'xacml-tab-authzen',
        'ssf-tab-metadata',
        'ssf-tab-ssf', 'ssf-tab-caep', 'ssf-tab-risc',
        'kerberos-tab-metadata', 'kerberos-tab-settings',
@@ -4630,7 +4687,7 @@ class AdminConsole {
        'kerberos-tab-trusts',
        'scim-tab-metadata', 'server', 'clients', 'policies-tab-metadata',
        'tab-password', 'tab-authn', 'tab-serviceAccount', 'tab-passkey',
-       'tab-locale', 'tab-attributes', 'tab-profiles',
+       'tab-locale', 'tab-attributes', 'tab-profiles', 'tab-transfer',
        'listeners-tab-metadata',
        'tab-listeners', 'tab-custom', 'tab-applications', 'tab-defaults'],
       LISTENER_TAB_IDS, POLICY_SUB_TAB_IDS,
@@ -4666,6 +4723,27 @@ class AdminConsole {
       // xacml/web_xacml.ts's warnings and scim/web_scim.ts's top-aligned
       // tiles, which were `style=""` until the families' pages followed.
       '.xacml-alert{color:#b00}.tiles.tiles-top{align-items:flex-start}' +
+      // A remote PEP's Configured Listeners: the Listener column kept whole
+      // (8081 at 1280px broke "api-http/s" mid-word); `.wide` scrolls the
+      // table sideways when the row is wider than the card.
+      'th.pep-listener-id{white-space:nowrap}' +
+      // The environment's pair as issued, on Create a new listener: its
+      // names and expiry drawn as the table cell draws them, small.
+      '.pep-envpair-held .sub{color:#666;font-size:.85em}' +
+      // At phone width a fieldset is as wide as its widest box by default
+      // (`min-width: min-content`), so a 40-column DNS names box pushed the
+      // Certificate legend past the card at 390px.
+      '.pep-listener-form fieldset,.pep-envpair-form fieldset{min-width:0}' +
+      '.pep-listener-form label,.pep-envpair-form label{max-width:100%}' +
+      '.pep-listener-form input,.pep-envpair-form input{max-width:100%}' +
+      // A drill-down's title inside its parent's tabs (`kit.drillTitle()`,
+      // rcbj 2026-11-15): indented under the innermost tab row, with the
+      // tab colour's bar down its left, the level below that row.
+      '.drilltitle{display:flex;flex-wrap:wrap;align-items:baseline;' +
+      'gap:.3em 1.2em;margin:.4em 0 1em .6em;padding:.2em 0 .2em .8em;' +
+      'border-left:4px solid #12107c}' +
+      '.drilltitle h2{margin:0;font-size:1.15em}' +
+      '.drillback{margin:.2em 0 .4em;font-weight:600}' +
       [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(function (n) {
         return '.indent-' + n + '{padding-left:' + (n * 1.4).toFixed(1) +
                'rem}';
@@ -6724,7 +6802,7 @@ class AdminConsole {
   // and they were two vocabularies for one question that did not line up: eight
   // kinds against fourteen families, five of those families having no kind at
   // all, and a reader made to choose in both. Worse, the two are on opposite
-  // sides of the line `applications.js`'s EDITABLE header draws — a family is
+  // sides of the line application.tsp's editability header draws — a family is
   // DECLARED and a kind is DERIVED, written by `seen()` when a protocol
   // actually recognises the identifier — so the select let a form assert a
   // sighting that had not happened, and `view()`'s `recordedProtocols` had to
@@ -8730,6 +8808,24 @@ class AdminConsole {
       self.sendConsoleFile(req, res, self.stylesheet(), null, null);
       log.debug("Leaving the static console's stylesheet.");
     });
+    // THE COUNTRY OUTLINES GEOLOCATION'S MAP IS DRAWN OVER (#444 phase 2b,
+    // 2026-11-14): `natural_earth/countries.json` as it ships, which the
+    // console fetches once per load and projects in the browser
+    // (`web_geo_map.ts`), rather than in every answer of
+    // `/admin-api/geolocation`. Public, like the script: Natural Earth's
+    // public-domain outlines and nothing about a request. Precompressed by
+    // the image build, read once; registered above the shell, which answers
+    // every other `/admin/*` path with the document.
+    app.get('/admin/geo-outlines.json', function (req, res) {
+      log.debug("Entering the console's country outlines.");
+      if (geoOutlinesFile === null) {
+        geoOutlinesFile = ShellDocument.readFile(
+          require('path').join(__dirname, 'natural_earth'), 'countries.json',
+          '{"countries":[]}');
+      }
+      ShellDocument.sendFile(req, res, geoOutlinesFile, 'application/json');
+      log.debug("Leaving the console's country outlines.");
+    });
     // ONE HANDLER, ON TWO PATHS — `/admin` itself and everything under it —
     // registered apart so that the router lists each by its own name.
     const shell = function (req, res, next) {
@@ -9327,6 +9423,9 @@ let consoleScriptText: string | null = null;
 // request instead.
 let consoleScriptPacked: { br: Buffer | null, gzip: Buffer | null } | null =
   null;
+// The country outlines Geolocation's map is drawn over, and their
+// precompressed forms, read once (`/admin/geo-outlines.json`).
+let geoOutlinesFile: ReturnType<typeof ShellDocument.readFile> | null = null;
 
 const REALM_SWITCH_PATH = '/admin/realm-switch';
 
@@ -10609,14 +10708,14 @@ const PROTOCOL_SETTINGS_PAGES = [
            'this service did before.',
            '<strong>It shares STATE and not SOCKETS, and the difference is ' +
            'where the surprises are.</strong> The KDC, the two LDAP ' +
-           'listeners, the main port and SPIFFE\'s four are bound per ' +
-           'process and always will be. And the <strong>replay caches and ' +
-           'DPoP <code>jti</code> sets converge rather than ' +
-           'synchronise</strong>: between a write in one process and its ' +
-           'arrival in another there is a window the size of ' +
-           '<code>persistence.pollInterval</code> in which a proof one ' +
-           'process refused is accepted by another. Sticky sessions at the ' +
-           'load balancer close it; nothing here does.',
+           'listeners, the main port and SPIFFE\'s sockets are bound per ' +
+           'process and always will be. <strong>A single-use value is spent ' +
+           'once across every process</strong>: an authorization code, a ' +
+           'DPoP <code>jti</code>, a SAML artifact, a Kerberos ' +
+           'authenticator and the rest are each spent through one atomic ' +
+           'claim in the store, so a value one process accepted is refused ' +
+           'by every other at once, with no window between them. A value ' +
+           'the store cannot be asked about is refused.',
            '<strong>A restored person shows on ' +
            '<a href="/admin/users">Users</a> as a directory person, not as ' +
            'having authenticated.</strong> They exist — an entry, searchable ' +
@@ -10755,6 +10854,7 @@ const PROTOCOL_SETTINGS_PAGES = [
            '<a href="/admin/delegation">Delegation</a> shows every act it ' +
            'recorded.'],
     links: [['/sts', 'the token service, for a person'],
+            ['/sts/metadata', 'its WSDL, with the credentials it accepts'],
             ['/sts/cert', 'the certificate its assertions verify against'],
             ['/admin/saml-attributes', 'what goes into the assertion'],
             ['/admin/delegation', 'what was asked for on whose behalf']] },

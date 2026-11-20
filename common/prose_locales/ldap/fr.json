@@ -1016,12 +1016,16 @@
     "text": "La même chose pour l’ID Token OIDC, en remplaçant oauth2.idTokenTtlS. Distinct de celui du jeton d’accès, car les deux vont à des lecteurs différents : un ID Token est consommé une fois à la connexion, tandis qu’un jeton d’accès est présenté aussi longtemps qu’il dure."
   },
   "applications.schema.attributes.oauthRefreshTokenTtlS.what": {
-    "en": "47a623e69e617b6d",
-    "text": "La même chose pour le jeton d’actualisation, en remplaçant oauth2.refreshTokenTtlS. Une valeur inférieure ou égale à oauthAccessTokenTtlS est légale et constitue un octroi qui ne peut jamais être utilement renouvelé — /admin/token-lifetimes signale cette combinaison pour la paire à l’échelle du service, et elle est tout aussi atteignable ici."
+    "en": "019d39de89f62aaf",
+    "text": "La même chose pour le jeton d’actualisation, en remplaçant oauth2.refreshTokenTtlS. Une valeur inférieure ou égale à oauthAccessTokenTtlS est légale et constitue un octroi qui ne peut jamais être utilement renouvelé — /admin/token-lifetimes signale cette combinaison pour la paire à l’échelle du service, et elle est tout aussi atteignable ici. Pour la console d’administration, le portail utilisateur et l’application de rapports, la valeur en vigueur est la plus courte entre un nombre positif ici et le paramètre du domaine ; ces trois-là ne peuvent pas être effacés, 0 est refusé, et un nombre positif différent confirmé à l’enregistrement est la façon dont la limite change (#825)."
   },
   "applications.schema.attributes.oauthRefreshIdleSeconds.what": {
-    "en": "37eeca0107443e0c",
-    "text": "MODE RFC 9700 UNIQUEMENT : combien de temps une chaîne d’actualisation peut rester inutilisée avant d’être coupée, en remplaçant oauth2.refreshIdleSeconds pour ce client. Ce délai est mesuré depuis la dernière fois qu’un jeton quelconque de la CHAÎNE a été utilisé, plutôt que depuis l’émission ; un client actif conserve donc son octroi et un client inactif non. Hors du mode RFC 9700, rien ne le lit, ce qui est une propriété du paramètre plutôt que de cet attribut."
+    "en": "2fd2c72086342ab0",
+    "text": "MODE RFC 9700 UNIQUEMENT : combien de temps une chaîne d’actualisation peut rester inutilisée avant d’être coupée, en remplaçant oauth2.refreshIdleSeconds pour ce client. Ce délai est mesuré depuis la dernière fois qu’un jeton quelconque de la CHAÎNE a été utilisé, plutôt que depuis l’émission ; un client actif conserve donc son octroi et un client inactif non. Hors du mode RFC 9700, rien ne le lit, ce qui est une propriété du paramètre plutôt que de cet attribut. Pour la console d’administration, le portail utilisateur et l’application de rapports, la valeur en vigueur est la plus courte entre un nombre positif ici et le paramètre du domaine ; ces trois-là ne peuvent pas être effacés, 0 est refusé, et un nombre positif différent confirmé à l’enregistrement est la façon dont la limite change (#825)."
+  },
+  "applications.schema.attributes.oauthMaxAuthAgeS.what": {
+    "en": "c79eafa0090748ab",
+    "text": "Depuis combien de temps ce client a été authentifié, en secondes, avant qu’une demande d’autorisation doive authentifier de nouveau, même lorsque la demande n’envoie pas de max_age, en remplaçant oauth2.maxAuthAgeS. 0 ou une valeur vide n’ajoute aucune limite propre à cet attribut, et un client ordinaire suit alors le paramètre du domaine, dont la valeur par défaut est 0. Pour la console d’administration, le portail utilisateur et l’application de rapports, la valeur en vigueur est la plus courte entre un nombre positif ici et authn.sessionLifetimeS, si bien qu’augmenter la valeur du domaine ne les allonge jamais. Ces trois-là ne peuvent pas être effacés, 0 est refusé, et un nombre positif différent confirmé à l’enregistrement est la façon dont la limite change (#825)."
   },
   "applications.schema.attributes.oauthClaimsAccessToken.what": {
     "en": "e284080e7c1bb9a6",
@@ -1227,6 +1231,10 @@
     "en": "00f7ceacfb9304e7",
     "text": "TRUE ou FALSE : ce fournisseur d’identité peut-il DÉMARRER une connexion à ce fournisseur de services — une Response non sollicitée (saml-profiles-2.0-os section 4.1.5) depuis /saml2/unsolicited ou /launch/{app} — en remplaçant saml2.idpInitiatedSso. TRUE uniquement pour un fournisseur de services qui en attend une : la Response ne porte pas d’InResponseTo, il ne peut donc pas distinguer une Response qui lui a été envoyée d’une Response poussée dans son navigateur."
   },
+  "applications.schema.attributes.saml2SsoConsent.what": {
+    "en": "f7ca67bc2031ec08",
+    "text": "TRUE ou FALSE : une personne est-elle interrogée, une fois, avant que SAML 2.0 ne la connecte à cette application depuis une session qu’elle a déjà, en remplaçant saml2.ssoConsent (ASVS 5.0.0 7.6.2). FALSE convient à une application que tout le monde dans le domaine doit utiliser ; un consentement global sur l’entrée répond pour tout le monde et garde la trace de qui a accepté."
+  },
   "applications.schema.attributes.saml2SpInitiatedSso.what": {
     "en": "1cab33aadc246c17",
     "text": "TRUE ou FALSE : la <samlp:AuthnRequest> propre à ce fournisseur de services reçoit-elle une réponse, en remplaçant saml2.spInitiatedSso. FALSE y répond par RequestDenied, ne laissant que la connexion initiée par le fournisseur d’identité comme moyen d’entrer."
@@ -1234,6 +1242,10 @@
   "applications.schema.attributes.saml11IdpInitiatedSso.what": {
     "en": "6081871f6aca6a2f",
     "text": "TRUE ou FALSE : une connexion SAML 1.1 à cette partie de confiance peut-elle DÉMARRER ici — /saml11/sso/{rp} avec un TARGET et sans shire, ou /launch/{app} — en remplaçant saml11.idpInitiatedSso."
+  },
+  "applications.schema.attributes.saml11SsoConsent.what": {
+    "en": "0cb7bbf2fb684481",
+    "text": "TRUE ou FALSE : une personne est-elle interrogée, une fois, avant que SAML 1.1 ne la connecte à cette application depuis une session qu’elle a déjà, en remplaçant saml11.ssoConsent (ASVS 5.0.0 7.6.2). FALSE convient à une application que tout le monde dans le domaine doit utiliser ; un consentement global sur l’entrée répond pour tout le monde et garde la trace de qui a accepté."
   },
   "applications.schema.attributes.saml11SpInitiatedSso.what": {
     "en": "2376052fceb025ab",
@@ -1259,6 +1271,10 @@
     "en": "d199b15200f6e9de",
     "text": "TRUE ou FALSE : le wsignin1.0 propre à cette partie de confiance reçoit-il une réponse, en remplaçant wsfed.spInitiatedSso. Un wsignin1.0 est une URL non signée ; FALSE ferme donc la porte plutôt que de prouver qui l’a ouverte."
   },
+  "applications.schema.attributes.wsfedSsoConsent.what": {
+    "en": "9a3541460bedfa45",
+    "text": "TRUE ou FALSE : une personne est-elle interrogée, une fois, avant que WS-Federation ne la connecte à cette application depuis une session qu’elle a déjà, en remplaçant wsfed.ssoConsent (ASVS 5.0.0 7.6.2). FALSE convient à une application que tout le monde dans le domaine doit utiliser ; un consentement global sur l’entrée répond pour tout le monde et garde la trace de qui a accepté."
+  },
   "applications.schema.attributes.wsfedSignOutUri.what": {
     "en": "677e7babd8d711d3",
     "text": "L’ENDROIT OÙ EST ENVOYÉ UN PING wsignoutcleanup1.0 pour cette application — l’URI de déconnexion de WS-Federation, celle que ce tableau n’avait pas jusqu’au 2026-08-30. DÉCLARÉE, non observée, ce qui en fait le pendant de samlSingleLogoutService plutôt que de wsfedReplyUrl : un nettoyage est envoyé lorsqu’une SESSION se termine, et à ce moment-là la requête qui aurait porté un wreply est terminée depuis longtemps.\n\n**UNE ADRESSE DÉCLARÉE PRIME SUR UNE ADRESSE OBSERVÉE** (#747). `cleanupTargetsFor()` notifie chaque valeur d’ici pour un domaine auquel la session s’est connectée, et le wreply auquel est allée la réponse de connexion, que `session.wsfedRealms` enregistre, seulement si ceci est vide."
@@ -1270,6 +1286,58 @@
   "applications.schema.attributes.wstrustJwtScope.what": {
     "en": "86ac83dbe366a17b",
     "text": "LES PORTÉES OAUTH 2.0 QUE PORTE UN JWT WS-TRUST POUR CETTE APPLICATION, une valeur de portée chacune (#485). Un JWT que WS-Trust émet avec cette application comme AppliesTo (wst:TokenType urn:ietf:params:oauth:token-type:jwt) les porte dans sa revendication `scope`, séparées par des espaces (RFC 9068 section 2.2.3) ; si aucune n’est définie, il ne porte pas de `scope`. Un jeton SAML n’est pas concerné.\n\n**CHACUNE EST JUGÉE COMME CELLES D’UN JETON D’ACCÈS OAUTH**, avec cette application comme client : `oauthAllowedScope` déclare ce qui peut lui être émis (en mode produit ; les portées protégées de ce service dans tous les modes), et la question par portée de la politique d’émission décide. Une valeur que la politique écarte est OMISE du jeton et auditée (STS-OAUTH-0579), jamais émise. Une écriture nommant une portée non déclarée est acceptée ici, car la déclaration peut changer et le mode développement accorde les portées non déclarées : déclarez-la aussi sur oauthAllowedScope. Une valeur que la politique écartera fait l’objet d’un AVERTISSEMENT là où elle est définie (#488) : à côté de ce champ, dans la réponse à Enregistrer, et sous forme de `warnings` dans les réponses d’écriture de /admin-api et dans la vue de l’application."
+  },
+  "applications.schema.attributes.wstrustEncryptRequest.what": {
+    "en": "1e6b032014941e7e",
+    "text": "TRUE ou FALSE : exiger que les éléments nommés par la table de requête de cette application arrivent chiffrés, en remplaçant wstrust.encryptRequest. Activé, une requête dont l’AppliesTo est cette application est un FailedCheck si la table est vide, si une expression désigne un élément arrivé en clair, ou si une expression ne désigne rien qui ait été restauré à partir d’un texte chiffré. Le texte chiffré ouvert relève de wstrustAcceptEncryptedElements ; l’AppliesTo est lu dans la requête ouverte, et un texte chiffré qui ne s’ouvre pas est un FailedCheck dans tous les cas."
+  },
+  "applications.schema.attributes.wstrustAcceptEncryptedElements.what": {
+    "en": "474d9ee5b02559e9",
+    "text": "TRUE ou FALSE : accepter le chiffrement XML n’importe où dans une requête dont l’AppliesTo est cette application, dans un en-tête ou le corps, sans qu’une table de requête le nomme, en remplaçant wstrust.acceptEncryptedElements. Désactivé, le texte chiffré n’est accepté que là où wstrustEncryptRequestElements le nomme — chaque élément restauré doit être sélectionné par une expression, ou se trouver dans un élément sélectionné — et un texte chiffré sans table est un InvalidRequest. Dans tous les cas, un texte chiffré doit s’ouvrir avec les clés de ce domaine."
+  },
+  "applications.schema.attributes.wstrustEncryptRequestElements.what": {
+    "en": "d28549992db71c30",
+    "text": "LES ÉLÉMENTS D’UNE REQUÊTE WS-TRUST QUI DOIVENT ARRIVER CHIFFRÉS, une expression XPath 1.0 chacune. Le sous-ensemble est `/`, `//`, `*`, un nom d’élément, `prefix:local`, une union avec `|`, et les prédicats `local-name()`, `namespace-uri()` et `@attr`, joints par `and`. Chaque expression doit sélectionner au moins un élément restauré à partir d’un texte chiffré : un xenc:EncryptedData de type Element ou Content, ou un EncryptedHeader de WS-Security 1.1. Une expression hors de ce sous-ensemble est un RequestFailed. Un en-tête SOAP, le corps SOAP ou tout élément peut être nommé, pour tout type de jeton."
+  },
+  "applications.schema.attributes.wstrustEncryptResponse.what": {
+    "en": "aafbbba9cd31d6c9",
+    "text": "VRAI ou FAUX : remplacer les éléments que nomme la carte de réponse de cette application par xenc:EncryptedData, en l’emportant sur wstrust.encryptResponse. La réponse est construite en clair, puis ces éléments sont remplacés, pour tout type de jeton. Une faute reste en clair. Activé, et si le chiffrement ne peut pas être mené à terme — pas de destinataire, une carte qui ne correspond à rien, ou un chiffrement que le certificat du destinataire ne prend pas — la requête est une faute dans les deux modes."
+  },
+  "applications.schema.attributes.wstrustEncryptResponseElements.what": {
+    "en": "0ee151df13c4663c",
+    "text": "LES ÉLÉMENTS D’UNE RÉPONSE WS-TRUST QUI SONT CHIFFRÉS, une expression XPath 1.0 chacun, le même sous-ensemble que wstrustEncryptRequestElements. Un en-tête SOAP, le corps SOAP, ou n’importe quel élément peut être nommé. Une expression qui ne correspond à rien dans la réponse construite est une faute."
+  },
+  "applications.schema.attributes.wstrustEncryptionAlgorithm.what": {
+    "en": "2156045953402736",
+    "text": "Le chiffrement par bloc utilisé pour les réponses WS-Trust de cette application — aes256-gcm, aes128-gcm, aes256-cbc ou aes128-cbc — en l’emportant sur wstrust.encryptionAlgorithm. Un élément wst:EncryptionAlgorithm peut nommer ce chiffrement, par son nom court ou son URI XML Encryption, seulement tant que le chiffrement de la réponse est activé pour cette application."
+  },
+  "applications.schema.attributes.wstrustEncryptionCertificate.what": {
+    "en": "1ccaa06830162696",
+    "text": "LE CERTIFICAT À DESTINATION DUQUEL UNE RÉPONSE WS-TRUST EST CHIFFRÉE, en DER base64 ou en PEM. Lorsqu’il est défini, il est le destinataire, et un certificat illisible est une faute plutôt qu’un repli vers la source suivante. Lorsqu’il n’est pas défini, le destinataire est l’élément de certificat que sélectionne wstrustResponseRecipientXPath, ou, lorsque cette expression n’est pas définie non plus, le premier élément de certificat du signataire que nomme la signature WS-Security de la requête."
+  },
+  "applications.schema.attributes.wstrustKeyTransportAlgorithm.what": {
+    "en": "89c8e142baf59834",
+    "text": "Comment la clé de contenu est enveloppée pour les réponses WS-Trust de cette application — rsa-oaep-mgf1p, rsa-oaep (SHA-256, MGF1-SHA-256) ou rsa-1_5 — en l’emportant sur wstrust.keyTransportAlgorithm. Un destinataire dont le certificat est EC est chiffré par ECDH-ES quoi que dise ce réglage. Un élément wst:EncryptWith peut nommer cet algorithme, par son nom court ou son URI XML Encryption, seulement tant que le chiffrement de la réponse est activé pour cette application."
+  },
+  "applications.schema.attributes.wstrustResponseRecipientXPath.what": {
+    "en": "0462e40dda10b491",
+    "text": "UNE EXPRESSION XPATH SÉLECTIONNANT L’ÉLÉMENT DE CERTIFICAT À DESTINATION DUQUEL UNE RÉPONSE WS-TRUST EST CHIFFRÉE : un ds:X509Certificate ou un BinarySecurityToken dont le ValueType se termine par #X509v3. Le même sous-ensemble que les cartes d’éléments. Lorsqu’elle est définie et qu’elle ne sélectionne rien, ou qu’elle sélectionne un élément qui n’est pas l’un de ces deux-là, il n’y a pas de destinataire et la source suivante n’est pas essayée. Un élément de certificat sélectionné dont le texte n’est pas un certificat est une faute de chiffrement achevé, et la source suivante n’est pas essayée. Lorsqu’elle n’est pas définie, le destinataire est le premier élément de certificat du signataire que nomme la signature WS-Security de la requête — le BinarySecurityToken que vise la référence de cette signature, ou un ds:X509Certificate dans le KeyInfo de cette signature. Une empreinte, un Subject Key Identifier ou un émetteur et un numéro de série n’est pas un élément de certificat."
+  },
+  "applications.schema.attributes.wstrustDecryptionCertificate.what": {
+    "en": "b00a63a9bafc49ad",
+    "text": "LE CERTIFICAT VERS LEQUEL UNE REQUÊTE WS-TRUST POUR CETTE APPLICATION EST CHIFFRÉE, PEM. Tant qu’il est défini, une requête pour cette application est déchiffrée avec sa clé privée et non avec celle du domaine, et une requête pour elle chiffrée vers la clé du domaine est un FailedCheck. Public : la page de l’application et GET /admin-api/applications le donnent."
+  },
+  "applications.schema.attributes.wstrustDecryptionCertificateChain.what": {
+    "en": "618cc20d5635f6b9",
+    "text": "Les certificats de l’autorité de certification qui a émis wstrustDecryptionCertificate, PEM, l’autorité émettrice en premier, pour une paire de clés émise ici. Vide pour une paire téléversée."
+  },
+  "applications.schema.attributes.wstrustDecryptionPrivateKey.what": {
+    "en": "96bb5bc025291cfa",
+    "text": "La clé privée de wstrustDecryptionCertificate, PEM. Scellée là où les clés persistent, retenue de toute page, de toute réponse de /admin-api et de toute lecture de l’annuaire, et jamais journalisée."
+  },
+  "applications.schema.attributes.wstrustDecryptionKeySource.what": {
+    "en": "d4894d5258b54b7d",
+    "text": "D’où vient la paire de clés de déchiffrement : issued (générée ici et certifiée par l’autorité du domaine) ou uploaded (téléversée)."
   },
   "applications.schema.attributes.krb5ServicePrincipalName.what": {
     "en": "2e8e5f607172bae7",
@@ -1931,6 +1999,10 @@
     "en": "eb941b100ed53ed4",
     "text": "Le moment où l’application propriétaire a été supprimée. La politique est conservée, désactivée, pour l’audit, jusqu’à ce qu’un administrateur la supprime."
   },
+  "xacmlPolicies.schema.attributes.xacmlPepRoute.what": {
+    "en": "4e1dc3fa8c6c3e3c",
+    "text": "Le PEP distant et la route, sous la forme du nom du PEP, d’une barre oblique et de l’id de la route, pour lesquels cette politique a été GÉNÉRÉE par le choix d’autorisation de la route (simple ou publique) dans les formulaires de routes du proxy inverse ou par l’action generate-pep-route-policy (#1760). Une telle politique est réécrite quand la route est enregistrée, renommée avec la route et retirée avec elle ; elle n’est jamais la racine. Elle peut être modifiée dans l’éditeur de politiques, et le prochain enregistrement du choix simple ou public de la route la réécrit : choisis une politique existante sur la route pour en garder une écrite à la main."
+  },
   "xacmlPeps.schema.objectClasses.xacmlPep.what": {
     "en": "2b063c0577e29981",
     "text": "Un Policy Enforcement Point distant qui s’est enregistré auprès de ce Policy Decision Point. LA LIGNE EST UN ENREGISTREMENT ET NON UNE PERMISSION — un PEP qui ne s’enregistre jamais peut tout de même récupérer le référentiel et appliquer les décisions. Ce qu’une ligne apporte, c’est une place sur la console et une adresse pour la notification de changement."
@@ -1972,8 +2044,8 @@
     "text": "La date du premier enregistrement de ce PEP. Conservée lors d’un réenregistrement, car un composant qui redémarre toutes les heures est un fait qui mérite d’être vu, et une entrée dont l’âge serait réinitialisé à chaque redémarrage ne pourrait jamais le montrer."
   },
   "xacmlPeps.schema.attributes.xacmlPepLastSeen.what": {
-    "en": "eca573eaea822db7",
-    "text": "Le dernier battement de cœur ou la dernière récupération. xacml.pepStaleAfterS est le délai écoulé depuis celui-ci au-delà duquel la console indique « périmé » — ce qui ne change délibérément rien à ce que fait ce service."
+    "en": "2e8561030cee3201",
+    "text": "Le dernier battement de cœur ou la dernière récupération au moment où cette entrée a été écrite pour la dernière fois. Un battement de cœur qui ne change rien de durable n'est pas écrit ici (#1882) : lui, les compteurs, l'état des signaux et le dernier avertissement sont conservés à côté de l'entrée, et la console affiche le plus récent des deux. xacml.pepStaleAfterS est le délai écoulé depuis le dernier au-delà duquel la console indique « périmé » — ce qui ne change délibérément rien à ce que fait ce service."
   },
   "xacmlPeps.schema.attributes.xacmlPepSyncToken.what": {
     "en": "44708a3c15a93cf6",
@@ -2003,24 +2075,64 @@
     "en": "b6078cbbbfdb9576",
     "text": "Ce que le PEP distant dit être. Texte libre."
   },
+  "xacmlPeps.schema.attributes.xacmlPepHostname.what": {
+    "en": "127c84c46465d544",
+    "text": "Le nom d’hôte que le PEP distant communique à son enregistrement et dans son signal de vie (#1760) : la variable d’environnement HOSTNAME, à défaut celui du noyau, à défaut /etc/hostname — le nom sous lequel le conteneur est connu sur son réseau, et celui dont il dérive son URL de notification quand le certificat de son écouteur HTTPS le porte. Limité à un nom DNS d’au plus 253 caractères, mis en minuscules, jamais une adresse IP ; un enregistrement ou un signal de vie portant autre chose est refusé (STS-XACML-0261). Le certificat d’écoute par défaut du domaine le porte à côté du nom enregistré du PEP et de son hôte de notification. Un enregistrement qui ne le contient pas le supprime, un signal de vie qui ne le contient pas le conserve. Absent pour un PEP plus ancien, dont les noms de certificat sont ceux d’avant."
+  },
   "xacmlPeps.schema.attributes.xacmlPepLastNotify.what": {
-    "en": "a4283bfe7916574e",
-    "text": "Ce qu’il est advenu de la dernière notification — le statut, ou la phrase de refus. LE SEUL ENDROIT OÙ UNE NOTIFICATION ÉCHOUÉE EST CONSIGNÉE, pour la raison que ssf_streams.js donne au sujet d’une poussée refusée : elle est par définition invisible du côté de la réception."
+    "en": "a512a007219ee216",
+    "text": "Ce qu’il est advenu de la dernière notification — le statut, ou la phrase de refus — au moment où cette entrée a été écrite pour la dernière fois. Le résultat d’une notification n’est pas écrit ici (#1882) : le plus récent est conservé dans l’enregistrement d’activité du PEP, à côté de l’entrée (xacml_pep_registry.liveness), et la console affiche le plus récent des deux. Ce service est le seul à consigner une notification échouée, pour la raison que ssf_streams.js donne au sujet d’une poussée refusée : elle est par définition invisible du côté de la réception."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepProxy.what": {
+    "en": "1d8edee3c551082e",
+    "text": "La configuration de proxy inverse que le PEP distant récupère de GET /xacml/pep/proxy (#1760) : un document JSON — enabled, l’URL de base de l’application en amont, l’URL de base publique par laquelle un navigateur atteint le proxy, les délais et la table ordonnée des routes, chacune avec son chemin, ses méthodes, ses mécanismes d’authentification, l’application du registre du royaume qu’elle protège, et la ressource et l’action XACML. Écrite par l’action set-pep-proxy de la console et de l’API de gestion, validée entière là et de nouveau à la construction de la récupération : une valeur écrite par ldapmodify qui n’est pas valide est récupérée comme configured: false. Conservée par un enregistrement et un battement de cœur ; supprimée avec la ligne."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepSignals.what": {
+    "en": "973f5fff5b5df8e8",
+    "text": "La santé des flux de signaux CAEP/RISC du proxy inverse telle que le PEP distant l’a communiquée en dernier dans un signal de vie (#1760) : un document JSON de comptes et d’âges uniquement — les récepteurs, combien sont sains et périmés, le seuil de péremption et l’intervalle d’interrogation, l’âge du plus ancien dernier succès, le plus grand nombre d’échecs consécutifs, les SET acceptés et refusés, les sessions terminées, et pour les magasins de sessions de la bibliothèque les valeurs held, max, TTL, evicted et expired — avec son heure d’arrivée, et, venant d’un PEP qui les communique, une ligne par flux : le client OIDC qu’il sert et son identifiant de flux, chacun limité à un jeu de caractères, s’il fonctionne et s’il est sain, quand il a démarré, été interrogé en dernier et réussi en dernier (calculé ici à partir des âges envoyés par le PEP et de l’heure d’arrivée, jamais d’après une horloge du PEP), et ses compteurs. Tout autre membre est écarté et toute valeur qui n’est pas un entier non négatif vaut 0 : aucune URL ni aucun texte d’erreur n’est donc jamais conservé. Un signal de vie qui ne le contient pas le conserve, un signal à null l’efface, et un enregistrement le supprime, puisqu’un enregistrement est un nouveau processus. Absent sur un PEP qui ne l’a jamais communiqué, ce que la console affiche comme non communiqué."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepSettings.what": {
+    "en": "2216d5f263d38ea5",
+    "text": "Les paramètres qu’un administrateur a fixés pour ce PEP distant sur sa page de la console ou avec l’action set-pep-settings de l’API de gestion (#1760) : un document JSON ne contenant que les paramètres fixés, chacun sous son nom de membre (description, resource, notifyUrl, bias, pip, les intervalles d’interrogation, de signal de vie et d’attente avant nouvelle tentative, le délai et la limite du corps, l’intervalle de rechargement HTTPS, le niveau de journalisation, l’interrupteur, l’identifiant et le délai de transmission AuthZEN, et les limites de session, de JWKS, d’amont, de partie de confiance et de flux de signaux du proxy inverse), validé en entier à l’écriture et de nouveau quand le PEP les récupère depuis GET /xacml/pep/settings. Un paramètre absent est la variable d’environnement du PEP, ou sa valeur par défaut. Le minimum dont le PEP a besoin pour se connecter la première fois n’y figure jamais. Conservé lors d’un enregistrement et d’un signal de vie ; supprimé avec la ligne."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepSettingsInUse.what": {
+    "en": "b081386a6d832967",
+    "text": "Ce que le PEP distant a communiqué en dernier, dans un signal de vie, comme étant en vigueur pour chaque paramètre géré (#1760) : un document JSON de la forme { token, values: { setting: { value, source } } }, la source étant service, environment ou default, avec son heure d’arrivée. Tout paramètre que la table ne nomme pas, toute valeur qui n’est pas du type de son paramètre et toute autre source sont écartés. Un signal de vie sans lui le conserve, un signal avec null l’efface, et un enregistrement l’écarte. Absent pour un PEP plus ancien que les paramètres, ce que la console affiche comme non communiqué."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepListeners.what": {
+    "en": "b2e07443143061b7",
+    "text": "Les écouteurs qu’un administrateur a définis pour ce PEP distant sur sa page de la console ou avec l’action set-pep-listener de l’API de gestion (#1760), en plus des quatre que lie son environnement : un tableau JSON, chaque écouteur avec son identifiant, son protocole (http ou https), son rôle (api ou proxy), son adresse et son port, et pour un écouteur HTTPS les noms DNS et adresses IP que porte son certificat, son algorithme de clé et un compteur de renouvellement. Validé en entier à l’écriture et de nouveau quand le PEP les récupère depuis GET /xacml/pep/settings, qui les lie et les délie pendant qu’il fonctionne. Le PEP génère la clé de chaque écouteur HTTPS et demande son certificat à POST /xacml/pep/listener-certificate : aucune clé privée n’est donc jamais ici. Conservé lors d’un enregistrement et d’un signal de vie ; supprimé avec la ligne."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepListenersInUse.what": {
+    "en": "b2a987046bb7d733",
+    "text": "Ce que le PEP distant a communiqué en dernier, dans un signal de vie, sur chacun de ses écouteurs (#1760), les quatre de son environnement et ceux qui sont définis : un document JSON { listeners: [ { id, source, protocol, purpose, address, port, state, reason, renew, certificate } ] }, avec son heure d’arrivée. L’état est l’un de listening, waiting, failed et off et la raison l’une d’un ensemble fermé, jamais le texte du système d’exploitation ; le certificat est le sujet, l’émetteur, le numéro de série, le subjectAltName, la validité et l’empreinte de celui qu’il sert. Tout autre membre est écarté. Un signal de vie qui ne le contient pas le conserve, un signal à null l’efface, et un enregistrement le supprime. Absent sur un PEP antérieur aux écouteurs, ce que la console affiche comme non communiqué."
   },
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "Ce que le PEP a dit de lui-même lors de son enregistrement."
   },
-  "applications.schema.attributes.saml2SsoConsent.what": {
-    "en": "f7ca67bc2031ec08",
-    "text": "TRUE ou FALSE : une personne est-elle interrogée, une fois, avant que SAML 2.0 ne la connecte à cette application depuis une session qu’elle a déjà, en remplaçant saml2.ssoConsent (ASVS 5.0.0 7.6.2). FALSE convient à une application que tout le monde dans le domaine doit utiliser ; un consentement global sur l’entrée répond pour tout le monde et garde la trace de qui a accepté."
+  "xacmlPepClusters.schema.objectClasses.xacmlPepCluster.what": {
+    "en": "e64d0948328eb8a1",
+    "text": "Un cluster logique de points d’application des politiques (PEP) distants qui partagent une configuration (#1760) : le proxy inverse, les paramètres gérés et les définitions d’écouteurs sont conservés ici une seule fois, et chaque membre les récupère comme les siens. Un membre ne diffère que par son nom et ses adresses. L’appartenance est conservée ici, si bien qu’un PEP peut être listé avant de s’enregistrer, et qu’un PEP appartient à un cluster au plus."
   },
-  "applications.schema.attributes.saml11SsoConsent.what": {
-    "en": "0cb7bbf2fb684481",
-    "text": "TRUE ou FALSE : une personne est-elle interrogée, une fois, avant que SAML 1.1 ne la connecte à cette application depuis une session qu’elle a déjà, en remplaçant saml11.ssoConsent (ASVS 5.0.0 7.6.2). FALSE convient à une application que tout le monde dans le domaine doit utiliser ; un consentement global sur l’entrée répond pour tout le monde et garde la trace de qui a accepté."
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterProxy.what": {
+    "en": "e23df410bfb4fa42",
+    "text": "La configuration du proxy inverse que chaque membre du cluster récupère par GET /xacml/pep/proxy (#1760) : le même document que celui du PEP (xacmlPepProxy), validé par la même grammaire, les politiques générées de ses routes étant nommées pepc-<cluster>-<route> et marquées @<cluster>/<route>. Son publicBaseUrl est l’URL de base logique du cluster, à partir de laquelle est construite la ressource par défaut d’une route simple ou publique et qui est envoyée à un membre sans publicBaseUrl propre. Écrite par les actions set-pep-cluster-proxy et set-pep-cluster-route."
   },
-  "applications.schema.attributes.wsfedSsoConsent.what": {
-    "en": "9a3541460bedfa45",
-    "text": "TRUE ou FALSE : une personne est-elle interrogée, une fois, avant que WS-Federation ne la connecte à cette application depuis une session qu’elle a déjà, en remplaçant wsfed.ssoConsent (ASVS 5.0.0 7.6.2). FALSE convient à une application que tout le monde dans le domaine doit utiliser ; un consentement global sur l’entrée répond pour tout le monde et garde la trace de qui a accepté."
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterSettings.what": {
+    "en": "dc3c4657f5e8a82b",
+    "text": "Les paramètres gérés que chaque membre du cluster récupère par GET /xacml/pep/settings (#1760) : le même document que celui du PEP (xacmlPepSettings), validé par la même table, sauf l’URL de notification, qui est une adresse du membre et se définit sur le membre. Écrits par l’action set-pep-cluster-settings."
+  },
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterListeners.what": {
+    "en": "27e48be388ccf3ed",
+    "text": "Les écouteurs définis pour chaque membre du cluster (#1760) : le même tableau que celui du PEP (xacmlPepListeners), validé par la même grammaire. Un membre peut remplacer l’adresse et le port d’un écouteur et ajouter des noms DNS à son certificat ; le certificat de chaque membre est le sien, émis pour sa propre clé. Écrits par les actions set-pep-cluster-listener et remove-pep-cluster-listener."
+  },
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterMembers.what": {
+    "en": "189d31ecba7f4c6b",
+    "text": "Les membres du cluster (#1760) : un tableau JSON de { pep, publicBaseUrl, notifyUrl, listeners: { <listener id>: { address, port, names } } }, chaque pep étant le nom d’un PEP enregistré ou d’un PEP pas encore enregistré, le reste les adresses propres du membre. Un PEP est membre d’un cluster au plus. Écrits par les actions create-pep-cluster, add-pep-cluster-member, set-pep-cluster-member et remove-pep-cluster-member."
+  },
+  "xacmlPepClusters.schema.attributes.description.what": {
+    "en": "769286563bacdcb4",
+    "text": "Ce qu’un administrateur a dit du cluster en le créant."
   }
 }

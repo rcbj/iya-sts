@@ -769,6 +769,12 @@ function serialiseSignerGroups(members) {
       out.privateKeyPem = one.privateKey.export({ type: 'pkcs8',
                                                   format: 'pem' });
     }
+    // An mdoc authority's certificate (#1862). A JOSE credential signer
+    // has none on the row — its certificate lives in the PKI store — so
+    // the field is written only when the row carries one.
+    if (one.certPem) {
+      out.certPem = one.certPem;
+    }
     return out;
   });
 }
@@ -787,7 +793,7 @@ function deserialiseSignerGroups(rows) {
   }
   log.debug("Leaving deserialiseSignerGroups(). " + rows.length + ".");
   return rows.map(function (one) {
-    return {
+    const out = {
       group: one.group, slot: one.slot, alg: one.alg, kind: one.kind,
       pairedSlot: one.pairedSlot || null, publicJwk: one.publicJwk,
       privateKey: one.kind === 'pq'
@@ -796,6 +802,11 @@ function deserialiseSignerGroups(rows) {
             : Buffer.from(String(one.privateKey), 'base64'))
         : crypto.privateKeyFrom(one.privateKeyPem)
     };
+    // See serialiseSignerGroups(): only an mdoc row has a certificate.
+    if (one.certPem) {
+      out.certPem = one.certPem;
+    }
+    return out;
   });
 }
 
@@ -1145,6 +1156,10 @@ function serialise(keys) {
     bbsKey: serialiseBbsKey(keys.bbsKey),
     // THE SIGNER GROUPS (2026-09-26, #68) — see serialiseSignerGroups().
     signerGroups: serialiseSignerGroups(keys.signerGroups),
+    // THE CREDENTIAL SIGNERS (#1880) — the signer groups' row shape, so
+    // serialiseSignerGroups() writes them too. See signerGroupsHeldFor()'s
+    // twin, credentialSignersHeldFor(), below.
+    credentialSigners: serialiseSignerGroups(keys.credentialSigners),
     generations: serialiseGenerations(keys.generations)
   };
   log.debug('Leaving serialise(). ' + out.extraKeys.length + ' extra key(s).');
@@ -1203,6 +1218,7 @@ function deserialise(blob) {
     xmlKey: deserialiseXmlKey(blob.xmlKey),
     bbsKey: deserialiseBbsKey(blob.bbsKey),
     signerGroups: deserialiseSignerGroups(blob.signerGroups),
+    credentialSigners: deserialiseSignerGroups(blob.credentialSigners),
     generations: deserialiseGenerations(blob.generations)
   };
   log.debug('Leaving deserialise(). ' + out.extraKeys.length +
@@ -1316,6 +1332,61 @@ function start() {
   return startPromise;
 }
 
+// The keys of `rows` whose realm the store no longer holds, or none where
+// the store cannot say which realms it holds (realms not written down, or
+// a store from before `storedRealmIds()`): then every row is read as it
+// always was. A row of the default realm or of an internal scope (`*service`,
+// `*process`) is never one: `realmOfRow()` answers '' for it.
+async function orphanRowsOf(rows) {
+  log.debug("Entering orphanRowsOf().");
+  if (typeof store.storedRealmIds !== 'function') {
+    log.debug("Leaving orphanRowsOf(). The store cannot say.");
+    return [];
+  }
+  let held = null;
+  try {
+    held = new Set((await store.storedRealmIds()) || []);
+  } catch (e) {
+    // Not fatal: the rows are then read as they always were, and a row that
+    // will not open refuses the start as it always did.
+    log.debug("Caught in orphanRowsOf(): " + ((e && e.message) || e));
+    log.debug("Leaving orphanRowsOf(). Unreadable.");
+    return [];
+  }
+  const out = (rows || []).map(function (row) {
+    return String(row.realm || '');
+  }).filter(function (rowKey) {
+    const realmId = realmOfRow(rowKey);
+    return realmId !== '' && !held.has(realmId);
+  });
+  log.debug("Leaving orphanRowsOf(). " + out.length + " row(s).");
+  return out;
+}
+
+// Deletes rows of realms that no longer exist, one at a time, each said once
+// (STS-KEYS-0199). Never throws: a row that could not be deleted is set
+// aside again at the next start.
+async function purgeOrphanRows(rowKeys, when) {
+  log.debug("Entering purgeOrphanRows(). " + rowKeys.length);
+  for (const rowKey of rowKeys) {
+    try {
+      await store.deleteKeys(rowKey);
+      log.warn(errorCodes.tag('STS-KEYS-0199') + 'keystore: the "' + rowKey +
+               '" row belongs to the "' + realmOfRow(rowKey) + '" realm, ' +
+               'which no longer exists — it was written after that realm ' +
+               'was removed, under a data key the removal destroyed — so it ' +
+               'was deleted ' + when + ' rather than read.');
+    } catch (e) {
+      log.debug("Caught in purgeOrphanRows(): " + ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-KEYS-0199') + 'keystore: the "' + rowKey +
+               '" row belongs to a realm that no longer exists and could ' +
+               'not be deleted (' + ((e && e.message) || e) + '); it is ' +
+               'set aside again at the next start.');
+    }
+  }
+  log.debug("Leaving purgeOrphanRows().");
+}
+
 async function startOnce() {
   log.debug('Entering startOnce().');
   if (!persists()) {
@@ -1370,6 +1441,21 @@ async function startOnce() {
   } catch (e) {
     throw new Error(errorCodes.tag('STS-KEYS-0028') +
                     'the stored key material could not be read: ' + e.message);
+  }
+  // A ROW OF A REALM THE STORE NO LONGER HOLDS IS NOT A WRONG KEY (2026-11-18,
+  // GitHub Actions run #496). A key-set write that landed after its realm's
+  // removal outlived the purge, sealed under a data key the purge destroyed,
+  // and every later start of every node refused below with STS-KEYS-0029:
+  // remove a realm, restart a node, and it never came back. Such a row is
+  // set aside here, before anything is opened, and deleted once the start
+  // has succeeded (STS-KEYS-0199). The refusal stays for every realm the
+  // store DOES hold: a live realm whose key will not open is still the wrong
+  // key-encryption key.
+  const orphans = await orphanRowsOf(rows);
+  if (orphans.length) {
+    rows = rows.filter(function (row) {
+      return orphans.indexOf(String(row.realm || '')) < 0;
+    });
   }
   let loaded = 0;
   let pkiLoaded = 0;
@@ -1471,6 +1557,7 @@ async function startOnce() {
            'something signs with it and dropped again (' +
            retentionSentence() + ').');
   started = true;
+  await purgeOrphanRows(orphans, 'at this start');
   log.debug('Leaving startOnce(). ' + loaded + ' realm(s).');
   return { persisting: true, loaded: loaded, pki: pkiLoaded,
            dataKeys: deks.size, provider: secrets.describe().provider };
@@ -1615,6 +1702,18 @@ function adoptShared(realmId, blob) {
     return false;
   }
   const id = String(realmId || '');
+  // A SET FOR A REALM THIS PROCESS NO LONGER HOLDS IS NOT ADOPTED
+  // (2026-11-18). A key set published by another process while a realm was
+  // being removed — a `signing.rotate` run that finished after the purge —
+  // arrived here after this process had removed the realm, was held again,
+  // and its write failed under the realm's destroyed data keys
+  // (`removedSince()`'s measurement). A realm this process removed and has
+  // not defined again (`realms.acceptsRows()`) takes no set; one that has not
+  // arrived yet still does.
+  if (realmOfRow(id) !== '' && !realms.acceptsRows(id)) {
+    log.debug("Leaving adoptShared(). A realm removed here.");
+    return false;
+  }
   let replacing = shared.has(id) && shared.get(id) !== blob;
   // **AND A SET HELD ONLY AS STORED MATERIAL IS REPLACED TOO (2026-09-14,
   // #46).** A process that RESTORED a realm's keys has nothing in `shared`, so
@@ -1835,17 +1934,22 @@ function enriches(candidate, held) {
   // And the VC-API keys, the TENTH (#598).
   const vcHere = candidate.vcApiKeys ? 1 : 0;
   const vcThere = held.vcApiKeys ? 1 : 0;
+  // And the credential signers, the ELEVENTH (#1880) — a list, made one key
+  // family at a time as credentials ask for them.
+  const csHere = (candidate.credentialSigners || []).length;
+  const csThere = (held.credentialSigners || []).length;
   if (pqHere < pqThere || vciHere < vciThere || rtHere < rtThere ||
       roHere < roThere || xmlHere < xmlThere || bbsHere < bbsThere ||
       grpHere < grpThere || bdHere < bdThere || kemHere < kemThere ||
-      vcHere < vcThere) {
+      vcHere < vcThere || csHere < csThere) {
     log.debug("Leaving enriches().");
     return false;
   }
   log.debug("Leaving enriches().");
   return pqHere > pqThere || vciHere > vciThere || rtHere > rtThere ||
          roHere > roThere || xmlHere > xmlThere || bbsHere > bbsThere ||
-         grpHere > grpThere || bdHere > bdThere || kemHere > kemThere;
+         grpHere > grpThere || bdHere > bdThere || kemHere > kemThere ||
+         csHere > csThere;
 }
 
 // ---------------------------------------------------------------------------
@@ -2055,6 +2159,81 @@ function signerGroupsHeldFor(realmId) {
     return { group: one.group, slot: one.slot, alg: one.alg, kind: one.kind,
              pairedSlot: one.pairedSlot || null, publicJwk: one.publicJwk };
   }) : null;
+}
+
+// ---------------------------------------------------------------------------
+// THE REALM'S CREDENTIAL SIGNERS (#1880), from the store or a sibling, PUBLIC
+// halves only — `signerGroupsHeldFor()`'s question for the list
+// `common/credential_signer.js` keeps: one key per key family, made the first
+// time a credential is signed with that family. The private halves are
+// `privateMaterialFor().credential`, by kid, on the residency timer.
+// ---------------------------------------------------------------------------
+/**
+ * Returns a realm's credential-signing keys from the store or a sibling,
+ * public halves only.
+ *
+ * @param realmId - the realm
+ * @returns `{ group, slot, alg, kind, publicJwk }` per key, or null
+ */
+function credentialSignersHeldFor(realmId) {
+  log.debug("Entering credentialSignersHeldFor().");
+  const id = String(realmId || '');
+  const fromStore = storedFor(id);
+  const fromShared = shared.get(id);
+  // THE UNION, BY SLOT, the stored key winning: a key family made by a
+  // sibling and not yet written down is still one this realm signs with.
+  const rows = [];
+  [fromStore, fromShared].forEach(function (blob) {
+    ((blob && blob.credentialSigners) || []).forEach(function (one) {
+      const known = rows.some(function (have) {
+        return have.slot === one.slot;
+      });
+      if (!known) {
+        const view = { group: one.group, slot: one.slot, alg: one.alg,
+                       kind: one.kind, pairedSlot: null,
+                       publicJwk: one.publicJwk };
+        // The IACA and the document signer (#1862) are public
+        // certificates. A JOSE row has no certPem, and the view does
+        // not grow a field it did not have.
+        if (one.certPem) {
+          view.certPem = one.certPem;
+        }
+        rows.push(view);
+      }
+    });
+  });
+  log.debug("Leaving credentialSignersHeldFor(). " + rows.length + ".");
+  return rows.length ? rows : null;
+}
+
+// The private half of one credential signer (#1880), by kid: the stored
+// material's, on its residency timer, and otherwise the shared blob's — in a
+// service that persists nothing, a key a sibling made reaches this process
+// only through the sibling channel. Null where neither holds it.
+/**
+ * Returns the private half of one of a realm's credential signers.
+ *
+ * @param realmId - the realm
+ * @param kid - the signer's `kid`
+ * @returns the private key (a KeyObject, or raw bytes for a post-quantum
+ *   key), or null
+ */
+function credentialSignerPrivateFor(realmId, kid) {
+  log.debug("Entering credentialSignerPrivateFor().");
+  const id = String(realmId || '');
+  const held = privateMaterialFor(id);
+  if (held && held.credential && held.credential.has(kid)) {
+    log.debug("Leaving credentialSignerPrivateFor(). Stored.");
+    return held.credential.get(kid);
+  }
+  const blob = shared.get(id);
+  const row = ((blob && blob.credentialSigners) || []).filter(function (one) {
+    return one && one.publicJwk && one.publicJwk.kid === kid;
+  })[0];
+  const parsed = row ? (deserialiseSignerGroups([row]) || [])[0] : null;
+  log.debug("Leaving credentialSignerPrivateFor(). " +
+            (parsed ? 'Shared.' : 'None.'));
+  return parsed ? parsed.privateKey : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -2336,11 +2515,18 @@ function privateMaterialFor(realmId) {
     // THE SIGNER GROUPS' PRIVATE HALVES (#68), by kid, on this record's
     // timer like every other private key here.
     groups: new Map(),
+    // THE CREDENTIAL SIGNERS' PRIVATE HALVES (#1880), by kid, the same.
+    credential: new Map(),
     standby: new Map()
   };
   (deserialiseSignerGroups(blob.signerGroups) || []).forEach(
     function (one) {
       parsed.groups.set(one.publicJwk && one.publicJwk.kid, one.privateKey);
+    });
+  (deserialiseSignerGroups(blob.credentialSigners) || []).forEach(
+    function (one) {
+      parsed.credential.set(one.publicJwk && one.publicJwk.kid,
+                            one.privateKey);
     });
   ((blob.generations && blob.generations.standby) || []).forEach(
     function (row) {
@@ -2663,6 +2849,24 @@ realms.onRemove(function (id) {
   // issued to the applications of a realm that is gone would go on chaining.
   pkiHeld.delete(realmId);
   pkiBase.delete(realmId);
+  // AND EVERY WRITE OF ITS ROWS NOT YET LANDED (2026-11-18) — its key set,
+  // its certificate authority and its data-key rows: queued, running or
+  // waiting for a retry, each is sealed under or names a data key the next
+  // lines destroy — see `removedRowAt` above. A stamp only where a write is
+  // pending, and it goes with the row's last pending write, so a removed
+  // realm leaves nothing here.
+  const ownRows = [realmId, PKI_ROW_PREFIX + realmId,
+                   dekRowKey('service', dekRealm(realmId))];
+  if (cellKek) {
+    ownRows.push(dekRowKey(ownCellScope(), dekRealm(realmId)));
+  }
+  ownRows.forEach(function (rowKey) {
+    failedWrites.delete(rowKey);
+    lastOutcome.delete(rowKey);
+    if (writes.has(rowKey)) {
+      removedRowAt.set(rowKey, ++writeSeq);
+    }
+  });
   // AND ITS DATA ENCRYPTION KEYS (#391): a realm re-created under the same
   // name gets keys of its own, and nothing of the last one's opens under them.
   const dekRealmId = dekRealm(realmId);
@@ -2970,6 +3174,28 @@ let dekReloadAt = 0;
 let dekReloading = null;
 const dekMissWarned = new Set();
 
+// Whether `dekRealmId` (a data key's realm: 'default' or a realm id) is a
+// realm this process has not removed — `realms.acceptsRows()`, which also
+// accepts a realm that has not arrived here yet.
+function realmAccepted(dekRealmId) {
+  log.debug("Entering realmAccepted().");
+  const id = String(dekRealmId || '');
+  log.debug("Leaving realmAccepted().");
+  return !id || id === 'default' || realms.acceptsRows(id);
+}
+
+// Whether `dekRealmId` is a realm DEFINED in this process now — the default
+// realm, or one `realms.get()` answers. Narrower than realmAccepted(): a
+// realm that has not arrived here is accepted (its rows may come first) and
+// is not defined. See dataKeys() and forgetUnlistedDeks() for why the
+// difference matters (GitHub Actions run #569).
+function realmDefinedHere(dekRealmId) {
+  log.debug("Entering realmDefinedHere().");
+  const id = String(dekRealmId || '');
+  log.debug("Leaving realmDefinedHere().");
+  return !id || id === 'default' || !!realms.get(id);
+}
+
 function dekRealm(realm) {
   log.debug("Entering dekRealm().");
   log.debug("Leaving dekRealm().");
@@ -3124,8 +3350,10 @@ const DIRECTORY_CLASSES = [
   'application-private-key', 'client-secret', 'registration-access-token',
   'federation-client-secret', 'identity-verifications', 'gnap-shared-key',
   'gnap-macaroon-key', 'person-private-key', 'federation-encryption-key',
-  'kerberos-keys', 'totp-secret', 'recovery-codes', 'directory',
-  'secret-destination-credential', 'scim-client-credential'
+  'federation-client-certificate', 'kerberos-keys', 'totp-secret',
+  'recovery-codes', 'directory',
+  'secret-destination-credential', 'scim-client-credential',
+  'wstrust-decryption-key'
 ];
 
 // The cipher a NEW data key of a class is made for.
@@ -3318,15 +3546,42 @@ function refreshDekRows(opts) {
     return dekReloading;
   }
   dekReloadAt = Date.now();
-  dekReloading = Promise.resolve().then(function () {
-    return store.loadKeys();
-  }).then(async function (rows) {
+  // ---------------------------------------------------------------------
+  // THE DATA-KEY ROWS AND NOTHING ELSE (2026-11-11), where it read the whole
+  // of `sts_keys` and threw away everything but them. This runs before EVERY
+  // key-set and certificate-authority write where the store merges
+  // (`writeAfterDeks()`), and for every directory and minted row met under
+  // a data key not held yet, so its cost was the size of every realm's key
+  // set and hierarchy together — rows that grow with every realm and every
+  // rebuild (an issued register keeps a record per certificate it ever
+  // published) — and was paid once per write, in every process. In fuzz run
+  // 16's single-node stack (165 realms with a hierarchy, three of them
+  // rebuilt every twenty seconds) a builder's own writes queued behind it,
+  // and the change-log pull waiting for those writes (`applyStoredChange()`
+  // `afterOurWrite`) spent 2-26 s on one "keys" row, so read barriers gave
+  // up (STS-STORE-0039, STS-WORKER-0027). A driver that cannot select by
+  // prefix still answers `loadKeys()`, and the filter below holds either
+  // way. Measured against PostgreSQL 18 with a 71 MB `sts_keys` of 500 rows:
+  // the whole table 61 ms median, four at once 303 ms; the data-key rows
+  // alone 1 ms (tests/key_row_dek_reads.js holds the shape).
+  // ---------------------------------------------------------------------
+  const reading = typeof store.loadDekRows === 'function'
+    ? function () {
+      return store.loadDekRows();
+    }
+    : function () {
+      return store.loadKeys();
+    };
+  dekReloading = Promise.resolve().then(reading).then(async function (rows) {
     let adopted = 0;
+    const listed = new Set();
     for (const row of rows || []) {
       if (String(row.realm || '').indexOf(DEK_ROW_PREFIX) === 0) {
+        listed.add(String(row.realm));
         adopted += await adoptDekRow(String(row.realm), row.material, false);
       }
     }
+    forgetUnlistedDeks(listed);
     return adopted;
   }, function (e) {
     log.debug("Caught in reloadDekRows(): " + ((e && e.message) || e));
@@ -3337,6 +3592,61 @@ function refreshDekRows(opts) {
   });
   log.debug("Leaving refreshDekRows().");
   return dekReloading;
+}
+
+// ---------------------------------------------------------------------------
+// THE DATA KEYS OF A REALM THAT NEVER ARRIVED HERE, WHOSE ROW IS GONE, ARE
+// DROPPED (2026-11-20, GitHub Actions run #569).
+//
+// A process that never defined a realm still adopts its data-key row — a
+// realm's rows may reach a process before the realm does, so
+// `realmAccepted()` takes them — and when that realm is created and removed
+// between two of this process's realm loads, it never runs `realms.remove()`
+// for it, so the keystore purge (above, `realms.onRemove()`) never drops
+// what it adopted. In run #569's single-node stack `cbc-mwoe2uxmho123` was
+// created and removed within nine seconds; four processes removed it, one
+// held its data keys from then on, listed them as current in the encryption
+// report for the 26 minutes until `sts_data_keys` ran, and no count could
+// reach them: the counting worker held none of them, and their row had been
+// deleted. The same process wrote that row back during the re-encryption
+// pass (every other process then deleted it again, STS-KEYS-0199).
+//
+// The store is the judge, not a timer: a data-key row is deleted only with
+// its realm (the purge) or as a removed realm's orphan, so a row this
+// process adopted that the store no longer lists is a removed realm's. Only
+// a realm NOT DEFINED here qualifies — a defined realm's row may simply not
+// be written yet — and never one whose own write is queued or failed here.
+// Dropping is safe even when wrong: the realm is not retired, so its row is
+// adopted again whenever it is listed (`noteDekMiss()` reads it on demand).
+// ---------------------------------------------------------------------------
+function forgetUnlistedDeks(listedRowKeys) {
+  log.debug("Entering forgetUnlistedDeks().");
+  const gone = new Set();
+  deks.forEach(function (rec) {
+    if (rec.derived || realmDefinedHere(rec.realm)) {
+      return;
+    }
+    const rowKey = dekRowKey(rec.scope, rec.realm);
+    if (listedRowKeys.has(rowKey) || writes.has(rowKey) ||
+        failedWrites.has(rowKey)) {
+      return;
+    }
+    gone.add(rowKey);
+  });
+  if (!gone.size) {
+    log.debug("Leaving forgetUnlistedDeks(). None.");
+    return 0;
+  }
+  const dropped = dropDeks(function (rec) {
+    return !rec.derived && gone.has(dekRowKey(rec.scope, rec.realm));
+  });
+  log.info('keystore: ' + dropped + ' data encryption key(s) of ' +
+           gone.size + ' realm(s) never defined in this process were ' +
+           'dropped: their row is no longer in the store, so the realm was ' +
+           'removed before it arrived here (' +
+           Array.from(gone).join(', ') + ').');
+  log.debug("Leaving forgetUnlistedDeks(). " + dropped + " dropped.");
+  return dropped;
 }
 
 // Whether a sealed row names a data encryption key this process does not
@@ -3453,6 +3763,17 @@ async function adoptDekRow(rowKey, text, fatal) {
   }
   if (!row) {
     log.debug("Leaving adoptDekRow(). No row.");
+    return 0;
+  }
+  // THE DATA KEYS OF A REALM REMOVED HERE ARE NOT ADOPTED BACK (2026-11-18,
+  // GitHub Actions run #493). The purge drops them and deletes their row,
+  // the delete after the removal has answered; a re-read of the data-key
+  // rows in between (`refreshDekRows()`) brought the removed realm's keys
+  // back into this process, where the encryption report listed them as
+  // current and no count ever reached them — `sts_data_keys` waited a
+  // minute for a count of keys of `keys-…`, removed 0.4 s before it began.
+  if (!realmAccepted(row.realm)) {
+    log.debug("Leaving adoptDekRow(). A realm removed here.");
     return 0;
   }
   let adopted = 0;
@@ -3892,6 +4213,15 @@ function dataKeys() {
   log.debug("Entering dataKeys().");
   const rows = [];
   deks.forEach(function (rec) {
+    // Not a removed realm's (see adoptDekRow()): its keys are on their way
+    // out of this process and the store, and are no key anything uses.
+    // NOR A REALM NOT DEFINED HERE (run #569, forgetUnlistedDeks()): nothing
+    // in this process can seal or open under its keys, and where it was
+    // removed before it arrived they would be listed as current for ever,
+    // with no count to come.
+    if (!realmDefinedHere(rec.realm)) {
+      return;
+    }
     rows.push({ id: rec.id, scope: rec.scope, realm: rec.realm, cls: rec.cls,
                 alg: rec.alg || (rec.key ? crypto.dekAlgOf(rec.key)
                                          : 'aes-256-gcm'),
@@ -4138,8 +4468,11 @@ function recordCounts(counts, options) {
   deks.forEach(function (rec) {
     // Only this process's own scopes: another cell's keys are held unopened,
     // and its values are in a database this one did not count.
+    // Nor a realm not defined here (run #569): its row written from here
+    // is a removed realm's written back, which every other process deletes
+    // on arrival (STS-KEYS-0199). See forgetUnlistedDeks().
     if (rec.derived || rec.status === 'destroyed' ||
-        !wrappingKeyOf(rec.scope)) {
+        !wrappingKeyOf(rec.scope) || !realmDefinedHere(rec.realm)) {
       return;
     }
     const has = Object.prototype.hasOwnProperty.call(map, rec.id);
@@ -5136,6 +5469,78 @@ const lastOutcome = new Map();   // row key -> what its last write decided
 // until a later write of the row succeeds (#351). `retryFailed()` queues it
 // again; `failing()` says whether any is waiting.
 const failedWrites = new Map();
+// ---------------------------------------------------------------------------
+// A ROW WHOSE REALM WAS REMOVED IS NEVER WRITTEN, AND NEVER RETRIED
+// (2026-11-18). The removal destroys the realm's data encryption keys
+// (`dropDeks()` in the purge below), so a write of its key set or its
+// certificate authority that was queued, running or waiting for a retry
+// cannot be sealed or merged any more: it failed "the data encryption key it
+// names is not held here", was kept in `failedWrites`, and because
+// `persistence.commitThrough()` makes every writing request wait for every
+// failed key row, EVERY request that changed anything was answered 503
+// (STS-STORE-0066) from then on, the token endpoint included. Reproduced on
+// a single product node by removing 74 realms the suite had just made: one
+// realm's key-set write was in flight, and the node answered nothing that
+// wrote until it was restarted. So the removal stamps each of the realm's
+// rows with a sequence number, and a write queued before that stamp is
+// abandoned rather than run, and not kept as a failure if it was already
+// running. A realm defined again under the same id queues writes after the
+// stamp, which run as they always did.
+// ---------------------------------------------------------------------------
+let writeSeq = 0;
+const removedRowAt = new Map();  // row key -> writeSeq at its realm's removal
+
+// The realm a row belongs to: a key set's row is its realm id, a
+// certificate authority's `pki:<scope>`, a data-key row's `dek:<scope>:<realm>`
+// ('default' for the default realm). '' for the default realm and for every
+// INTERNAL SCOPE, which are never removed — and this is the ONE predicate
+// every door that deletes or refuses a row "of a removed realm" asks
+// (`orphanRowsOf()` at a start, `applyStoredChange()` on arrival,
+// `removedSince()`, `adoptShared()`), so they cannot disagree.
+//
+// **AN INTERNAL SCOPE IS NOT A REALM (2026-11-18, #1900's regression).** This
+// named only `*service`, which is why the service Root survived #1900; the
+// process branch, `pki.js`'s PROCESS_SCOPE `*process`, was read as a realm
+// `sts_realms` does not hold, so every start of a product instance deleted
+// `pki:*process` and `dek:service:*process` (STS-KEYS-0199) and built a new
+// Intermediate and TLS Issuing CA — a new listener certificate per restart,
+// and in a cluster each node deleting the other's. A scope is recognised by
+// its leading `*`, which no realm id can carry (`realms.js`'s ID_PATTERN is
+// `[a-z0-9][a-z0-9-]*`), so a scope added later is covered without a list.
+function isInternalScope(id) {
+  log.debug("Entering isInternalScope().");
+  log.debug("Leaving isInternalScope().");
+  return String(id || '').charAt(0) === '*';
+}
+
+function realmOfRow(rowKey) {
+  log.debug("Entering realmOfRow().");
+  let id = String(rowKey || '');
+  if (id.indexOf(DEK_ROW_PREFIX) === 0) {
+    id = id.slice(id.lastIndexOf(':') + 1);
+  } else if (id.indexOf(PKI_ROW_PREFIX) === 0) {
+    id = id.slice(PKI_ROW_PREFIX.length);
+  }
+  log.debug("Leaving realmOfRow().");
+  return id === 'default' || id === PKI_SERVICE_SCOPE ||
+         isInternalScope(id) || id === realms.DEFAULT_ID ? '' : id;
+}
+
+// Whether a write queued at `seq` is of a row whose realm was removed since
+// — stamped by the purge below — or of a realm this process removed and has
+// not defined again (`realms.acceptsRows()`; a realm not yet ARRIVED here is
+// accepted): a write queued for a realm AFTER its removal here (a delivery or
+// a sweep that reached the realm's keys on its way out) is sealed under a
+// data key the purge has already destroyed, and fails exactly as the queued
+// one did. Measured: 943 STS-KEYS-0035 in five minutes for a realm removed two
+// rounds earlier, and every write on that worker answered 503 again.
+function removedSince(rowKey, seq) {
+  log.debug("Entering removedSince().");
+  const realmId = realmOfRow(rowKey);
+  log.debug("Leaving removedSince().");
+  return (removedRowAt.get(rowKey) || 0) > seq ||
+         (realmId !== '' && !realms.acceptsRows(realmId));
+}
 const pkiBase = new Map();       // scope id -> ciphertext last read or written
 const pkiLocalGen = new Map();   // scope id -> attachPki() calls so far
 
@@ -5231,6 +5636,7 @@ function queueWrite(rowKey, payload, perform) {
   }
   if (slot.queued) {
     slot.queued.payload = payload;
+    slot.queued.seq = ++writeSeq;
     log.debug("Leaving queueWrite(). Coalesced into the waiting write.");
     return slot.queued.promise;
   }
@@ -5238,7 +5644,8 @@ function queueWrite(rowKey, payload, perform) {
   // the store is replaced — a restart in a test, `setStore()` after
   // `reset()` — is abandoned rather than landing in the new store, sealed
   // under data encryption keys that store has never held.
-  const entry = { payload: payload, promise: null, store: store };
+  const entry = { payload: payload, promise: null, store: store,
+                  seq: ++writeSeq };
   slot.queued = entry;
   slot.pending += 1;
   entry.promise = slot.tail.then(function () {
@@ -5248,6 +5655,11 @@ function queueWrite(rowKey, payload, perform) {
     if (entry.store !== store) {
       log.debug("queueWrite(): the store was replaced; " + rowKey +
                 " is not written.");
+      return { ok: true, abandoned: true };
+    }
+    if (removedSince(rowKey, entry.seq)) {
+      log.debug("queueWrite(): the realm of " + rowKey + " was removed; " +
+                "it is not written.");
       return { ok: true, abandoned: true };
     }
     return perform(rowKey, entry.payload);
@@ -5268,7 +5680,8 @@ function queueWrite(rowKey, payload, perform) {
     // only, and a restart generated different keys. A refusal that is an
     // answer — `not-newer`, a merge that decided — carries no `error` and is
     // not a failure.
-    if (outcome && outcome.ok === false && outcome.error) {
+    if (outcome && outcome.ok === false && outcome.error &&
+        !removedSince(rowKey, entry.seq)) {
       failedWrites.set(rowKey, { payload: entry.payload, perform: perform });
     } else {
       failedWrites.delete(rowKey);
@@ -5276,6 +5689,7 @@ function queueWrite(rowKey, payload, perform) {
     slot.pending -= 1;
     if (!slot.pending && writes.get(rowKey) === slot) {
       writes.delete(rowKey);
+      removedRowAt.delete(rowKey);
     }
     return outcome;
   });
@@ -5385,11 +5799,12 @@ function pkiSettled(scopeId) {
 const KEY_SET_MEMBERS = ['pqKeys', 'vciRequestEncKey', 'refreshTokenEncKeys',
                          'requestObjectEncKeys', 'xmlKey', 'bbsKey',
                          'signerGroups', 'browserDeviceKeys', 'kemEncKeys',
-                         'vcApiKeys'];
+                         'vcApiKeys', 'credentialSigners'];
 
 // The ARRAY members, where an empty list is "none" (#68 added the second,
 // #82 the third).
-const LIST_MEMBERS = ['pqKeys', 'signerGroups', 'kemEncKeys'];
+const LIST_MEMBERS = ['pqKeys', 'signerGroups', 'kemEncKeys',
+                      'credentialSigners'];
 
 function hasMember(blob, member) {
   log.debug("Entering hasMember().");
@@ -5514,6 +5929,22 @@ function decideKeys(stored, offered) {
     });
     if (fresh.length) {
       joined.kemEncKeys = stored.kemEncKeys.concat(fresh);
+      added += 1;
+    }
+  }
+  // THE CREDENTIAL SIGNERS GROW ONE KEY FAMILY AT A TIME (#1880), the KEM
+  // keys' rule above BY SLOT: a credential already signed with the stored
+  // key must go on verifying, so a race never replaces it.
+  if (hasMember(stored, 'credentialSigners') &&
+      hasMember(offered, 'credentialSigners')) {
+    const slots = stored.credentialSigners.map(function (one) {
+      return one.slot;
+    });
+    const fresh = offered.credentialSigners.filter(function (one) {
+      return slots.indexOf(one.slot) === -1;
+    });
+    if (fresh.length) {
+      joined.credentialSigners = stored.credentialSigners.concat(fresh);
       added += 1;
     }
   }
@@ -5893,6 +6324,21 @@ function applyStoredChange(rowKey, round) {
   log.debug("Entering applyStoredChange(). row=" + rowKey);
   const key = String(rowKey || '');
   const turn = Number(round) || 0;
+  // A ROW OF A REALM REMOVED HERE, WRITTEN BY A PROCESS THAT HAD NOT HEARD
+  // YET (2026-11-18, run #496): a key-set merge in flight on another process
+  // landed after this realm's purge, sealed under a data key the purge
+  // destroyed. Nothing can open it, nothing uses it, and a later start would
+  // have refused over it, so it is deleted here (STS-KEYS-0199). A realm
+  // defined again under the same id is accepted again, and its rows are not
+  // touched.
+  const ownerRealm = realmOfRow(key);
+  if (ownerRealm !== '' && !realms.acceptsRows(ownerRealm) && store &&
+      typeof store.deleteKeys === 'function') {
+    log.debug("Leaving applyStoredChange(). A removed realm's late row.");
+    return purgeOrphanRows([key], 'when it arrived').then(function () {
+      return { kind: 'purged', realm: ownerRealm, adopted: false };
+    });
+  }
   // A DATA-KEY ROW (#391) is a union nobody arbitrates: whatever another
   // process added is adopted, in every mode a store can be shared in.
   if (key.indexOf(DEK_ROW_PREFIX) === 0) {
@@ -6144,6 +6590,7 @@ function reset() {
   writes.clear();
   lastOutcome.clear();
   failedWrites.clear();
+  removedRowAt.clear();
   pkiBase.clear();
   pkiLocalGen.clear();
   publisher = null;
@@ -6210,6 +6657,8 @@ module.exports = {
   xmlKeyHeldFor: xmlKeyHeldFor,
   bbsKeyHeldFor: bbsKeyHeldFor,
   signerGroupsHeldFor: signerGroupsHeldFor,
+  credentialSignersHeldFor: credentialSignersHeldFor,
+  credentialSignerPrivateFor: credentialSignerPrivateFor,
   withHeldMembers: withHeldMembers,
   joinSignerGroups: joinSignerGroups,
   serialiseSignerGroups: serialiseSignerGroups,

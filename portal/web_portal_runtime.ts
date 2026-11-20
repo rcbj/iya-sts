@@ -74,6 +74,7 @@ import WebAnnouncements = require('../common/web_announcements');
 // The realm's brand header and its facts (#717): the one copy the public
 // surfaces draw, read off the shell's `<html>` here as there.
 import WebSurface = require('../common/web_surface');
+import WebFooter = require('../common/web_footer');
 
 type Json = any;
 
@@ -726,9 +727,12 @@ class PortalRuntime extends SpaClient {
     // every shell of a realm that set nothing.
     const brand = WebSurface.brandOf(doc.documentElement);
     doc.title = title + ' — ' + (brand.name || 'IYA STS');
+    // THE PAGE FOOTER the shell drew, below every page, framed or bare, in
+    // the person's language (`common/web_footer.ts`).
+    const footer = WebFooter.drawnIn(doc, this.t);
     WebSafeDom.render(doc.body,
       PortalRuntime.realmLinks(
-      WebSurface.brandHeader(brand) + html, this.prefix));
+      WebSurface.brandHeader(brand) + html, this.prefix) + footer);
     // A page just drawn holds nothing typed (#561's unsaved-changes test).
     this.dirty = false;
     this.drawnAt = this.env.location.pathname + this.env.location.search;
@@ -749,7 +753,7 @@ class PortalRuntime extends SpaClient {
       '</div><p><a href="' + kit.BASE + '">' +
       (this.t.has('portal.signIn') ? this.t.html('portal.signIn')
                                    : 'Sign in') +
-      '</a></p></div>', (this.me || this.nobody || {}).version));
+      '</a></p></div>'));
   }
 
   // A TAB OR A SECTION IS A FRAGMENT: `targetFragment()` is `WebPage`'s
@@ -766,7 +770,6 @@ class PortalRuntime extends SpaClient {
     const ctx = { t: this.t, query: v.query, prefix: this.prefix,
                   origin: this.env.location.origin, me: this.me,
                   locale: this.me ? this.me.locale : nobody.locale,
-                  version: this.me ? this.me.version : nobody.version,
                   here: this.prefix + this.here(),
                   // The browser's accounts (#561), for a page that acts for
                   // this tab's account and must say which; OFF with the
@@ -784,8 +787,7 @@ class PortalRuntime extends SpaClient {
         (flash.error ? '<div class="err">' + kit.esc(flash.error) + '</div>'
                      : '') +
         (flash.message ? '<div class="ok">' + kit.esc(flash.message) +
-                         '</div>' : '') + body,
-        ctx.version));
+                         '</div>' : '') + body));
       return;
     }
     this.openSection = WebNavSections.initial(this.openSection,
@@ -875,8 +877,7 @@ class PortalRuntime extends SpaClient {
       this.view = null;
       this.put('Not a page', PortalShell.bare('<div class="card"><p>' +
         '<code>' + kit.esc(path) + '</code> is not a page of this portal.' +
-        '</p><p><a href="' + kit.BASE + '">' + kit.BASE + '</a></p></div>',
-        this.me && this.me.version));
+        '</p><p><a href="' + kit.BASE + '">' + kit.BASE + '</a></p></div>'));
       return;
     }
     // A PAGE DRAWN FROM THE MANAGEMENT API (#607): one object a person

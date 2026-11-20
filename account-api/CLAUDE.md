@@ -27,6 +27,14 @@ The shapes the two halves agree on are `types/account-api.d.ts`
 (`AccountOperation`, `AccountContext`, `AccountCaller`, and the browser's
 `PortalPage` and `PortalRenderContext`).
 
+**An operation's handler is typed by the model (#1579)**: `AccountOperation` is
+the model's operations discriminated by `operationId`, so a handler's request,
+validated `input` and response, and `ctx.json()`'s answer at a literal 2xx
+status, are its operation's. A helper a handler hands `res` to takes
+`AccountAnswering<'<operationId>'>`. A handler names no parameter type of its
+own, which would opt it out. `models/CLAUDE.md` (*The API types type the
+handlers*) argues it.
+
 ## THE RULE THAT MATTERS MORE THAN THE REST: THE PERSON IS THE TOKEN'S
 
 **No operation takes a username, an id or a DN naming whose account it acts

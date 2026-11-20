@@ -19,11 +19,14 @@
 //   P2. and answers the rows userRows() answers — a person by their name,
 //       a subject naming nobody as itself;
 //   P3. the Users page's population (`peopleAndCensusAsync()`) is built from
-//       it: building it asks `withUuids` synchronously not at all.
+//       it: building it asks `withUuids` synchronously not at all, and its
+//       people count on the read pool (#798).
 //   P4. its tiles too (2026-10-21): the directory's tallies and signed-in
 //       count on the read pool, none synchronously, the register's subjects
 //       never asked one at a time, and the live sign-on sessions from the
-//       session index — no session body walked.
+//       session index — no session body walked. The service-account roster
+//       is asked on the read pool too (#798); the page asks no group index
+//       and no realm count.
 //   P5. entriesAtAsync(), which the census asks every name of, is linear in
 //       the keys it is handed.
 //   P6. the population is kept for the hold, shared by concurrent asks, and
@@ -163,12 +166,21 @@ async function inTheWorker(t) {
   const views = require('../admin-core/admin_views');
   asked.sync = 0;
   asked.async = 0;
+  byName.sync = {};
+  byName.async = {};
   await inRealm(function () {
     return views.peopleAndCensusAsync();
   });
   t.check(asked.sync === 0 && asked.async >= batches,
           'P3. the Users page\'s population is built from it, asking ' +
           'withUuids synchronously not at all', JSON.stringify(asked));
+  // The people count is `recentCountUnder()` of `ou=users`, held ten
+  // seconds. P4 runs inside that hold and inside the population's, so it
+  // does not ask `count` again (#798).
+  t.check(!byName.sync.count && (byName.async.count || 0) >= 1,
+          'P3. and the people count is asked on the read pool',
+          JSON.stringify({ sync: byName.sync.count,
+                           async: byName.async.count }));
 
   // P4 (2026-10-21): the page's TILES are asked asynchronously too — the
   // directory's credential tallies and its count of the signed-in names on
@@ -212,6 +224,21 @@ async function inTheWorker(t) {
           (byName.async.countHolding || 0) >= 1,
           'P4. the directory\'s tiles and the register\'s subjects are ' +
           'asked on the read pool, none synchronously',
+          JSON.stringify(byName));
+  // The service-account roster (`withAttribute`, once per windowed
+  // container) and nothing of the group index. The realm count the warm
+  // page used to ask — `newUserContainer()` through `objectFor('')` — is
+  // not asked at all (#798). Shown-row flags stay out of this list.
+  const roster = ['withAttribute', 'classesUnder', 'count', 'byKeys',
+                  'byName'];
+  const rosterSync = roster.filter(function (name) {
+    return byName.sync[name];
+  });
+  t.check(rosterSync.length === 0 &&
+          (byName.async.withAttribute || 0) >= 1 &&
+          !byName.async.classesUnder,
+          'P4. the service-account roster is asked on the read pool, and ' +
+          'the page asks no group index and no realm count',
           JSON.stringify(byName));
   const first = ((listed && listed.users) || []).filter(function (row) {
     return row.key === people[0].uid;

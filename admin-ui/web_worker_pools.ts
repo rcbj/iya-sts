@@ -65,7 +65,11 @@ class WorkerPoolsPage {
     }
     // `totals`, which was `t` before the translator took the name.
     const totals = json.totals;
-    const html = '<h2 id="cluster">' + t.html('consoleWorkerPools.cluster') +
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the cluster's
+    // section and each node's, their headings inside, a node's pools a
+    // frame each inside its own.
+    const html = kit.frame('<h2 id="cluster">' +
+      t.html('consoleWorkerPools.cluster') +
       '</h2><p>' + kit.esc(c.text) +
       '</p>' + (c.readError ? kit.warn(kit.esc(c.readError)) : '') +
       '<table class="grid"><thead><tr><th>' +
@@ -101,7 +105,7 @@ class WorkerPoolsPage {
           '</td><td>' + kit.esc(n.state) + '</td><td>' +
           (n.ageSeconds === null ? '—' : kit.esc(n.ageSeconds) + ' s') +
           '</td></tr>';
-      }).join('') + '</tbody></table>' +
+      }).join('') + '</tbody></table>') +
       nodes.map(function (n: Json): string {
         const head = '<h2 id="node-' + kit.esc(n.name) + '">' +
           t.html('consoleWorkerPools.nodeNamed', { name: String(n.name) }) +
@@ -110,25 +114,25 @@ class WorkerPoolsPage {
           '<strong>' + kit.esc(n.state) + '</strong>: ' +
           kit.esc(n.stateText) + '</p>';
         if (!n.view || !Array.isArray(n.view.pools)) {
-          return head;
+          return kit.frame(head);
         }
         let body = '';
         try {
-          body = self.html(n.view, t);
+          body = self.html(n.view, t, true);
         } catch (e) {
           // A snapshot from another version of this page may lack a figure
           // this one draws; the node is still listed, and says so.
-          return head + kit.warn('This node\'s snapshot could not be ' +
-                                   'drawn: ' + kit.esc((e && e.message) ||
-                                                         e) + '.');
+          return kit.frame(head +
+            kit.warn('This node\'s snapshot could not be ' +
+                     'drawn: ' + kit.esc((e && e.message) || e) + '.'));
         }
         // Another node's sections carry its name in their anchors, so the
         // page's own `id="pool-request"` and the rest stay this node's.
         // On a cluster the page is one column per node, as it was: a pool
         // is a tab only where one node is drawn, so its marks go here.
-        return head + (n.self ? body
+        return kit.frame(head + (n.self ? body
           : body.replace(/ id="/g, ' id="' + kit.esc(n.name) + '-'))
-          .replace(/ data-tab="[^"]*"/g, '');
+          .replace(/ data-tab="[^"]*"/g, ''));
       }).join('');
     return html;
   }
@@ -184,7 +188,10 @@ class WorkerPoolsPage {
     return html;
   }
 
-  static html(json: Json, t: Json): string {
+  // `whole` frames each pool's section with its heading inside, for a
+  // cluster's page, which is not cut into tabs; one node's page keeps the
+  // tab's heading outside its frame, where `WebPages.protocolTabs()` cuts.
+  static html(json: Json, t: Json, whole?: boolean): string {
     const self = this;
     const tiles = '<div class="tiles">' +
       json.pools.map(function (p: Json): string {
@@ -205,17 +212,25 @@ class WorkerPoolsPage {
     const sections = json.pools.map(function (p: Json): string {
       // A TAB PER POOL (2026-10-12, `WebPages.protocolTabs()`): `request`
       // and `surface`; the tiles and the note above are Metadata.
-      const head = '<h2 id="pool-' + kit.esc(p.id) + '" data-tab="' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab's
+      // content after its heading, the threads a frame inside it.
+      const heading = '<h2 id="pool-' + kit.esc(p.id) + '" data-tab="' +
         kit.esc(p.id) + '">' +
-        kit.esc(p.title) + '</h2><p><code>' + kit.esc(p.module) +
+        kit.esc(p.title) + '</h2>';
+      const line = '<p><code>' + kit.esc(p.module) +
         '</code> · <code>' + kit.esc(p.setting) + '</code> · <strong>' +
         kit.esc(p.state) + '</strong>: ' + kit.esc(p.stateText) + '</p>';
+      const section = function (content: string): string {
+        return whole ? kit.frame(heading + content)
+          : heading + kit.frame(content);
+      };
       if (p.state === 'off') {
-        return head;
+        return section(line);
       }
       let detail = '';
       if (p.workers.length) {
-        detail = '<h3>' + t.html('consoleWorkerPools.thWorkerThreads') +
+        detail = kit.frame('<h3>' +
+          t.html('consoleWorkerPools.thWorkerThreads') +
           '</h3><table class="grid"><thead><tr>' +
           '<th>' + t.html('consoleWorkerPools.thThread') + '</th><th>' +
           t.html('consoleWorkerPools.thSlot') + '</th><th>' +
@@ -234,9 +249,9 @@ class WorkerPoolsPage {
               kit.esc(w.served) + '</td><td>' +
               (w.upSeconds === null ? '—' : kit.esc(w.upSeconds) + ' s') +
               '</td></tr>';
-          }).join('') + '</tbody></table>';
+          }).join('') + '</tbody></table>');
       }
-      return head + self.figures(p, t) + detail;
+      return section(line + self.figures(p, t) + detail);
     }).join('');
     return tiles + about + sections;
   }

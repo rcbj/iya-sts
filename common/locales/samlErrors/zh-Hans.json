@@ -33,7 +33,6 @@
   "refusal.STS-KEYS-0070": "该 LogoutRequest 的 EncryptedID 使用了此服务不解包的密钥传输方式（rsa-1_5）。未结束任何会话：您仍处于登录状态。",
   "refusal.STS-REG-0049": "响应将要送达的地址以前出现过，但尚未为此应用确认，因此不予使用。",
   "refusal.STS-SAML-0025": "此登录已过期：您在登录页面时它被保留，但保留时间过长。",
-  "refusal.STS-SAML-0026": "此链接指定的配置文件不是 SAML 1.1 的两种浏览器配置文件 post 和 artifact 之一。",
   "refusal.STS-SAML-0028": "响应将要送达的地址（shire）未为此依赖方注册，或者没有注册任何地址。",
   "refusal.STS-SAML-0029": "响应将要送达的地址不是绝对的 http 或 https URL。",
   "refusal.STS-SAML-0030": "此链接没有说明它是给哪个依赖方的：它没有 providerId，也没有可以推断出依赖方的 TARGET。",

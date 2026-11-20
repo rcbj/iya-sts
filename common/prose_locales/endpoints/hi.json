@@ -1,0 +1,2558 @@
+{
+  "endpoints.route./xacml.name": {
+    "en": "1184e17250970dab",
+    "text": "XACML सतह क्या है"
+  },
+  "endpoints.route./xacml/description.js.name": {
+    "en": "b8dd688d1fccdb8b",
+    "text": "विवरण पृष्ठ की स्क्रिप्ट"
+  },
+  "endpoints.route./xacml/pdp.name": {
+    "en": "a372155e5808a3ef",
+    "text": "एक निर्णय"
+  },
+  "endpoints.route./xacml/policies.name": {
+    "en": "beb8ca12489eec05",
+    "text": "नीति भंडार"
+  },
+  "endpoints.route./xacml/pep/register.name": {
+    "en": "042b865d703aee20",
+    "text": "एक दूरस्थ PEP पंजीकरण करता है"
+  },
+  "endpoints.route./xacml/pep/policies.name": {
+    "en": "d7b1a01d26f2cc80",
+    "text": "भंडार, जिसे एक दूरस्थ PEP लोड करे"
+  },
+  "endpoints.route./xacml/pep/authzen-catalogue.name": {
+    "en": "19bdeda29bc135e4",
+    "text": "AuthZEN कैटलॉग, जिसे एक दूरस्थ PEP लोड करे"
+  },
+  "endpoints.route./xacml/pep/authzen-callers.name": {
+    "en": "3cca9630a4d544af",
+    "text": "AuthZEN कॉलर, जिन्हें एक दूरस्थ PEP स्वीकार करे"
+  },
+  "endpoints.route./xacml/pep/proxy.name": {
+    "en": "739682a1ecd3fb3e",
+    "text": "रिवर्स-प्रॉक्सी कॉन्फ़िगरेशन, जिसे एक दूरस्थ PEP लागू करे"
+  },
+  "endpoints.route./xacml/pep/settings.name": {
+    "en": "6bae1b3fbf022a6d",
+    "text": "एक दूरस्थ PEP की प्रबंधित सेटिंग्स, जिन्हें वह लागू करे"
+  },
+  "endpoints.route./xacml/pep/listener-certificate.name": {
+    "en": "96d34844bd14ca01",
+    "text": "एक दूरस्थ PEP लिस्नर का प्रमाणपत्र, उसकी अपनी कुंजी पर"
+  },
+  "endpoints.route./xacml/pep/introspect.name": {
+    "en": "82423c6f4bbc4b7f",
+    "text": "टोकन इंट्रोस्पेक्शन, एक दूरस्थ PEP के प्रॉक्सी के लिए"
+  },
+  "endpoints.route./xacml/pep/basic.name": {
+    "en": "386c0d38a90c8eea",
+    "text": "HTTP Basic, एक दूरस्थ PEP के प्रॉक्सी के लिए सत्यापित"
+  },
+  "endpoints.route./xacml/pep/saml.name": {
+    "en": "f5df4c2323752626",
+    "text": "एक SAML 2.0 अभिकथन, एक दूरस्थ PEP के प्रॉक्सी के लिए सत्यापित"
+  },
+  "endpoints.route./xacml/pep/session.name": {
+    "en": "839d7610564c5a81",
+    "text": "क्या साइन-ऑन सत्र सक्रिय है, एक दूरस्थ PEP के प्रॉक्सी के लिए"
+  },
+  "endpoints.route./xacml/pep/identity.name": {
+    "en": "b9af583a88501df2",
+    "text": "एक दूरस्थ PEP का मार्ग अपने अनुप्रयोग को क्या अग्रेषित करता है"
+  },
+  "endpoints.route./xacml/pep/heartbeat.name": {
+    "en": "9570c5ba15aef084",
+    "text": "एक दूरस्थ PEP ने क्या लागू किया है"
+  },
+  "endpoints.route./xacml/pip.name": {
+    "en": "b0b1791a44311248",
+    "text": "नीति सूचना बिंदु, HTTP पर"
+  },
+  "endpoints.route./access/v1/evaluation.name": {
+    "en": "5cd6a5386c4d1353",
+    "text": "एक अभिगम मूल्यांकन"
+  },
+  "endpoints.route./access/v1/evaluations.name": {
+    "en": "71ce33d985a6eced",
+    "text": "अभिगम मूल्यांकनों का एक बैच"
+  },
+  "endpoints.route./access/v1/search/subject.name": {
+    "en": "b853f782aa326dda",
+    "text": "विषय खोज"
+  },
+  "endpoints.route./access/v1/search/resource.name": {
+    "en": "c82d24d3acd36cb5",
+    "text": "संसाधन खोज"
+  },
+  "endpoints.route./access/v1/search/action.name": {
+    "en": "c5373b52e1fb5ed4",
+    "text": "क्रिया खोज"
+  },
+  "endpoints.route./access/v1/access-requests.name": {
+    "en": "4b0c4feb0af59f04",
+    "text": "एक अभिगम अनुरोध जमा करें"
+  },
+  "endpoints.route./access/v1/access-requests/:id.name": {
+    "en": "c8bcbb33d07cfb8f",
+    "text": "एक अभिगम अनुरोध की कार्य स्थिति"
+  },
+  "endpoints.route./access/v1/access-requests/:id/cancel.name": {
+    "en": "90087f975ac5dec9",
+    "text": "एक अभिगम अनुरोध रद्द करें"
+  },
+  "endpoints.route./.well-known/authzen-configuration.name": {
+    "en": "2b5f43e5618bacac",
+    "text": "PDP मेटाडेटा"
+  },
+  "endpoints.route./.well-known/authzen-configuration/*.name": {
+    "en": "c2eadd486305d29d",
+    "text": "PDP मेटाडेटा (पथ सहित पहचानकर्ता)"
+  },
+  "endpoints.route./gnap.name": {
+    "en": "33b8b1fd38b28a51",
+    "text": "अनुदान एंडपॉइंट"
+  },
+  "endpoints.route./:as/gnap.name": {
+    "en": "4e8b789cccef4597",
+    "text": "एक नामित प्राधिकरण सर्वर का अनुदान एंडपॉइंट"
+  },
+  "endpoints.route./gnap/continue/:grant.name": {
+    "en": "db55ac21174c6f99",
+    "text": "अनुदान निरंतरता"
+  },
+  "endpoints.route./gnap/token/:handle.name": {
+    "en": "741af09dc62e9a62",
+    "text": "टोकन प्रबंधन"
+  },
+  "endpoints.route./gnap/interact/:id.name": {
+    "en": "94671ff4687a0e0b",
+    "text": "पुनर्निर्देशन इंटरैक्शन की शुरुआत"
+  },
+  "endpoints.route./gnap/app/:id.name": {
+    "en": "271e2b3bb99d4e34",
+    "text": "ऐप इंटरैक्शन की शुरुआत"
+  },
+  "endpoints.route./gnap/code.name": {
+    "en": "8882b6b5d7dd547f",
+    "text": "उपयोगकर्ता कोड प्रविष्टि"
+  },
+  "endpoints.route./gnap/approve/:id.name": {
+    "en": "7224d2fd77b49df7",
+    "text": "संसाधन स्वामी की स्वीकृति"
+  },
+  "endpoints.route./gnap/interaction.js.name": {
+    "en": "50effd29342dd164",
+    "text": "इंटरैक्शन पृष्ठों की स्क्रिप्ट"
+  },
+  "endpoints.route./gnap-api.name": {
+    "en": "7a180f1f38b7e340",
+    "text": "इंटरैक्शन API अनुक्रमणिका"
+  },
+  "endpoints.route./gnap-api/code.name": {
+    "en": "438612a8b0200673",
+    "text": "एक GNAP उपयोगकर्ता कोड दर्ज करें"
+  },
+  "endpoints.route./gnap-api/approve/:id.name": {
+    "en": "6bde2975aeb9128a",
+    "text": "एक GNAP स्वीकृति का उत्तर दें"
+  },
+  "endpoints.route./.well-known/gnap-as-rs.name": {
+    "en": "0fd056c79efdd3a0",
+    "text": "संसाधन सर्वर खोज"
+  },
+  "endpoints.route./.well-known/gnap-as-rs/:as.name": {
+    "en": "6df94c58d2c4986a",
+    "text": "एक नामित प्राधिकरण सर्वर के लिए संसाधन सर्वर खोज"
+  },
+  "endpoints.route./gnap/introspect.name": {
+    "en": "7e194fb9c34129c7",
+    "text": "टोकन इंट्रोस्पेक्शन"
+  },
+  "endpoints.route./gnap/resource.name": {
+    "en": "541dc030fa6fb91c",
+    "text": "संसाधन सेट पंजीकरण"
+  },
+  "endpoints.route./gnap/keys.name": {
+    "en": "c0d78f3392b95c6b",
+    "text": "टोकन प्रारूपों के लिए सत्यापन सामग्री"
+  },
+  "endpoints.route./gnap/biscuit/revocations.name": {
+    "en": "337581d2c9bece04",
+    "text": "निरस्त biscuit"
+  },
+  "endpoints.route./gnap/zcap/controller.name": {
+    "en": "6757bf6175282a42",
+    "text": "ZCAP नियंत्रक दस्तावेज़"
+  },
+  "endpoints.route./admin-api/gnap.name": {
+    "en": "c34c3f89f048c143",
+    "text": "JSON पर GNAP कंसोल पृष्ठ"
+  },
+  "endpoints.route./admin-api/gnap/monitor.name": {
+    "en": "369d3bf3a6c7b46f",
+    "text": "JSON पर GNAP अनुदान"
+  },
+  "endpoints.route./admin-api/gnap/:action.name": {
+    "en": "812de4df596c12ef",
+    "text": "एक अनुदान निरस्त करें या एक संसाधन सेट हटाएँ"
+  },
+  "endpoints.route./uma/rreg.name": {
+    "en": "b93e9a83c0d09d9a",
+    "text": "संसाधन पंजीकरण: बनाएँ, सूची"
+  },
+  "endpoints.route./uma/rreg/:id.name": {
+    "en": "34337892864217b3",
+    "text": "संसाधन पंजीकरण: पढ़ें, अद्यतन करें, हटाएँ"
+  },
+  "endpoints.route./uma/perm.name": {
+    "en": "8896272faf315717",
+    "text": "अनुमति एंडपॉइंट"
+  },
+  "endpoints.route./uma/claims.name": {
+    "en": "87870b4a58a75d4d",
+    "text": "दावा इंटरैक्शन एंडपॉइंट"
+  },
+  "endpoints.route./.well-known/uma2-configuration.name": {
+    "en": "1600a854e8ebe343",
+    "text": "UMA खोज"
+  },
+  "endpoints.route./.well-known/uma2-configuration/*.name": {
+    "en": "146531da4c5d6ba9",
+    "text": "UMA खोज (सम्मिलित-पथ रूप)"
+  },
+  "endpoints.route./uma.name": {
+    "en": "11e030203eddc757",
+    "text": "UMA विवरण पृष्ठ"
+  },
+  "endpoints.route./uma/description.js.name": {
+    "en": "b8dd688d1fccdb8b",
+    "text": "विवरण पृष्ठ की स्क्रिप्ट"
+  },
+  "endpoints.route./admin-api/uma.name": {
+    "en": "a706278ce3603ad8",
+    "text": "JSON पर UMA कंसोल पृष्ठ"
+  },
+  "endpoints.route./admin-api/uma/monitor.name": {
+    "en": "09df5f116b3c0624",
+    "text": "JSON पर UMA PEP की गिनतियाँ"
+  },
+  "endpoints.route./admin-api/uma/:action.name": {
+    "en": "af591f6b600855e2",
+    "text": "UMA कंसोल की नौ क्रियाएँ"
+  },
+  "endpoints.route./pki/crl/:scope/:ca.name": {
+    "en": "8d20c59eb134e55e",
+    "text": "एक प्राधिकारी की प्रमाणपत्र निरस्तीकरण सूची"
+  },
+  "endpoints.route./pki/ocsp/:scope/:ca.name": {
+    "en": "26e09611c77104e2",
+    "text": "एक प्राधिकारी का OCSP उत्तरदाता (POST)"
+  },
+  "endpoints.route./pki/ocsp/:scope/:ca/*.name": {
+    "en": "78daac5586a16467",
+    "text": "एक प्राधिकारी का OCSP उत्तरदाता (GET)"
+  },
+  "endpoints.route./pki/ca/:scope/:ca.name": {
+    "en": "674689732e065344",
+    "text": "एक प्रमाणपत्र प्राधिकारी का अपना प्रमाणपत्र"
+  },
+  "endpoints.route./pki/chain/:scope/:certificate.name": {
+    "en": "7f1f6b207986210f",
+    "text": "प्रमाणपत्र शृंखला जिसे एक हस्ताक्षरित टोकन का x5u नामित करता है"
+  },
+  "endpoints.route./crypto/metadata.name": {
+    "en": "a5ecf797eaf091e5",
+    "text": "क्रिप्टो मेटाडेटा दस्तावेज़, Accept के अनुसार"
+  },
+  "endpoints.route./crypto/metadata.json.name": {
+    "en": "4890cf97903b2272",
+    "text": "क्रिप्टो मेटाडेटा दस्तावेज़, JSON के रूप में"
+  },
+  "endpoints.route./crypto/metadata.xml.name": {
+    "en": "7e192a5658a57fa6",
+    "text": "क्रिप्टो मेटाडेटा दस्तावेज़, XML के रूप में"
+  },
+  "endpoints.route./crypto/metadata.jwt.name": {
+    "en": "a39f662681268cc8",
+    "text": "क्रिप्टो मेटाडेटा दस्तावेज़, JWS के रूप में हस्ताक्षरित"
+  },
+  "endpoints.route./crypto/metadata.signed.xml.name": {
+    "en": "c11085a7c69631a5",
+    "text": "क्रिप्टो मेटाडेटा दस्तावेज़, हस्ताक्षरित XML के रूप में"
+  },
+  "endpoints.route./crypto/metadata.xsd.name": {
+    "en": "9d94529b9b2f3464",
+    "text": "क्रिप्टो मेटाडेटा दस्तावेज़ का XML Schema"
+  },
+  "endpoints.route./pki/revocation.name": {
+    "en": "f399711ce1261bf4",
+    "text": "प्रत्येक CRL और OCSP उत्तरदाता जिसे यह सेवा प्रकाशित करती है"
+  },
+  "endpoints.route./admin-api/xacml.name": {
+    "en": "d3b1d402a612012c",
+    "text": "JSON पर XACML कंसोल पृष्ठ"
+  },
+  "endpoints.route./admin-api/xacml/policies.name": {
+    "en": "8e1fec42df374e4c",
+    "text": "JSON पर नीति भंडार"
+  },
+  "endpoints.route./admin-api/xacml/editor.name": {
+    "en": "97c8bc015f73b3f1",
+    "text": "एक नीति संपादन-योग्य वृक्ष के रूप में"
+  },
+  "endpoints.route./admin-api/xacml/decide.name": {
+    "en": "17f8129044f6440e",
+    "text": "JSON पर PDP से एक प्रश्न पूछें"
+  },
+  "endpoints.route./admin-api/xacml/peps.name": {
+    "en": "7f8ea0c37cf4776c",
+    "text": "JSON पर दूरस्थ प्रवर्तन बिंदु"
+  },
+  "endpoints.route./admin-api/xacml/pep-clusters.name": {
+    "en": "eb3f571462b2ef4a",
+    "text": "JSON पर दूरस्थ PEP क्लस्टर"
+  },
+  "endpoints.route./admin-api/xacml/monitor.name": {
+    "en": "c31e79f61be7e43b",
+    "text": "प्राधिकरण क्या कर रहा है, JSON पर"
+  },
+  "endpoints.route./admin-api/xacml/:action.name": {
+    "en": "264e6d022675cd79",
+    "text": "एक नीति, भंडार या एक दूरस्थ PEP बदलें"
+  },
+  "endpoints.route./.well-known/ssf-configuration.name": {
+    "en": "357ed4e8aed9b636",
+    "text": "ट्रांसमीटर कॉन्फ़िगरेशन मेटाडेटा"
+  },
+  "endpoints.route./.well-known/ssf-configuration/*.name": {
+    "en": "95c75b212ca6850f",
+    "text": "ट्रांसमीटर कॉन्फ़िगरेशन मेटाडेटा, सम्मिलित-पथ रूप"
+  },
+  "endpoints.route./ssf.name": {
+    "en": "29eb248f16235183",
+    "text": "Shared Signals सतह क्या है"
+  },
+  "endpoints.route./ssf/description.js.name": {
+    "en": "b8dd688d1fccdb8b",
+    "text": "विवरण पृष्ठ की स्क्रिप्ट"
+  },
+  "endpoints.route./ssf/stream.name": {
+    "en": "b0a8d86b9e533735",
+    "text": "स्ट्रीम प्रबंधन API"
+  },
+  "endpoints.route./ssf/status.name": {
+    "en": "60416f189a3afec0",
+    "text": "एक स्ट्रीम की स्थिति"
+  },
+  "endpoints.route./ssf/subjects/add.name": {
+    "en": "65df983c69cc22ac",
+    "text": "एक स्ट्रीम में एक विषय जोड़ें"
+  },
+  "endpoints.route./ssf/subjects/remove.name": {
+    "en": "e963dffef9e3d06b",
+    "text": "एक स्ट्रीम से एक विषय हटाएँ"
+  },
+  "endpoints.route./ssf/verify.name": {
+    "en": "9394a228c5271a2d",
+    "text": "एक सत्यापन घटना माँगें"
+  },
+  "endpoints.route./federation/signals/:id.name": {
+    "en": "b041f89b9c1dbd10",
+    "text": "एक फ़ेडरेशन भागीदार के Shared Signals के लिए पुश एंडपॉइंट (RFC 8935)"
+  },
+  "endpoints.route./ssf/poll.name": {
+    "en": "ac4ccca804188b23",
+    "text": "पोल वितरण (RFC 8936)"
+  },
+  "endpoints.route./scim.name": {
+    "en": "56accbf45038167b",
+    "text": "SCIM सतह क्या है"
+  },
+  "endpoints.route./scim/description.js.name": {
+    "en": "b8dd688d1fccdb8b",
+    "text": "विवरण पृष्ठ की स्क्रिप्ट"
+  },
+  "endpoints.route./scim/v2/ServiceProviderConfig.name": {
+    "en": "e7267904e2f73e0c",
+    "text": "यह SCIM सर्वर क्या समर्थन करता है"
+  },
+  "endpoints.route./scim/v2/ResourceTypes.name": {
+    "en": "c4842dd1549d02ce",
+    "text": "संसाधन प्रकार"
+  },
+  "endpoints.route./scim/v2/ResourceTypes/:id.name": {
+    "en": "f50850744e5d0035",
+    "text": "एक संसाधन प्रकार"
+  },
+  "endpoints.route./scim/v2/Schemas.name": {
+    "en": "b290eec1709feb6f",
+    "text": "स्कीमा"
+  },
+  "endpoints.route./scim/v2/Schemas/:id.name": {
+    "en": "5034a0e2cbb7b12b",
+    "text": "एक स्कीमा"
+  },
+  "endpoints.route./scim/v2/Users.name": {
+    "en": "85d63fe6b3d4f8c4",
+    "text": "उपयोगकर्ता: सूची और निर्माण"
+  },
+  "endpoints.route./scim/v2/Users/.search.name": {
+    "en": "2419ec93d320dc47",
+    "text": "उपयोगकर्ता: POST द्वारा खोज"
+  },
+  "endpoints.route./scim/v2/Users/:id.name": {
+    "en": "ac119777bcacd2ba",
+    "text": "एक उपयोगकर्ता: पढ़ें, प्रतिस्थापित करें, संशोधित करें, हटाएँ"
+  },
+  "endpoints.route./scim/v2/Groups.name": {
+    "en": "365b6120828199b6",
+    "text": "समूह: सूची और निर्माण"
+  },
+  "endpoints.route./scim/v2/Groups/.search.name": {
+    "en": "c0618941d836a76f",
+    "text": "समूह: POST द्वारा खोज"
+  },
+  "endpoints.route./scim/v2/Groups/:id.name": {
+    "en": "31e2cc7e078de787",
+    "text": "एक समूह: पढ़ें, प्रतिस्थापित करें, संशोधित करें, हटाएँ"
+  },
+  "endpoints.route./scim/v2/.search.name": {
+    "en": "ad4bb06fc5614a1c",
+    "text": "दोनों संसाधन प्रकारों में खोज"
+  },
+  "endpoints.route./scim/v2/*.name": {
+    "en": "09fc8d6021972a82",
+    "text": "आधार के अंतर्गत कोई अन्य पथ"
+  },
+  "endpoints.route./scim/v2/Me.name": {
+    "en": "bfb6c6f542c0607b",
+    "text": "/Me, प्रमाणित विषय"
+  },
+  "endpoints.route./.well-known/hoba/register.name": {
+    "en": "b95adde7badbdef3",
+    "text": "एक HOBA सार्वजनिक कुंजी पंजीकृत करें"
+  },
+  "endpoints.route./tls/sign-in.name": {
+    "en": "a670f321ddd2f009",
+    "text": "क्लाइंट प्रमाणपत्र से साइन इन करें"
+  },
+  "endpoints.route./tls/server-certificate.name": {
+    "en": "9458f47a8a347911",
+    "text": "सर्वर प्रमाणपत्र (PEM)"
+  },
+  "endpoints.route./.name": {
+    "en": "a064be014d290217",
+    "text": "मुख पृष्ठ"
+  },
+  "endpoints.route./home.js.name": {
+    "en": "130dd402d6eade90",
+    "text": "मुख पृष्ठ की स्क्रिप्ट"
+  },
+  "endpoints.route./home.css.name": {
+    "en": "84434cd1bd304a7d",
+    "text": "मुख पृष्ठ की स्टाइलशीट"
+  },
+  "endpoints.route./home-api.name": {
+    "en": "8789cae956543b36",
+    "text": "प्रवेश द्वार API अनुक्रमणिका"
+  },
+  "endpoints.route./home-api/front.name": {
+    "en": "14949c8a6af6f6d4",
+    "text": "मुख पृष्ठ का दृश्य"
+  },
+  "endpoints.route./logo.png.name": {
+    "en": "5d9164ce79341469",
+    "text": "मुख पृष्ठ पर लोगो"
+  },
+  "endpoints.route./realms.name": {
+    "en": "3bc74315dcf2fb5e",
+    "text": "विश्वास क्षेत्र निर्देशिका"
+  },
+  "endpoints.route./favicon.ico.name": {
+    "en": "6a36418727489219",
+    "text": "सेवा का आइकन"
+  },
+  "endpoints.route./web/card.css.name": {
+    "en": "96ed2387e40a779a",
+    "text": "सार्वजनिक सतहों की कार्ड स्टाइलशीट"
+  },
+  "endpoints.route./web/footer.css.name": {
+    "en": "b1ae9012425d7c77",
+    "text": "पृष्ठ फ़ुटर की स्टाइलशीट"
+  },
+  "endpoints.route./web/theme.css.name": {
+    "en": "955c14dc632bdf90",
+    "text": "एक विश्वास क्षेत्र की साइन-इन दिखावट स्टाइलशीट"
+  },
+  "endpoints.route./web/branding/logo.name": {
+    "en": "2ce72d622f586a26",
+    "text": "एक विश्वास क्षेत्र का साइन-इन लोगो"
+  },
+  "endpoints.route./web/photo/:id.name": {
+    "en": "f2cc426998480c9c",
+    "text": "एक व्यक्ति का प्रोफ़ाइल फ़ोटो"
+  },
+  "endpoints.route./web/branding/preview.name": {
+    "en": "54aca7174dc0a2b0",
+    "text": "साइन-इन दिखावट का पूर्वावलोकन"
+  },
+  "endpoints.route./web/locales/catalogs.json.name": {
+    "en": "54bbd31e0a5afc5b",
+    "text": "लोकेल कैटलॉग अनुक्रमणिका"
+  },
+  "endpoints.route./web/locales/:ns/:file.name": {
+    "en": "a51cf2baa37af68c",
+    "text": "एक कैटलॉग में एक नेमस्पेस के संदेश"
+  },
+  "endpoints.route./healthcheck.name": {
+    "en": "14290e1d06812977",
+    "text": "स्वास्थ्य जाँच"
+  },
+  "endpoints.route./docs.name": {
+    "en": "a7091d45b01e0e30",
+    "text": "सेवा दस्तावेज़"
+  },
+  "endpoints.route./policy.name": {
+    "en": "c134e729e1cc3153",
+    "text": "ऑपरेटर नीति"
+  },
+  "endpoints.route./tos.name": {
+    "en": "e69e06144877d81c",
+    "text": "सेवा की शर्तें"
+  },
+  "endpoints.route.*.name": {
+    "en": "4898865b52c1132a",
+    "text": "CORS प्रीफ़्लाइट"
+  },
+  "endpoints.route./spiffe.name": {
+    "en": "04302eb70b6b3d39",
+    "text": "SPIFFE सतहें क्या हैं"
+  },
+  "endpoints.route./spiffe/description.js.name": {
+    "en": "b8dd688d1fccdb8b",
+    "text": "विवरण पृष्ठ की स्क्रिप्ट"
+  },
+  "endpoints.route./spiffe/bundle.name": {
+    "en": "dfc63f78fe42ef9e",
+    "text": "विश्वास बंडल"
+  },
+  "endpoints.route./spiffe/federated/:trustDomain.name": {
+    "en": "9f481b0436f86e81",
+    "text": "एक फ़ेडरेटेड विश्वास डोमेन का बंडल, जैसा रखा गया है"
+  },
+  "endpoints.route./admin/api-explorer/explorer.js.name": {
+    "en": "a580f8533000172f",
+    "text": "API एक्सप्लोरर स्क्रिप्ट"
+  },
+  "endpoints.route./admin.name": {
+    "en": "ddf870cabeb295ab",
+    "text": "व्यवस्थापक कंसोल"
+  },
+  "endpoints.route./admin/*.name": {
+    "en": "e146f5e15e76dfe5",
+    "text": "प्रत्येक कंसोल पृष्ठ"
+  },
+  "endpoints.route./admin/signals/receive.name": {
+    "en": "d68ad816a1dfc9a9",
+    "text": "कंसोल का Shared Signals प्राप्त एंडपॉइंट"
+  },
+  "endpoints.route./admin/console.js.name": {
+    "en": "9932c00e39f5d470",
+    "text": "कंसोल की स्क्रिप्ट"
+  },
+  "endpoints.route./admin/console.css.name": {
+    "en": "cd6aeb9c9e8ebf8a",
+    "text": "कंसोल की स्टाइलशीट"
+  },
+  "endpoints.route./admin/geo-outlines.json.name": {
+    "en": "54575728e7ed9de1",
+    "text": "कंसोल के मानचित्र की देश रूपरेखाएँ"
+  },
+  "endpoints.route./portal.name": {
+    "en": "5212610fe0e7c89a",
+    "text": "एक व्यक्ति का अपना खाता"
+  },
+  "endpoints.route./portal/*.name": {
+    "en": "5b81a7e12cca9cd3",
+    "text": "प्रत्येक पोर्टल पृष्ठ"
+  },
+  "endpoints.route./portal/portal.js.name": {
+    "en": "acb6735807c66205",
+    "text": "पोर्टल की स्क्रिप्ट"
+  },
+  "endpoints.route./portal/portal.css.name": {
+    "en": "3b05a0008cdc0eb1",
+    "text": "पोर्टल की स्टाइलशीट"
+  },
+  "endpoints.route./report/signals/receive.name": {
+    "en": "ab329d399f348d73",
+    "text": "रिपोर्ट अनुप्रयोग का Shared Signals प्राप्त एंडपॉइंट"
+  },
+  "endpoints.route./report.name": {
+    "en": "f8876dead2cd7bc2",
+    "text": "रिपोर्ट अनुप्रयोग"
+  },
+  "endpoints.route./report/*.name": {
+    "en": "9e3bc85701ea48c1",
+    "text": "एक रिपोर्ट पृष्ठ"
+  },
+  "endpoints.route./report/report.js.name": {
+    "en": "ce2cc0bd6254aff1",
+    "text": "रिपोर्ट स्क्रिप्ट"
+  },
+  "endpoints.route./report/report.css.name": {
+    "en": "b4df466797766b01",
+    "text": "रिपोर्ट स्टाइलशीट"
+  },
+  "endpoints.route./report-api.name": {
+    "en": "41449550893ebaa2",
+    "text": "रिपोर्ट API"
+  },
+  "endpoints.route./report-api/openapi.json.name": {
+    "en": "cbe083af297afd0a",
+    "text": "रिपोर्ट OpenAPI दस्तावेज़"
+  },
+  "endpoints.route./report-api/catalog.name": {
+    "en": "721b162ec29218a7",
+    "text": "रिपोर्ट कैटलॉग"
+  },
+  "endpoints.route./report-api/catalog/:id.name": {
+    "en": "f4a97ac800f661e8",
+    "text": "एक रिपोर्ट स्रोत"
+  },
+  "endpoints.route./report-api/realms.name": {
+    "en": "c555ac10c13fd091",
+    "text": "विश्वास क्षेत्र, रिपोर्ट अनुप्रयोग के लिए"
+  },
+  "endpoints.route./report-api/signals.name": {
+    "en": "fa5ff98584c701fb",
+    "text": "रिपोर्ट अनुप्रयोग का Shared Signals इनबॉक्स"
+  },
+  "endpoints.route./report-api/me.name": {
+    "en": "11a93e2c9b06a26c",
+    "text": "रिपोर्ट अनुप्रयोग का उपयोगकर्ता मेनू क्या दर्शाता है"
+  },
+  "endpoints.route./report-api/announcements.name": {
+    "en": "3adb83b8075c6a3a",
+    "text": "रिपोर्ट अनुप्रयोग के लिए घोषणाएँ"
+  },
+  "endpoints.route./report-api/groups.name": {
+    "en": "e30ed85f8fa2f141",
+    "text": "समूह खोज, रिपोर्ट अनुप्रयोग के लिए"
+  },
+  "endpoints.route./report-api/schedules.name": {
+    "en": "25a6618403794275",
+    "text": "अनुसूचित रिपोर्ट परिभाषाएँ"
+  },
+  "endpoints.route./report-api/queries.name": {
+    "en": "ba718855c8f4548d",
+    "text": "एक रिपोर्ट क्वेरी चलाएँ"
+  },
+  "endpoints.route./report-api/definitions.name": {
+    "en": "b85da01b72f0f901",
+    "text": "सहेजी गई रिपोर्ट परिभाषाएँ"
+  },
+  "endpoints.route./report-api/definitions/:id.name": {
+    "en": "24d4a9eb8522c787",
+    "text": "एक रिपोर्ट परिभाषा"
+  },
+  "endpoints.route./report-api/definitions/:id/share.name": {
+    "en": "381aa8592d526281",
+    "text": "एक रिपोर्ट परिभाषा साझा करें"
+  },
+  "endpoints.route./report-api/definitions/:id/run.name": {
+    "en": "2a41162da14e8aed",
+    "text": "एक सहेजी गई रिपोर्ट चलाएँ"
+  },
+  "endpoints.route./report-api/jobs.name": {
+    "en": "792c052635196abd",
+    "text": "रिपोर्ट कार्य"
+  },
+  "endpoints.route./report-api/jobs/:id.name": {
+    "en": "4c2954e7f55686cb",
+    "text": "एक रिपोर्ट कार्य"
+  },
+  "endpoints.route./report-api/jobs/:id/cancel.name": {
+    "en": "8b217a98c1410cd2",
+    "text": "एक रिपोर्ट कार्य रद्द करें"
+  },
+  "endpoints.route./report-api/jobs/:id/result.name": {
+    "en": "31b5367e2efd2049",
+    "text": "एक रिपोर्ट परिणाम"
+  },
+  "endpoints.route./portal/signals/receive.name": {
+    "en": "657c84b412c86001",
+    "text": "पोर्टल का Shared Signals प्राप्त एंडपॉइंट"
+  },
+  "endpoints.route./portal/claim-sources/callback.name": {
+    "en": "152919279ecea855",
+    "text": "जुड़े दावा स्रोत — प्रदाता का उत्तर"
+  },
+  "endpoints.route./admin-api.name": {
+    "en": "eb75193bc8755faa",
+    "text": "प्रबंधन API अनुक्रमणिका"
+  },
+  "endpoints.route./admin-api/logout.name": {
+    "en": "b068dc8553d2b4f2",
+    "text": "सक्रिय सत्र, और उन्हें समाप्त करना"
+  },
+  "endpoints.route./admin-api/logout/:action.name": {
+    "en": "6c2dc375eee8253d",
+    "text": "सक्रिय सत्र: उन्हें समाप्त करें"
+  },
+  "endpoints.route./admin-api/openapi.json.name": {
+    "en": "ef18228535f6e74f",
+    "text": "OpenAPI दस्तावेज़"
+  },
+  "endpoints.route./admin-api/account-api.name": {
+    "en": "1ae155ffa9680b4a",
+    "text": "खाता API का OpenAPI दस्तावेज़"
+  },
+  "endpoints.route./admin-api/console/language.name": {
+    "en": "40be2295e7d1766a",
+    "text": "कंसोल की भाषा, आपके लिए"
+  },
+  "endpoints.route./admin-api/console/api-explorer.name": {
+    "en": "dc472022273007e2",
+    "text": "कंसोल का एक्सप्लोरर क्या पढ़ता है"
+  },
+  "endpoints.route./admin-api/console/delegation/map.name": {
+    "en": "58e1aa37ecc8aa2b",
+    "text": "प्रत्यायोजन चित्र"
+  },
+  "endpoints.route./admin-api/console/delegation/chain.name": {
+    "en": "2f4c2883e0a7367a",
+    "text": "एक प्रत्यायोजन संबंध, दर्शाया गया"
+  },
+  "endpoints.route./admin-api/delegation/application.name": {
+    "en": "e5fa3089fb3ad7ac",
+    "text": "एक अनुप्रयोग के प्रत्यायोजन, दर्शाए गए"
+  },
+  "endpoints.route./admin-api/console/delegation/application.name": {
+    "en": "e5fa3089fb3ad7ac",
+    "text": "एक अनुप्रयोग के प्रत्यायोजन, दर्शाए गए"
+  },
+  "endpoints.route./admin-api/delegation/user.name": {
+    "en": "96e37423f4f9bbf4",
+    "text": "एक व्यक्ति के नाम पर किया गया सब कुछ, दर्शाया गया"
+  },
+  "endpoints.route./admin-api/console/delegation/user.name": {
+    "en": "96e37423f4f9bbf4",
+    "text": "एक व्यक्ति के नाम पर किया गया सब कुछ, दर्शाया गया"
+  },
+  "endpoints.route./admin-api/console/delegation/allowed.name": {
+    "en": "8ae675640fa7d934",
+    "text": "कॉन्फ़िगर की गई प्रत्यायोजित अनुमतियाँ, दर्शाई गईं"
+  },
+  "endpoints.route./admin-api/console/delegation/cluster.name": {
+    "en": "ad732f8760d744ba",
+    "text": "अनुमतियों से जुड़े अनुप्रयोगों का एक समूह, दर्शाया गया"
+  },
+  "endpoints.route./admin-api/console/delegation-settings.name": {
+    "en": "502fcd0e4edaea72",
+    "text": "कॉन्फ़िगर किया गया अनुमति रजिस्टर, जैसा उसका पृष्ठ दिखाता है"
+  },
+  "endpoints.route./admin-api/tokens/credential.name": {
+    "en": "f45c68ae09f2d7fc",
+    "text": "एक क्रेडेंशियल और उसके पीछे की प्रत्येक पीढ़ी"
+  },
+  "endpoints.route./admin-api/console/federation/map.name": {
+    "en": "99866b83425ba5c7",
+    "text": "इस विश्वास क्षेत्र के फ़ेडरेशन संबंध, दर्शाए गए"
+  },
+  "endpoints.route./admin-api/console.name": {
+    "en": "f166c0c9b6ef8c18",
+    "text": "कंसोल प्रत्येक पृष्ठ के चारों ओर क्या दर्शाता है"
+  },
+  "endpoints.route./admin-api/keys/history/certificate.name": {
+    "en": "c4293d2be95a4d6e",
+    "text": "एक हस्ताक्षर कुंजी की प्रमाणपत्र शृंखला"
+  },
+  "endpoints.route./admin-api/sts-metadata.name": {
+    "en": "88b4c8d5056bd368",
+    "text": "प्रत्येक प्रोटोकॉल, एंडपॉइंट और विनिर्देश जिसे यह सेवा देता है"
+  },
+  "endpoints.route./admin-api/me.name": {
+    "en": "548b8ddef38a8823",
+    "text": "कॉलर"
+  },
+  "endpoints.route./admin-api/status.name": {
+    "en": "cce5eda33f91d11c",
+    "text": "सेवा स्थिति"
+  },
+  "endpoints.route./admin-api/console/dashboard.name": {
+    "en": "9b5ccd90b2944d73",
+    "text": "कंसोल का मुख पृष्ठ"
+  },
+  "endpoints.route./admin-api/console/operations.name": {
+    "en": "09b6da5088de6afb",
+    "text": "प्रत्येक ऑपरेशन, कंसोल के फ़ॉर्म के लिए"
+  },
+  "endpoints.route./admin-api/console/openapi.json.name": {
+    "en": "c5b582c6e41c78dd",
+    "text": "कंसोल ऑपरेशनों का OpenAPI दस्तावेज़"
+  },
+  "endpoints.route./admin-api/console/pki/:action.name": {
+    "en": "91b14d0429eaa0bc",
+    "text": "प्रमाणपत्र फ़ॉर्म के सहायक"
+  },
+  "endpoints.route./admin-api/console/applications/:action.name": {
+    "en": "18ea7bf0d0fcc0d4",
+    "text": "नए अनुप्रयोग फ़ॉर्म का सहायक"
+  },
+  "endpoints.route./admin-api/console/applications/new.name": {
+    "en": "226595ce0d487761",
+    "text": "नया अनुप्रयोग फ़ॉर्म, जैसा कंसोल उसे व्यवस्थित करता है"
+  },
+  "endpoints.route./admin-api/keys.name": {
+    "en": "b50a1f343114c6fa",
+    "text": "कुंजी युग्म"
+  },
+  "endpoints.route./admin-api/keys/history.name": {
+    "en": "13b97697b4e1e2b0",
+    "text": "हस्ताक्षर-कुंजी इतिहास"
+  },
+  "endpoints.route./admin-api/keys/:action.name": {
+    "en": "02bd417f55c9790f",
+    "text": "एक कुंजी युग्म निर्यात करें, या हस्ताक्षर कुंजियाँ घुमाएँ"
+  },
+  "endpoints.route./admin-api/mdoc-iaca.name": {
+    "en": "2a0f7fa3f4260418",
+    "text": "इस क्षेत्र का mdoc Issuing Authority CA"
+  },
+  "endpoints.route./admin-api/pki.name": {
+    "en": "bc458d477b4de7d9",
+    "text": "प्रमाणपत्र प्राधिकारी जिसे यह विश्वास क्षेत्र रखता है"
+  },
+  "endpoints.route./admin-api/pki/trust.name": {
+    "en": "d529a2413e65246d",
+    "text": "अतिसतर्क PKI मोड, हस्ताक्षरकर्ता विश्वास-भंडार और जो पिन किया गया है"
+  },
+  "endpoints.route./admin-api/pki/trust/:action.name": {
+    "en": "49eac4924ef09867",
+    "text": "हस्ताक्षरकर्ता विश्वास-भंडार या एक अतिसतर्क पंक्ति बदलें, या पिन की पुनः जाँच करें"
+  },
+  "endpoints.route./admin-api/pki/:action.name": {
+    "en": "c17f40560a0a857f",
+    "text": "एक पदानुक्रम बनाएँ, एक कुंजी युग्म जारी करें, एक प्रमाणपत्र की रचना करें"
+  },
+  "endpoints.route./admin-api/certificates.name": {
+    "en": "df89d301f57f6ace",
+    "text": "इस विश्वास क्षेत्र का प्रत्येक प्रमाणपत्र, या उनमें से एक पूर्ण रूप में"
+  },
+  "endpoints.route./admin-api/secrets.name": {
+    "en": "d13ef7e84b6dc8bb",
+    "text": "गुप्त भंडार, और क्या इस प्रक्रिया ने उससे पढ़ा"
+  },
+  "endpoints.route./admin-api/debugger.name": {
+    "en": "542e5e1c1841299c",
+    "text": "एम्बेडेड प्रोटोकॉल डीबगर का लिस्नर और api प्रक्रिया"
+  },
+  "endpoints.route./admin-api/database.name": {
+    "en": "30f6100d283f4d80",
+    "text": "PostgreSQL मेट्रिक्स और स्कीमा आँकड़े"
+  },
+  "endpoints.route./admin-api/risk/metrics.name": {
+    "en": "740320b44f69683c",
+    "text": "जोखिम स्कोरिंग मेट्रिक्स"
+  },
+  "endpoints.route./admin-api/risk/upload.name": {
+    "en": "49a3e164fdbf7c12",
+    "text": "जोखिम डेटासेट अपलोड"
+  },
+  "endpoints.route./admin-api/risk/:action.name": {
+    "en": "caad559e549e3108",
+    "text": "जोखिम क्रियाएँ"
+  },
+  "endpoints.route./admin-api/vc-status.name": {
+    "en": "ced60a751fc82211",
+    "text": "क्रेडेंशियल स्थिति"
+  },
+  "endpoints.route./admin-api/vc-status/:action.name": {
+    "en": "be2f7ebc85c75b68",
+    "text": "क्रेडेंशियल स्थिति क्रियाएँ"
+  },
+  "endpoints.route./admin-api/scheduler/:action.name": {
+    "en": "3483d9e9aab04915",
+    "text": "शेड्यूलर क्रियाएँ"
+  },
+  "endpoints.route./admin-api/broadcast.name": {
+    "en": "7ca7feaebe5215c0",
+    "text": "प्रसारण घोषणा"
+  },
+  "endpoints.route./admin-api/broadcast/:action.name": {
+    "en": "6e79d056a66502f2",
+    "text": "प्रसारण घोषणा क्रियाएँ"
+  },
+  "endpoints.route./admin-api/announcements.name": {
+    "en": "c4061b1ad0320a47",
+    "text": "कंसोल घोषणाएँ"
+  },
+  "endpoints.route./admin-api/mail/:action.name": {
+    "en": "cff7055c2db49c6a",
+    "text": "मेल क्रियाएँ"
+  },
+  "endpoints.route./admin-api/mail/outbox.name": {
+    "en": "d40abea9379f4e22",
+    "text": "मेल आउटबॉक्स"
+  },
+  "endpoints.route./admin-api/mail/outbox/:action.name": {
+    "en": "0311fbdb2c996481",
+    "text": "मेल आउटबॉक्स क्रियाएँ"
+  },
+  "endpoints.route./admin-api/worker-pools.name": {
+    "en": "8bf5d84f5ee5dd08",
+    "text": "वर्कर पूल"
+  },
+  "endpoints.route./admin-api/node-health.name": {
+    "en": "6a14636c8aef5de3",
+    "text": "नोड स्वास्थ्य"
+  },
+  "endpoints.route./admin-api/node-health/:action.name": {
+    "en": "00f328f6105fa2a9",
+    "text": "नोड स्वास्थ्य क्रियाएँ"
+  },
+  "endpoints.route./admin-api/encryption.name": {
+    "en": "eb626f73d72649aa",
+    "text": "विश्राम में एन्क्रिप्शन"
+  },
+  "endpoints.route./admin-api/encryption/:action.name": {
+    "en": "74f8245296e5a5ed",
+    "text": "डेटा एन्क्रिप्शन कुंजियों की चार क्रियाएँ"
+  },
+  "endpoints.route./admin-api/users/:action.name": {
+    "en": "33634352212a8e51",
+    "text": "उपयोगकर्ता क्रियाएँ"
+  },
+  "endpoints.route./admin-api/groups.name": {
+    "en": "c1524c47a0c5db15",
+    "text": "निर्देशिका समूह"
+  },
+  "endpoints.route./admin-api/groups/:action.name": {
+    "en": "aa987cf14daa872f",
+    "text": "समूह क्रियाएँ"
+  },
+  "endpoints.route./admin-api/backup-codes.name": {
+    "en": "58306d7221d1bf72",
+    "text": "पुनर्प्राप्ति कोड सेटिंग्स"
+  },
+  "endpoints.route./admin-api/totp.name": {
+    "en": "947a66c0238e7e56",
+    "text": "TOTP MFA सेटिंग्स"
+  },
+  "endpoints.route./admin-api/webauthn.name": {
+    "en": "dcc6aecb3740fef3",
+    "text": "WebAuthn सेटिंग्स"
+  },
+  "endpoints.route./admin-api/mfa.name": {
+    "en": "63fc7f058d95883b",
+    "text": "किसके पास दूसरा कारक है"
+  },
+  "endpoints.route./admin-api/mfa/:action.name": {
+    "en": "725b36f8b92fded4",
+    "text": "एक दूसरा कारक साफ़ करें"
+  },
+  "endpoints.route./admin-api/rbac.name": {
+    "en": "85d2e32f951ee980",
+    "text": "व्यवस्थापक कंसोल भूमिकाएँ"
+  },
+  "endpoints.route./admin-api/rbac/:action.name": {
+    "en": "de7f185fcea232a6",
+    "text": "व्यवस्थापक भूमिका क्रियाएँ"
+  },
+  "endpoints.route./admin-api/sessions.name": {
+    "en": "366487a11e4c5380",
+    "text": "सक्रिय सत्र"
+  },
+  "endpoints.route./admin-api/sessions/:action.name": {
+    "en": "f1fa288cb9378ffc",
+    "text": "सक्रिय सत्र: एक समाप्त करें"
+  },
+  "endpoints.route./admin-api/tokens.name": {
+    "en": "7d8ad8a77751253f",
+    "text": "जारी किए गए टोकन, अभिकथन और टिकट, जारीकरण के अनुसार समूहित"
+  },
+  "endpoints.route./admin-api/tokens/set.name": {
+    "en": "8db1ad0da0eb0cd8",
+    "text": "एक जारीकरण, और प्रत्येक क्रेडेंशियल जो उसके साथ था"
+  },
+  "endpoints.route./admin-api/tokens/:action.name": {
+    "en": "70ffb2afdb826704",
+    "text": "टोकन क्रियाएँ"
+  },
+  "endpoints.route./admin-api/applications/:action.name": {
+    "en": "f78d20689fac7101",
+    "text": "अनुप्रयोग क्रियाएँ"
+  },
+  "endpoints.route./admin-api/users/app-passwords.name": {
+    "en": "dbce87b518a55c12",
+    "text": "एक व्यक्ति के ऐप पासवर्ड"
+  },
+  "endpoints.route./admin-api/users/devices.name": {
+    "en": "cbd7e46575f64db6",
+    "text": "एक व्यक्ति के उपकरण"
+  },
+  "endpoints.route./admin-api/users/certificates.name": {
+    "en": "12293a2c63e7d8fb",
+    "text": "एक व्यक्ति के संग्रहीत प्रमाणपत्र"
+  },
+  "endpoints.route./admin-api/devices.name": {
+    "en": "2785787c7598b5f2",
+    "text": "उपकरण रजिस्टर"
+  },
+  "endpoints.route./admin-api/devices/:action.name": {
+    "en": "82d6c528e12bbe02",
+    "text": "उपकरण रजिस्टर क्रियाएँ"
+  },
+  "endpoints.route./admin-api/device-compliance.name": {
+    "en": "1b28ca2ff0e0999f",
+    "text": "उपकरण अनुपालन फ़ीड (MDM / पोस्चर)"
+  },
+  "endpoints.route./admin-api/pep-audit.name": {
+    "en": "df3ac1026eab32fe",
+    "text": "एक दूरस्थ PEP के निर्णय रिकॉर्ड"
+  },
+  "endpoints.route./admin-api/device-registration.name": {
+    "en": "f8fcb8ceb53f6ebf",
+    "text": "उपकरण पंजीकरण"
+  },
+  "endpoints.route./admin-api/service-accounts.name": {
+    "en": "330b2e1630d653b8",
+    "text": "सेवा खाते और उनका रोटेशन"
+  },
+  "endpoints.route./admin-api/ownership.name": {
+    "en": "8b5da1078c1dadb6",
+    "text": "किसी वस्तु का स्वामी कौन है, और क्या उसके स्वामी उसका प्रशासन कर सकते हैं"
+  },
+  "endpoints.route./admin-api/ownership/:action.name": {
+    "en": "b32834788957fcc7",
+    "text": "एक वस्तु को उसके स्वामियों तक बंद करें, या उसे फिर से खोलें"
+  },
+  "endpoints.route./admin-api/devices/monitor.name": {
+    "en": "8a3269dd4401ce60",
+    "text": "उपकरण रजिस्टर, गिना हुआ"
+  },
+  "endpoints.route./admin-api/users/self-issued-subjects.name": {
+    "en": "ec5770a23a0c10c0",
+    "text": "एक व्यक्ति के स्व-जारी (SIOPv2) विषय"
+  },
+  "endpoints.route./admin-api/users/published-dids.name": {
+    "en": "435edfcc1ed82c28",
+    "text": "एक व्यक्ति के प्रकाशित DIDs"
+  },
+  "endpoints.route./admin-api/users/verifications.name": {
+    "en": "aa12d03c659af2a0",
+    "text": "एक व्यक्ति के पहचान सत्यापन"
+  },
+  "endpoints.route./admin-api/users/new.name": {
+    "en": "911ac7f1d87d5691",
+    "text": "नया उपयोगकर्ता फ़ॉर्म"
+  },
+  "endpoints.route./admin-api/applications/new.name": {
+    "en": "46a0fea8394de3a4",
+    "text": "नया अनुप्रयोग फ़ॉर्म"
+  },
+  "endpoints.route./admin-api/authorization-servers.name": {
+    "en": "7c36031d3ab3bdc8",
+    "text": "प्राधिकरण सर्वर"
+  },
+  "endpoints.route./admin-api/authorization-servers/:action.name": {
+    "en": "2bab6ab3f36adca7",
+    "text": "प्राधिकरण सर्वर क्रियाएँ"
+  },
+  "endpoints.route./admin-api/risc/accounts.name": {
+    "en": "ac79739f3e78bebc",
+    "text": "RISC खाते"
+  },
+  "endpoints.route./admin-api/risc/:action.name": {
+    "en": "31d09cc1241351d4",
+    "text": "एक RISC घटना उत्सर्जित करें, या एक खाते की RISC अवस्था रीसेट करें"
+  },
+  "endpoints.route./admin-api/scim/monitor.name": {
+    "en": "6d0d6f35a18900e9",
+    "text": "SCIM ट्रैफ़िक"
+  },
+  "endpoints.route./admin-api/ssf/transmitters.name": {
+    "en": "bc790602233f8949",
+    "text": "भागीदारों से संकेत"
+  },
+  "endpoints.route./admin-api/deliveries.name": {
+    "en": "2175d3f98d233447",
+    "text": "जावक वितरण"
+  },
+  "endpoints.route./admin-api/deliveries/:action.name": {
+    "en": "870b99f43bcd07a3",
+    "text": "एक जावक वितरण का पुनः प्रयास करें"
+  },
+  "endpoints.route./admin-api/ssf/dead-letters.name": {
+    "en": "3f2fb3008f53f3c8",
+    "text": "अवितरित पत्र"
+  },
+  "endpoints.route./admin-api/signals.name": {
+    "en": "5a70784a76f04344",
+    "text": "प्राप्त संकेत"
+  },
+  "endpoints.route./admin-api/signals/:action.name": {
+    "en": "abf5e7e60e98fa56",
+    "text": "कंसोल का Shared Signals इनबॉक्स साफ़ करें"
+  },
+  "endpoints.route./admin-api/caep/sessions.name": {
+    "en": "646dc38ef308df94",
+    "text": "CAEP सत्र"
+  },
+  "endpoints.route./admin-api/caep/:action.name": {
+    "en": "ba2a3add441f2808",
+    "text": "एक CAEP घटना उत्सर्जित करें, या एक सत्र की CAEP अवस्था रीसेट करें"
+  },
+  "endpoints.route./admin-api/ssf/:action.name": {
+    "en": "d83510d002423a7b",
+    "text": "एक स्ट्रीम बदलें, या एक घटना प्रेषित करें"
+  },
+  "endpoints.route./admin-api/spiffe.name": {
+    "en": "dbcb7b6226a620be",
+    "text": "SPIFFE विश्वास डोमेन"
+  },
+  "endpoints.route./admin-api/spiffe/:action.name": {
+    "en": "e59d04e51fdc2e77",
+    "text": "एक प्राधिकारी घुमाएँ, या एक फ़ेडरेटेड बंडल सेट करें"
+  },
+  "endpoints.route./admin-api/spiffe/entries.name": {
+    "en": "3bf5e6f5489f682c",
+    "text": "पंजीकरण प्रविष्टियाँ"
+  },
+  "endpoints.route./admin-api/spiffe/entries/:action.name": {
+    "en": "74d79cc22326e3cd",
+    "text": "एक पंजीकरण प्रविष्टि बनाएँ, बदलें या हटाएँ"
+  },
+  "endpoints.route./admin-api/spiffe/agents.name": {
+    "en": "d5576daf0ffe1c68",
+    "text": "प्रमाणित एजेंट"
+  },
+  "endpoints.route./admin-api/spiffe/agents/:action.name": {
+    "en": "db7439843e5d6273",
+    "text": "एक एजेंट पर प्रतिबंध लगाएँ, प्रतिबंध हटाएँ या भूल जाएँ, या एक जॉइन टोकन बनाएँ"
+  },
+  "endpoints.route./admin-api/spiffe/brokers.name": {
+    "en": "3afd6d3f274707ff",
+    "text": "SPIFFE Broker API के ब्रोकर"
+  },
+  "endpoints.route./admin-api/spiffe/brokers/:action.name": {
+    "en": "6c08f9dc74c0d0b9",
+    "text": "एक SPIFFE ब्रोकर को अधिकृत करें या हटाएँ"
+  },
+  "endpoints.route./admin-api/delegation/policy.name": {
+    "en": "f062ac9572a07d80",
+    "text": "प्रत्यायोजन नीति (WS-Trust और टोकन एक्सचेंज)"
+  },
+  "endpoints.route./admin-api/permissions.name": {
+    "en": "cce5e2f6b790b802",
+    "text": "प्रत्यायोजित अनुमतियाँ"
+  },
+  "endpoints.route./admin-api/permissions/groups.name": {
+    "en": "c20e5fba08d328a5",
+    "text": "कौन से अनुप्रयोग एक-दूसरे से जुड़े हैं"
+  },
+  "endpoints.route./admin-api/permissions/:action.name": {
+    "en": "d6d712ed91d38438",
+    "text": "प्रत्यायोजित अनुमतियाँ परिभाषित करें और प्रदान करें"
+  },
+  "endpoints.route./admin-api/attribute-sources.name": {
+    "en": "c5a898cd54934862",
+    "text": "विशेषता स्रोत"
+  },
+  "endpoints.route./admin-api/attribute-sources/:action.name": {
+    "en": "df8c7ea77b91b6af",
+    "text": "विशेषता स्रोत बदलें"
+  },
+  "endpoints.route./admin-api/secret-destinations.name": {
+    "en": "4daa34966ee9102d",
+    "text": "गुप्त पुश गंतव्य"
+  },
+  "endpoints.route./admin-api/secret-destinations/:action.name": {
+    "en": "f8f3c83e76dc9f4c",
+    "text": "गुप्त पुश गंतव्य बदलें"
+  },
+  "endpoints.route./admin-api/xacml/authzen.name": {
+    "en": "7fd038e122addddd",
+    "text": "AuthZEN API का कैटलॉग और कॉलर"
+  },
+  "endpoints.route./admin-api/xacml/authzen/:action.name": {
+    "en": "92f7278aab7540fa",
+    "text": "AuthZEN कैटलॉग या एक कॉलर का स्कोप बदलें"
+  },
+  "endpoints.route./admin-api/passkey-report.name": {
+    "en": "9c856324242bc19b",
+    "text": "किसके पास कौन सा पासकी एल्गोरिदम है"
+  },
+  "endpoints.route./admin-api/passkey-report/export.name": {
+    "en": "058eb7c31724a848",
+    "text": "एक पासकी गिनती के पीछे के लोगों को निर्यात करें"
+  },
+  "endpoints.route./admin-api/passkey-report/evidence.name": {
+    "en": "e9eb776b6513e45f",
+    "text": "एक पासकी का RFC 4998 साक्ष्य रिकॉर्ड"
+  },
+  "endpoints.route./admin-api/passkey-report/:action.name": {
+    "en": "738bbc740bd914fc",
+    "text": "विश्वास क्षेत्र की पासकी पुनः गिनें"
+  },
+  "endpoints.route./admin-api/post-login-activities.name": {
+    "en": "d37435b7e29d739b",
+    "text": "शुरू की गई लॉगिन-पश्चात गतिविधियाँ"
+  },
+  "endpoints.route./admin-api/post-login-activities/:action.name": {
+    "en": "6bfc2bea96fee884",
+    "text": "एक लॉगिन-पश्चात गतिविधि शुरू करें, रोकें, फिर शुरू करें या समाप्त करें"
+  },
+  "endpoints.route./admin-api/scim/clients.name": {
+    "en": "63c8ee9a6d93cb89",
+    "text": "जावक SCIM क्लाइंट"
+  },
+  "endpoints.route./admin-api/scim/clients/:action.name": {
+    "en": "af52f5017d9fd21b",
+    "text": "जावक SCIM क्लाइंट बदलें"
+  },
+  "endpoints.route./admin-api/roles/preview.name": {
+    "en": "c2e62734c4466542",
+    "text": "क्या यह जारी होगा?"
+  },
+  "endpoints.route./admin-api/roles/:action.name": {
+    "en": "1baadaaa0e1df852",
+    "text": "भूमिकाएँ बनाएँ और बदलें"
+  },
+  "endpoints.route./admin-api/policies/:action.name": {
+    "en": "a5461fc6541725a3",
+    "text": "एक नीति बदलें"
+  },
+  "endpoints.route./admin-api/policies/transfer.name": {
+    "en": "d0e1c015c9f2a694",
+    "text": "नीति स्थानांतरण दृश्य"
+  },
+  "endpoints.route./admin-api/policies/transfer/:action.name": {
+    "en": "bc0714219f3243c3",
+    "text": "नीतियाँ निर्यात और आयात करें"
+  },
+  "endpoints.route./admin-api/consent/:action.name": {
+    "en": "a7acd63ff9b05a72",
+    "text": "सहमति प्रदान करें और निरस्त करें"
+  },
+  "endpoints.route./admin-api/used-assertions.name": {
+    "en": "73611edaf06c6db9",
+    "text": "उपयोग किए गए अभिकथन"
+  },
+  "endpoints.route./admin-api/error-codes.name": {
+    "en": "b485a2ff39ac01b5",
+    "text": "त्रुटि कोड"
+  },
+  "endpoints.route./admin-api/audit-export.name": {
+    "en": "6215b564a1d4430f",
+    "text": "ऑडिट निर्यात"
+  },
+  "endpoints.route./admin-api/audit-export/:action.name": {
+    "en": "b9a19e739aa5ebd6",
+    "text": "ऑडिट निर्यात गंतव्य बदलें"
+  },
+  "endpoints.route./admin-api/branding.name": {
+    "en": "4f6e7c69e356bf65",
+    "text": "साइन-इन दिखावट"
+  },
+  "endpoints.route./admin-api/branding/logo.name": {
+    "en": "febcf32d571a0fbf",
+    "text": "साइन-इन लोगो अपलोड करें"
+  },
+  "endpoints.route./admin-api/branding/:action.name": {
+    "en": "d7fa23e10dac9b1d",
+    "text": "साइन-इन दिखावट बदलें"
+  },
+  "endpoints.route./admin-api/audit/integrity.name": {
+    "en": "79de5da36fba17bd",
+    "text": "ऑडिट लॉग की अखंडता जाँचें"
+  },
+  "endpoints.route./admin-api/audit.name": {
+    "en": "e4d36f9a4e22d3a2",
+    "text": "ऑडिट लॉग"
+  },
+  "endpoints.route./admin-api/realms.name": {
+    "en": "6dd313699a1bc23c",
+    "text": "विश्वास क्षेत्र"
+  },
+  "endpoints.route./admin-api/realms/:action.name": {
+    "en": "2e89e91f0984a5ce",
+    "text": "विश्वास क्षेत्र क्रियाएँ"
+  },
+  "endpoints.route./admin-api/cells/:action.name": {
+    "en": "e801f925c59521a5",
+    "text": "एक व्यक्ति को पुनः बसाएँ"
+  },
+  "endpoints.route./admin-api/cells/people.name": {
+    "en": "3487e884b7bb0884",
+    "text": "सेल निवासी"
+  },
+  "endpoints.route./admin-api/malware-scanning.name": {
+    "en": "48adceb89b5e59c8",
+    "text": "मैलवेयर स्कैनिंग"
+  },
+  "endpoints.route./admin-api/malware-scanning/:action.name": {
+    "en": "5fea7fc18a3a67b9",
+    "text": "मैलवेयर स्कैनर का परीक्षण करें"
+  },
+  "endpoints.route./admin-api/listeners/:action.name": {
+    "en": "f35429cc1bbc09a8",
+    "text": "कस्टम लिस्नर परिभाषित करें, या अनुप्रयोगों को उन पर मैप करें"
+  },
+  "endpoints.route./admin-api/config-dump.name": {
+    "en": "9d414a56d337e804",
+    "text": "कॉन्फ़िगरेशन डंप"
+  },
+  "endpoints.route./admin-api/config/:action.name": {
+    "en": "7e8873a02dca9738",
+    "text": "कॉन्फ़िगरेशन क्रियाएँ"
+  },
+  "endpoints.route./admin-api/oauth2.name": {
+    "en": "e39e74c6a9c77af0",
+    "text": "OAuth 2.0 / OIDC सेटिंग्स"
+  },
+  "endpoints.route./admin-api/oid4vci-settings.name": {
+    "en": "82c9b9b35fc23789",
+    "text": "OpenID4VCI सेटिंग्स"
+  },
+  "endpoints.route./admin-api/oid4vp-settings.name": {
+    "en": "87b67f1b979a04d8",
+    "text": "OpenID4VP सेटिंग्स"
+  },
+  "endpoints.route./admin-api/kerberos.name": {
+    "en": "288b1e0163e753a9",
+    "text": "Kerberos सेटिंग्स"
+  },
+  "endpoints.route./admin-api/ldap.name": {
+    "en": "b4b5794e4fe30cc2",
+    "text": "LDAP / LDAPS सेटिंग्स"
+  },
+  "endpoints.route./admin-api/ldap/directory.name": {
+    "en": "f02a3e57dc2e468e",
+    "text": "निर्देशिका की प्रत्येक प्रविष्टि"
+  },
+  "endpoints.route./admin-api/ldap/applications.name": {
+    "en": "47e8fc7f73cf7414",
+    "text": "अनुप्रयोग रजिस्ट्री, जैसा निर्देशिका उसे रखती है"
+  },
+  "endpoints.route./admin-api/ldap/federations.name": {
+    "en": "834988ab8b5b6754",
+    "text": "फ़ेडरेशन रजिस्टर, जैसा निर्देशिका उसे रखती है"
+  },
+  "endpoints.route./admin-api/ldap/spiffe.name": {
+    "en": "6d82cdc8d7fb4c53",
+    "text": "SPIFFE कंटेनर, जैसा निर्देशिका उन्हें रखती है"
+  },
+  "endpoints.route./admin-api/ldap/roles.name": {
+    "en": "b0619c49a1d25fe7",
+    "text": "भूमिका प्रविष्टियाँ, जैसा निर्देशिका उन्हें रखती है"
+  },
+  "endpoints.route./admin-api/ldap/policies.name": {
+    "en": "05f1b17e20b06c12",
+    "text": "नीति भंडार, जैसा निर्देशिका उसे रखती है"
+  },
+  "endpoints.route./admin-api/ldap/devices.name": {
+    "en": "69b995f018f2f463",
+    "text": "उपकरण रजिस्टर, जैसा निर्देशिका उसे रखती है"
+  },
+  "endpoints.route./admin-api/ldap/peps.name": {
+    "en": "c36d4e8180e7ccbf",
+    "text": "पंजीकृत दूरस्थ PEP, जैसा निर्देशिका उन्हें रखती है"
+  },
+  "endpoints.route./admin-api/ldap/service.name": {
+    "en": "f6c749e9d414c44e",
+    "text": "निर्देशिका अभी क्या है"
+  },
+  "endpoints.route./admin-api/wstrust.name": {
+    "en": "9f6a673422101370",
+    "text": "WS-Trust सेटिंग्स"
+  },
+  "endpoints.route./admin-api/wsfed.name": {
+    "en": "87ba4432c64fb34a",
+    "text": "WS-Federation सेटिंग्स"
+  },
+  "endpoints.route./admin-api/tls.name": {
+    "en": "96b20b887882a558",
+    "text": "TLS / पारस्परिक TLS सेटिंग्स"
+  },
+  "endpoints.route./admin-api/tls/trust.name": {
+    "en": "7afb6aac81a9a73c",
+    "text": "क्लाइंट-प्रमाणपत्र विश्वास-भंडार"
+  },
+  "endpoints.route./admin-api/tls/trust/:action.name": {
+    "en": "a1951930186f3dee",
+    "text": "एक क्लाइंट-प्रमाणपत्र विश्वास एंकर जोड़ें या हटाएँ"
+  },
+  "endpoints.route./admin-api/tls-connection.name": {
+    "en": "efa20d960e0f15ad",
+    "text": "एक अनुरोध के TLS कनेक्शन का यह सेवा ने क्या देखा"
+  },
+  "endpoints.route./admin-api/kerberos/claims.name": {
+    "en": "5033ca8bef02346f",
+    "text": "Kerberos PAC दावे"
+  },
+  "endpoints.route./admin-api/kerberos/claims/:action.name": {
+    "en": "4c12463f13744211",
+    "text": "एक Kerberos PAC दावा जोड़ें, हटाएँ, साफ़ करें या प्रतिस्थापित करें"
+  },
+  "endpoints.route./admin-api/kerberos/principals.name": {
+    "en": "2832cf5b58397e32",
+    "text": "Kerberos प्रिंसिपल"
+  },
+  "endpoints.route./admin-api/kerberos/principals/:action.name": {
+    "en": "e3b666e9c2cf04a5",
+    "text": "एक सेवा प्रिंसिपल बनाएँ, घुमाएँ या हटाएँ, एक व्यक्ति की कुंजियाँ साफ़ करें, पिछले कुंजी संस्करण हटाएँ, या krbtgt कुंजी घुमाएँ"
+  },
+  "endpoints.route./admin-api/kerberos/trusts.name": {
+    "en": "e92d42c7c01ab222",
+    "text": "Kerberos विश्वास"
+  },
+  "endpoints.route./admin-api/kerberos/trusts/:action.name": {
+    "en": "15792a8aae11b100",
+    "text": "एक Kerberos विश्वास जोड़ें, बदलें, सक्षम करें, अक्षम करें, घुमाएँ, हटाएँ या युग्मित करें"
+  },
+  "endpoints.route./admin-api/token-lifetimes.name": {
+    "en": "ddad2319f680d9f9",
+    "text": "टोकन जीवनकाल"
+  },
+  "endpoints.route./admin-api/token-lifetimes/:action.name": {
+    "en": "b4ceed5378a53501",
+    "text": "टोकन जीवनकाल क्रियाएँ"
+  },
+  "endpoints.route./admin-api/saml-assertions.name": {
+    "en": "baa38758f2ab7660",
+    "text": "SAML अभिकथन"
+  },
+  "endpoints.route./admin-api/saml-assertions/:action.name": {
+    "en": "37942134597c5c23",
+    "text": "SAML अभिकथन क्रियाएँ"
+  },
+  "endpoints.route./admin-api/claims.name": {
+    "en": "65b9df09c075b30c",
+    "text": "कस्टम दावे"
+  },
+  "endpoints.route./admin-api/claims/:action.name": {
+    "en": "cff4a3fe8d0b0994",
+    "text": "कस्टम दावा क्रियाएँ"
+  },
+  "endpoints.route./admin-api/userinfo-claims.name": {
+    "en": "ba426b442708b016",
+    "text": "UserInfo दावे"
+  },
+  "endpoints.route./admin-api/userinfo-claims/:action.name": {
+    "en": "a538bc346df5c3ee",
+    "text": "UserInfo दावा क्रियाएँ"
+  },
+  "endpoints.route./admin-api/federation.name": {
+    "en": "ec49c08ccb8dd325",
+    "text": "फ़ेडरेशन संबंध"
+  },
+  "endpoints.route./admin-api/federation/:action.name": {
+    "en": "ae7246fdf8a72fad",
+    "text": "एक फ़ेडरेशन संबंध कॉन्फ़िगर करें"
+  },
+  "endpoints.route./admin-api/saml2.name": {
+    "en": "fad22d219a6fe6f3",
+    "text": "SAML 2.0 पहचान प्रदाता"
+  },
+  "endpoints.route./admin-api/saml2/:action.name": {
+    "en": "81efebabec383a15",
+    "text": "SAML 2.0 सेवा प्रदाता क्रियाएँ"
+  },
+  "endpoints.route./admin-api/saml11.name": {
+    "en": "cb7331a7d83104ee",
+    "text": "SAML 1.1 पहचान प्रदाता"
+  },
+  "endpoints.route./admin-api/saml11/:action.name": {
+    "en": "f507cdd5e7327df3",
+    "text": "SAML 1.1 निर्भर पक्ष क्रियाएँ"
+  },
+  "endpoints.route./admin-api/saml-idp-initiated.name": {
+    "en": "70297dbc6d423d65",
+    "text": "वे SAML अनुप्रयोग जिनके लिए यहाँ से साइन-इन शुरू हो सकता है"
+  },
+  "endpoints.route./admin-api/saml-attributes.name": {
+    "en": "e9808df4bc485128",
+    "text": "कस्टम SAML विशेषताएँ"
+  },
+  "endpoints.route./admin-api/saml-attributes/:action.name": {
+    "en": "98f2c7dbe4c6c89c",
+    "text": "कस्टम SAML विशेषता क्रियाएँ"
+  },
+  "endpoints.route./admin-api/credential-claims.name": {
+    "en": "b3466196455ff65d",
+    "text": "क्रेडेंशियल दावे"
+  },
+  "endpoints.route./admin-api/credential-claims/:action.name": {
+    "en": "c6f0e9281179a739",
+    "text": "क्रेडेंशियल दावा क्रियाएँ"
+  },
+  "endpoints.route./admin-api/verifier-request.name": {
+    "en": "41b747157d916a8b",
+    "text": "सत्यापनकर्ता अनुरोध (बार का दरवाज़ा)"
+  },
+  "endpoints.route./admin-api/verifier-request/:action.name": {
+    "en": "6b2d5671c824f225",
+    "text": "सत्यापनकर्ता अनुरोध क्रियाएँ"
+  },
+  "endpoints.route./admin-api/verifications/:action.name": {
+    "en": "2eacfd95342c2fd3",
+    "text": "एक सत्यापन शुरू करें"
+  },
+  "endpoints.route./admin-api/verifications.name": {
+    "en": "1a34e870e6381c91",
+    "text": "एक सत्यापन का परिणाम"
+  },
+  "endpoints.route./admin-api/oid4vci/last-request.name": {
+    "en": "ccc72f51fb477e25",
+    "text": "अंतिम क्रेडेंशियल अनुरोध"
+  },
+  "endpoints.route./admin-api/oid4vci/notifications.name": {
+    "en": "a7bb4ad24eb592cf",
+    "text": "एक क्रेडेंशियल की अधिसूचना"
+  },
+  "endpoints.route./sts.name": {
+    "en": "974efec49bd38548",
+    "text": "सुरक्षा टोकन सेवा"
+  },
+  "endpoints.route./sts/metadata.name": {
+    "en": "6d139ba55ee24788",
+    "text": "WS-Trust मेटाडेटा"
+  },
+  "endpoints.route./sts/metadata/capabilities.name": {
+    "en": "5976fe018c7df889",
+    "text": "WS-Trust टोकन क्षमताएँ"
+  },
+  "endpoints.route./sts/metadata/capabilities.xsd.name": {
+    "en": "c89390ca99682b92",
+    "text": "WS-Trust टोकन क्षमताओं का स्कीमा"
+  },
+  "endpoints.route./sts/cert.name": {
+    "en": "a8e401846d25c111",
+    "text": "STS प्रमाणपत्र"
+  },
+  "endpoints.route./wsfed.name": {
+    "en": "174e4d79e29b5d71",
+    "text": "निष्क्रिय अनुरोधकर्ता एंडपॉइंट"
+  },
+  "endpoints.route./wsfed/autopost.js.name": {
+    "en": "2a2ec46d4b275f3f",
+    "text": "साइन-इन प्रतिक्रिया ऑटो-पोस्ट स्क्रिप्ट"
+  },
+  "endpoints.route./FederationMetadata/2007-06/FederationMetadata.xml.name": {
+    "en": "57daca724d75f812",
+    "text": "फ़ेडरेशन मेटाडेटा"
+  },
+  "endpoints.route./wsfed/metadata/:rp.name": {
+    "en": "17543ed2ad8f5b73",
+    "text": "एक निर्भर पक्ष के लिए फ़ेडरेशन मेटाडेटा"
+  },
+  "endpoints.route./wsfed/initiate/:rp.name": {
+    "en": "c2e1dbfea3f7b82f",
+    "text": "पहचान-प्रदाता-प्रारंभित साइन-इन"
+  },
+  "endpoints.route./wsfed/initiate.name": {
+    "en": "fe8976709b142424",
+    "text": "पहचान-प्रदाता-प्रारंभित साइन-इन, wtrealm द्वारा"
+  },
+  "endpoints.route./saml2.name": {
+    "en": "35f88743c0a1f5d7",
+    "text": "प्रोफ़ाइल क्या है"
+  },
+  "endpoints.route./saml2/description.js.name": {
+    "en": "b8dd688d1fccdb8b",
+    "text": "विवरण पृष्ठ की स्क्रिप्ट"
+  },
+  "endpoints.route./saml2/metadata.name": {
+    "en": "99a0d84a3683fb71",
+    "text": "पहचान प्रदाता मेटाडेटा"
+  },
+  "endpoints.route./saml2/metadata/:sp.name": {
+    "en": "a9ae2cff7346229c",
+    "text": "एक सेवा प्रदाता के लिए पहचान प्रदाता मेटाडेटा"
+  },
+  "endpoints.route./saml2/sso.name": {
+    "en": "e16a38fa8fbc04a0",
+    "text": "Single Sign-On सेवा"
+  },
+  "endpoints.route./saml2/sso/:sp.name": {
+    "en": "004995b3099eff0b",
+    "text": "एक सेवा प्रदाता के लिए Single Sign-On सेवा"
+  },
+  "endpoints.route./saml2/unsolicited.name": {
+    "en": "c2e1dbfea3f7b82f",
+    "text": "पहचान-प्रदाता-प्रारंभित साइन-इन"
+  },
+  "endpoints.route./saml2/unsolicited/:sp.name": {
+    "en": "2a237a561e4bdb89",
+    "text": "एक सेवा प्रदाता के लिए पहचान-प्रदाता-प्रारंभित साइन-इन"
+  },
+  "endpoints.route./saml2/aa.name": {
+    "en": "162f9d403c0bae47",
+    "text": "विशेषता प्राधिकारी"
+  },
+  "endpoints.route./saml2/aa/:sp.name": {
+    "en": "fddab449328f6e63",
+    "text": "एक सेवा प्रदाता के लिए विशेषता प्राधिकारी"
+  },
+  "endpoints.route./saml2/ars.name": {
+    "en": "46cbd4aa352d2c6d",
+    "text": "आर्टिफ़ैक्ट समाधान सेवा"
+  },
+  "endpoints.route./saml2/ars/:sp.name": {
+    "en": "4ef0f8d60c58078a",
+    "text": "एक सेवा प्रदाता के लिए आर्टिफ़ैक्ट समाधान सेवा"
+  },
+  "endpoints.route./saml2/slo.name": {
+    "en": "4edb185d6016b03e",
+    "text": "Single Logout सेवा"
+  },
+  "endpoints.route./saml2/slo/:sp.name": {
+    "en": "98b9e34fbd53cb3f",
+    "text": "एक सेवा प्रदाता के लिए Single Logout सेवा"
+  },
+  "endpoints.route./saml2/autopost.js.name": {
+    "en": "3046cc7181c4dedb",
+    "text": "HTTP POST बाइंडिंग ऑटो-पोस्ट स्क्रिप्ट"
+  },
+  "endpoints.route./saml11.name": {
+    "en": "35f88743c0a1f5d7",
+    "text": "प्रोफ़ाइल क्या है"
+  },
+  "endpoints.route./saml11/description.js.name": {
+    "en": "b8dd688d1fccdb8b",
+    "text": "विवरण पृष्ठ की स्क्रिप्ट"
+  },
+  "endpoints.route./saml11/metadata.name": {
+    "en": "99a0d84a3683fb71",
+    "text": "पहचान प्रदाता मेटाडेटा"
+  },
+  "endpoints.route./saml11/metadata/:rp.name": {
+    "en": "e65a9fe2331190e7",
+    "text": "एक निर्भर पक्ष के लिए पहचान प्रदाता मेटाडेटा"
+  },
+  "endpoints.route./saml11/sso.name": {
+    "en": "bf8583daf48f7e2b",
+    "text": "अंतर-साइट स्थानांतरण सेवा"
+  },
+  "endpoints.route./saml11/sso/:rp.name": {
+    "en": "9fe980e24e7a8dfd",
+    "text": "एक निर्भर पक्ष के लिए अंतर-साइट स्थानांतरण सेवा"
+  },
+  "endpoints.route./saml11/responder.name": {
+    "en": "4c0c301abdc81459",
+    "text": "SAML उत्तरदाता (SOAP)"
+  },
+  "endpoints.route./saml11/responder/:rp.name": {
+    "en": "fff6a87d7e14a3a4",
+    "text": "एक निर्भर पक्ष के लिए SAML उत्तरदाता"
+  },
+  "endpoints.route./saml11/autopost.js.name": {
+    "en": "1c2c5f913f3bd033",
+    "text": "Browser/POST प्रोफ़ाइल ऑटो-पोस्ट स्क्रिप्ट"
+  },
+  "endpoints.route./federation.name": {
+    "en": "c025c7c05450031b",
+    "text": "यहाँ फ़ेडरेशन क्या है"
+  },
+  "endpoints.route./federation/pages.js.name": {
+    "en": "3ad84c6b852ab480",
+    "text": "फ़ेडरेशन पृष्ठों की स्क्रिप्ट"
+  },
+  "endpoints.route./federation/login/:id.name": {
+    "en": "561e36f4539a01de",
+    "text": "एक फ़ेडरेटेड साइन-इन शुरू करें"
+  },
+  "endpoints.route./federation/initiate-login/:id.name": {
+    "en": "b8fb585dd54cd123",
+    "text": "एक साइन-इन जिसे भागीदार शुरू करता है (initiate_login_uri)"
+  },
+  "endpoints.route./federation/request/:id/:handle.name": {
+    "en": "e38dd5a9bd371b4d",
+    "text": "संदर्भ द्वारा एक अनुरोध ऑब्जेक्ट"
+  },
+  "endpoints.route./federation/webfinger/:id.name": {
+    "en": "bb12b386b02e1d67",
+    "text": "WebFinger से एक व्यक्ति का OpenID Provider खोजें"
+  },
+  "endpoints.route./federation/fragment.js.name": {
+    "en": "87060058ad2ae994",
+    "text": "अभिकथन उपभोक्ता सेवा की फ़्रैगमेंट स्क्रिप्ट"
+  },
+  "endpoints.route./federation/acs/:id.name": {
+    "en": "fff6118cbd019f5e",
+    "text": "अभिकथन उपभोक्ता सेवा / wreply / redirect_uri"
+  },
+  "endpoints.route./federation/link/:handle.name": {
+    "en": "b1f3d17607ed42ee",
+    "text": "पहले साइन-इन पर भागीदार के विषय को लिंक करें"
+  },
+  "endpoints.route./federation/stepup/:handle.name": {
+    "en": "1b454ff71565d1ab",
+    "text": "जोखिम पर स्टेप-अप के बाद एक फ़ेडरेटेड साइन-इन पूरा करें"
+  },
+  "endpoints.route./federation/profile/:handle.name": {
+    "en": "6f866f6622379301",
+    "text": "वे विवरण दें जो एक उपभोक्ता प्रदाता ने नहीं भेजे (#729)"
+  },
+  "endpoints.route./federation/notifications/:id.name": {
+    "en": "4111365a4c05f259",
+    "text": "एक प्रदाता की सर्वर-से-सर्वर अधिसूचना (#565)"
+  },
+  "endpoints.route./federation/slo/:id.name": {
+    "en": "4974c5129575d272",
+    "text": "एक भागीदार का साइन-आउट, ब्राउज़र में (#167)"
+  },
+  "endpoints.route./federation/backchannel-logout/:id.name": {
+    "en": "27265e6379adee8c",
+    "text": "OpenID Connect Back-Channel Logout, निर्भर पक्ष के रूप में (#167)"
+  },
+  "endpoints.route./federation/frontchannel-logout/:id.name": {
+    "en": "f0ccc33fe373786e",
+    "text": "OpenID Connect Front-Channel Logout, निर्भर पक्ष के रूप में (#167)"
+  },
+  "endpoints.route./federation/metadata/:id.name": {
+    "en": "1bd56e73b838da2d",
+    "text": "इस सेवा का अपना SAML मेटाडेटा, प्रति भागीदार"
+  },
+  "endpoints.route./federation/atproto/client/:id.name": {
+    "en": "eb2fd5ea6de7cf28",
+    "text": "एक Bluesky संबंध का क्लाइंट मेटाडेटा (#746)"
+  },
+  "endpoints.route./federation/jwks/:id.name": {
+    "en": "56f010e78f399989",
+    "text": "एक OpenID Connect संबंध की एन्क्रिप्शन कुंजी (#168)"
+  },
+  "endpoints.route./.well-known/oauth-authorization-server.name": {
+    "en": "6339737b371a7f8e",
+    "text": "प्राधिकरण सर्वर मेटाडेटा"
+  },
+  "endpoints.route./.well-known/oauth-authorization-server/*.name": {
+    "en": "846fc2797e4d73f5",
+    "text": "प्राधिकरण सर्वर मेटाडेटा (पथ सहित जारीकर्ता)"
+  },
+  "endpoints.route./.well-known/webfinger.name": {
+    "en": "4ee1f8cf469f5a7d",
+    "text": "WebFinger जारीकर्ता खोज"
+  },
+  "endpoints.route./.well-known/openid-configuration.name": {
+    "en": "4f19360f1fe5690d",
+    "text": "OpenID Provider कॉन्फ़िगरेशन"
+  },
+  "endpoints.route./.well-known/openid-configuration/*.name": {
+    "en": "34de55b655967e89",
+    "text": "OpenID Provider कॉन्फ़िगरेशन (RFC 8414 सम्मिलित-पथ रूप)"
+  },
+  "endpoints.route./*/.well-known/openid-configuration.name": {
+    "en": "4cd225c57c9e9ff5",
+    "text": "OpenID Provider कॉन्फ़िगरेशन (पथ सहित जारीकर्ता)"
+  },
+  "endpoints.route./oauth2/authorize.name": {
+    "en": "91ef8dd96110c183",
+    "text": "प्राधिकरण एंडपॉइंट"
+  },
+  "endpoints.route./launch/:app.name": {
+    "en": "c2e1dbfea3f7b82f",
+    "text": "पहचान-प्रदाता-प्रारंभित साइन-इन"
+  },
+  "endpoints.route./logout.name": {
+    "en": "1228edbd8a552e3b",
+    "text": "सब कुछ से साइन आउट"
+  },
+  "endpoints.route./logout/signout.js.name": {
+    "en": "fb4839ee88511096",
+    "text": "साइन-आउट पृष्ठ की स्क्रिप्ट"
+  },
+  "endpoints.route./logout/signout.css.name": {
+    "en": "648db34f1fb87aa3",
+    "text": "साइन-आउट पृष्ठ की स्टाइलशीट"
+  },
+  "endpoints.route./logout/signed-out.name": {
+    "en": "a40a09189d1b1d45",
+    "text": "साइन आउट होने के बाद का पृष्ठ"
+  },
+  "endpoints.route./authn/login.name": {
+    "en": "cff20aed466d99d5",
+    "text": "साइन-इन स्क्रीन"
+  },
+  "endpoints.route./authn/select-idp.name": {
+    "en": "afae7eb3e60fb142",
+    "text": "फ़ेडरेशन भागीदार चयनक"
+  },
+  "endpoints.route./authn/accounts.name": {
+    "en": "c3b323e274fa067a",
+    "text": "खाता चयनक"
+  },
+  "endpoints.route./authn/spnego.name": {
+    "en": "0a014fa4b2685cd7",
+    "text": "Kerberos टिकट से साइन इन करें"
+  },
+  "endpoints.route./authn/wallet.name": {
+    "en": "762000c7e5e841a9",
+    "text": "वॉलेट से साइन इन करें"
+  },
+  "endpoints.route./authn/wallet/wait.name": {
+    "en": "b5fe1c58e2d72833",
+    "text": "वॉलेट साइन-इन: प्रतीक्षा करें, और पूरा करें"
+  },
+  "endpoints.route./authn/password-factor.name": {
+    "en": "153eb47c253809aa",
+    "text": "दूसरे कारक के रूप में पासवर्ड"
+  },
+  "endpoints.route./authn/webauthn.name": {
+    "en": "5bebca79ee720f59",
+    "text": "WebAuthn सुरक्षा-कुंजी चरण"
+  },
+  "endpoints.route./authn/backup-code.name": {
+    "en": "305d816e110db5e1",
+    "text": "पुनर्प्राप्ति कोड का दूसरा-कारक चरण"
+  },
+  "endpoints.route./authn/dbsc/register.name": {
+    "en": "5577cc2228ead966",
+    "text": "उपकरण-बाध्य सत्र पंजीकरण"
+  },
+  "endpoints.route./authn/dbsc/refresh.name": {
+    "en": "3defb4fd7920ec00",
+    "text": "उपकरण-बाध्य सत्र नवीनीकरण"
+  },
+  "endpoints.route./authn/email-code.name": {
+    "en": "f889f4695b9ab9f3",
+    "text": "ईमेल किए कोड का चरण"
+  },
+  "endpoints.route./authn/email-link.name": {
+    "en": "28e6a6472025060a",
+    "text": "ईमेल किया साइन-इन लिंक: प्रतीक्षा पृष्ठ"
+  },
+  "endpoints.route./authn/email-link/open.name": {
+    "en": "be8ae41916803885",
+    "text": "ईमेल किया साइन-इन लिंक: जहाँ वह पहुँचता है"
+  },
+  "endpoints.route./authn/language.name": {
+    "en": "33466e5d338f55b0",
+    "text": "भाषा चयनक"
+  },
+  "endpoints.route./authn/password-change.name": {
+    "en": "7e99dc1a87faaf46",
+    "text": "अनिवार्य पासवर्ड परिवर्तन चरण"
+  },
+  "endpoints.route./authn/mfa-setup.name": {
+    "en": "48e0b4bbb949a879",
+    "text": "आवश्यक दूसरे कारक का सेटअप चरण"
+  },
+  "endpoints.route./authn/post-login.name": {
+    "en": "69876d051e66729c",
+    "text": "लॉगिन-पश्चात गतिविधि चरण"
+  },
+  "endpoints.route./authn/totp.name": {
+    "en": "a89de574ee2c21ab",
+    "text": "एकबारगी कोड का दूसरा-कारक चरण"
+  },
+  "endpoints.route./authn/signin.js.name": {
+    "en": "9eb3a8726ead14bf",
+    "text": "साइन-इन स्क्रीन की स्क्रिप्ट"
+  },
+  "endpoints.route./authn-api.name": {
+    "en": "37f607930889c3f0",
+    "text": "साइन-इन API अनुक्रमणिका"
+  },
+  "endpoints.route./authn-api/openapi.json.name": {
+    "en": "95a08b95fbad641e",
+    "text": "साइन-इन API का OpenAPI दस्तावेज़"
+  },
+  "endpoints.route./authn-api/pending/:id.name": {
+    "en": "25b5fd300153bbe4",
+    "text": "साइन-इन स्क्रीन क्या प्रस्तुत करती है"
+  },
+  "endpoints.route./authn-api/pending/:id/partners.name": {
+    "en": "cb0f4ae92fef3ded",
+    "text": "जिन फ़ेडरेशन भागीदारों में से चुनना है"
+  },
+  "endpoints.route./authn-api/pending/:id/accounts.name": {
+    "en": "23c7f520afd7c0cb",
+    "text": "वे खाते जिनके रूप में साइन-इन जारी रह सकता है"
+  },
+  "endpoints.route./authn-api/pending/:id/accounts/select.name": {
+    "en": "4c05cbd10261e5fe",
+    "text": "ब्राउज़र के खातों में से एक के रूप में जारी रखें"
+  },
+  "endpoints.route./authn-api/pending/:id/accounts/another.name": {
+    "en": "8ffce6dab3c9d713",
+    "text": "किसी दूसरे खाते से साइन इन करें"
+  },
+  "endpoints.route./authn-api/pending/:id/accounts/forget.name": {
+    "en": "ee74996a1d01a953",
+    "text": "एक साइन-आउट खाता भूल जाएँ"
+  },
+  "endpoints.route./authn-api/accounts.name": {
+    "en": "e263821d69f3f785",
+    "text": "वे खाते जो यह ब्राउज़र रखता है"
+  },
+  "endpoints.route./authn-api/pending/:id/password.name": {
+    "en": "673a50377a1ff20b",
+    "text": "पासवर्ड से साइन इन करें"
+  },
+  "endpoints.route./authn-api/pending/:id/cancel.name": {
+    "en": "117e271d03b64b31",
+    "text": "साइन-इन अस्वीकार करें"
+  },
+  "endpoints.route./authn-api/pending/:id/anonymous.name": {
+    "en": "5468076a514d8abf",
+    "text": "साइन इन किए बिना जारी रखें"
+  },
+  "endpoints.route./authn-api/pending/:id/certificate.name": {
+    "en": "92ce6eacdbb8d068",
+    "text": "अपने प्रमाणपत्र के साथ जारी रखें"
+  },
+  "endpoints.route./authn-api/pending/:id/email.name": {
+    "en": "108905ece8873211",
+    "text": "ईमेल किए कोड या लिंक से साइन इन करें"
+  },
+  "endpoints.route./authn-api/pending/:id/passkey/options.name": {
+    "en": "9f5f54d890bd7637",
+    "text": "एक पासकी समारोह तैयार करें"
+  },
+  "endpoints.route./authn-api/pending/:id/passkey.name": {
+    "en": "d358470d455e8a4f",
+    "text": "बिना उपयोगकर्ता नाम के पासकी से साइन इन करें"
+  },
+  "endpoints.route./authn-api/wallet.name": {
+    "en": "80406ee6193d32ad",
+    "text": "एक वॉलेट साइन-इन शुरू करें"
+  },
+  "endpoints.route./authn-api/wallet/:state.name": {
+    "en": "48bf057dc942be93",
+    "text": "वॉलेट साइन-इन का प्रतीक्षा पृष्ठ क्या दर्शाता है"
+  },
+  "endpoints.route./authn-api/wallet/:state/status.name": {
+    "en": "8aa2eb39b24d76cc",
+    "text": "एक वॉलेट साइन-इन एकत्र करें"
+  },
+  "endpoints.route./authn-api/wallet/:state/dc-api.name": {
+    "en": "6f6ac9c72bde33a8",
+    "text": "वॉलेट साइन-इन: Digital Credentials API का उत्तर"
+  },
+  "endpoints.route./authn-api/logout.name": {
+    "en": "196d3a7dc50ac8ef",
+    "text": "एक साइन-आउट क्या समाप्त करेगा, और वह साइन-आउट"
+  },
+  "endpoints.route./authn-api/logout/accounts.name": {
+    "en": "ee44950fe4f4a290",
+    "text": "साइन-आउट किस खाते के लिए है"
+  },
+  "endpoints.route./authn-api/consent/:id.name": {
+    "en": "1f22b542171d33ef",
+    "text": "सहमति स्क्रीन क्या पूछती है, और उसका उत्तर"
+  },
+  "endpoints.route./authn-api/password-change/:id.name": {
+    "en": "f2d18b738357010b",
+    "text": "एक अनिवार्य पासवर्ड परिवर्तन"
+  },
+  "endpoints.route./authn-api/password-change/:id/start-over.name": {
+    "en": "90049254d0d4a693",
+    "text": "पासवर्ड परिवर्तन से साइन-इन फिर से शुरू करें"
+  },
+  "endpoints.route./authn-api/mfa/:id.name": {
+    "en": "b881ffb2600f827e",
+    "text": "एक साइन-इन चरण का पृष्ठ क्या दिखाता है"
+  },
+  "endpoints.route./authn-api/mfa/:id/totp.name": {
+    "en": "22a350cbbceaa429",
+    "text": "एक एकबारगी कोड जाँचें"
+  },
+  "endpoints.route./authn-api/mfa/:id/backup-code.name": {
+    "en": "f3e3fe66753f9114",
+    "text": "एक पुनर्प्राप्ति कोड खर्च करें"
+  },
+  "endpoints.route./authn-api/mfa/:id/password.name": {
+    "en": "e59ea53b9b75ba40",
+    "text": "दूसरे कारक के रूप में पासवर्ड जाँचें"
+  },
+  "endpoints.route./authn-api/mfa/:id/webauthn/options.name": {
+    "en": "f11cdfd17fc8a238",
+    "text": "एक पासकी चरण का समारोह तैयार करें"
+  },
+  "endpoints.route./authn-api/mfa/:id/webauthn.name": {
+    "en": "243864657b195912",
+    "text": "एक पासकी चरण पूरा करें"
+  },
+  "endpoints.route./authn-api/mfa/:id/setup/totp.name": {
+    "en": "09679d4354c9ec13",
+    "text": "एक प्रमाणक ऐप सेट करना शुरू करें"
+  },
+  "endpoints.route./authn-api/mfa/:id/setup/confirm.name": {
+    "en": "34a1798b4970fcf5",
+    "text": "एक प्रमाणक ऐप की पुष्टि करें"
+  },
+  "endpoints.route./authn-api/mfa/:id/setup/webauthn.name": {
+    "en": "731e67b177c594f5",
+    "text": "सेटअप चरण पर एक पासकी चुनें"
+  },
+  "endpoints.route./authn-api/mfa/:id/skip.name": {
+    "en": "d412e3d8a9215328",
+    "text": "प्रस्तावित दूसरे कारक को अनदेखा करें"
+  },
+  "endpoints.route./authn-api/mfa/:id/post-login/register.name": {
+    "en": "ea3fbaf33423ccc9",
+    "text": "वह पासकी पंजीकृत करें जो एक लॉगिन-पश्चात गतिविधि माँगती है"
+  },
+  "endpoints.route./authn-api/mfa/:id/post-login/skip.name": {
+    "en": "3d081a5b28f53bd6",
+    "text": "एक लॉगिन-पश्चात गतिविधि टाल दें"
+  },
+  "endpoints.route./authn-api/mfa/:id/email/send.name": {
+    "en": "f974b23b7838f712",
+    "text": "एक साइन-इन कोड या लिंक मेल करें"
+  },
+  "endpoints.route./authn-api/mfa/:id/email/code.name": {
+    "en": "73fb62565006f03f",
+    "text": "एक ईमेल किया कोड जाँचें"
+  },
+  "endpoints.route./authn-api/mfa/:id/email-link/open.name": {
+    "en": "7d4cd6f48237ebb7",
+    "text": "एक मेल किया साइन-इन लिंक खर्च करें"
+  },
+  "endpoints.route./authn-api/mfa/:id/start-over.name": {
+    "en": "34d6f89aeabf8c05",
+    "text": "एक चरण से साइन-इन फिर से शुरू करें"
+  },
+  "endpoints.route./authn/fingerprint.js.name": {
+    "en": "e79a24977ac0a595",
+    "text": "ब्राउज़र फ़िंगरप्रिंट स्क्रिप्ट (वैकल्पिक)"
+  },
+  "endpoints.route./oauth2/check_session.name": {
+    "en": "267337fd3ad0ab7f",
+    "text": "OP iframe (check_session_iframe)"
+  },
+  "endpoints.route./oauth2/logout.name": {
+    "en": "9901e3b8fd763f16",
+    "text": "सत्र समाप्ति (end_session_endpoint)"
+  },
+  "endpoints.route./oauth2/token.name": {
+    "en": "f60f44154acbc444",
+    "text": "टोकन एंडपॉइंट"
+  },
+  "endpoints.route./oauth2/consent.name": {
+    "en": "f38b4a6b64fec408",
+    "text": "सहमति स्क्रीन"
+  },
+  "endpoints.route./oauth2/consent.js.name": {
+    "en": "693bf762fd9680b4",
+    "text": "सहमति स्क्रीन की स्क्रिप्ट"
+  },
+  "endpoints.route./oauth2/autopost.js.name": {
+    "en": "509aa57b5e9572d6",
+    "text": "फ़ॉर्म-पोस्ट प्रतिक्रिया स्क्रिप्ट"
+  },
+  "endpoints.route./:as/oauth2/authorize.name": {
+    "en": "35a6a7905bcfc924",
+    "text": "प्राधिकरण एंडपॉइंट (एक नामित प्राधिकरण सर्वर)"
+  },
+  "endpoints.route./:as/oauth2/token.name": {
+    "en": "eff543132d567c86",
+    "text": "टोकन एंडपॉइंट (एक नामित प्राधिकरण सर्वर)"
+  },
+  "endpoints.route./:as/oauth2/userinfo.name": {
+    "en": "448a4f61fc7b0310",
+    "text": "UserInfo एंडपॉइंट (एक नामित प्राधिकरण सर्वर)"
+  },
+  "endpoints.route./:as/oauth2/introspect.name": {
+    "en": "d1e650a8a10a9e1f",
+    "text": "इंट्रोस्पेक्शन (एक नामित प्राधिकरण सर्वर)"
+  },
+  "endpoints.route./:as/oauth2/par.name": {
+    "en": "1540774db9722dee",
+    "text": "पुश किए गए प्राधिकरण अनुरोध (एक नामित प्राधिकरण सर्वर)"
+  },
+  "endpoints.route./:as/oauth2/revoke.name": {
+    "en": "5f15734899e15325",
+    "text": "निरस्तीकरण (एक नामित प्राधिकरण सर्वर)"
+  },
+  "endpoints.route./:as/oauth2/register.name": {
+    "en": "20e51292a909bb24",
+    "text": "पंजीकरण (एक नामित प्राधिकरण सर्वर)"
+  },
+  "endpoints.route./:as/oauth2/register/:client_id.name": {
+    "en": "e9e266200b93ee8c",
+    "text": "पंजीकृत क्लाइंट प्रबंधन (एक नामित प्राधिकरण सर्वर)"
+  },
+  "endpoints.route./:as/oauth2/logout.name": {
+    "en": "9f3e0399c82bb2d2",
+    "text": "सत्र समाप्ति (एक नामित प्राधिकरण सर्वर)"
+  },
+  "endpoints.route./:as/oauth2/jwks.name": {
+    "en": "da3c9537b549c3a3",
+    "text": "JWKS (एक नामित प्राधिकरण सर्वर)"
+  },
+  "endpoints.route./oauth2/rfc9700.name": {
+    "en": "d1dfc6ccb5d6f5ab",
+    "text": "RFC 9700 मोड रिपोर्ट (विनिर्देश एंडपॉइंट नहीं)"
+  },
+  "endpoints.route./oauth2/fapi.name": {
+    "en": "c0f8666df47dcdde",
+    "text": "FAPI प्रोफ़ाइल रिपोर्ट (विनिर्देश एंडपॉइंट नहीं)"
+  },
+  "endpoints.route./:as/oauth2/fapi.name": {
+    "en": "2db6a31fbce294e3",
+    "text": "FAPI प्रोफ़ाइल रिपोर्ट (एक नामित प्राधिकरण सर्वर)"
+  },
+  "endpoints.route./oauth2/oauth21.name": {
+    "en": "632451480bda3aec",
+    "text": "OAuth 2.1 मोड रिपोर्ट (विनिर्देश एंडपॉइंट नहीं)"
+  },
+  "endpoints.route./oauth2/userinfo.name": {
+    "en": "aebc2aa96e6b1b70",
+    "text": "UserInfo एंडपॉइंट"
+  },
+  "endpoints.route./oauth2/introspect.name": {
+    "en": "328dfd36fb81f446",
+    "text": "इंट्रोस्पेक्शन एंडपॉइंट"
+  },
+  "endpoints.route./status-lists/access-tokens.name": {
+    "en": "f059bd82cb3acaac",
+    "text": "एक्सेस-टोकन स्थिति सूची"
+  },
+  "endpoints.route./status-lists.name": {
+    "en": "187ac505c7e39fc8",
+    "text": "एक्सेस-टोकन स्थिति सूची एकत्रीकरण"
+  },
+  "endpoints.route./oauth2/challenge.name": {
+    "en": "2058075cb9955db9",
+    "text": "क्लाइंट अटेस्टेशन चुनौती एंडपॉइंट"
+  },
+  "endpoints.route./oauth2/par.name": {
+    "en": "59993176c4a0e4a5",
+    "text": "पुश किया गया प्राधिकरण अनुरोध एंडपॉइंट"
+  },
+  "endpoints.route./admin-api/oauth2/monitor.name": {
+    "en": "21eb6990b9a90996",
+    "text": "JSON पर OAuth 2.0 / OIDC गतिविधि"
+  },
+  "endpoints.route./admin-api/oauth2/monitor/:action.name": {
+    "en": "b9d72b1b82f53e0d",
+    "text": "OAuth 2.0 / OIDC निगरानी क्रिया"
+  },
+  "endpoints.route./oauth2/grants/:grantId.name": {
+    "en": "c949ed02f1ba90a5",
+    "text": "अनुदान प्रबंधन API"
+  },
+  "endpoints.route./admin-api/grants.name": {
+    "en": "b0eb5b67d86e7f62",
+    "text": "JSON पर अनुदान कंसोल पृष्ठ"
+  },
+  "endpoints.route./admin-api/grants/:action.name": {
+    "en": "d78e7d6c27003500",
+    "text": "एक अनुदान निरस्त करें"
+  },
+  "endpoints.route./admin-api/commands.name": {
+    "en": "88006178bfa3632d",
+    "text": "JSON पर OpenID Provider Commands कंसोल पृष्ठ"
+  },
+  "endpoints.route./admin-api/commands/:action.name": {
+    "en": "b784156dac51ba48",
+    "text": "एक कमांड भेजें, या एक का पुनः प्रयास करें"
+  },
+  "endpoints.route./oauth2/commands/callback.name": {
+    "en": "077e67ad034f4945",
+    "text": "OpenID Provider Commands कॉलबैक एंडपॉइंट"
+  },
+  "endpoints.route./admin-api/claim-providers.name": {
+    "en": "263c769f55b58ee3",
+    "text": "JSON पर दावा प्रदाता कंसोल पृष्ठ"
+  },
+  "endpoints.route./admin-api/claim-providers/:action.name": {
+    "en": "51791ee150e7550c",
+    "text": "दावा प्रदाता रजिस्टर बदलें"
+  },
+  "endpoints.route./oauth2/device_authorization.name": {
+    "en": "17f9953de35f59f9",
+    "text": "उपकरण प्राधिकरण एंडपॉइंट"
+  },
+  "endpoints.route./oauth2/bc-authorize.name": {
+    "en": "8abae32691ff0227",
+    "text": "बैकचैनल प्रमाणीकरण एंडपॉइंट (CIBA)"
+  },
+  "endpoints.route./oauth2/revoke.name": {
+    "en": "9033948292614d8a",
+    "text": "निरस्तीकरण एंडपॉइंट"
+  },
+  "endpoints.route./oauth2/register.name": {
+    "en": "d53075a18dfd9972",
+    "text": "गतिशील क्लाइंट पंजीकरण"
+  },
+  "endpoints.route./oauth2/register/:client_id.name": {
+    "en": "36b03c4cf456a0ad",
+    "text": "पंजीकृत क्लाइंट प्रबंधन"
+  },
+  "endpoints.route./.well-known/openid-credential-issuer.name": {
+    "en": "1f08d181c3c4f31b",
+    "text": "क्रेडेंशियल जारीकर्ता मेटाडेटा"
+  },
+  "endpoints.route./.well-known/openid-credential-issuer/*.name": {
+    "en": "dcd93dd68bb234ec",
+    "text": "क्रेडेंशियल जारीकर्ता मेटाडेटा (पथ सहित जारीकर्ता)"
+  },
+  "endpoints.route./.well-known/jwt-vc-issuer.name": {
+    "en": "f08112b1d485cfb0",
+    "text": "JWT VC जारीकर्ता मेटाडेटा"
+  },
+  "endpoints.route./.well-known/jwt-vc-issuer/*.name": {
+    "en": "1080905b09dbe51c",
+    "text": "JWT VC जारीकर्ता मेटाडेटा (पथ सहित जारीकर्ता)"
+  },
+  "endpoints.route./oid4vci/nonce.name": {
+    "en": "64d7b165db23d809",
+    "text": "नॉन्स एंडपॉइंट"
+  },
+  "endpoints.route./oid4vci/credential.name": {
+    "en": "f1a74c0c1d1a9142",
+    "text": "क्रेडेंशियल एंडपॉइंट"
+  },
+  "endpoints.route./oid4vci/status-lists/1.name": {
+    "en": "6bc2372d3bb214c3",
+    "text": "टोकन स्थिति सूची"
+  },
+  "endpoints.route./oid4vci/status-lists/mdoc.name": {
+    "en": "0f85cae8f7648bb1",
+    "text": "mdoc टोकन स्थिति सूची"
+  },
+  "endpoints.route./oid4vci/mdoc-iaca.name": {
+    "en": "005a19a028c1adc0",
+    "text": "mdoc Issuing Authority CA"
+  },
+  "endpoints.route./oid4vci/status-lists.name": {
+    "en": "b7c39aa8efc43f99",
+    "text": "स्थिति सूची एकत्रीकरण"
+  },
+  "endpoints.route./oid4vci/status-lists/bitstring/:purpose.name": {
+    "en": "69e5a2172fd0dff1",
+    "text": "बिटस्ट्रिंग स्थिति सूची क्रेडेंशियल"
+  },
+  "endpoints.route./oid4vci/trusted-list.name": {
+    "en": "9d8d4bfb47367165",
+    "text": "विश्वसनीय सूची (विश्वसनीय संस्थाओं की सूची)"
+  },
+  "endpoints.route./oid4vci/deferred_credential.name": {
+    "en": "b64bd315376ba1ef",
+    "text": "आस्थगित क्रेडेंशियल एंडपॉइंट"
+  },
+  "endpoints.route./oid4vci/notification.name": {
+    "en": "e1a25561e414b22c",
+    "text": "अधिसूचना एंडपॉइंट"
+  },
+  "endpoints.route./oid4vci/credential-offer/:id.name": {
+    "en": "357ca7bdfcc31665",
+    "text": "संदर्भ द्वारा क्रेडेंशियल ऑफ़र"
+  },
+  "endpoints.route./bbs/keys/:id.name": {
+    "en": "58347a1730d54e91",
+    "text": "BBS सार्वजनिक कुंजी"
+  },
+  "endpoints.route./vc-api/issuers.name": {
+    "en": "73b838a87b15b09a",
+    "text": "VC API जारीकर्ता"
+  },
+  "endpoints.route./vc-api/issuers/:issuer/credentials/issue.name": {
+    "en": "36e4ff37d0083d67",
+    "text": "एक क्रेडेंशियल जारी करें (VC API)"
+  },
+  "endpoints.route./vc-api/credentials/verify.name": {
+    "en": "7f67271e211b78e1",
+    "text": "एक क्रेडेंशियल सत्यापित करें (VC API)"
+  },
+  "endpoints.route./vc-api/presentations/verify.name": {
+    "en": "f0ace30e55e137f1",
+    "text": "एक प्रस्तुति सत्यापित करें (VC API)"
+  },
+  "endpoints.route./vc-api/holders/:holder/presentations/prove.name": {
+    "en": "96508bdaea6f7f69",
+    "text": "एक प्रस्तुति सिद्ध करें (VC API)"
+  },
+  "endpoints.route./vc-api/credentials/derive.name": {
+    "en": "4af3df1e4c1f2f99",
+    "text": "एक चयनात्मक प्रकटीकरण व्युत्पन्न करें (VC API)"
+  },
+  "endpoints.route./vc-api/credentials/status.name": {
+    "en": "d231bdc923e68f8a",
+    "text": "एक क्रेडेंशियल की स्थिति बदलें (VC API)"
+  },
+  "endpoints.route./vc-api/resolve.name": {
+    "en": "39c91a22e95b0c2e",
+    "text": "एक DID रिज़ॉल्व करें"
+  },
+  "endpoints.route./vc-api/dereference.name": {
+    "en": "a7044c968ef56722",
+    "text": "एक DID URL डीरेफ़रेंस करें"
+  },
+  "endpoints.route./.well-known/did.json.name": {
+    "en": "9400b0ba526646db",
+    "text": "DID दस्तावेज़ (did:web)"
+  },
+  "endpoints.route./did.json.name": {
+    "en": "64a6ef9ae9a20c82",
+    "text": "एक did:web पथ पर DID दस्तावेज़ (विश्वास क्षेत्र)"
+  },
+  "endpoints.route./applications/:application/did.json.name": {
+    "en": "7d0bcaaf2c946cba",
+    "text": "एक अनुप्रयोग का DID दस्तावेज़"
+  },
+  "endpoints.route./users/:rid/did.json.name": {
+    "en": "056966d689a17c3b",
+    "text": "एक व्यक्ति का प्रकाशित DID दस्तावेज़"
+  },
+  "endpoints.route./.well-known/did-configuration.json.name": {
+    "en": "ea3b5de3683521ad",
+    "text": "डोमेन लिंकेज क्रेडेंशियल"
+  },
+  "endpoints.route./oid4vp/verifier-certificate.name": {
+    "en": "9e006ca613ebe851",
+    "text": "सत्यापनकर्ता की x509 पहचान"
+  },
+  "endpoints.route./oid4vp/request/:id.name": {
+    "en": "72816b085ee822bd",
+    "text": "अनुरोध ऑब्जेक्ट"
+  },
+  "endpoints.route./oid4vp/response.name": {
+    "en": "041dda1707b526b4",
+    "text": "प्रतिक्रिया URI"
+  },
+  "endpoints.route./enroll/acme/directory.name": {
+    "en": "104ffd34f6a0e8e7",
+    "text": "ACME निर्देशिका"
+  },
+  "endpoints.route./enroll/acme/new-nonce.name": {
+    "en": "58500cdad5cfc4d8",
+    "text": "एक ताज़ा Replay-Nonce"
+  },
+  "endpoints.route./enroll/acme/new-account.name": {
+    "en": "19f7ad85f8039402",
+    "text": "एक खाता बनाएँ या खोजें"
+  },
+  "endpoints.route./enroll/acme/account/:id.name": {
+    "en": "d8e1731e5f342c53",
+    "text": "एक खाता"
+  },
+  "endpoints.route./enroll/acme/account/:id/orders.name": {
+    "en": "d2c2d051de5a7992",
+    "text": "एक खाते के ऑर्डर"
+  },
+  "endpoints.route./enroll/acme/new-order.name": {
+    "en": "18adf271f8844b21",
+    "text": "एक ऑर्डर बनाएँ"
+  },
+  "endpoints.route./enroll/acme/order/:id.name": {
+    "en": "8040f78fc2b0df03",
+    "text": "एक ऑर्डर"
+  },
+  "endpoints.route./enroll/acme/order/:id/finalize.name": {
+    "en": "b6644906e260eb21",
+    "text": "एक ऑर्डर को अंतिम रूप दें"
+  },
+  "endpoints.route./enroll/acme/authz/:id.name": {
+    "en": "56c0850aaa4bcf14",
+    "text": "एक प्राधिकरण"
+  },
+  "endpoints.route./enroll/acme/challenge/:id.name": {
+    "en": "cecfa83a474620dc",
+    "text": "एक चुनौती"
+  },
+  "endpoints.route./enroll/acme/cert/:id.name": {
+    "en": "684bd809e6bf3b64",
+    "text": "प्रमाणपत्र डाउनलोड करें"
+  },
+  "endpoints.route./enroll/acme/revoke-cert.name": {
+    "en": "374ba7ba8a1ba9d4",
+    "text": "प्रमाणपत्र निरस्त करें"
+  },
+  "endpoints.route./enroll/acme/key-change.name": {
+    "en": "e5e400a69df90c45",
+    "text": "खाते को नई कुंजी पर ले जाएँ"
+  },
+  "endpoints.route./enroll/acme/renewal-info/:id.name": {
+    "en": "3baccc984057446f",
+    "text": "नवीकरण जानकारी"
+  },
+  "endpoints.route./admin-api/acme.name": {
+    "en": "ccdc212d6fcfff07",
+    "text": "JSON पर ACME कंसोल पृष्ठ"
+  },
+  "endpoints.route./admin-api/acme/monitor.name": {
+    "en": "96d92e1bcdcc2d27",
+    "text": "JSON पर ACME नामांकन"
+  },
+  "endpoints.route./admin-api/acme/:action.name": {
+    "en": "aa09fbaeffaec922",
+    "text": "ACME कंसोल क्रियाएँ"
+  },
+  "endpoints.route./.well-known/est/cacerts.name": {
+    "en": "289fb2c13dc75710",
+    "text": "CA प्रमाणपत्र"
+  },
+  "endpoints.route./.well-known/est/simpleenroll.name": {
+    "en": "1ffad68b1154847d",
+    "text": "सरल नामांकन"
+  },
+  "endpoints.route./.well-known/est/simplereenroll.name": {
+    "en": "cd138debc7dcace9",
+    "text": "सरल पुनः नामांकन"
+  },
+  "endpoints.route./.well-known/est/serverkeygen.name": {
+    "en": "beb605660186e4e5",
+    "text": "सर्वर-पक्ष कुंजी जनन"
+  },
+  "endpoints.route./.well-known/est/csrattrs.name": {
+    "en": "fa0a2c47c0b1dfba",
+    "text": "CSR विशेषताएँ"
+  },
+  "endpoints.route./.well-known/est/fullcmc.name": {
+    "en": "d8a28887e3416c39",
+    "text": "पूर्ण CMC"
+  },
+  "endpoints.route./.well-known/est/:label/cacerts.name": {
+    "en": "0808f99538729c98",
+    "text": "CA प्रमाणपत्र (लेबलयुक्त)"
+  },
+  "endpoints.route./.well-known/est/:label/simpleenroll.name": {
+    "en": "cd563ee6554e6733",
+    "text": "सरल नामांकन (लेबलयुक्त)"
+  },
+  "endpoints.route./.well-known/est/:label/simplereenroll.name": {
+    "en": "cf34b617dc30eb0d",
+    "text": "सरल पुनः नामांकन (लेबलयुक्त)"
+  },
+  "endpoints.route./.well-known/est/:label/serverkeygen.name": {
+    "en": "698e0b99518ef7a0",
+    "text": "सर्वर-पक्ष कुंजी जनन (लेबलयुक्त)"
+  },
+  "endpoints.route./.well-known/est/:label/csrattrs.name": {
+    "en": "a99bf6e38057e196",
+    "text": "CSR विशेषताएँ (लेबलयुक्त)"
+  },
+  "endpoints.route./.well-known/est/:label/fullcmc.name": {
+    "en": "9342cd6960af927d",
+    "text": "पूर्ण CMC (लेबलयुक्त)"
+  },
+  "endpoints.route./.well-known/est/nonce.name": {
+    "en": "fac4d513cd37ea55",
+    "text": "सत्यापन-ताज़गी नॉन्स"
+  },
+  "endpoints.route./.well-known/est/:label/nonce.name": {
+    "en": "228380fc44850d1a",
+    "text": "सत्यापन-ताज़गी नॉन्स (लेबलयुक्त)"
+  },
+  "endpoints.route./admin-api/est.name": {
+    "en": "d52ede6acd0f288e",
+    "text": "JSON पर EST कंसोल पृष्ठ"
+  },
+  "endpoints.route./admin-api/est/monitor.name": {
+    "en": "d92f192b9774f4df",
+    "text": "JSON पर EST नामांकन"
+  },
+  "endpoints.route./admin-api/est/:action.name": {
+    "en": "560ee5483e3bac3e",
+    "text": "सर्वर कुंजी से जारी करें, निरस्त करें, या होस्ट नाम बदलें"
+  },
+  "endpoints.route./.well-known/openid-federation.name": {
+    "en": "d1df780ba25b939c",
+    "text": "Entity Configuration"
+  },
+  "endpoints.route./oidfed/fetch.name": {
+    "en": "f5422a3881454156",
+    "text": "अधीनस्थ कथन प्राप्त करें"
+  },
+  "endpoints.route./oidfed/list.name": {
+    "en": "ce37f0ea513eb35f",
+    "text": "अधीनस्थ सूची"
+  },
+  "endpoints.route./oidfed/resolve.name": {
+    "en": "7adde00f12c465ff",
+    "text": "एंटिटी का समाधान करें"
+  },
+  "endpoints.route./oidfed/trust-mark.name": {
+    "en": "77987668f6339bf8",
+    "text": "Trust Mark एंडपॉइंट"
+  },
+  "endpoints.route./oidfed/extended-list.name": {
+    "en": "b14e63c94c9083ed",
+    "text": "विस्तारित अधीनस्थ सूची"
+  },
+  "endpoints.route./oidfed/collection.name": {
+    "en": "fdaa144094945599",
+    "text": "एंटिटी संग्रह"
+  },
+  "endpoints.route./oidfed/subordinate-events.name": {
+    "en": "7a12871efa2aa1bc",
+    "text": "अधीनस्थ घटनाएँ"
+  },
+  "endpoints.route./oidfed/trust-mark-status.name": {
+    "en": "5721566a90e07bbb",
+    "text": "Trust Mark स्थिति"
+  },
+  "endpoints.route./oidfed/trust-mark-list.name": {
+    "en": "b0d733b58ace3f80",
+    "text": "Trust Mark वाली एंटिटियों की सूची"
+  },
+  "endpoints.route./oidfed/historical-keys.name": {
+    "en": "186db2a5169ec661",
+    "text": "फेडरेशन की ऐतिहासिक कुंजियाँ"
+  },
+  "endpoints.route./oidfed/register.name": {
+    "en": "d04d3abbbcd68dca",
+    "text": "स्पष्ट पंजीकरण"
+  },
+  "endpoints.route./admin-api/oidfed.name": {
+    "en": "1cf7cd853d6d692e",
+    "text": "JSON पर OpenID Federation कंसोल पृष्ठ"
+  },
+  "endpoints.route./admin-api/oidfed/:action.name": {
+    "en": "68da5fb8efee3487",
+    "text": "अधीनस्थ, एंकर, Trust Mark, समाधान और कुंजियाँ"
+  },
+  "endpoints.route./enroll/scep.name": {
+    "en": "7bfb8a0c73122b01",
+    "text": "SCEP सर्वर"
+  },
+  "endpoints.route./enroll/scep/pkiclient.exe.name": {
+    "en": "8bb99181dc5c31e3",
+    "text": "SCEP सर्वर (CGI नाम)"
+  },
+  "endpoints.route./enroll/scep/:profile/pkiclient.exe.name": {
+    "en": "b857590b45832439",
+    "text": "एक प्रोफ़ाइल के लिए SCEP सर्वर (CGI नाम)"
+  },
+  "endpoints.route./enroll/scep/:profile.name": {
+    "en": "db710be736714314",
+    "text": "एक प्रोफ़ाइल के लिए SCEP सर्वर"
+  },
+  "endpoints.route./admin-api/scep.name": {
+    "en": "27aaa89dfa182129",
+    "text": "JSON पर SCEP कंसोल पृष्ठ"
+  },
+  "endpoints.route./admin-api/scep/monitor.name": {
+    "en": "d1775471cb421bca",
+    "text": "JSON पर SCEP नामांकन"
+  },
+  "endpoints.route./admin-api/scep/:action.name": {
+    "en": "c335ded81d044226",
+    "text": "चुनौतियाँ, RA प्रमाणपत्र, निरसन और होस्ट नाम"
+  },
+  "endpoints.socket.kdc": {
+    "en": "a07cb128332c46ff",
+    "text": "कुंजी वितरण केंद्र"
+  },
+  "endpoints.socket.kdcRealm": {
+    "en": "bf03c3bc314da5cf",
+    "text": "कुंजी वितरण केंद्र (realm {{realm}})"
+  },
+  "endpoints.socket.mainPort": {
+    "en": "6b11a59c1fd5cd82",
+    "text": "मुख्य पोर्ट पर क्लाइंट प्रमाणपत्र"
+  },
+  "endpoints.socket.mainPortTransport": {
+    "en": "f09855213e0c9733",
+    "text": "TLS (क्लाइंट प्रमाणपत्र माँगा जाता है, कभी आवश्यक नहीं)"
+  }
+}

@@ -33,7 +33,6 @@
   "refusal.STS-KEYS-0070": "The LogoutRequest's EncryptedID uses a key transport this service does not unwrap (rsa-1_5). Nothing was ended: you are still signed in.",
   "refusal.STS-REG-0049": "The address the response would be delivered to has been seen before but has not been confirmed for this application, so it is not used.",
   "refusal.STS-SAML-0025": "This sign-in has expired: it was held while you were at the sign-in screen, and it was held for too long.",
-  "refusal.STS-SAML-0026": "This link names a profile other than the two SAML 1.1 browser profiles, post and artifact.",
   "refusal.STS-SAML-0028": "The address the response would be delivered to (the shire) is not registered for this relying party, or none is registered.",
   "refusal.STS-SAML-0029": "The address the response would be delivered to is not an absolute http or https URL.",
   "refusal.STS-SAML-0030": "This link does not say which relying party it is for: it has no providerId, and no TARGET to work one out from.",

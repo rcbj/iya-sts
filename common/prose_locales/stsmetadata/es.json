@@ -252,8 +252,12 @@
     "text": "partial: las partes que debe un respondedor. HTTP en claro (sección 5) — el respondedor responde en `pki.httpPort` además de en el puerto principal TLS, y los certificados nombran el de texto en claro; GET con la solicitud en base64 anexada; sin fracciones de segundo en ningún GeneralizedTime (sección 2.2.4); el ID del respondedor por hash de clave (sección 2.2.2); `unauthorized` para una solicitud de la que no es autoritativo (sección 2.2.3); y los encabezados de caché de la sección 6.2 — max-age no posterior a nextUpdate, Last-Modified, Expires y un ETag fuerte, nunca no-cache ni no-store en una respuesta autoritativa. NO HECHO: las respuestas se firman a petición en lugar de PRODUCIRSE DE ANTEMANO (la sección 2.2.1 recomienda la producción anticipada para volúmenes altos), y una respuesta a una solicitud con nonce se marca como privada en lugar de servirse desde una caché."
   },
   "stsmetadata.specs.ws-trust.coverage": {
-    "en": "cafeffef561dcd9a",
-    "text": "partial: Issue, Renew, Validate y Cancel sobre SOAP 1.1 y 1.2. Las firmas de solicitud no se verifican. OnBehalfOf y ActAs los decide la política de emisión (#186, las reglas que comparten el intercambio de tokens y Kerberos S4U) — OnBehalfOf pide suplantación y ActAs delegación, la semántica de delegación de las entradas debe permitirlo, el AppliesTo debe ser una aplicación registrada que las relaciones de delegación permitan, y un solicitante que sea una persona necesita delegation.actorRole — y se rechazan con un fallo wst:RequestFailed (sección 11) en modo producto; ambos elementos a la vez son wst:InvalidRequest; desarrollo registra lo que se habría rechazado. En modo PRODUCTO (2026-09-12) cada operación necesita una credencial — un UsernameToken verificado contra el directorio, o una aserción SAML que firmó este STS y dentro de sus Conditions — y un OnBehalfOf/ActAs necesita la propia credencial del solicitante y una aserción así dentro de él; desarrollo no acepta ninguna, como siempre. En ambos modos un wst:Lifetime solicitado se limita (wstrust.maxTokenLifetimeMin) y el AuthnContext de la aserción emitida nombra la credencial en lugar de una contraseña. Un solicitante cuyo wsse:Security no lleva ninguna credencial se autentica, en ambos modos, mediante el certificado de cliente TLS de la conexión cuando este dominio lo emitió a una persona o a una aplicación (#1046), o cuando procede de una autoridad de certificación externa y está almacenado en userCertificate en exactamente una de sus entradas (#1061)."
+    "en": "34e462a3c1215584",
+    "text": "partial: Issue, Renew, Validate y Cancel sobre SOAP 1.1 y 1.2. GET /sts/metadata es un WSDL 1.1, con un port type por versión de trust, con las credenciales como WS-SecurityPolicy; los pares credencial/tipo de token son una extensión de IYA-STS en /sts/metadata/capabilities; WS-MetadataExchange responde en /sts/mex. Una firma WS-Security sobre el Body y el Timestamp es una credencial (#521), verificada en producto. OnBehalfOf y ActAs los decide la política de emisión (#186, las reglas que comparten el intercambio de tokens y Kerberos S4U) — OnBehalfOf pide suplantación y ActAs delegación, la semántica de delegación de las entradas debe permitirlo, el AppliesTo debe ser una aplicación registrada que las relaciones de delegación permitan, y un solicitante que sea una persona necesita delegation.actorRole — y se rechazan con un fallo wst:RequestFailed (sección 11) en modo producto; ambos elementos a la vez son wst:InvalidRequest; desarrollo registra lo que se habría rechazado. En modo PRODUCTO (2026-09-12) cada operación necesita una credencial — un UsernameToken verificado contra el directorio, una aserción SAML 2.0 o SAML 1.1 o un JWT que emitió este STS, una firma WS-Security, o un token Kerberos para el SPN propio de este servicio — y un OnBehalfOf/ActAs necesita la propia credencial del solicitante y un token que este STS emitió dentro de él; desarrollo no acepta ninguna, como siempre. En ambos modos un wst:Lifetime solicitado se limita (wstrust.maxTokenLifetimeMin) y el AuthnContext de la aserción emitida nombra la credencial en lugar de una contraseña. Un solicitante cuyo wsse:Security no lleva ninguna credencial se autentica, en ambos modos, mediante el certificado de cliente TLS de la conexión cuando este dominio lo emitió a una persona o a una aplicación (#1046), o cuando procede de una autoridad de certificación externa y está almacenado en userCertificate en exactamente una de sus entradas (#1061)."
+  },
+  "stsmetadata.specs.ws-mex.coverage": {
+    "en": "252983aa08edd8d9",
+    "text": "partial: POST /sts/mex responde a un WS-Transfer Get y a un GetMetadata (acotado por Dialect e Identifier) en la versión de SOAP y el espacio de nombres de WS-Addressing de la solicitud, con el WSDL, el documento de capacidades de tokens y su esquema incrustados como secciones. No implementado: una sección MetadataReference o Location, el espacio de nombres de la Recomendación W3C WS-MetadataExchange 1.1 y los metadatos en una EPR."
   },
   "stsmetadata.specs.wss-kerberos.coverage": {
     "en": "a6d4bfc032b7d23e",
@@ -300,8 +304,8 @@
     "text": "full para lo que emite: firma envuelta, canonicalización exclusiva, RSA-SHA256 de forma predeterminada y RSA-SHA384/512 o el roto RSA-SHA1 mediante saml.signatureAlgorithm (2026-09-12; solo en modo de desarrollo desde #181); cifrado de contenido AES-GCM o AES-CBC con una clave envuelta RSA-OAEP (rsa-oaep-mgf1p, o el rsa-oaep de XML Encryption 1.1 con SHA-256 y MGF1-SHA-256, #168) o, solo en modo de desarrollo, RSA-1_5 — el modo producto ni envuelve ni desenvuelve RSA-1_5 (XML Encryption 1.1 sección 6.1.2) — y, para un destinatario EC, acuerdo de claves ECDH-ES con ConcatKDF y un envoltorio de clave AES (sección 5.6.4; #168). Una relación de federación DESCIFRA la EncryptedAssertion, EncryptedID y EncryptedAttribute de un socio exactamente con los algoritmos que publica, y rechaza AES-CBC y rsa-1_5 en todos los modos. No hay ningún método ML-KEM registrado para XML Encryption. VERIFICA (desde el 2026-09-17) cada SignatureMethod de RFC 9231 y XMLDSig 1.1 que implementa el OpenSSL de node — RSA PKCS#1 v1.5 y RSASSA-PSS (con y sin RSAPSSParams), ECDSA, EdDSA Ed25519/Ed448, DSA — y los identificadores ML-DSA y SLH-DSA del borrador draft-eastlake-rfc9231bis-xmlsec-uris; digests SHA-224, SHA-2, SHA-3 y RIPEMD-160; SHA-1 solo con saml.allowSha1Signatures, en modo de desarrollo. NO se verifican, y se rechazan por su nombre: MD5, los MAC, Whirlpool, ESIGN, EdDSA con prehash y los HSS/LMS y XMSS con estado."
   },
   "stsmetadata.specs.rfc6749.coverage": {
-    "en": "56137411ddc592b3",
-    "text": "partial: authorization_code, implicit, password, client_credentials y refresh_token. La autenticación del cliente se acepta, no se verifica — SALVO en modo RFC 9700, donde un cliente registrado aquí como confidencial debe presentar el client_secret que le emitió este servicio (sección 2.5, la única credencial verificada en todo este servicio). Ese modo también rechaza de plano la concesión password, rechaza el token de acceso de la concesión implicit — todo tipo de respuesta que emita uno desde el punto de autorización — salvo que un administrador exima la sección 2.1.2 de RFC 9700 para el dominio, y entonces solo lo respeta para una aplicación que tenga ese tipo habilitado (#1295, #1296), y rota los tokens de actualización. Sección 3.3: un ámbito está ligado al cliente (#110) — los ámbitos protegidos propios de este servicio (admin:*, los ámbitos de SCIM y Shared Signals, el permiso del depurador) se emiten solo a un cliente cuyo oauthAllowedScope los declare, en todos los modos, y en modo producto cada ámbito se ajusta a esa lista o a un conjunto predeterminado documentado; una solicitud fuera de ella es invalid_scope."
+    "en": "77e091b183d9dd7b",
+    "text": "partial: authorization_code, implicit, password, client_credentials y refresh_token. La autenticación del cliente se acepta, no se verifica — EXCEPTO en modo RFC 9700, donde un cliente registrado aquí como confidencial debe presentar el client_secret que este servicio le emitió (sección 2.5, la única credencial verificada en todo este servicio). Ese modo también rechaza por completo la concesión password, rechaza el token de acceso de la concesión implicit — todo tipo de respuesta que emita uno desde el punto final de autorización — salvo que un administrador exima la sección 2.1.2 de RFC 9700 para el dominio, y entonces solo lo atiende para una aplicación que tenga habilitado el tipo (#1295, #1296), y rota los tokens de actualización. Sección 3.3: un ámbito está ligado al cliente (#110) — los ámbitos protegidos propios de este servicio (admin:*, los ámbitos de SCIM y Shared Signals) solo se emiten a un cliente cuyo oauthAllowedScope los declara, en todos los modos, y en modo producto cada ámbito se ajusta a esa lista o a un conjunto predeterminado documentado; una solicitud fuera de ella es invalid_scope."
   },
   "stsmetadata.specs.rfc6750.coverage": {
     "en": "32af4b1d310ee331",
@@ -476,12 +480,12 @@
     "text": "full para el servidor de autorización, Y DESACTIVADO DE FORMA PREDETERMINADA — el PERFIL oauth2.fapi=1-advanced (por dominio, o el miembro fapi de un servidor de autorización con nombre), que es Baseline y más (#139): un objeto de solicitud firmado con JWS por valor o por referencia (punto 1) con exp y nbf dentro de 60 minutos y aud el emisor (puntos 13, 15, 17); response_type code id_token, o code con JARM (punto 2); el ID Token como firma separada con s_hash (5.2.2.1); solo tokens de acceso restringidos al remitente — mTLS, o DPoP salvo oauth2.fapiRequireMtls — con mtls_endpoint_aliases publicado (puntos 5, 6); tls_client_auth, self_signed_tls_client_auth o private_key_jwt y ningún cliente público (puntos 14, 16); PKCE S256 para solicitudes enviadas (punto 18, y el punto 7 de Baseline relajado como dice la sección); PS256 o ES256 para cada firma en ambos sentidos y nunca RSA1_5 (8.6), firmando este servidor con PS256 de forma predeterminada. La consola, el portal y el depurador cumplen: un objeto de solicitud firmado enviado a PAR, JARM y un token vinculado. NO cubierto: la suite de conformidad (#176)."
   },
   "stsmetadata.specs.fapi2-security.coverage": {
-    "en": "f8972d88b2277611",
-    "text": "full para el servidor de autorización, Y DESACTIVADO DE FORMA PREDETERMINADA — el PERFIL oauth2.fapi=2-security (por dominio, o el miembro fapi de un servidor de autorización con nombre), un perfil propio (#140): modo RFC 9700 activado; solo clientes confidenciales, por mTLS o private_key_jwt, con el aud de la aserción igual al emisor como cadena (5.3.2.1 puntos 3, 6, 8); solo tokens restringidos al remitente, por mTLS o DPoP (puntos 4-5); sin rotación de actualización salvo que oauth2.refreshTokenRotation la fuerce (punto 9); códigos de 60 s (punto 11); un iat o nbf más de 60 s en el futuro rechazado (punto 13); solo code, PAR obligatorio y con autenticación del cliente, PKCE S256, redirect_uri enviada, request_uris de menos de 600 s (5.3.2.2); PS256, ES256 o EdDSA, RSA de 2048 y EC de 224 bits (5.4.1). TLS (5.2): las suites de BCP 195 son las predeterminadas de cada escucha, con TLS 1.3 preferido. Los nonces DPoP siguen siendo opcionales, y el consentimiento sigue las reglas ordinarias. El Attacker Model no tiene requisitos normativos; docs/oauth-security.md asigna cada clase de atacante a lo que lo detiene. La consola, el portal y el depurador cumplen. NO cubierto: la suite de conformidad (#176)."
+    "en": "f7a75985a1885edb",
+    "text": "full para el servidor de autorización, Y DESACTIVADO DE FORMA PREDETERMINADA — el PERFIL oauth2.fapi=2-security (por dominio, o el miembro fapi de un servidor de autorización con nombre), un perfil propio (#140): modo RFC 9700 activado; solo clientes confidenciales, por mTLS o private_key_jwt, con el aud de la aserción igual al emisor como cadena (5.3.2.1 puntos 3, 6, 8); solo tokens restringidos al remitente, por mTLS o DPoP (puntos 4-5); sin rotación de actualización salvo que oauth2.refreshTokenRotation la fuerce (punto 9); códigos de 60 s (punto 11); un iat o nbf más de 60 s en el futuro rechazado (punto 13); solo code, PAR obligatorio y con autenticación del cliente, PKCE S256, redirect_uri enviada, request_uris de menos de 600 s (5.3.2.2); PS256, ES256 o EdDSA, RSA de 2048 y EC de 224 bits (5.4.1). TLS (5.2): las suites de BCP 195 son las predeterminadas de cada escucha, con TLS 1.3 preferido. Los nonces DPoP siguen siendo opcionales, y el consentimiento sigue las reglas ordinarias. El Attacker Model no tiene requisitos normativos; docs/v1.1.0/oauth-security.md asigna cada clase de atacante a lo que lo detiene. La consola, el portal y el depurador cumplen. NO cubierto: la suite de conformidad (#176)."
   },
   "stsmetadata.specs.fapi2-message-signing.coverage": {
-    "en": "455b8d25419e467e",
-    "text": "full para el servidor de autorización, Y DESACTIVADO DE FORMA PREDETERMINADA — el PERFIL oauth2.fapi=2-message-signing, el Security Profile más los tres componentes (#141, decisión de rcbj): un objeto de solicitud firmado con JAR exigido en PAR, con aud el emisor y exp y nbf dentro de 60 minutos (5.3); JARM obligatorio, con iss dentro del JWT (5.4); respuestas de introspección de RFC 9701 firmadas (5.5). El no repudio de la sección 5.2 es una orientación, respondida en docs/oauth-security.md. La consola, el portal y el depurador cumplen. Las firmas HTTP de RFC 9421 NO forman parte de la especificación final: son FAPI 2.0 Http Signatures, la entrada siguiente (#178)."
+    "en": "35f9077fddbb7a8e",
+    "text": "full para el servidor de autorización, Y DESACTIVADO DE FORMA PREDETERMINADA — el PERFIL oauth2.fapi=2-message-signing, el Security Profile más los tres componentes (#141, decisión de rcbj): un objeto de solicitud firmado con JAR exigido en PAR, con aud el emisor y exp y nbf dentro de 60 minutos (5.3); JARM obligatorio, con iss dentro del JWT (5.4); respuestas de introspección de RFC 9701 firmadas (5.5). El no repudio de la sección 5.2 es una orientación, respondida en docs/v1.1.0/oauth-security.md. La consola, el portal y el depurador cumplen. Las firmas HTTP de RFC 9421 NO forman parte de la especificación final: son FAPI 2.0 Http Signatures, la entrada siguiente (#178)."
   },
   "stsmetadata.specs.fapi2-http-signatures.coverage": {
     "en": "84f23a449916fdc1",
@@ -572,12 +576,12 @@
     "text": "full (#124, que incorporó #115, 2026-09-23): end_session_endpoint responde GET y POST; la solicitud se valida antes de que finalice la sesión; id_token_hint se verifica como un ID Token que emitió este servidor de autorización (se aceptan los caducados, como permite la sección 2) y su audiencia es el cliente, rechazándose un client_id al que no se emitió; se pide confirmación al usuario final — una página con un botón real y sin script — salvo que la pista nombre esta sesión y cualquier logout_hint lo nombre a él; post_logout_redirect_uri se sigue solo con una coincidencia exacta con la lista registrada del cliente, en todos los modos (desarrollo sigue una para un cliente que no registró ninguna; los modos producto y OAuth 2.1 no), y se devuelve state. ui_locales se acepta y cada página está en inglés, el único idioma que tiene este servicio. Front-channel y back-channel logout son filas propias. Como PARTE QUE CONFÍA (#167): un cierre de sesión en /logout ofrece el end_session_endpoint del socio de federación con id_token_hint, client_id, post_logout_redirect_uri y state, y el regreso se empareja en /federation/slo/{id}."
   },
   "stsmetadata.specs.oid4vci.coverage": {
-    "en": "9ec03ba02c69a7ce",
-    "text": "partial pero amplio: metadatos del emisor, nonce, prueba de posesión, emisión por lotes, emisión diferida, Credential Offers (Apéndice H.1/H.2/H.3), la concesión de código preautorizado con tx_code, credential_identifiers, cifrado de solicitudes y respuestas (sección 10), y el Notification Endpoint (sección 11). Atestaciones de clave (Apéndice D) en el encabezado de una prueba jwt y como tipo de prueba attestation, verificadas contra certificados configurados; listas de estado para cada credencial; credenciales firmadas con algoritmos poscuánticos. Sin atestación de billetera (Apéndice E)."
+    "en": "15dc78bbb604ec84",
+    "text": "partial pero amplio: metadatos del emisor, nonce, prueba de posesión, emisión por lotes, emisión diferida, Credential Offers (Apéndice H.1/H.2/H.3), la concesión de código preautorizado con tx_code, credential_identifiers, cifrado de solicitudes y respuestas (sección 10), y el Notification Endpoint (sección 11). Atestaciones de clave (Apéndice D) en el encabezado de una prueba jwt y como tipo de prueba attestation, verificadas contra certificados configurados; listas de estado para cada credencial; credenciales firmadas con algoritmos poscuánticos. Se emite un mso_mdoc (IdentityCredentialMdoc, #1862): COSE ES256 (-7) o ESP256 (-9), y la prueba sigue siendo un jwt de ES256. Sin atestación de billetera (Apéndice E)."
   },
   "stsmetadata.specs.oid4vp.coverage": {
-    "en": "7b2694beee176000",
-    "text": "partial: Authorization Requests por valor y como Request Object firmado por referencia, response_mode=direct_post, una consulta DCQL (incluidos credential_sets), y verificación completa de lo que vuelve en los cuatro formatos — un Key Binding JWT, un VP JWT con nonce, aud e iat, una VerifiablePresentation con una prueba Data Integrity (B.1.3.2.5), y desde #935 un mdoc ISO (B.2: el firmante del documento encadenado a oid4vp.mdocTrustAnchors, el MSO, el resumen de cada elemento, la firma del dispositivo sobre la transcripción de sesión de B.2.6.1; deviceMac rechazado) — y el estado de cada credencial, que cada credencial presentada debe nombrar (oid4vp.requireStatusReference, todas de forma predeterminada; una consulta ldp_vc pide credentialStatus y una que lo retenga se rechaza). Desde el 2026-09-17 una presentación puede INICIAR LA SESIÓN DE ALGUIEN en /authn/wallet — mediante la Digital Credentials API (Apéndice A: openid4vp-v1-signed, expected_origins, dc_api.jwt o dc_api, la audiencia origin:), en el mismo dispositivo con el response_code de la sección 8.2, y mediante un simple código QR solo donde oid4vp.signInCrossDevice esté activado — pero solo con una credencial vinculada al titular que emitió este dominio, en cualquiera de los tres formatos, y solo como la entrada de directorio para la que se emitió; cualquier otra cosa se verifica y no inicia la sesión de nadie. Sin presentation_definition (DIF PE) — solo DCQL; sin solicitud DC API sin firmar o con varias firmas; sin mdoc mediante la DC API ni para iniciar sesión; sin atestación de billetera; sin transaction_data. DESDE #129 una solicitud firmada nombra su Client Identifier con el prefijo que elige oid4vp.clientIdPrefix (sección 5.9): pre-registered, decentralized_identifier (el did:web del dominio, un kid de URL DID), verifier_attestation (un Verifier Attestation JWT en el encabezado `jwt`, configurado o autoatestado), u openid_federation (la Entity Configuration del dominio), y desde #230 x509_san_dns y x509_hash (sección 5.9.3: el propio certificado del verificador emitido por la CA emisora JOSE del dominio en x5c, un dNSName que es el host de la Response URI, o el SHA-256 de la hoja), elegido por dominio o por solicitud; una sin firmar usa redirect_uri. El prefijo origin no se ofrece (es el propio de la Digital Credentials API, definido por el navegador)."
+    "en": "65e427209cdba492",
+    "text": "partial: Authorization Requests por valor y como Request Object firmado por referencia, response_mode=direct_post, una consulta DCQL (incluidos credential_sets), y verificación completa de lo que vuelve en los cuatro formatos — un Key Binding JWT, un VP JWT con nonce, aud e iat, una VerifiablePresentation con una prueba Data Integrity (B.1.3.2.5), y desde #935 un mdoc ISO (B.2: el firmante del documento encadenado a oid4vp.mdocTrustAnchors, el MSO, el resumen de cada elemento, la firma del dispositivo sobre la transcripción de sesión de B.2.6.1; deviceMac rechazado) — y el estado de cada credencial, que cada credencial presentada debe nombrar (oid4vp.requireStatusReference, todas de forma predeterminada; una consulta ldp_vc pide credentialStatus y una que lo retenga se rechaza). Desde el 2026-09-17 una presentación puede INICIAR LA SESIÓN DE ALGUIEN en /authn/wallet — mediante la Digital Credentials API (Apéndice A: openid4vp-v1-signed, expected_origins, dc_api.jwt o dc_api, la audiencia origin:), en el mismo dispositivo con el response_code de la sección 8.2, y mediante un simple código QR solo donde oid4vp.signInCrossDevice esté activado — pero solo con una credencial vinculada al titular que emitió este dominio, en cualquiera de los cuatro formatos, y solo como la entrada de directorio para la que se emitió; cualquier otra cosa se verifica y no inicia la sesión de nadie. Sin presentation_definition (DIF PE) — solo DCQL; sin solicitud DC API sin firmar o con varias firmas; sin mdoc mediante la DC API (apéndice A); un mso_mdoc inicia la sesión de alguien solo si lo emitió este dominio (#1862); sin atestación de billetera; sin transaction_data. DESDE #129 una solicitud firmada nombra su Client Identifier con el prefijo que elige oid4vp.clientIdPrefix (sección 5.9): pre-registered, decentralized_identifier (el did:web del dominio, un kid de URL DID), verifier_attestation (un Verifier Attestation JWT en el encabezado `jwt`, configurado o autoatestado), u openid_federation (la Entity Configuration del dominio), y desde #230 x509_san_dns y x509_hash (sección 5.9.3: el propio certificado del verificador emitido por la CA emisora JOSE del dominio en x5c, un dNSName que es el host de la Response URI, o el SHA-256 de la hoja), elegido por dominio o por solicitud; una sin firmar usa redirect_uri. El prefijo origin no se ofrece (es el propio de la Digital Credentials API, definido por el navegador)."
   },
   "stsmetadata.specs.siopv2.coverage": {
     "en": "7b5596036282fc19",
@@ -636,8 +640,8 @@
     "text": "partial: los servicios de emisor (issue), titular (prove, derive), verificador (credenciales y presentaciones) y estado, sobre las suites criptográficas, las listas de estado y claves propias de la VC API de este servicio, DESACTIVADA hasta que un dominio la active (vcApi.enabled), tras un token de acceso OAuth 2.0 que lleve vc-api:issue o vc-api:verify en todos los modos, con tasa limitada por cliente, y una opción que no entiende rechazada. No construido: autorización zcap, flujos de trabajo e intercambios, desafíos, almacenamiento de credenciales y presentaciones (GET y DELETE de /credentials/{id}), los ámbitos operation:path de VCALM, e instancias de emisor configuradas por dominio (las instancias son fijas, una por mecanismo de aseguramiento y curva)."
   },
   "stsmetadata.specs.token-status-list.coverage": {
-    "en": "b7932392e5841ca6",
-    "text": "partial: una lista por dominio, dos bits por credencial (VALID, INVALID, SUSPENDED), servida como Status List Token en forma JWT y CWT según Accept, con ttl y exp, un endpoint de agregación y la notificación status en cada credencial SD-JWT VC y jwt_vc_json; el verificador resuelve la lista de un emisor externo de confianza y rechaza cuando no puede emitirse ninguna afirmación. Y una segunda lista por dominio para TOKENS DE ACCESO (#432): un bit por token, con cada token de acceso OAuth RFC 9068 y cada token GNAP jwt-signed y jwt-encrypted llevando su notificación de estado, anunciada como status_list_aggregation_endpoint (sección 9.1) en los metadatos del servidor de autorización. Sin resolución histórica (501), sin seguir redirecciones. No se emite ningún mdoc; el verificador resuelve la lista CWT que nombra el Mobile Security Object de un mdoc presentado, firmada por un certificado de su x5chain que se encadena a oid4vp.mdocTrustAnchors (#935)."
+    "en": "1159352758ad21d3",
+    "text": "partial: una lista por dominio, dos bits por credencial (VALID, INVALID, SUSPENDED), servida como Status List Token en forma JWT y CWT según Accept, con ttl y exp, un endpoint de agregación y la notificación status en cada credencial SD-JWT VC y jwt_vc_json; el verificador resuelve la lista de un emisor externo de confianza y rechaza cuando no puede emitirse ninguna afirmación. Y una segunda lista por dominio para TOKENS DE ACCESO (#432): un bit por token, con cada token de acceso OAuth RFC 9068 y cada token GNAP jwt-signed y jwt-encrypted llevando su notificación de estado, anunciada como status_list_aggregation_endpoint (sección 9.1) en los metadatos del servidor de autorización. Sin resolución histórica (501), sin seguir redirecciones. Un mdoc emitido nombra un CWT en /oid4vci/status-lists/mdoc, firmado por el firmante del documento con x5chain (#1862). El verificador resuelve el CWT de un mdoc presentado frente a oid4vp.mdocTrustAnchors y la IACA de este dominio una vez creada (#935)."
   },
   "stsmetadata.specs.etsi-ts-119-602.coverage": {
     "en": "d648e3ad690b8900",
@@ -764,8 +768,8 @@
     "text": "Cada política tal como la ve el PDP, CON LOS DOCUMENTOS INCLUIDOS, junto con los problemas estáticos de comprobación de tipos de cada una. Los documentos se muestran deliberadamente, a diferencia de los secretos que oculta /admin/ldap/*: una política es una regla y no una credencial, y una regla que nadie puede leer es una regla que nadie puede comprobar. QUIÉN PUEDE LEERLA ES UNA PREGUNTA DISTINTA DE SI SE OCULTA, y esto requiere XACML_USER: desde que se integraron los PEP de acceso y de emisión, estos documentos son con los que este servicio decide sus propias admisiones, y entregar a un llamador anónimo las condiciones exactas en las que deja entrar a las personas no es el mismo acto que publicar una política de demostración. El almacén es ou=policies en el directorio integrado: ese contenedor ES el repositorio."
   },
   "stsmetadata.endpoints./xacml/pep/register.what": {
-    "en": "2d66266ac296ab90",
-    "text": "Un Policy Enforcement Point en OTRO PROCESO anuncia que existe, mediante TLS mutuo en este mismo puerto; server.js ya establece requestCert: true, así que esto no necesitó una nueva escucha. EL ÚNICO ENDPOINT DE ESTA FAMILIA QUE PIDE UNA CREDENCIAL, y hace una pregunta distinta de la de /xacml/pdp: no sobre quién trata la decisión, sino QUÉ PEP es este, porque un registro escribe una entrada y aporta una dirección a la que este servicio se conectará más tarde. Es un torniquete como cualquier otro control de aquí (el certificado no necesita encadenar a nada, el argumento de la sección 3 de RFC 8705) y NO es lo que permite a un PEP aplicar decisiones: uno no registrado obtiene las políticas y decide igual de bien. xacml.pepRequireCertificate lo desactiva."
+    "en": "f25896a0df078725",
+    "text": "Un Policy Enforcement Point en OTRO PROCESO anuncia que existe, mediante TLS mutuo en este mismo puerto; server.js ya establece requestCert: true, así que esto no necesitó una nueva escucha. EL ÚNICO ENDPOINT DE ESTA FAMILIA QUE PIDE UNA CREDENCIAL, y hace una pregunta distinta de la de /xacml/pdp: no sobre quién trata la decisión, sino QUÉ PEP es este, porque un registro escribe una entrada y aporta una dirección a la que este servicio se conectará más tarde. Es un torniquete como cualquier otro control de aquí (el certificado no necesita encadenar a nada, el argumento de la sección 3 de RFC 8705) y NO es lo que permite a un PEP aplicar decisiones: uno no registrado obtiene las políticas y decide igual de bien. xacml.pepRequireCertificate lo desactiva. Un token de acceso vinculado por DPoP emitido a sts-remote-pep, con audiencia /xacml/pep y que lleva xacml:pep, puede sustituir al certificado aquí y en cada endpoint /xacml/pep y /xacml/pip, según lo permita xacml.pepAuthentication; el PEP se nombra entonces por el nombre de usuario de su entrada."
   },
   "stsmetadata.endpoints./xacml/pep/policies.what": {
     "en": "f21e16beea449f7d",
@@ -778,6 +782,38 @@
   "stsmetadata.endpoints./xacml/pep/authzen-callers.what": {
     "en": "59db273e0a0989c3",
     "text": "A quién admite ahora este dominio en su API AuthZEN, para que el PDP de borde del contenedor xacml-pep admita según ello: cada llamante que la política de control de acceso admite en /access/v1/* (AUTHZEN_PEPS, tal como lo decide la política), nombrado como lo ve una política en urn:sts:xacml:authzen:caller, con el SHA-256 del DER de cada certificado que este servicio resolvería a ese nombre, su ámbito de aplicaciones y los puntos de conexión a los que se le admite, más un token de sincronización propio; ?since=<token> responde 304. El token cambia con un miembro, un certificado, un ámbito o la respuesta de la política, y el borde converge en su sondeo. Requiere REMOTE_PEPS, como la obtención de las políticas, de modo que cualquiera que tenga ese rol puede leer quién puede preguntar al PDP (rcbj en #1189). Aditivo: /xacml/pep/policies y /xacml/pep/authzen-catalogue no cambian."
+  },
+  "stsmetadata.endpoints./xacml/pep/proxy.what": {
+    "en": "dbd48be2ca7bfe7b",
+    "text": "Lo que el contenedor xacml-pep aplica cuando se sitúa delante de una aplicación (#1760): el destino al que reenvía, las rutas ordenadas con los mecanismos que acepta cada una y el recurso y la acción XACML a los que corresponde, la aplicación de cada ruta resuelta desde el registro, los datos del reino con los que valida localmente (emisor, JWKS, los puntos de conexión de inicio de sesión, los certificados de firma SAML, la cadena del servicio de escucha, los clientes de las rutas de sesión) y las cuatro URL de validación siguientes, bajo un token de sincronización propio; ?since=<token> responde 304. Un PEP sin configurar es configured: false y su proxy lo deniega todo. Requiere REMOTE_PEPS, como la obtención de políticas; sin aviso."
+  },
+  "stsmetadata.endpoints./xacml/pep/settings.what": {
+    "en": "1d0f3cc8f4e76c25",
+    "text": "Los ajustes que un administrador fijó para este PEP en su página de la consola (#1760) — su descripción y recurso, la URL de aviso, el sesgo, el interruptor del PIP, los intervalos de sondeo, latido y espera, el tiempo de espera y el límite del cuerpo, el nivel de registro, el interruptor, el identificador y el tiempo de reenvío del PDP perimetral AuthZEN, y los límites del proxy inverso — con un token de sincronización propio; ?since=<token> responde 304. Solo se envía lo fijado: el PEP usa su entorno para el resto, y lo mínimo que necesita para conectarse nunca está aquí. Requiere REMOTE_PEPS, como la descarga de políticas; sin aviso."
+  },
+  "stsmetadata.endpoints./xacml/pep/listener-certificate.what": {
+    "en": "2e12c8c3ee45d622",
+    "text": "El certificado de una escucha HTTPS que un administrador definió para este PEP en su página de la consola (#1760): el PEP genera la clave y envía por POST { listener, csr }, una solicitud PKCS #10 cuya firma prueba que la posee, y recibe el certificado de la CA emisora pep-tls del reino y su cadena hasta la raíz, con no-store y sin ninguna clave. Los nombres son los del PEP y los de la definición, nunca los de la solicitud; la misma clave pedida de nuevo recibe el certificado guardado mientras le quede un tercio de su vida. Requiere REMOTE_PEPS, como el latido."
+  },
+  "stsmetadata.endpoints./xacml/pep/introspect.what": {
+    "en": "b3f9e293393b2e8a",
+    "text": "La lectura RFC 7662 del propio servidor de autorización de un token de acceso OAuth 2.0 que el proxy no pudo verificar por sí mismo (un token opaco, o una clave que no está en el JWKS), por el TLS mutuo del PEP en lugar de un registro de cliente propio. Requiere REMOTE_PEPS."
+  },
+  "stsmetadata.endpoints./xacml/pep/basic.what": {
+    "en": "96fe8e90091c87a2",
+    "text": "El nombre de usuario y la contraseña de una persona, verificados aquí y nunca en el PEP, tras los límites del propio inicio de sesión (429 con retryAfterS); un rechazo es { valid: false } y no dice nada más. Requiere REMOTE_PEPS."
+  },
+  "stsmetadata.endpoints./xacml/pep/saml.what": {
+    "en": "360f706d92daab1b",
+    "text": "Una aserción que emitió este reino, comprobada aquí cuando el proxy no pudo comprobarla por sí mismo: la firma envuelta en la aserción raíz contra los certificados de firma XML del reino, el emisor, las condiciones y la audiencia de la ruta. Se rechaza una EncryptedAssertion. Requiere REMOTE_PEPS."
+  },
+  "stsmetadata.endpoints./xacml/pep/session.what": {
+    "en": "da3c9a2559ab1433",
+    "text": "Si la sesión de inicio de sesión que nombra el sid de un ID Token sigue activa, de modo que un cierre de sesión aquí termina la sesión propia del proxy en su siguiente comprobación. Requiere REMOTE_PEPS."
+  },
+  "stsmetadata.endpoints./xacml/pep/identity.what": {
+    "en": "5a190f936df62f6b",
+    "text": "Para una ruta del PEP que pregunta, la identidad que nombra su prueba (un token de acceso, una aserción SAML o un ticket Basic, validados de nuevo), en el modo de la ruta: notificaciones para sus cabeceras, un token de acceso para la aplicación o una respuesta SAML firmada a su servicio consumidor de aserciones. Requiere REMOTE_PEPS."
   },
   "stsmetadata.endpoints./xacml/pep/heartbeat.what": {
     "en": "d05c08b4b281db67",
@@ -1027,6 +1063,10 @@
     "en": "102e5302d8a29ce7",
     "text": "El registro, y lo que cada PEP informó por última vez: si tiene el repositorio actual, cuándo se supo de él por última vez, el sesgo con el que dice estar funcionando y qué pasó con el último aviso, que es el único lugar donde se registra un aviso fallido, porque por definición es invisible desde el extremo receptor."
   },
+  "stsmetadata.endpoints./admin-api/xacml/pep-clusters.what": {
+    "en": "456664ae403ea3f3",
+    "text": "Cada clúster de PEP remotos que comparten una configuración: su proxy inverso, sus ajustes y sus definiciones de escuchas tal como los obtiene cada miembro, y cada miembro con sus propias direcciones y por qué un guardado lo rechazaría ahora."
+  },
   "stsmetadata.endpoints./admin-api/xacml/monitor.what": {
     "en": "a0f18506f38d22b3",
     "text": "Lo que dibuja GET /admin/xacml/monitor: las cifras globales de decisiones y una fila por punto de aplicación, integrado y remoto. Los tres totales se mantienen separados a propósito: `here` es lo que este proceso contó a medida que ocurría, `remote` es lo que otros procesos informan en un latido y BAJA cuando uno se reinicia, y `combined` es aritmética sobre ambos. En la fila `pdp`, `allowed` y `refused` son null en lugar de 0, porque este servicio produjo esa decisión y nunca vio su aplicación. No hay ningún POST a su lado: la página no tiene controles, y un reinicio se rechazó, no se olvidó."
@@ -1215,6 +1255,10 @@
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC (#570). Las reglas de la tarjeta de la pantalla de inicio de sesión y del selector de idioma, como una sola hoja de estilo que enlaza el shell de una superficie pública estática (common/web_card_css.ts). Se sirve en cada escucha; una dirección que lleva el ?v= de esta compilación se almacena en caché para siempre."
   },
+  "stsmetadata.endpoints./web/footer.css.what": {
+    "en": "32bce90003b1f15c",
+    "text": "NON-SPEC (2026-11-14). Las reglas del pie de página que dibuja el shell de cada superficie estática — los enlaces de documentación, contacto y acerca de, los iconos de redes sociales, el copyright y la versión (common/web_footer.ts). Se sirve en cada escucha; una dirección que lleva el ?v= de esta compilación se almacena en caché para siempre."
+  },
   "stsmetadata.endpoints./web/theme.css.what": {
     "en": "3f3b19caa8978c23",
     "text": "NON-SPEC (#717). Los colores de inicio de sesión del dominio como las propiedades personalizadas CSS que lee /web/card.css (common/branding.ts): los cuatro colores branding.* y los tonos derivados de ellos, construidos solo a partir de valores validados. Un shell la enlaza después de la tarjeta solo donde la apariencia del dominio difiere de la del servicio; una dirección que lleva su resumen como ?v= se guarda en caché para siempre."
@@ -1306,6 +1350,10 @@
   "stsmetadata.endpoints./admin/console.css.what": {
     "en": "4750f8f23393c7dd",
     "text": "NO ESTÁNDAR. La única hoja de estilos de la consola (#446)."
+  },
+  "stsmetadata.endpoints./admin/geo-outlines.json.what": {
+    "en": "16b6c492ce9b90e3",
+    "text": "NO ESTÁNDAR. Los países a 1:50m de Natural Earth, de dominio público, tal como los distribuye admin-ui/natural_earth/countries.json, que la consola obtiene una sola vez y sobre los que dibuja en el navegador el mapa de Monitoring → Geolocation (#444). Público, como el script."
   },
   "stsmetadata.endpoints./portal.what": {
     "en": "773d1d1c4e26f434",
@@ -1575,6 +1623,10 @@
     "en": "959c608dca54eb96",
     "text": "NO ESTÁNDAR. `rotate` y `emergency` (#48) son los dos formularios de /admin/keys/rotate: `{ \"units\": [...] }` (vacío o \"all\" para todas las unidades) y, para una emergencia, `\"confirm\": \"compromised\"`; cada uno responde 202 con el runId de la ejecución signing.rotate-now encolada, para seguirla en /admin-api/scheduler?run=. `export`: ESTA OPERACIÓN DEVUELVE MATERIAL DE CLAVE PRIVADA, en base64 dentro de una respuesta JSON porque esta API responde JSON en todos los demás casos. Toma un id de clave, un formato (pem, der, jwk, pkcs12) y una contraseña, obligatoria para pkcs12 y opcional en los demás, donde cifra la mitad privada. Esta API no tiene ningún control de acceso, que es la misma consecuencia honesta que tiene cada operación de aquí y que vale la pena decir dos veces para esta. Refleja POST /admin/keys/export."
   },
+  "stsmetadata.endpoints./admin-api/mdoc-iaca.what": {
+    "en": "371ef1954001d46d",
+    "text": "NON-SPEC (#1862). El certificado que publica GET /oid4vci/mdoc-iaca, como JSON: el PEM, su sujeto, notBefore y notAfter. Se crea en la primera llamada, igual que lo crea esa lectura pública. Sin clave privada. Un fallo al crearlo responde 500 en texto plano."
+  },
   "stsmetadata.endpoints./admin-api/pki.what": {
     "en": "83b11af065a98038",
     "text": "NO ESTÁNDAR. Todo lo que dibuja /admin/pki, como JSON: los tres niveles de CA con sus sujetos, números de serie, validez, algoritmos, huellas y CERTIFICADOS; los vocabularios que puede pedir una construcción; y UNA FILA POR APLICACIÓN Y POR PERFIL para todo lo que tenga un par de claves emitido, porque cada dato de esa fila (el identificador, la caducidad, el emisor declarado) es por perfil y una aplicación puede tener uno RFC 7523 y uno RFC 7522. **NUNCA HAY UNA CLAVE PRIVADA EN ESTA RESPUESTA**: common/pki.js las elimina a la salida, así que un llamador de aquí no puede filtrar la clave de la raíz por olvido. Los certificados van completos, porque un certificado es la mitad del par pensada para repartirse. POR DOMINIO, como la propia jerarquía. `revocation` ES EL REGISTRO desde el 2026-09-11 (una entrada por autoridad de certificación con lo que emitió, lo que está en su lista y sus direcciones CRL y OCSP sobre http y ldap) y `revocationNote` a su lado es la FRASE duradera: aquí la revocación se PUBLICA y nunca se CONSULTA, así que un certificado revocado en esta página sigue autenticándose ante este servicio. Son dos miembros porque una lista vacía y la ausencia total de listas son respuestas distintas y un solo campo solo podría llevar una de ellas. `residency` es el otro límite: en modo desarrollo la jerarquía muere con el proceso. Refleja GET /admin/pki."
@@ -1768,8 +1820,8 @@
     "text": "NO ESTÁNDAR. Los dos roles de la consola con cada concesión, los cuatro ajustes detrás del control de acceso y quién es el LLAMADOR. Los roles son dos grupos de directorio ordinarios, así que esto y un ldapsearch responden sobre las mismas entradas. Refleja GET /admin/rbac."
   },
   "stsmetadata.endpoints./admin-api/rbac/:action.what": {
-    "en": "0c8ab0417104c2c7",
-    "text": "NO ESTÁNDAR. Dos URL detrás de un patrón: grant y revoke. TOMA UNA CREDENCIAL DISTINTA DE LA DE LA CONSOLA QUE CONCEDE (un token de acceso que lleva admin:write en lugar de una sesión de consola), que es lo que la convierte en la forma de volver a entrar cuando nadie que tenga un rol puede iniciar sesión, un estado desde el que ningún navegador puede llegar a la consola. NO TUVO NINGÚN CONTROL DE ACCESO hasta el 2026-09-09, y la consecuencia valía la pena decirla y ahora está cerrada: cualquiera que pudiera llegar a este puerto podía concederse ambos roles. Conceder un rol que alguien ya tiene, o revocar uno que no tiene, responde 200 con changed:false. A una persona que no existe SE LE PUEDE conceder un rol: la pertenencia queda colgante hasta que inicie sesión por primera vez. Refleja POST /admin/rbac."
+    "en": "762545bfac400a73",
+    "text": "NO ESTÁNDAR. Dos URL detrás de un patrón: grant y revoke. TOMA UNA CREDENCIAL DISTINTA DE LA DE LA CONSOLA QUE CONCEDE (un token de acceso que lleva admin:write en lugar de una sesión de consola), que es lo que la convierte en la forma de volver a entrar cuando nadie que tenga un rol puede iniciar sesión, un estado desde el que ningún navegador puede llegar a la consola. NO TUVO NINGÚN CONTROL DE ACCESO hasta el 2026-09-09, y la consecuencia valía la pena decirla y ahora está cerrada: cualquiera que pudiera llegar a este puerto podía concederse ambos roles. Conceder un rol que alguien ya tiene, o revocar uno que no tiene, responde 200 con changed:false. Un rol solo se concede a una persona que existe: un nombre sin entrada en el directorio se rechaza y no se escribe nada, para que una persona creada más tarde con ese nombre no herede nada. Refleja POST /admin/rbac."
   },
   "stsmetadata.endpoints./admin-api/rbac/:action.effect": {
     "en": "d4fe53d89f2efabd",
@@ -1846,6 +1898,14 @@
   "stsmetadata.endpoints./admin-api/device-compliance.effect": {
     "en": "3ca2a7e72576096b",
     "text": "establece el cumplimiento de un dispositivo o de un lote"
+  },
+  "stsmetadata.endpoints./admin-api/pep-audit.what": {
+    "en": "0b396bb699707086",
+    "text": "NON-SPEC (#1827). Un PEP XACML remoto envía los registros de las decisiones que tomó en su propio proceso — las aplicaciones de /protected, las evaluaciones AuthZEN que decidió, nunca una que reenvió, y las solicitudes de su proxy inverso a una ruta — al menos una vez y en orden, hasta 500 por lote, cada uno confirmado por su seq. El token lleva el ámbito PROTEGIDO xacml:pep-audit y nada más aquí lo acepta: la autoaserción RFC 7523 del propio PEP, a través del cliente público precargado sts-remote-pep, vinculada a su certificado, emitida y aceptada solo mientras su entrada esté en el grupo de PEP remotos (REMOTE_PEPS). El PEP debe estar registrado en el dominio. Filas xacml.remote.enforcement, authzen.remote.decision y, para las solicitudes del proxy inverso, xacml.remote.proxy en /admin/audit."
+  },
+  "stsmetadata.endpoints./admin-api/pep-audit.effect": {
+    "en": "6d8bfdfca2b19127",
+    "text": "registra como filas de auditoría un lote de decisiones tomadas por un PEP remoto"
   },
   "stsmetadata.endpoints./admin-api/device-registration.what": {
     "en": "4050dc9d2959597e",
@@ -2095,6 +2155,14 @@
     "en": "148c1a64de18a40e",
     "text": "save-<kind>-policy y reset-<kind>-policy para cada tipo (hoy save-password-policy, reset-password-policy, save-authn-policy y reset-authn-policy): lo mismo que envía la consola a /admin/policies, mediante la misma función. Un guardado REEMPLAZA el perfil y todos los campos son obligatorios, así que un campo omitido se rechaza por nombre en lugar de restablecerse en silencio. Un restablecimiento elimina la entrada almacenada y vuelve a poner los valores predeterminados integrados. Ambos se aplican a la SIGUIENTE contraseña que se establezca en el dominio y a nada ya almacenado."
   },
+  "stsmetadata.endpoints./admin-api/policies/transfer.what": {
+    "en": "accd8d6a469cce08",
+    "text": "NO ESTÁNDAR. La lectura junto a export, inspect e import (#1713): pki.policyExportAlgorithm vigente, si pki.paranoidPolicySigner está activado, la CA emisora de firma de exportaciones de políticas de este dominio (sujeto, validez, su cadena hasta la raíz del servicio sin incluirla, y la huella SHA-256 y el x5t#S256 que otro dominio indica para confiar en sus exportaciones; null hasta que la primera exportación la crea), y las entradas del almacén de confianza de firmantes para policy-signer: los otros dominios en los que ha confiado. Solo certificados, nunca una clave privada."
+  },
+  "stsmetadata.endpoints./admin-api/policies/transfer/:action.what": {
+    "en": "c9ad043e74f40a37",
+    "text": "NON-SPEC. export, inspect e import (#1713): cada perfil que un dominio ALMACENA en Directory → Policies como un único documento JSON, un JWS en la serialización JSON aplanada firmado por una clave nueva bajo la Policy Export Signing CA del dominio, toda la cadena en su x5c. inspect verifica la firma y somete la cadena a la puerta de validación (propósito policy-signer, las comprobaciones paranoicas completas mientras pki.paranoidPolicySigner está activado); import escribe cada perfil mediante el guardado propio de su tipo. Se confía en el firmante propio de este dominio; en el de otro dominio solo con el sí de un administrador que nombre su Issuing CA, lo que añade esa cadena al almacén de confianza de firmantes solo para policy-signer."
+  },
   "stsmetadata.endpoints./admin-api/consent.what": {
     "en": "4454328af36e5774",
     "text": "NO ESTÁNDAR. El registro de consentimiento, ambas mitades, y el tercero de esta familia junto a /admin-api/delegation (lo que OCURRIÓ) y /admin-api/permissions (lo que está PERMITIDO entre dos aplicaciones): esto es a lo que una PERSONA dijo que sí. `users` es el registro: un valor oauthConsent por (persona, aplicación, ámbito) en la entrada de la persona, escrito cuando pulsó Allow en /oauth2/consent. `globals` es el reemplazo: oauthGlobalConsent en la entrada de una APLICACIÓN, un valor por ámbito, que omite la pregunta para todo el mundo y no escribe nada sobre nadie. `globals[].resource` indica qué aplicación expone el permiso cuando el ámbito se resuelve en uno, y `globals[].granted` si ese cliente además lo TIENE, que son preguntas independientes. `users[].unreadable` es un valor que un ldapmodify puso en una entrada y que no tiene la forma que escribe este servicio: no consiente nada y se informa en lugar de descartarse. `storable: false` significa que no hay ningún directorio instalado detrás del registro, así que una respuesta se respeta una vez y se olvida, y la pantalla se dibuja cada vez. DE SOLO LECTURA: los cuatro controles están en el recurso de abajo. Refleja GET /admin/consent."
@@ -2108,8 +2176,8 @@
     "text": "Superficie NO ESTÁNDAR sobre un comportamiento de la especificación. El historial de aserciones usadas como JSON: cada aserción RFC 7523 y RFC 7522 que este dominio aceptó y que aún no ha caducado, con dónde se guarda el historial (persistente, atómico entre procesos), el recuento actual frente a oauth2.assertionReplayCacheSize, filtrado por texto, formato, uso y estado y paginado con ?page= y ?per=. Ninguna aserción ni credencial en ninguna fila. DE SOLO LECTURA. Refleja GET /admin/used-assertions."
   },
   "stsmetadata.endpoints./admin-api/error-codes.what": {
-    "en": "853d31fe2e7b16e4",
-    "text": "NO ESTÁNDAR. La tabla central de cada condición de fallo que puede producir este servicio, STS-<SUBSYSTEM>-<NNNN>, como JSON: cada código con su subsistema, lo que falló, lo que se le dice al CLIENTE en el vocabulario de su propio protocolo y en cuántas filas del registro de auditoría mantenido aparece en este dominio; filtrado por subsistema, texto y ?seen=1, y paginado con ?page= y ?per=. UN CÓDIGO NUNCA SE ENVÍA A UN CLIENTE: está solo en la fila de auditoría y en la línea de registro. DE SOLO LECTURA: la tabla es código fuente. Refleja GET /admin/error-codes; la misma tabla es docs/error-codes.md."
+    "en": "6a8ddafe4157455e",
+    "text": "NO ESTÁNDAR. La tabla central de cada condición de fallo que puede producir este servicio, STS-<SUBSYSTEM>-<NNNN>, como JSON: cada código con su subsistema, lo que falló, lo que se le dice al CLIENTE en el vocabulario de su propio protocolo y en cuántas filas del registro de auditoría mantenido aparece en este dominio; filtrado por subsistema, texto y ?seen=1, y paginado con ?page= y ?per=. UN CÓDIGO NUNCA SE ENVÍA A UN CLIENTE: está solo en la fila de auditoría y en la línea de registro. DE SOLO LECTURA: la tabla es código fuente. Refleja GET /admin/error-codes; la misma tabla es docs/v1.1.0/error-codes.md."
   },
   "stsmetadata.endpoints./admin-api/audit-export.what": {
     "en": "c975b83632fa12f4",
@@ -2456,8 +2524,24 @@
     "text": "NO ESPECIFICADO (#594). Con ?id=, lo que una billetera dijo al Notification Endpoint sobre la credencial que nombra ese notification_id: el evento, su descripción y cuándo (404 para un id que este emisor no emitió). Admin Read; hasta #594, el /oid4vci/notification/:id solo de desarrollo."
   },
   "stsmetadata.endpoints./sts.what": {
-    "en": "66812a407152a91b",
-    "text": "POST de un RequestSecurityToken SOAP; despacha según wst:RequestType (Issue, Renew, Validate, Cancel) y devuelve un RSTR. GET describe el endpoint. Añada ?encrypt=1 para que la aserción emitida se devuelva como EncryptedAssertion."
+    "en": "dd027a41936ae3af",
+    "text": "POST de un RequestSecurityToken SOAP; despacha según wst:RequestType (Issue, Renew, Validate, Cancel) y devuelve un RSTR. GET describe el endpoint. Una aplicación puede exigir que elementos nombrados de la solicitud y de la respuesta sean XML Encryption (xenc:EncryptedData). Un mensaje que no coincide con ese mapa es una falta, y el procesamiento se detiene."
+  },
+  "stsmetadata.endpoints./sts/metadata.what": {
+    "en": "8ffa0771ab14417f",
+    "text": "WSDL 1.1 con WS-SecurityPolicy. Cada versión de trust (mayo de 2004, febrero de 2005, 1.3 y 1.4) tiene un port type propio con las operaciones que define, cada entrada y salida nombrando su wsa:Action, y un puerto SOAP 1.1 y un puerto SOAP 1.2 en /sts. Las credenciales son un UsernameToken, una aserción SAML 2.0 o SAML 1.1, un JWT, una firma X.509, un token Kerberos cuando wstrust.acceptKerberos está activo, y un certificado de cliente TLS cuando wstrust.acceptClientCertificate está activo. Se sirve con Cache-Control: no-store."
+  },
+  "stsmetadata.endpoints./sts/metadata/capabilities.what": {
+    "en": "58631087b8e5323a",
+    "text": "Una extensión de IYA-STS (urn:iya-sts:metadata:token-capabilities:1): cada credencial que acepta /sts, cada tipo de token que emite y cada par como admitido, condicional o no admitido con sus condiciones, construido a partir de la configuración en ejecución. Se sirve con Cache-Control: no-store."
+  },
+  "stsmetadata.endpoints./sts/metadata/capabilities.xsd.what": {
+    "en": "c38652777c26f595",
+    "text": "El esquema XML del documento de capacidades de tokens."
+  },
+  "stsmetadata.endpoints./sts/mex.what": {
+    "en": "5940ecbdab434650",
+    "text": "Envíe con POST un WS-Transfer Get o un GetMetadata de WS-MetadataExchange (2004/09), SOAP 1.1 o 1.2; la respuesta es un mex:Metadata que contiene el WSDL, el documento de capacidades de tokens y su esquema como tres secciones."
   },
   "stsmetadata.endpoints./sts/cert.what": {
     "en": "bb1a31c1486e5138",
@@ -3348,12 +3432,20 @@
     "text": "Un c_nonce reciente para una prueba de posesión. De un solo uso."
   },
   "stsmetadata.endpoints./oid4vci/credential.what": {
-    "en": "183d47a992f2e527",
-    "text": "Acuña dc+sd-jwt, jwt_vc_json o ldp_vc según la configuración pedida, cada uno con su referencia a la lista de estado. Verifica la prueba de la billetera (una prueba jwt, con una atestación de clave en su encabezado cuando se envía o se exige una, o el tipo de prueba attestation), admite la emisión por lotes y acepta una solicitud cifrada y/o devuelve una respuesta cifrada."
+    "en": "691a18d16548af3b",
+    "text": "Acuña dc+sd-jwt, jwt_vc_json, ldp_vc o mso_mdoc según la configuración pedida, cada uno con su referencia a la lista de estado. Verifica la prueba de la billetera (una prueba jwt, con una atestación de clave en su encabezado cuando se envía o se exige una, o el tipo de prueba attestation), admite la emisión por lotes y acepta una solicitud cifrada y/o devuelve una respuesta cifrada."
   },
   "stsmetadata.endpoints./oid4vci/status-lists/1.what": {
     "en": "0f0ea3feaea47fa8",
     "text": "El Status List Token de este dominio: application/statuslist+jwt, o application/statuslist+cwt cuando Accept lo pide (un COSE_Sign1, sin etiqueta CWT). Dos bits por credencial; ttl oid4vci.statusListTtlS, exp oid4vci.statusListLifetimeS, firmado con la clave de credenciales. ?time= responde 501: no se guardan listas históricas."
+  },
+  "stsmetadata.endpoints./oid4vci/status-lists/mdoc.what": {
+    "en": "635d4fa4e34ca898",
+    "text": "El mismo bitstring que /oid4vci/status-lists/1, como application/statuslist+cwt firmado por el firmante de documentos mdoc de este dominio. x5chain es ese certificado. Cache-Control es un max-age del ttl de la lista, y Vary es Accept. ?time= responde 501."
+  },
+  "stsmetadata.endpoints./oid4vci/mdoc-iaca.what": {
+    "en": "ef6376b2dcb0c9f8",
+    "text": "La CA de la autoridad emisora mdoc de este dominio, en PEM, application/pem-certificate-chain, Cache-Control no-store. Se crea en la primera llamada. Sin clave privada."
   },
   "stsmetadata.endpoints./oid4vci/status-lists.what": {
     "en": "76f52e390d2c1987",
@@ -3852,8 +3944,8 @@
     "text": "El Web (Passive) Requestor Profile 1.2: /wsfed despachando según wa, la pantalla de inicio de sesión, metadatos de federación firmados en la ruta de AD FS y wsignout1.0."
   },
   "stsmetadata.protocols.WS-Trust.what": {
-    "en": "3d88db91fab2cd5f",
-    "text": "RST / RSTR sobre SOAP en /sts, en las cuatro versiones (1.0 a 1.4), que emite cualquiera de los dos dialectos SAML con la aserción firmada y, opcionalmente, cifrada para el certificado del solicitante, un JWT o un ticket Kerberos."
+    "en": "2e317d1cfa752dc2",
+    "text": "RST / RSTR sobre SOAP en /sts, en las cuatro versiones (1.0 a 1.4), que emite cualquiera de los dos dialectos SAML con la aserción firmada y, opcionalmente, cifrada para el certificado del solicitante, un JWT o un ticket Kerberos, descrito por un WSDL con un port type por versión y publicado mediante WS-MetadataExchange."
   },
   "stsmetadata.protocols.Kerberos.what": {
     "en": "3048c833f899933d",

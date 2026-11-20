@@ -130,6 +130,9 @@ import cells = require('../common/cells');
 import cellPlacement = require('../common/cell_placement');
 import cellRouting = require('../common/cell_routing');
 import stsCrypto = require('../common/crypto');
+// THE OPERATIONS, THE MEDIA TYPES, THE REGISTERS AND THE NONCE EXCHANGE ARE
+// THE MODEL'S (#1579): `models/enrollment/est.tsp`. A leaf.
+import EnrollmentModel = require('../common/enrollment_model');
 
 /**
  * The enrollment family's name in the core and the monitor, `est`.
@@ -141,22 +144,16 @@ const FAMILY = 'est';
  */
 const BASE = '/.well-known/est';
 
-// The six operations, and the one method each answers. HEAD is answered for a
-// GET by Express itself.
+// The six operations of RFC 7030 and draft-ietf-lamps-attestation-freshness's
+// `nonce`, and the methods each answers: the model's `@operations` (#1579).
+// HEAD is answered for a GET by Express itself; `nonce` (#257) is the one
+// operation with two, GET with no content and POST with a nonce request.
 /**
- * The six operations of RFC 7030 and the one method each answers.
+ * The operations of RFC 7030 and the methods each answers.
  */
-const OPERATIONS = [
-  { name: 'cacerts', method: 'GET' },
-  { name: 'simpleenroll', method: 'POST' },
-  { name: 'simplereenroll', method: 'POST' },
-  { name: 'serverkeygen', method: 'POST' },
-  { name: 'csrattrs', method: 'GET' },
-  { name: 'fullcmc', method: 'POST' },
-  // draft-ietf-lamps-attestation-freshness section 5.1 (#257): GET with no
-  // content, POST with a nonce request — the one operation with two.
-  { name: 'nonce', method: 'GET, POST' }
-];
+const OPERATIONS = EnrollmentModel.operations('est').map(function (op) {
+  return { name: op.name, method: op.methods.join(', ') };
+});
 
 /**
  * The methods an `OPERATIONS` row answers.
@@ -184,19 +181,15 @@ OPERATIONS.forEach(function (op) {
   PATHS.push(BASE + '/:label/' + op.name);
 });
 
+// The media types EST reads and writes, the model's `media` register (#1579):
+// PKCS#10, certs-only CMS, CSR attributes, PKCS#8, the server-key multipart,
+// and draft-ietf-lamps-attestation-freshness section 5.1's, for a nonce
+// request and its response alike (#257).
 /**
  * The media types EST reads and writes: PKCS#10, certs-only CMS, CSR attributes
  * and PKCS#8.
  */
-const MEDIA = {
-  pkcs10: 'application/pkcs10',
-  certsOnly: 'application/pkcs7-mime; smime-type=certs-only',
-  csrattrs: 'application/csrattrs',
-  pkcs8: 'application/pkcs8',
-  // draft-ietf-lamps-attestation-freshness section 5.1, for a nonce request
-  // and its response alike (#257).
-  freshness: 'application/est-attestation-freshness+json'
-};
+const MEDIA = EnrollmentModel.map('est', 'media');
 
 // THE NONCE COOKIE (#257): the session-maintenance mechanism
 // draft-ietf-lamps-attestation-freshness section 5.1 requires to bind a
@@ -205,22 +198,16 @@ const MEDIA = {
 const NONCE_COOKIE = 'sts_est_nonce';
 const NONCE_HANDLE_SHAPE = /^est\.[A-Za-z0-9_-]{43}$/;
 
-const vzEst = validation.z;
-// The nonce-request CDDL (section 3.2): two optional members and no others —
-// a CDDL map is closed unless it says otherwise — `len` an unsigned integer
-// in 8..64, and `reqTypeInfo` a `type` that is a dotted-decimal OID and an
-// optional `reqInfo` of any shape.
-const NONCE_REQUEST = vzEst.strictObject({
-  len: vzEst.number().int().min(8).max(64).optional(),
-  reqTypeInfo: vzEst.strictObject({
-    type: vzEst.string().max(200).regex(/^[0-2](\.(0|[1-9][0-9]*))+$/,
-                                       'must be a dotted-decimal OID'),
-    reqInfo: vzEst.any().optional()
-  }).optional()
-});
+// The nonce request (the draft's CDDL, section 3.2) and the empty query every
+// operation takes are the model's (#1579): two optional members and no others
+// — a CDDL map is closed unless it says otherwise — `len` an unsigned integer
+// in 8..64, and `reqTypeInfo` a dotted-decimal OID `type` and an optional
+// `reqInfo` of any shape. The validators are built from the model with the
+// hand-written schema's bounds and messages.
+const NONCE_REQUEST = EnrollmentModel.body('est', 'nonce-request');
 
 // No EST operation takes a query string.
-const NO_QUERY = validation.z.strictObject({});
+const NO_QUERY = EnrollmentModel.body('est', 'query');
 
 // A label is a profile id's shape before it is a profile id; anything longer or
 // stranger is not looked up at all.
@@ -231,9 +218,22 @@ const LABEL_SHAPE = /^[a-z][a-z-]{0,39}$/;
 const MAX_AUTHORIZATION = 4096;
 
 // The statuses a refusal is COUNTED at against the caller's rate limit: the
-// ones a guessing client produces. A 404 label, a 405, a 501 and a 503 are the
-// server's own shape and are not.
-const COUNTED_STATUSES = [400, 401, 403, 409, 413, 415];
+// ones a guessing client produces, the model's `refusal-statuses` rows marked
+// `counted` (#1579). A 404 label, a 405, a 501 and a 503 are the server's own
+// shape and are not.
+const COUNTED_STATUSES = EnrollmentModel.rows('est', 'refusal-statuses')
+  .filter(function (row) {
+    return row.counted === true;
+  }).map(function (row) {
+    return row.code;
+  });
+
+// The name types a CSR attributes answer asks a request for, by profile: the
+// model's `csrattrs-names` register (#1579).
+const CSRATTRS_NAMES: Record<string, string[]> = {};
+EnrollmentModel.rows('est', 'csrattrs-names').forEach(function (row) {
+  CSRATTRS_NAMES[row.name] = row.values;
+});
 
 // What `Est` needs from the rest of the service: the modules this file
 // used to reach for itself, passed in so that the composition root can build
@@ -868,7 +868,8 @@ class Est {
   //     global tier's and every cell holds it.
   //   * **a TLS client certificate**, when there is no Authorization header
   //     (the order `authenticate()` reads them in) — the person its
-  //     `urn:sts:person:` subjectAltName names goes home the same way.
+  //     `urn:sts:person:` (or, for a service account, `urn:sts:sa:`, #1827)
+  //     subjectAltName names goes home the same way.
   //
   // A name nobody knows, or a certificate naming no person, is served here
   // and refused here for its own reasons. A single-cell service places
@@ -961,10 +962,14 @@ class Est {
    * @param res - the response
    * @param ctx - the request's context
    * @param parseOptions - passed to the core's CSR parser
+   * @param afterAuthentication - optional: asked once the caller is
+   *   authenticated and before the body is read; it answers true when it has
+   *   refused the request itself (`serverkeygen`'s switch, #36)
    * @returns a promise of the parsed request, or null when the request has been
    * answered
    */
-  async enrollmentRequest(req, res, ctx, parseOptions?) {
+  async enrollmentRequest(req, res, ctx, parseOptions?,
+                          afterAuthentication?) {
     const { log, codec, errorCodes, core } = this.deps;
     log.debug("Entering Est.enrollmentRequest().");
     ctx.basic = this.basicCredentialOf(req);
@@ -987,6 +992,11 @@ class Est {
     }
     ctx.principal = authenticated.principal;
     ctx.identity = this.principalLabel(ctx.principal);
+    if (afterAuthentication && afterAuthentication(ctx)) {
+      log.debug("Leaving Est.enrollmentRequest(). Refused once " +
+                "authenticated.");
+      return null;
+    }
     const decoded = codec.decodeBody(req.body);
     if (!decoded.ok) {
       errorCodes.mark(res, 'STS-EST-0008');
@@ -1400,24 +1410,40 @@ class Est {
   async serverkeygen(req, res, ctx) {
     const { log, config, errorCodes, codec, keyMaterial, core } = this.deps;
     log.debug("Entering Est.serverkeygen().");
-    // Off for the realm refuses here, before the template is read — unless
-    // the caller is an application whose own estServerKeyGeneration turns
-    // it on, or an administrator, who may be asking for such an
-    // application; `core.issue()` then asks the switch of the TARGET
-    // (rcbj, 2026-10-01: the application's setting overrides the realm's).
-    const asker = ctx.principal || {};
-    const mayStillBeOn = asker.kind === 'person' && asker.admin === true ||
-      (asker.kind === 'application' &&
-       core.estSwitch('serverKeyGeneration', asker));
-    if (config.value('est.serverKeyGeneration') === false && !mayStillBeOn) {
-      errorCodes.mark(res, 'STS-EST-0005');
-      this.estError(req, res, ctx, 501,
-                    'Server-side key generation is turned off ' +
-                    'for EST in this realm (est.serverKeyGeneration).');
-      log.debug("Leaving Est.serverkeygen(). Off.");
-      return;
-    }
-    const csr = await this.enrollmentRequest(req, res, ctx, { template: true });
+    // Off for the realm refuses ONCE THE CALLER IS AUTHENTICATED, and before
+    // the template is read — unless the caller is an application whose own
+    // estServerKeyGeneration turns it on, or an administrator, who may be
+    // asking for such an application; `core.issue()` then asks the switch of
+    // the TARGET (rcbj, 2026-10-01: the application's setting overrides the
+    // realm's).
+    //
+    // AUTHENTICATED FIRST (#36, 2026-11-15). The switch was asked before
+    // `enrollmentRequest()` had authenticated anybody, so `ctx.principal`
+    // was always empty: an anonymous caller learnt the realm's setting from
+    // a 501 where every other EST refusal asks for a credential first (RFC
+    // 7030 section 3.2.3), and the two exceptions above could never apply,
+    // because nobody was an administrator or an application yet.
+    const self = this;
+    const switchedOff = function (authenticated: any): boolean {
+      log.debug("Entering switchedOff().");
+      const asker = authenticated.principal || {};
+      const mayStillBeOn = asker.kind === 'person' && asker.admin === true ||
+        (asker.kind === 'application' &&
+         core.estSwitch('serverKeyGeneration', asker));
+      if (config.value('est.serverKeyGeneration') === false &&
+          !mayStillBeOn) {
+        errorCodes.mark(res, 'STS-EST-0005');
+        self.estError(req, res, authenticated, 501,
+                      'Server-side key generation is turned off ' +
+                      'for EST in this realm (est.serverKeyGeneration).');
+        log.debug("Leaving switchedOff(). Off.");
+        return true;
+      }
+      log.debug("Leaving switchedOff().");
+      return false;
+    };
+    const csr = await this.enrollmentRequest(req, res, ctx, { template: true },
+                                             switchedOff);
     if (!csr) {
       log.debug("Leaving Est.serverkeygen(). Answered.");
       return;
@@ -1513,12 +1539,7 @@ class Est {
         return { oid: o };
       }) });
     }
-    const names = {
-      'tls-server': ['dNSName', 'iPAddress'],
-      'tls-server-client': ['dNSName', 'iPAddress'],
-      'email': ['rfc822Name'],
-      'smartcard-logon': ['otherName:1.3.6.1.4.1.311.20.2.3']
-    }[profileId];
+    const names = CSRATTRS_NAMES[profileId];
     if (names) {
       items.push({ type: codec.OIDS.subjectAltName, values: names.map(
         function (name) { return { utf8: name }; }) });
@@ -1721,6 +1742,15 @@ class Est {
     }
     const send = (body: object): void => {
       log.debug("Entering send().");
+      // THE MODEL DESCRIBES THE WIRE AND DOES NOT RESHAPE IT (#1579): what
+      // the nonce answer's model does not allow is recorded, and the answer
+      // is sent as built.
+      const problems = EnrollmentModel.undeclared('est', 'nonce',
+                                                  body as Record<string, any>);
+      if (problems.length > 0) {
+        log.error(errorCodes.tag('STS-EST-0037') + 'the EST nonce answer is ' +
+                  'not its model\'s: ' + problems.join('; '));
+      }
       // A Buffer, so express adds no `; charset=utf-8`: the draft's media
       // type defines no parameter, and JSON is UTF-8 (RFC 8259 section 8.1).
       res.status(200)

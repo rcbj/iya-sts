@@ -41,6 +41,15 @@
 # DNS zone, and the ACME client follows it (ACME challenge delegation,
 # RFC 8555 section 8.4's record placed by alias). The AWS cells' ACM
 # validation uses `_<hash>.<name>` and is untouched.
+#
+# BEHIND CLOUDFRONT (#1341, `direct_hostname` set in the cells file) THE TREE
+# IS AT THE DIRECT NAME, every record of it, and the public name is the AWS
+# primary cell's to write: one geolocation default aliasing its distribution
+# (deploy/aws/environment/dns_cells.tf). The distribution's origin is the
+# direct name, so an edge reaches the nearest healthy cell of either cloud.
+# The GCP cells admit CloudFront's ranges on 443, to their load balancers
+# only, as they admit the health checkers; the direct name's challenge is
+# delegated too, because a GCP cell's certificate carries it.
 # ---------------------------------------------------------------------------
 data "aws_route53_zone" "public" {
   name         = var.public_zone_name
@@ -48,7 +57,10 @@ data "aws_route53_zone" "public" {
 }
 
 locals {
-  cells_name = "cells.${var.public_hostname}"
+  cdn = var.direct_hostname != ""
+  # Where the tree is: the public name, or the direct name behind CloudFront.
+  tree_name  = local.cdn ? var.direct_hostname : var.public_hostname
+  cells_name = "cells.${local.tree_name}"
 
   # The countries pinned to each jurisdiction (#367's `jurisdictions`).
   pinned = {
@@ -72,6 +84,7 @@ locals {
   # `_acme-challenge.gusw1.test-idp.iyasec.io` → `_acme-challenge.gusw1.test-idp.gcp.iyasec.io`.
   acme_names = concat(
     [var.public_hostname],
+    local.cdn ? [var.direct_hostname] : [],
     [for id in keys(local.gcp) : "${id}.${var.public_hostname}"],
   )
 }
@@ -103,6 +116,30 @@ resource "google_compute_firewall" "route53_health_checkers" {
   priority    = 1000
 
   source_ranges           = data.aws_ip_ranges.route53_health_checkers.cidr_blocks
+  destination_ranges      = [for c in values(local.gcp) : "${c.lb_address}/32"]
+  target_service_accounts = [for c in values(local.gcp) : c.service_account]
+
+  allow {
+    protocol = "tcp"
+    ports    = ["443"]
+  }
+}
+
+# ---- CloudFront, to the GCP cells (#1341) ---------------------------------
+data "aws_ip_ranges" "cloudfront" {
+  count    = local.cdn ? 1 : 0
+  services = ["cloudfront"]
+}
+
+resource "google_compute_firewall" "cloudfront" {
+  count       = local.cdn ? 1 : 0
+  name        = "${var.name}-${var.environment}-cloudfront"
+  network     = data.google_compute_network.shared.id
+  description = "CloudFront's edges, on 443, to the GCP cells' public load balancers (#1341)"
+  direction   = "INGRESS"
+  priority    = 1000
+
+  source_ranges           = data.aws_ip_ranges.cloudfront[0].cidr_blocks
   destination_ranges      = [for c in values(local.gcp) : "${c.lb_address}/32"]
   target_service_accounts = [for c in values(local.gcp) : c.service_account]
 
@@ -152,11 +189,11 @@ resource "aws_route53_record" "set_gcp" {
   health_check_id = aws_route53_health_check.gcp[each.value.cell].id
 }
 
-# ---- The public name ------------------------------------------------------
+# ---- The public name, or the direct name behind CloudFront ----------------
 resource "aws_route53_record" "pinned" {
   for_each       = local.pinned_places
   zone_id        = data.aws_route53_zone.public.zone_id
-  name           = var.public_hostname
+  name           = local.tree_name
   type           = "A"
   set_identifier = "pin-${each.key}"
 
@@ -174,9 +211,11 @@ resource "aws_route53_record" "pinned" {
   depends_on = [aws_route53_record.set_aws, aws_route53_record.set_gcp]
 }
 
+# At the direct name behind CloudFront, whose primary AWS cell writes the
+# public name's default (the header).
 resource "aws_route53_record" "default" {
   zone_id        = data.aws_route53_zone.public.zone_id
-  name           = var.public_hostname
+  name           = local.tree_name
   type           = "A"
   set_identifier = "default"
 

@@ -62,12 +62,16 @@ class LogoutPage {
         kit.note(t.html('consoleLogout.lookupLead')) +
         // THE LOOKUP IS A TAB (2026-10-12), headed by the page's own name;
         // the lead above it and what a logout reaches are Metadata.
+        // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): a tab's
+        // heading stays at the top level, its content one frame; what a
+        // logout reaches is Metadata, so `metadataFrame()` keeps it there.
         '<h2 data-tab="lookup">' + t.html('console.nav.logout') + '</h2>' +
-        '<form method="get" action="/admin/logout"><label>' +
+        kit.frame('<form method="get" action="/admin/logout"><label>' +
         t.html('consoleLogout.identity') + ' <input ' +
         'name="user" value="" placeholder="alice"></label> <button ' +
         'type="submit">' + t.html('consoleLogout.look') +
-        '</button></form><h2>' + t.html('consoleLogout.hReaches') +
+        '</button></form>') +
+        kit.metadataFrame('<h2>' + t.html('consoleLogout.hReaches') +
         '</h2><table><thead><tr><th>' + t.html('consoleLogout.thFamily') +
         '</th><th>' + t.html('consoleLogout.thProtocol') + '</th><th>' +
         t.html('consoleLogout.thCanEnd') + '</th><th>' +
@@ -86,7 +90,7 @@ class LogoutPage {
             '</em></td></tr>';
         }).join('') + '</tbody></table>' +
         kit.note(t.html('consoleLogout.cannotBeEnded')) +
-        kit.note(t.html('consoleLogout.themselves')) +
+        kit.note(t.html('consoleLogout.themselves'))) +
         LogoutPage.backchannelDeliveriesSection(t, json, mayWrite, back, '') +
         // ON THE LOOKUP PAGE AND NOT ON THE PER-PERSON ONE. These four decide
         // what a logout REACHES, which is a question about the feature; the
@@ -127,7 +131,8 @@ class LogoutPage {
             return f.held;
           }).length,
           key: json.key, realm: json.kerberosRealm })) +
-        summary +
+        // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16).
+        kit.frame(summary +
         (canWrite
           ? '<form method="post" action="/admin/logout">' +
             '<input type="hidden" name="action" value="global">' +
@@ -138,8 +143,8 @@ class LogoutPage {
             t.html('consoleLogout.globalLogout') + '</button> <span ' +
             'class="sub">' + t.html('consoleLogout.globalLogoutNote') +
             '</span></p></form>'
-          : kit.note(t.html('consoleLogout.needsWrite'))) +
-        '<h2>' + t.html('consoleLogout.hLiveItems') +
+          : kit.note(t.html('consoleLogout.needsWrite')))) +
+        kit.frame('<h2>' + t.html('consoleLogout.hLiveItems') +
         (wantedFamily ? ' — ' + kit.esc(wantedFamily) : '') +
         '</h2>' +
         kit.perPageForm('/admin/logout', 'family', wantedFamily,
@@ -160,9 +165,9 @@ class LogoutPage {
             '</tbody></table>' +
             kit.pageNavPair('/admin/logout', params, json.paging).head
           : kit.note(wantedFamily ? t.html('consoleLogout.nothingLiveFamily')
-                                  : t.html('consoleLogout.nothingLive'))) +
+                                  : t.html('consoleLogout.nothingLive')))) +
         (canWrite
-          ? '<h2>' + t.html('consoleLogout.hUndo') + '</h2>' +
+          ? kit.frame('<h2>' + t.html('consoleLogout.hUndo') + '</h2>' +
             kit.note(t.html('consoleLogout.undoLead')) +
             // DEVELOPMENT ONLY (#111): refused in product by the action, and
             // so not offered there — a note says why in its place.
@@ -189,7 +194,7 @@ class LogoutPage {
               'type="submit">' + t.html('consoleLogout.restore') +
             '</button> ' +
             '<span class="sub">' + t.html('consoleLogout.restoreNote') +
-            '</span></p></form>'
+            '</span></p></form>')
           : '') +
         LogoutPage.backchannelDeliveriesSection(t, json, canWrite, back,
           wantedUser);
@@ -235,8 +240,11 @@ class LogoutPage {
     const state = String(v.deliveryState || '');
     // The audit link carries an href, which a message may not, so the
     // paragraph around it is two messages with the anchor in the code.
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab's
+    // heading stays at the top level, what follows it one frame.
     const heading = '<h2 id="backchannel" data-tab="backchannel">' +
-      t.html('consoleLogout.hBackchannel') + '</h2>' +
+      t.html('consoleLogout.hBackchannel') + '</h2>';
+    const filter =
       kit.note(t.html('consoleLogout.backchannelLead', {
         pending: counts.pending, sent: counts.sent, dead: counts.dead }) +
         '<a href="/admin/audit">' + t.html('consoleLogout.auditLink') +
@@ -263,9 +271,9 @@ class LogoutPage {
       '<button class="secondary">' + t.html('consoleLogout.filter') +
       '</button></div></form>';
     if (!list.length) {
-      return heading + kit.note(state || v.deliveryq
+      return heading + kit.frame(filter + kit.note(state || v.deliveryq
         ? t.html('consoleLogout.noDeliveryMatches')
-        : t.html('consoleLogout.noneYet'));
+        : t.html('consoleLogout.noneYet')));
     }
     const paging = (v.deliveriesPg && v.deliveriesPg.paging) || null;
     const params = Object.assign({}, kit.pageParamsOf({}), wantedUser
@@ -273,7 +281,7 @@ class LogoutPage {
                                      deliveryq: v.deliveryq || '' });
     const nav = paging
       ? kit.pageNavPair('/admin/logout', params, paging) : { head: '' };
-    return heading + nav.head +
+    return heading + kit.frame(filter + nav.head +
       '<table><thead><tr><th>' + t.html('consoleLogout.thQueued') +
       '</th><th>' + t.html('consoleLogout.thClient') + '</th><th>' +
       t.html('consoleLogout.thSession') + '</th>' +
@@ -318,7 +326,7 @@ class LogoutPage {
             ? '<code>' + kit.esc(row.errorCode) + '</code> ' : '') +
           kit.esc(row.why || row.via || '') + '</td><td>' + retry +
           '</td></tr>';
-      }).join('') + '</tbody></table>';
+      }).join('') + '</tbody></table>');
   }
 
   // One row of the flattened table. The family is a COLUMN here where /logout

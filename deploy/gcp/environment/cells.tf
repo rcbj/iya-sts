@@ -118,19 +118,23 @@ locals {
     copy_address    = data.terraform_remote_state.global[0].outputs.copies[var.cell].address
     copy_ca_pem     = data.terraform_remote_state.global[0].outputs.copies[var.cell].ca_pem
     copy_master_ref = data.terraform_remote_state.global[0].outputs.copies[var.cell].master_secret
+    # CloudFront's ranges (#1341, cdn.tf); a gcp-global applied before them
+    # has none.
+    cloudfront_cidrs = try(data.terraform_remote_state.global[0].outputs.cloudfront_cidrs, [])
     } : {
-    writer_address  = ""
-    db_port         = 5432
-    db_name         = ""
-    db_app_user     = ""
-    publication     = ""
-    repl_user       = ""
-    secrets         = {}
-    writer_ca_pem   = ""
-    copy_host       = ""
-    copy_address    = ""
-    copy_ca_pem     = ""
-    copy_master_ref = ""
+    writer_address   = ""
+    db_port          = 5432
+    db_name          = ""
+    db_app_user      = ""
+    publication      = ""
+    repl_user        = ""
+    secrets          = {}
+    writer_ca_pem    = ""
+    copy_host        = ""
+    copy_address     = ""
+    copy_ca_pem      = ""
+    copy_master_ref  = ""
+    cloudfront_cidrs = []
   }
 
   # THE CONTRACT WITH THE SERVICE — AWS's `cell_environment`, name for name,

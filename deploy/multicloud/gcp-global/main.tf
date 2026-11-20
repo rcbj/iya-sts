@@ -19,6 +19,14 @@ provider "aws" {
 
 data "aws_caller_identity" "current" {}
 
+# CLOUDFRONT'S RANGES (#1341): the edges a GCP cell behind the AWS primary
+# cell's distribution believes, and refuses without the origin secret
+# (deploy/gcp/environment/cdn.tf). Read at each apply, as an AWS cell reads
+# them (deploy/aws/environment/cloudfront.tf).
+data "aws_ip_ranges" "cloudfront" {
+  services = ["cloudfront"]
+}
+
 data "terraform_remote_state" "aws_global" {
   backend = "s3"
   config = {

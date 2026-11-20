@@ -322,6 +322,13 @@ const RELEASE_WAIT_MS = 2000;
  */
 const PROTOCOL_WORKER_HEADER = 'x-sts-pool-protocol-worker';
 
+// The header a worker marks a revoking answer with (the review of #879).
+// `common/revoking_writes.ts` names it and `request_pool.js` spells it too;
+// `tests/revoking_writes.js` compares the three.
+const REVOKING_HEADER = 'x-sts-pool-revoking';
+// How many revocations came after their answer's headers had gone.
+let lateRevocations = 0;
+
 // An operation handler: a value or a promise, both answered the same way.
 // Its second argument, `emit`, sends a PART of the answer ahead of the rest
 // (#616: an LDAP search streaming the entries it finds while it reads the
@@ -535,6 +542,71 @@ class RequestWorker {
         return require('./service_state');
       }
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // A REVOCATION, SAID ON THE ANSWER IT RIDES OUT ON (the review of #879).
+  //
+  // `common/revoking_writes.ts` is told by the funnels that end a session, a
+  // token, a refresh family, a grant or an account. In a worker that becomes
+  // `x-sts-pool-revoking` on the response in flight, which the front process
+  // reads before it forwards a byte and files the request's ticket under the
+  // key every refresh grant waits for (`request_pool.js`, THE WRITES A
+  // REFRESH MUST NOT ANSWER AHEAD OF). The header and not the channel, for
+  // `LDAP_DROP_HEADER`'s reason: the answer is what the client sees, so the
+  // filing must come before it, and the header is read before it goes out.
+  //
+  // No response: a cluster job's body run here (#408) — the session sweep,
+  // a rotation. Nobody is waiting on an answer, and a refresh reads an
+  // expired session as ended whatever any worker has applied. Headers
+  // already sent: the front process can no longer be told in time, and that
+  // is logged under STS-WORKER-0052, sparingly, so a door that revokes after
+  // it has begun to answer is found rather than guessed at.
+  // ---------------------------------------------------------------------------
+  /**
+   * Marks the answer in flight as a revoking write, for the front process.
+   *
+   * @param res - the response this request is answering, or undefined
+   * @param what - what was ended, for the log
+   * @returns whether the answer was marked
+   */
+  static markRevokingAnswer(res: http.ServerResponse | undefined,
+                            what: string): boolean {
+    log.debug('Entering RequestWorker.markRevokingAnswer(). ' + what);
+    if (!res) {
+      log.debug('Leaving RequestWorker.markRevokingAnswer(). No answer in ' +
+                'flight.');
+      return false;
+    }
+    if (res.headersSent) {
+      lateRevocations++;
+      if (lateRevocations === 1 || lateRevocations % 100 === 0) {
+        log.warn(errorCodes.tag('STS-WORKER-0052') + 'request_worker: ' +
+                 what + ' after this answer\'s headers had gone, so the ' +
+                 'front process could not file it for the refresh grant ' +
+                 'in time (' + lateRevocations + ' so far).');
+      }
+      log.debug('Leaving RequestWorker.markRevokingAnswer(). Too late.');
+      return false;
+    }
+    res.setHeader(REVOKING_HEADER, '1');
+    log.debug('Leaving RequestWorker.markRevokingAnswer(). Marked.');
+    return true;
+  }
+
+  /**
+   * Installs the marker `common/revoking_writes.ts` answers with in this
+   * worker. Called once, after the protocol stack is loaded, which is when
+   * the funnels that call it exist.
+   */
+  installRevokingMarker(): void {
+    const { log } = this.deps;
+    log.debug('Entering RequestWorker.installRevokingMarker().');
+    const RevokingWrites = require('./revoking_writes');
+    RevokingWrites.install(function (what: string): void {
+      RequestWorker.markRevokingAnswer(currentResponse.getStore(), what);
+    });
+    log.debug('Leaving RequestWorker.installRevokingMarker().');
   }
 
   // ---------------------------------------------------------------------------
@@ -1337,8 +1409,13 @@ class RequestWorker {
     log.debug('Entering RequestWorker.handleSync(). id=' + message.id);
     const persistence = require('../persistence/persistence');
     persistence.syncNow().then(function (state: any) {
+      // `caughtUp` and `coordinating` are what the front reads (2026-11-14):
+      // a round that gave up at syncNow()'s deadline is `ok` and still
+      // behind, and the front asks again rather than stamping this worker
+      // current (request_pool.js, A BARRIER THAT RUNS OUT IS A REFUSAL).
       WorkerChannel.send({ sync: true, id: message.id, ok: true,
-                     applied: state.applied, caughtUp: state.caughtUp });
+                     applied: state.applied, caughtUp: state.caughtUp,
+                     coordinating: state.coordinating });
       log.debug('Leaving RequestWorker.handleSync(). applied=' +
                 state.applied);
     }, function (err: any) {
@@ -1479,8 +1556,25 @@ class RequestWorker {
     // and the channel's message is not delivered inside one today; said
     // here so that a later change to how messages arrive cannot hand a job
     // a console request's spent budget (`common/sync_query.ts`).
-    const started: Promise<any> = require('./sync_query').outsideBudget(
-      () => scheduler.runDelegated(message));
+    //
+    // **THIS WORKER CATCHES UP FIRST** (GitHub Actions run 43913216604,
+    // mariadb mode). The run was queued after writes other workers made — an
+    // administrator's setting, then "run now" — and nothing held this worker
+    // to them: a request waits at the pool's read barrier, a body handed over
+    // the channel did not. `sts_post_login_activities` turned a realm's mail
+    // transport off, ran the reminder job 300 ms later, and the body here
+    // still read the transport on and held two people back instead of saying
+    // STS-AUTHN-0495. syncNow() resolves rather than rejects and gives up at
+    // its own deadline, which counts against the job's time limit; a body is
+    // background work and can spend it.
+    const started: Promise<any> = Promise.resolve()
+      .then(() => persistence.syncNow())
+      .then(null, (e: any) => {
+        log.debug("Caught in RequestWorker.runSchedulerJob(): " +
+                  ((e && e.message) || e));
+      })
+      .then(() => require('./sync_query').outsideBudget(
+        () => scheduler.runDelegated(message)));
     started.then((answer: any) => {
       if (answer && (answer.unknownJob || answer.unknownRealm)) {
         report(answer);
@@ -1790,6 +1884,9 @@ class RequestWorker {
       // front process took when it forked this worker; every later change
       // arrives on the listener above.
       this.installDirectoryMirror(message.ldapConnections || []);
+      // And the marker a revocation is said with (the review of #879), for
+      // the same reason: the funnels that call it are loaded now.
+      this.installRevokingMarker();
       // And the SPIFFE listeners as they were at fork (#337); every later
       // reconcile arrives on the listener above.
       if (message.spiffeBindings) {
@@ -1832,6 +1929,10 @@ export = {
   LDAP_DROP_HEADER: LDAP_DROP_HEADER,
   // And the back-channel hint's, for the same comparison.
   PROTOCOL_WORKER_HEADER: PROTOCOL_WORKER_HEADER,
+  // And the revoking answer's (the review of #879).
+  REVOKING_HEADER: REVOKING_HEADER,
+  // The marker's one decision, for a test with a response of its own.
+  markRevokingAnswer: RequestWorker.markRevokingAnswer,
   // Installing the directory mirror, exported so that a test can put this
   // process in the state a worker is in without forking one.
   installDirectoryMirror:

@@ -60,8 +60,8 @@ const log = require('bunyan').createLogger({
   name: 'cache_registry',
   level: process.env.LOG_LEVEL || 'info' });
 
-// Every store `docs/caches.md` names that this process holds in memory, by
-// the module that registers it — the caches and the replay stores alike.
+// Every store `docs/v1.1.0/caches.md` names that this process holds in memory,
+// by the module that registers it — the caches and the replay stores alike.
 const OWNERS = {
   '../common/tls_client_certificates': ['tls.client-certificate-identities'],
   '../common/request_pool': ['workers.request-affinity'],
@@ -96,7 +96,7 @@ const OWNERS = {
   '../federation/federation': ['federation.release-index'],
   '../ldap/ldap_server': ['ldap.username-index', 'ldap.group-index',
     'ldap.entryuuid-index', 'ldap.subtree-listings',
-    'ldap.windowed-entryuuids'],
+    'ldap.windowed-entryuuids', 'ldap.gate-usernames'],
   '../kerberos/krb5_principals': ['krb5.long-term-keys',
     'krb5.authenticator-replay'],
   '../spiffe/spiffe_ca': ['spiffe.x509-authorities'],

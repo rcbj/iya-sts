@@ -182,12 +182,13 @@ services:
         GIT_COMMIT: "${GIT_COMMIT:-}"
         STS_RELEASE: "${STS_RELEASE:-false}"
         BUILD_NUMBER: "${BUILD_NUMBER:-}"
-        DEBUGGER_IMAGE: "${DEBUGGER_IMAGE:-debugger-none}"
+        DEBUGGER_IMAGE: "${DEBUGGER_IMAGE:-ghcr.io/rcbj/id-proto-debugger-embedded:0.9.3}"
     ports:
       - "${STS_HOST_PORT:-8081}:8081"
       - "${STS_PKI_HOST_PORT:-8082}:8082"
       - "${STS_KDC_HOST_PORT:-88}:88"
       - "${STS_KDC_HOST_PORT:-88}:88/udp"
+      - "${STS_DEBUGGER_PORT:-8444}:${STS_DEBUGGER_PORT:-8444}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -219,6 +220,10 @@ services:
       - PKI_DISTRIBUTION_LDAP_HOST=${PKI_DISTRIBUTION_LDAP_HOST:-}
       - STS_PERSISTENCE_MODE=${STS_PERSISTENCE_MODE:-postgres}
       - STS_MODE=${STS_MODE:-product}
+      - STS_DEBUGGER_ENABLED=${STS_DEBUGGER_ENABLED:-on}
+      - STS_DEBUGGER_PORT=${STS_DEBUGGER_PORT:-8444}
+      - STS_DEBUGGER_ALLOWED_DESTINATIONS
+      - STS_DEBUGGER_PUBLIC_BASE_URL
       - KRB5_SERVICE_PRINCIPAL=${KRB5_SERVICE_PRINCIPAL:-HTTP/localhost}
       - STS_PERSISTENCE_COORDINATE=${STS_PERSISTENCE_COORDINATE:-true}
       - STS_WORKERS_REQUEST_COUNT=${STS_WORKERS_REQUEST_COUNT:-2}
@@ -266,6 +271,8 @@ services:
     ports:
       - "${XACML_PEP_HOST_PORT:-9090}:9090"
       - "${XACML_PEP_HTTPS_HOST_PORT:-9444}:9443"
+      - "${XACML_PEP_PROXY_HOST_PORT:-9180}:9180"
+      - "${XACML_PEP_PROXY_HTTPS_HOST_PORT:-9543}:9543"
     volumes:
       - ${XACML_PEP_CERT_DIR:-./xacml-pep/certs}:/certs:ro
     depends_on:
@@ -276,18 +283,24 @@ services:
       - PEP_NAME=${XACML_PEP_NAME:-pep-1}
       - PEP_TLS_CERT=${XACML_PEP_TLS_CERT:-}
       - PEP_TLS_KEY=${XACML_PEP_TLS_KEY:-}
+      - PEP_ASSERTION_KEY=${XACML_PEP_ASSERTION_KEY:-}
       - PEP_HTTPS_CERT=${XACML_PEP_HTTPS_CERT:-}
       - PEP_HTTPS_KEY=${XACML_PEP_HTTPS_KEY:-}
       - PEP_HTTPS_PORT=9443
       - PEP_HTTPS_RELOAD_INTERVAL_MS=${XACML_PEP_HTTPS_RELOAD_INTERVAL_MS:-5000}
       - PEP_TLS_INSECURE=true
-      - PEP_NOTIFY_URL=${XACML_PEP_NOTIFY_URL:-http://xacml-pep:9090/notify}
+      - PEP_NOTIFY_URL=${XACML_PEP_NOTIFY_URL:-}
       - PEP_RESOURCE=${XACML_PEP_RESOURCE:-https://xacml-pep/protected}
       - PEP_BIAS=${XACML_PEP_BIAS:-deny-biased}
       - PEP_PIP=${XACML_PEP_PIP:-true}
       - PEP_POLL_INTERVAL_MS=${XACML_PEP_POLL_INTERVAL_MS:-15000}
       - PEP_HEARTBEAT_INTERVAL_MS=${XACML_PEP_HEARTBEAT_INTERVAL_MS:-60000}
       - PEP_LOG_LEVEL=${XACML_PEP_LOG_LEVEL:-info}
+      - PEP_HTTP=${XACML_PEP_HTTP:-false}
+      - PEP_CRL_HTTP=${XACML_PEP_CRL_HTTP:-}
+      - PEP_PROXY_HTTP=${XACML_PEP_PROXY_HTTP:-false}
+      - PEP_PROXY_HTTPS_PORT=9543
+      - PEP_PROXY_SESSION_RECHECK_MS=${XACML_PEP_PROXY_SESSION_RECHECK_MS:-5000}
 
   companion:
     container_name: ${STS_COMPANION_CONTAINER_NAME:-sts-companion}

@@ -1,0 +1,298 @@
+{
+  "secretstore.providers.file.label": {
+    "en": "5d423a594813c53f",
+    "text": "कंटेनर में माउंट की गई एक फ़ाइल"
+  },
+  "secretstore.providers.aws.label": {
+    "en": "b408912d14ae552b",
+    "text": "AWS Secrets Manager"
+  },
+  "secretstore.providers.gcp.label": {
+    "en": "7e2de75385b32f92",
+    "text": "Google Cloud Secret Manager"
+  },
+  "secretstore.providers.azure.label": {
+    "en": "549cdeb99f387d7d",
+    "text": "Azure Key Vault"
+  },
+  "secretstore.providers.vault.label": {
+    "en": "0fc7b1598470c4ea",
+    "text": "HashiCorp Vault"
+  },
+  "secretstore.providers.vault-transit.label": {
+    "en": "ecabc21234f2d967",
+    "text": "Vault या OpenBao Transit (कुंजी उसे कभी नहीं छोड़ती)"
+  },
+  "secretstore.providers.aws-kms.label": {
+    "en": "79c782926c157220",
+    "text": "AWS KMS (कुंजी उसे कभी नहीं छोड़ती)"
+  },
+  "secretstore.providers.gcp-kms.label": {
+    "en": "5e27bcfd042a293d",
+    "text": "Google Cloud KMS (कुंजी उसे कभी नहीं छोड़ती)"
+  },
+  "secretstore.providers.azure-keys.label": {
+    "en": "20bde19870bf41f3",
+    "text": "Azure Key Vault या Managed HSM कुंजी (कुंजी उसे कभी नहीं छोड़ती)"
+  },
+  "secretstore.source.reportWhat": {
+    "en": "22bc75be21c4a09a",
+    "text": "यह सेवा अपने आदिम रहस्य कहाँ से पढ़ती है — वह कुंजी-एन्क्रिप्शन कुंजी जिसके अंतर्गत उसके द्वारा सील की गई हर चीज़ सील है, और डेटाबेस पासवर्ड — क्या उसने वास्तव में उन्हें पढ़ा, और दूसरे छोर पर स्टोर क्या कर रहा है।"
+  },
+  "secretstore.source.notConfigured": {
+    "en": "9f33f06843e745c0",
+    "text": "कॉन्फ़िगर नहीं"
+  },
+  "secretstore.source.noPath": {
+    "en": "4749999e2e7aae1a",
+    "text": "(कोई पथ कॉन्फ़िगर नहीं)"
+  },
+  "secretstore.source.noSecretId": {
+    "en": "6e2d129e5e03f51c",
+    "text": "(कोई सीक्रेट आईडी कॉन्फ़िगर नहीं)"
+  },
+  "secretstore.source.noResourceName": {
+    "en": "92425929b094ca5f",
+    "text": "(कोई संसाधन नाम कॉन्फ़िगर नहीं)"
+  },
+  "secretstore.source.noSecretName": {
+    "en": "5fe472c605935f3f",
+    "text": "(कोई सीक्रेट नाम कॉन्फ़िगर नहीं)"
+  },
+  "secretstore.source.noVaultUrl": {
+    "en": "1213793d12fc8ff3",
+    "text": "(कोई वॉल्ट URL कॉन्फ़िगर नहीं)"
+  },
+  "secretstore.source.noKey": {
+    "en": "f2e233d8f6b89e13",
+    "text": "(कोई कुंजी कॉन्फ़िगर नहीं)"
+  },
+  "secretstore.source.noKeyName": {
+    "en": "1bceca3f70d1b52c",
+    "text": "(कोई कुंजी नाम कॉन्फ़िगर नहीं)"
+  },
+  "secretstore.source.sdkDefault": {
+    "en": "9c42a3a3ea6636b0",
+    "text": "(SDK डिफ़ॉल्ट)"
+  },
+  "secretstore.source.sdkDefaultEndpoint": {
+    "en": "7f0c4b72aea358e9",
+    "text": "(SDK डिफ़ॉल्ट एंडपॉइंट)"
+  },
+  "secretstore.source.wrapsInKms": {
+    "en": "7bd54b22d846fe00",
+    "text": "प्रत्येक डेटा एन्क्रिप्शन कुंजी, KMS में"
+  },
+  "secretstore.source.wrapsInVault": {
+    "en": "405bbc4d85fe30ff",
+    "text": "प्रत्येक डेटा एन्क्रिप्शन कुंजी, वॉल्ट में"
+  },
+  "secretstore.source.byCertificateAt": {
+    "en": "60b072e1200fbd17",
+    "text": "एक क्लाइंट प्रमाणपत्र ({{cert}})"
+  },
+  "secretstore.source.byCertificate": {
+    "en": "1d3bee4abba86445",
+    "text": "एक क्लाइंट प्रमाणपत्र"
+  },
+  "secretstore.source.byToken": {
+    "en": "e3316e2bafebb610",
+    "text": "एक टोकन"
+  },
+  "secretstore.source.byConfiguredToken": {
+    "en": "ffc120dd37b9491d",
+    "text": "एक कॉन्फ़िगर टोकन"
+  },
+  "secretstore.source.bySdkToken": {
+    "en": "eb9992956e4e8a67",
+    "text": "SDK का VAULT_TOKEN"
+  },
+  "secretstore.source.noRole": {
+    "en": "fc62ddb2080607e0",
+    "text": "(कोई नामित नहीं)"
+  },
+  "secretstore.source.fileNotObject": {
+    "en": "ae3e838b14eb115f",
+    "text": "फ़ाइल JSON ऑब्जेक्ट नहीं है, इसलिए उसमें जो कुछ है वह पूरा लिया जाता है। कच्ची कुंजी फ़ाइल यही होती है।"
+  },
+  "secretstore.source.memberNames": {
+    "en": "d5d75498f77116c1",
+    "text": "केवल सदस्य नाम। कौन सा कोई सीक्रेट लेता है, वह उसकी अपनी फ़ील्ड सेटिंग है।"
+  },
+  "secretstore.source.noField": {
+    "en": "c8104810832fdb73",
+    "text": "कोई फ़ील्ड कॉन्फ़िगर नहीं है, इसलिए पूरी फ़ाइल यह सीक्रेट है।"
+  },
+  "secretstore.source.sharesKekFile": {
+    "en": "77ad17c585850a0a",
+    "text": "यह सीक्रेट कुंजी-एन्क्रिप्शन कुंजी की फ़ाइल साझा करता है और वह फ़ाइल JSON ऑब्जेक्ट नहीं है — इसलिए उसमें जो है वह कुंजी है, और इस सीक्रेट को पढ़ना अस्वीकार है, बजाय उस कुंजी को डेटाबेस को सौंपने के।"
+  },
+  "secretstore.source.fileNotJson": {
+    "en": "c4715a803e2b6189",
+    "text": "फ़ाइल JSON नहीं है, इसलिए उसका पूरा भाग यह सीक्रेट है और फ़ील्ड का उपयोग नहीं होता।"
+  },
+  "secretstore.source.noLogin": {
+    "en": "d1d304bf7a11be99",
+    "text": "कोई क्लाइंट प्रमाणपत्र कॉन्फ़िगर नहीं है, इसलिए कोई लॉगिन नहीं हुआ: टोकन वह है जो {{token}} या SDK का VAULT_TOKEN देता है।"
+  },
+  "secretstore.source.canWrite": {
+    "en": "f0edb7f12492f535",
+    "text": "यह पहचान लिख सकती है। वह कुंजी-एन्क्रिप्शन कुंजी को बदल सकती है, और पुरानी के अंतर्गत सील सब कुछ अपठनीय हो जाएगा।"
+  },
+  "secretstore.source.readOnly": {
+    "en": "571684d367b80ab7",
+    "text": "जिन प्रत्येक पथ के बारे में पूछा गया उन पर केवल-पढ़ने योग्य, जो नीति को कहना चाहिए।"
+  },
+  "secretstore.source.reachesNothing": {
+    "en": "0b12560836d0a934",
+    "text": "यह पहचान उन पथों में से किसी तक नहीं पहुँच सकती जिन्हें पढ़ने के लिए कॉन्फ़िगर किया गया है। आरंभ पर पढ़ना अस्वीकार हो जाएगा।"
+  },
+  "secretstore.source.connectionString": {
+    "en": "769a73d1e1b8e994",
+    "text": "कनेक्शन स्ट्रिंग"
+  },
+  "secretstore.password.passwordFrom.file": {
+    "en": "e1f3b6d1cacc5e2c",
+    "text": "कंटेनर में माउंट की गई एक फ़ाइल ({{from}})"
+  },
+  "secretstore.password.passwordShared.file": {
+    "en": "758f5df5caeb2761",
+    "text": "कंटेनर में माउंट की गई एक फ़ाइल, कुंजी-एन्क्रिप्शन कुंजी के साथ साझा"
+  },
+  "secretstore.password.passwordFromShared.file": {
+    "en": "64f25900eac9925d",
+    "text": "कंटेनर में माउंट की गई एक फ़ाइल ({{from}}), कुंजी-एन्क्रिप्शन कुंजी के साथ साझा"
+  },
+  "secretstore.password.passwordFrom.aws": {
+    "en": "8421d2245730320b",
+    "text": "AWS Secrets Manager ({{from}})"
+  },
+  "secretstore.password.passwordShared.aws": {
+    "en": "74182258302f0676",
+    "text": "AWS Secrets Manager, कुंजी-एन्क्रिप्शन कुंजी के साथ साझा"
+  },
+  "secretstore.password.passwordFromShared.aws": {
+    "en": "d5b70defc93014cf",
+    "text": "AWS Secrets Manager ({{from}}), कुंजी-एन्क्रिप्शन कुंजी के साथ साझा"
+  },
+  "secretstore.password.passwordFrom.gcp": {
+    "en": "64d2a620e56a463c",
+    "text": "Google Cloud Secret Manager ({{from}})"
+  },
+  "secretstore.password.passwordShared.gcp": {
+    "en": "6e1c9a52cb2ee8eb",
+    "text": "Google Cloud Secret Manager, कुंजी-एन्क्रिप्शन कुंजी के साथ साझा"
+  },
+  "secretstore.password.passwordFromShared.gcp": {
+    "en": "950ccddbb5aef8f4",
+    "text": "Google Cloud Secret Manager ({{from}}), कुंजी-एन्क्रिप्शन कुंजी के साथ साझा"
+  },
+  "secretstore.password.passwordFrom.azure": {
+    "en": "6e8b2a5c28325d00",
+    "text": "Azure Key Vault ({{from}})"
+  },
+  "secretstore.password.passwordShared.azure": {
+    "en": "7a53268d08952f71",
+    "text": "Azure Key Vault, कुंजी-एन्क्रिप्शन कुंजी के साथ साझा"
+  },
+  "secretstore.password.passwordFromShared.azure": {
+    "en": "f97349b05904e291",
+    "text": "Azure Key Vault ({{from}}), कुंजी-एन्क्रिप्शन कुंजी के साथ साझा"
+  },
+  "secretstore.password.passwordFrom.vault": {
+    "en": "dfe6c58e804c494a",
+    "text": "HashiCorp Vault ({{from}})"
+  },
+  "secretstore.password.passwordShared.vault": {
+    "en": "e655c15d0f441caf",
+    "text": "HashiCorp Vault, कुंजी-एन्क्रिप्शन कुंजी के साथ साझा"
+  },
+  "secretstore.password.passwordFromShared.vault": {
+    "en": "b6d6b5c32d3b9a93",
+    "text": "HashiCorp Vault ({{from}}), कुंजी-एन्क्रिप्शन कुंजी के साथ साझा"
+  },
+  "secretstore.probe.file/file": {
+    "en": "f41c931e5680cbfa",
+    "text": "फ़ाइल स्वयं: क्या वह वहाँ है, कौन उसे पढ़ सकता है, और वह अंतिम बार कब बदली।"
+  },
+  "secretstore.probe.file/members": {
+    "en": "5778d7760aeb7443",
+    "text": "क्या फ़ाइल JSON ऑब्जेक्ट रखती है, और उसमें कौन से सदस्य हैं — नाम, और कभी मान नहीं।"
+  },
+  "secretstore.probe.file/field": {
+    "en": "9b658c3ec485be4b",
+    "text": "क्या वह सदस्य जिसे यह सीक्रेट लेने के लिए कॉन्फ़िगर किया गया है वास्तव में फ़ाइल में है।"
+  },
+  "secretstore.probe.vault/client-certificate": {
+    "en": "f94c9e7471f63b08",
+    "text": "वह प्रमाणपत्र जो यह सेवा स्टोर को प्रस्तुत करती है, और वह कब समाप्त होता है।"
+  },
+  "secretstore.probe.vault/store-ca": {
+    "en": "3fdf0ee5468250ab",
+    "text": "वह एंकर जिसके विरुद्ध यह सेवा स्टोर के अपने लिस्नर को सत्यापित करती है।"
+  },
+  "secretstore.probe.vault/seal-status": {
+    "en": "4bdb1036ad2931e1",
+    "text": "क्या स्टोर आरंभीकृत है, क्या वह सील है, उसकी सील किस प्रकार की है, और वह कौन सा बिल्ड है।"
+  },
+  "secretstore.probe.vault/health": {
+    "en": "1b177a8aea40f139",
+    "text": "स्टोर का अपना स्वास्थ्य सार: उसकी घड़ी, उसका क्लस्टर, और क्या यह नोड सक्रिय है।"
+  },
+  "secretstore.probe.vault/leader": {
+    "en": "2319cbe40ec5f3d7",
+    "text": "उच्च उपलब्धता: क्या यह नोड लीडर है, और लीडर कहाँ है।"
+  },
+  "secretstore.probe.vault/authentication": {
+    "en": "ee13e40f32b9fffb",
+    "text": "जिस तरह आरंभ-पठन लॉगिन करता है, और स्टोर ने क्या लौटाया।"
+  },
+  "secretstore.probe.vault/token": {
+    "en": "14a03524c0fb9140",
+    "text": "लॉगिन द्वारा उत्पन्न टोकन के बारे में स्टोर क्या कहता है, लॉगिन उत्तर से पढ़ने के बजाय स्टोर से पूछा गया।"
+  },
+  "secretstore.probe.vault/capabilities": {
+    "en": "0f220dde7a5da29c",
+    "text": "यह पहचान वास्तव में क्या कर सकती है, स्टोर से पूछा गया: वे पथ जो वह पढ़ती है, और एक लेखन जो उसे नहीं कर पाना चाहिए।"
+  },
+  "secretstore.probe.vault/mounts": {
+    "en": "3126483e397ac716",
+    "text": "वे सीक्रेट इंजन जो यह पहचान देख सकती है — जो स्टोर के पास से कम हैं, और होने चाहिए।"
+  },
+  "secretstore.probe.vault/versions": {
+    "en": "e6d3fd30c886c72b",
+    "text": "इस सीक्रेट का KV मेटाडेटा: वह कब लिखा गया, कितने संस्करण हैं, और पढ़ने पर कौन सा मिलता है।"
+  },
+  "secretstore.probe.aws/describe": {
+    "en": "6707e380066ebbee",
+    "text": "इस सीक्रेट के बारे में AWS Secrets Manager जो कुछ जानता है, उसके मान को छोड़कर: घुमाव, KMS कुंजी, संस्करण और उनके स्टेजिंग लेबल।"
+  },
+  "secretstore.probe.vault-transit/transit-key": {
+    "en": "8b5ec8540e5a645c",
+    "text": "Transit उस कुंजी के बारे में क्या कहता है जो डेटा कुंजियों को लपेटती है: उसका प्रकार, उसके संस्करण, और क्या वह कभी KMS छोड़ सकती है।"
+  },
+  "secretstore.probe.aws-kms/kms-key": {
+    "en": "c7a90045558f0a02",
+    "text": "AWS KMS उस कुंजी के बारे में क्या कहता है जो डेटा कुंजियों को लपेटती है: उसकी स्थिति और क्या AWS उसे घुमाता है।"
+  },
+  "secretstore.probe.gcp-kms/kms-key": {
+    "en": "a889c918017a3a6e",
+    "text": "Cloud KMS उस कुंजी के बारे में क्या कहता है जो डेटा कुंजियों को लपेटती है: उसका उद्देश्य, उसका प्राथमिक संस्करण और उसकी घुमाव अनुसूची।"
+  },
+  "secretstore.probe.azure-keys/vault-key": {
+    "en": "4c46af2b365b08fe",
+    "text": "वॉल्ट उस कुंजी के बारे में क्या कहता है जो डेटा कुंजियों को लपेटती है: उसका प्रकार, आकार, संक्रियाएँ, संस्करण और घुमाव।"
+  },
+  "secretstore.probe.gcp/secret": {
+    "en": "f7750717cdd5bfbc",
+    "text": "सीक्रेट का अपना मेटाडेटा: प्रतिकृति, लेबल, घुमाव और समाप्ति।"
+  },
+  "secretstore.probe.gcp/version": {
+    "en": "206e4669d7f025e4",
+    "text": "वह संस्करण जो पढ़ने पर मिलेगा: क्या वह सक्षम है, अक्षम है या नष्ट है।"
+  },
+  "secretstore.probe.azure/versions": {
+    "en": "9d0074a0c77ba2f9",
+    "text": "इस सीक्रेट का प्रत्येक संस्करण और उसके गुण — सक्षम, बनाया गया, अद्यतन, समाप्ति — और कभी मान नहीं।"
+  }
+}

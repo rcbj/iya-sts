@@ -95,6 +95,14 @@ function fakeDriver(origin) {
             row.expiresAt <= filter.nowMs) {
           return false;
         }
+        // A store that restores only rows with no expiry (#883): the
+        // postgres WHERE `NOT (handle = ANY(nullExpiryHandles) AND
+        // expires_at IS NOT NULL)`.
+        const nullExpiry = filter.nullExpiryHandles || [];
+        if (row.expiresAt != null &&
+            nullExpiry.indexOf(row.handle) >= 0) {
+          return false;
+        }
         return !(filter.staleBefore > 0 &&
                  (row.expiresAt === null || row.expiresAt === undefined) &&
                  filter.ageHandles.indexOf(row.handle) >= 0 &&

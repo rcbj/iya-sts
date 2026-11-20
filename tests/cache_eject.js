@@ -128,6 +128,8 @@ function childMain() {
       // The access-token status list's rows and signed lists, and the
       // revoked biscuits' identifiers (#432): each until its token expires.
       'oauth2.access-token-status', 'oauth2.access-token-status-lists',
+      // The compressed list those signatures are made from (#885).
+      'oauth2.access-token-status-packed',
       // Opaque access-token rows (#501), each until the token's exp.
       'oauth2.opaque-access-tokens',
       'gnap.biscuit-revocations',
@@ -143,13 +145,16 @@ function childMain() {
       'oauth2.refresh-token-bookkeeping',
       // What was last fetched about a pinned certificate (#1360), for a door
       // that cannot wait.
-      'pki.pinned-verdicts'
+      'pki.pinned-verdicts',
+      // The tickets a valid POST /xacml/pep/basic handed a remote PEP
+      // (#1760), each until TICKET_LIFETIME_S has passed.
+      'xacml.pep-tickets'
     ].sort();
     const ejecting = registry.ejecting().filter(function (n) {
       return !/^test\./.test(n);
     });
     note(JSON.stringify(ejecting) === JSON.stringify(expected),
-         'B1. exactly the forty-four stores whose entries expire eject them',
+         'B1. exactly the forty-six stores whose entries expire eject them',
          JSON.stringify({ missing: expected.filter(function (n) {
            return ejecting.indexOf(n) < 0;
          }), extra: ejecting.filter(function (n) {

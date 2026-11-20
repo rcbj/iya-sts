@@ -238,7 +238,7 @@ function childMain() {
              /<nav class="tabbar" aria-label="Sections of this page">/.test(
                inner),
            'E. nine tabs, in order', JSON.stringify(at));
-      ['ucred-factors', 'ucred-password', 'ucred-keys']
+      ['ucred-factors', 'ucred-password', 'ucred-keys', 'ucred-self-issued']
         .forEach(function (id) {
           note(inner.indexOf('id="' + id + '"') > at[4] &&
                  inner.indexOf('id="' + id + '"') < at[5],

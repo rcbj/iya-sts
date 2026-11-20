@@ -128,6 +128,9 @@ import mechanismLib = require('../common/authn_mechanisms');
 // leaf, for the same reason.
 import mfaLib = require('../common/mfa_mechanisms');
 import stats = require('../common/admin_stats');
+// Where a session's end is SAID, so a refresh grant waits for it (the
+// review of #879). A leaf over `helpers`.
+import RevokingWrites = require('../common/revoking_writes');
 // The federation register, for the buttons at the foot of the sign-in screen.
 // A plain require in the ordinary direction and it passes rule 3e's test both
 // ways round: that module registers no route, so nothing about requiring it
@@ -235,6 +238,11 @@ import sessionWindow = require('./session_window');
 // LIBRARY that requires only `common/` leaves and nothing of this file, so
 // the require closes no cycle and moves no route.
 import AccountSets = require('./account_sets');
+// THE SESSION AS THE MODEL SAYS IT MEANS (#1579): `models/domain/session.tsp`
+// is the one statement of a session's shape, so the readers below that
+// project a session onto a page, an answer or a decision read it through
+// `Session.fromRecord()` rather than off the raw record.
+import DomainClasses = require('../common/domain_classes');
 
 // The path a caller sends the browser to. Exported, because the two callers
 // build a URL out of it and a string spelled twice is a string that drifts.
@@ -592,7 +600,14 @@ const sessions = realms.map({ persist: 'authn.sessions', tombstone: true,
                               mergeRow: function (mine, theirs) {
                                 return slot.get().mergeSessionRows(mine,
                                                                    theirs);
-                              } });
+                              },
+                              // Another process's row is merged into the
+                              // copy held here (`realms.map()`'s
+                              // `mergeOnApply`): with the session window
+                              // off — several cells — a row read before a
+                              // sign-in here committed put the arrival back
+                              // over it (STS-AUTHN-0346).
+                              mergeOnApply: true });
 
 // A coalesced touch writes back through the facade, in the realm the
 // touch belongs to. Registered once: clearing it would drop later touches.
@@ -1240,6 +1255,15 @@ interface AuthnDeps {
  * path it returns, and finds the session with `sessionOf()` when the browser
  * comes back.
  */
+// A RESPONSE TO ANY OF THE AUTHENTICATION API'S OPERATIONS (#1579), for the
+// answer helpers every act shares (`stepAnswer()`, the refusals): what they
+// answer at a literal 2xx status must be one of the model's answers. Each act
+// `/authn-api` hands its response to is typed by its own operation instead.
+type AnyAuthnAnswering = IyaApi.AuthnAnswering<keyof IyaApi.Authn.Operations>;
+// What an act says comes next: the model's `next`, of a step's answer.
+type AuthnNext =
+  IyaApi.AnswerAt200<IyaApi.Authn.Operations, 'checkCode'>['next'];
+
 class Authn {
   // The sign-in surface's bundle, once read (`signInBundle()`, #571).
   private bundleFile: any = null;
@@ -1672,13 +1696,34 @@ class Authn {
       Object.keys(other.oidcClients).forEach(function (clientId) {
         const there = other.oidcClients[clientId] || {};
         const here = clients[clientId];
-        clients[clientId] = !here ? there : {
+        if (!here) {
+          clients[clientId] = there;
+          return;
+        }
+        // `iss` AND `sub` ARE KEPT (run 27, 2026-11-14). They are what
+        // `noteClient()` records for the two logouts — the issuer the
+        // client's ID Token named and its subject — and this merge built
+        // the entry from the three counters alone, so a client both copies
+        // held lost them. Since #1753 a held copy with a write pending is
+        // merged in place with every row another worker commits, so it
+        // happened on an ordinary sign-in in the single-node mode: the
+        // front-channel iframe carried the sign-out's issuer instead of
+        // the named server's (`sts_frontchannel_logout`) and the Logout
+        // Token was dead-lettered STS-OAUTH-0542 (`sts_backchannel_logout`).
+        // The later answer (`last`) wins, `noteClient()`'s own rule, and an
+        // empty value never wipes a recorded one; a tie keeps the base's.
+        const later = (Number(there.last) || 0) > (Number(here.last) || 0)
+          ? there : here;
+        const earlier = later === here ? there : here;
+        clients[clientId] = Object.assign({}, earlier, later, {
           first: Math.min.apply(null, [Number(here.first) || 0,
                                        Number(there.first) || 0]
             .filter(Boolean).concat([Date.now()])),
           last: Math.max(Number(here.last) || 0, Number(there.last) || 0),
-          count: Math.max(Number(here.count) || 0, Number(there.count) || 0)
-        };
+          count: Math.max(Number(here.count) || 0, Number(there.count) || 0),
+          iss: String(later.iss || earlier.iss || ''),
+          sub: String(later.sub || earlier.sub || '')
+        });
       });
       out.oidcClients = clients;
     }
@@ -1756,6 +1801,59 @@ class Authn {
     if (!out.accountSetId && other.accountSetId) {
       out.accountSetId = other.accountSetId;
     }
+    // THE HELD PRESENTATION (2026-11-17): the copy whose flag changed last
+    // wins it, by `presentationHeldAt` — see markPresentationHeld(). A tie
+    // between two stamped copies (two nodes changing it in one millisecond
+    // from the same starting stamp) is SPENT, so the answer does not depend
+    // on which node merges: a reported presentation the consent trip should
+    // have held is the cheaper mistake than a real one swallowed. Two
+    // copies with no stamp — rows from before it — keep the base's.
+    const mineHeldAt = Number(mine.presentationHeldAt) || 0;
+    const theirsHeldAt = Number(theirs.presentationHeldAt) || 0;
+    if (mineHeldAt || theirsHeldAt) {
+      if (mineHeldAt === theirsHeldAt) {
+        out.firstPresentationIsTheSignIn =
+          !!(mine.firstPresentationIsTheSignIn &&
+             theirs.firstPresentationIsTheSignIn);
+      } else {
+        out.firstPresentationIsTheSignIn = !!(mineHeldAt > theirsHeldAt
+          ? mine.firstPresentationIsTheSignIn
+          : theirs.firstPresentationIsTheSignIn);
+      }
+      out.presentationHeldAt = Math.max(mineHeldAt, theirsHeldAt);
+    }
+    // THE OPENID CONNECT LAUNCHES (#426, #713; run 43936849276). `/launch/
+    // {app}` records `launches[clientId]` on the session and the
+    // authorization request answers a client whose own start is off only
+    // within the window of one (`common/launch_links.ts`). The merge took
+    // the base copy's map whole, so in the cluster mode a launch recorded on
+    // node B was lost on node A when A merged B's row into the copy it held
+    // (same sign-in, so A's copy was the base) — and A refused the client's
+    // request a second later, STS-OAUTH-0959 (`sts_idp_initiated_launch`).
+    // Each client keeps the later launch and the later take
+    // (`launchesTaken`, written by `takeLaunch()`), and a launch no later
+    // than its take is spent, so a stale copy can neither lose a launch nor
+    // bring a spent one back. Both maps converge in either merge order.
+    if (mine.launches || theirs.launches ||
+        mine.launchesTaken || theirs.launchesTaken) {
+      const latest = function (x, y) {
+        const both = Object.assign({}, x || {});
+        Object.keys(y || {}).forEach(function (clientId) {
+          both[clientId] = Math.max(Number(both[clientId]) || 0,
+                                    Number(y[clientId]) || 0);
+        });
+        return both;
+      };
+      const taken = latest(mine.launchesTaken, theirs.launchesTaken);
+      const launches = latest(mine.launches, theirs.launches);
+      Object.keys(launches).forEach(function (clientId) {
+        if (launches[clientId] <= (Number(taken[clientId]) || 0)) {
+          delete launches[clientId];
+        }
+      });
+      out.launches = launches;
+      out.launchesTaken = taken;
+    }
     log.debug("Leaving Authn.mergeSessionRows(). " +
               (mineAhead ? "Mine is ahead." : "The stored copy is ahead."));
     return out;
@@ -1779,7 +1877,8 @@ class Authn {
   // protocol module reads to answer "is this person already signed in?", and
   // the only place in the service that writes it.
   /**
-   * Parses a request's Cookie header.
+   * Parses a request's Cookie header. A cookie whose value is not
+   * URI-encoded is skipped, never thrown.
    *
    * @param req - the request
    * @returns a map of cookie name to decoded value
@@ -1788,13 +1887,31 @@ class Authn {
     const { log } = this.deps;
     log.debug("Entering Authn.cookiesOf().");
     const out: Record<string, any> = {};
+    let skipped = 0;
+    // ONE COOKIE THAT DOES NOT DECODE IS THAT COOKIE'S PROBLEM, NOT THE
+    // BROWSER'S (2026-11-14, found by #444's D12). `decodeURIComponent()`
+    // throws `URIError` on a bad percent escape, and a site on a shared
+    // parent domain can set any cookie it likes (`x=%E0%A4%A`), so one bad
+    // value made every session door answer 500 and the account set read as
+    // unreadable — a 503 picker and STS-AUTHN-0344 on every request — for
+    // a browser whose own cookies were all well formed. A value this service
+    // wrote is always encoded, so one that does not decode is not one of
+    // ours: it is left out and the others are read.
     String(req.headers.cookie || '').split(';').forEach(function (part) {
       const i = part.indexOf('=');
-      if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(
-          part.slice(i + 1).trim());
+      if (i <= 0) {
+        return;
+      }
+      try {
+        out[part.slice(0, i).trim()] = decodeURIComponent(
+            part.slice(i + 1).trim());
+      } catch (e) {
+        log.debug("Caught in Authn.cookiesOf(): " + ((e && e.message) || e));
+        skipped++;
+      }
     });
     log.debug("Leaving Authn.cookiesOf(). " + Object.keys(out).length +
-              " cookie(s).");
+              " cookie(s)" + (skipped ? ", " + skipped + " skipped." : "."));
     return out;
   }
 
@@ -2227,6 +2344,30 @@ class Authn {
     return live;
   }
 
+  // WHICH HALF OF "NO LONGER LIVE" (2026-11-17, `sts_jar_admin_client` in the
+  // cells mode on GitHub, three runs in a row): STS-AUTHN-0346 said only
+  // that, and the two causes — the set this process holds does not list the
+  // session, or it lists one this process reads as an arrival, ended or not
+  // at all — are different defects. Said on the line, never decided on.
+  private unlivedReason(set, sid) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.unlivedReason().");
+    if (!set || !set.sessions || !set.sessions[sid]) {
+      log.debug("Leaving Authn.unlivedReason(). Not listed.");
+      return 'the set held here does not list it';
+    }
+    const read = this.accountSessionRead(sid);
+    const session = read.session;
+    const why = read.error ? 'its read failed'
+      : !session ? 'no row for it is held or stored'
+      : this.sessionEnded(session) ? 'it has ended'
+      : 'it is not an account session here (chosen=' +
+        String(session.chosen) + ', authenticated=' +
+        String(session.authenticated) + ')';
+    log.debug("Leaving Authn.unlivedReason().");
+    return why;
+  }
+
   // ---------------------------------------------------------------------------
   // THE SESSION A SET LISTS, READ THE WAY #350'S READERS READ ONE. With
   // `authn.sessionWindow` on (and `auto` turns it on whenever minted
@@ -2291,14 +2432,29 @@ class Authn {
 
   // A session's own set, stamped on the row so that its end can find the
   // set by key (`accountSessionEnded()`) without a scan.
+  //
+  // **IT NEVER BRINGS A SESSION BACK (2026-11-14, found by #444's D12).**
+  // The stamp wrote the HELD object back with a plain `set()`, so a session
+  // another request or node ended between the caller's read and this write
+  // came back to life. It goes through `noteSessionChanged()`, which writes
+  // only a row the store still holds (merged with a newer copy where one
+  // replaced it) and writes nothing for a session that is gone.
   private stampAccountSet(sid, session, setId) {
     const { log } = this.deps;
     log.debug("Entering Authn.stampAccountSet().");
-    if (session && session.accountSetId !== setId) {
-      session.accountSetId = setId;
-      sessions.set(String(sid), session);
+    if (!session || session.accountSetId === setId) {
+      log.debug("Leaving Authn.stampAccountSet(). Nothing to stamp.");
+      return;
     }
-    log.debug("Leaving Authn.stampAccountSet().");
+    if (String(session.id || '') !== String(sid)) {
+      log.debug("Leaving Authn.stampAccountSet(). The row is not " + sid +
+                "'s.");
+      return;
+    }
+    session.accountSetId = setId;
+    const written = this.noteSessionChanged(session);
+    log.debug("Leaving Authn.stampAccountSet(). " +
+              (written ? "Stamped." : "The session is gone; not written."));
   }
 
   // ---------------------------------------------------------------------------
@@ -2632,7 +2788,8 @@ class Authn {
       : !set || set.id !== row.setId ? 'it was issued to another browser'
       : row.path !== path ? 'it was issued for another address'
       : !set.sessions[row.sid] || !this.accountSessionLive(row.sid)
-        ? 'the session it names is no longer live in this browser'
+        ? 'the session it names is no longer live in this browser (' +
+          this.unlivedReason(set, row.sid) + ')'
         : '';
     if (why) {
       // A CHOICE WHOSE SESSION ENDED IN FLIGHT CHOOSES NOBODY (#731). The
@@ -2912,7 +3069,7 @@ class Authn {
                displayName: account.displayName || entry.displayName,
                state: 'signed-in',
                signedInAt: self.sessionStartedAt(session) || 0,
-               authTime: Number(session.authTime) || 0,
+               authTime: Authn.sessionView(session).authTime || 0,
                current: !!(own && own.id === sid) };
     });
     const remembered = Object.keys(row.remembered || {}).map(function (key) {
@@ -4029,7 +4186,7 @@ class Authn {
               (session.derivedFrom || 'the sign-on session') + '.'
       }
     });
-    session.firstPresentationIsTheSignIn = true;
+    this.markPresentationHeld(session, true);
     this.notifySession('established', session,
                        { via: 'OAuth 2.0 / OIDC',
                          req: (spec.res && spec.res.req) || null });
@@ -4189,7 +4346,7 @@ class Authn {
               source.id + ', and this session ends when that one does.'
       }
     });
-    session.firstPresentationIsTheSignIn = true;
+    this.markPresentationHeld(session, true);
     this.notifySession('established', session,
                        { via: spec.label || spec.surface,
                          req: spec.req || null });
@@ -5311,6 +5468,39 @@ class Authn {
     log.debug("Leaving Authn.noteCapacityEnd().");
   }
 
+  // ---------------------------------------------------------------------------
+  // WHETHER THE REALM IS AT ITS SESSION CAP NOW, with no side effect (2026-11-14,
+  // found by #444's D12). A browser that arrives while the realm is full is
+  // given no arrival session (`startArrivalSession()`), so its sign-in
+  // screen's acts carry no session and were refused "Load the sign-in page
+  // again" — which no reload changes while the realm stays full, and which
+  // named no code. `/authn-api` asks this to say what is true instead. It
+  // counts as `makeRoomForSession()` counts and frees nothing, so an expired
+  // row that an insert would end is still counted: the answer can be "full"
+  // a moment early, never "not full" while it is.
+  // ---------------------------------------------------------------------------
+  /**
+   * Says whether the ambient realm holds `authn.maxSessions` sessions now.
+   *
+   * @returns true at the cap; false with no cap, below it, or when the count
+   *   cannot be read
+   */
+  realmAtSessionCap() {
+    const { log, config, realms } = this.deps;
+    log.debug("Entering Authn.realmAtSessionCap().");
+    const cap = Math.floor(Number(config.value('authn.maxSessions')));
+    if (!(cap >= 1)) {
+      log.debug("Leaving Authn.realmAtSessionCap(). No cap.");
+      return false;
+    }
+    const size = this.windowOn()
+      ? sessionWindow.countForAdmission(realms.currentId(), cap)
+      : sessions.realmMap().size;
+    log.debug("Leaving Authn.realmAtSessionCap(). " + size + " of " + cap +
+              ".");
+    return size !== null && Number(size) >= cap;
+  }
+
   private noteRealmRefusal() {
     const { log, errorCodes } = this.deps;
     log.debug("Entering Authn.noteRealmRefusal().");
@@ -5621,10 +5811,10 @@ class Authn {
         // page skips the realm. A failed body ends nobody for that subject.
         // An absent row is not held, and the loop continues.
         if (self.windowOn()) {
-          // Only the subjects over the cap, in one question (2026-10-21):
-          // every chosen session paged synchronously was 634 questions a
-          // sweep on 8081. At most `budget` subjects can lose one this
-          // sweep, so no more are asked for.
+          // One base64url first character of the subject key this sweep
+          // (#876). The whole-realm aggregate did not answer within the
+          // read timeout at 1M sessions (STS-AUTHN-0338). At most `budget`
+          // subjects of that band can lose a row this sweep.
           const grouped = sessionWindow.overCapBySubject(realm.id, per,
                                                          budget);
           if (grouped === null) {
@@ -5779,7 +5969,7 @@ class Authn {
       return false;
     }
     if (session.firstPresentationIsTheSignIn) {
-      session.firstPresentationIsTheSignIn = false;
+      this.markPresentationHeld(session, false);
       // SPENT IN THE STORE TOO (2026-09-14, #46), or a node whose copy still
       // says true swallows the next real presentation's event as well.
       this.noteSessionChanged(session);
@@ -5818,6 +6008,47 @@ class Authn {
   }
 
   // ---------------------------------------------------------------------------
+  // THE HELD PRESENTATION CARRIES ITS OWN ORDERING STAMP (2026-11-17, from the
+  // cluster mode's `sts_caep_oauth_grants`, runs #412 and 44025839154).
+  //
+  // `firstPresentationIsTheSignIn` moves BOTH ways — startSession() and
+  // holdPresentation() arm it, notePresented() spends it — so neither "true
+  // wins" nor "false wins" is a merge rule for it. Until this stamp the merge
+  // took it from whichever copy was the base, and two copies of one sign-in
+  // rank equal, so the base was the merging node's own: node A spent the flag
+  // on the sign-in's return trip, node B still held its copy from before
+  // that, and B's merge of A's row put `true` back. B then swallowed the next
+  // REAL presentation — the CIBA approval's — and its CAEP
+  // `session-presented` event was never sent.
+  //
+  // Every write of the flag now goes through here and stamps
+  // `presentationHeldAt`, a per-row Lamport clock: the wall clock, but always
+  // past the stamp the copy being changed already carried, so a change made
+  // on a copy that SAW another change is ordered after it whatever the two
+  // nodes' clocks say. mergeSessionRows() takes the flag from the copy with
+  // the later stamp. A row written before the stamp existed has none (0),
+  // and loses to any copy that has one, which was written later by
+  // definition; two copies with none keep the base's, the rule they always
+  // had.
+  // ---------------------------------------------------------------------------
+  /**
+   * Arms or spends a session's free presentation, stamping the change so a
+   * merge of two nodes' copies keeps the later one.
+   *
+   * @param session - the session
+   * @param held - true to arm (the next presentation is the sign-in's own
+   *   return trip), false to spend
+   */
+  markPresentationHeld(session, held) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.markPresentationHeld().");
+    session.firstPresentationIsTheSignIn = !!held;
+    session.presentationHeldAt = Math.max(Date.now(),
+        (Number(session.presentationHeldAt) || 0) + 1);
+    log.debug("Leaving Authn.markPresentationHeld().");
+  }
+
+  // ---------------------------------------------------------------------------
   // A PRESENTATION CONTINUED THROUGH THE CONSENT SCREEN (2026-10-26).
   //
   // An authorization request that needs consent reaches the endpoint twice:
@@ -5850,7 +6081,7 @@ class Authn {
       log.debug("Leaving Authn.holdPresentation(). No session.");
       return;
     }
-    session.firstPresentationIsTheSignIn = true;
+    this.markPresentationHeld(session, true);
     // In the store as well, for notePresented()'s reason (#46).
     this.noteSessionChanged(session);
     log.debug("Leaving Authn.holdPresentation().");
@@ -6308,10 +6539,41 @@ class Authn {
   sessionStartedAt(session) {
     const { log } = this.deps;
     log.debug("Entering Authn.sessionStartedAt().");
-    const first = session && Array.isArray(session.events) &&
-                  session.events.length ? session.events[0] : null;
+    const view = Authn.sessionView(session);
+    const first = view.events && view.events.length ? view.events[0] : null;
     log.debug("Leaving Authn.sessionStartedAt().");
-    return ((first && first.at) || (session && session.authTime) || 0) * 1000;
+    return ((first && first.at) || view.authTime || 0) * 1000;
+  }
+
+  /**
+   * A session as the `Session` concept, or an empty one for no session.
+   *
+   * @param session - the session record, or nothing
+   * @returns the concept
+   */
+  static sessionView(session): IyaDomain.Session {
+    helpers.log.debug("Entering Authn.sessionView().");
+    const view = session && typeof session === 'object'
+      ? DomainClasses.Session.fromRecord(session)
+      : {} as IyaDomain.Session;
+    helpers.log.debug("Leaving Authn.sessionView().");
+    return view;
+  }
+
+  /**
+   * When a session's person last authenticated, in seconds: its latest
+   * event, else its `authTime`.
+   *
+   * @param session - the session record, or nothing
+   * @returns the instant in seconds, or 0
+   */
+  static lastAuthenticatedAt(session): number {
+    helpers.log.debug("Entering Authn.lastAuthenticatedAt().");
+    const view = Authn.sessionView(session);
+    const events = view.events || [];
+    const latest = events.length ? events[events.length - 1] : null;
+    helpers.log.debug("Leaving Authn.lastAuthenticatedAt().");
+    return Number((latest && latest.at) || view.authTime || 0);
   }
 
   // HOW A PERSON IS SIGNED IN, READ THROUGH A RELYING-PARTY SESSION
@@ -6347,14 +6609,15 @@ class Authn {
         fromParent = true;
       }
     }
-    const events = Array.isArray(source.events) ? source.events.length : 1;
+    const view = Authn.sessionView(source);
+    const events = view.events ? view.events.length : 1;
     log.debug("Leaving Authn.signOnFactsFor(). fromParent=" + fromParent);
     return {
       startedAt: this.sessionStartedAt(source),
-      authTime: (source.authTime || 0) * 1000,
-      amr: (source.amr || []).slice(),
-      acr: source.acr || '',
-      authentications: events + (source.eventsDropped || 0),
+      authTime: (view.authTime || 0) * 1000,
+      amr: (view.methods || []).slice(),
+      acr: view.assuranceLevel || '',
+      authentications: events + (view.eventsDropped || 0),
       fromParent: fromParent,
       // Whether the sign-on session is bound to a browser key (#725).
       deviceBound: deviceBound.bindingOf(source)
@@ -6447,7 +6710,7 @@ class Authn {
     session.authTime = event.at;
     session.via = event.via;
     session.lastSeenAt = Date.now();
-    session.firstPresentationIsTheSignIn = true;
+    this.markPresentationHeld(session, true);
     this.bindPartnerSession(session, extra);
     const cookieValue = this.mintSessionHandle(session);
     sessions.set(session.id, session);
@@ -6469,12 +6732,18 @@ class Authn {
     // relationship through `federation` already.
     delete statsExtra.fedPartnerSession;
     delete statsExtra.sessionNotOnOrAfter;
-    stats.recordAuthentication(Object.assign({
-      presented: username, protocol: event.via,
-      method: this.methodPhraseFor(event.amr),
-      sub: session.user.sub, amr: event.amr, acr: event.acr,
-      note: 'A re-authentication on a session this person already held.'
-    }, statsExtra, { sessionId: session.id }));
+    // `recorded`: the door wrote this authentication's row itself (see
+    // startSessionHere()).
+    const recordedByDoor = statsExtra.recorded === true;
+    delete statsExtra.recorded;
+    if (!recordedByDoor) {
+      stats.recordAuthentication(Object.assign({
+        presented: username, protocol: event.via,
+        method: this.methodPhraseFor(event.amr),
+        sub: session.user.sub, amr: event.amr, acr: event.acr,
+        note: 'A re-authentication on a session this person already held.'
+      }, statsExtra, { sessionId: session.id }));
+    }
     audit.audit({
       action: 'session.reauthenticate',
       actor: username,
@@ -8525,15 +8794,26 @@ class Authn {
     // relationship through `federation` already.
     delete statsExtra.fedPartnerSession;
     delete statsExtra.sessionNotOnOrAfter;
-    stats.recordAuthentication(Object.assign({
-      presented: username, protocol: via || 'OAuth 2.0 / OIDC',
-      method: authenticatedNow ? this.methodPhraseFor(amr) : 'declined',
-      amr: amr, acr: acr, sessionId: sessionId,
-      note: authenticatedNow
-        ? this.defaultSignInNote()
-        : 'Nobody authenticated: this is the anonymous principal, from ' +
-          '"Continue without signing in" at the sign-in screen.'
-    }, statsExtra, { sessionId: sessionId }));
+    // `recorded` (rcbj, 2026-11-16): the DOOR has already recorded this
+    // authentication through the funnel, with its own protocol and method —
+    // WS-Trust's UsernameToken, whose exchange also starts a session — so a
+    // second row here would be the same sign-in twice on the person's
+    // Authentications tab, the second one mislabelled "sign-in screen
+    // (password)". The entry already exists, which is what this call is
+    // also for.
+    const recordedByDoor = statsExtra.recorded === true;
+    delete statsExtra.recorded;
+    if (!recordedByDoor) {
+      stats.recordAuthentication(Object.assign({
+        presented: username, protocol: via || 'OAuth 2.0 / OIDC',
+        method: authenticatedNow ? this.methodPhraseFor(amr) : 'declined',
+        amr: amr, acr: acr, sessionId: sessionId,
+        note: authenticatedNow
+          ? this.defaultSignInNote()
+          : 'Nobody authenticated: this is the anonymous principal, from ' +
+            '"Continue without signing in" at the sign-in screen.'
+      }, statsExtra, { sessionId: sessionId }));
+    }
     // ---------------------------------------------------------------------
     // NO SIGNED-IN SESSION WITHOUT A DIRECTORY ENTRY (2026-09-14).
     //
@@ -8841,7 +9121,7 @@ class Authn {
     // cookie are this service's own record of the sign-in and must not depend
     // on a transmitter, and the observer is handed a session that is already
     // complete.
-    session.firstPresentationIsTheSignIn = true;
+    this.markPresentationHeld(session, true);
     this.notifySession('established', session, { via: via || 'OAuth 2.0 / OIDC',
       // `res.req` is express's own back-reference and is the only request this
       // function is given. See the note in dropSession() for why the observer
@@ -8966,6 +9246,13 @@ class Authn {
     const { realms, log, stats, bcp } = this.deps;
     const self = this;
     log.debug("Entering Authn.dropSession(). id=" + (id || '(none)'));
+    // SAID FIRST, whatever the read below finds: a refresh token issued on
+    // this session must not be redeemed on a worker that has not yet seen
+    // it end (the review of #879). Saying it for a session that turns out
+    // to be gone costs a refresh one wait, and nothing else.
+    if (id) {
+      RevokingWrites.note('a session ended (' + String(via || '') + ')');
+    }
     // WHO ENDED IT, SAID BY THE CALLER (#242). See initiatorOf().
     const entity = this.initiatorOf(initiatingEntity, via);
     // The read decides. A failure is not absence: nothing is deleted and
@@ -11642,7 +11929,10 @@ class Authn {
    * @param action - `register` or `skip`
    * @returns nothing; the answer is sent
    */
-  postLoginAct(req: any, res: any, stepId: string, action: string): void {
+  postLoginAct(req: any,
+               res: IyaApi.AuthnAnswering<'registerPostLoginPasskey' |
+                 'skipPostLoginActivity'>, stepId: string,
+               action: string): void {
     const { log, baseUrlOf, audit, errorCodes, postLogin,
       credentials } = this.deps;
     log.debug("Entering Authn.postLoginAct(). " + action);
@@ -11918,7 +12208,12 @@ class Authn {
    * @param body - the answer
    * @returns nothing
    */
-  answerJson(res, status: number, body: any): void {
+  // TYPED BY THE OPERATION (#1579): through an `/authn-api` handler's
+  // response the answer is held to the model's at a literal 2xx status
+  // (`types/api-handlers.d.ts`).
+  answerJson<R, S extends number>(res: R, status: S,
+                                  body: IyaApi.AnswerOf<R, S>): void;
+  answerJson(res: any, status: number, body: any): void {
     const { log } = this.deps;
     log.debug("Entering Authn.answerJson(). " + status);
     res.status(status).type('application/json')
@@ -11979,7 +12274,7 @@ class Authn {
    *   a classical passkey refused where a post-quantum one is required
    * @returns nothing
    */
-  screenRefused(res, record, message: string,
+  screenRefused(res: AnyAuthnAnswering, record, message: string,
     extra?: { status?: number, unknownCredential?: string,
     noAutofill?: boolean, postQuantumRequired?: boolean }): void {
     const { log } = this.deps;
@@ -12036,8 +12331,8 @@ class Authn {
    * @param query - the query parameter carrying the id
    * @returns nothing
    */
-  stepAnswer(res, next: string, step: string, id: string, path: string,
-             query: string): void {
+  stepAnswer(res: AnyAuthnAnswering, next: AuthnNext, step: string,
+             id: string, path: string, query: string): void {
     const { log } = this.deps;
     log.debug("Entering Authn.stepAnswer(). " + next + " " + step);
     const location = realms.currentPrefix() + path + '?' + query + '=' +
@@ -12992,7 +13287,7 @@ class Authn {
    * @param status - the HTTP status, 400 where left out
    * @returns nothing
    */
-  stepRefused(res: any, why: string, status?: number): void {
+  stepRefused(res: AnyAuthnAnswering, why: string, status?: number): void {
     const { log } = this.deps;
     log.debug("Entering Authn.stepRefused(). " + (status || 400));
     this.answerJson(res, status || 400, { ok: false, next: 'refused',
@@ -13163,7 +13458,8 @@ class Authn {
    * @param mfaId - the step id
    * @returns nothing
    */
-  mfaStartOver(req: any, res: any, mfaId: string): void {
+  mfaStartOver(req: any, res: IyaApi.AuthnAnswering<'startOver'>,
+               mfaId: string): void {
     const { log, errorCodes } = this.deps;
     log.debug("Entering Authn.mfaStartOver().");
     void req;
@@ -13190,7 +13486,9 @@ class Authn {
    * @param changeId - the step id
    * @returns nothing
    */
-  passwordChangeStartOver(req: any, res: any, changeId: string): void {
+  passwordChangeStartOver(
+    req: any, res: IyaApi.AuthnAnswering<'startOverFromPasswordChange'>,
+    changeId: string): void {
     const { log, errorCodes } = this.deps;
     log.debug("Entering Authn.passwordChangeStartOver().");
     void req;
@@ -13256,6 +13554,32 @@ class Authn {
     log.debug("Leaving Authn.refuseAtScreen().");
   }
 
+  // ---------------------------------------------------------------------------
+  // A SELF-SERVICE RECOVERY DOOR WAS PASSED, AND THE ENTRY SAYS SO (2026-11-14
+  // for a recovery code, 2026-11-15 for an emailed code or link, #31; both
+  // found by #444's D12). Under a recoveryAssurance that holds a recovery to
+  // a passkey (3cq), the administrator's password, a reset link and an
+  // activation link each write `stsRecoveryPending` (noteRecovery()); a
+  // recovery code, an emailed code and an emailed link wrote nothing: the
+  // sign-in was held (STS-AUTHN-0381), but nothing said a recovery was under
+  // way once the person left the set-up. The finisher calls this before
+  // either way on, so the next sign-in meets it until a passkey signs them
+  // in. noteRecovery() writes nothing where no hold is required (no passkey,
+  // or `any`), and nothing is written for a door the policy refuses
+  // outright (`operator-only`, STS-AUTHN-0380), which is no recovery at all.
+  // ---------------------------------------------------------------------------
+  private noteRecoveryDoor(username: string, door: string): void {
+    const { log, passkeyPolicy, credentials } = this.deps;
+    log.debug("Entering Authn.noteRecoveryDoor(). " + door);
+    const doorRefused = passkeyPolicy.recoveryRefusal({
+      username: username, door: door, at: 'door',
+      covered: credentials.holdsPasskey(username) });
+    if (!doorRefused || doorRefused.code !== 'STS-AUTHN-0380') {
+      credentials.noteRecovery(username, door);
+    }
+    log.debug("Leaving Authn.noteRecoveryDoor().");
+  }
+
   // AN EMAILED SECOND FACTOR, VERIFIED: the step's first factor and `otp`
   // (D2 — RFC 8176 registers nothing for email, and a single-use secret sent
   // to the person is what `otp` names), `acr` `mfa` (D1), and the credential
@@ -13278,6 +13602,9 @@ class Authn {
     pendingMfa.delete(String(mfaId));
     const amr = this.firstAmrOf(step).concat(
       this.firstAmrOf(step).indexOf('otp') >= 0 ? [] : ['otp']);
+    // An emailed code or link is a recovery door (#31), as a recovery code
+    // is; recorded before either way on.
+    this.noteRecoveryDoor(step.username, 'email-' + kind);
     if (step.thenEnrol) {
       // A proof before an enrolment (#475): the set-up screen, no session.
       this.enrolAfterProof(res, step, amr);
@@ -13324,6 +13651,9 @@ class Authn {
     const record = step.authn;
     const username = step.username;
     const credential = { kind: 'email-' + kind };
+    // The same recovery door as a second factor's (#31): recorded before
+    // the risk assessment and the second factor it may ask for.
+    this.noteRecoveryDoor(username, 'email-' + kind);
     const assessed = await this.assessSignIn(req, username, record.protocol,
       { application: String(record.application || ''),
         credential: credential,
@@ -14238,7 +14568,8 @@ class Authn {
    * @param home - the person's home cell
    * @returns a promise settled when the answer is sent
    */
-  async restartPendingAtHome(req, res, pendingId: string, fallback: string,
+  async restartPendingAtHome(req, res: AnyAuthnAnswering, pendingId: string,
+                             fallback: string,
                              home: string): Promise<void> {
     const { log } = this.deps;
     log.debug("Entering Authn.restartPendingAtHome(). home=" + home);
@@ -14570,7 +14901,8 @@ class Authn {
    * @param res - the response
    * @returns true when it answered
    */
-  refuseAccountsUnread(req, res) {
+  refuseAccountsUnread(req, res: IyaApi.AuthnAnswering<'getAccountChoice' |
+    'selectAccount' | 'useAnotherAccount' | 'forgetAccount'>) {
     const { log, errorCodes } = this.deps;
     const self = this;
     log.debug("Entering Authn.refuseAccountsUnread().");
@@ -14705,7 +15037,9 @@ class Authn {
    * @param record - the pending sign-in, waiting on an account choice
    * @param body - `{ action, account }`
    */
-  accountsAct(req, res, record, body): void {
+  accountsAct(req,
+              res: IyaApi.AuthnAnswering<'selectAccount' |
+                'useAnotherAccount' | 'forgetAccount'>, record, body): void {
     const { log, audit, stats, errorCodes } = this.deps;
     const self = this;
     log.debug("Entering Authn.accountsAct(). " + body.action);
@@ -15584,7 +15918,8 @@ class Authn {
   }
 
   // The step, or null with the refusal already sent.
-  passwordChangeStep(res, changeId) {
+  passwordChangeStep(res: IyaApi.AuthnAnswering<'getPasswordChange'>,
+                     changeId) {
     const { log, oauthError, errorCodes } = this.deps;
     log.debug('Entering Authn.passwordChangeStep().');
     const step = pendingPasswordChange.get(changeId);
@@ -17185,7 +17520,7 @@ class Authn {
                 "verify.");
       return this.passkeyRefused(res, base, record,
         webauthnPolicy.failureCodeFor(verdict),
-        'the assertion did not verify — ' +
+        'the assertion did not verify; this check failed: ' +
         (verdict.failed || []).join('; '), SAID);
     }
     const spent = await credentials.spendAssertion({
@@ -17282,8 +17617,9 @@ class Authn {
         'assertion-did-not-verify');
       log.debug("Leaving Authn.finishWebauthn(). Refused: " +
                 failed.join('; '));
-      return this.stepRefused(res, 'The second factor did not verify — ' +
-                              failed.join('; ') + '.');
+      return this.stepRefused(res, 'The second factor did not verify; ' +
+                              'this check failed: ' + failed.join('; ') +
+                              '.');
     }
 
     pendingMfa.delete(String(body.mfa_id));
@@ -17341,6 +17677,13 @@ class Authn {
                  'recovery; nothing is signed in until it is used',
         detail: { requiredBy: 'recovery' }
       });
+      // THE SIGN-IN IS STILL REFUSED, AND IT IS RECORDED SO (2026-11-14,
+      // found by #444's D12): no session starts here, because a key
+      // registered on the strength of the recovery is not a passkey that
+      // signed the person in (#901). The act answered `next: redirect` with
+      // no STS-AUTHN-0381 anywhere, as if the sign-in had gone through; the
+      // code is marked on the act, so its call-log row names it.
+      this.deps.errorCodes.mark(res, 'STS-AUTHN-0381');
       this.returnToCaller(res, step.authn, null, null);
       log.debug("Leaving Authn.finishWebauthn(). A recovery passkey " +
                 "registered; back to sign in with it.");
@@ -17613,6 +17956,9 @@ class Authn {
     // never a first factor, so the first factor's `amr` is always in the list.
     // never a first factor, so `pwd` is always in the list.
     const amr = this.firstAmrOf(step).concat(['otp']);
+    // A RECOVERY CODE IS A RECOVERY DOOR, AND IT IS RECORDED ON THE ENTRY
+    // (2026-11-14, found by #444's D12) — see noteRecoveryDoor().
+    this.noteRecoveryDoor(step.username, 'recovery-code');
     // A PROOF BEFORE AN ENROLMENT (#475): no session yet; the set-up
     // screen, offering what the application allows.
     if (step.thenEnrol) {
@@ -17725,7 +18071,11 @@ class Authn {
    * @param body - the act's fields, `action` naming it
    * @returns a promise settled when the answer is sent
    */
-  async screenAct(req, res, record, body): Promise<void> {
+  async screenAct(req,
+                  res: IyaApi.AuthnAnswering<'signInWithPassword' |
+                    'cancelSignIn' | 'continueAnonymously' |
+                    'continueWithCertificate' | 'signInByEmail' |
+                    'signInWithPasskey'>, record, body): Promise<void> {
     const { log, baseUrlOf, randomId, config, gate, credentials,
       websecurity, mode, errorCodes, webauthnPolicy } = this.deps;
     log.debug("Entering Authn.screenAct(). " +
@@ -18274,7 +18624,8 @@ class Authn {
    * @param body - `{ new_password, confirm_password }`
    * @returns a promise settled when the answer is sent
    */
-  async passwordChangeAct(req, res, changeId, step, body): Promise<void> {
+  async passwordChangeAct(req, res: IyaApi.AuthnAnswering<'changePassword'>,
+                          changeId, step, body): Promise<void> {
     const { log, baseUrlOf, credentials, audit, errorCodes } = this.deps;
     log.debug('Entering Authn.passwordChangeAct().');
     const base = baseUrlOf(req);
@@ -18356,7 +18707,7 @@ class Authn {
    * @param why - the sentence
    * @returns nothing
    */
-  passwordChangeRefused(res, why: string): void {
+  passwordChangeRefused(res: AnyAuthnAnswering, why: string): void {
     const { log } = this.deps;
     log.debug('Entering Authn.passwordChangeRefused().');
     this.answerJson(res, 400, { ok: false, next: 'refused',
@@ -18434,7 +18785,8 @@ class Authn {
    * @param body - `{ code }`
    * @returns a promise settled when the answer is sent
    */
-  async mfaTotpAct(req: any, res: any, mfaId: string,
+  async mfaTotpAct(req: any, res: IyaApi.AuthnAnswering<'checkCode'>,
+                   mfaId: string,
                    body: any): Promise<void> {
     const { log, baseUrlOf, websecurity, credentials, errorCodes } =
       this.deps;
@@ -18494,7 +18846,9 @@ class Authn {
    * @param body - `{ code }`
    * @returns a promise settled when the answer is sent
    */
-  async mfaBackupCodeAct(req: any, res: any, mfaId: string,
+  async mfaBackupCodeAct(req: any,
+                         res: IyaApi.AuthnAnswering<'spendRecoveryCode'>,
+                         mfaId: string,
                          body: any): Promise<void> {
     const { log, baseUrlOf, websecurity, credentials, errorCodes } =
       this.deps;
@@ -18549,7 +18903,9 @@ class Authn {
    * @param body - `{ password }`
    * @returns a promise settled when the answer is sent
    */
-  async mfaPasswordAct(req: any, res: any, mfaId: string,
+  async mfaPasswordAct(req: any,
+                       res: IyaApi.AuthnAnswering<'checkFactorPassword'>,
+                       mfaId: string,
                        body: any): Promise<void> {
     const { log, baseUrlOf, websecurity, credentials, errorCodes } =
       this.deps;
@@ -18631,7 +18987,8 @@ class Authn {
    *   registration that failed on the device (#944), or ''
    * @returns nothing; the answer is sent
    */
-  mfaWebauthnOptions(req: any, res: any, mfaId: string, key: string,
+  mfaWebauthnOptions(req: any, res: IyaApi.AuthnAnswering<'passkeyStepOptions'>,
+                     mfaId: string, key: string,
                      lane?: string, algorithms?: string): void {
     // `audit` from the deps (#912), as every other writer of its rows.
     const { log, baseUrlOf, errorCodes, webauthnPolicy, audit } = this.deps;
@@ -18829,7 +19186,10 @@ class Authn {
    * @param body - `{ code }` for `confirm`
    * @returns a promise settled when the answer is sent
    */
-  async mfaSetupAct(req: any, res: any, setupId: string, action: string,
+  async mfaSetupAct(req: any,
+                    res: IyaApi.AuthnAnswering<'beginAppEnrolment' |
+                      'confirmAppEnrolment' | 'beginKeyEnrolment' |
+                      'ignoreOffer'>, setupId: string, action: string,
                     body: any): Promise<void> {
     const { log, baseUrlOf, credentials, websecurity, audit,
       errorCodes } = this.deps;
@@ -19046,7 +19406,8 @@ class Authn {
    * @param posted - `{ credential }`, the ceremony's JSON form
    * @returns nothing; the answer is sent
    */
-  mfaWebauthnAct(req: any, res: any, mfaId: string, posted: any): any {
+  mfaWebauthnAct(req: any, res: IyaApi.AuthnAnswering<'finishPasskeyStep'>,
+                 mfaId: string, posted: any): any {
     const { log, baseUrlOf, errorCodes, credentials, stats, mode,
       webauthnVerifier, webauthnPolicy } = this.deps;
     const self = this;
@@ -20108,6 +20469,7 @@ export = {
   // the store is reached through the persistence layer, so the rule itself is
   // asserted here directly.
   mergeSessionRows: slot.forward('mergeSessionRows'),
+  markPresentationHeld: slot.forward('markPresentationHeld'),
   noteSessionChanged: slot.forward('noteSessionChanged'),
   LOGIN_PATH: LOGIN_PATH,
   MFA_SETUP_PATH: MFA_SETUP_PATH,
@@ -20165,6 +20527,11 @@ export = {
   // itself would be a second place to get the handle check wrong.
   sessionStartedAt: slot.forward('sessionStartedAt'),
   signOnFactsFor: slot.forward('signOnFactsFor'),
+  // A session read through the `Session` concept (#1579), and when its
+  // person last authenticated: what every reader outside this module that
+  // projects a session asks, so none of them reads the raw record.
+  sessionView: Authn.sessionView,
+  lastAuthenticatedAt: Authn.lastAuthenticatedAt,
   // A session's binding to a browser key (#725), for the session rows the
   // sign-out and the console draw.
   deviceBindingOf: deviceBound.bindingOf,
@@ -20175,6 +20542,7 @@ export = {
   ANONYMOUS_USERNAME: ANONYMOUS_USERNAME,
   sessions: sessions,
   cookiesOf: slot.forward('cookiesOf'),
+  realmAtSessionCap: slot.forward('realmAtSessionCap'),
   sessionOf: slot.forward('sessionOf'),
   // SEVERAL ACCOUNTS IN ONE BROWSER (#561): `authn/CLAUDE.md`, *Several
   // signed-in accounts in one browser*, has each one's contract.

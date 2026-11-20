@@ -139,6 +139,7 @@ async function boot() {
     stsCrypto: require(ROOT + '/common/crypto'),
     pqJose: require(ROOT + '/common/pq_jose'),
     bbs2023: require(ROOT + '/common/crypto_impl/bbs2023.js'),
+    vcBbs: require(ROOT + '/oid4vc/vc_bbs'),
     cacheRegistry: require(ROOT + '/common/cache_registry')
   };
   const DEFAULT = m.realms.DEFAULT_REALM;
@@ -440,21 +441,85 @@ async function boot() {
     return jws({ alg: signer.alg, typ: 'JWT' }, payload, signer);
   }
 
-  // The disclosed statements a sign-in asks for: the subject, the issuer,
-  // the validity window and the status entries — or, with `o.pick`, the ones
-  // that function chooses.
+  // A W3C bbs-2023 DERIVED PROOF (#1878): the reveal document, with this
+  // request's nonce as its presentation header. The issuer's mandatory
+  // statements (the issuer, the type and the validity window, by default)
+  // are always revealed; `o.pointers` are the selective JSON pointers,
+  // the subject and the status entries by default — what a sign-in asks
+  // for. `o.bbsNonce` derives against another header; `o.noHeader` with
+  // none. `o.legacy` presents a PRE-1.1 credential (`legacyCredential()`)
+  // in the old envelope instead, labelled `o.legacy` (the label the
+  // Verifier reads it under is `iya-bbs-2023-legacy`).
   async function presentLdp(credential, holder, nonce, domain, opts) {
     const o = opts || {};
-    const lib = await import('@digitalbazaar/bbs-signatures');
-    const suite = lib.CIPHERSUITES.BLS12381_SHA256;
+    const header = o.noHeader ? Buffer.alloc(0)
+      : Buffer.from(String(o.bbsNonce || nonce), 'utf8');
+    const derived = o.legacy
+      ? await legacyEnvelope(credential, header, o)
+      : await m.vcBbs.deriveProof(credential,
+          o.pointers || ['/credentialSubject/id', '/credentialStatus'],
+          { presentationHeader: header });
+    if (o.bare) {
+      return JSON.stringify(derived);
+    }
+    const signer = o.key || holder;
+    const vp = {
+      '@context': ['https://www.w3.org/ns/credentials/v2'],
+      type: ['VerifiablePresentation'],
+      holder: m.di.didJwkOf(holder.jwk),
+      verifiableCredential: [derived]
+    };
+    if (o.noProof) {
+      return JSON.stringify(vp);
+    }
+    const signed = await m.di.signPresentation(vp, {
+      privateKey: signer.alg === 'ML-DSA-44' ? signer.privateJwk
+                                             : signer.privateKey,
+      publicJwk: signer.jwk, challenge: o.challenge || nonce,
+      domain: domain, created: o.created,
+      verificationMethod: m.di.didJwkOf(signer.jwk) + '#0' });
+    if (o.key) {
+      // Claim the bound holder while signing with another key.
+      signed.holder = m.di.didJwkOf(holder.jwk);
+    }
+    return JSON.stringify(signed);
+  }
+
+  // A CREDENTIAL AS iya-sts 1.0 ISSUED IT (#1878's transition): the same
+  // document re-signed in the pre-1.1 private format with this realm's BBS
+  // key — every canonical statement a message, the header the proof
+  // options' N-Quads, the proofValue the raw signature. Nothing in the
+  // service makes one any more; this is what a holder of an old credential
+  // still has.
+  async function legacyCredential(credential) {
+    const keys = await m.helpers.bbsKeyPair();
+    const doc = Object.assign({}, credential);
+    const proof = Object.assign({}, doc.proof, {
+      created: new Date().toISOString() });
+    delete doc.proof;
+    delete proof.proofValue;
+    const statements = await m.bbs2023.legacyCanonicalizedStatements(doc);
+    const header = await m.bbs2023.legacyHeaderFor(Object.assign(
+      { '@context': doc['@context'] }, proof));
+    const te = function (s) { return new TextEncoder().encode(s); };
+    const signature = await m.bbs2023.sign({
+      secretKey: keys.secretKey, publicKey: keys.publicKey, header: header,
+      messages: statements.map(te) });
+    proof.proofValue = 'u' + Buffer.from(signature).toString('base64url');
+    return Object.assign(doc, { proof: proof });
+  }
+
+  // Its presentation, as 1.0's wallets made it: the statements a sign-in
+  // asks for, or `o.pick`'s, beside a raw BBS proof.
+  async function legacyEnvelope(credential, header, o) {
     const keys = await m.helpers.bbsKeyPair();
     const doc = Object.assign({}, credential);
     delete doc.proof;
-    const statements = await m.bbs2023.canonicalizedStatements(doc);
+    const statements = await m.bbs2023.legacyCanonicalizedStatements(doc);
     const proofOptions = Object.assign({ '@context': credential['@context'] },
                                        credential.proof);
     delete proofOptions.proofValue;
-    const header = await m.bbs2023.headerFor(proofOptions);
+    const bbsHeader = await m.bbs2023.legacyHeaderFor(proofOptions);
     const signature = m.bbs2023.multibaseToBytes(credential.proof.proofValue);
     const wanted = o.pick || function (line) {
       return /credentials#credentialSubject> <did:jwk:/.test(line) ||
@@ -471,13 +536,12 @@ async function boot() {
       }
     });
     const te = function (s) { return new TextEncoder().encode(s); };
-    const proof = await lib.deriveProof({
-      publicKey: keys.publicKey, signature: signature, header: header,
-      messages: statements.map(te),
-      presentationHeader: te(String(o.bbsNonce || nonce)),
-      disclosedMessageIndexes: indexes, ciphersuite: suite });
-    const envelope = {
-      cryptosuite: 'bbs-2023',
+    const proof = await m.bbs2023.deriveProof({
+      publicKey: keys.publicKey, signature: signature, header: bbsHeader,
+      messages: statements.map(te), presentationHeader: header,
+      disclosedMessageIndexes: indexes });
+    return {
+      cryptosuite: String(o.legacy),
       proof: Buffer.from(proof).toString('base64url'),
       disclosedIndexes: indexes,
       disclosedStatements: indexes.map(function (i) {
@@ -485,30 +549,6 @@ async function boot() {
       }),
       proofOptions: proofOptions
     };
-    if (o.bare) {
-      return JSON.stringify(envelope);
-    }
-    const signer = o.key || holder;
-    const vp = {
-      '@context': ['https://www.w3.org/ns/credentials/v2'],
-      type: ['VerifiablePresentation'],
-      holder: m.di.didJwkOf(holder.jwk),
-      verifiableCredential: [envelope]
-    };
-    if (o.noProof) {
-      return JSON.stringify(vp);
-    }
-    const signed = await m.di.signPresentation(vp, {
-      privateKey: signer.alg === 'ML-DSA-44' ? signer.privateJwk
-                                             : signer.privateKey,
-      publicJwk: signer.jwk, challenge: o.challenge || nonce,
-      domain: domain, created: o.created,
-      verificationMethod: m.di.didJwkOf(signer.jwk) + '#0' });
-    if (o.key) {
-      // Claim the bound holder while signing with another key.
-      signed.holder = m.di.didJwkOf(holder.jwk);
-    }
-    return JSON.stringify(signed);
   }
 
   async function present(format, credential, holder, nonce, aud, opts) {
@@ -808,7 +848,8 @@ async function boot() {
     jws: jws, accessTokenFor: accessTokenFor, fakeReq: fakeReq,
     signInAudience: signInAudience,
     issue: issue, presentSdJwt: presentSdJwt, presentJwtVc: presentJwtVc,
-    presentLdp: presentLdp, present: present, pendingSignIn: pendingSignIn,
+    presentLdp: presentLdp, legacyCredential: legacyCredential,
+    present: present, pendingSignIn: pendingSignIn,
     start: start, collect: collect, act: act, formLike: formLike,
     verificationStart: verificationStart,
     refreshCsrf: refreshCsrf,

@@ -730,11 +730,29 @@ class AdminRbac {
   // `stsBootstrapAdministrator` says it was seeded, `stsConsoleClaimedAt` says
   // the window is closed, and `pwdReset` is the password rule.
   // ---------------------------------------------------------------------------
+  //
+  // **ASKED IN THE ROSTER'S REALM, NOT THE CALLER'S (2026-11-14, found by
+  // #444's D12).** The name depends on the mode (`mode.generatesBootstrapName()`,
+  // product's `admin-<hmac>`), and the mode is a realm's setting. `bound()`
+  // binds the directory view and not the ambient realm, so a realm created
+  // with `global.mode=product` in a development process was SEEDED from the
+  // create's ambient realm — `admin` — while its roster, read later from a
+  // request in that realm, expected `admin-<hmac>`: nobody could ever claim
+  // that console. The name is now asked in the realm the view answers about,
+  // the same realm whichever caller asks.
   private bootstrapName() {
-    const { log, config } = this.deps;
+    const { log, realms } = this.deps;
+    const self = this;
     log.debug("Entering AdminRbac.bootstrapName().");
+    const names = require('../common/bootstrap_name');
+    const realm = realms.get(self.boundRealmId());
+    const name = realm
+      ? realms.run(realm, function () {
+          return names.current();
+        })
+      : names.current();
     log.debug("Leaving AdminRbac.bootstrapName().");
-    return require('../common/bootstrap_name').current();
+    return name;
   }
 
   /**
@@ -755,8 +773,23 @@ class AdminRbac {
       return out;
     }
     let flags = null;
+    // READ THROUGH THE GATE'S REMEMBERED USERNAMES WHERE THE DIRECTORY OFFERS
+    // THEM (#880's review). The roster and `GET /admin-api/me` read this on
+    // every console request, and the `/admin-api` gate warmed the bootstrap
+    // name off the event loop for exactly this read. It is safe to read a
+    // remembered "nobody" here, which no create is: this answers flags, and
+    // an absent entry means nothing to report and nothing written.
+    // `ensureBootstrap()`, which may CREATE the entry, reads the directory
+    // directly and never through this.
+    const view = directory;
+    const read = function () {
+      log.debug("Entering AdminRbac.bootstrapState()'s read().");
+      log.debug("Leaving AdminRbac.bootstrapState()'s read().");
+      return view.readPersonFlags(name);
+    };
     try {
-      flags = directory.readPersonFlags(name);
+      flags = typeof view.withRememberedUserNames === 'function'
+        ? view.withRememberedUserNames(read) : read();
     } catch (e) {
       log.debug("Caught in AdminRbac.bootstrapState(): " +
                 ((e && e.message) || e));
@@ -1067,14 +1100,19 @@ class AdminRbac {
     const self = this;
     log.debug("Entering AdminRbac.noteConsoleSignIn().");
     const name = String(username || '').trim();
-    const wanted = self.bootstrapName();
+    const fromRealm = String((session && session.derivedFromRealm) ||
+                             defaultRealmId || realms.DEFAULT_ID);
+    // THE NAME IS THE SIGN-IN REALM'S (2026-11-14, #444's D12): asked with
+    // that realm's roster bound, so a product realm in a development process
+    // compares with its generated name and not the default realm's `admin`.
+    const wanted = name ? String(self.inRosterRealm(fromRealm, function () {
+      return self.bootstrapName();
+    }) || '') : '';
     if (!name || !wanted || name.toLowerCase() !== wanted.toLowerCase()) {
       log.debug("Leaving AdminRbac.noteConsoleSignIn(). Not the bootstrap " +
                 "administrator.");
       return false;
     }
-    const fromRealm = String((session && session.derivedFromRealm) ||
-                             defaultRealmId || realms.DEFAULT_ID);
     const closed = self.inRosterRealm(fromRealm, function () {
       // PRODUCT: ONLY A PASSWORD CLAIMS IT (#103). The account's name can be
       // signed in by other doors — a partner asserting `admin`, a certificate
@@ -1400,9 +1438,10 @@ class AdminRbac {
   // The person's OWN entry when they have one, whatever it is named — somebody
   // whose entry was created by a client certificate is at `cn=<name>,ou=users`
   // and not at `uid=<name>,ou=users`, and a grant that wrote the uid form would
-  // dangle beside the entry it was meant to name. When there is no entry, the
-  // uid form is what a person created later will be at, so the value resolves
-  // the moment they authenticate.
+  // dangle beside the entry it was meant to name. When there is no entry the
+  // uid form is answered with `present: false`, which grant() REFUSES
+  // (STS-ADMIN-0920, 2026-11-11) and revoke() only compares against: a role
+  // is granted to somebody who exists, never to where they would go.
   private memberValueFor(username) {
     const { log } = this.deps;
     log.debug("Entering AdminRbac.memberValueFor(). username=" + username);
@@ -1456,7 +1495,7 @@ class AdminRbac {
     if (!username) {
       log.debug("Leaving AdminRbac.nameProblem().");
       return 'No name was given. Choose somebody from the list, or type the ' +
-             'name they will authenticate under.';
+             'name of a person in this realm\'s directory.';
     }
     if (!directory.nameUsableInDn(username)) {
       log.debug("Leaving AdminRbac.nameProblem().");
@@ -1472,12 +1511,41 @@ class AdminRbac {
     return '';
   }
 
+  // THE PERSON MUST EXIST (rcbj, 2026-11-11). A grant to a name with no entry
+  // used to write the uid DN where they would go, a membership that dangled
+  // until somebody of that name arrived. Two rules ended it: the directory
+  // refuses a group member that names no stored entry (#1624,
+  // `writeGroupEntry()`'s `danglingMember`, STS-LDAP-0212), and a person
+  // created later under an old name inherits no role or group (#1613) — and a
+  // dangling grant was exactly an inheritance waiting for its heir. So the
+  // grant asks first and refuses in a sentence naming the person, rather
+  // than falling through to the directory's refusal of a DN. Every door that
+  // grants a console role comes through here: `/admin/rbac`,
+  // `POST /admin-api/rbac/grant` and the bootstrap seeding, which creates its
+  // account before it grants.
+  private absentPersonProblem(name) {
+    const { log } = this.deps;
+    log.debug("Entering AdminRbac.absentPersonProblem().");
+    if (directory.existingUserEntry(name)) {
+      log.debug("Leaving AdminRbac.absentPersonProblem(). They exist.");
+      return '';
+    }
+    log.debug("Leaving AdminRbac.absentPersonProblem(). Nobody is there.");
+    return 'Nobody called "' + name + '" is in this realm\'s directory (' +
+           directory.usersDn + '), so there is nobody to grant a console ' +
+           'role to. Create the person first — Directory, People, or ' +
+           'POST /admin-api/users/create — and grant the role then. A role ' +
+           'is granted only to somebody who exists, so that a person ' +
+           'created later under the same name inherits nothing.';
+  }
+
   /**
    * Grants a console role by adding the person to the role's group, creating
    * the group if it does not exist.
    *
    * The act is audited. A refusal (no directory, no such role, a name unusable
-   * in a DN, a failed write) carries its error code.
+   * in a DN, a person with no entry, a failed write) carries its error
+   * code.
    * @param username - the person to grant the role to
    * @param roleId - the role id
    * @param context - `via`, `actor` and, through the exported wrapper, `realm`
@@ -1509,6 +1577,13 @@ class AdminRbac {
     if (problem) {
       log.debug("Leaving AdminRbac.grant(). " + problem);
       return self.refused('STS-ADMIN-0583', { ok: false, errors: [problem] });
+    }
+    const absent = self.absentPersonProblem(name);
+    if (absent) {
+      log.debug("Leaving AdminRbac.grant(). " + name + " has no entry.");
+      return self.refused('STS-ADMIN-0920',
+                          { ok: false, reason: 'noSuchPerson',
+                            username: name, errors: [absent] });
     }
 
     const dn = self.dnForRole(role);
@@ -1577,13 +1652,6 @@ class AdminRbac {
                       ' in ' + dn + '.' +
                       (written.created ? ' The group did not exist and was ' +
                                          'created.' : '') +
-                      (target.present ? ''
-                                      : ' NOTHING IS AT THAT DN YET — they ' +
-                                        'have not authenticated here and ' +
-                                        'nobody has created them, so the ' +
-                                        'membership dangles until one of ' +
-                                        'those happens. The role still ' +
-                                        'counts.') +
                       (wasEmpty ? ' This was the FIRST grant, so the ' +
                                   'roster is now enforced: whoever is not ' +
                                   'in one of ' +

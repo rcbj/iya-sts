@@ -153,6 +153,7 @@
 
 import helpers = require('./helpers');
 import config = require('./config');
+import DomainMap = require('./domain_map');
 import applications = require('./applications');
 // The registry of failure codes, a LEAF. A refusal carries its code
 // NON-ENUMERABLY on the result (`errorCodes.mark()`), so the JSON a console or
@@ -679,7 +680,9 @@ class Consent {
   globalConsentsFrom(entry) {
     const { log } = this.deps;
     log.debug("Entering Consent.globalConsentsFrom().");
-    const raw = ((entry && entry.fields) || {})[GLOBAL_ATTRIBUTE];
+    // The OAuthClient's (#1579).
+    const raw = DomainMap.fieldOf('OAuthClient', 'globalConsent',
+      (entry && entry.fields) || {});
     const out = [];
     (Array.isArray(raw) ? raw :
      (raw === undefined || raw === null || raw === '' ? [] : [raw]))
@@ -1536,7 +1539,9 @@ class Consent {
     const self = this;
     log.debug("Entering Consent.globalWithdrawalsOf().");
     const entry = applications.get(String(clientId || '').trim());
-    const raw = entry ? (entry.fields || {})[GLOBAL_WITHDRAWN_ATTRIBUTE] : [];
+    // The OAuthClient's (#1579).
+    const raw = entry ? DomainMap.fieldOf('OAuthClient',
+      'globalConsentWithdrawn', entry.fields || {}) : [];
     const rows = (Array.isArray(raw) ? raw : (raw ? [raw] : []))
       .map(function (value) {
         return self.parseWithdrawalValue(value, true);

@@ -13,8 +13,8 @@
 // citation the provenance rule uses. No OID is parsed out of it, because
 // the list is spellings and the comments are not a schema.
 //
-// `scim/scim_map.ts` has a second `OWN_NAMES`. The directory folds those
-// spellings in at runtime. They are read here the same way, as text.
+// `scim/scim_map.ts` had a second `OWN_NAMES` until #1579; its one name is
+// in `names.tsp`'s own list now.
 //
 // A LIBRARY. No route.
 // ---------------------------------------------------------------------------
@@ -67,15 +67,9 @@ class DirectorySpellings {
   static read(root: string): SpellingLists {
     log.debug("Entering DirectorySpellings.read().");
     const namesPath = path.join(root, 'models', 'directory', 'names.tsp');
-    const scimPath = path.join(root, 'scim', 'scim_map.ts');
     const names = fs.readFileSync(namesPath, 'utf8');
     const standard = DirectorySpellings.arrayOf(names, 'standard: #[');
     const own = DirectorySpellings.arrayOf(names, 'own: #[');
-    const scim = fs.readFileSync(scimPath, 'utf8');
-    const scimOwn = DirectorySpellings.arrayOf(scim, 'const OWN_NAMES = [');
-    scimOwn.forEach(function (one) {
-      own.push(one);
-    });
     const lists = {
       standard: standard,
       own: own,

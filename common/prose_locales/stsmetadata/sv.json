@@ -252,8 +252,12 @@
     "text": "partial: de delar som en responder är skyldig. Okrypterad HTTP (avsnitt 5) — respondern svarar på `pki.httpPort` såväl som på TLS-huvudporten, och certifikat namnger den okrypterade; GET med den base64-kodade förfrågan tillagd; inga bråkdelssekunder i någon GeneralizedTime (avsnitt 2.2.4); responder-ID:t efter nyckelhash (avsnitt 2.2.2); `unauthorized` för en förfrågan den inte är auktoritativ för (avsnitt 2.2.3); och cachehuvudena i avsnitt 6.2 — max-age inte senare än nextUpdate, Last-Modified, Expires och en stark ETag, aldrig no-cache eller no-store på ett auktoritativt svar. INTE GJORT: svar signeras på begäran snarare än att FÖRPRODUCERAS (avsnitt 2.2.1 rekommenderar förproduktion för stora volymer), och ett svar på en förfrågan som bär en nonce markeras som privat i stället för att betjänas från en cache."
   },
   "stsmetadata.specs.ws-trust.coverage": {
-    "en": "cafeffef561dcd9a",
-    "text": "partial: Issue, Renew, Validate och Cancel över SOAP 1.1 och 1.2. Förfrågningssignaturer verifieras inte. OnBehalfOf och ActAs avgörs av utfärdandepolicyn (#186, reglerna som tokenutbytet och Kerberos S4U delar) — OnBehalfOf begär personifiering och ActAs delegering, posternas delegeringssemantik måste tillåta det, AppliesTo måste vara en registrerad applikation som delegeringsrelationerna tillåter, och en person som begärande kräver delegation.actorRole — och nekas med ett wst:RequestFailed-fel (avsnitt 11) i produktläge; båda elementen samtidigt ger wst:InvalidRequest; utvecklingsläge registrerar vad som skulle ha nekats. I PRODUKTläge (2026-09-12) kräver varje operation en autentiseringsuppgift — en UsernameToken verifierad mot katalogen, eller ett SAML-intyg som den här STS:en signerat och som är inom sina Conditions — och en OnBehalfOf/ActAs kräver den begärandes egen autentiseringsuppgift och ett sådant intyg inuti den; utvecklingsläge accepterar ingen, som det alltid har gjort. I båda lägena begränsas en begärd wst:Lifetime (wstrust.maxTokenLifetimeMin) och det utfärdade intygets AuthnContext namnger autentiseringsuppgiften snarare än ett lösenord. En beställare vars wsse:Security inte bär någon autentiseringsuppgift autentiseras, i båda lägena, med TLS-klientcertifikatet på anslutningen när denna sfär har utfärdat det till en person eller ett program (#1046), eller när det kommer från en extern certifikatutfärdare och är lagrat i userCertificate på exakt en av deras poster (#1061)."
+    "en": "34e462a3c1215584",
+    "text": "partial: Issue, Renew, Validate och Cancel över SOAP 1.1 och 1.2. GET /sts/metadata är WSDL 1.1, en port type per trust-version, med autentiseringsuppgifterna som WS-SecurityPolicy; paren av autentiseringsuppgift/tokentyp är ett IYA-STS-tillägg på /sts/metadata/capabilities; WS-MetadataExchange svarar på /sts/mex. En WS-Security-signatur över Body och Timestamp är en autentiseringsuppgift (#521), verifierad i produktläge. OnBehalfOf och ActAs avgörs av utfärdandepolicyn (#186, reglerna som tokenutbytet och Kerberos S4U delar) — OnBehalfOf begär personifiering och ActAs delegering, posternas delegeringssemantik måste tillåta det, AppliesTo måste vara en registrerad applikation som delegeringsrelationerna tillåter, och en person som begärande kräver delegation.actorRole — och nekas med ett wst:RequestFailed-fel (avsnitt 11) i produktläge; båda elementen samtidigt ger wst:InvalidRequest; utvecklingsläge registrerar vad som skulle ha nekats. I PRODUKTläge (2026-09-12) kräver varje operation en autentiseringsuppgift — en UsernameToken verifierad mot katalogen, ett SAML 2.0- eller SAML 1.1-intyg eller en JWT som den här STS:en utfärdat, en WS-Security-signatur, eller en Kerberos-biljett för den här tjänstens eget SPN — och en OnBehalfOf/ActAs kräver den begärandes egen autentiseringsuppgift och en token som den här STS:en utfärdat inuti den; utvecklingsläge accepterar ingen, som det alltid har gjort. I båda lägena begränsas en begärd wst:Lifetime (wstrust.maxTokenLifetimeMin) och det utfärdade intygets AuthnContext namnger autentiseringsuppgiften snarare än ett lösenord. En beställare vars wsse:Security inte bär någon autentiseringsuppgift autentiseras, i båda lägena, med TLS-klientcertifikatet på anslutningen när denna sfär har utfärdat det till en person eller ett program (#1046), eller när det kommer från en extern certifikatutfärdare och är lagrat i userCertificate på exakt en av deras poster (#1061)."
+  },
+  "stsmetadata.specs.ws-mex.coverage": {
+    "en": "252983aa08edd8d9",
+    "text": "partial: POST /sts/mex besvarar en WS-Transfer Get och en GetMetadata (avgränsad av Dialect och Identifier) i begärans SOAP-version och WS-Addressing-namnrymd, med WSDL:en, tokenförmågedokumentet och dess schema inbäddade som sektioner. Inte gjort: en MetadataReference- eller Location-sektion, namnrymden i W3C-rekommendationen WS-MetadataExchange 1.1, och metadata i en EPR."
   },
   "stsmetadata.specs.wss-kerberos.coverage": {
     "en": "a6d4bfc032b7d23e",
@@ -300,8 +304,8 @@
     "text": "full för det som den skickar: inbäddad (enveloped) signatur, exklusiv kanonisering, RSA-SHA256 som standard och RSA-SHA384/512 eller den trasiga RSA-SHA1 via saml.signatureAlgorithm (2026-09-12; endast utvecklingsläge sedan #181); innehållskryptering med AES-GCM eller AES-CBC med en RSA-OAEP-inkapslad nyckel (rsa-oaep-mgf1p, eller XML Encryption 1.1:s rsa-oaep med SHA-256 och MGF1-SHA-256, #168) eller, endast i utvecklingsläge, en RSA-1_5-inkapslad nyckel — produktläge varken kapslar in eller packar upp RSA-1_5 (XML Encryption 1.1 avsnitt 6.1.2) — och, till en EC-mottagare, ECDH-ES-nyckelöverenskommelse med ConcatKDF och en AES-nyckelinkapsling (avsnitt 5.6.4; #168). En federationsrelation DEKRYPTERAR en partners EncryptedAssertion, EncryptedID och EncryptedAttribute med exakt de algoritmer den publicerar, och nekar AES-CBC och rsa-1_5 i varje läge. Ingen ML-KEM-metod är registrerad för XML Encryption. VERIFIERAR (sedan 2026-09-17) varje SignatureMethod i RFC 9231 och XMLDSig 1.1 som nodes OpenSSL implementerar — RSA PKCS#1 v1.5 och RSASSA-PSS (med och utan RSAPSSParams), ECDSA, EdDSA Ed25519/Ed448, DSA — och ML-DSA- och SLH-DSA-identifierarna i utkastet draft-eastlake-rfc9231bis-xmlsec-uris; sammandragen SHA-224, SHA-2, SHA-3 och RIPEMD-160; SHA-1 endast med saml.allowSha1Signatures, i utvecklingsläge. INTE verifierat, och nekat uttryckligen: MD5, MAC:arna, Whirlpool, ESIGN, förhashad EdDSA och de tillståndsbärande HSS/LMS och XMSS."
   },
   "stsmetadata.specs.rfc6749.coverage": {
-    "en": "56137411ddc592b3",
-    "text": "partial: authorization_code, implicit, password, client_credentials och refresh_token. Klientautentisering accepteras, verifieras inte — UTOM i RFC 9700-läge, där en klient som är registrerad här som konfidentiell måste visa upp den client_secret som den här tjänsten utfärdat till den (avsnitt 2.5, den enda autentiseringsuppgift som kontrolleras någonstans i den här tjänsten). Det läget nekar också grant-typen password helt, nekar implicit-grantens åtkomsttoken — varje svarstyp som utfärdar en från auktoriseringsslutpunkten — om inte en administratör undantar RFC 9700 avsnitt 2.1.2 för sfären, och respekterar den då bara för en applikation som har typen aktiverad (#1295, #1296), och roterar uppdateringstoken. Avsnitt 3.3: ett scope är knutet till klienten (#110) — den här tjänstens egna skyddade scopes (admin:*, SCIM- och Shared Signals-scopes, felsökarbehörigheten) utfärdas endast till en klient vars oauthAllowedScope deklarerar dem, i varje läge, och i produktläge hålls varje scope till den listan eller till en dokumenterad standarduppsättning; en förfrågan utanför den ger invalid_scope."
+    "en": "77e091b183d9dd7b",
+    "text": "partial: authorization_code, implicit, password, client_credentials och refresh_token. Klientautentisering godtas men verifieras inte — UTOM i RFC 9700-läge, där en klient som registrerats här som konfidentiell måste visa den client_secret som denna tjänst utfärdade till den (avsnitt 2.5, den enda autentiseringsuppgift som kontrolleras någonstans i denna tjänst). Det läget vägrar också helt password-beviljandet, vägrar implicit-beviljandets åtkomsttoken — varje svarstyp som utfärdar en från auktoriseringsslutpunkten — om inte en administratör undantar RFC 9700 avsnitt 2.1.2 för sfären, och godtar den då endast för en applikation som har typen aktiverad (#1295, #1296), och roterar förnyelsetoken. Avsnitt 3.3: ett scope är knutet till klienten (#110) — denna tjänsts egna skyddade scopes (admin:*, SCIM- och Shared Signals-scopen) utfärdas endast till en klient vars oauthAllowedScope deklarerar dem, i alla lägen, och i produktläge hålls varje scope till den listan eller till en dokumenterad standarduppsättning; en begäran utanför den är invalid_scope."
   },
   "stsmetadata.specs.rfc6750.coverage": {
     "en": "32af4b1d310ee331",
@@ -476,12 +480,12 @@
     "text": "full för auktoriseringsservern, OCH AV SOM STANDARD — PROFILEN oauth2.fapi=1-advanced (per sfär, eller fapi-medlemmen i en namngiven auktoriseringsserver), som är Baseline och mer (#139): ett JWS-signerat förfrågningsobjekt som värde eller som referens (punkt 1) med exp och nbf inom 60 minuter och aud utfärdaren (punkterna 13, 15, 17); response_type code id_token, eller code med JARM (punkt 2); ID Token som en fristående signatur med s_hash (5.2.2.1); endast avsändarbegränsade åtkomsttoken — mTLS, eller DPoP om inte oauth2.fapiRequireMtls — med mtls_endpoint_aliases publicerat (punkterna 5, 6); tls_client_auth, self_signed_tls_client_auth eller private_key_jwt och ingen publik klient (punkterna 14, 16); PKCE S256 för pushade förfrågningar (punkt 18, och Baseline-punkt 7 lättad som avsnittet säger); PS256 eller ES256 för varje signatur åt båda hållen och aldrig RSA1_5 (8.6), där den här servern signerar med PS256 som standard. Konsolen, portalen och felsökaren uppfyller kraven: ett signerat förfrågningsobjekt pushat till PAR, JARM och en bunden token. INTE täckt: konformitetssviten (#176)."
   },
   "stsmetadata.specs.fapi2-security.coverage": {
-    "en": "f8972d88b2277611",
-    "text": "full för auktoriseringsservern, OCH AV SOM STANDARD — PROFILEN oauth2.fapi=2-security (per sfär, eller fapi-medlemmen i en namngiven auktoriseringsserver), en egen profil (#140): RFC 9700-läget på; endast konfidentiella klienter, via mTLS eller private_key_jwt, där intygets aud är utfärdaren som en sträng (5.3.2.1 punkterna 3, 6, 8); endast avsändarbegränsade tokener, via mTLS eller DPoP (punkterna 4-5); ingen rotation av uppdateringstoken om inte oauth2.refreshTokenRotation framtvingar den (punkt 9); koder på 60 s (punkt 11); en iat eller nbf mer än 60 s framåt nekas (punkt 13); endast code, PAR krävs och klientautentiserad, PKCE S256, redirect_uri pushad, request_uris under 600 s (5.3.2.2); PS256, ES256 eller EdDSA, RSA 2048 och EC 224 bitar (5.4.1). TLS (5.2): BCP 195:s sviter är varje lyssnares standard, TLS 1.3 föredras. DPoP-nonces förblir valfria, och samtycke följer de vanliga reglerna. Attacker Model har inga normativa krav; docs/oauth-security.md kopplar varje angriparklass till det som stoppar den. Konsolen, portalen och felsökaren uppfyller kraven. INTE täckt: konformitetssviten (#176)."
+    "en": "f7a75985a1885edb",
+    "text": "full för auktoriseringsservern, OCH AV SOM STANDARD — PROFILEN oauth2.fapi=2-security (per sfär, eller fapi-medlemmen i en namngiven auktoriseringsserver), en egen profil (#140): RFC 9700-läget på; endast konfidentiella klienter, via mTLS eller private_key_jwt, där intygets aud är utfärdaren som en sträng (5.3.2.1 punkterna 3, 6, 8); endast avsändarbegränsade tokener, via mTLS eller DPoP (punkterna 4-5); ingen rotation av uppdateringstoken om inte oauth2.refreshTokenRotation framtvingar den (punkt 9); koder på 60 s (punkt 11); en iat eller nbf mer än 60 s framåt nekas (punkt 13); endast code, PAR krävs och klientautentiserad, PKCE S256, redirect_uri pushad, request_uris under 600 s (5.3.2.2); PS256, ES256 eller EdDSA, RSA 2048 och EC 224 bitar (5.4.1). TLS (5.2): BCP 195:s sviter är varje lyssnares standard, TLS 1.3 föredras. DPoP-nonces förblir valfria, och samtycke följer de vanliga reglerna. Attacker Model har inga normativa krav; docs/v1.1.0/oauth-security.md kopplar varje angriparklass till det som stoppar den. Konsolen, portalen och felsökaren uppfyller kraven. INTE täckt: konformitetssviten (#176)."
   },
   "stsmetadata.specs.fapi2-message-signing.coverage": {
-    "en": "455b8d25419e467e",
-    "text": "full för auktoriseringsservern, OCH AV SOM STANDARD — PROFILEN oauth2.fapi=2-message-signing, Security Profile plus alla tre komponenterna (#141, rcbj:s beslut): ett JAR-signerat förfrågningsobjekt krävs vid PAR, med aud utfärdaren och exp och nbf inom 60 minuter (5.3); JARM krävs, iss inuti JWT:n (5.4); introspektionssvar enligt RFC 9701 signerade (5.5). Avsnitt 5.2:s oavvislighet är vägledning, besvarad i docs/oauth-security.md. Konsolen, portalen och felsökaren uppfyller kraven. HTTP-signaturer enligt RFC 9421 är INTE en del av den slutliga specifikationen: de är FAPI 2.0 Http Signatures, nästa post (#178)."
+    "en": "35f9077fddbb7a8e",
+    "text": "full för auktoriseringsservern, OCH AV SOM STANDARD — PROFILEN oauth2.fapi=2-message-signing, Security Profile plus alla tre komponenterna (#141, rcbj:s beslut): ett JAR-signerat förfrågningsobjekt krävs vid PAR, med aud utfärdaren och exp och nbf inom 60 minuter (5.3); JARM krävs, iss inuti JWT:n (5.4); introspektionssvar enligt RFC 9701 signerade (5.5). Avsnitt 5.2:s oavvislighet är vägledning, besvarad i docs/v1.1.0/oauth-security.md. Konsolen, portalen och felsökaren uppfyller kraven. HTTP-signaturer enligt RFC 9421 är INTE en del av den slutliga specifikationen: de är FAPI 2.0 Http Signatures, nästa post (#178)."
   },
   "stsmetadata.specs.fapi2-http-signatures.coverage": {
     "en": "84f23a449916fdc1",
@@ -572,12 +576,12 @@
     "text": "full (#124, som infogade #115, 2026-09-23): end_session_endpoint svarar på GET och POST; förfrågan valideras innan sessionen avslutas; id_token_hint verifieras som en ID Token som den här auktoriseringsservern utfärdat (utgångna accepteras, som avsnitt 2 tillåter) och dess målgrupp är klienten, där ett client_id som den inte utfärdades till nekas; slutanvändaren ombeds bekräfta — en sida med en riktig knapp och inget skript — om inte ledtråden namnger den här sessionen och en eventuell logout_hint namnger hen; post_logout_redirect_uri följs endast vid exakt matchning mot klientens registrerade lista, i varje läge (utvecklingsläge följer fortfarande en för en klient som inte registrerat någon; produkt- och OAuth 2.1-läge gör det inte), och state returneras. ui_locales accepteras och varje sida är på engelska, det enda språk som den här tjänsten har. Front-channel och back-channel logout har egna rader. Som FÖRLITANDE PART (#167): en utloggning på /logout erbjuder federationspartnerns end_session_endpoint med id_token_hint, client_id, post_logout_redirect_uri och state, och återkomsten matchas på /federation/slo/{id}."
   },
   "stsmetadata.specs.oid4vci.coverage": {
-    "en": "9ec03ba02c69a7ce",
-    "text": "partial men bred: utfärdarmetadata, nonce, innehavsbevis, batchutfärdande, uppskjutet utfärdande, Credential Offers (bilaga H.1/H.2/H.3), grant med förauktoriserad kod med tx_code, credential_identifiers, kryptering av förfrågan och svar (avsnitt 10), och Notification Endpoint (avsnitt 11). Nyckelattesteringar (bilaga D) i huvudet på ett jwt-bevis och som bevistypen attestation, verifierade mot konfigurerade certifikat; statuslistor för varje intyg; intyg signerade med postkvantalgoritmer. Ingen plånboksattestering (bilaga E)."
+    "en": "15dc78bbb604ec84",
+    "text": "partial men bred: utfärdarmetadata, nonce, innehavsbevis, batchutfärdande, uppskjutet utfärdande, Credential Offers (bilaga H.1/H.2/H.3), grant med förauktoriserad kod med tx_code, credential_identifiers, kryptering av förfrågan och svar (avsnitt 10), och Notification Endpoint (avsnitt 11). Nyckelattesteringar (bilaga D) i huvudet på ett jwt-bevis och som bevistypen attestation, verifierade mot konfigurerade certifikat; statuslistor för varje intyg; intyg signerade med postkvantalgoritmer. Ett mso_mdoc utfärdas (IdentityCredentialMdoc, #1862): COSE ES256 (-7) eller ESP256 (-9), och beviset förblir en jwt med ES256. Ingen plånboksattestering (bilaga E)."
   },
   "stsmetadata.specs.oid4vp.coverage": {
-    "en": "7b2694beee176000",
-    "text": "partial: Authorization Requests som värde och som ett signerat Request Object via referens, response_mode=direct_post, en DCQL-fråga (credential_sets inräknade), och fullständig verifiering av det som kommer tillbaka i alla fyra formaten — en Key Binding JWT, en VP JWT med nonce, aud och iat, en VerifiablePresentation med ett Data Integrity-bevis (B.1.3.2.5), och sedan #935 en ISO-mdoc (B.2: dokumentsignerarens kedja till oid4vp.mdocTrustAnchors, MSO:n, varje elements hashvärde, enhetssignaturen över sessionsutskriften i B.2.6.1; deviceMac nekas) — och varje intygs status, som varje uppvisat intyg måste namnge (oid4vp.requireStatusReference, all som standard; en ldp_vc-fråga ber om credentialStatus och ett som undanhåller den nekas). Sedan 2026-09-17 kan en presentation LOGGA IN NÅGON på /authn/wallet — via Digital Credentials API (bilaga A: openid4vp-v1-signed, expected_origins, dc_api.jwt eller dc_api, målgruppen origin:), på samma enhet med avsnitt 8.2:s response_code, och via en vanlig QR-kod endast där oid4vp.signInCrossDevice är på — men endast ett innehavarbundet intyg som den här sfären utfärdat, i något av de tre formaten, och endast som den katalogpost det utfärdades för; allt annat verifieras och loggar inte in någon. Ingen presentation_definition (DIF PE) — endast DCQL; ingen osignerad eller flersignerad DC API-förfrågan; ingen mdoc via DC API eller för inloggning; ingen plånboksattestering; ingen transaction_data. SEDAN #129 namnger en signerad förfrågan sin Client Identifier med det prefix som oid4vp.clientIdPrefix väljer (avsnitt 5.9): pre-registered, decentralized_identifier (sfärens did:web, en DID-URL som kid), verifier_attestation (en Verifier Attestation JWT i huvudet `jwt`, konfigurerad eller självattesterad), eller openid_federation (sfärens Entity Configuration), och sedan #230 x509_san_dns och x509_hash (avsnitt 5.9.3: verifierarens eget certifikat från sfärens utfärdande JOSE-CA i x5c, ett dNSName som är Response URI:ns värd, eller lövcertifikatets SHA-256), valt per sfär eller per förfrågan; en osignerad använder redirect_uri. Prefixet origin erbjuds inte (det är Digital Credentials API:s eget, satt av webbläsaren)."
+    "en": "65e427209cdba492",
+    "text": "partial: Authorization Requests som värde och som ett signerat Request Object via referens, response_mode=direct_post, en DCQL-fråga (credential_sets inräknade), och fullständig verifiering av det som kommer tillbaka i alla fyra formaten — en Key Binding JWT, en VP JWT med nonce, aud och iat, en VerifiablePresentation med ett Data Integrity-bevis (B.1.3.2.5), och sedan #935 en ISO-mdoc (B.2: dokumentsignerarens kedja till oid4vp.mdocTrustAnchors, MSO:n, varje elements hashvärde, enhetssignaturen över sessionsutskriften i B.2.6.1; deviceMac nekas) — och varje intygs status, som varje uppvisat intyg måste namnge (oid4vp.requireStatusReference, all som standard; en ldp_vc-fråga ber om credentialStatus och ett som undanhåller den nekas). Sedan 2026-09-17 kan en presentation LOGGA IN NÅGON på /authn/wallet — via Digital Credentials API (bilaga A: openid4vp-v1-signed, expected_origins, dc_api.jwt eller dc_api, målgruppen origin:), på samma enhet med avsnitt 8.2:s response_code, och via en vanlig QR-kod endast där oid4vp.signInCrossDevice är på — men endast ett innehavarbundet intyg som den här sfären utfärdat, i något av de fyra formaten, och endast som den katalogpost det utfärdades för; allt annat verifieras och loggar inte in någon. Ingen presentation_definition (DIF PE) — endast DCQL; ingen osignerad eller flersignerad DC API-förfrågan; ingen mdoc via DC API (bilaga A); ett mso_mdoc loggar in någon bara när den här sfären utfärdade det (#1862); ingen plånboksattestering; ingen transaction_data. SEDAN #129 namnger en signerad förfrågan sin Client Identifier med det prefix som oid4vp.clientIdPrefix väljer (avsnitt 5.9): pre-registered, decentralized_identifier (sfärens did:web, en DID-URL som kid), verifier_attestation (en Verifier Attestation JWT i huvudet `jwt`, konfigurerad eller självattesterad), eller openid_federation (sfärens Entity Configuration), och sedan #230 x509_san_dns och x509_hash (avsnitt 5.9.3: verifierarens eget certifikat från sfärens utfärdande JOSE-CA i x5c, ett dNSName som är Response URI:ns värd, eller lövcertifikatets SHA-256), valt per sfär eller per förfrågan; en osignerad använder redirect_uri. Prefixet origin erbjuds inte (det är Digital Credentials API:s eget, satt av webbläsaren)."
   },
   "stsmetadata.specs.siopv2.coverage": {
     "en": "7b5596036282fc19",
@@ -636,8 +640,8 @@
     "text": "partial: utfärdar- (issue), innehavar- (prove, derive), verifierar- (intyg och presentationer) och statustjänsterna, över tjänstens egna kryptosviter, statuslistor och VC API:ets egna nycklar, AV tills en domän slår på det (vcApi.enabled), bakom en OAuth 2.0-åtkomsttoken som bär vc-api:issue eller vc-api:verify i alla lägen, hastighetsbegränsat per klient, och ett alternativ det inte förstår avvisas. Inte byggt: zcap-auktorisering, arbetsflöden och utbyten, utmaningar, lagring av intyg och presentationer (GET och DELETE av /credentials/{id}), VCALM:s operation:path-omfång, och utfärdarinstanser konfigurerade per domän (instanserna är fasta, en per säkringsmekanism och kurva)."
   },
   "stsmetadata.specs.token-status-list.coverage": {
-    "en": "b7932392e5841ca6",
-    "text": "partial: en lista per sfär, två bitar per intyg (VALID, INVALID, SUSPENDED), serverad som en Status List Token i JWT- och CWT-form enligt Accept, med ttl och exp, en aggregeringsslutpunkt och status-anspråket i varje SD-JWT VC- och jwt_vc_json-intyg; verifieraren slår upp en betrodd utländsk utfärdares lista och nekar när inget uttalande kan göras. Och en andra lista per sfär för ÅTKOMSTTOKENS (#432): en bit per token, där varje OAuth RFC 9068-åtkomsttoken och varje GNAP-token av typen jwt-signed och jwt-encrypted bär sitt status-anspråk, annonserad som status_list_aggregation_endpoint (avsnitt 9.1) i auktoriseringsserverns metadata. Ingen historisk uppslagning (501), inga omdirigeringar följs. Ingen mdoc utfärdas; verifieraren slår upp den CWT-lista som ett uppvisat mdoc:s Mobile Security Object namnger, signerad av ett certifikat i dess x5chain som kedjar till oid4vp.mdocTrustAnchors (#935)."
+    "en": "1159352758ad21d3",
+    "text": "partial: en lista per sfär, två bitar per intyg (VALID, INVALID, SUSPENDED), serverad som en Status List Token i JWT- och CWT-form enligt Accept, med ttl och exp, en aggregeringsslutpunkt och status-anspråket i varje SD-JWT VC- och jwt_vc_json-intyg; verifieraren slår upp en betrodd utländsk utfärdares lista och nekar när inget uttalande kan göras. Och en andra lista per sfär för ÅTKOMSTTOKENS (#432): en bit per token, där varje OAuth RFC 9068-åtkomsttoken och varje GNAP-token av typen jwt-signed och jwt-encrypted bär sitt status-anspråk, annonserad som status_list_aggregation_endpoint (avsnitt 9.1) i auktoriseringsserverns metadata. Ingen historisk uppslagning (501), inga omdirigeringar följs. Ett utfärdat mdoc namnger en CWT på /oid4vci/status-lists/mdoc, signerad av dokumentsigneraren med x5chain (#1862). Verifieraren slår upp ett uppvisat mdoc:s CWT mot oid4vp.mdocTrustAnchors och den här sfärens IACA när en har skapats (#935)."
   },
   "stsmetadata.specs.etsi-ts-119-602.coverage": {
     "en": "d648e3ad690b8900",
@@ -764,8 +768,8 @@
     "text": "Varje policy så som PDP:n ser den, DOKUMENTEN INRÄKNADE, med de statiska typkontrollproblemen för var och en. Dokumenten visas avsiktligt, till skillnad från de hemligheter som /admin/ldap/* döljer: en policy är en regel snarare än en inloggningsuppgift, och en regel som ingen kan läsa är en regel som ingen kan kontrollera. VEM SOM FÅR LÄSA DEN ÄR EN ANNAN FRÅGA ÄN OM DEN ÄR MASKERAD, och detta kräver XACML_USER: sedan åtkomst- och utfärdande-PEP:arna bäddades in är dessa dokument de som den här tjänsten fattar beslut om sina egna insläpp med, och att ge en anonym anropare de exakta villkoren för när den släpper in folk är inte samma handling som att publicera en demonstrationspolicy. Lagret är ou=policies i den inbäddade katalogen — den behållaren ÄR förrådet."
   },
   "stsmetadata.endpoints./xacml/pep/register.what": {
-    "en": "2d66266ac296ab90",
-    "text": "En Policy Enforcement Point i en ANNAN PROCESS meddelar att den finns, över ömsesidig TLS på samma port — server.js sätter redan requestCert: true, så detta behövde ingen ny lyssnare. DEN ENDA SLUTPUNKTEN I DEN HÄR FAMILJEN SOM BER OM EN INLOGGNINGSUPPGIFT, och den ställer en annan fråga än /xacml/pdp: inte vem beslutet gäller, utan VILKEN PEP detta är — eftersom en registrering skriver en post och anger en adress som den här tjänsten senare kommer att ringa upp. Det är en vändkors som varje annan grind här (certifikatet behöver inte kedja till något, argumentet i RFC 8705 avsnitt 3) och det är INTE det som låter en PEP upprätthålla beslut: en oregistrerad hämtar och beslutar lika bra. xacml.pepRequireCertificate stänger av den."
+    "en": "f25896a0df078725",
+    "text": "En Policy Enforcement Point i en ANNAN PROCESS meddelar att den finns, över ömsesidig TLS på samma port — server.js sätter redan requestCert: true, så detta behövde ingen ny lyssnare. DEN ENDA SLUTPUNKTEN I DEN HÄR FAMILJEN SOM BER OM EN INLOGGNINGSUPPGIFT, och den ställer en annan fråga än /xacml/pdp: inte vem beslutet gäller, utan VILKEN PEP detta är — eftersom en registrering skriver en post och anger en adress som den här tjänsten senare kommer att ringa upp. Det är en vändkors som varje annan grind här (certifikatet behöver inte kedja till något, argumentet i RFC 8705 avsnitt 3) och det är INTE det som låter en PEP upprätthålla beslut: en oregistrerad hämtar och beslutar lika bra. xacml.pepRequireCertificate stänger av den. En DPoP-bunden åtkomsttoken från sts-remote-pep, med /xacml/pep som mottagare och med xacml:pep, kan ersätta certifikatet här och vid varje /xacml/pep-slutpunkt och /xacml/pip, så som xacml.pepAuthentication tillåter; PEP:n namnges då av sin posts användarnamn."
   },
   "stsmetadata.endpoints./xacml/pep/policies.what": {
     "en": "f21e16beea449f7d",
@@ -778,6 +782,38 @@
   "stsmetadata.endpoints./xacml/pep/authzen-callers.what": {
     "en": "59db273e0a0989c3",
     "text": "Vilka denna sfär släpper in i sitt AuthZEN-API nu, så att edge-PDP:n i containern xacml-pep släpper in efter det: varje anropare som åtkomstpolicyn släpper in till /access/v1/* (AUTHZEN_PEPS, så som policyn avgör det), namngiven som en policy ser den i urn:sts:xacml:authzen:caller, med SHA-256 av DER för varje certifikat som denna tjänst skulle koppla till det namnet, dess applikationsomfång och de slutpunkter den släpps in till, plus en egen synkroniseringstoken; ?since=<token> svarar 304. Token ändras med en medlem, ett certifikat, ett omfång eller policyns svar, och edge-noden når samma läge vid nästa avfrågning. Kräver REMOTE_PEPS, liksom policyhämtningen, så den som har den rollen kan läsa vem som får fråga PDP:n (rcbj på #1189). Tillägg: /xacml/pep/policies och /xacml/pep/authzen-catalogue är oförändrade."
+  },
+  "stsmetadata.endpoints./xacml/pep/proxy.what": {
+    "en": "dbd48be2ca7bfe7b",
+    "text": "Det som xacml-pep-containern tillämpar när den står framför ett program (#1760): uppströmsadressen den vidarebefordrar till, de ordnade vägarna med de mekanismer var och en godtar och den XACML-resurs och åtgärd var och en motsvarar, varje vägs program upplöst från registret, de realmuppgifter den validerar lokalt med (utfärdare, JWKS, inloggningsslutpunkterna, SAML-signeringscertifikaten, lyssnarens kedja, sessionsvägarnas klienter) och de fyra valideringsadresserna nedan, under en egen synkroniseringstoken; ?since=<token> svarar 304. En okonfigurerad PEP är configured: false och dess proxy nekar allt. Kräver REMOTE_PEPS, som policyhämtningen; ingen knuff."
+  },
+  "stsmetadata.endpoints./xacml/pep/settings.what": {
+    "en": "1d0f3cc8f4e76c25",
+    "text": "De inställningar en administratör har satt för denna PEP på dess konsolsida (#1760) — dess beskrivning och resurs, notifierings-URL:en, biasen, PIP-brytaren, intervallen för hämtning, hjärtslag och backoff, tidsgränsen och gränsen för kroppen, loggnivån, AuthZEN-kant-PDP:ns brytare, identifierare och tidsgräns för vidarebefordran, samt den omvända proxyns gränser — under en egen synkroniseringstoken; ?since=<token> svarar 304. Endast det som är satt skickas: PEP:en använder sin miljö för resten, och det minsta den behöver för att ansluta finns aldrig här. Kräver REMOTE_PEPS, som policyhämtningen; ingen puff."
+  },
+  "stsmetadata.endpoints./xacml/pep/listener-certificate.what": {
+    "en": "2e12c8c3ee45d622",
+    "text": "Certifikatet för en HTTPS-lyssnare som en administratör definierat för den här PEP:en på dess sida i konsolen (#1760): PEP:en genererar nyckeln och skickar med POST { listener, csr }, en PKCS #10-begäran vars signatur bevisar att den innehar den, och får som svar certifikatet från sfärens utfärdande CA pep-tls och dess kedja till roten, no-store och utan någon nyckel. Namnen är PEP:ens och definitionens, aldrig begärans; samma nyckel som efterfrågas igen får det lagrade certifikatet så länge en tredjedel av dess livstid återstår. Kräver REMOTE_PEPS, som hjärtslaget."
+  },
+  "stsmetadata.endpoints./xacml/pep/introspect.what": {
+    "en": "b3f9e293393b2e8a",
+    "text": "Auktoriseringsserverns egen RFC 7662-läsning av en OAuth 2.0-åtkomsttoken som proxyn inte kunde verifiera själv (en opak token, eller en nyckel som inte finns i JWKS), över PEP:ens ömsesidiga TLS i stället för en egen klientregistrering. Kräver REMOTE_PEPS."
+  },
+  "stsmetadata.endpoints./xacml/pep/basic.what": {
+    "en": "96fe8e90091c87a2",
+    "text": "En persons användarnamn och lösenord, verifierade här och aldrig i PEP:en, bakom inloggningens egna gränser (429 med retryAfterS); en avvisning är { valid: false } och säger inget mer. Kräver REMOTE_PEPS."
+  },
+  "stsmetadata.endpoints./xacml/pep/saml.what": {
+    "en": "360f706d92daab1b",
+    "text": "En försäkran som den här realmen utfärdade, kontrollerad här när proxyn inte kunde kontrollera den själv: den inneslutna signaturen på rotförsäkran mot realmens XML-signeringscertifikat, utfärdaren, villkoren och vägens målgrupp. En EncryptedAssertion avvisas. Kräver REMOTE_PEPS."
+  },
+  "stsmetadata.endpoints./xacml/pep/session.what": {
+    "en": "da3c9a2559ab1433",
+    "text": "Om inloggningssessionen som ett ID Tokens sid namnger fortfarande är aktiv, så att en utloggning här avslutar proxyns egen session vid dess nästa kontroll. Kräver REMOTE_PEPS."
+  },
+  "stsmetadata.endpoints./xacml/pep/identity.what": {
+    "en": "5a190f936df62f6b",
+    "text": "För en väg hos den frågande PEP:en, den identitet som dess bevis (en åtkomsttoken, en SAML-försäkran eller en Basic-biljett, validerade igen) namnger, i vägens läge: anspråk för dess huvuden, en åtkomsttoken för programmet eller ett signerat SAML-svar till dess tjänst för mottagning av försäkringar. Kräver REMOTE_PEPS."
   },
   "stsmetadata.endpoints./xacml/pep/heartbeat.what": {
     "en": "d05c08b4b281db67",
@@ -1027,6 +1063,10 @@
     "en": "102e5302d8a29ce7",
     "text": "Registret, och vad varje PEP senast rapporterade: om den har det aktuella förrådet, när den senast hördes av, vilken bias den säger att den kör med och vad som hände med den senaste knuffen — vilket är det enda stället där en misslyckad knuff registreras, eftersom den per definition är osynlig från mottagarsidan."
   },
+  "stsmetadata.endpoints./admin-api/xacml/pep-clusters.what": {
+    "en": "456664ae403ea3f3",
+    "text": "Varje kluster av fjärr-PEP:er som delar en konfiguration: dess omvända proxy, inställningar och lyssnardefinitioner så som varje medlem hämtar dem, och varje medlem med sina egna adresser och varför ett sparande skulle neka den nu."
+  },
   "stsmetadata.endpoints./admin-api/xacml/monitor.what": {
     "en": "a0f18506f38d22b3",
     "text": "Det som GET /admin/xacml/monitor ritar: de globala beslutssiffrorna och en rad per upprätthållandepunkt, inbäddad och fjärr. De tre summorna hålls isär med avsikt — `here` är vad den här processen räknade när det hände, `remote` är vad andra processer rapporterar i ett hjärtslag och går NER när en startar om, och `combined` är aritmetik över de två. På raden `pdp` är `allowed` och `refused` null snarare än 0, eftersom den här tjänsten fattade det beslutet och aldrig såg upprätthållandet. Det finns ingen POST bredvid: sidan har ingen kontroll, och en nollställning avvisades snarare än glömdes bort."
@@ -1215,6 +1255,10 @@
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC (#570). Inloggningsskärmens kort och språkväljarens regler, som en enda formatmall som en statisk offentlig ytas skal länkar (common/web_card_css.ts). Besvaras på varje lyssnare; en adress med denna builds ?v= cachas för gott."
   },
+  "stsmetadata.endpoints./web/footer.css.what": {
+    "en": "32bce90003b1f15c",
+    "text": "NON-SPEC (2026-11-14). Reglerna för sidfoten som varje statisk ytas skal ritar — länkarna till dokumentation, kontakt och om, ikonerna för sociala medier, upphovsrätten och versionen (common/web_footer.ts). Besvaras på varje lyssnare; en adress som bär denna versions ?v= cachas för alltid."
+  },
   "stsmetadata.endpoints./web/theme.css.what": {
     "en": "3f3b19caa8978c23",
     "text": "NON-SPEC (#717). Domänens inloggningsfärger som de anpassade CSS-egenskaper /web/card.css läser (common/branding.ts): de fyra branding.*-färgerna och tonerna som härleds ur dem, byggda endast av validerade värden. Ett skal länkar den efter kortet bara där domänens utseende skiljer sig från tjänstens; en adress med dess sammandrag som ?v= cachelagras för gott."
@@ -1306,6 +1350,10 @@
   "stsmetadata.endpoints./admin/console.css.what": {
     "en": "4750f8f23393c7dd",
     "text": "ICKE-SPEC. Konsolens enda stilmall (#446)."
+  },
+  "stsmetadata.endpoints./admin/geo-outlines.json.what": {
+    "en": "16b6c492ce9b90e3",
+    "text": "ICKE-SPEC. Natural Earths landsdata i 1:50m, allmän egendom, så som admin-ui/natural_earth/countries.json levererar dem, som konsolen hämtar en gång och ritar kartan på Monitoring → Geolocation över i webbläsaren (#444). Publik, liksom skriptet."
   },
   "stsmetadata.endpoints./portal.what": {
     "en": "773d1d1c4e26f434",
@@ -1575,6 +1623,10 @@
     "en": "959c608dca54eb96",
     "text": "ICKE-SPEC. `rotate` och `emergency` (#48) är de två formerna på /admin/keys/rotate: `{ \"units\": [...] }` (tomt eller \"all\" för varje enhet) och, för en nödrotation, `\"confirm\": \"compromised\"`; var och en svarar 202 med runId för den köade signing.rotate-now-körningen, att följa på /admin-api/scheduler?run=. `export`: DEN HÄR OPERATIONEN RETURNERAR PRIVAT NYCKELMATERIAL, base64 i ett JSON-svar eftersom det här API:t svarar med JSON överallt annars. Tar ett nyckel-id, ett format (pem, der, jwk, pkcs12) och ett lösenord — obligatoriskt för pkcs12, valfritt annars, där det krypterar den privata halvan. Det här API:t är inte grindat alls, vilket är samma ärliga konsekvens som varje operation här har och är värt att säga två gånger för just den här. Speglar POST /admin/keys/export."
   },
+  "stsmetadata.endpoints./admin-api/mdoc-iaca.what": {
+    "en": "371ef1954001d46d",
+    "text": "NON-SPEC (#1862). Certifikatet som GET /oid4vci/mdoc-iaca publicerar, som JSON: PEM, dess subjekt, notBefore och notAfter. Skapas vid första anropet, på samma sätt som den publika läsningen skapar det. Ingen privat nyckel. Ett misslyckat skapande svarar 500 i klartext."
+  },
   "stsmetadata.endpoints./admin-api/pki.what": {
     "en": "83b11af065a98038",
     "text": "ICKE-SPEC. Allt som /admin/pki ritar, som JSON: de tre CA-nivåerna med deras subjekt, serienummer, giltighet, algoritmer, tumavtryck och CERTIFIKAT; de vokabulärer som ett bygge får begära; och EN RAD PER APPLIKATION PER PROFIL för allt som innehar ett utfärdat nyckelpar, eftersom varje faktum på en sådan rad — handtaget, utgångstiden, den deklarerade utfärdaren — är per profil och en applikation kan inneha både ett för RFC 7523 och ett för RFC 7522. **INGEN PRIVAT NYCKEL FINNS NÅGONSIN I DET HÄR SVARET**: common/pki.js släpper dem på vägen ut, så en anropare här kan inte läcka rotens nyckel genom att glömma. Certifikaten finns med i sin helhet, eftersom ett certifikat är den halva av ett par som är tänkt att delas ut. PER SFÄR, liksom själva hierarkin. `revocation` ÄR REGISTRET sedan 2026-09-11 — en post per certifikatutfärdare med vad den utfärdat, vad som står på dess lista och dess CRL- och OCSP-adresser över http och ldap — och `revocationNote` bredvid är den beständiga MENINGEN: återkallelse här PUBLICERAS och KONSULTERAS aldrig, så ett certifikat som återkallats på den här sidan autentiserar fortfarande mot den här tjänsten. De är två medlemmar eftersom en tom lista och inga listor alls är olika svar och ett fält bara kunde bära ett av dem. `residency` är den andra begränsningen: i utvecklingsläge dör hierarkin med processen. Speglar GET /admin/pki."
@@ -1768,8 +1820,8 @@
     "text": "ICKE-SPEC. De två konsolrollerna med varje tilldelning, de fyra inställningarna bakom grinden och vem ANROPAREN är. Rollerna är två vanliga katalogrupper, så detta och en ldapsearch svarar om samma poster. Speglar GET /admin/rbac."
   },
   "stsmetadata.endpoints./admin-api/rbac/:action.what": {
-    "en": "0c8ab0417104c2c7",
-    "text": "ICKE-SPEC. Två URL:er bakom ett mönster: grant och revoke. DEN TAR EN ANNAN INLOGGNINGSUPPGIFT ÄN DEN KONSOL DEN GER TILLGÅNG TILL — en åtkomsttoken som bär admin:write snarare än en konsolsession — vilket är det som gör den till vägen tillbaka in när ingen som innehar en roll kan logga in, ett tillstånd från vilket ingen webbläsare alls kan nå konsolen. DEN VAR HELT OGRINDAD fram till 2026-09-09, och konsekvensen var värd att nämna och är nu stängd: vem som helst som kunde nå den här porten kunde tilldela sig själv båda rollerna. Att tilldela en roll som någon redan har, eller återkalla en som personen inte har, svarar 200 med changed:false. En person som inte finns KAN tilldelas en roll: medlemskapet dinglar tills personen loggar in första gången. Speglar POST /admin/rbac."
+    "en": "762545bfac400a73",
+    "text": "ICKE-SPEC. Två URL:er bakom ett mönster: grant och revoke. DEN TAR EN ANNAN INLOGGNINGSUPPGIFT ÄN DEN KONSOL DEN GER TILLGÅNG TILL — en åtkomsttoken som bär admin:write snarare än en konsolsession — vilket är det som gör den till vägen tillbaka in när ingen som innehar en roll kan logga in, ett tillstånd från vilket ingen webbläsare alls kan nå konsolen. DEN VAR HELT OGRINDAD fram till 2026-09-09, och konsekvensen var värd att nämna och är nu stängd: vem som helst som kunde nå den här porten kunde tilldela sig själv båda rollerna. Att tilldela en roll som någon redan har, eller återkalla en som personen inte har, svarar 200 med changed:false. En roll tilldelas bara en person som finns: ett namn utan post i katalogen nekas och ingenting skrivs, så att en person som skapas senare med det namnet inte ärver något. Speglar POST /admin/rbac."
   },
   "stsmetadata.endpoints./admin-api/rbac/:action.effect": {
     "en": "d4fe53d89f2efabd",
@@ -1846,6 +1898,14 @@
   "stsmetadata.endpoints./admin-api/device-compliance.effect": {
     "en": "3ca2a7e72576096b",
     "text": "sätter efterlevnaden för en enhet eller en grupp"
+  },
+  "stsmetadata.endpoints./admin-api/pep-audit.what": {
+    "en": "0b396bb699707086",
+    "text": "NON-SPEC (#1827). En fjärr-XACML-PEP skickar posterna om de beslut den fattat i sin egen process — verkställanden på /protected, de AuthZEN-bedömningar den själv avgjort, aldrig en den vidarebefordrat, och dess omvända proxys begäranden till en route — minst en gång och i ordning, upp till 500 per sats, var och en kvitterad med sitt seq. Token bär den SKYDDADE omfattningen xacml:pep-audit och inget annat här tar emot den: PEP:ens egen RFC 7523-självförsäkran via den förinstallerade publika klienten sts-remote-pep, bunden till dess certifikat, utfärdad och godtagen bara så länge dess post finns i fjärr-PEP-gruppen (REMOTE_PEPS). PEP:en måste vara registrerad i domänen. Raderna xacml.remote.enforcement, authzen.remote.decision och, för den omvända proxyns begäranden, xacml.remote.proxy på /admin/audit."
+  },
+  "stsmetadata.endpoints./admin-api/pep-audit.effect": {
+    "en": "6d8bfdfca2b19127",
+    "text": "registrerar en sats beslut som en fjärr-PEP fattat som granskningsrader"
   },
   "stsmetadata.endpoints./admin-api/device-registration.what": {
     "en": "4050dc9d2959597e",
@@ -2095,6 +2155,14 @@
     "en": "148c1a64de18a40e",
     "text": "save-<kind>-policy och reset-<kind>-policy för varje slag — save-password-policy, reset-password-policy, save-authn-policy och reset-authn-policy i dag — samma som konsolen postar till /admin/policies, via samma funktion. En sparning ERSÄTTER profilen och varje fält krävs, så ett utelämnat fält nekas med namn snarare än tyst återställs. En återställning raderar den lagrade posten och sätter tillbaka de inbyggda standardvärdena. Båda gäller för NÄSTA lösenord som sätts i sfären och inte för något som redan är lagrat."
   },
+  "stsmetadata.endpoints./admin-api/policies/transfer.what": {
+    "en": "accd8d6a469cce08",
+    "text": "EJ SPECIFIKATION. Läsningen bredvid export, inspect och import (#1713): pki.policyExportAlgorithm som gäller, om pki.paranoidPolicySigner är på, den här sfärens utfärdande CA för signering av policyexporter (subjekt, giltighet, dess kedja upp till men inte med tjänstens rot, och det SHA-256-fingeravtryck och x5t#S256 som en annan sfär anger för att lita på dess exporter; null tills den första exporten skapar den), och signerartrustlagrets poster för policy-signer: de andra sfärer den har litat på. Endast certifikat, aldrig en privat nyckel."
+  },
+  "stsmetadata.endpoints./admin-api/policies/transfer/:action.what": {
+    "en": "c9ad043e74f40a37",
+    "text": "NON-SPEC. export, inspect och import (#1713): varje profil en sfär LAGRAR på Directory → Policies som ett JSON-dokument, en JWS i den tillplattade JSON-serialiseringen signerad av en ny nyckel under sfärens Policy Export Signing CA, hela kedjan i dess x5c. inspect verifierar signaturen och prövar kedjan i valideringsdörren (syfte policy-signer, de fullständiga paranoida kontrollerna medan pki.paranoidPolicySigner är på); import skriver varje profil genom dess typs egen sparning. Denna sfärs egen signerare är betrodd; en annan sfärs endast efter en administratörs ja som namnger dess Issuing CA, vilket lägger till den kedjan i det betrodda signerarlagret endast för policy-signer."
+  },
   "stsmetadata.endpoints./admin-api/consent.what": {
     "en": "4454328af36e5774",
     "text": "ICKE-SPEC. Samtyckesregistret, båda halvorna, och det tredje i den här familjen bredvid /admin-api/delegation (vad som HÄNDE) och /admin-api/permissions (vad som är TILLÅTET mellan två applikationer): detta är vad en PERSON sa ja till. `users` är registreringen — ett oauthConsent-värde per (person, applikation, omfång) på personens post, skrivet när personen tryckte på Tillåt på /oauth2/consent. `globals` är åsidosättningen — oauthGlobalConsent på en APPLIKATIONS post, ett värde per omfång, som hoppar över frågan för alla och inte skriver något om någon. `globals[].resource` anger vilken applikation som exponerar behörigheten där omfånget löses upp till en, och `globals[].granted` om den klienten också INNEHAR den, vilket är oberoende frågor. `users[].unreadable` är ett värde som en ldapmodify lade på en post och som inte har den form som den här tjänsten skriver: det ger inget samtycke och rapporteras snarare än kastas. `storable: false` betyder att ingen katalog är installerad bakom registret, så ett svar respekteras en gång och glöms, och skärmen ritas varje gång. ENDAST LÄSNING — de fyra kontrollerna finns på resursen nedan. Speglar GET /admin/consent."
@@ -2108,8 +2176,8 @@
     "text": "ICKE-SPEC-yta över ett specificerat beteende. Historiken över använda intyg som JSON: varje RFC 7523- och RFC 7522-intyg som den här sfären accepterat och som ännu inte gått ut, med var historiken hålls (beständig, atomär över processer), det levande antalet mot oauth2.assertionReplayCacheSize, filtrerad efter text, format, användning och tillstånd och sidindelad med ?page= och ?per=. Inget intyg och ingen inloggningsuppgift på någon rad. ENDAST LÄSNING. Speglar GET /admin/used-assertions."
   },
   "stsmetadata.endpoints./admin-api/error-codes.what": {
-    "en": "853d31fe2e7b16e4",
-    "text": "ICKE-SPEC. Den centrala tabellen över varje felvillkor som den här tjänsten kan framställa, STS-<SUBSYSTEM>-<NNNN>, som JSON: varje kod med sitt delsystem, vad som misslyckades, vad KLIENTEN får veta i sitt eget protokolls vokabulär, och på hur många rader den förekommer i den hållna granskningsloggen i den här sfären — filtrerad efter delsystem, text och ?seen=1, sidindelad med ?page= och ?per=. EN KOD SKICKAS ALDRIG TILL EN KLIENT: den finns endast på granskningsraden och i loggraden. ENDAST LÄSNING — tabellen är källkod. Speglar GET /admin/error-codes; samma tabell är docs/error-codes.md."
+    "en": "6a8ddafe4157455e",
+    "text": "ICKE-SPEC. Den centrala tabellen över varje felvillkor som den här tjänsten kan framställa, STS-<SUBSYSTEM>-<NNNN>, som JSON: varje kod med sitt delsystem, vad som misslyckades, vad KLIENTEN får veta i sitt eget protokolls vokabulär, och på hur många rader den förekommer i den hållna granskningsloggen i den här sfären — filtrerad efter delsystem, text och ?seen=1, sidindelad med ?page= och ?per=. EN KOD SKICKAS ALDRIG TILL EN KLIENT: den finns endast på granskningsraden och i loggraden. ENDAST LÄSNING — tabellen är källkod. Speglar GET /admin/error-codes; samma tabell är docs/v1.1.0/error-codes.md."
   },
   "stsmetadata.endpoints./admin-api/audit-export.what": {
     "en": "c975b83632fa12f4",
@@ -2456,8 +2524,24 @@
     "text": "ICKE-SPEC (#594). Med ?id=, vad en plånbok sade till Notification Endpoint om intyget som det notification_id anger: händelsen, dess beskrivning och när (404 för ett id som den här utfärdaren inte utfärdade). Admin Read; fram till #594 det utvecklingsbara /oid4vci/notification/:id."
   },
   "stsmetadata.endpoints./sts.what": {
-    "en": "66812a407152a91b",
-    "text": "POST ett SOAP RequestSecurityToken; fördelar på wst:RequestType (Issue, Renew, Validate, Cancel) och returnerar ett RSTR. GET beskriver slutpunkten. Lägg till ?encrypt=1 för att få det utfärdade intyget returnerat som en EncryptedAssertion."
+    "en": "dd027a41936ae3af",
+    "text": "POST ett SOAP RequestSecurityToken; fördelar på wst:RequestType (Issue, Renew, Validate, Cancel) och returnerar ett RSTR. GET beskriver slutpunkten. En applikation kan kräva att namngivna element i begäran och i svaret är XML Encryption (xenc:EncryptedData). Ett meddelande som inte matchar den kartan är ett fel, och bearbetningen stannar."
+  },
+  "stsmetadata.endpoints./sts/metadata.what": {
+    "en": "8ffa0771ab14417f",
+    "text": "WSDL 1.1 med WS-SecurityPolicy. Varje trust-version (maj 2004, februari 2005, 1.3 och 1.4) har en egen port type med de operationer den definierar, där varje indata och utdata namnger sin wsa:Action, och en SOAP 1.1- och en SOAP 1.2-port på /sts. Autentiseringsuppgifterna är en UsernameToken, ett SAML 2.0- eller SAML 1.1-intyg, en JWT, en X.509-signatur, en Kerberos-biljett när wstrust.acceptKerberos är på, och ett TLS-klientcertifikat när wstrust.acceptClientCertificate är på. Serveras med Cache-Control: no-store."
+  },
+  "stsmetadata.endpoints./sts/metadata/capabilities.what": {
+    "en": "58631087b8e5323a",
+    "text": "Ett IYA-STS-tillägg (urn:iya-sts:metadata:token-capabilities:1): varje autentiseringsuppgift som /sts accepterar, varje tokentyp den utfärdar, och varje par som stödd, villkorad eller ej stödd med sina villkor, byggt från de gällande inställningarna. Serveras med Cache-Control: no-store."
+  },
+  "stsmetadata.endpoints./sts/metadata/capabilities.xsd.what": {
+    "en": "c38652777c26f595",
+    "text": "XML-schemat för tokenförmågedokumentet."
+  },
+  "stsmetadata.endpoints./sts/mex.what": {
+    "en": "5940ecbdab434650",
+    "text": "Skicka med POST en WS-Transfer Get eller en WS-MetadataExchange GetMetadata (2004/09), SOAP 1.1 eller 1.2; svaret är en mex:Metadata som innehåller WSDL:en, tokenförmågedokumentet och dess schema som tre sektioner."
   },
   "stsmetadata.endpoints./sts/cert.what": {
     "en": "bb1a31c1486e5138",
@@ -3348,12 +3432,20 @@
     "text": "En färsk c_nonce för ett innehavsbevis. Engångs."
   },
   "stsmetadata.endpoints./oid4vci/credential.what": {
-    "en": "183d47a992f2e527",
-    "text": "Skapar dc+sd-jwt, jwt_vc_json eller ldp_vc enligt den begärda konfigurationen, var och en med sin statuslistereferens. Verifierar plånbokens bevis — ett jwt-bevis, med ett nyckelintyg i huvudet där ett sådant skickas eller krävs, eller bevistypen attestation — stöder batchutfärdande, och godtar en krypterad begäran och/eller returnerar ett krypterat svar."
+    "en": "691a18d16548af3b",
+    "text": "Skapar dc+sd-jwt, jwt_vc_json, ldp_vc eller mso_mdoc enligt den begärda konfigurationen, var och en med sin statuslistereferens. Verifierar plånbokens bevis — ett jwt-bevis, med ett nyckelintyg i huvudet där ett sådant skickas eller krävs, eller bevistypen attestation — stöder batchutfärdande, och godtar en krypterad begäran och/eller returnerar ett krypterat svar."
   },
   "stsmetadata.endpoints./oid4vci/status-lists/1.what": {
     "en": "0f0ea3feaea47fa8",
     "text": "Den här sfärens Status List Token: application/statuslist+jwt, eller application/statuslist+cwt när Accept ber om det (en COSE_Sign1, inte CWT-taggad). Två bitar per credential; ttl oid4vci.statusListTtlS, exp oid4vci.statusListLifetimeS, signerad med credential-nyckeln. ?time= svarar 501: inga historiska listor sparas."
+  },
+  "stsmetadata.endpoints./oid4vci/status-lists/mdoc.what": {
+    "en": "635d4fa4e34ca898",
+    "text": "Samma bitsträng som /oid4vci/status-lists/1, som application/statuslist+cwt signerad av den här sfärens mdoc-dokumentsignerare. x5chain är det certifikatet. Cache-Control är max-age av listans ttl, och Vary är Accept. ?time= svarar 501."
+  },
+  "stsmetadata.endpoints./oid4vci/mdoc-iaca.what": {
+    "en": "ef6376b2dcb0c9f8",
+    "text": "Den här sfärens mdoc-CA för utfärdande myndighet, PEM, application/pem-certificate-chain, Cache-Control no-store. Skapas vid första anropet. Ingen privat nyckel."
   },
   "stsmetadata.endpoints./oid4vci/status-lists.what": {
     "en": "76f52e390d2c1987",
@@ -3852,8 +3944,8 @@
     "text": "1.2 Web (Passive) Requestor Profile: /wsfed som fördelar efter wa, inloggningsskärmen, signerad federationsmetadata på AD FS-sökvägen och wsignout1.0."
   },
   "stsmetadata.protocols.WS-Trust.what": {
-    "en": "3d88db91fab2cd5f",
-    "text": "RST/RSTR över SOAP på /sts, i alla fyra versionerna (1.0 till 1.4), som utfärdar endera SAML-dialekten med påståendet signerat och eventuellt krypterat till den begärandes certifikat, en JWT eller en Kerberos-biljett."
+    "en": "2e317d1cfa752dc2",
+    "text": "RST/RSTR över SOAP på /sts, i alla fyra versionerna (1.0 till 1.4), som utfärdar endera SAML-dialekten med påståendet signerat och eventuellt krypterat till den begärandes certifikat, en JWT eller en Kerberos-biljett, beskrivet av en WSDL med en port type per version och publicerat över WS-MetadataExchange."
   },
   "stsmetadata.protocols.Kerberos.what": {
     "en": "3048c833f899933d",

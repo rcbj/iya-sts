@@ -31,6 +31,38 @@
     "en": "3cca9630a4d544af",
     "text": "AuthZEN-anroparna, som en fjärr-PEP SLÄPPER IN"
   },
+  "endpoints.route./xacml/pep/proxy.name": {
+    "en": "739682a1ecd3fb3e",
+    "text": "Konfigurationen för omvänd proxy, för en fjärr-PEP att TILLÄMPA"
+  },
+  "endpoints.route./xacml/pep/settings.name": {
+    "en": "6bae1b3fbf022a6d",
+    "text": "En fjärr-PEP:s hanterade inställningar, för att den ska TILLÄMPA dem"
+  },
+  "endpoints.route./xacml/pep/listener-certificate.name": {
+    "en": "96d34844bd14ca01",
+    "text": "En fjärr-PEP-lyssnares certifikat, över dess egen nyckel"
+  },
+  "endpoints.route./xacml/pep/introspect.name": {
+    "en": "82423c6f4bbc4b7f",
+    "text": "Tokenintrospektion, för en fjärr-PEP:s proxy"
+  },
+  "endpoints.route./xacml/pep/basic.name": {
+    "en": "386c0d38a90c8eea",
+    "text": "HTTP Basic, validerat för en fjärr-PEP:s proxy"
+  },
+  "endpoints.route./xacml/pep/saml.name": {
+    "en": "f5df4c2323752626",
+    "text": "En SAML 2.0-försäkran, validerad för en fjärr-PEP:s proxy"
+  },
+  "endpoints.route./xacml/pep/session.name": {
+    "en": "839d7610564c5a81",
+    "text": "Är en inloggningssession aktiv, för en fjärr-PEP:s proxy"
+  },
+  "endpoints.route./xacml/pep/identity.name": {
+    "en": "b9af583a88501df2",
+    "text": "Det som en fjärr-PEP:s väg vidarebefordrar till sitt program"
+  },
   "endpoints.route./xacml/pep/heartbeat.name": {
     "en": "9570c5ba15aef084",
     "text": "Vad en fjärr-PEP har tillämpat"
@@ -279,6 +311,10 @@
     "en": "7f8ea0c37cf4776c",
     "text": "Fjärrtillämpningspunkterna som JSON"
   },
+  "endpoints.route./admin-api/xacml/pep-clusters.name": {
+    "en": "eb3f571462b2ef4a",
+    "text": "Fjärr-PEP-klustren som JSON"
+  },
   "endpoints.route./admin-api/xacml/monitor.name": {
     "en": "c31e79f61be7e43b",
     "text": "Vad auktoriseringen gör, som JSON"
@@ -443,6 +479,10 @@
     "en": "96ed2387e40a779a",
     "text": "De offentliga ytornas kortformatmall"
   },
+  "endpoints.route./web/footer.css.name": {
+    "en": "b1ae9012425d7c77",
+    "text": "Sidfotens formatmall"
+  },
   "endpoints.route./web/theme.css.name": {
     "en": "955c14dc632bdf90",
     "text": "Formatmallen för en domäns inloggningsutseende"
@@ -526,6 +566,10 @@
   "endpoints.route./admin/console.css.name": {
     "en": "cd6aeb9c9e8ebf8a",
     "text": "Konsolens formatmall"
+  },
+  "endpoints.route./admin/geo-outlines.json.name": {
+    "en": "54575728e7ed9de1",
+    "text": "Landkonturerna på konsolens karta"
   },
   "endpoints.route./portal.name": {
     "en": "5212610fe0e7c89a",
@@ -775,6 +819,10 @@
     "en": "02bd417f55c9790f",
     "text": "Exportera ett nyckelpar, eller rotera signeringsnycklarna"
   },
+  "endpoints.route./admin-api/mdoc-iaca.name": {
+    "en": "2a0f7fa3f4260418",
+    "text": "Den här sfärens mdoc-CA för utfärdande myndighet"
+  },
   "endpoints.route./admin-api/pki.name": {
     "en": "bc458d477b4de7d9",
     "text": "Certifikatutfärdaren som den här sfären har"
@@ -962,6 +1010,10 @@
   "endpoints.route./admin-api/device-compliance.name": {
     "en": "1b28ca2ff0e0999f",
     "text": "Flödet för enhetsefterlevnad (MDM / säkerhetsstatus)"
+  },
+  "endpoints.route./admin-api/pep-audit.name": {
+    "en": "df3ac1026eab32fe",
+    "text": "En fjärr-PEP:s beslutsposter"
   },
   "endpoints.route./admin-api/device-registration.name": {
     "en": "f8fcb8ceb53f6ebf",
@@ -1175,6 +1227,14 @@
     "en": "a5461fc6541725a3",
     "text": "Ändra en policy"
   },
+  "endpoints.route./admin-api/policies/transfer.name": {
+    "en": "d0e1c015c9f2a694",
+    "text": "Vy över policyöverföring"
+  },
+  "endpoints.route./admin-api/policies/transfer/:action.name": {
+    "en": "bc0714219f3243c3",
+    "text": "Exportera och importera policyer"
+  },
   "endpoints.route./admin-api/consent/:action.name": {
     "en": "a7acd63ff9b05a72",
     "text": "Bevilja och återkalla samtycke"
@@ -1207,6 +1267,10 @@
     "en": "d7fa23e10dac9b1d",
     "text": "Ändra inloggningens utseende"
   },
+  "endpoints.route./admin-api/audit/integrity.name": {
+    "en": "79de5da36fba17bd",
+    "text": "Kontrollera granskningsloggens integritet"
+  },
   "endpoints.route./admin-api/audit.name": {
     "en": "e4d36f9a4e22d3a2",
     "text": "Granskningslogg"
@@ -1226,6 +1290,14 @@
   "endpoints.route./admin-api/cells/people.name": {
     "en": "3487e884b7bb0884",
     "text": "Cellens invånare"
+  },
+  "endpoints.route./admin-api/malware-scanning.name": {
+    "en": "48adceb89b5e59c8",
+    "text": "Skanning efter skadlig kod"
+  },
+  "endpoints.route./admin-api/malware-scanning/:action.name": {
+    "en": "5fea7fc18a3a67b9",
+    "text": "Testa skannern"
   },
   "endpoints.route./admin-api/listeners/:action.name": {
     "en": "f35429cc1bbc09a8",
@@ -1446,6 +1518,18 @@
   "endpoints.route./sts.name": {
     "en": "974efec49bd38548",
     "text": "Security Token Service"
+  },
+  "endpoints.route./sts/metadata.name": {
+    "en": "6d139ba55ee24788",
+    "text": "WS-Trust-metadata"
+  },
+  "endpoints.route./sts/metadata/capabilities.name": {
+    "en": "5976fe018c7df889",
+    "text": "WS-Trust-tokenförmågor"
+  },
+  "endpoints.route./sts/metadata/capabilities.xsd.name": {
+    "en": "c89390ca99682b92",
+    "text": "Schema för WS-Trust-tokenförmågor"
   },
   "endpoints.route./sts/cert.name": {
     "en": "a8e401846d25c111",
@@ -2131,6 +2215,14 @@
     "en": "6bc2372d3bb214c3",
     "text": "Token Status List"
   },
+  "endpoints.route./oid4vci/status-lists/mdoc.name": {
+    "en": "0f85cae8f7648bb1",
+    "text": "Token Status List för mdoc"
+  },
+  "endpoints.route./oid4vci/mdoc-iaca.name": {
+    "en": "005a19a028c1adc0",
+    "text": "mdoc-CA för utfärdande myndighet"
+  },
   "endpoints.route./oid4vci/status-lists.name": {
     "en": "b7c39aa8efc43f99",
     "text": "Status List Aggregation"
@@ -2462,17 +2554,5 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS (ett klientcertifikat begärs, krävs aldrig)"
-  },
-  "endpoints.route./admin-api/malware-scanning.name": {
-    "en": "48adceb89b5e59c8",
-    "text": "Skanning efter skadlig kod"
-  },
-  "endpoints.route./admin-api/malware-scanning/:action.name": {
-    "en": "5fea7fc18a3a67b9",
-    "text": "Testa skannern"
-  },
-  "endpoints.route./admin-api/audit/integrity.name": {
-    "en": "79de5da36fba17bd",
-    "text": "Kontrollera granskningsloggens integritet"
   }
 }

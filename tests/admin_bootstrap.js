@@ -233,9 +233,16 @@ function childMain() {
     // anything was seeded, and `admin.bootstrapUsername` is restart-only.
     // ======================================================================
     if (process.env.AB_PART === 'administered') {
-      inDefault(function () {
+      // The operator who administered it is a PERSON (2026-11-11): a console
+      // role is granted only to somebody with an entry (STS-ADMIN-0920), so
+      // they are made first, as an operator would have been.
+      const operator = inDefault(function () {
+        ldapServer.createUser('operator-ab', {});
         return rbac.grant('operator-ab', 'write', { via: 'test' });
       });
+      note(operator.ok && operator.changed,
+           '4-pre. the roster names an operator who exists',
+           JSON.stringify(operator));
       const administered = inDefault(function () {
         return rbac.seedBootstrapAdministrator();
       });

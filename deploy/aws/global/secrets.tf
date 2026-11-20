@@ -29,6 +29,14 @@
 #                            each is seeded ONCE into the global tier, so a
 #                            value made per cell would be a different value in
 #                            each, and all but the first cell's refused
+#   edge-secret              CloudFront's origin secret (#1341,
+#                            ../environment/cloudfront.tf): the primary cell's
+#                            distribution sends it and EVERY cell's nodes
+#                            require it of an edge, so it is one value. Made
+#                            whether or not the environment has CloudFront,
+#                            for the reason the product-mode values are, and
+#                            copied to a multi-cloud environment's GCP cells
+#                            with the rest (deploy/multicloud/gcp-global)
 # NOT REPLICATED:
 #   global-db-master-password  the global database's master user's, which only
 #                            the primary cell's global-schema-init uses, in
@@ -120,6 +128,11 @@ resource "terraform_data" "bootstrap_admin_username" {
       error_message = "bootstrap_admin_username is a default account name, which product mode replaces (common/bootstrap_name.ts); name the account the service actually created."
     }
   }
+}
+
+resource "random_password" "edge_secret" {
+  length  = 48
+  special = false
 }
 
 resource "random_password" "krb5_krbtgt" {
@@ -248,6 +261,7 @@ locals {
     bootstrap-admin-username = terraform_data.bootstrap_admin_username[0].output
     krb5-krbtgt-password     = random_password.krb5_krbtgt.result
     krb5-service-password    = lookup(local.carried, "krb5-service-password", random_password.krb5_service.result)
+    edge-secret              = random_password.edge_secret.result
     }, local.multi_cloud ? {
     # THE REPLICATION ROLE'S PASSWORD (#97): what a GCP cell's subscription
     # connects to the writer with. Copied into GCP Secret Manager by

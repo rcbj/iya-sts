@@ -32,6 +32,15 @@
 //      attribute. Development refuses none of it, and that is asserted too:
 //      a job that only ever met a strict directory would not notice the mode
 //      had stopped deciding anything.
+//   4. THE PLAIN LISTENER refuses a simple bind in product (13).
+//   5. LDAPS ASKS FOR NO CLIENT CERTIFICATE (#418): OpenSSL's client sees no
+//      CertificateRequest from 636, where the main port — the control —
+//      sends one.
+//
+// D12 (#444): section 3's audit row and 5 carry over
+// tests/ldap_anonymous_bind.js (the refusal is the service's handler,
+// STS-LDAP-0070, read off the audit log) and
+// tests/ldaps_no_certificate_request.js (B, over the wire).
 //
 // The person is created first through `/admin-api` with a real password, as
 // product mode requires of everybody it signs in. The /admin-api token is
@@ -43,6 +52,7 @@
 const assert = require("assert");
 const crypto = require("crypto");
 const tls = require("tls");
+const childProcess = require("child_process");
 const { Command, Option } = require("commander");
 const ldapjs = require("ldapjs");
 const names = require("./random_username.js");
@@ -256,6 +266,74 @@ async function presentedFingerprints(host, port, nodes) {
   return Array.from(seen).sort();
 }
 
+// How many rows of `code` the default realm's audit log holds. A code is
+// never sent, so the log is the one place it is read back.
+async function codeCount(code) {
+  log.debug("Entering codeCount(). " + code);
+  const r = await fetch(base + "/admin-api/audit?per=500&code=" +
+                        encodeURIComponent(code));
+  const body = await r.json();
+  assert.strictEqual(r.status, 200, "GET /admin-api/audit answered " +
+                     r.status);
+  log.debug("Leaving codeCount().");
+  return ((body && body.events) || []).length;
+}
+
+async function codeAdded(code, before) {
+  log.debug("Entering codeAdded(). " + code);
+  let now = before;
+  for (let i = 0; i < 25 && now <= before; i += 1) {
+    now = await codeCount(code);
+    if (now <= before) {
+      await new Promise(function (resolve) {
+        setTimeout(resolve, 150);
+      });
+    }
+  }
+  log.debug("Leaving codeAdded(). " + before + " -> " + now);
+  return now > before;
+}
+
+// THE HANDSHAKE MESSAGES OpenSSL's client saw from host:port in one TLS
+// version (`s_client -msg` prints every one), read off the wire rather than
+// off the service's options (tests/ldaps_no_certificate_request.js). No
+// input: s_client sends nothing after the handshake and, its stdin closed,
+// ends the connection.
+function handshakeOf(host, port, version) {
+  log.debug("Entering handshakeOf(). " + host + ":" + port + " " + version);
+  log.debug("Leaving handshakeOf().");
+  return new Promise(function (resolve) {
+    const flag = version === "TLSv1.2" ? "-tls1_2" : "-tls1_3";
+    const proc = childProcess.spawn("openssl",
+      ["s_client", "-connect", host + ":" + port, "-servername", host,
+       "-msg", flag], { stdio: ["pipe", "pipe", "pipe"] });
+    let text = "";
+    const timer = setTimeout(function () {
+      proc.kill("SIGKILL");
+    }, 20000);
+    proc.stdout.on("data", function (chunk) {
+      text += chunk;
+    });
+    proc.stderr.on("data", function (chunk) {
+      text += chunk;
+    });
+    proc.on("error", function (e) {
+      clearTimeout(timer);
+      resolve({ ran: false, text: String(e.message), finished: false,
+                certificateRequest: false });
+    });
+    proc.on("close", function () {
+      clearTimeout(timer);
+      resolve({
+        ran: true, text: text,
+        finished: /Handshake \[length [0-9a-f]+\], Finished/.test(text),
+        certificateRequest: /, CertificateRequest/.test(text)
+      });
+    });
+    proc.stdin.end();
+  });
+}
+
 async function createThePerson() {
   log.debug("Entering createThePerson().");
   const r = await fetch(base + "/admin-api/users/create", {
@@ -397,6 +475,21 @@ async function test() {
                 anonymous.message);
     }
   });
+  // D12 (#444), tests/ldap_anonymous_bind.js: the refusal is the SERVICE'S
+  // bind handler answering, not the library's — node-ldapjs answered an
+  // empty bind itself until the fork's `routeAnonymousBinds` — and the
+  // handler records STS-LDAP-0070. A second anonymous bind, counted.
+  if (product) {
+    const before = await codeCount("STS-LDAP-0070");
+    client = connect(ldapsUrl());
+    await bind(client, "", "");
+    await unbind(client);
+    const seen = await codeAdded("STS-LDAP-0070", before);
+    check("PRODUCT: and the service's bind handler recorded STS-LDAP-0070",
+          function () {
+      assert.ok(seen, "no new STS-LDAP-0070 row in the audit log");
+    });
+  }
 
   client = connect(ldapsUrl());
   const unbound = await search(client, dn, { scope: "base",
@@ -439,8 +532,41 @@ async function test() {
     }
   });
 
+  // --- 5. LDAPS asks for no client certificate (#418) -------------------
+  // D12 (#444), tests/ldaps_no_certificate_request.js. The main port asks
+  // every handshake for a client certificate and requires none (RFC 8705,
+  // certificate sign-in), which makes it this section's CONTROL: OpenSSL's
+  // client is seen to report a CertificateRequest there, so the detector can
+  // see one; on 636 it must see none. Each TLS version the listeners accept
+  // is asked — TLS 1.2 is off by default since #429, so its handshake may
+  // not finish, and then there is nothing to read in it.
+  for (const version of ["TLSv1.3", "TLSv1.2"]) {
+    const main = await handshakeOf(hostOf(base), httpsPort, version);
+    const directory = await handshakeOf(ldapsHost, ldapsPort, version);
+    if (version === "TLSv1.3") {
+      check("openssl ran, and both handshakes finished in TLS 1.3",
+            function () {
+        assert.ok(main.ran && directory.ran, main.text.slice(0, 300));
+        assert.ok(main.finished && directory.finished,
+                  main.text.slice(-400) + " / " + directory.text.slice(-400));
+      });
+    }
+    if (!main.finished || !directory.finished) {
+      log.info("  (" + version + " is not accepted here; nothing to read)");
+      continue;
+    }
+    check("the CONTROL: the main port sends a CertificateRequest in " +
+          version, function () {
+      assert.ok(main.certificateRequest, main.text.slice(-600));
+    });
+    check("LDAPS 636 sends NO CertificateRequest in " + version +
+          (product ? " (product)" : " (development)"), function () {
+      assert.ok(!directory.certificateRequest, directory.text.slice(-600));
+    });
+  }
+
   // A FLOOR on the count: a section that stops running must fail the job.
-  assert.ok(checks >= (product ? 11 : 9),
+  assert.ok(checks >= (product ? 15 : 12),
     "only " + checks + " checks ran; a section stopped running.");
   log.info(checks + " checks passed.");
   log.debug("Leaving test().");

@@ -68,7 +68,8 @@ using IyaSts.Api.Common;
               `admin:write`:"Change anything this API can change (every other method), except a security change.",
               `admin:security`:"A security change, in place of admin:write: a Directory → Policies policy saved, reset or acted on, a policy named on an application, group or person, the Security Administrator's role granted or revoked, and the account of a person who holds it. Issued only to a subject holding SECURITY_ADMIN.",
               `admin:console`:"The admin console's own operations, under /admin-api/console (#454). Issued only to the console's client, sts-admin-console, through the ADMIN_CONSOLE role it confers.",
-              `device:compliance`:"Report device compliance through POST /admin-api/device-compliance, and nothing else — the scope an MDM or posture feed holds (#164). Issued only to a client that declares it."
+              `device:compliance`:"Report device compliance through POST /admin-api/device-compliance, and nothing else — the scope an MDM or posture feed holds (#164). Issued only to a client that declares it.",
+              `xacml:pep-audit`:"Push a remote PEP's decision records through POST /admin-api/pep-audit, and nothing else. Issued to the PEP's own RFC 7523 self-assertion through sts-remote-pep, only while its entry is in the remote PEPs' group (REMOTE_PEPS)."
             }
           }
         }
@@ -85,1884 +86,6 @@ using IyaSts.Api.Common;
 })
 namespace IyaSts.Api.Console {
   
-
-@js(#{
-    `description`:"What the console's own action functions return, unchanged. `ok` is true when the operation was applied and false when it was refused; a refusal carries `errors` and is answered with HTTP 400. Successful replies carry `message` — the sentence the console would have shown — plus whatever the action produced: `claims` for a claim set, `selected` for the credential claim set, `requested` for the verifier request, `revoked` for a count.",
-    `additionalProperties`:true
-  }) @component model `ActionResult` {
-    @js(#{`description`:"Whether the operation was applied."}) `ok`: boolean;
-    @js(#{
-      `description`:"What happened, in the words the console would have used. Present on success."
-    }) `message`?: string;
-    @js(#{`description`:"Why it was refused. Present when `ok` is false."}) `errors`?: (string)[]
-  }
-
-@js(#{
-    `description`:"One thing this service issued and still remembers. Claims and facts only: the signed token, the assertion XML and the ticket are deliberately not kept.",
-    `patternProperties`:#{
-      `^iss$`:#{
-        `anyOf`:#[
-          #{`type`:"string"},
-          #{`type`:"number"},
-          #{`type`:"boolean"},
-          #{`type`:"null"},
-          #{
-            `type`:"array",
-            `items`:#{`anyOf`:#[#{`type`:"string"},#{`type`:"number"},#{`type`:"boolean"}]}
-          }
-        ]
-      },
-      `^audience$`:#{`type`:"string"},
-      `^x5t$`:#{`type`:"string"},
-      `^x5tSpki$`:#{`type`:"string"},
-      `^sessionAuthenticated$`:#{`type`:"boolean"},
-      `^grantId$`:#{`type`:"string"},
-      `^grantRefresh$`:#{`type`:"boolean"},
-      `^order$`:#{`type`:"integer"},
-      `^revocationReach$`:#{`type`:"string"},
-      `^expiresAt$`:#{`type`:"number"},
-      `^subject$`:#{`type`:"string"},
-      `^id$`:#{`type`:"string"},
-      `^signed$`:#{`type`:"boolean"},
-      `^realm$`:#{`type`:"string"},
-      `^service$`:#{`type`:"string"},
-      `^etype$`:#{`anyOf`:#[#{`type`:"string"},#{`type`:"number"}]},
-      `^claimSet$`:#{`type`:"string"},
-      `^pacClaims$`:#{`type`:"number"},
-      `^entryId$`:#{`type`:"string"},
-      `^serial$`:#{`type`:"string"},
-      `^hint$`:#{`type`:"string"},
-      `^person$`:#{`type`:"string"},
-      `^configId$`:#{`type`:"string"}
-    }
-  }) @component model `IssuedRecord` {
-    @js(#{
-      `description`:"token, assertion, ticket or svid: what the `family` filter takes."
-    }) `family`?: string;
-    @js(#{
-      `description`:"access_token, id_token, refresh_token, a SAML assertion version, a Kerberos ticket type or an SVID type."
-    }) `kind`?: string;
-    @js(#{
-      `description`:"valid, expired, revoked, \"not yet valid\" or \"no expiry stated\"."
-    }) `state`?: string;
-    `jti`?: StringOrNumericOrBooleanEtc3;
-    `sub`?: StringOrNumericOrBooleanEtc3;
-    `username`?: StringOrNumericOrBooleanEtc3;
-    `typ`?: StringOrNumericOrBooleanEtc3;
-    `issuedAt`?: numeric;
-    `expiresAtMs`?: NullableNumber;
-    `revocable`?: boolean;
-    `revoked`?: boolean;
-    `revokedAt`?: NullableNumber;
-    `revokedVia`?: string;
-    `sessionId`?: string;
-    `setId`?: string;
-    `jkt`?: string;
-    `grant`?: string;
-    `client_id`?: StringOrNumericOrBooleanEtc3;
-    `scope`?: StringOrNumericOrBooleanEtc3;
-    `identifier`?: StringOrNumericOrBooleanEtc3;
-    `length`?: integer;
-    `key`?: string;
-    `iat`?: numeric;
-    `nbf`?: numeric;
-    `exp`?: numeric
-  }
-
-@js(#{
-    `description`:"One custom claim. `nameFormat` applies to the SAML 2.0 set and `namespace` to the SAML 1.1 set; both are ignored by the two JWT sets."
-  }) @component model `ClaimEntry` {
-    `name`: string;
-    @js(#{
-      `description`:"May carry a placeholder such as \${username}; `GET /admin-api/claims` lists the ones this service expands."
-    }) `value`?: string;
-    `nameFormat`?: string;
-    `namespace`?: string;
-    @js(#{
-      `description`:"AN ATTRIBUTE CLAIM (#94), in place of `value`: the directory attribute of the person the artifact is about that the claim carries. Only the directory, never an invented value; absent on the entry, the claim is absent. A secret, a binary value or an attribute this service keeps (sts*, hoba*, app*, pwd*) is refused."
-    }) `attribute`?: string;
-    @js(#{
-      `description`:"An attribute claim: every value (a JSON array; several AttributeValues) rather than the first."
-    }) `multi`?: boolean;
-    @js(#{
-      `description`:"An attribute claim in a JWT or UserInfo set: the JSON type each value becomes (string, number, boolean, json). A value that is not one is left out. Ignored by the SAML sets. In the Kerberos PAC set (#493) EVERY row has one, of string, int64, uint64 and boolean — the PAC claim type."
-    }) `type`?: "string" | "number" | "boolean" | "json" | "int64" | "uint64"
-  }
-
-@js(#{
-    `description`:"What this API is, where its document is, and every operation it offers."
-  }) @component model `ApiIndex` {
-    `name`?: string;
-    @js(#{
-      `description`:"M.N.O.<build>: the release the repo-root VERSION file declares, followed by the build number. A stamp written before build numbers returned (#1317) reports the bare M.N.O."
-    }) `version`?: string;
-    @js(#{
-      `description`:"The build number on its own: the UTC build instant as YYYYMMDDHHMMSS, or the BUILD_NUMBER a release build named. Absent on a stamp that carries none."
-    }) `build`?: string;
-    @js(#{
-      `description`:"True when this build was flagged as a release (STS_RELEASE=true) and named its build number."
-    }) `release`?: boolean;
-    @js(#{
-      `description`:"The first twelve characters of the commit this was built from. Absent when the build could not know it."
-    }) `commit`?: string;
-    @js(#{`description`:"When this build was made. Read it with `stamped`."}) `builtAt`?: string;
-    @js(#{
-      `description`:"True when this version came off a record written at image build time. False means the process computed its own record at startup, so `builtAt` and the build number are the moment it started."
-    }) `stamped`?: boolean;
-    @js(#{`description`:"Where the document is."}) `openapi`?: string;
-    @js(#{`description`:"Where the explorer is."}) `docs`?: string;
-    @js(#{`description`:"Where the console every operation mirrors is."}) `console`?: string;
-    @js(#{
-      `description`:"Whether this API requires an access token (`adminApi.authRequired`, on by default)."
-    }) `protected`?: boolean;
-    @js(#{
-      `description`:"Every management operation, with the console page it mirrors. The console's own operations are listed by GET /admin-api/console/operations (#454)."
-    }) `operations`?: (WithMethodPathOperationIdEtc)[]
-  }
-
-@js(#{
-    `description`:"What this service is and how much it has done since it started."
-  }) @component model `Status` {
-    `issuer`?: string;
-    `startedAt`?: string;
-    `uptimeMs`?: numeric;
-    @js(#{`description`:"Endpoint calls served."}) `calls`?: integer;
-    `tokensHeld`?: integer;
-    @js(#{
-      `description`:"True when the token register is read on demand (#820): tokensHeld counts the recent tokens this process holds, not every token issued."
-    }) `tokensHeldOnly`?: boolean;
-    `tokensRevoked`?: integer;
-    @js(#{
-      `description`:"Assertions, tickets and credentials: everything that is not a JWT."
-    }) `artifactsHeld`?: integer;
-    @js(#{`description`:"Browser sign-on sessions really held."}) `signOnSessions`?: integer;
-    `usersKnown`?: integer;
-    `usersAuthenticatedHere`?: integer;
-    @js(#{`description`:"The console pages this API mirrors."}) `pages`?: (string)[]
-  }
-
-@js(#{
-    `description`:"Everything counted: endpoint calls by matched route and status class, tokens and artifacts by kind, and sessions counted BOTH ways."
-  }) @component model `Metrics` {
-    @js(#{`description`:"Milliseconds since the epoch."}) `startedAt`?: numeric;
-    `startedAtIso`?: string;
-    @js(#{
-      `description`:"When this snapshot was taken, in milliseconds, so that every age in it can be worked out without trusting the caller's clock."
-    }) `now`?: numeric;
-    `uptimeMs`?: numeric;
-    @js(#{`description`:"The custom claim sets and how many claims each holds."}) `claims`?: (WithIdLabelCountEtc4)[];
-    @js(#{`description`:"Endpoint calls, in total and per matched route."}) `calls`?: WithTotalPathsPathsHereEtc8;
-    @js(#{`description`:"JWTs by kind, with the state of each."}) `tokens`?: WithHeldHeldOnlyForgottenEtc6;
-    `artifacts`?: WithHeldHeldHereForgottenEtc5;
-    `users`?: WithKnownCapHeldOnlyEtc7;
-    `sessions`?: WithFamiliesDistinctSubjects;
-    `signOnSessions`?: WithHeldActiveWindowedEtc5
-  }
-
-@js(#{
-    `description`:"One live thing: a session, a credential, a relying party, a directory connection, or an artifact that cannot be ended at all.",
-    `additionalProperties`:true
-  }) @component model `LogoutRow` {
-    @js(#{
-      `description`:"What `POST /admin-api/logout/end` takes in `select`. It is `<family>:<handle>`, and for a row whose natural key is a CREDENTIAL — an authorization code, a pre-authorized code — the handle is a hash of it and never the value: a code in a reply is a code in a log."
-    }) `id`?: string;
-    @js(#{`description`:"Which family it belongs to."}) `family`?: string;
-    @js(#{`description`:"What it is, in that family's own vocabulary."}) `kind`?: string;
-    @js(#{`description`:"The thing itself, for a person."}) `label`?: string;
-    @js(#{`description`:"Who issued it, to whom, and what rides on it."}) `detail`?: string;
-    @js(#{`description`:"Epoch ms, or 0 where the family cannot say."}) `startedAt`?: integer;
-    @js(#{
-      `description`:"Epoch ms, or 0 for \"no expiry was stated\" — which is the honest answer for several of these rather than an expiry of now."
-    }) `expiresAt`?: integer;
-    @js(#{
-      `description`:"FALSE means nothing can end it — not this service and not a real one. Nothing consults the issuer when a SAML assertion, a Kerberos service ticket or an X509-SVID is presented, so there is no revocation to perform. `why` says so in a sentence."
-    }) `terminable`?: boolean;
-    @js(#{
-      `description`:"When `terminable` is false, the reason. Empty otherwise."
-    }) `why`?: string;
-    @js(#{
-      `description`:"The browser sign-on session it hangs off, where there is one. Empty is a fact about the row — the direct grants have no session — rather than a gap."
-    }) `sessionId`?: string
-  }
-
-@js(#{
-    `description`:"One family of live things, and the prose saying what a logout does and does not reach in it.",
-    `additionalProperties`:true
-  }) @component model `LogoutFamily` {
-    `id`?: string;
-    `label`?: string;
-    `protocol`?: string;
-    @js(#{
-      `description`:"The document this family's behaviour comes from, or a sentence saying there is none to cite — which is the answer for everything that cannot be recalled."
-    }) `spec`?: string;
-    `what`?: string;
-    `terminable`?: boolean;
-    @js(#{`description`:"How many are live."}) `held`?: integer;
-    @js(#{
-      `description`:"How many were held back by `logout.maxRows`. The cap is on what is LISTED and never on what a termination reaches: a global logout still ends every one of them."
-    }) `notListed`?: integer;
-    @js(#{
-      `description`:"Set when this family could not be read. The rest of the reply is unaffected — a family that cannot answer is reported rather than taking the whole inventory down."
-    }) `failure`?: string;
-    `rows`?: (`LogoutRow`)[]
-  }
-
-@js(#{
-    `description`:"Every key pair this realm holds, what each is used for, and which can be exported."
-  }) @component model `KeyList` {
-    `issuer`?: string;
-    @js(#{
-      `description`:"The signing keys belong to this realm; the TLS key to the process."
-    }) `realm`?: string;
-    @js(#{
-      `description`:"The settings this page draws, described: the same rows GET /config returns, filtered to the ones this page owns."
-    }) `settings`?: WithPageDescriptionGroupsEtc15;
-    `regeneratedEveryStart`?: boolean;
-    `residency`?: WithPersistingRetentionPlaintextTtlSEtc6;
-    @js(#{
-      `description`:"Every format the exporter knows. What a PARTICULAR key offers is its own `formats`."
-    }) `formats`?: (string)[];
-    `verifiesCredentials`?: boolean;
-    `keys`?: (WithDescriptionIdLabelEtc)[];
-    `rotation`?: NullableObject39;
-    `warning`?: string
-  }
-
-@js(#{
-    `description`:"Which key, in which format, under which password.",
-    `additionalProperties`:true
-  }) @component model `KeyExportRequest` {
-    @js(#{`description`:"The `id` from GET /admin-api/keys."}) `key`?: string;
-    `format`?: "pem" | "der" | "jwk" | "pkcs12";
-    @js(#{
-      `description`:"REQUIRED for `pkcs12`. Optional for the other three, where it encrypts the private half — PKCS#8 for PEM and DER, PBES2 as a .jwe for JWK. Empty means the private key comes out in the clear, which is usually what is wanted in development and never anywhere else."
-    }) `password`?: string
-  }
-
-@component model `KeyExport` {
-    `ok`: boolean;
-    `message`?: string;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    @js(#{`description`:"One line about what came out."}) `status`?: string;
-    @js(#{
-      `description`:"True for a post-quantum key, which comes out as its public half."
-    }) `publicOnly`?: boolean;
-    `files`?: (WithNameMimeBytesEtc)[]
-  }
-
-@js(#{
-    `description`:"What this service does when it signs, verifies, encrypts or decrypts, for every identity service it advertises. Every algorithm list is READ FROM THE MODULE THAT PERFORMS THE ALGORITHM, so it cannot claim something this service does not do."
-  }) @component model `CryptoMetadata` {
-    `signaturePolicy`?: WithPqcOnlySurfaces;
-    @js(#{`description`:"This service as the request reached it."}) `issuer`?: string;
-    @js(#{
-      `description`:"The trust realm the key material below belongs to. The ALGORITHM tables are process-wide; the SIGNING KEYS are per realm."
-    }) `realm`?: string;
-    `generatedAt`?: string;
-    @js(#{`description`:"Where all of this happens."}) `oneModule`?: string;
-    `drift`?: WithCheckedUndescribedStaleEtc4;
-    `keys`?: WithRealmRegeneratedEveryStartSigningEtc9;
-    `families`?: (WithNameSignsVerifiesEtc10)[];
-    `hashing`?: WithJwsXmlDigestMethodsScimDigestEtc5;
-    `signatures`?: WithJwsXmlCanonicalizationEtc5;
-    `encryption`?: WithJweXmlKerberosEtc4;
-    @js(#{
-      `description`:"The one to read before quoting this reply: signatures and key establishment are reported separately, because a signature is checked when it is presented while captured ciphertext can be kept and opened later."
-    }) `postQuantum`?: WithAlgorithmsSignaturesKeyEstablishmentEtc4;
-    `standards`?: (WithKeyNameSpecsEtc5)[]
-  }
-
-@js(#{
-    `description`:"Every session this service is holding right now, filtered and paged."
-  }) @component model `SessionList` {
-    `installed`?: boolean;
-    `note`?: string;
-    `held`?: numeric;
-    `matched`?: numeric;
-    `shown`?: numeric;
-    `heldByKind`?: Record<numeric>;
-    `filter`?: WithQProtocol;
-    `protocols`?: (string)[];
-    `at`?: numeric;
-    `expiryRules`?: Record<string>;
-    `sessions`?: (`SessionRow`)[];
-    `unauthenticatedHeld`?: numeric;
-    `unauthenticatedKept`?: boolean;
-    `unauthenticatedSessions`?: (`SessionRow`)[];
-    `unauthenticatedPaging`?: WithPagePagesPerPageEtc8;
-    `windowed`?: boolean;
-    `accountChoices`?: WithEnabledCounts;
-    `page`?: integer;
-    `pages`?: integer;
-    `perPage`?: integer;
-    `firstRow`?: integer;
-    `lastRow`?: integer;
-    `paging`?: WithPagePagesPerPageEtc8
-  }
-
-@js(#{`description`:"One live session of any kind."}) @component model `SessionRow` {
-    `id`?: string;
-    `family`?: string;
-    `kind`?: string;
-    `derivedFrom`?: string;
-    `rpClientId`?: string;
-    `key`?: string;
-    `username`?: string;
-    `sub`?: string;
-    `protocol`?: string;
-    `handle`?: string;
-    `sessionId`?: string;
-    `startedAt`?: numeric;
-    `expiresAt`?: numeric;
-    `expiryRule`?: string;
-    `amr`?: StringOrString;
-    `acr`?: string;
-    `deviceBound`?: NullableObject40;
-    `carries`?: (string)[];
-    `detail`?: string;
-    `authenticated`?: boolean;
-    `accountSet`?: string;
-    `terminable`?: boolean;
-    `why`?: string
-  }
-
-@js(#{
-    `description`:"One OpenID Connect Back-Channel Logout 1.0 delivery: a signed (and, where the client registered it, encrypted) Logout Token this service POSTs to a relying party's registered backchannel_logout_uri when a session it was issued an authorization response on ends. A row of a persisted, replicated store — every node lists every node's — and the token itself is never in a reply.",
-    `additionalProperties`:true
-  }) @component model `BackchannelDelivery` {
-    @js(#{
-      `description`:"Derived from the session and the client, so the same delivery planned by two processes is one row. What `retry-backchannel` names."
-    }) `id`?: string;
-    `realm`?: string;
-    @js(#{
-      `description`:"The sign-on session whose end it reports — the Logout Token's `sid`."
-    }) `sessionId`?: string;
-    @js(#{`description`:"The token's `aud`."}) `clientId`?: string;
-    `uri`?: string;
-    @js(#{
-      `description`:"What the client registered as backchannel_logout_session_required. `sid` is sent either way."
-    }) `sessionRequired`?: boolean;
-    @js(#{
-      `description`:"`pending` until it is accepted (`sent`: 200 or 204) or finally fails — refused with 400, refused by the outbound policy, or out of attempts — as a DEAD LETTER (`dead`), which is sent again only by `retry-backchannel`. A sign-out answers BEFORE its deliveries are made, so its own reply says `pending`."
-    }) `state`?: "pending" | "sent" | "dead";
-    @js(#{
-      `description`:"1, and one more for each operator retry; each generation is a new Logout Token."
-    }) `generation`?: integer;
-    @js(#{`description`:"Attempts recorded in this generation."}) `attempts`?: integer;
-    @js(#{
-      `description`:"An attempt is claimed and not yet recorded — being sent now, or by a process that died, in which case another takes it over when its lease lapses."
-    }) `inFlight`?: boolean;
-    @js(#{`description`:"The host and process that last claimed an attempt."}) `holder`?: string;
-    @js(#{`description`:"The last HTTP status, or 0 where none came back."}) `status`?: integer;
-    @js(#{`description`:"The STS-OAUTH-05xx code of the last failure."}) `errorCode`?: string;
-    `why`?: string;
-    @js(#{`description`:"Which door ended the session."}) `via`?: string;
-    @js(#{
-      `description`:"A sign-out (any door, an account disabled included), an expiry, or a relying party forgotten on a session that stays."
-    }) `trigger`?: "sign-out" | "expiry" | "forget";
-    @js(#{
-      `description`:"The JWE alg and enc the token was encrypted with, or empty."
-    }) `encrypted`?: string;
-    @js(#{`format`:"date-time"}) `queuedAt`?: string;
-    @js(#{`description`:"ISO 8601 while pending, else empty."}) `nextAttemptAt`?: string;
-    @js(#{`description`:"ISO 8601, or empty before the first."}) `lastAttemptAt`?: string;
-    @js(#{`description`:"ISO 8601, or empty while pending."}) `finishedAt`?: string
-  }
-
-@js(#{
-    `description`:"What this service is still holding for one identity, across every protocol family — or, with no `user`, the list of families a logout reaches.",
-    `additionalProperties`:true
-  }) @component model `LogoutInventory` {
-    @js(#{`description`:"The name that was asked about."}) `user`?: string;
-    @js(#{
-      `description`:"FALSE with no `user` means this is the family list rather than an identity."
-    }) `known`?: boolean;
-    @js(#{
-      `description`:"The normalised identity key everything is filed under — what folds `alice`, `alice@REALM` and a `urn:` subject into one answer."
-    }) `key`?: string;
-    @js(#{`description`:"Browser sign-on sessions held."}) `sessions`?: integer;
-    @js(#{`description`:"Live items in every family."}) `total`?: integer;
-    `listed`?: integer;
-    `notListed`?: integer;
-    @js(#{`description`:"The `logout.maxRows` cap."}) `maxRows`?: integer;
-    @js(#{
-      `description`:"Whether the CONSOLE session on the request holds Admin Write. A call carrying only this API's access token has no console session, so this reads false there; what that token may do is decided by its scope at this API's gate."
-    }) `canWrite`?: boolean;
-    `families`?: (`LogoutFamily`)[];
-    @js(#{
-      `description`:"The same rows flattened, filtered and paged — which is what the console table shows."
-    }) `rows`?: (`LogoutRow`)[];
-    @js(#{
-      `description`:"The back-channel Logout Token deliveries in this realm, from EVERY node, newest first, with or without `user`, narrowed by `deliveryState` and `deliveryq` and paged by `backchannelDeliveriesPage` — where a delivery a sign-out reported as `pending` is seen to have arrived, and where the dead letters are. Every final outcome is also a `logout.backchannel` audit row."
-    }) `backchannelDeliveries`?: (`BackchannelDelivery`)[];
-    @js(#{
-      `description`:"Where `backchannelDeliveries` came from in the whole list: the page, how many there are, and the 1-based row numbers this page covers. Same member names the flat lists carry at the top level, one level down."
-    }) `backchannelDeliveriesPaging`?: WithDescriptionTotalDescriptionEtc12;
-    @js(#{
-      `description`:"How many deliveries this realm holds in each state.",
-      `additionalProperties`:true
-    }) `backchannelCounts`?: WithPendingSentDescriptionEtc4;
-    @js(#{`description`:"The state asked for, or empty."}) `deliveryState`?: string;
-    @js(#{`description`:"The search asked for, or empty."}) `deliveryq`?: string;
-    @js(#{
-      `description`:"The page these rows are from, CLAMPED — `?page=999` on a two-page list reports 2, which is the page in the reply."
-    }) `page`?: integer;
-    @js(#{`description`:"How many pages the match has."}) `pages`?: integer;
-    @js(#{`description`:"Rows per page, clamped to the cap."}) `perPage`?: integer;
-    @js(#{`description`:"1-based and inclusive; 0 when nothing matched."}) `firstRow`?: integer;
-    @js(#{`description`:"1-based and inclusive."}) `lastRow`?: integer
-  }
-
-@js(#{
-    `description`:"Everyone this service has authenticated, united with at most `scanLimit` of the people the directory defines."
-  }) @component model `UserList` {
-    `known`?: numeric;
-    `matched`?: numeric;
-    `shown`?: numeric;
-    `authenticatedHere`?: numeric;
-    `factors`?: WithWithSecondWithTotpWithKeysEtc7;
-    `store`?: boolean;
-    `scanned`?: numeric;
-    `capped`?: boolean;
-    `scanLimit`?: numeric;
-    `directoryPeople`?: NullableNumber;
-    `directoryCounts`?: NullableObject41;
-    `directoryCountedAt`?: NullableString;
-    `directoryCountsKeptFor`?: NullableNumber;
-    `registryCap`?: numeric;
-    `filter`?: WithQProtocolFactorEtc4;
-    `serviceAccounts`?: numeric;
-    `protocols`?: (string)[];
-    `page`?: integer;
-    `pages`?: integer;
-    `perPage`?: integer;
-    `firstRow`?: integer;
-    `lastRow`?: integer;
-    `paging`?: WithPagePagesPerPageEtc8;
-    `withActiveSession`?: NullableNumber;
-    `personFieldCount`?: numeric;
-    `newUserContainer`?: string;
-    `registryKeeps`?: numeric;
-    `users`?: (WithKeyNameFormsEtc22)[]
-  }
-
-@js(#{
-    `description`:"One identity: the names it has been seen under, how it authenticated, every sign-on session it holds with the tokens issued on each, and its directory entry."
-  }) @component model `UserDetail` {
-    `known`?: boolean;
-    `user`?: WithKeyNameFormsEtc17;
-    `subject`?: string;
-    `serviceAccount`?: NullableObject43;
-    `risk`?: NullableObject44;
-    `factors`?: NullableObject45;
-    `sessions`?: (WithIdUsernameSubEtc15)[];
-    `sessionsPaging`?: WithPagePagesPerPageEtc8;
-    `tokensOnEndedSessions`?: (WithStateKeyJtiEtc29)[];
-    `tokensOnEndedSessionsPaging`?: WithPagePagesPerPageEtc8;
-    `tokensWithNoSession`?: (WithStateKeyJtiEtc29)[];
-    `tokensWithNoSessionPaging`?: WithPagePagesPerPageEtc8;
-    `artifacts`?: (WithStateKindIssuedAtEtc23)[];
-    `artifactsPaging`?: WithPagePagesPerPageEtc8;
-    `ldap`?: NullableObject46;
-    `credentials`?: WithStorableFoundKeyPairsEtc9;
-    `federationLinks`?: (WithLinkRelationshipIssuerEtc5)[];
-    `federationLinksPaging`?: WithPagePagesPerPageEtc8;
-    `kerberos`?: WithKdcRealmTrustRealmEtc11;
-    `attributeEditor`?: NullableObject49;
-    `gnapGrants`?: (WithIdStateFinalizationEtc18)[];
-    `gnapGrantsPaging`?: NullableObject50;
-    `gnapGrantsCells`?: NullableObject51;
-    `uma`?: NullableObject52;
-    `authenticationEvents`?: (WithSeqOriginAtEtc17)[];
-    `authenticationEventsPaging`?: WithPagePagesPerPageEtc8;
-    `authenticationEventsMatched`?: numeric;
-    `authenticationEventsKnownActors`?: Record<boolean>;
-    `authenticationEventsLog`?: WithHeldRecordedDroppedEtc4;
-    `page`?: {
-      `key`?: string;
-      `riskAsked`?: boolean;
-      `counts`?: WithLiveTokensValidEtc7;
-      `back`?: string;
-      `params`?: Record<StringOrNumericOrBooleanEtcOrStringOrNumericOrBooleanEtc>;
-      `blocksPerPage`?: numeric;
-      `perPage`?: numeric;
-      `maxEventsPerUser`?: numeric;
-      `directoryLoaded`?: boolean;
-      `mfa`?: WithStorableMechTotpEtc15;
-      `fieldGroups`?: (WithIdLabelWhatEtc4)[];
-      `delegation`?: WithFoundPersonUsernameEtc11;
-      `keyPairs`?: WithStorableFoundUsernameEtc10;
-      `serviceAccountRules`?: WithRequiresOwnerMaxOwnersDn;
-      `serviceProviders`?: (WithFedIdFedPeer)[]
-    }
-  }
-
-@component model `Saml2ServiceProviderList` {
-    `protocolEndpoints`?: (WithNameMethodsUrlEtc6)[];
-    `serviceProviders`?: (WithNameAuthenticationsSessionsEtc19)[];
-    `paging`?: WithPagePagesPerPageEtc9;
-    `unscopedMetadata`?: string;
-    `settings`?: WithPageGroupsSettingCountEtc11;
-    `artifactsAwaitingResolution`?: numeric;
-    `requestsHeldForSignIn`?: numeric;
-    `mdqRefused`?: (WithEntityIdWhyFirstAtEtc5)[];
-    `mdqRefusedPaging`?: WithPagePagesPerPageEtc9;
-    `kind`?: string;
-    `found`?: boolean;
-    `name`?: string;
-    `authentications`?: numeric;
-    `assertionConsumerServices`?: (string)[];
-    `singleLogoutServices`?: (string)[];
-    `nameIdFormats`?: (string)[];
-    `responseBindings`?: (string)[];
-    `lastRequestSigned`?: boolean;
-    `lastRequestVerification`?: WithOutcomeBindingSignatureMethodEtc4;
-    `signingCertificate`?: string;
-    `signingCertificates`?: (string)[];
-    `observedSigningCertificate`?: string;
-    `signedRequestsRequired`?: WithRequiredWhy;
-    `metadata`?: WithStateStateWhyExpiresAtEtc27;
-    `identifier`?: string;
-    `slug`?: NullableString;
-    `idpEntityId`?: NullableString;
-    `metadataUrl`?: string;
-    `ssoUrl`?: string;
-    `sloUrl`?: string;
-    `arsUrl`?: string
-  }
-
-@component model `FederationRelationshipList` {
-    `relationshipCount`?: integer;
-    `matched`?: integer;
-    `shown`?: integer;
-    `ready`?: IntegerOrBoolean;
-    `filter`?: WithQRoleCategory;
-    `page`?: integer;
-    `pages`?: integer;
-    `perPage`?: integer;
-    `firstRow`?: integer;
-    `lastRow`?: integer;
-    `container`?: NullableString;
-    `max`?: numeric;
-    `settings`?: NullableObject61;
-    `roles`?: (WithRoleLabelShortEtc4)[];
-    `protocols`?: (WithProtocolLabelFamilyEtc7)[];
-    `paths`?: WithBaseLoginAcsEtc18;
-    `paging`?: WithPagePagesPerPageEtc8;
-    `roleCounts`?: Record<numeric>;
-    `categoryCounts`?: Record<numeric>;
-    `consumerProviders`?: WithOnCatalogue;
-    `enabledNotConfigured`?: integer;
-    `authentications`?: integer;
-    `relationships`?: (WithIdNameRoleEtc26)[];
-    `found`?: boolean;
-    `id`?: string;
-    `name`?: string;
-    `role`?: string;
-    `roleLabel`?: string;
-    `protocol`?: string;
-    `protocolLabel`?: string;
-    `peer`?: string;
-    `application`?: string;
-    `category`?: string;
-    `provider`?: StringOrNullOrIdStringLabelStringNoteStringDocsStringRealmOnBoolean;
-    `providerLabel`?: string;
-    `enabled`?: boolean;
-    `missing`?: (string)[];
-    `usable`?: boolean;
-    `signsIn`?: boolean;
-    `signalsEnabled`?: boolean;
-    `releases`?: (string)[];
-    `mappings`?: (string)[];
-    `users`?: integer;
-    `lastUser`?: string;
-    `lastSeen`?: string;
-    `lastError`?: string;
-    `lastErrorAt`?: string;
-    `dn`?: string;
-    `endpoints`?: WithAssertionConsumerServiceLoginMetadataEtc10;
-    `fields`?: WithFedIdCnFedNameEtc89;
-    `editable`?: (WithNameKindRoleEtc9)[];
-    `unmappedAttributes`?: (WithNameRefusedFirstEtc4)[];
-    `signals`?: NullableObject62;
-    `signalArrivals`?: (WithRelationshipJtiViaEtc15)[];
-    `outboundSignals`?: NullableObject63;
-    `encryption`?: NullableObject64;
-    `links`?: (WithUsernameDnLinkEtc5)[];
-    `linksPaging`?: WithPagePagesPerPageEtc8;
-    `setFields`?: (WithNameKindRoleEtc9)[];
-    `multiFields`?: (WithNameKindRoleEtc9)[];
-    `signalSetFields`?: (WithNameKindRoleEtc9)[];
-    `schema`?: (WithNameKindRoleEtc9)[];
-    `enumLabels`?: Record<string>;
-    `defaultSubjectPolicy`?: string;
-    `autocreateDefault`?: boolean;
-    `subjectPolicy`?: string;
-    `encrypts`?: boolean;
-    `base`?: string;
-    `loginHref`?: string;
-    `metadataUrl`?: string;
-    `signOut`?: WithSingleLogoutSignOutCleanupBackchannelLogoutEtc5;
-    `protocolEndpoints`?: (WithNameMethodsUrlEtc72)[]
-  }
-
-@component model `Saml11RelyingPartyList` {
-    `protocolEndpoints`?: (WithNameMethodsUrlEtc6)[];
-    `relyingParties`?: (WithNameAuthenticationsSessionsEtc15)[];
-    `paging`?: WithPagePagesPerPageEtc9;
-    `unscopedMetadata`?: string;
-    `settings`?: WithPageGroupsSettingCountEtc11;
-    `artifactsAwaitingResolution`?: numeric;
-    `assertionsHeldByReference`?: numeric;
-    `flowsHeldForSignIn`?: numeric;
-    `kind`?: string;
-    `registered`?: boolean;
-    `identifierLooksGuessed`?: boolean;
-    `name`?: string;
-    `authentications`?: numeric;
-    `assertionConsumerServices`?: (string)[];
-    `nameIdFormats`?: (string)[];
-    `profiles`?: (string)[];
-    `identifier`?: string;
-    `slug`?: NullableString;
-    `idpProviderId`?: NullableString;
-    `metadataUrl`?: string;
-    `ssoUrl`?: string;
-    `responderUrl`?: string
-  }
-
-@component model `SamlIdpInitiatedList` {
-    `protocolEndpoints`?: (WithNameMethodsUrlEtc6)[];
-    `idpInitiated`?: (WithIdentifierNameEntityIdEtc9)[];
-    `idpInitiatedPaging`?: WithPagePagesPerPageEtc82;
-    `realmSwitches`?: (WithProtocolLabelSettingEtc5)[]
-  }
-
-@component model `AuthorizationServerList` {
-    `profileCount`?: integer;
-    `shown`?: integer;
-    `members`?: (WithNameGroupKindEtc6)[];
-    `paging`?: WithPagePagesPerPageEtc8;
-    `overrideTotal`?: integer;
-    `driftTotal`?: integer;
-    `authorizationServers`?: (WithIdLabelDescriptionEtc14)[];
-    `page`?: integer;
-    `pages`?: integer;
-    `perPage`?: integer;
-    `firstRow`?: integer;
-    `lastRow`?: integer;
-    `id`?: string;
-    `label`?: string;
-    `description`?: string;
-    @js(#{`description`:"The members this server overrides."}) `overrides`?: Record<Shape4>;
-    `removed`?: (string)[];
-    `changedAt`?: string;
-    `memberCount`?: integer;
-    `autoCreated`?: boolean;
-    `seen`?: numeric;
-    `seenAt`?: string;
-    `createdAt`?: string;
-    `urls`?: WithOauthOidcAuthorizeEtc4;
-    `found`?: boolean;
-    `drift`?: (WithMemberXFreeFormDescriptionEtc9)[];
-    @js(#{
-      `x-free-form`:"The RFC 8414 document this server would publish: what this service builds, with the operator's overrides, whose values are any JSON.",
-      `description`:"The RFC 8414 document this server would publish: what this service builds, with the operator's overrides, whose values are any JSON."
-    }) `capabilities`?: unknown;
-    `memberGroups`?: (string)[]
-  }
-
-  
-
-@hoisted union ApplicationList_page_h466 {
-    integer,
-    {
-      @js(#{`description`:"What each attribute of the entry is."}) `notes`?: Record<{`text`?: string; `sensitive`?: boolean}>;
-      `config`?: WithFieldsDescriptionValuesEtc18;
-      `passkeyPolicies`?: WithNamedMissingAppliesEtc6;
-      @js(#{`description`:"By protocol."}) `launchUrls`?: Record<{
-        `protocol`?: string;
-        `label`?: string;
-        `url`?: string;
-        `enabled`?: boolean;
-        `setting`?: string;
-        `attribute`?: string;
-        `missing`?: (string)[];
-        `endpoint`?: NullableString
-      }>;
-      `cors`?: (WithStoredCanonical)[];
-      `accessTypes`?: (WithStoredTypeDescriptionEtc29)[];
-      `fga`?: NullableObject68;
-      `permissionClaims`?: WithPermissionsStaleCatalogue;
-      `grantsUncataloguedAccess`?: boolean;
-      `acceptsUnregisteredAddresses`?: boolean;
-      `protocolRows`?: (WithIdLabelKindsEtc4)[];
-      `editable`?: WithSetMultiMultiAll;
-      `did`?: WithDidUrlOkEtc6;
-      `credentials`?: WithOauthDeclaredClientSecretPurposesEtc8;
-      `signals`?: WithInstalledStreamsSettingsEtc4;
-      `softwareStatement`?: WithIssuersUsableKeysKeyProblemsEtc8;
-      `roles`?: WithHeldOfferableRequiredEtc4;
-      `permissions`?: WithHeldExposesOfferableEtc8;
-      `lifetimes`?: WithRowsSkew;
-      `claims`?: (WithIdLabelAttributeEtc6)[];
-      `claimSelections`?: WithCataloguePreviewSetsEtc4;
-      `enrollment`?: WithCredentialsConfig;
-      `observed`?: WithPagingShown;
-      `warnings`?: (WithAttributeValueReasonEtc5)[];
-      `owners`?: (WithDnKindNameEtc4)[];
-      `maxOwners`?: numeric;
-      `ownership`?: WithKindNameMarkedEtc5;
-      `krb5Across`?: NullableObject75
-    }
-  }
-
-  
-
-@component model `ApplicationList` {
-    `applicationCount`?: integer;
-    `matched`?: integer;
-    `shown`?: integer;
-    `registered`?: BooleanOrNumeric;
-    `filter`?: WithQKindExclude;
-    `container`?: NullableString;
-    `max`?: NullableNumber;
-    `kinds`?: (StringOrKindStringLabelStringWhatString)[];
-    `settings`?: NullableObject65;
-    `paging`?: WithPagePagesPerPageEtc8;
-    @js(#{`description`:"How many applications are of each kind."}) `kindCounts`?: Record<integer>;
-    `authentications`?: numeric;
-    `protocols`?: (StringOrIdStringLabelStringKindStringKindsStringIdentifierAttributeStringRedirectAttributeStringLogoutAttributeStringDeliveryAttributeStringEventsAttributeStringSecretAttributeStringWhatString)[];
-    `applications`?: (WithIdentifierDnLabelDnEtc27)[];
-    `page`?: ApplicationList_page_h466;
-    `pages`?: integer;
-    `perPage`?: integer;
-    `firstRow`?: integer;
-    `lastRow`?: integer;
-    `identifier`?: string;
-    `dnLabel`?: NullableString;
-    `dn`?: NullableString;
-    `name`?: NullableString;
-    `allowedProtocols`?: (string)[];
-    `recordedProtocols`?: (string)[];
-    `declaredKinds`?: (string)[];
-    `registeredBy`?: string;
-    `returnAddressesObserved`?: (WithAttributeValueHeldEtc4)[];
-    `firstSeen`?: string;
-    `lastSeen`?: string;
-    `sessions`?: numeric;
-    `users`?: numeric;
-    `description`?: NullableString;
-    `origin`?: NullableString;
-    `createdAt`?: NullableString;
-    `modifiedAt`?: NullableString;
-    `operational`?: (string)[];
-    @js(#{`description`:"By attribute name."}) `attributes`?: Record<StringOrNumericOrBooleanEtc4>;
-    @js(#{`description`:"By attribute name."}) `fields`?: Record<StringOrNumericOrBooleanEtc3>;
-    `found`?: boolean;
-    `warnings`?: (WithAttributeValueReasonEtc5)[];
-    `attributesShown`?: (WithNameValuesSealedAtRestEtc4)[];
-    `attributesPaging`?: WithPagePagesPerPageEtc8;
-    `authenticationEvents`?: (WithSeqOriginAtEtc16)[];
-    `authenticationEventsPaging`?: WithPagePagesPerPageEtc8;
-    `authenticationEventsMatched`?: integer;
-    @js(#{`description`:"Which actors have a user page."}) `authenticationEventsKnownActors`?: Record<boolean>;
-    `authenticationEventsLog`?: WithHeldRecordedDroppedEtc4;
-    `returnAddressesObservedShown`?: (WithAttributeValueHeldEtc4)[];
-    `returnAddressesObservedPaging`?: WithPagePagesPerPageEtc8;
-    `credentials`?: WithClientSecretKeyPairsCaAvailableEtc8;
-    `sharedSignals`?: WithInstalledStreamsSettings;
-    `certificateEnrollment`?: WithFamiliesRulesCertificateCapEtc10;
-    `customClaims`?: (WithIdLabelAttributeEtc6)[];
-    `claimSelections`?: WithCataloguePreviewSetsEtc4;
-    `tokenLifetimes`?: WithLifetimesClockSkewS;
-    `softwareStatements`?: WithDeclaredIssuersUsableKeysIssuedEtc5;
-    `applicationRoles`?: WithHeldOfferableRequiredEtc4;
-    `delegatedPermissions`?: WithHeldExposesOfferableEtc5;
-    `owners`?: (WithDnKindNameEtc4)[];
-    `maxOwners`?: numeric
-  }
-
-@js(#{
-    `description`:"Every attribute a person may be created with, and the four ways they can be given a way in."
-  }) @component model `NewUserForm` {
-    `directory`?: boolean;
-    `container`?: NullableString;
-    `why`?: string;
-    `realm`?: WithIdName;
-    `mode`?: string;
-    `offersExampleData`?: boolean;
-    `fields`?: (WithAttributeLabelSchemaEtc5)[];
-    `fieldGroups`?: (WithIdLabelWhatEtc4)[];
-    `gridFields`?: (WithAttributeLabelGroupEtc8)[];
-    `requiredAttributes`?: (string)[];
-    `requiredEnforced`?: boolean;
-    `credentials`?: (WithIdLabelWhat)[];
-    `username`?: string;
-    `fieldRows`?: (WithAttributeTypeWhatEtc16)[];
-    `longTextAttributes`?: (string)[];
-    `mailAvailable`?: boolean;
-    `persistence`?: WithPersistsDirectoryMode;
-    `defaultCredential`?: string;
-    `credential`?: string;
-    `passwordPolicy`?: WithProfileEnforcedRules;
-    `invented`?: NullableObject76;
-    `inventRefused`?: string
-  }
-
-@component model `NewApplicationForm` {
-    `directory`?: boolean;
-    `container`?: NullableString;
-    `max`?: NullableNumber;
-    `applicationCount`?: integer;
-    `realm`?: WithIdName;
-    `kinds`?: (WithKindLabelWhat)[];
-    `protocols`?: (WithIdLabelKindEtc11)[];
-    `declarations`?: (WithAttributeRoleKindEtc8)[];
-    `fields`?: (WithAttributeTypeLongEtc19)[];
-    `fieldGroups`?: (WithIdLabelFamilies)[];
-    `familyChoices`?: (WithIdLabelFamiliesEtc5)[];
-    `longTextAttributes`?: (string)[];
-    `defaultSecretLifetimeDays`?: numeric;
-    `persistence`?: WithPersistsDirectoryMode;
-    `resourceMetadataImport`?: WithWellKnownAcceptsNonconformingDialsInternalAddresses;
-    `editable`?: (WithNameModeSensitiveEtc4)[]
-  }
-
-@js(#{`description`:"Every group the embedded directory holds."}) @component model `GroupList` {
-    `baseDn`?: string;
-    `usersDn`?: string;
-    `groupsDn`?: string;
-    `port`?: NullableNumber;
-    `listening`?: boolean;
-    `listenError`?: NullableString;
-    `ldapsPort`?: NullableNumber;
-    `ldapsListening`?: boolean;
-    `entryCount`?: numeric;
-    `groupCount`?: numeric;
-    `matched`?: numeric;
-    `shown`?: numeric;
-    `canWrite`?: boolean;
-    `membershipValues`?: numeric;
-    `dangling`?: numeric;
-    `settings`?: NullableObject77;
-    `filter`?: WithQExclude;
-    `page`?: integer;
-    `pages`?: integer;
-    `perPage`?: integer;
-    `firstRow`?: integer;
-    `lastRow`?: integer;
-    `paging`?: WithPagePagesPerPageEtc8;
-    `adminGroups`?: WithReadWrite;
-    `groups`?: (WithDnCnRuleEtc14)[]
-  }
-
-@component model `DirectoryEntryList` {
-    `baseDn`?: string;
-    `count`?: integer;
-    `matched`?: integer;
-    `shown`?: integer;
-    `filter`?: WithQOrigin;
-    `origins`?: (string)[];
-    @js(#{`description`:"A count per name."}) `originCounts`?: Record<numeric>;
-    `order`?: string;
-    `search`?: NullableObject78;
-    `entries`?: (WithDnOriginDescriptionEtc4)[];
-    `page`?: integer;
-    `pages`?: integer;
-    `perPage`?: integer;
-    `firstRow`?: integer;
-    `lastRow`?: integer;
-    `paging`?: WithPagePagesPerPageEtc82;
-    `directory`?: boolean;
-    `message`?: string
-  }
-
-@component model `DirectoryApplicationList` {
-    `baseDn`?: string;
-    `container`?: string;
-    `count`?: integer;
-    `matched`?: integer;
-    `shown`?: integer;
-    `max`?: integer;
-    `filter`?: {`q`?: NullableString};
-    `sourceOfTruth`?: string;
-    `kinds`?: (WithKindLabelWhat)[];
-    `schema`?: WithObjectClassesAttributes;
-    `applications`?: (WithIdentifierDnLabelDnEtc26)[];
-    `page`?: integer;
-    `pages`?: integer;
-    `perPage`?: integer;
-    `firstRow`?: integer;
-    `lastRow`?: integer;
-    `paging`?: WithPagePagesPerPageEtc82;
-    `directory`?: boolean;
-    `message`?: string
-  }
-
-@component model `DirectoryFederationList` {
-    `baseDn`?: string;
-    `container`?: string;
-    `count`?: integer;
-    `matched`?: integer;
-    `shown`?: integer;
-    `max`?: integer;
-    `filter`?: {`q`?: NullableString};
-    `sourceOfTruth`?: string;
-    `roles`?: (WithRoleLabelShortEtc4)[];
-    `protocols`?: (WithProtocolLabelFamilyEtc7)[];
-    `schema`?: WithObjectClassesAttributes;
-    `relationships`?: (WithDnCreatedAtModifiedAtEtc99)[];
-    `enabledCount`?: integer;
-    `page`?: integer;
-    `pages`?: integer;
-    `perPage`?: integer;
-    `firstRow`?: integer;
-    `lastRow`?: integer;
-    `paging`?: WithPagePagesPerPageEtc82;
-    `directory`?: boolean;
-    `message`?: string
-  }
-
-@component model `DirectorySpiffe` {
-    `baseDn`?: string;
-    `container`?: string;
-    `entriesContainer`?: string;
-    `agentsContainer`?: string;
-    `entries`?: integer;
-    `agents`?: integer;
-    `maxEntries`?: integer;
-    `maxAgents`?: integer;
-    `sourceOfTruth`?: string;
-    `editable`?: (string)[];
-    `schema`?: WithObjectClassesAttributes;
-    `filter`?: WithEntryqAgentq;
-    `entriesPaging`?: WithPagePagesPerPageEtc82;
-    `agentsPaging`?: WithPagePagesPerPageEtc82;
-    `registrationEntries`?: (WithIdDnSpiffeIdEtc24)[];
-    `attestedAgents`?: (WithIdDnAttestationTypeEtc13)[];
-    `directory`?: boolean;
-    `message`?: string
-  }
-
-@component model `DirectoryRoleList` {
-    `baseDn`?: string;
-    `container`?: string;
-    `count`?: integer;
-    `matched`?: integer;
-    `shown`?: integer;
-    `max`?: integer;
-    `filter`?: {`q`?: NullableString};
-    `sourceOfTruth`?: string;
-    `builtIn`?: (string)[];
-    `schema`?: WithObjectClassesAttributes;
-    `roles`?: (WithNameDnOriginEtc8)[];
-    `builtInCatalogue`?: (WithNameWhat)[];
-    `page`?: integer;
-    `pages`?: integer;
-    `perPage`?: integer;
-    `firstRow`?: integer;
-    `lastRow`?: integer;
-    `paging`?: WithPagePagesPerPageEtc82;
-    `directory`?: boolean;
-    `message`?: string
-  }
-
-@component model `DirectoryPolicyList` {
-    `baseDn`?: string;
-    `container`?: string;
-    `count`?: integer;
-    `matched`?: integer;
-    `shown`?: integer;
-    `max`?: integer;
-    `ownCount`?: integer;
-    `applicationCount`?: integer;
-    `applicationMax`?: integer;
-    `filter`?: {`q`?: NullableString};
-    `sourceOfTruth`?: string;
-    `schema`?: WithObjectClassesAttributes;
-    `policies`?: (WithNameDnOriginEtc8)[];
-    `enabledCount`?: integer;
-    `page`?: integer;
-    `pages`?: integer;
-    `perPage`?: integer;
-    `firstRow`?: integer;
-    `lastRow`?: integer;
-    `paging`?: WithPagePagesPerPageEtc82;
-    `directory`?: boolean;
-    `message`?: string
-  }
-
-@component model `DirectoryPepList` {
-    `baseDn`?: string;
-    `container`?: string;
-    `count`?: integer;
-    `matched`?: integer;
-    `shown`?: integer;
-    `max`?: integer;
-    `filter`?: {`q`?: NullableString};
-    `sourceOfTruth`?: string;
-    `schema`?: WithObjectClassesAttributes;
-    `peps`?: (WithNameDnOriginEtc8)[];
-    `enabledCount`?: integer;
-    `page`?: integer;
-    `pages`?: integer;
-    `perPage`?: integer;
-    `firstRow`?: integer;
-    `lastRow`?: integer;
-    `paging`?: WithPagePagesPerPageEtc82;
-    `directory`?: boolean;
-    `message`?: string
-  }
-
-@component model `DirectoryService` {
-    `url`?: string;
-    `port`?: NullableInteger;
-    `listening`?: boolean;
-    `listenError`?: NullableString;
-    `baseDn`?: string;
-    `usersDn`?: string;
-    `groupsDn`?: string;
-    `namingContexts`?: (string)[];
-    `searchScope`?: string;
-    `ldapVersion`?: integer;
-    `bindPolicy`?: string;
-    `refusedPassword`?: string;
-    `schema`?: string;
-    `referentialIntegrity`?: boolean;
-    `persistence`?: WithModeConfiguredModeEnabledEtc32;
-    `tls`?: WithLdapsPortUrlEtc10;
-    `autoCreateUsers`?: boolean;
-    `autoCreateRule`?: string;
-    `authenticationFacts`?: string;
-    `enforcedRules`?: (string)[];
-    `limits`?: WithMaxEntriesMaxSearchResultsCurrentEntriesEtc4;
-    `operations`?: (string)[];
-    `specifications`?: (string)[];
-    `implementation`?: string;
-    `ldapPort`?: NullableInteger;
-    `ldapsPort`?: NullableInteger;
-    `certificateProvenance`?: NullableString;
-    `directory`?: boolean;
-    `message`?: string
-  }
-
-@js(#{
-    `description`:"One group, with the same directory facts the list carries around it."
-  }) @component model `GroupDetail` {
-    `baseDn`?: string;
-    `usersDn`?: string;
-    `groupsDn`?: string;
-    `port`?: NullableNumber;
-    `listening`?: boolean;
-    `listenError`?: NullableString;
-    `ldapsPort`?: NullableNumber;
-    `ldapsListening`?: boolean;
-    `entryCount`?: numeric;
-    `maxEntries`?: numeric;
-    `found`?: boolean;
-    `requested`?: string;
-    `notAGroup`?: boolean;
-    `canWrite`?: boolean;
-    `group`?: WithDnCnRuleEtc16;
-    `groups`?: (WithDnCnRuleEtc14)[];
-    `groupCount`?: numeric;
-    `policyReferences`?: (WithAttributeNounChoicesEtc4)[];
-    `ownership`?: WithKindNameMarkedEtc5;
-    `membersPaging`?: WithPagePagesPerPageEtc8;
-    `claimedPaging`?: WithPagePagesPerPageEtc8;
-    `known`?: Record<boolean>;
-    `adminGroups`?: WithReadWrite
-  }
-
-@js(#{
-    `description`:"One issuance: everything that came back in a single reply."
-  }) @component model `IssuedSet` {
-    `setKey`?: string;
-    `setId`?: string;
-    `grouped`?: boolean;
-    `size`?: integer;
-    `kinds`?: (string)[];
-    `families`?: (string)[];
-    `family`?: string;
-    `state`?: string;
-    @js(#{`description`:"How many members are in each state."}) `states`?: Record<integer>;
-    `issuedAt`?: numeric;
-    `expiresAtMs`?: numeric;
-    `lastExpiresAtMs`?: numeric;
-    `username`?: StringOrNumericOrBooleanEtc3;
-    `sub`?: StringOrNumericOrBooleanEtc3;
-    `client_id`?: StringOrNumericOrBooleanEtc3;
-    `audience`?: string;
-    `scope`?: StringOrNumericOrBooleanEtc3;
-    `sessionId`?: string;
-    `sessionAuthenticated`?: boolean;
-    `grant`?: string;
-    `revocableCount`?: integer;
-    `revokedCount`?: integer;
-    `members`?: (`IssuedRecord`)[]
-  }
-
-@js(#{`$comb`:"oneOf"}) @hoisted union IssuedSetDetail_set_h714 {null, `IssuedSet`}
-
-@component model `IssuedSetDetail` {
-    `setKey`?: NullableString;
-    `set`?: IssuedSetDetail_set_h714;
-    `found`?: boolean;
-    `why`?: NullableString
-  }
-
-@component model `IssuedList` {
-    `held`?: integer;
-    `heldSets`?: integer;
-    `coverage`?: WithSourceCompleteNewestEtc6;
-    `matched`?: integer;
-    `matchedCredentials`?: integer;
-    `shown`?: integer;
-    `shownCredentials`?: integer;
-    @js(#{`description`:"Credentials held in each family."}) `heldByFamily`?: Record<integer>;
-    `filter`?: WithFamilyKindStateEtc4;
-    `families`?: (WithFamilyLabelKindsEtc4)[];
-    `revocableKinds`?: (string)[];
-    `revokedCount`?: integer;
-    `sets`?: (`IssuedSet`)[];
-    `issued`?: (`IssuedRecord`)[];
-    `paging`?: WithPagePagesPerPageEtc8;
-    `page`?: integer;
-    `pages`?: integer;
-    `perPage`?: integer;
-    `firstRow`?: integer;
-    `lastRow`?: integer
-  }
-
-@js(#{
-    `description`:"Every setting this service has, grouped by the protocol it belongs to. The same table the /admin/config page renders and the same call it makes, so the console and this API cannot come to describe different sets of settings."
-  }) @component model `Config` {
-    @js(#{`description`:"The realm this was read in."}) `realm`?: string;
-    @js(#{`description`:"The keys that realm holds a value of its own for."}) `realmSettings`?: (string)[];
-    `configFile`?: NullableString2;
-    @js(#{
-      `description`:"The DEFAULT appconfig file, which `configFile` is unioned on top of key by key with the operator's value winning. A setting whose `source` is `defaults` came from here."
-    }) `defaultsFile`?: string;
-    `settingCount`?: integer;
-    @js(#{
-      `description`:"How many of them POST /config/set will take. The rest are restart-only and say why in `restartReason`."
-    }) `editableCount`?: integer;
-    @js(#{
-      `description`:"The keys with a runtime override in force. Empty on a freshly started service, and emptied again by POST /config/reset-all."
-    }) `overridden`?: (string)[];
-    @js(#{
-      `description`:"In the order `config.js` declares them, which is the order the console renders its sections."
-    }) `groups`?: (WithGroupSettings2)[];
-    @js(#{
-      `description`:"WHERE EACH GROUP IS EDITED: every group is drawn on the console page for the protocol it configures, so a caller can send a person to the right page. Every one of those forms posts to the same four actions."
-    }) `homes`?: (WithGroupPagesDescriptionEtc)[];
-    @js(#{
-      `description`:"Empty, and reported rather than left implicit. A sentence here means a setting group exists that no console page draws."
-    }) `homeProblems`?: (string)[];
-    @js(#{
-      `description`:"The settings this page draws, described: the same rows GET /config returns, filtered to the ones this page owns."
-    }) `settings`?: WithPageDescriptionGroupsEtc15
-  }
-
-@js(#{
-    `description`:"One console page, and the settings it draws: the same described rows GET /config returns, filtered to the ones that page owns."
-  }) @component model `PageSettings` {
-    @js(#{`description`:"The console path this mirrors."}) `page`?: string;
-    `title`?: string;
-    @js(#{`description`:"What the page says the family is, as plain text."}) `what`?: string;
-    @js(#{
-      `description`:"The caveats the page carries, in order. On these pages the caveats are most of the content: what a family does NOT check is the half a client author cannot read off a protocol trace."
-    }) `notes`?: (string)[];
-    `links`?: (WithHrefWhat)[];
-    @js(#{
-      `description`:"The settings this page draws, described: the same rows GET /config returns, filtered to the ones this page owns."
-    }) `settings`?: WithPageDescriptionGroupsEtc152;
-    @js(#{`description`:"The page's first paragraph, as the console draws it."}) `leadHtml`?: string;
-    @js(#{`description`:"The caveats, as the console draws them."}) `alsoHtml`?: (string)[];
-    `status`?: WithModeConfiguredModeEnabledEtcOrWithSelfModeWhyEtc
-  }
-
-@component model `TokenLifetimes` {
-    `lifetimes`?: WithAccessTokenTtlSIdTokenTtlSRefreshTokenTtlSEtc4;
-    `settings`?: (WithKeyGroupLabelEtc27)[];
-    `tokens`?: WithHeldForgottenCapEtc5;
-    `now`?: numeric;
-    `context`?: NullableObject93;
-    `overridable`?: (WithSettingAttribute)[]
-  }
-
-@component model `SamlAssertions` {
-    `protocolEndpoints`?: (WithNameMethodsUrlEtc6)[];
-    `assertions`?: WithSaml2LifetimeMinSaml11LifetimeMinClockSkewSEtc5;
-    `perApplication`?: (WithSettingAttributeProfile)[];
-    `settings`?: (WithKeyGroupLabelEtc32)[];
-    `assertionsIssued`?: WithHeldForgottenCapEtc4;
-    `now`?: numeric;
-    `context`?: NullableObject94;
-    `rows`?: (WithKeyUnitKindEtc5)[];
-    @js(#{`description`:"Each setting in seconds, by key."}) `seconds`?: Record<NullableNumber>
-  }
-
-@component model `ClaimSets` {
-    `reservedJwtClaims`?: (string)[];
-    `placeholders`?: (string)[];
-    `attributeCatalogue`?: (WithLdapClaimLabelEtc10)[];
-    `precedence`?: string;
-    `sets`?: (WithIdLabelClaimsEtc11)[];
-    `attributeChoices`?: (WithAttributeFrom)[];
-    `preview`?: WithUserDescriptionByLdapEtc13;
-    `groups`?: WithEnabledLoadedClaimEtc11;
-    `withholding`?: (WithIdNames)[]
-  }
-
-@component model `KerberosPacClaims` {
-    `protocolEndpoints`?: (WithNameMethodsUrlEtc6)[];
-    `enabled`?: boolean;
-    `setting`?: string;
-    `types`?: (string)[];
-    `placeholders`?: (string)[];
-    `idFormat`?: string;
-    `precedence`?: string;
-    `sets`?: (WithIdLabelClaimsEtc4)[];
-    `attributeCatalogue`?: (WithLdapClaimLabelEtc10)[];
-    `attributeChoices`?: (WithAttributeFrom)[];
-    `preview`?: WithUserEntryFoundDescriptionEtc14
-  }
-
-@component model `UserInfoClaimSets` {
-    `protocolEndpoints`?: (WithNameMethodsUrlEtc6)[];
-    `reservedJwtClaims`?: (string)[];
-    `claimsRequest`?: WithSupportedMembersMaxClaimsEtc9;
-    `request`?: string;
-    `inventedEmail`?: NullableString;
-    `placeholders`?: (string)[];
-    `attributeCatalogue`?: (WithLdapClaimLabelEtc10)[];
-    `precedence`?: string;
-    `sets`?: (WithIdLabelClaimsEtc11)[];
-    `attributeChoices`?: (WithAttributeFrom)[];
-    `preview`?: WithUserDescriptionByLdapEtc13;
-    `groups`?: WithEnabledLoadedClaimEtc11;
-    `withholding`?: (WithIdNames)[]
-  }
-
-@component model `SamlAttributeSets` {
-    `protocolEndpoints`?: (WithNameMethodsUrlEtc6)[];
-    `defaultSaml11Namespace`?: string;
-    `placeholders`?: (string)[];
-    `attributeCatalogue`?: (WithLdapClaimLabelEtc10)[];
-    `precedence`?: string;
-    `sets`?: (WithIdLabelClaimsEtc11)[];
-    `attributeChoices`?: (WithAttributeFrom)[];
-    `preview`?: WithUserDescriptionByLdapEtc13;
-    `groups`?: WithEnabledLoadedClaimEtc11;
-    `withholding`?: (WithIdNames)[]
-  }
-
-  
-
-@component model `CredentialClaims` {
-    `selected`?: (string)[];
-    `defaults`?: (string)[];
-    `ldpOmitted`?: (string)[];
-    `attributes`?: (WithLdapClaimLabelEtc7)[];
-    `protocolEndpoints`?: (WithNameMethodsUrlEtc6)[];
-    `preview`?: WithUserClaims
-  }
-
-@component model `VerifierRequest` {
-    `protocolEndpoints`?: (WithNameMethodsUrlEtc6)[];
-    `requested`?: (string)[];
-    `defaults`?: (string)[];
-    `format`?: string;
-    `formats`?: (WithIdLabelIdentifiedByEtc9)[];
-    `ldpOmitted`?: (string)[];
-    `catalogue`?: (WithClaimLabelNestedEtc8)[];
-    `dcqlQuery`?: WithCredentialsCredentialSets;
-    `extras`?: (WithClaimPaths)[];
-    `recentVerifications`?: WithVerificationsTotalLimit;
-    `startChoices`?: WithFormatByModeEtc6
-  }
-
-@component model `Xacml` {
-    `xacml`?: boolean;
-    `message`?: string;
-    `enabled`?: boolean;
-    `policies`?: integer;
-    `enabledPolicies`?: integer;
-    `root`?: NullableString;
-    `pipAvailable`?: boolean;
-    `settings`?: NullableObject95;
-    `protocolEndpoints`?: (WithNameMethodsUrlEtc7)[]
-  }
-
-@js(#{
-    `description`:"One policy this service decides its OWN boundaries with. Built in and called at decision time rather than stored, so it is not in the repository — a repository entry of the same name overrides it.",
-    `additionalProperties`:true
-  }) @component model `XacmlServiceOwnPolicy` {
-    `key`?: "issuance" | "access";
-    `label`?: string;
-    @js(#{
-      `description`:"The entry name an override must be given for the PEP to pick it up. It is what `setting` says, NOT the template id — those are the same word today and need not be."
-    }) `name`?: string;
-    @js(#{
-      `description`:"The config.js key that names it: `xacml.issuancePolicy` or `xacml.accessPolicy`."
-    }) `setting`?: string;
-    @js(#{
-      `description`:"The template the built-in document is built from, and the one an override should be created from so that the two start identical."
-    }) `template`?: string;
-    `decides`?: string;
-    @js(#{`description`:"Which gate asks it, and from how many sites."}) `asked`?: string;
-    @js(#{
-      `description`:"Whether a repository entry of that name EXISTS. A separate fact from `builtIn`: \"nobody wrote an override\" and \"somebody wrote one and disabled it\" are opposite situations that `builtIn` alone cannot tell apart."
-    }) `entry`?: boolean;
-    `enabled`?: NullableBoolean3;
-    @js(#{
-      `description`:"Whether the BUILT-IN document is what is deciding. A fact about the decision, where `entry` is a fact about the directory."
-    }) `builtIn`?: boolean;
-    @js(#{
-      `description`:"Whether anything is being evaluated at all. False when an override exists and is disabled or will not load — neither policy falls back to the built-in one in that case, because a Disable button that quietly evaluated something else would be a lie."
-    }) `ok`?: boolean;
-    @js(#{`description`:"Why not, when `ok` is false. Empty otherwise."}) `why`?: string;
-    @js(#{
-      `description`:"One sentence naming what is deciding right now, which is what the console prints."
-    }) `effect`?: string
-  }
-
-@component model `XacmlPolicies` {
-    `xacml`?: boolean;
-    `message`?: string;
-    `root`?: NullableString;
-    `policies`?: (WithNamePolicyIdKindEtc11)[];
-    `applicationPolicies`?: (WithApplicationKnownEnforcedEtc4)[];
-    `templates`?: (WithIdLabelBlurbEtc5)[];
-    `serviceOwn`?: (WithKeyLabelDecidesEtc15)[];
-    `protocolEndpoints`?: (WithNameMethodsUrlEtc7)[]
-  }
-
-@component model `XacmlEditor` {
-    `xacml`?: boolean;
-    `message`?: string;
-    `policies`?: (string)[];
-    `serviceOwn`?: (WithKeyLabelDecidesEtc15)[];
-    `policy`?: NullableObject96;
-    `problem`?: NullableString;
-    `tree`?: (WithPathDepthKindEtc7)[];
-    `menus`?: NullableObject98;
-    `problems`?: (NullableString)[];
-    `xpathVersionGaps`?: (NullableString)[];
-    `document`?: string;
-    `alfa`?: NullableString;
-    `protocolEndpoints`?: (WithNameMethodsUrlEtc7)[]
-  }
-
-@component model `XacmlDecision` {
-    `xacml`?: boolean;
-    `message`?: string;
-    `asked`?: boolean;
-    `subject`?: string;
-    `action`?: string;
-    `resource`?: NullableString;
-    `decision`?: string;
-    `status`?: NullableObject99;
-    `obligations`?: (string)[];
-    `advice`?: (string)[];
-    `applicablePolicies`?: (StringOrKindStringIdStringVersionString)[];
-    `enforcement`?: WithAllowedBiasWhy;
-    `enforcements`?: (WithAllowedBiasWhy)[];
-    `protocolEndpoints`?: (WithNameMethodsUrlEtc7)[]
-  }
-
-@component model `GnapServer` {
-    `page`?: string;
-    `title`?: string;
-    `enabled`?: boolean;
-    `specifications`?: (string)[];
-    `endpoints`?: WithGrantDiscoveryRsDiscoveryEtc12;
-    `capabilities`?: WithGrantRequestEndpointInteractionStartModesSupportedInteractionFinishMethodsSupportedEtc8;
-    `authorizationServers`?: (WithIdLabelCapabilities)[];
-    `authorizationServersPaging`?: WithPagePagesPerPageEtc8;
-    `tokenFormats`?: (string)[];
-    `verificationMaterial`?: WithJwtBiscuitZcapEtc6;
-    `grants`?: WithStateStatesPagingEtc4;
-    `resourceSets`?: WithPagingRows;
-    `actions`?: (string)[];
-    `settings`?: NullableObject61
-  }
-
-@component model `GnapMonitor` {
-    `page`?: string;
-    `title`?: string;
-    `since`?: NullOrStringOrNumeric;
-    `events`?: (WithEventCounterLabel)[];
-    `totals`?: Record<numeric>;
-    `tokensByFormat`?: Record<numeric>;
-    `applications`?: integer;
-    `paging`?: WithPagePagesPerPageEtc8;
-    `rows`?: (WithIdentifierNameKindsEtc12)[]
-  }
-
-@component model `XacmlMonitor` {
-    `xacml`?: boolean;
-    `message`?: string;
-    `policies`?: WithTotalEnabledRoot;
-    `peps`?: WithEmbeddedRemoteTotal;
-    `decisions`?: WithHereRemoteCombined;
-    `since`?: string;
-    `enabled`?: boolean;
-    `remotePepsEnabled`?: boolean;
-    `realm`?: WithIdName3;
-    `rows`?: (WithIdLabelKindEtc22)[];
-    `remoteRows`?: (WithIdLabelKindEtc22)[];
-    `elsewhere`?: (WithIdNameCount)[];
-    `protocolEndpoints`?: (WithNameMethodsUrlEtc7)[]
-  }
-
-@component model `XacmlPeps` {
-    `xacml`?: boolean;
-    `message`?: string;
-    `enabled`?: boolean;
-    `syncToken`?: NullableString;
-    `staleAfterS`?: numeric;
-    `requiresCertificate`?: boolean;
-    `notify`?: WithOnAllowedHostsTimeoutMsEtc4;
-    `peps`?: (WithNameDnIdentityEtc25)[];
-    `elsewhere`?: (WithIdNameCount)[];
-    `listenerCertificates`?: WithUseCaseKeyAlgorithmsDefaultKeyAlg;
-    `current`?: integer;
-    `stale`?: integer;
-    `protocolEndpoints`?: (WithNameMethodsUrlEtc7)[]
-  }
-
-@component model `Ssf` {
-    `installed`?: boolean;
-    `enabled`?: boolean;
-    `issuer`?: string;
-    `metadataUrl`?: string;
-    `metadata`?: WithSpecVersionIssuerJwksUriEtc13;
-    `signingAlgorithm`?: string;
-    `delivery`?: (WithMethodNameWhatEtc4)[];
-    `push`?: WithAllowedTransportAllowedHostsEtc6;
-    `eventTypes`?: (WithUriNameShortEtc11)[];
-    `subjectFormats`?: (WithFormatMembersWhatEtc4)[];
-    `complexSubjectMembers`?: (WithNameWhat)[];
-    `criticalSubjectMembers`?: (string)[];
-    `authentication`?: WithRequiredRealmScopesEtc8;
-    `streams`?: (WithStreamIdStatusDeliveryEtc9)[];
-    `endpoints`?: (WithMethodPathWhat)[];
-    `reachableNegatives`?: (WithWhatAnswer)[];
-    `doesNotDo`?: (string)[];
-    `streamDetail`?: (WithStreamIdIssAudEtc26)[];
-    `deadLetters`?: WithRetentionSMaxPerStreamDeadStreamTimeoutSEtc4;
-    `settings`?: NullableObject61;
-    `statuses`?: (string)[];
-    `streamTotals`?: WithStreamsEnabledDeliveredEtc7;
-    `streamFilter`?: NullableString;
-    `paging`?: WithStreams;
-    `note`?: string;
-    `protocolEndpoints`?: (WithNameMethodsUrlEtc72)[]
-  }
-
-@component model `CaepApplication` {
-    `identifier`?: string;
-    `name`?: NullableString;
-    `registered`?: boolean;
-    `declared`?: boolean;
-    `dn`?: string;
-    `endpoints`?: (string)[];
-    `streams`?: (string)[];
-    `streamCount`?: integer;
-    `enabled`?: integer;
-    `deliveries`?: (string)[];
-    `audiences`?: (string)[];
-    `takes`?: (string)[];
-    `counts`?: Record<numeric>;
-    `total`?: integer;
-    `sessions`?: integer;
-    `accounts`?: integer;
-    `queued`?: integer;
-    `delivered`?: integer;
-    `failed`?: integer;
-    `acknowledged`?: integer;
-    `receiverErrors`?: integer;
-    `lastPushAt`?: NullOrStringOrNumeric;
-    `lastPushError`?: NullableString
-  }
-
-@component model `Caep` {
-    `installed`?: boolean;
-    `enabled`?: boolean;
-    `note`?: string;
-    `autoEmit`?: boolean;
-    `autoEmitActs`?: (string)[];
-    `omitEventTimestamp`?: boolean;
-    `eventTypes`?: (WithUriNameShortEtc11)[];
-    `totals`?: Record<numeric>;
-    `sessions`?: (WithSessionIdSubUsernameEtc23)[];
-    `tracked`?: integer;
-    `cap`?: numeric;
-    `issuer`?: string;
-    `ssfEnabled`?: boolean;
-    `applications`?: (WithIdentifierNameRegisteredEtc23)[];
-    `streams`?: (WithStreamIdAudStatusEtc6)[];
-    `catalogue`?: (WithUriNameShortEtc11)[];
-    `settings`?: NullableObject61;
-    `filter`?: WithSessionsApplications;
-    `paging`?: WithSessionsApplicationsStreamsEtc4;
-    `shown`?: WithSessionsApplicationsStreams2;
-    `matched`?: WithSessionsApplicationsStreams;
-    `streamCounts`?: WithTotalTaking;
-    `id`?: string;
-    `session`?: NullableObject104;
-    `events`?: (WithJtiUriNameEtc6)[]
-  }
-
-@component model `Risc` {
-    `installed`?: boolean;
-    `enabled`?: boolean;
-    `note`?: string;
-    `autoEmit`?: boolean;
-    `autoEmitActs`?: (string)[];
-    `honourOptOut`?: boolean;
-    `googleSubjectType`?: boolean;
-    `subjectFormat`?: string;
-    `omitEventTimestamp`?: boolean;
-    `eventTypes`?: (WithUriNameShortEtc11)[];
-    `optStates`?: (string)[];
-    `lifecycleStates`?: (string)[];
-    `totals`?: Record<numeric>;
-    `accounts`?: (WithAccountIdSubUsernameEtc29)[];
-    `tracked`?: integer;
-    `cap`?: numeric;
-    `issuer`?: string;
-    `ssfEnabled`?: boolean;
-    `applications`?: (WithIdentifierNameRegisteredEtc23)[];
-    `streams`?: (WithStreamIdAudStatusEtc6)[];
-    `catalogue`?: (WithUriNameShortEtc11)[];
-    `settings`?: NullableObject61;
-    `filter`?: WithAccountsApplications;
-    `paging`?: WithAccountsApplicationsStreamsEtc4;
-    `shown`?: WithAccountsApplicationsStreams2;
-    `matched`?: WithAccountsApplicationsStreams;
-    `streamCounts`?: WithTotalTaking;
-    `id`?: string;
-    `account`?: NullableObject105;
-    `events`?: (WithJtiUriNameEtc6)[]
-  }
-
-@component model `Scim` {
-    `protocolEndpoints`?: (WithNameMethodsUrlEtc6)[];
-    `installed`?: boolean;
-    `enabled`?: boolean;
-    `baseUrl`?: NullableString;
-    `specifications`?: (string)[];
-    `store`?: NullableObject106;
-    `identifiers`?: NullableObject107;
-    `authentication`?: NullableObject108;
-    `endpoints`?: (WithMethodPathWhat)[];
-    `doesNotDo`?: (string)[];
-    `reachableNegatives`?: (WithWhatAnswer)[];
-    `mapping`?: WithUserGroup;
-    `counters`?: WithTotalOkFailedEtc13;
-    `settings`?: NullableObject109;
-    `scimClients`?: NullableObject110
-  }
-
-@component model `Signals` {
-    `status`?: NullableObject111;
-    `received`?: (WithJtiAtTokenDigestEtc21)[];
-    `total`?: integer;
-    `filter`?: WithReceived;
-    `paging`?: WithReceived2
-  }
-
-@component model `SsfDeadLetters` {
-    `installed`?: boolean;
-    `enabled`?: boolean;
-    `note`?: string;
-    `realm`?: string;
-    `generatedAt`?: string;
-    `pushDelivery`?: boolean;
-    `causes`?: (WithIdLabelCodeEtc5)[];
-    `totals`?: WithHeldStreamsHoldingSignedEtc13;
-    `timeline`?: WithBucketSWindowSFromEtc7;
-    `byCode`?: (WithErrorCodeCountCauseEtc4)[];
-    `byStatus`?: (WithStatusCount)[];
-    `byEventType`?: (WithTypeNameCount)[];
-    `streams`?: (WithStreamIdAudEndpointUrlEtc16)[];
-    `letters`?: (WithStreamIdJtiQueuedAtEtc12)[];
-    `settings`?: WithRetentionSMaxPerStreamDeadStreamTimeoutSEtc7;
-    `process`?: WithPidThreadRoleEtc6;
-    `filter`?: WithQStreamCause;
-    `matched`?: integer;
-    `paging`?: WithLettersStreams
-  }
-
-@component model `ScimMonitor` {
-    `installed`?: boolean;
-    `enabled`?: boolean;
-    `baseUrl`?: NullableString;
-    `schemes`?: (WithIdTypeCanonicalEtc15)[];
-    `authRequired`?: boolean;
-    `store`?: NullableObject106;
-    `counters`?: WithCallsOkFailedEtc22
-  }
-
-@js(#{
-    `description`:"One layer of the architecture. Each of the three roles uses this shape and each can be an identity, an application, or BOTH — which is the fact that makes the model protocol-independent rather than a Kerberos model the other two are squeezed into.",
-    `additionalProperties`:true
-  }) @component model `DelegationParty` {
-    @js(#{
-      `description`:"The NORMALISED local name, so a party here and a row on /admin-api/users name the same person — `alice`, her `urn:uuid:<entryUUID>` subject and `alice@EXAMPLE.COM` are one identity. Empty where this layer is an application rather than a person, or where nothing named it."
-    }) `key`?: string;
-    @js(#{
-      `description`:"The identity exactly as it arrived, when that differs from `key` — a Kerberos principal, a NameID, a `sub`. Both are carried because the collapse from one to the other is something a reader has to be able to see."
-    }) `presented`?: string;
-    @js(#{
-      `description`:"The application this layer IS — a client_id, an AppliesTo, an SPN, an audience. NOT a promise that an entry exists under ou=applications: that registry holds what this service has been ASKED ABOUT, and a delegation naming something nobody has otherwise mentioned is an ordinary and interesting outcome. Look it up on /admin-api/applications to find out which."
-    }) `application`?: string;
-    @js(#{
-      `description`:"What this party is in THIS act, in the protocol's own words."
-    }) `what`?: string
-  }
-
-@js(#{
-    `description`:"One credential presented or produced. NO CREDENTIAL IS EVER CARRIED — only what kind it was and its identifier, which is the rule the audit log follows and applies here twice over: a delegation is precisely the request that carries two credentials at once.",
-    `additionalProperties`:true
-  }) @component model `DelegationCredential` {
-    @js(#{
-      `description`:"`subject_token`, `actor_token`, `access_token`, `Kerberos evidence ticket`, `SAML 2.0 assertion`, `PA-FOR-USER`, and so on."
-    }) `kind`?: string;
-    @js(#{
-      `description`:"A `jti` or an AssertionID. EMPTY for a Kerberos ticket, which genuinely has none in the protocol, and for the WS-Trust JWT, which is signed directly rather than through this service's JWT funnel and so carries no `jti` and is in no register. `note` says which."
-    }) `identifier`?: string;
-    @js(#{
-      `description`:"What is worth knowing about this credential — whether it verified, whether it was forwardable."
-    }) `note`?: string
-  }
-
-@js(#{
-    `description`:"ONE ACT: a single exchange at a single moment in which somebody acted on somebody else's behalf. Not a relationship — the same three parties appearing eleven times is eleven acts, and `chainKey` is what collapses them.",
-    `additionalProperties`:true
-  }) @component model `DelegationAct` {
-    @js(#{
-      `description`:"Unique across every process of the service and NEVER REUSED, including across a drop and a restart; rising within each process, not one order across them (#465). The stable name for an act; resume reading by `at`."
-    }) `seq`?: integer;
-    @js(#{
-      `description`:"The process that recorded the act, by its stable origin in the store; empty without a shared store. The tie-break, with `seq`, for two acts in one millisecond."
-    }) `origin`?: string;
-    @js(#{`description`:"Milliseconds since the epoch."}) `at`?: integer;
-    @js(#{`description`:"The family, spelled as /admin-api/users spells it."}) `protocol`?: string;
-    @js(#{
-      `description`:"The mechanism, as its specification names it. The list's `types` member describes each one."
-    }) `type`?: string;
-    @js(#{`description`:"That mechanism in words."}) `typeLabel`?: string;
-    @js(#{
-      `description`:"THE AXIS WORTH READING FIRST. `delegation` means the credential carries the chain and the far end can see who is really asking. `impersonation` means nothing does — so this record is the only place the fact will ever exist."
-    }) `mode`?: "impersonation" | "delegation";
-    @js(#{`description`:"Where the mechanism is defined."}) `spec`?: string;
-    @js(#{
-      `description`:"Whether THIS SERVICE decided who may perform the act. True for the three Kerberos S4U mechanisms and false for everything else, which is a real asymmetry rather than an omission — see `authorizedBy`."
-    }) `policed`?: boolean;
-    `outcome`?: "issued" | "refused";
-    `initial`?: `DelegationParty`;
-    `intermediary`?: `DelegationParty`;
-    `target`?: `DelegationParty`;
-    @js(#{
-      `description`:"The identity of the CHAIN rather than of the act: the mechanism and the three parties, with the time, the credentials and the OUTCOME left out. Acts sharing one are one edge of the picture — and the outcome is out of it deliberately, so a chain refused nine times and then fixed is one edge that changes rather than two that never meet."
-    }) `chainKey`?: string;
-    @js(#{
-      `description`:"What PERMITTED it: the attribute AND the account it is on, in the KDC's own words — or, for WS-Trust and token exchange (#108), in the delegation policy's; in development, what WOULD have refused it."
-    }) `authorizedBy`?: string;
-    @js(#{
-      `description`:"Why it was REFUSED — the `e-text` of the error the client was sent, not a second wording that could come to disagree with it. Empty on an issued act."
-    }) `reason`?: string;
-    `consumed`?: (`DelegationCredential`)[];
-    `produced`?: (`DelegationCredential`)[];
-    @js(#{
-      `description`:"The browser sign-on session, where there was one. USUALLY EMPTY, and that is a fact about delegation rather than a gap in the recording: a service asking on somebody's behalf has no browser anywhere in it."
-    }) `sessionId`?: string;
-    @js(#{`description`:"One sentence of context."}) `note`?: string
-  }
-
-@js(#{
-    `description`:"One DISTINCT chain among the acts that matched — one edge of the picture. This is the more useful answer to \"what talks to what\".",
-    `additionalProperties`:true
-  }) @component model `DelegationChain` {
-    `chainKey`?: string;
-    `protocol`?: string;
-    `type`?: string;
-    `typeLabel`?: string;
-    `mode`?: "impersonation" | "delegation";
-    `initial`?: `DelegationParty`;
-    `intermediary`?: `DelegationParty`;
-    `target`?: `DelegationParty`;
-    @js(#{`description`:"How many acts are on this edge."}) `acts`?: integer;
-    `issued`?: integer;
-    `refused`?: integer;
-    `firstAt`?: integer;
-    `lastAt`?: integer;
-    @js(#{
-      `description`:"From the MOST RECENT act on the chain, so an edge that was fixed says how it works now rather than why it used to fail."
-    }) `authorizedBy`?: string;
-    @js(#{`description`:"Likewise, for a refusal."}) `reason`?: string
-  }
-
-@js(#{
-    `description`:"WHO MAY DELEGATE TO WHOM, before anybody has tried. KERBEROS ONLY, and that is not an omission: Kerberos is the only family here that polices delegation at all. WS-Trust puts no authorization on OnBehalfOf or ActAs, and RFC 8693 leaves the policy to the authorization server, which this one does not have.",
-    `additionalProperties`:true
-  }) @component model `DelegationPolicy` {
-    @js(#{
-      `description`:"One per (front end, target, mechanism). The two mechanisms are in ONE list because the messages and the KDC options are identical and the whole difference is which of the two accounts carries the permission — which is `setOn`."
-    }) `pairs`?: (WithMechanismDescriptionTypeEtc)[];
-    @js(#{
-      `description`:"Principals carrying a flag that changes what delegation can do to them or with them. Two of the three STOP delegation rather than permit it, and one is not a control at all. Listed whether or not a pair names them."
-    }) `accounts`?: (WithPrincipalRealmNotDelegatedEtc)[]
-  }
-
-@component model `DelegationList` {
-    `held`?: integer;
-    `heldHere`?: integer;
-    `processes`?: integer;
-    `recorded`?: integer;
-    `dropped`?: integer;
-    `maxRecords`?: integer;
-    `matched`?: integer;
-    `shown`?: integer;
-    `oldestSeq`?: numeric;
-    `newestSeq`?: numeric;
-    `byType`?: Record<integer>;
-    `byMode`?: Record<integer>;
-    `byOutcome`?: Record<integer>;
-    `byProtocol`?: Record<integer>;
-    `filter`?: WithTypeModeOutcomeEtc5;
-    `page`?: integer;
-    `pages`?: integer;
-    `perPage`?: integer;
-    `firstRow`?: integer;
-    `lastRow`?: integer;
-    `types`?: (WithTypeProtocolModeEtc7)[];
-    `modes`?: (WithModeLabelWhat)[];
-    `outcomes`?: (string)[];
-    `roles`?: (WithRoleLabelWhat)[];
-    `acts`?: (WithSeqOriginAtEtc20)[];
-    `chains`?: (WithChainKeyProtocolTypeEtc15)[];
-    `applications`?: (WithKeyIdentifierSpellingsEtc13)[];
-    `graph`?: WithRealmIssuerNodesEtc13;
-    `policy`?: WithPairsAccounts;
-    `allowed`?: WithResourcesPermissionsGrantsEtc7;
-    `delegationPolicy`?: WithEnforcedAttributesProtectedGroupsEtc9;
-    `all`?: integer;
-    `paging`?: WithPagePagesPerPageEtc82;
-    `delegationPerPage`?: integer;
-    `chainPage`?: WithShownPaging8;
-    `pairPage`?: WithShownPaging2;
-    `flagPage`?: WithShownPaging4;
-    `mechanismPage`?: WithShownPaging;
-    `applicationChooser`?: WithTotalEntriesSliceEtc5;
-    `userChooser`?: WithTotalEntriesSliceEtc5;
-    `permissionsView`?: WithRegisterListStateAllApplications;
-    `exchangePolicyView`?: WithRegisterPairsIntermediariesEtc4;
-    `facts`?: WithUsersAppsNameEtc4
-  }
-
-@js(#{
-    `description`:"One thing that happened, with the facts of it and no credential of any kind. Written out rather than left open because a caller filtering or alerting on this list needs a name for every field.",
-    `additionalProperties`:true
-  }) @projects("AuditEvent") @component model `AuditEvent` {
-    @js(#{
-      `description`:"Unique across every process of the service and NEVER REUSED, including across a drop and a restart; rising within each process, not one order across them (#465). The stable name for an event — a row number would silently mean a different event as soon as the cap discarded anything. Resume reading by `at`."
-    }) `seq`?: integer;
-    @js(#{
-      `description`:"The process that recorded the event, by its stable origin in the store; empty without a shared store."
-    }) `origin`?: string;
-    @js(#{`description`:"When it happened, in milliseconds since the epoch."}) `at`?: integer;
-    @js(#{
-      `description`:"Derived from `action` and never set independently, so the two cannot disagree."
-    }) `category`?: "authentication" | "session" | "directory" | "admin" | "api" | "application" | "protocol" | "spiffe" | "signals" | "authorization" | "service";
-    @js(#{
-      `description`:"What happened, from a fixed vocabulary the list's `actions` member enumerates."
-    }) `action`?: string;
-    @js(#{
-      `description`:"A `refused` is this service saying no and working; an `error` is this service failing."
-    }) `outcome`?: "success" | "refused" | "error";
-    @js(#{
-      `description`:"Which failure condition this row is about — `STS-<SUBSYSTEM>-<NNNN>`, listed in docs/error-codes.md — or empty for a row that is not a failure. Every refused or failed request carries one. It is an operator's name for the condition and is never sent to the client whose request produced it."
-    }) `errorCode`?: string;
-    @js(#{
-      `description`:"The NORMALISED local name, so a row here and a row on /admin-api/users name the same person — `alice`, her `urn:uuid:<entryUUID>` subject and `alice@EXAMPLE.COM` are one identity. Empty where nothing named an actor, which an unauthenticated protocol call and an anonymous LDAP bind both are."
-    }) `actor`?: string;
-    @js(#{
-      `description`:"The identity exactly as it was presented, when that differs from `actor` — a bind DN, a Kerberos principal, an X.509 subject. Both are carried because the collapse from one to the other is something an auditor has to be able to see rather than infer."
-    }) `actorForm`?: string;
-    @js(#{
-      `description`:"What it was done to: a DN, a request path, a session id."
-    }) `target`?: string;
-    @js(#{
-      `description`:"The family, where one applies. Free text: the sixteen families here spell themselves differently in the places this is read from, and an enum would be a lookup table that silently drops the seventeenth."
-    }) `protocol`?: string;
-    @js(#{
-      `description`:"How it arrived. `http` the main port; `ldap` and `ldaps` the directory's sockets; `kerberos` the KDC's TCP and UDP 88; `grpc` the SPIFFE Workload API and SPIRE Server API; `tls` a client certificate presented to this service; `console` an act taken on the admin console or `/admin-api` and recorded as that act rather than as the HTTP call. `internal` is something this service did on its own — the directory entry it seeds for somebody who authenticated elsewhere — `none` a session that EXPIRED, which nothing sent, and empty a row whose recording site named no channel. The client's address is `address`."
-    }) `channel`?: "http" | "ldap" | "ldaps" | "kerberos" | "grpc" | "tls" | "console" | "internal" | "none" | "";
-    @js(#{
-      `description`:"The client's IP address (2026-09-18): whoever sent the HTTP request, LDAP operation, Kerberos message or SPIRE Server API call this row came out of — an authentication, a refused sign-in, a consent, a sign-out. Resolved through `global.trustProxy` and `global.trustedProxies` (the right-most `X-Forwarded-For` hop that is not a named proxy) or a PROXY protocol header; behind a proxy with neither set, it is the proxy. Empty for something this service did on its own, or that arrived over a Unix socket."
-    }) `address`?: string;
-    @js(#{`description`:"One sentence, the same one the console shows."}) `summary`?: string;
-    @js(#{
-      `description`:"Flat facts about this event, at most twelve keys with each value trimmed. What is in it depends on the action — a modify names the ATTRIBUTES it changed and never their values, a search names how many entries came back, an HTTP row names the route and the elapsed time.",
-      `additionalProperties`:true
-    }) `detail`?: {}
-  }
-
-@js(#{
-    `description`:"What happened here, newest first, filtered and paged. HISTORY where the rest of this API is STATE. Resume by `at`, not by `seq` or by `page` (#465)."
-  }) @component model `AuditList` {
-    @js(#{`description`:"Events currently in the log."}) `held`?: integer;
-    @js(#{`description`:"Events recorded since this process started."}) `recorded`?: integer;
-    @js(#{`description`:"Events discarded to stay under the cap."}) `dropped`?: integer;
-    @js(#{`description`:"The cap: `audit.maxEvents`."}) `maxEvents`?: numeric;
-    @js(#{
-      `description`:"Whether ordinary protocol endpoint calls are being recorded."
-    }) `protocolCalls`?: boolean;
-    `matched`?: integer;
-    `shown`?: integer;
-    `oldestSeq`?: numeric;
-    `newestSeq`?: numeric;
-    `byCategory`?: Record<numeric>;
-    `byOutcome`?: Record<numeric>;
-    `byAction`?: Record<numeric>;
-    `filter`?: WithCategoryActionOutcomeEtc7;
-    `page`?: integer;
-    `pages`?: integer;
-    `perPage`?: integer;
-    `firstRow`?: integer;
-    `lastRow`?: integer;
-    `categories`?: (WithCategoryLabelWhat)[];
-    `actions`?: (WithActionCategoryLabel)[];
-    `outcomes`?: (string)[];
-    `events`?: (WithSeqOriginAtEtc172)[];
-    @js(#{
-      `description`:"Which page of how many, and the query parameter that moves it."
-    }) `paging`?: WithPagePagesPerPageEtc8;
-    @js(#{`description`:"The actors on this page that are people known here."}) `knownActors`?: Record<boolean>;
-    `settings`?: NullableObject113;
-    `verifiesCredentials`?: boolean;
-    `persisted`?: boolean
-  }
-
-@js(#{
-    `description`:"A refusal or a failure. The sentence is for a person; no error code is ever in it."
-  }) @component model `RefusalFailure2` {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `message`?: string;
-    `why`?: string;
-    `status`?: integer
-  }
 
 @component model `WithPathLabelBlurb` is ({
     `path`?: string;
@@ -2035,6 +158,8 @@ namespace IyaSts.Api.Console {
   }
 
 @js(#{`description`:"Each node's look, by node id."}) @component model `NodeSLookNodeId` is Record<`WithShapeLabelSublabel2`>;
+
+@js(#{`description`:"Where each box of the federation picture links, by node id: an application to the applications register, a partner to its first relationship, this service nowhere."}) @component model `FederationBoxLinks` is Record<{@js(#{`description`:"The console page the box links to."}) `href`?: string}>;
   
 
 @component model `WithIdKindRealm` {
@@ -2070,20 +195,6 @@ namespace IyaSts.Api.Console {
 @component model `WithKindCountIdentifiers2` is (`WithIdKindRealm`)[];
   
 
-@component model `WithKindCountIdentifiers3` {
-    `kind`?: string;
-    `count`?: integer;
-    `identifiers`?: (string)[];
-    `moreIdentifiers`?: integer;
-    `notes`?: (string)[]
-  }
-
-@component model `WithIdFromTo4` is (`WithKindCountIdentifiers3`)[];
-  
-
-@component model `WithIdFromTo5` is Record<`WithKindCountIdentifiers3`>;
-  
-
 @component model `WithIdFromTo6` {
     `id`?: string;
     `from`?: string;
@@ -2109,14 +220,14 @@ namespace IyaSts.Api.Console {
     `lastAt`?: numeric;
     `authorizedBy`?: string;
     `reason`?: string;
-    `consumed`?: `WithIdFromTo4`;
-    `produced`?: `WithIdFromTo4`;
+    `consumed`?: `WithOkMessageErrors63`;
+    `produced`?: `WithOkMessageErrors63`;
     `attribute`?: string;
     `mechanism`?: string;
     `setOn`?: string;
     `used`?: boolean;
-    `consumedFold`?: `WithIdFromTo5`;
-    `producedFold`?: `WithIdFromTo5`;
+    `consumedFold`?: `WithIdFromTo2`;
+    `producedFold`?: `WithIdFromTo2`;
     `permissionId`?: string;
     `permissionName`?: string;
     `baseUri`?: string;
@@ -2194,17 +305,6 @@ namespace IyaSts.Api.Console {
 
 @component union `BrokeredUseValue` {BrokeredUseValue_h1349}
 
-@component model `WithApplicationsGrantsLines3` {
-    `applications`?: integer;
-    `grants`?: integer;
-    `lines`?: integer;
-    `permissions`?: integer;
-    `dangling`?: integer;
-    `selfGrants`?: integer;
-    `asked`?: integer;
-    `unused`?: integer
-  }
-
 @component model `WithClientClientNamePermissionId3` {
     `client`?: string;
     `clientName`?: string;
@@ -2221,17 +321,6 @@ namespace IyaSts.Api.Console {
 @component model `WithPagePagesPerPage4` is (`WithClientClientNamePermissionId3`)[];
   
 
-@component model `WithPagePagesPerPage5` {
-    `page`?: integer;
-    `pages`?: integer;
-    `perPage`?: integer;
-    `firstRow`?: integer;
-    `lastRow`?: integer;
-    `total`?: integer;
-    `param`?: NullableString;
-    `noun`?: NullableString
-  }
-
 @component model `WithResourceResourceNameBaseUri2` {
     `resource`?: string;
     `resourceName`?: string;
@@ -2246,7 +335,7 @@ namespace IyaSts.Api.Console {
 @component model `WithKeyMembersCounts` is (`WithResourceResourceNameBaseUri2`)[];
   
 
-@component model `WithKeyMembersCounts2` {`key`?: string; `members`?: (string)[]; `counts`?: `WithApplicationsGrantsLines3`}
+@component model `WithKeyMembersCounts2` {`key`?: string; `members`?: (string)[]; `counts`?: `WithApplicationsGrantsLines2`}
 
 @component model `WithAtFamilyKind2` is (`WithKeyMembersCounts2`)[];
   
@@ -2339,7 +428,7 @@ namespace IyaSts.Api.Console {
     `members`?: (string)[];
     `grants`?: `WithPagePagesPerPage4`;
     `permissions`?: `WithKeyMembersCounts`;
-    `counts`?: `WithApplicationsGrantsLines3`
+    `counts`?: `WithApplicationsGrantsLines2`
   }
 
 @component model `WithClustersDescriptionMemberOf` is (`WithKeyMembersGrants`)[];
@@ -2351,14 +440,9 @@ namespace IyaSts.Api.Console {
     `counts`?: WithClustersApplicationsLargestEtc5
   }
 
-@component model `WithShownPagingShown` {`shown`?: `WithPagePagesPerPage4`; `paging`?: `WithPagePagesPerPage5`}
+@component model `WithShownPagingShown` {`shown`?: `WithPagePagesPerPage4`; `paging`?: `WithPagePagesPerPage2`}
 
-@component model `WithShownPagingOnlyWhileOn` {`shown`?: `WithKeyMembersCounts`; `paging`?: `WithPagePagesPerPage5`}
-
-@component model `WithOnlyWhileOnAloneWhileOnKey2` {
-    `onlyWhileOn`?: (WithSettingValuesOnEtc4)[];
-    `aloneWhileOn`?: (WithSettingValuesOnEtc4)[]
-  }
+@component model `WithShownPagingOnlyWhileOn` {`shown`?: `WithKeyMembersCounts`; `paging`?: `WithPagePagesPerPage2`}
 
 @component model `WithKeyGroupLabel5` {
     `key`?: string;
@@ -2370,7 +454,7 @@ namespace IyaSts.Api.Console {
     `csvValues`?: (string)[];
     `ordered`?: boolean;
     @js(#{`description`:"A sentence per value of the row."}) `csvValueNotes`?: Record<string>;
-    `selectAll`?: `WithOnlyWhileOnAloneWhileOnKey2`;
+    `selectAll`?: `WithOnlyWhileOnAloneWhileOnKey`;
     `min`?: numeric;
     `max`?: numeric;
     `step`?: numeric;
@@ -2430,32 +514,14 @@ namespace IyaSts.Api.Console {
 @component model `WithIdLabelClassical3` is (`WithIdLabelCa3`)[];
   
 
-@component model `WithIdLabelClassical4` is ({
-    `id`?: string;
-    `label`?: string;
-    `classical`?: boolean;
-    `families`?: (string)[];
-    `note`?: string
-  })[];
-  
-
 @component model `WithIdLabelFamily` is ({
     `id`?: string;
     `label`?: string;
     `family`?: string;
     `kind`?: string;
     `signs`?: boolean;
-    `slow`?: boolean
-  })[];
-  
-
-@component model `WithIdLabelSubject2` is ({
-    `id`?: string;
-    `label`?: string;
-    `subject`?: string;
-    `keyAlg`?: string;
-    `notAfter`?: string;
-    `hasAlternativeKey`?: boolean
+    `slow`?: boolean;
+    `tlsUsable`?: boolean
   })[];
   
 
@@ -2493,7 +559,7 @@ namespace IyaSts.Api.Console {
 @component model `WithFieldsProfilesPqModes4` {
     `fields`?: (string)[];
     `profiles`?: `WithIdLabelClassical3`;
-    `pqModes`?: `WithIdLabelClassical4`;
+    `pqModes`?: `WithIdLabelClassical2`;
     `pqMode`?: string;
     `keyAlgorithms`?: `WithIdLabelFamily`;
     `alternativeKeyAlgorithms`?: `WithIdLabelFamily`;
@@ -2505,7 +571,7 @@ namespace IyaSts.Api.Console {
     `netscapeTypes`?: ({`name`?: string})[];
     `accessMethods`?: (string)[];
     `dnFields`?: (WithAttrField)[];
-    `issuers`?: `WithIdLabelSubject2`;
+    `issuers`?: `WithIdLabelSubject`;
     `objects`?: `WithFieldsProfilesPqModes3`;
     `maxObjects`?: integer;
     `slowFamilies`?: (string)[];
@@ -2567,7 +633,7 @@ op `getApiExplorer`(`responses/200/content/application~1json/schema`: {
     `realmPrefix`?: string;
     `script`?: string
   },
-  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -2668,7 +734,7 @@ op `getConsoleShell`(`parameters/0/schema`: "files",
     `version`?: WithVersionStampedBuildInfo;
     `locale`?: `WithNegotiatedOfferedDescription`
   },
-  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/console/language",
@@ -2702,7 +768,7 @@ op `setConsoleLanguage`(@js(#{`$open`:true}) `requestBody/content/application~1j
   },
   `responses/200/content/application~1json/schema`: `WithOkErrorsLocale`,
   `responses/400/content/application~1json/schema`: `WithOkErrorsLocale`,
-  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/console/delegation/map",
@@ -2710,7 +776,7 @@ op `setConsoleLanguage`(@js(#{`$open`:true}) `requestBody/content/application~1j
   #{
     `operationId`:"getDelegationMap",
     `summary`:"The delegation picture: the graph, each box, the drawing",
-    `description`:"The same acts as `GET /admin-api/delegation`, with the time taken out and the parties shared: a party that is the intermediary of six chains is ONE node with six edges. Drawn from everything that MATCHED the filter, not from one page of it.\n\n`nodes` and `edges` are the graph. `looks` says what each node IS, by node id: its label, its shape, the identifier a protocol would present for it, and the console page it links to — which the directory and the application registry decide. `svg` is the drawing, laid out on the server, with its links in it; `drawing` is its size, and says so if the layout failed. `summary` carries the counts by mechanism, kind and outcome that the filter's choices show.\n\nWith `format=svg` the answer is the SVG document alone, with no links in it, as `image/svg+xml`.\n\n**Mirrors** `GET /admin/delegation/map` on the admin console.",
+    `description`:"The same acts as `GET /admin-api/delegation`, with the time taken out and the parties shared: a party that is the intermediary of six chains is ONE node with six edges. Drawn from everything that MATCHED the filter, not from one page of it.\n\n`nodes` and `edges` are the graph. `looks` says what each node IS, by node id: its label, its shape, the identifier a protocol would present for it, and the console page it links to — which the directory and the application registry decide. `svg` is the drawing, with its links in it; `drawing` is its size, says so if the layout failed, and says whether this realm verifies what is presented (`verifiesCredentials`). The console lays the picture out in the browser from `nodes`, `edges`, `looks` and `drawing`, with the code that draws `svg` here. `summary` carries the counts by mechanism, kind and outcome that the filter's choices show.\n\nWith `format=svg` the answer is the SVG document alone, with no links in it, as `image/svg+xml`.\n\n**Mirrors** `GET /admin/delegation/map` on the admin console.",
     `tags`:#["Delegation"],
     `responses`:#{
       `200`:#{
@@ -2977,7 +1043,7 @@ op `getDelegationMap`(`parameters/0/schema`: "krb5-s4u2self" | "krb5-s4u2proxy-c
     `directoryLoaded`?: boolean;
     `facts`?: `WithDescriptionUsersDescription`
   },
-  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/console/federation/map",
@@ -2985,7 +1051,7 @@ op `getDelegationMap`(`parameters/0/schema`: "krb5-s4u2self" | "krb5-s4u2proxy-c
   #{
     `operationId`:"getFederationMap",
     `summary`:"This realm's federation relationships, drawn",
-    `description`:"Every federation relationship of the trust realm, filtered by `role`, `protocol` and text, as a graph — the partners, this service and the applications behind each relationship — with the relationships and their sign-ins, the drawing (`svg`, laid out on the server, with its links), its size, the filter's vocabulary and the key.\n\nWith `format=svg` the answer is the SVG document alone, with no links in it, as `image/svg+xml`.\n\n**Mirrors** `GET /admin/federation/map` on the admin console.",
+    `description`:"Every federation relationship of the trust realm, filtered by `role`, `protocol` and text, as a graph — the partners, this service and the applications behind each relationship — with the relationships and their sign-ins, where each box links (`looks`), the drawing (`svg`, with its links) and its size, the filter's vocabulary and the key. The console lays the picture out in the browser from `nodes`, `edges`, `relationships`, `looks` and `drawing.verifiesCredentials`, with the code that draws `svg` here.\n\nWith `format=svg` the answer is the SVG document alone, with no links in it, as `image/svg+xml`.\n\n**Mirrors** `GET /admin/federation/map` on the admin console.",
     `tags`:#["Federation"],
     `responses`:#{
       `200`:#{
@@ -3097,7 +1163,11 @@ op `getFederationMap`(`parameters/0/schema`: string,
       `id`?: string;
       `kind`?: string;
       `label`?: string;
-      `relationships`?: (string)[]
+      `relationships`?: (string)[];
+      @js(#{`description`:"This service's box: the trust realm's id."}) `realm`?: string;
+      @js(#{`description`:"This service's box: the trust realm's name."}) `realmName`?: string;
+      @js(#{`description`:"A foreign service provider's box: the application this service knows it as."}) `application`?: string;
+      @js(#{`description`:"A partner's box: its own name for itself."}) `peer`?: string
     })[];
     `edges`?: ({
       `id`?: string;
@@ -3109,13 +1179,14 @@ op `getFederationMap`(`parameters/0/schema`: string,
       `use`?: `BrokeredUseValue`
     })[];
     `drawing`?: WithWidthHeightFailed;
+    `looks`?: `FederationBoxLinks`;
     `label`?: string;
     `svg`?: string;
     `roles`?: (WithRoleLabelShortEtc4)[];
     `protocols`?: (WithProtocolLabelFamilyEtc7)[];
     `mapKey`?: string
   },
-  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -3123,7 +1194,7 @@ op `getFederationMap`(`parameters/0/schema`: string,
     `properties`:#{
       `key`:#{`type`:"string"},
       `members`:#{`type`:"array",`items`:#{`type`:"string"}},
-      `counts`:#{`$ref`:"#/components/schemas/WithApplicationsGrantsLines3"}
+      `counts`:#{`$ref`:"#/components/schemas/WithApplicationsGrantsLines2"}
     },
     `$types`:#["object","null"]
   }) @hoisted model get_admin_api_console_delegation_cluster_r200_application_json_group_h1397 {}
@@ -3135,7 +1206,7 @@ op `getFederationMap`(`parameters/0/schema`: string,
       `members`:#{`type`:"array",`items`:#{`type`:"string"}},
       `grants`:#{`$ref`:"#/components/schemas/WithPagePagesPerPage4"},
       `permissions`:#{`$ref`:"#/components/schemas/WithKeyMembersCounts"},
-      `counts`:#{`$ref`:"#/components/schemas/WithApplicationsGrantsLines3"}
+      `counts`:#{`$ref`:"#/components/schemas/WithApplicationsGrantsLines2"}
     },
     `$types`:#["object","null"]
   }) @hoisted model get_admin_api_console_delegation_cluster_r200_application_json_cluster_h1398 {}
@@ -3386,12 +1457,12 @@ op `getDelegationCluster`(`parameters/0/schema`: string,
     `application`?: NullableString;
     `group`?: get_admin_api_console_delegation_cluster_r200_application_json_group_h1397;
     `grants`?: `WithPagePagesPerPage4`;
-    `grantsPaging`?: `WithPagePagesPerPage5`;
+    `grantsPaging`?: `WithPagePagesPerPage2`;
     `permissions`?: `WithKeyMembersCounts`;
-    `permissionsPaging`?: `WithPagePagesPerPage5`;
+    `permissionsPaging`?: `WithPagePagesPerPage2`;
     `groups`?: `WithAtFamilyKind2`;
     `counts`?: WithClustersApplicationsLargestEtc5;
-    `paging`?: `WithPagePagesPerPage5`;
+    `paging`?: `WithPagePagesPerPage2`;
     `asked`?: string;
     `graph`?: `WithRealmIssuerNodes4`;
     `cluster`?: get_admin_api_console_delegation_cluster_r200_application_json_cluster_h1398;
@@ -3399,11 +1470,11 @@ op `getDelegationCluster`(`parameters/0/schema`: string,
     `clusters`?: `WithClustersDescriptionMemberOf2`;
     `grantPage`?: `WithShownPagingShown`;
     `permissionPage`?: `WithShownPagingOnlyWhileOn`;
-    `groupPage`?: {`shown`?: `WithClustersDescriptionMemberOf`; `paging`?: `WithPagePagesPerPage5`};
+    `groupPage`?: {`shown`?: `WithClustersDescriptionMemberOf`; `paging`?: `WithPagePagesPerPage2`};
     `facts`?: `WithDescriptionUsersDescription`;
     @js(#{`description`:"Each name in the answer the registry holds."}) `apps`?: Record<{`name`?: string; `dnLabel`?: string}>
   },
-  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/console/delegation/allowed",
@@ -3646,14 +1717,14 @@ op `getDelegationAllowed`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/sche
     `grants`?: `WithPagePagesPerPage4`;
     `groups`?: `WithAtFamilyKind2`;
     `groupCounts`?: WithClustersApplicationsLargestEtc5;
-    `groupsPaging`?: `WithPagePagesPerPage5`;
+    `groupsPaging`?: `WithPagePagesPerPage2`;
     `register`?: `WithResourcesPermissionsGrants`;
     `clusters`?: `WithClustersDescriptionMemberOf2`;
     `shownGroups`?: `WithClustersDescriptionMemberOf`;
     `facts`?: `WithDescriptionUsersDescription`;
     @js(#{`description`:"Each name in the answer the registry holds."}) `apps`?: Record<{`name`?: string; `dnLabel`?: string}>
   },
-  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -3932,7 +2003,7 @@ op `getDelegationSettings`(`parameters/0/schema`: string,
       `grants`?: `WithPagePagesPerPage4`;
       `counts`?: `WithResourcesPermissionsUnidentified2`;
       `filter`?: WithPermissionsGrants;
-      `paging`?: {`permissions`?: `WithPagePagesPerPage5`; `grants`?: `WithPagePagesPerPage5`}
+      `paging`?: {`permissions`?: `WithPagePagesPerPage2`; `grants`?: `WithPagePagesPerPage2`}
     };
     `settings`?: get_admin_api_console_delegation_settings_r200_application_json_settings_h1402;
     `register`?: `WithResourcesPermissionsGrants`;
@@ -3944,7 +2015,7 @@ op `getDelegationSettings`(`parameters/0/schema`: string,
     };
     `allApplications`?: (WithIdentifierName)[]
   },
-  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -4001,7 +2072,7 @@ op `getDelegationSettings`(`parameters/0/schema`: string,
   #{
     `operationId`:"getDelegationChain",
     `summary`:"One delegation relationship: its acts, graph and drawing",
-    `description`:"One chain — (mechanism, initial identity, intermediary, target) — named by its `chain` key, as `GET /admin-api/delegation` lists them in `chains`. The answer is the chain, every act on it (not paged), the graph of those acts and, as for `/delegation/map`, `looks`, the drawing (`svg`, laid out on the server, with its links) and its size.\n\n**A KEY NO ACT IS HELD UNDER IS NOT AN ERROR**: the store is capped and drops the oldest, so the answer is `found: false` with `maxRecords`.\n\nWith `format=svg` the answer is the SVG document alone, with no links in it, as `image/svg+xml`.\n\n**Mirrors** `GET /admin/delegation/chain` on the admin console.",
+    `description`:"One chain — (mechanism, initial identity, intermediary, target) — named by its `chain` key, as `GET /admin-api/delegation` lists them in `chains`. The answer is the chain, every act on it (not paged), the graph of those acts and, as for `/delegation/map`, `looks`, the drawing (`svg`, with its links) and its size.\n\n**A KEY NO ACT IS HELD UNDER IS NOT AN ERROR**: the store is capped and drops the oldest, so the answer is `found: false` with `maxRecords`.\n\nWith `format=svg` the answer is the SVG document alone, with no links in it, as `image/svg+xml`.\n\n**Mirrors** `GET /admin/delegation/chain` on the admin console.",
     `tags`:#["Delegation"],
     `responses`:#{
       `200`:#{
@@ -4049,7 +2120,7 @@ op `getDelegationChain`(`parameters/0/schema`: string,
     `mapKey`?: string;
     `facts`?: `WithDescriptionUsersDescription`
   },
-  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/console/dashboard",
@@ -4089,7 +2160,7 @@ op `getConsoleDashboard`(`responses/200/content/application~1json/schema`: {
     `testDouble`?: boolean;
     `sections`?: `WithLocaleChainCatalog`
   },
-  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/console/applications/new",
@@ -4178,7 +2249,7 @@ op `getConsoleNewApplicationForm`(`responses/200/content/application~1json/schem
       `families`?: (string)[]
     })[]
   },
-  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -4508,7 +2579,7 @@ op `getConsoleDelegationUser`(@js(#{`examples`:#["alice"]}) `parameters/0/schema
     `mapKey`?: string;
     `facts`?: `WithDescriptionUsersDescription`
   },
-  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -4812,7 +2883,7 @@ op `getConsoleDelegationApplication`(@js(#{`examples`:#["no-such-application"]})
     `mapKey`?: string;
     `facts`?: `WithDescriptionUsersDescription`
   },
-  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/console/pki/apply-profile",
@@ -4845,7 +2916,7 @@ op `applyPkiProfile`(@js(#{
   }) `requestBody/content/application~1json/schema`: {},
   `responses/200/content/application~1json/schema`: `WithOkErrorsWhy`,
   `responses/400/content/application~1json/schema`: `WithOkErrorsWhy`,
-  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/console/pki/generate-keys",
@@ -4875,7 +2946,7 @@ op `applyPkiProfile`(@js(#{
 op `generatePkiKeyPair`(@js(#{`examples`:#[#{`pki_key_alg`:"ec-p384"}],`additionalProperties`:true}) `requestBody/content/application~1json/schema`: {},
   `responses/200/content/application~1json/schema`: `WithOkErrorsWhy`,
   `responses/400/content/application~1json/schema`: `WithOkErrorsWhy`,
-  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/console/pki/generate-alt-keys",
@@ -4908,7 +2979,7 @@ op `generatePkiAltKeyPair`(@js(#{
   }) `requestBody/content/application~1json/schema`: {},
   `responses/200/content/application~1json/schema`: `WithOkErrorsWhy`,
   `responses/400/content/application~1json/schema`: `WithOkErrorsWhy`,
-  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/console/pki/use-key",
@@ -4941,7 +3012,7 @@ op `usePkiStoredKey`(@js(#{
   }) `requestBody/content/application~1json/schema`: WithDescriptionObjectId,
   `responses/200/content/application~1json/schema`: `WithOkErrorsWhy`,
   `responses/400/content/application~1json/schema`: `WithOkErrorsWhy`,
-  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/console/applications/generate-secret",
@@ -4971,7 +3042,7 @@ op `usePkiStoredKey`(@js(#{
 op `generateClientSecret`(@js(#{`examples`:#[#{}]}) `requestBody/content/application~1json/schema`: {},
   `responses/200/content/application~1json/schema`: `WithOkChangedClientSecret`,
   `responses/400/content/application~1json/schema`: `WithOkChangedClientSecret`,
-  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/console/operations",
@@ -5005,7 +3076,7 @@ op `getConsoleOperations`(`responses/200/content/application~1json/schema`: {
       `query`?: (string)[]
     })[]
   },
-  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -5046,6 +3117,6 @@ op `getConsoleOpenApi`(`responses/200/content/application~1json/schema`: {
     `paths`: `InsideOpenAPIDocumentPathsComponents`;
     `components`?: `InsideOpenAPIDocumentPathsComponents`
   },
-  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 }

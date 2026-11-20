@@ -59,7 +59,12 @@ function loadBundle(file, globalName) {
              problem: 'not built: ' + String((e && e.message) || e) };
   }
   try {
-    const sandbox = vm.createContext({});
+    // A BROWSER HAS `structuredClone`, and a bare context does not: it is
+    // the HTML standard's, not ECMAScript's, and `@dagrejs/dagre`, which the
+    // console's bundle carries since #444's phase 2b, copies its graph with
+    // it. So the context is given node's — the same algorithm — and still
+    // nothing a browser lacks (`require`, `process`, `module`, `Buffer`).
+    const sandbox = vm.createContext({ structuredClone: structuredClone });
     const value = vm.runInContext(code + '\n;' + globalName + ';', sandbox,
                                   { filename: path.basename(file) });
     log.debug("Leaving loadBundle().");

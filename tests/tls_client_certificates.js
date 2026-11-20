@@ -257,6 +257,78 @@ async function childBody() {
           'A: and not serverAuth');
   t.check(/(^|\n)CN=tlsalice(\n|$)/.test(leaf.subject),
           'A: its CN is the person', leaf.subject);
+  t.check(!/(^|\n)UID=/.test(leaf.subject),
+          'A: a portal issue keeps the common-name subject', leaf.subject);
+  const modeled = tlsClient.personDirectorySubject('tlsalice',
+    'uid=tlsalice,ou=users,dc=example,dc=com', 'iya-sts', 'US');
+  t.check(modeled.map(function (one) {
+    return one.name;
+  }).join(',') === 'CN,UID,OU,DC,DC,O,C' &&
+          modeled[2].value === 'users' && modeled[3].value === 'example' &&
+          modeled[4].value === 'com' && modeled[5].value === 'iya-sts' &&
+          modeled[6].value === 'US',
+          'A: a directory subject bookends the entry with CN and O, C',
+          JSON.stringify(modeled));
+  const escaped = tlsClient.personDirectorySubject('tlsalice',
+    'uid=tlsalice,ou=Example\\, Ltd,dc=example,dc=com', 'iya-sts', '');
+  t.check(escaped.some(function (one) {
+    return one.name === 'OU' && one.value === 'Example, Ltd';
+  }) && escaped[escaped.length - 1].name === 'O',
+          'A: an escaped comma stays one RDN, and no country is added when ' +
+          'the realm names none', JSON.stringify(escaped));
+  const dirMade = await inRealm(function () {
+    return tlsClient.issue(undefined, {
+      username: 'tlsbob', label: 'pep', keyAlg: 'ec-p256',
+      directorySubject: true,
+      entryDn: 'uid=tlsbob,ou=people,dc=example,dc=com',
+      initiatingEntity: 'admin', via: '/admin/users'
+    });
+  });
+  t.check(dirMade.ok, 'A: a directory-subject certificate is issued',
+          JSON.stringify(dirMade.errors || ''));
+  if (dirMade.ok) {
+    const dirLeaf = new nodeCrypto.X509Certificate(
+      dirMade.issued.certificatePem);
+    t.check(/(^|\n)CN=tlsbob(\n|$)/.test(dirLeaf.subject) &&
+            /(^|\n)UID=tlsbob(\n|$)/.test(dirLeaf.subject) &&
+            /(^|\n)OU=people(\n|$)/.test(dirLeaf.subject) &&
+            /(^|\n)DC=example(\n|$)/.test(dirLeaf.subject) &&
+            /(^|\n)DC=com(\n|$)/.test(dirLeaf.subject) &&
+            /(^|\n)O=iya-sts(\n|$)/.test(dirLeaf.subject),
+            'A: its subject is the entry plus the realm organisation',
+            dirLeaf.subject);
+    const stored = pki.certificatesFor(REALM, 'tls-client').filter(
+      function (one) {
+        return String(one.label || '') === 'pep';
+      });
+    t.check(stored.length === 1 && stored[0].issuedAs &&
+            Array.isArray(stored[0].issuedAs.subject) &&
+            stored[0].issuedAs.subject.some(function (one) {
+              return one.name === 'UID' && one.value === 'tlsbob';
+            }) && stored[0].issuedAs.subject.some(function (one) {
+              return one.name === 'OU' && one.value === 'people';
+            }),
+            'A: the register keeps the directory subject for a renewal',
+            stored.length ? JSON.stringify(stored[0].issuedAs) : '');
+  }
+  const badSubject = await inRealm(function () {
+    return tlsClient.issue(undefined, {
+      username: 'tlsbob',
+      subject: [{ name: 'CN', value: 'other' },
+                { name: 'O', value: 'iya-sts' }]
+    });
+  });
+  t.check(!badSubject.ok && errorCodes.codeOf(badSubject) === 'STS-PKI-0168',
+          'A: a subject whose CN is not the holder is refused');
+  const appDir = await inRealm(function () {
+    return tlsClient.issue(undefined, {
+      kind: 'application', application: 'pep-app',
+      directorySubject: true,
+      entryDn: 'cn=pep-app,ou=apps,dc=example,dc=com'
+    });
+  });
+  t.check(!appDir.ok && errorCodes.codeOf(appDir) === 'STS-PKI-0168',
+          'A: a directory subject is refused for an application');
   t.check(String(leaf.subjectAltName).indexOf('URI:urn:sts:person:tlsalice') >=
           0 && String(leaf.subjectAltName).indexOf('alice@example.com') >= 0,
           'A: its subjectAltName names the person and their mail',
@@ -272,7 +344,12 @@ async function childBody() {
             .export({ type: 'spki', format: 'der' })
             .equals(leaf.publicKey.export({ type: 'spki', format: 'der' })),
           'A: the private key handed back is the certificate\'s');
-  const stored = pki.certificatesFor(REALM, 'tls-client');
+  // The person's own record: `tlsbob`'s directory-subject certificate above
+  // is in the same register.
+  const stored = pki.certificatesFor(REALM, 'tls-client').filter(
+    function (one) {
+      return tlsClient.holderOfSlot(one.slot) === PERSON;
+    });
   t.check(stored.length === 1 && !stored[0].privateKeyPem,
           'A: the register holds the certificate and no private key');
   const listed = tlsClient.listFor(REALM, PERSON);
@@ -365,6 +442,13 @@ async function childBody() {
   t.check(leafOnly.accepted,
           'C: and so is the leaf presented without its chain, which is what ' +
           'a browser commonly sends');
+  if (dirMade.ok) {
+    const dirAccepted = tlsClient.identityOf(asInput(
+      dirMade.issued.certificatePem, dirMade.issued.chainPem, true));
+    t.check(dirAccepted.accepted && dirAccepted.username === 'tlsbob',
+            'C: a directory-subject leaf is still that person',
+            JSON.stringify(dirAccepted));
+  }
   const assertion = await pki.issueSigningKeyPair(REALM, {
     identifier: PERSON, purpose: 'jwt', subjectKind: 'person',
     commonName: PERSON });

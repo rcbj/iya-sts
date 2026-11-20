@@ -1304,6 +1304,55 @@ async function consoleAcrossCells(t, a, b) {
 }
 
 // ---------------------------------------------------------------------------
+// H. A RECONCILIATION IN EVERY CELL ANSWERS ITS MERGED COUNTS (CI run #250:
+// `sts_scim_client` in cells read `users` and `groups` from an answer that
+// carried only each cell's sentence).
+// ---------------------------------------------------------------------------
+async function mergedReconcile(t, a, b) {
+  log.debug('Entering mergedReconcile().');
+  sp = freshProvider();
+  setClient({ scimClientGroupMode: 'all' });
+  const id = 'pusher-' + RUN;
+  defineGroup('merged-' + RUN);
+  a.dir.add('ivy');
+  b.dir.add('jon');
+  a.dir.join('ivy', 'merged-' + RUN);
+  b.dir.join('jon', 'merged-' + RUN);
+  const atA = await a.instance.act({ action: 'reconcile', id: id,
+                                     cell: 'cella' }, { actor: 'tester' });
+  const atB = await a.instance.act({ action: 'reconcile', id: id,
+                                     cell: 'cellb' }, { actor: 'tester' });
+  const merged = await a.instance.act({ action: 'reconcile', id: id },
+                                      { actor: 'tester' });
+  await drain([a, b]);
+  t.check(atA.ok && atB.ok && atA.users > 0 && atB.users > 0 &&
+          atA.groups > 0 && atA.groups === atB.groups,
+          'H1. each cell reconciles its own residents and queues every ' +
+          'group in scope for its own share',
+          JSON.stringify({ a: atA, b: atB }));
+  t.check(merged.ok && merged.cells.length === 2 &&
+          merged.users === atA.users + atB.users &&
+          merged.deprovisioned === atA.deprovisioned + atB.deprovisioned,
+          'H2. the answer of a reconciliation in every cell carries the ' +
+          'cells\' people summed: each is reconciled only at home',
+          JSON.stringify(merged));
+  t.check(merged.groups === atA.groups,
+          'H3. and its groups once, not once per cell: a group\'s ' +
+          'definition is every cell\'s', JSON.stringify(merged));
+  world.unreachable.cellb = true;
+  const partly = await a.instance.act({ action: 'reconcile', id: id },
+                                      { actor: 'tester' });
+  world.unreachable.cellb = false;
+  t.check(partly.ok && partly.cells[1].reachable === false &&
+          partly.users === atA.users && partly.groups === atA.groups,
+          'H4. a cell that cannot be reached adds nothing to the counts',
+          JSON.stringify(partly));
+  undefineGroup('merged-' + RUN);
+  setClient();
+  log.debug('Leaving mergedReconcile().');
+}
+
+// ---------------------------------------------------------------------------
 // Z. WHAT A SERVICE PROVIDER SEES, AND ONE CELL.
 // ---------------------------------------------------------------------------
 function noCellNamed(t) {
@@ -1369,6 +1418,7 @@ async function run(t) {
       await groupsWithoutPatch(t, a, b);
       await sharedPause(t, a, b);
       await consoleAcrossCells(t, a, b);
+      await mergedReconcile(t, a, b);
       noCellNamed(t);
       await oneCell(t);
     });
@@ -1386,6 +1436,7 @@ module.exports = {
             'scim-provision transfer decision, a move as a handover, and ' +
             'groups by per-cell PATCH, owner-cell deletion and the merged ' +
             'PUT without PATCH, the shared pause and concurrency budget, ' +
-            'and every cell\'s queues and cell-routed acts',
+            'and every cell\'s queues and cell-routed acts, a ' +
+            'reconciliation in every cell answering its merged counts',
   run: run
 };

@@ -158,7 +158,7 @@
 //     Native SSO secret created, re-issued, revoked or deleted, and RISC
 //     `credential-compromise` and `sessions-revoked` when a person's device
 //     is compromised or removed. `ssf/CLAUDE.md` argues each event's shape
-//     and subject; `docs/devices.md` lists them.
+//     and subject; `docs/v1.1.0/devices.md` lists them.
 //   * **A COMPROMISED DEVICE LOSES EVERYTHING IT WAS TRUSTED WITH**: every
 //     sign-on session one of its keys authenticated is ended (each a CAEP
 //     session-revoked and its back-channel Logout Tokens, through
@@ -200,6 +200,7 @@
 
 import ModelTables = require('./model_tables');
 import Classes = require('./domain_classes');
+import DomainMap = require('./domain_map');
 import helpers = require('./helpers');
 import InstanceSlot = require('./instance_slot');
 import config = require('./config');
@@ -719,9 +720,11 @@ class Devices {
       secretHash: d.secretHash || '',
       session: d.session || '',
       lastUsed: d.lastUsed || '',
-      // The directory's own operational attribute, which this concept does
-      // not carry (#1390).
-      created: String((a.createtimestamp || [])[0] || ''),
+      // The directory's own operational attribute, DirectoryEntry's, read
+      // as one field so that a register read costs no second concept
+      // (#1579).
+      created: String(DomainMap.fieldOf('DirectoryEntry', 'createTimestamp',
+        a) || ''),
       browser: Devices.parsed(d.browser)
     };
   }
@@ -2823,6 +2826,82 @@ class Devices {
                    ' certificate(s) issued to it were revoked' : '') + '.' };
   }
 
+  // -------------------------------------------------------------------------
+  // A DELETED PERSON'S DEVICES GO WITH THEM (2026-11-16, rcbj's rule on
+  // #1612: a person deleted and made again under the same name inherits
+  // nothing). A device's `owner` is the DN of its holder's entry, and a
+  // person made again under the username has the SAME DN — so until now the
+  // new entry owned every device the deleted one had: its `device_id` claim
+  // (3bb), its recognition on the next sign-in with the old key (phase 2),
+  // and every risk level and compliance state recorded on it (phase 5).
+  //
+  // REMOVED, NOT DETACHED. A device left with a rewritten owner (a
+  // `urn:uuid:` nobody holds) would still be in the register, still
+  // RECOGNISED by its keys and still holding valid certificates, for a
+  // holder that no longer exists — and "a new owner takes the device" is an
+  // administrator's act on a device somebody still uses, not a delete's.
+  // So each one is removed as `remove()` removes it — the entry, the
+  // `removed` event, the audit row — and every certificate issued to it is
+  // revoked (`cessationOfOperation`, `keyCompromise` for a compromised one),
+  // as `tls_client_certificates.forgetDeletedHolder()` revokes the person's
+  // own. TWO THINGS `remove()` DOES ARE NOT DONE HERE: the sign-on sessions
+  // the device authenticated are not looked for (the delete ends EVERYTHING
+  // the person held, `common/account_state.ts`, and `endSessionsFrom()` walks
+  // the session store), and no CAEP credential-change or RISC
+  // sessions-revoked is sent about a holder whose entry is already gone —
+  // RISC's `account-purged` is the one statement about it. A re-homing
+  // (`cell_rehome.ts`) moves the devices and never comes here.
+  //
+  // FOUND BY THE OWNER INDEX (`ownedEntries()`, #636), at most
+  // `devices.maxPerPerson`: the cost is the person's devices, never the
+  // register's.
+  // -------------------------------------------------------------------------
+  /**
+   * Removes every device a deleted person owned, revoking the certificates
+   * issued to each; no session is looked for and no signal is sent.
+   *
+   * @param ownerDn - the deleted entry's DN
+   * @param door - who deleted the person, for the audit rows
+   * @returns `{ removed, revoked, failed }`, counts
+   */
+  forgetOwner(ownerDn: unknown, door?: unknown): Json {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering Devices.forgetOwner().");
+    const out = { removed: 0, revoked: 0, failed: 0 };
+    const dn = String(ownerDn || '');
+    if (!dn) {
+      log.debug("Leaving Devices.forgetOwner(). Nobody named.");
+      return out;
+    }
+    const via = String(door || 'a directory delete');
+    this.listForOwner(dn).forEach((device) => {
+      if (!this.store('deleteDeviceEntry', device.id)) {
+        out.failed += 1;
+        log.error(errorCodes.tag('STS-DEVICE-0053') + 'devices: device ' +
+                  device.id + ' of the deleted person ' + dn + ' was not ' +
+                  'removed, so a person made again under the name owns it; ' +
+                  'remove it on the Devices page.');
+        return;
+      }
+      out.removed += 1;
+      this.noteEvent('removed', device, 'owner deleted');
+      this.recordAudit('device.delete', '', device, 'device ' + device.id +
+                       ' removed: its owner ' + dn + ' was deleted (' + via +
+                       ')');
+      out.revoked += this.revokeCertificates(device,
+        device.status === 'compromised' ? 'keyCompromise'
+                                        : 'cessationOfOperation',
+        'system').length;
+    });
+    if (out.removed || out.failed) {
+      log.info('devices: ' + out.removed + ' device(s) of the deleted ' +
+               'person ' + dn + ' were removed and ' + out.revoked +
+               ' certificate(s) issued to them revoked (' + via + ').');
+    }
+    log.debug("Leaving Devices.forgetOwner(). " + out.removed + ".");
+    return out;
+  }
+
   // Adds one key to a device. `options.renewal` says the key replaces one
   // `removeKey()` just took off for a certificate re-issue, which is a
   // credential-change `update` rather than a `create`.
@@ -3683,6 +3762,7 @@ export = {
   create: slot.forward('create'),
   update: slot.forward('update'),
   remove: slot.forward('remove'),
+  forgetOwner: slot.forward('forgetOwner'),
   addKey: slot.forward('addKey'),
   removeKey: slot.forward('removeKey'),
   setCompliance: slot.forward('setCompliance'),

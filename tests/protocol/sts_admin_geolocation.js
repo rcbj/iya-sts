@@ -20,8 +20,10 @@
 //      a continent's countries, a country's cities and what was held back.
 //   3. THE REFUSALS: an unknown window, continent or country, and a country
 //      named with a continent it is not in, are each a 400.
-//   4. THE PAGE is drawn with the map inline, no script, the zoom trail and
-//      the outlines' credit; `?format=json` is the API's answer (rule 7);
+//   4. THE PAGE: the answer's `drawing.map`, `/admin/geo-outlines.json`
+//      answering, and the console's bundle laying the map out from both —
+//      the server's own picture, no script in it — the zoom trail and the
+//      outlines' credit; `?format=json` is the API's answer (rule 7);
 //      a refused query is a 400 page.
 //
 // NOTHING HERE LOADS A DATASET. A geolocation dataset is the service's, not
@@ -197,20 +199,56 @@ async function theRefusals() {
 // THE PAGE, AS THE STATIC CONSOLE DRAWS IT (#446): its operation's answer
 // drawn by the console's own renderers (`console_signin.js`'s `get()`), since
 // every `/admin/*` path answers the same document at the cutover.
+//
+// THE MAP IS LAID OUT IN THE BROWSER SINCE #444 PHASE 2b (2026-11-14): the
+// answer carries `drawing.map` (the level, the filled countries, the labels
+// and the cities), the console fetches the outlines once from
+// `/admin/geo-outlines.json` and `web_geo_map.ts` draws the map over them —
+// the code the server draws `drawing.picture.svg` with. So this asserts the
+// three halves: the data in the answer, the outlines answering, and the
+// bundle's drawing from them being the server's own picture, to the byte.
 async function thePage(consoleClient) {
   log.debug("Entering thePage().");
   log.info("=== 4. the page ===");
+  const outlines = await call("GET", base + "/admin/geo-outlines.json");
+  check("/admin/geo-outlines.json answers the country outlines, with no " +
+        "token", function () {
+          assert.strictEqual(outlines.status, 200,
+                             outlines.text.slice(0, 300));
+          assert.ok(outlines.body && Array.isArray(outlines.body.countries) &&
+                    outlines.body.countries.length > 100,
+                    "no outlines in the file");
+        });
   const world = await consoleClient.get("/admin/geolocation?window=30d");
-  check("Monitoring → Geolocation is drawn with the map inline, no script " +
-        "on it, and the outlines credited", function () {
+  check("the answer carries the map as data for the console to lay out",
+        function () {
           assert.strictEqual(world.status, 200, world.text.slice(0, 300));
+          const map = world.body.drawing && world.body.drawing.map;
+          assert.ok(map, "no drawing.map in the answer");
+          assert.strictEqual(map.level, "world", JSON.stringify(map.level));
+          // `areas` is keyed by ISO code; the labels and cities are lists.
+          assert.ok(map.areas && typeof map.areas === "object" &&
+                    !Array.isArray(map.areas) && Array.isArray(map.labels) &&
+                    Array.isArray(map.cities), JSON.stringify(map));
+          assert.ok(/Where people signed in from: the world/
+                      .test(String(map.title)), String(map.title));
+        });
+  check("Monitoring → Geolocation is drawn with the map the console laid " +
+        "out, no script on it, and the outlines credited", function () {
           const at = world.text.indexOf('<svg xmlns="http://www.w3.org/2000/' +
                                         'svg" id="geo-map"');
-          assert.ok(at >= 0, "no map on the page");
+          assert.ok(at >= 0, "no map on the page: " +
+                    (world.text.indexOf("/admin/geo-outlines.json") >= 0
+                      ? "the outlines did not load"
+                      : world.text.slice(0, 300)));
           const svg = world.text.slice(at, world.text.indexOf("</svg>", at));
           assert.ok(svg.indexOf("<script") < 0, "a script in the map");
           assert.ok(/continent=europe/.test(svg),
                     "no country on the world links to its continent");
+          const picture = world.body.drawing.picture;
+          assert.ok(picture && typeof picture.svg === "string" &&
+                    world.text.indexOf(picture.svg) >= 0,
+                    "the map the console drew is not the server's picture");
           assert.ok(world.text.indexOf("Made with Natural Earth") >= 0,
                     "the outlines are not credited");
         });

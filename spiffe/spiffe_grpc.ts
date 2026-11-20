@@ -71,6 +71,7 @@ import path = require('path');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import LazyModule = require('../common/lazy_module');
+import SpiffeModel = require('./spiffe_model');
 const { log } = helpers;
 // ---------------------------------------------------------------------------
 // THE gRPC RUNTIME AND ITS PROTO LOADER ARE REQUIRED AT FIRST USE (#348).
@@ -557,6 +558,65 @@ class SpiffeGrpc {
   // the call, or '' — which means the condition was already recorded on a row
   // of its own (an authorization refusal, a JWT-SVID refused at
   // ValidateJWTSVID) and a second coded row would count one refusal twice.
+  /**
+   * A request field's refusal, from the model: the call marked with its
+   * error code, and the status error to throw. The handler decides WHERE
+   * the field is read and what it read; the model says what is refused and
+   * in which words (#1579).
+   *
+   * @param call - the gRPC call
+   * @param message - the request message's full name in the protos
+   * @param field - the field
+   * @param when - `empty`, `malformed` or `unexpected`
+   * @param method - the method, where the message is shared by several
+   * @param reason - a malformed SPIFFE ID's sentence
+   * @returns the error
+   */
+  // error-code: none — the code comes from the model and is marked here
+  refuseField(call, message, field, when, method?, reason?) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering SpiffeGrpc.refuseField().");
+    const refusal = SpiffeModel.refusal(message, field, when, method, reason);
+    errorCodes.mark(call, refusal.code);
+    log.debug("Leaving SpiffeGrpc.refuseField(). " + refusal.code);
+    // error-code: none — a constructor; marked on the line above
+    return this.statusError(refusal.status, refusal.message);
+  }
+
+  /**
+   * Holds a message about to be written to its method's response in the
+   * model, and hands it back unchanged (#1579).
+   *
+   * @param surface - the surface
+   * @param method - the method
+   * @param reply - the message
+   * @returns the message
+   */
+  answer(surface, method, reply) {
+    const { log } = this.deps;
+    log.debug("Entering SpiffeGrpc.answer().");
+    SpiffeModel.holdReply(surface, method, reply);
+    log.debug("Leaving SpiffeGrpc.answer().");
+    return reply;
+  }
+
+  /**
+   * Holds the status a call ends with to the model's, and hands it back
+   * unchanged (#1579).
+   *
+   * @param surface - the surface
+   * @param method - the method
+   * @param ending - the status object grpc-js sends
+   * @returns the status object
+   */
+  ended(surface, method, ending) {
+    const { log } = this.deps;
+    log.debug("Entering SpiffeGrpc.ended().");
+    SpiffeModel.holdStatus(surface, method, ending.code);
+    log.debug("Leaving SpiffeGrpc.ended().");
+    return ending;
+  }
+
   /**
    * Decides which error code the audit row for a failed call carries.
    *
@@ -1562,7 +1622,8 @@ class SpiffeGrpc {
                           { refused: prepared.refusal.message },
                           prepared.caller, prepared.errorCode);
           log.debug('Leaving the ' + method + ' handler. Refused.');
-          callback(self.errorToStatus(prepared.refusal, method));
+          callback(self.ended(surface, method,
+                              self.errorToStatus(prepared.refusal, method)));
           return;
         }
         Promise.resolve()
@@ -1589,11 +1650,12 @@ class SpiffeGrpc {
           })
           .then(function (reply) {
             self.recordCall(surface, method, true, {}, prepared.caller);
-            callback(null, reply || {});
+            callback(null, self.answer(surface, method, reply || {}));
             log.debug('Leaving the ' + method + ' handler.');
           })
           .catch(function (err) {
-            const status = self.errorToStatus(err, method);
+            const status = self.ended(surface, method,
+                                      self.errorToStatus(err, method));
             self.recordCall(surface, method, false, { status: status.code },
                             prepared.caller,
                             self.failureCodeOf(call, err));
@@ -1750,7 +1812,8 @@ class SpiffeGrpc {
           self.recordCall(surface, method, false,
                           { refused: prepared.refusal.message },
                           prepared.caller, prepared.errorCode);
-          call.emit('error', self.errorToStatus(prepared.refusal, method));
+          call.emit('error', self.ended(surface, method,
+            self.errorToStatus(prepared.refusal, method)));
           log.debug('Leaving the ' + method + ' stream handler. Refused.');
           return;
         }
@@ -1780,7 +1843,7 @@ class SpiffeGrpc {
                 log.debug("Leaving push().");
                 return false;
               }
-              call.write(message);
+              call.write(self.answer(surface, method, message));
               log.debug("Leaving push().");
               return true;
             }, function end(err) {
@@ -1793,12 +1856,15 @@ class SpiffeGrpc {
                 return;
               }
               open = false;
-              call.emit('error', self.errorToStatus(err, method));
+              call.emit('error', self.ended(surface, method,
+                                            self.errorToStatus(err, method)));
               log.debug("Leaving end().");
             });
           })
           .then(function (first) {
-            if (first && open) call.write(first);
+            if (first && open) {
+              call.write(self.answer(surface, method, first));
+            }
             self.recordCall(surface, method, true, { streaming: true },
                             prepared.caller);
             log.debug('Leaving the ' + method + ' stream handler. The ' +
@@ -1806,7 +1872,8 @@ class SpiffeGrpc {
                       'ending as a fault.');
           })
           .catch(function (err) {
-            const status = self.errorToStatus(err, method);
+            const status = self.ended(surface, method,
+                                      self.errorToStatus(err, method));
             self.recordCall(surface, method, false, { status: status.code },
                             prepared.caller,
                             self.failureCodeOf(call, err));
@@ -1859,7 +1926,8 @@ class SpiffeGrpc {
           self.recordCall(surface, method, false,
                           { refused: prepared.refusal.message },
                           prepared.caller, prepared.errorCode);
-          call.emit('error', self.errorToStatus(prepared.refusal, method));
+          call.emit('error', self.ended(surface, method,
+            self.errorToStatus(prepared.refusal, method)));
           log.debug('Leaving the ' + method + ' bidi handler. Refused.');
           return;
         }
@@ -1930,7 +1998,7 @@ class SpiffeGrpc {
                               ' second(s).');
                 }, timeoutMs)
               };
-              call.write(message);
+              call.write(self.answer(surface, method, message));
             });
           }
         };
@@ -1946,7 +2014,9 @@ class SpiffeGrpc {
           const running = Promise.resolve()
             .then(function () { return handler(request, call, conversation); })
             .then(function (reply) {
-              if (reply && !failed) call.write(reply);
+              if (reply && !failed) {
+                call.write(self.answer(surface, method, reply));
+              }
             })
             .catch(function (err) {
               log.debug("Caught in the " + method + " bidi handler: " +
@@ -1956,7 +2026,8 @@ class SpiffeGrpc {
               }
               failed = true;
               failWaiting('ended', 'The stream failed.');
-              const status = self.errorToStatus(err, method);
+              const status = self.ended(surface, method,
+                                        self.errorToStatus(err, method));
               self.recordCall(surface, method, false, { status: status.code },
                               prepared.caller, self.failureCodeOf(call, err));
               call.emit('error', status);
@@ -2937,6 +3008,7 @@ export = {
   notFound: slot.forward('notFound'),
   permissionDenied: slot.forward('permissionDenied'),
   unavailable: slot.forward('unavailable'),
+  refuseField: slot.forward('refuseField'),
   unary: slot.forward('unary'),
   serverStream: slot.forward('serverStream'),
   bidiStream: slot.forward('bidiStream'),

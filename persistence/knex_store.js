@@ -88,6 +88,7 @@
 // ===========================================================================
 
 const bunyan = require('bunyan');
+const tls = require('tls');
 const errorCodes = require('../common/error_codes');
 
 const log = bunyan.createLogger({ name: 'sts-knex-store' });
@@ -759,9 +760,131 @@ function openConnection(settings) {
   return connection;
 }
 
+// ---------------------------------------------------------------------------
+// THE HOST CHECK A STORE CONNECTION MAKES, IN ONE PLACE (#951's review,
+// 2026-11-13).
+//
+// `persistence_postgres.dialOptions()` decides what is checked of the
+// server's certificate, and the directory bridge's thread
+// (`common/sync_query_thread.ts`) dials with the same decision. A function
+// cannot be posted to a thread, so the driver's `bridgeConnection()` posts
+// the decision as DATA (`postableSsl()`) and the thread turns it back into
+// options (`restoredSsl()`). Until this section the thread built its own
+// hook beside the one `dialOptions()` installs, so a change to how the
+// database's name is checked had two places to be made and one to be
+// forgotten — and the forgotten one is the connection a review cannot see,
+// on a thread, dialled by address. Both hooks are made HERE now:
+//
+//   * `hostCheck(host)` checks the certificate against the host from the
+//     connection string, not the `localhost` `pg` leaves node for an
+//     address. It calls `tls.checkServerIdentity` AT THE HANDSHAKE, so the
+//     process-wide check `common/outbound_tls.ts` installs — RFC 9525's
+//     names and the path rules (#201) — is what runs, in the thread exactly
+//     as in the front process (the thread installs it before it dials).
+//   * `chainOnlyCheck()` is libpq's verify-ca: the chain, and no name.
+//
+// A LEAF: node's `tls` only. The hooks are anonymous closures and log
+// nothing, because they run on the driver's handshake.
+// ---------------------------------------------------------------------------
+/**
+ * The hook that checks a database's certificate against the host named in
+ * its connection string.
+ *
+ * @param host - the host from the connection string, without brackets
+ * @returns a `checkServerIdentity` for node
+ */
+function hostCheck(host) {
+  log.debug("Entering hostCheck().");
+  const name = String(host);
+  log.debug("Leaving hostCheck().");
+  return function (_presented, cert) {
+    return tls.checkServerIdentity(name, cert);
+  };
+}
+
+/**
+ * The hook for libpq's verify-ca: node checks the name whenever it verifies
+ * the chain, and answering "no error" leaves out that check and only that.
+ *
+ * @returns a `checkServerIdentity` that checks nothing
+ */
+function chainOnlyCheck() {
+  log.debug("Entering chainOnlyCheck().");
+  log.debug("Leaving chainOnlyCheck().");
+  return function () {
+    return undefined;
+  };
+}
+
+/**
+ * Says a connection's `ssl` option as data a thread can be posted: the
+ * hook as `checkHost` (the host it checks) or `hostnameUnchecked`.
+ *
+ * @param ssl - what `dialOptions()` answered as `ssl`
+ * @returns the same decision with no function in it
+ */
+function postableSsl(ssl) {
+  log.debug("Entering postableSsl().");
+  if (!ssl || typeof ssl.checkServerIdentity !== 'function') {
+    log.debug("Leaving postableSsl(). No hook.");
+    return ssl;
+  }
+  /** @type {Record<string, unknown>} */
+  const posted = { rejectUnauthorized: ssl.rejectUnauthorized };
+  if (ssl.checkHost) {
+    posted.checkHost = String(ssl.checkHost);
+  } else {
+    posted.hostnameUnchecked = true;
+  }
+  if (ssl.ca) {
+    posted.ca = ssl.ca;
+  }
+  if (ssl.stsOutboundVariant) {
+    posted.stsOutboundVariant = ssl.stsOutboundVariant;
+  }
+  log.debug("Leaving postableSsl().");
+  return posted;
+}
+
+/**
+ * Turns what `postableSsl()` posted back into the options the driver's own
+ * pools dial with: the same hook, the trust anchors, the store's row of the
+ * outbound gate.
+ *
+ * @param posted - the posted `ssl` option
+ * @returns node's `ssl` option, or what was posted when it named no hook
+ */
+function restoredSsl(posted) {
+  log.debug("Entering restoredSsl().");
+  if (!posted || (posted.hostnameUnchecked !== true && !posted.checkHost)) {
+    log.debug("Leaving restoredSsl(). No hook.");
+    return posted;
+  }
+  /** @type {Record<string, unknown>} */
+  const restored = { rejectUnauthorized: posted.rejectUnauthorized };
+  if (posted.checkHost) {
+    restored.checkHost = String(posted.checkHost);
+    restored.checkServerIdentity = hostCheck(String(posted.checkHost));
+  } else {
+    restored.checkServerIdentity = chainOnlyCheck();
+  }
+  if (posted.ca) {
+    restored.ca = posted.ca;
+  }
+  if (posted.stsOutboundVariant) {
+    restored.stsOutboundVariant = posted.stsOutboundVariant;
+  }
+  log.debug("Leaving restoredSsl().");
+  return restored;
+}
+
 module.exports = {
   openPool: openPool,
   openConnection: openConnection,
+  hostCheck: hostCheck,
+  chainOnlyCheck: chainOnlyCheck,
+  postableSsl: postableSsl,
+  restoredSsl: restoredSsl,
   timedOutWaiting: timedOutWaiting,
   engineOf: engineOf,
   MARIADB_SESSION: MARIADB_SESSION

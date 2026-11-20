@@ -116,6 +116,7 @@ import countryCodes = require('../common/country_codes');
 // The error codes (common/error_codes.js). A LEAF that requires nothing, so it
 // adds nothing to the short list of what this library may require.
 import errorCodes = require('../common/error_codes');
+import DomainMap = require('../common/domain_map');
 
 // One row of the catalogue — see THE CATALOGUE below.
 interface CatalogueRow {
@@ -1392,9 +1393,10 @@ class VcClaims {
     const { log } = this.deps;
     log.debug("Entering VcClaims.updatedAtOf().");
     const attributes = this.directoryAttributes(name);
-    const stamp = attributes && [].concat(attributes.modifytimestamp ||
-                                          attributes.createtimestamp ||
-                                          [])[0];
+    // The two stamps are DirectoryEntry's (#1579).
+    const stamp = attributes && (DomainMap.fieldOf('DirectoryEntry',
+      'modifyTimestamp', attributes) || DomainMap.fieldOf('DirectoryEntry',
+      'createTimestamp', attributes));
     const m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/.exec(
       String(stamp || ''));
     if (!m) {
@@ -1524,7 +1526,8 @@ class VcClaims {
   // The prefix is the format's, exactly as the metadata builder needs it: an
   // SD-JWT VC keeps its claims at the top level of the payload, the two W3C
   // formats keep them under credentialSubject, and ldp_vc is additionally FLAT
-  // and limited to the terms the vendored context defines.
+  // and limited to the terms the vendored context defines. An mso_mdoc's
+  // path is `[namespace, element]` (OpenID4VCI Appendix A.2, #1862).
   // ---------------------------------------------------------------------------
   /**
    * Returns the claims this issuer advertises for a format, the vocabulary a
@@ -1539,6 +1542,11 @@ class VcClaims {
     if (format === 'ldp_vc') {
       log.debug("Leaving VcClaims.advertisedClaims(). The ldp_vc list.");
       return this.ldpMetadataClaims();
+    }
+    if (format === 'mso_mdoc') {
+      const issue = require('./vc_mdoc_issue');
+      log.debug("Leaving VcClaims.advertisedClaims(). The mdoc list.");
+      return issue.claimPaths();
     }
     log.debug("Leaving VcClaims.advertisedClaims().");
     return this.metadataClaims(format === 'jwt_vc_json' ?
@@ -1564,6 +1572,12 @@ class VcClaims {
       log.debug("Leaving VcClaims.pathOfRow().");
       return this.ldpTermFor(row) ? ['credentialSubject',
                                      this.ldpTermFor(row)] : null;
+    }
+    if (format === 'mso_mdoc') {
+      const issue = require('./vc_mdoc_issue');
+      const element = issue.elementForOidc(row.claim);
+      log.debug("Leaving VcClaims.pathOfRow().");
+      return element ? issue.pathFor(element) : null;
     }
     log.debug("Leaving VcClaims.pathOfRow().");
     return (format === 'jwt_vc_json' ? ['credentialSubject'] : []).concat(

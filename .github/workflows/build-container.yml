@@ -19,6 +19,9 @@
 # The second is the remote XACML PEP (xacml-pep/), checked for liveness
 # before anything is published. A develop build is built and checked and
 # publishes nothing (rcbj, 2026-10-02): what goes out is what reached main.
+# The one exception is a RELEASE CANDIDATE (rcbj, 2026-11-19), started by
+# hand with `candidate` on another branch: M.N.O.<build> and M.N.O-candidate,
+# never the bare release or `latest` (the `candidate` input, below).
 #
 # See *Publish the image* below.
 #
@@ -51,9 +54,45 @@ on:
         description: 'The release build number (e.g. 0 for 1.0.0.0)'
         type: string
         default: ''
+      # A RELEASE CANDIDATE (rcbj, 2026-11-19), the parent project's
+      # arrangement (its dockerimage.yml, ad5d2f03 there), dispatched on any
+      # branch but main. It publishes this branch's images so the live-site
+      # suites have something to run against before a release exists, with
+      # four differences from a build of main:
+      #   * the images are tagged M.N.O.<build> and M.N.O-candidate only;
+      #     NOT the bare M.N.O (that names a release, and is made once) and
+      #     NOT `latest`;
+      #   * the release is VERSION's as written, as on any develop build: no
+      #     patch is worked out from the tags, and no pre-release suffix
+      #     reaches the version (common/CLAUDE.md, *Versioning*);
+      #   * the git tags are v<M.N.O>.<build> and v<M.N.O>-candidate, the
+      #     second FORCE-MOVED by each candidate build. Neither is a
+      #     three-component vM.N.P, so tests/tools/release-number.js counts
+      #     neither, and the real release later finds no v<M.N.O> and makes
+      #     it as usual;
+      #   * NO GitHub release is made, because a release is permanent. The
+      #     notes it would carry go to the run summary instead.
+      # Ignored on main, which always publishes the real release.
+      candidate:
+        description: >-
+          Release candidate: publish this branch as M.N.O-candidate (no bare
+          M.N.O, no `latest`, no GitHub release). Ignored on main.
+        type: boolean
+        default: false
+
+# ONE BUILD OF main AT A TIME (2026-11-11): each one works out the next
+# patch from the git tags and tags it once it has published, so two at once
+# would both claim the same number. A run waiting for another is queued, not
+# cancelled; GitHub cancels a run that was already waiting when a newer one
+# queues, so a burst of merges publishes the newest. Every other ref's group
+# is the run's own, so a develop build waits for nothing, as before.
+concurrency:
+  group: ${{ github.ref == 'refs/heads/main' && 'build-container-main' || format('build-container-{0}', github.run_id) }}
+  cancel-in-progress: false
 
 permissions:
-  contents: read
+  # Written, for the release's git tags on a build of main (2026-11-11).
+  contents: write
   # The private image mirror on ghcr.io, read for the base images, and the
   # public ghcr.io/rcbj/iya-sts package, written.
   packages: write
@@ -61,6 +100,11 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # 'true' only for a dispatched candidate on a branch other than main.
+      CANDIDATE: >-
+        ${{ github.event_name == 'workflow_dispatch' &&
+        inputs.candidate == true && github.ref != 'refs/heads/main' }}
     steps:
       # submodules: recursive is LOAD-BEARING and its absence is silent until the
       # container starts. The LDAP directory's library is `"ldapjs":
@@ -77,7 +121,7 @@ jobs:
       # project needs for the same reason one level up (this repository is itself
       # a submodule over there).
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           submodules: recursive
 
@@ -96,11 +140,51 @@ jobs:
           fi
           echo "node-ldapjs is present."
 
-      # buildx, for the GitHub Actions layer cache below. The Dockerfile installs
-      # nvm and a Node toolchain from the network on every layer miss, which is
-      # the slow part by a wide margin and the part most worth caching.
+      # THE RELEASE THIS BUILD CARRIES (rcbj, 2026-11-11). Every build of
+      # main, a run started by hand from main included, is the NEXT PATCH
+      # after the newest `vM.N.P` tag of VERSION's M.N line — 1.0.0, 1.0.1,
+      # 1.0.2 — worked out here and committed nowhere. VERSION is used as
+      # written when its line has no tag yet or its patch is above the
+      # highest, which is how a minor or major release is made: the change
+      # being merged edits VERSION to 1.1.0 or 2.0.0. A re-run of a commit
+      # that already carries a release tag reuses it. Four-component build
+      # tags never count. The rule and its cases are
+      # tests/tools/release-number.js's and tests/release_number.js's.
+      #
+      # `git ls-remote` rather than the checkout's tags: the checkout is
+      # shallow and fetched none, and ls-remote names every tag's commit
+      # without fetching an object (actions/checkout left the token in the
+      # git config for it).
+      #
+      # `override` is what the two image builds are handed as
+      # STS_VERSION_RELEASE: the worked-out release on main, EMPTY on every
+      # other ref, so a develop build stamps VERSION exactly as it did.
+      # `release` is the release the images must report either way.
+      - name: Work out the release
+        id: release
+        run: |
+          set -euo pipefail
+          if [ "${{ github.ref }}" = refs/heads/main ]; then
+            tags="$(git ls-remote --tags origin 'refs/tags/v*')"
+            release="$(printf '%s\n' "${tags}" |
+              node tests/tools/release-number.js --commit "${{ github.sha }}" \
+                --version-file VERSION)"
+            override="${release}"
+          else
+            release="$(tr -d '[:space:]' < VERSION)"
+            override=""
+          fi
+          echo "${release}" | grep -Eq '^(0|[1-9][0-9]*)(\.(0|[1-9][0-9]*)){2}$'
+          echo "release=${release}" >> "$GITHUB_OUTPUT"
+          echo "override=${override}" >> "$GITHUB_OUTPUT"
+          echo "This build is release ${release}" \
+               "(VERSION says $(tr -d '[:space:]' < VERSION))."
+
+      # buildx, for the GitHub Actions layer cache below. The Dockerfile runs
+      # npm against the registry on every layer miss, which is the slow part
+      # by a wide margin and the part most worth caching.
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       # THE BASE IMAGES ARE PRIVATE COPIES ON GHCR.IO (2026-09-27): see
       # build-contexts below and .github/image-mirror.txt.
@@ -122,12 +206,13 @@ jobs:
       # ignores BUILD_NUMBER. The publish step below reads the version back
       # out of the image. The XACML PEP image is stamped by its own build, a
       # moment later, so an ordinary build's number is its own; a release
-      # names the same number for both.
+      # names the same number for both. STS_VERSION_RELEASE is the release
+      # worked out above, empty outside main, where the stamp reads VERSION.
       # GIT_COMMIT has to be passed because `.dockerignore` excludes
       # `.git`, so the build context carries no history for `git rev-parse` to
       # read.
       - name: Build image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           tags: rcbj/sts:ci
@@ -137,23 +222,26 @@ jobs:
             GIT_COMMIT=${{ github.sha }}
             STS_RELEASE=${{ inputs.release && 'true' || 'false' }}
             BUILD_NUMBER=${{ inputs.build_number }}
+            STS_VERSION_RELEASE=${{ steps.release.outputs.override }}
           # Every FROM from the ghcr.io mirror, as docker-compose-run-tests.yml's
-          # x-mirror-contexts does (`ubuntu`, not `ubuntu:latest`: BuildKit
-          # drops `:latest` when it looks a name up).
-          # tests/image_mirror_coverage.js holds this list to the Dockerfile.
+          # x-mirror-contexts does (a `:latest` would be dropped from the key:
+          # BuildKit drops it when it looks a name up). The service image is
+          # debian:bookworm-slim and the node image since 2026-11-14 (it was
+          # ubuntu:latest). tests/image_mirror_coverage.js holds this list to
+          # the Dockerfile.
           build-contexts: |
-            ubuntu=docker-image://ghcr.io/rcbj/iya-sts/mirror/ubuntu:latest
+            debian:bookworm-slim=docker-image://ghcr.io/rcbj/iya-sts/mirror/debian:bookworm-slim
             node:24.22.1-bookworm-slim=docker-image://ghcr.io/rcbj/iya-sts/mirror/node:24.22.1-bookworm-slim
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       # THE REMOTE XACML PEP (2026-10-02), with the same commit and the same
       # release inputs, so the two images published from one run carry one
-      # release (VERSION's), name one commit, and — for a release — one
-      # build number.
+      # release (the one worked out above), name one commit, and — for a
+      # release — one build number.
       # Its one FROM comes from the mirror, as the service's do.
       - name: Build the XACML PEP image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: xacml-pep/Dockerfile
@@ -164,6 +252,7 @@ jobs:
             GIT_COMMIT=${{ github.sha }}
             STS_RELEASE=${{ inputs.release && 'true' || 'false' }}
             BUILD_NUMBER=${{ inputs.build_number }}
+            STS_VERSION_RELEASE=${{ steps.release.outputs.override }}
           build-contexts: |
             rust:1.97-bookworm=docker-image://ghcr.io/rcbj/iya-sts/mirror/rust:1.97-bookworm
             debian:bookworm-slim=docker-image://ghcr.io/rcbj/iya-sts/mirror/debian:bookworm-slim
@@ -278,8 +367,9 @@ jobs:
       # service started from a checkout, where there IS no stamp and the record
       # is computed at startup. So `stamped: true` and the stamped build
       # number, release flag and instant reaching `/admin-api` are exactly
-      # what no other test can see. And the version is VERSION's release
-      # followed by that build number (#1317).
+      # what no other test can see. And the version is the release worked
+      # out above (VERSION's outside main) followed by that build number
+      # (#1317).
       #
       # It also catches the specific way this goes quietly wrong: a `--stamp`
       # that failed, or a `version.json` that ended up in the wrong directory,
@@ -306,11 +396,11 @@ jobs:
               exit 1
             }
           done
-          release="$(tr -d '[:space:]' < VERSION)"
+          release="${{ steps.release.outputs.release }}"
           build="$(echo "${stamp}" | jq -r .build)"
           echo "${body}" | jq -e --arg v "${release}.${build}" \
             '.version == $v' > /dev/null || {
-            echo "The service's version is not VERSION's ${release}" >&2
+            echo "The service's version is not release ${release}" >&2
             echo "followed by its build number ${build} (#1317)." >&2
             exit 1
           }
@@ -337,13 +427,15 @@ jobs:
           }
 
       # The PEP's liveness only: it starts, binds 9090 and answers
-      # /healthcheck. Registering with a PDP needs a client certificate a
+      # /healthcheck. Plain HTTP is off by default since #1760, and turned
+      # on here because this container holds no HTTPS pair to probe:
+      # issuing one needs a realm it registered to. Registering with a PDP needs a client certificate a
       # realm issued, which the test stacks arrange and this job does not; a
       # PEP that cannot reach its PDP keeps retrying and stays live, which
       # is the behaviour xacml-pep/CLAUDE.md argues.
       - name: Check the XACML PEP image starts
         run: |
-          docker run -d --name pep-ci -p 9090:9090 \
+          docker run -d --name pep-ci -p 9090:9090 -e PEP_HTTP=true \
             -e PEP_PDP_URL=https://localhost:8081 rcbj/xacml-pep:ci
           for i in $(seq 1 30); do
             if curl -fsS http://localhost:9090/healthcheck; then
@@ -364,23 +456,28 @@ jobs:
       #
       # Tagged with the FULL version the image itself reports, M.N.O.<build>
       # (read out of its version.json, so the tag and the stamp cannot
-      # disagree), the bare release `M.N.O` (`:1.0.0`, VERSION's), and a
-      # floating `latest`. THE BARE TAG IS ON EVERY BUILD OF main SINCE
-      # 2026-11-10 (rcbj): from #1317 until then only a RELEASE build carried
-      # it, and the first main publish of 1.0.0 went out with no `:1.0.0` at
-      # all. So `:1.0.0` is the newest main build of 1.0.0 and moves with each
-      # merge, and `M.N.O.<build>` is still the one name for one build (a
-      # release build's being `1.0.0.0`). From main ONLY
+      # disagree), the bare release `M.N.O`, and a floating `latest`. THE
+      # BARE TAG IS ON EVERY BUILD OF main SINCE 2026-11-10 (rcbj): from
+      # #1317 until then only a RELEASE build carried it, and the first main
+      # publish of 1.0.0 went out with no `:1.0.0` at all. SINCE 2026-11-11
+      # EACH BUILD OF main IS A RELEASE OF ITS OWN, the next patch (*Work out
+      # the release*, above), so `:1.0.1` names one merge into main rather
+      # than moving with every one; `M.N.O.<build>` is still the one name for
+      # one build (a release build's being `1.0.1.0`). From main ONLY
       # (rcbj, 2026-10-02): develop
       # published a `develop` tag for a day, and too much went out that was
       # not ready. A develop build, and a run started by hand from any branch
-      # but main, publishes nothing. The image's
+      # but main, publishes nothing, unless it is started as a candidate
+      # (rcbj, 2026-11-19): then `:<M.N.O.build>` and `:<M.N.O>-candidate`,
+      # with no bare `:<M.N.O>` and no `latest`. The image's
       # org.opencontainers.image.revision label names the commit.
       #
       # NOT ghcr.io/rcbj/iya-sts/<name>. That namespace is the test stack's
-      # (tests.yml pushes ghcr.io/rcbj/iya-sts/sts and its siblings under the
-      # commit and the branch, built for the test stacks) and the mirror's;
-      # sharing a name would let one workflow overwrite the other's tag.
+      # (run-tests.sh names ghcr.io/rcbj/iya-sts/sts and its siblings; tests.yml
+      # pushed them under the commit and the branch until 2026-11-14 and now
+      # hands them between its jobs as an artifact, pushing nothing) and the
+      # mirror's; sharing a name would let one workflow overwrite the other's
+      # tag.
       #
       # A NEW ghcr.io PACKAGE STARTS PRIVATE. The image's
       # org.opencontainers.image.source label links it to this repository,
@@ -401,10 +498,17 @@ jobs:
         id: publish-plan
         run: |
           set -euo pipefail
-          case "${{ github.ref_name }}" in
-            main) FLOAT=latest ;;
-            *)    FLOAT="" ;;
-          esac
+          # FLOAT is the moving tag, and a non-empty FLOAT is what publishes.
+          # BARE is the bare M.N.O, a release's: on main only, never on a
+          # candidate.
+          if [ "${CANDIDATE}" = true ]; then
+            FLOAT="${{ steps.release.outputs.release }}-candidate"
+          else
+            case "${{ github.ref_name }}" in
+              main) FLOAT=latest ;;
+              *)    FLOAT="" ;;
+            esac
+          fi
           VERSION="$(docker run --rm --entrypoint cat rcbj/sts:ci \
                      version.json | jq -r .version)"
           PEP_VERSION="$(docker run --rm --entrypoint cat \
@@ -412,10 +516,11 @@ jobs:
           for v in "${VERSION}" "${PEP_VERSION}"; do
             test -n "${v}" && test "${v}" != null
           done
-          # The bare M.N.O tag, on every build of main (2026-11-10). Both
-          # images must be builds of that release, or the tag would name two
+          # The bare M.N.O tag, on every build of main (2026-11-10): the
+          # release worked out before the build (2026-11-11). Both images
+          # must be builds of that release, or the tag would name two
           # releases; a release build (#1317) must number them alike as well.
-          RELEASE_TAG="$(tr -d '[:space:]' < VERSION)"
+          RELEASE_TAG="${{ steps.release.outputs.release }}"
           for v in "${VERSION}" "${PEP_VERSION}"; do
             case "${v}" in
               "${RELEASE_TAG}".*) ;;
@@ -430,12 +535,36 @@ jobs:
               exit 1
             }
           fi
+          # AND THE NUMBER IS STILL THIS BUILD'S TO TAKE. Builds of main run
+          # one at a time (`concurrency`, above), so this cannot fail in the
+          # ordinary course; it is what stops a publish if a tag was made by
+          # hand, or by a run outside that group, while this one built —
+          # before an image is pushed under a release somebody else has.
+          # Main only: a candidate claims no release number.
+          if [ "${FLOAT}" = latest ]; then
+            again="$(git ls-remote --tags origin 'refs/tags/v*' |
+              node tests/tools/release-number.js \
+                --commit "${{ github.sha }}" --version-file VERSION)"
+            test "${again}" = "${RELEASE_TAG}" || {
+              echo "::error::Release ${RELEASE_TAG} was taken while this" \
+                   "build ran; the next is now ${again}. Run it again."
+              exit 1
+            }
+          fi
           echo "float=${FLOAT}" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "pep_version=${PEP_VERSION}" >> "$GITHUB_OUTPUT"
           echo "release_tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
+          if [ "${CANDIDATE}" = true ]; then
+            echo "bare=" >> "$GITHUB_OUTPUT"
+          else
+            echo "bare=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
+          fi
           if [ -z "${FLOAT}" ]; then
-            echo "Not main: nothing is published."
+            echo "Not main and not a candidate: nothing is published."
+          elif [ "${CANDIDATE}" = true ]; then
+            echo "Publishing candidate ${VERSION} (PEP ${PEP_VERSION})" \
+                 "as ${FLOAT}; no bare ${RELEASE_TAG}, no latest."
           else
             echo "Publishing ${VERSION} (PEP ${PEP_VERSION})," \
                  "${RELEASE_TAG} and ${FLOAT}."
@@ -462,7 +591,7 @@ jobs:
           VERSION: ${{ steps.publish-plan.outputs.version }}
           PEP_VERSION: ${{ steps.publish-plan.outputs.pep_version }}
           FLOAT: ${{ steps.publish-plan.outputs.float }}
-          RELEASE_TAG: ${{ steps.publish-plan.outputs.release_tag }}
+          RELEASE_TAG: ${{ steps.publish-plan.outputs.bare }}
         run: |
           set -euo pipefail
           rows=""
@@ -471,6 +600,10 @@ jobs:
             for registry in ghcr.io/rcbj docker.io/iyasec; do
               dst="${registry}/${name}"
               for tag in "${version}" "${RELEASE_TAG}" "${FLOAT}"; do
+                # A candidate has no bare release tag.
+                if [ -z "${tag}" ]; then
+                  continue
+                fi
                 docker tag "${src}" "${dst}:${tag}"
                 docker push "${dst}:${tag}"
               done
@@ -493,6 +626,8 @@ jobs:
             echo "|---|---|"
             printf '%s' "${rows}"
           } >> "$GITHUB_STEP_SUMMARY"
+          # The same table, kept for the GitHub release's notes (below).
+          printf '%s' "${rows}" > "${RUNNER_TEMP}/published-images.md"
 
       # ARTIFACT HUB'S VERIFIED PUBLISHER BADGE (2026-10-02), the parent
       # project's arrangement (its dockerimage.yml, d95d48f there). For a
@@ -508,7 +643,7 @@ jobs:
       # io.artifacthub.* LABELs in each Dockerfile, not this file.
       - name: Install oras
         if: ${{ steps.publish-plan.outputs.float != '' }}
-        uses: oras-project/setup-oras@v1
+        uses: oras-project/setup-oras@v2
 
       - name: Publish Artifact Hub repository metadata
         if: ${{ steps.publish-plan.outputs.float != '' }}
@@ -530,6 +665,217 @@ jobs:
                 artifacthub-repo.yml:application/vnd.cncf.artifacthub.repository-metadata.layer.v1.yaml
             )
           done
+
+      # ---------------------------------------------------------------------
+      # THE GIT TAGS OF A PUBLISHED BUILD (rcbj, 2026-11-11), on main only and
+      # only once the images are out, so a tag never names a build that did
+      # not publish. Two, named as the images are with a `v` in front:
+      #
+      #   v<M.N.O>.<build>  the full version the service image reports
+      #                     (`v1.0.1.20261112090000`): one build, never moved.
+      #   v<M.N.O>          the release (`v1.0.1`), worked out before the
+      #                     build: made on this commit and NEVER MOVED since
+      #                     2026-11-11 — it is how the next build of main
+      #                     finds the patch to follow. A re-run of the same
+      #                     commit finds it already there and reuses it; one
+      #                     on another commit is refused, as the full tag's
+      #                     is. (From 2026-11-11's first tags until then it
+      #                     moved to the newest build of VERSION's release.)
+      #
+      # Through the REST API with the job's token rather than a `git push`, so
+      # the checkout's depth and credentials do not matter. A tag the token
+      # pushes starts no other workflow, which is what is wanted here.
+      # ---------------------------------------------------------------------
+      - name: Tag the release in git
+        if: ${{ steps.publish-plan.outputs.float != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.publish-plan.outputs.version }}
+          RELEASE_TAG: ${{ steps.publish-plan.outputs.release_tag }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          repo="${GITHUB_REPOSITORY}"
+          full="v${VERSION}"
+          release="v${RELEASE_TAG}"
+          # The full version names one build: made once, refused if it
+          # already names another commit.
+          if gh api "repos/${repo}/git/ref/tags/${full}" >/dev/null 2>&1; then
+            at="$(gh api "repos/${repo}/git/ref/tags/${full}" \
+                  --jq .object.sha)"
+            test "${at}" = "${SHA}" || {
+              echo "::error::${full} already names ${at}, not ${SHA}."
+              exit 1
+            }
+          else
+            gh api -X POST "repos/${repo}/git/refs" \
+              -f ref="refs/tags/${full}" -f sha="${SHA}" >/dev/null
+          fi
+          # A CANDIDATE's tag is v<M.N.O>-candidate, MOVED to this commit
+          # by each candidate build, and the release tag v<M.N.O> is not
+          # touched: it is made once, by the real release on main.
+          if [ "${CANDIDATE}" = true ]; then
+            release="v${RELEASE_TAG}-candidate"
+            if gh api "repos/${repo}/git/ref/tags/${release}" >/dev/null 2>&1; then
+              gh api -X PATCH "repos/${repo}/git/refs/tags/${release}" \
+                -f sha="${SHA}" -F force=true >/dev/null
+            else
+              gh api -X POST "repos/${repo}/git/refs" \
+                -f ref="refs/tags/${release}" -f sha="${SHA}" >/dev/null
+            fi
+            echo "Tagged ${SHA} as ${full} and ${release} (moved)."
+            {
+              echo ""
+              echo "Git tags: \`${full}\` and \`${release}\` (moved) on \`${SHA}\`."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # The release names this commit: made once, kept on a re-run of
+          # the same commit, refused if it already names another.
+          if gh api "repos/${repo}/git/ref/tags/${release}" >/dev/null 2>&1; then
+            at="$(gh api "repos/${repo}/git/ref/tags/${release}" \
+                  --jq .object.sha)"
+            test "${at}" = "${SHA}" || {
+              echo "::error::${release} already names ${at}, not ${SHA}."
+              exit 1
+            }
+          else
+            gh api -X POST "repos/${repo}/git/refs" \
+              -f ref="refs/tags/${release}" -f sha="${SHA}" >/dev/null
+          fi
+          echo "Tagged ${SHA} as ${full} and ${release}."
+          {
+            echo ""
+            echo "Git tags: \`${full}\` and \`${release}\` on \`${SHA}\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # ---------------------------------------------------------------------
+      # THE GITHUB RELEASE OF A PUBLISHED BUILD (rcbj, 2026-11-12): every
+      # build of main that published its images is also a release on the
+      # repository's Releases page, so each merge into main can be found
+      # there with the images and the version it produced. It is made
+      # after the git tags, on the release tag `v<M.N.O>` (`--verify-tag`:
+      # never a tag `gh` would invent), and is titled with the full version
+      # the service image reports, so the page, the image tags and
+      # `/admin-api` name one build alike. Its notes are:
+      #
+      #   * the two images' full versions, the release and `latest`, each
+      #     in both registries, with their digests (the publish step's
+      #     table);
+      #   * the commit, and whether it is a release build (#1317);
+      #   * GitHub's generated notes from the previous `vM.N.P` release tag,
+      #     which list the pull requests merged since it, rewritten by
+      #     tests/tools/release-changelog.js (rcbj, 2026-11-20): each entry
+      #     starts with its pull request as a linked `#NNNN`, and names one
+      #     ticket.
+      #
+      # IT IS MADE AS A DRAFT (rcbj, 2026-11-20): "for each new release I
+      # want to review exactly what gets printed in the change log." Nothing
+      # public is written here. rcbj reads and edits the draft's notes on
+      # the Releases page, then publishes it and marks it the latest
+      # (`gh release edit v<M.N.O> --draft=false --latest`). The images and
+      # the git tags are already out by then; only the page waits. The
+      # notes can be read before any of this, in the run summary of a
+      # release candidate (the `candidate` input).
+      # A re-run of the same commit finds the release there and leaves it:
+      # its tag cannot have moved (*Tag the release in git* refuses that),
+      # so it already describes this commit. The job's token creates it, so
+      # it starts no other workflow. Nothing here changes what is built,
+      # tagged or published; a failure here leaves the images and tags out
+      # and the run red, and a re-run makes the release.
+      # ---------------------------------------------------------------------
+      - name: Create the GitHub release
+        if: ${{ steps.publish-plan.outputs.float != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.publish-plan.outputs.version }}
+          PEP_VERSION: ${{ steps.publish-plan.outputs.pep_version }}
+          RELEASE_TAG: ${{ steps.publish-plan.outputs.release_tag }}
+          IS_RELEASE_BUILD: ${{ inputs.release && 'true' || 'false' }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          repo="${GITHUB_REPOSITORY}"
+          release="v${RELEASE_TAG}"
+          also="\`${RELEASE_TAG}\` and \`latest\`"
+          if [ "${CANDIDATE}" = true ]; then
+            # The notes are worked out against the release this candidate
+            # rehearses, from the previous real vM.N.P, and published to the
+            # run summary only.
+            also="\`${RELEASE_TAG}-candidate\`"
+          elif gh release view "${release}" --repo "${repo}" >/dev/null 2>&1; then
+            echo "Release ${release} already exists; it is left as it is."
+            exit 0
+          fi
+          # The previous release: the highest three-component vM.N.P tag
+          # below this one. Four-component build tags never count, as in
+          # tests/tools/release-number.js.
+          previous="$(git ls-remote --tags origin 'refs/tags/v*' |
+            sed -n 's#^[0-9a-f]*[[:space:]]*refs/tags/\(v[0-9]*\.[0-9]*\.[0-9]*\)$#\1#p' |
+            { cat; echo "${release}"; } | sort -uV |
+            awk -v r="${release}" '$0 == r { print p; exit } { p = $0 }')"
+          notes="${RUNNER_TEMP}/release-notes.md"
+          {
+            echo "## Images"
+            echo ""
+            echo "Service \`${VERSION}\`, remote XACML PEP \`${PEP_VERSION}\`," \
+                 "also tagged ${also}."
+            echo ""
+            echo "| Image | Digest |"
+            echo "|---|---|"
+            cat "${RUNNER_TEMP}/published-images.md"
+            echo ""
+            if [ "${CANDIDATE}" = true ]; then
+              echo "Commit \`${SHA}\`; git tags \`v${VERSION}\` and" \
+                   "\`${release}-candidate\`."
+            else
+              echo "Commit \`${SHA}\`; git tags \`v${VERSION}\` and \`${release}\`."
+            fi
+            if [ "${IS_RELEASE_BUILD}" = true ]; then
+              echo "A release build (build number named by hand)."
+            fi
+            echo ""
+          } > "${notes}"
+          # THE CHANGELOG (rcbj, 2026-11-20): GitHub's generated notes since
+          # the previous vM.N.P, asked for without making a release (the
+          # endpoint `--generate-notes` uses), then rewritten by
+          # tests/tools/release-changelog.js: each entry starts with its pull
+          # request as a linked `#NNNN`, and names one ticket.
+          tag_for_notes="${release}"
+          if [ "${CANDIDATE}" = true ]; then
+            tag_for_notes="${release}-candidate"
+          fi
+          gen=(-f tag_name="${tag_for_notes}" -f target_commitish="${SHA}")
+          if [ -n "${previous}" ]; then
+            gen+=(-f previous_tag_name="${previous}")
+          fi
+          gh api -X POST "repos/${repo}/releases/generate-notes" \
+            "${gen[@]}" --jq .body |
+            node tests/tools/release-changelog.js --repo "${repo}" \
+            >> "${notes}"
+          if [ "${CANDIDATE}" = true ]; then
+            {
+              echo ""
+              echo "### Release notes (candidate; no GitHub release made)"
+              echo ""
+              cat "${notes}"
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "Candidate ${release}-candidate: its notes are in the summary."
+            exit 0
+          fi
+          # --draft, for rcbj's review (above); --latest is set when the
+          # draft is published, not here.
+          args=(--repo "${repo}" --verify-tag --draft
+                --title "${release} (${VERSION})" --notes-file "${notes}")
+          gh release create "${release}" "${args[@]}"
+          echo "Created the DRAFT release ${release}" \
+               "${previous:+(since ${previous}) }for review."
+          {
+            echo ""
+            echo "GitHub release: \`${release}\`${previous:+, since \`${previous}\`}," \
+                 "a DRAFT: review its notes, then publish it with" \
+                 "\`gh release edit ${release} --draft=false --latest\`."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # if: always() — when a step above fails, the container's log is the only
       # place the reason exists (a MODULE_NOT_FOUND, a context file that was not

@@ -1427,7 +1427,13 @@ const SPECS: Spec[] = [
     where: 'OASIS ws-sx',
     url: 'https://docs.oasis-open.org/ws-sx/ws-trust/v1.4/ws-trust.html',
     coverage: 'partial: Issue, Renew, Validate and Cancel over SOAP 1.1 and ' +
-              '1.2. Request signatures are not verified. OnBehalfOf and ' +
+              '1.2. GET /sts/metadata is WSDL 1.1, a port type per trust ' +
+              'version, with the credentials as WS-SecurityPolicy; the ' +
+              'credential/token-type pairs are an IYA-STS extension at ' +
+              '/sts/metadata/capabilities; WS-MetadataExchange answers at ' +
+              '/sts/mex. ' +
+              'A WS-Security signature over the Body and the Timestamp is ' +
+              'a credential (#521), verified in product. OnBehalfOf and ' +
               'ActAs ' +
               'are decided by the issuance policy (#186, the rules the token ' +
               'exchange and Kerberos S4U share) — OnBehalfOf asks for ' +
@@ -1440,9 +1446,11 @@ const SPECS: Spec[] = [
               'development records what would have been refused. In PRODUCT ' +
               'mode (2026-09-12) every ' +
               'operation needs a credential — a UsernameToken verified ' +
-              'against the directory, or a SAML assertion this STS signed ' +
-              'and inside its Conditions — and an OnBehalfOf/ActAs needs the ' +
-              'requester\'s own credential and such an assertion inside it; ' +
+              'against the directory, a SAML 2.0 or SAML 1.1 assertion or ' +
+              'a JWT this STS issued, a WS-Security signature, or a ' +
+              'Kerberos token for this service\'s own SPN — and an ' +
+              'OnBehalfOf/ActAs needs the requester\'s own credential and ' +
+              'a token this STS issued inside it; ' +
               'development accepts none, as it always did. In both modes a ' +
               'requested wst:Lifetime is clamped ' +
               '(wstrust.maxTokenLifetimeMin) and the issued assertion\'s ' +
@@ -1453,6 +1461,16 @@ const SPECS: Spec[] = [
               'an application (#1046), or where it is from an outside ' +
               'certificate authority and stored in userCertificate on ' +
               'exactly one of their entries (#1061).' },
+  { id: 'ws-mex', name: 'WS-MetadataExchange (2004/09)',
+    where: 'W3C member submission',
+    url: 'https://www.w3.org/Submission/2008/SUBM-WS-MetadataExchange-20080813/',
+    coverage: 'partial: POST /sts/mex answers a WS-Transfer Get and a ' +
+              'GetMetadata (narrowed by Dialect and Identifier) in the ' +
+              'request\'s SOAP version and WS-Addressing namespace, with ' +
+              'the WSDL, the token capability document and its schema ' +
+              'embedded as sections. Not done: a MetadataReference or ' +
+              'Location section, the W3C WS-MetadataExchange 1.1 ' +
+              'Recommendation\'s namespace, and metadata in an EPR.' },
   { id: 'wss-kerberos', name: 'WS-Security Kerberos Token Profile 1.1',
     where: 'OASIS wss',
     url: 'https://docs.oasis-open.org/wss-m/wss/v1.1.1/os/wss-KerberosTokenProfile-v1.1.1-os.html',
@@ -1733,7 +1751,7 @@ const SPECS: Spec[] = [
               'only for an application that has the type enabled (#1295, ' +
               '#1296), and rotates refresh tokens. Section 3.3: a scope is ' +
               'tied to the client (#110) — this service\'s own protected scopes (admin:*, the ' +
-              'SCIM and Shared Signals scopes, the debugger permission) are ' +
+              'SCIM and Shared Signals scopes) are ' +
               'issued only to a client whose oauthAllowedScope declares ' +
               'them, in every mode, and in product mode every scope is held ' +
               'to that list or to a documented default set; a request ' +
@@ -2532,9 +2550,9 @@ const SPECS: Spec[] = [
               '(5.2): BCP 195\'s suites are every listener\'s default, TLS ' +
               '1.3 preferred. DPoP nonces stay optional, and consent follows ' +
               'the ordinary rules. The Attacker Model has no normative ' +
-              'requirements; docs/oauth-security.md maps each attacker ' +
-              'class to what stops it. The console, portal and debugger ' +
-              'conform. NOT covered: the conformance suite (#176).' },
+              'requirements; docs/v1.1.0/oauth-security.md maps each ' +
+              'attacker class to what stops it. The console, portal and ' +
+              'debugger conform. NOT covered: the conformance suite (#176).' },
   { id: 'fapi2-message-signing', name: 'FAPI 2.0 Message Signing (final)',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/fapi-message-signing-2_0.html',
@@ -2545,8 +2563,9 @@ const SPECS: Spec[] = [
               'issuer and exp and nbf within 60 minutes (5.3); JARM ' +
               'required, iss inside the JWT (5.4); RFC 9701 introspection ' +
               'responses signed (5.5). Section 5.2\'s non-repudiation is ' +
-              'guidance, answered in docs/oauth-security.md. The console, ' +
-              'portal and debugger conform. RFC 9421 HTTP signatures are NOT ' +
+              'guidance, answered in docs/v1.1.0/oauth-security.md. The ' +
+              'console, portal and debugger conform. RFC 9421 HTTP ' +
+              'signatures are NOT ' +
               'part of the final specification: they are FAPI 2.0 Http ' +
               'Signatures, the next entry (#178).' },
   { id: 'fapi2-http-signatures', name: 'FAPI 2.0 Http Signatures (draft of ' +
@@ -3059,7 +3078,10 @@ const SPECS: Spec[] = [
               'proof\'s header and as the attestation proof type, ' +
               'verified against configured certificates; status lists for ' +
               'every credential; credentials signed with post-quantum ' +
-              'algorithms. No wallet attestation (Appendix E).' },
+              'algorithms. An mso_mdoc is issued ' +
+              '(IdentityCredentialMdoc, #1862): COSE ES256 (-7) or ' +
+              'ESP256 (-9), and the proof stays a jwt of ES256. No ' +
+              'wallet attestation (Appendix E).' },
   { id: 'oid4vp', name: 'OpenID for Verifiable Presentations 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-4-verifiable-presentations-1_0.html',
@@ -3083,11 +3105,12 @@ const SPECS: Spec[] = [
               'audience), same-device with the section 8.2 response_code, ' +
               'and by a plain QR code only where oid4vp.signInCrossDevice is ' +
               'on — but only a holder-bound credential this realm issued, ' +
-              'in any of the three formats, and only as the directory entry ' +
+              'in any of the four formats, and only as the directory entry ' +
               'it was issued for; anything else verifies and signs nobody ' +
               'in. No presentation_definition (DIF PE) — DCQL only; no ' +
               'unsigned or multi-signed DC API request; no mdoc through ' +
-              'the DC API or for a sign-in; no ' +
+              'the DC API (Appendix A); an mso_mdoc signs somebody in ' +
+              'only when this realm issued it (#1862); no ' +
               'wallet attestation; no transaction_data. SINCE #129 a signed ' +
               'request names its Client Identifier by the prefix ' +
               'oid4vp.clientIdPrefix chooses (section 5.9): pre-registered, ' +
@@ -3321,11 +3344,12 @@ const SPECS: Spec[] = [
               'every GNAP jwt-signed and jwt-encrypted token carrying its ' +
               'status claim, advertised as status_list_aggregation_endpoint ' +
               '(section 9.1) in the authorization server metadata. No ' +
-              'historical resolution (501), no redirects followed. No mdoc is ' +
-              'issued; the Verifier resolves the CWT list a presented ' +
-              'mdoc\'s Mobile Security Object names, signed by a certificate ' +
-              'in its x5chain that chains to oid4vp.mdocTrustAnchors ' +
-              '(#935).' },
+              'historical resolution (501), no redirects followed. An ' +
+              'issued mdoc names a CWT at /oid4vci/status-lists/mdoc, ' +
+              'signed by the document signer with x5chain (#1862). The ' +
+              'Verifier resolves a presented mdoc\'s CWT against ' +
+              'oid4vp.mdocTrustAnchors and this realm\'s IACA once one ' +
+              'has been minted (#935).' },
   { id: 'etsi-ts-119-602',
     name: 'ETSI TS 119 602 V1.1.1, Lists of trusted entities (LoTE)',
     where: 'ETSI',
@@ -3700,7 +3724,12 @@ const ENDPOINTS: EndpointEntry[] = [
           'is a turnstile like every other gate here (the certificate need ' +
           'not chain to anything, RFC 8705 section 3\'s argument) and it is ' +
           'NOT what lets a PEP enforce: an unregistered one pulls and ' +
-          'decides just as well. xacml.pepRequireCertificate turns it off.' },
+          'decides just as well. xacml.pepRequireCertificate turns it off. ' +
+          'A DPoP-bound access token from sts-remote-pep, audienced to ' +
+          '/xacml/pep and carrying xacml:pep, may stand for the certificate ' +
+          'here and at every /xacml/pep endpoint and /xacml/pip, as ' +
+          'xacml.pepAuthentication allows; the PEP is then named by its ' +
+          'entry\'s username.' },
   { path: '/xacml/pep/policies', group: 'XACML',
     name: 'The repository, for a remote PEP to LOAD', specs: ['xacml30'],
     what: 'Every ENABLED policy and which one is the root, plus a sync ' +
@@ -3749,6 +3778,83 @@ const ENDPOINTS: EndpointEntry[] = [
           'role can read who may ask the PDP (rcbj on #1189). Additive: ' +
           '/xacml/pep/policies and /xacml/pep/authzen-catalogue are ' +
           'unchanged.' },
+  { path: '/xacml/pep/proxy', group: 'XACML',
+    name: 'The reverse-proxy configuration, for a remote PEP to ENFORCE',
+    specs: ['xacml30'],
+    what: 'What the xacml-pep container enforces when it stands in front ' +
+          'of an application (#1760): the upstream it forwards to, the ' +
+          'ordered routes with the mechanisms each accepts and the XACML ' +
+          'resource and action each maps to, each route\'s application ' +
+          'resolved from the registry, the realm facts it validates ' +
+          'locally with (issuer, JWKS, the sign-in endpoints, the SAML ' +
+          'signing certificates, the listener\'s chain, the session ' +
+          'routes\' clients) and the four validation URLs below, under a ' +
+          'sync token of its own; ' +
+          '?since=<token> answers 304. An unconfigured PEP is configured: ' +
+          'false and its proxy denies everything. Requires REMOTE_PEPS, as ' +
+          'the policy pull does; no nudge.' },
+  { path: '/xacml/pep/settings', group: 'XACML',
+    name: 'A remote PEP\'s managed settings, for it to APPLY',
+    specs: ['xacml30'],
+    what: 'The settings an administrator set for this PEP on its console ' +
+          'page (#1760) — its description and resource, the notify URL, ' +
+          'the bias, the PIP switch, the poll, heartbeat and back-off ' +
+          'intervals, the timeout and body bound, the log level, the ' +
+          'AuthZEN edge\'s switch, identifier and forward timeout, and the ' +
+          'reverse proxy\'s bounds — under a sync token of its own; ' +
+          '?since=<token> answers 304. Only what was set is sent: the PEP ' +
+          'uses its environment for the rest, and the minimum it needs to ' +
+          'connect is never here. Requires REMOTE_PEPS, as the policy pull ' +
+          'does; no nudge.' },
+  { path: '/xacml/pep/listener-certificate', group: 'XACML',
+    name: 'A remote PEP listener\'s certificate, over its own key',
+    specs: ['xacml30'],
+    what: 'The certificate of an HTTPS listener an administrator defined ' +
+          'for this PEP on its console page (#1760): the PEP generates the ' +
+          'key and POSTs { listener, csr }, a PKCS #10 request whose ' +
+          'signature proves possession of it, and is answered the ' +
+          'certificate from the realm\'s pep-tls Issuing CA and its chain ' +
+          'through the Root, no-store and with no key. The names are the ' +
+          'PEP\'s and the definition\'s, never the request\'s; the same key ' +
+          'asked again is answered the certificate held while it has a third ' +
+          'of its life left. Requires REMOTE_PEPS, as the heartbeat does.' },
+  { path: '/xacml/pep/introspect', group: 'XACML',
+    name: 'Token introspection, for a remote PEP\'s proxy',
+    specs: ['xacml30', 'rfc7662'],
+    what: 'The authorization server\'s own RFC 7662 reading of an OAuth ' +
+          '2.0 access token the proxy could not verify itself (an opaque ' +
+          'token, or a key not in the JWKS), over the PEP\'s mutual TLS ' +
+          'rather than a client registration of its own. Requires ' +
+          'REMOTE_PEPS.' },
+  { path: '/xacml/pep/basic', group: 'XACML',
+    name: 'HTTP Basic, validated for a remote PEP\'s proxy',
+    specs: ['xacml30', 'rfc7617'],
+    what: 'A person\'s username and password, verified here and never in ' +
+          'the PEP, behind the sign-in\'s own limits (429 with ' +
+          'retryAfterS); a refusal is { valid: false } and says nothing ' +
+          'more. Requires REMOTE_PEPS.' },
+  { path: '/xacml/pep/saml', group: 'XACML',
+    name: 'A SAML 2.0 assertion, validated for a remote PEP\'s proxy',
+    specs: ['xacml30', 'saml2'],
+    what: 'An assertion this realm issued, checked here when the proxy ' +
+          'could not check it itself: the enveloped signature on the root ' +
+          'assertion against the realm\'s XML signing certificates, the ' +
+          'issuer, the conditions and the route\'s audience. An ' +
+          'EncryptedAssertion is refused. Requires REMOTE_PEPS.' },
+  { path: '/xacml/pep/session', group: 'XACML',
+    name: 'Is a sign-on session live, for a remote PEP\'s proxy',
+    specs: ['xacml30', 'oidc'],
+    what: 'Whether the sign-on session an ID Token\'s sid names is still ' +
+          'live, so a sign-out here ends the proxy\'s own session at its ' +
+          'next check. Requires REMOTE_PEPS.' },
+  { path: '/xacml/pep/identity', group: 'XACML',
+    name: 'What a remote PEP\'s route forwards to its application',
+    specs: ['xacml30', 'rfc9068', 'saml2'],
+    what: 'For a route of the asking PEP, the identity its evidence (an ' +
+          'access token, a SAML assertion or a Basic ticket, validated ' +
+          'again) names, in the route\'s mode: claims for its headers, an ' +
+          'access token for the application, or a signed SAML Response to ' +
+          'its assertion consumer service. Requires REMOTE_PEPS.' },
   { path: '/xacml/pep/heartbeat', group: 'XACML',
     name: 'What a remote PEP has enforced', specs: ['xacml30'],
     what: 'Its cumulative counters and the sync token it holds — which is ' +
@@ -4385,6 +4491,12 @@ const ENDPOINTS: EndpointEntry[] = [
           'says it is running with, and what happened to the last nudge — ' +
           'which is the only place a failed nudge is recorded, because it ' +
           'is invisible from the receiving end by definition.' },
+  { path: '/admin-api/xacml/pep-clusters', group: 'XACML',
+    name: 'The remote PEP clusters over JSON', specs: ['xacml30'],
+    what: 'Each cluster of remote PEPs that share one configuration: its ' +
+          'reverse proxy, settings and listener definitions as every member ' +
+          'pulls them, and each member with its own addresses and why a ' +
+          'save would refuse it now.' },
   { path: '/admin-api/xacml/monitor', group: 'XACML',
     name: 'What authorization is doing, over JSON', specs: ['xacml30'],
     what: 'What GET /admin/xacml/monitor draws: the global decision figures ' +
@@ -4854,6 +4966,13 @@ const ENDPOINTS: EndpointEntry[] = [
           'shell links (common/web_card_css.ts). Answered on every ' +
           'listener; an address carrying this build\'s ?v= is cached for ' +
           'good.' },
+  { path: '/web/footer.css', group: 'Service',
+    name: 'The page footer\'s stylesheet', specs: [],
+    what: 'NON-SPEC (2026-11-14). The rules of the footer every static ' +
+          'surface\'s shell draws — the documentation, contact and about ' +
+          'links, the social icons, the copyright and the version ' +
+          '(common/web_footer.ts). Answered on every listener; an address ' +
+          'carrying this build\'s ?v= is cached for good.' },
   { path: '/web/theme.css', group: 'Service',
     name: 'A realm\'s sign-in appearance stylesheet', specs: [],
     what: 'NON-SPEC (#717). The realm\'s sign-in colours as the CSS custom ' +
@@ -5065,6 +5184,13 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'The console\'s stylesheet',
     specs: [],
     what: 'NON-SPEC. The console\'s one stylesheet (#446).' },
+  { path: '/admin/geo-outlines.json', group: 'Admin',
+    name: 'The country outlines of the console\'s map',
+    specs: [],
+    what: 'NON-SPEC. Natural Earth\'s public-domain 1:50m countries, as ' +
+          'admin-ui/natural_earth/countries.json ships them, which the ' +
+          'console fetches once and draws Monitoring → Geolocation\'s ' +
+          'map over in the browser (#444). Public, like the script.' },
   { path: '/portal', group: 'User portal',
     name: 'A person\'s own account',
     specs: [],
@@ -5510,6 +5636,14 @@ const ENDPOINTS: EndpointEntry[] = [
           'private half. This API is not gated at all, which is the same ' +
           'honest consequence every operation here has and is worth saying ' +
           'twice for this one. Mirrors POST /admin/keys/export.' },
+  { path: '/admin-api/mdoc-iaca', group: 'Management API',
+    name: 'This realm\'s mdoc Issuing Authority CA',
+    specs: ['rfc5280', 'oid4vci'],
+    what: 'NON-SPEC (#1862). The certificate GET /oid4vci/mdoc-iaca ' +
+          'publishes, as JSON: the PEM, its subject, notBefore and ' +
+          'notAfter. Minted on the first call, the same way that public ' +
+          'read mints it. No private key. A failure to mint answers 500 ' +
+          'in plain text.' },
   { path: '/admin-api/pki', group: 'Management API',
     name: 'The certificate authority this realm holds',
     specs: ['rfc5280', 'rfc7521', 'rfc7523', 'rfc7522'],
@@ -5981,9 +6115,11 @@ const ENDPOINTS: EndpointEntry[] = [
           '2026-09-09, and the consequence was worth stating and is now ' +
           'closed: anybody who could reach this port could grant themselves ' +
           'both roles. Granting a role somebody already holds, or revoking ' +
-          'one they do not, answers 200 with changed:false. A person who ' +
-          'does not exist CAN be granted a role: the membership dangles ' +
-          'until they first sign in. Mirrors POST /admin/rbac.' },
+          'one they do not, answers 200 with changed:false. A role is ' +
+          'granted only to a person who exists: a name with no directory ' +
+          'entry is refused and nothing is written, so that a person ' +
+          'created later under that name inherits nothing. Mirrors POST ' +
+          '/admin/rbac.' },
   { path: '/admin-api/sessions', group: 'Management API', name: 'Live sessions',
     specs: ['openapi', 'oidc', 'rfc4120', 'rfc4511'],
     what: 'NON-SPEC. Every session this service is holding right now, across ' +
@@ -6170,6 +6306,23 @@ const ENDPOINTS: EndpointEntry[] = [
           'client that declares it, in both modes) and no admin scope; ' +
           'an admin:write token is refused. Source mdm, the client as ' +
           'actor; a change sends CAEP device-compliance-change.' },
+  { path: '/admin-api/pep-audit', group: 'Management API',
+    name: 'A remote PEP\'s decision records',
+    specs: ['xacml30', 'openapi'],
+    effect: 'records a batch of decisions a remote PEP made as audit rows',
+    what: 'NON-SPEC (#1827). A remote XACML PEP pushes the records of the ' +
+          'decisions it made in its own process — /protected enforcements, ' +
+          'the AuthZEN evaluations it decided, never one it forwarded, and ' +
+          'its reverse proxy\'s requests to a route — ' +
+          'at least once and in order, up to 500 a batch, each acknowledged ' +
+          'by its seq. The token carries the PROTECTED xacml:pep-audit ' +
+          'scope and nothing else here takes it: the PEP\'s own RFC 7523 ' +
+          'self-assertion through the seeded public client sts-remote-pep, ' +
+          'bound to its certificate, issued and honoured only while its ' +
+          'entry is in the remote PEPs\' group (REMOTE_PEPS). The PEP must ' +
+          'be registered in the realm. Rows xacml.remote.enforcement, ' +
+          'authzen.remote.decision and, for the reverse proxy\'s requests, ' +
+          'xacml.remote.proxy on /admin/audit.' },
   { path: '/admin-api/device-registration', group: 'Management API',
     name: 'Device registration', specs: ['openapi'],
     what: 'NON-SPEC (#218). GET /admin/device-registration over JSON: the ' +
@@ -6825,6 +6978,32 @@ const ENDPOINTS: EndpointEntry[] = [
           'deletes the stored entry and puts the built-in defaults back. ' +
           'Either applies to the NEXT password set in the realm and to ' +
           'nothing already stored.' },
+  { path: '/admin-api/policies/transfer', group: 'Management API',
+    name: 'Policy transfer view',
+    specs: ['openapi', 'rfc7515', 'rfc5280'],
+    what: 'NON-SPEC. The read beside export, inspect and import (#1713): ' +
+          'pki.policyExportAlgorithm in force, whether ' +
+          'pki.paranoidPolicySigner is on, this realm\'s Policy Export ' +
+          'Signing Issuing CA (subject, validity, its chain up to but not ' +
+          'including the service Root, and the SHA-256 fingerprint and ' +
+          'x5t#S256 another realm names to trust its exports; null until ' +
+          'the first export builds it), and the signer truststore\'s ' +
+          'entries for policy-signer: the other realms it has trusted. ' +
+          'Certificates only, never a private key.' },
+  { path: '/admin-api/policies/transfer/:action', group: 'Management API',
+    name: 'Export and import policies',
+    specs: ['openapi', 'rfc7515', 'rfc5280'],
+    what: 'NON-SPEC. export, inspect and import (#1713): every profile a ' +
+          'realm STORES on Directory \u2192 Policies as one JSON document, ' +
+          'a JWS in the flattened JSON serialization signed by a fresh key ' +
+          'under the realm\'s Policy Export Signing CA, the whole chain in ' +
+          'its x5c. inspect verifies the signature and holds the chain to ' +
+          'the validation door (purpose policy-signer, the full paranoid ' +
+          'checks while pki.paranoidPolicySigner is on); import writes each ' +
+          'profile through its kind\'s own save. This realm\'s own signer ' +
+          'is trusted; another realm\'s only on an administrator\'s yes ' +
+          'naming its Issuing CA, which adds that chain to the signer ' +
+          'truststore for policy-signer alone.' },
   { path: '/admin-api/consent', group: 'Management API', name: 'Consent',
     specs: ['openapi', 'rfc6749', 'oidc'],
     what: 'NON-SPEC. The consent register, both halves, and the third in ' +
@@ -6891,7 +7070,7 @@ const ENDPOINTS: EndpointEntry[] = [
           '?seen=1, paged with ?page= and ?per=. A CODE IS NEVER SENT TO A ' +
           'CLIENT: it is on the audit row and in the log line only. READ ' +
           'ONLY — the table is source. Mirrors GET /admin/error-codes; the ' +
-          'same table is docs/error-codes.md.' },
+          'same table is docs/v1.1.0/error-codes.md.' },
   { path: '/admin-api/audit-export', group: 'Management API',
     name: 'Audit export', specs: ['openapi'],
     what: 'NON-SPEC (#641). What Monitoring → Audit export draws: each ' +
@@ -7647,8 +7826,39 @@ const ENDPOINTS: EndpointEntry[] = [
     specs: ['ws-trust', 'wss-username', 'wss-kerberos', 'saml2', 'xmldsig'],
     what: 'POST a SOAP RequestSecurityToken; dispatches on wst:RequestType ' +
           '(Issue, Renew, Validate, Cancel) and returns an RSTR. GET ' +
-          'describes the endpoint. Add ?encrypt=1 to have the issued ' +
-          'assertion returned as an EncryptedAssertion.' },
+          'describes the endpoint. An application may require named ' +
+          'elements of the request and of the response to be XML ' +
+          'Encryption (xenc:EncryptedData). A message that does not match ' +
+          'that map is a fault, and processing stops.' },
+  { path: '/sts/metadata', group: 'WS-Trust', name: 'WS-Trust metadata',
+    specs: ['ws-trust', 'wss-username', 'wss-kerberos', 'saml2', 'xmldsig'],
+    what: 'WSDL 1.1 with WS-SecurityPolicy. Each trust version (May 2004, ' +
+          'February 2005, 1.3 and 1.4) has a port type of its own with ' +
+          'the operations it defines, each input and output naming its ' +
+          'wsa:Action, and a SOAP 1.1 and a SOAP 1.2 port at /sts. The ' +
+          'credentials are a UsernameToken, a SAML 2.0 or SAML 1.1 ' +
+          'assertion, a JWT, an X.509 signature, a Kerberos token when ' +
+          'wstrust.acceptKerberos is on, and a TLS client certificate when ' +
+          'wstrust.acceptClientCertificate is on. Served with ' +
+          'Cache-Control: no-store.' },
+  { path: '/sts/metadata/capabilities', group: 'WS-Trust',
+    name: 'WS-Trust token capabilities',
+    specs: ['ws-trust'],
+    what: 'An IYA-STS extension (urn:iya-sts:metadata:token-capabilities:1' +
+          '): every credential /sts accepts, every token type it issues, ' +
+          'and each pair as supported, conditional or unsupported with ' +
+          'its conditions, built from the running settings. Served with ' +
+          'Cache-Control: no-store.' },
+  { path: '/sts/metadata/capabilities.xsd', group: 'WS-Trust',
+    name: 'WS-Trust token capabilities schema',
+    specs: ['ws-trust'],
+    what: 'The XML Schema of the token capability document.' },
+  { path: '/sts/mex', group: 'WS-Trust', name: 'WS-MetadataExchange',
+    specs: ['ws-trust', 'ws-mex'],
+    what: 'POST a WS-Transfer Get or a WS-MetadataExchange GetMetadata ' +
+          '(2004/09), SOAP 1.1 or 1.2; the answer is a mex:Metadata ' +
+          'holding the WSDL, the token capability document and its ' +
+          'schema as three sections.' },
   { path: '/sts/cert', group: 'WS-Trust', name: 'STS certificate',
     specs: ['ws-trust'], what: 'The PEM certificate whose key signs the ' +
                                'assertions, so a relying party can verify ' +
@@ -9611,8 +9821,9 @@ const ENDPOINTS: EndpointEntry[] = [
     specs: ['oid4vci', 'sd-jwt', 'sd-jwt-vc', 'vcdm', 'di-bbs', 'rdf-c14n',
              'rfc7800', 'rfc7515',
              'rfc6750'],
-    what: 'Mints dc+sd-jwt, jwt_vc_json or ldp_vc per the configuration ' +
-          'asked for, each carrying its status-list reference. Verifies the ' +
+    what: 'Mints dc+sd-jwt, jwt_vc_json, ldp_vc or mso_mdoc per the ' +
+          'configuration asked for, each carrying its status-list ' +
+          'reference. Verifies the ' +
           'wallet\'s proof — a jwt proof, with a key attestation in its ' +
           'header where one is sent or required, or the attestation proof ' +
           'type — supports batch issuance, and accepts an encrypted request ' +
@@ -9626,6 +9837,20 @@ const ENDPOINTS: EndpointEntry[] = [
           'oid4vci.statusListTtlS, exp oid4vci.statusListLifetimeS, signed ' +
           'with the credential key. ?time= answers 501: no historical ' +
           'lists are kept.' },
+  { path: '/oid4vci/status-lists/mdoc', group: 'VC Issuance (OID4VCI)',
+    name: 'mdoc Token Status List',
+    specs: ['token-status-list', 'rfc8392', 'rfc9052', 'oid4vci'],
+    what: 'The same bitstring as /oid4vci/status-lists/1, as ' +
+          'application/statuslist+cwt signed by this realm\'s mdoc ' +
+          'document signer. x5chain is that certificate. Cache-Control ' +
+          'is max-age of the list\'s ttl, and Vary is Accept. ?time= ' +
+          'answers 501.' },
+  { path: '/oid4vci/mdoc-iaca', group: 'VC Issuance (OID4VCI)',
+    name: 'mdoc Issuing Authority CA',
+    specs: ['oid4vci'],
+    what: 'This realm\'s mdoc Issuing Authority CA, PEM, ' +
+          'application/pem-certificate-chain, Cache-Control no-store. ' +
+          'Minted on the first call. No private key.' },
   { path: '/oid4vci/status-lists', group: 'VC Issuance (OID4VCI)',
     name: 'Status List Aggregation',
     specs: ['token-status-list'],
@@ -10477,11 +10702,13 @@ const PROTOCOLS: Protocol[] = [
           'dispatching on wa, the sign-in screen, signed federation ' +
           'metadata at the AD FS path, and wsignout1.0.' },
   { name: 'WS-Trust', groups: ['WS-Trust'],
-    specs: ['ws-trust', 'wss-username', 'wss-kerberos', 'xmldsig'],
+    specs: ['ws-trust', 'wss-username', 'wss-kerberos', 'xmldsig',
+            'ws-mex'],
     what: 'RST / RSTR over SOAP at /sts, in all four versions (1.0 through ' +
           '1.4), issuing either SAML dialect with the assertion signed and ' +
           'optionally encrypted to the requestor\'s certificate, a JWT, ' +
-          'or a Kerberos ticket.' },
+          'or a Kerberos ticket, described by a WSDL with a port type per ' +
+          'version and published over WS-MetadataExchange.' },
   { name: 'Kerberos', groups: ['Kerberos'],
     specs: ['rfc4120', 'rfc3961', 'ms-pac', 'ms-kkdcp'],
     what: 'A KDC: AS-REQ / TGS-REQ, pre-authentication, four ' +

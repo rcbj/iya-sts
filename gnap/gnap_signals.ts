@@ -22,15 +22,15 @@
 //      `streamCoversSubject()` — the single function every CAEP, RISC and
 //      by-hand delivery already asks — and this file fills it.
 //   3. **Grant and token revocation emit CAEP.** This REVERSES a documented
-//      rule — docs/caep-events.md said revoking a token emits nothing — for
-//      GNAP only, and the reason it is not a contradiction is the shape of a
-//      GNAP grant: it is a DELEGATED SESSION between a client instance and a
+//      rule — docs/v1.1.0/caep-events.md said revoking a token emits nothing —
+//      for GNAP only, and the reason it is not a contradiction is the shape of
+//      a GNAP grant: it is a DELEGATED SESSION between a client instance and a
 //      resource owner (RFC 9767 section 2.1.13 calls it the grant's current
 //      state), with a lifetime, a continuation and a revocation of its own. So
 //      a grant revoked is a `session-revoked` whose session is the GRANT, a
 //      token revoked is a `session-revoked` whose session is that token, and a
-//      grant modified onto different rights is a `token-claims-change`
-//      carrying the new `access`.
+//      grant modified onto different rights is a `token-claims-change` carrying
+//      the new `access`.
 //   4. ~~NOT: signals revoking grants.~~ REVERSED 2026-10-03 (#432, rcbj's
 //      decision 1): a federation partner's verified CAEP or RISC event about
 //      a person may end their grants, as the `signal-response` policy's
@@ -85,6 +85,7 @@ interface ApproverStore {
   has(key: string): boolean;
   get(key: string): string[] | undefined;
   set(key: string, list: string[]): unknown;
+  forEach(fn: (list: string[], key: string) => void): void;
 }
 
 interface GnapSignalsDeps {
@@ -156,6 +157,42 @@ class GnapSignals {
                 'not be recorded: ' + e.message);
     }
     log.debug("Leaving GnapSignals.noteApprover().");
+  }
+
+  // A DELETED PERSON APPROVED NOTHING (2026-11-16, rcbj's rule on #1612).
+  // The lists hold NAMES, so a person made again under one counted as having
+  // approved every application the deleted one had, and that application's
+  // stream heard about them. The directory's one person delete
+  // (`removePersonEntry()`) calls this. One list per APPLICATION that ever
+  // had an approver — configuration, not people — each capped at 5,000 by
+  // noteApprover(), so the cost does not grow with the directory. A
+  // re-homing keeps them.
+  /**
+   * Takes a deleted person off every application's approvers.
+   *
+   * @param username - the deleted person's name
+   * @returns how many lists named them
+   */
+  forgetApprover(username: unknown): number {
+    const { log, approvers } = this.deps;
+    log.debug("Entering GnapSignals.forgetApprover().");
+    const name = String(username || '').toLowerCase();
+    const named: string[] = [];
+    if (name) {
+      approvers.forEach(function (list: string[], key: string): void {
+        if (Array.isArray(list) && list.indexOf(name) >= 0) {
+          named.push(key);
+        }
+      });
+    }
+    named.forEach(function (key: string): void {
+      approvers.set(key, (approvers.get(key) || []).filter(
+        function (one: string): boolean {
+          return one !== name;
+        }));
+    });
+    log.debug("Leaving GnapSignals.forgetApprover(). " + named.length);
+    return named.length;
   }
 
   /**
@@ -616,6 +653,7 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   noteApprover: slot.forward('noteApprover'),
   approvedBy: slot.forward('approvedBy'),
+  forgetApprover: slot.forward('forgetApprover'),
   grantRevoked: slot.forward('grantRevoked'),
   tokenRevoked: slot.forward('tokenRevoked'),
   grantModified: slot.forward('grantModified'),

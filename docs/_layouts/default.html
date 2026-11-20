@@ -1,7 +1,8 @@
 <!DOCTYPE html>
 {%- comment -%}
   minima 2.5's default layout with a sidebar beside the content. Every page and
-  the theme's `page` and `home` layouts inherit it.
+  the theme's `page` and `home` layouts inherit it. A page of any version but
+  the latest opens with a line saying so and linking the latest overview.
 {%- endcomment -%}
 <html lang="{{ page.lang | default: site.lang | default: "en" }}">
 
@@ -16,6 +17,10 @@
 
       <main class="page-content" aria-label="Content">
         <div class="wrapper">
+          {%- if doc_version and doc_version.folder != doc_latest.folder %}
+          {%- assign latest_url = "/" | append: doc_latest.folder | append: "/" %}
+          <p class="version-notice">This is the documentation of iya-sts {{ doc_version.label | escape }}. The latest is <a href="{{ latest_url | relative_url }}">{{ doc_latest.label | escape }}</a>.</p>
+          {%- endif %}
           {{ content }}
         </div>
       </main>

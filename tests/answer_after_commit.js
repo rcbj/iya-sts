@@ -39,6 +39,11 @@
 //      carries its report.
 //   F. A KEY ROW WHOSE WRITE FAILED fails the commit a response waits for,
 //      and is written again by the retry with what it held.
+//   G. AND ONE OF A REALM THAT HAS SINCE BEEN REMOVED is dropped with it
+//      rather than retried (2026-11-18); its key set published afterwards
+//      is not adopted, and its data-key row read back is not either; and
+//      the data keys of a realm this process never defined are not
+//      reported, and are dropped once their row is gone (run #569).
 //
 // IN A CHILD PROCESS, for `cluster_barrier_throughput.js`'s reason: the store
 // modules are one per process, and this file installs stubs on them.
@@ -283,6 +288,121 @@ async function keyRows(t, dir) {
             'F: the retry writes the row it failed with, and nothing is left ' +
             'waiting', JSON.stringify({ rows: store.rows.size,
                                         failing: keystore.failing() }));
+
+    // G (2026-11-18): A REMOVED REALM'S FAILED KEY ROW IS DROPPED, NOT
+    // RETRIED. The removal destroys the realm's data keys, so its row can
+    // never be written again; kept, it failed every commit a writing request
+    // waited for — on a product node every write answered 503
+    // (STS-STORE-0066) for minutes after a batch of realms was removed.
+    t.log.info('=== G. a removed realm\'s failed key row is dropped ===');
+    const realms = require('../common/realms');
+    store.fail = true;
+    realms.create({ id: 'aac-gone', name: 'aac-gone' });
+    realms.run(realms.get('aac-gone'), function () {
+      return helpers.stsKeysFor();
+    });
+    await keystore.settleAll();
+    const failingBefore = keystore.failing();
+    realms.remove('aac-gone');
+    const afterRemoval = await persistence.commitThrough();
+    const stillFailed = (afterRemoval || []).filter(function (one) {
+      return one && one.error;
+    });
+    t.check(failingBefore === true && keystore.failing() === false &&
+            stillFailed.length === 0,
+            'G: a removed realm\'s failed key row is dropped with the realm, ' +
+            'and the next commit does not wait for it',
+            JSON.stringify({ failingBefore: failingBefore,
+                             failing: keystore.failing(),
+                             answers: afterRemoval }));
+    // G2: and a key set of that realm published by another process after
+    // the removal — a rotation that finished after the purge — is not
+    // adopted, so nothing is held or written for it again.
+    t.check(keystore.adoptShared('aac-gone', { certB64: 'x' }) === false &&
+            keystore.failing() === false && !keystore.pendingWrites(),
+            'G: a key set of the removed realm published afterwards is not ' +
+            'adopted, held or written', JSON.stringify({
+              failing: keystore.failing(),
+              pending: keystore.pendingWrites() }));
+    store.fail = false;
+
+    // G3 (run #493): a removed realm's data-key row still in the store —
+    // the purge deletes it after the removal has answered — is not adopted
+    // back by a re-read of the data-key rows, so the encryption report does
+    // not list keys nothing uses and no count will reach.
+    realms.create({ id: 'aac-gone2', name: 'aac-gone2' });
+    realms.run(realms.get('aac-gone2'), function () {
+      return helpers.stsKeysFor();
+    });
+    await keystore.settleAll();
+    const dekRows = Array.from(store.rows.keys()).filter(function (key) {
+      return /^dek:[^:]+:aac-gone2$/.test(key);
+    });
+    realms.remove('aac-gone2');
+    store.loadDekRows = function () {
+      log.debug("Entering loadDekRows().");
+      log.debug("Leaving loadDekRows().");
+      return Promise.resolve(dekRows.map(function (key) {
+        return { realm: key, material: store.rows.get(key) };
+      }));
+    };
+    await keystore.refreshDekRows({ fresh: true });
+    delete store.loadDekRows;
+    const listed = keystore.dataKeys().filter(function (d) {
+      return d.realm === 'aac-gone2';
+    });
+    t.check(dekRows.length === 1 && listed.length === 0,
+            'G: a removed realm\'s data-key row read back from the store is ' +
+            'not adopted, and the report lists none of its keys',
+            JSON.stringify({ rows: dekRows, listed: listed.length }));
+
+    // G4 (run #569): the data keys of a realm this process never defined —
+    // created and removed elsewhere between two of its realm loads, so it
+    // never ran the purge — are not reported, and are dropped once their
+    // row is gone from the store; a realm that has not arrived yet, whose
+    // row is still there, keeps its keys for when it does.
+    keystore.ensureDek('directory', 'service', { realm: 'aac-early' });
+    keystore.ensureDek('directory', 'service', { realm: 'aac-never' });
+    await keystore.settleAll();
+    const idsOf = function (realmId) {
+      log.debug("Entering idsOf().");
+      const text = store.rows.get('dek:service:' + realmId);
+      log.debug("Leaving idsOf().");
+      return text ? JSON.parse(text).deks.map(function (d) {
+        return d.id;
+      }) : [];
+    };
+    const earlyIds = idsOf('aac-early');
+    const neverIds = idsOf('aac-never');
+    const hidden = keystore.dataKeys().filter(function (d) {
+      return d.realm === 'aac-early' || d.realm === 'aac-never';
+    });
+    store.loadDekRows = function () {
+      log.debug("Entering loadDekRows().");
+      log.debug("Leaving loadDekRows().");
+      return Promise.resolve([{ realm: 'dek:service:aac-early',
+                                material: store.rows.get(
+                                  'dek:service:aac-early') }]);
+    };
+    await keystore.refreshDekRows({ fresh: true });
+    delete store.loadDekRows;
+    realms.create({ id: 'aac-early', name: 'aac-early' });
+    realms.create({ id: 'aac-never', name: 'aac-never' });
+    const reported = keystore.dataKeys().map(function (d) {
+      return d.id;
+    });
+    t.check(earlyIds.length === 1 && neverIds.length === 1 &&
+            hidden.length === 0,
+            'G: the data keys of a realm not defined in this process are ' +
+            'not reported — none of them could ever be counted here',
+            JSON.stringify({ early: earlyIds, never: neverIds,
+                             hidden: hidden }));
+    t.check(reported.indexOf(earlyIds[0]) >= 0 &&
+            reported.indexOf(neverIds[0]) < 0,
+            'G: and once their row is gone from the store they are dropped, ' +
+            'while a realm whose row is still there keeps its keys for when ' +
+            'it arrives', JSON.stringify({ early: earlyIds, never: neverIds,
+                                          reported: reported }));
   } finally {
     delete process.env.STS_KEYS_SOURCE;
     delete process.env.STS_KEYS_KEK_PROVIDER;
@@ -710,18 +830,31 @@ async function theLivenessConnection(t) {
           'D: THE ORIGIN RENEWAL SUCCEEDS WHILE EVERY POOLED CONNECTION IS ' +
           'TAKEN (on testidp it waited on the pool, the claim lapsed, and ' +
           'the worker exited)', String(renewed));
-  t.check(db.statements.length === 1 && db.statements[0].via === 'client',
-          'D: on the liveness connection, not the pool',
+  const renewalVia = db.statements.map(function (one) {
+    return one.via;
+  });
+  t.check(renewalVia.length > 0 &&
+          renewalVia.every(function (via) { return via === 'client'; }) &&
+          db.statements.some(function (one) {
+            return /^UPDATE sts_cluster_claims SET expires_at/.test(one.sql) ||
+              /sts:renewOrigin /.test(one.sql);
+          }),
+          'D: on the liveness connection, not the pool — the bound adds ' +
+          'BEGIN, the timeouts and COMMIT around the renewal',
           JSON.stringify(db.statements.map(function (one) {
-            return one.via;
+            return one.via + ' ' + one.sql.slice(0, 40);
           })));
   db.statements.length = 0;
   const beat = await bounded(driver.heartbeat('node-b', 30000, null), 2000);
-  t.check(beat && beat.alive === true && db.statements.length === 1 &&
-          db.statements[0].via === 'client',
+  t.check(beat && beat.alive === true && db.statements.length > 0 &&
+          db.statements.every(function (one) {
+            return one.via === 'client';
+          }) && db.statements.some(function (one) {
+            return /^WITH n AS \(UPDATE sts_cluster_nodes/.test(one.sql);
+          }),
           'D: and so does the cluster heartbeat',
           JSON.stringify({ beat: beat, via: db.statements.map(function (o) {
-            return o.via;
+            return o.via + ' ' + o.sql.slice(0, 32);
           }) }));
   const leased = await bounded(driver.releaseLease('scheduler', 'node-b', 3),
                                2000);
@@ -746,12 +879,16 @@ async function theLivenessConnection(t) {
   const viaPool = await bounded(second.heartbeat('node-c', 30000, null), 2000);
   t.check(viaPool && viaPool.alive === true &&
           db.statements.some(function (one) {
-            return one.via === 'pool';
+            return one.via === 'pool' &&
+              /^WITH n AS \(UPDATE sts_cluster_nodes/.test(one.sql);
+          }) && !db.statements.some(function (one) {
+            return one.via === 'pool' && one.sql === 'BEGIN';
           }) && second.livenessStatus().viaPool === 1,
           'D: a liveness connection that cannot be opened sends the ' +
-          'statement through the pool rather than failing it',
+          'statement through the pool rather than failing it, and does ' +
+          'not open a transaction there',
           JSON.stringify({ via: db.statements.map(function (o) {
-            return o.via;
+            return o.via + ' ' + o.sql.slice(0, 24);
           }), status: second.livenessStatus() }));
 
   // THE PURGE KEEPS A LAPSED ORIGIN CLAIM.

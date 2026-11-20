@@ -120,6 +120,7 @@ import config = require('../common/config');
 import errorCodes = require('../common/error_codes');
 import cacheRegistry = require('../common/cache_registry');
 import spiffeId = require('./spiffe_id');
+import SpiffeModel = require('./spiffe_model');
 import keys = require('../common/crypto_impl/key_material');
 import x509 = require('../common/crypto_impl/x509');
 
@@ -2420,8 +2421,13 @@ class SpiffeCa {
       // `JWT` rather than the default, and stated rather than left implicit:
       // the JWT-SVID specification says the `typ` header, if present, must be
       // `JWT` or `JOSE`.
-      header: { typ: 'JWT' }
+      header: { typ: JWT_SVID_TYP }
     });
+    // Held to the model's JWT-SVID members (#1579): recorded, not refused.
+    SpiffeModel.hold('jwt-svid-claims', payload, 'a minted JWT-SVID\'s claims');
+    SpiffeModel.hold('jwt-svid-header',
+                     { alg: authority.alg, kid: authority.id,
+                       typ: JWT_SVID_TYP }, 'a minted JWT-SVID\'s header');
     log.debug('Leaving SpiffeCa.mintJwtSvid(). aud=' + list.join(', '));
     return { spiffeId: parsed.id, token: token, audiences: list,
              expiresAt: expires, issuedAt: issuedAt, jti: payload.jti,
@@ -2471,19 +2477,22 @@ class SpiffeCa {
     // an in-process caller (a test, `/admin-api`) is not inside one.
     const opts = options || {};
     await this.ready(this.realmIdOf(opts.realm));
+    // The two refusals of an empty request field are the model's
+    // (models/spiffe/workload.tsp, ValidateJWTSVIDRequest): the sentence and
+    // the code; the Workload API answers them INVALID_ARGUMENT.
     const text = String(token == null ? '' : token).trim();
-    if (!text) {
+    if (SpiffeModel.isEmpty(text)) {
+      const none = SpiffeModel.refusal('ValidateJWTSVIDRequest', 'svid',
+                                       'empty');
       log.debug('Leaving SpiffeCa.validateJwtSvid(). No token.');
-      return { ok: false, reason: 'No JWT-SVID was given.',
-               errorCode: 'STS-SPIFFE-0031' };
+      return { ok: false, reason: none.message, errorCode: none.code };
     }
     const wanted = String(audience == null ? '' : audience).trim();
-    if (!wanted) {
+    if (SpiffeModel.isEmpty(wanted)) {
+      const none = SpiffeModel.refusal('ValidateJWTSVIDRequest', 'audience',
+                                       'empty');
       log.debug('Leaving SpiffeCa.validateJwtSvid(). No audience.');
-      return { ok: false, reason: 'ValidateJWTSVID requires the audience the ' +
-                                  'validating party goes by; a JWT-SVID is ' +
-                                  'only meaningful against one.',
-               errorCode: 'STS-SPIFFE-0032' };
+      return { ok: false, reason: none.message, errorCode: none.code };
     }
     let unverified;
     try {
@@ -2732,6 +2741,9 @@ class SpiffeCa {
       spiffe_sequence: this.sequenceNow(id),
       spiffe_refresh_hint: this.refreshHintSeconds()
     };
+    // Held to the model's bundle (#1579): recorded, not refused.
+    SpiffeModel.hold('bundle', document, 'the ' + (id || 'default') +
+                     ' realm\'s SPIFFE bundle');
     log.debug('Leaving SpiffeCa.bundle(). ' + keyList.length +
               ' key(s), sequence ' +
               this.sequenceNow(id) + '.');
@@ -3111,8 +3123,10 @@ class SpiffeCa {
         log.debug('Leaving SpiffeCa.checkBundleDocument(). A key has no kty.');
         return { ok: false, reason: 'Key ' + i + ' has no `kty`.' };
       }
-      if (key.use !== 'x509-svid' && key.use !== 'jwt-svid' &&
-          key.use !== 'wit-svid') {
+      // The uses a bundle's key may name are the model's registry
+      // (models/spiffe/spiffe.tsp, `bundle-key-use`).
+      const uses = SpiffeModel.registry('bundle-key-use');
+      if (uses.indexOf(key.use) < 0) {
         // The specification says a consumer MUST ignore a JWK whose `use` is
         // missing or unknown — so a bundle full of them is a bundle that will
         // verify nothing, and accepting it silently is the worst of the three
@@ -3123,8 +3137,10 @@ class SpiffeCa {
                                     (key.use ? '"' + key.use + '"' :
                                      '(absent)') +
                                     '. Every JWK in a SPIFFE bundle carries ' +
-                                    '`use` of x509-svid, jwt-svid or ' +
-                                    'wit-svid, and a consumer MUST IGNORE ' +
+                                    '`use` of ' + uses.slice(0, -1)
+                                      .join(', ') + ' or ' +
+                                    uses[uses.length - 1] + ', and a ' +
+                                    'consumer MUST IGNORE ' +
                                     'one that does not — so a ' +
                                     'bundle of these would verify ' +
                                     'nothing and report no error.' };
@@ -3846,6 +3862,10 @@ const slot = new InstanceSlot<SpiffeCa>(
   helpers.log);
 
 const SPIFFE_USE_CASE = 'spiffe';
+
+// The `typ` a minted JWT-SVID's header carries: the first of the model's
+// `jwt-svid-typ` registry (JWT-SVID section 2.3).
+const JWT_SVID_TYP: string = SpiffeModel.registry('jwt-svid-typ')[0];
 // How long a realm's SPIFFE start waits for a branch another node is still
 // writing before it falls back to a self-signed authority. A branch is built
 // in well under a second; this is room for a slow key algorithm and a busy

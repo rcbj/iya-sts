@@ -15,7 +15,7 @@
 // `returnTo` keep their statuses, their headers and the top-level navigation
 // that carries them. The runtime never drives Negotiate through `fetch()`.
 //
-// What changed is the BODY a person sees on three of those responses, which
+// What changed is the BODY a person sees on five of those responses, which
 // is now the sign-in surface's shell carrying the state its page is drawn
 // from (`data-sts-state` on `<html>`, read by `authn/web_authn.ts`):
 //
@@ -26,6 +26,13 @@
 //   * `off` — the 403 when `krb5.spnegoAuthentication` is false, naming the
 //     setting. A refusal, so its sentences are English (#539's decision 6)
 //     — only the link back to the password screen is translated.
+//   * `withheld` — the 200 when `?mutual=off` was honoured (#896): the
+//     ticket was accepted, the AP-REP was withheld and no session was
+//     started. Translated (#896's review): it is a page a person reads, and
+//     the catalog rule asks for every such page in every locale.
+//   * `mutual-closed` — the 403 when that query is asked and the test
+//     controls are closed: the ticket was not accepted. Translated too, as
+//     the sign-in's other refusals (`refusal.*`) are.
 //   * `signed-in` — the 200 when nothing was interrupted (no `returnTo`):
 //     who is now signed in, the session, and what the ticket claimed.
 //
@@ -176,6 +183,44 @@ class WebAuthnSpnego {
   }
 
   /**
+   * The 200 when `?mutual=off` was honoured (#896). The ticket was
+   * accepted, the AP-REP was withheld and no session was started. In the
+   * page's language (#896's review); the principal is a parameter, so the
+   * translator escapes it.
+   *
+   * @param view - the view: `principal`, `pending`
+   * @param t - the translator
+   * @returns the HTML
+   */
+  static withheld(view: Json, t: Json): string {
+    return '<h1>' + t.html('spnego.withheld.heading') + '</h1>' +
+      '<div class="warn" id="spnego-withheld">' +
+      t.html('spnego.withheld.body') +
+      (view.principal
+        ? ' ' + t.html('spnego.withheld.principal',
+                       { principal: String(view.principal) })
+        : '') +
+      '</div>' +
+      WebAuthnSpnego.fallback(view, t);
+  }
+
+  /**
+   * The 403 when `?mutual=off` was asked and the test controls are closed
+   * (#896). The ticket was not accepted. In the page's language, as the
+   * sign-in's other refusals are (#896's review).
+   *
+   * @param view - the view
+   * @param t - the translator
+   * @returns the HTML
+   */
+  static mutualClosed(view: Json, t: Json): string {
+    return '<h1>' + t.html('spnego.mutualClosed.heading') + '</h1>' +
+      '<div class="err" id="spnego-mutual-closed">' +
+      t.html('spnego.mutualClosed.body') + '</div>' +
+      WebAuthnSpnego.fallback(view, t);
+  }
+
+  /**
    * The signed-in page, when nothing was interrupted.
    *
    * @param view - the view
@@ -240,6 +285,12 @@ class WebAuthnSpnego {
     if (v.kind === 'off') {
       return WebAuthnSpnego.off(v, t);
     }
+    if (v.kind === 'withheld') {
+      return WebAuthnSpnego.withheld(v, t);
+    }
+    if (v.kind === 'mutual-closed') {
+      return WebAuthnSpnego.mutualClosed(v, t);
+    }
     return WebAuthnSpnego.challenge(v, t);
   }
 
@@ -257,6 +308,12 @@ class WebAuthnSpnego {
     }
     if (v.kind === 'off') {
       return 'Integrated authentication is off';
+    }
+    if (v.kind === 'withheld') {
+      return ctx.t.text('spnego.withheld.title');
+    }
+    if (v.kind === 'mutual-closed') {
+      return ctx.t.text('spnego.mutualClosed.title');
     }
     return ctx.t.text('spnego.first.title');
   }

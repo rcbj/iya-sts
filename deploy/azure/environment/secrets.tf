@@ -136,6 +136,10 @@ locals {
       bootstrap-admin-username = terraform_data.bootstrap_admin_username[0].output
       krb5-krbtgt-password     = random_password.krb5_krbtgt[0].result
       krb5-service-password    = random_password.krb5_service[0].result
+      } : {}, local.cdn ? {
+      # Front Door's origin secret (frontdoor.tf); a cell's is the global/
+      # stack's, written into this vault under the same name.
+      edge-secret = random_password.edge_secret[0].result
   } : {})
 
   # What the `sts-secrets` unit puts in each env file (units/): the
@@ -145,7 +149,9 @@ locals {
   # whatever the mode, AWS's global/ rule.
   node_secret_env = merge({
     ADMIN_API_CLIENT_SECRET = "admin-api-client-secret"
-    }, local.product ? {
+    }, local.edge_on ? {
+    STS_EDGE_SECRET = "edge-secret"
+    } : {}, local.product ? {
     STS_ADMIN_BOOTSTRAP_PASSWORD = "bootstrap-admin-password"
     STS_ADMIN_BOOTSTRAP_USERNAME = "bootstrap-admin-username"
     KRB5_KRBTGT_PASSWORD         = "krb5-krbtgt-password"

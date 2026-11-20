@@ -56,6 +56,8 @@ const log = bunyan.createLogger({ name: 'console_web_bundle',
 
 const ROOT = path.join(__dirname, '..');
 
+
+
 function childMain() {
   /* eslint-disable no-console */
   const ROOT_DIR = process.env.AG_ROOT;
@@ -63,6 +65,33 @@ function childMain() {
   const fsC = require('fs');
   const pathC = require('path');
   const findings = [];
+
+  // ONE TAB PANEL, WHOLE (2026-11-16). Every section of a console page is a
+  // frame since #1850-#1853, and a frame is a <section>: a capture that
+  // stopped at the first </section> ended at the panel's first frame, and a
+  // check that something is ABSENT from the tab then passed whatever the tab
+  // held. This reads from the panel's own tag to the </section> that closes
+  // it, nesting counted. It answers what RegExp.exec did: null, or
+  // [whole, inner].
+  function tabPanel(html, id) {
+    const open = new RegExp('<section class="tabpanel(?: first)?" id="' +
+                            id + '">').exec(html || '');
+    if (!open) {
+      return null;
+    }
+    const tags = /<section\b[^>]*>|<\/section>/g;
+    tags.lastIndex = open.index + open[0].length;
+    let depth = 1;
+    let m;
+    while ((m = tags.exec(html)) !== null) {
+      depth += m[0] === '</section>' ? -1 : 1;
+      if (depth === 0) {
+        return [html.slice(open.index, m.index + m[0].length),
+                html.slice(open.index + open[0].length, m.index)];
+      }
+    }
+    return null;
+  }
   function note(ok, what, detail) {
     findings.push({ ok: !!ok, what: what,
                     detail: detail === undefined ? '' : String(detail) });
@@ -227,6 +256,19 @@ function childMain() {
       const requires = /require\(\s*['"]([^'"]+)['"]\s*\)/g;
       let found = requires.exec(code);
       while (found) {
+        // THE ONE PACKAGE (#444 phase 2b, 2026-11-14): the console lays its
+        // pictures out in the browser, and the layout library is bundled
+        // into its script with them. It is pure JavaScript with one
+        // dependency, names nothing of node's and leaves no `require()` in
+        // the bundle (C3 below). Named exactly, and only for the modules
+        // that lay a picture out, so a second package is a decision made
+        // here rather than a line that slipped through.
+        if (found[1] === '@dagrejs/dagre' &&
+            /^admin-ui\/web_(delegation_map|federation_diagram)\.ts$/
+              .test(name)) {
+          found = requires.exec(code);
+          continue;
+        }
         if (!/^(\.\/|\.\.\/[a-z0-9-]+\/)web_[a-z0-9_]+$/.test(found[1])) {
           foreign.push(name + ' requires ' + found[1]);
         }
@@ -437,6 +479,33 @@ function childMain() {
     const unviewed = [];
     const differing = [];
     const drilled = [];
+    // THE PICTURES ARE LAID OUT IN THE BROWSER (#444 phase 2b): a page that
+    // draws one draws it from the answer's data, and what the bundle draws
+    // must be, to the byte, the `svg` this process answered beside that
+    // data — one code path, two places — and its document on its own must
+    // be a document.
+    const pictured = [];
+    const pictureDiffers = [];
+    const drawnPictures = [];
+    const pictureCheck = function (label, page, view, drawn) {
+      if (typeof page.document !== 'function' || !view ||
+          typeof view.svg !== 'string') {
+        return;
+      }
+      pictured.push(label);
+      const alone = StsConsole && StsConsole.documentOf
+        ? StsConsole.documentOf(page.path, view) : null;
+      // A page with nothing chosen draws no picture (a chooser instead);
+      // one that draws a diagram must draw the answer's own.
+      if (typeof drawn !== 'string' ||
+          (drawn.indexOf('<div class="diagram">') >= 0 &&
+           drawn.indexOf(view.svg) < 0) ||
+          typeof alone !== 'string' || alone.indexOf('<svg') !== 0) {
+        pictureDiffers.push(label);
+      } else if (drawn.indexOf('<div class="diagram">') >= 0) {
+        drawnPictures.push(label);
+      }
+    };
     for (let i = 0; i < WebPages.PAGES.length; i++) {
       const page = WebPages.PAGES[i];
       let view = null;
@@ -451,6 +520,7 @@ function childMain() {
       drawnPages.push({ path: page.path, html: mine });
       const theirs = StsConsole
         ? StsConsole.render(page.path, view, ctx) : null;
+      pictureCheck(page.path, page, view, theirs);
       if (typeof mine !== 'string' || mine.length < 100 || mine !== theirs) {
         differing.push(page.path + ' (' + String(mine).length + ' against ' +
                        String(theirs).length + ')');
@@ -490,6 +560,7 @@ function childMain() {
           drawnPages.push({ path: label, html: a });
           const b = StsConsole ? StsConsole.render(page.path, one, ectx)
                                : null;
+          pictureCheck(label, page, one, b);
           if (typeof a !== 'string' || a.length < 100 || a !== b ||
               a === mine) {
             differing.push(label + ' (' + String(a).length + ' against ' +
@@ -522,6 +593,7 @@ function childMain() {
         const a = WebPages.render(page.path, one, dctx);
         drawnPages.push({ path: label, html: a });
         const b = StsConsole ? StsConsole.render(page.path, one, dctx) : null;
+        pictureCheck(label, page, one, b);
         // Not the list again: a drill that fell through to the list's
         // renderer would draw the same page for every item.
         if (typeof a !== 'string' || a.length < 100 || a !== b ||
@@ -531,6 +603,36 @@ function childMain() {
         }
       }
     }
+    // NO PAGE LINKS TO AN XACML TAB AS IF IT WERE A PAGE (rcbj,
+    // 2026-11-15). `/admin/xacml/policies`, `editor`, `peps`, `decide` and
+    // `authzen` are tabs of /admin/xacml; a link or a GET form to one
+    // answered "is not a page of this console" everywhere but the XACML
+    // page itself, until `WebPages.render()` moved them for every page. A
+    // POST form keeps its action, which F0 below resolves.
+    const deadXacml = {};
+    drawnPages.forEach(function (one) {
+      const html = String(one.html || '');
+      const links = /\bhref="(\/admin\/xacml\/(?:policies|editor|peps|decide|authzen))(?=[?#"])/g;
+      let m = links.exec(html);
+      while (m) {
+        deadXacml[m[1] + ' (on ' + one.path + ')'] = true;
+        m = links.exec(html);
+      }
+      const gets = /<form\b[^>]*>/gi;
+      let g = gets.exec(html);
+      while (g) {
+        const action = /action="(\/admin\/xacml\/(?:policies|editor|peps|decide|authzen))(?=[?#"])/i
+          .exec(g[0]);
+        if (action && !/\bmethod="post"/i.test(g[0])) {
+          deadXacml[action[1] + ' GET form (on ' + one.path + ')'] = true;
+        }
+        g = gets.exec(html);
+      }
+    });
+    note(Object.keys(deadXacml).length === 0,
+         'F0x. no page draws a link or a GET form to an XACML tab\'s old ' +
+         'path (/admin/xacml/<tab>), which is not a console page',
+         Object.keys(deadXacml).join('; '));
     // EVERY POST FORM A CONVERTED PAGE DRAWS IS ONE /admin-api OPERATION
     // (#446). The static console sends a submitted form to the operation
     // that mirrors it (`web_forms.ts`), read off `GET
@@ -1111,6 +1213,43 @@ function childMain() {
          differing.join(', ') ||
          'drill-downs: ' + drilled.join(', ') + '; examples: ' +
          exampled.join(', '));
+    note(drawnPictures.length >= 7 && pictureDiffers.length === 0,
+         'D1-pictures. every picture the bundle lays out from an answer is, ' +
+         'to the byte, the svg this process answered beside it, and its ' +
+         'document on its own is drawn too (' + pictured.length +
+         ' view(s), ' + drawnPictures.length + ' of them drawing one)',
+         pictureDiffers.join(', ') || drawnPictures.join(', '));
+    // AND THE MAP (#444 phase 2b): Geolocation's view, given the outlines
+    // the runtime fetches from `/admin/geo-outlines.json` (the page row's
+    // `assets`), draws in the bundle the very `picture.svg` this process
+    // answered; without them it says so instead of drawing a map.
+    const geoPage = WebPages.pageFor('/admin/geolocation');
+    const geoView = geoPage ? await viewOf(geoPage, {}).catch(function (e) {
+      return { failed: String((e && e.message) || e) };
+    }) : null;
+    const outlines = JSON.parse(fsC.readFileSync(pathC.join(ROOT_DIR,
+      'admin-ui', 'natural_earth', 'countries.json'), 'utf8'));
+    const geoCtx = WebKit.context({}, true);
+    const geoWith = geoView && geoView.drawing
+      ? (StsConsole ? StsConsole.render('/admin/geolocation',
+          Object.assign({}, geoView, { countryOutlines: outlines }),
+          geoCtx) : '')
+      : '';
+    const geoWithout = geoView && geoView.drawing && StsConsole
+      ? StsConsole.render('/admin/geolocation', geoView, geoCtx) : '';
+    note(!!(geoPage && geoPage.assets &&
+            geoPage.assets.countryOutlines ===
+            '/admin/geo-outlines.json') &&
+         !!(geoView && geoView.drawing && geoView.drawing.map &&
+            geoView.drawing.picture) &&
+         geoWith.indexOf(geoView.drawing.picture.svg) >= 0 &&
+         geoWithout.indexOf(geoView.drawing.picture.svg) < 0 &&
+         geoWithout.indexOf('/admin/geo-outlines.json') >= 0,
+         'D1-map. the bundle draws Geolocation\'s map from drawing.map over ' +
+         'the outlines, to the byte the picture.svg this process answered, ' +
+         'and says so where it has no outlines',
+         geoView && geoView.failed ? geoView.failed
+           : String(geoWith.length) + ' / ' + String(geoWithout.length));
     const oauthPage = WebPages.pageFor('/admin/oauth2');
     const oauthView = oauthPage ? await viewOf(oauthPage, {}) : null;
     const oauthHtml = oauthView
@@ -1123,11 +1262,9 @@ function childMain() {
       'oauth-tab-userinfo-claims'
     ];
     const metadataTab =
-      /<section class="tabpanel first" id="oauth-tab-metadata">([\s\S]*?)<\/section>/
-        .exec(oauthHtml);
+      tabPanel(oauthHtml, 'oauth-tab-metadata');
     const globalTab =
-      /<section class="tabpanel" id="oauth-tab-global-settings">([\s\S]*?)<\/section>/
-        .exec(oauthHtml);
+      tabPanel(oauthHtml, 'oauth-tab-global-settings');
     // THE ENDPOINT TABLE, NOT THE PATH: a setting's description may name
     // the authorization endpoint in prose (oauth2.spInitiatedSso, #426, is
     // about what /oauth2/authorize answers), so what must be on Metadata and
@@ -1174,28 +1311,21 @@ function childMain() {
       'saml-tab-idp-initiated', 'saml-tab-assertions', 'saml-tab-attributes'
     ];
     const samlMetadataTab =
-      /<section class="tabpanel first" id="saml-tab-metadata">([\s\S]*?)<\/section>/
-        .exec(samlHtml);
+      tabPanel(samlHtml, 'saml-tab-metadata');
     const samlGlobalTab =
-      /<section class="tabpanel" id="saml-tab-global-settings">([\s\S]*?)<\/section>/
-        .exec(samlHtml);
+      tabPanel(samlHtml, 'saml-tab-global-settings');
     const samlSharedTab =
-      /<section class="tabpanel" id="saml-tab-shared-settings">([\s\S]*?)<\/section>/
-        .exec(samlHtml);
+      tabPanel(samlHtml, 'saml-tab-shared-settings');
     const saml2Tab =
-      /<section class="tabpanel" id="saml-tab-saml2">([\s\S]*?)<\/section>/
-        .exec(samlHtml);
+      tabPanel(samlHtml, 'saml-tab-saml2');
     const saml11Tab =
-      /<section class="tabpanel" id="saml-tab-saml11">([\s\S]*?)<\/section>/
-        .exec(samlHtml);
+      tabPanel(samlHtml, 'saml-tab-saml11');
     const samlTabLabels = samlHtml.match(
       /<a[^>]+href="#saml-tab-saml(?:2|11)"[^>]*>[^<]*<\/a>/g) || [];
     const samlAssertionTab =
-      /<section class="tabpanel" id="saml-tab-assertions">([\s\S]*?)<\/section>/
-        .exec(samlHtml);
+      tabPanel(samlHtml, 'saml-tab-assertions');
     const samlAttributeTab =
-      /<section class="tabpanel" id="saml-tab-attributes">([\s\S]*?)<\/section>/
-        .exec(samlHtml);
+      tabPanel(samlHtml, 'saml-tab-attributes');
     const settingKeys = function (settings, groups) {
       return (settings.groups || []).filter(function (group) {
         return groups.indexOf(group.group) >= 0;
@@ -1339,9 +1469,7 @@ function childMain() {
     ];
     const vcTabs = {};
     vcTabIds.forEach(function (id) {
-      vcTabs[id] = new RegExp(
-        '<section class="tabpanel(?: first)?" id="' + id +
-        '">([\\s\\S]*?)<\\/section>').exec(vcHtml);
+      vcTabs[id] = tabPanel(vcHtml, id);
     });
     const vcExpectedEndpoints = vcView
       ? vcView.protocolEndpoints || [] : [];
@@ -1449,9 +1577,7 @@ function childMain() {
                         WebKit.context({}, true))
       : '';
     const vcMonitorTab = function (id) {
-      const found = new RegExp(
-        '<section class="tabpanel(?: first)?" id="' + id +
-        '">([\\s\\S]*?)<\\/section>').exec(vcMonitorHtml);
+      const found = tabPanel(vcMonitorHtml, id);
       return found ? found[1] : null;
     };
     const vcMonitorMeta = vcMonitorTab('vc-monitor-tab-metadata');
@@ -1488,9 +1614,7 @@ function childMain() {
     ];
     const xacmlTabs = {};
     xacmlTabIds.forEach(function (id) {
-      xacmlTabs[id] = new RegExp(
-        '<section class="tabpanel(?: first)?" id="' + id +
-        '">([\\s\\S]*?)<\\/section>').exec(xacmlHtml);
+      xacmlTabs[id] = tabPanel(xacmlHtml, id);
     });
     const xacmlEndpoints = xacmlView
       ? xacmlView.protocolEndpoints || [] : [];
@@ -1557,11 +1681,9 @@ function childMain() {
     // METADATA FIRST (2026-10-12): the endpoints and everything the page
     // explains or reports; Server is its settings.
     const scimServerTab =
-      /<section class="tabpanel(?: first)?" id="server">([\s\S]*?)<\/section>/
-        .exec(scimHtml);
+      tabPanel(scimHtml, 'server');
     const scimMetadataTab =
-      /<section class="tabpanel first" id="scim-tab-metadata">([\s\S]*?)<\/section>/
-        .exec(scimHtml);
+      tabPanel(scimHtml, 'scim-tab-metadata');
     const scimEndpoints = scimView
       ? scimView.protocolEndpoints || [] : [];
     note(!!scimServerTab && !!scimMetadataTab &&
@@ -1594,9 +1716,7 @@ function childMain() {
     ];
     const ssfTabs = {};
     ssfTabIds.forEach(function (id) {
-      ssfTabs[id] = new RegExp(
-        '<section class="tabpanel(?: first)?" id="' + id +
-        '">([\\s\\S]*?)<\\/section>').exec(ssfHtml);
+      ssfTabs[id] = tabPanel(ssfHtml, id);
     });
     const ssfEndpoints = ssfView
       ? ssfView.protocolEndpoints || [] : [];
@@ -1670,9 +1790,7 @@ function childMain() {
     ];
     const kerberosTabs = {};
     kerberosTabIds.forEach(function (id) {
-      kerberosTabs[id] = new RegExp(
-        '<section class="tabpanel(?: first)?" id="' + id +
-        '">([\\s\\S]*?)<\\/section>').exec(kerberosHtml);
+      kerberosTabs[id] = tabPanel(kerberosHtml, id);
     });
     note(kerberosTabIds.every(function (id) {
       return !!kerberosTabs[id];
@@ -1747,9 +1865,7 @@ function childMain() {
                         'cert-spiffe-agents', 'cert-spiffe-brokers'];
     const certTabs = {};
     certTabIds.forEach(function (id) {
-      certTabs[id] = new RegExp(
-        '<section class="tabpanel(?: first)?" id="' + id +
-        '">([\\s\\S]*?)<\\/section>').exec(certHtml);
+      certTabs[id] = tabPanel(certHtml, id);
     });
     const spiffeTab = certTabs['cert-tab-spiffe']
       ? certTabs['cert-tab-spiffe'][1] : '';
@@ -1898,8 +2014,7 @@ function childMain() {
       });
       if (ids.length && pview.protocolEndpoints &&
           pview.protocolEndpoints.length) {
-        const meta = new RegExp('<section class="tabpanel first" id="' +
-          slug + '-tab-metadata">([\\s\\S]*?)<\\/section>').exec(html);
+        const meta = tabPanel(html, slug + '-tab-metadata');
         if (!meta || meta[1].indexOf('data-copy="' +
             WebKit.esc(pview.protocolEndpoints[0].url) + '"') < 0) {
           protocolProblems.push(path + '\'s endpoints are not on Metadata');
@@ -2033,6 +2148,20 @@ function childMain() {
          'deliberately does not do, the bundle the same',
          JSON.stringify({ testDouble: (dashDrawn.development || {})
                           .testDouble }));
+    // The second pass (#753, 2026-11-10): three roles, a record-only mark,
+    // and a TCP caller this mode does not identify by source address.
+    const current = dashDrawn.development.here;
+    note(current.indexOf('Security Administrator') >= 0 &&
+         current.indexOf('acceptAssertedSelectors') >= 0 &&
+         current.indexOf('own record') >= 0 &&
+         current.indexOf('rows carry a dash') < 0 &&
+         current.indexOf('one of two roles') < 0 &&
+         current.indexOf('holds both') < 0 &&
+         current.indexOf('source address') < 0 &&
+         current.indexOf('two role groups') < 0,
+         'D-notdo-current. the development list names the third role, ' +
+         'the record-only mark and what a TCP caller is not',
+         '');
     // The entries #753 retired are gone from every catalog, overlays too.
     const dashLocales = pathC.join(ROOT_DIR, 'common', 'locales',
                                    'consoleDashboard');

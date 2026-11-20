@@ -97,8 +97,10 @@ in this order:
    The truststore is service-wide and holds 32 (`tls/CLAUDE.md`); removing a
    realm does not take an anchor with it. `isSuiteTrustAnchor()` names the
    subjects. The remote PEP's anchor this run posted is kept when
-   `XACML_PEP_CA_PEM` is set, because `pep-credential.sh` adds it before this
-   script runs.
+   `XACML_PEP_CA_PEM` is set, because `pep-credential.sh` added it before this
+   script ran — until phase 4 of #1827's follow-up (2026-11-16), since which
+   it mints no client certificate and posts no anchor, so the variable is
+   unset and nothing is spared.
 
 Only the suite's own names go; `node deploy/aws/reset-environment.js --dry-run
 <url>` lists what would. Until #344 nothing in the default realm was deleted, so
@@ -442,7 +444,7 @@ by side. **Keep it that way across #820's status-list change**: from
 2026-10-21 a process leases blocks of access-token status indexes, and an
 older build claims single indexes that a block's owner cannot see — a mixed
 cluster could give two live tokens one index, and a revocation of one would
-then show the other INVALID in the status list. `docs/aws-cluster.md` tells
+then show the other INVALID in the status list. `docs/v1.1.0/aws-cluster.md` tells
 an operator the same.
 
 ## The key-encryption key: a key in KMS that never leaves it (#391, 2026-10-01)
@@ -820,7 +822,50 @@ apply. **The tag is 12 characters**: a shorter one names no image, and because a
 deployment replaces every task at once, that took `testidp` down for about twenty
 minutes on 2026-11-05. A workflow deploy that changes only the allowlist touches
 the WAF IP set and not the distribution, so it should not meet this refusal; one
-that changes the distribution may. **Every other pattern is #1341.**
+that changes the distribution may. **Every other pattern is #1341**, below.
+
+### CloudFront in front of the cells (#1341, rcbj 2026-11-13)
+
+**rcbj's decision: a CDN on every pattern.** A multi-cell environment
+(`testidpna`, `globalidp`, and #97's `testidpmc`) has ONE distribution, and
+`envs/testidpna.tfvars` and `envs/globalidp.tfvars` turn it on
+(`cloudfront_enabled`, `direct_hostname`). `cloudfront.tf`'s header argues it:
+
+* **The primary cell holds it, in `full`**: the distribution, its us-east-1
+  certificate, the web ACL and the cache policy (`local.cloudfront_here`).
+  `full` because the origin secret is now the global tier's `edge-secret`
+  (`global/secrets.tf`, made whether or not CloudFront is on), replicated into
+  every cell's region; the primary reads its value from the global state
+  (`local.global_edge_secret`, apart from `local.global` because a sensitive
+  attribute there would mark everything read through it), every cell's nodes
+  read the replica. A `base` primary makes no distribution and no public record.
+* **The tree moves to the direct name** (`dns_cells.tf`): pins, latency sets
+  and the direct name's own `*` default (`direct_default`). The public name
+  keeps one record, `default`, whose alias changes IN PLACE from the latency
+  set to the distribution, because a simple record cannot share a name with
+  another cell's not-yet-removed pins. The origin is the direct name, resolved
+  from the edge, so a pin sees the edge's country — the service is
+  authoritative on residency (#98, section 6).
+* **Every cell** admits the edges (`nlb_cloudfront`), believes them
+  (`STS_TRUST_PROXY`, `STS_EDGE_PROXIES`) and writes the direct name in its
+  inside zone (`direct_inside`); the outside `direct` CNAME is single-cell only.
+* **Multi-cloud**: with CloudFront on, the AWS primary writes the public
+  `default` even in a multi-cloud environment, and `deploy/multicloud/
+  interconnect` writes its tree at the direct name.
+* **Turning it on in an existing environment is one orchestrated apply**:
+  `global/` (the secret) runs before the cells' `full`. Between the primary's
+  `full` and the other cells', their pins still stand at the public name and
+  answer as before.
+
+**PROVEN OFFLINE ONLY**: `terraform fmt -check`, `init -backend=false`,
+`validate` in `environment/` and `global/`, and `environment/tests/
+render.tftest.hcl` (three new runs: the primary in `full` and in `base`, and a
+non-primary cell; 23 pass) and `global/tests` (3 pass). **No `terraform plan`
+ran**: the AWS session on the machine had expired (2026-11-13), and nothing
+was applied. The first `testidpna` apply is its test; look first at the
+default record's in-place alias change, and at CloudFront's origin TLS to a
+cell (Host is forwarded, so every cell's certificate must name the public name,
+which it does).
 
 ## Sizing a node: every process is a whole copy (#340, 2026-09-29)
 
@@ -1431,6 +1476,22 @@ environment with its own runner does not collide. **A destroy that fails is
 said loudly** — the NAT gateway bills until
 `TF_STACK=suite-callbacks deploy/aws/terraform-local.sh <env> destroy` runs.
 `STS_SUITE_CALLBACKS=0` skips that half.
+
+**THE PEP'S ASSERTION KEY (#1827's follow-up, phase 3) IS ITS ONE CREDENTIAL
+SINCE PHASE 4 (2026-11-16).** `pep-credential.sh` writes `pep-assertion.key`
+and `pep-assertion.csr` in `/shared/pep` (`pep-credential.js --assertion
+--csr-only`, `XACML_PEP_NAME` from the task definition), and the `xacml-pep`
+container reads the key as `PEP_ASSERTION_KEY`. The service never sees it:
+`sts_xacml_remote_pep` sends the request to `issue-pep-credential` once it
+has made the PEP's entry in `pep-e2e`, and the PEP's token fetches succeed
+from then on. **Phase 4 retired the client certificate**: the container no
+longer mints one or posts its anchor (so it no longer takes the management
+API's client secret, and the task definition's `STS_ADMIN_API_CLIENT_SECRET`,
+`XACML_PEP_SUBJECT`, `PEP_TLS_CERT`/`KEY` and `XACML_PEP_CA_PEM_FILE` are
+gone), and a key that is never registered leaves the PEP unauthenticated.
+**Applying it is a `suite-callbacks` apply** (the task definition changed).
+Nothing in `reset-environment.js` changes: the key is on an entry of the
+run's realm.
 
 It is the one suite for every environment since 2026-09-21: `run-suite-in-aws.sh`
 and `environment/runner.tf`, which `aws-cluster.yml` used for `dev` and `ci`,

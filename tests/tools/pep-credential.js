@@ -12,9 +12,14 @@
 // The remote PEP container has to be RECOGNISED by the mock — its DN resolved
 // to a directory entry, to a group, to a role, to a policy decision — and that
 // takes a client certificate the mock can build a path from. This tool makes
-// one and tells the mock to trust the authority behind it. Both launchers run
+// one and tells the mock to trust the authority behind it. Both launchers ran
 // it after the service is up and before the PEP container starts, and then
-// mount what it wrote.
+// mounted what it wrote — until phase 4 of #1827's follow-up (rcbj,
+// 2026-11-16) retired the PEP's client certificate: the launchers now run
+// only `--assertion --csr-only` (below), and the default mode is what the
+// protocol jobs use for the OTHER callers they drive over mutual TLS (an
+// XACML_USER, an AuthZEN caller, a PEP in a realm that opted in to
+// `xacml.pepAuthentication` `either`).
 //
 // ---------------------------------------------------------------------------
 // IT BUILDS THE CHAIN OUTSIDE THE SERVICE, WHICH IS THE ESTABLISHED PATTERN
@@ -112,6 +117,14 @@
 //               <out>/crl/ for that server. Without it no certificate names
 //               a list, and a product-mode service refuses the chain
 //               (STS-PKI-0190) — which is what the launchers pass it for.
+//               Name the PEP's PLAIN port, http://<pep>:<PEP_PORT>/crl
+//               (9090): the PEP serves <out>/crl there on its CRL-only
+//               listener even with PEP_HTTP off (2026-11-14, PEP_CRL_HTTP),
+//               because a CRL is fetched in the clear (RFC 5280 section
+//               4.2.1.13). Until then 9090 was dark with HTTP off, the list
+//               could not be fetched, and every pull was refused as
+//               unauthenticated. An https base is refused here: the list
+//               would have to be validated with the certificate it revokes.
 //
 //   --store-on  a username (#1061): after the anchor, the leaf is STORED on
 //               that person's entry (created first if absent), through
@@ -119,6 +132,53 @@
 //               the entry is not in the default realm, and the realm must
 //               already exist.
 //   --realm     the realm --store-on writes in. Default: the default realm.
+//               With --assertion, the realm whose Issuing CA certifies the
+//               key and whose ou=users holds --name.
+//
+// ---------------------------------------------------------------------------
+// --assertion: THE PEP'S ONE ASSERTION KEY INSTEAD (#1827's follow-up, phase
+// 3, rcbj 2026-11-16: "the service never holds the PEP's private key").
+//
+//   node tests/tools/pep-credential.js --assertion --url=https://… \
+//        --out=/tmp/pep --name=remote-pep-1 [--realm=acme] \
+//        [--key-alg=ec-p256|rsa-2048] [--revoke-previous] [--quiet]
+//
+// A remote PEP reaches the service on a DPoP-bound access token from its RFC
+// 7523 self-assertion, signed with ONE key (`PEP_ASSERTION_KEY`), and the
+// service accepts it only once that key is registered on the PEP's entry.
+// This mode generates the key pair HERE (EC P-256 by default, ES256; or RSA
+// 2048), writes a PKCS #10 request signed with it, and sends ONLY THE
+// REQUEST to `POST /admin-api/xacml/issue-pep-credential`: the realm's
+// Issuing CA certifies the public key as `urn:sts:sa:<name>` and registers
+// it. The private key never leaves this process except as the file below.
+// The entry must already exist, be a service account and be in the remote
+// PEPs group — the act refuses otherwise, naming which.
+//
+//   <out>/pep-assertion.key  the private key, PKCS #8 PEM. 0644, for the
+//                            reason the launchers relax pep.key: the PEP
+//                            container is not this user and its mount is
+//                            read-only, so a key only the writer can read
+//                            is a PEP that starts with no credential.
+//   <out>/pep-assertion.csr  the request that was sent.
+//   <out>/pep-assertion.crt  the leaf followed by its chain through the Root
+//                            (public; the PEP does not need it).
+//
+// The PEP environment is printed on stdout, one VAR=value a line:
+// PEP_ASSERTION_KEY (the file above), PEP_NAME and PEP_CLIENT_ID.
+//
+//   --name        the username of the PEP's entry. Required unless
+//                 --csr-only.
+//   --key-alg     ec-p256 (the default) or rsa-2048.
+//   --csr-only    write the key and the request and send nothing; --url is
+//                 then not needed. For a launcher whose PEP's entry does not
+//                 exist yet: the job that creates it sends the request
+//                 (`issueAssertionCredential()`, exported below).
+//   --reuse-key   use pep-assertion.key and pep-assertion.csr already in
+//                 --out rather than generating new ones (a request written
+//                 by --csr-only, sent later).
+//   --revoke-previous  revoke the entry's other RFC 7523 keys once this one
+//                 is registered. Off by default: a running PEP keeps its old
+//                 key until it is restarted on the new one.
 //
 // It prints the leaf's DN as its LAST line, so `$(... --quiet)` is the DN and a
 // launcher needs no parsing.
@@ -178,11 +238,12 @@ const DEFAULT_SUBJECT = 'CN=remote-pep-1,OU=remote-peps,O=iya-sts';
 //
 // **THE DOCUMENTATION MOVED RATHER THAN THIS FUNCTION**, which is worth saying
 // because the other repair is four lines and looks obviously kinder. Nothing
-// calls this file the space way — both launchers pass `=`, `docs/remote-pep.md`
-// passes `=`, and the tests that want a certificate `require()` this file for
-// `mint()` and never reach a command line at all — so accepting the space
-// form would have been a behaviour change made to rescue a comment, in the one
-// directory whose rule is that it takes no dependency and stays small.
+// calls this file the space way — both launchers pass `=`,
+// `docs/v1.1.0/remote-pep.md` passes `=`, and the tests that want a certificate
+// `require()` this file for `mint()` and never reach a command line at all — so
+// accepting the space form would have been a behaviour change made to rescue a
+// comment, in the one directory whose rule is that it takes no dependency and
+// stays small.
 function parseArgs(argv) {
   log.debug("Entering parseArgs().");
   const opts = { url: '', out: '', subject: DEFAULT_SUBJECT, years: 1,
@@ -199,6 +260,12 @@ function parseArgs(argv) {
     else if (name === '--quiet') { opts.quiet = true; }
     else if (name === '--store-on') { opts.storeOn = value; }
     else if (name === '--realm') { opts.realm = value; }
+    else if (name === '--assertion') { opts.assertion = true; }
+    else if (name === '--name') { opts.name = value; }
+    else if (name === '--key-alg') { opts.keyAlg = value; }
+    else if (name === '--csr-only') { opts.csrOnly = true; }
+    else if (name === '--reuse-key') { opts.reuseKey = true; }
+    else if (name === '--revoke-previous') { opts.revokePrevious = true; }
     else if (name === '--crl-base') {
       opts.crlBase = value.replace(/\/+$/, '');
     }
@@ -701,6 +768,18 @@ async function main() {
                          '. --help says what there is.\n');
     process.exit(2);
   }
+  if (opts.assertion) {
+    await assertionMain(opts);
+    log.debug("Leaving main(). The assertion key.");
+    return;
+  }
+  if (opts.crlBase && !/^http:\/\//i.test(opts.crlBase)) {
+    process.stderr.write('--crl-base must be an http:// URL, the PEP\'s ' +
+                         'plain port (http://<pep>:9090/crl): a CRL behind ' +
+                         'TLS would have to be validated with the ' +
+                         'certificate it revokes.\n');
+    process.exit(2);
+  }
   if (!opts.url || !opts.out) {
     process.stderr.write('Both --url and --out are required. --help says ' +
                          'what they are.\n');
@@ -732,7 +811,8 @@ async function main() {
   if (minted.crls) {
     // PUBLIC, SIGNED DOCUMENTS — no key material — for whoever serves
     // --crl-base: the PEP container answers GET /crl/<name> from this
-    // directory (`xacml-pep/pep.js`).
+    // directory on its plain port — the CRL-only listener when PEP_HTTP is
+    // off (`rust/bins/xacml-pep/src/options.rs`, `crl_listener()`).
     fs.mkdirSync(path.join(opts.out, 'crl'), { recursive: true });
     Object.keys(minted.crls).forEach(function (name) {
       fs.writeFileSync(path.join(opts.out, 'crl', name), minted.crls[name]);
@@ -915,6 +995,255 @@ async function storeFromCli(opts, leafPem) {
   return stored;
 }
 
+// ---------------------------------------------------------------------------
+// --assertion (#1827's follow-up, phase 3): see the header. THE KEY AND THE
+// REQUEST ARE MADE IN `utilities/pep-assertion-request.js` since 2026-11-16,
+// with the same vendored engine the chain above is: the operator's
+// `utilities/register-remote-pep.js` needs them too and runs from the
+// service image, which ships no tests/, so the code moved to where both can
+// reach it rather than being copied. These two names are re-exported below
+// for the jobs that require them from here.
+// ---------------------------------------------------------------------------
+const assertionRequests = require(path.join(REPO, 'utilities',
+                                            'pep-assertion-request.js'));
+const ASSERTION_KEY_ALGS = assertionRequests.ASSERTION_KEY_ALGS;
+const assertionRequest = assertionRequests.assertionRequest;
+
+// THE ACT, FROM A JOB (`api` is the job's own verbs, as `storeOnEntry()`
+// takes them) or from the CLI below. Answers the act's JSON body; throws
+// with the status and body when it is refused.
+async function issueAssertionCredential(api, base, prefix, name, csrPem,
+                                        options) {
+  log.debug("Entering issueAssertionCredential(). " + prefix + " " + name);
+  const url = String(base || '').replace(/\/+$/, '') + String(prefix || '') +
+              '/admin-api/xacml/issue-pep-credential';
+  const payload = Object.assign({ name: name, csr: csrPem },
+    (options && options.revokePrevious) ? { revokePrevious: true } : {});
+  // A REALM'S CERTIFICATE AUTHORITY IS BUILT JUST AFTER realms/create
+  // ANSWERS (2026-11-16): a job that creates a realm and issues straight
+  // away met "has no certificate authority yet" (STS-PKI-0008) on the first
+  // local runs — sts_xacml_remote_pep in memory, sts_fga in single-node —
+  // with the branch logged built a second or two later. That refusal, and
+  // only that one, is asked again for up to a minute.
+  const deadline = Date.now() + 60000;
+  let r = await api.post(url, payload);
+  while (r.status === 400 && Date.now() < deadline &&
+         /no certificate authority yet/.test(String(r.text ||
+           JSON.stringify(r.body || {})))) {
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 500);
+    });
+    r = await api.post(url, payload);
+  }
+  if (r.status !== 200 || !r.body || !r.body.ok) {
+    log.debug("Leaving issueAssertionCredential(). Refused.");
+    throw new Error('POST ' + prefix + '/admin-api/xacml/' +
+      'issue-pep-credential for ' + name + ' answered ' + r.status + ' ' +
+      String(r.text || JSON.stringify(r.body)).slice(0, 400));
+  }
+  log.debug("Leaving issueAssertionCredential(). kid=" + r.body.kid);
+  return r.body;
+}
+
+// The CLI's verbs over `send()`, in the `{ status, body, text }` shape the
+// function above takes from a job.
+function cliApi() {
+  log.debug("Entering cliApi().");
+  const token = process.env.STS_ADMIN_API_TOKEN || '';
+  const headers = token ? { Authorization: 'Bearer ' + token } : {};
+  log.debug("Leaving cliApi().");
+  return {
+    post: function (url, payload) {
+      log.debug("Entering post(). " + url);
+      log.debug("Leaving post().");
+      return send(url, 'application/json', JSON.stringify(payload), headers,
+                   true).then(function (answer) {
+        let body = null;
+        try {
+          body = JSON.parse(String(answer.body || ''));
+        } catch (e) {
+          log.debug("Caught in cliApi(): " + ((e && e.message) || e));
+          body = null;
+        }
+        return { status: answer.status || 0, body: body,
+                 text: String(answer.body || answer.why || '') };
+      });
+    }
+  };
+}
+
+async function assertionMain(opts) {
+  log.debug("Entering assertionMain().");
+  if (!opts.out || (!opts.csrOnly && (!opts.url || !opts.name))) {
+    process.stderr.write('--assertion needs --out, and --url and --name ' +
+                         'unless --csr-only. --help says what they are.\n');
+    process.exit(2);
+  }
+  fs.mkdirSync(opts.out, { recursive: true });
+  const keyFile = path.join(opts.out, 'pep-assertion.key');
+  const csrFile = path.join(opts.out, 'pep-assertion.csr');
+  let made = null;
+  if (opts.reuseKey && fs.existsSync(keyFile) && fs.existsSync(csrFile)) {
+    made = { privateKeyPem: fs.readFileSync(keyFile, 'utf8'),
+             csrPem: fs.readFileSync(csrFile, 'utf8'), keyAlg: 'as written' };
+    say(opts, 'Reusing the key and the request already in ' + opts.out + '.');
+  } else {
+    made = await assertionRequest({ keyAlg: opts.keyAlg || 'ec-p256',
+                                    name: opts.name || '' });
+    // 0644 — see the header: the PEP container reads it as another user.
+    fs.writeFileSync(keyFile, made.privateKeyPem, { mode: 0o644 });
+    fs.chmodSync(keyFile, 0o644);
+    fs.writeFileSync(csrFile, made.csrPem, { mode: 0o644 });
+    say(opts, 'Generated a ' + made.keyAlg + ' key (' + keyFile + ') and a ' +
+              'certificate request signed with it (' + csrFile + '). The ' +
+              'key stays here; only the request is sent.');
+  }
+  if (opts.csrOnly) {
+    process.stdout.write('PEP_ASSERTION_KEY=' + keyFile + '\n');
+    log.debug("Leaving assertionMain(). The request only.");
+    return;
+  }
+  const prefix = opts.realm ? '/realm/' + opts.realm : '';
+  let answer = null;
+  try {
+    answer = await issueAssertionCredential(cliApi(), opts.url, prefix,
+      opts.name, made.csrPem, { revokePrevious: !!opts.revokePrevious });
+  } catch (e) {
+    log.debug("Caught in assertionMain(): " + ((e && e.message) || e));
+    process.stderr.write(String((e && e.message) || e) +
+      (process.env.STS_ADMIN_API_TOKEN ? ''
+        : ' (no STS_ADMIN_API_TOKEN was set)') + '\nThe key and the ' +
+      'request are in ' + opts.out + '; nothing was registered.\n');
+    process.exit(1);
+  }
+  fs.writeFileSync(path.join(opts.out, 'pep-assertion.crt'),
+                   String(answer.fullChainPem || answer.certificatePem || ''));
+  say(opts, 'The realm certified the key as ' + answer.urn + ' (kid ' +
+            answer.kid + ', valid until ' + answer.notAfter + ') and ' +
+            'registered it on ' + opts.name + '\'s entry.');
+  const env = answer.environment || {};
+  process.stdout.write('PEP_ASSERTION_KEY=' + keyFile + '\n' +
+                       'PEP_NAME=' + String(env.PEP_NAME || opts.name) +
+                       '\n' + 'PEP_CLIENT_ID=' +
+                       String(env.PEP_CLIENT_ID || 'sts-remote-pep') + '\n');
+  log.debug("Leaving assertionMain().");
+}
+
+// ---------------------------------------------------------------------------
+// A PEP'S TOKEN, AS THE REMOTE PEP GETS ONE (#1827's follow-up, for the
+// protocol jobs). The RFC 7523 self-assertion (`iss` and `sub` the PEP's
+// name, `aud` the realm's token endpoint), presented through
+// `sts-remote-pep` with an RFC 9449 proof by the SAME key, for one
+// audience; and the `Authorization`/`DPoP` pair a call on it carries. What
+// `rust/bins/xacml-pep/src/credential.rs` does, in node, so a job can be a
+// PEP without a container. Over node's own `fetch`, because the token
+// endpoint's `DPoP-Nonce` header is read; a job's trust settings
+// (`NODE_EXTRA_CA_CERTS`) apply to it as to every other call it makes.
+// ---------------------------------------------------------------------------
+function joseOf(privateKeyPem) {
+  log.debug("Entering joseOf().");
+  const key = crypto.createPrivateKey(privateKeyPem);
+  const ec = key.asymmetricKeyType === 'ec';
+  const full = crypto.createPublicKey(key).export({ format: 'jwk' });
+  const jwk = ec ? { kty: full.kty, crv: full.crv, x: full.x, y: full.y }
+                 : { kty: full.kty, n: full.n, e: full.e };
+  log.debug("Leaving joseOf().");
+  return {
+    alg: ec ? 'ES256' : 'RS256',
+    jwk: jwk,
+    sign: function (input) {
+      log.debug("Entering sign().");
+      log.debug("Leaving sign().");
+      return crypto.sign('sha256', Buffer.from(input),
+        ec ? { key: key, dsaEncoding: 'ieee-p1363' } : key)
+        .toString('base64url');
+    }
+  };
+}
+
+function compactJws(jose, header, claims) {
+  log.debug("Entering compactJws().");
+  const input = Buffer.from(JSON.stringify(header)).toString('base64url') +
+    '.' + Buffer.from(JSON.stringify(claims)).toString('base64url');
+  log.debug("Leaving compactJws().");
+  return input + '.' + jose.sign(input);
+}
+
+// The `DPoP` proof for one call; `token` adds `ath` (RFC 9449 section 4.2).
+function dpopProof(privateKeyPem, method, url, token, nonce) {
+  log.debug("Entering dpopProof(). " + method + " " + url);
+  const jose = joseOf(privateKeyPem);
+  const claims = { jti: crypto.randomBytes(16).toString('hex'), htm: method,
+                   htu: String(url).split(/[?#]/)[0],
+                   iat: Math.floor(Date.now() / 1000) };
+  if (token) {
+    claims.ath = crypto.createHash('sha256').update(token)
+      .digest('base64url');
+  }
+  if (nonce) {
+    claims.nonce = nonce;
+  }
+  log.debug("Leaving dpopProof().");
+  return compactJws(jose, { typ: 'dpop+jwt', alg: jose.alg, jwk: jose.jwk },
+                    claims);
+}
+
+// The headers of a call on a DPoP-bound token. `scheme` `Bearer` is the
+// refusal a job asserts.
+function dpopHeaders(privateKeyPem, method, url, token, scheme) {
+  log.debug("Entering dpopHeaders().");
+  log.debug("Leaving dpopHeaders().");
+  return { Authorization: (scheme || 'DPoP') + ' ' + token,
+           DPoP: dpopProof(privateKeyPem, method, url, token) };
+}
+
+// The token request. `realmBase` is the service's base with the realm's
+// prefix (`https://sts:8081/realm/acme`), `resourcePath` the audience under
+// it (`/xacml/pep`). One retry on `use_dpop_nonce`, as the PEP makes.
+async function pepAccessToken(realmBase, name, privateKeyPem, scope,
+                              resourcePath) {
+  log.debug("Entering pepAccessToken(). " + name + " " + scope);
+  const base = String(realmBase || '').replace(/\/+$/, '');
+  const tokenUrl = base + '/oauth2/token';
+  const jose = joseOf(privateKeyPem);
+  const now = Math.floor(Date.now() / 1000);
+  const ask = function (nonce) {
+    log.debug("Entering ask().");
+    log.debug("Leaving ask().");
+    const form = new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion: compactJws(jose, { alg: jose.alg, typ: 'JWT' }, {
+        iss: name, sub: name, aud: tokenUrl, iat: now, exp: now + 120,
+        jti: crypto.randomBytes(16).toString('hex') }),
+      client_id: 'sts-remote-pep', scope: scope,
+      resource: base + resourcePath }).toString();
+    return fetch(tokenUrl, { method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded',
+                 DPoP: dpopProof(privateKeyPem, 'POST', tokenUrl, '',
+                                 nonce) },
+      body: form }).then(async function (r) {
+      const text = await r.text();
+      let body = null;
+      try {
+        body = JSON.parse(text);
+      } catch (e) {
+        log.debug("Caught in pepAccessToken(): " + ((e && e.message) || e));
+        body = null;
+      }
+      return { status: r.status, body: body, text: text,
+               nonce: r.headers.get('dpop-nonce') || '' };
+    });
+  };
+  let answer = await ask('');
+  if (answer.status === 400 && answer.body &&
+      answer.body.error === 'use_dpop_nonce' && answer.nonce) {
+    answer = await ask(answer.nonce);
+  }
+  log.debug("Leaving pepAccessToken(). " + answer.status);
+  return { status: answer.status, body: answer.body, text: answer.text,
+           token: (answer.body && answer.body.access_token) || '' };
+}
+
 if (require.main === module) {
   main().catch(function (error) {
     process.stderr.write((error && error.stack ? error.stack : String(error)) +
@@ -930,4 +1259,9 @@ module.exports = { mint: mint, trustAnchor: postAnchor,
                    confirmAnchor: confirmAnchor, isConfirmed: isConfirmed,
                    useSender: useSender, useRetryDelay: useRetryDelay,
                    storeOnEntry: storeOnEntry, forgetStored: forgetStored,
+                   assertionRequest: assertionRequest,
+                   issueAssertionCredential: issueAssertionCredential,
+                   ASSERTION_KEY_ALGS: ASSERTION_KEY_ALGS,
+                   pepAccessToken: pepAccessToken, dpopHeaders: dpopHeaders,
+                   dpopProof: dpopProof,
                    DEFAULT_SUBJECT: DEFAULT_SUBJECT };

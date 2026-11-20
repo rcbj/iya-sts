@@ -106,6 +106,7 @@ import config = require('../common/config');
 import errorCodes = require('../common/error_codes');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
+import ownMembers = require('../common/own_members');
 import realms = require('../common/realms');
 import cacheRegistry = require('../common/cache_registry');
 // The limits vocabulary (#432 phase 5): a static utility class, a leaf.
@@ -424,7 +425,11 @@ class AuthorizationDetails {
                    definition.problem + '.');
           return;
         }
-        if (out[definition.type]) {
+        // Own members only (2026-11-12): a type a request names is read with
+        // `ownMembers.read()`, so it is written as an own member too — a type
+        // called `__proto__` stays a type, and `constructor` is not "declared
+        // by both" before anybody declared it.
+        if (ownMembers.has(out, definition.type)) {
           log.warn(errorCodes.tag('STS-OAUTH-0462') +
                    'authorization_details: ' +
                    'the type "' + definition.type + '" is declared by both "' +
@@ -433,7 +438,8 @@ class AuthorizationDetails {
                    '" answers for it. A type names one resource server.');
           return;
         }
-        out[definition.type] = self.resourceDefinition(definition, row);
+        ownMembers.put(out, definition.type,
+                       self.resourceDefinition(definition, row));
       });
     });
     log.debug("Leaving AuthorizationDetails.buildDeclaredTypes(). " +
@@ -630,7 +636,8 @@ class AuthorizationDetails {
     const { log } = this.deps;
     log.debug("Entering AuthorizationDetails.typeOf().");
     const name = typeof type === 'string' ? type : '';
-    const found = name ? this.declaredTypes()[name] || null : null;
+    const found = name
+      ? ownMembers.read(this.declaredTypes(), name) || null : null;
     log.debug("Leaving AuthorizationDetails.typeOf(). " + !!found);
     return found;
   }
@@ -652,7 +659,7 @@ class AuthorizationDetails {
     const declared = this.declaredTypes();
     let out: number | null = null;
     (details || []).forEach(function (one: Json): void {
-      const definition = one && declared[one.type];
+      const definition = one && ownMembers.read(declared, one.type);
       if (definition && typeof definition.maxLifetimeS === 'number' &&
           (out === null || definition.maxLifetimeS < out)) {
         out = definition.maxLifetimeS;
@@ -757,7 +764,7 @@ class AuthorizationDetails {
     log.debug("Entering AuthorizationDetails.bearerRefusedBy().");
     const declared = this.declaredTypes();
     const hit = (details || []).filter(function (one: Json): boolean {
-      const definition = one && declared[one.type];
+      const definition = one && ownMembers.read(declared, one.type);
       return !!definition && definition.bearer === false;
     })[0];
     log.debug("Leaving AuthorizationDetails.bearerRefusedBy().");
@@ -784,7 +791,7 @@ class AuthorizationDetails {
     const declared = this.declaredTypes();
     const out: string[] = [];
     (details || []).forEach(function (one: Json): void {
-      const definition = one && declared[one.type];
+      const definition = one && ownMembers.read(declared, one.type);
       const acr = definition && definition.acr ? String(definition.acr) : '';
       if (acr && out.indexOf(acr) < 0) {
         out.push(acr);
@@ -883,7 +890,7 @@ class AuthorizationDetails {
     let owned = false;
     const kept = (rights || []).filter(function (one: Json): boolean {
       const definition = one && typeof one === 'object'
-        ? declared[one.type] : null;
+        ? ownMembers.read(declared, one.type) : null;
       if (!definition) {
         return true;
       }
@@ -1099,7 +1106,10 @@ class AuthorizationDetails {
       // never have held it.
       const builtInType =
         applications.AUTHORIZATION_DETAILS_BUILT_IN.indexOf(detail.type) >= 0;
-      const definition = builtInType ? null : declared[detail.type];
+      // An own member only (2026-11-12): `type: "constructor"` is a type
+      // nobody declares, refused as one (STS-OAUTH-0453), never Object.
+      const definition = builtInType
+        ? null : ownMembers.read(declared, detail.type);
       if (!builtInType && !definition) {
         log.debug("Leaving AuthorizationDetails.parse(). An unknown type.");
         return self.refusal('STS-OAUTH-0453', where + ' is of type "' +
@@ -1230,7 +1240,7 @@ class AuthorizationDetails {
     for (let i = 0; i < details.length; i++) {
       const detail = details[i];
       const definition = detail && typeof detail === 'object'
-        ? declared[detail.type] : null;
+        ? ownMembers.read(declared, detail.type) : null;
       if (!definition) {
         continue;
       }
@@ -1312,7 +1322,7 @@ class AuthorizationDetails {
     for (let i = 0; i < requested.length; i++) {
       const detail = requested[i];
       const definition = detail && typeof detail === 'object'
-        ? declared[detail.type] : null;
+        ? ownMembers.read(declared, detail.type) : null;
       if (!definition ||
           !applications.fgaStateOf(String(definition.identifier)).enforced) {
         continue;
@@ -1519,7 +1529,7 @@ class AuthorizationDetails {
     const audiences = [];
     const identifiers = [];
     (details || []).forEach(function (detail) {
-      const definition = detail && declared[detail.type];
+      const definition = detail && ownMembers.read(declared, detail.type);
       if (!definition) {
         return;
       }
@@ -1580,7 +1590,7 @@ class AuthorizationDetails {
     log.debug("Entering AuthorizationDetails.describe().");
     const declared = this.declaredTypes();
     const rows = (details || []).map(function (detail) {
-      const definition = declared[detail.type] || null;
+      const definition = ownMembers.read(declared, detail.type) || null;
       const members = Object.keys(detail).filter(function (key) {
         return key !== 'type';
       }).map(function (key) {
@@ -1691,6 +1701,43 @@ class AuthorizationDetails {
                   { expires: now + this.consentTtlMs(),
                     lowered: Array.isArray(lowered) ? lowered : null });
     log.debug("Leaving AuthorizationDetails.noteConsented().");
+  }
+
+  // A DELETED PERSON'S ALLOWS GO WITH THEM (2026-11-16, rcbj's rule on
+  // #1612). A row is keyed by the NAME, the client and the details, so a
+  // person made again under the name inside the row's lifetime
+  // (`authn.pendingTtlS`) had the deleted one's Allow spent for them. The
+  // directory's one person delete (`removePersonEntry()`) calls this. The
+  // store holds only Allows of the last few minutes, and noteConsented()
+  // walks it on every write already; this walk costs the same.
+  /**
+   * Forgets every Allow a deleted person gave.
+   *
+   * @param username - the deleted person's name
+   * @returns how many were held
+   */
+  forgetPerson(username: unknown): number {
+    const { log } = this.deps;
+    log.debug("Entering AuthorizationDetails.forgetPerson().");
+    const name = String(username || '');
+    const gone: string[] = [];
+    if (name) {
+      // The name is what precedes the last two words (the client and the
+      // digest, neither of which holds a space).
+      consented.forEach(function (held: unknown, key: string): void {
+        const text = String(key);
+        const end = text.lastIndexOf(' ', text.lastIndexOf(' ') - 1);
+        const owner = end > 0 ? text.slice(0, end) : '';
+        if (owner === name || owner.toLowerCase() === name.toLowerCase()) {
+          gone.push(key);
+        }
+      });
+    }
+    gone.forEach(function (key: string): void {
+      consented.delete(key);
+    });
+    log.debug("Leaving AuthorizationDetails.forgetPerson(). " + gone.length);
+    return gone.length;
   }
 
   // Whether they did, SPENDING the answer: one Allow is one authorization
@@ -1810,5 +1857,6 @@ export = {
   scopeAnswerDigestOf: slot.forward('scopeAnswerDigestOf'),
   noteConsented: slot.forward('noteConsented'),
   consumeConsent: slot.forward('consumeConsent'),
-  consumeConsented: slot.forward('consumeConsented')
+  consumeConsented: slot.forward('consumeConsented'),
+  forgetPerson: slot.forward('forgetPerson')
 };

@@ -314,6 +314,11 @@ locals {
     publication       = ""
     repl_user         = ""
   }
+  # CloudFront's origin secret (#1341, cloudfront.tf), which only the primary
+  # cell's distribution reads. Apart from `global` because it is SENSITIVE: in
+  # that object it would mark every value read through it. A global stack
+  # applied before it existed has none, and the next global apply makes it.
+  global_edge_secret = local.multi && local.full ? try(data.terraform_remote_state.global[0].outputs.edge_secret, "") : ""
   global_secret_arns = local.multi ? try(local.global.secret_arns[var.cell], {}) : {}
   global_read_host   = local.multi ? try(local.global.read_addresses[var.cell], "") : ""
 

@@ -43,6 +43,8 @@
 // replace.
 // ---------------------------------------------------------------------------
 
+// Types a row of actions by its own actions' operations (#1579).
+import ApiRows = require('../common/api_rows');
 import helpers = require('../common/helpers');
 const { log, parseBody } = helpers;
 import errorCodes = require('../common/error_codes');
@@ -136,7 +138,12 @@ class EstApi {
    * @param status - the HTTP status
    * @param body - the body
    */
-  sendJson(res, status, body) {
+  // TYPED BY THE OPERATION (#1579): through a handler's response, the
+  // answer is held to the model's at a literal 2xx status
+  // (`types/api-handlers.d.ts`).
+  sendJson<R, S extends number>(res: R, status: S,
+           body: IyaApi.AnswerOf<R, S>): void;
+  sendJson(res: any, status: number, body: any): void {
     const { log } = this.deps;
     log.debug("Entering EstApi.sendJson(). status=" + status);
     let reply = body;
@@ -175,7 +182,7 @@ class EstApi {
     const { log, loadEstConsole, parseBody, errorCodes } = this.deps;
     const self = this;
     log.debug("Entering EstApi.buildRoutes().");
-    const ROUTES = [
+    const ROUTES: IyaApi.AdminRow[] = [
       { method: 'GET', path: BASE + '/est', tag: 'EST', operationId: 'getEst',
         parameters: [
           { name: 'certificatesPage', in: 'query', required: false,
@@ -209,7 +216,8 @@ class EstApi {
           log.debug("Leaving the management API EST monitor endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/est/:action', tag: 'EST',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/est/:action', tag: 'EST',
         mirrors: 'POST /admin/est',
         handler: function (req, res) {
           log.debug("Entering the management API EST action endpoint.");
@@ -241,7 +249,7 @@ class EstApi {
           { action: 'revoke-certificate', operationId: 'revokeEstCertificate' },
           { action: 'add-host-name', operationId: 'addEstHostName' },
           { action: 'remove-host-name', operationId: 'removeEstHostName' }
-        ] }
+        ] })
     ];
     log.debug("Leaving EstApi.buildRoutes().");
     return ROUTES;

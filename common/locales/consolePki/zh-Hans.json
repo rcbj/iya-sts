@@ -114,6 +114,7 @@
   "notAfterPlaceholder": "（生效时间 + 有效期）",
   "slowToGenerate": " — 生成较慢",
   "cannotSign": " — 仅主体密钥，不能签名",
+  "notForTls": " — TLS 客户端无法使用",
   "keyPair": "密钥对",
   "keyPairNote": "下一个证书所认证的密钥对 &mdash; 对于自签名配置文件，也是为它签名的密钥。它<strong>在这里、在本服务中</strong>生成，这是本页面与调试器页面唯一的本质区别：那个页面在浏览器中生成，因为它的全部承诺就是密钥永不离开浏览器；而本页面持有证书颁发机构，所以密钥属于负责签名的进程。两者使用同一个模块（<code>common/crypto_impl/key_material.js</code>），因此算法、PEM/JWK 转换和密钥库格式是完全相同的，而不只是相似。",
   "keyPairNoteTitle": "此密钥对从何而来",

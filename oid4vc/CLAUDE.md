@@ -1020,10 +1020,12 @@ ISO/IEC 18013-5:2021 section 9.3.1), because OpenID4VC HAIP 1.0 names it
 beside the SD-JWT VC and the conformance suite's HAIP verifier plan
 (`oid4vp-1final-verifier-haip-test-plan`) has an `iso_mdl` variant. rcbj's
 standing rule (spec compliance including the optional parts) made building it
-the answer rather than recording it as a gap. **This realm issues no mdoc**:
-the format is a row of `vc_verifier_config.ts`'s `FORMATS` with `configs: []`,
-the start's format list is the issuer's formats plus the Verifier's
-(`START_FORMATS`), and the issuer is untouched.
+the answer rather than recording it as a gap. **This realm issues an mdoc**
+(`IdentityCredentialMdoc`, #1862): `mso_mdoc`, COSE ES256 (`-7`) or ESP256
+(`-9`), proof still a `jwt` of ES256. The format is a row of
+`vc_verifier_config.ts`'s `FORMATS` whose `configs` names that configuration,
+and the start's format list is the issuer's formats plus the Verifier's
+(`START_FORMATS`).
 
 * **`vc_mdoc.ts` is the whole check**, a library the composition root builds
   after the codec. Its header lists the steps; the ones a reader would get
@@ -1032,7 +1034,9 @@ the start's format list is the issuer's formats plus the Verifier's
   IACA, and the document signer rotates (the suite mints a new one at run
   time) — which is why it is a setting of its own rather than more rows of
   `oid4vp.trustedIssuerCertificates`, whose certificates ARE the keys. Empty
-  trusts nobody.
+  trusts nobody except this realm's own IACA once one has been minted
+  (`GET /oid4vci/mdoc-iaca`). `VcMdoc.verify` itself does not append that
+  IACA; `verifyMdoc` and the status check do.
 * **Digests and the device signature are over the bytes RECEIVED.** The
   codec's decoder keeps every tag's encoding on `Tagged.raw`, and its encoder
   writes it back unchanged; re-encoding an IssuerSignedItemBytes or the
@@ -1062,11 +1066,26 @@ the start's format list is the issuer's formats plus the Verifier's
   `oid4vp.requireStatusReference` as for any foreign credential; the issuer
   is exempted by its ANCHOR's thumbprint in `oid4vp.statusOptionalIssuers`,
   the document signer's being useless for a key that rotates.
-* **Not for a sign-in or the Digital Credentials API**: a foreign mdoc names
-  no entry of this realm to sign in, and the DC API's transcript is a
-  different handover (B.2.6.2). A SIOPv2 `vp_token id_token` answer that
-  carries an mdoc over `direct_post.jwt` is refused (`answerSelfIssued()`
-  passes no `kid`); nothing asks for that combination.
+* **The authority is minted once per realm under a cluster claim**
+  (`mdoc_authority.ts`), and a process that loses the claim finds the
+  winner's pair through the keystore's held rows — certificates AND the
+  document signer's private key by the HELD row's kid. Until CI run #532 the
+  key was looked up through the kid of the caller's own key-set row, which
+  only the minting process has, so in every store-backed mode each loser
+  waited the whole 15 s (`STS-PKI-0288`) and minted a second authority, and
+  `GET /oid4vci/mdoc-iaca` timed out under `sts_route_inputs`. The requests
+  of one process share one mint (`inFlight`), as `credential_signer.js`'s
+  do. `tests/mdoc_authority_held.js` holds both.
+* **A sign-in of an mdoc this realm issued** (#1862): the register is keyed
+  by the base64url of `issuerAuth`'s `#6.24` payload, and the sign-in
+  requires the presented device key's thumbprint to be the one recorded.
+  It does not require an OIDC `sub`. A foreign mdoc still signs nobody in.
+  The Digital Credentials API (OpenID4VP Appendix A, ISO 18013-7 Annex C)
+  and post-quantum COSE ML-DSA signing of the Mobile Security Object stay
+  later. The verifier already offers `-48` and `-49`; that accept list is
+  unchanged. A SIOPv2 `vp_token id_token` answer that carries an mdoc over
+  `direct_post.jwt` is refused (`answerSelfIssued()` passes no `kid`);
+  nothing asks for that combination.
 * **An accepted mdoc records nobody** on `/admin/users`: it carries no
   subject (`verified.sub` is empty), which the funnel already treats as
   nothing to record.
@@ -1383,7 +1402,18 @@ it has to keep.
   signed AS the DID by a key its current version names, kept as `pending`
   for `PENDING_TTL_S` (600 s); then the new key, proved by the wallet's own
   did:jwk, did:key or thumbprint subject (never a did:web, never another
-  person's, never a key already in the version — `STS-VC-0170`). A new key
+  person's, never a key already in the version — `STS-VC-0170`, and never
+  a key already enrolled for this person as a sign-in key — `STS-VC-0178`,
+  #775: the published DID is its own subject and can sign in, and the
+  document does not publish a key the person already signs in with). **And
+  the other way round** (the review of #775, 2026-11-13): `siop.ts`'s
+  enrolment refuses, as a did:jwk, did:key or thumbprint subject, a key
+  ANY version of the person's published DIDs named (`STS-VC-0179`,
+  `person_did.publishedThumbprints()`, the person's own entry, reached
+  lazily through the `publishedKeys` dep) — every version, since none is
+  rewritten. A subject they already hold is not asked; a person who held
+  both before 9bf3187ce keeps both, and nothing reports it yet (a realm-wide
+  report would walk every holder: a follow-up). A new key
   without a live authorization is `STS-VC-0171`, at the start and at the
   finish. Both proofs are the new version's `authorizedBy`.
 * **`realm` CUSTODY** generates with `crypto.js`'s
@@ -1764,11 +1794,95 @@ its grace outlasts every credential lifetime (`common/signing_rotation.ts`).
 which after a rotation would have resolved to a key the credential was not
 signed with. The DID document and `/bbs/keys/<kid>` publish every live
 generation; `/bbs/keys/1` is kept as the name of the current one. The
-Verifier tries the generation the proof options name first, then the rest.
+Verifier checks a W3C derived proof under the generation its
+`verificationMethod` names by kid, and under no other (STS-VC-0184, #1878);
+it tries the pre-1.1 envelope against the named one first, then the rest.
 **Realms no longer share one BBS key**, which the header note in
 `vc_verifier.ts` about the issuer being disclosed already assumed was not
 needed to tell them apart.
 
+
+---
+
+## bbs-2023 IS W3C's CRYPTOSUITE (#1878, 2026-11-17, rcbj: "Bad to have things that are not spec compliant")
+
+**UNTIL 1.1.0 THIS SERVICE'S `bbs-2023` WAS ITS OWN FORMAT under the W3C
+name**: every canonical statement a BBS message, the header the proof
+options' N-Quads, the proofValue the raw signature, and a presentation an
+envelope `{ cryptosuite, proof, disclosedStatements, disclosedIndexes,
+proofOptions }` beside a raw BBS proof. Nothing else could verify what it
+issued, and it could verify nothing else; every test was a round trip through
+its own code, which is exactly how a private format passes.
+id-proto-debugger's wallet and Verifier had copied it (rcbj/id-proto-debugger
+#470, B1) and move with it.
+
+**`vc_bbs.ts` IS THE CRYPTOSUITE NOW**, W3C Data Integrity BBS Cryptosuites
+v1.0 (CRD 2026-09-10), baseline, step for step: Create Base Proof (3.3.1-2,
+serialized 3.2.1, `0xd95d02`), Add Derived Proof (3.3.3, 3.2.3, `0xd95d03`),
+Verify Derived Proof (3.3.4-5). Its generic steps — skolemize, selectJsonLd,
+canonicalize-and-group, label replacement — are `vc_ecdsa_sd.ts`'s (which
+exports two more of them for it); what is bbs-2023's own is the SHUFFLED
+label map (`b` + the rank of each label's HMAC), the header (proofHash ‖
+mandatoryHash), the two CBOR encodings (the label map compressed to
+integers) and the BBS calls, which are `common/crypto.js`'s door to
+`common/crypto_impl/bbs2023.js` (rule 3r). That file keeps the primitives,
+the Multikey and, READ ONLY, the old format. The at-risk features (headers
+0x04-0x09) are refused by name, not misread.
+
+* **The issuer** (`buildLdpVc()`) signs with mandatory pointers per
+  configuration (`oid4vci.ldpVcMandatoryPointers`,
+  `oid4vci.ldpVcDidMandatoryPointers`, `/issuer,/type,/validFrom,/validUntil`
+  by default — the three statements a sign-in needs, made mandatory rather
+  than left to the holder) and verifies its own base proof before handing it
+  out (`verifyBaseProof()`, which no section defines because no verifier is
+  ever given one). A pointer that names nothing refuses the issuance
+  (STS-VC-0180). **No `created`** (the privacy considerations; Digital
+  Bazaar drops it too) — so two issuances are told apart by `validFrom`, and
+  no two proofs are alike anyway: each draws its own HMAC key.
+* **The key** is vc-di-bbs 2.1.1's Multikey (`z`, base58btc, `0xeb01`,
+  96 bytes — `zUC7…` usually, `zUC6…` for a key whose first bytes are
+  low, so a test decodes it rather than matching a prefix, run #478), at
+  `/bbs/keys/<kid>` and in the DID document.
+  It was `u` and the raw bytes.
+* **The Verifier** (`verifyLdpVc()` → `verifyBbsRevealDocument()`) reads its
+  facts from the statements IT rebuilt from the reveal document, never from
+  a list the holder sent. A bare derived proof's presentation header must be
+  the nonce (its only replay protection); inside a VP — whose own proof binds
+  challenge and domain, B.1.3.2.5 — it may be the nonce or empty, never
+  anything else (STS-VC-0185).
+
+**THE TRANSITION IS rcbj's DECISION (#1878, 2026-11-17).** By default a
+realm issues and accepts only W3C bbs-2023, and the old envelope is refused
+BY NAME as the pre-W3C, non-standard format (STS-VC-0181), whatever it is
+labelled (a 1.0 wallet labels it `bbs-2023`). Credentials issued by 1.0
+cannot be presented; their holders need a reissue. **`oid4vc.bbs2023LegacyFormat`**
+(per realm, off; "add a flag to use the old format per realm") makes a realm
+USE the old format, which here means BOTH halves: it ISSUES `ldp_vc` in it
+(`bbs2023.legacyIssue()`, self-checked by `legacyVerifyBase()`, STS-VC-0183
+per credential) and ACCEPTS the envelope (`verifyLegacyBbsEnvelope()`,
+STS-VC-0182 per presentation), W3C presentations still accepted beside it.
+Both, because the only reason for the flag is a wallet that speaks only the
+old format, and such a wallet needs a credential it can derive from as much
+as a Verifier that reads what it derives; verify-only would serve nobody
+once the 1.0 credentials (30 days by default) expired. **The old format is
+never named `bbs-2023`**: the credential's proof says `iya-bbs-2023-legacy`,
+and so do the issuer metadata's `credential_signing_alg_values_supported`
+(`vciSigningAlgsFor()`) and the Verifier's `cryptosuite_values` (beside
+`bbs-2023`). A 1.0 wallet that checks the proof's label would not take such a
+credential: the price of that rule, and named in the flag's description.
+
+**THE TESTS ARE AGAINST WHAT NOBODY HERE WROTE** (`tests/vc_bbs2023.js`):
+the specification's TestVectors, byte for byte for everything but the BBS
+proof itself (randomized; the vectors' mocked random scalars could not be
+reproduced through `@digitalbazaar/bbs-signatures`' mock hook with either
+DST the drafts name, so B10 re-serializes the vector's own BBS proof with
+this file's label map and indexes and compares the whole proofValue), and
+Digital Bazaar's `@digitalbazaar/bbs-2023-cryptosuite` both ways — pinned by
+w3c/vc-di-bbs-test-suite's lockfile, in the tests image only. Two vector
+quirks are worth knowing: the `prc` set's `prCredUnsigned.json` at the top of
+TestVectors/ was edited after its intermediate values were made, so the test
+takes the unsigned document from `prc/addSignedSDBase.json`; and the
+vectors' base proofs carry `created`, so the test passes it.
 
 ---
 

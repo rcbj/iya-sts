@@ -248,7 +248,34 @@ const SCIM_TYPE = /^application\/scim\+json\b/;
 const DID_TYPE = /^application\/did\+json\b/;
 const SAML_TYPE = /^application\/samlmetadata\+xml\b/;
 const XML_TYPE = /^application\/xml\b/;
+
+// Whether a publicKeyMultibase is a bls12_381-g2-pub Multikey (vc-di-bbs
+// 2.1.1): `z`, then base58btc of 0xeb 0x01 and a 96-byte key (#1878).
+function bbsMultikey(value) {
+  log.debug("Entering bbsMultikey().");
+  const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  if (value.charAt(0) !== "z") {
+    log.debug("Leaving bbsMultikey(). Not base58btc.");
+    return false;
+  }
+  let n = BigInt(0);
+  for (const ch of value.slice(1)) {
+    const v = B58.indexOf(ch);
+    if (v < 0) {
+      log.debug("Leaving bbsMultikey(). Not base58.");
+      return false;
+    }
+    n = n * BigInt(58) + BigInt(v);
+  }
+  const hex = n.toString(16);
+  const ok = hex.length === 196 && hex.slice(0, 4) === "eb01";
+  log.debug("Leaving bbsMultikey(). " + ok);
+  return ok;
+}
 const TEXT_TYPE = /^text\/plain\b/;
+// WSDL 1.1 names no media type. application/wsdl+xml is the conventional one
+// GET /sts/metadata sends (#958).
+const WSDL_TYPE = /^application\/wsdl\+xml\b/;
 // OpenID Federation 1.1 section 9: an Entity Configuration's media type, and
 // 8.7.2's for the Historical Keys.
 const ENTITY_STATEMENT_TYPE = /^application\/entity-statement\+jwt\b/;
@@ -549,6 +576,12 @@ const DOCUMENTS = [
       const bad = [];
       if (d.type !== "Multikey") { bad.push("type is " + d.type); }
       if (!d.publicKeyMultibase) { bad.push("no publicKeyMultibase"); }
+      // vc-di-bbs 2.1.1 (#1878): base58btc of 0xeb01 and the 96-byte key,
+      // decoded here rather than matched by prefix — it begins zUC6 or
+      // zUC7, depending on the key's first bytes (run #478).
+      if (!bbsMultikey(String(d.publicKeyMultibase || ""))) {
+        bad.push("publicKeyMultibase is not a bls12_381-g2-pub Multikey");
+      }
       if (d.secretKeyMultibase) {
         bad.push("CARRIES secretKeyMultibase, and this endpoint needs no " +
                  "credential to read");
@@ -731,12 +764,106 @@ const DOCUMENTS = [
       log.debug("Leaving must().");
       return bad;
     } },
+  { family: "WS-Trust", spec: "WS-Trust 1.3", path: "/sts/metadata",
+    type: WSDL_TYPE, json: false, badCredential: "ignored",
+    // THE WSDL (#958): a port type per trust version. WS-MetadataExchange
+    // is POST /sts/mex, a SOAP request rather than a document. The signing
+    // certificate stays at /sts/cert. Since #1668 (rcbj on #1908) the
+    // message signature is an AsymmetricBinding under sp:Basic256Sha256 on
+    // eight ports and the IYA-STS suite on eight more. The encryption
+    // certificate as each port's endpoint identity is
+    // wstrust.advertiseEndpointIdentity, OFF BY DEFAULT (rcbj, 2026-11-19:
+    // WS-AddressingIdentity was never standardised), so by default no port
+    // carries one; sts_wstrust_metadata.js V5 turns it on.
+    must: function (text) {
+      log.debug("Entering must().");
+      const bad = [];
+      if (!/<wsdl:definitions[\s>]/.test(text)) {
+        bad.push("no wsdl:definitions");
+      }
+      if (!/wsu:Id="RequesterAuthentication"/.test(text)) {
+        bad.push("no requester policy");
+      }
+      if (!/wsu:Id="IssuedTokenTypes"/.test(text)) {
+        bad.push("no issued-type policy");
+      }
+      if (!/sp:UsernameToken/.test(text)) {
+        bad.push("no UsernameToken alternative");
+      }
+      // The document DENIES SAML 1.2 in a sentence. A substring ban would
+      // fail on that sentence. WssSamlV12 and AQ-RES are the advertisements.
+      if (!/There is no SAML 1\.2\./.test(text)) {
+        bad.push("does not say there is no SAML 1.2");
+      }
+      if (/WssSamlV12|AQ-RES/.test(text)) {
+        bad.push("advertises SAML 1.2 or AQ-RES");
+      }
+      if (!/<sp:Basic256Sha256\/>/.test(text) ||
+          !/iyasp:Basic256GcmRsaOaepSha256 xmlns:iyasp="urn:iya-sts:ws-securitypolicy:algorithm-suite:1"/
+            .test(text)) {
+        bad.push("does not name both algorithm suites");
+      }
+      if (/IncludeTimestamp/.test(text)) {
+        bad.push("binds the answer to a signed Timestamp");
+      }
+      if ((text.match(/<wsdl:port name="/g) || []).length !== 16 ||
+          (text.match(/<wsdl:port name="[^"]*IyaSuite"/g) || []).length !==
+            8) {
+        bad.push("not eight ports under each suite");
+      }
+      if (/addressingidentity|<wsid:Identity[\s>]|EndpointReference/
+        .test(text)) {
+        bad.push("a port names an endpoint identity by default");
+      }
+      if (!/location="[^"]*\/sts"/.test(text)) {
+        bad.push("the RST address is not /sts");
+      }
+      ["TrustMay2004", "TrustFeb2005", "Trust13", "Trust14"]
+        .forEach(function (name) {
+          if (text.indexOf('<wsdl:portType name="' + name + '">') < 0) {
+            bad.push("no port type " + name);
+          }
+        });
+      log.debug("Leaving must().");
+      return bad;
+    } },
+  { family: "WS-Trust", spec: "WS-Trust 1.3",
+    path: "/sts/metadata/capabilities", type: XML_TYPE, json: false,
+    badCredential: "ignored",
+    // THE TOKEN CAPABILITY EXTENSION (#958): every credential, every issued
+    // type and each pair, built from the running settings.
+    must: function (text) {
+      log.debug("Entering must().");
+      const bad = [];
+      if (!/<iya:TokenCapabilities[^>]*urn:iya-sts:metadata:token-capabilities:1/
+        .test(text)) {
+        bad.push("no iya:TokenCapabilities in version 1");
+      }
+      ["InputToken", "OutputToken", "Combination"].forEach(function (name) {
+        if (text.indexOf("<iya:" + name + " ") < 0) {
+          bad.push("no " + name);
+        }
+      });
+      log.debug("Leaving must().");
+      return bad;
+    } },
+  { family: "WS-Trust", spec: "WS-Trust 1.3",
+    path: "/sts/metadata/capabilities.xsd", type: XML_TYPE, json: false,
+    badCredential: "ignored",
+    must: function (text) {
+      log.debug("Entering must().");
+      const bad = [];
+      if (!/<xsd:schema[^>]*targetNamespace="urn:iya-sts:metadata:token-capabilities:1"/
+        .test(text)) {
+        bad.push("not the capability schema");
+      }
+      log.debug("Leaving must().");
+      return bad;
+    } },
   { family: "WS-Trust", spec: "WS-Trust 1.3", path: "/sts/cert",
     type: TEXT_TYPE, json: false, badCredential: "ignored",
-    // THE ONLY "METADATA" THIS FAMILY HAS. WS-Trust's own discovery is
-    // WS-MetadataExchange, which this service does not implement, so the
-    // certificate a client verifies issued tokens against is the whole of
-    // what it can read before it sends anything.
+    // THE SIGNING CERTIFICATE. The WSDL is /sts/metadata. This row stays
+    // the certificate a client verifies issued tokens against.
     must: function (text) {
       log.debug("Entering must().");
       log.debug("Leaving must().");

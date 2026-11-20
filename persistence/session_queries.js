@@ -42,20 +42,35 @@ const SUBJECT_ROWS = 'SELECT key, subject_key, last_seen_at, started_at ' +
   'FROM sts_sessions WHERE realm = $1 AND chosen AND subject_key <> \'\' ' +
   'AND (subject_key, key) > ($2, $3) ORDER BY subject_key, key LIMIT 500';
 
-// ONLY THE SUBJECTS OVER THE CAP (2026-10-21), for the session sweep's shed:
-// `session.subjectRows` paged every chosen session of the realm, 500 at a
-// time and each page a synchronous question — 634 of them a sweep on
-// 8081's 317,000 sessions, on a request worker — to find the handful of
-// people holding more than `authn.maxSessionsPerSubject`. The store groups
-// them now, through the `sts_sessions_subject` index, and answers every row
-// of at most $3 such subjects, so each subject's oldest is chosen from all
-// of its rows. The predicate is `session.subjectRows`' own.
+// ONE BASE64URL CHARACTER OF THE SUBJECT KEY PER SWEEP (#876). #808 stopped
+// paging every chosen session (634 questions a sweep on 8081's 317,000),
+// but the GROUP BY still counted every chosen row before LIMIT, and at 1M
+// sessions that did not answer within authn.sessionReadTimeoutMs
+// (STS-AUTHN-0338, the 2026-10-22 soak). A subject key is base64url, so its
+// first character is one of SUBJECT_CAP_BANDS. Each sweep asks one. The
+// range is COLLATE "C" so it walks sts_sessions_subject_band; the database
+// collation does not order base64url as ASCII and cannot use that index.
+// min(subject_key) is the group's key in the column's own collation, so the
+// outer IN can use sts_sessions_subject. The band is also on the outer
+// range, so a plan that does not is still one character of the realm.
+// The per-insert shed still ends one oldest row at sign-in. This is the
+// catch-up for a lowered cap, and a full pass is 64 sweeps.
 const OVER_CAP_ROWS = 'SELECT key, subject_key, last_seen_at, started_at ' +
   'FROM sts_sessions WHERE realm = $1 AND chosen AND subject_key <> \'\' ' +
-  'AND subject_key IN (SELECT subject_key FROM sts_sessions WHERE ' +
-  'realm = $1 AND chosen AND subject_key <> \'\' GROUP BY subject_key ' +
-  'HAVING count(*) > $2 ORDER BY subject_key LIMIT $3) ' +
-  'ORDER BY subject_key, key';
+  'AND subject_key COLLATE "C" >= $2 AND subject_key COLLATE "C" < $3 ' +
+  'AND subject_key IN (SELECT min(subject_key) FROM sts_sessions WHERE ' +
+  'realm = $1 AND chosen AND subject_key <> \'\' AND ' +
+  'subject_key COLLATE "C" >= $2 AND subject_key COLLATE "C" < $3 ' +
+  'GROUP BY subject_key COLLATE "C" HAVING count(*) > $4 ' +
+  'ORDER BY subject_key COLLATE "C" LIMIT $5) ORDER BY subject_key, key';
+
+// The 64 characters of base64url, in ASCII order. keyedDigest is
+// HMAC-SHA256 in base64url, so a subject key's first character is one of
+// these. A band's exclusive upper bound is the next code point (`.` after
+// `-`, `{` after `z`). Nothing this service writes falls between them.
+const SUBJECT_CAP_BANDS = '-0123456789' +
+  'ABCDEFGHIJKLMNOPQRSTUVWXYZ_' +
+  'abcdefghijklmnopqrstuvwxyz';
 
 const CHILDREN = 'SELECT key FROM sts_sessions WHERE realm = $1 AND ' +
   'parent_key = $2';
@@ -132,7 +147,10 @@ const LIVE_PAGE = 'SELECT key FROM sts_sessions WHERE ' + LIVE_ROWS +
 //   * `= ANY($2::text[])` is `IN ($2)`.
 //   * `session.overCapRows`' subquery carries a LIMIT, which MariaDB refuses
 //     inside `IN (...)`; it is wrapped in a derived table, which is the same
-//     set of subjects.
+//     set of subjects. The same statement bounds that aggregate to one
+//     first character of `subject_key` (#876). The column is
+//     `utf8mb4_nopad_bin`, so the range uses `(realm, subject_key,
+//     last_seen_at)` and carries no COLLATE.
 //   * `$6::int` is `$6`: the value is a number already.
 //   * the epoch of `written_at` is UNIX_TIMESTAMP's, in the session's UTC.
 //
@@ -163,11 +181,12 @@ const MARIADB = {
     'subject_key, `key` LIMIT 500',
   'session.overCapRows': 'SELECT `key`, subject_key, last_seen_at, ' +
     'started_at FROM sts_sessions WHERE realm = $1 AND chosen AND ' +
-    'subject_key <> \'\' AND subject_key IN (SELECT over_cap.subject_key ' +
-    'FROM (SELECT subject_key FROM sts_sessions WHERE realm = $1 AND ' +
-    'chosen AND subject_key <> \'\' GROUP BY subject_key HAVING ' +
-    'count(*) > $2 ORDER BY subject_key LIMIT $3) AS over_cap) ' +
-    'ORDER BY subject_key, `key`',
+    'subject_key <> \'\' AND subject_key >= $2 AND subject_key < $3 ' +
+    'AND subject_key IN (SELECT over_cap.subject_key FROM (SELECT ' +
+    'subject_key FROM sts_sessions WHERE realm = $1 AND chosen AND ' +
+    'subject_key <> \'\' AND subject_key >= $2 AND subject_key < $3 ' +
+    'GROUP BY subject_key HAVING count(*) > $4 ORDER BY subject_key ' +
+    'LIMIT $5) AS over_cap) ORDER BY subject_key, `key`',
   'session.children': 'SELECT `key` FROM sts_sessions WHERE realm = $1 AND ' +
     'parent_key = $2',
   'session.credential': 'SELECT `key` FROM sts_sessions WHERE realm = $1 ' +
@@ -250,7 +269,7 @@ function buildPostgres(name, args) {
     values = [a[0], a[1], a[2]];
   } else if (name === 'session.overCapRows') {
     text = OVER_CAP_ROWS;
-    values = [a[0], a[1], a[2]];
+    values = [a[0], a[1], a[2], a[3], a[4]];
   } else if (name === 'session.children') {
     text = CHILDREN;
     values = [a[0], a[1]];
@@ -382,7 +401,30 @@ function answerOf(name, rows) {
   throw new Error('session_queries: unknown query "' + name + '"');
 }
 
+/**
+ * The subject-key band one sweep asks (#876). The slot is the wall clock
+ * divided by `authn.sessionSweepS`, so two workers agree without a stored
+ * cursor. A sweep interval below one second is read as one second.
+ *
+ * @param {number} nowMs
+ * @param {number} sweepS
+ * @returns {{ lo: string, hi: string }}
+ */
+function subjectCapBand(nowMs, sweepS) {
+  log.debug("Entering subjectCapBand().");
+  const seconds = Number(sweepS);
+  const sweepMs = (seconds >= 1 ? Math.floor(seconds) : 1) * 1000;
+  const now = Number(nowMs);
+  const at = Number.isFinite(now) && now >= 0 ? now : 0;
+  const slot = Math.floor(at / sweepMs) % SUBJECT_CAP_BANDS.length;
+  const lo = SUBJECT_CAP_BANDS.charAt(slot);
+  const hi = String.fromCharCode(lo.charCodeAt(0) + 1);
+  log.debug("Leaving subjectCapBand(). " + lo);
+  return { lo: lo, hi: hi };
+}
+
 module.exports = {
   build: build,
-  answerOf: answerOf
+  answerOf: answerOf,
+  subjectCapBand: subjectCapBand
 };

@@ -20,14 +20,16 @@
 //   B. THE VIEW is the ambient realm's: its id, its preview's address
 //      under its own prefix, the settings block.
 //   C. SAVE writes what it names and refuses as the core refuses, with the
-//      core's codes (STS-AUTHN-0544, STS-CORE-0004); `action` and the
-//      gate's `actor` are not settings.
+//      core's codes (STS-AUTHN-0544, STS-CORE-0004); `action` is not a
+//      setting.
 //   D. AN UNKNOWN ACTION names all three, `logo` among them (STS-API-0038).
 //   E. THE LOGO: the bytes from the raw parser and from beside the text
 //      parser's string, the alternative text required (0548), a file that
 //      is no image 415 (0545), one over the cap 413 (0546), and the stored
 //      logo's address under the realm's prefix.
-//   F. REMOVE-LOGO, twice: the second has nothing to remove.
+//   F. REMOVE-LOGO, twice: the second has nothing to remove, and the row
+//      the first writes names the gate's caller, which the act is handed
+//      beside the body and never in it (rcbj on #1579, 2026-11-11).
 //   G. THE PAGE: four tabs, the colour inputs named for the settings, the
 //      contrast drawn against AA, the upload a multipart form, the preview
 //      a GET form to the realm's preview in a new tab, the logo drawn by
@@ -221,14 +223,14 @@ function sectionC(t, rows) {
   const saved = call(rows[2], { params: { action: 'save' }, body:
     JSON.stringify({ 'branding.layout': 'split',
                      'branding.accentColor': '#0B5394',
-                     'branding.displayName': 'Example Corp',
-                     actor: 'carol' }) });
+                     'branding.displayName': 'Example Corp' }) },
+                    'carol');
   const after = call(rows[0], {}).body;
   t.check(saved.status === 200 && saved.body.ok === true &&
           after.layout === 'split' && after.colours.accent === '#0b5394' &&
           after.displayName === 'Example Corp' && after.customised === true,
-          'C1. a save writes what it names, in this realm, and the gate\'s ' +
-          'actor is not a setting', JSON.stringify(saved.body));
+          'C1. a save writes what it names, in this realm',
+          JSON.stringify(saved.body));
   const low = call(rows[2], { params: { action: 'save' }, body:
     JSON.stringify({ 'branding.textColor': '#eeeeee' }) });
   t.check(low.status === 400 && low.code === 'STS-AUTHN-0544' &&
@@ -295,7 +297,11 @@ function sectionE(t, rows) {
 function sectionF(t, rows) {
   log.debug("Entering sectionF().");
   const first = call(rows[2], { params: { action: 'remove-logo' },
-                                body: '{}' });
+                                body: '{}' }, 'dave');
+  const removedRow = require('../common/audit').list().filter(function (r) {
+    return r.action === 'branding.logo' &&
+      /the logo was removed/.test(String(r.summary || ''));
+  })[0] || null;
   const second = call(rows[2], { params: { action: 'remove-logo' },
                                  body: '{}' });
   t.check(first.status === 200 && first.body.removed === true &&
@@ -303,6 +309,8 @@ function sectionF(t, rows) {
           call(rows[0], {}).body.logo === null,
           'F1. the logo is removed, and a second removal finds none',
           JSON.stringify([first.body, second.body]));
+  t.equal(removedRow && removedRow.actor, 'dave',
+          'F2. the removal\'s row names the gate\'s caller');
   log.debug("Leaving sectionF().");
 }
 

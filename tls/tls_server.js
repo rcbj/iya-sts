@@ -5521,6 +5521,14 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
                                  // Which certificate, as a thumbprint the
                                  // event fingerprints again (#62 P0).
                                  { request: req,
+                                   // The row on the person's
+                                   // Authentications tab: the protocol and
+                                   // the credential, not the listener's
+                                   // sentence and the sign-in screen's
+                                   // password (rcbj, 2026-11-16).
+                                   protocol: 'TLS',
+                                   method: 'client certificate (GET ' +
+                                           '/tls/sign-in)',
                                    credential: {
                                      kind: 'certificate',
                                      id: cert.fingerprint256 || '' } });
@@ -5878,9 +5886,11 @@ function screenCertificateHolder(req) {
 // What it now also does is get WRITTEN DOWN. `/admin/users` answers "who has
 // this service seen, in an interaction that succeeded", and a mutual-TLS client
 // that verified is exactly that — leaving it out made the console's answer
-// wrong by omission, and it is the one family whose identity the embedded
-// directory can seed an entry for verbatim, because a certificate subject is
-// already a DN. So this calls `stats.recordAuthentication()`, the same funnel
+// wrong by omission. The actor is the mapped person (`urn:sts:person:`, or a
+// service account's `urn:sts:sa:` (#1827), on a leaf this realm issued, or
+// the one entry storing an outside leaf). Filing
+// the subject DN instead put the row on a name the person's page does not
+// ask for. So this calls `stats.recordAuthentication()`, the same funnel
 // the other thirteen families pass through, and the LDAP entry follows from the
 // observer that is already on it rather than from a second call here.
 //
@@ -5911,6 +5921,22 @@ function recordClientCertificate(socket, mode, revocation) {
   // one — the console lists identities that got somewhere. It IS a refusal,
   // and gets the audit row a refusal gets, with its code.
   if (revocation && revocation.refused) {
+    // The holder's refused attempt (rcbj, 2026-11-16), where the
+    // certificate names a person: the row below names no one.
+    let named = null;
+    try {
+      named = issuedIdentityOf(socket, { stored: true });
+    } catch (e) {
+      log.debug('Caught in recordClientCertificate(): ' +
+                ((e && e.message) || e));
+      named = null;
+    }
+    if (named && named.accepted && named.kind === 'person' &&
+        named.username) {
+      recordRefusedCertificate(named, 'client certificate on the main ' +
+        'port (' + MAIN_PORT + ')', revocation.status === 'revoked'
+        ? 'STS-PKI-0118' : 'STS-PKI-0119', 'revoked', true);
+    }
     audit.failure(revocation.status === 'revoked' ? 'STS-PKI-0118' :
                   'STS-PKI-0119', {
       protocol: 'TLS', channel: 'tls',
@@ -5938,21 +5964,34 @@ function recordClientCertificate(socket, mode, revocation) {
   }
   // An application's certificate is not a person's authentication, for
   // `startCertificateSession()`'s reason; filing it on /admin/users would put
-  // an application in the register of people.
+  // an application in the register of people. A stored application's
+  // certificate is the same refusal, once the lookup below has named it.
   if (gated.issuedHere && gated.accepted && gated.kind === 'application') {
     log.debug('Leaving recordClientCertificate(). An application.');
     return null;
   }
-  // AN OUTSIDE AUTHORITY'S CERTIFICATE IS NOT RECORDED HERE (#1061). Until
-  // rcbj's decision it was recorded under its subject, and the observer
-  // SEEDED a directory entry for it (`certificatePlan()`) — an entry created
-  // out of a name somebody else's authority chose. It is an identity now
-  // only as the one entry storing it, in a realm, and a handshake has no
-  // realm: `GET /tls/sign-in` and every other door resolve it where the
-  // request names one, and the sign-in they start is the authentication.
+  // THE ACTOR IS THE MAPPED PERSON, NOT THE SUBJECT. Recording the RFC 4514
+  // subject made `identityOf()` keep that DN whole, so the Authentication
+  // attempts tab for the username never listed the row. A remote PEP's
+  // mutual TLS is this handshake and no later sign-in, which is why that
+  // tab stayed empty while the info line said the certificate authenticated.
+  //
+  // AN OUTSIDE CERTIFICATE IS THE ONE ENTRY STORING IT (#1061). Recording
+  // its SUBJECT seeded `cn=<CN>,ou=users` through `certificatePlan()`.
+  // Recording the mapped username does not: `namePlan()` files the person.
+  // The lookup is the ambient realm, which at a handshake is the default
+  // realm — a handshake still has no request — so a certificate stored only
+  // in another realm stays the door's to record. Nothing stored, or stored
+  // twice, or stored on an application, is still not an authentication here.
+  let holder = gated;
   if (!gated.issuedHere) {
-    log.debug('Leaving recordClientCertificate(). An outside certificate; ' +
-              'its doors resolve it.');
+    holder = issuedIdentityOf(socket, { stored: true });
+  }
+  if (!(holder && holder.accepted && holder.kind === 'person' &&
+        holder.username)) {
+    log.debug('Leaving recordClientCertificate(). ' +
+              (gated.issuedHere ? 'Not a person.'
+                : 'An outside certificate stored on no one person.'));
     return null;
   }
   let cert = null;
@@ -5984,9 +6023,14 @@ function recordClientCertificate(socket, mode, revocation) {
     : '';
   try {
     // IN THE CERTIFICATE'S REALM, so the directory entry the observer seeds is
-    // in the subtree of the realm whose authority issued it.
-    inCertificateRealm(gated, function () {
-      recordCertificateAuthentication(subject, common, cert, mode, revocation);
+    // in the subtree of the realm whose authority issued it. A stored
+    // certificate's realm is the ambient one the lookup just asked.
+    // `username` (#33): a person's certificate issued here is filed on the
+    // entry its holder subject names NOW, so a rename does not make the CN
+    // a new person (see certificatePlan() in ldap_server.js).
+    inCertificateRealm(holder, function () {
+      recordCertificateAuthentication(holder.username, subject, common, cert,
+                                      mode, revocation, holder.issuedHere);
     });
   } catch (e) {
     // Same reason as the read above, and one more: the console and the
@@ -5998,42 +6042,74 @@ function recordClientCertificate(socket, mode, revocation) {
     log.debug('Leaving recordClientCertificate(). The recording threw.');
     return null;
   }
-  log.info('tls: ' + subject + ' presented a client certificate that ' +
-           'verified on ' +
-           'the ' + mode + ' listener. It is recorded in the admin ' +
-           'console and the directory has an entry for it. The SIGN-IN is a ' +
+  log.info('tls: ' + holder.username + ' presented a client certificate ' +
+           'that verified on the ' + mode + ' listener (subject ' + subject +
+           '). It is recorded against that person. The SIGN-IN is a ' +
            'separate act and startCertificateSession() performs it on the ' +
            'request, because a cookie needs a response to be written on.');
   log.debug('Leaving recordClientCertificate(). Recorded.');
   return subject;
 }
 
+// A PERSON'S CERTIFICATE REFUSED (rcbj, 2026-11-16): the
+// `authentication.refused` row their Authentications tab lists, in the
+// certificate's realm. It counts nothing and creates nobody, and it never
+// throws: bookkeeping must not break a connection.
+function recordRefusedCertificate(identity, method, code, reason,
+                                  codedElsewhere) {
+  log.debug('Entering recordRefusedCertificate().');
+  try {
+    inCertificateRealm(identity, function () {
+      stats.recordRefusedAuthentication({ presented: identity.username,
+        protocol: 'TLS', method: method, errorCode: code,
+        codedElsewhere: !!codedElsewhere, channel: 'tls',
+        note: reason });
+    });
+  } catch (e) {
+    log.debug('Caught in recordRefusedCertificate(): ' +
+              ((e && e.message) || e));
+    // Logged and dropped, for the reason above.
+  }
+  log.debug('Leaving recordRefusedCertificate().');
+}
+
 // The authentication itself, split out of `recordClientCertificate()` so it
 // can run inside the certificate's realm. It may throw; its caller catches.
-function recordCertificateAuthentication(subject, common, cert, mode,
-                                         revocation) {
+// `username` is the mapped person, and the holder name `certificatePlan()`
+// files on (#33). `subject` is the RFC 4514 DN, kept in the note and — for a
+// leaf this realm issued — on the certificate the directory merges onto that
+// person. An outside leaf passes no certificate object: `autoCreateUser()`
+// treats one as "the identity is this subject" and `certificatePlan()` would
+// file the outside CN.
+function recordCertificateAuthentication(username, subject, common, cert,
+                                         mode, revocation, issuedHere) {
   log.debug('Entering recordCertificateAuthentication().');
-  stats.recordAuthentication({
-    presented: subject,
+  const detail = {
+    presented: username,
     protocol: 'TLS',
     method: 'client certificate on the main port (' + MAIN_PORT + ')',
     // The certificate subject, RFC 4514, which is what an application's
-    // oauthTlsClientAuthSubjectDn holds. The attempts tab matches that.
-    // Not client_id: this sighting is the certificate, and the token
-    // endpoint records its own client_id when one authenticated there.
+    // oauthTlsClientAuthSubjectDn holds. That application's attempts tab
+    // matches this field. Not client_id: the token endpoint records its
+    // own client_id when a client authenticated there. The person's tab
+    // matches `presented`, which is the username.
     application: subject,
-    note: 'the chain verified against one of the ' + anchors.length +
+    note: 'subject ' + subject +
+      (common ? ' (CN ' + common + ')' : '') +
+      '. The chain verified against one of the ' + anchors.length +
       ' anchor(s) in this service\'s truststore, and ' +
       (revocation && revocation.checked
         ? 'its revocation was consulted (' + revocation.policy + ', ' +
           revocation.status + ')'
         : 'NO REVOCATION WAS CHECKED (pki.revocationCheck is off)') +
-      '. Since 2026-09-05 a sign-on session is started for the holder, so ' +
-      'a global sign-out can end it; no token is issued.',
+      '. A sign-on session, where one is started, is a separate act; no ' +
+      'token is issued here.'
+  };
+  if (issuedHere) {
     // Both DNs in RFC 4514 form, which is not the form dnToString() renders
-    // for a reader — see dnRfc4514(). These two go into a DIRECTORY, and
-    // that is the only form a directory takes.
-    certificate: {
+    // for a reader — see dnRfc4514(). The directory merges these onto the
+    // person the CN already names.
+    detail.certificate = {
       subject: subject,
       commonName: common,
       issuer: dnRfc4514(cert.issuer),
@@ -6041,9 +6117,14 @@ function recordCertificateAuthentication(subject, common, cert, mode,
       validFrom: cert.valid_from || '',
       validTo: cert.valid_to || '',
       fingerprint256: cert.fingerprint256 || '',
-      email: emailOf(cert)
-    }
-  });
+      email: emailOf(cert),
+      // The entry this certificate's holder has now, by name (#33). The
+      // actor above is that same username. An outside leaf sends no
+      // certificate object, so this field is not how one is filed.
+      holder: String(username || '')
+    };
+  }
+  stats.recordAuthentication(detail);
   log.debug('Leaving recordCertificateAuthentication().');
 }
 
@@ -6655,6 +6736,35 @@ function answerCertificateSignIn(req, res) {
         errorCodes.mark(res, session.refusedAsStored === 'STORED_TWICE'
           ? 'STS-TLS-0055' : 'STS-TLS-0054');
       }
+      // REFUSED ON REVOCATION, ON THE AUDIT LOG OF THE REALM ASKED (#34,
+      // #38, 2026-11-15). Nothing marked it, so it was a log line only:
+      // STS-PKI-0119 (the status could not be established under hard-fail)
+      // and STS-PKI-0189 (RFC 9608 noRevAvail beside a distribution point)
+      // reached no audit row at all, and STS-PKI-0118 only the handshake's
+      // row, written in the default realm because a handshake has no realm.
+      // Marked here, under the revocation verdict's own code, the call log
+      // writes the refusal's row in the realm this request named, as it
+      // does for STS-TLS-0054 above. The answer is unchanged: 200,
+      // `session.refusedOnRevocation`.
+      if (session.refusedOnRevocation) {
+        errorCodes.mark(res, errorCodes.codeOf(revocation) ||
+          (revocation && revocation.status === 'revoked' ? 'STS-PKI-0118'
+                                                         : 'STS-PKI-0119'));
+      }
+      // THE REFUSED ATTEMPT ON THE HOLDER'S PAGE (rcbj, 2026-11-16): a
+      // verified certificate naming a person that started no session — a
+      // revocation, a second factor owed, the issuance policy — is that
+      // person's refused attempt. A browser already signed in (`id`) is not
+      // refused, and a certificate naming nobody is nobody's attempt.
+      if (!session.started && !session.id && identity &&
+          identity.kind === 'person' && identity.username) {
+        recordRefusedCertificate(identity, 'client certificate (GET ' +
+          '/tls/sign-in)', errorCodes.codeOf(res) || 'STS-TLS-0060',
+          session.refusedOnRevocation ? 'revoked' : 'no-session',
+          // The request's own row carries a code only when one was marked;
+          // otherwise this row is the one that does.
+          !!errorCodes.codeOf(res));
+      }
       const presented = !!(req.socket && req.socket.getPeerCertificate &&
                            req.socket.getPeerCertificate().raw &&
                            req.socket.getPeerCertificate().raw.length);
@@ -6736,6 +6846,39 @@ function answerCertificateSignIn(req, res) {
   log.debug('Leaving answerCertificateSignIn().');
 }
 
+// THE LISTENER'S CHAIN AS ONE PEM BUNDLE: every leaf the main port presents,
+// their issuers, and the anchors a client installs (the argument is inside
+// `GET /tls/server-certificate`, which answers it). A remote PEP's reverse
+// proxy pulls the same bundle (#1760, `realm.tlsCaChain`), so the two cannot
+// disagree.
+/**
+ * The PEM bundle `GET /tls/server-certificate` publishes: leaves, chain,
+ * anchors.
+ *
+ * @returns the PEM text
+ */
+function listenerChainPem() {
+  log.debug("Entering listenerChainPem().");
+  const chain = [];
+  SERVER_CERTIFICATES.forEach(function (one) {
+    (one.chainPem || []).forEach(function (pemText) {
+      if (chain.indexOf(pemText) < 0) {
+        chain.push(pemText);
+      }
+    });
+  });
+  const pem = SERVER_CERTIFICATES.map(function (one) {
+    return one.certPem;
+  }).concat(chain).concat(trustAnchorPems().filter(function (anchorPem) {
+    // The self-signed case answers the leaf here, and it is already above.
+    return SERVER_CERTIFICATES.every(function (one) {
+      return one.certPem !== anchorPem;
+    });
+  })).join('');
+  log.debug("Leaving listenerChainPem().");
+  return pem;
+}
+
 app.get('/tls/server-certificate', function (req, res) {
   log.debug('Entering GET /tls/server-certificate.');
   // no-store for the same reason every document describing the signing key
@@ -6764,22 +6907,7 @@ app.get('/tls/server-certificate', function (req, res) {
   // THE LEAVES STAY FIRST. `tests/tools/trust.js` reads the first certificate
   // in this document to compute the SPKI pin the browser job uses, and a
   // reader looking for "the server certificate" should find it at the top.
-  const chain = [];
-  SERVER_CERTIFICATES.forEach(function (one) {
-    (one.chainPem || []).forEach(function (pemText) {
-      if (chain.indexOf(pemText) < 0) {
-        chain.push(pemText);
-      }
-    });
-  });
-  const pem = SERVER_CERTIFICATES.map(function (one) {
-    return one.certPem;
-  }).concat(chain).concat(trustAnchorPems().filter(function (anchorPem) {
-    // The self-signed case answers the leaf here, and it is already above.
-    return SERVER_CERTIFICATES.every(function (one) {
-      return one.certPem !== anchorPem;
-    });
-  })).join('');
+  const pem = listenerChainPem();
   res.status(200).type('text/plain').set('Cache-Control', 'no-store')
      .send(pem);
   log.debug('Leaving GET /tls/server-certificate. ' +
@@ -7017,7 +7145,13 @@ function connectionView(req) {
     },
     clientCertificate: {
       presented: presented,
+      // `verified` is the handshake's verdict AND NOT REFUSED ON REVOCATION
+      // (#37, 2026-11-15) — settled once the revocation verdict is in,
+      // below. It was the handshake's alone, so a revoked certificate the
+      // main port's doors refuse read `verified: true` here.
+      // `handshakeVerified` keeps the handshake's own answer.
       verified: presented && socket.authorized === true,
+      handshakeVerified: presented && socket.authorized === true,
       authorizationError: presented && socket.authorizationError
         ? String(socket.authorizationError) : null,
       certificate: presented ? describeCertificate(peer, 0) : null,
@@ -7031,6 +7165,7 @@ function connectionView(req) {
         why: identity.why || null
       } : null,
       revocation: null,
+      revocationStatus: null,
       signIn: '/tls/sign-in',
       note: presented
         ? 'What this connection carried. Verified means a chain to an anchor ' +
@@ -7104,8 +7239,39 @@ function connectionView(req) {
   log.debug('Leaving connectionView(). The revocation verdict follows.');
   return checkedSocket(socket).then(function (verdict) {
     view.clientCertificate.revocation = verdict || null;
+    view.clientCertificate.revocationStatus = revocationStatusOf(verdict);
+    if (verdict && verdict.refused) {
+      view.clientCertificate.verified = false;
+    }
     return view;
   });
+}
+
+// ---------------------------------------------------------------------------
+// THE REVOCATION VERDICT IN THREE WORDS (#37, 2026-11-15), beside the whole
+// verdict at `revocation`: its `status`, whether the policy `refused` the
+// certificate on it — what `GET /tls/sign-in` and every door reading the
+// certificate act on — the `policy`, and the `source` that decided: the
+// list or responder that named it revoked, else the leaf's own link's
+// (`crl`, `ocsp`, `register`, ...), and `''` where nothing was consulted.
+// ---------------------------------------------------------------------------
+function revocationStatusOf(verdict) {
+  log.debug('Entering revocationStatusOf().');
+  if (!verdict) {
+    log.debug('Leaving revocationStatusOf(). No verdict.');
+    return null;
+  }
+  const links = Array.isArray(verdict.links) ? verdict.links : [];
+  const decided = verdict.revoked && verdict.revoked.source
+    ? String(verdict.revoked.source)
+    : (links.length && links[0] && links[0].source
+      ? String(links[0].source) : '');
+  log.debug('Leaving revocationStatusOf(). ' + verdict.status);
+  return { status: String(verdict.status || ''),
+           refused: verdict.refused === true,
+           checked: verdict.checked === true,
+           policy: String(verdict.policy || ''),
+           source: verdict.status === 'unchecked' ? '' : decided };
 }
 
 // ---------------------------------------------------------------------------
@@ -7336,6 +7502,8 @@ module.exports = {
   // leaf of the same TLS Issuing CA now, and this is where that is visible.
   // Every leaf the main port presents, as the socket presents it (#248).
   presentedCertificatePems: presentedCertificatePems,
+  // The listener's chain as one PEM bundle (#1760).
+  listenerChainPem: listenerChainPem,
   /**
    * Returns every certificate the TLS sockets present, with its chain and
    * nothing private.

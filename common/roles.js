@@ -118,7 +118,8 @@
 
 const ModelTables = require('./model_tables');
 const DomainClasses = require('./domain_classes');
-const { log } = require('./helpers');
+const helpers = require('./helpers');
+const { log } = helpers;
 const config = require('./config');
 // The error-code registry. A LEAF that requires nothing here, so this file
 // stays one (the header argues why that matters). A refusal's code is marked on
@@ -238,14 +239,38 @@ const BUILT_IN = [
   // refused — which is the whole point of resolving the DN rather than
   // stopping at the handshake.
   // -------------------------------------------------------------------------
-  { name: 'REMOTE_PEPS',
+  // **AND IT AUTHORIZES ONE PERMISSION SINCE #1827 (rcbj, 2026-11-16)**:
+  // `xacml:pep-audit`, the scope `POST /admin-api/pep-audit` takes, by
+  // which a remote PEP pushes the records of the decisions it made to this
+  // service's audit log. rcbj: "Every log event pushed to iya-sts must be
+  // through an authenticated request on the mgmt API. Tie access to the
+  // built in group of remote PEPs." So the role that already says which
+  // enforcement points may pull the policy is the one that says which may
+  // write their decisions here, asked at issuance and again on every call
+  // (held ∩ carried, `role_permissions.ts`), exactly as the owner roles
+  // authorize theirs. A PEP taken out of the group is refused at its next
+  // push, whatever token it still holds.
+  //
+  // **AND A SECOND SINCE THE PEP'S TOKEN CREDENTIAL (#1827's follow-up,
+  // rcbj-approved, 2026-11-16)**: `xacml:pep`, the scope a remote PEP's
+  // DPoP-bound access token for `/xacml/pep/*` and `POST /xacml/pip`
+  // carries in place of its client certificate. So the row names a LIST,
+  // and `AUTHORIZING_BUILT_INS` below carries one `{ name, permission }`
+  // per pair: a reader asking "which built-in role authorizes this
+  // permission" reads the same rows it did.
+  { name: 'REMOTE_PEPS', permissions: ['xacml:pep-audit', 'xacml:pep'],
     what: 'A remote XACML Policy Enforcement Point: whoever is a member of ' +
           'the group named by `roles.remotePepGroup` (default ' +
           '"remote-peps"). It is what `/xacml/pep/register`, ' +
           '`/xacml/pep/policies` and `/xacml/pep/heartbeat` require, and the ' +
           'party that holds it is normally a client-certificate DN rather ' +
           'than a person — the certificate says WHO, and this group says ' +
-          'whether they may.',
+          'whether they may. It authorizes the xacml:pep-audit permission: ' +
+          'pushing the records of the decisions the PEP made to this ' +
+          'service\'s audit log, through POST /admin-api/pep-audit, ' +
+          'and nothing else on /admin-api; and the xacml:pep permission: ' +
+          'reaching /xacml/pep/* and POST /xacml/pip on a DPoP-bound ' +
+          'access token instead of a client certificate.',
     holds: function (who) {
       log.debug("Entering holds().");
       const wanted = remotePepGroupName().toLowerCase();
@@ -409,16 +434,34 @@ const BUILT_IN = [
     } }
 ];
 
-// THE BUILT-IN ROLES THAT AUTHORIZE A PERMISSION (#607): the two owner roles.
-// Derived from the table, as `BUILT_IN_NAMES` is.
+// THE BUILT-IN ROLES THAT AUTHORIZE A PERMISSION: the two owner roles (#607)
+// and, since #1827, REMOTE_PEPS. Derived from the table, as `BUILT_IN_NAMES`
+// is. Every reader that asks "which permissions does a built-in role
+// authorize" reads this list; `OWNER_ROLES` below is the two owner roles
+// alone, for the readers that ask about OWNING something — a person holds
+// those by owning, and REMOTE_PEPS by being in a group, so one list for both
+// questions would hand the PEP permission to every owner.
+// A row naming several (`permissions`, REMOTE_PEPS since the PEP's token
+// credential) is one entry per permission, so a role may appear twice.
 /**
- * The built-in roles that authorize a permission of this service (#607):
- * `{ name, permission }` per row that names one.
+ * The built-in roles that authorize a permission of this service:
+ * `{ name, permission }` per permission a row names (#607, #1827).
  */
-const OWNER_ROLES = BUILT_IN.filter(function (one) {
-  return !!one.permission;
-}).map(function (one) {
-  return { name: one.name, permission: one.permission };
+const AUTHORIZING_BUILT_INS = [];
+BUILT_IN.forEach(function (one) {
+  const named = one.permissions || (one.permission ? [one.permission] : []);
+  named.forEach(function (permission) {
+    AUTHORIZING_BUILT_INS.push({ name: one.name, permission: permission });
+  });
+});
+
+// THE OWNER ROLES (#607), held by owning something: the two rows of the list
+// above whose names say so.
+/**
+ * The two owner roles (#607): `{ name, permission }`.
+ */
+const OWNER_ROLES = AUTHORIZING_BUILT_INS.filter(function (one) {
+  return /^OWNER_/.test(one.name);
 });
 
 // The group that grants REMOTE_PEPS. A setting rather than a constant because
@@ -832,13 +875,6 @@ function haveDirectory() {
 // ---------------------------------------------------------------------------
 // READING THE REGISTER.
 // ---------------------------------------------------------------------------
-function firstValue(attributes, name) {
-  log.debug("Entering firstValue().");
-  const found = attributes[name] || attributes[name.toLowerCase()];
-  log.debug("Leaving firstValue().");
-  return Array.isArray(found) ? (found[0] || '') : (found || '');
-}
-
 // A role's list as this module has always answered it: each value trimmed and
 // the empty ones gone, which a concept's list does not do for it (#1390).
 function trimmedValues(values) {
@@ -871,8 +907,8 @@ function all() {
   }
   const rows = directory.allRoles().map(function (entry) {
     const at = entry.attributes || {};
-    // What the role says comes from its concept (#1390); the entryUUID below
-    // is the one read no field of the concept holds.
+    // What the role says comes from its concept (#1390), and its entryUUID
+    // from DirectoryEntry's, which any entry carries (#1579).
     const role = DomainClasses.Role.fromEntry(at);
     const consoleRow = consoleRoleFor(entry.name);
     const nativeRow = nativeRoleFor(entry.name);
@@ -892,7 +928,8 @@ function all() {
       // ITS STABLE ID (#93): the entry's entryUUID, which the directory keeps
       // across every rewrite of the entry and a delete and re-create does
       // not, so a caller holding it can tell the role from a namesake.
-      id: firstValue(at, 'entryUUID').toLowerCase(),
+      id: String(DomainClasses.DirectoryEntry.fromEntry(at).entryUuid || '')
+        .toLowerCase(),
       displayName: role.displayName || '',
       // WHO MAY HOLD IT (#93); empty is both kinds.
       memberTypes: trimmedValues(role.roleAllowedMemberType),
@@ -1695,10 +1732,19 @@ function normalizeContext(who) {
   log.debug("Entering normalizeContext().");
   const given = who || {};
   const kind = given.kind === 'application' ? 'application' : 'user';
+  const name = String(given.name || '');
   log.debug("Leaving normalizeContext().");
   return {
     kind: kind,
-    name: String(given.name || ''),
+    name: name,
+    // THE NAMES A DIRECT MEMBERSHIP IS MATCHED UNDER (2026-11-14). A role
+    // names its people by username (`roleMemberUser`), and a person also
+    // arrives here as their subject, `urn:uuid:<entryUUID>` — the `sub` a
+    // remote PEP asks `POST /xacml/pip` about. The group half already found
+    // them (`groupsOfUser()` looks a subject up), the direct half compared
+    // the username list against the subject and missed, so the same person
+    // was Permit by name and Deny by subject. See `memberNamesOf()`.
+    memberNames: memberNamesOf(kind, name, given.crossRealm === true),
     authenticated: given.authenticated === true,
     groups: Array.isArray(given.groups) ? given.groups.map(String) : null,
     // THE APPLICATION(S) THIS DECISION OR TOKEN IS FOR (#310): a role
@@ -1790,7 +1836,10 @@ function configuredRolesOf(context) {
     if (context.kind === 'application') {
       return contains(role.applications, context.name);
     }
-    if (contains(role.users, context.name)) {
+    const names = context.memberNames || [context.name];
+    if (names.some(function (one) {
+      return contains(role.users, one);
+    })) {
       return true;
     }
     return role.groups.some(function (group) {
@@ -1802,6 +1851,30 @@ function configuredRolesOf(context) {
   }).map(function (role) {
     return context.ids || !role.application ? role.name : role.localName;
   });
+}
+
+// The names a person's DIRECT membership of a role is matched under: the name
+// as given, and where that is a subject this service issued, `urn:uuid:` and
+// an entryUUID, the username its entry is filed under as well. The lookup is
+// `helpers.nameForSubject()`, the subject resolver `ldap/ldap_server.js`
+// fills, which reads one entry by its entryUUID — indexed, never a scan. A
+// subject that names nobody, a process with no directory, and a resolver
+// that fails all leave the name as given, which is what was matched before.
+// Only a person: an application is named by its client_id, and a principal
+// that arrived through a Kerberos trust (#430) has no entry here to name.
+function memberNamesOf(kind, name, crossRealm) {
+  log.debug("Entering memberNamesOf().");
+  const out = [name];
+  if (kind !== 'user' || crossRealm || !/^urn:uuid:/i.test(name.trim())) {
+    log.debug("Leaving memberNamesOf(). Not a subject.");
+    return out;
+  }
+  const filed = helpers.nameForSubject(name);
+  if (filed && filed.toLowerCase() !== name.toLowerCase()) {
+    out.push(filed);
+  }
+  log.debug("Leaving memberNamesOf(). " + out.length + " name(s).");
+  return out;
 }
 
 // Case-insensitively, because a username here arrives from a login form, a
@@ -2104,6 +2177,218 @@ function renameMember(field, from, to) {
   return changed;
 }
 
+// ---------------------------------------------------------------------------
+// A DELETED CLIENT CONFERS NOTHING (2026-11-13, #1612's review).
+//
+// forgetMember('applications', …) takes a deleted application's identifier
+// out of `applications`, and wrote the role back without naming
+// `conferredBy` — which write() reads as "keep what the entry holds" (the
+// four callers that predate #454 rely on that). So the identifier stayed in
+// `roleConferredBy`, and whatever was next registered under it — in
+// development an unknown client_id registers itself — conferred the role on
+// everybody who signed in through it. This takes it out of every role that
+// names it, as the role page's remove-conferring-client writes it.
+//
+// Compared without case, as forgetMember() compares an application: two
+// clients one letter-case apart cannot both be registered (the entry's DN is
+// built from the identifier, and a DN ignores case), so nothing live is lost.
+// ---------------------------------------------------------------------------
+/**
+ * Takes a deleted application's identifier off every configured role in the
+ * ambient realm that it conferred.
+ *
+ * @param identifier - the deleted application's identifier
+ * @returns the names of the roles it no longer confers
+ */
+function forgetConferrer(identifier) {
+  log.debug('Entering forgetConferrer().');
+  const wanted = String(identifier || '').toLowerCase();
+  if (!wanted) {
+    log.debug('Leaving forgetConferrer(). Nothing to forget.');
+    return [];
+  }
+  const changed = [];
+  all().forEach(function (row) {
+    const held = row.conferredBy || [];
+    const kept = held.filter(function (one) {
+      return String(one).toLowerCase() !== wanted;
+    });
+    if (kept.length === held.length) {
+      return;
+    }
+    const record = recordWithOwners(row, row.owners || []);
+    record.conferredBy = kept;
+    const result = write(row.name, record);
+    if (result.ok) {
+      changed.push(row.name);
+    } else {
+      // The client still confers the role; the line names both, so an
+      // administrator can take it off by hand (remove-conferring-client).
+      log.error(errorCodes.tag('STS-ADMIN-0921') + 'roles: the deleted ' +
+                'application "' + identifier + '" could not be taken off ' +
+                'the clients conferring the role "' + row.name + '": ' +
+                result.why);
+    }
+  });
+  if (changed.length) {
+    log.info('roles: the deleted application "' + identifier + '" no ' +
+             'longer confers ' + changed.join(', ') + '.');
+  }
+  log.debug('Leaving forgetConferrer(). ' + changed.length + ' role(s).');
+  return changed;
+}
+
+// ---------------------------------------------------------------------------
+// A DELETED APPLICATION'S OWN ROLES GO WITH IT (rcbj's decision of
+// 2026-11-13 on #1612).
+//
+// A role made for one application (#310) is `<role>@<application>` with
+// `roleApplication` naming it. forgetMember() and forgetConferrer() take the
+// identifier off every role that LISTS it, and left the roles it OWNS: an
+// application registered later under the same identifier — made again by an
+// administrator or, in development, by whoever presents the client_id —
+// found `reader@<id>` already there, members and permissions included. rcbj's
+// rule of 2026-11-10 is that a recreated application inherits nothing, so
+// each role it owns is deleted, through remove(), the call the console's
+// delete-role makes: the directory's deleteRole() tells the members' token
+// holders through noteRoleChange(). The caller writes the `roles.delete`
+// audit row the console writes.
+//
+// Compared without case, as forgetConferrer() compares an application. The
+// roles are read off the kept `ou=roles` listing (all()), never a walk of the
+// directory. A role remove() refuses (a native or built-in name, which no
+// application's role can be) is logged and kept.
+// ---------------------------------------------------------------------------
+/**
+ * Deletes every configured role in the ambient realm that a deleted
+ * application owns (its `roleApplication` names the application).
+ *
+ * @param identifier - the deleted application's identifier
+ * @returns the names of the roles deleted
+ */
+function forgetApplicationRoles(identifier) {
+  log.debug('Entering forgetApplicationRoles().');
+  const wanted = String(identifier || '').toLowerCase();
+  if (!wanted) {
+    log.debug('Leaving forgetApplicationRoles(). Nothing to forget.');
+    return [];
+  }
+  const owned = all().filter(function (row) {
+    return String(row.application || '').toLowerCase() === wanted;
+  });
+  const deleted = [];
+  owned.forEach(function (row) {
+    const result = remove(row.name);
+    if (result.ok) {
+      deleted.push(row.name);
+    } else {
+      // The role stays, owned by an application that is gone; the line names
+      // both, so an administrator can delete it by hand (delete-role).
+      log.error(errorCodes.tag('STS-ADMIN-0924') + 'roles: the role "' +
+                row.name + '" of the deleted application "' + identifier +
+                '" could not be deleted: ' + result.why);
+    }
+  });
+  if (deleted.length) {
+    log.info('roles: the deleted application "' + identifier + '" took ' +
+             'its roles with it: ' + deleted.join(', ') + '.');
+  }
+  log.debug('Leaving forgetApplicationRoles(). ' + deleted.length +
+            ' role(s).');
+  return deleted;
+}
+
+// ---------------------------------------------------------------------------
+// A DELETED OWNER OWNS NOTHING; A RENAMED ONE STILL OWNS IT (2026-11-13,
+// #1612's review). A role's `owner` values are DNs of people and groups
+// (#604), and under #607 an owner is issued owner:write. A person deleted and
+// made again at the same DN — the same username — was an owner again, so
+// every delete of a person or a group takes its DN off every role's owners,
+// and a rename moves it, as forgetMember() and renameMember() do for members.
+// The DNs are compared as removeOwner() compares them.
+// ---------------------------------------------------------------------------
+function ownerKey(dn) {
+  log.debug('Entering ownerKey().');
+  log.debug('Leaving ownerKey().');
+  return String(dn || '').trim().toLowerCase().replace(/\s*,\s*/g, ',');
+}
+
+/**
+ * Replaces, or takes off, an owner DN on every configured role in the ambient
+ * realm that names it.
+ *
+ * @param from - the DN the owner had (deleted, or renamed from)
+ * @param to - the DN it has now, or '' when it was deleted
+ * @returns the names of the roles changed
+ */
+function replaceOwner(from, to) {
+  log.debug('Entering replaceOwner().');
+  const was = ownerKey(from);
+  const now = String(to || '').trim();
+  if (!was || was === ownerKey(now)) {
+    log.debug('Leaving replaceOwner(). Nothing to change.');
+    return [];
+  }
+  const changed = [];
+  all().forEach(function (row) {
+    const held = row.owners || [];
+    if (!held.some(function (one) {
+      return ownerKey(one) === was;
+    })) {
+      return;
+    }
+    const owners = [];
+    held.forEach(function (one) {
+      const value = ownerKey(one) === was ? now : String(one);
+      if (value && !owners.some(function (kept) {
+        return ownerKey(kept) === ownerKey(value);
+      })) {
+        owners.push(value);
+      }
+    });
+    const result = write(row.name, recordWithOwners(row, owners));
+    if (result.ok) {
+      changed.push(row.name);
+    } else {
+      log.error(errorCodes.tag('STS-ADMIN-0922') + 'roles: could not ' +
+                (now ? 'move the owner ' + from + ' to ' + now + ' on'
+                     : 'take the deleted owner ' + from + ' off') +
+                ' the role "' + row.name + '": ' + result.why);
+    }
+  });
+  log.debug('Leaving replaceOwner(). ' + changed.length + ' role(s).');
+  return changed;
+}
+
+/**
+ * Takes a deleted person's or group's DN off every configured role's owners
+ * in the ambient realm.
+ *
+ * @param dn - the deleted entry's DN
+ * @returns the names of the roles it was taken off
+ */
+function forgetOwner(dn) {
+  log.debug('Entering forgetOwner().');
+  const changed = replaceOwner(dn, '');
+  log.debug('Leaving forgetOwner(). ' + changed.length + ' role(s).');
+  return changed;
+}
+
+/**
+ * Moves a renamed person's or group's DN on every configured role's owners
+ * in the ambient realm.
+ *
+ * @param from - the DN it had
+ * @param to - the DN it has now
+ * @returns the names of the roles changed
+ */
+function renameOwner(from, to) {
+  log.debug('Entering renameOwner().');
+  const changed = String(to || '').trim() ? replaceOwner(from, to) : [];
+  log.debug('Leaving renameOwner(). ' + changed.length + ' role(s).');
+  return changed;
+}
+
 // The three member lists a role row carries.
 const MEMBER_FIELDS = ['users', 'groups', 'applications'];
 
@@ -2123,6 +2408,7 @@ module.exports = {
   NATIVE_ROLES: NATIVE_ROLES,
   // The two owner roles (#607): built in, each authorizing its permission.
   OWNER_ROLES: OWNER_ROLES,
+  AUTHORIZING_BUILT_INS: AUTHORIZING_BUILT_INS,
   setOwnerProtected: setOwnerProtected,
   nativeRoleFor: nativeRoleFor,
   isNativeRole: isNativeRole,
@@ -2148,6 +2434,13 @@ module.exports = {
   forgetMember: forgetMember,
   // A renamed member keeps its roles (2026-11-10).
   renameMember: renameMember,
+  // A deleted client confers nothing; a deleted owner owns nothing, and a
+  // renamed one still does (2026-11-13).
+  forgetConferrer: forgetConferrer,
+  // A deleted application's own roles are deleted (2026-11-13).
+  forgetApplicationRoles: forgetApplicationRoles,
+  forgetOwner: forgetOwner,
+  renameOwner: renameOwner,
   rolesOf: rolesOf,
   claimFor: claimFor,
   rolesInClaims: rolesInClaims,

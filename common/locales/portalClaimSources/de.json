@@ -1,0 +1,15 @@
+{
+  "heading": "Verbundene Claim-Quellen",
+  "sub": "Ein anderer Identitätsanbieter kann für Tatsachen über Sie bürgen, die dieser Dienst nicht hält. Sobald Sie eine verknüpfen, erhält eine Anwendung, die nach diesen Tatsachen fragt, sie so, wie dieser Anbieter sie signiert hat (aggregierte und verteilte Claims von OpenID Connect). Das Verknüpfen führt Sie zum Anbieter, damit Sie sich anmelden und zustimmen.",
+  "none": "Dieser Dienst hat keine Claim-Quellen anzubieten.",
+  "supplies": "Liefert",
+  "distributed": ", indem einer Anwendung Ihr Token bei diesem Anbieter übergeben wird, damit sie die Angaben selbst abruft.",
+  "aggregated": ", von diesem Dienst abgerufen und so weitergegeben, wie der Anbieter sie signiert hat.",
+  "linked": "Verknüpft {when}.",
+  "linkedStale": "Verknüpft {when} — <strong>nicht mehr verwendbar</strong>; verknüpfen Sie erneut.",
+  "link": "Verknüpfen",
+  "linkAgain": "Erneut verknüpfen",
+  "unlink": "Lösen",
+  "doneUnlinked": "Gelöst.",
+  "doneLinked": "„{provider}“ wurde verknüpft."
+}

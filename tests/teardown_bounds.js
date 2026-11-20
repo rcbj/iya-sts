@@ -327,7 +327,39 @@ function checkTheVerdictIsRecovered(t) {
 // explain themselves, capture the logs, keep the report and give the mode a
 // verdict. So the job's number has to sit above the sum of ours with room —
 // otherwise the useful bound never gets to run.
+//
+// THE JOB GRAPH THIS READS IS 2026-11-14's (tests.yml's header): a `build`
+// job builds every image once, a `unit` job runs the in-process half once,
+// a `mode` matrix runs the protocol half one mode per runner with
+// --no-build, and the two conformance jobs load the same images. Until then
+// a `tests` job ran two whole modes and built its own images, and this file
+// sliced it out by name; the arithmetic is the same, per job.
 // ---------------------------------------------------------------------------
+
+// One job of the workflow, from its `  name:` line to the next job's. A job
+// that is not there is the empty string, which every check below reads as
+// a failure rather than as nothing to check.
+function jobBlock(workflow, name) {
+  log.debug("Entering jobBlock().");
+  const at = workflow.indexOf('\n  ' + name + ':\n');
+  if (at === -1) {
+    log.debug("Leaving jobBlock(). No such job.");
+    return '';
+  }
+  const rest = workflow.slice(at + 1);
+  const next = rest.slice(1).search(/\n  [a-z][a-z0-9-]*:\n/);
+  log.debug("Leaving jobBlock().");
+  return next === -1 ? rest : rest.slice(0, next + 1);
+}
+
+// Whether a mode is in a comma list in modes.sh's spelling, as the
+// launcher's `printf ',%s,' | grep` asks it.
+function inModeList(list, mode) {
+  log.debug("Entering inModeList().");
+  log.debug("Leaving inModeList().");
+  return (',' + list + ',').indexOf(',' + mode + ',') >= 0;
+}
+
 function checkTheJobTimeoutIsAboveOurs(t) {
   log.debug("Entering checkTheJobTimeoutIsAboveOurs().");
   t.log.info('=== the CI job\'s timeout is the backstop, not the mechanism ' +
@@ -336,13 +368,8 @@ function checkTheJobTimeoutIsAboveOurs(t) {
   const workflow = read('.github/workflows/tests.yml');
   const modes = read('tests/tools/modes.sh');
 
-  // THE LARGEST BOUND THE `tests` JOB'S MODES GET: the launcher's shared
-  // default, or `single-node`'s own in modes.sh (2026-09-24) when it has one.
   const sharedBound = Number(
     /STS_MODE_TIMEOUT="\$\{STS_MODE_TIMEOUT:-(\d+)\}"/.exec(launcher)[1]);
-  const singleNodeBound = Number(
-    (/single-node\)\s*echo "\$\{STS_SINGLE_NODE_MODE_TIMEOUT:-(\d+)\}"/
-      .exec(modes) || [])[1]) || 0;
   // A mode that runs the OpenID conformance suite (#176, `memory` by
   // default) has STS_CONFORMANCE_TIMEOUT added to its bound by the launcher.
   const conformanceBound = Number(
@@ -353,115 +380,196 @@ function checkTheJobTimeoutIsAboveOurs(t) {
   const peersBound = Number(
     (/STS_SAML_PEERS_TIMEOUT="\$\{STS_SAML_PEERS_TIMEOUT:-(\d+)\}"/
       .exec(launcher) || [])[1]) || 0;
-  // Unless the `tests` job empties STS_TEST_CONFORMANCE_MODES (#187): the
-  // plans are the `openid-conformance` job's then, whose arithmetic is below.
-  const testsJob = workflow.slice(workflow.indexOf('\n  tests:'),
-                                  workflow.indexOf('\n  coverage:'));
-  const testsRunConformance =
-    !/STS_TEST_CONFORMANCE_MODES:\s*""/.test(testsJob);
-  const modeBound = Math.max(
-    sharedBound + (testsRunConformance ? conformanceBound : 0) + peersBound,
-    singleNodeBound + peersBound);
+  const peersModes = (/STS_TEST_SAML_PEERS_MODES="\$\{STS_TEST_SAML_PEERS_MODES-([^}]*)\}"/
+    .exec(launcher) || ['', ''])[1];
   const teardownBound = Number(
     /STS_TEARDOWN_TIMEOUT="\$\{STS_TEARDOWN_TIMEOUT:-(\d+)\}"/
       .exec(launcher)[1]);
-  // THE IMAGE BUILD, WHICH NO MODE BOUND COVERS (2026-09-27). The launcher
-  // builds before the first mode starts, and a runner with no layer cache
-  // took nineteen minutes for it (the Samba and Heimdal stages, the
-  // enrollment clients, tlsfuzzer): the `cluster` job's 115 minutes were
-  // above its mode's bound plus teardowns and were still spent before the
-  // mode's own bound could fire, so the run was cancelled with no verdict.
-  // Every job running the launcher sits above this as well.
+  // THE IMAGE BUILD, WHICH NO MODE BOUND COVERS (2026-09-27). A runner with
+  // no layer cache took nineteen minutes for it, then 20-29; the `cluster`
+  // job's 115 minutes were above its mode's bound plus teardowns and were
+  // still spent before the mode's own bound could fire. Since 2026-11-14 it
+  // is the `build` job's alone, and the jobs that --no-build pay instead for
+  // the artifact's download and `docker load`, measured at three to five
+  // minutes for three to four gigabytes and allowed ten.
   const buildAllowance = 1800;
+  const loadAllowance = 600;
 
-  // How many modes a full run does. Read from the file that defines them
-  // rather than written down here, for the reason that file gives about
-  // itself: a fourth mode must not leave this arithmetic quietly stale.
+  // The modes a full run does, read from the file that defines them rather
+  // than written down here, for the reason that file gives about itself: a
+  // fourth mode must not leave this arithmetic quietly stale.
   const declared = /STS_ALL_MODES=\(([^)]*)\)/.exec(modes);
-  const modeCount = declared
-    ? declared[1].split(/\s+/).filter(function (w) { return w.trim(); }).length
-    : 3;
-  t.check(modeCount >= 1,
+  const allModes = declared
+    ? declared[1].split(/\s+/).filter(function (w) { return w.trim(); })
+    : [];
+  t.check(allModes.length >= 1,
           'the mode list is readable from tests/tools/modes.sh (' +
-            modeCount + ' mode(s))',
-          'the budget below is per mode, so a fourth mode changes it and ' +
-          'this file must not be the place that goes stale');
+            allModes.join(', ') + ')',
+          'the matrix below must cover it, so this file must not be the ' +
+          'place that goes stale');
+  // Each mode's own bound in modes.sh, the launcher's shared one otherwise.
+  function defaultBoundOf(mode) {
+    log.debug("Entering defaultBoundOf().");
+    const own = new RegExp('\\n\\s*' + mode.replace(/-/g, '\\-') +
+      '\\)\\s*echo "\\$\\{([A-Z_]+):-(\\d+)\\}"').exec(modes);
+    log.debug("Leaving defaultBoundOf().");
+    return own ? { variable: own[1], seconds: Number(own[2]) }
+               : { variable: 'STS_MODE_TIMEOUT', seconds: sharedBound };
+  }
 
-  // The `tests` job (sliced above), which is the one that runs this
-  // launcher. The coverage job runs ./run-coverage.sh, has a number of its
-  // own and is not this.
-  const jobMinutes = Number(/timeout-minutes:\s*(\d+)/.exec(testsJob)[1]);
+  // ---- THE BUILD, ONCE -------------------------------------------------
+  const buildJob = jobBlock(workflow, 'build');
+  const buildMinutes = Number(
+    (/timeout-minutes:\s*(\d+)/.exec(buildJob) || [])[1]);
+  t.check(/\.\/run-tests\.sh --build-only\b/.test(buildJob) &&
+          /stack-images\.sh save\b/.test(buildJob) &&
+          /actions\/upload-artifact@/.test(buildJob),
+          'a `build` job builds every image with ./run-tests.sh ' +
+          '--build-only and saves them as an artifact',
+          'every other job runs --no-build, so without it they would run ' +
+          'against images nobody built');
+  t.check(buildMinutes * 60 > buildAllowance && buildMinutes <= 90,
+          'the `build` job\'s timeout (' + buildMinutes + 'm) is above the ' +
+            'cold build (' + buildAllowance / 60 + 'm) and still an outer ' +
+            'bound',
+          'a cold runner took 20-29 minutes to build, before the save and ' +
+          'the upload');
 
-  // One wedged mode is the case worth surviving: the run reaches its bound,
-  // says so, and the remaining modes still run. Every mode wedging is a
-  // wedged machine, which is what the job timeout is for.
-  const worstSeconds = buildAllowance + modeBound +
-    teardownBound * (modeCount + 1);
-  t.check(jobMinutes * 60 > worstSeconds,
-          'the job timeout (' + jobMinutes + 'm) is above the image ' +
-            'build, one wedged mode plus every teardown (' + Math.ceil(worstSeconds / 60) + 'm)',
-          'if the job\'s number is the smaller one then the bound that ' +
-          'fires is the one that cannot explain itself, which is exactly ' +
-          'the 2026-09-10 outcome with extra machinery in front of it');
+  // ---- NO OTHER JOB BUILDS ---------------------------------------------
+  // Every job that runs the launcher but `build` loads the artifact. A job
+  // that built again would be a second build's disk on a runner that ran
+  // out of it, and a second chance at the network flakes the build met.
+  const launcherCalls = workflow.split('\n').filter(function (line) {
+    return /\.\/run-(tests|coverage)\.sh\b/.test(line) &&
+      !/^\s*#/.test(line);
+  });
+  const building = launcherCalls.filter(function (line) {
+    return !/--no-build\b/.test(line) && !/--build-only\b/.test(line);
+  });
+  t.check(launcherCalls.length > 0 && building.length === 0,
+          'every launcher call but the `build` job\'s passes --no-build',
+          'found: ' + building.join(' | '));
 
-  // And it must not be so large that a genuinely wedged runner is held for a
-  // shift. The workflow's own header makes this argument about six hours.
-  // 240 since 2026-11-10, when single-node's own bound went to 150 minutes.
-  t.check(jobMinutes <= 240,
-          'and it is still an outer bound rather than a licence (' +
-            jobMinutes + 'm)',
-          'without a number here a stuck job holds a runner for six hours, ' +
-          'which is what the workflow header says this setting is for');
+  // ---- THE IN-PROCESS HALF, ONCE ---------------------------------------
+  // The mode jobs run --protocol=only, so the tests/*.js files run here or
+  // nowhere.
+  const unitJob = jobBlock(workflow, 'unit');
+  const unitMinutes = Number(
+    (/timeout-minutes:\s*(\d+)/.exec(unitJob) || [])[1]);
+  t.check(/run-report\.js --no-protocol\b/.test(unitJob) &&
+          /--unit-concurrency=\d+/.test(unitJob),
+          'a `unit` job runs the in-process half, with a concurrency of its ' +
+          'own',
+          'run-report.js defaults to a quarter of the CPUs, which is one ' +
+          'file at a time on a 4-vCPU runner and was the long pole of every ' +
+          'mode until 2026-11-14');
+  t.check(unitMinutes > 0 && unitMinutes <= 240,
+          'the `unit` job\'s timeout (' + unitMinutes + 'm) is an outer ' +
+            'bound',
+          'without a number a stuck job holds a runner for six hours');
 
-  // THE `openid-conformance` JOB (#187; `conformance` until 2026-09-27) runs
-  // the same launcher for ONE mode with
-  // the suite's plans in it: its number sits above that mode's bound plus
-  // a teardown for the mode and one for the stack before it, and under the
-  // six hours GitHub gives any job. Its absence is a failure only while the
-  // `tests` job leaves the plans out, since then nothing else runs them.
-  const conformanceAt = workflow.indexOf('\n  openid-conformance:');
-  t.check(testsRunConformance || conformanceAt !== -1,
-          'the conformance plans run in some job',
-          'the `tests` job empties STS_TEST_CONFORMANCE_MODES, so without a ' +
-          '`openid-conformance` job CI would run none of the OpenID ' +
-          'Foundation plans');
-  // SINCE #930 THE PLANS ARE TWO JOBS, split by lane: `openid-conformance`
-  // runs every lane but the OpenID Provider job's and
+  // ---- THE PROTOCOL HALF, ONE MODE PER RUNNER --------------------------
+  const modeJob = jobBlock(workflow, 'mode');
+  t.check(/timeout-minutes:\s*\$\{\{\s*matrix\.minutes\s*\}\}/
+            .test(modeJob) &&
+          /fail-fast:\s*false/.test(modeJob) &&
+          /\.\/run-tests\.sh --no-build --modes=\$\{\{ matrix\.mode \}\} --protocol=only/
+            .test(modeJob),
+          'the `mode` matrix runs ./run-tests.sh --no-build ' +
+          '--modes=<mode> --protocol=only, each with its own timeout, ' +
+          'fail-fast off',
+          'one mode per runner is what fits a runner, and one mode\'s ' +
+          'failure says nothing about another\'s');
+  // The bound reaches the launcher through every variable a mode reads; a
+  // missing one leaves that mode on its default, which is above its job.
+  const boundVariables = ['STS_MODE_TIMEOUT'].concat(allModes.map(
+    function (mode) { return defaultBoundOf(mode).variable; }))
+    .filter(function (v, i, all) { return all.indexOf(v) === i; });
+  const unwired = boundVariables.filter(function (v) {
+    return !new RegExp('\\n\\s*' + v + ':\\s*\\$\\{\\{\\s*matrix\\.bound' +
+                       '\\s*\\}\\}').test(modeJob);
+  });
+  t.check(unwired.length === 0,
+          'the matrix hands its bound to the launcher (' +
+            boundVariables.join(', ') + ')',
+          'not handed: ' + unwired.join(', '));
+  const modeRunsConformance =
+    !/STS_TEST_CONFORMANCE_MODES:\s*""/.test(modeJob);
+  const modePeers = /STS_TEST_SAML_PEERS_MODES:\s*""/.test(modeJob)
+    ? '' : peersModes;
+  // The rows are YAML, or (since 2026-11-17, when the fuzz mode moved to a
+  // merge into main or a dispatch that asks for it) JSON objects inside the
+  // event-dependent fromJSON() the matrix is now; a mode listed under two
+  // events is one entry.
+  const entries = [];
+  const entryRes = [
+    /-\s*mode:\s*([a-z-]+)\s*\n\s*minutes:\s*(\d+)\s*\n\s*bound:\s*(\d+)/g,
+    /\{\s*"mode":\s*"([a-z-]+)",\s*"minutes":\s*(\d+),\s*"bound":\s*(\d+)\s*\}/g
+  ];
+  entryRes.forEach(function (entryRe) {
+    let m;
+    while ((m = entryRe.exec(modeJob)) !== null) {
+      const mode = m[1];
+      if (entries.some(function (e) { return e.mode === mode; })) {
+        continue;
+      }
+      entries.push({ mode: mode, minutes: Number(m[2]),
+                     bound: Number(m[3]) });
+    }
+  });
+  const covered = entries.map(function (e) { return e.mode; });
+  t.check(allModes.length > 0 && allModes.every(function (mode) {
+    return covered.indexOf(mode) >= 0;
+  }),
+          'the matrix runs every mode of STS_ALL_MODES (' +
+            covered.join(', ') + ')',
+          'a mode the matrix leaves out is a mode CI never runs; a cluster ' +
+          'defect would be found by nobody');
+  entries.forEach(function (entry) {
+    const modeBound = entry.bound +
+      (inModeList(modePeers, entry.mode) ? peersBound : 0) +
+      (modeRunsConformance ? conformanceBound : 0);
+    const worst = loadAllowance + modeBound + teardownBound * 2;
+    // At most 330 minutes, half an hour inside GitHub's six (2026-11-14):
+    // `fuzz` measured 126-155 minutes on the development laptop and the
+    // protocol half runs about 1.5 times slower on a hosted runner.
+    t.check(entry.minutes * 60 > worst && entry.minutes <= 330,
+            'the `' + entry.mode + '` job timeout (' + entry.minutes +
+              'm) is above loading the images, its mode\'s bound and two ' +
+              'teardowns (' + Math.ceil(worst / 60) + 'm), and at most 330m',
+            'if the job\'s number is the smaller one then the bound that ' +
+            'fires is the one that cannot explain itself, which is exactly ' +
+            'the 2026-09-10 outcome with extra machinery in front of it');
+  });
+
+  // ---- THE CONFORMANCE PLANS -------------------------------------------
+  // The mode jobs empty STS_TEST_CONFORMANCE_MODES (#187), so the plans run
+  // in these two jobs or nowhere. SINCE #930 THEY ARE SPLIT BY LANE:
+  // `openid-conformance` runs every lane but the OpenID Provider job's and
   // `openid-conformance-oidcc` that lane alone, so the browser jobs could
-  // join without either outgrowing six hours. Each is held to the same
-  // arithmetic, and together they must cover every lane: one names
-  // `--not-lanes=conformance`, the other `--lanes=conformance`.
-  const oidccAt = workflow.indexOf('\n  openid-conformance-oidcc:');
-  if (conformanceAt !== -1) {
-    const jobsOf = [
-      { name: 'openid-conformance', lanes: /--not-lanes=conformance\b/,
-        text: workflow.slice(conformanceAt, oidccAt !== -1 ? oidccAt
-          : workflow.indexOf('\n  cluster:', conformanceAt)) },
-      { name: 'openid-conformance-oidcc', lanes: /--lanes=conformance\b/,
-        text: oidccAt !== -1
-          ? workflow.slice(oidccAt, workflow.indexOf('\n  cluster:', oidccAt))
-          : '' }];
-    t.check(oidccAt !== -1,
-            'the workflow has an `openid-conformance-oidcc` job',
-            'without it the OpenID Provider lane, which ' +
-            '`openid-conformance` leaves out by --not-lanes, runs nowhere');
-    jobsOf.forEach(function (job) {
-      if (!job.text) {
+  // join without either outgrowing six hours.
+  [{ name: 'openid-conformance', lanes: /--not-lanes=conformance\b/ },
+   { name: 'openid-conformance-oidcc', lanes: /--lanes=conformance\b/ }]
+    .forEach(function (job) {
+      const text = jobBlock(workflow, job.name);
+      t.check(modeRunsConformance || text !== '',
+              'the workflow has an `' + job.name + '` job',
+              'the mode jobs leave the plans out, so without it its lanes ' +
+              'run nowhere');
+      if (!text) {
         return;
       }
-      const conformanceJob = job.text;
-      const conformanceMinutes = Number(
-        (/timeout-minutes:\s*(\d+)/.exec(conformanceJob) || [])[1]);
+      const minutes = Number(
+        (/timeout-minutes:\s*(\d+)/.exec(text) || [])[1]);
       // The SAML peers' bound too, unless the job empties their modes.
-      const conformancePeers =
-        /STS_TEST_SAML_PEERS_MODES:\s*""/.test(conformanceJob) ? 0
-                                                              : peersBound;
-      const conformanceWorst = buildAllowance + sharedBound +
-        conformanceBound + conformancePeers + teardownBound * 2;
-      t.check(/--modes=memory\b/.test(conformanceJob) &&
-              /--conformance-only\b/.test(conformanceJob) &&
-              job.lanes.test(conformanceJob) &&
-              !/--no-browser\b/.test(conformanceJob),
+      const peers = /STS_TEST_SAML_PEERS_MODES:\s*""/.test(text) ? 0
+                                                               : peersBound;
+      const worst = loadAllowance + sharedBound + conformanceBound + peers +
+        teardownBound * 2;
+      t.check(/--modes=memory\b/.test(text) &&
+              /--conformance-only\b/.test(text) &&
+              job.lanes.test(text) &&
+              !/--no-browser\b/.test(text),
               'the `' + job.name + '` job runs the memory mode\'s ' +
               'conformance jobs of its lanes, by the manifest flag, with ' +
               'the browser jobs',
@@ -469,65 +577,31 @@ function checkTheJobTimeoutIsAboveOurs(t) {
               'STS_TEST_CONFORMANCE_MODES names, `memory` by default; the ' +
               'two jobs split the lanes; and rcbj asked for the ' +
               'Chrome-driven conformance jobs in CI (#930)');
-      t.check(conformanceMinutes * 60 > conformanceWorst &&
-              conformanceMinutes <= 360,
-              'the `' + job.name + '` job timeout (' + conformanceMinutes +
-                'm) is above the image build, its mode\'s bound and two ' +
-                'teardowns (' +
-                Math.ceil(conformanceWorst / 60) + 'm) and within six hours',
+      t.check(minutes * 60 > worst && minutes <= 360,
+              'the `' + job.name + '` job timeout (' + minutes +
+                'm) is above loading the images, its mode\'s bound and two ' +
+                'teardowns (' + Math.ceil(worst / 60) + 'm) and within six ' +
+                'hours',
               'the launcher\'s bound must be the one that fires, and ' +
               'GitHub cancels any job at six hours whatever it says');
     });
-  }
 
-  // THE `cluster` JOB (2026-09-15) runs the same launcher for ONE mode, so the
-  // same arithmetic holds with a count of one: its bound plus a teardown for
-  // the mode and one for the stack before it. It is the last job in the file,
-  // which is why its block runs to the end.
-  const clusterAt = workflow.indexOf('\n  cluster:');
-  t.check(clusterAt !== -1,
-          'the workflow has a `cluster` job',
-          'the `tests` job names memory and single-node only, so without ' +
-          'that job nothing in CI runs two nodes behind a balancer at all');
-  if (clusterAt !== -1) {
-    const clusterJob = workflow.slice(clusterAt);
-    t.check(/run-tests\.sh --modes=cluster\b/.test(clusterJob),
-            'the `cluster` job runs ./run-tests.sh --modes=cluster',
-            'a job of that name running anything else would leave the mode ' +
-            'as unrun as having no job');
-    const clusterMinutes = Number(
-      (/timeout-minutes:\s*(\d+)/.exec(clusterJob) || [])[1]);
-    // THE CLUSTER MODE'S OWN BOUND since 2026-09-21, read off modes.sh's
-    // stsModeTimeout() rather than the launcher's shared default, which that
-    // mode no longer uses.
-    const clusterBound = Number(
-      (/cluster\)\s*echo "\$\{STS_CLUSTER_MODE_TIMEOUT:-(\d+)\}"/
-        .exec(modes) || [])[1]);
-    t.check(clusterBound > 0,
-            'modes.sh gives the `cluster` mode a bound of its own (' +
-              clusterBound + 's)',
-            'the arithmetic below would otherwise be about a number the ' +
-            'cluster mode does not use');
-    const clusterWorst = buildAllowance + (clusterBound || modeBound) +
-      teardownBound * 2;
-    t.check(clusterMinutes * 60 > clusterWorst,
-            'the `cluster` job timeout (' + clusterMinutes + 'm) is above ' +
-              'the image build, its one mode and its teardowns (' +
-              Math.ceil(clusterWorst / 60) + 'm)',
-            'the tests job\'s argument for one mode: the bound that fires ' +
-            'must be the one that can explain itself');
-    // 300 RATHER THAN THE `tests` JOB'S 180 SINCE 2026-10-20: one mode of
-    // two production nodes outgrew a 130-minute bound on a GitHub runner
-    // (run 39464473145, job 841 of 871), so its own bound is 200 minutes and
-    // this job's number sits above that and the build. It is still an outer
-    // bound — the `openid-conformance` job's 280 is the precedent — and
-    // still an hour inside the six GitHub allows any job.
-    t.check(clusterMinutes <= 300,
-            'and the `cluster` job\'s is still an outer bound (' +
-              clusterMinutes + 'm)',
-            'the six-hour argument again, for the second job running this ' +
-            'launcher');
-  }
+  // ---- CI PUBLISHES NOTHING (rcbj's hold, 2026-11-14) ------------------
+  // tests.yml pushed what a run built to ghcr.io until that day, four of the
+  // packages public. Only the `mirror` job may write a package, and it
+  // writes the private mirror.
+  const writers = workflow.split(/\n(?=  [a-z][a-z0-9-]*:\n)/)
+    .filter(function (block) {
+      return /\n[ \t]+packages:[ \t]*write/.test(block);
+    })
+    .map(function (block) {
+      return (block.match(/^\s*([a-z][a-z0-9-]*):/) || ['', '?'])[1];
+    });
+  t.check(writers.length === 1 && writers[0] === 'mirror' &&
+          !/\bdocker push\b|push-stack-images/.test(workflow),
+          'nothing in tests.yml pushes an image, and only `mirror` may ' +
+          'write a package',
+          'packages: write in: ' + writers.join(', '));
   log.debug("Leaving checkTheJobTimeoutIsAboveOurs().");
 }
 

@@ -500,24 +500,47 @@ function run(t) {
     config.clearOverride('wstrust.jwtAlgorithm');
   }
 
+  const apps = require('../common/applications');
+  const sfhId = 'sfh-rp-' + process.pid;
+  const assertionXPath = "//*[local-name()='Assertion' and " +
+    "namespace-uri()='urn:oasis:names:tc:SAML:2.0:assertion']";
+  const armed = [
+    apps.updateApplication(sfhId, { mode: 'set',
+      attribute: 'wstrustEncryptResponse', value: 'true' }),
+    apps.updateApplication(sfhId, { mode: 'add',
+      attribute: 'wstrustEncryptResponseElements', value: assertionXPath })
+  ];
+  t.check(armed.every(function (one) { return one && one.ok; }),
+          'precondition: the relying party encrypts its assertion',
+          JSON.stringify(armed));
   const devNoCert = withMode(config, 'development', function () {
-    return wstrust.handleRst(rst(''), 'application/soap+xml',
-                             { encrypt: true });
+    return wstrust.handleRst(rst(''), 'application/soap+xml');
   });
-  t.equal(devNoCert.status, 200,
-          'development: ?encrypt=1 with no recipient certificate still ' +
-          'returns the plaintext');
+  t.check(devNoCert.status >= 400 &&
+          devNoCert.errorCode === 'STS-WSTRUST-0076',
+          'development: response encryption with no recipient certificate ' +
+          'is STS-WSTRUST-0076, not a clear assertion',
+          devNoCert.status + ' ' + devNoCert.errorCode + ' ' +
+          String(devNoCert.body).slice(0, 300));
+  // Product authenticates before it seals. An assertion this STS
+  // signed, addressed to this IdP, is a credential. The certificate
+  // inside that assertion is not a signer certificate element, so
+  // stripping it leaves no recipient.
+  const prodSigned = saml2.buildSamlAssertion('dan', idpAudience(), 5)
+    .replace(/<ds:X509Certificate>[^<]*<\/ds:X509Certificate>/g, '');
   const prodNoCert = withMode(config, 'product', function () {
-    return wstrust.handleRst(rst('',
-                                 saml2.buildSamlAssertion('dan', 'x',
-                                                          5)).replace(
-      /<ds:X509Certificate>[^<]*<\/ds:X509Certificate>/g,
-      ''), 'application/soap+xml', { encrypt: true });
+    return wstrust.handleRst(rst('', prodSigned), 'application/soap+xml');
   });
-  t.check(prodNoCert.status >= 400,
-          'PRODUCT: ?encrypt=1 that cannot encrypt is a Fault, not a ' +
-          'plaintext assertion',
-          prodNoCert.body.slice(0, 300));
+  t.check(prodNoCert.status >= 400 &&
+          prodNoCert.errorCode === 'STS-WSTRUST-0076',
+          'PRODUCT: the same request is STS-WSTRUST-0076, not a clear ' +
+          'assertion',
+          prodNoCert.status + ' ' + prodNoCert.errorCode + ' ' +
+          String(prodNoCert.body).slice(0, 300));
+  apps.updateApplication(sfhId, { mode: 'set',
+    attribute: 'wstrustEncryptResponse', value: '' });
+  apps.updateApplication(sfhId, { mode: 'remove',
+    attribute: 'wstrustEncryptResponseElements', value: assertionXPath });
 
   // -------------------------------------------------------------------------
   t.log.info('F. federation');

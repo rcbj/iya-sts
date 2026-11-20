@@ -36,17 +36,52 @@
 //   4. the APPCONFIG file          the CONFIG_FILE module, e.g. env/local.js
 //   5. env/defaults.js             the DEFAULT appconfig file, which 4 is
 //                                  unioned on top of
+//   6. the row's own `dflt`        THE IMAGE'S FLOOR (2026-11-16): the
+//                                  default written in the table below, in
+//                                  this image, which no mounted or copied
+//                                  file can take away
 //
-// AND THERE IS NO SIXTH. A setting with no value in 4 or 5 and no variable in
-// 2 or 3 STOPS THIS SERVICE FROM STARTING — see requireComplete() at the foot
-// of this file. That is the 2026-08-24 change and it is the point of the whole
-// arrangement: a value nobody configured, arriving from a constant somewhere in
-// a module, is exactly what made "what is this service configured with?"
-// unanswerable before this table existed, and leaving a silent fallback under
-// the table would have kept one way of asking the question wrong.
+// THE SIXTH LEVEL IS NEW, AND IT REVERSES "THERE IS NO SIXTH" (2026-08-24 to
+// 2026-11-16). Until then a setting with no value in 4 or 5 and no variable
+// in 2 or 3 STOPPED THIS SERVICE FROM STARTING (STS-CORE-0002), on the
+// argument that only a maintainer could cause it — a row added here and
+// env/defaults.js not regenerated. That argument assumed env/defaults.js is
+// always the image's own, and it is not: an operator who customises env/ by
+// MOUNTING a directory over /usr/src/sts/env, or who keeps a copy of
+// defaults.js, carries the file from the release they copied it from. The
+// port-8081 deployment did exactly that, upgraded to an image that added
+// xacml.pepAuthentication, and crash-looped on STS-CORE-0002 until the mount
+// was moved — an upgrade that needed the operator to edit files first, which
+// rcbj's backwards-compatibility directive of 2026-11-11 rules out.
 //
-// 4 AND 5 ARE ONE LAYER, UNIONED, and that is what makes the refusal above
-// affordable. `appconfig` below is env/defaults.js with the operator's file
+// So the row's `dflt` is the floor beneath every layer. It is not "a constant
+// buried in a module" — the thing the refusal was written against — because
+// it is the same `dflt` /admin/config, GET /admin-api/config, the OpenAPI
+// document and docs/v1.1.0/configuration.md already publish as the default,
+// and a value taken from it is reported with `source: 'default'`, by name,
+// on every one of those surfaces. What the floor costs is reported too:
+//
+//   * STS-CORE-0177, a WARNING at startup, names every setting that came from
+//     the floor and the defaults file that lacked it, so the operator learns
+//     that file is older than the image;
+//   * STS-CORE-0178, a WARNING, names every setting whose value in that file
+//     differs from this image's default. The FILE's value is used — it was
+//     what the service ran on before the upgrade, and an operator may have
+//     meant it — but it is said, because a stale copy also pins every default
+//     a later release changed.
+//
+// WHAT STILL REFUSES. A row with no `dflt` at all (none today; a required
+// secret would be one) and no value in any layer still stops the start with
+// STS-CORE-0002, so a setting that must be SUPPLIED cannot be started without.
+// A value an operator DID set that the console would refuse still stops the
+// start with STS-CORE-0108, in every layer, env/defaults.js included. And the
+// maintainer's mistake the old refusal caught — a row added and the file not
+// regenerated — is caught where it is cheaper, before the image is built:
+// tests/config_defaults_layer.js fails when env/defaults.js and this table
+// disagree in either direction.
+//
+// 4 AND 5 ARE ONE LAYER, UNIONED, and that is what keeps an operator's file
+// small. `appconfig` below is env/defaults.js with the operator's file
 // merged over it key by key, the operator's value winning wherever the two
 // carry the same key. So:
 //
@@ -54,25 +89,23 @@
 //     which is what keeps the parent project's in-process Kerberos jobs
 //     working, since they point CONFIG_FILE at the TEST suite's own config and
 //     it carries none of this service's keys;
-//   * a setting added to this table tomorrow does not break every config file
-//     in the world on the day it is added, so long as env/defaults.js gains its
-//     row — and env/defaults.js is GENERATED from the `dflt` column here, so
-//     that is one edit rather than two;
-//   * the refusal then fires on the one case it is for: a row in this table
-//     with no row in env/defaults.js, which is a setting somebody added and did
-//     not finish adding.
+//   * every value the shipped image runs on is in a file an operator can read,
+//     since env/defaults.js is GENERATED from the `dflt` column here;
+//   * and a defaults file that is OLDER than the image — or missing — costs a
+//     warning rather than the start (level 6, above).
 //
 // The order is what makes this backwards compatible rather than merely similar:
 // every env var that worked before works now and still beats the file, and a
 // service started with no env vars at all and the shipped appconfig behaves
 // exactly as it did — the shipped files were seeded with the built-in defaults,
-// so 4 and 5 agree wherever both carry a key.
+// so 4, 5 and 6 agree wherever each carries a key.
 //
-// FOUR SETTINGS ARE EXEMPT from the refusal, and they are the four marked
-// `derived`: `global.https` comes from `oauth2.rfc9700`, `oid4vp.walletUrl`
-// from `oid4vci.walletUrl`, `krb5.serviceDomains` from `krb5.realm`, and — since
-// 2026-09-13 — `adminApi.audience` from `global.publicBaseUrl`, `global.https`,
-// `global.host` and `global.port`. Their
+// THE DERIVED SETTINGS ARE ABSENT FROM THE DEFAULTS FILE, and they are the
+// ones marked `derived`: `global.https` comes from `oauth2.rfc9700`,
+// `oid4vp.walletUrl` from `oid4vci.walletUrl`, `krb5.serviceDomains` from
+// `krb5.realm`, and — since 2026-09-13 — `adminApi.audience` from
+// `global.publicBaseUrl`, `global.https`, `global.host` and `global.port`,
+// among others. Their
 // default is a FUNCTION of a neighbour, so writing a literal for them in
 // env/defaults.js would freeze the derivation at whatever it evaluated to the
 // day the file was written — which is why they are deliberately absent from
@@ -335,7 +368,38 @@ quietBelowLevel(bunyan, bunyan.DEBUG, 'debug');
 // ---------------------------------------------------------------------------
 /** The default appconfig file, which the operator's file is unioned on. */
 const DEFAULTS_FILE = path.join(configFile.ROOT, 'env', 'defaults.js');
-const defaults = require(DEFAULTS_FILE);
+
+// A MISSING env/defaults.js IS AN OLDER OR AN OPERATOR'S env/, NOT A FAULT
+// (2026-11-16). env/ is the directory an operator mounts over to customise
+// the service, and a mounted directory carries whatever files its owner put
+// there — a selected appconfig file and nothing else is a reasonable one.
+// The table's own `dflt` is the floor beneath this file (level 6 in the
+// header), so with no file every value comes from there and the start says
+// so (STS-CORE-0177). A file that is THERE and will not load is different in
+// kind, exactly as the operator's own is below: whatever it was meant to say
+// is unknown, so the start stops (STS-CORE-0179). Neither can be logged yet —
+// the logger needs a level out of the files being read — so what happened is
+// kept in `defaultsProblem` and the line after the logger reports it.
+/** @type {any} */
+let defaults = {};
+/** Why the defaults file was not read, or null when it was. */
+let defaultsProblem = null;
+try {
+  defaults = require(DEFAULTS_FILE);
+} catch (err) {
+  const missing = err && err.code === 'MODULE_NOT_FOUND' &&
+                  String(err.message).indexOf(DEFAULTS_FILE) >= 0;
+  if (!missing) {
+    process.stderr.write(errorCodes.tag('STS-CORE-0179') + 'config: FATAL ' +
+      '— the defaults file ' + DEFAULTS_FILE + ' is there and could not be ' +
+      'loaded: ' + ((err && err.message) || err) + '\nRemove it to run on ' +
+      'this image\'s own defaults, or replace it with the one the image ' +
+      'ships (see docs/v1.1.0/configuration.md, *Upgrading with a ' +
+      'mounted env/*).\n');
+    process.exit(1);
+  }
+  defaultsProblem = 'it is not there';
+}
 
 // A two-file union. Plain objects merge key by key; everything else — a scalar,
 // an array, a Date — is REPLACED wholesale by the override, because a merged
@@ -413,13 +477,33 @@ const TYPES = {
     // display name and its logo's alternative text, which a page draws).
     // Optional, as `int`'s bounds are: a row without it is any text, as
     // every string row was before.
-    check: function (raw, setting) {
+    //
+    // A ROW MAY ASK FOR AN ABSOLUTE URI with `absoluteUri: true` (a SAML
+    // NameID format, 2026-11-12): RFC 3986 section 4.3's scheme, a colon and
+    // at least one character after it, with no space or control character
+    // anywhere. A fuzzed `saml2.nameIdFormat` of `,]` was accepted as text and
+    // put in every assertion's NameID Format, which the SAML schema types as
+    // `anyURI`, so every Response the realm sent was schema-invalid. Only a
+    // caller's write is checked: a value already stored is still read, so a
+    // deployment holding one starts as it did (the console then refuses the
+    // same value on its next save, naming the rule). A value from the
+    // environment or an appconfig file is WARNED about at startup
+    // (`opts.startup`, STS-CORE-0176) and never refused there: a deployment
+    // that started on one before this rule must still start.
+    check: function (raw, setting, opts) {
       log.debug("Entering check().");
       const max = setting && setting.maxLength;
       const s = raw === undefined || raw === null ? '' : String(raw);
       if (typeof max === 'number' && s.length > max) {
         log.debug("Leaving check(). Too long.");
         return 'must be at most ' + max + ' characters, got ' + s.length;
+      }
+      if (setting && setting.absoluteUri && !(opts && opts.startup) &&
+          !/^[A-Za-z][A-Za-z0-9+.-]*:[^\s\u0000-\u001f\u007f]+$/.test(s)) {
+        log.debug("Leaving check(). Not an absolute URI.");
+        return 'must be an absolute URI (a scheme, a colon and the rest, ' +
+               'with no spaces), such as ' +
+               'urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified';
       }
       log.debug("Leaving check().");
       return null;
@@ -821,7 +905,8 @@ const OID4VCI_CONFIG_IDS = ['IdentityCredential',
                             'IdentityCredentialJwtVcJson',
                             'IdentityCredentialLdpVc',
                             'IdentityCredentialDid',
-                            'IdentityCredentialLdpVcDid'];
+                            'IdentityCredentialLdpVcDid',
+                            'IdentityCredentialMdoc'];
 
 // THE KEM AND HPKE JWE ALGS (#82): `common/crypto.js`'s section 4a table,
 // written out because this file requires nothing in this repository.
@@ -1005,8 +1090,8 @@ const SETTINGS = [
   // what a caller reaches BEFORE it trusts anything. The certificate is generated at every start (and certified under
   // this service's Root, which a caller does not hold yet either), so the first
   // fetch has to be made without verification (`curl -k`), which is the
-  // ordinary bootstrap for a mock and is stated in docs/tls.md rather than
-  // left to be discovered.
+  // ordinary bootstrap for a mock and is stated in docs/v1.1.0/tls.md rather
+  // than left to be discovered.
   { key: 'global.https', group: 'Global', label: 'HTTPS on the main port',
     env: 'STS_HTTPS', type: 'bool', derived: true,
     // processValue() and not value(): a realm may carry `oauth2.rfc9700`, and
@@ -2924,12 +3009,13 @@ const SETTINGS = [
     path: 'authn.passwordAloneDoors', env: 'STS_AUTHN_PASSWORD_ALONE_DOORS',
     type: 'csv', dflt: '', runtime: true,
     // Mirrors common/app_passwords.ts's DOOR_IDS (the reader lower-cases).
-    csvValues: ['ldap', 'wstrust', 'scim', 'ssf', 'est'],
+    csvValues: ['ldap', 'wstrust', 'scim', 'ssf', 'est', 'xacml-pep'],
     description: 'Product mode only. A comma-separated list of the ' +
-                 'password-only doors — ldap, wstrust, scim, ssf, est — at ' +
+                 'password-only doors — ldap, wstrust, scim, ssf, est, ' +
+                 'xacml-pep — at ' +
                  'which a person who holds or must hold a second factor is ' +
                  'STILL accepted with their own password. Empty, the ' +
-                 'default, refuses that password at all five (answered as ' +
+                 'default, refuses that password at all six (answered as ' +
                  'a wrong password) and accepts only an app password there. ' +
                  '**WARNING: every door listed lowers every such person to ' +
                  'ONE factor at that door** (NIST SP 800-63B section 4.2: ' +
@@ -3982,6 +4068,32 @@ const SETTINGS = [
                  'algorithm; an algorithm outside the set still signs with ' +
                  'the per-algorithm key. Every key is a key pair of its own; ' +
                  'what the hybrid certificate shares is the certificate.' },
+  // THE KEY CREDENTIALS ARE SIGNED WITH (#1880, 1.1.0). `dedicated`, the
+  // default, is the compliant behaviour: `common/credential_signer.js`.
+  // `realm-key` is 1.0.0's, kept as the way back for a deployment whose
+  // verifiers pinned the realm's general key (backwards compatibility from
+  // 1.0.0 on). Per realm, read at every credential.
+  { key: 'keys.credentialSigner', group: 'Key material',
+    label: 'Credential signing key',
+    path: 'keys.credentialSigner', env: 'STS_KEYS_CREDENTIAL_SIGNER',
+    type: 'enum', enumValues: ['dedicated', 'realm-key'],
+    dflt: 'dedicated', runtime: true,
+    description: 'Which key signs this realm\'s dc+sd-jwt and jwt_vc_json ' +
+                 'credentials and their Token Status List Tokens. ' +
+                 '`dedicated` — the default — is a key of their own, per ' +
+                 'algorithm family, used for nothing else, under a ' +
+                 'certificate whose subjectAltName names every issuer ' +
+                 'identifier the realm answers to as a URI (no DNS name), ' +
+                 'with the extended key usage id-kp-documentSigning (RFC ' +
+                 '9336) and nothing a TLS stack would accept, so a wallet ' +
+                 'can match the credential\'s iss against its x5c (HAIP ' +
+                 '1.0 section 6.1.1). The certificate is re-issued when the ' +
+                 'issuer identifiers change (global.publicBaseUrl, ' +
+                 'tls.hostnames, a listener). `realm-key` signs them with ' +
+                 'the realm\'s general JOSE key, as 1.0.0 did, whose ' +
+                 'certificate names no issuer. Credentials already issued ' +
+                 'stay verifiable either way. ldp_vc and mso_mdoc are not ' +
+                 'affected.' },
   // THE REALM'S POST-QUANTUM AND HPKE DECRYPTION KEYS (#82, 2026-09-27).
   // EMPTY BY DEFAULT, deliberately (rcbj's decision on #82): see the
   // description. `common/helpers.js`'s kemEncryptionKeysFor() makes them.
@@ -5258,18 +5370,48 @@ const SETTINGS = [
                  'a sign-in flow in its address waits for the writes of ' +
                  'earlier requests that carried the same, for every write ' +
                  'of a request that carried none of them, and for the ' +
-                 'front process\'s own writes; a request carrying none of ' +
-                 'them, such as a token request from a client\'s server, ' +
-                 'SCIM or a management API call with a bearer token, waits ' +
-                 'for every write answered before it. So a browser sees its ' +
-                 'own writes and every back channel\'s at once, and another ' +
-                 'browser\'s only once the workers converge. `global`: ' +
-                 'every request ' +
+                 'front process\'s own writes. A request carrying none of ' +
+                 'them, such as SCIM or a management API call with a bearer ' +
+                 'token, waits for every write answered before it. A ' +
+                 'refresh grant in a small form that names one refresh ' +
+                 'token waits for that token\'s earlier writes and for ' +
+                 'keyless writes, and not for another browser\'s. A refresh ' +
+                 'token this process did not read out of a token response ' +
+                 'counts as one of those keyless writes. So a browser sees ' +
+                 'its own writes and the keyless writes at once, and ' +
+                 'another browser\'s, and another refresh token\'s, only ' +
+                 'once the workers converge. `global`: every request ' +
                  'waits for every write answered before it, which costs ' +
                  'tens of milliseconds a request under load. `off`: no ' +
                  'request waits, and a caller may not find its own write. ' +
                  '`true` means `session` and `false` means `off`. It must ' +
                  'not be off for a surface pool (workers.surfaceCount).' },
+
+  // ---------------------------------------------------------------------
+  // HOW LONG A READ BARRIER MAY HOLD A REQUEST BEFORE IT IS REFUSED
+  // (2026-11-14). It was a hard-coded 5,000 ms after which the request was
+  // SERVED from what a behind worker had — a wrong answer, which
+  // request_pool.js's A BARRIER THAT RUNS OUT IS A REFUSAL argues against.
+  // The default is past the 22 s the slowest apply took in the run that
+  // found it; there is no 0, because "never wait" is the stale answer.
+  // ---------------------------------------------------------------------
+  { key: 'workers.readBarrierTimeoutMs', group: 'Global',
+    label: 'Read barrier wait (ms)',
+    env: 'STS_WORKERS_READ_BARRIER_TIMEOUT_MS', type: 'int', dflt: 30000,
+    min: 1000, max: 600000, runtime: true, perProcess: true,
+    description: 'How long a request may wait, in all, for its request ' +
+                 'worker (or the front process, for a request it answers ' +
+                 'itself) to catch up with the writes answered before it, ' +
+                 'when workers.readYourWrite says it must. The worker is ' +
+                 'asked again every five seconds until it has caught up. ' +
+                 'Past this wait the request is refused with HTTP 503 and ' +
+                 'Retry-After (an LDAP, Kerberos or SPIFFE operation with ' +
+                 'its protocol\'s unavailable answer) rather than answered ' +
+                 'from a copy that may be stale. Raise it where a worker ' +
+                 'can take longer to apply a burst of writes (a global ' +
+                 'logout, a bulk load) on slow hardware; lower it where a ' +
+                 'quick refusal suits the callers better than a long wait. ' +
+                 'Read for each request.' },
 
   { key: 'workers.socketDir', group: 'Global',
     label: 'Request worker socket directory',
@@ -6813,13 +6955,11 @@ const SETTINGS = [
                  'may fix it and try again, and an IDENTICAL repeat of a ' +
                  'redemption is answered with the tokens it already got, for ' +
                  'the rest of the code\'s lifetime. RFC 9700, OAuth 2.1, ' +
-                 'FAPI and product mode ignore it. It exists for the parent ' +
-                 'project\'s development-mode job that still asserts the ' +
-                 'old courtesy (#187). On, each redeemed code\'s WHOLE ' +
-                 'token response — access token, refresh token and ID ' +
-                 'Token — is kept for the rest of its lifetime so that it ' +
-                 'can be sent again; off, only the issued tokens\' jti ' +
-                 'values are kept (#614).' },
+                 'FAPI and product mode ignore it. On, each redeemed ' +
+                 'code\'s WHOLE token response — access token, refresh ' +
+                 'token and ID Token — is kept for the rest of its ' +
+                 'lifetime so that it can be sent again; off, only the ' +
+                 'issued tokens\' jti values are kept (#614).' },
 
   { key: 'oauth2.maxPendingTransactions', group: 'OAuth 2.0 / OIDC',
     label: 'RFC 9700: remembered transactions (per realm)',
@@ -7685,10 +7825,14 @@ const SETTINGS = [
     runtime: true,
     description: 'Which key algorithm a new certificate authority is built ' +
                  'with when the form names none: rsa-2048, rsa-3072, ' +
-                 'rsa-4096, ec-p256, ec-p384, ec-p521 or ed25519, or one of ' +
-                 'the post-quantum ids (ML-DSA, SLH-DSA, the composites and ' +
-                 'ML-KEM — which cannot sign, so it is a subject key and ' +
-                 'never an authority\'s). RSA is the default because the ' +
+                 'rsa-4096, ec-p256, ec-p384, ec-p521 or ed25519, or ML-DSA ' +
+                 'or SLH-DSA. ML-KEM cannot sign, so it is a subject key ' +
+                 'and never an authority\'s. A composite ML-DSA id is ' +
+                 'accepted and not used for a CA certificate: OpenSSL ' +
+                 'cannot read a composite key on a TLS listener\'s chain, ' +
+                 'so the Root, the process branch and each realm\'s branch ' +
+                 'are built with a classical key instead (STS-PKI-0273, ' +
+                 'STS-PKI-0275). RSA is the default because the ' +
                  'LEAF this hierarchy exists to issue signs a client ' +
                  'assertion that somebody else\'s OAuth library has to ' +
                  'verify, and RS256 is the one algorithm every such library ' +
@@ -8641,6 +8785,43 @@ const SETTINGS = [
                  'before #1360, while every other row and the master are ' +
                  'untouched; off in product mode it is logged once ' +
                  '(STS-PKI-0239) and drawn red on /admin/pki/trust.' },
+  // #1713: the one row a site FORCES while it is on. rcbj asked for full
+  // paranoid validation of a policy export's signer, so on (the default) the
+  // checks run in development too; off, the master decides as for any row.
+  { key: 'pki.paranoidPolicySigner', group: 'PKI',
+    label: 'Paranoid: the signer of a policy export',
+    env: 'STS_PKI_PARANOID_POLICY_SIGNER', type: 'bool',
+    dflt: true, runtime: true,
+    description: 'Use case `policy-signer`: the certificate a policy ' +
+                 'export from Directory → Policies is signed with, and ' +
+                 'the chain in its x5c, when it is inspected or imported ' +
+                 '(#1713). On, the full checks apply in EVERY mode, the ' +
+                 'master pki.paranoid included: validity, keyUsage, the ' +
+                 'path and revocation of every link. Anchors: the ' +
+                 'service Root for this realm\'s own exports, the signer ' +
+                 'truststore for another realm\'s. Off, the master ' +
+                 'decides, as for every other row; off in product mode it ' +
+                 'is logged once (STS-PKI-0239) and drawn red on ' +
+                 '/admin/pki/trust.' },
+  // #1713: what a policy export is signed with. rcbj: "Make it configurable
+  // what algorithm is used. But, use the default signing cert for JOSE for
+  // the realm", so the default is RS256, the algorithm of the realm's own
+  // JOSE signing key, the one every relying party verifies.
+  { key: 'pki.policyExportAlgorithm', group: 'PKI',
+    label: 'Policy export signing algorithm',
+    env: 'STS_PKI_POLICY_EXPORT_ALGORITHM', type: 'enum',
+    enumValues: ['RS256', 'PS256', 'ES256', 'ES384', 'ES512', 'EdDSA',
+                 'ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87'],
+    dflt: 'RS256', runtime: true,
+    description: 'The JWS algorithm a policy export from Directory → ' +
+                 'Policies is signed with (#1713). Each export is signed ' +
+                 'by a fresh key of this algorithm, certified by this ' +
+                 'realm\'s Policy Export Signing CA, and the document ' +
+                 'carries that certificate and its whole chain in the x5c. ' +
+                 'RS256 by default: the algorithm of the realm\'s own JOSE ' +
+                 'signing key. An RSA key is 3072 bits. A change applies ' +
+                 'to the next export; an export already made keeps the ' +
+                 'algorithm it was signed with.' },
   // The signer truststore's file layer (#1360): a PEM bundle read at start
   // into the DEFAULT realm's signer truststore, as `tls.trustAnchorsFile` is
   // read into the client truststore. Per process and restart-only for the
@@ -8846,7 +9027,8 @@ const SETTINGS = [
     runtime: true,
     description: 'A client certificate THIS REALM issued, verified to its ' +
                  'Intermediate and mapped to its entry by the ' +
-                 'urn:sts:person: or urn:sts:application: name in it ' +
+                 'urn:sts:person:, urn:sts:sa: (a service account) or ' +
+                 'urn:sts:application: name in it ' +
                  '(RFC 7030 section 3.3.2). Required for simplereenroll ' +
                  'with no Basic credential.' },
   { key: 'est.serverKeyGeneration', group: 'EST',
@@ -9019,6 +9201,29 @@ const SETTINGS = [
                  'and is measured from the last redemption rather than from ' +
                  'issuance: this one is a wall a chain cannot be refreshed ' +
                  'past however busy it is.' },
+
+  // #825: not a token lifetime, and deliberately not on
+  // /admin/token-lifetimes. The page, its OpenAPI body and its catalogs say
+  // six token settings. This one is enforced at the authorization endpoint.
+  { key: 'oauth2.maxAuthAgeS', group: 'OAuth 2.0 / OIDC per-client',
+    label: 'Maximum authentication age (s)',
+    env: 'STS_OAUTH2_MAX_AUTH_AGE_S', type: 'int', dflt: 0,
+    min: 0, max: 2592000, step: 30, runtime: true,
+    description: 'How long ago a client was authenticated, in seconds, ' +
+                 'before an authorization request must authenticate again, ' +
+                 'even when the request sends no max_age. 0, the default, ' +
+                 'adds no bound of its own, so an ordinary client is ' +
+                 'unchanged. Read on each authorization request: it does ' +
+                 'not rewrite a session already stored. The admin console ' +
+                 '(sts-admin-console), the user portal (sts-user-portal) ' +
+                 'and the reports application (sts-report) each carry ' +
+                 'their own value and take the shorter of it and ' +
+                 'authn.sessionLifetimeS, so raising this setting or the ' +
+                 'session lifetime never lengthens those three, and ' +
+                 'lowering authn.sessionLifetimeS still shortens them. A ' +
+                 'per-client override is oauthMaxAuthAgeS. This is not a ' +
+                 'token lifetime and it is not on /admin/token-lifetimes ' +
+                 '(#825).' },
 
   // The fourth is not a lifetime, and it is deliberately NOT folded into
   // `oauth2.clientAssertionSkewS` beside it: that one is how far out a CLIENT'S
@@ -10532,6 +10737,21 @@ const SETTINGS = [
                  'entry. 0 ends the old key at the rotation. Only the key ' +
                  'just replaced is kept: a second rotation inside the ' +
                  'window drops the older one.' },
+  { key: 'federation.clientCertificateRenewDays', group: 'Federation',
+    label: 'Renew a FAPI client certificate this many days before it ' +
+           'expires',
+    env: 'STS_FEDERATION_CLIENT_CERTIFICATE_RENEW_DAYS', type: 'int',
+    dflt: 30, min: 1, max: 3650, runtime: true,
+    description: 'A FAPI 1.0 Advanced federation relationship presents a ' +
+                 'TLS client certificate from this realm\'s TLS Client ' +
+                 'Issuing CA to the partner (RFC 8705), and the partner ' +
+                 'binds its access tokens to it. The scheduler job ' +
+                 'federation.client-certificate-renew issues a new one, ' +
+                 'with the same subject, this many days before the current ' +
+                 'one expires. A partner that registered the subject DN ' +
+                 '(tls_client_auth) needs nothing; one that pinned the ' +
+                 'certificate itself must be given the new one, which the ' +
+                 'relationship\'s page shows.' },
 
   // --- SAML ----------------------------------------------------------------
   // ---------------------------------------------------------------------
@@ -10699,7 +10919,9 @@ const SETTINGS = [
   { key: 'saml2.assertionLifetimeMin', group: 'SAML 2.0 assertions',
     label: 'Assertion lifetime (minutes)',
     env: 'STS_SAML2_ASSERTION_LIFETIME_MIN', type: 'int', dflt: 60,
-    runtime: true,
+    // `min: 1` (#39, 2026-11-15): with no bound a realm or an application
+    // could store 0, which the readers' `|| 60` then read as an hour.
+    min: 1, runtime: true,
     description: 'How long an issued assertion is valid for: it becomes ' +
                  'Conditions/NotOnOrAfter and the bearer ' +
                  'SubjectConfirmationData/NotOnOrAfter alike. Set it to 1 to ' +
@@ -10754,6 +10976,7 @@ const SETTINGS = [
   { key: 'saml2.nameIdFormat', group: 'SAML 2.0 assertions', label: 'Default ' +
       'NameID format',
     env: 'STS_SAML2_NAMEID_FORMAT', type: 'string',
+    absoluteUri: true,
     dflt: 'urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified',
     runtime: true,
     description: 'The Format on the NameID when the AuthnRequest\'s ' +
@@ -11161,7 +11384,9 @@ const SETTINGS = [
   { key: 'saml11.assertionLifetimeMin', group: 'SAML 1.1 assertions',
     label: 'Assertion lifetime (minutes)',
     env: 'STS_SAML11_ASSERTION_LIFETIME_MIN', type: 'int', dflt: 60,
-    runtime: true,
+    // `min: 1` (#39, 2026-11-15): with no bound a realm or an application
+    // could store 0, which the readers' `|| 60` then read as an hour.
+    min: 1, runtime: true,
     description: 'How long the browser profiles\' assertions are valid for, ' +
                  'in the NotBefore and NotOnOrAfter of <saml:Conditions>. It ' +
                  'is separate from the WS-Federation lifetime for the same ' +
@@ -11218,6 +11443,7 @@ const SETTINGS = [
     label: 'Default ' +
       'NameIdentifier format',
     env: 'STS_SAML11_NAMEID_FORMAT', type: 'string',
+    absoluteUri: true,
     dflt: 'urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified',
     runtime: true,
     description: 'The Format on the <saml:NameIdentifier> when the request ' +
@@ -11225,8 +11451,8 @@ const SETTINGS = [
                  'profile has no request message to carry a NameIDPolicy in. ' +
                  'That is the difference from saml2.nameIdFormat, which is a ' +
                  'default a request routinely overrides: this one is the ' +
-                 'answer unless the non-spec `format` parameter overrides ' +
-                 'it.' },
+                 'answer, unless the relying party\'s entry sets ' +
+                 'saml11NameIdFormat.' },
 
   { key: 'saml11.defaultProfile', group: 'SAML 1.1', label: 'Default browser ' +
       'profile',
@@ -11234,17 +11460,18 @@ const SETTINGS = [
     enumValues: ['post', 'artifact'],
     dflt: 'post', runtime: true,
     description: 'Which profile the inter-site transfer service uses when ' +
-                 'the request does not say: Browser/POST (section 4.2), ' +
+                 'the relying party registered no binding for the `shire` ' +
+                 'it sends: Browser/POST (section 4.2), ' +
                  'where the assertion travels through the browser in a form ' +
                  'POST, or Browser/Artifact (section 4.1), where a reference ' +
                  'travels through the browser and the relying party fetches ' +
                  'the assertion over SOAP. POST is the default because it ' +
                  'needs no server behind the relying party\'s assertion ' +
                  'consumer, so it is the one that works when somebody points ' +
-                 'this at a URL and watches. The non-spec `profile` ' +
-                 'parameter overrides it, and so does the binding a ' +
-                 'relying party registered for the `shire` it sends ' +
-                 '(samlAcsEndpoint, from consumed metadata).' },
+                 'this at a URL and watches. The binding a relying party ' +
+                 'registered for the `shire` it sends (samlAcsEndpoint, ' +
+                 'from consumed metadata) overrides it; nothing in the ' +
+                 'request does.' },
 
   { key: 'saml11.doNotCacheCondition', group: 'SAML 1.1 assertions',
     label: 'Mark a Browser/POST assertion DoNotCache',
@@ -11470,6 +11697,122 @@ const SETTINGS = [
                  'party that acted in its PAC\'s S4U_DELEGATION_INFO. Off, ' +
                  'such a request is refused.' },
 
+  // XML ENCRYPTION OF A WS-TRUST REQUEST AND RESPONSE (#1668). The two
+  // switches default off, so a request and a response stay as they were
+  // until an operator turns one on. Which elements, and which certificate
+  // a response is encrypted to, are the application's own attributes.
+  { key: 'wstrust.encryptRequest', group: 'WS-Trust',
+    label: 'Require the named elements of a request encrypted',
+    env: 'STS_WSTRUST_ENCRYPT_REQUEST', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Whether a RequestSecurityToken whose AppliesTo names no ' +
+                 'application of its own must arrive with the elements of ' +
+                 'wstrustEncryptRequestElements encrypted. An ' +
+                 'application\'s wstrustEncryptRequest overrides this for ' +
+                 'a request whose AppliesTo names it. Which ciphertext is ' +
+                 'opened at all is wstrust.acceptEncryptedElements; the ' +
+                 'AppliesTo is read from the opened request. ' +
+                 'On, and the map is empty, or an expression matches an ' +
+                 'element that arrived in the clear or nothing that was ' +
+                 'restored, the request is a wsse:FailedCheck. A ' +
+                 'ciphertext that will not open is that fault either way.' },
+  // ARBITRARY CIPHERTEXT (rcbj on #1908, 2026-11-18). OFF BY DEFAULT IN
+  // BOTH MODES: what a request may hide is then what an administrator
+  // named in a map, and nothing else is decrypted on a requester's say-so.
+  // Development does not differ, because the WSDL offers request
+  // encryption only where this is on, and a development realm that offered
+  // what product refuses would teach a client the wrong contract. An
+  // operator, or an application, turns it on.
+  { key: 'wstrust.acceptEncryptedElements', group: 'WS-Trust',
+    label: 'Accept encrypted elements no map names',
+    env: 'STS_WSTRUST_ACCEPT_ENCRYPTED_ELEMENTS', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'Whether a RequestSecurityToken may carry XML Encryption ' +
+                 'anywhere, in a header or the body, with no request map ' +
+                 'naming it. On, every encrypted element is opened. Off, ' +
+                 'ciphertext is accepted only where the application\'s ' +
+                 'wstrustEncryptRequestElements names it, and ciphertext ' +
+                 'with no map is a wst:InvalidRequest. Either way a ' +
+                 'ciphertext must open with this realm\'s keys. An ' +
+                 'application\'s wstrustAcceptEncryptedElements overrides ' +
+                 'this. The WSDL offers request encryption only while it ' +
+                 'is on.' },
+  // THE ENCRYPTION CERTIFICATE AS EACH PORT'S ENDPOINT IDENTITY (rcbj,
+  // 2026-11-19, on #1908). OFF BY DEFAULT IN BOTH MODES: the element is
+  // WS-AddressingIdentity's, a Microsoft specification that never became
+  // an OASIS or W3C standard, and a realm does not advertise a
+  // non-standard element unless an operator asks for it. Off, a client
+  // takes the certificate out of band (ws-trust/CLAUDE.md). One WSDL per
+  // realm, so a realm setting and no application attribute.
+  { key: 'wstrust.advertiseEndpointIdentity', group: 'WS-Trust',
+    label: 'Advertise the encryption certificate as each port\'s identity',
+    env: 'STS_WSTRUST_ADVERTISE_ENDPOINT_IDENTITY', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'Whether every port of the WSDL at /sts/metadata carries ' +
+                 'a wsa:EndpointReference whose wsid:Identity holds this ' +
+                 'realm\'s XML Encryption certificate, the certificate a ' +
+                 'request is encrypted to. The element is from ' +
+                 'WS-AddressingIdentity, a Microsoft specification that ' +
+                 'was never standardised; WCF reads it, and so do the ' +
+                 'toolkits that copy WCF. Off, the WSDL names no ' +
+                 'certificate and a client is configured with it out of ' +
+                 'band: the KeyDescriptor use="encryption" of ' +
+                 '/saml2/metadata, which is the same certificate. What a ' +
+                 'request may encrypt is unchanged either way.' },
+  { key: 'wstrust.encryptResponse', group: 'WS-Trust',
+    label: 'Encrypt the named elements of a response',
+    env: 'STS_WSTRUST_ENCRYPT_RESPONSE', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Whether a RequestSecurityTokenResponse has the elements ' +
+                 'of wstrustEncryptResponseElements replaced by ' +
+                 'xenc:EncryptedData after it is built, for any token ' +
+                 'type. An application\'s wstrustEncryptResponse overrides ' +
+                 'this. The recipient is that application\'s ' +
+                 'wstrustEncryptionCertificate, else the certificate ' +
+                 'element wstrustResponseRecipientXPath selects, else the ' +
+                 'first signer certificate element the request\'s ' +
+                 'WS-Security signature names. A fault is sent in the ' +
+                 'clear. On, and the encryption cannot be completed, the ' +
+                 'request is a fault in both modes.' },
+  { key: 'wstrust.encryptionAlgorithm', group: 'WS-Trust',
+    label: 'Response encryption algorithm',
+    env: 'STS_WSTRUST_ENCRYPTION_ALGORITHM', type: 'enum',
+    enumValues: ['aes256-gcm', 'aes128-gcm', 'aes256-cbc', 'aes128-cbc'],
+    dflt: 'aes256-gcm', runtime: true,
+    onlyWhile: 'usesBrokenAlgorithms',
+    onlyWhileValues: ['aes256-cbc', 'aes128-cbc'],
+    description: 'The block cipher a WS-Trust response\'s encrypted ' +
+                 'elements are encrypted with. The two GCM ones are ' +
+                 'authenticated: an altered ciphertext fails its tag and ' +
+                 'is refused. The two CBC ones are not. An application\'s ' +
+                 'wstrustEncryptionAlgorithm overrides this. A ' +
+                 'wst:EncryptionAlgorithm element may name this cipher, by ' +
+                 'its short name or its XML Encryption URI, only while ' +
+                 'response encryption is on.' },
+  { key: 'wstrust.keyTransportAlgorithm', group: 'WS-Trust',
+    label: 'Response key transport algorithm',
+    env: 'STS_WSTRUST_KEY_TRANSPORT_ALGORITHM', type: 'enum',
+    enumValues: ['rsa-oaep-mgf1p', 'rsa-oaep', 'rsa-1_5'],
+    dflt: 'rsa-oaep-mgf1p', runtime: true,
+    onlyWhile: 'usesBrokenAlgorithms', onlyWhileValues: ['rsa-1_5'],
+    description: 'How the one-time content key of a WS-Trust response is ' +
+                 'wrapped to the recipient\'s RSA public key. `rsa-oaep` ' +
+                 'is XML Encryption 1.1\'s RSA-OAEP with SHA-256 and ' +
+                 'MGF1-SHA-256; `rsa-oaep-mgf1p` is OAEP over SHA-1. A ' +
+                 'recipient whose certificate is EC is encrypted to by ' +
+                 'ECDH-ES key agreement whatever this says. An ' +
+                 'application\'s wstrustKeyTransportAlgorithm overrides ' +
+                 'this. `rsa-1_5` is RSAES-PKCS1-v1_5 and is broken, and ' +
+                 'it is offered because a deployed requester may accept ' +
+                 'nothing else. WARNING: rsa-1_5 is development mode ' +
+                 'only — in product mode it is ignored where it is read, ' +
+                 'on this setting and on an application\'s ' +
+                 'wstrustKeyTransportAlgorithm (rsa-oaep-mgf1p is used, ' +
+                 'logged once, STS-CORE-0106), and setting it is refused ' +
+                 '(STS-CORE-0103, STS-REG-0193). A wst:EncryptWith element ' +
+                 'may name this algorithm only while response encryption ' +
+                 'is on.' },
+
   // WHO MAY START A SIGN-IN (#426, #710), the WS-Federation pair. A
   // wsignin1.0 at /wsfed is the relying party's (WS-Federation 1.2 section
   // 13.2.1); /wsfed/initiate/{rp} is this identity provider's, posting to the
@@ -11687,7 +12030,7 @@ const SETTINGS = [
   // section 5.2.2 asks exactly this of a server, and it is the default for
   // every listener rather than a FAPI switch, because a cipher suite is a
   // property of the SOCKET and a profile is a property of a realm. A weaker
-  // list stays settable; docs/tls.md says what that costs.
+  // list stays settable; docs/v1.1.0/tls.md says what that costs.
   { key: 'tls.ciphers', group: 'TLS', label: 'TLS 1.2 cipher list',
     env: 'STS_TLS_CIPHERS', type: 'string',
     dflt: 'ECDHE-ECDSA-AES128-GCM-SHA256:' +
@@ -12281,7 +12624,67 @@ const SETTINGS = [
                  'bbs-2023 and is not affected. A credential already issued ' +
                  'keeps the algorithm it was signed with. ' +
                  'oid4vc.walletCompatibility refuses a post-quantum or ' +
-                 'composite one here.' },
+                 'composite one here. An mso_mdoc is signed with COSE ' +
+                 'ES256 (-7) or ESP256 (-9), not with this algorithm.' },
+
+  // AN mdoc's DOCUMENT TYPE AND NAMESPACE (#1862). The same values the
+  // verifier accepts by default, so a realm that changes neither issues
+  // a document it will also accept. An operator who wants an ISO mDL
+  // sets both sides to org.iso.18013.5.1.mDL and org.iso.18013.5.1.
+  { key: 'oid4vci.mdocDoctype', group: 'OID4VCI',
+    label: 'mdoc document type',
+    env: 'OID4VCI_MDOC_DOCTYPE', type: 'string',
+    dflt: 'urn:iya:sts:mdoc:identity', runtime: true,
+    description: 'The docType of an mso_mdoc this realm issues (ISO/IEC ' +
+                 '18013-5). A wallet sign-in asks for this same type. ' +
+                 'The verifier\'s bar door uses oid4vp.expectedDoctype, ' +
+                 'which defaults to the same value.' },
+
+  { key: 'oid4vci.mdocNamespace', group: 'OID4VCI',
+    label: 'mdoc data namespace',
+    env: 'OID4VCI_MDOC_NAMESPACE', type: 'string',
+    dflt: 'urn:iya:sts:mdoc', runtime: true,
+    description: 'The namespace an issued mdoc\'s elements are named ' +
+                 'in. A sign-in asks for issuing_authority in this ' +
+                 'namespace. The verifier\'s bar door uses ' +
+                 'oid4vp.mdocNamespace, which defaults to the same value.' },
+
+  { key: 'oid4vci.mdocValidityDays', group: 'OID4VCI',
+    label: 'mdoc validity (days)',
+    env: 'OID4VCI_MDOC_VALIDITY_DAYS', type: 'int', dflt: 365,
+    min: 1, max: 3650, runtime: true,
+    description: 'How many days an issued mdoc\'s validityInfo covers, ' +
+                 'from the moment it is signed. The document signer\'s ' +
+                 'certificate is shorter than the Issuing Authority CA ' +
+                 'and may end before this window does; a verifier checks ' +
+                 'the signature time against the certificate, not the ' +
+                 'document\'s expiry.' },
+
+  { key: 'oid4vci.mdocAgeThresholds', group: 'OID4VCI',
+    label: 'mdoc age-over thresholds',
+    env: 'OID4VCI_MDOC_AGE_THRESHOLDS', type: 'csv', dflt: '18,21',
+    runtime: true,
+    description: 'The age_over_NN booleans an mdoc carries when the ' +
+                 'person has a birth date, as whole years. Computed from ' +
+                 'the birth date. A portrait and driving privileges are ' +
+                 'not invented.' },
+
+  { key: 'oid4vci.mdocIssuingCountry', group: 'OID4VCI',
+    label: 'mdoc issuing country',
+    env: 'OID4VCI_MDOC_ISSUING_COUNTRY', type: 'string', dflt: 'US',
+    runtime: true,
+    description: 'The ISO 3166-1 alpha-2 country the Issuing Authority ' +
+                 'CA\'s subject names, and the issuing_country element ' +
+                 'of every mdoc. Two letters.' },
+
+  { key: 'oid4vci.mdocIssuingAuthority', group: 'OID4VCI',
+    label: 'mdoc issuing authority',
+    env: 'OID4VCI_MDOC_ISSUING_AUTHORITY', type: 'string',
+    dflt: 'Iya STS', runtime: true,
+    description: 'The name in the Issuing Authority CA\'s common name ' +
+                 'and the issuing_authority element of every mdoc. A ' +
+                 'wallet sign-in asks for this element, which is always ' +
+                 'present.' },
 
   // `x5c` BY DEFAULT (2026-10-16): eudi-dev's wallet refused every
   // credential's Token Status List with "no key to verify the status list
@@ -12434,6 +12837,34 @@ const SETTINGS = [
                  'narrower reason: ldp_vc\'s verificationMethod is an https ' +
                  'URL that existing tests dereference, and switching it to a ' +
                  'DID URL breaks them silently.' },
+
+  // THE STATEMENTS A HOLDER CANNOT WITHHOLD (#1878): bbs-2023's mandatory
+  // JSON pointers, per ldp_vc credential configuration. vc-di-bbs hashes the
+  // statements they select into the BBS header, so a derived proof that
+  // leaves one out does not verify. The default is what a verifier of this
+  // credential needs to know which issuer stands behind it, what it is and
+  // whether it is still valid; the subject and the claims stay the holder's
+  // to choose. The specification's privacy considerations are the reason
+  // the list is short: every mandatory statement shrinks the anonymity set.
+  { key: 'oid4vci.ldpVcMandatoryPointers', group: 'OID4VCI',
+    label: 'ldp_vc mandatory JSON pointers',
+    env: 'OID4VCI_LDP_VC_MANDATORY_POINTERS', type: 'csv',
+    dflt: '/issuer,/type,/validFrom,/validUntil', runtime: true,
+    description: 'The JSON pointers (RFC 6901) of the statements every ' +
+                 'derived proof of an IdentityCredentialLdpVc credential ' +
+                 'must reveal: bbs-2023 (W3C Data Integrity BBS ' +
+                 'Cryptosuites v1.0) hashes them into the signature\'s ' +
+                 'header, so a holder cannot leave one out. The default ' +
+                 'names the issuer, the type and the validity window. A ' +
+                 'pointer that is not a JSON pointer, or names nothing in ' +
+                 'the credential, refuses the issuance (STS-VC-0180). A ' +
+                 'change applies to the next credential issued.' },
+  { key: 'oid4vci.ldpVcDidMandatoryPointers', group: 'OID4VCI',
+    label: 'ldp_vc (did:web) mandatory JSON pointers',
+    env: 'OID4VCI_LDP_VC_DID_MANDATORY_POINTERS', type: 'csv',
+    dflt: '/issuer,/type,/validFrom,/validUntil', runtime: true,
+    description: 'The same for the IdentityCredentialLdpVcDid ' +
+                 'configuration, whose issuer names itself by did:web.' },
 
   // --- OID4VP --------------------------------------------------------------
   { key: 'oid4vp.clientId', group: 'OID4VP', label: 'Verifier client ID',
@@ -12588,6 +13019,38 @@ const SETTINGS = [
                  'for a wallet that accepts them; ' +
                  'oid4vc.walletCompatibility refuses them, and so does ' +
                  'keys.postQuantumSigning off.' },
+
+  // THE PRE-1.1 bbs-2023 FORMAT, PER REALM AND OFF (#1878, rcbj: "add a
+  // flag to use the old format per realm"). Until 1.1.0 this service's
+  // bbs-2023 was a private format; since then it is the W3C cryptosuite, and
+  // a realm issues and accepts only that. A realm with this on ISSUES its
+  // ldp_vc credentials in the old format and also ACCEPTS the old envelope
+  // (as well as W3C presentations): the old format exists only for wallets
+  // that implement it, and such a wallet needs both halves — a credential it
+  // can derive from, and a Verifier that reads what it derives. The old
+  // format is labelled `iya-bbs-2023-legacy` wherever this service names it,
+  // never `bbs-2023`. Every use is logged (STS-VC-0182, STS-VC-0183).
+  // `oid4vc/CLAUDE.md` argues it.
+  { key: 'oid4vc.bbs2023LegacyFormat', group: 'OID4VCI',
+    label: 'Use the pre-1.1 bbs-2023 format',
+    env: 'OID4VC_BBS2023_LEGACY_FORMAT', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Makes this realm issue its ldp_vc credentials in the ' +
+                 'private format iya-sts 1.0 used, and accept a ' +
+                 'presentation in it, for a wallet that has not moved to ' +
+                 'the W3C bbs-2023 cryptosuite (W3C Data Integrity BBS ' +
+                 'Cryptosuites v1.0). OFF, the default: the realm issues ' +
+                 'and accepts only W3C bbs-2023, and refuses the old ' +
+                 'format by name (STS-VC-0181). The old format is not a ' +
+                 'standard, no other implementation reads it, and it is ' +
+                 'named iya-bbs-2023-legacy in the metadata and in the ' +
+                 'credential, never bbs-2023. W3C presentations are still ' +
+                 'accepted with it on. Every credential issued in it is ' +
+                 'logged under STS-VC-0183 and every presentation accepted ' +
+                 'in it under STS-VC-0182. Turn it on only while such a ' +
+                 'wallet is in use; a credential issued under it cannot be ' +
+                 'presented once it is off, and its holder needs a new ' +
+                 'one.' },
 
   { key: 'oid4vc.walletCompatibility', group: 'OID4VCI',
     label: 'Wallet compatibility mode',
@@ -12964,11 +13427,12 @@ const SETTINGS = [
                  'type.' },
 
   // AN ISO mdoc (#935, OpenID4VP 1.0 Appendix B.2, ISO/IEC 18013-5): the
-  // fourth format the Verifier asks for. This realm issues none, so every
-  // mdoc it accepts is another issuer's, and these three say whose and what:
-  // the IACA certificates a document signer must chain to (no chain, no
-  // mdoc — the default trusts nobody), the document type, and the namespace
-  // the requested claims are read from.
+  // fourth format the Verifier asks for. This realm also issues one
+  // (#1862). These three say whose and what the bar door accepts: the
+  // IACA certificates a document signer must chain to, the document
+  // type, and the namespace the requested claims are read from. An empty
+  // anchor list still trusts nobody until this realm has minted its own
+  // IACA, which is then trusted as well.
   { key: 'oid4vp.mdocTrustAnchors', group: 'OID4VP',
     label: 'Trusted mdoc issuing authorities (IACA certificates, PEM)',
     env: 'OID4VP_MDOC_TRUST_ANCHORS', type: 'string', dflt: '',
@@ -12979,28 +13443,32 @@ const SETTINGS = [
                  'built and checked as RFC 5280 says, the document signer\'s ' +
                  'revocation is consulted (pki.revocationCheck), and an mdoc ' +
                  'whose signer chains to none of these is refused. Empty — ' +
-                 'the default — trusts no mdoc issuer, so an mso_mdoc ' +
-                 'presentation is refused until one is named.' },
+                 'the default — trusts no mdoc issuer except this ' +
+                 'realm\'s own Issuing Authority CA, once one has been ' +
+                 'minted (GET /oid4vci/mdoc-iaca).' },
 
   { key: 'oid4vp.expectedDoctype', group: 'OID4VP',
     label: 'Expected mdoc document type (docType)',
     env: 'OID4VP_EXPECTED_DOCTYPE', type: 'string',
-    dflt: 'org.iso.18013.5.1.mDL', runtime: true,
+    dflt: 'urn:iya:sts:mdoc:identity', runtime: true,
     description: 'The `docType` an mso_mdoc request asks for ' +
                  '(`meta.doctype_value`) and the Verifier requires of the ' +
                  'presented document and its Mobile Security Object. The ' +
-                 'default is the mobile driving licence of ISO/IEC 18013-5.' },
+                 'default is the type this realm issues ' +
+                 '(oid4vci.mdocDoctype). An ISO mobile driving licence is ' +
+                 'org.iso.18013.5.1.mDL, set here and on the issuer.' },
 
   { key: 'oid4vp.mdocNamespace', group: 'OID4VP',
     label: 'mdoc namespace the requested claims are read from',
     env: 'OID4VP_MDOC_NAMESPACE', type: 'string',
-    dflt: 'org.iso.18013.5.1', runtime: true,
+    dflt: 'urn:iya:sts:mdoc', runtime: true,
     description: 'The namespace an mso_mdoc request\'s claim paths name ' +
                  '(`[namespace, element]`, OpenID4VP 1.0 Appendix B.2.3). ' +
                  'Each requested claim is asked for as the data element of ' +
                  'the same name, except birthdate (birth_date) and address ' +
                  '(resident_address), which ISO/IEC 18013-5 names ' +
-                 'differently. The default is the mobile driving licence\'s.' },
+                 'differently. The default is the namespace this realm ' +
+                 'issues in (oid4vci.mdocNamespace).' },
 
   { key: 'oid4vp.maxRequestedClaims', group: 'OID4VP',
     label: 'Claims one request may ask for',
@@ -13126,18 +13594,21 @@ const SETTINGS = [
   { key: 'oid4vp.signInFormats', group: 'OID4VP',
     label: 'Wallet sign-in credential formats',
     env: 'OID4VP_SIGN_IN_FORMATS', type: 'csv',
-    dflt: 'dc+sd-jwt,jwt_vc_json,ldp_vc', runtime: true,
+    dflt: 'dc+sd-jwt,jwt_vc_json,ldp_vc,mso_mdoc', runtime: true,
     // Mirrors oid4vc/vc_verifier.ts's SIGN_IN_FORMATS, and `dc sd-jwt`, which
     // its reader turns back into dc+sd-jwt.
-    csvValues: ['dc+sd-jwt', 'jwt_vc_json', 'ldp_vc', 'dc sd-jwt'],
+    csvValues: ['dc+sd-jwt', 'jwt_vc_json', 'ldp_vc', 'mso_mdoc',
+                'dc sd-jwt'],
     description: 'The credential formats a wallet sign-in asks for, in ' +
                  'order of preference: one DCQL credential query each, and ' +
                  'a credential set saying any one will do. Each signs in ' +
                  'only with a fresh holder proof — a Key Binding JWT, a VP ' +
-                 'JWT, or a Data Integrity proof — for this request. ' +
-                 'Unknown names are ignored; none at all means all three. ' +
-                 'A wallet that answers only the first query it reads ' +
-                 'answers in the first format here.' },
+                 'JWT, a Data Integrity proof, or an mdoc device ' +
+                 'signature — for this request. Unknown names are ' +
+                 'ignored; none at all means all four. A wallet that ' +
+                 'answers only the first query it reads answers in the ' +
+                 'first format here. An mso_mdoc signs somebody in only ' +
+                 'when this realm issued it.' },
 
   { key: 'oid4vp.signInDcApiResponseMode', group: 'OID4VP',
     label: 'Digital Credentials API response mode',
@@ -13323,7 +13794,15 @@ const SETTINGS = [
                  'with a wallet. Off: nothing new is published; a DID ' +
                  'already published is still served, deactivated or not, ' +
                  'because its address is kept for good. In product mode a ' +
-                 'DID is published only on a pinned global.publicBaseUrl.' },
+                 'DID is published only on a pinned global.publicBaseUrl. ' +
+                 'A key already enrolled for sign-in is not published ' +
+                 '(#775): the wallet proves a key that is not one of the ' +
+                 'person\'s sign-in subjects, so the document is not a ' +
+                 'public copy of a sign-in key. Changing ' +
+                 'global.publicBaseUrl, or the realm\'s path, does not ' +
+                 'rewrite a DID already published; it keeps the host and ' +
+                 'path it was minted on, and stops resolving if that ' +
+                 'address no longer reaches this realm.' },
   { key: 'did.personCustody', group: 'Person DIDs',
     label: 'Who holds the private key of a person\'s DID',
     env: 'STS_DID_PERSON_CUSTODY', type: 'enum',
@@ -13591,8 +14070,15 @@ const SETTINGS = [
   { key: 'krb5.renewLifetimeSeconds', group: 'Kerberos',
     label: 'Renewable lifetime (s)', env: 'KRB5_RENEW_LIFETIME_S', type: 'int',
     dflt: 604800, min: 60, max: 31536000, runtime: true,
-    description: 'How far renew-till reaches for a ticket issued renewable. ' +
-                 'Seven days is Active Directory\'s default.' },
+    description: 'The maximum renew-till of a ticket issued renewable, ' +
+                 'measured from its start. A requested rtime shortens ' +
+                 'it, and with no rtime the ticket takes this maximum. ' +
+                 'An rtime at or before the ticket\'s endtime still ' +
+                 'marks it renewable, as MIT krb5 does. RENEWABLE-OK ' +
+                 'sets the flag only when the requested endtime was ' +
+                 'shortened and the resulting renew-till is later than ' +
+                 'the endtime issued. Seven days is Active Directory\'s ' +
+                 'default.' },
 
   { key: 'krb5.logonServer', group: 'Kerberos', label: 'PAC logon server',
     env: 'KRB5_LOGON_SERVER', type: 'string', dflt: 'DC01', runtime: true,
@@ -14108,10 +14594,10 @@ const SETTINGS = [
   // off the one thing this setting does control.
   //
   // What it cost is worth recording, because it was invisible from every
-  // direction: ldap_server.js's own header, docs/ldap.md, docs/mock-sts.md and
-  // tests/api_ldap.js all said "on by default", so a directory that stayed
-  // empty after somebody signed in read as a broken hook rather than as a
-  // setting doing exactly what it was set to.
+  // direction: ldap_server.js's own header, docs/v1.1.0/ldap.md,
+  // docs/mock-sts.md and tests/api_ldap.js all said "on by default", so a
+  // directory that stayed empty after somebody signed in read as a broken hook
+  // rather than as a setting doing exactly what it was set to.
   { key: 'ldap.autocreateUsers', group: 'LDAP', label: 'Auto-create users',
     env: 'LDAP_AUTOCREATE_USERS', type: 'bool', dflt: true, runtime: true,
     description: 'When on, an entry appears at uid=<name>,ou=users,<base> ' +
@@ -14791,8 +15277,8 @@ const SETTINGS = [
   // which (a SAML entityID, a WS-Trust AppliesTo, a Kerberos SPN, this
   // service's own seeded ones) never declare an access type and never get
   // a policy. So this stays an ordinary row — in env/defaults.js, on the
-  // console, in docs/configuration.md as the value it is — rather than a
-  // fifth exemption from the refusal of a row with no value. An operator
+  // console, in docs/v1.1.0/configuration.md as the value it is — rather
+  // than a fifth exemption from the refusal of a row with no value. An operator
   // who raises applications.max raises this beside it when those
   // applications will enforce fine-grained authorization; the refusal
   // (STS-FGA-0024) names both settings and their values.
@@ -14880,6 +15366,60 @@ const SETTINGS = [
                  'registration is marked UNAUTHENTICATED on its entry and on ' +
                  'the console rather than being quietly indistinguishable ' +
                  'from one that proved something.' },
+
+  // #1827's follow-up (rcbj-approved plan, 2026-11-16): which credential a
+  // remote PEP may present. Runtime and per realm, as
+  // `xacml.pepRequireCertificate` and `authzen.callerAuthentication` are —
+  // the two settings that already say how this realm's PEP door and its
+  // AuthZEN door authenticate a caller — because it moves no socket and is a
+  // fact about the realm's PEPs, whose tokens a realm's own `sts-remote-pep`
+  // issues. `either` through phase 3 of the plan; PHASE 4 (rcbj, 2026-11-16)
+  // MADE `token` THE DEFAULT, and `certificate` and `either` stay an
+  // operator's choice for good. A value an operator stored or set in an
+  // appconfig file wins over this default, as every value does. The 1.1.0
+  // upgrade script (postgres/ and mariadb/upgrade-1.0.0.sql) stores `either`
+  // in every realm with a registered remote PEP, since 1.0.0's PEPs all
+  // authenticated by certificate; a store it does not reach sets it by
+  // hand, and a PEP refused for that is refused under STS-XACML-0289 with a
+  // description saying so.
+  { key: 'xacml.pepAuthentication', group: 'XACML',
+    label: 'How a remote PEP authenticates',
+    env: 'STS_XACML_PEP_AUTHENTICATION', type: 'enum',
+    enumValues: ['certificate', 'token', 'either'], dflt: 'token',
+    runtime: true,
+    description: 'token, the default since 1.1.0: a remote PEP reaches ' +
+                 '/xacml/pep/* and POST /xacml/pip only by a DPoP-bound ' +
+                 'access token (RFC 9449) it obtains from its own RFC 7523 ' +
+                 'self-assertion through the client sts-remote-pep, ' +
+                 'audienced to this realm\'s /xacml/pep and carrying ' +
+                 'xacml:pep, and a client certificate alone is refused. ' +
+                 'either: the token or a client certificate this service ' +
+                 'verifies; a token, where one is presented, decides — set ' +
+                 'it before upgrading while any PEP still authenticates by ' +
+                 'its certificate. certificate: the certificate only, and ' +
+                 'the Authorization header is not read. Either way the ' +
+                 'PEP\'s entry must hold REMOTE_PEPS (roles.remotePepGroup) ' +
+                 'and the access-control policy decides. The same answer ' +
+                 'governs a remote PEP\'s token at /access/v1, the edge ' +
+                 'PDP\'s forward of a fine-grained evaluation, whatever ' +
+                 'authzen.callerAuthentication says.' },
+
+  { key: 'xacml.pepPlainHttpProxyListeners', group: 'XACML',
+    label: 'A remote PEP may define a plain-HTTP reverse-proxy listener',
+    env: 'STS_XACML_PEP_PLAIN_HTTP_PROXY_LISTENERS', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'OFF by default, and read only in product mode, where a ' +
+                 'listener defined on a remote PEP\'s page (#1760) that ' +
+                 'serves its reverse proxy over plain HTTP is refused ' +
+                 '(STS-XACML-0249): the proxy is where a browser signs in ' +
+                 'and carries its session cookie, so in the clear it is ' +
+                 'right only when something in front of it terminates TLS ' +
+                 '— a fact about the deployment only an administrator can ' +
+                 'state, which is what turning this on states. Development ' +
+                 'allows such a listener whatever this says. It governs ' +
+                 'only the listeners defined on the page; the four the ' +
+                 'PEP\'s environment binds (PEP_PROXY_PORT among them) are ' +
+                 'its operator\'s.' },
 
   { key: 'xacml.pipMaxPerWindow', group: 'XACML',
     label: 'PIP queries one caller may make per rate-limit window',
@@ -14970,42 +15510,51 @@ const SETTINGS = [
                  'path and does not legitimately move to another host.' },
 
   // THE THREE NUDGE TRANSPORT SETTINGS (#171), which were ONE —
-  // `xacml.pepNotifyAllowInsecure` — honoured in product mode.
+  // `xacml.pepNotifyAllowInsecure` — honoured in product mode. SINCE
+  // 2026-11-14 TWO OF THEM ARE RETIRED (rcbj: the notify listener is always
+  // HTTPS): a nudge is https with the certificate verified in every mode.
+  // The rows STAY, so an appconfig file, the environment or a stored value
+  // naming either still loads — backwards compatibility — and the value is
+  // ignored, said once per process by `xacml/xacml_pep_http.ts`
+  // (STS-XACML-0258). `REPLACED_SETTINGS` would refuse to start instead,
+  // which is the pre-1.0 rule and the wrong one for a setting whose only
+  // effect was to weaken something.
   { key: 'xacml.pepNotifyAllowHttp', group: 'XACML',
-    label: 'Allow http:// for a nudge (development only)',
+    label: 'Allow http:// for a nudge (retired, ignored)',
     env: 'STS_XACML_PEP_NOTIFY_ALLOW_HTTP', type: 'bool', dflt: false,
     runtime: true,
-    description: 'OFF by default, like federation\'s and SSF\'s equivalents ' +
-                 '— and what travels here is WEAKER than either of those, ' +
-                 'which is worth saying rather than leaving to be assumed. ' +
-                 'A nudge carries no credential and no event: its whole ' +
-                 'body says that the repository changed, which the PEP is ' +
-                 'about to find out anyway. It is still off by default, ' +
-                 'because the URL is one somebody configured and a request ' +
-                 'this service makes in the clear is a request somebody can ' +
-                 'answer for. ON allows an http:// notify URL in ' +
-                 'development; in product mode plain http is refused ' +
-                 'whatever this says (STS-XACML-0073).' },
+    description: 'RETIRED ON 2026-11-14 AND IGNORED. A nudge is sent over ' +
+                 'https only, in every mode, so an http:// notify URL is ' +
+                 'reported unusable on the PEP\'s row and the PEP converges ' +
+                 'by polling. The setting is still accepted, so a ' +
+                 'configuration that names it keeps starting; turned on, it ' +
+                 'changes nothing and is logged once per process ' +
+                 '(STS-XACML-0258). Remove it.' },
   { key: 'xacml.pepNotifySkipTlsVerification', group: 'XACML',
-    label: 'Skip TLS verification for a nudge (development only)',
+    label: 'Skip TLS verification for a nudge (retired, ignored)',
     env: 'STS_XACML_PEP_NOTIFY_SKIP_TLS_VERIFICATION', type: 'bool',
     dflt: false, runtime: true, onlyWhile: 'skipsOutboundTlsVerification',
-    description: 'WARNING — DEVELOPMENT MODE ONLY. On nudges an https notify ' +
-                 'URL WITHOUT verifying the PEP\'s certificate, so anybody ' +
-                 'who can intercept the connection can answer for it. Every ' +
-                 'such request is logged as a warning. In product mode it is ' +
-                 'ignored (STS-XACML-0074, logged once) and cannot be set ' +
-                 '(STS-CORE-0103): name a private CA in ' +
-                 'xacml.pepNotifyCaFile instead.' },
+    description: 'RETIRED ON 2026-11-14 AND IGNORED. A nudge always ' +
+                 'verifies the PEP\'s certificate: against the realm\'s ' +
+                 'Remote PEP listeners (pep-tls) Issuing CA, which issues a ' +
+                 'PEP\'s HTTPS listener certificate, and against ' +
+                 'xacml.pepNotifyCaFile and node\'s own store. The setting ' +
+                 'is still accepted, so a configuration that names it keeps ' +
+                 'starting; turned on, it changes nothing and is logged once ' +
+                 'per process (STS-XACML-0258). In product it still cannot ' +
+                 'be set (STS-CORE-0103). Remove it.' },
   { key: 'xacml.pepNotifyCaFile', group: 'XACML',
-    label: 'CA certificates for a nudge',
+    label: 'More CA certificates for a nudge',
     env: 'STS_XACML_PEP_NOTIFY_CA_FILE', type: 'string', dflt: '',
     runtime: true,
     description: 'A PEM file of CA certificates a PEP\'s notify listener may ' +
-                 'chain to, BESIDE node\'s own CA store — how a PEP ' +
-                 'certified by a private CA is nudged with verification on. ' +
-                 'Read on every nudge; a file that cannot be read or holds no ' +
-                 'certificate refuses the nudge (STS-CORE-0104).' },
+                 'chain to, BESIDE the realm\'s Remote PEP listeners ' +
+                 '(pep-tls) Issuing CA and node\'s own CA store. Not needed ' +
+                 'for a PEP whose HTTPS listener certificate this realm ' +
+                 'issued: that one verifies with nothing set. It is for a ' +
+                 'PEP certified by a CA of its own. Read on every nudge; a ' +
+                 'file that cannot be read or holds no certificate refuses ' +
+                 'the nudge (STS-CORE-0104).' },
 
   { key: 'xacml.pepNotifyTimeoutMs', group: 'XACML',
     label: 'Nudge timeout (ms)',
@@ -16489,7 +17038,8 @@ const SETTINGS = [
                  'digest, and a browser this person has never signed in ' +
                  'from is the signal new-device (x2). A browser fingerprint ' +
                  'is personal data: complete the privacy impact assessment ' +
-                 'in docs/risk-scoring.md, and tell the people who sign in, ' +
+                 'in docs/v1.1.0/risk-scoring.md, and tell the people who ' +
+                 'sign in, ' +
                  'before turning it on. Per realm, like every setting.' },
 
   { key: 'risk.breachCheck', group: 'Risk',
@@ -19029,7 +19579,8 @@ const SETTINGS = [
                  'import, the directory window) is refused. WHAT THIS SERVICE MINTS — sessions, tokens, codes, ' +
                  'artifacts, Kerberos principals, the replay caches, the ' +
                  'counters and the audit log — is persisted in PRODUCT mode ' +
-                 'on postgres and in no other configuration; see ' +
+                 'on a database store (postgres or mariadb) and in no other ' +
+                 'configuration; see ' +
                  'persistence.minted. Development mode persists none of it, ' +
                  'because the signing key is regenerated on every start ' +
                  'there and a token that outlived it would verify against ' +
@@ -19518,7 +20069,8 @@ const SETTINGS = [
                  'the replay caches, the counters and the audit log — ' +
                  'survive a restart. ON, and it reaches nothing at all ' +
                  'unless BOTH global.mode is "product" AND persistence.mode ' +
-                 'is "postgres". Development mode ignores it, because the ' +
+                 'is a database store, "postgres" or "mariadb". Development ' +
+                 'mode ignores it, because the ' +
                  'signing key is regenerated on every start there and a ' +
                  'restored token would verify against nothing; the ldif ' +
                  'store ignores it too and says so at startup, because it ' +
@@ -19562,20 +20114,23 @@ const SETTINGS = [
                    'part-way through a run would leave a process applying ' +
                    'changes from a point it was never at',
     description: 'Whether this process applies changes other processes ' +
-                 'committed to the same store. ON, and it needs the postgres ' +
-                 'store: every change is written to a monotonic log INSIDE ' +
-                 'the transaction that made it, and each process reads what ' +
-                 'it has not yet applied. A LISTEN/NOTIFY nudge wakes that ' +
-                 'read early, so a missed notification costs latency and ' +
+                 'committed to the same store. ON, and it needs a database ' +
+                 'store (postgres or MariaDB): every change is written to a ' +
+                 'monotonic log INSIDE the transaction that made it, and ' +
+                 'each process reads what it has not yet applied. On ' +
+                 'postgres a ' +
+                 'LISTEN/NOTIFY nudge wakes that read early (MariaDB sends ' +
+                 'none, and is polled), so a missed notification costs ' +
+                 'latency and ' +
                  'never a change — the same trade the remote XACML PEP makes ' +
                  'about its own pull. Turning it off is what this service ' +
                  'did before this existed: correct, and each process alone ' +
                  'with its own copy. IT SHARES STATE AND NOT SOCKETS — the ' +
                  'KDC, the LDAP listeners, the main port and SPIFFE\'s ' +
-                 'four are bound per process — and the replay caches ' +
-                 'CONVERGE rather than synchronise, so between a write in ' +
-                 'one process and its arrival in another there is a window ' +
-                 'in which a proof one refused is accepted by the other.' },
+                 'sockets are bound per process. A single-use value — an ' +
+                 'authorization code, a DPoP jti, a Kerberos authenticator — ' +
+                 'is spent once across every process, through one atomic ' +
+                 'claim in the store, with no window between them.' },
 
   { key: 'persistence.pollInterval', group: 'Persistence',
     label: 'Change poll interval (ms)',
@@ -19589,10 +20144,11 @@ const SETTINGS = [
                  'typical lag is a few milliseconds. Five seconds because ' +
                  'the nudge normally arrives first and a shorter interval ' +
                  'buys nothing but queries; 250ms is the floor. Where the ' +
-                 'store sends no nudge (persistence.sqlDialect portable) ' +
-                 'and this is not set, the interval is one second. It is ' +
-                 'also the size of the replay-cache window described under ' +
-                 'persistence.coordinate.' },
+                 'store sends no nudge (mariadb, or persistence.sqlDialect ' +
+                 'portable) and this is not set, the interval is one ' +
+                 'second. A single-use value is not affected by this lag: ' +
+                 'it is spent through an atomic claim in the store (see ' +
+                 'persistence.coordinate).' },
 
   // Added 2026-09-14 (#46 section 8): `sts_changes` was never trimmed.
   // `persistence/persistence_replication.js` argues the bound this is half of.
@@ -19625,9 +20181,10 @@ const SETTINGS = [
     restartReason: 'a node joins the cluster, and in active-passive mode ' +
                    'waits for the service lease, before anything is restored ' +
                    'from the store or any listener binds',
-    description: 'How several copies of this service against ONE postgres ' +
-                 'store behave. `off`: nothing is coordinated beyond the ' +
-                 'change log, which is correct for one container and gives ' +
+    description: 'How several copies of this service against ONE database ' +
+                 'store (postgres or MariaDB) behave. `off`: nothing is ' +
+                 'coordinated beyond the change log, which is correct for ' +
+                 'one container and gives ' +
                  'wrong answers silently for two. `active-passive`: every ' +
                  'node joins, ONE holds the service lease and serves, and the ' +
                  'others wait before restoring or binding anything — so a ' +
@@ -19638,7 +20195,7 @@ const SETTINGS = [
                  'key-encryption key and REFUSES TO START while any capability ' +
                  'it depends on is missing from this build (see ' +
                  'cluster.acceptMissingCapabilities). `auto`, the default, is ' +
-                 'active-passive in product mode on a postgres store and off ' +
+                 'active-passive in product mode on a database store and off ' +
                  'everywhere else. Every write a clustered node makes is ' +
                  'FENCED: it checks that the node is still a member, and in ' +
                  'active-passive mode that it still holds the service lease, ' +
@@ -20229,7 +20786,7 @@ const SETTINGS = [
                  'MailFrom address of a connected domain in Azure, the ' +
                  'impersonated mailbox (or one of its send-as aliases) for ' +
                  'Gmail — and SPF, DKIM and DMARC for its domain are ' +
-                 'docs/mail.md\'s subject.' },
+                 'docs/v1.1.0/mail.md\'s subject.' },
   { key: 'mail.fromName', group: 'Mail', label: 'From display name',
     env: 'STS_MAIL_FROM_NAME', type: 'string', dflt: '', runtime: true,
     description: 'The display name beside the From address. Empty means ' +
@@ -20360,7 +20917,7 @@ const SETTINGS = [
                  '8301) or `ed25519-sha256` (RFC 8463). Many receivers still ' +
                  'verify only RSA, so a domain moving to Ed25519 publishes ' +
                  'both and signs twice elsewhere. DKIM has no post-quantum ' +
-                 'algorithm registered yet; docs/mail.md says so.' },
+                 'algorithm registered yet; docs/v1.1.0/mail.md says so.' },
   { key: 'mail.dkimKeyProvider', group: 'Mail',
     label: 'Where the DKIM private key is read from',
     env: 'STS_MAIL_DKIM_KEY_PROVIDER', type: 'enum',
@@ -20553,7 +21110,8 @@ const SETTINGS = [
                  'import or a provisioning feed wrote, and nobody ever ' +
                  'proved, is not somewhere to send it. **Turning it off is a ' +
                  'weaker setting**, for a directory whose addresses are ' +
-                 'trusted as written; docs/mail.md carries the warning.' },
+                 'trusted as written; docs/v1.1.0/mail.md carries the ' +
+                 'warning.' },
   // #64: THE RECOVERY CODE A SELF-SERVICE RESET ASKS FOR, beside the
   // username and the address. On by default (rcbj's D4).
   { key: 'mail.resetRequiresBackupCode', group: 'Mail',
@@ -20568,7 +21126,8 @@ const SETTINGS = [
                  'weaker setting**: the form goes back to one field (a ' +
                  'username or the address), and a reset is then as strong ' +
                  'as the mailbox it goes to — which NIST SP 800-63B-4 allows ' +
-                 'for recovery, and which docs/mail.md warns about. A person ' +
+                 'for recovery, and which docs/v1.1.0/mail.md warns about. ' +
+                 'A person ' +
                  'who holds no recovery codes cannot reset their password ' +
                  'themselves while it is on; an administrator can.' },
   { key: 'mail.verificationTtlMinutes', group: 'Mail',
@@ -20985,7 +21544,13 @@ const REPLACED_SETTINGS = [
   { key: 'xacml.pepNotifyAllowInsecure',
     env: 'STS_XACML_PEP_NOTIFY_ALLOW_INSECURE',
     now: ['xacml.pepNotifyAllowHttp', 'xacml.pepNotifySkipTlsVerification',
-          'xacml.pepNotifyCaFile'] },
+          'xacml.pepNotifyCaFile'],
+    why: ' It was removed on 2026-09-23 (#171) and replaced by ' +
+         'xacml.pepNotifyAllowHttp, xacml.pepNotifySkipTlsVerification and ' +
+         'xacml.pepNotifyCaFile — and on 2026-11-14 the first two were ' +
+         'retired in turn: a nudge is https with the PEP\'s certificate ' +
+         'verified, against the realm\'s pep-tls Issuing CA by default, and ' +
+         'xacml.pepNotifyCaFile adds anchors.' },
   { key: 'oauth2.registeredSecretLifetimeS',
     env: 'STS_OAUTH2_REGISTERED_SECRET_LIFETIME_S',
     now: ['oauth2.clientSecretLifetimeDays'],
@@ -21644,10 +22209,12 @@ function resolve(key) {
     log.debug("Leaving resolve().");
     return { raw: fromDefaultsFile, source: 'defaults' };
   }
-  // NOWHERE. For a `derived` setting this is the answer — its default is a
-  // function of a neighbour and env/defaults.js deliberately carries no row for
-  // it. For any other, requireComplete() has already stopped the process, so
-  // this line is only reached in a module loaded on its own by a test.
+  // THE FLOOR, level 6. For a `derived` setting this is the answer — its
+  // default is a function of a neighbour and env/defaults.js deliberately
+  // carries no row for it. For any other it is the image's own default for a
+  // setting the defaults file lacks — an env/ older than the image — and
+  // reportStaleDefaults() has said so at startup (STS-CORE-0177). A row with
+  // no `dflt` never gets here: requireComplete() stopped the process.
   log.debug("Leaving resolve().");
   return { raw: defaultOf(setting), source: 'default' };
 }
@@ -21956,6 +22523,47 @@ function unstorableText(value) {
  */
 function checkOverride(key, raw, forRealm) {
   log.debug("Entering checkOverride().");
+  log.debug("Leaving checkOverride().");
+  return overrideProblem(key, raw, forRealm, true);
+}
+
+// ---------------------------------------------------------------------------
+// A VALUE THE STORE ALREADY HOLDS, CHECKED FOR WHAT IT IS AND NOT FOR WHAT IS
+// BESIDE IT (2026-11-15, GitHub Actions run #300).
+//
+// A realm's overrides read back or replicated from another process are
+// re-checked one value at a time (`realms.js`'s restorableOverrides(), #39),
+// so a bound added to a row after a value was written costs that value and
+// not the realm. That check ran the RULES BETWEEN SETTINGS too, and those are
+// a judgment the process that took the write already made, with that realm's
+// companions in hand. Asked again here they read the companion wherever the
+// pull happened to run — the default realm, outside any request — and they
+// are not symmetric: `oauth2.accessTokenSigningAlg=ES256` set first and
+// `keys.signingAlgorithms=PS256,RS256` set after it are both taken (the
+// second write is not judged against the first, and the setting falls back
+// to the list's first), while the pair judged together is STS-KEYS-0192. A
+// replica that re-judged the pair held a different realm from the writer's.
+// So this is checkOverride() without `writeRules`: the type, the bounds, the
+// runtime and realm rules — what a value IS — and nothing between settings.
+// ---------------------------------------------------------------------------
+/**
+ * Checks a stored value as checkOverride() does, without the rules between
+ * settings, which the door that took the write already asked.
+ *
+ * @param key - the setting's key
+ * @param raw - the value as text
+ * @param forRealm - as for `checkOverride()`
+ * @returns the problem, or null
+ */
+function checkStoredOverride(key, raw, forRealm) {
+  log.debug("Entering checkStoredOverride().");
+  log.debug("Leaving checkStoredOverride().");
+  return overrideProblem(key, raw, forRealm, false);
+}
+
+// checkOverride()'s body; `withRules` false is checkStoredOverride().
+function overrideProblem(key, raw, forRealm, withRules) {
+  log.debug("Entering overrideProblem().");
   // `forRealm` OMITTED MEANS "WHEREVER THIS WRITE WOULD LAND", which is what
   // every caller inside this service means and what none of them was saying.
   //
@@ -21979,14 +22587,14 @@ function checkOverride(key, raw, forRealm) {
   // refusing. Defaulting here fixes all four call sites at once and leaves the
   // explicit `true` and the explicit `false` meaning exactly what they did.
   const inRealm = forRealm === undefined ? !!realmFor(key) : !!forRealm;
-  log.debug("Entering checkOverride(). forRealm=" + inRealm);
+  log.debug("overrideProblem(): forRealm=" + inRealm);
   const setting = byKey[key];
   if (!setting) {
-    log.debug("Leaving checkOverride().");
+    log.debug("Leaving overrideProblem().");
     return 'Unknown setting "' + key + '".' + replacedBy(key);
   }
   if (!setting.runtime && !(inRealm && setting.realmRuntime)) {
-    log.debug("Leaving checkOverride().");
+    log.debug("Leaving overrideProblem().");
     return '"' + key + '" cannot be changed while this service is running: ' +
       setting.restartReason + '. Set it in the appconfig file or as ' +
       (setting.env || 'its environment variable') + ' and restart.';
@@ -21995,22 +22603,27 @@ function checkOverride(key, raw, forRealm) {
   // realm hears STS-CORE-0162 rather than a type error (#368).
   const realmLocked = maxCountRealmProblem(key);
   if (realmLocked) {
-    log.debug("Leaving checkOverride().");
+    log.debug("Leaving overrideProblem().");
     return realmLocked;
   }
   if (unstorableText(raw)) {
-    log.debug("Leaving checkOverride(). Text the store cannot hold.");
+    log.debug("Leaving overrideProblem(). Text the store cannot hold.");
     return '"' + key + '" holds a NUL character or half of a surrogate ' +
       'pair, which this service cannot store.';
   }
   const problem = TYPES[setting.type].check(raw, setting);
   if (problem) {
-    log.debug("Leaving checkOverride().");
+    log.debug("Leaving overrideProblem().");
     return '"' + key + '" ' + problem + '.';
+  }
+  if (!withRules) {
+    log.debug("Leaving overrideProblem(). Stored: no rule between " +
+              "settings.");
+    return null;
   }
   const ruled = writeRuleProblem(key, TYPES[setting.type].parse(raw, setting),
                                  inRealm);
-  log.debug("Leaving checkOverride().");
+  log.debug("Leaving overrideProblem().");
   return ruled ? ruled.problem : null;
 }
 
@@ -22081,6 +22694,23 @@ function withWriteBatch(values, fn) {
   } finally {
     writeBatch = before;
   }
+}
+
+/**
+ * The values of the write batch in force, as a copy, or null outside one.
+ * `realms.setOverride()` layers them over a realm's stored overrides when
+ * it builds its own batch (2026-11-15): its batch REPLACES this one for the
+ * length of its check, so without them a pair posted together was judged
+ * by the realm's old value of the one not yet written (`Branding`'s
+ * colours, a realm's `set-many`).
+ *
+ * @returns {Object<string, *>|null}
+ */
+function currentWriteBatch() {
+  log.debug("Entering currentWriteBatch().");
+  const out = writeBatch ? Object.assign({}, writeBatch) : null;
+  log.debug("Leaving currentWriteBatch(). " + !!out);
+  return out;
 }
 
 // A companion setting's value as a rule should judge it: the batch's, where
@@ -22867,36 +23497,65 @@ function auditAppconfig() {
 }
 
 // ---------------------------------------------------------------------------
-// EVERY SETTING HAS A VALUE, OR THIS SERVICE DOES NOT START.
+// A SETTING THAT MUST BE SUPPLIED HAS A VALUE, OR THIS SERVICE DOES NOT START.
 //
-// The rule, stated once: a setting's value must come from the appconfig layer
-// (the operator's file, or env/defaults.js under it) or from an environment
-// variable. There is no sixth source, and a `dflt` in the table above is
-// DOCUMENTATION of what env/defaults.js was generated from rather than a
-// fallback the service quietly leans on.
+// Until 2026-11-16 this read "EVERY SETTING HAS A VALUE", and the rule was that
+// a value must come from the appconfig layer (the operator's file, or
+// env/defaults.js under it) or from an environment variable, the `dflt` column
+// being documentation rather than a fallback. The header says why that ended:
+// env/defaults.js is in the directory operators mount over, so an older copy
+// of it stopped a newer image over a setting nobody had touched. The `dflt` is
+// now the floor (level 6), and what is left for this check is the case it is
+// still right for — a row that has NO default, a value that must be supplied
+// (a required secret is the example; there is none today), and that nothing
+// supplied.
 //
-// WHAT THIS CAN ACTUALLY CATCH, since it is not what it looks like. The union
-// means an operator's file cannot cause this — a file carrying nothing at all
-// still resolves every key through env/defaults.js. What it catches is a row
-// added to the table with no row in env/defaults.js: a setting somebody added
-// and did not finish adding, which before this check would have shipped as a
-// value nobody could see in any file, on any page, and would have been
-// discovered as a default that could not be changed by editing the file that
-// claims to list it. That is a MAINTAINER'S mistake caught at the first start
-// after it is made, which is where it is cheapest.
+// The maintainer's mistake it used to catch, a row added and env/defaults.js
+// not regenerated, is tests/config_defaults_layer.js's now: it compares the
+// file with the table in both directions, before an image is built.
 //
-// It refuses BY NAME and says both places the value could go, because a
-// service that exits saying "configuration error" has told nobody anything.
+// It refuses BY NAME and says where the value could go, because a service that
+// exits saying "configuration error" has told nobody anything.
 //
 // process.exit(1) rather than a throw. A throw out of a require lands as a
 // stack trace whose top frame is node's module loader, and the reason ends up
 // three screens above where anybody looks; the exit code is the same either
 // way, and this is a message meant to be read.
 // ---------------------------------------------------------------------------
+/**
+ * What a setting that resolved to no layer above the floor means at startup.
+ *
+ * @param setting - a row of SETTINGS
+ * @returns 'derived' (its default is a neighbour's, which is correct),
+ *   'floor' (the image's own `dflt`, reported) or 'refuse' (no default at
+ *   all, and nothing supplied one)
+ */
+function floorVerdict(setting) {
+  log.debug("Entering floorVerdict().");
+  if (setting.derived) {
+    log.debug("Leaving floorVerdict(). Derived.");
+    return 'derived';
+  }
+  if (setting.dflt === undefined || setting.dflt === null) {
+    log.debug("Leaving floorVerdict(). No default.");
+    return 'refuse';
+  }
+  log.debug("Leaving floorVerdict(). The floor.");
+  return 'floor';
+}
+
 function requireComplete() {
   log.debug("Entering requireComplete().");
+  // THE VERDICT FIRST, AND ONLY THEN THE RESOLVE. Resolving a `derived` row
+  // calls its default, and `adminApi.audience`'s reaches `listener_map.js`,
+  // which requires `realms.js`, which calls this module's `registerLogger()`
+  // — while this module is still loading, so node warns of a circular
+  // dependency (tests/composition_root.js). Until 2026-11-16 a `derived`
+  // test came first here; a row with a default never refuses, so asking the
+  // verdict first means no default is called at load.
   const orphans = SETTINGS.filter(function (setting) {
-    return !setting.derived && resolve(setting.key).source === 'default';
+    return floorVerdict(setting) === 'refuse' &&
+           resolve(setting.key).source === 'default';
   });
   if (!orphans.length) {
     log.debug("Leaving requireComplete(). Every setting has a value.");
@@ -22908,8 +23567,8 @@ function requireComplete() {
   process.stderr.write(
     '\n' + errorCodes.tag('STS-CORE-0002') + 'config: FATAL — ' +
     orphans.length + ' ' +
-    'setting(s) have no value in the appconfig layer and no environment ' +
-    'variable:\n\n' +
+    'setting(s) have no default and no value in the appconfig layer or ' +
+    'the environment:\n\n' +
     orphans.map(function (setting) {
       return '  ' + setting.key + ' '.repeat(width - setting.key.length + 2) +
              setting.env;
@@ -22918,12 +23577,95 @@ function requireComplete() {
     'file CONFIG_FILE ' +
     'names') + ', in ' + DEFAULTS_FILE + ' (the default ' +
     'appconfig file every other one is unioned on top of), or as the ' +
-    'environment variable beside it.\n\nIf one of these was just added to ' +
-    'SETTINGS in common/config.js, env/defaults.js is generated from that ' +
-    'table and has not been regenerated.\n\n');
+    'environment variable beside it.\n\n');
   log.debug("Leaving requireComplete(). Refusing to start.");
   process.exit(1);
   log.debug("Leaving requireComplete().");
+}
+
+// ---------------------------------------------------------------------------
+// AN env/defaults.js OLDER THAN THIS IMAGE IS SAID, NOT REFUSED (2026-11-16).
+//
+// Two warnings, each with its own code so an operator's alerting can tell
+// them apart, and each naming the defaults file, because the fix is the same
+// for both — replace that file with the image's, or stop mounting it:
+//
+//   * STS-CORE-0177: settings that came from the floor, level 6. The file
+//     lacks them (or is not there at all), which is what an env/ copied from
+//     an earlier release looks like after an upgrade adds a setting. The
+//     value is this image's own default, and is what /admin/config reports
+//     with source "default".
+//   * STS-CORE-0178: settings the file carries with a value that is not this
+//     image's default. The file's value is used — it is the value the service
+//     ran on before the upgrade, and an operator who keeps a copy may have
+//     meant it — but a stale copy also pins every default a later release
+//     changed, which nobody would otherwise see.
+//
+// Neither is said for a value a layer ABOVE the file supplies: the
+// operator's file, the environment and an override make the file's row moot.
+// A WARN rather than an error: the service is running as configured. Said
+// once, at startup, which is the one moment the layers change.
+// ---------------------------------------------------------------------------
+/**
+ * Compares env/defaults.js with this table, for the settings it decides.
+ *
+ * @returns `{ floor, differing }`: the keys whose value came from the
+ *   table's own default because the file lacks them, and the keys whose value
+ *   in the file is not the table's default
+ */
+function auditDefaultsFile() {
+  log.debug("Entering auditDefaultsFile().");
+  const floor = [];
+  const differing = [];
+  SETTINGS.forEach(function (setting) {
+    if (setting.derived) {
+      return;
+    }
+    const source = resolve(setting.key).source;
+    if (source === 'default' && floorVerdict(setting) === 'floor') {
+      floor.push(setting.key);
+      return;
+    }
+    if (source !== 'defaults') {
+      return;
+    }
+    const raw = dig(defaults, setting.path || setting.key);
+    const kind = TYPES[setting.type];
+    if (JSON.stringify(kind.parse(raw, setting)) !==
+        JSON.stringify(kind.parse(defaultOf(setting), setting))) {
+      differing.push(setting.key);
+    }
+  });
+  log.debug("Leaving auditDefaultsFile(). " + floor.length + " from the " +
+            "floor, " + differing.length + " differing.");
+  return { floor: floor, differing: differing };
+}
+
+function reportStaleDefaults() {
+  log.debug("Entering reportStaleDefaults().");
+  const found = auditDefaultsFile();
+  const file = DEFAULTS_FILE + (defaultsProblem ? ' (' + defaultsProblem +
+                                                  ')' : '');
+  if (found.floor.length) {
+    log.warn(errorCodes.tag('STS-CORE-0177') + 'config: ' +
+             found.floor.length + ' setting(s) have no row in the defaults ' +
+             'file ' + file + ' and no value in any layer above it, so each ' +
+             'takes this image\'s own default: ' + nameList(found.floor) +
+             '. The defaults file is older than this image, or is not the ' +
+             'one it ships — usually an env/ directory mounted or copied ' +
+             'from an earlier release. The service runs; replace that file ' +
+             'with the image\'s, or stop mounting it, to silence this.');
+  }
+  if (found.differing.length) {
+    log.warn(errorCodes.tag('STS-CORE-0178') + 'config: ' +
+             found.differing.length + ' setting(s) in the defaults file ' +
+             file + ' are not this image\'s default, and the file\'s value ' +
+             'is used: ' + nameList(found.differing) + '. A defaults file ' +
+             'copied from an earlier release pins every default changed ' +
+             'since; set a value you mean in the appconfig file CONFIG_FILE ' +
+             'names and replace the defaults file with the image\'s.');
+  }
+  log.debug("Leaving reportStaleDefaults().");
 }
 
 log.info('config: ' + SETTINGS.length + ' settings from ' +
@@ -23041,9 +23783,17 @@ function refuseMalformedSettings() {
                     where: dotted + ' (in ' + DEFAULTS_FILE + ')' });
     }
     layers.forEach(function (layer) {
-      const problem = TYPES[setting.type].check(layer.raw, setting);
+      const problem = TYPES[setting.type].check(layer.raw, setting,
+                                                { startup: true });
       if (problem) {
         named.push('  ' + layer.where + ': "' + setting.key + '" ' + problem);
+      }
+      if (!problem && setting.absoluteUri &&
+          TYPES[setting.type].check(layer.raw, setting)) {
+        log.warn(errorCodes.tag('STS-CORE-0176') + 'config: ' +
+                 layer.where + ': "' + setting.key + '" is not an ' +
+                 'absolute URI. It is used as configured; /admin/config ' +
+                 'and the management API refuse it on the next save.');
       }
     });
   });
@@ -23063,6 +23813,10 @@ function refuseMalformedSettings() {
   log.debug("Leaving refuseMalformedSettings().");
 }
 refuseMalformedSettings();
+
+// After the refusals, for the reason requireComplete() goes before the drift
+// warnings: a warning about a stale file is noise in front of a refusal.
+reportStaleDefaults();
 
 const audit = auditAppconfig();
 
@@ -23192,9 +23946,10 @@ function parseAs(key, raw) {
  * Every setting this service has, in one table, and the one place a value
  * is read.
  *
- * Five layers, highest wins — a runtime override, the environment variable,
- * its legacy variable, the appconfig file, `env/defaults.js` — and no
- * sixth: a setting with no value stops the service starting.
+ * Six layers, highest wins — a runtime override, the environment variable,
+ * its legacy variable, the appconfig file, `env/defaults.js`, and the row's
+ * own default, the image's floor beneath every file. Only a setting with no
+ * default and no value stops the service starting.
  * @namespace
  */
 module.exports = {
@@ -23202,12 +23957,17 @@ module.exports = {
   parseAs: parseAs,
   setRealmContext: setRealmContext,
   DEFAULTS_FILE: DEFAULTS_FILE,
+  // What startup made of env/defaults.js (2026-11-16), and the verdict on a
+  // setting no file or variable supplied — tests/config_defaults_layer.js.
+  auditDefaultsFile: auditDefaultsFile,
+  floorVerdict: floorVerdict,
   value: value,
   text: text,
   sourceOf: sourceOf,
   managementApiBaseUrl: managementApiBaseUrl,
   registerLogger: registerLogger,
   checkOverride: checkOverride,
+  checkStoredOverride: checkStoredOverride,
   unstorableText: unstorableText,
   checkOverrideCode: checkOverrideCode,
   checkWrite: checkWrite,
@@ -23236,5 +23996,6 @@ module.exports = {
   TLS_LISTENERS: TLS_LISTENERS,
   PER_LISTENER_SETTINGS: PER_LISTENER_SETTINGS,
   addWriteRule: addWriteRule,
-  withWriteBatch: withWriteBatch
+  withWriteBatch: withWriteBatch,
+  currentWriteBatch: currentWriteBatch
 };

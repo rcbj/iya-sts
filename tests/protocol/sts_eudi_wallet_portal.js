@@ -526,13 +526,41 @@ async function until(driver, expression, what, ms) {
   }
 }
 
+// A PAGE THAT REDRAWS BETWEEN THE FIND AND THE CLICK (GitHub Actions run
+// 43672106260, single-node: StaleElementReferenceError in walletSignIn()).
+// The runtime replaces the body when its view arrives, so an element found a
+// moment earlier can be gone by the click while one with the same selector
+// is there. Only a STALE element is found again — at most STALE_TRIES
+// times, a moment apart. An element that is not there at all still fails at
+// once with findElement()'s own error, and a stale one past the last try is
+// thrown as it came.
+const STALE_TRIES = 5;
+
 async function click(driver, selector) {
   log.debug("Entering click(). " + selector);
-  const element = await driver.findElement(By.css(selector));
-  await driver.executeScript(
-    "arguments[0].scrollIntoView({block: 'center'});", element);
-  await element.click();
-  log.debug("Leaving click().");
+  for (let attempt = 1; ; attempt++) {
+    const element = await driver.findElement(By.css(selector));
+    try {
+      await driver.executeScript(
+        "arguments[0].scrollIntoView({block: 'center'});", element);
+      await element.click();
+      log.debug("Leaving click().");
+      return;
+    } catch (e) {
+      log.debug("Caught in click(): " + ((e && e.message) || e));
+      // Anything but a stale element, and a stale one past the last try,
+      // is the failure it is.
+      if (!e || e.name !== "StaleElementReferenceError" ||
+          attempt >= STALE_TRIES) {
+        log.debug("Leaving click(). Thrown.");
+        throw e;
+      }
+      log.info("  " + selector + " was redrawn before it could be " +
+               "clicked; finding it again (" + attempt + " of " +
+               STALE_TRIES + ").");
+      await sleep(200);
+    }
+  }
 }
 
 async function hrefOf(driver, selector) {
@@ -578,9 +606,30 @@ async function walletConsent(driver, what) {
     "document.querySelector('#consent-approve') && " +
     "!document.querySelector('#consent-approve').disabled",
     "the wallet's consent dialog (" + what + ")");
-  const text = String(await driver.executeScript(
-    "var d = document.querySelector('#consent-dialog');" +
-    "return d ? d.innerText : '';") || "");
+  // THE DIALOG IS DRAWN TWICE. The wallet draws a presentation request's
+  // candidates from the request's summary first — the bare `vct`, "No
+  // status" — and draws them again once its own `api/credentials/{id}` read
+  // of each one answers (eudi-dev's loadCandidateDetails()). Run #325 read
+  // the first drawing. So the text is read until it holds still: three
+  // equal reads 200 ms apart, within ten seconds.
+  const read = async function () {
+    log.debug("Entering read().");
+    const shown = String(await driver.executeScript(
+      "var d = document.querySelector('#consent-dialog');" +
+      "return d ? d.innerText : '';") || "");
+    log.debug("Leaving read().");
+    return shown;
+  };
+  let text = await read();
+  let steady = 0;
+  for (let i = 0; i < 50 && steady < 2; i += 1) {
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 200);
+    });
+    const again = await read();
+    steady = again === text ? steady + 1 : 0;
+    text = again;
+  }
   log.info("  the wallet asks (" + what + "): " +
            text.replace(/\s+/g, " ").slice(0, 400));
   log.debug("Leaving walletConsent().");

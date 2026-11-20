@@ -152,10 +152,21 @@ class PkiPage {
     }).join('');
   }
 
-  static algorithmOptions(json: Json, selected: Json) {
-    return json.keyAlgorithms.map(function (one) {
+  // `forCa` is a build form's menu: every certificate authority here is on
+  // a TLS or gRPC listener chain, and a composite ML-DSA key cannot be (the
+  // service refuses it, STS-PKI-0272 and 0274), so the menu offers none —
+  // except the one already selected, so a stored value still draws. A
+  // leaf's menu offers them all, a composite marked as no TLS peer's key:
+  // a leaf can sign what this service verifies itself (2026-11-12).
+  static algorithmOptions(json: Json, selected: Json, t?: Json,
+                          forCa?: boolean) {
+    return json.keyAlgorithms.filter(function (one) {
+      return !forCa || one.tlsUsable !== false || one.id === selected;
+    }).map(function (one) {
       return '<option value="' + esc(one.id) + '"' +
         (one.id === selected ? ' selected' : '') + '>' + esc(one.label) +
+        (t && one.tlsUsable === false
+          ? esc(t.text('consolePki.notForTls')) : '') +
         '</option>';
     }).join('');
   }
@@ -603,6 +614,8 @@ class PkiPage {
       return { value: one.id, group: one.family,
                label: one.label +
                       (one.slow ? t.text('consolePki.slowToGenerate') : '') +
+                      (one.tlsUsable === false
+                        ? t.text('consolePki.notForTls') : '') +
                       (one.signs ? '' : t.text('consolePki.cannotSign')) };
     });
     const slow = wb.keyAlgorithms.filter(function (one) { return one.slow; });
@@ -858,9 +871,12 @@ class PkiPage {
     const self = this;
     const wb = json.workbench;
     const html =
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab's
+      // heading stays at the top level for the tab splitter, what follows
+      // it is one frame, and the store's `<h3>` block a frame inside it.
       '<h3 id="workbench" data-tab="workbench">' +
       t.html('consolePki.paneHeading') + '</h3>' +
-      kit.note(t.html('consolePki.paneIntro') + '<p>' +
+      kit.frame(kit.note(t.html('consolePki.paneIntro') + '<p>' +
                t.html('consolePki.paneWhere') + '</p><p>' +
                t.html('consolePki.paneAsserting') + '</p>',
                t.html('consolePki.paneIntroTitle')) +
@@ -886,11 +902,11 @@ class PkiPage {
       kit.tip(t.text('consolePki.issueTip')) +
       '>' + t.html('consolePki.issue') + '</button>' +
       '</div>' +
-      '<h3>' + t.html('consolePki.keysAndCertificates') + '</h3>' +
+      kit.frame('<h3>' + t.html('consolePki.keysAndCertificates') + '</h3>' +
       kit.note(t.html('consolePki.storeNote', { n: String(wb.maxObjects) }),
                t.html('consolePki.storeNoteTitle')) +
-      self.storeTable(json, draft, t) +
-      '</form>';
+      self.storeTable(json, draft, t)) +
+      '</form>');
     return html;
   }
 
@@ -1055,10 +1071,12 @@ class PkiPage {
           '>' + t.html('consolePki.unpin') + '</button></form>') +
         '</td></tr>';
     }).join('');
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the heading
+    // stays at the top level for the tab splitter; what follows is a frame.
     return '<h3 id="pki-pinned" data-tab="pinned">' +
       t.html('consolePki.pinnedHeading') +
       '</h3>' +
-      kit.note(model.on
+      kit.frame(kit.note(model.on
         ? t.html('consolePki.pinnedOn', { n: model.leadMinutes })
         : t.html('consolePki.pinnedOff')) +
       warnings +
@@ -1069,7 +1087,8 @@ class PkiPage {
               t.html('consolePki.thCertificate') +
               '</th><th></th></tr></thead>' +
               '<tbody>' + rows + '</tbody></table>'
-            : '<p><em>' + t.html('consolePki.nothingPinned') + '</em></p>');
+            : '<p><em>' + t.html('consolePki.nothingPinned') +
+              '</em></p>'));
   }
 
   static scopeControls(json: Json, scope: Json, t: Json) {
@@ -1088,7 +1107,7 @@ class PkiPage {
       '<label' + kit.tip(t.text('consolePki.branchKeyAlgTip')) + '>' +
       t.html('consolePki.keyAlgorithm') + ' <select name="keyAlg">' +
       self.algorithmOptions(json, scope.keyAlg ||
-                            json.pageDefaults.keyAlgorithm) +
+                            json.pageDefaults.keyAlgorithm, t, true) +
                             '</select></label> ' +
       self.alternativeField(json, scope.altKeyAlg, t) +
       '<button type="submit"' +
@@ -1199,7 +1218,7 @@ class PkiPage {
       '<label>' + t.html('consolePki.keyAlgorithm') +
       ' <select name="keyAlg">' +
       self.algorithmOptions(json, (tree.root && tree.root.keyAlg) ||
-                            json.pageDefaults.keyAlgorithm) +
+                            json.pageDefaults.keyAlgorithm, t, true) +
                             '</select></label> ' +
       self.alternativeField(json, tree.root &&
                             (tree.root.altKeyAlg ||
@@ -1451,10 +1470,13 @@ class PkiPage {
     const self = this;
     const model = json.revocation;
     if (!model.authorities.length) {
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab's
+      // heading stays at the top level for the tab splitter, what follows
+      // it is one frame, and each authority's `<h4>` block a frame in it.
       return '<h3 data-tab="revocation">' +
         t.html('consolePki.revokingHeading') + '</h3>' +
-        kit.note(t.html('consolePki.noAuthorityToRevoke',
-                        { realm: json.realm }));
+        kit.frame(kit.note(t.html('consolePki.noAuthorityToRevoke',
+                                  { realm: json.realm })));
     }
 
     const what = kit.note(
@@ -1483,11 +1505,12 @@ class PkiPage {
       t.html('consolePki.reasonsTitle'));
 
     return '<h3 data-tab="revocation">' +
-      t.html('consolePki.revokingHeading') + '</h3>' + what +
+      t.html('consolePki.revokingHeading') + '</h3>' + kit.frame(what +
       rotation + reasons +
       model.authorities.map(function (authority) {
-        return self.authorityBlock(authority, listView, model.reasons, t);
-      }).join('');
+        return kit.frame(self.authorityBlock(authority, listView,
+                                             model.reasons, t));
+      }).join(''));
   }
 
   // THE PAGE'S BODY (#446), one method so that it can be one renderer. What
@@ -1584,13 +1607,14 @@ class PkiPage {
     const buildForm =
       '<h3 data-tab="build">' + (chain ? t.html('consolePki.rebuildHierarchy')
                       : t.html('consolePki.buildHierarchy')) + '</h3>' +
-      (chain ? kit.warn(t.html('consolePki.replacesWarn'),
+      kit.frame((chain ? kit.warn(t.html('consolePki.replacesWarn'),
                         t.html('consolePki.replacesWarnTitle')) : '') +
       '<form method="post" action="/admin/pki">' +
       '<input type="hidden" name="action" value="build">' +
       '<label>' + t.html('consolePki.keyAlgorithm') +
       ' <select name="keyAlg">' +
-        self.algorithmOptions(json, keyAlg) + '</select></label> ' +
+        self.algorithmOptions(json, keyAlg, t, true) +
+        '</select></label> ' +
       '<label>' + t.html('consolePki.signatureAlgorithm') +
       ' <select name="signatureAlg">' +
         self.signatureOptions(json, keyAlg, t) + '</select></label> ' +
@@ -1620,7 +1644,7 @@ class PkiPage {
           '<input type="hidden" name="action" value="clear">' +
           '<button type="submit">' + t.html('consolePki.removeHierarchy') +
           '</button></form>'
-        : '');
+        : ''));
 
     const purposeOptions = json.purposes.map(function (one) {
       return '<option value="' + esc(one.id) + '">' + esc(one.label) +
@@ -1633,7 +1657,7 @@ class PkiPage {
     const issueForm = chain
       ? '<h3 data-tab="applications">' +
         t.html('consolePki.issueToApplication') + '</h3>' +
-        kit.tip(t.text('consolePki.issueWritesTip'),
+        kit.frame(kit.tip(t.text('consolePki.issueWritesTip'),
           'What issuing writes, and where') +
         '<form method="post" action="/admin/pki">' +
         '<input type="hidden" name="action" value="issue">' +
@@ -1650,14 +1674,14 @@ class PkiPage {
         ' <select name="leafKeyAlg">' +
           '<option value="">' +
           t.html('consolePki.issuingCaAlg', { alg: chain.keyAlg }) +
-          '</option>' + self.algorithmOptions(json, '') +
+          '</option>' + self.algorithmOptions(json, '', t) +
           '</select></label> ' +
         '<label>' + t.html('consolePki.days') +
         ' <input name="days" size="5" value="' +
           esc(String(json.pageDefaults.leafLifetimeDays)) + '"></label> ' +
         '<button type="submit">' + t.html('consolePki.generateAndIssue') +
         '</button>' +
-        '</form>'
+        '</form>')
       : kit.warn(t.html('consolePki.nothingToIssue'),
                  t.html('consolePki.nothingToIssueTitle'));
 
@@ -1678,7 +1702,7 @@ class PkiPage {
     const personForm = chain
       ? '<h3 data-tab="people">' + t.html('consolePki.issueToPerson') +
         '</h3>' +
-        kit.tip(t.text('consolePki.personKeyTip'),
+        kit.frame(kit.tip(t.text('consolePki.personKeyTip'),
           'What a person’s key pair is for') +
         kit.warn('<p>' + t.html('consolePki.personOnlyThemselves') +
           '</p><p>' + t.html('consolePki.personShownOnce') + '</p>',
@@ -1712,14 +1736,14 @@ class PkiPage {
         ' <select name="leafKeyAlg">' +
           '<option value="">' +
           t.html('consolePki.issuingCaAlg', { alg: chain.keyAlg }) +
-          '</option>' + self.algorithmOptions(json, '') +
+          '</option>' + self.algorithmOptions(json, '', t) +
           '</select></label> ' +
         '<label>' + t.html('consolePki.days') +
         ' <input name="days" size="5" value="' +
           esc(String(json.pageDefaults.leafLifetimeDays)) + '"></label> ' +
         '<button type="submit">' + t.html('consolePki.generateAndIssue') +
         '</button>' +
-        '</form>'
+        '</form>')
       : '';
 
     // A ROW PER KEY PAIR (#1290): a person holds several per profile, each
@@ -1865,43 +1889,48 @@ class PkiPage {
       t.html('consolePki.twoActsSaml') + '</p>',
       t.html('consolePki.twoActsTitle'));
 
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each tab's
+    // heading stays at the top level, where `WebPages.protocolTabs()` cuts,
+    // and what follows it is one frame, each `<h4>` block a frame inside it.
     return tiles + what + limits + PqcBadgeView.legend(t) +
                   '<h3 id="pki-tree" data-tab="hierarchy">' +
                   t.html('consolePki.hierarchy') +
                   '</h3>' +
-                  kit.note(
+                  kit.frame(kit.note(
                     t.html('consolePki.treeOneRoot') + '<p>' +
                     t.html('consolePki.treeRealmShares') + '</p><p>' +
                     t.html('consolePki.treeDrawn', { realm: json.realm }) +
                     '</p><p>' + t.html('consolePki.treeAutoBuild') + '</p>',
                     t.html('consolePki.treeTitle')) +
                   self.treeSection(json, t) +
-                  self.coverageNote(json, t) +
+                  self.coverageNote(json, t)) +
                   self.pinnedSection(json, t) +
                   '<h3 data-tab="edit">' +
                   t.html('consolePki.editHierarchy') + '</h3>' +
-                  self.rootControls(json, t) +
+                  kit.frame(kit.frame(self.rootControls(json, t)) +
                   (json.tree.scopes || []).map(function (scope) {
-                    return self.scopeControls(json, scope, t);
-                  }).join('') +
+                    return kit.frame(self.scopeControls(json, scope, t));
+                  }).join('')) +
                   (chain ? '<h3 id="pki-chain" data-tab="hierarchy">' +
                            t.html('consolePki.threeTierView') + '</h3>' +
-                           kit.note(t.html('consolePki.threeTierNote')) +
-                           self.chainTable(chain, t) +
-                           self.pemBlocks(chain, t) : '') +
+                           kit.frame(
+                             kit.note(t.html('consolePki.threeTierNote')) +
+                             self.chainTable(chain, t) +
+                             self.pemBlocks(chain, t)) : '') +
                   buildForm + issueForm +
                   '<h3 id="pki-applications" data-tab="applications">' +
-                  t.html('consolePki.applications') + '</h3>' + twoActs +
+                  t.html('consolePki.applications') + '</h3>' +
+                  kit.frame(twoActs +
                   // NO *Rows per table* CONTROL (2026-09-30). Every size it
                   // offered is above this page's ceiling of five and would be
                   // clamped back to it, and a select whose choices all do
                   // nothing is a control that lies about the page. `?per=`
                   // still shortens every list, by hand.
-                  issuedRows +
+                  issuedRows) +
                   personForm +
                   '<h3 id="pki-people" data-tab="people">' +
                   t.html('consolePki.people') +
-                  '</h3>' + personRows +
+                  '</h3>' + kit.frame(personRows) +
                   self.revocationPane(json, listView, t) +
                   self.certificatePane(json, json.workbench.draft, t) +
                   SettingsForms.forms(json.settings, '/admin/pki', undefined,

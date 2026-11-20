@@ -18,6 +18,8 @@
 // but a lazy one costs nothing and keeps the order a non-question.
 // ---------------------------------------------------------------------------
 
+// Types a row of actions by its own actions' operations (#1579).
+import ApiRows = require('../common/api_rows');
 import helpers = require('../common/helpers');
 const { log, parseBody } = helpers;
 import errorCodes = require('../common/error_codes');
@@ -107,7 +109,12 @@ class OidfedApi {
    * @param status - the HTTP status
    * @param body - the reply
    */
-  send(res: Json, status: number, body: Json): void {
+  // TYPED BY THE OPERATION (#1579): through a handler's response, the
+  // answer is held to the model's at a literal 2xx status
+  // (`types/api-handlers.d.ts`).
+  send<R, S extends number>(res: R, status: S,
+       body: IyaApi.AnswerOf<R, S>): void;
+  send(res: any, status: number, body: any): void {
     const { log } = this.deps;
     log.debug("Entering OidfedApi.send(). status=" + status);
     const rows = res.locals && res.locals.protocolEndpoints;
@@ -155,7 +162,7 @@ class OidfedApi {
     const { log, loadOidfed, loadPage, errorCodes, parseBody } = this.deps;
     const self = this;
     log.debug("Entering OidfedApi.buildRoutes().");
-    const ROUTES = [
+    const ROUTES: IyaApi.AdminRow[] = [
       { method: 'GET', path: BASE + '/oidfed', tag: 'OpenID Federation',
         operationId: 'getOidfed',
         mirrors: 'GET /admin/oidfed',
@@ -177,7 +184,7 @@ class OidfedApi {
             schema: { type: 'integer', minimum: 1, examples: [10] },
             description: 'Rows per page, shared by the seven lists.' }
         ]),
-        handler: function (req: Json, res: Json): Promise<void> {
+        handler: function (req, res): Promise<void> {
           log.debug("Entering the management API OpenID Federation " +
                     "endpoint.");
           return loadPage().oidfedView(req).then(function (view: Json): void {
@@ -192,9 +199,9 @@ class OidfedApi {
           });
         } },
 
-      { method: 'POST', route: BASE + '/oidfed/:action',
+      ApiRows.actions({ method: 'POST', route: BASE + '/oidfed/:action',
         tag: 'OpenID Federation', mirrors: 'POST /admin/oidfed',
-        handler: function (req: Json, res: Json): Promise<void> {
+        handler: function (req, res): Promise<void> {
           log.debug("Entering the management API OpenID Federation action.");
           const body = Object.assign({}, parseBody(req),
                                      { action: String(req.params.action ||
@@ -396,7 +403,7 @@ class OidfedApi {
                                                'superseded'] } },
             ['kid'], { kid: 'NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9Xs',
                        reason: 'compromised' })
-        ] }
+        ] })
     ];
     log.debug("Leaving OidfedApi.buildRoutes().");
     return ROUTES;

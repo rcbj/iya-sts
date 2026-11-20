@@ -57,6 +57,8 @@ import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
+type AccountAnswering<K extends keyof IyaApi.Account.Operations> =
+  import('../types/account-api').AccountAnswering<K>;
 type AccountContext = import('../types/account-api').AccountContext;
 type AccountCaller = import('../types/account-api').AccountCaller;
 
@@ -299,7 +301,8 @@ class PortalSelfIssued {
    * @param enrolled - whether the wallet sign-in has just enrolled a subject
    * @returns nothing
    */
-  answer(ctx: AccountContext, res: Json, caller: AccountCaller,
+  answer(ctx: AccountContext, res: AccountAnswering<'getSelfIssued'>,
+         caller: AccountCaller,
          enrolled: boolean, didDone?: string): unknown {
     const { log, siop } = this.deps;
     log.debug("Entering PortalSelfIssued.answer().");
@@ -355,7 +358,8 @@ class PortalSelfIssued {
    * @param asked - the subject named, or ''
    * @returns nothing
    */
-  async didDocument(ctx: AccountContext, req: Json, res: Json,
+  async didDocument(ctx: AccountContext, req: Json,
+                    res: AccountAnswering<'getSelfIssuedDidDocument'>,
                     caller: AccountCaller, asked: string): Promise<unknown> {
     const { log, siop, resolveDid } = this.deps;
     log.debug("Entering PortalSelfIssued.didDocument().");
@@ -422,7 +426,8 @@ class PortalSelfIssued {
    * @param body - the checked body
    * @returns nothing
    */
-  prefer(ctx: AccountContext, res: Json, caller: AccountCaller,
+  prefer(ctx: AccountContext, res: AccountAnswering<'removeSelfIssued'>,
+         caller: AccountCaller,
          body: Json): unknown {
     const { log, siop } = this.deps;
     log.debug("Entering PortalSelfIssued.prefer(). " + body.action);
@@ -462,7 +467,8 @@ class PortalSelfIssued {
    * @param body - the checked body
    * @returns nothing
    */
-  remove(ctx: AccountContext, res: Json, caller: AccountCaller,
+  remove(ctx: AccountContext, res: AccountAnswering<'removeSelfIssued'>,
+         caller: AccountCaller,
          body: Json): unknown {
     const { log, siop, personDid } = this.deps;
     log.debug("Entering PortalSelfIssued.remove().");
@@ -510,7 +516,9 @@ class PortalSelfIssued {
    * @param body - the checked body
    * @returns nothing
    */
-  didAct(ctx: AccountContext, req: Json, res: Json, caller: AccountCaller,
+  didAct(ctx: AccountContext, req: Json,
+         res: AccountAnswering<'actOnPublishedDid' | 'removeSelfIssued'>,
+         caller: AccountCaller,
          body: Json): unknown {
     const { log, personDid } = this.deps;
     log.debug("Entering PortalSelfIssued.didAct().");
@@ -577,22 +585,22 @@ class PortalSelfIssued {
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/self-issued',
         operationId: 'getSelfIssued', access: 'person', query: SELF_ISSUED_QUERY,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return self.answer(ctx, res, caller, input.query.enrolled === '1',
                              String(input.query.did || ''));
         } },
       { method: 'GET', path: ctx.BASE + '/self-issued/did',
         operationId: 'getSelfIssuedDidDocument', access: 'person', query: DID_QUERY,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return self.didDocument(ctx, req, res, caller,
                                   String(input.query.subject || ''));
         } },
       { method: 'POST', path: ctx.BASE + '/self-issued',
         operationId: 'removeSelfIssued', access: 'person', recentAuth: true, body: REMOVE_FORM,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           if (input.body.action === 'prefer' ||
               input.body.action === 'unprefer') {
             return self.prefer(ctx, res, caller, input.body);
@@ -601,8 +609,8 @@ class PortalSelfIssued {
         } },
       { method: 'POST', path: ctx.BASE + '/self-issued/dids',
         operationId: 'actOnPublishedDid', access: 'person', recentAuth: true, body: DID_FORM,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return self.didAct(ctx, req, res, caller, input.body);
         } }
     ];

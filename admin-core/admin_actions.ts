@@ -135,6 +135,7 @@
 import helpers = require('../common/helpers');
 import configDump = require('./config_dump');
 import DomainClasses = require('../common/domain_classes');
+import DomainMap = require('../common/domain_map');
 import InstanceSlot = require('../common/instance_slot');
 // A policy save's or reset's message is filled from `policy_kinds.ts`'s
 // templates, so the server can translate it (#543).
@@ -145,6 +146,7 @@ import config = require('../common/config');
 // library, required in the ordinary direction, as `admin_views.ts` does.
 import persistence = require('../persistence/persistence');
 import credentials = require('../common/credentials');
+import DirectorySecrets = require('../ldap/directory_secrets');
 import realms = require('../common/realms');
 import stats = require('../common/admin_stats');
 import rbac = require('../admin-ui/admin_rbac');
@@ -181,6 +183,10 @@ import fedLinks = require('../federation/federation_links');
 // request or when its key type changes. A static utility class; it registers
 // nothing.
 import fedEncryption = require('../federation/federation_encryption');
+// A FAPI 1.0 Advanced relationship's TLS client certificate (#931): issued
+// when fedFapi becomes 1-advanced. A static utility class; requiring it
+// registers its scheduler job and no route.
+import fedClientCert = require('../federation/federation_client_certificate');
 import spiffeCa = require('../spiffe/spiffe_ca');
 import spiffeRegistry = require('../spiffe/spiffe_registry');
 import spiffeIdLib = require('../spiffe/spiffe_id');
@@ -201,6 +207,10 @@ import accountState = require('../common/account_state');
 // filled through its own slot by `ldap_server.js`, so requiring it here loads
 // no route module.
 import personEditor = require('../ldap/person_editor');
+// A person out to an LDIF file and back in (2026-11-14). A library that
+// reads the directory out of the require cache at request time, so requiring
+// it here loads no route module either.
+import personLdif = require('../ldap/person_ldif');
 import identityAssurance = require('../common/identity_assurance');
 import siop = require('../oid4vc/siop');
 import devices = require('../common/devices');
@@ -226,6 +236,9 @@ import passwordPolicy = require('../common/password_policy');
 // THE KINDS OF POLICY ON /admin/policies (#64). A library over the policy
 // modules, which are leaves; `policiesAction()` hands each action to its kind.
 import policyKinds = require('./policy_kinds');
+// POLICY EXPORT AND IMPORT (#1713). A library over the kinds above, the
+// realm's Policy Export Signing CA and the validation door; no route.
+import policyTransfer = require('./policy_transfer');
 // THE ERROR CODES (common/error_codes.js, a leaf). An action has no response to
 // mark, so a refusal's code goes on the RESULT, under the same non-enumerable
 // Symbol `mark()` writes on a response. JSON.stringify never sees a Symbol key,
@@ -382,6 +395,8 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        'require-mfa', 'stop-requiring-mfa',
                        // A disabled account (2026-09-17).
                        'disable', 'enable',
+                       // The person deleted (rcbj, 2026-11-16).
+                       'delete',
                        // A partner's subject linked to, or unlinked from,
                        // a person (#109, 2026-09-22).
                        'federation-link', 'federation-unlink',
@@ -430,7 +445,15 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        // A message-signing certificate issued to the
                        // person by an administrator, and revoked (#521).
                        'issue-signing-certificate',
-                       'revoke-signing-certificate'];
+                       'revoke-signing-certificate',
+                       // A TLS client certificate issued to the person
+                       // from this realm's CA, and revoked. The subject
+                       // is the directory entry's.
+                       'issue-tls-client-certificate',
+                       'revoke-tls-client-certificate',
+                       // The person as an LDIF file, out and back in: the
+                       // Import / export tab of their page (2026-11-14).
+                       'export-ldif', 'import-ldif'];
 
 // ---------------------------------------------------------------------------
 // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS FROM THEIR PAGE
@@ -526,9 +549,9 @@ const CREDENTIAL_ADMIN_ACTIONS = ['reset-password', 'issue-password-reset',
   'answer-ciba-request',
   // A SERVICE ACCOUNT (#221, 2026-10-06): `set-service-account` makes the
   // person one (`serviceAccount` true, the default), changes its `owners`
-  // (#600: the whole list), `destination` and `secretName`, or makes it a
-  // person again
-  // (`serviceAccount` false). `common/service_accounts.ts` checks and keeps
+  // (#600: the whole list), `destination` and `secretName`; it never makes
+  // one a person again (rcbj, 2026-11-15: `serviceAccount` false on one is
+  // refused, STS-SVCACCT-0060). `common/service_accounts.ts` checks and keeps
   // it; where the realm's policy refuses a service account every browser
   // sign-in, becoming one ends the person's sessions. `rotate-password`
   // QUEUES a rotation of a service account's password on the scheduler's
@@ -557,8 +580,8 @@ const CREDENTIAL_ADMIN_ACTIONS = ['reset-password', 'issue-password-reset',
 // both are visible to the other immediately because nothing caches.
 //
 // **What may be changed is DECLARED and not DERIVED**, and that line is drawn
-// in `applications.js`'s EDITABLE table rather than here: redirect URIs, grant
-// types, scopes, the secret, whether the client is confidential —
+// in the application table's `editable` rows rather than here: redirect URIs,
+// grant types, scopes, the secret, whether the client is confidential —
 // configuration, which is what RFC 9700 mode reads — but never the counters,
 // the sightings, the kinds or the protocols, which are what happened. LDAP can
 // still reach those; the difference between offering an operation and merely
@@ -615,6 +638,9 @@ const APPLICATION_ACTIONS = ['create', 'set', 'add', 'remove',
                              'issue-signing-certificate',
                              'revoke-signing-certificate',
                              'add-certificate', 'remove-certificate',
+                             'issue-wstrust-decryption-key',
+                             'upload-wstrust-decryption-key',
+                             'remove-wstrust-decryption-key',
                              'revoke-registration', 'refresh-metadata',
                              'load-resource-metadata', 'generate-did-key',
                              'sign-domain-linkage', 'set-custom-claim',
@@ -1081,6 +1107,7 @@ interface AdminActionsDeps {
   accountSignals: typeof accountSignals;
   accountState: typeof accountState;
   personEditor: typeof personEditor;
+  personLdif: typeof personLdif;
   identityAssurance: typeof identityAssurance;
   siop: typeof siop;
   devices: typeof devices;
@@ -1095,6 +1122,7 @@ interface AdminActionsDeps {
   roles: typeof roles;
   passwordPolicy: typeof passwordPolicy;
   policyKinds: typeof policyKinds;
+  policyTransfer: typeof policyTransfer;
   errorCodes: typeof errorCodes;
   krb5Principals: typeof krb5Principals;
   krb5PersonKeys: typeof krb5PersonKeys;
@@ -1174,6 +1202,7 @@ class AdminActions {
       accountSignals: accountSignals,
       accountState: accountState,
       personEditor: personEditor,
+      personLdif: personLdif,
       identityAssurance: identityAssurance,
       siop: siop,
       devices: devices,
@@ -1188,6 +1217,7 @@ class AdminActions {
       roles: roles,
       passwordPolicy: passwordPolicy,
       policyKinds: policyKinds,
+      policyTransfer: policyTransfer,
       errorCodes: errorCodes,
       krb5Principals: krb5Principals,
       krb5PersonKeys: krb5PersonKeys,
@@ -1416,7 +1446,8 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  tokenAction(body, setWarmed?) {
+  tokenAction(body: IyaApi.AdminActionBody<
+    '/admin-api/tokens'>, setWarmed?) {
     const { log, stats } = this.deps;
     log.debug("Entering AdminActions.tokenAction(). action=" + (body.action ||
                                                                 '(none)'));
@@ -1810,7 +1841,8 @@ class AdminActions {
    * @param opts - who is acting (`actor`) and from where (`by`)
    * @returns `{ ok, errors, … }` reporting what was ended and what could not be
    */
-  sessionsAction(body, opts) {
+  sessionsAction(body: IyaApi.AdminActionBody<
+    '/admin-api/sessions'>, opts) {
     const { log } = this.deps;
     log.debug("Entering AdminActions.sessionsAction().");
     if (!logoutReader) {
@@ -1899,15 +1931,17 @@ class AdminActions {
    * delivery.
    *
    * @param body - the parsed form or JSON body, whose `action` names the act
+   * @param context - who is acting (`actor`), for a retried delivery's row
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  logoutAction(body) {
+  logoutAction(body: IyaApi.AdminActionBody<'/admin-api/logout'>,
+               context?) {
     const { log, stats, krb5Principals, mode } = this.deps;
     log.debug("Entering AdminActions.logoutAction(). action=" + (body.action ||
                                                                  '(none)'));
     const action = String(body.action || '');
-    const user = String(body.user || body.username || '').trim();
+    const user = String(body.user || '').trim();
     // RESTORE-KERBEROS IS A DEVELOPMENT TEST CONTROL (#111, 2026-09-23), and
     // refused here — the one function the console form and `POST
     // /admin-api/logout/restore-kerberos` both reach (rule 7) — before the
@@ -1930,13 +1964,14 @@ class AdminActions {
     // `backchannel_logout.ts`'s retry() argues it.
     if (action === 'retry-backchannel') {
       const { backchannel } = this.deps;
-      const id = String(body.delivery || body.id || '').trim();
+      const id = String(body.delivery || '').trim();
       if (!id) {
         log.debug("Leaving AdminActions.logoutAction(). No delivery named.");
         return this.refused('STS-OAUTH-0550', { ok: false, errors: ['Name ' +
             'the dead delivery to retry in `delivery`.'] });
       }
-      const answer = backchannel.retry(id, String(body.actor || user || ''));
+      const answer = backchannel.retry(id,
+        String((context || {}).actor || user || ''));
       log.debug("Leaving AdminActions.logoutAction(). retry-backchannel " +
                 (answer.ok ? 'queued.' : 'refused.'));
       return answer.ok
@@ -2025,7 +2060,7 @@ class AdminActions {
       // jti belongs. It is the same call tokenAction() makes further up, where
       // it was always spelt `found.jti` — which is why /admin/tokens' restore
       // worked and this one did not.
-      const found = this.jtiFrom(String(body.jti || body.target || ''));
+      const found = this.jtiFrom(String(body.jti || ''));
       if (!found.jti) {
         log.debug("Leaving AdminActions.logoutAction().");
         return this.refused('STS-ADMIN-0502', { ok: false, errors: ['Name ' +
@@ -2073,26 +2108,29 @@ class AdminActions {
    * permission base, on `/admin/delegation`.
    *
    * @param body - the parsed form or JSON body, whose `action` names the act
+   * @param context - who is acting (`actor`)
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  permissionsAction(body) {
+  permissionsAction(body: IyaApi.AdminActionBody<'/admin-api/permissions'>,
+                    context?) {
     const { log, numberWord, appPermissions } = this.deps;
     log.debug("Entering AdminActions.permissionsAction(). action=" +
               (body.action || '(none)'));
     const action = String(body.action || '');
-    const actor = String(body.actor || '');
-    const resource = String(body.resource || body.application || '').trim();
-    const client = String(body.client || body.application || '').trim();
+    const actor = String((context || {}).actor || '');
+    const resource = String(body.resource || '').trim();
+    const client = String(body.client || '').trim();
 
     // WHICH APPLICATION, ASKED ONCE FOR EACH SIDE. The two names are
     // deliberately different — `resource` for the application that EXPOSES a
     // permission and `client` for the one that HOLDS it — because this is the
     // one feature here where a body naming the wrong one still succeeds and
-    // writes a grant onto the API instead of onto its caller. `application` is
-    // accepted for either as a convenience for a caller editing one entry, and
-    // the refusals below name the field that was missing rather than "an
-    // application".
+    // writes a grant onto the API instead of onto its caller. The refusals
+    // below name the field that was missing rather than "an application".
+    // (`application` was once accepted for either, and `value` for
+    // `baseUri`; neither is in the model, and both were removed — rcbj on
+    // #1579, 2026-11-11.)
     const needsResource = ['set-permission-base', 'define-permission',
                            'remove-permission'];
     const needsClient = ['grant-permission', 'revoke-permission'];
@@ -2122,8 +2160,7 @@ class AdminActions {
       // entry. It is the same convention every `set` on /admin/applications
       // follows.
       const result = appPermissions.setBaseUri(resource,
-                                               String(body.baseUri === undefined
-        ? (body.value === undefined ? '' : body.value) : body.baseUri), actor);
+        String(body.baseUri === undefined ? '' : body.baseUri), actor);
       log.debug("Leaving AdminActions.permissionsAction(). " +
                 "set-permission-base " +
                 (result.ok ? 'ok' : 'refused') + ".");
@@ -2226,7 +2263,8 @@ class AdminActions {
    * @param body - the parsed body, whose `action` names the act
    * @returns `{ ok, errors, why, … }`, or a promise of it
    */
-  xacmlAction(body) {
+  xacmlAction(body: IyaApi.AdminActionBody<
+    '/admin-api/xacml'>) {
     const { log } = this.deps;
     const self = this;
     log.debug('Entering AdminActions.xacmlAction(). action=' + (body ||
@@ -2911,8 +2949,9 @@ class AdminActions {
               held.length + " held.");
     return {
       ok: true, kind: kind, holder: name,
-      implicitName: (kind === 'application'
-        ? tlsClientCertificates.APPLICATION_URN : 'urn:sts:person:') + name,
+      // The name a leaf issued NOW would carry (#1827): a service
+      // account's is `urn:sts:sa:`.
+      implicitName: tlsClientCertificates.holderUrn(undefined, kind, name),
       certificates: held,
       active: held.filter(function (cert) {
         return cert.state === 'valid';
@@ -2923,6 +2962,162 @@ class AdminActions {
       revocationReasons: tlsClientCertificates.REVOCATION_REASONS.slice(),
       passwordMin: tlsClientCertificates.PKCS12_PASSWORD_MIN
     };
+  }
+
+  /**
+   * The TLS client certificates one person has been issued in the ambient
+   * realm, and the subject the next one would carry.
+   *
+   * @param holder - the username
+   * @returns the signing list's shape, plus `entryDn`, `subjectDn` and
+   *   `caAvailable`
+   */
+  tlsClientCertificatesOf(holder) {
+    const { log, tlsClientCertificates, personEditor } = this.deps;
+    log.debug("Entering AdminActions.tlsClientCertificatesOf().");
+    const name = String(holder || '');
+    const purpose = 'tls-client';
+    let held = [];
+    try {
+      held = tlsClientCertificates.listFor(undefined, name, 'person',
+                                            purpose)
+        .map(function (cert) {
+          return { serialHex: cert.serialHex, label: cert.label,
+                   subject: cert.subject, keyAlg: cert.keyAlg,
+                   notBefore: cert.notBefore, notAfter: cert.notAfter,
+                   thumbprint: cert.thumbprint, state: cert.state,
+                   reason: cert.reason, revokedAt: cert.revokedAt,
+                   certificatePem: cert.certificatePem };
+        });
+    } catch (e) {
+      // No certificate authority in this process: nothing issued.
+      log.debug("Caught in AdminActions.tlsClientCertificatesOf(): " +
+                ((e && e.message) || e));
+      held = [];
+    }
+    let entryDn = '';
+    try {
+      const editor = personEditor.editorFor(name);
+      entryDn = editor ? String(editor.dn || '') : '';
+    } catch (e) {
+      log.debug("Caught in AdminActions.tlsClientCertificatesOf(): " +
+                ((e && e.message) || e));
+      entryDn = '';
+    }
+    const planned = tlsClientCertificates.plannedPersonSubject(
+      undefined, name, entryDn);
+    const subjectDn = planned
+      ? planned.map(function (one) {
+          return one.name + '=' + one.value;
+        }).join(', ')
+      : '';
+    log.debug("Leaving AdminActions.tlsClientCertificatesOf(). " +
+              held.length + " held.");
+    return {
+      ok: true, kind: 'person', holder: name,
+      implicitName: tlsClientCertificates.holderUrn(undefined, 'person', name),
+      certificates: held,
+      active: held.filter(function (cert) {
+        return cert.state === 'valid';
+      }).length,
+      max: tlsClientCertificates.maxPerHolder('person', purpose),
+      keyAlgorithms: tlsClientCertificates.KEY_ALGS.slice(),
+      defaultKeyAlg: tlsClientCertificates.DEFAULT_KEY_ALG,
+      revocationReasons: tlsClientCertificates.REVOCATION_REASONS.slice(),
+      passwordMin: tlsClientCertificates.PKCS12_PASSWORD_MIN,
+      caAvailable: !!planned,
+      entryDn: entryDn,
+      subjectDn: subjectDn
+    };
+  }
+
+  private tlsClientCertificateAction(action, holder, body) {
+    const { log, tlsClientCertificates, personEditor } = this.deps;
+    const self = this;
+    log.debug("Entering AdminActions.tlsClientCertificateAction(). " +
+              action);
+    const whose = '"' + holder + '"';
+    const standing = function () {
+      log.debug("Entering standing().");
+      log.debug("Leaving standing().");
+      return { user: holder,
+               tls: self.tlsClientCertificatesOf(holder) };
+    };
+    if (action === 'revoke-tls-client-certificate') {
+      const done = tlsClientCertificates.revoke(undefined, holder,
+        String(body.serialHex || ''), String(body.reason || ''), 'person',
+        'tls-client');
+      if (done.ok) {
+        done.message = 'The TLS client certificate ' +
+          done.certificate.serialHex + ' of ' + whose + ' was revoked (' +
+          done.reason + '). A handshake that presents it is refused ' +
+          'from now on.';
+        Object.assign(done, standing());
+      }
+      log.debug("Leaving AdminActions.tlsClientCertificateAction(). " +
+                "revoke " + (done.ok ? 'ok' : 'refused') + ".");
+      return this.refusedBy('STS-ADMIN-0942', done);
+    }
+    const passwordSaid = tlsClientCertificates.pkcs12PasswordProblem(
+      body.password, body.confirm === undefined ? undefined : body.confirm);
+    if (passwordSaid) {
+      log.debug("Leaving AdminActions.tlsClientCertificateAction(). The " +
+                "file password.");
+      return this.refused('STS-ADMIN-0940', { ok: false,
+                                              errors: [passwordSaid] });
+    }
+    let entryDn = '';
+    let email = '';
+    try {
+      const editor = personEditor.editorFor(holder);
+      if (editor) {
+        entryDn = String(editor.dn || '');
+        email = String(editor.mail || '');
+      }
+    } catch (e) {
+      // The entry was found a moment ago. A lookup that throws still
+      // issues: the SAN names the person, and the subject falls back to
+      // the common name, the UID and the organisation.
+      log.debug("Caught in AdminActions.tlsClientCertificateAction(): " +
+                ((e && e.message) || e));
+    }
+    return tlsClientCertificates.issue(undefined, {
+      kind: 'person', username: holder,
+      keyAlg: body.keyAlg || undefined, label: body.label || '',
+      email: email,
+      days: body.days ? Number(body.days) : undefined,
+      directorySubject: true, entryDn: entryDn,
+      initiatingEntity: 'admin', via: '/admin/users'
+    }).then(function (made) {
+      if (!made.ok) {
+        log.debug("Leaving AdminActions.tlsClientCertificateAction(). " +
+                  "The issue was refused.");
+        return self.refusedBy('STS-ADMIN-0941', made);
+      }
+      const issued = made.issued;
+      return tlsClientCertificates.bundle(issued, String(body.password))
+        .then(function (files) {
+          log.debug("Leaving AdminActions.tlsClientCertificateAction(). " +
+                    "A TLS client certificate was issued to " + holder +
+                    ".");
+          return Object.assign({
+            ok: true,
+            message: 'A TLS client certificate was issued to ' + whose +
+                     ' (serial ' + issued.serialHex + '). This is the ' +
+                     'only time its private key can be downloaded.',
+            certificate: {
+              serialHex: issued.serialHex, subject: issued.subject,
+              keyAlg: issued.keyAlg, label: issued.label,
+              notBefore: issued.notBefore, notAfter: issued.notAfter,
+              thumbprint: issued.thumbprint,
+              certificatePem: issued.certificatePem,
+              chainPem: issued.chainPem,
+              implicitName: issued.implicitName
+            },
+            files: files
+          }, standing());
+        });
+    });
   }
 
   private signingCertificateAction(action, kind, holder, body) {
@@ -3001,9 +3196,7 @@ class AdminActions {
                 thumbprint: issued.thumbprint,
                 certificatePem: issued.certificatePem,
                 chainPem: issued.chainPem,
-                implicitName: (kind === 'application'
-                  ? tlsClientCertificates.APPLICATION_URN
-                  : 'urn:sts:person:') + holder
+                implicitName: issued.implicitName
               },
               files: files
             }, standing());
@@ -3381,7 +3574,8 @@ class AdminActions {
       // checkbox per door (`door_ldap=on`, ...) — a form parser keeps the
       // last of a repeated name, so the boxes are named apart.
       const doors = [].concat(body.doors === undefined ? [] : body.doors)
-        .concat(['ldap', 'wstrust', 'scim', 'ssf', 'est'].filter(function (
+        .concat(['ldap', 'wstrust', 'scim', 'ssf', 'est',
+                   'xacml-pep'].filter(function (
           door) {
           return ['on', 'true', '1', 'yes'].indexOf(
             String(body['door_' + door] || '')) >= 0;
@@ -3812,8 +4006,10 @@ class AdminActions {
       const { serviceAccounts } = this.deps;
       const adding = action === 'add-service-account-owner';
       const owner = String(body.owner == null ? '' : body.owner).trim();
-      const result: any = adding ? serviceAccounts.addOwner(who, owner)
-                                 : serviceAccounts.removeOwner(who, owner);
+      const caller = { caller: ctx.admin ? ctx.admin.username : '' };
+      const result: any = adding
+        ? serviceAccounts.addOwner(who, owner, caller)
+        : serviceAccounts.removeOwner(who, owner, caller);
       audited(adding ? 'admin.service-account.owner-added'
                      : 'admin.service-account.owner-removed',
               (result.ok ? '' : 'could not ') +
@@ -3907,11 +4103,14 @@ class AdminActions {
 
   // ---------------------------------------------------------------------------
   // A SERVICE ACCOUNT (#221): the flag, its owner and its push destination,
-  // set or cleared. The checks are `service_accounts.set()`'s; this audits,
-  // and where the realm keeps service accounts out of every browser it ends
-  // the sessions a person who has just become one still holds — the policy
-  // would refuse them at the next sign-in, and a session already open is the
-  // same browser.
+  // set. It is never cleared (rcbj, 2026-11-15): `set()` refuses
+  // `serviceAccount` false on a service account, an owner list left empty
+  // and the caller taking themselves off, so a refusal of those is audited
+  // here like any other. The checks are `service_accounts.set()`'s; this
+  // audits, and where the realm keeps service accounts out of every browser
+  // it ends the sessions a person who has just become one still holds — the
+  // policy would refuse them at the next sign-in, and a session already open
+  // is the same browser.
   // ---------------------------------------------------------------------------
   private serviceAccountAction(who, body, ctx, audited) {
     const { log, serviceAccounts, serviceAccountPolicy } = this.deps;
@@ -3923,7 +4122,7 @@ class AdminActions {
       owners: body.owners,
       destination: body.destination,
       secretName: body.secretName
-    });
+    }, { caller: ctx.admin ? ctx.admin.username : '' });
     const ownersOf = function (account) {
       log.debug("Entering ownersOf().");
       log.debug("Leaving ownersOf().");
@@ -4090,6 +4289,164 @@ class AdminActions {
     return evidence ? '; identity verified by: ' + evidence : '';
   }
 
+  // ---------------------------------------------------------------------------
+  // A PERSON DELETED BY AN ADMINISTRATOR (rcbj, 2026-11-16: "Add a user
+  // delete endpoint to the admin api"). `POST /admin-api/users/delete` and
+  // the Delete control on the person's console page.
+  //
+  // **ONE DELETE.** The entry goes through the directory's `deletePerson()`,
+  // the function SCIM's `DELETE /Users/{id}` calls, which takes the same
+  // `removePersonEntry()` path an LDAP delete takes: the entry and its
+  // indexes, the passkey report, every group and role that named it
+  // (#1612/#1613), every owner list (a service account's last owner handed
+  // to the realm's Admin Write group), the profile photo, the account
+  // observers (RISC `account-purged`, OpenID Provider Commands), and — after
+  // the answer — everything the person held ended as a disable ends it
+  // (`account_state.ts`, #241). The bootstrap administrator (STS-LDAP-0077)
+  // and an entry with children (STS-LDAP-0014) are refused there, for every
+  // door. Nothing here deletes anything itself.
+  //
+  // **TWO REFUSALS ARE THIS DOOR'S OWN**, because they are about the
+  // ADMINISTRATOR rather than the entry, and SCIM and LDAP have no console
+  // in front of them to protect: the person whose token this is may not
+  // delete their own entry (STS-ADMIN-0943), and nobody may delete the last
+  // person a console role's roster lists for Admin Write or the Security
+  // Administrator (STS-ADMIN-0944) — nobody would be left to grant the role
+  // again. Neither is an authorization decision (the access-control policy
+  // has made that before this runs, the Security Administrator's `holder`
+  // kind among it, `common/security_operations.ts`): each is about the state
+  // the act would leave, as the bootstrap administrator's rule is.
+  // ---------------------------------------------------------------------------
+  private deletePersonAction(body: any, ctx: any) {
+    const { log, auditLog, realms, errorCodes } = this.deps;
+    log.debug("Entering AdminActions.deletePersonAction().");
+    const who = String(body.user || body.username || '').trim();
+    if (!who) {
+      log.debug("Leaving AdminActions.deletePersonAction(). No person named.");
+      return this.refused('STS-ADMIN-0518', { ok: false, errors: ['Name ' +
+          'the person in `user`.'] });
+    }
+    const audit = function (outcome, summary, code, dn) {
+      auditLog.record({ category: 'directory', action: 'user.delete',
+        actor: ctx.actor, target: dn || who, outcome: outcome,
+        errorCode: code || '', protocol: 'Management API',
+        channel: ctx.via === 'api' ? 'http' : 'internal',
+        summary: summary, detail: { username: who, via: ctx.via } });
+    };
+    const ldap = require('../ldap/ldap_server');
+    const located = ldap.locateEntry(who);
+    const stored = located && located.stored;
+    if (!stored || !ldap.isPersonEntry(stored)) {
+      audit('refused', 'nobody called ' + who + ' was here to delete',
+            'STS-LDAP-0013', '');
+      log.debug("Leaving AdminActions.deletePersonAction(). Nobody.");
+      return this.refused('STS-LDAP-0013', { ok: false, errors: ['Nobody ' +
+        'called "' + who + '" is in this realm\'s directory, so nothing ' +
+        'was deleted.'] });
+    }
+    const dn = String(stored.dn);
+    const attrs = stored.attributes || {};
+    const username = String([].concat(attrs.uid || [])[0] || who);
+    // Any entry's UUID is DirectoryEntry's (#1579).
+    const uuid = DomainMap.fieldOf('DirectoryEntry', 'entryUuid', attrs);
+    const subject = uuid ? 'urn:uuid:' + String(uuid).toLowerCase() : '';
+    // THE BOOTSTRAP ADMINISTRATOR is refused by `deletePerson()` below, for
+    // every door, and that refusal is the one it meets here too: it holds
+    // both console roles, and would otherwise be told it is the last holder.
+    const seeded = ldap.isBootstrapAdministratorEntry(stored);
+    // THEMSELVES: the token's person, in the realm the token was issued in.
+    // A default-realm administrator acting in a trust realm is never the
+    // trust realm's namesake.
+    const admin = ctx.admin;
+    const sameRealm = !!admin && (!admin.realm ||
+                                  String(admin.realm) === realms.currentId());
+    if (!seeded && sameRealm &&
+        ((subject && String(admin.sub || '').toLowerCase() === subject) ||
+         String(admin.username || '').toLowerCase() ===
+           username.toLowerCase())) {
+      audit('refused', ctx.actor + ' tried to delete their own entry',
+            'STS-ADMIN-0943', dn);
+      log.debug("Leaving AdminActions.deletePersonAction(). Themselves.");
+      return this.refused('STS-ADMIN-0943', { ok: false, errors: ['You ' +
+        'cannot delete your own entry: ask another administrator.'] });
+    }
+    const last = seeded ? '' : this.lastRoleHolder(username, dn);
+    if (last) {
+      audit('refused', username + ' is the last person holding ' + last,
+            'STS-ADMIN-0944', dn);
+      log.debug("Leaving AdminActions.deletePersonAction(). The last " +
+                "holder.");
+      return this.refused('STS-ADMIN-0944', { ok: false, errors: ['"' +
+        username + '" is the last person holding ' + last + ' in this ' +
+        'realm, and nobody would be left to grant it. Grant it to ' +
+        'somebody else first.'] });
+    }
+    const removed = ldap.deletePerson(dn, { door: ctx.via === 'api'
+      ? 'POST /admin-api/users/delete' : 'the admin console' });
+    if (!removed || !removed.ok) {
+      const code = errorCodes.codeOf(removed) || 'STS-LDAP-0013';
+      const reason = String((removed && removed.reason) || '');
+      audit('refused', username + ' was not deleted (' + reason + ')', code,
+            dn);
+      log.debug("Leaving AdminActions.deletePersonAction(). Refused: " +
+                reason);
+      return this.refused(code, { ok: false, errors: [reason === 'protected'
+        ? '"' + username + '" is this realm\'s bootstrap administrator, ' +
+          'which no door may delete.'
+        : (reason === 'notLeaf'
+          ? 'The entry ' + dn + ' has entries beneath it, and this ' +
+            'directory deletes only a leaf (RFC 4511 section 4.8). Delete ' +
+            'what is under it first.'
+          : 'Nobody called "' + who + '" is in this realm\'s directory, ' +
+            'so nothing was deleted.')] });
+    }
+    audit('success', (ctx.actor || 'an unnamed caller') + ' deleted ' + dn,
+          '', dn);
+    log.info('admin: ' + (ctx.actor || 'an unnamed caller') + ' (' +
+             ctx.via + ') deleted ' + dn + '.');
+    log.debug("Leaving AdminActions.deletePersonAction(). Deleted.");
+    return { ok: true, changed: true, username: username, dn: dn,
+             message: '"' + username + '" was deleted. Every group and role ' +
+                      'that named them has let them go, and everything ' +
+                      'they held — sessions, tokens, codes, connections — ' +
+                      'is being ended. Somebody made again under the name ' +
+                      'starts with nothing.' };
+  }
+
+  // The console role a person is the last roster member of, as its label,
+  // or '' (STS-ADMIN-0944). Admin Write and the Security Administrator only:
+  // each can grant its role again, and Admin Read implies neither. A member
+  // counts when the roster resolves them to an entry that is there
+  // (`present`), by the group's own list or by their own `memberOf`.
+  private lastRoleHolder(username: string, dn: string): string {
+    const { log, rbac, realms } = this.deps;
+    log.debug("Entering AdminActions.lastRoleHolder().");
+    if (!rbac.available()) {
+      log.debug("Leaving AdminActions.lastRoleHolder(). No roster.");
+      return '';
+    }
+    const ldap = require('../ldap/ldap_server');
+    const mine = ldap.normalizeDn(dn);
+    // The roster of the realm this act is in, named rather than inherited.
+    const realm = realms.currentId();
+    const held = (rbac.rolesOf(username, realm).groups || []).map(function (
+        one) {
+      return String(one.role);
+    });
+    const last = ['write', 'security'].filter(function (id) {
+      if (held.indexOf(id) < 0) {
+        return false;
+      }
+      const roster = rbac.rosterFor(id, realm) || { members: [] };
+      return !(roster.members || []).some(function (member) {
+        return member.present && member.dn &&
+               ldap.normalizeDn(member.dn) !== mine;
+      });
+    })[0];
+    log.debug("Leaving AdminActions.lastRoleHolder(). " + (last || 'none'));
+    return last ? (rbac.roleFor(last) || { label: last }).label : '';
+  }
+
   /**
    * Performs a `/admin/users` action on a person: create, set a password or
    * mail address, issue an activation link, clear a second factor, disable or
@@ -4101,7 +4458,7 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  usersAction(body, context?) {
+  usersAction(body: IyaApi.AdminActionBody<'/admin-api/users'>, context?) {
     const { log, numberWord, credentials, auditLog,
             accountSignals } = this.deps;
     log.debug("Entering AdminActions.usersAction(). action=" + (body.action ||
@@ -4115,20 +4472,27 @@ class AdminActions {
     // realm prefix included, so a password reset link can be handed back WHOLE
     // — the one thing an administrator does with it is send it to somebody.
     //
-    // AN OWN `actor` IS THE ACTOR EVEN WHEN IT IS EMPTY (#966). The management
-    // API always passes the verified token's subject, and '' means nobody was
-    // authenticated. Falling through to `body.actor` on that empty subject is
-    // how a name the request nominated reached the row. A caller that OMITS
-    // the property — an in-process call that still puts the name in the
-    // body — keeps today's `body.actor` fallback. The federation-unlink
-    // test is the one caller that passes `actor: ''` on purpose; its body
-    // names nobody, so that row stays empty.
+    // THE ACTOR IS THE CONTEXT'S AND NEVER THE BODY'S (#966; rcbj on #1579,
+    // 2026-11-11). The management API passes the verified token's subject,
+    // and '' means nobody was authenticated. Until #1579 a body's `actor`
+    // was read when the context did not name one, and that is how a name
+    // the request nominated once reached the row; no body member names who
+    // acts now, so a caller that omits it records nobody.
     const given = context || {};
-    const actorNamed = Object.prototype.hasOwnProperty.call(given, 'actor');
     const ctx = { via: given.via || 'console',
-                  actor: actorNamed ? String(given.actor || '')
-                                    : String(body.actor || ''),
-                  base: String(given.base || '') };
+                  actor: String(given.actor || ''),
+                  base: String(given.base || ''),
+                  // THE PERSON ACTING, as the token named them (#945), for
+                  // the service-account owner rules (rcbj, 2026-11-15): an
+                  // owner may not take themselves off. Null for a client's
+                  // token and for development's open API.
+                  // And the realm the token was issued in, for the delete's
+                  // "not yourself" (2026-11-16): '' where it was not said.
+                  admin: given.admin && given.admin.username
+                    ? { username: String(given.admin.username),
+                        sub: String(given.admin.sub || ''),
+                        realm: String(given.admin.realm || '') }
+                    : null };
 
     // AN ADMINISTRATOR UPGRADES A PERSON'S CLASSICAL PASSKEY (#939). The
     // assertion and ML-DSA registration both run in the operator's browser;
@@ -4194,7 +4558,7 @@ class AdminActions {
         posted = typeof body.credential === 'string'
           ? JSON.parse(body.credential || 'null') : body.credential;
       } catch (e) { posted = null; }
-      const upgradeId = String(body.upgradeId || body.upgrade_id || '');
+      const upgradeId = String(body.upgradeId || '');
       if (action === 'prove-passkey-upgrade') {
         const checked = passkeyPolicy.withSelection(who, '', function () {
           return credentials.proveKeyUpgrade(who, upgradeId, posted, {
@@ -4270,7 +4634,7 @@ class AdminActions {
         return this.refused('STS-ADMIN-0518', { ok: false, errors: ['Name ' +
             'the person in `user`.'] });
       }
-      const riscReason = String(body.riscReason || body.risc_reason || '');
+      const riscReason = String(body.riscReason || '');
       if (riscReason && ['hijacking', 'bulk-account'].indexOf(riscReason) < 0) {
         log.debug("Leaving AdminActions.usersAction(). Not a RISC reason.");
         return this.refused('STS-ADMIN-0794', { ok: false, errors: ['"' +
@@ -4296,6 +4660,13 @@ class AdminActions {
       return { ok: true, username: who, disabled: answer.disabled,
                changed: answer.changed, ended: answer.ended || null,
                message: answer.message };
+    }
+
+    // THE PERSON DELETED (rcbj, 2026-11-16): the directory's one person
+    // delete, behind this door's own two refusals. deletePersonAction().
+    if (action === 'delete') {
+      log.debug("Leaving AdminActions.usersAction(). delete.");
+      return this.deletePersonAction(body, ctx);
     }
 
     // ONE OF A PERSON'S ATTRIBUTES, SET, ADDED TO OR REMOVED FROM (#228).
@@ -4358,6 +4729,30 @@ class AdminActions {
       return this.signingCertificateAction(action, 'person', who, body);
     }
 
+    // A TLS CLIENT CERTIFICATE, issued to the person from this realm's CA
+    // and mapped to them by the register. The subject is rebuilt from the
+    // entry. The same two names an application already has; this branch is
+    // the person's.
+    if (action === 'issue-tls-client-certificate' ||
+        action === 'revoke-tls-client-certificate') {
+      const who = String(body.user || body.username || '').trim();
+      if (!who) {
+        log.debug("Leaving AdminActions.usersAction(). No person named.");
+        return this.refused('STS-ADMIN-0939', { ok: false,
+          errors: ['Name the person in `user`.'] });
+      }
+      if (!require('../ldap/ldap_server').storedCertificatesOf('person',
+                                                               who)) {
+        log.debug("Leaving AdminActions.usersAction(). No entry.");
+        return this.refused('STS-ADMIN-0939', { ok: false,
+          errors: ['There is no person called "' + who + '" here, and ' +
+                   'issuing a certificate creates nobody.'] });
+      }
+      log.debug("Leaving AdminActions.usersAction(). A TLS client " +
+                "certificate.");
+      return this.tlsClientCertificateAction(action, who, body);
+    }
+
     // A FEDERATION LINK, MADE OR REMOVED BY AN ADMINISTRATOR (#109).
     if (action === 'federation-link' || action === 'federation-unlink') {
       log.debug("Leaving AdminActions.usersAction(). A federation link.");
@@ -4403,12 +4798,12 @@ class AdminActions {
       }
       auditLog.record({
         category: 'authentication', action: 'activation.issued',
-        actor: (body.actor || ''), target: who, outcome: 'success',
+        actor: ctx.actor, target: who, outcome: 'success',
         summary: 'an activation link was issued for ' + who,
         detail: { expiresAt: issued.expiresAt }
       });
       const mailed = this.mailedLink('activation', who, issued.token, body,
-                                     body.actor, 'the users page');
+                                     ctx.actor, 'the users page');
       // AN ACTIVATION LINK FOR SOMEBODY WHO ALREADY EXISTS SETS THEIR
       // CREDENTIALS (#235), as its peer issue-password-reset does, and says
       // the same two RISC events: recovery-activated and
@@ -4775,8 +5170,8 @@ class AdminActions {
     // Commands (#151); this is the administrator's door.
     if (action === 'set-aud-sub') {
       const who = String(body.user || body.username || '').trim();
-      const client = String(body.client || body.client_id || '').trim();
-      const value = String(body.value || body.aud_sub || '').trim();
+      const client = String(body.client || '').trim();
+      const value = String(body.value || '').trim();
       if (!who || !client || /\s/.test(client) || value.length > 255 ||
           /[\u0000-\u001f]/.test(value)) {
         log.debug("Leaving AdminActions.usersAction(). A malformed aud_sub.");
@@ -4935,6 +5330,19 @@ class AdminActions {
         return this.refused('STS-ADMIN-0518', { ok: false, errors: ['Name ' +
           'the person the passkey is for, in `user`.'] });
       }
+      // A NAME NO PERSON CAN HAVE IS REFUSED BEFORE THE PENDING RECORD
+      // (the fuzz run on 7fc43a1de): it is keyed by the administrator and
+      // the person joined with a newline, and a finish spends it before
+      // anything else — so a NUL here was journalled into a store PostgreSQL
+      // cannot hold (STS-STORE-0063), and a newline could name another
+      // administrator's record.
+      if (/[\u0000-\u001f\u007f]/.test(who) || config.unstorableText(who)) {
+        log.debug("Leaving AdminActions.usersAction(). A name no person " +
+                  "holds.");
+        return this.refused('STS-AUTHN-0556', { ok: false, errors: ['The ' +
+          'person\'s name holds a control character or text that cannot ' +
+          'be stored, so no person has it. Nothing was started or spent.'] });
+      }
       const authn = require('../authn/authn');
       const webauthnPolicy = require('../authn/webauthn_policy');
       const passkeyPolicy = require('../common/passkey_policy');
@@ -5038,6 +5446,19 @@ class AdminActions {
         return this.refused('STS-ADMIN-0518', { ok: false, errors: ['Name ' +
           'the person the passkey is for, in `user`.'] });
       }
+      // A NAME NO PERSON CAN HAVE IS REFUSED BEFORE THE PENDING RECORD
+      // (the fuzz run on 7fc43a1de): it is keyed by the administrator and
+      // the person joined with a newline, and a finish spends it before
+      // anything else — so a NUL here was journalled into a store PostgreSQL
+      // cannot hold (STS-STORE-0063), and a newline could name another
+      // administrator's record.
+      if (/[\u0000-\u001f\u007f]/.test(who) || config.unstorableText(who)) {
+        log.debug("Leaving AdminActions.usersAction(). A name no person " +
+                  "holds.");
+        return this.refused('STS-AUTHN-0556', { ok: false, errors: ['The ' +
+          'person\'s name holds a control character or text that cannot ' +
+          'be stored, so no person has it. Nothing was started or spent.'] });
+      }
       const admin = context && (context as any).admin;
       let posted: any = null;
       try {
@@ -5079,7 +5500,7 @@ class AdminActions {
       log.debug("Leaving AdminActions.usersAction(). finish-passkey-" +
                 "enrolment answers when the verification settles.");
       return credentials.confirmAdminKeyEnrolment(who, admin,
-        String(body.enrolmentId || body.enrolment_id || ''), posted,
+        String(body.enrolmentId || ''), posted,
         { origin: authn.expectedOriginFor(ctx.base, posted),
           rpId: authn.rpIdOf(ctx.base) }).then(function (done) {
         return self.adminKeyEnrolled(who, done, ctx);
@@ -5187,6 +5608,96 @@ class AdminActions {
                    'changed at the next sign-in.'
                  : 'The password for ' + who + ' is set. It is stored as a ' +
                    'hash and cannot be shown again.' };
+    }
+
+    // THE PERSON AS AN LDIF FILE (2026-11-14), the application page's #546
+    // pattern on a person's page. `ldap/person_ldif.ts` decides what goes in
+    // and what comes out; this is the transport — the file answered as a
+    // named attachment the console saves (`files`) and as `ldif` for a
+    // script, and an import read from the console's file input (`file`, its
+    // name and text) or from `ldif` — and the Shared Signals an import of
+    // credentials owes, as every other door that gives a person one says
+    // (#145).
+    if (action === 'export-ldif') {
+      const { personLdif } = this.deps;
+      const who = String(body.user || body.username || '').trim();
+      if (!who) {
+        log.debug("Leaving AdminActions.usersAction(). No person named.");
+        return this.refused('STS-ADMIN-0518', { ok: false, errors: ['Name ' +
+            'the person in `user`.'] });
+      }
+      const withCredentials = body.credentials === true ||
+        ['true', 'on', '1'].indexOf(String(body.credentials || '')
+          .toLowerCase()) >= 0;
+      const exported: any = personLdif.exportPerson(who,
+        { credentials: withCredentials, actor: ctx.actor });
+      if (!exported || exported.ok === false) {
+        log.debug("Leaving AdminActions.usersAction(). export-ldif refused.");
+        return exported;
+      }
+      log.debug("Leaving AdminActions.usersAction(). export-ldif.");
+      return { ok: true, changed: false, username: exported.username,
+               credentials: exported.credentials,
+               attributes: exported.attributes, leftOut: exported.leftOut,
+               ldif: exported.ldif,
+               message: '"' + exported.username + '" exported to ' +
+                        exported.fileName +
+                        (exported.credentials
+                          ? ', WITH their credential material, unencrypted.'
+                          : ', without credential material.'),
+               files: [{ name: exported.fileName, mime: 'text/plain',
+                         base64: Buffer.from(exported.ldif, 'utf8')
+                           .toString('base64') }] };
+    }
+    if (action === 'import-ldif') {
+      const { personLdif } = this.deps;
+      const given: any = body.file;
+      const file = given && typeof given === 'object'
+        ? String(given.text || '') : '';
+      const text = String(body.ldif || '').trim() ? String(body.ldif) : file;
+      const imported: any = personLdif.importPerson(text,
+        { actor: ctx.actor });
+      if (!imported || imported.ok === false) {
+        log.debug("Leaving AdminActions.usersAction(). import-ldif refused.");
+        return this.refusedBy('STS-LDAP-0216', imported || { ok: false,
+          errors: ['The import was refused.'] });
+      }
+      const who = imported.username;
+      const said = { username: who, changeType: 'create',
+                     initiatingEntity: 'admin', via: ctx.via,
+                     reasonAdmin: 'An administrator imported ' + who +
+                                  ' from an LDIF file, with credentials.',
+                     reasonUser: 'Your account was created with ' +
+                                 'credentials an administrator imported.' };
+      const kinds = imported.credentialKinds || [];
+      if (kinds.indexOf('password') >= 0 ||
+          kinds.indexOf('app-passwords') >= 0) {
+        accountSignals.credentialChanged(Object.assign({},
+          said, { credentialType: 'password' }));
+      }
+      if (kinds.indexOf('totp') >= 0) {
+        accountSignals.credentialChanged(Object.assign({},
+          said, { credentialType: accountSignals.TOTP_CREDENTIAL_TYPE }));
+      }
+      if (kinds.indexOf('passkey') >= 0) {
+        accountSignals.credentialChanged(Object.assign({},
+          said, { credentialType: accountSignals.keyCredentialType(null) }));
+      }
+      if (kinds.indexOf('certificate') >= 0) {
+        accountSignals.credentialChanged(Object.assign({},
+          said, { credentialType: 'x509' }));
+      }
+      log.debug("Leaving AdminActions.usersAction(). import-ldif.");
+      return { ok: true, changed: true, username: who, dn: imported.dn,
+               attributes: imported.attributes,
+               credentials: imported.credentials,
+               kerberosKeys: false,
+               message: '"' + who + '" was imported' +
+                        (imported.credentials.length
+                          ? ' with ' + imported.credentials.join(', ') +
+                            '. No Kerberos key is derived from a stored ' +
+                            'hash: set the password again for Kerberos.'
+                          : ', with no credential.') };
     }
 
     if (action === 'create') {
@@ -5387,7 +5898,7 @@ class AdminActions {
           });
           answer.expiresAt = issued.expiresAt;
           const mailed = this.mailedLink('activation', result.username,
-                                         issued.token, body, body.actor,
+                                         issued.token, body, ctx.actor,
                                          'the new user screen');
           if (mailed && mailed.ok) {
             answer.mailedTo = mailed.mailedTo;
@@ -5420,6 +5931,20 @@ class AdminActions {
           answer.credentialError + ' Set one from their row on Users rather ' +
           'than creating them again — the name is taken now, by this entry.';
       }
+      // THE ENTRY WITH ITS CREDENTIALS MASKED, AND MASKED HERE, LAST
+      // (2026-11-14, found by #444's port). `result.entry` is the entry as
+      // the directory holds it, so by now the credential step above has
+      // written to it: `userPassword` and `pwdHistory` for a password, and
+      // `stsActivationToken` for an activation link — a scrypt hash and a
+      // token's hash this answer carried until then. Masked with the one
+      // function every `GET /admin-api/ldap/*` answer uses, over the list
+      // in `models/directory/names.tsp`; masked after the credential step
+      // because a copy taken before it would still share the live entry.
+      // The value an administrator hands over is not on the entry and is
+      // untouched: a generated password stays in `password`, once, and an
+      // activation link in `activationUrl`.
+      answer.entry = result.entry
+        ? DirectorySecrets.withoutSecrets(result.entry) : result.entry;
       log.debug("Leaving AdminActions.usersAction(). Created " + result.dn +
                 ".");
       answer.message = result.dn + ' now exists in the directory' +
@@ -5484,11 +6009,14 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  groupsAction(body) {
+  groupsAction(body: IyaApi.AdminActionBody<'/admin-api/groups'>,
+               context?) {
     const { log } = this.deps;
     log.debug("Entering AdminActions.groupsAction(). action=" + (body.action ||
                                                                  '(none)'));
     const action = String(body.action || '');
+    // Who is acting, for the directory's rows: the context's (#1579).
+    const actor = String((context || {}).actor || '');
 
     if (!groupWriter) {
       // ONE REFUSAL FOR BOTH ACTIONS, and it says which half of the page is
@@ -5507,8 +6035,7 @@ class AdminActions {
     }
 
     if (action === 'create') {
-      const name = String(body.group || body.displayName || body.cn || '')
-        .trim();
+      const name = String(body.group || body.displayName || '').trim();
       // THE MEMBERS BOX IS SPLIT ON NEWLINES AND COMMAS, which is where this
       // differs from userFieldsFrom() one section up and is worth saying rather
       // than leaving as an apparent inconsistency: a person's attributes are
@@ -5528,7 +6055,7 @@ class AdminActions {
               'created by hand on the admin console rather than by a ' +
               'directory client',
         channel: 'console',
-        actor: String(body.actor || ''),
+        actor: actor,
         members: members,
         // The group's own email address (#989), where a report shared
         // with it is sent; optional, checked by the directory.
@@ -5564,7 +6091,7 @@ class AdminActions {
       const result = groupWriter.addGroupMember(group, member, {
         origin: 'console',
         channel: 'console',
-        actor: String(body.actor || '')
+        actor: actor
       });
       if (!result.ok) {
         log.debug("Leaving AdminActions.groupsAction(). add-member refused.");
@@ -5584,7 +6111,7 @@ class AdminActions {
       const result = groupWriter.setGroupMail(group, address, {
         origin: 'console',
         channel: 'console',
-        actor: String(body.actor || '')
+        actor: actor
       });
       if (!result.ok) {
         log.debug("Leaving AdminActions.groupsAction(). set-mail refused.");
@@ -5604,7 +6131,7 @@ class AdminActions {
         String(body.group || '').trim(), String(body.attribute || '').trim(),
         String(body.policy || '').trim(),
         { origin: 'console', channel: 'console',
-          actor: String(body.actor || '') });
+          actor: actor });
       if (!result.ok) {
         log.debug("Leaving AdminActions.groupsAction(). set-policy refused.");
         return this.refusedBy('STS-ADMIN-0907', result);
@@ -5622,7 +6149,7 @@ class AdminActions {
       const group = String(body.group || '').trim();
       const owner = String(body.owner || '').trim();
       const options = { origin: 'console', channel: 'console',
-                        actor: String(body.actor || '') };
+                        actor: actor };
       const result: any = adding
         ? groupWriter.addGroupOwner(group, owner, options)
         : groupWriter.removeGroupOwner(group, owner, options);
@@ -5811,7 +6338,7 @@ class AdminActions {
    * @param protocols - the declared families, when the body carries them
    * @returns `{ ok, changed, errors, message }`
    */
-  updateApplicationFields(identifier, body, protocols) {
+  updateApplicationFields(identifier, body, protocols, actor?) {
     const { log, applications } = this.deps;
     log.debug("Entering AdminActions.updateApplicationFields(). " +
               "identifier=" + identifier);
@@ -5906,8 +6433,49 @@ class AdminActions {
       syncConfidential = true;
       changes.splice(changes.indexOf(confidentialChange), 1);
     }
+    // #825: a hosted session bound that this save would change is checked
+    // BEFORE any attribute is written. A later refusal must not leave the
+    // earlier fields of the same post already stored.
+    const config = this.deps.config;
+    const confirm = body && body.confirm;
+    const boundRefusals = [];
+    changes.forEach(function (change) {
+      const name = change.attribute;
+      if (modes[name] !== 'set' ||
+          !applications.isHostedSessionClient(identifier) ||
+          !applications.hostedBoundAttribute(name)) {
+        return;
+      }
+      const current = valuesOf(entry.fields[name]);
+      const wanted = change.values;
+      const same = current.length === wanted.length &&
+        current.every(function (one) { return wanted.indexOf(one) >= 0; });
+      if (same) {
+        return;
+      }
+      const refusal = applications.hostedSessionBoundRefusal(identifier,
+        name, wanted[0] || '', confirm, config);
+      if (refusal) {
+        boundRefusals.push(refusal);
+      }
+    });
+    if (boundRefusals.length) {
+      const code = boundRefusals.some(function (one) {
+        return one.code === 'STS-REG-0369';
+      }) ? 'STS-REG-0369' : 'STS-REG-0368';
+      log.debug("Leaving AdminActions.updateApplicationFields(). The " +
+                "hosted session bound was refused.");
+      return this.refused(code, { ok: false,
+        errors: boundRefusals.map(function (one) {
+          return one.errors[0];
+        }) });
+    }
     const changed = [];
     const errors = [];
+    // A METADATA DOCUMENT IN THE SAVE is consumed after every other field
+    // is written (the declared families above all, which decide which
+    // descriptor is read), as `set` consumes one: consumeWrittenMetadata().
+    let metadataDocument = '';
     changes.forEach(function (change) {
       const name = change.attribute;
       const mode = modes[name];
@@ -5917,6 +6485,11 @@ class AdminActions {
       }
       const current = valuesOf(entry.fields[name]);
       const wanted = change.values;
+      if (name === 'samlSpMetadata' && wanted.length === 1 &&
+          !(current.length === 1 && current[0] === wanted[0])) {
+        metadataDocument = wanted[0];
+        return;
+      }
       // `none` BESIDE ANOTHER METHOD (2026-10-01) is refused for the whole
       // list before any of it is written: the removes and adds below go one
       // value at a time, and the first add would land before the second was
@@ -5939,7 +6512,8 @@ class AdminActions {
           return;
         }
         const set = applications.updateApplication(identifier, {
-          mode: 'set', attribute: name, value: wanted[0] || '' });
+          mode: 'set', attribute: name, value: wanted[0] || '',
+          confirm: confirm });
         if (set.ok) {
           changed.push(name);
         } else {
@@ -6010,6 +6584,17 @@ class AdminActions {
         }
       });
     }
+    if (!errors.length && metadataDocument) {
+      const consumed = this.consumeWrittenMetadata(identifier,
+                                                   metadataDocument, actor);
+      if (consumed.ok) {
+        changed.push('samlSpMetadata');
+      } else {
+        (consumed.errors || []).forEach(function (one) {
+          errors.push(one);
+        });
+      }
+    }
     if (errors.length) {
       log.debug("Leaving AdminActions.updateApplicationFields(). " +
                 errors.length + " refusal(s).");
@@ -6033,6 +6618,40 @@ class AdminActions {
                  identifier + '": ' + changed.join(', ') + '.'
                : 'Nothing changed: every field already held what was ' +
                  'submitted.' };
+  }
+
+  // ---------------------------------------------------------------------------
+  // A SERVICE PROVIDER'S METADATA DOCUMENT WRITTEN TO ITS ENTRY, CONSUMED.
+  //
+  // `samlSpMetadata` is the document, and what the document REGISTERS — each
+  // assertion consumer service with its binding (`samlAcsEndpoint`), each
+  // single logout service, the signing and encryption certificates, the
+  // flags — is written beside it by `spMetadata.consume()` in one save. A
+  // `set`, an `add` or the field grid's save that stored the text alone left
+  // an entry whose document said artifact-01 and whose endpoints said
+  // nothing, so SAML 1.1's profileFor() fell back to saml11.defaultProfile
+  // and a shire registered on the artifact profile got a Browser/POST form
+  // (run 22, sts_saml11.js's Browser/Artifact section, on an entry a
+  // development sighting had filed before the job registered it). The
+  // create door and the upload already consumed; this is the third door,
+  // and it answers as they do. Consuming writes the document itself, so a
+  // refused one changes nothing on the entry (STS-ADMIN-0935).
+  // ---------------------------------------------------------------------------
+  private consumeWrittenMetadata(identifier, text, actor) {
+    const { log, applications, spMetadata } = this.deps;
+    log.debug("Entering AdminActions.consumeWrittenMetadata(). " +
+              "identifier=" + identifier);
+    const consumed = spMetadata.upload(identifier, text, actor || '');
+    if (!consumed.ok) {
+      log.debug("Leaving AdminActions.consumeWrittenMetadata(). Refused.");
+      return this.refused('STS-ADMIN-0935', { ok: false,
+        errors: ['The metadata document was not written, because it was ' +
+                 'refused: '].concat(consumed.errors || []) });
+    }
+    log.debug("Leaving AdminActions.consumeWrittenMetadata(). Consumed.");
+    return { ok: true, changed: true,
+             application: applications.get(identifier),
+             message: String(consumed.message || '') };
   }
 
   // ---------------------------------------------------------------------------
@@ -6694,11 +7313,11 @@ class AdminActions {
   // Lazy for the reason `xacml_admin.ts` gives: the module is built by the
   // composition root at 23c, after this file's 18.
   // -------------------------------------------------------------------------
-  private fgaAction(action: string, identifier: string, body: any): any {
+  private fgaAction(action: string, identifier: string, body: any,
+                    actor: string): any {
     const { log, errorCodes } = this.deps;
     log.debug("Entering AdminActions.fgaAction(). " + action);
     const fga = require('../xacml/fga_policies');
-    const actor = String(body.actor || '');
     const confirmed = body.confirm === true || body.confirm === 'true' ||
                       body.confirm === 'on';
     // `via` IS `api`: since #446 the console is a client of `/admin-api`,
@@ -6803,13 +7422,18 @@ class AdminActions {
    * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
    *   with the sentence naming every action
    */
-  applicationsAction(body, protocols, context) {
+  applicationsAction(body: IyaApi.AdminActionBody<
+    '/admin-api/applications' | '/admin-api/console/applications'>,
+    protocols, context) {
     const { log, numberWord, applications, spMetadata, resourceMetadata,
       softwareStatement, tlsClientCertificates } = this.deps;
     const self = this;
     log.debug("Entering AdminActions.applicationsAction(). action=" +
               (body.action || '(none)'));
     const action = String(body.action || '');
+    // WHO IS ACTING, for every row an act writes: the context's, never a
+    // member of the body (rcbj on #1579, 2026-11-11).
+    const actor = String((context || {}).actor || '');
     const identifier = String(body.application || '').trim();
     const needsOne = ['set', 'add', 'remove', 'update-fields',
                       'add-owner', 'remove-owner',
@@ -6822,6 +7446,9 @@ class AdminActions {
                       'issue-signing-certificate',
                       'revoke-signing-certificate',
                       'add-certificate', 'remove-certificate',
+                      'issue-wstrust-decryption-key',
+                      'upload-wstrust-decryption-key',
+                      'remove-wstrust-decryption-key',
                       'revoke-registration', 'generate-did-key',
                       'sign-domain-linkage', 'set-custom-claim',
                       'remove-custom-claim', 'set-claim-attributes',
@@ -6949,10 +7576,32 @@ class AdminActions {
     }
 
     if (action === 'set' || action === 'add' || action === 'remove') {
+      // A METADATA DOCUMENT WRITTEN TO AN ENTRY THAT EXISTS IS CONSUMED, as
+      // one given with the create is and as an upload is: the document is
+      // the service provider's statement of its endpoints, their bindings
+      // and its keys, and stored without being consumed it registered none
+      // of them. Run 22 found it (sts_saml11.js): an entry a development
+      // sighting had already filed took its metadata through `set`, so no
+      // `samlAcsEndpoint` named the artifact-01 consumer, and the SAML 1.1
+      // shire registered on it was answered with a Browser/POST form.
+      // Clearing it (an empty `set`) is still the plain write.
+      const metadataText = body.value === undefined ? ''
+        : String(body.value);
+      if (action !== 'remove' &&
+          String(body.attribute || '') === 'samlSpMetadata' &&
+          metadataText.trim()) {
+        const consumed = this.consumeWrittenMetadata(identifier,
+                                                     metadataText, actor);
+        log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                  " samlSpMetadata " + (consumed.ok ? 'consumed' :
+                                                      'refused') + ".");
+        return consumed;
+      }
       const result = applications.updateApplication(identifier, {
         mode: action,
         attribute: String(body.attribute || ''),
-        value: body.value === undefined ? '' : String(body.value)
+        value: body.value === undefined ? '' : String(body.value),
+        confirm: body.confirm
       });
       log.debug("Leaving AdminActions.applicationsAction(). " + action + " " +
                 (result.ok ? 'ok' : 'refused') + ".");
@@ -6970,7 +7619,7 @@ class AdminActions {
     // a form carry every field and still refuse nothing it did not touch.
     if (action === 'update-fields') {
       const result = this.withScopeWarnings(identifier,
-        this.updateApplicationFields(identifier, body, protocols));
+        this.updateApplicationFields(identifier, body, protocols, actor));
       log.debug("Leaving AdminActions.applicationsAction(). update-fields " +
                 (result.ok ? 'ok' : 'refused') + ".");
       return result;
@@ -7024,7 +7673,7 @@ class AdminActions {
         auditLog.audit({
           action: adding ? 'application.add-owner'
                          : 'application.remove-owner',
-          actor: String(body.actor || ''), target: identifier,
+          actor: actor, target: identifier,
           channel: 'http',
           detail: (adding ? 'made ' : 'took ') + result.owner +
                   (adding ? ' an owner of ' : ' off the owners of ') +
@@ -7038,7 +7687,7 @@ class AdminActions {
 
     if (action === 'regenerate-secret') {
       const result = applications.regenerateClientSecret(identifier,
-        { actor: body.actor || '' });
+        { actor: actor });
       log.debug("Leaving AdminActions.applicationsAction(). " +
                 "regenerate-secret " +
                 (result.ok ? 'ok' : 'refused') + ".");
@@ -7498,7 +8147,7 @@ class AdminActions {
     // THE FINE-GRAINED AUTHORIZATION TAB (#564, P5).
     if (action === 'fga-enable' || action === 'fga-disable' ||
         action === 'fga-create-policy' || action === 'fga-reset-policy') {
-      const result = this.fgaAction(action, identifier, body);
+      const result = this.fgaAction(action, identifier, body, actor);
       log.debug("Leaving AdminActions.applicationsAction(). " + action + " " +
                 (result.ok ? 'ok' : 'refused') + ".");
       return result;
@@ -7617,7 +8266,7 @@ class AdminActions {
       // rotation an administrator asked for was announced to Shared Signals
       // as the service's own (sts_application_signals found it).
       const result = applications.rotateClientSecret(identifier,
-        { actor: body.actor || '' });
+        { actor: actor });
       log.debug("Leaving AdminActions.applicationsAction(). rotate-secret " +
                 (result.ok ? 'ok' : 'refused') + ".");
       return this.refusedBy('STS-ADMIN-0620', result);
@@ -7630,14 +8279,14 @@ class AdminActions {
     if (action === 'add-secret') {
       const result = applications.addClientSecret(identifier, {
         lifetimeDays: body.lifetimeDays, description: body.description,
-        actor: body.actor || '' });
+        actor: actor });
       log.debug("Leaving AdminActions.applicationsAction(). add-secret " +
                 (result.ok ? 'ok' : 'refused') + ".");
       return this.refusedBy('STS-ADMIN-0620', result);
     }
     if (action === 'remove-secret') {
       const result = applications.removeClientSecret(identifier, {
-        id: body.secret, actor: body.actor || '' });
+        id: body.secret, actor: actor });
       log.debug("Leaving AdminActions.applicationsAction(). remove-secret " +
                 (result.ok ? 'ok' : 'refused') + ".");
       return this.refusedBy('STS-ADMIN-0620', result);
@@ -7663,7 +8312,7 @@ class AdminActions {
         ['true', 'on', '1'].indexOf(String(body.credentials || '')
           .toLowerCase()) >= 0;
       const exported = applications.exportApplicationLdif(identifier,
-        { credentials: credentials, actor: body.actor || '' });
+        { credentials: credentials, actor: actor });
       if (!exported || exported.ok === false) {
         log.debug("Leaving AdminActions.applicationsAction(). export-ldif " +
                   "refused.");
@@ -7689,7 +8338,7 @@ class AdminActions {
         : (typeof body.file === 'string' ? body.file : '');
       const text = String(body.ldif || '').trim() ? String(body.ldif) : file;
       const imported = applications.importApplicationLdif(text,
-        { actor: body.actor || '' });
+        { actor: actor });
       if (!imported || imported.ok === false) {
         log.debug("Leaving AdminActions.applicationsAction(). import-ldif " +
                   "refused.");
@@ -7744,7 +8393,7 @@ class AdminActions {
       }
       auditLog.record({ category: 'application',
         action: 'application.secret-revealed',
-        actor: body.actor || '', target: identifier, outcome: 'success',
+        actor: actor, target: identifier, outcome: 'success',
         summary: 'A credential of ' + identifier + ' was revealed: ' + asked +
                  '.',
         detail: { application: identifier, secret: asked } });
@@ -7830,17 +8479,18 @@ class AdminActions {
     // promise, like `refresh-metadata`, for that action's reason.
     if (action === 'load-resource-metadata') {
       const ctx = context || {};
+      // `file` is the model's `{ name, text }`. A bare string beside a
+      // `filename` was an older spelling, removed (rcbj on #1579,
+      // 2026-11-11).
       const file = body.file && typeof body.file === 'object'
-        ? body.file
-        : (body.file ? { name: String(body.filename || ''),
-                         text: String(body.file) } : null);
+        ? body.file : null;
       log.debug("Leaving AdminActions.applicationsAction(). Loading RFC 9728 " +
                 "metadata.");
       return resourceMetadata.load({ document: body.document, url: body.url,
                                      file: file },
                                    { authorizationServers:
                                        ctx.authorizationServers || [],
-                                     actor: ctx.actor || body.actor || '' })
+                                     actor: actor })
         .then(function (result) {
           return self.refusedBy('STS-ADMIN-0644', result);
         });
@@ -7970,6 +8620,31 @@ class AdminActions {
         String(target.identifier), body);
     }
 
+    // THE APPLICATION'S OWN WS-TRUST DECRYPTION KEY PAIR (#1668, rcbj's
+    // request of 2026-11-19), from the Credentials section of its page:
+    // issued from the realm's CA, uploaded as a certificate and private key,
+    // or removed. `ws-trust/ws_decryption_key.ts` decides all of it, and the
+    // private key is in no answer. Required when asked: a library, so the
+    // require moves no route.
+    if (action === 'issue-wstrust-decryption-key' ||
+        action === 'upload-wstrust-decryption-key' ||
+        action === 'remove-wstrust-decryption-key') {
+      const keys = require('../ws-trust/ws_decryption_key');
+      const how = { actor: actor,
+                    via: String((context || {}).via || 'console') };
+      log.debug("Leaving AdminActions.applicationsAction(). A WS-Trust " +
+                "decryption key pair.");
+      if (action === 'issue-wstrust-decryption-key') {
+        return keys.issue(identifier, body, how).then(function (done) {
+          return self.refusedBy('STS-ADMIN-0945', done);
+        });
+      }
+      return this.refusedBy('STS-ADMIN-0950',
+        action === 'upload-wstrust-decryption-key'
+          ? keys.upload(identifier, body, how)
+          : keys.remove(identifier, how));
+    }
+
     // A STORED CERTIFICATE ON THE APPLICATION'S ENTRY (#1227): the person's
     // `add-certificate` and `remove-certificate` (#1061), on the entry a
     // certificate from an outside authority is to authenticate as. The
@@ -7988,7 +8663,7 @@ class AdminActions {
                 "certificate.");
       const asked = context || {};
       return this.storedCertificateAction(action, body,
-        { actor: String(asked.actor || body.actor || ''),
+        { actor: actor,
           via: String(asked.via || 'console') },
         'application', String(target.identifier));
     }
@@ -8065,7 +8740,8 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  asAction(body) {
+  asAction(body: IyaApi.AdminActionBody<
+    '/admin-api/authorization-servers'>) {
     const { log, authorizationServers } = this.deps;
     log.debug("Entering AdminActions.asAction(). action=" + (body.action ||
                                                              '(none)'));
@@ -8141,16 +8817,18 @@ class AdminActions {
    * its signing certificates, its metadata by upload, refresh or MDQ import.
    *
    * @param body - the parsed form or JSON body, whose `action` names the act
+   * @param context - who is acting (`actor`), for the metadata rows
    * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
    *   with the sentence naming every action
    */
-  saml2Action(body): any {
+  saml2Action(body: IyaApi.AdminActionBody<'/admin-api/saml2'>,
+              context?): any {
     const { log, applications, saml2 } = this.deps;
     const self = this;
     log.debug("Entering AdminActions.saml2Action(). action=" + (body.action ||
                                                                 '(none)'));
     const action = String(body.action || '');
-    const identifier = String(body.sp || body.serviceProvider || '').trim();
+    const identifier = String(body.sp || '').trim();
     if (!identifier) {
       log.debug("Leaving AdminActions.saml2Action(). No service provider " +
                 "named.");
@@ -8247,24 +8925,24 @@ class AdminActions {
     }
     // AN UPLOADED METADATA DOCUMENT, consumed exactly as a refresh consumes a
     // fetched one — `sp_metadata.ts`'s `consume()`. `document` is a pasted
-    // document; `file` is what the console's file input carries, as text.
-    // `family` makes the SAML 1.1/SAML 2.0 sub-tab authoritative when one
-    // application is declared for both protocols.
+    // document, as XML; `file` is what the console's file input carries,
+    // `{ name, text }`. `family` makes the SAML 1.1/SAML 2.0 sub-tab
+    // authoritative when one application is declared for both protocols.
+    // Each in the model's one type: a `document` object and a bare-string
+    // `file` were older shapes, removed (rcbj on #1579, 2026-11-11).
     if (action === 'upload-metadata') {
-      const document = body.document;
-      const documentText = typeof document === 'string' ? document :
-        (document && typeof document.text === 'string'
-          ? document.text : '');
-      const fileText = typeof body.file === 'string' ? body.file :
-        (body.file && typeof body.file.text === 'string'
-          ? body.file.text : '');
+      const documentText = typeof body.document === 'string'
+        ? body.document : '';
+      const fileText = body.file && typeof body.file.text === 'string'
+        ? body.file.text : '';
       const text = documentText || fileText;
       if (!text.trim()) {
         log.debug("Leaving AdminActions.saml2Action(). No document.");
         return this.refused('STS-ADMIN-0791', { ok: false, errors: ['Send ' +
                             'the metadata document in `document`.'] });
       }
-      const result = spMetadata.upload(identifier, text, body.actor || '',
+      const result = spMetadata.upload(identifier, text,
+                                       String((context || {}).actor || ''),
                                        body.family || '');
       log.debug("Leaving AdminActions.saml2Action(). upload-metadata " +
                 (result.ok ? 'ok' : 'refused') + ".");
@@ -8276,7 +8954,8 @@ class AdminActions {
     // import one from the MDQ responder by entityID, creating its entry.
     if (action === 'refresh-metadata') {
       log.debug("Leaving AdminActions.saml2Action(). refresh-metadata.");
-      return spMetadata.refresh(identifier, { actor: body.actor || '' })
+      return spMetadata.refresh(identifier,
+                                { actor: String((context || {}).actor || '') })
         .then(function (result) {
           return self.refusedBy('STS-ADMIN-0532', result);
         });
@@ -8285,7 +8964,8 @@ class AdminActions {
       log.debug("Leaving AdminActions.saml2Action(). mdq-import.");
       // `origin: 'operator'` (#112): an administrator named this entityID,
       // which is what a lookup a request starts cannot claim.
-      return spMetadata.mdqImport(identifier, { actor: body.actor || '',
+      return spMetadata.mdqImport(identifier,
+                                  { actor: String((context || {}).actor || ''),
                                                origin: 'operator' })
         .then(function (result) {
           return self.refusedBy('STS-ADMIN-0532', result);
@@ -8381,12 +9061,12 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  saml11Action(body) {
+  saml11Action(body: IyaApi.AdminActionBody<'/admin-api/saml11'>) {
     const { log, applications, saml11 } = this.deps;
     log.debug("Entering AdminActions.saml11Action(). action=" + (body.action ||
                                                                  '(none)'));
     const action = String(body.action || '');
-    const identifier = String(body.rp || body.relyingParty || '').trim();
+    const identifier = String(body.rp || '').trim();
     if (!identifier) {
       log.debug("Leaving AdminActions.saml11Action(). No relying party named.");
       return this.refused('STS-ADMIN-0538', { ok: false, errors: ['Name the ' +
@@ -8441,7 +9121,7 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  mfaAction(body, context) {
+  mfaAction(body: IyaApi.AdminActionBody<'/admin-api/mfa'>, context) {
     const { log } = this.deps;
     log.debug("Entering AdminActions.mfaAction(). action=" + (body.action ||
                                                               '(none)'));
@@ -8476,12 +9156,12 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  rbacAction(body, context) {
+  rbacAction(body: IyaApi.AdminActionBody<'/admin-api/rbac'>, context) {
     const { log, realms, rbac } = this.deps;
     log.debug("Entering AdminActions.rbacAction(). action=" + (body.action ||
                                                                '(none)'));
     const action = String(body.action || '');
-    const username = String(body.username || body.user || '').trim();
+    const username = String(body.username || '').trim();
     const role = String(body.role || '').trim();
     // THE ROSTER OF THE REALM BEING READ (2026-09-14, #32): the default realm's
     // is the service roster, any other realm's its own. A realm administrator
@@ -8515,22 +9195,25 @@ class AdminActions {
    * records, on `/admin/consent`.
    *
    * @param body - the parsed form or JSON body, whose `action` names the act
+   * @param context - who is acting (`actor`)
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  consentAction(body) {
+  consentAction(body: IyaApi.AdminActionBody<'/admin-api/consent'>,
+                context?) {
     const { log, numberWord, auditLog, consent } = this.deps;
     log.debug("Entering AdminActions.consentAction(). action=" + (body.action ||
                                                                   '(none)'));
     const action = String(body.action || '');
-    const actor = String(body.actor || '');
+    const actor = String((context || {}).actor || '');
     // `client` for the application half and `username` for the person half,
     // named apart for `permissionsAction()`'s reason: this is another feature
     // where a body naming the wrong field still succeeds and writes the
-    // right-looking thing onto the wrong entry. `application` is accepted for
-    // `client` as a convenience for a caller editing one entry.
-    const client = String(body.client || body.application || '').trim();
-    const username = String(body.username || body.user || '').trim();
+    // right-looking thing onto the wrong entry. (`application` for `client`
+    // and `user` for `username` were older spellings, not in the model, and
+    // were removed — rcbj on #1579, 2026-11-11.)
+    const client = String(body.client || '').trim();
+    const username = String(body.username || '').trim();
     const scope = String(body.scope || '').trim();
 
     if (action === 'grant-global-consent') {
@@ -8649,14 +9332,14 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  rolesAction(body, context) {
+  rolesAction(body: IyaApi.AdminActionBody<'/admin-api/roles'>, context?) {
     const { log, numberWord, auditLog, applications, roles } = this.deps;
     log.debug("Entering AdminActions.rolesAction(). action=" + (body.action ||
                                                                 '(none)'));
     const action = String(body.action || '');
     const ctx = context || {};
-    const actor = String(ctx.actor || body.actor || '');
-    const name = String(body.role || body.name || '').trim();
+    const actor = String(ctx.actor || '');
+    const name = String(body.role || '').trim();
     const kind = String(body.kind || '').trim();
     // `member` for the thing being added and never `name`, which is the ROLE's.
     // Named apart for `permissionsAction()`'s reason: this is another feature
@@ -9157,19 +9840,18 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  policiesAction(body, context) {
+  policiesAction(body: IyaApi.AdminActionBody<'/admin-api/policies'>,
+                 context?) {
     const { log, auditLog, policyKinds, numberWord } = this.deps;
     log.debug("Entering AdminActions.policiesAction(). action=" +
               (body.action || '(none)'));
     const action = String(body.action || '');
     const ctx = context || {};
-    // AN OWN `actor` IS THE SUBJECT EVEN WHEN IT IS EMPTY (#966), the same
-    // rule as `usersAction`. The policies route passes the token's subject,
-    // and '' means nobody was authenticated. A caller that omits the
-    // property — an in-process save that passes only `{ via }` — still
-    // records `body.actor`.
-    const actor = Object.prototype.hasOwnProperty.call(ctx, 'actor')
-      ? String(ctx.actor || '') : String(body.actor || '');
+    // THE SUBJECT IS THE CONTEXT'S (#966), the same rule as `usersAction`:
+    // the policies route passes the token's subject, '' means nobody was
+    // authenticated, and no body member names who acts (rcbj on #1579,
+    // 2026-11-11).
+    const actor = String(ctx.actor || '');
     const found = policyKinds.forAction(action);
     if (!found) {
       const known = policyKinds.actions();
@@ -9228,7 +9910,10 @@ class AdminActions {
     }
 
     if (found.verb === 'save') {
-      const given = Object.assign({}, body);
+      // `form` is no member of the body: it is this function telling the
+      // policy module's `save()` which door the values came through, and the
+      // copy is what carries it (#1579).
+      const given: Record<string, any> = Object.assign({}, body);
       if (ctx.via === 'console') {
         given.form = 'console';
       }
@@ -9295,6 +9980,120 @@ class AdminActions {
       ? (answered as Promise<any>).then(finish) : finish(answered);
   }
 
+  // A policy selection as the audit row records it: `kind/name` per policy,
+  // comma-separated, or nothing for a whole export or import (an audit
+  // detail is a flat value; a list of objects would read as
+  // "[object Object]").
+  private selectionText(list: any): string {
+    this.deps.log.debug("Entering AdminActions.selectionText().");
+    const out = Array.isArray(list) ? list.map(function (one) {
+      return String(one.kind) + '/' + String(one.name);
+    }).join(', ') : '';
+    this.deps.log.debug("Leaving AdminActions.selectionText().");
+    return out;
+  }
+
+  /**
+   * Exports, inspects or imports a realm's policies (#1713): `export` signs
+   * the stored profiles of every kind on Directory → Policies, `inspect`
+   * verifies a document and says who signed it without writing anything,
+   * and `import` writes it — another realm's signer only once `trustSigner`
+   * names the Issuing CA `inspect` showed. Each act is audited.
+   *
+   * A selection (`policies`, `[{ kind, name }]`, rcbj 2026-11-14) narrows
+   * an export or an import to the policies it names, and the audit row
+   * records it.
+   *
+   * @param body - `{ action, document, trustSigner, issuerFingerprint,
+   *   policies }`
+   * @param context - who is acting (`actor`) and the door (`via`)
+   * @returns a promise of the module's answer, or a refusal
+   */
+  async policyTransferAction(body: IyaApi.AdminActionBody<
+    '/admin-api/policies/transfer'>, context?) {
+    const { log, auditLog, policyTransfer } = this.deps;
+    log.debug("Entering AdminActions.policyTransferAction(). action=" +
+              (body.action || '(none)'));
+    const action = String(body.action || '');
+    const ctx = context || {};
+    const actor = String(ctx.actor || '');
+    const ACTIONS = ['export', 'inspect', 'import'];
+    if (ACTIONS.indexOf(action) === -1) {
+      log.debug("Leaving AdminActions.policyTransferAction(). Unknown.");
+      return this.refused('STS-ADMIN-0934',
+                          { ok: false, errors: ['Unknown action "' + action +
+                            '". The three are: ' + ACTIONS.join(', ') +
+                            '.'] });
+    }
+    if (action === 'export') {
+      const exported = await policyTransfer.exportPolicies({
+        actor: actor, policies: body.policies });
+      if (!exported.ok) {
+        log.debug("Leaving AdminActions.policyTransferAction(). Export " +
+                  "refused.");
+        return this.refused(this.innerCode(exported) || 'STS-ADMIN-0925',
+                            exported);
+      }
+      auditLog.audit({
+        action: 'admin.policies.export', actor: actor, target: '',
+        channel: 'http',
+        summary: (exported.selection
+          ? 'exported ' + exported.selection.length + ' of this realm\'s ' +
+            'policies'
+          : 'exported this realm\'s policies') + ', signed by ' +
+                 exported.signer.subject,
+        detail: { via: ctx.via || '', counts: exported.counts,
+                  signer: exported.signer,
+                  selection: this.selectionText(exported.selection) }
+      });
+      log.debug("Leaving AdminActions.policyTransferAction(). Exported.");
+      return exported;
+    }
+    if (action === 'inspect') {
+      const seen = await policyTransfer.inspect(body.document);
+      log.debug("Leaving AdminActions.policyTransferAction(). Inspected.");
+      return seen.ok ? policyTransfer.publicView(seen)
+        : this.refused(this.innerCode(seen) || 'STS-ADMIN-0926',
+                       policyTransfer.publicView(seen));
+    }
+    const done = await policyTransfer.importPolicies(body.document, {
+      trustSigner: String(body.trustSigner) === 'true',
+      issuerFingerprint: body.issuerFingerprint, actor: actor,
+      policies: body.policies });
+    if ((done.trustAdded || []).length) {
+      auditLog.audit({
+        action: 'admin.policies.trust-signer', actor: actor, target: '',
+        channel: 'http',
+        summary: 'trusted another realm\'s policy export signer: ' +
+                 done.trustAdded.map(function (one) {
+                   return one.subject;
+                 }).join(', '),
+        detail: { via: ctx.via || '', purpose: 'policy-signer',
+                  added: done.trustAdded.map(function (one) {
+                    return { subject: one.subject, kind: one.kind,
+                             fingerprint256: one.fingerprint256 };
+                  }) }
+      });
+    }
+    if (done.imported) {
+      auditLog.audit({
+        action: 'admin.policies.import', actor: actor, target: '',
+        channel: 'http',
+        summary: 'imported policies exported by "' + done.realm + '" (' +
+                 done.origin + ')',
+        outcome: done.ok ? 'success' : 'failure',
+        detail: { via: ctx.via || '', origin: done.origin,
+                  signer: done.signer && done.signer.subject,
+                  imported: done.imported, refused: done.refused,
+                  selection: this.selectionText(done.selection) }
+      });
+    }
+    log.debug("Leaving AdminActions.policyTransferAction(). Import " +
+              (done.ok ? "done." : "refused."));
+    return done.ok ? done : this.refused(this.innerCode(done) ||
+                                         'STS-ADMIN-0932', done);
+  }
+
   // ---------------------------------------------------------------------------
   // GET /admin/claims, POST /admin/claims
   // GET /admin/saml-attributes, POST /admin/saml-attributes
@@ -9336,7 +10135,10 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  claimsAction(body, names, allowed) {
+  claimsAction(body: IyaApi.AdminActionBody<
+    '/admin-api/claims' | '/admin-api/kerberos/claims' |
+    '/admin-api/saml-attributes' | '/admin-api/userinfo-claims'>, names,
+    allowed) {
     const { log, stats, claimAttributes } = this.deps;
     log.debug("Entering AdminActions.claimsAction(). action=" + (body.action ||
                                                                  '(none)'));
@@ -9383,8 +10185,10 @@ class AdminActions {
       const entry: Record<string, any> = {
         name: String(body.name || '').trim(),
         attribute: String(body.attribute || '').trim(),
-        multi: body.multi === true || body.multi === 'true' ||
-               body.multi === 'on',
+        // A boolean, the model's type (the console sends one); the strings
+        // `'true'` and `'on'` were an older form's, removed (rcbj on #1579,
+        // 2026-11-11).
+        multi: body.multi === true,
         type: String(body.type || 'string').trim() || 'string' };
       if (!entry.attribute) {
         log.debug("Leaving AdminActions.claimsAction(). No attribute.");
@@ -9600,7 +10404,8 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  vcAction(body, names) {
+  vcAction(body: IyaApi.AdminActionBody<
+    '/admin-api/credential-claims'>, names) {
     const { log, vcClaims } = this.deps;
     log.debug("Entering AdminActions.vcAction(). action=" + (body.action ||
                                                              '(none)'));
@@ -9738,7 +10543,8 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  vpConfigAction(body, names) {
+  vpConfigAction(body: IyaApi.AdminActionBody<
+    '/admin-api/verifier-request'>, names) {
     const { log, vpConfig } = this.deps;
     log.debug("Entering AdminActions.vpConfigAction(). action=" +
               (body.action || '(none)'));
@@ -9849,8 +10655,10 @@ class AdminActions {
    * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
    *   with the sentence naming every action
    */
-  realmsAction(body) {
-    const { log, credentials, realms, rbac, mode, errorCodes } = this.deps;
+  realmsAction(body: IyaApi.AdminActionBody<
+    '/admin-api/realms'>) {
+    const { log, credentials, realms, rbac, mode, errorCodes,
+            serviceAccounts } = this.deps;
     log.debug("Entering AdminActions.realmsAction(). action=" + (body &&
                                                                  body.action));
     const action = String((body && body.action) || '').trim();
@@ -9895,8 +10703,23 @@ class AdminActions {
       // And, in product, a realm left with nobody who may enter its console
       // is logged at once (#103, STS-ADMIN-0798).
       rbac.reportClosedConsole(result.realm.id);
+      // A REMOTE PEP'S IDENTITY IS A SERVICE ACCOUNT (#1760), owned by the
+      // administrators just seeded: the realm's seed put its own
+      // `remote-pep-1` in the group before they existed.
+      realms.run(result.realm, function () {
+        log.debug("Entering realmsAction()'s designateRemotePeps().");
+        serviceAccounts.designateRemotePeps('a realm created');
+        log.debug("Leaving realmsAction()'s designateRemotePeps().");
+      });
       let password = '';
-      if (seeded.ran && seeded.created && mode.isProduct()) {
+      // THE MODE IS THE NEW REALM'S, NOT THIS REQUEST'S (2026-11-14, #444's
+      // D12): a realm created with `global.mode=product` from a development
+      // realm is product, so its seeded administrator is given a generated
+      // password here as in a product process.
+      const productRealm = !!realms.run(result.realm, function () {
+        return mode.isProduct();
+      });
+      if (seeded.ran && seeded.created && productRealm) {
         realms.run(result.realm, function () {
           const generated = credentials.generatePassword(seeded.username);
           const set = credentials.setPassword(seeded.username, generated,
@@ -10195,7 +11018,8 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  configAction(body) {
+  configAction(body: IyaApi.AdminActionBody<
+    '/admin-api/config'>) {
     const { log, config } = this.deps;
     const self = this;
     log.debug("Entering AdminActions.configAction(). action=" + (body &&
@@ -10430,7 +11254,8 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  tokenLifetimesAction(body) {
+  tokenLifetimesAction(body: IyaApi.AdminActionBody<
+    '/admin-api/token-lifetimes'>) {
     const { log, config } = this.deps;
     const self = this;
     log.debug("Entering AdminActions.tokenLifetimesAction(). action=" + (body &&
@@ -10569,7 +11394,8 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  samlAssertionsAction(body) {
+  samlAssertionsAction(body: IyaApi.AdminActionBody<
+    '/admin-api/saml-assertions'>) {
     const { log, config } = this.deps;
     const self = this;
     log.debug("Entering AdminActions.samlAssertionsAction(). action=" + (body &&
@@ -10686,7 +11512,8 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  signalsAction(body) {
+  signalsAction(body: IyaApi.AdminActionBody<
+    '/admin-api/signals'>) {
     const { log, signals } = this.deps;
     log.debug("Entering AdminActions.signalsAction(). action=" + String((body ||
         {}).action));
@@ -10734,7 +11561,7 @@ class AdminActions {
    * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
    *   with the sentence naming every action
    */
-  ssfAction(body) {
+  ssfAction(body: IyaApi.AdminActionBody<'/admin-api/ssf'>) {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering AdminActions.ssfAction().");
@@ -10761,7 +11588,7 @@ class AdminActions {
    * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
    *   with the sentence naming every action
    */
-  caepAction(body) {
+  caepAction(body: IyaApi.AdminActionBody<'/admin-api/caep'>) {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering AdminActions.caepAction().");
@@ -10788,7 +11615,7 @@ class AdminActions {
    * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
    *   with the sentence naming every action
    */
-  riscAction(body) {
+  riscAction(body: IyaApi.AdminActionBody<'/admin-api/risc'>) {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering AdminActions.riscAction().");
@@ -10818,7 +11645,8 @@ class AdminActions {
    * @param context - `{ actor, via }`
    * @returns a promise of the answer
    */
-  async pkiTrustAction(body, context) {
+  async pkiTrustAction(body: IyaApi.AdminActionBody<
+    '/admin-api/pki/trust'>, context) {
     const { log, auditLog, config } = this.deps;
     log.debug("Entering AdminActions.pkiTrustAction().");
     const asked = body || {};
@@ -10941,7 +11769,8 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  truststoreAction(body, context) {
+  truststoreAction(body: IyaApi.AdminActionBody<
+    '/admin-api/tls/trust'>, context) {
     const { log, numberWord, auditLog } = this.deps;
     log.debug("Entering AdminActions.truststoreAction(). action=" +
               String((body || {}).action));
@@ -11130,7 +11959,8 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  spiffeEntriesAction(body) {
+  spiffeEntriesAction(body: IyaApi.AdminActionBody<
+    '/admin-api/spiffe/entries'>) {
     const { log, spiffeCa, spiffeRegistry, spiffeIdLib } = this.deps;
     log.debug("Entering AdminActions.spiffeEntriesAction(). action=" +
               (body.action || '(none)'));
@@ -11264,7 +12094,8 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  spiffeAgentsAction(body, context?) {
+  spiffeAgentsAction(body: IyaApi.AdminActionBody<
+    '/admin-api/spiffe/agents'>, context?) {
     const { log, spiffeRegistry } = this.deps;
     log.debug("Entering AdminActions.spiffeAgentsAction(). action=" +
               (body.action || '(none)'));
@@ -11383,7 +12214,8 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  spiffeBrokersAction(body) {
+  spiffeBrokersAction(body: IyaApi.AdminActionBody<
+    '/admin-api/spiffe/brokers'>) {
     const { log, config, spiffeAuth } = this.deps;
     log.debug("Entering AdminActions.spiffeBrokersAction(). action=" +
               (body.action || '(none)'));
@@ -11470,12 +12302,13 @@ class AdminActions {
    * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
    *   with the sentence naming every action
    */
-  async federationAction(body, ctx?) {
+  async federationAction(body: IyaApi.AdminActionBody<
+    '/admin-api/federation'>, ctx?) {
     const { log, federation, fedEncryption, loadSignals } = this.deps;
     log.debug("Entering AdminActions.federationAction(). action=" +
               (body.action || '(none)'));
     const action = String(body.action || '');
-    const id = String(body.id || body.relationship || '').trim();
+    const id = String(body.id || '').trim();
     const context = ctx || { via: 'console', actor: '', base: '' };
 
     // AN OPENID CONNECT PARTNER CHECKED (#930): its discovery document and
@@ -11646,6 +12479,26 @@ class AdminActions {
             : keyed);
         }
       }
+      // A FAPI 1.0 ADVANCED RELATIONSHIP GETS ITS CLIENT CERTIFICATE NOW
+      // (#931), so the administrator can register it at the partner before
+      // the first sign-in. One that cannot be issued leaves the profile set
+      // and says so; the renewal job and the first sign-in try again.
+      if (result.ok && String(body.field || '') === 'fedFapi' &&
+          fedClientCert.needed(result.relationship) &&
+          !fedClientCert.currentOf(result.relationship)) {
+        const made = await fedClientCert.issue(id,
+          'a client certificate was issued when fedFapi became 1-advanced');
+        return this.refusedBy('STS-ADMIN-0575',
+          Object.assign({}, result, {
+            relationship: federation.get(id) || result.relationship,
+            readiness: federation.readinessOf(federation.get(id) ||
+                                              result.relationship),
+            message: result.message + ' ' + (made.ok ? made.message
+              : 'ITS TLS CLIENT CERTIFICATE WAS NOT ISSUED: ' +
+                (made.errors || []).join(' ') + ' The scheduler job ' +
+                'federation.client-certificate-renew and the first ' +
+                'sign-in try again.') }));
+      }
       return this.refusedBy('STS-ADMIN-0575', result);
     }
 
@@ -11709,7 +12562,8 @@ class AdminActions {
    * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
    *   with the sentence naming every action
    */
-  async spiffeAction(body) {
+  async spiffeAction(body: IyaApi.AdminActionBody<
+    '/admin-api/spiffe'>) {
     const { log, auditLog, spiffeCa } = this.deps;
     log.debug("Entering AdminActions.spiffeAction(). action=" + (body.action ||
                                                                  '(none)'));
@@ -11932,7 +12786,8 @@ class AdminActions {
    * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
    *   with the sentence naming every action
    */
-  kerberosPrincipalsAction(body, context) {
+  kerberosPrincipalsAction(body: IyaApi.AdminActionBody<
+    '/admin-api/kerberos/principals'>, context) {
     const self = this;
     const { log, numberWord, realms, krb5PersonKeys } = this.deps;
     log.debug("Entering AdminActions.kerberosPrincipalsAction(). action=" +
@@ -12099,7 +12954,8 @@ class AdminActions {
    * @returns `{ ok, errors, trust, shown, … }`; never a key but a generated
    *   one, once, in `shown`
    */
-  kerberosTrustsAction(body, context) {
+  kerberosTrustsAction(body: IyaApi.AdminActionBody<
+    '/admin-api/kerberos/trusts'>, context) {
     const { log, numberWord, realms, auditLog } = this.deps;
     const asked = body || {};
     const action = String(asked.action || '');
@@ -12306,6 +13162,7 @@ export = {
   applicationStoredCertificatesOf:
     slot.forward('applicationStoredCertificatesOf'),
   signingCertificatesOf: slot.forward('signingCertificatesOf'),
+  tlsClientCertificatesOf: slot.forward('tlsClientCertificatesOf'),
   groupsAction: slot.forward('groupsAction'),
   FIELD_PREFIX: FIELD_PREFIX,
   applicationFieldsFrom: slot.forward('applicationFieldsFrom'),
@@ -12332,6 +13189,7 @@ export = {
   roleMemberKindOf: slot.forward('roleMemberKindOf'),
   rolesAction: slot.forward('rolesAction'),
   policiesAction: slot.forward('policiesAction'),
+  policyTransferAction: slot.forward('policyTransferAction'),
   DEFAULT_CREDENTIAL: DEFAULT_CREDENTIAL,
   claimsAction: slot.forward('claimsAction'),
   sweepText: slot.forward('sweepText'),

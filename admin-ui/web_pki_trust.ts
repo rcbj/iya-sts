@@ -159,8 +159,11 @@ class PkiTrustPage {
         'value="' + kit.esc(row.purpose) + '"> <code>' +
         kit.esc(row.purpose) + '</code></label> ';
     }).join('');
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each tab's
+    // content after its heading, which stays at the top level for the tab
+    // splitter, and the `<h3>` block a frame inside the Signers tab's.
     const addForm = context.write
-      ? '<h3>' + t.html('consolePkiTrust.addHeading') + '</h3>' +
+      ? kit.frame('<h3>' + t.html('consolePkiTrust.addHeading') + '</h3>' +
         kit.note(t.html('consolePkiTrust.addNote')) +
         '<form method="post" action="' + PAGE + '">' +
         '<input type="hidden" name="action" value="add">' +
@@ -170,7 +173,7 @@ class PkiTrustPage {
         purposeBoxes + '</p><p><label class="sub"><input type="checkbox" ' +
         'name="kind" value="accepted"> ' + t.html('consolePkiTrust.addAccept') +
         '</label></p><div class="formrow"><button type="submit">' +
-        t.html('consolePkiTrust.addButton') + '</button></div></form>'
+        t.html('consolePkiTrust.addButton') + '</button></div></form>')
       : kit.note(t.html('consolePkiTrust.needsWrite'));
     const pinsNav = kit.pageNavPair(PAGE, kit.pageParamsOf(context.query),
       Object.assign({ offset: 0 }, json.pinsPaging), t);
@@ -182,7 +185,7 @@ class PkiTrustPage {
       kit.tile(json.pinsTotal, t.text('consolePkiTrust.tilePins')) +
       '</div>' +
       '<h2 data-tab="paranoid">' + t.html('consolePkiTrust.paranoid') +
-      '</h2>' + kit.note(t.html('consolePkiTrust.paranoidNote')) +
+      '</h2>' + kit.frame(kit.note(t.html('consolePkiTrust.paranoidNote')) +
       PkiTrustPage.masterForm(json, context) +
       '<table><tr><th>' + t.html('consolePkiTrust.thUseCase') + '</th><th>' +
       t.html('consolePkiTrust.thRow') + '</th><th>' +
@@ -190,9 +193,9 @@ class PkiTrustPage {
       t.html('consolePkiTrust.thCounts') + '</th><th></th></tr>' +
       (json.rows || []).map(function (row: Json) {
         return PkiTrustPage.rowOf(row, json, context);
-      }).join('') + '</table>' +
+      }).join('') + '</table>') +
       '<h2 data-tab="signers">' + t.html('consolePkiTrust.signers') + '</h2>' +
-      kit.note(t.html('consolePkiTrust.signersNote')) +
+      kit.frame(kit.note(t.html('consolePkiTrust.signersNote')) +
       kit.note(store.file
         ? t.html('consolePkiTrust.fileSet', {
           file: store.file, n: String(store.loadedFromFile) })
@@ -207,9 +210,9 @@ class PkiTrustPage {
         return PkiTrustPage.entryOf(entry, context);
       }).join('') || '<tr><td colspan="7">' +
         kit.esc(t.text('consolePkiTrust.emptySigners')) + '</td></tr>') +
-      '</table>' + addForm +
+      '</table>' + addForm) +
       '<h2 data-tab="pins">' + t.html('consolePkiTrust.pins') + '</h2>' +
-      kit.note(t.html('consolePkiTrust.pinsNote', {
+      kit.frame(kit.note(t.html('consolePkiTrust.pinsNote', {
         when: PkiTrustPage.when(json.assessedAt) })) +
       (context.write
         ? '<form method="post" action="' + PAGE + '">' +
@@ -225,12 +228,12 @@ class PkiTrustPage {
       t.html('consolePkiTrust.thStatus') + '</th></tr>' +
       ((json.pins || []).map(PkiTrustPage.pinOf).join('') ||
        '<tr><td colspan="6">' + kit.esc(t.text('consolePkiTrust.emptyPins')) +
-       '</td></tr>') + '</table>' + pinsNav.foot +
+       '</td></tr>') + '</table>' + pinsNav.foot) +
       '<h2 data-tab="client">' + t.html('consolePkiTrust.client') + '</h2>' +
-      kit.note(t.html('consolePkiTrust.clientNote', {
+      kit.frame(kit.note(t.html('consolePkiTrust.clientNote', {
         n: String(json.clientTruststore.count) })) +
       kit.note('<a href="' + kit.esc(json.clientTruststore.href) + '">' +
-               t.html('consolePkiTrust.clientLink') + '</a>');
+               t.html('consolePkiTrust.clientLink') + '</a>'));
   }
 }
 

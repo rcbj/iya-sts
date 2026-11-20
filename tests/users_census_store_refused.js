@@ -18,9 +18,17 @@
 //       unknown and asks nobody on their own — synchronously and not;
 //   R2. a census that threw for any other reason is still answered one name
 //       at a time;
-//   R3. that one-at-a-time path reads no recovery codes;
+//   R3. that one-at-a-time path reads no recovery codes, including for a
+//       person who holds an authenticator app (recoveryAdvised's read);
 //   R4. a row none of whose names the census answered has no factors
-//       (unknown), not "no credential".
+//       (unknown), not "no credential";
+//   R5. where the directory offers no census, each name is still asked on
+//       its own and no recovery codes are read;
+//   R6. a census that failed on the store under a code `storeRefused()`
+//       does not list (a pool timeout, STS-STORE-0066) is refused as well;
+//   R7. in a windowed process, a census that threw for any reason is
+//       refused, with no one-name read (#786's review). R2 is the same
+//       throw in a process holding the directory in memory.
 //
 // In a child process: it replaces the directory's census hooks.
 // ===========================================================================
@@ -50,11 +58,13 @@ function child() {
     require(ROOT + '/ldap/ldap_server');
     const credentials = require(ROOT + '/common/credentials');
     const errorCodes = require(ROOT + '/common/error_codes');
+    const backupCodes = require(ROOT + '/common/backup_codes');
     const views = require(ROOT + '/admin-core/admin_views');
     const proto = credentials.Credentials.prototype;
-    const counts = { mechanisms: 0, recovery: 0 };
+    const counts = { mechanisms: 0, recovery: 0, codesOf: 0 };
     const realMechanisms = proto.mechanismsFor;
     const realRecovery = proto.backupCodeStatus;
+    const realCodesOf = proto.backupCodesOf;
     proto.mechanismsFor = function () {
       counts.mechanisms++;
       return realMechanisms.apply(this, arguments);
@@ -63,6 +73,21 @@ function child() {
       counts.recovery++;
       return realRecovery.apply(this, arguments);
     };
+    proto.backupCodesOf = function () {
+      counts.codesOf++;
+      return realCodesOf.apply(this, arguments);
+    };
+    // An authenticator enrolment makes `recoveryAdvised` true of a person
+    // who holds no recovery codes, which is the read `backupCodeStatus`
+    // does not cover (#786).
+    proto.totpStatusOf = function () {
+      return { enrolledAt: 1, algorithm: 'SHA1', digits: 6, period: 30,
+               sealed: false, unusable: false, why: '' };
+    };
+    note(typeof realCodesOf === 'function' && backupCodes.offered() === true,
+         'recovery codes are offered, and the census can reach the read',
+         'codesOf=' + typeof realCodesOf + ' offered=' +
+         backupCodes.offered());
     const names = ['ucr-a', 'ucr-b', 'ucr-c'];
     const refused = function () {
       return errorCodes.mark(new Error('this request has already waited ' +
@@ -80,7 +105,8 @@ function child() {
     const syncFacts = credentials.factorCensus(names);
     const asyncFacts = await credentials.factorCensusAsync(names);
     note(syncFacts.size === 0 && asyncFacts.size === 0 &&
-         counts.mechanisms === 0 && counts.recovery === 0,
+         counts.mechanisms === 0 && counts.recovery === 0 &&
+         counts.codesOf === 0,
          'R1. a census the store refused answers every name unknown and asks ' +
          'nobody on their own, synchronously and not',
          JSON.stringify({ sync: syncFacts.size, async: asyncFacts.size,
@@ -96,9 +122,59 @@ function child() {
          'R2. a census that threw for another reason is still answered one ' +
          'name at a time', JSON.stringify({ size: other.size,
                                             counts: counts }));
-    note(counts.recovery === 0,
-         'R3. and that one-at-a-time path reads no recovery codes',
+    note(counts.recovery === 0 && counts.codesOf === 0,
+         'R3. and that one-at-a-time path reads no recovery codes, including ' +
+         'for a person who holds an authenticator app',
          JSON.stringify(counts));
+
+    // R6, R7 (#786's review): a store failure the three listed codes do not
+    // name, and any failure where the directory is a window onto the store,
+    // are refused too — no `mechanismsFor()` per name.
+    const r6 = { mechanisms: counts.mechanisms, recovery: counts.recovery,
+                 codesOf: counts.codesOf };
+    const poolTimeout = function () {
+      return errorCodes.mark(new Error('timed out waiting for a connection ' +
+        'from the pool'), 'STS-STORE-0066');
+    };
+    credentials.addDirectoryHooks({
+      credentialCensus: function () {
+        throw poolTimeout();
+      },
+      credentialCensusAsync: function () {
+        return Promise.reject(poolTimeout());
+      }
+    });
+    const storeSync = credentials.factorCensus(names);
+    const storeAsync = await credentials.factorCensusAsync(names);
+    note(storeSync.size === 0 && storeAsync.size === 0 &&
+         counts.mechanisms === r6.mechanisms &&
+         counts.recovery === r6.recovery && counts.codesOf === r6.codesOf,
+         'R6. a census that failed on the store under a code storeRefused() ' +
+         'does not list (a pool timeout) answers every name unknown and asks ' +
+         'nobody on their own, synchronously and not',
+         JSON.stringify({ sync: storeSync.size, async: storeAsync.size,
+                          before: r6, counts: counts }));
+
+    credentials.addDirectoryHooks({
+      directoryWindowed: function () {
+        return true;
+      },
+      credentialCensus: function () {
+        throw new Error('a page of the window could not be read');
+      },
+      credentialCensusAsync: function () {
+        return Promise.reject(new Error('a page of the window could not ' +
+                                        'be read'));
+      }
+    });
+    const winSync = credentials.factorCensus(names);
+    const winAsync = await credentials.factorCensusAsync(names);
+    note(winSync.size === 0 && winAsync.size === 0 &&
+         counts.mechanisms === r6.mechanisms,
+         'R7. in a windowed process a census that threw for any reason is ' +
+         'answered unknown, with no one-name read',
+         JSON.stringify({ sync: winSync.size, async: winAsync.size,
+                          before: r6, counts: counts }));
 
     // R4: the view's merge, over a census that answered nobody.
     const instance = new views.AdminViews(views.AdminViews.defaultDeps());
@@ -114,6 +190,19 @@ function child() {
          'R4. a row the census did not answer has no factors (unknown); one ' +
          'it answered keeps its facts', JSON.stringify([merged.get('ucr-a'),
            merged.get('ucr-b') && merged.get('ucr-b').password]));
+
+    const before = { mechanisms: counts.mechanisms,
+                     recovery: counts.recovery, codesOf: counts.codesOf };
+    credentials.addDirectoryHooks({});
+    const absent = credentials.factorCensus(names);
+    note(absent.size === 3 &&
+         counts.mechanisms === before.mechanisms + 3 &&
+         counts.recovery === before.recovery &&
+         counts.codesOf === before.codesOf,
+         'R5. where the directory offers no census, each name is still asked ' +
+         'on its own and no recovery codes are read',
+         JSON.stringify({ size: absent.size, before: before,
+                          counts: counts }));
     finish();
   })().catch(function (e) {
     note(false, 'the child threw', (e && e.stack) || e);

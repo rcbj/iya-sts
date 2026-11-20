@@ -1,0 +1,4339 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "IYA STS remote PEP control plane",
+    "version": "1",
+    "description": "What the identity service serves for a remote XACML PEP: registration and heartbeat, the pulls (policies, AuthZEN attribute catalogue and callers, reverse-proxy configuration, managed settings and listeners), a defined listener's certificate, the reverse proxy's five validation doors and the PIP. Paths are under PEP_PDP_URL, which carries the realm's prefix (/realm/<id>). Every operation needs a client certificate the service verifies whose entry holds REMOTE_PEPS (the access-control policy on xacml-pep-api: READ for the pulls, the doors and the PIP; WRITE for register, heartbeat and listener-certificate); a refusal is 403 access_denied (STS-XACML-0007, 0008, 0009, 0010, 0179, 0180, or the revocation's code). xacml.enabled off is 501 (STS-XACML-0001), xacml.remotePeps off 501 (0002), both before the gate. A pull's sync token is base64url SHA-256, sent as ETag in quotes; ?since=<token> equal to it answers 304, and so does an If-None-Match that matches the ETag (RFC 9110 section 13.1.2: *, or a list of entity tags compared weakly). Errors are the Error object, with Cache-Control: no-store, except at POST /xacml/pip, where every refusal (the gate's and the off switches' included) is a PIPError in XML; a request refused before any endpoint sees it (a body over 5 MB, 413; in a character set or content encoding the service does not read, 415; cut short of its Content-Length, or a control character or a parameter named __proto__, constructor or prototype in the query, 400; over the ceiling on one address's requests, 429 with Retry-After) is answered in the same shapes; no error code is ever in a body, except a route's resolved.code inside the proxy pull. The PEP sends Accept: application/xml on POST /xacml/pip and Accept: application/json everywhere else, and User-Agent: sts/<version> (xacml-pep), and follows no redirect."
+  },
+  "servers": [
+    {
+      "url": "https://localhost:8081",
+      "description": "PEP_PDP_URL: the service, with /realm/<id> for a realm."
+    }
+  ],
+  "security": [
+    {
+      "mutualTLS": []
+    },
+    {
+      "dpop": [
+        "xacml:pep"
+      ]
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "mutualTLS": {
+        "type": "mutualTLS",
+        "description": "The PEP's PEP_TLS_CERT, verified by the service, stored on an entry that holds REMOTE_PEPS. The PEP's register name is the certificate's CN (else its DN), folded to [A-Za-z0-9._-] and 128 characters; a name in the request is read only when no certificate was presented. Accepted when the realm's xacml.pepAuthentication is certificate or either."
+      },
+      "dpop": {
+        "type": "http",
+        "scheme": "DPoP",
+        "description": "RFC 9449 (#1827): Authorization: DPoP <token> with a DPoP proof for this method and URL. The token is the client sts-remote-pep's, from an RFC 7523 self-assertion, audienced to the realm's /xacml/pep, carrying xacml:pep, its subject the PEP's own entry. Accepted when xacml.pepAuthentication is token or either. A refusal is 401 with a DPoP challenge, error=... and algs=\"ES256 RS256\" (and a DPoP-Nonce header for use_dpop_nonce): no token where one is required (STS-XACML-0289), a token where a certificate is (0290), not this realm's or revoked (0291), not DPoP-bound (0292), another audience (0293), another client (0294), without xacml:pep (0295), a refused proof (0296), a subject naming no entry (0297)."
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "enum": [
+              "not_implemented",
+              "access_denied",
+              "invalid_client",
+              "invalid_request",
+              "invalid_token",
+              "insufficient_scope",
+              "use_dpop_nonce",
+              "server_error",
+              "too_many_requests"
+            ]
+          },
+          "error_description": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "error",
+          "error_description"
+        ]
+      },
+      "RegisterRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "PEP_NAME. Read only when no certificate was presented."
+          },
+          "notifyUrl": {
+            "type": "string",
+            "description": "Where the service nudges this PEP: https, or empty. notify_url is accepted as an alias."
+          },
+          "bias": {
+            "type": "string",
+            "enum": [
+              "deny-biased",
+              "permit-biased"
+            ]
+          },
+          "resource": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "description": "Empty keeps the description held."
+          },
+          "hostname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Sent only when the PEP knows it: a lower-case DNS name of at most 253 characters, not an IP address; anything else is 400 STS-XACML-0261.",
+            "maxLength": 253
+          }
+        },
+        "additionalProperties": false
+      },
+      "RegisterNotify": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "usable": {
+            "type": "boolean"
+          },
+          "why": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "url",
+          "usable",
+          "why"
+        ]
+      },
+      "Registered": {
+        "type": "object",
+        "properties": {
+          "registered": {
+            "type": "boolean",
+            "const": true
+          },
+          "name": {
+            "type": "string"
+          },
+          "created": {
+            "type": "boolean"
+          },
+          "authenticated": {
+            "type": "boolean",
+            "description": "A certificate was presented."
+          },
+          "verified": {
+            "type": "boolean"
+          },
+          "verifiedWhy": {
+            "type": "string"
+          },
+          "identity": {
+            "type": "string",
+            "description": "The certificate's DN, or empty."
+          },
+          "syncToken": {
+            "type": "string",
+            "description": "The policy repository's token. Not read by the PEP."
+          },
+          "policiesUrl": {
+            "type": "string"
+          },
+          "heartbeatUrl": {
+            "type": "string"
+          },
+          "notify": {
+            "$ref": "#/components/schemas/RegisterNotify"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "registered",
+          "name",
+          "created",
+          "authenticated",
+          "verified",
+          "verifiedWhy",
+          "identity",
+          "syncToken",
+          "policiesUrl",
+          "heartbeatUrl",
+          "notify",
+          "note"
+        ]
+      },
+      "TooManyRequests": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "enum": [
+              "too_many_requests"
+            ]
+          },
+          "error_description": {
+            "type": "string"
+          },
+          "retryAfterS": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "error",
+          "error_description",
+          "retryAfterS"
+        ],
+        "description": "A refusal for now, from every validation door: the doors' shared limiter (STS-XACML-0215), or basic's lockout of the account (0205). The wait is retryAfterS, and the Retry-After header."
+      },
+      "LibrarySessions": {
+        "type": "object",
+        "properties": {
+          "held": {
+            "type": "integer"
+          },
+          "max": {
+            "type": "integer"
+          },
+          "ttlSec": {
+            "type": "integer"
+          },
+          "evicted": {
+            "type": "integer"
+          },
+          "expired": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "held",
+          "max",
+          "ttlSec",
+          "evicted",
+          "expired"
+        ]
+      },
+      "SignalStream": {
+        "type": "object",
+        "properties": {
+          "clientId": {
+            "type": "string",
+            "maxLength": 256,
+            "pattern": "^[A-Za-z0-9._:~@/+-]*$"
+          },
+          "streamId": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:~@/+-]*$"
+          },
+          "running": {
+            "type": "boolean"
+          },
+          "healthy": {
+            "type": "boolean"
+          },
+          "startedAgeMs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastPollAgeMs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastSuccessAgeMs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "consecutiveFailures": {
+            "type": "integer"
+          },
+          "polls": {
+            "type": "integer"
+          },
+          "failedPolls": {
+            "type": "integer"
+          },
+          "setsAccepted": {
+            "type": "integer"
+          },
+          "setsRefused": {
+            "type": "integer"
+          },
+          "sessionsEnded": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "clientId",
+          "streamId",
+          "running",
+          "healthy",
+          "startedAgeMs",
+          "lastPollAgeMs",
+          "lastSuccessAgeMs",
+          "consecutiveFailures",
+          "polls",
+          "failedPolls",
+          "setsAccepted",
+          "setsRefused",
+          "sessionsEnded"
+        ]
+      },
+      "PepSignals": {
+        "type": "object",
+        "properties": {
+          "receivers": {
+            "type": "integer"
+          },
+          "healthy": {
+            "type": "integer"
+          },
+          "stale": {
+            "type": "integer"
+          },
+          "staleAfterMs": {
+            "type": "integer"
+          },
+          "pollIntervalMs": {
+            "type": "integer"
+          },
+          "oldestSuccessAgeMs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mostConsecutiveFailures": {
+            "type": "integer"
+          },
+          "setsAccepted": {
+            "type": "integer"
+          },
+          "setsRefused": {
+            "type": "integer"
+          },
+          "sessionsEnded": {
+            "type": "integer"
+          },
+          "librarySessions": {
+            "$ref": "#/components/schemas/LibrarySessions"
+          },
+          "streams": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SignalStream"
+            },
+            "maxItems": 64
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "receivers",
+          "healthy",
+          "stale",
+          "staleAfterMs",
+          "pollIntervalMs",
+          "oldestSuccessAgeMs",
+          "mostConsecutiveFailures",
+          "setsAccepted",
+          "setsRefused",
+          "sessionsEnded",
+          "librarySessions"
+        ],
+        "description": "The reverse proxy's CAEP and RISC receivers: counts only; the service drops a member it does not name."
+      },
+      "SettingInUse": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "service",
+              "environment",
+              "derived",
+              "default"
+            ]
+          },
+          "rejected": {
+            "type": "boolean",
+            "const": true,
+            "description": "Only on notifyUrl, when the one set was not https."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value",
+          "source"
+        ]
+      },
+      "SettingsReport": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{0,128}$"
+          },
+          "values": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SettingInUse"
+            },
+            "description": "Every managed setting in force, by key; values are checked against the row and unknown keys dropped."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "token",
+          "values"
+        ]
+      },
+      "ReportedCertificate": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "string"
+          },
+          "issuer": {
+            "type": "string"
+          },
+          "serialHex": {
+            "type": "string"
+          },
+          "subjectAltName": {
+            "type": "string"
+          },
+          "validFrom": {
+            "type": "string"
+          },
+          "validTo": {
+            "type": "string"
+          },
+          "fingerprint256": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "subject",
+          "issuer",
+          "serialHex",
+          "subjectAltName",
+          "validFrom",
+          "validTo",
+          "fingerprint256"
+        ]
+      },
+      "ListenerPool": {
+        "type": "object",
+        "properties": {
+          "min": {
+            "type": "integer"
+          },
+          "max": {
+            "type": "integer"
+          },
+          "current": {
+            "type": "integer"
+          },
+          "busy": {
+            "type": "integer"
+          },
+          "idle": {
+            "type": "integer"
+          },
+          "queued": {
+            "type": "integer"
+          },
+          "completed": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "min",
+          "max",
+          "current",
+          "busy",
+          "idle",
+          "queued",
+          "completed"
+        ]
+      },
+      "ListenerStats": {
+        "type": "object",
+        "properties": {
+          "accepted": {
+            "type": "integer"
+          },
+          "open": {
+            "type": "integer"
+          },
+          "refused": {
+            "type": "integer"
+          },
+          "http1": {
+            "type": "integer"
+          },
+          "http2": {
+            "type": "integer"
+          },
+          "handshakes": {
+            "type": "integer"
+          },
+          "handshakeFailures": {
+            "type": "integer"
+          },
+          "pool": {
+            "$ref": "#/components/schemas/ListenerPool",
+            "description": "Kept only with all seven members."
+          }
+        },
+        "additionalProperties": false
+      },
+      "ReportedListener": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._-]{1,64}$"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "environment",
+              "service"
+            ]
+          },
+          "protocol": {
+            "type": "string",
+            "enum": [
+              "http",
+              "https"
+            ]
+          },
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "api",
+              "proxy",
+              "crl"
+            ]
+          },
+          "address": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65535
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "listening",
+              "waiting",
+              "failed",
+              "off"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "none",
+              "address-in-use",
+              "permission-denied",
+              "address-unavailable",
+              "no-certificate",
+              "certificate-refused",
+              "certificate-request-refused",
+              "proxy-off",
+              "http-off",
+              "not-configured",
+              "crl-only",
+              "other"
+            ]
+          },
+          "renew": {
+            "type": "integer"
+          },
+          "certificate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportedCertificate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stats": {
+            "$ref": "#/components/schemas/ListenerStats"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "source",
+          "protocol",
+          "purpose",
+          "address",
+          "port",
+          "state",
+          "reason",
+          "renew",
+          "certificate"
+        ]
+      },
+      "ProcessMemory": {
+        "type": "object",
+        "properties": {
+          "rssBytes": {
+            "type": "integer"
+          },
+          "virtualBytes": {
+            "type": "integer"
+          },
+          "dataBytes": {
+            "type": "integer"
+          },
+          "threads": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PathCount": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string",
+            "pattern": "^[A-Z*]{1,16}$"
+          },
+          "path": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "The path, its query cut."
+          },
+          "count": {
+            "type": "integer"
+          },
+          "refused": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "method",
+          "path",
+          "count",
+          "refused"
+        ]
+      },
+      "ListenersReport": {
+        "type": "object",
+        "properties": {
+          "listeners": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReportedListener"
+            },
+            "maxItems": 36
+          },
+          "memory": {
+            "$ref": "#/components/schemas/ProcessMemory"
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PathCount"
+            },
+            "maxItems": 256
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "listeners"
+        ]
+      },
+      "HeartbeatRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Read only when no certificate was presented."
+          },
+          "syncToken": {
+            "type": "string",
+            "description": "The policy set held, empty if none."
+          },
+          "policyCount": {
+            "type": "integer"
+          },
+          "decisions": {
+            "type": "integer"
+          },
+          "allowed": {
+            "type": "integer"
+          },
+          "refused": {
+            "type": "integer"
+          },
+          "undischargeable": {
+            "type": "integer"
+          },
+          "bias": {
+            "type": "string"
+          },
+          "resource": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "notifyUrl": {
+            "type": "string"
+          },
+          "hostname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "maxLength": 253
+          },
+          "settings": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SettingsReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "signals": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PepSignals"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "listeners": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ListenersReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "description": "Absent keeps what the service holds; null clears signals, settings and listeners; a value replaces it. The counters are set, not added."
+      },
+      "HeartbeatAnswer": {
+        "type": "object",
+        "properties": {
+          "acknowledged": {
+            "type": "boolean",
+            "const": true
+          },
+          "name": {
+            "type": "string"
+          },
+          "syncToken": {
+            "type": "string",
+            "description": "The repository's current token, not the PEP's."
+          },
+          "current": {
+            "type": "boolean",
+            "description": "Whether the PEP holds the current policy set: the one member the PEP reads; false makes it pull."
+          },
+          "action": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "acknowledged",
+          "name",
+          "syncToken",
+          "current",
+          "action"
+        ]
+      },
+      "PolicyRow": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "policyId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "Policy",
+              "PolicySet"
+            ]
+          },
+          "version": {
+            "type": "string"
+          },
+          "combiningAlgId": {
+            "type": "string"
+          },
+          "isRoot": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
+          },
+          "document": {
+            "type": "string",
+            "description": "The XACML 3.0 Policy or PolicySet, as XML."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "policyId",
+          "kind",
+          "version",
+          "combiningAlgId",
+          "isRoot",
+          "description",
+          "document"
+        ]
+      },
+      "PolicySet": {
+        "type": "object",
+        "properties": {
+          "syncToken": {
+            "type": "string"
+          },
+          "root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The root policy's name. Not read by the PEP, which uses isRoot."
+          },
+          "rootNote": {
+            "type": "string",
+            "description": "Only when root is null."
+          },
+          "policies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PolicyRow"
+            },
+            "description": "Every enabled policy but those withheld."
+          },
+          "withheld": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Names withheld from PEPs: the access and issuance policies and every policy an application owns."
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "syncToken",
+          "root",
+          "policies",
+          "withheld",
+          "note"
+        ]
+      },
+      "CatalogueRow": {
+        "type": "object",
+        "properties": {
+          "object": {
+            "type": "string",
+            "enum": [
+              "subject",
+              "resource",
+              "action",
+              "context"
+            ]
+          },
+          "property": {
+            "type": "string",
+            "description": "A dotted path of at most six segments of [A-Za-z0-9_$@:-]{1,64}."
+          },
+          "attributeId": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "dataType": {
+            "type": "string"
+          },
+          "multiplicity": {
+            "type": "string",
+            "enum": [
+              "single",
+              "bag"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Only when not empty."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "object",
+          "property",
+          "attributeId",
+          "category",
+          "dataType",
+          "multiplicity"
+        ]
+      },
+      "AuthzenSettings": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "resolveSubjectTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "batchEnabled": {
+            "type": "boolean"
+          },
+          "maxEvaluations": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "maxBodyBytes": {
+            "type": "integer",
+            "minimum": 1024,
+            "maximum": 5242880
+          },
+          "returnReasons": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "enabled",
+          "resolveSubjectTypes",
+          "batchEnabled",
+          "maxEvaluations",
+          "maxBodyBytes",
+          "returnReasons"
+        ]
+      },
+      "AuthzenCatalogue": {
+        "type": "object",
+        "properties": {
+          "syncToken": {
+            "type": "string"
+          },
+          "realm": {
+            "type": "string",
+            "description": "The realm's id; empty for the default realm."
+          },
+          "apiObject": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "sts-authzen-api"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "sts-authzen-api when the realm has the API's resource object."
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogueRow"
+            }
+          },
+          "leftOut": {
+            "type": "integer",
+            "description": "Rows left out of the catalogue (STS-AUTHZEN-0060)."
+          },
+          "settings": {
+            "$ref": "#/components/schemas/AuthzenSettings"
+          },
+          "fgaApplications": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Applications enforcing fine-grained authorization, whose evaluations the PEP forwards; each non-empty, at most 256 characters, or the PEP refuses the whole catalogue."
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "syncToken",
+          "realm",
+          "apiObject",
+          "rows",
+          "leftOut",
+          "settings",
+          "note"
+        ]
+      },
+      "CallerCertificate": {
+        "type": "object",
+        "properties": {
+          "sha256": {
+            "type": "string",
+            "description": "64 hex digits; colons allowed."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "stored",
+              "issued"
+            ],
+            "description": "Not read by the PEP."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "sha256",
+          "source"
+        ]
+      },
+      "EdgeCaller": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The caller's verified DN."
+          },
+          "certificates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CallerCertificate"
+            },
+            "minItems": 1,
+            "maxItems": 64
+          },
+          "applications": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64
+          },
+          "endpoints": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "evaluation",
+                "evaluations"
+              ]
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "certificates",
+          "applications",
+          "endpoints"
+        ]
+      },
+      "CallerCounts": {
+        "type": "object",
+        "properties": {
+          "members": {
+            "type": "integer"
+          },
+          "read": {
+            "type": "integer"
+          },
+          "unlocated": {
+            "type": "integer"
+          },
+          "unnamed": {
+            "type": "integer"
+          },
+          "notAdmitted": {
+            "type": "integer"
+          },
+          "unreadable": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "members",
+          "read",
+          "unlocated",
+          "unnamed",
+          "notAdmitted",
+          "unreadable"
+        ]
+      },
+      "AuthzenCallers": {
+        "type": "object",
+        "properties": {
+          "syncToken": {
+            "type": "string"
+          },
+          "realm": {
+            "type": "string"
+          },
+          "door": {
+            "type": "string",
+            "enum": [
+              "mtls",
+              "bearer",
+              "mtls+bearer"
+            ],
+            "description": "The realm's authzen.callerAuthentication. The edge admits callers only when it is mtls."
+          },
+          "role": {
+            "type": "string",
+            "const": "AUTHZEN_PEPS"
+          },
+          "group": {
+            "type": "string"
+          },
+          "callers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EdgeCaller"
+            },
+            "description": "Sorted by name; empty unless door is mtls."
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/CallerCounts"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "syncToken",
+          "realm",
+          "door",
+          "role",
+          "group",
+          "callers",
+          "truncated",
+          "counts",
+          "note"
+        ]
+      },
+      "RouteAuthorization": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "policy",
+              "simple",
+              "public"
+            ]
+          },
+          "policy": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._-]{1,128}$"
+          },
+          "resource": {
+            "type": "string",
+            "description": "Empty: the normalised path."
+          },
+          "actionModel": {
+            "type": "string",
+            "enum": [
+              "method",
+              "crud",
+              "read-write"
+            ]
+          },
+          "roles": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "description": "The roles each action of the model needs, at most 8 each: create, read, update, delete for crud; read, write for read-write."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "policy",
+          "resource",
+          "actionModel",
+          "roles"
+        ]
+      },
+      "IdentityHeader": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "An HTTP token, not a reserved header."
+          },
+          "claim": {
+            "type": "string",
+            "enum": [
+              "sub",
+              "username",
+              "email",
+              "name",
+              "given_name",
+              "family_name",
+              "groups",
+              "mechanism",
+              "acr",
+              "amr"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "claim"
+        ]
+      },
+      "RouteIdentity": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "headers",
+              "saml",
+              "jwt"
+            ]
+          },
+          "headers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IdentityHeader"
+            },
+            "maxItems": 16
+          },
+          "separator": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1,
+            "default": ","
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "mode",
+          "headers",
+          "separator"
+        ]
+      },
+      "RouteResolution": {
+        "type": "object",
+        "properties": {
+          "usable": {
+            "type": "boolean"
+          },
+          "why": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "audiences": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "An oauth2 route's accepted audiences."
+          },
+          "samlAudience": {
+            "type": "string"
+          },
+          "clientId": {
+            "type": "string",
+            "description": "A session route's client."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "usable"
+        ],
+        "description": "What the service resolved for a route. When not usable, why and code (STS-XACML-0217 to 0223, 0228: the one error code this surface sends)."
+      },
+      "ProxyRoute": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._-]{1,64}$"
+          },
+          "path": {
+            "type": "string",
+            "pattern": "^/",
+            "description": "Never /.iya-pep or under /.iya-pep/, which the proxy keeps (STS-XACML-0300 at the save; a stored one makes the pull configured: false)."
+          },
+          "match": {
+            "type": "string",
+            "enum": [
+              "prefix",
+              "exact"
+            ]
+          },
+          "methods": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "GET",
+                "HEAD",
+                "POST",
+                "PUT",
+                "PATCH",
+                "DELETE",
+                "OPTIONS"
+              ]
+            },
+            "description": "Empty denies every method."
+          },
+          "mechanisms": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "session",
+                "oauth2",
+                "saml2",
+                "basic"
+              ]
+            }
+          },
+          "application": {
+            "type": "string",
+            "description": "Empty on a public route."
+          },
+          "authorization": {
+            "$ref": "#/components/schemas/RouteAuthorization"
+          },
+          "identity": {
+            "$ref": "#/components/schemas/RouteIdentity"
+          },
+          "forwardCredentials": {
+            "type": "boolean"
+          },
+          "signals": {
+            "type": "boolean"
+          },
+          "multipleAccounts": {
+            "type": "boolean",
+            "description": "Only with session."
+          },
+          "resolved": {
+            "$ref": "#/components/schemas/RouteResolution"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "path",
+          "match",
+          "methods",
+          "mechanisms",
+          "application",
+          "authorization",
+          "identity",
+          "forwardCredentials",
+          "signals",
+          "multipleAccounts",
+          "resolved"
+        ]
+      },
+      "ProxyDocument": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "upstream": {
+            "type": "string",
+            "description": "An absolute http(s) URL with no userinfo, query or fragment."
+          },
+          "publicBaseUrl": {
+            "type": "string",
+            "description": "An origin or empty; https when any route uses session."
+          },
+          "upstreamTimeoutMs": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 120000,
+            "default": 10000
+          },
+          "maxBodyBytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 104857600,
+            "default": 1048576
+          },
+          "routes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProxyRoute"
+            },
+            "maxItems": 64
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "enabled",
+          "upstream",
+          "publicBaseUrl",
+          "upstreamTimeoutMs",
+          "maxBodyBytes",
+          "routes"
+        ]
+      },
+      "SessionClient": {
+        "type": "object",
+        "properties": {
+          "clientSecret": {
+            "type": "string",
+            "description": "The application client's secret, in the clear: the PEP is its relying party."
+          },
+          "tokenEndpointAuthMethod": {
+            "type": "string",
+            "enum": [
+              "client_secret_basic",
+              "client_secret_post"
+            ]
+          },
+          "redirectUri": {
+            "type": "string"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "clientSecret",
+          "tokenEndpointAuthMethod",
+          "redirectUri",
+          "scopes"
+        ]
+      },
+      "RealmFacts": {
+        "type": "object",
+        "properties": {
+          "issuer": {
+            "type": "string"
+          },
+          "jwksUri": {
+            "type": "string"
+          },
+          "authorizationEndpoint": {
+            "type": "string",
+            "description": "Not read: the PEP discovers it from issuer."
+          },
+          "tokenEndpoint": {
+            "type": "string",
+            "description": "Not read: the PEP discovers it from issuer."
+          },
+          "endSessionEndpoint": {
+            "type": "string",
+            "description": "Not read: the PEP discovers it from issuer."
+          },
+          "samlIssuer": {
+            "type": "string"
+          },
+          "signingCertificates": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "PEM certificates."
+          },
+          "tlsCaChain": {
+            "type": "string",
+            "description": "PEM, leaf to Root."
+          },
+          "clients": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SessionClient"
+            },
+            "description": "By client id: each session route's client."
+          },
+          "serviceCookiePrefixes": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Cookies of the service's the proxy strips upstream; absent or null is the built-in list."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "issuer",
+          "jwksUri",
+          "authorizationEndpoint",
+          "tokenEndpoint",
+          "endSessionEndpoint",
+          "samlIssuer",
+          "signingCertificates",
+          "tlsCaChain",
+          "clients"
+        ]
+      },
+      "ValidationUrls": {
+        "type": "object",
+        "properties": {
+          "introspect": {
+            "type": "string"
+          },
+          "basic": {
+            "type": "string"
+          },
+          "saml": {
+            "type": "string"
+          },
+          "session": {
+            "type": "string"
+          },
+          "identity": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "introspect",
+          "basic",
+          "saml",
+          "session",
+          "identity"
+        ]
+      },
+      "ProxyPull": {
+        "type": "object",
+        "properties": {
+          "syncToken": {
+            "type": "string"
+          },
+          "pep": {
+            "type": "string"
+          },
+          "configured": {
+            "type": "boolean"
+          },
+          "note": {
+            "type": "string"
+          },
+          "proxy": {
+            "$ref": "#/components/schemas/ProxyDocument"
+          },
+          "realm": {
+            "$ref": "#/components/schemas/RealmFacts"
+          },
+          "validation": {
+            "$ref": "#/components/schemas/ValidationUrls"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "syncToken",
+          "pep",
+          "configured"
+        ],
+        "description": "configured false: note alone. configured true: proxy, realm and validation. A cluster member gets its cluster's document."
+      },
+      "ManagedSettings": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "resource": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "notifyUrl": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "bias": {
+            "type": "string",
+            "enum": [
+              "deny-biased",
+              "permit-biased"
+            ]
+          },
+          "pip": {
+            "type": "boolean"
+          },
+          "pollIntervalMs": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 86400000
+          },
+          "heartbeatIntervalMs": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 86400000
+          },
+          "backoffMaxMs": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 86400000
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 120000
+          },
+          "maxBodyBytes": {
+            "type": "integer",
+            "minimum": 1024,
+            "maximum": 104857600
+          },
+          "httpsReloadIntervalMs": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 3600000
+          },
+          "logLevel": {
+            "type": "string",
+            "enum": [
+              "trace",
+              "debug",
+              "info",
+              "warn",
+              "error",
+              "fatal"
+            ]
+          },
+          "authzen": {
+            "type": "boolean"
+          },
+          "authzenPdpIdentifier": {
+            "type": "string",
+            "description": "An https origin."
+          },
+          "authzenForwardTimeoutMs": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 120000
+          },
+          "proxySessionRecheckMs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3600000
+          },
+          "proxySessionTtlMs": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 2592000000
+          },
+          "proxyMaxSessions": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000000
+          },
+          "proxyMaxAccounts": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 32
+          },
+          "proxyJwksTtlMs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 86400000
+          },
+          "proxyUpstreamInsecure": {
+            "type": "boolean",
+            "description": "Refused true in product mode."
+          },
+          "proxyRpAllowInsecure": {
+            "type": "boolean",
+            "description": "Refused true in product mode."
+          },
+          "proxySignalsPollMs": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 3600000
+          },
+          "proxySignalsStaleMs": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 86400000
+          },
+          "proxyStripCookies": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "auditEnabled": {
+            "type": "boolean",
+            "description": "PEP_AUDIT: whether this PEP sends its decision records to the service's audit log (#1827)."
+          },
+          "auditIntervalMs": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 86400000
+          },
+          "auditBatch": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "auditBuffer": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000000
+          }
+        },
+        "additionalProperties": false,
+        "description": "Only the keys an administrator set. A notifyUrl that is not https is held and refused by the PEP."
+      },
+      "ListenerTuning": {
+        "type": "object",
+        "properties": {
+          "minVersion": {
+            "type": "string",
+            "enum": [
+              "TLSv1",
+              "TLSv1.1",
+              "TLSv1.2",
+              "TLSv1.3"
+            ]
+          },
+          "disableTls12": {
+            "type": "boolean"
+          },
+          "ciphers": {
+            "type": "string"
+          },
+          "tls13CipherSuites": {
+            "type": "string"
+          },
+          "pqcOnly": {
+            "type": "boolean"
+          },
+          "groups": {
+            "type": "string"
+          },
+          "signatureAlgorithms": {
+            "type": "string"
+          },
+          "trustAnchorsFile": {
+            "type": "string"
+          },
+          "trustIssuedClientCertificates": {
+            "type": "boolean"
+          },
+          "askClientCertificate": {
+            "type": "boolean"
+          },
+          "requireClientCertificate": {
+            "type": "boolean"
+          },
+          "sessionTimeoutS": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 86400
+          },
+          "sessionCacheSize": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000000
+          },
+          "keepAliveTimeoutS": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3600
+          },
+          "headersTimeoutS": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3600
+          },
+          "maxRequestsPerSocket": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000000
+          },
+          "maxConnections": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000000
+          },
+          "http2": {
+            "type": "boolean"
+          },
+          "http2MaxConcurrentStreams": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "threadPoolMin": {
+            "type": "integer"
+          },
+          "threadPoolMax": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "minVersion",
+          "disableTls12",
+          "ciphers",
+          "tls13CipherSuites",
+          "pqcOnly",
+          "groups",
+          "signatureAlgorithms",
+          "trustAnchorsFile",
+          "trustIssuedClientCertificates",
+          "askClientCertificate",
+          "requireClientCertificate",
+          "sessionTimeoutS",
+          "sessionCacheSize",
+          "keepAliveTimeoutS",
+          "headersTimeoutS",
+          "maxRequestsPerSocket",
+          "maxConnections",
+          "http2",
+          "http2MaxConcurrentStreams",
+          "threadPoolMin",
+          "threadPoolMax"
+        ]
+      },
+      "ListenerDefinition": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._-]{1,64}$",
+            "description": "Not one of the four environment listeners' ids."
+          },
+          "protocol": {
+            "type": "string",
+            "enum": [
+              "http",
+              "https"
+            ]
+          },
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "api",
+              "proxy"
+            ]
+          },
+          "address": {
+            "type": "string",
+            "description": "An IP literal."
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "dnsNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16
+          },
+          "ipAddresses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16
+          },
+          "keyAlg": {
+            "type": "string",
+            "enum": [
+              "ec-p256",
+              "ec-p384",
+              "rsa-2048",
+              "rsa-3072"
+            ],
+            "description": "https only."
+          },
+          "renew": {
+            "type": "integer"
+          },
+          "tuning": {
+            "$ref": "#/components/schemas/ListenerTuning",
+            "description": "The tuning in force, complete."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "protocol",
+          "purpose",
+          "address",
+          "port",
+          "dnsNames",
+          "ipAddresses",
+          "renew",
+          "tuning"
+        ]
+      },
+      "EnvironmentTuning": {
+        "type": "object",
+        "properties": {
+          "api-http": {
+            "$ref": "#/components/schemas/ListenerTuning"
+          },
+          "api-https": {
+            "$ref": "#/components/schemas/ListenerTuning"
+          },
+          "proxy-http": {
+            "$ref": "#/components/schemas/ListenerTuning"
+          },
+          "proxy-https": {
+            "$ref": "#/components/schemas/ListenerTuning"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "api-http",
+          "api-https",
+          "proxy-http",
+          "proxy-https"
+        ]
+      },
+      "SettingsPull": {
+        "type": "object",
+        "properties": {
+          "syncToken": {
+            "type": "string"
+          },
+          "pep": {
+            "type": "string",
+            "description": "Not read by the PEP."
+          },
+          "configured": {
+            "type": "boolean"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/ManagedSettings"
+          },
+          "note": {
+            "type": "string"
+          },
+          "listeners": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ListenerDefinition"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "environmentTuning": {
+            "$ref": "#/components/schemas/EnvironmentTuning"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "syncToken",
+          "pep",
+          "configured"
+        ],
+        "description": "configured false: note; configured true: settings. listeners only when at least one is defined; environmentTuning always, unless the stored listeners failed validation (STS-XACML-0252), when neither is sent."
+      },
+      "ListenerCertificateRequest": {
+        "type": "object",
+        "properties": {
+          "listener": {
+            "type": "string",
+            "description": "A defined https listener of this PEP."
+          },
+          "csr": {
+            "type": "string",
+            "description": "PKCS #10, PEM or base64 DER; its key one of the listener's keyAlg values."
+          },
+          "name": {
+            "type": "string",
+            "description": "Read only when no certificate was presented; the PEP does not send it."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "listener",
+          "csr"
+        ]
+      },
+      "ListenerCertificate": {
+        "type": "object",
+        "properties": {
+          "pep": {
+            "type": "string"
+          },
+          "listener": {
+            "type": "string"
+          },
+          "renew": {
+            "type": "integer"
+          },
+          "issued": {
+            "type": "boolean",
+            "description": "False when the certificate held was answered again."
+          },
+          "serialHex": {
+            "type": "string"
+          },
+          "notBefore": {
+            "type": "string"
+          },
+          "notAfter": {
+            "type": "string"
+          },
+          "replacedSerialHex": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "certificatePem": {
+            "type": "string"
+          },
+          "fullChainPem": {
+            "type": "string",
+            "description": "Leaf to Root, each PEM ending in a newline: the one member the PEP reads."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "pep",
+          "listener",
+          "renew",
+          "issued",
+          "serialHex",
+          "notBefore",
+          "notAfter",
+          "replacedSerialHex",
+          "certificatePem",
+          "fullChainPem"
+        ]
+      },
+      "IntrospectRequest": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16384
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "token"
+        ]
+      },
+      "Introspection": {
+        "type": "object",
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "sub": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "client_id": {
+            "type": "string"
+          },
+          "aud": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "iss": {
+            "type": "string"
+          },
+          "exp": {
+            "type": "number"
+          },
+          "iat": {
+            "type": "number"
+          },
+          "token_type": {
+            "type": "string"
+          },
+          "cnf": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "active"
+        ],
+        "description": "active false alone, or active true with the RFC 7662 members that are not null."
+      },
+      "BasicRequest": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "username",
+          "password"
+        ]
+      },
+      "BasicValidation": {
+        "type": "object",
+        "properties": {
+          "valid": {
+            "type": "boolean"
+          },
+          "username": {
+            "type": "string"
+          },
+          "sub": {
+            "type": "string"
+          },
+          "ticket": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "valid"
+        ],
+        "description": "valid false alone, or valid true with username, sub and a ticket: opaque, bound to this PEP, good for 120 s, the evidence the identity door takes."
+      },
+      "SamlRequest": {
+        "type": "object",
+        "properties": {
+          "assertion": {
+            "type": "string",
+            "maxLength": 524288,
+            "description": "The assertion's XML, base64; at most 262144 bytes decoded."
+          },
+          "audience": {
+            "type": "string",
+            "maxLength": 1024,
+            "description": "The route's resolved.samlAudience."
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "assertion",
+          "audience"
+        ]
+      },
+      "SamlValidation": {
+        "type": "object",
+        "properties": {
+          "valid": {
+            "type": "boolean"
+          },
+          "subject": {
+            "type": "string",
+            "description": "The NameID."
+          },
+          "username": {
+            "type": "string"
+          },
+          "issuer": {
+            "type": "string"
+          },
+          "notOnOrAfter": {
+            "type": "string"
+          },
+          "sessionIndex": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "valid"
+        ],
+        "description": "valid false alone (the reason audited: STS-XACML-0208 to 0213), or valid true with the assertion's subject and its facts."
+      },
+      "SessionRequest": {
+        "type": "object",
+        "properties": {
+          "sid": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "sid"
+        ]
+      },
+      "SessionLiveness": {
+        "type": "object",
+        "properties": {
+          "live": {
+            "type": "boolean"
+          },
+          "sub": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "description": "Only when it differs from username."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "live"
+        ]
+      },
+      "IdentityEvidence": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "access_token",
+              "saml_assertion",
+              "ticket"
+            ]
+          },
+          "value": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 524288
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "value"
+        ]
+      },
+      "IdentityRequest": {
+        "type": "object",
+        "properties": {
+          "route": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "A non-public route of this PEP's own proxy document."
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/IdentityEvidence"
+          },
+          "claims": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "sub",
+                "username",
+                "email",
+                "name",
+                "given_name",
+                "family_name",
+                "groups",
+                "mechanism",
+                "acr",
+                "amr"
+              ]
+            },
+            "maxItems": 16,
+            "description": "headers mode only: claims the route's headers name."
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "route",
+          "evidence"
+        ],
+        "description": "Closed: any other member is 400 STS-XACML-0229."
+      },
+      "IdentityAnswer": {
+        "type": "object",
+        "properties": {
+          "claims": {
+            "type": "object",
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            }
+          },
+          "accessToken": {
+            "type": "string"
+          },
+          "tokenType": {
+            "type": "string",
+            "enum": [
+              "Bearer"
+            ]
+          },
+          "expiresIn": {
+            "type": "integer"
+          },
+          "samlResponse": {
+            "type": "string",
+            "description": "The SAML Response's XML, base64."
+          },
+          "acsUrl": {
+            "type": "string"
+          },
+          "notOnOrAfter": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "description": "By the route's identity.mode. headers: claims (groups and amr are lists; a claim with no value is left out). jwt: accessToken, tokenType and expiresIn. saml: samlResponse, acsUrl and notOnOrAfter."
+      },
+      "PipRequest": {
+        "type": "string",
+        "contentMediaType": "application/xml",
+        "description": "A PIPRequest in urn:sts:xacml:pip:1.0: one XACML 3.0 core Request (urn:oasis:names:tc:xacml:3.0:core:schema:wd-17) whose access-subject category carries subject-id (IncludeInResult true) and, for an application, urn:sts:xacml:subject-kind; then 1 to xacml.pipMaxDesignators (50) AttributeDesignator elements in the core namespace, MustBePresent false. No DOCTYPE or ENTITY.",
+        "x-iya-xml": {
+          "namespace": "urn:sts:xacml:pip:1.0",
+          "root": "PIPRequest"
+        }
+      },
+      "PipResponse": {
+        "type": "string",
+        "contentMediaType": "application/xml",
+        "description": "A PIPResponse in urn:sts:xacml:pip:1.0: one XACML core Attributes per category asked (only access-subject is ever resolved), each Attribute (IncludeInResult false) with one or more AttributeValue; an empty bag is an absent Attribute. Then, if any, Unresolved holding a Designator (Category, AttributeId, DataType, MustBePresent) with a Reason for each designator not resolved.",
+        "x-iya-xml": {
+          "namespace": "urn:sts:xacml:pip:1.0",
+          "root": "PIPResponse"
+        }
+      },
+      "PipError": {
+        "type": "string",
+        "contentMediaType": "application/xml",
+        "description": "<PIPError xmlns=\"urn:sts:xacml:pip:1.0\" error=\"invalid_request|too_many_requests|access_denied|not_implemented\"><Description>…</Description></PIPError>",
+        "x-iya-xml": {
+          "namespace": "urn:sts:xacml:pip:1.0",
+          "root": "PIPError"
+        }
+      }
+    }
+  },
+  "paths": {
+    "/xacml/pep/register": {
+      "post": {
+        "operationId": "postRegister",
+        "summary": "Register, or register again",
+        "description": "The PEP registers on every poll until this answers 200 or 201. With xacml.pepRequireCertificate (the default) a certificate is required: a plain socket is 401 STS-XACML-0017, TLS with no certificate 0018.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Registered again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Registered"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Registered for the first time.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Registered"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No usable name (STS-XACML-0019) or a bad hostname (0261): invalid_request. Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No certificate (STS-XACML-0017, 0018): invalid_client; or the token door refused the credential (see the dpop scheme), with a DPoP challenge.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The gate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body over the 5 MB the service reads (STS-HTTP-0004), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "A body in a character set or content encoding the service does not read (STS-HTTP-0012), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: too_many_requests, Retry-After 60.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TooManyRequests"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "XACML or remote PEPs off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "No embedded directory in this process (STS-XACML-0026): server_error; a later attempt can succeed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "The directory refused the entry: ou=peps holds xacml.maxPeps, or the directory its entry cap (STS-XACML-0027): server_error, until an operator makes room.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/xacml/pep/heartbeat": {
+      "post": {
+        "operationId": "postHeartbeat",
+        "summary": "Report what this PEP holds and does",
+        "description": "Every PEP_HEARTBEAT_INTERVAL_MS: the policy held, the decision counters, the settings in force, the reverse proxy's receivers and the listeners.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HeartbeatRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Acknowledged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeartbeatAnswer"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No name (STS-XACML-0020) or a bad hostname (0261). Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "DPoP-Nonce": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The gate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not registered (STS-XACML-0021).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body over the 5 MB the service reads (STS-HTTP-0004), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "A body in a character set or content encoding the service does not read (STS-HTTP-0012), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: too_many_requests, Retry-After 60.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TooManyRequests"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "XACML or remote PEPs off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "No embedded directory in this process (STS-XACML-0026): server_error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "The directory refused the write (STS-XACML-0027): server_error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/xacml/pep/policies": {
+      "get": {
+        "operationId": "getPolicies",
+        "summary": "Pull the policy repository",
+        "description": "Every PEP_POLL_INTERVAL_MS, on a nudge, and when a heartbeat says the PEP is not current.",
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "description": "The token held; equal to the current one answers 304.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "description": "The ETag held; a match (weak comparison, a list, or *) answers 304.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pep",
+            "in": "query",
+            "required": false,
+            "description": "The register name, read only when no certificate was presented; with one, the certificate's name (as register's) is the row whose last-seen time a pull touches, whatever this says.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The policies. ETag: \"<syncToken>\".",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicySet"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unchanged. ETag.",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "DPoP-Nonce": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The gate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: too_many_requests, Retry-After 60.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TooManyRequests"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "XACML or remote PEPs off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/xacml/pep/authzen-catalogue": {
+      "get": {
+        "operationId": "getAuthzenCatalogue",
+        "summary": "Pull the realm's AuthZEN attribute catalogue",
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "description": "The ETag held; a match (weak comparison, a list, or *) answers 304.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The catalogue. ETag.",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthzenCatalogue"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unchanged. ETag.",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "DPoP-Nonce": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The gate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: too_many_requests, Retry-After 60.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TooManyRequests"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The fine-grained authorization applications could not be read (STS-FGA-0108); answered before since or If-None-Match is compared.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "XACML or remote PEPs off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/xacml/pep/authzen-callers": {
+      "get": {
+        "operationId": "getAuthzenCallers",
+        "summary": "Pull who may ask the AuthZEN edge PDP",
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "description": "The ETag held; a match (weak comparison, a list, or *) answers 304.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The callers. ETag.",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthzenCallers"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unchanged. ETag.",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "DPoP-Nonce": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The gate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: too_many_requests, Retry-After 60.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TooManyRequests"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "XACML or remote PEPs off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/xacml/pep/proxy": {
+      "get": {
+        "operationId": "getProxy",
+        "summary": "Pull the reverse proxy's configuration",
+        "description": "Pulled only while PEP_PROXY is on.",
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "required": false,
+            "description": "Read only when no certificate was presented; the PEP does not send it.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "description": "The ETag held; a match (weak comparison, a list, or *) answers 304.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The configuration. ETag.",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProxyPull"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unchanged. ETag.",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "DPoP-Nonce": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The gate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: too_many_requests, Retry-After 60.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TooManyRequests"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "XACML or remote PEPs off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/xacml/pep/settings": {
+      "get": {
+        "operationId": "getSettings",
+        "summary": "Pull the managed settings and listeners",
+        "description": "A 404 is a service older than #1760: the PEP puts its environment in force (STS-XPEP-0101).",
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "required": false,
+            "description": "Read only when no certificate was presented; the PEP does not send it.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "description": "The ETag held; a match (weak comparison, a list, or *) answers 304.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The settings. ETag.",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsPull"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unchanged. ETag.",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "DPoP-Nonce": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The gate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: too_many_requests, Retry-After 60.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TooManyRequests"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "XACML or remote PEPs off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/xacml/pep/listener-certificate": {
+      "post": {
+        "operationId": "postListenerCertificate",
+        "summary": "Have a defined HTTPS listener's certificate issued",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ListenerCertificateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Issued, or the one held.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListenerCertificate"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not a defined https listener of this PEP (STS-XACML-0253), or a bad CSR or key (0254). Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "DPoP-Nonce": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The gate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not registered (STS-XACML-0253).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body over the 5 MB the service reads (STS-HTTP-0004), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "A body in a character set or content encoding the service does not read (STS-HTTP-0012), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: too_many_requests, Retry-After 60.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TooManyRequests"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Issuance failed (STS-XACML-0255).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "XACML or remote PEPs off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/xacml/pep/introspect": {
+      "post": {
+        "operationId": "postIntrospect",
+        "summary": "Validation door: an access token (RFC 7662)",
+        "description": "The oauth2 mechanism, after the PEP's own JWS check. Rate-limited per address and DN by xacml.pipMaxPerWindow (429 STS-XACML-0215, Retry-After) before the gate; any throw is 500 STS-XACML-0216.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IntrospectRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The token's reading.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Introspection"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No token, or too long (STS-XACML-0207). Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "DPoP-Nonce": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The gate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body over the 5 MB the service reads (STS-HTTP-0004), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "A body in a character set or content encoding the service does not read (STS-HTTP-0012), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The limiter (STS-XACML-0215). Or over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: Retry-After 60.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TooManyRequests"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "STS-XACML-0216.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "XACML or remote PEPs off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/xacml/pep/basic": {
+      "post": {
+        "operationId": "postBasic",
+        "summary": "Validation door: a username and password",
+        "description": "The basic mechanism. The same limiter and failure as introspect; a password the service has locked out is 429 too (STS-XACML-0205), the same body as the limiter's.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BasicRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Valid or not; the reason is audited (STS-XACML-0206).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BasicValidation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed (STS-XACML-0204). Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "DPoP-Nonce": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The gate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body over the 5 MB the service reads (STS-HTTP-0004), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "A body in a character set or content encoding the service does not read (STS-HTTP-0012), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Locked out (STS-XACML-0205), or the limiter (0215): one shape either way. Retry-After. Or over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: Retry-After 60.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TooManyRequests"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "STS-XACML-0216.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "XACML or remote PEPs off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/xacml/pep/saml": {
+      "post": {
+        "operationId": "postSaml",
+        "summary": "Validation door: a SAML 2.0 assertion",
+        "description": "The saml2 mechanism, after the PEP's own check. The same limiter and failure as introspect.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SamlRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Valid or not.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SamlValidation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed (STS-XACML-0208). Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "DPoP-Nonce": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The gate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body over the 5 MB the service reads (STS-HTTP-0004), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "A body in a character set or content encoding the service does not read (STS-HTTP-0012), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The limiter (STS-XACML-0215). Or over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: Retry-After 60.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TooManyRequests"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "STS-XACML-0216.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "XACML or remote PEPs off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/xacml/pep/session": {
+      "post": {
+        "operationId": "postSession",
+        "summary": "Validation door: is a sign-on session live",
+        "description": "The session mechanism, every PEP_PROXY_SESSION_RECHECK_MS when no signal says. The same limiter and failure as introspect.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Live or ended.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionLiveness"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed (STS-XACML-0214). Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "DPoP-Nonce": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The gate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body over the 5 MB the service reads (STS-HTTP-0004), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "A body in a character set or content encoding the service does not read (STS-HTTP-0012), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The limiter (STS-XACML-0215). Or over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: Retry-After 60.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TooManyRequests"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "STS-XACML-0216.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "XACML or remote PEPs off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/xacml/pep/identity": {
+      "post": {
+        "operationId": "postIdentity",
+        "summary": "Validation door: the identity to deliver upstream",
+        "description": "For a route's identity.mode: the claims for its headers, a service-issued access token, or a SAML Response for the application's ACS. The same limiter and failure as introspect.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdentityRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The identity.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityAnswer"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed, or claims the route does not name (STS-XACML-0229). Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "DPoP-Nonce": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The gate; not one of this PEP's non-public routes (STS-XACML-0230); the evidence invalid or not for the application (0231); the ticket unknown, expired or another PEP's (0232); the issuance policy refused (0234).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body over the 5 MB the service reads (STS-HTTP-0004), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "A body in a character set or content encoding the service does not read (STS-HTTP-0012), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The route not usable, no SAML entity ID or no directory entry (STS-XACML-0233); issuance failed (0235).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The limiter (STS-XACML-0215). Or over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: Retry-After 60.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TooManyRequests"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "STS-XACML-0216.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "XACML or remote PEPs off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/xacml/pip": {
+      "post": {
+        "operationId": "postPip",
+        "summary": "The policy information point",
+        "description": "Before evaluation the PEP walks the policy for every designator it could be asked about and fetches them all in one request; the answer feeds a synchronous resolver. A subject homed in another cell is relayed there and answered by it. Rate-limited (xacml.pipMaxPerWindow) before the gate. The PEP reads no refusal: any status but 200 is an empty bag for every designator.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/xml": {
+              "schema": {
+                "$ref": "#/components/schemas/PipRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The attributes. Cache-Control: no-store.",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not a well-formed PIPRequest (STS-XACML-0023), too many designators (0024), a value too long (0025). Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate, the body a PIPError.",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "DPoP-Nonce": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The gate (the codes in the document's description), error=\"access_denied\".",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body over the 5 MB the service reads (STS-HTTP-0004), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipError"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "A body in a character set or content encoding the service does not read (STS-HTTP-0012), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The limiter (STS-XACML-0022). Retry-After. Or over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: Retry-After 60.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipError"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "XACML or remote PEPs off (STS-XACML-0001, 0002), error=\"not_implemented\".",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

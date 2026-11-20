@@ -42,10 +42,22 @@
 //      default in force, and a certificate authority build naming SHA-1 is
 //      refused.
 //
-// What no HTTP request reaches without a partner — a SHA-1 signature
-// presented to the verifier, an rsa-1_5 EncryptedKey unwrapped, an assertion
-// built under an application's override, the KDC's own clock — is asserted in
-// process by `tests/mode_weak_settings.js`.
+//   4. THE CODES BEHIND TWO OF THEM (D12, #444: carries over the
+//      over-the-wire half of tests/mode_weak_settings.js B). A SHA-1 XML
+//      signature presented to the RFC 7522 token endpoint — an assertion a
+//      person signed with RSA-SHA1 over a SHA-1 digest — is refused before
+//      any cryptography with saml.allowSha1Signatures off, its sentence
+//      saying so (the door records its own STS-OAUTH-0067; the verifier's
+//      STS-KEYS-0062 reaches no audit row), accepted in development with it
+//      on, and refused again in product with it still on; a certificate
+//      authority build naming sha1-rsa is accepted in development and
+//      refused in product (STS-PKI-0191 on the audit row).
+//
+// What no HTTP request reaches without a partner — an rsa-1_5 EncryptedKey
+// unwrapped (STS-KEYS-0070, a LogoutRequest's EncryptedID: the SAML
+// encryption family's to carry), an assertion built under an application's
+// override, the KDC's own clock — is asserted in process by
+// `tests/mode_weak_settings.js`.
 //
 // OWNED HERE (local: true).
 // ---------------------------------------------------------------------------
@@ -53,6 +65,8 @@
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
+const nodeCrypto = require("crypto");
+const signer = require("./saml_xmldsig.js");
 const signin = require("./console_signin");
 
 var appconfig;
@@ -366,6 +380,191 @@ async function writeDoors() {
   log.debug("Leaving writeDoors().");
 }
 
+// The newest audit sequence number of a realm, and the codes recorded after
+// one; a response carries no code.
+async function newestAt(realm) {
+  log.debug("Entering newestAt().");
+  const r = await call("GET", realmBase(realm) + "/admin-api/audit?per=1");
+  log.debug("Leaving newestAt().");
+  // BY TIME (#465): `seq` is unique across processes and rises within
+  // each, but it is not one order across them, so a row a request worker
+  // numbered from a lower block than the newest row here would be missed.
+  // A reader resumes by `at`, as the audit API says.
+  const newest = (r.json && r.json.events && r.json.events[0]) || {};
+  return newest.at || 0;
+}
+
+async function codesSince(realm, since, wanted) {
+  log.debug("Entering codesSince().");
+  let found = [];
+  for (let i = 0; i < 20; i += 1) {
+    const r = await call("GET", realmBase(realm) +
+                         "/admin-api/audit?per=200");
+    found = ((r.json && r.json.events) || []).filter(function (row) {
+      return row.at > since && row.errorCode;
+    }).map(function (row) {
+      return row.errorCode;
+    });
+    if (found.indexOf(wanted) >= 0) {
+      break;
+    }
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 150);
+    });
+  }
+  log.debug("Leaving codesSince(). " + found.join(","));
+  return found;
+}
+
+// An assertion signed RSA-SHA1 over a SHA-1 digest: `saml_xmldsig.js`'s
+// signature with the two algorithms SHA-1's, by hand, so the signature is
+// real and only the algorithm is at issue.
+function signSha1(built, privateKeyPem, certPem) {
+  log.debug("Entering signSha1().");
+  const DS = "http://www.w3.org/2000/09/xmldsig#";
+  const EXC = "http://www.w3.org/2001/10/xml-exc-c14n#";
+  const digest = nodeCrypto.createHash("sha1")
+    .update(Buffer.from(built.xml, "utf8")).digest("base64");
+  const signedInfo = "<ds:SignedInfo xmlns:ds=\"" + DS + "\">" +
+    "<ds:CanonicalizationMethod Algorithm=\"" + EXC + "\"></ds:" +
+    "CanonicalizationMethod><ds:SignatureMethod Algorithm=\"" + DS +
+    "rsa-sha1\"></ds:SignatureMethod><ds:Reference URI=\"#" + built.id +
+    "\"><ds:Transforms><ds:Transform Algorithm=\"" + DS +
+    "enveloped-signature\"></ds:Transform><ds:Transform Algorithm=\"" +
+    EXC + "\"></ds:Transform></ds:Transforms><ds:DigestMethod Algorithm=" +
+    "\"" + DS + "sha1\"></ds:DigestMethod><ds:DigestValue>" + digest +
+    "</ds:DigestValue></ds:Reference></ds:SignedInfo>";
+  const value = nodeCrypto.sign("sha1", Buffer.from(signedInfo, "utf8"),
+                                privateKeyPem).toString("base64");
+  const keyInfo = "<ds:KeyInfo><ds:X509Data><ds:X509Certificate>" +
+    String(certPem).replace(/-----[^-]+-----/g, "").replace(/\s+/g, "") +
+    "</ds:X509Certificate></ds:X509Data></ds:KeyInfo>";
+  const signature = "<ds:Signature xmlns:ds=\"" + DS + "\">" + signedInfo +
+    "<ds:SignatureValue>" + value + "</ds:SignatureValue>" + keyInfo +
+    "</ds:Signature>";
+  const marker = "</saml:Issuer>";
+  const at = built.xml.indexOf(marker) + marker.length;
+  log.debug("Leaving signSha1().");
+  return built.xml.slice(0, at) + signature + built.xml.slice(at);
+}
+
+async function sha1Grant(realm, person, issued) {
+  log.debug("Entering sha1Grant().");
+  const endpoint = realmBase(realm) + "/oauth2/token";
+  const built = signer.buildAssertion({ issuer: person, subject: person,
+                                        audience: endpoint,
+                                        recipient: endpoint });
+  const r = await call("POST", endpoint, new URLSearchParams({
+    grant_type: "urn:ietf:params:oauth:grant-type:saml2-bearer",
+    assertion: signer.b64u(signSha1(built, issued.privateKeyPem,
+                                    issued.certificatePem)) }).toString(),
+    { "Content-Type": "application/x-www-form-urlencoded" });
+  log.debug("Leaving sha1Grant().");
+  return r;
+}
+
+async function theCodes() {
+  log.debug("Entering theCodes().");
+  log.info("=== 4. the codes behind a SHA-1 signature and a SHA-1 CA ===");
+  const SHA = ("weakmode-s-" + STAMP).toLowerCase().replace(/[^a-z0-9-]/g, "")
+    .slice(0, 31);
+  const CA = ("weakmode-c-" + STAMP).toLowerCase().replace(/[^a-z0-9-]/g, "")
+    .slice(0, 31);
+  // BOTH START IN DEVELOPMENT, SAID SO (run #300): each half asserts the
+  // development answer first and then puts its realm in product, so in a
+  // product process a realm made without the override would be product
+  // from the start and refuse saml.allowSha1Signatures — setUp()'s DEV
+  // realm says it the same way.
+  for (const id of [SHA, CA]) {
+    await ok(base + "/admin-api/realms/create", { id: id,
+      domain: id + ".example.net", name: "Weak settings " + STAMP,
+      overrides: { "global.mode": "development" } },
+      "created the realm " + id);
+  }
+  try {
+    await sha1Codes(SHA, CA);
+  } finally {
+    // REMOVED ONLY WHEN ASKED (STS_TEST_REMOVE_REALMS=1, a hand run against
+    // a long-lived probe): tests/CLAUDE.md's *No job removes a realm* is the
+    // rule for a shared run.
+    if (process.env.STS_TEST_REMOVE_REALMS === "1") {
+      for (const id of [SHA, CA]) {
+        await call("POST", base + "/admin-api/realms/remove", { id: id });
+      }
+    }
+  }
+  log.debug("Leaving theCodes().");
+}
+
+async function sha1Codes(SHA, CA) {
+  log.debug("Entering sha1Codes().");
+  const PERSON = "weak-sha1-signer";
+  await ok(realmBase(SHA) + "/admin-api/pki/build",
+           { organisation: "Weak settings", country: "US" },
+           "built a certificate authority");
+  await ok(realmBase(SHA) + "/admin-api/users/create", { username: PERSON,
+    invent: false, credential: "none", attributes: { cn: PERSON,
+      sn: "Signer", givenName: "Weak", mail: PERSON + "@" + SHA +
+      ".example.net" } }, "created the signer");
+  const issued = await ok(realmBase(SHA) + "/admin-api/pki/issue",
+    { identifier: PERSON, target: "person", purpose: "saml",
+      keyAlg: "rsa-2048" }, "issued an RFC 7522 key pair");
+  let since = await newestAt(SHA);
+  const off = await sha1Grant(SHA, PERSON, issued);
+  // OBSERVED: the grant records its own code, STS-OAUTH-0067 (no
+  // signature verified), and the sentence carries the verifier's reason;
+  // STS-KEYS-0062 itself is not on an audit row of this door.
+  const offCodes = await codesSince(SHA, since, "STS-OAUTH-0067");
+  check("development, saml.allowSha1Signatures off: a SHA-1 signature is " +
+        "refused before it is verified, saying why (STS-OAUTH-0067 on the " +
+        "audit row)", function () {
+    assert.strictEqual(off.status, 400, off.text.slice(0, 300));
+    assert.strictEqual(off.json.error, "invalid_grant");
+    assert.ok(/uses SHA-1/.test(off.json.error_description) &&
+              /saml\.allowSha1Signatures is off/
+                .test(off.json.error_description), off.text.slice(0, 400));
+    assert.ok(offCodes.indexOf("STS-OAUTH-0067") >= 0, offCodes.join(","));
+  });
+  await setting(SHA, "saml.allowSha1Signatures", true);
+  const on = await sha1Grant(SHA, PERSON, issued);
+  check("development, with it on: the same assertion is accepted",
+        function () {
+    assert.strictEqual(on.status, 200, on.text.slice(0, 300));
+    assert.ok(on.json.access_token);
+  });
+  await setting(SHA, "global.mode", "product");
+  since = await newestAt(SHA);
+  const product = await sha1Grant(SHA, PERSON, issued);
+  const productCodes = await codesSince(SHA, since, "STS-OAUTH-0067");
+  check("product, saml.allowSha1Signatures still on: refused again for " +
+        "SHA-1 (STS-OAUTH-0067)", function () {
+    assert.strictEqual(product.status, 400, product.text.slice(0, 300));
+    assert.ok(/uses SHA-1/.test(product.json.error_description),
+              product.text.slice(0, 400));
+    assert.ok(productCodes.indexOf("STS-OAUTH-0067") >= 0,
+              productCodes.join(","));
+  });
+
+  const devBuild = await call("POST", realmBase(CA) + "/admin-api/pki/build",
+    { keyAlg: "rsa-2048", signatureAlg: "sha1-rsa" });
+  check("development: a certificate authority may be built naming sha1-rsa",
+        function () {
+    assert.strictEqual(devBuild.status, 200, devBuild.text.slice(0, 300));
+  });
+  await setting(CA, "global.mode", "product");
+  since = await newestAt(CA);
+  const prodBuild = await call("POST", realmBase(CA) +
+    "/admin-api/pki/build", { keyAlg: "rsa-2048", signatureAlg: "sha1-rsa" });
+  const buildCodes = await codesSince(CA, since, "STS-PKI-0191");
+  check("product: a build naming sha1-rsa is refused (STS-PKI-0191 on the " +
+        "audit row)", function () {
+    assert.strictEqual(prodBuild.status, 400, prodBuild.text.slice(0, 300));
+    assert.ok(buildCodes.indexOf("STS-PKI-0191") >= 0, buildCodes.join(","));
+    assert.ok(prodBuild.text.indexOf("STS-") < 0, "a code was sent");
+  });
+  log.debug("Leaving sha1Codes().");
+}
+
 async function readSites() {
   log.debug("Entering readSites().");
   log.info("=== 3. the read sites, in development and then in product ===");
@@ -452,6 +651,7 @@ async function test() {
   await theRoutes();
   await writeDoors();
   await readSites();
+  await theCodes();
   assert.ok(checks >= FLOOR, "only " + checks + " checks ran; a section has " +
             "stopped being called.");
   log.info(checks + " check(s) passed.");

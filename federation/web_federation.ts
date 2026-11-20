@@ -33,6 +33,9 @@
 
 import kit = require('../admin-ui/web_kit');
 import SettingsForms = require('../admin-ui/web_settings');
+// THE PICTURE'S LAYOUT, IN THE BROWSER (#444 phase 2b, 2026-11-14): the code
+// the server draws the answer's `svg` with, bundled with dagre.
+import FederationDiagram = require('../admin-ui/web_federation_diagram');
 
 type Json = any;
 
@@ -130,8 +133,13 @@ class FederationPage {
       t.html('consoleFederation.pictureNote')) +
       // The list is the page's first tab (2026-10-12); the tiles, the caveat
       // and the picture's link above it are Metadata.
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): a tab's
+      // heading stays at the top level, where `protocolTabs()` cuts, and what
+      // follows it is the frame; the two unmarked sections after the tabs,
+      // Metadata's, are metadata frames.
       '<h2 data-tab="relationships">' +
       t.html('consoleFederation.headingRelationships') + '</h2>' +
+      kit.frame(
       '<form method="get" action="/admin/federation"><div class="formrow">' +
       '<label for="q">' + t.html('consoleFederation.labelRelationship') +
       '</label>' +
@@ -169,10 +177,11 @@ class FederationPage {
         ((wantedText || wantedRole || wantedCategory)
           ? t.html('consoleFederation.noneMatches')
           : t.html('consoleFederation.noneConfigured')) + '</td></tr>') +
-      '</table>' + nav.foot +
+      '</table>' + nav.foot) +
       FederationPage.consumerSection(json.consumerProviders, t) +
       FederationPage.federationCreateForm(json.roles, json.protocols, t) +
-      '<h2>' + t.html('consoleFederation.headingTwoDirections') + '</h2>' +
+      kit.metadataFrame('<h2>' +
+      t.html('consoleFederation.headingTwoDirections') + '</h2>' +
       '<table><tr><th>' + t.html('consoleFederation.thThisServiceIs') +
       '</th><th>' + t.html('consoleFederation.thWhatItMeans') +
       '</th></tr>' +
@@ -181,8 +190,9 @@ class FederationPage {
                kit.esc(one.what) +
                '</td></tr>';
       }).join('') + '</table>' +
-      kit.note(t.html('consoleFederation.oneDirection')) +
-      '<h2>' + t.html('consoleFederation.headingFiveProtocols') +
+      kit.note(t.html('consoleFederation.oneDirection'))) +
+      kit.metadataFrame('<h2>' +
+      t.html('consoleFederation.headingFiveProtocols') +
       '</h2><table><tr><th>' + t.html('consoleFederation.thProtocol') +
       '</th><th>' + t.html('consoleFederation.thWhatHappens') +
       '</th><th>' + t.html('consoleFederation.thSpecification') +
@@ -192,7 +202,7 @@ class FederationPage {
                kit.esc(one.what) +
           '</td><td ' +
           'class="sub">' + kit.esc(one.spec) + '</td></tr>';
-      }).join('') + '</table>' +
+      }).join('') + '</table>') +
       // The federation.* rows (fifteen as of 2026-09-16), on the page that
       // configures the feature. `federation.enabled` and `federation.outbound`
       // are the two that turn halves of it off, and a person reading a
@@ -286,9 +296,11 @@ class FederationPage {
         kit.esc(p.protocol) + '</td><td>' + kit.esc(p.note) + '</td><td>' +
         docs + '</td><td>' + form + '</td></tr>';
     }).join('');
+    // The tab's heading at the top level, its content a frame (`secframe`,
+    // rcbj 2026-11-16).
     return '<h2 data-tab="consumer">' +
       t.html('consoleFederation.headingConsumer') + '</h2>' +
-      kit.note(view.on ? t.html('consoleFederation.consumerOn')
+      kit.frame(kit.note(view.on ? t.html('consoleFederation.consumerOn')
                        : t.html('consoleFederation.consumerOff')) +
       kit.note(t.html('consoleFederation.consumerWhat')) +
       '<p><a href="/admin/federation?category=consumer">' +
@@ -298,7 +310,7 @@ class FederationPage {
       t.html('consoleFederation.thWhatItIs') + '</th><th>' +
       t.html('consoleFederation.thDocumentation') + '</th><th>' +
       t.html('consoleFederation.thAddOne') + '</th></tr>' + rows +
-      '</table>';
+      '</table>');
   }
 
   /**
@@ -310,9 +322,11 @@ class FederationPage {
    * @returns the form as HTML
    */
   static federationCreateForm(roles, protocols, t) {
+    // The tab's heading at the top level, its content a frame (`secframe`,
+    // rcbj 2026-11-16).
     return '<h2 data-tab="add">' + t.html('consoleFederation.headingAdd') +
       '</h2>' +
-      kit.note(t.html('consoleFederation.createdDisabled')) +
+      kit.frame(kit.note(t.html('consoleFederation.createdDisabled')) +
       '<form method="post" action="/admin/federation"><div ' +
       'class="formrow"><input type="hidden" name="action" ' +
       'value="create"><label for="fedid">' +
@@ -343,7 +357,7 @@ class FederationPage {
       kit.esc(t.text('consoleFederation.peerPlaceholder')) + '"><button ' +
       'type="submit">' + t.html('consoleFederation.buttonAdd') +
       '</button></div></form>' +
-      kit.note(t.html('consoleFederation.idRules'));
+      kit.note(t.html('consoleFederation.idRules')));
   }
 
   /**
@@ -473,7 +487,7 @@ class FederationPage {
                                        kit.pageParamsOf(ctx.query),
                                        json.linksPaging);
       const linkedSection = row.role !== 'service-provider' ? ''
-        : '<h2 id="linked-people">' +
+        : kit.frame('<h2 id="linked-people">' +
           t.html('consoleFederation.headingLinkedPeople') + '</h2>' +
           (row.signsIn
             ? kit.note(t.html('consoleFederation.linkedSignsIn',
@@ -494,7 +508,7 @@ class FederationPage {
                   kit.esc(one.subject) + '</code></td></tr>';
               }).join('') + '</table>'
             : kit.note(t.html('consoleFederation.nobodyLinked'))) +
-          linkNav.foot;
+          linkNav.foot);
 
       // An `ssf` relationship (#374) has no sign-in to switch; its two
       // signals switches are in its Shared Signals section.
@@ -506,10 +520,11 @@ class FederationPage {
              'fedSignRequest', 'fedAcceptSignout', 'fedRequireSignedLogout']
               .concat(json.encrypts ? ['fedAllowUnencrypted'] : [])
               // OpenID Connect's discovery and partner-started sign-in
-              // (#930), both off by default.
+              // (#930), both off by default, and whether UserInfo is
+              // asked (#931's third run), on by default.
               .concat(row.protocol === 'oidc'
                 ? ['fedDiscovery', 'fedInitiateLogin', 'fedRefreshTokens',
-                   'fedRegister', 'fedWebFinger']
+                   'fedRegister', 'fedWebFinger', 'fedUserinfo']
                 : [])
           : []).map(function (name) {
         const field = json.schema.filter(
@@ -525,7 +540,8 @@ class FederationPage {
           ? json.autocreateDefault !== false
           : (name === 'fedUpdateUserAttributes' ||
              name === 'fedAcceptSignout' ||
-             name === 'fedRequireSignedLogout');
+             name === 'fedRequireSignedLogout' ||
+             name === 'fedUserinfo');
         const on = FederationPage.boolOf(record[name], dflt);
         // TRUE and FALSE are the attribute's own values, not words.
         return '<tr><td><code>' + kit.esc(name) + '</code></td>' +
@@ -549,7 +565,9 @@ class FederationPage {
 
       const multiSections = multiFields.map(function (field) {
         const values = record[field.name] || [];
-        return '<h3><code>' + kit.esc(field.name) + '</code></h3>' +
+        // Each list a frame inside the Lists section's (`secframe`, rcbj
+        // 2026-11-16), the unmapped names one beside it.
+        return kit.frame('<h3><code>' + kit.esc(field.name) + '</code></h3>' +
           kit.note(kit.esc(field.what)) +
           (values.length
             ? '<table><tr><th>' + t.html('consoleFederation.thValue') +
@@ -589,7 +607,7 @@ class FederationPage {
                ? t.text('consoleFederation.releasePlaceholder') :
                t.text('consoleFederation.valuePlaceholder'))) + '"><button ' +
           'type="submit">' + t.html('consoleFederation.buttonAdd') +
-          '</button></div></form>' +
+          '</button></div></form>') +
           (field.name === 'fedAttributeMap'
             ? FederationPage.federationUnmappedSection(row,
               json.unmappedAttributes || [],
@@ -623,7 +641,10 @@ class FederationPage {
             t.html('consoleFederation.enabledNotConfiguredWarn',
                    { missing: row.missing.join(', ') }) + '</p>'
           : '') +
-        '<table><tr><th>' + t.html('consoleFederation.thWhat') +
+        // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the facts
+        // table, and then each h2 section, is a frame; the caveat and the
+        // links at the foot are not.
+        kit.frame('<table><tr><th>' + t.html('consoleFederation.thWhat') +
         '</th><th>' + t.html('consoleFederation.thValue') + '</th></tr>' +
         '<tr><td>' + t.html('consoleFederation.thThisServiceIs') +
         '</td><td>' + kit.esc(row.roleLabel) +
@@ -670,12 +691,13 @@ class FederationPage {
           '</td></tr>' +
         '<tr><td>' + t.html('consoleFederation.directoryEntry') +
         '</td><td class="who"><code>' + kit.esc(row.dn) +
-        '</code></td></tr></table>' +
+        '</code></td></tr></table>') +
         (row.role === 'service-provider' && !row.signsIn
           ? FederationPage.federationSignalsSection(row, record, json,
             carryBack, t)
           : row.role === 'service-provider'
-          ? '<h2>' + t.html('consoleFederation.headingConfigureAtPartner') +
+          ? kit.frame('<h2>' +
+            t.html('consoleFederation.headingConfigureAtPartner') +
             '</h2>' +
             kit.note(t.html('consoleFederation.configureAtPartnerNote')) +
             '<table><tr><th>' + t.html('consoleFederation.thWhatTheyNeed') +
@@ -757,9 +779,12 @@ class FederationPage {
                         management: json.encryption.policy.management }) +
                     '</td></tr>')
               : '') +
-            '</table>' +
+            '</table>') +
             (json.encryption ? FederationPage.federationEncryptionSection(row,
                                  json.encryption, carryBack, t) : '') +
+            (json.clientCertificate
+              ? FederationPage.federationClientCertificateSection(
+                  json.clientCertificate, t) : '') +
             kit.note('<a class="btn" href="' + kit.esc(login) +
                       '">' + t.html('consoleFederation.startSignIn') +
             '</a> ' + (row.usable ? '' : '<span class="sub">' +
@@ -767,7 +792,8 @@ class FederationPage {
             // THE SAME PARTNER AS A TRANSMITTER (#373).
             FederationPage.federationSignalsSection(row, record, json,
               carryBack, t)
-          : '<h2>' + t.html('consoleFederation.headingWhatItDoes') + '</h2>' +
+          : kit.frame('<h2>' +
+            t.html('consoleFederation.headingWhatItDoes') + '</h2>' +
             kit.note(t.html('consoleFederation.whatItDoesNote')) +
             // The sentence is split at its two links, which sit inside the
             // bold opening.
@@ -777,16 +803,18 @@ class FederationPage {
             'href="/admin/saml-attributes">' +
             t.html('consoleFederation.customSamlAttributes') + '</a>' +
             t.html('consoleFederation.releaseOnlyB') + '</strong>' +
-            t.html('consoleFederation.releaseOnlyC')) +
+            t.html('consoleFederation.releaseOnlyC'))) +
             // WHAT THIS SERVICE TELLS THE PARTNER (#373).
             FederationPage.federationOutboundSection(json.outboundSignals,
                                                      t)) +
-        '<h2>' + t.html('consoleFederation.headingSettings') + '</h2>' +
+        kit.frame('<h2>' + t.html('consoleFederation.headingSettings') +
+        '</h2>' +
         '<table><tr><th>' + t.html('consoleFederation.thField') +
         '</th><th>' + t.html('consoleFederation.thValue') + '</th><th>' +
         t.html('consoleFederation.thWhatItIs') + '</th></tr>' +
         fieldRows +
-        '</table><h2>' + t.html('consoleFederation.headingSwitches') +
+        '</table>') +
+        kit.frame('<h2>' + t.html('consoleFederation.headingSwitches') +
         '</h2><table><tr><th>' + t.html('consoleFederation.thField') +
         '</th><th>' + t.html('consoleFederation.thNow') + '</th><th>' +
         '</th>' +
@@ -812,11 +840,13 @@ class FederationPage {
             '"> <button type="submit">' +
             t.html('consoleFederation.actRegisterPartner') +
             '</button></form>'
-          : '') +
-        '<h2>' + t.html('consoleFederation.headingLists') + '</h2>' +
-        multiSections +
+          : '')) +
+        kit.frame('<h2>' + t.html('consoleFederation.headingLists') +
+        '</h2>' +
+        multiSections) +
         linkedSection +
-        '<h2>' + t.html('consoleFederation.headingDelete') + '</h2>' +
+        kit.frame('<h2>' + t.html('consoleFederation.headingDelete') +
+        '</h2>' +
         '<form method="post" action="/admin/federation"><div class="formrow">' +
         carryBack +
         '<input type="hidden" name="action" value="delete">' +
@@ -827,7 +857,8 @@ class FederationPage {
         t.html('consoleFederation.deleteNote',
                { count: String(row.authentications) }) +
         '</span></div></form>' +
-        kit.note(t.html('consoleFederation.oneEntryNote', { dn: row.dn })) +
+        kit.note(t.html('consoleFederation.oneEntryNote',
+                        { dn: row.dn }))) +
         FederationPage.federationCaveat(t) +
         '<p class="sub"><a href="' +
         kit.esc('/admin/federation' +
@@ -938,7 +969,7 @@ class FederationPage {
         act('signals-create-stream',
             t.text('consoleFederation.actCreateStream'));
     const blocks = (s.blocks || []).length
-      ? '<h3 id="signal-blocks">' +
+      ? kit.frame('<h3 id="signal-blocks">' +
         t.html('consoleFederation.headingBlocked') + '</h3>' +
         '<table><tr><th>' + t.html('consoleFederation.thPerson') +
         '</th><th>' + t.html('consoleFederation.thSince') + '</th><th>' +
@@ -951,10 +982,10 @@ class FederationPage {
             act('signals-unblock', t.text('consoleFederation.actUnblock'),
                 '<input type="hidden" name="user" value="' +
                 kit.esc(b.username) + '">') + '</td></tr>';
-        }).join('') + '</table>'
+        }).join('') + '</table>')
       : '';
     const arrivals = (view.signalArrivals || []).length
-      ? '<h3>' + t.html('consoleFederation.headingArrivals') +
+      ? kit.frame('<h3>' + t.html('consoleFederation.headingArrivals') +
         '</h3><table><tr><th>' + t.html('consoleFederation.thWhen') +
         '</th><th>' + t.html('consoleFederation.thEvents') + '</th>' +
         '<th>' + t.html('consoleFederation.thVerified') + '</th><th>' +
@@ -986,9 +1017,11 @@ class FederationPage {
         kit.note(t.html('consoleFederation.everyArrivalA') + '<a href="' +
           '/admin/ssf/transmitters">' +
           t.html('consoleFederation.everyArrivalLink') + '</a>' +
-          t.html('consoleFederation.everyArrivalB'))
+          t.html('consoleFederation.everyArrivalB')))
       : '';
-    return '<h2 id="signals">' +
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the section is
+    // a frame, and each of its h3 blocks one inside it.
+    return kit.frame('<h2 id="signals">' +
       t.html('consoleFederation.headingSignalsFrom') + '</h2>' +
       kit.note(row.signsIn
         ? t.html('consoleFederation.signalsSignsIn')
@@ -1059,7 +1092,7 @@ class FederationPage {
       t.html('consoleFederation.thValue') + '</th><th>' +
       t.html('consoleFederation.thWhatItIs') + '</th></tr>' +
       (view.signalSetFields || []).map(setRow).join('') + '</table>' +
-      '<h3><code>fedSignalsEvents</code></h3>' +
+      kit.frame('<h3><code>fedSignalsEvents</code></h3>' +
       (eventRows ? '<table>' + eventRows + '</table>'
                  : kit.note(t.html('consoleFederation.noEventsListed'))) +
       '<form method="post" action="/admin/federation"><div class="formrow">' +
@@ -1069,8 +1102,8 @@ class FederationPage {
       '<input type="text" name="value" size="60" placeholder="' +
       kit.esc(t.text('consoleFederation.eventPlaceholder')) +
       '"><button type="submit">' + t.html('consoleFederation.buttonAdd') +
-      '</button></div></form>' +
-      blocks + arrivals;
+      '</button></div></form>') +
+      blocks + arrivals);
   }
 
   // ---------------------------------------------------------------------------
@@ -1100,7 +1133,8 @@ class FederationPage {
                     : t.html('consoleFederation.inClear')) +
         '</td></tr>';
     }).join('');
-    return '<h2 id="encryption">' +
+    // A frame (`secframe`, rcbj 2026-11-16).
+    return kit.frame('<h2 id="encryption">' +
       t.html('consoleFederation.headingEncryption') + '</h2>' +
       kit.note(encryption.required
         ? t.html('consoleFederation.plaintextRefused')
@@ -1126,7 +1160,60 @@ class FederationPage {
       '<span class="sub">' +
       t.html('consoleFederation.rotateNote',
              { seconds: String(encryption.graceS) }) +
-      '</span></div></form>';
+      '</span></div></form>');
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE TLS CLIENT CERTIFICATE A FAPI 1.0 ADVANCED RELATIONSHIP PRESENTS
+  // (#931): what the administrator registers at the partner — the
+  // certificate, or its subject DN for tls_client_auth — and the x5t#S256 a
+  // bound token carries. `GET /admin-api/federation?relationship=` answers
+  // the same member (`clientCertificate`, rule 7). Never the private key.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws a FAPI 1.0 Advanced relationship's TLS client certificate.
+   *
+   * @param cert - the relationship's `clientCertificate` view
+   * @param t - the page's translator
+   * @returns the section as HTML
+   */
+  static federationClientCertificateSection(cert, t) {
+    const head = '<h2 id="client-certificate">' +
+      t.html('consoleFederation.headingClientCertificate') + '</h2>' +
+      kit.note(t.html('consoleFederation.clientCertificateNote',
+                      { days: String(cert.renewDays) }));
+    // A frame (`secframe`, rcbj 2026-11-16), either way.
+    if (!cert.held) {
+      return kit.frame(head +
+        kit.note(t.html('consoleFederation.clientCertificateNone')));
+    }
+    return kit.frame(head + '<table>' +
+      '<tr><td>' + t.html('consoleFederation.clientCertificateTokenAuth') +
+      '</td><td><code>' + kit.esc(cert.tokenAuth === 'tls_client_auth'
+        ? 'tls_client_auth' : 'private_key_jwt') + '</code></td></tr>' +
+      '<tr><td>' + t.html('consoleFederation.clientCertificateSubject') +
+      '</td><td class="who"><code>' + kit.esc(cert.subject) +
+      '</code></td></tr>' +
+      '<tr><td>' + t.html('consoleFederation.clientCertificateThumbprint') +
+      '</td><td class="who"><code>' + kit.esc(cert.x5tS256) +
+      '</code></td></tr>' +
+      '<tr><td>' + t.html('consoleFederation.clientCertificateValid') +
+      '</td><td>' + kit.esc(cert.notBefore) + ' – ' +
+      kit.esc(cert.notAfter) + '</td></tr>' +
+      '<tr><td>' + t.html('consoleFederation.clientCertificateRenews') +
+      '</td><td>' + kit.esc(cert.renewsAt) + '</td></tr>' +
+      '<tr><td>' + t.html('consoleFederation.thAtRest') + '</td><td>' +
+      (cert.sealed ? t.html('consoleFederation.sealed')
+                   : t.html('consoleFederation.inClear')) + '</td></tr>' +
+      '<tr><td>' + t.html('consoleFederation.clientCertificatePem') +
+      '</td><td class="who"><pre>' + kit.esc(cert.certificatePem) +
+      '</pre></td></tr>' +
+      ((cert.chainPem || []).length
+        ? '<tr><td>' + t.html('consoleFederation.clientCertificateChain') +
+          '</td><td class="who"><pre>' +
+          kit.esc((cert.chainPem || []).join('')) + '</pre></td></tr>'
+        : '') +
+      '</table>');
   }
 
   /**
@@ -1141,7 +1228,8 @@ class FederationPage {
     if (!outbound || !outbound.application) {
       return '';
     }
-    return '<h2 id="signals-sent">' +
+    // A frame (`secframe`, rcbj 2026-11-16).
+    return kit.frame('<h2 id="signals-sent">' +
       t.html('consoleFederation.headingSignalsSent') + '</h2>' +
       kit.note(t.html('consoleFederation.signalsSentNote',
                       { application: outbound.application })) +
@@ -1165,7 +1253,7 @@ class FederationPage {
               kit.esc(one.lastActivityAt || '—') + '</td><td>' +
               kit.esc(String(one.deadLetters)) + '</td></tr>';
           }).join('') + '</table>'
-        : kit.note(t.html('consoleFederation.noOutboundStream')));
+        : kit.note(t.html('consoleFederation.noOutboundStream'))));
   }
 
   // WHAT THE PARTNER SENT AND NOTHING WROTE (#94), under the mapping it
@@ -1186,7 +1274,8 @@ class FederationPage {
     if (!unmapped.length) {
       return '';
     }
-    return '<h3 id="unmapped">' +
+    // A frame (`secframe`, rcbj 2026-11-16).
+    return kit.frame('<h3 id="unmapped">' +
       t.html('consoleFederation.headingUnmapped') + '</h3>' +
       kit.note(t.html('consoleFederation.unmappedNote')) +
       '<table><tr><th>' + t.html('consoleFederation.thName') + '</th><th>' +
@@ -1210,7 +1299,7 @@ class FederationPage {
           kit.esc(one.name + '=') + '"><button type="submit">' +
           t.html('consoleFederation.buttonMap') +
           '</button></div></form></td></tr>';
-      }).join('') + '</table>';
+      }).join('') + '</table>');
   }
 
   // federation.js's boolOf(), copied for the page (#446): how the register
@@ -1344,7 +1433,10 @@ class FederationPage {
               t.html('consoleFederation.mapNoMatchLink') + '</a>' +
               t.html('consoleFederation.mapNoMatchB'))) +
 
-      '<h2>' + t.html('consoleFederation.headingRelationships') + '</h2>' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each h2 is a
+      // frame; the filter above and the picture it narrows are not.
+      kit.frame('<h2>' + t.html('consoleFederation.headingRelationships') +
+      '</h2>' +
       kit.note(t.html('consoleFederation.mapRowsA') +
       '<a href="/admin/federation">' +
       t.html('consoleFederation.mapRowsLink') + '</a>' +
@@ -1364,9 +1456,10 @@ class FederationPage {
       }).join('') ||
         '<tr><td colspan="9">' + t.html('consoleFederation.nothingToShow') +
         '</td></tr>') +
-      '</table>' +
+      '</table>') +
 
-      '<h2>' + t.html('consoleFederation.headingPerRelationship') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleFederation.headingPerRelationship') +
+      '</h2>' +
       kit.note(t.html('consoleFederation.perRelationshipNote')) +
       '<table><tr><th>' + t.html('consoleFederation.thApplication') +
       '</th><th>' + t.html('consoleFederation.thRelationship') +
@@ -1437,26 +1530,67 @@ class FederationPage {
                 '<td class="num">' + r.attributed + '</td>' +
                 '<td class="num">' + r.unattributed + '</td></tr>';
             }).join('') + '</table>'
-        : '') +
+        : '')) +
 
-      '<h2>' + t.html('consoleFederation.headingKey') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleFederation.headingKey') + '</h2>' +
       kit.note(t.html('consoleFederation.keyNote')) +
-      json.mapKey);
+      json.mapKey));
+  }
+
+  // THE PICTURE IS LAID OUT HERE (#444 phase 2b), from the answer's graph,
+  // by the code the server draws `svg` with: what `render()` read off the
+  // server's graph, the answer carries — each node's realm or partner names,
+  // each edge's relationship row (by `relationship`, from `relationships`),
+  // each box's link (`looks`) and the realm's mode.
+  /**
+   * Lays the federation picture out from its answer.
+   *
+   * @param json - the answer
+   * @param links - whether each box links to its console page
+   * @returns `web_federation_diagram.ts`'s drawing
+   */
+  static laidOut(json: Json, links: boolean): Json {
+    const rows: Json = {};
+    (json.relationships || []).forEach(function (row: Json): void {
+      rows[row.id] = row;
+    });
+    const edges = (json.edges || []).map(function (edge: Json): Json {
+      return Object.assign({}, edge, { row: rows[edge.relationship] });
+    });
+    const looks = json.looks || {};
+    return FederationDiagram.render({ nodes: json.nodes || [], edges: edges },
+      { resolve: function (node: Json): Json {
+        return looks[node.id];
+      },
+      links: links, id: 'fedmap', label: json.label,
+      verifiesCredentials: !!(json.drawing &&
+                              json.drawing.verifiesCredentials) });
+  }
+
+  /**
+   * Draws the federation picture as a standalone SVG document, for the
+   * page's `?format=svg` link.
+   *
+   * @param json - the answer
+   * @returns the SVG document
+   */
+  static mapDocument(json: Json): string {
+    return FederationPage.laidOut(json, false).svg;
   }
 
   /**
    * Draws the federation picture from its answer, with the links to its SVG
    * and JSON forms.
    *
-   * @param json - the answer: `svg` and `drawing`
+   * @param json - the answer: the graph, `looks`, `label` and `drawing`
    * @param params - the page's filter, carried into the two links
    * @param t - the page's translator
    * @returns the drawing and its note as HTML
    */
   static mapDrawing(json: Json, params: Json, t: Json): string {
-    const drawn = json.drawing || {};
+    const drawn = FederationPage.laidOut(json, true);
     // The layout's failure is a refusal of sorts, and stays English.
-    return '<div class="diagram">' + json.svg + '</div>' +
+    return '<div class="diagram">' + drawn.svg + '</div>' +
       kit.note(drawn.width + '&times;' + drawn.height + ' &mdash; ' +
       '<a href="' +
       kit.esc('/admin/federation/map' +

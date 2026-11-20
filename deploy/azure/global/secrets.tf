@@ -22,6 +22,11 @@
 #                            the global tier, so one value in every cell.
 #                            Made in development mode too (AWS's reason: a
 #                            stack whose shape does not depend on the mode)
+#   edge-secret              Front Door's origin secret (#1341,
+#                            ../environment/frontdoor.tf): the primary cell's
+#                            profile sends it and EVERY cell's nodes require
+#                            it of an edge. Made whether or not the
+#                            environment has Front Door, for that reason
 # NOT IN EVERY CELL:
 #   global-db-master-password  the writer's administrator's, in the PRIMARY
 #                            cell's vault only — only its global schema-init
@@ -105,6 +110,11 @@ resource "random_password" "krb5_krbtgt" {
   special = false
 }
 
+resource "random_password" "edge_secret" {
+  length  = 48
+  special = false
+}
+
 resource "random_password" "krb5_service" {
   length  = 40
   special = false
@@ -119,6 +129,7 @@ locals {
     bootstrap-admin-username = terraform_data.bootstrap_admin_username[0].output
     krb5-krbtgt-password     = random_password.krb5_krbtgt.result
     krb5-service-password    = random_password.krb5_service.result
+    edge-secret              = random_password.edge_secret.result
   }
 
   secret_copies = merge(

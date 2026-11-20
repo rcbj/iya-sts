@@ -299,6 +299,12 @@ const GLOBAL_MINTED = {
   // the certificates are configuration every cell relies on alike.
   'pki.pins.lastAudit': 'what a realm\'s pinned certificate audit last ' +
     'found',
+  // A remote PEP's last heartbeat and counters (#1882), kept beside its
+  // ou=peps entry instead of in it. The entry is global, and every heartbeat
+  // used to rewrite it, so every cell's console saw it; this keeps that. A
+  // row is a component's name, times and counts — nobody's data.
+  'xacml_pep_registry.liveness': 'a remote PEP\'s last heartbeat and ' +
+    'counters',
   'mail.templates': 'a realm\'s wording of its messages',
   'oauth2.commandIssuer': 'the issuer a realm\'s provider commands use',
   'oauth2.commandMetadata': 'what each client says it supports',
@@ -489,6 +495,9 @@ const CELL_MINTED = [
   'vc_offers.issuerStates', 'vc_offers.preAuthorizedCodes',
   'vc_offers.signingAlgTokens', 'vc_trusted_list.state',
   'vc_verifier.vpRequests', 'vc_verifier.vpTransactions',
+  // A remote PEP's Basic tickets (#1760): a person's sign-in, handed to the
+  // PEP that asked this cell, and looked up by it alone.
+  'xacml.pepTickets',
   'xacml_monitor.counters'
 ];
 
@@ -514,6 +523,7 @@ const GLOBAL_JOBS = [
   'krb5.krbtgt-rotate', 'krb5.krbtgt-rotate-now',
   'oidfed.key-rotate', 'oidfed.key-rotate-now', 'oidfed.collection-crawl',
   'oidfed.registrations-expire', 'federation.encryption-key-retire',
+  'federation.client-certificate-renew',
   'spiffe.authority-rotation', 'spiffe.sigstore-tuf-refresh',
   'oauth2.client-secret-expiry', 'oauth2.used-assertion-purge',
   'saml2.sp-metadata-refresh', 'ssf.stream-maintenance', 'ssf.foreign-poll',
@@ -527,8 +537,21 @@ const GLOBAL_JOBS = [
 ];
 // The claim scope a global job's run is claimed under.
 const GLOBAL_RUN_SCOPE = 'scheduler.run.global';
+// THE CLAIM `common/pki.js` TAKES BEFORE IT BUILDS A ROOT, A PROCESS BRANCH
+// OR A REALM'S BRANCH (`oneBuildInTheCluster()`). Every certificate
+// authority row is `sts_keys`, a WHOLE global table, so the builders the
+// claim has to exclude are every cell's, not one cell's. Kept in the cell's
+// database it excluded only the processes of one cell: two cells could each
+// win it and each build a branch of one realm, the row's first-writer-wins
+// merge the only arbiter left between them — and a cell whose build lost had
+// already certified keys under the Issuing CAs it threw away. GitHub
+// Actions run 43642810770's `cells` mode published two JOSE Signing CAs, two
+// Intermediates and two XML Signing CAs of one name in three realms
+// (`sts_pki_distribution_points`: "jose.crl is named by certificates of two
+// different authorities"), where the `cluster` mode, one database, did not.
+const PKI_BUILD_SCOPE = 'pki.build';
 // The claim scopes kept in the global tier.
-const GLOBAL_CLAIM_SCOPES = [GLOBAL_RUN_SCOPE];
+const GLOBAL_CLAIM_SCOPES = [GLOBAL_RUN_SCOPE, PKI_BUILD_SCOPE];
 
 /**
  * Tells whether a scheduler job's work is the global tier's.
@@ -621,6 +644,7 @@ module.exports = {
   MEMBER_ATTRIBUTES: MEMBER_ATTRIBUTES,
   GLOBAL_JOBS: GLOBAL_JOBS,
   GLOBAL_RUN_SCOPE: GLOBAL_RUN_SCOPE,
+  PKI_BUILD_SCOPE: PKI_BUILD_SCOPE,
   isGlobalJob: isGlobalJob,
   claimTierOf: claimTierOf
 };

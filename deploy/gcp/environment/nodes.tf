@@ -46,7 +46,7 @@ locals {
     STS_KEYS_SOURCE             = "persisted"
     STS_CLUSTER_MODE            = "active-active"
     STS_PUBLIC_BASE_URL         = local.public_base_url
-    STS_TLS_HOSTNAMES           = join(",", distinct(compact([local.public_name ? var.public_hostname : "", local.cell_console_host, "localhost"])))
+    STS_TLS_HOSTNAMES           = join(",", distinct(compact([local.public_name ? var.public_hostname : "", local.cdn ? var.direct_hostname : "", local.cell_console_host, "localhost"])))
     STS_TLS_IPS                 = join(",", ["127.0.0.1", local.lb_address])
     STS_WORKERS_REQUEST_COUNT   = tostring(var.workers_request_count)
     STS_WORKERS_SURFACE_COUNT   = tostring(var.workers_surface_count)
@@ -55,9 +55,9 @@ locals {
     GOOGLE_CLOUD_PROJECT        = var.project_id
 
     # NO PROXY HEADER: a passthrough load balancer delivers the client's own
-    # packets (lb.tf), so the peer IS the client and no proxy is trusted.
-    STS_PROXY_PROTOCOL  = "off"
-    STS_TRUSTED_PROXIES = ""
+    # packets (lb.tf), so the peer IS the client and no proxy is trusted —
+    # unless a CDN is in front (cdn.tf, `edge_environment`, merged below).
+    STS_PROXY_PROTOCOL = "off"
 
     # The database password, from Secret Manager through common/secrets.js
     # — the path issue #51 exists to exercise, on the `gcp` provider. The
@@ -76,7 +76,7 @@ locals {
     # Where a certificate says its CRL and OCSP are: the FRONT-END port
     # (AWS's argument, deploy/aws/environment/ecs.tf).
     PKI_DISTRIBUTION_BASE_URL  = local.pki_public_url
-    PKI_DISTRIBUTION_LDAP_HOST = local.public_host
+    PKI_DISTRIBUTION_LDAP_HOST = local.direct_host
     # 389 is what an ldap:// address names (RFC 4516; RFC 5280 section 8 rules
     # out ldaps://); it is no longer published (locals.tf), so from outside
     # that address does not resolve.
@@ -104,6 +104,8 @@ locals {
     local.kek_environment,
     # A CELL'S CONTRACT WITH THE SERVICE (#97, cells.tf); empty otherwise.
     local.cell_environment,
+    # WHO IS IN FRONT: nobody, Cloud CDN's front ends, or CloudFront (cdn.tf).
+    local.edge_environment,
   var.extra_environment)
 
   # `KEY=projects/…/secrets/…` pairs, comma-separated, for node-init's
@@ -137,6 +139,10 @@ locals {
   extra_hosts = join(" \\\n  ", concat(
     ["--add-host ${local.db_hostname}:${google_compute_address.database.address}"],
     local.global_copy ? ["--add-host ${local.global.copy_host}:${local.global.copy_address}"] : [],
+    # BEHIND A CDN, THE NODE'S OWN PUBLIC NAME IS ITS OWN PASSTHROUGH ADDRESS
+    # (cdn.tf): answered locally, as before the CDN, rather than through an
+    # edge whose allowlist a node's ephemeral address is not on.
+    local.cdn ? ["--add-host ${var.public_hostname}:${local.lb_address}"] : [],
   ))
 
   # EVERY DATABASE CA A NODE VERIFIES, IN ONE FILE (NODE_EXTRA_CA_CERTS takes
@@ -197,7 +203,7 @@ locals {
         tls_owner   = local.service_user
         tls_secret  = data.google_secret_manager_secret.tls[0].id
         hostname    = var.public_hostname
-        alt_names   = local.cell_console_host
+        alt_names   = join(",", compact([local.cell_console_host, local.cdn ? var.direct_hostname : ""]))
         issuer      = node == "node-a" ? "true" : "false"
         acme_server = var.acme_server
         acme_email  = var.acme_email
@@ -378,6 +384,12 @@ resource "google_compute_instance_group_manager" "first" {
   name               = "${local.prefix}-node-a"
   zone               = local.zones[0]
   base_instance_name = "${local.prefix}-node-a"
+
+  # The main port, by name, for the CDN's backend services (cdn.tf).
+  named_port {
+    name = "https"
+    port = 443
+  }
   # 0 in a new cell's `base` phase (#97), before the global tier exists.
   target_size = local.full ? 1 : 0
 
@@ -425,6 +437,11 @@ resource "google_compute_instance_group_manager" "others" {
   name               = "${local.prefix}-${each.key}"
   zone               = local.zones[each.value]
   base_instance_name = "${local.prefix}-${each.key}"
+
+  named_port {
+    name = "https"
+    port = 443
+  }
   # 0 in a new cell's `base` phase (#97), before the global tier exists.
   target_size = local.full ? 1 : 0
 

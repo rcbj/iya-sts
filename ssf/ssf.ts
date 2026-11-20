@@ -206,6 +206,8 @@ import ssfAuth = require('./ssf_auth');
 // transition, one prober for the cluster, and a GNAP key proof spent across
 // every node before the gate reads it. A LIBRARY; see its header.
 import ssfCluster = require('./ssf_cluster');
+// The model the answers are held to (#1579): a leaf.
+import SsfModel = require('./ssf_model');
 // The error-code registry, a LEAF. An HTTP refusal is marked on the response
 // (the call-log funnel records it); a refusal with no response of its own — a
 // transmission, a console action, an automatic emission — is an audit row.
@@ -464,6 +466,14 @@ class SharedSignals {
                headers?: Json): void {
     const { log } = this.deps;
     log.debug('Entering SharedSignals.fail(). ' + status + ' ' + err);
+    // HELD TO THE MODEL (#1579): every `err` this family sends is declared
+    // in `models/ssf/ssf.tsp`. One that is not is recorded, and sent as it
+    // was built — the model describes the wire, it does not reshape it.
+    if (SsfModel.unknownError(err)) {
+      log.error(this.deps.errorCodes.tag('STS-SSF-0160') + 'the err value "' +
+                err + '" is not declared in models/ssf/ssf.tsp; it is sent ' +
+                'as it is.');
+    }
     const extra = headers || {};
     Object.keys(extra).forEach(function (name) {
       res.set(name, extra[name]);
@@ -472,6 +482,34 @@ class SharedSignals {
        .set('Cache-Control', 'no-store')
        .send(JSON.stringify({ err: err, description: description }, null, 2));
     log.debug('Leaving SharedSignals.fail().');
+  }
+
+  /**
+   * Holds an answer to its document in the model (#1579) and records what
+   * the document does not allow, under STS-SSF-0159. The answer is not
+   * changed: the model describes the wire and does not reshape it, so a
+   * problem here is a model gap. A stream configuration's `delivery` is held
+   * to its own document too.
+   *
+   * @param id - the document's id in `models/ssf/ssf.tsp`
+   * @param value - the answer as it is about to be sent
+   * @returns the value, unchanged
+   */
+  holdToModel(id: string, value: Json): Json {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering SharedSignals.holdToModel(). ' + id);
+    let problems = SsfModel.undeclared(id, value);
+    if (id === 'stream-configuration' && value && value.delivery) {
+      problems = problems.concat(SsfModel.undeclared('stream-delivery',
+                                                     value.delivery));
+    }
+    if (problems.length > 0) {
+      log.error(errorCodes.tag('STS-SSF-0159') + 'the ' + id + ' answer is ' +
+                'not the model\'s (models/ssf/ssf.tsp): ' +
+                problems.join('; ') + '.');
+    }
+    log.debug('Leaving SharedSignals.holdToModel().');
+    return value;
   }
 
   // Answers 501 rather than 404 when the family is switched off: the feature
@@ -2151,16 +2189,55 @@ class SharedSignals {
   // it had cleared `events_requested` when it had not, and the symptom is
   // event types still arriving after they were removed.
   // -------------------------------------------------------------------------
+  // A cluster member's name (#1760 phase 3), from `X-Iya-Pep-Name`.
+  // Absent is a name of '': the caller is not asking for a member's
+  // stream, which is every receiver that is not a cluster member.
+  // Present and not a PEP name is refused. Reading that as absent would
+  // put the caller on the untagged stream it was trying not to share.
+  private pepMemberHeader(req: Req): { ok: boolean; name: string } {
+    const { log } = this.deps;
+    log.debug('Entering SharedSignals.pepMemberHeader().');
+    const raw = req.headers ? req.headers['x-iya-pep-name'] : undefined;
+    if (raw === undefined) {
+      log.debug('Leaving SharedSignals.pepMemberHeader(). Absent.');
+      return { ok: true, name: '' };
+    }
+    // Several values are one header that cannot be a name: Express
+    // joins them with a comma, and a comma is outside the grammar.
+    const text = Array.isArray(raw) ? raw.join(',') : String(raw);
+    if (!/^[A-Za-z0-9._-]{1,128}$/.test(text)) {
+      log.debug('Leaving SharedSignals.pepMemberHeader(). Not a name.');
+      return { ok: false, name: '' };
+    }
+    log.debug('Leaving SharedSignals.pepMemberHeader().');
+    return { ok: true, name: text };
+  }
+
+  private refuseMemberHeader(res: Res): void {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering SharedSignals.refuseMemberHeader().');
+    errorCodes.mark(res, 'STS-SSF-0163');
+    this.fail(res, 400, 'invalid_request',
+      'X-Iya-Pep-Name is not a PEP name. It is one token of 1 to 128 ' +
+      'letters, digits, ".", "_" or "-", the name this PEP registered ' +
+      'as. Omit the header to use the untagged stream.');
+    log.debug('Leaving SharedSignals.refuseMemberHeader().');
+  }
+
   private contextOf(req: Req, decision: Json | null): Json {
     const { log } = this.deps;
     log.debug('Entering SharedSignals.contextOf().');
     // `owner` is what KIND of party authenticated (ssf_auth.ts), from the
     // decision and never from the request body, so a person's stream is
     // recorded as theirs (ssf_streams.ts, "A PERSON'S STREAM IS ABOUT THAT
-    // PERSON").
+    // PERSON"). `pepMember` is the same kind of fact (#1760 phase 3): the
+    // X-Iya-Pep-Name header, when it is a PEP name, and never a body
+    // field a caller could use to tag a stream as somebody else's.
+    const member = this.pepMemberHeader(req);
     const out = { issuer: this.issuerFor(req),
       principal: String((decision || {}).principal || ''),
-      owner: (decision || {}).owner || null };
+      owner: (decision || {}).owner || null,
+      pepMember: member.ok && member.name ? member.name : undefined };
     log.debug('Leaving SharedSignals.contextOf().');
     return out;
   }
@@ -2177,7 +2254,7 @@ class SharedSignals {
       includeSecrets: !!(decision && !decision.anonymous)
     });
     log.debug('Leaving SharedSignals.streamView().');
-    return view;
+    return this.holdToModel('stream-configuration', view);
   }
 
   // -------------------------------------------------------------------------
@@ -2274,7 +2351,8 @@ class SharedSignals {
       log.debug('Entering GET ' + WELL_KNOWN + '.');
       res.status(200).type('application/json')
          .set('Cache-Control', 'no-store')
-         .send(JSON.stringify(this.metadata(req), null, 2));
+         .send(JSON.stringify(this.holdToModel('transmitter-metadata',
+                                               this.metadata(req)), null, 2));
       log.debug('Leaving GET ' + WELL_KNOWN + '.');
     });
 
@@ -2336,7 +2414,8 @@ class SharedSignals {
       }
       res.status(200).type('application/json')
          .set('Cache-Control', 'no-store')
-         .send(JSON.stringify(found, null, 2));
+         .send(JSON.stringify(this.holdToModel('transmitter-metadata',
+                                               found), null, 2));
       log.debug('Leaving GET ' + WELL_KNOWN + '/*. ' + found.issuer);
     });
 
@@ -2349,6 +2428,15 @@ class SharedSignals {
       const decision = this.gate(req, res, 'write');
       if (!decision) {
         log.debug('Leaving POST /ssf/stream. Refused.');
+        return;
+      }
+      // BEFORE THE BODY (#1760 phase 3). A header that is not a PEP name
+      // creates nothing, including when the body would also be refused:
+      // the two failures are different facts, and the header is the one
+      // that would otherwise be read as "no header".
+      if (!this.pepMemberHeader(req).ok) {
+        this.refuseMemberHeader(res);
+        log.debug('Leaving POST /ssf/stream. Bad member header.');
         return;
       }
       const body = this.jsonBody(req);
@@ -2432,14 +2520,35 @@ class SharedSignals {
         log.debug('Leaving GET /ssf/stream. Refused.');
         return;
       }
+      // A bad header is refused on a list AND on a read of one stream.
+      // Treating it as absent would answer the untagged list to a caller
+      // that sent a name and failed to spell it.
+      const member = this.pepMemberHeader(req);
+      if (!member.ok) {
+        this.refuseMemberHeader(res);
+        log.debug('Leaving GET /ssf/stream. Bad member header.');
+        return;
+      }
       const id = String(req.query.stream_id || '');
       if (!id) {
         // "The stream configurations AVAILABLE TO THIS RECEIVER" (section
         // 8.1.1.2) — its own, and an empty list when it has none. Until #144
         // this was every stream in the realm, each with its
         // authorization_header.
-        const list = streams.streamsOwnedBy(decision.principal)
-          .map((record) => {
+        //
+        // A NAME SELECTS THAT MEMBER'S STREAMS (#1760 phase 3), and the
+        // filter is BEFORE noteActivity: listing pep-1 must not restart
+        // pep-2's inactivity timer. No match is an empty list, so the
+        // caller creates a stream of its own rather than being handed
+        // the untagged one. A caller that sent no header still sees
+        // every stream it owns, tagged and not.
+        const owned = streams.streamsOwnedBy(decision.principal);
+        const mine = member.name
+          ? owned.filter((record) => {
+              return String(record.pepMember || '') === member.name;
+            })
+          : owned;
+        const list = mine.map((record) => {
             streams.noteActivity(record);
             return this.streamView(req, record, decision);
           });
@@ -2532,8 +2641,9 @@ class SharedSignals {
       }
       res.status(200).type('application/json')
          .set('Cache-Control', 'no-store')
-         .send(JSON.stringify({ stream_id: record.stream_id,
-           status: record.status, reason: record.statusReason }, null, 2));
+         .send(JSON.stringify(this.holdToModel('stream-status',
+           { stream_id: record.stream_id, status: record.status,
+             reason: record.statusReason }), null, 2));
       log.debug('Leaving GET /ssf/status. ' + record.status);
     });
 
@@ -2583,9 +2693,10 @@ class SharedSignals {
               ? (changed.report.ok ? 'sent' : changed.report.why) : 'none' } });
         res.status(200).type('application/json')
            .set('Cache-Control', 'no-store')
-           .send(JSON.stringify({ stream_id: changed.stream.stream_id,
-             status: changed.stream.status,
-             reason: changed.stream.statusReason }, null, 2));
+           .send(JSON.stringify(this.holdToModel('stream-status',
+             { stream_id: changed.stream.stream_id,
+               status: changed.stream.status,
+               reason: changed.stream.statusReason }), null, 2));
         log.debug('Leaving POST /ssf/status. ' + changed.stream.status);
       });
     });
@@ -2919,8 +3030,9 @@ class SharedSignals {
       }
       res.status(200).type('application/json')
          .set('Cache-Control', 'no-store')
-         .send(JSON.stringify({ sets: result.sets,
-           moreAvailable: result.moreAvailable }, null, 2));
+         .send(JSON.stringify(this.holdToModel('poll-response',
+           { sets: result.sets, moreAvailable: result.moreAvailable }), null,
+                              2));
       log.debug('Leaving POST /ssf/poll. ' + Object.keys(result.sets).length +
                 ' set(s).');
     });
@@ -5061,6 +5173,15 @@ class SharedSignals {
   riscAutoEmit(notice?: Json): Promise<EmitResult> {
     const { log, risc, errorCodes } = this.deps;
     log.debug('Entering SharedSignals.riscAutoEmit().');
+    // A NAME TAKEN AGAIN STARTS FRESH IN THE REGISTER whether or not
+    // anything is sent (`risc.retireNamesake()`, 2026-11-16).
+    try {
+      risc.retireNamesake(notice || {});
+    } catch (e) {
+      log.error(errorCodes.tag('STS-LDAP-0222') + 'ssf: the RISC register ' +
+                'row of an account whose name was taken again could not be ' +
+                'moved out of it: ' + ((e && e.message) || e));
+    }
     if (!this.enabled()) {
       log.debug('Leaving SharedSignals.riscAutoEmit(). SSF is off.');
       return Promise.resolve({ sent: 0, streams: 0 });

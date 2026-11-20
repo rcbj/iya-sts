@@ -36,7 +36,7 @@ var config = {
     // is the endpoint a caller reaches BEFORE it trusts anything — so the
     // first fetch of the certificate has to be made with verification off
     // (`curl -k`). That is the ordinary bootstrap for a service that
-    // regenerates its key every start, and docs/tls.md says so.
+    // regenerates its key every start, and docs/v1.1.0/tls.md says so.
     //
     // STS_HTTPS still wins over this file, so `STS_HTTPS=false` is the way back
     // to a plain port without editing anything.
@@ -64,18 +64,6 @@ var config = {
     // exercise a client against a server that behaves like a real deployment.
     // GET /oauth2/rfc9700 lists what it does and does not enforce.
     rfc9700: false,
-
-    // RFC 6749 section 4.1.2: a code used twice is refused in every mode
-    // since #187, and this is the opt-in that restores the old development
-    // courtesy (an identical repeat answered with the same tokens). ON HERE
-    // ONLY because the parent project's vendored `oauth2_sts_endpoints.js`
-    // still asserts that courtesy in development mode; remove it once that
-    // job asserts the refusal (rcbj/id-proto-debugger#306). The OpenID
-    // conformance jobs switch it off in their own realms, so they test the
-    // default. env/test.js carries the same line, for the same job:
-    // ./run-tests.sh gives the service that file unless a debug level asks
-    // for this one.
-    codeReplayIdempotent: true,
 
     // OAuth 2.1 (draft-ietf-oauth-v2-1-16). OFF, for the reason above; it
     // turns RFC 9700 mode on as well, and additionally refuses a client that
@@ -265,7 +253,8 @@ var config = {
     // any protocol and the directory stayed empty — which reads as a
     // broken hook and is a setting doing what it was told.
     autocreateUsers: true,
-    // 10000, not defaults.js's 2000 (2026-09-23). The cap is PROCESS-WIDE —
+    // 60000, not defaults.js's 2000 (10000 from 2026-09-23, 20000 from
+    // 10-27, 60000 from 11-15; why each, below). The cap is PROCESS-WIDE —
     // `totalEntries()` sums every realm's store — and every trust realm a
     // suite job creates is seeded and LEFT STANDING (tests/CLAUDE.md, *No job
     // removes a realm*), so the suite's own growth reached 2000 around the
@@ -273,7 +262,23 @@ var config = {
     // refused (`sts_federation_realms`, `vc_did`: "This directory holds its
     // maximum of 2000 entries"). The bulk-load jobs raise it further for
     // what they add, and leave it raised.
-    maxEntries: 10000,
+    // **IT REACHED 20000 IN RUNS #287 AND #300 (2026-11-15)**, in the memory
+    // mode, from about the 241st job on: `STS-LDAP-0007` logged 170 times,
+    // and `sts_development_only_settings` ("holds its maximum of 20000"),
+    // `sts_mode_weak_settings` ("ou=applications container is full") and
+    // `sts_admin_client_policies` (a realm's seeding refused, so no
+    // `sts-user-portal`) failed for a ceiling none of them set. The suite
+    // creates more realms, and seeds more into each, than it did on
+    // 10-27, and the bulk-load jobs raise the cap only at their END. So
+    // 60000: three times what the suite was measured to outgrow. **The
+    // modes differ on purpose, and this one number serves all of them.**
+    // memory, mariadb and cells count every realm the process holds, as
+    // above (only postgres outside cells has a directory window); in
+    // single-node, cluster and fuzz the directory is a window (#349, #320)
+    // and `cappedEntries()` counts the realm's own rows in the store, a
+    // per-realm cap the suite does not come near, which is why only the
+    // memory mode failed. The higher number changes nothing there.
+    maxEntries: 60000,
     sizeLimit: 500
   },
 

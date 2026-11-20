@@ -61,7 +61,6 @@
   "indexedNote": "Un opérateur indexé est résolu par l’annuaire sans lire chaque personne. Une requête sur les utilisateurs dont le filtre n’en utilise aucun, ou qui trie ou compte, lit chaque personne : elle est refusée en mode synchrone et devient un travail en mode auto.",
   "trustRealm": "Domaine de confiance",
   "go": "Aller",
-  "version": "iya-sts version {version}",
   "docsLink": "Documentation",
   "addFilter": "Ajouter un filtre",
   "removeFilter": "Supprimer ce filtre",

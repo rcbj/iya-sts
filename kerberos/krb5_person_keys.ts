@@ -945,15 +945,23 @@ class Krb5PersonKeys {
       log.debug('Leaving Krb5PersonKeys.personKeys(). Nobody by that name.');
       return { state: 'unknown' };
     }
+    // THE ENTRY'S entryUUID AND ITS ALIASES (2026-11-16, #1612's rule), on
+    // every answer about a person who is there: the KDC binds the principal
+    // record, and the RID in it, to the entry, so a person made again under
+    // the name is not handed the deleted one's SID (`krb5_principals.js`,
+    // *A PERSON'S RID IS THE ENTRY'S*).
+    const entryUuids = Array.isArray(current.entryUuids)
+      ? current.entryUuids.map(String) : [];
     if (!current.keys) {
       log.debug('Leaving Krb5PersonKeys.personKeys(). No keys yet.');
-      return { state: 'none' };
+      return { state: 'none', entryUuids: entryUuids };
     }
     const opened = this.openRecord(current.keys);
     if (!opened.ok) {
       log.debug('Leaving Krb5PersonKeys.personKeys(). Unreadable: ' +
                 opened.why);
-      return { state: 'unreadable', detail: opened.why };
+      return { state: 'unreadable', detail: opened.why,
+               entryUuids: entryUuids };
     }
     const record = opened.record;
     if (record.name !== name || record.realm !== principals.REALM) {
@@ -979,13 +987,13 @@ class Krb5PersonKeys {
         record.stamp !== this.stampOf(current.passwordHash)) {
       log.debug('Leaving Krb5PersonKeys.personKeys(). Derived from an older ' +
                 'password.');
-      return { state: 'stale' };
+      return { state: 'stale', entryUuids: entryUuids };
     }
     const keys = this.keyPairs(record.keys);
     if (!keys.length) {
       log.debug('Leaving Krb5PersonKeys.personKeys(). No key for any enctype ' +
                 'this KDC offers.');
-      return { state: 'none' };
+      return { state: 'none', entryUuids: entryUuids };
     }
     // THE PREVIOUS VERSIONS RIDE BESIDE THE CURRENT KEYS AND NEVER AMONG THEM:
     // `krb5_principals.js` keeps them apart, so pre-authentication can only
@@ -995,7 +1003,7 @@ class Krb5PersonKeys {
               ', ' + keys.length + ' key(s), ' + retained.length +
               ' previous version(s).');
     return { state: 'ok', kvno: record.kvno, salt: record.salt, keys: keys,
-             retained: retained };
+             retained: retained, entryUuids: entryUuids };
   }
 
   // A DISABLED ACCOUNT (2026-09-17): `pwdAccountLockedTime` on the person's

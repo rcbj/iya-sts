@@ -94,6 +94,8 @@ import keyMaterial = require('./crypto_impl/key_material');
 import keystore = require('./keystore');
 import mode = require('./mode');
 import CertificateTrust = require('./certificate_trust');
+// The names a leaf gives its holder, defined once (#1827).
+import SubjectUrn = require('./subject_urn');
 import pki = require('./pki');
 import realms = require('./realms');
 import x509 = require('./crypto_impl/x509');
@@ -130,6 +132,12 @@ const FAMILIES = ['acme', 'est', 'scep'];
  * Each enrollment family's display name.
  */
 const FAMILY_LABELS = { acme: 'ACME', est: 'EST', scep: 'SCEP' };
+
+/**
+ * The smallest RSA modulus a certificate request may carry, in bits, in every
+ * mode (#35): the floor `acme_jws.ts` holds an account key to.
+ */
+const MIN_RSA_BITS = 2048;
 
 // ---------------------------------------------------------------------------
 // THE PROFILES.
@@ -212,11 +220,11 @@ const SECRET_ATTRIBUTES = ['stsEnrolledPrivateKey', 'appEnrolledPrivateKey',
 
 // What `read()` is asked for, per kind.
 const READ_NAMES = {
-  person: ['mail', 'userPrincipalName', 'x509subject'].concat(
+  person: ['mail', 'userPrincipalName', 'x509subject', 'entryUUID'].concat(
     Object.keys(ATTRIBUTES.person).map(function (k) {
       return ATTRIBUTES.person[k];
     })),
-  application: ['appIdentifier', 'oauthClientId'].concat(
+  application: ['appIdentifier', 'oauthClientId', 'entryUUID'].concat(
     Object.keys(ATTRIBUTES.application).map(function (k) {
       return ATTRIBUTES.application[k];
     }))
@@ -224,10 +232,11 @@ const READ_NAMES = {
 
 /**
  * The `urn:sts:` subjectAltName prefix that names a person or an application
- * entry.
+ * entry. A person who is a SERVICE ACCOUNT is named
+ * `SubjectUrn.SERVICE_ACCOUNT` instead (#1827) — `entryUri()` decides, and `entryFromUri()` reads both.
  */
-const URN_PREFIX = { person: 'urn:sts:person:',
-                     application: 'urn:sts:application:' };
+const URN_PREFIX = { person: SubjectUrn.PERSON,
+                     application: SubjectUrn.APPLICATION };
 
 // ---------------------------------------------------------------------------
 // THE `device` PROFILE (#164 decision 6c, phase 2, 2026-09-26).
@@ -275,9 +284,10 @@ const URN_PREFIX = { person: 'urn:sts:person:',
 //     says what to do instead.
 // ---------------------------------------------------------------------------
 /**
- * The profile a device entry's certificate is issued under.
+ * The profile a device entry's certificate is issued under: the data leaf's,
+ * which the model reads too (#1579).
  */
-const DEVICE_PROFILE = 'device';
+const DEVICE_PROFILE = enrollmentProfiles.DEVICE_PROFILE;
 /**
  * The families that may issue the device profile: EST and SCEP.
  */
@@ -285,7 +295,7 @@ const DEVICE_PROFILE_FAMILIES = ['est', 'scep'];
 /**
  * The `urn:sts:` subjectAltName prefix that names a device entry.
  */
-const DEVICE_URN_PREFIX = 'urn:sts:device:';
+const DEVICE_URN_PREFIX = SubjectUrn.DEVICE;
 // What a device certificate's extensions are: /admin/pki's tls-client leaf.
 const DEVICE_CERTIFICATE_PROFILE = 'tls-client';
 
@@ -342,6 +352,10 @@ interface CertEnrollmentDeps {
   // nonces (#257), by `issueForDevice()`. Lazily: it requires the WebAuthn
   // verifier and the credentials module, which nothing else here needs.
   loadDeviceEnrolment(): typeof import('./device_enrolment');
+  // #1827: whether a person is a service account now, which decides the
+  // spelling of their name in a leaf. LAZY: a leaf register, reached only
+  // when a person's name is written or a `urn:sts:sa:` one is read.
+  loadServiceAccounts(): { isServiceAccountName(username: unknown): boolean };
 }
 
 /**
@@ -459,6 +473,9 @@ class CertEnrollment {
       },
       loadDeviceEnrolment: function () {
         return require('./device_enrolment');
+      },
+      loadServiceAccounts: function () {
+        return require('./service_accounts');
       }
     };
   }
@@ -611,33 +628,106 @@ class CertEnrollment {
   entryUri(entry) {
     const { log } = this.deps;
     log.debug("Entering CertEnrollment.entryUri().");
+    // A SERVICE ACCOUNT'S NAME SAYS SO (#1827): `urn:sts:sa:<name>` for a
+    // person who is one now. This is the name an enrolled leaf carries
+    // (`namesFor()`) and the one every console and audit row shows.
+    const out = entry.kind === 'person'
+      ? SubjectUrn.forPerson(entry.id, this.isServiceAccount(entry.id))
+      : SubjectUrn.forHolder(entry.kind, entry.id);
     log.debug("Leaving CertEnrollment.entryUri().");
-    return (entry.kind === 'device' ? DEVICE_URN_PREFIX
-                                    : URN_PREFIX[entry.kind]) + entry.id;
+    return out;
   }
 
   /**
-   * Reads a person or application entry out of a `urn:sts:` URI.
+   * Says whether a person is a service account now, in the ambient realm.
+   *
+   * @param id - the username
+   * @returns true for a service account; false otherwise and where nothing
+   *   can say
+   */
+  isServiceAccount(id) {
+    const { log, loadServiceAccounts } = this.deps;
+    log.debug("Entering CertEnrollment.isServiceAccount().");
+    let out = false;
+    try {
+      out = loadServiceAccounts().isServiceAccountName(String(id)) === true;
+    } catch (e) {
+      log.debug("Caught in CertEnrollment.isServiceAccount(): " +
+                ((e && e.message) || e));
+      out = false;
+    }
+    log.debug("Leaving CertEnrollment.isServiceAccount(). " + out);
+    return out;
+  }
+
+  /**
+   * Reads a person or application entry out of a `urn:sts:` URI: a person
+   * in either spelling, `urn:sts:person:` or a service account's
+   * `urn:sts:sa:` (#1827).
    *
    * @param uri - the URI
    * @returns the entry's `kind` and `id`, or null
    */
   entryFromUri(uri) {
     const { log } = this.deps;
-    const self = this;
     log.debug("Entering CertEnrollment.entryFromUri().");
-    const text = String(uri || '');
-    let found = null;
-    Object.keys(URN_PREFIX).forEach(function (kind) {
-      if (!found && text.indexOf(URN_PREFIX[kind]) === 0) {
-        const id = text.slice(URN_PREFIX[kind].length);
-        if (self.wellFormedId(id)) {
-          found = { kind: kind, id: id };
-        }
-      }
-    });
+    const parsed = SubjectUrn.parse(uri, ['person', 'sa', 'application']);
+    const found = parsed && this.wellFormedId(parsed.name)
+      ? { kind: parsed.kind, id: parsed.name } : null;
     log.debug("Leaving CertEnrollment.entryFromUri().");
     return found;
+  }
+
+  /**
+   * Says whether a URI names an entry, in whichever spelling.
+   *
+   * @param uri - the URI
+   * @param entry - the entry's `kind` and `id`
+   * @returns true when it names that entry
+   */
+  namesEntry(uri, entry) {
+    const { log } = this.deps;
+    log.debug("Entering CertEnrollment.namesEntry().");
+    const out = this.sameEntry(this.entryFromUri(uri), entry);
+    log.debug("Leaving CertEnrollment.namesEntry(). " + out);
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // `urn:sts:sa:` IS A CLAIM ABOUT THE ENTRY (#1827).
+  //
+  // This service writes `urn:sts:sa:<name>` only for a person who IS a
+  // service account (`entryUri()`), and an entry never stops being one. A
+  // request or a presented certificate saying it of somebody who is not —
+  // or of nobody — is refused, STS-ENROLL-0097, wherever the name chooses an
+  // entry: the target of a request, a name it asks for, the credential a
+  // re-enrollment presents. `urn:sts:person:` naming a service account is
+  // NOT refused: a leaf issued before the entry became one keeps working
+  // (rcbj's 1.0.0 rule), and a request asking for it is issued the entry's
+  // own name, `urn:sts:sa:`.
+  // ---------------------------------------------------------------------------
+  /**
+   * Refuses a URI that names a person as a service account when the
+   * directory does not hold them as one.
+   *
+   * @param uri - the URI
+   * @returns a refusal (STS-ENROLL-0097, 403), or null
+   */
+  serviceAccountUriRefusal(uri) {
+    const { log } = this.deps;
+    log.debug("Entering CertEnrollment.serviceAccountUriRefusal().");
+    const parsed = SubjectUrn.parse(uri, ['sa']);
+    if (!parsed || this.isServiceAccount(parsed.name)) {
+      log.debug("Leaving CertEnrollment.serviceAccountUriRefusal(). None.");
+      return null;
+    }
+    log.debug("Leaving CertEnrollment.serviceAccountUriRefusal(). Refused.");
+    return this.refuse('STS-ENROLL-0097', 403, 'The name "' +
+                       String(uri).slice(0, 200) + '" says that "' +
+                       parsed.name.slice(0, 200) + '" is a service account, ' +
+                       'and in this realm that entry is not one. This ' +
+                       'service writes that name only for a service ' +
+                       'account.');
   }
 
   // THE ENTRY A CERTIFICATE NAMES, READ AND NOT BELIEVED (#98 D10). Where a
@@ -751,10 +841,18 @@ class CertEnrollment {
     const user = kind === 'person' ? Classes.User.fromEntry(attrs) : null;
     const held = self.heldValues({ entry: { kind: kind }, attributes: attrs },
                                  'hostName');
+    // THE ENTRY'S `entryUUID` (2026-11-16), so a binding made to a NAME —
+    // an ACME account — can tell the entry it was made for from one made
+    // again under the name (#1612's rule; `acme/acme.ts`'s `sameHolder()`).
+    const uuidName = Object.keys(attrs).filter(function (name) {
+      return name.toLowerCase() === 'entryuuid';
+    })[0];
+    const uuidValue = uuidName ? [].concat(attrs[uuidName])[0] : '';
     log.debug("Leaving CertEnrollment.resolveEntry(). " + found.dn);
     return {
       ok: true,
       entry: { kind: kind, id: String(id) },
+      uuid: String(uuidValue || '').toLowerCase(),
       dn: found.dn,
       mail: (user && user.email) || '',
       upn: (user && user.userPrincipalName) || '',
@@ -984,6 +1082,13 @@ class CertEnrollment {
                                       hasEntry: false } };
     }
     log.debug("Leaving CertEnrollment.authenticatePerson(). Refused.");
+    // A RIGHT PASSWORD REFUSED FOR WANT OF A SECOND FACTOR is recorded as the
+    // verifier's STS-AUTHN-0213, as LDAP and SCIM record it; the answer is the
+    // same (2026-11-14, found by #444's D12).
+    if (local.ok && verified && verified.reason === 'second-factor-required') {
+      return self.refuse('STS-AUTHN-0213', 401,
+                         'The password was not accepted.');
+    }
     return self.refuse(local.ok ? 'STS-ENROLL-0014' : 'STS-ENROLL-0015', 401,
                        local.ok
                          ? 'The password was not accepted.'
@@ -1160,11 +1265,19 @@ class CertEnrollment {
     const uris = String((cert && cert.subjectAltName) || '').split(/,\s*/)
       .filter(function (one) { return one.indexOf('URI:') === 0; })
       .map(function (one) { return one.slice(4); });
-    const named = uris.map(function (uri) {
-      return self.entryFromUri(uri);
-    }).filter(function (one) {
-      return !!one;
+    const namingUris = uris.filter(function (uri) {
+      return !!self.entryFromUri(uri);
     });
+    const named = namingUris.map(function (uri) {
+      return self.entryFromUri(uri);
+    });
+    const notOne = named.length === 1
+      ? self.serviceAccountUriRefusal(namingUris[0]) : null;
+    if (notOne) {
+      log.debug("Leaving CertEnrollment.authenticatePresentedCertificate(). " +
+                "Not a service account.");
+      return notOne;
+    }
     if (named.length !== 1) {
       log.debug("Leaving CertEnrollment.authenticatePresentedCertificate(). " +
                 "No entry.");
@@ -1722,6 +1835,23 @@ class CertEnrollment {
                          'request is not one this certificate authority can ' +
                          'certify.');
     }
+    // AN RSA KEY OF AT LEAST 2048 BITS, IN EVERY MODE (#35, 2026-11-15).
+    // ACME, EST and SCEP all read a request through here, and nothing here
+    // asked the size: a development realm certified an RSA-1024 key over
+    // EST. 2048 is the floor everything else in this service holds an RSA
+    // key to — an ACME account key (`acme_jws.ts`'s MIN_RSA_BITS), an
+    // uploaded signing key (`pki.js`), the realm's own CA keys — and NIST SP
+    // 800-131A Rev. 2 disallows less for a signature. It is refused as a key
+    // this authority cannot certify, the code ACME answers `badPublicKey`
+    // for; the elliptic curves and the post-quantum families are already
+    // held to their lists by `describePublicPem()` above.
+    if (desc.kind === 'rsa' && Number(desc.bits || 0) < MIN_RSA_BITS) {
+      log.debug("Leaving CertEnrollment.parseCsr(). A short RSA key.");
+      return self.refuse('STS-ENROLL-0031', 400, 'The request carries a ' +
+                         Number(desc.bits || 0) + '-bit RSA key, and this ' +
+                         'certificate authority certifies an RSA key of at ' +
+                         'least ' + MIN_RSA_BITS + ' bits.');
+    }
     const kem = desc.kind === 'pqc' && desc.use && desc.use !== 'sig';
     if (kem && !opts.template) {
       log.debug("Leaving CertEnrollment.parseCsr(). A KEM key.");
@@ -1949,7 +2079,16 @@ class CertEnrollment {
     const self = this;
     log.debug("Entering CertEnrollment.targetFromRequest().");
     const named = [];
-    ((requested && requested.uris) || []).forEach(function (uri) {
+    const asked = (requested && requested.uris) || [];
+    for (let i = 0; i < asked.length; i++) {
+      const notOne = self.serviceAccountUriRefusal(asked[i]);
+      if (notOne) {
+        log.debug("Leaving CertEnrollment.targetFromRequest(). Not a " +
+                  "service account.");
+        return notOne;
+      }
+    }
+    asked.forEach(function (uri) {
       const entry = self.entryFromUri(uri);
       if (entry && !named.some(function (one) {
         return self.sameEntry(one, entry);
@@ -2033,7 +2172,15 @@ class CertEnrollment {
     seen['uri:' + self.entryUri(entry)] = true;
     const uris = want.uris || [];
     for (let i = 0; i < uris.length; i++) {
-      if (uris[i] !== self.entryUri(entry)) {
+      // Either spelling of the entry's own name (#1827); the leaf carries
+      // the entry's name as it is now, which is the first name above.
+      const notOne = self.serviceAccountUriRefusal(uris[i]);
+      if (notOne) {
+        log.debug("Leaving CertEnrollment.namesFor(). Not a service " +
+                  "account.");
+        return notOne;
+      }
+      if (!self.namesEntry(uris[i], entry)) {
         log.debug("Leaving CertEnrollment.namesFor(). A foreign URI.");
         return self.refuse('STS-ENROLL-0050', 403, 'The request asks for the ' +
                            'name "' + String(uris[i]).slice(0, 200) + '", ' +
@@ -2925,7 +3072,8 @@ class CertEnrollment {
                                           want.upns || []);
     if (deviceIds.length > 1 || other.length ||
         ownerUris.some(function (uri) {
-          return !asked.target || uri !== self.entryUri(asked.target);
+          return !asked.target || !self.namesEntry(uri, asked.target) ||
+                 !!self.serviceAccountUriRefusal(uri);
         })) {
       log.debug("Leaving CertEnrollment.issueForDevice(). Names.");
       return refused(self.refuse('STS-ENROLL-0050', 403, 'A device ' +
@@ -5005,6 +5153,9 @@ export = {
   entryUri: slot.forward('entryUri'),
   organisationOf: slot.forward('organisationOf'),
   entryFromUri: slot.forward('entryFromUri'),
+  namesEntry: slot.forward('namesEntry'),
+  serviceAccountUriRefusal: slot.forward('serviceAccountUriRefusal'),
+  isServiceAccount: slot.forward('isServiceAccount'),
   entryNamedByCertificate: slot.forward('entryNamedByCertificate'),
   entryOfCredentialId: slot.forward('entryOfCredentialId'),
   entryLabel: slot.forward('entryLabel'),

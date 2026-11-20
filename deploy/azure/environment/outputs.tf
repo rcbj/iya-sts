@@ -163,3 +163,13 @@ output "intercell_url" {
   description = "Where the other cells reach this one: https://nodes.<cell>.<env>.iya-sts.internal:8446; empty outside a cell."
   value       = local.multi ? "https://${local.intercell_hostname}:${local.intercell_port}" : ""
 }
+
+output "direct_hostname" {
+  description = "The name that reaches the load balancer (or the cells' tree) itself: the public name unless Front Door is in front (frontdoor.tf, #1341)."
+  value       = local.direct_host
+}
+
+output "frontdoor_endpoint" {
+  description = "The Front Door endpoint the public name is a CNAME to; empty without one, and in every cell but the primary."
+  value       = local.frontdoor_here ? azurerm_cdn_frontdoor_endpoint.main[0].host_name : ""
+}

@@ -533,42 +533,86 @@ class Oidfed {
   // (8.2.1, and the Extended Listing, #135): its entity types — the
   // register's for a registered one, read off its configuration for a realm
   // of this service — and whether it is an Intermediate.
+  //
+  // **A REALM OF THIS SERVICE IS DESCRIBED ONLY WHEN A CALLER NEEDS IT**
+  // (GitHub Actions run 43735265596, cluster mode, 2026-11-15). Describing
+  // one builds its whole Entity Configuration — every protocol's metadata,
+  // the verifier's request signer, a signature — and in the default topology
+  // the default realm has every other realm as a subordinate. So a list page
+  // with no filter cost one configuration per realm the service holds,
+  // whatever `limit` said: 2.3 s a page with the few hundred realms a
+  // protocol run leaves behind, and sts_oidfed_extensions' walk two at a time
+  // was N/2 such pages, past its five-minute limit on the cluster's slower
+  // nodes. `described` false answers each row as the register and the realm
+  // list have it (`described: false`, no `heldTypes`), and `describedFact()`
+  // describes one row when a caller does need it — a filter on entity type
+  // or Intermediate needs every row, a `trust_marks` claim only the page's.
   // -------------------------------------------------------------------------
   /**
    * Answers what the listings filter on for each active subordinate: its entity
    * types and whether it is an Intermediate.
    *
    * @param req - the request
+   * @param described - false to skip describing the realms of this service
+   * (each row then `described: false`); true when omitted
    * @returns a promise of one row per subordinate
    */
-  async subordinateFacts(req: Req): Promise<Json[]> {
+  async subordinateFacts(req: Req, described?: boolean): Promise<Json[]> {
     const { log } = this.deps;
-    log.debug("Entering Oidfed.subordinateFacts().");
-    const self = this;
+    log.debug("Entering Oidfed.subordinateFacts(). " + described);
     const subs = this.activeSubordinates(req);
     const out: Json[] = [];
     for (let i = 0; i < subs.length; i++) {
-      const s = subs[i];
-      let held: string[] = Array.isArray(s.entityTypes) ? s.entityTypes : [];
-      let isIntermediate = !!s.intermediate;
-      let configuration: Json = null;
-      if (s.localRealm) {
-        const realm = this.deps.realms.get(s.localRealm);
-        const ec: Outcome = realm ? await this.inRealm(realm, req,
-          function (r: Req) {
-            return self.configuration(r);
-          }) : { ok: false };
-        held = ec.ok ? Object.keys(ec.claims.metadata || {}) : [];
-        isIntermediate = !!(ec.ok && ec.claims.metadata.federation_entity &&
-          ec.claims.metadata.federation_entity.federation_fetch_endpoint);
-        configuration = ec.ok ? ec.claims : null;
+      if (described === false) {
+        out.push(Object.assign({}, subs[i], { described: false }));
+      } else {
+        out.push(await this.describedFact(req, subs[i]));
       }
-      out.push(Object.assign({}, s, { heldTypes: held,
-                                      isIntermediate: isIntermediate,
-                                      configuration: configuration }));
     }
     log.debug("Leaving Oidfed.subordinateFacts(). " + out.length);
     return out;
+  }
+
+  // One subordinate DESCRIBED: its entity types, whether it is an
+  // Intermediate, and — for a realm of this service — the claims of its
+  // Entity Configuration. A row already described is answered as it is.
+  /**
+   * Describes one subordinate: its entity types, whether it is an
+   * Intermediate, and for a realm of this service its Entity Configuration's
+   * claims.
+   *
+   * @param req - the request
+   * @param s - a row of `activeSubordinates()` or `subordinateFacts()`
+   * @returns a promise of the row with `heldTypes`, `isIntermediate`,
+   * `configuration` and `described: true`
+   */
+  async describedFact(req: Req, s: Json): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering Oidfed.describedFact(). " + s.entityId);
+    if (s.described === true) {
+      log.debug("Leaving Oidfed.describedFact(). Already described.");
+      return s;
+    }
+    const self = this;
+    let held: string[] = Array.isArray(s.entityTypes) ? s.entityTypes : [];
+    let isIntermediate = !!s.intermediate;
+    let configuration: Json = null;
+    if (s.localRealm) {
+      const realm = this.deps.realms.get(s.localRealm);
+      const ec: Outcome = realm ? await this.inRealm(realm, req,
+        function (r: Req) {
+          return self.configuration(r);
+        }) : { ok: false };
+      held = ec.ok ? Object.keys(ec.claims.metadata || {}) : [];
+      isIntermediate = !!(ec.ok && ec.claims.metadata.federation_entity &&
+        ec.claims.metadata.federation_entity.federation_fetch_endpoint);
+      configuration = ec.ok ? ec.claims : null;
+    }
+    log.debug("Leaving Oidfed.describedFact().");
+    return Object.assign({}, s, { heldTypes: held,
+                                  isIntermediate: isIntermediate,
+                                  configuration: configuration,
+                                  described: true });
   }
 
   // The keys a Subordinate Statement pins for a subordinate: the register's,
@@ -1682,7 +1726,9 @@ class Oidfed {
       .map(String).filter(Boolean);
     const markType = query.trust_mark_type ? String(query.trust_mark_type)
                                            : '';
-    const subs = await this.subordinateFacts(req);
+    // Described only when a filter reads what describing finds.
+    const subs = await this.subordinateFacts(req, types.length > 0 ||
+                                                  intermediate !== undefined);
     const out: string[] = [];
     for (let i = 0; i < subs.length; i++) {
       const s = subs[i];

@@ -254,10 +254,22 @@ class OidfedRp {
     }
     const op = (got.resolved.metadata || {}).openid_provider;
     let problem = '';
+    // AN ABSENT `issuer` IS THE ENTITY IDENTIFIER (#933). Connect 1.1 section
+    // 5.1.2 says the issuer in openid_provider metadata MUST match the
+    // Entity Identifier, so that is the one value it can have, and the
+    // resolved metadata determines it whether or not it is written out. The
+    // OpenID Foundation's suite publishes its OP that way, and its own
+    // relying party fills `issuer` in from the Entity Configuration's `iss`.
+    // Refusing it left every happy-path module of the relying-party plan
+    // WAITING until it timed out. An issuer that IS present and names
+    // anybody else is still refused, and the ID Token's `iss` is still held
+    // to the Entity Identifier, so nothing is believed that was not before.
+    const issuer = (op && (op.issuer === undefined || op.issuer === null))
+      ? peer : (op ? op.issuer : undefined);
     if (!op) {
       problem = 'it resolves with no openid_provider metadata';
-    } else if (op.issuer !== peer) {
-      problem = 'its issuer is ' + op.issuer + ', not its Entity ' +
+    } else if (issuer !== peer) {
+      problem = 'its issuer is ' + issuer + ', not its Entity ' +
                 'Identifier (Connect 1.1, 5.1.2)';
     } else if (!EntityStatement.isEndpointUrl(op.authorization_endpoint) ||
                !EntityStatement.isEndpointUrl(op.token_endpoint)) {
@@ -305,7 +317,7 @@ class OidfedRp {
       fedClientSecret: '',
       fedResponseType: 'code',
       fedTokenAuth: 'private_key_jwt',
-      fedOpIssuer: String(op.issuer)
+      fedOpIssuer: String(issuer)
     });
     log.debug("Leaving OidfedRp.effectiveRecord(). Through " + anchor);
     return { ok: true, record: effective, anchor: anchor };
@@ -356,11 +368,26 @@ class OidfedRp {
     return at + (at.indexOf('?') === -1 ? '?' : '&') + outer.toString();
   }
 
-  // The private_key_jwt for the token request (RFC 7523, 12.1.1.2): `iss`
-  // and `sub` this realm's client_id, `aud` the OP's Entity Identifier.
+  // The private_key_jwt for the token request (RFC 7523): `iss` and `sub`
+  // this realm's client_id, `aud` THE OP'S TOKEN ENDPOINT URL, a single
+  // string, never the Entity Identifier the request object is addressed to.
+  // OpenID Federation 1.0 section 12.1.1.2 holds a client assertion to the
+  // Entity Identifier only at the PUSHED AUTHORIZATION REQUEST endpoint,
+  // which this relying party does not use; of the token endpoint it says
+  // nothing (12.1.5 leaves other endpoints to other specifications), so
+  // OpenID Connect Core section 9 governs: the audience "SHOULD be the URL
+  // of the Authorization Server's Token Endpoint", which RFC 7523 section 3
+  // allows too. Addressed to the Entity Identifier, every happy-path module
+  // of the OpenID Foundation's joined-rp plans failed with
+  // "ValidateClientAssertionClaims: aud mismatch": at its token endpoint the
+  // suite (v5.3.1, OpenIDFederationClientTest.tokenResponse) accepts the
+  // token endpoint URL, never the OP's Entity Identifier. Only this federated
+  // path changes; a FAPI or plain OpenID Connect relationship signs its own
+  // assertion in `federation/fapi_client.ts`.
   /**
-   * Signs the `private_key_jwt` for the token request (RFC 7523, 12.1.1.2):
-   * `iss` and `sub` this realm's client_id, `aud` the OP's Entity Identifier.
+   * Signs the `private_key_jwt` for the token request (RFC 7523, Connect
+   * Core 9): `iss` and `sub` this realm's client_id, `aud` the OP's token
+   * endpoint URL.
    *
    * @param effective - `effectiveRecord()`'s record
    * @returns a promise of the assertion
@@ -374,7 +401,7 @@ class OidfedRp {
     // publishes, as the request object is.
     return signJwtAsAsync({ iss: effective.fedClientId,
                             sub: effective.fedClientId,
-                            aud: effective.fedOpIssuer,
+                            aud: String(effective.fedTokenUrl || ''),
                             jti: stsCrypto.randomUuid(), iat: iat,
                             exp: iat + 300 }, RP_ALG, null, {});
   }

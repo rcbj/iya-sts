@@ -198,6 +198,22 @@ function childMain() {
          ClosedSets.saidName('z--><qss>') === '"z--%3E%3Cqss%3E"',
          'F2. markup and quotes are percent-encoded',
          ClosedSets.saidName('"><script>alert(81)</script>'));
+    // F3 (run 21's fuzz stage): the cut at 128 fell inside a surrogate
+    // pair and encodeURIComponent() threw "URI malformed" — a 500 on
+    // POST /admin-api/branding/logo for a long query name of astral
+    // characters. A lone surrogate the caller sent is U+FFFD.
+    let said3 = '';
+    let threw3 = '';
+    try {
+      said3 = ClosedSets.saidName('\n' + 'a'.repeat(126) + '\ud83d\ude00') +
+              ClosedSets.saidName('<\udc00x\ud800y');
+    } catch (e) {
+      threw3 = String((e && e.message) || e);
+    }
+    note(!threw3 && said3 === '"%0A' + 'a'.repeat(126) + '""%3C%EF%BF%BDx' +
+           '%EF%BF%BDy"',
+         'F3. a cut pair is dropped whole and a lone surrogate is said as ' +
+         'U+FFFD, never a throw', threw3 || said3);
 
     // G. The four sentences the scan found reflecting its probes.
     const probes = [

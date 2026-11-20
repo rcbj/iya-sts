@@ -97,6 +97,16 @@ class CryptoMetadataPage {
       .replace(/^-|-$/g, '');
   }
 
+  // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): a section of a
+  // page cut into tabs keeps its `data-tab` heading at the top level, where
+  // `WebPages.protocolTabs()` cuts, and what follows it is one frame, each
+  // `<h3>` block a frame inside it.
+  static tabFramed(html) {
+    const head = /^<h2\b[^>]*>[\s\S]*?<\/h2>/.exec(html);
+    return head ? head[0] + kit.frame(html.slice(head[0].length))
+                : kit.frame(html);
+  }
+
   static renderFamilies(report, t) {
     const self = this;
     // The link is markup a message cannot carry, so the lead is cut at it.
@@ -151,7 +161,7 @@ class CryptoMetadataPage {
       }).join('') + '</tbody></table>';
 
     report.families.forEach(function (row) {
-      html += '<h3 id="' + esc(self.anchorFor(row.name)) + '">' +
+      html += kit.frame('<h3 id="' + esc(self.anchorFor(row.name)) + '">' +
         esc(row.name) + '</h3>' +
         '<table><tbody>' +
         '<tr><th class="n">' + t.html('consoleCryptoMetadata.hashing') +
@@ -185,9 +195,9 @@ class CryptoMetadataPage {
         }).join(', ') + '</td></tr>' +
         '</tbody></table>' +
         kit.note(t.html('consoleCryptoMetadata.doesNotDo') + ' ' +
-                   self.prose(row.whatItDoesNot));
+                   self.prose(row.whatItDoesNot)));
     });
-    return html;
+    return CryptoMetadataPage.tabFramed(html);
   }
 
   // A "View details" link on a key row, opening the certificate dialog over
@@ -313,7 +323,7 @@ class CryptoMetadataPage {
       self.prose(keys.postQuantum.what) + ' ' +
       t.html('consoleCryptoMetadata.firstUseAfter'));
     html += kit.note(t.html('consoleCryptoMetadata.noSecret'));
-    return html;
+    return CryptoMetadataPage.tabFramed(html);
   }
 
   static renderHashing(report, t) {
@@ -338,16 +348,17 @@ class CryptoMetadataPage {
       '</span></td></tr>' +
       '</tbody></table>';
 
-    html += '<h3>XML DigestMethod</h3><table><thead><tr><th class="n">' +
+    html += kit.frame('<h3>XML DigestMethod</h3>' +
+      '<table><thead><tr><th class="n">' +
             'URI</th>' +
       '<th>' + t.html('consoleCryptoMetadata.thLabel') +
       '</th></tr></thead><tbody>' +
       h.xmlDigestMethods.map(function (row) {
         return '<tr><td class="n"><code>' + esc(row.uri) + '</code></td><td>' +
           esc(row.label) + '</td></tr>';
-      }).join('') + '</tbody></table>';
+      }).join('') + '</tbody></table>');
 
-    html += '<h3>' + t.html('consoleCryptoMetadata.fixedUses') +
+    html += kit.frame('<h3>' + t.html('consoleCryptoMetadata.fixedUses') +
       '</h3><table><thead><tr><th class="n">' +
       t.html('consoleCryptoMetadata.thWhere') + '</th>' +
       '<th>' + t.html('consoleCryptoMetadata.thDigest') + '</th><th>' +
@@ -356,9 +367,10 @@ class CryptoMetadataPage {
         return '<tr><td class="n">' + self.prose(row.where) +
           '</td><td><code>' + esc(row.hash) + '</code></td><td>' +
           self.prose(row.what) + '</td></tr>';
-      }).join('') + '</tbody></table>';
+      }).join('') + '</tbody></table>');
 
-    html += '<h3>' + t.html('consoleCryptoMetadata.weakOnes') + '</h3>' +
+    html += kit.frame('<h3>' + t.html('consoleCryptoMetadata.weakOnes') +
+      '</h3>' +
       kit.note(t.html('consoleCryptoMetadata.weakNote')) +
       '<table><thead><tr><th class="n">' +
       t.html('consoleCryptoMetadata.thDigest') + '</th><th>' +
@@ -369,8 +381,8 @@ class CryptoMetadataPage {
         return '<tr><td class="n"><code>' + esc(row.hash) + '</code></td><td>' +
           self.prose(row.where) + '</td><td>' + self.prose(row.why) +
           '</td></tr>';
-      }).join('') + '</tbody></table>';
-    return html;
+      }).join('') + '</tbody></table>');
+    return CryptoMetadataPage.tabFramed(html);
   }
 
   // WHICH ALGORITHM, ON WHICH SURFACE, AND WHY NOT (#1368). A row is the policy's
@@ -386,7 +398,7 @@ class CryptoMetadataPage {
       t.html('consoleCryptoMetadata.algorithmsSettings') + '</a></p>';
     Object.keys(policy.surfaces).forEach(function (name) {
       const surface = policy.surfaces[name];
-      html += '<h3><code>' + esc(name) + '</code></h3>' +
+      html += kit.frame('<h3><code>' + esc(name) + '</code></h3>' +
         '<table><thead><tr><th>' + t.html('consoleCryptoMetadata.thAlgName') +
         '</th><th>' + t.html('consoleCryptoMetadata.thAlgSigns') + '</th><th>' +
         t.html('consoleCryptoMetadata.thAlgAccepts') + '</th><th>' +
@@ -396,9 +408,9 @@ class CryptoMetadataPage {
             (surface.signSetting ? (row.signs ? yes : no) : '') + '</td><td>' +
             (row.accepts ? yes : no) + '</td><td>' +
             esc(row.signRefusal || row.acceptRefusal) + '</td></tr>';
-        }).join('') + '</tbody></table>';
+        }).join('') + '</tbody></table>');
     });
-    return html;
+    return CryptoMetadataPage.tabFramed(html);
   }
 
   static renderSignatures(report, t) {
@@ -411,7 +423,8 @@ class CryptoMetadataPage {
       '<p class="lead">' + t.html('consoleCryptoMetadata.signaturesLead') +
       '</p>';
 
-    html += '<h3>JWS</h3><table><thead><tr><th class="n">alg</th><th>' +
+    html += kit.frame('<h3>JWS</h3>' +
+      '<table><thead><tr><th class="n">alg</th><th>' +
       t.html('consoleCryptoMetadata.thFamily') + '</th><th>' +
       t.html('consoleCryptoMetadata.thKey') + '</th><th>' +
       t.html('consoleCryptoMetadata.thDigest') + '</th><th>' +
@@ -435,9 +448,9 @@ class CryptoMetadataPage {
           '</td>' +
           '<td>' + (row.dpop ? yes : no) + '</td></tr>';
       }).join('') + '</tbody></table>' +
-      kit.note(t.html('consoleCryptoMetadata.dpopNote'));
+      kit.note(t.html('consoleCryptoMetadata.dpopNote')));
 
-    html += '<h3>XML SignatureMethod</h3>' +
+    html += kit.frame('<h3>XML SignatureMethod</h3>' +
       '<p class="lead">' + t.html('consoleCryptoMetadata.xmlSigLead') +
       '</p><table><thead><tr><th class="n">URI</th><th>' +
       t.html('consoleCryptoMetadata.thLabel') + '</th><th>' +
@@ -450,9 +463,10 @@ class CryptoMetadataPage {
           '</code></td><td>' + (row.signsWith ? yes : '<span class="why">' +
           t.html('consoleCryptoMetadata.verifyOnly') + '</span>') +
           '</td></tr>';
-      }).join('') + '</tbody></table>';
+      }).join('') + '</tbody></table>');
 
-    html += '<h3>' + t.html('consoleCryptoMetadata.canonicalization') +
+    html += kit.frame('<h3>' +
+      t.html('consoleCryptoMetadata.canonicalization') +
       '</h3>' +
       '<table><thead><tr><th class="n">URI</th><th>' +
       t.html('consoleCryptoMetadata.thLabel') + '</th>' +
@@ -465,18 +479,18 @@ class CryptoMetadataPage {
             : '<span class="why">' + t.html('consoleCryptoMetadata.readOnly') +
               '</span>') + '</td></tr>';
       }).join('') + '</tbody></table>' +
-      kit.note(t.html('consoleCryptoMetadata.exclusiveNote'));
+      kit.note(t.html('consoleCryptoMetadata.exclusiveNote')));
 
-    html += '<h3>COSE (WebAuthn)</h3><table><thead><tr>' +
+    html += kit.frame('<h3>COSE (WebAuthn)</h3><table><thead><tr>' +
       '<th class="n">COSE alg</th><th>' +
       t.html('consoleCryptoMetadata.thJoseName') +
       '</th></tr></thead><tbody>' +
       s.cose.map(function (row) {
         return '<tr><td class="n"><code>' + esc(row.coseAlg) +
           '</code></td><td><code>' + esc(row.jose) + '</code></td></tr>';
-      }).join('') + '</tbody></table>';
+      }).join('') + '</tbody></table>');
 
-    html += '<h3>' + t.html('consoleCryptoMetadata.everythingElse') +
+    html += kit.frame('<h3>' + t.html('consoleCryptoMetadata.everythingElse') +
       '</h3><table><thead><tr><th class="n">' +
       t.html('consoleCryptoMetadata.thWhat') + '</th>' +
       '<th>' + t.html('consoleCryptoMetadata.thDetail') +
@@ -484,8 +498,8 @@ class CryptoMetadataPage {
       s.other.map(function (row) {
         return '<tr><td class="n">' + esc(row.name) + '</td><td>' +
           self.prose(row.what) + '</td></tr>';
-      }).join('') + '</tbody></table>';
-    return html;
+      }).join('') + '</tbody></table>');
+    return CryptoMetadataPage.tabFramed(html);
   }
 
   static renderEncryption(report, t) {
@@ -497,7 +511,7 @@ class CryptoMetadataPage {
       'class="lead">' + t.html('consoleCryptoMetadata.encryptionLead') +
       '</p>';
 
-    html += '<h3>JWE</h3><table><tbody>' +
+    html += kit.frame('<h3>JWE</h3><table><tbody>' +
       '<tr><th class="n">' + t.html('consoleCryptoMetadata.kmEncrypting') +
       '</th><td>' +
       self.chips(e.jwe.keyManagementOut) + '</td></tr>' +
@@ -523,10 +537,10 @@ class CryptoMetadataPage {
           '</td><td>' +
           esc(row.note) + '</td></tr>';
       }).join('') + '</tbody></table>' +
-      kit.note(t.html('consoleCryptoMetadata.cbcNote'));
+      kit.note(t.html('consoleCryptoMetadata.cbcNote')));
 
     // The link is markup a message cannot carry, so the lead is cut at it.
-    html += '<h3>XML Encryption</h3>' +
+    html += kit.frame('<h3>XML Encryption</h3>' +
       '<p class="lead">' + t.html('consoleCryptoMetadata.xmlEncLead') +
       ' <a href="/admin/saml2">SAML 2.0</a>' +
       t.html('consoleCryptoMetadata.xmlEncNow',
@@ -563,9 +577,10 @@ class CryptoMetadataPage {
             : t.html('consoleCryptoMetadata.broken')) +
           '</td></tr>';
       }).join('') + '</tbody></table>' +
-      kit.warn(t.html('consoleCryptoMetadata.unsafeNote'));
+      kit.warn(t.html('consoleCryptoMetadata.unsafeNote')));
 
-    html += '<h3>' + t.html('consoleCryptoMetadata.kerberosEtypes') + '</h3>' +
+    html += kit.frame('<h3>' +
+      t.html('consoleCryptoMetadata.kerberosEtypes') + '</h3>' +
       '<table><thead><tr><th class="n">etype</th><th>' +
       t.html('consoleCryptoMetadata.thName') + '</th>' +
       '<th>' + t.html('consoleCryptoMetadata.thPerformed') +
@@ -581,13 +596,14 @@ class CryptoMetadataPage {
           '</code></td><td><span class="why">' +
           t.html('consoleCryptoMetadata.decodeOnly') + '</span></td></tr>';
       }).join('') + '</tbody></table>' +
-      kit.note(t.html('consoleCryptoMetadata.decodeOnlyNote'));
+      kit.note(t.html('consoleCryptoMetadata.decodeOnlyNote')));
 
     // `tls.what` is the report's sentence, drawn as it comes.
-    html += '<h3>TLS</h3>' + kit.note('<strong>' + self.prose(e.tls.what) +
+    html += kit.frame('<h3>TLS</h3>' +
+      kit.note('<strong>' + self.prose(e.tls.what) +
       '</strong> ' + t.html('consoleCryptoMetadata.sockets') + ' ' +
-      self.chips(e.tls.sockets) + '.');
-    return html;
+      self.chips(e.tls.sockets) + '.'));
+    return CryptoMetadataPage.tabFramed(html);
   }
 
   static renderPostQuantum(report, t) {
@@ -604,7 +620,8 @@ class CryptoMetadataPage {
         t.html('consoleCryptoMetadata.pqStrongest') + ' ' +
         self.prose(pq.symmetric.strongest));
 
-    html += '<h3>' + t.html('consoleCryptoMetadata.pqHeld') + '</h3>' +
+    html += kit.frame('<h3>' + t.html('consoleCryptoMetadata.pqHeld') +
+      '</h3>' +
       '<table><tbody>' +
       '<tr><th class="n">ML-DSA (FIPS 204)</th><td>' +
       self.chips(pq.algorithms.mlDsa) +
@@ -632,13 +649,14 @@ class CryptoMetadataPage {
       kit.note(t.html('consoleCryptoMetadata.compositesBuy') + ' ' +
         self.prose(pq.algorithms.what)) +
       kit.note(t.html('consoleCryptoMetadata.independence') + ' ' +
-        self.prose(pq.algorithms.independence));
+        self.prose(pq.algorithms.independence)));
 
     const pqAvailable = '<strong>' +
       t.html('consoleCryptoMetadata.pqAvailable') + '</strong>';
     const classicalOnly = '<span class="why">' +
       t.html('consoleCryptoMetadata.classicalOnly') + '</span>';
-    html += '<h3>' + t.html('consoleCryptoMetadata.sigSurfaces') + '</h3>' +
+    html += kit.frame('<h3>' +
+      t.html('consoleCryptoMetadata.sigSurfaces') + '</h3>' +
       '<table><thead><tr><th class="n">' +
       t.html('consoleCryptoMetadata.thSurface') + '</th><th>' +
       t.html('consoleCryptoMetadata.thState') + '</th><th>' +
@@ -648,9 +666,10 @@ class CryptoMetadataPage {
         return '<tr><td class="n">' + esc(row.surface) + '</td><td>' +
           (row.state === 'pq' ? pqAvailable : classicalOnly) +
           '</td><td>' + self.prose(row.how) + '</td></tr>';
-      }).join('') + '</tbody></table>';
+      }).join('') + '</tbody></table>');
 
-    html += '<h3>' + t.html('consoleCryptoMetadata.keSurfaces') + '</h3>' +
+    html += kit.frame('<h3>' +
+      t.html('consoleCryptoMetadata.keSurfaces') + '</h3>' +
       kit.note(t.html('consoleCryptoMetadata.keNote') + ' ' +
         self.prose(pq.keyEstablishment.what)) +
       '<table><thead><tr><th class="n">' +
@@ -689,8 +708,8 @@ class CryptoMetadataPage {
       '<tr><th class="n">' + t.html('consoleCryptoMetadata.whatRemains') +
       '</th><td>' +
       self.prose(pq.keyEstablishment.whatWouldClose) +
-      '</td></tr></tbody></table>';
-    return html;
+      '</td></tr></tbody></table>');
+    return CryptoMetadataPage.tabFramed(html);
   }
 
   static renderStandards(report, t) {
@@ -705,7 +724,8 @@ class CryptoMetadataPage {
 
     // A standard's name, coverage and description are the report's.
     html += report.standards.map(function (row) {
-      return '<h3 id="std-' + esc(row.key) + '">' + esc(row.name) + '</h3>' +
+      return kit.frame('<h3 id="std-' + esc(row.key) + '">' + esc(row.name) +
+        '</h3>' +
         '<table><tbody>' +
         '<tr><th class="n">' + t.html('consoleCryptoMetadata.specifications') +
         '</th><td>' + self.chips(row.specs) +
@@ -716,9 +736,9 @@ class CryptoMetadataPage {
         'class="n">' + t.html('consoleCryptoMetadata.whatItIsHere') +
         '</th><td>' + self.prose(row.what) +
         '</td></tr>' +
-        '</tbody></table>';
+        '</tbody></table>');
     }).join('');
-    return html;
+    return CryptoMetadataPage.tabFramed(html);
   }
 
   static renderInner(report, t) {
@@ -836,11 +856,14 @@ class CryptoMetadataPage {
       '</p>' +
       '<p><a href="/admin/keys">&larr; ' +
       t.html('consoleCryptoMetadata.keyPairs') + '</a></p>';
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each `<h2>`
+    // section one frame; the lead stays outside.
     if (!view.observed) {
-      return lead + '<p class="warn">' +
-             t.html('consoleCryptoMetadata.noHistoryModule') + '</p>';
+      return lead + kit.frame('<p class="warn">' +
+             t.html('consoleCryptoMetadata.noHistoryModule') + '</p>');
     }
-    const index = '<h2>' + t.html('consoleCryptoMetadata.units') + '</h2>' +
+    const index = kit.frame('<h2>' + t.html('consoleCryptoMetadata.units') +
+      '</h2>' +
       (view.units.length
       ? '<table class="data"><thead><tr><th>' +
         t.html('consoleCryptoMetadata.thUnit') + '</th><th>' +
@@ -856,7 +879,7 @@ class CryptoMetadataPage {
             '</td><td>' + esc(String(u.dropped)) + '</td><td>' +
             esc(String(u.withCertificate)) + '</td></tr>';
         }).join('') + '</tbody></table>'
-      : '<p>' + t.html('consoleCryptoMetadata.noKeyObserved') + '</p>');
+      : '<p>' + t.html('consoleCryptoMetadata.noKeyObserved') + '</p>'));
     if (!view.unit) {
       return lead + index;
     }
@@ -894,7 +917,8 @@ class CryptoMetadataPage {
             t.html('consoleCryptoMetadata.certificateAndChain') + '</a>'
           : t.html('consoleCryptoMetadata.none')) + '</td></tr>';
     }).join('');
-    const out = lead + '<h2>' + esc(view.unit) + '</h2>' + nav.head +
+    const out = lead + kit.frame('<h2>' + esc(view.unit) + '</h2>' +
+      nav.head +
       '<table class="data"><thead><tr><th>' +
       t.html('consoleCryptoMetadata.thKey') + '</th><th>' +
       t.html('consoleCryptoMetadata.thRole') + '</th>' +
@@ -905,7 +929,7 @@ class CryptoMetadataPage {
       '<th>' + t.html('consoleCryptoMetadata.thWhy') + '</th><th>' +
       t.html('consoleCryptoMetadata.thCertificate') +
       '</th></tr></thead><tbody>' + rows +
-      '</tbody></table>' + nav.foot + index;
+      '</tbody></table>' + nav.foot) + index;
     return out;
   }
 
@@ -970,16 +994,20 @@ class CryptoMetadataPage {
                    { n: String(view.refresh.retired),
                      days: String(view.refresh.graceDays) }) +
       '</p>';
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab's
+    // heading stays at the top level for the tab splitter, what follows it
+    // is one frame, and the `<h3>` block a frame inside it.
     if (!canWrite) {
       return '<h2 data-tab="rotation">' +
-        t.html('consoleCryptoMetadata.rotation') + '</h2>' + status + table;
+        t.html('consoleCryptoMetadata.rotation') + '</h2>' +
+        kit.frame(status + table);
     }
     // THE ROTATION, THE KEY PAIRS AND THE SETTINGS ARE TABS ON /admin/keys
     // (2026-10-12); what is held decrypted, the exporter's note and the
     // legend are Metadata.
     const out = '<h2 data-tab="rotation">' +
       t.html('consoleCryptoMetadata.rotation') + '</h2>' +
-      status +
+      kit.frame(status +
       '<form method="post" action="/admin/keys/rotate">' +
       '<input type="hidden" name="action" value="rotate">' + table +
       '<p><button type="submit" id="keys-rotate-selected">' +
@@ -988,7 +1016,7 @@ class CryptoMetadataPage {
       'id="keys-rotate-all">' + t.html('consoleCryptoMetadata.rotateAll') +
       '</button>' + t.html('consoleCryptoMetadata.rotateNote') +
       '</p></form>' +
-      '<h3>' + t.html('consoleCryptoMetadata.emergency') + '</h3>' +
+      kit.frame('<h3>' + t.html('consoleCryptoMetadata.emergency') + '</h3>' +
       '<p class="warn">' + t.html('consoleCryptoMetadata.emergencyNote') +
       '</p>' +
       '<form method="post" action="/admin/keys/rotate">' +
@@ -997,7 +1025,7 @@ class CryptoMetadataPage {
       ' <input type="text" ' +
       'name="confirm" id="keys-emergency-confirm" autocomplete="off">' +
       '</label> <button type="submit" id="keys-emergency">' +
-      t.html('consoleCryptoMetadata.rotateEveryKey') + '</button></form>';
+      t.html('consoleCryptoMetadata.rotateEveryKey') + '</button></form>'));
     return out;
   }
 
@@ -1063,7 +1091,9 @@ class CryptoMetadataPage {
           '</span></td></tr>') +
       '</tbody></table>';
     html += kit.note(t.html('consoleCryptoMetadata.residencyReads'));
-    return html;
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16), and marked for
+    // Metadata, where the tab splitter kept this unmarked section.
+    return kit.metadataFrame(html);
   }
 
   static renderKeyPairs(report, t) {
@@ -1100,10 +1130,13 @@ class CryptoMetadataPage {
     html += PqcBadgeView.legend(t);
 
     // A key's label, its uses and its names are the view's.
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab's
+    // heading stays at the top level for the tab splitter, what follows it
+    // is one frame, and each key's `<h3>` block a frame inside it.
     html += '<h2 id="keys" data-tab="keys">' +
       t.html('consoleCryptoMetadata.theKeyPairs') +
-      '</h2>' +
-      '<table><thead><tr><th class="n">' +
+      '</h2>';
+    let keyList = '<table><thead><tr><th class="n">' +
       t.html('consoleCryptoMetadata.thKey') + '</th><th>' +
       t.html('consoleCryptoMetadata.thType') + '</th><th>' +
       t.html('consoleCryptoMetadata.thIdentifier') + '</th><th>' +
@@ -1135,7 +1168,8 @@ class CryptoMetadataPage {
       }).join('') + '</tbody></table>';
 
     report.keys.forEach(function (row) {
-      html += '<h3 id="key-' + esc(row.id) + '">' + esc(row.label) +
+      keyList += kit.frame('<h3 id="key-' + esc(row.id) + '">' +
+        esc(row.label) +
         PqcBadgeView.badge(row.pqc, t) + '</h3>' +
         '<table><tbody><tr><th class="n">' +
         t.html('consoleCryptoMetadata.usedFor') + '</th><td><ul>' +
@@ -1152,8 +1186,9 @@ class CryptoMetadataPage {
           t.html('consoleCryptoMetadata.validTo') + '</th><td>' +
           esc(row.notAfter) + '</td></tr>' : '') +
         '</tbody></table>' +
-        self.keyExportForm(row, t);
+        self.keyExportForm(row, t));
     });
+    html += kit.frame(keyList);
     return html;
   }
 

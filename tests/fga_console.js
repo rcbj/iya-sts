@@ -101,7 +101,7 @@ function run(t) {
       log.debug("Leaving act().");
       return realms.run(made.realm, function () {
         return adminActions.applicationsAction(Object.assign(
-          { application: 'fgac-rs', actor: 'test' }, body));
+          { application: 'fgac-rs' }, body), undefined, { actor: 'test' });
       });
     },
     read: function () {

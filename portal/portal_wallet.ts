@@ -109,6 +109,8 @@ import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
+type AccountAnswering<K extends keyof IyaApi.Account.Operations> =
+  import('../types/account-api').AccountAnswering<K>;
 type AccountContext = import('../types/account-api').AccountContext;
 type AccountCaller = import('../types/account-api').AccountCaller;
 
@@ -196,7 +198,10 @@ const ALG_NOTES: Json = {
   'ML-DSA-87-Ed448': ['composite post-quantum',
                       'draft-ietf-jose-pq-composite-sigs'],
   'bbs-2023': ['BBS, selective disclosure',
-               'W3C Data Integrity BBS Cryptosuites v1.0']
+               'W3C Data Integrity BBS Cryptosuites v1.0'],
+  // COSE identifiers an mdoc offer names (#1862).
+  '-7': ['COSE ES256', 'RFC 9053'],
+  '-9': ['COSE ESP256', 'RFC 9864']
 };
 
 const OFFER_FORM = ModelZod.body('account', 'createCredentialOffer');
@@ -305,7 +310,10 @@ class PortalWallet {
    * @param action - the audit action of the operation refused
    * @returns the refusal sent, or null
    */
-  refuseDisagreement(ctx: AccountContext, res: Json, caller: AccountCaller,
+  refuseDisagreement(ctx: AccountContext,
+                     res: AccountAnswering<'getOfferableCredentials' |
+                       'removeIssuedCredential' | 'createCredentialOffer'>,
+                     caller: AccountCaller,
                      action: string): unknown {
     const { log } = this.deps;
     log.debug("Entering PortalWallet.refuseDisagreement(). " + action);
@@ -439,7 +447,8 @@ class PortalWallet {
    * @param body - the checked body
    * @returns nothing
    */
-  remove(ctx: AccountContext, req: Json, res: Json, caller: AccountCaller,
+  remove(ctx: AccountContext, req: Json,
+         res: AccountAnswering<'removeIssuedCredential'>, caller: AccountCaller,
          body: Json): unknown {
     const { log, loadIssued } = this.deps;
     log.debug("Entering PortalWallet.remove().");
@@ -501,7 +510,8 @@ class PortalWallet {
    * @param body - the checked body
    * @returns nothing
    */
-  offer(ctx: AccountContext, req: Json, res: Json, caller: AccountCaller,
+  offer(ctx: AccountContext, req: Json,
+        res: AccountAnswering<'createCredentialOffer'>, caller: AccountCaller,
         body: Json): unknown {
     const { log, userFor, loadOffers, loadConfigs } = this.deps;
     log.debug("Entering PortalWallet.offer().");
@@ -617,8 +627,8 @@ class PortalWallet {
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/credentials/offerable',
         operationId: 'getOfferableCredentials', access: 'person', query: PAGE_QUERY,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           const refused = self.refuseDisagreement(ctx, res, caller,
                                                   'portal.vc.view');
           if (refused) {
@@ -629,15 +639,15 @@ class PortalWallet {
         } },
       { method: 'POST', path: ctx.BASE + '/credentials/offers',
         operationId: 'createCredentialOffer', access: 'person', recentAuth: true, body: OFFER_FORM,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return self.offer(ctx, req, res, caller, input.body);
         } },
       { method: 'POST', path: ctx.BASE + '/credentials/remove',
         operationId: 'removeIssuedCredential', access: 'person',
         body: REMOVE_FORM,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return self.remove(ctx, req, res, caller, input.body);
         } }
     ];

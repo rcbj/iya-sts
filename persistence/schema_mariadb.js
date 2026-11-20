@@ -49,7 +49,7 @@
  */
 const ModelTables = require('../common/model_tables');
 
-const SCHEMA_VERSION = 31;
+const SCHEMA_VERSION = 32;
 
 /**
  * Every table and index of the MariaDB schema, each `{ name, statement }`, in

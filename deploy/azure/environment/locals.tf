@@ -61,7 +61,8 @@ locals {
 
   # A DEFAULT PORT IS LEFT OUT of the URL that goes inside a certificate:
   # deploy/aws/environment/locals.tf, `pki_public_url`, argues it.
-  pki_public_url = var.pki_listener_port == 80 ? "http://${local.public_host}" : "http://${local.public_host}:${var.pki_listener_port}"
+  # Behind Front Door, the direct name (frontdoor.tf): an edge speaks HTTPS only.
+  pki_public_url = var.pki_listener_port == 80 ? "http://${local.direct_host}" : "http://${local.direct_host}:${var.pki_listener_port}"
 
   # EVERY PORT THE LOAD BALANCER PUBLISHES and the node port behind it —
   # AWS's map, row for row (deploy/aws/environment/locals.tf argues each).

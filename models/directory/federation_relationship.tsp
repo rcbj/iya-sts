@@ -16,19 +16,90 @@ namespace IyaSts.Directory;
 @entry(#{
   id: "federationRelationship",
   lists: #{
-    subjectPolicies: #["link-at-first-sign-in", "pre-linked", "jit-namespaced", "any-existing"],
     classicalKeyTypes: #["rsa-3072", "ec-p256"],
     joseOnlyKeyTypes: #["x-wing", "ml-kem-768"],
     xmlKeyManagement: #["rsa-oaep", "ecdh-es"],
     joseKeyManagement: #["RSA-OAEP-256", "RSA-OAEP", "ECDH-ES", "ECDH-ES+A128KW", "ECDH-ES+A256KW", "HPKE-10-KE", "ML-KEM-768"],
     xmlContentEncryption: #["aes256-gcm", "aes128-gcm"],
-    joseContentEncryption: #["A256GCM", "A128GCM"],
-    mechanisms: #["password", "password-mfa", "webauthn", "federation", "spnego", "wallet"]
+    joseContentEncryption: #["A256GCM", "A128GCM"]
+  },
+  // The two closed lists whose values a page names and explains: which people
+  // a partner may assert (#109) and how a person proves who they are when
+  // this service is the identity provider (`fedAuthnMechanism`). Each one's
+  // ids are its list, in this order, which is the order a page offers them.
+  // federation/federation.js reads the rows; what each value DOES is code.
+  terms: #{
+    subjectPolicies: #[
+      #{id: "link-at-first-sign-in", label: "Link at first sign-in (default)", what: "A linked subject signs in. An unlinked one naming an existing person signs in HERE as that person first, and is then linked."},
+      #{id: "pre-linked", label: "Pre-linked only", what: "Only a link made beforehand — on the console, through /admin-api or SCIM — signs anybody in."},
+      #{id: "jit-namespaced", label: "Just-in-time, namespaced", what: "An unlinked subject gets a new entry named <relationship>~<name>, linked at creation, never an existing person."},
+      #{id: "any-existing", label: "Any existing person, by name (development only)", what: "The name the partner sends is matched onto a local person. Refused in product mode."}
+    ],
+    mechanisms: #[
+      #{id: "password", label: "Username and password", what: "This service's own sign-in screen: a username and a password, the password verified in product mode and not in development mode. The ordinary case, and what an unset mechanism falls through to once nothing else has an opinion."},
+      #{id: "password-mfa", label: "Username and password, with MFA", what: "The same screen with the second-factor box ticked and locked, so the WebAuthn ceremony runs after the password step and the session records amr [\"pwd\",\"hwk\"] and acr \"mfa\". It is the same demand a RequestedAuthnContext can make; a protocol asking for it and a relationship configuring it produce one screen, not two."},
+      #{id: "webauthn", label: "WebAuthn, passwordless", what: "A security key ALONE — no password is presented, so the session records amr [\"hwk\"] and ONE factor. That is why it cannot satisfy a caller that demanded a second factor: see forceMfa in authn.js, which wins over this and says so in the log."},
+      #{id: "federation", label: "Another federation relationship", what: "THE BROKER CASE. `fedAuthnRelationship` names a SERVICE-PROVIDER-side relationship in this same realm and the person is sent there, so this service consumes somebody else's assertion and then issues its own to the partner that asked. The two protocols need not match and usually do not — that is the whole of what an identity bridge is."},
+      // THE FIFTH, ADDED 2026-08-26, AND IT IS THE FIRST ONE THAT IS NEITHER
+      // THIS SERVICE'S SCREEN NOR SOMEBODY ELSE'S. The other four are a page
+      // here or a redirect to a partner; this one is a CREDENTIAL THE BROWSER
+      // ALREADY HOLDS, which is what "integrated authentication" has always
+      // meant. It is also a value that can be switched off service-wide — see
+      // authn.ts's declaredMechanismFor(), which reports a relationship or an
+      // application naming it while krb5.spnegoAuthentication is false rather
+      // than letting somebody meet a 403 halfway through a sign-in.
+      #{id: "spnego", label: "Kerberos ticket (SPNEGO)", what: "INTEGRATED AUTHENTICATION. The person is sent to /authn/spnego, which answers 401 with WWW-Authenticate: Negotiate and signs them in on the service ticket their client sends back (RFC 4559 over RFC 4178 over RFC 4121). Nothing is typed and no screen is drawn. Like a security key or a wallet, it rests on a credential this service verifies in every mode — the sign-in screen's password is verified only in product mode — and what the session then claims is read off the TICKET's own flags: amr [\"pwd\"] for pre-authent, [\"hwk\"] for hw-authent, both for both, and NOTHING at all for a ticket that claims neither. A client that cannot get a ticket meets a page with the sign-in screen linked from it, because a bare 401 Negotiate is a dead end in every browser that is not configured for this host."},
+      // THE SIXTH, ADDED 2026-09-17 (#38's follow-ups): a WALLET. Like
+      // `spnego` it is a credential the person already holds rather than a
+      // screen, and like `spnego` it can be switched off service-wide —
+      // `oid4vp.signIn` — which authn.ts's declaredMechanismFor() reports
+      // rather than sending somebody to a door that is shut.
+      #{id: "wallet", label: "Wallet (OpenID4VP)", what: "The person is sent to /authn/wallet, which asks their wallet — through the Digital Credentials API, or on this device by link — for a credential this realm issued them, and signs them in as the directory entry it was issued for once a fresh holder proof verifies. amr [\"pop\"] and acr \"1\" for one factor; a caller that demanded two is asked for a second factor afterwards (or has one already, where the credential's key attestation says so), so this mechanism does not lose to forceMfa the way spnego does."}
+    ]
+  },
+  // WHICH MANAGEMENT ALGORITHMS A KEY OF EACH TYPE CAN DO, in both families.
+  // A post-quantum key names ONE alg (an AKP key), so its list has one entry,
+  // and that entry is the default for the type.
+  pairings: #{
+    keyManagementForKeyType: #{
+      from: #["classicalKeyTypes", "joseOnlyKeyTypes"],
+      to: #["xmlKeyManagement", "joseKeyManagement"],
+      values: #{
+        `rsa-3072`: #["rsa-oaep", "RSA-OAEP-256", "RSA-OAEP"],
+        `ec-p256`: #["ecdh-es", "ECDH-ES", "ECDH-ES+A128KW", "ECDH-ES+A256KW"],
+        `x-wing`: #["HPKE-10-KE"],
+        `ml-kem-768`: #["ML-KEM-768"]
+      }
+    }
   },
   source: "../federation/federation",
   container: "ou=federations",
   ownContainer: false,
   authored: true,
+  // ---------------------------------------------------------------------
+  // WHAT A CONSOLE MAY CHANGE: each row's `editable`, `set` or `multi`, and
+  // a row that says nothing is not editable. It is a different question from
+  // what an entry carries — the same DERIVED-versus-DECLARED split
+  // application.tsp draws, and it lands differently here because almost
+  // everything on these entries is declared.
+  //
+  // Everything a relationship is CONFIGURED with is editable. The six counters
+  // and the two error fields are not: a form that could rewrite them would make
+  // this page lie about what actually happened, and the lie would be
+  // indistinguishable from a bug in the recording.
+  //
+  // `fedId`, `fedRole` and `fedProtocol` are NOT editable either, and that is a
+  // third category rather than an oversight. They are the entry's identity: the
+  // id is the RDN, and the role and the protocol decide which of the fields
+  // below even apply. Changing one of them on an existing entry would leave a
+  // SAML relationship carrying a token endpoint, which no form could then draw.
+  // Delete it and make another; there is no state to lose but the counters.
+  //
+  // LDAP can still change every one of them, exactly as it can on an application
+  // entry, and that is the same line: an operator with an ldapmodify is doing
+  // something deliberate.
+  // ---------------------------------------------------------------------
+  editing: true,
   objectClasses: #[
     #{
       name: "top",
@@ -68,6 +139,7 @@ model FederationRelationship {
   })
   cn?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "both",
     from: "this register",
@@ -98,6 +170,7 @@ model FederationRelationship {
   })
   fedProvider?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "both",
     from: "this register",
@@ -105,6 +178,7 @@ model FederationRelationship {
   })
   fedPeer?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -112,6 +186,7 @@ model FederationRelationship {
   })
   fedLocalEntityId?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "both",
     from: "this register",
@@ -119,6 +194,7 @@ model FederationRelationship {
   })
   fedEnabled?: string;
   @attr(#{
+    editable: "multi",
     kind: "multi",
     role: "both",
     standard: true,
@@ -128,6 +204,7 @@ model FederationRelationship {
   description?: string[];
   // --- the service provider half: what this service CONSUMES ------------
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -135,6 +212,7 @@ model FederationRelationship {
   })
   fedSsoUrl?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -142,6 +220,7 @@ model FederationRelationship {
   })
   fedTokenUrl?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -149,6 +228,7 @@ model FederationRelationship {
   })
   fedUserinfoUrl?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -156,6 +236,7 @@ model FederationRelationship {
   })
   fedJwksUri?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -163,6 +244,7 @@ model FederationRelationship {
   })
   fedEmailsUrl?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -174,6 +256,7 @@ model FederationRelationship {
   // See oidfed/oidfed_rp.ts, and federation/CLAUDE.md for why this is
   // still a relationship whose trust is a configured key.
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -181,6 +264,7 @@ model FederationRelationship {
   })
   fedTrustAnchor?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -188,6 +272,7 @@ model FederationRelationship {
   })
   fedSigningCertificate?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -195,6 +280,7 @@ model FederationRelationship {
   })
   fedClientId?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     sensitive: true,
@@ -205,6 +291,7 @@ model FederationRelationship {
   // SIGN IN WITH APPLE (#565): a client secret that is a JWT this service
   // signs, and an authorization code returned by form_post.
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -213,6 +300,7 @@ model FederationRelationship {
   })
   fedResponseMode?: string;
   @attr(#{
+    editable: "multi",
     kind: "multi",
     role: "service-provider",
     from: "this register",
@@ -220,6 +308,7 @@ model FederationRelationship {
   })
   fedAllowedTenants?: string[];
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -227,6 +316,7 @@ model FederationRelationship {
   })
   fedTeamId?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -234,6 +324,7 @@ model FederationRelationship {
   })
   fedKeyId?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     sensitive: true,
@@ -242,6 +333,7 @@ model FederationRelationship {
   })
   fedClientSigningKey?: string;
   @attr(#{
+    editable: "multi",
     kind: "multi",
     role: "service-provider",
     from: "this register",
@@ -249,14 +341,16 @@ model FederationRelationship {
   })
   fedAuthorizeParams?: string[];
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
-    allowed: #["client_secret_basic", "client_secret_post"],
-    what: "HOW THIS SERVICE AUTHENTICATES AT THE PARTNER'S TOKEN ENDPOINT: client_secret_basic (the default, which RFC 6749 section 2.3.1 says a server MUST support) or client_secret_post, for a partner that reads the secret only from the body. With no fedClientSecret this service is a public client and neither applies."
+    allowed: #["client_secret_basic", "client_secret_post", "tls_client_auth"],
+    what: "HOW THIS SERVICE AUTHENTICATES AT THE PARTNER'S TOKEN ENDPOINT: client_secret_basic (the default, which RFC 6749 section 2.3.1 says a server MUST support) or client_secret_post, for a partner that reads the secret only from the body. With no fedClientSecret this service is a public client and neither applies. tls_client_auth (RFC 8705 section 2.1) authenticates with the relationship's TLS client certificate (fedClientCertificate) and sends no assertion and no secret; it is for fedFapi 1-advanced alone, and a relationship naming it without that profile is not ready."
   })
   fedTokenAuth?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -264,6 +358,7 @@ model FederationRelationship {
   })
   fedScope?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -272,6 +367,7 @@ model FederationRelationship {
   })
   fedResponseType?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -280,6 +376,7 @@ model FederationRelationship {
   })
   fedIdTokenSignedResponseAlg?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -288,6 +385,15 @@ model FederationRelationship {
   })
   fedUserinfoSignedResponseAlg?: string;
   @attr(#{
+    editable: "set",
+    kind: "single",
+    role: "service-provider",
+    from: "this register",
+    what: "OPENID CONNECT ONLY. TRUE, the default (and what an empty value means): the partner's UserInfo endpoint is asked with the access token at sign-in and at every refresh, and what it answers for the same sub is added to the ID Token's claims (OpenID Connect Core 1.0 section 5.3). FALSE: UserInfo is never asked, whatever fedUserinfoUrl or the discovery document names, and the person's claims are the ID Token's alone — for a partner whose UserInfo this relationship may not call, such as a FAPI 1.0 Advanced authorization server that serves its resource elsewhere."
+  })
+  fedUserinfo?: string;
+  @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -295,6 +401,7 @@ model FederationRelationship {
   })
   fedRefreshTokens?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -302,6 +409,7 @@ model FederationRelationship {
   })
   fedRefreshEverySeconds?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -309,6 +417,7 @@ model FederationRelationship {
   })
   fedRegister?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -316,6 +425,7 @@ model FederationRelationship {
   })
   fedRegisteredIssuer?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -324,6 +434,7 @@ model FederationRelationship {
   })
   fedRequestObject?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -332,6 +443,7 @@ model FederationRelationship {
   })
   fedRequestObjectSigningAlg?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -339,6 +451,7 @@ model FederationRelationship {
   })
   fedWebFinger?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -346,6 +459,16 @@ model FederationRelationship {
   })
   fedDiscovery?: string;
   @attr(#{
+    editable: "set",
+    kind: "single",
+    role: "service-provider",
+    from: "this register",
+    allowed: #["1-advanced", "2-security", "2-message-signing"],
+    what: "OPENID CONNECT ONLY. The FAPI client profile used when this service signs a person in at the partner (#931). Empty, the default, is today's OpenID Connect relying party. 1-advanced (FAPI 1.0 Advanced) forces response type code id_token, PKCE S256 and a PS256 request object by value, presents the relationship's TLS client certificate (fedClientCertificate) to the token and UserInfo endpoints so the partner can bind its access tokens to it (RFC 8705), authenticates with private_key_jwt or, where fedTokenAuth is tls_client_auth, with that certificate, and does not use DPoP. 2-security (FAPI 2.0 Security Profile) forces discovery, a pushed authorization request, response type code, PKCE S256, private_key_jwt and DPoP. 2-message-signing adds a PS256 request object inside that push and a signed authorization response (JARM). A 2.x profile forces private_key_jwt whatever fedTokenAuth says. This service does not act as a CIBA client, and only 1-advanced presents a client certificate."
+  })
+  fedFapi?: string;
+  @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -353,6 +476,7 @@ model FederationRelationship {
   })
   fedInitiateLogin?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -361,6 +485,7 @@ model FederationRelationship {
   })
   fedBinding?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -368,6 +493,7 @@ model FederationRelationship {
   })
   fedSignRequest?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -375,6 +501,7 @@ model FederationRelationship {
   })
   fedUsernameSource?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -382,6 +509,7 @@ model FederationRelationship {
   })
   fedSubjectClaim?: string;
   @attr(#{
+    editable: "multi",
     kind: "multi",
     role: "service-provider",
     from: "this register",
@@ -389,6 +517,7 @@ model FederationRelationship {
   })
   fedAttributeMap?: string[];
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -396,6 +525,7 @@ model FederationRelationship {
   })
   fedAutocreateUsers?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -403,6 +533,7 @@ model FederationRelationship {
   })
   fedUpdateUserAttributes?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -410,6 +541,7 @@ model FederationRelationship {
   })
   fedProvisionGroups?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -417,6 +549,7 @@ model FederationRelationship {
   })
   fedProvisionCap?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -429,6 +562,7 @@ model FederationRelationship {
   // which local person a partner's subject may become — see
   // federation/CLAUDE.md, *WHICH PEOPLE A PARTNER MAY ASSERT*.
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -437,6 +571,7 @@ model FederationRelationship {
   })
   fedSubjectPolicy?: string;
   @attr(#{
+    editable: "multi",
     kind: "multi",
     role: "service-provider",
     from: "this register",
@@ -444,6 +579,7 @@ model FederationRelationship {
   })
   fedSubjectGroup?: string[];
   @attr(#{
+    editable: "multi",
     kind: "multi",
     role: "service-provider",
     from: "this register",
@@ -451,6 +587,7 @@ model FederationRelationship {
   })
   fedSubjectDomain?: string[];
   @attr(#{
+    editable: "multi",
     kind: "multi",
     role: "service-provider",
     from: "this register",
@@ -458,6 +595,7 @@ model FederationRelationship {
   })
   fedHomeRealmDomain?: string[];
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -465,6 +603,7 @@ model FederationRelationship {
   })
   fedSubjectPattern?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -473,6 +612,7 @@ model FederationRelationship {
   fedMayAssertAdministrators?: string;
   // --- A PARTNER'S SHARED SIGNALS (#153) ----------------------------------
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -485,6 +625,7 @@ model FederationRelationship {
   // verification — is minted, and lives in ssf/ssf_transmitters.ts's
   // store keyed by fedId. ssf/CLAUDE.md, *A PARTNER'S SHARED SIGNALS*.
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -492,6 +633,7 @@ model FederationRelationship {
   })
   fedSignalsEnabled?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -499,6 +641,7 @@ model FederationRelationship {
   })
   fedSignalsIssuer?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -507,6 +650,7 @@ model FederationRelationship {
   })
   fedSignalsDelivery?: string;
   @attr(#{
+    editable: "multi",
     kind: "multi",
     role: "service-provider",
     from: "this register",
@@ -514,6 +658,7 @@ model FederationRelationship {
   })
   fedSignalsEvents?: string[];
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -521,6 +666,7 @@ model FederationRelationship {
   })
   fedSignalsTokenUrl?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -528,6 +674,7 @@ model FederationRelationship {
   })
   fedSignalsClientId?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     sensitive: true,
@@ -536,6 +683,7 @@ model FederationRelationship {
   })
   fedSignalsClientSecret?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -543,6 +691,7 @@ model FederationRelationship {
   })
   fedSignalsScope?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     sensitive: true,
@@ -555,6 +704,7 @@ model FederationRelationship {
   // the partner telling this service a session ended, and this service
   // telling the partner. federation/CLAUDE.md, *A PARTNER'S SIGN-OUT*.
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -562,6 +712,7 @@ model FederationRelationship {
   })
   fedSloUrl?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -570,6 +721,7 @@ model FederationRelationship {
   })
   fedSloBinding?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -577,6 +729,7 @@ model FederationRelationship {
   })
   fedEndSessionUrl?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -584,6 +737,7 @@ model FederationRelationship {
   })
   fedAcceptSignout?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -597,6 +751,7 @@ model FederationRelationship {
   // has no encryption construct and a plain OAuth 2.0 relationship reads
   // no ID Token.
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -605,6 +760,7 @@ model FederationRelationship {
   })
   fedEncryptionKeyType?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -613,6 +769,7 @@ model FederationRelationship {
   })
   fedKeyManagementAlgorithm?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -621,6 +778,7 @@ model FederationRelationship {
   })
   fedContentEncryptionAlgorithm?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "service-provider",
     from: "this register",
@@ -639,11 +797,21 @@ model FederationRelationship {
     kind: "single",
     role: "service-provider",
     from: "this register",
+    sensitive: true,
+    what: "OPENID CONNECT, fedFapi 1-advanced ONLY (#931). THE TLS CLIENT CERTIFICATE this service presents when it dials the partner's token and UserInfo endpoints: one JSON row holding a clientAuth certificate from this realm's TLS Client Issuing CA (subject CN=federation <id> client, a urn:sts:federation: subjectAltName), its chain, its x5t#S256, its validity, and the private key, SEALED under the key-encryption key wherever keys persist. It authenticates the client where fedTokenAuth is tls_client_auth (RFC 8705 section 2.1) and is what the partner binds its access tokens to (cnf.x5t#S256, section 3). Issued when fedFapi becomes 1-advanced, at the first sign-in that has none, or by the scheduler job federation.client-certificate-renew, which also renews it federation.clientCertificateRenewDays before it expires, with the same subject. Written only by those; WITHHELD from every LDAP search in product and from every page and /admin-api reply, which publish the public half to register at the partner."
+  })
+  fedClientCertificate?: string;
+  @attr(#{
+    editable: "set",
+    kind: "single",
+    role: "service-provider",
+    from: "this register",
     what: "Accept a response this service did not ask for — SAML 2.0's unsolicited Response, and SAML 1.1's ONLY mode of operation. OFF by default for SAML 2.0 and forced ON for SAML 1.1, because that profile has no request to be in response to. Turning it on for SAML 2.0 removes the InResponseTo check, which is worth knowing rather than worth hiding."
   })
   fedAllowUnsolicited?: string;
   // --- the identity provider half: what this service ASSERTS ------------
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "identity-provider",
     from: "this register",
@@ -651,6 +819,7 @@ model FederationRelationship {
   })
   fedApplication?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "identity-provider",
     from: "this register",
@@ -659,6 +828,7 @@ model FederationRelationship {
   })
   fedAuthnMechanism?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     role: "identity-provider",
     from: "this register",
@@ -666,6 +836,7 @@ model FederationRelationship {
   })
   fedAuthnRelationship?: string;
   @attr(#{
+    editable: "multi",
     kind: "multi",
     role: "identity-provider",
     from: "this register",

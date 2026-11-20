@@ -29,11 +29,35 @@
 //   f. Recount now queues the recount job (`runId`), and an action that
 //      does not exist is refused 400.
 //
-// No passkey is enrolled here: a WebAuthn ceremony needs an authenticator,
-// which `tests/passkey_report.js` stands in for in process, where the
-// counts, the changes and the recount are compared with a count of every
-// person. What only HTTP can show is the operation, its gate and its
-// answers, in every mode.
+// Sections a-f enrol no passkey: they run in the default realm, whose
+// people every other job adds to.
+//
+// D12 (#444) ADDS SECTION g, carrying what a client can see of
+// `tests/passkey_report.js`, in a throwaway realm with REAL enrolments
+// through `/account-api/keys` (the kit's ES256 and ML-DSA-65
+// authenticators, one model's AAGUID on two of them):
+//
+//   g1. Recount now makes a fresh baseline, and its people, algorithms and
+//       model are a count of every person made here (B2-B11);
+//   g2. an enrolment, a removal and a person deleted over LDAP each move
+//       the report at once with no recount, and a rename notes nothing (C);
+//   g3. a recount after the changes gives the numbers the changes had
+//       already given, with no change noted since (D);
+//   g4. two filters, a profile nobody named, the default profile and an
+//       unknown application are refused 400, coded STS-AUTHN-0416 (F), and
+//       an unknown action STS-AUTHN-0418 (I);
+//   g5. each kind's list is exactly its people, a list paged one row at a
+//       time by the `from` cursor visits each holder once, one algorithm's
+//       list, and the people with no passkey (G);
+//   g6. the CSV and JSON exports carry every holder (H1, H2, H4).
+//
+// NOT CARRIED (class (d)): B1 (no baseline before a recount: a realm's
+// first baseline is written as soon as its first key is, so a client never
+// meets a realm without one), A (a person's facets from values no ceremony can
+// make — an unreadable algorithm, a value that is not a key), E (that no
+// count reads the directory: a spy on the directory's scan), H3 (the
+// formula-quoting of a cell: no column a person controls carries free
+// text), I's scheduler registration (a module table).
 //
 // OWNED HERE (local: true): this repository's own console and management API
 // (tests/CLAUDE.md, *where a new test goes*, rule 1).
@@ -42,6 +66,9 @@
 const assert = require("assert");
 const https = require("https");
 const { Command, Option } = require("commander");
+const ldapjs = require("ldapjs");
+const wire = require("./passkey_wire_kit.js");
+const portalSignin = require("./portal_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -132,6 +159,272 @@ function qs(query) {
   return "?" + Object.keys(query).map(function (k) {
     return encodeURIComponent(k) + "=" + encodeURIComponent(query[k]);
   }).join("&");
+}
+
+// ---------------------------------------------------------------------------
+// g. IN A REALM OF ITS OWN, WITH REAL ENROLMENTS (D12, #444).
+// ---------------------------------------------------------------------------
+const MODEL = "c0ffee00-0000-4000-8000-00000000d12b";
+
+function ldapDelete(dn, binder) {
+  log.debug("Entering ldapDelete().");
+  const url = "ldap://" + new URL(base).hostname + ":" +
+              (process.env.STS_LDAP_PORT || "389");
+  log.debug("Leaving ldapDelete().");
+  return new Promise(function (resolve) {
+    const client = ldapjs.createClient({ url: url });
+    function done(error) {
+      client.unbind();
+      resolve(error ? { ok: false, message: error.message } : { ok: true });
+    }
+    client.on("error", function (e) {
+      log.debug("Caught in ldapDelete(): " + ((e && e.message) || e));
+      resolve({ ok: false, message: String(e && e.message) });
+    });
+    // Development checks no LDAP password (ldap/CLAUDE.md).
+    client.bind(binder, "any-" + STAMP, function (bindError) {
+      if (bindError) {
+        done(bindError);
+        return;
+      }
+      client.del(dn, done);
+    });
+  });
+}
+
+async function realmReport() {
+  log.debug("Entering realmReport().");
+  log.info("=== g. in a realm of its own, with real enrolments ===");
+  const K = wire.kit("sts_passkey_report", { log: log });
+  const realm = await K.realm("pkrep", "development");
+  try {
+    await realmReportIn(K, realm);
+  } finally {
+    // Removed only where STS_TEST_REMOVE_REALMS=1 (the kit's rule).
+    await K.removeRealms();
+  }
+  log.debug("Leaving realmReport().");
+}
+
+async function realmReportIn(K, realm) {
+  log.debug("Entering realmReportIn().");
+  const op = "/realm/" + realm.id + OPERATION;
+  const password = "Pk-report-" + STAMP + "-Aa1!";
+  const nameOf = function (kind) {
+    return ("pkr-" + kind + "-" + K.STAMP).slice(0, 40);
+  };
+  const portals = {};
+  for (const kind of ["pq", "cl", "both", "none"]) {
+    await K.person(realm, nameOf(kind), password);
+    portals[kind] = await portalSignin.signInToThePortal(realm.base,
+      nameOf(kind), null, { password: password });
+  }
+  const aaguid = Buffer.from(MODEL.replace(/-/g, ""), "hex");
+  const keys = {
+    pq: K.authenticator({ alg: -49, aaguid: aaguid }),
+    cl: K.authenticator({ aaguid: aaguid }),
+    bothCl: K.authenticator({}),
+    bothPq: K.authenticator({ alg: -49 })
+  };
+  const enrolled = [await K.enrol(portals.pq, keys.pq),
+                    await K.enrol(portals.cl, keys.cl),
+                    await K.enrol(portals.both, keys.bothCl),
+                    await K.enrol(portals.both, keys.bothPq)];
+  enrolled.forEach(function (e) {
+    assert.strictEqual(e.done && e.done.status, 200,
+                       JSON.stringify(e.done && e.done.json).slice(0, 300));
+  });
+  const read = async function (query) {
+    const r = await send("GET", op + qs(query || {}));
+    assert.strictEqual(r.status, 200, r.raw.slice(0, 300));
+    return r.json;
+  };
+  const recountAndWait = async function (since) {
+    const queued = await send("POST", op + "/recount", { json: {} });
+    assert.strictEqual(queued.status, 200, queued.raw.slice(0, 300));
+    let v = null;
+    for (let i = 0; i < 60; i += 1) {
+      v = await read({});
+      if (v.counted && v.counted.from === "baseline" &&
+          String(v.counted.at) !== String(since || "") &&
+          v.counted.changesSince === 0) {
+        break;
+      }
+      await K.sleep(500);
+    }
+    return v;
+  };
+  const first = await read({});
+  const v = await recountAndWait((first.counted || {}).at);
+  const mldsa = (v.keys.byAlgorithm || []).filter(function (r) {
+    return r.algorithm === "ML-DSA-65";
+  })[0] || {};
+  const model = (v.models || []).filter(function (m) {
+    return m.aaguid === MODEL;
+  })[0] || {};
+  check("g1. Recount now makes the baseline: one post-quantum only, one " +
+        "classical only, one with both, the rest none, four keys, two of " +
+        "them ML-DSA-65, the model holding two keys of two algorithms",
+        function () {
+    assert.strictEqual(v.counted && v.counted.from, "baseline",
+                       JSON.stringify(v.counted));
+    assert.strictEqual(v.people.postQuantumOnly, 1, JSON.stringify(v.people));
+    assert.strictEqual(v.people.classicalOnly, 1);
+    assert.strictEqual(v.people.both, 1);
+    assert.strictEqual(v.people.holding, 3);
+    assert.strictEqual(v.people.none, v.people.total - 3);
+    assert.strictEqual(v.keys.total, 4, JSON.stringify(v.keys));
+    assert.ok(mldsa.count === 2 && mldsa.postQuantum === true,
+              JSON.stringify(mldsa));
+    assert.ok(model.total === 2 && model.postQuantum === true &&
+              model.algorithms.length === 2, JSON.stringify(v.models));
+  });
+
+  const noneKey = K.authenticator({ alg: -49 });
+  const late = await K.enrol(portals.none, noneKey);
+  assert.strictEqual(late.done.status, 200, JSON.stringify(late.done.json));
+  const c1 = await read({});
+  const renamed = await portals.cl.api("POST", "/account-api/keys/rename",
+    { credentialId: keys.cl.credentialId, label: "Work key" });
+  const c2 = await read({});
+  const removed = await portals.both.api("POST", "/account-api/keys/remove",
+    { credentialId: keys.bothPq.credentialId });
+  const c3 = await read({});
+  // The kit's realm has the DNS domain `<id>.example.net`, so its tree is
+  // rooted there (ldap/CLAUDE.md).
+  const users = "ou=users,dc=" + realm.id + ",dc=example,dc=net";
+  const dn = "uid=" + nameOf("pq") + "," + users;
+  const binder = "uid=" + nameOf("none") + "," + users;
+  const gone = await ldapDelete(dn, binder);
+  let c4 = await read({});
+  for (let i = 0; i < 20 && c4.people.postQuantumOnly !== 1; i += 1) {
+    await K.sleep(250);
+    c4 = await read({});
+  }
+  check("g2. an enrolment moves the report at once, with no recount, and " +
+        "is counted as a change since the baseline", function () {
+    assert.strictEqual(c1.people.postQuantumOnly, 2, JSON.stringify(c1.people));
+    assert.ok(c1.counted.changesSince >= 1, JSON.stringify(c1.counted));
+  });
+  check("g2. a rename is written and notes nothing: it moves no facet",
+        function () {
+    assert.strictEqual(renamed.status, 200, JSON.stringify(renamed.json));
+    assert.strictEqual(c2.counted.changesSince, c1.counted.changesSince,
+                       JSON.stringify([c1.counted, c2.counted]));
+  });
+  check("g2. a removal moves the person who held both to classical only",
+        function () {
+    assert.strictEqual(removed.status, 200, JSON.stringify(removed.json));
+    assert.strictEqual(c3.people.both, 0, JSON.stringify(c3.people));
+    assert.strictEqual(c3.people.classicalOnly, 2);
+  });
+  check("g2. a person deleted over LDAP takes their passkey out of the " +
+        "report with them", function () {
+    assert.ok(gone.ok, dn + ": " + JSON.stringify(gone));
+    assert.strictEqual(c4.people.postQuantumOnly, 1,
+                       JSON.stringify(c4.people));
+  });
+
+  const fresh = await recountAndWait(v.counted.at);
+  check("g3. a recount after the changes gives the numbers the changes had " +
+        "already given, every algorithm's count too, with no change noted " +
+        "since", function () {
+    ["postQuantumOnly", "classicalOnly", "both", "none", "holding"]
+      .forEach(function (name) {
+        assert.strictEqual(fresh.people[name], c4.people[name], name);
+      });
+    assert.strictEqual(JSON.stringify(fresh.keys.byAlgorithm),
+                       JSON.stringify(c4.keys.byAlgorithm));
+    assert.strictEqual(fresh.counted.changesSince, 0,
+                       JSON.stringify(fresh.counted));
+  });
+
+  const group = "pkr-g-" + K.STAMP;
+  await K.call(realm, "POST", "/groups/create", { group: group });
+  const refusals = [[{ group: group, profile: "x" }, "two filters"],
+                    [{ profile: "pkr-nobody-" + K.STAMP },
+                     "a profile nobody named"],
+                    [{ profile: "default" }, "the default profile"],
+                    [{ application: "pkr-no-such-" + K.STAMP },
+                     "an unknown application"]];
+  for (const pair of refusals) {
+    const n = await K.codeCount(realm, "STS-AUTHN-0416");
+    const r = await send("GET", op + qs(pair[0]));
+    const recorded = await K.newCodes(realm, "STS-AUTHN-0416", n);
+    check("g4. " + pair[1] + " is refused 400, coded STS-AUTHN-0416",
+          function () {
+      assert.strictEqual(r.status, 400, r.raw.slice(0, 300));
+      assert.ok(recorded > 0, "no STS-AUTHN-0416 row");
+    });
+  }
+  const n18 = await K.codeCount(realm, "STS-AUTHN-0418");
+  const unknown = await send("POST", op + "/nonsense", { json: {} });
+  const recorded18 = await K.newCodes(realm, "STS-AUTHN-0418", n18);
+  check("g4. an unknown action is refused 400, coded STS-AUTHN-0418",
+        function () {
+    assert.strictEqual(unknown.status, 400, unknown.raw.slice(0, 300));
+    assert.ok(recorded18 > 0, "no STS-AUTHN-0418 row");
+  });
+
+  const mine = function (body) {
+    return ((body.list && body.list.rows) || []).map(function (r) {
+      return r.username;
+    }).filter(function (name) {
+      return /^pkr-(pq|cl|both|none)-/.test(name);
+    }).sort();
+  };
+  const pqList = await read({ list: "post-quantum-only" });
+  const clList = await read({ list: "classical-only" });
+  const algList = await read({ list: "algorithm", algorithm: "ML-DSA-65" });
+  const noneList = await read({ list: "none", per: "500" });
+  check("g5. each kind's list is exactly its people, one algorithm's list " +
+        "too, and the people with no passkey hold none", function () {
+    assert.deepStrictEqual(mine(pqList), [nameOf("none")]);
+    assert.deepStrictEqual(mine(clList), [nameOf("both"), nameOf("cl")]
+      .sort());
+    assert.deepStrictEqual(mine(algList), [nameOf("none")]);
+    assert.strictEqual(mine(noneList).length, 0,
+                       JSON.stringify(noneList.list));
+    assert.ok((noneList.list.rows || []).every(function (r) {
+      return r.kind === "none";
+    }), JSON.stringify(noneList.list.rows).slice(0, 300));
+  });
+  const seen = [];
+  let from = "";
+  for (let page = 1; page < 20; page += 1) {
+    const one = await read({ list: "holding", per: "1",
+                             page: String(page), from: from });
+    (one.list.rows || []).forEach(function (r) {
+      seen.push(r.username);
+    });
+    if (!one.list.paging.hasNext) {
+      break;
+    }
+    from = one.list.paging.nextFrom;
+  }
+  check("g5. paged one row at a time by the cursor, every holder is " +
+        "visited, and none twice", function () {
+    assert.deepStrictEqual(seen.slice().sort(), [nameOf("both"),
+      nameOf("cl"), nameOf("none")].sort(), JSON.stringify(seen));
+    assert.strictEqual(new Set(seen).size, seen.length);
+  });
+
+  const csv = await send("GET", op + "/export" + qs({ list: "holding" }),
+                         { headers: { accept: "text/csv" } });
+  const json = await send("GET", op + "/export" +
+                          qs({ list: "holding", format: "json" }));
+  check("g6. the export is a CSV with its header carrying the holders, and " +
+        "JSON with every row", function () {
+    assert.strictEqual(csv.status, 200, csv.raw.slice(0, 300));
+    assert.ok(/^username,dn,kind,passkeys,/.test(csv.raw),
+              csv.raw.slice(0, 200));
+    [nameOf("both"), nameOf("cl"), nameOf("none")].forEach(function (name) {
+      assert.ok(csv.raw.indexOf(name) >= 0, name);
+    });
+    assert.strictEqual(json.status, 200, json.raw.slice(0, 300));
+    assert.strictEqual(json.json.rows.length, 3, json.raw.slice(0, 300));
+  });
+  log.debug("Leaving realmReportIn().");
 }
 
 async function test() {
@@ -290,7 +583,9 @@ async function test() {
     assert.strictEqual(unknown.status, 400, unknown.raw.slice(0, 300));
   });
 
-  assert.ok(checks >= 10, "only " + checks + " checks ran; a section has " +
+  await realmReport();
+
+  assert.ok(checks >= 25, "only " + checks + " checks ran; a section has " +
                                             "stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");

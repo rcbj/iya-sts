@@ -84,6 +84,9 @@
 // `crypto.js`, `config.js` and `keystore.js` all make their own for the same
 // reason.
 const bunyan = require('bunyan');
+// THE BOUND ON A BUILD'S WAIT, carried to the builds a build starts (CI run
+// #250; see `buildWaitFrame()`).
+const { AsyncLocalStorage } = require('async_hooks');
 const config = require('./config');
 
 const log = bunyan.createLogger({
@@ -106,6 +109,10 @@ const realms = require('./realms');
 // with no caller to hand it to is `tag()`ged onto its log line instead: this
 // module does not require `audit.js`, for the leaf rule above.
 const errorCodes = require('./error_codes');
+// THE NAMES A LEAF GIVES ITS HOLDER (#1827): `urn:sts:application:`,
+// `urn:sts:person:`, `urn:sts:sa:`, `urn:sts:federation:` — one table, a leaf
+// that requires only `config` and `bunyan`, so it closes no cycle here.
+const SubjectUrn = require('./subject_urn');
 // THE MODE, for SHA-1 certificate signatures, which are development's (#181).
 // A LEAF (`config` and `error_codes` only), so no cycle.
 const mode = require('./mode');
@@ -401,8 +408,9 @@ const USE_CASES = [
     cn: 'ACME Issuing CA',
     what: 'Certificates issued over ACME (RFC 8555) at /enroll/acme, to a ' +
           'person or application entry an External Account Binding key was ' +
-          'issued for. Every leaf names that entry in a urn:sts:person: or ' +
-          'urn:sts:application: subjectAltName.' },
+          'issued for. Every leaf names that entry in a urn:sts:person: ' +
+          '(urn:sts:sa: for a service account) or urn:sts:application: ' +
+          'subjectAltName.' },
   { id: 'est', scope: 'realm', label: 'EST enrollment',
     cn: 'EST Issuing CA',
     what: 'Certificates issued over EST (RFC 7030) at /.well-known/est, to ' +
@@ -430,7 +438,8 @@ const USE_CASES = [
   { id: 'tls-client', scope: 'realm', label: 'TLS client certificates',
     cn: 'TLS Client Issuing CA',
     what: 'The TLS client certificates people issue themselves on the user ' +
-          'portal: clientAuth, the person\'s urn:sts:person: name, and a ' +
+          'portal: clientAuth, the person\'s urn:sts:person: name (a ' +
+          'service account\'s urn:sts:sa:), and a ' +
           'private key handed over once as a PKCS#12. A certificate from ' +
           'this authority signs its holder in at GET /tls/sign-in on the ' +
           'main port, in this ' +
@@ -454,12 +463,33 @@ const USE_CASES = [
     what: 'The certificates a person or an application signs a WS-Trust ' +
           'request with (a WS-Security 1.1 signature over the SOAP Body ' +
           'and Timestamp): digitalSignature only, the holder\'s ' +
-          'urn:sts:person: or urn:sts:application: name, and a private key ' +
+          'urn:sts:person:, urn:sts:sa: (a service account) or ' +
+          'urn:sts:application: name, and a private key ' +
           'handed over once as a PKCS#12. Issued by an administrator from ' +
           'the console or /admin-api. A certificate from this authority ' +
           'authenticates its holder as the requester of a signed RST, in ' +
           'this realm; a TLS client certificate from this service does not, ' +
-          'and this one signs nobody in over TLS.' }
+          'and this one signs nobody in over TLS.' },
+  // **THE SIGNER OF A POLICY EXPORT (#1713, rcbj 2026-11-13).** "Create a
+  // new Issuing CA for each realm that is the policy export signing cert."
+  // `admin-core/policy_transfer.ts` certifies a fresh key under it for every
+  // export and signs the document with that key, carrying the whole chain
+  // in the JWS `x5c`. An authority of its own for `message-signing`'s
+  // reason: every authority here chains to the one Root, so "this key may
+  // speak for this realm's Directory → Policies" is sayable only as WHICH
+  // authority issued it — and an importing realm pins exactly this Issuing
+  // CA, never the Root it shares with every other realm of the service.
+  // REALM-scoped because the policies are a realm's. `pathLen` 0, so
+  // `topUpScopeNow()` adds it to a stored branch without a rebuild.
+  { id: 'policy-signing', scope: 'realm', label: 'Policy export signing',
+    cn: 'Policy Export Signing CA',
+    what: 'The certificates a policy export from Directory → Policies ' +
+          'is signed under (#1713): a fresh key per export, ' +
+          'digitalSignature only, its certificate and this whole chain in ' +
+          'the export\'s x5c. A realm importing the export trusts it at ' +
+          'once when this is its own authority, and asks an administrator ' +
+          'before it trusts another realm\'s, adding that realm\'s chain to ' +
+          'its signer truststore for this use and no other.' }
 ];
 
 /**
@@ -853,7 +883,13 @@ function keyAlgorithms() {
   log.debug('Entering keyAlgorithms().');
   const out = keyMaterial.keyAlgIds().map(function (id) {
     const desc = keyMaterial.keyAlg(id);
-    return { id: id, label: desc.label, kind: desc.kind };
+    // `tlsUsable` (2026-11-12): false for a composite ML-DSA key, which this
+    // service's OpenSSL cannot read, so a TLS peer can never be shown one.
+    // The console leaves those out of every build form (a CA is on the
+    // listener chains) and marks them on a leaf's, and an /admin-api caller
+    // learns the same from here rather than from STS-PKI-0272 or 0274.
+    return { id: id, label: desc.label, kind: desc.kind,
+             tlsUsable: !listenerUnreadableKeyAlg(id) };
   });
   log.debug('Leaving keyAlgorithms(). ' + out.length + ' algorithm(s).');
   return out;
@@ -1016,8 +1052,8 @@ function signatureForIssuer(parent, preferred, subjectKeyAlg) {
 // encoder writing what it is handed is defensible; handing it a time with
 // milliseconds in it is what this module was doing wrong. The parent project
 // should still drop fractional seconds on the way out — that is its bug to
-// fix, and `docs/parent-project-migration.md` is where this repository records
-// what it owes that one.
+// fix, and `docs/v1.1.0/parent-project-migration.md` is where this repository
+// records what it owes that one.
 // ---------------------------------------------------------------------------
 function certificateInstant(at) {
   log.debug("Entering certificateInstant().");
@@ -1247,7 +1283,14 @@ function scopeChainsToRoot(scopeId) {
 
 async function buildRootNow(opts) {
   log.debug('Entering buildRoot().');
-  const options = opts || {};
+  // The Root is on the listeners' chain too (#1064), so the same rule as the
+  // process branch — see listenerChainOptions().
+  const readable = listenerChainOptions(opts || {}, 'the service Root');
+  if (!readable.ok) {
+    log.debug('Leaving buildRoot(). A key the listeners cannot load.');
+    return readable;
+  }
+  const options = readable.options;
   const chosen = algorithmsFrom(options);
   if (!chosen.ok) {
     log.debug('Leaving buildRoot(). ' + chosen.errors.join(' '));
@@ -1419,6 +1462,100 @@ function coordinatesPkiBuilds() {
 const CLUSTER_BUILD_CLAIM_MS = 120000;
 const CLUSTER_BUILD_WAIT_MS = 180000;
 const CLUSTER_BUILD_POLL_MS = 250;
+// The longest pause between two looks at a held claim: the poll backs off
+// from CLUSTER_BUILD_POLL_MS to this, doubling, so a caller that waits long
+// does not ask the store four times a second for all of it.
+const CLUSTER_BUILD_POLL_MAX_MS = 2000;
+
+// ---------------------------------------------------------------------------
+// A BUILD IS WAITED FOR A BOUNDED TIME, ALL OF IT COUNTED (CI run #250,
+// 2026-11-15).
+//
+// The fuzz mode's schemathesis waited 300 s for POST /admin-api/pki/
+// build-scope (twice), policies/transfer/export, scep/reissue-ra and
+// scim/clients/issue-certificate, and none of them was ever answered. Every
+// one of them ends in this module's per-scope queue (`oneBuildAtATime()`):
+// the three issuers through `ensureScope()`, which asks for the branch
+// INSIDE the queue. The queue had no bound at all, and the cluster claim's
+// wait had one of its own, CLUSTER_BUILD_WAIT_MS, counted from when the
+// claim was first asked for and not from when the caller arrived — so a
+// caller behind a build that waited out a held claim (the store's pool was
+// starved, and a release that failed left the claim held for its lifetime,
+// STS-CLUSTER-0014) waited that build's 180 s and then its own 180 s, and a
+// caller behind two such builds longer still. And a build nested in a build
+// (`buildScopeNow()` ensures the Root) started a bound of its own.
+//
+// So ONE DEADLINE per caller, set when it joins the queue, covers its place
+// in the queue, the claim's wait and every wait of a build it starts: the
+// deadline travels with the build through `buildWait` (AsyncLocalStorage),
+// and is honoured only while the build that set it is running, so work a
+// build merely kicked off is not bound by it afterwards. Past the deadline
+// the caller is refused STS-PKI-0184 — never left waiting — and
+// `/admin-api/pki/*` answers that refusal, and STS-PKI-0183's, 503 with
+// Retry-After (`isBusyRefusal()`), because both are about the moment and
+// not about the request.
+// ---------------------------------------------------------------------------
+const buildWait = new AsyncLocalStorage();
+let buildWaitMs = CLUSTER_BUILD_WAIT_MS;
+
+// The wait frame a caller here runs under: the running build's that started
+// it, or a new one whose deadline is now plus the bound.
+function buildWaitFrame() {
+  log.debug("Entering buildWaitFrame().");
+  const held = buildWait.getStore();
+  if (held && held.active) {
+    log.debug("Leaving buildWaitFrame(). Inherited.");
+    return { frame: held, own: false };
+  }
+  log.debug("Leaving buildWaitFrame(). A new one.");
+  return { frame: { deadline: Date.now() + buildWaitMs, active: true },
+           own: true };
+}
+
+// The refusal of a caller whose deadline passed while it waited.
+function waitedTooLong(label, where) {
+  log.debug("Entering waitedTooLong().");
+  log.error(errorCodes.tag('STS-PKI-0184') + 'pki: ' + label + ' was ' +
+            'waited for ' + where + ' for longer than ' +
+            (buildWaitMs / 1000) + 's; this caller is refused rather than ' +
+            'left waiting.');
+  log.debug("Leaving waitedTooLong().");
+  return errorCodes.mark({ ok: false,
+    errors: [label.charAt(0).toUpperCase() + label.slice(1) + ' is being ' +
+             'built ' + where + ', and it was waited for longer than ' +
+             (buildWaitMs / 1000) + 's. Nothing was changed; try again ' +
+             'shortly.'] }, 'STS-PKI-0184');
+}
+
+/**
+ * Tells whether a refusal is about the moment rather than the request: a
+ * build that was waited for too long (STS-PKI-0184), or a store that could
+ * not be asked about one (STS-PKI-0183). `/admin-api` answers these 503 with
+ * Retry-After.
+ *
+ * @param result - a refusal this module answered
+ * @returns true for a refusal worth retrying
+ */
+function isBusyRefusal(result) {
+  log.debug("Entering isBusyRefusal().");
+  const code = result && !result.ok ? errorCodes.codeOf(result) : '';
+  log.debug("Leaving isBusyRefusal(). " + code);
+  return code === 'STS-PKI-0184' || code === 'STS-PKI-0183';
+}
+
+/**
+ * Sets how long a caller waits for a build, for the tests; with no argument
+ * it puts back the default.
+ *
+ * @param ms - the bound in milliseconds
+ * @returns the bound now in force
+ */
+function setBuildWaitMs(ms) {
+  log.debug("Entering setBuildWaitMs().");
+  buildWaitMs = Number(ms) > 0 ? Number(ms) : CLUSTER_BUILD_WAIT_MS;
+  log.debug("Leaving setBuildWaitMs(). " + buildWaitMs);
+  return buildWaitMs;
+}
 
 function sleepMs(ms) {
   log.debug("Entering sleepMs().");
@@ -1462,6 +1599,29 @@ async function oneBuildInTheCluster(scopeId, tier, existing, build, options) {
     log.debug("Leaving oneBuildInTheCluster(). Nothing to coordinate.");
     return build();
   }
+  // The caller's deadline — see buildWaitFrame() — and, for a caller that
+  // came straight here (the SCEP RA), the frame its build runs under.
+  const waiting = buildWaitFrame();
+  if (!waiting.own) {
+    log.debug("Leaving oneBuildInTheCluster(). Under the caller's deadline.");
+    return claimedBuild(scopeId, tier, existing, build, options,
+                        waiting.frame.deadline);
+  }
+  try {
+    log.debug("Leaving oneBuildInTheCluster(). Under a deadline of its own.");
+    return await buildWait.run(waiting.frame, function () {
+      return claimedBuild(scopeId, tier, existing, build, options,
+                          waiting.frame.deadline);
+    });
+  } finally {
+    waiting.frame.active = false;
+  }
+}
+
+// `oneBuildInTheCluster()`'s claim and its wait, which ends at `deadline`.
+async function claimedBuild(scopeId, tier, existing, build, options,
+                            deadline) {
+  log.debug("Entering claimedBuild(). scope=" + scopeId);
   // Required lazily: `cluster_claims.js` reaches the store through
   // `persistence.js`, which requires the keystore this file sits on.
   const claims = require('../cluster/cluster_claims');
@@ -1470,13 +1630,13 @@ async function oneBuildInTheCluster(scopeId, tier, existing, build, options) {
     : scopeId === SERVICE_SCOPE ? 'the service Root'
     : scopeId === PROCESS_SCOPE ? 'the process branch'
     : 'the "' + (scopeId || 'default') + '" branch';
-  const began = Date.now();
   let announced = false;
+  let pause = CLUSTER_BUILD_POLL_MS;
   for (;;) {
     await keystore.refreshPki(scopeId);
     const before = existing ? existing() : null;
     if (before) {
-      log.debug("Leaving oneBuildInTheCluster(). Another node built it.");
+      log.debug("Leaving claimedBuild(). Another node built it.");
       return before;
     }
     const claim = await claims.claim({ scope: 'pki.build',
@@ -1491,7 +1651,7 @@ async function oneBuildInTheCluster(scopeId, tier, existing, build, options) {
         await keystore.refreshPki(scopeId);
         const under = existing ? existing() : null;
         if (under) {
-          log.debug("Leaving oneBuildInTheCluster(). Built meanwhile.");
+          log.debug("Leaving claimedBuild(). Built meanwhile.");
           return under;
         }
         const made = await build();
@@ -1503,10 +1663,10 @@ async function oneBuildInTheCluster(scopeId, tier, existing, build, options) {
                      'was built here and by another node at the same ' +
                      'moment; the other node\'s committed first and is ' +
                      'the one this node now holds.');
-            log.debug("Leaving oneBuildInTheCluster(). Adopted theirs.");
+            log.debug("Leaving claimedBuild(). Adopted theirs.");
             return Object.assign({}, theirs, { adoptedFromCluster: true });
           }
-          log.debug("Leaving oneBuildInTheCluster(). Lost to another build.");
+          log.debug("Leaving claimedBuild(). Lost to another build.");
           return errorCodes.mark({ ok: false,
             errors: [label.charAt(0).toUpperCase() + label.slice(1) + ' was ' +
                      'made again by another node at the same moment and ' +
@@ -1515,7 +1675,7 @@ async function oneBuildInTheCluster(scopeId, tier, existing, build, options) {
                      'build again if it is still not what you want.'] },
                                  'STS-PKI-0182');
         }
-        log.debug("Leaving oneBuildInTheCluster(). Built.");
+        log.debug("Leaving claimedBuild(). Built.");
         return made;
       } finally {
         await claims.release(claim.handle);
@@ -1525,30 +1685,25 @@ async function oneBuildInTheCluster(scopeId, tier, existing, build, options) {
       log.error(errorCodes.tag('STS-PKI-0183') + 'pki: ' + label + ' could ' +
                 'not be built, because the store could not be asked whether ' +
                 'another node is building it (' + claim.why + ').');
-      log.debug("Leaving oneBuildInTheCluster(). The store refused.");
+      log.debug("Leaving claimedBuild(). The store refused.");
       return errorCodes.mark({ ok: false,
         errors: [label.charAt(0).toUpperCase() + label.slice(1) + ' was ' +
                  'not built: the store could not be asked whether another ' +
                  'node is building it, and two nodes building one would ' +
                  'publish two authorities of one name.'] }, 'STS-PKI-0183');
     }
-    if (Date.now() - began > CLUSTER_BUILD_WAIT_MS) {
-      log.error(errorCodes.tag('STS-PKI-0184') + 'pki: ' + label + ' is ' +
-                'being built by another node and has not appeared in ' +
-                (CLUSTER_BUILD_WAIT_MS / 1000) + 's; this node gives up ' +
-                'waiting.');
-      log.debug("Leaving oneBuildInTheCluster(). Waited too long.");
-      return errorCodes.mark({ ok: false,
-        errors: ['Another node has been building ' + label + ' for longer ' +
-                 'than ' + (CLUSTER_BUILD_WAIT_MS / 1000) + 's and it has ' +
-                 'not appeared in the store.'] }, 'STS-PKI-0184');
+    if (Date.now() >= deadline) {
+      log.debug("Leaving claimedBuild(). Waited too long.");
+      return waitedTooLong(label, 'by another node or process');
     }
     if (!announced) {
       announced = true;
       log.info('pki: another node is building ' + label + '; this node ' +
                'waits for it rather than building a second one.');
     }
-    await sleepMs(CLUSTER_BUILD_POLL_MS);
+    // Never past the deadline, and backing off (CLUSTER_BUILD_POLL_MAX_MS).
+    await sleepMs(Math.max(1, Math.min(pause, deadline - Date.now())));
+    pause = Math.min(CLUSTER_BUILD_POLL_MAX_MS, pause * 2);
   }
 }
 
@@ -1592,19 +1747,45 @@ function oneBuildAtATime(scopeId, build) {
   log.debug("Entering oneBuildAtATime().");
   const key = String(scopeId);
   const ahead = scopeBuilds.get(key) || Promise.resolve();
-  const mine = ahead.then(function () { return null; }, function (e) {
+  const settledAhead = ahead.then(function () { return null; }, function (e) {
     // The build ahead of this one failed. Its caller has that failure; this
     // caller only needed it to finish before starting.
     log.debug("Caught in oneBuildAtATime(): the build ahead failed: " +
               ((e && e.message) || e));
     return null;
-  }).then(function () {
-    return build();
   });
-  const tail = mine.then(function () { return null; }, function (e) {
+  // THE CALLER'S DEADLINE (CI run #250, buildWaitFrame()): its place in the
+  // queue counts, and a caller still waiting for the builds ahead of it when
+  // the deadline passes is refused without building. The queue's ORDER is
+  // kept all the same: the tail below still waits for the builds ahead, so
+  // a caller that gave up lets nobody overtake them.
+  const waiting = buildWaitFrame();
+  const mine = turnBefore(settledAhead, waiting.frame.deadline)
+    .then(function (turn) {
+      if (!turn) {
+        return waitedTooLong(key === SERVICE_SCOPE ? 'the service Root'
+          : key === PROCESS_SCOPE ? 'the process branch'
+          : 'the "' + (key || 'default') + '" branch', 'in this process');
+      }
+      return buildWait.run(waiting.frame, build);
+    });
+  if (waiting.own) {
+    mine.then(function () {
+      waiting.frame.active = false;
+    }, function (e) {
+      // The caller holds `mine` and has the failure; the frame only ends.
+      log.debug("Caught in oneBuildAtATime(): " + ((e && e.message) || e));
+      waiting.frame.active = false;
+    });
+  }
+  const tail = Promise.all([settledAhead, mine.then(function () {
+    return null;
+  }, function (e) {
     // This build's own caller holds `mine` and has the failure; the queue's
     // tail only has to settle.
     log.debug("Caught in oneBuildAtATime(): " + ((e && e.message) || e));
+    return null;
+  })]).then(function () {
     return null;
   });
   scopeBuilds.set(key, tail);
@@ -1615,6 +1796,25 @@ function oneBuildAtATime(scopeId, build) {
   });
   log.debug("Leaving oneBuildAtATime().");
   return mine;
+}
+
+// Whether `ahead` settles before `deadline`: true when it does, false when
+// the deadline comes first. A per-operation timeout, cleared as soon as the
+// race is decided (tests/no_periodic_timers.js). A deadline already passed
+// still lets an `ahead` that has settled win: the timer is a macrotask and
+// the settled promise is not.
+function turnBefore(ahead, deadline) {
+  log.debug("Entering turnBefore().");
+  log.debug("Leaving turnBefore().");
+  return new Promise(function (resolve) {
+    const timer = setTimeout(function () {
+      resolve(false);
+    }, Math.max(0, deadline - Date.now()));
+    ahead.then(function () {
+      clearTimeout(timer);
+      resolve(true);
+    });
+  });
 }
 
 // Every build queued in this process, settled — for a caller that must not
@@ -1774,12 +1974,20 @@ function algorithmsFrom(options) {
  */
 async function buildScope(scopeId, opts) {
   log.debug("Entering buildScope().");
+  // Refused for what it asks for: answered now, not after the queue and the
+  // claim (scopeBuildChecks()).
+  const checked = scopeBuildChecks(scopeId, opts);
+  if (!checked.ok) {
+    log.debug("Leaving buildScope(). Refused before the queue.");
+    return checked;
+  }
   log.debug("Leaving buildScope().");
   return oneBuildAtATime(String(scopeId), function () {
     return oneBuildInTheCluster(String(scopeId), ['intermediate', 'issuing'],
                                 null,
                                 function () {
-                                  return buildScopeNow(scopeId, opts);
+                                  return buildScopeNow(scopeId, opts,
+                                                       checked);
                                 });
   });
 }
@@ -1984,17 +2192,168 @@ function processListenerAltSignatureProblem(altKeyAlg, keyAlg) {
                          'STS-PKI-0270');
 }
 
-async function buildScopeNow(scopeId, opts) {
-  log.debug('Entering buildScope(). scope=' + scopeId);
+// ---------------------------------------------------------------------------
+// A SIGNING KEY THE LISTENER'S OPENSSL CANNOT READ (the fuzz run on
+// 7fc43a1de, 2026-11-12).
+//
+// The service Root and the process branch are on the main port's chain and
+// LDAPS's: the Root is presented after the Intermediate (#1064) and the TLS
+// Issuing CA signs the listener certificate. OpenSSL reads every key on that
+// chain while it builds the context — the issuer's key, to check that it
+// fits the subject's signature — and it cannot read a composite ML-DSA key
+// at all (node's 3.5 has ML-DSA and SLH-DSA, not the LAMPS composites). So a
+// composite Root or process branch was built, stored and handed to every
+// listener, and every `setSecureContext()` threw `03000072 decode error`
+// (STS-TLS-0011, STS-LDAP-0030): the sockets went on serving the certificate
+// they had, now under a revoked Intermediate, while the pages and the
+// workers' pins named one no socket presented. Thirty-two times in eight
+// seconds of `POST /admin-api/pki/build-scope`. Pure ML-DSA and SLH-DSA load.
+//
+// A CALLER NAMING ONE IS REFUSED (STS-PKI-0272), before any key is made. The
+// SETTING naming one (`pki.keyAlgorithm`, whose list still carries the
+// composites) is not refused for these two builds, because the
+// startup build reads it and a refusal there would leave a deployment that
+// stored it without a Root: the classical default is used for them, said
+// (STS-PKI-0273).
+//
+// **AND A REALM'S BRANCH TOO (the same day, after #1684).** That change left
+// a realm's branch free to be composite on the claim that its keys are only
+// verified by relying parties. It is not so: every realm branch carries the
+// SPIFFE authority, whose server SVID the realm's SPIRE Server API and Broker
+// API present through grpc-js (`spiffe/spiffe_grpc.ts`,
+// `presentedChainPem()`), the Remote PEP listeners' authority (`pep-tls`)
+// and the custom listeners' (`realm-tls`, `tls/listeners.js`), and each of
+// those chains is [leaf, Issuing CA, the realm's Intermediate, Root]. The
+// INTERMEDIATE alone is enough: a leaf followed by a composite-keyed
+// Intermediate and nothing else throws the same `03000072 decode error`, and
+// so does a grpc-js `bindAsync()` with the SPIFFE chain. So no Issuing CA's
+// key can rescue a composite branch, and the branch is one key algorithm.
+// The X509-SVIDs handed to workloads are loaded into the WORKLOAD'S TLS stack
+// the same way. A realm branch takes the same rule under codes of its own
+// (STS-PKI-0274 refused, STS-PKI-0275 the setting's fallback), so a log line
+// says which kind of branch it was. A composite LEAF key (a JOSE signing key
+// certified under the `jose` authority, a Workbench object) is untouched:
+// nothing here loads one into OpenSSL. A branch already stored composite is
+// left as it is and still loads at start; the next rebuild or repair of it
+// reads the setting and so falls back.
+// ---------------------------------------------------------------------------
+/**
+ * Whether a key algorithm is one this service's OpenSSL cannot read, which
+ * is a composite ML-DSA key.
+ *
+ * @param keyAlg - a key-material id
+ * @returns true for a composite ML-DSA id
+ */
+function listenerUnreadableKeyAlg(keyAlg) {
+  log.debug('Entering listenerUnreadableKeyAlg().');
+  const unreadable = !!keyAlg &&
+    Object.prototype.hasOwnProperty.call(pqcX509.COMPOSITE_ALGS,
+                                         String(keyAlg));
+  log.debug('Leaving listenerUnreadableKeyAlg(). ' + unreadable);
+  return unreadable;
+}
+
+/**
+ * The key algorithm a CA on a listener chain is built with when the form
+ * names none: `pki.keyAlgorithm`, or the classical default where that is a
+ * composite (listenerChainOptions()'s fallback). The console's build forms
+ * preselect it, so the menu shows what the build would do.
+ *
+ * @returns a key-material id
+ */
+function listenerDefaultKeyAlg() {
+  log.debug('Entering listenerDefaultKeyAlg().');
+  const configured = String(config.value('pki.keyAlgorithm') || '');
+  const out = listenerUnreadableKeyAlg(configured)
+    ? 'rsa-' + mode.defaultRsaBits() : configured;
+  log.debug('Leaving listenerDefaultKeyAlg(). ' + out);
+  return out;
+}
+
+/**
+ * The build options for a CA on a listener chain (the Root, the process
+ * branch, a realm's branch): a composite the caller named is refused, and a
+ * composite that only the `pki.keyAlgorithm` setting names is replaced by
+ * the classical default.
+ *
+ * @param options - the build options
+ * @param label - what is being built, for the sentence and the log
+ * @param codes - `{ refused, fallback }`, the codes for this kind of build;
+ *   the Root's and the process branch's when omitted
+ * @returns `{ ok: true, options }` or a refusal marked `codes.refused`
+ */
+function listenerChainOptions(options, label, codes) {
+  log.debug('Entering listenerChainOptions(). ' + label);
+  const refused = (codes && codes.refused) || 'STS-PKI-0272';
+  const fallback = (codes && codes.fallback) || 'STS-PKI-0273';
+  if (options.keyAlg) {
+    if (listenerUnreadableKeyAlg(options.keyAlg)) {
+      log.warn(errorCodes.tag(refused) + 'pki: ' + label + ' was ' +
+               'asked for a ' + String(options.keyAlg) + ' key, which the ' +
+               'TLS listeners cannot load. Nothing was built.');
+      log.debug('Leaving listenerChainOptions(). Refused.');
+      return errorCodes.mark({ ok: false,
+               errors: ['A composite ML-DSA key cannot sign ' + label +
+                        ': that certificate is on the TLS listeners\' ' +
+                        'chain, and the TLS library cannot read a ' +
+                        'composite key, so the listeners would keep the ' +
+                        'certificate they have. Choose ML-DSA, SLH-DSA or ' +
+                        'a classical key, or a hybrid branch with an ' +
+                        'alternative ML-DSA key. Nothing was built.'] },
+                             refused);
+    }
+    log.debug('Leaving listenerChainOptions(). Named, readable.');
+    return { ok: true, options: options };
+  }
+  const configured = String(config.value('pki.keyAlgorithm') || '');
+  if (!listenerUnreadableKeyAlg(configured)) {
+    log.debug('Leaving listenerChainOptions(). The setting is readable.');
+    return { ok: true, options: options };
+  }
+  const classical = 'rsa-' + mode.defaultRsaBits();
+  log.warn(errorCodes.tag(fallback) + 'pki: pki.keyAlgorithm is ' +
+           configured + ', which the TLS listeners cannot load, so ' + label +
+           ' is built with ' + classical + '.');
+  log.debug('Leaving listenerChainOptions(). The classical default.');
+  return { ok: true,
+           options: Object.assign({}, options, { keyAlg: classical }) };
+}
+
+// WHAT A BRANCH BUILD REFUSES BEFORE IT MAKES ANYTHING, as one check:
+// the key the listeners cannot load, the algorithms, the process listener's
+// chain and the lifetimes. `buildScope()` asks it BEFORE the build queue and
+// the cluster claim as well as `buildScopeNow()` inside them, because a
+// request refused for what it asked for has no reason to wait for somebody
+// else's build: CI run #250's fuzzer sent `build-scope` bodies whose
+// `keyAlg` or `altKeyAlg` this refuses at once, and they queued behind a
+// held claim until schemathesis gave up at 300 s. Answers `{ ok: true,
+// options, chosen, intermediateYears, issuingYears }` or the refusal.
+function scopeBuildChecks(scopeId, opts) {
+  log.debug('Entering scopeBuildChecks(). scope=' + scopeId);
   const id = String(scopeId);
   const kind = scopeKindOf(id);
-  const options = opts || {};
+  // Every branch is on a listener's chain — the process branch the main
+  // port's and LDAPS's, a realm's its SPIFFE, Remote PEP and custom
+  // listeners' — so a composite key named for one is refused, and one only
+  // the setting names is not used for it: see listenerChainOptions().
+  const readable = kind === 'process'
+    ? listenerChainOptions(opts || {}, 'the process branch')
+    : listenerChainOptions(opts || {},
+                           'the "' + (id || 'default') + '" realm\'s branch',
+                           { refused: 'STS-PKI-0274',
+                             fallback: 'STS-PKI-0275' });
+  if (!readable.ok) {
+    log.debug('Leaving scopeBuildChecks(). A key the listeners cannot ' +
+              'load.');
+    return readable;
+  }
+  const options = readable.options;
   // The algorithms are decided BEFORE the Root is made, so that a build
   // refused for its algorithm (a SHA-1 one in product, #181, or an
   // impossible pair) creates nothing on its way to the refusal.
   const chosen = algorithmsFrom(options);
   if (!chosen.ok) {
-    log.debug('Leaving buildScope(). ' + chosen.errors.join(' '));
+    log.debug('Leaving scopeBuildChecks(). ' + chosen.errors.join(' '));
     return chosen;
   }
   // BEFORE the Root and BEFORE any tier is made, for the same reason as the
@@ -2007,7 +2366,7 @@ async function buildScopeNow(scopeId, opts) {
     const handshake = processListenerAltSignatureProblem(chosen.altKeyAlg,
                                                          chosen.keyAlg);
     if (handshake) {
-      log.debug('Leaving buildScope(). The listener chain.');
+      log.debug('Leaving scopeBuildChecks(). The listener chain.');
       return handshake;
     }
   }
@@ -2016,9 +2375,30 @@ async function buildScopeNow(scopeId, opts) {
   const lifetime = certificateLifetimeProblem(intermediateYears) ||
                    certificateLifetimeProblem(issuingYears);
   if (lifetime) {
-    log.debug('Leaving buildScope(). The lifetime.');
+    log.debug('Leaving scopeBuildChecks(). The lifetime.');
     return lifetime;
   }
+  log.debug('Leaving scopeBuildChecks(). Buildable.');
+  return { ok: true, options: options, chosen: chosen,
+           intermediateYears: intermediateYears, issuingYears: issuingYears };
+}
+
+// `checked` is `scopeBuildChecks()`'s answer when the caller already asked
+// it for these options (`buildScope()`), so a fallback is not logged twice.
+async function buildScopeNow(scopeId, opts, checked) {
+  log.debug('Entering buildScope(). scope=' + scopeId);
+  const id = String(scopeId);
+  const kind = scopeKindOf(id);
+  const ready = checked && checked.ok ? checked
+                                      : scopeBuildChecks(scopeId, opts);
+  if (!ready.ok) {
+    log.debug('Leaving buildScope(). Refused before anything was made.');
+    return ready;
+  }
+  const options = ready.options;
+  const chosen = ready.chosen;
+  const intermediateYears = ready.intermediateYears;
+  const issuingYears = ready.issuingYears;
   const removalsAtStart = removalCount(id);
   const rooted = await ensureRoot(options);
   if (!rooted.ok) {
@@ -2259,6 +2639,50 @@ function primaryUseCaseFor(scopeId) {
   log.debug("Entering primaryUseCaseFor().");
   log.debug("Leaving primaryUseCaseFor().");
   return scopeKindOf(scopeId) === 'process' ? 'tls' : 'assertions';
+}
+
+// ---------------------------------------------------------------------------
+// ONE USE CASE'S ISSUING CA, WITH WHAT IS ABOVE IT: the trust a client of a
+// leaf from that use case needs, and nothing from the scope's other Issuing
+// CAs. Public certificates only. First asked for by the XACML nudge
+// (`xacml/xacml_pep_http.ts`, 2026-11-14): a remote PEP's notify listener
+// serves a `pep-tls` leaf of the realm it registered to, so that realm's
+// `pep-tls` chain is what the nudge verifies it against with no CA file
+// named. `issuing` is answered apart from the rest so a caller can PIN the
+// leaf's issuer to it — the Root would also verify a leaf from any other
+// Issuing CA of any realm, which is not what "issued to a PEP of this realm"
+// means.
+// ---------------------------------------------------------------------------
+/**
+ * Answers one use case's Issuing CA in a scope, and the Intermediate and
+ * Root above it, as PEM.
+ *
+ * @param scopeId - the realm (the ambient one when empty); ignored for a
+ *   process-scoped use case
+ * @param useCaseId - the use case, such as `pep-tls`
+ * @returns `{ issuing, intermediate, root }`, each a PEM, or null where the
+ *   scope holds no such Issuing CA (nothing has been issued from it yet)
+ */
+function useCaseChainPems(scopeId, useCaseId) {
+  log.debug("Entering useCaseChainPems(). use=" + useCaseId);
+  const uc = useCase(useCaseId);
+  if (!uc) {
+    log.debug("Leaving useCaseChainPems(). Unknown use case.");
+    return null;
+  }
+  const row = rawRowFor(uc.scope === 'process' ? PROCESS_SCOPE
+                                               : realmIdOf(scopeId));
+  const root = serviceRoot();
+  const issuing = row && row.issuing ? row.issuing[uc.id] : null;
+  if (!root || !row || !row.intermediate || !issuing ||
+      !issuing.certificatePem) {
+    log.debug("Leaving useCaseChainPems(). No such Issuing CA here.");
+    return null;
+  }
+  log.debug("Leaving useCaseChainPems().");
+  return { issuing: issuing.certificatePem,
+           intermediate: row.intermediate.certificatePem,
+           root: root.certificatePem };
 }
 
 /**
@@ -2752,11 +3176,11 @@ function trustAnchorsFor(realmId) {
  */
 const SUBJECT_KINDS = [
   { id: 'application', label: 'an application',
-    urnPrefix: 'urn:sts:application:', kidPrefix: 'app-',
+    urnPrefix: SubjectUrn.APPLICATION, kidPrefix: 'app-',
     what: 'A registered OAuth client or relying party. Its key pair is ' +
           'written onto its own entry in ou=applications.' },
   { id: 'person', label: 'a person',
-    urnPrefix: 'urn:sts:person:', kidPrefix: 'person-',
+    urnPrefix: SubjectUrn.PERSON, kidPrefix: 'person-',
     what: 'Somebody in ou=users. Their key pair signs an RFC 7523 section ' +
           '2.1 assertion ABOUT THEMSELVES and about nobody else — see ' +
           'common/person_assertions.js, which is where the refusal is ' +
@@ -2781,6 +3205,69 @@ function subjectKindFor(id) {
   return SUBJECT_KINDS.filter(function (one) {
     return one.id === wanted;
   })[0] || null;
+}
+
+// ---------------------------------------------------------------------------
+// IS THIS PERSON A SERVICE ACCOUNT NOW (#1827).
+//
+// rcbj, 2026-11-16: a service account's certificates name it
+// `urn:sts:sa:<name>`, "but underneath, it's a regular user object". Which
+// spelling a person's leaf gets is decided at ISSUE from the entry, so this
+// module asks — LAZILY, at the act, in the realm the leaf is issued in —
+// `service_accounts.isServiceAccountName()`, the one predicate every door
+// asks (`common/CLAUDE.md` 3cd). This module stays a leaf at load: the
+// register is a leaf too, and is reached only when a person's key pair or an
+// upload for one is being decided. With no register or no directory in this
+// process the answer is "not one", which writes `urn:sts:person:` — the
+// spelling every reader has always accepted.
+// ---------------------------------------------------------------------------
+/**
+ * Says whether a person is a service account now, in a realm.
+ *
+ * @param realmId - the realm
+ * @param username - the person's username
+ * @returns true for a service account; false for anybody else, and where
+ *   nothing can say
+ */
+function personIsServiceAccount(realmId, username) {
+  log.debug('Entering personIsServiceAccount().');
+  let out = false;
+  try {
+    const realm = realms.get(realmIdOf(realmId));
+    const ask = function () {
+      return require('./service_accounts').isServiceAccountName(username) ===
+             true;
+    };
+    out = realm ? realms.run(realm, ask) : ask();
+  } catch (e) {
+    log.debug('Caught in personIsServiceAccount(): ' +
+              ((e && e.message) || e));
+    out = false;
+  }
+  log.debug('Leaving personIsServiceAccount(). ' + out);
+  return out;
+}
+
+/**
+ * Returns the URI subjectAltName a signing leaf names its holder by.
+ *
+ * @param realmId - the realm
+ * @param subjectKind - a `SUBJECT_KINDS` entry (or the encryption kind)
+ * @param identifier - the holder's name or identifier
+ * @param serviceAccount - for a person, the caller's answer; asked of the
+ *   directory when it is not a boolean
+ * @returns the URI
+ */
+function subjectUriFor(realmId, subjectKind, identifier, serviceAccount) {
+  log.debug('Entering subjectUriFor().');
+  if (subjectKind.id !== 'person') {
+    log.debug('Leaving subjectUriFor(). Not a person.');
+    return subjectKind.urnPrefix + identifier;
+  }
+  const flagged = typeof serviceAccount === 'boolean' ? serviceAccount
+    : personIsServiceAccount(realmId, identifier);
+  log.debug('Leaving subjectUriFor(). ' + flagged);
+  return SubjectUrn.forPerson(identifier, flagged);
 }
 
 /**
@@ -2855,7 +3342,10 @@ const ENCRYPTION_KEY_ALGS = ['rsa-3072', 'ec-p256'];
  * Differs from a signing leaf in its key usage, `use: enc` and kid prefix.
  * @param realmId - the realm
  * @param opts - as `issueSigningKeyPair()`; `keyAlg` one of
- *   `ENCRYPTION_KEY_ALGS`
+ *   `ENCRYPTION_KEY_ALGS`; `encryptionHolder` `application` for an
+ *   application's WS-Trust decryption key (#1668), whose subjectAltName is
+ *   `urn:sts:application:<identifier>` — a federation relationship's
+ *   otherwise
  * @returns a promise of `issueSigningKeyPair()`'s answer
  */
 async function issueEncryptionKeyPair(realmId, opts) {
@@ -2877,13 +3367,140 @@ async function issueEncryptionKeyPair(realmId, opts) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// A FEDERATION RELATIONSHIP'S TLS CLIENT CERTIFICATE (#931, rcbj's decision
+// of 2026-11-13): what this service presents when it dials a FAPI 1.0
+// Advanced partner, for RFC 8705's `tls_client_auth` and for the
+// certificate-bound access token the partner issues (`cnf.x5t#S256`).
+//
+// It is a leaf of the realm's `tls-client` Issuing CA, through `certify()`,
+// so it is in the register (OCSP answers `good`, the CRL can carry it, a
+// rebuilt branch supersedes it) and names that authority's CRL and
+// responder — a partner that checks revocation has somewhere to ask. It is
+// NOT an identity at this service: its one subjectAltName is a
+// `urn:sts:federation:` URI, which `tls_client_certificates.js`'s gate does
+// not read as a person or an application, and its register slot
+// (`federation:<id>:<random>`) is not one that module lists. The subject is
+// fixed for a relationship (`CN=federation <id> client`, the realm's O and
+// C), so a renewal keeps the DN a partner registered as
+// `tls_client_auth_subject_dn`.
+//
+// THE PRIVATE KEY IS RETURNED AND NOT KEPT, as every leaf here: the caller
+// seals it onto the relationship (`federation/federation_client_certificate
+// .ts`). Earlier certificates of the same relationship that have EXPIRED
+// are forgotten first, as `tls_client_certificates.issue()` forgets a
+// person's; one that is superseded but still valid keeps its record, so
+// the responder still answers for it until it ends.
+// ---------------------------------------------------------------------------
+/**
+ * The key algorithms a federation relationship's client certificate is
+ * issued with.
+ */
+const FEDERATION_CLIENT_KEY_ALGS = ['rsa-2048', 'rsa-3072', 'ec-p256'];
+
+/**
+ * Generates and certifies a federation relationship's TLS client key pair
+ * (clientAuth) from the realm's `tls-client` Issuing CA.
+ *
+ * @param realmId - the realm; the ambient realm when absent
+ * @param opts - `identifier` (the relationship id), `keyAlg` (one of
+ *   `FEDERATION_CLIENT_KEY_ALGS`, `rsa-2048` by default) and `days`
+ * @returns a promise of `{ ok: true, issued }` — the certificate, its chain,
+ *   the private key, the serial, the validity and the subject — or
+ *   `{ ok: false, errors }` marked with its code
+ */
+async function issueFederationClientKeyPair(realmId, opts) {
+  log.debug('Entering issueFederationClientKeyPair().');
+  const scope = realmIdOf(realmId);
+  const options = opts || {};
+  const identifier = String(options.identifier || '');
+  if (!identifier || identifier.length > 128 ||
+      /[\s:,=+<>#;"\\]/.test(identifier)) {
+    log.debug('Leaving issueFederationClientKeyPair(). No identifier.');
+    return errorCodes.mark({ ok: false,
+             errors: ['A client certificate is issued to a federation ' +
+                      'relationship, named by its id.'] }, 'STS-PKI-0010');
+  }
+  const keyAlg = String(options.keyAlg || 'rsa-2048');
+  if (FEDERATION_CLIENT_KEY_ALGS.indexOf(keyAlg) < 0 ||
+      !keyMaterial.keyAlg(keyAlg)) {
+    log.debug('Leaving issueFederationClientKeyPair(). Unknown key type.');
+    return errorCodes.mark({ ok: false,
+             errors: ['"' + keyAlg + '" is not a key type a federation ' +
+                      'client certificate is issued with. It may be ' +
+                      FEDERATION_CLIENT_KEY_ALGS.join(', ') + '.'] },
+                           'STS-PKI-0192');
+  }
+  const branch = await ensureScope(scope);
+  if (!branch || !branch.ok) {
+    log.debug('Leaving issueFederationClientKeyPair(). No branch.');
+    return branch || errorCodes.mark({ ok: false,
+             errors: ['This realm has no certificate authority.'] },
+                                     'STS-PKI-0009');
+  }
+  const prefix = 'federation:' + identifier + ':';
+  const now = Date.now();
+  certificatesFor(scope, 'tls-client').forEach(function (one) {
+    if (String(one.slot || '').indexOf(prefix) === 0 &&
+        new Date(one.notAfter).getTime() < now) {
+      forgetCertificate(scope, 'tls-client', one.slot);
+    }
+  });
+  const pair = await keyMaterial.generateKeyPair(keyAlg);
+  const keyDesc = keyMaterial.keyAlg(keyAlg);
+  const made = await certify(scope, 'tls-client', {
+    slot: prefix + stsCrypto.randomBytes(6).toString('hex'),
+    label: 'Federation client certificate (' + identifier + ')',
+    commonName: 'federation ' + identifier + ' client',
+    keyAlg: keyAlg,
+    publicKeyPem: pair.publicPem,
+    profile: 'tls-client',
+    days: options.days,
+    keyUsage: keyDesc.kind === 'rsa' ? ['digitalSignature', 'keyEncipherment']
+                                     : ['digitalSignature'],
+    extensions: {
+      extKeyUsage: { present: true, critical: false, usages: ['clientAuth'] },
+      subjectAltName: { present: true, critical: false,
+        names: [{ kind: 'uri',
+                  value: SubjectUrn.make('federation', identifier) }] }
+    }
+  });
+  if (!made.ok) {
+    log.debug('Leaving issueFederationClientKeyPair(). certify() refused.');
+    return made;
+  }
+  log.info('pki: a ' + keyDesc.label + ' TLS client certificate was issued ' +
+           'to the federation relationship ' + identifier + ' in "' +
+           scope + '", serial ' + made.record.serialHex + ', expires ' +
+           made.record.notAfter + '. The private key was handed to the ' +
+           'caller and is not kept.');
+  log.debug('Leaving issueFederationClientKeyPair().');
+  return {
+    ok: true,
+    issued: {
+      scope: scope,
+      slot: made.record.slot,
+      keyAlg: keyAlg,
+      serialHex: made.record.serialHex,
+      subject: made.record.subject,
+      notBefore: made.record.notBefore,
+      notAfter: made.record.notAfter,
+      certificatePem: made.record.certificatePem,
+      chainPem: (made.record.chainPem || []).slice(),
+      privateKeyPem: pair.privatePem
+    }
+  };
+}
+
 /**
  * Generates and certifies a signing key pair for an application or a
  * person, and records the issuance.
  *
  * @param realmId - the realm
  * @param opts - `identifier`, `subjectKind`, `purpose`, `keyAlg`,
- *   `signatureAlg`, `commonName` and `days`
+ *   `signatureAlg`, `commonName` and `days`; and `publicKeyPem` (with the
+ *   `keyAlg` it is) for a key the holder generated, which is certified and
+ *   answered with an empty `privateKeyPem`
  * @returns a promise of `{ ok: true, issued }` or `{ ok: false, errors }`
  */
 async function issueSigningKeyPair(realmId, opts) {
@@ -2928,9 +3545,15 @@ async function issueSigningKeyPair(realmId, opts) {
   // subject kind this service does not have wants a certificate that says
   // something, and handing back an `application` one would put the wrong URN
   // in the subjectAltName with nothing saying so.
+  // AN APPLICATION'S WS-TRUST DECRYPTION KEY (#1668) names the application
+  // it is for, as its signing leaves do, with a kid of its own prefix; a
+  // federation relationship's is the default, as it always was.
   const subjectKind = encryption
-    ? { id: 'federation', label: 'a federation relationship',
-        urnPrefix: 'urn:sts:federation:', kidPrefix: 'fedenc-' }
+    ? (options.encryptionHolder === 'application'
+      ? { id: 'application', label: 'an application',
+          urnPrefix: SubjectUrn.APPLICATION, kidPrefix: 'appenc-' }
+      : { id: 'federation', label: 'a federation relationship',
+          urnPrefix: SubjectUrn.FEDERATION, kidPrefix: 'fedenc-' })
     : subjectKindFor(options.subjectKind);
   if (!subjectKind) {
     log.debug('Leaving issueSigningKeyPair(). Unknown subject kind.');
@@ -2941,6 +3564,13 @@ async function issueSigningKeyPair(realmId, opts) {
                       'to ' + SUBJECT_KIND_IDS.join(' and ') + '.'] },
                            'STS-PKI-0012');
   }
+  // THE NAME THE LEAF CARRIES (#1827): a person who is a SERVICE ACCOUNT now
+  // is `urn:sts:sa:<name>`, anybody else `urn:sts:person:<name>`. Asked here,
+  // at issue, of the directory (`subjectUriFor()`), unless the caller has
+  // said — the decision is the entry's, and a leaf issued before the entry
+  // became one keeps its `urn:sts:person:` name and keeps working.
+  const subjectUri = subjectUriFor(id, subjectKind, identifier,
+                                   options.serviceAccount);
   const issuing = chain.tiers[chain.tiers.length - 1];
   // The leaf follows the ISSUING CA's key algorithm by default, because a chain
   // whose leaf and issuer are the same family is the one a client library is
@@ -3014,7 +3644,13 @@ async function issueSigningKeyPair(realmId, opts) {
     notAfter.setTime(issuerNotAfter);
   }
 
-  const pair = await keyMaterial.generateKeyPair(keyAlgId);
+  // A KEY THE HOLDER GENERATED (#1827's phase 3, rcbj 2026-11-16): the
+  // caller hands the PUBLIC half — read out of a PKCS #10 request whose proof
+  // of possession `certifySigningRequest()` checked — and no private half
+  // exists here to return. Everything below is the same leaf either way.
+  const pair = options.publicKeyPem
+    ? { publicPem: String(options.publicKeyPem), privatePem: '' }
+    : await keyMaterial.generateKeyPair(keyAlgId);
   const subject = [{ name: 'CN', value: commonName },
                    { name: 'O', value: chain.organisation }]
     .concat(chain.country ? [{ name: 'C', value: chain.country }] : []);
@@ -3056,7 +3692,7 @@ async function issueSigningKeyPair(realmId, opts) {
         // to decide what an assertion signed with this key may say.
         subjectAltName: { present: true, critical: false,
                           names: [{ kind: 'uri',
-                                    value: subjectKind.urnPrefix + identifier }]
+                                    value: subjectUri }]
                             .concat(purpose.profileUri
                               ? [{ kind: 'uri', value: purpose.profileUri }]
                               : []) }
@@ -3164,7 +3800,7 @@ async function issueSigningKeyPair(realmId, opts) {
     // same place.
     subjectKind: subjectKind.id,
     subjectKindLabel: subjectKind.label,
-    subjectUri: subjectKind.urnPrefix + identifier,
+    subjectUri: subjectUri,
     // WHICH AUTHORITY SIGNED IT, by the id its revocation list is kept
     // under (#1290): a person's key pairs are revoked one at a time on
     // `/portal/signing-key`, and a serial is unique only within one issuer.
@@ -3233,6 +3869,130 @@ async function issueSigningKeyPair(realmId, opts) {
            record.notAfter + '.');
   log.debug('Leaving issueSigningKeyPair(). kid=' + record.kid);
   return { ok: true, issued: record };
+}
+
+// ---------------------------------------------------------------------------
+// A PERSON'S RFC 7523 KEY CERTIFIED FROM THEIR OWN REQUEST (#1827's phase 3,
+// rcbj 2026-11-16: "the service never holds the PEP's private key").
+//
+// `issueSigningKeyPair()` GENERATES the key pair and hands the private half to
+// its caller, which seals a copy onto the entry (`person_assertions.write()`).
+// That is right for a person who asked this service for a key, and wrong for a
+// workload that can make its own: a remote PEP, or the tool that provisions
+// one, generates the key, sends a PKCS #10 request, and the realm's Issuing CA
+// certifies the PUBLIC key in it. The leaf is the same leaf — the same
+// profile, the same revocation pointers, the same record in `issuedKeyPairs`,
+// so its authority's CRL and OCSP responder answer for it — with nothing
+// private anywhere in this process.
+//
+// THE PROOF OF POSSESSION IS `cert_enrollment.ts`'s `parseCsr()`, the one
+// PKCS #10 reader this service has (ACME, EST, SCEP and a PEP's listener
+// certificate read through it), required LAZILY: that module requires this
+// one, and a request reaches here long after both are built. Not a second
+// parser, so a key family it verifies is verified the same way here.
+//
+// **THE REQUEST'S NAMES ARE READ FOR NOTHING.** Its subject and any
+// subjectAltName it asks for are ignored: the leaf's names are the ENTRY's —
+// its username as CN and `SubjectUrn.forPerson()` as the URI SAN, which is
+// `urn:sts:sa:<name>` for a service account. A requester cannot name somebody
+// else, which is what keeps `assertion_grant.js`'s "a person asserts only
+// about themselves" true of a key nobody here generated.
+//
+// **TWO KEY FAMILIES, BY NAME** (`CSR_SIGNING_KEY_ALGS`): EC P-256 (ES256,
+// the one a PEP is told to prefer) and RSA of 2048 bits or more (RS256 or
+// PS256, the realm's chain decides). These are the two the remote PEP signs a
+// self-assertion and a DPoP proof with (`credential.rs`), and anything else is
+// refused naming the two, rather than certified into a key the holder cannot
+// use.
+// ---------------------------------------------------------------------------
+/**
+ * The key algorithms a holder-generated RFC 7523 key is certified for:
+ * EC P-256 and RSA of at least 2048 bits.
+ */
+const CSR_SIGNING_KEY_ALGS = ['ec-p256', 'rsa-2048', 'rsa-3072', 'rsa-4096'];
+
+/**
+ * Certifies the public key in a person's own PKCS #10 request as an RFC 7523
+ * signing key, from the realm's Issuing CA. Nothing private is generated or
+ * answered.
+ *
+ * The request's signature must verify with its own key (proof of
+ * possession). Its subject and names are ignored: the leaf names the entry
+ * (`urn:sts:sa:<name>` for a service account).
+ *
+ * @param realmId - the realm; the ambient realm when absent
+ * @param opts - `identifier` (the username), `csr` (PEM or base64 DER),
+ *   `serviceAccount` (the entry's flag, read by the caller), `commonName`
+ *   and `days`
+ * @returns a promise of `{ ok: true, issued }` — `issueSigningKeyPair()`'s
+ *   record with `source` `issued-from-csr` and an empty `privateKeyPem` — or
+ *   `{ ok: false, errors }` marked with its code
+ */
+async function certifySigningRequest(realmId, opts) {
+  log.debug('Entering certifySigningRequest().');
+  const options = opts || {};
+  const text = typeof options.csr === 'string' ? options.csr : '';
+  const der = Buffer.from(text.replace(/-----[A-Z0-9 ]+-----/g, '')
+                            .replace(/\s+/g, ''), 'base64');
+  if (!der.length) {
+    log.debug('Leaving certifySigningRequest(). No request.');
+    return errorCodes.mark({ ok: false,
+             errors: ['No certificate request arrived: `csr` is a PKCS #10 ' +
+                      'request (PEM, or base64 DER) signed with the key to ' +
+                      'be certified. This service never generates or holds ' +
+                      'that key.'] },
+                           'STS-PKI-0278');
+  }
+  let parsed = null;
+  try {
+    parsed = await require('./cert_enrollment').parseCsr(der);
+  } catch (e) {
+    log.debug('Caught in certifySigningRequest(): ' +
+              ((e && e.message) || e));
+    parsed = null;
+  }
+  if (!parsed || !parsed.ok) {
+    log.debug('Leaving certifySigningRequest(). The request was refused.');
+    return errorCodes.mark({ ok: false,
+             errors: ['The certificate request was refused: ' +
+                      ((parsed && (parsed.why ||
+                                   (parsed.errors || []).join(' '))) ||
+                       'it could not be read.')] },
+             (parsed && errorCodes.codeOf(parsed)) || 'STS-PKI-0278');
+  }
+  if (CSR_SIGNING_KEY_ALGS.indexOf(String(parsed.keyAlg)) < 0) {
+    log.debug('Leaving certifySigningRequest(). Key ' + parsed.keyAlg +
+              ' refused.');
+    return errorCodes.mark({ ok: false,
+             errors: ['The request carries a ' + parsed.keyAlg + ' key. An ' +
+                      'RFC 7523 key certified from a request is EC P-256 ' +
+                      '(ES256, preferred) or RSA of 2048 bits or more — ' +
+                      CSR_SIGNING_KEY_ALGS.join(', ') + '.'] },
+                           'STS-PKI-0281');
+  }
+  const identifier = String(options.identifier || '');
+  const issued = await issueSigningKeyPair(realmId, {
+    identifier: identifier,
+    purpose: 'jwt',
+    subjectKind: 'person',
+    serviceAccount: options.serviceAccount,
+    commonName: String(options.commonName || '') || identifier,
+    keyAlg: parsed.keyAlg,
+    publicKeyPem: parsed.publicKeyPem,
+    days: options.days
+  });
+  if (!issued.ok) {
+    log.debug('Leaving certifySigningRequest(). Not issued.');
+    return issued;
+  }
+  issued.issued.source = 'issued-from-csr';
+  issued.issued.privateKeyPem = '';
+  log.info('pki: the ' + parsed.keyAlg + ' key in a certificate request ' +
+           'from "' + identifier + '" was certified for RFC 7523 as ' +
+           issued.issued.subjectUri + ', serial ' + issued.issued.serialHex +
+           '. Its private key was never here.');
+  log.debug('Leaving certifySigningRequest(). kid=' + issued.issued.kid);
+  return issued;
 }
 
 // ===========================================================================
@@ -5753,17 +6513,38 @@ async function registerCertificate(realmId, opts) {
     // making the same decision an external certificate is. A leaf naming no
     // subject of this service (one the Certificate & Key pane authored)
     // carries no such claim, and is registered on the entry's word alone.
-    const named = String(leaf.cert.subjectAltName || '').split(',')
-      .map(function (one) { return one.trim(); })
-      .map(function (one) {
-        return /^URI:(urn:sts:(?:application|person):.+)$/.exec(one);
-      })
-      .filter(Boolean)
-      .map(function (match) { return match[1]; });
+    //
+    // A SERVICE ACCOUNT IS A PERSON HERE (#1827): `urn:sts:sa:<name>` is a
+    // person's name on both sides of the rule — a person's upload may carry
+    // its own name in either spelling (one issued before the entry became a
+    // service account says `urn:sts:person:`, and still works), and an
+    // application's may carry neither. What the `sa` spelling adds is one
+    // claim the directory can check: that the entry IS a service account.
+    // A leaf saying so of somebody who is not is refused (STS-PKI-0277),
+    // since this realm's authority writes it only for one.
+    const parsedNames = SubjectUrn.namesIn(
+      String(leaf.cert.subjectAltName || ''), ['application', 'person', 'sa']);
+    const named = parsedNames.map(function (one) { return one.uri; });
     const wanted = subjectKind.urnPrefix + identifier;
     const widens = subjectKind.id === 'person'
-      ? named.length && named.indexOf(wanted) < 0
-      : named.some(function (one) { return /^urn:sts:person:/.test(one); });
+      ? named.length && !parsedNames.some(function (one) {
+        return SubjectUrn.sameHolder(one.uri, wanted);
+      })
+      : parsedNames.some(function (one) { return one.kind === 'person'; });
+    if (!widens && subjectKind.id === 'person' &&
+        parsedNames.some(SubjectUrn.isServiceAccountForm) &&
+        !personIsServiceAccount(id, identifier)) {
+      log.debug('Leaving registerCertificate(). It names a service account ' +
+                'that is not one.');
+      return uploadRefusal('STS-PKI-0277', 'The certificate was issued by ' +
+                           'this realm\'s certificate authority as a SERVICE ' +
+                           'ACCOUNT\'s (' + SubjectUrn.forPerson(identifier,
+                                                                 true) +
+                           '), and "' + identifier + '" is not a service ' +
+                           'account in this realm. This service writes that ' +
+                           'name only for a service account, so a person ' +
+                           'who is not one cannot hold such a certificate.');
+    }
     if (widens) {
       log.debug('Leaving registerCertificate(). It names another subject.');
       return uploadRefusal('STS-PKI-0155', 'The certificate was issued by ' +
@@ -6768,6 +7549,27 @@ function describeCertificate(one) {
 const CERTIFY_ISSUER_MOVED_RETRIES = 3;
 
 /**
+ * The organisation and country a leaf's subject uses: the scope's own, and
+ * `iya-sts` where the scope names no organisation — the same fallback
+ * `certify()` writes into a leaf that brings no subject of its own.
+ *
+ * `describeScope()` answers an empty organisation for a row that has none,
+ * which is what the console draws. A leaf is not that reading.
+ * @param scopeId - a realm id or `PROCESS_SCOPE`
+ * @returns `{ organisation, country }`
+ */
+function leafNameFacts(scopeId) {
+  log.debug('Entering leafNameFacts().');
+  const row = rawRowFor(String(scopeId));
+  const out = {
+    organisation: (row && row.organisation) || DEFAULT_ORGANISATION,
+    country: (row && row.country) || ''
+  };
+  log.debug('Leaving leafNameFacts().');
+  return out;
+}
+
+/**
  * Certifies one key pair from a use case's Issuing CA and records the
  * certificate in the slot the spec names.
  *
@@ -6777,8 +7579,9 @@ const CERTIFY_ISSUER_MOVED_RETRIES = 3;
  * @param scopeId - a realm id or `PROCESS_SCOPE`
  * @param useCaseId - the use case
  * @param spec - the slot, `publicKeyPem`, and optionally `alg`, `kid`,
- *   `label`, `commonName`, `keyUsage`, `extensions`, `days` and the pinned
- *   material
+ *   `label`, `commonName`, `subject` (an RDN sequence of `{ name, value }`,
+ *   used instead of CN, O and C), `keyUsage`, `extensions`, `days` and the
+ *   pinned material
  * @returns a promise of `{ ok: true, certificate, record }` or
  *   `{ ok: false, errors }`
  */
@@ -6905,10 +7708,23 @@ async function certify(scopeId, useCaseId, spec) {
   if (notAfter.getTime() > caEnds) {
     notAfter.setTime(caEnds);
   }
-  const organisation = (row && row.organisation) || DEFAULT_ORGANISATION;
-  const subject = [{ name: 'CN', value: String(spec.commonName || spec.slot) },
-                   { name: 'O', value: organisation }]
-    .concat(row && row.country ? [{ name: 'C', value: row.country }] : []);
+  // A caller that already built the subject — a person's directory name,
+  // with the common name first and the organisation and country last —
+  // passes it. Anything else keeps the CN, O and optional C every leaf
+  // has had. `leafNameFacts()` is that fallback, including `iya-sts` where
+  // the scope names no organisation.
+  const facts = leafNameFacts(id);
+  const given = spec && Array.isArray(spec.subject) ? spec.subject : [];
+  const usable = given.filter(function (one) {
+    return one && String(one.value || '') !== '';
+  });
+  const subject = usable.length
+    ? usable.map(function (one) {
+        return { name: String(one.name), value: String(one.value) };
+      })
+    : [{ name: 'CN', value: String(spec.commonName || spec.slot) },
+       { name: 'O', value: facts.organisation }]
+      .concat(facts.country ? [{ name: 'C', value: facts.country }] : []);
   let issued;
   try {
     issued = await x509.issueCertificate(Object.assign({
@@ -6993,12 +7809,22 @@ async function certify(scopeId, useCaseId, spec) {
   // and a renewal that did not carry these re-minted a TLS listener's or the
   // OpenID4VP Verifier's certificate WITHOUT its names: a certificate over
   // the same key that no client could match to a host any more.
-  if (spec.profile || spec.keyUsage || spec.extensions) {
+  if (spec.profile || spec.keyUsage || spec.extensions ||
+      (Array.isArray(spec.subject) && spec.subject.length)) {
     record.issuedAs = {
       profile: spec.profile ? String(spec.profile) : '',
       keyUsage: spec.keyUsage ? spec.keyUsage.slice() : null,
       extensions: spec.extensions ? JSON.parse(JSON.stringify(
-        spec.extensions)) : null
+        spec.extensions)) : null,
+      // The RDN sequence, when the caller built one. A renewal hands it
+      // back, so a person's directory subject survives a rebuilt branch.
+      // Absent, the renewal keeps CN, O and C.
+      subject: Array.isArray(spec.subject) && spec.subject.length
+        ? spec.subject.map(function (one) {
+            return { name: String(one && one.name || ''),
+                     value: String(one && one.value || '') };
+          })
+        : null
     };
   }
   // A PINNED SIGNER'S LIFECYCLE (#263) rides on its record through every
@@ -7179,6 +8005,86 @@ function forgetCertificate(scopeId, useCaseId, slot) {
   return { ok: true, pinned: !!was.pinned };
 }
 
+// ---------------------------------------------------------------------------
+// A CERTIFICATE WHOSE HOLDER WAS DELETED LEAVES ITS SLOT AND KEEPS ITS SERIAL
+// (2026-11-16, rcbj's rule of 2026-11-10 on #1612/#1613: a deleted person or
+// application made again under the same name inherits NOTHING).
+//
+// A person's or an application's TLS client and message-signing certificates
+// are recorded under a slot that carries the holder's NAME
+// (`tls_client_certificates.js`, `person:<name>:<random>`), so a namesake made
+// after a delete was listed every certificate the deleted holder had — a
+// revoked one included, on `/admin/users` and on the portal. Forgetting the
+// record (`forgetCertificate()`) would cost the serial: an OCSP responder with
+// no record of a serial answers `unknown` about a certificate that sends a
+// relying party here to ask (`pki_revocation.js`'s `issuedList()`).
+//
+// So the record MOVES: out of `certs`, where every reader finds a holder by
+// slot and where `recertifyUseCase()` would re-mint it under a rebuilt
+// authority, into `issuedKeyPairs`, the register of serials this authority
+// issued that no slot holds — as a cluster merge's displaced serial already
+// is (`pki_merge.js`'s `displacedRecord()`). It names no name: `identifier` is
+// the deleted holder's `urn:uuid:` subject where it had one, and
+// `subjectKind` is `deleted-person` or `deleted-application`, which no
+// reader of a holder's certificates asks for. The revocation, where the
+// caller made one, is on the authority's own list and stays there
+// (`revoked` is a union that loses nothing).
+//
+// Both halves survive another node's save: the slot's removal is a plain
+// three-way change of `certs`, and `issuedKeyPairs` is a union by serial.
+// ---------------------------------------------------------------------------
+/**
+ * Moves a certificate whose holder was deleted out of its slot and into the
+ * issued register, so no reader finds it under the holder's name while OCSP
+ * and the revocation pane still know its serial.
+ *
+ * @param scopeId - a realm id or `PROCESS_SCOPE`
+ * @param useCaseId - the use case
+ * @param slot - the slot the certificate is recorded under
+ * @param holder - `kind` ('person' or 'application') and `subject`, the
+ *   deleted holder's `urn:uuid:` subject where it had one
+ * @returns `{ ok: true, serialHex }`, or `{ ok: false, errors }` marked with
+ *   its code where the slot holds nothing
+ */
+function detachCertificate(scopeId, useCaseId, slot, holder) {
+  log.debug('Entering detachCertificate().');
+  const id = String(scopeId);
+  const row = rawRowFor(id);
+  const key = slotKey(useCaseId, slot);
+  if (!row || !row.certs || !row.certs[key]) {
+    log.debug('Leaving detachCertificate(). Nothing there.');
+    return errorCodes.mark({ ok: false,
+             errors: ['There is no ' + useCaseId + ' certificate for "' +
+                      slot + '" in that scope.'] }, 'STS-PKI-0025');
+  }
+  const was = row.certs[key];
+  const h = holder || {};
+  const kind = String(h.kind || '') === 'application' ? 'application'
+                                                      : 'person';
+  const subject = String(h.subject || '');
+  const serial = pkiMerge.normalSerial(was.serialHex);
+  row.certs = Object.assign({}, row.certs);
+  delete row.certs[key];
+  row.issuedKeyPairs = (row.issuedKeyPairs || []).filter(function (one) {
+    return !(one && pkiMerge.normalSerial(one.serialHex) === serial &&
+             String(one.useCase || '') === String(useCaseId));
+  }).concat([{
+    serialHex: was.serialHex,
+    subject: was.subject || '',
+    notAfter: was.notAfter || '',
+    identifier: subject,
+    subjectKind: 'deleted-' + kind,
+    holderSubject: kind === 'person' ? subject : '',
+    purpose: 'detached:' + String(useCaseId),
+    useCase: String(useCaseId),
+    issuedAt: new Date(Number(was.createdAt) || Date.now()).toISOString(),
+    detachedAt: new Date().toISOString()
+  }]);
+  saveRow(id, row);
+  log.debug('Leaving detachCertificate(). serial=' + was.serialHex);
+  return { ok: true, serialHex: was.serialHex };
+}
+
 // ===========================================================================
 // A TLS SERVER KEY PAIR FOR SOMETHING THIS SERVICE DOES NOT RUN (2026-09-13):
 // `issueTlsServerKeyPair()`.
@@ -7253,7 +8159,8 @@ function tlsDnsNameProblem(name) {
  * @param scopeId - a realm id (a process use case uses the process branch)
  * @param useCaseId - the use case
  * @param spec - `slot`, `dnsNames`, `ipAddresses`, `keyAlg`, `commonName`,
- *   `label` and `days`
+ *   `label`, `days`, and `publicKeyPem` for a key the holder generated
+ *   (then no key is generated and `privateKeyPem` is null)
  * @returns a promise of `{ ok: true, issued }`, `issued` carrying the
  *   certificate, the private key and the anchor, or `{ ok: false, errors }`
  */
@@ -7335,7 +8242,14 @@ async function issueTlsServerKeyPair(scopeId, useCaseId, spec) {
     return branch;
   }
 
-  const pair = await keyMaterial.generateKeyPair(keyAlgId);
+  // A KEY THE HOLDER GENERATED (#1760): a remote PEP's defined HTTPS
+  // listener sends the public half in a PKCS #10 request whose proof of
+  // possession its caller verified, so the private half never reaches this
+  // process and nothing is handed back. The algorithm named must be the
+  // key's; the caller read it off the request.
+  const pair = s.publicKeyPem
+    ? { publicPem: String(s.publicKeyPem), privatePem: null }
+    : await keyMaterial.generateKeyPair(keyAlgId);
   const was = certificateFor(id, uc.id, slot);
   const names = dnsNames.map(function (one) {
     return { kind: 'dns', value: one };
@@ -7375,8 +8289,11 @@ async function issueTlsServerKeyPair(scopeId, useCaseId, spec) {
   log.info('pki: a ' + keyDesc.label + ' ' + uc.label + ' certificate was ' +
            'issued for "' + slot + '" in "' + (id || 'default') + '", naming ' +
            names.map(function (one) { return one.value; }).join(', ') +
-           '; expires ' + made.record.notAfter + '. The private key was ' +
-           'handed to the caller and is not kept here.');
+           '; expires ' + made.record.notAfter + '. ' + (pair.privatePem
+             ? 'The private key was handed to the caller and is not kept ' +
+               'here.'
+             : 'The holder generated the key; this service never saw the ' +
+               'private half.'));
   log.debug('Leaving issueTlsServerKeyPair().');
   return { ok: true,
            issued: Object.assign(describeCertificate(made.record), {
@@ -7833,6 +8750,195 @@ async function certifyVerifierKey(realmId, spec) {
   log.debug("Leaving certifyVerifierKey(). Issued.");
   return { ok: true, issued: true,
            certificate: verifierCertificateFor(id, dnsName) };
+}
+
+// ===========================================================================
+// THE CREDENTIAL SIGNERS' CERTIFICATES (#1880): `common/credential_signer.js`
+// argues the design; this is the certificate half, beside the OpenID4VP
+// Verifier's, whose arrangement it follows.
+//
+// One certificate per credential signer, under the realm's JOSE Issuing CA,
+// in the slot `vc-issuer:<key family>`, carrying:
+//
+//   * subjectAltName: `uniformResourceIdentifier` entries only — every issuer
+//     identifier the realm answers to and the `did:web` of each. NEVER a
+//     `dNSName`: with one, a TLS stack that finds no reason to refuse would
+//     take the certificate for a server certificate of that host.
+//   * extendedKeyUsage: `id-kp-documentSigning` (RFC 9336) alone, which
+//     excludes `serverAuth` and `clientAuth` (RFC 5280 section 4.2.1.12).
+//   * keyUsage: `digitalSignature` alone, critical.
+//
+// **CURRENT, OR RE-ISSUED.** `credentialSignerCertificateCurrent()` is asked
+// before every credential is signed, and a certificate is used again only
+// while it is over the key, from the Issuing CA the branch holds now, still
+// chaining to the Root, with more than a third of its validity left, carrying
+// documentSigning, and naming EXACTLY the issuer identifiers wanted now — so
+// a `global.publicBaseUrl` changed, a listener added or a host name taken out
+// of `tls.hostnames` re-issues it at the next credential. **THE CERTIFICATE
+// IT REPLACES IS NOT REVOKED**: `certify()` keeps its record in the issued
+// register (`pki_merge.js`'s displaced record), so the OCSP responder goes on
+// answering `good` for a credential issued under it, which is a valid
+// certificate for a key this realm still holds.
+// ===========================================================================
+// The URIs of a record's subjectAltName, sorted, as it was issued.
+function credentialSignerUrisOf(record) {
+  log.debug("Entering credentialSignerUrisOf().");
+  const ext = (record && record.issuedAs && record.issuedAs.extensions) || {};
+  const san = ext.subjectAltName || {};
+  const out = (san.names || []).filter(function (one) {
+    return one && one.kind === 'uri';
+  }).map(function (one) {
+    return String(one.value);
+  }).sort();
+  log.debug("Leaving credentialSignerUrisOf(). " + out.length + ".");
+  return out;
+}
+
+/**
+ * Answers whether a credential signer's held certificate may be used again:
+ * over this key, from the Issuing CA held now, chaining to the Root, with a
+ * third of its validity left, carrying documentSigning, and naming exactly
+ * `spec.uris`.
+ *
+ * @param realmId - the realm
+ * @param spec - `{ slot, publicKeyPem, uris }`
+ * @returns `{ current: true }`, or `{ current: false, why }`
+ */
+function credentialSignerCertificateCurrent(realmId, spec) {
+  log.debug("Entering credentialSignerCertificateCurrent().");
+  const id = realmIdOf(realmId);
+  const held = certificateFor(id, 'jose', spec.slot);
+  if (!held || !held.certificatePem) {
+    log.debug("Leaving credentialSignerCertificateCurrent(). None.");
+    return { current: false, why: 'it has no certificate yet' };
+  }
+  if (held.subjectKeyFingerprint !== thumbprintOf(spec.publicKeyPem)) {
+    log.debug("Leaving credentialSignerCertificateCurrent(). Another key.");
+    return { current: false, why: 'its certificate is over another key' };
+  }
+  // A REVOKED CERTIFICATE IS NEVER CURRENT (#1880's follow-up, run #478).
+  // An administrator, or sts_pki_revocation, may put the live certificate on
+  // the JOSE Issuing CA's list; it was used again for every credential and
+  // published in /oauth2/jwks, so the realm went on publishing a certificate
+  // its own CRL and OCSP responder call revoked. A new one is issued instead,
+  // over the same key — `heldCertificateCurrent()`'s rule for a registered
+  // key, and the same reason.
+  const revocation = require('./pki_revocation');
+  if (revocation.isRevoked(id, 'jose', held.serialHex)) {
+    log.debug("Leaving credentialSignerCertificateCurrent(). Revoked.");
+    return { current: false, why: 'its certificate is revoked' };
+  }
+  const row = rawRowFor(id) || {};
+  const issuing = (row.issuing || {}).jose;
+  if (!issuing || (held.chainPem || [])[0] !== issuing.certificatePem ||
+      !scopeChainsToRoot(id)) {
+    log.debug("Leaving credentialSignerCertificateCurrent(). Old branch.");
+    return { current: false,
+             why: 'its certificate is from a branch this realm no longer ' +
+                  'holds' };
+  }
+  const ext = (held.issuedAs && held.issuedAs.extensions) || {};
+  const eku = (ext.extKeyUsage && ext.extKeyUsage.usages) || [];
+  if (eku.length !== 1 || eku[0] !== 'documentSigning') {
+    log.debug("Leaving credentialSignerCertificateCurrent(). Old profile.");
+    return { current: false,
+             why: 'its certificate does not carry documentSigning alone' };
+  }
+  const wanted = (spec.uris || []).slice().sort();
+  const named = credentialSignerUrisOf(held);
+  if (JSON.stringify(wanted) !== JSON.stringify(named)) {
+    log.debug("Leaving credentialSignerCertificateCurrent(). Other names.");
+    return { current: false,
+             why: 'the issuer identifiers changed (' + named.length +
+                  ' named, ' + wanted.length + ' wanted)' };
+  }
+  const from = new Date(held.notBefore).getTime();
+  const to = new Date(held.notAfter).getTime();
+  const now = Date.now();
+  if (!(from <= now) || !(to - now > (to - from) / 3)) {
+    log.debug("Leaving credentialSignerCertificateCurrent(). Renew.");
+    return { current: false,
+             why: 'less than a third of its validity remains' };
+  }
+  log.debug("Leaving credentialSignerCertificateCurrent(). Current.");
+  return { current: true };
+}
+
+/**
+ * Certifies a credential signer's key under the realm's JOSE Issuing CA, with
+ * a subjectAltName of `uniformResourceIdentifier` entries only, documentSigning
+ * and digitalSignature (#1880). The realm's branch is asked for first where
+ * this process builds branches; the certificate it replaces is not revoked.
+ *
+ * @param realmId - the realm
+ * @param spec - `{ slot, kid, alg, keyAlg, publicKeyPem, uris }`
+ * @param why - why it is issued, for the log
+ * @returns a promise of `{ ok: true, record }` or `{ ok: false, errors }`
+ */
+async function certifyCredentialSigner(realmId, spec, why) {
+  log.debug("Entering certifyCredentialSigner(). " + spec.slot);
+  const id = realmIdOf(realmId);
+  const uris = (spec.uris || []).map(String).filter(function (one) {
+    return /^[a-z][a-z0-9+.-]*:/i.test(one);
+  });
+  if (!spec.publicKeyPem || !uris.length) {
+    log.debug("Leaving certifyCredentialSigner(). Nothing to name.");
+    return errorCodes.mark({ ok: false,
+             errors: ['A credential-signing certificate names the issuer ' +
+                      'and is over the signing key, and ' +
+                      (!uris.length ? 'no issuer identifier' : 'no key') +
+                      ' was given.'] }, 'STS-PKI-0286');
+  }
+  const row = rawRowFor(id);
+  if (!(row && row.issuing && row.issuing.jose)) {
+    if (!buildsRealmBranches()) {
+      log.debug("Leaving certifyCredentialSigner(). No branch, no builder.");
+      return errorCodes.mark({ ok: false,
+               errors: ['The "' + (id || 'default') + '" realm has no ' +
+                        'certificate authority branch.'] }, 'STS-PKI-0008');
+    }
+    const branch = await ensureScope(id);
+    if (!branch.ok) {
+      log.debug("Leaving certifyCredentialSigner(). No branch.");
+      return branch;
+    }
+  }
+  const made = await certify(id, 'jose', {
+    slot: spec.slot,
+    label: 'Credential signing (' + String(spec.alg || '') + ')',
+    // The family's name, whatever generation (`RSA~1`, #1880's follow-up).
+    commonName: 'Credential signing (' + String(spec.slot).replace(
+      /^vc-issuer:/, '').replace(/~\d+$/, '') + ')',
+    alg: String(spec.alg || ''),
+    keyAlg: String(spec.keyAlg || ''),
+    kid: spec.kid,
+    publicKeyPem: spec.publicKeyPem,
+    profile: 'digital-signature',
+    keyUsage: ['digitalSignature'],
+    extensions: {
+      subjectAltName: { present: true, critical: false,
+                        names: uris.map(function (one) {
+                          return { kind: 'uri', value: one };
+                        }) },
+      extKeyUsage: { present: true, critical: false,
+                     usages: ['documentSigning'] }
+    }
+  });
+  if (!made.ok) {
+    log.warn(errorCodes.tag('STS-PKI-0286') + 'pki: the "' +
+             (id || 'default') + '" realm\'s credential signer ' + spec.slot +
+             ' could not be certified: ' + (made.errors || []).join(' ') +
+             ' It still signs; its credentials carry no x5c until it is.');
+    log.debug("Leaving certifyCredentialSigner(). certify() refused.");
+    return made;
+  }
+  log.info('pki: the credential signer ' + spec.slot + ' of "' +
+           (id || 'default') + '" was certified for ' + uris.length +
+           ' issuer identifier(s)' + (why ? ' (' + why + ')' : '') +
+           ', serial ' + made.record.serialHex + ', until ' +
+           made.record.notAfter + '.');
+  log.debug("Leaving certifyCredentialSigner(). Issued.");
+  return { ok: true, record: made.record };
 }
 
 // ===========================================================================
@@ -9723,18 +10829,82 @@ function tidyPem(text) {
 //                      one this service would have made.
 // ===========================================================================
 
-// Re-mint everything one Issuing CA has certified, from whatever authority it
-// now is. Shared by the reissue and the renewal, which differ only in whether
-// the authority changed first.
+// ---------------------------------------------------------------------------
+// WHAT A REBUILD MAY RE-MINT: ONLY A CERTIFICATE THAT IS STILL GOOD
+// (2026-11-16).
+//
+// **THIS RE-MINTED EVERY SLOT, REVOKED ONES INCLUDED, AND THAT UNDID
+// REVOCATION.** A slot is a person's or an application's TLS client or
+// message-signing certificate, a pinned pair, a remote PEP's listener, the
+// realm's own signing-key certificates. A renewal, a reissue and an import
+// each issued a NEW certificate over the key of every one of them — and a new
+// serial is on no list. So a person who revoked their laptop's certificate
+// for `keyCompromise` had it back, valid, signed by the renewed authority,
+// the next time an operator pressed *Renew certificates*; a hold became a
+// certificate nobody had put on hold.
+//
+// **A REVOKED RECORD (ANY REASON, A HOLD INCLUDED) AND AN EXPIRED ONE ARE LEFT
+// EXACTLY AS THEY ARE**: in their slot, under the authority that signed them,
+// with their serial on that use case's list and its entry — reason and date —
+// untouched. That is what keeps the revocation true wherever it can still be
+// asked:
+//
+//   * a RENEWAL keeps the authority and its key, so its CRL and its OCSP
+//     responder go on answering `revoked` for the serial, which is still in
+//     the register (`issuedHere()`), for as long as the leaf could be valid;
+//   * a REISSUE and an IMPORT replace the authority, and the replaced one is
+//     SUPERSEDED on its Intermediate's list (`reissueUseCase()` always did;
+//     `importCa()` does since this date), so a leaf it signed chains to a
+//     revoked authority — refused by every validator that checks, whatever
+//     the leaf's own status. The leaf's serial stays on the use case's list,
+//     which the new authority's CRL carries.
+//
+// The predicate is `pki_merge.js`'s `notReMintable()`, the one the merge's
+// orphan report asks too. The answer names what was left and why, so a
+// console or a test can see it; the holder of a revoked certificate who still
+// needs one issues a new one, which is what the portal and the console say.
+// ---------------------------------------------------------------------------
 /**
- * Re-mints everything one Issuing CA has certified, from whatever authority
- * it now is.
+ * Splits one use case's recorded certificates into those a rebuild may
+ * re-mint and those it must leave: revoked (any reason) or expired.
  *
  * @param scopeId - a realm id or `PROCESS_SCOPE`
  * @param useCaseId - the use case
- * @returns a promise of `{ ok, recertified, failed }`
+ * @returns `{ held, skipped }`; `skipped` is `{ slot, serialHex, why }`
  */
-async function recertifyUseCase(scopeId, useCaseId) {
+function reMintable(scopeId, useCaseId) {
+  log.debug('Entering reMintable(). scope=' + scopeId + ' use=' + useCaseId);
+  const row = rawRowFor(String(scopeId)) || {};
+  const now = Date.now();
+  const held = [];
+  const skipped = [];
+  certificatesFor(scopeId, useCaseId).forEach(function (one) {
+    const why = pkiMerge.notReMintable(row, one, now);
+    if (why) {
+      skipped.push({ slot: one.slot, serialHex: one.serialHex, why: why });
+    } else {
+      held.push(one);
+    }
+  });
+  log.debug('Leaving reMintable(). ' + held.length + ' to re-mint, ' +
+            skipped.length + ' left.');
+  return { held: held, skipped: skipped };
+}
+
+// Re-mint everything one Issuing CA has certified that is still good, from
+// whatever authority it now is. Shared by the reissue, the renewal and the
+// import, which differ only in whether the authority changed first.
+/**
+ * Re-mints everything one Issuing CA has certified that is still good —
+ * neither revoked nor expired — from whatever authority it now is.
+ *
+ * @param scopeId - a realm id or `PROCESS_SCOPE`
+ * @param useCaseId - the use case
+ * @param options - optional; `chosen`, a `reMintable()` answer taken before
+ *   the caller changed anything (a reissue supersedes every leaf first)
+ * @returns a promise of `{ ok, recertified, failed, skipped }`
+ */
+async function recertifyUseCase(scopeId, useCaseId, options) {
   log.debug('Entering recertifyUseCase(). scope=' + scopeId + ' use=' +
             useCaseId);
   const id = String(scopeId);
@@ -9745,7 +10915,20 @@ async function recertifyUseCase(scopeId, useCaseId) {
              errors: ['"' + useCaseId + '" is not a use case. They are ' +
                       USE_CASE_IDS.join(', ') + '.'] }, 'STS-PKI-0022');
   }
-  const held = certificatesFor(id, uc.id);
+  const chosen = (options && options.chosen) || reMintable(id, uc.id);
+  const held = chosen.held;
+  const skipped = chosen.skipped.slice();
+  if (skipped.length) {
+    log.info('pki: ' + skipped.length + ' certificate(s) under the ' +
+             uc.label + ' Issuing CA of "' + (id || 'default') + '" were ' +
+             'NOT re-minted, because each is revoked or expired and a new ' +
+             'serial would undo that: ' + skipped.slice(0, 10)
+               .map(function (one) {
+                 return one.slot + ' (' + one.why + ')';
+               }).join('; ') +
+             (skipped.length > 10 ? '; and ' + (skipped.length - 10) +
+                                    ' more' : '') + '.');
+  }
   let done = 0;
   const failed = [];
   for (let i = 0; i < held.length; i++) {
@@ -9754,6 +10937,17 @@ async function recertifyUseCase(scopeId, useCaseId) {
     // RENEW (#263): its x5c is their chain, and a certificate of ours over
     // their key would change what relying parties pin behind their back.
     if (was.pinnedSigner && was.pinnedSigner.operatorCertificate) {
+      continue;
+    }
+    // ASKED AGAIN BEFORE EACH SIGNATURE, for a renewal: every one is an
+    // await, and a holder may revoke their certificate while the ones
+    // before it are signed. Not for a caller that chose first — a reissue
+    // has superseded every leaf by now, on purpose.
+    const lateWhy = (options && options.chosen) ? ''
+      : pkiMerge.notReMintable(rawRowFor(id), was);
+    if (lateWhy) {
+      skipped.push({ slot: was.slot, serialHex: was.serialHex,
+                     why: lateWhy });
       continue;
     }
     // **THE PUBLIC KEY COMES FROM THE CERTIFICATE THAT IS BEING REPLACED**,
@@ -9791,9 +10985,14 @@ async function recertifyUseCase(scopeId, useCaseId) {
       kid: was.pinnedSigner ? was.kid : undefined,
       generationSlot: !!was.pinnedSigner,
       // And a named leaf keeps its names (#230): see `issuedAs` in certify().
+      // The subject and the holder's `urn:uuid:` ride with them, so a
+      // person's directory-modeled TLS client certificate is still that
+      // person after the branch is rebuilt.
       profile: (was.issuedAs && was.issuedAs.profile) || undefined,
       keyUsage: (was.issuedAs && was.issuedAs.keyUsage) || undefined,
-      extensions: (was.issuedAs && was.issuedAs.extensions) || undefined
+      extensions: (was.issuedAs && was.issuedAs.extensions) || undefined,
+      subject: (was.issuedAs && was.issuedAs.subject) || undefined,
+      holderSubject: was.holderSubject || undefined
     });
     if (made.ok) {
       done += 1;
@@ -9815,7 +11014,7 @@ async function recertifyUseCase(scopeId, useCaseId) {
              ' Issuing CA could not be re-minted: ' + failed.join('; '));
   }
   log.debug('Leaving recertifyUseCase(). ' + done + ' re-minted.');
-  return { ok: true, recertified: done, failed: failed };
+  return { ok: true, recertified: done, failed: failed, skipped: skipped };
 }
 
 // ---------------------------------------------------------------------------
@@ -9837,7 +11036,8 @@ async function recertifyUseCase(scopeId, useCaseId) {
 //
 // Asked again per slot before signing, because the slot may have been
 // certified from the live CA since the merge — by the rebuild's own re-mint,
-// or by a second report of the same merge.
+// or by a second report of the same merge. **A REVOKED OR EXPIRED SLOT IS
+// NEVER CERTIFIED AGAIN (2026-11-16)**, for `reMintable()`'s reason.
 // ---------------------------------------------------------------------------
 /**
  * Certifies again, from the Issuing CA the row now holds, the slots a merge
@@ -9859,6 +11059,12 @@ async function recertifyOrphanedSlots(scopeId, slots) {
     const was = (row.certs || {})[name];
     const ca = was ? (row.issuing || {})[was.useCase] : null;
     if (!was || !ca || (was.chainPem || [])[0] === ca.certificatePem) {
+      continue;
+    }
+    // NOT A REVOKED OR EXPIRED ONE (2026-11-16): `orphanedSlots()` no longer
+    // reports one, and a caller handing one in anyway gets the same answer —
+    // a new serial would undo the revocation (`reMintable()`'s header).
+    if (pkiMerge.notReMintable(row, was)) {
       continue;
     }
     let publicPem = was.subjectPublicKeyPem || '';
@@ -9891,8 +11097,11 @@ async function recertifyOrphanedSlots(scopeId, slots) {
       publicKeyPemStored: was.publicKeyPem,
       pinnedSigner: was.pinnedSigner || undefined,
       // A named leaf keeps its names (#230): see `issuedAs` in certify().
+      // The subject and the holder's `urn:uuid:` ride with them.
       profile: (was.issuedAs && was.issuedAs.profile) || undefined,
-      extensions: (was.issuedAs && was.issuedAs.extensions) || undefined
+      extensions: (was.issuedAs && was.issuedAs.extensions) || undefined,
+      subject: (was.issuedAs && was.issuedAs.subject) || undefined,
+      holderSubject: was.holderSubject || undefined
     });
     if (made.ok) {
       done += 1;
@@ -10037,10 +11246,16 @@ async function reissueUseCase(scopeId, useCaseId) {
              errors: ['That Issuing CA could not be re-issued: ' + e.message] },
                            'STS-PKI-0036');
   }
+  // WHAT MAY BE RE-MINTED IS DECIDED FIRST (2026-11-16), before the line
+  // below puts every leaf on the list as `superseded`: after it, a
+  // certificate a person revoked and one that was merely replaced look alike.
+  // `reMintable()`'s header argues why a revoked or expired one is left.
+  const chosen = reMintable(id, uc.id);
   // THE OLD AUTHORITY IS SUPERSEDED, at the Intermediate that signed it — and
   // so is everything it had issued, at the old authority itself. Both are
   // done BEFORE the new one is stored, because `supersede()` reads the row and
-  // the old certificates are what is being listed.
+  // the old certificates are what is being listed. A leaf already revoked
+  // keeps its entry: `revoke()` is idempotent and the earlier entry wins.
   supersede(id, 'intermediate', row.issuing[uc.id],
             'replaced by a reissue of the ' + uc.label + ' Issuing CA');
   certificatesFor(id, uc.id).forEach(function (one) {
@@ -10052,7 +11267,7 @@ async function reissueUseCase(scopeId, useCaseId) {
   fresh.issuing = Object.assign({}, fresh.issuing || {});
   fresh.issuing[uc.id] = made;
   saveRow(id, fresh);
-  const again = await recertifyUseCase(id, uc.id);
+  const again = await recertifyUseCase(id, uc.id, { chosen: chosen });
   log.info('pki: the ' + uc.label + ' Issuing CA in "' + (id || 'default') +
            '" was re-issued with a new key pair, and ' + again.recertified +
            ' certificate(s) under it were re-minted from it.');
@@ -10209,9 +11424,31 @@ async function importCa(scopeId, useCaseId, material) {
                       'Issuing CA is imported INTO a branch.'] },
                            'STS-PKI-0034');
   }
-  row.issuing = Object.assign({}, row.issuing || {});
-  row.issuing[uc.id] = record;
-  saveRow(scopeId, row);
+  // -------------------------------------------------------------------------
+  // **THE AUTHORITY BEING REPLACED IS SUPERSEDED (2026-11-16)**, at its
+  // Intermediate, as a reissue's is. It was left VALID: still chaining to the
+  // Intermediate and the Root, still vouching for every leaf it had signed —
+  // a revoked one included — while its CRL address and its OCSP responder
+  // came to answer for the imported authority instead (`unauthorized` about
+  // anything the old one signed). A certificate somebody revoked under it was
+  // then good to every relying party that could not ask any more. With the
+  // old authority on its Intermediate's list, every leaf it signed chains to
+  // a revoked authority, which is the one claim still published about it.
+  //
+  // Only the AUTHORITY goes on a list, so the leaves' own entries still tell
+  // a revoked one from a good one, and `recertifyUseCase()` asks them itself.
+  // Re-importing the authority already held is the same certificate and
+  // supersedes nothing.
+  // -------------------------------------------------------------------------
+  const replaced = (row.issuing || {})[uc.id] || null;
+  if (replaced && normalSerialsDiffer(replaced.serialHex, record.serialHex)) {
+    supersede(scopeId, 'intermediate', replaced,
+              'replaced by an imported ' + uc.label + ' Issuing CA');
+  }
+  const fresh = rawRowFor(scopeId) || row;
+  fresh.issuing = Object.assign({}, fresh.issuing || {});
+  fresh.issuing[uc.id] = record;
+  saveRow(scopeId, fresh);
   const again = await recertifyUseCase(scopeId, uc.id);
   log.warn('pki: the ' + uc.label + ' Issuing CA in "' +
            (String(scopeId) || 'default') + '" was REPLACED BY AN IMPORTED ' +
@@ -14517,6 +15754,9 @@ module.exports = {
   describeTier: describeTier,
   // The certificate register.
   certify: certify,
+  // The organisation and country a leaf is named with, including the
+  // `iya-sts` fallback `describeScope()` does not apply.
+  leafNameFacts: leafNameFacts,
   // Issue WITHOUT recording, for a caller that owns what comes out — see
   // `issueUnder()`'s header. `spiffe/spiffe_ca.ts` is the caller.
   issueUnder: issueUnder,
@@ -14567,6 +15807,7 @@ module.exports = {
   pinnedKeyFor: pinnedKeyFor,
   publishedCertificateFor: publishedCertificateFor,
   forgetCertificate: forgetCertificate,
+  detachCertificate: detachCertificate,
   issueTlsServerKeyPair: issueTlsServerKeyPair,
   // The realm's KDC certificate and a client certificate's PKINIT facts
   // (#179).
@@ -14576,6 +15817,8 @@ module.exports = {
   PKINIT_SAN_OID: PKINIT_SAN_OID,
   pkinitCertificateFacts: pkinitCertificateFacts,
   certifyVerifierKey: certifyVerifierKey,
+  credentialSignerCertificateCurrent: credentialSignerCertificateCurrent,
+  certifyCredentialSigner: certifyCredentialSigner,
   verifierCertificateFor: verifierCertificateFor,
   MAX_VERIFIER_CERTIFICATES: MAX_VERIFIER_CERTIFICATES,
   TLS_SERVER_KEY_ALGS: TLS_SERVER_KEY_ALGS,
@@ -14599,6 +15842,8 @@ module.exports = {
   // certificate list (#1421). Null when they do. Exported so a test can
   // ask without building a branch.
   processListenerAltSignatureProblem: processListenerAltSignatureProblem,
+  listenerUnreadableKeyAlg: listenerUnreadableKeyAlg,
+  listenerDefaultKeyAlg: listenerDefaultKeyAlg,
   certifySignerGroups: certifySignerGroups,
   alternativeProblem: alternativeProblem,
   defaultSignatureAlgorithmFor: defaultSignatureAlgorithmFor,
@@ -14612,8 +15857,13 @@ module.exports = {
   chainPemFor: chainPemFor,
   chainThroughRoot: chainThroughRoot,
   trustAnchorsFor: trustAnchorsFor,
+  useCaseChainPems: useCaseChainPems,
   issueSigningKeyPair: issueSigningKeyPair,
+  certifySigningRequest: certifySigningRequest,
+  CSR_SIGNING_KEY_ALGS: CSR_SIGNING_KEY_ALGS,
   issueEncryptionKeyPair: issueEncryptionKeyPair,
+  FEDERATION_CLIENT_KEY_ALGS: FEDERATION_CLIENT_KEY_ALGS,
+  issueFederationClientKeyPair: issueFederationClientKeyPair,
   ENCRYPTION_KEY_ALGS: ENCRYPTION_KEY_ALGS,
   registerCertificate: registerCertificate,
   verifyLeaf: verifyLeaf,
@@ -14645,6 +15895,8 @@ module.exports = {
   // `scep/scep_ra.ts`'s RA certificate. `refreshScope()` lands this process's
   // queued writes of the row and takes what the store holds.
   oneBuildInTheCluster: oneBuildInTheCluster,
+  isBusyRefusal: isBusyRefusal,
+  setBuildWaitMs: setBuildWaitMs,
   /**
    * Lands this process's queued writes of a scope's row and takes what the
    * store holds, where the store arbitrates.

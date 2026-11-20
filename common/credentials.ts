@@ -198,6 +198,7 @@ import claims = require('../cluster/cluster_claims');
 import counters = require('../cluster/cluster_counters');
 import capabilities = require('../cluster/cluster_capabilities');
 import InstanceSlot = require('./instance_slot');
+import DomainMap = require('./domain_map');
 // THE CACHE REGISTRY (#74, rule 3ap), for the one cache this file keeps — the
 // TOTP verdicts below (#352). A LEAF in JavaScript that requires `config` and
 // `error_codes`, so it can close no cycle from here.
@@ -1134,6 +1135,7 @@ class Credentials {
   //     process), and the first `limit` names with whether there were more,
   //     so the roster neither lists everybody to cap the list nor reports
   //     the length of a capped list as the size of the directory.
+  //     `personCountAsync()` (#798) is that count for a caller that can wait.
   //
   // **THEY ARE REMEMBERED AGAINST THE DIRECTORY THEY CAME WITH.** A test that
   // installs a stub directory with `setDirectory()` and no census must not be
@@ -1147,8 +1149,8 @@ class Credentials {
   /**
    * Adds the population hooks to the directory slot already filled.
    *
-   * @param hooks - `credentialCensus`, `applicationMatcher`, `personCount`
-   *   and `personNamesUpTo`
+   * @param hooks - `credentialCensus`, `applicationMatcher`, `personCount`,
+   *   `personCountAsync` and `personNamesUpTo`
    * @returns true when added, false when no directory is installed
    */
   addDirectoryHooks(hooks) {
@@ -1801,12 +1803,17 @@ class Credentials {
   // ---------------------------------------------------------------------------
   // THE UPGRADE ON SIGN-IN (2026-10-22, #847).
   //
-  // A password that has just VERIFIED against the stored hash, where that
-  // hash is not the password policy's preferred algorithm AND parameters, is
-  // hashed again under the policy and written back. rcbj's decision 4: a
-  // parameter change within one algorithm counts as much as a change of
-  // algorithm. It is the only way an old hash can move — there is no bulk
-  // rehash, because the plaintext exists only at a sign-in.
+  // A password that has just VERIFIED against the stored hash is hashed again
+  // under the policy and written back when the stored hash is a different
+  // algorithm, or the same algorithm at a strictly lower cost (#872). rcbj's
+  // decision 4 on #847 still holds for an algorithm change and for a cost
+  // that goes up. A same-algorithm hash that is already at least the policy's
+  // cost is left, so a stronger stored hash is not rewritten down onto the
+  // new default. It is the only way an old hash can move — there is no bulk
+  // rehash, because the plaintext exists only at a sign-in. The one-time
+  // extra hash of each weaker password is still on this sign-in: the Kerberos
+  // keys are re-stamped inside the write, and the new hash has to be the one
+  // the caller sees when the promise resolves.
   //
   // Five rules, each a way to get it wrong:
   //
@@ -1826,9 +1833,10 @@ class Credentials {
   //     (`kerberos/krb5_person_keys.ts`), so the observer is told of a
   //     `rehash`, which re-stamps them at the SAME kvno: the password, and so
   //     every key, is the one it was.
-  //   * IT NEVER COSTS THE SIGN-IN. A hash or a write that fails is logged
-  //     (STS-AUTHN-0409) and the person is signed in as they would have been;
-  //     the next verified sign-in tries again.
+  //   * A FAILED UPGRADE NEVER COSTS THE SIGN-IN. A hash or a write that
+  //     fails is logged (STS-AUTHN-0409) and the person is signed in as they
+  //     would have been; the next verified sign-in tries again. A successful
+  //     one is awaited, for the reason above.
   // ---------------------------------------------------------------------------
   private rehashSpecFor(name, stored) {
     const { log, crypto, passwordPolicy } = this.deps;
@@ -1841,6 +1849,12 @@ class Credentials {
     const spec = passwordPolicy.hashSpec(passwordPolicy.profileFor(name));
     if (crypto.storedSecretMatchesSpec(stored, spec)) {
       log.debug('Leaving Credentials.rehashSpecFor(). Already in force.');
+      return null;
+    }
+    // Same algorithm and not strictly weaker (#872): left as stored. A
+    // different algorithm is weaker here, so it is still upgraded.
+    if (!crypto.storedSecretIsWeaker(stored, spec)) {
+      log.debug('Leaving Credentials.rehashSpecFor(). Not weaker.');
       return null;
     }
     log.debug('Leaving Credentials.rehashSpecFor(). Out of date.');
@@ -1895,8 +1909,8 @@ class Credentials {
 
   /**
    * Hashes a just-verified password again under the password policy and
-   * writes it back where the stored hash is not the policy's algorithm and
-   * parameters (#847). On this thread; never throws.
+   * writes it back where the stored hash is another algorithm, or the same
+   * one at a strictly lower cost (#847, #872). On this thread; never throws.
    *
    * @param name - the person
    * @param password - the password the stored hash just verified
@@ -4452,7 +4466,10 @@ class Credentials {
     for (let i = 0; i < holders.length; i += 1) {
       const holder = holders[i];
       const name = String(holder.id);
-      const raw = (holder.attributes || {})[webauthn] || [];
+      // The holder query named the attribute; its values are read as the
+      // Credential's passkeys (#1579).
+      const raw = DomainMap.fieldOf('Credential', 'passkeys',
+        holder.attributes || {}) || [];
       this.keysFromValues(raw, name).forEach(function (key) {
         if (Credentials.isAndroidRecheckable(key)) {
           rows.push({ username: name,
@@ -4552,8 +4569,10 @@ class Credentials {
     for (let i = 0; i < holders.length; i += 1) {
       const holder = holders[i];
       const attrs = holder.attributes || {};
-      const want = Credentials.androidMarkerOf(attrs[webauthn] || []);
-      const have = (attrs[marker] || []).map(String).sort();
+      const want = Credentials.androidMarkerOf(
+        DomainMap.fieldOf('Credential', 'passkeys', attrs) || []);
+      const have = (DomainMap.fieldOf('Credential',
+        'androidAttestedCredential', attrs) || []).slice().sort();
       if (want.join('\n') !== have.join('\n')) {
         try {
           const name = String(holder.id);
@@ -5633,6 +5652,16 @@ class Credentials {
       return coded('STS-AUTHN-0058', { ok: false, errors: ['There is no name ' +
                                    'to enrol an authenticator for.'] });
     }
+    // A NAME NO PERSON CAN HAVE IS REFUSED BEFORE THE PENDING RECORD (run
+    // 21's fuzz stage): it is the record's key, and PostgreSQL cannot store
+    // a NUL (STS-STORE-0063). The passkey door's rule, STS-AUTHN-0556.
+    if (/[\u0000-\u001f\u007f]/.test(name)) {
+      log.debug("Leaving Credentials.beginTotpEnrolment(). A name no " +
+                "person holds.");
+      return coded('STS-AUTHN-0557', { ok: false, errors: ['The name ' +
+                                   'holds a control character, so no ' +
+                                   'person has it. Nothing was started.'] });
+    }
     // `entryExists()` AND NOT `hasEntry()` (2026-09-18). That one answers
     // false always — it is the bootstrap's, so the bootstrap always attempts
     // its create — and here it refused EVERY enrolment in product mode, for
@@ -5700,7 +5729,15 @@ class Credentials {
   abandonTotpEnrolment(username) {
     const { log } = this.deps;
     log.debug("Entering Credentials.abandonTotpEnrolment().");
-    pendingTotp.delete(this.pendingKeyOf(username));
+    // Only what is HELD is deleted (run 21's fuzz stage, STS-STORE-0063). A
+    // delete of a key the map never held still journals a row, so
+    // `/admin-api/mfa/clear-totp` sent a name holding a NUL character wrote
+    // a key PostgreSQL cannot store, for an enrolment that never existed. A
+    // name that was never pending can now reach the journal through nothing.
+    const key = this.pendingKeyOf(username);
+    if (pendingTotp.has(key)) {
+      pendingTotp.delete(key);
+    }
     log.debug("Leaving Credentials.abandonTotpEnrolment().");
   }
 
@@ -6101,7 +6138,10 @@ class Credentials {
    * @param alsoKnown - names the caller has seen
    * @param opts - `limit`; `credentials.factorScanLimit` when omitted;
    *   `directoryFirst`, the `{ names, more }` a caller already asked for
-   *   (`directoryFirstNames()`, #616), so the directory is not asked again
+   *   (`directoryFirstNames()`, #616), so the directory is not asked again;
+   *   `directoryPeople`, the count already asked (`directoryPeopleCount()`,
+   *   #798) — null where it was asked and failed, and 0 a count, so a
+   *   missing count is omitted rather than passed as `undefined`
    * @returns `{ rows: [{ username, inDirectory, known }], scanned, capped,
    *   limit, directoryPeople, store, isApplication }`
    */
@@ -6167,7 +6207,12 @@ class Credentials {
       scanned = people.length;
       people.forEach((name) => { add(name, 'inDirectory'); });
     }
-    if (counter) {
+    if (options.directoryPeople !== undefined) {
+      // Asked already, asynchronously (#798): `directoryPeopleCount()`.
+      // Null means the count was asked and failed. 0 is a count, so this
+      // is not `options.directoryPeople || counter()`.
+      directoryPeople = options.directoryPeople;
+    } else if (counter) {
       try {
         directoryPeople = Number(counter()) || 0;
       } catch (e) {
@@ -6243,6 +6288,44 @@ class Credentials {
               (first ? (first.names || []).length + ' name(s).'
                 : 'No directory.'));
     return first || null;
+  }
+
+  // THE PEOPLE COUNT, ASKED WITHOUT HOLDING THE EVENT LOOP (#798).
+  // `secondFactorPopulation()` asks `personCount()` synchronously, and in a
+  // windowed process that is one `count` of `ou=users` on the worker that
+  // serves sign-ins. A caller that can wait asks this first and hands the
+  // answer over as `directoryPeople`. No hook means `undefined`, and the
+  // caller omits the option so the synchronous count still runs. A count
+  // of 0 is a count; a throw is null (the page draws no count) under the
+  // code the synchronous count already records.
+  /**
+   * How many people the realm defines, asked of the directory
+   * asynchronously.
+   *
+   * @returns a promise of the count, of null where the count threw, or of
+   *   undefined where the directory offers no asynchronous count
+   */
+  async directoryPeopleCount() {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering Credentials.directoryPeopleCount().');
+    const hook = this.directoryHook('personCountAsync');
+    if (!hook) {
+      log.debug('Leaving Credentials.directoryPeopleCount(). No count.');
+      return undefined;
+    }
+    let n: number | null = null;
+    try {
+      const raw = Number(await hook());
+      // `Number.isFinite` and not `raw || 0`: a count of 0 is a count.
+      n = Number.isFinite(raw) ? raw : 0;
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0334') +
+                'credentials: counting this realm\'s people threw: ' +
+                ((e && e.message) || e));
+      n = null;
+    }
+    log.debug('Leaving Credentials.directoryPeopleCount(). ' + n);
+    return n;
   }
 
   /**
@@ -6553,7 +6636,7 @@ class Credentials {
       try {
         raws = census(list);
       } catch (e) {
-        if (Credentials.storeRefused(errorCodes, e)) {
+        if (this.censusFailureRefuses(e)) {
           log.error(errorCodes.tag('STS-AUTHN-0293') +
                     'credentials: the directory\'s credential census could ' +
                     'not read the store, so ' + list.length + ' name(s) are ' +
@@ -6588,8 +6671,9 @@ class Credentials {
   // different facts. Where the directory offers no asynchronous census — a
   // test's stub, an older `ldap_server.js` — this is `factorCensus()`. A
   // census that FAILED (the store could not be read) is the synchronous
-  // census's failure: logged under STS-AUTHN-0293 and answered one person at
-  // a time.
+  // census's failure: logged under STS-AUTHN-0293 and, where the store
+  // refused it or the directory is windowed, answered unknown; otherwise one
+  // person at a time (`censusFailureRefuses()`).
   // ===========================================================================
   /**
    * `factorCensus()`, with the directory asked asynchronously.
@@ -6611,7 +6695,7 @@ class Credentials {
     try {
       raws = await census(list);
     } catch (e) {
-      if (Credentials.storeRefused(errorCodes, e)) {
+      if (this.censusFailureRefuses(e)) {
         log.error(errorCodes.tag('STS-AUTHN-0293') +
                   'credentials: the directory\'s credential census could not ' +
                   'read the store, so ' + list.length + ' name(s) are ' +
@@ -6639,7 +6723,15 @@ class Credentials {
   // ~165,000 names, every one refused and logged, and a request worker was
   // held for minutes. Those names are answered unknown instead (an empty
   // Map: the list draws them with no factors, counted in no tile), and the
-  // census is logged once. Any other throw is still answered one at a time.
+  // census is logged once. Since #786's review any store-side failure, and
+  // any failure at all in a windowed process, is answered the same way
+  // (`censusFailureRefuses()`, below); only a failure that is not the
+  // store's, in a process holding the directory in memory, is still
+  // answered one at a time, as is a directory that offers no census. That
+  // answer passes
+  // `withoutRecoveryCodes`, so neither recovery-code read runs:
+  // `backupCodeStatus()`, or `recoveryAdvised`'s `backupCodesOf()` for a
+  // person who holds a second factor.
   // ---------------------------------------------------------------------------
   private static storeRefused(errorCodes, e) {
     helpers.log.debug("Entering Credentials.storeRefused().");
@@ -6647,6 +6739,57 @@ class Credentials {
     helpers.log.debug("Leaving Credentials.storeRefused(). " + code);
     return code === 'STS-LDAP-0130' || code === 'STS-LDAP-0131' ||
            code === 'STS-LDAP-0175';
+  }
+
+  // ---------------------------------------------------------------------------
+  // AND ANY OTHER STORE-SIDE FAILURE IS REFUSED TOO (#786's review,
+  // 2026-11-13). `storeRefused()` lists three codes, and a census can fail on
+  // the store for others: a pool that timed out (STS-STORE-0066), a query the
+  // driver refused, a page the window could not read. Each of those sent the
+  // census back to `mechanismsFor()` one name at a time, which on a large
+  // realm is the multi-minute outage #786 was about. So a census failure is
+  // answered unknown, and the page says the census is unavailable, when:
+  //
+  //   * `storeRefused()` names its code, as before;
+  //   * its code is any STS-STORE- or STS-LDAP- code: the store or the
+  //     directory said it could not answer, and a one-name read meets the
+  //     same store;
+  //   * the directory is a window onto the store (`directoryWindowed`, a
+  //     hook `ldap_server.js` offers), whatever the failure was: there every
+  //     one-name read is a synchronous store round trip, so a fallback over
+  //     `factorScanLimit` names holds the event loop for as long as the
+  //     store takes.
+  //
+  // A process holding the whole directory in memory, with a failure that is
+  // not the store's, still answers one name at a time, as it always did:
+  // there `mechanismsFor()` reads the Map.
+  // ---------------------------------------------------------------------------
+  private censusFailureRefuses(e) {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering Credentials.censusFailureRefuses().');
+    if (Credentials.storeRefused(errorCodes, e)) {
+      log.debug('Leaving Credentials.censusFailureRefuses(). Listed.');
+      return true;
+    }
+    const code = String(errorCodes.codeOf(e) || '');
+    if (/^STS-(STORE|LDAP)-/.test(code)) {
+      log.debug('Leaving Credentials.censusFailureRefuses(). ' + code + '.');
+      return true;
+    }
+    const windowed = this.directoryHook('directoryWindowed');
+    let inWindow = false;
+    try {
+      inWindow = !!(windowed && windowed());
+    } catch (err) {
+      log.debug('Caught in Credentials.censusFailureRefuses(): ' +
+                ((err && err.message) || err));
+      // Not known: a window is the safe reading, since the fallback is what
+      // costs a windowed process minutes.
+      inWindow = true;
+    }
+    log.debug('Leaving Credentials.censusFailureRefuses(). windowed=' +
+              inWindow);
+    return inWindow;
   }
 
   // The names a census is asked about, as both doors trim them.
@@ -9237,6 +9380,9 @@ class Credentials {
    * authenticator app and recovery codes.
    *
    * @param username - the person
+   * @param [opts] - `withoutRecoveryCodes` skips both recovery-code reads
+   *   (#786). The census asks for that: no tile reports them, and it
+   *   throws `recoveryAdvised` away
    * @returns `{ username, password, primaryKeys, mfaKeys, keys, totp, … }`
    */
   mechanismsFor(username, opts?) {
@@ -9260,6 +9406,13 @@ class Credentials {
     // address verified (`common/mail_factor.ts` argues why). Asked lazily —
     // that module reaches the mail channel, which requires the directory.
     const mailFactor = this.mailFactorOf(name);
+    // Not read for a caller that counts and filters a list (#786): no tile
+    // and no filter reads a recovery code, and on a large directory each
+    // read was another store round trip per person. `recoveryAdvised`
+    // reads the same attribute again (`backupCodesOf()`), and the census
+    // throws that flag away (`factsOf()`), so it is left false rather
+    // than computed.
+    const skipRecovery = !!(opts && opts.withoutRecoveryCodes);
     log.debug("Leaving Credentials.mechanismsFor().");
     return {
       username: name,
@@ -9303,11 +9456,8 @@ class Credentials {
       // is generated when the person asks to see one and stored — hashed — only
       // once they confirm they have kept it. `recoveryAdvised` below is what
       // replaced the automatic issue.
-      // Not read for a caller that counts and filters a list (#786): no tile
-      // and no filter reads it, and on a large directory it was a third
-      // store read per person.
-      backupCodes: opts && opts.withoutRecoveryCodes ? null
-                                                     : this.backupCodeStatus(name),
+      // Skipped with `recoveryAdvised` when `skipRecovery` is set, above.
+      backupCodes: skipRecovery ? null : this.backupCodeStatus(name),
       // Is a second factor required of them? A person holding an `mfa` key or
       // an enrolled authenticator is saying their password alone is not enough,
       // so the sign-in screen demands it as well — which is what makes the flag
@@ -9356,9 +9506,12 @@ class Credentials {
       // A KEY IS A SECOND FACTOR ONLY BESIDE A PASSWORD (#1135), as
       // `addKey()`'s advice reads it: a passwordless person's keys are their
       // way in, with no second step for a code to stand in for.
-      recoveryAdvised: backupCodes.offered() &&
-                       ((uses.mfa > 0 && password) || totpEnrolled) &&
-                       !this.backupCodesOf(name),
+      // False, unread, when the caller asked not to read recovery codes
+      // (#786): the census does not report this flag.
+      recoveryAdvised: skipRecovery ? false :
+                       (backupCodes.offered() &&
+                        ((uses.mfa > 0 && password) || totpEnrolled) &&
+                        !this.backupCodesOf(name)),
       // IS A SECOND FACTOR REQUIRED OF THEM (2026-09-13), whether or not they
       // hold one — by an administrator on their entry, or by the realm. It is
       // NOT `mfaRequired` above, which is what they HOLD: somebody required to
@@ -9657,6 +9810,55 @@ class Credentials {
     return held || null;
   }
 
+  // A DELETED PERSON'S CEREMONIES GO WITH THEM (2026-11-16, rcbj's rule on
+  // #1612). The pending authenticator-app secret and the pending security-key
+  // challenge are keyed by the NAME, so a person made again under it inside
+  // their lifetime (`authn.pendingTtlS`, minutes) could finish the deleted
+  // one's enrolment — a secret, or a key bound to the deleted entry's user
+  // handle, written onto the new entry. The directory's one person delete
+  // (`removePersonEntry()`) calls this. Two keys, and the administrators'
+  // ceremonies (`pendingAdminKeys`, keyed by both names) walked for either
+  // name: that store holds only ceremonies begun in the last few minutes,
+  // which `sweepPendingAdminKeys()` walks on every read already, so the
+  // cost is theirs and not the directory's. A re-homing keeps them.
+  /**
+   * Forgets every enrolment pending for a deleted person: the authenticator
+   * app, their security key, and an administrator's ceremony for them or by
+   * them.
+   *
+   * @param username - the deleted person's name
+   * @returns how many were pending
+   */
+  forgetPending(username) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.forgetPending().");
+    const name = String(username || '').trim().toLowerCase();
+    if (!name) {
+      log.debug("Leaving Credentials.forgetPending(). Nobody named.");
+      return 0;
+    }
+    let gone = 0;
+    [pendingTotp, pendingKeys].forEach(function (store) {
+      if (store.has(name)) {
+        gone += 1;
+      }
+      store.delete(name);
+    });
+    const admin: string[] = [];
+    pendingAdminKeys.forEach(function (value, key) {
+      const parts = String(key).split('\n');
+      if (parts[0] === name || parts[1] === name) {
+        admin.push(String(key));
+      }
+    });
+    admin.forEach(function (key) {
+      pendingAdminKeys.delete(key);
+    });
+    gone += admin.length;
+    log.debug("Leaving Credentials.forgetPending(). " + gone);
+    return gone;
+  }
+
   /**
    * Forgets a pending security key enrolment.
    *
@@ -9850,13 +10052,19 @@ class Credentials {
     }
     if (!verdict.ok) {
       log.info('credentials: a security key enrolment for ' + name +
-               ' did not verify — ' + (verdict.failed || []).join('; '));
+               ' did not verify; failed: ' +
+               (verdict.failed || []).join('; '));
       log.debug('Leaving Credentials.verifyKeyRegistration(). It did not ' +
                 'verify.');
       return coded(webauthnPolicy.failureCodeFor(verdict),
                    { ok: false, reason: 'invalid',
-               errors: ['The registration did not verify — ' +
-                        (verdict.failed || []).join('; ') + '.'] });
+               // WHAT FAILED, SAID AS FAILED (2026-11-14, found by #444's
+               // D12): a check is named for what must hold, so a bare list
+               // read "did not verify — credential algorithm was offered"
+               // where it meant the algorithm was NOT offered.
+               errors: ['The registration did not verify; this check ' +
+                        'failed: ' + (verdict.failed || []).join('; ') +
+                        '.'] });
     }
 
     // **THE EXCLUSION, CHECKED HERE AS WELL AS REQUESTED.**
@@ -10384,8 +10592,8 @@ class Credentials {
     if (!verdict.ok) {
       log.debug("Leaving Credentials.proveKeyUpgrade(). It did not verify.");
       return Promise.resolve(dropped(webauthnPolicy.failureCodeFor(verdict),
-        'The passkey did not verify — ' + (verdict.failed || []).join('; ') +
-        '. Nothing was changed.'));
+        'The passkey did not verify; this check failed: ' +
+        (verdict.failed || []).join('; ') + '. Nothing was changed.'));
     }
     log.debug("Leaving Credentials.proveKeyUpgrade(). Spending the proof.");
     return this.spendAssertion({
@@ -10884,6 +11092,17 @@ class Credentials {
   abandonAdminKeyEnrolment(admin, username) {
     const { log } = this.deps;
     log.debug("Entering Credentials.abandonAdminKeyEnrolment().");
+    // A NAME WITH A CONTROL CHARACTER WAS NEVER A KEY HERE: the begin
+    // requires a directory entry, and no entry's name holds one. A delete of
+    // it is still journalled, and a NUL in a journalled key is a row
+    // PostgreSQL cannot hold (STS-STORE-0063, the fuzz run on 7fc43a1de),
+    // so it is not asked. The door refuses it first (STS-AUTHN-0556).
+    if (/[\u0000-\u001f\u007f]/.test(String(admin || '') +
+                                     String(username || ''))) {
+      log.debug("Leaving Credentials.abandonAdminKeyEnrolment(). No " +
+                "record can be held under that name.");
+      return;
+    }
     pendingAdminKeys.delete(adminEnrolmentKey(admin, username));
     log.debug("Leaving Credentials.abandonAdminKeyEnrolment().");
   }
@@ -12675,6 +12894,7 @@ export = {
   // and count everybody in one pass — see `secondFactorPopulation()`.
   secondFactorPopulation: slot.forward('secondFactorPopulation'),
   directoryFirstNames: slot.forward('directoryFirstNames'),
+  directoryPeopleCount: slot.forward('directoryPeopleCount'),
   factorHolderRow: slot.forward('factorHolderRow'),
   factorHolderRowsAsync: slot.forward('factorHolderRowsAsync'),
   personDnsAsync: slot.forward('personDnsAsync'),
@@ -12733,6 +12953,7 @@ export = {
   beginKeyEnrolment: slot.forward('beginKeyEnrolment'),
   pendingKeyEnrolmentFor: slot.forward('pendingKeyEnrolmentFor'),
   abandonKeyEnrolment: slot.forward('abandonKeyEnrolment'),
+  forgetPending: slot.forward('forgetPending'),
   confirmKeyEnrolment: slot.forward('confirmKeyEnrolment'),
   // Upgrading a classical passkey to an ML-DSA one (#939).
   keyUpgradeHistory: Credentials.keyUpgradeHistory,

@@ -41,12 +41,9 @@
 //        * the AuthZEN API, `/access/v1` (#563).
 //      The GNAP demonstration resource server, `/gnap/rs/resource`, was the
 //      fourth until #593 deleted it.
-//      The embedded debugger's api is not in this list because it needs no
-//      place in it: it is an APPLICATION, `sts-debugger-api`, seeded and
-//      registered at startup (`appRegisteredBy: startup`) while the debugger
-//      is embedded, under the permission base `urn:sts:debugger-api:` — so
-//      it is found by the second rule, and is no target at all while the
-//      debugger is not embedded.
+//      The embedded debugger's api is not in this list and is no target at
+//      all: since #1717 it accepts no access token — its gate is the
+//      debugger's sign-in session — so nothing is issued addressed to it.
 //   2. A REGISTERED APPLICATION, found by any of the names an access token
 //      addresses one by (`applications.audienceNamesEntry()`'s four, which
 //      `accessTokenPlan()` and RFC 9701's "intended for" read): its
@@ -264,6 +261,16 @@ export = class RegisteredTargets {
       log.debug("Leaving RegisteredTargets.ownResourceServer(). The " +
                 "AuthZEN API; its object " + (on ? 'exists.' : 'is gone.'));
       return on ? 'the AuthZEN API (/access/v1)' : '';
+    }
+    // THE REMOTE PEP'S API (#1827's follow-up): this realm's `/xacml/pep`,
+    // which a remote PEP asks for as its `resource` on the jwt-bearer grant
+    // through `sts-remote-pep` and which `xacml/pep_token.ts` accepts as a
+    // token's audience for every `/xacml/pep/*` call and `POST /xacml/pip`.
+    if (underAny('/xacml/pep')) {
+      const on = RegisteredTargets.seeded('sts-xacml-pep-api');
+      log.debug("Leaving RegisteredTargets.ownResourceServer(). The remote " +
+                "PEP API; its object " + (on ? 'exists.' : 'is gone.'));
+      return on ? 'the remote PEP API (/xacml/pep)' : '';
     }
     // THE UMA 2.0 PROTECTION API (#1168): this realm's `/uma`, which a
     // resource server asks for as its `resource` when it obtains a PAT and

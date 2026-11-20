@@ -446,8 +446,8 @@ class SettingsForms {
     // rather than an oversight — see the paragraph in `admin-ui/CLAUDE.md` that
     // used to say the opposite. What pays for it is that a setting's
     // description is also on `/admin/config`'s own JSON view, in
-    // `GET /admin-api/config`, and in docs/configuration.md's table, so the
-    // text has three other doors that a keyboard or a screen reader can
+    // `GET /admin-api/config`, and in docs/v1.1.0/configuration.md's table, so
+    // the text has three other doors that a keyboard or a screen reader can
     // reach. A field whose prose has NO other door does not get this
     // treatment.
     return '<tr>' +
@@ -581,6 +581,11 @@ class SettingsForms {
     const inner = '<h2 data-tab="settings">' +
       t.html('consoleSettings.forms.heading') + '</h2>' +
 
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): what follows
+      // the heading is one frame, each group's form a frame inside it. The
+      // heading stays outside: `WebPages.protocolTabs()` cuts at it only at
+      // the page's top level.
+      kit.frame(
       kit.note(t.html('consoleSettings.forms.lead1') +
       '<a href="/admin/config">' + t.html('consoleSettings.configuration') +
       '</a>' + t.html('consoleSettings.forms.lead2') +
@@ -643,12 +648,12 @@ class SettingsForms {
         : '') +
 
       groups.map(function (group) {
-        return SettingsForms.section(group, path, context, t);
+        return kit.frame(SettingsForms.section(group, path, context, t));
       }).join('') +
 
       kit.note('<a href="/admin/config">' +
       t.html('consoleSettings.configuration') + '</a>' +
-      t.html('consoleSettings.forms.tail', { path: path }));
+      t.html('consoleSettings.forms.tail', { path: path })));
 
     return inner;
   }

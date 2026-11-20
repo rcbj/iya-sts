@@ -471,6 +471,21 @@ function reportPerson(entry: any): { user: IyaDomain.User;
   return person;
 }
 
+// Whether an entry is a person's, by the one field a person cannot be
+// without (#1579): a walk asks it of every entry, so it reads the field and
+// not the whole concept.
+function reportUsername(entry: any): string {
+  log.debug("Entering reportUsername().");
+  const name = DomainMap.fieldOf('User', 'username',
+    (entry && entry.attributes) || {}) || '';
+  log.debug("Leaving reportUsername().");
+  return name;
+}
+
+// THE CLASSES ARE READ BY NAME ON PURPOSE (#1579): an object's classes are
+// stated by its @entry in the model, not by an attribute any concept reads.
+// A concept says what an entry means; its objectClass is how the directory
+// files it, which is the question this answers.
 function reportClasses(entry: any): string[] {
   log.debug("Entering reportClasses().");
   const raw = entry && entry.objectClass;
@@ -697,7 +712,7 @@ async function reportEachUser(onUser: (entry: any, dn: string) =>
   if (!ldap.directoryIsWindowed()) {
     await reportEachEntry(ldap.usersDn(), async function (entry: any,
         dn: string): Promise<boolean> {
-      if (!reportAttr(entry, 'uid')) {
+      if (!reportUsername(entry)) {
         return true;
       }
       return onUser(entry, dn);
@@ -756,9 +771,10 @@ function reportSecondFactors(entry: any, username: string,
   }
   // The attribute is single-valued, so a person has one app or none.
   n += credential.authenticatorApp ? 1 : 0;
-  // No concept of a person holds this one: the model files it under the
-  // authentication policy (#1390).
-  n += reportAttrList(entry, 'stsMailFactor').length;
+  // The model files the emailed factor's opt-in under the authentication
+  // policy, whose directory object keeps it on the person (#1579).
+  n += DomainMap.fieldOf('AuthenticationPolicy', 'stsMailFactor',
+    (entry && entry.attributes) || {}) ? 1 : 0;
   log.debug("Leaving reportSecondFactors(). " + n + '.');
   return n;
 }
@@ -1076,6 +1092,8 @@ async function reportLookupEntries(lookup: Lookup, ldap: any,
       const hits = await ldap.directoryWindow.findWindowedAsync(realmId,
         'byMail', [realmId, wanted, CANDIDATE_CAP],
         function (entry: any): boolean {
+          // Every address, not the User's first: the index found the
+          // entry by any of them (#1579).
           return reportAttrList(entry, 'mail').some(function (one: string):
               boolean {
             return one.toLowerCase() === wanted;
@@ -1143,7 +1161,7 @@ async function reportCandidates(lookups: Lookup[], ldap: any,
       const dn = String((entry && entry.dn) || '').toLowerCase();
       const origin = String((entry && entry.origin) || '');
       if (!dn || seen.has(dn) || origin.indexOf('projection') === 0 ||
-          !reportAttr(entry, 'uid') || !reportUnder(dn, parent)) {
+          !reportUsername(entry) || !reportUnder(dn, parent)) {
         continue;
       }
       seen.add(dn);
@@ -2152,8 +2170,8 @@ async function reportReadCredentialHolders(rows: any, control: any):
       boolean {
     return wantedIds.indexOf(m.id) >= 0;
   }) : MECHANISM_TABLE;
-  // THE PASSWORD'S CENSUS IS ITS COUNTER (#1040). `docs/reporting.md` said
-  // since #1019 that a count by mechanism reads the password's count from
+  // THE PASSWORD'S CENSUS IS ITS COUNTER (#1040). `docs/v1.1.0/reporting.md`
+  // said since #1019 that a count by mechanism reads the password's count from
   // the realm's counter, and nothing did: on 8081 `count` of `mechanism
   // equals password` counted a million holders against the cap and was
   // refused. A count grouped by mechanism alone, filtered on nothing but
@@ -3252,16 +3270,24 @@ async function reportReadWork(plan: any, control: any): Promise<any> {
   return { ok: true, rows: rows.finish() };
 }
 
+// WHETHER A POOL IS THERE TO WAIT FOR is the POOL's answer, not the
+// setting's (2026-11-14, found by #444's D12). `workers.requestCount` is
+// what was asked for; the pool runs what `common/process_memory`'s
+// `requestWorkers()` allows, which is NONE on a memory store (dispatch needs
+// a coordinating store) whatever the setting says. Reading the setting, a
+// memory-store service with the default `1` waited for a worker that would
+// never start: every report job stayed queued and STS-REPORT-0024 was
+// logged every two seconds.
 function reportWorkersReady(): boolean {
   log.debug("Entering reportWorkersReady().");
-  const config = require('../common/config');
-  const configured = Number(config.value('workers.requestCount'));
+  const pool = require('../common/request_pool');
+  const state = pool.stats();
+  const configured = Number(state.configured) || 0;
   if (!(configured > 0)) {
     log.debug("Leaving reportWorkersReady(). No pool.");
     return true;
   }
-  const pool = require('../common/request_pool');
-  const ready = Number(pool.stats().ready) || 0;
+  const ready = Number(state.ready) || 0;
   log.debug("Leaving reportWorkersReady().");
   return ready > 0;
 }
@@ -3309,7 +3335,8 @@ function reportGroupRows(ldap: any): any[] {
     return {
       dn: String(group.dn || ''),
       name: cn || String(group.dn || ''),
-      mail: reportAttr(group, 'mail')
+      mail: String(DomainMap.fieldOf('Group', 'email',
+        group.attributes || {}) || '')
     };
   }).filter(function (row: any): boolean {
     return !!row.dn;
@@ -3761,10 +3788,27 @@ function reportNoteFailure(def: any, description: string): void {
   log.debug("Leaving reportNoteFailure().");
 }
 
+// THE INSTANT A JOB RUN IS FOR (2026-11-14, found by #444's D12). The
+// scheduler hands every job `ctx.nowMs` as a FUNCTION (cluster/scheduler.ts,
+// `nowMs: () => number`), and these two jobs read it as a number: the
+// schedule's `Number(ctx.nowMs)` was NaN, so no definition ever had a due
+// slot ({"enqueued":0} every minute), and the retention's arithmetic on a
+// function expired nothing. The tests' own entry points (`jobs.ts`'s
+// `reportScheduleNow(at)`) pass a number, which is why they never saw it.
+// Both forms are read; anything else is now.
+function reportJobNow(ctx: any): number {
+  log.debug("Entering reportJobNow().");
+  const given = ctx ? ctx.nowMs : undefined;
+  const at = typeof given === 'function' ? Number(given.call(ctx))
+    : Number(given);
+  log.debug("Leaving reportJobNow().");
+  return Number.isFinite(at) && at > 0 ? at : Date.now();
+}
+
 async function reportRetainWork(ctx: any): Promise<any> {
   log.debug("Entering reportRetainWork().");
   const limits = new Limits();
-  const now = ctx && ctx.nowMs ? ctx.nowMs : Date.now();
+  const now = reportJobNow(ctx);
   const artifactMs = limits.artifactRetentionS() * 1000;
   const jobMs = limits.jobRetentionS() * 1000;
   const list = stores.listJobs();
@@ -3819,7 +3863,7 @@ async function reportScheduleWork(ctx: any): Promise<any> {
   const scheduler = require('../cluster/scheduler');
   const rights = require('./rights');
   const jobsApi = require('./jobs');
-  const now = ctx && ctx.nowMs ? Number(ctx.nowMs) : Date.now();
+  const now = reportJobNow(ctx);
   const defs = stores.listDefinitions();
   let enqueued = 0;
   for (let i = 0; i < defs.length; i++) {

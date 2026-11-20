@@ -70,17 +70,18 @@
 //        `saml11.defaultProfile` are answers rather than defaults a request
 //        overrides — except that since #189 a relying party whose metadata
 //        was consumed registered a profile WITH each assertion consumer
-//        service, and the `shire` it sends picks it (`profileFor()`). The
-//        non-spec `format` and `profile` parameters exist so
-//        that both can be exercised by hand; that is the same device
-//        `/sts?encrypt=1` is, and it is marked as non-spec everywhere it
-//        appears.
+//        service, and the `shire` it sends picks it (`profileFor()`). There
+//        is no request parameter for either: the non-spec `format` and
+//        `profile` parameters that once chose them were removed for spec
+//        compliance, because a `profile` that disagreed with the shire's
+//        registered binding delivered over a profile that consumer does
+//        not answer.
 //      * **`ForceAuthn`, `IsPassive` and `RequestedAuthnContext` have no
 //        spelling at all.** The 2.0 module implements all three. Here they are
 //        absent from the protocol rather than unimplemented, which is why this
 //        file has no `NoPassive` path — there is no way to ask for one.
-//        The non-spec `authnContextClassRef` parameter (#736) is the same
-//        device as `format` and `profile`: when it names an EAP class URI,
+//        The non-spec `authnContextClassRef` parameter (#736) is this
+//        service's own device, marked as such: when it names an EAP class URI,
 //        the sign-in is held to that class. When it is absent, the
 //        AuthenticationMethod is unchanged.
 //      * **A failure cannot be reported to the relying party.** With no request
@@ -266,6 +267,10 @@ import authnContext = require('./authn_context');
 import PhishingResistance = require('../common/phishing_resistance');
 import SsoConsent = require('../common/sso_consent');
 import documentSettings = require('./document_settings');
+// SAML 1.1's vocabularies, its browser parameters and the order of every
+// element this file writes are the model's (#1579): `saml/saml_model.ts`.
+// A leaf.
+import SamlModel = require('./saml_model');
 // The certificate the back channel presents, as a metadata key (#248).
 import listenerKeys = require('./listener_keys');
 import returnAddress = require('./return_address');
@@ -303,15 +308,17 @@ import cellPlacement = require('../common/cell_placement');
 // 1.1, and the version travels in MajorVersion/MinorVersion attributes instead.
 // Writing `urn:oasis:names:tc:SAML:1.1:assertion` produces a document that
 // looks right in a diff and that nothing will parse.
-const NS_SAML = 'urn:oasis:names:tc:SAML:1.0:assertion';
+// EVERY URI BELOW IS A TERM OF `models/saml/saml11.tsp` (or, for the
+// metadata, the signature and SOAP, of `saml2.tsp`), asked for by name.
+const NS_SAML = SamlModel.term('saml11.namespace', 'assertion');
 
-const NS_SAMLP = 'urn:oasis:names:tc:SAML:1.0:protocol';
+const NS_SAMLP = SamlModel.term('saml11.namespace', 'protocol');
 
-const NS_MD = 'urn:oasis:names:tc:SAML:2.0:metadata';
+const NS_MD = SamlModel.term('saml2.namespace', 'metadata');
 
-const NS_DS = 'http://www.w3.org/2000/09/xmldsig#';
+const NS_DS = SamlModel.term('saml2.namespace', 'xmlSignature');
 
-const NS_SOAP = 'http://schemas.xmlsoap.org/soap/envelope/';
+const NS_SOAP = SamlModel.term('saml2.namespace', 'soap');
 
 // The two browser profiles, by the URIs metadata names them with. Both carry
 // `1.0` for the reason the namespaces do, and `artifact-01` is the real
@@ -319,18 +326,18 @@ const NS_SOAP = 'http://schemas.xmlsoap.org/soap/envelope/';
 /**
  * The SAML 1.1 Browser/POST profile's URI.
  */
-const PROFILE_POST = 'urn:oasis:names:tc:SAML:1.0:profiles:browser-post';
+const PROFILE_POST = SamlModel.term('saml11.profile', 'post');
 
 /**
  * The SAML 1.1 Browser/Artifact profile's URI.
  */
-const PROFILE_ARTIFACT = 'urn:oasis:names:tc:SAML:1.0:profiles:artifact-01';
+const PROFILE_ARTIFACT = SamlModel.term('saml11.profile', 'artifact');
 
 // The SOAP binding the responder speaks.
 /**
  * The SAML 1.1 SOAP binding's URI, which the responder speaks.
  */
-const BINDING_SOAP = 'urn:oasis:names:tc:SAML:1.0:bindings:SOAP-binding';
+const BINDING_SOAP = SamlModel.term('saml11.binding', 'soap');
 
 // Shibboleth's request profile — decision 1. Advertised so that a service
 // provider building its endpoint list from the metadata offers it.
@@ -338,13 +345,13 @@ const BINDING_SOAP = 'urn:oasis:names:tc:SAML:1.0:bindings:SOAP-binding';
  * Shibboleth's AuthnRequest profile's URI, advertised in the metadata.
  */
 const PROFILE_SHIB_AUTHN_REQUEST =
-    'urn:mace:shibboleth:1.0:profiles:AuthnRequest';
+    SamlModel.term('saml11.profile', 'shibAuthnRequest');
 
 // What `protocolSupportEnumeration` says. THIS one is spelled 1.1, because it
 // names the PROTOCOL version rather than a schema namespace — the one place in
 // this file where the digit changes, and the reason the constant exists rather
 // than the literal being written inline next to the others.
-const PROTOCOL_SAML11 = 'urn:oasis:names:tc:SAML:1.1:protocol';
+const PROTOCOL_SAML11 = SamlModel.term('saml11.protocol', 'saml11');
 
 // AND SHIBBOLETH'S, for the request profile above (#189). A relying party
 // looks for an identity provider's Shib1 AuthnRequest endpoint only in an
@@ -354,7 +361,7 @@ const PROTOCOL_SAML11 = 'urn:oasis:names:tc:SAML:1.1:protocol';
 // SingleSignOnService without the protocol offered an endpoint no Shibboleth
 // SP would ever use: every SAML 1.1 sign-in it started failed with "None of
 // the configured SessionInitiators handled the request" until #189.
-const PROTOCOL_SHIB1 = 'urn:mace:shibboleth:1.0';
+const PROTOCOL_SHIB1 = SamlModel.term('saml11.protocol', 'shibboleth1');
 
 // **SAML 1.1 STATUS CODES ARE QNames, NOT URIs**, and this is the single
 // easiest thing in the file to get wrong by writing 2.0 out of habit. The value
@@ -365,11 +372,11 @@ const PROTOCOL_SHIB1 = 'urn:mace:shibboleth:1.0';
 // `{urn:oasis:names:tc:SAML:1.0:protocol}Success`. Writing the 2.0 URI here
 // produces a document that looks plausible and whose status resolves to nothing
 // at all.
-const STATUS_SUCCESS = 'samlp:Success';
+const STATUS_SUCCESS = SamlModel.term('saml11.status', 'Success');
 
-const STATUS_REQUESTER = 'samlp:Requester';
+const STATUS_REQUESTER = SamlModel.term('saml11.status', 'Requester');
 
-const STATUS_RESPONDER = 'samlp:Responder';
+const STATUS_RESPONDER = SamlModel.term('saml11.status', 'Responder');
 
 const SIG_RSA_SHA256 = 'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256';
 
@@ -386,17 +393,24 @@ const TRANSFORM_ENVELOPED =
 // would tell a relying party it could ask for something the protocol has no way
 // to ask for. What is here is what SAML 1.1 defines plus the X.509 one every
 // deployment used. As in 2.0, the list is what goes in the metadata and is NOT
-// a list of what will be accepted: the non-spec `format` parameter is answered
-// with whatever it says.
+// a list of what is chosen from: the relying party's saml11.nameIdFormat
+// setting is what an assertion carries.
 /**
  * The NameIdentifier formats this identity provider advertises in its metadata.
  */
-const NAMEID_FORMATS = [
-  saml11.NAMEID_FORMAT_UNSPECIFIED,
-  'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress',
-  'urn:oasis:names:tc:SAML:1.1:nameid-format:X509SubjectName',
-  'urn:oasis:names:tc:SAML:1.1:nameid-format:WindowsDomainQualifiedName'
-];
+const NAMEID_FORMATS = SamlModel.terms('saml11.nameIdFormat', 'advertised');
+
+// The responder's request types, by the local name of the element that asks:
+// the model's `saml11.request` terms.
+const ASKS_ARTIFACT = SamlModel.term('saml11.request', 'assertionArtifact');
+
+const ASKS_REFERENCE =
+    SamlModel.term('saml11.request', 'assertionIdReference');
+
+const ASKS_ATTRIBUTES = SamlModel.term('saml11.request', 'attributeQuery');
+
+const ASKS_AUTHENTICATION =
+    SamlModel.term('saml11.request', 'authenticationQuery');
 
 // How the End-User authenticated, in SAML 1.1's vocabulary — `am:` URIs, where
 // 2.0 has `ac:classes:`. THREE outcomes, because /authn/login can use a
@@ -520,8 +534,8 @@ const assertionsById = realms.map({ persist: 'saml11_sso.assertionsById',
                                     expiresAt: realms.expiryField('expires',
                                                                   1) });
 
-// Described to `/admin/caches` (#74, rule 3ap), in `docs/caches.md`'s other
-// protocols. A register of issued assertions more than a cache — an entry
+// Described to `/admin/caches` (#74, rule 3ap), in `docs/v1.1.0/caches.md`'s
+// other protocols. A register of issued assertions more than a cache — an entry
 // cannot be rebuilt — and listed because that document lists it. A hit is an
 // AssertionIDReference answered.
 const assertionsCount = cacheRegistry.register({
@@ -1159,7 +1173,7 @@ class Saml11Sso {
           value: known.target !== undefined
             ? known.target : (params.TARGET || params.target) },
         { label: t.text('errorPages.binding'),
-          value: known.profile || params.profile },
+          value: known.profile },
         { label: t.text('errorPages.signedInAs'), value: username },
         { label: t.text('errorPages.summary'), value: title },
         { label: t.text('errorPages.detail'), value: detail }
@@ -1291,13 +1305,14 @@ class Saml11Sso {
     const { log, personAttributes } = this.deps;
     log.debug("Entering Saml11Sso.nameIdValueFor(). format=" + format);
     const username = (session.user && session.user.username) || '';
-    if (format === 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress') {
+    if (format === SamlModel.term('saml11.nameIdFormat', 'emailAddress')) {
       // Off the directory in product, invented in development; the username
       // when neither has one, which is what this always fell back to.
       log.debug("Leaving Saml11Sso.nameIdValueFor(). The mail address.");
       return personAttributes.personFor(session.user).email || username;
     }
-    if (format === 'urn:oasis:names:tc:SAML:1.1:nameid-format:WindowsDomainQualifiedName') {
+    if (format === SamlModel.term('saml11.nameIdFormat',
+                                  'windowsDomainQualifiedName')) {
       // `domain\user`, which is what the format means and what a relying party
       // asking for it is going to try to split on a backslash.
       log.debug("Leaving Saml11Sso.nameIdValueFor(). A Windows domain " +
@@ -1305,7 +1320,7 @@ class Saml11Sso {
       return 'IYASTS\\' + username;
     }
     if (format ===
-        'urn:oasis:names:tc:SAML:1.1:nameid-format:X509SubjectName') {
+        SamlModel.term('saml11.nameIdFormat', 'x509SubjectName')) {
       log.debug("Leaving Saml11Sso.nameIdValueFor(). An X.509 subject name.");
       return 'CN=' + username;
     }
@@ -1359,29 +1374,31 @@ class Saml11Sso {
     // `opts.rp` is the relying party; see settingFor() above.
     log.debug("Entering Saml11Sso.buildResponse(). status=" + opts.status);
     const id = genId();
+    // The attributes and children in the model's order (#1579).
     const xml =
       '<samlp:Response xmlns:samlp="' + NS_SAMLP + '" xmlns:saml="' + NS_SAML +
-        '" ' +
-        'ResponseID="' + id + '" MajorVersion="1" MinorVersion="1"' +
-        ' IssueInstant="' + iso(0) + '"' +
-        (opts.recipient ? ' Recipient="' + xmlEscape(opts.recipient) +
-         '"' : '') +
-        (opts.inResponseTo ?
-         ' InResponseTo="' + xmlEscape(opts.inResponseTo) + '"' : '') +
-        '><samlp:Status><samlp:StatusCode ' +
-        'Value="' + xmlEscape(opts.status) + '"/>' +
-          (opts.statusMessage
-            ? '<samlp:StatusMessage>' + xmlEscape(opts.statusMessage) +
-              '</samlp:StatusMessage>'
-            : '') +
-        '</samlp:Status>' +
-        (opts.assertion || '') +
+        '"' +
+        SamlModel.attributes('saml11.Response', {
+          responseId: id, issueInstant: iso(0), recipient: opts.recipient,
+          inResponseTo: opts.inResponseTo }) + '>' +
+        SamlModel.children('saml11.Response', {
+          status: '<samlp:Status>' + SamlModel.children('saml11.Status', {
+            statusCode: '<samlp:StatusCode ' +
+              'Value="' + xmlEscape(opts.status) + '"/>',
+            statusMessage: opts.statusMessage
+              ? '<samlp:StatusMessage>' + xmlEscape(opts.statusMessage) +
+                '</samlp:StatusMessage>'
+              : '' }) +
+            '</samlp:Status>',
+          assertion: opts.assertion || '' }) +
       '</samlp:Response>';
     logArtifact('SAML 1.1 Response', 'before signing', xml);
     if (!this.settingFor(opts.rp || '', 'saml11.signResponse')) {
       log.debug("Leaving Saml11Sso.buildResponse(). Unsigned: " +
                 "saml11.signResponse is off.");
-      return { xml: xml, id: id, signed: false };
+      return { xml: SamlModel.hold('saml11.Response', xml,
+                                   'SAML 1.1 Response'),
+               id: id, signed: false };
     }
     try {
       // 'prepend' — ds:Signature is the FIRST child of a 1.1 Response. See
@@ -1390,7 +1407,9 @@ class Saml11Sso {
       const signed = this.signDocument(xml, 'Response', id, 'prepend');
       logArtifact('SAML 1.1 Response', 'after signing', signed);
       log.debug("Leaving Saml11Sso.buildResponse(). Signed.");
-      return { xml: signed, id: id, signed: true };
+      return { xml: SamlModel.hold('saml11.Response', signed,
+                                   'SAML 1.1 Response'),
+               id: id, signed: true };
     } catch (e) {
       log.debug("Caught in Saml11Sso.buildResponse(): " +
                 ((e && e.message) || e));
@@ -1404,7 +1423,9 @@ class Saml11Sso {
                                                   'unsigned: ' + e.message);
       log.debug("Leaving Saml11Sso.buildResponse(). Unsigned after a signing " +
                 "failure.");
-      return { xml: xml, id: id, signed: false };
+      return { xml: SamlModel.hold('saml11.Response', xml,
+                                   'SAML 1.1 Response'),
+               id: id, signed: false };
     }
   }
 
@@ -1425,12 +1446,17 @@ class Saml11Sso {
     const askedMethod = PhishingResistance.assertionUri(
       session, ctx.requestedUris);
     const method = askedMethod || how.method;
+    // READ AS IT STANDS (#39, 2026-11-15): the row's `min: 1` bounds it, and
+    // `|| 60` turned a value nothing refused into an hour; see the row.
     const lifetimeMin = Number(this.settingFor(
-      ctx.rpId, 'saml11.assertionLifetimeMin')) || 60;
-    const format = ctx.nameIdFormat ||
-      String(this.settingFor(ctx.rpId, 'saml11.nameIdFormat') ||
-             NAMEID_FORMAT_UNSPECIFIED);
-    const authnInstant = new Date((session.authTime || 0) * 1000).toISOString();
+      ctx.rpId, 'saml11.assertionLifetimeMin'));
+    // The relying party's saml11NameIdFormat, else saml11.nameIdFormat:
+    // SAML 1.1 has no request message to ask for a format in.
+    const format = String(this.settingFor(ctx.rpId, 'saml11.nameIdFormat') ||
+                          NAMEID_FORMAT_UNSPECIFIED);
+    // When they authenticated, read through the `Session` concept (#1579).
+    const authnInstant = new Date((authn.sessionView(session).authTime || 0) *
+                                  1000).toISOString();
     const assertion = buildSaml11Assertion({
       subject: user.username,
       audience: ctx.rpId,
@@ -1797,28 +1823,18 @@ class Saml11Sso {
     return { ipAddress: address.replace(/^::ffff:/, '') };
   }
 
-  // Which profile to use. The request may say — `profile=post|artifact`,
-  // non-spec and marked as such — then the binding registered for the
-  // `shire` (below), and otherwise `saml11.defaultProfile` answers. There
-  // is no way for a SAML 1.1 relying party to ask in the protocol itself,
-  // which is decision 1 again: in 2.0 this comes off the AuthnRequest's
-  // ProtocolBinding.
+  // Which profile to use: the binding registered for the `shire`, and
+  // otherwise `saml11.defaultProfile`. SAML 1.1 has no way for a relying
+  // party to ask in the protocol itself — in 2.0 this comes off the
+  // AuthnRequest's ProtocolBinding — so the assertion consumer it names is
+  // what decides, as in a Shibboleth identity provider and in the UK
+  // federation's profile (each AssertionConsumerService location carries
+  // the profile bound to it). The non-spec `profile` parameter that used to
+  // come first is gone: one that disagreed with the shire's binding sent an
+  // assertion over a profile that consumer does not answer.
   private profileFor(params, rpId?) {
     const { config, log } = this.deps;
-    log.debug("Entering Saml11Sso.profileFor(). asked=" +
-              (params.profile || '(none)'));
-    const asked = String(params.profile || '').toLowerCase();
-    if (asked === 'post' || asked === 'artifact') {
-      log.debug("Leaving Saml11Sso.profileFor(). " + asked + ", from the " +
-                                                   "non-spec profile " +
-                                                   "parameter.");
-      return { profile: asked, from: 'parameter' };
-    }
-    if (asked) {
-      log.debug("Leaving Saml11Sso.profileFor(). An unknown profile was " +
-                "named.");
-      return { error: asked };
-    }
+    log.debug("Entering Saml11Sso.profileFor().");
     // THE SHIRE'S REGISTERED BINDING (#189). A relying party whose metadata
     // was consumed publishes each assertion consumer service WITH its
     // profile — Shibboleth's /SAML/POST as browser-post and /SAML/Artifact
@@ -1853,6 +1869,36 @@ class Saml11Sso {
         "default.");
     return { profile: dflt === 'artifact' ? 'artifact' : 'post',
              from: 'setting' };
+  }
+
+  // THE DEFAULT ASSERTION CONSUMER of a relying party's consumed metadata,
+  // among those bound to a SAML 1.1 browser profile: isDefault="true", else
+  // the first not marked false, else the first (saml-metadata-2.0-os section
+  // 2.2.3). '' when the metadata bound none to either profile.
+  private defaultConsumerOf(fields) {
+    const { log } = this.deps;
+    log.debug("Entering Saml11Sso.defaultConsumerOf().");
+    const listed = Array.isArray(fields.samlAcsEndpoint)
+      ? fields.samlAcsEndpoint
+      : (fields.samlAcsEndpoint ? [fields.samlAcsEndpoint] : []);
+    const candidates = listed.map(function (value) {
+      const parts = String(value).trim().split(/\s+/);
+      return parts.length < 4 ? null : {
+        isDefault: parts[1], binding: parts[2],
+        location: parts.slice(3).join(' ')
+      };
+    }).filter(function (one) {
+      return !!one && (one.binding === PROFILE_POST ||
+                       one.binding === PROFILE_ARTIFACT);
+    });
+    const chosen = candidates.filter(function (one) {
+      return one.isDefault === 'true';
+    })[0] || candidates.filter(function (one) {
+      return one.isDefault !== 'false';
+    })[0] || candidates[0];
+    log.debug("Leaving Saml11Sso.defaultConsumerOf(). " +
+              (chosen ? chosen.location : '(none)'));
+    return chosen ? chosen.location : '';
   }
 
   private interSiteTransfer(req, res) {
@@ -1907,23 +1953,6 @@ class Saml11Sso {
                            this.describeSsoPage(base, scoped));
     }
 
-    const wanted = this.profileFor(carried, String(carried.providerId || '') ||
-                                              scoped.id || '');
-    if (wanted.error) {
-      log.debug("Leaving Saml11Sso.interSiteTransfer(). An unknown profile " +
-                "was named.");
-      errorCodes.mark(res, 'STS-SAML-0026');
-      log.debug("Leaving Saml11Sso.interSiteTransfer().");
-      return this.samlError(res, 400, 'That is not one of the two browser ' +
-                                      'profiles',
-        'This request asked for profile="' + wanted.error + '". SAML 1.1 has ' +
-        'exactly two browser profiles: "post" (Browser/POST, section 4.2) ' +
-        'and "artifact" (Browser/Artifact, section 4.1). The parameter is ' +
-        'non-spec — nothing in SAML 1.1 lets a relying party choose — and it ' +
-        'exists so both can be exercised by hand.', undefined,
-        { target: carried.TARGET, profile: wanted.error });
-    }
-
 
     // --- step 2: where does the answer go ------------------------------------
     // `shire` is Shibboleth's name for the assertion consumer service, and it
@@ -1943,9 +1972,14 @@ class Saml11Sso {
     // GUESSED relying party.
     const knownFirst = this.fieldsOf(scoped.id);
     const recordedAcs = knownFirst.samlAssertionConsumerService;
-    const recorded = Array.isArray(recordedAcs)
-      ? recordedAcs[recordedAcs.length - 1]
-      : recordedAcs || '';
+    // With no shire, the DEFAULT consumer of the consumed metadata, as
+    // saml-metadata-2.0-os section 2.2.3 defines it and SAML 2.0 already
+    // reads it (Saml2Sso.registeredAcsFor()); the last hand-registered
+    // address only when no metadata bound one to a SAML 1.1 profile.
+    const recorded = this.defaultConsumerOf(knownFirst) ||
+      (Array.isArray(recordedAcs)
+        ? recordedAcs[recordedAcs.length - 1]
+        : recordedAcs || '');
     let acsUrl = String(carried.shire || recorded || '');
     if (!mode.acceptsUnregisteredAddresses()) {
       const early = this.relyingPartyFor(carried, scoped,
@@ -2054,6 +2088,12 @@ class Saml11Sso {
     }
     const rpId = who.id;
     const providerId = this.providerId();
+    // THE PROFILE IS THE ONE BOUND TO WHERE THE ANSWER GOES: the consumer
+    // resolved above, not only a `shire` the request named. With no shire
+    // the answer goes to a registered consumer, and answering on another
+    // profile than that consumer's sent a Browser/POST form to an artifact
+    // consumer.
+    const wanted = this.profileFor({ shire: acsUrl }, rpId);
 
     // WHO STARTED THIS, AND MAY THEY (#426, #711). SAML 1.1 has no request
     // message, so the only thing that tells the two apart is `shire`: the
@@ -2122,7 +2162,6 @@ class Saml11Sso {
       fields: {
         samlEntityId: rpId,
         samlAssertionConsumerService: acsUrl,
-        samlNameIdFormat: String(carried.format || ''),
         samlResponseBinding: wanted.profile === 'artifact' ? PROFILE_ARTIFACT :
                                   PROFILE_POST
       }
@@ -2185,13 +2224,11 @@ class Saml11Sso {
                 'party\'s entry — which this mode requires.' },
           { label: 'Browser profile', value: wanted.profile === 'artifact'
               ? 'Browser/Artifact (section 4.1)' : 'Browser/POST (section 4.2)',
-            note: wanted.from === 'parameter'
-              ? 'asked for by the non-spec profile parameter.'
-              : (wanted.from === 'shire'
-                ? 'the binding registered for this shire on the relying ' +
-                  'party\'s entry (samlAcsEndpoint).'
-                : 'the saml11.defaultProfile setting; nothing in SAML 1.1 ' +
-                  'lets a relying party ask.') },
+            note: wanted.from === 'shire'
+              ? 'the binding registered for this shire on the relying ' +
+                'party\'s entry (samlAcsEndpoint).'
+              : 'the saml11.defaultProfile setting; nothing in SAML 1.1 ' +
+                'lets a relying party ask.' },
           { label: 'TARGET', value: String(carried.TARGET || '(none)'),
             note: 'the relying party\'s own state, echoed back untouched. ' +
                   'SAML ' +
@@ -2464,7 +2501,7 @@ class Saml11Sso {
     this.issueSignIn(res, req, {
       session: session, rpId: rpId, providerId: providerId, acsUrl: acsUrl,
       profile: wanted.profile, target: String(carried.TARGET || ''),
-      nameIdFormat: String(carried.format || ''), how: who,
+      how: who,
       requestedUris: askedUris,
       // THE PATH SEGMENT THIS FLOW ARRIVED ON, carried beside `rpId` because
       // they are two different NAMES for the same relying party and only one
@@ -2487,8 +2524,7 @@ class Saml11Sso {
     const session = ctx.session;
     const assertion = this.buildAssertionFor({
       session: session, rpId: ctx.rpId, providerId: ctx.providerId,
-      profile: ctx.profile,
-      nameIdFormat: ctx.nameIdFormat, locality: this.localityOf(req),
+      profile: ctx.profile, locality: this.localityOf(req),
       requestedUris: ctx.requestedUris
     });
     this.rememberAssertion(assertion);
@@ -2533,7 +2569,7 @@ class Saml11Sso {
       at: Date.now(),
       // The NameIdentifier it was GIVEN (#189): what the responder's release
       // policy matches an attribute query against in product.
-      nameId: this.nameIdValueFor(ctx.nameIdFormat ||
+      nameId: this.nameIdValueFor(
         String(this.settingFor(ctx.rpId, 'saml11.nameIdFormat') ||
                this.deps.NAMEID_FORMAT_UNSPECIFIED), session)
     };
@@ -2834,7 +2870,7 @@ class Saml11Sso {
     // whatever the reason. The reason is the operator's: the error code and
     // the log line or audit row beside it. `saml2_sso.ts`'s
     // `resolveArtifact()` is the same rule for SAML 2.0.
-    const artifactEl = firstByLocal(request, 'AssertionArtifact');
+    const artifactEl = firstByLocal(request, ASKS_ARTIFACT);
     if (artifactEl) {
       const artifact = (artifactEl.textContent || '').trim();
       const empty = (code) => {
@@ -2955,7 +2991,7 @@ class Saml11Sso {
     }
 
     // --- an assertion by id --------------------------------------------------
-    const referenceEl = firstByLocal(request, 'AssertionIDReference');
+    const referenceEl = firstByLocal(request, ASKS_REFERENCE);
     if (referenceEl) {
       const wanted = (referenceEl.textContent || '').trim();
       // AN AssertionID IS STAMPED WHERE IT IS MINTED (#98 D10, `saml11.ts`),
@@ -2999,8 +3035,8 @@ class Saml11Sso {
     }
 
     // --- a query -------------------------------------------------------------
-    const attributeQuery = firstByLocal(request, 'AttributeQuery');
-    const authnQuery = firstByLocal(request, 'AuthenticationQuery');
+    const attributeQuery = firstByLocal(request, ASKS_ATTRIBUTES);
+    const authnQuery = firstByLocal(request, ASKS_AUTHENTICATION);
     const query = attributeQuery || authnQuery;
     if (query) {
       // THE CELL THAT ANSWERS (#98 D10), before the caller is authenticated:
@@ -3214,10 +3250,10 @@ class Saml11Sso {
         subject: username,
         audience: rpId,
         lifetimeMin: Number(this.settingFor(rpId,
-                                            'saml11.assertionLifetimeMin')) ||
-                     60,
+                                            'saml11.assertionLifetimeMin')),
         authnMethod: how.method,
-        authnInstant: new Date((live.authTime || 0) * 1000).toISOString(),
+        authnInstant: new Date((authn.sessionView(live).authTime || 0) *
+                               1000).toISOString(),
         issuer: providerId,
         nameQualifier: providerId,
         // A query's answer is confirmed by neither browser profile: it did
@@ -3247,8 +3283,7 @@ class Saml11Sso {
       subject: username,
       audience: rpId,
       lifetimeMin: Number(this.settingFor(rpId,
-                                          'saml11.assertionLifetimeMin')) ||
-                   60,
+                                          'saml11.assertionLifetimeMin')),
       issuer: providerId,
       nameQualifier: providerId,
       confirmationMethod: CONFIRMATION_BEARER,
@@ -3441,18 +3476,7 @@ class Saml11Sso {
                       'relying party can name itself.'],
        ['time', 'Accepted and ignored. Shibboleth sends it; nothing here ' +
                 'reads it, because there is no clock skew setting for this ' +
-                'profile to reject a request under.'],
-       ['profile', '<strong>Non-spec.</strong> <code>post</code> or <code>' +
-                   'artifact</code>, choosing between the two browser ' +
-                   'profiles. Nothing in SAML 1.1 lets a relying party ' +
-                   'choose, so without it the binding registered for the ' +
-                   '<code>shire</code> on the relying party\'s entry ' +
-                   '(<code>samlAcsEndpoint</code>, from its consumed ' +
-                   'metadata) decides, and failing that the ' +
-                   'saml11.defaultProfile setting.'],
-       ['format', '<strong>Non-spec.</strong> The NameIdentifier Format to ' +
-                  'answer with. SAML 1.1 has no NameIDPolicy to ask in, so ' +
-                  'without it saml11.nameIdFormat decides.']
+                'profile to reject a request under.']
       ].map((r) => {
         return '<tr><td><code>' + r[0] + '</code></td><td>' + r[1] +
             '</td></tr>';

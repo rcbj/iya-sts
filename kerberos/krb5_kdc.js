@@ -160,7 +160,7 @@ const delegation = require('../common/delegation');
 //
 // (History: when it was added, this require owed the parent project's `sts/`
 // COPY set a line, `COPY sts/common/issuance_gate.js ./sts/common/`. Nothing
-// is owed since #1280; `docs/parent-project-migration.md` records it.)
+// is owed since #1280; `docs/v1.1.0/parent-project-migration.md` records it.)
 const gate = require('../common/issuance_gate');
 // THE MODE. A LEAF (rule 3) requiring only `config`, and already loaded:
 // `common/helpers.js` requires it, and `krb5_principals.js` below does too.
@@ -309,6 +309,87 @@ function kdcTime(offsetSeconds) {
   log.debug("Entering kdcTime().");
   log.debug("Leaving kdcTime().");
   return new Date(now().getTime() + (offsetSeconds || 0) * 1000);
+}
+
+// The renew-till of a ticket being ISSUED (#897). A renewal does not call
+// this: it copies the presented ticket's renew-till, and that instant does
+// not move.
+//
+// RFC 4120 section 3.1.3 lets renew-till be the earliest of the requested
+// rtime, starttime plus each principal's maximum renewable life, and
+// starttime plus the realm's. This service has the one realm maximum
+// (`krb5.renewLifetimeSeconds`) and no per-principal maximum. On a TGS
+// exchange the presented ticket's own renew-till is a further cap, and a
+// ticket that is not renewable cannot buy one that is.
+//
+// MIT krb5's kdc_get_ticket_renewtime, with the differences kerberos/CLAUDE.md
+// records. `inherited` is the caller's choice to keep a TGT's RENEWABLE flag
+// when the TGS-REQ did not repeat the option; MIT would have cleared it.
+// RENEWABLE-OK (option 27) sets the flag only when the requested till was
+// shortened to endtime and the capped renew-till is strictly later than that
+// endtime. An explicit RENEWABLE, and an inherited flag, keep the flag even
+// when rtime does not pass endtime.
+//
+// `spec.start` is the ticket's starttime, `spec.endtime` the endtime about
+// to be issued. `spec.presented` is null on an AS exchange and
+// `{ renewable, renewTill }` on a TGS exchange.
+//
+// `spec.notAfter` (a Date, or absent) is the client certificate's notAfter
+// on a PKINIT AS exchange. RFC 4556 section 3.2.3 says the ticket "MUST NOT
+// exceed" the lifetime of the client's key pair, and a renewal extends a
+// ticket up to renew-till, so renew-till is capped there too (the review of
+// #897, 2026-11-13; endtime alone was capped, so a PKINIT TGT stayed
+// renewable for up to krb5.renewLifetimeSeconds past the certificate). A
+// renew-till the certificate brings down to endtime or before is no
+// renewable ticket at all, so the flag is dropped whatever was asked: an
+// explicit RENEWABLE keeps the flag only when the CLIENT chose that rtime.
+function decideRenewTill(spec) {
+  log.debug("Entering decideRenewTill().");
+  const options = spec.options || [];
+  const asked = options.indexOf(msgs.KDC_OPTION.RENEWABLE) !== -1;
+  const askedOk = options.indexOf(msgs.KDC_OPTION.RENEWABLE_OK) !== -1;
+  const presented = spec.presented || null;
+  if (presented && !presented.renewable) {
+    log.debug("Leaving decideRenewTill().");
+    return { renewable: false, renewTill: null };
+  }
+  const realmCap = spec.start.getTime() + renewLifetimeSeconds() * 1000;
+  let requested = null;
+  let fromOk = false;
+  if (asked || spec.inherited) {
+    requested = spec.rtime instanceof Date ? spec.rtime.getTime() : realmCap;
+  } else if (askedOk && spec.till instanceof Date &&
+             spec.till.getTime() > spec.endtime.getTime()) {
+    fromOk = true;
+    requested = spec.till.getTime();
+  } else {
+    log.debug("Leaving decideRenewTill().");
+    return { renewable: false, renewTill: null };
+  }
+  let cap = requested;
+  if (cap > realmCap) {
+    cap = realmCap;
+  }
+  if (presented && presented.renewTill instanceof Date &&
+      cap > presented.renewTill.getTime()) {
+    cap = presented.renewTill.getTime();
+  }
+  if (spec.notAfter instanceof Date && cap > spec.notAfter.getTime()) {
+    cap = spec.notAfter.getTime();
+    if (cap <= spec.endtime.getTime()) {
+      log.debug("Leaving decideRenewTill(). The certificate ends it.");
+      return { renewable: false, renewTill: null };
+    }
+  }
+  // RENEWABLE-OK only. An explicit request keeps the flag, so a renewal is
+  // refused at once (STS-KRB-0045) rather than the ticket pretending it can
+  // be extended.
+  if (fromOk && cap <= spec.endtime.getTime()) {
+    log.debug("Leaving decideRenewTill().");
+    return { renewable: false, renewTill: null };
+  }
+  log.debug("Leaving decideRenewTill().");
+  return { renewable: true, renewTill: new Date(cap) };
 }
 
 // ---------------------------------------------------------------------------
@@ -2491,6 +2572,31 @@ function errorReply(code, options) {
     eText: opts.eText || null,
     eData: opts.eData || null
   });
+  // THE REFUSED ATTEMPT ON THE PERSON'S PAGE (rcbj, 2026-11-16): a coded
+  // refusal naming a client principal is that principal's refused attempt
+  // (`authentication.refused`, which their Authentications tab lists). Here,
+  // where every refusal is built, so every transport has it once; the
+  // transport's own audit row is unchanged. KDC_ERR_PREAUTH_REQUIRED (25)
+  // is a step of the exchange, not a refusal: it is the first answer to
+  // every AS-REQ a client sends without pre-authentication, which is every
+  // ordinary sign-in, and it DOES carry a code, so it is excluded by number
+  // (until 2026-11-16 every Kerberos sign-in showed a refused attempt).
+  if (opts.errorCode && code !== 25 && opts.cname &&
+      Array.isArray(opts.cname.name) && opts.cname.name.length) {
+    try {
+      stats.recordRefusedAuthentication({
+        presented: opts.cname.name.join('/') +
+                   (opts.crealm ? '@' + opts.crealm : ''),
+        protocol: 'Kerberos v5',
+        method: 'KDC request refused with ' + msgs.describeError(code).name,
+        errorCode: String(opts.errorCode), codedElsewhere: true,
+        channel: 'kerberos',
+        note: msgs.describeError(code).name });
+    } catch (e) {
+      log.debug('Caught in errorReply(): ' + ((e && e.message) || e));
+      // Bookkeeping: the KRB-ERROR goes out whatever this did.
+    }
+  }
   if (opts.errorCode) {
     try {
       Object.defineProperty(bytes, REFUSAL, {
@@ -3654,11 +3760,19 @@ async function answerAsReq(request, fast) {
     kdcTime(ticketLifetimeSeconds()).getTime(),
     preauth && preauth.pkinit && preauth.pkinit.notAfter
       ? preauth.pkinit.notAfter.getTime() : Infinity));
+  // #897. renew-till follows the requested rtime, capped by the realm
+  // maximum and, for PKINIT, by the certificate's notAfter (RFC 4556
+  // section 3.2.3, as endtime is). RENEWABLE-OK can add the flag; an
+  // explicit RENEWABLE keeps it even when rtime does not pass endtime.
+  const renewal = decideRenewTill({
+    options: body.kdcOptions, rtime: body.rtime, till: body.till,
+    start: authtime, endtime: endtime, inherited: false, presented: null,
+    notAfter: preauth && preauth.pkinit && preauth.pkinit.notAfter
+      ? preauth.pkinit.notAfter : null
+  });
 
   const wantsForwardable = (body.kdcOptions || []).indexOf(
       msgs.KDC_OPTION.FORWARDABLE) !== -1;
-  const wantsRenewable = (body.kdcOptions || []).indexOf(
-      msgs.KDC_OPTION.RENEWABLE) !== -1;
   const flags = [msgs.TICKET_FLAG.INITIAL];
   // "Account is sensitive and cannot be delegated". The refusal is not an error
   // — the ticket is issued, simply WITHOUT the forwardable flag — and that is
@@ -3675,7 +3789,9 @@ async function answerAsReq(request, fast) {
   } else if (wantsForwardable) {
     flags.push(msgs.TICKET_FLAG.FORWARDABLE);
   }
-  if (wantsRenewable) flags.push(msgs.TICKET_FLAG.RENEWABLE);
+  if (renewal.renewable) {
+    flags.push(msgs.TICKET_FLAG.RENEWABLE);
+  }
   // pre-authent is set only if pre-authentication actually happened. A service
   // can read this flag and insist on it, so setting it unconditionally would be
   // a lie with security consequences. Any of the three methods sets it; what
@@ -3695,7 +3811,7 @@ async function answerAsReq(request, fast) {
   }
   // RFC 6806 section 11, on every ticket issued (encPaRepData() above).
   if (request[REQUEST_BYTES]) flags.push(msgs.TICKET_FLAG.ENC_PA_REP);
-  const renewTill = wantsRenewable ? kdcTime(renewLifetimeSeconds()) : null;
+  const renewTill = renewal.renewTill;
 
   // THREE ENCTYPES, NOT ONE (#204, 2026-09-26). The request's etype list
   // chooses the REPLY key — the client's own, `etype` above — and the SESSION
@@ -5024,7 +5140,8 @@ async function answerTgsReq(request, state) {
   //   * the presented ticket must be flagged RENEWABLE and carry a renew-till;
   //   * the new endtime is capped at renew-till, which does NOT move — that cap
   //     is the whole point of a renewable ticket, since otherwise it would be
-  //     immortal;
+  //     immortal. An rtime on the renewal is ignored (#897): recomputing
+  //     renew-till here would let the client name a later one;
   //   * **authtime is preserved.** A renewed ticket must not look freshly
   //     authenticated: a service reading authtime to decide how recently the
   //     user proved themselves would otherwise be told a lie that grows more
@@ -5273,6 +5390,34 @@ async function answerTgsReq(request, state) {
     ? new Date(Math.min(requestedTill.getTime(),
                         ticketPart.renewTill.getTime()))
     : new Date(Math.min(requestedTill.getTime(), ticketPart.endtime.getTime()));
+  // #897. A renewal copies renew-till. Every other TGS ticket takes
+  // decideRenewTill(): a requested rtime shortens it, it cannot pass the
+  // TGT's own renew-till, and a TGT that is not renewable cannot source one
+  // that is. The flag is still inherited when the TGS-REQ does not repeat
+  // RENEWABLE — MIT would clear it, and the clients that renew a service
+  // ticket obtained with an empty kdcOptions list depend on this KDC not
+  // doing so.
+  const presentedRenewable = (ticketPart.flags || [])
+    .indexOf(msgs.TICKET_FLAG.RENEWABLE) !== -1 &&
+    ticketPart.renewTill instanceof Date;
+  let renewTill = ticketPart.renewTill || null;
+  if (!wantsRenew) {
+    const decision = decideRenewTill({
+      options: body.kdcOptions, rtime: body.rtime, till: body.till,
+      start: at, endtime: endtime, inherited: presentedRenewable,
+      presented: { renewable: presentedRenewable,
+                   renewTill: ticketPart.renewTill }
+    });
+    flags = flags.filter(function (f) {
+      return f !== msgs.TICKET_FLAG.RENEWABLE;
+    });
+    if (decision.renewable) {
+      flags.push(msgs.TICKET_FLAG.RENEWABLE);
+      renewTill = decision.renewTill;
+    } else {
+      renewTill = null;
+    }
+  }
 
   const serviceKey = u2u ? u2u.key.key
                          : await principals.longTermKey(service, ticketEtype);
@@ -5311,7 +5456,7 @@ async function answerTgsReq(request, state) {
       authtime: authtime,
       starttime: at,
       endtime: endtime,
-      renewTill: ticketPart.renewTill,
+      renewTill: renewTill,
       authorizationData: ad.length ? ad : null
     });
   };
@@ -5613,7 +5758,7 @@ async function answerTgsReq(request, state) {
     authtime: authtime,
     starttime: at,
     endtime: endtime,
-    renewTill: ticketPart.renewTill,
+    renewTill: renewTill,
     srealm: answeringRealm,
     sname: body.sname,
     // RFC 6806 section 11's checksum, when the TGS-REQ asked for it — "any
@@ -5763,12 +5908,26 @@ async function answerTgsReq(request, state) {
 // its clear after that sign-out's stamp — last writer wins on the whole row,
 // section 3 of the issue. Milliseconds wide, not a replication interval.
 //
-// Only with `logout.kerberosSignOut` on, and only in active-active: nothing
-// else reads replicated state here, and a single node is exactly as it was.
-// The requires are LAZY and guarded, because the parent project loaded this
-// file in-process from a COPY set (an obligation until #1280; the
-// arrangement stands); both modules are already loaded through
-// common/app.js.
+// ~~Only with `logout.kerberosSignOut` on~~ — **EVERY KDC REQUEST IN
+// ACTIVE-ACTIVE SINCE 2026-11-19 (GitHub run #569, cluster mode).** "Nothing
+// else reads replicated state here" was wrong: the principal table is
+// replicated, and the development KDC WRITES it on first sight. Samba's
+// `fast_tests.test_fast_ad_fx_fast_armor` had an AS-REQ for a fresh name
+// answered on node A (04:01:38.567) and its TGS-REQ, 22 ms later, answered
+// on node B from a copy without the principal — a service ticket with NO
+// PAC, which the test refused. A password set, an account disabled, a
+// second factor required and a krbtgt rotated on another node are the same
+// shape. So the pull is `cluster_barrier.catchUp()`, LDAP's arrangement
+// since run #510, whatever the setting says, and its counters and its
+// warning (STS-CLUSTER-0018) are the barrier's; STS-KRB-0118 is still
+// logged beside it when the setting is on, because it names what a sign-out
+// costs. The other half — a reply HELD until what its request wrote has
+// committed, rule 2, without which no pull on B could have found A's row —
+// is `handleMessage()`'s, below. A single node is exactly as it was.
+// The requires are LAZY and guarded, so a process that loads this file on
+// its own (an in-process test, say) needs neither module; both are already
+// loaded through common/app.js. (They were made lazy for the parent
+// project's COPY set, an obligation until #1280 and history now.)
 // ---------------------------------------------------------------------------
 // **AND WITH REQUEST WORKERS, ON ONE NODE TOO (2026-09-23).** A password
 // set, a principal created, an authenticator enrolled or a sign-out stamped is
@@ -5825,29 +5984,35 @@ async function catchUpWithWorkers() {
   log.debug('Leaving catchUpWithWorkers().');
 }
 
+// The cluster barrier, or null in a process that cannot load it — the LAZY,
+// guarded require the two functions here and handleMessage() share.
+function clusterBarrier() {
+  log.debug('Entering clusterBarrier().');
+  try {
+    log.debug('Leaving clusterBarrier().');
+    return require('../cluster/cluster_barrier');
+  } catch (e) {
+    log.debug('Caught in clusterBarrier(): ' + ((e && e.message) || e));
+    log.debug('Leaving clusterBarrier(). No cluster layer here.');
+    return null;
+  }
+}
+
 async function catchUpWithCluster() {
   log.debug('Entering catchUpWithCluster().');
   await catchUpWithWorkers();
-  if (!config.value('logout.kerberosSignOut')) {
-    log.debug('Leaving catchUpWithCluster(). Sign-out stamps are off.');
-    return null;
-  }
-  let cluster = null;
-  let barrier = null;
-  try {
-    cluster = require('../cluster/cluster');
-    barrier = require('../cluster/cluster_barrier');
-  } catch (e) {
-    log.debug('Caught in catchUpWithCluster(): ' + ((e && e.message) || e));
+  const barrier = clusterBarrier();
+  if (!barrier) {
     log.debug('Leaving catchUpWithCluster(). No cluster layer here.');
     return null;
   }
-  if (!cluster.isActiveActive() || !cluster.enabled()) {
+  if (!barrier.isActive()) {
     log.debug('Leaving catchUpWithCluster(). Not active-active.');
     return null;
   }
-  const answer = await barrier.syncShared();
-  if (!answer || !answer.caughtUp) {
+  const answer = await barrier.catchUp('a Kerberos request');
+  if (config.value('logout.kerberosSignOut') &&
+      (!answer || !answer.caughtUp)) {
     log.warn(errorCodes.tag('STS-KRB-0118') + 'krb5: a KDC request is ' +
              'answered before this node caught up with the others (' +
              JSON.stringify(answer || {}) + '); a sign-out committed on ' +
@@ -5984,8 +6149,34 @@ async function handleMessage(bytes, options) {
             eText: route.refusal.eText
           });
         }
+        // AND HELD UNTIL WHAT IT WROTE HAS COMMITTED (2026-11-19, run #569):
+        // `cluster_barrier.js`'s rule 2, which an HTTP response and an LDAP
+        // result already had. An AS-REP for a principal created on first
+        // sight went before that row committed, and the TGS-REQ that
+        // followed on the other node was answered without it. A commit that
+        // fails is KDC_ERR_SVC_UNAVAILABLE (29), which MIT's and Heimdal's
+        // clients retry, as for a worker that failed (STS-KRB-0204): a
+        // ticket whose principal the store does not hold is an
+        // acknowledgement this process can lose.
+        const barrier = clusterBarrier();
+        const arrival = barrier ? barrier.writePosition() : null;
+        const reply = await (isAs ? handleAsReq(request)
+                                  : handleTgsReq(request));
+        const failed = barrier ? await barrier.commitAnswered(arrival) : [];
+        if (failed.length) {
+          log.error(errorCodes.tag('STS-KRB-0259') + 'krb5: ' +
+                    (isAs ? 'an AS-REQ' : 'a TGS-REQ') + ' changed the ' +
+                    'store and the commit of that change failed (' +
+                    failed.join('; ') + '); it is answered ' +
+                    'KDC_ERR_SVC_UNAVAILABLE instead of its reply. The ' +
+                    'change is still in memory and its write is retried.');
+          log.debug("Leaving the answer. Its commit failed.");
+          return errorReply(29, { errorCode: 'STS-KRB-0259',
+            realm: ourRealm(), sname: request.reqBody.sname,
+            eText: 'the KDC could not complete this request; try again' });
+        }
         log.debug("Leaving the answer.");
-        return isAs ? handleAsReq(request) : handleTgsReq(request);
+        return reply;
       });
     }
     log.info('krb5: received ' + identified.name + ', which is not a request ' +
@@ -6066,9 +6257,9 @@ async function handleMessage(bytes, options) {
 // which MIT's and Heimdal's clients read as "this KDC did not answer" and
 // retry, against the next KDC in their list or this one again.
 //
-// The require of the pool is LAZY and guarded (for the parent project's COPY
-// set, until #1280; the arrangement stands): a process without it answers
-// here, as before.
+// The require of the pool is LAZY and guarded: a process without it answers
+// here, as before. (It was made lazy for the parent project's COPY set, an
+// obligation until #1280 and history now.)
 // ---------------------------------------------------------------------------
 const MESSAGE_OPERATION = 'krb5.message';
 
@@ -6223,11 +6414,13 @@ async function answerSocketMessage(bytes, transport, address, port) {
 // here: a placement that failed must not leave a client waiting for a reply
 // that never comes, and the KDC's own answer is what it got before this seam.
 //
-// THE ROUTER IS NOT THIS FILE'S, ON PURPOSE. This file was in the parent
-// project's tests-image COPY closure, so it required nothing new (an
-// obligation until #1280; the arrangement stands): `krb5_home.ts` installs
-// the router from outside (`common/protocol_stack.ts`, right after requiring
-// this file), and only in a service deployed as cells. With no router — single-cell mode, and every
+// THE ROUTER IS NOT THIS FILE'S, ON PURPOSE. Placement is a concern of
+// cells and this file knows nothing of them, so it requires nothing new:
+// `krb5_home.ts` installs the router from outside
+// (`common/protocol_stack.ts`, right after requiring this file), and only in
+// a service deployed as cells. (Requiring nothing new was first an
+// obligation to the parent project's tests-image COPY closure, until #1280;
+// that is history now.) With no router — single-cell mode, and every
 // in-process loader of this file — `answerFromSocket()` calls
 // `answerSocketMessage()` and nothing else, byte for byte what the sockets
 // did before. No realm is passed, because the sockets have none: `routeOf()`

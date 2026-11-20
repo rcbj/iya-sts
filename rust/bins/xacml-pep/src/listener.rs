@@ -19,29 +19,41 @@
 //! OpenSSL rather than rustls (rust/DESIGN.md section 6): the realm's
 //! `pep-tls` CA may issue an ML-DSA certificate, which only OpenSSL serves.
 //!
-//! **IT ASKS FOR A CLIENT CERTIFICATE WHEN `PEP_AUTHZEN_CLIENT_CA` IS SET**
-//! (#1179), the AuthZEN edge PDP's one door. It ASKS and does not REQUIRE,
-//! and a certificate that does not verify still completes the handshake,
-//! as the service's main port does (`requestCert`, `rejectUnauthorized:
-//! false`): the other endpoints on this listener take no certificate, and
-//! the AuthZEN handler is where a refusal can say why — a handshake alert
-//! says nothing a PEP's operator can act on. [`peer_of`] reads what was
+//! **A CLIENT CERTIFICATE FOLLOWS THE LISTENER'S TUNING** (#1179, and the
+//! same knobs Server Settings → Listeners exposes). The default is what
+//! this file used to hard-code: with `PEP_AUTHZEN_CLIENT_CA` set, the API
+//! listener ASKS and does not REQUIRE, and a certificate that does not
+//! verify still completes the handshake (`requestCert`,
+//! `rejectUnauthorized: false`). The reverse proxy asks everybody and
+//! checks nobody. `requireClientCertificate` is the one setting that fails
+//! the handshake when nothing is presented, and it needs an authority to
+//! verify against: with none, the listener serves NOTHING
+//! (`STS-XPEP-0137`, 2026-11-16) rather than asking nobody and admitting
+//! everybody, as the API listener did. A knob OpenSSL will not apply
+//! is logged (`STS-XPEP-0119`); once a certificate is already served, that
+//! failure keeps the previous acceptor. [`peer_of`] reads what was
 //! presented and whether it verified.
 
 use std::net::IpAddr;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard, RwLock};
-use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use openssl::asn1::{Asn1Time, Asn1TimeRef};
 use openssl::hash::{hash, MessageDigest};
 use openssl::pkey::PKey;
-use openssl::ssl::{SslAcceptor, SslMethod, SslRef, SslVerifyMode};
+use openssl::ssl::{
+    select_next_proto, AlpnError, SslAcceptor, SslMethod, SslRef,
+    SslSessionCacheMode, SslVerifyMode, SslVersion,
+};
 use openssl::stack::Stack;
 use openssl::x509::store::X509StoreBuilder;
 use openssl::x509::{X509Name, X509NameRef, X509VerifyResult, X509};
 use serde_json::{json, Value};
 use sts_core::log::tag;
+
+use crate::listener_pool::ListenerRuntime;
+use crate::listener_tuning::{groups_list, tls13_suites, Tuning};
 
 /// What `GET /` says about the listener.
 #[derive(Debug, Clone, Default)]
@@ -52,9 +64,19 @@ struct Status {
     digest: String,
     loaded_at: Option<String>,
     certificate: Option<Value>,
+    /// The served certificate's subjectAltName DNS names, in its order —
+    /// what the notify URL is derived from (`options::derive_notify_url`).
+    dns_names: Vec<String>,
     last_problem: Option<String>,
     last_checked_at: Option<String>,
     last_logged_problem: String,
+    /// Why the socket would not bind, from the closed set the heartbeat
+    /// reports (#1760); `None` while it has not failed.
+    bind_failed: Option<&'static str>,
+    /// Why the listener serves nothing although it has a pair
+    /// (`STS-XPEP-0137`): it requires a client certificate and has no
+    /// authority to verify one against.
+    refused: Option<String>,
 }
 
 /// The listener's pair and what is known about it.
@@ -64,10 +86,35 @@ pub struct HttpsListener {
     port: u16,
     reload_interval_ms: u64,
     status: Mutex<Status>,
-    acceptor: RwLock<Option<Arc<SslAcceptor>>>,
+    /// The acceptor served now, and what it does about a client
+    /// certificate — read together, so a connection knows both.
+    acceptor: RwLock<Option<(Arc<SslAcceptor>, ClientAuth)>>,
     /// The authorities a caller's certificate must chain to (#1179); none
-    /// means no certificate is asked for.
+    /// means no certificate is asked for — unless `ask_any`.
     client_ca: Vec<X509>,
+    /// The reverse proxy's listener (#1760): ask EVERY client for a
+    /// certificate, verify none against an authority, require none. The
+    /// handshake alone proves possession of the key, which is all a
+    /// certificate-bound token's `cnf.x5t#S256` asks.
+    ask_any: bool,
+    /// Its pair is installed, not read from files (#1760).
+    in_memory: bool,
+    /// TLS knobs in force. Rebuilt onto `pair` by [`Self::set_tuning`].
+    tuning: Mutex<Tuning>,
+    /// The PEM last installed, so a tuning change does not re-read the
+    /// files or ask for another certificate. Empty until the first pair.
+    pair: Mutex<Option<(Vec<u8>, Vec<u8>)>>,
+}
+
+/// Why a bind failed, from the closed set the heartbeat reports (#1760):
+/// never the operating system's sentence, which goes to the log.
+pub fn bind_reason(error: &std::io::Error) -> &'static str {
+    match error.kind() {
+        std::io::ErrorKind::AddrInUse => "address-in-use",
+        std::io::ErrorKind::PermissionDenied => "permission-denied",
+        std::io::ErrorKind::AddrNotAvailable => "address-unavailable",
+        _ => "other",
+    }
 }
 
 /// The certificate a caller presented on an HTTPS connection: the SHA-256
@@ -87,6 +134,30 @@ pub struct Peer {
 pub struct Transport {
     pub https: bool,
     pub peer: Option<Peer>,
+    /// The address the connection came from: the reverse proxy's
+    /// `X-Forwarded-For` (#1760). Never a header a client sent.
+    pub remote: Option<std::net::SocketAddr>,
+    /// The CRL-only plain-HTTP listener (2026-11-14): it answers
+    /// `GET /crl/<name>` and nothing else (`STS-XPEP-0114`).
+    pub crl_only: bool,
+    /// THE LISTENER THIS REQUEST ARRIVED ON asked for a client certificate
+    /// and verifies it against an authority (#1830): what the acceptor that
+    /// took the connection did, read with it. The AuthZEN door's first
+    /// question (`STS-XPEP-0039`) is asked of this, not of the
+    /// environment's listener. Always false on plain HTTP.
+    pub verifies_client_certificates: bool,
+}
+
+/// What a listener does about a client certificate (#1830), as its acceptor
+/// was built: nothing, ask and verify against authorities (the API
+/// listener with `PEP_AUTHZEN_CLIENT_CA` or trust anchors), or ask anybody
+/// and verify nothing (the reverse proxy's).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ClientAuth {
+    #[default]
+    None,
+    Verifying,
+    Any,
 }
 
 /// The caller's certificate on an accepted connection, read with the
@@ -178,6 +249,18 @@ fn alt_names(x509: &X509) -> String {
         .join(", ")
 }
 
+/// A certificate's subjectAltName DNS names, in the certificate's order.
+fn dns_names_of(x509: &X509) -> Vec<String> {
+    x509.subject_alt_names()
+        .map(|names| {
+            names
+                .iter()
+                .filter_map(|name| name.dnsname().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// What `GET /` says about the certificate being served — read with the
 /// same library the handshake uses.
 fn describe_served(
@@ -217,63 +300,429 @@ fn describe_served(
     )
 }
 
-/// Builds an acceptor from a pair, checked whole, asking for a client
-/// certificate chaining to `client_ca` when there is one.
+/// Why `acceptor_for` built nothing. A pair error is the certificate's
+/// (`STS-XPEP-0030`). A tuning error is a knob (`STS-XPEP-0119`), and only
+/// when `strict`: the caller keeps the acceptor it already serves.
+enum AcceptorFault {
+    Pair(String),
+    Tuning,
+}
+
+/// Builds an acceptor from a pair, checked whole, then applies `tuning`.
+/// `strict` is a listener that already serves a certificate: any knob that
+/// OpenSSL refuses keeps that acceptor rather than serving a half-applied
+/// one. The first pair is not strict, so a knob the library does not know
+/// is logged and skipped and the certificate is still served.
 fn acceptor_for(
     cert: &[u8],
     key: &[u8],
     client_ca: &[X509],
-) -> Result<(SslAcceptor, X509), String> {
-    let chain = X509::stack_from_pem(cert).map_err(|e| e.to_string())?;
+    ask_any: bool,
+    tuning: &Tuning,
+    strict: bool,
+) -> Result<Built, AcceptorFault> {
+    let chain = X509::stack_from_pem(cert)
+        .map_err(|e| AcceptorFault::Pair(e.to_string()))?;
     let mut chain = chain.into_iter();
     let leaf = chain.next().ok_or_else(|| {
-        "the certificate file holds no certificate".to_string()
+        AcceptorFault::Pair(
+            "the certificate file holds no certificate".to_string(),
+        )
     })?;
-    let private = PKey::private_key_from_pem(key).map_err(|e| e.to_string())?;
-    let public = leaf.public_key().map_err(|e| e.to_string())?;
+    let private = PKey::private_key_from_pem(key)
+        .map_err(|e| AcceptorFault::Pair(e.to_string()))?;
+    let public = leaf
+        .public_key()
+        .map_err(|e| AcceptorFault::Pair(e.to_string()))?;
     if !public.public_eq(&private) {
-        return Err("the private key is not the key this certificate \
-                    certifies — most likely one file of the pair has been \
-                    written and the other not yet"
-            .into());
+        return Err(AcceptorFault::Pair(
+            "the private key is not the key this certificate certifies — \
+             most likely one file of the pair has been written and the \
+             other not yet"
+                .into(),
+        ));
     }
     let mut builder = SslAcceptor::mozilla_intermediate_v5(SslMethod::tls())
-        .map_err(|e| e.to_string())?;
-    builder.set_certificate(&leaf).map_err(|e| e.to_string())?;
+        .map_err(|e| AcceptorFault::Pair(e.to_string()))?;
+    builder
+        .set_certificate(&leaf)
+        .map_err(|e| AcceptorFault::Pair(e.to_string()))?;
     for extra in chain {
         builder
             .add_extra_chain_cert(extra)
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| AcceptorFault::Pair(e.to_string()))?;
     }
     builder
         .set_private_key(&private)
-        .map_err(|e| e.to_string())?;
-    builder.check_private_key().map_err(|e| e.to_string())?;
-    if !client_ca.is_empty() {
-        let mut store = X509StoreBuilder::new().map_err(|e| e.to_string())?;
-        let mut names = Stack::<X509Name>::new().map_err(|e| e.to_string())?;
-        for authority in client_ca {
-            store
-                .add_cert(authority.clone())
-                .map_err(|e| e.to_string())?;
-            if let Ok(name) = authority.subject_name().to_owned() {
-                names.push(name).map_err(|e| e.to_string())?;
+        .map_err(|e| AcceptorFault::Pair(e.to_string()))?;
+    builder
+        .check_private_key()
+        .map_err(|e| AcceptorFault::Pair(e.to_string()))?;
+    let mut faults = Vec::new();
+    apply_tls_knobs(&mut builder, tuning, &mut faults);
+    let mut refusal = None;
+    let client_auth = apply_client_auth(
+        &mut builder,
+        client_ca,
+        ask_any,
+        tuning,
+        &mut faults,
+        &mut refusal,
+    );
+    // A refused listener serves nothing, so a knob that did not apply
+    // cannot make it keep the acceptor it had: that one may admit
+    // everybody, which is what the refusal is there to stop.
+    if !faults.is_empty() {
+        tracing::error!(
+            "{}xacml-pep: a listener's TLS settings were not all applied: \
+             {}. {}",
+            tag("STS-XPEP-0119"),
+            faults.join("; "),
+            if strict {
+                "The certificate already served is kept."
+            } else {
+                "The certificate is served without those settings."
+            }
+        );
+        if strict && refusal.is_none() {
+            return Err(AcceptorFault::Tuning);
+        }
+    }
+    Ok(Built {
+        acceptor: builder.build(),
+        leaf,
+        client_auth,
+        refusal,
+    })
+}
+
+/// What [`acceptor_for`] built. `refusal` is a listener that must serve
+/// NOTHING (`STS-XPEP-0137`): the acceptor is built so the pair is known
+/// good, and is never handed a connection.
+struct Built {
+    acceptor: SslAcceptor,
+    leaf: X509,
+    client_auth: ClientAuth,
+    refusal: Option<String>,
+}
+
+/// Records one knob OpenSSL refused. The builder keeps what it had.
+fn knob(
+    faults: &mut Vec<String>,
+    what: &str,
+    result: Result<(), openssl::error::ErrorStack>,
+) {
+    if let Err(error) = result {
+        faults.push(format!("{}: {}", what, error));
+    }
+}
+
+/// Minimum version, suites, groups, session cache and ALPN.
+fn apply_tls_knobs(
+    builder: &mut openssl::ssl::SslAcceptorBuilder,
+    tuning: &Tuning,
+    faults: &mut Vec<String>,
+) {
+    let min = if tuning.pqc_only || tuning.min_version == "TLSv1.3" {
+        SslVersion::TLS1_3
+    } else if tuning.min_version == "TLSv1.1" {
+        SslVersion::TLS1_1
+    } else if tuning.min_version == "TLSv1" {
+        SslVersion::TLS1
+    } else {
+        SslVersion::TLS1_2
+    };
+    knob(
+        faults,
+        "minimum version",
+        builder.set_min_proto_version(Some(min)),
+    );
+    if !tuning.pqc_only && !tuning.ciphers.is_empty() {
+        knob(faults, "ciphers", builder.set_cipher_list(&tuning.ciphers));
+    }
+    let suites = tls13_suites(&tuning.tls13_cipher_suites, tuning.pqc_only);
+    if !suites.is_empty() {
+        knob(faults, "TLS 1.3 suites", builder.set_ciphersuites(&suites));
+    }
+    let groups = groups_list(&tuning.groups, tuning.pqc_only);
+    if !groups.is_empty() {
+        knob(faults, "groups", builder.set_groups_list(&groups));
+    }
+    if !tuning.signature_algorithms.is_empty() {
+        knob(
+            faults,
+            "signature algorithms",
+            builder.set_sigalgs_list(&tuning.signature_algorithms),
+        );
+    }
+    if tuning.session_cache_size == 0 {
+        builder.set_session_cache_mode(
+            SslSessionCacheMode::SERVER
+                | SslSessionCacheMode::NO_INTERNAL_STORE,
+        );
+    } else {
+        builder.set_session_cache_mode(SslSessionCacheMode::SERVER);
+        builder.set_session_cache_size(tuning.session_cache_size as i32);
+    }
+    // THE SESSION LIFETIME IS OPENSSL'S, AND IT IS NOT 300 s (2026-11-16).
+    // The `openssl` crate (0.10.82, the newest) binds no
+    // `SSL_CTX_set_timeout`, and this crate forbids unsafe code, so
+    // `sessionTimeoutS` cannot be set — not for the TLS 1.2 session cache
+    // and not as a TLS 1.3 ticket's lifetime, which is the same value.
+    // The only binding of it in the workspace is `sts-crypto`'s
+    // `set_session_timeout` on #444's branch, the one place unsafe code is
+    // allowed; until this crate can call it, a session lives OpenSSL's own
+    // [`OPENSSL_SESSION_TIMEOUT_S`] (2 hours for TLS, not the 300 s this
+    // comment used to claim; a test reads it off a real session), and
+    // every other value is logged once. The cache size and the other
+    // knobs are applied.
+    if session_timeout_unapplied(tuning.session_timeout_s)
+        && first_time_for(tuning.session_timeout_s)
+    {
+        tracing::warn!(
+            "{}xacml-pep: sessionTimeoutS {} is not applied: this PEP's TLS \
+             library has no safe session-lifetime call, so a TLS session \
+             (and a TLS 1.3 ticket) lives OpenSSL's {} seconds. The \
+             listener's other settings are applied. Logged once per value.",
+            tag("STS-XPEP-0119"),
+            tuning.session_timeout_s,
+            OPENSSL_SESSION_TIMEOUT_S
+        );
+    }
+    // THE SERVER CHOOSES (2026-11-16). `set_alpn_protos` is the CLIENT's
+    // offer, and on an acceptor it made no handshake ever select h2, so a
+    // browser never spoke HTTP/2 to this PEP; only a client sending the
+    // preface by prior knowledge did (hyper's auto builder still answers
+    // that when `http2` is on). The selection is the server's own order —
+    // h2 first when the listener offers it, then http/1.1 — over what the
+    // client offered; a client offering neither goes on without ALPN.
+    let ours: &'static [u8] = if tuning.http2 {
+        ALPN_H2_FIRST
+    } else {
+        ALPN_HTTP1
+    };
+    builder.set_alpn_select_callback(move |_, offered| {
+        select_next_proto(ours, offered).ok_or(AlpnError::NOACK)
+    });
+}
+
+/// The lifetime OpenSSL gives a TLS session (and a TLS 1.3 ticket) when
+/// nothing sets one: `SSL_CTX_set_timeout`'s default for the TLS methods.
+pub const OPENSSL_SESSION_TIMEOUT_S: u64 = 7200;
+
+/// Whether `sessionTimeoutS` differs from the lifetime in force.
+fn session_timeout_unapplied(asked: u64) -> bool {
+    asked != OPENSSL_SESSION_TIMEOUT_S
+}
+
+/// True the first time a value is seen in this process, so the warning is
+/// logged once per value rather than on every pull that rebuilds an
+/// acceptor.
+fn first_time_for(asked: u64) -> bool {
+    use std::collections::HashSet;
+    use std::sync::OnceLock;
+    static LOGGED: OnceLock<Mutex<HashSet<u64>>> = OnceLock::new();
+    LOGGED
+        .get_or_init(|| Mutex::new(HashSet::new()))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(asked)
+}
+
+/// The protocols a listener with HTTP/2 on selects from, in its order
+/// (RFC 7301's wire format).
+const ALPN_H2_FIRST: &[u8] = b"\x02h2\x08http/1.1";
+/// And with HTTP/2 off.
+const ALPN_HTTP1: &[u8] = b"\x08http/1.1";
+
+/// Who is asked for a certificate. Neither ask nor require sets nothing,
+/// even when a client CA is configured. An authority list asks and checks
+/// (`xacml-pep-authzen`); `ask_any` with no authorities asks everybody and
+/// checks nobody (`xacml-pep-proxy`). Require fails the handshake when the
+/// client presents nothing. Answers what was set, for `GET /` and for the
+/// AuthZEN door (#1830).
+fn apply_client_auth(
+    builder: &mut openssl::ssl::SslAcceptorBuilder,
+    client_ca: &[X509],
+    ask_any: bool,
+    tuning: &Tuning,
+    faults: &mut Vec<String>,
+    refusal: &mut Option<String>,
+) -> ClientAuth {
+    let want =
+        tuning.ask_client_certificate || tuning.require_client_certificate;
+    if !want {
+        return ClientAuth::None;
+    }
+    let mut authorities = Vec::new();
+    if tuning.trust_issued_client_certificates {
+        authorities.extend(client_ca.iter().cloned());
+    }
+    let mut anchors_problem = None;
+    if !tuning.trust_anchors_file.is_empty() {
+        match std::fs::read(&tuning.trust_anchors_file) {
+            Ok(pem) => match X509::stack_from_pem(&pem) {
+                Ok(stack) => authorities.extend(stack),
+                Err(error) => {
+                    anchors_problem = Some(error.to_string());
+                    faults.push(format!("trust anchors: {}", error));
+                }
+            },
+            Err(error) => {
+                anchors_problem = Some(error.to_string());
+                faults.push(format!("trust anchors file: {}", error));
             }
         }
-        builder
-            .set_verify_cert_store(store.build())
-            .map_err(|e| e.to_string())?;
-        builder.set_client_ca_list(names);
-        // ASKED, NOT REQUIRED, and a failure is the handler's to refuse:
-        // the verify result is still recorded on the connection.
-        builder.set_verify_callback(SslVerifyMode::PEER, |_, _| true);
-        // A server that asks for a client certificate must name a session
-        // context, or OpenSSL refuses every resumed session.
-        builder
-            .set_session_id_context(b"xacml-pep-authzen")
-            .map_err(|e| e.to_string())?;
     }
-    Ok((builder.build(), leaf))
+    if tuning.require_client_certificate && authorities.is_empty() {
+        // REQUIRED, WITH NOTHING TO VERIFY AGAINST (2026-11-16): the API
+        // listener used to ask nobody here, so it said it required a
+        // certificate and admitted everybody; the proxy's asked everybody
+        // and refused every certificate. Neither is what was asked for,
+        // so the listener is refused and serves nothing until a trust
+        // source is set or the requirement is turned off.
+        *refusal = Some(require_without_trust(
+            tuning,
+            client_ca,
+            ask_any,
+            anchors_problem.as_deref(),
+        ));
+        return ClientAuth::None;
+    }
+    if !authorities.is_empty() {
+        if let Err(error) = client_store(builder, &authorities) {
+            faults.push(error);
+            return ClientAuth::None;
+        }
+        let require = tuning.require_client_certificate;
+        let mut mode = SslVerifyMode::PEER;
+        if require {
+            mode |= SslVerifyMode::FAIL_IF_NO_PEER_CERT;
+        }
+        builder.set_verify_callback(mode, move |preverify, _| {
+            if require {
+                preverify
+            } else {
+                true
+            }
+        });
+        knob(
+            faults,
+            "session context",
+            builder.set_session_id_context(b"xacml-pep-authzen"),
+        );
+        return ClientAuth::Verifying;
+    }
+    if !ask_any {
+        // The API listener with no client CA asks nobody, which is how a
+        // PEP without PEP_AUTHZEN_CLIENT_CA has always behaved.
+        return ClientAuth::None;
+    }
+    let require = tuning.require_client_certificate;
+    let mut mode = SslVerifyMode::PEER;
+    if require {
+        mode |= SslVerifyMode::FAIL_IF_NO_PEER_CERT;
+    }
+    builder.set_verify_callback(
+        mode,
+        move |preverify, _| {
+            if require {
+                preverify
+            } else {
+                true
+            }
+        },
+    );
+    knob(
+        faults,
+        "session context",
+        builder.set_session_id_context(b"xacml-pep-proxy"),
+    );
+    ClientAuth::Any
+}
+
+/// Why a listener that requires a client certificate has nothing to
+/// verify one against: the sentence `STS-XPEP-0137` logs and `GET /`'s
+/// `problem` carries.
+fn require_without_trust(
+    tuning: &Tuning,
+    client_ca: &[X509],
+    ask_any: bool,
+    anchors_problem: Option<&str>,
+) -> String {
+    let anchors = if tuning.trust_anchors_file.is_empty() {
+        "trustAnchorsFile is not set".to_string()
+    } else {
+        format!(
+            "trustAnchorsFile {} holds no usable certificate ({})",
+            tuning.trust_anchors_file,
+            anchors_problem.unwrap_or("none could be read")
+        )
+    };
+    let issued = if ask_any {
+        "a reverse-proxy listener has no issuing CA to trust"
+    } else if !tuning.trust_issued_client_certificates {
+        "trustIssuedClientCertificates is off"
+    } else if client_ca.is_empty() {
+        "trustIssuedClientCertificates is on but PEP_AUTHZEN_CLIENT_CA is \
+         not set"
+    } else {
+        "the issuing CA added nothing"
+    };
+    format!(
+        "requireClientCertificate is on and the listener has no authority to \
+         verify a client certificate against: {}, and {}. The listener \
+         serves no connection until a trust source is set or the \
+         requirement is turned off.",
+        anchors, issued
+    )
+}
+
+/// What [`apply_client_auth`] will set for `tuning`, before an acceptor is
+/// built: the same decision, a trust anchors file taken as readable.
+fn planned_client_auth(
+    client_ca: &[X509],
+    ask_any: bool,
+    tuning: &Tuning,
+) -> ClientAuth {
+    let trusted = (tuning.trust_issued_client_certificates
+        && !client_ca.is_empty())
+        || !tuning.trust_anchors_file.is_empty();
+    if !(tuning.ask_client_certificate || tuning.require_client_certificate)
+        || (tuning.require_client_certificate && !trusted)
+    {
+        ClientAuth::None
+    } else if (tuning.trust_issued_client_certificates && !client_ca.is_empty())
+        || !tuning.trust_anchors_file.is_empty()
+    {
+        ClientAuth::Verifying
+    } else if ask_any {
+        ClientAuth::Any
+    } else {
+        ClientAuth::None
+    }
+}
+
+/// The trust store and the CA names advertised to the client.
+fn client_store(
+    builder: &mut openssl::ssl::SslAcceptorBuilder,
+    authorities: &[X509],
+) -> Result<(), String> {
+    let mut store = X509StoreBuilder::new().map_err(|e| e.to_string())?;
+    let mut names = Stack::<X509Name>::new().map_err(|e| e.to_string())?;
+    for authority in authorities {
+        store
+            .add_cert(authority.clone())
+            .map_err(|e| e.to_string())?;
+        if let Ok(name) = authority.subject_name().to_owned() {
+            names.push(name).map_err(|e| e.to_string())?;
+        }
+    }
+    builder
+        .set_verify_cert_store(store.build())
+        .map_err(|e| e.to_string())?;
+    builder.set_client_ca_list(names);
+    Ok(())
 }
 
 impl HttpsListener {
@@ -292,12 +741,58 @@ impl HttpsListener {
             status: Mutex::new(Status::default()),
             acceptor: RwLock::new(None),
             client_ca: client_authorities(client_ca),
+            ask_any: false,
+            in_memory: false,
+            tuning: Mutex::new(Tuning::defaults("api", true)),
+            pair: Mutex::new(None),
+        }
+    }
+
+    /// The reverse proxy's HTTPS listener (#1760): the same pair, re-read
+    /// on the same interval, on a port of its own, asking every client for
+    /// a certificate and requiring none.
+    pub fn for_proxy(
+        cert_path: &str,
+        key_path: &str,
+        port: u16,
+        reload_interval_ms: u64,
+    ) -> HttpsListener {
+        let mut listener = HttpsListener::new(
+            cert_path,
+            key_path,
+            port,
+            reload_interval_ms,
+            None,
+        );
+        listener.ask_any = true;
+        listener.store_tuning(Tuning::defaults("proxy", true));
+        listener
+    }
+
+    /// What this listener does about a client certificate (#1830): what
+    /// the acceptor it serves was built to do, and before it serves one,
+    /// what its tuning will build — never the environment's client CA
+    /// alone, which the tuning may not ask with.
+    pub fn client_auth(&self) -> ClientAuth {
+        match self.current_served() {
+            Some((_, served)) => served,
+            None => planned_client_auth(
+                &self.client_ca,
+                self.ask_any,
+                &self.tuning_now(),
+            ),
         }
     }
 
     /// Whether this listener asks callers for a certificate (#1179).
     pub fn asks_for_client_certificates(&self) -> bool {
-        !self.client_ca.is_empty()
+        self.client_auth() != ClientAuth::None
+    }
+
+    /// Whether it asks AND verifies what is presented against an
+    /// authority: what the AuthZEN door needs (#1830).
+    pub fn verifies_client_certificates(&self) -> bool {
+        self.client_auth() == ClientAuth::Verifying
     }
 
     fn status(&self) -> MutexGuard<'_, Status> {
@@ -313,6 +808,12 @@ impl HttpsListener {
 
     /// The acceptor for a new connection: the pair being served NOW.
     pub fn current(&self) -> Option<Arc<SslAcceptor>> {
+        self.current_served().map(|(acceptor, _)| acceptor)
+    }
+
+    /// [`Self::current`] with what it does about a client certificate,
+    /// read together, for the connection's `Transport` (#1830).
+    pub fn current_served(&self) -> Option<(Arc<SslAcceptor>, ClientAuth)> {
         match self.acceptor.read() {
             Ok(guard) => guard.clone(),
             Err(poisoned) => poisoned.into_inner().clone(),
@@ -399,10 +900,17 @@ impl HttpsListener {
         if digest == self.status().digest {
             return false;
         }
-        let (acceptor, leaf) = match acceptor_for(&cert, &key, &self.client_ca)
-        {
+        let tuning = self.tuning_now();
+        let built = match acceptor_for(
+            &cert,
+            &key,
+            &self.client_ca,
+            self.ask_any,
+            &tuning,
+            false,
+        ) {
             Ok(built) => built,
-            Err(error) => {
+            Err(AcceptorFault::Pair(error)) => {
                 let listening = self.status().listening;
                 self.problem(
                     "STS-XPEP-0030",
@@ -419,8 +927,15 @@ impl HttpsListener {
                 );
                 return false;
             }
+            // strict is false on a reload: a knob is logged and skipped.
+            Err(AcceptorFault::Tuning) => return false,
         };
-        let (served, from, to) = describe_served(&leaf);
+        // The first pair is what starts the accept loop, whether or not
+        // the listener is refused: a refused one drops every connection it
+        // accepts, and a later tuning that lifts the refusal serves at once.
+        let first = self.has_no_pair();
+        self.save_pair(&cert, &key);
+        let (served, from, to) = describe_served(&built.leaf);
         let now = Utc::now();
         if from.is_some_and(|f| now < f) || to.is_some_and(|t| now > t) {
             tracing::warn!(
@@ -435,17 +950,18 @@ impl HttpsListener {
                 served["validTo"]
             );
         }
-        let first = self.current().is_none();
-        match self.acceptor.write() {
-            Ok(mut slot) => *slot = Some(Arc::new(acceptor)),
-            Err(poisoned) => *poisoned.into_inner() = Some(Arc::new(acceptor)),
+        let refused = built.refusal.is_some();
+        {
+            let mut status = self.status();
+            status.last_problem = None;
+            status.last_logged_problem.clear();
         }
+        let leaf = built.leaf.clone();
+        self.serve_built(built);
         let mut status = self.status();
         status.digest = digest;
         status.loaded_at = Some(sts_core::time::iso_now());
-        status.last_problem = None;
-        status.last_logged_problem.clear();
-        if !first {
+        if !first && !refused {
             tracing::info!(
                 "xacml-pep: the HTTPS listener on {} now serves certificate \
                  {} ({}), issued by {}. Connections already open keep the \
@@ -457,12 +973,24 @@ impl HttpsListener {
             );
         }
         status.certificate = Some(served);
+        status.dns_names = dns_names_of(&leaf);
         first
+    }
+
+    /// The DNS names of the certificate being served, or `None` while it
+    /// serves none.
+    pub fn dns_names(&self) -> Option<Vec<String>> {
+        let status = self.status();
+        status
+            .certificate
+            .as_ref()
+            .map(|_| status.dns_names.clone())
     }
 
     pub fn mark_listening(&self, port: u16) {
         let mut status = self.status();
         status.listening = true;
+        status.bind_failed = None;
         status.port = Some(port);
         if let Some(served) = &status.certificate {
             tracing::info!(
@@ -476,6 +1004,28 @@ impl HttpsListener {
         }
     }
 
+    /// What the heartbeat reports about this listener (#1760): its state and
+    /// reason from the closed sets, and the certificate it serves.
+    pub fn state(&self) -> (&'static str, &'static str, Option<Value>) {
+        let s = self.status().clone();
+        let state = if s.refused.is_some() {
+            // Bound, or about to be, and serving nobody: a failure, and the
+            // closed set's `other` (the sentence is the log's and GET /'s).
+            ("failed", "other")
+        } else if s.listening {
+            ("listening", "none")
+        } else if let Some(reason) = s.bind_failed {
+            ("failed", reason)
+        } else if !s.configured && !self.in_memory {
+            ("off", "not-configured")
+        } else if s.certificate.is_none() {
+            ("waiting", "no-certificate")
+        } else {
+            ("waiting", "none")
+        };
+        (state.0, state.1, s.certificate)
+    }
+
     pub fn mark_bind_failed(&self, error: &str) {
         self.status().listening = false;
         self.problem(
@@ -487,12 +1037,212 @@ impl HttpsListener {
         );
     }
 
+    /// A bind that failed, with its reason from the closed set.
+    pub fn mark_bind_failed_for(&self, error: &std::io::Error) {
+        self.status().bind_failed = Some(bind_reason(error));
+        self.mark_bind_failed(&error.to_string());
+    }
+
     pub fn port(&self) -> u16 {
         self.port
     }
 
-    pub fn interval(&self) -> Duration {
-        Duration::from_millis(self.reload_interval_ms.max(100))
+    /// A listener whose pair is HANDED to it rather than read from disk
+    /// (#1760): a listener the service defined, whose key this process
+    /// generated and whose certificate the service issued over it. Asks
+    /// for a client certificate as the environment's listener of the same
+    /// purpose does.
+    pub fn in_memory(
+        port: u16,
+        client_ca: Option<&[u8]>,
+        ask_any: bool,
+    ) -> HttpsListener {
+        let mut listener = HttpsListener::new("", "", port, 0, client_ca);
+        listener.ask_any = ask_any;
+        listener.in_memory = true;
+        if ask_any {
+            listener.store_tuning(Tuning::defaults("proxy", true));
+        }
+        listener
+    }
+
+    /// The TLS knobs to use the next time the acceptor is built, and — when
+    /// a pair is already served — rebuilt now. A knob that will not apply
+    /// leaves the acceptor that is serving.
+    pub fn set_tuning(&self, tuning: Tuning) {
+        self.store_tuning(tuning.clone());
+        let pair = match self.pair.lock() {
+            Ok(slot) => slot.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        };
+        let Some((cert, key)) = pair else {
+            return;
+        };
+        let strict = self.current().is_some();
+        match acceptor_for(
+            &cert,
+            &key,
+            &self.client_ca,
+            self.ask_any,
+            &tuning,
+            strict,
+        ) {
+            Ok(built) => self.serve_built(built),
+            Err(AcceptorFault::Tuning) => {}
+            Err(AcceptorFault::Pair(error)) => {
+                tracing::error!(
+                    "{}xacml-pep: the listener's TLS settings were not \
+                     applied ({}). The certificate already served is kept.",
+                    tag("STS-XPEP-0119"),
+                    error
+                );
+            }
+        }
+    }
+
+    fn store_tuning(&self, tuning: Tuning) {
+        match self.tuning.lock() {
+            Ok(mut slot) => *slot = tuning,
+            Err(poisoned) => *poisoned.into_inner() = tuning,
+        }
+    }
+
+    fn tuning_now(&self) -> Tuning {
+        match self.tuning.lock() {
+            Ok(slot) => slot.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        }
+    }
+
+    fn save_pair(&self, cert: &[u8], key: &[u8]) {
+        let saved = Some((cert.to_vec(), key.to_vec()));
+        match self.pair.lock() {
+            Ok(mut slot) => *slot = saved,
+            Err(poisoned) => *poisoned.into_inner() = saved,
+        }
+    }
+
+    fn swap_acceptor(&self, acceptor: SslAcceptor, client_auth: ClientAuth) {
+        self.set_acceptor(Some((Arc::new(acceptor), client_auth)));
+    }
+
+    fn set_acceptor(&self, served: Option<(Arc<SslAcceptor>, ClientAuth)>) {
+        match self.acceptor.write() {
+            Ok(mut slot) => *slot = served,
+            Err(poisoned) => *poisoned.into_inner() = served,
+        }
+    }
+
+    /// Serves what was built, or — refused — NOTHING: the acceptor served
+    /// until now is dropped too, because it may admit everybody, and
+    /// every connection the accept loop takes is closed unanswered. The
+    /// sentence is logged once (`STS-XPEP-0137`) and is `GET /`'s
+    /// `problem`; a later build without the refusal serves again.
+    fn serve_built(&self, built: Built) {
+        match built.refusal {
+            Some(why) => {
+                self.set_acceptor(None);
+                self.status().refused = Some(why.clone());
+                self.problem("STS-XPEP-0137", why, false);
+            }
+            None => {
+                let was_refused = self.status().refused.take().is_some();
+                self.swap_acceptor(built.acceptor, built.client_auth);
+                if was_refused {
+                    let mut status = self.status();
+                    status.last_problem = None;
+                    status.last_logged_problem.clear();
+                    tracing::info!(
+                        "xacml-pep: the HTTPS listener on {} has a trust \
+                         source for the client certificate it requires, or \
+                         no longer requires one, and serves again.",
+                        self.port
+                    );
+                }
+            }
+        }
+    }
+
+    /// Why the listener serves nothing although it has a pair, when it is
+    /// refused (`STS-XPEP-0137`).
+    pub fn refusal(&self) -> Option<String> {
+        self.status().refused.clone()
+    }
+
+    fn has_no_pair(&self) -> bool {
+        match self.pair.lock() {
+            Ok(slot) => slot.is_none(),
+            Err(poisoned) => poisoned.into_inner().is_none(),
+        }
+    }
+
+    /// Installs a pair, checked whole as a pair read from disk is: a pair
+    /// that does not build an acceptor is refused and the one served is
+    /// kept. Answers the served certificate's description.
+    pub fn install(&self, cert: &[u8], key: &[u8]) -> Result<Value, String> {
+        let tuning = self.tuning_now();
+        let built = acceptor_for(
+            cert,
+            key,
+            &self.client_ca,
+            self.ask_any,
+            &tuning,
+            false,
+        )
+        .map_err(|fault| match fault {
+            AcceptorFault::Pair(error) => error,
+            AcceptorFault::Tuning => {
+                "the listener's TLS settings were not applied".to_string()
+            }
+        })?;
+        self.save_pair(cert, key);
+        let leaf = built.leaf.clone();
+        let (served, _, _) = describe_served(&leaf);
+        let refused = built.refusal.is_some();
+        if !refused {
+            self.status().last_problem = None;
+        }
+        // A refused listener keeps its certificate (it is the right one)
+        // and serves nothing: the caller reads `refusal()`.
+        self.serve_built(built);
+        let mut status = self.status();
+        status.configured = true;
+        status.loaded_at = Some(sts_core::time::iso_now());
+        status.certificate = Some(served.clone());
+        status.dns_names = dns_names_of(&leaf);
+        Ok(served)
+    }
+
+    /// The handshake, on the worker that owns `stream`. `None` is a failure
+    /// already counted on `runtime`; the connection is not served.
+    pub async fn accept_tls(
+        stream: tokio::net::TcpStream,
+        acceptor: &SslAcceptor,
+        runtime: &ListenerRuntime,
+    ) -> Option<tokio_openssl::SslStream<tokio::net::TcpStream>> {
+        let ssl = match openssl::ssl::Ssl::new(acceptor.context()) {
+            Ok(ssl) => ssl,
+            Err(error) => {
+                tracing::debug!("TLS handshake was not started: {}", error);
+                runtime.note_handshake_failure();
+                return None;
+            }
+        };
+        let mut tls = match tokio_openssl::SslStream::new(ssl, stream) {
+            Ok(tls) => tls,
+            Err(error) => {
+                tracing::debug!("TLS handshake was not started: {}", error);
+                runtime.note_handshake_failure();
+                return None;
+            }
+        };
+        if let Err(error) = Pin::new(&mut tls).accept().await {
+            tracing::debug!("TLS handshake failed: {}", error);
+            runtime.note_handshake_failure();
+            return None;
+        }
+        runtime.note_handshake();
+        Some(tls)
     }
 
     /// `https` on `GET /`.
@@ -518,12 +1268,12 @@ impl HttpsListener {
         };
         json!({
             "configured": s.configured,
-            "listening": s.listening,
+            "listening": s.listening && s.refused.is_none(),
             "port": if s.listening { s.port.map(Value::from) } else { None },
             "certificate": s.certificate,
             "loadedAt": s.loaded_at,
             "lastCheckedAt": s.last_checked_at,
-            "asksForClientCertificates": !self.client_ca.is_empty(),
+            "asksForClientCertificates": self.asks_for_client_certificates(),
             "problem": s.last_problem,
             "what": what
         })
@@ -540,6 +1290,11 @@ mod tests {
     use openssl::x509::{X509Builder, X509NameBuilder};
 
     fn pair() -> (Vec<u8>, Vec<u8>) {
+        pair_naming(&[])
+    }
+
+    /// A self-signed pair whose subjectAltName names `dns`, in order.
+    fn pair_naming(dns: &[&str]) -> (Vec<u8>, Vec<u8>) {
         let group = EcGroup::from_curve_name(Nid::X9_62_PRIME256V1).unwrap();
         let key = PKey::from_ec_key(EcKey::generate(&group).unwrap()).unwrap();
         let mut name = X509NameBuilder::new().unwrap();
@@ -559,6 +1314,16 @@ mod tests {
         builder
             .set_not_after(&Asn1Time::days_from_now(1).unwrap())
             .unwrap();
+        if !dns.is_empty() {
+            let mut san =
+                openssl::x509::extension::SubjectAlternativeName::new();
+            for name in dns {
+                san.dns(name);
+            }
+            let extension =
+                san.build(&builder.x509v3_context(None, None)).unwrap();
+            builder.append_extension(extension).unwrap();
+        }
         builder.sign(&key, MessageDigest::sha256()).unwrap();
         (
             builder.build().to_pem().unwrap(),
@@ -608,15 +1373,135 @@ mod tests {
         std::fs::remove_file(&key_path).unwrap();
     }
 
+    /// THE NOTIFY URL FOLLOWS THE SERVED CERTIFICATE (2026-11-14): nothing
+    /// is derived before a pair is served; the first served certificate's
+    /// first DNS name is the host; a reload to a certificate naming
+    /// another host derives again, and the same certificate again changes
+    /// nothing. An installed pair (a listener the service defined) is read
+    /// the same way.
+    #[test]
+    fn a_certificate_change_derives_the_notify_url_again() {
+        let (cert_path, key_path) = (temp("dcert"), temp("dkey"));
+        let listener = HttpsListener::new(
+            cert_path.to_str().unwrap(),
+            key_path.to_str().unwrap(),
+            0,
+            100,
+            None,
+        );
+        // A hostname no certificate below names until the last one.
+        const HOST: Option<&str> = Some("pep-e.example");
+        let mut options = crate::options::Options::from_env("0.0.0");
+        options.https_port = 9443;
+        options.notify_url = String::new();
+        options.managed = Arc::new(crate::settings::Held::default());
+        assert!(!listener.reload());
+        assert_eq!(listener.dns_names(), None, "no certificate, no names");
+        assert!(!options.refresh_derived_notify_as(
+            listener.dns_names().as_deref(),
+            None,
+            HOST
+        ));
+        assert_eq!(options.now().notify_url, "", "no listener, none");
+        let (cert, key) =
+            pair_naming(&["*.pep.example", "pep-a.example", "pep-b.example"]);
+        std::fs::write(&cert_path, &cert).unwrap();
+        std::fs::write(&key_path, &key).unwrap();
+        assert!(listener.reload());
+        assert!(options.refresh_derived_notify_as(
+            listener.dns_names().as_deref(),
+            None,
+            HOST
+        ));
+        assert_eq!(
+            options.now().notify_url,
+            "https://pep-a.example:9443/notify",
+            "the first DNS name a host can be; the wildcard is not"
+        );
+        assert!(
+            !options.refresh_derived_notify_as(
+                listener.dns_names().as_deref(),
+                None,
+                HOST
+            ),
+            "the same certificate"
+        );
+        let (cert, key) = pair_naming(&["pep-c.example"]);
+        std::fs::write(&cert_path, &cert).unwrap();
+        std::fs::write(&key_path, &key).unwrap();
+        assert!(!listener.reload(), "a reload, not a first start");
+        assert!(
+            options.refresh_derived_notify_as(
+                listener.dns_names().as_deref(),
+                None,
+                HOST
+            ),
+            "a new name derives again"
+        );
+        assert_eq!(
+            options.now().notify_url,
+            "https://pep-c.example:9443/notify"
+        );
+        // OPTION 1 ON A RELOAD: a certificate naming the hostname, not
+        // first, derives the hostname's name.
+        let (cert, key) = pair_naming(&["pep-c.example", "PEP-E.example"]);
+        std::fs::write(&cert_path, &cert).unwrap();
+        std::fs::write(&key_path, &key).unwrap();
+        assert!(!listener.reload());
+        assert!(
+            options.refresh_derived_notify_as(
+                listener.dns_names().as_deref(),
+                None,
+                HOST
+            ),
+            "the hostname's name, not the first"
+        );
+        assert_eq!(
+            options.now().notify_url,
+            "https://pep-e.example:9443/notify"
+        );
+        let installed = HttpsListener::in_memory(0, None, false);
+        assert_eq!(installed.dns_names(), None);
+        let (cert, key) = pair_naming(&["pep-d.example"]);
+        installed.install(&cert, &key).unwrap();
+        assert_eq!(
+            installed.dns_names(),
+            Some(vec!["pep-d.example".to_string()])
+        );
+        std::fs::remove_file(&cert_path).unwrap();
+        std::fs::remove_file(&key_path).unwrap();
+    }
+
     /// One mutual-TLS handshake against an acceptor built as `reload()`
     /// builds one: what the server reads of the caller's certificate.
     fn handshake(
         client_ca: &[X509],
         presented: Option<&(Vec<u8>, Vec<u8>)>,
     ) -> Option<Peer> {
+        handshake_with(client_ca, presented, false)
+    }
+
+    fn handshake_with(
+        client_ca: &[X509],
+        presented: Option<&(Vec<u8>, Vec<u8>)>,
+        ask_any: bool,
+    ) -> Option<Peer> {
         use openssl::ssl::{SslConnector, SslVerifyMode};
         let (cert, key) = pair();
-        let (acceptor, _) = acceptor_for(&cert, &key, client_ca).unwrap();
+        let purpose = if ask_any { "proxy" } else { "api" };
+        let tuning = Tuning::defaults(purpose, true);
+        let acceptor =
+            acceptor_for(&cert, &key, client_ca, ask_any, &tuning, false)
+                .map(|built| built.acceptor)
+                .unwrap_or_else(|fault| {
+                    panic!(
+                        "acceptor: {}",
+                        match fault {
+                            AcceptorFault::Pair(error) => error,
+                            AcceptorFault::Tuning => "tuning".to_string(),
+                        }
+                    )
+                });
         let server = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = server.local_addr().unwrap().port();
         let thread = std::thread::spawn(move || {
@@ -672,5 +1557,199 @@ mod tests {
         assert!(!other.why.is_empty());
         assert!(handshake(&ca, None).is_none());
         assert!(handshake(&[], Some(&caller)).is_none());
+    }
+
+    /// `asksForClientCertificates` IS WHAT THE LISTENER DOES (#1830): with
+    /// `PEP_AUTHZEN_CLIENT_CA` the API listener asks and verifies by
+    /// default, and stops when its tuning asks for none — before a pair is
+    /// served (the plan) and after (the acceptor built); without one it
+    /// asks nobody whatever the tuning says.
+    #[test]
+    fn the_client_certificate_report_follows_the_tuning() {
+        let (cert, key) = pair();
+        let with_ca = HttpsListener::new("", "", 0, 0, Some(&cert));
+        assert!(with_ca.verifies_client_certificates());
+        assert_eq!(with_ca.overview()["asksForClientCertificates"], true);
+        let mut quiet = Tuning::defaults("api", true);
+        quiet.ask_client_certificate = false;
+        with_ca.set_tuning(quiet.clone());
+        assert!(!with_ca.asks_for_client_certificates());
+        assert_eq!(with_ca.overview()["asksForClientCertificates"], false);
+        with_ca.install(&cert, &key).unwrap();
+        assert_eq!(with_ca.current_served().unwrap().1, ClientAuth::None);
+        assert_eq!(with_ca.overview()["asksForClientCertificates"], false);
+        with_ca.set_tuning(Tuning::defaults("api", true));
+        assert_eq!(with_ca.current_served().unwrap().1, ClientAuth::Verifying);
+        assert_eq!(with_ca.overview()["asksForClientCertificates"], true);
+        let without = HttpsListener::new("", "", 0, 0, None);
+        without.install(&cert, &key).unwrap();
+        assert!(!without.asks_for_client_certificates());
+        assert_eq!(without.overview()["asksForClientCertificates"], false);
+    }
+
+    /// The reverse proxy's listener (#1760): it asks EVERY client for a
+    /// certificate with no authority to check it against, reads the one
+    /// presented (for `cnf.x5t#S256`), and lets a client with none in.
+    #[test]
+    fn the_proxy_listener_asks_everybody_and_requires_nobody() {
+        let caller = pair();
+        let peer = handshake_with(&[], Some(&caller), true).unwrap();
+        let expected = X509::from_pem(&caller.0)
+            .unwrap()
+            .digest(MessageDigest::sha256())
+            .unwrap()
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<String>();
+        assert_eq!(peer.sha256, expected);
+        assert!(handshake_with(&[], None, true).is_none());
+        let proxy = HttpsListener::for_proxy("c", "k", 9543, 100);
+        assert!(proxy.ask_any && proxy.asks_for_client_certificates());
+        assert!(!proxy.verifies_client_certificates());
+    }
+
+    /// One handshake against an acceptor built from `tuning`, the client
+    /// offering `alpn` (RFC 7301 wire format). Answers what the server
+    /// selected and the lifetime of the session the server made.
+    fn negotiate(tuning: &Tuning, alpn: &[u8]) -> (Option<Vec<u8>>, i64) {
+        use openssl::ssl::{SslConnector, SslVerifyMode};
+        let (cert, key) = pair();
+        let acceptor = match acceptor_for(&cert, &key, &[], false, tuning, true)
+        {
+            Ok(built) => built.acceptor,
+            Err(_) => panic!("the acceptor did not build"),
+        };
+        let server = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = server.local_addr().unwrap().port();
+        let thread = std::thread::spawn(move || {
+            let (stream, _) = server.accept().unwrap();
+            let tls = acceptor.accept(stream).unwrap();
+            let chosen = tls.ssl().selected_alpn_protocol().map(<[u8]>::to_vec);
+            let lifetime = tls.ssl().session().map(|s| s.timeout()).unwrap();
+            (chosen, lifetime)
+        });
+        let mut connector =
+            SslConnector::builder(SslMethod::tls_client()).unwrap();
+        connector.set_verify(SslVerifyMode::NONE);
+        connector.set_alpn_protos(alpn).unwrap();
+        let stream = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+        let tls = connector
+            .build()
+            .configure()
+            .unwrap()
+            .verify_hostname(false)
+            .connect("localhost", stream)
+            .unwrap();
+        let client_chose =
+            tls.ssl().selected_alpn_protocol().map(<[u8]>::to_vec);
+        let (server_chose, lifetime) = thread.join().unwrap();
+        assert_eq!(client_chose, server_chose, "both ends agree");
+        drop(tls);
+        (server_chose, lifetime)
+    }
+
+    /// ALPN IS SELECTED BY THE SERVER (2026-11-16): a client offering h2
+    /// and http/1.1 — what every browser offers — gets h2 when the
+    /// listener's `http2` is on and http/1.1 when it is off; a client
+    /// offering only http/1.1 gets it either way, and one offering
+    /// nothing this listener speaks goes on without ALPN.
+    #[test]
+    fn alpn_selects_h2_when_the_listener_offers_it() {
+        let browser = b"\x02h2\x08http/1.1";
+        let on = Tuning::defaults("api", true);
+        assert!(on.http2);
+        assert_eq!(negotiate(&on, browser).0.as_deref(), Some(&b"h2"[..]));
+        assert_eq!(
+            negotiate(&on, b"\x08http/1.1").0.as_deref(),
+            Some(&b"http/1.1"[..])
+        );
+        let mut off = on.clone();
+        off.http2 = false;
+        assert_eq!(
+            negotiate(&off, browser).0.as_deref(),
+            Some(&b"http/1.1"[..]),
+            "http2 off never selects h2"
+        );
+        assert_eq!(negotiate(&off, b"\x02h2").0, None, "no overlap, no ALPN");
+    }
+
+    /// THE SESSION LIFETIME OPENSSL GIVES, which `sessionTimeoutS` cannot
+    /// change from this crate (no safe `SSL_CTX_set_timeout`, and unsafe
+    /// code is forbidden here): every value gives the same lifetime, and
+    /// it is [`OPENSSL_SESSION_TIMEOUT_S`], which the warning names.
+    #[test]
+    fn the_session_lifetime_is_openssls_whatever_is_asked() {
+        let mut tuning = Tuning::defaults("api", true);
+        let (_, default) = negotiate(&tuning, b"\x08http/1.1");
+        tuning.session_timeout_s = 120;
+        let (_, asked) = negotiate(&tuning, b"\x08http/1.1");
+        assert_eq!(default, asked, "sessionTimeoutS changes nothing");
+        assert_eq!(default as u64, OPENSSL_SESSION_TIMEOUT_S);
+        assert!(session_timeout_unapplied(120));
+        assert!(!session_timeout_unapplied(OPENSSL_SESSION_TIMEOUT_S));
+    }
+
+    /// REQUIRED WITH NO TRUST SOURCE IS REFUSED, FAIL-CLOSED (2026-11-16):
+    /// the API listener without PEP_AUTHZEN_CLIENT_CA or trust anchors used
+    /// to ask nobody and admit everybody while its tuning said a
+    /// certificate was required. Now it serves nothing, says why
+    /// (`STS-XPEP-0137`, GET /'s `problem`) and reports `failed`; a trust
+    /// anchors file, or the requirement turned off, serves again.
+    #[test]
+    fn required_without_a_trust_source_serves_nothing() {
+        let listener = HttpsListener::in_memory(0, None, false);
+        let mut tuning = Tuning::defaults("api", true);
+        tuning.require_client_certificate = true;
+        listener.set_tuning(tuning.clone());
+        let (cert, key) = pair();
+        assert!(listener.install(&cert, &key).is_ok(), "the pair is kept");
+        assert!(listener.current().is_none(), "nothing is served");
+        let why = listener.refusal().unwrap();
+        assert!(why.contains("requireClientCertificate"), "{}", why);
+        assert!(why.contains("PEP_AUTHZEN_CLIENT_CA"), "{}", why);
+        assert_eq!(listener.state().0, "failed");
+        assert_eq!(listener.state().1, "other");
+        let overview = listener.overview();
+        assert_eq!(overview["listening"], false);
+        assert!(overview["problem"]
+            .as_str()
+            .unwrap()
+            .contains("requireClientCertificate"));
+        assert!(!listener.asks_for_client_certificates());
+
+        // A trust anchors file: served, and a certificate required.
+        let anchors = temp("anchors");
+        std::fs::write(&anchors, &cert).unwrap();
+        tuning.trust_anchors_file = anchors.to_str().unwrap().to_string();
+        listener.set_tuning(tuning.clone());
+        assert!(listener.current().is_some());
+        assert!(listener.refusal().is_none());
+        assert!(listener.overview()["problem"].is_null());
+        assert!(listener.verifies_client_certificates());
+
+        // An unreadable file is no trust source: refused again, and the
+        // acceptor that required one is not kept either.
+        tuning.trust_anchors_file = temp("missing").to_str().unwrap().into();
+        listener.set_tuning(tuning.clone());
+        assert!(listener.current().is_none());
+        assert!(listener.refusal().unwrap().contains("missing"));
+
+        // Not required: served without a certificate asked.
+        tuning.require_client_certificate = false;
+        tuning.trust_anchors_file.clear();
+        listener.set_tuning(tuning);
+        assert!(listener.current().is_some());
+        assert!(listener.refusal().is_none());
+        std::fs::remove_file(&anchors).unwrap();
+
+        // The reverse proxy's, required with no anchors, is refused too
+        // (it used to ask everybody and refuse every certificate).
+        let proxy = HttpsListener::in_memory(0, None, true);
+        let mut tuning = Tuning::defaults("proxy", true);
+        tuning.require_client_certificate = true;
+        proxy.set_tuning(tuning);
+        assert!(proxy.install(&cert, &key).is_ok());
+        assert!(proxy.current().is_none());
+        assert!(proxy.refusal().is_some());
     }
 }

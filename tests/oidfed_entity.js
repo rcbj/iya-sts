@@ -160,6 +160,19 @@ async function body(t) {
           '3a. the statement pins the realm\'s own keys; itself is ' +
           'invalid_request and a stranger not_found',
           JSON.stringify([selfSs.why, stranger.why]));
+  // OpenID Federation 1.1 section 3.1.2: authority_hints and the Trust
+  // Anchor's trust_mark_* claims are Entity Configuration claims only. The
+  // conformance suite's ValidateAbsenceOfAuthorityHints asks it of the
+  // fetch endpoint's answer (#933); the Leaf's own configuration carries
+  // the hint (2a), so a statement copying claims from it would fail here.
+  t.check(ss.ok && !('authority_hints' in ss.claims) &&
+          !('trust_mark_issuers' in ss.claims) &&
+          !('trust_mark_owners' in ss.claims) &&
+          !('trust_marks' in ss.claims) &&
+          !(ss.claims.metadata && ss.claims.metadata.federation_entity),
+          '3b. the Subordinate Statement carries no authority_hints, no ' +
+          'Trust Mark claims and no federation_entity metadata (3.1.2, 8.1)',
+          JSON.stringify(Object.keys(ss.claims || {})));
 
   t.log.info('=== 4. resolution ===');
   const resolved = await oidfed.resolve(req, leafId, [], false);

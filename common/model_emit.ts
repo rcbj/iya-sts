@@ -575,6 +575,7 @@ class ModelEmit {
       serviceAccount: 'Service account',
       spiffe: 'SPIFFE',
       xacmlPep: 'XACML policy enforcement point',
+      xacmlPepCluster: 'XACML policy enforcement point cluster',
       xacmlPolicy: 'XACML policy'
     };
     const title = titles[id] || ModelEmit.className(id);
@@ -798,19 +799,28 @@ class ModelEmit {
       'does not say. A name\'s origin is **RFC**, **other standard**,',
       '**this service**, **derived**, or **not stated**. **Secret** marks',
       'a value the model withholds.',
-      '',
-      'An OID that begins `1.3.6.1.4.1.32473` is a placeholder. That is the',
-      'number RFC 5612 reserves for documentation, and this service\'s own',
-      'names use it until its Private Enterprise Number is assigned.',
-      '',
+      ''
+    ];
+    // The register says whether its root is still a placeholder (#1573).
+    // While it is, the page says so; once the Private Enterprise Number is
+    // in place the sentence would be false, so it is not written.
+    const oidRoot = catalog.oidRoot || { root: '', placeholder: false };
+    if (oidRoot.placeholder) {
+      lines.push(
+        'An OID that begins `' + oidRoot.root + '` is a placeholder. That ' +
+          'is the',
+        'number RFC 5612 reserves for documentation, and this service\'s own',
+        'names use it until its Private Enterprise Number is assigned.',
+        '');
+    }
+    lines.push(
       'This page is rewritten whenever that TypeSpec model is written.',
       'Do not edit it by hand.',
       '',
       '## Models',
       '',
       '| Model | TypeSpec | Container | Attributes |',
-      '|---|---|---|---|'
-    ];
+      '|---|---|---|---|');
     entries.forEach(function (entry) {
       const tsp = ModelEmit.className(entry.object.id) +
         (entry.onPerson ? 'OnPerson' : '');
@@ -949,10 +959,13 @@ class ModelEmit {
     const persistence = path.join(root, 'models', 'persistence');
     fs.mkdirSync(dir, { recursive: true });
     fs.mkdirSync(persistence, { recursive: true });
-    fs.writeFileSync(path.join(root, 'docs', 'data-model-directory.md'),
+    // The latest documentation version's folder only; a frozen release's
+    // pages are never rewritten (docs/CLAUDE.md, *The versioned site*).
+    const docs = path.join(root, 'docs', 'v1.1.0');
+    fs.writeFileSync(path.join(docs, 'data-model-directory.md'),
       ModelEmit.directoryDocs(catalog));
     fs.writeFileSync(
-      path.join(root, 'docs', 'data-model-persistence.md'),
+      path.join(docs, 'data-model-persistence.md'),
       ModelEmit.persistenceDocs(pg));
     log.debug("Leaving ModelEmit.writeReadingFiles().");
   }
@@ -1017,9 +1030,9 @@ class ModelEmit {
       problems.push('directory collect is not stable');
     }
     const pg = PostgresImport.read(root);
-    ModelEmit.expectText(root, 'docs/data-model-directory.md',
+    ModelEmit.expectText(root, 'docs/v1.1.0/data-model-directory.md',
       ModelEmit.directoryDocs(first), problems);
-    ModelEmit.expectText(root, 'docs/data-model-persistence.md',
+    ModelEmit.expectText(root, 'docs/v1.1.0/data-model-persistence.md',
       ModelEmit.persistenceDocs(pg), problems);
     log.debug("Leaving ModelEmit.check().");
     return problems;

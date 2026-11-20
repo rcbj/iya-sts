@@ -184,13 +184,16 @@ class ScepPage {
         '</td></tr></table>'
       : '<p class="sub">' + t.html('consoleScep.noRa',
                                    { alg: r.keyAlgorithm }) + '</p>';
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the second
+    // section a frame of its own, which `body()`'s frame holds once
+    // `kit.untitled()` has made its heading an `<h3>`.
     return '<h2>' + t.html('consoleScep.hIssuingCa') + '</h2>' + authority +
-      '<h2>' + t.html('consoleScep.hRa') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleScep.hRa') + '</h2>' +
       kit.note(t.html('consoleScep.raNote')) + raTable +
       '<form method="post" action="/admin/scep">' +
       this.hidden('action', 'reissue-ra') +
       '<button type="submit">' + t.html('consoleScep.reissueRa') +
-      '</button></form>';
+      '</button></form>');
   }
 
   /**
@@ -224,10 +227,11 @@ class ScepPage {
       t.html('consoleScep.thKeys') + '</th><th>' +
       t.html('consoleScep.thUrl') + '</th></tr></thead><tbody>' + rows +
       '</tbody></table>' +
-      '<h3>' + t.html('consoleScep.hNeverIssued') + '</h3><table><thead><tr>' +
+      kit.frame('<h3>' + t.html('consoleScep.hNeverIssued') +
+      '</h3><table><thead><tr>' +
       '<th>' + t.html('consoleScep.thProfile') + '</th><th>' +
       t.html('consoleScep.thWhy') + '</th></tr></thead><tbody>' + refused +
-      '</tbody></table>';
+      '</tbody></table>');
   }
 
   /**
@@ -389,13 +393,13 @@ class ScepPage {
     const m = json.mode;
     return '<h2>' + t.html('consoleScep.hNotDo') +
       '</h2><table class="kv">' + rows +
-      '</table><h2>' + t.html('consoleScep.hMode') + '</h2>' +
+      '</table>' + kit.frame('<h2>' + t.html('consoleScep.hMode') + '</h2>' +
       kit.note(t.html('consoleScep.realmMode', { mode: m.mode }) + ' ' +
         esc(m.scep) +
         (m.requirement ? ' ' + t.html('consoleScep.development') + ' ' +
          esc(m.requirement.development) +
          ' ' + t.html('consoleScep.product') + ' ' +
-         esc(m.requirement.product) : ''));
+         esc(m.requirement.product) : '')));
   }
 
   // THE TWO PAGES' BODIES (#446), each one method so that it can be one
@@ -415,21 +419,25 @@ class ScepPage {
       // EACH SECTION A SUB-TAB (2026-10-12): the SCEP tab of Protocols →
       // Cert issuance, one sub-tab per section, the ids in `admin.ts`'s
       // CERT_SUB_TAB_IDS. A section's own heading is the sub-tab's label.
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each sub-tab's
+      // content one frame, its blocks frames inside it; the settings forms
+      // frame themselves.
       kit.subTabbedPanels(t.text('console.nav.scep'), [
         { id: 'cert-scep-ca', label: t.text('consoleScep.hIssuingCa'),
-          html: kit.untitled(this.sectionAuthority(json, t)) },
+          html: kit.frame(kit.untitled(this.sectionAuthority(json, t))) },
         { id: 'cert-scep-profiles', label: t.text('consoleScep.hProfiles'),
-          html: kit.untitled(this.sectionProfiles(json, t)) },
+          html: kit.frame(kit.untitled(this.sectionProfiles(json, t))) },
         { id: 'cert-scep-challenges',
           label: t.text('consoleScep.hChallenges'),
-          html: kit.untitled(this.sectionChallenges(ctx, json)) },
+          html: kit.frame(kit.untitled(this.sectionChallenges(ctx, json))) },
         { id: 'cert-scep-host-names', label: t.text('consoleScep.hHostNames'),
-          html: kit.untitled(this.sectionHostNames(json, t)) },
+          html: kit.frame(kit.untitled(this.sectionHostNames(json, t))) },
         { id: 'cert-scep-certificates',
           label: t.text('consoleScep.hEnrolled'),
-          html: kit.untitled(this.sectionCertificates(ctx, json)) },
+          html: kit.frame(kit.untitled(this.sectionCertificates(ctx,
+                                                                json))) },
         { id: 'cert-scep-exceptions', label: t.text('consoleScep.hNotDo'),
-          html: kit.untitled(this.sectionExceptions(json, t)) },
+          html: kit.frame(kit.untitled(this.sectionExceptions(json, t))) },
         { id: 'cert-scep-settings', label: t.text('consoleScep.hSettings'),
           html: SettingsForms.forms(json.settings,
                                     '/admin/cert-issuance#cert-scep-settings',
@@ -462,8 +470,15 @@ class ScepPage {
     });
     // `tab` (2026-10-12): the Monitoring page is drawn as tabs, one per
     // table of counts (`WebPages.protocolTabs()`).
-    return '<h2' + (tab ? ' data-tab="' + esc(tab) + '"' : '') + '>' +
-      esc(title) + '</h2>' + (keys.length
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): a tab's heading
+    // stays at the top level for the splitter and its table is the frame;
+    // an unmarked heading goes inside its frame.
+    const heading = '<h2' + (tab ? ' data-tab="' + esc(tab) + '"' : '') +
+      '>' + esc(title) + '</h2>';
+    const framed = function (html) {
+      return tab ? heading + kit.frame(html) : kit.frame(heading + html);
+    };
+    return framed(keys.length
       ? '<table><tbody>' + keys.map(function (k) {
         return '<tr><td>' + self.code(k) + '</td><td class="num">' + counts[k] +
                '</td></tr>';
@@ -519,7 +534,7 @@ class ScepPage {
                  'principals') +
       '<h2 id="list-page" data-tab="recent">' + t.html('consoleScep.recent') +
       '</h2>' +
-      nav.head + '<table><thead><tr>' +
+      kit.frame(nav.head + '<table><thead><tr>' +
       '<th>' + t.html('consoleScep.thAt') + '</th><th>' +
       t.html('consoleScep.thOperation') + '</th><th>' +
       t.html('consoleScep.thOutcome') + '</th><th>failInfo</th>' +
@@ -529,7 +544,7 @@ class ScepPage {
       t.html('consoleScep.thCode') + '</th>' +
       '<th>' + t.html('consoleScep.serial') + '</th></tr></thead><tbody>' +
       rows + '</tbody></table>' +
-      nav.foot +
+      nav.foot) +
       '<div data-metadata>' +
       kit.note(t.html('consoleScep.noReset') +
         ' <a href="/admin/audit">' + t.html('consoleScep.auditLog') +

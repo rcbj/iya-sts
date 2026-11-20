@@ -199,6 +199,22 @@
     "en": "3d4cea483bdd4763",
     "text": "PAS DU TOUT PERSISTÉS, dans aucun des deux modes ; il n’y a donc rien au repos à sceller. Les trois sont nommés dans le `NOT_YET` de `common/mode.js` plutôt que laissés à découvrir, car *non stocké* et *non protégé* se lisent de la même façon de l’extérieur et ne sont pas la même chose."
   },
+  "encryption.classes.25.what": {
+    "en": "676f5f32f70780f8",
+    "text": "La clé privée du certificat client TLS d’une relation de fédération FAPI 1.0 Advanced (#931) — ce que ce service présente aux points de terminaison de jeton et UserInfo du partenaire, dans `fedClientCertificate`"
+  },
+  "encryption.classes.25.why": {
+    "en": "7aa85457f3f98d8b",
+    "text": "Quiconque la détient peut s’authentifier auprès de ce partenaire en tant que ce service (`tls_client_auth`) et présenter les jetons d’accès que le partenaire a liés au certificat. Scellée au repos partout où les clés sont persistées, et retenue — chiffré compris — de toute recherche LDAP, page et réponse `/admin-api`, qui ne portent que le certificat."
+  },
+  "encryption.classes.26.what": {
+    "en": "6b9f0476194b0ed3",
+    "text": "La clé privée de déchiffrement WS-Trust propre à une application (#1668) — `wstrustDecryptionPrivateKey` : ce avec quoi une requête WS-Trust pour cette application, chiffrée vers son certificat, est déchiffrée"
+  },
+  "encryption.classes.26.why": {
+    "en": "d1b5cf75485762fa",
+    "text": "Qui la détient lit toute requête chiffrée vers cette application — les identifiants et les claims que le chiffrement garde hors du réseau. Scellée au repos partout où les clés persistent, et retenue — texte chiffré compris — de toute recherche LDAP, page et réponse de `/admin-api`, qui ne portent que le certificat."
+  },
   "encryption.notes.what": {
     "en": "69ba4b884ae9c0f6",
     "text": "Ce que ce service chiffre AU REPOS, avec quelle clé, sous quel algorithme, et combien de fois c’est arrivé dans ce processus."
@@ -220,8 +236,8 @@
     "text": "IL Y A UNE SEULE CLÉ DE CHIFFREMENT DE CLÉ POUR CE SERVICE, ET NON UNE PAR DOMAINE DE CONFIANCE, ET UNE CLÉ DE CHIFFREMENT DES DONNÉES PAR DOMAINE ET PAR CLASSE DE DONNÉES (#391). Aucune clé de chiffrement des données n’est partagée entre domaines ; une valeur d’un domaine n’est donc jamais scellée sous une clé sous laquelle le sont les valeurs d’un autre domaine. Mais chaque clé de chiffrement des données est enveloppée sous l’unique clé de chiffrement de clé ; un domaine n’est donc PAS une frontière indépendante au repos : quiconque peut lire cette clé peut désenvelopper les clés de données de tous les domaines, et la renouveler ré-enveloppe celles de tous les domaines à la fois."
   },
   "encryption.notes.storage": {
-    "en": "18686e2b1d638124",
-    "text": "TOUT CE QUI NE FIGURE PAS DANS LA TABLE CI-DESSUS EST EN CLAIR DANS LE MAGASIN — les entrées d’annuaire, les groupes, les applications, les domaines et les paramètres, et en mode développement presque tout. Ce service scelle les identifiants et les clés privées et rien d’autre, délibérément : le chiffrement au niveau des colonnes laisse le texte en clair dans le journal d’écriture anticipée, dans les fichiers temporaires lorsqu’un tri déborde, dans un pg_dump, sur les réplicas et dans les journaux de requêtes ; la couche qui couvre un magasin entier se situe donc SOUS la base de données plutôt qu’à l’intérieur. Cette couche relève de l’opérateur — LUKS ou un jeu de données ZFS chiffré sous PGDATA, un disque cloud avec une clé gérée par le client, ou l’un des forks de PostgreSQL qui disposent de TDE, puisque la version communautaire n’en a pas. docs/encryption-at-rest.md est la description des options rédigée par ce dépôt."
+    "en": "ee0a54241e7767c7",
+    "text": "TOUT CE QUI NE FIGURE PAS DANS LA TABLE CI-DESSUS EST EN CLAIR DANS LE MAGASIN — les entrées d’annuaire, les groupes, les applications, les domaines et les paramètres, et en mode développement presque tout. Ce service scelle les identifiants et les clés privées et rien d’autre, délibérément : le chiffrement au niveau des colonnes laisse le texte en clair dans le journal d’écriture anticipée, dans les fichiers temporaires lorsqu’un tri déborde, dans un pg_dump, sur les réplicas et dans les journaux de requêtes ; la couche qui couvre un magasin entier se situe donc SOUS la base de données plutôt qu’à l’intérieur. Cette couche relève de l’opérateur — LUKS ou un jeu de données ZFS chiffré sous PGDATA, un disque cloud avec une clé gérée par le client, ou l’un des forks de PostgreSQL qui disposent de TDE, puisque la version communautaire n’en a pas. docs/v1.1.0/encryption-at-rest.md est la description des options rédigée par ce dépôt."
   },
   "encryption.notes.keyResidency": {
     "en": "612d0883b63631fd",

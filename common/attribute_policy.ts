@@ -1223,6 +1223,11 @@ class AttributePolicy {
   deriveCommonName(attributes: Record<string, unknown>): boolean {
     const { log } = this.deps;
     log.debug('Entering AttributePolicy.deriveCommonName().');
+    // BY NAME ON PURPOSE (#1579): these are the attributes of a write about
+    // to be made, which this function edits in place, and each is read as
+    // its first NON-EMPTY value. The User's `givenName` and `familyName` are
+    // the first value whatever it holds, so they would answer '' where this
+    // finds a name.
     const valueOf = function (name: string): string {
       log.debug('Entering valueOf().');
       const key = Object.keys(attributes).filter(function (one) {

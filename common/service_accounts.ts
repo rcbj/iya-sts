@@ -66,6 +66,31 @@
 // rather than an entry asks `isServiceAccountName()`, which reads the entry
 // and asks the same predicate.
 //
+// ONCE A SERVICE ACCOUNT, ALWAYS ONE (rcbj, 2026-11-15). Three rules hold at
+// every door that writes these attributes — `set()` (and so `addOwner()`,
+// `removeOwner()`, `setDestination()`, the console and `/admin-api`) and the
+// directory's LDAP modify, through `ownerChangeRefusal()` and the flag check
+// in `serviceAccountWriteRefusal()`:
+//
+//   1. THE FLAG IS NEVER CLEARED. `serviceAccount` false on a service
+//      account is refused (STS-SVCACCT-0060; over LDAP -0064). DELETING the
+//      entry is still allowed: that ends the account, it does not make it a
+//      person, and a person made later at the same name inherits nothing.
+//   2. THE OWNERS ARE NEVER ALL TAKEN AWAY. A change that leaves no owner on
+//      an account that named one is refused (-0061; -0065), whatever the
+//      policy's `requireOwner` says. `requireOwner` off still lets an
+//      account be MADE with none, and one with none may be edited without
+//      naming one: nothing is being taken away from it. Once it names an
+//      owner, one always remains.
+//   3. AN OWNER DOES NOT REMOVE THEMSELVES. The caller's own DN taken off is
+//      refused (-0062; -0066), and so is a group taken off when that group
+//      was the caller's ONLY way of owning the account (-0063; -0067): the
+//      caller would stop being an owner by their own hand, which is what
+//      the rule forbids. A group the caller is in may be taken off while
+//      the caller still owns the account another way — they are not
+//      removing themselves. Another administrator may remove them, rule 2
+//      permitting.
+//
 // WHERE THE FLAG IS SET: the console's *Service account* box on
 // `/admin/users/new` and a person's page, `POST /admin-api/users/
 // set-service-account` (rule 7), and an LDAP modify by a holder of Admin
@@ -135,7 +160,10 @@ interface DirectoryHooks {
                        changes: Record<string, string | string[] | null>):
     boolean;
   serviceAccountNames?(): string[];
+  serviceAccountNamesAsync?(): Promise<string[]>;
   resolveOwner?(value: string): { kind: string; dn: string; name: string };
+  // The DNs of the PERSONS in the ambient realm's REMOTE_PEPS group (#1760).
+  remotePepMembers?(): string[];
   [hook: string]: unknown;
 }
 
@@ -186,6 +214,36 @@ interface ServiceAccountsDeps {
   // `found: null` where the register is not loaded in this process.
   destination(dn: string): { found: boolean | null; name?: string;
                              problems?: string[] };
+  // Who a caller is as an owner — their DN and every DN that makes
+  // something theirs (`ownership.ts`'s `identityOf()`), asked lazily. A
+  // deps object without it knows nobody's groups, only a caller's own DN.
+  callerIdentity?(key: string): { dn: string; keys: string[] };
+  // Who a remote PEP's identity is owned by, first that resolves (#1760):
+  // the realm's Admin Write group, then its bootstrap administrator.
+  remotePepOwnerCandidates?(): string[];
+  // Told once a remote PEP's identity was made a service account (#1760):
+  // the audit row, and the sessions a browser may no longer hold ended.
+  designated?(username: string, owner: string, why: string): void;
+}
+
+/**
+ * The codes one door gives the three rules of an irreversible service
+ * account (rcbj, 2026-11-15): the management API's (and so the console's)
+ * and the LDAP modify's.
+ */
+const OWNER_RULE_CODES = {
+  api: { cleared: 'STS-SVCACCT-0060', lastOwner: 'STS-SVCACCT-0061',
+         self: 'STS-SVCACCT-0062', selfGroup: 'STS-SVCACCT-0063' },
+  ldap: { cleared: 'STS-SVCACCT-0064', lastOwner: 'STS-SVCACCT-0065',
+          self: 'STS-SVCACCT-0066', selfGroup: 'STS-SVCACCT-0067' }
+};
+
+// A DN as it is compared: case and the spaces around a comma do not matter.
+function dnKeyOf(dn: unknown): string {
+  log.debug("Entering dnKeyOf().");
+  log.debug("Leaving dnKeyOf().");
+  return String(dn == null ? '' : dn).trim().toLowerCase()
+    .replace(/\s*,\s*/g, ',');
 }
 
 // What an entry is, as the domain model says it means (#1390), on any of the
@@ -324,6 +382,56 @@ class ServiceAccounts {
         return row ? { found: true, name: row.name,
                        problems: row.problems || [] }
           : { found: false };
+      },
+      callerIdentity: function (key) {
+        log.debug("Entering ServiceAccounts callerIdentity().");
+        // LAZY: `ownership.ts` reaches this module lazily too, and reads
+        // the directory at the moment it is asked.
+        const ownership = require('./ownership');
+        const found = ownership.identityOf(key);
+        log.debug("Leaving ServiceAccounts callerIdentity().");
+        return { dn: String((found && found.dn) || ''),
+                 keys: (found && found.keys) || [] };
+      },
+      remotePepOwnerCandidates: function () {
+        log.debug("Entering ServiceAccounts remotePepOwnerCandidates().");
+        // LAZY: `config` and the bootstrap name are read at the act, and
+        // `admin.writeGroup` is per process — the same name in every realm,
+        // resolved in the ambient realm's directory, so it is that realm's
+        // own roster group.
+        const config = require('./config');
+        const out = [String(config.value('admin.writeGroup') || ''),
+                     String(require('./bootstrap_name').current() || '')];
+        log.debug("Leaving ServiceAccounts remotePepOwnerCandidates().");
+        return out;
+      },
+      designated: function (username, owner, why) {
+        log.debug("Entering ServiceAccounts designated().");
+        require('./audit').audit({
+          action: 'admin.service-account.set', actor: 'system',
+          channel: 'internal', protocol: 'Directory', target: username,
+          outcome: 'success',
+          summary: 'make ' + username + ' a service account: it holds ' +
+                   'REMOTE_PEPS, so it is a remote PEP\'s identity',
+          detail: { owners: owner ? [owner] : [], reason: why,
+                    remotePep: true } });
+        // A REALM THAT KEEPS SERVICE ACCOUNTS OUT OF EVERY BROWSER ends the
+        // sessions the entry still holds, as the console's own act does
+        // (`admin_actions.ts`'s `serviceAccountAction()`): the next sign-in
+        // would be refused, and a session already open is the same browser.
+        const policy = require('./service_account_policy');
+        if (!policy.allowsDoor('browser', policy.profileFor(username))) {
+          try {
+            require('./account_state').endEverything(username, {
+              actor: 'system', channel: 'internal',
+              initiatingEntity: 'policy',
+              by: 'becoming a service account as a remote PEP\'s identity' });
+          } catch (e) {
+            log.debug("Caught in ServiceAccounts designated(): " +
+                      ((e && e.message) || e));
+          }
+        }
+        log.debug("Leaving ServiceAccounts designated().");
       }
     };
   }
@@ -529,6 +637,29 @@ class ServiceAccounts {
   }
 
   /**
+   * `names()`, asked of the directory asynchronously (#798). A directory
+   * without the asynchronous hook is asked `names()`'s question.
+   *
+   * @returns a promise of the usernames
+   */
+  async namesAsync(): Promise<string[]> {
+    const { log } = this.deps;
+    log.debug("Entering ServiceAccounts.namesAsync().");
+    const directory = this.directory;
+    if (directory &&
+        typeof directory.serviceAccountNamesAsync === 'function') {
+      const out = await directory.serviceAccountNamesAsync();
+      log.debug("Leaving ServiceAccounts.namesAsync(). " + out.length);
+      return out;
+    }
+    const out = directory &&
+                typeof directory.serviceAccountNames === 'function'
+      ? directory.serviceAccountNames() : [];
+    log.debug("Leaving ServiceAccounts.namesAsync(). " + out.length);
+    return out;
+  }
+
+  /**
    * Says whether a secret at a destination is one a service account's
    * rotation writes — what `secret_destinations.testPush()` asks before it
    * writes a canary, so a test can never overwrite a live password.
@@ -548,6 +679,194 @@ class ServiceAccounts {
              one.destination.replace(/\s*,\s*/g, ',').toLowerCase() === dn;
     });
     log.debug("Leaving ServiceAccounts.secretNameInUse(). " + out);
+    return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // A REMOTE PEP'S IDENTITY IS A SERVICE ACCOUNT (#1760, rcbj: "The user that
+  // a remote PEP uses to map its client cert to and connect to the STS needs
+  // to be flagged as a service account. The realm admin can be listed as the
+  // owner.")
+  //
+  // The entry a remote PEP's client certificate resolves to is a PERSON
+  // entry holding REMOTE_PEPS (`roles.remotePepGroup`), and it is a program's
+  // identity, not a person's. So the moment an entry is put in that group it
+  // is made a service account, owned by the realm's administrators:
+  //
+  //   * ONE CHOKEPOINT: `ldap/ldap_server.js`'s `noteMembershipChange()`,
+  //     which every write of a group's members tells — the console's and the
+  //     API's add-member, an LDAP add, modify or modifyDN, a bulk import —
+  //     asks `designateRemotePep()` of each PERSON who JOINED the group. An
+  //     application holding REMOTE_PEPS is already a non-human identity of
+  //     its own kind and is left alone; so is anybody already a service
+  //     account, whose owners an administrator chose.
+  //   * THE SEED AND EVERY ENTRY THAT PREDATES THIS: `designateRemotePeps()`,
+  //     every person in the realm's group at once, called at startup right
+  //     after the realm's bootstrap administrator is seeded (`server.js`,
+  //     inside the bootstrap claim) and when a realm is created — the seed's
+  //     own group write is not told (`origin: 'seed'`), because the
+  //     administrator who is to own it does not exist yet at that point.
+  //
+  // THE OWNER is the realm's Admin Write group (`admin.writeGroup`, the
+  // realm's own roster), which outlives any one administrator; where the
+  // realm has none yet, its bootstrap administrator. Neither is a DEFERRAL
+  // (STS-SVCACCT-0051), never an ownerless write, whatever `requireOwner`
+  // says: the flag and its owner are one write, because a service account
+  // always keeps an owner and is never made a person again. The next start
+  // or the next membership change tries again. Nothing here changes an
+  // entry that is a service account already, and nothing here clears one.
+  //
+  // THE DOORS. A remote PEP authenticates by mutual TLS and its certificate
+  // is NAMED to the entry (`xacml.ts`'s `callerIdentity()`); the REMOTE_PEPS
+  // question is `roles.rolesOf()` and the access policy. Neither asks a
+  // service-account door — those are asked of a PASSWORD
+  // (`credentials.verifyPrepare()`) and of a BROWSER session
+  // (`authn.startSession()`) — so the PEP's connection is unchanged, and a
+  // browser sign-in as the entry is refused, which is the point.
+  //
+  // ROTATION. The entry names no push destination, so the rotation job skips
+  // it without a line above debug (`service_account_rotation.ts`'s
+  // `rotateDue()`): there is no password to rotate.
+  // -------------------------------------------------------------------------
+
+  /**
+   * Reads a remote PEP's identity entry as the PEP page shows it: who it is,
+   * whether it is a service account, and its owners.
+   *
+   * @param key - the entry's DN, or any key the directory locates it by
+   * @returns the facts, or null where no person entry answers to the key
+   */
+  identityOf(key: unknown): { username: string; dn: string;
+                              serviceAccount: boolean;
+                              owners: ServiceAccountOwner[] } | null {
+    const { log } = this.deps;
+    log.debug("Entering ServiceAccounts.identityOf().");
+    const found = this.read(key);
+    if (!found || !found.person) {
+      log.debug("Leaving ServiceAccounts.identityOf(). No person.");
+      return null;
+    }
+    const facts = this.of(found.dn);
+    log.debug("Leaving ServiceAccounts.identityOf(). " + !!facts);
+    return { username: found.username, dn: found.dn,
+             serviceAccount: !!facts, owners: facts ? facts.owners : [] };
+  }
+
+  // The owner a remote PEP's identity is given: the realm's Admin Write
+  // group where it exists, else its bootstrap administrator, else none.
+  private remotePepOwner(selfDn: string): ServiceAccountOwner | null {
+    const { log } = this.deps;
+    log.debug("Entering ServiceAccounts.remotePepOwner().");
+    const candidates = typeof this.deps.remotePepOwnerCandidates === 'function'
+      ? this.deps.remotePepOwnerCandidates() : [];
+    for (const one of candidates) {
+      const text = String(one || '').trim();
+      if (!text || !this.directory ||
+          typeof this.directory.resolveOwner !== 'function') {
+        continue;
+      }
+      const owner = this.directory.resolveOwner(text);
+      if ((owner.kind === 'group' || owner.kind === 'person') &&
+          owner.dn.toLowerCase() !== String(selfDn || '').toLowerCase()) {
+        log.debug("Leaving ServiceAccounts.remotePepOwner(). " + owner.dn);
+        return { dn: owner.dn, kind: owner.kind, name: owner.name };
+      }
+    }
+    log.debug("Leaving ServiceAccounts.remotePepOwner(). None.");
+    return null;
+  }
+
+  /**
+   * Makes a remote PEP's identity — a person holding REMOTE_PEPS — a service
+   * account owned by the realm's administrators (#1760). An entry that is a
+   * service account already, or no person, is left as it is.
+   *
+   * @param key - the entry's DN, or any key the directory locates it by
+   * @param why - what asked, for the log and the audit row
+   * @returns `{ ok, changed, deferred?, code?, username?, owner? }`
+   */
+  designateRemotePep(key: unknown, why?: string) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering ServiceAccounts.designateRemotePep().");
+    const found = this.read(key);
+    if (!found || !found.person) {
+      log.debug("Leaving ServiceAccounts.designateRemotePep(). No person.");
+      return { ok: true, changed: false, skipped: 'not a person' };
+    }
+    if (ServiceAccounts.isServiceAccount(found.values)) {
+      log.debug("Leaving ServiceAccounts.designateRemotePep(). Already one.");
+      return { ok: true, changed: false, username: found.username };
+    }
+    // NEVER AN OWNERLESS WRITE, WHATEVER `requireOwner` SAYS: a service
+    // account always keeps at least one owner and cannot be made a person
+    // again (rcbj, `fix/service-account-irreversible`), so the flag and its
+    // owner go in ONE write or not at all.
+    const owner = this.remotePepOwner(found.dn);
+    if (!owner) {
+      log.warn(errorCodes.tag('STS-SVCACCT-0051') + 'service_accounts: ' +
+               found.username + ' holds REMOTE_PEPS and is not yet a ' +
+               'service account: this realm has no Admin Write group and no ' +
+               'bootstrap administrator to own it. It is tried again at the ' +
+               'next start and the next change to the group.');
+      log.debug("Leaving ServiceAccounts.designateRemotePep(). Deferred.");
+      return { ok: false, changed: false, deferred: true,
+               code: 'STS-SVCACCT-0051', username: found.username };
+    }
+    const done: any = this.set(found.dn, {
+      serviceAccount: true, owners: [owner.dn] });
+    if (!done.ok) {
+      log.warn(errorCodes.tag('STS-SVCACCT-0052') + 'service_accounts: ' +
+               found.username + ' holds REMOTE_PEPS and could not be made a ' +
+               'service account: ' + ((done.errors || []).join(' ') ||
+                                      'the directory refused the write') +
+               '.');
+      log.debug("Leaving ServiceAccounts.designateRemotePep(). Refused.");
+      return { ok: false, changed: false, code: 'STS-SVCACCT-0052',
+               username: found.username };
+    }
+    log.info('service_accounts: ' + found.username + ' holds REMOTE_PEPS, ' +
+             'so it is now a service account, owned by ' + owner.dn + ' (' + (why || 'a remote PEP\'s identity') +
+             ').');
+    if (typeof this.deps.designated === 'function') {
+      this.deps.designated(found.username, owner.dn, String(why || ''));
+    }
+    log.debug("Leaving ServiceAccounts.designateRemotePep(). Flagged.");
+    return { ok: true, changed: true, username: found.username,
+             owner: owner.dn };
+  }
+
+  /**
+   * Makes every person in the ambient realm's REMOTE_PEPS group a service
+   * account (#1760): the seed's identity and every entry put in the group
+   * before this existed. Idempotent; called at startup after the realm's
+   * bootstrap administrator is seeded, and when a realm is created.
+   *
+   * @param why - what asked
+   * @returns counts: `members`, `flagged`, `already`, `deferred`, `failed`
+   */
+  designateRemotePeps(why?: string) {
+    const { log } = this.deps;
+    log.debug("Entering ServiceAccounts.designateRemotePeps().");
+    const out = { members: 0, flagged: 0, already: 0, deferred: 0,
+                  failed: 0 };
+    const members = this.directory &&
+                    typeof this.directory.remotePepMembers === 'function'
+      ? this.directory.remotePepMembers() : [];
+    for (const dn of members) {
+      out.members += 1;
+      const one: any = this.designateRemotePep(dn, why);
+      if (one.changed) {
+        out.flagged += 1;
+      } else if (one.deferred) {
+        out.deferred += 1;
+      } else if (!one.ok) {
+        out.failed += 1;
+      } else if (!one.skipped) {
+        out.already += 1;
+      }
+    }
+    log.debug("Leaving ServiceAccounts.designateRemotePeps(). " +
+              JSON.stringify(out));
     return out;
   }
 
@@ -671,21 +990,106 @@ class ServiceAccounts {
   }
 
   /**
-   * Makes a person a service account, changes one, or makes one a person
-   * again.
+   * Says whether changing a service account's owners from `before` to
+   * `after` breaks rule 2 or rule 3 of an irreversible service account
+   * (rcbj, 2026-11-15): no change may leave an account that named an owner
+   * with none, and the caller may not take themselves off — their own DN,
+   * or the group that was their only way of owning it. Asked by `set()` and
+   * by the directory's LDAP modify, each with its own codes.
    *
-   * `serviceAccount` false clears every attribute this module writes, the
-   * previous password and the rotation state included. Otherwise `owners` —
+   * @param before - the owner DNs the account names now
+   * @param after - the owner DNs it would name
+   * @param caller - who is asking: a username or a DN; '' for nobody known
+   *   (development's open API, a client's own token, an anonymous bind)
+   * @param door - `api` or `ldap`, whose codes the refusal carries
+   * @returns `{ code, message }`, or null where the change is allowed
+   */
+  ownerChangeRefusal(before: string[], after: string[], caller: unknown,
+                     door?: string): { code: string; message: string } | null {
+    const { log } = this.deps;
+    log.debug("Entering ServiceAccounts.ownerChangeRefusal().");
+    const codes = door === 'ldap' ? OWNER_RULE_CODES.ldap
+                                  : OWNER_RULE_CODES.api;
+    const was = (before || []).map(dnKeyOf).filter(Boolean);
+    const now = (after || []).map(dnKeyOf).filter(Boolean);
+    if (was.length && !now.length) {
+      log.debug("Leaving ServiceAccounts.ownerChangeRefusal(). No owner " +
+                "would remain.");
+      return { code: codes.lastOwner, message: 'A service account always ' +
+        'keeps at least one owner once it has one: this change would take ' +
+        'away the last. Add another owner first, then remove this one.' };
+    }
+    const who = String(caller == null ? '' : caller).trim();
+    if (!who) {
+      log.debug("Leaving ServiceAccounts.ownerChangeRefusal(). Allowed; no " +
+                "caller known.");
+      return null;
+    }
+    let identity = { dn: '', keys: [] as string[] };
+    if (typeof this.deps.callerIdentity === 'function') {
+      try {
+        identity = this.deps.callerIdentity(who) || identity;
+      } catch (e) {
+        // A directory that cannot say who the caller is leaves only the
+        // caller's own name to compare, which is the plain case below.
+        log.debug("Caught in ServiceAccounts.ownerChangeRefusal(): " +
+                  ((e && e.message) || e));
+      }
+    }
+    // THE CALLER'S OWN DN: what the directory resolved, and the caller as
+    // given when it is a DN itself (an LDAP bind that names no person).
+    const selfKeys = [identity.dn, who.indexOf('=') > 0 ? who : '']
+      .map(dnKeyOf).filter(Boolean);
+    const removed = was.filter(function (key) {
+      return now.indexOf(key) < 0;
+    });
+    if (removed.some(function (key) {
+      return selfKeys.indexOf(key) >= 0;
+    })) {
+      log.debug("Leaving ServiceAccounts.ownerChangeRefusal(). The caller " +
+                "would remove themselves.");
+      return { code: codes.self, message: 'An owner cannot remove ' +
+        'themselves from a service account\'s owners. Another ' +
+        'administrator may.' };
+    }
+    const mine = (identity.keys || []).map(dnKeyOf).concat(selfKeys);
+    const ownsBefore = was.some(function (key) {
+      return mine.indexOf(key) >= 0;
+    });
+    const ownsAfter = now.some(function (key) {
+      return mine.indexOf(key) >= 0;
+    });
+    if (ownsBefore && !ownsAfter) {
+      log.debug("Leaving ServiceAccounts.ownerChangeRefusal(). The caller " +
+                "would remove the group they own it through.");
+      return { code: codes.selfGroup, message: 'This would take off the ' +
+        'only group through which you own this service account, and an ' +
+        'owner cannot remove themselves. Another administrator may.' };
+    }
+    log.debug("Leaving ServiceAccounts.ownerChangeRefusal(). Allowed.");
+    return null;
+  }
+
+  /**
+   * Makes a person a service account, or changes one. A service account is
+   * never made a person again (rcbj, 2026-11-15): `serviceAccount` false on
+   * one is refused, STS-SVCACCT-0060; on an ordinary person it changes
+   * nothing. Deleting the entry is the only way an account ends. `owners` —
    * the WHOLE list, which replaces what the account names; each a DN,
    * username or group name, at least one while the policy's `requireOwner`
    * is on (#600) — and `destination` (an application entry's DN) with
-   * `secretName`, both or neither.
+   * `secretName`, both or neither. On a service account the owners may
+   * not become none, nor may the caller take themselves off
+   * (`ownerChangeRefusal()`).
    *
    * @param username - the person
    * @param given - `serviceAccount`, `owners`, `destination`, `secretName`
+   * @param opts - `caller`, the username of the person asking, from the
+   *   verified token and never from a request body; absent for nobody known
    * @returns `{ ok: true, account, changed }`, or a refusal with a code
    */
-  set(username: unknown, given: Record<string, any>) {
+  set(username: unknown, given: Record<string, any>,
+      opts?: { caller?: string }) {
     const { log } = this.deps;
     log.debug("Entering ServiceAccounts.set().");
     const body = given || {};
@@ -709,6 +1113,30 @@ class ServiceAccounts {
         'application is already a non-human identity of its own kind.');
     }
     const was = ServiceAccounts.isServiceAccount(found.values);
+    const caller = String((opts && opts.caller) || '');
+    if (!this.truthy(body.serviceAccount) && was) {
+      // RULE 1: ONCE A SERVICE ACCOUNT, ALWAYS ONE.
+      log.debug("Leaving ServiceAccounts.set(). A service account is not " +
+                "made a person again.");
+      return this.refusal(OWNER_RULE_CODES.api.cleared, found.username +
+        ' is a service account, and a service account cannot be made an ' +
+        'ordinary person again. Delete the entry to end the account.');
+    }
+    // The owners it names now, for rules 2 and 3.
+    const ownersBefore = was
+      ? (conceptOf(found.values).owners || []).map(function (one) {
+        return one.trim();
+      }).filter(Boolean)
+      : [];
+    if (was && ownersBefore.length && !(ownersGivenOf(body) || []).length) {
+      // RULE 2, asked before `check()` so that its `requireOwner` refusal
+      // does not stand in for this one.
+      const none = this.ownerChangeRefusal(ownersBefore, [], caller, 'api');
+      if (none) {
+        log.debug("Leaving ServiceAccounts.set(). No owner would remain.");
+        return this.refusal(none.code, none.message);
+      }
+    }
     if (!this.truthy(body.serviceAccount)) {
       const changes: Record<string, string | string[] | null> = {};
       ATTRIBUTES.forEach(function (name) {
@@ -731,6 +1159,17 @@ class ServiceAccounts {
       return checked;
     }
     const owners = checked.owners;
+    if (was) {
+      const ownerRefusal = this.ownerChangeRefusal(ownersBefore,
+        owners.map(function (one) {
+          return one.dn;
+        }), caller, 'api');
+      if (ownerRefusal) {
+        log.debug("Leaving ServiceAccounts.set(). Refused by the owner " +
+                  "rules.");
+        return this.refusal(ownerRefusal.code, ownerRefusal.message);
+      }
+    }
     const destination = checked.destination;
     const secretName = checked.secretName;
     const changes: Record<string, string | string[] | null> = {
@@ -767,9 +1206,10 @@ class ServiceAccounts {
    *
    * @param username - the service account
    * @param owner - a DN, username or group name
+   * @param opts - `caller`, as `set()` takes it
    * @returns `{ ok: true, account, changed }`, or a refusal with a code
    */
-  addOwner(username: unknown, owner: unknown) {
+  addOwner(username: unknown, owner: unknown, opts?: { caller?: string }) {
     const { log } = this.deps;
     log.debug("Entering ServiceAccounts.addOwner().");
     const facts = this.of(username);
@@ -783,7 +1223,7 @@ class ServiceAccounts {
       owners: facts.owners.map(function (one) {
         return one.dn;
       }).concat([String(owner == null ? '' : owner)]),
-      destination: facts.destination, secretName: facts.secretName });
+      destination: facts.destination, secretName: facts.secretName }, opts);
     log.debug("Leaving ServiceAccounts.addOwner(). " + !!done.ok);
     return done.ok ? Object.assign({}, done, {
       changed: (done as any).account.owners.length !== before }) : done;
@@ -826,13 +1266,16 @@ class ServiceAccounts {
   /**
    * Takes one owner off a service account, writing at once (#602). Refused
    * for a value that is not one of its owners, and — through `set()` — for
-   * the last owner while the policy requires one.
+   * the last owner, whatever the policy says, and for the caller themselves
+   * (`ownerChangeRefusal()`).
    *
    * @param username - the service account
    * @param owner - the owner's DN, as the account lists it
+   * @param opts - `caller`, as `set()` takes it
    * @returns `{ ok: true, account, changed: true }`, or a refusal with a code
    */
-  removeOwner(username: unknown, owner: unknown) {
+  removeOwner(username: unknown, owner: unknown,
+              opts?: { caller?: string }) {
     const { log } = this.deps;
     log.debug("Entering ServiceAccounts.removeOwner().");
     const facts = this.of(username);
@@ -861,7 +1304,7 @@ class ServiceAccounts {
       owners: kept.map(function (one) {
         return one.dn;
       }),
-      destination: facts.destination, secretName: facts.secretName });
+      destination: facts.destination, secretName: facts.secretName }, opts);
     log.debug("Leaving ServiceAccounts.removeOwner(). " + !!done.ok);
     return done.ok ? Object.assign({}, done, { changed: true }) : done;
   }
@@ -1086,8 +1529,13 @@ export = {
   policyReference: slot.forward('policyReference'),
   list: slot.forward('list'),
   names: slot.forward('names'),
+  namesAsync: slot.forward('namesAsync'),
   secretNameInUse: slot.forward('secretNameInUse'),
+  identityOf: slot.forward('identityOf'),
+  designateRemotePep: slot.forward('designateRemotePep'),
+  designateRemotePeps: slot.forward('designateRemotePeps'),
   check: slot.forward('check'),
+  ownerChangeRefusal: slot.forward('ownerChangeRefusal'),
   set: slot.forward('set'),
   addOwner: slot.forward('addOwner'),
   removeOwner: slot.forward('removeOwner'),

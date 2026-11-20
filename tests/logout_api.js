@@ -352,6 +352,111 @@ function childMain() {
     note(r.status === 400, '6i. no result at all is refused (400)',
          r.status);
 
+    // --- 6j. a selected WS-Federation or SAML row tells the store ----------
+    // (2026-11-15, found by #444's D12): forgetting a realm or a service
+    // provider edits an object the session store holds and does not
+    // journal, so the session is written back through noteSessionChanged()
+    // as the oidc-rp row's forget always was. The calls are counted on the
+    // module's facade, which logout.ts calls at the time of the act.
+    const ed = await signIn('la-ed');
+    const edSession = sessionIdOf(ed.jar);
+    const edHeld = authn.sessionById(edSession);
+    edHeld.wsfedRealms = { 'urn:la:ed': 'https://rp.la.example/wsfed-ed' };
+    edHeld.saml2ServiceProviders = { 'urn:la:sp': {
+      acs: 'https://sp.la.example/acs', idpEntityId: 'urn:la:idp',
+      at: Date.now(), nameId: 'la-ed', nameIdFormat: '' } };
+    authn.noteSessionChanged(edHeld);
+    const noted = [];
+    const realNote = authn.noteSessionChanged;
+    authn.noteSessionChanged = function (one) {
+      noted.push(one && one.id);
+      return realNote.apply(this, arguments);
+    };
+    let edResult;
+    try {
+      edResult = logout.terminate(String((edHeld.user || {}).username ||
+                                         'la-ed'),
+        ['wsfed-rp:' + edSession + '|urn:la:ed',
+         'saml2-sp:' + edSession + '|urn:la:sp'],
+        { by: 'the logout_api test' });
+    } finally {
+      authn.noteSessionChanged = realNote;
+    }
+    const edAfter = authn.sessionById(edSession) || {};
+    note(noted.filter(function (id) {
+      return id === edSession;
+    }).length >= 2 &&
+         !Object.prototype.hasOwnProperty.call(edAfter.wsfedRealms || {},
+                                                'urn:la:ed') &&
+         !Object.prototype.hasOwnProperty.call(
+           edAfter.saml2ServiceProviders || {}, 'urn:la:sp'),
+         '6j. forgetting a WS-Federation realm and a SAML service provider ' +
+         'writes the session back to the store, once for each',
+         JSON.stringify({ noted: noted,
+                          ended: ((edResult || {}).terminated || [])
+                            .map(function (row) { return row.id; }) }));
+
+    // --- 6k. a realm with several sign-out addresses: every one is told ----
+    // (2026-11-15). A realm declaring two `wsfedSignOutUri` values is one
+    // sign-in and two rows, `<sid>|<realm>` and `<sid>|<realm>|1` (#747).
+    // Until this, the second row read its realm as `<realm>|1` and did
+    // nothing while saying it had, and only the first address was ever sent
+    // a cleanup. Ending either row now sends one to both and forgets the
+    // realm once; the sibling row then reports it already forgotten.
+    const applications = require(ROOT_DIR + '/common/applications');
+    const TWO = 'urn:la:two';
+    const OUTS = ['https://rp.la.example/out-a',
+                  'https://rp.la.example/out-b?x=1'];
+    const twoMade = applications.createApplication({ identifier: TWO,
+      protocols: ['wsfed'],
+      fields: { wsfedReplyUrl: ['https://rp.la.example/wsfed-two'],
+                wsfedSignOutUri: OUTS } });
+    const urlsOf = function (result) {
+      return ((result || {}).cleanups || []).map(function (one) {
+        return one.url;
+      }).sort();
+    };
+    const wanted = [OUTS[0] + '?wa=wsignoutcleanup1.0',
+                    OUTS[1] + '&wa=wsignoutcleanup1.0'].sort();
+    // The second row on its own.
+    const two = await signIn('la-two');
+    const twoSession = sessionIdOf(two.jar);
+    const twoHeld = authn.sessionById(twoSession);
+    twoHeld.wsfedRealms = { [TWO]: 'https://rp.la.example/wsfed-two' };
+    authn.noteSessionChanged(twoHeld);
+    const twoUser = String((twoHeld.user || {}).username || 'la-two');
+    const second = logout.terminate(twoUser,
+      ['wsfed-rp:' + twoSession + '|' + TWO + '|1'],
+      { by: 'the logout_api test' });
+    const twoAfter = authn.sessionById(twoSession) || {};
+    note(twoMade && twoMade.ok !== false &&
+         JSON.stringify(urlsOf(second)) === JSON.stringify(wanted) &&
+         !Object.prototype.hasOwnProperty.call(twoAfter.wsfedRealms || {},
+                                                TWO),
+         '6k. ending a realm\'s SECOND address row sends a cleanup to both ' +
+         'its addresses and forgets the realm',
+         JSON.stringify({ made: twoMade && twoMade.errors,
+                          cleanups: urlsOf(second),
+                          realms: Object.keys(twoAfter.wsfedRealms || {}) }));
+    // Both rows together, as a sign-out of the session ends them.
+    twoAfter.wsfedRealms = { [TWO]: 'https://rp.la.example/wsfed-two' };
+    authn.noteSessionChanged(twoAfter);
+    const both = logout.terminate(twoUser,
+      ['wsfed-rp:' + twoSession + '|' + TWO,
+       'wsfed-rp:' + twoSession + '|' + TWO + '|1'],
+      { by: 'the logout_api test' });
+    const bothRows = ((both || {}).terminated || []).filter(function (row) {
+      return String(row.id).indexOf('wsfed-rp:') === 0;
+    });
+    note(JSON.stringify(urlsOf(both)) === JSON.stringify(wanted) &&
+         bothRows.length === 2,
+         '6k2. ending both rows sends each address exactly one cleanup, and ' +
+         'both rows are ended',
+         JSON.stringify({ cleanups: urlsOf(both),
+                          ended: bothRows.map(function (row) {
+                            return row.id;
+                          }) }));
+
     // --- 7. the JSON door, and a form posted to /logout ---------------------
     const dee = await signIn('la-dee');
     const deeSession = sessionIdOf(dee.jar);

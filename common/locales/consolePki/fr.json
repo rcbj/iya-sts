@@ -114,6 +114,7 @@
   "notAfterPlaceholder": "(Pas avant + validité)",
   "slowToGenerate": " — lente à générer",
   "cannotSign": " — clé de sujet uniquement, ne peut pas signer",
+  "notForTls": " — inutilisable par les clients TLS",
   "keyPair": "Paire de clés",
   "keyPairNote": "La paire de clés que certifie le prochain certificat &mdash; et, pour un profil autosigné, la clé qui le signe. Elle est générée <strong>ici, dans ce service</strong>, et c’est le seul point où cette page diffère par nature de celle du débogueur : celle-ci génère dans le navigateur parce que toute sa promesse est que la clé ne le quitte jamais, alors que celle-là détient l’autorité de certification, et la clé a donc sa place dans le processus qui signe. C’est le même module dans les deux cas (<code>common/crypto_impl/key_material.js</code>), si bien que les algorithmes, la conversion PEM/JWK et les formats de magasin de clés sont identiques plutôt que semblables.",
   "keyPairNoteTitle": "D’où vient cette paire",

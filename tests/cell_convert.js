@@ -598,10 +598,11 @@ async function statements(t) {
                                     false);
   t.check(!full.refused && !/sslmode/.test(full.connectionString) &&
           full.ssl.rejectUnauthorized === true &&
-          full.ssl.checkServerIdentity === undefined &&
+          typeof full.ssl.checkServerIdentity === 'function' &&
+          full.ssl.checkHost === 'db' &&
           full.verifyChain === true && full.verifyHostname === true,
-          'sslmode=verify-full verifies the chain and the host name with ' +
-          'the setting off');
+          'sslmode=verify-full verifies the chain and the host name in ' +
+          'the string, with the setting off (#951)');
   const ca = postgres.dialOptions('postgres://db/sts?sslmode=VERIFY-CA',
                                   false);
   t.check(!ca.refused && ca.ssl.rejectUnauthorized === true &&
@@ -613,9 +614,11 @@ async function statements(t) {
   const required = postgres.dialOptions(
     'postgres://db/sts?sslmode=require', true);
   t.check(required.ssl.rejectUnauthorized === true &&
-          required.ssl.checkServerIdentity === undefined &&
+          typeof required.ssl.checkServerIdentity === 'function' &&
+          required.ssl.checkHost === 'db' &&
           required.verifyHostname === true &&
-          dial.verifyChain === false && dial.verifyHostname === false,
+          dial.verifyChain === false && dial.verifyHostname === false &&
+          dial.ssl.checkServerIdentity === undefined,
           'for require the setting still decides, both halves together');
   const seen = [];
   function FakePool() {}

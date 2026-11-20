@@ -95,6 +95,14 @@
     "en": "af65a7bf379c0b71",
     "text": "Télécharge la liste de statut d’attestation de clés Android de Google depuis devices.androidStatusUrl et la charge comme jeu de données de risque android.attestation-status : les certificats d’attestation révoqués ou suspendus. Quotidiennement (devices.androidStatusRefreshS) ; une liste identique à la liste active ne charge rien."
   },
+  "sched.jobs.federation.client-certificate-renew.title": {
+    "en": "f37b7eff9973c660",
+    "text": "Renouvellement des certificats clients de fédération"
+  },
+  "sched.jobs.federation.client-certificate-renew.describe": {
+    "en": "655fd604e686a4d3",
+    "text": "Émet un certificat client TLS pour chaque relation de fédération FAPI 1.0 Advanced qui n'en a pas, et un nouveau, avec le même sujet, pour chacune dont le certificat expire dans federation.clientCertificateRenewDays."
+  },
   "sched.jobs.federation.encryption-key-retire.title": {
     "en": "0c323ec372941184",
     "text": "Retrait des clés de chiffrement de fédération"

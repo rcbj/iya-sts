@@ -94,7 +94,10 @@ class ConfigPage {
         : kit.warn(t.html('consoleConfig.inMemory') + ' ' +
           SettingsForms.durability(stored, t))) +
 
-      '<h2>' + t.html('consoleConfig.settingsHeading',
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): this section,
+      // before the first tab, stays on Metadata; the index tab's content
+      // after its heading.
+      kit.frame('<h2>' + t.html('consoleConfig.settingsHeading',
                       { total: String(snapshot.settingCount),
                         editable: String(snapshot.editableCount) }) +
       '</h2>' +
@@ -110,13 +113,13 @@ class ConfigPage {
           t.html('consoleConfig.resetAll') + '</button></form></div>'
         : kit.note(t.html('consoleConfig.noOverrides'))) +
 
-      kit.note(t.html('consoleConfig.resetAllHere')) +
+      kit.note(t.html('consoleConfig.resetAllHere'))) +
 
       // THE INDEX AND THE GLOBAL SETTINGS ARE TABS (2026-10-12); what is
       // overridden, and where a value survives, are Metadata.
       '<h2 data-tab="index">' + t.html('consoleConfig.whereEdited') +
       '</h2>' +
-      kit.note(t.html('consoleConfig.wholeTable')) +
+      kit.frame(kit.note(t.html('consoleConfig.wholeTable')) +
       '<table><thead><tr><th>' + t.html('consoleConfig.thGroup') +
       '</th><th class="num">' + t.html('consoleConfig.thSettings') +
       '</th>' +
@@ -127,7 +130,7 @@ class ConfigPage {
       snapshot.groups.map(function (group) {
         return ConfigPage.configHomeRow(group, json.homes, t);
       }).join('') +
-      '</tbody></table>' +
+      '</tbody></table>') +
 
       SettingsForms.forms(json.settings, '/admin/config', undefined,
                           t) +

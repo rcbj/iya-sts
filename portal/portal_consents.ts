@@ -51,6 +51,8 @@ import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
+type AccountAnswering<K extends keyof IyaApi.Account.Operations> =
+  import('../types/account-api').AccountAnswering<K>;
 type AccountContext = import('../types/account-api').AccountContext;
 type AccountCaller = import('../types/account-api').AccountCaller;
 
@@ -187,7 +189,8 @@ class PortalConsents {
    * @param body - the checked body
    * @returns nothing
    */
-  withdraw(ctx: AccountContext, res: Json, caller: AccountCaller,
+  withdraw(ctx: AccountContext, res: AccountAnswering<'withdrawConsent'>,
+           caller: AccountCaller,
            body: Json): unknown {
     const { log } = this.deps;
     log.debug("Entering PortalConsents.withdraw().");
@@ -249,16 +252,16 @@ class PortalConsents {
       { method: 'GET', path: ctx.BASE + '/consents',
         operationId: 'getConsents', access: 'person',
         query: CONSENTS_QUERY,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return ctx.json(res, 200,
                           self.view(caller.username, input.query.page || 1));
         } },
       { method: 'POST', path: ctx.BASE + '/consents',
         operationId: 'withdrawConsent', access: 'person',
         body: WITHDRAW_FORM,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return self.withdraw(ctx, res, caller, input.body);
         } }
     ];

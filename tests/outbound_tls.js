@@ -147,8 +147,11 @@ async function run(t) {
   const FAMILIES = [
     { name: 'GNAP', t: gnapHttp.PUSH_TRANSPORT, loopback: true },
     { name: 'SSF', t: ssfHttp.PUSH_TRANSPORT, loopback: false },
-    { name: 'federation', t: fedHttp.OUTBOUND_TRANSPORT, loopback: false },
-    { name: 'XACML', t: pepHttp.NOTIFY_TRANSPORT, loopback: false }
+    { name: 'federation', t: fedHttp.OUTBOUND_TRANSPORT, loopback: false }
+    // THE XACML NUDGE LEFT THIS LIST ON 2026-11-14: it is https only and
+    // always verified, so its plain-http and skip settings are retired and
+    // ignored, and its trust is the realm's pep-tls chain beside the CA
+    // file — `tests/pep_listener_certificate.js` section F holds it.
   ];
   FAMILIES.forEach(function (f) {
     touched.push(f.t.allowHttpKey, f.t.skipTlsKey, f.t.caFileKey);

@@ -57,5 +57,12 @@
   "checks.result": "Result",
   "checks.detail": "Detail",
   "checks.passed": "passed",
-  "checks.failed": "FAILED"
+  "checks.failed": "FAILED",
+  "withheld.title": "Mutual authentication was not performed",
+  "withheld.heading": "Mutual authentication was not performed",
+  "withheld.body": "The ticket was accepted and the AP-REP was withheld, because <code>?mutual=off</code> was asked. Nothing has proved which server answered, and no session was started.",
+  "withheld.principal": "The ticket named <code>{principal}</code>.",
+  "mutualClosed.title": "That test control is closed",
+  "mutualClosed.heading": "That test control is closed",
+  "mutualClosed.body": "Withholding the AP-REP (<code>?mutual=off</code>) is open only in development. The ticket was not accepted and no session was started."
 }

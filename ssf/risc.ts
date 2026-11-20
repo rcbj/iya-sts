@@ -119,6 +119,7 @@ import realms = require('../common/realms');
 import mode = require('../common/mode');
 import audit = require('../common/audit');
 import errorCodes = require('../common/error_codes');
+import DomainMap = require('../common/domain_map');
 // #221: the one predicate every door asks (a leaf).
 import serviceAccounts = require('../common/service_accounts');
 import events = require('./ssf_events');
@@ -318,11 +319,15 @@ const OPT_STATES = ['opt-in', 'opt-out-initiated', 'opt-out'];
 // only one this register enforces anything on — see applyToState().
 const LIFECYCLE_STATES = ['active', 'disabled', 'purged'];
 
-// The directory attributes this file reads, LOWER-CASED, because that is how
-// `ldap_server.js`'s store keys them. Naming them here rather than inline is
-// what keeps `identifierChanges()` from being four copies of one comparison.
+// The directory attributes the identifier events compare, LOWER-CASED,
+// because that is how `ldap_server.js`'s store keys them. Naming them here
+// rather than inline is what keeps `identifierChanges()` from being four
+// copies of one comparison. They are a table of which attributes hold each
+// kind of identifier, read by name on purpose (#1579): a kind is the set of
+// attributes named here, compared before and after the write. The lock is
+// read through the Credential.
 //
-// `pwdaccountlockedtime` is draft-behera-ldap-password-policy's
+// `pwdAccountLockedTime` is draft-behera-ldap-password-policy's
 // `pwdAccountLockedTime`, and SINCE 2026-09-17 IT IS WHAT A DISABLED ACCOUNT
 // IS HERE: an administrator's disable writes it (`common/account_state.ts`),
 // SCIM's `active: false` writes it, and every door refuses the account while
@@ -330,7 +335,6 @@ const LIFECYCLE_STATES = ['active', 'disabled', 'purged'];
 // and nothing read — so an `account-disabled` sent over RISC used to report a
 // deprovisioning that disabled nobody, and now reports one that did. A
 // transmitter still only REPORTS; what the receiver does is the receiver's.
-const LOCK_ATTRIBUTE = 'pwdaccountlockedtime';
 const EMAIL_ATTRIBUTES = ['mail'];
 const PHONE_ATTRIBUTES = ['telephonenumber', 'mobile'];
 // The two kinds of identifier RISC's identifier events name, each with the
@@ -1647,6 +1651,7 @@ class RiscRegister {
     const after = asked.after || {};
     const accountId = deleted ? kind.slice('deleted:'.length)
       : String(asked.username || '');
+    this.retireNamesake(asked);
     if (!this.enabled() || !accountId) {
       log.debug("Leaving RiscRegister.observe(). Off, or nothing named.");
       return [];
@@ -1659,7 +1664,8 @@ class RiscRegister {
     // entry's subject is what says it is the row already held under the old
     // name. Its counts and state move with it, and the old name is kept among
     // its former identifiers so an event naming it is still matched.
-    const renamedUuid = ((deleted ? before : after).entryuuid || [])[0];
+    const renamedUuid = DomainMap.fieldOf('DirectoryEntry', 'entryUuid',
+      (deleted ? before : after) || {});
     if (!row && renamedUuid) {
       const wantedSubject = 'urn:uuid:' + String(renamedUuid).toLowerCase();
       let formerId = '';
@@ -1708,7 +1714,8 @@ class RiscRegister {
     // (2026-09-14). It is kept on the row because the one event where it
     // matters most — an account PURGED — is about an entry that is gone, and
     // the directory can no longer be asked whose `urn:uuid:` it was.
-    const snapshotUuid = ((deleted ? before : after).entryuuid || [])[0];
+    const snapshotUuid = DomainMap.fieldOf('DirectoryEntry', 'entryUuid',
+      (deleted ? before : after) || {});
     if (snapshotUuid) {
       row.subject = 'urn:uuid:' + String(snapshotUuid).toLowerCase();
     }
@@ -1778,6 +1785,69 @@ class RiscRegister {
     log.debug("Leaving RiscRegister.observe(). " + due.length + ' event(s) ' +
               'due.');
     return due;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A NAME TAKEN AGAIN STARTS FRESH (2026-11-16, rcbj's rule on #1612: a
+  // person deleted and made again under the same name inherits nothing).
+  //
+  // The register is keyed by the NAME and its `purged` row is kept on
+  // purpose — it is the evidence that `account-purged` went out, which
+  // /admin/risc-accounts exists to show. But a person made again under the
+  // name found that row: its opt-out (RISC section 2.8, the holder's choice,
+  // which gate() honours by suppressing every event about the account), its
+  // credential standing, its counts and its identifiers, all the deleted
+  // account's. So when a write names an entry whose `urn:uuid:` is NOT the
+  // one the row recorded, the row is about another account, and it is MOVED
+  // out of the name — refiled under the subject it recorded (the deleted
+  // entry's, which nobody else can hold), and still matched by it
+  // (`matchAccount()` tries the account id first) — and the name starts
+  // with no row, as any new account does. A row with no recorded subject (one
+  // written before 2026-09-14) is moved when it is `purged`, under the name
+  // and the time it was last written. A rename keeps the subject and its row;
+  // a re-homing deletes and adopts the same entry and never meets this.
+  // Asked on every person's write, RISC and SSF on or off (`ssf.ts`'s
+  // riscAutoEmit() asks before it looks at either), and again by observe().
+  // ---------------------------------------------------------------------------
+  /**
+   * Moves a register row out of a name a new entry now holds, so the new
+   * account starts without it.
+   *
+   * @param notice - the directory's account observer notice
+   */
+  retireNamesake(notice?: Record<string, any> | null): void {
+    const { log, iso } = this.deps;
+    log.debug("Entering RiscRegister.retireNamesake().");
+    const asked = notice || {};
+    const kind = String(asked.kind || '');
+    const accountId = kind.indexOf('deleted') === 0 ? ''
+      : String(asked.username || '');
+    const entryUuid = DomainMap.fieldOf('DirectoryEntry', 'entryUuid',
+                                        asked.after || {});
+    const row = accountId ? register.get(accountId) : null;
+    const subject = entryUuid ? 'urn:uuid:' + String(entryUuid).toLowerCase()
+                              : '';
+    const other = !!row && (row.subject
+      ? !!subject && row.subject !== subject
+      : row.lifecycle === 'purged');
+    if (!row || !other) {
+      log.debug("Leaving RiscRegister.retireNamesake(). The same account.");
+      return;
+    }
+    const key = row.subject && !register.has(row.subject) ? row.subject
+      : accountId + '#' + String(row.updatedAt || iso());
+    register.delete(accountId);
+    row.accountId = key;
+    row.notes.push('The name ' + accountId + ' was given to a new account ' +
+                   'on ' + iso() + ', so this row is filed under ' + key +
+                   ' and the new account starts without it.');
+    row.notes = row.notes.slice(-5);
+    register.set(key, row);
+    log.info('risc: the register\'s row for ' + accountId + ' was about an ' +
+             'account that no longer has the name (' + row.lifecycle + '); ' +
+             'it is filed under ' + key + ' and the new account starts ' +
+             'fresh.');
+    log.debug("Leaving RiscRegister.retireNamesake(). Moved.");
   }
 
   // ---------------------------------------------------------------------------
@@ -2102,8 +2172,9 @@ class RiscRegister {
       log.debug("Leaving RiscRegister.activeIn(). No entry.");
       return null;
     }
-    const values = attrs[LOCK_ATTRIBUTE];
-    const out = !(Array.isArray(values) && values.length);
+    // A lock is the Credential's (#1579).
+    const out = DomainMap.fieldOf('Credential', 'lockedSince', attrs) ===
+      undefined;
     log.debug("Leaving RiscRegister.activeIn(). " + out);
     return out;
   }
@@ -2883,6 +2954,7 @@ export = {
   buildPayload: slot.forward('buildPayload'),
   gate: slot.forward('gate'),
   applyToState: slot.forward('applyToState'),
+  retireNamesake: slot.forward('retireNamesake'),
   applyDue: slot.forward('applyDue'),
   refusals: slot.forward('refusals'),
   noteTransmitted: slot.forward('noteTransmitted'),

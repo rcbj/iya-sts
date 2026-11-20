@@ -9,6 +9,7 @@ resolver = "2"
 members = [
   "crates/sts-core",
   "crates/sts-xacml",
+  "crates/sts-model-pep",
   "bins/xacml-pep",
 ]
 
@@ -24,6 +25,7 @@ publish = false
 [workspace.dependencies]
 sts-core = { path = "crates/sts-core" }
 sts-xacml = { path = "crates/sts-xacml" }
+sts-model-pep = { path = "crates/sts-model-pep" }
 axum = "0.8"
 base64 = "0.23"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
@@ -45,6 +47,13 @@ regex = "1.13"
 roxmltree = "0.21"
 thiserror = "2.0"
 tracing = "0.1"
+# rcbj's confidential OpenID Connect relying party and CAEP/RISC poll
+# receiver (MIT, crates.io): the reverse proxy's session mechanism (#1760).
+# rust/DESIGN.md, *Third-party crates*, says why a crate and not a port.
+# 0.3.0 (published 2026-11-14) brought the bounded session store, the
+# receiver's health and the async API (feature `tokio`) the proxy uses; until
+# it was on crates.io this was a git commit of rcbj/oidc-caep-risc-rust.
+oidc-caep-risc = { version = "0.3.0", features = ["tokio"] }
 
 [workspace.lints.rust]
 # The one exception (rust/DESIGN.md section 6) is the openssl-sys wrapper in

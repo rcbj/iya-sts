@@ -48,8 +48,8 @@
     "text": "Le certificat avec lequel le KDC de ce domaine signe ses réponses PKINIT (RFC 4556) : id-pkinit-KPKdc dans son usage étendu de clé et le service d’octroi de tickets du domaine, krbtgt/REALM@REALM, dans un id-pkinit-san. Un par processus, créé lors de la première utilisation de PKINIT ; la clé privée ne quitte jamais le processus qui l’a créée."
   },
   "pki.useCases.acme.what": {
-    "en": "85c88fe668bcb64d",
-    "text": "Certificats émis via ACME (RFC 8555) sur /enroll/acme, pour une entrée de personne ou d’application pour laquelle une clé External Account Binding a été émise. Chaque certificat feuille nomme cette entrée dans un subjectAltName urn:sts:person: ou urn:sts:application:."
+    "en": "2f0eeec1390c0623",
+    "text": "Certificats émis via ACME (RFC 8555) sur /enroll/acme, pour une entrée de personne ou d’application pour laquelle une clé External Account Binding a été émise. Chaque certificat feuille nomme cette entrée dans un subjectAltName urn:sts:person: (urn:sts:sa: pour un compte de service) ou urn:sts:application:."
   },
   "pki.useCases.est.what": {
     "en": "20925fe97c792b47",
@@ -60,12 +60,16 @@
     "text": "Certificats émis via SCEP (RFC 8894) sur /enroll/scep, pour l’entrée pour laquelle un mot de passe de défi à usage unique a été émis. Le certificat de RA pour lequel SCEP chiffre les requêtes est lui aussi un certificat feuille de cette AC, avec une clé RSA car le transport de clé de SCEP est RSA."
   },
   "pki.useCases.tls-client.what": {
-    "en": "903e048677f8ab58",
-    "text": "Les certificats client TLS que les personnes s’émettent elles-mêmes sur le portail utilisateur : clientAuth, le nom urn:sts:person: de la personne, et une clé privée remise une seule fois sous forme de PKCS#12. Un certificat de cette autorité connecte son titulaire sur GET /tls/sign-in sur le port principal, dans ce domaine ; un certificat de toute autre autorité de ce service ne le fait pas, bien que tous remontent jusqu’à la même racine."
+    "en": "1b378238cd4bc7ec",
+    "text": "Les certificats client TLS que les personnes s’émettent elles-mêmes sur le portail utilisateur : clientAuth, le nom urn:sts:person: de la personne (urn:sts:sa: pour un compte de service), et une clé privée remise une seule fois sous forme de PKCS#12. Un certificat de cette autorité connecte son titulaire sur GET /tls/sign-in sur le port principal, dans ce domaine ; un certificat de toute autre autorité de ce service ne le fait pas, bien que tous remontent jusqu’à la même racine."
   },
   "pki.useCases.message-signing.what": {
-    "en": "4aacf430b5a390f0",
-    "text": "Les certificats avec lesquels une personne ou une application signe une requête WS-Trust (une signature WS-Security 1.1 sur le Body SOAP et le Timestamp) : digitalSignature seulement, le nom urn:sts:person: ou urn:sts:application: du détenteur, et une clé privée remise une seule fois sous forme de PKCS#12. Émis par un administrateur depuis la console ou /admin-api. Un certificat de cette autorité authentifie son détenteur comme demandeur d’une RST signée, dans ce domaine ; un certificat client TLS de ce service ne le fait pas, et celui-ci ne connecte personne en TLS."
+    "en": "f585bff7b006f247",
+    "text": "Les certificats avec lesquels une personne ou une application signe une requête WS-Trust (une signature WS-Security 1.1 sur le Body SOAP et le Timestamp) : digitalSignature seulement, le nom urn:sts:person:, urn:sts:sa: (un compte de service) ou urn:sts:application: du détenteur, et une clé privée remise une seule fois sous forme de PKCS#12. Émis par un administrateur depuis la console ou /admin-api. Un certificat de cette autorité authentifie son détenteur comme demandeur d’une RST signée, dans ce domaine ; un certificat client TLS de ce service ne le fait pas, et celui-ci ne connecte personne en TLS."
+  },
+  "pki.useCases.policy-signing.what": {
+    "en": "9dd7e80fa0d8f1eb",
+    "text": "Les certificats sous lesquels un export de politiques depuis Directory → Policies est signé (#1713) : une clé neuve par export, digitalSignature uniquement, son certificat et toute cette chaîne dans le x5c de l’export. Un domaine qui importe l’export lui fait confiance aussitôt quand il s’agit de sa propre autorité, et demande à un administrateur avant de faire confiance à celle d’un autre domaine, en ajoutant la chaîne de ce domaine à son magasin de confiance des signataires pour cet usage et aucun autre."
   },
   "pki.subjectKinds.application.what": {
     "en": "52037236b4cfff5f",

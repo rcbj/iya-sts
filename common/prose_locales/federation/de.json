@@ -1,0 +1,554 @@
+{
+  "fed.roles.service-provider.label": {
+    "en": "1fd2d940fd75671b",
+    "text": "Dieser Dienst ist der Dienstanbieter"
+  },
+  "fed.roles.service-provider.short": {
+    "en": "6deb8eb0a31924f8",
+    "text": "Dienstanbieter"
+  },
+  "fed.roles.service-provider.what": {
+    "en": "9ca71fc74f7baaeb",
+    "text": "Ein FREMDER Identitätsanbieter authentifiziert die Person, und dieser Dienst nimmt entgegen, was jener ausstellt. Dies ist die Richtung, die Verzeichniseinträge für Personen anlegt, die dieser Dienst noch nie gesehen hat, und die Richtung, die nicht permissiv sein kann: Eine Assertion wird abgelehnt, sofern sie sich nicht gegen den Schlüssel dieser Beziehung prüfen lässt."
+  },
+  "fed.roles.identity-provider.label": {
+    "en": "f565ea32582c51fe",
+    "text": "Dieser Dienst ist der Identitätsanbieter"
+  },
+  "fed.roles.identity-provider.short": {
+    "en": "d8a43dbfd9a920e9",
+    "text": "Identitätsanbieter"
+  },
+  "fed.roles.identity-provider.what": {
+    "en": "6456326e0ffdbb1e",
+    "text": "Dieser Dienst authentifiziert die Person, und ein FREMDER Dienstanbieter nimmt entgegen, was dieser Dienst ausstellt. Jeder Protokollendpunkt hier tut das bereits für jeden Aufrufer — was die Beziehung hinzufügt, ist die Kennzeichnung des Partners als Föderationspartner statt als Testclient und eine Liste, welche Attribute an ihn freigegeben werden."
+  },
+  "fed.protocols.saml2.label": {
+    "en": "48634c26c8a29cf0",
+    "text": "SAML 2.0"
+  },
+  "fed.protocols.saml2.what": {
+    "en": "355d6177d0a6e06b",
+    "text": "Das Web-Browser-SSO-Profil. Dieser Dienst sendet ein <AuthnRequest> an den Partner und nimmt die <Response> an seinem Assertion Consumer Service entgegen oder stellt von /saml2 eines an den Partner aus."
+  },
+  "fed.protocols.saml11.label": {
+    "en": "7b5ac3b7f73c08c8",
+    "text": "SAML 1.1"
+  },
+  "fed.protocols.saml11.what": {
+    "en": "3c12221e7c47c8a0",
+    "text": "Das Browser/POST-Profil. ES GIBT KEINE ANFRAGENACHRICHT — ein Ablauf von SAML 1.1 wird vom Identitätsanbieter initiiert, daher ist das, wohin dieser Dienst den Browser sendet, eine Inter-Site-Transfer-URL, die ein TARGET trägt, und zurück kommt eine <Response> ohne ein InResponseTo, das passen würde. Siehe weiter unten den Hinweis zur Wiedereinspielung bei fedNonce."
+  },
+  "fed.protocols.wsfed.label": {
+    "en": "8dedbb37150543a1",
+    "text": "WS-Federation 1.2"
+  },
+  "fed.protocols.wsfed.what": {
+    "en": "7c638a5872ef9fcd",
+    "text": "Das Passive-Requestor-Profil. Dieser Dienst sendet wa=wsignin1.0 mit seinem eigenen wtrealm und nimmt das wresult entgegen, das eine Assertion von SAML 1.1 oder SAML 2.0 in einem RSTR trägt."
+  },
+  "fed.protocols.oidc.label": {
+    "en": "50a8a027ce52903c",
+    "text": "OpenID Connect"
+  },
+  "fed.protocols.oidc.what": {
+    "en": "37c9ef2268d1e1b9",
+    "text": "Standardmäßig der Authorization-Code-Flow und response_type=id_token mit response_mode=form_post, wo es überhaupt keinen Rückkanal geben soll. Die Attribute kommen aus dem ID Token und aus UserInfo, wo eines konfiguriert ist."
+  },
+  "fed.protocols.oauth2.label": {
+    "en": "aebabad39063fe48",
+    "text": "OAuth 2.0"
+  },
+  "fed.protocols.oauth2.what": {
+    "en": "b8c06dd7e4c8e69d",
+    "text": "Der Authorization-Code-Flow OHNE ID Token — die Attribute kommen aus dem Access Token, wo es ein JWT ist, und andernfalls aus einem konfigurierten Endpunkt in der Form von UserInfo. Es ist hier ein eigenes Protokoll und nicht OIDC mit einem Schalter, weil das, was die Person identifiziert, ein anderes Artefakt ist, und genau das falsch zu machen ist das Wesentliche dessen, was schiefgeht, wenn OAuth 2.0 zur Authentifizierung verwendet wird."
+  },
+  "fed.protocols.ssf.label": {
+    "en": "3c589f06261f6ba6",
+    "text": "Nur Shared Signals"
+  },
+  "fed.protocols.ssf.what": {
+    "en": "01c3df2380a01fdd",
+    "text": "Ein Transmitter, der hier niemanden anmeldet — ein Geräteverwalter, ein Endpunktagent, ein HR-System — und CAEP- sowie RISC-Ereignisse über Personen und Geräte sendet, die dieser Vertrauensbereich kennt. Wohin seine Ereignisse führen, ist die Entscheidung der Signalantwort-Richtlinie, und standardmäßig wird das aufgezeichnet und nichts weiter, außer der Konformität eines Geräts."
+  },
+  "fed.mechanisms.password.label": {
+    "en": "e3db92128adfe5d4",
+    "text": "Benutzername und Passwort"
+  },
+  "fed.mechanisms.password.what": {
+    "en": "3c7b942fed61a172",
+    "text": "Der eigene Anmeldebildschirm dieses Dienstes: ein Benutzername und ein Passwort, wobei das Passwort im Produktmodus geprüft wird und im Entwicklungsmodus nicht. Der gewöhnliche Fall und das, worauf ein nicht gesetzter Mechanismus durchfällt, sobald nichts anderes eine Vorgabe macht."
+  },
+  "fed.mechanisms.password-mfa.label": {
+    "en": "4e8e68a717825941",
+    "text": "Benutzername und Passwort, mit MFA"
+  },
+  "fed.mechanisms.password-mfa.what": {
+    "en": "16512b9a181edfcd",
+    "text": "Derselbe Bildschirm mit angehaktem und gesperrtem Kästchen für den zweiten Faktor, sodass die WebAuthn-Zeremonie nach dem Passwortschritt läuft und die Sitzung amr [\"pwd\",\"hwk\"] sowie acr \"mfa\" aufzeichnet. Es ist dieselbe Forderung, die ein RequestedAuthnContext stellen kann; ein Protokoll, das sie verlangt, und eine Beziehung, die sie konfiguriert, ergeben einen Bildschirm, nicht zwei."
+  },
+  "fed.mechanisms.webauthn.label": {
+    "en": "d1b42f0bce49d6e9",
+    "text": "WebAuthn, passwortlos"
+  },
+  "fed.mechanisms.webauthn.what": {
+    "en": "0c8a75ea99e01b48",
+    "text": "Ein Sicherheitsschlüssel ALLEIN — es wird kein Passwort vorgelegt, daher zeichnet die Sitzung amr [\"hwk\"] und EINEN Faktor auf. Deshalb kann er einen Aufrufer nicht erfüllen, der einen zweiten Faktor verlangt hat: siehe forceMfa in authn.js, das sich dagegen durchsetzt und das im Log festhält."
+  },
+  "fed.mechanisms.federation.label": {
+    "en": "abfd4fd4bfb3a76c",
+    "text": "Eine andere Föderationsbeziehung"
+  },
+  "fed.mechanisms.federation.what": {
+    "en": "86f6c0e269a249de",
+    "text": "DER VERMITTLERFALL. `fedAuthnRelationship` benennt eine Beziehung auf der DIENSTANBIETER-Seite in demselben Vertrauensbereich, und die Person wird dorthin gesendet, sodass dieser Dienst die Assertion eines anderen entgegennimmt und dann seine eigene an den Partner ausstellt, der angefragt hat. Die beiden Protokolle müssen nicht übereinstimmen und tun es gewöhnlich nicht — genau das macht eine Identitätsbrücke aus."
+  },
+  "fed.mechanisms.spnego.label": {
+    "en": "e12bc145a6d518f3",
+    "text": "Kerberos-Ticket (SPNEGO)"
+  },
+  "fed.mechanisms.spnego.what": {
+    "en": "0f52a102d4c01229",
+    "text": "INTEGRIERTE AUTHENTIFIZIERUNG. Die Person wird an /authn/spnego gesendet, das mit 401 und WWW-Authenticate: Negotiate antwortet und sie anhand des Service-Tickets anmeldet, das ihr Client zurücksendet (RFC 4559 über RFC 4178 über RFC 4121). Nichts wird eingetippt und kein Bildschirm gezeichnet. Wie ein Sicherheitsschlüssel oder eine Wallet beruht sie auf Anmeldedaten, die dieser Dienst in jedem Modus prüft — das Passwort des Anmeldebildschirms wird nur im Produktmodus geprüft — und was die Sitzung danach behauptet, wird aus den eigenen Flags des TICKETS gelesen: amr [\"pwd\"] bei pre-authent, [\"hwk\"] bei hw-authent, beides bei beidem und ÜBERHAUPT NICHTS bei einem Ticket, das keines von beiden behauptet. Ein Client, der kein Ticket erhält, trifft auf eine Seite, von der der Anmeldebildschirm verlinkt ist, weil ein bloßes 401 Negotiate in jedem Browser, der nicht für diesen Host konfiguriert ist, eine Sackgasse ist."
+  },
+  "fed.mechanisms.wallet.label": {
+    "en": "a6a3e498bac9d4f6",
+    "text": "Wallet (OpenID4VP)"
+  },
+  "fed.mechanisms.wallet.what": {
+    "en": "d476b4b21a6959d0",
+    "text": "Die Person wird an /authn/wallet gesendet, das ihre Wallet — über die Digital Credentials API oder auf diesem Gerät per Link — nach einem Credential fragt, das dieser Vertrauensbereich ihr ausgestellt hat, und sie als den Verzeichniseintrag anmeldet, für den es ausgestellt wurde, sobald ein frischer Holder-Nachweis geprüft ist. amr [\"pop\"] und acr \"1\" für einen Faktor; ein Aufrufer, der zwei verlangt hat, wird danach nach einem zweiten Faktor gefragt (oder hat bereits einen, wo die Schlüsselattestierung des Credentials das sagt), sodass dieser Mechanismus nicht gegen forceMfa verliert, wie spnego es tut."
+  },
+  "fed.subjectPolicies.link-at-first-sign-in.label": {
+    "en": "3fb482b3b1d215c6",
+    "text": "Verknüpfung bei der ersten Anmeldung (Standard)"
+  },
+  "fed.subjectPolicies.link-at-first-sign-in.what": {
+    "en": "bf6249bea0d69f73",
+    "text": "Ein verknüpftes Subjekt meldet sich an. Ein unverknüpftes, das eine vorhandene Person benennt, meldet sich zuerst HIER als diese Person an und wird danach verknüpft."
+  },
+  "fed.subjectPolicies.pre-linked.label": {
+    "en": "f892df83895cdf56",
+    "text": "Nur vorverknüpft"
+  },
+  "fed.subjectPolicies.pre-linked.what": {
+    "en": "9335561304f4cdab",
+    "text": "Nur eine zuvor hergestellte Verknüpfung — in der Konsole, über /admin-api oder SCIM — meldet jemanden an."
+  },
+  "fed.subjectPolicies.jit-namespaced.label": {
+    "en": "02c2c9bfd4a4b3cf",
+    "text": "Just-in-time, mit Namensraum"
+  },
+  "fed.subjectPolicies.jit-namespaced.what": {
+    "en": "b78784c7524b07bf",
+    "text": "Ein unverknüpftes Subjekt erhält einen neuen Eintrag namens <relationship>~<name>, bei der Erstellung verknüpft, niemals eine vorhandene Person."
+  },
+  "fed.subjectPolicies.any-existing.label": {
+    "en": "3c34ce5af080ff96",
+    "text": "Jede vorhandene Person, nach dem Namen (nur Entwicklung)"
+  },
+  "fed.subjectPolicies.any-existing.what": {
+    "en": "0738db6ce4ae6df5",
+    "text": "Der Name, den der Partner sendet, wird auf eine lokale Person abgebildet. Im Produktmodus abgelehnt."
+  },
+  "fed.schema.objectClasses.top.what": {
+    "en": "814dcf82144bb33e",
+    "text": "Die abstrakte Klasse, die jeder Eintrag trägt."
+  },
+  "fed.schema.objectClasses.applicationProcess.what": {
+    "en": "1c2b8d8382210aed",
+    "text": "Dieselbe registrierte Klasse, die ou=applications verwendet, und aus demselben Grund: Sie ist diejenige, die eine Partei in einem Protokoll überhaupt abbildet, und sie bringt cn, description, seeAlso, ou und l mit."
+  },
+  "fed.schema.objectClasses.stsFederation.what": {
+    "en": "c0a952c96d821bd5",
+    "text": "ERFUNDEN. Kein registriertes LDAP-Schema hat einen Föderationspartner, weil jedes Produkt, das einen speichert (AD FS, Shibboleth, Keycloak, Ping), ihn in seiner eigenen Datenbank hält. Das sind die eigenen Namen dieses Dienstes, so wie es die von stsApplication bereits sind."
+  },
+  "fed.schema.attributes.fedId.what": {
+    "en": "259929e99a94f66f",
+    "text": "DER SCHLÜSSEL: ein kurzer Name, den ein Betreiber gewählt hat, eindeutig über beide Rollen. Er ist zugleich der RDN, anders als der einer Anwendung, weil dieses Register KONFIGURIERT statt beobachtet wird — niemand muss hinnehmen, was ein Protokoll vorgelegt hat, daher kann schlicht verlangt werden, dass die ID RDN-sicher und kurz ist."
+  },
+  "fed.schema.attributes.cn.what": {
+    "en": "a0eb71f29906fcfc",
+    "text": "Der RDN-Wert, gleich fedId. Anders als bei einem Anwendungseintrag gibt es hier keinen Digest-Fall: Eine ID, die nicht passen würde, wird bei der Erstellung abgelehnt, statt gehasht zu werden."
+  },
+  "fed.schema.attributes.fedName.what": {
+    "en": "3680b45397f1fed4",
+    "text": "Wie der Partner auf einer Seite genannt wird. Die ID ist der Name, wenn keiner angegeben ist, weil ein erfundener Anzeigename eine erfundene Tatsache wäre."
+  },
+  "fed.schema.attributes.fedRole.what": {
+    "en": "05d0154783f31965",
+    "text": "WELCHES ENDE DIESER DIENST IST: service-provider (er nimmt entgegen) oder identity-provider (er stellt aus). Eine Beziehung ist eine Richtung — siehe die Überschrift."
+  },
+  "fed.schema.attributes.fedProtocol.what": {
+    "en": "06ec8c6d5bce784c",
+    "text": "Eines von saml2, saml11, wsfed, oidc, oauth2 — den fünf Anmeldeprotokollen — oder ssf, ein Partner, der nur Shared Signals sendet und niemanden anmeldet."
+  },
+  "fed.schema.attributes.fedProvider.what": {
+    "en": "b2f68432f2b706d4",
+    "text": "DER CONSUMER- ODER SOCIAL-PROVIDER, DEN DIESE BEZIEHUNG DARSTELLT (google, discord, github, generic-oidc, generic-oauth2), oder leer für einen Unternehmenspartner. Gesetzt, wenn die Beziehung erstellt wird, und nie geändert: Das Profil des Providers hat seine Endpunkte damals auf diesen Eintrag geschrieben und liefert bei jeder Anmeldung, woher das Subjekt, die Adresse und deren Prüfung stammen. Eine Beziehung, die einen Provider benennt, liegt in der Consumer-Kategorie, die ein Vertrauensbereich mit federation.consumerProviders einschaltet."
+  },
+  "fed.schema.attributes.fedPeer.what": {
+    "en": "267dac8cafddfb60",
+    "text": "DIE EIGENE KENNUNG DES PARTNERS, so wie sein Protokoll sie nennt: eine SAML-entityID, ein Issuer von OpenID Connect, ein wtrealm von WS-Federation. Auf einer Beziehung der Dienstanbieter-Seite wird sie GEPRÜFT — eine Assertion, deren Issuer nicht diese Zeichenkette ist, wird abgelehnt —, deshalb ist sie nicht bloß Dokumentation, und seit dem 2026-09-12 ist sie dort ERFORDERLICH: Eine Beziehung ohne sie ist nicht vollständig konfiguriert."
+  },
+  "fed.schema.attributes.fedLocalEntityId.what": {
+    "en": "000e6680c6459ba5",
+    "text": "WIE DIESER DIENST DIESEM PARTNER GEGENÜBER HEISST, wenn das nicht der Name ist, den dieser Dienst ableitet. Leer — der Standard — leitet ihn aus der Basis-URL ab, unter der der Browser diesen Dienst erreicht hat (<base>/federation/acs/<id>, die global.publicBaseUrl festlegt). Setzen Sie ihn auf die entityID, mit der der Partner konfiguriert wurde: Er wird der Issuer des ausgehenden AuthnRequest, das wtrealm von WS-Federation, die providerId von SAML 1.1, die entityID der SP-Metadaten dieser Beziehung und die Audience, die eine eingehende Assertion nennen muss — und das ist seit dem 2026-09-12 eine ABLEHNUNG, sodass ein Partner, der diesen Dienst unter einem anderen Namen kennt, dies gesetzt haben muss. Die URL des Assertion Consumer bleibt abgeleitet, weil es eine Adresse ist, die ein Browser erreichen können muss."
+  },
+  "fed.schema.attributes.fedEnabled.what": {
+    "en": "b6615a9f3a870188",
+    "text": "TRUE/FALSE. Eine Beziehung wird DEAKTIVIERT erstellt, und nichts an ihr tut etwas, bis sie eingeschaltet wird: Ein halb konfigurierter Partner, der Assertionen stillschweigend annähme, wäre genau der Fehler, den dieses ganze Register verhindern soll."
+  },
+  "fed.schema.attributes.description.what": {
+    "en": "a82b6893dc62502e",
+    "text": "Eine Zeile je Vorgang, der dieser Beziehung widerfahren ist."
+  },
+  "fed.schema.attributes.fedSsoUrl.what": {
+    "en": "46c3751779813588",
+    "text": "WOHIN DER BROWSER GESENDET WIRD. Der SAML-Single-Sign-On-Dienst des Partners, sein Inter-Site-Transfer-Dienst von SAML 1.1, sein passiver Endpunkt von WS-Federation oder sein Autorisierungsendpunkt von OAuth 2.0. In jedem Protokoll erforderlich, weil eine Beziehung ohne ein Ziel, an das jemand gesendet werden kann, nicht beginnen kann."
+  },
+  "fed.schema.attributes.fedTokenUrl.what": {
+    "en": "3bd95189243b5794",
+    "text": "Der Token-Endpunkt des Partners für den Authorization-Code-Flow. DIES IST EINE DER ZWEI URLS, DIE DIESER DIENST TATSÄCHLICH ANWÄHLT — siehe federation_http.js, die einzige ausgehende Anfrage in diesem Repository, und dort wird begründet, warum eine konfigurierte URL etwas anderes ist als eine registrierte."
+  },
+  "fed.schema.attributes.fedUserinfoUrl.what": {
+    "en": "c20335797afc1b41",
+    "text": "Der UserInfo-Endpunkt des Partners oder jeder Endpunkt, der JSON über den Inhaber eines Access Tokens antwortet. FAKULTATIV für OIDC, wo das ID Token gewöhnlich ausreicht, und die EINZIGE Attributquelle für einen reinen Partner von OAuth 2.0, dessen Access Token opak ist. Die zweite URL, die dieser Dienst anwählt."
+  },
+  "fed.schema.attributes.fedJwksUri.what": {
+    "en": "8abc51b744775c8b",
+    "text": "Die JWKS des Partners. ABGERUFEN — genau das Gegenteil dessen, was oauthJwksUri an einem Anwendungseintrag tut, und der Unterschied ist das ganze Argument in federation_http.js: Jene ist eine URL, die ein nicht authentifizierter Aufrufer REGISTRIERT hat, diese eine URL, die ein Administrator KONFIGURIERT hat. Lassen Sie sie leer und fügen Sie die Schlüssel stattdessen in fedJwks ein, wenn dieser Dienst den Aufruf nicht machen soll."
+  },
+  "fed.schema.attributes.fedEmailsUrl.what": {
+    "en": "8e6bd0b6ac698403",
+    "text": "EIN ZWEITER PROFILENDPUNKT für einen Provider, der die geprüfte Adresse einer Person getrennt vom Übrigen veröffentlicht (bei GitHub /user/emails). Angewählt mit demselben Access Token und unter derselben Richtlinie wie fedUserinfoUrl und nur für eine Beziehung, deren Provider-Profil ihn liest. Sein Fehlschlag kostet die Adresse, niemals die Anmeldung."
+  },
+  "fed.schema.attributes.fedJwks.what": {
+    "en": "e5d612d3437f7654",
+    "text": "Die öffentlichen Schlüssel des Partners als JWKS-Dokument, wortgetreu. Gelesen VOR fedJwksUri und nie aufgefrischt, sodass eine Beziehung, die dies trägt, überhaupt keine ausgehende Anfrage nach Schlüsseln stellt."
+  },
+  "fed.schema.attributes.fedTrustAnchor.what": {
+    "en": "c2b143ccd681914e",
+    "text": "NUR OPENID CONNECT. Die Entity Identifier eines der Trust Anchors dieses Vertrauensbereichs (/admin/oidfed). Gesetzt wird der von fedPeer benannte OP über seine Trust Chain bis zu diesem Anker aufgelöst, seine Endpunkte und Schlüssel sind die openid_provider-Metadaten, für die die Kette bürgt, und dieser Dienst registriert sich bei ihm AUTOMATISCH unter seiner eigenen Entity Identifier, wobei er seine Anfragen und die Authentifizierung am Token-Endpunkt mit seinem ES256-Schlüssel signiert — sodass fedSsoUrl, fedTokenUrl, fedJwks, fedJwksUri, fedClientId und fedClientSecret nicht gelesen werden. Leer wird die Beziehung wie immer von Hand konfiguriert."
+  },
+  "fed.schema.attributes.fedSigningCertificate.what": {
+    "en": "964cd498196aff60",
+    "text": "DAS SIGNIERZERTIFIKAT DES PARTNERS, base64 DER — dieselbe Schreibweise, die ein ds:X509Certificate trägt, und dieselbe, die samlSigningCertificate an einem Anwendungseintrag verwendet, sodass ein Zertifikat in diesem Dienst eine Schreibweise hat. Gegen dieses Zertifikat wird jede Assertion von SAML und WS-Federation geprüft, und es ist das einzige Attribut, das zwischen diesem Dienst und einem Endpunkt steht, an dem jeder Beliebiges behaupten könnte."
+  },
+  "fed.schema.attributes.fedClientId.what": {
+    "en": "d1b0b114250b58b6",
+    "text": "DIE client_id DIESES DIENSTES BEIM PARTNER. Unsere, von ihm ausgestellt — nicht zu verwechseln mit einer oauthClientId an einem Anwendungseintrag, die hier die ID eines Clients ist."
+  },
+  "fed.schema.attributes.fedClientSecret.what": {
+    "en": "627419de92206a62",
+    "text": "DAS GEHEIMNIS DIESES DIENSTES BEIM PARTNER, im Klartext, in einem Verzeichnis, in dem jedes Bind gelingt. Es sind ECHTE Anmeldedaten bei einem ECHTEN fremden Dienst, und das ist eine stärkere Aussage als alles andere in diesem Verzeichnis — siehe die Überschrift. Nie in das Audit-Log geschrieben und nie auf einer Seite ausgegeben."
+  },
+  "fed.schema.attributes.fedResponseMode.what": {
+    "en": "fdcac3938c7dc0ec",
+    "text": "WIE DIE AUTORISIERUNGSANTWORT ZURÜCKKOMMT. Leer, der Standard: query für code und form_post (OAuth 2.0 Form Post Response Mode) für einen Response-Typ von OpenID Connect, der ein ID Token oder ein Access Token trägt. form_post, das Sign in with Apple verlangt, sobald ein Name oder eine Adresse erfragt wird, kommt als seitenübergreifendes POST an, daher sendet ein Browser dafür kein Cookie SameSite=Lax. fragment, nur OpenID Connect, ist in der Spezifikation der Standard dieser Response-Typen: Die Antwort steht im URL-Fragment, und eine Seite mit einem Skript hier sendet sie per POST weiter. Es legt das ID Token im Browserverlauf ab, was form_post nicht tut: Verwenden Sie es nur für einen Partner, der nicht per POST senden kann. query kann weder ein ID Token noch ein Access Token tragen."
+  },
+  "fed.schema.attributes.fedAllowedTenants.what": {
+    "en": "1436122fe8c92048",
+    "text": "MICROSOFT, NUR BELIEBIGER TENANT: die Tenant-IDs, deren Personen sich anmelden dürfen, eine je Wert. fedPeer hält dann {tenantid}, gefüllt aus dem tid jedes Tokens, und ein Token eines nicht aufgeführten Tenants wird abgelehnt. Leer lehnt jeden Tenant ab."
+  },
+  "fed.schema.attributes.fedTeamId.what": {
+    "en": "959f29403a917b46",
+    "text": "NUR APPLE: die Team-ID bei Apple Developer, das iss des Client-Geheimnisses, das dieser Dienst für jede Token-Anfrage signiert."
+  },
+  "fed.schema.attributes.fedKeyId.what": {
+    "en": "557cedae99afdf0f",
+    "text": "NUR APPLE: die ID des Schlüssels von Sign in with Apple, das kid des Client-Geheimnisses, das dieser Dienst signiert."
+  },
+  "fed.schema.attributes.fedClientSigningKey.what": {
+    "en": "411c7d1d5df63859",
+    "text": "NUR APPLE: DER PRIVATE SCHLÜSSEL, mit dem dieser Dienst sein Client-Geheimnis signiert (die von Apple ausgestellte .p8-Datei, ein P-256-Schlüssel in PKCS #8 PEM). Es sind Anmeldedaten bei Apple. Er ist überall, wo Schlüssel fortbestehen, unter dem Schlüsselverschlüsselungsschlüssel versiegelt, wird nie angezeigt und nie in das Audit-Log geschrieben. Ein damit signiertes Client-Geheimnis gilt fünf Minuten und wird je Token-Anfrage geprägt."
+  },
+  "fed.schema.attributes.fedAuthorizeParams.what": {
+    "en": "4cf26c17034bb859",
+    "text": "ZUSÄTZLICHE PARAMETER DER AUTORISIERUNGSANFRAGE, einer je Wert, geschrieben als `<name>=<value>`, für einen Provider, der einen benötigt (das `claims` von Twitch, damit eine Adresse gesendet wird). Nur OpenID Connect und OAuth 2.0. Die Parameter, die dieser Dienst selbst setzt — response_type, client_id, redirect_uri, state, scope, nonce, code_challenge, code_challenge_method, response_mode, request und request_uri —, werden hier abgelehnt, weil einer von ihnen, hier geändert, eine Prüfung dieses Dienstes aufheben würde."
+  },
+  "fed.schema.attributes.fedTokenAuth.what": {
+    "en": "df266a3a67c1b2b5",
+    "text": "WIE SICH DIESER DIENST AM TOKEN-ENDPUNKT DES PARTNERS AUTHENTIFIZIERT: client_secret_basic (der Standard; RFC 6749 Abschnitt 2.3.1 sagt, ein Server MUST ihn unterstützen) oder client_secret_post für einen Partner, der das Geheimnis nur aus dem Body liest. Ohne fedClientSecret ist dieser Dienst ein öffentlicher Client, und keines von beiden gilt. tls_client_auth (RFC 8705 Abschnitt 2.1) authentifiziert mit dem TLS-Clientzertifikat der Beziehung (fedClientCertificate) und sendet weder eine Assertion noch ein Geheimnis; es gilt allein für fedFapi 1-advanced, und eine Beziehung, die es ohne dieses Profil benennt, ist nicht bereit."
+  },
+  "fed.schema.attributes.fedScope.what": {
+    "en": "7f9479e6e589a23f",
+    "text": "Der beim Partner erfragte Scope. `openid profile email` ist der Standard für eine OIDC-Beziehung, und für eine Beziehung von OAuth 2.0 gibt es keinen, weil das, was Ihnen ein Autorisierungsserver von OAuth 2.0 gewährt, ganz bei ihm liegt."
+  },
+  "fed.schema.attributes.fedResponseType.what": {
+    "en": "885dc55158b43f26",
+    "text": "code (der Standard), id_token oder eines der anderen vier von OpenID Connect: id_token token (implicit), code id_token, code token und code id_token token (hybrid). `id_token` mit form_post ist die Form, die KEINEN Rückkanal und daher keinen Token-Endpunkt, kein Client-Geheimnis und keine ausgehende Anfrage braucht — der einzige Weg, mit einem OIDC-Partner aus einer Bereitstellung ganz ohne ausgehenden Verkehr zu föderieren. Ein ID Token vom Autorisierungsendpunkt muss die nonce tragen sowie c_hash und at_hash, wo ein code oder ein Access Token mitkam."
+  },
+  "fed.schema.attributes.fedIdTokenSignedResponseAlg.what": {
+    "en": "3d9af9fdc895c49c",
+    "text": "NUR OPENID CONNECT. DER EINE ALGORITHMUS, mit dem der Partner die ID Tokens und Logout Tokens dieser Beziehung signiert — was beim Partner als id_token_signed_response_alg registriert wurde (OpenID Connect Core 1.0 Abschnitt 3.1.3.7 Schritt 7, Back-Channel Logout 1.0 Abschnitt 2.6). Ein mit einem anderen Algorithmus signiertes Token wird abgelehnt, auch eines, das der Schlüssel des Partners prüft. Leer, der Standard: jeder Algorithmus aus der Familie des prüfenden Schlüssels, den federation.jwtAlgorithms zulässt. Setzen Sie ihn: Ein leerer Wert nimmt ein Token an, das ein anderer Schlüssel des Partners unter einem anderen Algorithmus signiert hat."
+  },
+  "fed.schema.attributes.fedUserinfoSignedResponseAlg.what": {
+    "en": "dfebb4c3fc05d0ca",
+    "text": "NUR OPENID CONNECT. Der Algorithmus, mit dem eine SIGNIERTE UserInfo-Antwort signiert sein muss — was beim Partner als userinfo_signed_response_alg registriert wurde (OpenID Connect Core 1.0 Abschnitt 5.3.2). Eine signierte Antwort wird gegen die Schlüssel des Partners geprüft, ob dies gesetzt ist oder nicht; ist es gesetzt, wird eine Antwort unter einem anderen Algorithmus nicht verwendet. Leer, der Standard: eine JSON-Antwort oder eine signierte unter jedem Algorithmus aus der Familie ihres Schlüssels."
+  },
+  "fed.schema.attributes.fedUserinfo.what": {
+    "en": "937c36d63a3876a6",
+    "text": "NUR OPENID CONNECT. TRUE, der Standard (und was ein leerer Wert bedeutet): Der UserInfo-Endpunkt des Partners wird bei der Anmeldung und bei jeder Aktualisierung mit dem Access Token gefragt, und was er für dasselbe sub antwortet, wird den Claims des ID Tokens hinzugefügt (OpenID Connect Core 1.0 Abschnitt 5.3). FALSE: UserInfo wird nie gefragt, was auch immer fedUserinfoUrl oder das Discovery-Dokument nennt, und die Claims der Person sind allein die des ID Tokens — für einen Partner, dessen UserInfo diese Beziehung nicht aufrufen darf, etwa einen Autorisierungsserver nach FAPI 1.0 Advanced, der seine Ressource anderswo bedient."
+  },
+  "fed.schema.attributes.fedRefreshTokens.what": {
+    "en": "eaa1a36d346a058b",
+    "text": "NUR OPENID CONNECT. TRUE behält das Refresh Token, das der Partner bei der Anmeldung ausstellt, versiegelt bei der Sitzung, die es begonnen hat, und nutzt es, um die Identität dieser Sitzung aktuell zu halten (OpenID Connect Core 1.0 Abschnitt 12): alle fedRefreshEverySeconds werden die Tokens der Sitzung aktualisiert, ein neues ID Token muss dasselbe iss und sub nennen, und UserInfo muss für dieses sub weiterhin antworten. Eine Aktualisierung, die der Partner ablehnt, oder eine Antwort, die diese Prüfungen nicht besteht, BEENDET die Sitzung. Das Token endet mit der Sitzung. FALSE, der Standard: Die Tokens des Partners werden einmal, bei der Anmeldung, verwendet und verworfen — hier liegt nichts, das Anmeldedaten bei einem anderen Dienst hält, und die eigene Abmeldung des Partners sowie Shared Signals beenden die Sitzung vorzeitig."
+  },
+  "fed.schema.attributes.fedRefreshEverySeconds.what": {
+    "en": "d839fb1f30532e3a",
+    "text": "Bei eingeschaltetem fedRefreshTokens: wie oft, in Sekunden, die Tokens einer Sitzung aktualisiert werden. Leer: wenn das Access Token abläuft (sein expires_in) oder stündlich, wo der Partner keinen Ablauf nennt. Der Scheduler-Job federation.partner-refresh prüft alle fünfzehn Sekunden."
+  },
+  "fed.schema.attributes.fedRegister.what": {
+    "en": "f4b0de6cbbd8105e",
+    "text": "NUR OPENID CONNECT, mit fedDiscovery. TRUE lässt diesen Dienst sich beim Partner SELBST registrieren (OpenID Connect Dynamic Client Registration 1.0, RFC 7591) an dem registration_endpoint, den sein Discovery-Dokument nennt, wann immer die Beziehung keine fedClientId hält oder eine, die bei einem anderen Issuer registriert ist — zu Beginn einer Anmeldung oder durch register-partner eines Administrators. Die client_id und das Geheimnis, die der Partner ausstellt, werden nach fedClientId und fedClientSecret geschrieben (versiegelt). Registriert wird diese Beziehung: ihr Assertion Consumer Service, der Response-Typ, die Client-Authentifizierung, die hier gesetzten Algorithmen und, für Request Objects, der öffentliche Schlüssel, der sie signiert. FALSE, der Standard: Der Client wird beim Partner von Hand registriert."
+  },
+  "fed.schema.attributes.fedRegisteredIssuer.what": {
+    "en": "0ef5d192e48176ae",
+    "text": "Der Issuer, bei dem fedClientId durch fedRegister registriert wurde. Von der Registrierung geschrieben; löschen Sie ihn zusammen mit fedClientId, um bei der nächsten Anmeldung erneut zu registrieren."
+  },
+  "fed.schema.attributes.fedRequestObject.what": {
+    "en": "7eaba1ff4f67ec99",
+    "text": "NUR OPENID CONNECT. Senden Sie die Autorisierungsanfrage als Request Object (OpenID Connect Core 1.0 Abschnitt 6, RFC 9101): request (als Wert) oder request_uri (als Verweis — der Partner ruft es einmal von /federation/request/{id}/{handle} ab). Signiert unter fedRequestObjectSigningAlg mit dem Schlüssel dieses Vertrauensbereichs. Leer, der Standard: eine schlichte Autorisierungsanfrage."
+  },
+  "fed.schema.attributes.fedRequestObjectSigningAlg.what": {
+    "en": "dd87fb6848bcdad0",
+    "text": "Der Algorithmus, mit dem ein Request Object signiert wird: RS256 (der Standard), PS256 oder ES256 unter dem Schlüssel dieses Vertrauensbereichs, oder none — ein UNSIGNIERTES, das Core 6.2 nur als Verweis über https zulässt; eine Warnung: Der Partner hat dann nur das TLS des Abrufs, um zu erkennen, dass dieser Dienst es geschrieben hat."
+  },
+  "fed.schema.attributes.fedWebFinger.what": {
+    "en": "6e8daf4993b3f3e7",
+    "text": "NUR OPENID CONNECT, mit fedDiscovery. TRUE beantwortet /federation/webfinger/{id}, wo eine PERSON eine Kennung eintippt (acct:user@host oder eine URL) und dieser Dienst diesen Host fragt, wer der OpenID Provider der Person ist (OpenID Connect Discovery 1.0 Abschnitt 2, RFC 7033). EINE WARNUNG: Der angewählte Host ist einer, den ein Aufrufer gewählt hat — die eine begründete Ausnahme dieser Art unter den Föderationsanfragen dieses Dienstes, unter der Ausgangsrichtlinie (keine interne Adresse im Produktmodus, keine Weiterleitung, die Obergrenze). Der gefundene Issuer muss mit fedPeer beginnen, was ihn auf den von einem Administrator konfigurierten Partner begrenzt; der Person wird der Issuer gezeigt, und sie setzt nur fort, indem sie eine Schaltfläche drückt. FALSE, der Standard, lehnt ab."
+  },
+  "fed.schema.attributes.fedDiscovery.what": {
+    "en": "bec8778c7adc894f",
+    "text": "NUR OPENID CONNECT. TRUE liest die Endpunkte des Partners und seine jwks_uri aus seinem Discovery-Dokument {fedPeer}/.well-known/openid-configuration zu Beginn jeder Anmeldung (OpenID Connect Discovery 1.0 Abschnitt 4), dessen Issuer genau fedPeer sein muss; fedSsoUrl, fedTokenUrl, fedUserinfoUrl und fedJwksUri werden dann nicht gelesen. Die Adresse wird aus fedPeer abgeleitet, das ein Administrator konfiguriert hat, und nie aus einer Anfrage. FALSE, der Standard: Die Endpunkte werden von Hand konfiguriert."
+  },
+  "fed.schema.attributes.fedFapi.what": {
+    "en": "f2b7f8d0b97ba58f",
+    "text": "NUR OPENID CONNECT. Das FAPI-Clientprofil, das verwendet wird, wenn dieser Dienst eine Person beim Partner anmeldet (#931). Leer, der Standard, ist die heutige Relying Party von OpenID Connect. 1-advanced (FAPI 1.0 Advanced) erzwingt den Response-Typ code id_token, PKCE S256 und ein Request Object PS256 als Wert, legt das TLS-Clientzertifikat der Beziehung (fedClientCertificate) an den Token- und UserInfo-Endpunkten vor, damit der Partner seine Access Tokens daran binden kann (RFC 8705), authentifiziert mit private_key_jwt oder, wo fedTokenAuth tls_client_auth ist, mit diesem Zertifikat und verwendet kein DPoP. 2-security (FAPI 2.0 Security Profile) erzwingt Discovery, eine Pushed Authorization Request, den Response-Typ code, PKCE S256, private_key_jwt und DPoP. 2-message-signing fügt in diesen Push ein Request Object PS256 und eine signierte Autorisierungsantwort (JARM) ein. Ein Profil 2.x erzwingt private_key_jwt, was auch immer fedTokenAuth sagt. Dieser Dienst tritt nicht als CIBA-Client auf, und nur 1-advanced legt ein Clientzertifikat vor."
+  },
+  "fed.schema.attributes.fedInitiateLogin.what": {
+    "en": "f4c27cf4c2c9aa2c",
+    "text": "NUR OPENID CONNECT. TRUE beantwortet den Endpunkt zur Anmeldungsanbahnung dieser Beziehung, /federation/initiate-login/{id}, den der Partner als initiate_login_uri registriert (OpenID Connect Core 1.0 Abschnitt 4): eine Anmeldung, die der PARTNER beginnt und sich dabei in iss nennt, das fedPeer sein muss. Ein login_hint wird weitergereicht, und einem target_link_uri wird nur zu einem Pfad auf diesem Dienst gefolgt. FALSE, der Standard, lehnt das ab: Eine Seite irgendwo könnte sonst eine Anmeldung im Browser einer Person starten."
+  },
+  "fed.schema.attributes.fedBinding.what": {
+    "en": "a10d4406a67b3b1f",
+    "text": "Auf welchem Binding das ausgehende SAML-AuthnRequest gesendet wird: HTTP-Redirect (der Standard und das, was jeder Identitätsanbieter unterstützt) oder HTTP-POST. Es sagt nichts über die Antwort, die auf dem Binding ankommt, auf dem der Partner sie sendet, und die auf allen Bindings angenommen wird."
+  },
+  "fed.schema.attributes.fedSignRequest.what": {
+    "en": "df6a6c1b53d5529c",
+    "text": "Signieren Sie das ausgehende AuthnRequest mit dem Schlüssel DIESES Dienstes. Standardmäßig AUS: Die meisten Identitätsanbieter verlangen es nicht, und ein Partner, der es verlangt, lehnt die Anfrage so ab, dass das Problem benannt wird. Ist es an, ist das beim Partner zu konfigurierende Zertifikat dasjenige in den eigenen SAML-Metadaten dieses Dienstes."
+  },
+  "fed.schema.attributes.fedUsernameSource.what": {
+    "en": "e0e96af3e55ca105",
+    "text": "WELCHER EINGEHENDE WERT BEI LINK-AT-FIRST-SIGN-IN NACHGESCHLAGEN und unter any-existing abgeglichen wird — ein Claim-Name für OIDC/OAuth 2.0, ein SAML Attribute Name für die übrigen. Leer bedeutet das Subjekt selbst: die NameID oder `sub`. Es benennt keinen Eintrag, den diese Anmeldung ERZEUGT: Dieser Name ist die Beziehung und das stabile Subjekt des Partners (#358)."
+  },
+  "fed.schema.attributes.fedSubjectClaim.what": {
+    "en": "c52efd86a4983b41",
+    "text": "NUR REINES OAUTH 2.0: das Mitglied der Antwort des Profilendpunkts, das die stabile Kennung des Partners für die Person ist, als gepunkteter Pfad (id, data.id). Leer behält, was dieser Dienst immer getan hat — sub, dann id, dann user_id. Es ist das SUBJEKT, die Hälfte einer Föderationsverknüpfung, die sich nie ändern darf, und das ist nicht der Benutzername (fedUsernameSource). Das Subjekt eines Partners von OpenID Connect ist das sub des ID Tokens, das OpenID Connect Core Abschnitt 5.7 zur einzigen stabilen Kennung macht, und das eines Consumer-Providers ist das seines Profils."
+  },
+  "fed.schema.attributes.fedAttributeMap.what": {
+    "en": "4c966530efb4269f",
+    "text": "EIN WERT JE ZUORDNUNG, geschrieben als `<incoming name>=<LDAP attribute>`. Was hier NICHT steht, kommt trotzdem an — federation_map.js hat eine Standardtabelle für die gewöhnlichen OIDC-Claims, die SAML-Namen urn:oid: und die Claim-URIs von WS-Federation —, daher gilt dies für die eigenen Erfindungen des Partners und nicht für die Namen, die alle verwenden."
+  },
+  "fed.schema.attributes.fedAutocreateUsers.what": {
+    "en": "bfd1076470982a0d",
+    "text": "DYNAMISCHE BEREITSTELLUNG: einen Verzeichniseintrag anlegen, wenn dieser Partner jemanden zum ersten Mal anmeldet. TRUE, wenn eine Beziehung in der Entwicklung erstellt wird, und FALSE im Produkt (mode.defaultsFederatedAutocreate()); eine Beziehung, die keines von beiden speichert, wird genauso gelesen. AUS bedeutet, die Person muss hier BEREITS einen Eintrag haben — im Voraus bereitgestellt, per SCIM oder von Hand —, und eine Anmeldung für jemanden ohne Eintrag wird abgelehnt, weil eine Sitzung einen Eintrag braucht, dessen Subjekt sie ist. (Bis zum 2026-09-14 ergab AUS eine Sitzung ohne Eintrag; ein stabiles Subjekt hat diesen Zustand unmöglich gemacht.)"
+  },
+  "fed.schema.attributes.fedUpdateUserAttributes.what": {
+    "en": "4d516236bce43ce4",
+    "text": "Die Verzeichnisattribute der Person bei JEDER Anmeldung aus der jüngsten Assertion oder dem jüngsten Token aktualisieren. Standardmäßig AN, und das hat dieser Dienst immer getan. AUS schreibt die Attribute des Partners nur, wenn diese Anmeldung den Eintrag ERZEUGT hat, sodass eine im Voraus bereitgestellte Person — oder eine, die seither jemand bearbeitet hat — behält, was das Verzeichnis sagt. Über welche Beziehung und welchen Issuer eine Person gekommen ist, wird so oder so aufgezeichnet."
+  },
+  "fed.schema.attributes.fedProvisionGroups.what": {
+    "en": "7a8153e8814f97c9",
+    "text": "GRUPPENMITGLIEDSCHAFTEN AUS DEM TOKEN DES PARTNERS AUFBAUEN (#358). Standardmäßig AUS, und ein fehlender Wert ist aus. An wird jeder Gruppenname, den die Assertion trägt, bei jeder erfolgreichen Anmeldung zu einer Mitgliedschaft der Person, die diese Anmeldung bereitgestellt hat. Eine so erzeugte Gruppe wird mit dieser Beziehung gekennzeichnet. Ein Name, der bereits existiert und nicht als zu dieser Beziehung gehörend gekennzeichnet ist, wird ignoriert, auditiert (STS-FED-0161), und die Anmeldung geht weiter. Eine Gruppe, die etwas gewährt, weil sie gehalten wird — eine Konsolengruppe, die Mitgliedergruppe einer Rolle, eine Eigentümergruppe, eine Gruppe, die eine Richtlinie nennt —, wird nie erzeugt und ihr wird nie beigetreten (STS-FED-0164). Sie erfüllt fedSubjectGroup nicht: Diese Regel läuft, bevor irgendjemand hinzugefügt wird."
+  },
+  "fed.schema.attributes.fedProvisionCap.what": {
+    "en": "6807b5eb2cff8e4f",
+    "text": "WIE VIELE PERSONEN DIESE BEZIEHUNG ERZEUGEN DARF. 0 ist unbegrenzt. Leer ist für einen Unternehmenspartner unbegrenzt; die Beziehung eines CONSUMER- oder Social-Providers ist standardmäßig nie unbegrenzt: Sie wird erstellt, indem federation.consumerProvisionCap (10000, sofern der Vertrauensbereich nichts anderes sagt) hierher geschrieben wird, und ein leerer Wert bedeutet diese Einstellung. An der Obergrenze wird ein neues Subjekt mit STS-FED-0090 abgelehnt; eine bereits verknüpfte Person meldet sich weiterhin an. ldap.maxEntries bleibt die Obergrenze des Vertrauensbereichs. Keine Zählung von Anmeldungen — das ist fedUsers."
+  },
+  "fed.schema.attributes.fedProvisionIdleMinutes.what": {
+    "en": "29c243b9d96fac47",
+    "text": "EINE PERSON DEAKTIVIEREN, FÜR DIE DIESE BEZIEHUNG DER EINZIGE ANMELDEWEG IST, sobald federationLastSeen älter ist als diese Anzahl Minuten. Leer oder 0 ist aus: Niemand wird wegen Untätigkeit deaktiviert. Eintrag und Verknüpfung bleiben erhalten. Eine Person mit einem lokalen userPassword oder einer Verknüpfung über eine andere Beziehung wird nicht angetastet. Ein Signal account-disabled des Partners ist davon getrennt (STS-FED-0156) und sperrt nur die Anmeldungen dieses Partners."
+  },
+  "fed.schema.attributes.fedSubjectPolicy.what": {
+    "en": "afab8ba90a854d71",
+    "text": "WIE AUS DEM SUBJEKT DES PARTNERS EINE LOKALE PERSON WIRD. Das Subjekt ist die eigene stabile Kennung des Partners — iss + sub, eine persistente NameID und die Entity-ID des Partners —, und eine Person trägt sie als federationLink. link-at-first-sign-in (der Standard; leer bedeutet ihn): Ein verknüpftes Subjekt meldet sich an; ein unverknüpftes, das eine vorhandene Person benennt, muss sich zuerst HIER als diese Person anmelden — Passwort und ein zweiter Faktor, wo einer vorhanden ist oder verlangt wird —, und erst dann wird die Verknüpfung aufgezeichnet und die Attribute des Partners geschrieben; eines, das niemanden benennt, erhält einen neuen Eintrag im Namensraum dieser Beziehung, wo die Bereitstellung an ist. pre-linked: Nur eine Verknüpfung meldet jemanden an. jit-namespaced: Ein unverknüpftes Subjekt erhält immer einen NEUEN Eintrag, <relationship>~<subject>, niemals eine vorhandene Person. Das Subjekt ist die stabile Kennung des Partners, wobei ein urn:uuid: zu sub-<uuid> umgeschrieben wird; es ist nicht der zugeordnete Benutzername. any-existing: Der vom Partner gesendete Name wird unmittelbar auf eine lokale Person abgebildet, wie es dieser Dienst vor #109 tat — NUR ENTWICKLUNG, im Produkt abgelehnt, und es erlaubt diesem Partner, jedes Konto anzumelden, das er benennen kann."
+  },
+  "fed.schema.attributes.fedSubjectGroup.what": {
+    "en": "a93a51b8d9b56949",
+    "text": "EINE REGEL ÜBER DER RICHTLINIE: Die Person muss Mitglied einer dieser Gruppen sein, jeweils ein cn oder ein DN. Ein Eintrag, den diese Anmeldung ERZEUGEN würde, gehört keiner Gruppe an, daher wird bei gesetztem Wert niemand erzeugt. Leer: keine Gruppenregel."
+  },
+  "fed.schema.attributes.fedSubjectDomain.what": {
+    "en": "ea40949bc8260521",
+    "text": "EINE REGEL ÜBER DER RICHTLINIE: Die Mail-Domain, die der Partner GESENDET hat (die zugeordnete mail oder der zugeordnete Benutzername, wo er eine Adresse ist), muss eine von diesen sein, und ebenso die mail des lokalen Eintrags, wo er eine hat. Ohne Unterscheidung der Groß- und Kleinschreibung und genau verglichen: example.com lässt sub.example.com nicht zu. Leer: keine Domainregel."
+  },
+  "fed.schema.attributes.fedHomeRealmDomain.what": {
+    "en": "e6d68b5bbe3dac9e",
+    "text": "HOME-REALM DISCOVERY (#148): Eine Autorisierungsanfrage, deren `domain_hint` der OpenID Connect Enterprise Extensions eines von diesen ist, geht direkt zur Anmeldung dieses Partners, sofern die Anwendung nicht einen eigenen Partner nennt. Ohne Unterscheidung der Groß- und Kleinschreibung und genau verglichen. Nur ein Routing-Hinweis — wer ZUGELASSEN wird, entscheidet fedSubjectDomain."
+  },
+  "fed.schema.attributes.fedSubjectPattern.what": {
+    "en": "d9fa507e5053ce09",
+    "text": "EINE REGEL ÜBER DER RICHTLINIE: ein regulärer Ausdruck, dem der DN des lokalen Eintrags VOLLSTÄNDIG entsprechen muss (er wird für Sie verankert), etwa uid=[^,]+,ou=users,.* — bei einem Eintrag, den diese Anmeldung erzeugen würde, der DN, an dem er erzeugt würde. Höchstens 256 Zeichen, kein Rückverweis und kein Quantor auf einer Gruppe, die selbst quantifiziert ist, und geprüft wird gegen höchstens 1024 Zeichen, sodass ein Muster nicht minutenlang zum Backtracking gebracht werden kann. Leer: kein Muster."
+  },
+  "fed.schema.attributes.fedMayAssertAdministrators.what": {
+    "en": "74c845779242205c",
+    "text": "DIESEN PARTNER EINEN ADMINISTRATOR DER KONSOLE ANMELDEN LASSEN. Standardmäßig AUS, und aus bedeutet: Eine Person auf der Liste Admin Read oder Admin Write — oder mit REMOTE_PEPS — wird abgelehnt, was auch sonst zutrifft, eine gültige Verknüpfung eingeschlossen (STS-FED-0093). Einschalten macht den Signierschlüssel dieses Partners zu einem Schlüssel zur Konsole für jeden Administrator, der mit ihm verknüpft ist."
+  },
+  "fed.schema.attributes.fedSignalEmailMatch.what": {
+    "en": "9a124c8b72f692ec",
+    "text": "DIE SHARED SIGNALS DIESES PARTNERS EINE PERSON ANHAND DER MAIL BENENNEN LASSEN. Standardmäßig AUS: Ein Security Event Token eines Transmitters mit dem Issuer dieses Partners benennt eine Person über `iss_sub`, anhand des federationLink der Person. An gleicht ein Subjekt `email` zusätzlich die eine Person mit dieser Mailadresse ab — eine Adresse ist keine Kennung (OpenID Connect Core Abschnitt 5.7), daher nur für einen Partner, dessen Adressen dieser Vertrauensbereich vertraut."
+  },
+  "fed.schema.attributes.fedSignalsEnabled.what": {
+    "en": "93b7dae2ca58a41e",
+    "text": "DIE SHARED SIGNALS DIESES PARTNERS EMPFANGEN. Bei einer Anmeldebeziehung standardmäßig AUS und der ganze Sinn einer Beziehung `ssf`, bei der es bei der Erstellung auf AN gesetzt wird. Aus wird kein Push für diese Beziehung angenommen, und der Poll-Auftrag übergeht sie; fedEnabled muss ebenfalls an sein."
+  },
+  "fed.schema.attributes.fedSignalsIssuer.what": {
+    "en": "6ba19adcf4dbf152",
+    "text": "DER SSF-ISSUER DES PARTNERS, wenn er nicht fedPeer ist. Leer — der Standard — verwendet fedPeer, was für einen Partner von OpenID Connect richtig ist, dessen Transmitter denselben Issuer hat. Die entityID eines Partners von SAML 2.0 oder WS-Federation ist gewöhnlich NICHT die URL seines SSF-Issuers, setzen Sie sie daher dort. Das Konfigurationsdokument wird darunter von /.well-known/ssf-configuration abgerufen (SSF 1.0 Abschnitt 7) und muss ihn nennen, und das iss jedes SET muss er sein."
+  },
+  "fed.schema.attributes.fedSignalsDelivery.what": {
+    "en": "2a805e4031228032",
+    "text": "WIE DIE EREIGNISSE DES PARTNERS ANKOMMEN: poll (RFC 8936, der Auftrag ssf.foreign-poll, der Standard) oder push (RFC 8935, an /federation/signals/{id} mit einem Authorization-Header, den nur dieser Vertrauensbereich und der Partner kennen). Gelesen, wenn der Stream erzeugt wird; löschen und neu erzeugen, um die Art zu ändern."
+  },
+  "fed.schema.attributes.fedSignalsEvents.what": {
+    "en": "d593cfe04f6b50a6",
+    "text": "DIE EREIGNISTYP-URIS, DIE DER STREAM ERFRAGT (events_requested). Keine erfragt, was auch immer der Partner unterstützt."
+  },
+  "fed.schema.attributes.fedSignalsTokenUrl.what": {
+    "en": "f22895fc3eb97e28",
+    "text": "WO DIESER VERTRAUENSBEREICH EIN ACCESS TOKEN FÜR DIE STREAM-VERWALTUNG DES PARTNERS ERHÄLT, per client credentials. Leer verwendet fedTokenUrl — denselben Autorisierungsserver, den die Anmeldebeziehung bereits anwählt."
+  },
+  "fed.schema.attributes.fedSignalsClientId.what": {
+    "en": "93661f7f666dca94",
+    "text": "DIE client_id DIESES DIENSTES FÜR DIE STREAM-VERWALTUNG DES PARTNERS. Leer verwendet fedClientId."
+  },
+  "fed.schema.attributes.fedSignalsClientSecret.what": {
+    "en": "5c7f0300ca7c4869",
+    "text": "DAS GEHEIMNIS FÜR fedSignalsClientId, VERSIEGELT unter dem Schlüsselverschlüsselungsschlüssel, überall wo Schlüssel fortbestehen, und nie angezeigt. Leer verwendet fedClientSecret, auf dieselbe Weise versiegelt."
+  },
+  "fed.schema.attributes.fedSignalsScope.what": {
+    "en": "9a4b1c668a3d1dd5",
+    "text": "Der per client credentials erfragte Scope. Leer erfragt `ssf.read ssf.manage`, die beiden des CAEP Interoperability Profile (Abschnitt 2.7.3)."
+  },
+  "fed.schema.attributes.fedSignalsBearer.what": {
+    "en": "75ae4009add7e2d2",
+    "text": "EIN BEARER-TOKEN, DAS DER PARTNER AUSGESTELLT HAT, anstelle von client credentials. Versiegelt wie fedSignalsClientSecret und verwendet, wann immer es gesetzt ist."
+  },
+  "fed.schema.attributes.fedSloUrl.what": {
+    "en": "1fbc6ebefdaa8b2d",
+    "text": "DER SingleLogoutService DES PARTNERS NACH SAML 2.0 — wohin dieser Dienst ein signiertes <LogoutRequest> sendet, wenn sich eine Person HIER abmeldet (/logout), und wohin die <LogoutResponse> auf das eigene LogoutRequest des Partners geht. Aus den Metadaten des Partners. Leer: Dem Partner wird eine Abmeldung hier nie mitgeteilt, und ein LogoutRequest von ihm wird weiterhin befolgt, aber mit nichts beantwortet, weil es keinen Ort gibt, an den die Antwort gesendet werden kann. Nur SAML 2.0: SAML 1.1 definiert überhaupt kein Logout."
+  },
+  "fed.schema.attributes.fedSloBinding.what": {
+    "en": "f18757e5314706e9",
+    "text": "Auf welchem Binding ein LogoutRequest oder eine LogoutResponse geht, das dieser Dienst an den Partner sendet: HTTP-Redirect (der Standard; die Signatur liegt über der Abfragezeichenkette) oder HTTP-POST (eine eingebettete Signatur, auf einem echten Formular mit einer echten Schaltfläche — kein Skript). Eine Nachricht VOM Partner wird auf beiden angenommen."
+  },
+  "fed.schema.attributes.fedEndSessionUrl.what": {
+    "en": "1936bb8b51d16899",
+    "text": "DER end_session_endpoint DES PARTNERS NACH OpenID Connect (RP-Initiated Logout 1.0), aus seinem Discovery-Dokument. Meldet sich eine Person HIER ab, bietet die Abmeldeseite an, sie dorthin zu senden, mit dem eigenen ID Token des Partners als id_token_hint, der client_id dieser Beziehung und dem Single-Logout-Endpunkt dieser Beziehung als post_logout_redirect_uri — den der Partner registriert haben muss. Das ID Token bleibt nur so lange an der Sitzung, wie dies gesetzt ist. Leer: Der Partner wird nicht benachrichtigt."
+  },
+  "fed.schema.attributes.fedAcceptSignout.what": {
+    "en": "a80798b41222ab19",
+    "text": "DIE ABMELDUNG DES PARTNERS BEFOLGEN: ein LogoutRequest nach SAML, ein Back-Channel- oder Front-Channel-Logout nach OpenID Connect, ein Cleanup nach WS-Federation. Standardmäßig AN — der Partner ist die Autorität für die Anmeldung der Person, und wenn er dort eine Sitzung beendet oder ein Konto deaktiviert, ist dies das einzige Signal, das hier ankommt. Aus wird jedes davon abgelehnt (STS-FED-0123), und die Sitzung hier besteht ihre gesamte Lebensdauer."
+  },
+  "fed.schema.attributes.fedRequireSignedLogout.what": {
+    "en": "7b5c415a7a173deb",
+    "text": "VERLANGEN, DASS LogoutRequest UND LogoutResponse DES PARTNERS NACH SAML SIGNIERT SIND, wie saml-profiles-2.0-os Abschnitt 4.4.4.1 sagt, dass sie es MUST sind. Standardmäßig AN und im Produktmodus IMMER an; das Ausschalten wird dort abgelehnt (STS-FED-0132). Aus — nur Entwicklung — nimmt eine UNSIGNIERTE Logout-Nachricht an, wodurch jeder, der die Partnersitzung einer Person benennen kann, sie beenden kann: Ein Partner im Test, der noch nicht signieren kann, ist der einzige Grund dafür. Eine Signatur, die VORLIEGT, wird so oder so geprüft."
+  },
+  "fed.schema.attributes.fedEncryptionKeyType.what": {
+    "en": "5499ff6ee41a989b",
+    "text": "DIE ART DES SCHLÜSSELS, FÜR DEN EIN PARTNER VERSCHLÜSSELT: rsa-3072 (der Standard für SAML 2.0 und WS-Federation) oder ec-p256 (der Standard für OpenID Connect) — oder, nur für OpenID Connect, einen Post-Quantum-Schlüssel (#82): x-wing (HPKE-10-KE, ML-KEM-768 + X25519) oder ml-kem-768 (ML-KEM-768), ein AKP-Schlüssel, der in der JWKS der Beziehung ohne Zertifikat veröffentlicht wird, aus Internet-Drafts, die erst wenige Partner umsetzen. Eine Änderung stellt sofort einen neuen Schlüssel dieser Art aus und behält den alten für federation.encryptionKeyGraceS, so wie eine Rotation es tut."
+  },
+  "fed.schema.attributes.fedKeyManagementAlgorithm.what": {
+    "en": "d806c41bb2e8697a",
+    "text": "WIE DER PARTNER DEN INHALTSSCHLÜSSEL HÜLLT ODER VEREINBART, und der einzige, der angenommen wird. XML (SAML 2.0, WS-Federation): rsa-oaep — das RSA-OAEP von XML Encryption 1.1 mit SHA-256 und MGF1-SHA-256 — für einen RSA-Schlüssel, ecdh-es (ConcatKDF, kw-aes256) für einen EC-Schlüssel. JOSE (ein ID Token von OpenID Connect): RSA-OAEP-256 oder RSA-OAEP für einen RSA-Schlüssel, ECDH-ES, ECDH-ES+A128KW oder ECDH-ES+A256KW für einen EC-Schlüssel. WARNUNG: RSA-OAEP ist OAEP über SHA-1, angeboten für einen Partner, der nichts Neueres hat; zu verwenden ist RSA-OAEP-256. rsa-1_5 und RSA1_5 werden in jedem Modus abgelehnt (Bleichenbacher). Leer bedeutet den Standard für den Schlüsseltyp."
+  },
+  "fed.schema.attributes.fedContentEncryptionAlgorithm.what": {
+    "en": "30df7b680dcf4979",
+    "text": "DIE CHIFFRE ÜBER DER ASSERTION ODER DEM ID TOKEN und die einzige, die angenommen wird: aes256-gcm (der Standard) oder aes128-gcm für XML, A256GCM (der Standard) oder A128GCM für JOSE. AES-CBC — aes*-cbc von XML Encryption und A*CBC-HS* von JOSE — wird in jedem Modus abgelehnt: Die Form von XML ist das Padding-Orakel von Jager und Somorovsky (2011), und ein Partner, der GCM in dem einen kann, kann es in dem anderen."
+  },
+  "fed.schema.attributes.fedAllowUnencrypted.what": {
+    "en": "c3d0a1b2ac50968b",
+    "text": "EINE KLARTEXT-ASSERTION IM PRODUKTMODUS ANNEHMEN. Standardmäßig AUS, und aus bedeutet: Eine Assertion nach SAML 2.0 oder WS-Federation oder ein id_token von OpenID Connect per form_post, das NICHT für den Schlüssel dieser Beziehung verschlüsselt ist, wird abgelehnt (STS-FED-0140). WARNUNG: Das Einschalten lässt den Partner NameID, mail, Gruppen und jedes andere Attribut der Person IM KLARTEXT durch ihren Browser senden — seinen Verlauf, seine Erweiterungen und jeden TLS-beendenden Proxy auf dem Weg. Schalten Sie es nur für einen Partner ein, der nicht verschlüsseln kann, und bitten Sie ihn vorzugsweise darum. Der Entwicklungsmodus nimmt Klartext an, was auch immer dies sagt."
+  },
+  "fed.schema.attributes.fedEncryptionKey.what": {
+    "en": "b4d2ac940c13b9f8",
+    "text": "DIE SCHLÜSSELTABELLE: eine JSON-Zeile je Schlüssel, mit dem diese Beziehung entschlüsselt — sein kid, sein Schlüsseltyp, `current` oder `previous`, sein Zertifikat und seine Kette unter dem Intermediate dieses Vertrauensbereichs sowie der private Schlüssel, VERSIEGELT unter dem Schlüsselverschlüsselungsschlüssel, überall wo Schlüssel fortbestehen. Eine Zeile `previous` bleibt bis zu ihrem retiresAt und wird dann vom Scheduler-Auftrag federation.encryption-key-retire entfernt. Geschrieben nur von create, rotate und diesem Auftrag; VORENTHALTEN bei jeder LDAP-Suche im Produkt und bei jeder Antwort einer Seite und von /admin-api, die die öffentliche Hälfte veröffentlichen. Der Schlüsseltyp ist eine Spalte, damit ein hybrider Post-Quantum-Schlüssel eine Zeile neben dem klassischen sein kann, sobald einer registriert ist."
+  },
+  "fed.schema.attributes.fedClientCertificate.what": {
+    "en": "c8d1bb6c418a58bb",
+    "text": "OPENID CONNECT, NUR fedFapi 1-advanced (#931). DAS TLS-CLIENTZERTIFIKAT, das dieser Dienst vorlegt, wenn er den Token- und den UserInfo-Endpunkt des Partners anwählt: eine JSON-Zeile mit einem Zertifikat clientAuth von der TLS Client Issuing CA dieses Vertrauensbereichs (Subject CN=federation <id> client, ein subjectAltName urn:sts:federation:), seiner Kette, seinem x5t#S256, seiner Gültigkeit und dem privaten Schlüssel, VERSIEGELT unter dem Schlüsselverschlüsselungsschlüssel, überall wo Schlüssel fortbestehen. Es authentifiziert den Client, wo fedTokenAuth tls_client_auth ist (RFC 8705 Abschnitt 2.1), und ist das, woran der Partner seine Access Tokens bindet (cnf.x5t#S256, Abschnitt 3). Ausgestellt, wenn fedFapi zu 1-advanced wird, bei der ersten Anmeldung, die keines hat, oder durch den Scheduler-Auftrag federation.client-certificate-renew, der es außerdem federation.clientCertificateRenewDays vor dem Ablauf erneuert, mit demselben Subject. Geschrieben nur von diesen Stellen; VORENTHALTEN bei jeder LDAP-Suche im Produkt und bei jeder Antwort einer Seite und von /admin-api, die die öffentliche Hälfte veröffentlichen, damit sie beim Partner registriert wird."
+  },
+  "fed.schema.attributes.fedAllowUnsolicited.what": {
+    "en": "5b2a044dd3f46597",
+    "text": "Eine Antwort annehmen, um die dieser Dienst nicht gebeten hat — die unaufgeforderte Response von SAML 2.0 und der EINZIGE Betriebsmodus von SAML 1.1. Für SAML 2.0 standardmäßig AUS und für SAML 1.1 zwingend AN, weil dieses Profil keine Anfrage hat, auf die zu antworten wäre. Das Einschalten für SAML 2.0 hebt die Prüfung von InResponseTo auf, und das sollte man wissen, statt es zu verbergen."
+  },
+  "fed.schema.attributes.fedApplication.what": {
+    "en": "c8291b575c606bc3",
+    "text": "DER ZEIGER und alles, was diese Seite über den Partner speichert: die Kennung seines Eintrags in ou=applications. Seine entityID, sein Assertion Consumer Service, seine Redirect-URIs und sein Zertifikat liegen DORT, wo jedes Protokollmodul sie bereits liest. Irgendetwas davon hierher zu kopieren, wäre der Zwei-Speicher-Fehler, den dieses Repository zu vermeiden angelegt ist."
+  },
+  "fed.schema.attributes.fedAuthnMechanism.what": {
+    "en": "10e91a734e1d74b3",
+    "text": "WIE DIESER DIENST DIE PERSON AUTHENTIFIZIERT, wenn dieser Partner ihn darum bittet: password, password-mfa, webauthn, spnego — ein Kerberos-Ticket, das der Browser bereits hält, ganz ohne Bildschirm —, wallet — ein Credential, das dieser Vertrauensbereich ausgestellt hat und aus der Wallet der Person vorgelegt wird — oder federation, das sie zu einer anderen Beziehung weiterleitet und diesen Dienst zu einer Identitäts-BRÜCKE zwischen zwei Protokollen macht. LEER BEDEUTET, DASS DIESE BEZIEHUNG NICHTS SAGT, und das ist nicht dasselbe wie password: Es fällt durch auf appFederationRelationship am Anwendungseintrag und dann auf den Anmeldebildschirm, genau das, was jede Beziehung tat, bevor es dieses Attribut gab."
+  },
+  "fed.schema.attributes.fedAuthnRelationship.what": {
+    "en": "e67f3ec502c8b6b8",
+    "text": "ZU WELCHER BEZIEHUNG DIE PERSON GESENDET WIRD, wenn der Mechanismus `federation` ist. Sie benennt eine Beziehung auf der DIENSTANBIETER-Seite in DIESEM Vertrauensbereich — das Register gilt je Vertrauensbereich, daher benennt eine ID aus einem anderen hier nichts — und sie wird geprüft, wenn sie VERWENDET wird, nicht wenn sie geschrieben wird, weil die benannte Beziehung danach von jemandem deaktiviert oder gelöscht werden kann, der diesen Eintrag nie angesehen hat. Von jedem anderen Mechanismus ignoriert und von diesem verlangt: readinessOf() nennt sie."
+  },
+  "fed.schema.attributes.fedRelease.what": {
+    "en": "c9c33e739003f762",
+    "text": "WELCHE ATTRIBUTE AN DIESEN PARTNER FREIGEGEBEN WERDEN, nach Claim- oder Attributnamen. Es FILTERT, was /admin/claims, /admin/saml-attributes und der Claim groups sonst in ein Artefakt für diese Audience schreiben würden, und es kann nichts anderes berühren — nicht sub, nicht iss, nicht exp, nicht eine NameID. KEINE WERTE HIER BEDEUTET KEINE RICHTLINIE, nicht dass nichts freigegeben wird; siehe die Überschrift, wo der Unterschied begründet wird."
+  },
+  "fed.schema.attributes.fedFirstSeen.what": {
+    "en": "4eb7da413f19633b",
+    "text": "GeneralizedTime: wann diese Beziehung zuerst VERWENDET wurde, und das ist nicht der Zeitpunkt, zu dem sie erstellt wurde."
+  },
+  "fed.schema.attributes.fedLastSeen.what": {
+    "en": "49fa18e0b49322c5",
+    "text": "GeneralizedTime, die jüngste Verwendung."
+  },
+  "fed.schema.attributes.fedAuthentications.what": {
+    "en": "2ee55bdb488ba64f",
+    "text": "Wie viele Anmeldedaten diese Beziehung durchquert haben. Bei jeder Änderung ZUGEWIESEN — ein Zähler, der Werte anhäuft, wäre Unsinn — und es ist eine lebendige Zahl in einem Verzeichniseintrag, die ein echtes Verzeichnis nicht enthielte."
+  },
+  "fed.schema.attributes.fedUsers.what": {
+    "en": "437b5b9e1a80bc48",
+    "text": "Wie viele verschiedene Identitäten sie durchquert haben. Gezählt anhand von fedLastUser, daher zählt es einen WECHSEL des Benutzers und keine Menge: richtig für den gewöhnlichen Fall und eine Unterzählung, wenn jemand zwischen zwei Partnern wechselt. Hier genannt, weil es eine Zahl auf einer Seite ist."
+  },
+  "fed.schema.attributes.fedLastUser.what": {
+    "en": "28541b4bc6a62e68",
+    "text": "Die jüngste Identität. Am Eintrag und nicht im Speicher, weil der Eintrag die Ablage ist."
+  },
+  "fed.schema.attributes.fedApplicationUse.what": {
+    "en": "3c112c1cef2a6f6d",
+    "text": "DIESELBEN ZWEI ZÄHLUNGEN, AUFGETEILT NACH DER ANWENDUNG, FÜR DIE DIE ANMELDUNG GALT — ein Wert je Anwendung, gepackt als `application|authentications|users|lastUser|lastSeen`. Es gibt sie, weil fedAuthentications beantwortet, \"wie viel diese Beziehung durchquert hat\", und die Karte unter /admin/federation/map beantworten muss, \"wie viel sie FÜR JEDE der Anwendungen durchquert hat, die für ihre Nutzung konfiguriert sind\", und das ist eine andere Frage, sobald eine zweite Anwendung denselben Partner nennt.\n\nNUR DIE SEITE DES DIENSTANBIETERS, und das ist kein Versäumnis. Eine Beziehung auf der Seite des Identitätsanbieters benennt genau EINE Anwendung (fedApplication), daher IST ihre Zählung je Anwendung fedAuthentications, und ein zweites Attribut, das dieselbe Zahl unter einem anderen Namen hält, ist die Kopie, die auseinanderzulaufen beginnt.\n\nEIN WERT WIRD NUR FÜR EIN PAAR GESCHRIEBEN, FÜR DAS DIESER DIENST KONFIGURIERT IST, geprüft gegen die aktuelle Konfiguration im Augenblick des Schreibens, statt der Anfrage zu vertrauen — siehe applicationConfiguredFor(). Ohne diese Prüfung wäre dieses Attribut eine unbegrenzte Liste von Zeichenketten, die jeder gewählt hat, der /federation/login/{id} erreichen kann, an dem einen Eintrag dieses Verzeichnisses, dessen Inhalt entscheidet, ob eine Assertion abgelehnt wird.\n\n`|` WIRD IN JEDEM DER BEIDEN FREITEXTFELDER AUF DEM WEG HINEIN DURCH `~` ERSETZT, und das ist der Kompromiss dieses Formats, genannt statt erst entdeckt: Dies ist ein gepackter Zähler, der auf einem Bild gezeichnet wird, keine Kennung, über die irgendetwas verknüpft. Die Anwendung, unter der eine Zeile ABGELEGT wird, wird durchgehend in derselben gepackten Schreibweise verglichen, sodass ein Paar auf sich selbst zurückführt, wie auch immer es heißt."
+  },
+  "fed.schema.attributes.fedLastError.what": {
+    "en": "20801142f5a5592a",
+    "text": "WARUM DER LETZTE VERSUCH SCHEITERTE, in den eigenen Worten dieses Dienstes. Es ist hier das nützlichste Attribut, und deshalb werden Ablehnungen aufgezeichnet und nicht nur protokolliert: Eine Föderation, die nicht funktioniert, scheitert beim Dienst von jemand anderem, und \"die Signatur ließ sich gegen das konfigurierte Zertifikat nicht prüfen\" ist der Satz, der den Streit beendet, wessen Ende defekt ist."
+  },
+  "fed.schema.attributes.fedLastErrorAt.what": {
+    "en": "5ff3120f0d87d356",
+    "text": "GeneralizedTime für die Zeile darüber. Getrennt, damit ein alter Fehler neben einem jüngsten Erfolg als Vergangenheit gelesen wird und nicht als der aktuelle Zustand."
+  },
+  "fed.schema.where.thisService": {
+    "en": "8d0cc39f82ebc508",
+    "text": "dieser Dienst"
+  },
+  "fed.schema.from.thisRegister": {
+    "en": "eb9ec04b4f5dbb7c",
+    "text": "dieses Register"
+  },
+  "fedgraph.sentences.thisService": {
+    "en": "2ee8e73fd08187ad",
+    "text": "Dieser Dienst"
+  },
+  "fedgraph.sentences.noMechanism": {
+    "en": "85a969d1a113b8c5",
+    "text": "Der Anmeldebildschirm (Benutzername und Passwort)"
+  },
+  "fedgraph.sentences.unknownMechanism": {
+    "en": "f76c6d8079660f9f",
+    "text": "{{mechanism}} — kein Mechanismus, den dieser Dienst hat"
+  }
+}

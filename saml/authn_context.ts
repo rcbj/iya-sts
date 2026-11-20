@@ -69,6 +69,10 @@
 
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
+// The two vocabularies are the model's (#1579): `models/saml/saml2.tsp`'s
+// authentication context classes and `saml11.tsp`'s methods, with the
+// `equivalent` each names in the other. A leaf, so no cycle.
+import SamlModel = require('./saml_model');
 
 // What `forSession()` answers.
 interface AuthnReading {
@@ -92,10 +96,10 @@ interface AuthnContextDeps {
 }
 
 // --- SAML 2.0 authentication context classes (saml-authn-context-2.0-os) ---
-const AC_PREFIX = 'urn:oasis:names:tc:SAML:2.0:ac:classes:';
+const AC_PREFIX = SamlModel.prefix('saml2.authnContext');
 
 // --- SAML 1.1 authentication methods (saml-core-1.1 section 7.1) ------------
-const AM_PREFIX = 'urn:oasis:names:tc:SAML:1.0:am:';
+const AM_PREFIX = SamlModel.prefix('saml11.authnMethod');
 
 /**
  * Says how a session authenticated in the two SAML vocabularies: a SAML 2.0
@@ -106,15 +110,17 @@ class AuthnContext {
    * SAML 2.0's PasswordProtectedTransport class.
    */
   static readonly AC_PASSWORD_PROTECTED =
-    AC_PREFIX + 'PasswordProtectedTransport';
+    SamlModel.term('saml2.authnContext', 'passwordProtectedTransport');
   /**
    * SAML 2.0's Password class.
    */
-  static readonly AC_PASSWORD = AC_PREFIX + 'Password';
+  static readonly AC_PASSWORD =
+    SamlModel.term('saml2.authnContext', 'password');
   /**
    * SAML 2.0's Kerberos class.
    */
-  static readonly AC_KERBEROS = AC_PREFIX + 'Kerberos';
+  static readonly AC_KERBEROS =
+    SamlModel.term('saml2.authnContext', 'kerberos');
   // TLSClient and not X509: the X509 class is "the principal authenticated by
   // means of a digital signature where the key was validated as part of an
   // X.509 PKI" at the MESSAGE level, and what the main port verified is the
@@ -123,15 +129,18 @@ class AuthnContext {
   /**
    * SAML 2.0's TLSClient class, for a verified TLS client certificate.
    */
-  static readonly AC_TLS_CLIENT = AC_PREFIX + 'TLSClient';
+  static readonly AC_TLS_CLIENT =
+    SamlModel.term('saml2.authnContext', 'tlsClient');
   /**
    * SAML 2.0's X509 class.
    */
-  static readonly AC_X509 = AC_PREFIX + 'X509';
+  static readonly AC_X509 =
+    SamlModel.term('saml2.authnContext', 'x509');
   /**
    * SAML 2.0's unspecified class.
    */
-  static readonly AC_UNSPECIFIED = AC_PREFIX + 'unspecified';
+  static readonly AC_UNSPECIFIED =
+    SamlModel.term('saml2.authnContext', 'unspecified');
   // Microsoft's, and used for the reason wsfed.ts recorded long before this
   // file: SAML 2.0's own classes have no member that describes a WebAuthn key
   // after a password without overstating a specific mechanism, and
@@ -141,58 +150,54 @@ class AuthnContext {
    * Microsoft's `multipleauthn` class, for more than one factor.
    */
   static readonly AC_MULTIFACTOR =
-    'http://schemas.microsoft.com/claims/multipleauthn';
+    SamlModel.term('saml2.authnContext', 'multipleAuthn');
 
   /**
    * SAML 1.1's password authentication method.
    */
-  static readonly AM_PASSWORD = AM_PREFIX + 'password';
+  static readonly AM_PASSWORD =
+    SamlModel.term('saml11.authnMethod', 'password');
   /**
    * SAML 1.1's Kerberos authentication method, RFC 1510 by number.
    */
-  static readonly AM_KERBEROS = 'urn:ietf:rfc:1510';
+  static readonly AM_KERBEROS =
+    SamlModel.term('saml11.authnMethod', 'kerberos');
   // "SSL/TLS Certificate Based Client Authentication" — RFC 2246 by number,
   // which is how section 7.1 spells it.
   /**
    * SAML 1.1's TLS client certificate authentication method, RFC 2246 by
    * number.
    */
-  static readonly AM_TLS_CLIENT = 'urn:ietf:rfc:2246';
+  static readonly AM_TLS_CLIENT =
+    SamlModel.term('saml11.authnMethod', 'tlsClient');
   /**
    * SAML 1.1's X509-PKI authentication method.
    */
-  static readonly AM_X509 = AM_PREFIX + 'X509-PKI';
+  static readonly AM_X509 =
+    SamlModel.term('saml11.authnMethod', 'x509');
   /**
    * SAML 1.1's HardwareToken authentication method.
    */
-  static readonly AM_HARDWARE_TOKEN = AM_PREFIX + 'HardwareToken';
+  static readonly AM_HARDWARE_TOKEN =
+    SamlModel.term('saml11.authnMethod', 'hardwareToken');
   /**
    * SAML 1.1's unspecified authentication method.
    */
-  static readonly AM_UNSPECIFIED = AM_PREFIX + 'unspecified';
+  static readonly AM_UNSPECIFIED =
+    SamlModel.term('saml11.authnMethod', 'unspecified');
 
   // A partner's SAML 2.0 class, said in SAML 1.1 — for a federated session
   // re-asserted over a 1.1 profile. Only the classes with a 1.1 method that
   // means the same thing are listed; anything else becomes `unspecified`,
   // which overstates nothing.
-  private static readonly SAML2_TO_SAML11: Readonly<Record<string, string>> = {
-    [AuthnContext.AC_PASSWORD_PROTECTED]: AuthnContext.AM_PASSWORD,
-    [AuthnContext.AC_PASSWORD]: AuthnContext.AM_PASSWORD,
-    [AuthnContext.AC_KERBEROS]: AuthnContext.AM_KERBEROS,
-    [AuthnContext.AC_TLS_CLIENT]: AuthnContext.AM_TLS_CLIENT,
-    [AuthnContext.AC_X509]: AuthnContext.AM_X509,
-    [AuthnContext.AC_MULTIFACTOR]: AuthnContext.AC_MULTIFACTOR
-  };
+  // The equivalents are the model's (`@term`'s `equivalent`).
+  private static readonly SAML2_TO_SAML11: Readonly<Record<string, string>> =
+    SamlModel.equivalents('saml2.authnContext', 'saml11.authnMethod');
 
   // And the other way, for a partner that spoke SAML 1.1 or
   // WS-Federation-1.1.
-  private static readonly SAML11_TO_SAML2: Readonly<Record<string, string>> = {
-    [AuthnContext.AM_PASSWORD]: AuthnContext.AC_PASSWORD_PROTECTED,
-    [AuthnContext.AM_KERBEROS]: AuthnContext.AC_KERBEROS,
-    [AuthnContext.AM_TLS_CLIENT]: AuthnContext.AC_TLS_CLIENT,
-    [AuthnContext.AM_X509]: AuthnContext.AC_X509,
-    [AuthnContext.AC_MULTIFACTOR]: AuthnContext.AC_MULTIFACTOR
-  };
+  private static readonly SAML11_TO_SAML2: Readonly<Record<string, string>> =
+    SamlModel.equivalents('saml11.authnMethod', 'saml2.authnContext');
 
   /**
    * Builds an instance over the modules it depends on.

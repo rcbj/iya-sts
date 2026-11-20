@@ -648,6 +648,9 @@ var EKU_OIDS = {
   anyExtendedKeyUsage: '2.5.29.37.0',
   msSmartcardLogon: '1.3.6.1.4.1.311.20.2.2',
   msDocumentSigning: '1.3.6.1.4.1.311.10.3.12',
+  // RFC 9336: what a credential-signing certificate carries (#1880), and
+  // what no TLS stack takes for serverAuth or clientAuth.
+  documentSigning: '1.3.6.1.5.5.7.3.36',
   msEncryptingFileSystem: '1.3.6.1.4.1.311.10.3.4',
   kdcAuthentication: '1.3.6.1.5.2.3.5',
   pkinitClientAuth: '1.3.6.1.5.2.3.4'

@@ -7,6 +7,13 @@ handler, what it mirrors and its parameters; `AdminApiSpec.named()` gives it the
 summary and the request-body schema from the model when the table is built. To change
 an operation or a schema, edit the `.tsp`.
 
+**A row's handler is typed by its operation in the model (#1579).** The table
+and every table it spreads are `IyaApi.AdminRow[]`; a new row of actions goes
+through `ApiRows.actions()` (`common/api_rows.ts`), so its handler is typed by
+its actions' operations, and a handler names no parameter type of its own,
+which would opt it out. `models/CLAUDE.md` (*The API types type the handlers*)
+argues it and `tests/model_api_handlers.js` holds it.
+
 The management API at `/admin-api`, its generated OpenAPI document, and the
 browser-side explorer.
 
@@ -282,6 +289,21 @@ is read from is every delivery in the realm), so it is answered before the
 `user` check the other four make, and `GET /admin-api/logout` grew
 `deliveryState`, `deliveryq` and `backchannelDeliveriesPage` to find one.
 
+**`delete` SINCE 2026-11-16 (rcbj: "Add a user delete endpoint to the admin
+api")**, `deleteUser`, and the person page's Delete tab is its console
+control (rule 7). It is not a second delete: `adminActions.deletePersonAction()`
+hands the entry to the directory's `deletePerson()`, SCIM's function, on the
+`removePersonEntry()` path an LDAP delete takes, so every cleanup those doors
+do (groups, roles, owner lists, the photo, the account observers, and
+`account_state.ts` ending what the person held) is this door's too. Two
+refusals are this door's own, because SCIM and LDAP have no console to
+protect: the caller's own entry (`STS-ADMIN-0943`, the token's person in the
+realm that issued the token, `callerPersonOf().realm`) and the last present
+member of a realm's Admin Write or Security Administrator roster
+(`STS-ADMIN-0944`). A Security Administrator's entry needs that role
+(`holder`, `common/security_operations.ts`), and the act is in
+`REAUTHENTICATED_ACTIONS`. `tests/admin_users_delete.js` holds it.
+
 ### `/admin-api/applications/new` is a GET WITH NO POST BESIDE IT, and that is rule 7 read exactly
 
 `/admin/applications/new` arrived on 2026-08-25 — a console page whose one
@@ -325,7 +347,7 @@ single-valued one given several values.
 change with the same lesson as everything else here: making six identifier
 attributes multi-valued moved six names from one sentence to the other, and
 neither sentence noticed. A hand-written list of what an operation accepts is a
-second definition of the `EDITABLE` table, and it goes stale in the document a
+second definition of the `editable` rows, and it goes stale in the document a
 caller trusts most — the same reason the enum above is read off the service
 rather than written here.
 
@@ -745,6 +767,17 @@ that one door out of nine kept its own opinion. The refusal carries its own code
 `Bearer` according to which setting is on, with the scope this method wants.
 Both are off by default and neither compliance mode implies one;
 `oauth-oidc/CLAUDE.md` rule 3ao argues the five.
+
+**`oauth2.accessTokenRequireDpop` IS ASKED IN THE REALM THAT ISSUED THE TOKEN
+(#28, rcbj, 2026-11-15), not the realm whose `/admin-api` was called.** Asked
+in the ambient realm, a realm turning it on refused the SERVICE-WIDE API
+client's bearer token at that realm's `/admin-api` (`STS-OAUTH-0528`) — the
+default realm's `sts-api-client`, which operators and automation use at every
+realm's door. Now a realm's switch holds the tokens its own clients hold, and
+the service-wide client keeps the default realm's rule: the gate reads the
+setting under `tokenRealm` and passes it as `dpopRequired`, and the
+`WWW-Authenticate` scheme follows the same answer.
+`oauth2.accessTokenRequireMtls` is unchanged, still the ambient realm's.
 
 **`/admin/api-explorer` STOPS WORKING while `oauth2.accessTokenRequireDpop` is
 on**, and that is stated rather than worked around: the explorer's script sends
@@ -1361,17 +1394,30 @@ is who did it.
   person's name, or the client's id on `client_credentials`.
 * **`callerNameOf(res)`** is what a handler passes as `actor`. It never reads
   the request.
-* **`nameActor(req, res)` sets a JSON body's `actor` member**, in the route
-  wrapper, after the body has passed its schema. Eighteen places in
-  `admin-core/admin_actions.ts` read `body.actor` for the row an action
-  writes — the console puts its signed-in user there — and this API gave them
-  nothing: a closed schema refuses the member (400, `STS-API-0009`), so those
-  rows named nobody. It is set AFTER the schema so that a caller's own `actor`
-  is still refused wherever the schema is closed, and replaced wherever it is
-  open. Every handler reads its own body with `parseBody(req)`, which parses
-  `req.body` each time, so the one place that reaches all of them is the text
-  they parse. A body that is not JSON, and one its handler owns (a streamed
-  upload), is left alone; the HTTP row names the caller either way.
+* **Every action is HANDED the caller, never through its body** (rcbj on
+  #1579, 2026-11-11). Each handler passes `callerNameOf(res)` as `actor` in
+  the action's context argument — `{ via: 'api', actor, … }`, the shape
+  `usersAction`, `applicationsAction`, `rolesAction`, `policiesAction`,
+  `rbacAction` and `mfaAction` already took — and so do `logoutAction`,
+  `permissionsAction`, `groupsAction`, `saml2Action` and `consentAction`
+  since #1579; the spread tables' acts (`scim_clients_api.ts`,
+  `secret_destinations_api.ts`, `passkey_report_api.ts`,
+  `post_login_activities_api.ts`, `branding_api.ts`) read
+  `res.locals.apiCaller` the same way, and `uma_api.ts` and `authzen_api.ts`
+  `req.adminApiCaller`. **Until #1579 the carrier was the body:**
+  `nameActor(req, res)` wrote the subject into a JSON body's `actor` member
+  after the schema had passed (#446), and the actions read `body.actor` — the
+  one member an action read that the model does not declare, typed
+  `IyaApi.NamedActor`. rcbj decided on #1579 that an action reads no body
+  member the model does not declare; `nameActor()`, `NamedActor` and every
+  `body.actor` read were deleted, and `tests/admin_api_action_actor.js` holds
+  one act of each family that took it from the body to a row naming the
+  caller. A caller's own `actor` is still refused by the closed schema (400,
+  `STS-API-0009`), like any member the model does not declare. One thing the
+  move changed: the context is the gate's answer whatever the body's media
+  type, so an act whose body is not JSON names the caller too, where the
+  body's carrier left it nobody; and with no token (development's open API)
+  an open schema's `actor` is no longer read, so nobody is named.
 * **`common/audit.js`'s HTTP row reads `res.locals.apiCaller` first**, before
   the sign-on cookie's resolver: the credential that let the call in is the
   token.
@@ -1412,6 +1458,19 @@ work out —
   methods of those names now delegates;
 * `svg`, the drawing, laid out by dagre on the server, with its links;
 * `summary`, the counts the filter's choices show.
+
+**SINCE #444's PHASE 2b (2026-11-14) THE CONSOLE LAYS THE PICTURES OUT
+ITSELF** from the graph and `looks`, with the very code `svg` is drawn with
+(`admin-ui/web_delegation_map.ts`, `web_federation_diagram.ts`,
+`web_geo_map.ts`), so the answers ADDED what that code reads and the server
+had kept to itself — `drawing.verifiesCredentials` on every picture, the
+federation map's node names and `looks`, Geolocation's `drawing.map` — and
+removed nothing. `svg`, `picture.svg` and `format=svg` stay (#1768). The
+console lays the page out from the data. When the request names a language,
+those SVG members are redrawn from the translated answer
+(`admin-ui/picture_svg.ts`), so they are that picture; with no language they
+are the English the model laid out. `admin-ui/CLAUDE.md`, *The pictures are
+laid out in the browser*, has the rest.
 
 `format=svg` answers the document alone with no links, as the page's own
 `?format=svg` does. The five filter parameters are declared once
@@ -1458,6 +1517,43 @@ gate asks, straight after the revoked-or-disabled check
 `tests/admin_api_session_bound.js` holds it: the same token before and after
 its session ends, a second session of the same person that goes on working,
 and a token issued on no session.
+
+**THE GATE READS THOSE ROWS OFF THE EVENT LOOP (#880, 2026-11-11).** The
+checks above stay synchronous. Before them, `AdminApi.warmGateRows()` asks
+the token row (`stats.warmTokens()`), then the session id that row holds
+(`authn.warmSessionAsync()`), then the person (`ldap.warmSubjectsAsync()`,
+which puts the window slot and notes the UUID — `entriesByUuidsAsync()`
+does neither). The roster still reads the bootstrap administrator by
+username (`existingUserEntry()`), and the owner check lists service
+accounts (`serviceAccountNames()`). Those are warmed in the token's realm
+too: `warmUserNamesAsync()` puts the `uid=` key, absence included, and
+remembers the `byName` answer until a write under `ou=users`, and
+`serviceAccountNamesAsync()` fills the list the synchronous call keeps.
+An absence at `uid=<name>` is not treated as nobody.
+
+**THE REMEMBERED ANSWER IS READ BY THE GATE'S CHECKS AND NOTHING ELSE
+(#880's review, 2026-11-13).** The first version wrote an answer down on
+every `existingUserEntry()` lookup in a windowed process, so every name
+presented at any sign-in, before authentication, became an entry of an
+unbounded Map, and a remembered "nobody" was trusted by the creates too
+(`ldap/CLAUDE.md`, *THE CONSOLE GATE'S REMEMBERED USERNAMES*). So the
+continuation `admit()` no longer calls `next()`: it marks `admitted`, and
+`runAdmit()` runs it inside `ldap.withRememberedUserNames()` and calls
+`next()` after that returns. A handler the gate admits, which may create a
+person, therefore never reads a remembered answer. The one read after
+`next()` that does is the bootstrap administrator's flags
+(`admin_rbac.ts`'s `bootstrapState()`, asked by `GET /admin-api/me` and the
+roster), which creates nothing. A warm that fails
+holds nothing and the same checks run; the decision is not cached, and a
+failed warm is not a refusal of its own. Applications stay resident, so
+`applications.load()` is not this cost. The group index's `classesUnder`
+read is once per `groupsVersion` and is not part of this change.
+`tests/admin_api_gate_warm.js` holds it, against a window and an on-demand
+reader that count synchronous reads: the first request and the next one
+do none for the token, the person, the bootstrap name or the service
+accounts. The session in that child lives in the memory map, so the test
+records that `warmSessionAsync()` was asked and does not arm the session
+bridge. 8081 was not re-measured.
 
 ## `GET /admin-api/me` — WHAT THE GATE DECIDED FOR THE CALLER (#446, 2026-10-05)
 
@@ -1933,6 +2029,17 @@ since the same change** (`STS-API-0110`) — see `oauth-oidc/CLAUDE.md` 3an. **T
 DPoP half of that check was missing until #34 (2026-09-15)**: see *THE GATE
 READS `DPoP` TOO* above.
 
+The same two action names on `POST /admin-api/users` issue and revoke one
+for a **person** (`issueUserTlsClientCertificate`,
+`revokeUserTlsClientCertificate`). The subject is the directory entry's
+name, the subjectAltName is `urn:sts:person:<username>` (`urn:sts:sa:` for
+a service account, #1827; `implicitName` says which), and the leaf is
+not written to `userCertificate`. The list is `mfa.tls` of
+`GET /admin-api/users`, which adds `subjectDn`, `entryDn` and
+`caAvailable` to the signing list's shape. Codes `STS-ADMIN-0939` through
+`0942`; a refusal the certificate module already marked keeps that code.
+The application's operations are unchanged.
+
 ## `issue-software-statement` (2026-09-13)
 
 `POST /admin-api/applications/issue-software-statement` mirrors the *Issue a
@@ -2013,6 +2120,20 @@ the roster. Now:
   suite read them.
 
 `sts_admin_api_operations.js`'s `theAdminRolesRoundTrip()` asserts all three.
+
+## `issue-pep-credential`: A PEP'S KEY FROM ITS OWN REQUEST (#1827's follow-up, phase 3)
+
+`POST /admin-api/xacml/issue-pep-credential` takes `name` (a username under
+the realm's `ou=users`, no `ou=peps` row needed) and `csr`, and answers a
+PROMISE like `issue-pep-certificate` below. Gated as every XACML act (Admin
+Write, `admin:write`); the answer is `XacmlPepCredentialAnswer`, public
+material only — **this service never had the private key**, so unlike
+`issue-pep-certificate` there is nothing to hand over once. A refusal's code
+is the inner one (`STS-XACML-0298`, `0299`, `0301`, `0302`, `STS-PKI-0278`/`0279`, the
+enrollment reader's), carried through `xacmlAction()`'s conversion. The
+documented example's request is not a real CSR, so the operations walk's
+replay is refused about its referent, which counts as driven.
+`xacml/CLAUDE.md` argues the act.
 
 ## `issue-pep-certificate`: THE ONE XACML ACTION THAT AWAITS (2026-09-13)
 
@@ -2374,8 +2495,9 @@ The register of secret push destinations and its four acts —
 into the table as the attribute source operations are; each handler calls
 `common/secret_destinations.ts`'s `view()` or `act()`, which is also what the
 static console's page sends its forms to (rule 7, `mirrors: POST
-/admin/secret-destinations`). The audit actor is the body's `actor`, which
-`nameActor()` sets. **`credential` is the one member here that is
+/admin/secret-destinations`). The audit actor is the gate's caller
+(`res.locals.apiCaller`), handed to `act()` beside the body (#1579).
+**`credential` is the one member here that is
 WRITE-ONLY**: taken by add and update (`writeOnly: true` in the schema), and
 in no answer of this resource or of `/applications`; `reveal-secret` refuses
 it. The provider and payload `enum`s are read off `common/secrets.js`'s
@@ -2428,6 +2550,68 @@ exception out of the gate's source. `admin-ui/devices_admin.ts`'s `mdmFeed()`
 is the handler. It was shared with development's test control at
 `/devices/test/compliance` until #597 deleted that route; the feed is the one
 door in both modes.
+
+## `POST /admin-api/pep-audit` — A REMOTE PEP'S DECISION RECORDS, THE SECOND OPERATION THAT IS NOT AN ADMINISTRATOR'S (#1827, 2026-11-16)
+
+rcbj: "Every log event pushed to iya-sts must be through an authenticated
+request on the mgmt API. Tie access to the built in group of remote PEPs."
+A remote XACML PEP pushes the records of the decisions it made in its own
+process here, and `xacml/pep_audit.ts` records each as an audit row
+(`xacml/CLAUDE.md`, *A remote PEP's decision records*). The gate's half is
+the device feed's above, made a second time:
+
+* **`isPepAuditFeed()`** — a POST to `PEP_AUDIT_PATH` — takes
+  **`xacml:pep-audit`**, which nothing else here takes, and the access policy
+  is asked for **REMOTE_PEPS**. It is not under `/xacml/:action` on
+  purpose: that route would take `pep-audit` as an unknown action.
+* **REMOTE_PEPS AUTHORIZES THE PERMISSION, AND IT IS A GROUP, NOT A
+  ROSTER.** It is the built-in role of `roles.remotePepGroup`'s members
+  (`common/roles.js`), and since #1827 it carries `permission:
+  'xacml:pep-audit'`, which puts it on `roles.AUTHORIZING_BUILT_INS` beside
+  the two owner roles. `role_permissions.ts` gates the scope with it at
+  issuance and held ∩ carried on every call: `heldRoles()` adds a held
+  authorizing built-in to the configured list, and `effectiveRoles()` takes
+  one ONLY through that list, never from `rolesOf()`'s built-ins — so an
+  `admin:write` token whose subject happens to be in the group is not a PEP's.
+* **THE GATE REFUSES BOTH CROSSINGS ITSELF (`STS-API-0147`)**, as it does a
+  security change without SECURITY_ADMIN: a push without `xacml:pep-audit`
+  and REMOTE_PEPS, and a token carrying `xacml:pep-audit` at any other
+  operation. With `xacml.enforceAccess` off the policy allows everything,
+  and a PEP's token must not be one setting away from administering.
+* **THE TOKEN IS THE PEP'S OWN RFC 7523 SELF-ASSERTION** (`common/CLAUDE.md`
+  3ab), presented through the seeded public client **`sts-remote-pep`**,
+  which holds the one delegated permission grant
+  (`urn:sts:admin-api:xacml:pep-audit`) and declares bound tokens, so the
+  token endpoint issues it only over mutual TLS (#1050's STS-OAUTH-0489) and
+  this gate honours it only on that certificate. The audit actor is the
+  token's subject, the PEP's entry, which since #1760 is a service account:
+  a service account's policy governs the browser and the password doors, and
+  a self-assertion is neither.
+* **THE PERMISSION IS FILLED INTO AN EXISTING `sts-management-api`**
+  (`applications.js`'s `fillApiPermissions()`, a name listed in
+  `PERMISSIONS_ADDED_SINCE_SEED` and absent from the entry), because a seeded
+  entry that already exists is otherwise left alone and the grant would name
+  nothing on a service upgraded from 1.1.0.
+
+* **AND ON A DPoP KEY SINCE THE PEP'S TOKEN CREDENTIAL (#1827's
+  follow-up, rcbj-approved plan, 2026-11-16).** `sts-remote-pep` is a
+  DPoP-bound public client now (`sender_constraints.js`), and its
+  `/admin-api` token is bound to the PEP's key, whose proof RFC 9449 section
+  7's check below asks for. Through phase 3 of that plan its entry still
+  declared certificate-bound tokens and a DPoP binding stood for that
+  declaration (`dpopStandsForCertificate()`, past `STS-API-0137`, and
+  `accessTokenRefusal()`'s `certificateStands`). **PHASE 4 (rcbj,
+  2026-11-16) DROPPED THE DECLARATION AND THE EXCEPTION**: the seed no
+  longer declares the flag, an entry an earlier build seeded has it cleared
+  at start (`applications.js`'s `fillRetiredClientFlags()`), and
+  `STS-API-0137` holds for `sts-remote-pep` exactly as for any client, which
+  now never asks it of that client because the client declares nothing.
+
+`admin_api_spec.ts`'s `scopeForMethod()` states the exception and
+`tests/admin_api_document_security.js` holds the two together.
+`tests/remote_pep_audit.js` drives the whole path in process, and
+`tests/remote_pep_token_door.js` (A1) the push on a DPoP-bound token over a
+connection with no certificate.
 
 ## ONE COPY OF THE COMPONENTS BEHIND EVERY VALIDATOR (#365, 2026-09-30)
 
@@ -2511,7 +2695,7 @@ on the BODY, so the OpenAPI document says `admin:security` only for
 description names the rest. `/me` answers `security`. `sts-api-client` and
 `sts-admin-console` declare it; **an entry seeded before #645 is not
 migrated** (no migrations), and needs a delegated permission grant of
-`urn:sts:admin-api:admin:security` — `docs/security-administrator.md` says
+`urn:sts:admin-api:admin:security` — `docs/v1.1.0/security-administrator.md` says
 so. The harness's token asks for it (`tests/tools/admin-api-token.js`).
 `admin-ui/CLAUDE.md` 8a-ii has the role.
 
@@ -2832,7 +3016,11 @@ and `applicationPolicies` on `GET /admin-api/xacml/policies`;
   where the validator could only say a member is missing. The row's
   `category`, `dataType` and `multiplicity` are plain strings: the grammar
   takes a short name OR its XACML URI, and its refusal (STS-FGA-0023) names
-  the `field`, which the console draws under the box.
+  the `field`, which the console draws under the box. **`field` IS IN THE
+  RESPONSE MODEL since #40 (2026-11-15)**, on `WithOkMessageErrors97`, which
+  the five access-type acts share: until then the refusal was not a valid
+  answer of its operation, so #1353's check replaced every 400 of the three
+  mapping acts with a 500 and STS-API-0139 (`sts_fga_codes` S3 pinned it).
 * **The three mapping acts rewrite the type's ONE value through
   `updateApplication()`**, the door `set-access-type` takes, after the
   grammar's own `FgaMap.parseRow()` has read the row — so the reserved

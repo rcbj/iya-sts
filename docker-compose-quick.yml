@@ -141,8 +141,12 @@ services:
       - "${PKI_PORT:-8082}:8082"
       - "${KDC_PORT:-88}:88"
       - "${KDC_PORT:-88}:88/udp"
+      - "${DEBUGGER_PORT:-8444}:${DEBUGGER_PORT:-8444}"
     environment:
       STS_MODE: product
+      STS_DEBUGGER_ENABLED: "${STS_DEBUGGER_ENABLED:-on}"
+      STS_DEBUGGER_PORT: "${DEBUGGER_PORT:-8444}"
+      STS_DEBUGGER_ALLOWED_DESTINATIONS: ${STS_DEBUGGER_ALLOWED_DESTINATIONS:-}
       KRB5_SERVICE_PRINCIPAL: ${KRB5_SERVICE_PRINCIPAL:-HTTP/localhost}
       STS_PERSISTENCE_MODE: postgres
       STS_DATABASE_URL: postgres://sts_app@postgres:5432/sts?sslmode=verify-full

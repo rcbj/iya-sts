@@ -856,6 +856,32 @@ async function sectionE(t, db, dir) {
           lists.saml2ServiceProviders['urn:sp:2'],
           'and so are the WS-Federation realms and SAML service providers');
 
+  // A CLIENT BOTH COPIES HOLD KEEPS ITS `iss` AND `sub` (run 27,
+  // 2026-11-14): the merge rebuilt the entry from first/last/count, so the
+  // front-channel iframe fell back to the sign-out's issuer and the Logout
+  // Token was dead-lettered STS-OAUTH-0542.
+  const named = 'https://sts.example/realm/r/fcx';
+  const c1 = Object.assign({}, signedIn, { oidcClients: { app1: {
+    first: 1, last: 5, count: 2, iss: named, sub: 'urn:uuid:alice' } } });
+  const c2 = Object.assign({}, signedIn, { oidcClients: { app1: {
+    first: 3, last: 4, count: 1, iss: '', sub: '' } } });
+  [merge(c1, c2), merge(c2, c1)].forEach(function (one, i) {
+    const row = one.oidcClients.app1;
+    t.equal(row.iss + ' ' + row.sub + ' ' + row.first + ' ' + row.last +
+            ' ' + row.count, named + ' urn:uuid:alice 1 5 2',
+            'A CLIENT IN BOTH COPIES KEEPS THE iss AND sub ITS ID TOKEN ' +
+            'NAMED, with the counters merged (' + (i ? 'theirs' : 'mine') +
+            ' first)');
+  });
+  const c3 = Object.assign({}, signedIn, { oidcClients: { app1: {
+    first: 2, last: 9, count: 3, iss: 'https://sts.example/realm/r',
+    sub: 'urn:uuid:alice' } } });
+  t.equal(merge(c1, c3).oidcClients.app1.iss + ' ' +
+          merge(c3, c1).oidcClients.app1.iss,
+          'https://sts.example/realm/r https://sts.example/realm/r',
+          'and the later answer\'s iss wins, noteClient()\'s rule, from ' +
+          'either side');
+
   // The flush, over the real driver: the store declares a tombstone and the
   // session merge, and product mode arms minted persistence.
   await armKeystore(dir);

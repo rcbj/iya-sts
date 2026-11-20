@@ -42,6 +42,7 @@
 import bunyan = require('bunyan');
 import net = require('net');
 import config = require('../common/config');
+import realms = require('../common/realms');
 import InstanceSlot = require('../common/instance_slot');
 // This thread's identity (#364): a request worker is a thread of this
 // process, so the pid alone no longer tells two of them apart.
@@ -2019,6 +2020,38 @@ class RiskStore {
     }));
   }
 
+  // -------------------------------------------------------------------------
+  // A REMOVED REALM'S HISTORY LEAVES THIS PROCESS WITH IT (2026-11-18). The
+  // five maps above that are keyed by realm hold a person's history only where
+  // there is no database; nothing ever deleted a realm's key, so every realm
+  // a development service had ever held kept its failures, counts,
+  // assessments, standings and session contexts after it was removed — up to
+  // the per-realm bounds each, in every process. Found by a heap snapshot of
+  // a development node after 81 realms were removed (common/CLAUDE.md,
+  // *Removing a realm takes its state with it*). The database's rows are the
+  // store's to purge and are not touched here.
+  // -------------------------------------------------------------------------
+  /**
+   * Forgets what this process holds in memory for one realm.
+   *
+   * @param realm - the removed realm's id
+   * @returns how many of the five maps held something for it
+   */
+  forgetRealm(realm: string): number {
+    const { log } = this.deps;
+    const id = String(realm || '');
+    log.debug("Entering RiskStore.forgetRealm(). " + id);
+    let forgotten = 0;
+    [this.failures, this.counts, this.assessments, this.subjectStates,
+     this.sessionContexts].forEach(function (m: Map<string, Json>): void {
+      if (m.delete(id)) {
+        forgotten += 1;
+      }
+    });
+    log.debug("Leaving RiskStore.forgetRealm(). " + forgotten);
+    return forgotten;
+  }
+
   // For tests: forget everything held in this process.
   /**
    * Forgets everything held in this process. Tests only.
@@ -2053,6 +2086,13 @@ const slot = new InstanceSlot<RiskStore>(
 
 slot.buildNowUnlessDeferred();
 
+// A removed realm's in-memory history goes with it (`forgetRealm()`), in
+// every process that applies the removal. A purge, so it runs inside
+// `realms.remove()` with every store's.
+realms.onRemove(function (id: string): void {
+  slot.get().forgetRealm(id);
+});
+
 /**
  * Where risk scoring keeps what it keeps: datasets by version, failures,
  * the model's history, assessments and standings.
@@ -2075,6 +2115,7 @@ export = {
    * @returns `root`, `default` or `none`
    */
   instanceOrigin: (): string => slot.origin(),
+  forgetRealm: slot.forward('forgetRealm'),
   RISK_GROUP: RiskStore.RISK_GROUP,
   addressNumber: RiskStore.addressNumber,
   addressText: RiskStore.addressText,

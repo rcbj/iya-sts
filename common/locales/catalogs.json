@@ -10,7 +10,10 @@
     { "tag": "zh-Hant", "name": "繁體中文", "english": "Chinese (Traditional)", "status": "machine-unreviewed" },
     { "tag": "zh-Hant-HK", "name": "繁體中文（香港）", "english": "Chinese (Traditional, Hong Kong)", "status": "machine-unreviewed", "base": "zh-Hant" },
     { "tag": "fil", "name": "Filipino", "english": "Filipino (Tagalog)", "status": "machine-unreviewed" },
-    { "tag": "sv", "name": "Svenska", "english": "Swedish", "status": "machine-unreviewed" }
+    { "tag": "sv", "name": "Svenska", "english": "Swedish", "status": "machine-unreviewed" },
+    { "tag": "de", "name": "Deutsch", "english": "German", "status": "machine-unreviewed" },
+    { "tag": "ar", "name": "العربية", "english": "Arabic", "status": "machine-unreviewed" },
+    { "tag": "hi", "name": "हिन्दी", "english": "Hindi", "status": "machine-unreviewed" }
   ],
   "offered": [
     { "tag": "en", "name": "English" },
@@ -23,6 +26,12 @@
     { "tag": "zh-HK", "name": "繁體中文（香港）" },
     { "tag": "zh-TW", "name": "繁體中文（台灣）" },
     { "tag": "fil-PH", "name": "Filipino (Pilipinas)" },
-    { "tag": "sv-SE", "name": "Svenska (Sverige)" }
+    { "tag": "sv-SE", "name": "Svenska (Sverige)" },
+    { "tag": "de-DE", "name": "Deutsch (Deutschland)" },
+    { "tag": "de-AT", "name": "Deutsch (Österreich)" },
+    { "tag": "de-CH", "name": "Deutsch (Schweiz)" },
+    { "tag": "ar-EG", "name": "العربية (مصر)" },
+    { "tag": "ar-SA", "name": "العربية (السعودية)" },
+    { "tag": "hi-IN", "name": "हिन्दी (भारत)" }
   ]
 }

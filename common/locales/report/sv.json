@@ -61,7 +61,6 @@
   "indexedNote": "En indexerad operator besvaras av katalogen utan att varje person läses. En fråga om användare vars filter inte använder någon av dem, eller som sorterar eller räknar, läser varje person: den avvisas i synkront läge och blir ett jobb i läget auto.",
   "trustRealm": "Förtroendesfär",
   "go": "Gå",
-  "version": "iya-sts version {version}",
   "docsLink": "Dokumentation",
   "addFilter": "Lägg till ett filter",
   "removeFilter": "Ta bort det här filtret",

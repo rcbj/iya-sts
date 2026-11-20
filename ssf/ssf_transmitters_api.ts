@@ -89,7 +89,12 @@ class SsfTransmittersApi {
    * @param status - the HTTP status
    * @param body - the body
    */
-  sendJson(res: Res, status: number, body: Json): void {
+  // TYPED BY THE OPERATION (#1579): through a handler's response, the
+  // answer is held to the model's at a literal 2xx status
+  // (`types/api-handlers.d.ts`).
+  sendJson<R, S extends number>(res: R, status: S,
+           body: IyaApi.AnswerOf<R, S>): void;
+  sendJson(res: any, status: number, body: any): void {
     const { log } = this.deps;
     log.debug("Entering SsfTransmittersApi.sendJson(). status=" + status);
     const reply = Object.assign({}, body);
@@ -165,7 +170,7 @@ class SsfTransmittersApi {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering SsfTransmittersApi.buildRoutes().");
-    const ROUTES = [
+    const ROUTES: IyaApi.AdminRow[] = [
       { method: 'GET', path: BASE + '/ssf/transmitters',
         tag: 'Shared Signals', operationId: 'getPartnerSignals',
         mirrors: 'GET /admin/ssf/transmitters',
@@ -189,7 +194,7 @@ class SsfTransmittersApi {
             schema: { type: 'integer', minimum: 1, examples: [10] },
             description: 'Rows per page, shared by the three lists.' }
         ],
-        handler: function (req: Req, res: Res): void {
+        handler: function (req, res): void {
           log.debug("Entering the management API partners' signals " +
                     "endpoint.");
           self.sendJson(res, 200, self.pagedReport(req.query));

@@ -41,7 +41,9 @@
 //                `delegation`   every delegation relationship an entry
 //                               declares (`appAllowedToDelegateTo`), as
 //                               `<source>|<target>`
-//                any other type has none
+//                any other type: every literal the root policy (and the
+//                policies it references) compares resource-id with
+//                (#936), as the actions below are named
 //   actions      every action name the root policy (and the policies it
 //                references) compares action-id with, and — for a resource
 //                that is an application or an API — the names of the
@@ -63,6 +65,7 @@
 // ===========================================================================
 
 import helpers = require('../common/helpers');
+import authzenModel = require('./authzen_model');
 
 const { log } = helpers;
 
@@ -71,6 +74,9 @@ const KINDS = Object.freeze(['subject', 'resource', 'action']);
 
 // The resource types this service can name candidates of.
 const RESOURCE_TYPES = Object.freeze(['application', 'api', 'delegation']);
+
+// The attribute a resource of any other type is named by in a policy (#936).
+const RESOURCE_ID = 'urn:oasis:names:tc:xacml:1.0:resource:resource-id';
 
 // What stands in for the id a search does not send, so the evaluation can be
 // read by the one reader; it is replaced per candidate.
@@ -112,19 +118,6 @@ function isObject(value: unknown): boolean {
   log.debug("Entering isObject().");
   log.debug("Leaving isObject().");
   return !!value && typeof value === 'object' && !Array.isArray(value);
-}
-
-/**
- * Builds a search refusal, status 400.
- *
- * @param code - the error code
- * @param message - what the caller is told
- * @returns `{ refusal }`
- */
-function refused(code: string, message: string): SearchRequest {
-  log.debug("Entering refused(). " + code);
-  log.debug("Leaving refused().");
-  return { refusal: { status: 400, code: code, message: message } };
 }
 
 /**
@@ -181,59 +174,108 @@ class AuthzenSearch {
   read(kind: string, given: unknown): SearchRequest {
     const self = this;
     log.debug("Entering AuthzenSearch.read(). " + kind);
-    if (!isObject(given)) {
-      log.debug("Leaving AuthzenSearch.read(). Not an object.");
-      return refused('STS-AUTHZEN-0001', 'A search request is a JSON ' +
-                     'object.');
+    // THE SHAPE IS THE MODEL'S (#1579): the search's own request in
+    // `models/authzen/authzen.tsp` — `page`, and the searched entity's
+    // `type` (or, for an Action Search, no `action` at all). What is left
+    // is read as an evaluation, by `authzen_map.ts`.
+    const refusal = authzenModel.read('search-' + kind, given);
+    if (refusal) {
+      log.debug("Leaving AuthzenSearch.read(). " + refusal.code);
+      return { refusal: refusal };
     }
     const body: any = Object.assign({}, given);
     let page = { token: '', limit: null, properties: {} };
     if (body.page !== undefined) {
       const sent = body.page;
-      const limit = isObject(sent) ? sent.limit : undefined;
-      if (!isObject(sent) ||
-          (sent.token !== undefined && typeof sent.token !== 'string') ||
-          (limit !== undefined && (!Number.isSafeInteger(limit) ||
-                                   limit < 0)) ||
-          (sent.properties !== undefined && !isObject(sent.properties)) ||
-          Object.keys(sent).some(function (key: string) {
-            return ['token', 'limit', 'properties'].indexOf(key) < 0;
-          })) {
-        log.debug("Leaving AuthzenSearch.read(). A bad page.");
-        return refused('STS-AUTHZEN-0042', 'page is an object with token ' +
-                       '(a string from a previous next_token), limit (a ' +
-                       'non-negative integer) and properties (an object), ' +
-                       'each optional.');
-      }
       page = { token: String(sent.token || ''),
-               limit: limit === undefined ? null : limit,
+               limit: sent.limit === undefined ? null : sent.limit,
                properties: sent.properties || {} };
       delete body.page;
     }
     if (kind === 'action') {
-      if (body.action !== undefined) {
-        log.debug("Leaving AuthzenSearch.read(). An action was sent.");
-        return refused('STS-AUTHZEN-0009', 'An Action Search request ' +
-                       'carries no action member (section 8.6).');
-      }
       body.action = { name: PLACEHOLDER };
     } else {
-      const object = body[kind];
-      if (!isObject(object) || typeof object.type !== 'string' ||
-          !object.type) {
-        log.debug("Leaving AuthzenSearch.read(). No " + kind + ".type.");
-        return refused('STS-AUTHZEN-0002', 'A ' + kind + ' search names ' +
-                       'the ' + kind + '.type to search, a non-empty ' +
-                       'string.');
-      }
       // AN ID SENT IS IGNORED (sections 8.4 and 8.5: it "MUST be ignored").
-      body[kind] = Object.assign({}, object, { id: PLACEHOLDER });
+      body[kind] = Object.assign({}, body[kind], { id: PLACEHOLDER });
     }
     // THE FINGERPRINT IS OF EVERYTHING BUT THE TOKEN: the entities and the
-    // limit a continued request must not change (section 8.2).
-    const fingerprint = self.fingerprintOf(kind, given);
+    // limit a continued request must not change (section 8.2). Everything
+    // the model names, that is: an ignored member (section 10.1.1, #936)
+    // is left out, so changing one between pages changes nothing.
+    const fingerprint = self.fingerprintOf(kind, AuthzenSearch.known(kind,
+      JSON.parse(JSON.stringify(given))));
     log.debug("Leaving AuthzenSearch.read().");
     return { body: body, page: page, fingerprint: fingerprint };
+  }
+
+  /**
+   * A search request less every member the model does not name (AuthZEN
+   * 1.0 section 10.1.1: they are IGNORED, #936), so an ignored member can
+   * neither change a page token's fingerprint nor be refused by it. Kept:
+   * the evaluation's members (`context` whole, being open; each entity's
+   * own declared members), and `page`'s. Left out: an Action Search's
+   * `action`, which its model declares `ignored`. A request naming nothing
+   * unknown is unchanged, so its digest is the one it always had.
+   *
+   * @param kind - the search
+   * @param given - a copy of the request, which this edits
+   * @returns the copy
+   */
+  static known(kind: string, given: any): any {
+    log.debug("Entering AuthzenSearch.known(). " + kind);
+    if (!isObject(given)) {
+      log.debug("Leaving AuthzenSearch.known(). Not an object.");
+      return given;
+    }
+    const namesOf = function (fields: any[]): string[] {
+      return (fields || []).map(function (one: any) {
+        return one.name;
+      });
+    };
+    const top: any[] = authzenModel.request('evaluation').fields;
+    const searched: any[] = authzenModel.request('search-' + kind).fields;
+    const ignored = searched.filter(function (one: any) {
+      return one.ignored === true;
+    }).map(function (one: any) {
+      return one.name;
+    });
+    const out: any = {};
+    top.forEach(function (field: any) {
+      const name = field.name;
+      if (ignored.indexOf(name) >= 0 ||
+          !Object.prototype.hasOwnProperty.call(given, name)) {
+        return;
+      }
+      const value = given[name];
+      if (field.open === true || !isObject(value)) {
+        out[name] = value;
+        return;
+      }
+      const keep = namesOf(field.fields);
+      out[name] = {};
+      Object.keys(value).forEach(function (key: string) {
+        if (keep.indexOf(key) >= 0) {
+          out[name][key] = value[key];
+        }
+      });
+    });
+    if (Object.prototype.hasOwnProperty.call(given, 'page')) {
+      const page = given.page;
+      if (isObject(page)) {
+        const keep = namesOf(authzenModel.fieldOf('search-' + kind,
+                                                  'page').fields);
+        out.page = {};
+        Object.keys(page).forEach(function (key: string) {
+          if (keep.indexOf(key) >= 0) {
+            out.page[key] = page[key];
+          }
+        });
+      } else {
+        out.page = page;
+      }
+    }
+    log.debug("Leaving AuthzenSearch.known().");
+    return out;
   }
 
   /**
@@ -257,8 +299,15 @@ class AuthzenSearch {
       }
       if (isObject(value)) {
         const out: any = {};
+        // defineProperty, not `out[key] =`: an assignment of `__proto__` on
+        // a plain object sets its prototype and adds no member, so a detail
+        // carrying one hashed as if it did not. Every other key is defined
+        // exactly as the assignment did, so no other digest moves.
         Object.keys(value).sort().forEach(function (key: string) {
-          out[key] = canonical(value[key]);
+          Object.defineProperty(out, key, {
+            value: canonical(value[key]), enumerable: true,
+            writable: true, configurable: true
+          });
         });
         return out;
       }
@@ -363,8 +412,18 @@ class AuthzenSearch {
   resources(type: string): string[] {
     log.debug("Entering AuthzenSearch.resources(). " + type);
     if (RESOURCE_TYPES.indexOf(type) < 0) {
-      log.debug("Leaving AuthzenSearch.resources(). Not ours.");
-      return [];
+      // A TYPE THIS SERVICE HAS NO OBJECTS OF (#936): the resource ids the
+      // policies compare resource-id with, as the actions are named, each
+      // still decided by the policy as this type before it is a result.
+      // Until #936 such a type answered no results whatever the policy
+      // permitted, which section 8.5 ("all of the resources of that type
+      // that the subject can perform the action on") does not allow when
+      // the PDP can name them.
+      const named = this.policyLiterals(RESOURCE_ID).slice(0);
+      named.sort();
+      log.debug("Leaving AuthzenSearch.resources(). From the policies, " +
+                named.length);
+      return named;
     }
     const rows = this.deps.applications.list() || [];
     let out: string[] = [];
@@ -430,7 +489,24 @@ class AuthzenSearch {
    */
   policyActions(): string[] {
     log.debug("Entering AuthzenSearch.policyActions().");
-    const ACTION_ID = 'urn:oasis:names:tc:xacml:1.0:action:action-id';
+    const found = this.policyLiterals(
+      'urn:oasis:names:tc:xacml:1.0:action:action-id');
+    log.debug("Leaving AuthzenSearch.policyActions(). " + found.length);
+    return found;
+  }
+
+  /**
+   * Every literal the realm's root policy, and the policies its repository
+   * holds, compare one attribute with — a target's match or a condition's
+   * comparison. The action candidates (action-id) and, since #936, the
+   * resources of a type this service has no objects of (resource-id).
+   *
+   * @param attributeId - the attribute the literals are compared with
+   * @returns the literals, each once, in the order found
+   */
+  policyLiterals(attributeId: string): string[] {
+    log.debug("Entering AuthzenSearch.policyLiterals(). " + attributeId);
+    const ACTION_ID = attributeId;
     const found: string[] = [];
     // Recursive, once per node of every policy: no Entering/Leaving pair,
     // which would drown the log around a property read.
@@ -475,12 +551,12 @@ class AuthzenSearch {
         walk(store.parseDocument(root.document), 0);
       }
     } catch (e) {
-      // A repository that will not read names no actions; the search then
+      // A repository that will not read names no literals; the search then
       // answers none rather than failing.
-      log.debug("Caught in AuthzenSearch.policyActions(): " +
+      log.debug("Caught in AuthzenSearch.policyLiterals(): " +
                 ((e && e.message) || e));
     }
-    log.debug("Leaving AuthzenSearch.policyActions(). " + found.length);
+    log.debug("Leaving AuthzenSearch.policyLiterals(). " + found.length);
     return found.filter(function (one: string, i: number) {
       return found.indexOf(one) === i;
     });

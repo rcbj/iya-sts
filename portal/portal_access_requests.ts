@@ -36,6 +36,8 @@ import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
+type AccountAnswering<K extends keyof IyaApi.Account.Operations> =
+  import('../types/account-api').AccountAnswering<K>;
 type AccountContext = import('../types/account-api').AccountContext;
 type AccountCaller = import('../types/account-api').AccountCaller;
 
@@ -110,7 +112,8 @@ class PortalAccessRequests {
    * @param body - the checked body
    * @returns nothing
    */
-  decide(ctx: AccountContext, res: Json, caller: AccountCaller,
+  decide(ctx: AccountContext, res: AccountAnswering<'decideAccessRequest'>,
+         caller: AccountCaller,
          body: Json): unknown {
     const { log } = this.deps;
     log.debug("Entering PortalAccessRequests.decide().");
@@ -146,14 +149,14 @@ class PortalAccessRequests {
     log.debug("Entering PortalAccessRequests.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/access-requests',
-        operationId: 'getAccessRequests', access: 'person', handler: function (req: Json, res: Json,
-                           caller: AccountCaller): unknown {
+        operationId: 'getAccessRequests', access: 'person',
+        handler: function (req, res, caller: AccountCaller): unknown {
           return ctx.json(res, 200, self.view(caller.username));
         } },
       { method: 'POST', path: ctx.BASE + '/access-requests',
         operationId: 'decideAccessRequest', access: 'person', body: DECIDE_FORM,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return self.decide(ctx, res, caller, input.body);
         } }
     ];

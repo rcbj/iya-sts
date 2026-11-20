@@ -173,7 +173,7 @@ class KerberosDemo {
   constructor(deps) {
     log.debug("Entering KerberosDemo.constructor().");
     this.sts = deps.sts;
-    this.publicUrl = String(deps.publicUrl || "").replace(/\/+$/, "");
+    this.publicUrl = util.stripTrailingSlashes(deps.publicUrl || "");
     this.spn = String(deps.spn || "") ||
       "HTTP/" + new URL(this.publicUrl || "http://localhost").hostname;
     this.servicePort = deps.servicePort === undefined ? 8888
@@ -320,15 +320,18 @@ class KerberosDemo {
    */
   async advertPage(res, ctx) {
     log.debug("Entering KerberosDemo.advertPage().");
-    let problem = "";
+    let failed = false;
     try {
       await this.ensureKeytab();
     } catch (e) {
-      log.debug("Caught in KerberosDemo.advertPage(): " +
-                ((e && e.message) || e));
-      // The page still says what would be protected, and why it is not yet.
-      problem = String((e && e.message) || e);
+      log.error("companion: the Kerberos keytab could not be prepared: " +
+                ((e && e.stack) || e));
+      // The page still says what would be protected. The sentence below
+      // is fixed: js/stack-trace-exposure follows the catch binding into
+      // sendJson, and the detail is in the log.
+      failed = true;
     }
+    const problem = failed ? "the keytab could not be prepared" : "";
     const advert = this.advertisement();
     if (String(ctx.query.get("format") || "").toLowerCase() === "json") {
       util.sendJson(res, problem ? 503 : 200,

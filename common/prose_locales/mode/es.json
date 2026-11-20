@@ -1406,5 +1406,17 @@
   "mode.requirements.sso-consent.product": {
     "en": "0a4ee080bb81a76f",
     "text": "Se pregunta a una persona una vez por aplicación antes de que SAML 2.0, SAML 1.1 o WS-Federation inicie su sesión en ella, y la respuesta se conserva. saml2.ssoConsent, saml11.ssoConsent y wsfed.ssoConsent lo desactivan por protocolo, y el valor propio de una aplicación los reemplaza."
+  },
+  "mode.requirements.pep-proxy-origin.what": {
+    "en": "697bb262238f557f",
+    "text": "Un navegador llega al proxy inverso de un PEP remoto por https"
+  },
+  "mode.requirements.pep-proxy-origin.development": {
+    "en": "27973f632a8e4726",
+    "text": "Una configuración de proxy puede nombrar un publicBaseUrl en http simple, de modo que una pila en una sola máquina no necesita certificado de escucha para el proxy."
+  },
+  "mode.requirements.pep-proxy-origin.product": {
+    "en": "3c64430130525f3e",
+    "text": "Se rechaza un publicBaseUrl que no sea https (STS-XACML-0188): el inicio de sesión del mecanismo de sesión devuelve allí un código de autorización y su cookie de sesión es Secure."
   }
 }

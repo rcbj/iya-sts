@@ -1,0 +1,762 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: BUSL-1.1
+
+'use strict';
+//
+// File: admin-ui/web_geo_map.ts
+//
+// ===========================================================================
+// THE GEOLOCATION PICTURE (#255): where a realm's people signed in from,
+// drawn as a map — the world, a continent or a country, with every country
+// filled by how many people it counts and, on a country, its cities as
+// circles. `admin-ui/geolocation_admin.ts` counts; this file draws.
+//
+// THE GEOMETRY RUNS IN THE BROWSER (#444 phase 2b, 2026-11-14). It was
+// `geo_map.ts`'s, and moved here verbatim, less its Entering/Leaving lines
+// (a `web_` module logs nothing), on `web_delegation_map.ts`'s terms: the
+// answer of `GET /admin-api/geolocation` carries the map's DATA
+// (`drawing.map`: the level, which countries are filled how dark and what
+// each says, the labels, the cities — coordinates, because on a map they
+// ARE data) and the console projects and draws it, over the outlines it
+// fetches once from `/admin/geo-outlines.json`. `geo_map.ts` is the server's
+// wrapper over this one copy, for the `picture.svg` the answer still
+// carries, so the two cannot differ. #1768 redraws that member from the
+// translated `drawing.map` when a language changes it.
+//
+// Everything it draws arrives as an argument — the outlines too — so how the
+// console decides what a number IS cannot reach the code that decides where
+// it GOES. What it requires is `web_kit.ts` (the escaper) and
+// `web_delegation_map.ts`'s palette and text metric, the latter for the
+// federation picture's reason: two pictures in one console should measure a
+// label and colour a line the same way.
+//
+// ---------------------------------------------------------------------------
+// WHAT IT DOES NOT TAKE FROM THOSE TWO IS DAGRE, and that is not a choice.
+// dagre lays out a GRAPH — ranks, orders, coordinates for boxes nobody has
+// placed. A map's boxes are placed already, by the earth; what a map needs
+// instead is a PROJECTION and OUTLINES:
+//
+//   * THE PROJECTION is Equal Earth (Šavrič, Patterson and Jenny, 2018): an
+//     equal-area pseudocylindrical projection, so a country's filled area is
+//     proportional to its real one — which matters on a choropleth, where a
+//     reader's eye weighs a colour by how much of it there is. Mercator would
+//     make Greenland outweigh Africa. It is six lines (`project()`), and no
+//     dependency is worth six lines.
+//   * THE OUTLINES are Natural Earth's 1:50m Admin 0 countries, PUBLIC
+//     DOMAIN, reduced by `tests/tools/natural-earth.js` to
+//     `natural_earth/countries.json` (one row per ISO 3166-1 code, the
+//     continent, a label point, the rings rounded to 0.01°). The one
+//     third-party dataset this repository ships, and why that is allowed
+//     when `risk/CLAUDE.md` says none is shipped, is in `admin-ui/CLAUDE.md`
+//     (*`/admin/geolocation` is the third drawing*). 1.3 MB, the same for
+//     every realm: this process reads it once, and a browser fetches it once
+//     per load of the console (420 KB as gzip, less as brotli, precompressed
+//     by the image build) rather than in every answer.
+//
+// AND IT KEEPS THE CSP RULE INTACT: this is part of the console's one
+// script (`script-src 'self'`), and the outlines are fetched from this
+// service's own origin (`connect-src 'self'`). ZOOM IS A LINK: every country
+// is an `<a>`, and following it asks the API for the next level. A
+// pan-and-zoom map would be more script, to show a picture that does not
+// need to move.
+//
+// ---------------------------------------------------------------------------
+// THREE THINGS THAT WENT INTO THE GEOMETRY, each because the obvious version
+// draws something wrong:
+//
+//   * A VIEW HAS A CENTRAL MERIDIAN. Natural Earth cuts every ring at ±180°,
+//     which is right for a world centred on Greenwich and wrong for Oceania,
+//     Russia or Fiji, whose country view would otherwise span the whole
+//     globe. Each view projects longitudes relative to its own centre, and a
+//     ring that crosses the view's far side (the new ±180°) is broken into
+//     separate strokes there rather than drawn as a line across the map.
+//   * A COUNTRY'S VIEW IS ITS MAIN TERRITORY. France's outline carries French
+//     Guiana and Réunion; a box around all of it is mostly ocean with France
+//     a dot at the top. The view is the largest polygon's box, joined by the
+//     polygons whose centres lie within that polygon's own size of it — so
+//     Corsica, Alaska and Svalbard are in their countries' views and Réunion
+//     is not — and then widened to take in every CITY the page was given, so
+//     a person counted is never off the edge.
+//   * POINTS ARE THINNED FOR THE SCALE, not for the file. The file keeps
+//     0.01° (a kilometre); the world at 960 pixels is 40 km a pixel. A point
+//     within `THIN_PX` of the last one kept is dropped as the path is
+//     written, and a ring smaller than a pixel is not written at all, so the
+//     world is a few hundred kilobytes of markup and a country keeps its
+//     coastline.
+// ===========================================================================
+
+import kit = require('./web_kit');
+import DelegationMap = require('./web_delegation_map');
+
+type Json = any;
+
+// One country as the file holds it, and as `countries()` answers it.
+interface Country {
+  iso: string;
+  name: string;
+  continent: string;
+  label: number[];
+  polygons: number[][][];
+}
+
+// A view: the central meridian and the box, in degrees (longitudes relative
+// to `lon0`).
+interface View {
+  lon0: number;
+  west: number;
+  east: number;
+  south: number;
+  north: number;
+}
+
+// ---------------------------------------------------------------------------
+// The outlines indexed, per parsed file (see `GeoDrawing.countries()`).
+const INDEXED = new WeakMap<object, { list: Country[];
+                                     byIso: Map<string, Country>;
+                                     source: Json }>();
+
+// THE PALETTE, `delegation_map.ts`'s — and the one thing that is new.
+//
+// THE FILL SCALE is five steps of the console's indigo, light to dark, and it
+// was run through the dataviz palette validator before it was written here
+// (`--ordinal`, light surface): one hue, lightness monotone, a visible gap
+// between every pair of steps, and the lightest still clearing 2:1 against
+// the paper — so a country with one person is never mistaken for a country
+// with none, which is `NO_DATA`, a neutral grey with no hue at all. A
+// country below `risk.geoMinimumCount` is filled with the lightest step and
+// carries no number: shaded, as rcbj decided, and saying no more than "a
+// few".
+// ---------------------------------------------------------------------------
+const PALETTE = DelegationMap.COLOURS;
+const INK = PALETTE.ink;
+const INDIGO = PALETTE.indigo;
+const QUIET = PALETTE.quiet;
+const PAPER = PALETTE.paper;
+const WASH = PALETTE.wash;
+/**
+ * The five fills of the count scale, lightest to darkest.
+ */
+const RAMP = ['#a7a2dc', '#857fcb', '#6159b6', '#3b3598', '#12107c'];
+/**
+ * The fill of a country that counts nobody: a neutral grey with no hue.
+ */
+const NO_DATA = '#e4e4ea';
+// Land outside the country a country view is about: there to say where it
+// is, and quieter than anything that counts.
+const CONTEXT = '#efeff3';
+const OCEAN = '#f7f8fb';
+const GRATICULE = '#e3e6ee';
+const BORDER = '#ffffff';
+
+// The picture's width; the height follows the view's shape between the two
+// bounds, and a view too tall for them is narrowed and centred instead.
+const WIDTH = 960;
+const MIN_HEIGHT = 260;
+const MAX_HEIGHT = 620;
+const MARGIN = 12;
+// A point closer than this to the last one kept is not written.
+const THIN_PX = 0.7;
+// A counted country smaller than this on screen also gets a dot at its
+// label point, or Singapore would be counted and invisible.
+const DOT_BELOW_PX = 7;
+const LABEL_SIZE = 12;
+const CITY_LABEL_SIZE = 11;
+
+// THE CONTINENTS, by the slug a URL carries: the name Natural Earth files
+// each country under, and the view each is drawn in. The boxes are chosen,
+// not computed — Russia is filed under Europe and a box around Europe's
+// countries would reach the Bering Strait — and a country view is always
+// computed, so nothing is cut off where it matters.
+/**
+ * The continents by the slug a URL carries: the name Natural Earth files each
+ * country under, and the view each is drawn in.
+ */
+const CONTINENTS: Record<string, Json> = {
+  'africa': { name: 'Africa',
+    view: { lon0: 17, west: -38, east: 38, south: -36, north: 38 } },
+  'antarctica': { name: 'Antarctica',
+    view: { lon0: 0, west: -180, east: 180, south: -90, north: -55 } },
+  'asia': { name: 'Asia',
+    view: { lon0: 95, west: -70, east: 55, south: -12, north: 56 } },
+  'europe': { name: 'Europe',
+    view: { lon0: 12, west: -37, east: 33, south: 34, north: 72 } },
+  'north-america': { name: 'North America',
+    view: { lon0: -100, west: -70, east: 52, south: 6, north: 78 } },
+  'oceania': { name: 'Oceania',
+    view: { lon0: 160, west: -50, east: 32, south: -48, north: 22 } },
+  'south-america': { name: 'South America',
+    view: { lon0: -60, west: -26, east: 28, south: -56, north: 14 } }
+};
+const WORLD: View = { lon0: 0, west: -180, east: 180, south: -58, north: 84 };
+
+// Equal Earth's coefficients (Šavrič, Patterson and Jenny, 2018).
+const A1 = 1.340264;
+const A2 = -0.081106;
+const A3 = 0.000893;
+const A4 = 0.003796;
+const M = Math.sqrt(3) / 2;
+const RAD = Math.PI / 180;
+
+/**
+ * The geolocation picture: the world, a continent or a country in the Equal
+ * Earth projection, each country filled by its count and, on a country, its
+ * cities as circles, in this process or in a browser. It reads nothing but
+ * its arguments — the outlines among them — and logs nothing.
+ */
+class GeoDrawing {
+  /**
+   * See the module's `RAMP`.
+   */
+  static readonly RAMP = RAMP;
+  /**
+   * See the module's `NO_DATA`.
+   */
+  static readonly NO_DATA = NO_DATA;
+  /**
+   * See the module's `CONTINENTS`.
+   */
+  static readonly CONTINENTS = CONTINENTS;
+
+  // -------------------------------------------------------------------------
+  // THE OUTLINES ARE AN ARGUMENT (#444 phase 2b):
+  // `natural_earth/countries.json` as parsed, which this process reads from
+  // disk (`geo_map.ts`) and a browser fetches once from
+  // `/admin/geo-outlines.json`. Indexed once per parsed file, which is why
+  // it is held by the object and not by a copy.
+  // -------------------------------------------------------------------------
+  /**
+   * Indexes the outlines: every country, the same by ISO code, and the
+   * file's provenance, which the page credits.
+   *
+   * @param file - `natural_earth/countries.json`, parsed
+   * @returns the countries, the index and the provenance
+   */
+  static countries(file: Json): { list: Country[];
+                                  byIso: Map<string, Country>;
+                                  source: Json } {
+    const known = INDEXED.get(file);
+    if (known) {
+      return known;
+    }
+    const list: Country[] = (file && file.countries) || [];
+    const byIso = new Map<string, Country>();
+    list.forEach(function (c: Country): void {
+      byIso.set(c.iso, c);
+    });
+    const source = Object.assign({}, file || {});
+    delete source.countries;
+    const held = { list: list, byIso: byIso, source: source };
+    if (file && typeof file === 'object') {
+      INDEXED.set(file, held);
+    }
+    return held;
+  }
+
+  // The continent slug a continent name is filed under ('' for none).
+  /**
+   * Answers the slug a continent name is filed under.
+   *
+   * @param continent - the continent's name
+   * @returns its slug, or '' for none
+   */
+  static slugOf(continent: string): string {
+    const found = Object.keys(CONTINENTS).filter(function (s: string): boolean {
+      return CONTINENTS[s].name === continent;
+    })[0];
+    return found || '';
+  }
+
+  // A count's step on the scale, 1 to 5, against the largest count drawn;
+  // 0 for none. Logarithmic, because sign-ins are: one capital city with a
+  // thousand people and forty countries with three would otherwise be one
+  // dark country and forty that look empty.
+  /**
+   * Answers a count's step on the logarithmic scale against the largest count
+   * drawn.
+   *
+   * @param n - the count
+   * @param max - the largest count drawn
+   * @returns the step, 1 to 5, or 0 for none
+   */
+  static bucketOf(n: number, max: number): number {
+    if (!(n > 0)) {
+      return 0;
+    }
+    if (max <= 1) {
+      return RAMP.length;
+    }
+    return Math.max(1, Math.min(RAMP.length,
+      Math.ceil(RAMP.length * Math.log(1 + n) / Math.log(1 + max))));
+  }
+
+  // The range of counts each step stands for, for the legend: step i holds
+  // the n with bucketOf(n, max) === i + 1.
+  /**
+   * Answers the range of counts each step stands for, for the legend.
+   *
+   * @param max - the largest count drawn
+   * @returns one row per step: its colour and the counts it runs from and to
+   */
+  static legendOf(max: number): Json[] {
+    const out: Json[] = [];
+    let low = 1;
+    for (let step = 1; step <= RAMP.length && low <= Math.max(1, max);
+         step++) {
+      let high = low;
+      while (high + 1 <= max && GeoDrawing.bucketOf(high + 1, max) === step) {
+        high++;
+      }
+      if (GeoDrawing.bucketOf(low, max) === step) {
+        out.push({ colour: RAMP[step - 1], from: low, to: high });
+        low = high + 1;
+      }
+    }
+    return out;
+  }
+
+  // Equal Earth, of a longitude already relative to the view's meridian.
+  // A hot path — every point of every ring drawn — so no Entering or
+  // Leaving pair, which would be two log lines per coordinate.
+  /**
+   * Projects a point with Equal Earth, its longitude already relative to the
+   * view's meridian. A hot path, with no Entering or Leaving log lines.
+   *
+   * @param lon - the relative longitude in degrees
+   * @param lat - the latitude in degrees
+   * @returns the projected x and y
+   */
+  static project(lon: number, lat: number): number[] {
+    const lambda = lon * RAD;
+    const theta = Math.asin(M * Math.sin(lat * RAD));
+    const t2 = theta * theta;
+    const t6 = t2 * t2 * t2;
+    return [lambda * Math.cos(theta) /
+              (M * (A1 + 3 * A2 * t2 + t6 * (7 * A3 + 9 * A4 * t2))),
+            theta * (A1 + A2 * t2 + t6 * (A3 + A4 * t2))];
+  }
+
+  // A longitude relative to `lon0`, in [-180, 180] — the far side kept on
+  // the side it came from, because Natural Earth cuts its rings AT ±180 and
+  // a point on the cut folded to the other edge would break every ring that
+  // touches it. A hot path, as above.
+  /**
+   * Answers a longitude relative to a meridian, in [-180, 180], keeping a point
+   * on the ±180 cut on the side it came from. A hot path.
+   *
+   * @param lon - the longitude
+   * @param lon0 - the view's meridian
+   * @returns the relative longitude
+   */
+  static relative(lon: number, lon0: number): number {
+    const r = ((lon - lon0 + 540) % 360) - 180;
+    return r === -180 && lon > lon0 ? 180 : r;
+  }
+
+  // THE VIEW OF ONE COUNTRY: see the header. `cities` widen it.
+  /**
+   * Computes the view one country is drawn in, widened by its cities.
+   *
+   * @param country - the country's outline
+   * @param cities - the cities drawn on it
+   * @returns the view: its meridian and its west, east, south and north bounds
+   */
+  countryView(country: Country, cities: Json[]): View {
+    const lon0 = country.label[0];
+    const boxOf = function (polygon: number[][]): number[] {
+      const ring = polygon[0];
+      const box = [Infinity, -Infinity, Infinity, -Infinity];
+      for (let i = 0; i < ring.length; i += 2) {
+        const x = GeoDrawing.relative(ring[i], lon0);
+        box[0] = Math.min(box[0], x);
+        box[1] = Math.max(box[1], x);
+        box[2] = Math.min(box[2], ring[i + 1]);
+        box[3] = Math.max(box[3], ring[i + 1]);
+      }
+      return box;
+    };
+    const boxes = country.polygons.map(boxOf);
+    const area = function (b: number[]): number {
+      return (b[1] - b[0]) * (b[3] - b[2]);
+    };
+    const main = boxes.slice().sort(function (a: number[],
+                                              b: number[]): number {
+      return area(b) - area(a);
+    })[0] || [-5, 5, -5, 5];
+    const reach = Math.max(15, main[1] - main[0], main[3] - main[2]);
+    const box = main.slice();
+    boxes.forEach(function (b: number[]): void {
+      const cx = (b[0] + b[1]) / 2;
+      const cy = (b[2] + b[3]) / 2;
+      const dx = Math.max(0, main[0] - cx, cx - main[1]);
+      const dy = Math.max(0, main[2] - cy, cy - main[3]);
+      if (dx <= reach && dy <= reach) {
+        box[0] = Math.min(box[0], b[0]);
+        box[1] = Math.max(box[1], b[1]);
+        box[2] = Math.min(box[2], b[2]);
+        box[3] = Math.max(box[3], b[3]);
+      }
+    });
+    (cities || []).forEach(function (c: Json): void {
+      if (typeof c.lon === 'number' && typeof c.lat === 'number') {
+        const x = GeoDrawing.relative(c.lon, lon0);
+        box[0] = Math.min(box[0], x);
+        box[1] = Math.max(box[1], x);
+        box[2] = Math.min(box[2], c.lat);
+        box[3] = Math.max(box[3], c.lat);
+      }
+    });
+    // A margin of a tenth, and never less than three degrees across, so a
+    // city-state is drawn with something around it.
+    const padX = Math.max(1.5, (box[1] - box[0]) * 0.1);
+    const padY = Math.max(1.5, (box[3] - box[2]) * 0.1);
+    return { lon0: lon0,
+             west: Math.max(-180, box[0] - padX),
+             east: Math.min(180, box[1] + padX),
+             south: Math.max(-89, box[2] - padY),
+             north: Math.min(89, box[3] + padY) };
+  }
+
+  // The view's box on the screen: the projected bounds (sampled on a grid,
+  // because a meridian is a curve here), the scale and the offsets.
+  private frameOf(view: View): Json {
+    let x0 = Infinity;
+    let x1 = -Infinity;
+    let y0 = Infinity;
+    let y1 = -Infinity;
+    for (let i = 0; i <= 12; i++) {
+      for (let j = 0; j <= 12; j++) {
+        const p = GeoDrawing.project(
+          view.west + (view.east - view.west) * i / 12,
+          view.south + (view.north - view.south) * j / 12);
+        x0 = Math.min(x0, p[0]);
+        x1 = Math.max(x1, p[0]);
+        y0 = Math.min(y0, p[1]);
+        y1 = Math.max(y1, p[1]);
+      }
+    }
+    const inner = WIDTH - 2 * MARGIN;
+    let scale = inner / Math.max(1e-9, x1 - x0);
+    let height = (y1 - y0) * scale + 2 * MARGIN;
+    if (height > MAX_HEIGHT) {
+      scale = (MAX_HEIGHT - 2 * MARGIN) / Math.max(1e-9, y1 - y0);
+      height = MAX_HEIGHT;
+    }
+    height = Math.max(MIN_HEIGHT, height);
+    const offsetX = (WIDTH - (x1 - x0) * scale) / 2 - x0 * scale;
+    const offsetY = (height - (y1 - y0) * scale) / 2 + y1 * scale;
+    return { scale: scale, offsetX: offsetX, offsetY: offsetY,
+             height: Math.round(height), lon0: view.lon0 };
+  }
+
+  // A longitude and latitude on the screen. A hot path, as `project()`.
+  /**
+   * Places a longitude and latitude on the screen in a frame. A hot path.
+   *
+   * @param frame - the view's frame: scale, offsets and meridian
+   * @param lon - the longitude
+   * @param lat - the latitude
+   * @returns the screen x and y
+   */
+  static toScreen(frame: Json, lon: number, lat: number): number[] {
+    const p = GeoDrawing.project(GeoDrawing.relative(lon, frame.lon0), lat);
+    return [frame.offsetX + p[0] * frame.scale,
+            frame.offsetY - p[1] * frame.scale];
+  }
+
+  // One polygon as path data, thinned, with its screen box. A ring whose
+  // longitude jumps by more than half the globe between two points crossed
+  // the view's far side: the stroke is broken there. A hot path — once per
+  // polygon of every country drawn — so no Entering or Leaving pair.
+  /**
+   * Draws one polygon as thinned SVG path data, with its screen box, breaking
+   * the stroke where a ring crosses the view's far side. A hot path.
+   *
+   * @param frame - the view's frame
+   * @param polygon - the polygon's rings, each flat longitude and latitude
+   * pairs
+   * @returns the path data and its screen box
+   */
+  static polygonPath(frame: Json, polygon: number[][]): Json {
+    let d = '';
+    const box = [Infinity, -Infinity, Infinity, -Infinity];
+    polygon.forEach(function (ring: number[]): void {
+      let part = '';
+      let lastX = NaN;
+      let lastY = NaN;
+      let lastLon = NaN;
+      let points = 0;
+      const rbox = [Infinity, -Infinity, Infinity, -Infinity];
+      for (let i = 0; i < ring.length; i += 2) {
+        const rel = GeoDrawing.relative(ring[i], frame.lon0);
+        const p = GeoDrawing.toScreen(frame, ring[i], ring[i + 1]);
+        const jump = !isNaN(lastLon) && Math.abs(rel - lastLon) > 180;
+        lastLon = rel;
+        const last = i + 2 >= ring.length;
+        if (!jump && !isNaN(lastX) && !last &&
+            Math.abs(p[0] - lastX) < THIN_PX &&
+            Math.abs(p[1] - lastY) < THIN_PX) {
+          continue;
+        }
+        part += (isNaN(lastX) || jump ? 'M' : 'L') + p[0].toFixed(1) + ' ' +
+          p[1].toFixed(1);
+        lastX = p[0];
+        lastY = p[1];
+        points++;
+        rbox[0] = Math.min(rbox[0], p[0]);
+        rbox[1] = Math.max(rbox[1], p[0]);
+        rbox[2] = Math.min(rbox[2], p[1]);
+        rbox[3] = Math.max(rbox[3], p[1]);
+      }
+      if (points < 3 || (rbox[1] - rbox[0] < 0.5 && rbox[3] - rbox[2] < 0.5)) {
+        return;
+      }
+      d += part + 'Z';
+      box[0] = Math.min(box[0], rbox[0]);
+      box[1] = Math.max(box[1], rbox[1]);
+      box[2] = Math.min(box[2], rbox[2]);
+      box[3] = Math.max(box[3], rbox[3]);
+    });
+    return { d: d, box: box };
+  }
+
+  // The lines of longitude and latitude, every `step` degrees, inside the
+  // view.
+  private graticule(frame: Json, view: View): string {
+    const span = Math.max(view.east - view.west, view.north - view.south);
+    const step = span > 150 ? 30 : (span > 40 ? 10 : (span > 12 ? 5 : 2));
+    let d = '';
+    const line = function (points: number[][]): void {
+      d += points.map(function (p: number[], i: number): string {
+        return (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1);
+      }).join('');
+    };
+    for (let lon = Math.ceil((view.west + view.lon0) / step) * step;
+         lon <= view.east + view.lon0; lon += step) {
+      const points: number[][] = [];
+      for (let lat = view.south; lat <= view.north; lat += 1) {
+        points.push(GeoDrawing.toScreen(frame, lon, lat));
+      }
+      line(points);
+    }
+    for (let lat = Math.ceil(view.south / step) * step; lat <= view.north;
+         lat += step) {
+      const points: number[][] = [];
+      for (let rel = view.west; rel <= view.east; rel += 1) {
+        points.push(GeoDrawing.toScreen(frame, rel + view.lon0, lat));
+      }
+      line(points);
+    }
+    return '<path d="' + d + '" fill="none" stroke="' + GRATICULE +
+      '" stroke-width="0.6"/>';
+  }
+
+  // A label with a white halo, so it reads over any fill.
+  private label(x: number, y: number, text: string, size: number,
+                weight: string, anchor: string): string {
+    const xmlEscape = kit.esc;
+    return '<text x="' + x.toFixed(1) + '" y="' + y.toFixed(1) +
+      '" font-size="' + size + '" font-weight="' + weight +
+      '" text-anchor="' + anchor + '" fill="' + INK + '" stroke="' + PAPER +
+      '" stroke-width="3" stroke-linejoin="round" paint-order="stroke">' +
+      xmlEscape(text) + '</text>';
+  }
+
+  // -------------------------------------------------------------------------
+  // THE PICTURE. `spec`:
+  //
+  //   level      'world' | 'continent' | 'country'
+  //   continent  the continent's slug (continent level)
+  //   iso        the country's code (country level)
+  //   areas      iso -> { bucket (0-5), title, href? } — every country the
+  //              caller counted; a country not here is NO_DATA, and still
+  //              links to `linkFor(iso)` when that answers one
+  //   linkFor    iso -> href or '' (the next level down, for any country)
+  //   labels     [{ lon, lat, text, href? }] — a continent's or a country's
+  //              count, placed by the caller
+  //   cities     [{ lon, lat, name, people, title }] (country level)
+  //
+  // Answers `{ svg, width, height }`. Links are root-relative: `app.js`
+  // rewrites them into the realm on the way out of a text/html response,
+  // which is the only way this picture is served.
+  // -------------------------------------------------------------------------
+  /**
+   * Draws the map at the world, continent or country level.
+   *
+   * Links are root-relative; `app.js` rewrites them into the realm on the way
+   * out of an HTML response.
+   * @param spec - `level`, `continent`, `iso`, `areas` (ISO code to bucket,
+   * title and link), `linkFor`, `labels`, `cities` and `title`
+   * @param outlines - `natural_earth/countries.json`, parsed
+   * @returns the SVG, its width and height
+   */
+  render(spec: Json, outlines: Json): Json {
+    const xmlEscape = kit.esc;
+    const textWidth = DelegationMap.textWidth;
+    const self = this;
+    const { list, byIso } = GeoDrawing.countries(outlines);
+    const areas = spec.areas || {};
+    const focus: Country | undefined = spec.level === 'country'
+      ? byIso.get(String(spec.iso)) : undefined;
+    const view: View = spec.level === 'continent' &&
+      CONTINENTS[spec.continent] ? CONTINENTS[spec.continent].view
+      : (focus ? this.countryView(focus, spec.cities) : WORLD);
+    const frame = this.frameOf(view);
+    const height = frame.height;
+    const onScreen = function (box: number[]): boolean {
+      return box[1] >= 0 && box[0] <= WIDTH && box[3] >= 0 &&
+        box[2] <= height;
+    };
+    const shapes: string[] = [];
+    const dots: string[] = [];
+    list.forEach(function (c: Country): void {
+      let d = '';
+      const box = [Infinity, -Infinity, Infinity, -Infinity];
+      c.polygons.forEach(function (polygon: number[][]): void {
+        const drawn = GeoDrawing.polygonPath(frame, polygon);
+        if (drawn.d && onScreen(drawn.box)) {
+          d += drawn.d;
+          box[0] = Math.min(box[0], drawn.box[0]);
+          box[1] = Math.max(box[1], drawn.box[1]);
+          box[2] = Math.min(box[2], drawn.box[2]);
+          box[3] = Math.max(box[3], drawn.box[3]);
+        }
+      });
+      const area = areas[c.iso];
+      const bucket = area ? Number(area.bucket) || 0 : 0;
+      // A COUNTRY VIEW IS ABOUT ITS CITIES, so the country itself is pale
+      // whatever it counts: its fill on the world's scale would be the
+      // darkest step, and the circles are drawn in that same indigo.
+      const fill = focus && focus.iso === c.iso ? WASH
+        : (bucket ? RAMP[bucket - 1] : (focus ? CONTEXT : NO_DATA));
+      const href = (area && area.href) ||
+        (spec.linkFor ? spec.linkFor(c.iso) : '');
+      const title = (area && area.title) || c.name;
+      const wrap = function (inner: string): string {
+        return href ? '<a href="' + xmlEscape(href) + '">' + inner + '</a>'
+          : '<g>' + inner + '</g>';
+      };
+      if (d) {
+        shapes.push(wrap('<title>' + xmlEscape(title) + '</title>' +
+          '<path d="' + d + '" fill="' + fill + '" stroke="' +
+          (focus && focus.iso === c.iso ? INK : BORDER) + '" stroke-width="' +
+          (focus && focus.iso === c.iso ? '1' : '0.6') +
+          '" stroke-linejoin="round" fill-rule="evenodd"/>'));
+      }
+      // A counted country too small to see: a dot at its label point.
+      const small = !d || (box[1] - box[0] < DOT_BELOW_PX &&
+                           box[3] - box[2] < DOT_BELOW_PX);
+      if (bucket && small && spec.level !== 'country') {
+        const p = GeoDrawing.toScreen(frame, c.label[0], c.label[1]);
+        if (p[0] >= 0 && p[0] <= WIDTH && p[1] >= 0 && p[1] <= height) {
+          dots.push(wrap('<title>' + xmlEscape(title) + '</title>' +
+            '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) +
+            '" r="4" fill="' + RAMP[bucket - 1] + '" stroke="' + INK +
+            '" stroke-width="0.8"/>'));
+        }
+      }
+    });
+
+    // THE LABELS, largest first and never on top of one another: a label
+    // that would overlap one already placed is left to its tooltip.
+    const placed: number[][] = [];
+    const fits = function (x0: number, y0: number, x1: number,
+                           y1: number): boolean {
+      if (x0 < 0 || x1 > WIDTH || y0 < 0 || y1 > height) {
+        return false;
+      }
+      return !placed.some(function (b: number[]): boolean {
+        return x0 < b[2] && x1 > b[0] && y0 < b[3] && y1 > b[1];
+      });
+    };
+    const texts: string[] = [];
+    (spec.labels || []).forEach(function (l: Json): void {
+      const p = GeoDrawing.toScreen(frame, l.lon, l.lat);
+      const w = textWidth(l.text, LABEL_SIZE) + 6;
+      const box = [p[0] - w / 2, p[1] - LABEL_SIZE, p[0] + w / 2, p[1] + 4];
+      if (!fits(box[0], box[1], box[2], box[3])) {
+        return;
+      }
+      placed.push(box);
+      const text = self.label(p[0], p[1], l.text, LABEL_SIZE, '600',
+                              'middle');
+      texts.push(l.href ? '<a href="' + xmlEscape(l.href) + '">' + text +
+                          '</a>' : text);
+    });
+
+    // THE CITIES, biggest drawn first so a small one on top stays visible;
+    // area proportional to people, so the eye compares them fairly.
+    const cities = (spec.cities || []).filter(function (c: Json): boolean {
+      return typeof c.lon === 'number' && typeof c.lat === 'number';
+    }).sort(function (a: Json, b: Json): number {
+      return b.people - a.people;
+    });
+    const most = Math.max(1, ...cities.map(function (c: Json): number {
+      return c.people;
+    }));
+    const circles: string[] = [];
+    cities.forEach(function (c: Json): void {
+      const p = GeoDrawing.toScreen(frame, c.lon, c.lat);
+      const r = 4 + 14 * Math.sqrt(c.people / most);
+      circles.push('<g><title>' + xmlEscape(c.title) + '</title>' +
+        '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) +
+        '" r="' + r.toFixed(1) + '" fill="' + INDIGO +
+        '" fill-opacity="0.72" stroke="' + PAPER + '" stroke-width="2"/>' +
+        '</g>');
+      const text = c.name + ' · ' + c.people;
+      const w = textWidth(text, CITY_LABEL_SIZE) + 4;
+      const x = p[0] + r + 3;
+      if (fits(x, p[1] - CITY_LABEL_SIZE + 2, x + w, p[1] + 5)) {
+        placed.push([x, p[1] - CITY_LABEL_SIZE + 2, x + w, p[1] + 5]);
+        texts.push(self.label(x, p[1] + 4, text, CITY_LABEL_SIZE, '400',
+                              'start'));
+      }
+    });
+
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" id="geo-map" ' +
+      // Its `max-width` is `#geo-map` in the console's stylesheet, not a
+      // `style=""` the console's policy would drop (2026-11-10).
+      'viewBox="0 0 ' + WIDTH + ' ' + height + '" width="100%" ' +
+      'role="img" aria-labelledby=' +
+      '"geo-map-title" font-family="system-ui, sans-serif">' +
+      '<title id="geo-map-title">' + xmlEscape(spec.title || 'Sign-ins') +
+      '</title><rect x="0" y="0" width="' + WIDTH + '" height="' + height +
+      '" fill="' + OCEAN + '"/>' + this.graticule(frame, view) +
+      shapes.join('') + dots.join('') + circles.join('') + texts.join('') +
+      '<rect x="0.5" y="0.5" width="' + (WIDTH - 1) + '" height="' +
+      (height - 1) + '" fill="none" stroke="' + QUIET +
+      '" stroke-opacity="0.35"/></svg>';
+    return { svg: svg, width: WIDTH, height: height };
+  }
+}
+
+
+// The drawing has no state; one instance does for every map.
+const SHARED = new GeoDrawing();
+
+/**
+ * The geolocation picture's geometry, for this process and the browser.
+ * @namespace
+ */
+export = {
+  GeoDrawing: GeoDrawing,
+  /**
+   * Draws the map: `spec` as `GeoDrawing.render()`'s, over the outlines.
+   */
+  render: function (spec: Json, outlines: Json): Json {
+    return SHARED.render(spec, outlines);
+  },
+  /**
+   * The view one country is drawn in, widened by its cities.
+   */
+  countryView: function (country: Json, cities: Json[]): Json {
+    return SHARED.countryView(country, cities);
+  },
+  countries: GeoDrawing.countries,
+  slugOf: GeoDrawing.slugOf,
+  bucketOf: GeoDrawing.bucketOf,
+  legendOf: GeoDrawing.legendOf,
+  project: GeoDrawing.project,
+  RAMP: GeoDrawing.RAMP,
+  NO_DATA: GeoDrawing.NO_DATA,
+  CONTINENTS: GeoDrawing.CONTINENTS
+};

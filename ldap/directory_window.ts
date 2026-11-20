@@ -2050,9 +2050,11 @@ class DirectoryWindow {
    *
    * @param realmId - the realm id
    * @param base - the base's normalised DN
+   * @param asked - the store's count, when a caller already asked for it
+   *   asynchronously; omitted, the store is asked here
    * @returns the count
    */
-  countUnder(realmId: string, base: string): number {
+  countUnder(realmId: string, base: string, asked?: number): number {
     log.debug("Entering DirectoryWindow.countUnder().");
     let n = 0;
     this.residentOf(realmId).forEach(function (entry, key) {
@@ -2064,7 +2066,11 @@ class DirectoryWindow {
       return DirectoryWindow.within(c, base) || base.endsWith(',' + c);
     });
     if (reaches && this.bridge) {
-      n += Number(this.bridge.query('count', [realmId, base]));
+      // `asked === undefined` and not `asked || query`: a count of 0 is a
+      // count, and `0 || query` would ask the store again.
+      n += asked === undefined
+        ? Number(this.bridge.query('count', [realmId, base]))
+        : Number(asked);
       this.dirty.forEach((ck) => {
         const cut = ck.indexOf('\n');
         const key = ck.slice(cut + 1);
@@ -2317,6 +2323,57 @@ class DirectoryWindow {
       this.containerCounts.set(cck, { n: n, at: Date.now() });
     }
     log.debug("Leaving DirectoryWindow.recentCountUnder(). Counted.");
+    return n;
+  }
+
+  // `countUnder()` FOR A CALLER THAT CAN WAIT (#798). The store's `count`
+  // is one round trip. `/admin/users` asked it synchronously while it built
+  // the population, on the worker that serves sign-ins. The arithmetic —
+  // residents, the store, this process's own net — stays in `countUnder()`.
+  /**
+   * `countUnder()`, the store asked asynchronously.
+   *
+   * @param realmId - the realm id
+   * @param base - the base's normalised DN
+   * @returns a promise of the count
+   */
+  async countUnderAsync(realmId: string, base: string): Promise<number> {
+    log.debug("Entering DirectoryWindow.countUnderAsync().");
+    const reaches = this.deps.windowedContainers(realmId).some(function (c) {
+      return DirectoryWindow.within(c, base) || base.endsWith(',' + c);
+    });
+    let asked: number | undefined;
+    if (reaches && this.bridge) {
+      asked = Number(await this.askAsync('count', [realmId, base]));
+    }
+    const n = this.countUnder(realmId, base, asked);
+    log.debug("Leaving DirectoryWindow.countUnderAsync().");
+    return n;
+  }
+
+  // `recentCountUnder()` FOR A CALLER THAT CAN WAIT (#798): the same ten
+  // seconds, and the store asked on the read pool when the reading is stale.
+  /**
+   * `recentCountUnder()`, the store asked asynchronously.
+   *
+   * @param realmId - the realm id
+   * @param base - the base's normalised DN
+   * @returns a promise of the count
+   */
+  async recentCountUnderAsync(realmId: string, base: string):
+      Promise<number> {
+    log.debug("Entering DirectoryWindow.recentCountUnderAsync().");
+    const cck = slotKey(realmId, base);
+    const held = this.containerCounts.get(cck);
+    if (held && Date.now() - held.at <= 10000) {
+      log.debug("Leaving DirectoryWindow.recentCountUnderAsync(). Held.");
+      return Math.max(0, held.n);
+    }
+    const n = await this.countUnderAsync(realmId, base);
+    if (this.bridge) {
+      this.containerCounts.set(cck, { n: n, at: Date.now() });
+    }
+    log.debug("Leaving DirectoryWindow.recentCountUnderAsync(). Counted.");
     return n;
   }
 

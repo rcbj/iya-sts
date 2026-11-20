@@ -29,7 +29,7 @@
 // hand-written list of highlights here would be a second, unchecked copy of it
 // — wrong within a month, on the page most likely to be read first and least
 // likely to be re-read. The documentation site makes the same argument in
-// `docs/endpoints.md` and this page holds to it: LINK to the thing that
+// `docs/v1.1.0/endpoints.md` and this page holds to it: LINK to the thing that
 // generates the list.
 //
 // ---------------------------------------------------------------------------
@@ -193,13 +193,14 @@ const BUILD_INFO = version.buildInfo(APP_VERSION);
 // repository: `docs/` is built and deployed by `.github/workflows/pages.yml`,
 // and `docs/_config.yml` sets `baseurl: /iya-sts`, so the site is served under
 // the repository name. Change the repository and all three of these change
-// together — and so does that baseurl.
+// together — and so does that baseurl. The site is versioned and the link
+// names this build's own version's folder (docs/CLAUDE.md).
 // ---------------------------------------------------------------------------
 const REPO_URL = 'https://github.com/rcbj/iya-sts';
 
 const ISSUES_URL = REPO_URL + '/issues';
 
-const DOCS_URL = 'https://rcbj.github.io/iya-sts/';
+const DOCS_URL = 'https://rcbj.github.io/iya-sts/v1.1.0/';
 
 // Relative on purpose. This service is reached as localhost, as `sts` on a
 // compose network and through a published port, and `baseUrlOf()` exists
@@ -288,8 +289,9 @@ const HOME_CSS =
   // pale yellow ground is not the realm's to change.
   'h1{font-size:1.5em;margin:0 0 2px;color:var(--sts-accent,#12107c);' +
   'letter-spacing:.01em}' +
-  'p.sub{color:var(--sts-muted,#666);font-size:.88em;margin:0 0 4px}' +
-  'p.ver{color:#8a8a99;font-size:.76em;margin:0 0 16px}' +
+  // The version line under this sentence went to the page footer
+  // (2026-11-14), so the sentence keeps the space below it that line had.
+  'p.sub{color:var(--sts-muted,#666);font-size:.88em;margin:0 0 16px}' +
   '.warn{background:#fff8e1;border:1px solid #ffe082;padding:9px 12px;' +
   'border-radius:5px;font-size:.82em;margin:0 0 18px;color:#222}' +
   'ul{list-style:none;margin:0;padding:0}' +

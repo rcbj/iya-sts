@@ -98,6 +98,18 @@ function childMain() {
     // ---------------------------------------------------------------------
     // 1. THE ROSTER IS PER REALM.
     // ---------------------------------------------------------------------
+    // A CONSOLE ROLE IS GRANTED ONLY TO SOMEBODY WHO EXISTS (2026-11-11):
+    // `admin_rbac.ts`'s grant() refuses a name with no entry
+    // (STS-ADMIN-0920), so every person this file grants a role to is made
+    // first, in the realm whose roster names them.
+    const person = function (id, name) {
+      return inRealm(id, function () {
+        return ldapServer.createUser(name, {});
+      });
+    };
+    person(R, 'realmboss');
+    person(realms.DEFAULT_ID, 'svcboss');
+    person(S, 'someone-else');
     const serviceBefore = rbac.describe();
     const granted = rbac.grant('realmboss', 'write', { via: 'test',
                                                       realm: R });

@@ -154,6 +154,8 @@ import transport = require('./ssf_http');
 // `req.res`, the response express attaches to every request, which is the
 // object the call-log funnel reads the code from. It is never serialised.
 import errorCodes = require('../common/error_codes');
+// A session as the model says it means (#1579).
+import DomainClasses = require('../common/domain_classes');
 
 // ---------------------------------------------------------------------------
 // THE SURFACES. This table is the whole register — there is no second list
@@ -1546,7 +1548,8 @@ class SsfReceivers {
         claimedAt(entry.claims && entry.claims.toe) ||
         claimedAt(entry.claims && entry.claims.iat);
       const beganAfterEvent = function (session: Loose): boolean {
-        const authenticatedAt = Number(session && session.authTime);
+        const authenticatedAt = Number(session &&
+          DomainClasses.Session.fromRecord(session).authTime);
         return eventAt > 0 && authenticatedAt > 0 &&
           Math.floor(authenticatedAt) > Math.floor(eventAt);
       };

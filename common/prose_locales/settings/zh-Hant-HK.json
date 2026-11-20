@@ -252,8 +252,8 @@
     "text": "/admin/users 與 GET /admin-api/mfa 上的第二因素欄位在停止之前讀取多少個目錄項目。每個人都需要在單一線程上讀取數個屬性，而該線程負責回應本服務持有的每個通訊端；五萬人的目錄正是大量載入工作刻意製造的狀態。回應會說明何時停止。"
   },
   "authn.passwordAloneDoors|description": {
-    "en": "c893f7eaeaad4aa7",
-    "text": "僅限產品模式。以逗號分隔的純密碼入口清單——ldap、wstrust、scim、ssf、est——在這些入口，持有或必須持有第二因素的人「仍」可憑自己的密碼通過。空白（預設）在全部五個入口都拒絕該密碼（以密碼錯誤回應），只接受應用程式密碼。**警告：列出的每個入口都會讓每個此類用戶在該入口降為「單一」因素**（NIST SP 800-63B 第 4.2 節：AAL2 變成 AAL1），因此被竊的密碼不需第二因素即可打開它。請優先使用應用程式密碼；只為無法使用應用程式密碼的客戶端列出入口。開發模式在任何地方都不檢查密碼，並忽略此設定。"
+    "en": "a01fe4fce9df1599",
+    "text": "僅限產品模式。以逗號分隔的純密碼入口清單——ldap、wstrust、scim、ssf、est、xacml-pep——在這些入口，持有或必須持有第二因素的人「仍」可憑自己的密碼通過。空白（預設）在全部六個入口都拒絕該密碼（以密碼錯誤回應），只接受應用程式密碼。**警告：列出的每個入口都會讓每個此類用戶在該入口降為「單一」因素**（NIST SP 800-63B 第 4.2 節：AAL2 變成 AAL1），因此被竊的密碼不需第二因素即可打開它。請優先使用應用程式密碼；只為無法使用應用程式密碼的客戶端列出入口。開發模式在任何地方都不檢查密碼，並忽略此設定。"
   },
   "appPasswords.enabled|label": {
     "en": "2208ee75339ab0f4",
@@ -318,6 +318,14 @@
   "webauthn.credProps|description": {
     "en": "c6d1b0ec68d6e39c",
     "text": "在註冊時送出 `extensions: { credProps: true }`，要求瀏覽器回報其建立的認證是否確實可探索。這是唯一的查明方式：`residentKey: \"preferred\"` 可能會也可能不會產生可探索認證，而證明中沒有任何內容說明是哪一種。本服務會將答案「記錄」在金鑰旁，但不據以做任何決定。關閉此項可觀察客戶端在完全沒有延伸結果時會怎麼做。"
+  },
+  "keys.credentialSigner|label": {
+    "en": "550ef73b0777ea78",
+    "text": "憑證簽署密鑰"
+  },
+  "keys.credentialSigner|description": {
+    "en": "80863e8241a6ca0b",
+    "text": "簽署本領域 dc+sd-jwt 及 jwt_vc_json 憑證及其 Token Status List Token 的密鑰。`dedicated`（預設值）是憑證專用的密鑰，每個演算法系列一把，不作其他任何用途，其證書的 subjectAltName 以 URI 形式列出本領域回應的每個簽發者識別碼（不含 DNS 名稱），延伸密鑰用途為 id-kp-documentSigning（RFC 9336），不含任何 TLS 協定堆疊會接受的用途，讓錢包能將憑證的 iss 與其 x5c 比對（HAIP 1.0 第 6.1.1 節）。簽發者識別碼變更時（global.publicBaseUrl、tls.hostnames、監聽器），證書會重新簽發。`realm-key` 以本領域的一般 JOSE 密鑰簽署，與 1.0.0 相同，其證書不列出任何簽發者。無論採用哪一種方式，已簽發的憑證仍可驗證。ldp_vc 及 mso_mdoc 不受影響。"
   },
   "keys.encryptionKemAlgs|description": {
     "en": "0b5ca1b36593b356",
@@ -696,8 +704,8 @@
     "text": "信任領域記住多少個已兌換的授權碼。在任何模式下，重複出示被記住的授權碼都會被拒絕，並指名它何時、由哪個客戶端兌換（或不同的欄位），且它換得的權杖會被撤銷（RFC 6749 第 10.5 節）；只有在 oauth2.codeReplayIdempotent 開啟時，完全相同的重複兌換才會以它已取得的權杖回應。超過上限時會遺忘「最舊」的：授權碼本身在兌換時已被移除，因此重送一個被遺忘的授權碼仍會被拒絕（作為未知授權碼），但它換得的內容不再被撤銷。"
   },
   "oauth2.codeReplayIdempotent|description": {
-    "en": "77b14590b7ee604f",
-    "text": "**比規格更寬鬆——請保持關閉。**關閉（預設）時，授權碼只能出示「一次」：其第一個權杖請求就會用掉它，無論該請求的結果為何——錯誤的 code_verifier、客戶端驗證失敗或任何情況——第二次出示會被拒絕，並撤銷第一次換得的一切（RFC 6749 第 4.1.2 與 10.5 節；#424）。開啟時，被拒絕的請求會讓授權碼保持可兌換，讓客戶端可以修正後重試，而在授權碼剩餘的有效期內，與某次兌換「完全相同」的重複請求會以其已取得的權杖回應。RFC 9700、OAuth 2.1、FAPI 與產品模式會忽略它。它的存在是為了上層專案中仍斷言舊有寬容行為的開發模式工作（#187）。開啟時，每個已兌換授權碼的完整權杖回應——存取權杖、更新權杖及 ID 權杖——會在其剩餘有效期內保留，以便再次傳送；關閉時，只保留所簽發權杖的 jti 值（#614）。"
+    "en": "be7993ae95611704",
+    "text": "**比規格更寬鬆——請保持關閉。**關閉（預設）時，授權碼只能出示「一次」：其第一個權杖請求就會用掉它，無論該請求的結果為何——錯誤的 code_verifier、客戶端驗證失敗或任何情況——第二次出示會被拒絕，並撤銷第一次換得的一切（RFC 6749 第 4.1.2 與 10.5 節；#424）。開啟時，被拒絕的請求會讓授權碼保持可兌換，讓客戶端可以修正後重試，而在授權碼剩餘的有效期內，與某次兌換「完全相同」的重複請求會以其已取得的權杖回應。RFC 9700、OAuth 2.1、FAPI 與產品模式會忽略它。開啟時，每個已兌換授權碼的完整權杖回應——存取權杖、更新權杖及 ID 權杖——會在其剩餘有效期內保留，以便再次傳送；關閉時，只保留所簽發權杖的 jti 值（#614）。"
   },
   "oauth2.maxPendingTransactions|description": {
     "en": "996c2cfe55594c87",
@@ -928,8 +936,8 @@
     "text": "階層在接聽程式繫結之前建置，因為金鑰組只能由產生金鑰時已存在的授權單位簽發——而金鑰是在啟動時產生的。在服務執行期間關閉它，會讓已經為它們簽發證書的授權單位依然存在。"
   },
   "pki.keyAlgorithm|description": {
-    "en": "d0667a437e4fd5f6",
-    "text": "表單未指定時，新核證機關以哪種金鑰演算法建置：rsa-2048、rsa-3072、rsa-4096、ec-p256、ec-p384、ec-p521 或 ed25519，或後量子 ID 之一（ML-DSA、SLH-DSA、複合演算法與 ML-KEM——後者無法簽署，因此只能作為主體金鑰，絕不能作為授權單位的金鑰）。預設為 RSA，因為此階層存在的目的是簽發葉證書，而葉證書所簽署的客戶端斷言必須由別人的 OAuth 程式庫驗證，RS256 是每個這類程式庫都具備的唯一演算法：開發模式下為 rsa-2048，產品模式下為 rsa-3072（ASVS 5.0.0 11.2.3）。清單讀取自 common/crypto_impl/key_material.js——產生金鑰的模組——因此它不認得的值會在建置時被拒絕，並在旁列出清單。"
+    "en": "cc69afa5c623e756",
+    "text": "表單未指定時，新核證機關以哪種金鑰演算法建置：rsa-2048、rsa-3072、rsa-4096、ec-p256、ec-p384、ec-p521 或 ed25519，或 ML-DSA、SLH-DSA。ML-KEM 無法簽署，因此只能作為主體金鑰，絕不能作為核證機關的金鑰。複合 ML-DSA ID 會被接受，但不會用於 CA 證書：OpenSSL 無法讀取 TLS 監聽程式證書鏈上的複合金鑰，因此根 CA、處理程序分支與每個領域分支都會改以傳統金鑰建置（STS-PKI-0273、STS-PKI-0275）。預設為 RSA，因為此階層存在的目的是簽發葉證書，而葉證書所簽署的客戶端斷言必須由別人的 OAuth 程式庫驗證，RS256 是每個這類程式庫都具備的唯一演算法：開發模式下為 rsa-2048，產品模式下為 rsa-3072（ASVS 5.0.0 11.2.3）。清單讀取自 common/crypto_impl/key_material.js——產生金鑰的模組——因此它不認得的值會在建置時被拒絕，並在旁列出清單。"
   },
   "pki.signatureAlgorithm|description": {
     "en": "31edad9e41104ab3",
@@ -1152,8 +1160,8 @@
     "text": "接受 TLS 客戶端證書"
   },
   "est.certificateAuthentication|description": {
-    "en": "00c619c4dd5d1658",
-    "text": "由「此領域」簽發的客戶端憑證，驗證至其 Intermediate，並依其中的 urn:sts:person: 或 urn:sts:application: 名稱對應到其項目（RFC 7030 section 3.3.2）。沒有 Basic 認證時，simplereenroll 必須使用它。"
+    "en": "a9bb56c470b2a73f",
+    "text": "由「此領域」簽發的客戶端憑證，驗證至其 Intermediate，並依其中的 urn:sts:person:、urn:sts:sa:（服務帳戶）或 urn:sts:application: 名稱對應到其項目（RFC 7030 section 3.3.2）。沒有 Basic 認證時，simplereenroll 必須使用它。"
   },
   "est.serverKeyGeneration|description": {
     "en": "44d03d6bbd6bb6f7",
@@ -1504,8 +1512,8 @@
     "text": "僅限產品模式：當領域沒有 saml2.metadataTrustAnchors 時，管理員的 Import from MDQ（SAML 2.0 頁面、POST /admin-api/saml2/mdq-import）是否可以註冊服務提供者。關閉（預設值）：會被拒絕（STS-SAML-0084）。警告：開啟時，回應程式所回應的文件會在「沒有任何簽章檢查」的情況下被採用——其簽署證書會成為驗證該服務提供者要求的依據，其端點會成為斷言的送達位置——因此任何能代替回應程式主機回應的人（其營運者，或位於通往它之路徑上的任何人）都能選擇這些內容。只有管理員對 entityID 與回應程式的選擇能代替簽章。請優先設定信任錨。由「要求」觸發的查詢永遠不受此設定涵蓋：無論此處如何設定，它都需要信任錨。開發模式無論此處如何設定，都會在沒有信任錨的情況下匯入。在偏執 PKI 模式下，由此放行的匯入會將文件的第一個簽署憑證設為該應用程式的信任錨，之後的擷取必須據此驗證。"
   },
   "saml11.defaultProfile|description": {
-    "en": "b75b217e5204aad5",
-    "text": "要求未指明時，站際傳輸服務使用哪個設定檔：Browser/POST（section 4.2），斷言透過瀏覽器以表單 POST 傳遞；或 Browser/Artifact（section 4.1），參照透過瀏覽器傳遞，依賴方再透過 SOAP 擷取斷言。預設為 POST，因為它不需要依賴方的斷言取用端後面有伺服器，所以在有人把它指向某個 URL 並觀察時能夠運作。非規格的 `profile` 參數會覆寫它，依賴方為其傳送之 `shire` 所註冊的繫結（samlAcsEndpoint，來自已採用的元數據）也會覆寫它。"
+    "en": "8ce998424bcc2563",
+    "text": "依賴方未為其傳送之 `shire` 註冊繫結時，站際傳輸服務使用哪個設定檔：Browser/POST（section 4.2），斷言透過瀏覽器以表單 POST 傳遞；或 Browser/Artifact（section 4.1），參照透過瀏覽器傳遞，依賴方再透過 SOAP 擷取斷言。預設為 POST，因為它不需要依賴方的斷言取用端後面有伺服器，所以在有人把它指向某個 URL 並觀察時能夠運作。依賴方為其傳送之 `shire` 所註冊的繫結（samlAcsEndpoint，來自已採用的元數據）會覆寫它；要求中的任何內容都不會覆寫它。"
   },
   "saml11.autocreateApplications|description": {
     "en": "2e68718a26d4706c",
@@ -2139,17 +2147,29 @@
     "en": "739267abc67032d4",
     "text": "提示是一種優化，絕不是機制本身。遠端 PEP 依自己的間隔「拉取」；當原則變更時，此服務會額外向每個提供了通知 URL 的已註冊 PEP POST 幾個位元組，只說「有東西變了，現在拉取」。關閉它只會增加「延遲」，沒有其他代價——每個 PEP 仍會在下次輪詢時趨於一致——這使得在沒有對外連線的部署中關閉它是安全的。它是此服務中第三個對外要求，xacml/xacml_pep_http.ts 對其加以論證，而非引用另外兩個。"
   },
+  "xacml.pepNotifyAllowHttp|label": {
+    "en": "37d9db04e27a17a9",
+    "text": "允許提示使用 http://（已停用，忽略）"
+  },
+  "xacml.pepNotifyAllowHttp|description": {
+    "en": "f283479a0bedc4de",
+    "text": "已於 2026-11-14 停用並被忽略。在任何模式下提示都只透過 https 傳送，因此 http:// 提示 URL 會在 PEP 的列上回報為不可用，PEP 透過輪詢收斂。該設定仍被接受，因此提到它的設定仍能啟動；開啟後不會改變任何內容，並且每個程序記錄一次（STS-XACML-0258）。請將其刪除。"
+  },
+  "xacml.pepNotifySkipTlsVerification|label": {
+    "en": "da9e36587928e192",
+    "text": "提示略過 TLS 驗證（已停用，忽略）"
+  },
   "xacml.pepNotifySkipTlsVerification|description": {
-    "en": "d86b4e5d60f9ad54",
-    "text": "警告——僅限開發模式。開啟時會向 https 通知 URL 推送提示而「不」驗證 PEP 的證書，因此任何能攔截連線的人都能代為回應。每個此類要求都會記錄為警告。在產品模式下會被忽略（STS-XACML-0074，記錄一次）且無法設定（STS-CORE-0103）：請改在 xacml.pepNotifyCaFile 中指名私人 CA。"
+    "en": "3a27f9a4f0fe5cc1",
+    "text": "已於 2026-11-14 停用並被忽略。提示一律驗證 PEP 的證書：依據本領域的遠端 PEP 監聽器（pep-tls）簽發 CA（它簽發 PEP 的 HTTPS 監聽器證書），以及 xacml.pepNotifyCaFile 和 node 自己的儲存區。該設定仍被接受，因此提到它的設定仍能啟動；開啟後不會改變任何內容，並且每個程序記錄一次（STS-XACML-0258）。在產品模式下仍不能設定（STS-CORE-0103）。請將其刪除。"
   },
   "xacml.pepNotifyCaFile|label": {
-    "en": "647c5ee499d1a37b",
-    "text": "推送提示用的 CA 證書"
+    "en": "ba76eb67fd7510d1",
+    "text": "提示的更多 CA 證書"
   },
   "xacml.pepNotifyCaFile|description": {
-    "en": "792f75ad9d56b75b",
-    "text": "一個 PEM 檔案，內含 PEP 通知接聽程式可鏈結至的 CA 證書，「附加於」node 自身的 CA 存放區之外——這是在開啟驗證的情況下，向由私人 CA 簽發證書之 PEP 推送提示的方式。每次推送提示時讀取；無法讀取或不含任何證書的檔案會拒絕該次提示（STS-CORE-0104）。"
+    "en": "69d21c555590f4c8",
+    "text": "一個 PEM 檔案，包含 PEP 提示監聽器可以鏈結到的 CA 證書，此外還有本領域的遠端 PEP 監聽器（pep-tls）簽發 CA 和 node 自己的 CA 儲存區。若 PEP 的 HTTPS 監聽器證書由本領域簽發，則不需要它：無需任何設定即可驗證。它用於由自身 CA 認證的 PEP。每次提示時讀取；無法讀取或不含證書的檔案會拒絕提示（STS-CORE-0104）。"
   },
   "ssf.enabled|description": {
     "en": "021bc1797758d38a",
@@ -2328,8 +2348,8 @@
     "text": "產品模式一律「強制執行」簽發原則依風險所做的決定（#62 P3）：HIGH 的驗證會被拒絕，MEDIUM 的驗證會被要求升級驗證。開發模式只「觀察」：決定會做出並記錄，而簽發僅由角色決定，因此受測的客戶端不會因為其測試從新的地址執行而被拒絕。開啟時在開發模式下也強制執行。「規則」屬於簽發原則，位於 ou=policies——此開關只決定是否保留風險 Deny。"
   },
   "risk.fingerprinting|description": {
-    "en": "fb95d41998827b2a",
-    "text": "預設關閉（#62 P6）。開啟時，登入畫面會執行一個腳本 FingerprintJS（MIT；它不會向任何地方傳送任何內容），依瀏覽器所公開的資訊計算識別碼並放入表單；服務只保留加鍵摘要，而此人員從未從其登入的瀏覽器會成為 new-device 訊號（x2）。瀏覽器指紋屬於個人資料：開啟前請完成 docs/risk-scoring.md 中的隱私影響評估，並告知登入的人員。如同每項設定，可依領域設定。"
+    "en": "452ca90f0592fe8b",
+    "text": "預設關閉（#62 P6）。開啟時，登入畫面會執行一個腳本 FingerprintJS（MIT；它不會向任何地方傳送任何內容），依瀏覽器所公開的資訊計算識別碼並放入表單；服務只保留加鍵摘要，而此人員從未從其登入的瀏覽器會成為 new-device 訊號（x2）。瀏覽器指紋屬於個人資料：開啟前請完成 docs/v1.1.0/risk-scoring.md 中的隱私影響評估，並告知登入的人員。如同每項設定，可依領域設定。"
   },
   "risk.breachApiUrl|description": {
     "en": "9eb446d420832ce9",
@@ -2736,8 +2756,8 @@
     "text": "監聽器在程序啟動時繫結。「領域」的監聽器在其 SPIFFE 開啟時繫結，而「這一列正是在同一台機器上區隔兩個領域的關鍵」：每個領域取得自己的地址並保留連接埠，因為端點地址是 SPIFFE 客戶端用來指名租用戶的唯一依據"
   },
   "persistence.mode|description": {
-    "en": "9017af2918cf94be",
-    "text": "嵌入式目錄、信任領域登錄庫與執行時期 appconfig 覆寫的寫入位置。memory 不寫入任何東西，這是此服務一向的做法——重新啟動後一切都會消失。ldif 會為每個領域寫入一個 RFC 2849 檔案，另在 persistence.dataDir 中寫入兩個 JSON 檔案，這是本機開發的解決方案，不需要數據庫。postgres 會寫入一組數據表（postgres/schema.sql 列出它們），是共用儲存區。mariadb 是 MariaDB 上的同一儲存（mariadb/schema.sql），是測試套件所針對的第二種引擎：此時 persistence.databaseUrl 是一個 mariadb:// 地址，必須安裝 mysql2 套件，而需要 PostgreSQL 本身的功能（儲存格、大量匯入、目錄視窗）會被拒絕。此服務所產生的東西——工作階段、權杖、代碼、成品、Kerberos 主體、重送快取、計數器與稽核記錄——只在「產品」模式且使用 postgres 時才會持久保存，在其他任何組態下都不會；請參閱 persistence.minted。開發模式不持久保存其中任何一項，因為該模式下簽署金鑰在每次啟動時都會重新產生，而比它存活更久的權杖將無法對任何東西通過驗證。ldif 儲存區在兩種模式下都不保存其中任何一項，並在啟動時說明，因為它每次清寫都會寫入完整檔案。"
+    "en": "6c4f506d112de691",
+    "text": "嵌入式目錄、信任領域登錄庫與執行時期 appconfig 覆寫的寫入位置。memory 不寫入任何東西，這是此服務一向的做法——重新啟動後一切都會消失。ldif 會為每個領域寫入一個 RFC 2849 檔案，另在 persistence.dataDir 中寫入兩個 JSON 檔案，這是本機開發的解決方案，不需要數據庫。postgres 會寫入一組數據表（postgres/schema.sql 列出它們），是共用儲存區。mariadb 是 MariaDB 上的同一儲存（mariadb/schema.sql），是測試套件所針對的第二種引擎：此時 persistence.databaseUrl 是一個 mariadb:// 地址，必須安裝 mysql2 套件，而需要 PostgreSQL 本身的功能（儲存格、大量匯入、目錄視窗）會被拒絕。此服務所產生的東西——工作階段、權杖、代碼、成品、Kerberos 主體、重送快取、計數器與稽核記錄——只在「產品」模式且使用數據庫儲存區（postgres 或 mariadb）時才會持久保存，在其他任何組態下都不會；請參閱 persistence.minted。開發模式不持久保存其中任何一項，因為該模式下簽署金鑰在每次啟動時都會重新產生，而比它存活更久的權杖將無法對任何東西通過驗證。ldif 儲存區在兩種模式下都不保存其中任何一項，並在啟動時說明，因為它每次清寫都會寫入完整檔案。"
   },
   "persistence.metricsTimeoutMs|label": {
     "en": "7cfd3f3265f2652f",
@@ -2860,8 +2880,8 @@
     "text": "讀取全域數據庫密碼的 AWS 區域——此單元的區域，即其 Secrets Manager 複本所在處。空白表示金鑰加密金鑰的區域。"
   },
   "persistence.pollInterval|description": {
-    "en": "0620a679e69c0d43",
-    "text": "此程序向變更記錄詢問其他程序已提交內容的頻率。這才是「契約」，LISTEN/NOTIFY 提示只是在其之上的優化，因此這是通知遺失時——監聽器中斷、數據庫重新啟動——最壞情況下的收斂延遲，而一般延遲只有幾毫秒。設為五秒，是因為提示通常會先到達，較短的間隔除了增加查詢之外毫無益處；下限為 250ms。當儲存不發出提示（persistence.sqlDialect 為 portable）而此項未設定時，間隔為一秒。它也是 persistence.coordinate 中所述重送快取時間窗口的大小。"
+    "en": "60b8dc667d7ddb4d",
+    "text": "此程序向變更記錄詢問其他程序已提交內容的頻率。這才是「契約」，LISTEN/NOTIFY 提示只是在其之上的優化，因此這是通知遺失時——監聽器中斷、數據庫重新啟動——最壞情況下的收斂延遲，而一般延遲只有幾毫秒。設為五秒，是因為提示通常會先到達，較短的間隔除了增加查詢之外毫無益處；下限為 250ms。當儲存不發出提示（mariadb，或 persistence.sqlDialect 為 portable）而此項未設定時，間隔為一秒。一次性的值不受此延遲影響：它透過儲存區中的一次不可分割的宣告被使用（請參閱 persistence.coordinate）。"
   },
   "persistence.changeLogRetentionS|description": {
     "en": "543e89bfaeba9cc3",
@@ -2948,8 +2968,8 @@
     "text": "寄件者地址"
   },
   "mail.from|description": {
-    "en": "33efdb50c1bacbc3",
-    "text": "每封訊息的寄件地址。空白表示該領域 DNS 網域的 `no-reply@`。提供者必須允許以此身分傳送：SES 中經驗證的身分、Azure 中已連結網域的 MailFrom 地址、Gmail 的被模擬郵箱（或其 send-as 別名之一）——而其網域的 SPF、DKIM 與 DMARC 則是 docs/mail.md 的主題。"
+    "en": "b1da52c40fbad767",
+    "text": "每封訊息的寄件地址。空白表示該領域 DNS 網域的 `no-reply@`。提供者必須允許以此身分傳送：SES 中經驗證的身分、Azure 中已連結網域的 MailFrom 地址、Gmail 的被模擬郵箱（或其 send-as 別名之一）——而其網域的 SPF、DKIM 與 DMARC 則是 docs/v1.1.0/mail.md 的主題。"
   },
   "mail.fromName|description": {
     "en": "dd213cb46586c5b9",
@@ -3032,12 +3052,12 @@
     "text": "自助式重設需要已驗證的地址"
   },
   "mail.resetRequiresVerifiedAddress|description": {
-    "en": "76e079f6e1b23b98",
-    "text": "只將自助式重設連結寄到人員已「驗證」過的地址（他們從該地址點過連結）。預設為開啟，因為連結就等於帳戶：由匯入或佈建來源寫入、從未有人證明過的地址，不是寄送它的地方。**將其關閉是較弱的設定**，適用於其地址按原樣受信任的目錄；docs/mail.md 載有相關警告。"
+    "en": "81dfbb5f1c67cc3c",
+    "text": "只將自助式重設連結寄到人員已「驗證」過的地址（他們從該地址點過連結）。預設為開啟，因為連結就等於帳戶：由匯入或佈建來源寫入、從未有人證明過的地址，不是寄送它的地方。**將其關閉是較弱的設定**，適用於其地址按原樣受信任的目錄；docs/v1.1.0/mail.md 載有相關警告。"
   },
   "mail.resetRequiresBackupCode|description": {
-    "en": "d2884302ae8d8475",
-    "text": "忘記密碼表單會要求「用戶名稱」、帳戶上已驗證的「地址」以及該人員的一組「復原碼」之一，只有三者都正確時才寄出重設連結——屆時該代碼即被使用。每種組合都以同一句話回應。**將其關閉是較弱的設定**：表單會回到單一欄位（用戶名稱或地址），此時重設的強度就等同於它所寄往的郵箱——NIST SP 800-63B-4 允許以此方式復原，docs/mail.md 則對此提出警告。此設定開啟時，沒有任何復原碼的人員無法自行重設密碼；管理員可以。"
+    "en": "2d8885388b97eb61",
+    "text": "忘記密碼表單會要求「用戶名稱」、帳戶上已驗證的「地址」以及該人員的一組「復原碼」之一，只有三者都正確時才寄出重設連結——屆時該代碼即被使用。每種組合都以同一句話回應。**將其關閉是較弱的設定**：表單會回到單一欄位（用戶名稱或地址），此時重設的強度就等同於它所寄往的郵箱——NIST SP 800-63B-4 允許以此方式復原，docs/v1.1.0/mail.md 則對此提出警告。此設定開啟時，沒有任何復原碼的人員無法自行重設密碼；管理員可以。"
   },
   "mail.verificationTtlMinutes|label": {
     "en": "49c2a4b66ba8a448",

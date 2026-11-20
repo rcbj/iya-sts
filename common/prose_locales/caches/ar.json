@@ -1,0 +1,1714 @@
+{
+  "caches.registry.default.hitMeaning": {
+    "en": "4314127680e25488",
+    "text": "بحث أُجيب عنه من ذاكرة التخزين المؤقت"
+  },
+  "caches.registry.default.notCountedWhy": {
+    "en": "99031acf625704cc",
+    "text": "البحث في ملف لا يحرّره هذا المستودع"
+  },
+  "caches.store.acme.nonces.title": {
+    "en": "e25c959b1d4ea38a",
+    "text": "قيم nonce في ACME"
+  },
+  "caches.store.acme.nonces.description": {
+    "en": "d8605f70794b6e01",
+    "text": "قيم Replay-Nonce التي قُدِّمت بالفعل إلى خادم ACME (RFC 8555 القسم 6.5)، بحيث تُقبل كل منها مرة واحدة."
+  },
+  "caches.store.acme.nonces.bound": {
+    "en": "08c86b675ec9c9e4",
+    "text": "مُطبَّق: acme.maxSpentNonces قيمة nonce مستهلَكة لكل نطاق ثقة. تُمسح المنتهية عند الحد؛ والسجل الذي ما يزال ممتلئًا يرفض الاستهلاك التالي (وتكون الإجابة badNonce) بدلًا من نسيان قيمة ما زالت سارية."
+  },
+  "caches.store.acme.nonces.lifetime": {
+    "en": "4429efe4e095ab5b",
+    "text": "إلى أن تنتهي صلاحية قيمة nonce؛ وتُمسح المنتهية عند بلوغ الحد."
+  },
+  "caches.store.acme.nonces.hitMeaning": {
+    "en": "87a572725d5885db",
+    "text": "قيمة nonce استُهلِكت بالفعل، لذا رُفض الطلب"
+  },
+  "caches.store.admin.console-totals.title": {
+    "en": "148cb7460d633eb9",
+    "text": "إجماليات فهرس وحدة التحكم، محفوظة"
+  },
+  "caches.store.admin.console-totals.description": {
+    "en": "21f463f4c0d3aa21",
+    "text": "إجماليات فهرس وحدة التحكم — الاستدعاءات، والرموز، والعناصر، والجلسات، والمستخدمون المعروفون، والمستخدمون الذين سجّلوا الدخول هنا — التي يجيب عنها /admin-api/status. وعدّ المستخدمين يعني حل كل هوية في السجل، لذا تُحفظ الإجماليات لبضع ثوانٍ."
+  },
+  "caches.store.admin.console-totals.bound": {
+    "en": "00ddf9958d051363",
+    "text": "بنيوي: مجموعة إجماليات واحدة لكل نطاق ثقة، تُبنى مرة واحدة على الأكثر في الوقت نفسه."
+  },
+  "caches.store.admin.console-totals.lifetime": {
+    "en": "1fd142ea1eba6ca9",
+    "text": "خمس عشرة ثانية."
+  },
+  "caches.store.admin.users-population.title": {
+    "en": "187dfb82048a5dde",
+    "text": "تعداد صفحة المستخدمين، محفوظ"
+  },
+  "caches.store.admin.users-population.description": {
+    "en": "19ff0e331d0cabdb",
+    "text": "كل هوية يحتفظ بها السجل وكل شخص في الدليل، مع حصر بيانات اعتماد كل واحد: وهو ما تتصفحه /admin/users و/admin-api/users وتُصفّيه وتعدّه. وبناؤه يعني حل كل موضوع في السجل وقراءة مدخل كل شخص، لذا يحتفظ التصفح به بدلًا من بنائه لكل صفحة."
+  },
+  "caches.store.admin.users-population.bound": {
+    "en": "63612b99f35238a3",
+    "text": "بنيوي: تعداد واحد لكل نطاق ثقة، يُبنى مرة واحدة على الأكثر في الوقت نفسه."
+  },
+  "caches.store.admin.users-population.lifetime": {
+    "en": "39fc3b3cca7a059f",
+    "text": "خمس عشرة ثانية، وفورًا عند كتابة أي شيء تحت ou=users الخاص بنطاق الثقة، هنا أو عند تطبيقه من عملية أخرى."
+  },
+  "caches.store.applications.listing.title": {
+    "en": "eee968e6707b5423",
+    "text": "قائمة سجل التطبيقات"
+  },
+  "caches.store.applications.listing.description": {
+    "en": "b14bdfe854b508da",
+    "text": "كل مدخل تطبيق في نطاق ثقة، محلَّلًا، مع بحث لكل من client_id والجمهور وAppliesTo والإذن — بحيث لا تحلّل صفحة أو طلب رمز السجل كله لكل سؤال."
+  },
+  "caches.store.applications.listing.bound": {
+    "en": "acf20913d7111d22",
+    "text": "بنيوي: قائمة واحدة لكل نطاق ثقة، بحجم ou=applications (وهو نفسه محدود بـ applications.max)."
+  },
+  "caches.store.applications.listing.lifetime": {
+    "en": "0d7ef2a117733512",
+    "text": "إلى أن يتغيّر أي شيء تحت ou=applications الخاص بنطاق الثقة؛ ثم تعيد القراءة التالية تحليله."
+  },
+  "caches.store.applications.load.title": {
+    "en": "87b6608598fd495b",
+    "text": "مداخل التطبيقات المقروءة بالمعرّف"
+  },
+  "caches.store.applications.load.description": {
+    "en": "449808b7934fff9f",
+    "text": "مدخل تطبيق واحد وسجله المحلَّل، حسب المعرّف، بحيث لا تقرأ عمليات التحقق في تسجيل الدخول المدخل ولا تحلّله لكل سؤال."
+  },
+  "caches.store.applications.load.bound": {
+    "en": "2f0f2fdc2a335270",
+    "text": "مُطبَّق: MAX_LOAD_MEMO (256) معرّفًا لكل نطاق ثقة؛ وبعد تجاوزه تُسقَط الإجابات المحفوظة."
+  },
+  "caches.store.applications.load.lifetime": {
+    "en": "a1430f3b77ef4dc8",
+    "text": "إلى أن يتغيّر أي شيء تحت ou=applications الخاص بنطاق الثقة؛ ثم تسأل القراءة التالية الدليل مرة أخرى."
+  },
+  "caches.store.applications.ssf-allowed-events.title": {
+    "en": "da62d279c1ec6d48",
+    "text": "أذونات مستقبِل Shared Signals"
+  },
+  "caches.store.applications.ssf-allowed-events.description": {
+    "en": "e079736452f08ea4",
+    "text": "أي تطبيق يملك تدفق Shared Signals وأي أحداث يجوز له تلقيها، لكل أصيل، بحيث لا يمر حدث الجلسة على كل تطبيق مسجَّل."
+  },
+  "caches.store.applications.ssf-allowed-events.bound": {
+    "en": "a4734e7608a889bd",
+    "text": "مُطبَّق: 4096 إجابة لكل نطاق ثقة، ويُسقَط الأقدم ويُبحث عنه مرة أخرى عند الحاجة التالية."
+  },
+  "caches.store.applications.ssf-allowed-events.lifetime": {
+    "en": "995228533c95870f",
+    "text": "إلى أن يتغيّر أي شيء تحت ou=applications الخاص بنطاق الثقة؛ ثم يفرغ البحث التالي إجابات نطاق الثقة ذلك."
+  },
+  "caches.store.attribute-sources.lookups.title": {
+    "en": "0e79812ce7455f95",
+    "text": "عمليات بحث مصادر السمات"
+  },
+  "caches.store.attribute-sources.lookups.description": {
+    "en": "f579fe8e54fdccd5",
+    "text": "الصف الذي أعاده مصدر سمات لمفتاح شخص واحد، ويُحفظ لفترة وجيزة بحيث تكون موجة من عمليات تسجيل الدخول استعلامًا واحدًا (#94)."
+  },
+  "caches.store.attribute-sources.lookups.bound": {
+    "en": "27ece14a75b504e2",
+    "text": "مُطبَّق: 2000 صف لكل عملية، ويُسقَط الأقدم."
+  },
+  "caches.store.attribute-sources.lookups.hitMeaning": {
+    "en": "21657e9840c744f0",
+    "text": "تسجيل دخول أُجيب عنه من بحث جرى قبل ثوانٍ"
+  },
+  "caches.store.attribute-sources.lookups.sentences.lifetime": {
+    "en": "758990e906bc4fb2",
+    "text": "{{seconds}} ث بعد البحث؛ وتغيير المصدر يسقط صفوفه."
+  },
+  "caches.store.authn.session-window.title": {
+    "en": "c7d3b3347696bed7",
+    "text": "نافذة جلسة تسجيل الدخول"
+  },
+  "caches.store.authn.session-window.description": {
+    "en": "7a7d9e762890fe35",
+    "text": "جلسات تسجيل الدخول التي تحتفظ بها عملية واحدة عندما يكون authn.sessionWindow مفعّلًا (#350). ويُقرأ الإخفاق من الصف المختوم. وينسى الإخلاء النسخة في الذاكرة بعد تثبيت عملية الإدراج أو التحديث، ولا يُنهي الجلسة."
+  },
+  "caches.store.certificates.parsed-facts.title": {
+    "en": "5746d523daca087a",
+    "text": "حقائق الشهادات المحلَّلة"
+  },
+  "caches.store.certificates.parsed-facts.description": {
+    "en": "9bd397c6aabdfd7e",
+    "text": "الموضوع وجهة الإصدار وnotAfter التي تعرضها قائمة الشهادات، وما إذا كانت الشهادة تحمل مفتاح ما بعد الكم، تُحلَّل مرة واحدة لكل شهادة من أجل /admin/pki وGET /admin-api/certificates. ومفتاحها SHA-256 الخاص بالشهادة نفسها."
+  },
+  "caches.store.certificates.parsed-facts.bound": {
+    "en": "652e9484a6aabccf",
+    "text": "مُطبَّق: 4,096 شهادة، تُسقَط الأقدم وتُحلَّل مرة أخرى عند العرض التالي."
+  },
+  "caches.store.certificates.parsed-facts.lifetime": {
+    "en": "67ce8000dd01d5b4",
+    "text": "بلا انتهاء صلاحية: مفتاحها محتوى الشهادة، وحقائقه لا تتغيّر أبدًا. ويذهب الأقدم أولًا عند الامتلاء."
+  },
+  "caches.store.credentials.totp-verdicts.title": {
+    "en": "cf29b20375e49e75",
+    "text": "أحكام أسرار المصادقة"
+  },
+  "caches.store.credentials.totp-verdicts.description": {
+    "en": "44ed095a8aaddf55",
+    "text": "ما إذا كان كل سر مصادقة (TOTP) مختوم سُئلت عنه هذه العملية يُفتح تحت مفتاح تشفير المفاتيح الخاص به (#352)، بحيث تستطيع قائمة المستخدمين وقائمة العامل الثاني الإبلاغ عن تسجيل بأنه مقروء أو غير مقروء من غير فك ختمه في كل طلب. ومفتاحها النص المختوم؛ والقيمة نعم أو لا، وليست السر أبدًا."
+  },
+  "caches.store.credentials.totp-verdicts.bound": {
+    "en": "26d3fe6063b4d737",
+    "text": "مُطبَّق: 20000 حكمًا؛ وعند الامتلاء يُسقَط الأقدم ويُفتح ذلك السر مرة أخرى عند السؤال عنه في المرة التالية."
+  },
+  "caches.store.credentials.totp-verdicts.lifetime": {
+    "en": "6681c5901df77218",
+    "text": "إلى أن تتغيّر مفاتيح تشفير المفاتيح، أو يُسقَط لإفساح المجال. والتسجيل الجديد نص مختوم جديد ويُسأل عنه من جديد."
+  },
+  "caches.store.credentials.totp-verdicts.hitMeaning": {
+    "en": "55449e18bd6dd225",
+    "text": "سر مختوم كان حكمه معروفًا بالفعل، لذا لم يُفتح"
+  },
+  "caches.store.debugger.static-files.title": {
+    "en": "391f9031c0bbe0bb",
+    "text": "الملفات الثابتة لمصحح الأخطاء المضمَّن"
+  },
+  "caches.store.debugger.static-files.description": {
+    "en": "4b3f347eb0b511c1",
+    "text": "ملفات عميل مصحح الأخطاء المضمَّن بعد استبدال عنوان هذه الخدمة فيها، تُحفظ لكل إصدار ملف ولكل عنوان بحيث لا يعيد مستمع مصحح الأخطاء كتابة ملف في كل طلب."
+  },
+  "caches.store.debugger.static-files.bound": {
+    "en": "45ba4df709cbf3c3",
+    "text": "مُطبَّق: 400 ملف، يُسقَط الأقدم ويُقرأ مرة أخرى عند التقديم التالي."
+  },
+  "caches.store.debugger.static-files.lifetime": {
+    "en": "ed5fb6e35c20a032",
+    "text": "إلى أن يتغيّر الملف على القرص (وقت تعديل جديد يعني مدخلًا جديدًا)؛ ويذهب الأقدم أولًا عند الامتلاء."
+  },
+  "caches.store.devices.challenges.title": {
+    "en": "71ba1256c880f287",
+    "text": "تحديات تسجيل الأجهزة"
+  },
+  "caches.store.devices.challenges.description": {
+    "en": "8419d9ee3d2f3c39",
+    "text": "التحديات التي أصدرتها /portal/devices لإثبات مفتاح أو لبيان App Attest أو لربط WebAuthn، وقيم nonce للحداثة التي أصدرها EST /nonce لتصديق مفتاح TPM، وكل منها مرتبط بالجلسة (أو بملف تعريف ارتباط EST) التي أُصدر إليها، ويُجاب عنه مرة واحدة."
+  },
+  "caches.store.devices.challenges.bound": {
+    "en": "09b572ec38f68351",
+    "text": "مُطبَّق: devices.maxChallenges لكل نطاق ثقة، ويُسقَط الأقدم عند الإدراج؛ وواحد لكل جلسة ولكل غرض."
+  },
+  "caches.store.devices.challenges.hitMeaning": {
+    "en": "3c188e43349d3468",
+    "text": "تحدٍّ أصدره نطاق الثقة هذا، لذا فُحص الإثبات"
+  },
+  "caches.store.devices.events.title": {
+    "en": "83817a9f9a3a3e29",
+    "text": "أحداث سجل الأجهزة"
+  },
+  "caches.store.devices.events.description": {
+    "en": "b374122fe6382c32",
+    "text": "صف واحد لكل جهاز أُنشئ أو أُزيل أو أُخلي عند حد شخص في نطاق الثقة هذا — وهو ما ترسمه المراقبة → الأجهزة عبر الزمن. وليس مفتاحًا ولا سرًا ولا اسم مالك أبدًا."
+  },
+  "caches.store.devices.events.bound": {
+    "en": "f055322b7dd157b2",
+    "text": "مُطبَّق: devices.eventsKept لكل نطاق ثقة، ويُسقَط أقدم حدث عند الإدراج."
+  },
+  "caches.store.devices.events.lifetime": {
+    "en": "080afaefbe52c342",
+    "text": "إلى أن تدفعه أحداث أحدث عددها devices.eventsKept إلى الخارج."
+  },
+  "caches.store.dpop.nonces.title": {
+    "en": "a131d3dea3731f75",
+    "text": "قيم nonce في DPoP"
+  },
+  "caches.store.dpop.nonces.description": {
+    "en": "b375c554b6362540",
+    "text": "قيم nonce في DPoP يصدرها الخادم (RFC 9449 القسم 8)، بحيث يمكن التحقق من إثبات يحمل إحداها مقابل ما سُلِّم."
+  },
+  "caches.store.dpop.nonces.bound": {
+    "en": "cf88aac51271454f",
+    "text": "مُطبَّق: oauth2.dpopNonceCacheSize لكل نطاق ثقة؛ وتُسقَط أقدم قيمة nonce، ويُسلَّم العميل الذي يقدّمها قيمة جديدة."
+  },
+  "caches.store.dpop.nonces.hitMeaning": {
+    "en": "054858096e8ee64e",
+    "text": "قيمة nonce وُجدت سارية، لذا قُبل الإثبات"
+  },
+  "caches.store.dpop.proof-ids.title": {
+    "en": "fdc1f37867ca23d7",
+    "text": "معرّفات إثباتات DPoP"
+  },
+  "caches.store.dpop.proof-ids.description": {
+    "en": "e4ad47d3ddf82b82",
+    "text": "قيمة jti لكل إثبات DPoP قُبل، بحيث يصلح الإثبات لطلب واحد (RFC 9449 القسم 11.1)."
+  },
+  "caches.store.dpop.proof-ids.bound": {
+    "en": "b6132425d7ebf69a",
+    "text": "مُطبَّق: oauth2.dpopReplayCacheSize معرّفًا ساريًا لكل نطاق ثقة. والسجل الممتلئ يرفض الإثبات التالي (STS-OAUTH-0554) بدلًا من نسيان معرّف سارٍ، وهو ما سيعيد فتح إعادة إرساله."
+  },
+  "caches.store.dpop.proof-ids.hitMeaning": {
+    "en": "47b81c5d2badc0bc",
+    "text": "إثبات استُخدم بالفعل، لذا رُفض الطلب"
+  },
+  "caches.store.federation.release-index.title": {
+    "en": "320bf243877446b0",
+    "text": "فهرس إصدار سمات الاتحاد"
+  },
+  "caches.store.federation.release-index.description": {
+    "en": "b4d5f3108b264826",
+    "text": "قائمة الإصدار لأي شريك تنطبق على أي تطبيق، وهي مبنية من ou=federations بحيث لا يمر إصدار رمز على السجل. فهرس واحد لكل نطاق ثقة."
+  },
+  "caches.store.federation.release-index.bound": {
+    "en": "6ad2d9fb0c661c1d",
+    "text": "بنيوي: فهرس واحد لكل نطاق ثقة، يحتفظ بمدخل واحد لكل تطبيق له قائمة إصدار."
+  },
+  "caches.store.federation.release-index.sentences.lifetime": {
+    "en": "335d6e9891f39e35",
+    "text": "federation.releaseIndexTtlMs ({{ms}} مللي ث) بعد بنائه، أو فورًا عند كتابة علاقة اتحاد عبر هذه الخدمة."
+  },
+  "caches.store.global.edge-proxies.title": {
+    "en": "a4ddab7d49a3428d",
+    "text": "نطاقات حافة CDN"
+  },
+  "caches.store.global.edge-proxies.description": {
+    "en": "404fd94a38171235",
+    "text": "global.edgeProxies، محلَّل إلى BlockList، بحيث لا يعيد الطلب تحليل الإعداد ليقرر ما إذا كان قد جاء من حافة CDN يجب أن تحمل سر هذا النشر."
+  },
+  "caches.store.global.edge-proxies.bound": {
+    "en": "f2a4143574ccc474",
+    "text": "بنيوي: نسخة محلَّلة واحدة من الإعداد."
+  },
+  "caches.store.global.edge-proxies.lifetime": {
+    "en": "dd55f37fe33ed31f",
+    "text": "إلى أن يتغيّر نص global.edgeProxies."
+  },
+  "caches.store.global.trusted-proxies.title": {
+    "en": "9c82ac7525550c6d",
+    "text": "نطاقات الوكلاء الموثوقين"
+  },
+  "caches.store.global.trusted-proxies.description": {
+    "en": "6312ef008eaa90ec",
+    "text": "global.trustedProxies، محلَّل إلى BlockList، بحيث لا يعيد الطلب تحليل الإعداد ليقرر عنوان الإحالة الذي يصدّقه."
+  },
+  "caches.store.global.trusted-proxies.bound": {
+    "en": "f2a4143574ccc474",
+    "text": "بنيوي: نسخة محلَّلة واحدة من الإعداد."
+  },
+  "caches.store.global.trusted-proxies.lifetime": {
+    "en": "a234a6c3782a6a59",
+    "text": "إلى أن يتغيّر نص global.trustedProxies."
+  },
+  "caches.store.gnap.biscuit-revocations.title": {
+    "en": "337581d2c9bece04",
+    "text": "رموز biscuit المُلغاة"
+  },
+  "caches.store.gnap.biscuit-revocations.description": {
+    "en": "bec35292747e2dd3",
+    "text": "معرّفات الإلغاء لكل رمز وصول biscuit مُلغًى، منشورة على /gnap/biscuit/revocations لخادم موارد يتحقق من رموز biscuit بنفسه."
+  },
+  "caches.store.gnap.biscuit-revocations.bound": {
+    "en": "64c244911f86f322",
+    "text": "مُطبَّق: oauth2.maxRevokedJtis لكل نطاق ثقة — حد سجل الإلغاء نفسه، للوعد نفسه عن الرموز نفسها. وعند الحد يذهب الصف المنتهي أولًا؛ وإلا يُنسى أقدم إلغاء (STS-GNAP-0752)، ويُقبل رمز biscuit ذلك مرة أخرى لدى خادم موارد يفحص هذه القائمة فقط إلى أن تنتهي صلاحيته."
+  },
+  "caches.store.gnap.biscuit-revocations.lifetime": {
+    "en": "2e7b9a4f7165b5ba",
+    "text": "إلى exp الخاص بالرمز المُلغى نفسه."
+  },
+  "caches.store.gnap.biscuit-revocations.hitMeaning": {
+    "en": "aa2cb2991b347fd3",
+    "text": "قُرئت القائمة المنشورة"
+  },
+  "caches.store.gnap.owner-lookups.title": {
+    "en": "e7c42445cf1d0c35",
+    "text": "مالكو الموارد الذين بُحث عنهم"
+  },
+  "caches.store.gnap.owner-lookups.description": {
+    "en": "04f8ef8478ff0188",
+    "text": "المالك الذي سمّاه gnapOwnerLookupUri الخاص بخادم الموارد لمعرّف، بحيث يسأل طلب المنحة وصفحة الموافقة والإصدار خادم الموارد مرة واحدة (#432 المرحلة 5)."
+  },
+  "caches.store.gnap.owner-lookups.bound": {
+    "en": "94bd0cb7c6469038",
+    "text": "مُطبَّق: 1024 مالكًا لكل نطاق ثقة، ويُسقَط الأقدم ويُبحث عنه مرة أخرى عند الحاجة التالية."
+  },
+  "caches.store.gnap.signatures.title": {
+    "en": "8e21c4fe5987c2c0",
+    "text": "توقيعات GNAP"
+  },
+  "caches.store.gnap.signatures.description": {
+    "en": "9df162f452e8424c",
+    "text": "كل طلب GNAP موقَّع قُبل (توقيعات رسائل HTTP وJWS مرفق أو منفصل)، بحيث لا يمكن إرسال طلب مُلتقَط مرة أخرى."
+  },
+  "caches.store.gnap.signatures.bound": {
+    "en": "36dc000f8f6cdb57",
+    "text": "مُطبَّق: gnap.replayCacheSize توقيعًا ساريًا لكل نطاق ثقة. والسجل الممتلئ يرفض الطلب الموقَّع التالي (STS-GNAP-0718) بدلًا من نسيان توقيع سارٍ، وهو ما سيعيد فتح إعادة إرساله."
+  },
+  "caches.store.gnap.signatures.lifetime": {
+    "en": "7811612a3c4ca16d",
+    "text": "ضعف gnap.signatureMaxAgeS بعد رؤيته."
+  },
+  "caches.store.gnap.signatures.hitMeaning": {
+    "en": "1d89a0731fc525e7",
+    "text": "توقيع رُئي بالفعل، لذا رُفض الطلب"
+  },
+  "caches.store.jose.kid-thumbprint-uris.title": {
+    "en": "336e569778455530",
+    "text": "معرّفات المفاتيح في RFC 9278"
+  },
+  "caches.store.jose.kid-thumbprint-uris.description": {
+    "en": "036518b411a3041a",
+    "text": "JWK Thumbprint URI المنشور بوصفه kid تحت keys.kidFormat=jwk-thumbprint-uri، ومفتاحه kid الداخلي، بحيث لا يعيد توقيع الرمز قراءة المفتاح من شهادته."
+  },
+  "caches.store.jose.kid-thumbprint-uris.bound": {
+    "en": "7f85e649ed06b202",
+    "text": "مُطبَّق: 512 معرّف مفتاح، يُسقَط الأقدم ويُشتق مرة أخرى عند الطلب التالي."
+  },
+  "caches.store.jose.kid-thumbprint-uris.lifetime": {
+    "en": "cc27797b71edc78e",
+    "text": "بلا انتهاء صلاحية: يُشتق kid الداخلي من المفتاح، لذا لا تتغيّر إجابته أبدًا. ويذهب الأقدم أولًا عند الامتلاء."
+  },
+  "caches.store.jose.x5c-chain-under-root.title": {
+    "en": "60184de45f42b205",
+    "text": "سلاسل الشهادات المنتهية تحت الجذر"
+  },
+  "caches.store.jose.x5c-chain-under-root.description": {
+    "en": "4683a9fbb696ec3e",
+    "text": "ما إذا كانت السلسلة المخزَّنة لصف السجل تنتهي تحت جذر الخدمة الحالي، وهو ما يقرر إلحاق الجذر بترويسة x5c. ومفتاحها بصمة الصف وبصمة الجذر."
+  },
+  "caches.store.jose.x5c-chain-under-root.bound": {
+    "en": "a398fbe4dfc655cc",
+    "text": "مُطبَّق: 512 إجابة، تُسقَط الأقدم وتُحسَب مرة أخرى عند الطلب التالي."
+  },
+  "caches.store.jose.x5c-chain-under-root.lifetime": {
+    "en": "aa520701ba5654bb",
+    "text": "بلا انتهاء صلاحية: مفتاحها بصمة الشهادة وkid، وإجابته لا تتغيّر أبدًا. ويذهب الأقدم أولًا عند الامتلاء."
+  },
+  "caches.store.jose.x5c-key-match.title": {
+    "en": "070b8f9475789530",
+    "text": "مطابقات الشهادة مع مفتاح التوقيع"
+  },
+  "caches.store.jose.x5c-key-match.description": {
+    "en": "8abb041e0d309c39",
+    "text": "ما إذا كان صف سجل الشهادات يحمل مفتاح التوقيع، ويُسأل قبل وضع ترويسة x5c أو x5t#S256 على رمز. ومفتاحها بصمة الصف وkid المفتاح."
+  },
+  "caches.store.jose.x5c-key-match.bound": {
+    "en": "a398fbe4dfc655cc",
+    "text": "مُطبَّق: 512 إجابة، تُسقَط الأقدم وتُحسَب مرة أخرى عند الطلب التالي."
+  },
+  "caches.store.jose.x5c-key-match.lifetime": {
+    "en": "aa520701ba5654bb",
+    "text": "بلا انتهاء صلاحية: مفتاحها بصمة الشهادة وkid، وإجابته لا تتغيّر أبدًا. ويذهب الأقدم أولًا عند الامتلاء."
+  },
+  "caches.store.keys.ca-hierarchies.title": {
+    "en": "bb578538c72a914b",
+    "text": "سلطات الشهادات"
+  },
+  "caches.store.keys.ca-hierarchies.description": {
+    "en": "10ca9967b48a2a15",
+    "text": "تسلسل سلطة الشهادات لكل مجال — جذر الخدمة، والشهادة الوسيطة لنطاق الثقة، وسلطات الإصدار التابعة له — يُحفظ مفكوك التشفير للتوقيع، ويُقرأ من المخزن عند البدء أو يُتبنّى من عملية أخرى."
+  },
+  "caches.store.keys.ca-hierarchies.bound": {
+    "en": "ee4228c31fe34d79",
+    "text": "بنيوي: تسلسل واحد لكل مجال (جذر الخدمة، وفرع العملية، وواحد لكل نطاق ثقة)، يُستبدل بدلًا من الإضافة إليه."
+  },
+  "caches.store.keys.ca-hierarchies.lifetime": {
+    "en": "d0ae04f76208dec0",
+    "text": "بلا انتهاء صلاحية: يُستبدل عندما يتغيّر التسلسل هنا أو على عقدة أخرى، ويُسقَط مع نطاق الثقة الخاص به."
+  },
+  "caches.store.keys.derived-digest-keys.title": {
+    "en": "f9fe85cae4c1d960",
+    "text": "مفاتيح البصمة المشتقة"
+  },
+  "caches.store.keys.derived-digest-keys.description": {
+    "en": "168b9cef8ba71a95",
+    "text": "مفتاح HMAC الذي يُشتق به كل وسم لبصمة ذات مفتاح، بحيث لا تشغّل البصمة HKDF في كل استدعاء. ويُحفظ إلى جانب المفتاح الذي اشتُق منه، والذي يُقارَن في كل استخدام."
+  },
+  "caches.store.keys.derived-digest-keys.bound": {
+    "en": "ddbdac124aa8d60a",
+    "text": "مُطبَّق: MAX_DERIVED_DIGEST_KEYS (64) وسمًا؛ وبعد تجاوزه يُسقَط كل مفتاح مشتق."
+  },
+  "caches.store.keys.derived-digest-keys.lifetime": {
+    "en": "624f872facf2862c",
+    "text": "إلى أن يتغيّر المفتاح الذي اشتُق منه (مفتاح بصمة جديد أو مفتاح تشفير مفاتيح)، ويُتحقق من ذلك في كل استخدام."
+  },
+  "caches.store.keys.plaintext.title": {
+    "en": "51cb646ea755ee9e",
+    "text": "مفاتيح التوقيع المفكوك تشفيرها"
+  },
+  "caches.store.keys.plaintext.description": {
+    "en": "9ae5fbc71d0ee089",
+    "text": "مادة مفتاح التوقيع لنطاق الثقة، مفكوكة التشفير من مخزن الاستمرارية تحت مفتاح تشفير المفاتيح ومحتفظ بها طوال نافذة خمول بحيث لا يتحمّل التوقيع المطّرد تكلفة فك تشفير في كل مرة. في وضع المنتج فقط؛ ولا تُخزَّن مفاتيح التطوير مشفّرة أبدًا."
+  },
+  "caches.store.keys.plaintext.bound": {
+    "en": "403b3bdab80f68d0",
+    "text": "بنيوي: مادة مفاتيح نطاق ثقة واحد لكل نطاق ثقة، أيًا كانت سياسة الاحتفاظ؛ ولا تقرر السياسة إلا مدة الاحتفاظ بها."
+  },
+  "caches.store.keys.post-quantum-sets.title": {
+    "en": "31793faed0af5624",
+    "text": "مجموعات مفاتيح ما بعد الكم"
+  },
+  "caches.store.keys.post-quantum-sets.description": {
+    "en": "48908823922d3c59",
+    "text": "مفاتيح ML-DSA وSLH-DSA لكل نطاق ثقة، تُولَّد (أو تُقرأ من المجموعة المخزَّنة) في أول مرة يحتاج إليها شيء، ثم تُحفظ مع مجموعة مفاتيح نطاق الثقة بعد ذلك."
+  },
+  "caches.store.keys.post-quantum-sets.bound": {
+    "en": "6b7474127f960dde",
+    "text": "بنيوي: مجموعة ما بعد كم واحدة لكل نطاق ثقة، محفوظة مع مجموعة مفاتيح نطاق الثقة."
+  },
+  "caches.store.keys.post-quantum-sets.lifetime": {
+    "en": "6888983df500912c",
+    "text": "كما هي حال مجموعة مفاتيح نطاق الثقة: بلا انتهاء صلاحية، وتُسقَط عند إزالة نطاق الثقة أو استبدال مفاتيحه."
+  },
+  "caches.store.keys.signing-sets.title": {
+    "en": "08f9512fa0140953",
+    "text": "مجموعات مفاتيح التوقيع"
+  },
+  "caches.store.keys.signing-sets.description": {
+    "en": "90fabe3bffe305d8",
+    "text": "مفاتيح التوقيع لكل نطاق ثقة (RSA وEC ومجموعة ما بعد الكم متى طُلبت)، تُبنى أو تُقرأ من مخزن المفاتيح عند أول استخدام وتُحفظ لكل توقيع بعده."
+  },
+  "caches.store.keys.signing-sets.bound": {
+    "en": "9011975e56c13eb7",
+    "text": "بنيوي: مجموعة مفاتيح واحدة لكل نطاق ثقة، تُسقَط مع نطاق الثقة أو تُستبدل عند تدوير مفاتيحه أو تبنّيها."
+  },
+  "caches.store.keys.signing-sets.lifetime": {
+    "en": "86e5adc71e4eb758",
+    "text": "بلا انتهاء صلاحية: تُسقَط عند إزالة نطاق الثقة، أو تدوير مفاتيحه، أو تبنّي مفاتيح مخزَّنة لعملية أخرى. مدخل واحد لكل نطاق ثقة وقّع."
+  },
+  "caches.store.krb5.authenticator-replay.title": {
+    "en": "2e4f78c88940562b",
+    "text": "مصادقات Kerberos"
+  },
+  "caches.store.krb5.authenticator-replay.description": {
+    "en": "bd92a375c1ba17cd",
+    "text": "كل مصادقة قبلتها الخدمة المحمية، بحيث لا يمكن تقديم AP-REQ مُلتقَط مرتين. لكل نطاق ثقة: نطاق الثقة الذي أصدر نطاق Kerberos التابع له التذكرة."
+  },
+  "caches.store.krb5.authenticator-replay.bound": {
+    "en": "f80dfee6019f5638",
+    "text": "مُطبَّق: krb5.replayCacheMaxEntries لكل نطاق ثقة. وذاكرة التخزين المؤقت الممتلئة ترفض المصادقة التالية بدلًا من نسيان مصادقة سارية، وهو ما سيعيد فتح إعادة إرسالها."
+  },
+  "caches.store.krb5.authenticator-replay.hitMeaning": {
+    "en": "c44d8906b93d52b2",
+    "text": "مصادقة رُئيت بالفعل، لذا رُفض الطلب"
+  },
+  "caches.store.krb5.long-term-keys.title": {
+    "en": "908c0978f6268343",
+    "text": "المفاتيح طويلة الأجل في Kerberos"
+  },
+  "caches.store.krb5.long-term-keys.description": {
+    "en": "69997baa6ed64476",
+    "text": "المفاتيح طويلة الأجل لكل أصيل مسجَّل، مشتقة من كلمة المرور الخاصة به بواسطة string-to-key (أو مقروءة من مصدر المفاتيح) مرة واحدة لكل نوع تشفير، ومحفوظة لكل تذكرة بعدها."
+  },
+  "caches.store.krb5.long-term-keys.bound": {
+    "en": "8c11652313ab159c",
+    "text": "مُطبَّق: 4096 أصيلًا على الأكثر يحتفظون بالمفاتيح في وقت واحد، وصف واحد لكل نوع تشفير؛ وتُمسح مفاتيح الأقل استخدامًا مؤخرًا، ويشتقها أو يقرأها مرة أخرى عند تذكرته التالية."
+  },
+  "caches.store.krb5.long-term-keys.lifetime": {
+    "en": "ce837804788fa2c5",
+    "text": "بلا انتهاء صلاحية: تُسقَط مع الأصيل، أو عند استبدال سجله (تغيير كلمة المرور أو استعادة)، أو عندما يكون الأقل استخدامًا مؤخرًا بعد تجاوز الحد؛ ولا تُستدام أبدًا."
+  },
+  "caches.store.krb5.trust-keys.title": {
+    "en": "9e19b75405074ba3",
+    "text": "مفاتيح الثقة بين النطاقات في Kerberos"
+  },
+  "caches.store.krb5.trust-keys.description": {
+    "en": "44c86730ace05ee9",
+    "text": "أصلاء krbtgt بين النطاقات المبنية من سجلات ثقة نطاق الثقة هذا (ou=kerberosTrusts)، ولكل منهم المفاتيح المشتقة من كلمة المرور المشتركة أو المفتوحة من ختمه، محفوظة لكل إحالة بعد الأولى."
+  },
+  "caches.store.krb5.trust-keys.bound": {
+    "en": "c9282e1e84dbe9e3",
+    "text": "مُطبَّق: 512 على الأكثر لكل نطاق ثقة (مفتاحان لكل سجل من 256 سجلًا على الأكثر)؛ ويُسقَط الأقدم ويُبنى مرة أخرى عند استخدامه التالي."
+  },
+  "caches.store.krb5.trust-keys.lifetime": {
+    "en": "37ee5778f968cdd3",
+    "text": "بلا انتهاء صلاحية: يُستبدل لحظة تغيّر سجله (تُقارَن بايتات السجل في كل استخدام)، ويُسقَط مع السجل؛ ولا يُستدام أبدًا."
+  },
+  "caches.store.ldap.credential-tallies.title": {
+    "en": "41d340493639d53a",
+    "text": "الأشخاص وحاملو بيانات الاعتماد، معدودون"
+  },
+  "caches.store.ldap.credential-tallies.description": {
+    "en": "b107a5481cd185df",
+    "text": "كم شخصًا يعرّفه نطاق الثقة، وكم منهم يحمل كلمة مرور، وكل من يحمل سمة بيانات اعتماد (خام)، وكم من الأسماء التي شوهِدت وهي تسجّل الدخول هم أشخاص هنا: بطاقات /admin/users على الدليل كله دون سرده (#610)."
+  },
+  "caches.store.ldap.credential-tallies.bound": {
+    "en": "38494f0a059462b2",
+    "text": "بنيوي: حصر واحد وعدد أسماء واحد لكل نطاق ثقة؛ ويحمل الحصر الأشخاص الحاملين لبيانات اعتماد، لا الجميع."
+  },
+  "caches.store.ldap.credential-tallies.lifetime": {
+    "en": "e89a24bb9d11f866",
+    "text": "إلى أن يُكتب أي شيء تحت ou=users الخاص بنطاق الثقة، وفي عملية تحتفظ بالدليل بوصفه نافذة على المخزن لعشر ثوانٍ على الأكثر."
+  },
+  "caches.store.ldap.device-index.title": {
+    "en": "cb268f1d4224510b",
+    "text": "فهرس أجهزة الدليل"
+  },
+  "caches.store.ldap.device-index.description": {
+    "en": "db3c95d463a78acc",
+    "text": "معرّف كل مدخل جهاز وبصمات مفاتيحه وتجزئة سر Native SSO، إلى مدخله تحت ou=devices، بحيث لا ينسخ التعرف على جهاز عند نقطة نهاية الرمز السجل (#164)."
+  },
+  "caches.store.ldap.device-index.lifetime": {
+    "en": "5390ee30fa237c70",
+    "text": "إلى أن يُكتب شيء تحت ou=devices ويخفق بحث؛ ولا تنتظر الإصابة على مدخل حالي إعادة بناء. فهرس واحد لكل نطاق ثقة."
+  },
+  "caches.store.ldap.entryuuid-index.title": {
+    "en": "84a281e4f601dfe3",
+    "text": "فهرس entryUUID في الدليل"
+  },
+  "caches.store.ldap.entryuuid-index.description": {
+    "en": "9ae0fb72e2b9426c",
+    "text": "entryUUID لكل مدخل (وأسماؤه البديلة) إلى DN الخاص به، وهكذا يجد معرّف الموضوع ومعرّف SCIM شخصًا."
+  },
+  "caches.store.ldap.entryuuid-index.lifetime": {
+    "en": "b0f0da21ac461ad3",
+    "text": "إلى أن يتغيّر الدليل ويخفق بحث؛ ولا تنتظر الإصابة على مدخل حالي إعادة بناء. فهرس واحد لكل نطاق ثقة."
+  },
+  "caches.store.ldap.gate-usernames.title": {
+    "en": "689e1e6184e6baf0",
+    "text": "أسماء مستخدمي حاجز وحدة التحكم"
+  },
+  "caches.store.ldap.gate-usernames.description": {
+    "en": "06f13f021c4a27e4",
+    "text": "في عملية تحتفظ بنافذة على الدليل، الإجابة عن حامل اسم المستخدم (بما يشمل لا أحد) التي طلبها حاجز /admin-api خارج حلقة الأحداث، بحيث لا تسأل تحققاته المتزامنة المخزن. لا تقرأها إلا تلك التحققات؛ أما الإنشاء فيسأل المخزن دائمًا."
+  },
+  "caches.store.ldap.gate-usernames.bound": {
+    "en": "953882a7c140627a",
+    "text": "مُطبَّق: 64 اسم مستخدم لكل نطاق ثقة، ويُسقَط الأقل سؤالًا مؤخرًا أولًا."
+  },
+  "caches.store.ldap.gate-usernames.lifetime": {
+    "en": "43a85e1731c71231",
+    "text": "إلى أن يُكتب أي شيء عند ou=users الخاص بنطاق الثقة أو تحته أو فوقه هنا، أو يُنسَخ من عملية أخرى؛ ويسأل الإحماء التالي للحاجز مرة أخرى."
+  },
+  "caches.store.ldap.group-index.title": {
+    "en": "ed4018229dabe2c1",
+    "text": "فهرس مجموعات الدليل"
+  },
+  "caches.store.ldap.group-index.description": {
+    "en": "b7a9d5e55510d7e8",
+    "text": "عضوية المجموعة حسب العضو وحسب DN المجموعة، بحيث لا تمر مطالبة المجموعات ولا أي تحقق من دور على ou=groups."
+  },
+  "caches.store.ldap.group-index.lifetime": {
+    "en": "b12dd09efefaa6bd",
+    "text": "إلى أن يُكتب الدليل على نحو لا يستطيع الفهرس دمجه؛ ثم يعيد البحث التالي بناءه. فهرس واحد لكل نطاق ثقة."
+  },
+  "caches.store.ldap.memberof-claims.title": {
+    "en": "e11214f5dcb2df7b",
+    "text": "مطالبات memberOf، حسب المجموعة"
+  },
+  "caches.store.ldap.memberof-claims.description": {
+    "en": "a8b814b367bde432",
+    "text": "لكل مجموعة، المداخل التي يسمّي memberOf الخاص بها تلك المجموعة، بحيث لا تمر صفحتا المجموعات والكشوف على نطاق الثقة مرة لكل مجموعة (#352)."
+  },
+  "caches.store.ldap.memberof-claims.bound": {
+    "en": "1c452f55ba1fa07a",
+    "text": "بنيوي: فهرس واحد لكل نطاق ثقة، وصف واحد لكل قيمة memberOf."
+  },
+  "caches.store.ldap.memberof-claims.lifetime": {
+    "en": "f929877e04baf8dc",
+    "text": "إلى الكتابة التالية للدليل، في أي مكان."
+  },
+  "caches.store.ldap.person-keys.title": {
+    "en": "3ebad5ed26bc69ee",
+    "text": "الأشخاص، كمفاتيح مرتَّبة"
+  },
+  "caches.store.ldap.person-keys.description": {
+    "en": "7a8e30d74e436094",
+    "text": "DN المُطبَّع واسم المستخدم لكل شخص، بالترتيب الذي يسردهم به allPersons()، بحيث لا تمر صفحة الأشخاص على نطاق الثقة ولا تُطبّعه ولا ترتّبه لكل طلب (#352)."
+  },
+  "caches.store.ldap.person-keys.bound": {
+    "en": "9023115342c9c596",
+    "text": "بنيوي: قائمة واحدة لكل نطاق ثقة، بحجم ou=users."
+  },
+  "caches.store.ldap.person-keys.lifetime": {
+    "en": "1c2c57f79cea4fb0",
+    "text": "إلى أن يُكتب أي شيء تحت ou=users الخاص بنطاق الثقة."
+  },
+  "caches.store.ldap.service-accounts.title": {
+    "en": "cf6e6b4822e4f795",
+    "text": "حسابات الخدمة في الدليل"
+  },
+  "caches.store.ldap.service-accounts.description": {
+    "en": "c438b52f56cdcb94",
+    "text": "أسماء حسابات الخدمة لنطاق الثقة، بحيث لا يسأل قرار النطاق، الذي يسأل ما إذا كان شخص يملك أحدها، الدليل عن جميعها."
+  },
+  "caches.store.ldap.service-accounts.bound": {
+    "en": "3fab118dee48ec80",
+    "text": "بنيوي: قائمة واحدة لكل نطاق ثقة، بحجم حسابات الخدمة الخاصة به."
+  },
+  "caches.store.ldap.service-accounts.lifetime": {
+    "en": "6d41d8c344106c1b",
+    "text": "إلى أن تمس كتابة مدخلًا هو حساب خدمة، أو كان كذلك؛ ثم تسأل القراءة التالية الدليل مرة أخرى."
+  },
+  "caches.store.ldap.subtree-listings.title": {
+    "en": "89d5ba5e5411f55d",
+    "text": "قوائم حاويات الدليل"
+  },
+  "caches.store.ldap.subtree-listings.description": {
+    "en": "c4abe28dc7061031",
+    "text": "المداخل تحت حاوية (التطبيقات والاتحادات والسياسات وما شابهها)، تُحفظ إلى أن يُكتب شيء تحتها."
+  },
+  "caches.store.ldap.subtree-listings.bound": {
+    "en": "0a25541682bbfb7c",
+    "text": "مُطبَّق: 64 قائمة حاويات لكل نطاق ثقة، تُسقَط الأقدم وتُمشى مرة أخرى عند الطلب التالي."
+  },
+  "caches.store.ldap.subtree-listings.lifetime": {
+    "en": "57e3e963207e4be2",
+    "text": "إلى أن يُضاف مدخل تحت الحاوية أو يُزال أو يُكتب دون تسمية الموضع؛ مدخل واحد لكل حاوية مسرودة."
+  },
+  "caches.store.ldap.username-index.title": {
+    "en": "f619a8c6ea91bc8f",
+    "text": "فهرس أسماء المستخدمين في الدليل"
+  },
+  "caches.store.ldap.username-index.description": {
+    "en": "d7a1bebd68ee2f7c",
+    "text": "كل اسم يردّ به شخص (uid وRDN)، إلى مدخله تحت ou=users، بحيث لا يمر تسجيل الدخول على الدليل."
+  },
+  "caches.store.ldap.username-index.lifetime": {
+    "en": "b12dd09efefaa6bd",
+    "text": "إلى أن يُكتب الدليل على نحو لا يستطيع الفهرس دمجه؛ ثم يعيد البحث التالي بناءه. فهرس واحد لكل نطاق ثقة."
+  },
+  "caches.store.ldap.windowed-entryuuids.title": {
+    "en": "1bcb1ccebd4c7781",
+    "text": "قيم entryUUID ذات النافذة"
+  },
+  "caches.store.ldap.windowed-entryuuids.description": {
+    "en": "4bbc3a85d38472cd",
+    "text": "في عملية تحتفظ بنافذة على الدليل، المفتاح الذي وُجد عنده آخر مرة entryUUID الخاص بكل شخص أو جهاز، بحيث يُحل الموضوع إلى المدخل الذي تحتفظ به النافذة دون سؤال المخزن مرة أخرى (#773). ويُتحقق منه مقابل entryUUID الخاص بالمدخل نفسه في كل استخدام."
+  },
+  "caches.store.ldap.windowed-entryuuids.bound": {
+    "en": "a4522667ab0d5562",
+    "text": "مُطبَّق: ldap.workerCacheEntries لكل نطاق ثقة، ويُسقَط الأقدم أولًا."
+  },
+  "caches.store.ldap.windowed-entryuuids.lifetime": {
+    "en": "317464bd9b5bd06a",
+    "text": "إلى أن يغادر المدخل الذي يسمّيه النافذة، أو يُعاد تسميته، أو يكف عن حمل entryUUID ذلك، ويُتحقق من ذلك في كل استخدام."
+  },
+  "caches.store.mail.outbox.title": {
+    "en": "d40abea9379f4e22",
+    "text": "صندوق صادر البريد"
+  },
+  "caches.store.mail.outbox.description": {
+    "en": "a6352896048fde4b",
+    "text": "صف واحد لكل رسالة ترسلها هذه الخدمة: المستلم، وحالتها، ومحاولاتها، وموعد استحقاقها التالي — ونصها ما دامت معلّقة أو ميتة أو ملتقَطة، وليس بعد إرسالها أبدًا. الطابور الدائم الذي تمسحه مهمة mail.deliver."
+  },
+  "caches.store.mail.outbox.bound": {
+    "en": "6a37e278a83399a5",
+    "text": "مُطبَّق: mail.maxRows لكل نطاق ثقة، وتُسقَط أقدم رسالة FINISHED أولًا؛ ولا تُسقَط رسالة معلّقة أبدًا لإفساح المجال."
+  },
+  "caches.store.mail.outbox.lifetime": {
+    "en": "18d9f9e9aaa28b0a",
+    "text": "إلى انقضاء mail.retentionS بعد إدخالها في الطابور، وتُسقَط الأقدم المنتهية أولًا بعد تجاوز mail.maxRows لكل نطاق ثقة."
+  },
+  "caches.store.mail.outbox.hitMeaning": {
+    "en": "cdfb417042891812",
+    "text": "رسالة كُبتت لأنها مكررة لرسالة أُدخلت في الطابور بالفعل للفعل نفسه ضمن mail.dedupWindowS"
+  },
+  "caches.store.oauth2.access-token-status.title": {
+    "en": "510d919c0bffd0a8",
+    "text": "مداخل حالة رمز الوصول"
+  },
+  "caches.store.oauth2.access-token-status.description": {
+    "en": "642c7b724ba0c31a",
+    "text": "فهرس كل رمز وصول سارٍ في قائمة حالة رموز الوصول لنطاق الثقة هذا — رموز OAuth وفق RFC 9068 وتنسيقا JWT الاثنان لدى GNAP — مع jti الخاص به، بحيث يمكن حساب البت من سجل الإلغاء."
+  },
+  "caches.store.oauth2.access-token-status.bound": {
+    "en": "89d41edd17bc8817",
+    "text": "مُطبَّق: تحتفظ القائمة بـ 16777216 فهرسًا لكل نطاق ثقة؛ والقائمة التي لا يبقى فيها فهرس حر ترفض سك رمز الوصول (STS-OAUTH-0817) بدلًا من إعادة استخدام رمز سارٍ."
+  },
+  "caches.store.oauth2.access-token-status.lifetime": {
+    "en": "8de02df809461e33",
+    "text": "ما دام رمز الوصول الذي تصفه قائمًا؛ ويتحرر فهرسه مرة أخرى بعد ذلك."
+  },
+  "caches.store.oauth2.access-token-status.hitMeaning": {
+    "en": "f3d3ecc4c22434cc",
+    "text": "وُجدت حالة رمز هنا"
+  },
+  "caches.store.oauth2.access-token-status-lists.title": {
+    "en": "fbf9c8a567bfa76a",
+    "text": "قوائم حالة رموز الوصول الموقَّعة"
+  },
+  "caches.store.oauth2.access-token-status-lists.description": {
+    "en": "5dd0b4a74b29c624",
+    "text": "آخر Status List Token لرموز الوصول وقّعته هذه العملية لكل نطاق ثقة، ويُعاد استخدامه ما لم تتغيّر القائمة."
+  },
+  "caches.store.oauth2.access-token-status-lists.bound": {
+    "en": "80432c4ebde95ad8",
+    "text": "مُطبَّق: 1024 قائمة موقَّعة للعملية، تُسقَط الأقدم وتُوقَّع مرة أخرى عند الطلب التالي."
+  },
+  "caches.store.oauth2.access-token-status-lists.lifetime": {
+    "en": "51e29a7ed466e171",
+    "text": "إلى أن تتغيّر القائمة، أو إلى نصف oauth2.accessTokenStatusListTtlS."
+  },
+  "caches.store.oauth2.access-token-status-lists.hitMeaning": {
+    "en": "48214c6b54f10691",
+    "text": "قُدِّمت قائمة من غير توقيعها مرة أخرى"
+  },
+  "caches.store.oauth2.access-token-status-packed.title": {
+    "en": "41a83d2bb80a2918",
+    "text": "قوائم حالة رموز الوصول المعبَّأة"
+  },
+  "caches.store.oauth2.access-token-status-packed.description": {
+    "en": "b67a46cbdc14089f",
+    "text": "قائمة حالة رموز الوصول المضغوطة التي بنتها هذه العملية آخر مرة لكل نطاق ثقة، وتُعاد استخدامها إلى أن يتغيّر بت غير صالح أو تنتهي صلاحية الأبكر."
+  },
+  "caches.store.oauth2.access-token-status-packed.bound": {
+    "en": "93bd023bcc902515",
+    "text": "بنيوي: قائمة مضغوطة واحدة لكل نطاق ثقة. ونطاق الثقة الذي زال، أو القائمة التي انتهت صلاحية أبكر بت غير صالح فيها، تسقطه مهمة caches."
+  },
+  "caches.store.oauth2.access-token-status-packed.lifetime": {
+    "en": "86b51b8d0239fd45",
+    "text": "إلى أن يتغيّر بت غير صالح، أو تنتهي صلاحية الأبكر."
+  },
+  "caches.store.oauth2.access-token-status-packed.hitMeaning": {
+    "en": "29707643b235dbd9",
+    "text": "قُدِّمت قائمة من غير تعبئتها أو ضغطها مرة أخرى"
+  },
+  "caches.store.oauth2.attestation-challenges.title": {
+    "en": "f19e208930fddc5c",
+    "text": "تحديات تصديق العميل"
+  },
+  "caches.store.oauth2.attestation-challenges.description": {
+    "en": "662374646ca59f3f",
+    "text": "التحديات المسلَّمة لمصادقة العميل القائمة على التصديق في OAuth 2.0 (draft-ietf-oauth-attestation-based-client-auth-11 القسم 6)، بحيث يمكن التحقق من Client Attestation PoP يحمل أحدها مقابل ما أُصدر."
+  },
+  "caches.store.oauth2.attestation-challenges.bound": {
+    "en": "35159bcb83ab4004",
+    "text": "مُطبَّق: oauth2.clientAttestationChallengeCacheSize لكل نطاق ثقة؛ ويُسقَط أقدم تحدٍّ، ويُسلَّم العميل الذي يقدّمه تحديًا جديدًا مع use_attestation_challenge."
+  },
+  "caches.store.oauth2.attestation-challenges.hitMeaning": {
+    "en": "ec2ac5040ee56556",
+    "text": "تحدٍّ وُجد ساريًا، لذا قُبل PoP"
+  },
+  "caches.store.oauth2.attestation-challenges.sentences.lifetime": {
+    "en": "2e89c6be2e93654a",
+    "text": "oauth2.clientAttestationChallengeTtlS ({{seconds}} ث) بعد إصداره."
+  },
+  "caches.store.oauth2.authorization-details-types.title": {
+    "en": "567064e52a2873c3",
+    "text": "أنواع authorization_details المحلَّلة"
+  },
+  "caches.store.oauth2.authorization-details-types.description": {
+    "en": "8900e32db6598589",
+    "text": "تعريفات الأنواع في RFC 9396 المعلَنة على تطبيقات الموارد، تُحلَّل وتُصرَّف مخططات JSON Schema الخاصة بها مرة واحدة لكل نص تعريف متميّز. وهي مشتركة بين كل نطاقات الثقة، لأن النص هو المفتاح."
+  },
+  "caches.store.oauth2.authorization-details-types.bound": {
+    "en": "112a6e6fa385c928",
+    "text": "مُطبَّق: 512 تعريفًا محلَّلًا، يُسقَط الأقدم ويُحلَّل مرة أخرى عند الاستخدام التالي."
+  },
+  "caches.store.oauth2.authorization-details-types.lifetime": {
+    "en": "473355e47deb4520",
+    "text": "بلا انتهاء صلاحية: مفتاحها نص التعريف، لذا فالتعريف المعدَّل مدخل جديد. ويذهب الأقدم أولًا عند الامتلاء."
+  },
+  "caches.store.oauth2.backchannelDeliveries.title": {
+    "en": "77766290cfc9291c",
+    "text": "تسليمات Back-Channel Logout"
+  },
+  "caches.store.oauth2.backchannelDeliveries.description": {
+    "en": "4aeb276277f6aab5",
+    "text": "صف واحد لكل طرف معتمد أُبلغ بانتهاء جلسة (OpenID Connect Back-Channel Logout 1.0): حالته، ومحاولاته، وموعد استحقاقه التالي، وLogout Token الموقَّع. الطابور الدائم الذي تمسحه كل عملية؛ وتبقى الرسالة الميتة إلى أن تُعاد المحاولة أو تزيلها مدة الاحتفاظ."
+  },
+  "caches.store.oauth2.backchannelDeliveries.bound": {
+    "en": "f9b82a863658b91d",
+    "text": "مُطبَّق: oauth2.backchannelLogoutMaxRows لكل نطاق ثقة، ويُسقَط أقدم تسليم FINISHED أولًا؛ ولا يُسقَط تسليم معلّق أبدًا لإفساح المجال."
+  },
+  "caches.store.oauth2.backchannelDeliveries.lifetime": {
+    "en": "c265d018294ec409",
+    "text": "إلى انقضاء oauth2.backchannelLogoutRetentionS بعد إدخاله في الطابور (سواء انتهى أو لا)، ويُسقَط الأقدم المنتهي أولًا بعد تجاوز oauth2.backchannelLogoutMaxRows لكل نطاق ثقة."
+  },
+  "caches.store.oauth2.backchannelDeliveries.hitMeaning": {
+    "en": "caea9bfc772cb4de",
+    "text": "تسليم أُدخل في الطابور بالفعل لتلك الجلسة وذلك العميل، لذا لم تُدخل عملية ثانية تنهي الجلسة نفسها شيئًا في الطابور"
+  },
+  "caches.store.oauth2.client-jwks.title": {
+    "en": "3272fee4e1b83bb7",
+    "text": "مجموعات مفاتيح العملاء المجلوبة"
+  },
+  "caches.store.oauth2.client-jwks.description": {
+    "en": "65bfbd863f38dc47",
+    "text": "مجموعة JSON Web Key Set التي أجاب بها jwks_uri المسجَّل للعميل، بحيث تجد تأكيدات العميل وكائنات الطلب والاستجابات المشفَّرة مفاتيحه من غير جلب لكل طلب (#120)."
+  },
+  "caches.store.oauth2.client-jwks.bound": {
+    "en": "bfe4788c0fa5b7fe",
+    "text": "مُطبَّق: 256 مجموعة مفاتيح لكل نطاق ثقة، تُسقَط الأقدم وتُجلب مرة أخرى عند الحاجة التالية."
+  },
+  "caches.store.oauth2.declared-authorization-details-types.title": {
+    "en": "3f4c1bef936a03c4",
+    "text": "أنواع authorization_details المعلَنة"
+  },
+  "caches.store.oauth2.declared-authorization-details-types.description": {
+    "en": "5eba0c7bb76a5960",
+    "text": "أنواع RFC 9396 التي تعلنها تطبيقات نطاق الثقة، وكل نوع مع المورد الذي يجيب عنه، بحيث لا يبني التفويض عرضًا لكل تطبيق للعثور عليها."
+  },
+  "caches.store.oauth2.declared-authorization-details-types.bound": {
+    "en": "d25b94e5d9062281",
+    "text": "بنيوي: إجابة واحدة لكل نطاق ثقة، بحجم الأنواع التي تعلنها تطبيقاته."
+  },
+  "caches.store.oauth2.declared-authorization-details-types.lifetime": {
+    "en": "3bfa4ec2d7a5b1f4",
+    "text": "إلى أن يتغيّر أي شيء تحت ou=applications الخاص بنطاق الثقة؛ ثم تبنيه القراءة التالية مرة أخرى."
+  },
+  "caches.store.oauth2.opaque-access-tokens.title": {
+    "en": "f5521031758787e4",
+    "text": "رموز الوصول المبهمة"
+  },
+  "caches.store.oauth2.opaque-access-tokens.description": {
+    "en": "03c5375f953a154b",
+    "text": "مطالبات كل رمز وصول مبهم أصدره نطاق الثقة هذا، ومفتاحها SHA-256 الخاص بمقبضه. والمقبض نفسه لا يُخزَّن."
+  },
+  "caches.store.oauth2.opaque-access-tokens.bound": {
+    "en": "4fdda86dda2da589",
+    "text": "مُطبَّق: المخزن الممتلئ يرفض السك (STS-OAUTH-0979) بدلًا من إخلاء رمز سارٍ. والسقف هو oauth2.maxOpaqueAccessTokens."
+  },
+  "caches.store.oauth2.opaque-access-tokens.lifetime": {
+    "en": "28035bececff39cc",
+    "text": "إلى exp الخاص برمز الوصول؛ ويُحذف الصف المنتهي عند قراءته وبواسطة caches.eject-expired."
+  },
+  "caches.store.oauth2.opaque-access-tokens.hitMeaning": {
+    "en": "44484a9bf214d2c8",
+    "text": "وُجد مقبض عن طريق تجزئته"
+  },
+  "caches.store.oauth2.redeemed-codes.title": {
+    "en": "d05b2abe4dfcac4c",
+    "text": "رموز التفويض المستبدَلة"
+  },
+  "caches.store.oauth2.redeemed-codes.description": {
+    "en": "95d0628d00fe6871",
+    "text": "كل رمز تفويض استُبدل بالفعل عند نقطة نهاية الرمز، بحيث يُتعرَّف على الاستبدال الثاني بوصفه إعادة إرسال (RFC 9700 القسم 4.5، RFC 6749 القسم 4.1.2)."
+  },
+  "caches.store.oauth2.redeemed-codes.bound": {
+    "en": "68bf16c7399216cb",
+    "text": "مُطبَّق: oauth2.redeemedCodeCacheSize لكل نطاق ثقة؛ ويُنسى أقدم استبدال. والرمز نفسه زال عند الاستبدال، لذا ما يزال تكرار رمز منسي يُرفض، بوصفه رمزًا مجهولًا."
+  },
+  "caches.store.oauth2.redeemed-codes.lifetime": {
+    "en": "a5b0ac55b8d2fee9",
+    "text": "عمر رمز واحد بعد الوقت الذي كان الرمز سينتهي فيه."
+  },
+  "caches.store.oauth2.redeemed-codes.hitMeaning": {
+    "en": "55156810371e3ec1",
+    "text": "رمز استُبدل بالفعل، وقُدِّم مرة أخرى"
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.title": {
+    "en": "c9c28d7d082aab14",
+    "text": "سجلات تدوير رمز التحديث"
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.description": {
+    "en": "38d9cf25fa52b3ad",
+    "text": "سجل لكل رمز تحديث ولكل عائلة، بحيث يلغي رمز التحديث المعاد إرساله عائلته (RFC 9700)، وما أصدرته كل منحة، بحيث يلغي سحب رمز التحديث رمز الوصول الذي بجانبه (RFC 7009)."
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.bound": {
+    "en": "945ea34a46306638",
+    "text": "مُطبَّق: oauth2.maxRefreshTokenFamilies سجلًا لرموز التحديث لكل نطاق ثقة، وضعف ذلك لما أصدرته المنحة؛ وبعد تجاوزه تذهب المتقاعدة أولًا، ثم الأقدم، مع تحذير."
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.lifetime": {
+    "en": "584ca21b64df4c69",
+    "text": "إلى أن تنقضي نافذة العائلة بعد إصدار الرمز؛ ثم تسقط مهمة caches.eject-expired السجل."
+  },
+  "caches.store.oauth2.request-uri.title": {
+    "en": "3ae35b709a8c09f7",
+    "text": "كائنات الطلب المجلوبة"
+  },
+  "caches.store.oauth2.request-uri.description": {
+    "en": "e131879806506d25",
+    "text": "محتوى request_uri مسجَّل وفق RFC 9101، يُحفظ بحيث لا يُجلب من جديد عميل يرسل URI نفسه مرة أخرى (OpenID Connect Core القسم 6.2). ومتوقف ما لم يُضبط oauth2.requestUriCacheS."
+  },
+  "caches.store.oauth2.request-uri.bound": {
+    "en": "85d51ba970545675",
+    "text": "مُطبَّق: 256 كائن طلب مجلوبًا لكل نطاق ثقة، يُسقَط الأقدم ويُجلب مرة أخرى عند الاستخدام التالي."
+  },
+  "caches.store.oauth2.request-uri.sentences.lifetime": {
+    "en": "873bf7d50fb75475",
+    "text": "oauth2.requestUriCacheS ({{seconds}} ث) بعد الجلب، لكل نطاق ثقة؛ ويذهب الأقدم أولًا عند الامتلاء."
+  },
+  "caches.store.oauth2.request-uri.sentences.lifetimeOff": {
+    "en": "e4da95e27cb3da50",
+    "text": "متوقف: oauth2.requestUriCacheS يساوي 0، لذا لا يُحفظ شيء."
+  },
+  "caches.store.oauth2.signed-metadata.title": {
+    "en": "3dd1b4bc87c49970",
+    "text": "بيانات تعريف خادم التفويض الموقَّعة"
+  },
+  "caches.store.oauth2.signed-metadata.description": {
+    "en": "bb3264a47fd20369",
+    "text": "رموز JWT من النوع signed_metadata وفق RFC 8414، تُعاد استخدامها ما دامت بيانات التعريف وإعدادات التوقيع التي بُنيت منها بلا تغيير، بحيث لا توقّع نقطة نهاية اكتشاف مشغولة عند كل جلب."
+  },
+  "caches.store.oauth2.signed-metadata.bound": {
+    "en": "d492592aaeda96a9",
+    "text": "مُطبَّق: oauth2.maxSignedMetadataEntries لكل نطاق ثقة، يُسقَط الأقدم ويُوقَّع مرة أخرى عند الطلب التالي."
+  },
+  "caches.store.oauth2.used-assertions.title": {
+    "en": "73611edaf06c6db9",
+    "text": "التأكيدات المستخدَمة"
+  },
+  "caches.store.oauth2.used-assertions.description": {
+    "en": "3b419f31b05f2f53",
+    "text": "كل تأكيد JWT وفق RFC 7523 وكل تأكيد SAML وفق RFC 7522 قُبل، لمنحة أو لمصادقة عميل، بحيث يُقبل كل منها مرة واحدة لا غير."
+  },
+  "caches.store.oauth2.used-assertions.bound": {
+    "en": "638f25295e1c0d43",
+    "text": "مُطبَّق: oauth2.assertionReplayCacheSize لكل نطاق ثقة. والسجل الممتلئ يرفض التأكيد التالي بدلًا من نسيان تأكيد سارٍ، وهو ما سيعيد فتح إعادة إرساله."
+  },
+  "caches.store.oauth2.used-assertions.lifetime": {
+    "en": "94d0ca921a65d035",
+    "text": "إلى أن ينتهي التأكيد نفسه. ويرفض التأكيدات الجديدة عند الامتلاء بدلًا من نسيان أحدها. وفي مخزن قاعدة بيانات تكون الصفوف في قاعدة البيانات ولا يُدرج أي منها هنا."
+  },
+  "caches.store.oauth2.used-assertions.hitMeaning": {
+    "en": "6a3a94d2a957b664",
+    "text": "تأكيد استُخدم بالفعل، لذا رُفض الطلب"
+  },
+  "caches.store.oid4vci.nonces.title": {
+    "en": "37b4454d3ea9239d",
+    "text": "قيم nonce في OID4VCI"
+  },
+  "caches.store.oid4vci.nonces.description": {
+    "en": "632fb796a062271b",
+    "text": "قيم c_nonce المسلَّمة إلى المحافظ، بحيث يسمّي إثبات طلب بيانات الاعتماد قيمة أصدرها هذا المُصدِر، ويستخدمها مرة واحدة."
+  },
+  "caches.store.oid4vci.nonces.bound": {
+    "en": "7191bca374cecc2b",
+    "text": "مُطبَّق: oid4vci.cNonceCacheSize لكل نطاق ثقة؛ وتُسقَط أقدم قيمة nonce، ويُجاب الإثبات الذي يقتبسها بـ invalid_nonce."
+  },
+  "caches.store.oid4vci.nonces.lifetime": {
+    "en": "93e82934be7922d7",
+    "text": "oid4vci.cNonceTtlS بعد إصدارها، أو عند استخدامها."
+  },
+  "caches.store.oid4vci.nonces.hitMeaning": {
+    "en": "4773369ba8623f1c",
+    "text": "قيمة nonce سلّمها هذا المُصدِر، لذا فُحص الإثبات"
+  },
+  "caches.store.oid4vci.status-entries.title": {
+    "en": "56843562e68b0331",
+    "text": "مداخل حالة بيانات الاعتماد"
+  },
+  "caches.store.oid4vci.status-entries.description": {
+    "en": "3a0bf81182e19590",
+    "text": "فهرس كل بيانات اعتماد مُصدَرة في قوائم حالة نطاق الثقة هذا، والحالة التي ضبطها مسؤول أو تسجيل خروج لها."
+  },
+  "caches.store.oid4vci.status-entries.bound": {
+    "en": "3bf8c1289f83c0ef",
+    "text": "مُطبَّق: تحتفظ قائمة الحالة بـ 131072 فهرسًا لكل نطاق ثقة؛ والقائمة التي لا يبقى فيها فهرس حر ترفض إصدار بيانات الاعتماد (STS-VC-0075) بدلًا من إعادة استخدام واحدة سارية."
+  },
+  "caches.store.oid4vci.status-entries.lifetime": {
+    "en": "3a29fdc0d43392bc",
+    "text": "ما دامت بيانات الاعتماد التي تصفها قائمة؛ ويتحرر فهرسها مرة أخرى بعد ذلك."
+  },
+  "caches.store.oid4vci.status-entries.hitMeaning": {
+    "en": "73245de2fcaad199",
+    "text": "وُجدت حالة بيانات اعتماد هنا"
+  },
+  "caches.store.oid4vci.status-list-tokens.title": {
+    "en": "866d48f2249eb97d",
+    "text": "قوائم الحالة الموقَّعة"
+  },
+  "caches.store.oid4vci.status-list-tokens.description": {
+    "en": "0d499c1db7ce1b33",
+    "text": "آخر Status List Token وبيانات اعتماد Bitstring Status List وقّعتهما هذه العملية لكل نطاق ثقة، ويُعاد استخدامهما ما لم تتغيّر القائمة."
+  },
+  "caches.store.oid4vci.status-list-tokens.bound": {
+    "en": "88419eb5f5e652eb",
+    "text": "مُطبَّق: 1024 مستندًا موقَّعًا للعملية، يُسقَط الأقدم ويُوقَّع مرة أخرى عند الطلب التالي."
+  },
+  "caches.store.oid4vci.status-list-tokens.lifetime": {
+    "en": "2bd4807258e34312",
+    "text": "إلى أن تتغيّر القائمة، أو إلى نصف oid4vci.statusListTtlS."
+  },
+  "caches.store.oid4vci.status-list-tokens.hitMeaning": {
+    "en": "48214c6b54f10691",
+    "text": "قُدِّمت قائمة من غير توقيعها مرة أخرى"
+  },
+  "caches.store.oid4vp.sign-in-register.title": {
+    "en": "8377fd5187608db2",
+    "text": "سجل تسجيل دخول المحفظة"
+  },
+  "caches.store.oid4vp.sign-in-register.description": {
+    "en": "979c99c562007a1c",
+    "text": "بيانات الاعتماد التي أصدرها نطاق الثقة هذا لشخص على رمز وصول تحقق منه، وهي الوحيدة التي يجوز لمحفظة أن تسجّل الدخول بها — ومفتاحها تجزئة JWT الموقَّع من المُصدِر (وفي حالة mdoc، تجزئة حمولة issuerAuth)، أو في حالة ldp_vc مفتاح الحامل والشخص."
+  },
+  "caches.store.oid4vp.sign-in-register.bound": {
+    "en": "89a00ee69a340570",
+    "text": "مُطبَّق: oid4vp.signInRegisterMaxEntries لكل نطاق ثقة؛ ويُسقَط الصف الذي أُصدر أولًا. ويفشل ذلك مغلقًا — فبيانات الاعتماد التي بلا صف لا تسجّل دخول أحد."
+  },
+  "caches.store.oid4vp.sign-in-register.lifetime": {
+    "en": "c4978652a50a81bb",
+    "text": "إلى أن تنتهي صلاحية آخر بيانات اعتماد في الصف؛ ويُحفظ الصف المتبرَّأ منه حتى ذلك الحين أيضًا، ليستمر في الرفض."
+  },
+  "caches.store.oid4vp.sign-in-register.hitMeaning": {
+    "en": "edf65c6768151cfc",
+    "text": "بيانات اعتماد مقدَّمة سجّلها نطاق الثقة هذا بوصفها مما يجوز أن يسجّل دخول صاحبها"
+  },
+  "caches.store.oid4vp.status-lists-fetched.title": {
+    "en": "15a3636c9501e7c5",
+    "text": "قوائم الحالة المجلوبة"
+  },
+  "caches.store.oid4vp.status-lists-fetched.description": {
+    "en": "864c6eeca25082c3",
+    "text": "رموز Status List Token وبيانات اعتماد Bitstring Status List نشرها مُصدِر أجنبي موثوق، وتُجلب عندما تُقدَّم إحدى بيانات اعتماده إلى المحقّق."
+  },
+  "caches.store.oid4vp.status-lists-fetched.bound": {
+    "en": "bcf56be849d1f682",
+    "text": "مُطبَّق: 256 قائمة مجلوبة للعملية، تُسقَط الأقدم وتُجلب مرة أخرى عند الحاجة التالية."
+  },
+  "caches.store.oid4vp.status-lists-fetched.lifetime": {
+    "en": "c7ab92ad02d104b4",
+    "text": "ttl الخاص بالقائمة نفسها (ومن غير تجاوز exp أبدًا)، وعلى الأكثر oid4vp.statusListMaxCacheS؛ والجلب الفاشل 30 ثانية."
+  },
+  "caches.store.oid4vp.status-lists-fetched.hitMeaning": {
+    "en": "f822f1850d9e7875",
+    "text": "أُجيبت حالة بيانات اعتماد مقدَّمة من غير جلب"
+  },
+  "caches.store.oid4vp.transactions.title": {
+    "en": "8713c7cb29f0bd13",
+    "text": "معاملات OpenID4VP"
+  },
+  "caches.store.oid4vp.transactions.description": {
+    "en": "90e0bfc3241f7632",
+    "text": "كل طلب تقديم ينتظره هذا المحقّق — طلب باب البار وطلب تسجيل دخول المحفظة، ويحمل الأخير طلب Digital Credentials API ووضع استجابته والمفتاح الذي تُشفَّر إليه إجابته."
+  },
+  "caches.store.oid4vp.transactions.bound": {
+    "en": "906ceadcdc3ebca9",
+    "text": "مُطبَّق: oid4vp.maxTransactions لكل نطاق ثقة؛ ويُسقَط أقدم طلب منتظِر (قاعدة federation.maxContexts)، لأن الرفض سيتيح لأي أحد إيقاف نقطة نهاية الطلب عن الجميع."
+  },
+  "caches.store.oid4vp.transactions.lifetime": {
+    "en": "3fa7d80df304403b",
+    "text": "oid4vp.presentationRequestTtlS، أو oid4vp.signInTtlS لتسجيل الدخول؛ ويُمسَح عند بناء الطلب التالي."
+  },
+  "caches.store.oid4vp.transactions.hitMeaning": {
+    "en": "8fb2e09564d83b32",
+    "text": "وجدت إجابة محفظة الطلب الذي أُعدّت من أجله"
+  },
+  "caches.store.oidfed.collections.title": {
+    "en": "02796e1277627f75",
+    "text": "مجموعات OpenID Federation، المصنوعة داخل العملية"
+  },
+  "caches.store.oidfed.collections.description": {
+    "en": "2f2e159f830abf0b",
+    "text": "Entity Collection كما تصنعه هذه العملية من غير جلب أي شيء — نطاقات الثقة الخاصة بهذه الخدمة، والتابعون الذين حُلّوا بالفعل — وتُستخدم حيث لم يُحفظ أي زحف، بحيث لا توقّع الطلبات المجهولة بيانات لكل نطاق ثقة في كل مرة (#136)."
+  },
+  "caches.store.oidfed.collections.bound": {
+    "en": "0be0a09e5b54fc2c",
+    "text": "مُطبَّق: 8 لكل نطاق ثقة (واحدة لكل مضيف يُوصل من خلاله إلى نطاق الثقة)، وتُخلَى الأقدم أولًا."
+  },
+  "caches.store.oidfed.collections.lifetime": {
+    "en": "04891ecb8bc94b6c",
+    "text": "oidfed.collectionCacheS."
+  },
+  "caches.store.oidfed.resolutions.title": {
+    "en": "491967416029bead",
+    "text": "عمليات حل OpenID Federation"
+  },
+  "caches.store.oidfed.resolutions.description": {
+    "en": "bddcd39bede47404",
+    "text": "سلاسل Trust Chain التي حلّها نطاق الثقة هذا — بفعل من المسؤول، أو داخل العملية لنطاقات الثقة الخاصة به — مع بيانات التعريف المحلولة وعلامات Trust Mark المتحقَّق منها، بحيث تستطيع نقطة نهاية الحل أن تجيب من غير المرور على الاتحاد لمتصل غير مصادَق عليه (18.1)."
+  },
+  "caches.store.oidfed.resolutions.bound": {
+    "en": "ba33533130408063",
+    "text": "مُطبَّق: oidfed.resolveCacheMax لكل نطاق ثقة، ويُخلَى الأقدم أولًا."
+  },
+  "caches.store.oidfed.resolutions.lifetime": {
+    "en": "ce6f4a649ea6af77",
+    "text": "إلى أن تنتهي صلاحية السلسلة (أقل exp لها، 10.4)، وعلى الأكثر oidfed.resolveCacheS."
+  },
+  "caches.store.passwords.breach-ranges.title": {
+    "en": "5746db291bee19b3",
+    "text": "نطاقات كلمات المرور المخترَقة"
+  },
+  "caches.store.passwords.breach-ranges.description": {
+    "en": "a63073324d3b97be",
+    "text": "إجابات نطاقات Pwned Passwords، حسب بادئة SHA-1 المؤلفة من خمسة أحرف التي طُلبت (#62 P6): أي تجزئات لكلمات المرور تحتها معروفة بأنها مخترَقة، وكم مرة."
+  },
+  "caches.store.passwords.breach-ranges.bound": {
+    "en": "24463075100aedaa",
+    "text": "مُطبَّق: risk.breachCacheSize بادئة؛ وعند الامتلاء يُسقَط الأقدم ويُسأل مرة أخرى عند الحاجة التالية."
+  },
+  "caches.store.passwords.breach-ranges.lifetime": {
+    "en": "aae341c66c7e2c1a",
+    "text": "risk.breachCacheMinutes بعد جلبه."
+  },
+  "caches.store.passwords.breach-ranges.hitMeaning": {
+    "en": "48c6ca9f5e775571",
+    "text": "بادئة سُئلت بالفعل، لذا لم يُقدَّم أي طلب"
+  },
+  "caches.store.passwords.breach-verdicts.title": {
+    "en": "aae3278a7898fa0e",
+    "text": "أحكام كلمات المرور المخترَقة"
+  },
+  "caches.store.passwords.breach-verdicts.description": {
+    "en": "f99aab54b7cbaca0",
+    "text": "ما إذا كانت كلمة مرور فحصها باب للتو مخترَقة، لتقرأ ذلك قواعد كلمة المرور المتزامنة في الطلب نفسه (#62 P6). ومفتاحها تجزئة كلمة المرور، لا كلمة المرور نفسها أبدًا."
+  },
+  "caches.store.passwords.breach-verdicts.bound": {
+    "en": "b080f1460f9ce4f3",
+    "text": "مُطبَّق: 1000 حكم؛ وعند الامتلاء يُسقَط الأقدم."
+  },
+  "caches.store.passwords.breach-verdicts.lifetime": {
+    "en": "163b9a20f735bea7",
+    "text": "خمس دقائق بعد فحص كلمة المرور."
+  },
+  "caches.store.passwords.breach-verdicts.hitMeaning": {
+    "en": "6be02cca3aeca2ef",
+    "text": "حُكم وُجد لكلمة مرور يجري ضبطها"
+  },
+  "caches.store.persistence.observational-stores.title": {
+    "en": "419e59390ec83d75",
+    "text": "إعلانات مخازن الملاحظة"
+  },
+  "caches.store.persistence.observational-stores.description": {
+    "en": "64160a787450a0e1",
+    "text": "ما إذا كان كل مخزن مستدام قد أُعلن ملاحظة (حصر لا ينتظره حاجز القراءة)، ويُقرأ مرة واحدة لكل مقبض مخزن لأن التحقق يقع على مسار كل كتابة في المخزن."
+  },
+  "caches.store.persistence.observational-stores.bound": {
+    "en": "c60e874dcf573f9b",
+    "text": "بنيوي: علامة واحدة لكل مخزن مستدام يعلنه هذا البناء."
+  },
+  "caches.store.persistence.observational-stores.lifetime": {
+    "en": "600d9d2014883617",
+    "text": "طوال عمر العملية: لا يمكن أن يتغيّر إعلان أثناء تشغيلها."
+  },
+  "caches.store.persistence.write-shadow.title": {
+    "en": "d577317e78eee7d6",
+    "text": "ظل الكتابات غير المتغيّرة"
+  },
+  "caches.store.persistence.write-shadow.description": {
+    "en": "61a1fa8c2fa1f796",
+    "text": "آخر نسخة من كل مدخل في الدليل ومن سجل نطاق الثقة كتبته هذه العملية إلى مخزن الاستمرارية، بحيث لا يكتب التفريغ إلا ما تغيّر."
+  },
+  "caches.store.persistence.write-shadow.bound": {
+    "en": "25e652cba44fd7ec",
+    "text": "بنيوي: صف واحد لكل مدخل دليل كُتب وصف واحد لسجل نطاق الثقة، أي ldap.maxEntries + 1 على الأكثر في نطاق الثقة."
+  },
+  "caches.store.persistence.write-shadow.lifetime": {
+    "en": "9c59c7826b7934f6",
+    "text": "بلا انتهاء صلاحية: يُحدَّث عند كل تفريغ، ومدخل واحد لكل مدخل دليل ولكل نطاق ثقة كُتب. وفارغ في وضع الذاكرة."
+  },
+  "caches.store.pki.pinned-verdicts.title": {
+    "en": "b15bc2f1792c41b4",
+    "text": "إلغاء الشهادات المثبَّتة"
+  },
+  "caches.store.pki.pinned-verdicts.description": {
+    "en": "d092c13225f4f0a7",
+    "text": "آخر ما جُلب عن شهادة مثبَّتة، للأبواب التي تجيب في تك واحد تحت وضع PKI المرتاب. ومفتاحها بصمة الشهادة."
+  },
+  "caches.store.pki.pinned-verdicts.bound": {
+    "en": "76e83c217add330c",
+    "text": "مُطبَّق: 1024 مدخلًا، وتُسقَط أقدم كتابة وتُجلب مرة أخرى عند الحاجة التالية."
+  },
+  "caches.store.pki.pinned-verdicts.lifetime": {
+    "en": "3170543ce47c2f0b",
+    "text": "5 دقائق"
+  },
+  "caches.store.revocation.ca-certificates.title": {
+    "en": "c65adefa5d027d1a",
+    "text": "شهادات المُصدِرين المجلوبة"
+  },
+  "caches.store.revocation.ca-certificates.description": {
+    "en": "c33c6761aae6d7a6",
+    "text": "شهادات تُجلب من عنوان URL لطريقة caIssuers في Authority Information Access أو من سمة cACertificate في LDAP، لبناء مسار لفحص الإلغاء. ولا تُوثَق أبدًا لمجرد أنها جُلبت."
+  },
+  "caches.store.revocation.ca-certificates.bound": {
+    "en": "026141faa20a43bf",
+    "text": "مُطبَّق: pki.revocationCrlCacheEntries، وتُسقَط أقدم كتابة وتُجلب مرة أخرى عند الحاجة التالية."
+  },
+  "caches.store.revocation.crl.title": {
+    "en": "103ad3aaa8b602ed",
+    "text": "قوائم إلغاء الشهادات"
+  },
+  "caches.store.revocation.crl.description": {
+    "en": "35e5514e29ea7646",
+    "text": "قوائم CRL جُلبت لفحص شهادة مقدَّمة، وهي محلَّلة ومتحقَّق منها، ومفتاحها عنوان URL لنقطة التوزيع وبصمات الموقّعين الذين جرى التحقق منها مقابلهم."
+  },
+  "caches.store.revocation.crl.bound": {
+    "en": "026141faa20a43bf",
+    "text": "مُطبَّق: pki.revocationCrlCacheEntries، وتُسقَط أقدم كتابة وتُجلب مرة أخرى عند الحاجة التالية."
+  },
+  "caches.store.revocation.failures.title": {
+    "en": "e4d1527ba168d4a0",
+    "text": "عمليات جلب الإلغاء الفاشلة"
+  },
+  "caches.store.revocation.failures.description": {
+    "en": "dbb6ac12fe1343bf",
+    "text": "ذاكرة تخزين مؤقت سلبية: لا يُعاد محاولة جلب CRL أو OCSP أو شهادة فشل إلى أن تنقضي نافذة إعادة المحاولة، ويكون الفشل المتذكَّر هو الإجابة في هذه الأثناء. والإصابة فشل يُعاد استخدامه."
+  },
+  "caches.store.revocation.failures.bound": {
+    "en": "f79a5dadafc412d8",
+    "text": "مُطبَّق: pki.revocationCrlCacheEntries، ويُسقَط الأقدم؛ والفشل المسقَط لا يعني إلا أن العنوان قد يُسأل مرة أخرى في وقت أبكر."
+  },
+  "caches.store.revocation.ocsp.title": {
+    "en": "5cb556fe6018af0b",
+    "text": "استجابات OCSP"
+  },
+  "caches.store.revocation.ocsp.description": {
+    "en": "f2cbc8a367642667",
+    "text": "إجابات OCSP عن شهادة واحدة لكل منها، ومفتاحها عنوان URL للمستجيب وبصمة المُصدِر والرقم التسلسلي."
+  },
+  "caches.store.revocation.ocsp.bound": {
+    "en": "0b95d0db46e148cd",
+    "text": "مُطبَّق: pki.revocationCrlCacheEntries، وتُسقَط أقدم كتابة ويُسأل عنها مرة أخرى عند الحاجة التالية."
+  },
+  "caches.store.revocation.parsed-tiers.title": {
+    "en": "9d1b05aed46f4898",
+    "text": "شهادات مراسي الثقة المحلَّلة"
+  },
+  "caches.store.revocation.parsed-tiers.description": {
+    "en": "2ab4c1418758f008",
+    "text": "شهادات CA الخاصة بهذه الخدمة، تُحلَّل مرة واحدة لكل PEM أثناء المرور على سجل الإلغاء. ومفتاحها PEM نفسه؛ ولكيان CA المستبدَل PEM مختلف ومدخل جديد."
+  },
+  "caches.store.revocation.parsed-tiers.bound": {
+    "en": "e64e50f254ba86b3",
+    "text": "مُطبَّق: 8192 تحليلًا؛ وعند الامتلاء تُفرَغ المذكرة كلها وتُعاد بناؤها كلما استُخدمت."
+  },
+  "caches.store.revocation.parsed-tiers.lifetime": {
+    "en": "b8e9b839bbae7740",
+    "text": "بلا انتهاء صلاحية: مفتاحها المحتوى. وعند الامتلاء تُفرَغ المذكرة كلها دفعة واحدة."
+  },
+  "caches.store.revocation.pem-files.title": {
+    "en": "5bba075753f2c751",
+    "text": "ملفات الثقة المقروءة من القرص"
+  },
+  "caches.store.revocation.pem-files.description": {
+    "en": "8ced004de4c5eb3f",
+    "text": "ملفات PEM التي تسمّيها إعدادات الإلغاء، تُقرأ مرة واحدة وتُحفظ إلى أن يتغيّر وقت تعديل الملف."
+  },
+  "caches.store.revocation.pem-files.bound": {
+    "en": "fe1bda7532b3e9c1",
+    "text": "بنيوي: مدخل واحد لكل إعداد يسمّي ملفًا (pki.revocationCrlIssuersFile, pki.revocationLdapCaFile)."
+  },
+  "caches.store.revocation.pem-files.lifetime": {
+    "en": "25a592100bbb938d",
+    "text": "إلى أن يتغيّر الملف المسمّى على القرص، أو يسمّي الإعداد ملفًا آخر. مدخل واحد لكل إعداد."
+  },
+  "caches.store.revocation.presented-chains.title": {
+    "en": "c1aadccf1ec9f484",
+    "text": "سلاسل شهادات العميل، للجلسات المستأنَفة"
+  },
+  "caches.store.revocation.presented-chains.description": {
+    "en": "d1dfca3ff5d777e5",
+    "text": "المسار الذي بنته شهادة عميل متحقَّق منها أثناء مصافحة TLS كاملة، ومفتاحه الورقة، ويُعاد عندما تُستأنف تلك الجلسة — فـ node يعطي الجلسة المستأنفة الورقة وحدها، ومن دون هذا يرفض المرور على الإلغاء شهادة كانت قد تحقّقت."
+  },
+  "caches.store.revocation.presented-chains.bound": {
+    "en": "d1664dfb6bfaa88f",
+    "text": "مُطبَّق: 1024 ورقة؛ ويُنسى الأقدم أولًا."
+  },
+  "caches.store.revocation.presented-chains.lifetime": {
+    "en": "bb0b83daf5258fef",
+    "text": "مشتركة بين كل العقد ومنسوخة (#406): ساعة، أو عمر جلسة المنفذ الرئيسي زائد دقيقة عندما يكون أطول، وتُجدَّد بالمصافحة الكاملة التالية للورقة؛ ويُسقَط الأقدم عند الامتلاء."
+  },
+  "caches.store.risk.dataset-lookups.title": {
+    "en": "fb13e848d289d04e",
+    "text": "عمليات بحث مجموعات بيانات المخاطر"
+  },
+  "caches.store.risk.dataset-lookups.description": {
+    "en": "f63859539f3ae0dc",
+    "text": "ما قالته مجموعات بيانات الموقع الجغرافي وASN وقوائم IP النشطة عن عنوان، لكل نطاق ثقة. تُمسَح كلما فُعِّلت نسخة مجموعة بيانات على أي عقدة."
+  },
+  "caches.store.risk.dataset-lookups.bound": {
+    "en": "c911a586d2203607",
+    "text": "مفروض: 10000 عملية بحث، ويُسقَط الأقدم أولًا."
+  },
+  "caches.store.risk.dataset-lookups.lifetime": {
+    "en": "cabefdef4e47cbf3",
+    "text": "حتى تُفعَّل نسخة مجموعة بيانات، أو يسقطه الحد."
+  },
+  "caches.store.risk.population-users.title": {
+    "en": "ee5f57710fdd1b70",
+    "text": "تسجيل المخاطر: عدد المستخدمين في كل نطاق ثقة"
+  },
+  "caches.store.risk.population-users.description": {
+    "en": "cb24f916eda472c0",
+    "text": "عدد الأشخاص الذين سجّلوا الدخول إلى كل نطاق ثقة، وهو مقام حد التنعيم في نموذج المخاطر، يُحفَظ حتى لا يعدّ تسجيل الدخول كل شخص سجّل الدخول يومًا."
+  },
+  "caches.store.risk.population-users.bound": {
+    "en": "8154bb7a629a4263",
+    "text": "بنيوي: عدد واحد لكل نطاق ثقة فيه 1000 شخص على الأقل (مختومًا أو لا)، ويوجد على الأكثر realms.maxCount من نطاقات الثقة إلى جانب الافتراضي."
+  },
+  "caches.store.risk.standings.title": {
+    "en": "492e058d1adf8354",
+    "text": "تصنيفات المخاطر"
+  },
+  "caches.store.risk.standings.description": {
+    "en": "4d054f02f95acda8",
+    "text": "آخر مخاطر مُقيَّمة لكل شخص (المستوى والنتيجة والإشارات)، لإصدار لا توجد جلسة تُقرأ منها — تذكرة Kerberos، أو رمز WS-Trust (#62 P3)."
+  },
+  "caches.store.risk.standings.bound": {
+    "en": "f5d37f56be898128",
+    "text": "مفروض: risk.standingCacheSize شخصًا لكل عملية؛ وعند الامتلاء يُسقَط الأقدم، فيُقرَّر الإصدار التالي لذلك الشخص بلا جلسة على الأدوار وحدها."
+  },
+  "caches.store.risk.standings.lifetime": {
+    "en": "09d8d0f5307cb80c",
+    "text": "risk.standingValidMinutes بعد التقييم الذي تسجّله."
+  },
+  "caches.store.risk.standings.hitMeaning": {
+    "en": "8d6fb31ae90a70a5",
+    "text": "تصنيف محتفَظ به ولا يزال صالحًا، فقُرِّر الإصدار به"
+  },
+  "caches.store.saml11.artifacts.title": {
+    "en": "952a2cd74bae711c",
+    "text": "آثار SAML 1.1"
+  },
+  "caches.store.saml11.artifacts.description": {
+    "en": "82d0e75b9091cc8e",
+    "text": "التأكيدات التي تمثّلها آثار SAML 1.1، حتى يُحَل كل منها مرة واحدة عند مستجيب SAML. تُفهرَس بتجزئة SHA-256 للأثر، لا بالأثر نفسه."
+  },
+  "caches.store.saml11.artifacts.bound": {
+    "en": "8ada19f46ebcec4a",
+    "text": "مفروض: saml11.maxArtifacts لكل نطاق ثقة. تُمسَح الآثار المنتهية عند الحد؛ والمخزن الذي يظل ممتلئًا يرفض الأثر التالي بدل نسيان أثر لم يُحَل."
+  },
+  "caches.store.saml11.artifacts.lifetime": {
+    "en": "a85bf33aa7f6b5fe",
+    "text": "حتى يُحَل مرة واحدة، أو حتى تنقضي saml11.artifactTtlS."
+  },
+  "caches.store.saml11.artifacts.hitMeaning": {
+    "en": "cd691b2189f1c009",
+    "text": "أثر تم حلّه"
+  },
+  "caches.store.saml11.assertions.title": {
+    "en": "8dd27dfb9529ae0c",
+    "text": "تأكيدات SAML 1.1"
+  },
+  "caches.store.saml11.assertions.description": {
+    "en": "5871e55cdce3067d",
+    "text": "تأكيدات SAML 1.1 المُصدَرة، تُحفَظ حتى يمكن الإجابة عن طلب سلطة سمات يسمّي أحدها بـ AssertionIDReference."
+  },
+  "caches.store.saml11.assertions.bound": {
+    "en": "9d12efffcb44be21",
+    "text": "مفروض: saml11.assertionCacheMax لكل نطاق ثقة، ويُسقَط الأقدم؛ ويُجاب عن أثر يسمّي تأكيدًا مسقوطًا بأنه غير معروف."
+  },
+  "caches.store.saml11.assertions.lifetime": {
+    "en": "b163f4a46cb87b30",
+    "text": "حتى NotOnOrAfter الخاص بالتأكيد، أو saml11.assertionCacheTtlS عندما لا يحمل واحدًا؛ ويُسقَط الأقدم بعد تجاوز saml11.assertionCacheMax."
+  },
+  "caches.store.saml11.assertions.hitMeaning": {
+    "en": "b7e393c624057aea",
+    "text": "AssertionIDReference تمت الإجابة عنه"
+  },
+  "caches.store.saml2.artifacts.title": {
+    "en": "5f8f30f78880af2b",
+    "text": "آثار SAML 2.0"
+  },
+  "caches.store.saml2.artifacts.description": {
+    "en": "f4d58e16296562ae",
+    "text": "الرسائل التي تمثّلها آثار SAML 2.0، حتى يُحَل كل منها مرة واحدة عند Artifact Resolution Service. تُفهرَس بتجزئة SHA-256 للأثر، لا بالأثر نفسه."
+  },
+  "caches.store.saml2.artifacts.bound": {
+    "en": "44cfb6d812b7e9cf",
+    "text": "مفروض: saml2.maxArtifacts لكل نطاق ثقة. تُمسَح الآثار المنتهية عند الحد؛ والمخزن الذي يظل ممتلئًا يرفض الأثر التالي بدل نسيان أثر لم يُحَل."
+  },
+  "caches.store.saml2.artifacts.lifetime": {
+    "en": "1e22e3573b691653",
+    "text": "حتى يُحَل مرة واحدة، أو حتى تنقضي saml2.artifactTtlS."
+  },
+  "caches.store.saml2.artifacts.hitMeaning": {
+    "en": "cd691b2189f1c009",
+    "text": "أثر تم حلّه"
+  },
+  "caches.store.scim.digest-nonce-counts.title": {
+    "en": "96cc15215936464e",
+    "text": "عدّادات nonce لـ Digest في SCIM"
+  },
+  "caches.store.scim.digest-nonce-counts.description": {
+    "en": "9cf76c08d5bdd84d",
+    "text": "قيم عدّاد nonce (nc) التي قُبلت بالفعل تحت كل nonce من Digest، فلا يمكن إرسال استجابة واحدة مرتين."
+  },
+  "caches.store.scim.digest-nonce-counts.bound": {
+    "en": "64f5a29e49d56390",
+    "text": "مفروض: scim.maxDigestNonces من قيم nonce لكل نطاق ثقة، ويُسقَط الأقدم (فيصبح nonce بائتًا، ويُسلَّم العميل واحدًا جديدًا)؛ و1024 عدًّا لكل nonce، وبعدها يُحال nonce بالطريقة نفسها."
+  },
+  "caches.store.scim.digest-nonce-counts.lifetime": {
+    "en": "efeadb072ad16204",
+    "text": "يُنسى مع nonce الخاص به. يُداوَم عليه، فتظل العملية التي أُعيد تشغيلها ترفض عدًّا سبق أن قبلته؛ وادعاء الإنفاق هو ما يقرّر إعادة الإرسال عبر العقد العاملة."
+  },
+  "caches.store.scim.digest-nonce-counts.hitMeaning": {
+    "en": "e6f3c950888715fc",
+    "text": "عدّ nonce مستخدَم من قبل، فرُفض الطلب"
+  },
+  "caches.store.scim.digest-nonces.title": {
+    "en": "fe5e78bccba7a348",
+    "text": "قيم nonce لـ Digest في SCIM"
+  },
+  "caches.store.scim.digest-nonces.description": {
+    "en": "67f0b9ca7d8ae2e9",
+    "text": "تحديات HTTP Digest التي سلّمها /scim/v2 (RFC 7616)، فتسمّي الاستجابة واحدًا أصدرته هذه الخدمة."
+  },
+  "caches.store.scim.digest-nonces.bound": {
+    "en": "dd6e6894aa2f1e70",
+    "text": "مفروض: scim.maxDigestNonces لكل نطاق ثقة، ويُسقَط الأقدم؛ ويُجاب العميل الذي يستخدمه بـ stale=true مع واحد جديد."
+  },
+  "caches.store.scim.digest-nonces.hitMeaning": {
+    "en": "6564f906d6ce4a3e",
+    "text": "nonce أصدرته هذه الخدمة، فتم التحقق من الاستجابة"
+  },
+  "caches.store.scim.hoba-challenges.title": {
+    "en": "3acc5a8d73a93f82",
+    "text": "تحديات HOBA في SCIM"
+  },
+  "caches.store.scim.hoba-challenges.description": {
+    "en": "3a8b3b3e6201e3be",
+    "text": "تحديات HOBA التي سلّمها /scim/v2 (RFC 7486)، فيسمّي التوقيع واحدًا أصدرته هذه الخدمة."
+  },
+  "caches.store.scim.hoba-challenges.bound": {
+    "en": "487c5ab98e1a9d69",
+    "text": "مفروض: scim.maxHobaChallenges لكل نطاق ثقة، ويُسقَط الأقدم؛ ويُرسَل إلى العميل الذي يستخدمه تحدٍّ جديد."
+  },
+  "caches.store.scim.hoba-challenges.hitMeaning": {
+    "en": "5ad2c51ee6de00bd",
+    "text": "تحدٍّ أصدرته هذه الخدمة، فتم التحقق من التوقيع"
+  },
+  "caches.store.scim.hoba-signatures.title": {
+    "en": "eaf577ca3629172c",
+    "text": "تواقيع HOBA في SCIM"
+  },
+  "caches.store.scim.hoba-signatures.description": {
+    "en": "6b4d95830f64e6d4",
+    "text": "كل (kid, challenge, nonce) وصل معه توقيع HOBA، فتُرفض بيانات اعتماد منسوخة."
+  },
+  "caches.store.scim.hoba-signatures.bound": {
+    "en": "2f72f1afb6269174",
+    "text": "مفروض: scim.maxHobaSeen لكل نطاق ثقة، ويُسقَط الأقدم مع التحدي الذي صُنع من أجله، فلا يمكن إعادة إرساله ضد تحدٍّ قائم."
+  },
+  "caches.store.scim.hoba-signatures.lifetime": {
+    "en": "a43fc993f53c433b",
+    "text": "حتى ينتهي تحدّيه؛ وبعد الحد يذهب الأقدم مع تحدّيه."
+  },
+  "caches.store.scim.hoba-signatures.hitMeaning": {
+    "en": "1d89a0731fc525e7",
+    "text": "توقيع سبق رؤيته، فرُفض الطلب"
+  },
+  "caches.store.spiffe.x509-authorities.title": {
+    "en": "b85d5faab7cde9ef",
+    "text": "سلطات X.509 المفكوكة لـ SPIFFE"
+  },
+  "caches.store.spiffe.x509-authorities.description": {
+    "en": "d9f9182caa79c265",
+    "text": "سلطات X.509 المخزّنة لكل نطاق ثقة، تُحوَّل من شكلها المخزّن إلى شهادات مرة واحدة، لكل SVID يُوقَّع ولكل حزمة تُقدَّم."
+  },
+  "caches.store.spiffe.x509-authorities.bound": {
+    "en": "c5f0314994fb5deb",
+    "text": "بنيوي: قائمة سلطات مفكوكة واحدة لكل نطاق ثقة، تُستبدَل عندما تتغير القائمة المخزّنة."
+  },
+  "caches.store.spiffe.x509-authorities.lifetime": {
+    "en": "27c141ecfc4da53a",
+    "text": "حتى تُدوَّر سلطات نطاق الثقة أو تُستعاد، مما يستبدل القائمة المخزّنة التي فُك القيد منها."
+  },
+  "caches.store.ssf.dead-letter-counts.title": {
+    "en": "2ae2baadc4bf3135",
+    "text": "عدّادات الرسائل الميتة للإشارات المشتركة"
+  },
+  "caches.store.ssf.dead-letter-counts.description": {
+    "en": "ea293d3db7b99efa",
+    "text": "تقدير للرسائل الميتة لكل تدفّق، يُحفَظ حتى يمكن التحقق من رسالة جديدة مقابل سقف التدفّق دون عدّ الطابور. الرسائل التي كتبتها عملية أخرى لا تكون فيه حتى المسح التالي."
+  },
+  "caches.store.ssf.dead-letter-counts.bound": {
+    "en": "18ea80b569ceb959",
+    "text": "بنيوي: عدّ واحد لكل تدفّق، ويحمل نطاق الثقة على الأكثر ssf.maxStreams تدفّقًا."
+  },
+  "caches.store.ssf.dead-letter-counts.lifetime": {
+    "en": "33e19c1540ed3a70",
+    "text": "بلا انتهاء: يُعاد العدّ عند كل مسح للرسائل الميتة، قيد واحد لكل تدفّق."
+  },
+  "caches.store.tls.client-certificate-identities.title": {
+    "en": "6621d01bf0591364",
+    "text": "هويات شهادات العميل"
+  },
+  "caches.store.tls.client-certificate-identities.description": {
+    "en": "51bc8185f1a7b942",
+    "text": "ما رُبطت به شهادة عميل TLS تم التحقق منها — شخص أو تطبيق في نطاق ثقة، أو رفض — وتُفهرَس بتجزئة الورقة والسلطات التي كانت قائمة عند السير في السلسلة."
+  },
+  "caches.store.tls.client-certificate-identities.bound": {
+    "en": "60b3f06ac2fcba6f",
+    "text": "مفروض: 256 إجابة؛ وعند الامتلاء تُفرَّغ المذكرة كلها وتُعاد بناؤها أثناء استخدامها."
+  },
+  "caches.store.tls.client-certificate-identities.lifetime": {
+    "en": "7e34d7e487ace8d1",
+    "text": "بلا انتهاء: استبدال CA المُصدِرة يغيّر المفتاح. وعند الامتلاء تُفرَّغ المذكرة كلها دفعة واحدة."
+  },
+  "caches.store.tls.ticket-names.title": {
+    "en": "45b312c79e1fc669",
+    "text": "أسماء تذاكر TLS 1.2، للجلسات المستأنفة"
+  },
+  "caches.store.tls.ticket-names.description": {
+    "en": "57d1e55a310de728",
+    "text": "اسم الخادم الذي أُجريت تحته مصافحة TLS 1.2 كاملة، يُفهرَس بتجزئة السر الرئيسي للجلسة، ويُقارَن عندما تُستأنَف تلك الجلسة بتذكرة (#507، القسم 3 من RFC 6066): يستأنف node تذكرة داخل OpenSSL بلا حدث، ولا يقارن OpenSSL الاسم. يُغلَق الاستئناف تحت اسم آخر، أو استئناف لا يشهد له أي سجل، بعد المصافحة. يحتفظ كل مستمع بنسخته أيضًا، وبالحد نفسه."
+  },
+  "caches.store.tls.ticket-names.bound": {
+    "en": "fbeee6f2caab2df9",
+    "text": "مفروض: 4096 جلسة؛ تذهب الصفوف المنتهية أولًا، ثم الأقدم."
+  },
+  "caches.store.tls.ticket-names.lifetime": {
+    "en": "f016ce1d11af0c30",
+    "text": "مشترك بين كل العقد ومنسوخ: عمر جلسة المستمع (tls.sessionTimeoutS)، وهو بقدر ما تعيش التذكرة."
+  },
+  "caches.store.vc-api.issued.title": {
+    "en": "146ad69e9e6c821f",
+    "text": "بيانات اعتماد VC-API ذات حالة"
+  },
+  "caches.store.vc-api.issued.description": {
+    "en": "6276c639d08ac2a7",
+    "text": "كل بيانات اعتماد أصدرتها W3C VC API مع قيد حالة، وفهرس قائمة الحالة الذي أخذته، حتى يستطيع تغيير الحالة أن يجدها."
+  },
+  "caches.store.vc-api.issued.bound": {
+    "en": "c05e415f3ddb333b",
+    "text": "مفروض: 4096 من بيانات الاعتماد لكل نطاق ثقة، ويُنسى الأقدم أولًا (فلا يعود بالإمكان تغيير حالته هنا؛ وقيد القائمة نفسه يخص vc_status.ts ويبقى)."
+  },
+  "caches.store.vc-api.issued.lifetime": {
+    "en": "ec5d07ae10c640a3",
+    "text": "validUntil لبيانات الاعتماد، أو سنة."
+  },
+  "caches.store.vc-api.issued.hitMeaning": {
+    "en": "17d270b650c46964",
+    "text": "وجد تغيير الحالة بيانات الاعتماد"
+  },
+  "caches.store.version.stamp.title": {
+    "en": "c7dae27be2ec0b59",
+    "text": "ختم الإصدار"
+  },
+  "caches.store.version.stamp.description": {
+    "en": "b7ad6d424d0d5996",
+    "text": "سجل البناء (M.N.O، والالتزام، ولحظة البناء) المقروء من version.json مرة واحدة، والذي يقرأه كل سطح يرسم إصدارًا."
+  },
+  "caches.store.version.stamp.bound": {
+    "en": "0c3944127f2a49b7",
+    "text": "بنيوي: سجل واحد."
+  },
+  "caches.store.version.stamp.lifetime": {
+    "en": "98303c30c59712b7",
+    "text": "طوال عمر العملية: لا يمكن أن يتغير البناء أثناء تشغيلها."
+  },
+  "caches.store.version.stamp.notCountedWhy": {
+    "en": "4b5f6c4e422b4474",
+    "text": "يعمل common/version.js أيضًا في حاوية PEP البعيدة وقد لا يطلب السجل"
+  },
+  "caches.store.workers.request-affinity.title": {
+    "en": "a4571cd2c6ca1e6f",
+    "text": "ارتباط عامل الطلبات"
+  },
+  "caches.store.workers.request-affinity.description": {
+    "en": "4e7a7ba4a736c39f",
+    "text": "عامل الطلبات الذي تُثبَّت إليه جلسة متصفح أو بيانات اعتماد أو تدفّق، خريطة واحدة لكل تجمّع (البروتوكول والسطوح)، فيبقى التدفّق متعدد الخطوات على العامل الذي يحمله."
+  },
+  "caches.store.workers.request-affinity.bound": {
+    "en": "ef4d1bcdaf3e72cb",
+    "text": "مفروض: 5000 لكل تجمّع، ويُسقَط الأقدم؛ ويُوجَّه التثبيت المسقوط من جديد ببساطة."
+  },
+  "caches.store.workers.request-affinity.sentences.lifetime": {
+    "en": "e1ead9c67dd2fa2c",
+    "text": "بلا انتهاء: يُنسى عندما يخرج عامله؛ ويذهب الأقدم أولًا عندما يحمل تجمّع {{max}}. العملية الأمامية فقط."
+  },
+  "caches.store.xacml.parsed-policies.title": {
+    "en": "45d5651efd462f89",
+    "text": "سياسات XACML المحلَّلة"
+  },
+  "caches.store.xacml.parsed-policies.description": {
+    "en": "49eb7823626734e3",
+    "text": "السياسات ومجموعات السياسات من ou=policies، تُحلَّل وتُتحقَّق منها سكونيًا مرة واحدة لكل نص مستند، وتُفهرَس بتجزئة SHA-256 لذلك النص فيكون التغيير عبر أي باب قيدًا جديدًا."
+  },
+  "caches.store.xacml.parsed-policies.bound": {
+    "en": "456f6c745a32ef47",
+    "text": "مفروض: 1024 تحليلًا، ويُسقَط الأقل استخدامًا مؤخرًا؛ وتُحلَّل السياسة المسقوطة من جديد عند طلبها التالي."
+  },
+  "caches.store.xacml.parsed-policies.lifetime": {
+    "en": "6ba64c6240c222a0",
+    "text": "بلا انتهاء: تُفهرَس بالمحتوى، فتكون السياسة المعدَّلة قيدًا جديدًا ويذهب تحليلها القديم عندما يصبح الأقل استخدامًا مؤخرًا."
+  },
+  "caches.store.xacml.pep-tickets.title": {
+    "en": "d8dab9277ae943e0",
+    "text": "تذاكر Basic لـ PEP البعيد"
+  },
+  "caches.store.xacml.pep-tickets.description": {
+    "en": "1cdd4ca49053b643",
+    "text": "التذاكر التي سلّمها POST /xacml/pep/basic صالح إلى PEP بعيد، تُفهرَس بتجزئة SHA-256 لكل منها؛ والتذكرة نفسها لا تُخزَّن."
+  },
+  "caches.store.xacml.pep-tickets.bound": {
+    "en": "4dead9c8be3539ac",
+    "text": "مفروض: 10000 لكل نطاق ثقة، ويُسقَط الأقدم؛ وتعيد PEP التحقق من بيانات اعتماد Basic."
+  },
+  "caches.store.xacml.pep-tickets.hitMeaning": {
+    "en": "484401484f6f539d",
+    "text": "وُجدت تذكرة بتجزئتها"
+  },
+  "caches.lru.default.description": {
+    "en": "777e71be96460478",
+    "text": "ذاكرة تخزين مؤقت محدودة بترتيب الأقل استخدامًا مؤخرًا."
+  },
+  "caches.lru.default.bound": {
+    "en": "c79fdeffe84515df",
+    "text": "مفروض: الإدراج بعد الحد يُخرج القيود غير المثبتة الأقل استخدامًا مؤخرًا."
+  },
+  "caches.lru.default.hitMeaning": {
+    "en": "8cfd5e8b0fe3eb88",
+    "text": "قراءة أُجيبت من الذاكرة المؤقتة دون الذهاب إلى المخزن"
+  },
+  "caches.lru.default.lifetime": {
+    "en": "1dee092cb10aa3f5",
+    "text": "حتى يُخرجه الحد أو يسقطه مالكه."
+  },
+  "caches.notListed.0.what": {
+    "en": "441b01b35e9c6547",
+    "text": "بيانات وصف مزوّد خدمة SAML"
+  },
+  "caches.notListed.0.why": {
+    "en": "8c739fbd97bfccff",
+    "text": "تُخزَّن على قيد التطبيق كما استُلمت، ولا تُحفَظ في الذاكرة؛ وتُحدَّث من صفحة التطبيق"
+  },
+  "caches.notListed.1.what": {
+    "en": "17cca5745feb8f19",
+    "text": "سياسة PEP بعيد"
+  },
+  "caches.notListed.1.why": {
+    "en": "dd0d05560aece1a9",
+    "text": "تحتفظ بها حاوية PEP البعيد، لا هذه العملية"
+  },
+  "caches.notListed.2.what": {
+    "en": "fa1039fc2441114c",
+    "text": "تسجيل دخول إلى مخزن الأسرار"
+  },
+  "caches.notListed.2.why": {
+    "en": "f91837521ad465fe",
+    "text": "محلّي لتقرير /admin/secrets واحد، فيُسجَّل الدخول إلى مخزن مرة واحدة لكل تقرير؛ ويزول عند رسم التقرير، ولا شيء يحتفظ به بين الطلبات"
+  },
+  "caches.remaining.expiredAgo": {
+    "en": "b37737685a26ad66",
+    "text": "انتهى منذ {{span}}"
+  },
+  "caches.remaining.noExpiryByContent": {
+    "en": "3ebe07479ff8b7bc",
+    "text": "بلا انتهاء (يُفهرَس بالمحتوى)"
+  },
+  "caches.remaining.stale": {
+    "en": "a03f2386ae06b211",
+    "text": "بائت"
+  },
+  "caches.remaining.untilChanges": {
+    "en": "80bf20c29c949806",
+    "text": "حتى يتغير {{basis}}"
+  },
+  "caches.remaining.staleChanged": {
+    "en": "1134a1cffa605ffb",
+    "text": "بائت: تغيّر {{basis}}"
+  },
+  "caches.remaining.untilEvicted": {
+    "en": "0720ff476383563a",
+    "text": "حتى يسقطه الحد بصفته الأقل استخدامًا مؤخرًا"
+  },
+  "caches.remaining.untilBound": {
+    "en": "da7296d0ef57eafd",
+    "text": "حتى يسقطه الحد"
+  },
+  "caches.remaining.untilActivation": {
+    "en": "559a2238c9ffa5c4",
+    "text": "حتى تُفعَّل نسخة مجموعة بيانات"
+  },
+  "caches.remaining.untilIdle": {
+    "en": "0a72edba2b1b69f9",
+    "text": "حتى يبقى دون استخدام طوال مهلة الخمول"
+  },
+  "caches.remaining.nonceExpired": {
+    "en": "e59448baf4bc8498",
+    "text": "بائت: انتهت صلاحية nonce الخاص به"
+  },
+  "caches.remaining.challengeExpired": {
+    "en": "b59065915d6116bf",
+    "text": "بائت: انتهت صلاحية تحدّيه"
+  },
+  "caches.remaining.disowned": {
+    "en": "0e9453a606f40a73",
+    "text": "بائت: تم التنصّل من بيانات الاعتماد"
+  }
+}

@@ -705,7 +705,8 @@ const gcpProvider = {
     const at = locationOf(secret, 'ref');
     let sdk;
     try {
-      sdk = require('@google-cloud/secret-manager');
+      // loadSdk() is `require` unless a test hands in a fake (kms_kek.js L).
+      sdk = loadSdk('@google-cloud/secret-manager');
     } catch (e) {
       throw missingModule('@google-cloud/secret-manager', 'gcp', e);
     }
@@ -723,7 +724,9 @@ const gcpProvider = {
     const client = new sdk.SecretManagerServiceClient();
     const [answer] = await client.accessSecretVersion({ name: name });
     const payload = answer && answer.payload && answer.payload.data;
-    if (!payload) {
+    // noBytes(), not `!payload`: the payload is a Buffer and an empty one is
+    // truthy, so the check this was meant to be never fired.
+    if (noBytes(payload)) {
       throw errorCodes.mark(new Error('the secret version "' + name + '" ' +
           'carries no payload'),
                             'STS-KEYS-0048');
@@ -1113,6 +1116,44 @@ function kmsParts(text) {
            ciphertext: rest[2] };
 }
 
+// NO BYTES IN A KMS'S ANSWER: missing, or present and EMPTY. The SDKs answer
+// a ciphertext or a plaintext as a Uint8Array (a Buffer), and an empty one is
+// TRUTHY — so `!answer.ciphertext` let an empty ciphertext through to be
+// stored as a wrap that opens nothing, and `!answer.plaintext` let an empty
+// data key through to be used (2026-11-14, found by #444's port). Every
+// answer check on bytes goes through this, a string (Transit's) included.
+function noBytes(value) {
+  log.debug("Entering noBytes().");
+  log.debug("Leaving noBytes().");
+  return value === undefined || value === null || value.length === 0;
+}
+
+// THE SIZE OF AN RSA MODULUS IN BITS, from its big-endian bytes (a JWK's `n`,
+// as a Uint8Array or as base64url). Counting BYTES times eight is wrong: Key
+// Vault answers `n` with a leading zero byte, as ASN.1 would, so a 3072-bit
+// key was reported as "3080-bit" and a 3064-bit one passed the 3072-bit floor
+// (2026-11-14, found by #444's port). Leading zero bytes are skipped and the
+// top byte counts only its significant bits; 0 when there is no modulus.
+function rsaModulusBits(n) {
+  log.debug("Entering rsaModulusBits().");
+  if (n === undefined || n === null) {
+    log.debug("Leaving rsaModulusBits(). No modulus.");
+    return 0;
+  }
+  const bytes = typeof n === 'string' ? Buffer.from(n, 'base64url') :
+                                        Buffer.from(n);
+  let first = 0;
+  while (first < bytes.length && bytes[first] === 0) {
+    first++;
+  }
+  if (first === bytes.length) {
+    log.debug("Leaving rsaModulusBits(). All zero.");
+    return 0;
+  }
+  log.debug("Leaving rsaModulusBits().");
+  return (bytes.length - first - 1) * 8 + (32 - Math.clz32(bytes[first]));
+}
+
 // The Transit mount, refused rather than spliced when it is not a path:
 // it goes into a request line, `certAuthMount()`'s rule.
 function transitMount() {
@@ -1333,7 +1374,7 @@ const awsKmsProvider = {
         const answer = await client.send(new sdk.EncryptCommand({
           KeyId: keyId, Plaintext: Buffer.from(dek),
           EncryptionContext: context(aad) }));
-        if (!answer || !answer.CiphertextBlob) {
+        if (!answer || noBytes(answer.CiphertextBlob)) {
           throw errorCodes.mark(new Error('AWS KMS answered no ciphertext'),
                                 'STS-KEYS-0103');
         }
@@ -1352,7 +1393,7 @@ const awsKmsProvider = {
           KeyId: keyId,
           CiphertextBlob: Buffer.from(parts.ciphertext, 'base64'),
           EncryptionContext: context(aad) }));
-        if (!answer || !answer.Plaintext) {
+        if (!answer || noBytes(answer.Plaintext)) {
           throw errorCodes.mark(new Error('AWS KMS answered no plaintext'),
                                 'STS-KEYS-0103');
         }
@@ -1472,7 +1513,7 @@ const gcpKmsProvider = {
           name: name, plaintext: Buffer.from(dek),
           additionalAuthenticatedData: Buffer.from(String(aad), 'utf8') });
         const version = gcpVersionOf(answer && answer.name);
-        if (!answer || !answer.ciphertext || !version) {
+        if (!answer || noBytes(answer.ciphertext) || !version) {
           throw errorCodes.mark(new Error('Cloud KMS answered no ciphertext ' +
                                           'or no key version'),
                                 'STS-KEYS-0103');
@@ -1494,7 +1535,7 @@ const gcpKmsProvider = {
         const [answer] = await client.decrypt({
           name: name, ciphertext: Buffer.from(body[2], 'base64'),
           additionalAuthenticatedData: Buffer.from(String(aad), 'utf8') });
-        if (!answer || !answer.plaintext) {
+        if (!answer || noBytes(answer.plaintext)) {
           throw errorCodes.mark(new Error('Cloud KMS answered no plaintext'),
                                 'STS-KEYS-0103');
         }
@@ -1569,6 +1610,9 @@ const gcpKmsProvider = {
 // a data key wrapped under an older version is stale and re-wrapped at start.
 // ---------------------------------------------------------------------------
 const AZURE_RSA_MIN_BITS = 3072;
+// A key version as the stored form carries it and unwrap() reads it back
+// (Key Vault's are 32 hex digits).
+const AZURE_VERSION = /^[A-Za-z0-9]+$/;
 
 const azureKeysProvider = {
   id: 'azure-keys',
@@ -1619,7 +1663,7 @@ const azureKeysProvider = {
     const type = String((key && key.keyType) || '');
     const symmetric = type === 'oct-HSM' || type === 'oct';
     const rsa = type === 'RSA' || type === 'RSA-HSM';
-    const bits = rsa && key.key && key.key.n ? key.key.n.length * 8 : 0;
+    const bits = rsa && key.key ? rsaModulusBits(key.key.n) : 0;
     const needs = symmetric ? ['encrypt', 'decrypt'] : ['wrapKey', 'unwrapKey'];
     const allowed = needs.every(function (op) { return ops.indexOf(op) >= 0; });
     if (props.enabled === false || !allowed || !(symmetric || rsa) ||
@@ -1633,7 +1677,22 @@ const azureKeysProvider = {
         (ops.join(' ') || 'none') + ').'), 'STS-KEYS-0102');
     }
     const keyRef = vault + '/keys/' + name;
+    // A KEY WITH NO VERSION IS REFUSED BEFORE ANYTHING IS WRAPPED (2026-11-14,
+    // found by #444's port). The stored form is `<version>:<body>`, Key Vault
+    // decrypts under the version named, and unwrap() takes only a version of
+    // AZURE_VERSION's shape — so an empty version wrote `:<body>`, a data key
+    // nothing could ever open. Cloud KMS and Transit name the version in the
+    // answer to each wrap; Key Vault names it only here and in rotateKey().
     let latest = String(props.version || '');
+    if (!AZURE_VERSION.test(latest)) {
+      throw errorCodes.mark(new Error('the Key Vault key "' + name + '" in ' +
+        vault + ' was answered with ' +
+        (latest ? 'the version "' + latest + '", which is not a key ' +
+                  'version (letters and digits)' : 'no version') +
+        '; a data key is stored with the version that wraps it, and one ' +
+        'wrapped now could never be unwrapped.'),
+        'STS-KEYS-0198');
+    }
     const clients = new Map();
     function cryptoFor(version) {
       log.debug('Entering azureKeysProvider.cryptoFor().');
@@ -1657,14 +1716,20 @@ const azureKeysProvider = {
              (bits ? ' ' + bits : '') + ')',
       wrap: async function (dek, aad) {
         log.debug('Entering azure-keys wrap().');
+        // read() and rotate() hold `latest` to the shape; this is the last
+        // line of that guarantee, at the one place the stored form is made.
+        if (!AZURE_VERSION.test(latest)) {
+          throw errorCodes.mark(new Error('no Key Vault key version to wrap ' +
+                                          'under'), 'STS-KEYS-0103');
+        }
         const client = cryptoFor(latest);
         let body;
         if (symmetric) {
           const answer = await client.encrypt({
             algorithm: 'A256GCM', plaintext: Buffer.from(dek),
             additionalAuthenticatedData: Buffer.from(String(aad), 'utf8') });
-          if (!answer || !answer.result || !answer.iv ||
-              !answer.authenticationTag) {
+          if (!answer || noBytes(answer.result) || noBytes(answer.iv) ||
+              noBytes(answer.authenticationTag)) {
             throw errorCodes.mark(new Error('Key Vault answered no ' +
                                             'ciphertext'), 'STS-KEYS-0103');
           }
@@ -1674,7 +1739,7 @@ const azureKeysProvider = {
         } else {
           const answer = await client.wrapKey('RSA-OAEP-256',
             Buffer.concat([Buffer.from(dek), aadDigest(aad)]));
-          if (!answer || !answer.result) {
+          if (!answer || noBytes(answer.result)) {
             throw errorCodes.mark(new Error('Key Vault answered no ' +
                                             'wrapped key'), 'STS-KEYS-0103');
           }
@@ -1706,7 +1771,7 @@ const azureKeysProvider = {
             authenticationTag: Buffer.from(pieces[1], 'base64'),
             ciphertext: Buffer.from(pieces[2], 'base64'),
             additionalAuthenticatedData: Buffer.from(String(aad), 'utf8') });
-          if (!answer || !answer.result) {
+          if (!answer || noBytes(answer.result)) {
             throw errorCodes.mark(new Error('Key Vault answered no ' +
                                             'plaintext'), 'STS-KEYS-0103');
           }
@@ -1715,8 +1780,13 @@ const azureKeysProvider = {
         }
         const answer = await client.unwrapKey('RSA-OAEP-256',
                                               Buffer.from(m[2], 'base64'));
-        const out = answer && answer.result ? Buffer.from(answer.result) :
-                                              Buffer.alloc(0);
+        // Refused before the digest check, which would refuse it too but
+        // call a vault that answered nothing a row moved from another.
+        if (!answer || noBytes(answer.result)) {
+          throw errorCodes.mark(new Error('Key Vault answered no unwrapped ' +
+                                          'key'), 'STS-KEYS-0103');
+        }
+        const out = Buffer.from(answer.result);
         const want = aadDigest(aad);
         const dek = out.subarray(0, Math.max(0, out.length - want.length));
         const got = out.subarray(dek.length);
@@ -1754,7 +1824,7 @@ const azureKeysProvider = {
         const made = await keyClient.rotateKey(name);
         const version = String((made && made.properties &&
                                 made.properties.version) || '');
-        if (!version) {
+        if (!AZURE_VERSION.test(version)) {
           throw errorCodes.mark(new Error('Key Vault made no new version'),
                                 'STS-KEYS-0103');
         }
@@ -3499,8 +3569,7 @@ PROBES['azure-keys'] = {
           rotation = { error: String((e && e.message) || e) };
         }
         return { id: k && k.id, type: k && k.keyType,
-                 bits: k && k.key && k.key.n ? k.key.n.length * 8 :
-                                               undefined,
+                 bits: (k && k.key && rsaModulusBits(k.key.n)) || undefined,
                  operations: k && k.keyOperations, enabled: p.enabled,
                  version: p.version, exportable: !!p.exportable,
                  created: p.createdOn, rotation: rotation };

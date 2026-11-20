@@ -26,7 +26,8 @@
 //      them, the logo, and the six links by id.
 //   5. DRAWN FROM THE LIVE ANSWER: the renderers' bundle draws the view this
 //      process answered, after the wire, into the card the old page was —
-//      the name, the version, the sign-in sentence of this mode, every link.
+//      the name, the sign-in sentence of this mode, every link — and no
+//      version line, which is the page footer's since 2026-11-14.
 //   6. THE OLD RENDERER IS GONE: the class has no `homePage()`.
 //
 // The round trip from a view alone is `tests/web_surfaces.js`'s, from the
@@ -258,7 +259,9 @@ function childMain() {
     const sentence = mode.verifiesCredentials() ? own.signInProduct
                                                 : own.signInDevelopment;
     note(drawn.indexOf('<h1>IYA STS</h1>') === 0 &&
-         drawn.indexOf('version ' + view.version) > 0 &&
+         // The version is the page footer's since 2026-11-14, not the
+         // card's: the card names no version.
+         drawn.indexOf(view.version) < 0 && drawn.indexOf('class="ver"') < 0 &&
          // Development's warning, and only development's (#543 round 2).
          (mode.verifiesCredentials() ? drawn.indexOf(own.warn) < 0
                                      : drawn.indexOf(own.warn) > 0) &&
@@ -268,7 +271,8 @@ function childMain() {
          }) && drawn.indexOf(own.reportLabel) > 0 &&
          drawn.split('<li>').length === 7,
          '5a. the bundle draws the live view, after the wire, as the card ' +
-         'it was: the name, the version, this mode\'s sentence, six links',
+         'it was: the name, this mode\'s sentence, six links, and no ' +
+         'version line (the footer\'s)',
          loaded.problem + ' ' + drawn.slice(0, 600));
     note(framed.indexOf('<div class="card"><div class="hero"><img ' +
                         'src="/logo.png"') === 0 &&

@@ -77,14 +77,14 @@
 // path cannot await without making every one of those handlers asynchronous
 // first. It is DEVELOPMENT MODE only (`mode.autoCreates()` is false in
 // product), and reachable with several processes only in a development dispatch
-// run or a development active-active cluster. **RESOLVED 2026-09-14 BY rcbj'S
-// CHOICE: THE ENTRY'S entryUUID IS NAME-DERIVED THERE.** `ldap_server.js`'s
-// `putEntry()` gives an entry created by a sign-in (`origin: 'authentication'`)
-// the seed's version 5 value over the realm and the DN whenever another process
-// can race — a cluster mode, or a dispatched pool — so both create the SAME
-// entry and the merge makes them one. A person deleted and signed in again
-// under the same name gets the same subject there; a single process keeps
-// random values. `tests/cluster_autocreate_subject.js` holds both halves.
+// run or a development active-active cluster. **FROM 2026-09-14 (rcbj'S
+// CHOICE) UNTIL 2026-11-16 THE ENTRY'S entryUUID WAS NAME-DERIVED THERE**, so
+// both nodes created the same entry — and a person deleted and signed in
+// again under the name got the deleted person's subject. **SINCE 2026-11-16
+// (#1612's rule) IT IS RANDOM ON EVERY NODE**: the node whose copy lost
+// receives the winner's row, and `ldap_server.js`'s `mergeCreateRace()` keeps
+// its value as an alias, so the tokens it issued still name the entry.
+// `tests/cluster_autocreate_subject.js` holds it.
 //
 // A LIBRARY (rule 3): it registers no route. `persistence.js` and
 // `cluster_claims.js` are reached lazily inside the calls.

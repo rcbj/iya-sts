@@ -393,7 +393,9 @@ restart-only, on by default. Four things are this directory's:
 * **THE SESSION IS STARTED IN THE CERTIFICATE'S REALM.** `inCertificateRealm()`
   wraps `startCertificateSessionIn()` and the authentication recording in
   `realms.run()` of the realm whose Issuing CA signed the leaf, and the session's
-  username is the leaf's `urn:sts:person:` name. A certificate from an anchor
+  username is the leaf's `urn:sts:person:` name (or a service account's
+  `urn:sts:sa:`, #1827 — refused, STS-TLS-0063, where the entry is not one;
+  `common/CLAUDE.md` 3df). A certificate from an anchor
   somebody installed signs in, since #1061, in the REQUEST's realm as the
   entry storing it (below); it was default realm and common name until then.
 * **THE CONTEXT IS RE-APPLIED WHEN THE CERTIFICATE IS CERTIFIED.** A listener
@@ -424,7 +426,15 @@ What is this directory's:
   awaits it before `recordClientCertificate()`. A certificate the policy refuses
   starts **no session** and is **not recorded** as an authentication — it gets a
   refusal audit row with `STS-PKI-0118` or `-0119` instead — and the route says
-  so in its answer, which carries the whole verdict at `revocation`. **It also
+  so in its answer, which carries the whole verdict at `revocation`. **The
+  route's refusal is a row of its own since 2026-11-15 (#34, #38)**: the
+  handshake's row is the default realm's (a handshake has no realm) and it is
+  written only where the PROCESS's policy refuses, so `STS-PKI-0119` under a
+  realm's hard-fail and `STS-PKI-0189` (RFC 9608) were a log line only, and
+  `STS-PKI-0118` never reached the realm the request named. `GET /tls/sign-in`
+  now marks its answer with the verdict's own code, and the call log writes
+  the row in the request's realm; the answer is still 200 with
+  `session.refusedOnRevocation`. **It also
   answered 403 on 9443 until 2026-09-16**; that listener is gone and nothing
   here refuses a connection any more. `GET /tls` carries the policy.
 * **NOT AT THE HANDSHAKE, AND THAT WAS MEASURED RATHER THAN ASSUMED.** Node's
@@ -1574,7 +1584,7 @@ rcbj asked for:
 
 The settings are drawn, all on Server configuration → Listeners
 (`admin-ui/listeners_admin.ts`), along with the TLS group that moved there
-from this page and, since #472, the Custom listeners group. `docs/tls.md` has
+from this page and, since #472, the Custom listeners group. `docs/v1.1.0/tls.md` has
 the table.
 
 * **A POLICY PER LISTENER, FROM ONE FUNCTION.** `policyFor(kind, realmId)`
@@ -1721,6 +1731,56 @@ unexpected message while it waits for its close_notify answer. It is a race
 (single-node lost it, memory won it on the same build), so the exception is
 often not seen. RFC 8446 section 4.2.11 does not apply: it binds only TLS 1.3
 early data to the original ALPN.
+
+## A CONNECTION THAT FAILS AT THE TLS LAYER KEEPS ITS ALERT (2026-11-13)
+
+**The memory-mode run on 9300a96d1 failed `sts_tlsfuzzer` on one probe of
+`test-tls13-record-layer-limits.py`** ("too big ciphertext … fuzzed tag",
+*Unexpected closure from peer* where a record_overflow or bad_record_mac
+alert was expected), about one in seventy under load. LDAPS had the same
+failure in run 21 and the same cause (`ldap/CLAUDE.md`, the fork's
+`errorCloseDelay`): node closed the socket within a tick of the TLS failure,
+with the record the alert was about still arriving, so the kernel answered
+with a TCP reset and a reset that reached the peer first discarded the alert
+OpenSSL had already written.
+
+`tls/alert_close.ts` holds such a connection for two seconds before closing
+it, on the main port, every custom listener (`server.js`) and the debugger's
+listener. What it rests on, because none of it is a node option:
+
+* **A server-side TLSSocket closes by calling `destroy()` on the raw socket
+  under it** (`TLSWrap.close()`), and that one call is what closes the
+  descriptor. A raw socket marked as failed has its own `destroy()` replaced
+  for that connection only; the TLS engine goes on reading the TCP stream and
+  discarding it while the socket is held, so the receive buffer stays empty
+  (measured: Recv-Q 0 with the peer still sending).
+* **The FIN goes at once; only the descriptor is held.** A reset comes only
+  from closing with unread data, so the sending side is ended immediately
+  (the FIN follows the alert) and the close waits. The first version held
+  both, and tlsfuzzer's ExpectClose — which after an ExpectNoMessage waits
+  well under a second — failed 23 probes of
+  `test-truncating-of-client-hello.py` on the debugger's listener and ran
+  two more scripts into their watchdog.
+* **There are two ways a failure arrives.** Before node counts the handshake
+  done (a bad record behind the client's Finished, as tlsfuzzer sends it, or
+  a handshake failure), node destroys the TLSSocket itself and closes its
+  handle a microtask after `tlsClientError`, which is where it is marked.
+  After it, the TLSSocket's `error` reaches HTTP/1.1's `clientError` or the
+  HTTP/2 session, both of which destroy in the same call, so it is marked
+  from an `error` listener prepended at `secureConnection`.
+* **`TLSSocket._parent`** (the raw socket) is not public API; without it the
+  connection closes at once as before, logged once (`STS-TLS-0062`).
+* **An alert the PEER sent is not held** — nothing is owed back.
+* **Bounded**: 256 held per listener; beyond that a failure closes at once
+  (`STS-TLS-0061`, the first and then a count at most once a minute). One
+  one-shot timer per failed connection, cleared on close, which is the
+  per-connection timeout the scheduler rule exempts.
+
+`common/parser_refusal.ts` no longer answers a TLS failure: it wrote a
+plaintext 400 into a connection whose TLS engine had just sent its fatal
+alert and logged it as a refused request (`STS-HTTP-0026`). It closes it, and
+the close is held. `tests/tls_alert_close.js` holds all of it, with the
+control.
 
 ## THE PROXY PROTOCOL COMES OFF BEFORE THE HANDSHAKE (2026-09-14, #46)
 
@@ -2000,7 +2060,7 @@ refuses any other realm's path on a realm's listener (STS-TLS-0041), and its
 listener (STS-TLS-0047); `common/request_pool.js` carries the id to a worker
 in a header it strips from the client first. Which application is where, and
 where URLs are built, is `common/CLAUDE.md`'s (*Hosted applications and the
-listeners they are on*); `docs/listeners.md` is the operator's half.
+listeners they are on*); `docs/v1.1.0/listeners.md` is the operator's half.
 
 ## MONITORING → TLS CONNECTION, AND NO OPEN DOOR (#597, 2026-10-12)
 
@@ -2026,7 +2086,15 @@ Admin Read, drawn by `web_tls_connection.ts` from `GET
   certificate as `describeCertificate()` describes a sighting, its RFC 8705
   thumbprint, the identity gate's answer (`issuedIdentityOf()`), and the
   revocation verdict `GET /tls/sign-in` would act on (`checkedSocket()`). It
-  starts no session and records no sighting;
+  starts no session and records no sighting. **`verified` IS NOT TRUE FOR A
+  CERTIFICATE REFUSED ON REVOCATION (#37, 2026-11-15)**: it was the
+  handshake's `socket.authorized` alone, which on the main port carries no
+  revocation by design, so a revoked certificate every door refuses read
+  `verified: true`. It is the handshake's verdict and not `refused` now; the
+  handshake's own answer is `handshakeVerified`, and `revocationStatus` is
+  the verdict in brief — `status`, `refused`, `checked`, `policy` and the
+  `source` that decided (`revocationStatusOf()`). Both members were added;
+  none was removed;
 * `forwarded` — `/tls/forwarded`'s object, extended: `global.trustProxy`,
   `global.trustedProxies`, whether the peer is a trusted proxy and whether the
   headers were `believed` (`client_address.js`'s own answer, not a second
@@ -2136,15 +2204,22 @@ module's:
 * **`certificatePeer()` READS NO NAME OFF THE CERTIFICATE.** It answers only
   the gate's `username`; with no accepted identity it refuses, naming the CN in
   the sentence and nothing else. An outside issuer could write anybody's CN.
-* **THE HANDSHAKE NO LONGER RECORDS AN OUTSIDE CERTIFICATE.**
-  `recordClientCertificate()` returns before recording when `!issuedHere`: it
-  used to file the subject and the observer SEEDED `cn=<CN>,ou=users` through
-  `certificatePlan()` — an entry made out of a name somebody else's authority
-  chose. A handshake has no realm to look the stored entry up in, so the door
-  that signs the holder in records the authentication instead. The connection
-  page (`/admin/tls-connection`) still calls `issuedIdentityOf()` WITHOUT
-  `stored`: it describes what arrived, and reports an outside certificate as
-  `issuedHere: false` as before.
+* **THE HANDSHAKE RECORDS THE MAPPED PERSON.** `recordClientCertificate()`
+  passes `presented` as `gated.username`, and the RFC 4514 subject stays in
+  the note and in `detail.application` (an application's
+  `oauthTlsClientAuthSubjectDn`). Filing the subject made `identityOf()` keep
+  that DN whole, so Directory → Users → Authentication attempts for the
+  username listed nothing while the info line said the certificate
+  authenticated. An outside certificate is recorded only when
+  `issuedIdentityOf(socket, { stored: true })` names exactly one person, and
+  then under that username with no certificate object — passing the subject
+  still seeded `cn=<CN>,ou=users` through `certificatePlan()`. The lookup is
+  the ambient realm, the default realm at a handshake, which has no request;
+  a certificate stored only in another realm stays the door's. Nothing
+  stored, stored twice, or stored on an application is still not recorded
+  here. The connection page (`/admin/tls-connection`) still calls
+  `issuedIdentityOf()` WITHOUT `stored`: it describes what arrived, and
+  reports an outside certificate as `issuedHere: false` as before.
 * **WHAT HAS NO IN-PROCESS TEST**: a stored outside certificate over a real
   HTTP request to `/tls/sign-in` is held only by the protocol jobs that
   present one (`sts_tls_connection`, `sts_main_port_pooling`,

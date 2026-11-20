@@ -299,6 +299,27 @@ function childMain() {
            'D8. a claim outside section 5.4 and an unknown mode are refused',
            JSON.stringify([code(badClaim), code(badCombine)]));
 
+      // D9. DEVELOPMENT'S PERSONA NEVER REACHES A DECLARED CLAIM (2026-11-14,
+      // #444's D12): a person object as userFor() builds it in development
+      // carries an invented `name` and `email`; a resource server's declared
+      // claims come from the entry instead, or are omitted.
+      const ldapServer = require(ROOT + '/ldap/ldap_server');
+      const helpers = require(ROOT + '/common/helpers');
+      ldapServer.createUser('sc-dora', { invent: false, attributes: {
+        cn: 'Dora Filed', sn: 'Filed', givenName: 'Dora',
+        mail: 'dora@filed.sc.test' } });
+      const persona = helpers.userFor('sc-dora');
+      const filed = claimsOf((await oauth2.tokenSet(BASE, {
+        client_id: 'sc-web', grant: 'authorization_code',
+        scope: 'openid profile email', audience: ['https://api.sc.test'],
+        username: 'sc-dora', user: persona })).access_token);
+      note(/\(mock\)$/.test(String(persona.name)) &&
+           filed.email === 'dora@filed.sc.test' &&
+           filed.email_verified !== true && filed.name !== persona.name,
+           'D9. in development a declared claim is the entry\'s value, ' +
+           'never the invented persona\'s', JSON.stringify([persona.name,
+             persona.email, filed.name, filed.email]));
+
       // --- E. The ID Token ------------------------------------------------
       stats.setClaimSet('id_token', [{ name: 'email', value: 'set@sc.test' },
                                      { name: 'site', value: 'sc' }]);

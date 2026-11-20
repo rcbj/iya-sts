@@ -130,15 +130,23 @@
 
 import app = require('../common/app');
 import ModelTables = require('../common/model_tables');
+// Types a row of actions by its own actions' operations (#1579); returns it.
+import ApiRows = require('../common/api_rows');
 // The error-code registry, a leaf. A refusal here is MARKED on the response for
 // the call log and never written into the JSON a caller receives.
 import errorCodes = require('../common/error_codes');
 import ResponseModelKit = require('../common/response_model_kit');
+// The OpenAPI documents are sent compressed (`compressDocument()`): a 7 MB
+// body over HTTP/2 sometimes never reached the console's page whole.
+import ShellDocument = require('../common/shell_document');
 // THE CONSOLE'S LANGUAGE (#539 phase 5): the catalogs and the negotiation,
 // and the hosted surfaces' table for the console's own client id — and the
 // prose a view carries, in the caller's language (#543). Libraries.
 import i18n = require('../common/i18n');
 import serverProse = require('../common/server_prose');
+// The picture members, redrawn from the translated answer so they are the
+// picture the console draws (#1768). A library; it registers nothing.
+import pictureSvg = require('../admin-ui/picture_svg');
 import PageLocale = require('../common/page_locale');
 import oidcRp = require('../common/oidc_rp');
 import lingeringClose = require('../common/lingering_close');
@@ -151,6 +159,8 @@ import ownership = require('../common/ownership');
 // Whether a create can race another node's, and the sentence a refused one
 // carries (#46 section 3). A LIBRARY that registers nothing.
 import createClaims = require('../ldap/directory_create_claims');
+// The username an LDIF import names, which it claims as a create does.
+import personLdif = require('../ldap/person_ldif');
 import helpers = require('../common/helpers');
 const { log, parseBody, baseUrlOf, STS } = helpers;
 // BOTH ARE LIBRARIES (rule 3): they register no route, so requiring them here
@@ -568,6 +578,57 @@ const NOT_ENFORCED_HERE = ['required'];
 // ---------------------------------------------------------------------------
 const REFUSED_BY_HANDLER = 'x-refused-by-handler';
 
+// ---------------------------------------------------------------------------
+// A ROW OF THE TABLE IS TYPED BY THE MODEL (#1579). A row naming one
+// operationId has its handler typed by that operation in
+// `types/api.generated.d.ts` (`IyaApi.AdminOperations`, the Management and
+// Admin Console APIs together): the body and query names it may read, and
+// what `sendJson()` may answer at a literal 2xx status. A row that serves
+// several (`POST …/:action`) is typed by the union of its actions'
+// operations. `types/api-handlers.d.ts` argues it.
+//
+// THE CONSOLE'S TWINS (#454): a management operation whose console twin
+// answers the same handler's whole answer, where the management one leaves
+// the console's members out (`withConsoleRoutes()`). Declared here, beside
+// the row type, because the twin's handler is the management row's: it is
+// typed by both operations.
+// ---------------------------------------------------------------------------
+
+// What a drawing adds to a delegation answer: the box looks, the SVG,
+// its size and label, and the page's chooser, key and facts.
+const CONSOLE_DRAWING = ['drawing', 'looks', 'label', 'svg', 'chooser',
+                         'mapKey', 'facts'];
+const CONSOLE_TWINS = [
+  { of: 'getStatus', path: '/console/dashboard',
+    operationId: 'getConsoleDashboard',
+    members: ['base', 'persistence', 'testDouble', 'sections'],
+    drawing: false },
+  { of: 'getNewApplicationForm', path: '/console/applications/new',
+    operationId: 'getConsoleNewApplicationForm',
+    members: ['fieldGroups', 'familyChoices', 'longTextAttributes',
+              'persistence', 'resourceMetadataImport'],
+    drawing: false },
+  { of: 'getDelegationUser', path: '/console/delegation/user',
+    operationId: 'getConsoleDelegationUser',
+    members: CONSOLE_DRAWING, drawing: true },
+  { of: 'getDelegationApplication', path: '/console/delegation/application',
+    operationId: 'getConsoleDelegationApplication',
+    members: CONSOLE_DRAWING, drawing: true }
+] as const;
+type AdminOps = IyaApi.AdminOperations;
+type ConsoleTwinOf<K> =
+  Extract<(typeof CONSOLE_TWINS)[number], { of: K }>['operationId'];
+type AdminServed<K extends keyof AdminOps> = AdminOps[K | ConsoleTwinOf<K>];
+type AdminOneRow = {
+  [K in keyof AdminOps]: {
+    operationId: K;
+    handler?: (req: IyaApi.RequestTo<AdminServed<K>>,
+               res: IyaApi.Answering<AdminServed<K>>, next?: any) => unknown;
+    [member: string]: any;
+  }
+}[keyof AdminOps];
+type AdminRow = AdminOneRow | IyaApi.AdminActionRow;
+
 // What `AdminApi` needs from the rest of the service: the modules this file
 // used to reach for itself, passed in so that the composition root can build
 // one and a test can build one with stubs.
@@ -667,10 +728,16 @@ type RouteApp = typeof app;
 // actions' `evidence`, being the same act on every factor at once, and they
 // had been left out of this list, so they were the two that took none of the
 // recent sign-in the single-factor removals take.
+// A person's LDIF file since 2026-11-14: an export can carry their
+// credentials in the clear, and an import writes credentials onto a new
+// person, so both are asked for a recent sign-in as `set-password` is.
+// A person's delete (2026-11-16) too: it cannot be undone, and it ends
+// everything they hold.
 const REAUTHENTICATED_ACTIONS = ['set-password', 'reset-password',
   'issue-password-reset', 'clear-totp', 'clear-key', 'clear-backup-codes',
   'clear-email-factor', 'disable-mfa', 'disable-primary-keys', 'set-mail',
-  'create-app-password', 'revoke-app-password'];
+  'create-app-password', 'revoke-app-password', 'export-ldif',
+  'import-ldif', 'delete'];
 
 class AdminApi {
   /**
@@ -1405,9 +1472,15 @@ class AdminApi {
     return Object.assign({}, result, { relationship: shown });
   }
 
-  sendJson(res, status, body) {
+  // TYPED BY THE OPERATION (#1579): through a handler's response (a row's
+  // `IyaApi.Answering`), `body` is held to the model's answer at a literal
+  // 2xx status. Inside, it is the untyped value it always was.
+  sendJson<R, S extends number>(res: R, status: S,
+                                answer: IyaApi.AnswerOf<R, S>): void;
+  sendJson(res: any, status: number, answer: any): void {
     const { log } = this.deps;
     log.debug("Entering AdminApi.sendJson(). status=" + status);
+    let body = answer;
     // A 500 is by definition something nobody planned to say, so product mode
     // says nothing of it to the caller (ASVS 5.0.0 16.5.1). The sites that send
     // one log it.
@@ -1450,9 +1523,15 @@ class AdminApi {
     // document, which stays English (rcbj's answers 1 and 2). A caller that
     // names no language reads exactly what it read before.
     if (status >= 200 && status < 300 && this.translatesAnswer(res.req)) {
+      // THE PICTURE WAS DRAWN BEFORE THIS TRANSLATION (#1768). Redraw it
+      // from the translated graph when that graph is what the picture
+      // reads, so `svg` and `picture.svg` are the console's drawing. An
+      // answer whose picture inputs did not change keeps the model's bytes.
+      const source = body;
       body = serverProse.translateView(body, serverProse.translatorFor(
         res.req.headers['accept-language'],
         (res.locals && res.locals.proseRoute) || ''));
+      pictureSvg.align(source, body, true);
     }
     // ADDED TO, never set: CORS may already have said `Vary: Origin`. A
     // response a test builds by hand has no `vary()`, and needs none.
@@ -1482,6 +1561,39 @@ class AdminApi {
     const out = named && !/\/openapi\.json$/.test(String(req.path || ''));
     log.debug("Leaving AdminApi.translatesAnswer(). " + out);
     return out;
+  }
+
+  /**
+   * Answers a picture's `format=svg`: the document alone, with no links,
+   * in the caller's language when the request names one (#1768).
+   *
+   * The model has already drawn the English document. When the request
+   * names a language, the same redraw `sendJson()` does runs here with
+   * the links left out, which is the document the console's page saves.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param model - the picture's answer, drawn with `links: false`
+   */
+  sendPicture(req: any, res: any, model: any): void {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.sendPicture().");
+    let view = model;
+    if (this.translatesAnswer(req)) {
+      const route = (res.locals && res.locals.proseRoute) || '';
+      view = serverProse.translateView(model, serverProse.translatorFor(
+        req.headers['accept-language'], route));
+      pictureSvg.align(model, view, false);
+    }
+    // The document now depends on the language, so a cache has to vary on
+    // it. ADDED TO, as `sendJson()` does: CORS may already have said
+    // `Vary: Origin`. A response a test builds by hand has no `vary()`.
+    if (typeof res.vary === 'function') {
+      res.vary('Accept-Language');
+    }
+    res.status(200).set('Cache-Control', 'no-store')
+       .type('image/svg+xml').send(view && view.svg);
+    log.debug("Leaving AdminApi.sendPicture().");
   }
 
   // The action a POST names, from the path rather than the body. It is forced
@@ -1969,7 +2081,11 @@ class AdminApi {
       log.debug("Leaving cap().");
       return text.charAt(0).toUpperCase() + text.slice(1);
     };
-    const out = [];
+    // A kind's save and reset are named after it, so the checker knows them
+    // only as the model's operations of that name (#1579).
+    type SaveOrReset =
+      Extract<keyof AdminOps, `save${string}Policy` | `reset${string}Policy`>;
+    const out: Array<IyaApi.ActionOf<AdminOps>> = [];
     policyKinds.list().forEach(function (kind) {
       const module = kind.module;
       const prose = PROSE[kind.id] || {
@@ -2074,10 +2190,10 @@ class AdminApi {
       }
       out.push({
         action: policyKinds.saveAction(kind),
-        operationId: 'save' + cap(kind.id) + 'Policy' });
+        operationId: ('save' + cap(kind.id) + 'Policy') as SaveOrReset });
       out.push({
         action: policyKinds.resetAction(kind),
-        operationId: 'reset' + cap(kind.id) + 'Policy' });
+        operationId: ('reset' + cap(kind.id) + 'Policy') as SaveOrReset });
       // A KIND'S OWN ACTS (#396), described by the kind itself.
       (kind.extraActions || []).forEach(function (extra) {
         out.push({
@@ -2167,13 +2283,17 @@ class AdminApi {
    *   in `ids`
    * @returns the action rows
    */
-  claimSetActions(family) {
+  claimSetActions<K extends keyof AdminOps>(family: {
+    ids: Record<'add' | 'addAttribute' | 'remove' | 'clear' | 'replace' |
+                'attributes' | 'all' | 'none', K>;
+    [member: string]: any;
+  }): Array<IyaApi.ActionOf<AdminOps, K>> {
     const { log } = this.deps;
     log.debug("Entering AdminApi.claimSetActions(). " + family.sets.length +
               " set(s).");
     const noun = family.noun;
     const setField = { type: 'string', enum: family.sets.slice() };
-    const rows = [
+    const rows: Array<IyaApi.ActionOf<AdminOps, K>> = [
       { action: 'add', operationId: family.ids.add },
       { action: 'add-attribute-claim', operationId: family.ids.addAttribute },
       { action: 'remove', operationId: family.ids.remove },
@@ -2233,7 +2353,9 @@ class AdminApi {
     const { log, admin } = this.deps;
     const self = this;
     log.debug("Entering AdminApi.buildProtocolSettingsOperations().");
-    const PROTOCOL_SETTINGS_OPERATIONS: any[] = [
+    // `as const`, so each row's operationId is the model's (#1579): the
+    // handler below is typed by the union of the thirteen.
+    const SETTINGS_PAGES = ([
       { path: '/oauth2', console: '/admin/oauth2', tag: 'OAuth 2.0 / OIDC',
         operationId: 'getOauth2Settings' },
       { path: '/oid4vci-settings', console: '/admin/vc',
@@ -2277,17 +2399,22 @@ class AdminApi {
         operationId: 'getWsFedSettings' },
       { path: '/tls', console: '/admin/tls', tag: 'TLS',
         operationId: 'getTlsSettings' }
-    ].map(function (row: {
-      path: string;
-      console: string;
-      tag: string;
-      operationId: string;
-      settingsPage?: string;
-    }) {
+    ] as const);
+    type SettingsId = (typeof SETTINGS_PAGES)[number]['operationId'];
+    const PROTOCOL_SETTINGS_OPERATIONS: AdminRow[] = SETTINGS_PAGES.map(
+      function (row: {
+        path: string;
+        console: string;
+        tag: string;
+        operationId: SettingsId;
+        settingsPage?: string;
+      }): AdminRow {
       return { method: 'GET', path: BASE + row.path, tag: row.tag,
                operationId: row.operationId,
                mirrors: 'GET ' + row.console,
-               handler: function (req, res) {
+               handler: function (
+                 req: IyaApi.RequestTo<AdminOps[SettingsId]>,
+                 res: IyaApi.Answering<AdminOps[SettingsId]>) {
                  log.debug("Entering the management API " + row.console + " " +
                      "endpoint.");
                  // Through the row's `prepare` step, which the Cluster page
@@ -2623,7 +2750,7 @@ class AdminApi {
       log.debug("Leaving withDelegationQuery().");
       return out;
     };
-    const ROUTES: any[] = [
+    const ROUTES: AdminRow[] = [
       { method: 'GET', path: BASE, tag: 'Service',
         operationId: 'getIndex',
         mirrors: 'GET /admin',
@@ -2703,6 +2830,11 @@ class AdminApi {
           // THE MANAGEMENT OPERATIONS ALONE (#454): the console's own are
           // described by `GET /admin-api/console/openapi.json`, so what an
           // integrator reads here is what they can rely on.
+          // COMPRESSED where the caller accepts it: about 7 MB as JSON, which
+          // the console fetches before it sends a form, and which Chrome
+          // sometimes stopped delivering part-way over HTTP/2 (run
+          // 44544256231). It carries no secret, so BREACH has nothing to read.
+          ShellDocument.compressDocument(req, res);
           self.sendJson(res, 200,
                         spec.buildSpec(self.routesOfKind('management'),
                                        self.specOptions(req)));
@@ -2782,7 +2914,8 @@ class AdminApi {
       // THE DATA-KEY ACTS (#391 P2, P5): `/admin/encryption/data-keys`'s
       // four forms, through the one function they post to. Each QUEUES a run of
       // `common/data_key_rotation.ts`'s jobs and answers 202.
-      { method: 'POST', route: BASE + '/encryption/:action', tag: 'Service',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/encryption/:action', tag: 'Service',
         mirrors: 'POST /admin/encryption/data-keys',
         handler: function (req, res) {
           log.debug("Entering the management API data-key endpoint.");
@@ -2810,7 +2943,7 @@ class AdminApi {
             operationId: 'reencryptDataKeys' },
           { action: 'count-data-keys', operationId: 'countDataKeys' },
           { action: 'rotate-kek', operationId: 'rotateKek' }
-        ] },
+        ] }),
 
       // ---------------------------------------------------------------------
       // CELLS (#98). `cellsAdmin.cellsView()` — the function `/admin/cells`
@@ -2922,7 +3055,8 @@ class AdminApi {
       // POST resource with an action nobody has heard of and requires a 400
       // naming the ones that exist, and a literal `/cells/rehome` answered
       // Express's 404. One action today.
-      { method: 'POST', route: BASE + '/cells/:action', tag: 'Service',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/cells/:action', tag: 'Service',
         mirrors: 'POST /admin/cells (action=rehome)',
         handler: function (req, res) {
           log.debug("Entering the management API rehome endpoint.");
@@ -2962,7 +3096,7 @@ class AdminApi {
         },
         actions: [
           { action: 'rehome', operationId: 'rehomePerson' }
-        ] },
+        ] }),
 
       // ---------------------------------------------------------------------
       // BROADCAST AN ANNOUNCEMENT (#1086): Server configuration → Broadcast
@@ -2983,7 +3117,7 @@ class AdminApi {
           log.debug("Leaving the management API broadcast endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/broadcast/:action',
+      ApiRows.actions({ method: 'POST', route: BASE + '/broadcast/:action',
         tag: 'Shared Signals',
         mirrors: 'POST /admin/broadcast',
         handler: function (req, res) {
@@ -3044,7 +3178,7 @@ class AdminApi {
         },
         actions: [
           { action: 'send', operationId: 'sendBroadcast' }
-        ] },
+        ] }),
 
       // The console's own open tabs ask this every ssf.announcementPollMs.
       { method: 'GET', path: BASE + '/announcements', tag: 'Shared Signals',
@@ -3127,7 +3261,8 @@ class AdminApi {
           log.debug("Leaving the management API malware scanning endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/malware-scanning/:action',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/malware-scanning/:action',
         tag: 'Service', mirrors: 'POST /admin/malware-scanning',
         handler: function (req, res) {
           log.debug("Entering the management API malware scanning action.");
@@ -3152,7 +3287,7 @@ class AdminApi {
             });
           log.debug("Leaving the management API malware scanning action.");
         },
-        actions: [{ action: 'test', operationId: 'testMalwareScanning' }] },
+        actions: [{ action: 'test', operationId: 'testMalwareScanning' }] }),
 
       { method: 'GET', path: BASE + '/listeners', tag: 'Service',
         operationId: 'getListeners',
@@ -3163,7 +3298,8 @@ class AdminApi {
           log.debug("Leaving the management API listeners endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/listeners/:action', tag: 'Service',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/listeners/:action', tag: 'Service',
         mirrors: 'POST /admin/listeners',
         handler: function (req, res) {
           log.debug("Entering the management API listeners action " +
@@ -3182,7 +3318,7 @@ class AdminApi {
           { action: 'set-listeners', operationId: 'setListeners' },
 
           { action: 'set-applications', operationId: 'setListenerApplications' }
-        ] },
+        ] }),
 
       // ---------------------------------------------------------------------
       // THE CACHES (#74). `cachesAdmin.cachesView()` and nothing else — the
@@ -3207,7 +3343,7 @@ class AdminApi {
                     "endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/vc-status/:action',
+      ApiRows.actions({ method: 'POST', route: BASE + '/vc-status/:action',
         tag: 'Credential status',
         mirrors: 'POST /admin/vc/monitor',
         handler: function (req, res) {
@@ -3221,14 +3357,17 @@ class AdminApi {
           self.sendJson(res, result.ok ? 200 : 400, result);
           log.debug("Leaving the management API credential status action.");
         },
-        // `any`: the publish action below carries a body of another shape.
-        actions: ['suspend', 'reinstate', 'revoke'].map(function (action):
-          any {
-          return {
-            action: action,
-            operationId: action + 'Credential'
-          };
-        }).concat([{
+        // The publish action below carries a body of another shape; each
+        // operationId is the model's (#1579).
+        actions: (['suspend', 'reinstate', 'revoke'] as const).map(
+          function (action): IyaApi.ActionOf<AdminOps,
+            'suspendCredential' | 'reinstateCredential' | 'revokeCredential' |
+            'publishStatusList'> {
+            return {
+              action: action,
+              operationId: `${action}Credential` as const
+            };
+          }).concat([{
           // THE STATUS-LIST PUBLISH (#598), moved here from the VC API's
           // test hook `POST /oid4vci/status-lists/bitstring/{purpose}/
           // publish` when the VC API became a product surface: an
@@ -3238,7 +3377,7 @@ class AdminApi {
           action: 'publish',
           operationId: 'publishStatusList'
         }])
-      },
+      }),
 
       // ---------------------------------------------------------------------
       // RISK SCORING (#62 P1, 2026-09-22): `riskAdmin.riskView()` and
@@ -3455,7 +3594,8 @@ class AdminApi {
             });
         } },
 
-      { method: 'POST', route: BASE + '/risk/:action', tag: 'Risk',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/risk/:action', tag: 'Risk',
         mirrors: 'POST /admin/risk',
         handler: function (req, res) {
           log.debug("Entering the management API risk action.");
@@ -3486,7 +3626,7 @@ class AdminApi {
           { action: 'accept-terms', operationId: 'acceptRiskProviderTerms' },
           { action: 'delete', operationId: 'deleteRiskDatasetVersion' }
         ]
-      },
+      }),
 
       // ---------------------------------------------------------------------
       // MAIL (#63, 2026-09-22). `mailAdmin.settingsView()` and
@@ -3521,7 +3661,8 @@ class AdminApi {
           log.debug("Leaving the management API mail endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/mail/:action', tag: 'Service',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/mail/:action', tag: 'Service',
         mirrors: 'POST /admin/mail',
         handler: function (req, res) {
           log.debug("Entering the management API mail action.");
@@ -3540,7 +3681,7 @@ class AdminApi {
           { action: 'save-template', operationId: 'saveMailTemplate' },
           { action: 'reset-template', operationId: 'resetMailTemplate' }
         ]
-      },
+      }),
 
       { method: 'GET', path: BASE + '/mail/outbox', tag: 'Service',
         operationId: 'getMailOutbox',
@@ -3564,7 +3705,8 @@ class AdminApi {
           log.debug("Leaving the management API mail outbox endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/mail/outbox/:action', tag: 'Service',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/mail/outbox/:action', tag: 'Service',
         mirrors: 'POST /admin/mail/outbox',
         handler: function (req, res) {
           log.debug("Entering the management API mail outbox action.");
@@ -3579,7 +3721,7 @@ class AdminApi {
         actions: [
           { action: 'retry', operationId: 'retryMailDeadLetter' }
         ]
-      },
+      }),
 
       // ---------------------------------------------------------------------
       // THE DEVICE REGISTER (#164, #218, 2026-09-26). `devicesAdmin`'s
@@ -3642,7 +3784,8 @@ class AdminApi {
           log.debug("Leaving the management API devices list endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/devices/:action', tag: 'Devices',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/devices/:action', tag: 'Devices',
         mirrors: 'POST /admin/devices',
         handler: function (req, res) {
           log.debug("Entering the management API devices action.");
@@ -3665,7 +3808,7 @@ class AdminApi {
           { action: 'set-compliance', operationId: 'setDeviceCompliance' },
           { action: 'set-status', operationId: 'setDeviceStatus' }
         ]
-      },
+      }),
 
       // ---------------------------------------------------------------------
       // THE MDM / POSTURE FEED (#164 decision 2, phase 3). Not an
@@ -3691,6 +3834,45 @@ class AdminApi {
           }
           self.sendJson(res, result.ok ? 200 : 400, result);
           log.debug("Leaving the management API device compliance feed.");
+        } },
+
+      // ---------------------------------------------------------------------
+      // A REMOTE PEP'S DECISION RECORDS (#1827). The MDM feed's shape: not
+      // an administrator's operation, its token carries `xacml:pep-audit`
+      // and REMOTE_PEPS authorizes it (`isPepAuditFeed()` and the gate's
+      // hard check). `xacml/pep_audit.ts` records each record as an audit
+      // row; the register and that file are required at the call, because
+      // the XACML family loads at 23c, after this module (19).
+      // ---------------------------------------------------------------------
+      { method: 'POST', path: BASE + PEP_AUDIT_PATH, tag: 'XACML',
+        operationId: 'reportPepDecisions',
+        mirrors: 'no console form — a remote PEP pushing what it decided; ' +
+                 'the records are read on GET /admin/audit',
+        parameters: [],
+        handler: function (req, res) {
+          log.debug("Entering the management API remote PEP decision " +
+                    "records.");
+          const body = parseBody(req);
+          // THE PEP IS THE TOKEN'S SUBJECT. Where the gate is off
+          // (development's adminApi.authRequired) there is none, and the
+          // body's `name` stands in, as the heartbeat's does without a
+          // certificate.
+          const pep = self.callerNameOf(res) ||
+            (self.tokenRequired() ? '' : String((body && body.name) || ''));
+          const PepAudit = require('../xacml/pep_audit');
+          const answer = PepAudit.record(body, pep, {
+            log: log,
+            audit: audit,
+            errorCodes: errorCodes,
+            registry: require('../xacml/xacml_pep_registry'),
+            realmId: realms.currentId()
+          });
+          if (!answer.ok) {
+            errorCodes.mark(res, answer.code);
+          }
+          self.sendJson(res, answer.status, answer.body);
+          log.debug("Leaving the management API remote PEP decision " +
+                    "records.");
         } },
 
       { method: 'GET', path: BASE + '/devices/monitor', tag: 'Devices',
@@ -3811,7 +3993,8 @@ class AdminApi {
           log.debug("Leaving handler().");
         } },
 
-      { method: 'POST', route: BASE + '/scheduler/:action', tag: 'Service',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/scheduler/:action', tag: 'Service',
         mirrors: 'POST /admin/scheduler',
         handler: function (req, res) {
           log.debug("Entering the management API scheduler action.");
@@ -3833,7 +4016,7 @@ class AdminApi {
           { action: 'run', operationId: 'runSchedulerJob' },
           { action: 'step-down', operationId: 'stepDownScheduler' }
         ]
-      },
+      }),
 
       { method: 'GET', path: BASE + '/caches', tag: 'Service',
         operationId: 'getCaches',
@@ -3948,7 +4131,8 @@ class AdminApi {
       // operation, so a realm's own token is refused it (its `mirrors` is a
       // service page, `admin_scope.ts`).
       // ---------------------------------------------------------------------
-      { method: 'POST', route: BASE + '/node-health/:action', tag: 'Service',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/node-health/:action', tag: 'Service',
         mirrors: 'POST /admin/node-health',
         handler: function (req, res) {
           log.debug("Entering the management API node health action.");
@@ -3981,7 +4165,7 @@ class AdminApi {
         },
         actions: [
           { action: 'collect-garbage', operationId: 'collectGarbage' }
-        ] },
+        ] }),
 
       // ---------------------------------------------------------------------
       // THE DATABASE REPORT. `databaseAdmin.databaseView()` and nothing else,
@@ -4190,7 +4374,8 @@ class AdminApi {
       // `/keys/export` looked like that resource and was not one, so the probe
       // got a 404 — the route pattern simply did not match. One `export` action
       // today; a second (an import, a rotation) goes in the same list.
-      { method: 'POST', route: BASE + '/keys/:action', tag: 'Service',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/keys/:action', tag: 'Service',
         // BOTH console paths (2026-09-22): the rotate and emergency actions
         // (#48) came in through this handler and the declaration still named
         // only the export form, so `/admin/keys`'s two Rotate forms mirrored
@@ -4294,7 +4479,7 @@ class AdminApi {
           // job's NOT_DRIVEN_HERE says so.
           { action: 'rotate', operationId: 'rotateSigningKeys' },
           { action: 'emergency', operationId: 'rotateSigningKeysEmergency' }
-        ] },
+        ] }),
 
       // ---------------------------------------------------------------------
       // THE EXPLORER USED TO BE HERE — `GET /admin-api/docs` and
@@ -4497,13 +4682,14 @@ class AdminApi {
             description: 'Which page of `authenticationEvents`, on the ' +
                          '`?user=` reply only. Named rather than the bare ' +
                          '`page` so it does not move the session list. ' +
+                         'Ten a page by default (#1844). ' +
                          'The member is not `authentications`: that one ' +
                          'is the count.' }
         ].concat(this.pagingParameters()).concat(this.detailPagingParameters([
           { name: 'sessions',
             description: 'Sign-on session blocks, which default to ' +
                          adminViews.DEFAULT_BLOCKS_PER_PAGE + ' rather than ' +
-                         adminViews.DEFAULT_PER_PAGE +
+                         adminViews.DEFAULT_ACTIVITY_PER_PAGE +
                          ' because each one carries a ' +
                          'token list of its own. Only the sessions ON this ' +
                          'page are in the reply.' },
@@ -4515,6 +4701,10 @@ class AdminApi {
                          'grants that never involve one.' },
           { name: 'artifacts',
             description: 'SAML assertions, Kerberos tickets and credentials.' },
+          { name: 'authenticationHistory',
+            description: 'How they authenticated (`user.events`), most ' +
+                         'recent first, ten a page by default (#1844). ' +
+                         '`user.events` is still the whole list.' },
           { name: 'federationLinks',
             description: 'The federation partners\' subjects linked to ' +
                          'this person (#109), each `{ link, relationship, ' +
@@ -4774,7 +4964,8 @@ class AdminApi {
           log.debug("Leaving the management API new-user endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/users/:action', tag: 'Users',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/users/:action', tag: 'Users',
         // TWO CONSOLE PATHS, AND BOTH ARE NAMED. One resource legitimately
         // mirrors several controls — /admin-api/xacml/{action} names three —
         // and this action switch is reached from the Users list and from
@@ -4803,10 +4994,16 @@ class AdminApi {
           // synchronous and reads the verdict this leaves.
           return require('../common/breached_passwords')
             .screenAll([request.password]).then(function () {
-          // A CREATE CLAIMS ITS NAME FIRST — see `claimForCreate()`.
+          // A CREATE CLAIMS ITS NAME FIRST — see `claimForCreate()`. An LDIF
+          // import is a create too, of the username its file names.
           return self.runClaimed(res, request.action === 'create'
             ? { username: String(request.username || request.user || '') }
-            : null, function (held) {
+            : (request.action === 'import-ldif'
+                ? { username: personLdif.usernameOf(
+                      String((request as any).ldif || '').trim()
+                        ? (request as any).ldif
+                        : (((request as any).file || {}).text || '')) }
+                : null), function (held) {
             // `via: 'api'` and the subject of the token the gate verified,
             // for the audit rows this action writes (#446). It was an empty
             // actor while this API authenticated only clients; with no token
@@ -4989,11 +5186,30 @@ class AdminApi {
           { action: 'remove-certificate',
             operationId: 'removeUserCertificate' },
 
+          // THE PERSON DELETED (rcbj, 2026-11-16): the Delete control on
+          // their page, through the directory's one person delete.
+          { action: 'delete', operationId: 'deleteUser' },
+
+          // THE PERSON AS AN LDIF FILE (2026-11-14): the Import / export tab
+          // of their console page, #546's pattern.
+          { action: 'export-ldif', operationId: 'exportUserLdif' },
+
+          { action: 'import-ldif', operationId: 'importUserLdif' },
+
           { action: 'issue-signing-certificate',
             operationId: 'issueUserSigningCertificate' },
 
           { action: 'revoke-signing-certificate',
             operationId: 'revokeUserSigningCertificate' },
+
+          // A TLS CLIENT CERTIFICATE FOR THE PERSON, issued from this
+          // realm's CA with the directory entry's subject. The same two
+          // names on an application are that application's door.
+          { action: 'issue-tls-client-certificate',
+            operationId: 'issueUserTlsClientCertificate' },
+
+          { action: 'revoke-tls-client-certificate',
+            operationId: 'revokeUserTlsClientCertificate' },
 
           { action: 'enrol-self-issued-subject',
             operationId: 'enrolUserSelfIssuedSubject' },
@@ -5062,7 +5278,7 @@ class AdminApi {
 
           { action: 'finish-passkey-enrolment',
             operationId: 'finishUserPasskeyEnrolment' }
-        ] },
+        ] }),
 
       // ---------------------------------------------------------------------
       // SESSIONS. The other half of /tokens, and the resource behind
@@ -5126,7 +5342,8 @@ class AdminApi {
           });
         } },
 
-      { method: 'POST', route: BASE + '/sessions/:action', tag: 'Sessions',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/sessions/:action', tag: 'Sessions',
         mirrors: 'POST /admin/sessions',
         handler: function (req, res) {
           log.debug("Entering the management API sessions action endpoint.");
@@ -5147,7 +5364,7 @@ class AdminApi {
         actions: [
           { action: 'revoke', operationId: 'revokeSession' },
           { action: 'end-all', operationId: 'endAllSessions' }
-        ] },
+        ] }),
 
       { method: 'GET', path: BASE + '/logout', tag: 'Sign-out',
         operationId: 'getLiveSessions',
@@ -5187,12 +5404,14 @@ class AdminApi {
           log.debug("Leaving the management API sign-out endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/logout/:action', tag: 'Sign-out',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/logout/:action', tag: 'Sign-out',
         mirrors: 'POST /admin/logout',
         handler: function (req, res) {
           log.debug("Entering the management API sign-out action endpoint.");
           const body = parseBody(req);
-          const result = adminActions.logoutAction(self.withAction(req, body));
+          const result = adminActions.logoutAction(self.withAction(req, body),
+            { via: 'api', actor: self.callerNameOf(res) });
           if (!result.ok) {
             errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0032');
           }
@@ -5206,7 +5425,7 @@ class AdminApi {
             operationId: 'retryBackchannelDelivery' },
           { action: 'restore-token', operationId: 'restoreLoggedOutToken' },
           { action: 'restore-kerberos', operationId: 'clearKerberosSignOut' }
-        ] },
+        ] }),
 
       { method: 'GET', path: BASE + '/groups', tag: 'Groups',
         operationId: 'getGroups',
@@ -5272,7 +5491,8 @@ class AdminApi {
       // exactly as the users one is: two doors onto one action must not be two
       // readings of what was sent.
       // -----------------------------------------------------------------------
-      { method: 'POST', route: BASE + '/groups/:action', tag: 'Groups',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/groups/:action', tag: 'Groups',
         // A SECOND CONSOLE PATH SINCE #603: the group page's Owners tab posts
         // to /admin/groups/owners, so its Find and Add are told apart from the
         // page's other forms; its Add and Remove reach `add-owner` and
@@ -5284,10 +5504,10 @@ class AdminApi {
           const request = self.withAction(req, body);
           // A CREATE CLAIMS ITS NAME FIRST — see `claimForCreate()`.
           return self.runClaimed(res, request.action === 'create'
-            ? { group: String(request.group || request.displayName ||
-                              request.cn || '') }
+            ? { group: String(request.group || request.displayName || '') }
             : null, function (held) {
-            const result = adminActions.groupsAction(request);
+            const result = adminActions.groupsAction(request,
+              { via: 'api', actor: self.callerNameOf(res) });
             held.settle(!!result.ok);
             if (!result.ok) {
               errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0033');
@@ -5314,7 +5534,7 @@ class AdminApi {
           // the moment Add or Remove is pressed.
           { action: 'add-owner', operationId: 'addGroupOwner' },
           { action: 'remove-owner', operationId: 'removeGroupOwner' }
-        ] },
+        ] }),
 
       // --- The directory itself, entry by entry
       // --------------------------------
@@ -5640,7 +5860,8 @@ class AdminApi {
           });
         } },
 
-      { method: 'POST', route: BASE + '/rbac/:action', tag: 'Admin roles',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/rbac/:action', tag: 'Admin roles',
         mirrors: 'POST /admin/rbac',
         handler: function (req, res) {
           log.debug("Entering the management API admin roles action endpoint.");
@@ -5661,7 +5882,7 @@ class AdminApi {
           { action: 'grant', operationId: 'grantAdminRole' },
 
           { action: 'revoke', operationId: 'revokeAdminRole' }
-        ] },
+        ] }),
 
       // ---------------------------------------------------------------------
       // MULTI-FACTOR AUTHENTICATION (2026-09-10).
@@ -5720,7 +5941,7 @@ class AdminApi {
           });
         } },
 
-      { method: 'POST', route: BASE + '/mfa/:action',
+      ApiRows.actions({ method: 'POST', route: BASE + '/mfa/:action',
         tag: 'Multi-factor authentication',
         mirrors: 'POST /admin/users',
         handler: function (req, res) {
@@ -5749,7 +5970,7 @@ class AdminApi {
           { action: 'clear-key', operationId: 'clearSecurityKey' },
 
           { action: 'clear-email-factor', operationId: 'clearEmailFactor' }
-        ] },
+        ] }),
 
       // ONE CREDENTIAL'S LINEAGE (#446): the console page had no
       // operation, having no form; see
@@ -5773,10 +5994,8 @@ class AdminApi {
           log.debug("Entering the management API credential lineage " +
                     "endpoint.");
           if (String((req.query || {}).format || '') === 'svg') {
-            const bare = adminViews.credentialLineageModel(req.query,
-                                                           { links: false });
-            res.status(200).set('Cache-Control', 'no-store')
-               .type('image/svg+xml').send(bare.svg);
+            self.sendPicture(req, res, adminViews.credentialLineageModel(
+              req.query, { links: false }));
             log.debug("Leaving the management API credential lineage " +
                       "endpoint. Answered SVG.");
             return;
@@ -5868,7 +6087,8 @@ class AdminApi {
           });
         } },
 
-      { method: 'POST', route: BASE + '/tokens/:action', tag: 'Tokens',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/tokens/:action', tag: 'Tokens',
         mirrors: 'POST /admin/tokens',
         handler: function (req, res) {
           log.debug("Entering the management API token action endpoint.");
@@ -5906,7 +6126,7 @@ class AdminApi {
           { action: 'revoke-user', operationId: 'revokeTokensByUser' },
 
           { action: 'revoke-all', operationId: 'revokeAllTokens' }
-        ] },
+        ] }),
 
       // ---------------------------------------------------------------------
       // TRUST REALMS — several logical copies of this service in one process.
@@ -5963,7 +6183,8 @@ class AdminApi {
           });
         } },
 
-      { method: 'POST', route: BASE + '/realms/:action', tag: 'Trust realms',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/realms/:action', tag: 'Trust realms',
         mirrors: 'POST /admin/realms',
         handler: function (req, res, next) {
           log.debug("Entering the management API trust realms action " +
@@ -5996,7 +6217,7 @@ class AdminApi {
 
           { action: 'unset', operationId: 'unsetRealmSetting' },
 
-          { action: 'remove', operationId: 'removeRealm' } ] },
+          { action: 'remove', operationId: 'removeRealm' } ] }),
 
       { method: 'GET', path: BASE + '/config', tag: 'Configuration',
         operationId: 'getConfig',
@@ -6016,7 +6237,8 @@ class AdminApi {
           log.debug("Leaving the management API configuration dump.");
         } },
 
-      { method: 'POST', route: BASE + '/config/:action', tag: 'Configuration',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/config/:action', tag: 'Configuration',
         mirrors: 'POST /admin/config, POST ' +
                  '/admin/xacml#xacml-tab-settings and POST ' +
                  '/admin/xacml#xacml-tab-authzen',
@@ -6039,7 +6261,7 @@ class AdminApi {
 
           { action: 'reset', operationId: 'resetSetting' },
 
-          { action: 'reset-all', operationId: 'resetAllSettings' } ] },
+          { action: 'reset-all', operationId: 'resetAllSettings' } ] }),
 
       // ---------------------------------------------------------------------
       // The token lifetimes, which are six of the settings above — the three
@@ -6073,7 +6295,8 @@ class AdminApi {
           log.debug("Leaving the management API token lifetimes endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/token-lifetimes/:action',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/token-lifetimes/:action',
         // ---------------------------------------------------------------------
         // A NARROW DOOR: THE HANDLER OWNS THE WHOLE BODY, so the ajv wrapper at
         // the foot of this file stands aside for it.
@@ -6109,7 +6332,7 @@ class AdminApi {
         actions: [
           { action: 'set', operationId: 'setTokenLifetimes' },
 
-          { action: 'defaults', operationId: 'resetTokenLifetimes' } ] },
+          { action: 'defaults', operationId: 'resetTokenLifetimes' } ] }),
 
       // ---------------------------------------------------------------------
       // The SAML assertion settings, which are sixteen of the settings above —
@@ -6138,7 +6361,8 @@ class AdminApi {
           log.debug("Leaving the management API SAML assertions endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/saml-assertions/:action',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/saml-assertions/:action',
         // ---------------------------------------------------------------------
         // A NARROW DOOR: THE HANDLER OWNS THE WHOLE BODY, so the ajv wrapper at
         // the foot of this file stands aside for it.
@@ -6174,7 +6398,7 @@ class AdminApi {
         actions: [
           { action: 'set', operationId: 'setSamlAssertions' },
 
-          { action: 'defaults', operationId: 'resetSamlAssertions' } ] },
+          { action: 'defaults', operationId: 'resetSamlAssertions' } ] }),
 
       { method: 'GET', path: BASE + '/claims', tag: 'Custom claims',
         operationId: 'getClaims',
@@ -6199,7 +6423,8 @@ class AdminApi {
           log.debug("Leaving the management API claims endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/claims/:action', tag: 'Custom claims',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/claims/:action', tag: 'Custom claims',
         mirrors: 'POST /admin/claims',
         handler: function (req, res) {
           log.debug("Entering the management API claims action endpoint.");
@@ -6223,7 +6448,7 @@ class AdminApi {
           self.sendJson(res, result.ok ? 200 : 400, result);
           log.debug("Leaving the management API claims action endpoint.");
         },
-        actions: this.claimSetActions(JWT_CLAIM_FAMILY) },
+        actions: this.claimSetActions(JWT_CLAIM_FAMILY) }),
 
       // -----------------------------------------------------------------------
       // THE USERINFO HALF OF THE SAME STORE, and the half a client can add to.
@@ -6275,7 +6500,8 @@ class AdminApi {
           log.debug("Leaving the management API UserInfo claims endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/userinfo-claims/:action',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/userinfo-claims/:action',
         tag: 'UserInfo claims',
         mirrors: 'POST /admin/userinfo-claims',
         handler: function (req, res) {
@@ -6293,7 +6519,7 @@ class AdminApi {
           log.debug("Leaving the management API UserInfo claims action " +
                     "endpoint.");
         },
-        actions: this.claimSetActions(USERINFO_CLAIM_FAMILY) },
+        actions: this.claimSetActions(USERINFO_CLAIM_FAMILY) }),
 
       // -----------------------------------------------------------------------
       // THE SAML HALF OF THE SAME STORE, mirrored by the Custom SAML
@@ -6329,7 +6555,8 @@ class AdminApi {
           log.debug("Leaving the management API SAML attributes endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/saml-attributes/:action',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/saml-attributes/:action',
         tag: 'Custom SAML attributes',
         mirrors: 'POST /admin/saml2',
         handler: function (req, res) {
@@ -6347,7 +6574,7 @@ class AdminApi {
           log.debug("Leaving the management API SAML attributes action " +
                     "endpoint.");
         },
-        actions: this.claimSetActions(SAML_CLAIM_FAMILY) },
+        actions: this.claimSetActions(SAML_CLAIM_FAMILY) }),
 
       // -----------------------------------------------------------------------
       // THE KERBEROS PAC HALF OF THE SAME STORE (#493): the sixth set, the
@@ -6374,7 +6601,8 @@ class AdminApi {
                     "endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/kerberos/claims/:action',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/kerberos/claims/:action',
         tag: 'Kerberos',
         mirrors: 'POST /admin/kerberos#kerberos-tab-claims',
         handler: function (req, res) {
@@ -6394,7 +6622,7 @@ class AdminApi {
           log.debug("Leaving the management API Kerberos PAC claims action " +
                     "endpoint.");
         },
-        actions: this.claimSetActions(KERBEROS_CLAIM_FAMILY) },
+        actions: this.claimSetActions(KERBEROS_CLAIM_FAMILY) }),
 
       { method: 'GET', path: BASE + '/credential-claims',
         tag: 'Credential claims',
@@ -6414,7 +6642,8 @@ class AdminApi {
           log.debug("Leaving the management API credential-claims endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/credential-claims/:action',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/credential-claims/:action',
         tag: 'Credential claims',
         mirrors: 'POST /admin/vc#vc-tab-claims',
         handler: function (req, res) {
@@ -6439,7 +6668,7 @@ class AdminApi {
           { action: 'defaults', operationId: 'resetCredentialClaims' },
 
           { action: 'populate', operationId: 'populateDirectory' }
-        ] },
+        ] }),
 
       { method: 'GET', path: BASE + '/verifier-request',
         tag: 'Verifier request',
@@ -6451,7 +6680,8 @@ class AdminApi {
           log.debug("Leaving the management API verifier-request endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/verifier-request/:action',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/verifier-request/:action',
         tag: 'Verifier request',
         mirrors: 'POST /admin/vc#vc-tab-verifier-request',
         handler: function (req, res) {
@@ -6476,7 +6706,7 @@ class AdminApi {
           { action: 'defaults', operationId: 'resetRequestedClaims' },
 
           { action: 'format', operationId: 'setRequestFormat' }
-        ] },
+        ] }),
 
       // ---------------------------------------------------------------------
       // STARTING A VERIFICATION AND READING ITS OUTCOME (#587, 2026-10-12).
@@ -6504,7 +6734,7 @@ class AdminApi {
       // with an action nobody has heard of and requires a 400 naming the
       // ones that exist, and a literal `/verifications/start` answered
       // Express's 404. One action today.
-      { method: 'POST', route: BASE + '/verifications/:action',
+      ApiRows.actions({ method: 'POST', route: BASE + '/verifications/:action',
         tag: 'Verifier request',
         mirrors: 'POST /admin/vc#vc-tab-verifier-request',
         handler: async function (req, res) {
@@ -6586,7 +6816,7 @@ class AdminApi {
         },
         actions: [
           { action: 'start', operationId: 'startVerification' }
-        ] },
+        ] }),
 
       { method: 'GET', path: BASE + '/verifications',
         tag: 'Verifier request',
@@ -6739,7 +6969,7 @@ class AdminApi {
           log.debug("Leaving the management API federation endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/federation/:action',
+      ApiRows.actions({ method: 'POST', route: BASE + '/federation/:action',
         tag: 'Federation',
         mirrors: 'POST /admin/federation',
         handler: function (req, res) {
@@ -6788,7 +7018,7 @@ class AdminApi {
 
           // A PARTNER'S SHARED SIGNALS (#373, #374): the relationship page's
           // Shared Signals buttons, each handed to ssf/ssf_transmitters.ts.
-          ...[
+          ...([
             ['signals-discover', 'discoverFederationSignals',
              'Discover the partner\'s Shared Signals configuration',
              'Fetches `/.well-known/ssf-configuration` under the SSF issuer ' +
@@ -6830,26 +7060,26 @@ class AdminApi {
             ['signals-poll-now', 'pollFederationSignals',
              'Poll the partner now', 'RFC 8936, as the ssf.foreign-poll job ' +
              'does.']
-          ].map(function (one: string[]) {
+          ] as const).map(function (one) {
             return { action: one[0], operationId: one[1]
                       };
           }),
           { action: 'signals-set-status',
             operationId: 'setFederationSignalsStatus' },
-          ...[['signals-add-subject', 'addFederationSignalsSubject',
+          ...([['signals-add-subject', 'addFederationSignalsSubject',
                'Add a subject to the stream at the partner',
                'SSF 1.0 section 8.1.3.2. Audited.'],
               ['signals-remove-subject', 'removeFederationSignalsSubject',
                'Remove a subject from the stream at the partner',
                'SSF 1.0 section 8.1.3.3. Audited.']
-          ].map(function (one: string[]) {
+          ] as const).map(function (one) {
             return { action: one[0], operationId: one[1]
                       };
           }),
           { action: 'signals-unblock', operationId: 'unblockFederationSignals' },
 
           { action: 'delete', operationId: 'deleteFederationRelationship' }
-        ] },
+        ] }),
 
       { method: 'GET', path: BASE + '/saml2', tag: 'SAML 2.0',
         operationId: 'getSaml2ServiceProviders',
@@ -6875,14 +7105,15 @@ class AdminApi {
           log.debug("Leaving the management API SAML 2.0 endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/saml2/:action',
+      ApiRows.actions({ method: 'POST', route: BASE + '/saml2/:action',
         tag: 'SAML 2.0',
         mirrors: 'POST /admin/saml2',
         handler: function (req, res) {
           log.debug("Entering the management API SAML 2.0 action endpoint.");
           const body = parseBody(req);
           // Two actions dial out and answer with a promise (#37 follow-up).
-          Promise.resolve(adminActions.saml2Action(self.withAction(req, body)))
+          Promise.resolve(adminActions.saml2Action(self.withAction(req, body),
+            { via: 'api', actor: self.callerNameOf(res) }))
             .then(function (result) {
               if (!result.ok) {
                 errorCodes.mark(res, errorCodes.codeOf(result) ||
@@ -6927,7 +7158,7 @@ class AdminApi {
 
           { action: 'upload-metadata',
             operationId: 'uploadSaml2Metadata' }
-        ] },
+        ] }),
 
       { method: 'GET', path: BASE + '/saml11', tag: 'SAML 1.1',
         operationId: 'getSaml11RelyingParties',
@@ -6969,7 +7200,7 @@ class AdminApi {
                     "endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/saml11/:action',
+      ApiRows.actions({ method: 'POST', route: BASE + '/saml11/:action',
         tag: 'SAML 1.1',
         mirrors: 'POST /admin/saml2#saml-tab-saml11',
         handler: function (req, res) {
@@ -6984,7 +7215,7 @@ class AdminApi {
         },
         actions: [
           { action: 'register', operationId: 'registerSaml11RelyingParty' }
-        ] },
+        ] }),
 
       { method: 'GET', path: BASE + '/authorization-servers',
         tag: 'Authorization ' +
@@ -7007,7 +7238,8 @@ class AdminApi {
                     "endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/authorization-servers/:action',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/authorization-servers/:action',
         tag: 'Authorization servers',
         mirrors: 'POST /admin/authorization-servers',
         handler: function (req, res) {
@@ -7032,7 +7264,7 @@ class AdminApi {
           { action: 'reset', operationId: 'resetAuthorizationServerMember' },
 
           { action: 'delete', operationId: 'deleteAuthorizationServer' }
-        ] },
+        ] }),
 
       // The application registry, read and written.
       //
@@ -7044,10 +7276,10 @@ class AdminApi {
       //
       // What may be changed is DECLARED and not DERIVED — configuration, which
       // is what RFC 9700 mode reads, but never the counters or the sightings,
-      // which are what happened. The line is drawn by applications.js's
-      // EDITABLE table, so this file offers no opinion about it and the
-      // console's selects are built from the same rows these actions validate
-      // against.
+      // which are what happened. The line is drawn by each application
+      // row's `editable` in the model, so this file offers no opinion about it
+      // and the console's selects are built from the same rows these actions
+      // validate against.
       { method: 'GET', path: BASE + '/applications', tag: 'Applications',
         operationId: 'getApplications',
         mirrors: 'GET /admin/applications',
@@ -7178,7 +7410,7 @@ class AdminApi {
           log.debug("Leaving the management API new-application endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/applications/:action',
+      ApiRows.actions({ method: 'POST', route: BASE + '/applications/:action',
         tag: 'Applications',
         // TWO CONSOLE PATHS REACH THIS SWITCH SINCE 2026-09-13: the list page,
         // and /admin/applications/new's RFC 9728 import, whose load and create
@@ -7390,6 +7622,16 @@ class AdminApi {
           { action: 'remove-certificate',
             operationId: 'removeApplicationCertificate' },
 
+          // THE CREDENTIALS SECTION'S WS-TRUST DECRYPTION KEY PAIR (#1668):
+          // issued from the realm's CA, uploaded, or removed. The
+          // certificate is in `credentials.wstrustDecryption` of the GET.
+          { action: 'issue-wstrust-decryption-key',
+            operationId: 'issueApplicationWsTrustDecryptionKey' },
+          { action: 'upload-wstrust-decryption-key',
+            operationId: 'uploadApplicationWsTrustDecryptionKey' },
+          { action: 'remove-wstrust-decryption-key',
+            operationId: 'removeApplicationWsTrustDecryptionKey' },
+
           // THE SOFTWARE STATEMENTS SECTION'S CONTROL (RFC 7591 section 2.3,
           // 2026-09-13).
           { action: 'issue-software-statement',
@@ -7413,7 +7655,7 @@ class AdminApi {
             operationId: 'importApplicationLdif' },
 
           { action: 'forget', operationId: 'deleteApplication' }
-        ] },
+        ] }),
 
       // The audit log. READ ONLY, and that is a decision rather than an
       // operation nobody got round to. Every other resource here has a POST
@@ -7461,6 +7703,25 @@ class AdminApi {
       { method: 'GET', path: BASE + '/xacml/policies', tag: 'XACML',
         operationId: 'getXacmlPolicies',
         mirrors: 'GET /admin/xacml',
+        // THE REPOSITORY'S SEARCH (#1760): the reverse-proxy route forms'
+        // policy chooser asks it, five to a page, `routable` keeping what a
+        // route may choose. With none of these the answer is unchanged.
+        parameters: [
+          { name: 'q', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 256 },
+            description: 'A substring of a policy\'s name, PolicyId or ' +
+                         'description, without case.' },
+          { name: 'per', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1, maximum: 300 },
+            description: 'Policies per page of a search.' },
+          { name: 'page', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Which page of a search, clamped.' },
+          { name: 'routable', in: 'query', required: false,
+            schema: { type: 'string', enum: ['true', 'false'] },
+            description: 'true keeps only what a reverse-proxy route may ' +
+                         'choose.' }
+        ],
         handler: function (req, res) {
           log.debug("Entering the management API XACML policies endpoint.");
           self.sendJson(res, 200, adminViews.xacmlPoliciesView(req));
@@ -7555,7 +7816,8 @@ class AdminApi {
           log.debug("Leaving the management API GNAP monitor endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/gnap/:action', tag: 'GNAP',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/gnap/:action', tag: 'GNAP',
         mirrors: 'POST /admin/gnap',
         handler: function (req, res) {
           log.debug("Entering the management API GNAP action endpoint.");
@@ -7572,7 +7834,7 @@ class AdminApi {
         actions: [
           { action: 'revoke-grant', operationId: 'revokeGnapGrant' },
           { action: 'delete-resource-set', operationId: 'deleteGnapResourceSet' }
-        ] },
+        ] }),
 
       { method: 'GET', path: BASE + '/xacml/monitor', tag: 'XACML',
         operationId: 'getXacmlMonitor',
@@ -7585,14 +7847,61 @@ class AdminApi {
 
       { method: 'GET', path: BASE + '/xacml/peps', tag: 'XACML',
         operationId: 'getXacmlPeps',
-        mirrors: 'GET /admin/xacml',
+        mirrors: 'GET /admin/xacml, GET /admin/xacml/pep, GET ' +
+                 '/admin/xacml/pep/route and GET /admin/xacml/pep/monitor',
+        // ONE PEP's PAGE (#1760): `/admin/xacml/pep?pep=<name>` is this
+        // answer narrowed to that row, `/admin-api/applications`'
+        // `?application=` arrangement.
+        parameters: [
+          { name: 'pep', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 128 },
+            description: 'One registered PEP, by its name exactly. The ' +
+                         'answer then lists that row alone and says ' +
+                         '`found`; a name with no row answers 200 with ' +
+                         '`found: false`.' },
+          // ONE ROUTE's PAGE (#1760): `/admin/xacml/pep/route?pep=&route=`.
+          { name: 'route', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 64 },
+            description: 'With `pep`: one route of that PEP\'s reverse ' +
+                         'proxy, by its id. The answer then carries ' +
+                         '`routeDetail`: the route, where it stands, ' +
+                         'whether its application resolves and which ' +
+                         'proxy listeners serve it; `found: false` there ' +
+                         'when the PEP has no such route.' }
+        ],
         handler: function (req, res) {
           log.debug("Entering the management API XACML remote PEPs endpoint.");
           self.sendJson(res, 200, adminViews.xacmlPepsView(req));
           log.debug("Leaving the management API XACML remote PEPs endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/xacml/:action', tag: 'XACML',
+      // REMOTE PEP CLUSTERS (#1760, phase 1): the XACML page's PEP clusters
+      // tab, and with `cluster` (and `route`) the cluster's own pages.
+      { method: 'GET', path: BASE + '/xacml/pep-clusters', tag: 'XACML',
+        operationId: 'getXacmlPepClusters',
+        mirrors: 'GET /admin/xacml, GET /admin/xacml/pep-cluster and GET ' +
+                 '/admin/xacml/pep-cluster/route',
+        parameters: [
+          { name: 'cluster', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 64 },
+            description: 'One cluster, by its name exactly. The answer ' +
+                         'then lists that cluster alone and says `found`.' },
+          { name: 'route', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 64 },
+            description: 'With `cluster`: one route of the cluster\'s ' +
+                         'reverse proxy, by its id. The answer then ' +
+                         'carries `routeDetail`.' }
+        ],
+        handler: function (req, res) {
+          log.debug("Entering the management API XACML PEP clusters " +
+                    "endpoint.");
+          self.sendJson(res, 200, adminViews.xacmlPepClustersView(req));
+          log.debug("Leaving the management API XACML PEP clusters " +
+                    "endpoint.");
+        } },
+
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/xacml/:action', tag: 'XACML',
         mirrors: 'POST /admin/xacml#xacml-tab-policies, POST ' +
                  '/admin/xacml#xacml-tab-editor, POST ' +
                  '/admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, ' +
@@ -7718,9 +8027,64 @@ class AdminApi {
           { action: 'disable-pep', operationId: 'disableXacmlPep' },
           { action: 'enable-pep', operationId: 'enableXacmlPep' },
           { action: 'forget-pep', operationId: 'forgetXacmlPep' },
+          // Sync (2026-11-16): one PEP nudged to pull everything now.
+          { action: 'sync-pep', operationId: 'syncXacmlPep' },
           { action: 'issue-pep-certificate',
-            operationId: 'issueXacmlPepCertificate' }
-        ] },
+            operationId: 'issueXacmlPepCertificate' },
+          // A remote PEP's RFC 7523 assertion key, certified from its own
+          // certificate request (#1827's follow-up, phase 3).
+          { action: 'issue-pep-credential',
+            operationId: 'issueXacmlPepCredential' },
+          // The remote PEP's reverse proxy (#1760).
+          { action: 'set-pep-proxy', operationId: 'setXacmlPepProxy' },
+          { action: 'clear-pep-proxy', operationId: 'clearXacmlPepProxy' },
+          { action: 'set-pep-route-identity',
+            operationId: 'setXacmlPepRouteIdentity' },
+          // The remote PEP's managed settings (#1760).
+          { action: 'set-pep-settings', operationId: 'setXacmlPepSettings' },
+          { action: 'clear-pep-settings',
+            operationId: 'clearXacmlPepSettings' },
+          // The remote PEP's listeners and its routes one at a time (#1760).
+          { action: 'set-pep-listener', operationId: 'setXacmlPepListener' },
+          { action: 'set-pep-environment-tuning',
+            operationId: 'setXacmlPepEnvironmentTuning' },
+          { action: 'remove-pep-listener',
+            operationId: 'removeXacmlPepListener' },
+          { action: 'renew-pep-listener-certificate',
+            operationId: 'renewXacmlPepListenerCertificate' },
+          { action: 'set-pep-route', operationId: 'setXacmlPepRoute' },
+          { action: 'remove-pep-route', operationId: 'removeXacmlPepRoute' },
+          { action: 'set-pep-route-application',
+            operationId: 'setXacmlPepRouteApplication' },
+          // A route's authorization, and its generated policy (#1760).
+          { action: 'set-pep-route-authorization',
+            operationId: 'setXacmlPepRouteAuthorization' },
+          { action: 'generate-pep-route-policy',
+            operationId: 'generateXacmlPepRoutePolicy' },
+          // Remote PEP clusters (#1760, phase 1).
+          { action: 'create-pep-cluster', operationId: 'createXacmlPepCluster' },
+          { action: 'delete-pep-cluster', operationId: 'deleteXacmlPepCluster' },
+          { action: 'add-pep-cluster-member',
+            operationId: 'addXacmlPepClusterMember' },
+          { action: 'remove-pep-cluster-member',
+            operationId: 'removeXacmlPepClusterMember' },
+          { action: 'set-pep-cluster-member',
+            operationId: 'setXacmlPepClusterMember' },
+          { action: 'set-pep-cluster-proxy',
+            operationId: 'setXacmlPepClusterProxy' },
+          { action: 'set-pep-cluster-settings',
+            operationId: 'setXacmlPepClusterSettings' },
+          { action: 'set-pep-cluster-route',
+            operationId: 'setXacmlPepClusterRoute' },
+          { action: 'remove-pep-cluster-route',
+            operationId: 'removeXacmlPepClusterRoute' },
+          { action: 'generate-pep-cluster-route-policy',
+            operationId: 'generateXacmlPepClusterRoutePolicy' },
+          { action: 'set-pep-cluster-listener',
+            operationId: 'setXacmlPepClusterListener' },
+          { action: 'remove-pep-cluster-listener',
+            operationId: 'removeXacmlPepClusterListener' }
+        ] }),
 
       { method: 'GET', path: BASE + '/ssf', tag: 'Shared Signals',
         operationId: 'getSsf',
@@ -7783,7 +8147,8 @@ class AdminApi {
           log.debug("Leaving the management API dead letters endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/ssf/:action', tag: 'Shared Signals',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/ssf/:action', tag: 'Shared Signals',
         mirrors: 'POST /admin/ssf',
         handler: function (req, res) {
           log.debug("Entering the management API Shared Signals action " +
@@ -7830,7 +8195,7 @@ class AdminApi {
           { action: 'verify', operationId: 'verifySsfStream' },
 
           { action: 'clear-dead-letters', operationId: 'clearSsfDeadLetters' }
-        ] },
+        ] }),
 
       // ---------------------------------------------------------------------
       // CAEP. A GET and a POST, and the POST is not optional: /admin/caep and
@@ -7915,7 +8280,8 @@ class AdminApi {
           log.debug("Leaving the management API CAEP sessions endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/caep/:action', tag: 'CAEP',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/caep/:action', tag: 'CAEP',
         mirrors: 'POST /admin/caep',
         handler: function (req, res) {
           log.debug("Entering the management API CAEP action endpoint.");
@@ -7947,7 +8313,7 @@ class AdminApi {
           { action: 'reset-session', operationId: 'resetCaepSession' },
 
           { action: 'clear', operationId: 'clearCaepSessions' }
-        ] },
+        ] }),
 
       // ---------------------------------------------------------------------
       // RISC. A GET, a second GET and a POST, on exactly the CAEP block's terms
@@ -8021,7 +8387,8 @@ class AdminApi {
           log.debug("Leaving the management API RISC accounts endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/risc/:action', tag: 'RISC',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/risc/:action', tag: 'RISC',
         mirrors: 'POST /admin/risc',
         handler: function (req, res) {
           log.debug("Entering the management API RISC action endpoint.");
@@ -8050,7 +8417,7 @@ class AdminApi {
           { action: 'reset-account', operationId: 'resetRiscAccount' },
 
           { action: 'clear', operationId: 'clearRiscAccounts' }
-        ] },
+        ] }),
 
       { method: 'GET', path: BASE + '/scim', tag: 'SCIM',
         operationId: 'getScim',
@@ -8109,6 +8476,49 @@ class AdminApi {
       // and `pki.js` is a LIBRARY (rule 3), so there is no route this could
       // move and no cycle it could close.
       // -----------------------------------------------------------------------
+      // THE mdoc ISSUING AUTHORITY (#1862). The certificate
+      // `GET /oid4vci/mdoc-iaca` publishes, and nothing else: no private
+      // key. Minted on the first call, the same way that public read
+      // mints it. Not a field of `GET /admin-api/pki`, whose model is
+      // closed. It sits with the other PKI routes so the served OpenAPI
+      // tag order stays the order the specification declares.
+      // -----------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/mdoc-iaca', tag: 'PKI',
+        operationId: 'getMdocIaca',
+        mirrors: 'GET /oid4vci/mdoc-iaca',
+        handler: function (req, res) {
+          log.debug("Entering the management API mdoc IACA endpoint.");
+          const authority = require('../oid4vc/mdoc_authority');
+          const issuer = String(baseUrlOf(req) || '').replace(/\/+$/, '');
+          authority.ensure(helpers.stsKeysFor(), issuer).then(
+            function (held) {
+              const cert = stsCrypto.parseCertificate(held.iacaPem);
+              const subject = String(cert.subject || '')
+                .replace(/\n/g, ', ');
+              self.sendJson(res, 200, {
+                certificatePem: String(held.iacaPem)
+                  .replace(/\s*$/, '') + '\n',
+                subject: subject,
+                notBefore: cert.validFromDate.toISOString(),
+                notAfter: cert.validToDate.toISOString()
+              });
+              log.debug("Leaving the management API mdoc IACA endpoint.");
+            }, function (e) {
+              // ensure() throws only STS-PKI-0288. The code stays off
+              // the body; the public read answers the same sentence.
+              log.debug("Caught in the management API mdoc IACA " +
+                        "endpoint: " + ((e && e.message) || e));
+              log.error(errorCodes.tag('STS-PKI-0288') +
+                        'the mdoc authority could not be minted: ' +
+                        ((e && e.message) || e));
+              errorCodes.mark(res, 'STS-PKI-0288');
+              res.status(500).type('text/plain')
+                .send('The mdoc authority could not be minted.\n');
+              log.debug("Leaving the management API mdoc IACA " +
+                        "endpoint. Not minted.");
+            });
+        } },
+
       { method: 'GET', path: BASE + '/pki', tag: 'PKI',
         operationId: 'getPki',
         mirrors: 'GET /admin/pki',
@@ -8244,7 +8654,8 @@ class AdminApi {
           log.debug("Leaving the management API PKI trust endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/pki/trust/:action', tag: 'PKI',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/pki/trust/:action', tag: 'PKI',
         mirrors: 'POST /admin/pki/trust',
         handler: function (req, res) {
           log.debug("Entering the management API PKI trust action endpoint.");
@@ -8273,9 +8684,10 @@ class AdminApi {
           { action: 'remove', operationId: 'removeSignerTrustAnchor' },
           { action: 'recheck', operationId: 'recheckPinnedCertificates' },
           { action: 'set-row', operationId: 'setParanoidPkiRow' }
-        ] },
+        ] }),
 
-      { method: 'POST', route: BASE + '/pki/:action', tag: 'PKI',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/pki/:action', tag: 'PKI',
         // TWO CONSOLE PATHS, because the pane answers with a PAGE rather than a
         // redirect and needs a route of its own to do it. This field is how the
         // console suite builds "console paths that take a POST", so a control
@@ -8306,7 +8718,16 @@ class AdminApi {
               ? Object.assign({}, result,
                               { workbench: pkiAdmin.workbenchOf(result.draft) })
               : result;
-            self.sendJson(res, result.ok ? 200 : 400, answered);
+            // A BUILD WAITED FOR TOO LONG, OR A STORE THAT COULD NOT BE ASKED
+            // ABOUT ONE (STS-PKI-0184, STS-PKI-0183), is about the moment and
+            // not the request: 503 with Retry-After, which a client retries,
+            // rather than a 400 it would take as its own fault (CI run #250,
+            // `pki.isBusyRefusal()`).
+            const busy = pki.isBusyRefusal(result);
+            if (busy) {
+              res.setHeader('Retry-After', '5');
+            }
+            self.sendJson(res, result.ok ? 200 : (busy ? 503 : 400), answered);
             log.debug("Leaving the management API PKI action endpoint.");
           }).catch(function (e) {
             errorCodes.mark(res, 'STS-API-0021');
@@ -8410,7 +8831,7 @@ class AdminApi {
           { action: 'revoke-certificate', operationId: 'revokePkiCertificate' },
 
           { action: 'release-hold', operationId: 'releasePkiCertificateHold' }
-        ] },
+        ] }),
 
       { method: 'GET', path: BASE + '/scim/monitor', tag: 'SCIM',
         operationId: 'getScimMonitor',
@@ -8454,7 +8875,8 @@ class AdminApi {
           log.debug("Leaving the management API signals endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/signals/:action', tag: 'Shared Signals',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/signals/:action', tag: 'Shared Signals',
         mirrors: 'POST /admin/signals',
         handler: function (req, res) {
           log.debug("Entering the management API signals action endpoint.");
@@ -8468,7 +8890,7 @@ class AdminApi {
         },
         actions: [
           { action: 'clear', operationId: 'clearSignalsInbox' }
-        ] },
+        ] }),
 
       // -----------------------------------------------------------------------
       // THE CLIENT-CERTIFICATE TRUSTSTORE (2026-09-12).
@@ -8507,7 +8929,8 @@ class AdminApi {
           log.debug("Leaving the management API truststore endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/tls/trust/:action', tag: 'TLS',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/tls/trust/:action', tag: 'TLS',
         mirrors: 'POST /admin/tls/trust',
         handler: function (req, res) {
           log.debug("Entering the management API truststore action endpoint.");
@@ -8525,7 +8948,7 @@ class AdminApi {
           { action: 'add', operationId: 'addTrustAnchors' },
 
           { action: 'remove', operationId: 'removeTrustAnchor' }
-        ] },
+        ] }),
 
       // -----------------------------------------------------------------------
       // MONITORING → TLS CONNECTION (#597, rcbj's decision 3 on #591): what
@@ -8605,7 +9028,8 @@ class AdminApi {
           log.debug("Leaving the management API Kerberos principals endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/kerberos/principals/:action',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/kerberos/principals/:action',
         tag: 'Kerberos',
         mirrors: 'POST /admin/kerberos#kerberos-tab-principals, POST ' +
                  '/admin/kerberos/principals',
@@ -8670,7 +9094,7 @@ class AdminApi {
 
           { action: 'rotate-krbtgt-invalidate',
             operationId: 'rotateKerberosKrbtgtInvalidate' }
-        ] },
+        ] }),
 
       // -----------------------------------------------------------------------
       // THE KERBEROS TRUSTS (#430 Phase 4, 2026-10-20).
@@ -8711,7 +9135,8 @@ class AdminApi {
           log.debug("Leaving the management API Kerberos trusts endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/kerberos/trusts/:action',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/kerberos/trusts/:action',
         tag: 'Kerberos',
         mirrors: 'POST /admin/kerberos#kerberos-tab-trusts, POST ' +
                  '/admin/kerberos/trusts',
@@ -8755,7 +9180,7 @@ class AdminApi {
           { action: 'rotate-key', operationId: 'rotateKerberosTrustKey' },
           { action: 'remove', operationId: 'removeKerberosTrust' },
           { action: 'pair', operationId: 'pairKerberosTrust' }
-        ] },
+        ] }),
 
       { method: 'GET', path: BASE + '/audit/integrity', tag: 'Audit log',
         operationId: 'getAuditIntegrity',
@@ -8808,7 +9233,8 @@ class AdminApi {
             schema: { type: 'string' },
             description: 'The FRONT of an error code: a whole code is one ' +
                          'failure condition and `STS-OAUTH` every failure in ' +
-                         'that subsystem. docs/error-codes.md lists them. ' +
+                         'that subsystem. docs/v1.1.0/error-codes.md lists ' +
+                         'them. ' +
                          'Every refused or failed request ' +
                          'carries a code; no code is ' +
                          'ever sent to the client that made the request.' },
@@ -8952,10 +9378,8 @@ class AdminApi {
         handler: function (req, res) {
           log.debug("Entering the management API delegation map endpoint.");
           if (String((req.query || {}).format || '') === 'svg') {
-            const bare = adminViews.delegationMapModel(req.query,
-                                                       { links: false });
-            res.status(200).set('Cache-Control', 'no-store')
-               .type('image/svg+xml').send(bare.svg);
+            self.sendPicture(req, res, adminViews.delegationMapModel(
+              req.query, { links: false }));
             log.debug("Leaving the management API delegation map endpoint. " +
                       "Answered SVG.");
             return;
@@ -8989,10 +9413,8 @@ class AdminApi {
         handler: function (req, res) {
           log.debug("Entering the management API federation map endpoint.");
           if (String((req.query || {}).format || '') === 'svg') {
-            const bare = adminViews.federationMapModel(req.query,
-                                                       { links: false });
-            res.status(200).set('Cache-Control', 'no-store')
-               .type('image/svg+xml').send(bare.svg);
+            self.sendPicture(req, res, adminViews.federationMapModel(
+              req.query, { links: false }));
             log.debug("Leaving the management API federation map endpoint. " +
                       "Answered SVG.");
             return;
@@ -9021,10 +9443,8 @@ class AdminApi {
           log.debug("Entering the management API delegation cluster " +
                     "endpoint.");
           if (String((req.query || {}).format || '') === 'svg') {
-            const bare = adminViews.delegationClusterModel(req.query,
-                                                           { links: false });
-            res.status(200).set('Cache-Control', 'no-store')
-               .type('image/svg+xml').send(bare.svg);
+            self.sendPicture(req, res, adminViews.delegationClusterModel(
+              req.query, { links: false }));
             log.debug("Leaving the management API delegation cluster " +
                       "endpoint. Answered SVG.");
             return;
@@ -9053,10 +9473,8 @@ class AdminApi {
           log.debug("Entering the management API allowed delegation " +
                     "endpoint.");
           if (String((req.query || {}).format || '') === 'svg') {
-            const bare = adminViews.delegationAllowedModel(req.query,
-                                                           { links: false });
-            res.status(200).set('Cache-Control', 'no-store')
-               .type('image/svg+xml').send(bare.svg);
+            self.sendPicture(req, res, adminViews.delegationAllowedModel(
+              req.query, { links: false }));
             log.debug("Leaving the management API allowed delegation " +
                       "endpoint. Answered SVG.");
             return;
@@ -9112,10 +9530,8 @@ class AdminApi {
         handler: function (req, res) {
           log.debug("Entering the management API delegation user endpoint.");
           if (String((req.query || {}).format || '') === 'svg') {
-            const bare = adminViews.delegationUserModel(req.query,
-                                                        { links: false });
-            res.status(200).set('Cache-Control', 'no-store')
-               .type('image/svg+xml').send(bare.svg);
+            self.sendPicture(req, res, adminViews.delegationUserModel(
+              req.query, { links: false }));
             log.debug("Leaving the management API delegation user " +
                       "endpoint. Answered SVG.");
             return;
@@ -9147,10 +9563,9 @@ class AdminApi {
           log.debug("Entering the management API delegation application " +
                     "endpoint.");
           if (String((req.query || {}).format || '') === 'svg') {
-            const bare = adminViews.delegationApplicationModel(req.query,
-              { links: false });
-            res.status(200).set('Cache-Control', 'no-store')
-               .type('image/svg+xml').send(bare.svg);
+            self.sendPicture(req, res,
+              adminViews.delegationApplicationModel(req.query,
+                                                    { links: false }));
             log.debug("Leaving the management API delegation application " +
                       "endpoint. Answered SVG.");
             return;
@@ -9181,10 +9596,8 @@ class AdminApi {
         handler: function (req, res) {
           log.debug("Entering the management API delegation chain endpoint.");
           if (String((req.query || {}).format || '') === 'svg') {
-            const bare = adminViews.delegationChainModel(req.query,
-                                                         { links: false });
-            res.status(200).set('Cache-Control', 'no-store')
-               .type('image/svg+xml').send(bare.svg);
+            self.sendPicture(req, res, adminViews.delegationChainModel(
+              req.query, { links: false }));
             log.debug("Leaving the management API delegation chain " +
                       "endpoint. Answered SVG.");
             return;
@@ -9335,13 +9748,14 @@ class AdminApi {
           log.debug("Leaving the management API permission groups endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/permissions/:action', tag: 'Delegation',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/permissions/:action', tag: 'Delegation',
         mirrors: 'POST /admin/delegation-settings',
         handler: function (req, res) {
           log.debug("Entering the management API permissions action endpoint.");
           const body = parseBody(req);
           const result = adminActions.permissionsAction(self.withAction(req,
-              body));
+              body), { via: 'api', actor: self.callerNameOf(res) });
           if (!result.ok) {
             errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0058');
           }
@@ -9358,7 +9772,7 @@ class AdminApi {
           { action: 'grant-permission', operationId: 'grantPermission' },
 
           { action: 'revoke-permission', operationId: 'revokePermission' }
-        ] },
+        ] }),
 
       // -----------------------------------------------------------------------
       // CONSENT — the THIRD register in this family and the first whose rows
@@ -9493,7 +9907,8 @@ class AdminApi {
           log.debug("Leaving the management API role preview endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/roles/:action', tag: 'Roles',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/roles/:action', tag: 'Roles',
         // A SECOND CONSOLE PATH SINCE #604: the role page's Owners tab posts
         // to /admin/roles/owners, so its Find and Add are told apart from
         // the page's other forms; its Add and Remove reach `add-owner` and
@@ -9503,7 +9918,7 @@ class AdminApi {
           log.debug("Entering the management API roles action endpoint.");
           const body = parseBody(req);
           const result = adminActions.rolesAction(self.withAction(req, body),
-                                                  { via: 'api' });
+            { via: 'api', actor: self.callerNameOf(res) });
           if (!result.ok) {
             errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0059');
           }
@@ -9535,7 +9950,7 @@ class AdminApi {
           // moment Add or Remove is pressed.
           { action: 'add-owner', operationId: 'addRoleOwner' },
           { action: 'remove-owner', operationId: 'removeRoleOwner' }
-        ] },
+        ] }),
 
       // -----------------------------------------------------------------------
       // OWNERSHIP (#607): what an OWNER may administer through this API, and
@@ -9571,7 +9986,8 @@ class AdminApi {
           log.debug("Leaving the management API ownership endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/ownership/:action', tag: 'Ownership',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/ownership/:action', tag: 'Ownership',
         // THE OWNERS TABS' CHECKBOX: each posts `set-protected` to its own
         // tab's route, which is what resolves the form to this operation.
         mirrors: 'POST /admin/roles/owners, POST /admin/groups/owners, ' +
@@ -9602,7 +10018,7 @@ class AdminApi {
         },
         actions: [
           { action: 'set-protected', operationId: 'setOwnerProtected' }
-        ] },
+        ] }),
 
       // -----------------------------------------------------------------------
       // POLICIES (2026-09-12; every kind since #64). Two operations over
@@ -9663,7 +10079,8 @@ class AdminApi {
           log.debug("Leaving the management API policies endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/policies/:action', tag: 'Policies',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/policies/:action', tag: 'Policies',
         mirrors: 'POST /admin/policies',
         handler: function (req, res) {
           log.debug("Entering the management API policies action endpoint.");
@@ -9700,7 +10117,81 @@ class AdminApi {
           log.debug("Leaving the management API policies action endpoint.");
           return pending;
         },
-        actions: this.policyKindActions() },
+        actions: this.policyKindActions() }),
+
+      // -----------------------------------------------------------------------
+      // POLICY EXPORT AND IMPORT (#1713). Two path segments, so no request
+      // `/policies/:action` answers can reach it, in either order. The answer
+      // is the module's, and a refusal is a 400 with its code, as above. An
+      // import of another realm's export answers 400 with `needsTrust` until
+      // it is posted again with `trustSigner` and the Issuing CA's
+      // fingerprint it was shown: the console's question, as JSON.
+      //
+      // THE READ BESIDE THEM (rule 7, and the read-back
+      // `sts_admin_api_operations` asks of every write's resource): the
+      // export algorithm, this realm's Policy Export Signing CA with the
+      // fingerprint another realm trusts, the paranoid row and the signers
+      // this realm has trusted. Certificates only. The Export and import tab
+      // of /admin/policies draws it (`web_pages.ts` composes it as
+      // `transfer`).
+      // -----------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/policies/transfer', tag: 'Policies',
+        operationId: 'getPolicyTransfer',
+        mirrors: 'GET /admin/policies',
+        handler: function (req, res) {
+          log.debug("Entering the management API policy transfer view.");
+          let view = null;
+          try {
+            view = adminViews.policyTransferJson();
+          } catch (e) {
+            log.debug("Caught in the management API policy transfer view: " +
+                      ((e && e.message) || e));
+            log.error(errorCodes.tag('STS-ADMIN-0936') + 'The policy ' +
+                      'transfer view could not be built: ' +
+                      ((e && e.message) || e));
+            errorCodes.mark(res, 'STS-ADMIN-0936');
+            self.sendJson(res, 500, { ok: false, errors: [
+              'The policy transfer view could not be read.'] });
+            log.debug("Leaving the management API policy transfer view. " +
+                      "Failed.");
+            return;
+          }
+          self.sendJson(res, 200, view);
+          log.debug("Leaving the management API policy transfer view.");
+        } },
+
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/policies/transfer/:action', tag: 'Policies',
+        mirrors: 'POST /admin/policies',
+        handler: function (req, res) {
+          log.debug("Entering the management API policy transfer endpoint.");
+          const body = parseBody(req);
+          const pending = adminActions.policyTransferAction(
+            self.withAction(req, body),
+            { via: 'api', actor: self.callerNameOf(res) })
+            .then(function (result) {
+              log.debug("Entering the policy transfer endpoint's answer.");
+              if (!result.ok) {
+                errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                     'STS-API-0060');
+              }
+              self.sendJson(res, result.ok ? 200 : 400, result);
+              log.debug("Leaving the policy transfer endpoint's answer.");
+            }, function (e) {
+              log.debug("Caught in the management API policy transfer " +
+                        "endpoint: " + ((e && e.message) || e));
+              errorCodes.mark(res, 'STS-API-0060');
+              self.sendJson(res, 500, { ok: false, errors: [
+                'The policy transfer failed.'] });
+            });
+          log.debug("Leaving the management API policy transfer endpoint.");
+          return pending;
+        },
+        actions: [
+          { action: 'export', operationId: 'exportPolicies' },
+          { action: 'inspect', operationId: 'inspectPolicyExport' },
+          { action: 'import', operationId: 'importPolicies' }
+        ] }),
 
       { method: 'GET', path: BASE + '/consent', tag: 'Delegation',
         operationId: 'getConsent',
@@ -9738,12 +10229,14 @@ class AdminApi {
           });
         } },
 
-      { method: 'POST', route: BASE + '/consent/:action', tag: 'Delegation',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/consent/:action', tag: 'Delegation',
         mirrors: 'POST /admin/consent',
         handler: function (req, res) {
           log.debug("Entering the management API consent action endpoint.");
           const body = parseBody(req);
-          const result = adminActions.consentAction(self.withAction(req, body));
+          const result = adminActions.consentAction(self.withAction(req, body),
+            { via: 'api', actor: self.callerNameOf(res) });
           if (!result.ok) {
             errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0061');
           }
@@ -9761,7 +10254,7 @@ class AdminApi {
             operationId: 'revokeApplicationConsent' },
 
           { action: 'forget-user-consent', operationId: 'forgetUserConsent' }
-        ] },
+        ] }),
 
       // -----------------------------------------------------------------------
       // SPIFFE. Three resources, mirroring the three console pages one for one,
@@ -9792,7 +10285,8 @@ class AdminApi {
           log.debug("Leaving the management API SPIFFE endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/spiffe/:action', tag: 'SPIFFE',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/spiffe/:action', tag: 'SPIFFE',
         mirrors: 'POST /admin/spiffe',
         handler: function (req, res) {
           log.debug("Entering the management API SPIFFE action endpoint.");
@@ -9824,7 +10318,7 @@ class AdminApi {
 
           { action: 'federation-remove',
             operationId: 'removeSpiffeFederatedBundle' }
-        ] },
+        ] }),
 
       { method: 'GET', path: BASE + '/spiffe/entries', tag: 'SPIFFE',
         operationId: 'getSpiffeEntries',
@@ -9861,7 +10355,8 @@ class AdminApi {
           log.debug("Leaving the management API SPIFFE entries endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/spiffe/entries/:action', tag: 'SPIFFE',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/spiffe/entries/:action', tag: 'SPIFFE',
         mirrors: 'POST /admin/spiffe/entries',
         handler: function (req, res) {
           log.debug("Entering the management API SPIFFE entries action " +
@@ -9882,7 +10377,7 @@ class AdminApi {
           { action: 'update', operationId: 'updateSpiffeEntry' },
 
           { action: 'delete', operationId: 'deleteSpiffeEntry' }
-        ] },
+        ] }),
 
       // THE SPIFFE BROKER API'S BROKERS (#170): /admin/spiffe/brokers, rule 7.
       { method: 'GET', path: BASE + '/spiffe/brokers', tag: 'SPIFFE',
@@ -9899,7 +10394,7 @@ class AdminApi {
           log.debug("Leaving the management API SPIFFE brokers endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/spiffe/brokers/:action',
+      ApiRows.actions({ method: 'POST', route: BASE + '/spiffe/brokers/:action',
         tag: 'SPIFFE', mirrors: 'POST /admin/spiffe/brokers',
         handler: function (req, res) {
           log.debug("Entering the management API SPIFFE brokers action " +
@@ -9919,7 +10414,7 @@ class AdminApi {
           { action: 'set', operationId: 'setSpiffeBroker' },
 
           { action: 'remove', operationId: 'removeSpiffeBroker' }
-        ] },
+        ] }),
 
       { method: 'GET', path: BASE + '/spiffe/agents', tag: 'SPIFFE',
         operationId: 'getSpiffeAgents',
@@ -9945,7 +10440,8 @@ class AdminApi {
           log.debug("Leaving the management API SPIFFE agents endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/spiffe/agents/:action', tag: 'SPIFFE',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/spiffe/agents/:action', tag: 'SPIFFE',
         mirrors: 'POST /admin/spiffe/agents',
         handler: function (req, res) {
           log.debug("Entering the management API SPIFFE agents action " +
@@ -9970,7 +10466,7 @@ class AdminApi {
           { action: 'delete', operationId: 'deleteSpiffeAgent' },
 
           { action: 'join-token', operationId: 'createSpiffeJoinToken' }
-        ] },
+        ] }),
       // CERTIFICATE ENROLLMENT (2026-09-13). Each family's operations are
       // declared beside the family, in a file that registers no route and
       // requires its view model lazily inside each handler — so requiring it
@@ -10083,27 +10579,8 @@ class AdminApi {
         return entry.operationId === id;
       })[0];
     };
-    // What a drawing adds to a delegation answer: the box looks, the SVG,
-    // its size and label, and the page's chooser, key and facts.
-    const DRAWING = ['drawing', 'looks', 'label', 'svg', 'chooser',
-                     'mapKey', 'facts'];
-    const TWINS = [
-      { of: 'getStatus', path: '/console/dashboard',
-        operationId: 'getConsoleDashboard',
-        members: ['base', 'persistence', 'testDouble', 'sections'] },
-      { of: 'getNewApplicationForm', path: '/console/applications/new',
-        operationId: 'getConsoleNewApplicationForm',
-        members: ['fieldGroups', 'familyChoices', 'longTextAttributes',
-                  'persistence', 'resourceMetadataImport'] },
-      { of: 'getDelegationUser', path: '/console/delegation/user',
-        operationId: 'getConsoleDelegationUser',
-        members: DRAWING, drawing: true },
-      { of: 'getDelegationApplication', path: '/console/delegation/application',
-        operationId: 'getConsoleDelegationApplication',
-        members: DRAWING, drawing: true }
-    ];
     const out = routes.slice(0);
-    TWINS.forEach(function (twin) {
+    CONSOLE_TWINS.forEach(function (twin) {
       const entry = byId(twin.of);
       // `proseRoute` (#543): the twin answers the management operation's
       // prose, so a prose source names that operation alone.
@@ -10150,7 +10627,8 @@ class AdminApi {
         actions: moved, consoleActions: undefined,
         proseRoute: entry.route || entry.path }));
     });
-    out.push(
+    // Typed by the model like the table's own rows (#1579).
+    const consoleOwn: AdminRow[] = [
       { method: 'GET', path: BASE + '/console/operations', kind: 'console',
         tag: 'Service', operationId: 'getConsoleOperations',
         mirrors: 'GET /admin',
@@ -10165,12 +10643,15 @@ class AdminApi {
         mirrors: 'GET /admin/sts-metadata',
         handler: function (req, res) {
           log.debug("Entering the console OpenAPI document endpoint.");
+          // Compressed, as the management document is, and for its reason.
+          ShellDocument.compressDocument(req, res);
           self.sendJson(res, 200,
                         spec.buildSpec(self.routesOfKind('console'),
                                        Object.assign(self.specOptions(req),
                                                      { console: true })));
           log.debug("Leaving the console OpenAPI document endpoint.");
-        } });
+        } }];
+    out.push(...consoleOwn);
     // RULE 7 FOR A PAGE WHOSE OWN OPERATION MOVED (#454). A page with no
     // form still needs a management GET; for a drawing, that is the
     // operation its data comes from, and the row says so — `drawnOn` is
@@ -10182,7 +10663,11 @@ class AdminApi {
                        '/admin/delegation-settings'],
       getPermissionGroups: ['/admin/delegation/cluster'],
       getFederationRelationships: ['/admin/federation/map'],
-      getOpenApi: ['/admin/api-explorer']
+      getOpenApi: ['/admin/api-explorer'],
+      // The remote PEPs' monitor (#1760) draws GET /admin-api/xacml/peps,
+      // which `mirrors` names in a sentence of four pages; the index reads
+      // one page per `mirrors`, so the drawing is named here as well.
+      getXacmlPeps: ['/admin/xacml/pep/monitor']
     };
     Object.keys(DRAWN_ON).forEach(function (id) {
       byId(id).drawnOn = DRAWN_ON[id].slice(0);
@@ -10628,6 +11113,24 @@ class AdminApi {
                                      path === BASE + DEVICE_COMPLIANCE_PATH);
   }
 
+  // Whether this request is a remote PEP pushing its decision records
+  // (#1827), `POST /admin-api/pep-audit` — the MDM feed's shape.
+  /**
+   * Says whether the request is a remote PEP's decision-record push, `POST
+   * /admin-api/pep-audit`.
+   *
+   * @param req - the request
+   * @returns whether it is
+   */
+  isPepAuditFeed(req) {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.isPepAuditFeed().");
+    const path = String(req.path || '').replace(/\/+$/, '');
+    log.debug("Leaving AdminApi.isPepAuditFeed().");
+    return req.method === 'POST' && (path === PEP_AUDIT_PATH ||
+                                     path === BASE + PEP_AUDIT_PATH);
+  }
+
   // ---------------------------------------------------------------------------
   // THE OBJECT AN OWNER WOULD ADMINISTER (#607): the row of OWNER_OPERATIONS
   // the request is, the object it names, the action, and — for an
@@ -10852,8 +11355,10 @@ class AdminApi {
     const clientId = String(claims.client_id || '');
     // The device compliance feed's scope (#164) is held to the same rule,
     // and an owner's two (#607).
+    // And a remote PEP's (#1827).
     const held = scopePolicy.ADMIN_SCOPES
-      .concat([scopePolicy.DEVICE_COMPLIANCE_SCOPE])
+      .concat([scopePolicy.DEVICE_COMPLIANCE_SCOPE,
+               scopePolicy.PEP_AUDIT_SCOPE])
       .concat(scopePolicy.OWNER_SCOPES);
     const undeclared = realms.run(realms.get(tokenRealm), function () {
       return scopes.filter(function (one) {
@@ -11015,12 +11520,17 @@ class AdminApi {
    * @param res - the response, whose locals the gate wrote
    * @returns `{ username, sub }`, or null where the caller is no person
    */
-  callerPersonOf(res): { username: string; sub: string } | null {
+  callerPersonOf(res): { username: string; sub: string;
+                         realm: string } | null {
     const { log } = this.deps;
     log.debug("Entering AdminApi.callerPersonOf().");
     const caller = res && res.locals && res.locals.apiCaller;
+    // `realm` (2026-11-16): the realm that issued the token, which a
+    // person delete compares with the realm it acts in before calling the
+    // entry the caller's own.
     const out = caller && caller.kind === 'person' && caller.name
-      ? { username: String(caller.name), sub: String(caller.sub || '') }
+      ? { username: String(caller.name), sub: String(caller.sub || ''),
+          realm: String(caller.realm || '') }
       : null;
     log.debug("Leaving AdminApi.callerPersonOf(). " +
               (out ? out.username : '(nobody)'));
@@ -11242,51 +11752,6 @@ class AdminApi {
   }
 
   // ---------------------------------------------------------------------------
-  // THE ACTOR IS THE GATE'S ANSWER, NEVER THE CALLER'S (#446, 2026-10-05).
-  //
-  // Eighteen places in `admin-core/admin_actions.ts` read `body.actor` for
-  // the audit row an action writes — the console puts its signed-in user
-  // there — and until #446 this API gave them nothing: an operation's schema
-  // refuses a member it does not define, so those rows named nobody (and the
-  // few operations whose schema is open took whatever a caller sent). The
-  // route wrapper calls this after the body has passed its schema: where the
-  // gate verified a token, a JSON body's `actor` member is SET to that
-  // token's subject, replacing anything there. Every handler reads its own
-  // body with `parseBody(req)`, which parses `req.body` each time, so the
-  // one place that reaches all of them is the text they parse.
-  //
-  // A body that is not JSON, and one the handler owns (a streamed upload),
-  // is left alone: the HTTP row still names the caller. So is every request
-  // with no token, which only development's open API has.
-  // ---------------------------------------------------------------------------
-  /**
-   * Replaces a JSON request body's `actor` member with the subject of the
-   * verified access token, so an action's audit row names who called.
-   *
-   * @param req - the request, whose body text is rewritten
-   * @param res - the response, whose locals the gate wrote
-   */
-  nameActor(req, res): void {
-    const { log, parseBody } = this.deps;
-    log.debug("Entering AdminApi.nameActor().");
-    const name = this.callerNameOf(res);
-    if (!name || req.__adminApiHandlerOwnsBody ||
-        typeof req.body !== 'string' ||
-        !/json/i.test(String(req.headers['content-type'] || ''))) {
-      log.debug("Leaving AdminApi.nameActor(). Nothing to name.");
-      return;
-    }
-    const body = parseBody(req);
-    if (!body || typeof body !== 'object' || Array.isArray(body)) {
-      log.debug("Leaving AdminApi.nameActor(). Not an object.");
-      return;
-    }
-    body.actor = name;
-    req.body = JSON.stringify(body);
-    log.debug("Leaving AdminApi.nameActor(). Named.");
-  }
-
-  // ---------------------------------------------------------------------------
   // WHAT THE OPENAPI DOCUMENT IS BUILT FROM, IN ONE PLACE.
   //
   // `admin_api_spec.ts` is a pure function over the route table and takes every
@@ -11328,6 +11793,78 @@ class AdminApi {
     return options;
   }
 
+  // THE GATE'S ROWS, READ OFF THE LOOP BEFORE THE SYNCHRONOUS CHECKS (#880).
+  //
+  // `endedSessionOf()` reads the token register by jti and then the session,
+  // and the disabled-account and role checks read the person. On a request
+  // worker each of those is a synchronous store read the first time that
+  // caller is seen, and it holds the event loop. The rows are asked here,
+  // together, before those checks run, so the checks find them held. A warm
+  // that fails holds nothing and the checks read as they always did: the
+  // decision is not cached, and a failed warm is not a refusal.
+  //
+  // The directory is required HERE and not at the top. `ldap/ldap_server.js`
+  // registers its routes when it is required, and it is position 21, after
+  // this module at 19. A require at load would put `/admin/ldap` wherever
+  // this module was first loaded. By the time a request reaches this gate
+  // the stack has required it. `authn` is the same kind of require: this
+  // module does not load it at the top, and the session warm is the one
+  // call.
+  /**
+   * Reads the token row, its session and its person off the event loop,
+   * so the gate's synchronous checks find them held (#880).
+   *
+   * @param claims - the verified token claims
+   * @param tokenRealm - the realm that issued the token
+   */
+  async warmGateRows(claims, tokenRealm): Promise<void> {
+    const { log, realms, stats } = this.deps;
+    log.debug("Entering AdminApi.warmGateRows().");
+    const jti = String((claims && claims.jti) || '');
+    const sub = String((claims && claims.sub) || '');
+    const clientId = String((claims && claims.client_id) || '');
+    const person = sub && sub !== clientId ? sub : '';
+    const ambient = realms.currentId();
+    try {
+      await realms.run(realms.get(tokenRealm), async function () {
+        if (jti) {
+          await stats.warmTokens([jti]);
+        }
+        const sid = jti ? String(stats.sessionIdOfJti(jti) || '') : '';
+        if (sid) {
+          const authn = require('../authn/authn');
+          await authn.warmSessionAsync(sid);
+        }
+        const ldap = require('../ldap/ldap_server');
+        if (person) {
+          await ldap.warmSubjectsAsync([person]);
+        }
+        // The roster reads the bootstrap administrator by username, and
+        // the owner check lists service accounts. Neither is the token's
+        // subject, and both are synchronous store reads once that subject
+        // is held (#880).
+        const bootstrap = require('../common/bootstrap_name');
+        const bootName = String(bootstrap.current() || '');
+        if (bootName) {
+          await ldap.warmUserNamesAsync([bootName]);
+        }
+        await ldap.serviceAccountNamesAsync();
+      });
+      // `isDisabled()` runs in the request's realm, which is not always the
+      // realm that issued the token. The person is warmed there too.
+      if (person && ambient !== tokenRealm) {
+        const ldap = require('../ldap/ldap_server');
+        await ldap.warmSubjectsAsync([person]);
+      }
+    } catch (e) {
+      log.debug("Caught in AdminApi.warmGateRows(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving AdminApi.warmGateRows(). The warm failed.");
+      throw e;
+    }
+    log.debug("Leaving AdminApi.warmGateRows().");
+  }
+
   // THE GATE, registered where it always was: the exported
   // `registerRoutes(app)` calls this first, and `common/protocol_stack.ts`
   // calls that at the point the gate used to be registered, so the route
@@ -11363,6 +11900,12 @@ class AdminApi {
         // the MDM feed takes `device:compliance` and its role, and nothing
         // else here takes that scope — see DevicesAdmin.mdmFeed().
         const mdmFeed = self.isDeviceComplianceFeed(req);
+        // AND THE SECOND (#1827): a remote PEP pushing the records of what
+        // it decided takes `xacml:pep-audit` and REMOTE_PEPS, the built-in
+        // role of the remote PEPs' group — rcbj: "Tie access to the built in
+        // group of remote PEPs" — and nothing else here takes that scope.
+        // See `xacml/pep_audit.ts`.
+        const pepFeed = self.isPepAuditFeed(req);
         // THE CONSOLE'S OWN OPERATIONS (#454) take `admin:console`, the
         // permission of the ADMIN_CONSOLE role the console's client confers
         // on everybody who signs in through it — see withConsoleRoutes().
@@ -11371,9 +11914,10 @@ class AdminApi {
         // permission of SECURITY_ADMIN, INSTEAD of `admin:write`: a Security
         // Administrator need not hold Admin Write, and Admin Write alone may
         // not make it — see `common/security_operations.ts`.
-        const securityChange = mdmFeed || consoleOp ? null
+        const securityChange = mdmFeed || pepFeed || consoleOp ? null
           : self.securityChangeOf(req);
         const scopesWanted = mdmFeed ? 'device:compliance'
+          : pepFeed ? 'xacml:pep-audit'
           : (consoleOp ? 'admin:console'
             : (securityChange ? 'admin:security'
               : (req.method === 'GET' ? 'admin:read' : 'admin:write')));
@@ -11383,18 +11927,25 @@ class AdminApi {
           // The scope to ask for: the feed's or the console's own (#454)
           // where the operation is one of theirs, both admin scopes
           // otherwise.
-          const hint = mdmFeed || consoleOp || securityChange ? scopesWanted
-                                            : 'admin:read admin:write';
+          const hint = mdmFeed || pepFeed || consoleOp || securityChange
+            ? scopesWanted : 'admin:read admin:write';
           res.set('WWW-Authenticate',
                   'Bearer realm="' + BASE + '", scope="' + hint + '"');
           errorCodes.mark(res, 'STS-API-0001');
           return self.sendJson(res, 401, { error: 'unauthorized', errors: [
             'This API requires an OAuth 2.0 access token. Ask ' +
-            '/oauth2/token for one with `grant_type=client_credentials`, ' +
+            '/oauth2/token for one with `grant_type=' + (pepFeed
+              // A remote PEP's own RFC 7523 self-assertion (#1827).
+              ? 'urn:ietf:params:oauth:grant-type:jwt-bearer` (an ' +
+                'assertion the PEP signs about itself), `client_id=' +
+                'sts-remote-pep`, with a DPoP proof (RFC 9449) signed by ' +
+                'the same key, '
+              : 'client_credentials`, ') +
             '`scope=' + hint +
             '` and `resource=' +
             self.wantedAudience(req) +
-            '`, then send it as `Authorization: Bearer`. ' +
+            '`, then send it as `Authorization: ' +
+            (pepFeed ? 'DPoP` with a fresh proof' : 'Bearer`') + '. ' +
             'adminApi.authRequired turns this off.'] });
         }
         // ---------------------------------------------------------------------
@@ -11543,6 +12094,18 @@ class AdminApi {
             'That access token expired at ' +
             new Date(Number(claims.exp) * 1000).toISOString() + '.'] });
         }
+        // THE ROWS THE CHECKS BELOW READ, ASKED OFF THE LOOP FIRST (#880).
+        // The token register, the session and the person are warmed, and
+        // the checks stay the synchronous ones they are. A failed warm
+        // falls through to the same checks. No Entering/Leaving pair on
+        // this continuation: it is this middleware's own remainder, and a
+        // Leaving line before each of its returns would be the change.
+        // It does not call `next()` itself: it marks `admitted`, and
+        // `runAdmit()` calls `next()` once the checks are over, OUTSIDE the
+        // window in which a remembered username may be read (#880's
+        // review), because a handler it admits may create a person.
+        const admitted = { yes: false };
+        const admit = function () {
         // A TOKEN THIS SERVICE HAS SINCE REVOKED OR DISOWNED, AND ONE MADE FOR
         // A PERSON WHOSE ACCOUNT IS DISABLED (2026-09-17, #36 follow-up). This
         // gate checked neither, so an administrator's token went on working
@@ -11658,7 +12221,6 @@ class AdminApi {
         // scopes still decide what a bound token may do — this decides only
         // whether it is a credential here at all. In every mode: the client
         // asked for it.
-        // ---------------------------------------------------------------------
         if (!mtls.boundThumbprintOf(claims)) {
           const holder = String(claims.client_id || '');
           const declaration = holder
@@ -11743,8 +12305,21 @@ class AdminApi {
             return senderConstraints.dpopBoundPublicClient(
               issuedTo, entry.token_endpoint_auth_method);
           });
+        // `oauth2.accessTokenRequireDpop` IS THE ISSUING REALM'S (#28, rcbj,
+        // 2026-11-15). A realm's switch is about the tokens that realm's own
+        // clients hold; asked in the ambient realm it also refused the
+        // service-wide API client's bearer token — the default realm's
+        // `sts-api-client`, which operators and automation use at every
+        // realm's `/admin-api` — the moment a realm turned it on. So it is
+        // read in `tokenRealm`, the realm that issued the token: a realm's
+        // own client meets the realm's rule, the service-wide client the
+        // default realm's.
+        const dpopRequired = realms.run(realms.get(tokenRealm), function () {
+          return senderConstraints.accessTokenDpopRequired();
+        });
         const required = senderConstraints.accessTokenRefusal({
           where: 'the management API',
+          dpopRequired: dpopRequired,
           clientBound: clientBound,
           boundJkt: boundJkt,
           proofOk: proofOk,
@@ -11759,8 +12334,7 @@ class AdminApi {
         if (required) {
           errorCodes.mark(res, required.errorCode);
           res.set('WWW-Authenticate',
-                  (senderConstraints.accessTokenDpopRequired() ? 'DPoP' :
-                   'Bearer') +
+                  (dpopRequired ? 'DPoP' : 'Bearer') +
                   ' error="' + required.error + '", scope="' + scopesWanted +
                   '"');
           // error-code: none — marked above with the refusal's own code, one of
@@ -11805,7 +12379,8 @@ class AdminApi {
         const ownerScope = req.method === 'GET' ? 'owner:read' : 'owner:write';
         // Never for a security change (#645): naming a policy on an object
         // you own is still naming a policy.
-        const ownerPath = !mdmFeed && !consoleOp && !securityChange &&
+        const ownerPath = !mdmFeed && !pepFeed && !consoleOp &&
+          !securityChange &&
           carried.indexOf(scopesWanted) < 0 &&
           carried.indexOf(ownerScope) >= 0;
         const owned = ownerPath ? self.ownedOperationOf(req) : null;
@@ -11836,6 +12411,11 @@ class AdminApi {
             'holds the scope it uses. ' + (mdmFeed
               ? 'Declare device:compliance on the MDM feed\'s ' +
                 'application\'s oauthAllowedScope.'
+              : pepFeed
+              ? 'A remote PEP\'s token is issued through sts-remote-pep, ' +
+                'which holds a delegated permission grant of ' +
+                'urn:sts:admin-api:xacml:pep-audit; give the client that ' +
+                'grant back (POST /admin-api/permissions/grant-permission).'
               : 'An admin or owner scope is held by a delegated permission ' +
                 'grant on sts-management-api (#1141): give the client a ' +
                 'delegated permission grant of ' +
@@ -11859,6 +12439,10 @@ class AdminApi {
               ? 'An owner\'s scope is authorized by owning something in ' +
                 'the realm that issued the token: be named an owner of a ' +
                 'role, group, service account or application there'
+              : neededScope === 'xacml:pep-audit'
+              // #1827: the remote PEPs' group, not a configured role.
+              ? 'Put the PEP\'s entry in the group roles.remotePepGroup ' +
+                'names (POST /admin-api/groups/add-member)'
               : effective.subject.kind !== 'application' &&
              neededScope !== 'device:compliance'
               ? 'Grant the console role on /admin/rbac (or POST ' +
@@ -11895,6 +12479,38 @@ class AdminApi {
             (scopes.length ? scopes.join(', ') : '(no scope)') + '. A ' +
             'Security Administrator grants the role on /admin/rbac (POST ' +
             BASE + '/rbac/grant with role=security).'] });
+        }
+        // ---------------------------------------------------------------------
+        // A REMOTE PEP'S PUSH, AND ONLY THAT (#1827), refused HERE as well as
+        // by the policy, for the security change's reason above: with
+        // `xacml.enforceAccess` off the policy allows everything. The push
+        // needs a token carrying `xacml:pep-audit` whose subject holds
+        // REMOTE_PEPS now (held ∩ carried); and that scope reaches nothing
+        // but the push, so a PEP's token is never an administrator's.
+        // ---------------------------------------------------------------------
+        const pepToken = carried.indexOf('xacml:pep-audit') >= 0;
+        if ((pepFeed && (scopes.indexOf('xacml:pep-audit') < 0 ||
+                         effective.roles.indexOf('REMOTE_PEPS') < 0)) ||
+            (!pepFeed && pepToken && carried.indexOf(scopesWanted) < 0 &&
+             !ownerPath)) {
+          log.info('admin-api: refusing ' + req.method + ' ' +
+                   (req.originalUrl || req.url) + ' for ' + who + ': ' +
+                   (pepFeed ? 'a remote PEP\'s push without xacml:pep-audit ' +
+                              'and REMOTE_PEPS'
+                            : 'a remote PEP\'s token at another operation') +
+                   '.');
+          errorCodes.mark(res, 'STS-API-0147');
+          return self.sendJson(res, 403, { error: 'forbidden', errors: [
+            pepFeed
+              ? 'A remote PEP pushes its decision records here on a token ' +
+                'carrying xacml:pep-audit whose subject — the PEP\'s own ' +
+                'entry — is in the group roles.remotePepGroup names ' +
+                '(REMOTE_PEPS). This token carries ' +
+                (carried.length ? carried.join(', ') : '(no scope)') + '.'
+              : 'xacml:pep-audit reaches POST ' + BASE + PEP_AUDIT_PATH +
+                ' and no other operation: it is a remote PEP\'s, and this ' +
+                'token carries nothing else this operation takes (' +
+                scopesWanted + ').'] });
         }
         if (tokenRealm !== realms.DEFAULT_ID) {
           const realmRefusal = self.realmTokenRefusal(claims, req);
@@ -11944,6 +12560,7 @@ class AdminApi {
         const frameOnly = path === '/console' ||
           path === '/console/operations' || path === '/console/language';
         const requiredRoles = mdmFeed ? ['DEVICE_COMPLIANCE']
+          : pepFeed ? ['REMOTE_PEPS']
           : (consoleOp ? ['ADMIN_CONSOLE']
             : (path === '/me' ? ['ADMIN_READ', 'ADMIN_CONSOLE']
               : (securityChange ? ['SECURITY_ADMIN']
@@ -12010,6 +12627,8 @@ class AdminApi {
             'role(s) ' + (held.length ? held.join(', ') : '(none)') + '. ' +
             (mdmFeed ? 'The device compliance feed needs device:compliance ' +
                        '(DEVICE_COMPLIANCE), and only that'
+              : pepFeed ? 'A remote PEP\'s decision records need ' +
+                          'xacml:pep-audit (REMOTE_PEPS), and only that'
               : (consoleOp
                 ? 'A console operation needs admin:console (ADMIN_CONSOLE)' +
                   (requiredAllRoles.length ? ' and ' +
@@ -12069,7 +12688,39 @@ class AdminApi {
           res.locals.ownerProjection = owned.project;
         }
         res.locals.apiCaller.owner = !!owned;
-        return next();
+        admitted.yes = true;
+        return undefined;
+        };
+        // No Entering/Leaving pair: this only guards the continuation
+        // above. The middleware has returned by the time it runs, so a
+        // throw in the remainder is not Express's to catch. Hand it to
+        // next, which is what a throw in the middleware used to become.
+        // The checks run inside `withRememberedUserNames()`, the one place
+        // the username answers `warmGateRows()` asked for are read, and
+        // `next()` runs after it.
+        const runAdmit = function () {
+          try {
+            const ldap = require('../ldap/ldap_server');
+            if (ldap && typeof ldap.withRememberedUserNames === 'function') {
+              ldap.withRememberedUserNames(admit);
+            } else {
+              admit();
+            }
+            if (admitted.yes) {
+              next();
+            }
+          } catch (err) {
+            log.debug("Caught in AdminApi.registerGate(): " +
+                      ((err && err.message) || err));
+            next(err);
+          }
+        };
+        self.warmGateRows(claims, tokenRealm).then(runAdmit, function (e) {
+          log.debug("Caught in AdminApi.registerGate(): " +
+                    ((e && e.message) || e));
+          runAdmit();
+        });
+        return;
       }
       // ---------------------------------------------------------------------
       // THE SETTING IS OFF, WHICH ONLY DEVELOPMENT MODE CAN BE (#446,
@@ -12260,10 +12911,10 @@ class AdminApi {
           self.sendJson(res, 400, { ok: false, errors: checked.errors });
           return undefined;
         }
-        // AFTER the schema, so a caller's own `actor` is judged by the
-        // operation's schema as it always was — refused, wherever the schema
-        // is closed — and what the actions read is the gate's answer (#446).
-        self.nameActor(req, res);
+        // WHO IS ACTING is not put into the body: each handler hands its
+        // action `callerNameOf(res)` in the action's context (rcbj on #1579,
+        // 2026-11-11), and a caller's own `actor` is refused by the closed
+        // schema above like any member the model does not declare.
         return entry.handler(req, res);
       });
     });
@@ -12333,6 +12984,8 @@ const BASE = '/admin-api';
 // The device compliance feed's path below BASE (#164 phase 3): the one
 // operation whose token carries device:compliance rather than an admin scope.
 const DEVICE_COMPLIANCE_PATH = '/device-compliance';
+// A remote PEP's decision records (#1827).
+const PEP_AUDIT_PATH = '/pep-audit';
 // ---------------------------------------------------------------------------
 // THE OPERATIONS AN OWNER MAY ASK (#607), below BASE: one object of the four
 // kinds a person may own, read or changed. `ownedOperationOf()` reads a
@@ -12534,7 +13187,8 @@ const JWT_CLAIM_FAMILY = {
   ids: { add: 'addClaim', addAttribute: 'addAttributeClaim',
          remove: 'removeClaim', clear: 'clearClaims',
          replace: 'replaceClaims', attributes: 'setClaimAttributes',
-         all: 'selectAllClaimAttributes', none: 'clearClaimAttributes' }
+         all: 'selectAllClaimAttributes',
+         none: 'clearClaimAttributes' } as const
 };
 
 // The third family, and the one that made the two above it a PATTERN rather
@@ -12563,7 +13217,7 @@ const USERINFO_CLAIM_FAMILY = {
          clear: 'clearUserInfoClaims', replace: 'replaceUserInfoClaims',
          attributes: 'setUserInfoClaimAttributes',
          all: 'selectAllUserInfoClaimAttributes',
-         none: 'clearUserInfoClaimAttributes' }
+         none: 'clearUserInfoClaimAttributes' } as const
 };
 
 const SAML_CLAIM_FAMILY = {
@@ -12581,7 +13235,7 @@ const SAML_CLAIM_FAMILY = {
          clear: 'clearSamlAttributes', replace: 'replaceSamlAttributes',
          attributes: 'setSamlDirectoryAttributes',
          all: 'selectAllSamlDirectoryAttributes',
-         none: 'clearSamlDirectoryAttributes' }
+         none: 'clearSamlDirectoryAttributes' } as const
 };
 
 // The sixth family (#493): the Kerberos PAC set. `attributeTypes` is the
@@ -12604,7 +13258,7 @@ const KERBEROS_CLAIM_FAMILY = {
          replace: 'replaceKerberosPacClaims',
          attributes: 'setKerberosPacClaimAttributes',
          all: 'selectAllKerberosPacClaimAttributes',
-         none: 'clearKerberosPacClaimAttributes' }
+         none: 'clearKerberosPacClaimAttributes' } as const
 };
 
 // Filled by `AdminApi.wire()` (#50, R2), in this order, with the request

@@ -4,9 +4,10 @@
 # tests/docker-compose-run-tests-fuzz.yml — THE `fuzz` MODE'S LAYER (#1299).
 #
 # Layered over docker-compose-run-tests.yml (run-tests.sh, FUZZ_COMPOSE_FILE)
-# ONLY in the `fuzz` mode, which runs only when named
-# (`--modes=fuzz --only=schemathesis`). It makes the stack's one network
-# INTERNAL: no gateway, no route off the host. Schemathesis throws any input
+# ONLY in the `fuzz` mode, in a bare run since 2026-11-14 (last), which runs
+# only its own jobs (tests/tools/modes.sh, stsModeJobFilter()). It makes the
+# stack's one network INTERNAL: no gateway, no route off the host.
+# Schemathesis throws any input
 # at the service, URL-shaped values among them; with the network internal,
 # even a dial the service were tricked into making fails at the network layer,
 # so the run stays on this device. Every container the stack needs — postgres,

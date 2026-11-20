@@ -21,6 +21,8 @@
 // lazy one keeps the order a non-question.
 // ---------------------------------------------------------------------------
 
+// Types a row of actions by its own actions' operations (#1579).
+import ApiRows = require('../common/api_rows');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
@@ -97,7 +99,12 @@ class GrantManagementApi {
    * @param status - the HTTP status
    * @param body - the body, serialised with indentation
    */
-  sendJson(res: Res, status: number, body: Json): void {
+  // TYPED BY THE OPERATION (#1579): through a handler's response, the
+  // answer is held to the model's at a literal 2xx status
+  // (`types/api-handlers.d.ts`).
+  sendJson<R, S extends number>(res: R, status: S,
+           body: IyaApi.AnswerOf<R, S>): void;
+  sendJson(res: any, status: number, body: any): void {
     const { log } = this.deps;
     log.debug("Entering GrantManagementApi.sendJson(). status=" + status);
     res.status(status).type('application/json')
@@ -163,7 +170,7 @@ class GrantManagementApi {
     const { log, parseBody, errorCodes, loadGrants } = this.deps;
     const self = this;
     log.debug("Entering GrantManagementApi.buildRoutes().");
-    const ROUTES = [
+    const ROUTES: IyaApi.AdminRow[] = [
       { method: 'GET', path: BASE + '/grants', tag: 'OAuth 2.0 / OIDC',
         operationId: 'getGrants',
         mirrors: 'GET /admin/grants',
@@ -184,15 +191,15 @@ class GrantManagementApi {
             schema: { type: 'integer', minimum: 1, examples: [10] },
             description: 'Grants per page, capped.' }
         ],
-        handler: function (req: Req, res: Res): void {
+        handler: function (req, res): void {
           log.debug("Entering the management API grants endpoint.");
           self.sendJson(res, 200, self.grantsView(req.query || {}));
           log.debug("Leaving the management API grants endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/grants/:action',
+      ApiRows.actions({ method: 'POST', route: BASE + '/grants/:action',
         tag: 'OAuth 2.0 / OIDC', mirrors: 'POST /admin/grants',
-        handler: function (req: Req, res: Res): void {
+        handler: function (req, res): void {
           log.debug("Entering the management API grants action.");
           const body = Object.assign({}, parseBody(req),
                                      { action: String(req.params.action ||
@@ -222,7 +229,7 @@ class GrantManagementApi {
         },
         actions: [
           { action: 'revoke-grant', operationId: 'revokeGrant' }
-        ] }
+        ] })
     ];
     log.debug("Leaving GrantManagementApi.buildRoutes().");
     return ROUTES;

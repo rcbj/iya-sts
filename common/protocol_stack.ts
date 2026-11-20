@@ -846,6 +846,10 @@ class ProtocolStack {
                'VcDataModel');
     this.build('oid4vc/vc_ecdsa_sd', require('../oid4vc/vc_ecdsa_sd'),
                'VcEcdsaSd');
+    // #1878: bbs-2023, the W3C BBS cryptosuite, over the selective-
+    // disclosure steps of the library above. The issuer and the verifier
+    // reach it; it registers nothing.
+    this.build('oid4vc/vc_bbs', require('../oid4vc/vc_bbs'), 'VcBbs');
     this.build('oid4vc/vc_data_integrity',
                require('../oid4vc/vc_data_integrity'), 'VcDataIntegrity');
     // #198: VC-JOSE-COSE's envelopes (vc+jwt, vc+sd-jwt, vc+cose and the vp
@@ -875,6 +879,12 @@ class ProtocolStack {
     // The register of credentials issued for a directory entry (#38): a
     // library both the issuer and the verifier read, built before either.
     this.build('oid4vc/vc_issued', require('../oid4vc/vc_issued'), 'VcIssued');
+    // #1862: the mdoc issuing authority and the issuer. Libraries, no
+    // routes. Built before the issuer, which reaches both lazily.
+    this.build('oid4vc/mdoc_authority', require('../oid4vc/mdoc_authority'),
+               'MdocAuthority');
+    this.build('oid4vc/vc_mdoc_issue', require('../oid4vc/vc_mdoc_issue'),
+               'VcMdocIssue');
     require('../oid4vc/vc_issuer');
     this.build('oid4vc/vc_issuer', require('../oid4vc/vc_issuer'), 'VcIssuer');
     this.register(app, require('../oid4vc/vc_issuer'), 'oid4vc/vc_issuer');
@@ -1985,8 +1995,19 @@ class ProtocolStack {
                'XacmlTemplates');
     this.build('xacml/xacml_alfa', require('../xacml/xacml_alfa'),
                'AlfaLanguage');
+    // A remote PEP's listeners (#1760): a library, the definitions'
+    // grammar and the reading of the PEP's report. Before the TLS module,
+    // which issues a defined HTTPS listener's certificate through it.
+    this.build('xacml/xacml_pep_listeners',
+               require('../xacml/xacml_pep_listeners'), 'PepListeners');
     this.build('xacml/xacml_pep_tls', require('../xacml/xacml_pep_tls'),
                'PepTls');
+    this.build('xacml/xacml_pep_proxy', require('../xacml/xacml_pep_proxy'),
+               'PepProxy');
+    // A remote PEP's managed settings (#1760): a library, its table and the
+    // pull's body.
+    this.build('xacml/xacml_pep_settings',
+               require('../xacml/xacml_pep_settings'), 'PepSettings');
     this.build('xacml/xacml_admin', require('../xacml/xacml_admin'),
                'XacmlAdmin');
     this.build('xacml/xacml_role_pep', require('../xacml/xacml_role_pep'),

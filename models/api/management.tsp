@@ -1654,7 +1654,7 @@
 // the per-protocol identifiers multi-valued moved six names from
 // this sentence to that one — and neither sentence noticed, which
 // is the whole argument: a hand-written list of what an operation
-// accepts is a second definition of the EDITABLE table, and it goes
+// accepts is a second definition of the `editable` rows, and it goes
 // wrong silently in the document a caller trusts most.
 // Not `oauthTokenEndpointAuthMethod` since 2026-10-01: it is
 // a list now, written with `add` and `remove`.
@@ -1722,6 +1722,7 @@ using IyaSts.Api.Common;
     },
     #{`name`:"Risk",`description`:""},
     #{`name`:"Devices",`description`:""},
+    #{`name`:"XACML",`description`:""},
     #{
       `name`:"Users",
       `description`:"Who it has authenticated, and what each of them holds."
@@ -1784,7 +1785,6 @@ using IyaSts.Api.Common;
     #{`name`:"SAML 1.1",`description`:""},
     #{`name`:"Authorization servers",`description`:""},
     #{`name`:"Applications",`description`:""},
-    #{`name`:"XACML",`description`:""},
     #{
       `name`:"GNAP",
       `description`:"The Grant Negotiation and Authorization Protocol (RFC 9635) and its resource server connections (RFC 9767): the authorization server of this realm, what the applications using it have done, and the two things an operator does to its state by hand."
@@ -1839,7 +1839,8 @@ using IyaSts.Api.Common;
               `admin:write`:"Change anything this API can change (every other method), except a security change.",
               `admin:security`:"A security change, in place of admin:write: a Directory → Policies policy saved, reset or acted on, a policy named on an application, group or person, the Security Administrator's role granted or revoked, and the account of a person who holds it. Issued only to a subject holding SECURITY_ADMIN.",
               `admin:console`:"The admin console's own operations, under /admin-api/console (#454). Issued only to the console's client, sts-admin-console, through the ADMIN_CONSOLE role it confers.",
-              `device:compliance`:"Report device compliance through POST /admin-api/device-compliance, and nothing else — the scope an MDM or posture feed holds (#164). Issued only to a client that declares it."
+              `device:compliance`:"Report device compliance through POST /admin-api/device-compliance, and nothing else — the scope an MDM or posture feed holds (#164). Issued only to a client that declares it.",
+              `xacml:pep-audit`:"Push a remote PEP's decision records through POST /admin-api/pep-audit, and nothing else. Issued to the PEP's own RFC 7523 self-assertion through sts-remote-pep, only while its entry is in the remote PEPs' group (REMOTE_PEPS)."
             }
           }
         }
@@ -2351,6 +2352,16 @@ namespace IyaSts.Api.Management {
     `authenticationEventsMatched`?: numeric;
     `authenticationEventsKnownActors`?: Record<boolean>;
     `authenticationEventsLog`?: WithHeldRecordedDroppedEtc4;
+    @js(#{`description`:"The authentications that start no sign-on session and issue nothing (a TLS client certificate on a request, an LDAP bind, a SCIM or SPIFFE caller's credential), counted by protocol and method over the rows the Authentications tab lists (what the audit log still holds). Sessions & tokens draws its summary line from it; each one is on the Authentications tab."}) `authenticationsWithoutActivity`?: {
+      `total`?: integer;
+      `methods`?: ({
+        `protocol`?: string;
+        `method`?: string;
+        `count`?: integer;
+      })[];
+    };
+    `authenticationHistory`?: (WithAtProtocolMethodEtc12)[];
+    `authenticationHistoryPaging`?: WithPagePagesPerPageEtc8;
     `page`?: {
       `key`?: string;
       `riskAsked`?: boolean;
@@ -2461,6 +2472,7 @@ namespace IyaSts.Api.Management {
     `signalArrivals`?: (WithRelationshipJtiViaEtc15)[];
     `outboundSignals`?: NullableObject63;
     `encryption`?: NullableObject64;
+    `clientCertificate`?: NullableFederationClientCertificate;
     `links`?: (WithUsernameDnLinkEtc5)[];
     `linksPaging`?: WithPagePagesPerPageEtc8;
     `setFields`?: (WithNameKindRoleEtc9)[];
@@ -2586,7 +2598,8 @@ namespace IyaSts.Api.Management {
       `owners`?: (WithDnKindNameEtc4)[];
       `maxOwners`?: numeric;
       `ownership`?: WithKindNameMarkedEtc5;
-      `krb5Across`?: NullableObject75
+      `krb5Across`?: NullableObject75;
+      @js(#{`description`:"The routes of this realm's remote PEPs that front this application (#1760): which PEP, which route, its path and mechanisms — the reference only."}) `pepRoutes`?: (XacmlPepRouteReference)[]
     }
   }
 
@@ -2653,7 +2666,8 @@ namespace IyaSts.Api.Management {
     `applicationRoles`?: WithHeldOfferableRequiredEtc4;
     `delegatedPermissions`?: WithHeldExposesOfferableEtc5;
     `owners`?: (WithDnKindNameEtc4)[];
-    `maxOwners`?: numeric
+    `maxOwners`?: numeric;
+    @js(#{`description`:"The routes of this realm's remote PEPs that front this application (#1760): the reference only."}) `pepRoutes`?: (XacmlPepRouteReference)[]
   }
 
 @js(#{
@@ -3298,12 +3312,20 @@ namespace IyaSts.Api.Management {
     `syncToken`?: NullableString;
     `staleAfterS`?: numeric;
     `requiresCertificate`?: boolean;
+    `pepAuthentication`?: "certificate" | "token" | "either";
     `notify`?: WithOnAllowedHostsTimeoutMsEtc4;
     `peps`?: (WithNameDnIdentityEtc25)[];
     `elsewhere`?: (WithIdNameCount)[];
     `listenerCertificates`?: WithUseCaseKeyAlgorithmsDefaultKeyAlg;
     `current`?: integer;
     `stale`?: integer;
+    `settingsCatalogue`?: XacmlPepSettingsCatalogue;
+    `listenersCatalogue`?: XacmlPepListenersCatalogue;
+    `applicationChoices`?: (WithIdentifierName)[];
+    `pep`?: string;
+    `found`?: boolean;
+    `route`?: string;
+    `routeDetail`?: XacmlPepRouteDetail;
     `protocolEndpoints`?: (WithNameMethodsUrlEtc7)[]
   }
 
@@ -3660,7 +3682,7 @@ namespace IyaSts.Api.Management {
       `description`:"A `refused` is this service saying no and working; an `error` is this service failing."
     }) `outcome`?: "success" | "refused" | "error";
     @js(#{
-      `description`:"Which failure condition this row is about — `STS-<SUBSYSTEM>-<NNNN>`, listed in docs/error-codes.md — or empty for a row that is not a failure. Every refused or failed request carries one. It is an operator's name for the condition and is never sent to the client whose request produced it."
+      `description`:"Which failure condition this row is about — `STS-<SUBSYSTEM>-<NNNN>`, listed in docs/v1.1.0/error-codes.md — or empty for a row that is not a failure. Every refused or failed request carries one. It is an operator's name for the condition and is never sent to the client whose request produced it."
     }) `errorCode`?: string;
     @js(#{
       `description`:"The NORMALISED local name, so a row here and a row on /admin-api/users name the same person — `alice`, her `urn:uuid:<entryUUID>` subject and `alice@EXAMPLE.COM` are one identity. Empty where nothing named an actor, which an unauthenticated protocol call and an anonymous LDAP bind both are."
@@ -3725,18 +3747,6 @@ namespace IyaSts.Api.Management {
     `settings`?: NullableObject113;
     `verifiesCredentials`?: boolean;
     `persisted`?: boolean
-  }
-
-@js(#{
-    `description`:"A refusal or a failure. The sentence is for a person; no error code is ever in it."
-  }) @component model `RefusalFailure` {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `message`?: string;
-    `why`?: string;
-    `status`?: integer
   }
 
 @js(#{
@@ -3822,7 +3832,7 @@ namespace IyaSts.Api.Management {
 @component union `ValueValue` {ValueValue_h1346}
 
 @js(#{
-    `description`:"Where the effective value came from, highest first: this trust realm's own value; a runtime override set through this API or the console; the setting's own environment variable; a legacy variable (no row has one since #523); the appconfig file CONFIG_FILE names; `env/defaults.js`, the DEFAULT appconfig file that one is unioned on top of. `default` is reachable only for the DERIVED settings, whose value is a function of a neighbouring setting: for every other setting, no value anywhere stops this service from STARTING."
+    `description`:"Where the effective value came from, highest first: this trust realm's own value; a runtime override set through this API or the console; the setting's own environment variable; a legacy variable (no row has one since #523); the appconfig file CONFIG_FILE names; `env/defaults.js`, the DEFAULT appconfig file that one is unioned on top of. `default` is the row's own built-in default, the floor beneath both files: for a DERIVED setting it is a function of a neighbouring setting; for any other it means `env/defaults.js` lacks the setting (an env/ directory older than the image, which the start warns of as STS-CORE-0177). Only a setting with no default and no value anywhere stops this service from STARTING."
   }) @component union `SourceValue` {
     "realm" | "override" | "env" | "env-legacy" | "appconfig" | "defaults" | "default"
   }
@@ -5171,6 +5181,15 @@ namespace IyaSts.Api.Management {
     `removed`?: string
   }
 
+@component model `UserDeleted` {
+    `ok`: boolean;
+    `message`?: string;
+    `errors`?: (string)[];
+    `changed`?: boolean;
+    `username`?: string;
+    `dn`?: string
+  }
+
 @component model `WithOkMessageErrors38` {
     `ok`: boolean;
     `message`?: string;
@@ -5575,11 +5594,6 @@ namespace IyaSts.Api.Management {
     `result`?: `WithOkKeyScope2`
   }
 
-@component model `WithOnlyWhileOnAloneWhileOnKey` {
-    `onlyWhileOn`?: (WithSettingValuesOnEtc4)[];
-    `aloneWhileOn`?: (WithSettingValuesOnEtc4)[]
-  }
-
 @component model `WithKeyGroupLabel` {
     `key`?: string;
     `group`?: string;
@@ -5725,17 +5739,6 @@ namespace IyaSts.Api.Management {
     `owners`?: (WithDnKindNameEtc4)[]
   }
 
-@component model `WithPagePagesPerPage2` {
-    `page`?: integer;
-    `pages`?: integer;
-    `perPage`?: integer;
-    `firstRow`?: integer;
-    `lastRow`?: integer;
-    `total`?: integer;
-    `param`?: NullableString;
-    `noun`?: NullableString
-  }
-
 @component model `WithOkMessageErrors61` {
     `ok`: boolean;
     `message`?: string;
@@ -5866,17 +5869,6 @@ namespace IyaSts.Api.Management {
     `note`?: string;
     `chainKey`?: string
   }
-
-@component model `WithKindCountIdentifiers` {
-    `kind`?: string;
-    `count`?: integer;
-    `identifiers`?: (string)[];
-    `moreIdentifiers`?: integer;
-    `notes`?: (string)[]
-  }
-
-@component model `WithOkMessageErrors63` is (`WithKindCountIdentifiers`)[];
-  
 
 @component model `WithOkMessageErrors64` {
     `ok`: boolean;
@@ -6565,6 +6557,7 @@ namespace IyaSts.Api.Management {
       `fedResponseType`:#{`type`:"string"},
       `fedIdTokenSignedResponseAlg`:#{`type`:"string"},
       `fedUserinfoSignedResponseAlg`:#{`type`:"string"},
+      `fedUserinfo`:#{`type`:"string"},
       `fedRefreshTokens`:#{`type`:"string"},
       `fedRefreshEverySeconds`:#{`type`:"string"},
       `fedRegister`:#{`type`:"string"},
@@ -6573,6 +6566,7 @@ namespace IyaSts.Api.Management {
       `fedRequestObjectSigningAlg`:#{`type`:"string"},
       `fedWebFinger`:#{`type`:"string"},
       `fedDiscovery`:#{`type`:"string"},
+      `fedFapi`:#{`type`:"string"},
       `fedInitiateLogin`:#{`type`:"string"},
       `fedBinding`:#{`type`:"string"},
       `fedSignRequest`:#{`type`:"string"},
@@ -6602,6 +6596,7 @@ namespace IyaSts.Api.Management {
       `fedKeyManagementAlgorithm`:#{`type`:"string"},
       `fedContentEncryptionAlgorithm`:#{`type`:"string"},
       `fedAllowUnencrypted`:#{`type`:"string"},
+      `fedClientCertificate`:#{`type`:"string"},
       `fedAllowUnsolicited`:#{`type`:"string"},
       `fedApplication`:#{`type`:"string"},
       `fedAuthnMechanism`:#{`type`:"string"},
@@ -7068,7 +7063,8 @@ namespace IyaSts.Api.Management {
     `application`?: `ApplicationValue`;
     `changed`?: BooleanOrString2;
     `type`?: string;
-    `definition`?: `JSONOperatorWroteIntoAccess`
+    `definition`?: `JSONOperatorWroteIntoAccess`;
+    @js(#{`description`:"On a refusal of an access type's XACML mapping (`STS-FGA-0023`, `STS-FGA-0019`): the member of the request that was wrong — `path`, `attributeId`, `category`, `dataType`, `multiplicity` or `notForPolicy`."}) `field`?: string
   }
 
 @component model `WithNameKindDn` {
@@ -7313,6 +7309,31 @@ namespace IyaSts.Api.Management {
     `status`?: numeric
   }
 
+@component model `UserLdifExportAnswer` {
+    `ok`: boolean;
+    `message`?: string;
+    `errors`?: (string)[];
+    `username`?: string;
+    `changed`?: boolean;
+    `credentials`?: boolean;
+    `attributes`?: (string)[];
+    `leftOut`?: (string)[];
+    `ldif`?: string;
+    `files`?: (WithNameMimeTextEtc4)[]
+  }
+
+@component model `UserLdifImportAnswer` {
+    `ok`: boolean;
+    `message`?: string;
+    `errors`?: (string)[];
+    `username`?: string;
+    `dn`?: string;
+    `changed`?: boolean;
+    `attributes`?: (string)[];
+    `credentials`?: (string)[];
+    `kerberosKeys`?: boolean
+  }
+
 @component model `WithOkMessageErrors105` {
     `ok`: boolean;
     `message`?: string;
@@ -7466,6 +7487,83 @@ namespace IyaSts.Api.Management {
     `problems`?: NullableArray
   }
 
+@component model `XacmlPepSyncAnswer` {
+    `ok`: boolean;
+    `message`?: string;
+    `errors`?: (string)[];
+    `why`?: string;
+    `what`?: string;
+    `problems`?: NullableArray;
+    @js(#{`description`:"The PEP nudged."}) `pep`?: string;
+    @js(#{`description`:"The remote PEP cluster it is a member of, whose configuration it pulls; null for a standalone PEP."}) `cluster`?: NullableString;
+    @js(#{`description`:"Whether the nudge was delivered."}) `delivered`?: boolean;
+    @js(#{`description`:"The HTTP status the PEP answered the nudge with."}) `status`?: numeric
+  }
+
+@component model `XacmlPepSettingsAnswer` {
+    `ok`: boolean;
+    `message`?: string;
+    `errors`?: (string)[];
+    `why`?: string;
+    `what`?: string;
+    `problems`?: NullableArray;
+    `settings`?: NullableXacmlPepSettings
+  }
+
+@component model `XacmlPepListenersAnswer` {
+    `ok`: boolean;
+    `message`?: string;
+    `errors`?: (string)[];
+    `why`?: string;
+    `what`?: string;
+    `problems`?: NullableArray;
+    `listeners`?: NullableXacmlPepListeners
+  }
+
+@component model `XacmlPepClusterAnswer` {
+    `ok`: boolean;
+    `message`?: string;
+    `errors`?: (string)[];
+    `why`?: string;
+    `what`?: string;
+    `problems`?: NullableArray;
+    @js(#{`description`:"The cluster acted on."}) `cluster`?: string;
+    @js(#{`description`:"The member acted on."}) `pep`?: string;
+    @js(#{`description`:"create-pep-cluster: the PEP it was created from, or null."}) `from`?: NullableString;
+    @js(#{`description`:"add-pep-cluster-member: whether the PEP is registered yet."}) `registered`?: boolean;
+    @js(#{`description`:"remove-pep-cluster-member: whether the member kept a copy."}) `kept`?: boolean;
+    @js(#{`description`:"delete-pep-cluster: the members that kept a copy."}) `released`?: (string)[];
+    @js(#{`description`:"add-pep-cluster-member with discard: the PEP's own documents that joining replaced, for the console to offer as a download; null when it held none."}) `discarded`?: XacmlPepClusterDiscarded | null;
+    @js(#{`description`:"set-pep-cluster-member: the member as saved."}) `member`?: XacmlPepClusterMemberAddresses;
+    `proxy`?: NullableXacmlPepProxy;
+    `settings`?: NullableXacmlPepSettings;
+    `listeners`?: NullableXacmlPepListeners;
+    @js(#{`description`:"What the act did to the routes' generated policies: written, removed, and left in the repository with no route naming them."}) `policies`?: {
+      `generated`?: (string)[];
+      `removed`?: (string)[];
+      `unreferenced`?: (string)[]
+    };
+    `policy`?: string;
+    `written`?: boolean
+  }
+
+@component model `XacmlPepProxyAnswer` {
+    `ok`: boolean;
+    `message`?: string;
+    `errors`?: (string)[];
+    `why`?: string;
+    `what`?: string;
+    `problems`?: NullableArray;
+    `proxy`?: NullableXacmlPepProxy;
+    @js(#{`description`:"What the save did to the routes' generated policies (#1760): written, removed with a removed or renamed route, and left in the repository with no route naming them."}) `policies`?: {
+      `generated`?: (string)[];
+      `removed`?: (string)[];
+      `unreferenced`?: (string)[]
+    };
+    @js(#{`description`:"generate-pep-route-policy: the policy's name."}) `policy`?: string;
+    @js(#{`description`:"generate-pep-route-policy: whether it was written; false when it already said what the route chooses."}) `written`?: boolean
+  }
+
 @component model `WithOkMessageErrors108` {
     `ok`: boolean;
     `message`?: string;
@@ -7488,6 +7586,36 @@ namespace IyaSts.Api.Management {
     `fullChainPem`?: string;
     `anchorPem`?: string;
     `privateKeyPem`?: string
+  }
+
+@component model `XacmlPepCredentialEnvironment` {
+    @js(#{`description`:"The PEP's name: its entry's username, the iss and sub of its self-assertion."}) `PEP_NAME`: string;
+    @js(#{`description`:"The client its token is issued through, sts-remote-pep."}) `PEP_CLIENT_ID`: string;
+    @js(#{`description`:"A reminder, not a path: the key file the caller generated the request with. This service never had it."}) `PEP_ASSERTION_KEY`: string
+  }
+
+@component model `XacmlPepCredentialAnswer` {
+    `ok`: boolean;
+    `message`?: string;
+    `errors`?: (string)[];
+    `why`?: string;
+    `what`?: string;
+    `problems`?: NullableArray;
+    @js(#{`description`:"The PEP's entry, by username."}) `pep`?: string;
+    @js(#{`description`:"The realm whose Issuing CA certified it; empty for the default realm."}) `realm`?: string;
+    @js(#{`description`:"The URI subjectAltName the leaf carries, urn:sts:sa:<name>."}) `urn`?: string;
+    @js(#{`description`:"The key's kid on the entry's JWKS."}) `kid`?: string;
+    @js(#{`description`:"The key algorithm, ec-p256 or rsa-<bits>."}) `keyAlg`?: string;
+    @js(#{`description`:"The JWS algorithm the PEP signs with."}) `jwsAlg`?: string;
+    `serialHex`?: string;
+    `subject`?: string;
+    `notBefore`?: string;
+    `notAfter`?: string;
+    `certificatePem`?: string;
+    @js(#{`description`:"The Issuing CA and the realm Intermediate, leaf excluded."}) `chainPem`?: (string)[];
+    @js(#{`description`:"The leaf followed by its chain through the service Root."}) `fullChainPem`?: string;
+    @js(#{`description`:"What the PEP is started with."}) `environment`?: `XacmlPepCredentialEnvironment`;
+    @js(#{`description`:"The kids of the entry's other keys revokePrevious revoked."}) `revoked`?: (string)[]
   }
 
 @projects("IssuedToken") @component union `IssuedTokenView` {NullableObject103}
@@ -7868,7 +7996,8 @@ namespace IyaSts.Api.Management {
     `kind`?: string;
     `family`?: string;
     `signs`?: boolean;
-    `slow`?: boolean
+    `slow`?: boolean;
+    `tlsUsable`?: boolean
   })[];
   
 
@@ -7974,25 +8103,6 @@ namespace IyaSts.Api.Management {
   }
 
 @component model `WithIdLabelClassical` is (`WithIdLabelCa`)[];
-  
-
-@component model `WithIdLabelClassical2` is ({
-    `id`?: string;
-    `label`?: string;
-    `classical`?: boolean;
-    `families`?: (string)[];
-    `note`?: string
-  })[];
-  
-
-@component model `WithIdLabelSubject` is ({
-    `id`?: string;
-    `label`?: string;
-    `subject`?: string;
-    `keyAlg`?: string;
-    `notAfter`?: string;
-    `hasAlternativeKey`?: boolean
-  })[];
   
 
 @component model `WithIdCaProfile` {
@@ -8748,9 +8858,6 @@ namespace IyaSts.Api.Management {
 @component model `WithIdFromTo` is (`WithIdKindKey2`)[];
   
 
-@component model `WithIdFromTo2` is Record<`WithKindCountIdentifiers`>;
-  
-
 @component model `WithIdFromTo3` {
     `id`?: string;
     `from`?: string;
@@ -8899,17 +9006,6 @@ namespace IyaSts.Api.Management {
 
 @component model `WithApplicationsGrantsLines` is (`WithClientClientNamePermissionId2`)[];
   
-
-@component model `WithApplicationsGrantsLines2` {
-    `applications`?: integer;
-    `grants`?: integer;
-    `lines`?: integer;
-    `permissions`?: integer;
-    `dangling`?: integer;
-    `selfGrants`?: integer;
-    `asked`?: integer;
-    `unused`?: integer
-  }
 
 @hoisted union SharedModel419_ap_h1934 {StringOrNumericOrBooleanEtc, (StringOrNumericOrBooleanEtc)[]}
 
@@ -9083,8 +9179,8 @@ namespace IyaSts.Api.Management {
     `container`?: string;
     `definitionContainer`?: string;
     `objectClasses`?: (WithNameWhat)[];
-    `attributes`?: (WithNameWhat)[];
-    `personAttributes`?: (WithNameWhat)[]
+    `attributes`?: (WithNameWhatKind)[];
+    `personAttributes`?: (WithNameWhatKind)[]
   }
 
 @component model `WithApplicationsGroupsPeople` {
@@ -10576,6 +10672,33 @@ namespace IyaSts.Api.Management {
     `row`?: `WithIdRealmClientId5`
   }
 
+// A person's TLS client certificate, issued. The signing answer's shape with
+// `tls` in place of `signing`, and no `purpose`: this door issues `tls-client`
+// only, and the subject is the directory entry's.
+@component model `WithOkMessageErrors194` {
+    `ok`: boolean;
+    `message`?: string;
+    `errors`?: (string)[];
+    `certificate`?: `WithSerialHexSubjectKeyAlg`;
+    `files`?: `WithPkcs12KeyChain`;
+    `user`?: string;
+    `tls`?: PersonTlsClientView
+  }
+
+// The same certificate, revoked. The signing revoke's shape with `tls`.
+@component model `WithOkMessageErrors195` {
+    `ok`: boolean;
+    `message`?: string;
+    `errors`?: (string)[];
+    `certificate`?: `WithSlotLabelSerialHex`;
+    `reason`?: string;
+    `already`?: boolean;
+    `why`?: string;
+    `entry`?: `WithSerialHexRevokedAtReason`;
+    `user`?: string;
+    `tls`?: PersonTlsClientView
+  }
+
 @endpoint("/admin-api",
   "get",
   #{
@@ -10772,7 +10895,7 @@ op `getCryptoMetadata`(`responses/200/content/application~1json/schema`: `Crypto
   #{
     `operationId`:"getEncryption",
     `summary`:"What this service encrypts at rest, and how much of it it has done",
-    `description`:"The at-rest half of this service's cryptography: which data is sealed, where it lives, under which key and which algorithm, and how many encryptions and decryptions have happened in this process.\n\nIT IS NOT GET /admin-api/crypto WITH FEWER FIELDS. That one answers what this service DOES when it signs or encrypts — per protocol family, read out of the module that performs each algorithm — and reads identically on a service that started a second ago. This one is TRAFFIC: `accounting` goes up while something is happening, counted at the one funnel both operations pass through rather than at the call sites, because a total assembled from call sites is wrong the first time somebody adds another one and is wrong silently.\n\n`classes` LISTS WHAT IS DELIBERATELY NOT SEALED BESIDE WHAT IS, each with the reason — passwords are hashed rather than encrypted, which is stronger; the post-quantum keys, the TLS certificate and the SPIFFE authorities are not persisted at all, so there is nothing at rest to seal. A list of only the yeses would answer \"is X encrypted\" by silence.\n\nTHE COUNTERS ARE PROCESS-WIDE AND NOT PER REALM — a key-encryption key belongs to the process — and they are in memory, so a restart is how you get an empty one. Under `workers.requestCount` each request worker keeps its own, so a dispatched service answers this from whichever worker took the call.\n\nNO CIPHERTEXT AND NO PLAINTEXT IS IN THE REPLY, and there is no operation anywhere that opens a sealed value on request: a sealed value is a private key, an authenticator's shared secret or somebody's recovery codes. `key.where` names the PROVIDER the key-encryption key is read from and never the key.\n\n**`boundaries` IS THE PART TO READ BEFORE ACTING ON THE REST**, and it is in this reply rather than in a document because a machine reader has no page to have read it on. Two limits and one deployment mistake: there is ONE key-encryption key for the service and NOT one per trust realm (`perRealmKey: false`) — it wraps every realm's data encryption keys, one per realm per class — so a realm is not an independent boundary at rest and rotating the key re-wraps every realm's data keys; everything NOT in `classes` is plaintext in the store, because the layer that covers a whole database belongs under it rather than inside it (a column-level answer leaves plaintext in the WAL, in spilled sorts, in a pg_dump, on replicas and in query logs) — that layer is the operator's and docs/encryption-at-rest.md is the write-up; and the key must not live on the volume it protects, which is what the `file` provider invites and why every other provider exists.\n\n**Mirrors** `GET /admin/encryption` on the admin console.",
+    `description`:"The at-rest half of this service's cryptography: which data is sealed, where it lives, under which key and which algorithm, and how many encryptions and decryptions have happened in this process.\n\nIT IS NOT GET /admin-api/crypto WITH FEWER FIELDS. That one answers what this service DOES when it signs or encrypts — per protocol family, read out of the module that performs each algorithm — and reads identically on a service that started a second ago. This one is TRAFFIC: `accounting` goes up while something is happening, counted at the one funnel both operations pass through rather than at the call sites, because a total assembled from call sites is wrong the first time somebody adds another one and is wrong silently.\n\n`classes` LISTS WHAT IS DELIBERATELY NOT SEALED BESIDE WHAT IS, each with the reason — passwords are hashed rather than encrypted, which is stronger; the post-quantum keys, the TLS certificate and the SPIFFE authorities are not persisted at all, so there is nothing at rest to seal. A list of only the yeses would answer \"is X encrypted\" by silence.\n\nTHE COUNTERS ARE PROCESS-WIDE AND NOT PER REALM — a key-encryption key belongs to the process — and they are in memory, so a restart is how you get an empty one. Under `workers.requestCount` each request worker keeps its own, so a dispatched service answers this from whichever worker took the call.\n\nNO CIPHERTEXT AND NO PLAINTEXT IS IN THE REPLY, and there is no operation anywhere that opens a sealed value on request: a sealed value is a private key, an authenticator's shared secret or somebody's recovery codes. `key.where` names the PROVIDER the key-encryption key is read from and never the key.\n\n**`boundaries` IS THE PART TO READ BEFORE ACTING ON THE REST**, and it is in this reply rather than in a document because a machine reader has no page to have read it on. Two limits and one deployment mistake: there is ONE key-encryption key for the service and NOT one per trust realm (`perRealmKey: false`) — it wraps every realm's data encryption keys, one per realm per class — so a realm is not an independent boundary at rest and rotating the key re-wraps every realm's data keys; everything NOT in `classes` is plaintext in the store, because the layer that covers a whole database belongs under it rather than inside it (a column-level answer leaves plaintext in the WAL, in spilled sorts, in a pg_dump, on replicas and in query logs) — that layer is the operator's and docs/v1.1.0/encryption-at-rest.md is the write-up; and the key must not live on the volume it protects, which is what the `file` provider invites and why every other provider exists.\n\n**Mirrors** `GET /admin/encryption` on the admin console.",
     `tags`:#["Service"],
     `responses`:#{
       `200`:#{
@@ -12569,7 +12692,16 @@ op `getGeolocation`(@js(#{`examples`:#["7d"]}) `parameters/0/schema`: "live" | "
     };
     `drawing`?: {
       `picture`?: {`svg`?: string; `width`?: numeric; `height`?: numeric};
-      `legend`?: ({`colour`?: string; `from`?: numeric; `to`?: numeric})[]
+      `legend`?: ({`colour`?: string; `from`?: numeric; `to`?: numeric})[];
+      @js(#{`description`:"The map as data, which the console projects and draws over Natural Earth's outlines (`/admin/geo-outlines.json`) with the code that draws `picture` here (#444): the level, the continent's slug or the country's code, each counted country's step on the scale and what it says, the labels and the cities, each where it is."}) `map`?: {
+        `level`?: string;
+        `continent`?: string;
+        `iso`?: string;
+        @js(#{`description`:"Each counted country by ISO 3166-1 code: its step on the scale (1 to 5) and its tooltip."}) `areas`?: Record<{`bucket`?: integer; `title`?: string; `href`?: string}>;
+        `labels`?: ({`lon`?: numeric; `lat`?: numeric; `text`?: string; `href`?: string})[];
+        `cities`?: ({`lon`?: numeric; `lat`?: numeric; `name`?: string; `people`?: integer; `title`?: string})[];
+        `title`?: string
+      }
     };
     `noDataColour`?: string
   },
@@ -13941,6 +14073,69 @@ op `reportDeviceCompliance`(@js(#{
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
+@endpoint("/admin-api/pep-audit",
+  "post",
+  #{
+    `operationId`:"reportPepDecisions",
+    `summary`:"Push a remote PEP's decision records (#1827)",
+    `description`:"A remote XACML PEP pushes the records of the decisions it made in its own process — `/protected` enforcements (`kind` `enforcement`) the AuthZEN evaluations it decided (`kind` `authzen`; never one it forwarded, which this service decided and recorded itself) and its reverse proxy's requests to a route (`kind` `proxy`, #1760, with `route` and the `status` it answered) — and each becomes one audit row, `xacml.remote.enforcement`, `authzen.remote.decision` or `xacml.remote.proxy`, read on GET /admin-api/audit. `instance` names the PEP process; every record carries `seq`, a positive integer increasing within that process, and the answer's `acknowledged` is the highest `seq` the batch carried, so the PEP removes everything up to it. Delivery is at least once: a record sent again is recorded again, and the row names the PEP, the instance and the seq that identify it. A record with no positive integer `seq` or an unknown `kind` is counted in `ignored` (STS-XACML-0288) and the rest are recorded. At most 500 records a push. The PEP must be registered in this realm (POST /xacml/pep/register) under the name its token's subject carries (STS-XACML-0287, 404). **The access token must carry `xacml:pep-audit`**: the PEP's own RFC 7523 self-assertion (`grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer`, `iss` and `sub` its own username, its certificate's key registered on its entry) presented through the seeded public client `sts-remote-pep` with a DPoP proof by that key, so the token is bound to it (RFC 9449; over mutual TLS it is bound to the certificate as well, and through phase 3 of the PEP's token plan a certificate-bound token is still honoured where its certificate is presented). It is issued and honoured only while the PEP's entry is in the group roles.remotePepGroup names (REMOTE_PEPS); a token carrying anything else is refused here, and that scope reaches no other operation (STS-API-0147).\n\n**Mirrors** `no console form — a remote PEP pushing what it decided; the records are read on GET /admin/audit` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"`acknowledged` — the highest `seq` the batch carried — and how many records were `recorded` and `ignored`.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"A malformed batch (STS-XACML-0286), or a body the request schema does not admit: `errors` says why and nothing was recorded.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure: a PEP not registered in this realm (404, STS-XACML-0287), or a token that is not a remote PEP's (403).",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["xacml:pep-audit"]},#{`bearerAuth`:#[]}]
+  })
+op `reportPepDecisions`(@js(#{
+    `examples`:#[#{`instance`:"5f2c9a0e7b3d41c8a6e2f0d19b7c3a54",`events`:#[#{`seq`:1,`at`:"2026-11-16T15:00:00.123Z",`kind`:"enforcement",`decision`:"Permit",`allowed`:true,`fault`:false,`code`:"",`subject`:"alice",`resource`:"https://xacml-pep/protected",`action`:"read",`bias`:"deny-biased",`why`:"",`policies`:#["urn:example:policy v1"],`discharged`:#[],`undischargeable`:#[],`caller`:"",`application`:"",`subjectType`:"",`endpoint`:"",`requestId`:""}]}]
+  }) `requestBody/content/application~1json/schema`: {
+    @js(#{`minLength`:1,`maxLength`:64,`pattern`:"^[A-Za-z0-9-]{1,64}$"}) `instance`: string;
+    @js(#{`minItems`:1,`maxItems`:500}) `events`: ({
+      @js(#{`minimum`:1}) `seq`: integer;
+      `at`?: string;
+      @js(#{`minLength`:1,`maxLength`:40}) `kind`: string;
+      `decision`?: "Permit" | "Deny" | "NotApplicable" | "Indeterminate";
+      `allowed`?: boolean;
+      `fault`?: boolean;
+      `code`?: string;
+      `subject`?: string;
+      `resource`?: string;
+      `action`?: string;
+      `bias`?: string;
+      `why`?: string;
+      `policies`?: (string)[];
+      `discharged`?: (string)[];
+      `undischargeable`?: (string)[];
+      `caller`?: string;
+      `application`?: string;
+      `subjectType`?: string;
+      `endpoint`?: string;
+      `requestId`?: string;
+      `route`?: string;
+      `status`?: integer
+    })[];
+    `name`?: string
+  },
+  `responses/200/content/application~1json/schema`: {
+    @js(#{`minimum`:0}) `acknowledged`: integer;
+    @js(#{`minimum`:0}) `recorded`: integer;
+    @js(#{`minimum`:0}) `ignored`: integer
+  },
+  `responses/400/content/application~1json/schema`: `RefusalFailure`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
 @endpoint("/admin-api/devices/monitor",
   "get",
   #{
@@ -15033,7 +15228,7 @@ op `getSecrets`(`responses/200/content/application~1json/schema`: {
   #{
     `operationId`:"getDebugger",
     `summary`:"Whether the identity protocol debugger is embedded, where it answers, and what its api process is doing",
-    `description`:"The embedded identity protocol debugger: `embedded` and the setting and mode that decided it, the listener's `port` and whether it is `listening`, the client (`clientId`), the resource server (`resource`), the permission its api requires (`permission`) and the audience a token for it carries (`audience`), and under `api` the child process: its `state` (`starting`, `running`, `restarting`, `given-up`, `not-installed`, `stopped`), process id, socket, starts, consecutive failures, last exit and last error, and — in product mode — the `allowedRanges` it may dial. `settings` is the `Protocol debugger` group as `/admin/debugger` draws it.\n\nNothing here opens the debugger: its gate is the permission, which the authorization server issues to console administrators only.\n\n**Mirrors** `GET /admin/debugger` on the admin console.",
+    `description`:"The embedded identity protocol debugger: `embedded` and the setting and mode that decided it, the listener's `port` and whether it is `listening`, the client the debugger and its api sign in as (`clientId`), and under `api` the child process: its `state` (`starting`, `running`, `restarting`, `given-up`, `not-installed`, `stopped`), process id, socket, starts, consecutive failures, last exit and last error, and — in product mode — the `allowedRanges` it may dial. `settings` is the `Protocol debugger` group as `/admin/debugger` draws it.\n\nNothing here opens the debugger: its gate is a console administrator's sign-in session, and it accepts no access token.\n\n**Mirrors** `GET /admin/debugger` on the admin console.",
     `tags`:#["Service"],
     `responses`:#{
       `200`:#{
@@ -15060,9 +15255,6 @@ op `getDebugger`(`responses/200/content/application~1json/schema`: {
     `publicBaseUrl`?: NullableString;
     `uiDirectory`?: NullableString;
     `clientId`?: string;
-    `resource`?: string;
-    `permission`?: string;
-    `audience`?: string;
     `api`?: {
       `state`?: string;
       `pid`?: NullableInteger;
@@ -15603,6 +15795,13 @@ op `getMetrics`(`responses/200/content/application~1json/schema`: `Metrics`,
         `description`:"Which page of `artifacts` to return, answered by `artifactsPaging`. SAML assertions, Kerberos tickets and credentials."
       },
       #{
+        `name`:"authenticationHistoryPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `authenticationHistory` to return, answered by `authenticationHistoryPaging`. How they authenticated (`user.events`), most recent first, ten a page by default (#1844). `user.events` is still the whole list."
+      },
+      #{
         `name`:"federationLinksPage",
         `in`:"query",
         `required`:false,
@@ -15641,6 +15840,7 @@ op `getUsers`(`parameters/0/schema`: string,
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/12/schema`: integer,
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/13/schema`: integer,
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/14/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/15/schema`: integer,
   `responses/200/content/application~1json/schema`: get_admin_api_users_r200_application_json_h2549,
   `responses/400/content/application~1json/schema`: `WithOkMessageErrors13`,
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
@@ -16867,7 +17067,7 @@ op `stopRequiringUserSecondFactor`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requ
 
 @js(#{
     `items`:#{`type`:"string"},
-    `description`:"The people and groups answerable for the account (#600), each a DN, a username or a group's cn: an array, or a string of one per line. It REPLACES the owners the account names; absent or empty is none, refused while the policy requires an owner.",
+    `description`:"The people and groups answerable for the account (#600), each a DN, a username or a group's cn: an array, or a string of one per line. It REPLACES the owners the account names; absent or empty is none, refused while the policy requires an owner, and always refused on a service account that names an owner now.",
     `$types`:#["array","string"]
   }) @hoisted model post_admin_api_users_set_service_account_b_application_json_owners_h2581 {}
 
@@ -16875,8 +17075,8 @@ op `stopRequiringUserSecondFactor`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requ
   "post",
   #{
     `operationId`:"setUserServiceAccount",
-    `summary`:"Make somebody a service account, or a person again",
-    `description`:"A service account is a PERSON entry carrying `stsServiceAccount` (#221): everything a person is — a password, app passwords, Kerberos keys, groups, roles, Shared Signals under their `iss_sub` — and governed by the realm's service-account policy (`GET /admin-api/policies`, kind `serviceAccount`): whether the second factor is exempt, whether a browser sign-in is allowed (not by default), which password doors open, and whether its password rotates and is pushed to a secrets manager.\n\n`serviceAccount` true (the default) sets or changes it: `owners`, the WHOLE list of the people and groups in this realm who answer for it (#600) — it replaces the list the account names, at most 25, at least one while the policy's `requireOwner` is on; `destination`, a push destination's DN, and `secretName` go together. `serviceAccount` false makes them an ordinary person again and clears the owner, the destination and the rotation state.\n\nWhere the policy refuses a service account every browser sign-in, becoming one ENDS the person's sessions (`signedOut`). SCIM does not carry the flag; an LDAP modify by a holder of Admin Write may, under the same rules.\n\n**Mirrors** `POST /admin/users, POST /admin/users/new, POST /admin/users/edit and POST /admin/users/service-account` on the admin console.",
+    `summary`:"Make somebody a service account, or change one",
+    `description`:"A service account is a PERSON entry carrying `stsServiceAccount` (#221): everything a person is — a password, app passwords, Kerberos keys, groups, roles, Shared Signals under their `iss_sub` — and governed by the realm's service-account policy (`GET /admin-api/policies`, kind `serviceAccount`): whether the second factor is exempt, whether a browser sign-in is allowed (not by default), which password doors open, and whether its password rotates and is pushed to a secrets manager.\n\n`serviceAccount` true (the default) sets or changes it: `owners`, the WHOLE list of the people and groups in this realm who answer for it (#600) — it replaces the list the account names, at most 25, at least one while the policy's `requireOwner` is on; `destination`, a push destination's DN, and `secretName` go together. A service account is never made an ordinary person again (rcbj, 2026-11-15): `serviceAccount` false on one is REFUSED (STS-SVCACCT-0060), and on an ordinary person changes nothing; deleting the entry is the only way to end an account. Once an account names an owner its `owners` may not become empty, whatever `requireOwner` says (STS-SVCACCT-0061), and the caller may not take themselves off — their own DN, or the group that was their only way of owning it (STS-SVCACCT-0062, STS-SVCACCT-0063).\n\nWhere the policy refuses a service account every browser sign-in, becoming one ENDS the person's sessions (`signedOut`). SCIM does not carry the flag; an LDAP modify by a holder of Admin Write may, under the same rules.\n\n**Mirrors** `POST /admin/users, POST /admin/users/new, POST /admin/users/edit and POST /admin/users/service-account` on the admin console.",
     `tags`:#["Users"],
     `responses`:#{
       `200`:#{
@@ -16907,7 +17107,7 @@ op `setUserServiceAccount`(@js(#{
     @js(#{`description`:"The person, as /admin-api/users names them."}) `user`: string;
     @js(#{`description`:"Accepted for `user`."}) `username`?: string;
     @js(#{
-      `description`:"true makes or keeps them a service account (the default); false makes them a person again."
+      `description`:"true makes or keeps them a service account (the default). false is refused on a service account, which is never made a person again, and changes nothing on an ordinary person."
     }) `serviceAccount`?: boolean;
     `owners`?: post_admin_api_users_set_service_account_b_application_json_owners_h2581;
     @js(#{`description`:"The DN of the push destination (an application entry)."}) `destination`?: string;
@@ -16963,7 +17163,7 @@ op `addServiceAccountOwner`(@js(#{
   #{
     `operationId`:"removeServiceAccountOwner",
     `summary`:"Take one owner off a service account",
-    `description`:"Takes one owner off the service account and writes at once, keeping the rest and the push destination (#602). `owner` is the DN the account lists. Refused for one it does not list, and for the last owner while the service-account policy requires one.\n\n**Mirrors** `POST /admin/users, POST /admin/users/new, POST /admin/users/edit and POST /admin/users/service-account` on the admin console.",
+    `description`:"Takes one owner off the service account and writes at once, keeping the rest and the push destination (#602). `owner` is the DN the account lists. Refused for one it does not list; for the last owner, whatever the service-account policy says (STS-SVCACCT-0061); and for the caller themselves — their own DN, or the group that is their only way of owning the account (STS-SVCACCT-0062, STS-SVCACCT-0063). Another administrator may remove them.\n\n**Mirrors** `POST /admin/users, POST /admin/users/new, POST /admin/users/edit and POST /admin/users/service-account` on the admin console.",
     `tags`:#["Users"],
     `responses`:#{
       `200`:#{
@@ -17341,12 +17541,118 @@ op `removeUserCertificate`(@js(#{
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
+@endpoint("/admin-api/users/delete",
+  "post",
+  #{
+    `operationId`:"deleteUser",
+    `summary`:"Delete somebody's entry from the directory",
+    `description`:"Deletes the person's entry, through the directory's one person delete: the function SCIM's `DELETE /scim/v2/Users/{id}` calls and an LDAP delete reaches. It cannot be undone. The entry goes with everything stored on it (its credentials and passkeys among them) and its profile photo; every group and role that named them lets them go, and every owner list (a service account's last owner is replaced by the realm's Admin Write group); RISC receivers are sent `account-purged`. Everything they held is then ended, as `POST /admin-api/users/disable` ends it: sessions (with CAEP `session-revoked` and back-channel Logout Tokens), tokens, codes and connections. Somebody made again under the same name inherits nothing.\n\n**Refused** for nobody of that name in this realm (STS-LDAP-0013), the realm's bootstrap administrator (STS-LDAP-0077), an entry with entries beneath it (STS-LDAP-0014), the caller's own entry (STS-ADMIN-0943), and the last person the realm's console roster lists for Admin Write or the Security Administrator (STS-ADMIN-0944). A person who holds the Security Administrator's role is deleted only by a Security Administrator. A person asks for a recent sign-in first, as for a password reset.\n\n**Mirrors** `POST /admin/users, POST /admin/users/new, POST /admin/users/edit and POST /admin/users/service-account` on the admin console.",
+    `tags`:#["Users"],
+    `responses`:#{
+      `200`:#{
+        `description`:"Who was deleted, and the entry's DN.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `deleteUser`(@js(#{`examples`:#[#{`user`:"departed-contractor"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The person, as /admin-api/users names them."}) `user`: string;
+    @js(#{`description`:"Accepted for `user`."}) `username`?: string
+  },
+  `responses/200/content/application~1json/schema`: `UserDeleted`,
+  `responses/400/content/application~1json/schema`: `UserDeleted`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
+@endpoint("/admin-api/users/export-ldif",
+  "post",
+  #{
+    `operationId`:"exportUserLdif",
+    `summary`:"Export one person's entry as an LDIF file",
+    `description`:"Answers the person's directory entry as an RFC 2849 LDIF document with one record: `ldif` (the text) and `files` (the same, named and base64, which the console saves). The attributes a create takes only — the inetOrgPerson attributes, the credential catalogue's and the realm's custom attributes, which is what `import-ldif` writes back; nothing this service recorded about the person (sign-in methods, federation sightings, consents, flags), no group membership and no `entryUUID`. The DN is the entry's own; `import-ldif` creates the person in whichever realm it is called in.\n\n**CREDENTIAL MATERIAL IS LEFT OUT BY DEFAULT** and named in `leftOut`. With `credentials` true the password's stored hash, the authenticator app (its secret opened), the passkeys and their user handles, the recovery codes, the app passwords, the stored client certificates, the HOBA keys and the CIBA user code's hash are written **UNENCRYPTED**: a value sealed under this process's key-encryption key is opened, because a file sealed under it opens nowhere else. Keep such a file as you would the secrets in it. Kerberos keys, the RFC 7523 and RFC 7522 key pairs, enrolled certificates and enrolment secrets are never exported: each is minted by its own subsystem. An audit row (`user.export`) says whether credentials went with the file, never a value. Asked for a recent sign-in, as `set-password` is.\n\n**Mirrors** `POST /admin/users, POST /admin/users/new, POST /admin/users/edit and POST /admin/users/service-account` on the admin console.",
+    `tags`:#["Users"],
+    `responses`:#{
+      `200`:#{
+        `description`:"`ldif`, `files` (one `.ldif`), the `attributes` written, `credentials`, and `leftOut`: the credential attributes not written.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `exportUserLdif`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The person, as /admin-api/users names them."}) `user`: string;
+    @js(#{`description`:"Accepted for `user`."}) `username`?: string;
+    `credentials`?: post_admin_api_applications_export_ldif_b_application_json_credentials_h2752
+  },
+  `responses/200/content/application~1json/schema`: `UserLdifExportAnswer`,
+  `responses/400/content/application~1json/schema`: `UserLdifExportAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+
+@endpoint("/admin-api/users/import-ldif",
+  "post",
+  #{
+    `operationId`:"importUserLdif",
+    `summary`:"Create a person from an LDIF file",
+    `description`:"Reads an RFC 2849 LDIF document holding ONE person's record, as `export-ldif` writes it (`uid=<name>,ou=users,…` with that name as its one `uid`), and creates that person in the realm this is called in, through the create `POST /admin-api/users/create` makes: the realm's attribute policy, the username rules and one entry per person are its checks. **IT NEVER OVERWRITES**: a username already here is refused, naming the entry that holds it (STS-LDAP-0218). A new `entryUUID`, and so a new subject, is minted; a file carrying one is refused.\n\nOnly the attributes a create takes and the credentials an export writes are taken; a record carrying what this service records about a person, or a credential a subsystem mints, is refused naming each (STS-LDAP-0219). A credential in the file is written as stored: a password only as the hash this service writes (a hash cannot be held to the password policy, so a clear password is refused — set one with `set-password` after the import), the authenticator secret and a legacy recovery-code set sealed again wherever the key-encryption key persists, a passkey user handle or a stored certificate refused when somebody here holds it already (STS-LDAP-0220). **No Kerberos key is derived from a hash**: the person has none until their password is set again. A CAEP credential-change is sent for each kind of credential that came in, and the import is audited (`user.import`) with the attribute names, never a value. Give the document as `ldif` (its text), or as `file` (its name and text), which is how the console sends an uploaded file. Asked for a recent sign-in, as `set-password` is.\n\n**Mirrors** `POST /admin/users, POST /admin/users/new, POST /admin/users/edit and POST /admin/users/service-account` on the admin console.",
+    `tags`:#["Users"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The `username` created, its `dn`, the `attributes` the create wrote and the `credentials` written after it.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `importUserLdif`(@js(#{
+    `examples`:#[
+      #{
+        `ldif`:"version: 1\n\ndn: uid=imported-person,ou=users,dc=example,dc=com\nuid: imported-person\ncn: Imported Person\nsn: Person\ngivenName: Imported\nmail: imported-person@example.com\n"
+      }
+    ]
+  }) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The LDIF document."}) `ldif`?: string;
+    @js(#{`description`:"An uploaded LDIF file: its name and its text."}) `file`?: WithNameText
+  },
+  `responses/200/content/application~1json/schema`: `UserLdifImportAnswer`,
+  `responses/400/content/application~1json/schema`: `UserLdifImportAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+
 @endpoint("/admin-api/users/issue-signing-certificate",
   "post",
   #{
     `operationId`:"issueUserSigningCertificate",
     `summary`:"Issue somebody a message-signing certificate from this realm's CA",
-    `description`:"Generates a key pair and certifies it from the realm's `message-signing` Issuing CA with `digitalSignature` only and `urn:sts:person:<username>` as its subjectAltName. A WS-Trust request whose WS-Security signature over the SOAP Body and Timestamp verifies under it authenticates the person as its requester; it signs nobody in over TLS. An administrator's act: the person has no door to it on the user portal (#521).\n\n**THIS REPLY IS THE ONLY COPY OF THE PRIVATE KEY.** `files` holds a PKCS#12 (base64), an encrypted PKCS#8 PEM key and the PEM chain, all protected by `password`, which is neither stored nor audited. Refused past `pki.messageSigningCertificateMax` valid certificates (`STS-PKI-0220`), for a person with no entry (`STS-ADMIN-0905`), for a key algorithm outside `rsa-2048`, `rsa-3072`, `ec-p256`, `ec-p384`, and in a realm with no certificate authority.\n\n**Mirrors** `POST /admin/users, POST /admin/users/new, POST /admin/users/edit and POST /admin/users/service-account` on the admin console.",
+    `description`:"Generates a key pair and certifies it from the realm's `message-signing` Issuing CA with `digitalSignature` only and `urn:sts:person:<username>` as its subjectAltName (`urn:sts:sa:<username>` for a service account, #1827). A WS-Trust request whose WS-Security signature over the SOAP Body and Timestamp verifies under it authenticates the person as its requester; it signs nobody in over TLS. An administrator's act: the person has no door to it on the user portal (#521).\n\n**THIS REPLY IS THE ONLY COPY OF THE PRIVATE KEY.** `files` holds a PKCS#12 (base64), an encrypted PKCS#8 PEM key and the PEM chain, all protected by `password`, which is neither stored nor audited. Refused past `pki.messageSigningCertificateMax` valid certificates (`STS-PKI-0220`), for a person with no entry (`STS-ADMIN-0905`), for a key algorithm outside `rsa-2048`, `rsa-3072`, `ec-p256`, `ec-p384`, and in a realm with no certificate authority.\n\n**Mirrors** `POST /admin/users, POST /admin/users/new, POST /admin/users/edit and POST /admin/users/service-account` on the admin console.",
     `tags`:#["Users"],
     `responses`:#{
       `200`:#{
@@ -17422,6 +17728,90 @@ op `revokeUserSigningCertificate`(@js(#{
   },
   `responses/200/content/application~1json/schema`: `WithOkMessageErrors40`,
   `responses/400/content/application~1json/schema`: `WithOkMessageErrors40`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
+@endpoint("/admin-api/users/issue-tls-client-certificate",
+  "post",
+  #{
+    `operationId`:"issueUserTlsClientCertificate",
+    `summary`:"Issue somebody a TLS client certificate from this realm's CA",
+    `description`:"Generates a key pair and certifies it from the realm's `tls-client` Issuing CA with `clientAuth`. The subject is the person's directory name — common name and UID first, then the entry's own naming attributes, then the organisation and country — and `urn:sts:person:<username>` (`urn:sts:sa:<username>` for a service account, #1827) is its subjectAltName, which is what admits a remote PEP that presents the certificate. It is not stored on the entry as `userCertificate`.\n\n**THIS REPLY IS THE ONLY COPY OF THE PRIVATE KEY.** `files` holds a PKCS#12 (base64), an encrypted PKCS#8 PEM key and the PEM chain, all protected by `password`, which is neither stored nor audited. Refused past the maximum of valid TLS client certificates for a person, for a person with no entry (`STS-ADMIN-0939`), for a file password that is too short or does not match (`STS-ADMIN-0940`), for a key algorithm outside `rsa-2048`, `rsa-3072`, `ec-p256`, `ec-p384`, and in a realm with no certificate authority.\n\n**Mirrors** `POST /admin/users` on the admin console (Credentials, Key pairs).",
+    `tags`:#["Users"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The certificate (serial, subject, thumbprint, PEM and chain, its urn:sts: name), the three files, and the person's TLS client certificates as they now stand, in `tls`.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `issueUserTlsClientCertificate`(@js(#{
+    `examples`:#[
+      #{
+        `user`:"alice",
+        `password`:"correct horse battery",
+        `keyAlg`:"ec-p256",
+        `label`:"remote pep"
+      }
+    ]
+  }) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The person, as /admin-api/users names them."}) `user`: string;
+    @js(#{`description`:"Accepted for `user`."}) `username`?: string;
+    @js(#{`minLength`:8,`maxLength`:256}) `password`: string;
+    `confirm`?: string;
+    `keyAlg`?: "rsa-2048" | "rsa-3072" | "ec-p256" | "ec-p384";
+    @js(#{`maxLength`:40}) `label`?: string;
+    @js(#{`minimum`:1}) `days`?: integer
+  },
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors194`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors194`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
+@endpoint("/admin-api/users/revoke-tls-client-certificate",
+  "post",
+  #{
+    `operationId`:"revokeUserTlsClientCertificate",
+    `summary`:"Revoke one of somebody's TLS client certificates",
+    `description`:"Revokes a certificate `issue-tls-client-certificate` issued to THIS person — a serial belonging to anybody else, or one of their message-signing certificates, matches nothing — onto the Issuing CA's CRL and OCSP responder. A handshake that presents it is refused from then on. The person's certificates are listed in `mfa.tls` of GET /admin-api/users?user=.\n\n**Mirrors** `POST /admin/users` on the admin console (Credentials, Key pairs).",
+    `tags`:#["Users"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The revoked certificate, the reason, and the person's TLS client certificates as they now stand.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `revokeUserTlsClientCertificate`(@js(#{
+    `examples`:#[#{`user`:"alice",`serialHex`:"1a2b3c",`reason`:"keyCompromise"}]
+  }) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The person, as /admin-api/users names them."}) `user`: string;
+    @js(#{`description`:"Accepted for `user`."}) `username`?: string;
+    `serialHex`: string;
+    `reason`?: "cessationOfOperation" | "keyCompromise"
+  },
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors195`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors195`,
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
@@ -17882,7 +18272,7 @@ op `createUserAppPassword`(@js(#{
     @js(#{
       `description`:"What it is for — the client it goes in. At most 64 characters, unique among this person's."
     }) `name`: string;
-    @js(#{`description`:"The doors it is accepted at. At least one."}) `doors`: ("ldap" | "wstrust" | "scim" | "ssf" | "est")[]
+    @js(#{`description`:"The doors it is accepted at. At least one."}) `doors`: ("ldap" | "wstrust" | "scim" | "ssf" | "est" | "xacml-pep")[]
   },
   `responses/200/content/application~1json/schema`: `WithOkMessageErrors47`,
   `responses/400/content/application~1json/schema`: `WithOkMessageErrors47`,
@@ -19745,7 +20135,7 @@ op `getAdminRoles`(`parameters/0/schema`: string,
   #{
     `operationId`:"grantAdminRole",
     `summary`:"Give somebody a console role",
-    `description`:"Adds them to the role's group as a `member`, creating the group if this is the first grant — which is why \"the group does not exist\" and \"the group has no members\" are the same state everywhere in this feature.\n\n**The person need not exist.** A name nothing here has seen, and that has no directory entry, is granted anyway: the membership names the DN they WILL be at (`uid=<name>,ou=users`) and dangles until they first sign in or somebody creates them, and the role counts from that moment. That is the interesting case for testing and is deliberately reachable. What IS refused is a name carrying a character RFC 4514 reserves in a DN — the same refusal `POST /admin-api/users/create` gives, for the same reason.\n\nGranting a role somebody already holds answers 200 with `changed: false` rather than 400, so a script that grants on every run does not fail on its second one.\n\n**THE FIRST GRANT ON A SERVICE CLOSES THE DOOR BEHIND IT.** While the roster is empty anybody who signs in holds both roles; the moment one grant exists, everybody not in one of the two groups is refused at every page of the console. Grant yourself first.\n\n**Mirrors** `POST /admin/rbac` on the admin console.",
+    `description`:"Adds them to the role's group as a `member`, creating the group if this is the first grant — which is why \"the group does not exist\" and \"the group has no members\" are the same state everywhere in this feature.\n\n**The person must exist.** A name with no entry in this realm's directory is REFUSED with 400, `reason: \"noSuchPerson\"` and an `errors` sentence naming them, and nothing is written: create them first (POST /admin-api/users/create) and grant the role then. A role is granted only to somebody who exists, so that a person created later under the same name inherits nothing. A name carrying a character RFC 4514 reserves in a DN is refused too — the same refusal `POST /admin-api/users/create` gives, for the same reason.\n\nGranting a role somebody already holds answers 200 with `changed: false` rather than 400, so a script that grants on every run does not fail on its second one.\n\n**THE FIRST GRANT ON A SERVICE CLOSES THE DOOR BEHIND IT.** While the roster is empty anybody who signs in holds both roles; the moment one grant exists, everybody not in one of the two groups is refused at every page of the console. Grant yourself first.\n\n**Mirrors** `POST /admin/rbac` on the admin console.",
     `tags`:#["Admin roles"],
     `responses`:#{
       `200`:#{
@@ -24096,6 +24486,7 @@ op `getFederationRelationships`(`parameters/0/schema`: string,
     `signalArrivals`?: `WithAdditionalPropertiesPropertiesKty`;
     `outboundSignals`?: NullableObject63;
     `encryption`?: get_admin_api_federation_r200_application_json_encryption_h2696;
+    `clientCertificate`?: NullableFederationClientCertificate;
     `links`?: (WithUsernameDnLinkEtc5)[];
     `linksPaging`?: `WithPagePagesPerPage`;
     `setFields`?: `WithDescriptionAdditionalPropertiesProperties`;
@@ -24221,7 +24612,7 @@ op `setFederationField`(@js(#{
     @js(#{`description`:"The relationship."}) `id`: string;
     @js(#{
       `description`:"The attribute name, e.g. `fedSsoUrl`, `fedSigningCertificate`, `fedClientId`."
-    }) `field`: "fedName" | "fedPeer" | "fedLocalEntityId" | "fedEnabled" | "fedSsoUrl" | "fedTokenUrl" | "fedUserinfoUrl" | "fedJwksUri" | "fedEmailsUrl" | "fedJwks" | "fedTrustAnchor" | "fedSigningCertificate" | "fedClientId" | "fedClientSecret" | "fedResponseMode" | "fedTeamId" | "fedKeyId" | "fedClientSigningKey" | "fedTokenAuth" | "fedScope" | "fedResponseType" | "fedIdTokenSignedResponseAlg" | "fedUserinfoSignedResponseAlg" | "fedRefreshTokens" | "fedRefreshEverySeconds" | "fedRegister" | "fedRegisteredIssuer" | "fedRequestObject" | "fedRequestObjectSigningAlg" | "fedWebFinger" | "fedDiscovery" | "fedInitiateLogin" | "fedBinding" | "fedSignRequest" | "fedUsernameSource" | "fedSubjectClaim" | "fedAutocreateUsers" | "fedUpdateUserAttributes" | "fedProvisionGroups" | "fedProvisionCap" | "fedProvisionIdleMinutes" | "fedSubjectPolicy" | "fedSubjectPattern" | "fedMayAssertAdministrators" | "fedSignalEmailMatch" | "fedSignalsEnabled" | "fedSignalsIssuer" | "fedSignalsDelivery" | "fedSignalsTokenUrl" | "fedSignalsClientId" | "fedSignalsClientSecret" | "fedSignalsScope" | "fedSignalsBearer" | "fedSloUrl" | "fedSloBinding" | "fedEndSessionUrl" | "fedAcceptSignout" | "fedRequireSignedLogout" | "fedEncryptionKeyType" | "fedKeyManagementAlgorithm" | "fedContentEncryptionAlgorithm" | "fedAllowUnencrypted" | "fedAllowUnsolicited" | "fedApplication" | "fedAuthnMechanism" | "fedAuthnRelationship";
+    }) `field`: "fedName" | "fedPeer" | "fedLocalEntityId" | "fedEnabled" | "fedSsoUrl" | "fedTokenUrl" | "fedUserinfoUrl" | "fedJwksUri" | "fedEmailsUrl" | "fedJwks" | "fedTrustAnchor" | "fedSigningCertificate" | "fedClientId" | "fedClientSecret" | "fedResponseMode" | "fedTeamId" | "fedKeyId" | "fedClientSigningKey" | "fedTokenAuth" | "fedScope" | "fedResponseType" | "fedIdTokenSignedResponseAlg" | "fedUserinfoSignedResponseAlg" | "fedUserinfo" | "fedRefreshTokens" | "fedRefreshEverySeconds" | "fedRegister" | "fedRegisteredIssuer" | "fedRequestObject" | "fedRequestObjectSigningAlg" | "fedWebFinger" | "fedDiscovery" | "fedFapi" | "fedInitiateLogin" | "fedBinding" | "fedSignRequest" | "fedUsernameSource" | "fedSubjectClaim" | "fedAutocreateUsers" | "fedUpdateUserAttributes" | "fedProvisionGroups" | "fedProvisionCap" | "fedProvisionIdleMinutes" | "fedSubjectPolicy" | "fedSubjectPattern" | "fedMayAssertAdministrators" | "fedSignalEmailMatch" | "fedSignalsEnabled" | "fedSignalsIssuer" | "fedSignalsDelivery" | "fedSignalsTokenUrl" | "fedSignalsClientId" | "fedSignalsClientSecret" | "fedSignalsScope" | "fedSignalsBearer" | "fedSloUrl" | "fedSloBinding" | "fedEndSessionUrl" | "fedAcceptSignout" | "fedRequireSignedLogout" | "fedEncryptionKeyType" | "fedKeyManagementAlgorithm" | "fedContentEncryptionAlgorithm" | "fedAllowUnencrypted" | "fedAllowUnsolicited" | "fedApplication" | "fedAuthnMechanism" | "fedAuthnRelationship";
     @js(#{
       `description`:"The new value. An empty string clears it. `fedSigningCertificate` is normalised — PEM armour and whitespace are stripped, because what the schema holds is the base64 DER a ds:X509Certificate carries."
     }) `value`: string
@@ -26085,7 +26476,7 @@ op `createApplication`(@js(#{
       `description`:"THE PROTOCOL FAMILIES THIS APPLICATION IS DECLARED FOR, as ids from the closed vocabulary GET /admin-api/applications/new publishes. They land on `appAllowedProtocol`, and one that is not in that list is REFUSED rather than recorded — a typo that silently became a new family is how one application comes to be declared for two spellings of one thing.\n\n**IT GRANTS AND REFUSES NOTHING.** Nothing in this service reads the attribute: an application declared for `saml2` alone is still issued an access token at /oauth2/token, and one declared for nothing is treated exactly as it would have been. It is a record of INTENT, kept apart from `appProtocol` — which is what has actually happened and is not editable — so the two lists on an entry can be read against each other.\n\nA form-encoded body may repeat `protocol` instead, which is how the console's checkbox column posts it, and a single string may carry several separated by spaces or commas.\n\nA COMBINED CHOICE the console draws as one checkbox stands for its families: `vc` declares `oid4vci` and `oid4vp`."
     }) `protocols`?: ("oauth2" | "oidc" | "saml2" | "saml11" | "wsfed" | "wstrust" | "krb5" | "oid4vci" | "oid4vp" | "federation" | "ldap" | "scim" | "spiffe" | "mtls" | "ssf" | "gnap" | "uma" | "acme" | "est" | "scep" | "did" | "secret-destination" | "scim-client" | "vc")[];
     @js(#{
-      `description`:"THE ATTRIBUTES THE ENTRY IS CREATED WITH, keyed by the schema's own attribute name and valued with a string or an array of strings. This is where the per-protocol identifiers and the redirect URIs go — `oauthClientId`, `samlEntityId`, `wsfedRealm`, `krb5ServicePrincipalName`, `oauthRedirectUri`, `samlAssertionConsumerService`, `wsfedReplyUrl` and the rest.\n\nGET /admin-api/applications/new publishes the list as `declarations`, with the families each attribute serves and whether it holds a list; it is the same walk of the protocol table the console's form is drawn from, so this document and that page cannot offer different fields. GET /admin/ldap/applications publishes every attribute in the schema with an `editable` member.\n\n**Only DECLARED attributes may be given.** A derived one — a counter, a sighting, `appProtocol`, `appRedirectUriObserved` — is REFUSED by name rather than written, because an entry created with one would be asserting a past it does not have. A single-valued attribute given several values is refused as well, rather than truncated to the first: the only one you are likely to meet is `oauthTlsClientAuthSubjectDn`, which an RFC 8705 check compares by exact string equality, and quietly keeping one of two is exactly the wrong answer there.\n\n**Nothing given here is CHECKED except the OAuth redirect URIs, and those only in RFC 9700 mode.** The rest are recorded, in the way being in this registry at all is a record.\n\n**106 attributes are scoped to a PROTOCOL FAMILY and REFUSED on an application declared for none of them: `oauthNativeSso` (OpenID Connect), `oauthNativeSsoGroup` (OpenID Connect), `oauthBackchannelTokenDeliveryMode` (OpenID Connect), `oauthBackchannelClientNotificationEndpoint` (OpenID Connect), `oauthCommandEndpoint` (OpenID Connect), `oauthBackchannelAuthenticationRequestSigningAlg` (OpenID Connect), `oauthBackchannelUserCodeParameter` (OpenID Connect), `oauthSubjectType` (OpenID Connect), `oauthSectorIdentifierUri` (OpenID Connect), `oauthDidClaimWithPairwise` (OpenID Connect), `oauthTokenEndpointAuthSigningAlg` (OAuth 2.0, OpenID Connect), `oauthIntrospectionSignedResponseAlg` (OAuth 2.0, OpenID Connect), `oauthIntrospectionEncryptedResponseAlg` (OAuth 2.0, OpenID Connect), `oauthIntrospectionEncryptedResponseEnc` (OAuth 2.0, OpenID Connect), `oauthRequestUri` (OAuth 2.0, OpenID Connect), `oauthRequestObjectSigningAlg` (OAuth 2.0, OpenID Connect), `oauthRequestObjectEncryptionAlg` (OAuth 2.0, OpenID Connect), `oauthRequestObjectEncryptionEnc` (OAuth 2.0, OpenID Connect), `oauthRequireSignedRequestObject` (OAuth 2.0, OpenID Connect), `oauthRequirePushedAuthorizationRequests` (OAuth 2.0, OpenID Connect), `oauthHttpSignedRequests` (OAuth 2.0, OpenID Connect), `oauthAuthorizationDetailsType` (OAuth 2.0, OpenID Connect, GNAP), `oauthAuthorizationDetailsTypes` (OAuth 2.0, OpenID Connect), `authzenAttribute` (OAuth 2.0, OpenID Connect), `appAuthzenApplication` (OAuth 2.0, OpenID Connect), `appAuthzenCallbackUri` (OAuth 2.0, OpenID Connect), `oauthStepUpAcrValues` (OAuth 2.0, OpenID Connect), `oauthStepUpMaxAge` (OAuth 2.0, OpenID Connect), `oauthIdTokenSignedResponseAlg` (OpenID Connect), `oauthIdTokenEncryptedResponseAlg` (OpenID Connect), `oauthIdTokenEncryptedResponseEnc` (OpenID Connect), `oauthUserinfoSignedResponseAlg` (OpenID Connect), `oauthUserinfoEncryptedResponseAlg` (OpenID Connect), `oauthUserinfoEncryptedResponseEnc` (OpenID Connect), `oauthAuthorizationSignedResponseAlg` (OAuth 2.0, OpenID Connect), `oauthAuthorizationEncryptedResponseAlg` (OAuth 2.0, OpenID Connect), `oauthAuthorizationEncryptedResponseEnc` (OAuth 2.0, OpenID Connect), `oauthDefaultAcrValues` (OpenID Connect), `oauthDefaultMaxAge` (OpenID Connect), `oauthThirdPartyInitiatedLogin` (OAuth 2.0, OpenID Connect), `oauthSpInitiatedSso` (OAuth 2.0, OpenID Connect), `oauthInitiateLoginUri` (OAuth 2.0, OpenID Connect), `oauthLogoUri` (OAuth 2.0, OpenID Connect), `oauthPolicyUri` (OAuth 2.0, OpenID Connect), `oauthTosUri` (OAuth 2.0, OpenID Connect), `oauthTokenExchangeRefreshToken` (OAuth 2.0, OpenID Connect), `vcCredentialClaimAttributes` (OpenID4VCI), `wstrustJwtScope` (WS-Trust), `krb5S4uSelfRealm` (Kerberos v5), `krb5ForeignTgtDelegation` (Kerberos v5), `secretDestProvider` (Secret push destination), `secretDestPayload` (Secret push destination), `secretDestRegion` (Secret push destination), `secretDestProject` (Secret push destination), `secretDestEndpoint` (Secret push destination), `secretDestMount` (Secret push destination), `secretDestField` (Secret push destination), `secretDestDirectory` (Secret push destination), `secretDestCaCertificates` (Secret push destination), `secretDestCredential` (Secret push destination), `scimClientBaseUrl` (SCIM client (outbound provisioning)), `scimClientEnabled` (SCIM client (outbound provisioning)), `scimClientAuthMethod` (SCIM client (outbound provisioning)), `scimClientUsername` (SCIM client (outbound provisioning)), `scimClientPassword` (SCIM client (outbound provisioning)), `scimClientTokenEndpoint` (SCIM client (outbound provisioning)), `scimClientOAuthClientId` (SCIM client (outbound provisioning)), `scimClientOAuthClientSecret` (SCIM client (outbound provisioning)), `scimClientOAuthClientAuth` (SCIM client (outbound provisioning)), `scimClientOAuthScope` (SCIM client (outbound provisioning)), `scimClientOAuthResource` (SCIM client (outbound provisioning)), `scimClientTlsSource` (SCIM client (outbound provisioning)), `scimClientTlsCertificate` (SCIM client (outbound provisioning)), `scimClientTlsPrivateKey` (SCIM client (outbound provisioning)), `scimClientCaCertificates` (SCIM client (outbound provisioning)), `scimClientScopeMode` (SCIM client (outbound provisioning)), `scimClientScopeGroups` (SCIM client (outbound provisioning)), `scimClientScopeFilter` (SCIM client (outbound provisioning)), `scimClientGroupMode` (SCIM client (outbound provisioning)), `scimClientGroups` (SCIM client (outbound provisioning)), `scimClientDeprovision` (SCIM client (outbound provisioning)), `scimClientReconcileMinutes` (SCIM client (outbound provisioning)), `scimClientJurisdiction` (SCIM client (outbound provisioning)), `scimClientCells` (SCIM client (outbound provisioning)), `scimClientMaxRequestsPerSecond` (SCIM client (outbound provisioning)), `ssfAllowedEvents` (Shared Signals), `ssfCaepIncludeReasons` (Shared Signals), `ssfCaepReasonLanguage` (Shared Signals), `ssfCaepOmitEventTimestamp` (Shared Signals), `ssfRiscIncludeReasons` (Shared Signals), `ssfRiscReasonLanguage` (Shared Signals), `ssfRiscOmitEventTimestamp` (Shared Signals), `ssfSigningAlgorithm` (Shared Signals), `ssfMinVerificationInterval` (Shared Signals), `ssfInactivityTimeoutS` (Shared Signals), `ssfInactivityAction` (Shared Signals), `ssfVerificationEveryS` (Shared Signals), `ssfStreamStatusOnCreate` (Shared Signals), `ssfMaxStreams` (Shared Signals), `ssfMaxSubjectsPerStream` (Shared Signals), `ssfMaxQueuedEvents` (Shared Signals), `ssfPollMaxEvents` (Shared Signals), `ssfDeadLetterMaxPerStream` (Shared Signals), `ssfPushTimeoutMs` (Shared Signals), `ssfPushRetries` (Shared Signals), `ssfPushRetryDelayMs` (Shared Signals).** That is unlike every other attribute here, which is inert rather than wrong on an entry that never reaches the protocol it belongs to — these decide what an ENDPOINT does for an identifier, so on an entry no request could ever name they would read as a policy that was in force. Declare the family first (`protocols` on the create, or add to `appAllowedProtocol`). Clearing one is never refused, and `ldapmodify` reaches them like every other attribute.\n\n",
+      `description`:"THE ATTRIBUTES THE ENTRY IS CREATED WITH, keyed by the schema's own attribute name and valued with a string or an array of strings. This is where the per-protocol identifiers and the redirect URIs go — `oauthClientId`, `samlEntityId`, `wsfedRealm`, `krb5ServicePrincipalName`, `oauthRedirectUri`, `samlAssertionConsumerService`, `wsfedReplyUrl` and the rest.\n\nGET /admin-api/applications/new publishes the list as `declarations`, with the families each attribute serves and whether it holds a list; it is the same walk of the protocol table the console's form is drawn from, so this document and that page cannot offer different fields. GET /admin/ldap/applications publishes every attribute in the schema with an `editable` member.\n\n**Only DECLARED attributes may be given.** A derived one — a counter, a sighting, `appProtocol`, `appRedirectUriObserved` — is REFUSED by name rather than written, because an entry created with one would be asserting a past it does not have. A single-valued attribute given several values is refused as well, rather than truncated to the first: the only one you are likely to meet is `oauthTlsClientAuthSubjectDn`, which an RFC 8705 check compares by exact string equality, and quietly keeping one of two is exactly the wrong answer there.\n\n**Nothing given here is CHECKED except the OAuth redirect URIs, and those only in RFC 9700 mode.** The rest are recorded, in the way being in this registry at all is a record.\n\n**114 attributes are scoped to a PROTOCOL FAMILY and REFUSED on an application declared for none of them: `oauthNativeSso` (OpenID Connect), `oauthNativeSsoGroup` (OpenID Connect), `oauthBackchannelTokenDeliveryMode` (OpenID Connect), `oauthBackchannelClientNotificationEndpoint` (OpenID Connect), `oauthCommandEndpoint` (OpenID Connect), `oauthBackchannelAuthenticationRequestSigningAlg` (OpenID Connect), `oauthBackchannelUserCodeParameter` (OpenID Connect), `oauthSubjectType` (OpenID Connect), `oauthSectorIdentifierUri` (OpenID Connect), `oauthDidClaimWithPairwise` (OpenID Connect), `oauthTokenEndpointAuthSigningAlg` (OAuth 2.0, OpenID Connect), `oauthIntrospectionSignedResponseAlg` (OAuth 2.0, OpenID Connect), `oauthIntrospectionEncryptedResponseAlg` (OAuth 2.0, OpenID Connect), `oauthIntrospectionEncryptedResponseEnc` (OAuth 2.0, OpenID Connect), `oauthRequestUri` (OAuth 2.0, OpenID Connect), `oauthRequestObjectSigningAlg` (OAuth 2.0, OpenID Connect), `oauthRequestObjectEncryptionAlg` (OAuth 2.0, OpenID Connect), `oauthRequestObjectEncryptionEnc` (OAuth 2.0, OpenID Connect), `oauthRequireSignedRequestObject` (OAuth 2.0, OpenID Connect), `oauthRequirePushedAuthorizationRequests` (OAuth 2.0, OpenID Connect), `oauthHttpSignedRequests` (OAuth 2.0, OpenID Connect), `oauthAuthorizationDetailsType` (OAuth 2.0, OpenID Connect, GNAP), `oauthAuthorizationDetailsTypes` (OAuth 2.0, OpenID Connect), `authzenAttribute` (OAuth 2.0, OpenID Connect), `appAuthzenApplication` (OAuth 2.0, OpenID Connect), `appAuthzenCallbackUri` (OAuth 2.0, OpenID Connect), `oauthStepUpAcrValues` (OAuth 2.0, OpenID Connect), `oauthStepUpMaxAge` (OAuth 2.0, OpenID Connect), `oauthIdTokenSignedResponseAlg` (OpenID Connect), `oauthIdTokenEncryptedResponseAlg` (OpenID Connect), `oauthIdTokenEncryptedResponseEnc` (OpenID Connect), `oauthUserinfoSignedResponseAlg` (OpenID Connect), `oauthUserinfoEncryptedResponseAlg` (OpenID Connect), `oauthUserinfoEncryptedResponseEnc` (OpenID Connect), `oauthAuthorizationSignedResponseAlg` (OAuth 2.0, OpenID Connect), `oauthAuthorizationEncryptedResponseAlg` (OAuth 2.0, OpenID Connect), `oauthAuthorizationEncryptedResponseEnc` (OAuth 2.0, OpenID Connect), `oauthDefaultAcrValues` (OpenID Connect), `oauthDefaultMaxAge` (OpenID Connect), `oauthThirdPartyInitiatedLogin` (OAuth 2.0, OpenID Connect), `oauthSpInitiatedSso` (OAuth 2.0, OpenID Connect), `oauthInitiateLoginUri` (OAuth 2.0, OpenID Connect), `oauthLogoUri` (OAuth 2.0, OpenID Connect), `oauthPolicyUri` (OAuth 2.0, OpenID Connect), `oauthTosUri` (OAuth 2.0, OpenID Connect), `oauthTokenExchangeRefreshToken` (OAuth 2.0, OpenID Connect), `vcCredentialClaimAttributes` (OpenID4VCI), `wstrustJwtScope` (WS-Trust), `wstrustEncryptRequest`, `wstrustAcceptEncryptedElements` (WS-Trust), `wstrustEncryptRequestElements` (WS-Trust), `wstrustEncryptResponse` (WS-Trust), `wstrustEncryptResponseElements` (WS-Trust), `wstrustEncryptionAlgorithm` (WS-Trust), `wstrustEncryptionCertificate` (WS-Trust), `wstrustKeyTransportAlgorithm` (WS-Trust), `wstrustResponseRecipientXPath` (WS-Trust), `krb5S4uSelfRealm` (Kerberos v5), `krb5ForeignTgtDelegation` (Kerberos v5), `secretDestProvider` (Secret push destination), `secretDestPayload` (Secret push destination), `secretDestRegion` (Secret push destination), `secretDestProject` (Secret push destination), `secretDestEndpoint` (Secret push destination), `secretDestMount` (Secret push destination), `secretDestField` (Secret push destination), `secretDestDirectory` (Secret push destination), `secretDestCaCertificates` (Secret push destination), `secretDestCredential` (Secret push destination), `scimClientBaseUrl` (SCIM client (outbound provisioning)), `scimClientEnabled` (SCIM client (outbound provisioning)), `scimClientAuthMethod` (SCIM client (outbound provisioning)), `scimClientUsername` (SCIM client (outbound provisioning)), `scimClientPassword` (SCIM client (outbound provisioning)), `scimClientTokenEndpoint` (SCIM client (outbound provisioning)), `scimClientOAuthClientId` (SCIM client (outbound provisioning)), `scimClientOAuthClientSecret` (SCIM client (outbound provisioning)), `scimClientOAuthClientAuth` (SCIM client (outbound provisioning)), `scimClientOAuthScope` (SCIM client (outbound provisioning)), `scimClientOAuthResource` (SCIM client (outbound provisioning)), `scimClientTlsSource` (SCIM client (outbound provisioning)), `scimClientTlsCertificate` (SCIM client (outbound provisioning)), `scimClientTlsPrivateKey` (SCIM client (outbound provisioning)), `scimClientCaCertificates` (SCIM client (outbound provisioning)), `scimClientScopeMode` (SCIM client (outbound provisioning)), `scimClientScopeGroups` (SCIM client (outbound provisioning)), `scimClientScopeFilter` (SCIM client (outbound provisioning)), `scimClientGroupMode` (SCIM client (outbound provisioning)), `scimClientGroups` (SCIM client (outbound provisioning)), `scimClientDeprovision` (SCIM client (outbound provisioning)), `scimClientReconcileMinutes` (SCIM client (outbound provisioning)), `scimClientJurisdiction` (SCIM client (outbound provisioning)), `scimClientCells` (SCIM client (outbound provisioning)), `scimClientMaxRequestsPerSecond` (SCIM client (outbound provisioning)), `ssfAllowedEvents` (Shared Signals), `ssfCaepIncludeReasons` (Shared Signals), `ssfCaepReasonLanguage` (Shared Signals), `ssfCaepOmitEventTimestamp` (Shared Signals), `ssfRiscIncludeReasons` (Shared Signals), `ssfRiscReasonLanguage` (Shared Signals), `ssfRiscOmitEventTimestamp` (Shared Signals), `ssfSigningAlgorithm` (Shared Signals), `ssfMinVerificationInterval` (Shared Signals), `ssfInactivityTimeoutS` (Shared Signals), `ssfInactivityAction` (Shared Signals), `ssfVerificationEveryS` (Shared Signals), `ssfStreamStatusOnCreate` (Shared Signals), `ssfMaxStreams` (Shared Signals), `ssfMaxSubjectsPerStream` (Shared Signals), `ssfMaxQueuedEvents` (Shared Signals), `ssfPollMaxEvents` (Shared Signals), `ssfDeadLetterMaxPerStream` (Shared Signals), `ssfPushTimeoutMs` (Shared Signals), `ssfPushRetries` (Shared Signals), `ssfPushRetryDelayMs` (Shared Signals).** That is unlike every other attribute here, which is inert rather than wrong on an entry that never reaches the protocol it belongs to — these decide what an ENDPOINT does for an identifier, so on an entry no request could ever name they would read as a policy that was in force. Declare the family first (`protocols` on the create, or add to `appAllowedProtocol`). Clearing one is never refused, and `ldapmodify` reaches them like every other attribute.\n\n",
       `$apTrue`:true
     }) `fields`?: Record<unknown>;
     `lifetimeDays`?: post_admin_api_applications_create_b_application_json_lifetimeDays_h2727
@@ -26100,7 +26491,7 @@ op `createApplication`(@js(#{
   #{
     `operationId`:"setApplicationAttribute",
     `summary`:"Set a single-valued attribute",
-    `description`:"For the attributes that hold ONE value — `appName`, `appHomePageUrl`, `appLaunchProtocol`, `description`, `oauthClientSecret`, `oauthFrontchannelLogoutUri`, `oauthFrontchannelLogoutSessionRequired`, `oauthBackchannelLogoutUri`, `oauthBackchannelLogoutSessionRequired`, `oauthPermissionBaseUri`, `oauthResourceMetadata`, `oauthResourceMetadataUrl`, `oauthNativeSso`, `oauthNativeSsoGroup`, `oauthBackchannelTokenDeliveryMode`, `oauthBackchannelClientNotificationEndpoint`, `oauthCommandEndpoint`, `oauthBackchannelAuthenticationRequestSigningAlg`, `oauthBackchannelUserCodeParameter`, `oauthSubjectType`, `oauthSectorIdentifierUri`, `oauthDidClaimWithPairwise`, `oauthTokenEndpointAuthSigningAlg`, `oauthJwks`, `oauthJwksUri`, `oauthIntrospectionSignedResponseAlg`, `oauthIntrospectionEncryptedResponseAlg`, `oauthIntrospectionEncryptedResponseEnc`, `oauthRequestObjectSigningAlg`, `oauthRequestObjectEncryptionAlg`, `oauthRequestObjectEncryptionEnc`, `oauthRequireSignedRequestObject`, `oauthRequirePushedAuthorizationRequests`, `oauthHttpSignedRequests`, `oauthStepUpAcrValues`, `oauthStepUpMaxAge`, `oauthIdTokenSignedResponseAlg`, `oauthIdTokenEncryptedResponseAlg`, `oauthIdTokenEncryptedResponseEnc`, `oauthUserinfoSignedResponseAlg`, `oauthUserinfoEncryptedResponseAlg`, `oauthUserinfoEncryptedResponseEnc`, `oauthAuthorizationSignedResponseAlg`, `oauthAuthorizationEncryptedResponseAlg`, `oauthAuthorizationEncryptedResponseEnc`, `oauthDefaultAcrValues`, `oauthDefaultMaxAge`, `oauthAssertionJwks`, `oauthAssertionCertificate`, `oauthAssertionCertificateChain`, `oauthAssertionPrivateKey`, `oauthAssertionKid`, `oauthAssertionExpiresAt`, `oauthAssertionKeySource`, `oauthSamlAssertionSigningCertificate`, `oauthSamlAssertionCertificate`, `oauthSamlAssertionCertificateChain`, `oauthSamlAssertionPrivateKey`, `oauthSamlAssertionThumbprint`, `oauthSamlAssertionExpiresAt`, `oauthSamlAssertionKeySource`, `oauthIssuedSoftwareStatement`, `oauthTlsClientAuthSubjectDn`, `oauthTlsClientAuthSanDns`, `oauthTlsClientAuthSanUri`, `oauthTlsClientAuthSanIp`, `oauthTlsClientAuthSanEmail`, `oauthTlsClientCertificateBoundAccessTokens`, `oauthTlsClientCertificateThumbprint`, `samlSpMetadataUrl`, `samlSpMetadata`, `samlEncryptionCertificate`, `samlSpMetadataSigningCertificate`, `saml2EncryptAssertion`, `saml2EncryptionAlgorithm`, `saml2KeyTransportAlgorithm`, `saml2EncryptLogoutNameId`, `oauthAccessTokenTtlS`, `oauthIdTokenTtlS`, `oauthRefreshTokenTtlS`, `oauthRefreshIdleSeconds`, `oauthClaimsAccessToken`, `oauthClaimsIdToken`, `oauthClaimsUserinfo`, `oauthClaimAttributesAccessToken`, `oauthClaimAttributesIdToken`, `oauthClaimAttributesUserinfo`, `oauthClaimsCombineAccessToken`, `oauthClaimsCombineIdToken`, `oauthClaimsCombineUserinfo`, `oauthPermissionClaims`, `oauthAccessTokenClaimsCombine`, `oauthRevokeRefreshOnLogout`, `oauthThirdPartyInitiatedLogin`, `oauthSpInitiatedSso`, `oauthInitiateLoginUri`, `oauthLogoUri`, `oauthPolicyUri`, `oauthTosUri`, `oauthTokenExchangeRefreshToken`, `appDefaultDelegationSemantics`, `appNotDelegated`, `appMayAct`, `appGroupsClaim`, `appGroupsClaimName`, `appGroupsClaimValue`, `appGroupsClaimFromMemberOf`, `wsfedAssertionLifetimeMin`, `saml2CustomAttributes`, `saml11CustomAttributes`, `saml2ClaimAttributes`, `saml11ClaimAttributes`, `saml2ClaimsCombine`, `saml11ClaimsCombine`, `vcCredentialClaimAttributes`, `saml2AssertionLifetimeMin`, `saml2SignAssertion`, `saml2SignResponse`, `saml2NameIdFormat`, `saml2ArtifactTtlS`, `saml11AssertionLifetimeMin`, `saml11SignAssertion`, `saml11SignResponse`, `saml11NameIdFormat`, `saml11ArtifactTtlS`, `saml2IdpInitiatedSso`, `saml2SpInitiatedSso`, `saml11IdpInitiatedSso`, `saml11SpInitiatedSso`, `wsfedIdpInitiatedSso`, `wsfedSpInitiatedSso`, `krb5ClaimsPac`, `gnapClaimsAccessToken`, `krb5TrustedForDelegation`, `krb5ForeignTgtDelegation`, `appRegistrationAccessToken`, `acmeDefaultProfile`, `acmeCertificateLifetimeDays`, `estDefaultProfile`, `estCertificateLifetimeDays`, `scepDefaultProfile`, `scepCertificateLifetimeDays`, `estBasicAuthentication`, `estCertificateAuthentication`, `estServerKeyGeneration`, `enrollMaxCertificates`, `didPrivateKeys`, `secretDestProvider`, `secretDestPayload`, `secretDestRegion`, `secretDestProject`, `secretDestEndpoint`, `secretDestMount`, `secretDestField`, `secretDestDirectory`, `secretDestCaCertificates`, `secretDestCredential`, `scimClientBaseUrl`, `scimClientEnabled`, `scimClientAuthMethod`, `scimClientUsername`, `scimClientPassword`, `scimClientTokenEndpoint`, `scimClientOAuthClientId`, `scimClientOAuthClientSecret`, `scimClientOAuthClientAuth`, `scimClientOAuthScope`, `scimClientOAuthResource`, `scimClientTlsSource`, `scimClientTlsCertificate`, `scimClientTlsPrivateKey`, `scimClientCaCertificates`, `scimClientScopeMode`, `scimClientScopeFilter`, `scimClientGroupMode`, `scimClientDeprovision`, `scimClientReconcileMinutes`, `scimClientJurisdiction`, `scimClientMaxRequestsPerSecond`, `ssfCaepIncludeReasons`, `ssfCaepReasonLanguage`, `ssfCaepOmitEventTimestamp`, `ssfRiscIncludeReasons`, `ssfRiscReasonLanguage`, `ssfRiscOmitEventTimestamp`, `ssfSigningAlgorithm`, `ssfMinVerificationInterval`, `ssfInactivityTimeoutS`, `ssfInactivityAction`, `ssfVerificationEveryS`, `ssfStreamStatusOnCreate`, `ssfMaxStreams`, `ssfMaxSubjectsPerStream`, `ssfMaxQueuedEvents`, `ssfPollMaxEvents`, `ssfDeadLetterMaxPerStream`, `ssfPushTimeoutMs`, `ssfPushRetries`, `ssfPushRetryDelayMs`, `gnapInstanceId`, `gnapKey`, `gnapKeyReference`, `gnapKeyProof`, `gnapMtlsTrust`, `gnapSymmetricKey`, `gnapSymmetricAlg`, `gnapClassId`, `gnapDisplayUri`, `gnapLogoUri`, `gnapBearerTokens`, `gnapSkipInteraction`, `gnapAccessTokenFormat`, `gnapAccessTokenLifetimeS`, `gnapOwnerLookupUri`, `gnapJweKey`, `gnapScopedSignals`, `appFederationAutoRedirect`, `appAuthnPolicy`, `appPasskeyPolicy`, `appLocalePolicy`, `appPasswordPolicy`, `appPostLoginPolicy`, `umaOwnsResources`. An empty `value` CLEARS the attribute.\n\n**What may be changed is DECLARED and not DERIVED.** Configuration — what this application is allowed to do, which is what RFC 9700 mode reads — is editable. The counters, the sightings, the kinds and the protocols are what HAPPENED, and are refused with a list of what is not: a call that could rewrite them would make this registry lie about the service's own behaviour, in a way indistinguishable from the recording being broken. `ldapmodify` still reaches every attribute, which is a deliberate difference — refusing them HERE is the difference between offering an operation and merely not preventing it.\n\n**106 attributes are scoped to a PROTOCOL FAMILY and REFUSED on an application declared for none of them: `oauthNativeSso` (OpenID Connect), `oauthNativeSsoGroup` (OpenID Connect), `oauthBackchannelTokenDeliveryMode` (OpenID Connect), `oauthBackchannelClientNotificationEndpoint` (OpenID Connect), `oauthCommandEndpoint` (OpenID Connect), `oauthBackchannelAuthenticationRequestSigningAlg` (OpenID Connect), `oauthBackchannelUserCodeParameter` (OpenID Connect), `oauthSubjectType` (OpenID Connect), `oauthSectorIdentifierUri` (OpenID Connect), `oauthDidClaimWithPairwise` (OpenID Connect), `oauthTokenEndpointAuthSigningAlg` (OAuth 2.0, OpenID Connect), `oauthIntrospectionSignedResponseAlg` (OAuth 2.0, OpenID Connect), `oauthIntrospectionEncryptedResponseAlg` (OAuth 2.0, OpenID Connect), `oauthIntrospectionEncryptedResponseEnc` (OAuth 2.0, OpenID Connect), `oauthRequestUri` (OAuth 2.0, OpenID Connect), `oauthRequestObjectSigningAlg` (OAuth 2.0, OpenID Connect), `oauthRequestObjectEncryptionAlg` (OAuth 2.0, OpenID Connect), `oauthRequestObjectEncryptionEnc` (OAuth 2.0, OpenID Connect), `oauthRequireSignedRequestObject` (OAuth 2.0, OpenID Connect), `oauthRequirePushedAuthorizationRequests` (OAuth 2.0, OpenID Connect), `oauthHttpSignedRequests` (OAuth 2.0, OpenID Connect), `oauthAuthorizationDetailsType` (OAuth 2.0, OpenID Connect, GNAP), `oauthAuthorizationDetailsTypes` (OAuth 2.0, OpenID Connect), `authzenAttribute` (OAuth 2.0, OpenID Connect), `appAuthzenApplication` (OAuth 2.0, OpenID Connect), `appAuthzenCallbackUri` (OAuth 2.0, OpenID Connect), `oauthStepUpAcrValues` (OAuth 2.0, OpenID Connect), `oauthStepUpMaxAge` (OAuth 2.0, OpenID Connect), `oauthIdTokenSignedResponseAlg` (OpenID Connect), `oauthIdTokenEncryptedResponseAlg` (OpenID Connect), `oauthIdTokenEncryptedResponseEnc` (OpenID Connect), `oauthUserinfoSignedResponseAlg` (OpenID Connect), `oauthUserinfoEncryptedResponseAlg` (OpenID Connect), `oauthUserinfoEncryptedResponseEnc` (OpenID Connect), `oauthAuthorizationSignedResponseAlg` (OAuth 2.0, OpenID Connect), `oauthAuthorizationEncryptedResponseAlg` (OAuth 2.0, OpenID Connect), `oauthAuthorizationEncryptedResponseEnc` (OAuth 2.0, OpenID Connect), `oauthDefaultAcrValues` (OpenID Connect), `oauthDefaultMaxAge` (OpenID Connect), `oauthThirdPartyInitiatedLogin` (OAuth 2.0, OpenID Connect), `oauthSpInitiatedSso` (OAuth 2.0, OpenID Connect), `oauthInitiateLoginUri` (OAuth 2.0, OpenID Connect), `oauthLogoUri` (OAuth 2.0, OpenID Connect), `oauthPolicyUri` (OAuth 2.0, OpenID Connect), `oauthTosUri` (OAuth 2.0, OpenID Connect), `oauthTokenExchangeRefreshToken` (OAuth 2.0, OpenID Connect), `vcCredentialClaimAttributes` (OpenID4VCI), `wstrustJwtScope` (WS-Trust), `krb5S4uSelfRealm` (Kerberos v5), `krb5ForeignTgtDelegation` (Kerberos v5), `secretDestProvider` (Secret push destination), `secretDestPayload` (Secret push destination), `secretDestRegion` (Secret push destination), `secretDestProject` (Secret push destination), `secretDestEndpoint` (Secret push destination), `secretDestMount` (Secret push destination), `secretDestField` (Secret push destination), `secretDestDirectory` (Secret push destination), `secretDestCaCertificates` (Secret push destination), `secretDestCredential` (Secret push destination), `scimClientBaseUrl` (SCIM client (outbound provisioning)), `scimClientEnabled` (SCIM client (outbound provisioning)), `scimClientAuthMethod` (SCIM client (outbound provisioning)), `scimClientUsername` (SCIM client (outbound provisioning)), `scimClientPassword` (SCIM client (outbound provisioning)), `scimClientTokenEndpoint` (SCIM client (outbound provisioning)), `scimClientOAuthClientId` (SCIM client (outbound provisioning)), `scimClientOAuthClientSecret` (SCIM client (outbound provisioning)), `scimClientOAuthClientAuth` (SCIM client (outbound provisioning)), `scimClientOAuthScope` (SCIM client (outbound provisioning)), `scimClientOAuthResource` (SCIM client (outbound provisioning)), `scimClientTlsSource` (SCIM client (outbound provisioning)), `scimClientTlsCertificate` (SCIM client (outbound provisioning)), `scimClientTlsPrivateKey` (SCIM client (outbound provisioning)), `scimClientCaCertificates` (SCIM client (outbound provisioning)), `scimClientScopeMode` (SCIM client (outbound provisioning)), `scimClientScopeGroups` (SCIM client (outbound provisioning)), `scimClientScopeFilter` (SCIM client (outbound provisioning)), `scimClientGroupMode` (SCIM client (outbound provisioning)), `scimClientGroups` (SCIM client (outbound provisioning)), `scimClientDeprovision` (SCIM client (outbound provisioning)), `scimClientReconcileMinutes` (SCIM client (outbound provisioning)), `scimClientJurisdiction` (SCIM client (outbound provisioning)), `scimClientCells` (SCIM client (outbound provisioning)), `scimClientMaxRequestsPerSecond` (SCIM client (outbound provisioning)), `ssfAllowedEvents` (Shared Signals), `ssfCaepIncludeReasons` (Shared Signals), `ssfCaepReasonLanguage` (Shared Signals), `ssfCaepOmitEventTimestamp` (Shared Signals), `ssfRiscIncludeReasons` (Shared Signals), `ssfRiscReasonLanguage` (Shared Signals), `ssfRiscOmitEventTimestamp` (Shared Signals), `ssfSigningAlgorithm` (Shared Signals), `ssfMinVerificationInterval` (Shared Signals), `ssfInactivityTimeoutS` (Shared Signals), `ssfInactivityAction` (Shared Signals), `ssfVerificationEveryS` (Shared Signals), `ssfStreamStatusOnCreate` (Shared Signals), `ssfMaxStreams` (Shared Signals), `ssfMaxSubjectsPerStream` (Shared Signals), `ssfMaxQueuedEvents` (Shared Signals), `ssfPollMaxEvents` (Shared Signals), `ssfDeadLetterMaxPerStream` (Shared Signals), `ssfPushTimeoutMs` (Shared Signals), `ssfPushRetries` (Shared Signals), `ssfPushRetryDelayMs` (Shared Signals).** That is unlike every other attribute here, which is inert rather than wrong on an entry that never reaches the protocol it belongs to — these decide what an ENDPOINT does for an identifier, so on an entry no request could ever name they would read as a policy that was in force. Declare the family first (`protocols` on the create, or add to `appAllowedProtocol`). Clearing one is never refused, and `ldapmodify` reaches them like every other attribute.\n\nThis writes the same entry LDAP writes, through the same functions, so it takes effect on the very next authorization request.\n\n**Mirrors** `POST /admin/applications, POST /admin/applications/new, POST /admin/applications/edit and POST /admin/applications/owners` on the admin console.",
+    `description`:"For the attributes that hold ONE value — `appName`, `appHomePageUrl`, `appLaunchProtocol`, `description`, `oauthClientSecret`, `oauthFrontchannelLogoutUri`, `oauthFrontchannelLogoutSessionRequired`, `oauthBackchannelLogoutUri`, `oauthBackchannelLogoutSessionRequired`, `oauthPermissionBaseUri`, `oauthResourceMetadata`, `oauthResourceMetadataUrl`, `oauthNativeSso`, `oauthNativeSsoGroup`, `oauthBackchannelTokenDeliveryMode`, `oauthBackchannelClientNotificationEndpoint`, `oauthCommandEndpoint`, `oauthBackchannelAuthenticationRequestSigningAlg`, `oauthBackchannelUserCodeParameter`, `oauthSubjectType`, `oauthSectorIdentifierUri`, `oauthDidClaimWithPairwise`, `oauthTokenEndpointAuthSigningAlg`, `oauthJwks`, `oauthJwksUri`, `oauthIntrospectionSignedResponseAlg`, `oauthIntrospectionEncryptedResponseAlg`, `oauthIntrospectionEncryptedResponseEnc`, `oauthRequestObjectSigningAlg`, `oauthRequestObjectEncryptionAlg`, `oauthRequestObjectEncryptionEnc`, `oauthRequireSignedRequestObject`, `oauthRequirePushedAuthorizationRequests`, `oauthHttpSignedRequests`, `oauthStepUpAcrValues`, `oauthStepUpMaxAge`, `oauthIdTokenSignedResponseAlg`, `oauthIdTokenEncryptedResponseAlg`, `oauthIdTokenEncryptedResponseEnc`, `oauthUserinfoSignedResponseAlg`, `oauthUserinfoEncryptedResponseAlg`, `oauthUserinfoEncryptedResponseEnc`, `oauthAuthorizationSignedResponseAlg`, `oauthAuthorizationEncryptedResponseAlg`, `oauthAuthorizationEncryptedResponseEnc`, `oauthDefaultAcrValues`, `oauthDefaultMaxAge`, `oauthAssertionJwks`, `oauthAssertionCertificate`, `oauthAssertionCertificateChain`, `oauthAssertionPrivateKey`, `oauthAssertionKid`, `oauthAssertionExpiresAt`, `oauthAssertionKeySource`, `oauthSamlAssertionSigningCertificate`, `oauthSamlAssertionCertificate`, `oauthSamlAssertionCertificateChain`, `oauthSamlAssertionPrivateKey`, `oauthSamlAssertionThumbprint`, `oauthSamlAssertionExpiresAt`, `oauthSamlAssertionKeySource`, `oauthIssuedSoftwareStatement`, `oauthTlsClientAuthSubjectDn`, `oauthTlsClientAuthSanDns`, `oauthTlsClientAuthSanUri`, `oauthTlsClientAuthSanIp`, `oauthTlsClientAuthSanEmail`, `oauthTlsClientCertificateBoundAccessTokens`, `oauthTlsClientCertificateThumbprint`, `samlSpMetadataUrl`, `samlSpMetadata`, `samlEncryptionCertificate`, `samlSpMetadataSigningCertificate`, `saml2EncryptAssertion`, `saml2EncryptionAlgorithm`, `saml2KeyTransportAlgorithm`, `wstrustEncryptRequest`, `wstrustAcceptEncryptedElements`, `wstrustEncryptResponse`, `wstrustEncryptionAlgorithm`, `wstrustEncryptionCertificate`, `wstrustKeyTransportAlgorithm`, `wstrustResponseRecipientXPath`, `saml2EncryptLogoutNameId`, `oauthAccessTokenTtlS`, `oauthIdTokenTtlS`, `oauthRefreshTokenTtlS`, `oauthRefreshIdleSeconds`, `oauthMaxAuthAgeS`, `oauthClaimsAccessToken`, `oauthClaimsIdToken`, `oauthClaimsUserinfo`, `oauthClaimAttributesAccessToken`, `oauthClaimAttributesIdToken`, `oauthClaimAttributesUserinfo`, `oauthClaimsCombineAccessToken`, `oauthClaimsCombineIdToken`, `oauthClaimsCombineUserinfo`, `oauthPermissionClaims`, `oauthAccessTokenClaimsCombine`, `oauthRevokeRefreshOnLogout`, `oauthThirdPartyInitiatedLogin`, `oauthSpInitiatedSso`, `oauthInitiateLoginUri`, `oauthLogoUri`, `oauthPolicyUri`, `oauthTosUri`, `oauthTokenExchangeRefreshToken`, `appDefaultDelegationSemantics`, `appNotDelegated`, `appMayAct`, `appGroupsClaim`, `appGroupsClaimName`, `appGroupsClaimValue`, `appGroupsClaimFromMemberOf`, `wsfedAssertionLifetimeMin`, `saml2CustomAttributes`, `saml11CustomAttributes`, `saml2ClaimAttributes`, `saml11ClaimAttributes`, `saml2ClaimsCombine`, `saml11ClaimsCombine`, `vcCredentialClaimAttributes`, `saml2AssertionLifetimeMin`, `saml2SignAssertion`, `saml2SignResponse`, `saml2NameIdFormat`, `saml2ArtifactTtlS`, `saml11AssertionLifetimeMin`, `saml11SignAssertion`, `saml11SignResponse`, `saml11NameIdFormat`, `saml11ArtifactTtlS`, `saml2IdpInitiatedSso`, `saml2SpInitiatedSso`, `saml11IdpInitiatedSso`, `saml11SpInitiatedSso`, `wsfedIdpInitiatedSso`, `wsfedSpInitiatedSso`, `krb5ClaimsPac`, `gnapClaimsAccessToken`, `krb5TrustedForDelegation`, `krb5ForeignTgtDelegation`, `appRegistrationAccessToken`, `acmeDefaultProfile`, `acmeCertificateLifetimeDays`, `estDefaultProfile`, `estCertificateLifetimeDays`, `scepDefaultProfile`, `scepCertificateLifetimeDays`, `estBasicAuthentication`, `estCertificateAuthentication`, `estServerKeyGeneration`, `enrollMaxCertificates`, `didPrivateKeys`, `secretDestProvider`, `secretDestPayload`, `secretDestRegion`, `secretDestProject`, `secretDestEndpoint`, `secretDestMount`, `secretDestField`, `secretDestDirectory`, `secretDestCaCertificates`, `secretDestCredential`, `scimClientBaseUrl`, `scimClientEnabled`, `scimClientAuthMethod`, `scimClientUsername`, `scimClientPassword`, `scimClientTokenEndpoint`, `scimClientOAuthClientId`, `scimClientOAuthClientSecret`, `scimClientOAuthClientAuth`, `scimClientOAuthScope`, `scimClientOAuthResource`, `scimClientTlsSource`, `scimClientTlsCertificate`, `scimClientTlsPrivateKey`, `scimClientCaCertificates`, `scimClientScopeMode`, `scimClientScopeFilter`, `scimClientGroupMode`, `scimClientDeprovision`, `scimClientReconcileMinutes`, `scimClientJurisdiction`, `scimClientMaxRequestsPerSecond`, `ssfCaepIncludeReasons`, `ssfCaepReasonLanguage`, `ssfCaepOmitEventTimestamp`, `ssfRiscIncludeReasons`, `ssfRiscReasonLanguage`, `ssfRiscOmitEventTimestamp`, `ssfSigningAlgorithm`, `ssfMinVerificationInterval`, `ssfInactivityTimeoutS`, `ssfInactivityAction`, `ssfVerificationEveryS`, `ssfStreamStatusOnCreate`, `ssfMaxStreams`, `ssfMaxSubjectsPerStream`, `ssfMaxQueuedEvents`, `ssfPollMaxEvents`, `ssfDeadLetterMaxPerStream`, `ssfPushTimeoutMs`, `ssfPushRetries`, `ssfPushRetryDelayMs`, `gnapInstanceId`, `gnapKey`, `gnapKeyReference`, `gnapKeyProof`, `gnapMtlsTrust`, `gnapSymmetricKey`, `gnapSymmetricAlg`, `gnapClassId`, `gnapDisplayUri`, `gnapLogoUri`, `gnapBearerTokens`, `gnapSkipInteraction`, `gnapAccessTokenFormat`, `gnapAccessTokenLifetimeS`, `gnapOwnerLookupUri`, `gnapJweKey`, `gnapScopedSignals`, `appFederationAutoRedirect`, `appAuthnPolicy`, `appPasskeyPolicy`, `appLocalePolicy`, `appPasswordPolicy`, `appPostLoginPolicy`, `umaOwnsResources`. An empty `value` CLEARS the attribute.\n\n**What may be changed is DECLARED and not DERIVED.** Configuration — what this application is allowed to do, which is what RFC 9700 mode reads — is editable. The counters, the sightings, the kinds and the protocols are what HAPPENED, and are refused with a list of what is not: a call that could rewrite them would make this registry lie about the service's own behaviour, in a way indistinguishable from the recording being broken. `ldapmodify` still reaches every attribute, which is a deliberate difference — refusing them HERE is the difference between offering an operation and merely not preventing it.\n\n**114 attributes are scoped to a PROTOCOL FAMILY and REFUSED on an application declared for none of them: `oauthNativeSso` (OpenID Connect), `oauthNativeSsoGroup` (OpenID Connect), `oauthBackchannelTokenDeliveryMode` (OpenID Connect), `oauthBackchannelClientNotificationEndpoint` (OpenID Connect), `oauthCommandEndpoint` (OpenID Connect), `oauthBackchannelAuthenticationRequestSigningAlg` (OpenID Connect), `oauthBackchannelUserCodeParameter` (OpenID Connect), `oauthSubjectType` (OpenID Connect), `oauthSectorIdentifierUri` (OpenID Connect), `oauthDidClaimWithPairwise` (OpenID Connect), `oauthTokenEndpointAuthSigningAlg` (OAuth 2.0, OpenID Connect), `oauthIntrospectionSignedResponseAlg` (OAuth 2.0, OpenID Connect), `oauthIntrospectionEncryptedResponseAlg` (OAuth 2.0, OpenID Connect), `oauthIntrospectionEncryptedResponseEnc` (OAuth 2.0, OpenID Connect), `oauthRequestUri` (OAuth 2.0, OpenID Connect), `oauthRequestObjectSigningAlg` (OAuth 2.0, OpenID Connect), `oauthRequestObjectEncryptionAlg` (OAuth 2.0, OpenID Connect), `oauthRequestObjectEncryptionEnc` (OAuth 2.0, OpenID Connect), `oauthRequireSignedRequestObject` (OAuth 2.0, OpenID Connect), `oauthRequirePushedAuthorizationRequests` (OAuth 2.0, OpenID Connect), `oauthHttpSignedRequests` (OAuth 2.0, OpenID Connect), `oauthAuthorizationDetailsType` (OAuth 2.0, OpenID Connect, GNAP), `oauthAuthorizationDetailsTypes` (OAuth 2.0, OpenID Connect), `authzenAttribute` (OAuth 2.0, OpenID Connect), `appAuthzenApplication` (OAuth 2.0, OpenID Connect), `appAuthzenCallbackUri` (OAuth 2.0, OpenID Connect), `oauthStepUpAcrValues` (OAuth 2.0, OpenID Connect), `oauthStepUpMaxAge` (OAuth 2.0, OpenID Connect), `oauthIdTokenSignedResponseAlg` (OpenID Connect), `oauthIdTokenEncryptedResponseAlg` (OpenID Connect), `oauthIdTokenEncryptedResponseEnc` (OpenID Connect), `oauthUserinfoSignedResponseAlg` (OpenID Connect), `oauthUserinfoEncryptedResponseAlg` (OpenID Connect), `oauthUserinfoEncryptedResponseEnc` (OpenID Connect), `oauthAuthorizationSignedResponseAlg` (OAuth 2.0, OpenID Connect), `oauthAuthorizationEncryptedResponseAlg` (OAuth 2.0, OpenID Connect), `oauthAuthorizationEncryptedResponseEnc` (OAuth 2.0, OpenID Connect), `oauthDefaultAcrValues` (OpenID Connect), `oauthDefaultMaxAge` (OpenID Connect), `oauthThirdPartyInitiatedLogin` (OAuth 2.0, OpenID Connect), `oauthSpInitiatedSso` (OAuth 2.0, OpenID Connect), `oauthInitiateLoginUri` (OAuth 2.0, OpenID Connect), `oauthLogoUri` (OAuth 2.0, OpenID Connect), `oauthPolicyUri` (OAuth 2.0, OpenID Connect), `oauthTosUri` (OAuth 2.0, OpenID Connect), `oauthTokenExchangeRefreshToken` (OAuth 2.0, OpenID Connect), `vcCredentialClaimAttributes` (OpenID4VCI), `wstrustJwtScope` (WS-Trust), `wstrustEncryptRequest`, `wstrustAcceptEncryptedElements` (WS-Trust), `wstrustEncryptRequestElements` (WS-Trust), `wstrustEncryptResponse` (WS-Trust), `wstrustEncryptResponseElements` (WS-Trust), `wstrustEncryptionAlgorithm` (WS-Trust), `wstrustEncryptionCertificate` (WS-Trust), `wstrustKeyTransportAlgorithm` (WS-Trust), `wstrustResponseRecipientXPath` (WS-Trust), `krb5S4uSelfRealm` (Kerberos v5), `krb5ForeignTgtDelegation` (Kerberos v5), `secretDestProvider` (Secret push destination), `secretDestPayload` (Secret push destination), `secretDestRegion` (Secret push destination), `secretDestProject` (Secret push destination), `secretDestEndpoint` (Secret push destination), `secretDestMount` (Secret push destination), `secretDestField` (Secret push destination), `secretDestDirectory` (Secret push destination), `secretDestCaCertificates` (Secret push destination), `secretDestCredential` (Secret push destination), `scimClientBaseUrl` (SCIM client (outbound provisioning)), `scimClientEnabled` (SCIM client (outbound provisioning)), `scimClientAuthMethod` (SCIM client (outbound provisioning)), `scimClientUsername` (SCIM client (outbound provisioning)), `scimClientPassword` (SCIM client (outbound provisioning)), `scimClientTokenEndpoint` (SCIM client (outbound provisioning)), `scimClientOAuthClientId` (SCIM client (outbound provisioning)), `scimClientOAuthClientSecret` (SCIM client (outbound provisioning)), `scimClientOAuthClientAuth` (SCIM client (outbound provisioning)), `scimClientOAuthScope` (SCIM client (outbound provisioning)), `scimClientOAuthResource` (SCIM client (outbound provisioning)), `scimClientTlsSource` (SCIM client (outbound provisioning)), `scimClientTlsCertificate` (SCIM client (outbound provisioning)), `scimClientTlsPrivateKey` (SCIM client (outbound provisioning)), `scimClientCaCertificates` (SCIM client (outbound provisioning)), `scimClientScopeMode` (SCIM client (outbound provisioning)), `scimClientScopeGroups` (SCIM client (outbound provisioning)), `scimClientScopeFilter` (SCIM client (outbound provisioning)), `scimClientGroupMode` (SCIM client (outbound provisioning)), `scimClientGroups` (SCIM client (outbound provisioning)), `scimClientDeprovision` (SCIM client (outbound provisioning)), `scimClientReconcileMinutes` (SCIM client (outbound provisioning)), `scimClientJurisdiction` (SCIM client (outbound provisioning)), `scimClientCells` (SCIM client (outbound provisioning)), `scimClientMaxRequestsPerSecond` (SCIM client (outbound provisioning)), `ssfAllowedEvents` (Shared Signals), `ssfCaepIncludeReasons` (Shared Signals), `ssfCaepReasonLanguage` (Shared Signals), `ssfCaepOmitEventTimestamp` (Shared Signals), `ssfRiscIncludeReasons` (Shared Signals), `ssfRiscReasonLanguage` (Shared Signals), `ssfRiscOmitEventTimestamp` (Shared Signals), `ssfSigningAlgorithm` (Shared Signals), `ssfMinVerificationInterval` (Shared Signals), `ssfInactivityTimeoutS` (Shared Signals), `ssfInactivityAction` (Shared Signals), `ssfVerificationEveryS` (Shared Signals), `ssfStreamStatusOnCreate` (Shared Signals), `ssfMaxStreams` (Shared Signals), `ssfMaxSubjectsPerStream` (Shared Signals), `ssfMaxQueuedEvents` (Shared Signals), `ssfPollMaxEvents` (Shared Signals), `ssfDeadLetterMaxPerStream` (Shared Signals), `ssfPushTimeoutMs` (Shared Signals), `ssfPushRetries` (Shared Signals), `ssfPushRetryDelayMs` (Shared Signals).** That is unlike every other attribute here, which is inert rather than wrong on an entry that never reaches the protocol it belongs to — these decide what an ENDPOINT does for an identifier, so on an entry no request could ever name they would read as a policy that was in force. Declare the family first (`protocols` on the create, or add to `appAllowedProtocol`). Clearing one is never refused, and `ldapmodify` reaches them like every other attribute.\n\nThis writes the same entry LDAP writes, through the same functions, so it takes effect on the very next authorization request.\n\nThe admin console, the user portal and the reports application keep `oauthMaxAuthAgeS`, `oauthRefreshTokenTtlS` and `oauthRefreshIdleSeconds` as their own session bound (#825). Clearing one of those, or storing 0, is refused. A different positive number is written only when `confirm` is true, \"true\", \"on\" or \"1\". The value in force is the shorter of that number and the matching realm limit (`authn.sessionLifetimeS` for the maximum authentication age, the setting itself for the other two).\n\n**Mirrors** `POST /admin/applications, POST /admin/applications/new, POST /admin/applications/edit and POST /admin/applications/owners` on the admin console.",
     `tags`:#["Applications"],
     `responses`:#{
       `200`:#{
@@ -26131,8 +26522,9 @@ op `setApplicationAttribute`(@js(#{
     @js(#{`description`:"The identifier, exactly as the registry holds it."}) `application`: string;
     @js(#{
       `description`:"One of the editable single-valued attributes. GET /admin/ldap/applications publishes the schema with an `editable` member on every row."
-    }) `attribute`: "appName" | "appHomePageUrl" | "appLaunchProtocol" | "description" | "oauthClientSecret" | "oauthFrontchannelLogoutUri" | "oauthFrontchannelLogoutSessionRequired" | "oauthBackchannelLogoutUri" | "oauthBackchannelLogoutSessionRequired" | "oauthPermissionBaseUri" | "oauthResourceMetadata" | "oauthResourceMetadataUrl" | "oauthNativeSso" | "oauthNativeSsoGroup" | "oauthBackchannelTokenDeliveryMode" | "oauthBackchannelClientNotificationEndpoint" | "oauthCommandEndpoint" | "oauthBackchannelAuthenticationRequestSigningAlg" | "oauthBackchannelUserCodeParameter" | "oauthSubjectType" | "oauthSectorIdentifierUri" | "oauthDidClaimWithPairwise" | "oauthTokenEndpointAuthSigningAlg" | "oauthJwks" | "oauthJwksUri" | "oauthIntrospectionSignedResponseAlg" | "oauthIntrospectionEncryptedResponseAlg" | "oauthIntrospectionEncryptedResponseEnc" | "oauthRequestObjectSigningAlg" | "oauthRequestObjectEncryptionAlg" | "oauthRequestObjectEncryptionEnc" | "oauthRequireSignedRequestObject" | "oauthRequirePushedAuthorizationRequests" | "oauthHttpSignedRequests" | "oauthStepUpAcrValues" | "oauthStepUpMaxAge" | "oauthIdTokenSignedResponseAlg" | "oauthIdTokenEncryptedResponseAlg" | "oauthIdTokenEncryptedResponseEnc" | "oauthUserinfoSignedResponseAlg" | "oauthUserinfoEncryptedResponseAlg" | "oauthUserinfoEncryptedResponseEnc" | "oauthAuthorizationSignedResponseAlg" | "oauthAuthorizationEncryptedResponseAlg" | "oauthAuthorizationEncryptedResponseEnc" | "oauthDefaultAcrValues" | "oauthDefaultMaxAge" | "oauthAssertionJwks" | "oauthAssertionCertificate" | "oauthAssertionCertificateChain" | "oauthAssertionPrivateKey" | "oauthAssertionKid" | "oauthAssertionExpiresAt" | "oauthAssertionKeySource" | "oauthSamlAssertionSigningCertificate" | "oauthSamlAssertionCertificate" | "oauthSamlAssertionCertificateChain" | "oauthSamlAssertionPrivateKey" | "oauthSamlAssertionThumbprint" | "oauthSamlAssertionExpiresAt" | "oauthSamlAssertionKeySource" | "oauthIssuedSoftwareStatement" | "oauthTlsClientAuthSubjectDn" | "oauthTlsClientAuthSanDns" | "oauthTlsClientAuthSanUri" | "oauthTlsClientAuthSanIp" | "oauthTlsClientAuthSanEmail" | "oauthTlsClientCertificateBoundAccessTokens" | "oauthTlsClientCertificateThumbprint" | "samlSpMetadataUrl" | "samlSpMetadata" | "samlEncryptionCertificate" | "samlSpMetadataSigningCertificate" | "saml2EncryptAssertion" | "saml2EncryptionAlgorithm" | "saml2KeyTransportAlgorithm" | "saml2EncryptLogoutNameId" | "oauthAccessTokenTtlS" | "oauthIdTokenTtlS" | "oauthRefreshTokenTtlS" | "oauthRefreshIdleSeconds" | "oauthClaimsAccessToken" | "oauthClaimsIdToken" | "oauthClaimsUserinfo" | "oauthClaimAttributesAccessToken" | "oauthClaimAttributesIdToken" | "oauthClaimAttributesUserinfo" | "oauthClaimsCombineAccessToken" | "oauthClaimsCombineIdToken" | "oauthClaimsCombineUserinfo" | "oauthPermissionClaims" | "oauthAccessTokenClaimsCombine" | "oauthRevokeRefreshOnLogout" | "oauthThirdPartyInitiatedLogin" | "oauthSpInitiatedSso" | "oauthInitiateLoginUri" | "oauthLogoUri" | "oauthPolicyUri" | "oauthTosUri" | "oauthTokenExchangeRefreshToken" | "appDefaultDelegationSemantics" | "appNotDelegated" | "appMayAct" | "appGroupsClaim" | "appGroupsClaimName" | "appGroupsClaimValue" | "appGroupsClaimFromMemberOf" | "wsfedAssertionLifetimeMin" | "saml2CustomAttributes" | "saml11CustomAttributes" | "saml2ClaimAttributes" | "saml11ClaimAttributes" | "saml2ClaimsCombine" | "saml11ClaimsCombine" | "vcCredentialClaimAttributes" | "saml2AssertionLifetimeMin" | "saml2SignAssertion" | "saml2SignResponse" | "saml2NameIdFormat" | "saml2ArtifactTtlS" | "saml11AssertionLifetimeMin" | "saml11SignAssertion" | "saml11SignResponse" | "saml11NameIdFormat" | "saml11ArtifactTtlS" | "saml2IdpInitiatedSso" | "saml2SpInitiatedSso" | "saml11IdpInitiatedSso" | "saml11SpInitiatedSso" | "wsfedIdpInitiatedSso" | "wsfedSpInitiatedSso" | "krb5ClaimsPac" | "gnapClaimsAccessToken" | "krb5TrustedForDelegation" | "krb5ForeignTgtDelegation" | "appRegistrationAccessToken" | "acmeDefaultProfile" | "acmeCertificateLifetimeDays" | "estDefaultProfile" | "estCertificateLifetimeDays" | "scepDefaultProfile" | "scepCertificateLifetimeDays" | "estBasicAuthentication" | "estCertificateAuthentication" | "estServerKeyGeneration" | "enrollMaxCertificates" | "didPrivateKeys" | "secretDestProvider" | "secretDestPayload" | "secretDestRegion" | "secretDestProject" | "secretDestEndpoint" | "secretDestMount" | "secretDestField" | "secretDestDirectory" | "secretDestCaCertificates" | "secretDestCredential" | "scimClientBaseUrl" | "scimClientEnabled" | "scimClientAuthMethod" | "scimClientUsername" | "scimClientPassword" | "scimClientTokenEndpoint" | "scimClientOAuthClientId" | "scimClientOAuthClientSecret" | "scimClientOAuthClientAuth" | "scimClientOAuthScope" | "scimClientOAuthResource" | "scimClientTlsSource" | "scimClientTlsCertificate" | "scimClientTlsPrivateKey" | "scimClientCaCertificates" | "scimClientScopeMode" | "scimClientScopeFilter" | "scimClientGroupMode" | "scimClientDeprovision" | "scimClientReconcileMinutes" | "scimClientJurisdiction" | "scimClientMaxRequestsPerSecond" | "ssfCaepIncludeReasons" | "ssfCaepReasonLanguage" | "ssfCaepOmitEventTimestamp" | "ssfRiscIncludeReasons" | "ssfRiscReasonLanguage" | "ssfRiscOmitEventTimestamp" | "ssfSigningAlgorithm" | "ssfMinVerificationInterval" | "ssfInactivityTimeoutS" | "ssfInactivityAction" | "ssfVerificationEveryS" | "ssfStreamStatusOnCreate" | "ssfMaxStreams" | "ssfMaxSubjectsPerStream" | "ssfMaxQueuedEvents" | "ssfPollMaxEvents" | "ssfDeadLetterMaxPerStream" | "ssfPushTimeoutMs" | "ssfPushRetries" | "ssfPushRetryDelayMs" | "gnapInstanceId" | "gnapKey" | "gnapKeyReference" | "gnapKeyProof" | "gnapMtlsTrust" | "gnapSymmetricKey" | "gnapSymmetricAlg" | "gnapClassId" | "gnapDisplayUri" | "gnapLogoUri" | "gnapBearerTokens" | "gnapSkipInteraction" | "gnapAccessTokenFormat" | "gnapAccessTokenLifetimeS" | "gnapOwnerLookupUri" | "gnapJweKey" | "gnapScopedSignals" | "appFederationAutoRedirect" | "appAuthnPolicy" | "appPasskeyPolicy" | "appLocalePolicy" | "appPasswordPolicy" | "appPostLoginPolicy" | "umaOwnsResources";
-    @js(#{`description`:"The new value; empty clears the attribute."}) `value`?: string
+    }) `attribute`: "appName" | "appHomePageUrl" | "appLaunchProtocol" | "description" | "oauthClientSecret" | "oauthFrontchannelLogoutUri" | "oauthFrontchannelLogoutSessionRequired" | "oauthBackchannelLogoutUri" | "oauthBackchannelLogoutSessionRequired" | "oauthPermissionBaseUri" | "oauthResourceMetadata" | "oauthResourceMetadataUrl" | "oauthNativeSso" | "oauthNativeSsoGroup" | "oauthBackchannelTokenDeliveryMode" | "oauthBackchannelClientNotificationEndpoint" | "oauthCommandEndpoint" | "oauthBackchannelAuthenticationRequestSigningAlg" | "oauthBackchannelUserCodeParameter" | "oauthSubjectType" | "oauthSectorIdentifierUri" | "oauthDidClaimWithPairwise" | "oauthTokenEndpointAuthSigningAlg" | "oauthJwks" | "oauthJwksUri" | "oauthIntrospectionSignedResponseAlg" | "oauthIntrospectionEncryptedResponseAlg" | "oauthIntrospectionEncryptedResponseEnc" | "oauthRequestObjectSigningAlg" | "oauthRequestObjectEncryptionAlg" | "oauthRequestObjectEncryptionEnc" | "oauthRequireSignedRequestObject" | "oauthRequirePushedAuthorizationRequests" | "oauthHttpSignedRequests" | "oauthStepUpAcrValues" | "oauthStepUpMaxAge" | "oauthIdTokenSignedResponseAlg" | "oauthIdTokenEncryptedResponseAlg" | "oauthIdTokenEncryptedResponseEnc" | "oauthUserinfoSignedResponseAlg" | "oauthUserinfoEncryptedResponseAlg" | "oauthUserinfoEncryptedResponseEnc" | "oauthAuthorizationSignedResponseAlg" | "oauthAuthorizationEncryptedResponseAlg" | "oauthAuthorizationEncryptedResponseEnc" | "oauthDefaultAcrValues" | "oauthDefaultMaxAge" | "oauthAssertionJwks" | "oauthAssertionCertificate" | "oauthAssertionCertificateChain" | "oauthAssertionPrivateKey" | "oauthAssertionKid" | "oauthAssertionExpiresAt" | "oauthAssertionKeySource" | "oauthSamlAssertionSigningCertificate" | "oauthSamlAssertionCertificate" | "oauthSamlAssertionCertificateChain" | "oauthSamlAssertionPrivateKey" | "oauthSamlAssertionThumbprint" | "oauthSamlAssertionExpiresAt" | "oauthSamlAssertionKeySource" | "oauthIssuedSoftwareStatement" | "oauthTlsClientAuthSubjectDn" | "oauthTlsClientAuthSanDns" | "oauthTlsClientAuthSanUri" | "oauthTlsClientAuthSanIp" | "oauthTlsClientAuthSanEmail" | "oauthTlsClientCertificateBoundAccessTokens" | "oauthTlsClientCertificateThumbprint" | "samlSpMetadataUrl" | "samlSpMetadata" | "samlEncryptionCertificate" | "samlSpMetadataSigningCertificate" | "saml2EncryptAssertion" | "saml2EncryptionAlgorithm" | "saml2KeyTransportAlgorithm" | "wstrustEncryptRequest" | "wstrustAcceptEncryptedElements" | "wstrustEncryptResponse" | "wstrustEncryptionAlgorithm" | "wstrustEncryptionCertificate" | "wstrustKeyTransportAlgorithm" | "wstrustResponseRecipientXPath" | "saml2EncryptLogoutNameId" | "oauthAccessTokenTtlS" | "oauthIdTokenTtlS" | "oauthRefreshTokenTtlS" | "oauthRefreshIdleSeconds" | "oauthMaxAuthAgeS" | "oauthClaimsAccessToken" | "oauthClaimsIdToken" | "oauthClaimsUserinfo" | "oauthClaimAttributesAccessToken" | "oauthClaimAttributesIdToken" | "oauthClaimAttributesUserinfo" | "oauthClaimsCombineAccessToken" | "oauthClaimsCombineIdToken" | "oauthClaimsCombineUserinfo" | "oauthPermissionClaims" | "oauthAccessTokenClaimsCombine" | "oauthRevokeRefreshOnLogout" | "oauthThirdPartyInitiatedLogin" | "oauthSpInitiatedSso" | "oauthInitiateLoginUri" | "oauthLogoUri" | "oauthPolicyUri" | "oauthTosUri" | "oauthTokenExchangeRefreshToken" | "appDefaultDelegationSemantics" | "appNotDelegated" | "appMayAct" | "appGroupsClaim" | "appGroupsClaimName" | "appGroupsClaimValue" | "appGroupsClaimFromMemberOf" | "wsfedAssertionLifetimeMin" | "saml2CustomAttributes" | "saml11CustomAttributes" | "saml2ClaimAttributes" | "saml11ClaimAttributes" | "saml2ClaimsCombine" | "saml11ClaimsCombine" | "vcCredentialClaimAttributes" | "saml2AssertionLifetimeMin" | "saml2SignAssertion" | "saml2SignResponse" | "saml2NameIdFormat" | "saml2ArtifactTtlS" | "saml11AssertionLifetimeMin" | "saml11SignAssertion" | "saml11SignResponse" | "saml11NameIdFormat" | "saml11ArtifactTtlS" | "saml2IdpInitiatedSso" | "saml2SpInitiatedSso" | "saml11IdpInitiatedSso" | "saml11SpInitiatedSso" | "wsfedIdpInitiatedSso" | "wsfedSpInitiatedSso" | "krb5ClaimsPac" | "gnapClaimsAccessToken" | "krb5TrustedForDelegation" | "krb5ForeignTgtDelegation" | "appRegistrationAccessToken" | "acmeDefaultProfile" | "acmeCertificateLifetimeDays" | "estDefaultProfile" | "estCertificateLifetimeDays" | "scepDefaultProfile" | "scepCertificateLifetimeDays" | "estBasicAuthentication" | "estCertificateAuthentication" | "estServerKeyGeneration" | "enrollMaxCertificates" | "didPrivateKeys" | "secretDestProvider" | "secretDestPayload" | "secretDestRegion" | "secretDestProject" | "secretDestEndpoint" | "secretDestMount" | "secretDestField" | "secretDestDirectory" | "secretDestCaCertificates" | "secretDestCredential" | "scimClientBaseUrl" | "scimClientEnabled" | "scimClientAuthMethod" | "scimClientUsername" | "scimClientPassword" | "scimClientTokenEndpoint" | "scimClientOAuthClientId" | "scimClientOAuthClientSecret" | "scimClientOAuthClientAuth" | "scimClientOAuthScope" | "scimClientOAuthResource" | "scimClientTlsSource" | "scimClientTlsCertificate" | "scimClientTlsPrivateKey" | "scimClientCaCertificates" | "scimClientScopeMode" | "scimClientScopeFilter" | "scimClientGroupMode" | "scimClientDeprovision" | "scimClientReconcileMinutes" | "scimClientJurisdiction" | "scimClientMaxRequestsPerSecond" | "ssfCaepIncludeReasons" | "ssfCaepReasonLanguage" | "ssfCaepOmitEventTimestamp" | "ssfRiscIncludeReasons" | "ssfRiscReasonLanguage" | "ssfRiscOmitEventTimestamp" | "ssfSigningAlgorithm" | "ssfMinVerificationInterval" | "ssfInactivityTimeoutS" | "ssfInactivityAction" | "ssfVerificationEveryS" | "ssfStreamStatusOnCreate" | "ssfMaxStreams" | "ssfMaxSubjectsPerStream" | "ssfMaxQueuedEvents" | "ssfPollMaxEvents" | "ssfDeadLetterMaxPerStream" | "ssfPushTimeoutMs" | "ssfPushRetries" | "ssfPushRetryDelayMs" | "gnapInstanceId" | "gnapKey" | "gnapKeyReference" | "gnapKeyProof" | "gnapMtlsTrust" | "gnapSymmetricKey" | "gnapSymmetricAlg" | "gnapClassId" | "gnapDisplayUri" | "gnapLogoUri" | "gnapBearerTokens" | "gnapSkipInteraction" | "gnapAccessTokenFormat" | "gnapAccessTokenLifetimeS" | "gnapOwnerLookupUri" | "gnapJweKey" | "gnapScopedSignals" | "appFederationAutoRedirect" | "appAuthnPolicy" | "appPasskeyPolicy" | "appLocalePolicy" | "appPasswordPolicy" | "appPostLoginPolicy" | "umaOwnsResources";
+    @js(#{`description`:"The new value; empty clears the attribute. For the admin console, the user portal and the reports application, emptying oauthMaxAuthAgeS, oauthRefreshTokenTtlS or oauthRefreshIdleSeconds is refused."}) `value`?: string;
+    @js(#{`description`:"Required when this write changes oauthMaxAuthAgeS, oauthRefreshTokenTtlS or oauthRefreshIdleSeconds on the admin console, the user portal or the reports application. true, \"true\", \"on\" or \"1\". An unchanged value does not need it (#825)."}) `confirm`?: string
   },
   `responses/200/content/application~1json/schema`: `WithOkMessageErrors86`,
   `responses/400/content/application~1json/schema`: `WithOkMessageErrors86`,
@@ -26144,7 +26536,7 @@ op `setApplicationAttribute`(@js(#{
   #{
     `operationId`:"addApplicationValue",
     `summary`:"Add a value to a multi-valued attribute",
-    `description`:"For the attributes that hold a LIST — `appCorsOrigin`, `appAllowedProtocol`, `oauthClientId`, `oauthAudience`, `oauthRedirectUri`, `oauthClaimsRedirectUri`, `oauthPostLogoutRedirectUri`, `oauthGrantType`, `oauthResponseType`, `oauthAllowedTokenResponseTypes`, `oauthScope`, `oauthAllowedScope`, `oauthPermission`, `oauthRoleGatedPermission`, `oauthDelegatedPermission`, `oauthGlobalConsent`, `oauthTokenEndpointAuthMethod`, `oauthRequestUri`, `oauthAuthorizationDetailsType`, `oauthAuthorizationDetailsTypes`, `authzenAttribute`, `appAuthzenApplication`, `appAuthzenCallbackUri`, `oauthAssertionIssuer`, `oauthSamlAssertionIssuer`, `oauthSoftwareStatementIssuer`, `samlEntityId`, `samlAssertionConsumerService`, `samlSingleLogoutService`, `samlSigningCertificate`, `oauthAccessTokenClaim`, `appRequiredRole`, `appAllowedToDelegateTo`, `appAllowedToActOnBehalfOf`, `appDelegationSubjectGroup`, `appDelegationSemantics`, `wsfedRealm`, `wsfedReplyUrl`, `wsfedSignOutUri`, `wstrustAppliesTo`, `wstrustJwtScope`, `krb5ServicePrincipalName`, `krb5S4uSelfRealm`, `oid4vpClientId`, `federationPartnerId`, `ldapBindDn`, `scimClientId`, `acmeAllowedProfiles`, `estAllowedProfiles`, `scepAllowedProfiles`, `didPublicKeyJwk`, `didService`, `didAlsoKnownAs`, `scimClientScopeGroups`, `scimClientGroups`, `scimClientCells`, `ssfReceiverId`, `ssfDeliveryEndpoint`, `ssfAllowedEvents`, `gnapFinishUri`, `gnapInteractionStartModes`, `gnapAllowedAccess`, `gnapResourceServerUri`, `spiffeWorkloadId`, `appFederationRelationship`.\n\nThis is the one that matters most: a value added to `oauthRedirectUri` is a redirect URI RFC 9700 mode accepts by exact string match on the next authorization request. Note that it is the REGISTERED list — `appRedirectUriObserved`, which records what a client actually used, is not editable, because \"registered\" and \"used\" are different facts and section 2.1 is entirely about not confusing them.\n\n**Mirrors** `POST /admin/applications, POST /admin/applications/new, POST /admin/applications/edit and POST /admin/applications/owners` on the admin console.",
+    `description`:"For the attributes that hold a LIST — `appCorsOrigin`, `appAllowedProtocol`, `oauthClientId`, `oauthAudience`, `oauthRedirectUri`, `oauthClaimsRedirectUri`, `oauthPostLogoutRedirectUri`, `oauthGrantType`, `oauthResponseType`, `oauthAllowedTokenResponseTypes`, `oauthScope`, `oauthAllowedScope`, `oauthPermission`, `oauthRoleGatedPermission`, `oauthDelegatedPermission`, `oauthGlobalConsent`, `oauthTokenEndpointAuthMethod`, `oauthRequestUri`, `oauthAuthorizationDetailsType`, `oauthAuthorizationDetailsTypes`, `authzenAttribute`, `appAuthzenApplication`, `appAuthzenCallbackUri`, `oauthAssertionIssuer`, `oauthSamlAssertionIssuer`, `oauthSoftwareStatementIssuer`, `samlEntityId`, `samlAssertionConsumerService`, `samlSingleLogoutService`, `samlSigningCertificate`, `oauthAccessTokenClaim`, `appRequiredRole`, `appAllowedToDelegateTo`, `appAllowedToActOnBehalfOf`, `appDelegationSubjectGroup`, `appDelegationSemantics`, `wsfedRealm`, `wsfedReplyUrl`, `wsfedSignOutUri`, `wstrustAppliesTo`, `wstrustJwtScope`, `wstrustEncryptRequestElements`, `wstrustEncryptResponseElements`, `krb5ServicePrincipalName`, `krb5S4uSelfRealm`, `oid4vpClientId`, `federationPartnerId`, `ldapBindDn`, `scimClientId`, `acmeAllowedProfiles`, `estAllowedProfiles`, `scepAllowedProfiles`, `didPublicKeyJwk`, `didService`, `didAlsoKnownAs`, `scimClientScopeGroups`, `scimClientGroups`, `scimClientCells`, `ssfReceiverId`, `ssfDeliveryEndpoint`, `ssfAllowedEvents`, `gnapFinishUri`, `gnapInteractionStartModes`, `gnapAllowedAccess`, `gnapResourceServerUri`, `spiffeWorkloadId`, `appFederationRelationship`.\n\nThis is the one that matters most: a value added to `oauthRedirectUri` is a redirect URI RFC 9700 mode accepts by exact string match on the next authorization request. Note that it is the REGISTERED list — `appRedirectUriObserved`, which records what a client actually used, is not editable, because \"registered\" and \"used\" are different facts and section 2.1 is entirely about not confusing them.\n\n**Mirrors** `POST /admin/applications, POST /admin/applications/new, POST /admin/applications/edit and POST /admin/applications/owners` on the admin console.",
     `tags`:#["Applications"],
     `responses`:#{
       `200`:#{
@@ -26225,7 +26617,7 @@ op `removeApplicationValue`(@js(#{
   #{
     `operationId`:"updateApplicationFields",
     `summary`:"Set several attributes of an application at once",
-    `description`:"What the Save button of an application's field grid on the console does. Each member of `fields` names an editable attribute and gives what it should hold: a single-valued attribute is SET (an empty string or array clears it), and a multi-valued one has the values not given removed and the values not yet held added — exactly `set`, `add` and `remove`, applied per attribute, so every rule those hold still holds. An attribute whose values did not change is not written. `protocols`, when given, replaces the declared protocol families, and is written first, so a family-scoped attribute may be set in the same call that declares its family.\n\nWhat one attribute refuses does not undo another: the reply names what was saved (`changed`) and every refusal, and answers 400 when there was any.\n\n**Mirrors** `POST /admin/applications, POST /admin/applications/new, POST /admin/applications/edit and POST /admin/applications/owners` on the admin console.",
+    `description`:"What the Save button of an application's field grid on the console does. Each member of `fields` names an editable attribute and gives what it should hold: a single-valued attribute is SET (an empty string or array clears it), and a multi-valued one has the values not given removed and the values not yet held added — exactly `set`, `add` and `remove`, applied per attribute, so every rule those hold still holds. An attribute whose values did not change is not written. `protocols`, when given, replaces the declared protocol families, and is written first, so a family-scoped attribute may be set in the same call that declares its family.\n\nWhat one attribute refuses does not undo another: the reply names what was saved (`changed`) and every refusal, and answers 400 when there was any. A change to the admin console's, the user portal's or the reports application's own session bound (`oauthMaxAuthAgeS`, `oauthRefreshTokenTtlS`, `oauthRefreshIdleSeconds`) that is not confirmed, or that clears the attribute or stores 0, refuses the whole save and writes nothing (#825). Pass `confirm` as true, \"true\", \"on\" or \"1\".\n\n**Mirrors** `POST /admin/applications, POST /admin/applications/new, POST /admin/applications/edit and POST /admin/applications/owners` on the admin console.",
     `tags`:#["Applications"],
     `responses`:#{
       `200`:#{
@@ -26266,7 +26658,8 @@ op `updateApplicationFields`(@js(#{
     @js(#{`$noProps`:true,`$open`:true}) `fields`?: {};
     `protocols`?: (string)[];
     `protocolsPresent`?: post_admin_api_applications_update_fields_b_application_json_protocolsPresent_h2728;
-    `present`?: Shape11
+    `present`?: Shape11;
+    @js(#{`description`:"Required when this save changes oauthMaxAuthAgeS, oauthRefreshTokenTtlS or oauthRefreshIdleSeconds on the admin console, the user portal or the reports application. true, \"true\", \"on\" or \"1\". An unchanged value does not need it. Without it the whole save is refused and nothing is written (#825)."}) `confirm`?: string
   },
   `responses/200/content/application~1json/schema`: `WithOkMessageErrors86`,
   `responses/400/content/application~1json/schema`: `WithOkMessageErrors86`,
@@ -27535,6 +27928,133 @@ op `removeApplicationCertificate`(@js(#{
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
+@endpoint("/admin-api/applications/issue-wstrust-decryption-key",
+  "post",
+  #{
+    `operationId`:"issueApplicationWsTrustDecryptionKey",
+    `summary`:"Issue an application its own WS-Trust decryption key pair from this realm's CA",
+    `description`:"Generates a key pair and certifies it from the realm's certificate authority with the `key-encipherment` profile (keyUsage keyEncipherment for RSA, keyAgreement for EC, never digitalSignature), subject `CN=<application>-encrypt` with the realm's organisation and country, subjectAltName `urn:sts:application:<application>` (#1668). It replaces the pair the application held. The private key is sealed where keys persist and is in no answer, page or directory read; the certificate is in the answer and in `credentials.wstrustDecryption` of GET /admin-api/applications?application=, which is how a requester gets it. From then on a WS-Trust request for this application is decrypted with this key (chosen by the recipient its EncryptedKey names), and a request for it encrypted to the realm's key is refused (STS-WSTRUST-0083). Refused when the realm has no certificate authority or the key type is not rsa-3072 or ec-p256 (STS-ADMIN-0945), and for an application the registry does not hold (STS-ADMIN-0950).\n\n**Mirrors** `POST /admin/applications, POST /admin/applications/new, POST /admin/applications/edit and POST /admin/applications/owners` on the admin console.",
+    `tags`:#["Applications"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The key pair issued, as it now stands.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `issueApplicationWsTrustDecryptionKey`(@js(#{
+    `examples`:#[
+      #{
+        `application`:"urn:example:esb",
+        `keyAlg`:"rsa-3072"
+      }
+    ]
+  }) `requestBody/content/application~1json/schema`: {
+    @js(#{
+      `description`:"The application's identifier, exactly as this registry holds it."
+    }) `application`: string;
+    @js(#{`description`:"The key type: `rsa-3072` (the default) or `ec-p256`."}) `keyAlg`?: "rsa-3072" | "ec-p256";
+    @js(#{`description`:"The certificate's lifetime in days; pki.leafLifetimeDays when absent. Clamped to the Issuing CA's own expiry."}) `days`?: integer
+  },
+  `responses/200/content/application~1json/schema`: WsTrustDecryptionKeyAnswer,
+  `responses/400/content/application~1json/schema`: WsTrustDecryptionKeyAnswer,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
+@endpoint("/admin-api/applications/upload-wstrust-decryption-key",
+  "post",
+  #{
+    `operationId`:"uploadApplicationWsTrustDecryptionKey",
+    `summary`:"Store a certificate and private key as an application's WS-Trust decryption key pair",
+    `description`:"Stores an uploaded certificate and its private key as the application's WS-Trust decryption key pair, in place of the one it held (#1668). Both are PEM; PKCS#12 is not taken. Refused when the certificate is not exactly one certificate or the key is not an unencrypted PEM private key (STS-ADMIN-0946), when the key is not the certificate's private half (STS-ADMIN-0947), when the key is not RSA of at least 2048 bits or EC on P-256, P-384 or P-521 — what XML Encryption here unwraps a content key with (STS-ADMIN-0948) — when the certificate's keyUsage leaves out keyEncipherment (RSA) or keyAgreement (EC) or it has expired (STS-ADMIN-0949), and when the certificate is already another application's or the registry holds no such application (STS-ADMIN-0950). The private key is sealed where keys persist and is in no answer.\n\n**Mirrors** `POST /admin/applications, POST /admin/applications/new, POST /admin/applications/edit and POST /admin/applications/owners` on the admin console.",
+    `tags`:#["Applications"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The key pair stored, as it now stands.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `uploadApplicationWsTrustDecryptionKey`(@js(#{
+    `examples`:#[
+      #{
+        `application`:"urn:example:esb",
+        `certificate`:"-----BEGIN CERTIFICATE-----\nMIIC...\n-----END CERTIFICATE-----",
+        `privateKey`:"-----BEGIN PRIVATE KEY-----\nMIIE...\n-----END PRIVATE KEY-----"
+      }
+    ]
+  }) `requestBody/content/application~1json/schema`: {
+    @js(#{
+      `description`:"The application's identifier, exactly as this registry holds it."
+    }) `application`: string;
+    @js(#{`description`:"The certificate, one PEM block."}) `certificate`: string;
+    @js(#{`description`:"Its private key, an unencrypted PEM private key (PKCS#8, PKCS#1 or SEC 1)."}) `privateKey`: string
+  },
+  `responses/200/content/application~1json/schema`: WsTrustDecryptionKeyAnswer,
+  `responses/400/content/application~1json/schema`: WsTrustDecryptionKeyAnswer,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
+@endpoint("/admin-api/applications/remove-wstrust-decryption-key",
+  "post",
+  #{
+    `operationId`:"removeApplicationWsTrustDecryptionKey",
+    `summary`:"Take an application's WS-Trust decryption key pair off its entry",
+    `description`:"Removes the application's WS-Trust decryption key pair: the certificate, its chain, the private key and its source (#1668). A request for the application is decrypted with the realm's key again. This is not revocation: a certificate issued here stays valid and is on no revocation list. Refused when the application holds none or the registry holds no such application (STS-ADMIN-0950).\n\n**Mirrors** `POST /admin/applications, POST /admin/applications/new, POST /admin/applications/edit and POST /admin/applications/owners` on the admin console.",
+    `tags`:#["Applications"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The application, with no key pair.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `removeApplicationWsTrustDecryptionKey`(@js(#{
+    `examples`:#[
+      #{
+        `application`:"urn:example:esb"
+      }
+    ]
+  }) `requestBody/content/application~1json/schema`: {
+    @js(#{
+      `description`:"The application's identifier, exactly as this registry holds it."
+    }) `application`: string
+  },
+  `responses/200/content/application~1json/schema`: WsTrustDecryptionKeyAnswer,
+  `responses/400/content/application~1json/schema`: WsTrustDecryptionKeyAnswer,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
 @js(#{
     `description`:"The client metadata the statement fixes, as an object or as JSON text.",
     `$comb`:"oneOf"
@@ -27874,13 +28394,51 @@ op `getXacml`(`responses/200/content/application~1json/schema`: {
         `content`:#{`application/json`:#{`schema`:null}}
       }
     },
+    `parameters`:#[
+      #{
+        `name`:"q",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"A search (#1760, the reverse-proxy route forms' policy chooser): a substring of a policy's name, PolicyId or description, without case. With q, per, page or routable the answer is that page of the matching policies, with matched, page and pages; with none of them, the whole repository."
+      },
+      #{
+        `name`:"per",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Policies per page of a search; 50 by default, capped at 300."
+      },
+      #{
+        `name`:"page",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of a search. CLAMPED rather than refused: a page past the end returns the last one."
+      },
+      #{
+        `name`:"routable",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"true keeps only the policies a reverse-proxy route may choose: enabled, and sent to a remote PEP (not this service's own access or issuance policy, not an application's)."
+      }
+    ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getXacmlPolicies`(`responses/200/content/application~1json/schema`: {
+op `getXacmlPolicies`(@js(#{`maxLength`:256,`examples`:#["pep-demo"]}) `parameters/0/schema`: string,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[5]}) `parameters/1/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
+  @js(#{`enum`:#["true","false"]}) `parameters/3/schema`: string,
+  `responses/200/content/application~1json/schema`: {
     `xacml`?: boolean;
     `message`?: string;
     `root`?: NullableString;
     `policies`?: (WithNamePolicyIdKindEtc11)[];
+    @js(#{`description`:"A search's: how many policies matched."}) `matched`?: integer;
+    @js(#{`description`:"A search's: the page these rows are, clamped."}) `page`?: integer;
+    @js(#{`description`:"A search's: how many pages the match has."}) `pages`?: integer;
+    @js(#{`description`:"A search's: what was asked."}) `query`?: { `q`?: string; `routable`?: boolean };
     `applicationPolicies`?: (WithApplicationKnownEnforcedEtc4)[];
     `templates`?: (WithIdLabelBlurbEtc5)[];
     `serviceOwn`?: `WithKindTypeLexical`;
@@ -28274,7 +28832,7 @@ op `getXacmlMonitor`(`responses/200/content/application~1json/schema`: `XacmlMon
   #{
     `operationId`:"getXacmlPeps",
     `summary`:"The REMOTE Policy Enforcement Points that pull this repository, and whether they are deciding with the same policy this service holds",
-    `description`:"Everything the Remote PEPs tab on /admin/xacml draws.\n\nA REMOTE PEP runs in another process, holds its own copy of the engine and PULLS the enabled policies from GET /xacml/pep/policies. The pull is the contract; the nudge this service sends to `notifyUrl` when the repository changes is an optimisation over the polling interval and never a replacement for it, so a PEP that is never nudged still converges.\n\nREGISTERING IS NOT A PERMISSION. An unregistered PEP can pull and enforce exactly as well — GET /xacml/pep/policies requires no credential, because a policy is a rule and a rule nobody can read is a rule nobody can check. What a row buys is this listing and an address for the nudge.\n\n`current` is a COMPARISON this service performs between `syncToken` on the row and the repository's own, not a claim the PEP makes; `stale` is how long since it was last heard from against xacml.pepStaleAfterS and changes nothing this service does. The decision counts are the PEP's own, cumulative in its process — this service saw none of those decisions, which is what a remote PEP is — so a PEP that restarts makes them go down.\n\n**Mirrors** `GET /admin/xacml` on the admin console.\n\nThe reply also carries `protocolEndpoints`: every endpoint of this family in the realm the call arrived in, as `{ name, methods, url }` (plus `route` for an HTTP endpoint, `transport` for a socket, and `registered: false` for a route the router no longer has).",
+    `description`:"Everything the Remote PEPs tab on /admin/xacml draws.\n\nA REMOTE PEP runs in another process, holds its own copy of the engine and PULLS the enabled policies from GET /xacml/pep/policies. The pull is the contract; the nudge this service sends to `notifyUrl` when the repository changes is an optimisation over the polling interval and never a replacement for it, so a PEP that is never nudged still converges.\n\nREGISTERING IS NOT A PERMISSION. An unregistered PEP can pull and enforce exactly as well — GET /xacml/pep/policies requires no credential, because a policy is a rule and a rule nobody can read is a rule nobody can check. What a row buys is this listing and an address for the nudge.\n\n`current` is a COMPARISON this service performs between `syncToken` on the row and the repository's own, not a claim the PEP makes; `stale` is how long since it was last heard from against xacml.pepStaleAfterS and changes nothing this service does. The decision counts are the PEP's own, cumulative in its process — this service saw none of those decisions, which is what a remote PEP is — so a PEP that restarts makes them go down.\n\nWith `pep`, the answer is ONE PEP's page (#1760, `/admin/xacml/pep?pep=<name>`): `peps` holds that row alone and `found` says whether it is registered. Every answer carries `settingsCatalogue`: each setting an administrator may set for a remote PEP (its member name, the environment variable it replaces at the PEP, its type, bounds and closed set, its default, when a change takes effect, and whether this realm's mode refuses `true`), the environment variables that stay the PEP's own with why, and the precedence — the service's value, then the environment's, then the default. Each row carries `settings` (what is set here, null for none), `settingsProblem`, `settingsInUse` (what the PEP last reported having in force, by source) and `settingsCurrent` (whether that was applied from what would be sent now), and `effectiveNotifyUrl`, the address the nudge dials.\n\n**Mirrors** `GET /admin/xacml, GET /admin/xacml/pep, GET /admin/xacml/pep/route and GET /admin/xacml/pep/monitor` on the admin console.\n\nThe reply also carries `protocolEndpoints`: every endpoint of this family in the realm the call arrived in, as `{ name, methods, url }` (plus `route` for an HTTP endpoint, `transport` for a socket, and `registered: false` for a route the router no longer has).",
     `tags`:#["XACML"],
     `responses`:#{
       `200`:#{
@@ -28286,22 +28844,102 @@ op `getXacmlMonitor`(`responses/200/content/application~1json/schema`: `XacmlMon
         `content`:#{`application/json`:#{`schema`:null}}
       }
     },
+    `parameters`:#[
+      #{
+        `name`:"pep",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"One registered PEP, by its name exactly. The answer then lists that row alone and says `found`; a name with no row answers 200 with `found: false`."
+      },
+      #{
+        `name`:"route",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"With `pep`: one route of that PEP's reverse proxy, by its id. The answer then carries `routeDetail`: the route, where it stands, whether its application resolves and which proxy listeners serve it; `found: false` there when the PEP has no such route."
+      }
+    ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getXacmlPeps`(`responses/200/content/application~1json/schema`: {
+op `getXacmlPeps`(@js(#{`maxLength`:128}) `parameters/0/schema`: string,
+  @js(#{`maxLength`:64,`examples`:#["orders"]}) `parameters/1/schema`: string,
+  `responses/200/content/application~1json/schema`: {
     `xacml`?: boolean;
     `message`?: string;
     `enabled`?: boolean;
     `syncToken`?: NullableString;
     `staleAfterS`?: numeric;
     `requiresCertificate`?: boolean;
+    `pepAuthentication`?: "certificate" | "token" | "either";
     `notify`?: WithOnAllowedHostsTimeoutMsEtc4;
     `peps`?: (WithNameDnIdentityEtc25)[];
     `elsewhere`?: (WithIdNameCount)[];
     `listenerCertificates`?: WithUseCaseKeyAlgorithmsDefaultKeyAlg;
     `current`?: integer;
     `stale`?: integer;
+    `settingsCatalogue`?: XacmlPepSettingsCatalogue;
+    `listenersCatalogue`?: XacmlPepListenersCatalogue;
+    `applicationChoices`?: (WithIdentifierName)[];
+    `pep`?: string;
+    `found`?: boolean;
+    `route`?: string;
+    `routeDetail`?: XacmlPepRouteDetail;
     `protocolEndpoints`?: `WithParamsDescriptionParams`
+  },
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
+@endpoint("/admin-api/xacml/pep-clusters",
+  "get",
+  #{
+    `operationId`:"getXacmlPepClusters",
+    `summary`:"The realm's remote PEP clusters: each one's shared configuration and its members",
+    `description`:"Everything the PEP clusters tab on /admin/xacml and a cluster's own pages draw (#1760). A cluster's reverse proxy, managed settings and listener definitions are held once and every member pulls them as its own, differing only in its name and addresses. Each cluster carries its documents as the pull reads them, its routes' resolution and policy state, and each member's addresses, whether it is registered, and why a write would refuse it now (`code`, `why`). `peps` lists every registered PEP and its cluster, for the Members tab's chooser. With `cluster`, one cluster and `found`; with `route` as well, `routeDetail`.\n\n**Mirrors** `GET /admin/xacml, GET /admin/xacml/pep-cluster and GET /admin/xacml/pep-cluster/route` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The clusters and their members.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `parameters`:#[
+      #{
+        `name`:"cluster",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"One cluster, by its name exactly. The answer then lists that cluster alone and says `found`."
+      },
+      #{
+        `name`:"route",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"With `cluster`: one route of the cluster's reverse proxy, by its id. The answer then carries `routeDetail`."
+      }
+    ],
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+  })
+op `getXacmlPepClusters`(@js(#{`maxLength`:64,`examples`:#["orders"]}) `parameters/0/schema`: string,
+  @js(#{`maxLength`:64,`examples`:#["health"]}) `parameters/1/schema`: string,
+  `responses/200/content/application~1json/schema`: {
+    `xacml`?: boolean;
+    `message`?: string;
+    `enabled`?: boolean;
+    `clusters`?: (XacmlPepClusterView)[];
+    `peps`?: (XacmlPepClusterPep)[];
+    `settingsCatalogue`?: XacmlPepSettingsCatalogue;
+    `listenersCatalogue`?: XacmlPepListenersCatalogue;
+    `applicationChoices`?: (WithIdentifierName)[];
+    `cluster`?: string;
+    `found`?: boolean;
+    `route`?: string;
+    `routeDetail`?: XacmlPepRouteDetail
   },
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
@@ -30055,7 +30693,8 @@ op `disableXacmlPep`(@js(#{`examples`:#[#{`name`:"pep-1"}]}) `requestBody/conten
 op `enableXacmlPep`(@js(#{`examples`:#[#{`name`:"pep-1"}]}) `requestBody/content/application~1json/schema`: {
     @js(#{
       `description`:"The registered PEP's name, which is the one its client certificate gave it."
-    }) `name`: string
+    }) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string
   },
   `responses/200/content/application~1json/schema`: `WithOkMessageErrors107`,
   `responses/400/content/application~1json/schema`: `WithOkMessageErrors107`,
@@ -30092,6 +30731,36 @@ op `forgetXacmlPep`(@js(#{`examples`:#[#{`name`:"pep-1"}]}) `requestBody/content
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
+@endpoint("/admin-api/xacml/sync-pep",
+  "post",
+  #{
+    `operationId`:"syncXacmlPep",
+    `summary`:"Tell one remote PEP to pull everything again now",
+    `description`:"Nudges ONE registered PEP at the address the change nudge dials (its managed notify URL, or a cluster member's own) and waits for the answer. This service pushes nothing: the PEP answers a nudge by pulling a whole round — its settings and listeners, the policies, the AuthZEN catalogue and callers, and its reverse proxy — and a member of a remote PEP cluster pulls its cluster's documents, so the cluster's configuration travels with it. The nudge carries `full: true`, so the PEP asks for each document without its token and loads it again whole; a PEP honours that at most once a poll interval and otherwise pulls as usual. A PEP whose change nudges are stopped (disable-pep) is dialled all the same.\n\nRefused before anything is dialled when remote PEPs or nudging are off (STS-XACML-0282), or when it has no usable notify URL (STS-XACML-0284); a nudge that was not delivered is STS-XACML-0285 and is recorded on the PEP's row as every nudge is. The PEP converges on its own poll in every one of those cases.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The nudge was delivered; the PEP is pulling.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `syncXacmlPep`(@js(#{`examples`:#[#{`name`:"pep-1"}]}) `requestBody/content/application~1json/schema`: WithDescriptionName,
+  `responses/200/content/application~1json/schema`: `XacmlPepSyncAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepSyncAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
 @js(#{
     `description`:"DNS names to ADD to the two derived from the registration. An array, or one string separated by commas or whitespace. A `*.` wildcard is accepted in the first label.",
     `$comb`:"oneOf"
@@ -30107,7 +30776,7 @@ op `forgetXacmlPep`(@js(#{`examples`:#[#{`name`:"pep-1"}]}) `requestBody/content
   #{
     `operationId`:"issueXacmlPepCertificate",
     `summary`:"Issue a remote PEP the certificate and private key for its HTTPS listener",
-    `description`:"Generates a key pair and certifies it from the Remote PEP listeners (`pep-tls`) Issuing CA of THE REALM THE PEP REGISTERED TO — the realm this call is made in, because ou=peps is per realm — so a client that installed this service's Root CA verifies the PEP, and the chain says which realm vouched for it. A realm whose branch was built before that Issuing CA existed gets it added under its existing Intermediate; nothing already issued is replaced.\n\nThe PEP must be REGISTERED: its row is the one record that it exists in this realm. That is not a permission check on the PEP — registering is still not what lets it pull or enforce.\n\nTHE CERTIFICATE NAMES the PEP's registered name (where that is a DNS name) and the host of its notify URL, plus any `dnsNames` and `ipAddresses` sent. It certifies `serverAuth` and nothing else.\n\n**THE PRIVATE KEY IS IN THIS REPLY AND NOWHERE ELSE.** This service records the certificate — its issuer's CRL and OCSP responder answer for it — and keeps no copy of the key, so nothing can read it back. To put the pair in the container, write `fullChainPem` (the leaf followed by its Issuing CA, the realm Intermediate and, since #1064, the service Root) and `privateKeyPem` to the files `PEP_HTTPS_CERT` and `PEP_HTTPS_KEY` name; the PEP picks up a pair written after it started. `anchorPem` is the service Root a client of that listener installs.\n\nIssuing again REPLACES: the certificate it replaces goes on its issuer's revocation list as `superseded` (`replacedSerialHex`).\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `description`:"Generates a key pair and certifies it from the Remote PEP listeners (`pep-tls`) Issuing CA of THE REALM THE PEP REGISTERED TO — the realm this call is made in, because ou=peps is per realm — so a client that installed this service's Root CA verifies the PEP, and the chain says which realm vouched for it. A realm whose branch was built before that Issuing CA existed gets it added under its existing Intermediate; nothing already issued is replaced.\n\nThe PEP must be REGISTERED: its row is the one record that it exists in this realm. That is not a permission check on the PEP — registering is still not what lets it pull or enforce.\n\nTHE CERTIFICATE NAMES the PEP's registered name (where that is a DNS name), the hostname it reported on its registration or heartbeat (#1760; the name its derived notify URL looks for, so the nudge works on a fresh install), and the host of its notify URL, plus any `dnsNames` and `ipAddresses` sent. It certifies `serverAuth` and nothing else.\n\n**THE PRIVATE KEY IS IN THIS REPLY AND NOWHERE ELSE.** This service records the certificate — its issuer's CRL and OCSP responder answer for it — and keeps no copy of the key, so nothing can read it back. To put the pair in the container, write `fullChainPem` (the leaf followed by its Issuing CA, the realm Intermediate and, since #1064, the service Root) and `privateKeyPem` to the files `PEP_HTTPS_CERT` and `PEP_HTTPS_KEY` name; the PEP picks up a pair written after it started. `anchorPem` is the service Root a client of that listener installs.\n\nIssuing again REPLACES: the certificate it replaces goes on its issuer's revocation list as `superseded` (`replacedSerialHex`).\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
     `tags`:#["XACML"],
     `responses`:#{
       `200`:#{
@@ -30137,7 +30806,8 @@ op `issueXacmlPepCertificate`(@js(#{
   }) `requestBody/content/application~1json/schema`: {
     @js(#{
       `description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."
-    }) `name`: string;
+    }) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
     `dnsNames`?: post_admin_api_xacml_issue_pep_certificate_b_application_json_dnsNames_h2783;
     `ipAddresses`?: post_admin_api_xacml_issue_pep_certificate_b_application_json_ipAddresses_h2784;
     @js(#{
@@ -30152,6 +30822,1019 @@ op `issueXacmlPepCertificate`(@js(#{
   `responses/400/content/application~1json/schema`: `WithOkMessageErrors108`,
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
+
+@endpoint("/admin-api/xacml/issue-pep-credential",
+  "post",
+  #{
+    `operationId`:"issueXacmlPepCredential",
+    `summary`:"Certify a remote PEP's own key as its RFC 7523 assertion key",
+    `description`:"Certifies the public key in a remote PEP's own PKCS #10 certificate request (`csr`) from THIS REALM's Issuing CA and registers the leaf as the RFC 7523 (purpose=jwt) key of the PEP's entry, which is what lets the PEP sign its self-assertion for a DPoP-bound access token from `sts-remote-pep` (#1827's follow-up, phase 3). **This service never generates, sees or keeps the private key**: the PEP, or `tests/tools/pep-credential.js --assertion`, generates the key pair and sends only the request; no private value is written to the entry (`source` `issued-from-csr`).\n\nThe request's signature must verify with the key it carries (proof of possession, the PKCS #10 reader ACME, EST and SCEP use), and the key must be EC P-256 (ES256, preferred) or RSA of 2048 bits or more; anything else is refused naming the two. **The request's subject and names are ignored**: the leaf names the ENTRY, `urn:sts:sa:<name>`. Like any issued leaf it is in its Issuing CA's register, so its CRL and OCSP responder answer for it and revoking it on /admin/users refuses the grant.\n\n`name` (or `pep`) is the USERNAME of the PEP's entry under this realm's ou=users — no registered ou=peps row is needed, because this is how a PEP is provisioned before it ever registers. The entry must exist (STS-XACML-0298), be a service account (STS-XACML-0299) and hold REMOTE_PEPS through the group roles.remotePepGroup names (STS-XACML-0301).\n\nA new key is ADDED beside any the entry holds, up to pki.personSigningKeyMax valid ones, so a running PEP keeps working until it is moved onto the new key. `revokePrevious: true` revokes every other valid RFC 7523 key of the entry (cessationOfOperation) after the new one is written — before it, where the entry is at the cap; a revocation that fails is STS-XACML-0302 with the new key registered.\n\nThe answer carries the certificate, its chain, `fullChainPem` (through the Root), the `kid`, the `urn` and the `environment` the PEP is started with: `PEP_NAME`, `PEP_CLIENT_ID` and `PEP_ASSERTION_KEY` (the key file the caller kept). Audited as `xacml.pep.credential`, with no key material.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The key was certified and registered.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing was certified (except STS-XACML-0302, which says which other key is still valid).",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `issueXacmlPepCredential`(@js(#{
+    `examples`:#[
+      #{
+        `name`:"remote-pep-1",
+        `csr`:"-----BEGIN CERTIFICATE REQUEST-----\n...\n-----END CERTIFICATE REQUEST-----\n"
+      }
+    ]
+  }) `requestBody/content/application~1json/schema`: {
+    @js(#{
+      `description`:"The username of the remote PEP's entry under this realm's ou=users: a service account in the remote PEPs group."
+    }) `name`?: string;
+    @js(#{`description`:"The same, under the member GET /admin-api/xacml/peps calls it. Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
+    @js(#{
+      `description`:"The PEP's PKCS #10 certificate request, PEM or base64 DER, signed with the key to be certified (EC P-256 or RSA of 2048 bits or more). Its subject and names are ignored."
+    }) `csr`?: string;
+    @js(#{
+      `description`:"A short name for the key on the entry's key list. Defaults to `remote PEP`."
+    }) `label`?: string;
+    @js(#{
+      `minimum`:1,
+      `description`:"The lifetime. Defaults to `pki.leafLifetimeDays`, and is shortened to the Issuing CA's own expiry."
+    }) `days`?: integer;
+    @js(#{
+      `description`:"Revoke every other valid RFC 7523 key of the entry once this one is registered. Default false: a running PEP keeps its old key until it is moved onto this one."
+    }) `revokePrevious`?: boolean
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepCredentialAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepCredentialAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
+@endpoint("/admin-api/xacml/set-pep-proxy",
+  "post",
+  #{
+    `operationId`:"setXacmlPepProxy",
+    `summary`:"Configure a registered remote PEP as a reverse proxy in front of an application",
+    `description`:"Sets the configuration a registered remote PEP pulls from GET /xacml/pep/proxy (#1760) and enforces as a reverse proxy in front of one application: `enabled`, the `upstream` it forwards to (absolute http or https, no user name, query or fragment — fixed per PEP, so no request can choose where it is forwarded), the `publicBaseUrl` a browser reaches the proxy at (an origin; required when a route uses the session mechanism, https in product mode), `upstreamTimeoutMs` (1 to 120000, default 10000), `maxBodyBytes` (0 to 104857600, default 1048576) and the ORDERED `routes`, first match wins, at most 64. A route has a unique `id`, a `path` (starting with /, no . or .. segment, no //, %, backslash, ? or #), `match` (`prefix` at a segment boundary, or `exact`), `methods` (required: all seven for any, empty for deny-all, STS-XACML-0262), its `authorization` (required, STS-XACML-0263: kind `policy` naming an existing policy, `simple` with a resource, an action model and roles per action, or `public`, anyone and no credential; simple and public generate the policy pep-<pep>-<route>; every request on the route is decided by that policy, never by the root), at least one of `mechanisms` unless it is public: `session`, `oauth2`, `saml2` and `basic`, the `application` it fronts (an identifier in this realm's registry; refused on a public route), how the identity reaches the application, `identity` (`mode` `headers` with up to 16 `headers` of { `name`, `claim` } and a one-character `separator`, `saml` for a signed SAML Response to the application's registered assertion consumer service, or `jwt` for an access token addressed to it; refused on a public route; the proxy strips a client's own identity headers), `forwardCredentials` (false by default: the Authorization header and the proxy's cookie are stripped) and `signals` (true by default: a session route's sign-out reaches the proxy through CAEP/RISC, else through POST /xacml/pep/session).\n\nTHE DOCUMENT IS VALIDATED WHOLE AND IS CLOSED: a member the grammar does not name is refused by name, and nothing is written unless all of it is right. What is stored is the document normalised, every member present, which is what the pull sends.\n\nEACH ROUTE NAMES AN APPLICATION AND NOTHING IS COPIED FROM IT: the pull reads what each mechanism needs off the application's entry — the audiences of its access tokens (`oauthAudience`, `oauthPermissionBaseUri`), its SAML entity ID, its confidential OIDC client — so a save is refused, by code, for an unknown application, an oauth2 route whose application has no audience, a saml2 route whose application has no entity ID, and a session route whose application is not a confidential client (client_secret_basic or client_secret_post), does not allow authorization_code, does not register `<publicBaseUrl>/.iya-pep/callback`, or holds no unexpired secret. A session route needs an https publicBaseUrl.\n\nThe PEP must be REGISTERED in this realm (its row is where the configuration lives); the proxy picks a change up on its next pull — there is no nudge.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setXacmlPepProxy`(@js(#{`examples`:#[#{`name`:"pep-1",`proxy`:#{`enabled`:true,`upstream`:"http://companion:8090/pep-app",`upstreamTimeoutMs`:10000,`maxBodyBytes`:1048576,`routes`:#[#{`id`:"public",`path`:"/public",`match`:"prefix",`methods`:#["GET","HEAD"],`authorization`:#{`kind`:"public"}},#{`id`:"api",`path`:"/api",`match`:"prefix",`methods`:#["GET","POST"],`mechanisms`:#["oauth2","basic"],`application`:"my-api",`authorization`:#{`kind`:"simple",`actionModel`:"read-write",`roles`:#{`read`:#["my-api-users"],`write`:#["my-api-admins"]}},`identity`:#{`mode`:"headers",`headers`:#[#{`name`:"X-Remote-User",`claim`:"username"},#{`name`:"X-Remote-Groups",`claim`:"groups"}],`separator`:","},`forwardCredentials`:false}]}}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{
+      `description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."
+    }) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
+    @js(#{
+      `description`:"The configuration document. Validated whole by the handler, which refuses a member it does not name, so this schema leaves its shape to that refusal."
+    }) `proxy`: Record<unknown>
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+
+@endpoint("/admin-api/xacml/clear-pep-proxy",
+  "post",
+  #{
+    `operationId`:"clearXacmlPepProxy",
+    `summary`:"Remove a remote PEP's reverse-proxy configuration",
+    `description`:"Removes a registered remote PEP's reverse-proxy configuration (#1760). From its next pull the PEP's proxy answers 404 to everything. The applications its routes named are untouched.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `clearXacmlPepProxy`(@js(#{`examples`:#[#{`name`:"pep-1"}]}) `requestBody/content/application~1json/schema`: WithDescriptionName,
+  `responses/200/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/set-pep-route-identity",
+  "post",
+  #{
+    `operationId`:"setXacmlPepRouteIdentity",
+    `summary`:"Set how one reverse-proxy route forwards the identity to its application",
+    `description`:"Replaces one route's `identity` in a registered remote PEP's reverse-proxy configuration (#1760, D11) and saves the document through the same checks as set-pep-proxy. `mode` is `headers` (the claims in `headerName` and `headerClaim`, row by row; a row with no name is unused; at most 16; each name an RFC 9110 token that is not hop-by-hop, framing, Authorization, Cookie, Host, Forwarded or X-Forwarded-*, each claim one of sub, username, email, name, given_name, family_name, groups, mechanism, acr and amr; `separator` one printable ASCII character that is not a letter or a digit, `,` by default), `saml` (a signed SAML Response to the application's registered assertion consumer service; its entity ID and ACS are required) or `jwt` (an access token addressed to the application; an audience is required). A public route forwards nobody.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setXacmlPepRouteIdentity`(@js(#{`examples`:#[#{`name`:"pep-1",`route`:"api",`mode`:"headers",`headerName`:#["X-Remote-User","X-Remote-Groups"],`headerClaim`:#["username","groups"],`separator`:","}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{
+      `description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."
+    }) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
+    @js(#{
+      `description`:"The route's `id` in that PEP's configuration."
+    }) `route`: string;
+    @js(#{
+      `description`:"How the identity reaches the application.",
+      `enum`:#["headers", "saml", "jwt"]
+    }) `mode`: string;
+    @js(#{
+      `description`:"Mode headers: the header names, one per row of the console's table."
+    }) `headerName`?: string[];
+    @js(#{
+      `description`:"Mode headers: the claim each row's header carries, by position."
+    }) `headerClaim`?: string[];
+    @js(#{
+      `description`:"Mode headers: the one character a list claim (groups, amr) is joined with."
+    }) `separator`?: string
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+
+@endpoint("/admin-api/xacml/set-pep-settings",
+  "post",
+  #{
+    `operationId`:"setXacmlPepSettings",
+    `summary`:"Set a remote PEP's managed settings, over its environment",
+    `description`:"Sets the settings a registered remote PEP pulls from GET /xacml/pep/settings and applies while it runs (#1760), REPLACING what was set: the settings are sent as `settings`, an object of them, or as members of the body itself (the console's form), and a setting absent, null or empty is NOT SET, so the PEP uses its environment variable for it, or its default — THE PRECEDENCE IS THE SERVICE'S VALUE, THEN THE ENVIRONMENT'S, THEN THE DEFAULT. GET /admin-api/xacml/peps' `settingsCatalogue` lists every setting with its variable, type, bounds, default and when a change takes effect. Validated whole: a member of `settings` that is not a setting is refused by name (STS-XACML-0236), a wrong type or a value outside a closed set (bias, logLevel) STS-XACML-0237, an integer out of bounds STS-XACML-0238, text too long or with a control character, a notifyUrl that is not an absolute http(s) URL and an authzenPdpIdentifier that is not an https origin STS-XACML-0239, and in product mode proxyUpstreamInsecure or proxyRpAllowInsecure true STS-XACML-0240. THE MINIMUM THE PEP NEEDS TO CONNECT THE FIRST TIME IS NOT HERE AND CANNOT BE: the service's URL, the PEP's name, its client certificate, key and anchors, the ports it binds and the files its TLS stacks read stay in its environment (`settingsCatalogue.bootstrap`). The PEP must be registered in this realm; it applies a change on its next pull — there is no nudge — and an older PEP, which never asks, goes on using its environment.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setXacmlPepSettings`(@js(#{`examples`:#[#{`name`:"pep-1",`bias`:"deny-biased",`pollIntervalMs`:10000,`logLevel`:"info",`proxySessionRecheckMs`:2000},#{`name`:"pep-1",`settings`:#{`description`:"In front of the orders API",`timeoutMs`:4000}}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{
+      `description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."
+    }) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
+    @js(#{
+      `description`:"The settings as one object, in place of the members below. Validated whole by the handler, which refuses a member that is not a setting by name."
+    }) `settings`?: Record<unknown>;
+    @js(#{`maxLength`:1024,`description`:"Sets `description` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `description`?: string;
+    @js(#{`maxLength`:2048,`description`:"Sets `resource` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `resource`?: string;
+    @js(#{`maxLength`:2048,`description`:"Sets `notifyUrl` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `notifyUrl`?: string;
+    @js(#{`enum`:#["deny-biased","permit-biased"],`minLength`:1,`description`:"Sets `bias` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `bias`?: string;
+    @js(#{`description`:"Sets `pip` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `pip`?: boolean;
+    @js(#{`minimum`:1000,`maximum`:86400000,`description`:"Sets `pollIntervalMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `pollIntervalMs`?: integer;
+    @js(#{`minimum`:1000,`maximum`:86400000,`description`:"Sets `heartbeatIntervalMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `heartbeatIntervalMs`?: integer;
+    @js(#{`minimum`:1000,`maximum`:86400000,`description`:"Sets `backoffMaxMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `backoffMaxMs`?: integer;
+    @js(#{`minimum`:100,`maximum`:120000,`description`:"Sets `timeoutMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `timeoutMs`?: integer;
+    @js(#{`minimum`:1024,`maximum`:104857600,`description`:"Sets `maxBodyBytes` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `maxBodyBytes`?: integer;
+    @js(#{`minimum`:1000,`maximum`:3600000,`description`:"Sets `httpsReloadIntervalMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `httpsReloadIntervalMs`?: integer;
+    @js(#{`enum`:#["trace","debug","info","warn","error","fatal"],`minLength`:1,`description`:"Sets `logLevel` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `logLevel`?: string;
+    @js(#{`description`:"Sets `authzen` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `authzen`?: boolean;
+    @js(#{`maxLength`:2048,`description`:"Sets `authzenPdpIdentifier` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `authzenPdpIdentifier`?: string;
+    @js(#{`minimum`:1,`maximum`:120000,`description`:"Sets `authzenForwardTimeoutMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `authzenForwardTimeoutMs`?: integer;
+    @js(#{`minimum`:0,`maximum`:3600000,`description`:"Sets `proxySessionRecheckMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `proxySessionRecheckMs`?: integer;
+    @js(#{`minimum`:1000,`maximum`:2592000000,`description`:"Sets `proxySessionTtlMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `proxySessionTtlMs`?: integer;
+    @js(#{`minimum`:1,`maximum`:1000000,`description`:"Sets `proxyMaxSessions` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `proxyMaxSessions`?: integer;
+    @js(#{`minimum`:1,`maximum`:32,`description`:"Sets `proxyMaxAccounts` at the PEP: the most accounts one browser holds on a route with `multipleAccounts`; absent, null or empty is not set, so the PEP uses PEP_PROXY_MAX_ACCOUNTS or its default, 5."}) `proxyMaxAccounts`?: integer;
+    @js(#{`minimum`:0,`maximum`:86400000,`description`:"Sets `proxyJwksTtlMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `proxyJwksTtlMs`?: integer;
+    @js(#{`description`:"Sets `proxyUpstreamInsecure` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `proxyUpstreamInsecure`?: boolean;
+    @js(#{`description`:"Sets `proxyRpAllowInsecure` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `proxyRpAllowInsecure`?: boolean;
+    @js(#{`minimum`:100,`maximum`:3600000,`description`:"Sets `proxySignalsPollMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `proxySignalsPollMs`?: integer;
+    @js(#{`minimum`:1,`maximum`:86400000,`description`:"Sets `proxySignalsStaleMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `proxySignalsStaleMs`?: integer;
+    @js(#{`maxLength`:1024,`description`:"Sets `proxyStripCookies` at the PEP: more cookie names the reverse proxy never forwards upstream, beside this service's own, separated by commas, a trailing `*` a prefix; absent, null or empty is not set, so the PEP uses PEP_PROXY_STRIP_COOKIES or its default, none."}) `proxyStripCookies`?: string;
+    @js(#{`description`:"Sets `auditEnabled` at the PEP: whether it sends its decision records to this service's audit log (#1827); absent, null or empty is not set, so the PEP uses PEP_AUDIT or its default, true."}) `auditEnabled`?: boolean;
+    @js(#{`minimum`:1000,`maximum`:86400000,`description`:"Sets `auditIntervalMs` at the PEP: how often its queued decision records are sent; absent, null or empty is not set, so the PEP uses PEP_AUDIT_INTERVAL_MS or its default, 5000."}) `auditIntervalMs`?: integer;
+    @js(#{`minimum`:1,`maximum`:500,`description`:"Sets `auditBatch` at the PEP: the most decision records in one request; absent, null or empty is not set, so the PEP uses PEP_AUDIT_BATCH or its default, 200."}) `auditBatch`?: integer;
+    @js(#{`minimum`:1,`maximum`:1000000,`description`:"Sets `auditBuffer` at the PEP: the most decision records queued, a lower value applying to new records; absent, null or empty is not set, so the PEP uses PEP_AUDIT_BUFFER or its default, 10000."}) `auditBuffer`?: integer;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepSettingsAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepSettingsAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/clear-pep-settings",
+  "post",
+  #{
+    `operationId`:"clearXacmlPepSettings",
+    `summary`:"Remove a remote PEP's managed settings",
+    `description`:"Removes every setting set for a registered remote PEP (#1760). From its next pull of GET /xacml/pep/settings every setting is the PEP's environment variable or its default.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `clearXacmlPepSettings`(@js(#{`examples`:#[#{`name`:"pep-1"}]}) `requestBody/content/application~1json/schema`: WithDescriptionName,
+  `responses/200/content/application~1json/schema`: `XacmlPepSettingsAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepSettingsAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/set-pep-listener",
+  "post",
+  #{
+    `operationId`:"setXacmlPepListener",
+    `summary`:"Define or replace one of a remote PEP's listeners",
+    `description`:"Adds a listener to a registered remote PEP, or replaces the one with its id, beyond the four its environment binds (#1760). The PEP pulls the definitions from GET /xacml/pep/settings and binds a new one, unbinds a removed one and rebinds a changed one while it runs, with no restart; it reports each on its heartbeat (listenerRows on GET /admin-api/xacml/peps). An HTTPS listener's key is generated by the PEP, which asks POST /xacml/pep/listener-certificate for its certificate from the realm's pep-tls Issuing CA, so no private key is in this call or its answer. Validated whole: STS-XACML-0243 (not an object, a stray member, more than 32), 0244 (the id), 0245 (protocol, purpose), 0246 (address, port), 0247 (an address and port another listener holds, the environment's as the PEP last reported them), 0248 (certificate names or key), and in product mode a plain-HTTP proxy listener 0249 unless xacml.pepPlainHttpProxyListeners is on. The listener's TLS, session cache, HTTP pooling, HTTP/2, client certificates and thread pool (`threadPoolMin`, `threadPoolMax`) are the same knobs Server Settings' listeners expose, and the reverse proxy's pool is the largest by default. A value that does not fit is refused (STS-XACML-0281).\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setXacmlPepListener`(@js(#{`examples`:#[#{`name`:"pep-1",`id`:"public-https",`protocol`:"https",`purpose`:"proxy",`address`:"0.0.0.0",`port`:8443,`dnsNames`:#["app.example.test"]},#{`name`:"pep-1",`listener`:#{`id`:"internal-api",`protocol`:"http",`purpose`:"api",`port`:9091}}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."}) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
+    @js(#{`description`:"The listener as one object (id, protocol, purpose, address, port, dnsNames, ipAddresses, keyAlg), in place of the members below. Validated whole by the handler."}) `listener`?: Record<unknown>;
+    @js(#{`maxLength`:64,`description`:"The listener's id: 1 to 64 letters, digits, dots, dashes or underscores, not one of the environment's four (api-http, api-https, proxy-http, proxy-https). An id already defined is replaced."}) `id`?: string;
+    @js(#{`enum`:#["http","https"],`description`:"http or https."}) `protocol`?: string;
+    @js(#{`enum`:#["api","proxy"],`description`:"api (the PEP's decision API: /protected, GET / and the AuthZEN endpoints) or proxy (the reverse proxy)."}) `purpose`?: string;
+    @js(#{`maxLength`:64,`description`:"The IPv4 or IPv6 address to bind; 0.0.0.0 (the default) or :: for every one."}) `address`?: string;
+    @js(#{`minimum`:1,`maximum`:65535,`description`:"The port, 1 to 65535."}) `port`?: integer;
+    @js(#{`description`:"HTTPS only: DNS names the certificate carries beside the PEP's own name and its notify host; at most 16. A string is one per line or separated by commas."}) `dnsNames`?: string[] | string;
+    @js(#{`description`:"HTTPS only: IP addresses the certificate carries; at most 16."}) `ipAddresses`?: string[] | string;
+    @js(#{`enum`:#["ec-p256","ec-p384","rsa-2048","rsa-3072"],`description`:"HTTPS only: the key the PEP generates, ec-p256 by default."}) `keyAlg`?: string;
+    ...XacmlPepListenerTuningFields;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepListenersAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepListenersAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/set-pep-environment-tuning",
+  "post",
+  #{
+    `operationId`:"setXacmlPepEnvironmentTuning",
+    `summary`:"Set the TLS, HTTP and thread-pool tuning of one environment listener",
+    `description`:"Sets the tuning of one of a registered remote PEP's four environment listeners (api-http, api-https, proxy-http, proxy-https) (#1760). The address, port and protocol stay the environment's. The PEP applies the tuning on its next pull. The same knobs as set-pep-listener: TLS, the session cache, HTTP pooling, HTTP/2, client certificates and the thread pool. The reverse proxy's pool is the largest by default. A value that does not fit is refused (STS-XACML-0281). A cluster has no single process, so this act is a PEP's, not a cluster's.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setXacmlPepEnvironmentTuning`(@js(#{`examples`:#[#{`name`:"pep-1",`listener`:"api-http"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."}) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep=. Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
+    @js(#{`maxLength`:64,`description`:"One of the environment's four: api-http, api-https, proxy-http or proxy-https."}) `listener`: string;
+    ...XacmlPepListenerTuningFields;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepListenersAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepListenersAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/remove-pep-listener",
+  "post",
+  #{
+    `operationId`:"removeXacmlPepListener",
+    `summary`:"Remove one of a remote PEP's defined listeners",
+    `description`:"Removes a listener defined for a registered remote PEP (#1760); the PEP unbinds it on its next pull. The environment's four cannot be removed here (STS-XACML-0250).\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `removeXacmlPepListener`(@js(#{`examples`:#[#{`name`:"pep-1",`listener`:"public-https"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."}) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
+    @js(#{`maxLength`:64,`description`:"The listener's id."}) `listener`: string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepListenersAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepListenersAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/renew-pep-listener-certificate",
+  "post",
+  #{
+    `operationId`:"renewXacmlPepListenerCertificate",
+    `summary`:"Have a remote PEP renew a defined HTTPS listener's certificate",
+    `description`:"Moves the renewal counter of an HTTPS listener defined for a registered remote PEP (#1760): on its next pull the PEP generates a new key and asks POST /xacml/pep/listener-certificate for a new certificate, which supersedes the old one. A plain-HTTP listener or an unknown id is refused (STS-XACML-0250). The environment's HTTPS pair is issued with issue-pep-certificate.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `renewXacmlPepListenerCertificate`(@js(#{`examples`:#[#{`name`:"pep-1",`listener`:"public-https"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."}) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
+    @js(#{`maxLength`:64,`description`:"The listener's id."}) `listener`: string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepListenersAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepListenersAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/set-pep-route",
+  "post",
+  #{
+    `operationId`:"setXacmlPepRoute",
+    `summary`:"Add or replace one route of a remote PEP's reverse proxy",
+    `description`:"Adds a route to a registered remote PEP's reverse-proxy configuration, or replaces the one with its id (#1760), and saves the WHOLE document through the same checks as set-pep-proxy — the grammar (STS-XACML-0184 to 0199, 0224 to 0228) and every route's application resolved in the registry (0217 to 0223) — so a route this saves is one the document editor could hold. An edit keeps the route's identity, which set-pep-route-identity sets, unless the form members carry `mode`, as the route's own page sends them, and its authorization unless they carry `authzKind`; `from` renames the route it names to `id`, and a simple or public route's generated policy with it; `part` reads one tab of the route's page and keeps the rest of the route. Every route states `methods` (STS-XACML-0262; empty is deny-all) and one authorization choice (STS-XACML-0263): see set-pep-route-authorization. The PEP must already hold a configuration (STS-XACML-0201); a missing route or a position outside the list is STS-XACML-0256.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setXacmlPepRoute`(@js(#{`examples`:#[#{`name`:"pep-1",`id`:"orders",`path`:"/orders",`match`:"prefix",`methods`:#["GET","POST"],`mechanisms`:#["session"],`application`:"orders-app",`authzKind`:"simple",`authzActionModel`:"read-write",`authzActions`:#["read","write"],`authzRole.read`:#["orders-users"],`authzRole.write`:#["orders-admins"]},#{`name`:"pep-1",`from`:"orders",`id`:"orders-api",`path`:"/orders",`match`:"prefix",`methods`:#["GET","POST"],`methodsGiven`:"true",`mechanisms`:#["session","oauth2"],`application`:"orders-app",`authzKind`:"policy",`authzPolicy`:"orders-policy",`authzPolicyActionModel`:"crud",`authzResource`:"https://orders.example.test",`forwardCredentials`:"false",`signals`:"true",`mode`:"headers",`headerName`:#["X-Remote-User","X-Remote-Groups"],`headerClaim`:#["username","groups"],`separator`:",",`position`:1},#{`name`:"pep-1",`route`:#{`id`:"health",`path`:"/health",`match`:"exact",`methods`:#["GET","HEAD"],`authorization`:#{`kind`:"public"}},`position`:0}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."}) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
+    @js(#{`description`:"The route as one object (id, path, match, methods, mechanisms, application, authorization, identity, forwardCredentials, signals, multipleAccounts), or its JSON, in place of the members below. `methods` and `authorization` are required (STS-XACML-0262, 0263)."}) `route`?: Record<unknown> | string;
+    @js(#{`maxLength`:64,`description`:"The route's id; one already in the list is replaced where it stands, keeping its identity."}) `id`?: string;
+    @js(#{`maxLength`:2048,`description`:"The path the route matches."}) `path`?: string;
+    @js(#{`enum`:#["prefix","exact"],`description`:"prefix (the default) or exact."}) `match`?: string;
+    @js(#{`description`:"The methods it allows, from GET, HEAD, POST, PUT, PATCH, DELETE and OPTIONS: all seven for any, none for deny-all (every request on it is refused). Absent with no `methodsGiven` is not stated, which is refused (STS-XACML-0262)."}) `methods`?: string[] | string;
+    @js(#{`description`:"\"true\" when the form drew the method boxes, so that no `methods` is the empty list (deny-all) rather than not stated."}) `methodsGiven`?: boolean | string;
+    @js(#{`description`:"The route's authorization as one object, { kind: policy | simple | public, policy, resource, actionModel: method | crud | read-write, roles: { action: [role] } }, in place of the authz members below. On an edit, absent keeps the route's own."}) `authorization`?: Record<unknown> | string;
+    @js(#{`enum`:#["policy","simple","public"],`description`:"The form's authorization choice: an existing policy, a simple generated policy, or Public (anyone, a generated policy too). Empty is no choice, refused on a new route (STS-XACML-0263)."}) `authzKind`?: string;
+    @js(#{`maxLength`:128,`description`:"kind policy: the existing policy's name in this realm's repository."}) `authzPolicy`?: string;
+    @js(#{`enum`:#["method","crud","read-write"],`description`:"kind policy: what the PEP sends as the action-id; the method by default."}) `authzPolicyActionModel`?: string;
+    @js(#{`maxLength`:1024,`description`:"The resource-id sent, an absolute URI. Empty: for a simple or public route the proxy's base URL and the path; for an existing policy the request's path."}) `authzResource`?: string;
+    @js(#{`enum`:#["crud","read-write"],`description`:"kind simple: the action model."}) `authzActionModel`?: string;
+    @js(#{`description`:"kind simple: the actions permitted, each of the model's: create, read, update, delete, or read, write."}) `authzActions`?: string[] | string;
+    @js(#{`description`:"kind simple: the configured roles that may take `read` (any of them), one to eight; the same for `authzRole.create`, `.update`, `.delete` and `.write`."}) `authzRole.read`?: string[] | string;
+    @js(#{`description`:"kind simple: the roles that may create."}) `authzRole.create`?: string[] | string;
+    @js(#{`description`:"kind simple: the roles that may update."}) `authzRole.update`?: string[] | string;
+    @js(#{`description`:"kind simple: the roles that may delete."}) `authzRole.delete`?: string[] | string;
+    @js(#{`description`:"kind simple: the roles that may write."}) `authzRole.write`?: string[] | string;
+    @js(#{`description`:"How a caller is authenticated: session, oauth2, saml2, basic."}) `mechanisms`?: string[] | string;
+    @js(#{`maxLength`:256,`description`:"The identifier of the application in this realm's registry the route fronts."}) `application`?: string;
+    @js(#{`description`:"Whether the caller's own credential is forwarded upstream."}) `forwardCredentials`?: boolean | string;
+    @js(#{`description`:"Whether a session route's sign-out reaches the proxy by CAEP/RISC (true, the default) or by POST /xacml/pep/session."}) `signals`?: boolean | string;
+    @js(#{`description`:"true lets one browser hold several signed-in accounts on this session route and switch the active one at /.iya-pep/accounts; false (the default) is one sign-in per browser. Only on a route whose mechanisms include session (STS-XACML-0257)."}) `multipleAccounts`?: boolean | string;
+    @js(#{`minimum`:0,`description`:"Where the route goes in the list, from 0; the first route that matches wins. A replaced route keeps its place unless this is given."}) `position`?: integer;
+    @js(#{`enum`:#["settings","authentication","authorization","identity"],`description`:"With the form members and an existing route: the route page's tab the form is (2026-11-15). Only that part's members are read — settings: id, path, match, application and position; authentication: mechanisms, signals, multipleAccounts; authorization: methods and the authz members; identity: forwardCredentials and the identity members — and every other member keeps the stored route's value. A route that does not exist is STS-XACML-0230, another value STS-XACML-0256. Empty or absent: the members are the whole route."}) `part`?: string;
+    @js(#{`maxLength`:64,`description`:"The route being edited, when it is not `id`: the route's own page renames a route by sending its current id here and the new one as `id`. An unknown route is STS-XACML-0230, and a new id another route holds is STS-XACML-0192."}) `from`?: string;
+    @js(#{`enum`:#["headers","saml","jwt"],`description`:"With the form members: the route's identity mode, which then replaces its identity (headers with `headerName`, `headerClaim` and `separator`). Without it, an edit keeps the identity."}) `mode`?: string;
+    @js(#{`description`:"mode headers: the header names, paired by position with `headerClaim`; a row with no name is left out."}) `headerName`?: string[] | string;
+    @js(#{`description`:"mode headers: the claim each header carries: sub, username, email, name, given_name, family_name, groups, mechanism, acr or amr."}) `headerClaim`?: string[] | string;
+    @js(#{`maxLength`:1,`description`:"mode headers: the one character that joins a claim's several values; , when empty."}) `separator`?: string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/remove-pep-route",
+  "post",
+  #{
+    `operationId`:"removeXacmlPepRoute",
+    `summary`:"Remove one route of a remote PEP's reverse proxy",
+    `description`:"Removes a route from a registered remote PEP's reverse-proxy configuration (#1760) and saves the document through set-pep-proxy's checks. An unknown route is STS-XACML-0230. A route with a policy generated for it (its authorization simple or public) is removed only with `removePolicy: true`, and the policy goes with it (STS-XACML-0268 otherwise).\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `removeXacmlPepRoute`(@js(#{`examples`:#[#{`name`:"pep-1",`route`:"orders",`removePolicy`:true}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."}) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
+    @js(#{`maxLength`:64,`description`:"The route's id."}) `route`: string;
+    @js(#{`description`:"true confirms that the policy generated for the route (a simple or public choice) is removed with it; without it such a route is refused (STS-XACML-0268)."}) `removePolicy`?: boolean | string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/set-pep-route-application",
+  "post",
+  #{
+    `operationId`:"setXacmlPepRouteApplication",
+    `summary`:"Map an application to one route of a remote PEP's reverse proxy",
+    `description`:"Binds a route of a registered remote PEP's reverse-proxy configuration to an application in this realm's registry (#1760, D10): the route's `application`, from which the pull reads what each mechanism needs. Saved through set-pep-proxy's checks, so an application that does not qualify for the route's mechanisms is refused by its code (STS-XACML-0217 to 0223) and a public route, which names none, by STS-XACML-0197. An unknown route is STS-XACML-0230 and a missing application STS-XACML-0256. Kept for compatibility: the console no longer has a form for it, and edits a route's application on the route's own page (`/admin/xacml/pep/route?pep=<name>&route=<id>`) through set-pep-route.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setXacmlPepRouteApplication`(@js(#{`examples`:#[#{`name`:"pep-1",`route`:"orders",`application`:"orders-app"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."}) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
+    @js(#{`maxLength`:64,`description`:"The route's id."}) `route`: string;
+    @js(#{`maxLength`:256,`description`:"The application's identifier in this realm's registry."}) `application`: string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/set-pep-route-authorization",
+  "post",
+  #{
+    `operationId`:"setXacmlPepRouteAuthorization",
+    `summary`:"Set one route's authorization: an existing policy, a simple generated policy, or Public",
+    `description`:"Replaces the authorization of one route of a registered remote PEP's reverse proxy (#1760) and saves the WHOLE document through set-pep-proxy's checks. Every route makes exactly one choice and every request on it is decided by that policy in XACML, never by the realm's root: kind policy names an existing policy of this realm's repository, enabled and sent to a remote PEP (STS-XACML-0265); kind simple names a resource, an action model (crud or read-write) and, for each action permitted, one to eight configured roles (STS-XACML-0266), and generates the policy pep-<pep>-<route>; kind public lets anyone take the route's methods and generates that policy too, and clears the route's mechanisms, application and identity. An empty resource on a simple or public route is filled with the proxy's base URL and the path. A grammar refusal is STS-XACML-0263 or 0264, a generated name held by a hand-written policy STS-XACML-0267, an unknown route STS-XACML-0230. Switching a route to an existing policy leaves its generated policy in the repository, unreferenced, and the answer's `policies.unreferenced` says so.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setXacmlPepRouteAuthorization`(@js(#{`examples`:#[#{`name`:"pep-1",`route`:"orders",`authorization`:#{`kind`:"simple",`actionModel`:"crud",`roles`:#{`read`:#["orders-users"],`update`:#["orders-admins"],`delete`:#["orders-admins"]}}},#{`name`:"pep-1",`route`:"health",`authorization`:#{`kind`:"public"}},#{`name`:"pep-1",`route`:"orders",`authorization`:#{`kind`:"policy",`policy`:"orders-policy",`actionModel`:"method"}}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."}) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
+    @js(#{`maxLength`:64,`description`:"The route's id."}) `route`: string;
+    @js(#{`description`:"{ kind: policy | simple | public, policy, resource, actionModel: method | crud | read-write, roles: { action: [role] } }, or its JSON. The console's form members (authzKind, authzPolicy, authzPolicyActionModel, authzResource, authzActionModel, authzActions, authzRole.<action>) are read in its place."}) `authorization`?: Record<unknown> | string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/generate-pep-route-policy",
+  "post",
+  #{
+    `operationId`:"generateXacmlPepRoutePolicy",
+    `summary`:"Generate a route's simple or public policy again",
+    `description`:"Writes the policy a simple or public route of a registered remote PEP's reverse proxy generates (#1760), pep-<pep>-<route>, again from the route as stored: after it was edited in the policy editor or deleted. It is written as ALFA and stored through the repository's validating write, marked xacmlPepRoute = <pep>/<route>, never the root. A route choosing an existing policy has nothing to generate (STS-XACML-0264); a name held by a policy not generated for the route is STS-XACML-0267; an unknown route STS-XACML-0230. The answer's `written` is false when the policy already says what the route chooses.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `generateXacmlPepRoutePolicy`(@js(#{`examples`:#[#{`name`:"pep-1",`route`:"orders"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."}) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
+    @js(#{`maxLength`:64,`description`:"The route's id."}) `route`: string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/create-pep-cluster",
+  "post",
+  #{
+    `operationId`:"createXacmlPepCluster",
+    `summary`:"Create a remote PEP cluster, empty or from a registered PEP",
+    `description`:"Creates a logical cluster of remote PEPs that share one configuration (#1760). With `from`, the PEP's reverse proxy, managed settings and listener definitions are copied to the cluster, the PEP becomes its first member (its publicBaseUrl and notify URL kept as its own addresses), its own documents are cleared, and the routes' generated policies are written again as pepc-<cluster>-<route>, marked @<cluster>/<route>; the PEP's old pep-<pep>-<route> policies are left in the repository, unreferenced. A name that is not 1 to 64 letters, digits, dots, dashes or underscores, or one already taken, is STS-XACML-0270; a PEP not registered STS-XACML-0038, one already a member STS-XACML-0271.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `createXacmlPepCluster`(@js(#{`examples`:#[#{`cluster`:"orders",`from`:"pep-1",`description`:"The orders proxies"},#{`cluster`:"empty-cluster"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
+    @js(#{`maxLength`:128,`description`:"The registered PEP whose configuration the cluster starts from; omitted for an empty cluster."}) `from`?: string;
+    @js(#{`maxLength`:1024}) `description`?: string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/delete-pep-cluster",
+  "post",
+  #{
+    `operationId`:"deleteXacmlPepCluster",
+    `summary`:"Delete a remote PEP cluster",
+    `description`:"Deletes a cluster and the policies generated for its routes (#1760). A cluster that still has members is refused unless `release` says what they keep: keep, and each registered member keeps a copy of the configuration as its own (its routes' policies generated again as pep-<pep>-<route>), or empty, and each is left with none (STS-XACML-0273). Every member is nudged.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `deleteXacmlPepCluster`(@js(#{`examples`:#[#{`cluster`:"orders",`release`:"keep"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
+    @js(#{`description`:"keep or empty; required while the cluster has members."}) `release`?: "keep" | "empty";
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/add-pep-cluster-member",
+  "post",
+  #{
+    `operationId`:"addXacmlPepClusterMember",
+    `summary`:"Add a member to a remote PEP cluster",
+    `description`:"Adds a PEP to a cluster (#1760): from its next poll it pulls the cluster's configuration with its own addresses. A name not yet registered may be listed. A PEP is a member of one cluster at most (STS-XACML-0271). A PEP holding a configuration of its own is refused unless `discard` is true (STS-XACML-0272); its own documents are then cleared and the answer's `discarded` carries them. Each member polls its own CAEP/RISC stream: it sends its registered name in the X-Iya-Pep-Name header, and a sign-out on that stream reaches that member. The member's routes must resolve with its own callback, <publicBaseUrl>/.iya-pep/callback registered on each session route's client, and its listeners must not clash with what it reported; a refusal names the member and keeps its code.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `addXacmlPepClusterMember`(@js(#{`examples`:#[#{`cluster`:"orders",`pep`:"pep-2",`publicBaseUrl`:"https://pep-2.example.test:9543",`discard`:true}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
+    @js(#{`maxLength`:128,`description`:"The member's name: a registered PEP's, or one not registered yet."}) `pep`: string;
+    @js(#{`maxLength`:2048,`description`:"The member's own public base URL, the origin a browser reaches it at; empty for the cluster's."}) `publicBaseUrl`?: string;
+    @js(#{`maxLength`:2048,`description`:"The member's own notify URL, which the nudge dials; empty for the one it registered with."}) `notifyUrl`?: string;
+    @js(#{`description`:"The member's own listener addresses: { <listener id>: { address, port, names } }, its JSON, or the console's lines of `<id> <address>:<port> <name> ...`."}) `listeners`?: Record<unknown> | string;
+    @js(#{`description`:"true confirms that the PEP's own configuration is replaced by the cluster's."}) `discard`?: boolean | string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/remove-pep-cluster-member",
+  "post",
+  #{
+    `operationId`:"removeXacmlPepClusterMember",
+    `summary`:"Remove a member from a remote PEP cluster",
+    `description`:"Removes a member (#1760). By default (`keep` true) a registered member keeps a copy of the configuration it pulled as its own, its routes' policies generated again as pep-<pep>-<route>, and goes on enforcing it; with `keep` false it is left with none. Not a member is STS-XACML-0269.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `removeXacmlPepClusterMember`(@js(#{`examples`:#[#{`cluster`:"orders",`pep`:"pep-2",`keep`:true}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
+    @js(#{`maxLength`:128,`description`:"The member's name: a registered PEP's, or one not registered yet."}) `pep`: string;
+    @js(#{`description`:"Whether the member keeps a copy; true by default."}) `keep`?: boolean | string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/set-pep-cluster-member",
+  "post",
+  #{
+    `operationId`:"setXacmlPepClusterMember",
+    `summary`:"Set a member's own addresses",
+    `description`:"Replaces a member's own addresses (#1760): its publicBaseUrl, notify URL and listener addresses, each member given replacing the stored one. Checked as a cluster write is, for this member (STS-XACML-0277 for a shape, the grammar's and the resolution's own codes otherwise).\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setXacmlPepClusterMember`(@js(#{`examples`:#[#{`cluster`:"orders",`pep`:"pep-2",`publicBaseUrl`:"https://pep-2.example.test:9543",`listeners`:#{`proxy-alt`:#{`port`:9544,`names`:#["pep-2.example.test"]}}}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
+    @js(#{`maxLength`:128,`description`:"The member's name: a registered PEP's, or one not registered yet."}) `pep`: string;
+    @js(#{`maxLength`:2048,`description`:"The member's own public base URL, the origin a browser reaches it at; empty for the cluster's."}) `publicBaseUrl`?: string;
+    @js(#{`maxLength`:2048,`description`:"The member's own notify URL, which the nudge dials; empty for the one it registered with."}) `notifyUrl`?: string;
+    @js(#{`description`:"The member's own listener addresses: { <listener id>: { address, port, names } }, its JSON, or the console's lines of `<id> <address>:<port> <name> ...`."}) `listeners`?: Record<unknown> | string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/set-pep-cluster-proxy",
+  "post",
+  #{
+    `operationId`:"setXacmlPepClusterProxy",
+    `summary`:"Set a remote PEP cluster's reverse-proxy configuration",
+    `description`:"The cluster's set-pep-proxy (#1760): the same document and grammar, its simple and public routes' policies generated as pepc-<cluster>-<route>. Its publicBaseUrl is the cluster's logical base URL: a simple or public route with no resource needs one (STS-XACML-0274). Every member's routes must resolve with its own callback; a session route with signals on is polled by each member on a stream of its own (X-Iya-Pep-Name). Every member is nudged.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setXacmlPepClusterProxy`(@js(#{`examples`:#[#{`cluster`:"orders",`proxy`:#{`upstream`:"http://orders.internal:8080",`publicBaseUrl`:"https://orders.example.test",`routes`:#[#{`id`:"health",`path`:"/health",`match`:"exact",`methods`:#["GET"],`authorization`:#{`kind`:"public"}}]}}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
+    @js(#{`description`:"The configuration document, or its JSON: set-pep-proxy's."}) `proxy`: Record<unknown> | string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/set-pep-cluster-settings",
+  "post",
+  #{
+    `operationId`:"setXacmlPepClusterSettings",
+    `summary`:"Set a remote PEP cluster's managed settings",
+    `description`:"The cluster's set-pep-settings (#1760): the same table, replacing what is set; every member pulls them. The notify URL is a member's address and is refused here (STS-XACML-0278).\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setXacmlPepClusterSettings`(@js(#{`examples`:#[#{`cluster`:"orders",`settings`:#{`bias`:"deny-biased",`pollIntervalMs`:30000}}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
+    @js(#{`description`:"The settings, as set-pep-settings takes them."}) `settings`?: Record<unknown> | string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/set-pep-cluster-route",
+  "post",
+  #{
+    `operationId`:"setXacmlPepClusterRoute",
+    `summary`:"Add or replace one route of a remote PEP cluster's reverse proxy",
+    `description`:"The cluster's set-pep-route (#1760): `route` or the form's members, `from` for a rename, `part` for one tab of the route's page. Saved through set-pep-cluster-proxy's checks.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setXacmlPepClusterRoute`(@js(#{`examples`:#[#{`cluster`:"orders",`route`:#{`id`:"health",`path`:"/health",`match`:"exact",`methods`:#["GET","HEAD"],`authorization`:#{`kind`:"public"}},`position`:0}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
+    @js(#{`description`:"One route object, or its JSON; or the console form's members."}) `route`?: Record<unknown> | string;
+    @js(#{`maxLength`:64}) `from`?: string;
+    `part`?: string;
+    `position`?: integer | string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/remove-pep-cluster-route",
+  "post",
+  #{
+    `operationId`:"removeXacmlPepClusterRoute",
+    `summary`:"Remove one route of a remote PEP cluster's reverse proxy",
+    `description`:"The cluster's remove-pep-route (#1760): a route with a generated policy needs `removePolicy` true (STS-XACML-0268).\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `removeXacmlPepClusterRoute`(@js(#{`examples`:#[#{`cluster`:"orders",`route`:"health",`removePolicy`:true}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
+    @js(#{`maxLength`:64}) `route`: string;
+    `removePolicy`?: boolean | string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/generate-pep-cluster-route-policy",
+  "post",
+  #{
+    `operationId`:"generateXacmlPepClusterRoutePolicy",
+    `summary`:"Generate a cluster route's simple or public policy again",
+    `description`:"The cluster's generate-pep-route-policy (#1760): pepc-<cluster>-<route> written again from the route as stored.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `generateXacmlPepClusterRoutePolicy`(@js(#{`examples`:#[#{`cluster`:"orders",`route`:"health"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
+    @js(#{`maxLength`:64}) `route`: string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/set-pep-cluster-listener",
+  "post",
+  #{
+    `operationId`:"setXacmlPepClusterListener",
+    `summary`:"Define or replace one listener of a remote PEP cluster",
+    `description`:"The cluster's set-pep-listener (#1760): the same grammar; each member's copy, with its own address, port and names, is checked against what that member reported (STS-XACML-0247 names the member).\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setXacmlPepClusterListener`(@js(#{`examples`:#[#{`cluster`:"orders",`listener`:#{`id`:"proxy-alt",`protocol`:"https",`purpose`:"proxy",`port`:9544,`dnsNames`:#["orders.example.test"]}}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
+    @js(#{`description`:"One listener object, or its JSON; or the console form's members."}) `listener`?: Record<unknown> | string;
+    @js(#{`maxLength`:64,`description`:"The listener's id: 1 to 64 letters, digits, dots, dashes or underscores, not one of the environment's four. An id already defined is replaced."}) `id`?: string;
+    @js(#{`enum`:#["http","https"],`description`:"http or https."}) `protocol`?: string;
+    @js(#{`enum`:#["api","proxy"],`description`:"api or proxy."}) `purpose`?: string;
+    @js(#{`maxLength`:64,`description`:"The IPv4 or IPv6 address to bind; 0.0.0.0 or :: for every one."}) `address`?: string;
+    @js(#{`minimum`:1,`maximum`:65535,`description`:"The port, 1 to 65535."}) `port`?: integer;
+    @js(#{`description`:"HTTPS only: DNS names the certificate carries; at most 16."}) `dnsNames`?: string[] | string;
+    @js(#{`description`:"HTTPS only: IP addresses the certificate carries; at most 16."}) `ipAddresses`?: string[] | string;
+    @js(#{`enum`:#["ec-p256","ec-p384","rsa-2048","rsa-3072"],`description`:"HTTPS only: the key the PEP generates, ec-p256 by default."}) `keyAlg`?: string;
+    ...XacmlPepListenerTuningFields;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/remove-pep-cluster-listener",
+  "post",
+  #{
+    `operationId`:"removeXacmlPepClusterListener",
+    `summary`:"Remove one listener of a remote PEP cluster",
+    `description`:"The cluster's remove-pep-listener (#1760).\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `removeXacmlPepClusterListener`(@js(#{`examples`:#[#{`cluster`:"orders",`listener`:"proxy-alt"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
+    @js(#{`maxLength`:64}) `listener`: string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
 
 @endpoint("/admin-api/ssf",
   "get",
@@ -30957,7 +32640,7 @@ op `getRiscAccounts`(`parameters/0/schema`: string,
   #{
     `operationId`:"emitRiscEvent",
     `summary`:"Send one RISC event about one account",
-    `description`:"Builds the payload, composes the SUBJECT from the account in the format `risc.subjectFormat` names, and transmits it on every stream that both delivers the type and covers that subject.\n\nELEVEN OF THE FOURTEEN CARRY NO PAYLOAD MEMBERS AT ALL, so for those the subject is the entire message and `payload` is left empty. Only `credential-compromise` has a REQUIRED member, `credential_type`, which RISC defines by reference to CAEP's `credential-change` — the two lists are the same list.\n\nEVERY ONE OF THE FOURTEEN HAS SOMETHING HERE THAT SENDS IT when it happens (`docs/shared-signals.md` lists each, #164), where `risc.autoEmit` is on and `risc.autoEmitTypes` names it, which by default is all but the deprecated `sessions-revoked`. This sends any of them by hand, whatever that is.\n\nFOUR OF THEM CHANGE REAL STATE WHEN THEY GO. RISC section 2.8 defines each opt-out event as \"the account is in this state\" rather than as a report that it moved, so emitting `opt-out-effective` here IS the transition — and the next event about that account is suppressed while `risc.honourOptOut` is on.\n\nAN ACCOUNT THIS SERVICE HAS NEVER HELD IS ACCEPTED, which is the opposite of what emitCaepEvent does with an unknown session. A session identifier this service never minted is one it can compose no subject from; an account is a person, and RISC is aimed ACROSS providers, so the account a receiver is warned about is usually one it has never seen.\n\nA TYPE NO STREAM TAKES IS NOT AN ERROR. The account's state is still updated and the reply says nothing was sent.\n\n**Mirrors** `POST /admin/risc` on the admin console.",
+    `description`:"Builds the payload, composes the SUBJECT from the account in the format `risc.subjectFormat` names, and transmits it on every stream that both delivers the type and covers that subject.\n\nELEVEN OF THE FOURTEEN CARRY NO PAYLOAD MEMBERS AT ALL, so for those the subject is the entire message and `payload` is left empty. Only `credential-compromise` has a REQUIRED member, `credential_type`, which RISC defines by reference to CAEP's `credential-change` — the two lists are the same list.\n\nEVERY ONE OF THE FOURTEEN HAS SOMETHING HERE THAT SENDS IT when it happens (`docs/v1.1.0/shared-signals.md` lists each, #164), where `risc.autoEmit` is on and `risc.autoEmitTypes` names it, which by default is all but the deprecated `sessions-revoked`. This sends any of them by hand, whatever that is.\n\nFOUR OF THEM CHANGE REAL STATE WHEN THEY GO. RISC section 2.8 defines each opt-out event as \"the account is in this state\" rather than as a report that it moved, so emitting `opt-out-effective` here IS the transition — and the next event about that account is suppressed while `risc.honourOptOut` is on.\n\nAN ACCOUNT THIS SERVICE HAS NEVER HELD IS ACCEPTED, which is the opposite of what emitCaepEvent does with an unknown session. A session identifier this service never minted is one it can compose no subject from; an account is a person, and RISC is aimed ACROSS providers, so the account a receiver is warned about is usually one it has never seen.\n\nA TYPE NO STREAM TAKES IS NOT AN ERROR. The account's state is still updated and the reply says nothing was sent.\n\n**Mirrors** `POST /admin/risc` on the admin console.",
     `tags`:#["RISC"],
     `responses`:#{
       `200`:#{
@@ -31813,7 +33496,7 @@ op `buildPkiChain`(@js(#{
   #{
     `operationId`:"issuePkiKeyPair",
     `summary`:"Issue a signing key pair to an application — or, with target=person, to somebody in ou=users — from the Issuing CA",
-    `description`:"Generates a key pair, signs a leaf certificate for it with this realm's Issuing CA, and writes the whole lot onto that application's directory entry.\n\n**WHICH ATTRIBUTES DEPENDS ON `purpose`, AND THE TWO SETS SHARE NONE.** `jwt` (the default, RFC 7523) writes seven — `oauthAssertionPrivateKey`, `oauthAssertionCertificate`, `oauthAssertionCertificateChain`, `oauthAssertionJwks` (with `x5c` and `x5t#S256` on the key), `oauthAssertionKid`, `oauthAssertionExpiresAt` and `oauthAssertionKeySource` (`issued`). `saml` (RFC 7522) writes six under `oauthSamlAssertion*`, with no JWKS among them because SAML has none — what a party registers for that profile IS a certificate — and with a `oauthSamlAssertionThumbprint` where the other has a `kid`, because those are the handles the two formats actually carry.\n\n**AN APPLICATION MAY HOLD BOTH KEY PAIRS AND NEITHER CAN SIGN FOR THE OTHER'S PROFILE.** No verifier reads the other set, so issuing one leaves the other untouched and taking one off leaves the other working. The SAML leaf also carries the RFC 7522 grant-type URI as a second URI subjectAltName, so a certificate read out of context says which profile it was issued for.\n\n**THIS SERVICE KEEPS NO SECOND COPY OF THE PRIVATE KEY.** `common/pki.js` hands it over once and forgets it, so the entry is where it lives.\n\n**AND IT IS SEALED THERE.** AES-256-GCM under the key-encryption key, through `common/keystore.js` — the same mechanism and the same key that seal this service's own signing keys and the CA hierarchy this leaf was issued from — wherever that key outlives the process, which is product mode. So an ldapsearch on TCP 389 where every bind succeeds, an ldif file, a database row and a backup of either hold `$aesgcm$…`. `GET /admin-api/applications` opens it for you, because it comes through `common/applications.js` and you are holding an `admin:read` token; in development mode it is in the clear, where the key-encryption key is ephemeral and would not survive the restart the entry does. Issuing again replaces.\n\n**THE LEAF IS A `digital-signature` CERTIFICATE and deliberately carries no extended key usage.** What it signs is a JWT, not a TLS handshake; giving it `clientAuth` would make it usable for RFC 8705 as well, which is a DIFFERENT credential with a different registration attribute, and one certificate quietly doing both is how a deployment ends up unable to revoke either.\n\n**A KEY PAIR IS NOT A TRUST DECISION.** It lets the application SIGN, which is all RFC 7523 section 2.2 (client authentication) needs. For section 2.1 — the authorization grant — the `iss` it will use must also be declared on `oauthAssertionIssuer`, through POST /admin-api/applications/add. RFC 7522 is the same two acts with its own declaration, `oauthSamlAssertionIssuer`.\n\n**THE LIFETIME IS CLAMPED to the Issuing CA's own expiry** rather than refused where it would overshoot: the ordinary cause is a five-year Issuing CA in its fifth year.\n\n**AND SINCE 2026-09-11 THE SUBJECT MAY BE A PERSON.** `target=person` issues to somebody in `ou=users` instead: the same hierarchy, the same profile, the same certificate, ADDED to the key pairs on their own entry — a `stsAssertionKeyPair` record and a SEALED `stsAssertionPrivateKey` value per key pair, several per profile since #1290, up to `pki.personSigningKeyMax` valid ones (STS-PKI-0223 past it), each named by an optional `label` — an attribute set that shares no name with the application's and is read by nothing else, which is the same rule the two profiles above follow. RFC 7523 section 3 asks only that `iss` be a unique identifier for the issuer and says the `sub` of an authorization grant typically identifies a resource owner, so a person signing for themselves is the profile read literally.\n\n**A PERSON MAY ONLY ASSERT ABOUT THEMSELVES**, and the grant refuses anything else: a key issued to one resource owner is that person's credential rather than permission to speak for the others, and the certificate carries `urn:sts:person:<name>` as a URI subjectAltName so that the rule holds for an assertion presented on its `x5c` alone. A party that may assert about OTHER people is an application with `oauthAssertionIssuer` declared on it.\n\n**AND THIS REPLY CARRIES THE PRIVATE KEY, WHICH THE APPLICATION'S DOES NOT.** An application's is readable through `GET /admin-api/applications`, which opens the seal for an `admin:read` token; a person's entry is not drawn through any module that would open it, so the alternatives were a page that prints somebody's private key on every visit or a key nobody can ever obtain. `privateKeyPem` is in the reply to `target=person` and in no other answer this API gives, and it is not shown again.\n\n**AND SINCE 2026-09-13 A PERSON MAY HOLD AN RFC 7522 KEY PAIR TOO**: `target=person` with `purpose=saml` adds a `stsSamlAssertionKeyPair` record (the certificate, its chain, its thumbprint, expiry and provenance) and a sealed `stsSamlAssertionPrivateKey` value — a fourth attribute set sharing no name with the others. The SAML 2.0 bearer grant reads it under the same rule: the `<Subject>` must be that person.\n\n**Mirrors** `POST /admin/pki, POST /admin/pki/certificate and POST /admin/pki/person` on the admin console.",
+    `description`:"Generates a key pair, signs a leaf certificate for it with this realm's Issuing CA, and writes the whole lot onto that application's directory entry.\n\n**WHICH ATTRIBUTES DEPENDS ON `purpose`, AND THE TWO SETS SHARE NONE.** `jwt` (the default, RFC 7523) writes seven — `oauthAssertionPrivateKey`, `oauthAssertionCertificate`, `oauthAssertionCertificateChain`, `oauthAssertionJwks` (with `x5c` and `x5t#S256` on the key), `oauthAssertionKid`, `oauthAssertionExpiresAt` and `oauthAssertionKeySource` (`issued`). `saml` (RFC 7522) writes six under `oauthSamlAssertion*`, with no JWKS among them because SAML has none — what a party registers for that profile IS a certificate — and with a `oauthSamlAssertionThumbprint` where the other has a `kid`, because those are the handles the two formats actually carry.\n\n**AN APPLICATION MAY HOLD BOTH KEY PAIRS AND NEITHER CAN SIGN FOR THE OTHER'S PROFILE.** No verifier reads the other set, so issuing one leaves the other untouched and taking one off leaves the other working. The SAML leaf also carries the RFC 7522 grant-type URI as a second URI subjectAltName, so a certificate read out of context says which profile it was issued for.\n\n**THIS SERVICE KEEPS NO SECOND COPY OF THE PRIVATE KEY.** `common/pki.js` hands it over once and forgets it, so the entry is where it lives.\n\n**AND IT IS SEALED THERE.** AES-256-GCM under the key-encryption key, through `common/keystore.js` — the same mechanism and the same key that seal this service's own signing keys and the CA hierarchy this leaf was issued from — wherever that key outlives the process, which is product mode. So an ldapsearch on TCP 389 where every bind succeeds, an ldif file, a database row and a backup of either hold `$aesgcm$…`. `GET /admin-api/applications` opens it for you, because it comes through `common/applications.js` and you are holding an `admin:read` token; in development mode it is in the clear, where the key-encryption key is ephemeral and would not survive the restart the entry does. Issuing again replaces.\n\n**THE LEAF IS A `digital-signature` CERTIFICATE and deliberately carries no extended key usage.** What it signs is a JWT, not a TLS handshake; giving it `clientAuth` would make it usable for RFC 8705 as well, which is a DIFFERENT credential with a different registration attribute, and one certificate quietly doing both is how a deployment ends up unable to revoke either.\n\n**A KEY PAIR IS NOT A TRUST DECISION.** It lets the application SIGN, which is all RFC 7523 section 2.2 (client authentication) needs. For section 2.1 — the authorization grant — the `iss` it will use must also be declared on `oauthAssertionIssuer`, through POST /admin-api/applications/add. RFC 7522 is the same two acts with its own declaration, `oauthSamlAssertionIssuer`.\n\n**THE LIFETIME IS CLAMPED to the Issuing CA's own expiry** rather than refused where it would overshoot: the ordinary cause is a five-year Issuing CA in its fifth year.\n\n**AND SINCE 2026-09-11 THE SUBJECT MAY BE A PERSON.** `target=person` issues to somebody in `ou=users` instead: the same hierarchy, the same profile, the same certificate, ADDED to the key pairs on their own entry — a `stsAssertionKeyPair` record and a SEALED `stsAssertionPrivateKey` value per key pair, several per profile since #1290, up to `pki.personSigningKeyMax` valid ones (STS-PKI-0223 past it), each named by an optional `label` — an attribute set that shares no name with the application's and is read by nothing else, which is the same rule the two profiles above follow. RFC 7523 section 3 asks only that `iss` be a unique identifier for the issuer and says the `sub` of an authorization grant typically identifies a resource owner, so a person signing for themselves is the profile read literally.\n\n**A PERSON MAY ONLY ASSERT ABOUT THEMSELVES**, and the grant refuses anything else: a key issued to one resource owner is that person's credential rather than permission to speak for the others, and the certificate carries `urn:sts:person:<name>` (a service account's `urn:sts:sa:<name>`, #1827) as a URI subjectAltName so that the rule holds for an assertion presented on its `x5c` alone. A party that may assert about OTHER people is an application with `oauthAssertionIssuer` declared on it.\n\n**AND THIS REPLY CARRIES THE PRIVATE KEY, WHICH THE APPLICATION'S DOES NOT.** An application's is readable through `GET /admin-api/applications`, which opens the seal for an `admin:read` token; a person's entry is not drawn through any module that would open it, so the alternatives were a page that prints somebody's private key on every visit or a key nobody can ever obtain. `privateKeyPem` is in the reply to `target=person` and in no other answer this API gives, and it is not shown again.\n\n**AND SINCE 2026-09-13 A PERSON MAY HOLD AN RFC 7522 KEY PAIR TOO**: `target=person` with `purpose=saml` adds a `stsSamlAssertionKeyPair` record (the certificate, its chain, its thumbprint, expiry and provenance) and a sealed `stsSamlAssertionPrivateKey` value — a fourth attribute set sharing no name with the others. The SAML 2.0 bearer grant reads it under the same rule: the `<Subject>` must be that person.\n\n**Mirrors** `POST /admin/pki, POST /admin/pki/certificate and POST /admin/pki/person` on the admin console.",
     `tags`:#["PKI"],
     `responses`:#{
       `200`:#{
@@ -31937,7 +33620,7 @@ op `revokePkiKeyPair`(@js(#{
   #{
     `operationId`:"uploadPkiCertificate",
     `summary`:"Replace an application's or a person's key pair with a certificate it already holds — issued by this realm's CA, or by another with its full chain",
-    `description`:"The application generated its own key pair and brings the CERTIFICATE; this writes it over the key pair this service manages for one profile, onto the same attributes an `issue` writes — seven for `jwt`, six for `saml` — with the private key attribute CLEARED and `oauthAssertionKeySource` / `oauthSamlAssertionKeySource` saying where it came from. **No private key is taken**: an upload carrying one is refused and nothing is stored.\n\n**WHAT THE CHAIN MUST BE DEPENDS ON WHO ISSUED IT.** A certificate from THIS REALM's own certificate authority may be sent alone — the service holds every tier above it — and is held to the path check an `x5c` is: it must pass through this realm's own Intermediate and nothing on it may be revoked (`uploaded-realm-ca`). A certificate from ANY OTHER authority must arrive with its WHOLE chain, every intermediate and a SELF-SIGNED root, in either field and in any order (`uploaded-external-ca`). Every link is verified — signature, issuer name, validity — every issuer must be a CA permitted keyCertSign within its path length constraint, the leaf must not be a CA and must permit digitalSignature, and its revocation is checked the way a registered certificate is when it is used. An incomplete chain, an unrelated extra certificate, a self-signed leaf, and a chain to this SERVICE's Root through ANOTHER realm's Intermediate are each refused by name. The external root need not be trusted by anything here: the application is registering a KEY and the chain is the evidence for it.\n\n**THE KEY MUST BE ONE THE PROFILE's VERIFIER CAN USE**: RSA of at least 2048 bits, ECDSA on P-256, P-384 or P-521 — and for `jwt` also secp256k1 or Ed25519. The chain is stored WITH its root for an external authority, because revocation checking needs every issuer; the JWKS written for `jwt` carries it in `x5c`.\n\nLike `issue`, a key pair is not a trust decision: the issuer the application will assert as still has to be declared for section 2.1.\n\n**`target=person` (2026-09-13) ADDS A KEY PAIR TO A PERSON's** (since #1290; it replaced the one held until then) — `stsAssertion*` or `stsSamlAssertion*` on their `ou=users` entry, with an optional `label`, under `pki.personSigningKeyMax` — under the same chain rules, with one more: a certificate this realm issued must name THAT person (`urn:sts:person:<name>`), so an application's leaf or another person's is refused. For an application, a leaf this realm issued to a PERSON is refused. A self-signed certificate is refused for a person with no by-value alternative, and the grant still holds an uploaded key to assertions about the person alone.\n\n**Mirrors** `POST /admin/pki, POST /admin/pki/certificate and POST /admin/pki/person` on the admin console.",
+    `description`:"The application generated its own key pair and brings the CERTIFICATE; this writes it over the key pair this service manages for one profile, onto the same attributes an `issue` writes — seven for `jwt`, six for `saml` — with the private key attribute CLEARED and `oauthAssertionKeySource` / `oauthSamlAssertionKeySource` saying where it came from. **No private key is taken**: an upload carrying one is refused and nothing is stored.\n\n**WHAT THE CHAIN MUST BE DEPENDS ON WHO ISSUED IT.** A certificate from THIS REALM's own certificate authority may be sent alone — the service holds every tier above it — and is held to the path check an `x5c` is: it must pass through this realm's own Intermediate and nothing on it may be revoked (`uploaded-realm-ca`). A certificate from ANY OTHER authority must arrive with its WHOLE chain, every intermediate and a SELF-SIGNED root, in either field and in any order (`uploaded-external-ca`). Every link is verified — signature, issuer name, validity — every issuer must be a CA permitted keyCertSign within its path length constraint, the leaf must not be a CA and must permit digitalSignature, and its revocation is checked the way a registered certificate is when it is used. An incomplete chain, an unrelated extra certificate, a self-signed leaf, and a chain to this SERVICE's Root through ANOTHER realm's Intermediate are each refused by name. The external root need not be trusted by anything here: the application is registering a KEY and the chain is the evidence for it.\n\n**THE KEY MUST BE ONE THE PROFILE's VERIFIER CAN USE**: RSA of at least 2048 bits, ECDSA on P-256, P-384 or P-521 — and for `jwt` also secp256k1 or Ed25519. The chain is stored WITH its root for an external authority, because revocation checking needs every issuer; the JWKS written for `jwt` carries it in `x5c`.\n\nLike `issue`, a key pair is not a trust decision: the issuer the application will assert as still has to be declared for section 2.1.\n\n**`target=person` (2026-09-13) ADDS A KEY PAIR TO A PERSON's** (since #1290; it replaced the one held until then) — `stsAssertion*` or `stsSamlAssertion*` on their `ou=users` entry, with an optional `label`, under `pki.personSigningKeyMax` — under the same chain rules, with one more: a certificate this realm issued must name THAT person (`urn:sts:person:<name>`, or `urn:sts:sa:<name>` for a service account, #1827), so an application's leaf or another person's is refused. For an application, a leaf this realm issued to a PERSON is refused. A self-signed certificate is refused for a person with no by-value alternative, and the grant still holds an uploaded key to assertions about the person alone.\n\n**Mirrors** `POST /admin/pki, POST /admin/pki/certificate and POST /admin/pki/person` on the admin console.",
     `tags`:#["PKI"],
     `responses`:#{
       `200`:#{
@@ -32955,6 +34638,18 @@ op `removeTrustAnchor`(@js(#{
     `$types`:#["object","null"]
   }) @hoisted model get_admin_api_tls_connection_r200_application_json_clientCertificate_revocation_h2870 {}
 
+@js(#{
+    `additionalProperties`:false,
+    `properties`:#{
+      `status`:#{`type`:"string"},
+      `refused`:#{`type`:"boolean"},
+      `checked`:#{`type`:"boolean"},
+      `policy`:#{`type`:"string"},
+      `source`:#{`type`:"string"}
+    },
+    `$types`:#["object","null"]
+  }) @hoisted model get_admin_api_tls_connection_r200_application_json_clientCertificate_revocationStatus {}
+
 @endpoint("/admin-api/tls-connection",
   "get",
   #{
@@ -32987,11 +34682,13 @@ op `getTlsConnection`(`responses/200/content/application~1json/schema`: {
     `clientCertificate`?: {
       `presented`?: boolean;
       `verified`?: boolean;
+      `handshakeVerified`?: boolean;
       `authorizationError`?: NullableString;
       `certificate`?: get_admin_api_tls_connection_r200_application_json_clientCertificate_certificate_h2867;
       `thumbprint`?: NullableString;
       `identity`?: get_admin_api_tls_connection_r200_application_json_clientCertificate_identity_h2869;
       `revocation`?: get_admin_api_tls_connection_r200_application_json_clientCertificate_revocation_h2870;
+      `revocationStatus`?: get_admin_api_tls_connection_r200_application_json_clientCertificate_revocationStatus;
       `signIn`?: string;
       `note`?: string
     };
@@ -33951,7 +35648,7 @@ op `pairKerberosTrust`(@js(#{
         `in`:"query",
         `required`:false,
         `schema`:null,
-        `description`:"The FRONT of an error code: a whole code is one failure condition and `STS-OAUTH` every failure in that subsystem. docs/error-codes.md lists them. Every refused or failed request carries a code; no code is ever sent to the client that made the request."
+        `description`:"The FRONT of an error code: a whole code is one failure condition and `STS-OAUTH` every failure in that subsystem. docs/v1.1.0/error-codes.md lists them. Every refused or failed request carries a code; no code is ever sent to the client that made the request."
       },
       #{
         `name`:"address",
@@ -33978,7 +35675,7 @@ op `pairKerberosTrust`(@js(#{
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getAudit`(`parameters/0/schema`: "authentication" | "session" | "directory" | "admin" | "api" | "application" | "protocol" | "spiffe" | "signals" | "authorization" | "service" | "mail",
-  `parameters/1/schema`: "authentication" | "authentication.refused" | "portal.activate" | "portal.activate.refused" | "portal.password.changed" | "authn.password.changed" | "portal.password.refused" | "portal.password.csrf" | "portal.signout" | "portal.signout.csrf" | "portal.key.enrolled" | "portal.key.removed" | "portal.key.renamed" | "portal.tls-client.issued" | "portal.tls-client.revoked" | "activation.issued" | "portal.password-reset" | "portal.password-reset.refused" | "authn.mfa.enrolment.required" | "authn.mfa.enrolment.started" | "authn.mfa.enrolment.offered" | "authn.mfa.enrolment.declined" | "authn.second-factor.skipped" | "authn.mfa.enrolment.at-risk" | "authn.mfa.enrolled" | "authn.recovery.refused" | "authn.recovery.limited" | "authn.recovery.completed" | "authn.sign-in.started-over" | "portal.mfa.started" | "portal.mfa.enrolled" | "portal.mfa.refused" | "portal.mfa.removed" | "portal.mfa.csrf" | "portal.activate.mfa.started" | "portal.activate.mfa.refused" | "portal.activate.key.started" | "portal.activate.key.enrolled" | "portal.activate.key.refused" | "session.start" | "session.end" | "session.renew" | "authn.session.bound" | "authn.session.refreshed" | "authn.session.binding-skipped" | "logout.global" | "logout.selective" | "logout.backchannel" | "mail.queued" | "mail.sent" | "mail.dead" | "mail.refused" | "mail.reset-requested" | "mail.retry" | "mail.template" | "branding.logo" | "mail.verified" | "mail.preferences" | "scheduler.run" | "scheduler.step-down" | "keys.rotate" | "keys.rotate.emergency" | "application.secret-expiring" | "application.secret-expired" | "keys.retire" | "keys.data-key-rotate" | "keys.data-key-reencrypt" | "keys.data-key-destroy" | "keys.kek-rotate" | "keys.pin" | "keys.unpin" | "oidfed.key-minted" | "oidfed.key-rotated" | "oidfed.key-revoked" | "oidfed.subordinate-set" | "oidfed.subordinate-removed" | "oidfed.anchor-set" | "oidfed.anchor-removed" | "oidfed.mark-type-set" | "oidfed.remove-mark-type" | "oidfed.mark-policy-set" | "oidfed.remove-mark-policy" | "oidfed.mark-issued" | "oidfed.mark-revoked" | "oidfed.held-mark-added" | "oidfed.held-mark-removed" | "oidfed.act-refused" | "oidfed.resolved" | "device.create" | "device.browser.remembered" | "device.update" | "device.delete" | "device.evict" | "device.attestation-revoked" | "webauthn.ceremony" | "webauthn.algorithm-mismatch" | "webauthn.client.learned" | "webauthn.attestation-revoked" | "device.key-add" | "device.key-remove" | "device.compliance" | "device.enrol.refused" | "user.create" | "user.delete" | "user.update" | "user.rename" | "cells.rehome" | "user.query" | "group.create" | "group.delete" | "group.update" | "group.rename" | "entry.create" | "entry.delete" | "entry.update" | "entry.rename" | "directory.search" | "directory.compare" | "directory.bind" | "application.create" | "application.secret-revealed" | "application.export" | "application.import" | "application.add-owner" | "application.remove-owner" | "application.update" | "consent.grant" | "consent.deny" | "consent.revoke" | "application.delete" | "oidfed.registered" | "oidfed.registration-refused" | "admin.view" | "admin.change" | "admin.config-dump" | "claims.change" | "admin.role.change" | "admin.console.bootstrap" | "admin.mail.set" | "admin.pseudonym.set" | "admin.mfa.totp.cleared" | "admin.mfa.key.cleared" | "admin.mfa.key.renamed" | "admin.password.reset" | "admin.password.reset-link" | "admin.mfa.primary-keys.removed" | "admin.mfa.disabled" | "admin.mfa.required" | "admin.mfa.unrequired" | "admin.delegation.not-delegated" | "admin.delegation.may-act" | "admin.delegation.semantics" | "portal.delegation.may-act" | "portal.delegation.search" | "admin.password-policy.change" | "admin.authn-policy.change" | "admin.locale-policy.change" | "admin.post-login-policy.change" | "authn.post-login.asked" | "authn.post-login.skipped" | "authn.post-login.done" | "authn.post-login.held" | "admin.post-login-activity.change" | "authn.post-login.activity-run" | "authn.post-login.unsupported" | "webauthn.key.possibly-replaced" | "authn.mail-factor.change" | "authn.mail-factor.sent" | "authn.mail-factor.accepted" | "authn.mail-factor.refused" | "admin.truststore.change" | "admin.pki.trust.change" | "krb5.keys.derived" | "krb5.trust.sid-filtered" | "admin.krb5.keys.cleared" | "admin.krb5.service.created" | "admin.krb5.service.rotated" | "admin.krb5.service.deleted" | "admin.krb5.previous.dropped" | "api.read" | "api.change" | "protocol.call" | "oauth.token.revoke" | "protocol.failure" | "service.failure" | "spiffe.svid.issue" | "spiffe.svid.validate" | "spiffe.entry.create" | "spiffe.entry.update" | "spiffe.entry.delete" | "spiffe.agent.create" | "spiffe.agent.attest" | "spiffe.agent.ban" | "spiffe.agent.unban" | "spiffe.agent.delete" | "spiffe.bundle.read" | "spiffe.bundle.change" | "spiffe.call.refuse" | "xacml.decision" | "xacml.enforcement" | "authzen.decision" | "authzen.search" | "fga.decision" | "admin.authzen.attribute.set" | "admin.authzen.attribute.removed" | "admin.authzen.scope.set" | "admin.authzen.pep.granted" | "admin.authzen.callbacks.set" | "authzen.access-request.submitted" | "authzen.access-request.approved" | "authzen.access-request.denied" | "authzen.access-request.expired" | "authzen.access-request.cancelled" | "authzen.access-request.revoked" | "authzen.access-request.approver-refused" | "authzen.access-request.callback" | "xacml.issuance.refused" | "xacml.access.refused" | "xacml.issuance.alarm" | "xacml.pep.register" | "xacml.pep.certificate" | "xacml.pip.query" | "saml2.request.signature" | "gnap.grant.request" | "gnap.grant.consent" | "gnap.grant.deny" | "gnap.grant.approve" | "gnap.grant.revoke" | "gnap.grant.owner-queued" | "gnap.grant.forward" | "uma.resource.register" | "uma.resource.update" | "uma.resource.delete" | "uma.permission.ticket" | "uma.decision" | "uma.grant" | "uma.pct.revoke" | "uma.approval.request" | "uma.approval.answer" | "uma.claims.gathered" | "uma.share.add" | "uma.share.remove" | "uma.policy.alfa" | "uma.resource-server.enable" | "uma.resource-server.disable" | "uma.owns-resources.set" | "uma.rpt.revoke" | "gnap.grant.finalize" | "gnap.token.issue" | "gnap.token.rotate" | "gnap.token.revoke" | "gnap.rs.introspect" | "gnap.rs.register" | "ssf.stream.create" | "ssf.stream.update" | "ssf.stream.delete" | "ssf.stream.status" | "ssf.subject.change" | "ssf.event.transmit" | "ssf.announcement.broadcast" | "ssf.event.refused" | "ssf.stream.dead" | "ssf.stream.revived" | "ssf.stream.delivery" | "ssf.deadletter.clear" | "ssf.event.receive" | "caep.event.auto" | "caep.event.emit" | "caep.session.reset" | "caep.session.clear" | "risc.event.auto" | "risc.event.emit" | "risc.account.reset" | "risc.account.clear" | "persistence.minted-drop" | "admin.aud-sub.set" | "admin.mfa.backup-codes.cleared" | "admin.password.reset-keytab" | "admin.user.attribute" | "admin.service-account.set" | "admin.service-account.cleared" | "admin.service-account.owner-added" | "admin.service-account.owner-removed" | "admin.service-account.destination-set" | "admin.service-account.rotate" | "admin.app-password.created" | "admin.app-password.revoked" | "admin.ciba.answered" | "admin.device.removed" | "admin.ida.recorded" | "admin.ida.removed" | "admin.siop.enrolled" | "admin.siop.removed" | "admin.siop.preferred" | "admin.passkey.enrolment-started" | "admin.passkey.enrolment-refused" | "admin.passkey.enrolled" | "admin.passkey.upgrade-started" | "admin.passkey.upgrade-refused" | "admin.passkey.upgrade-proved" | "admin.passkey.upgrade-cancelled" | "admin.passkey.upgraded" | "ssf.signals.discover" | "ssf.signals.stream" | "ssf.signals.unblock" | "ssf.signals.read-stream" | "ssf.signals.update-stream" | "ssf.signals.delete-stream" | "ssf.signals.set-status" | "ssf.signals.add-subject" | "ssf.signals.remove-subject" | "ssf.signals.verify" | "application.key-issued" | "enrollment.acme.account.create" | "enrollment.acme.account.deactivate" | "enrollment.acme.account.key-change" | "enrollment.eab.create" | "enrollment.eab.delete" | "enrollment.challenge.create" | "enrollment.challenge.delete" | "enrollment.issue" | "enrollment.issue.refused" | "enrollment.revoke" | "federation.signal-block" | "federation.signal-unblock" | "federation.signout" | "federation.signout-answered" | "federation.unlink" | "federation.connected" | "federation.provider-notification" | "federation.group-ignored" | "group.add-member" | "group.add-owner" | "group.remove-owner" | "group.owner-protected" | "group.set-mail" | "group.set-policy" | "krb5.keytab.person" | "logout.backchannel.retry" | "oauth.device-secret.revoke" | "oauth2.ciba.notify" | "oauth2.claim-source-linked" | "oauth2.claim-source-link-refused" | "oauth2.claims-providers.add-provider" | "oauth2.claims-providers.update-provider" | "oauth2.claims-providers.remove-provider" | "oauth2.claims-providers.revoke-link" | "oauth2.command" | "oauth2.command.tenant" | "oauth2.grant-revoked" | "oauth2.par.withdraw" | "password.set" | "service-account.rotated" | "service-account.rotation-failed" | "portal.app-password.created" | "portal.app-password.revoked" | "portal.app-password.csrf" | "portal.certificates.csrf" | "portal.device.remove" | "portal.device.remember-browser" | "portal.kerberos.keytab" | "portal.kerberos.refused" | "portal.kerberos.csrf" | "portal.key.started" | "portal.key.refused" | "portal.key.upgrade-started" | "portal.key.upgrade-refused" | "portal.key.upgraded" | "portal.mfa.backup-codes.generated" | "portal.mfa.backup-codes.confirmed" | "portal.mfa.backup-codes.discarded" | "portal.risc.optOutInitiated" | "portal.risc.optOutCancelled" | "portal.risc.optIn" | "portal.signing-key.issued" | "portal.signing-key.removed" | "portal.signing-key.csrf" | "portal.signing-key.revoked" | "did.person.published" | "did.person.version" | "did.person.authorized" | "did.person.deactivated" | "admin.did.deactivated" | "portal.siop.enrol" | "portal.siop.remove" | "portal.siop.prefer" | "portal.siop.view" | "portal.siop.did" | "siop.key.pinned" | "siop.key.refused" | "portal.vc.offer" | "portal.vc.remove" | "risk.feedback" | "risk.response" | "risk.terms.accept" | "attribute-sources.add" | "attribute-sources.update" | "attribute-sources.remove" | "attribute-sources.refresh" | "scim-client.change" | "scim-client.delivery" | "scim-client.reconcile" | "scim-client.queue" | "secret-destination.push" | "secret-destination.test-push" | "roles.add-owner" | "roles.remove-owner" | "roles.create" | "roles.delete" | "roles.describe" | "node-health.collect-garbage" | "saml2.authnrequest" | "saml2.artifact.resolve" | "saml2.attribute-query" | "saml2.metadata.mdq" | "saml2.metadata.refresh" | "account.add" | "account.select" | "account.switch" | "account.forget" | "account.ambiguous" | "session.reauthenticate" | "session.presented" | "session.refuse" | "session.refused" | "ssf.event.act" | "ssf.stream.swept" | "xacml.pep.enable" | "xacml.pep.disable" | "xacml.pep.forget" | "xacml.policy.write" | "xacml.policy.delete" | "report.definition.create" | "report.definition.update" | "report.definition.share" | "report.definition.delete" | "report.job.submit" | "report.job.start" | "report.job.complete" | "report.job.fail" | "report.job.cancel" | "report.notify" | "report.query" | "report.job.retrieve" | "admin.audit-export.add" | "admin.audit-export.update" | "admin.audit-export.remove" | "admin.audit-export.enable" | "admin.audit-export.disable" | "admin.audit-export.test" | "audit.export.test",
+  `parameters/1/schema`: "authentication" | "authentication.refused" | "portal.activate" | "portal.activate.refused" | "portal.password.changed" | "authn.password.changed" | "portal.password.refused" | "portal.password.csrf" | "portal.signout" | "portal.signout.csrf" | "portal.key.enrolled" | "portal.key.removed" | "portal.key.renamed" | "portal.tls-client.issued" | "portal.tls-client.revoked" | "activation.issued" | "portal.password-reset" | "portal.password-reset.refused" | "authn.mfa.enrolment.required" | "authn.mfa.enrolment.started" | "authn.mfa.enrolment.offered" | "authn.mfa.enrolment.declined" | "authn.second-factor.skipped" | "authn.mfa.enrolment.at-risk" | "authn.mfa.enrolled" | "authn.recovery.refused" | "authn.recovery.limited" | "authn.recovery.completed" | "authn.sign-in.started-over" | "portal.mfa.started" | "portal.mfa.enrolled" | "portal.mfa.refused" | "portal.mfa.removed" | "portal.mfa.csrf" | "portal.activate.mfa.started" | "portal.activate.mfa.refused" | "portal.activate.key.started" | "portal.activate.key.enrolled" | "portal.activate.key.refused" | "session.start" | "session.end" | "session.renew" | "authn.session.bound" | "authn.session.refreshed" | "authn.session.binding-skipped" | "logout.global" | "logout.selective" | "logout.backchannel" | "mail.queued" | "mail.sent" | "mail.dead" | "mail.refused" | "mail.reset-requested" | "mail.retry" | "mail.template" | "branding.logo" | "mail.verified" | "mail.preferences" | "scheduler.run" | "scheduler.step-down" | "keys.rotate" | "keys.rotate.emergency" | "application.secret-expiring" | "application.secret-expired" | "keys.retire" | "keys.data-key-rotate" | "keys.data-key-reencrypt" | "keys.data-key-destroy" | "keys.kek-rotate" | "keys.pin" | "keys.unpin" | "oidfed.key-minted" | "oidfed.key-rotated" | "oidfed.key-revoked" | "oidfed.subordinate-set" | "oidfed.subordinate-removed" | "oidfed.anchor-set" | "oidfed.anchor-removed" | "oidfed.mark-type-set" | "oidfed.remove-mark-type" | "oidfed.mark-policy-set" | "oidfed.remove-mark-policy" | "oidfed.mark-issued" | "oidfed.mark-revoked" | "oidfed.held-mark-added" | "oidfed.held-mark-removed" | "oidfed.act-refused" | "oidfed.resolved" | "device.create" | "device.browser.remembered" | "device.update" | "device.delete" | "device.evict" | "device.attestation-revoked" | "webauthn.ceremony" | "webauthn.algorithm-mismatch" | "webauthn.client.learned" | "webauthn.attestation-revoked" | "device.key-add" | "device.key-remove" | "device.compliance" | "device.enrol.refused" | "user.create" | "user.delete" | "user.update" | "user.rename" | "user.export" | "user.import" | "cells.rehome" | "user.query" | "group.create" | "group.delete" | "group.update" | "group.rename" | "entry.create" | "entry.delete" | "entry.update" | "entry.rename" | "directory.search" | "directory.compare" | "directory.bind" | "application.create" | "application.secret-revealed" | "application.export" | "application.import" | "application.add-owner" | "application.remove-owner" | "application.update" | "consent.grant" | "consent.deny" | "consent.revoke" | "application.delete" | "oidfed.registered" | "oidfed.registration-refused" | "admin.view" | "admin.change" | "admin.config-dump" | "claims.change" | "admin.role.change" | "admin.console.bootstrap" | "admin.mail.set" | "admin.pseudonym.set" | "admin.mfa.totp.cleared" | "admin.mfa.key.cleared" | "admin.mfa.key.renamed" | "admin.password.reset" | "admin.password.reset-link" | "admin.mfa.primary-keys.removed" | "admin.mfa.disabled" | "admin.mfa.required" | "admin.mfa.unrequired" | "admin.delegation.not-delegated" | "admin.delegation.may-act" | "admin.delegation.semantics" | "portal.delegation.may-act" | "portal.delegation.search" | "admin.password-policy.change" | "admin.policies.export" | "admin.policies.import" | "admin.policies.trust-signer" | "admin.authn-policy.change" | "admin.locale-policy.change" | "admin.post-login-policy.change" | "authn.post-login.asked" | "authn.post-login.skipped" | "authn.post-login.done" | "authn.post-login.held" | "admin.post-login-activity.change" | "authn.post-login.activity-run" | "authn.post-login.unsupported" | "webauthn.key.possibly-replaced" | "authn.mail-factor.change" | "authn.mail-factor.sent" | "authn.mail-factor.accepted" | "authn.mail-factor.refused" | "admin.truststore.change" | "admin.pki.trust.change" | "krb5.keys.derived" | "krb5.trust.sid-filtered" | "admin.krb5.keys.cleared" | "admin.krb5.service.created" | "admin.krb5.service.rotated" | "admin.krb5.service.deleted" | "admin.krb5.previous.dropped" | "api.read" | "api.change" | "protocol.call" | "oauth.token.revoke" | "protocol.failure" | "service.failure" | "spiffe.svid.issue" | "spiffe.svid.validate" | "spiffe.entry.create" | "spiffe.entry.update" | "spiffe.entry.delete" | "spiffe.agent.create" | "spiffe.agent.attest" | "spiffe.agent.ban" | "spiffe.agent.unban" | "spiffe.agent.delete" | "spiffe.bundle.read" | "spiffe.bundle.change" | "spiffe.call.refuse" | "xacml.decision" | "xacml.enforcement" | "authzen.decision" | "xacml.remote.enforcement" | "authzen.remote.decision" | "xacml.remote.proxy" | "authzen.search" | "fga.decision" | "admin.authzen.attribute.set" | "admin.authzen.attribute.removed" | "admin.authzen.scope.set" | "admin.authzen.pep.granted" | "admin.authzen.callbacks.set" | "authzen.access-request.submitted" | "authzen.access-request.approved" | "authzen.access-request.denied" | "authzen.access-request.expired" | "authzen.access-request.cancelled" | "authzen.access-request.revoked" | "authzen.access-request.approver-refused" | "authzen.access-request.callback" | "xacml.issuance.refused" | "xacml.access.refused" | "xacml.issuance.alarm" | "xacml.pep.register" | "xacml.pep.certificate" | "xacml.pep.credential" | "xacml.pip.query" | "saml2.request.signature" | "gnap.grant.request" | "gnap.grant.consent" | "gnap.grant.deny" | "gnap.grant.approve" | "gnap.grant.revoke" | "gnap.grant.owner-queued" | "gnap.grant.forward" | "uma.resource.register" | "uma.resource.update" | "uma.resource.delete" | "uma.permission.ticket" | "uma.decision" | "uma.grant" | "uma.pct.revoke" | "uma.approval.request" | "uma.approval.answer" | "uma.claims.gathered" | "uma.share.add" | "uma.share.remove" | "uma.policy.alfa" | "uma.resource-server.enable" | "uma.resource-server.disable" | "uma.owns-resources.set" | "uma.rpt.revoke" | "gnap.grant.finalize" | "gnap.token.issue" | "gnap.token.rotate" | "gnap.token.revoke" | "gnap.rs.introspect" | "gnap.rs.register" | "ssf.stream.create" | "ssf.stream.update" | "ssf.stream.delete" | "ssf.stream.status" | "ssf.subject.change" | "ssf.event.transmit" | "ssf.announcement.broadcast" | "ssf.event.refused" | "ssf.stream.dead" | "ssf.stream.revived" | "ssf.stream.delivery" | "ssf.deadletter.clear" | "ssf.event.receive" | "caep.event.auto" | "caep.event.emit" | "caep.session.reset" | "caep.session.clear" | "risc.event.auto" | "risc.event.emit" | "risc.account.reset" | "risc.account.clear" | "persistence.minted-drop" | "admin.aud-sub.set" | "admin.mfa.backup-codes.cleared" | "admin.password.reset-keytab" | "admin.user.attribute" | "admin.service-account.set" | "admin.service-account.cleared" | "admin.service-account.owner-added" | "admin.service-account.owner-removed" | "admin.service-account.destination-set" | "admin.service-account.rotate" | "admin.app-password.created" | "admin.app-password.revoked" | "admin.ciba.answered" | "admin.device.removed" | "admin.ida.recorded" | "admin.ida.removed" | "admin.siop.enrolled" | "admin.siop.removed" | "admin.siop.preferred" | "admin.passkey.enrolment-started" | "admin.passkey.enrolment-refused" | "admin.passkey.enrolled" | "admin.passkey.upgrade-started" | "admin.passkey.upgrade-refused" | "admin.passkey.upgrade-proved" | "admin.passkey.upgrade-cancelled" | "admin.passkey.upgraded" | "ssf.signals.discover" | "ssf.signals.stream" | "ssf.signals.unblock" | "ssf.signals.read-stream" | "ssf.signals.update-stream" | "ssf.signals.delete-stream" | "ssf.signals.set-status" | "ssf.signals.add-subject" | "ssf.signals.remove-subject" | "ssf.signals.verify" | "application.key-issued" | "enrollment.acme.account.create" | "enrollment.acme.account.deactivate" | "enrollment.acme.account.key-change" | "enrollment.eab.create" | "enrollment.eab.delete" | "enrollment.challenge.create" | "enrollment.challenge.delete" | "enrollment.issue" | "enrollment.issue.refused" | "enrollment.revoke" | "federation.signal-block" | "federation.signal-unblock" | "federation.signout" | "federation.signout-answered" | "federation.unlink" | "federation.connected" | "federation.provider-notification" | "federation.group-ignored" | "group.add-member" | "group.add-owner" | "group.remove-owner" | "group.owner-protected" | "group.set-mail" | "group.set-policy" | "krb5.keytab.person" | "logout.backchannel.retry" | "oauth.device-secret.revoke" | "oauth2.ciba.notify" | "oauth2.claim-source-linked" | "oauth2.claim-source-link-refused" | "oauth2.claims-providers.add-provider" | "oauth2.claims-providers.update-provider" | "oauth2.claims-providers.remove-provider" | "oauth2.claims-providers.revoke-link" | "oauth2.command" | "oauth2.command.tenant" | "oauth2.grant-revoked" | "oauth2.par.withdraw" | "password.set" | "service-account.rotated" | "service-account.rotation-failed" | "portal.app-password.created" | "portal.app-password.revoked" | "portal.app-password.csrf" | "portal.certificates.csrf" | "portal.device.remove" | "portal.device.remember-browser" | "portal.kerberos.keytab" | "portal.kerberos.refused" | "portal.kerberos.csrf" | "portal.key.started" | "portal.key.refused" | "portal.key.upgrade-started" | "portal.key.upgrade-refused" | "portal.key.upgraded" | "portal.mfa.backup-codes.generated" | "portal.mfa.backup-codes.confirmed" | "portal.mfa.backup-codes.discarded" | "portal.risc.optOutInitiated" | "portal.risc.optOutCancelled" | "portal.risc.optIn" | "portal.signing-key.issued" | "portal.signing-key.removed" | "portal.signing-key.csrf" | "portal.signing-key.revoked" | "did.person.published" | "did.person.version" | "did.person.authorized" | "did.person.deactivated" | "admin.did.deactivated" | "portal.siop.enrol" | "portal.siop.remove" | "portal.siop.prefer" | "portal.siop.view" | "portal.siop.did" | "siop.key.pinned" | "siop.key.refused" | "portal.vc.offer" | "portal.vc.remove" | "risk.feedback" | "risk.response" | "risk.terms.accept" | "attribute-sources.add" | "attribute-sources.update" | "attribute-sources.remove" | "attribute-sources.refresh" | "scim-client.change" | "scim-client.delivery" | "scim-client.reconcile" | "scim-client.queue" | "secret-destination.push" | "secret-destination.test-push" | "roles.add-owner" | "roles.remove-owner" | "roles.confer" | "roles.unconfer" | "roles.create" | "roles.delete" | "roles.describe" | "node-health.collect-garbage" | "saml2.authnrequest" | "saml2.artifact.resolve" | "saml2.attribute-query" | "saml2.metadata.mdq" | "saml2.metadata.refresh" | "account.add" | "account.select" | "account.switch" | "account.forget" | "account.ambiguous" | "session.reauthenticate" | "session.presented" | "session.refuse" | "session.refused" | "ssf.event.act" | "ssf.stream.swept" | "xacml.pep.enable" | "xacml.pep.disable" | "xacml.pep.forget" | "xacml.pep.proxy.set" | "xacml.pep.proxy.clear" | "xacml.pep.validate" | "xacml.pep.sync" | "xacml.pep.listener.certificate" | "xacml.pep.cluster.create" | "xacml.pep.cluster.delete" | "xacml.pep.cluster.member.add" | "xacml.pep.cluster.member.set" | "xacml.pep.cluster.member.remove" | "xacml.policy.write" | "xacml.policy.delete" | "report.definition.create" | "report.definition.update" | "report.definition.share" | "report.definition.delete" | "report.job.submit" | "report.job.start" | "report.job.complete" | "report.job.fail" | "report.job.cancel" | "report.notify" | "report.query" | "report.job.retrieve" | "admin.audit-export.add" | "admin.audit-export.update" | "admin.audit-export.remove" | "admin.audit-export.enable" | "admin.audit-export.disable" | "admin.audit-export.test" | "audit.export.test" | "certificate.stored" | "certificate.unstored" | "wstrust.decryption-key.issue" | "wstrust.decryption-key.upload" | "wstrust.decryption-key.remove" | "federation.link.add" | "federation.link.remove" | "roles.grant" | "roles.revoke" | "roles.authorize" | "roles.unauthorize" | "krb5.trust.add" | "krb5.trust.update" | "krb5.trust.enable" | "krb5.trust.disable" | "krb5.trust.rotate-key" | "krb5.trust.remove" | "krb5.trust.pair" | "admin.authn-policy.save-named" | "admin.authn-policy.delete-named" | "admin.service-account-policy.change" | "admin.passkey-policy.change" | "admin.passkey-client.clear" | "admin.attribute-policy.change" | "admin.attribute-policy.define" | "admin.attribute-policy.update" | "admin.attribute-policy.undefine" | "authn.session.registration.refused" | "authn.session.refresh.refused" | "account.disable" | "account.enable" | "enrollment.hostname.add" | "enrollment.hostname.remove" | "device.risk" | "federation.create" | "federation.update" | "federation.delete" | "federation.encryption-key" | "federation.client-certificate" | "federation.refused" | "krb5.krbtgt.created" | "krb5.krbtgt.rotated" | "krb5.krbtgt.invalidated" | "admin.krb5.krbtgt.created" | "admin.krb5.krbtgt.rotated" | "admin.krb5.krbtgt.invalidated" | "ciba.approved" | "ciba.denied" | "oidfed.subordinate-suspended" | "oidfed.subordinate-reinstated" | "oidfed.collection-crawled" | "portal.device.approve" | "portal.device.deny" | "portal.device.prove" | "portal.device.link" | "portal.vc.view" | "risk.dataset.import" | "risk.dataset.activate" | "risk.dataset.delete" | "ssf.signals.replace-stream" | "ssf.signals.read-status" | "xacml.pep.listener.set" | "xacml.pep.listener.remove" | "xacml.pep.listener.renew" | "xacml.pep.listener.environment" | "xacml.pep.settings.set" | "xacml.pep.settings.clear" | "xacml.pep.cluster.listener.set" | "xacml.pep.cluster.listener.remove" | "xacml.pep.cluster.listener.renew" | "xacml.pep.cluster.listener.environment" | "xacml.pep.cluster.settings.set" | "xacml.pep.cluster.settings.clear" | "xacml.pep.cluster.proxy.set" | "xacml.pep.cluster.proxy.clear",
   `parameters/2/schema`: "success" | "refused" | "error",
   `parameters/3/schema`: string,
   `parameters/4/schema`: string,
@@ -33996,7 +35693,7 @@ op `getAudit`(`parameters/0/schema`: "authentication" | "session" | "directory" 
   #{
     `operationId`:"getErrorCodes",
     `summary`:"Every failure condition this service can produce, and how often each is on the held audit log",
-    `description`:"The central table of error codes, `STS-<SUBSYSTEM>-<NNNN>`, filtered and paged: each code with the subsystem it belongs to, what failed, and what the CLIENT is told in its protocol's own vocabulary (`spec`).\n\n**A CODE IS NEVER SENT TO A CLIENT.** It is recorded on the audit row (`errorCode` on GET /admin-api/audit, filterable there with `?code=`) and at the front of the service log line; every protocol response is exactly what it was.\n\n`seen` counts the rows the audit log holds IN THIS REALM right now, so it falls as the log's cap discards the oldest, and it is zero for a failure recorded only as a log line — a startup refusal, or anything the remote PEP container records. `unregisteredSeen` lists codes found on held rows that the table does not hold, each a failure site whose code was never registered.\n\nThe same table is published as docs/error-codes.md, generated from common/error_codes.js.\n\n**Mirrors** `GET /admin/error-codes` on the admin console.",
+    `description`:"The central table of error codes, `STS-<SUBSYSTEM>-<NNNN>`, filtered and paged: each code with the subsystem it belongs to, what failed, and what the CLIENT is told in its protocol's own vocabulary (`spec`).\n\n**A CODE IS NEVER SENT TO A CLIENT.** It is recorded on the audit row (`errorCode` on GET /admin-api/audit, filterable there with `?code=`) and at the front of the service log line; every protocol response is exactly what it was.\n\n`seen` counts the rows the audit log holds IN THIS REALM right now, so it falls as the log's cap discards the oldest, and it is zero for a failure recorded only as a log line — a startup refusal, or anything the remote PEP container records. `unregisteredSeen` lists codes found on held rows that the table does not hold, each a failure site whose code was never registered.\n\nThe same table is published as docs/v1.1.0/error-codes.md, generated from common/error_codes.js.\n\n**Mirrors** `GET /admin/error-codes` on the admin console.",
     `tags`:#["Audit log"],
     `responses`:#{
       `200`:#{
@@ -36564,7 +38261,7 @@ op `getPolicies`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: inte
   
 
 @js(#{
-    `description`:"scrypt's CPU and memory cost for a newly stored password while the algorithm is scrypt, as a power of two: 15 (the default) is N=32768. OWASP's table pairs it with the parallelism: 2^17 with p=1, 2^16 with p=2, 2^15 with p=3, 2^14 with p=5, or 2^13 with p=10. The default, 2^15 with p=1, is below it. Between 13 and 20. Default 15.",
+    `description`:"scrypt's CPU and memory cost for a newly stored password while the algorithm is scrypt, as a power of two: 15 (the default) is N=32768. OWASP's table pairs it with the parallelism: 2^17 with p=1, 2^16 with p=2, 2^15 with p=3, 2^14 with p=5, or 2^13 with p=10. The default is 2^15 with p=3, one of those pairs. A parallelism below the pair for the chosen cost is refused. Between 13 and 20. Default 15.",
     `$comb`:"oneOf"
   }) @hoisted union post_admin_api_policies_save_password_policy_b_application_json_scryptLogN_h2973 {
     post_admin_api_policies_save_password_policy_b_application_json_scryptLogN_v0_h2972,
@@ -36585,7 +38282,7 @@ op `getPolicies`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: inte
   
 
 @js(#{
-    `description`:"scrypt's parallelism for a newly stored password while the algorithm is scrypt. Node computes it on one thread, so a higher value costs time rather than cores; the cost's description lists the pairs OWASP accepts. Between 1 and 16. Default 1.",
+    `description`:"scrypt's parallelism for a newly stored password while the algorithm is scrypt. Node computes it on one thread, so a higher value costs time rather than cores; the cost's description lists the pairs OWASP accepts. The default is 3. A value below OWASP's pair for the chosen cost is refused. Between 1 and 16. Default 3.",
     `$comb`:"oneOf"
   }) @hoisted union post_admin_api_policies_save_password_policy_b_application_json_scryptParallelism_h2977 {
     IntegerFrom1To16,
@@ -36632,7 +38329,7 @@ op `savePasswordPolicy`(@js(#{
         `argon2Parallelism`:1,
         `scryptLogN`:15,
         `scryptBlockSize`:8,
-        `scryptParallelism`:1
+        `scryptParallelism`:3
       }
     ]
   }) `requestBody/content/application~1json/schema`: {
@@ -36649,7 +38346,7 @@ op `savePasswordPolicy`(@js(#{
     `requireDigit`: post_admin_api_policies_save_password_policy_b_application_json_requireDigit_h2963;
     `generatedLength`: post_admin_api_policies_save_password_policy_b_application_json_generatedLength_h2965;
     @js(#{
-      `description`:"The algorithm a newly stored password is hashed with: scrypt (RFC 7914), the default, or argon2id (RFC 9106, the OWASP Password Storage Cheat Sheet's first choice). A stored hash names its own algorithm and parameters and keeps verifying; one that is not in this algorithm with these parameters is hashed again at the person's next verified sign-in. Client secrets, activation tokens, recovery codes and app passwords are not passwords and stay scrypt. Default `scrypt`."
+      `description`:"The algorithm a newly stored password is hashed with: scrypt (RFC 7914), the default, or argon2id (RFC 9106, the OWASP Password Storage Cheat Sheet's first choice). A stored hash names its own algorithm and parameters and keeps verifying. One in another algorithm, or in the same algorithm at a strictly lower cost, is hashed again at the person's next verified sign-in. A same-algorithm hash already at least this cost is left. Client secrets, activation tokens, recovery codes and app passwords are not passwords and stay scrypt. Default `scrypt`."
     }) `hashAlgorithm`?: "scrypt" | "argon2id";
     `argon2Memory`?: post_admin_api_policies_save_password_policy_b_application_json_argon2Memory_h2967;
     `argon2Iterations`?: post_admin_api_policies_save_password_policy_b_application_json_argon2Iterations_h2969;
@@ -36999,6 +38696,217 @@ op `saveNamedAuthnPolicy`(@js(#{
 op `deleteNamedAuthnPolicy`(@js(#{`examples`:#[#{`name`:"passkeys-only"}]}) `requestBody/content/application~1json/schema`: {@js(#{`description`:"The policy's name."}) `name`: string},
   `responses/200/content/application~1json/schema`: `WithOkMessageErrors144`,
   `responses/400/content/application~1json/schema`: `WithOkMessageErrors144`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+  
+
+@js(#{
+    `x-free-form`:"A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`."
+  }) @component model `PolicyTransferValue` {}
+
+@component model `PolicySelection` {
+    @js(#{`description`:"The policy's kind, an id of Directory → Policies: `password`, `authn`, `passkey` and the others."}) `kind`: StringMax128;
+    @js(#{`description`:"The policy's name within its kind: `default`, a named policy, or one of the authentication policy's named policies."}) `name`: StringMax256;
+  }
+
+@component model `PolicyTransferProfile` {
+    @js(#{`description`:"The policy's kind."}) `kind`: string;
+    @js(#{`description`:"Its name within its kind."}) `name`: string;
+    @js(#{`description`:"True for one of the authentication policy's named policies, which has an act of its own; false for a kind's profile."}) `named`: boolean;
+    @js(#{`description`:"Whether this realm already stores a policy of that kind by that name, so importing this one would replace it."}) `replaces`: boolean;
+  }
+
+@component model `PolicyExportable` {
+    @js(#{`description`:"The policy's kind."}) `kind`: string;
+    @js(#{`description`:"Its name within its kind."}) `name`: string;
+    @js(#{`description`:"True for one of the authentication policy's named policies."}) `named`: boolean;
+  }
+
+@component model `PolicyTransferAnswer` {
+    `ok`: boolean;
+    `message`?: string;
+    `errors`?: (string)[];
+    @js(#{`description`:"The signed export: a JWS in the flattened JSON serialization (RFC 7515 section 7.2.2), its protected header carrying `typ` policy-export+json and the signer's whole chain in `x5c`."}) `document`?: PolicyTransferValue;
+    @js(#{`description`:"A name to save the export under."}) `filename`?: string;
+    @js(#{`description`:"The export as a file to save, `{ name, mime, base64 }`: the same document, which the console saves where it was asked from."}) `files`?: (PolicyTransferValue)[];
+    @js(#{`description`:"The signing certificate: for an export its subject, algorithm, serial and expiry; for an inspection or import its subject, issuer, validity and SHA-256 fingerprint."}) `signer`?: PolicyTransferValue;
+    @js(#{`description`:"How many profiles of each kind the export carries."}) `counts`?: Record<integer>;
+    @js(#{`description`:"`own`: signed under this realm's own Policy Export Signing CA, trusted. `trusted`: another realm's, whose chain this realm's signer truststore holds for policy-signer. `foreign`: another realm's this realm has not trusted, so an import needs an administrator's yes."}) `origin`?: "own" | "trusted" | "foreign";
+    @js(#{`description`:"Whether the signer is trusted without a question."}) `trusted`?: boolean;
+    @js(#{`description`:"The JWS algorithm the export was signed with."}) `alg`?: string;
+    @js(#{`description`:"Each certificate of the signer's chain, leaf first, Root last: subject, issuer, validity and SHA-256 fingerprint."}) `chain`?: (PolicyTransferValue)[];
+    @js(#{`description`:"The SHA-256 fingerprint of the chain's Issuing CA, which an import of a foreign export names in `issuerFingerprint` to say yes."}) `issuerFingerprint`?: string;
+    @js(#{`description`:"The realm the export says it came from."}) `realm`?: string;
+    @js(#{`description`:"That realm's DNS domain."}) `realmDomain`?: string;
+    @js(#{`description`:"When it was exported."}) `exportedAt`?: string;
+    @js(#{`description`:"Who exported it."}) `exportedBy`?: string;
+    @js(#{`description`:"The kinds of policy the export carries, each with its profile names."}) `kinds`?: (PolicyTransferValue)[];
+    @js(#{`description`:"The validation door's verdict on the chain, purpose policy-signer."}) `verdict`?: PolicyTransferValue;
+    @js(#{`description`:"An import: the profiles written, by kind."}) `imported`?: (PolicyTransferValue)[];
+    @js(#{`description`:"An import: each profile its kind refused, with the kind's code and sentences."}) `refused`?: (PolicyTransferValue)[];
+    @js(#{`description`:"An import: the certificates added to this realm's signer truststore by the yes."}) `trustAdded`?: (PolicyTransferValue)[];
+    @js(#{`description`:"An import of another realm's export that was not confirmed: ask, then post again with `trustSigner` and `issuerFingerprint`."}) `needsTrust`?: boolean;
+    @js(#{`description`:"With `needsTrust`: what the question is about, as `inspect` answers it."}) `inspection`?: PolicyTransferValue;
+    @js(#{`description`:"An inspection: every profile the export carries, with whether this realm already stores one by that name (`replaces`). What an import's `policies` names."}) `profiles`?: (PolicyTransferProfile)[];
+    @js(#{`description`:"The policies a selection named: for an export or an import the `policies` it was asked for, for an inspection the selection the document records it was exported as. Absent for a whole export."}) `selection`?: (PolicySelection)[];
+    @js(#{`description`:"A refused selection: the policies it named that this realm does not store (an export, STS-ADMIN-0937) or that the document does not carry (an import, STS-ADMIN-0938)."}) `missing`?: (PolicySelection)[]
+  }
+
+@component model `PolicyExportIssuingCa` {
+    @js(#{`description`:"The Issuing CA's subject, as RFC 4514 writes it."}) `subject`: string;
+    @js(#{`description`:"Its issuer: this realm's Intermediate."}) `issuer`: string;
+    @js(#{`description`:"Its serial number, lower-case hex."}) `serialHex`: string;
+    @js(#{`description`:"Valid from, ISO 8601."}) `notBefore`: string;
+    @js(#{`description`:"Valid until, ISO 8601."}) `notAfter`: string;
+    @js(#{`description`:"The CA's own key algorithm."}) `keyAlg`: string;
+    @js(#{`description`:"What the CA signs the export signer's certificate with."}) `signatureAlg`: string;
+    @js(#{`description`:"The SHA-256 fingerprint of the certificate's DER, upper-case hex with no colons: what an administrator in another realm names in `issuerFingerprint` to trust this realm's exports, and what an inspection of an export answers as `issuerFingerprint`."}) `fingerprint256`: string;
+    @js(#{`description`:"The same digest as RFC 7515 section 4.1.8's `x5t#S256`: base64url, unpadded."}) `x5t#S256`: string;
+    @js(#{`description`:"The Issuing CA's certificate, PEM. The second certificate of every export's `x5c`."}) `certificatePem`: string;
+    @js(#{`description`:"The chain up to but not including the service Root, PEM, the Issuing CA first and then this realm's Intermediate."}) `chainPem`: (string)[];
+    @js(#{`description`:"The service Root the chain ends at, which every realm of this service shares."}) `root`: {
+      `subject`: string;
+      @js(#{`description`:"Its SHA-256 fingerprint, upper-case hex with no colons."}) `fingerprint256`: string;
+    };
+  }
+
+@component model `PolicyTrustedSigner` {
+    `subject`: string;
+    `issuer`: string;
+    @js(#{`description`:"`anchor` for a Root, `intermediate` for a CA under one."}) `kind`: string;
+    @js(#{`description`:"The use cases the entry serves; empty serves every one, policy-signer included."}) `purposes`: (string)[];
+    @js(#{`description`:"The SHA-256 fingerprint, upper-case hex with no colons."}) `fingerprint256`: string;
+    @js(#{`description`:"Valid from, ISO 8601; empty where the certificate could not be read."}) `notBefore`: string;
+    @js(#{`description`:"Valid until, ISO 8601; empty where the certificate could not be read."}) `notAfter`: string;
+    @js(#{`description`:"`runtime` for an entry an administrator added (an import's yes among them), `file` for one `pki.signerTrustAnchorsFile` named."}) `source`: string;
+    @js(#{`description`:"Who added it."}) `addedBy`: string;
+    @js(#{`description`:"When it was added."}) `addedAt`: string;
+    @js(#{`description`:"Why the entry would no longer be admitted (it expired where it sits, for one); absent while it would be."}) `unadmittable`?: string;
+  }
+
+@component model `PolicyTransferView` {
+    @js(#{`description`:"The realm this view is about."}) `realm`: string;
+    @js(#{`description`:"`pki.policyExportAlgorithm` in force here: the JWS algorithm the next export is signed with."}) `algorithm`: string;
+    @js(#{`description`:"Every value that setting may take."}) `algorithms`: (string)[];
+    @js(#{`description`:"Whether `pki.paranoidPolicySigner` is on here, which forces the full paranoid checks on an export's signer in every mode."}) `paranoidPolicySigner`: boolean;
+    @js(#{`description`:"This realm's Policy Export Signing Issuing CA; null until the first export builds it."}) `issuingCa`: PolicyExportIssuingCa | null;
+    @js(#{`description`:"The signer truststore's entries in this realm that serve policy-signer: the chains of the other realms whose exports this realm has trusted."}) `trustedSigners`: (PolicyTrustedSigner)[];
+    @js(#{`description`:"Every policy this realm stores, in Directory → Policies' order: what an export carries, and what its `policies` may name."}) `policies`: (PolicyExportable)[];
+  }
+
+@endpoint("/admin-api/policies/transfer",
+  "get",
+  #{
+    `operationId`:"getPolicyTransfer",
+    `summary`:"How this realm's policy exports are signed, and whose it trusts",
+    `description`:"The policy transfer view (#1713): the JWS algorithm the next export is signed with (`pki.policyExportAlgorithm`), whether `pki.paranoidPolicySigner` is on, this realm's Policy Export Signing Issuing CA with its SHA-256 fingerprint (the `issuerFingerprint` another realm's import names to trust this realm's exports), its validity and its chain up to but not including the service Root, and the signer truststore's entries in this realm for policy-signer — the chains of the other realms it has trusted — and every policy this realm stores (`policies`), which an export's selection names. `issuingCa` is null until this realm's first export builds the CA; a read builds nothing. Certificates only: no private key is in the answer. A view that cannot be built is STS-ADMIN-0936.\n\n**Mirrors** `GET /admin/policies` on the admin console.",
+    `tags`:#["Policies"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The algorithm, the paranoid row, the Issuing CA and the trusted signers.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+  })
+op `getPolicyTransfer`(`responses/200/content/application~1json/schema`: `PolicyTransferView`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+
+@endpoint("/admin-api/policies/transfer/export",
+  "post",
+  #{
+    `operationId`:"exportPolicies",
+    `summary`:"Export this realm's policies as a signed JSON document",
+    `description`:"Every kind on Directory → Policies, and of each only what this realm STORES: its own `default` profile and its named policies, each as the body its save takes (#1713). What the realm inherits is left out. The document is a JWS in the flattened JSON serialization, signed by a fresh key of `pki.policyExportAlgorithm` (RS256 by default) that this realm's Policy Export Signing CA certifies; the protected header carries `typ` policy-export+json and the whole chain, leaf to the service Root, in `x5c`. The private key is not kept. `policies` narrows it to the policies it names, each by kind and name: the document is the same format, carries only those, and records them in its payload's `selection`, so one policy's export is a document any importer reads; a name this realm does not store is refused (STS-ADMIN-0937) and nothing is signed. Refused when the realm has no certificate authority branch or the signer cannot be made (STS-ADMIN-0925).\n\n**Mirrors** `POST /admin/policies` on the admin console.",
+    `tags`:#["Policies"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The signed document, a file name, the signer and how many profiles of each kind it carries.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `exportPolicies`(@js(#{`examples`:#[#{}, #{`policies`:#[#{`kind`:"password",`name`:"default"}]}]}) `requestBody/content/application~1json/schema`: {@js(#{`minItems`:1,`maxItems`:256,`description`:"The policies to carry, each by its kind and its name. Absent: every policy this realm stores. A name this realm does not store is refused (STS-ADMIN-0937) and nothing is exported."}) `policies`?: (PolicySelection)[]},
+  `responses/200/content/application~1json/schema`: `PolicyTransferAnswer`,
+  `responses/400/content/application~1json/schema`: `PolicyTransferAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
+@endpoint("/admin-api/policies/transfer/inspect",
+  "post",
+  #{
+    `operationId`:"inspectPolicyExport",
+    `summary`:"Verify a policy export and say who signed it, writing nothing",
+    `description`:"Checks the document's signature with the key in its `x5c` (STS-ADMIN-0927) and holds the chain to the validation door, purpose policy-signer, forced to the full paranoid checks while `pki.paranoidPolicySigner` is on (STS-ADMIN-0928). Answers `origin`: `own` when the chain's Issuing CA is this realm's Policy Export Signing CA under this service's Root, `trusted` when this realm's signer truststore holds that Issuing CA and its Root for policy-signer, and `foreign` otherwise, with the chain and the Issuing CA's fingerprint to ask an administrator about. `profiles` lists every profile it carries, each with `replaces` true where this realm already stores one of that kind by that name. A document that is not a policy export is refused (STS-ADMIN-0926), and one naming a kind of policy this service does not have (STS-ADMIN-0933).\n\n**Mirrors** `POST /admin/policies` on the admin console.",
+    `tags`:#["Policies"],
+    `responses`:#{
+      `200`:#{
+        `description`:"Who signed it, whether that signer is trusted here, and what it carries.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `inspectPolicyExport`(@js(#{`examples`:#[#{`document`:#{`protected`:"eyJ...",`payload`:"eyJ...",`signature`:"..."}}]}) `requestBody/content/application~1json/schema`: {@js(#{`description`:"The export, as the JSON object `export` answered in `document` or as that JSON in a string."}) `document`: PolicyTransferValue},
+  `responses/200/content/application~1json/schema`: `PolicyTransferAnswer`,
+  `responses/400/content/application~1json/schema`: `PolicyTransferAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
+@endpoint("/admin-api/policies/transfer/import",
+  "post",
+  #{
+    `operationId`:"importPolicies",
+    `summary`:"Import a policy export into this realm",
+    `description`:"Inspects it first, as `inspect` does. A signer of this realm, or one this realm's signer truststore already holds, is trusted. Another realm's is refused with `needsTrust` (STS-ADMIN-0929) until the import is posted again with `trustSigner` true and `issuerFingerprint` naming the Issuing CA it was shown (another is STS-ADMIN-0930); that yes adds the chain's CA certificates to this realm's signer truststore for policy-signer alone (a refusal there is STS-ADMIN-0931). Each profile is then written through its kind's own save, so it is checked as a console save is; a profile its kind refuses is named with the kind's code and the others are written (STS-ADMIN-0932). `policies` writes only the profiles it names, as `inspect` lists them; a name the export does not carry is refused (STS-ADMIN-0938) before the trust question and before anything is written.\n\n**Mirrors** `POST /admin/policies` on the admin console.",
+    `tags`:#["Policies"],
+    `responses`:#{
+      `200`:#{
+        `description`:"What was written, by kind, and what the yes added to the signer truststore.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `importPolicies`(@js(#{`examples`:#[#{`document`:#{`protected`:"eyJ...",`payload`:"eyJ...",`signature`:"..."},`trustSigner`:true,`issuerFingerprint`:"ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB"}]}) `requestBody/content/application~1json/schema`: {@js(#{`description`:"The export, as the JSON object `export` answered in `document` or as that JSON in a string."}) `document`: PolicyTransferValue;
+    @js(#{`description`:"An administrator's yes to trusting another realm's signer for policy imports in this realm. Ignored for this realm's own signer."}) `trustSigner`?: boolean;
+    @js(#{`description`:"With `trustSigner`: the SHA-256 fingerprint of the Issuing CA the inspection showed, in either spelling."}) `issuerFingerprint`?: string;
+    @js(#{`minItems`:1,`maxItems`:256,`description`:"The profiles to write, each by its kind and its name, as `inspect` lists them in `profiles`. Absent: every profile the export carries. A name the export does not carry is refused (STS-ADMIN-0938) before anything is trusted or written; the rest of the export is left unwritten."}) `policies`?: (PolicySelection)[]},
+  `responses/200/content/application~1json/schema`: `PolicyTransferAnswer`,
+  `responses/400/content/application~1json/schema`: `PolicyTransferAnswer`,
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
@@ -39322,6 +41230,7 @@ op `createAcmeEab`(@js(#{`examples`:#[#{`kind`:"person",`identifier`:"alice"}]})
     @js(#{
       `minLength`:1,
       `maxLength`:256,
+      `pattern`:"^[^\\x00-\\x1f\\x7f]+$",
       `description`:"The username of a person, or the identifier of an application, in this realm."
     }) `identifier`: string;
     @js(#{
@@ -39479,6 +41388,7 @@ op `addAcmeHostName`(@js(#{
     @js(#{
       `minLength`:1,
       `maxLength`:256,
+      `pattern`:"^[^\\x00-\\x1f\\x7f]+$",
       `description`:"The username of a person, or the identifier of an application, in this realm."
     }) `identifier`: string;
     @js(#{
@@ -39527,6 +41437,7 @@ op `removeAcmeHostName`(@js(#{
     @js(#{
       `minLength`:1,
       `maxLength`:256,
+      `pattern`:"^[^\\x00-\\x1f\\x7f]+$",
       `description`:"The username of a person, or the identifier of an application, in this realm."
     }) `identifier`: string;
     @js(#{
@@ -39721,6 +41632,13 @@ op `getEstMonitor`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: in
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
+// The nine profiles an enrollment protocol issues, written from
+// `common/enrollment_profiles.js` at build time (#1579), as the Account API's
+// challenge profiles are: a profile is added in that file only.
+@js(#{
+    `$enumFrom`:#{`module`:"common/enrollment_profiles.js",`export`:"PROFILE_IDS"}
+  }) @hoisted scalar EnrollmentProfileId extends string;
+
 @endpoint("/admin-api/est/issue-server-key",
   "post",
   #{
@@ -39765,7 +41683,7 @@ op `issueEstServerKey`(@js(#{
     }) `identifier`: string;
     @js(#{
       `description`:"One of the nine profiles; `est.defaultProfile` when omitted."
-    }) `profile`?: string;
+    }) `profile`?: EnrollmentProfileId;
     @js(#{
       `description`:"A key algorithm id from GET /admin-api/est `keyAlgorithms`; ec-p256 when omitted."
     }) `keyAlg`?: "rsa-2048" | "rsa-3072" | "rsa-4096" | "ec-p256" | "ec-p384" | "ec-p521" | "ed25519" | "ml-dsa-44" | "ml-dsa-65" | "ml-dsa-87" | "slh-dsa-sha2-128s" | "slh-dsa-sha2-128f" | "slh-dsa-sha2-192s" | "slh-dsa-sha2-192f" | "slh-dsa-sha2-256s" | "slh-dsa-sha2-256f" | "slh-dsa-shake-128s" | "slh-dsa-shake-128f" | "slh-dsa-shake-192s" | "slh-dsa-shake-192f" | "slh-dsa-shake-256s" | "slh-dsa-shake-256f" | "mldsa44-rsa2048-pss-sha256" | "mldsa44-rsa2048-pkcs15-sha256" | "mldsa44-ed25519-sha512" | "mldsa44-ecdsa-p256-sha256" | "mldsa65-rsa3072-pss-sha512" | "mldsa65-rsa3072-pkcs15-sha512" | "mldsa65-rsa4096-pss-sha512" | "mldsa65-rsa4096-pkcs15-sha512" | "mldsa65-ecdsa-p256-sha512" | "mldsa65-ecdsa-p384-sha512" | "mldsa65-ed25519-sha512" | "mldsa87-ecdsa-p384-sha512" | "mldsa87-ed448-shake256" | "mldsa87-rsa3072-pss-sha512" | "mldsa87-rsa4096-pss-sha512" | "mldsa87-ecdsa-p521-sha512" | "ml-kem-512" | "ml-kem-768" | "ml-kem-1024"
@@ -39803,6 +41721,7 @@ op `revokeEstCertificate`(@js(#{`examples`:#[#{`serial`:"00",`reason`:"keyCompro
     @js(#{
       `minLength`:1,
       `maxLength`:80,
+      `pattern`:"^[0-9A-Fa-f:]+$",
       `description`:"The serial, from GET /admin-api/est."
     }) `serial`: string;
     @js(#{
@@ -40044,6 +41963,7 @@ op `removeEstHostName`(@js(#{
         `name`:"per",
         `in`:"query",
         `required`:false,
+        `allowEmptyValue`:true,
         `schema`:null,
         `description`:"Rows per page, for both lists."
       },
@@ -40051,6 +41971,7 @@ op `removeEstHostName`(@js(#{
         `name`:"certificatesPage",
         `in`:"query",
         `required`:false,
+        `allowEmptyValue`:true,
         `schema`:null,
         `description`:"The page of the enrolled certificates."
       },
@@ -40058,6 +41979,7 @@ op `removeEstHostName`(@js(#{
         `name`:"credentialsPage",
         `in`:"query",
         `required`:false,
+        `allowEmptyValue`:true,
         `schema`:null,
         `description`:"The page of the challenge passwords."
       }
@@ -40065,8 +41987,8 @@ op `removeEstHostName`(@js(#{
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getScep`(@js(#{`minimum`:1,`maximum`:1000,`examples`:#[10]}) `parameters/0/schema`: integer,
-  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/1/schema`: integer,
-  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:1000000,`examples`:#[1]}) `parameters/1/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:1000000,`examples`:#[1]}) `parameters/2/schema`: integer,
   `responses/200/content/application~1json/schema`: get_admin_api_scep_r200_application_json_h3111,
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
@@ -40093,6 +42015,7 @@ op `getScep`(@js(#{`minimum`:1,`maximum`:1000,`examples`:#[10]}) `parameters/0/s
         `name`:"per",
         `in`:"query",
         `required`:false,
+        `allowEmptyValue`:true,
         `schema`:null,
         `description`:"Rows per page of the recent requests."
       },
@@ -40100,6 +42023,7 @@ op `getScep`(@js(#{`minimum`:1,`maximum`:1000,`examples`:#[10]}) `parameters/0/s
         `name`:"page",
         `in`:"query",
         `required`:false,
+        `allowEmptyValue`:true,
         `schema`:null,
         `description`:"The page of the recent requests."
       }
@@ -40107,7 +42031,7 @@ op `getScep`(@js(#{`minimum`:1,`maximum`:1000,`examples`:#[10]}) `parameters/0/s
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getScepMonitor`(@js(#{`minimum`:1,`maximum`:1000,`examples`:#[10]}) `parameters/0/schema`: integer,
-  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/1/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:1000000,`examples`:#[1]}) `parameters/1/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `page`?: string;
     `title`?: string;
@@ -40170,10 +42094,11 @@ op `createScepChallenge`(@js(#{
   }) `requestBody/content/application~1json/schema`: {
     @js(#{`description`:"Whether the entry is a person or an application."}) `kind`: "person" | "application";
     @js(#{
+      `minLength`:1,
       `maxLength`:256,
       `description`:"The username or the application identifier, in this realm."
     }) `identifier`: string;
-    @js(#{`maxLength`:64,`description`:"One of the nine enrollment profiles."}) `profile`?: string;
+    @js(#{`minLength`:1,`maxLength`:64,`pattern`:"^[a-z][a-z0-9-]{0,63}$",`description`:"One of the nine enrollment profiles."}) `profile`?: string;
     @js(#{
       `minimum`:60,
       `maximum`:2592000,
@@ -40211,7 +42136,9 @@ op `createScepChallenge`(@js(#{
   })
 op `deleteScepChallenge`(@js(#{`examples`:#[#{`id`:"scep-p-bm9ib2R5-0000000000000000"}]}) `requestBody/content/application~1json/schema`: {
     @js(#{
+      `minLength`:1,
       `maxLength`:600,
+      `pattern`:"^scep-[pa]-[A-Za-z0-9_-]{1,400}-[0-9a-f]{16}(?:[A-Za-z0-9_-]{12})?$",
       `description`:"The challenge id, from GET /admin-api/scep."
     }) `id`: string
   },
@@ -40275,7 +42202,7 @@ op `reissueScepRa`(@js(#{`examples`:#[#{}]}) `requestBody/content/application~1j
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `revokeScepCertificate`(@js(#{`examples`:#[#{`serial`:"0badc0de",`reason`:"keyCompromise"}]}) `requestBody/content/application~1json/schema`: {
-    @js(#{`maxLength`:128,`description`:"The serial, hexadecimal."}) `serial`: string;
+    @js(#{`minLength`:1,`maxLength`:128,`pattern`:"^[0-9A-Fa-f:]+$",`description`:"The serial, hexadecimal."}) `serial`: string;
     @js(#{`description`:"The RFC 5280 reason."}) `reason`?: "unspecified" | "keyCompromise" | "affiliationChanged" | "superseded" | "cessationOfOperation" | "privilegeWithdrawn"
   },
   `responses/200/content/application~1json/schema`: `WithOkMessageErrors167`,
@@ -41257,6 +43184,7 @@ op `revokeOidfedKey`(@js(#{
         `name`:"offset",
         `in`:"query",
         `required`:false,
+        `allowEmptyValue`:true,
         `schema`:null,
         `description`:"Skip this many pushed requests (newest first). Wins over `page` when both are sent."
       },
@@ -41264,6 +43192,7 @@ op `revokeOidfedKey`(@js(#{
         `name`:"limit",
         `in`:"query",
         `required`:false,
+        `allowEmptyValue`:true,
         `schema`:null,
         `description`:"At most this many pushed requests; 50 by default."
       },
@@ -41271,6 +43200,7 @@ op `revokeOidfedKey`(@js(#{
         `name`:"state",
         `in`:"query",
         `required`:false,
+        `allowEmptyValue`:true,
         `schema`:null,
         `description`:"`live` (not yet spent), `spent` (an authorization response was issued on it; kept until it would have expired), or `all`, the default."
       },
@@ -41278,6 +43208,7 @@ op `revokeOidfedKey`(@js(#{
         `name`:"client_id",
         `in`:"query",
         `required`:false,
+        `allowEmptyValue`:true,
         `schema`:null,
         `description`:"Only the pushed requests bound to this client."
       },
@@ -41285,6 +43216,7 @@ op `revokeOidfedKey`(@js(#{
         `name`:"page",
         `in`:"query",
         `required`:false,
+        `allowEmptyValue`:true,
         `schema`:null,
         `description`:"The console's spelling: which page of pushed requests, `per` to a page."
       },
@@ -41292,6 +43224,7 @@ op `revokeOidfedKey`(@js(#{
         `name`:"per",
         `in`:"query",
         `required`:false,
+        `allowEmptyValue`:true,
         `schema`:null,
         `description`:"Rows per page, for `page` and `clientsPage`."
       },
@@ -41299,6 +43232,7 @@ op `revokeOidfedKey`(@js(#{
         `name`:"clientsPage",
         `in`:"query",
         `required`:false,
+        `allowEmptyValue`:true,
         `schema`:null,
         `description`:"Which page of the RFC 9126 section's per-client counter rows."
       },
@@ -41306,20 +43240,21 @@ op `revokeOidfedKey`(@js(#{
         `name`:"stepUpClientsPage",
         `in`:"query",
         `required`:false,
+        `allowEmptyValue`:true,
         `schema`:null,
         `description`:"Which page of the RFC 9470 section's per-client counter rows."
       }
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getOauth2Monitor`(@js(#{`minimum`:0,`examples`:#[0]}) `parameters/0/schema`: integer,
+op `getOauth2Monitor`(@js(#{`minimum`:0,`maximum`:100000000,`examples`:#[0]}) `parameters/0/schema`: integer,
   @js(#{`minimum`:1,`maximum`:500,`examples`:#[50]}) `parameters/1/schema`: integer,
   @js(#{`examples`:#["all"]}) `parameters/2/schema`: "live" | "spent" | "all",
-  @js(#{`maxLength`:256,`examples`:#["no-such-client"]}) `parameters/3/schema`: string,
-  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/4/schema`: integer,
+  @js(#{`minLength`:1,`maxLength`:256,`pattern`:"^[\\x21-\\x7E]+$",`examples`:#["no-such-client"]}) `parameters/3/schema`: string,
+  @js(#{`minimum`:1,`maximum`:1000000,`examples`:#[1]}) `parameters/4/schema`: integer,
   @js(#{`minimum`:1,`maximum`:500,`examples`:#[10]}) `parameters/5/schema`: integer,
-  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/6/schema`: integer,
-  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/7/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:1000000,`examples`:#[1]}) `parameters/6/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:1000000,`examples`:#[1]}) `parameters/7/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `page`?: string;
     `title`?: string;
@@ -46010,6 +47945,33 @@ op `getAuditIntegrity`(`responses/200/content/application~1json/schema`: {
       `before`: integer;
     })[];
     `head`: "intact" | "truncated" | "altered" | "none"
+  },
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/mdoc-iaca",
+  "get",
+  #{
+    `operationId`:"getMdocIaca",
+    `summary`:"This realm's mdoc Issuing Authority CA",
+    `description`:"`certificatePem` is the Issuing Authority CA only. No private key is returned. The authority is minted on the first call, and the certificate is the one `GET /oid4vci/mdoc-iaca` publishes.\n\n**Mirrors** `GET /oid4vci/mdoc-iaca`.",
+    `tags`:#["PKI"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The Issuing Authority CA.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+  })
+op `getMdocIaca`(`responses/200/content/application~1json/schema`: {
+    `certificatePem`: string;
+    `subject`: string;
+    `notBefore`: string;
+    `notAfter`: string
   },
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
 }

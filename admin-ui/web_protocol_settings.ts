@@ -179,7 +179,8 @@ class ProtocolSettingsPage {
     return kit.note(view.leadHtml) +
       (view.alsoHtml || []).map(function (text) { return kit.warn(text); })
         .join('') +
-      '<h2>' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16).
+      kit.frame('<h2>' +
       t.html('consoleProtocolSettings.metadataHeading') + '</h2>' +
       kit.note(t.html('consoleProtocolSettings.metadataDescription')) +
       '<p class="sub">' + discovery.map(function (link) {
@@ -187,7 +188,7 @@ class ProtocolSettingsPage {
                kit.esc(link.what) + '</a>';
       }).concat(['<a href="/admin/sts-metadata">' +
                  t.html('consoleProtocolSettings.everyEndpoint') +
-                 '</a>']).join(' &middot; ') + '</p>';
+                 '</a>']).join(' &middot; ') + '</p>');
   }
 
   // The /admin/totp status block (#446): what the console drew from its JSON.
@@ -240,12 +241,14 @@ class ProtocolSettingsPage {
       '<tr><th>' + t.html('consoleProtocolSettings.thTruncation') +
       '</th><td>' + kit.esc(info.truncation) + '</td></tr>' +
       '</table>' +
+      kit.frame(
       '<h3>' + t.html('consoleProtocolSettings.digestsHeading') + '</h3>' +
       '<table><tr><th>' + t.html('consoleProtocolSettings.thAlgorithm') +
       '</th><th>' + t.html('consoleProtocolSettings.thState') + '</th><th>' +
       t.html('consoleProtocolSettings.thNote') + '</th></tr>' +
-      algorithmRows + '</table>';
-    return html;
+      algorithmRows + '</table>');
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16).
+    return kit.frame(html);
   }
 
   // The /admin/backup-codes status block (#446): what the console drew from its
@@ -261,7 +264,8 @@ class ProtocolSettingsPage {
     const t = ProtocolSettingsPage.translator(tr);
     // The links are markup a message cannot carry (#539), so the prose is
     // split around each one; the view's own strings stay outside messages.
-    const html =
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each block.
+    const html = kit.frame(
       '<h3>' + t.html('consoleProtocolSettings.bcHeading') + '</h3>' +
       ProtocolSettingsPage.keyHead(t) +
       '<tr><th>' + t.html('consoleProtocolSettings.thOffered') + '</th><td>' +
@@ -297,14 +301,15 @@ class ProtocolSettingsPage {
       t.html('consoleProtocolSettings.bcCompared') + '</td></tr><tr><th>' +
       t.html('consoleProtocolSettings.thAtRest') + '</th><td>' +
       kit.esc(info.atRest) + '</td></tr>' +
-      '</table>' +
+      '</table>') +
+      kit.frame(
       '<h3>' + t.html('consoleProtocolSettings.bcWillNotHeading') + '</h3>' +
       kit.note(t.html('consoleProtocolSettings.bcNoteRequest')) +
       kit.note(t.html('consoleProtocolSettings.bcNoteOnce1') + '<a ' +
       'href="/admin/users">' + t.html('consoleProtocolSettings.usersLink') +
       '</a>' + t.html('consoleProtocolSettings.bcNoteOnce2')) +
       kit.note(t.html('consoleProtocolSettings.bcNoteNeverShown')) +
-      kit.note(t.html('consoleProtocolSettings.bcNoteNotFirst'));
+      kit.note(t.html('consoleProtocolSettings.bcNoteNotFirst')));
     return html;
   }
 
@@ -389,7 +394,7 @@ class ProtocolSettingsPage {
         '</td></tr>' +
       '</table>' +
       ProtocolSettingsPage.attestationPolicyBlock(info, t) +
-      '<h3>CTAP</h3>' +
+      kit.frame('<h3>CTAP</h3>' +
       kit.note(t.html('consoleProtocolSettings.waCtapNote')) +
       ProtocolSettingsPage.keyHead(t) +
       '<tr><th>' + t.html('consoleProtocolSettings.thAttachment') +
@@ -409,7 +414,7 @@ class ProtocolSettingsPage {
       '<tr><th>credProps</th><td>' + (info.credProps
         ? t.html('consoleProtocolSettings.waCredPropsYes')
         : t.html('consoleProtocolSettings.waCredPropsNo')) +
-      '</td></tr></table><h3>' +
+      '</td></tr></table>') + kit.frame('<h3>' +
       t.html('consoleProtocolSettings.waMayBeHeading') + '</h3>' +
       kit.note(t.html('consoleProtocolSettings.waMayBeNote')) +
       ProtocolSettingsPage.keyHead(t) +
@@ -446,7 +451,8 @@ class ProtocolSettingsPage {
       '</th><td>' +
       t.html('consoleProtocolSettings.waKeysPerPerson',
              { n: String(info.maxKeysPerPerson) }) + '</td></tr>' +
-      '</table>' +
+      '</table>') +
+      kit.frame(
       '<h3>' + t.html('consoleProtocolSettings.waAlgorithmsHeading') +
       '</h3>' +
       kit.note(t.html('consoleProtocolSettings.waAlgNote')) + source +
@@ -459,8 +465,10 @@ class ProtocolSettingsPage {
       '<p class="sub">' + t.html('consoleProtocolSettings.waCurves') +
       info.curves.map(function (curve) {
         return '<code>' + kit.esc(curve.name) + '</code>';
-      }).join(', ') + t.html('consoleProtocolSettings.period') + '</p>';
-    return html;
+      }).join(', ') + t.html('consoleProtocolSettings.period') + '</p>');
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the section,
+    // each `<h3>` block a frame inside it.
+    return kit.frame(html);
   }
 
   // The attestation half of the /admin/webauthn block, given the page's
@@ -552,7 +560,8 @@ class ProtocolSettingsPage {
       kit.note(t.html('consoleProtocolSettings.attNote1') + '<a ' +
       'href="/admin/users">' + t.html('consoleProtocolSettings.usersLink') +
       '</a>' + t.html('consoleProtocolSettings.attNote2'));
-    return html;
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16).
+    return kit.frame(html);
   }
 
   // The /admin/kerberos status block (#446): what the console drew from its
@@ -605,6 +614,7 @@ class ProtocolSettingsPage {
       '</table>' +
       '<p><a href="/admin/kerberos/principals">' +
       t.html('consoleProtocolSettings.krbRotateLink') + '</a></p>';
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each block.
     // PKINIT (#179): a certificate as the pre-authentication, and anonymous
     // PKINIT as FAST armor — `kerberos/krb5_pkinit.ts`'s policy().
     const pkinit = info.pkinit;
@@ -678,8 +688,8 @@ class ProtocolSettingsPage {
           kit.esc(info.otpIndicator || 'otp') + '</code>' +
           t.html('consoleProtocolSettings.krbIndicator2')
         : '—') +
-      '</table>' + pkinitHtml + krbtgtHtml;
-    return html;
+      '</table>';
+    return kit.frame(html) + kit.frame(pkinitHtml) + kit.frame(krbtgtHtml);
   }
 
   // The /admin/persistence status block (#446): what the console drew from its
@@ -897,7 +907,8 @@ class ProtocolSettingsPage {
       }).join('') +
       '</table>';
 
-    return html;
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16).
+    return kit.frame(html);
   }
 }
 

@@ -17,11 +17,12 @@
 //
 //   * THE ISSUER. `issuerAuth` is a COSE_Sign1 by the document signer (DS)
 //     whose certificate travels in its `x5chain` header (33). The chain is
-//     built and checked to one of `oid4vp.mdocTrustAnchors` — the Issuing
-//     Authority CA certificates (IACA, Annex B) an operator trusts — by
-//     `common/pki.js`'s `verifyPathToAnchors()`, RFC 5280 section 6 and
-//     nothing looser; this realm issues no mdoc, so there is no "our own"
-//     case and an empty setting trusts nobody. Then the signature, by the
+//     built and checked to one of the anchors it is GIVEN — the Issuing
+//     Authority CA certificates (IACA, Annex B) — by `common/pki.js`'s
+//     `verifyPathToAnchors()`, RFC 5280 section 6 and nothing looser.
+//     `verify()` itself does not mint and does not add this realm's own
+//     IACA: the caller does, once one has been minted (`mdoc_authority.ts`).
+//     An empty anchor list trusts nobody. Then the signature, by the
 //     DS key, in an algorithm `issuerauth_alg_values` offers.
 //   * THE MOBILE SECURITY OBJECT, the payload: `#6.24(bstr .cbor MSO)`, its
 //     `docType` the Document's and the request's, its `validityInfo`
@@ -440,7 +441,12 @@ class VcMdoc {
    * @param token - the presentation from the `vp_token`
    * @param ctx - the request's values (see `MdocContext`)
    * @returns `{ ok, checks, claims, disclosed, extraDisclosed, doctype,
-   *   issuerCertificatePem, anchorCertificatePem, statusReference }`
+   *   issuerCertificatePem, anchorCertificatePem, statusReference,
+   *   credentialJwt, holderJwk }`. `credentialJwt` is the base64url of
+   *   `issuerAuth`'s payload once that signature verifies, which is how
+   *   the issued register keys an mdoc. `holderJwk` is the device key
+   *   once the device signature verifies, and is left unset when it
+   *   does not.
    */
   async verify(token: unknown, ctx: MdocContext): Promise<any> {
     const { log, codec, errorCodes } = this.deps;
@@ -548,6 +554,11 @@ class VcMdoc {
     if (issuerProblem) {
       return done('Issuer signature.');
     }
+    // The issued register keys an mdoc by this payload (#1862): the
+    // base64url of `issuerAuth`'s `#6.24` bytes, which is what issuance
+    // records. The wallet is handed the whole IssuerSigned.
+    result.credentialJwt = Buffer.from(issuerAuth.payload)
+      .toString('base64url');
 
     // --- the Mobile Security Object -----------------------------------------
     let mso: any = null;
@@ -692,6 +703,11 @@ class VcMdoc {
         deviceProblem += ' over this request\'s session transcript (its ' +
           'client_id, nonce, response URI and encryption key) under the ' +
           'Mobile Security Object\'s device key';
+      } else {
+        // Set before keyAuthorizations, which throws: a signature that
+        // verified has a holder whether or not a later element is
+        // authorized (#1862). A failed signature leaves it unset.
+        result.holderJwk = deviceKey;
       }
       // Device-signed elements, only as the issuer authorized them.
       const authorized = keyInfo instanceof Map &&

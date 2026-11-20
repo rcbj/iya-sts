@@ -95,7 +95,8 @@ function sharedClaimStore() {
           rows.set(k, { reservation: opts.reservation,
                         expiresAt: Date.now() + opts.ttlMs });
         }
-        asked.push({ scope: scope, digest: digest, claimed: claimed });
+        asked.push({ scope: scope, digest: digest, claimed: claimed,
+                     noFlushWait: !!(opts && opts.noFlushWait) });
         return { claimed: claimed, existing: claimed ? null :
                  { origin: 'the other process' } };
       });
@@ -187,6 +188,14 @@ async function refreshFamily(t) {
         }).length === 2,
                 'and both reached the shared store — the race happened and ' +
                 'the store decided it');
+        t.check(store.asked.filter(function (one) {
+          return one.scope === 'oauth.refresh';
+        }).every(function (one) {
+          return one.noFlushWait === true;
+        }),
+                'THE REFRESH SPEND DOES NOT WAIT FOR ITS OWN WAL FLUSH ' +
+                '(#886): every oauth.refresh claim asks for noFlushWait',
+                JSON.stringify(store.asked));
         const revoke = (lost && lost.revoke) || [];
         t.check(['fam-root', 'fam-child-a', 'fam-child-b'].every(
                   function (jti) { return revoke.indexOf(jti) >= 0; }),
@@ -198,6 +207,12 @@ async function refreshFamily(t) {
                 'and names the family, so the grant can revoke it by id');
 
         await bcp.revokeFamily('fam-root', 'fam-client');
+        t.check(store.asked.some(function (one) {
+          return one.scope === 'oauth.refresh-family-revoked' &&
+                 one.noFlushWait !== true;
+        }),
+                'A FAMILY REVOKED BY ID STAYS A SYNCHRONOUS CLAIM: it is ' +
+                'the durable record, and does not pass noFlushWait');
         const late = await bcp.spendRefreshToken({ claims: {
           jti: 'fam-minted-elsewhere', client_id: 'fam-client', exp: exp,
           refresh_family: 'fam-root' } });
@@ -497,7 +512,8 @@ function childMain() {
             rows.set(k, { reservation: opts.reservation,
                           expiresAt: Date.now() + opts.ttlMs });
           }
-          asked.push({ scope: scope, digest: digest, claimed: claimed });
+          asked.push({ scope: scope, digest: digest, claimed: claimed,
+                       noFlushWait: !!(opts && opts.noFlushWait) });
           return { claimed: claimed, existing: claimed ? null :
                    { origin: 'the other node' } };
         });

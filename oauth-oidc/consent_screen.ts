@@ -113,6 +113,8 @@ import errorCodes = require('../common/error_codes');
 
 // The input validator. A LEAF (rule 3): registers no route, closes no cycle.
 import validation = require('../common/validation');
+// The request shape of `/oauth2/consent`, from the model (#1579).
+import OAuthModel = require('./oauth_model');
 // The session, the answers and the sign-in surface's bundle. This module
 // is required AFTER authn.js in `common/protocol_stack.ts`, so this is a cache
 // hit — and since #50's R1 requiring a converted module registers nothing, so
@@ -162,9 +164,6 @@ interface ConsentScreenDeps {
   authorizationDetails: typeof authorizationDetails;
 }
 
-const vt = validation.types;
-const vz = validation.z;
-
 const CONSENT_PATH = '/oauth2/consent';
 
 // THE PAGE'S SCRIPT (#576): the sign-in surface's bundle, at this page's
@@ -211,9 +210,7 @@ const pending = realms.map({ persist: 'consent_screen.pending',
 // issued. Anything that is not `allow` or `deny` is not a third option this
 // screen is willing to interpret.
 // ---------------------------------------------------------------------------
-const CONSENT_QUERY = vz.object({
-  consent: vt.opt(vt.base64url)
-});
+const CONSENT_QUERY = OAuthModel.request('consent');
 
 // THE ANSWER'S BODY (#576) is `POST /authn-api/consent/{id}`'s, checked by
 // `authn/authn_api.ts`: `action`, and the limit controls by their names.
@@ -412,7 +409,17 @@ class ConsentScreen {
    * @param id - the record's id
    * @returns the record, or null
    */
-  claimForBrowser(id: unknown, sessionId: string): boolean {
+  // ONLY THE PERSON IT WAS ASKED OF CLAIMS IT (2026-11-11, run 16's
+  // single-node mode). The first browser to ask about a consent was the one
+  // it was tied to (#1454), whoever that browser's session belonged to, so
+  // somebody else holding the id who asked first — and was refused — had
+  // claimed it on the way, and the person it was asked of was then refused
+  // their own consent as "started in another browser": a refusal that spent
+  // the record for its owner, which `sts_consent`'s last check exists to
+  // catch. An unclaimed record is claimed now only by a session that
+  // `answeredBy()` says is the person's; any other session is refused and
+  // claims nothing.
+  claimForBrowser(id: unknown, sessionId: string, req?: Req): boolean {
     const { log } = this.deps;
     log.debug("Entering ConsentScreen.claimForBrowser().");
     const record = pending.get(String(id || ''));
@@ -425,6 +432,11 @@ class ConsentScreen {
       return !record.browserSession;
     }
     if (!record.browserSession) {
+      if (req && !this.answeredBy(req, record).ok) {
+        log.debug("Leaving ConsentScreen.claimForBrowser(). Somebody " +
+                  "else's session, which claims nothing.");
+        return false;
+      }
       record.browserSession = sessionId;
       pending.set(String(id), record);
     }
@@ -563,7 +575,7 @@ class ConsentScreen {
       resources: record.resources || [],
       // ASVS 5.0.0 10.7.2: how long one grant of this access can last.
       lifetimeHours: Math.round(Number(require('../common/applications')
-        .settingFor(record.clientId, 'oauth2.refreshTokenTtlS',
+        .hostedEffective(record.clientId, 'oauth2.refreshTokenTtlS',
                     require('../common/config'))) / 3600),
       scopes: record.scopes.map(function (one: Json): Json {
         const p = one.permission;
@@ -734,7 +746,8 @@ class ConsentScreen {
   // would be this file making a protocol decision it has no way to make
   // correctly.
   // -------------------------------------------------------------------------
-  private backToCaller(res: Res, record: Json, error: string | null,
+  private backToCaller(res: IyaApi.AuthnAnswering<'getConsent' |
+                         'answerConsent'>, record: Json, error: string | null,
                        description: string | null): void {
     const { log, authn } = this.deps;
     log.debug("Entering ConsentScreen.backToCaller(). error=" +
@@ -793,7 +806,8 @@ class ConsentScreen {
    * @param body - the act's JSON: `action` and the limit controls
    * @returns nothing
    */
-  consentAct(req: Req, res: Res, id: string, body: Json): void {
+  consentAct(req: Req, res: IyaApi.AuthnAnswering<'answerConsent'>, id: string,
+             body: Json): void {
     const { log, consent, audit, errorCodes, authorizationDetails } =
       this.deps;
     log.debug("Entering ConsentScreen.consentAct().");

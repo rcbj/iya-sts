@@ -1,0 +1,135 @@
+{
+  "templates": {
+    "uma-approval": {
+      "subject": "{{service}}: jemand bittet um Zugriff auf eine Ressource, die Sie freigeben",
+      "text": "{{requester}} bittet über {{client}} darum, auf Ihre Ressource {{resource}} ({{scopes}}) zuzugreifen. Sie haben darum gebeten, jedes Mal gefragt zu werden.\n\nNichts ist erlaubt, bis Sie es genehmigen. Um es zu genehmigen oder zu verweigern, melden Sie sich an und öffnen Sie diese Seite innerhalb von {{expiresMinutes}} Minuten:\n\n{{link}}\n\nWenn Sie die Anfrage nicht erkennen, verweigern Sie sie dort oder ignorieren Sie diese Nachricht: sie läuft von selbst ab.\n",
+      "html": "<p><strong>{{requester}}</strong> bittet über <strong>{{client}}</strong> darum, auf Ihre Ressource <strong>{{resource}}</strong> ({{scopes}}) zuzugreifen. Sie haben darum gebeten, jedes Mal gefragt zu werden.</p><p>Nichts ist erlaubt, bis Sie es genehmigen. <a href=\"{{link}}\">Genehmigen oder verweigern</a> innerhalb von {{expiresMinutes}} Minuten.</p><p>Wenn Sie die Anfrage nicht erkennen, verweigern Sie sie dort oder ignorieren Sie diese Nachricht: sie läuft von selbst ab.</p>"
+    },
+    "password-reset": {
+      "subject": "Setzen Sie Ihr Passwort für {{service}} zurück",
+      "text": "Jemand — {{requestedBy}} — hat darum gebeten, das Passwort des Kontos {{username}} zurückzusetzen.\n\nUm ein neues Passwort zu wählen, öffnen Sie diesen Link innerhalb von {{expiresMinutes}} Minuten:\n\n{{link}}\n\nEr funktioniert einmal. Wenn Sie dies nicht angefordert haben, können Sie diese Nachricht ignorieren: nichts ändert sich, bis der Link verwendet wird.\n",
+      "html": "<p>Jemand &mdash; {{requestedBy}} &mdash; hat darum gebeten, das Passwort des Kontos <strong>{{username}}</strong> zurückzusetzen.</p><p><a href=\"{{link}}\">Ein neues Passwort wählen</a> innerhalb von {{expiresMinutes}} Minuten. Der Link funktioniert einmal.</p><p>Wenn Sie dies nicht angefordert haben, können Sie diese Nachricht ignorieren: nichts ändert sich, bis der Link verwendet wird.</p>"
+    },
+    "account-activation": {
+      "subject": "Aktivieren Sie Ihr Konto für {{service}}",
+      "text": "Ein Konto, {{username}}, wurde für Sie erstellt.\n\nUm sein Passwort zu wählen, öffnen Sie diesen Link innerhalb von {{expiresMinutes}} Minuten:\n\n{{link}}\n\nEr funktioniert einmal.\n",
+      "html": "<p>Ein Konto, <strong>{{username}}</strong>, wurde für Sie erstellt.</p><p><a href=\"{{link}}\">Sein Passwort wählen</a> innerhalb von {{expiresMinutes}} Minuten. Der Link funktioniert einmal.</p>"
+    },
+    "address-verification": {
+      "subject": "Bestätigen Sie Ihre Adresse für {{service}}",
+      "text": "Das Konto {{username}} nennt {{address}} als seine E-Mail-Adresse.\n\nUm zu bestätigen, dass dies Ihre Adresse ist, öffnen Sie diesen Link innerhalb von {{expiresMinutes}} Minuten:\n\n{{link}}\n\nWenn dies nicht Ihr Konto ist, ignorieren Sie diese Nachricht.\n",
+      "html": "<p>Das Konto <strong>{{username}}</strong> nennt {{address}} als seine E-Mail-Adresse.</p><p><a href=\"{{link}}\">Bestätigen, dass dies Ihre Adresse ist</a> innerhalb von {{expiresMinutes}} Minuten.</p><p>Wenn dies nicht Ihr Konto ist, ignorieren Sie diese Nachricht.</p>"
+    },
+    "pseudonym-verification": {
+      "subject": "Bestätigen Sie einen Namen, mit dem Sie sich bei {{service}} anmelden können",
+      "text": "Das Konto {{username}} hat darum gebeten, sich als {{address}} anzumelden.\n\nUm zu bestätigen, dass Sie sich mit diesem Namen anmelden können, öffnen Sie diesen Link innerhalb von {{expiresMinutes}} Minuten:\n\n{{link}}\n\nBis Sie ihn öffnen, meldet Sie dieser Name nicht an. Wenn dies nicht Ihr Konto ist, ignorieren Sie diese Nachricht.\n",
+      "html": "<p>Das Konto <strong>{{username}}</strong> hat darum gebeten, sich als {{address}} anzumelden.</p><p><a href=\"{{link}}\">Bestätigen, dass Sie sich mit diesem Namen anmelden können</a> innerhalb von {{expiresMinutes}} Minuten. Bis Sie ihn öffnen, meldet Sie dieser Name nicht an.</p><p>Wenn dies nicht Ihr Konto ist, ignorieren Sie diese Nachricht.</p>"
+    },
+    "password-changed": {
+      "subject": "Ihr Passwort für {{service}} wurde geändert",
+      "text": "Das Passwort des Kontos {{username}} wurde um {{when}} geändert ({{how}}).\n\nWenn Sie das nicht waren, wenden Sie sich umgehend an die Person, die Ihr Konto verwaltet.\n",
+      "html": "<p>Das Passwort des Kontos <strong>{{username}}</strong> wurde um {{when}} geändert ({{how}}).</p><p>Wenn Sie das nicht waren, wenden Sie sich umgehend an die Person, die Ihr Konto verwaltet.</p>"
+    },
+    "account-disabled": {
+      "subject": "Ihr Konto für {{service}} wurde deaktiviert",
+      "text": "Das Konto {{username}} wurde um {{when}} deaktiviert. {{why}}\n\nNiemand kann sich mit diesem Konto anmelden, bis es wieder aktiviert wird, und jede Sitzung, die es hielt, wurde beendet.\n",
+      "html": "<p>Das Konto <strong>{{username}}</strong> wurde um {{when}} deaktiviert. {{why}}</p><p>Niemand kann sich mit diesem Konto anmelden, bis es wieder aktiviert wird, und jede Sitzung, die es hielt, wurde beendet.</p>"
+    },
+    "sessions-ended": {
+      "subject": "Sie wurden von {{service}} abgemeldet",
+      "text": "{{count}} Sitzung(en) des Kontos {{username}} wurden um {{when}} von {{by}} beendet.\n\nMelden Sie sich erneut an, um fortzufahren. Wenn Sie dies nicht erwartet haben, wenden Sie sich an die Person, die Ihr Konto verwaltet.\n",
+      "html": "<p>{{count}} Sitzung(en) des Kontos <strong>{{username}}</strong> wurden um {{when}} von {{by}} beendet.</p><p>Melden Sie sich erneut an, um fortzufahren. Wenn Sie dies nicht erwartet haben, wenden Sie sich an die Person, die Ihr Konto verwaltet.</p>"
+    },
+    "credential-compromised": {
+      "subject": "Anmeldedaten von Ihnen für {{service}} wurden als kompromittiert markiert",
+      "text": "{{what}} des Kontos {{username}} wurde um {{when}} als kompromittiert markiert. {{why}}\n\nEs funktioniert nicht mehr. Wählen Sie beim nächsten Anmelden ein neues, oder bitten Sie die Person, die Ihr Konto verwaltet.\n",
+      "html": "<p>{{what}} des Kontos <strong>{{username}}</strong> wurde um {{when}} als kompromittiert markiert. {{why}}</p><p>Es funktioniert nicht mehr. Wählen Sie beim nächsten Anmelden ein neues, oder bitten Sie die Person, die Ihr Konto verwaltet.</p>"
+    },
+    "recovery-started": {
+      "subject": "Die Wiederherstellung Ihres Kontos für {{service}} wurde gestartet",
+      "text": "Die Wiederherstellung des Kontos {{username}} wurde um {{when}} von {{by}} gestartet.\n\nWenn das weder Sie waren noch jemand, den Sie darum gebeten haben, wenden Sie sich umgehend an die Person, die Ihr Konto verwaltet.\n",
+      "html": "<p>Die Wiederherstellung des Kontos <strong>{{username}}</strong> wurde um {{when}} von {{by}} gestartet.</p><p>Wenn das weder Sie waren noch jemand, den Sie darum gebeten haben, wenden Sie sich umgehend an die Person, die Ihr Konto verwaltet.</p>"
+    },
+    "address-changed": {
+      "subject": "Die E-Mail-Adresse Ihres Kontos für {{service}} wurde geändert",
+      "text": "Die E-Mail-Adresse des Kontos {{username}} wurde um {{when}} zu {{address}} geändert. Diese Nachricht ging an die Adresse, die es zuvor hatte.\n\nWenn Sie dies nicht erwartet haben, wenden Sie sich umgehend an die Person, die Ihr Konto verwaltet.\n",
+      "html": "<p>Die E-Mail-Adresse des Kontos <strong>{{username}}</strong> wurde um {{when}} zu {{address}} geändert. Diese Nachricht ging an die Adresse, die es zuvor hatte.</p><p>Wenn Sie dies nicht erwartet haben, wenden Sie sich umgehend an die Person, die Ihr Konto verwaltet.</p>"
+    },
+    "account-connected": {
+      "subject": "Ein Konto wurde mit Ihrem Konto für {{service}} verbunden",
+      "text": "Ein Konto bei {{provider}} wurde um {{when}} mit dem Konto {{username}} verbunden und kann nun verwendet werden, um sich damit anzumelden.\n\nWenn Sie das nicht waren, trennen Sie es unter Verbundene Konten und wenden Sie sich umgehend an die Person, die Ihr Konto verwaltet.\n",
+      "html": "<p>Ein Konto bei {{provider}} wurde um {{when}} mit dem Konto <strong>{{username}}</strong> verbunden und kann nun verwendet werden, um sich damit anzumelden.</p><p>Wenn Sie das nicht waren, trennen Sie es unter Verbundene Konten und wenden Sie sich umgehend an die Person, die Ihr Konto verwaltet.</p>"
+    },
+    "access-request": {
+      "subject": "{{service}}: eine Anwendung bittet um Zugriff",
+      "text": "Die Anwendung {{client}} bittet im Namen des Kontos {{username}} um Zugriff: {{rights}}.\n\nNichts ist erlaubt, bis Sie es genehmigen. Um es zu genehmigen oder abzulehnen, melden Sie sich an und öffnen Sie diese Seite innerhalb von {{expiresMinutes}} Minuten:\n\n{{link}}\n\nWenn Sie die Anfrage nicht erkennen, lehnen Sie sie dort ab oder ignorieren Sie diese Nachricht: sie läuft von selbst ab.\n",
+      "html": "<p>Die Anwendung <strong>{{client}}</strong> bittet im Namen des Kontos <strong>{{username}}</strong> um Zugriff: {{rights}}.</p><p>Nichts ist erlaubt, bis Sie es genehmigen. <a href=\"{{link}}\">Genehmigen oder ablehnen</a> innerhalb von {{expiresMinutes}} Minuten.</p><p>Wenn Sie die Anfrage nicht erkennen, lehnen Sie sie dort ab oder ignorieren Sie diese Nachricht: sie läuft von selbst ab.</p>"
+    },
+    "authzen-access-request": {
+      "subject": "{{service}}: eine Zugriffsanfrage wartet auf Ihre Genehmigung",
+      "text": "Eine Zugriffsanfrage nennt Sie, {{username}}, als eine ihrer genehmigenden Personen: {{subject}} bittet darum, {{action}} {{resource}} in der Anwendung {{application}}, über {{requester}}.\n\nNichts ist erlaubt, bis eine genehmigende Person es genehmigt. Um es zu genehmigen oder abzulehnen, melden Sie sich an und öffnen Sie diese Seite innerhalb von {{expiresMinutes}} Minuten:\n\n{{link}}\n\nWenn Sie die Anfrage nicht erkennen, lehnen Sie sie dort ab oder ignorieren Sie diese Nachricht: sie läuft von selbst ab.\n",
+      "html": "<p>Eine Zugriffsanfrage nennt Sie, <strong>{{username}}</strong>, als eine ihrer genehmigenden Personen: <strong>{{subject}}</strong> bittet darum, <strong>{{action}}</strong> <strong>{{resource}}</strong> in der Anwendung <strong>{{application}}</strong>, über {{requester}}.</p><p>Nichts ist erlaubt, bis eine genehmigende Person es genehmigt. <a href=\"{{link}}\">Genehmigen oder ablehnen</a> innerhalb von {{expiresMinutes}} Minuten.</p><p>Wenn Sie die Anfrage nicht erkennen, lehnen Sie sie dort ab oder ignorieren Sie diese Nachricht: sie läuft von selbst ab.</p>"
+    },
+    "authzen-emergency-access": {
+      "subject": "{{service}}: Notfallzugriff wurde gewährt und muss geprüft werden",
+      "text": "Notfallzugriff wurde sofort gewährt, ohne genehmigende Person, für eine Anfrage, die Sie, {{username}}, als eine ihrer genehmigenden Personen nennt: {{subject}} darf {{action}} {{resource}} in der Anwendung {{application}}, über {{requester}}, für kurze Zeit.\n\nDie angegebene Begründung: {{justification}}\n\nDie Richtlinie erlaubt hierfür Notfallzugriff. Prüfen Sie ihn und widerrufen Sie ihn, wenn er nicht gerechtfertigt war:\n\n{{link}}\n",
+      "html": "<p>Notfallzugriff wurde sofort gewährt, ohne genehmigende Person, für eine Anfrage, die Sie, <strong>{{username}}</strong>, als eine ihrer genehmigenden Personen nennt: <strong>{{subject}}</strong> darf <strong>{{action}}</strong> <strong>{{resource}}</strong> in der Anwendung <strong>{{application}}</strong>, über {{requester}}, für kurze Zeit.</p><p>Die angegebene Begründung: {{justification}}</p><p>Die Richtlinie erlaubt hierfür Notfallzugriff. <a href=\"{{link}}\">Prüfen</a>, und widerrufen Sie ihn, wenn er nicht gerechtfertigt war.</p>"
+    },
+    "pki-pin-status": {
+      "subject": "{{service}}: ein Zertifikat, auf das sich dieser Vertrauensbereich verlässt, hat den Status geändert",
+      "text": "Die tägliche Prüfung der Zertifikate, auf die sich dieser Vertrauensbereich verlässt, hat diese Änderungen gefunden:\n\n{{changes}}\n\nDie Seite für PKI-Vertrauen der Administrationskonsole zeigt jede einzelne. Sie erhalten diese Nachricht, weil Sie in diesem Vertrauensbereich über Admin Write verfügen.\n",
+      "html": "<p>Die tägliche Prüfung der Zertifikate, auf die sich dieser Vertrauensbereich verlässt, hat diese Änderungen gefunden:</p><p>{{changes}}</p><p>Die Seite für PKI-Vertrauen der Administrationskonsole zeigt jede einzelne. Sie erhalten diese Nachricht, weil Sie in diesem Vertrauensbereich über Admin Write verfügen.</p>"
+    },
+    "administrator-alert": {
+      "subject": "{{service}}: {{act}} für {{username}}",
+      "text": "Dieser Dienst, nicht eine Person, hat um {{when}} eine Maßnahme am Konto {{username}} vorgenommen: {{act}}.\n\n{{why}}\n\nSie erhalten diese Nachricht, weil Sie in diesem Vertrauensbereich über Admin Write verfügen.\n",
+      "html": "<p>Dieser Dienst, nicht eine Person, hat um {{when}} eine Maßnahme am Konto <strong>{{username}}</strong> vorgenommen: {{act}}.</p><p>{{why}}</p><p>Sie erhalten diese Nachricht, weil Sie in diesem Vertrauensbereich über Admin Write verfügen.</p>"
+    },
+    "sign-in-code": {
+      "subject": "Ihr Anmeldecode für {{service}}: {{code}}",
+      "text": "Ihr Code für die Anmeldung bei {{service}} als {{username}} lautet:\n\n    {{code}}\n\nEr funktioniert einmal, {{minutes}} Minuten lang. Niemand von {{service}} wird Sie jemals danach fragen.\n\nWenn Sie sich nicht anmelden, versucht jemand, der Ihren Kontonamen kennt, sich anzumelden: ignorieren Sie diesen Code und erwägen Sie, Ihr Passwort zu ändern.\n",
+      "html": "<p>Ihr Code für die Anmeldung bei {{service}} als <strong>{{username}}</strong> lautet:</p><p><strong>{{code}}</strong></p><p>Er funktioniert einmal, {{minutes}} Minuten lang. Niemand von {{service}} wird Sie jemals danach fragen.</p><p>Wenn Sie sich nicht anmelden, versucht jemand, der Ihren Kontonamen kennt, sich anzumelden: ignorieren Sie diesen Code und erwägen Sie, Ihr Passwort zu ändern.</p>"
+    },
+    "sign-in-link": {
+      "subject": "Ihr Anmeldelink für {{service}}",
+      "text": "Um die Anmeldung bei {{service}} als {{username}} abzuschließen, öffnen Sie diesen Link IN DEM BROWSER, IN DEM SIE DIE ANMELDUNG BEGONNEN HABEN, innerhalb von {{minutes}} Minuten:\n\n{{signin}}\n\nEr funktioniert einmal, und nur in diesem Browser.\n\nWenn Sie sich nicht anmelden, ignorieren Sie diese Nachricht: der Link kann niemanden sonst anmelden.\n",
+      "html": "<p>Um die Anmeldung bei {{service}} als <strong>{{username}}</strong> abzuschließen, <a href=\"{{signin}}\">öffnen Sie diesen Link</a> in dem Browser, in dem Sie die Anmeldung begonnen haben, innerhalb von {{minutes}} Minuten.</p><p>Er funktioniert einmal, und nur in diesem Browser.</p><p>Wenn Sie sich nicht anmelden, ignorieren Sie diese Nachricht: der Link kann niemanden sonst anmelden.</p>"
+    },
+    "report-ready": {
+      "subject": "Ihr Bericht für {{service}} ist {{status}}",
+      "text": "Der Bericht {{definition}} für {{username}} ist {{status}}.\n\nÖffnen Sie ihn:\n\n{{report}}\n",
+      "html": "<p>Der Bericht <strong>{{definition}}</strong> für {{username}} ist {{status}}.</p><p><a href=\"{{report}}\">Öffnen</a>.</p>"
+    },
+    "post-login-reminder": {
+      "subject": "Registrieren Sie einen Post-Quanten-Passkey für {{service}}",
+      "text": "{{service}} bittet {{username}}, einen neuen Passkey zu registrieren, der Post-Quanten-Kryptografie (ML-DSA) verwendet.\n\nMelden Sie sich hier an, und unmittelbar nach der Anmeldung werden Sie gebeten, ihn zu registrieren:\n\n{{signin}}\n\nDer Link öffnet nur die Anmeldeseite. Er meldet Sie nicht an und enthält nichts zu Ihrem Konto. Wenn Sie diese Nachricht nicht erwartet haben, ignorieren Sie sie, oder fragen Sie die Person, die Ihr Konto verwaltet.\n",
+      "html": "<p>{{service}} bittet <strong>{{username}}</strong>, einen neuen Passkey zu registrieren, der Post-Quanten-Kryptografie (ML-DSA) verwendet.</p><p><a href=\"{{signin}}\">Anmelden</a>, und unmittelbar nach der Anmeldung werden Sie gebeten, ihn zu registrieren.</p><p>Der Link öffnet nur die Anmeldeseite. Er meldet Sie nicht an und enthält nichts zu Ihrem Konto. Wenn Sie diese Nachricht nicht erwartet haben, ignorieren Sie sie, oder fragen Sie die Person, die Ihr Konto verwaltet.</p>"
+    },
+    "reset-refused-attempt": {
+      "subject": "Jemand hat versucht, Ihr Passwort für {{service}} zurückzusetzen",
+      "text": "Um {{when}} hat jemand darum gebeten, das Passwort des Kontos {{username}} zurückzusetzen, diese Adresse genannt und einen Wiederherstellungscode angegeben, der keiner der Ihren ist. Nichts wurde geändert, und kein Link zum Zurücksetzen wurde gesendet.\n\nWenn Sie das waren, versuchen Sie es erneut mit einem unbenutzten Wiederherstellungscode. Wenn nicht, kennt jemand Ihren Kontonamen und Ihre Adresse; wenden Sie sich an die Person, die Ihr Konto verwaltet.\n",
+      "html": "<p>Um {{when}} hat jemand darum gebeten, das Passwort des Kontos <strong>{{username}}</strong> zurückzusetzen, diese Adresse genannt und einen Wiederherstellungscode angegeben, der keiner der Ihren ist. Nichts wurde geändert, und kein Link zum Zurücksetzen wurde gesendet.</p><p>Wenn Sie das waren, versuchen Sie es erneut mit einem unbenutzten Wiederherstellungscode. Wenn nicht, kennt jemand Ihren Kontonamen und Ihre Adresse; wenden Sie sich an die Person, die Ihr Konto verwaltet.</p>"
+    },
+    "test-message": {
+      "subject": "Testnachricht von {{service}}",
+      "text": "Dies ist eine Testnachricht, gesendet um {{when}} über den Transport {{transport}} auf Anfrage von {{username}}.\n",
+      "html": "<p>Dies ist eine Testnachricht, gesendet um {{when}} über den Transport {{transport}} auf Anfrage von <strong>{{username}}</strong>.</p>"
+    }
+  },
+  "layout": {
+    "subject": "{{subject}}",
+    "text": "{{content}}\n-- \n{{service}} ({{realm}})\nSie haben diese Nachricht erhalten, denn es ist {{reason}}.\n",
+    "html": "<div>{{content}}</div><hr><p><small>{{service}} ({{realm}}). Sie haben diese Nachricht erhalten, denn es ist {{reason}}.</small></p>"
+  },
+  "categories": {
+    "security": {
+      "reason": "ein Sicherheitshinweis zu Ihrem Konto, der nicht deaktiviert werden kann"
+    },
+    "account": {
+      "reason": "etwas, worum Sie oder ein Administrator gebeten haben"
+    },
+    "notification": {
+      "reason": "eine Benachrichtigung, die Sie in Ihrem Portal deaktivieren können"
+    }
+  }
+}

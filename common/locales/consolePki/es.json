@@ -114,6 +114,7 @@
   "notAfterPlaceholder": "(No antes de + validez)",
   "slowToGenerate": " — lenta de generar",
   "cannotSign": " — solo clave de sujeto, no puede firmar",
+  "notForTls": " — no utilizable por clientes TLS",
   "keyPair": "Par de claves",
   "keyPairNote": "El par de claves que certifica el siguiente certificado &mdash; y, para un perfil autofirmado, la clave que lo firma. Se genera <strong>aquí, en este servicio</strong>, que es lo único en que esta página difiere en naturaleza de la del depurador: aquella genera en el navegador porque toda su promesa es que la clave nunca sale de él, y esta tiene la autoridad de certificación, así que la clave pertenece al proceso que firma. Es el mismo módulo en ambos casos (<code>common/crypto_impl/key_material.js</code>), así que los algoritmos, la conversión PEM/JWK y los formatos de almacén de claves son idénticos, no parecidos.",
   "keyPairNoteTitle": "De dónde viene este par",

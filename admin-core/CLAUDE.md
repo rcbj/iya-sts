@@ -10,6 +10,7 @@ neither of them owns.** Two files arrived on 2026-09-12 out of
 | `admin_views.ts` | **what ANSWERS a question** | 38 functions that compute a JSON answer and build no markup |
 | `certificate_views.ts` | **which certificates a details view may open, and the view** | the catalogue and `detailsView()` / `listView()`, read by `/admin/pki`, `/admin/crypto-metadata` and `GET /admin-api/certificates` — see the section at the foot |
 | `protocol_endpoints.ts` | **which endpoints each Protocols page lists** | the page-to-route table and `forPage()`, read by `admin.respond()` and `admin_api.js`'s `sendJson()` — see the section at the foot |
+| `policy_transfer.ts` | **a realm's policies, out and back in, signed** (#1713) | `exportPolicies()`, `inspect()`, `importPolicies()`, answered by `admin_actions.ts`'s `policyTransferAction()` — see the section at the foot |
 
 **Read each file's own header first.** They carry the argument at length: what
 may be in them, what may not, why they are not in `common/`, and why the
@@ -188,7 +189,12 @@ for the page and `/admin-api/scim` to assemble that block separately, which is
 the drift rule 7 exists to prevent.
 
 **THE REQUEST RULE IS NOT THE SAME FOR THE TWO HALVES.** An action is handed a
-parsed body and an actor and never sees the request. A view is parameterised by
+parsed body and an actor and never sees the request. The actor is an
+ARGUMENT — the `context` (`{ via, actor, … }`) beside the body — and never a
+member of the body: until rcbj's decision on #1579 (2026-11-11) the
+management API wrote it into the body as `actor` and nine actions read
+`body.actor`; now no action reads a body member the Management API model
+does not declare (`mgmt-api/CLAUDE.md`). A view is parameterised by
 the QUERY STRING — which page, which filter, which user — and reads
 `req.query`, exactly as it did on the console. Nothing else off the request:
 a header, a cookie or a body would not mean the same thing arriving at the API.
@@ -322,12 +328,35 @@ what it needs:**
   `credentials.factorHolderRowsAsync()` (the directory's
   `credentialRowsAsync()`, read as the census reads), `personDnsAsync()`
   and, while the token register is on demand, `stats.userRowsOfAsync()` for
-  every shown row at once, then decorates as `decoratePerson()` does. On
+  every shown row at once — the shown rows' own subjects one
+  `subjectsForNamesAsync()` of their identity keys, not `subjectForName()`
+  per row, and the name warm not on this path (#881) — then decorates as
+  `decoratePerson()` does. On
   8081 fifty rows of about nine synchronous reads each spent the request's
   store budget (STS-LDAP-0175) and the page could not be drawn. A store
   that refuses leaves each row's factors null (unknown) and its DN empty
   (STS-AUTHN-0410). The console's page and `?user=` still decorate a row at
   a time. `tests/users_page_rows_async.js` holds it.
+
+**The service-account roster and the people count are asked before the
+view (#798).** `usersListJson()` reads `serviceAccounts.names()`, which on
+a cold cache walks `stsServiceAccount` through `holders()` — a synchronous
+`withAttribute` per windowed container, and a synchronous `byKeys` per row
+the window does not hold. `usersJsonAsync()` and `mfaRosterJsonAsync()` ask
+`namesAsync()` beside the population (`serviceAccountNamesAsync()`,
+`holdersAsync()`) and hand the names in as `opts.serviceNames`, so the view
+does not ask again; an empty list is a list. The people count
+`secondFactorPopulation()` asks (`personCount()`, `recentCountUnder()`,
+held ten seconds) is asked the same way (`personCountAsync()`,
+`directoryPeopleCount()`) inside `buildPeopleAndCensusAsync()` and handed
+in as `directoryPeople`. A count of 0 is a count. A failure is recorded as
+`STS-AUTHN-0334` and the page draws no count. **`newUserContainer()` calls
+`usersDn()`.** It used to call `directoryReader('')`, which is
+`objectFor('')` and counts the realm — one synchronous `count` per
+windowed container — to learn a DN. The group index is not asked: the
+shown rows no longer call `mechanismsFor()`, which is what built it.
+`?user=` still decorates one row synchronously.
+`tests/users_population_async.js` P3 and P4 hold the questions.
 
 **The census interprets nothing in the directory.** `ldap_server.js` hands
 back raw attribute values; which values are keys, what a sealed TOTP record
@@ -581,3 +610,72 @@ named policies without touching the console, the API or each other:
 * **The ranking and the recipe** are `common/policy_selection.ts`'s,
   `common/CLAUDE.md` 3cx; the group and person halves are
   `ldap/CLAUDE.md`'s.
+
+## `policy_transfer.ts`: A REALM'S POLICIES, OUT AND BACK IN, SIGNED (#1713, 2026-11-13)
+
+rcbj's issue, in his words: export and import "within a realm or between
+realms", JSON, digitally signed, the signer's whole trust chain in the
+document, a realm's own signer trusted automatically, another realm's
+(**even on the same instance**) only after a person is asked, the accepted
+chain added to the signer truststore, **full paranoid validation**, a new
+Issuing CA per realm for it, and a configurable algorithm defaulting to the
+realm's JOSE default. The file's header is the argument; what a maintainer
+must not undo:
+
+* **WHAT IS EXPORTED IS WHAT THE REALM STORES.** Every kind in
+  `policy_kinds.ts`, filtered on `stored`, as the BODY its save takes — so
+  an import goes through each kind's own `save()` (and the authentication
+  policy's `saveNamed()`), with every refusal those make. Nothing here writes
+  the directory. A kind added to `policy_kinds.ts` is exported the same day.
+* **THE DOCUMENT IS A FLATTENED JWS** (RFC 7515 section 7.2.2), `typ`
+  `policy-export+json`, the whole chain — leaf, `policy-signing` Issuing CA,
+  Intermediate, service Root — in the protected `x5c`. Verified with
+  `crypto.verifyCompactJwsWithCertificate()`, which reads the SPKI with
+  asn1js so an ML-DSA leaf verifies too.
+* **A FRESH KEY PER EXPORT, CERTIFIED INTO ONE SLOT AND NEVER SUPERSEDED.**
+  Superseding revokes, and yesterday's export must still import: `certify()`
+  keeps a displaced serial in the register, which answers `good` until it
+  expires. The private key is dropped after the one signature.
+* **THE BOUNDARY IS THE ISSUING CA, NOT THE ROOT.** Every realm of a service
+  shares the Root, so `own` is "this realm's own Policy Export Signing CA
+  issued it", and an administrator's yes is pinned to the Issuing CA they
+  were shown (`issuerFingerprint`): trusted means the signer truststore
+  holds that Issuing CA AND its Root for `policy-signer`. Reading the store
+  with `list()` for that pin is deliberate and is the only read outside the
+  door; the PATH is always the door's.
+* **PARANOID IS FORCED WHILE ITS ROW IS ON.** The site passes `force` from
+  `CertificateTrust.rowOn('policy-signer')`, so development validates what
+  product does; off, the row is an ordinary one the master decides. Forced
+  verdicts are not counted by the door, so the acts are audited here
+  (`admin.policies.export`, `.trust-signer`, `.import`).
+* **THE READ BESIDE THE THREE ACTS IS `view()`** (`GET
+  /admin-api/policies/transfer`, through `admin_views.ts`'s
+  `policyTransferJson()`; the Export and import tab composes it as
+  `transfer`). It was missing when #1713 merged, and
+  `sts_admin_api_operations`' read-back found it: every write's resource
+  owes a read. It READS: `pki.describeIssuer()`, never `ensureScope()`, so
+  a realm with no Policy Export Signing CA answers `issuingCa: null` rather
+  than having one built by a GET. Certificates only, and its model is
+  closed, so a member added here owes `models/api/management.tsp`.
+
+* **A SELECTION IS FEWER PROFILES, NOT ANOTHER FORMAT** (rcbj,
+  2026-11-14: "import / export individual policies"). `policies`, a list
+  of `{ kind, name }`, narrows an export or an import; absent is
+  everything, exactly as before. The export checks it FIRST, before a key
+  is made (a name the realm does not store is STS-ADMIN-0937), carries
+  only the kinds with something selected, and records the list as the
+  payload's `selection`; a whole export carries no such member, so its
+  document is unchanged. The import checks its selection against the
+  inspection's `profiles` BEFORE the trust question (STS-ADMIN-0938), so a
+  mistyped name trusts nobody; the trust is still about the whole
+  document's signer. `inspect()` answers `profiles` with `replaces` (this
+  realm stores one of that kind by that name), and `view()` answers
+  `policies` (what may be selected). The console's boxes post each policy
+  as JSON under `policies`, which `web_runtime.ts`'s `shapeFields()` parses
+  per item for a list of objects.
+
+`tests/policy_transfer.js` holds it in process (the export's shape, own and
+foreign realms, the pin across a third and a fourth realm, refusals,
+revocation, every algorithm, the action layer, the console's question and
+the view);
+`tests/protocol/sts_policy_transfer.js` over HTTP.

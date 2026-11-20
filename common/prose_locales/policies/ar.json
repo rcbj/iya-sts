@@ -1,0 +1,2042 @@
+{
+  "kinds.password.label": {
+    "en": "21b86a0e7f34e88d",
+    "text": "سياسة كلمة المرور"
+  },
+  "kinds.password.appliesTo": {
+    "en": "e33b031ac2855712",
+    "text": "كلمة المرور التالية التي تُضبط في نطاق الثقة هذا، ولا شيء مما هو مخزّن بالفعل"
+  },
+  "kinds.password.fallsBackTo": {
+    "en": "e1a34c11cd145d88",
+    "text": "الإعدادات الافتراضية المضمّنة"
+  },
+  "kinds.password.param.noun": {
+    "en": "3df37c27d5224b9e",
+    "text": "ملف سياسة كلمة المرور"
+  },
+  "password.FIELDS.minLength.label": {
+    "en": "54fda5553dbf64a5",
+    "text": "الحد الأدنى للطول"
+  },
+  "password.FIELDS.minLength.unit": {
+    "en": "25d939ffd0d79b73",
+    "text": "محارف"
+  },
+  "password.FIELDS.minLength.what": {
+    "en": "53845d92c5f6ea44",
+    "text": "أقصر كلمة مرور تضبطها هذه الخدمة، تُحسب بالمحارف (نقاط ترميز Unicode، فالرمز التعبيري الواحد يُحسب واحدًا). السمة هي سمة draft-behera-ldap-password-policy. اثنا عشر هو الافتراضي؛ ويطلب NIST SP 800-63B ما لا يقل عن 8، و15 حيث تكون كلمة المرور العامل الوحيد."
+  },
+  "password.FIELDS.history.label": {
+    "en": "58e5a89d48d65a94",
+    "text": "كلمات المرور السابقة التي لا يجوز إعادة استخدامها"
+  },
+  "password.FIELDS.history.unit": {
+    "en": "3049a1f8327e0215",
+    "text": "كلمات مرور"
+  },
+  "password.FIELDS.history.what": {
+    "en": "06be7ed15512bb42",
+    "text": "كم من كلمات المرور السابقة للشخص يُتذكَّر ويُرفض. تُرفض كلمة المرور الحالية أيضًا دائمًا ما دامت هذه القيمة أعلى من 0، فـ5 تعني أن كلمة المرور الجديدة لا يجوز أن تكون أيًا من الست الأخيرة. القيمة 0 تعطّل القاعدة. سمة المسودة، وبمعنى المسودة. تُحفظ كل كلمة مرور مُتذكَّرة بالتجزئة التي كانت مخزَّنة بها أصلًا (argon2id أو scrypt)، في pwdHistory على مدخلة الشخص نفسها، ويكلف التحقق من كلمة مرور جديدة مقارنة تجزئة واحدة لكل واحدة مُتذكَّرة."
+  },
+  "password.FIELDS.minSymbols.label": {
+    "en": "95033032ad043277",
+    "text": "الحد الأدنى لعدد الرموز"
+  },
+  "password.FIELDS.minSymbols.unit": {
+    "en": "1ea50a8caf608504",
+    "text": "رموز"
+  },
+  "password.FIELDS.minSymbols.what": {
+    "en": "1121ccc1580b0c86",
+    "text": "دائمًا 0. تُرفض السياسة التي تطلب رموزًا: يشترط ASVS 5.0.0 6.2.5 قبول كلمة مرور بأي تركيب، فالطول هو ما تطلبه هذه السياسة."
+  },
+  "password.FIELDS.requireUppercase.label": {
+    "en": "41d8365a4b5a8473",
+    "text": "اشتراط حرف كبير"
+  },
+  "password.FIELDS.requireUppercase.what": {
+    "en": "9ab7a52d3b16949e",
+    "text": "متوقف دائمًا. تُرفض السياسة التي تشترط حرفًا كبيرًا: يشترط ASVS 5.0.0 6.2.5 قبول كلمة مرور بأي تركيب."
+  },
+  "password.FIELDS.requireDigit.label": {
+    "en": "eaa0c73c3cc00f02",
+    "text": "اشتراط رقم"
+  },
+  "password.FIELDS.requireDigit.what": {
+    "en": "9d7cd7fdbca971d9",
+    "text": "متوقف دائمًا. تُرفض السياسة التي تشترط رقمًا: يشترط ASVS 5.0.0 6.2.5 قبول كلمة مرور بأي تركيب."
+  },
+  "password.FIELDS.generatedLength.label": {
+    "en": "9a6d2215cc16392c",
+    "text": "طول كلمة المرور المولَّدة"
+  },
+  "password.FIELDS.generatedLength.unit": {
+    "en": "25d939ffd0d79b73",
+    "text": "محارف"
+  },
+  "password.FIELDS.generatedLength.what": {
+    "en": "9abc8e368dbfdf05",
+    "text": "طول كلمة المرور التي تولّدها هذه الخدمة — لمستخدم جديد يُنشأ من وحدة التحكم أو /admin-api، ولإجراء التوليد لدى المشغّل، ولحساب التمهيد في وضع المنتج. يجب أن يبلغ على الأقل الحد الأدنى للطول، وعلى الأقل ضعف عدد الرموز زائد اثنين. عشرون محرفًا من أبجدية من 90 محرفًا تعادل نحو 130 بتًا."
+  },
+  "password.FIELDS.hashAlgorithm.label": {
+    "en": "3864bfd74ab51369",
+    "text": "خوارزمية تجزئة كلمة المرور"
+  },
+  "password.FIELDS.hashAlgorithm.what": {
+    "en": "1e7d12ba7a86b147",
+    "text": "الخوارزمية التي تُجزَّأ بها كلمة المرور المخزَّنة حديثًا: scrypt (RFC 7914)، وهي الافتراضية، أو argon2id (RFC 9106، والخيار الأول في OWASP Password Storage Cheat Sheet). تسمّي التجزئة المخزَّنة خوارزميتها ومعاملاتها وتستمر في التحقق. ما كان بخوارزمية أخرى، أو بالخوارزمية نفسها بتكلفة أقل بصرامة، يُعاد تجزئته عند تسجيل الدخول المُتحقَّق التالي للشخص. تُترك التجزئة بالخوارزمية نفسها إذا كانت تكلفتها هذه على الأقل. أسرار العميل ورموز التفعيل ورموز الاسترداد وكلمات مرور التطبيقات ليست كلمات مرور وتبقى scrypt."
+  },
+  "password.FIELDS.argon2Memory.label": {
+    "en": "f56cee65f89ca6d4",
+    "text": "ذاكرة argon2id"
+  },
+  "password.FIELDS.argon2Memory.unit": {
+    "en": "97ee1b8dd0d5456b",
+    "text": "KiB"
+  },
+  "password.FIELDS.argon2Memory.what": {
+    "en": "ec649d8291c32776",
+    "text": "الذاكرة التي تستخدمها تجزئة argon2id واحدة، بالكيبيبايت (m). 19456 KiB (19 MiB) هو الحد الأدنى لدى OWASP وأقل ما تكتبه هذه الخدمة. رفعه يجعل مهاجمة المخزن المسروق أبطأ، ويستهلك كل تسجيل دخول هذا القدر الإضافي من الذاكرة."
+  },
+  "password.FIELDS.argon2Iterations.label": {
+    "en": "7d86f5ad8bfeae28",
+    "text": "تكرارات argon2id"
+  },
+  "password.FIELDS.argon2Iterations.unit": {
+    "en": "2c28ec094b830e09",
+    "text": "تمريرات"
+  },
+  "password.FIELDS.argon2Iterations.what": {
+    "en": "b04ad660d2d130b6",
+    "text": "كم تمريرة تنفّذها argon2id على ذاكرتها (t). 2 هو الحد الأدنى لدى OWASP عند 19 MiB؛ وكل تمريرة تضيف الزمن نفسه مرة أخرى."
+  },
+  "password.FIELDS.argon2Parallelism.label": {
+    "en": "e1eb312244fb28cf",
+    "text": "توازي argon2id"
+  },
+  "password.FIELDS.argon2Parallelism.unit": {
+    "en": "ff1789b2348ddbc2",
+    "text": "مسارات"
+  },
+  "password.FIELDS.argon2Parallelism.what": {
+    "en": "e5321dcccf2989ad",
+    "text": "كم مسارًا تقسّم argon2id ذاكرتها إليها (p). هو جزء من التجزئة لا عدد خيوط: يحسب node التجزئة على خيط واحد مهما كانت هذه القيمة. 1 هو رقم OWASP."
+  },
+  "password.FIELDS.scryptLogN.label": {
+    "en": "91d752051cc3e278",
+    "text": "تكلفة scrypt (log2 لـ N)"
+  },
+  "password.FIELDS.scryptLogN.what": {
+    "en": "12d941c210e87f99",
+    "text": "تكلفة CPU والذاكرة لدى scrypt لكلمة مرور مخزَّنة حديثًا ما دامت الخوارزمية scrypt، كأسّ للعدد اثنين: 15 (الافتراضي) هو N=32768. يقرنها جدول OWASP بالتوازي: 2^17 مع p=1، و2^16 مع p=2، و2^15 مع p=3، و2^14 مع p=5، أو 2^13 مع p=10. الافتراضي هو 2^15 مع p=3، وهو أحد تلك الأزواج. يُرفض توازٍ أقل من الزوج المقابل للتكلفة المختارة."
+  },
+  "password.FIELDS.scryptBlockSize.label": {
+    "en": "7b7e7b5de9b8be58",
+    "text": "حجم كتلة scrypt (r)"
+  },
+  "password.FIELDS.scryptBlockSize.what": {
+    "en": "f0c104745b77d30a",
+    "text": "حجم كتلة scrypt لكلمة مرور مخزَّنة حديثًا ما دامت الخوارزمية scrypt. الذاكرة نحو 128 × N × r بايت؛ و8 هو الرقم الذي يعطيه RFC 7914 وOWASP."
+  },
+  "password.FIELDS.scryptParallelism.label": {
+    "en": "0aa3282295d9521b",
+    "text": "توازي scrypt (p)"
+  },
+  "password.FIELDS.scryptParallelism.what": {
+    "en": "82203c87cc0f2354",
+    "text": "توازي scrypt لكلمة مرور مخزَّنة حديثًا ما دامت الخوارزمية scrypt. يحسبه Node على خيط واحد، فالقيمة الأعلى تكلف زمنًا لا أنوية؛ ويسرد وصف التكلفة الأزواج التي يقبلها OWASP. الافتراضي هو 3. تُرفض قيمة أقل من زوج OWASP للتكلفة المختارة."
+  },
+  "password.SCHEMA.objectClasses.pwdPolicy.what": {
+    "en": "ab642ea5cb282745",
+    "text": "صنف draft-behera-ldap-password-policy لمدخلة سياسة كلمة المرور. يسمّي `pwdAttribute` السمة التي تحكمها السياسة، وهي هنا دائمًا `userPassword`."
+  },
+  "password.SCHEMA.objectClasses.stsPasswordPolicy.what": {
+    "en": "4a651241a26c3b18",
+    "text": "صنف هذه الخدمة الخاص، يحمل قواعد التركيب والطول المولَّد اللذين لا توجد لهما سمة في المسودة. تُسمّى المدخلة بالملف: `cn=default`، أو اسم سياسة مسمّاة."
+  },
+  "password.SCHEMA.attributes.pwdAttribute.what": {
+    "en": "603a95b316f4b6f5",
+    "text": "السمة التي تحكمها هذه السياسة: `userPassword`."
+  },
+  "password.SCHEMA.attributes.pwdMinLength.what": {
+    "en": "53845d92c5f6ea44",
+    "text": "أقصر كلمة مرور تضبطها هذه الخدمة، تُحسب بالمحارف (نقاط ترميز Unicode، فالرمز التعبيري الواحد يُحسب واحدًا). السمة هي سمة draft-behera-ldap-password-policy. اثنا عشر هو الافتراضي؛ ويطلب NIST SP 800-63B ما لا يقل عن 8، و15 حيث تكون كلمة المرور العامل الوحيد."
+  },
+  "password.SCHEMA.attributes.pwdInHistory.what": {
+    "en": "06be7ed15512bb42",
+    "text": "كم من كلمات المرور السابقة للشخص يُتذكَّر ويُرفض. تُرفض كلمة المرور الحالية أيضًا دائمًا ما دامت هذه القيمة أعلى من 0، فـ5 تعني أن كلمة المرور الجديدة لا يجوز أن تكون أيًا من الست الأخيرة. القيمة 0 تعطّل القاعدة. سمة المسودة، وبمعنى المسودة. تُحفظ كل كلمة مرور مُتذكَّرة بالتجزئة التي كانت مخزَّنة بها أصلًا (argon2id أو scrypt)، في pwdHistory على مدخلة الشخص نفسها، ويكلف التحقق من كلمة مرور جديدة مقارنة تجزئة واحدة لكل واحدة مُتذكَّرة."
+  },
+  "password.SCHEMA.attributes.stsPwdMinSymbols.what": {
+    "en": "1121ccc1580b0c86",
+    "text": "دائمًا 0. تُرفض السياسة التي تطلب رموزًا: يشترط ASVS 5.0.0 6.2.5 قبول كلمة مرور بأي تركيب، فالطول هو ما تطلبه هذه السياسة."
+  },
+  "password.SCHEMA.attributes.stsPwdRequireUppercase.what": {
+    "en": "9ab7a52d3b16949e",
+    "text": "متوقف دائمًا. تُرفض السياسة التي تشترط حرفًا كبيرًا: يشترط ASVS 5.0.0 6.2.5 قبول كلمة مرور بأي تركيب."
+  },
+  "password.SCHEMA.attributes.stsPwdRequireDigit.what": {
+    "en": "9d7cd7fdbca971d9",
+    "text": "متوقف دائمًا. تُرفض السياسة التي تشترط رقمًا: يشترط ASVS 5.0.0 6.2.5 قبول كلمة مرور بأي تركيب."
+  },
+  "password.SCHEMA.attributes.stsPwdGeneratedLength.what": {
+    "en": "9abc8e368dbfdf05",
+    "text": "طول كلمة المرور التي تولّدها هذه الخدمة — لمستخدم جديد يُنشأ من وحدة التحكم أو /admin-api، ولإجراء التوليد لدى المشغّل، ولحساب التمهيد في وضع المنتج. يجب أن يبلغ على الأقل الحد الأدنى للطول، وعلى الأقل ضعف عدد الرموز زائد اثنين. عشرون محرفًا من أبجدية من 90 محرفًا تعادل نحو 130 بتًا."
+  },
+  "password.SCHEMA.attributes.stsPwdHashAlgorithm.what": {
+    "en": "1e7d12ba7a86b147",
+    "text": "الخوارزمية التي تُجزَّأ بها كلمة المرور المخزَّنة حديثًا: scrypt (RFC 7914)، وهي الافتراضية، أو argon2id (RFC 9106، والخيار الأول في OWASP Password Storage Cheat Sheet). تسمّي التجزئة المخزَّنة خوارزميتها ومعاملاتها وتستمر في التحقق. ما كان بخوارزمية أخرى، أو بالخوارزمية نفسها بتكلفة أقل بصرامة، يُعاد تجزئته عند تسجيل الدخول المُتحقَّق التالي للشخص. تُترك التجزئة بالخوارزمية نفسها إذا كانت تكلفتها هذه على الأقل. أسرار العميل ورموز التفعيل ورموز الاسترداد وكلمات مرور التطبيقات ليست كلمات مرور وتبقى scrypt."
+  },
+  "password.SCHEMA.attributes.stsPwdArgon2Memory.what": {
+    "en": "ec649d8291c32776",
+    "text": "الذاكرة التي تستخدمها تجزئة argon2id واحدة، بالكيبيبايت (m). 19456 KiB (19 MiB) هو الحد الأدنى لدى OWASP وأقل ما تكتبه هذه الخدمة. رفعه يجعل مهاجمة المخزن المسروق أبطأ، ويستهلك كل تسجيل دخول هذا القدر الإضافي من الذاكرة."
+  },
+  "password.SCHEMA.attributes.stsPwdArgon2Iterations.what": {
+    "en": "b04ad660d2d130b6",
+    "text": "كم تمريرة تنفّذها argon2id على ذاكرتها (t). 2 هو الحد الأدنى لدى OWASP عند 19 MiB؛ وكل تمريرة تضيف الزمن نفسه مرة أخرى."
+  },
+  "password.SCHEMA.attributes.stsPwdArgon2Parallelism.what": {
+    "en": "e5321dcccf2989ad",
+    "text": "كم مسارًا تقسّم argon2id ذاكرتها إليها (p). هو جزء من التجزئة لا عدد خيوط: يحسب node التجزئة على خيط واحد مهما كانت هذه القيمة. 1 هو رقم OWASP."
+  },
+  "password.SCHEMA.attributes.stsPwdScryptLogN.what": {
+    "en": "12d941c210e87f99",
+    "text": "تكلفة CPU والذاكرة لدى scrypt لكلمة مرور مخزَّنة حديثًا ما دامت الخوارزمية scrypt، كأسّ للعدد اثنين: 15 (الافتراضي) هو N=32768. يقرنها جدول OWASP بالتوازي: 2^17 مع p=1، و2^16 مع p=2، و2^15 مع p=3، و2^14 مع p=5، أو 2^13 مع p=10. الافتراضي هو 2^15 مع p=3، وهو أحد تلك الأزواج. يُرفض توازٍ أقل من الزوج المقابل للتكلفة المختارة."
+  },
+  "password.SCHEMA.attributes.stsPwdScryptBlockSize.what": {
+    "en": "f0c104745b77d30a",
+    "text": "حجم كتلة scrypt لكلمة مرور مخزَّنة حديثًا ما دامت الخوارزمية scrypt. الذاكرة نحو 128 × N × r بايت؛ و8 هو الرقم الذي يعطيه RFC 7914 وOWASP."
+  },
+  "password.SCHEMA.attributes.stsPwdScryptParallelism.what": {
+    "en": "82203c87cc0f2354",
+    "text": "توازي scrypt لكلمة مرور مخزَّنة حديثًا ما دامت الخوارزمية scrypt. يحسبه Node على خيط واحد، فالقيمة الأعلى تكلف زمنًا لا أنوية؛ ويسرد وصف التكلفة الأزواج التي يقبلها OWASP. الافتراضي هو 3. تُرفض قيمة أقل من زوج OWASP للتكلفة المختارة."
+  },
+  "password.SCHEMA.attributes.stsPasswordPrecedence.what": {
+    "en": "f8becfc3b7045813",
+    "text": "أي سياسة كلمة مرور مسمّاة تفوز حيث تُسمّى عدة سياسات لشخص واحد: الأدنى، من 1 إلى 1000."
+  },
+  "password.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "الغرض من الملف، للشخص التالي."
+  },
+  "password.SCHEMA.personAttributes.pwdHistory.what": {
+    "en": "e800109ca0c5e386",
+    "text": "قيمة واحدة لكل كلمة مرور سابقة مُتذكَّرة، بصيغة المسودة `time#syntaxOID#length#data` — والبيانات هي التجزئة التي خُزّنت كلمة المرور تحتها، لا كلمة المرور نفسها أبدًا. تتولى هذه الخدمة صيانتها وتُرفض عند إضافة أو تعديل في LDAP، لأن سجلًا يمكن لأي شخص تعديله هو سجل يمكن لأي شخص إفراغه."
+  },
+  "password.SCHEMA.personAttributes.pwdChangedTime.what": {
+    "en": "3c870b2e0c097f36",
+    "text": "وقت آخر ضبط لكلمة المرور، بصيغة GeneralizedTime. تتولى هذه الخدمة صيانته."
+  },
+  "password.SELECTORS.precedence.what": {
+    "en": "f8becfc3b7045813",
+    "text": "أي سياسة كلمة مرور مسمّاة تفوز حيث تُسمّى عدة سياسات لشخص واحد: الأدنى، من 1 إلى 1000."
+  },
+  "password.sentences.minLength": {
+    "en": "68a35ccf19e404fb",
+    "text": "ما لا يقل عن {{n}} محارف"
+  },
+  "password.sentences.history": {
+    "en": "524e6c7233b4e109",
+    "text": "ليست كلمة مرورك الحالية ولا أيًا من {{n}} السابقة لها"
+  },
+  "kinds.authn.label": {
+    "en": "07e21daf38c77b35",
+    "text": "سياسة المصادقة"
+  },
+  "kinds.authn.governs": {
+    "en": "2a4cfd66f045124b",
+    "text": "أي الآليات تُقبل عاملًا أول وعاملًا ثانيًا"
+  },
+  "kinds.authn.appliesTo": {
+    "en": "3e20938990b921a7",
+    "text": "تسجيل الدخول التالي في نطاق الثقة هذا؛ والجلسة التي بدأت بالفعل تحتفظ بالعوامل التي بُدئت بها"
+  },
+  "kinds.authn.fallsBackTo": {
+    "en": "c56187f00ea11347",
+    "text": "ملف نطاق الثقة الافتراضي حيث يوجد واحد، والإعدادات الافتراضية المضمّنة حيث لا يوجد"
+  },
+  "kinds.authn.param.noun": {
+    "en": "d3123a2955133922",
+    "text": "ملف سياسة المصادقة"
+  },
+  "authn.FIELDS.requireSecondFactor.label": {
+    "en": "fac9928873cc8d82",
+    "text": "العامل الثاني مطلوب"
+  },
+  "authn.FIELDS.requireSecondFactor.what": {
+    "en": "781e80e1c746ea34",
+    "text": "`if-held`: يُطلب من الشخص عامل ثانٍ حين يملك واحدًا (أو حين تقول مدخلته stsMfaRequired). `always`: يُطلب من كل شخص في نطاق الثقة هذا، ومن لا يملك واحدًا يُرسَل لتسجيل واحد عند تسجيل دخوله التالي. حلّ هذا محل authn.mfaRequired. لا يوجد \"never\"، فالعامل المملوك يُطلب دائمًا."
+  },
+  "authn.FIELDS.requireSecondFactorForAdministrators.label": {
+    "en": "1bc5adb51edf4c2b",
+    "text": "عامل ثانٍ للمسؤولين"
+  },
+  "authn.FIELDS.requireSecondFactorForAdministrators.what": {
+    "en": "b66258c1b032dec3",
+    "text": "لكل من يحمل دورًا في وحدة التحكم (Admin Read أو Admin Write) ولا يملك عاملًا ثانيًا. `offer`: تُعرض عليه خطوة إعداد واحد، ومعها زر تجاهل، في كل تسجيل دخول. `always`: يجب أن يُعدّ واحدًا قبل أن يُسجَّل دخوله — باستثناء المسؤول المضمّن لنطاق الثقة الافتراضي (admin.bootstrapUsername)، الذي لا يُعرَض عليه إلا واحد، كي لا تُترك الخدمة بلا أحد يستطيع تسجيل الدخول. `if-held`: كسائر الجميع، بحسب الحقل أعلاه. أضعف من `always`: فالمسؤول الذي لا يملك غير كلمة المرور هو مسؤول لكل من يملك كلمة المرور."
+  },
+  "authn.FIELDS.passwordPrimary.label": {
+    "en": "8459feba5558b2cd",
+    "text": "كلمة المرور — عاملًا أول"
+  },
+  "authn.FIELDS.passwordPrimary.what": {
+    "en": "3b32854915d0d6d0",
+    "text": "كلمة مرور على شاشة تسجيل الدخول. وبصفتها عاملًا ثانيًا فهي كلمة المرور المطلوبة بعد محفظة أو عامل أول آخر من دون كلمة مرور."
+  },
+  "authn.FIELDS.passwordSecondFactor.label": {
+    "en": "12355f2b5a9fbbc8",
+    "text": "كلمة المرور — عاملًا ثانيًا"
+  },
+  "authn.FIELDS.passwordSecondFactor.what": {
+    "en": "3b32854915d0d6d0",
+    "text": "كلمة مرور على شاشة تسجيل الدخول. وبصفتها عاملًا ثانيًا فهي كلمة المرور المطلوبة بعد محفظة أو عامل أول آخر من دون كلمة مرور."
+  },
+  "authn.FIELDS.passkeyPrimary.label": {
+    "en": "c825f70e98df3fa4",
+    "text": "مفتاح المرور (دون كلمة مرور) — عاملًا أول"
+  },
+  "authn.FIELDS.passkeyPrimary.what": {
+    "en": "1cab77157f5d6263",
+    "text": "أي مفتاح مرور (بيانات اعتماد WebAuthn) يملكه الشخص، ويُسجَّل دخوله من دون كلمة مرور. ليس لمفتاح المرور دور: يقول هذا الصف، عند كل تسجيل دخول، ما إذا كان يجوز لأي منها أن يكون عاملًا أول في نطاق الثقة هذا، ما لم تقل العوامل الأولى لسياسة المصادقة التي يسمّيها تطبيق (appAuthnPolicy) غير ذلك."
+  },
+  "authn.FIELDS.securityKeySecondFactor.label": {
+    "en": "4e99afea50969c29",
+    "text": "مفتاح المرور (عامل ثانٍ) — عاملًا ثانيًا"
+  },
+  "authn.FIELDS.securityKeySecondFactor.what": {
+    "en": "5577b57e8d01187e",
+    "text": "أي مفتاح مرور (بيانات اعتماد WebAuthn) يملكه الشخص، ويُطلب بعد عامل أول. ليس لمفتاح المرور دور: يقول هذا الصف، عند كل تسجيل دخول، ما إذا كان يجوز لأي منها أن يكون عاملًا ثانيًا في نطاق الثقة هذا، ما لم تقل العوامل الثانية لسياسة المصادقة التي يسمّيها تطبيق (appAuthnPolicy) غير ذلك."
+  },
+  "authn.FIELDS.totpSecondFactor.label": {
+    "en": "4dbb7fdae02261a7",
+    "text": "تطبيق المصادقة (TOTP) — عاملًا ثانيًا"
+  },
+  "authn.FIELDS.totpSecondFactor.what": {
+    "en": "ea01b0588ad42047",
+    "text": "رمز لمرة واحدة وفق RFC 6238. ليس عاملًا أول أبدًا: تحتفظ هذه الخدمة بالسر المشترك نفسه الذي يحتفظ به التطبيق. عند الإيقاف هنا، لا يجوز لأحد تسجيل واحد؛ أما من يملك واحدًا بالفعل فيُطلب منه مع ذلك، لأن مفتاح إيقاف ينزل كل حساب مُسجَّل إلى كلمة المرور وحدها كان سيفعل غير ما يقول (حلّ هذا الصف محل totp.enabled، ويُبقي عقده)."
+  },
+  "authn.FIELDS.recoveryCodeSecondFactor.label": {
+    "en": "ee9982b48a9c6a90",
+    "text": "رمز الاسترداد — عاملًا ثانيًا"
+  },
+  "authn.FIELDS.recoveryCodeSecondFactor.what": {
+    "en": "e93ab2adc3e581bd",
+    "text": "رمز للاستخدام مرة واحدة من مجموعة ولّدها الشخص. عند الإيقاف هنا، لا يجوز توليد مجموعة جديدة؛ والمجموعة المملوكة بالفعل تظل تعمل (حلّ هذا الصف محل backupCodes.enabled، ويُبقي عقده)."
+  },
+  "authn.FIELDS.emailCodePrimary.label": {
+    "en": "76c9a682be0fce8d",
+    "text": "رمز من ستة أرقام مُرسَل بالبريد — عاملًا أول"
+  },
+  "authn.FIELDS.emailCodePrimary.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "رمز من ستة أرقام يُرسَل بالبريد إلى العنوان المُتحقَّق منه للشخص. NIST SP 800-63B-4 القسم 3.1.3.1: \"Email SHALL NOT be used for out-of-band authentication\"، لأن صندوق البريد قد يُوصَل إليه بكلمة مرور وحدها، وقد يُقرأ البريد أثناء عبوره أو يُغيَّر مساره. متوقف افتراضيًا لهذا السبب؛ لا يُشغَّل إلا حيث يكون ذلك خطرًا مقبولًا."
+  },
+  "authn.FIELDS.emailCodeSecondFactor.label": {
+    "en": "3ae4544eaf519a66",
+    "text": "رمز من ستة أرقام مُرسَل بالبريد — عاملًا ثانيًا"
+  },
+  "authn.FIELDS.emailCodeSecondFactor.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "رمز من ستة أرقام يُرسَل بالبريد إلى العنوان المُتحقَّق منه للشخص. NIST SP 800-63B-4 القسم 3.1.3.1: \"Email SHALL NOT be used for out-of-band authentication\"، لأن صندوق البريد قد يُوصَل إليه بكلمة مرور وحدها، وقد يُقرأ البريد أثناء عبوره أو يُغيَّر مساره. متوقف افتراضيًا لهذا السبب؛ لا يُشغَّل إلا حيث يكون ذلك خطرًا مقبولًا."
+  },
+  "authn.FIELDS.emailLinkPrimary.label": {
+    "en": "d52000176173475b",
+    "text": "رابط تسجيل دخول مُرسَل بالبريد — عاملًا أول"
+  },
+  "authn.FIELDS.emailLinkPrimary.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "رابط لمرة واحدة يُرسَل بالبريد إلى العنوان المُتحقَّق منه للشخص، ولا يُتمّ تسجيل الدخول إلا في المتصفح الذي بدأه. NIST SP 800-63B-4 القسم 3.1.3.1: \"Email SHALL NOT be used for out-of-band authentication\"، لأن صندوق البريد قد يُوصَل إليه بكلمة مرور وحدها، وقد يُقرأ البريد أثناء عبوره أو يُغيَّر مساره. متوقف افتراضيًا لهذا السبب؛ لا يُشغَّل إلا حيث يكون ذلك خطرًا مقبولًا."
+  },
+  "authn.FIELDS.emailLinkSecondFactor.label": {
+    "en": "29aaae045271f243",
+    "text": "رابط تسجيل دخول مُرسَل بالبريد — عاملًا ثانيًا"
+  },
+  "authn.FIELDS.emailLinkSecondFactor.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "رابط لمرة واحدة يُرسَل بالبريد إلى العنوان المُتحقَّق منه للشخص، ولا يُتمّ تسجيل الدخول إلا في المتصفح الذي بدأه. NIST SP 800-63B-4 القسم 3.1.3.1: \"Email SHALL NOT be used for out-of-band authentication\"، لأن صندوق البريد قد يُوصَل إليه بكلمة مرور وحدها، وقد يُقرأ البريد أثناء عبوره أو يُغيَّر مساره. متوقف افتراضيًا لهذا السبب؛ لا يُشغَّل إلا حيث يكون ذلك خطرًا مقبولًا."
+  },
+  "authn.FIELDS.certificatePrimary.label": {
+    "en": "d304f2a565b7a9e3",
+    "text": "شهادة عميل TLS — عاملًا أول"
+  },
+  "authn.FIELDS.certificatePrimary.what": {
+    "en": "bbf7d091b1854474",
+    "text": "شهادة عميل TLS مُتحقَّق منها: GET /tls/sign-in، أو المتابعة بشهادتك على شاشة تسجيل الدخول."
+  },
+  "authn.FIELDS.kerberosPrimary.label": {
+    "en": "f2f6ed9dd0454fdc",
+    "text": "Kerberos (SPNEGO) — عاملًا أول"
+  },
+  "authn.FIELDS.kerberosPrimary.what": {
+    "en": "da71a0338fe2a8df",
+    "text": "GET /authn/spnego مع تذكرة Kerberos."
+  },
+  "authn.FIELDS.walletPrimary.label": {
+    "en": "f215dfc0a7d74e7f",
+    "text": "تقديم المحفظة — عاملًا أول"
+  },
+  "authn.FIELDS.walletPrimary.what": {
+    "en": "c6b81177c7b7d944",
+    "text": "/authn/wallet ببيانات اعتماد أصدرها نطاق الثقة هذا، أو ID Token ذاتي الإصدار وفق SIOPv2 من مفتاح مُسجَّل. وبصفته عاملًا ثانيًا، المحفظة التي تُقدَّم بعد كلمة المرور."
+  },
+  "authn.FIELDS.walletSecondFactor.label": {
+    "en": "d77b29a6f118e61d",
+    "text": "تقديم المحفظة — عاملًا ثانيًا"
+  },
+  "authn.FIELDS.walletSecondFactor.what": {
+    "en": "c6b81177c7b7d944",
+    "text": "/authn/wallet ببيانات اعتماد أصدرها نطاق الثقة هذا، أو ID Token ذاتي الإصدار وفق SIOPv2 من مفتاح مُسجَّل. وبصفته عاملًا ثانيًا، المحفظة التي تُقدَّم بعد كلمة المرور."
+  },
+  "authn.FIELDS.federationPrimary.label": {
+    "en": "60fa1bebb39d244f",
+    "text": "شريك الاتحاد — عاملًا أول"
+  },
+  "authn.FIELDS.federationPrimary.what": {
+    "en": "31fc7fc7f271920b",
+    "text": "تسجيل دخول يؤكده شريك اتحاد مُعدّ."
+  },
+  "authn.FIELDS.emailCodeTtlS.unit": {
+    "en": "59f006d63bd009b7",
+    "text": "ثوانٍ"
+  },
+  "authn.FIELDS.emailCodeTtlS.label": {
+    "en": "a0d3df11fd93619b",
+    "text": "مدة صلاحية الرمز أو الرابط المُرسَل بالبريد"
+  },
+  "authn.FIELDS.emailCodeTtlS.what": {
+    "en": "8d18087c20d55ec4",
+    "text": "من لحظة إرساله. عشر دقائق على الأكثر، وهو حد NIST SP 800-63B-4 القسم 3.1.3.2 لسر خارج النطاق."
+  },
+  "authn.FIELDS.emailCodeAttempts.unit": {
+    "en": "1ac7d61d1d29fc2e",
+    "text": "محاولات"
+  },
+  "authn.FIELDS.emailCodeAttempts.label": {
+    "en": "c0cb3753ee818f64",
+    "text": "الرموز الخاطئة قبل انتهاء خطوة تسجيل الدخول"
+  },
+  "authn.FIELDS.emailCodeAttempts.what": {
+    "en": "f01dd1453c1c4690",
+    "text": "كم رمزًا خاطئًا تقبل خطوة تسجيل دخول واحدة قبل أن تُنهى ويبدأ الشخص من جديد. تنطبق أيضًا حدود المعدّل لكل شخص ولكل شبكة."
+  },
+  "authn.FIELDS.emailResendS.unit": {
+    "en": "59f006d63bd009b7",
+    "text": "ثوانٍ"
+  },
+  "authn.FIELDS.emailResendS.label": {
+    "en": "0780d5107e58e3e7",
+    "text": "أقصر انتظار قبل إرسال رمز أو رابط آخر"
+  },
+  "authn.FIELDS.emailResendS.what": {
+    "en": "8f53b3aeb7702554",
+    "text": "يحل رمز أو رابط جديد محل الأخير، فيتوقف الأخير عن العمل. يُرسَل ثلاثة على الأكثر لخطوة تسجيل دخول واحدة."
+  },
+  "authn.FIELDS.emailFailureLimit.unit": {
+    "en": "3d2200f2d590cf33",
+    "text": "إخفاقات"
+  },
+  "authn.FIELDS.emailFailureLimit.label": {
+    "en": "4f9a2ee120f0918b",
+    "text": "الإخفاقات المتتالية قبل إيقاف عامل البريد لدى الشخص"
+  },
+  "authn.FIELDS.emailFailureLimit.what": {
+    "en": "b5c28617f88284a5",
+    "text": "يطلب NIST SP 800-63B-4 القسم 3.2.2 ألا يزيد العدد على 100. يُبلَّغ الشخص ومسؤولوه، ويعيد الشخص تشغيله من البوابة."
+  },
+  "authn.FIELDS.rememberedBrowserSkipsSecondFactor.label": {
+    "en": "3810571654974307",
+    "text": "يجوز لمتصفح مُتذكَّر تخطي العامل الثاني"
+  },
+  "authn.FIELDS.rememberedBrowserSkipsSecondFactor.what": {
+    "en": "dc03d1b953cb0b33",
+    "text": "متوقف افتراضيًا. عند التشغيل، لا يُطلب من شخص يسجّل الدخول على متصفح اختار تذكّره أن يقدّم عامله الثاني مرة أخرى خلال المدة أدناه منذ آخر مرة قدّمه على ذلك المتصفح. لا يحدث ذلك أبدًا في وحدة تحكم المسؤول أو بوابة المستخدم أو مصحح البروتوكول؛ ولا لمسؤول؛ ولا ما دام خطر تسجيل الدخول متوسطًا أو أعلى؛ ويُعدّ تسجيل الدخول عندئذ عاملًا واحدًا لدى كل طرف معتمد — amr [\"pwd\"] وacr \"1\"، ككلمة مرور وحدها — فيُرفض للتطبيق الذي يطلب \"mfa\". يُتعرَّف على المتصفح بملف تعريف ارتباط حامل: من ينسخ ملف تعريف الارتباط يتخطى العامل الثاني أيضًا، إلى أن يُكتشَف النسخ."
+  },
+  "authn.FIELDS.rememberedBrowserDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "أيام"
+  },
+  "authn.FIELDS.rememberedBrowserDays.label": {
+    "en": "dcd7c57a1e61d82f",
+    "text": "مدة تخطي المتصفح المُتذكَّر للعامل الثاني"
+  },
+  "authn.FIELDS.rememberedBrowserDays.what": {
+    "en": "c5aa4b7f04ffeb9b",
+    "text": "تُحسب من آخر مرة قدّم فيها الشخص عامله الثاني على ذلك المتصفح. بعد انتهائها يُطلب منه مرة أخرى، وتقديمه يبدأ المدة من جديد."
+  },
+  "authn.SCHEMA.objectClasses.stsAuthnPolicy.what": {
+    "en": "f5f9a5956c21100f",
+    "text": "صنف هذه الخدمة لسياسة مصادقة: أي الآليات تُقبل عاملًا أول وعاملًا ثانيًا، ومتى يُطلب عامل ثانٍ. تُسمّى المدخلة بالملف (`cn=default`)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnRequireSecondFactor.what": {
+    "en": "781e80e1c746ea34",
+    "text": "`if-held`: يُطلب من الشخص عامل ثانٍ حين يملك واحدًا (أو حين تقول مدخلته stsMfaRequired). `always`: يُطلب من كل شخص في نطاق الثقة هذا، ومن لا يملك واحدًا يُرسَل لتسجيل واحد عند تسجيل دخوله التالي. حلّ هذا محل authn.mfaRequired. لا يوجد \"never\"، فالعامل المملوك يُطلب دائمًا."
+  },
+  "authn.SCHEMA.attributes.stsAuthnRequireSecondFactorForAdministrators.what": {
+    "en": "b66258c1b032dec3",
+    "text": "لكل من يحمل دورًا في وحدة التحكم (Admin Read أو Admin Write) ولا يملك عاملًا ثانيًا. `offer`: تُعرض عليه خطوة إعداد واحد، ومعها زر تجاهل، في كل تسجيل دخول. `always`: يجب أن يُعدّ واحدًا قبل أن يُسجَّل دخوله — باستثناء المسؤول المضمّن لنطاق الثقة الافتراضي (admin.bootstrapUsername)، الذي لا يُعرَض عليه إلا واحد، كي لا تُترك الخدمة بلا أحد يستطيع تسجيل الدخول. `if-held`: كسائر الجميع، بحسب الحقل أعلاه. أضعف من `always`: فالمسؤول الذي لا يملك غير كلمة المرور هو مسؤول لكل من يملك كلمة المرور."
+  },
+  "authn.SCHEMA.attributes.stsAuthnPasswordPrimary.what": {
+    "en": "3b32854915d0d6d0",
+    "text": "كلمة مرور على شاشة تسجيل الدخول. وبصفتها عاملًا ثانيًا فهي كلمة المرور المطلوبة بعد محفظة أو عامل أول آخر من دون كلمة مرور."
+  },
+  "authn.SCHEMA.attributes.stsAuthnPasswordSecondFactor.what": {
+    "en": "3b32854915d0d6d0",
+    "text": "كلمة مرور على شاشة تسجيل الدخول. وبصفتها عاملًا ثانيًا فهي كلمة المرور المطلوبة بعد محفظة أو عامل أول آخر من دون كلمة مرور."
+  },
+  "authn.SCHEMA.attributes.stsAuthnPasskeyPrimary.what": {
+    "en": "1cab77157f5d6263",
+    "text": "أي مفتاح مرور (بيانات اعتماد WebAuthn) يملكه الشخص، ويُسجَّل دخوله من دون كلمة مرور. ليس لمفتاح المرور دور: يقول هذا الصف، عند كل تسجيل دخول، ما إذا كان يجوز لأي منها أن يكون عاملًا أول في نطاق الثقة هذا، ما لم تقل العوامل الأولى لسياسة المصادقة التي يسمّيها تطبيق (appAuthnPolicy) غير ذلك."
+  },
+  "authn.SCHEMA.attributes.stsAuthnSecurityKeySecondFactor.what": {
+    "en": "5577b57e8d01187e",
+    "text": "أي مفتاح مرور (بيانات اعتماد WebAuthn) يملكه الشخص، ويُطلب بعد عامل أول. ليس لمفتاح المرور دور: يقول هذا الصف، عند كل تسجيل دخول، ما إذا كان يجوز لأي منها أن يكون عاملًا ثانيًا في نطاق الثقة هذا، ما لم تقل العوامل الثانية لسياسة المصادقة التي يسمّيها تطبيق (appAuthnPolicy) غير ذلك."
+  },
+  "authn.SCHEMA.attributes.stsAuthnTotpSecondFactor.what": {
+    "en": "ea01b0588ad42047",
+    "text": "رمز لمرة واحدة وفق RFC 6238. ليس عاملًا أول أبدًا: تحتفظ هذه الخدمة بالسر المشترك نفسه الذي يحتفظ به التطبيق. عند الإيقاف هنا، لا يجوز لأحد تسجيل واحد؛ أما من يملك واحدًا بالفعل فيُطلب منه مع ذلك، لأن مفتاح إيقاف ينزل كل حساب مُسجَّل إلى كلمة المرور وحدها كان سيفعل غير ما يقول (حلّ هذا الصف محل totp.enabled، ويُبقي عقده)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnRecoveryCodeSecondFactor.what": {
+    "en": "e93ab2adc3e581bd",
+    "text": "رمز للاستخدام مرة واحدة من مجموعة ولّدها الشخص. عند الإيقاف هنا، لا يجوز توليد مجموعة جديدة؛ والمجموعة المملوكة بالفعل تظل تعمل (حلّ هذا الصف محل backupCodes.enabled، ويُبقي عقده)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailCodePrimary.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "رمز من ستة أرقام يُرسَل بالبريد إلى العنوان المُتحقَّق منه للشخص. NIST SP 800-63B-4 القسم 3.1.3.1: \"Email SHALL NOT be used for out-of-band authentication\"، لأن صندوق البريد قد يُوصَل إليه بكلمة مرور وحدها، وقد يُقرأ البريد أثناء عبوره أو يُغيَّر مساره. متوقف افتراضيًا لهذا السبب؛ لا يُشغَّل إلا حيث يكون ذلك خطرًا مقبولًا."
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailCodeSecondFactor.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "رمز من ستة أرقام يُرسَل بالبريد إلى العنوان المُتحقَّق منه للشخص. NIST SP 800-63B-4 القسم 3.1.3.1: \"Email SHALL NOT be used for out-of-band authentication\"، لأن صندوق البريد قد يُوصَل إليه بكلمة مرور وحدها، وقد يُقرأ البريد أثناء عبوره أو يُغيَّر مساره. متوقف افتراضيًا لهذا السبب؛ لا يُشغَّل إلا حيث يكون ذلك خطرًا مقبولًا."
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailLinkPrimary.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "رابط لمرة واحدة يُرسَل بالبريد إلى العنوان المُتحقَّق منه للشخص، ولا يُتمّ تسجيل الدخول إلا في المتصفح الذي بدأه. NIST SP 800-63B-4 القسم 3.1.3.1: \"Email SHALL NOT be used for out-of-band authentication\"، لأن صندوق البريد قد يُوصَل إليه بكلمة مرور وحدها، وقد يُقرأ البريد أثناء عبوره أو يُغيَّر مساره. متوقف افتراضيًا لهذا السبب؛ لا يُشغَّل إلا حيث يكون ذلك خطرًا مقبولًا."
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailLinkSecondFactor.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "رابط لمرة واحدة يُرسَل بالبريد إلى العنوان المُتحقَّق منه للشخص، ولا يُتمّ تسجيل الدخول إلا في المتصفح الذي بدأه. NIST SP 800-63B-4 القسم 3.1.3.1: \"Email SHALL NOT be used for out-of-band authentication\"، لأن صندوق البريد قد يُوصَل إليه بكلمة مرور وحدها، وقد يُقرأ البريد أثناء عبوره أو يُغيَّر مساره. متوقف افتراضيًا لهذا السبب؛ لا يُشغَّل إلا حيث يكون ذلك خطرًا مقبولًا."
+  },
+  "authn.SCHEMA.attributes.stsAuthnCertificatePrimary.what": {
+    "en": "bbf7d091b1854474",
+    "text": "شهادة عميل TLS مُتحقَّق منها: GET /tls/sign-in، أو المتابعة بشهادتك على شاشة تسجيل الدخول."
+  },
+  "authn.SCHEMA.attributes.stsAuthnKerberosPrimary.what": {
+    "en": "da71a0338fe2a8df",
+    "text": "GET /authn/spnego مع تذكرة Kerberos."
+  },
+  "authn.SCHEMA.attributes.stsAuthnWalletPrimary.what": {
+    "en": "c6b81177c7b7d944",
+    "text": "/authn/wallet ببيانات اعتماد أصدرها نطاق الثقة هذا، أو ID Token ذاتي الإصدار وفق SIOPv2 من مفتاح مُسجَّل. وبصفته عاملًا ثانيًا، المحفظة التي تُقدَّم بعد كلمة المرور."
+  },
+  "authn.SCHEMA.attributes.stsAuthnWalletSecondFactor.what": {
+    "en": "c6b81177c7b7d944",
+    "text": "/authn/wallet ببيانات اعتماد أصدرها نطاق الثقة هذا، أو ID Token ذاتي الإصدار وفق SIOPv2 من مفتاح مُسجَّل. وبصفته عاملًا ثانيًا، المحفظة التي تُقدَّم بعد كلمة المرور."
+  },
+  "authn.SCHEMA.attributes.stsAuthnFederationPrimary.what": {
+    "en": "31fc7fc7f271920b",
+    "text": "تسجيل دخول يؤكده شريك اتحاد مُعدّ."
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailCodeTtlS.what": {
+    "en": "8d18087c20d55ec4",
+    "text": "من لحظة إرساله. عشر دقائق على الأكثر، وهو حد NIST SP 800-63B-4 القسم 3.1.3.2 لسر خارج النطاق."
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailCodeAttempts.what": {
+    "en": "f01dd1453c1c4690",
+    "text": "كم رمزًا خاطئًا تقبل خطوة تسجيل دخول واحدة قبل أن تُنهى ويبدأ الشخص من جديد. تنطبق أيضًا حدود المعدّل لكل شخص ولكل شبكة."
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailResendS.what": {
+    "en": "8f53b3aeb7702554",
+    "text": "يحل رمز أو رابط جديد محل الأخير، فيتوقف الأخير عن العمل. يُرسَل ثلاثة على الأكثر لخطوة تسجيل دخول واحدة."
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailFailureLimit.what": {
+    "en": "b5c28617f88284a5",
+    "text": "يطلب NIST SP 800-63B-4 القسم 3.2.2 ألا يزيد العدد على 100. يُبلَّغ الشخص ومسؤولوه، ويعيد الشخص تشغيله من البوابة."
+  },
+  "authn.SCHEMA.attributes.stsAuthnRememberedBrowserSkipsSecondFactor.what": {
+    "en": "dc03d1b953cb0b33",
+    "text": "متوقف افتراضيًا. عند التشغيل، لا يُطلب من شخص يسجّل الدخول على متصفح اختار تذكّره أن يقدّم عامله الثاني مرة أخرى خلال المدة أدناه منذ آخر مرة قدّمه على ذلك المتصفح. لا يحدث ذلك أبدًا في وحدة تحكم المسؤول أو بوابة المستخدم أو مصحح البروتوكول؛ ولا لمسؤول؛ ولا ما دام خطر تسجيل الدخول متوسطًا أو أعلى؛ ويُعدّ تسجيل الدخول عندئذ عاملًا واحدًا لدى كل طرف معتمد — amr [\"pwd\"] وacr \"1\"، ككلمة مرور وحدها — فيُرفض للتطبيق الذي يطلب \"mfa\". يُتعرَّف على المتصفح بملف تعريف ارتباط حامل: من ينسخ ملف تعريف الارتباط يتخطى العامل الثاني أيضًا، إلى أن يُكتشَف النسخ."
+  },
+  "authn.SCHEMA.attributes.stsAuthnRememberedBrowserDays.what": {
+    "en": "c5aa4b7f04ffeb9b",
+    "text": "تُحسب من آخر مرة قدّم فيها الشخص عامله الثاني على ذلك المتصفح. بعد انتهائها يُطلب منه مرة أخرى، وتقديمه يبدأ المدة من جديد."
+  },
+  "authn.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "الغرض من الملف، للشخص التالي."
+  },
+  "authn.SCHEMA.attributes.stsAuthnPolicyMechanism.what": {
+    "en": "66db848b0bb1c58f",
+    "text": "في سياسة مصادقة مسمّاة (#1148، #1237): آلية عامل أول يسمح بها تسجيل الدخول الذي تنطبق عليه — حيث يسمّيها التطبيق (appAuthnPolicy) أو إحدى مجموعات الشخص (stsAuthnPolicy) وتكون أسبقيتها الأدنى بين المسمّاة — password أو password-mfa أو webauthn أو spnego أو wallet أو federation، قيمة واحدة لكل منها. الغياب يسمح بكل ما يسمح به نطاق الثقة."
+  },
+  "authn.SCHEMA.attributes.stsAuthnPolicySecondFactor.what": {
+    "en": "7c8e4d8b4cce7c08",
+    "text": "في سياسة مصادقة مسمّاة (#1148، #1237): عامل ثانٍ يسمح به تسجيل الدخول الذي تنطبق عليه — حيث يسمّيه التطبيق (appAuthnPolicy) أو إحدى مجموعات الشخص (stsAuthnPolicy) وتكون أسبقيته الأدنى بين المسمّاة — password أو securityKey أو totp أو recoveryCode أو emailCode أو emailLink أو wallet، قيمة واحدة لكل منها. الغياب يترك سياسة مصادقة نطاق الثقة كما هي."
+  },
+  "authn.SCHEMA.attributes.stsAuthnPolicyPrecedence.what": {
+    "en": "afff5dad656a9845",
+    "text": "في سياسة مصادقة مسمّاة (#1237): أيها تنطبق حيث تُسمّى عدة سياسات لتسجيل دخول واحد — من التطبيق (appAuthnPolicy) ومن مجموعات الشخص (stsAuthnPolicy) — الأدنى، من 1 إلى 1000، ويُحسم التعادل بالاسم. 100 عند الغياب."
+  },
+  "authn.SCHEMA.personAttributes.stsMailFactor.what": {
+    "en": "7498b88833038685",
+    "text": "أي عامل ثانٍ بالبريد اشترك فيه هذا الشخص: `code` أو `link`. عند الغياب: لا شيء. يُضبط في /portal/mfa، ويُمسح في /admin/mfa وبعد إخفاقات متتالية أكثر مما ينبغي."
+  },
+  "authn.SCHEMA.personAttributes.stsMailFactorFailures.what": {
+    "en": "b9c5e547fd47d350",
+    "text": "الرموز أو الروابط المُرسَلة بالبريد التي أخفقت تواليًا، وتُصفَّر عند النجاح. تتولى هذه الخدمة صيانتها."
+  },
+  "authn.MECHANISMS.password.label": {
+    "en": "e7cf3ef4f17c3999",
+    "text": "كلمة المرور"
+  },
+  "authn.MECHANISMS.password.what": {
+    "en": "3b32854915d0d6d0",
+    "text": "كلمة مرور على شاشة تسجيل الدخول. وبصفتها عاملًا ثانيًا فهي كلمة المرور المطلوبة بعد محفظة أو عامل أول آخر من دون كلمة مرور."
+  },
+  "authn.MECHANISMS.passkey.label": {
+    "en": "b6471f84ac5db5d7",
+    "text": "مفتاح المرور (دون كلمة مرور)"
+  },
+  "authn.MECHANISMS.passkey.what": {
+    "en": "1cab77157f5d6263",
+    "text": "أي مفتاح مرور (بيانات اعتماد WebAuthn) يملكه الشخص، ويُسجَّل دخوله من دون كلمة مرور. ليس لمفتاح المرور دور: يقول هذا الصف، عند كل تسجيل دخول، ما إذا كان يجوز لأي منها أن يكون عاملًا أول في نطاق الثقة هذا، ما لم تقل العوامل الأولى لسياسة المصادقة التي يسمّيها تطبيق (appAuthnPolicy) غير ذلك."
+  },
+  "authn.MECHANISMS.securityKey.label": {
+    "en": "7474add07b92939d",
+    "text": "مفتاح المرور (عامل ثانٍ)"
+  },
+  "authn.MECHANISMS.securityKey.what": {
+    "en": "5577b57e8d01187e",
+    "text": "أي مفتاح مرور (بيانات اعتماد WebAuthn) يملكه الشخص، ويُطلب بعد عامل أول. ليس لمفتاح المرور دور: يقول هذا الصف، عند كل تسجيل دخول، ما إذا كان يجوز لأي منها أن يكون عاملًا ثانيًا في نطاق الثقة هذا، ما لم تقل العوامل الثانية لسياسة المصادقة التي يسمّيها تطبيق (appAuthnPolicy) غير ذلك."
+  },
+  "authn.MECHANISMS.totp.label": {
+    "en": "6e6d78e296bae6dd",
+    "text": "تطبيق المصادقة (TOTP)"
+  },
+  "authn.MECHANISMS.totp.what": {
+    "en": "ea01b0588ad42047",
+    "text": "رمز لمرة واحدة وفق RFC 6238. ليس عاملًا أول أبدًا: تحتفظ هذه الخدمة بالسر المشترك نفسه الذي يحتفظ به التطبيق. عند الإيقاف هنا، لا يجوز لأحد تسجيل واحد؛ أما من يملك واحدًا بالفعل فيُطلب منه مع ذلك، لأن مفتاح إيقاف ينزل كل حساب مُسجَّل إلى كلمة المرور وحدها كان سيفعل غير ما يقول (حلّ هذا الصف محل totp.enabled، ويُبقي عقده)."
+  },
+  "authn.MECHANISMS.recoveryCode.label": {
+    "en": "5bda8302b5ecf4d3",
+    "text": "رمز الاسترداد"
+  },
+  "authn.MECHANISMS.recoveryCode.what": {
+    "en": "e93ab2adc3e581bd",
+    "text": "رمز للاستخدام مرة واحدة من مجموعة ولّدها الشخص. عند الإيقاف هنا، لا يجوز توليد مجموعة جديدة؛ والمجموعة المملوكة بالفعل تظل تعمل (حلّ هذا الصف محل backupCodes.enabled، ويُبقي عقده)."
+  },
+  "authn.MECHANISMS.emailCode.label": {
+    "en": "24c48c4f0edb8fc6",
+    "text": "رمز من ستة أرقام مُرسَل بالبريد"
+  },
+  "authn.MECHANISMS.emailCode.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "رمز من ستة أرقام يُرسَل بالبريد إلى العنوان المُتحقَّق منه للشخص. NIST SP 800-63B-4 القسم 3.1.3.1: \"Email SHALL NOT be used for out-of-band authentication\"، لأن صندوق البريد قد يُوصَل إليه بكلمة مرور وحدها، وقد يُقرأ البريد أثناء عبوره أو يُغيَّر مساره. متوقف افتراضيًا لهذا السبب؛ لا يُشغَّل إلا حيث يكون ذلك خطرًا مقبولًا."
+  },
+  "authn.MECHANISMS.emailLink.label": {
+    "en": "ebd3a120849f9c13",
+    "text": "رابط تسجيل دخول مُرسَل بالبريد"
+  },
+  "authn.MECHANISMS.emailLink.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "رابط لمرة واحدة يُرسَل بالبريد إلى العنوان المُتحقَّق منه للشخص، ولا يُتمّ تسجيل الدخول إلا في المتصفح الذي بدأه. NIST SP 800-63B-4 القسم 3.1.3.1: \"Email SHALL NOT be used for out-of-band authentication\"، لأن صندوق البريد قد يُوصَل إليه بكلمة مرور وحدها، وقد يُقرأ البريد أثناء عبوره أو يُغيَّر مساره. متوقف افتراضيًا لهذا السبب؛ لا يُشغَّل إلا حيث يكون ذلك خطرًا مقبولًا."
+  },
+  "authn.MECHANISMS.certificate.label": {
+    "en": "484883fec27a25ab",
+    "text": "شهادة عميل TLS"
+  },
+  "authn.MECHANISMS.certificate.what": {
+    "en": "bbf7d091b1854474",
+    "text": "شهادة عميل TLS مُتحقَّق منها: GET /tls/sign-in، أو المتابعة بشهادتك على شاشة تسجيل الدخول."
+  },
+  "authn.MECHANISMS.kerberos.label": {
+    "en": "a8316dcb1a42420f",
+    "text": "Kerberos (SPNEGO)"
+  },
+  "authn.MECHANISMS.kerberos.what": {
+    "en": "da71a0338fe2a8df",
+    "text": "GET /authn/spnego مع تذكرة Kerberos."
+  },
+  "authn.MECHANISMS.wallet.label": {
+    "en": "696e7476221a3382",
+    "text": "تقديم المحفظة"
+  },
+  "authn.MECHANISMS.wallet.what": {
+    "en": "c6b81177c7b7d944",
+    "text": "/authn/wallet ببيانات اعتماد أصدرها نطاق الثقة هذا، أو ID Token ذاتي الإصدار وفق SIOPv2 من مفتاح مُسجَّل. وبصفته عاملًا ثانيًا، المحفظة التي تُقدَّم بعد كلمة المرور."
+  },
+  "authn.MECHANISMS.federation.label": {
+    "en": "a96ac2d1dc7dff02",
+    "text": "شريك الاتحاد"
+  },
+  "authn.MECHANISMS.federation.what": {
+    "en": "31fc7fc7f271920b",
+    "text": "تسجيل دخول يؤكده شريك اتحاد مُعدّ."
+  },
+  "authn.nistWarning": {
+    "en": "a84b99742bf880e2",
+    "text": "NIST SP 800-63B-4 القسم 3.1.3.1: \"Email SHALL NOT be used for out-of-band authentication\"، لأن صندوق البريد قد يُوصَل إليه بكلمة مرور وحدها، وقد يُقرأ البريد أثناء عبوره أو يُغيَّر مساره. متوقف افتراضيًا لهذا السبب؛ لا يُشغَّل إلا حيث يكون ذلك خطرًا مقبولًا."
+  },
+  "authn.sentences.firstFactors": {
+    "en": "1d98bbbf6bae810b",
+    "text": "العوامل الأولى: {{list}}"
+  },
+  "authn.sentences.secondFactors": {
+    "en": "0e43f24fd8e81289",
+    "text": "العوامل الثانية: {{list}}"
+  },
+  "authn.sentences.param.none": {
+    "en": "140bedbf9c3f6d56",
+    "text": "لا شيء"
+  },
+  "authn.sentences.secondAlways": {
+    "en": "b1727eb39a8cf698",
+    "text": "يُطلب عامل ثانٍ من الجميع"
+  },
+  "authn.sentences.secondIfHeld": {
+    "en": "644fee6946608afb",
+    "text": "يُطلب عامل ثانٍ ممن يملك واحدًا"
+  },
+  "authn.sentences.adminAlways": {
+    "en": "f38bf66a5f6f79eb",
+    "text": "يجب أن يُعدّ المسؤولون واحدًا (يُعرَض واحد على المسؤول المضمّن)"
+  },
+  "authn.sentences.adminOffer": {
+    "en": "64f9643cf453bfee",
+    "text": "يُعرَض واحد في كل تسجيل دخول على المسؤولين الذين لا يملكون واحدًا"
+  },
+  "authn.sentences.adminAsked": {
+    "en": "69fccba563079867",
+    "text": "يُطلب من المسؤولين كما يُطلب من الجميع"
+  },
+  "authn.sentences.emailTtl": {
+    "en": "1a9208bd2d59b54d",
+    "text": "يبقى الرمز أو الرابط المُرسَل بالبريد صالحًا لمدة {{n}} ثانية"
+  },
+  "authn.sentences.emailTtlInactive": {
+    "en": "20f80fea7980a662",
+    "text": "يبقى الرمز أو الرابط المُرسَل بالبريد صالحًا لمدة {{n}} ثانية — غير نشط: لا يستطيع نطاق الثقة هذا إرسال البريد"
+  },
+  "kinds.serviceAccount.label": {
+    "en": "029b1070484594c2",
+    "text": "سياسة حساب الخدمة"
+  },
+  "kinds.serviceAccount.governs": {
+    "en": "dc2f42e8f87a7bcd",
+    "text": "ما يجوز لحساب الخدمة فعله — العامل الثاني، والمتصفح، وأبواب كلمة المرور — وكيف تُدوَّر كلمة مروره"
+  },
+  "kinds.serviceAccount.appliesTo": {
+    "en": "34a64ba365919802",
+    "text": "كل حساب خدمة تحكمه — تلك التي تسمّيه، وبالنسبة إلى `default` تلك التي لا تسمّي شيئًا — من المرة التالية التي يُسجَّل فيها دخوله أو يُربَط أو يُدوَّر"
+  },
+  "kinds.serviceAccount.fallsBackTo": {
+    "en": "c56187f00ea11347",
+    "text": "ملف نطاق الثقة الافتراضي حيث يوجد واحد، والإعدادات الافتراضية المضمّنة حيث لا يوجد"
+  },
+  "kinds.serviceAccount.param.noun": {
+    "en": "35eeb58fca1d2edf",
+    "text": "ملف سياسة حساب الخدمة"
+  },
+  "serviceAccount.FIELDS.exemptFromSecondFactor.label": {
+    "en": "5c60d609e3a83940",
+    "text": "حسابات الخدمة معفاة من العامل الثاني"
+  },
+  "serviceAccount.FIELDS.exemptFromSecondFactor.what": {
+    "en": "f86f6d62a8cfc303",
+    "text": "متوقف افتراضيًا. عند التشغيل، لا تنطبق متطلبات العامل الثاني في سياسة المصادقة على حساب خدمة في نطاق الثقة هذا، ولا ينطبق رفض كلمة المرور وحدها عند أبواب كلمة المرور (#101). ما زال amr الحساب يقول pwd فقط، فيُرفض ذلك لطرف معتمد يطلب أكثر. أضعف: الحساب القائم على كلمة مرور وحدها هو حساب لكل من يملك كلمة المرور."
+  },
+  "serviceAccount.FIELDS.allowBrowserSignIn.label": {
+    "en": "4ed97ae3678854cb",
+    "text": "يجوز لحسابات الخدمة تسجيل الدخول في متصفح"
+  },
+  "serviceAccount.FIELDS.allowBrowserSignIn.what": {
+    "en": "ea2f29b5622a8b61",
+    "text": "متوقف افتراضيًا. عند الإيقاف، ترفض شاشة تسجيل الدخول وبوابة المستخدم ووحدة تحكم المسؤول حساب الخدمة، أيًا كان العامل الأول الذي يقدّمه، وتحويل شخص إلى حساب خدمة يُنهي جلسات متصفحه. حساب الخدمة يستخدمه برنامج، ولا شأن لبرنامج بشاشة تسجيل الدخول."
+  },
+  "serviceAccount.FIELDS.allowLdapBind.label": {
+    "en": "6990793c25a0ff94",
+    "text": "الباب: الربط البسيط في LDAP"
+  },
+  "serviceAccount.FIELDS.allowLdapBind.what": {
+    "en": "fbe0036b12ee4f1a",
+    "text": "ربط على 389 أو 636 (RFC 4513). عند الإيقاف، تُرفض كلمة المرور الصحيحة لحساب الخدمة هناك كما تُرفض الخاطئة."
+  },
+  "serviceAccount.FIELDS.allowWsTrust.label": {
+    "en": "66d43931f786043d",
+    "text": "الباب: WS-Trust UsernameToken"
+  },
+  "serviceAccount.FIELDS.allowWsTrust.what": {
+    "en": "84fcb1e5876c5fab",
+    "text": "يُرسَل WS-Security UsernameToken إلى خدمة رمز الأمان. عند الإيقاف، تُرفض كلمة المرور الصحيحة لحساب الخدمة هناك كما تُرفض الخاطئة."
+  },
+  "serviceAccount.FIELDS.allowScim.label": {
+    "en": "069d413789335b8c",
+    "text": "الباب: SCIM HTTP Basic"
+  },
+  "serviceAccount.FIELDS.allowScim.what": {
+    "en": "499781bd5539c4db",
+    "text": "HTTP Basic عند /scim/v2 (RFC 7617). عند الإيقاف، تُرفض كلمة المرور الصحيحة لحساب الخدمة هناك كما تُرفض الخاطئة."
+  },
+  "serviceAccount.FIELDS.allowSsf.label": {
+    "en": "bc59f0c260a825d0",
+    "text": "الباب: Shared Signals HTTP Basic"
+  },
+  "serviceAccount.FIELDS.allowSsf.what": {
+    "en": "645bec420f84bb62",
+    "text": "HTTP Basic عند نقاط نهاية /ssf (RFC 7617). عند الإيقاف، تُرفض كلمة المرور الصحيحة لحساب الخدمة هناك كما تُرفض الخاطئة."
+  },
+  "serviceAccount.FIELDS.allowEst.label": {
+    "en": "259d4d38a4e9d8cc",
+    "text": "الباب: EST HTTP Basic"
+  },
+  "serviceAccount.FIELDS.allowEst.what": {
+    "en": "4c31da0052671f61",
+    "text": "HTTP Basic عند /.well-known/est (RFC 7030 القسم 3.2.3). عند الإيقاف، تُرفض كلمة المرور الصحيحة لحساب الخدمة هناك كما تُرفض الخاطئة."
+  },
+  "serviceAccount.FIELDS.allowKerberos.label": {
+    "en": "d9a91a667be2b5f9",
+    "text": "الباب: تبادل AS في Kerberos"
+  },
+  "serviceAccount.FIELDS.allowKerberos.what": {
+    "en": "18013168c7504972",
+    "text": "AS-REQ تُثبت مصادقته المسبقة مفتاح كلمة المرور (RFC 4120)، وMS-KKDCP. عند الإيقاف، تُرفض كلمة المرور الصحيحة لحساب الخدمة هناك كما تُرفض الخاطئة."
+  },
+  "serviceAccount.FIELDS.allowPasswordGrant.label": {
+    "en": "fce855bdcd0e1ba9",
+    "text": "الباب: منح كلمة المرور في OAuth 2.0"
+  },
+  "serviceAccount.FIELDS.allowPasswordGrant.what": {
+    "en": "3a460ad384d322e3",
+    "text": "grant_type=password عند نقطة نهاية الرمز (RFC 6749 القسم 4.3)، حيث يسمح نطاق الثقة بالمنح أصلًا. عند الإيقاف، تُرفض كلمة المرور الصحيحة لحساب الخدمة هناك كما تُرفض الخاطئة."
+  },
+  "serviceAccount.FIELDS.rotationEnabled.label": {
+    "en": "365f31e83a78cc6c",
+    "text": "تدوير كلمات مرور حسابات الخدمة تلقائيًا"
+  },
+  "serviceAccount.FIELDS.rotationEnabled.what": {
+    "en": "a6bb42bcd609d4c9",
+    "text": "متوقف افتراضيًا. عند التشغيل، تمنح مهمة service-accounts.rotate كل حساب خدمة يسمّي وجهة دفع كلمة مرور مولَّدة جديدة في كل فترة: تُدفع إلى الوجهة أولًا، ولا تُثبَّت تجزئتها إلا بعد نجاح الدفع، وتُحفظ كلمة المرور السابقة طوال التداخل أدناه. الدفع الفاشل لا يغيّر شيئًا. لا يمكن تشغيله ما دام نطاق الثقة هذا بلا وجهة دفع."
+  },
+  "serviceAccount.FIELDS.rotationIntervalDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "أيام"
+  },
+  "serviceAccount.FIELDS.rotationIntervalDays.label": {
+    "en": "bb5664abd72273db",
+    "text": "فترة التدوير"
+  },
+  "serviceAccount.FIELDS.rotationIntervalDays.what": {
+    "en": "11902b0df4f4b877",
+    "text": "كم تبقى كلمة مرور حساب الخدمة قبل أن تستبدلها المهمة، محسوبة من آخر تدوير (أو من آخر تغيير لكلمة مرور الحساب)."
+  },
+  "serviceAccount.FIELDS.rotationOverlapMinutes.unit": {
+    "en": "90e63d85fa1ab2c8",
+    "text": "دقائق"
+  },
+  "serviceAccount.FIELDS.rotationOverlapMinutes.label": {
+    "en": "146af6815514852b",
+    "text": "المدة التي تبقى فيها كلمة المرور السابقة صالحة"
+  },
+  "serviceAccount.FIELDS.rotationOverlapMinutes.what": {
+    "en": "0786be138e3ef0d7",
+    "text": "بعد التدوير تُقبل كلمة المرور السابقة لهذه المدة، كي لا يُرفض المستهلك الذي يتأخر في قراءة الجديدة — ولا يحسبه تقييم المخاطر تخمينًا (#226). تُحفظ مفاتيح Kerberos السابقة للمدة نفسها. 0: تتوقف كلمة المرور القديمة فورًا."
+  },
+  "serviceAccount.FIELDS.generatedLength.unit": {
+    "en": "25d939ffd0d79b73",
+    "text": "محارف"
+  },
+  "serviceAccount.FIELDS.generatedLength.label": {
+    "en": "f2c4928b6c7393e9",
+    "text": "طول كلمة المرور المُدوَّرة"
+  },
+  "serviceAccount.FIELDS.generatedLength.what": {
+    "en": "c29c222454a19a8a",
+    "text": "يستمدها مولّد سياسة كلمة المرور، فتستوفي تلك السياسة، ولا تقصر أبدًا عن حدها الأدنى للطول."
+  },
+  "serviceAccount.FIELDS.requireOwner.label": {
+    "en": "1c075e89b0a877a8",
+    "text": "يجب أن يسمّي حساب الخدمة مالكًا"
+  },
+  "serviceAccount.FIELDS.requireOwner.what": {
+    "en": "e1a95c9ce8d16909",
+    "text": "مشغّل افتراضيًا. المالك — شخص أو مجموعة في نطاق الثقة هذا — هو من يتحمّل تبعة الحساب؛ ولا يمكن حفظ حساب خدمة بدونه ما دام هذا مشغّلًا."
+  },
+  "serviceAccount.FIELDS.rotationAlarmFailures.unit": {
+    "en": "3d2200f2d590cf33",
+    "text": "إخفاقات"
+  },
+  "serviceAccount.FIELDS.rotationAlarmFailures.label": {
+    "en": "74f32eb1fa2cb6f2",
+    "text": "عمليات التدوير الفاشلة المتتالية قبل الإنذار"
+  },
+  "serviceAccount.FIELDS.rotationAlarmFailures.what": {
+    "en": "604c6f36ecb4ac58",
+    "text": "تُعاد محاولة التدوير الفاشل عند التشغيل التالي للمهمة. بعد هذا العدد على التوالي يُعرض الحساب في المراقبة → حسابات الخدمة ويُسجَّل إنذارًا (STS-SVCACCT-0042)."
+  },
+  "serviceAccount.SCHEMA.objectClasses.stsServiceAccountPolicy.what": {
+    "en": "5ef697454678b011",
+    "text": "صنف هذه الخدمة لسياسة حساب الخدمة: ما يجوز لحساب خدمة في نطاق الثقة هذا فعله وكيف تُدوَّر كلمة مروره. تُسمّى المدخلة بالملف: `cn=default`، أو ملف مسمّى يسمّيه حساب الخدمة في stsServiceAccountPolicy."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctExemptFromSecondFactor.what": {
+    "en": "f86f6d62a8cfc303",
+    "text": "متوقف افتراضيًا. عند التشغيل، لا تنطبق متطلبات العامل الثاني في سياسة المصادقة على حساب خدمة في نطاق الثقة هذا، ولا ينطبق رفض كلمة المرور وحدها عند أبواب كلمة المرور (#101). ما زال amr الحساب يقول pwd فقط، فيُرفض ذلك لطرف معتمد يطلب أكثر. أضعف: الحساب القائم على كلمة مرور وحدها هو حساب لكل من يملك كلمة المرور."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowBrowserSignIn.what": {
+    "en": "ea2f29b5622a8b61",
+    "text": "متوقف افتراضيًا. عند الإيقاف، ترفض شاشة تسجيل الدخول وبوابة المستخدم ووحدة تحكم المسؤول حساب الخدمة، أيًا كان العامل الأول الذي يقدّمه، وتحويل شخص إلى حساب خدمة يُنهي جلسات متصفحه. حساب الخدمة يستخدمه برنامج، ولا شأن لبرنامج بشاشة تسجيل الدخول."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowLdapBind.what": {
+    "en": "fbe0036b12ee4f1a",
+    "text": "ربط على 389 أو 636 (RFC 4513). عند الإيقاف، تُرفض كلمة المرور الصحيحة لحساب الخدمة هناك كما تُرفض الخاطئة."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowWsTrust.what": {
+    "en": "84fcb1e5876c5fab",
+    "text": "يُرسَل WS-Security UsernameToken إلى خدمة رمز الأمان. عند الإيقاف، تُرفض كلمة المرور الصحيحة لحساب الخدمة هناك كما تُرفض الخاطئة."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowScim.what": {
+    "en": "499781bd5539c4db",
+    "text": "HTTP Basic عند /scim/v2 (RFC 7617). عند الإيقاف، تُرفض كلمة المرور الصحيحة لحساب الخدمة هناك كما تُرفض الخاطئة."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowSsf.what": {
+    "en": "645bec420f84bb62",
+    "text": "HTTP Basic عند نقاط نهاية /ssf (RFC 7617). عند الإيقاف، تُرفض كلمة المرور الصحيحة لحساب الخدمة هناك كما تُرفض الخاطئة."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowEst.what": {
+    "en": "4c31da0052671f61",
+    "text": "HTTP Basic عند /.well-known/est (RFC 7030 القسم 3.2.3). عند الإيقاف، تُرفض كلمة المرور الصحيحة لحساب الخدمة هناك كما تُرفض الخاطئة."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowKerberos.what": {
+    "en": "18013168c7504972",
+    "text": "AS-REQ تُثبت مصادقته المسبقة مفتاح كلمة المرور (RFC 4120)، وMS-KKDCP. عند الإيقاف، تُرفض كلمة المرور الصحيحة لحساب الخدمة هناك كما تُرفض الخاطئة."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowPasswordGrant.what": {
+    "en": "3a460ad384d322e3",
+    "text": "grant_type=password عند نقطة نهاية الرمز (RFC 6749 القسم 4.3)، حيث يسمح نطاق الثقة بالمنح أصلًا. عند الإيقاف، تُرفض كلمة المرور الصحيحة لحساب الخدمة هناك كما تُرفض الخاطئة."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctRotationEnabled.what": {
+    "en": "a6bb42bcd609d4c9",
+    "text": "متوقف افتراضيًا. عند التشغيل، تمنح مهمة service-accounts.rotate كل حساب خدمة يسمّي وجهة دفع كلمة مرور مولَّدة جديدة في كل فترة: تُدفع إلى الوجهة أولًا، ولا تُثبَّت تجزئتها إلا بعد نجاح الدفع، وتُحفظ كلمة المرور السابقة طوال التداخل أدناه. الدفع الفاشل لا يغيّر شيئًا. لا يمكن تشغيله ما دام نطاق الثقة هذا بلا وجهة دفع."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctRotationIntervalDays.what": {
+    "en": "11902b0df4f4b877",
+    "text": "كم تبقى كلمة مرور حساب الخدمة قبل أن تستبدلها المهمة، محسوبة من آخر تدوير (أو من آخر تغيير لكلمة مرور الحساب)."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctRotationOverlapMinutes.what": {
+    "en": "0786be138e3ef0d7",
+    "text": "بعد التدوير تُقبل كلمة المرور السابقة لهذه المدة، كي لا يُرفض المستهلك الذي يتأخر في قراءة الجديدة — ولا يحسبه تقييم المخاطر تخمينًا (#226). تُحفظ مفاتيح Kerberos السابقة للمدة نفسها. 0: تتوقف كلمة المرور القديمة فورًا."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctGeneratedLength.what": {
+    "en": "c29c222454a19a8a",
+    "text": "يستمدها مولّد سياسة كلمة المرور، فتستوفي تلك السياسة، ولا تقصر أبدًا عن حدها الأدنى للطول."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctRequireOwner.what": {
+    "en": "e1a95c9ce8d16909",
+    "text": "مشغّل افتراضيًا. المالك — شخص أو مجموعة في نطاق الثقة هذا — هو من يتحمّل تبعة الحساب؛ ولا يمكن حفظ حساب خدمة بدونه ما دام هذا مشغّلًا."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctRotationAlarmFailures.what": {
+    "en": "604c6f36ecb4ac58",
+    "text": "تُعاد محاولة التدوير الفاشل عند التشغيل التالي للمهمة. بعد هذا العدد على التوالي يُعرض الحساب في المراقبة → حسابات الخدمة ويُسجَّل إنذارًا (STS-SVCACCT-0042)."
+  },
+  "serviceAccount.SCHEMA.attributes.stsServiceAccountPrecedence.what": {
+    "en": "3bc40f48dcc93e91",
+    "text": "أي سياسة حساب خدمة مسمّاة تفوز حين تُسمّى عدة سياسات: الأدنى، من 1 إلى 1000. يسمّي حساب الخدمة سياسة واحدة، لذا فهي لا تحسم شيئًا اليوم."
+  },
+  "serviceAccount.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "الغرض من الملف، للشخص التالي."
+  },
+  "serviceAccount.DOORS.allowLdapBind.label": {
+    "en": "02f30171dcced882",
+    "text": "الربط البسيط في LDAP"
+  },
+  "serviceAccount.DOORS.allowWsTrust.label": {
+    "en": "a1d8fa9805648e7d",
+    "text": "WS-Trust UsernameToken"
+  },
+  "serviceAccount.DOORS.allowScim.label": {
+    "en": "13441836ceee258a",
+    "text": "SCIM HTTP Basic"
+  },
+  "serviceAccount.DOORS.allowSsf.label": {
+    "en": "5f0a37c29c6be8ab",
+    "text": "Shared Signals HTTP Basic"
+  },
+  "serviceAccount.DOORS.allowEst.label": {
+    "en": "90892c78280ab239",
+    "text": "EST HTTP Basic"
+  },
+  "serviceAccount.DOORS.allowKerberos.label": {
+    "en": "b707a90f8fd22d69",
+    "text": "تبادل AS في Kerberos"
+  },
+  "serviceAccount.DOORS.allowPasswordGrant.label": {
+    "en": "a55abf2085020a8c",
+    "text": "منح كلمة المرور في OAuth 2.0"
+  },
+  "serviceAccount.SELECTORS.precedence.what": {
+    "en": "3bc40f48dcc93e91",
+    "text": "أي سياسة حساب خدمة مسمّاة تفوز حين تُسمّى عدة سياسات: الأدنى، من 1 إلى 1000. يسمّي حساب الخدمة سياسة واحدة، لذا فهي لا تحسم شيئًا اليوم."
+  },
+  "serviceAccount.sentences.exempt": {
+    "en": "b26ecbca5a57dc48",
+    "text": "حسابات الخدمة معفاة من العامل الثاني"
+  },
+  "serviceAccount.sentences.notExempt": {
+    "en": "b02c592e6db99be5",
+    "text": "تخضع حسابات الخدمة لقواعد العامل الثاني التي يخضع لها الجميع"
+  },
+  "serviceAccount.sentences.browser": {
+    "en": "93b1e12955e68cb6",
+    "text": "يجوز لحسابات الخدمة تسجيل الدخول في متصفح"
+  },
+  "serviceAccount.sentences.noBrowser": {
+    "en": "63d0aee214048278",
+    "text": "تُرفض حسابات الخدمة في كل تسجيل دخول من متصفح"
+  },
+  "serviceAccount.sentences.doors": {
+    "en": "c501e87ae7952f69",
+    "text": "أبواب كلمة المرور: {{list}}"
+  },
+  "serviceAccount.sentences.param.none": {
+    "en": "140bedbf9c3f6d56",
+    "text": "لا شيء"
+  },
+  "serviceAccount.sentences.rotation": {
+    "en": "12695290fe4a7d33",
+    "text": "تُدوَّر كلمات المرور كل {{days}} يومًا، وتبقى السابقة صالحة لمدة {{minutes}} دقيقة"
+  },
+  "serviceAccount.sentences.noRotation": {
+    "en": "4ff442ba6a6ee158",
+    "text": "لا تُدوَّر كلمات المرور تلقائيًا"
+  },
+  "serviceAccount.sentences.owner": {
+    "en": "d9eff26803e4db69",
+    "text": "كل حساب خدمة يسمّي مالكًا"
+  },
+  "serviceAccount.sentences.noOwner": {
+    "en": "6ad1c61ec9cf3e86",
+    "text": "يجوز أن يخلو حساب الخدمة من مالك"
+  },
+  "kinds.passkey.label": {
+    "en": "dc0e1f0076ac175f",
+    "text": "سياسة مفتاح المرور"
+  },
+  "kinds.passkey.governs": {
+    "en": "31eeef667c347730",
+    "text": "كيف تسلك مفاتيح المرور — هل يجوز لتسجيل الدخول ألا يذكر اسم مستخدم، وما يُطلب من مفتاح الأمان أن يخزّنه"
+  },
+  "kinds.passkey.appliesTo": {
+    "en": "1e3aef415c5feb43",
+    "text": "تسجيل الدخول التالي ومفتاح المرور التالي المُسجَّل في نطاق الثقة هذا؛ ومفتاح المرور المُسجَّل بالفعل يحتفظ بما خزّنه جهاز مصادقته"
+  },
+  "kinds.passkey.fallsBackTo": {
+    "en": "c56187f00ea11347",
+    "text": "ملف نطاق الثقة الافتراضي حيث يوجد واحد، والإعدادات الافتراضية المضمّنة حيث لا يوجد"
+  },
+  "kinds.passkey.param.noun": {
+    "en": "eb904193445442cf",
+    "text": "ملف سياسة مفتاح المرور"
+  },
+  "passkey.FIELDS.allowUsernameless.label": {
+    "en": "188831dad6ee4817",
+    "text": "السماح بتسجيل الدخول بمفتاح مرور دون اسم مستخدم"
+  },
+  "passkey.FIELDS.allowUsernameless.what": {
+    "en": "474a843b37cbf2dc",
+    "text": "مشغّل افتراضيًا. عند التشغيل، تعرض شاشة تسجيل الدخول *تسجيل الدخول بمفتاح مرور* والملء التلقائي لحقل اسم المستخدم، فيطلبان من المتصفح أي بيانات اعتماد قابلة للاكتشاف لنطاق الثقة هذا (WebAuthn Level 3 القسم 5.4، `allowCredentials` فارغ) ويُسجَّل الدخول إلى الحساب الذي يسمّيه مقبض المستخدم، مع اشتراط التحقق من المستخدم وفحصه. عند الإيقاف لا يُعرض أي منهما، ويسمّي تسجيل الدخول الشخص أولًا دائمًا. يحل محل الإعداد webauthn.usernameless."
+  },
+  "passkey.FIELDS.requireUsernameless.label": {
+    "en": "c49fdea33dcb88d9",
+    "text": "اشتراط تسجيل الدخول بمفتاح مرور دون اسم مستخدم"
+  },
+  "passkey.FIELDS.requireUsernameless.what": {
+    "en": "3f8988c76401d34a",
+    "text": "متوقف افتراضيًا. عند التشغيل، يحصل التطبيق الذي آلية مصادقته مفتاح مرور ولا شيء غيره (سياسة المصادقة التي يسمّيها، appAuthnPolicy، تدرج `webauthn` وحدها) على شاشة تسجيل دخول بلا حقل اسم مستخدم: *تسجيل الدخول بمفتاح مرور* هو سبيل الدخول، ويُرفض تسجيل الدخول الذي يسمّي شخصًا. يحتاج إلى الصف أعلاه. لا يطبّق ملف `default` لنطاق الثقة ذلك على وحدة تحكم المسؤول أو المصحح أو بوابة المستخدم؛ والملف المسمّى الذي يختار ذلك التطبيق يطبّقه."
+  },
+  "passkey.FIELDS.securityKeyResidentKey.label": {
+    "en": "d2b810facc1c57f0",
+    "text": "ما يطلبه \"استخدام مفتاح أمان\" ما دام تسجيل الدخول دون اسم مستخدم مشغّلًا"
+  },
+  "passkey.FIELDS.securityKeyResidentKey.what": {
+    "en": "cccca16315fbaa97",
+    "text": "قيمة `residentKey` التي يرسلها التسجيل عبر *استخدام مفتاح أمان* (أو تسجيل لا يسمّي نوعًا) ما دام تسجيل الدخول دون اسم مستخدم مشغّلًا. وعند الإيقاف يطلب الزر دائمًا `required`، فيُنتج بيانات اعتماد قابلة للاكتشاف كما يفعل *إنشاء مفتاح مرور* (الذي يطلب `required` دائمًا). `discouraged` أو `preferred` يوفّران الخانات المقيمة القليلة في مفتاح الأمان، على حساب مفتاح يحتاج إلى اسم المستخدم لتسجيل الدخول. يحل محل الإعداد webauthn.residentKey."
+  },
+  "passkey.FIELDS.backupEligibility.label": {
+    "en": "ddcad787bb43ec66",
+    "text": "مفاتيح المرور المتزامنة (مؤهلة للنسخ الاحتياطي)"
+  },
+  "passkey.FIELDS.backupEligibility.what": {
+    "en": "f2d962cb4cf0696a",
+    "text": "`allow` (الافتراضي) يقبل أي مفتاح مرور. لا يقبل `disallow` إلا مفاتيح المرور المرتبطة بالجهاز: يُرفض مفتاح المرور الذي يقول مُصادقه إنه قابل للنسخ الاحتياطي أو للمزامنة (علامة BE، WebAuthn Level 3 القسم 6.1) عند تسجيله وعند تسجيل دخول أحد به، فيتوقف عن العمل أيضًا مفتاح مرور مُزامَن أُلحق قبل أن يرفض نطاق الثقة ذلك. لا تتغير BE أبدًا لأي بيانات اعتماد."
+  },
+  "passkey.FIELDS.enforcePinLength.label": {
+    "en": "31eb482ccf4b3fd1",
+    "text": "اشتراط حد أدنى لطول رمز PIN لمفتاح الأمان"
+  },
+  "passkey.FIELDS.enforcePinLength.what": {
+    "en": "31c7ae2d055f6bb6",
+    "text": "متوقف افتراضيًا. عند التشغيل، يطلب التسجيل من المُصادق الحد الأدنى لطول رمز PIN الخاص به (CTAP 2.1 القسم 12.4، امتداد minPinLength)، ويسجّله على المفتاح، ويرفض المفتاح الذي يقل حده الأدنى عن الصف التالي، عند التسجيل وعند كل تسجيل دخول. لا يجيب المفتاح إلا عن الأطراف المعتمدة التي هُيّئ لإخبارها (CTAP 2.1 setMinPINLength مع معرّف RP هذا)؛ أما كل مفتاح آخر، وكل مفتاح مرور على المنصة أو مُزامَن، فلا يبلّغ، ويُرفض ما لم يكن الصف الذي يلي التالي قيد التشغيل."
+  },
+  "passkey.FIELDS.minPinLength.unit": {
+    "en": "25d939ffd0d79b73",
+    "text": "أحرف"
+  },
+  "passkey.FIELDS.minPinLength.label": {
+    "en": "bd44e050db3c8cd9",
+    "text": "الحد الأدنى لطول رمز PIN لمفتاح الأمان"
+  },
+  "passkey.FIELDS.minPinLength.what": {
+    "en": "a636cf708ad6bf10",
+    "text": "أقصر رمز PIN يمكن ضبط مفتاح الأمان لقبوله، كما يبلّغ المفتاح نفسه عنه، حين يكون الصف أعلاه قيد التشغيل. بين 4 (الحد الأدنى الخاص بـ CTAP 2.1) و63."
+  },
+  "passkey.FIELDS.pinLengthOnlyIfSupported.label": {
+    "en": "ac66a26b34cdd414",
+    "text": "قبول مفتاح لا يبلّغ عن طول رمز PIN الخاص به"
+  },
+  "passkey.FIELDS.pinLengthOnlyIfSupported.what": {
+    "en": "40c28fef42d19166",
+    "text": "متوقف افتراضيًا، وهي القراءة الصارمة: ما دام طول رمز PIN مفروضًا، يُرفض المفتاح الذي لا يبلّغ عنه. عند التشغيل، يُقبل مثل هذا المفتاح ولا يُلزَم بالقاعدة إلا الحد الأدنى المبلَّغ — فلا تلزم القاعدة حينئذٍ إلا المفاتيح المهيّأة للتبليغ إلى هذا الطرف المعتمد."
+  },
+  "passkey.FIELDS.enforceAttestationAtSignIn.label": {
+    "en": "659120b1356b126b",
+    "text": "إخضاع كل تسجيل دخول لقواعد التصديق السارية"
+  },
+  "passkey.FIELDS.enforceAttestationAtSignIn.what": {
+    "en": "dcf08d219b55b2ed",
+    "text": "متوقف افتراضيًا. تُفحَص قواعد التصديق (إعدادات webauthn.attestation*: السياسة، وقائمة AAGUID، ومستوى الاعتماد وFIPS) عند تسجيل مفتاح المرور. عند التشغيل، تُفحَص مرة أخرى عند كل تسجيل دخول مقابل ما سُجّل آنذاك وFIDO Metadata Service كما هي الآن، فيتوقف عن تسجيل دخول أي شخص المفتاح الذي سُجّل قبل تشديد قاعدة، أو الذي أُبلغ منذئذٍ عن اختراق طرازه. يفشل المفتاح الذي بلا تصديق موثوق في كل قاعدة تشترط تصديقًا."
+  },
+  "passkey.FIELDS.postQuantumRequired.label": {
+    "en": "011c5d09e4f351f3",
+    "text": "اشتراط مفتاح مرور ما بعد الكم"
+  },
+  "passkey.FIELDS.postQuantumRequired.what": {
+    "en": "ba077a59ecf25ecb",
+    "text": "`off` (الافتراضي) يقبل مفتاح المرور أيًا كانت خوارزمية توقيعه. لا يقبل `sign-in` إلا مفتاح مرور ما بعد الكم، وهو الذي تكون خوارزميته ML-DSA-44 أو ML-DSA-65 أو ML-DSA-87 (RFC 9964)، حين يسجّل دخول أحد به، بوصفه بيانات الاعتماد الأولى أو العامل الثاني؛ ويجوز مع ذلك تسجيل مفتاح كلاسيكي. يرفض `registration-and-sign-in` المفتاح الكلاسيكي عند التسجيل أيضًا، ولا يعرض الإلحاق حينئذٍ إلا ML-DSA. الخوارزمية هي التي تقرّر، لا المسار الذي أُنشئ المفتاح فيه. يُرفض ما دام نطاق الثقة لا يعرض أي ML-DSA (لا تسمّي webauthn.algorithms أيًا منها، وليس أي من webauthn.pqcOnly وwebauthn.pqcAlongsideClassical قيد التشغيل)."
+  },
+  "passkey.FIELDS.postQuantumAllowCredentials.label": {
+    "en": "295b04bef9cf50bc",
+    "text": "مفاتيح المرور التي يسمّيها تسجيل الدخول حين يُشترط مفتاح ما بعد الكم"
+  },
+  "passkey.FIELDS.postQuantumAllowCredentials.what": {
+    "en": "af7666466d67e760",
+    "text": "`realm` (الافتراضي) يتبع webauthn.postQuantumAllowCredentials الخاص بنطاق الثقة. يُقرأ فقط حين يشترط postQuantumRequired مفتاح مرور ما بعد الكم عند تسجيل الدخول. يسمّي `narrow` في طلب خطوة مفتاح المرور مفاتيح المرور ما بعد الكم (ML-DSA) الخاصة بالشخص فقط، فلا يُعرض مفتاح كلاسيكي أبدًا، ويرى الشخص الذي لا يحمل جهازه سوى مفتاحه الكلاسيكي رسالة المنصة نفسها \"لم يُعثر على مفتاح مرور\". يسمّي `list-and-refuse` كل مفتاح مرور يحمله ويرفض المفتاح الكلاسيكي بعد المراسم، مع صفحة تقول إن هذا التطبيق يتطلب مفتاح مرور ما بعد الكم وأين يُضاف واحد؛ ويجوز للشخص حينئذٍ اختيار مفتاح مرور سيُرفض. يُخبَر الشخص الذي لا يحمل أي مفتاح مرور ما بعد الكم قبل أي مراسم في الحالتين. إذا تُرك خارج الحفظ، يُبقى على `realm`."
+  },
+  "passkey.FIELDS.registrationAlgorithms.label": {
+    "en": "48d2a5935e526db5",
+    "text": "الخوارزميات التي يعرضها تسجيل مفتاح المرور"
+  },
+  "passkey.FIELDS.registrationAlgorithms.what": {
+    "en": "4ff3748f6cb3a6f1",
+    "text": "`realm` (الافتراضي) يعرض webauthn.algorithms الخاص بنطاق الثقة. وإلا فخوارزميات التوقيع التي يعرضها تسجيل مفتاح المرور لأشخاص هذا الملف، بترتيب التفضيل (يصنع المُصادق أول خوارزمية يدعمها)، من الخوارزميات التي يجوز أن تسمّيها webauthn.algorithms. يجوز للصف التالي أن يضيّق القائمة أو يعيد ترتيبها، ويُرفض عند التسجيل مفتاح المرور الذي ليست خوارزميته واحدة مما يعرضه هذا الملف. إذا تُرك خارج الحفظ، يُبقى على `realm`."
+  },
+  "passkey.FIELDS.registrationMode.label": {
+    "en": "ca3432814ea1b7a3",
+    "text": "خوارزميات ما بعد الكم عند التسجيل"
+  },
+  "passkey.FIELDS.registrationMode.what": {
+    "en": "1466dbe275c566e7",
+    "text": "`realm` (الافتراضي) يتبع webauthn.pqcOnly وwebauthn.pqcAlongsideClassical. لا يعرض `pq-only` إلا ML-DSA، ويرفض إعادة المحاولة بالخوارزميات الكلاسيكية. يعرض `pq-first` خوارزمية ML-DSA أولًا والخوارزميات الكلاسيكية بعدها، حتى حيث يطلب نطاق الثقة ML-DSA فقط. لا يعرض `classical-only` أي ML-DSA ولا مفتاح مرور ما بعد الكم إلى جانب مفتاح كلاسيكي، للأشخاص الذين تفشل أجهزتهم في تسجيل ML-DSA. يُرفض مع postQuantumRequired بقيمة غير off، أو مع تعيين attestationAlgorithms (classical-only)، وحيث لا تسمّي الخوارزميات المعروضة أي ML-DSA (pq-only وpq-first). إذا تُرك خارج الحفظ، يُبقى على `realm`."
+  },
+  "passkey.FIELDS.lanes.label": {
+    "en": "bfb331a11d2bc27a",
+    "text": "مفتاح مرور كلاسيكي ومفتاح مرور ما بعد الكم جنبًا إلى جنب"
+  },
+  "passkey.FIELDS.lanes.what": {
+    "en": "8bc141c02b65ba53",
+    "text": "`realm` (الافتراضي) يتبع webauthn.pqcAlongsideClassical. يمنح `both` أشخاص هذا الملف مفتاح مرور كلاسيكيًا ومفتاح مرور ما بعد الكم جنبًا إلى جنب، لكل منهما معرّف المستخدم الخاص به، حيثما كان إعداد نطاق الثقة متوقفًا؛ ويمنحهم `one` مسارًا واحدًا حيثما كان قيد التشغيل. ما يزال webauthn.pqcOnly يعني مسارًا واحدًا. يُرفض بوصفه `both` مع registrationMode بقيمة classical-only. إذا تُرك خارج الحفظ، يُبقى على `realm`."
+  },
+  "passkey.FIELDS.clientRules.label": {
+    "en": "678fdc15babf767d",
+    "text": "العملاء الذين لا يعرض لهم التسجيل أي ML-DSA"
+  },
+  "passkey.FIELDS.clientRules.what": {
+    "en": "888532a818f8776d",
+    "text": "فارغ افتراضيًا: يُعرض على كل عميل القائمة كما هي. وإلا فما يصل إلى 20 قاعدة مفصولة بـ `;`، كل منها بالصيغة `<browser> on <system>`، حيث يكون أي من الجانبين عائلة كما تسمّيها صفوف مراسم مفتاح المرور (`Chrome` أو `Firefox` أو `macOS` أو `Android`) أو `*` لأي منها، ويتبعها اختياريًا نطاق إصدار رئيسي (`141` أو `130-140` أو `130-` أو `-140`): `Firefox 140- on Linux; * on Android 13`. يعرض تسجيل مفتاح مرور من عميل مطابق القائمة من دون ML-DSA (ES256 وRS256 حيث لا يبقى شيء). لا يُطبَّق حيث لا يُسمح بمفتاح مرور كلاسيكي — registrationMode بقيمة pq-only، أو webauthn.pqcOnly، أو postQuantumRequired بقيمة registration-and-sign-in، أو في خطوة تسجيل الدخول تحت postQuantumRequired بقيمة sign-in — ولا على مسار ما بعد الكم، ويقول صف المراسم إنه لم يُطبَّق. إذا تُرك خارج الحفظ، يُبقى على الفراغ."
+  },
+  "passkey.FIELDS.passkeyHints.label": {
+    "en": "7445bda72b06c415",
+    "text": "التلميحات التي يرسلها \"إنشاء مفتاح مرور\""
+  },
+  "passkey.FIELDS.passkeyHints.what": {
+    "en": "2ffa66aabab7a053",
+    "text": "تلميحات WebAuthn (المستوى 3 القسم 5.4.8) التي يرسلها *إنشاء مفتاح مرور* في البوابة، بالترتيب، من security-key وclient-device وhybrid، أو لا شيء. تخبر المتصفح بأي طريقة يصنع بها مفتاح المرور ليبدأ. لا يجوز أن يناقض تلميح الإعداد webauthn.authenticatorAttachment: فـ client-device يقتضي platform، وsecurity-key وhybrid يقتضيان cross-platform."
+  },
+  "passkey.FIELDS.securityKeyHints.label": {
+    "en": "3fc22a70aa3a1e64",
+    "text": "التلميحات التي يرسلها \"استخدام مفتاح أمان\""
+  },
+  "passkey.FIELDS.securityKeyHints.what": {
+    "en": "6046d3d271c529e3",
+    "text": "التلميحات التي يرسلها *استخدام مفتاح أمان*، بالترتيب، أو لا شيء. يطلب الزر مُصادقًا cross-platform، لذا يناقضه client-device ويُرفض."
+  },
+  "passkey.FIELDS.signInHints.label": {
+    "en": "8b1e49c893942fb6",
+    "text": "التلميحات التي يرسلها تسجيل الدخول بمفتاح المرور"
+  },
+  "passkey.FIELDS.signInHints.what": {
+    "en": "c748dd352b0e7351",
+    "text": "التلميحات التي ترسلها مراسم تسجيل الدخول — خطوة مفتاح المرور، وتسجيل الدخول من دون اسم مستخدم وملؤه التلقائي — بالترتيب، أو لا شيء (الافتراضي: يعرض المتصفح كل طريقة يعرفها)."
+  },
+  "passkey.FIELDS.enterpriseSerialAttribute.label": {
+    "en": "ca9457e38cd942c9",
+    "text": "سمة الدليل التي تحمل الأرقام التسلسلية لمفاتيح أمان الشخص"
+  },
+  "passkey.FIELDS.enterpriseSerialAttribute.what": {
+    "en": "8d6a1de9c96bcb9e",
+    "text": "فارغ افتراضيًا: لا يُفحَص أي رقم تسلسلي. عند ضبطه على سمة من مدخل الشخص (مثل `serialNumber`، التي قد تحمل عدة قيم)، لا يُسجَّل مفتاح الأمان إلا بتصديق مؤسسي موثوق تسمّي شهادته رقمًا تسلسليًا لجهاز هو إحدى قيم ذلك الشخص. يحتاج إلى ضبط webauthn.attestation على enterprise، وإلى تهيئة المورّد أو المنصة لإصدار التصديق المؤسسي إلى معرّف RP هذا؛ ومن دون ذلك يرسل المتصفح تصديقًا عاديًا ويُرفض كل تسجيل."
+  },
+  "passkey.FIELDS.userDisplayName.label": {
+    "en": "357a8bc7ceaa1129",
+    "text": "الاسم الذي تعرضه مطالبة مفتاح المرور للشخص"
+  },
+  "passkey.FIELDS.userDisplayName.what": {
+    "en": "651c5aad674eb937",
+    "text": "فارغ افتراضيًا: الاسم الذي يعرفه تسجيل الدخول، وإلا فاسم المستخدم. وإلا فما يصل إلى ست سمات من الدليل بالترتيب، مفصولة بفواصل؛ ومجموعة سمات مفصولة بمسافات (givenName sn) تُضم قيمها. تصبح الأولى التي لكل سمة منها قيمة هي user.displayName (WebAuthn Level 3 القسم 5.4.3)، بعد إزالة محارف التحكم ومحارف تغيير الاتجاه، وبما لا يزيد على 64 حرفًا. اسم المستخدم هو دائمًا user.name."
+  },
+  "passkey.FIELDS.rpNameExtras.label": {
+    "en": "0b47e644dc75f546",
+    "text": "ما تضيفه مطالبة مفتاح المرور إلى اسم الخدمة"
+  },
+  "passkey.FIELDS.rpNameExtras.what": {
+    "en": "2a3d634aa9fad92e",
+    "text": "`none` (الافتراضي) يعرض webauthn.rpName وحده. يُلحق `realm` أو `organisation` أو `realm-and-organisation` اسم نطاق الثقة و/أو saml.organizationName، حتى يستطيع شخص لديه حسابات في عدة نطاقات ثقة أن يميّز المطالبات بعضها عن بعض."
+  },
+  "passkey.FIELDS.credentialLabel.label": {
+    "en": "b9fb7cb97e11075a",
+    "text": "الاسم الذي يُعطى لمفتاح مرور جديد"
+  },
+  "passkey.FIELDS.credentialLabel.what": {
+    "en": "38c780430a415a35",
+    "text": "فارغ افتراضيًا: اسم المزوّد، وإلا \"مفتاح المرور\" أو \"مفتاح الأمان\". وإلا فهذا النص، مع ملء {provider} و{kind}، وبما لا يزيد على 60 حرفًا. يجوز للشخص إعادة تسميته بعد ذلك، كما هو الحال دائمًا."
+  },
+  "passkey.FIELDS.aggregateDevices.label": {
+    "en": "f019bccb105e42cd",
+    "text": "عرض مفاتيح مرور الشخص كخيار تسجيل دخول واحد"
+  },
+  "passkey.FIELDS.aggregateDevices.what": {
+    "en": "128deae048d6edbf",
+    "text": "قيد التشغيل افتراضيًا: خطوة واحدة \"استخدام مفتاح المرور\" يسرد طلبها كل مفتاح من مفاتيح مرور الشخص، ويعرض المتصفح أيها كان حاضرًا. عند الإيقاف، يُعرض على الشخص الذي لديه أكثر من مفتاح خيار لكل مفتاح مرور، باسمه، ولا يسمّي الطلب إلا ذلك المفتاح."
+  },
+  "passkey.FIELDS.recoveryAssurance.label": {
+    "en": "f1e6580ee3b2ee9c",
+    "text": "استرداد الحساب لشخص يحمل مفتاح مرور"
+  },
+  "passkey.FIELDS.recoveryAssurance.what": {
+    "en": "bdbb83ca7b2a2c48",
+    "text": "`any` افتراضيًا في التطوير، و`not-weaker` في المنتج. هل يعيد سبيل العودة إلى الحساب الذي لا يطلب مفتاح مرور — رابط إعادة تعيين كلمة المرور، أو رابط تفعيل، أو رمز استرداد، أو رمز أو رابط مُرسَل بالبريد — الوصول لشخص يحمل واحدًا. `any`: فورًا. `not-weaker`: لا يبلغ تسجيل الدخول الأول بعده الذي ليس تسجيل دخول بمفتاح مرور أي تطبيق؛ ويسجّل الشخص مفتاح مرور يلبّي هذه السياسة ويسجّل الدخول به. `operator-only`: كـ not-weaker، وتُرفض أبواب الخدمة الذاتية (نموذج نسيت كلمة المرور، أو رمز استرداد، أو رمز أو رابط مُرسَل بالبريد عند تسجيل الدخول)؛ ولا يبقى إلا رابط إعادة التعيين من المسؤول، أو كلمة المرور المولَّدة، أو رابط التفعيل. إذا تُرك خارج الحفظ، يُبقى على الافتراضي المضمّن."
+  },
+  "passkey.FIELDS.attestationAlgorithms.label": {
+    "en": "fe72fed238e39ede",
+    "text": "الخوارزميات التي يجب أن يُوقَّع بها تصديق مفتاح المرور"
+  },
+  "passkey.FIELDS.attestationAlgorithms.what": {
+    "en": "cb4ed83be3a69177",
+    "text": "`none` افتراضيًا: يُقبل التصديق أيًا كان ما وُقّع به. وإلا فقائمة من post-quantum وml-dsa-44 وml-dsa-65 وml-dsa-87 وslh-dsa وcomposite-ml-dsa: لا يُسجَّل مفتاح المرور إلا بتصديق موثوق يحمل شهادة، يكون توقيع بيانه والتوقيع على كل شهادة في سلسلتها، من الورقة إلى مرساة الثقة، كل واحد مما تسمح به القائمة (`post-quantum` يسمح بأي توقيع ML-DSA أو SLH-DSA أو ML-DSA مركّب). يُرفض التصديقان Self وnone، إذ لا شهادة لهما. مع تشغيل enforceAttestationAtSignIn، يُخضع كل تسجيل دخول مفتاح المرور له بما سجّله تسجيله، فيتوقف عن العمل مفتاح مرور سُجّل قبل القاعدة. هذه خوارزمية التصديق، لا خوارزمية مفتاح المرور نفسه (postQuantumRequired). إذا تُرك خارج الحفظ، يُبقى على الافتراضي المضمّن."
+  },
+  "passkey.FIELDS.adminEnrolment.label": {
+    "en": "73fd6ffe6660cf3f",
+    "text": "السماح للمسؤول بإلحاق مفتاح مرور لشخص"
+  },
+  "passkey.FIELDS.adminEnrolment.what": {
+    "en": "9e395e59fd838fcf",
+    "text": "`off` افتراضيًا. يتيح `on` لمسؤول يحمل دور Admin Write في وحدة التحكم إلحاق مفتاح مرور لشخص ينطبق عليه هذا الملف، من صفحة الشخص في وحدة التحكم أو /admin-api: تجري مراسم التسجيل في متصفح المسؤول نفسه، أمام مُصادق يحمله (مفتاح أمان سيُسلَّم إليه، مثلًا)، تحت معرّف المستخدم الخاص بالشخص، وتُتحقق منها تمامًا كما يُتحقق من تسجيل الشخص نفسه — التصديق، والخوارزميات، وقواعد تسجيل هذه السياسة. لا يمكن استيراد أي شيء صُنع في مكان آخر. يسجّل المفتاح أي مسؤول ألحَقه ومتى، ويُخبَر الشخص. إذا تُرك خارج الحفظ، يُبقى على الافتراضي المضمّن."
+  },
+  "passkey.FIELDS.deviceBoundRequired.label": {
+    "en": "19194c290aaa3903",
+    "text": "اشتراط جلسة مرتبطة بالجهاز"
+  },
+  "passkey.FIELDS.deviceBoundRequired.what": {
+    "en": "5098a9645fefe2ff",
+    "text": "متوقف افتراضيًا. عند التشغيل، ينتظر الإصدار لتطبيق يغطيه هذا الملف حتى تُربط جلسة تسجيل الدخول بمفتاح المتصفح، ويُرفض إذا تخطى المتصفح ذلك التسجيل أو انقضت المهلة من دون ربط. لا ترفض هذه الصف جلسة لم يُعرض عليها التسجيل قط. يُرفض ما دام authn.deviceBoundSessions متوقفًا."
+  },
+  "passkey.SCHEMA.objectClasses.stsPasskeyPolicy.what": {
+    "en": "44bab556bd6240cc",
+    "text": "صنف هذه الخدمة لسياسة مفتاح المرور: كيف تتصرف مفاتيح المرور في نطاق الثقة هذا. يُسمّى المدخل بالملف (`cn=default`)."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyAllowUsernameless.what": {
+    "en": "474a843b37cbf2dc",
+    "text": "قيد التشغيل افتراضيًا. عند التشغيل، تعرض شاشة تسجيل الدخول *تسجيل الدخول بمفتاح مرور* والملء التلقائي لحقل اسم المستخدم، وهما يطلبان من المتصفح أي بيانات اعتماد قابلة للاكتشاف لنطاق الثقة هذا (WebAuthn Level 3 القسم 5.4، مع `allowCredentials` فارغ) ويسجّلان الدخول إلى الحساب الذي يسمّيه معرّف المستخدم، مع كون التحقق من المستخدم مطلوبًا ومفحوصًا. عند الإيقاف، لا يُعرض أي منهما، ويسمّي تسجيل الدخول الشخص أولًا دائمًا. يحل محل الإعداد webauthn.usernameless."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyRequireUsernameless.what": {
+    "en": "3f8988c76401d34a",
+    "text": "متوقف افتراضيًا. عند التشغيل، يحصل التطبيق الذي تكون آلية مصادقته مفتاح مرور ولا شيء غيره (سياسة المصادقة التي يسمّيها، appAuthnPolicy، تسرد `webauthn` وحده) على شاشة تسجيل دخول بلا حقل لاسم المستخدم: *تسجيل الدخول بمفتاح مرور* هو سبيل الدخول، ويُرفض تسجيل الدخول الذي يسمّي شخصًا. يحتاج إلى الصف أعلاه. لا يطبّق ملف `default` الخاص بنطاق الثقة ذلك على وحدة تحكم المسؤول، ولا على المصحّح، ولا على بوابة المستخدم؛ ويفعله ملف مسمّى يختار ذلك التطبيق."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeySecurityKeyResidentKey.what": {
+    "en": "cccca16315fbaa97",
+    "text": "قيمة `residentKey` التي يرسلها إلحاق عبر *استخدام مفتاح أمان* (أو إلحاق لا يسمّي نوعًا) حين يكون تسجيل الدخول من دون اسم مستخدم قيد التشغيل. حين يكون متوقفًا يطلب الزر دائمًا `required`، فيصنع بيانات اعتماد قابلة للاكتشاف كما يفعل *إنشاء مفتاح مرور* (الذي يطلب `required` دائمًا). يوفّر `discouraged` أو `preferred` خانات مفتاح الأمان المقيمة القليلة، مقابل مفتاح يحتاج إلى اسم المستخدم لتسجيل الدخول. يحل محل الإعداد webauthn.residentKey."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyBackupEligibility.what": {
+    "en": "f2d962cb4cf0696a",
+    "text": "`allow` (الافتراضي) يقبل أي مفتاح مرور. لا يقبل `disallow` إلا مفاتيح المرور المرتبطة بالجهاز: يُرفض مفتاح المرور الذي يقول مُصادقه إنه قابل للنسخ الاحتياطي أو للمزامنة (علامة BE، WebAuthn Level 3 القسم 6.1) عند تسجيله وعند تسجيل دخول أحد به، فيتوقف عن العمل أيضًا مفتاح مرور مُزامَن أُلحق قبل أن يرفض نطاق الثقة ذلك. لا تتغير BE أبدًا لأي بيانات اعتماد."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyEnforcePinLength.what": {
+    "en": "31c7ae2d055f6bb6",
+    "text": "متوقف افتراضيًا. عند التشغيل، يطلب التسجيل من المُصادق الحد الأدنى لطول رمز PIN الخاص به (CTAP 2.1 القسم 12.4، امتداد minPinLength)، ويسجّله على المفتاح، ويرفض المفتاح الذي يقل حده الأدنى عن الصف التالي، عند التسجيل وعند كل تسجيل دخول. لا يجيب المفتاح إلا عن الأطراف المعتمدة التي هُيّئ لإخبارها (CTAP 2.1 setMinPINLength مع معرّف RP هذا)؛ أما كل مفتاح آخر، وكل مفتاح مرور على المنصة أو مُزامَن، فلا يبلّغ، ويُرفض ما لم يكن الصف الذي يلي التالي قيد التشغيل."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyMinPinLength.what": {
+    "en": "a636cf708ad6bf10",
+    "text": "أقصر رمز PIN يمكن ضبط مفتاح الأمان لقبوله، كما يبلّغ المفتاح نفسه عنه، حين يكون الصف أعلاه قيد التشغيل. بين 4 (الحد الأدنى الخاص بـ CTAP 2.1) و63."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyPinLengthOnlyIfSupported.what": {
+    "en": "40c28fef42d19166",
+    "text": "متوقف افتراضيًا، وهي القراءة الصارمة: ما دام طول رمز PIN مفروضًا، يُرفض المفتاح الذي لا يبلّغ عنه. عند التشغيل، يُقبل مثل هذا المفتاح ولا يُلزَم بالقاعدة إلا الحد الأدنى المبلَّغ — فلا تلزم القاعدة حينئذٍ إلا المفاتيح المهيّأة للتبليغ إلى هذا الطرف المعتمد."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyEnforceAttestationAtSignIn.what": {
+    "en": "dcf08d219b55b2ed",
+    "text": "متوقف افتراضيًا. تُفحَص قواعد التصديق (إعدادات webauthn.attestation*: السياسة، وقائمة AAGUID، ومستوى الاعتماد وFIPS) عند تسجيل مفتاح المرور. عند التشغيل، تُفحَص مرة أخرى عند كل تسجيل دخول مقابل ما سُجّل آنذاك وFIDO Metadata Service كما هي الآن، فيتوقف عن تسجيل دخول أي شخص المفتاح الذي سُجّل قبل تشديد قاعدة، أو الذي أُبلغ منذئذٍ عن اختراق طرازه. يفشل المفتاح الذي بلا تصديق موثوق في كل قاعدة تشترط تصديقًا."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyPostQuantumRequired.what": {
+    "en": "ba077a59ecf25ecb",
+    "text": "`off` (الافتراضي) يقبل مفتاح المرور أيًا كانت خوارزمية توقيعه. لا يقبل `sign-in` إلا مفتاح مرور ما بعد الكم، وهو الذي تكون خوارزميته ML-DSA-44 أو ML-DSA-65 أو ML-DSA-87 (RFC 9964)، حين يسجّل دخول أحد به، بوصفه بيانات الاعتماد الأولى أو العامل الثاني؛ ويجوز مع ذلك تسجيل مفتاح كلاسيكي. يرفض `registration-and-sign-in` المفتاح الكلاسيكي عند التسجيل أيضًا، ولا يعرض الإلحاق حينئذٍ إلا ML-DSA. الخوارزمية هي التي تقرّر، لا المسار الذي أُنشئ المفتاح فيه. يُرفض ما دام نطاق الثقة لا يعرض أي ML-DSA (لا تسمّي webauthn.algorithms أيًا منها، وليس أي من webauthn.pqcOnly وwebauthn.pqcAlongsideClassical قيد التشغيل)."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyPostQuantumAllowCredentials.what": {
+    "en": "af7666466d67e760",
+    "text": "`realm` (الافتراضي) يتبع webauthn.postQuantumAllowCredentials الخاص بنطاق الثقة. يُقرأ فقط حين يشترط postQuantumRequired مفتاح مرور ما بعد الكم عند تسجيل الدخول. يسمّي `narrow` في طلب خطوة مفتاح المرور مفاتيح المرور ما بعد الكم (ML-DSA) الخاصة بالشخص فقط، فلا يُعرض مفتاح كلاسيكي أبدًا، ويرى الشخص الذي لا يحمل جهازه سوى مفتاحه الكلاسيكي رسالة المنصة نفسها \"لم يُعثر على مفتاح مرور\". يسمّي `list-and-refuse` كل مفتاح مرور يحمله ويرفض المفتاح الكلاسيكي بعد المراسم، مع صفحة تقول إن هذا التطبيق يتطلب مفتاح مرور ما بعد الكم وأين يُضاف واحد؛ ويجوز للشخص حينئذٍ اختيار مفتاح مرور سيُرفض. يُخبَر الشخص الذي لا يحمل أي مفتاح مرور ما بعد الكم قبل أي مراسم في الحالتين. إذا تُرك خارج الحفظ، يُبقى على `realm`."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyRegistrationAlgorithms.what": {
+    "en": "4ff3748f6cb3a6f1",
+    "text": "`realm` (الافتراضي) يعرض webauthn.algorithms الخاص بنطاق الثقة. وإلا فخوارزميات التوقيع التي يعرضها تسجيل مفتاح المرور لأشخاص هذا الملف، بترتيب التفضيل (يصنع المُصادق أول خوارزمية يدعمها)، من الخوارزميات التي يجوز أن تسمّيها webauthn.algorithms. يجوز للصف التالي أن يضيّق القائمة أو يعيد ترتيبها، ويُرفض عند التسجيل مفتاح المرور الذي ليست خوارزميته واحدة مما يعرضه هذا الملف. إذا تُرك خارج الحفظ، يُبقى على `realm`."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyRegistrationMode.what": {
+    "en": "1466dbe275c566e7",
+    "text": "`realm` (الافتراضي) يتبع webauthn.pqcOnly وwebauthn.pqcAlongsideClassical. لا يعرض `pq-only` إلا ML-DSA، ويرفض إعادة المحاولة بالخوارزميات الكلاسيكية. يعرض `pq-first` خوارزمية ML-DSA أولًا والخوارزميات الكلاسيكية بعدها، حتى حيث يطلب نطاق الثقة ML-DSA فقط. لا يعرض `classical-only` أي ML-DSA ولا مفتاح مرور ما بعد الكم إلى جانب مفتاح كلاسيكي، للأشخاص الذين تفشل أجهزتهم في تسجيل ML-DSA. يُرفض مع postQuantumRequired بقيمة غير off، أو مع تعيين attestationAlgorithms (classical-only)، وحيث لا تسمّي الخوارزميات المعروضة أي ML-DSA (pq-only وpq-first). إذا تُرك خارج الحفظ، يُبقى على `realm`."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyLanes.what": {
+    "en": "8bc141c02b65ba53",
+    "text": "`realm` (الافتراضي) يتبع webauthn.pqcAlongsideClassical. يمنح `both` أشخاص هذا الملف مفتاح مرور كلاسيكيًا ومفتاح مرور ما بعد الكم جنبًا إلى جنب، لكل منهما معرّف المستخدم الخاص به، حيثما كان إعداد نطاق الثقة متوقفًا؛ ويمنحهم `one` مسارًا واحدًا حيثما كان قيد التشغيل. ما يزال webauthn.pqcOnly يعني مسارًا واحدًا. يُرفض بوصفه `both` مع registrationMode بقيمة classical-only. إذا تُرك خارج الحفظ، يُبقى على `realm`."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyClientRules.what": {
+    "en": "888532a818f8776d",
+    "text": "فارغ افتراضيًا: يُعرض على كل عميل القائمة كما هي. وإلا فما يصل إلى 20 قاعدة مفصولة بـ `;`، كل منها بالصيغة `<browser> on <system>`، حيث يكون أي من الجانبين عائلة كما تسمّيها صفوف مراسم مفتاح المرور (`Chrome` أو `Firefox` أو `macOS` أو `Android`) أو `*` لأي منها، ويتبعها اختياريًا نطاق إصدار رئيسي (`141` أو `130-140` أو `130-` أو `-140`): `Firefox 140- on Linux; * on Android 13`. يعرض تسجيل مفتاح مرور من عميل مطابق القائمة من دون ML-DSA (ES256 وRS256 حيث لا يبقى شيء). لا يُطبَّق حيث لا يُسمح بمفتاح مرور كلاسيكي — registrationMode بقيمة pq-only، أو webauthn.pqcOnly، أو postQuantumRequired بقيمة registration-and-sign-in، أو في خطوة تسجيل الدخول تحت postQuantumRequired بقيمة sign-in — ولا على مسار ما بعد الكم، ويقول صف المراسم إنه لم يُطبَّق. إذا تُرك خارج الحفظ، يُبقى على الفراغ."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
+    "en": "2ffa66aabab7a053",
+    "text": "تلميحات WebAuthn (المستوى 3 القسم 5.4.8) التي يرسلها *إنشاء مفتاح مرور* في البوابة، بالترتيب، من security-key وclient-device وhybrid، أو لا شيء. تخبر المتصفح بأي طريقة يصنع بها مفتاح المرور ليبدأ. لا يجوز أن يناقض تلميح الإعداد webauthn.authenticatorAttachment: فـ client-device يقتضي platform، وsecurity-key وhybrid يقتضيان cross-platform."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyHintsSecurityKey.what": {
+    "en": "6046d3d271c529e3",
+    "text": "التلميحات التي يرسلها *استخدام مفتاح أمان*، بالترتيب، أو لا شيء. يطلب الزر مُصادقًا cross-platform، لذا يناقضه client-device ويُرفض."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyHintsSignIn.what": {
+    "en": "c748dd352b0e7351",
+    "text": "التلميحات التي ترسلها مراسم تسجيل الدخول — خطوة مفتاح المرور، وتسجيل الدخول من دون اسم مستخدم وملؤه التلقائي — بالترتيب، أو لا شيء (الافتراضي: يعرض المتصفح كل طريقة يعرفها)."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyEnterpriseSerialAttribute.what": {
+    "en": "8d6a1de9c96bcb9e",
+    "text": "فارغ افتراضيًا: لا يُفحَص أي رقم تسلسلي. عند ضبطه على سمة من مدخل الشخص (مثل `serialNumber`، التي قد تحمل عدة قيم)، لا يُسجَّل مفتاح الأمان إلا بتصديق مؤسسي موثوق تسمّي شهادته رقمًا تسلسليًا لجهاز هو إحدى قيم ذلك الشخص. يحتاج إلى ضبط webauthn.attestation على enterprise، وإلى تهيئة المورّد أو المنصة لإصدار التصديق المؤسسي إلى معرّف RP هذا؛ ومن دون ذلك يرسل المتصفح تصديقًا عاديًا ويُرفض كل تسجيل."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyUserDisplayName.what": {
+    "en": "651c5aad674eb937",
+    "text": "فارغ افتراضيًا: الاسم الذي يعرفه تسجيل الدخول، وإلا فاسم المستخدم. وإلا فما يصل إلى ست سمات من الدليل بالترتيب، مفصولة بفواصل؛ ومجموعة سمات مفصولة بمسافات (givenName sn) تُضم قيمها. تصبح الأولى التي لكل سمة منها قيمة هي user.displayName (WebAuthn Level 3 القسم 5.4.3)، بعد إزالة محارف التحكم ومحارف تغيير الاتجاه، وبما لا يزيد على 64 حرفًا. اسم المستخدم هو دائمًا user.name."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyRpNameExtras.what": {
+    "en": "2a3d634aa9fad92e",
+    "text": "`none` (الافتراضي) يعرض webauthn.rpName وحده. يُلحق `realm` أو `organisation` أو `realm-and-organisation` اسم نطاق الثقة و/أو saml.organizationName، حتى يستطيع شخص لديه حسابات في عدة نطاقات ثقة أن يميّز المطالبات بعضها عن بعض."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyCredentialLabel.what": {
+    "en": "38c780430a415a35",
+    "text": "فارغ افتراضيًا: اسم المزوّد، وإلا \"مفتاح المرور\" أو \"مفتاح الأمان\". وإلا فهذا النص، مع ملء {provider} و{kind}، وبما لا يزيد على 60 حرفًا. يجوز للشخص إعادة تسميته بعد ذلك، كما هو الحال دائمًا."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyAggregateDevices.what": {
+    "en": "128deae048d6edbf",
+    "text": "قيد التشغيل افتراضيًا: خطوة واحدة \"استخدام مفتاح المرور\" يسرد طلبها كل مفتاح من مفاتيح مرور الشخص، ويعرض المتصفح أيها كان حاضرًا. عند الإيقاف، يُعرض على الشخص الذي لديه أكثر من مفتاح خيار لكل مفتاح مرور، باسمه، ولا يسمّي الطلب إلا ذلك المفتاح."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyRecoveryAssurance.what": {
+    "en": "bdbb83ca7b2a2c48",
+    "text": "`any` افتراضيًا في التطوير، و`not-weaker` في المنتج. هل يعيد سبيل العودة إلى الحساب الذي لا يطلب مفتاح مرور — رابط إعادة تعيين كلمة المرور، أو رابط تفعيل، أو رمز استرداد، أو رمز أو رابط مُرسَل بالبريد — الوصول لشخص يحمل واحدًا. `any`: فورًا. `not-weaker`: لا يبلغ تسجيل الدخول الأول بعده الذي ليس تسجيل دخول بمفتاح مرور أي تطبيق؛ ويسجّل الشخص مفتاح مرور يلبّي هذه السياسة ويسجّل الدخول به. `operator-only`: كـ not-weaker، وتُرفض أبواب الخدمة الذاتية (نموذج نسيت كلمة المرور، أو رمز استرداد، أو رمز أو رابط مُرسَل بالبريد عند تسجيل الدخول)؛ ولا يبقى إلا رابط إعادة التعيين من المسؤول، أو كلمة المرور المولَّدة، أو رابط التفعيل. إذا تُرك خارج الحفظ، يُبقى على الافتراضي المضمّن."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyAttestationAlgorithms.what": {
+    "en": "cb4ed83be3a69177",
+    "text": "`none` افتراضيًا: يُقبل التصديق أيًا كان ما وُقّع به. وإلا فقائمة من post-quantum وml-dsa-44 وml-dsa-65 وml-dsa-87 وslh-dsa وcomposite-ml-dsa: لا يُسجَّل مفتاح المرور إلا بتصديق موثوق يحمل شهادة، يكون توقيع بيانه والتوقيع على كل شهادة في سلسلتها، من الورقة إلى مرساة الثقة، كل واحد مما تسمح به القائمة (`post-quantum` يسمح بأي توقيع ML-DSA أو SLH-DSA أو ML-DSA مركّب). يُرفض التصديقان Self وnone، إذ لا شهادة لهما. مع تشغيل enforceAttestationAtSignIn، يُخضع كل تسجيل دخول مفتاح المرور له بما سجّله تسجيله، فيتوقف عن العمل مفتاح مرور سُجّل قبل القاعدة. هذه خوارزمية التصديق، لا خوارزمية مفتاح المرور نفسه (postQuantumRequired). إذا تُرك خارج الحفظ، يُبقى على الافتراضي المضمّن."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyAdminEnrolment.what": {
+    "en": "9e395e59fd838fcf",
+    "text": "`off` افتراضيًا. يتيح `on` لمسؤول يحمل دور Admin Write في وحدة التحكم إلحاق مفتاح مرور لشخص ينطبق عليه هذا الملف، من صفحة الشخص في وحدة التحكم أو /admin-api: تجري مراسم التسجيل في متصفح المسؤول نفسه، أمام مُصادق يحمله (مفتاح أمان سيُسلَّم إليه، مثلًا)، تحت معرّف المستخدم الخاص بالشخص، وتُتحقق منها تمامًا كما يُتحقق من تسجيل الشخص نفسه — التصديق، والخوارزميات، وقواعد تسجيل هذه السياسة. لا يمكن استيراد أي شيء صُنع في مكان آخر. يسجّل المفتاح أي مسؤول ألحَقه ومتى، ويُخبَر الشخص. إذا تُرك خارج الحفظ، يُبقى على الافتراضي المضمّن."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyDeviceBoundRequired.what": {
+    "en": "5098a9645fefe2ff",
+    "text": "متوقف افتراضيًا. عند التشغيل، ينتظر الإصدار لتطبيق يغطيه هذا الملف حتى تُربط جلسة تسجيل الدخول بمفتاح المتصفح، ويُرفض إذا تخطى المتصفح ذلك التسجيل أو انقضت المهلة من دون ربط. لا ترفض هذه الصف جلسة لم يُعرض عليها التسجيل قط. يُرفض ما دام authn.deviceBoundSessions متوقفًا."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyPrecedence.what": {
+    "en": "cd02467de702ad24",
+    "text": "أي سياسة مفتاح مرور مسمّاة تفوز حيث تتطابق عدة سياسات: الأدنى، من 1 إلى 1000."
+  },
+  "passkey.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "الغرض من الملف، للشخص التالي."
+  },
+  "passkey.SCHEMA.personAttributes.stsRecoveryPending.what": {
+    "en": "bb82df307a8e5b9a",
+    "text": "أعاد استرداد الوصول إلى هذا الشخص، الذي يحمل مفتاح مرور، ولم يسجّل أي مفتاح مرور دخوله منذ ذلك الحين: الباب ومتى، بالصيغة `<door> <ISO 8601 instant>`. ما دامت recoveryAssurance في سياسة مفتاح المرور بقيمة not-weaker أو operator-only، لا يبلغ تسجيل الدخول الذي ليس بمفتاح مرور أي تطبيق. تتولاه هذه الخدمة."
+  },
+  "passkey.SCHEMA.personAttributes.stsPasswordResetSource.what": {
+    "en": "110d1231fc9be5f4",
+    "text": "من أصدر رابط إعادة تعيين كلمة المرور على هذا المدخل: `self` (نموذج نسيت كلمة المرور) أو `operator` (مسؤول). يُكتب ويُمسح مع الرابط. تتولاه هذه الخدمة."
+  },
+  "passkey.SELECTORS.precedence.what": {
+    "en": "cd02467de702ad24",
+    "text": "أي سياسة مفتاح مرور مسمّاة تفوز حيث تتطابق عدة سياسات: الأدنى، من 1 إلى 1000."
+  },
+  "passkey.sentences.usernameless": {
+    "en": "e6aa1e26ce9d38a9",
+    "text": "يجوز لمفتاح مرور أن يسجّل دخول شخص من دون اسم مستخدم (التحقق من المستخدم مطلوب)"
+  },
+  "passkey.sentences.noUsernameless": {
+    "en": "1152c46cd0b86b19",
+    "text": "كل تسجيل دخول يسمّي الشخص أولًا: لا تسجيل دخول بمفتاح مرور من دون اسم مستخدم"
+  },
+  "passkey.sentences.requireUsernameless": {
+    "en": "16511f23383d8dec",
+    "text": "التطبيق الذي يسجّل الدخول بمفتاح مرور وحده لا يطلب اسم مستخدم: تسجيل الدخول بمفتاح مرور من دون اسم مستخدم هو السبيل الوحيد"
+  },
+  "passkey.sentences.createPasskey": {
+    "en": "69c8c2e4b8f32675",
+    "text": "يطلب \"إنشاء مفتاح مرور\" بيانات اعتماد قابلة للاكتشاف (residentKey مطلوب)"
+  },
+  "passkey.sentences.securityKeyRequired": {
+    "en": "c839fcbdde6e65d6",
+    "text": "يطلب \"استخدام مفتاح أمان\" القيمة residentKey {{value}}، فيصنع بيانات اعتماد قابلة للاكتشاف أيضًا"
+  },
+  "passkey.sentences.securityKeyOther": {
+    "en": "89e2cb66e39ae79a",
+    "text": "يطلب \"استخدام مفتاح أمان\" القيمة residentKey {{value}}، فقد يحتاج مفتاح أُلحق عبره إلى اسم المستخدم لتسجيل الدخول"
+  },
+  "passkey.sentences.deviceBound": {
+    "en": "a427e63844dd9c4c",
+    "text": "مفاتيح المرور المرتبطة بالجهاز فقط: يُرفض مفتاح المرور المُزامَن (المؤهّل للنسخ الاحتياطي) عند التسجيل وعند تسجيل الدخول"
+  },
+  "passkey.sentences.synced": {
+    "en": "eaf735600d87b945",
+    "text": "تُقبل مفاتيح المرور المُزامَنة (المؤهّلة للنسخ الاحتياطي)"
+  },
+  "passkey.sentences.noPinLength": {
+    "en": "8164ad4cf915e055",
+    "text": "لا يُطلب من مفتاح الأمان حد أدنى لطول رمز PIN"
+  },
+  "passkey.sentences.pinLengthAccepted": {
+    "en": "02246cda94f0a345",
+    "text": "يجب أن يبلّغ مفتاح الأمان عن حد أدنى لرمز PIN لا يقل عن {{n}} من الأحرف، عند التسجيل وعند تسجيل الدخول؛ ويُقبل المفتاح الذي لا يبلّغ"
+  },
+  "passkey.sentences.pinLengthRefused": {
+    "en": "0c6d08464be7bf6b",
+    "text": "يجب أن يبلّغ مفتاح الأمان عن حد أدنى لرمز PIN لا يقل عن {{n}} من الأحرف، عند التسجيل وعند تسجيل الدخول؛ ويُرفض المفتاح الذي لا يبلّغ"
+  },
+  "passkey.sentences.attestationAtSignIn": {
+    "en": "af2ddecba8c5bae6",
+    "text": "يُخضع كل تسجيل دخول بمفتاح مرور لقواعد التصديق السارية"
+  },
+  "passkey.sentences.attestationAtRegistration": {
+    "en": "9a09dd3ab4e05b1e",
+    "text": "تُفحَص قواعد التصديق عند تسجيل مفتاح المرور"
+  },
+  "passkey.sentences.hints": {
+    "en": "261fe70414f521a7",
+    "text": "يلمّح \"إنشاء مفتاح مرور\" بـ {{passkey}}؛ و\"استخدام مفتاح أمان\" بـ {{securityKey}}؛ وتسجيل الدخول بـ {{signIn}}"
+  },
+  "passkey.sentences.param.nothing": {
+    "en": "1785cfc3bc6ac773",
+    "text": "لا شيء"
+  },
+  "passkey.sentences.enterpriseSerial": {
+    "en": "983521bbcf6dc708",
+    "text": "لا يُسجَّل مفتاح الأمان إلا بتصديق مؤسسي موثوق يسمّي رقمًا تسلسليًا في {{attribute}} الخاص بالشخص"
+  },
+  "passkey.sentences.noEnterpriseSerial": {
+    "en": "445b66c4d3c95e44",
+    "text": "لا يُفحَص أي رقم تسلسلي لمفتاح أمان"
+  },
+  "passkey.sentences.promptAttribute": {
+    "en": "32513ed5a676c725",
+    "text": "تعرض مطالبة مفتاح المرور {{attribute}} الخاص بالشخص"
+  },
+  "passkey.sentences.promptAttributeExtras": {
+    "en": "f1fb4090f02acc0b",
+    "text": "تعرض مطالبة مفتاح المرور {{attribute}} الخاص بالشخص، واسم الخدمة مع {{extras}} الخاص به"
+  },
+  "passkey.sentences.promptName": {
+    "en": "22388086c95f252f",
+    "text": "تعرض مطالبة مفتاح المرور اسم الشخص كما يعرفه تسجيل الدخول"
+  },
+  "passkey.sentences.promptNameExtras": {
+    "en": "09f9434240ad3432",
+    "text": "تعرض مطالبة مفتاح المرور اسم الشخص كما يعرفه تسجيل الدخول، واسم الخدمة مع {{extras}} الخاص به"
+  },
+  "passkey.sentences.chooseOne": {
+    "en": "da1b6a76a9549c9d",
+    "text": "يختار الشخص الذي لديه عدة مفاتيح مرور واحدًا منها عند تسجيل الدخول"
+  },
+  "passkey.sentences.aggregate": {
+    "en": "fa8fc40822659fe4",
+    "text": "تُعرض مفاتيح مرور الشخص كخيار واحد لتسجيل الدخول"
+  },
+  "passkey.sentences.postQuantumOff": {
+    "en": "a8e0e01781dab9b0",
+    "text": "يُستخدم مفتاح المرور لتسجيل الدخول وللتسجيل أيًا كانت خوارزمية توقيعه"
+  },
+  "passkey.sentences.postQuantumSignIn": {
+    "en": "2282f9fa1ff20b26",
+    "text": "لا يسجّل دخول شخص إلا مفتاح مرور ما بعد الكم (ML-DSA)؛ ويجوز مع ذلك تسجيل مفتاح كلاسيكي"
+  },
+  "passkey.sentences.postQuantumEverywhere": {
+    "en": "79742dacfba54ede",
+    "text": "لا يُسجَّل ولا يُستخدم لتسجيل الدخول إلا مفتاح مرور ما بعد الكم (ML-DSA)"
+  },
+  "passkey.sentences.attestationAlgorithms": {
+    "en": "9e73c79f0de11296",
+    "text": "لا يُسجَّل مفتاح المرور إلا بتصديق موثوق وُقّع بيانه وسلسلة شهاداته بـ {{algorithms}}"
+  },
+  "passkey.sentences.recoveryAny": {
+    "en": "7383156c8eb1e363",
+    "text": "يعيد استرداد الحساب الوصول فورًا، أيًا كان مفتاح المرور الذي يحمله الشخص"
+  },
+  "passkey.sentences.recoveryNotWeaker": {
+    "en": "37557fd6d60301ce",
+    "text": "بعد استرداد الحساب، لا يبلغ الشخص الذي يحمل مفتاح مرور أي تطبيق حتى يسجّل دخوله مفتاح مرور يلبّي هذه السياسة"
+  },
+  "passkey.sentences.recoveryOperatorOnly": {
+    "en": "1a8f0b4a3319a435",
+    "text": "لا يسترد الشخص الذي يحمل مفتاح مرور حسابه إلا عبر مسؤول، ثم لا يبلغ أي تطبيق حتى يسجّل دخوله مفتاح مرور يلبّي هذه السياسة"
+  },
+  "passkey.sentences.registrationList": {
+    "en": "fec8859790708542",
+    "text": "يعرض تسجيل مفتاح المرور {{algorithms}}، بذلك الترتيب، بدلًا من قائمة نطاق الثقة"
+  },
+  "passkey.sentences.registrationPqOnly": {
+    "en": "10bb1b9e748c737c",
+    "text": "لا يعرض تسجيل مفتاح المرور إلا خوارزميات ما بعد الكم (ML-DSA)، من {{algorithms}}، ومن دون إعادة محاولة كلاسيكية"
+  },
+  "passkey.sentences.registrationPqFirst": {
+    "en": "6d255de3f15849dd",
+    "text": "يعرض تسجيل مفتاح المرور خوارزميات ما بعد الكم (ML-DSA) أولًا ثم الكلاسيكية بعدها، من {{algorithms}}"
+  },
+  "passkey.sentences.registrationClassicalOnly": {
+    "en": "34338f9da2211979",
+    "text": "لا يعرض تسجيل مفتاح المرور إلا خوارزميات كلاسيكية، من {{algorithms}}: لا يُصنع أي مفتاح مرور ما بعد الكم"
+  },
+  "passkey.sentences.param.realmAlgorithms": {
+    "en": "62dd60f1d67057b4",
+    "text": "webauthn.algorithms الخاص بنطاق الثقة"
+  },
+  "passkey.sentences.lanesBoth": {
+    "en": "01a4a63a09108c26",
+    "text": "يجوز للشخص أن يحمل مفتاح مرور كلاسيكيًا ومفتاح مرور ما بعد الكم جنبًا إلى جنب، لكل منهما معرّف المستخدم الخاص به"
+  },
+  "passkey.sentences.lanesOne": {
+    "en": "745ef3f6a44d81be",
+    "text": "يحمل الشخص مفاتيح مروره في مسار واحد، مهما قالت webauthn.pqcAlongsideClassical الخاصة بنطاق الثقة"
+  },
+  "passkey.sentences.adminEnrolment": {
+    "en": "41023a55f549b1cd",
+    "text": "يجوز لمسؤول إلحاق مفتاح مرور لشخص، في متصفح المسؤول نفسه، ويُتحقق منه كما يُتحقق من تسجيل الشخص نفسه"
+  },
+  "passkey.sentences.clientRules": {
+    "en": "1081afaa606e937a",
+    "text": "لا يعرض تسجيل مفتاح مرور من {{rules}} أي ML-DSA، حيث يُسمح بمفتاح مرور كلاسيكي"
+  },
+  "kinds.locale.label": {
+    "en": "1219a9dcfb9aa19f",
+    "text": "سياسة اللغة"
+  },
+  "kinds.locale.governs": {
+    "en": "2e133e6f61161db9",
+    "text": "اللغة التي ترتد إليها الصفحة، واللغة التي يُكتب بها البريد حين لا يسمّي الشخص أي لغة، وقيمة preferredLanguage التي تُعطى لشخص جديد"
+  },
+  "kinds.locale.appliesTo": {
+    "en": "b98c6ab7f1daa0a4",
+    "text": "الصفحة التالية التي تُرسم والشخص التالي الذي يُنشأ في نطاق الثقة هذا؛ ويحتفظ الشخص الذي أُنشئ من قبل بقيمة preferredLanguage التي لديه، أو بلا شيء"
+  },
+  "kinds.locale.fallsBackTo": {
+    "en": "c56187f00ea11347",
+    "text": "ملف نطاق الثقة الافتراضي حيث يوجد واحد، والافتراضيات المضمّنة حيث لا يوجد"
+  },
+  "kinds.locale.param.noun": {
+    "en": "373333108748fdd2",
+    "text": "ملف سياسة اللغة"
+  },
+  "locale.FIELDS.defaultLocale.label": {
+    "en": "07c569d962377b98",
+    "text": "اللغة والمنطقة الافتراضيتان"
+  },
+  "locale.FIELDS.defaultLocale.what": {
+    "en": "7b103155bd0c34db",
+    "text": "وسم لغة وفق BCP 47 (RFC 5646)، مثل en أو fr-CA أو zh-TW. تُرسم الصفحات به حين لا يسمّي الطلب، ولا preferredLanguage الخاص بالشخص، ولا منتقي اللغة، ولا المتصفح شيئًا يجيب عنه كتالوج؛ وتُنسَّق التواريخ والأرقام له حتى حيث لا يفعل أي كتالوج ذلك. يُكتب البريد إلى شخص لا يسمّي مدخله أي لغة به. يحل محل الإعداد mail.defaultLanguage."
+  },
+  "locale.FIELDS.populatePreferredLanguage.label": {
+    "en": "7b464462632db810",
+    "text": "منح شخص جديد هذه اللغة"
+  },
+  "locale.FIELDS.populatePreferredLanguage.what": {
+    "en": "aac6446069dd5f66",
+    "text": "قيد التشغيل افتراضيًا. مدخل شخص يُنشأ في نطاق الثقة هذا من دون preferredLanguage (RFC 2798 القسم 2.7) يُعطى اللغة الافتراضية أعلاه قيمة لها — عبر وحدة التحكم، أو واجهة الإدارة، أو SCIM، أو تسجيل اتحادي أو بالخدمة الذاتية، أو تحميل جماعي. ينطبق ملف مسمّى حيث يسمّيه التطبيق الذي تسبّب في الإنشاء، أو تسمّيه إحدى مجموعات الشخص. لا تُعاد كتابة المدخلات القائمة أبدًا."
+  },
+  "locale.SCHEMA.objectClasses.stsLocalePolicy.what": {
+    "en": "796100ae10a7611a",
+    "text": "صنف هذه الخدمة لسياسة اللغة: اللغة التي ترتد إليها صفحات نطاق الثقة ويمنحها لشخص جديد. يُسمّى بالملف (`cn=default`، أو ملف مسمّى يسمّيه تطبيق أو مجموعة)."
+  },
+  "locale.SCHEMA.attributes.stsLocaleDefault.what": {
+    "en": "7b103155bd0c34db",
+    "text": "وسم لغة وفق BCP 47 (RFC 5646)، مثل en أو fr-CA أو zh-TW. تُرسم الصفحات به حين لا يسمّي الطلب، ولا preferredLanguage الخاص بالشخص، ولا منتقي اللغة، ولا المتصفح شيئًا يجيب عنه كتالوج؛ وتُنسَّق التواريخ والأرقام له حتى حيث لا يفعل أي كتالوج ذلك. يُكتب البريد إلى شخص لا يسمّي مدخله أي لغة به. يحل محل الإعداد mail.defaultLanguage."
+  },
+  "locale.SCHEMA.attributes.stsLocalePopulatePreferredLanguage.what": {
+    "en": "aac6446069dd5f66",
+    "text": "قيد التشغيل افتراضيًا. مدخل شخص يُنشأ في نطاق الثقة هذا من دون preferredLanguage (RFC 2798 القسم 2.7) يُعطى اللغة الافتراضية أعلاه قيمة لها — عبر وحدة التحكم، أو واجهة الإدارة، أو SCIM، أو تسجيل اتحادي أو بالخدمة الذاتية، أو تحميل جماعي. ينطبق ملف مسمّى حيث يسمّيه التطبيق الذي تسبّب في الإنشاء، أو تسمّيه إحدى مجموعات الشخص. لا تُعاد كتابة المدخلات القائمة أبدًا."
+  },
+  "locale.SCHEMA.attributes.stsLocalePrecedence.what": {
+    "en": "f96d91dbc5ec1199",
+    "text": "أي سياسة لغة مسمّاة تفوز حيث تُسمّى عدة سياسات لصفحة واحدة: الأدنى، من 1 إلى 1000."
+  },
+  "locale.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "الغرض من الملف، للشخص التالي."
+  },
+  "locale.SCHEMA.personAttributes.stsPreferredLanguagePopulated.what": {
+    "en": "839242d6ed29c817",
+    "text": "قيمة preferredLanguage التي منحتها سياسة اللغة لهذا الشخص عند إنشاء مدخله. ما دام preferredLanguage مساويًا لها، فهي اختيار السياسة وترتبها الصفحة في مرتبة أدنى من لغة المتصفح؛ ومتى ضبط أحد قيمة أخرى، صارت اختيار الشخص. لا تكتبها إلا هذه الخدمة."
+  },
+  "locale.SELECTORS.precedence.what": {
+    "en": "f96d91dbc5ec1199",
+    "text": "أي سياسة لغة مسمّاة تفوز حيث تُسمّى عدة سياسات لصفحة واحدة: الأدنى، من 1 إلى 1000."
+  },
+  "locale.sentences.drawnIn": {
+    "en": "def5bb364db8e407",
+    "text": "تُرسم الصفحة التي لا يسمّي قارئها لغة يجيب عنها كتالوج باللغة {{tag}}"
+  },
+  "locale.sentences.drawnInUncatalogued": {
+    "en": "86507629ace6469e",
+    "text": "تُرسم الصفحة التي لا يسمّي قارئها لغة يجيب عنها كتالوج باللغة {{tag}} — وهي لغة لا يجيب عنها أي كتالوج، فكلماتها إنجليزية وتواريخها وأرقامها منسَّقة لـ {{tag}}"
+  },
+  "locale.sentences.populated": {
+    "en": "357f756fb2f30745",
+    "text": "يُعطى الشخص المُنشأ من دون preferredLanguage القيمة {{tag}}"
+  },
+  "locale.sentences.notPopulated": {
+    "en": "bacca940fb64dcc5",
+    "text": "لا يُعطى الشخص المُنشأ من دون preferredLanguage أي قيمة"
+  },
+  "locale.sentences.mail": {
+    "en": "ab1ab635d8ef149d",
+    "text": "يُكتب البريد إلى شخص لا يسمّي مدخله لغة باللغة {{tag}}"
+  },
+  "kinds.attributes.label": {
+    "en": "6619889d4a9f485d",
+    "text": "سياسة السمات"
+  },
+  "kinds.attributes.governs": {
+    "en": "20a9273a811994df",
+    "text": "السمات التي يجب أن يحملها كل شخص في نطاق الثقة هذا، والسمات المخصّصة التي يجوز منحها لشخص هنا"
+  },
+  "kinds.attributes.appliesTo": {
+    "en": "c68abf6d2b5ec2a2",
+    "text": "الشخص التالي الذي يُنشأ والتعديل التالي في نطاق الثقة هذا؛ ويبقى لكل شخص يفتقر أصلًا إلى سمة تشترطها كل باب آخر"
+  },
+  "kinds.attributes.fallsBackTo": {
+    "en": "c352143b534bf909",
+    "text": "ملف نطاق الثقة الافتراضي حيث يوجد واحد، والافتراضي المضمّن (givenName وsn وmail) حيث لا يوجد"
+  },
+  "kinds.attributes.param.noun": {
+    "en": "58bb93afc775aa81",
+    "text": "ملف سياسة السمات"
+  },
+  "attributes.FIELDS.requiredAttributes.label": {
+    "en": "59a6e795223fdea0",
+    "text": "السمات المطلوبة"
+  },
+  "attributes.FIELDS.requiredAttributes.what": {
+    "en": "cb63bcf493bd6a8c",
+    "text": "السمات التي يجب أن يحمل كل شخص في نطاق الثقة هذا قيمة لها، إلى جانب uid وcn وsn المطلوبة دائمًا. قائمة، أو مفصولة بفواصل. أي سمة يجوز منح الشخص قيمة لها: مخطط inetOrgPerson، وفهرس بيانات الاعتماد، وmail، والسمات المخصّصة لنطاق الثقة هذا. تُفرَض في وضع المنتج: يُرفض الإنشاء من دون واحدة عند كل باب، ولا يجوز لتعديل أن ينتزع واحدة. الافتراضي هو givenName وsn وmail."
+  },
+  "attributes.SCHEMA.objectClasses.stsAttributePolicy.what": {
+    "en": "df463dd3d0380799",
+    "text": "صنف هذه الخدمة لسياسة السمات: السمات التي يجب أن يحملها كل شخص في نطاق ثقة. يُسمّى بالملف (`cn=default`، أو ملف مسمّى خاص بنطاق الثقة)."
+  },
+  "attributes.SCHEMA.objectClasses.stsAttributeDefinition.what": {
+    "en": "a1a975c54d05126f",
+    "text": "صنف هذه الخدمة لسمة مخصّصة لنطاق ثقة، في ou=attributeDefinitions، تُسمّى بالسمة (`cn=<name>`)."
+  },
+  "attributes.SCHEMA.attributes.stsAttributeRequired.what": {
+    "en": "cb63bcf493bd6a8c",
+    "text": "السمات التي يجب أن يحمل كل شخص في نطاق الثقة هذا قيمة لها، إلى جانب uid وcn وsn المطلوبة دائمًا. قائمة، أو مفصولة بفواصل. أي سمة يجوز منح الشخص قيمة لها: مخطط inetOrgPerson، وفهرس بيانات الاعتماد، وmail، والسمات المخصّصة لنطاق الثقة هذا. تُفرَض في وضع المنتج: يُرفض الإنشاء من دون واحدة عند كل باب، ولا يجوز لتعديل أن ينتزع واحدة. الافتراضي هو givenName وsn وmail."
+  },
+  "attributes.SCHEMA.attributes.description.what": {
+    "en": "8e8f462fddce3d22",
+    "text": "الغرض من الملف أو السمة المخصّصة، للشخص التالي."
+  },
+  "attributes.SCHEMA.attributes.stsAttributeLabel.what": {
+    "en": "8d93b7c14ddfd1af",
+    "text": "تسمية السمة المخصّصة، تُرسم بجانب اسمها."
+  },
+  "attributes.SCHEMA.attributes.stsAttributeSyntax.what": {
+    "en": "b5ccce4927fccd38",
+    "text": "صيغة السمة المخصّصة: string أو integer أو boolean أو date أو email أو uri أو dn. تُفحَص قيمها وفقها."
+  },
+  "attributes.SCHEMA.attributes.stsAttributeSingleValued.what": {
+    "en": "b6a0dfd5be9d81fd",
+    "text": "TRUE حيث تحمل السمة المخصّصة قيمة واحدة، وFALSE حيث تحمل عدة قيم."
+  },
+  "attributes.SCHEMA.attributes.stsAttributePortalVisible.what": {
+    "en": "1d436a3f3d4be8c0",
+    "text": "TRUE حيث يرى الشخص قيمه هو لسمة مخصّصة في النظرة العامة لبوابة المستخدم. FALSE، أو غائبة، افتراضيًا."
+  },
+  "attributes.SCHEMA.attributes.stsAttributePortalEditable.what": {
+    "en": "7bda04372c270eb4",
+    "text": "TRUE حيث يجوز للشخص تغيير قيمه هو لسمة مخصّصة في بوابة المستخدم. يقتضي ذلك stsAttributePortalVisible. FALSE، أو غائبة، افتراضيًا."
+  },
+  "attributes.SCHEMA.attributes.stsAttributePolicyPrecedence.what": {
+    "en": "aae577af9c4de4d2",
+    "text": "أي سياسة سمات مسمّاة تنطبق حيث يسمّي الشخص ومجموعاته عدة سياسات: الأدنى، من 1 إلى 1000."
+  },
+  "attributes.SCHEMA.personAttributes.stsAttributePolicy.what": {
+    "en": "7631cfea872f9233",
+    "text": "على شخص أو مجموعة: سياسة السمات التي يسمّيها، `default` أو ملف مسمّى لنطاق الثقة. قيمة واحدة."
+  },
+  "attributes.SELECTORS.precedence.what": {
+    "en": "aae577af9c4de4d2",
+    "text": "أي سياسة سمات مسمّاة تنطبق حيث يسمّي الشخص ومجموعاته عدة سياسات: الأدنى، من 1 إلى 1000."
+  },
+  "attributes.SYNTAXES.string.what": {
+    "en": "6f2c36f9a836b2f4",
+    "text": "نص، بما لا يزيد على 1024 حرفًا، ومن دون محرف تحكم."
+  },
+  "attributes.SYNTAXES.integer.what": {
+    "en": "258ac79871ab42ad",
+    "text": "عدد صحيح (RFC 4517 القسم 3.3.16)."
+  },
+  "attributes.SYNTAXES.boolean.what": {
+    "en": "5ab7cfb21a4d669d",
+    "text": "TRUE أو FALSE (RFC 4517 القسم 3.3.3)."
+  },
+  "attributes.SYNTAXES.date.what": {
+    "en": "70f2250e9d5c193d",
+    "text": "تاريخ، يُخزَّن بالصيغة YYYYMMDD ويُقبل أيضًا بالصيغة YYYY-MM-DD."
+  },
+  "attributes.SYNTAXES.email.what": {
+    "en": "daebff95f510f8db",
+    "text": "عنوان بريد إلكتروني (RFC 5322 addr-spec، local@domain)."
+  },
+  "attributes.SYNTAXES.uri.what": {
+    "en": "16bf68a2b162f491",
+    "text": "عنوان URL بنظام http أو https."
+  },
+  "attributes.SYNTAXES.dn.what": {
+    "en": "3feab9c94c12f33d",
+    "text": "اسم مميّز (RFC 4514)."
+  },
+  "attributes.sentences.required": {
+    "en": "a35b08811463b6be",
+    "text": "يجب أن يحمل الشخص في نطاق الثقة هذا {{list}} ليُنشأ، ولا يجوز لتعديل أن ينتزع قيمة لأي منها"
+  },
+  "attributes.sentences.enforced": {
+    "en": "babafe534682a510",
+    "text": "مفروضة: نطاق الثقة هذا في وضع المنتج، فيرفض كل باب ينشئ شخصًا أو يعدّله شخصًا يخلو منها"
+  },
+  "attributes.sentences.notEnforced": {
+    "en": "9e7b85236de9223c",
+    "text": "غير مفروضة: نطاق الثقة هذا في وضع التطوير، حيث يجوز إنشاء شخص بما لا يزيد على اسم مستخدم"
+  },
+  "attributes.sentences.custom": {
+    "en": "2296301f35c39ed9",
+    "text": "يعرّف نطاق الثقة هذا {{n}} سمة مخصّصة: {{list}}"
+  },
+  "attributes.sentences.noCustom": {
+    "en": "f9d920b6ce8d9d03",
+    "text": "لا يعرّف نطاق الثقة هذا أي سمة مخصّصة"
+  },
+  "attributes.sentences.defined": {
+    "en": "3867ffa1e351efa2",
+    "text": "عُرّفت السمة المخصّصة {{name}} في نطاق الثقة هذا عند {{dn}}. يجوز الآن ضبطها على شخص واشتراطها بهذه السياسة."
+  },
+  "attributes.sentences.updated": {
+    "en": "bb46010bdf65b89d",
+    "text": "تغيّرت السمة المخصّصة {{name}}. بقيت صيغتها، وهل تحمل عدة قيم، كما كانتا."
+  },
+  "attributes.sentences.undefined": {
+    "en": "36e7b5eba26472f2",
+    "text": "لم تعد السمة المخصّصة {{name}} معرّفة في نطاق الثقة هذا."
+  },
+  "attributes.sentences.named": {
+    "en": "a18571bfeeea1845",
+    "text": "تنطبق على شخص يسمّيها، أو يكون في مجموعة تسمّيها، حيث لا تكون لأي سياسة أخرى يسمّونها أسبقية أدنى من {{precedence}}"
+  },
+  "kinds.postLogin.label": {
+    "en": "22a1a1f2caf79722",
+    "text": "سياسة نشاط ما بعد تسجيل الدخول"
+  },
+  "kinds.postLogin.governs": {
+    "en": "7e688e7ccf60004e",
+    "text": "ما يُطلب من الشخص فعله بعد تسجيل الدخول، وقبل إعادته إلى التطبيق — واليوم، تسجيل مفتاح مرور ما بعد الكم"
+  },
+  "kinds.postLogin.appliesTo": {
+    "en": "92a6fbd367b6cbfa",
+    "text": "تسجيل الدخول التالي لكل شخص يبلغه الملف في نطاق الثقة هذا؛ ولا تُقاطع جلسة بدأت من قبل"
+  },
+  "kinds.postLogin.fallsBackTo": {
+    "en": "a9788373941865d0",
+    "text": "ملف نطاق الثقة الافتراضي حيث يوجد واحد، والافتراضيات المضمّنة (لا يُطلب من أحد شيء) حيث لا يوجد"
+  },
+  "kinds.postLogin.param.noun": {
+    "en": "faa1ddd124e8b913",
+    "text": "ملف سياسة نشاط ما بعد تسجيل الدخول"
+  },
+  "postLogin.FIELDS.enabled.label": {
+    "en": "73f5d3d4be6db5a1",
+    "text": "السؤال بعد تسجيل الدخول"
+  },
+  "postLogin.FIELDS.enabled.what": {
+    "en": "594af708f511f0b5",
+    "text": "متوقف افتراضيًا. عند التشغيل، يُطلب من كل شخص يبلغه هذا الملف ويكون النشاط أدناه مستحقًا له أن يؤديه بعد تسجيل الدخول، وقبل إعادته إلى التطبيق. يستثني الملف المسمّى الذي يكون هذا فيه متوقفًا من اختير من أجله: أعضاء المجموعات التي تسمّيه، وتسجيل الدخول إلى تطبيق يسمّيه."
+  },
+  "postLogin.FIELDS.activity.label": {
+    "en": "38da1505ca837328",
+    "text": "النشاط"
+  },
+  "postLogin.FIELDS.activity.what": {
+    "en": "93b1483272fe7b46",
+    "text": "ما يُطلب. pqc-passkey-migration: يُطلب من شخص يحمل مفتاح مرور صُنع بخوارزمية كلاسيكية تسجيل مفتاح مرور ما بعد الكم (ML-DSA). وهل يُستبدل مفتاح المرور الكلاسيكي في مكانه أو يُبقى إلى جانبه فذلك ما تقوله الطريقة (أدناه). لا يُطلب من أحد حيث لا يعرض نطاق الثقة أي خوارزمية ML-DSA عند التسجيل (وهذا ما تفعله القيمة الافتراضية لـ webauthn.algorithms)."
+  },
+  "postLogin.FIELDS.snoozeDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "أيام"
+  },
+  "postLogin.FIELDS.snoozeDays.label": {
+    "en": "cb9807cfc3d1cb67",
+    "text": "المدة التي يؤجّلها تخطي"
+  },
+  "postLogin.FIELDS.snoozeDays.what": {
+    "en": "26d3b7bf4511a4e5",
+    "text": "كم يؤجّل تخطي النشاط لذلك الشخص."
+  },
+  "postLogin.FIELDS.graceDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "أيام"
+  },
+  "postLogin.FIELDS.graceDays.label": {
+    "en": "89547df9079ab954",
+    "text": "الوقت المخصص"
+  },
+  "postLogin.FIELDS.graceDays.what": {
+    "en": "7c820005033f3514",
+    "text": "يُحتسب من الدعوة الأولى للشخص. حين تمضي، يختفي تخطي ويُحبس تسجيل الدخول — لا تُبدأ أي جلسة — حتى يُنجز النشاط. القيمة 0 تعني بلا موعد نهائي: يمكن تخطيه دائمًا."
+  },
+  "postLogin.FIELDS.noPasskey.label": {
+    "en": "422700e42ff800bb",
+    "text": "شخص بلا مفتاح مرور"
+  },
+  "postLogin.FIELDS.noPasskey.what": {
+    "en": "b3a902aa631de14e",
+    "text": "leave: لا يُطلب منه شيء. invite: يُطلب منه تسجيل مفتاح مرور ما بعد الكم، ويجوز له تخطيه دائمًا. require: يُطلب منه، ولا يجوز له تخطيه إلا حتى يمضي الوقت المخصص."
+  },
+  "postLogin.FIELDS.method.label": {
+    "en": "e5beebb729b34546",
+    "text": "كيفية ترحيل مفتاح المرور الكلاسيكي"
+  },
+  "postLogin.FIELDS.method.what": {
+    "en": "b028cf1ddda71c5d",
+    "text": "upgrade: يستخدم الشخص مفتاح مروره الكلاسيكي مرة واحدة، ثم يحل مفتاح مرور ML-DSA محله في المكان نفسه على المُصادق نفسه — مفتاح مرور واحد، ولا يُترك شيء. alongside: يُضاف مفتاح مرور ML-DSA بجانبه، في مسار ما بعد الكم حيث يعرض نطاق الثقة مسارين، أو على مُصادق آخر حيث يعرض مسارًا واحدًا. automatic: تكون alongside حيث تعرض سياسة مفتاح مرور الشخص مسارين، وupgrade حيث تعرض مسارًا واحدًا."
+  },
+  "postLogin.FIELDS.attestation.label": {
+    "en": "430490e68719e72e",
+    "text": "يُعد مفتاح المرور ما بعد الكم عندما"
+  },
+  "postLogin.FIELDS.attestation.what": {
+    "en": "77645f746e1d52e2",
+    "text": "any: خوارزمية مفتاحه هي ML-DSA. post-quantum: خوارزمية مفتاحه هي ML-DSA وقد وُقّع تصديقه المسجَّل بخوارزميات ما بعد الكم في كل أجزائه؛ ولا يُحتسب مفتاح المرور ذو التصديق الكلاسيكي، أو الذي لم يُسجَّل له تصديق، ويُطلب من حامله مفتاح يُحتسب."
+  },
+  "postLogin.FIELDS.noPasskeyFallback.label": {
+    "en": "8804bd18de56c2a8",
+    "text": "شخص بلا مفتاح مرور لا يستطيع جهازه صنع ML-DSA"
+  },
+  "postLogin.FIELDS.noPasskeyFallback.what": {
+    "en": "4fa78beae92d0ce5",
+    "text": "none: ML-DSA فقط. classical: بعد فشل تسجيل ML-DSA على الجهاز، تُعرض إعادة محاولة بالخوارزميات الكلاسيكية (حيث تسمح سياسة مفتاح المرور بواحدة) — فمفتاح المرور الكلاسيكي أفضل من كلمة المرور، ويُطلب من حامله الترحيل لاحقًا مثل أي شخص آخر."
+  },
+  "postLogin.SCHEMA.objectClasses.stsPostLoginPolicy.what": {
+    "en": "b1a01fe693170513",
+    "text": "صنف هذه الخدمة لملف نشاط ما بعد تسجيل الدخول: ما يُطلب من الشخص فعله بعد تسجيل الدخول. يُسمّى بالملف (`cn=default`، أو ملف مسمّى يسمّيه تطبيق أو مجموعة)."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginEnabled.what": {
+    "en": "594af708f511f0b5",
+    "text": "متوقف افتراضيًا. عند التشغيل، يُطلب من كل شخص يبلغه هذا الملف ويكون النشاط أدناه مستحقًا له أن يؤديه بعد تسجيل الدخول، وقبل إعادته إلى التطبيق. يستثني الملف المسمّى الذي يكون هذا فيه متوقفًا من اختير من أجله: أعضاء المجموعات التي تسمّيه، وتسجيل الدخول إلى تطبيق يسمّيه."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginActivity.what": {
+    "en": "93b1483272fe7b46",
+    "text": "ما يُطلب. pqc-passkey-migration: يُطلب من شخص يحمل مفتاح مرور صُنع بخوارزمية كلاسيكية تسجيل مفتاح مرور ما بعد الكم (ML-DSA). وهل يُستبدل مفتاح المرور الكلاسيكي في مكانه أو يُبقى إلى جانبه فذلك ما تقوله الطريقة (أدناه). لا يُطلب من أحد حيث لا يعرض نطاق الثقة أي خوارزمية ML-DSA عند التسجيل (وهذا ما تفعله القيمة الافتراضية لـ webauthn.algorithms)."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginSnoozeDays.what": {
+    "en": "26d3b7bf4511a4e5",
+    "text": "كم يؤجّل تخطي النشاط لذلك الشخص."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginGraceDays.what": {
+    "en": "7c820005033f3514",
+    "text": "يُحتسب من الدعوة الأولى للشخص. حين تمضي، يختفي تخطي ويُحبس تسجيل الدخول — لا تُبدأ أي جلسة — حتى يُنجز النشاط. القيمة 0 تعني بلا موعد نهائي: يمكن تخطيه دائمًا."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginNoPasskey.what": {
+    "en": "b3a902aa631de14e",
+    "text": "leave: لا يُطلب منه شيء. invite: يُطلب منه تسجيل مفتاح مرور ما بعد الكم، ويجوز له تخطيه دائمًا. require: يُطلب منه، ولا يجوز له تخطيه إلا حتى يمضي الوقت المخصص."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMethod.what": {
+    "en": "b028cf1ddda71c5d",
+    "text": "upgrade: يستخدم الشخص مفتاح مروره الكلاسيكي مرة واحدة، ثم يحل مفتاح مرور ML-DSA محله في المكان نفسه على المُصادق نفسه — مفتاح مرور واحد، ولا يُترك شيء. alongside: يُضاف مفتاح مرور ML-DSA بجانبه، في مسار ما بعد الكم حيث يعرض نطاق الثقة مسارين، أو على مُصادق آخر حيث يعرض مسارًا واحدًا. automatic: تكون alongside حيث تعرض سياسة مفتاح مرور الشخص مسارين، وupgrade حيث تعرض مسارًا واحدًا."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginAttestation.what": {
+    "en": "77645f746e1d52e2",
+    "text": "any: خوارزمية مفتاحه هي ML-DSA. post-quantum: خوارزمية مفتاحه هي ML-DSA وكان إقراره المسجَّل موقَّعًا بخوارزميات ما بعد الكم من أوله إلى آخره؛ ومفتاح المرور ذو الإقرار التقليدي، أو الذي لم يُسجَّل له إقرار، لا يُحتسب، ويُطلب من حامله واحد يُحتسب."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyFallback.what": {
+    "en": "4fa78beae92d0ce5",
+    "text": "none: ML-DSA فقط. classical: بعد فشل تسجيل ML-DSA على الجهاز، تُعرَض إعادة محاولة بالخوارزميات التقليدية (حيث تسمح سياسة مفتاح المرور بذلك) — فمفتاح المرور التقليدي أفضل من كلمة المرور، ويُطلب من حامله الترحيل لاحقًا كسائر الناس."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPrecedence.what": {
+    "en": "2b5b2ba409912c7d",
+    "text": "أي ملف تعريف مسمّى لما بعد تسجيل الدخول يفوز عندما يُسمّى أكثر من واحد لتسجيل دخول واحد — بحسب التطبيق وبحسب مجموعات الشخص: الأدنى، من 1 إلى 1000."
+  },
+  "postLogin.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "الغرض من ملف التعريف، للشخص التالي."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyRole.what": {
+    "en": "b56a731743cd58be",
+    "text": "مُلغى (#1135): الدور الذي كان شخص بلا مفتاح مرور يسجّل واحدًا فيه. ليس لمفتاح المرور دور؛ ولا شيء يقرأ هذه القيمة."
+  },
+  "postLogin.SELECTORS.precedence.what": {
+    "en": "2b5b2ba409912c7d",
+    "text": "أي ملف تعريف مسمّى لما بعد تسجيل الدخول يفوز عندما يُسمّى أكثر من واحد لتسجيل دخول واحد — بحسب التطبيق وبحسب مجموعات الشخص: الأدنى، من 1 إلى 1000."
+  },
+  "postLogin.sentences.off": {
+    "en": "f22422aec6b67033",
+    "text": "لا يُطلب أي شيء بعد تسجيل الدخول من أي شخص يصله ملف التعريف هذا"
+  },
+  "postLogin.sentences.pqcMigration": {
+    "en": "f5a41f8e1962f73d",
+    "text": "يُطلب من الشخص الذي يحمل مفتاح مرور تقليديًا، بعد تسجيل الدخول، أن يسجّل مفتاح مرور ما بعد كم (ML-DSA)"
+  },
+  "postLogin.sentences.methodUpgrade": {
+    "en": "70079684df361766",
+    "text": "يحل مفتاح المرور ML-DSA محل التقليدي في مكانه، بعد أن يستخدم الشخص التقليدي مرة واحدة"
+  },
+  "postLogin.sentences.methodAlongside": {
+    "en": "a8cb04020a43af35",
+    "text": "يُضاف مفتاح المرور ML-DSA إلى جانب التقليدي"
+  },
+  "postLogin.sentences.methodAutomatic": {
+    "en": "ff31b304263925a9",
+    "text": "يُضاف مفتاح المرور ML-DSA إلى جانب التقليدي حيث يُعرض مساران، ويحل محله في مكانه حيث يُعرض مسار واحد"
+  },
+  "postLogin.sentences.attestationAny": {
+    "en": "a26a23bf63ae7e82",
+    "text": "يُعد مفتاح المرور ما بعد كم عندما تكون خوارزمية مفتاحه ML-DSA"
+  },
+  "postLogin.sentences.attestationPq": {
+    "en": "f16fef2aa80b52a9",
+    "text": "يُعد مفتاح المرور ما بعد كم فقط عندما تكون خوارزمية مفتاحه وإقراره المسجَّل ما بعد الكم"
+  },
+  "postLogin.sentences.fallbackClassical": {
+    "en": "df5f433fb781483c",
+    "text": "يُعرَض على الشخص الذي لا يملك مفتاح مرور ولا يستطيع جهازه صنع ML-DSA مفتاح مرور تقليدي بدلًا منه"
+  },
+  "postLogin.sentences.snooze": {
+    "en": "f3c3ff82c8da1f59",
+    "text": "التخطي يؤجله لمدة {{days}} يوم (أيام)"
+  },
+  "postLogin.sentences.grace": {
+    "en": "2c906ed9b00f8c75",
+    "text": "بعد {{days}} يوم (أيام) من الدعوة الأولى يختفي التخطي ويُعلَّق تسجيل الدخول إلى أن يُنجَز"
+  },
+  "postLogin.sentences.noGrace": {
+    "en": "9163ad95dcc9e4c5",
+    "text": "يمكن تخطيه دائمًا"
+  },
+  "postLogin.sentences.noPasskeyLeave": {
+    "en": "646cbd76d74e7834",
+    "text": "لا يُسأل شخص لا يحمل أي مفتاح مرور"
+  },
+  "postLogin.sentences.noPasskeyInvite": {
+    "en": "f1e2e6217d3d9180",
+    "text": "يُدعى شخص لا يحمل مفتاح مرور إلى تسجيل مفتاح مرور ما بعد كم، ويمكنه تخطيه دائمًا"
+  },
+  "postLogin.sentences.noPasskeyRequire": {
+    "en": "988144ad40324fa8",
+    "text": "يُطلب من شخص لا يحمل مفتاح مرور أن يسجّل مفتاح مرور ما بعد كم، ويمكنه تخطيه إلى أن تنتهي فترة السماح"
+  },
+  "postLogin.sentences.appliesTo": {
+    "en": "f195acc04e68d15e",
+    "text": "ينطبق حيث يسميه تطبيق أو مجموعة (appPostLoginPolicy، stsPostLoginPolicy)، عند الأسبقية {{precedence}}"
+  },
+  "messages.saved": {
+    "en": "aff7d1fa6042bebd",
+    "text": "يُحفظ {{noun}} \"{{name}}\" في {{dn}}. وينطبق على {{appliesTo}}."
+  },
+  "messages.savedNotEnforced": {
+    "en": "0e2ffb6b206220b6",
+    "text": "يُحفظ {{noun}} \"{{name}}\" في {{dn}}. وينطبق على {{appliesTo}} — وهو غير مُفرَض هنا إلى أن يكون نطاق الثقة هذا في وضع المنتج."
+  },
+  "messages.removed": {
+    "en": "07e9be78127c21d9",
+    "text": "اختفى ملف التعريف المخزَّن، ويتبع نطاق الثقة هذا {{fallsBackTo}}: {{rules}}."
+  },
+  "messages.nothingStored": {
+    "en": "6e3d9c2876ac0650",
+    "text": "لم يُخزَّن شيء في نطاق الثقة هذا، لذلك كان يتبع {{fallsBackTo}} أصلًا."
+  },
+  "page.enforced": {
+    "en": "f7172b346c62f1ca",
+    "text": "مُفرَض. نطاق الثقة هذا في وضع المنتج، لذلك يجب أن تستوفي كل كلمة مرور تُعيَّن هنا — عند كل باب أدناه — ملف التعريف، ولا يجوز أن تكرر كلمة مرور جديدة واحدة متذكَّرة."
+  },
+  "page.notEnforced": {
+    "en": "d48ea6d943af779a",
+    "text": "غير مُفرَض. نطاق الثقة هذا في وضع التطوير، حيث لا تُفحص كلمة المرور عند أي باب، لذلك تكون قاعدة عنها قاعدة عن بيانات اعتماد لا يقرأها شيء. ما زال السجل مُدوَّنًا، لذلك يبدأ نطاق الثقة الذي يُبدَّل إلى وضع المنتج بسجل. كلمة المرور المُولَّدة تستوفي ملف التعريف في الوضعين."
+  },
+  "page.source": {
+    "en": "3f584f451203473d",
+    "text": "crypto.randomInt الخاصة بـ node، بعيّنة الرفض حتى لا يكون أي محرف في المجمع أرجح من غيره"
+  },
+  "page.drawsUntil": {
+    "en": "c06275d67751acb9",
+    "text": "تستوفي كلمة المرور ملف التعريف، فتكون كل كلمة مرور مولَّدة منتظمة على كلمات المرور التي يقبلها ملف التعريف"
+  },
+  "page.notDoors": {
+    "en": "8bb9eaa9dc06e164",
+    "text": "لا يحمل SCIM كلمة مرور (تعلن هذه الخدمة changePassword: false)، ولا تُعيَّن كلمة مرور أبدًا عن طريق تسجيل الدخول. كلمات المرور المخزَّنة قبل تغيير قاعدة لا يُعاد فحصها: لا شيء هنا يحتفظ بكلمة مرور في شكل يسمح بذلك، وتنطبق القاعدة من التغيير التالي."
+  },
+  "page.mailWhy": {
+    "en": "c7aa023cc0d9c95a",
+    "text": "لا يستطيع نطاق الثقة هذا إرسال البريد، لذلك لا يمكن تشغيل آليتَي البريد الإلكتروني ولا تُعرضان أبدًا. هيّئ نقلًا في تهيئة الخادم > البريد."
+  },
+  "page.doors.0.door": {
+    "en": "8327644f61eb973a",
+    "text": "/admin/users/new و/admin/users (تعيين كلمة المرور)"
+  },
+  "page.doors.1.door": {
+    "en": "87ea56f7e0e44acd",
+    "text": "POST /admin-api/users/create و/admin-api/users/set-password"
+  },
+  "page.doors.3.door": {
+    "en": "bf7698db188665b7",
+    "text": "/portal/activate (كلمة المرور الأولى التي يعيّنها شخص)"
+  },
+  "page.doors.4.door": {
+    "en": "68ddb58dcaaf956f",
+    "text": "إضافة أو تعديل LDAP لـ userPassword على 389 أو 636"
+  },
+  "page.doors.5.door": {
+    "en": "2ad6798475ed5717",
+    "text": "/authn/password-change (التغيير الذي يشترطه تسجيل الدخول؛ وقد يسمّي التطبيق الذي تم تسجيل الدخول إليه السياسة)"
+  },
+  "page.doors.6.door": {
+    "en": "f6310f5585f611ea",
+    "text": "/portal/reset-password (رابط إعادة تعيين)"
+  },
+  "page.pools.0": {
+    "en": "66175c2ffcf81f48",
+    "text": "أحرف صغيرة"
+  },
+  "page.pools.1": {
+    "en": "d4622acef3c349eb",
+    "text": "أحرف كبيرة"
+  },
+  "page.pools.2": {
+    "en": "cc6b6bad31a0ff4d",
+    "text": "أرقام"
+  },
+  "page.pools.3": {
+    "en": "1ea50a8caf608504",
+    "text": "رموز خاصة"
+  }
+}

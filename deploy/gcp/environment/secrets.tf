@@ -155,6 +155,8 @@ locals {
   # `secrets` lists, for the node and for schema-init.
   node_secret_env = { for k, v in merge({
     ADMIN_API_CLIENT_SECRET = local.shared_secret_names["admin-api-client-secret"]
+    # CloudFront's origin secret, in a cell behind it (cdn.tf); '' elsewhere.
+    STS_EDGE_SECRET = local.edge_secret_name
     }, local.product ? {
     STS_ADMIN_BOOTSTRAP_PASSWORD = local.shared_secret_names["bootstrap-admin-password"]
     STS_ADMIN_BOOTSTRAP_USERNAME = local.shared_secret_names["bootstrap-admin-username"]

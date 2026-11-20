@@ -43,6 +43,8 @@ import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
+type AccountAnswering<K extends keyof IyaApi.Account.Operations> =
+  import('../types/account-api').AccountAnswering<K>;
 type AccountContext = import('../types/account-api').AccountContext;
 type AccountCaller = import('../types/account-api').AccountCaller;
 
@@ -228,7 +230,8 @@ class PortalSignIns {
    * @param body - the checked body
    * @returns nothing
    */
-  async answer(ctx: AccountContext, res: Json, caller: AccountCaller,
+  async answer(ctx: AccountContext, res: AccountAnswering<'answerSignIn'>,
+               caller: AccountCaller,
                body: Json): Promise<unknown> {
     const { log } = this.deps;
     log.debug("Entering PortalSignIns.answer().");
@@ -285,8 +288,8 @@ class PortalSignIns {
       { method: 'GET', path: ctx.BASE + '/sign-ins',
         operationId: 'getSignIns', access: 'person',
         query: PAGE_QUERY,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return self.view(caller, input.query.page || 1)
             .then(function (view: Json) {
               return ctx.json(res, 200, view);
@@ -294,8 +297,8 @@ class PortalSignIns {
         } },
       { method: 'POST', path: ctx.BASE + '/sign-ins',
         operationId: 'answerSignIn', access: 'person', body: ANSWER_FORM,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return self.answer(ctx, res, caller, input.body);
         } }
     ];

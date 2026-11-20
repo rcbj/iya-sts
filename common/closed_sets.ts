@@ -483,9 +483,20 @@ class ClosedSets {
    */
   static saidName(name: unknown): string {
     log.debug("Entering ClosedSets.saidName().");
-    const text = String(name === null || name === undefined ? ''
-                                                            : name)
+    // WELL-FORMED BEFORE IT IS ENCODED (run 21's fuzz stage, STS-API-0140).
+    // `encodeURIComponent()` throws "URI malformed" on a lone surrogate, and
+    // the cut below made one whenever it fell inside a pair: a long query
+    // name of astral characters on `POST /admin-api/branding/logo` was a 500.
+    // A pair the cut would split is dropped whole, and a lone surrogate the
+    // caller sent is said as U+FFFD.
+    let text = String(name === null || name === undefined ? '' : name)
       .slice(0, MAX_NAME_SAID);
+    if (/[\ud800-\udbff]$/.test(text)) {
+      text = text.slice(0, -1);
+    }
+    text = text.replace(
+      /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g,
+      '\ufffd');
     // Encoded only when it holds a character markup or a string is made
     // of: a quote, an angle bracket, a backtick, a backslash, a control.
     // A URL with a query, the usual SAML entity id, is left as it was.

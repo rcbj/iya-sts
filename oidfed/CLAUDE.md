@@ -88,7 +88,7 @@ resolves anything.
   `helpers.makeFederationKey()`, which uses the curve and post-quantum recipes
   a signing unit's next key uses. Signing is `crypto.js`'s.
 - **Not a PKI leaf**, by nature. A federation trusts a key through the
-  statements above it (`docs/pki.md`'s "every key pair is a leaf" has this
+  statements above it (`docs/v1.1.0/pki.md`'s "every key pair is a leaf" has this
   exception, with the BBS key and SPIFFE's JWT authority).
 
 **Row states:** `next` → `current` → `retired`.
@@ -213,6 +213,25 @@ a Crawl now went unlisted for `oidfed.collectionMaxAgeS`.
 **`trust_anchor` may be only the realm itself** (rcbj's answer): the
 collection is of the realm's own subtree.
 
+**A REALM OF THIS SERVICE IS DESCRIBED ONLY WHEN A CALLER NEEDS IT**
+(2026-11-15, GitHub Actions run 43735265596). The listings filter on a
+subordinate's entity types and on its being an Intermediate, and for a realm
+of this service both are read off its Entity Configuration — which
+`configuration()` builds whole and SIGNS. In the default topology every
+realm is the default realm's subordinate, so `subordinateFacts()` describing
+every row made an unfiltered list page cost one signed configuration per
+realm the service held, whatever `limit` said: 2.3 s a page with the few
+hundred realms a protocol run leaves, and `sts_oidfed_extensions`' walk two
+at a time took N/2 such pages (107-174 s in the other modes of that run, past
+its 300 s in `cluster`, where it timed out). `subordinateFacts(req, false)`
+answers the rows as the register and the realm list have them
+(`described: false`); `describedFact()` describes one. A filter on
+`entity_type` or `intermediate` still describes every row (it must), a
+`trust_marks` claim only the page's rows, and the collection's
+`childrenOf()` — identifiers only — none. A filtered page on an anchor with
+many realms is still O(realms); nothing caches a description, because a
+realm's configuration changes with its settings on any node.
+
 **THE THREE ENDPOINTS ARE PUBLISHED BY A SUPERIOR**: the listing and the
 collection wherever the fetch and list endpoints are, and the events endpoint
 also while any history is kept — a superior whose last subordinate was
@@ -245,10 +264,21 @@ revoked still answers for it.
 - `tests/protocol/sts_oidfed.js` (local): the same over HTTP, with Trust Marks
   and key rotation through `/admin-api`.
 - `tests/siop.js` 7f: the verifier's `openid_federation:` client identifier.
+- `tests/oidfed_rp.js`: the RP's reading of the OP's metadata (#933): an
+  absent `issuer` is the Entity Identifier (Connect 1.1, 5.1.2), another
+  one is refused. And the two audiences, which differ: the request object
+  is addressed to the Entity Identifier alone (Federation 1.0, 12.1.1.1),
+  the token endpoint's `private_key_jwt` to the token endpoint URL, one
+  string. Federation 1.0 holds a client assertion to the Entity Identifier
+  only at the PAR endpoint (12.1.1.2), which this RP does not use, and
+  leaves the token endpoint to Connect Core 9 ("SHOULD be the URL of the
+  Token Endpoint"); the suite's `ValidateClientAssertionClaims` takes the
+  token endpoint URL there and never the Entity Identifier.
 - `tests/oidfed_extensions.js`: the page pointer; a subordinate's history
   through registration, updates, suspension, reinstatement and revocation;
   a realm's creation, rotation and deletion; the Extended Listing's paging,
-  claims and filters; the Entity Collection in process and by a CRAWL through
+  claims and filters, and (4e) a realm described only when a filter or a
+  `trust_marks` claim needs it, counted by Entity Configurations signed; the Entity Collection in process and by a CRAWL through
   a foreign Intermediate over a stub requester, with the fetch budget.
 - `tests/protocol/sts_oidfed_extensions.js` (local): the three endpoints over
   HTTP, and the acts through `/admin-api`.
@@ -256,5 +286,11 @@ revoked still answers for it.
 **Still untested:**
 
 - a resolution through a real foreign entity over HTTP. The fetcher is covered
-  by a stub, and `fetchPublished()` by the federation tests;
+  by a stub, and `fetchPublished()` by the federation tests. The relying-party
+  direction is the `joined-rp` plan of
+  `tests/protocol/sts_oidfed_conformance.js` (#933), whose first run timed
+  out at the OP's missing `issuer` (fixed; `tests/oidfed_rp.js`), and
+  whose second reached the token endpoint and failed every happy-path
+  module on the client assertion's `aud` (fixed, the same file); a run
+  with both fixes is owed;
 - a post-quantum Federation Entity Key end to end.

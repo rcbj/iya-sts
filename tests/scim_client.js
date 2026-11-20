@@ -42,7 +42,9 @@
 //      group's members changed by PATCH add and PATCH remove by value;
 //   M. a 409 uniqueness adopts the resource found by EXTERNALID (a linked
 //      id gone, the resource re-created there under another id); a 409
-//      without uniqueness is a dead letter, nothing adopted;
+//      without uniqueness is a dead letter, nothing adopted; and a User found
+//      by userName whose externalId is another entry's — a deleted person's,
+//      left deactivated — is not adopted by a namesake (STS-SCIMC-0035);
 //   N. a required enterprise extension is sent (empty); any other required
 //      extension is a dead letter naming it (STS-SCIMC-0029); the required
 //      attributes (STS-SCIMC-0030); a replace clears what the entry lost
@@ -62,6 +64,11 @@
 //      slot — discovery, the listing, the deliveries — so none is closer to
 //      the last than 1000 / rate ms; a rate that is not a whole number is
 //      refused.
+//   T. A ROW IS NEVER AHEAD OF ITS ENTRY (run #500): where writes commit
+//      later, a directory change's row is written only once the directory
+//      has committed, and a sweep catches up with the store before it
+//      attempts anything — the two halves that stop a node sending a
+//      person read from a replica that lacks the change.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -617,6 +624,7 @@ async function changes(t) {
           'C1. a change is a PUT to the linked id, and a 412 re-reads and ' +
           'tries again with If-Match', JSON.stringify(bob.body));
   await observedClientsKept(t, dn);
+  await commitOrder(t, dn);
   // D: a resource already there under the userName, with no externalId.
   sp.users['sp-pre'] = { id: 'sp-pre', v: 1, body: {
     schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'],
@@ -640,6 +648,69 @@ async function changes(t) {
           'E1. a disabled person is deactivated there (active false)',
           JSON.stringify(sp.users['sp-pre'].body));
   log.debug('Leaving changes().');
+}
+
+// T (run #500): the ORDER of a row and its entry across processes. A second
+// instance over the same stores, never installed, with the persistence
+// hooks replaced: a commit that is held, and a read barrier that records
+// what had been sent when it ran.
+async function commitOrder(t, dn) {
+  log.debug('Entering commitOrder().');
+  const client = 'basic-' + RUN;
+  const queued = function () {
+    log.debug('Entering queued().');
+    const view = scimClients.view({ client: client });
+    log.debug('Leaving queued().');
+    return Number(view.client && view.client.queues.counts.queued) || 0;
+  };
+  let release = null;
+  const held = new Promise(function (resolve) {
+    release = resolve;
+  });
+  const barriers = [];
+  const instance = new scimClients.ScimClients(Object.assign(
+    scimClients.ScimClients.defaultDeps(), {
+      writesCommitLater: function () {
+        return true;
+      },
+      directoryCommitted: function () {
+        return held.then(function () {
+          return [{ written: true }];
+        });
+      },
+      catchUp: function () {
+        barriers.push({ requests: sp.requests.length, queued: queued() });
+        return Promise.resolve({ caughtUp: true });
+      }
+    }));
+  const before = queued();
+  instance.observe({ kind: 'updated', dn: dn, username: 'bob' + RUN,
+                     realm: realms.currentId(), before: {}, after: {} });
+  await new Promise(function (resolve) {
+    setImmediate(resolve);
+  });
+  const whileHeld = queued();
+  release();
+  await new Promise(function (resolve) {
+    setImmediate(resolve);
+  });
+  const afterCommit = queued();
+  t.check(before === 0 && whileHeld === 0 && afterCommit === 1,
+          'T1. a change\'s row is written only once the directory write ' +
+          'it is for has committed', JSON.stringify({ before: before,
+            whileHeld: whileHeld, afterCommit: afterCommit }));
+  const sent = sp.requests.length;
+  await instance.delivery.sweep();
+  await new Promise(function (resolve) {
+    setTimeout(resolve, 150);
+  });
+  t.check(barriers.length === 1 && barriers[0].requests === sent &&
+          barriers[0].queued === 1 && sp.requests.length > sent,
+          'T2. a sweep catches up with the store before it attempts a due ' +
+          'row, and then sends it', JSON.stringify({ barriers: barriers,
+            sent: sent, after: sp.requests.length }));
+  await drain();
+  log.debug('Leaving commitOrder().');
 }
 
 // C2–C3 (#625): the clients a directory change is observed for are kept by
@@ -1058,6 +1129,41 @@ async function adoption(t, base, ca) {
           /409/.test(dead[0].why) && !userNamed('frank' + RUN),
           'M2. a 409 without uniqueness is a dead letter, nothing adopted',
           JSON.stringify(dead));
+  // M3 (2026-11-16, #1612's rule): a person deleted, their User left there
+  // deactivated, and a person made again under the name. The userName
+  // clashes, and the User found by it carries the deleted person's
+  // externalId, so it is not adopted.
+  const gina = 'hana' + RUN;
+  ldap.createUser(gina, { attributes: { givenName: 'Hana', sn: 'Bell' } });
+  await drain();
+  const deletedUuid = uuidOf(gina);
+  const kept = userNamed(gina);
+  ldap.deletePerson('uid=' + gina + ',' + ldap.usersDn());
+  await drain();
+  ldap.createUser(gina, { attributes: { givenName: 'Hana', sn: 'Ross' } });
+  const namesakeUuid = uuidOf(gina);
+  await drain(3);
+  const there = Object.keys(sp.users).map(function (k) {
+    return sp.users[k];
+  }).filter(function (r) {
+    return r.body.userName === gina;
+  });
+  const refused = deadOf(id).filter(function (one) {
+    return one.errorCode === 'STS-SCIMC-0035';
+  });
+  t.check(!!kept && deletedUuid !== namesakeUuid && there.length === 1 &&
+          there[0].id === kept.id &&
+          String(there[0].body.externalId).toLowerCase() === deletedUuid &&
+          there[0].body.active === false &&
+          !(there[0].body.name && there[0].body.name.familyName === 'Ross') &&
+          refused.length === 1,
+          'M3. a 409 uniqueness does not adopt the User found by userName ' +
+          'when its externalId is another entry\'s (a deleted person\'s, ' +
+          'left deactivated): a dead letter, STS-SCIMC-0035, and that User ' +
+          'is untouched',
+          JSON.stringify({ there: there, refused: refused,
+                           deletedUuid: deletedUuid,
+                           namesakeUuid: namesakeUuid }));
   await act({ action: 'remove-client', id: id });
   log.debug('Leaving adoption().');
 }

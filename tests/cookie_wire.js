@@ -14,7 +14,10 @@
 //   3. The stack, with a TLS socket and product's predicate: a real answer's
 //      cookie is prefixed, a request's arrives under its inside name, and
 //      neither happens on cleartext or in development.
-//   4. A worker never translates: the code asks `isMainThread`.
+//   4. A worker translates only a request the front process marked as TLS,
+//      by its own view of the realm's mode, and tells the front whether to
+//      prefix the answer's cookies; the front strips the mark from clients
+//      and wraps as told (GitHub Actions run 43884417831).
 //   5. Every cookie the service declares can be translated, and the OP iframe
 //      script still finds its cookie when it is prefixed.
 // ===========================================================================
@@ -95,12 +98,73 @@ function childMain() {
            name + ' comes back, or the feature it carries breaks');
     });
 
+    // --- 2b. the worker's half (run 43884417831) ----------------------------
+    const fakeRes = function () {
+      const set = {};
+      return { set: set,
+               setHeader: function (name, value) {
+                 set[String(name).toLowerCase()] = value;
+               },
+               writeHead: function () {
+                 return 'flushed';
+               } };
+    };
+    const asked = mode.prefixesCookies;
+    mode.prefixesCookies = function () {
+      return true;
+    };
+    let one = { headers: { 'x-sts-wire-tls': '1',
+      cookie: 'sts_est_nonce=plain; __Host-sts_est_nonce=wire; other=1' } };
+    let out = fakeRes();
+    const marked = wire.inWorker(one, out);
+    out.writeHead(200);
+    note(marked && one.headers.cookie === 'sts_est_nonce=wire; other=1' &&
+         !('x-sts-wire-tls' in one.headers),
+         'a worker translates a marked request by its own view of the mode, ' +
+         'and takes the mark off', JSON.stringify(one.headers));
+    note(out.set['x-sts-wire-prefix'] === '1',
+         'and tells the front process to prefix the answer\'s cookies',
+         JSON.stringify(out.set));
+    mode.prefixesCookies = function () {
+      return false;
+    };
+    one = { headers: { 'x-sts-wire-tls': '1', cookie: 'sts_session=a' } };
+    out = fakeRes();
+    wire.inWorker(one, out);
+    out.writeHead(200);
+    note(one.headers.cookie === 'sts_session=a' &&
+         out.set['x-sts-wire-prefix'] === '0',
+         'in a development realm it keeps the plain names and says not to ' +
+         'prefix', JSON.stringify(one.headers) + ' ' + JSON.stringify(out.set));
+    one = { headers: { cookie: 'sts_session=a' } };
+    out = fakeRes();
+    note(wire.inWorker(one, out) === false &&
+         one.headers.cookie === 'sts_session=a' &&
+         out.writeHead(200) === 'flushed' &&
+         !('x-sts-wire-prefix' in out.set),
+         'an unmarked request (cleartext, or relayed by a cell) is left alone',
+         JSON.stringify(out.set));
+    mode.prefixesCookies = asked;
+
     // --- 3. the stack -------------------------------------------------------
     app.get('/cookie-probe', function (req, res) {
-      res.json({ cookie: String(req.headers.cookie || '') });
+      res.json({ cookie: String(req.headers.cookie || ''),
+                 raw: req.stsWireCookie === undefined ? null :
+                   String(req.stsWireCookie) });
+    });
+    // What the pool does with a worker's PREFIX_HEADER: `res.stsWirePrefix`.
+    app.get('/cookie-told', function (req, res) {
+      res.stsWirePrefix = req.query.prefix === '1';
+      res.setHeader('Set-Cookie', 'sts_lang=fr; Path=/; Secure');
+      res.end('told');
     });
     const server = http.createServer(function (req, res) {
       req.socket.encrypted = req.headers['x-probe-tls'] === '1';
+      // What `cell_channel.ts`'s `serveRelayed()` sets on a request another
+      // cell relayed here, which a header cannot.
+      if (req.headers['x-probe-relay'] === '1') {
+        req.stsCellRelay = { from: 'a', client: '127.0.0.1', reason: 'test' };
+      }
       app(req, res);
     });
     await new Promise(function (r) {
@@ -145,6 +209,43 @@ function childMain() {
     note(JSON.parse(r.text).cookie === 'sts_lang=fr',
          'and a request arrives under its inside name, the forgery gone',
          r.text);
+    note(JSON.parse(r.text).raw === '__Host-sts_lang=fr; sts_session=forged.x',
+         'the header as it arrived is kept for a worker to translate', r.text);
+    r = await ask('GET', '/cookie-told?prefix=0', { 'x-probe-tls': '1' });
+    note(/^sts_lang=fr;/.test(String((r.headers['set-cookie'] || [])[0])),
+         'a worker that says its realm does not prefix is believed over ' +
+         'this process\'s view', String(r.headers['set-cookie']));
+    mode.prefixesCookies = function () {
+      return false;
+    };
+    r = await ask('GET', '/cookie-told?prefix=1', { 'x-probe-tls': '1' });
+    note(/^__Host-sts_lang=fr;/.test(String((r.headers['set-cookie'] ||
+                                             [])[0])),
+         'and one that says it does is prefixed, whatever this process ' +
+         'thinks', String(r.headers['set-cookie']));
+    mode.prefixesCookies = function () {
+      return true;
+    };
+    // A REQUEST ANOTHER CELL RELAYED (#98, CI run 43642810770): the sending
+    // cell's front process translated the header already, so what arrives
+    // is the inside names, and they are kept — dropping them refused a
+    // traveller's sign-in at home (STS-AUTHN-0327).
+    r = await ask('GET', '/cookie-probe', {
+      cookie: 'sts_session=held.x; sts_cell=pin', 'x-probe-tls': '1',
+      'x-probe-relay': '1' });
+    note(JSON.parse(r.text).cookie === 'sts_session=held.x; sts_cell=pin',
+         'a relayed request keeps the inside names its sending cell wrote',
+         r.text);
+    r = await ask('GET', '/cookie-probe', {
+      cookie: 'sts_session=held.x', 'x-probe-tls': '1' });
+    note(JSON.parse(r.text).cookie === '',
+         'and the same header from a browser is still dropped', r.text);
+    r = await ask('POST', '/authn/language', Object.assign({
+      'x-probe-tls': '1', 'x-probe-relay': '1' }, form), 'lang=fr&return=/');
+    note(/^__Host-sts_lang=fr;/.test(String((r.headers['set-cookie'] ||
+                                             [])[0])),
+         'and its answer\'s cookie is still prefixed: the relaying cell ' +
+         'copies it as it arrives', String(r.headers['set-cookie']));
     r = await choose({});
     note(/^sts_lang=fr;/.test(String((r.headers['set-cookie'] || [])[0])),
          'cleartext: not prefixed, or a browser would refuse it',
@@ -158,8 +259,15 @@ function childMain() {
     const read = function (name) {
       return fs.readFileSync(ROOT_DIR + '/' + name, 'utf8');
     };
-    note(/!workerThreads\.isMainThread/.test(read('common/cookie_wire.ts')),
-         'a worker does not translate');
+    const wireText = read('common/cookie_wire.ts');
+    note(/!workerThreads\.isMainThread\) \{\s*CookieWire\.inWorker\(req, res\)/
+           .test(wireText),
+         'a worker translates only through inWorker(), what the front marked');
+    const poolText = read('common/request_pool.js');
+    const stripAt = poolText.indexOf('delete headers[wire.TLS_HEADER]');
+    const setAt = poolText.indexOf("headers[wire.TLS_HEADER] = '1'");
+    note(stripAt > 0 && setAt > stripAt,
+         'the pool strips a client\'s TLS mark before it writes its own');
     const appText = read('common/app.js');
     note(appText.indexOf('app.use(enterRealm)') <
            appText.indexOf('cookieWire.middleware()') &&

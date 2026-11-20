@@ -35,7 +35,14 @@
 //      refused everywhere else and refused the service-wide operations, and
 //      the same scopes are not issued to any other client in the realm unless
 //      an administrator declares them on it (#110) — and withdrawing that
-//      declaration cuts off the token it already holds.
+//      declaration cuts off the token it already holds. D12 (#444): carries
+//      over tests/realm_administrators.js 5's over-the-wire half — a mixed
+//      save names only its per-process settings, a reset of global.mode and
+//      an unlisted per-process row are refused, each STS-API-0112 on the
+//      realm's audit log (the scope table's STS-ADMIN-0788 is the verdict
+//      beneath it and reaches no row), and a service operation is refused
+//      at a segment
+//      boundary (tls/trust, not tls-connection).
 //
 // **IT IS `local: true` FOR THE OWNERSHIP REASON.** Everything here is
 // asserted over HTTP and could run from the parent's suite; the tree that GAVE
@@ -365,6 +372,11 @@ async function aRealmAdministratorIsConfined() {
   // OPENS (#103, 2026-09-22), so the realm's roster is given them — through
   // the realm's own API, which is a grant in that realm and nowhere else.
   if (!roster.body.openToAnyone) {
+    // A CONSOLE ROLE IS GRANTED ONLY TO SOMEBODY WHO EXISTS (rcbj,
+    // 2026-11-11, STS-ADMIN-0920), so the account the sign-in below would
+    // make is made first; the sign-in finds it and sets the same password.
+    await consoleSignIn.ensureConsoleAccount(base + R, REALM_PERSON,
+                                             log.info.bind(log));
     const grant = await api("POST", R + "/admin-api/rbac/grant",
                             { username: REALM_PERSON, role: "write" });
     assert.strictEqual(grant.status, 200, "granting " + REALM_PERSON +
@@ -469,6 +481,11 @@ async function theServiceAdministratorIsNot() {
   let granted = false;
   try {
     if (!open) {
+      // A CONSOLE ROLE IS GRANTED ONLY TO SOMEBODY WHO EXISTS (rcbj,
+      // 2026-11-11, STS-ADMIN-0920), so the account the sign-in below would
+      // make is made first; the sign-in finds it and sets the same password.
+      await consoleSignIn.ensureConsoleAccount(base, SERVICE_PERSON,
+                                               log.info.bind(log));
       const grant = await api("POST", "/admin-api/rbac/grant",
                               { username: SERVICE_PERSON, role: "write" });
       assert.strictEqual(grant.status, 200, "granting Admin Write answered " +
@@ -590,6 +607,71 @@ async function aRealmTokenStaysInItsRealm() {
                               { key: "scheduler.runHistoryCount", value: "2" });
   check("a per-process setting is refused 403", function () {
     assert.strictEqual(workers.status, 403, "it answered " + workers.status);
+  });
+  // D12 (#444): the code behind that refusal, and what a mixed save names,
+  // carried over from tests/realm_administrators.js 5. Codes are never
+  // sent, so they are read off the realm's own audit log.
+  // BY TIME (#465): `seq` is not one order across processes, so a row a
+  // request worker numbered from a lower block would be missed; the cluster
+  // mode saw two of the three.
+  const auditNewest = await api("GET", R + "/admin-api/audit?per=1");
+  const sinceAt = ((auditNewest.body && auditNewest.body.events &&
+                    auditNewest.body.events[0]) || {}).at || 0;
+  const mixed = await apiAs(token, "POST", R + "/admin-api/config/set-many",
+    { "scheduler.runHistoryCount": "2", "admin.readGroup": "x",
+      "oauth2.accessTokenTtlS": "600" });
+  const named = JSON.stringify(mixed.body || mixed.text);
+  check("a save mixing two per-process settings with a realm one is " +
+        "refused 403, naming the two and not the third", function () {
+    assert.strictEqual(mixed.status, 403, "it answered " + mixed.status +
+                       " " + mixed.text.slice(0, 300));
+    assert.ok(/scheduler\.runHistoryCount/.test(named) &&
+              /admin\.readGroup/.test(named), named.slice(0, 400));
+    assert.ok(!/oauth2\.accessTokenTtlS/.test(named), named.slice(0, 400));
+  });
+  const modeReset = await apiAs(token, "POST", R + "/admin-api/config/reset",
+                                { key: "global.mode" });
+  const unlisted = await apiAs(token, "POST", R + "/admin-api/config/set",
+    { key: "spiffe.maxRecordedConnections", value: "10" });
+  check("a reset of global.mode, and a per-process row no prefix names, " +
+        "are refused 403 too", function () {
+    assert.strictEqual(modeReset.status, 403, "it answered " +
+                       modeReset.status + " " + modeReset.text.slice(0, 200));
+    assert.strictEqual(unlisted.status, 403, "it answered " +
+                       unlisted.status + " " + unlisted.text.slice(0, 200));
+  });
+  let coded = [];
+  for (let i = 0; i < 20 && coded.length < 3; i += 1) {
+    const rows = await api("GET", R + "/admin-api/audit?per=200");
+    coded = ((rows.body && rows.body.events) || []).filter(function (row) {
+      return row.at > sinceAt && row.errorCode === "STS-API-0112";
+    });
+    if (coded.length < 3) {
+      await new Promise(function (resolve) {
+        setTimeout(resolve, 150);
+      });
+    }
+  }
+  // OBSERVED: the gate in front of /admin-api records its own STS-API-0112
+  // for each; the scope table's STS-ADMIN-0788 is the in-process verdict
+  // beneath it and reaches no audit row of this door.
+  check("each of the three is STS-API-0112 on the realm's audit log, and " +
+        "no answer carries a code", function () {
+    assert.ok(coded.length >= 3, "rows: " + coded.length);
+    [mixed, modeReset, unlisted].forEach(function (one) {
+      assert.ok(one.text.indexOf("STS-") < 0, one.text);
+    });
+  });
+  const trustPage = await apiAs(token, "GET", R + "/admin-api/tls/trust");
+  const connection = await apiAs(token, "GET", R +
+                                 "/admin-api/tls-connection");
+  check("a service operation is refused at a segment boundary: tls/trust " +
+        "403, tls-connection beside it not", function () {
+    assert.strictEqual(trustPage.status, 403, "it answered " +
+                       trustPage.status);
+    assert.strictEqual(connection.status, 200, "it answered " +
+                       connection.status + " " +
+                       connection.text.slice(0, 200));
   });
   const allowed = await apiAs(token, "POST", R + "/admin-api/config/set",
                               { key: "groups.claim", value: "true" });

@@ -271,22 +271,21 @@ class PortalShell {
       t.html('chooser.change') + '</button></form>');
   }
 
-  // WHICH BUILD THIS IS, on every page including the ones nobody is signed
-  // in to: the surfaces a person reaches when something has gone wrong are
-  // the ones where "which build were you on" is most likely to be asked.
+  // WHICH BUILD THIS IS is the page footer's (rcbj, 2026-11-14): the
+  // shell's footer, below this wrapper, draws the version with its build
+  // line on every page, the ones nobody is signed in to included. The
+  // version line this wrapper drew under the body was the version said
+  // twice, and went.
   /**
-   * Wraps a page's body with the version line.
+   * Wraps a page's body.
    *
    * @param inner - the body
    * @param wide - whether the page has the navigation column
-   * @param version - `{ version, buildInfo }`
    * @returns the page's HTML
    */
-  static page(inner: string, wide: boolean, version: Json): string {
-    const v = version || {};
+  static page(inner: string, wide: boolean): string {
     return '<div class="wrap' + (wide ? ' wide' : '') + '">' + inner +
-      '<p class="ver" title="' + kit.esc(v.buildInfo || '') + '">' +
-      'iya-sts <code>' + kit.esc(v.version || '') + '</code></p></div>';
+      '</div>';
   }
 
   /**
@@ -326,7 +325,7 @@ class PortalShell {
       (page.error ? '<div class="err">' + kit.esc(page.error) + '</div>' : '') +
       (page.message ? '<div class="ok">' + kit.esc(page.message) + '</div>'
                     : '') +
-      page.cards + '</div></div>', true, me && me.version);
+      page.cards + '</div></div>', true);
   }
 
   // THE PERSON'S PHOTO (#719), this realm's own copy and nothing else: its
@@ -413,11 +412,10 @@ class PortalShell {
    * Draws a page for nobody: no column, no header.
    *
    * @param inner - the page's cards
-   * @param version - `{ version, buildInfo }`
    * @returns the page's HTML
    */
-  static bare(inner: string, version: Json): string {
-    return PortalShell.page(inner, false, version);
+  static bare(inner: string): string {
+    return PortalShell.page(inner, false);
   }
 }
 

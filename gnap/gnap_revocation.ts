@@ -66,6 +66,7 @@
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import DomainMap = require('../common/domain_map');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 import errorCodes = require('../common/error_codes');
@@ -445,10 +446,13 @@ class GnapRevocation {
 
   // One value of an application field, as `gnap_grants.ts`'s `field()` reads
   // one: the first, as a string.
-  private fieldOf(app: Json, name: string): string {
+  // Named by its GnapClient field rather than its attribute (#1579).
+  private fieldOf(app: Json,
+      name: keyof IyaDomain.GnapClient & string): string {
     const { log } = this.deps;
     log.debug("Entering GnapRevocation.fieldOf(). " + name);
-    const raw = app && app.fields ? app.fields[name] : undefined;
+    const raw: unknown = app && app.fields ?
+      DomainMap.fieldOf('GnapClient', name, app.fields) : undefined;
     const value = Array.isArray(raw) ? raw[0] : raw;
     log.debug("Leaving GnapRevocation.fieldOf().");
     return value === undefined || value === null ? '' : String(value);
@@ -486,7 +490,7 @@ class GnapRevocation {
     const { log } = this.deps;
     log.debug("Entering GnapRevocation.entryKeyIdentities().");
     const out: string[] = [];
-    const raw = this.fieldOf(app, 'gnapKey');
+    const raw = this.fieldOf(app, 'key');
     if (raw) {
       try {
         const identity = this.keyIdentityOf(JSON.parse(raw));
@@ -500,11 +504,11 @@ class GnapRevocation {
         // (STS-GNAP-0652) where it is read to identify a caller.
       }
     }
-    const identity = this.fieldOf(app, 'gnapKeyIdentity');
+    const identity = this.fieldOf(app, 'keyIdentity');
     if (identity) {
       out.push(identity);
     }
-    const reference = this.fieldOf(app, 'gnapKeyReference');
+    const reference = this.fieldOf(app, 'keyReference');
     if (reference) {
       out.push('ref:' + reference);
     }

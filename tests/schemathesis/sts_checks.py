@@ -24,6 +24,19 @@
 #                           egress network). The network is the guarantee; this
 #                           is the backstop.
 #
+# and two for the remote XACML PEP's surfaces (tests/protocol/
+# schemathesis_pep.js), which only those cells enable:
+#
+#   no_internal_detail      no stack trace, panic, backtrace or source path in
+#                           a body: a Rust panic is contained (STS-XPEP-0033)
+#                           and a node one caught by the fault boundary, and
+#                           neither's text is a caller's business.
+#   refused_unauthenticated in an `-anonymous` cell only, every operation the
+#                           document gates answers one of the cell's
+#                           documented refusals (STS_SCHEMA_REFUSED_WITH); an
+#                           operation the document leaves open
+#                           (STS_SCHEMA_PUBLIC_OPERATIONS) is not asked.
+#
 # The Response accessor names (status_code, headers, body) are read
 # defensively, because they have moved across Schemathesis majors; confirm them
 # against the version tests/schemathesis/requirements.txt pins when the image
@@ -41,7 +54,23 @@ import schemathesis
 # the import path.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import code_members  # noqa: E402
+import pep_bodies  # noqa: E402
 import egress_routes  # noqa: E402
+
+# THE TWO ARCHIVE BODY TYPES ARE SENT AS BYTES, AS octet-stream IS (fuzz run
+# 14, 2026-11-11). POST /admin-api/risk/upload takes its file as
+# application/octet-stream, application/gzip or application/zip, and
+# Schemathesis 4.33 has a serializer for the first alone: every case drawing
+# either of the other two was rejected ("Can't serialize data to
+# `application/gzip`"), so about two draws in three were thrown away, neither
+# archive type ever reached the service, and in about one run in forty the
+# filter_too_much health check failed the operation -- fuzz-9700's admin-api
+# cell, with all 70521 of its cases passing. They are a file's bytes like any
+# other, which is what the octet-stream serializer sends, so it is reused for
+# them; no health check is suppressed and no operation is excluded. These are
+# the only request media types in models/api/*.tsp with no built-in serializer.
+schemathesis.serializer.alias(["application/gzip", "application/zip"],
+                              "application/octet-stream")
 
 # STS-<SUBSYSTEM>-<NNNN>: an uppercase subsystem and four digits. The audit and
 # log form; it must never appear in a response body.
@@ -66,6 +95,15 @@ _ALLOWED_SERVER_STATUS = frozenset((501,))
 # Narrow on purpose: these name resolution failures rather than any error text.
 _EGRESS_MARKERS = (b"getaddrinfo", b"ENOTFOUND", b"EAI_AGAIN")
 
+# The same question in the Rust PEP's words (hyper's and the system resolver's),
+# read on a PEP surface only: the service is node and never says them, so they
+# add nothing there and could only add an echo.
+_PEP_EGRESS_MARKERS = (b"failed to lookup address", b"dns error",
+                       b"Name or service not known")
+
+def _pep_surface():
+    """Whether this cell is one of the remote PEP's (schemathesis_pep.js)."""
+    return os.environ.get("STS_SCHEMA_SURFACE", "").startswith("pep-")
 
 def _header(response, name):
     """The named response header, lower-cased key match, or ''."""
@@ -124,6 +162,28 @@ def _action(case):
         if len(tail) == 2:
             return tail[1]
     return ""
+
+
+def _request_strings(case):
+    """Every string value this request sent -- its JSON or form body, at any
+    depth, its query and its path parameters -- for code_members.leaked's
+    `echoed`: a member answering one of them whole is the caller's own input.
+    Read defensively, as the other case accessors are."""
+    out = set()
+
+    def walk(value):
+        if isinstance(value, str):
+            out.add(value)
+        elif isinstance(value, (list, tuple)):
+            for one in value:
+                walk(one)
+        elif isinstance(value, dict):
+            for one in value.values():
+                walk(one)
+
+    for name in ("body", "query", "path_parameters"):
+        walk(getattr(case, name, None))
+    return frozenset(out)
 
 
 def _record_finding(kind, case, response, detail):
@@ -207,7 +267,8 @@ def no_error_code_leak(ctx, response, case):
     except (TypeError, ValueError):
         status = None
     body = _body_bytes(response).decode("utf-8", "replace")
-    found = code_members.leaked(method, path, status, body)
+    found = code_members.leaked(method, path, status, body,
+                                _request_strings(case))
     if found:
         detail = ", ".join(sorted({code + " at " + member
                                    for member, code in found}))
@@ -240,7 +301,9 @@ def no_outbound_fetch(ctx, response, case):
     design (egress_routes.py). The marker still fails on every other route."""
     body = _body_bytes(response)
     hit = None
-    for marker in _EGRESS_MARKERS:
+    markers = _EGRESS_MARKERS + (_PEP_EGRESS_MARKERS if _pep_surface()
+                                 else ())
+    for marker in markers:
         if marker in body:
             hit = marker
             break
@@ -258,4 +321,64 @@ def no_outbound_fetch(ctx, response, case):
                + hit.decode("ascii", "replace")
                + "); the stack must stay on the device")
     _record_finding("outbound_fetch", case, response, message)
+    raise AssertionError(message)
+
+
+@schemathesis.check
+def no_internal_detail(ctx, response, case):
+    """No stack trace, panic or source path in a body (a PEP surface's
+    invariant, pep_bodies.py). Text the request itself sent is its echo."""
+    body = _body_bytes(response).decode("utf-8", "replace")
+    text = pep_bodies.internal_detail(body, _request_strings(case))
+    if text is None:
+        return
+    message = ("the body shows an internal detail (" + text.strip()[:80]
+               + "): a stack trace, panic or source path is never sent to a "
+               "caller")
+    _record_finding("internal_detail", case, response, message)
+    raise AssertionError(message)
+
+
+def _refusal_expectation():
+    """(statuses, public routes) for an unauthenticated cell, or None."""
+    wanted = os.environ.get("STS_SCHEMA_REFUSED_WITH", "").strip()
+    if not wanted:
+        return None
+    statuses = set()
+    for one in wanted.split(","):
+        one = one.strip()
+        if one.isdigit():
+            statuses.add(int(one))
+    public = set(one.strip() for one in
+                 os.environ.get("STS_SCHEMA_PUBLIC_OPERATIONS", "").split("|")
+                 if one.strip())
+    return statuses, public
+
+
+@schemathesis.check
+def refused_unauthenticated(ctx, response, case):
+    """In an unauthenticated cell, a gated operation answers one of its
+    documented refusals (pep_bodies.py): never a success, never another
+    status."""
+    expected = _refusal_expectation()
+    if expected is None:
+        return
+    # A METHOD THE DOCUMENT DOES NOT DECLARE (the coverage phase's TRACE and
+    # the like) is not the operation, so not the operation's refusal: its 404
+    # or 405 is the answer to a path nobody serves that way.
+    operation = getattr(case, "operation", None)
+    declared = str(getattr(operation, "method", "") or "").upper()
+    sent = str(getattr(case, "method", "") or "").upper()
+    if declared and sent and declared != sent:
+        return
+    status = getattr(response, "status_code", None)
+    try:
+        status = int(status)
+    except (TypeError, ValueError):
+        return
+    message = pep_bodies.refusal(_route(case), status, expected[0],
+                                 expected[1])
+    if message is None:
+        return
+    _record_finding("unauthenticated_not_refused", case, response, message)
     raise AssertionError(message)

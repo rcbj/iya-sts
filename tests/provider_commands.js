@@ -492,6 +492,41 @@ async function body(t) {
   t.check(JSON.stringify(client).indexOf('errorCode') < 0 &&
           client.client.deliveries[0].why === 'y',
           '9h. and the SCIM clients\' door takes it off a nested row too');
+
+  t.log.info('=== 10. a token row a v1.0.0 build persisted ===');
+  // #1579's review: v1.0.0's recordJwt() stored `client_id` as the token's
+  // ARRAY `aud` when it named no client_id and no azp, and read it here with
+  // String(); IssuedToken.clientId (a string) dropped it, so the person's
+  // client stopped counting as one they were issued a token for. The row is
+  // the shape v1.0.0 wrote it in, read back from a store as it was.
+  const v100 = instance(clock, [], [], []);
+  v100.deps.stats = function () {
+    return {
+      identityKeyOf: function (name) {
+        return name;
+      },
+      tokenList: function () {
+        return [{ jti: 'v100-aud', kind: 'access_token', sub: 's', iss: 'i',
+          username: 'cmd-alice', client_id: ['cmd-app', 'other-aud'],
+          audience: 'cmd-app other-aud', scope: '', exp: 2000000000,
+          issuedAt: 1000, revoked: false, revocable: true },
+        { jti: 'v100-objects', kind: 'access_token', sub: 's', iss: 'i',
+          username: 'cmd-alice', client_id: [{ x: 1 }], exp: 2000000000,
+          issuedAt: 1000, revoked: false, revocable: true }];
+      }
+    };
+  };
+  const issuedTo = v100.clientsIssuedTo('cmd-alice');
+  t.equal(JSON.stringify(issuedTo), '{"cmd-app":true}',
+          '10a. a v1.0.0 row\'s array client_id counts as its first ' +
+          'audience, as the writer files it now; a list of no strings ' +
+          'counts as no client');
+  const DomainClasses = require('../common/domain_classes');
+  t.equal(DomainClasses.IssuedToken.fromRecord({ client_id: ['a', 'b'] })
+    .clientId, 'a', '10b. IssuedToken.clientId reads that list\'s first ' +
+    'member (the sign-out inventory\'s "for <client>" reads the same field)');
+  t.equal(DomainClasses.IssuedToken.fromRecord({ client_id: 'c' }).clientId,
+          'c', '10c. and a string as it always did');
   log.debug("Leaving body().");
 }
 

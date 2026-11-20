@@ -18,6 +18,8 @@
 //   S3. counts() takes the live entries from the digests and the INVALID
 //       ones from the bits, not from a walk of the entries;
 //   S4. fillInvalid() writes the bit of every held entry already revoked.
+//   S5. a second publication reuses the compressed list, and a bit restored
+//       from another process is published on the next one (#885).
 //
 // In a child process: it installs a stand-in reader in `common/realms.js`.
 // ===========================================================================
@@ -32,7 +34,7 @@ const log = require('bunyan').createLogger({
   level: process.env.LOG_LEVEL || 'info' });
 
 // Runs in the child. Stringified, so it may use nothing from this file's scope.
-function child() {
+async function child() {
   const findings = [];
   const note = function (ok, what, detail) {
     findings.push({ ok: !!ok, what: what,
@@ -44,6 +46,8 @@ function child() {
     const realms = require(ROOT + '/common/realms');
     const stats = require(ROOT + '/common/admin_stats');
     const status = require(ROOT + '/oauth-oidc/access_token_status');
+    const cacheRegistry = require(ROOT + '/common/cache_registry');
+    const codec = require(ROOT + '/oid4vc/vc_status_codec');
     const HANDLE = 'access_token_status.entries';
     const future = Date.now() + 3600 * 1000;
     const stored = new Map([
@@ -120,6 +124,41 @@ function child() {
          }),
          'S3. counts() takes live from the digests and INVALID from the bits',
          JSON.stringify({ counted: counted, asked: asked }));
+
+    const PACKED = 'oauth2.access-token-status-packed';
+    const publisher = new status.AccessTokenStatus(Object.assign(
+      status.AccessTokenStatus.defaultDeps(), {
+        baseUrlOf: function () {
+          return 'https://sts.example';
+        }
+      }));
+    function bitOf(compact, idx) {
+      const claims = JSON.parse(Buffer.from(String(compact).split('.')[1],
+                                             'base64url').toString('utf8'));
+      const parts = codec.tslFromJson(claims.status_list);
+      return codec.unpackTslValue(parts.bytes, parts.bits, idx);
+    }
+    const packedBefore = cacheRegistry.detail(PACKED).summary;
+    const first = await publisher.listJwt({});
+    const packedCold = cacheRegistry.detail(PACKED).summary;
+    const second = await publisher.listJwt({});
+    const packedHot = cacheRegistry.detail(PACKED).summary;
+    note(packedCold.misses === packedBefore.misses + 1 &&
+         packedHot.misses === packedCold.misses &&
+         packedHot.hits === packedCold.hits + 1 && first === second,
+         'S5. a second publication reuses the compressed list (#885)',
+         JSON.stringify({ misses: packedHot.misses, hits: packedHot.hits }));
+    realms.handleFor('access_token_status.invalid').restore('default', '99',
+      { jti: 'at-restored', expiresAt: Date.now() + 3600000 });
+    const third = await publisher.listJwt({});
+    const packedRestored = cacheRegistry.detail(PACKED).summary;
+    note(packedRestored.misses === packedHot.misses + 1 &&
+         bitOf(third, 99) === 1 && third !== second,
+         'S5b. a bit restored from another process is published on the next ' +
+         'list',
+         JSON.stringify({ misses: packedRestored.misses,
+           bit: bitOf(third, 99) }));
+    realms.handleFor('access_token_status.invalid').remove('default', '99');
 
     live = false;
     realms.handleFor('access_token_status.invalid').remove('default', '42');

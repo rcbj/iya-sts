@@ -97,6 +97,7 @@ const realms = require('../common/realms');
 // an audit ring exists to hold a row.
 const errorCodes = require('../common/error_codes');
 const cacheRegistry = require('../common/cache_registry');
+const DomainClasses = require('../common/domain_classes');
 
 // ---------------------------------------------------------------------------
 // ONE PRINCIPAL DATABASE PER TRUST REALM (2026-09-15).
@@ -1412,14 +1413,20 @@ const AUTO_RID_LIMIT = 0x40000000;
  * @param realm - the Kerberos realm; the ambient KDC's own by default
  * @returns the RID
  */
-function autoRidFor(nameComponents, realm) {
+function autoRidFor(nameComponents, realm, retired) {
   log.debug('Entering autoRidFor().');
   const key = keyOf({ name: (nameComponents || []).map(String),
                       realm: realm || current().REALM });
   const span = AUTO_RID_LIMIT - AUTO_RID_BASE;
+  // The RIDs earlier holders of THIS name had (2026-11-16): taken, and
+  // counted into the digest, so a person made again under a deleted
+  // person's name starts somewhere else and can never land on one of them.
+  // None for a name nobody held, whose RID is what it always was.
+  const before = ridList(retired);
   // A label in front of the name, so this digest is never the same bytes as
   // any other SHA-256 of a principal name something else computes.
-  const digest = stsCrypto.digest('sha256', 'sts-krb5-auto-rid:' + key);
+  const digest = stsCrypto.digest('sha256', 'sts-krb5-auto-rid:' + key +
+                                  (before.length ? '#' + before.length : ''));
   // 48 bits is an exact integer in a double, and 2^48 mod ~2^30 leaves a bias
   // of about one part in a quarter of a million — nothing a SID can show.
   const start = digest.readUIntBE(0, 6) % span;
@@ -1428,6 +1435,17 @@ function autoRidFor(nameComponents, realm) {
     const rid = Number(principal && principal.pac && principal.pac.rid);
     if (otherKey !== key && Number.isFinite(rid) && !taken.has(rid)) {
       taken.set(rid, otherKey);
+    }
+    // And every RID a deleted holder of another name had (retirePerson()).
+    ridList(principal && principal.retiredRids).forEach(function (old) {
+      if (!taken.has(old)) {
+        taken.set(old, otherKey + ' (a deleted holder)');
+      }
+    });
+  });
+  before.forEach(function (old) {
+    if (!taken.has(old)) {
+      taken.set(old, key + ' (a deleted holder)');
     }
   });
   for (let step = 0; step <= taken.size; step++) {
@@ -1449,6 +1467,158 @@ function autoRidFor(nameComponents, realm) {
   throw new Error('krb5: no free RID for ' + key + ' after ' +
                   (taken.size + 1) +
                   ' slots, which cannot happen');
+}
+
+// ---------------------------------------------------------------------------
+// A PERSON'S RID IS THE ENTRY'S, NOT THE NAME'S (2026-11-16, #1612's rule: a
+// person deleted and made again under the same name inherits nothing).
+//
+// A person's principal record, and the RID in it, is kept under
+// `name@REALM`, and survived the person's delete — it must, because it
+// carries the sign-out stamp that refuses the deleted person's tickets
+// (#111). So a person made again under the name found the record and was
+// given its RID — the same SID, which a service authorizing on the PAC
+// cannot tell from the deleted person's. Three things end that:
+//
+//   * **A DELETE RETIRES THE RECORD** (`retirePerson()`, reached from
+//     `ldap_server.js`'s `forgetPersonHoldings()` in the entry's realm). The
+//     record stays, sign-out stamp and all; it is marked `retired`, and its
+//     RID joins `retiredRids`. One key, no walk.
+//   * **A RETIRED RECORD IS NEVER REUSED.** `directoryUser()`,
+//     `certificatePerson()` and a development-mode create each make a NEW
+//     record for the next person under the name: a RID from autoRidFor()
+//     past every RID the name ever had (so it can never equal a deleted
+//     one's in the realm), the sign-out stamps merged from the retired
+//     record, and its `retiredRids` carried so the next one avoids them too.
+//   * **A PRODUCT RECORD IS BOUND TO ITS ENTRY'S `entryUUID`** (`entryUuid`),
+//     which the key source reads beside the keys. A record bound to an entry
+//     the name no longer names is retired at its next lookup — a delete whose
+//     retirement did not reach this record (another process's, or one that
+//     failed) still cannot hand its SID over.
+//
+// **NOTHING EXISTING IS RENUMBERED.** A record written before this carries
+// its RID (persisted with the record since 2026-09-12) and no `entryUuid`; it
+// is bound to the entry the name names at its first lookup after the upgrade
+// — the lazy migration — and keeps its RID, so an existing person's SID does
+// not change. A configured principal (the development fixtures) is built from
+// the settings and is never retired. `tests/kerberos_namesake_rid.js` holds
+// it.
+// ---------------------------------------------------------------------------
+// A list of RIDs as finite numbers, once each.
+function ridList(values) {
+  log.debug("Entering ridList().");
+  const out = [];
+  (Array.isArray(values) ? values : []).forEach(function (value) {
+    const rid = Number(value);
+    if (Number.isFinite(rid) && out.indexOf(rid) === -1) {
+      out.push(rid);
+    }
+  });
+  log.debug("Leaving ridList().");
+  return out;
+}
+
+// Marks a record retired, its RID joining the ones its name may never be
+// given again. In place; the caller writes it back.
+function retireRecord(record) {
+  log.debug("Entering retireRecord().");
+  if (!record.retired) {
+    record.retiredRids = ridList((record.retiredRids || [])
+      .concat(record.pac && record.pac.rid !== undefined
+        ? [record.pac.rid] : []));
+    record.retired = true;
+  }
+  log.debug("Leaving retireRecord().");
+  return record;
+}
+
+// Whether a held record belongs to an entry the name no longer names: it is
+// bound to one, and that one is not among the entry's UUIDs (its `entryUUID`
+// and the aliases a create race left — `ldap_server.js`).
+function boundElsewhere(record, entryUuids) {
+  log.debug("Entering boundElsewhere().");
+  const ids = (entryUuids || []).map(function (one) {
+    return String(one).toLowerCase();
+  });
+  const bound = String((record && record.entryUuid) || '').toLowerCase();
+  log.debug("Leaving boundElsewhere().");
+  return !!bound && ids.length > 0 && ids.indexOf(bound) === -1;
+}
+
+// Whether a held record is bound to no entry yet while the person's entry
+// is known: a record written before 2026-11-16, bound at its first lookup.
+function unbound(record, entryUuids) {
+  log.debug("Entering unbound().");
+  log.debug("Leaving unbound().");
+  return !!record && !record.entryUuid && !!(entryUuids || [])[0];
+}
+
+// What a new record for the person under a name takes from the record it
+// replaces: the RID when that record is the same person's (not retired), a
+// new one past every RID the name had otherwise; the sign-out stamps either
+// way (#111); the retired RIDs; and the entry it is bound to.
+function successorRid(name, realm, kept) {
+  log.debug("Entering successorRid().");
+  if (kept && !kept.retired && kept.pac && kept.pac.rid) {
+    log.debug("Leaving successorRid(). The same person's.");
+    return kept.pac.rid;
+  }
+  log.debug("Leaving successorRid(). A new one.");
+  return autoRidFor([name], realm, kept ? kept.retiredRids : []);
+}
+
+function inheritFrom(record, kept, entryUuids) {
+  log.debug("Entering inheritFrom().");
+  if (kept) {
+    mergeSignOut(record, kept);
+    const retired = ridList(kept.retiredRids);
+    if (retired.length) {
+      record.retiredRids = retired;
+    }
+  }
+  const bound = String((entryUuids || [])[0] || '').toLowerCase();
+  if (bound) {
+    record.entryUuid = bound;
+  }
+  log.debug("Leaving inheritFrom().");
+  return record;
+}
+
+/**
+ * Retires the principal record of a person whose directory entry was deleted,
+ * in the ambient realm, so the next person under the name gets a RID — a SID
+ * — of their own. The record and its sign-out stamps are kept.
+ *
+ * @param name - the deleted person's username
+ * @returns whether a record was retired
+ */
+function retirePerson(name) {
+  log.debug('Entering retirePerson(). name=' + name);
+  const ctx = current();
+  if (!ctx.active || !name) {
+    log.debug('Leaving retirePerson(). No Kerberos here.');
+    return false;
+  }
+  const key = String(name) + '@' + ctx.REALM;
+  const record = principals.get(key);
+  if (!record || record.retired) {
+    log.debug('Leaving retirePerson(). No live record.');
+    return false;
+  }
+  if (ctx.configuredKeys.has(key)) {
+    log.info('krb5: ' + key + ' is a configured principal, built from the ' +
+             'settings, so the directory delete of ' + name + ' did not ' +
+             'retire it.');
+    log.debug('Leaving retirePerson(). Configured.');
+    return false;
+  }
+  // WRITTEN BACK THROUGH THE STORE, for signOut()'s reason.
+  principals.set(key, retireRecord(record));
+  log.info('krb5: ' + key + ' was retired with its directory entry; RID ' +
+           record.pac.rid + ' will not be given to anybody made again under ' +
+           'the name.');
+  log.debug('Leaving retirePerson().');
+  return true;
 }
 
 // The map key carries the REALM, because two realms are served here and
@@ -2946,7 +3116,15 @@ function directoryUser(name) {
   const key = name + '@' + REALM;
   let record = principals.get(key);
   const wantedEtypes = answer.keys.map(function (pair) { return pair[0]; });
-  if (!record || !record.directoryKeys) {
+  // A RECORD BOUND TO ANOTHER ENTRY is a deleted person's (see *A PERSON'S
+  // RID IS THE ENTRY'S*): retired here, so the branch below makes this
+  // person's own.
+  if (record && !record.retired && boundElsewhere(record, answer.entryUuids)) {
+    log.info('krb5: ' + key + ' was bound to a deleted entry; the person ' +
+             'now under the name gets a RID of their own.');
+    retireRecord(record);
+  }
+  if (!record || !record.directoryKeys || record.retired) {
     const kept = record || null;
     record = register({
       name: [name],
@@ -2957,8 +3135,7 @@ function directoryUser(name) {
       directoryKeys: true,
       description: 'a person in the directory, keyed from their own password',
       pac: {
-        rid: kept && kept.pac && kept.pac.rid ? kept.pac.rid :
-             autoRidFor([name], REALM),
+        rid: successorRid(name, REALM, kept),
         groups: [RID.DOMAIN_USERS],
         userAccountControl: UAC.NORMAL_ACCOUNT,
         // S-1-18-1 says the identity came from a password logon, which is
@@ -2967,22 +3144,23 @@ function directoryUser(name) {
       }
     });
     // The sign-out, all three of its fields (#111): a person re-keyed after
-    // signing out is still signed out.
-    if (kept) {
-      mergeSignOut(record, kept);
-    }
+    // signing out is still signed out. And the retired RIDs and the entry.
+    inheritFrom(record, kept, answer.entryUuids);
     record.kvno = answer.kvno;
     principals.set(key, record);
     log.info('krb5: ' + key + ' is keyed from the directory (kvno ' +
              answer.kvno + ', ' + wantedEtypes.length + ' etype(s)).');
   } else if (record.kvno !== answer.kvno || record.salt !== answer.salt ||
-             record.etypes.join(',') !== wantedEtypes.join(',')) {
+             record.etypes.join(',') !== wantedEtypes.join(',') ||
+             unbound(record, answer.entryUuids)) {
     // WRITTEN BACK THROUGH THE STORE when it moved, for signOut()'s reason:
     // a field mutated in place is invisible to persistence and to every other
-    // process.
+    // process. A record from before 2026-11-16 is bound to its entry here,
+    // the lazy migration, and keeps its RID.
     record.kvno = answer.kvno;
     record.salt = answer.salt;
     record.etypes = wantedEtypes;
+    inheritFrom(record, null, answer.entryUuids);
     principals.set(key, record);
   }
   withKeyCache(record);
@@ -3041,7 +3219,13 @@ function certificatePerson(nameComponents, realm) {
   const REALM = current().REALM;
   const key = name + '@' + REALM;
   let record = principals.get(key);
-  if (!record) {
+  if (record && !record.retired && boundElsewhere(record, answer.entryUuids)) {
+    log.info('krb5: ' + key + ' was bound to a deleted entry; the person ' +
+             'now under the name gets a RID of their own.');
+    retireRecord(record);
+  }
+  if (!record || record.retired) {
+    const kept = record || null;
     record = register({
       name: [name],
       type: 1,
@@ -3052,7 +3236,7 @@ function certificatePerson(nameComponents, realm) {
       description: 'a person in the directory with no Kerberos keys, ' +
                    'authenticated by a certificate (PKINIT)',
       pac: {
-        rid: autoRidFor([name], REALM),
+        rid: successorRid(name, REALM, kept),
         groups: [RID.DOMAIN_USERS],
         userAccountControl: UAC.NORMAL_ACCOUNT,
         // S-1-18-1 would say a password logon; this one was a certificate,
@@ -3061,6 +3245,11 @@ function certificatePerson(nameComponents, realm) {
         extraSids: ['S-1-5-11']
       }
     });
+    inheritFrom(record, kept, answer.entryUuids);
+    principals.set(key, record);
+  } else if (unbound(record, answer.entryUuids)) {
+    // The lazy migration, as directoryUser() makes it.
+    inheritFrom(record, null, answer.entryUuids);
     principals.set(key, record);
   }
   withKeyCache(record);
@@ -3435,11 +3624,15 @@ function findOrCreateUserInDatabase(nameComponents, realm) {
   log.debug('Entering findOrCreateUser().');
   const inRealm = realm || current().REALM;
   const existing = find(nameComponents, inRealm);
-  if (existing) {
+  if (existing && !existing.retired) {
     log.debug('Leaving findOrCreateUser(). ' + keyOf(existing) + ' was ' +
         'already known.');
     return existing;
   }
+  // A RETIRED RECORD (2026-11-16) is a deleted person's: the next person
+  // under the name is created below, with a RID of their own — see *A
+  // PERSON'S RID IS THE ENTRY'S*.
+  const retired = existing || null;
   if (realmsServed().indexOf(inRealm) === -1) {
     // Not our realm, so not our account to invent. handleAsReq refuses a
     // foreign realm before it gets here; this is for any caller that does not.
@@ -3485,7 +3678,7 @@ function findOrCreateUserInDatabase(nameComponents, realm) {
     description: 'created on first sight — every username authenticates ' +
                  'here, with the one password every user shares',
     pac: {
-      rid: autoRidFor([name], inRealm),
+      rid: successorRid(name, inRealm, retired),
       groups: [RID.DOMAIN_USERS],
       userAccountControl: UAC.NORMAL_ACCOUNT,
       // The same two well-known SIDs the configured users carry: S-1-18-1 says
@@ -3496,6 +3689,11 @@ function findOrCreateUserInDatabase(nameComponents, realm) {
       extraSids: ['S-1-18-1', 'S-1-5-11']
     }
   });
+  if (retired) {
+    // Written back with what it carries over: the stamps and the retired
+    // RIDs.
+    principals.set(keyOf(created), inheritFrom(created, retired, []));
+  }
   log.debug('krb5: created ' + keyOf(created) + ' on demand — RID ' +
     created.pac.rid +
     ', salt ' + JSON.stringify(created.salt) + ', the shared user password');
@@ -3928,17 +4126,18 @@ function delegationPolicy() {
   // principal table. In a process with no directory the registry answers
   // empty, and so does this.
   const applications = require('../common/applications');
-  const valuesOf = function (row, attribute) {
-    log.debug("Entering valuesOf().");
-    const raw = row && row.fields ? row.fields[attribute] : undefined;
-    log.debug("Leaving valuesOf().");
+  // A service's delegation is its concepts' (#1579): the Application's
+  // who-for and who-to, the KerberosService's ok-as-delegate.
+  const listOf = function (raw) {
+    log.debug("Entering listOf().");
+    log.debug("Leaving listOf().");
     return (Array.isArray(raw) ? raw : (raw === undefined || raw === null ||
       raw === '' ? [] : [raw])).map(String).filter(Boolean);
   };
-  const flag = function (row, attribute) {
+  const flag = function (raw) {
     log.debug("Entering flag().");
     log.debug("Leaving flag().");
-    return (valuesOf(row, attribute)[0] || '').toUpperCase() === 'TRUE';
+    return (listOf(raw)[0] || '').toUpperCase() === 'TRUE';
   };
   const suffix = '@' + ctx.REALM;
   const services = (applications.list() || []).filter(function (row) {
@@ -3953,11 +4152,13 @@ function delegationPolicy() {
   };
   services.forEach(function (row) {
     const id = String(row.identifier);
-    const semantics = valuesOf(row, 'appDelegationSemantics')
+    const app = DomainClasses.Application.fromEntry(row.fields || {});
+    const kdc = DomainClasses.KerberosService.fromEntry(row.fields || {});
+    const semantics = listOf(app.delegationSemantics)
       .map(function (one) { return one.toLowerCase(); });
     const impersonates = semantics.indexOf('impersonation') >= 0;
     // CLASSIC — the permission is on THIS account and names what it may reach.
-    valuesOf(row, 'appAllowedToDelegateTo').forEach(function (target) {
+    listOf(app.allowedToDelegateTo).forEach(function (target) {
       const warnings = [];
       if (!impersonates) {
         warnings.push('This account does not allow IMPERSONATION ' +
@@ -3994,7 +4195,7 @@ function delegationPolicy() {
     });
     // RESOURCE-BASED — the permission is on THIS account and names who may
     // act on its behalf, so the pair is built the other way round.
-    valuesOf(row, 'appAllowedToActOnBehalfOf').forEach(function (requester) {
+    listOf(app.allowedToActOnBehalfOf).forEach(function (requester) {
       const warnings = [];
       if (/\//.test(requester) && !known(requester)) {
         warnings.push('This KDC has no principal called ' + requester + '. ' +
@@ -4018,8 +4219,8 @@ function delegationPolicy() {
         note: String(row.description || '')
       });
     });
-    const notDelegated = flag(row, 'appNotDelegated');
-    const okAsDelegate = flag(row, 'krb5TrustedForDelegation');
+    const notDelegated = flag(app.notDelegated);
+    const okAsDelegate = flag(kdc.trustedForDelegation);
     if (notDelegated || impersonates || okAsDelegate) {
       accounts.push({
         principal: id,
@@ -4375,6 +4576,9 @@ module.exports = {
   // the range it is drawn from — see autoRidFor(). Exported so a test can ask
   // two processes the same question without creating anything.
   autoRidFor: autoRidFor,
+  // A deleted person's record retired, so a namesake gets a SID of their own
+  // (2026-11-16) — `ldap_server.js`'s forgetPersonHoldings() calls it.
+  retirePerson: retirePerson,
   AUTO_RID_BASE: AUTO_RID_BASE,
   AUTO_RID_LIMIT: AUTO_RID_LIMIT,
   // Whether a principal was built from this process's settings and code, which

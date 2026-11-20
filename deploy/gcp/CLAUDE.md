@@ -74,6 +74,44 @@ one HTTPS GET of `/healthcheck`: a node whose LDAPS never binds is not
 replaced for that. The inter-cell check uses the same failure count and
 only removes the backend from that pool.
 
+## A CDN: Cloud CDN behind a global Application Load Balancer (#1341)
+
+**rcbj's decision (2026-11-13): a CDN on every pattern.** `cdn_enabled` and
+`direct_hostname` (`envs/testidp.tfvars` sets both) add `environment/cdn.tf`,
+whose header argues each decision; AWS's CloudFront (`deploy/aws/CLAUDE.md`,
+*CloudFront*) is the pattern:
+
+* `public_hostname` → a global external Application Load Balancer
+  (EXTERNAL_MANAGED) with a Google-managed certificate; `direct_hostname` → the
+  passthrough NLB, for mutual TLS, Kerberos, LDAP, SPIFFE and revocation
+  (`PKI_DISTRIBUTION_*` name it). The node's ACME certificate carries both.
+* Two backend services over the same instance groups (named port `https`):
+  `api`, no CDN and no compression (BREACH); `static`, Cloud CDN
+  `USE_ORIGIN_HEADERS`, negative caching off, chosen by a URL-map regex.
+* The URL map REPLACES `X-Forwarded-Host` and `-Proto`; another Host is
+  redirected to the public name. Cloud Armor holds `allowed_cidrs` at the
+  backend and, for cache hits, at the edge.
+* **No origin secret, on purpose**: the front ends (35.191.0.0/16,
+  130.211.0.0/22) reach instance-group backends only for this project's load
+  balancers, and every Google health check comes from them without a header,
+  so `global.edgeProxies` would refuse every health check. They and the ALB's
+  address are `STS_TRUSTED_PROXIES` instead.
+* A node's own public name is `--add-host`ed to the passthrough address, so a
+  self-call stays local, as before.
+* **A GCP cell of a multi-cloud environment** gets CloudFront instead (the
+  AWS primary's distribution): its nodes trust CloudFront's ranges and require
+  `edge-secret` once `deploy/multicloud/gcp-global` hands them both, and its
+  certificate carries the direct name.
+
+**PROVEN OFFLINE ONLY**: `fmt -check`, `init -backend=false`, `validate`, and
+`environment/tests/cdn.tftest.hcl` (four runs; 11 pass with `kek`). No `plan`
+ran: GCP was never applied, so the foundation's data sources have nothing to
+read. **First apply, look at**: an instance group shared by the passthrough
+backend (CONNECTION) and the ALB's (UTILIZATION) — Google restricts mixed
+balancing modes on one group; the managed certificate provisioning once the
+public name resolves to the new address; and the deployer's roles
+(`loadBalancerAdmin`, `securityAdmin`) covering Cloud Armor's edge policy.
+
 ## The certificate
 
 **Google releases the private key of no certificate it issues** —

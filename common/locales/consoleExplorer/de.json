@@ -1,0 +1,5 @@
+{
+  "lede": "Jede Operation, die die Verwaltungs-API dieses Dienstes anbietet, gelesen aus demselben OpenAPI-Dokument, das die API veröffentlicht, mit einem Formular, das sie aufruft. Aufrufe erfolgen mit dem eigenen Zugriffstoken dieser Konsole, ausgestellt für <strong>{who}</strong> und an den Schlüssel dieses Browsers gebunden, mit <code>{scope}</code> — den Scopes, die Ihre Konsolenrollen gewähren, und keinen weiteren, sodass eine Operation, die Sie nicht ausführen dürfen, hier genauso abgelehnt wird wie überall sonst.",
+  "you": "Sie",
+  "reading": "Lese <code>{spec}</code>&hellip;"
+}

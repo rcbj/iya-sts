@@ -721,6 +721,9 @@ ldif or multi-cell service is unchanged.
     `count(*)`, linear in the realm's rows, 13–15 ms for 29,303 on 8081),
     and outside a window the realm's KEYS
     walked with an `endsWith`, no entry read — still a walk, said there.
+    `personCountAsync()` asks the windowed count on the read pool
+    (`recentCountUnderAsync()`, the same ten seconds) for `/admin-api/users`
+    and `/admin-api/mfa` (#798).
     `personNamesUpTo(limit)` reads only the first `limit` + 1 KEYS
     (`keysUnder`: key and DN, no entry read or opened; #616), and
     `personNamesUpToAsync()` asks the same asynchronously for
@@ -850,7 +853,13 @@ ldif or multi-cell service is unchanged.
       `locateStoredAsync()` is `locateEntry()`'s entry for the four
       identifier shapes, sharing its halves (`firstRecording()`,
       `residentEntryByUuid()`, `uuidHolderOf()`) so the two cannot rank
-      differently. **`credentialCensusAsync()`** is the census on them —
+      differently. `subjectsForNamesAsync()` is `subjectForName()` for many
+      names — the whole string, then the fold — through `byKeys`, `byName`
+      eight at a time, `entriesByUuidsAsync()` and `byAttribute` eight at a
+      time, and a DN outside `ou=users` and `ou=devices` is a resident
+      lookup whose store question is `byAttribute`; `/admin/users`'
+      on-demand token rows ask it through `subjectsForAsync` (#881).
+      **`credentialCensusAsync()`** is the census on them —
       5,006 names were ten `byKeys`, six `byName` and four identifier
       questions, none synchronous, where the synchronous census asked
       5,015 — and `credentials.factorCensusAsync()`,
@@ -1480,11 +1489,13 @@ identity is here*, carries the design and rcbj's choices; this is the directory'
 | **Looked up through a validating index** — a hit is checked against the store, a miss rebuilds once per directory version, so a foreign subject cannot cost a walk per lookup | `entryByUuid()` |
 
 **THE SUBJECT RESOLVER IS A SLOT THIS FILE FILLS**, `helpers.setSubjectResolver({
-subjectFor, nameFor })`: `helpers.userFor()` asks for a person's `sub` and
-`admin_stats.js`'s `identityOf()` asks who a `sub` names. Rule 3e's test answers yes both
-ways round — `helpers.js` is a leaf this module requires, and a require the other way
-would register every `/admin/ldap/*` route at #3. Both answer in the ambient realm and
-only for PERSON entries. **A process with no directory has no subjects**: `userFor()`
+subjectFor, nameFor, namesFor, namesForAsync, warmNames, subjectsForAsync })`:
+`helpers.userFor()` asks for a person's `sub` and `admin_stats.js`'s
+`identityOf()` asks who a `sub` names. `subjectsForAsync` is
+`subjectsForNamesAsync()`, many names at once (#881). Rule 3e's test answers
+yes both ways round — `helpers.js` is a leaf this module requires, and a
+require the other way would register every `/admin/ldap/*` route at #3. Both
+answer in the ambient realm and only for PERSON entries. **A process with no directory has no subjects**: `userFor()`
 gives `sub: ''` there rather than the retired name-derived form.
 
 **A SUBJECT IS NOT A USERNAME, AND NOTHING IS CREATED NAMED AFTER ONE.** `createUser()`
@@ -1530,6 +1541,64 @@ used to write `undefined` into it, and every SCIM list after that threw
 `tests/stable_subject.js` is the contract, in two processes for the determinism claims;
 sixteen mutants across this file and the others the change touched, all caught, and
 twenty more for the race, the rename and the timestamp.
+
+## A PERSON AS AN LDIF FILE: `person_ldif.ts` (rcbj, 2026-11-14)
+
+The application page's Import / export tab (#546, `common/CLAUDE.md`) on
+Directory → Users → (a person), as `export-ldif` and `import-ldif` on
+`usersAction()` and `POST /admin-api/users/{action}` (rule 7). The file's
+header argues each rule; what a maintainer must not undo:
+
+* **DECLARED MEANS WHAT A CREATE TAKES.** An export writes the attributes
+  `personAttributesFrom()` accepts — `vc_claims.ts`'s catalogue and the
+  person editor's universe, custom attributes included (`creatable()` asks
+  the same two) — so a file round-trips through `createUser()`, which is the
+  import's create: the attribute policy, the DN rules and one entry per
+  person are its checks, not a copy. Everything else the entry holds that is
+  not a credential below is RECORDED and is neither exported nor imported
+  (STS-LDAP-0219): sign-in methods, federation sightings, consents, the
+  account's flags, pending links. The account's state (disabled, MFA
+  required, delegation flags, a service account) is set again by its own
+  controls where the person lands.
+* **THE CREDENTIALS ARE `CREDENTIALS`, A CLOSED TABLE**: the password's hash,
+  the TOTP record, the passkeys and both user handles, the recovery codes,
+  the app passwords, stored certificates, HOBA keys and the CIBA code's hash.
+  Exported only with the box, UNENCRYPTED: the two sealed records (TOTP,
+  a legacy recovery-code set) are OPENED with `credentials.ts`'s labels and
+  sealed again on import where the key persists; one that will not open
+  refuses the export (STS-LDAP-0215). A credential a subsystem mints
+  (Kerberos keys, key pairs, enrolled certificates, enrolment secrets,
+  published DIDs, self-issued subjects) is never exported and refused on
+  import. **A new credential attribute on a person owes a row there, or a
+  decision that it is minted.**
+* **A PASSWORD ONLY AS A HASH THIS SERVICE WRITES** (`isHashedSecret()`): a
+  hash cannot be held to the password policy (#546's rule for a client
+  secret), and a clear one is refused (STS-LDAP-0220) for `set-password`.
+  **No Kerberos key is derived** — the imported person has none until the
+  password is set again; the answer says `kerberosKeys: false`.
+* **NEVER OVERWRITES, AND NO `entryUUID`.** An existing username is
+  STS-LDAP-0218; an `entryUUID` in the file is refused, and the create mints
+  one, for `ALWAYS_PROTECTED_OPERATIONAL`'s reason. A passkey user handle or
+  a stored certificate somebody in the realm holds already is refused,
+  before anything is written: each finds ONE person.
+* **THE CREDENTIALS ARE WRITTEN THROUGH `writeImportedCredentials()`**, after
+  the create, in their stored forms: a third door that writes
+  `stsWebauthnCredential`, so it derives the Android marker and tells the
+  passkey report (#942), stamps `pwdChangedTime` for a password, and touches
+  once. A failure there leaves the person made without them
+  (STS-LDAP-0221). The CAEP credential-change per kind is the action's.
+* **NO GROUP MEMBERSHIP**, as #546 exports no relationship: a membership is
+  on the group's entry, and a group in another realm is another group.
+* **THE DIRECTORY IS READ OUT OF `require.cache`**, never required: this file
+  is loaded with `admin-core/admin_actions.ts` at 18 and this module
+  registers routes at 21 (rule 1). No slot.
+* **AN IMPORT CLAIMS ITS NAME LIKE A CREATE** (`mgmt-api/admin_api.ts`,
+  `runClaimed()` with `usernameOf()`), and an import naming a person policy
+  reference is the Security Administrator's (`common/security_operations.ts`).
+  Export and import both ask for a recent sign-in (`REAUTHENTICATED_ACTIONS`).
+
+Audited as `user.export` and `user.import`, names only. `tests/user_ldif.js`
+in process; `tests/protocol/sts_application_ldif.js` section e over HTTP.
 
 ## A DOOR THAT IS NOT THIS FILE: THE BULK IMPORT (#629, 2026-10-14)
 
@@ -1636,6 +1705,18 @@ fills attributes that are ABSENT and never replaces one, and `uid` is among the
 attributes it can fill. Any other shape of write must still leave the version
 behind. Flat at 0.05ms after.
 
+**`applyEntry()` broke that precondition until CI run #532 (2026-11-19).** It
+called `noteUsernameIndexRefresh()` for a row from another process, and such
+a row can REMOVE a name — a pseudonym taken off, a `uid` changed. The old name
+stayed in the index pointing at the entry, the index was stamped current, and
+that worker signed the address in as its former owner for as long as nothing
+else made it rebuild (`sts_pseudonyms` step 9, product mode). It shows only
+where a process holds the directory whole and resolves names through this
+index — every MariaDB process, since a window needs PostgreSQL's bridge; a
+windowed worker asks the store (`byName`). `applyEntry()` now reads the names
+of the entry it replaces and calls `noteUsernameIndexPut()`, as a local
+overwrite and `commitPseudonymChange()` do. `tests/pseudonym_index.js` 6.
+
 ### And under it was a third one, in the GROUP index, on the same door
 
 With the create flat at 0.05ms the SCIM door was still growing — 11.1ms at the
@@ -1715,6 +1796,12 @@ DN, a DN the kept answer holds (it WAS one), an entry that IS one where this
 process holds it, and a windowed key it does not hold. Every other write —
 a sign-in's consent, a password — leaves it. `ldap.service-accounts` on
 `/admin/caches`; `tests/sign_in_owner_reads.js`.
+`serviceAccountNamesAsync()` is that list for `/admin-api/users` and
+`/admin-api/mfa` (#798): the holders through `holdersAsync()`
+(`withAttribute` on the read pool, the store's row taken with no second
+`byKeys`). The kept list is written only when `serviceAccountsVersion` did
+not move while it was asked, so a write that landed during the walk is not
+replaced with the older answer.
 
 ### AND A FOURTH, WHICH IS THE SAME DOOR AND THE SAME LESSON A THIRD TIME
 
@@ -1937,6 +2024,64 @@ reconcile them (see `claimedMembersOf()`), so an incremental update has to
 handle a group that names a person and a person who names a group as two
 separate edits. It was not attempted on 2026-09-07; the three fixes above were,
 and this is the measurement that says where the next one would go.
+
+## THE CONSOLE GATE'S REMEMBERED USERNAMES (#880; its review, 2026-11-13)
+
+In a windowed process `existingUserEntry()` asks the store `byName` after the
+`uid=` DN misses, and the `/admin-api` gate does that for the bootstrap
+administrator on every request. #880 had the gate ask it off the event loop
+first (`warmUserNamesAsync()`) and remember the answer, nobody included, in
+`userNameAnswers` (`mgmt-api/CLAUDE.md`, *THE GATE READS THOSE ROWS OFF THE
+EVENT LOOP*). The first version had three faults, which a review found:
+
+* **It remembered every lookup, not only the gate's.** `existingUserEntry()`
+  wrote down every answer it asked the store for, and `admin_stats.js`'s
+  `identityOf()` asks that for every name anybody presents at a sign-in,
+  before authentication. That was an unbounded Map, nonexistent names
+  included, on no cache page.
+* **Every caller read it, and a remembered "nobody" defeats
+  one-entry-per-person.** `createUser()`, the LDAP add, `autoCreateUser()`
+  and the other doors ask `existingUserEntry()` precisely to refuse a second
+  person.
+* **A replicated create did not always drop it.** The drop ran only inside
+  `noteHeldNamesTouched()`, which returns at once when no add is in flight,
+  and `forgetEntry()`'s busy-key branch calls no `touchDirectory()`, so the
+  subtree clock does not move either.
+
+What holds now:
+
+* **Only `warmUserNamesAsync()` writes an answer** (`noteUserNameAnswer()`),
+  and only when neither the `ou=users` subtree clock nor the drop
+  `generation` moved while its question was out.
+* **Only two reads use one.** `existingUserEntry()` consults the memo only
+  while `rememberedNameReads` is above zero, which
+  `withRememberedUserNames(fn)` raises around `fn` and lowers in a `finally`.
+  The gate runs `admit()` inside it and calls `next()` after it returns, so a
+  handler it admits, which may create a person, asks the store. The other is
+  `admin_rbac.ts`'s `bootstrapState()`, which reads the bootstrap
+  administrator's FLAGS through it (the roster's member
+  `withRememberedUserNames`): `GET /admin-api/me` and the roster read those
+  on every console request, after `next()`, and a flags read creates
+  nothing. `ensureBootstrap()`, which may create that entry, reads directly.
+* **Any write at, under or above the realm's `ou=users` drops it**
+  (`dropUserNameAnswersFor()`): from `touchDirectory()`, which covers every
+  local write and every replicated row applied with a touch, and from
+  `forgetEntry()`'s busy branch. It bumps `generation` even when nothing is
+  held. Outside a window it returns at once, because nothing is remembered
+  there.
+* **Bounded**: `USER_NAME_ANSWERS_MAX` (64) a realm, least recently asked
+  dropped first, registered as `ldap.gate-usernames` (rule 3ap) with hits and
+  misses counted at the gate's read.
+
+`tests/admin_api_gate_warm.js` section 4 holds each rule: the registration and
+the bound, a lookup outside the gate remembering nothing, `createUser()`
+refusing a person the remembered "nobody" would hide, a replicated create on
+a key busy here and on one not busy, and a write during the warm's question.
+
+**`directoryWindowed`** is a hook this file also hands
+`credentials.addDirectoryHooks()` (#786's review): a credential census that
+fails in a windowed process is answered unknown rather than asked again one
+name at a time (`common/credentials.ts`, `censusFailureRefuses()`).
 
 ## DELETING PEOPLE IN BULK, AND THE INDEXES A DELETE USED TO THROW AWAY (#351, 2026-09-29)
 
@@ -2267,7 +2412,14 @@ the first change is the `routeAnonymousBinds` server option
 (the bind refusals, below), the second `encodeErrorMessage`, which
 sends a refusal's text as its diagnosticMessage (#261), and the third and
 fourth `saslMechanisms` and `bindDnFromHandler` (#1047, *SASL EXTERNAL*,
-below). A change goes in THE FORK, never as a
+below), and the fifth `errorCloseDelay` (run 21, 2026-11-13): a connection
+that emits an error is destroyed two seconds later rather than at once, so a
+TLS alert reaches a peer still sending the record it is about instead of
+being discarded by the TCP reset (`STS-LDAP-0213` if the option did not
+take; `ldap_server.js` above `plainServer` has the measurement; the main
+port's listeners have the same hold in `tls/alert_close.ts`); and since
+2026-11-14 it carries the five @ldapjs packages it decodes with, fixed
+(*THE @ldapjs PACKAGES ARE THE FORK'S*, below). A change goes in THE FORK, never as a
 patch from this repository into the library: an option whose default is
 upstream's behaviour, a test in the fork's own `test/` (tap), a line in its
 `docs/`, a commit pushed to `rcbj/node-ldapjs`, and the submodule pin bumped
@@ -2294,6 +2446,70 @@ them have already cost something:
   about 200 packages and a dozen advisories that have nothing to do with this
   service. `.npmrc` carries `omit=dev` and the Dockerfile passes `--omit=dev` as
   well; the duplication is deliberate.
+
+### THE @ldapjs PACKAGES ARE THE FORK'S (2026-11-14)
+
+**One unauthenticated PDU on 389 or 636 stopped the whole process**, every
+protocol and not just the connection that sent it. The Rust port of the wire
+codec (#444, `rust/crates/sts-ldap`) found four in its corpus, each recorded
+there as `Fault::Stalled`: a bind name of `cn=#4142 ,dc=example,dc=com`, a
+search whose control list runs past its sequence, and searches whose
+substring initial and extensible-match value are longer than their filter.
+None of the four was in node-ldapjs itself. They were in the @ldapjs packages
+it decodes with, and they were two defects:
+
+* **A BerReader read that cannot be satisfied answers null WITHOUT moving the
+  offset**, and every SEQUENCE OF was read with `while (ber.offset < end)`,
+  `end` from a length the peer sent. A length running past the message made
+  the loop read the same bytes for ever — on the event loop. Every such loop
+  now throws when an iteration did not advance; node-ldapjs reports a parser
+  error and destroys the connection, which is what it already did for other
+  undecodable BER. Twelve loops in `messages`, `attribute` and `filter`, and
+  the fork's own `lib/messages/sasl_bind.js` (#1047's), which had copied the
+  shape. Three of the four corpus cases and five more of the fork's test's
+  PDUs (an attribute selector, an add, a modify, a search result entry and
+  reference, a SASL bind's controls) timed out before.
+* **The DN parser never advanced past a character that was not a separator**
+  after an attribute value, and a hex-string value ends at a space. Spaces
+  before a separator are now skipped (as a string value's already were), so
+  that bind name is a DN; anything else is invalidDNSyntax (34).
+
+**rcbj's decision (2026-11-14): we are entirely responsible for our
+node-ldapjs, there is no disclosure, and the fix goes into the fork.** The
+packages are decommissioned upstream (npm deprecates every version, the
+repositories are archived), so a fork of each under rcbj would be five
+repositories with nothing to track and five git dependencies for every
+`npm ci`. **The fork CARRIES them instead**, in `node-ldapjs/packages/`
+(`attribute`, `controls`, `dn`, `filter`, `messages`): the published
+tarballs, versions unchanged, devDependencies dropped, each fix marked
+`iya-sts:` where it is made. `packages/README.md` there lists them, and its
+`test/malformed_ber.test.js` holds every loop. Two consequences here:
+
+* **This package.json depends on the five directories itself**
+  (`"@ldapjs/dn": "file:node-ldapjs/packages/dn"`, …). The fork's own
+  `file:packages/*` alone put the links in `node-ldapjs/node_modules`, and
+  `@ldapjs/change` — still the registry's, at the top — went on finding the
+  registry's `attribute` there, unfixed. As top-level dependencies they are
+  the only copy, and `tests/` requiring `@ldapjs/filter` gets the same one.
+  `npm ls @ldapjs/attribute` shows one, a link, deduped everywhere.
+* **`controls` needs `@ldapjs/asn1` 1.x** where everything else has 2.0.0,
+  and it requires it by the alias `ldapjs-asn1-v1`
+  (`npm:@ldapjs/asn1@1.2.0`), which npm puts at the top beside 2.0.0. Under
+  its own name npm records it in the lock under
+  `node-ldapjs/packages/controls/node_modules` and then `npm ci` never
+  installs it there — a nested copy inside a link target inside this tree —
+  so `controls` would find 2.0.0 and throw on every control that carries a
+  criticality, destroying every request that sent one. The first attempt
+  at this change did exactly that, and only the wire vectors noticed (37
+  changed where 5 should have); `tests/ldap_malformed_pdu.js` now searches
+  with a control as well.
+
+`tests/ldap_malformed_pdu.js` sends the four corpus PDUs to this module's own
+389 and asserts that a bind and a search are still answered afterwards. **The
+Rust port pinned these as stalls**, and once the pin moves the vectors
+`tests/tools/ldap-wire-vectors.js` writes record a destroyed connection (and
+for the DN, a bind handed to the handlers) instead of `hang`; the port's
+`Fault::Stalled` sites have to follow.
 
 (Moved here from the root `CLAUDE.md` on 2026-10-13; it was there because these
 are facts about the package root, and the root keeps the two warnings that
@@ -2343,6 +2559,106 @@ mode.
   username or group name on every role. So no group or role can be left naming
   something that is not there. Until then a rename left the old DN in the groups
   that listed it.
+
+  **AND NO OWNER LIST OR CONFERRING CLIENT EITHER (2026-11-13, the review of
+  #1613).** Two kinds of reference were left behind by the first pass.
+  `roles.forgetMember()` writes a role back without naming `conferredBy`,
+  which `roles.write()` reads as "keep it", so a deleted application's
+  identifier stayed in `roleConferredBy` and the next application registered
+  under it (in development, whoever presents the client_id) conferred the role
+  on everybody signing in through it: `noteApplicationRemoved()` now calls
+  `roles.forgetConferrer()` too, with a `roles.unconfer` row per role
+  (`STS-ADMIN-0921` when one cannot be rewritten). And the OWNERS — a role's
+  and a group's `owner`, an application's `appOwner`, a service account's
+  `stsServiceAccountOwner`, each a person's or group's DN, and under #607 an
+  owner is issued owner:write — were never touched, so a person made again at
+  the same DN owned it all again. `forgetOwnerReferences()` runs on every
+  delete of a person (`removePersonEntry()`) and of a group (`deleteGroupEntry()`
+  and the LDAP delete), and `moveOwnerReferences()` on a person's or group's
+  modifyDN, each through the register's own door — `roles.forgetOwner()` /
+  `renameOwner()`, `applications.forgetOwner()` / `renameOwner()` (both off
+  their kept listings), `writeGroupOwners()` and `writeServiceAccount()` — and a
+  removal is audited under that register's remove-owner action; a rename is
+  not, as a moved membership is not (`STS-ADMIN-0922` for a write refused).
+  **Who names the DN is asked, not walked**: the resident entries (the groups;
+  `groupsOwnedBy()`'s reach) and, in a windowed process, ONE `byAttribute` on
+  the store's `grantinggroup` value key, which holds every value of the three
+  owner attributes by its DN (#1306) — that is how a service account under
+  `ou=users` is found without paging the people. Past 1,000 answers it says so
+  (`STS-ADMIN-0923`). A device's `owner` is its holder, not an authority, and
+  is left to the device register (whose `forgetOwner()` removes a deleted
+  person's devices, below). `tests/deleted_references.js` holds both.
+
+  **AND AN APPLICATION'S OWN ROLES GO WITH IT (rcbj's decision of 2026-11-13
+  on #1612).** A role made for one application (#310: `<role>@<app>`,
+  `roleApplication` naming it) outlived the application, so one registered
+  again under that identifier found `reader@<id>` waiting, members and
+  permissions included. `noteApplicationRemoved()` — which every door that
+  deletes an application reaches: the console's Forget and `/admin-api`
+  (`applicationsAction()`), the registry's delete (the outbound SCIM client
+  calls it) and the LDAP delete handler — now calls
+  `roles.forgetApplicationRoles()` FIRST, so `forgetMember()` and
+  `forgetConferrer()` do not rewrite a role about to go. It deletes each
+  through `roles.remove()`, the call the console's delete-role makes (the
+  directory's `deleteRole()`, whose `noteRoleChange()` tells the members'
+  token holders), off the kept `ou=roles` listing and compared without case;
+  this file writes the `roles.delete` row the console writes, actor empty,
+  channel `internal`. A role remove() refuses is logged `STS-ADMIN-0924` and
+  kept. Unlike the console it does not report applications that still
+  REQUIRE the role (`appRequiredRole`), because finding them would read every
+  application's view. Only `roleApplication` decides: a realm-wide role whose
+  NAME merely ends in `@<id>` (writable only over the socket) is kept.
+
+  **AND EVERY CERTIFICATE IT HAD IS REVOKED AND LEAVES ITS NAME (2026-11-16).**
+  The TLS client and message-signing register finds a holder by the name in
+  its slot, so a person or application made again under the name was listed
+  the deleted one's certificates. `removePersonEntry()` and
+  `noteApplicationRemoved()` call `forgetHolderCertificates()`, which hands the
+  holder, its `urn:uuid:` and the deleted entry's attributes to
+  `common/tls_client_certificates.js`'s `forgetDeletedHolder()`
+  (`common/CLAUDE.md` 3ag argues it). `deletePerson()`'s `moved` — a
+  re-homing to another cell — skips it.
+
+  **AND EVERYTHING ELSE KEPT UNDER THE NAME OR THE DN (2026-11-16, rcbj:
+  "address all those things a recreated user inherits").** A person made
+  again under the username has the same name and DN and a new `entryUUID`,
+  so every store keyed by either handed the deleted person's rows over.
+  `removePersonEntry()` (not on `moved`) calls `forgetPersonHoldings()`,
+  which runs each store's own door in the entry's realm, SYNCHRONOUSLY —
+  before the delete is answered, so nothing made under the name afterwards
+  is what gets forgotten: `devices.forgetOwner()` (the devices the person
+  owned are REMOVED and their certificates revoked, found by the owner index;
+  `common/CLAUDE.md`, the device register), `post_login.forgetPerson()`,
+  `mail.forgetPerson()`, `federation_blocks.forgetPerson()` (a key per
+  relationship), `gnap_signals.forgetApprover()` (a list per application),
+  `admin_stats.forgetIdentity()`, `credentials.forgetPending()`,
+  `authorization_details.forgetPerson()`, `risk_engine.forgetStanding()`
+  (this process's copy) and `krb5_principals.retirePerson()` — the Kerberos
+  record is RETIRED, not removed, so it keeps the sign-out stamp and the next
+  person under the name gets a RID, a SID, of their own; a product record is
+  also bound to its entry's `entryUUID`, the lazy migration keeping every
+  existing RID (`kerberos/CLAUDE.md`). An ACME account is bound to the
+  entry's `entryUUID` as well as its name, so a deleted holder's account orders nothing for a
+  namesake (`acme/CLAUDE.md`). Each one's cost is the person's
+  rows, or configuration (relationships, applications), or a store of
+  minutes-long rows its own writes already walk — never the directory. A
+  step that throws is logged `STS-LDAP-0222` and the rest go on. **The RISC
+  register is the exception, on purpose**: its `purged` row is the evidence
+  `account-purged` went out, so it is not forgotten here; `ssf/risc.ts`'s
+  `retireNamesake()` moves it out of the name when a write names a new entry
+  under it (`ssf/CLAUDE.md`). **What is left**, each needing a decision of
+  its own: another process's own row of `admin_stats.users` (`merge: 'own'`,
+  display only) and its risk standing (ages out). The outbound SCIM client no
+  longer adopts a deactivated remote User found by `userName` when its
+  `externalId` is another entry's (`STS-SCIMC-0035`, `scim/CLAUDE.md`), and
+  `authzen_access_request.forgetSubject()` ends the AuthZEN tasks naming the
+  person — by username, `urn:uuid:` subject or mail — through its subject
+  index (`authzen/CLAUDE.md`). SAML's NameID is left as it is (rcbj,
+  2026-11-16). The development seed's entries keep their name-derived
+  `entryUUID`, so a realm deleted and made again under its id seeds alice
+  with her old subject; every entry a door creates is random
+  (`tests/cluster_autocreate_subject.js`).
+  `tests/deleted_person_inherits_nothing.js` holds it.
 
 ---
 
@@ -2723,6 +3039,26 @@ the store about keys nothing stale is held for. `common/CLAUDE.md` (#626) has
 the mechanism and the argument; `tests/request_write_barrier.js` section B
 shows each hazard with nothing applied and the barrier's answer once the keys
 are.
+
+### And caught up with the OTHER NODES first (2026-11-18, run #510)
+
+**The pool's read barrier is one container's.** What another NODE committed
+reached an LDAP operation only at this node's next change pull, because
+`cluster_barrier.js`'s rule 1 is HTTP middleware and a socket never passes
+`app.js`. GitHub run #510, cluster mode: a second factor required of a person
+through `/admin-api` on node A (answered after its commit, 03:17:50.496), and
+the LDAPS simple bind that followed, balanced to node B (50.522), ACCEPTED
+her password alone. Every operation but unbind is now wrapped in
+`afterClusterCatchUp()` at registration — outside the realm wrapper, so a
+realm just created elsewhere is known, and inside what `LOCAL_HANDLERS`
+holds, so it runs in whichever process runs the operation — and waits, where
+the barrier is active (active-active), for `clusterBarrier.catchUp()`: a pull
+that started after it arrived, shared as the HTTP side shares it. A pull that
+cannot catch up is STS-CLUSTER-0018 and the operation goes on, the
+middleware's rule; a handler that throws after the wait is answered
+`operationsError` (STS-LDAP-0223) or, for an unreadable directory,
+`unavailable`. SPIFFE's gRPC listener closed the same gap the same way
+(`spiffe/spiffe_grpc.ts`, `fromCaller()`). `tests/ldap_cluster_barrier.js`.
 
 ### What is asserted, and what is not
 
@@ -3932,13 +4268,16 @@ the handler), a SCIM create of a User or a Group, and `POST
   `autoCreateUser()` is `recordAuthentication()`'s SYNCHRONOUS observer inside
   every protocol's credential check, and because it is development mode only
   (`mode.autoCreates()`), reachable with several processes in a development
-  dispatch run or cluster. **Resolved 2026-09-14 by rcbj's choice**: where
-  another process can race, `putEntry()` gives a sign-in's entry a name-derived
-  (v5) `entryUUID`, so both nodes create the same entry and the merge makes them
-  one — at the cost of a name deleted and signed in again getting the same
-  subject there; a single process keeps random values.
-  `directory_create_claims.ts`'s header has it, and
-  `tests/cluster_autocreate_subject.js` holds both halves.
+  dispatch run or cluster. **From 2026-09-14 (rcbj's choice) until 2026-11-16**
+  `putEntry()` gave a sign-in's entry a name-derived (v5) `entryUUID` where
+  another process could race, so both nodes created the same entry — at the
+  cost of a name deleted and signed in again getting the deleted person's
+  subject, and every store keyed by it. **Since 2026-11-16 (#1612's rule, a
+  namesake inherits nothing) it is random on every node**: the losing node's
+  value survives as an alias through `mergeCreateRace()` (above), which is all
+  the race needs. An entry created under the old rule carries its value
+  through every overwrite, so no existing subject changed.
+  `tests/cluster_autocreate_subject.js` holds it.
 
 ## SASL EXTERNAL: A PERSON BOUND BY THE CERTIFICATE THIS SERVICE ISSUED (#1047, 2026-10-27)
 
@@ -3963,7 +4302,9 @@ changing it; the block headed *THE CERTIFICATE BIND* above `server.bind` in
 * **ONLY A CERTIFICATE THIS SERVICE ISSUED, TO A PERSON WHO HAS AN ENTRY.**
   `common/tls_client_certificates.js`'s `checkSocket()` (its `identityOf()`
   under the bind's realm) decides; the name is the `urn:sts:person:`
-  subjectAltName; `stillHeld()` and revocation are asked; a disabled account
+  subjectAltName (a service account's `urn:sts:sa:` since #1827, the same
+  person entry; one naming an entry that is not a service account is not an
+  identity, `0183`, logged STS-TLS-0063 — `common/CLAUDE.md` 3df); `stillHeld()` and revocation are asked; a disabled account
   is refused; nothing is read off a CN or subject and no entry is created.
   An APPLICATION's certificate is refused (`0185`) by #106's rule that only a
   person binds. **A certificate from an outside authority trusted through
@@ -4271,6 +4612,16 @@ and how a presented one finds it:
   registry's naming of one (`certificateIdentity()`, which writes nothing).
   Entries it seeded before stay, and sign nobody in unless the certificate is
   stored on them.
+* **A CERTIFICATE THIS SERVICE ISSUED IS FILED ON ITS HOLDER, NOT ITS CN
+  (#33, 2026-11-15)**: `tls_server.js` passes `certificate.holder`, the name
+  the issuance register's holder subject resolves to now
+  (`currentHolderOf()`), and `certificatePlan()` places the sighting on that
+  entry before any other rule. Its "person exists" above was true only until
+  a rename: the CN is the name at issuance, so after a modifyDN the
+  handshake's sighting folded onto nobody and CREATED `cn=<old name>`,
+  `origin: authentication`, an entry an administrator then could not create
+  the name over. `tests/certificate_holder_rename.js` A3b,
+  `sts_certificate_holder_rename` 2b.
 
 
 ## A GROUP OR A PERSON NAMES ITS POLICY (#1235, 2026-10-30; `common/CLAUDE.md` 3cx)

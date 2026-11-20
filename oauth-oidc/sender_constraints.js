@@ -132,13 +132,37 @@ const MTLS_EXEMPT_CLIENTS = ['sts-admin-console', 'sts-user-portal',
 //
 // **THE REPORTS APPLICATION JOINED THEM ON #956**, on those same terms: a
 // static application, a public client, every token DPoP-bound.
+//
+// **AND THE REMOTE PEP'S CLIENT, `sts-remote-pep`, JOINED THEM WITH THE
+// PEP'S TOKEN CREDENTIAL (#1827's follow-up, rcbj-approved, 2026-11-16)**:
+// a public client every PEP in the realm presents its RFC 7523
+// self-assertion through, holding no secret, so its token is bound to the
+// one key the PEP proves possession of — the key its assertion is signed
+// with. It is NOT a hosted surface, which is the one way it differs from
+// the three above. Its entry declared certificate-bound tokens through phase
+// 3 of that plan, and a DPoP binding stood for that declaration
+// (`dpopStandsForCertificate()`, at the token endpoint, `oauth2.ts`'s
+// `/admin-api` binding rule, `/admin-api`'s STS-API-0137 and, at a
+// resource, a certificate-bound token beside DPoP). PHASE 4 (rcbj,
+// 2026-11-16) RETIRED THE PEP'S CLIENT CERTIFICATE: the seed no longer
+// declares the flag, an entry an earlier build seeded has it cleared at
+// start (`applications.js`'s `fillRetiredClientFlags()`), and the exception
+// went with it. What stays is the client's own refusal code for a token
+// request with no proof (STS-OAUTH-1012, `REMOTE_PEP_CLIENT`).
 // ---------------------------------------------------------------------------
 /**
- * The hosted clients that are DPoP-bound whenever they are public clients:
- * the admin console, the user portal and the reports application.
+ * The clients that are DPoP-bound whenever they are public clients: the
+ * admin console, the user portal, the reports application and the remote
+ * PEP's client.
  */
 const DPOP_BOUND_PUBLIC_CLIENTS = ['sts-admin-console', 'sts-user-portal',
-                                   'sts-report'];
+                                   'sts-report', 'sts-remote-pep'];
+
+/**
+ * The remote PEP's client, refused under its own code (STS-OAUTH-1012) when
+ * a token request carries no DPoP proof.
+ */
+const REMOTE_PEP_CLIENT = 'sts-remote-pep';
 
 /**
  * Tells whether a client is one that must be DPoP-bound because it is the
@@ -171,6 +195,20 @@ function publicClientIssuanceRefusal(opts) {
   if (!dpopBoundPublicClient(o.clientId, o.method) || o.dpopJkt) {
     log.debug("Leaving publicClientIssuanceRefusal(). Nothing refused.");
     return null;
+  }
+  // The remote PEP's client says so in its own words and under its own
+  // code: an operator reading 0943's "admin console" would look in the
+  // wrong place.
+  if (String(o.clientId || '') === REMOTE_PEP_CLIENT) {
+    log.debug("Leaving publicClientIssuanceRefusal(). A remote PEP sent " +
+              "no proof.");
+    return refusal('STS-OAUTH-1012', 'invalid_dpop_proof',
+      'the remote PEP\'s client is a public client',
+      'sts-remote-pep is the public client every remote PEP presents its ' +
+      'RFC 7523 self-assertion through, and every token issued to it is ' +
+      'bound to the key the PEP proves possession of (RFC 9449). The ' +
+      (String(o.grant || '') || 'token') + ' request carried no DPoP ' +
+      'proof. Send a DPoP header signed with the PEP\'s assertion key.');
   }
   log.debug("Leaving publicClientIssuanceRefusal(). No proof.");
   return refusal('STS-OAUTH-0943', 'invalid_dpop_proof',
@@ -510,7 +548,10 @@ function refreshRedemptionRefusal(opts) {
  * @param opts - `where`, `boundJkt`, `proofOk`, `boundThumbprint`,
  *   `certificate`, `certificateMatches`, `mtlsAvailable`, and `clientBound`
  *   (true when the token was issued to a client `dpopBoundPublicClient()`
- *   names)
+ *   names), and `dpopRequired`
+ *   (`oauth2.accessTokenRequireDpop` as the
+ *   caller read it in the realm that issued the token; the ambient realm's
+ *   when absent)
  * @returns null, or `{ ok: false, errorCode, error, setting, description }`
  */
 function accessTokenRefusal(opts) {
@@ -528,7 +569,13 @@ function accessTokenRefusal(opts) {
       'when it is DPoP-bound (RFC 9449), because the console is a public ' +
       'client, and this token carries no cnf.jkt.');
   }
-  if (accessTokenDpopRequired()) {
+  // `dpopRequired` (#28): the management API asks the setting in the realm
+  // that ISSUED the token, so a realm's switch does not refuse the
+  // service-wide API client's bearer; every other caller leaves it to the
+  // ambient realm, as before.
+  const dpopRequired = o.dpopRequired === undefined
+    ? accessTokenDpopRequired() : !!o.dpopRequired;
+  if (dpopRequired) {
     if (!o.boundJkt) {
       log.debug("Leaving accessTokenRefusal(). Token unbound.");
       return refusal('STS-OAUTH-0528', 'invalid_token',
@@ -654,6 +701,7 @@ function state() {
 module.exports = {
   MTLS_EXEMPT_CLIENTS,
   DPOP_BOUND_PUBLIC_CLIENTS,
+  REMOTE_PEP_CLIENT,
   dpopBoundPublicClient,
   publicClientIssuanceRefusal,
   mtlsExemptClient,

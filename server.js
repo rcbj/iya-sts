@@ -870,17 +870,44 @@ serviceState.start({
   // does neither and says which node is. It is awaited below, before the
   // request workers start, so the listener still binds only after it ran.
   const bootstrapUsername = require('./common/bootstrap_name').current();
+  // A realm's remote PEP identities made service accounts (#1760). Never
+  // fatal: a failure leaves them as they were, and the next start asks again.
+  const designateRemotePeps = function (realmId) {
+    log.debug("Entering designateRemotePeps(). " + realmId);
+    try {
+      const done = require('./common/service_accounts')
+        .designateRemotePeps('startup');
+      if (done.flagged || done.deferred || done.failed) {
+        log.info('service accounts: the "' + (realmId || 'default') +
+                 '" realm\'s remote PEP identities: ' + done.flagged +
+                 ' made service accounts, ' + done.already + ' already, ' +
+                 done.deferred + ' deferred, ' + done.failed + ' failed.');
+      }
+    } catch (e) {
+      log.warn(errorCodes.tag('STS-SVCACCT-0052') + 'service accounts: the ' +
+               '"' + (realmId || 'default') + '" realm\'s remote PEP ' +
+               'identities were not made service accounts: ' +
+               ((e && e.message) || e));
+    }
+    log.debug("Leaving designateRemotePeps().");
+  };
   const otherRealms = realms.list().filter(function (realm) {
     return realm.id !== realms.DEFAULT_ID;
   });
   // In a service of several cells, a realm whose bootstrap account is homed
   // in another cell is not bootstrapped here: see bootstrapHomedElsewhere().
+  // The name is each realm's own, asked in it (admin_rbac.ts's
+  // bootstrapName(), 2026-11-14): a product realm's is generated.
   const unlessHomedElsewhere = function (realmId, bootstrap) {
-    return bootstrapHomedElsewhere(realmId, bootstrapUsername)
+    const realm = realms.get(realmId);
+    const name = realm ? realms.run(realm, function () {
+      return require('./common/bootstrap_name').current();
+    }) : bootstrapUsername;
+    return bootstrapHomedElsewhere(realmId, name)
       .then(function (home) {
         if (home) {
           log.info('credentials: the "' + realmId + '" realm\'s bootstrap ' +
-                   'account "' + bootstrapUsername + '" is homed in cell "' +
+                   'account "' + name + '" is homed in cell "' +
                    home + '"; this cell bootstraps no administrator of its ' +
                    'own.');
           return { ran: false, why: 'homed in cell ' + home };
@@ -892,6 +919,12 @@ serviceState.start({
     return realms.run(realms.DEFAULT_REALM, function () {
       return credentials.bootstrapOnce(realms.DEFAULT_ID, function () {
         adminRbac.seedBootstrapAdministrator();
+        // A REMOTE PEP'S IDENTITY IS A SERVICE ACCOUNT (#1760), owned by the
+        // realm's administrators — who exist from the line above. Every
+        // person in the REMOTE_PEPS group: the seeded `remote-pep-1` and any
+        // entry put there before this existed. Idempotent; a later member
+        // is made one as it joins (ldap_server.js's noteMembershipChange()).
+        designateRemotePeps(realms.DEFAULT_ID);
         // A CONSOLE NOBODY CAN ENTER IS SAID HERE, ONCE (#103): product mode
         // never opens it to whoever signs in, so a realm left with no
         // bootstrap administrator and an empty roster is logged under
@@ -913,8 +946,15 @@ serviceState.start({
           return realms.run(realm, function () {
             return credentials.bootstrapOnce(realm.id, function () {
               adminRbac.seedBootstrapAdministrator(realm.id);
+              designateRemotePeps(realm.id);
               adminRbac.reportClosedConsole(realm.id);
-              return credentials.bootstrap({ username: bootstrapUsername });
+              // The REALM'S name (2026-11-14, #444's D12): asked here, in
+              // the realm, because a realm in product mode in a development
+              // process seeds `admin-<hmac>` (admin_rbac.ts's
+              // bootstrapName()), and the default realm's name would give
+              // a password to an account that is not its administrator.
+              return credentials.bootstrap({
+                username: require('./common/bootstrap_name').current() });
             });
           });
         });
@@ -1153,6 +1193,9 @@ function customListener(label, certificate, certificateOf, listenerId) {
   require('./common/connect_refusal').install(server, label);
   // A request the parser refuses keeps its answer (#1500).
   require('./common/parser_refusal').install(server, label);
+  // A connection that fails at the TLS layer keeps its alert, as on the
+  // main port (2026-11-13).
+  require('./tls/alert_close').install(server, label);
   tlsServer.trustClientCertificatesOn(server, label, certificateOf,
                                       { kind: 'custom', realm: listenerId });
   tlsServer.observeConnectionsOn(server, label);
@@ -1261,6 +1304,13 @@ if (useHttps) {
   require('./common/connect_refusal').install(mainServer,
     'the main port (' + PORT + ')');
   require('./common/parser_refusal').install(mainServer,
+    'the main port (' + PORT + ')');
+  // A CONNECTION THAT FAILS AT THE TLS LAYER KEEPS ITS ALERT (2026-11-13):
+  // node closed it in the tick of the failure, with the peer's record unread,
+  // and the TCP reset that sent could discard the alert — tlsfuzzer's
+  // record-layer probe, one in seventy under load. Held for two seconds,
+  // bounded — tls/alert_close.ts.
+  require('./tls/alert_close').install(mainServer,
     'the main port (' + PORT + ')');
   // REGISTERED SO THAT A LATER TRUSTSTORE CHANGE REACHES THIS LISTENER TOO.
   // `tls_server.js` owns the anchors and applies them to every listener it

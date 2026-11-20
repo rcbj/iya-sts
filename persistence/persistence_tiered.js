@@ -64,8 +64,8 @@ const log = bunyan.createLogger({ name: 'sts-persistence-tiered' });
 // The driver methods that belong to the GLOBAL tier outright.
 const GLOBAL_METHODS = [
   'loadRealms', 'saveRealms', 'loadOverrides', 'saveOverrides',
-  'loadKeys', 'saveKeys', 'deleteKeys', 'loadKey', 'mergeKeys',
-  'ensureSharedSecret',
+  'loadKeys', 'loadDekRows', 'saveKeys', 'deleteKeys', 'loadKey',
+  'mergeKeys', 'ensureSharedSecret',
   // THE USED-ASSERTION HISTORY IS GLOBAL (#98): an RFC 7523 or 7522
   // assertion is accepted once EVER (rule 3ae), and every cell answers on
   // the same public name — a history per cell would accept it once per cell.
@@ -734,14 +734,15 @@ function create(options) {
     });
   };
 
-  driver.saveDirectory = function (change) {
+  driver.saveDirectory = function (change, how) {
     log.debug("Entering tiered saveDirectory().");
     const split = splitChange(change);
     log.debug("Leaving tiered saveDirectory().");
     // THE GLOBAL HALF FIRST: a group's definition before its members, and a
-    // failure there leaves the cell untouched for the retry.
-    return globalDriver.saveDirectory(split.toGlobal).then(function (g) {
-      return cellDriver.saveDirectory(split.toCell).then(function (c) {
+    // failure there leaves the cell untouched for the retry. `how` is the
+    // tally flag (#878); both halves use the pool the caller asked for.
+    return globalDriver.saveDirectory(split.toGlobal, how).then(function (g) {
+      return cellDriver.saveDirectory(split.toCell, how).then(function (c) {
         return indexPeople(split.toCell).then(function () {
           tellCellHooks(split);
           return { outcomes: joinOutcomes(split, g && g.outcomes,
@@ -819,6 +820,30 @@ function create(options) {
         };
       });
     });
+  };
+
+  // The status row is global and the block claim is on the cell, so the
+  // fence lock lives on the global database: a share lock on the cell
+  // would not hold the flush that writes the row (#884). The cell driver
+  // is not the fence's owner and does not report those locks lost.
+  driver.installClaimFence = function (scope, realm, key, reservation) {
+    log.debug("Entering tiered installClaimFence().");
+    log.debug("Leaving tiered installClaimFence().");
+    return globalDriver.installClaimFence(scope, realm, key, reservation);
+  };
+  driver.releaseClaimFences = function (rows) {
+    log.debug("Entering tiered releaseClaimFences().");
+    log.debug("Leaving tiered releaseClaimFences().");
+    return globalDriver.releaseClaimFences(rows);
+  };
+  driver.mintedLiveKeys = function (handle, realmId, keys) {
+    log.debug("Entering tiered mintedLiveKeys().");
+    const target = tiers.mintedTierOf(handle) === 'global' ? globalDriver
+                                                           : cellDriver;
+    log.debug("Leaving tiered mintedLiveKeys().");
+    return typeof target.mintedLiveKeys === 'function'
+      ? target.mintedLiveKeys(handle, realmId, keys)
+      : Promise.resolve([]);
   };
 
   driver.readMinted = function (handle, realmId, key) {

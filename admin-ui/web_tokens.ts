@@ -195,9 +195,11 @@ class TokensPage {
 
       // A TAB PER SECTION (2026-10-12): the lead notes and the column
       // legend are Metadata (`WebPages.protocolTabs()`).
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each tab's
+      // heading stays at the top level, its content one frame.
       '<h2 data-tab="invalidate">' + t.html('consoleTokens.hInvalidate') +
       '</h2>' +
-      '<form method="post" action="/admin/tokens">' +
+      kit.frame('<form method="post" action="/admin/tokens">' +
         '<input type="hidden" name="action" value="revoke">' +
         '<input type="hidden" name="back" value="' + kit.esc(backFilter) +
         '"><div class="formrow"><label for="target">' +
@@ -235,14 +237,15 @@ class TokensPage {
         'name="subject" size="40" placeholder="' +
         kit.esc(t.text('consoleTokens.placeholderSubject')) + '"><button ' +
         'class="danger">' + t.html('consoleTokens.revoke') +
-        '</button></div></form><h2 data-tab="issued">' +
+        '</button></div></form>') + '<h2 data-tab="issued">' +
         t.html('consoleTokens.hIssued') + '</h2>' +
       // No `page` input in this form, and that is the point: changing the
       // filter or the page size sends the reader back to page 1. Carrying the
       // old page number over would land somebody on page 6 of a two-page
       // result, and the clamp in pagingOf() would then quietly move them
       // again.
-      '<form method="get" action="/admin/tokens"><div class="formrow">' +
+      kit.frame('<form method="get" action="/admin/tokens">' +
+        '<div class="formrow">' +
         '<label for="family">' + t.html('consoleTokens.labelFamily') +
         '</label><select id="family" ' +
         'name="family">' +
@@ -324,16 +327,17 @@ class TokensPage {
       t.html('consoleTokens.perFamilyBefore') + '<a ' +
       'href="/admin/metrics">' + t.html('consoleTokens.metricsLink') +
       '</a>' + t.html('consoleTokens.perFamilyAfter')) +
-      (coverageNote ? kit.note(coverageNote) : '') +
+      (coverageNote ? kit.note(coverageNote) : '')) +
 
-      '<div data-metadata><h3>' + t.html('consoleTokens.hColumns') + '</h3>' +
+      '<div data-metadata>' +
+      kit.frame('<h3>' + t.html('consoleTokens.hColumns') + '</h3>' +
       kit.note(t.html('consoleTokens.columnsLead')) +
       columnLegend(t) +
       kit.note(t.html('consoleTokens.oid4vciBefore') + '<a ' +
       'href="/admin/metrics">' + t.html('consoleTokens.metricsLink') +
       '</a>' + t.html('consoleTokens.oid4vciAfter')) +
 
-      kit.note(t.html('consoleTokens.pagingJson', { max: kit.MAX_ROWS })) +
+      kit.note(t.html('consoleTokens.pagingJson', { max: kit.MAX_ROWS }))) +
       '</div>';
 
     return inner;
@@ -843,7 +847,8 @@ class TokensPage {
       t.html('consoleTokens.setLeadLink') + '</a>' +
       t.html('consoleTokens.setLeadAfter')) +
 
-      '<h2>' + t.html('consoleTokens.hIssuance') + '</h2>' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16).
+      kit.frame('<h2>' + t.html('consoleTokens.hIssuance') + '</h2>' +
       '<table>' +
       '<tr><th>' + t.html('consoleTokens.rowSet') + '</th><td><code>' +
       kit.esc(set.setId || set.setKey) +
@@ -891,10 +896,11 @@ class TokensPage {
       kit.esc(kit.whenText(set.issuedAt)) +
       '</td></tr><tr><th>' + t.html('consoleTokens.thExpires') +
       '</th><td>' +
-      TokensPage.setExpiryCell(t, set) + '</td></tr></table>' +
+      TokensPage.setExpiryCell(t, set) + '</td></tr></table>') +
 
       (set.grouped && set.revocableCount
-        ? '<h2>' + t.html('consoleTokens.hInvalidateSet') + '</h2>' +
+        ? kit.frame('<h2>' + t.html('consoleTokens.hInvalidateSet') +
+          '</h2>' +
           kit.note(t.html('consoleTokens.invalidateSetLead') +
           (set.size > set.revocableCount
             ? t.html('consoleTokens.onlySomeRevocable',
@@ -914,10 +920,10 @@ class TokensPage {
             '"><button class="secondary">' +
             t.html('consoleTokens.restoreThisSet') + '</button></form>' +
           '</div>' +
-          kit.note(t.html('consoleTokens.restoreNonSpec'))
+          kit.note(t.html('consoleTokens.restoreNonSpec')))
         : '') +
 
-      '<h2>' + (set.grouped
+      kit.frame('<h2>' + (set.grouped
         ? t.html('consoleTokens.hCredentials', { n: set.size })
         : t.html('consoleTokens.hCredential')) +
       '</h2><table><tr><th>' + t.html('consoleTokens.labelKind') +
@@ -934,7 +940,7 @@ class TokensPage {
       kit.note(t.html('consoleTokens.membersNote')) +
       (set.grouped
         ? kit.note(t.html('consoleTokens.detailDisagrees'))
-        : '');
+        : ''));
 
     return inner;
   }

@@ -46,6 +46,13 @@ model RecordField {
 
   /** Stated, because no directory marking stands behind a record. */
   secret?: boolean;
+
+  /**
+   * `first` reads a member held as a list as its first value: a record an
+   * earlier build wrote with a list where the field is one value (#1579's
+   * review). Only on a field that is one string or number.
+   */
+  transform?: "first";
 }
 
 /** A field no attribute holds, and how it is worked out. */

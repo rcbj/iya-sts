@@ -110,8 +110,8 @@ class Oid4vcDemo {
     log.debug("Entering Oid4vcDemo.constructor().");
     this.sts = deps.sts;
     this.sessions = deps.sessions;
-    this.publicUrl = String(deps.publicUrl || "").replace(/\/+$/, "");
-    this.walletUrl = String(deps.walletUrl || "").replace(/\/+$/, "");
+    this.publicUrl = util.stripTrailingSlashes(deps.publicUrl || "");
+    this.walletUrl = util.stripTrailingSlashes(deps.walletUrl || "");
     log.debug("Leaving Oid4vcDemo.constructor().");
   }
 

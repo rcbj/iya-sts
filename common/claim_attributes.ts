@@ -125,6 +125,7 @@
 // ---------------------------------------------------------------------------
 
 import helpers = require('./helpers');
+import DomainMap = require('./domain_map');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
 // config.js and error_codes.js and nothing else here, so it cannot join a
 // cycle and it registers no route, so its position is not a position at all.
@@ -872,8 +873,10 @@ class ClaimAttributes {
                      exposed: string[]): Record<string, string[]> {
     const { log } = this.deps;
     log.debug("Entering ClaimAttributes.permissionClaimsOf().");
+    // The OAuthClient's (#1579).
     const raw = application && application.fields
-      ? [].concat(application.fields[PERMISSION_CLAIMS_ATTRIBUTE] || [])[0]
+      ? DomainMap.fieldOf('OAuthClient', 'permissionClaims',
+        application.fields)
       : '';
     const out: Record<string, string[]> = {};
     if (raw === undefined || raw === null || String(raw).trim() === '') {

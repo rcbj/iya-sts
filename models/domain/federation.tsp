@@ -115,6 +115,9 @@ model FederationRelationship {
   @fromAttr(#{attr: "fedUserinfoSignedResponseAlg"})
   `userinfoSignedResponseAlg`?: string;
 
+  @fromAttr(#{attr: "fedUserinfo"})
+  `userinfo`?: string;
+
   @fromAttr(#{attr: "fedRefreshTokens"})
   `refreshTokens`?: string;
 
@@ -138,6 +141,9 @@ model FederationRelationship {
 
   @fromAttr(#{attr: "fedDiscovery"})
   `discovery`?: string;
+
+  @fromAttr(#{attr: "fedFapi"})
+  `fapi`?: string;
 
   @fromAttr(#{attr: "fedInitiateLogin"})
   `initiateLogin`?: string;
@@ -249,6 +255,9 @@ model FederationRelationship {
 
   @fromAttr(#{attr: "fedEncryptionKey", secret: true})
   `encryptionKey`?: string[];
+
+  @fromAttr(#{attr: "fedClientCertificate", secret: true})
+  `clientCertificate`?: string;
 
   @fromAttr(#{attr: "fedAllowUnsolicited"})
   `allowUnsolicited`?: string;

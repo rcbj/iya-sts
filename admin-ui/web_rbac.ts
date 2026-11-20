@@ -204,7 +204,7 @@ class RbacPage {
     const forms = mayWrite && info.available
       ? '<h2 id="grant" data-tab="grant">' +
         t.html('consoleRbac.body.grantHeading') +
-        '</h2>' + kit.note(t.html('consoleRbac.body.grantNote')) +
+        '</h2>' + kit.frame(kit.note(t.html('consoleRbac.body.grantNote')) +
         personPane + gapNotes +
         (picked
           ? '<form method="post" action="/admin/rbac" id="grant-picked">' +
@@ -230,10 +230,12 @@ class RbacPage {
               ? '<div class="err" id="grant-picked"><strong>' +
                 kit.esc(personAsked) + '</strong> is not in the ' +
                 'directory and has not signed in, so there is nobody by that ' +
-                'name to pick. Search again, or grant to the name as typed ' +
-                'with the form below.</div>'
+                'name to pick. Search again, or create the person on ' +
+                'Directory, People first: a console role is granted only to ' +
+                'somebody in this realm\'s directory.</div>'
               : '')) +
-        '<h3>' + t.html('consoleRbac.body.typedHeading') + '</h3>' +
+        kit.frame('<h3>' + t.html('consoleRbac.body.typedHeading') +
+        '</h3>' +
         '<form method="post" action="/admin/rbac"><div class="formrow">' +
         '<input type="hidden" name="action" value="grant">' + carryBack +
         '<label for="typed">' + t.html('consoleRbac.body.name') +
@@ -246,7 +248,7 @@ class RbacPage {
         '<button type="submit" class="secondary">' +
         t.html('consoleRbac.body.grant') + '</button>' +
         '</div></form>' +
-        kit.note(t.html('consoleRbac.body.typedNote'))
+        kit.note(t.html('consoleRbac.body.typedNote'))))
       : (info.available && info.enforced && !mayWrite
           ? kit.note(t.html('consoleRbac.body.readOnlyNote'))
           : '');
@@ -264,9 +266,13 @@ class RbacPage {
     }).join('');
     // WHO HOLDS A ROLE IS A TAB (2026-10-12), headed by the page's own
     // name; the status, the tiles and the notes are Metadata.
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each tab's
+    // heading stays at the top level, its content one frame; the roles
+    // follow the tabs and `metadataFrame()` keeps them on Metadata.
     const inner = noDirectory + status + tiles +
       '<h2 data-tab="holders">' + t.html('console.nav.rbac') + '</h2>' +
-      '<form method="get" action="/admin/rbac"><div class="formrow">' +
+      kit.frame('<form method="get" action="/admin/rbac">' +
+      '<div class="formrow">' +
       personCarry +
       '<label for="q">' + t.html('consoleRbac.body.person') + '</label>' +
       '<input type="text" id="q" name="q" value="' + kit.esc(wantedText) +
@@ -305,8 +311,8 @@ class RbacPage {
       '</table>' + nav.foot +
       (info.roles.some(function (r) { return r.claimedCount; })
         ? kit.note(t.html('consoleRbac.body.claimedNote'))
-        : '') + forms +
-      '<h2>' + t.html('consoleRbac.body.rolesHeading') +
+        : '')) + forms +
+      kit.metadataFrame('<h2>' + t.html('consoleRbac.body.rolesHeading') +
       '</h2><table><tr><th>' + t.html('consoleRbac.body.thRole') +
       '</th><th>' + t.html('consoleRbac.body.thGroup') + '</th><th>' +
       t.html('consoleRbac.body.thAllows') + '</th><th class="num">' +
@@ -330,7 +336,7 @@ class RbacPage {
       }).join('') + '</table>' +
       kit.note(t.html('consoleRbac.body.writeImpliesRead', {
         write: info.roles[1] ? info.roles[1].cn : '',
-        read: info.roles[0] ? info.roles[0].cn : '' })) +
+        read: info.roles[0] ? info.roles[0].cn : '' }))) +
       // THE FOUR SETTINGS THEMSELVES, AND NOT A TABLE OF READINGS BESIDE THEM.
       // This page carried its own four-row table saying what each one was set
       // to and what it did, above a link to /admin/config; the descriptions in

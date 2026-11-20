@@ -159,14 +159,26 @@ directory:
 
 | Licence | Packages |
 |---|---|
-| MIT | @dagrejs/dagre, @fingerprintjs/fingerprintjs, @noble/curves, @noble/hashes, @noble/post-quantum, @xmldom/xmldom, ajv, ajv-formats, body-parser, bowser, bunyan, busboy, cors, croner, express, jsonwebtoken, knex, ldapjs (the `node-ldapjs` submodule, fork `rcbj/node-ldapjs`), pg, qrcode, scimmy, xml-crypto, yauzl, zod |
+| MIT | @dagrejs/dagre, @fingerprintjs/fingerprintjs, @noble/curves, @noble/hashes, @noble/post-quantum, @xmldom/xmldom, ajv, ajv-formats, body-parser, bowser, bunyan, busboy, croner, express, jsonwebtoken, knex, ldapjs (the `node-ldapjs` submodule, fork `rcbj/node-ldapjs`), pg, qrcode, scimmy, xml-crypto, yauzl, zod |
 | MIT-0 | nodemailer |
 | BSD-3-Clause | @digitalbazaar/bbs-signatures, @digitalbazaar/ed25519-signature-2020, @digitalbazaar/ed25519-verification-key-2020, @digitalbazaar/security-context, @digitalbazaar/zcap, asn1js, jsonld, jsonld-signatures, macaroon, pkijs |
 | Apache-2.0 | @biscuit-auth/biscuit-wasm, @grpc/grpc-js, @grpc/proto-loader |
 | BSD-3-Clause OR GPL-2.0 | node-forge, used under BSD-3-Clause |
 | Unlicense | isbot |
 
-Their transitive dependencies, and the optional packages under
+## Runtime dependencies in the remote PEP image
+
+The remote XACML PEP (`xacml-pep/`) is a Rust binary, and its crates are
+compiled into it from crates.io at the versions `rust/Cargo.lock` pins. Each
+carries its own licence in the Cargo registry. One of them is named here
+because it was added for a protocol rather than a primitive (#1760,
+`rust/DESIGN.md` section 7):
+
+| Licence | Crate |
+|---|---|
+| MIT | `oidc-caep-risc` 0.3.0 (crates.io; source github.com/rcbj/oidc-caep-risc-rust, the same owner): the reverse proxy's OpenID Connect relying party and CAEP/RISC receiver |
+
+The npm packages' transitive dependencies, and the optional packages under
 `peerDependencies` — the cloud SDKs, and the attribute sources' database
 drivers `mysql2` and `tedious` (MIT) and `oracledb` (Apache-2.0 OR UPL-1.0) —
 carry their licences the same way. The test suite's

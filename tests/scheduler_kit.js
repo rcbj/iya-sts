@@ -85,7 +85,12 @@ function world(options) {
     claimsDown: false,
     // How many times a scheduler waited for its writes to be written down
     // (the history purge does, between batches — #338).
-    settles: 0
+    settles: 0,
+    // The tick's batch read of the current and previous slot (#883).
+    // Absent, the tick does not ask.
+    readRuns: o.readRuns,
+    // The page's newest window (#883). Absent, the page lists the map.
+    newestRuns: o.newestRuns
   };
 
   // THE STORE'S `watch()` (#623): every node's scheduler is told of every
@@ -260,6 +265,8 @@ function world(options) {
         w.settles += 1;
         return Promise.resolve(null);
       },
+      readRuns: w.readRuns,
+      newestRuns: w.newestRuns,
       host: 'host-' + name,
       pid: node.pid,
       isRequestWorker: function () { return !!no.worker; },

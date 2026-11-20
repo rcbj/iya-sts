@@ -710,6 +710,15 @@ async function saml11Section(t, state, view) {
           'F. an artifact is resolved at the responder with a request the ' +
           'tenant\'s registered key signed, and its cm:artifact assertion ' +
           'accepted', r.text.slice(0, 300));
+  // The artifact consumer at a Location of its own, which is what a
+  // relying party registers on artifact-01: the identity provider answers
+  // the binding registered for the shire.
+  r = await call(view.urls.saml11Artifact + '?SAMLart=' +
+                 encodeURIComponent('AAEartifact2') + '&TARGET=x');
+  t.check(r.status === 200 && r.json.ok && r.json.profile === 'artifact' &&
+          r.json.nameIdentifier === 'carol',
+          'F. the artifact consumer at /saml11/artifact resolves an ' +
+          'artifact the same way', r.text.slice(0, 300));
   log.debug("Leaving saml11Section().");
 }
 

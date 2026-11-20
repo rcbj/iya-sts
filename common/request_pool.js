@@ -464,9 +464,9 @@ function dropSettledWaiter() {
 //   keys' writes reached ON OTHER WORKERS (sessionWanted()) — a write the
 //   chosen worker made itself is in its memory, lowestBlocking()'s argument.
 // * **A REQUEST WITH NO KEY KEEPS THE GLOBAL WAIT, UNCHANGED.** That is every
-//   back channel — a client's server redeeming a code at `/oauth2/token`, a
-//   refresh, SCIM, `/admin-api` with a bearer token and no cookie — so the
-//   code exchange still waits for the code, as it always did.
+//   back channel — a client's server redeeming a code at `/oauth2/token`,
+//   SCIM, `/admin-api` with a bearer token and no cookie. A refresh grant
+//   is the exception below: it is keyed by its token (#879).
 // * **A POOL PIN THE ROUTE DID NOT HONOUR IS NO KEY.** `p:<pid>` names a
 //   worker, shared by every client pinned there, and this service's own back
 //   channel (`oidc_rp.ts`) sends one to reach the worker that minted a code a
@@ -476,12 +476,13 @@ function dropSettledWaiter() {
 // * **WHAT THE FRONT PROCESS WRITES ITSELF IS EVERYBODY'S** (frontGeneration):
 //   those writes carry no ticket and so no key, and they are rare.
 //
-// What is given up, and `docs/configuration.md` says so: a request does not
-// wait for ANOTHER BROWSER's write; a console page reads another session's
+// What is given up, and `docs/v1.1.0/configuration.md` says so: a request does
+// not wait for ANOTHER BROWSER's write; a console page reads another session's
 // writes only once the workers converge, half a second to a second. A
 // request that carried no key — a back channel, SCIM, an API call, a
 // dispatched LDAP operation — is everybody's write (SHARED_KEY, below), so
-// a browser waits for it. `global` is the old barrier, whole.
+// a browser waits for it. A refresh grant this process could read is not
+// one of those (#879). `global` is the old barrier, whole.
 //
 // BOUNDED WITHOUT A TIMER (the root CLAUDE.md, *Anything periodic is a
 // scheduler job*): at most CLIENT_KEYS_MAX keys, least recently used first;
@@ -502,8 +503,10 @@ const CLIENT_KEYS_MAX = 20000;
 // thirteen single-node jobs failed (sts_gnap_interaction, sts_siop,
 // sts_userinfo_protected, sts_consent_withdrawal, …). So such a request's
 // ticket is filed under SHARED_KEY as well, and every keyed request waits
-// for SHARED_KEY with its own keys: a browser waits for every back channel's
-// writes, and still not for another browser's.
+// for SHARED_KEY with its own keys: a browser waits for every keyless
+// write, and still not for another browser's. A refresh grant keyed by its
+// token is not filed there (#879, THE REFRESH GRANT, below), so neither a
+// browser nor the next refresh of a different token waits for it.
 const SHARED_KEY = '*';
 // How many of the oldest keys each dispatch looks at to drop.
 const CLIENT_KEYS_PRUNED_PER_DISPATCH = 4;
@@ -548,8 +551,8 @@ let globalDispatches = 0;
 //   all; it streams as before.
 // * **IT IS KEYED BY ITS CODE ONLY IF THE POOL KNOWS THAT CODE**: an
 //   `authorization_code` grant naming one `code` this pool holds state for
-//   (codeKeysOf()). A refresh grant stays global; its token was issued in a
-//   JSON body and is usually hours old.
+//   (codeKeysOf()). A refresh grant is keyed by its token instead (#879,
+//   below).
 // * **AN UNKNOWN CODE IS NEVER "WAIT FOR NOTHING"; IT IS THE GLOBAL WAIT,
 //   EXACTLY AS BEFORE.** The code may have come in a `form_post` body or a
 //   fragment, been minted by the front process, or come from another node.
@@ -577,6 +580,139 @@ const TOKEN_PATH = /^(?:\/realm\/[^/]+)?(?:\/[^/]+)?\/oauth2\/token$/;
 const settledCodes = new Set();
 let codeKeyedDispatches = 0;
 let codeKeysLearnt = 0;
+
+// ---------------------------------------------------------------------------
+// THE REFRESH GRANT, KEYED BY ITS TOKEN (2026-11-11, #879).
+//
+// About half of `/oauth2/token` in the soak is `grant_type=refresh_token`.
+// It carried no cookie, so once the barrier was per client it took the
+// global wait: every other browser's sign-in, and every other back channel.
+// The token in the body is usually hours old. The one write it must not
+// miss is a rotation of THAT token that this process has not finished with,
+// because a replay the worker cannot yet see is redeemed as a second use
+// and the family is revoked.
+//
+// * **A SMALL, PLAIN REFRESH GRANT IS KEYED BY `rt:<digest>`** whether or
+//   not this process has seen that token before (refreshKeysOf()). The
+//   same body read as a code exchange. It waits for that key, for
+//   SHARED_KEY (a keyless write, which is where an issuance this process
+//   could not read is filed) and for REVOKE_KEY (every write that ended
+//   what a refresh token rests on, below). It is NOT filed under
+//   SHARED_KEY, so the next refresh of another token does not wait for it,
+//   and neither does a browser.
+// * **THE KEY IS A DIGEST OF THE TOKEN, NEVER THE TOKEN** (refreshKeyOf(),
+//   the review of #879). The key table lives as long as the process and is
+//   what a heap snapshot or a debugger reads first; a refresh token is a
+//   bearer credential good for hours. `crypto.credentialDigest()` (SHA-256)
+//   is the one place it is hashed, as the opaque access-token store hashes
+//   its handles.
+// * **AN ANSWER FROM THE TOKEN ENDPOINT WHOSE JSON CARRIES `refresh_token`
+//   FILES ITS TICKET UNDER ITS KEY** (learnRefreshToken()), inheriting
+//   the tickets and write generations outstanding under the request's own
+//   keys except SHARED_KEY (inheritIntoRefreshKey()). The client's next
+//   refresh of the new token waits for the response that minted it. The
+//   body is buffered only when it is a 200 JSON of a declared length of at
+//   most REFRESH_LEARN_MAX, and the same bytes are what the client is sent.
+// * **A TOKEN THIS PROCESS NEVER SAW IS THAT KEY, EMPTY.** Nothing
+//   outstanding under it means no rotation of it is unfinished here:
+//   pruning drops a key only once its tickets are gone and every other
+//   worker has passed its writes. That is "unknown = old". It is never
+//   "wait for nothing" while a write for it is still in the table, and a
+//   token response this process could not read (too large, unframed, not
+//   JSON) is filed under SHARED_KEY so the grant still waits for it
+//   (noteUnlearntRefresh()).
+// * **A GRANT THIS PROCESS CANNOT READ STAYS GLOBAL.** More than one
+//   refresh token, a token longer than REFRESH_TOKEN_MAX, a body over
+//   CODE_BODY_MAX, a chunked or encoded body, HTTP/2 with no length. The
+//   same rule as an unknown code.
+//
+// ~~A sign-out is a browser's write, not this token's. The refresh grant
+// sees it when the workers converge.~~ **REVERSED BY THE REVIEW OF #879
+// (2026-11-13)**: in product that let a refresh routed to a lagging worker
+// be issued new tokens from a session signed out a moment before. A
+// sign-out, and every other write that ends what a refresh token rests on,
+// is now filed under REVOKE_KEY, which every refresh grant waits for — see
+// THE WRITES A REFRESH MUST NOT ANSWER AHEAD OF, below. 8081 was not
+// re-measured.
+// ---------------------------------------------------------------------------
+// The largest token RESPONSE buffered to read `refresh_token` out of it.
+// The grant's own body stays at CODE_BODY_MAX; a token response also
+// carries the access token and the ID token.
+const REFRESH_LEARN_MAX = 64 * 1024;
+// The longest refresh token used as a key. A longer one stays the global
+// wait: the form that carries it is then past CODE_BODY_MAX anyway.
+const REFRESH_TOKEN_MAX = 12 * 1024;
+let refreshKeyedDispatches = 0;
+let refreshKeysLearnt = 0;
+
+// ---------------------------------------------------------------------------
+// THE WRITES A REFRESH MUST NOT ANSWER AHEAD OF (2026-11-13, the review of
+// #879).
+//
+// Keyed by its token, a refresh grant stopped waiting for browsers' writes,
+// and one kind of browser write is exactly what it must wait for: one that
+// ENDS what the refresh token rests on. A sign-out of its session, a global
+// logout, a token revoked at `/oauth2/revoke` or on the console, a refresh
+// family revoked (a replay detected on another worker), a disabled account,
+// a Grant Management grant revoked, a consent withdrawn. The old global
+// wait held a refresh for every one of them; keyed, a refresh routed to a
+// worker that had not applied the sign-out was issued a new token set from
+// a session that had ended.
+//
+// * **REVOKE_KEY IS ONE KEY, AND ONLY TOKEN-ENDPOINT REQUESTS WAIT FOR IT.**
+//   A refresh grant keyed by its token waits for its key, SHARED_KEY and
+//   REVOKE_KEY; so does a code exchange keyed by its code, for the same
+//   reason (a code minted from a session signed out since), and a token
+//   request that carries a browser's cookie (the console's and the
+//   portal's own refreshes). A browser's ordinary request does NOT wait for
+//   it, so a sign-out holds no other browser — #879's gain for every
+//   unrelated browser write stands, and so does #820's.
+// * **A TICKET IS FILED UNDER IT TWO WAYS, and either is enough:**
+//   - **BY ITS PATH, AT DISPATCH** (revokingRequest()): every method on a
+//     sign-out path (`/logout`, `/oauth2/logout`, `/saml2/slo`, any
+//     `logout`, `slo` or `signout` segment, WS-Federation's `wsignout1.0`
+//     and `wsignoutcleanup1.0`), a write to `/oauth2/revoke` and
+//     `/oauth2/grants`, any write to `/admin-api`, `/account-api`, `/scim`
+//     and `/ssf`, and any DELETE. Coarse on purpose: it is the backstop for
+//     a door nobody taught to say so, and what it costs is a refresh
+//     waiting for an administrator's write.
+//   - **BY ITS ANSWER** (REVOKING_HEADER): the funnels that end a session,
+//     a token, a family, a grant or an account say so through
+//     `common/revoking_writes.ts`, and the worker sets the header on the
+//     answer in flight. This catches what no path names — a sign-in that
+//     replaces another session in the same browser, a disabled account, a
+//     refresh replay that revokes its family. It is filed when the answer's
+//     headers arrive, before the client is sent a byte, and a ticket only
+//     blocks once finished, so it is always in time.
+// * **WHAT A REVOKING TICKET COSTS**: a token request that arrives after
+//   it was answered waits until it is announced and the worker it lands on
+//   has reached the generation it wrote — the same wait a browser has
+//   always had for its own write.
+// * **WHAT IT CANNOT SEE**: a revocation made after its answer's headers
+//   had gone (`STS-WORKER-0052`, logged by the worker), and one made by a
+//   cluster job's body, which has no answer — a session expiry, which a
+//   refresh reads as ended whatever any worker has applied.
+// ---------------------------------------------------------------------------
+const REVOKE_KEY = '!revoke';
+// The answer header a worker marks a revoking answer with. Spelled here, in
+// `request_worker.ts` and in `common/revoking_writes.ts`;
+// `tests/revoking_writes.js` compares the three.
+const REVOKING_HEADER = 'x-sts-pool-revoking';
+// A path whose every request may end a session: a sign-out door.
+const SIGN_OUT_PATH = /(?:^|\/)(?:logout|slo|signout|sign-out)(?:\/|$)/i;
+// WS-Federation's sign-out is a query on `/wsfed`.
+const WSFED_PATH = /(?:^|\/)wsfed$/;
+const WSFED_SIGN_OUT = /(?:^|&)wa=wsignout(?:cleanup)?1\.0(?:&|$)/;
+// A write to one of these may revoke a token, a grant, a session or an
+// account. A realm's prefix and a named authorization server's are allowed.
+const REVOKING_WRITE_PATH = new RegExp(
+  '^(?:/realm/[^/]+)?(?:' +
+  '(?:/[^/]+)?/oauth2/(?:revoke|grants)|' +
+  '/(?:admin-api|account-api|scim|ssf)' +
+  ')(?:/|$)');
+let revokingDispatches = 0;
+let revokingAnswers = 0;
+let revokeWaits = 0;
 
 /**
  * Returns a client key's state, most recently used from now.
@@ -816,12 +952,172 @@ function inheritIntoCodeKey(ticket, codeKey) {
             " key(s) inherited.");
 }
 
-// Whether a request might be a code exchange worth reading before the
-// barrier: a POST to the token endpoint with a small, plain form body of a
-// declared length. HTTP/2 may send no `content-length`; such a body is not
-// read first, and the request waits globally. A HOT PATH — every request
-// that would wait globally in `session` mode asks — so no Entering/Leaving
-// pair, for the reason route() has none.
+/**
+ * Files a token response's ticket under the refresh token it handed out,
+ * with everything outstanding under the request's own keys except
+ * SHARED_KEY. See THE REFRESH GRANT, KEYED BY ITS TOKEN.
+ *
+ * @param ticket - the token response's ticket
+ * @param refreshKey - `rt:<digest>` (refreshKeyOf())
+ */
+function inheritIntoRefreshKey(ticket, refreshKey) {
+  log.debug("Entering inheritIntoRefreshKey().");
+  const info = ticketInfo.get(ticket);
+  if (!info) {
+    log.debug("Leaving inheritIntoRefreshKey(). No such ticket.");
+    return;
+  }
+  // SHARED_KEY is every keyless write. Copying it onto this token would
+  // make the next refresh of it wait for all of them twice, and would pin
+  // those tickets to a key that stands for one family.
+  const own = (info.keys || []).filter(function (k) {
+    return k !== refreshKey && k !== SHARED_KEY;
+  });
+  const state = clientStateFor(refreshKey, true);
+  refreshKeysLearnt++;
+  for (let i = 0; i < own.length; i++) {
+    const from = clientStates.get(own[i]);
+    if (!from) {
+      // Evicted, and so spilled: every keyed request waits for it already.
+      continue;
+    }
+    Array.from(from.tickets).forEach(function (t) {
+      fileTicketUnder(t, [refreshKey]);
+    });
+    from.writes.forEach(function (gen, pid) {
+      if (!((state.writes.get(pid) || 0) >= gen)) {
+        state.writes.set(pid, gen);
+      }
+    });
+  }
+  fileTicketUnder(ticket, [refreshKey]);
+  log.debug("Leaving inheritIntoRefreshKey(). " + own.length +
+            " key(s) inherited.");
+}
+
+/**
+ * Files a token response's ticket under the refresh token its JSON names.
+ *
+ * @param ticket - the token response's ticket
+ * @param buf - the response body, the bytes the client is also sent
+ * @returns whether the body was read as a token response. False means a
+ *   refresh token may have been issued and was not keyed, so the caller
+ *   files the ticket under SHARED_KEY.
+ */
+function learnRefreshToken(ticket, buf) {
+  log.debug("Entering learnRefreshToken().");
+  let parsed;
+  try {
+    parsed = JSON.parse(buf.toString('utf8'));
+  } catch (e) {
+    log.debug("Caught in learnRefreshToken(): " + ((e && e.message) || e));
+    log.debug("Leaving learnRefreshToken(). Not JSON.");
+    return false;
+  }
+  const token = parsed && parsed.refresh_token;
+  if (typeof token !== 'string' || token.length === 0) {
+    // A token response that names no refresh token issued none.
+    log.debug("Leaving learnRefreshToken(). No refresh token.");
+    return true;
+  }
+  if (token.length > REFRESH_TOKEN_MAX) {
+    log.debug("Leaving learnRefreshToken(). Too long to be a key.");
+    return false;
+  }
+  inheritIntoRefreshKey(ticket, refreshKeyOf(token));
+  log.debug("Leaving learnRefreshToken().");
+  return true;
+}
+
+// A token response this process could not read may still have issued a
+// refresh token. The next refresh waits for SHARED_KEY, so the ticket is
+// filed there. One already filed there gains nothing.
+function noteUnlearntRefresh(ticket) {
+  log.debug("Entering noteUnlearntRefresh().");
+  fileTicketUnder(ticket, [SHARED_KEY]);
+  log.debug("Leaving noteUnlearntRefresh().");
+}
+
+// Whether a token response is small enough to read `refresh_token` out of
+// before the client is sent it. Runs on every proxied answer, so no
+// Entering/Leaving pair, for the reason route() has none.
+function refreshAnswerCandidate(req, answer) {
+  if (!answer || !answer.headers || answer.statusCode !== 200) {
+    return false;
+  }
+  if (req.method !== 'POST') {
+    return false;
+  }
+  const path = String(req.originalUrl || req.url || '').split('?')[0];
+  if (!TOKEN_PATH.test(path)) {
+    return false;
+  }
+  const type = String(answer.headers['content-type'] || '').split(';')[0]
+    .trim().toLowerCase();
+  if (type !== 'application/json') {
+    return false;
+  }
+  if (answer.headers['content-encoding'] ||
+      answer.headers['transfer-encoding']) {
+    return false;
+  }
+  const declared = String(answer.headers['content-length'] === undefined
+    ? '' : answer.headers['content-length']).trim();
+  return /^[0-9]{1,7}$/.test(declared) && Number(declared) > 0 &&
+    Number(declared) <= REFRESH_LEARN_MAX;
+}
+
+/**
+ * Holds a token response's body, then sends the client those same bytes.
+ * `done` is called with the buffer when it was within REFRESH_LEARN_MAX,
+ * and with null when it was not, before the bytes are sent.
+ *
+ * @param answer - the worker's response
+ * @param res - the client's response
+ * @param done - called once with the buffer, or null
+ */
+function bufferRefreshAnswer(answer, res, done) {
+  log.debug("Entering bufferRefreshAnswer().");
+  const chunks = [];
+  let size = 0;
+  let over = false;
+  let settled = false;
+  const finishRead = function () {
+    log.debug("Entering finishRead().");
+    if (settled) {
+      log.debug("Leaving finishRead(). Already settled.");
+      return;
+    }
+    settled = true;
+    const buf = Buffer.concat(chunks);
+    done(over ? null : buf);
+    if (!res.destroyed && !res.writableEnded) {
+      res.end(buf);
+    }
+    log.debug("Leaving finishRead().");
+  };
+  // `end` before `data`. A body already buffered emits both in the turn
+  // `data` is attached, and an `end` listener registered after that has
+  // missed it: the client would never be sent the bytes, and the ticket
+  // would never be armed.
+  answer.on('end', finishRead);
+  answer.on('data', function (chunk) {
+    chunks.push(chunk);
+    size += chunk.length;
+    if (size > REFRESH_LEARN_MAX) {
+      over = true;
+    }
+  });
+  log.debug("Leaving bufferRefreshAnswer().");
+}
+
+// Whether a request might be a code exchange or a refresh grant worth
+// reading before the barrier: a POST to the token endpoint with a small,
+// plain form body of a declared length. HTTP/2 may send no
+// `content-length`; such a body is not read first, and the request waits
+// globally. A HOT PATH — every request that would wait globally in
+// `session` mode asks — so no Entering/Leaving pair, for the reason
+// route() has none.
 function codeExchangeCandidate(req) {
   if (req.method !== 'POST') {
     return false;
@@ -960,6 +1256,105 @@ function codeKeysOf(body) {
   }
   log.debug("Leaving codeKeysOf(). Unknown: global.");
   return null;
+}
+
+/**
+ * The key a refresh token is held under: `rt:` and the token's SHA-256,
+ * through the one crypto module, so the token itself is never a key in this
+ * process's tables (the review of #879). See THE REFRESH GRANT, KEYED BY ITS
+ * TOKEN.
+ *
+ * @param token - the refresh token
+ * @returns the key
+ */
+function refreshKeyOf(token) {
+  log.debug("Entering refreshKeyOf().");
+  const key = 'rt:' + stsCrypto.credentialDigest(String(token));
+  log.debug("Leaving refreshKeyOf().");
+  return key;
+}
+
+/**
+ * The client keys the session barrier holds, oldest first: names only, for
+ * a test that must see no refresh token among them.
+ *
+ * @returns the keys
+ */
+function clientKeyNames() {
+  log.debug("Entering clientKeyNames().");
+  const names = Array.from(clientStates.keys());
+  log.debug("Leaving clientKeyNames(). " + names.length);
+  return names;
+}
+
+// Whether a request may end what a refresh token rests on, by its method and
+// path alone: see THE WRITES A REFRESH MUST NOT ANSWER AHEAD OF. A HOT PATH —
+// every dispatched request asks — so no Entering/Leaving pair, for the reason
+// route() has none.
+function revokingRequest(req) {
+  const method = String((req && req.method) || 'GET').toUpperCase();
+  const url = String((req && (req.originalUrl || req.url)) || '');
+  const q = url.indexOf('?');
+  const path = q >= 0 ? url.slice(0, q) : url;
+  if (SIGN_OUT_PATH.test(path)) {
+    return true;
+  }
+  if (q >= 0 && WSFED_PATH.test(path) &&
+      WSFED_SIGN_OUT.test(url.slice(q + 1))) {
+    return true;
+  }
+  if (method === 'DELETE') {
+    return true;
+  }
+  if (READ_ONLY_METHODS[method]) {
+    return false;
+  }
+  return REVOKING_WRITE_PATH.test(path);
+}
+
+// Whether a request is a POST to a token endpoint: what waits for REVOKE_KEY
+// when it is keyed by a browser's cookie. Hot path, for route()'s reason.
+function tokenRequest(req) {
+  if (!req || req.method !== 'POST') {
+    return false;
+  }
+  const url = String(req.originalUrl || req.url || '');
+  return TOKEN_PATH.test(url.split('?')[0]);
+}
+
+/**
+ * The keys a refresh grant is held to: `[refreshKeyOf(token)]` when the
+ * body is a whole `refresh_token` grant naming one token short enough to be
+ * a key, else null for the global wait. An unknown token is still that key. See
+ * THE REFRESH GRANT, KEYED BY ITS TOKEN.
+ *
+ * @param body - what readCodeExchangeBody() handed over
+ * @returns the keys, or null
+ */
+function refreshKeysOf(body) {
+  log.debug("Entering refreshKeysOf().");
+  if (!body || !body.ended) {
+    log.debug("Leaving refreshKeysOf(). Not read whole.");
+    return null;
+  }
+  let form;
+  try {
+    form = new URLSearchParams(Buffer.concat(body.chunks).toString('utf8'));
+  } catch (e) {
+    log.debug("Caught in refreshKeysOf(): " + ((e && e.message) || e));
+    log.debug("Leaving refreshKeysOf(). Unreadable.");
+    return null;
+  }
+  const grants = form.getAll('grant_type');
+  const tokens = form.getAll('refresh_token');
+  if (grants.length !== 1 || grants[0] !== 'refresh_token' ||
+      tokens.length !== 1 || !tokens[0] ||
+      tokens[0].length > REFRESH_TOKEN_MAX) {
+    log.debug("Leaving refreshKeysOf(). Not one refresh token.");
+    return null;
+  }
+  log.debug("Leaving refreshKeysOf(). Held.");
+  return [refreshKeyOf(tokens[0])];
 }
 
 // Remembers a pruned code key's name, so its exchange stays keyed; see THE
@@ -1581,6 +1976,14 @@ const LISTENER_HEADER = 'x-sts-listener';
  */
 const PROTOCOL_WORKER_HEADER = 'x-sts-pool-protocol-worker';
 
+// The cookie names' translation, loaded on first use for the JA4 reader's
+// reason: a leaf this module needs only once a request is proxied.
+function cookieWireModule() {
+  log.debug("Entering cookieWireModule().");
+  log.debug("Leaving cookieWireModule().");
+  return require('./cookie_wire');
+}
+
 // The JA4 reader, loaded on first use — see the note at the requires.
 function clientHelloModule() {
   log.debug("Entering clientHelloModule().");
@@ -2043,6 +2446,24 @@ function size(pool) {
   }
   log.debug('Leaving size(). ' + wanted + '.');
   return wanted;
+}
+
+// WHETHER THIS IS A FRONT PROCESS THAT HAS REQUEST WORKERS (2026-11-15): one
+// whose copy of the store can trail what a worker wrote a moment ago — a
+// realm a worker created, which `app.js`'s enterRealm() then catches up on
+// before deciding a path names no realm. False in a worker, and where no pool
+// is configured.
+/**
+ * Tells whether this process is a front process with request workers.
+ *
+ * @returns true in the front process when either pool has a worker
+ */
+function frontWithWorkers() {
+  log.debug("Entering frontWithWorkers().");
+  const answer = !IS_REQUEST_WORKER &&
+    (size(PROTOCOL_POOL) > 0 || size(SURFACE_POOL) > 0);
+  log.debug("Leaving frontWithWorkers(). " + answer);
+  return answer;
 }
 
 // ---------------------------------------------------------------------------
@@ -2678,13 +3099,15 @@ function poolFor(url) {
 // can ask them. A worker drawing it would list itself alone.
 //
 // **AND THE SCHEDULER'S (#617, 2026-10-14).** `/admin/scheduler` and
-// `GET /admin-api/scheduler` (with its `/run` and `/step-down` acts) read
-// `scheduler.runs` whole — every run of every job — and a request worker no
-// longer reads that store back at its start: it was 42,740 of the 52,234 rows
-// each of 8081's processes restored, for a page only an administrator opens.
-// So the page is the front process's, which restores the store as before and
-// catches up (the barrier below) before it answers. `cluster/scheduler.ts`
-// and `common/realms.js` (`restoreInWorkers`) carry the rest.
+// `GET /admin-api/scheduler` (with its `/run` and `/step-down` acts) are
+// answered from the run store, and a request worker no longer reads that
+// store back at its start: it was 42,740 of the 52,234 rows each of 8081's
+// processes restored, for a page only an administrator opens. So the page is
+// the front process's, which catches up (the barrier below) before it
+// answers. Since #883 that front restores the rows with no expiry and asks
+// the store for a bounded newest window; it does not hold the finished
+// interval history. `cluster/scheduler.ts` and `common/realms.js`
+// (`restoreInWorkers`, `restoreExpiring`) carry the rest.
 //
 // **AND MONITORING → TLS CONNECTION'S (#597, 2026-10-12)**, `/tls`'s own
 // argument moved with the view `GET /tls` and `GET /tls/forwarded` drew:
@@ -2718,11 +3141,11 @@ const NEVER_DISPATCHED = ['/tls', '/admin/tls/trust', '/admin-api/tls/trust',
 // own block on that says what it then cost.
 //
 // **WHAT THE PATH IS DOCUMENTED TO MEAN DECIDES WHERE IT IS ANSWERED.**
-// `sts_metadata.ts` and `docs/docker-compose.md` both say *liveness only*: it
-// answers 200 with a JSON message and reads no state. A question that reads no
-// state has nothing to be stale about, so it needs neither barrier, and the
-// process that answers it should be the one a restart would replace — the
-// one holding the listener. That is this process. So it is never dispatched
+// `sts_metadata.ts` and `docs/v1.1.0/docker-compose.md` both say *liveness
+// only*: it answers 200 with a JSON message and reads no state. A question that
+// reads no state has nothing to be stale about, so it needs neither barrier,
+// and the process that answers it should be the one a restart would replace —
+// the one holding the listener. That is this process. So it is never dispatched
 // (dispatched() below) and, kept here, it skips the catch-up every other kept
 // request runs (middleware()). What it still proves is that this process
 // accepts a connection and its event loop turns, which is what liveness is.
@@ -6304,10 +6727,115 @@ function mayWrite(method) {
   return !READ_ONLY_METHODS[String(method || '').toUpperCase()];
 }
 
-// How long a barrier may hold a request. Reaching it means the store is
-// unwell rather than that more time is needed, and the request is then served
-// from what that worker has — which is the behaviour before this existed.
-const BARRIER_TIMEOUT_MS = 5000;
+// ---------------------------------------------------------------------------
+// A BARRIER THAT RUNS OUT IS A REFUSAL, NEVER A STALE ANSWER (2026-11-14).
+//
+// Until this date a reader gave up at a hard-coded 5,000 ms and was SERVED
+// "from what that worker has", on the argument that reaching the bound meant
+// the store was unwell rather than that more time was needed. The run that
+// disproved it (GitHub Actions 43622250478, single-node, a runner slower than
+// the laptop): one worker spent 7 to 22 s applying a global logout's 8,000
+// minted rows, missed fifteen barriers (STS-WORKER-0027) in two minutes, and
+// two protocol jobs got WRONG answers — `sts_realm_administrators` a 404 from
+// `/realm/<a realm created a moment before>/oauth2/authorize`, and
+// `sts_scope_policy` a SCIM 403 for a scope declared through `/admin-api` a
+// moment before. The store was well; the worker was merely behind. That is
+// the case this file's own rule names: dispatch without coordination answers
+// WRONGLY rather than slowly, so it is refused.
+//
+// **AND A SECOND PATH SERVED STALE WITHOUT A WORD.** The worker's answer to a
+// sync round is `persistence.syncNow()`'s, which gives up at its own 4,600 ms
+// deadline and says `caughtUp: false` — and the front read only `ok`, which
+// is true for that answer too. So a worker whose pull outlasted the deadline
+// but whose loop was free to answer was STAMPED CURRENT at the generation the
+// reader wanted: no STS-WORKER-0027, the request served stale, and every
+// later reader at that generation sent there without a barrier at all. A
+// round counts now only when the worker says it caught up (or that its store
+// does not coordinate, where there is nothing to catch up with).
+//
+// WHAT A RUN-OUT BARRIER DOES INSTEAD, and the two alternatives weighed:
+//
+//   * **IT KEEPS ASKING**, a round at a time (one round per worker still
+//     shared by every reader it covers, below), for up to
+//     `workers.readBarrierTimeoutMs` in all — 30 s by default, past the 22 s
+//     the slowest apply of that run took. A worker that is applying a burst
+//     answers its next round once the pull that began after the round
+//     finishes, and the request is then served CURRENT.
+//   * **THEN IT IS REFUSED**: HTTP 503 with `Retry-After`, STS-WORKER-0053,
+//     the ticket dropped (no byte reached a worker, so nothing was written —
+//     ticketAbandoned()'s argument); a dispatched operation is rejected with
+//     the same code, and its caller already answers LDAP_UNAVAILABLE or
+//     KDC_ERR_SVC_UNAVAILABLE for a rejection.
+//   * **NOT SENT TO ANOTHER WORKER THAT IS CURRENT.** It reads well and it
+//     breaks two things. A request's worker is chosen by its affinity, and a
+//     pin is honoured because worker-local state rides on it (`oidc_rp.ts`'s
+//     back channel pins to the worker holding a code another client wrote);
+//     and the ticket wait exempts a worker's OWN answered writes, which are in
+//     its memory — a different worker would owe a different, stricter wait
+//     that this request has not done. And when one worker is behind on a
+//     burst, the others are applying the same burst.
+//   * **NOT A LARGER CONSTANT.** A bound is a deployment's choice between
+//     waiting and refusing, so it is a setting (`common/config.js`), read per
+//     request; `0` is not legal, because "never wait" is the stale answer.
+//
+// What stays a constant is the ROUND: how long the front waits for one reply
+// before it asks again, which decides no answer any more — a missed round is
+// counted (STS-WORKER-0027) and the reader stays. It stays above
+// `persistence_replication.js`'s 4,600 ms SYNC_DEADLINE_MS so a worker that
+// can answer answers inside it.
+// ---------------------------------------------------------------------------
+const BARRIER_ROUND_MS = 5000;
+// The least time between two rounds one reader starts, so that a worker whose
+// store answers "not caught up" at once (a read that failed) is not asked in
+// a tight loop for thirty seconds.
+const BARRIER_ROUND_SPACING_MS = 250;
+// The row's default, for a process with no configuration at all (an
+// in-process job that loaded this module on its own).
+const READ_BARRIER_TIMEOUT_DEFAULT_MS = 30000;
+
+// Readers a run-out barrier refused (STS-WORKER-0053, STS-WORKER-0054) and
+// rounds that came back without the worker caught up, for stats().
+let barrierRefusals = 0;
+let barrierRoundsMissed = 0;
+
+/**
+ * How long, in all, a read barrier may hold one request before it is
+ * refused: `workers.readBarrierTimeoutMs`, read per request.
+ *
+ * @returns milliseconds, at least one
+ */
+function readBarrierTimeoutMs() {
+  log.debug("Entering readBarrierTimeoutMs().");
+  let n = READ_BARRIER_TIMEOUT_DEFAULT_MS;
+  try {
+    n = Number(config.value('workers.readBarrierTimeoutMs'));
+  } catch (e) {
+    log.debug("Caught in readBarrierTimeoutMs(): " +
+              ((e && e.message) || e));
+    // No configuration at all: the row's own default.
+    n = READ_BARRIER_TIMEOUT_DEFAULT_MS;
+  }
+  if (!(n >= 1)) {
+    n = READ_BARRIER_TIMEOUT_DEFAULT_MS;
+  }
+  log.debug("Leaving readBarrierTimeoutMs(). " + n + ".");
+  return n;
+}
+
+/**
+ * Whether a worker's answer to a sync round says it caught up: `ok`, and not
+ * `caughtUp: false` from a store that coordinates.
+ *
+ * @param message - the worker's answer
+ * @returns true when the round may stamp the worker current
+ */
+function roundCaughtUp(message) {
+  log.debug("Entering roundCaughtUp().");
+  const caught = !!(message && message.ok) &&
+    (message.caughtUp !== false || message.coordinating === false);
+  log.debug("Leaving roundCaughtUp(). " + caught + ".");
+  return caught;
+}
 
 let nextSyncId = 1;
 const pendingSyncs = new Map();
@@ -6335,48 +6863,169 @@ const pendingSyncs = new Map();
 // highest generation asked for in between. Two syncs per worker at most,
 // however many readers.
 //
-// The per-reader bound is unchanged — each reader still gives up at
-// BARRIER_TIMEOUT_MS — and a round has the same bound of its own, so a worker
-// that never answers costs one round rather than wedging every later reader
-// behind a sync that will not come back.
+// A round has a bound of its own (BARRIER_ROUND_MS), so a worker that never
+// answers costs one round rather than wedging every later reader behind a
+// sync that will not come back; a reader whose round ran out asks again, for
+// up to `workers.readBarrierTimeoutMs` in all (see A BARRIER THAT RUNS OUT IS
+// A REFUSAL, above).
 // ---------------------------------------------------------------------------
 /**
  * Waits for a worker to catch up to a generation, sharing one sync round
- * per worker among readers.
+ * per worker among readers, round after round, until it has or
+ * `workers.readBarrierTimeoutMs` has passed.
  *
- * Resolves on every path, at most after five seconds.
+ * Resolves on every path and never rejects. `false` means the worker is
+ * still behind: the caller REFUSES the request (STS-WORKER-0053) and does not
+ * serve it from what that worker has.
  * @param entry - the worker's table entry
  * @param wanted - the generation it must reach
+ * @param stillWanted - optional; asked between rounds, and a false answer
+ *   (the client went away) ends the wait at once, resolving false
  * @returns a promise of whether it caught up
  */
-function barrier(entry, wanted) {
+function barrier(entry, wanted, stillWanted) {
   log.debug('Entering barrier(). pid=' + entry.pid + ' want=' + wanted);
   if (entry.generation >= wanted) {
     log.debug('Leaving barrier(). Already current.');
     return Promise.resolve(true);
   }
+  const bound = readBarrierTimeoutMs();
+  const deadline = Date.now() + bound;
   log.debug("Leaving barrier().");
+  // A LOOP, NOT A CHAIN (tests/no_periodic_timers.js): the rounds are retries
+  // within one request's wait, bounded by its deadline.
+  return (async function () {
+    let missed = 0;
+    for (;;) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        break;
+      }
+      const began = Date.now();
+      const caught = await roundWithin(entry, wanted,
+                                       Math.min(remaining, BARRIER_ROUND_MS));
+      if (caught || entry.generation >= wanted) {
+        return true;
+      }
+      missed += 1;
+      barrierRoundsMissed += 1;
+      if (stillWanted && !stillWanted()) {
+        return false;
+      }
+      warnSparingly('STS-WORKER-0027',
+                    'request_pool: worker ' + entry.pid + ' had not caught ' +
+                    'up after read-barrier round ' + missed + ' (it did not ' +
+                    'answer within ' + BARRIER_ROUND_MS + 'ms, or answered ' +
+                    'that its pull is still running); the request keeps ' +
+                    'waiting, for up to ' + bound + 'ms in all ' +
+                    '(workers.readBarrierTimeoutMs), and is refused rather ' +
+                    'than served from what that worker has.');
+      const spent = Date.now() - began;
+      const pause = Math.min(BARRIER_ROUND_SPACING_MS - spent,
+                             deadline - Date.now());
+      if (pause > 0) {
+        await new Promise(function (resolve) {
+          setTimeout(resolve, pause);
+        });
+      }
+    }
+    return entry.generation >= wanted;
+  })();
+}
+
+// One round's answer for one reader, or false once `ms` has passed: the
+// round itself goes on for the other readers that share it.
+function roundWithin(entry, wanted, ms) {
+  log.debug('Entering roundWithin(). pid=' + entry.pid + ' ms=' + ms);
+  log.debug("Leaving roundWithin().");
   return new Promise(function (resolve) {
     let done = false;
     const timer = setTimeout(function () {
-      if (done) {
-        return;
+      if (!done) {
+        done = true;
+        resolve(false);
       }
-      done = true;
-      warnSparingly('STS-WORKER-0027',
-                    'request_pool: worker ' + entry.pid + ' did not answer a ' +
-                    'read barrier within ' + BARRIER_TIMEOUT_MS + 'ms; the ' +
-                    'request is being served from what that worker has.');
-      resolve(false);
-    }, BARRIER_TIMEOUT_MS);
+    }, ms);
     syncRoundFor(entry, wanted).then(function (ok) {
-      if (done) {
-        return;
+      if (!done) {
+        done = true;
+        clearTimeout(timer);
+        resolve(!!ok);
       }
-      done = true;
-      clearTimeout(timer);
-      resolve(!!ok);
     });
+  });
+}
+
+/**
+ * Refuses a dispatched request whose worker did not catch up within
+ * `workers.readBarrierTimeoutMs` (STS-WORKER-0053): a 503 with Retry-After,
+ * and its ticket dropped, since no byte of it reached a worker.
+ *
+ * @param entry - the worker's table entry
+ * @param req - the request
+ * @param res - the response
+ * @param ticket - the request's read-barrier ticket, or 0
+ * @param waitedMs - how long it waited
+ */
+function refuseBehind(entry, req, res, ticket, waitedMs) {
+  log.debug('Entering refuseBehind(). pid=' + entry.pid);
+  if (ticket) {
+    ticketAbandoned(entry, ticket);
+  }
+  barrierRefusals += 1;
+  warnSparingly('STS-WORKER-0053',
+                'request_pool: ' + req.method + ' ' +
+                String(req.originalUrl || req.url || '').split('?')[0] +
+                ' was REFUSED with a 503: worker ' + entry.pid + ' had not ' +
+                'caught up with the writes answered before it after ' +
+                waitedMs + 'ms (workers.readBarrierTimeoutMs), and serving ' +
+                'it from what that worker has could answer wrongly. The ' +
+                'worker\'s own STS-STORE-0039 line says where its pull\'s ' +
+                'time is going.');
+  errorCodes.mark(res, 'STS-WORKER-0053');
+  res.status(503);
+  res.set('Retry-After', '5');
+  res.type('text/plain');
+  res.send('The request worker that must answer this request has not yet ' +
+           'caught up with writes answered before it, so it was refused ' +
+           'rather than answered from a copy that may be stale. Try again ' +
+           'shortly; the service log says why.\n');
+  log.debug("Leaving refuseBehind().");
+}
+
+/**
+ * Proxies a dispatched request once its worker has caught up, and refuses
+ * it once `workers.readBarrierTimeoutMs` has passed without (#2026-11-14's
+ * change: never served from what a behind worker has). A client that went
+ * away while it waited is handed to proxy(), which drops its ticket.
+ *
+ * @param entry - the worker's table entry
+ * @param req - the request
+ * @param res - the response
+ * @param wanted - the generation the worker must reach
+ * @param ticket - the request's read-barrier ticket
+ * @param timing - optional; the request's phase stamps (#820)
+ * @param body - optional; what was read of the body already (#820)
+ * @returns a promise that settles once the request was proxied or refused
+ */
+function proxyAfterBarrier(entry, req, res, wanted, ticket, timing, body) {
+  log.debug('Entering proxyAfterBarrier(). pid=' + entry.pid);
+  const began = Date.now();
+  const gone = function () {
+    return !!(res.destroyed || res.closed || res.writableEnded);
+  };
+  log.debug("Leaving proxyAfterBarrier().");
+  return barrier(entry, wanted, function () {
+    return !gone();
+  }).then(function (caught) {
+    if (timing) {
+      timing.barrierDone = Date.now();
+    }
+    if (!caught && !gone()) {
+      refuseBehind(entry, req, res, ticket, Date.now() - began);
+      return;
+    }
+    proxy(entry, req, res, wanted, ticket, timing, body);
   });
 }
 
@@ -6459,18 +7108,22 @@ function startSyncRound(entry, wanted) {
     // mark it current for a write it has not seen. And NEVER BACKWARDS: two
     // rounds can settle out of order, and the earlier one's generation is
     // the smaller.
-    if (message.ok && !(entry.generation >= round.wanted)) {
+    // AND ONLY WHEN IT SAYS IT CAUGHT UP (2026-11-14): `ok` with
+    // `caughtUp: false` is a worker whose syncNow() gave up at its own
+    // deadline, still behind. See A BARRIER THAT RUNS OUT IS A REFUSAL.
+    const caught = roundCaughtUp(message);
+    if (caught && !(entry.generation >= round.wanted)) {
       entry.generation = round.wanted;
     }
     if (entry.syncing === round) {
       entry.syncing = null;
     }
-    settle(!!message.ok);
+    settle(caught);
     log.debug("Leaving finish().");
   };
   timer = setTimeout(function () {
     finish({ ok: false });
-  }, BARRIER_TIMEOUT_MS);
+  }, BARRIER_ROUND_MS);
   pendingSyncs.set(id, finish);
   try {
     entry.child.send({ sync: true, id: id });
@@ -6498,6 +7151,74 @@ function receiveSync(entry, message) {
   pendingSyncs.delete(message.id);
   waiter(message);
   log.debug("Leaving receiveSync().");
+}
+
+/**
+ * The front process's own read barrier for a request it keeps: syncNow()
+ * again and again until it says it caught up (or that the store does not
+ * coordinate), for up to `workers.readBarrierTimeoutMs`.
+ *
+ * @param persistence - the persistence module
+ * @param stillWanted - asked between attempts; false (the client went)
+ *   ends the wait, resolving false
+ * @returns a promise of whether this process caught up
+ */
+function catchUpHere(persistence, stillWanted) {
+  log.debug("Entering catchUpHere().");
+  const deadline = Date.now() + readBarrierTimeoutMs();
+  log.debug("Leaving catchUpHere().");
+  // A LOOP, NOT A CHAIN (tests/no_periodic_timers.js), as in barrier().
+  return (async function () {
+    for (;;) {
+      const began = Date.now();
+      const state = await persistence.syncNow();
+      if (!state || state.caughtUp !== false ||
+          state.coordinating === false) {
+        return true;
+      }
+      barrierRoundsMissed += 1;
+      if (Date.now() >= deadline || (stillWanted && !stillWanted())) {
+        return false;
+      }
+      const pause = Math.min(BARRIER_ROUND_SPACING_MS - (Date.now() - began),
+                             deadline - Date.now());
+      if (pause > 0) {
+        await new Promise(function (resolve) {
+          setTimeout(resolve, pause);
+        });
+      }
+    }
+  })();
+}
+
+/**
+ * Refuses a request the front process keeps when it could not catch up
+ * within `workers.readBarrierTimeoutMs` (STS-WORKER-0054).
+ *
+ * @param req - the request
+ * @param res - the response
+ * @param waitedMs - how long it waited
+ */
+function refuseBehindHere(req, res, waitedMs) {
+  log.debug("Entering refuseBehindHere().");
+  barrierRefusals += 1;
+  warnSparingly('STS-WORKER-0054',
+                'request_pool: ' + req.method + ' ' +
+                String(req.originalUrl || req.url || '').split('?')[0] +
+                ' was REFUSED with a 503: the front process had not caught ' +
+                'up with the change log after ' + waitedMs + 'ms ' +
+                '(workers.readBarrierTimeoutMs), and answering from its own ' +
+                'copy could answer wrongly. Its STS-STORE-0039 line says ' +
+                'where the pull\'s time is going.');
+  errorCodes.mark(res, 'STS-WORKER-0054');
+  res.status(503);
+  res.set('Retry-After', '5');
+  res.type('text/plain');
+  res.send('This service has not yet caught up with writes answered before ' +
+           'this request, so it was refused rather than answered from a ' +
+           'copy that may be stale. Try again shortly; the service log says ' +
+           'why.\n');
+  log.debug("Leaving refuseBehindHere().");
 }
 
 // ---------------------------------------------------------------------------
@@ -6587,13 +7308,27 @@ function middleware(options) {
       // a 401, because the session was answered and not committed.
       // `sts_realm_administrators` failed on it in `dispatch` mode. No worker
       // answers this request, so none is exempted (`servedBy` null).
+      // **AND A CATCH-UP THAT RUNS OUT IS A REFUSAL HERE TOO (2026-11-14)**,
+      // for the reason above barrier(): syncNow() gives up at its own
+      // deadline and says so (`caughtUp: false`), and answering then was
+      // answering from a copy it had just said was behind.
+      const keptSince = Date.now();
       awaitCommitConfirmations(null).then(function () {
-        return persistence.syncNow();
+        return catchUpHere(persistence, function () {
+          return !(res.destroyed || res.closed || res.writableEnded);
+        });
       }).catch(function (e) {
         log.debug('request_pool: the front process could not catch up before ' +
                   'answering ' + (req.originalUrl || req.url) + ': ' +
                   e.message);
-      }).then(function () {
+        return true;
+      }).then(function (caught) {
+        if (caught === false) {
+          if (!(res.destroyed || res.closed || res.writableEnded)) {
+            refuseBehindHere(req, res, Date.now() - keptSince);
+          }
+          return;
+        }
         // **AND A REALM THE CATCH-UP BROUGHT IS ENTERED NOW (2026-09-15).**
         // app.js placed this request in a realm before the wait above, so a
         // realm a worker created a moment ago was unknown then and the
@@ -6706,7 +7441,10 @@ function middleware(options) {
       if (keys) {
         sessionDispatches++;
         pruneClientStates();
-        waitThenProxy(keys, null, false);
+        // A token request a browser's cookie keys (the console's and the
+        // portal's own refreshes) waits for REVOKE_KEY too. See THE WRITES
+        // A REFRESH MUST NOT ANSWER AHEAD OF.
+        waitThenProxy(keys, null, false, tokenRequest(req));
         return;
       }
       // A CODE EXCHANGE IS READ BEFORE IT WAITS (#820): keyed by its code
@@ -6729,26 +7467,56 @@ function middleware(options) {
           if (codeKeys) {
             codeKeyedDispatches++;
             pruneClientStates();
-          } else {
-            globalDispatches++;
+            // A code redemption is still a back channel's write: filed
+            // under SHARED_KEY as well as its code. It waits for REVOKE_KEY:
+            // a code minted from a session signed out since is not redeemed
+            // ahead of the sign-out.
+            waitThenProxy(codeKeys, body, true, true);
+            return;
           }
-          waitThenProxy(codeKeys, body, true);
+          const refreshKeys = refreshKeysOf(body);
+          if (refreshKeys) {
+            refreshKeyedDispatches++;
+            pruneClientStates();
+            // NOT filed under SHARED_KEY. It waits for that key, so an
+            // issuance this process could not read still holds it, and
+            // the next refresh of another token does not wait for this
+            // one. See THE REFRESH GRANT, KEYED BY ITS TOKEN. It waits for
+            // REVOKE_KEY: a sign-out, a revocation or a disabled account
+            // answered before it is not answered ahead of (the review of
+            // #879).
+            waitThenProxy(refreshKeys, body, false, true);
+            return;
+          }
+          globalDispatches++;
+          waitThenProxy(null, body, true, false);
         });
         return;
       }
       globalDispatches++;
-      waitThenProxy(null, null, true);
+      waitThenProxy(null, null, true, false);
 
       // THE WAITS AND THE DISPATCH, for keys already decided (null: global)
       // and a body already read (null: streamed from `req`). `shared`: this
       // request's write is a back channel's — no browser's own — and is
       // filed under SHARED_KEY too, so every keyed request waits for it.
-      // A HOT PATH, for route()'s reason.
-      function waitThenProxy(keys, body, shared) {
+      // `revokeWait`: a keyed token request, which waits for REVOKE_KEY as
+      // well. A request that may end what a refresh token rests on is filed
+      // under REVOKE_KEY (revokingRequest()); its answer may file it there
+      // too (REVOKING_HEADER, in proxy()). A HOT PATH, for route()'s reason.
+      function waitThenProxy(keys, body, shared, revokeWait) {
         // A keyed request waits for its keys AND for SHARED_KEY: the
         // writes of requests no browser made (see SHARED_KEY).
-        const waitKeys = keys ? keys.concat([SHARED_KEY]) : null;
-        const fileKeys = shared ? (keys || []).concat([SHARED_KEY]) : keys;
+        let waitKeys = keys ? keys.concat([SHARED_KEY]) : null;
+        if (waitKeys && revokeWait) {
+          waitKeys.push(REVOKE_KEY);
+          revokeWaits++;
+        }
+        let fileKeys = shared ? (keys || []).concat([SHARED_KEY]) : keys;
+        if (session && revokingRequest(req)) {
+          fileKeys = (fileKeys || []).concat([REVOKE_KEY]);
+          revokingDispatches++;
+        }
         awaitCommitConfirmations(entry, waitKeys).then(function () {
           timing.ticketDone = Date.now();
           const ticket = dispatchTicket(entry, req.method + ' ' +
@@ -6765,10 +7533,9 @@ function middleware(options) {
             proxy(entry, req, res, wanted, ticket, timing, body);
             return;
           }
-          return barrier(entry, wanted).then(function () {
-            timing.barrierDone = Date.now();
-            proxy(entry, req, res, wanted, ticket, timing, body);
-          });
+          // CAUGHT UP, OR REFUSED — never served behind (2026-11-14).
+          return proxyAfterBarrier(entry, req, res, wanted, ticket, timing,
+                                   body);
         });
       }
     }
@@ -6807,18 +7574,20 @@ const WORKER_ANSWER_MAX_HEADER_BYTES = 1024 * 1024;
 // How many requests were sent again that way, for stats().
 let replayCount = 0;
 
-// One answered request's phases, to `request_phases.js` (#820): the front's
-// two waits, what the worker reported, and the rest of the round trip — the
-// socket and the worker's event loop busy with other requests — as `queue`.
-// Hot path: every dispatched request. No Entering/Leaving pair.
-function notePhases(req, timing, dispatchedAt, answeredAt, worker) {
-  const roundTrip = answeredAt - dispatchedAt;
-  const inWorker = worker ? worker.handler + worker.commit : 0;
+// One answered request's phases, to `request_phases.js` (#820, #887): the
+// front's ticket and barrier, how long it waited to be given a socket, and
+// from that socket until the worker's middleware — what one `queue` number
+// used to cover. The worker reports the rest. Hot path: every dispatched
+// request. No Entering/Leaving pair.
+function notePhases(req, timing, answeredAt, worker, socketAt, askedAt) {
+  const waits = requestPhases.connectionWaits(askedAt, socketAt,
+    worker && worker.arrived);
   requestPhases.record(requestPhases.routeOf(req.method,
                                              req.originalUrl || req.url), {
     ticket: timing.ticketDone - timing.arrived,
     barrier: timing.barrierDone - timing.ticketDone,
-    queue: worker ? Math.max(0, roundTrip - inWorker) : undefined,
+    connect: waits.connect,
+    loop: waits.loop,
     handler: worker ? worker.handler : undefined,
     commit: worker ? worker.commit : undefined,
     bridge: worker ? worker.bridge : undefined,
@@ -6906,6 +7675,12 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
   // When the worker's answer arrived, and the phases it reported (#820).
   let answeredAt = 0;
   let workerPhases = null;
+  // When the front asked the agent for a socket, and when the agent gave
+  // it one (#887). A request past `workers.maxSockets` waits in the agent
+  // between the two. The first ask stands; a retry's later socket replaces
+  // the first, so the wait runs until the connection that answered.
+  let askedAt = 0;
+  let socketAt = 0;
   const finish = function (lost) {
     log.debug("Entering finish().");
     if (!done) {
@@ -6915,7 +7690,7 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
       if (!lost) {
         noteAnswered(entry.pool, Date.now() - dispatchedAt);
         if (timing && answeredAt) {
-          notePhases(req, timing, dispatchedAt, answeredAt, workerPhases);
+          notePhases(req, timing, answeredAt, workerPhases, socketAt, askedAt);
         }
       }
       // THE TICKET IS TAKEN AT DISPATCH NOW, NOT HERE — see dispatchTicket().
@@ -7052,6 +7827,25 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
   // Nothing a client says about whose directory connections should close may be
   // believed. See LDAP_DROP_HEADER.
   delete headers[LDAP_DROP_HEADER];
+  // THE COOKIE HEADER AS THE BROWSER SENT IT, AND THAT IT CAME OVER TLS, so
+  // that the worker translates the names by ITS view of the realm's mode
+  // (`common/cookie_wire.ts`, A REQUEST A WORKER ANSWERS; GitHub Actions run
+  // 43884417831). This process translated by its own view, which lags a
+  // worker's `config/set global.mode` by up to a second. Both headers are
+  // stripped from what the client sent first, as the certificate's are: a
+  // client that could set the flag could have a cleartext request read as
+  // TLS. A relayed request carries neither, and goes as translated.
+  const wire = cookieWireModule();
+  delete headers[wire.TLS_HEADER];
+  delete headers[wire.PREFIX_HEADER];
+  if (req.stsWireTls) {
+    headers[wire.TLS_HEADER] = '1';
+    if (req.stsWireCookie) {
+      headers.cookie = req.stsWireCookie;
+    } else {
+      delete headers.cookie;
+    }
+  }
   // THE POOL'S OWN COOKIE IS THE POOL'S. Removed from what the worker sees so
   // that no handler can come to depend on a routing detail, and so that it
   // cannot be confused with an application cookie by anything that enumerates
@@ -7061,7 +7855,8 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
   // worker has no more business seeing the protocol pool's pin than its own.
   if (headers.cookie) {
     const kept = String(headers.cookie).split(';').filter(function (bit) {
-      const trimmed = bit.trim();
+      // Under its wire name too, now that the header may be the raw one.
+      const trimmed = bit.trim().replace(/^__(?:Host|Secure)-/, '');
       return trimmed.indexOf(POOL_COOKIE + '=') !== 0 &&
              trimmed.indexOf(SURFACE_POOL_COOKIE + '=') !== 0;
     });
@@ -7162,6 +7957,8 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
   // never ran a handler for it, and sending it again on a new connection
   // cannot do anything twice. The 502 that said "it can simply be made
   // again" was right, and this process can make it again itself.
+  // (The EPIPE that comes AFTER the request was delivered was found on
+  // 2026-11-15, and is not resent: see THE LAST CHUNK IS HELD BACK, below.)
   //
   // `delivered` is set by a write callback, which node calls only once the
   // kernel has taken the bytes — from that moment the worker can read them,
@@ -7279,6 +8076,15 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
     if (ticket && readYourWriteMode() === 'session') {
       learnTicketKeys(ticket, answer);
     }
+    // A refresh token named in this answer is filed under its key BEFORE
+    // the client is sent the bytes, so the refresh that follows them waits
+    // for this ticket (#879). The read is below, after the status and the
+    // headers: a body already buffered emits `data` and `end` in the turn
+    // the listener is attached, and ending the response first would answer
+    // with no status and never arm the ticket.
+    let refreshLearnt = false;
+    const learnRefresh = ticket && readYourWriteMode() === 'session' &&
+      refreshAnswerCandidate(req, answer);
     // ------------------------------------------------------------------
     // THE SOCKETS THIS ANSWER SAYS TO CLOSE, CLOSED BEFORE IT GOES OUT.
     //
@@ -7288,6 +8094,15 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
     // already gone. See LDAP_DROP_HEADER.
     // ------------------------------------------------------------------
     closeDirectoryConnections(answer.headers[LDAP_DROP_HEADER]);
+    // AN ANSWER THAT ENDED WHAT A REFRESH TOKEN RESTS ON is filed under
+    // REVOKE_KEY here, before a byte of it reaches the client, so a refresh
+    // grant sent after the client has it waits for it (the review of #879,
+    // THE WRITES A REFRESH MUST NOT ANSWER AHEAD OF).
+    if (ticket && answer.headers[REVOKING_HEADER] &&
+        readYourWriteMode() === 'session') {
+      fileTicketUnder(ticket, [REVOKE_KEY]);
+      revokingAnswers++;
+    }
     answeredAt = Date.now();
     workerPhases = requestPhases.decode(
       answer.headers[requestPhases.PHASES_HEADER]);
@@ -7323,11 +8138,19 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
     for (let i = 0; i + 1 < raw.length; i += 2) {
       spelled[String(raw[i]).toLowerCase()] = String(raw[i]);
     }
+    // WHETHER THE WORKER'S COOKIES TAKE THE PREFIX, which the worker decided
+    // by its view of the realm's mode; `common/cookie_wire.ts` wraps them at
+    // the flush as told. Believed only where this process asked.
+    const wirePrefix = answer.headers[wire.PREFIX_HEADER];
+    if (req.stsWireTls && (wirePrefix === '1' || wirePrefix === '0')) {
+      res.stsWirePrefix = wirePrefix === '1';
+    }
     Object.keys(answer.headers).forEach(function (name) {
       // The worker's instruction to this process, and no business of the
       // client's — for the reason the hop-by-hop headers below are dropped, and
       // because a header naming an identity key has no place on a page.
-      if (name === LDAP_DROP_HEADER || name === requestPhases.PHASES_HEADER) {
+      if (name === LDAP_DROP_HEADER || name === requestPhases.PHASES_HEADER ||
+          name === REVOKING_HEADER || name === wire.PREFIX_HEADER) {
         return;
       }
       // Hop-by-hop headers belong to the connection this process made and not
@@ -7365,9 +8188,13 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
         upstream.destroy();
       });
     }
-    answer.pipe(res);
-    answer.on('end', finish);
+    // Before the body is read. A token response that fails before its
+    // refresh token is learnt is filed under SHARED_KEY, so the next
+    // refresh still waits for it (#879).
     answer.on('error', function (err) {
+      if (learnRefresh && !refreshLearnt) {
+        noteUnlearntRefresh(ticket);
+      }
       if (clientGone) {
         // Ended by this process for a client that had gone. Not a fault.
         log.debug('request_pool: an answer from worker ' + entry.pid +
@@ -7380,11 +8207,30 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
       finish();
       res.destroy();
     });
+    if (learnRefresh) {
+      // Learns the token, arms the ticket, then sends the same bytes. When
+      // the body is already buffered all three happen before this turn
+      // yields, which is when the next refresh can follow the bytes.
+      bufferRefreshAnswer(answer, res, function (buf) {
+        if (buf && learnRefreshToken(ticket, buf)) {
+          refreshLearnt = true;
+        } else {
+          noteUnlearntRefresh(ticket);
+        }
+        finish();
+      });
+    } else {
+      answer.pipe(res);
+      answer.on('end', finish);
+    }
     log.debug("Leaving onAnswer().");
   };
 
   const open = function () {
     log.debug("Entering open().");
+    if (!askedAt) {
+      askedAt = Date.now();
+    }
     const one = http.request({
       socketPath: entry.socket,
       path: req.originalUrl || req.url,
@@ -7400,6 +8246,15 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
       // (#1225); see WORKER_ANSWER_MAX_HEADER_BYTES.
       maxHeaderSize: WORKER_ANSWER_MAX_HEADER_BYTES
     }, onAnswer);
+    // The `socket` event is when the agent hands one over. Measured on
+    // node 22, it is not emitted inside `http.request()`, so the listener
+    // sees it; `one.socket` covers a node that emits it during construction.
+    if (one.socket) {
+      socketAt = Date.now();
+    }
+    one.on('socket', function () {
+      socketAt = Date.now();
+    });
     one.on('error', onUpstreamError);
     log.debug("Leaving open().");
     return one;
@@ -7435,6 +8290,10 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
     dropReplay();
     failed = false;
     upstream = open();
+    // Written and ended in the same turn as open(), before the agent hands
+    // the request a socket, so node queues all of it and flushes it as one
+    // write: there is no write after the last byte here, which is the
+    // hazard endBody() avoids (see THE LAST CHUNK IS HELD BACK, below).
     chunks.forEach(function (chunk) {
       upstream.write(chunk, wroteOn(upstream));
     });
@@ -7550,10 +8409,37 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
   // reached the worker. The pipe's back-pressure is kept: a write the
   // connection cannot take yet pauses the client until it drains.
   // -------------------------------------------------------------------------
-  // One chunk of the body, kept for a resend and written to the worker. A
-  // HOT PATH — every chunk of every dispatched body — so no Entering/Leaving
-  // pair, for route()'s reason.
+  // -------------------------------------------------------------------------
+  // THE LAST CHUNK IS HELD BACK AND SENT WITH THE END (2026-11-15), BECAUSE
+  // NOTHING MAY BE WRITTEN TO THE WORKER AFTER THE BYTE IT ANSWERS ON.
+  //
+  // This is what the `write EPIPE` above and the 502 in
+  // `tests/request_ryw_session.js` (R15, R16, GitHub Actions run
+  // 43672106260) were. Node's `ClientRequest.end()` with no chunk writes an
+  // EMPTY string when anything is still queued on its socket — the socket
+  // still connecting, as it is when a body arrives a tick after open() —
+  // and that empty write is a SEPARATE write, issued after the one that
+  // carries the last body byte. A worker answers the moment that byte is
+  // in, and with `Connection: close` (above) it then closes the
+  // connection. Closing a unix socket marks this end SEND_SHUTDOWN, so the
+  // empty write fails EPIPE: the request is answered and recorded by the
+  // worker, and this process tells the client 502. It needs this thread to
+  // be preempted between two writes long enough for the worker thread to
+  // read, answer and close — rare alone, and three runs in five of the unit
+  // pool on a two-CPU runner. A worker that answered is not resent to (a
+  // POST is not idempotent, and `delivered` is true), so nothing above
+  // could recover it; the only fix is not to make the write.
+  //
+  // `end(chunk)` corks the socket and writes the chunk and node's trailing
+  // empty write as ONE writev, so the worker cannot have the last byte
+  // without the rest. `tests/request_proxy_last_write.js` delays every
+  // write after the first and fails without this.
+  // -------------------------------------------------------------------------
+  // One chunk of the body, kept for a resend; the one before it is written
+  // to the worker. A HOT PATH — every chunk of every dispatched body — so
+  // no Entering/Leaving pair, for route()'s reason.
   let draining = false;
+  let held = null;
   const forward = function (chunk) {
     if (replay.kept && !delivered) {
       replay.bytes += chunk.length;
@@ -7566,10 +8452,16 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
     // An early answer's drain (#215) and a failed connection take nothing
     // more: the one stopped reading, the other cannot be written to.
     if (detached || failed) {
+      held = null;
+      return;
+    }
+    const previous = held;
+    held = chunk;
+    if (!previous) {
       return;
     }
     const writing = upstream;
-    if (!writing.write(chunk, wroteOn(writing))) {
+    if (!writing.write(previous, wroteOn(writing))) {
       req.pause();
       draining = true;
       writing.once('drain', function () {
@@ -7581,8 +8473,14 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
   const endBody = function () {
     log.debug("Entering endBody().");
     ended = true;
+    const last = held;
+    held = null;
     if (!detached && !failed) {
-      upstream.end(wroteOn(upstream));
+      if (last) {
+        upstream.end(last, wroteOn(upstream));
+      } else {
+        upstream.end(wroteOn(upstream));
+      }
     }
     log.debug("Leaving endBody().");
   };
@@ -7870,7 +8768,24 @@ function runOperation(kind, args, opts) {
     if (write) {
       writeBarriers.synced++;
     }
-    return barrier(entry, wanted).then(function () {
+    return barrier(entry, wanted).then(function (caught) {
+      if (!caught) {
+        // REFUSED, NOT SENT BEHIND (2026-11-14): the caller answers its
+        // protocol's unavailable reply for a rejection. Nothing reached the
+        // worker, so the ticket goes (ticketAbandoned()'s argument).
+        ticketAbandoned(entry, ticket);
+        barrierRefusals += 1;
+        warnSparingly('STS-WORKER-0053',
+                      'request_pool: the ' + kind + ' operation was ' +
+                      'REFUSED: worker ' + entry.pid + ' had not caught up ' +
+                      'with the writes answered before it within ' +
+                      'workers.readBarrierTimeoutMs, and running it there ' +
+                      'could answer wrongly.');
+        const refusal = new Error('the request worker had not caught up ' +
+                                  'with earlier writes in time');
+        errorCodes.mark(refusal, 'STS-WORKER-0053');
+        throw refusal;
+      }
       return sendOperation(entry, kind, args, ticket, options.onPartial);
     });
   });
@@ -8579,6 +9494,10 @@ function stats() {
     // (nothing to catch up on), `keyed` (handed `keysSent` keys in place of
     // the pull) or `synced` (the barrier, as every write before #626).
     syncRounds: syncRounds,
+    // READERS A RUN-OUT BARRIER REFUSED (2026-11-14), and rounds that came
+    // back with the worker (or this process) still behind.
+    barrier: { refused: barrierRefusals, roundsMissed: barrierRoundsMissed,
+               timeoutMs: readBarrierTimeoutMs() },
     writes: { current: writeBarriers.current, keyed: writeBarriers.keyed,
               synced: writeBarriers.synced, keysSent: writeBarriers.keysSent,
               lastSharedGeneration: lastSharedGeneration,
@@ -8625,12 +9544,22 @@ function stats() {
     // `codeKeyed` counts code exchanges keyed by their code, `codesLearnt`
     // authorization code redirects learnt, and `settledCodes` the names kept
     // of code keys pruned once settled (THE CODE EXCHANGE, KEYED BY ITS
-    // CODE).
+    // CODE). `refreshKeyed` counts refresh grants keyed by their token, and
+    // `refreshLearnt` token responses whose refresh token was filed (THE
+    // REFRESH GRANT, KEYED BY ITS TOKEN, #879). `revokingDispatched` and
+    // `revokingAnswered` count tickets filed under REVOKE_KEY by their path
+    // and by their answer, and `revokeWaits` the token requests that waited
+    // for it (THE WRITES A REFRESH MUST NOT ANSWER AHEAD OF).
     sessionBarrier: { mode: readYourWriteMode(), session: sessionDispatches,
                      global: globalDispatches,
                      codeKeyed: codeKeyedDispatches,
                      codesLearnt: codeKeysLearnt,
                      settledCodes: settledCodes.size,
+                     refreshKeyed: refreshKeyedDispatches,
+                     refreshLearnt: refreshKeysLearnt,
+                     revokingDispatched: revokingDispatches,
+                     revokingAnswered: revokingAnswers,
+                     revokeWaits: revokeWaits,
                      keys: clientStates.size,
                      evicted: clientEvictions,
                      spilled: spilledTickets.size,
@@ -8709,6 +9638,11 @@ function reset() {
   settledCodes.clear();
   codeKeyedDispatches = 0;
   codeKeysLearnt = 0;
+  refreshKeyedDispatches = 0;
+  refreshKeysLearnt = 0;
+  revokingDispatches = 0;
+  revokingAnswers = 0;
+  revokeWaits = 0;
   reaped = 0;
   // And what each write was and how it was sent (#626).
   lastSharedGeneration = 0;
@@ -8717,6 +9651,8 @@ function reset() {
   keyLogFloor = 0;
   writeBarriers = { current: 0, keyed: 0, synced: 0, keysSent: 0 };
   syncRounds = 0;
+  barrierRefusals = 0;
+  barrierRoundsMissed = 0;
   ticketWaits = 0;
   localChangeMark = null;
   localChangeMarked = false;
@@ -8741,6 +9677,8 @@ module.exports = {
   // Where the scheduler's leader runs a cluster job's body (#408).
   schedulerRunner: schedulerRunner,
   size: size,
+  // Whether app.js's realm middleware catches up on an unknown realm here.
+  frontWithWorkers: frontWithWorkers,
   start: start,
   confirmCoordination: confirmCoordination,
   stop: stop,
@@ -8765,6 +9703,14 @@ module.exports = {
   readYourWriteModeOf: readYourWriteModeOf,
   clientKeysOf: clientKeysOf,
   codeExchangeCandidate: codeExchangeCandidate,
+  // THE WRITES A REFRESH MUST NOT ANSWER AHEAD OF, and the refresh token's
+  // key (the review of #879), for tests/request_ryw_session.js: which
+  // requests are filed under REVOKE_KEY by their path, and that a key is a
+  // digest. `clientKeyNames()` is the table's keys, never its tickets.
+  revokingRequest: revokingRequest,
+  refreshKeyOf: refreshKeyOf,
+  REVOKE_KEY: REVOKE_KEY,
+  clientKeyNames: clientKeyNames,
   dispatchPrefixes: dispatchPrefixes,
   fanoutPrefixes: fanoutPrefixes,
   affinityKeyOf: affinityKeyOf,
@@ -8794,6 +9740,9 @@ module.exports = {
   // catch a rename is a test holding them side by side. tests/ldap_logout.js
   // does exactly that.
   LDAP_DROP_HEADER: LDAP_DROP_HEADER,
+  // And the revoking answer's (the review of #879), for
+  // tests/revoking_writes.js.
+  REVOKING_HEADER: REVOKING_HEADER,
   WORKER_DECIDES: WORKER_DECIDES,
   // THIS PROCESS'S OWN WRITES MOVING THE GENERATION, exported so that
   // tests/front_process_writes.js can drive it without a store, a fork or a
@@ -8833,6 +9782,11 @@ module.exports = {
   // leaving releases its place needs a real socket and nothing else.
   barrier: barrier,
   receiveSync: receiveSync,
+  // And the 2026-11-14 change's two halves: a run-out barrier refuses, and
+  // the front's own catch-up loops, for tests/read_barrier_slow_apply.js.
+  proxyAfterBarrier: proxyAfterBarrier,
+  catchUpHere: catchUpHere,
+  roundCaughtUp: roundCaughtUp,
   proxy: proxy,
   WORKER_ANSWER_MAX_HEADER_BYTES: WORKER_ANSWER_MAX_HEADER_BYTES,
   // THE LISTENER'S RECONCILE, exported for tests/listener_branch_adoption.js

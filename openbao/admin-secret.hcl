@@ -23,7 +23,7 @@
 #   * an OPERATOR token, printed by the seeder, which is how a person reads
 #     the management API secret for the FIRST token on a stack they own —
 #     after that the documented path is an application of their own
-#     (`docs/management-api.md`).
+#     (`docs/v1.1.0/management-api.md`).
 #
 # Read on the data path and on the metadata path (the version), and nothing
 # else: no write, no list, no other path. The default policy beside it gives

@@ -39,7 +39,9 @@ import OpenApi = require('./openapi');
 import responseChecks = require('../common/response_models');
 // What a request may name and hold (#1483): a leaf that registers nothing.
 import RequestHeaders = require('../common/request_headers');
+import ModelZod = require('../common/model_zod');
 import version = require('../common/version');
+import Classes = require('../common/domain_classes');
 
 const log = bunyan.createLogger({ name: 'sts-report-api' });
 
@@ -54,6 +56,15 @@ const BASE = '/report-api';
 const SCOPE_CHALLENGE = 'report:use report:admin';
 
 let reportDeps: any = null;
+
+// THE MODEL'S OPERATIONS (#1579), by operationId, in `types/api.generated.d.ts`.
+// Each function that serves one is typed by it: its request (the body and
+// query names it may read) and its response (what `reportJson()` may answer
+// at a literal 2xx status).
+type ReportOps = IyaApi.Report.Operations;
+type ReportRequest<K extends keyof ReportOps> = IyaApi.RequestTo<ReportOps[K]>;
+type ReportAnswering<K extends keyof ReportOps> =
+  IyaApi.Answering<ReportOps[K]>;
 
 function reportDepsOf(): any {
   log.debug("Entering reportDepsOf().");
@@ -126,6 +137,11 @@ function reportSend(res: any, status: number, code: string, error: string,
   log.debug("Leaving reportSend().");
 }
 
+// TYPED BY THE OPERATION (#1579): through a serving function's response,
+// typed below by the Reports API operation it answers, the payload is held
+// to the model's answer at a literal 2xx status (`types/api-handlers.d.ts`).
+function reportJson<R, S extends number>(res: R, status: S,
+    payload: IyaApi.AnswerOf<R, S>): void;
 function reportJson(res: any, status: number, payload: any): void {
   log.debug("Entering reportJson().");
   if (res.headersSent) {
@@ -317,33 +333,103 @@ function reportPosted(req: any): any {
   return parsed;
 }
 
-function reportDocumentOf(body: any): any {
-  log.debug("Entering reportDocumentOf().");
-  if (!body || typeof body !== 'object') {
-    log.debug("Leaving reportDocumentOf(). None.");
-    return null;
-  }
-  if (typeof body.source === 'string') {
-    log.debug("Leaving reportDocumentOf(). Document.");
-    return { document: body, parameters: null };
-  }
-  if (body.document && typeof body.document === 'object' &&
-      !Array.isArray(body.document)) {
-    const parameters = body.parameters &&
-      typeof body.parameters === 'object' &&
-      !Array.isArray(body.parameters) ? body.parameters : null;
-    log.debug("Leaving reportDocumentOf(). Wrapper.");
-    return { document: body.document, parameters: parameters };
-  }
-  log.debug("Leaving reportDocumentOf(). Unshaped.");
-  return null;
-}
-
 function reportIdOk(id: string): boolean {
   log.debug("Entering reportIdOk().");
   const ok = /^[A-Za-z0-9_-]{1,64}$/.test(String(id || ''));
   log.debug("Leaving reportIdOk().");
   return ok;
+}
+
+// WHAT A DEFINITION, A SHARE AND A RUN'S PARAMETERS MAY HOLD (#1579) is the
+// model's `DefinitionWrite`, `ShareWrite` and `ParameterBag`: the body is held
+// to it here, at the door, and `jobs.ts` asks only what one body cannot
+// answer — a schedule's cron grammar, the catalog, a group's existence. A
+// document inside a definition is the model's too, and `Query` reports what
+// is wrong with it, so its own issues are left to it.
+//
+// A SAVED PARAMETER'S NAME (1 to 64 characters) is the model's as well since
+// the document became OpenAPI 3.1.0 (`propertyNames`, rcbj, #1579,
+// 2026-11-11), but its refusal is not made here. `jobs.ts` asked it by hand
+// after the definition was found, its schedule parsed and its document
+// validated, so a request wrong in one of those too was answered for that;
+// rcbj's decision was that no caller sees a change. So the door finds the
+// issue and `jobs.save()` refuses it where the hand check stood
+// (`tests/report_parameter_names.js` holds the order).
+//
+// A RUN'S PARAMETERS ARE THE SAME `ParameterBag`, names of 1 to 64 characters
+// included (rcbj, #1579, 2026-11-11): until then a run's body was
+// `RunParameters`, unbounded in name. A run has no later check to keep in
+// order, so its refusal is the door's, the one a run's bag always had.
+let reportWrites: Record<string, any> | null = null;
+
+function reportWriteShape(name: string): any {
+  log.debug("Entering reportWriteShape().");
+  if (!reportWrites) {
+    reportWrites = {};
+    ['DefinitionWrite', 'ShareWrite', 'ParameterBag',
+     'QueryDocument'].forEach(
+      function (one: string): void {
+        reportWrites[one] = ModelZod.component('report', one,
+                                               { typed: true });
+      });
+  }
+  log.debug("Leaving reportWriteShape().");
+  return reportWrites[name];
+}
+
+// The model's issues with a posted body, outermost first.
+function reportWriteIssues(name: string, posted: any): any[] {
+  log.debug("Entering reportWriteIssues().");
+  const held = reportWriteShape(name).safeParse(posted,
+                                                { reportInput: true });
+  log.debug("Leaving reportWriteIssues().");
+  return held.success ? [] : held.error.issues;
+}
+
+// True for the model's issue with a saved parameter's name: refused later,
+// where `jobs.ts` asked it (above).
+function reportParameterNameIssue(one: any): boolean {
+  log.debug("Entering reportParameterNameIssue().");
+  const out = one.path.length === 2 && one.path[0] === 'parameters' &&
+    !!(one.params && one.params.propertyNames);
+  log.debug("Leaving reportParameterNameIssue().");
+  return out;
+}
+
+// The sentence for what is wrong with a posted definition, or ''.
+function reportDefinitionProblem(posted: any): string {
+  log.debug("Entering reportDefinitionProblem().");
+  const issues = reportWriteIssues('DefinitionWrite', posted)
+    .filter(function (one: any): boolean {
+      // The query document's own issues are `Query`'s to name, and a
+      // parameter's name is `jobs.save()`'s to refuse.
+      return !(one.path[0] === 'document' && one.path.length > 1) &&
+        !reportParameterNameIssue(one);
+    });
+  const at = function (key: string): boolean {
+    return issues.some(function (one: any): boolean {
+      return one.path[0] === key;
+    });
+  };
+  let problem = '';
+  if (issues.some(function (one: any): boolean {
+    return one.path.length === 0;
+  })) {
+    problem = 'A definition is a name, a query document, parameters, a ' +
+      'schedule, scheduleEnabled and notify, and nothing else.';
+  } else if (at('name')) {
+    problem = 'A definition needs a name.';
+  } else if (at('document')) {
+    problem = 'A definition needs a query document.';
+  } else if (at('schedule')) {
+    problem = 'The schedule is not a UTC cron expression.';
+  } else if (at('parameters')) {
+    problem = 'Parameters are names and values.';
+  } else if (issues.length) {
+    problem = 'scheduleEnabled and notify are true or false.';
+  }
+  log.debug("Leaving reportDefinitionProblem().");
+  return problem;
 }
 
 function reportMergedParameters(stored: any, posted: any): any {
@@ -904,18 +990,9 @@ function reportOwnerName(owner: string, ownerRealm?: string): string {
   const ldap = require('../ldap/ldap_server');
   const entry = typeof ldap.existingUserEntry === 'function' ?
     ldap.existingUserEntry(username) : null;
-  const attrs = (entry && entry.attributes) || {};
-  const first = function (name: string): string {
-    const keys = Object.keys(attrs);
-    for (let i = 0; i < keys.length; i++) {
-      if (keys[i].toLowerCase() === name) {
-        const value = attrs[keys[i]];
-        return String((Array.isArray(value) ? value[0] : value) || '');
-      }
-    }
-    return '';
-  };
-  shown = first('displayname') || first('cn') || username;
+  // The name a person is shown by is the User's (#1579).
+  const user = Classes.User.fromEntry((entry && entry.attributes) || {});
+  shown = user.displayName || (user.cn || [])[0] || username;
   log.debug("Leaving reportOwnerName().");
   return shown;
 }
@@ -941,8 +1018,10 @@ function reportDefinitionView(who: any, row: any): any {
     modifiedAt: jobs.iso(row.modifiedAt)
   };
   if (editable) {
-    view.document = stores.copy(row.document);
-    view.parameters = row.parameters ? stores.copy(row.parameters) : null;
+    if (reportStoredHolds(row)) {
+      view.document = stores.copy(row.document);
+      view.parameters = row.parameters ? stores.copy(row.parameters) : null;
+    }
     view.groups = (row.groups || []).slice();
     view.failures = (row.failures || []).slice();
   }
@@ -950,7 +1029,32 @@ function reportDefinitionView(who: any, row: any): any {
   return view;
 }
 
-function reportServeIndex(res: any): void {
+// A DEFINITION STORED BEFORE THE MODEL GREW A BOUND (#1579): a filter's
+// `param` was any length until rcbj's decision of 2026-11-11 made it 1 to 64
+// characters, and there is no migration (no backward compatibility). Every
+// answer is held to the model (`common/response_models.ts`), so such a row's
+// document in a view would turn the whole list into a 500. It is answered
+// without its document and parameters instead: the owner still sees it, can
+// replace its document or delete it, and a run of it is refused 400 for its
+// query (`tests/report_parameter_names.js`, D). Noted once per row.
+const reportStaleNoted = new Set<string>();
+
+function reportStoredHolds(row: any): boolean {
+  log.debug("Entering reportStoredHolds().");
+  const holds = reportWriteIssues('QueryDocument', row.document).length ===
+    0 && (row.parameters == null ||
+    reportWriteIssues('ParameterBag', row.parameters).length === 0);
+  if (!holds && !reportStaleNoted.has(String(row.id))) {
+    reportStaleNoted.add(String(row.id));
+    log.warn(errorCodes.tag('STS-REPORT-0060') + 'report: a stored ' +
+      'definition no longer holds to the model, and is answered without ' +
+      'its document.');
+  }
+  log.debug("Leaving reportStoredHolds().");
+  return holds;
+}
+
+function reportServeIndex(res: ReportAnswering<'getIndex'>): void {
   log.debug("Entering reportServeIndex().");
   reportJson(res, 200, {
     service: 'report',
@@ -1097,7 +1201,10 @@ function reportSchedulesView(who: any, query: any): any {
   };
 }
 
-function reportServeSchedules(req: any, res: any, who: any): void {
+function reportServeSchedules(
+    req: ReportRequest<'getSchedules'>,
+    res: ReportAnswering<'getSchedules'>,
+    who: any): void {
   log.debug("Entering reportServeSchedules().");
   const view = reportSchedulesView(who, (req && req.query) || {});
   if (!view.ok) {
@@ -1114,7 +1221,9 @@ function reportServeSchedules(req: any, res: any, who: any): void {
 // THE GROUP SEARCH (#989): the definition page's pane, five a page, over
 // the realm's resident groups, each with its own address so the page can
 // say which groups a notice could reach.
-function reportServeGroups(req: any, res: any): void {
+function reportServeGroups(
+    req: ReportRequest<'getGroups'>,
+    res: ReportAnswering<'getGroups'>): void {
   log.debug("Entering reportServeGroups().");
   const query = (req && req.query) || {};
   reportJson(res, 200, sources.groupSearch(String(query.q || ''),
@@ -1129,7 +1238,9 @@ function reportServeGroups(req: any, res: any): void {
 // WHAT THE USER MENU DRAWS (#719): the reader's own photo. This application
 // signs in with no directory view of its own, so this is the one thing it asks
 // about the person, and it answers only about the token's.
-function reportServeMe(res: any, who: any): void {
+function reportServeMe(
+    res: ReportAnswering<'getMe'>,
+    who: any): void {
   log.debug("Entering reportServeMe().");
   reportJson(res, 200, { photo: who && who.kind === 'user'
     ? require('../common/profile_photo').pathFor(String(who.username || ''))
@@ -1137,7 +1248,9 @@ function reportServeMe(res: any, who: any): void {
   log.debug("Leaving reportServeMe().");
 }
 
-function reportServeAnnouncements(req: any, res: any): void {
+function reportServeAnnouncements(
+    req: ReportRequest<'getAnnouncements'>,
+    res: ReportAnswering<'getAnnouncements'>): void {
   log.debug("Entering reportServeAnnouncements().");
   const since = Number(((req && req.query) || {}).since || 0) || 0;
   reportJson(res, 200, require('../ssf/ssf_receivers')
@@ -1154,8 +1267,10 @@ function reportServeAnnouncements(req: any, res: any): void {
 // directory is asked for — what the portal reads off its session.
 const SIGNALS_PER_PAGE = 20;
 
-async function reportServeSignals(req: any, res: any, who: any):
-    Promise<void> {
+async function reportServeSignals(
+    req: ReportRequest<'getSignals'>,
+    res: ReportAnswering<'getSignals'>,
+    who: any): Promise<void> {
   log.debug("Entering reportServeSignals().");
   const signals = require('../ssf/ssf_receivers');
   const everyone = rights.isAdmin(who);
@@ -1203,13 +1318,15 @@ async function reportServeSignals(req: any, res: any, who: any):
   log.debug("Leaving reportServeSignals(). " + rows.length + " held.");
 }
 
-function reportServeRealms(res: any): void {
+function reportServeRealms(
+    res: ReportAnswering<'getRealms'>): void {
   log.debug("Entering reportServeRealms().");
   reportJson(res, 200, reportRealmsView());
   log.debug("Leaving reportServeRealms().");
 }
 
-function reportServeOpenApi(res: any): void {
+function reportServeOpenApi(
+    res: ReportAnswering<'getOpenApi'>): void {
   log.debug("Entering reportServeOpenApi().");
   // The catalog is the field reference. This document names the routes
   // and points at it, so a new field is not written twice.
@@ -1217,7 +1334,8 @@ function reportServeOpenApi(res: any): void {
   log.debug("Leaving reportServeOpenApi().");
 }
 
-function reportServeCatalog(res: any): void {
+function reportServeCatalog(
+    res: ReportAnswering<'getCatalog'>): void {
   log.debug("Entering reportServeCatalog().");
   const catalog = new Catalog();
   reportJson(res, 200, {
@@ -1226,7 +1344,9 @@ function reportServeCatalog(res: any): void {
   log.debug("Leaving reportServeCatalog().");
 }
 
-function reportServeSource(res: any, id: string): void {
+function reportServeSource(
+    res: ReportAnswering<'getCatalogSource'>,
+    id: string): void {
   log.debug("Entering reportServeSource().");
   const catalog = new Catalog();
   const src = catalog.source(id);
@@ -1240,8 +1360,13 @@ function reportServeSource(res: any, id: string): void {
   log.debug("Leaving reportServeSource().");
 }
 
-async function reportAcceptQuery(req: any, res: any, who: any,
-    forceAsync: boolean, definition: any, because?: string): Promise<void> {
+async function reportAcceptQuery(
+    req: ReportRequest<'runQuery' | 'queueJob' | 'runDefinition'>,
+    res: ReportAnswering<'runQuery' | 'queueJob' | 'runDefinition'>,
+    who: any,
+    forceAsync: boolean,
+    definition: any,
+    because?: string): Promise<void> {
   log.debug("Entering reportAcceptQuery().");
   const posted = reportPosted(req);
   if (posted === false) {
@@ -1252,10 +1377,17 @@ async function reportAcceptQuery(req: any, res: any, who: any,
     log.debug("Leaving reportAcceptQuery(). Bad JSON.");
     return;
   }
-  const wrapped = definition ? {
-    document: stores.copy(definition.document),
-    parameters: reportMergedParameters(definition.parameters, posted)
-  } : reportDocumentOf(posted);
+  // An ad hoc body IS the query document (`QueryDocument`, #1579): there is
+  // no wrapper, and so no parameter outside a saved definition's run.
+  let wrapped: any = null;
+  if (definition) {
+    wrapped = {
+      document: stores.copy(definition.document),
+      parameters: reportMergedParameters(definition.parameters, posted)
+    };
+  } else if (posted) {
+    wrapped = { document: posted, parameters: null };
+  }
   if (!wrapped) {
     reportQueryRefused(who, null, 'STS-REPORT-0004');
     reportSend(res, reportHttpStatus('STS-REPORT-0004'),
@@ -1413,13 +1545,19 @@ function reportDefinitionsView(who: any, query: any): any {
   return view;
 }
 
-function reportServeDefinitions(req: any, res: any, who: any): void {
+function reportServeDefinitions(
+    req: ReportRequest<'getDefinitions'>,
+    res: ReportAnswering<'getDefinitions'>,
+    who: any): void {
   log.debug("Entering reportServeDefinitions().");
   reportJson(res, 200, reportDefinitionsView(who, (req && req.query) || {}));
   log.debug("Leaving reportServeDefinitions().");
 }
 
-function reportCreateDefinition(req: any, res: any, who: any,
+function reportCreateDefinition(
+    req: ReportRequest<'createDefinition' | 'replaceDefinition'>,
+    res: ReportAnswering<'createDefinition' | 'replaceDefinition'>,
+    who: any,
     id: string): void {
   log.debug("Entering reportCreateDefinition().");
   const posted = reportPosted(req);
@@ -1428,6 +1566,13 @@ function reportCreateDefinition(req: any, res: any, who: any,
       'STS-REPORT-0030', 'invalid_query',
       'A definition is a JSON object.');
     log.debug("Leaving reportCreateDefinition(). Bad body.");
+    return;
+  }
+  const problem = reportDefinitionProblem(posted);
+  if (problem) {
+    reportSend(res, reportHttpStatus('STS-REPORT-0030'),
+      'STS-REPORT-0030', 'invalid_query', problem);
+    log.debug("Leaving reportCreateDefinition(). Not a definition.");
     return;
   }
   if (id) {
@@ -1448,7 +1593,9 @@ function reportCreateDefinition(req: any, res: any, who: any,
     schedule: posted.schedule,
     scheduleEnabled: posted.scheduleEnabled,
     notify: posted.notify,
-    parameters: posted.parameters
+    parameters: posted.parameters,
+    parameterNamesRefused: reportWriteIssues('DefinitionWrite', posted)
+      .some(reportParameterNameIssue)
   });
   if (!saved.ok) {
     reportApplyRefusal(res, who, saved, null, '');
@@ -1461,7 +1608,10 @@ function reportCreateDefinition(req: any, res: any, who: any,
   log.debug("Leaving reportCreateDefinition().");
 }
 
-function reportServeDefinition(res: any, who: any, id: string): void {
+function reportServeDefinition(
+    res: ReportAnswering<'getDefinition'>,
+    who: any,
+    id: string): void {
   log.debug("Entering reportServeDefinition().");
   const row = reportIdOk(id) ? stores.getDefinition(id) : null;
   if (!row || !rights.canSee(who, row)) {
@@ -1473,7 +1623,10 @@ function reportServeDefinition(res: any, who: any, id: string): void {
   log.debug("Leaving reportServeDefinition().");
 }
 
-function reportDeleteDefinition(res: any, who: any, id: string): void {
+function reportDeleteDefinition(
+    res: ReportAnswering<'deleteDefinition'>,
+    who: any,
+    id: string): void {
   log.debug("Entering reportDeleteDefinition().");
   const row = reportIdOk(id) ? stores.getDefinition(id) : null;
   if (!row || !rights.canEdit(who, row)) {
@@ -1491,8 +1644,10 @@ function reportDeleteDefinition(res: any, who: any, id: string): void {
   log.debug("Leaving reportDeleteDefinition().");
 }
 
-function reportSharePosted(req: any, res: any, who: any, id: string):
-    void {
+function reportSharePosted(
+    req: ReportRequest<'shareDefinition'>,
+    res: ReportAnswering<'shareDefinition'>,
+    who: any, id: string): void {
   log.debug("Entering reportSharePosted().");
   const row = reportIdOk(id) ? stores.getDefinition(id) : null;
   if (!row || !rights.canEdit(who, row)) {
@@ -1501,11 +1656,22 @@ function reportSharePosted(req: any, res: any, who: any, id: string):
     return;
   }
   const posted = reportPosted(req);
-  if (posted === false || !posted || !Array.isArray(posted.groups)) {
+  const issues = posted ? reportWriteIssues('ShareWrite', posted) : [];
+  if (posted === false || !posted || issues.some(function (one: any):
+      boolean {
+    return one.path.length < 2;
+  })) {
     reportSend(res, reportHttpStatus('STS-REPORT-0031'),
       'STS-REPORT-0031', 'invalid_query',
       'Name the groups to share this definition with.');
     log.debug("Leaving reportSharePosted(). Bad body.");
+    return;
+  }
+  if (issues.length) {
+    reportSend(res, reportHttpStatus('STS-REPORT-0031'),
+      'STS-REPORT-0031', 'invalid_query',
+      'A share names a group this realm does not have.');
+    log.debug("Leaving reportSharePosted(). Not a group.");
     return;
   }
   const shared = jobs.share({
@@ -1524,7 +1690,10 @@ function reportSharePosted(req: any, res: any, who: any, id: string):
   log.debug("Leaving reportSharePosted().");
 }
 
-async function reportRunSaved(req: any, res: any, who: any,
+async function reportRunSaved(
+    req: ReportRequest<'runDefinition'>,
+    res: ReportAnswering<'runDefinition'>,
+    who: any,
     id: string): Promise<void> {
   log.debug("Entering reportRunSaved().");
   const row = reportIdOk(id) ? stores.getDefinition(id) : null;
@@ -1540,6 +1709,13 @@ async function reportRunSaved(req: any, res: any, who: any,
       'STS-REPORT-0004', 'invalid_query',
       'The query body is not a JSON object.');
     log.debug("Leaving reportRunSaved(). Bad JSON.");
+    return;
+  }
+  if (reportWriteIssues('ParameterBag', posted).length) {
+    reportSend(res, reportHttpStatus('STS-REPORT-0004'),
+      'STS-REPORT-0004', 'invalid_query',
+      'Parameters are names and values.');
+    log.debug("Leaving reportRunSaved(). Not a parameter bag.");
     return;
   }
   await reportAcceptQuery(req, res, who, true, row, 'run');
@@ -1595,13 +1771,19 @@ function reportJobsView(who: any, query: any): any {
   return view;
 }
 
-function reportServeJobs(req: any, res: any, who: any): void {
+function reportServeJobs(
+    req: ReportRequest<'getJobs'>,
+    res: ReportAnswering<'getJobs'>,
+    who: any): void {
   log.debug("Entering reportServeJobs().");
   reportJson(res, 200, reportJobsView(who, (req && req.query) || {}));
   log.debug("Leaving reportServeJobs().");
 }
 
-function reportServeJob(res: any, who: any, id: string): void {
+function reportServeJob(
+    res: ReportAnswering<'getJob'>,
+    who: any,
+    id: string): void {
   log.debug("Entering reportServeJob().");
   const job = reportIdOk(id) ? stores.getJob(id) : null;
   if (!reportJobVisible(who, job)) {
@@ -1616,7 +1798,10 @@ function reportServeJob(res: any, who: any, id: string): void {
   log.debug("Leaving reportServeJob().");
 }
 
-function reportStopPosted(res: any, who: any, id: string): void {
+function reportStopPosted(
+    res: ReportAnswering<'cancelJob'>,
+    who: any,
+    id: string): void {
   log.debug("Entering reportStopPosted().");
   const job = reportIdOk(id) ? stores.getJob(id) : null;
   if (!reportJobVisible(who, job)) {
@@ -1644,8 +1829,9 @@ function reportExtent(format: string): string {
   return ext;
 }
 
-async function reportServeResult(res: any, who: any, id: string):
-    Promise<void> {
+async function reportServeResult(
+    res: ReportAnswering<'getJobResult'>,
+    who: any, id: string): Promise<void> {
   log.debug("Entering reportServeResult().");
   const job = reportIdOk(id) ? stores.getJob(id) : null;
   if (!reportJobVisible(who, job)) {

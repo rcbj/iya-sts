@@ -101,14 +101,6 @@ fn refused(code: &'static str, message: String) -> Refusal {
     }
 }
 
-/// The first member of an object that is not in a list, cut short.
-fn stray(object: &Map<String, Value>, allowed: &[&str]) -> Option<String> {
-    js_keys(object)
-        .into_iter()
-        .find(|key| !allowed.contains(&key.as_str()))
-        .map(|key| js_slice(key, 64))
-}
-
 /// Reads one access evaluation request (section 5) against the realm's
 /// catalogue rows, as `AuthzenMap.read()` does.
 pub fn read(body: &Value, rows: &[Row]) -> Result<Evaluation, Refusal> {
@@ -120,25 +112,17 @@ pub fn read(body: &Value, rows: &[Row]) -> Result<Evaluation, Refusal> {
                 .into(),
         ));
     };
-    if let Some(key) =
-        stray(given, &["subject", "action", "resource", "context"])
-    {
-        return Err(refused(
-            "STS-AUTHZEN-0009",
-            format!(
-                "An access evaluation request has no member \"{}\"; it takes \
-                 subject, action, resource and context.",
-                key
-            ),
-        ));
-    }
-    let shapes: [(&str, &[&str], &[&str]); 3] = [
-        ("subject", &["type", "id"], &["type", "id", "properties"]),
-        ("action", &["name"], &["name", "properties"]),
-        ("resource", &["type", "id"], &["type", "id", "properties"]),
+    // A MEMBER AUTHZEN 1.0 DOES NOT DEFINE IS IGNORED, at the top and in
+    // each entity (section 10.1.1, "receivers MUST ignore unknown fields";
+    // rcbj's decision on #936, 2026-11-13). Until then it was refused with
+    // STS-AUTHZEN-0009, which is retired, as the service's model is.
+    let shapes: [(&str, &[&str]); 3] = [
+        ("subject", &["type", "id"]),
+        ("action", &["name"]),
+        ("resource", &["type", "id"]),
     ];
     let mut parts: Vec<Vec<String>> = Vec::new();
-    for (name, required, members) in shapes {
+    for (name, required) in shapes {
         let Some(object) = given.get(name) else {
             let joined = required.join(&format!(" and {}.", name));
             return Err(refused(
@@ -155,17 +139,6 @@ pub fn read(body: &Value, rows: &[Row]) -> Result<Evaluation, Refusal> {
                 format!("{} must be a JSON object.", name),
             ));
         };
-        if let Some(key) = stray(object, members) {
-            return Err(refused(
-                "STS-AUTHZEN-0009",
-                format!(
-                    "{} has no member \"{}\"; it takes {}.",
-                    name,
-                    key,
-                    members.join(", ")
-                ),
-            ));
-        }
         let mut values = Vec::new();
         for member in required {
             let value = object.get(*member);

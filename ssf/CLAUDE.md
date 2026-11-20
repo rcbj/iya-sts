@@ -18,6 +18,7 @@ family here and the first one that TALKS BACK.
 | `ssf_dead_letter_report.ts` | What the dead-letter queues hold, counted, for Monitoring → Shared Signals → Dead letters and `/admin-api/ssf/dead-letters` (2026-09-14). A LIBRARY. |
 | `ssf_cluster.ts` | Several nodes (2026-09-14, #46): one report per stream health transition, one prober, and the GNAP key-proof spend as route middleware. A LIBRARY. |
 | `account_signals.ts` | What a credential change on the admin and portal doors says over CAEP and RISC (2026-09-13), read out of `require.cache`. A LIBRARY. |
+| `ssf_model.ts` | **The model, as the family reads it** (#1579): the tables `models/generated/ssf.json` holds, and the holding of what is answered and sent. A LEAF. |
 
 Twelve of the thirteen register nothing (rule 3), so their position in the
 route order is not a position. `ssf.ts` is required at **23b in
@@ -27,6 +28,63 @@ before `sts_metadata.ts`, which is last for everybody.
 
 ---
 
+
+## THE SHAPES ARE THE MODEL'S (#1579, 2026-11-10)
+
+rcbj's decision on #1579 brings every protocol family into the model; this
+one is `models/ssf/ssf_events.tsp` (every event type: SSF's two, CAEP's
+eight, RISC's fourteen, this service's own six, each payload member's shape
+and prose) and `models/ssf/ssf.tsp` (the eleven subject formats with their
+closed member sets and the check each value is held to, the complex subject,
+the delivery methods, the statuses, the credential types, every document and
+the `err` values). The build writes `models/generated/ssf.json` and
+`ssf_model.ts` reads it. **The model describes and validates the wire; it does
+not reshape it**: `tests/ssf_model_wire.js` holds 201 answers and 185 verdicts
+recorded before the switch, byte for byte, in four realms.
+
+* **The rows are BUILT from the model.** `ssf_subjects.js`'s `FORMATS`,
+  `PERSON_FORMATS`, `COMPLEX_MEMBERS` and `MEMBER_NAME`, `ssf_events.js`'s
+  `EVENTS` (and its four family slices), `STATUSES`, `CREDENTIAL_TYPES` and the
+  two common-member lists, `ssf_streams.ts`'s `DELIVERY_METHODS` and the
+  Transmitter-Supplied members `transmitterSuppliedMismatch()` compares, and
+  `ssf_transmitters.ts`'s status list. The literals are gone, and the exports
+  keep their shapes.
+* **What stays in code is what a row DOES**, never what it is:
+  * each value CHECK and its sentence (`ssf_subjects.js`'s `CHECKS`, keyed by
+    the check `@subjectMember` names: `acct`, `addrSpec`, `e164`, `did`,
+    `absoluteUri`, `issuer`, `jwtIssuer`, `ipAddresses`, `identifiers`) — a
+    refusal's words are the wire, and a pattern with no sentence would be half
+    a check;
+  * each event's payload GENERATOR (`ssf_events.js`'s `GENERATORS`, by URI;
+    a row with no member makes `{}`; the key-rotation family's rows share one
+    generator read off the row's own members, so a sibling URN is a model and
+    nothing here). `tests/model_ssf.js` B holds every generated payload to its
+    row;
+  * everything that needs STATE, the mode or a setting: which delivery methods
+    a deployment offers, the stream limit and verification interval, an
+    owner's `ssfAllowedEvents`, the `aud` association, whether an endpoint URL
+    can be dialled, the opt-out gate. `assignAudience()`'s "a string or a
+    non-empty array" stays there with the association it is the first half
+    of;
+  * the two delivery URNs and the SET media type as constants the code
+    branches on.
+* **The answers are HELD, as OAuth holds its claim sets**: the metadata (both
+  forms), every stream configuration (`streamView()`, its `delivery` too),
+  both status answers and the poll answer to their documents (STS-SSF-0159);
+  every `err` through `fail()` to the declared list (STS-SSF-0160); every SET
+  `buildSet()` makes to RFC 8417's claims (STS-SSF-0161). A problem is logged
+  and the answer sent unchanged — a 500 here would change a specification's
+  endpoint, which #1579 forbids. The payload was already refused on its row
+  (`validateEvent()`, STS-SSF-0027), and the row is the model's now.
+* **The receiver half, at a federation partner** (`ssf_transmitters.ts`'s
+  `heldTo()`, STS-SSF-0162, a warning): what this realm SENDS — a stream
+  request, which may carry only Receiver-Supplied members and `stream_id`, a
+  status, a subject, a verification, a poll — and what the partner SENDS — its
+  configuration, a stream configuration, a poll's answer, a SET's claims, all
+  held OPEN, because a partner may extend them. Nothing is refused there: the
+  receiver's own checks (issuer, `jwks_uri`, `configuration_endpoint`, `typ`,
+  `iss`, `aud`, `jti`, `events`) still decide. This service's own receivers
+  poll this service's own transmitter, whose answer is held at the route.
 
 ## Internal delivery is not applied in every process (2026-10-21, #820)
 
@@ -829,6 +887,19 @@ somebody had merely left.
 create's `before` and a delete's `after`, so creating a person is not an
 `account-enabled` and deleting a disabled one is not either.
 
+**A NAME TAKEN AGAIN STARTS FRESH (2026-11-16, #1612's rule).** The register
+is keyed by the name and keeps a `purged` row on purpose, so a person made
+again under a deleted person's name found it — the holder's opt-out (which
+`gate()` honours by suppressing every event), the credential standing, the
+counts. `retireNamesake()` runs on every person's write (from
+`riscAutoEmit()` before SSF's switch is read, and from `observe()`): when the
+write's entry has a `urn:uuid:` other than the one the row recorded, the row
+is MOVED to that recorded subject — still on `/admin/risc-accounts`, still
+matched by `matchAccount()` — and the name starts with no row. A row with no
+recorded subject is moved when it is `purged`, under `<name>#<updatedAt>`. A
+rename keeps the subject, and its row. `ldap/CLAUDE.md` has the rest of what
+a delete forgets.
+
 **`identifier-recycled` IS READ FROM THE REGISTER'S OWN HISTORY.**
 - Each row keeps `releasedIdentifiers`: an address it moved off, or everything
   it held when purged, each with its time.
@@ -1299,6 +1370,20 @@ stream IDs and aud values"; nothing here did.
   alone would not do: they are created as `internal`, and in development any
   Basic username authenticates, including that one. They are managed on
   `/admin/ssf` and through `/admin-api` only.
+* **A cluster member is a stream of its own** (#1760 phase 3). Members of
+  one application client authenticate as that one principal, so
+  `streamsOwnedBy` cannot tell them apart. A caller may send
+  `X-Iya-Pep-Name`, its registered PEP name. `GET /ssf/stream` with no
+  `stream_id` then returns only the streams whose `pepMember` is that
+  name, and an empty list when there are none, so the caller creates one.
+  `POST /ssf/stream` records `pepMember` from the header, through
+  `contextOf()`, and never from the body. A header that is present and
+  not a PEP name is 400 (`STS-SSF-0163`) on that GET and that POST; it is
+  not read as no header. Absent, the list is every stream of the
+  principal, which is what a receiver that is not a cluster member has
+  always seen. `pepMember` is bookkeeping, like `subjects` and the queue:
+  `streamConfiguration()` does not put it on the wire. Poll, PUT, PATCH
+  and DELETE stay by `stream_id`.
 * **`ssf.maxStreams` is per owner**, and a create past it is a 403 (section
   8.1.1.1's "not allowed to create a stream"). It was per realm, so one
   receiver could use up everyone's allowance.
@@ -2252,7 +2337,7 @@ regex is gone: every door STATES `admin`, `user`, `policy` or `system` —
 entity)`, `endEverySessionIn()`, `endRelyingPartySessions()` — and the words
 reach `reason_admin` only. A derived session ends with its parent's entity; a
 door that says nothing is `system` with `STS-AUTHN-0290`. The table of doors
-and their entities is `docs/caep-events.md`'s `session-revoked` section.
+and their entities is `docs/v1.1.0/caep-events.md`'s `session-revoked` section.
 `caep.ts`'s own fallback (`byAdmin`, then `user`) is kept for a notice from
 elsewhere that states nothing; `authn` always states one.
 
@@ -2593,6 +2678,21 @@ of this directory needs:
   `ssf.foreign-poll` cluster job, per realm, over every relationship
   streaming by poll; what was received is acknowledged (`ack`) or refused
   (`setErrs`) on the next request.
+  **One poll of a stream at a time (2026-11-18, GitHub Actions run #493).**
+  The job and an administrator's `signals-poll-now` used to reach the
+  partner side by side, and the conformance suite's CAEP interoperability
+  module (release v5.3.1, poll) loses what it generates when a second poll
+  arrives during its one-second wait inside the acknowledgement of its
+  verification: reproduced against the suite's own image with a second
+  poller 30, 300 and 900 ms behind the first (six SETs made and handed to
+  nobody, the module WAITING until it timed out), and at 0 and 5 ms the
+  module died of a NullPointerException. Run #493's `rx-caep-poll` was the
+  job's tick landing in that second. Now `pollOnce()` chains the polls of
+  one `<realm>|<relationship>` in a process, and across processes a poll
+  marks the shared stream row (`pollingBy`, `pollingUntil`, bounded by what
+  one poll may take): the job skips a stream another process is polling,
+  and a poll-now waits for the mark to clear or expire.
+  `tests/ssf_transmitters.js` N1 and N2.
 * **Verification** is done here, against the configuration's `jwks_uri` —
   not the sign-in relationship's keys, which may be another set — reusing
   `oauth-oidc/client_jwks.js`'s cache. Then `typ`, `iss` (the discovered

@@ -546,7 +546,48 @@ function projections(t) {
   }
 
   const spec = OpenApi.document(catalog);
-  t.equal(spec.openapi, '3.0.3', 'the document is OpenAPI 3.0.3');
+  t.equal(spec.openapi, '3.1.0', 'the document is OpenAPI 3.1.0 (#1579)');
+  t.equal(JSON.stringify(spec).indexOf('"nullable"'), -1,
+    'no schema says OpenAPI 3.0\'s nullable: a nullable value is a type list');
+  const schemas = spec.components.schemas;
+  t.equal(JSON.stringify(schemas.ParameterBag.propertyNames),
+    JSON.stringify({ type: 'string', minLength: 1, maxLength: 64 }),
+    'a saved parameter\'s name is 1 to 64 characters, the model\'s ' +
+    'propertyNames');
+  t.equal(schemas.RunParameters, undefined,
+    'there is no RunParameters: a run\'s parameters are a ParameterBag ' +
+    '(rcbj, #1579, 2026-11-11)');
+  const runBody = spec.paths['/report-api/definitions/{id}/run'].post
+    .requestBody.content['application/json'].schema;
+  t.equal(runBody && runBody.$ref, '#/components/schemas/ParameterBag',
+    'a run\'s body is the ParameterBag, names bounded as a saved bag\'s');
+  const paramName = schemas.FilterParam.properties.param;
+  t.check(paramName.minLength === 1 && paramName.maxLength === 64,
+    'a filter\'s param is a name of 1 to 64 characters',
+    JSON.stringify(paramName));
+  const ModelZod = require('../common/model_zod');
+  const bag = ModelZod.component('report', 'ParameterBag', { typed: true });
+  t.check(!bag.safeParse({ ['p'.repeat(65)]: 1 }).success,
+    'the model refuses a 65-character name');
+  t.check(!bag.safeParse({ '': 1 }).success,
+    'the model refuses an empty name');
+  t.check(bag.safeParse({ ['p'.repeat(64)]: 1 }).success,
+    'the model accepts a 64-character name');
+  t.check(bag.safeParse(null).success,
+    'the model takes null, a definition with no parameters');
+  const long = bag.safeParse({ ['p'.repeat(65)]: 1 });
+  const issue = long.error ? long.error.issues[0] : null;
+  t.check(issue && issue.path.length === 1 && issue.params &&
+    issue.params.propertyNames === true,
+    'the issue is at the member and says it is the name',
+    JSON.stringify(issue));
+  const leaf = ModelZod.component('report', 'FilterParam', { typed: true });
+  t.check(!leaf.safeParse({ op: 'eq', field: 'f',
+                           param: 'p'.repeat(65) }).success,
+    'the model refuses a filter naming a 65-character parameter');
+  t.check(leaf.safeParse({ op: 'eq', field: 'f',
+                          param: 'p'.repeat(64) }).success,
+    'the model takes a filter naming a 64-character parameter');
   const paths = [
     '/report-api',
     '/report-api/openapi.json',
@@ -1745,15 +1786,10 @@ function chrome(t) {
   t.check(runTag.indexOf('disabled') < 0 && runTag.indexOf('hidden') < 0,
     'the Run button is the default button until then');
 
-  // The footer.
-  const foot = ReportRuntime.footerHtml(tr, { version: '0.1.1', stamped: true,
-    buildInfo: 'built 2026-10-26' });
-  t.check(foot.indexOf('iya-sts version 0.1.1') >= 0,
-    'the footer names the version', foot);
-  t.check(foot.indexOf('title="built 2026-10-26"') >= 0,
-    'the build is the footer\'s title');
-  t.equal(ReportRuntime.footerHtml(tr, null), '',
-    'no version draws no footer');
+  // The version line under the card is gone (2026-11-14): the page footer
+  // every shell draws carries the version (tests/page_footer.js).
+  t.check(typeof ReportRuntime.footerHtml === 'undefined',
+    'the reports application draws no version line of its own');
 
   // A filter row, with and without the +.
   const first = ReportRuntime.filterRowHtml(tr, 0, '<option value="a">a' +
@@ -3422,8 +3458,30 @@ async function disabledOwner(t) {
   log.debug("Leaving disabledOwner().");
 }
 
+// A MEMORY STORE WITH workers.requestCount AT ITS DEFAULT RUNS NO REQUEST
+// WORKER, AND THE DRAIN DOES NOT WAIT FOR ONE (2026-11-14, #444's D12): it
+// read the setting (1) and waited for a pool that never starts, so every
+// report job stayed queued and STS-REPORT-0024 was logged every two seconds.
+async function drainWithoutPool(t) {
+  log.debug("Entering drainWithoutPool().");
+  const config = require('../common/config');
+  const pool = require('../common/request_pool');
+  const jobs = require('../report/jobs');
+  const configured = Number(pool.stats().configured) || 0;
+  t.check(Number(config.value('workers.requestCount')) === 1 &&
+          configured === 0,
+          'drain: the setting asks for a worker and this memory store runs ' +
+          'none', config.value('workers.requestCount') + ' / ' + configured);
+  const out = await jobs.drainNow();
+  t.check(!(out && out.waiting === true),
+          'drain: with no pool it runs rather than waiting for a worker ' +
+          '(no STS-REPORT-0024)', JSON.stringify(out));
+  log.debug("Leaving drainWithoutPool().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
+  await drainWithoutPool(t);
   documents(t);
   formats(t);
   await artifacts(t);

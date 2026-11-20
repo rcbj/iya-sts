@@ -1240,8 +1240,8 @@
     "text": "仅凭密码即可通过的纯密码入口"
   },
   "authn.passwordAloneDoors|description": {
-    "en": "c893f7eaeaad4aa7",
-    "text": "仅限产品模式。纯密码入口——ldap、wstrust、scim、ssf、est——的逗号分隔列表，在列出的入口处，持有或必须持有第二因素的人仍可凭其自己的密码被接受。留空（默认）则在全部五个入口拒绝该密码（按密码错误应答），只在那里接受应用密码。**警告：列出的每个入口都会把所有这类人在该入口降为单一因素**（NIST SP 800-63B 第 4.2 节：AAL2 变为 AAL1），因此被盗的密码无需第二因素即可通过。请优先使用应用密码；只为无法提供应用密码的客户端列出入口。开发模式在任何地方都不检查密码，并忽略此项。"
+    "en": "a01fe4fce9df1599",
+    "text": "仅限产品模式。纯密码入口——ldap、wstrust、scim、ssf、est、xacml-pep——的逗号分隔列表，在列出的入口处，持有或必须持有第二因素的人仍可凭其自己的密码被接受。留空（默认）则在全部六个入口拒绝该密码（按密码错误应答），只在那里接受应用密码。**警告：列出的每个入口都会把所有这类人在该入口降为单一因素**（NIST SP 800-63B 第 4.2 节：AAL2 变为 AAL1），因此被盗的密码无需第二因素即可通过。请优先使用应用密码；只为无法提供应用密码的客户端列出入口。开发模式在任何地方都不检查密码，并忽略此项。"
   },
   "appPasswords.enabled|label": {
     "en": "2208ee75339ab0f4",
@@ -1718,6 +1718,14 @@
   "keys.signerModel|description": {
     "en": "2cfc3f704d76eaf9",
     "text": "此领域的签名密钥如何划分。`per-algorithm`（默认）为每种 JWS 算法一个密钥（一个 RSA 密钥、六个曲线密钥和十一个后量子密钥），由每种 JOSE 用途共享，并为所有 XML 签名使用一个 RSA 密钥。`hybrid-groups` 为五个签名者组——OAuth/OIDC 令牌、可验证凭据、Security Event Token、WS-Trust 和 GNAP、XML——各自提供专属密钥，采用选定的一组算法：RSA-3072、P-256 和 P-384，每个都与一个 ML-DSA 密钥（65、44 和 87）一起在一张混合证书中认证（ITU-T X.509 第 9.8 条），以及单独的 SLH-DSA-SHA2-128s。组用途中的签名使用该组对应算法的密钥；不在该组算法集中的算法仍使用按算法划分的密钥签名。每个密钥都是独立的密钥对；混合证书共享的是证书。"
+  },
+  "keys.credentialSigner|label": {
+    "en": "550ef73b0777ea78",
+    "text": "凭证签名密钥"
+  },
+  "keys.credentialSigner|description": {
+    "en": "80863e8241a6ca0b",
+    "text": "签署本领域 dc+sd-jwt 和 jwt_vc_json 凭证及其 Token Status List Token 的密钥。`dedicated`（默认值）是凭证专用的密钥，每个算法族一把，不用于其他任何用途，其证书的 subjectAltName 以 URI 形式列出本领域响应的每个颁发者标识符（不含 DNS 名称），扩展密钥用法为 id-kp-documentSigning（RFC 9336），不含任何 TLS 协议栈会接受的用法，使钱包能够将凭证的 iss 与其 x5c 进行比对（HAIP 1.0 第 6.1.1 节）。颁发者标识符发生变化时（global.publicBaseUrl、tls.hostnames、监听器），证书会重新签发。`realm-key` 使用本领域的通用 JOSE 密钥签署，与 1.0.0 相同，其证书不列出任何颁发者。无论哪种方式，已签发的凭证都仍可验证。ldp_vc 和 mso_mdoc 不受影响。"
   },
   "keys.encryptionKemAlgs|label": {
     "en": "c0f9d68cc4ea0925",
@@ -2368,8 +2376,16 @@
     "text": "跨请求工作线程的读己之写"
   },
   "workers.readYourWrite|description": {
-    "en": "fb1bc46eaab84ce9",
+    "en": "232dadd8bb312926",
     "text": "请求工作线程在响应之前，是否必须赶上通过其他工作线程所做的写入。协调使工作线程在半秒到一秒内收敛，但这不是 read-your-write。`session`（默认）：在其地址中带有会话 Cookie、池 Cookie 或登录流程的请求，等待带有相同内容的先前请求的写入、不带有其中任何一项的请求的每一次写入，以及前端进程自己的写入；不带有其中任何一项的请求，例如来自客户端服务器的令牌请求、SCIM 或带 bearer 令牌的管理 API 调用，会等待在它之前已应答的每一次写入。因此浏览器会立即看到自己的写入和每个后端通道的写入，而另一个浏览器的写入只有在工作线程收敛后才能看到。`global`：每个请求都等待在它之前已应答的每一次写入，在负载下每个请求要多花几十毫秒。`off`：没有请求等待，调用方可能找不到自己的写入。`true` 表示 `session`，`false` 表示 `off`。对于界面池（workers.surfaceCount），不得将其关闭。"
+  },
+  "workers.readBarrierTimeoutMs|label": {
+    "en": "3b71b70cca1bcc7d",
+    "text": "读屏障等待时间（毫秒）"
+  },
+  "workers.readBarrierTimeoutMs|description": {
+    "en": "5de72cbc57b2e8dc",
+    "text": "当 workers.readYourWrite 要求时，一个请求总共可以等待多长时间，让其请求 worker（或者前端进程，对于它自己应答的请求）追上在它之前已应答的写入。在追上之前，每五秒会再次询问该 worker。超过这一等待时间后，请求会以 HTTP 503 和 Retry-After 被拒绝（LDAP、Kerberos 或 SPIFFE 操作则以其协议的不可用应答拒绝），而不是用可能已经过时的副本来应答。在硬件较慢、worker 应用一批写入（一次全局注销、一次批量加载）可能需要更长时间的地方调高它；在快速拒绝比长时间等待更适合调用方的地方调低它。每个请求都会读取。"
   },
   "workers.socketDir|label": {
     "en": "92c5ff3b54b1efde",
@@ -2968,8 +2984,8 @@
     "text": "对重复兑换授权码返回相同令牌"
   },
   "oauth2.codeReplayIdempotent|description": {
-    "en": "77b14590b7ee604f",
-    "text": "**弱于规范——请保持关闭。** 关闭时（默认），授权码只能出示一次：它的第一个令牌请求即会将其用掉，无论该请求的结果如何——错误的 code_verifier、失败的客户端身份验证或其他任何情况——第二次出示会被拒绝，并吊销第一次所换得的一切（RFC 6749 第 4.1.2 和 10.5 节；#424）。开启时，被拒绝的请求会让授权码保持可兑换，以便客户端修正后重试，而在授权码的剩余有效期内，完全相同的重复兑换会以已获得的令牌应答。RFC 9700、OAuth 2.1、FAPI 和产品模式会忽略它。它的存在是为了父项目中仍在断言旧有宽容行为的开发模式作业（#187）。开启时，每个已兑换授权码的完整令牌响应——访问令牌、刷新令牌和 ID 令牌——会在其剩余生命周期内保留，以便再次发送；关闭时，只保留所签发令牌的 jti 值（#614）。"
+    "en": "be7993ae95611704",
+    "text": "**弱于规范——请保持关闭。** 关闭时（默认），授权码只能出示一次：它的第一个令牌请求即会将其用掉，无论该请求的结果如何——错误的 code_verifier、失败的客户端身份验证或其他任何情况——第二次出示会被拒绝，并吊销第一次所换得的一切（RFC 6749 第 4.1.2 和 10.5 节；#424）。开启时，被拒绝的请求会让授权码保持可兑换，以便客户端修正后重试，而在授权码的剩余有效期内，完全相同的重复兑换会以已获得的令牌应答。RFC 9700、OAuth 2.1、FAPI 和产品模式会忽略它。开启时，每个已兑换授权码的完整令牌响应——访问令牌、刷新令牌和 ID 令牌——会在其剩余生命周期内保留，以便再次发送；关闭时，只保留所签发令牌的 jti 值（#614）。"
   },
   "oauth2.maxPendingTransactions|label": {
     "en": "5aa99aa732e7fa2e",
@@ -3672,8 +3688,8 @@
     "text": "默认 CA 密钥算法"
   },
   "pki.keyAlgorithm|description": {
-    "en": "d0667a437e4fd5f6",
-    "text": "当表单未指明时，新证书颁发机构所使用的密钥算法：rsa-2048、rsa-3072、rsa-4096、ec-p256、ec-p384、ec-p521 或 ed25519，或某个后量子 id（ML-DSA、SLH-DSA、复合算法以及 ML-KEM——后者不能签名，因此只能作为主体密钥，而绝不能作为颁发机构的密钥）。默认值为 RSA，因为此层级结构所要签发的叶证书会签署客户端断言，而该断言须由别人的 OAuth 库验证，RS256 是每个此类库都支持的唯一算法：开发模式下为 rsa-2048，产品模式下为 rsa-3072（ASVS 5.0.0 11.2.3）。该列表读取自 common/crypto_impl/key_material.js——即生成密钥的模块——因此它不认识的值会在构建时被拒绝，并附上该列表。"
+    "en": "cc69afa5c623e756",
+    "text": "当表单未指明时，新证书颁发机构所使用的密钥算法：rsa-2048、rsa-3072、rsa-4096、ec-p256、ec-p384、ec-p521 或 ed25519，或 ML-DSA、SLH-DSA。ML-KEM 不能签名，因此只能作为主体密钥，而绝不能作为颁发机构的密钥。复合 ML-DSA id 会被接受，但不会用于 CA 证书：OpenSSL 无法读取 TLS 监听器证书链上的复合密钥，因此根 CA、进程分支和每个领域分支都会改用经典密钥构建（STS-PKI-0273、STS-PKI-0275）。默认值为 RSA，因为此层级结构所要签发的叶证书会签署客户端断言，而该断言须由别人的 OAuth 库验证，RS256 是每个此类库都支持的唯一算法：开发模式下为 rsa-2048，产品模式下为 rsa-3072（ASVS 5.0.0 11.2.3）。该列表读取自 common/crypto_impl/key_material.js——即生成密钥的模块——因此它不认识的值会在构建时被拒绝，并附上该列表。"
   },
   "pki.signatureAlgorithm|label": {
     "en": "43cdf39e69d6fdd4",
@@ -4147,6 +4163,22 @@
     "en": "03950106a2822b70",
     "text": "用例 `fido-mds`：已导入的 FIDO MDS3 BLOB 的签名者。原本就已完整；偏执模式改为经由入口检查，使这些检查成为同一份代码。管理员经审计的 overrideSignature 绕过保持不变。锚点：risk.mdsTrustAnchors、GlobalSign Root R3、签名者信任库。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
   },
+  "pki.paranoidPolicySigner|label": {
+    "en": "38aa0042d4360db7",
+    "text": "偏执：策略导出的签名者"
+  },
+  "pki.paranoidPolicySigner|description": {
+    "en": "c64cd02e7a525d75",
+    "text": "用例 `policy-signer`：从 Directory → Policies 进行的策略导出所用的签名证书，以及其 x5c 中的链，在检查或导入时（#1713）。开启时，完整检查在每种模式下都适用，包括总开关 pki.paranoid：有效期、keyUsage、每一环的路径和吊销。信任锚：本领域自己的导出用服务根证书，另一领域的用签名者信任库。关闭时由总开关决定，与其他各行相同；在产品模式下关闭会记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.policyExportAlgorithm|label": {
+    "en": "86a4a3a6f65c98bb",
+    "text": "策略导出的签名算法"
+  },
+  "pki.policyExportAlgorithm|description": {
+    "en": "ef8edd8df33cb131",
+    "text": "从 Directory → Policies 进行的策略导出所用的 JWS 算法（#1713）。每次导出都由该算法的一把新密钥签名，由本领域的 Policy Export Signing CA 认证，文档在 x5c 中携带该证书及其整条链。默认 RS256：领域自身 JOSE 签名密钥的算法。RSA 密钥为 3072 位。更改适用于下一次导出；已完成的导出保留其签名时的算法。"
+  },
   "pki.signerTrustAnchorsFile|label": {
     "en": "9d4fabbc6c6918f1",
     "text": "签名者信任库：包含锚点和中间证书的 PEM 文件"
@@ -4324,8 +4356,8 @@
     "text": "接受 TLS 客户端证书"
   },
   "est.certificateAuthentication|description": {
-    "en": "00c619c4dd5d1658",
-    "text": "由此领域签发的客户端证书，验证至其中间 CA，并通过其中的 urn:sts:person: 或 urn:sts:application: 名称映射到其条目（RFC 7030 第 3.3.2 节）。在没有 Basic 凭据的情况下进行 simplereenroll 时必需。"
+    "en": "a9bb56c470b2a73f",
+    "text": "由此领域签发的客户端证书，验证至其中间 CA，并通过其中的 urn:sts:person:、urn:sts:sa:（服务账户）或 urn:sts:application: 名称映射到其条目（RFC 7030 第 3.3.2 节）。在没有 Basic 凭据的情况下进行 simplereenroll 时必需。"
   },
   "est.serverKeyGeneration|label": {
     "en": "ee06989bdc51c67d",
@@ -4438,6 +4470,14 @@
   "oauth2.refreshTokenTtlS|description": {
     "en": "c002260d32d033da",
     "text": "刷新令牌的绝对有效期——令牌本身上的 `exp`，在两种模式下都由刷新许可强制执行。默认为二十四小时，而这是一项变更：过去为三十天，因此在长时间测试运行中持有刷新令牌的客户端，现在会在以前不会遇到的地方遇到 invalid_grant。将其设为 2592000 即可完全恢复旧行为。它与 oauth2.refreshIdleSeconds 不是同一项设置，后者是 RFC 9700 模式下刷新链的不活动超时，从上一次兑换而不是从签发起算：而本设置是一道墙，无论刷新链多么活跃都无法越过它继续刷新。"
+  },
+  "oauth2.maxAuthAgeS|label": {
+    "en": "ff5efd87e142a988",
+    "text": "最大身份验证时限（秒）"
+  },
+  "oauth2.maxAuthAgeS|description": {
+    "en": "5a37fced9d4d040e",
+    "text": "客户端在多少秒以前完成过身份验证之后，授权请求必须再次进行身份验证，即使该请求没有发送 max_age。0 是默认值，不增加自身的界限，因此普通客户端保持不变。在每次授权请求时读取：它不改写已经存储的会话。管理控制台（sts-admin-console）、用户门户（sts-user-portal）和报表应用（sts-report）各自带有自己的值，并取该值与 authn.sessionLifetimeS 中较短的一个，因此提高此项设置或会话有效期永远不会延长这三项，而降低 authn.sessionLifetimeS 仍然会缩短它们。按客户端覆盖的属性是 oauthMaxAuthAgeS。这不是令牌有效期，也不在 /admin/token-lifetimes 上（#825）。"
   },
   "oauth2.expiredTokenRetentionS|label": {
     "en": "4466b89054d69c81",
@@ -5231,6 +5271,14 @@
     "en": "f8e11f4044147d5e",
     "text": "当关系的加密密钥被轮换时，被替换的密钥仍可解密的时长——这样尚未获取新元数据或 JWKS 的合作方，或已在浏览器中的响应，就不会被拒绝。超过此时长后，旧密钥不再解密任何内容，调度作业 federation.encryption-key-retire 会将其从条目中移除。设为 0 则在轮换时即终止旧密钥。只保留刚被替换的密钥：在窗口内再次轮换会丢弃更旧的那个。"
   },
+  "federation.clientCertificateRenewDays|label": {
+    "en": "918bb1aa7c690001",
+    "text": "在 FAPI 客户端证书到期前多少天续期"
+  },
+  "federation.clientCertificateRenewDays|description": {
+    "en": "c9ce3366a9d4ba59",
+    "text": "FAPI 1.0 Advanced 联合关系向合作方出示由本领域 TLS Client 签发 CA 签发的 TLS 客户端证书（RFC 8705），合作方将其访问令牌绑定到该证书。计划任务 federation.client-certificate-renew 在当前证书到期前这么多天以相同主体签发新证书。注册了主体 DN（tls_client_auth）的合作方无需任何操作；固定了证书本身的合作方必须获得新证书，关系页面会显示它。"
+  },
   "saml.clockSkewS|label": {
     "en": "34ba47c6439a7089",
     "text": "断言时钟偏差（秒）"
@@ -5383,6 +5431,14 @@
     "en": "d5e8553e9978dfda",
     "text": "是否拒绝未签名的 <samlp:AuthnRequest>——以及服务提供方未签名的 <samlp:LogoutRequest>。**`auto` 在产品模式下为打开，在开发模式下为关闭。**`on` 和 `off` 则不论模式如何都起决定作用；已导入元数据声明 AuthnRequestsSigned=\"true\" 的服务提供方，即使此设置关闭也要遵守该声明。它也决定了此身份提供方元数据中 WantAuthnRequestsSigned 的值。\n\n存在的签名在每种模式下都会被验证——HTTP Redirect 绑定的查询字符串签名（第 3.4.4.1 节）或 HTTP POST 绑定的封装型签名——对照服务提供方已注册的签名证书（samlSigningCertificate，来自其元数据或在 SAML 2.0 页面上设置）进行验证，而绝不对照请求所携带的证书，未通过验证的签名会被拒绝。没有已注册证书时，签名会被记录为未验证，在此设置打开时视为未签名。"
   },
+  "saml2.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "在让用户登录前先征得同意"
+  },
+  "saml2.ssoConsent|description": {
+    "en": "1ddf528dcc7be0f8",
+    "text": "在 SAML 2.0 用用户已有的会话将其登录到某个应用之前，是否先询问用户，每个应用一次（ASVS 5.0.0 7.6.2）。用户的回答会被保存，只有撤回后才会再次询问；应用上的全局同意代表所有人回答。被动请求不显示该页面，按无法交互的请求作答。产品模式下默认开启，开发模式下关闭；应用条目上的 saml2SsoConsent 可为该应用覆盖此设置。"
+  },
   "saml2.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "身份提供方发起的登录"
@@ -5508,16 +5564,16 @@
     "text": "默认 NameIdentifier 格式"
   },
   "saml11.nameIdFormat|description": {
-    "en": "2075551ddbb8336f",
-    "text": "当请求未要求任何格式时 <saml:NameIdentifier> 上的 Format——在 SAML 1.1 中总是如此，因为该配置文件没有可以携带 NameIDPolicy 的请求消息。这就是它与 saml2.nameIdFormat 的区别，后者是请求经常会覆盖的默认值：而此值就是最终答案，除非非规范的 `format` 参数覆盖它。"
+    "en": "1f1bb898326ff544",
+    "text": "当请求未要求任何格式时 <saml:NameIdentifier> 上的 Format——在 SAML 1.1 中总是如此，因为该配置文件没有可以携带 NameIDPolicy 的请求消息。这就是它与 saml2.nameIdFormat 的区别，后者是请求经常会覆盖的默认值：而此值就是最终答案，除非依赖方的条目设置了 saml11NameIdFormat。"
   },
   "saml11.defaultProfile|label": {
     "en": "18dccb1d7410af14",
     "text": "默认浏览器配置文件"
   },
   "saml11.defaultProfile|description": {
-    "en": "b75b217e5204aad5",
-    "text": "当请求未指明时，站点间传输服务使用的配置文件：Browser/POST（第 4.2 节），断言通过表单 POST 经由浏览器传输；或 Browser/Artifact（第 4.1 节），引用经由浏览器传输，依赖方通过 SOAP 获取断言。POST 是默认值，因为它不需要依赖方的断言消费者背后有服务器，所以当有人把它指向某个 URL 并观察时，它是能正常工作的那一种。非规范的 `profile` 参数会覆盖它，依赖方为其所发送的 `shire` 注册的绑定（samlAcsEndpoint，来自已导入的元数据）也会覆盖它。"
+    "en": "8ce998424bcc2563",
+    "text": "当依赖方没有为其所发送的 `shire` 注册绑定时，站点间传输服务使用的配置文件：Browser/POST（第 4.2 节），断言通过表单 POST 经由浏览器传输；或 Browser/Artifact（第 4.1 节），引用经由浏览器传输，依赖方通过 SOAP 获取断言。POST 是默认值，因为它不需要依赖方的断言消费者背后有服务器，所以当有人把它指向某个 URL 并观察时，它是能正常工作的那一种。依赖方为其所发送的 `shire` 注册的绑定（samlAcsEndpoint，来自已导入的元数据）会覆盖它；请求中的任何内容都不会覆盖它。"
   },
   "saml11.doNotCacheCondition|label": {
     "en": "e1fd907d123fa918",
@@ -5542,6 +5598,14 @@
   "saml11.autocreateApplications|description": {
     "en": "2e68718a26d4706c",
     "text": "在首次指明某个依赖方时——通过到达的 TARGET、获取的元数据文档或解析的工件——在 ou=applications 下为其创建一个应用条目。关闭时，浏览器配置文件仍可工作，而 /admin/saml11 保持为空，这是进行负载测试的人想要的，其他人都不想要。"
+  },
+  "saml11.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "在让用户登录前先征得同意"
+  },
+  "saml11.ssoConsent|description": {
+    "en": "53f104813a60ba25",
+    "text": "在 SAML 1.1 用用户已有的会话将其登录到某个应用之前，是否先询问用户，每个应用一次（ASVS 5.0.0 7.6.2）。用户的回答会被保存，只有撤回后才会再次询问；应用上的全局同意代表所有人回答。被动请求不显示该页面，按无法交互的请求作答。产品模式下默认开启，开发模式下关闭；应用条目上的 saml11SsoConsent 可为该应用覆盖此设置。"
   },
   "saml11.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
@@ -5647,6 +5711,54 @@
     "en": "52a63db9be2c6460",
     "text": "指定 Kerberos Token Profile 1.1 六种 ValueType 之一的 wst:TokenType 是否以 Kerberos 令牌应答：一个 AP-REQ，携带本领域 KDC 为主体签发、发给 AppliesTo 所指 Kerberos 服务的服务票据，并通过 TLS 把 Authenticator 的子密钥作为证明令牌返回。ActAs 票据在其 PAC 的 S4U_DELEGATION_INFO 中列出每个执行过操作的参与方。关闭时，拒绝此类请求。"
   },
+  "wstrust.encryptRequest|label": {
+    "en": "8c145f441c1aa7f2",
+    "text": "要求请求中被点名的元素已加密"
+  },
+  "wstrust.encryptRequest|description": {
+    "en": "a4747360d56b0948",
+    "text": "AppliesTo 未点名自身应用的 RequestSecurityToken 是否必须带着已加密的 wstrustEncryptRequestElements 元素到达。对于 AppliesTo 点名某应用的请求，该应用的 wstrustEncryptRequest 覆盖此设置。哪些密文会被打开由 wstrust.acceptEncryptedElements 决定；AppliesTo 从打开后的请求中读取。开启时，若映射为空，或某个表达式匹配到以明文到达的元素或未匹配到任何被还原的内容，该请求即为 wsse:FailedCheck。无法打开的密文在任何情况下都是该错误。"
+  },
+  "wstrust.acceptEncryptedElements|label": {
+    "en": "fdb0c37def2e9c0a",
+    "text": "接受没有映射点名的加密元素"
+  },
+  "wstrust.acceptEncryptedElements|description": {
+    "en": "91a62934f0ef031e",
+    "text": "RequestSecurityToken 是否可以在任何位置（头或正文）携带 XML 加密，而无需请求映射点名。开启时，打开每个加密元素。关闭时，仅在应用的 wstrustEncryptRequestElements 点名之处接受密文，没有映射的密文为 wst:InvalidRequest。无论哪种情况，密文都必须能用本领域的密钥打开。应用的 wstrustAcceptEncryptedElements 覆盖此设置。仅在此设置开启时，WSDL 才提供请求加密。"
+  },
+  "wstrust.advertiseEndpointIdentity|label": {
+    "en": "3c4111aa7ace7ccd",
+    "text": "将加密证书公布为每个端口的标识"
+  },
+  "wstrust.advertiseEndpointIdentity|description": {
+    "en": "761faaf79fa0e5b4",
+    "text": "/sts/metadata 处的 WSDL 的每个端口是否带有一个 wsa:EndpointReference，其 wsid:Identity 包含本领域的 XML Encryption 证书，即请求所加密到的证书。该元素出自 WS-AddressingIdentity，这是一份从未标准化的 Microsoft 规范；WCF 读取它，仿效 WCF 的工具包也读取它。关闭时，WSDL 不指明任何证书，客户端通过带外方式配置该证书：/saml2/metadata 的 KeyDescriptor use=\"encryption\"，它就是同一张证书。无论哪种情况，请求可以加密的内容都不变。"
+  },
+  "wstrust.encryptResponse|label": {
+    "en": "1d9d5a11338444b1",
+    "text": "加密响应中被点名的元素"
+  },
+  "wstrust.encryptResponse|description": {
+    "en": "cdc7fb979f5c7e5b",
+    "text": "RequestSecurityTokenResponse 在构建之后是否将其 wstrustEncryptResponseElements 元素替换为 xenc:EncryptedData，适用于任何令牌类型。应用的 wstrustEncryptResponse 覆盖此项。接收方是该应用的 wstrustEncryptionCertificate，否则是 wstrustResponseRecipientXPath 选中的证书元素，否则是请求的 WS-Security 签名所点名的第一个签名者证书元素。故障以明文发送。开启时，若加密无法完成，该请求在两种模式下都是故障。"
+  },
+  "wstrust.encryptionAlgorithm|label": {
+    "en": "d91b60a56e964f0a",
+    "text": "响应加密算法"
+  },
+  "wstrust.encryptionAlgorithm|description": {
+    "en": "0308b0e0b66692a8",
+    "text": "WS-Trust 响应中被加密元素所用的分组密码。两种 GCM 带认证：被改动的密文无法通过其标签并被拒绝。两种 CBC 则没有。应用的 wstrustEncryptionAlgorithm 覆盖此项。wst:EncryptionAlgorithm 元素可以以其短名或其 XML Encryption URI 点名此密码，仅在响应加密开启时。"
+  },
+  "wstrust.keyTransportAlgorithm|label": {
+    "en": "614f82577349a013",
+    "text": "响应密钥传输算法"
+  },
+  "wstrust.keyTransportAlgorithm|description": {
+    "en": "ffc141f1ac37ec59",
+    "text": "WS-Trust 响应的一次性内容密钥如何封装到接收方的 RSA 公钥。`rsa-oaep` 是 XML Encryption 1.1 的 RSA-OAEP，使用 SHA-256 与 MGF1-SHA-256；`rsa-oaep-mgf1p` 是基于 SHA-1 的 OAEP。证书为 EC 的接收方无论此项如何设置，都通过 ECDH-ES 密钥协商加密。应用的 wstrustKeyTransportAlgorithm 覆盖此项。`rsa-1_5` 是 RSAES-PKCS1-v1_5，已经破损，之所以提供是因为已部署的请求方可能不接受其他算法。警告：rsa-1_5 仅用于开发模式——在产品模式中，读取此项以及应用的 wstrustKeyTransportAlgorithm 时会忽略它（改用 rsa-oaep-mgf1p，记录一次，STS-CORE-0106），并且拒绝设置它（STS-CORE-0103、STS-REG-0193）。wst:EncryptWith 元素仅在响应加密开启时可以点名此算法。"
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "身份提供方发起的登录"
@@ -5654,6 +5766,14 @@
   "wsfed.idpInitiatedSso|description": {
     "en": "62f920d6663c4e4f",
     "text": "/wsfed/initiate/{rp}——以及用于 WS-Federation 的 /launch/{app}——是否让某人登录到一个并未请求的依赖方，POST 到其已注册的 wsfedReplyUrl。默认关闭；应用条目上的 wsfedIdpInitiatedSso 会针对该依赖方覆盖此项。依赖方会收到一个它并未请求的响应，它无法将其与他人推入其浏览器的响应区分开。"
+  },
+  "wsfed.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "在让用户登录前先征得同意"
+  },
+  "wsfed.ssoConsent|description": {
+    "en": "b60b06fe1664cb06",
+    "text": "在 WS-Federation 用用户已有的会话将其登录到某个应用之前，是否先询问用户，每个应用一次（ASVS 5.0.0 7.6.2）。用户的回答会被保存，只有撤回后才会再次询问；应用上的全局同意代表所有人回答。被动请求不显示该页面，按无法交互的请求作答。产品模式下默认开启，开发模式下关闭；应用条目上的 wsfedSsoConsent 可为该应用覆盖此设置。"
   },
   "wsfed.spInitiatedSso|label": {
     "en": "705a2297f2762532",
@@ -6116,8 +6236,56 @@
     "text": "凭证签名算法"
   },
   "oid4vci.credentialSigningAlgorithm|description": {
-    "en": "64dfa4a593f7ec50",
-    "text": "dc+sd-jwt 和 jwt_vc_json 凭证签名所用的 JWS 算法——包括后量子算法——也是此领域状态列表签名所用的算法，以及 DID Configuration 的 Domain Linkage Credential 所用的算法。元数据的 credential_signing_alg_values_supported 会指明它，/oauth2/jwks 和 /.well-known/did.json 会发布该密钥，本服务的验证方也会据此进行检查。ldp_vc 使用 bbs-2023，不受影响。已签发的凭证保留其签名时所用的算法。oid4vc.walletCompatibility 会在此拒绝后量子或组合算法。"
+    "en": "3ed3ccddb91c589b",
+    "text": "dc+sd-jwt 和 jwt_vc_json 凭证签名所用的 JWS 算法——包括后量子算法——也是此领域状态列表签名所用的算法，以及 DID Configuration 的 Domain Linkage Credential 所用的算法。元数据的 credential_signing_alg_values_supported 会指明它，/oauth2/jwks 和 /.well-known/did.json 会发布该密钥，本服务的验证方也会据此进行检查。ldp_vc 使用 bbs-2023，不受影响。已签发的凭证保留其签名时所用的算法。oid4vc.walletCompatibility 会在此拒绝后量子或组合算法。mso_mdoc 使用 COSE ES256（-7）或 ESP256（-9）签名，而不是此算法。"
+  },
+  "oid4vci.mdocDoctype|label": {
+    "en": "7c632130b19137d8",
+    "text": "mdoc 文档类型"
+  },
+  "oid4vci.mdocDoctype|description": {
+    "en": "7c9ba6ae8828e218",
+    "text": "本领域签发的 mso_mdoc 的 docType（ISO/IEC 18013-5）。钱包登录请求的也是此类型。验证方的独立端点使用 oid4vp.expectedDoctype，其默认值与此相同。"
+  },
+  "oid4vci.mdocNamespace|label": {
+    "en": "f77603a07120c5c0",
+    "text": "mdoc 数据命名空间"
+  },
+  "oid4vci.mdocNamespace|description": {
+    "en": "e2007e40d0654a1d",
+    "text": "已签发 mdoc 的元素所在的命名空间。登录时在此命名空间中请求 issuing_authority。验证方的独立端点使用 oid4vp.mdocNamespace，其默认值与此相同。"
+  },
+  "oid4vci.mdocValidityDays|label": {
+    "en": "59bc5ea950d1023b",
+    "text": "mdoc 有效期（天）"
+  },
+  "oid4vci.mdocValidityDays|description": {
+    "en": "944bf93ff64708d5",
+    "text": "已签发 mdoc 的 validityInfo 自签名时起覆盖的天数。文档签名者证书比签发机构 CA 短，可能早于此期限结束；验证方依据证书检查签名时间，而不是文档的到期时间。"
+  },
+  "oid4vci.mdocAgeThresholds|label": {
+    "en": "6c387f6457dff007",
+    "text": "mdoc 年龄阈值"
+  },
+  "oid4vci.mdocAgeThresholds|description": {
+    "en": "dc3119549f240edd",
+    "text": "当此人有出生日期时，mdoc 携带的 age_over_NN 布尔值，以整年计。根据出生日期计算。不会虚构肖像和驾驶资格。"
+  },
+  "oid4vci.mdocIssuingCountry|label": {
+    "en": "58a5fa921fb5157c",
+    "text": "mdoc 签发国家"
+  },
+  "oid4vci.mdocIssuingCountry|description": {
+    "en": "599a6893d6e1ecbe",
+    "text": "签发机构 CA 的主体所指明的 ISO 3166-1 alpha-2 国家，也是每个 mdoc 的 issuing_country 元素。两个字母。"
+  },
+  "oid4vci.mdocIssuingAuthority|label": {
+    "en": "f2b2eee4bbbb52fa",
+    "text": "mdoc 签发机构"
+  },
+  "oid4vci.mdocIssuingAuthority|description": {
+    "en": "ab81dc9a73b43680",
+    "text": "签发机构 CA 通用名中的名称，也是每个 mdoc 的 issuing_authority 元素。钱包登录会请求此元素，它始终存在。"
   },
   "oid4vci.credentialCertificateHeader|label": {
     "en": "dce4ddde19bfc321",
@@ -6223,6 +6391,22 @@
     "en": "de851f5fe529cc0b",
     "text": "vc_did.js 在 require 时读取一次，颁发者元数据由其读到的内容构建"
   },
+  "oid4vci.ldpVcMandatoryPointers|label": {
+    "en": "e98c7ce2b1bc1508",
+    "text": "ldp_vc 强制 JSON 指针"
+  },
+  "oid4vci.ldpVcMandatoryPointers|description": {
+    "en": "f4e6bd1a31cb4d3b",
+    "text": "IdentityCredentialLdpVc 凭证的每个派生证明都必须披露的陈述的 JSON 指针（RFC 6901）：bbs-2023（W3C Data Integrity BBS Cryptosuites v1.0）将它们哈希进签名头，因此持有者不能省略其中任何一个。默认值指明签发者、类型和有效期。不是 JSON 指针、或在凭证中不指向任何内容的指针会使签发被拒绝（STS-VC-0180）。更改适用于下一个签发的凭证。"
+  },
+  "oid4vci.ldpVcDidMandatoryPointers|label": {
+    "en": "6cd8b076c457cb2b",
+    "text": "ldp_vc（did:web）强制 JSON 指针"
+  },
+  "oid4vci.ldpVcDidMandatoryPointers|description": {
+    "en": "5e7073657a62dae2",
+    "text": "对 IdentityCredentialLdpVcDid 配置同样适用，该配置的签发者以 did:web 标识自身。"
+  },
   "oid4vp.clientId|label": {
     "en": "54fc949b8b05b803",
     "text": "验证方客户端 ID"
@@ -6310,6 +6494,14 @@
   "oid4vp.requestObjectSigningAlgorithm|description": {
     "en": "c8e10b889bf92533",
     "text": "在 pre-registered、decentralized_identifier、verifier_attestation 和 openid_federation 客户端标识符前缀下，已签名请求对象所用的 JWS 签名算法（x509 前缀使用 oid4vp.x509SigningAlgorithm）。对应的领域密钥就是请求所指明的那把：在 /oauth2/jwks 中、在 DID 文档中、在自签发的 Verifier Attestation 的 cnf 中，以及在 Entity Configuration 的 openid_credential_verifier jwks 中。默认为 RS256，即此设置出现之前所有已签名请求所用的算法。后量子算法和组合算法也提供给接受它们的钱包；oid4vc.walletCompatibility 会拒绝它们，关闭 keys.postQuantumSigning 时也会拒绝。"
+  },
+  "oid4vc.bbs2023LegacyFormat|label": {
+    "en": "48e440849305fead",
+    "text": "使用 1.1 之前的 bbs-2023 格式"
+  },
+  "oid4vc.bbs2023LegacyFormat|description": {
+    "en": "da02d5f092c9dd36",
+    "text": "使此领域以 iya-sts 1.0 所用的私有格式签发其 ldp_vc 凭证，并接受该格式的出示，供尚未迁移到 W3C bbs-2023 密码套件（W3C Data Integrity BBS Cryptosuites v1.0）的钱包使用。关闭（默认）：领域只签发和接受 W3C bbs-2023，并按名称拒绝旧格式（STS-VC-0181）。旧格式不是标准，没有其他实现能读取它，它在元数据和凭证中称为 iya-bbs-2023-legacy，绝不称为 bbs-2023。开启时仍接受 W3C 出示。以该格式签发的每个凭证以 STS-VC-0183 记录，以该格式接受的每次出示以 STS-VC-0182 记录。仅在使用此类钱包期间开启；在其开启时签发的凭证在关闭后无法出示，持有者需要新的凭证。"
   },
   "oid4vc.walletCompatibility|label": {
     "en": "50234c10261cc298",
@@ -6620,24 +6812,24 @@
     "text": "受信任的 mdoc 签发机构（IACA 证书，PEM）"
   },
   "oid4vp.mdocTrustAnchors|description": {
-    "en": "bc0c2fd840ac9688",
-    "text": "PEM 证书，串联在一起：出示的 mdoc 的文档签名者证书必须链接到的签发机构 CA 证书（ISO/IEC 18013-5 附录 B）。证书链按 RFC 5280 的规定构建和检查，会查询文档签名者的吊销状态（pki.revocationCheck），签名者未链接到其中任何一个证书的 mdoc 会被拒绝。为空（默认值）时不信任任何 mdoc 签发者，因此在指定一个之前，mso_mdoc 出示会被拒绝。"
+    "en": "725416403bc17a75",
+    "text": "PEM 证书，串联在一起：出示的 mdoc 的文档签名者证书必须链接到的签发机构 CA 证书（ISO/IEC 18013-5 附录 B）。证书链按 RFC 5280 的规定构建和检查，会查询文档签名者的吊销状态（pki.revocationCheck），签名者未链接到其中任何一个证书的 mdoc 会被拒绝。为空（默认值）时，除本领域自己的签发机构 CA（一旦已生成，GET /oid4vci/mdoc-iaca）外，不信任任何 mdoc 签发者。"
   },
   "oid4vp.expectedDoctype|label": {
     "en": "49833f72d06c775d",
     "text": "预期的 mdoc 文档类型（docType）"
   },
   "oid4vp.expectedDoctype|description": {
-    "en": "d718e92b610b1ae9",
-    "text": "mso_mdoc 请求所请求的 `docType`（`meta.doctype_value`），也是验证方要求出示的文档及其 Mobile Security Object 所具有的类型。默认值是 ISO/IEC 18013-5 的移动驾照。"
+    "en": "dcb6e8f85158b0a1",
+    "text": "mso_mdoc 请求所请求的 `docType`（`meta.doctype_value`），也是验证方要求出示的文档及其 Mobile Security Object 所具有的类型。默认值是本领域签发的类型（oid4vci.mdocDoctype）。ISO 移动驾照为 org.iso.18013.5.1.mDL，需在此处和签发方同时设置。"
   },
   "oid4vp.mdocNamespace|label": {
     "en": "8e0371b0c93613a5",
     "text": "读取所请求声明的 mdoc 命名空间"
   },
   "oid4vp.mdocNamespace|description": {
-    "en": "119af9b2a1680a4c",
-    "text": "mso_mdoc 请求的声明路径所指明的命名空间（`[namespace, element]`，OpenID4VP 1.0 附录 B.2.3）。每个请求的声明都以同名的数据元素请求，但 birthdate（birth_date）和 address（resident_address）除外，ISO/IEC 18013-5 对它们的命名不同。默认值是移动驾照的命名空间。"
+    "en": "0ad347251f9b7a85",
+    "text": "mso_mdoc 请求的声明路径所指明的命名空间（`[namespace, element]`，OpenID4VP 1.0 附录 B.2.3）。每个请求的声明都以同名的数据元素请求，但 birthdate（birth_date）和 address（resident_address）除外，ISO/IEC 18013-5 对它们的命名不同。默认值是本领域签发时使用的命名空间（oid4vci.mdocNamespace）。"
   },
   "oid4vp.maxRequestedClaims|label": {
     "en": "efe099be2d3fb468",
@@ -6700,8 +6892,8 @@
     "text": "钱包登录凭证格式"
   },
   "oid4vp.signInFormats|description": {
-    "en": "e90ac91d5df31d20",
-    "text": "钱包登录按优先顺序请求的凭证格式：每种格式一个 DCQL 凭证查询，并有一个凭证集表示任意一个均可。每种格式都只在为此请求提供了新的持有者证明——密钥绑定 JWT、VP JWT 或 Data Integrity 证明——时才能登录。未知名称会被忽略；完全不指定则表示全部三种。只应答它读到的第一个查询的钱包，会以此处的第一种格式应答。"
+    "en": "53a49b652b8fa682",
+    "text": "钱包登录按优先顺序请求的凭证格式：每种格式一个 DCQL 凭证查询，并有一个凭证集表示任意一个均可。每种格式都只在为此请求提供了新的持有者证明——密钥绑定 JWT、VP JWT、Data Integrity 证明或 mdoc 设备签名——时才能登录。未知名称会被忽略；完全不指定则表示全部四种。只应答它读到的第一个查询的钱包，会以此处的第一种格式应答。只有本领域签发的 mso_mdoc 才能让人登录。"
   },
   "oid4vp.signInDcApiResponseMode|label": {
     "en": "65bede388d0c842b",
@@ -6788,8 +6980,8 @@
     "text": "为个人发布 did:web"
   },
   "did.personPublishing|description": {
-    "en": "841dc751d16e1137",
-    "text": "允许个人在其门户的 Self-issued IDs 页面上创建一个由本领域为其发布的 did:web（#1291）：did:web:<host>[:realm:<id>]:users:<rid>，其中 <rid> 为 128 位随机数，因此没有人能通过探测地址来枚举账户，同一个人的两个 DID 也无法被关联。其文档在 /users/<rid>/did.json 提供，所有版本均保留，并且可以作为此人的首选 DID。开启后，绑定到 DID 的凭证配置（oid4vci.didHolderBinding）还会为本领域托管且此人已用钱包证明的 DID 提供 did:web。关闭：不发布任何新的 DID；已发布的 DID 无论是否停用仍继续提供，因为其地址会永久保留。在产品模式下，只有在固定的 global.publicBaseUrl 上才会发布 DID。"
+    "en": "291c209edc596dc6",
+    "text": "允许个人在其门户的 Self-issued IDs 页面上创建一个由本领域为其发布的 did:web（#1291）：did:web:<host>[:realm:<id>]:users:<rid>，其中 <rid> 为 128 位随机数，因此没有人能通过探测地址来枚举账户，同一个人的两个 DID 也无法被关联。其文档在 /users/<rid>/did.json 提供，所有版本均保留，并且可以作为此人的首选 DID。开启后，绑定到 DID 的凭证配置（oid4vci.didHolderBinding）还会为本领域托管且此人已用钱包证明的 DID 提供 did:web。关闭：不发布任何新的 DID；已发布的 DID 无论是否停用仍继续提供，因为其地址会永久保留。在产品模式下，只有在固定的 global.publicBaseUrl 上才会发布 DID。已登记用于登录的密钥不会被发布（#775）：钱包证明的是此人登录主体之外的密钥，因此该文档不是登录密钥的公开副本。更改 global.publicBaseUrl 或领域路径不会改写已发布的 DID；它保留创建时的主机和路径，若该地址不再指向本领域，则无法再被解析。"
   },
   "did.personCustody|label": {
     "en": "057d429ef011ffab",
@@ -6948,8 +7140,8 @@
     "text": "可续订有效期（秒）"
   },
   "krb5.renewLifetimeSeconds|description": {
-    "en": "c5e760b09dd1a975",
-    "text": "以可续订方式签发的票据，其 renew-till 可延伸多远。七天是 Active Directory 的默认值。"
+    "en": "5e2fb0a8cf795055",
+    "text": "以可续订方式签发的票据，其 renew-till 的上限，自票据起始时间起算。客户端请求的 rtime 会缩短它；未给出 rtime 时票据采用此上限。rtime 早于或等于票据 endtime 时仍将其标为可续订，与 MIT krb5 相同。仅当所请求的 endtime 被缩短，且由此得到的 renew-till 晚于所签发的 endtime 时，RENEWABLE-OK 才设置该标志。七天是 Active Directory 的默认值。"
   },
   "krb5.logonServer|label": {
     "en": "430185046b3ddca6",
@@ -7715,6 +7907,22 @@
     "en": "e41d92adf65ec5bc",
     "text": "默认开启。它曾是此协议族中唯一的拒绝；现在每个 /xacml 端点都要求证书，而此设置仍专门管辖的是注册——注册会写入一个条目，是控制台所列出的内容，也是发送提醒的地址，因此“这是哪个 PEP”恰恰是那里的问题，而客户端证书就是答案。其上的访问策略层是另一种更强的检查（roles.remotePepGroup，以及用于关闭它的 xacml.enforceAccess）；此项关注的是没有证书的注册是否会被接受并标记为未认证。与本服务中其他所有门禁一样，它是一道闸机：不要求证书链接到任何东西，因为 RFC 8705 的论证同样适用——所证明的是同一个密钥完成了握手。关闭它允许 PEP 通过明文 HTTP 注册，这是 global.https 关闭的运行所需要的；此类注册会在其条目和控制台上被标记为未认证，而不是悄无声息地与经过证明的注册无从区分。"
   },
+  "xacml.pepAuthentication|label": {
+    "en": "1666c238e5c498af",
+    "text": "远程 PEP 的认证方式"
+  },
+  "xacml.pepAuthentication|description": {
+    "en": "223363d0264d3558",
+    "text": "token，自 1.1.0 起的默认值：远程 PEP 只能凭借经 DPoP 绑定的访问令牌（RFC 9449）访问 /xacml/pep/* 和 POST /xacml/pip，该令牌由其自身的 RFC 7523 自断言通过客户端 sts-remote-pep 获得，受众为本领域的 /xacml/pep 并带有 xacml:pep；仅有客户端证书会被拒绝。either：令牌或本服务验证的客户端证书；出示令牌时由令牌决定——只要仍有 PEP 使用证书进行身份验证，请在升级前设置此值。certificate：仅证书，并且不读取 Authorization 标头。无论哪种情况，PEP 的条目都必须持有 REMOTE_PEPS（roles.remotePepGroup），并由访问控制策略作出决定。同一答案也适用于远程 PEP 在 /access/v1 的令牌，即边缘 PDP 对细粒度评估的转发，无论 authzen.callerAuthentication 如何设置。"
+  },
+  "xacml.pepPlainHttpProxyListeners|label": {
+    "en": "25b7e415e05fa392",
+    "text": "远程 PEP 可以定义普通 HTTP 的反向代理监听器"
+  },
+  "xacml.pepPlainHttpProxyListeners|description": {
+    "en": "b30ff05f28db4d9c",
+    "text": "默认关闭，且只在产品模式下读取：在该模式下，远程 PEP 页面上定义的（#1760）以普通 HTTP 提供其反向代理的监听器会被拒绝（STS-XACML-0249）：代理是浏览器登录并携带会话 Cookie 的地方，因此只有在其前面有组件终止 TLS 时以明文提供才是正确的——这是关于部署的事实，只有管理员能够声明，而开启此设置就是这种声明。开发模式无论此设置如何都允许这样的监听器。它只约束在页面上定义的监听器；PEP 环境绑定的四个监听器（包括 PEP_PROXY_PORT）由其运维人员负责。"
+  },
   "xacml.pipMaxPerWindow|label": {
     "en": "5e3d588e1a459b92",
     "text": "单个调用方每个速率限制窗口可进行的 PIP 查询数"
@@ -7764,28 +7972,28 @@
     "text": "本服务会提醒的主机名。为空表示任意主机，这是默认值，与 ssf.pushAllowedHosts 完全一致——可被其不信任的任何人访问的部署应设置此列表，其他所有主机都会在该 PEP 自己的行上被按名称拒绝。使用主机而不是 URL，理由与 SSF 相同：组件正当地更改其路径是常事，但不会正当地迁移到另一台主机。"
   },
   "xacml.pepNotifyAllowHttp|label": {
-    "en": "f232b8d66a791160",
-    "text": "允许以 http:// 发送提醒（仅限开发模式）"
+    "en": "37d9db04e27a17a9",
+    "text": "允许通知使用 http://（已停用，忽略）"
   },
   "xacml.pepNotifyAllowHttp|description": {
-    "en": "a86a934a3f20a990",
-    "text": "默认关闭，与联合和 SSF 中的对应设置一样——而这里传输的内容比两者都更弱，这一点值得明说而不是留给人去假设。提醒不携带任何凭据，也不携带任何事件：其全部正文只是说策略库已变更，而 PEP 反正马上就会发现这一点。它仍默认关闭，因为该 URL 是某人配置的，而本服务以明文发出的请求是可以被别人冒名应答的请求。开启时允许在开发模式下使用 http:// 通知 URL；无论此项如何，产品模式都会拒绝明文 http（STS-XACML-0073）。"
+    "en": "f283479a0bedc4de",
+    "text": "已于 2026-11-14 停用并被忽略。在任何模式下通知都只通过 https 发送，因此 http:// 通知 URL 会在 PEP 的行上报告为不可用，PEP 通过轮询收敛。该设置仍被接受，因此提到它的配置仍能启动；开启后不会改变任何内容，并且每个进程记录一次（STS-XACML-0258）。请将其删除。"
   },
   "xacml.pepNotifySkipTlsVerification|label": {
-    "en": "dbfe535e5ae02217",
-    "text": "发送提醒时跳过 TLS 验证（仅限开发模式）"
+    "en": "da9e36587928e192",
+    "text": "通知跳过 TLS 验证（已停用，忽略）"
   },
   "xacml.pepNotifySkipTlsVerification|description": {
-    "en": "d86b4e5d60f9ad54",
-    "text": "警告——仅限开发模式。开启时，向 https 通知 URL 发送提醒而不验证 PEP 的证书，因此任何能拦截该连接的人都可以冒名应答。每个此类请求都会被记录为警告。在产品模式下会被忽略（STS-XACML-0074，记录一次）且无法设置（STS-CORE-0103）：请改为在 xacml.pepNotifyCaFile 中指定私有 CA。"
+    "en": "3a27f9a4f0fe5cc1",
+    "text": "已于 2026-11-14 停用并被忽略。通知始终验证 PEP 的证书：依据本领域的远程 PEP 监听器（pep-tls）签发 CA（它签发 PEP 的 HTTPS 监听器证书），以及 xacml.pepNotifyCaFile 和 node 自己的存储。该设置仍被接受，因此提到它的配置仍能启动；开启后不会改变任何内容，并且每个进程记录一次（STS-XACML-0258）。在产品模式下仍不能设置（STS-CORE-0103）。请将其删除。"
   },
   "xacml.pepNotifyCaFile|label": {
-    "en": "647c5ee499d1a37b",
-    "text": "提醒所用的 CA 证书"
+    "en": "ba76eb67fd7510d1",
+    "text": "通知的更多 CA 证书"
   },
   "xacml.pepNotifyCaFile|description": {
-    "en": "792f75ad9d56b75b",
-    "text": "一个 PEM 文件，包含 PEP 通知监听器的证书可以链接到的 CA 证书，作为 node 自身 CA 存储的补充——由私有 CA 认证的 PEP 就是这样在开启验证的情况下接收提醒的。每次提醒时都会读取；无法读取或不含证书的文件会导致提醒被拒绝（STS-CORE-0104）。"
+    "en": "69d21c555590f4c8",
+    "text": "一个 PEM 文件，包含 PEP 通知监听器可以链接到的 CA 证书，此外还有本领域的远程 PEP 监听器（pep-tls）签发 CA 和 node 自己的 CA 存储。若 PEP 的 HTTPS 监听器证书由本领域签发，则不需要它：无需任何设置即可验证。它用于由自身 CA 认证的 PEP。每次通知时读取；无法读取或不含证书的文件会拒绝通知（STS-CORE-0104）。"
   },
   "xacml.pepNotifyTimeoutMs|label": {
     "en": "6c361a6796002d56",
@@ -8732,8 +8940,8 @@
     "text": "登录时采集浏览器指纹"
   },
   "risk.fingerprinting|description": {
-    "en": "fb95d41998827b2a",
-    "text": "默认关闭（#62 P6）。开启时，登录界面运行一个脚本 FingerprintJS（MIT；它不会向任何地方发送任何内容），它根据浏览器公开的信息计算一个标识符并放入表单；服务只保留带密钥的摘要，此人从未用其登录过的浏览器会产生 new-device 信号（x2）。浏览器指纹属于个人数据：在开启之前，请完成 docs/risk-scoring.md 中的隐私影响评估，并告知登录的用户。与每项设置一样，按领域设置。"
+    "en": "452ca90f0592fe8b",
+    "text": "默认关闭（#62 P6）。开启时，登录界面运行一个脚本 FingerprintJS（MIT；它不会向任何地方发送任何内容），它根据浏览器公开的信息计算一个标识符并放入表单；服务只保留带密钥的摘要，此人从未用其登录过的浏览器会产生 new-device 信号（x2）。浏览器指纹属于个人数据：在开启之前，请完成 docs/v1.1.0/risk-scoring.md 中的隐私影响评估，并告知登录的用户。与每项设置一样，按领域设置。"
   },
   "risk.breachCheck|label": {
     "en": "8b4443cd88527e75",
@@ -10460,8 +10668,8 @@
     "text": "持久化模式"
   },
   "persistence.mode|description": {
-    "en": "9017af2918cf94be",
-    "text": "内嵌目录、信任领域注册表和运行时 appconfig 覆盖写入的位置。memory 不写入任何内容，也是本服务一贯的做法——重启后一切都会消失。ldif 为每个领域写入一个 RFC 2849 文件，并在 persistence.dataDir 中写入两个 JSON 文件，这是本地开发的方案，不需要数据库。postgres 写入一组表（postgres/schema.sql 列出了它们），是共享存储。mariadb 是 MariaDB 上的同一存储（mariadb/schema.sql），是测试套件所针对的第二种引擎：此时 persistence.databaseUrl 是一个 mariadb:// 地址，必须安装 mysql2 包，而需要 PostgreSQL 本身的功能（单元、批量导入、目录窗口）会被拒绝。本服务铸造的内容——会话、令牌、代码、工件、Kerberos 主体、重放缓存、计数器和审计日志——仅在产品模式下使用 postgres 时持久化，其他任何配置均不持久化；请参阅 persistence.minted。开发模式不持久化其中任何内容，因为那里的签名密钥在每次启动时都会重新生成，比密钥存活更久的令牌将无从验证。ldif 存储在任何模式下都不保存这些内容，并在启动时说明这一点，因为它每次刷新都写入完整文件。"
+    "en": "6c4f506d112de691",
+    "text": "内嵌目录、信任领域注册表和运行时 appconfig 覆盖写入的位置。memory 不写入任何内容，也是本服务一贯的做法——重启后一切都会消失。ldif 为每个领域写入一个 RFC 2849 文件，并在 persistence.dataDir 中写入两个 JSON 文件，这是本地开发的方案，不需要数据库。postgres 写入一组表（postgres/schema.sql 列出了它们），是共享存储。mariadb 是 MariaDB 上的同一存储（mariadb/schema.sql），是测试套件所针对的第二种引擎：此时 persistence.databaseUrl 是一个 mariadb:// 地址，必须安装 mysql2 包，而需要 PostgreSQL 本身的功能（单元、批量导入、目录窗口）会被拒绝。本服务铸造的内容——会话、令牌、代码、工件、Kerberos 主体、重放缓存、计数器和审计日志——仅在产品模式下使用数据库存储（postgres 或 mariadb）时持久化，其他任何配置均不持久化；请参阅 persistence.minted。开发模式不持久化其中任何内容，因为那里的签名密钥在每次启动时都会重新生成，比密钥存活更久的令牌将无从验证。ldif 存储在任何模式下都不保存这些内容，并在启动时说明这一点，因为它每次刷新都写入完整文件。"
   },
   "persistence.mode|restartReason": {
     "en": "22887c233a0a0adf",
@@ -10716,8 +10924,8 @@
     "text": "持久化会话、令牌和审计日志"
   },
   "persistence.minted|description": {
-    "en": "ce7aa21775e90c3f",
-    "text": "本服务铸造的内容——会话、访问令牌、ID 令牌和刷新令牌、授权码、预授权码、SAML 工件、Kerberos 主体和票据、重放缓存、计数器和审计日志——是否在重启后保留。默认打开，但除非 global.mode 为 \"product\" 且 persistence.mode 为 \"postgres\"，否则它不起任何作用。开发模式忽略此项，因为那里的签名密钥在每次启动时都会重新生成，恢复的令牌将无从验证；ldif 存储也会忽略此项并在启动时说明，因为它每次刷新都写入完整文件，而这些行在每个请求中都会变化。每一行都用保护签名密钥的同一个密钥加密密钥加密，因为会话 ID 就是 cookie 值，而授权码是可兑换的。"
+    "en": "744fef5983eca02e",
+    "text": "本服务铸造的内容——会话、访问令牌、ID 令牌和刷新令牌、授权码、预授权码、SAML 工件、Kerberos 主体和票据、重放缓存、计数器和审计日志——是否在重启后保留。默认打开，但除非 global.mode 为 \"product\" 且 persistence.mode 为数据库存储（\"postgres\" 或 \"mariadb\"），否则它不起任何作用。开发模式忽略此项，因为那里的签名密钥在每次启动时都会重新生成，恢复的令牌将无从验证；ldif 存储也会忽略此项并在启动时说明，因为它每次刷新都写入完整文件，而这些行在每个请求中都会变化。每一行都用保护签名密钥的同一个密钥加密密钥加密，因为会话 ID 就是 cookie 值，而授权码是可兑换的。"
   },
   "persistence.minted|restartReason": {
     "en": "a1ec511a16ef6535",
@@ -10736,8 +10944,8 @@
     "text": "与其他进程协调"
   },
   "persistence.coordinate|description": {
-    "en": "24f904c30ceb01ac",
-    "text": "本进程是否应用其他进程向同一存储提交的更改。默认打开，需要 postgres 存储：每项更改都在产生它的事务内部写入一个单调日志，每个进程读取它尚未应用的内容。LISTEN/NOTIFY 提醒会提前唤醒该读取，因此错过一条通知只会增加延迟，而绝不会丢失更改——这与远程 XACML PEP 对其自身拉取所做的权衡相同。关闭它就是本服务在此功能出现之前的行为：正确无误，每个进程独自持有自己的副本。它共享状态而不共享套接字——KDC、LDAP 监听器、主端口以及 SPIFFE 的四个监听器都按进程绑定——而重放缓存是收敛而非同步的，因此在一个进程中写入与其到达另一个进程之间存在一个窗口，在此窗口内，一个进程拒绝的证明可能被另一个进程接受。"
+    "en": "3dff083199972128",
+    "text": "此进程是否应用其他进程提交到同一存储的更改。开启时，它需要数据库存储（postgres 或 MariaDB）：每个更改都在做出它的事务之内写入一个单调递增的日志，每个进程读取自己尚未应用的内容。在 postgres 上，LISTEN/NOTIFY 提醒会提前唤醒这次读取（MariaDB 不发送提醒，而是被轮询），因此错过一次通知只会增加延迟，绝不会丢失更改——这与远程 XACML PEP 对其自身拉取所做的权衡相同。关闭它就是本服务在此功能出现之前的做法：正确，但每个进程各自持有自己的副本。它共享状态而不共享套接字——KDC、LDAP 监听器、主端口以及 SPIFFE 的套接字都按进程绑定。一次性值——授权码、DPoP jti、Kerberos 认证符——通过存储中的一次原子声明，在所有进程中只被使用一次，进程之间没有任何时间窗口。"
   },
   "persistence.coordinate|restartReason": {
     "en": "5d0ebf878ed54e42",
@@ -10748,8 +10956,8 @@
     "text": "变更轮询间隔（毫秒）"
   },
   "persistence.pollInterval|description": {
-    "en": "0620a679e69c0d43",
-    "text": "此进程多久向变更日志询问一次其他进程已提交的内容。这是契约，LISTEN/NOTIFY 提示只是对它的一种优化，因此当通知丢失时——监听器断开、数据库重启——这就是最坏情况下的收敛延迟，而典型延迟只有几毫秒。取五秒是因为提示通常先到达，更短的间隔除了更多查询之外一无所获；250 毫秒是下限。当存储不发送提示（persistence.sqlDialect 为 portable）且未设置此项时，间隔为一秒。它也是 persistence.coordinate 下所述重放缓存窗口的大小。"
+    "en": "60b8dc667d7ddb4d",
+    "text": "此进程多久向变更日志询问一次其他进程已提交的内容。这是契约，LISTEN/NOTIFY 提示只是对它的一种优化，因此当通知丢失时——监听器断开、数据库重启——这就是最坏情况下的收敛延迟，而典型延迟只有几毫秒。取五秒是因为提示通常先到达，更短的间隔除了更多查询之外一无所获；250 毫秒是下限。当存储不发送提示（mariadb，或 persistence.sqlDialect 为 portable）且未设置此项时，间隔为一秒。一次性值不受此延迟影响：它通过存储中的一次原子声明被使用（参见 persistence.coordinate）。"
   },
   "persistence.changeLogRetentionS|label": {
     "en": "110e12ce2099a8a8",
@@ -10764,8 +10972,8 @@
     "text": "集群模式"
   },
   "cluster.mode|description": {
-    "en": "69b7eb6339e66112",
-    "text": "本服务的多个副本在同一个 postgres 存储上的行为方式。`off`：除变更日志外不进行任何协调，这对一个容器是正确的，对两个容器则会悄悄给出错误的答复。`active-passive`：每个节点都加入，由一个节点持有服务租约并提供服务，其他节点在恢复或绑定任何内容之前等待——因此第二个容器是备用节点而不是第二个写入者，并会在正常停止后的一个心跳内、或崩溃后的 cluster.nodeTtlMs 内接管。`active-active`：每个节点都提供服务；它需要在运维人员的密钥加密密钥之下持久化的密钥，并且在本构建缺少其所依赖的任何功能时拒绝启动（请参阅 cluster.acceptMissingCapabilities）。默认值 `auto` 在产品模式下使用 postgres 存储时为 active-passive，在其他情况下均为 off。集群节点的每次写入都受到隔离保护：它会检查该节点仍是成员，在 active-passive 模式下还会检查它仍持有服务租约，丢失其中任一项的节点会退出。"
+    "en": "ce7fd84fc03cf8ca",
+    "text": "本服务的多个副本在同一个数据库存储（postgres 或 MariaDB）上的行为方式。`off`：除变更日志外不进行任何协调，这对一个容器是正确的，对两个容器则会悄悄给出错误的答复。`active-passive`：每个节点都加入，由一个节点持有服务租约并提供服务，其他节点在恢复或绑定任何内容之前等待——因此第二个容器是备用节点而不是第二个写入者，并会在正常停止后的一个心跳内、或崩溃后的 cluster.nodeTtlMs 内接管。`active-active`：每个节点都提供服务；它需要在运维人员的密钥加密密钥之下持久化的密钥，并且在本构建缺少其所依赖的任何功能时拒绝启动（请参阅 cluster.acceptMissingCapabilities）。默认值 `auto` 在产品模式下使用数据库存储时为 active-passive，在其他情况下均为 off。集群节点的每次写入都受到隔离保护：它会检查该节点仍是成员，在 active-passive 模式下还会检查它仍持有服务租约，丢失其中任一项的节点会退出。"
   },
   "cluster.mode|restartReason": {
     "en": "ec1b93d98727db81",
@@ -11152,8 +11360,8 @@
     "text": "发件人地址"
   },
   "mail.from|description": {
-    "en": "33efdb50c1bacbc3",
-    "text": "发送每封消息所用的地址。为空表示领域 DNS 域的 `no-reply@`。提供商必须允许以该地址发送：在 SES 中是已验证的身份，在 Azure 中是已连接域的 MailFrom 地址，对于 Gmail 是被模拟的邮箱（或其“以…身份发送”别名之一）——其域的 SPF、DKIM 和 DMARC 是 docs/mail.md 的主题。"
+    "en": "b1da52c40fbad767",
+    "text": "发送每封消息所用的地址。为空表示领域 DNS 域的 `no-reply@`。提供商必须允许以该地址发送：在 SES 中是已验证的身份，在 Azure 中是已连接域的 MailFrom 地址，对于 Gmail 是被模拟的邮箱（或其“以…身份发送”别名之一）——其域的 SPF、DKIM 和 DMARC 是 docs/v1.1.0/mail.md 的主题。"
   },
   "mail.fromName|label": {
     "en": "54fc2703a4957936",
@@ -11288,8 +11496,8 @@
     "text": "DKIM 算法"
   },
   "mail.dkimAlgorithm|description": {
-    "en": "b319eebbac62f962",
-    "text": "`rsa-sha256`（RFC 6376；按照 RFC 8301，密钥为 2048 位或更大）或 `ed25519-sha256`（RFC 8463）。许多接收方仍然只验证 RSA，因此迁移到 Ed25519 的域会同时发布两者，并在其他地方签名两次。DKIM 尚未注册任何后量子算法；docs/mail.md 对此有说明。"
+    "en": "62ed500aeff2bc8a",
+    "text": "`rsa-sha256`（RFC 6376；按照 RFC 8301，密钥为 2048 位或更大）或 `ed25519-sha256`（RFC 8463）。许多接收方仍然只验证 RSA，因此迁移到 Ed25519 的域会同时发布两者，并在其他地方签名两次。DKIM 尚未注册任何后量子算法；docs/v1.1.0/mail.md 对此有说明。"
   },
   "mail.dkimKeyProvider|label": {
     "en": "7e4fc266794b62d9",
@@ -11512,16 +11720,16 @@
     "text": "自助重置需要已验证的地址"
   },
   "mail.resetRequiresVerifiedAddress|description": {
-    "en": "76e079f6e1b23b98",
-    "text": "只将自助重置链接邮寄到该人员已验证的地址（他们从该地址点击过链接）。默认打开，因为该链接就等同于账户：由导入或配置源写入、从未有人证明过的地址，不是可以发送它的地方。**关闭它是一项较弱的设置**，适用于其地址按写入内容即受信任的目录；docs/mail.md 载有相关警告。"
+    "en": "81dfbb5f1c67cc3c",
+    "text": "只将自助重置链接邮寄到该人员已验证的地址（他们从该地址点击过链接）。默认打开，因为该链接就等同于账户：由导入或配置源写入、从未有人证明过的地址，不是可以发送它的地方。**关闭它是一项较弱的设置**，适用于其地址按写入内容即受信任的目录；docs/v1.1.0/mail.md 载有相关警告。"
   },
   "mail.resetRequiresBackupCode|label": {
     "en": "addd650807ec39b2",
     "text": "自助重置需要恢复码"
   },
   "mail.resetRequiresBackupCode|description": {
-    "en": "d2884302ae8d8475",
-    "text": "忘记密码表单要求提供用户名、账户上已验证的地址以及该人员的一个恢复码，只有三者全部正确时才邮寄重置链接——届时该恢复码即被消耗。每种组合都以同一句话作答。**关闭它是一项较弱的设置**：表单会回到单个字段（用户名或地址），此时重置的强度与其发送到的邮箱相同——NIST SP 800-63B-4 允许将其用于恢复，docs/mail.md 对此有警告。在此项打开时，不持有恢复码的人员无法自行重置密码；管理员可以。"
+    "en": "2d8885388b97eb61",
+    "text": "忘记密码表单要求提供用户名、账户上已验证的地址以及该人员的一个恢复码，只有三者全部正确时才邮寄重置链接——届时该恢复码即被消耗。每种组合都以同一句话作答。**关闭它是一项较弱的设置**：表单会回到单个字段（用户名或地址），此时重置的强度与其发送到的邮箱相同——NIST SP 800-63B-4 允许将其用于恢复，docs/v1.1.0/mail.md 对此有警告。在此项打开时，不持有恢复码的人员无法自行重置密码；管理员可以。"
   },
   "mail.verificationTtlMinutes|label": {
     "en": "49c2a4b66ba8a448",
@@ -12442,29 +12650,5 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "仅针对协议调试器监听器：http.http2MaxConcurrentStreams。-1（默认值）时遵循 http.http2MaxConcurrentStreams；其他任何值只对此监听器作出决定。一个 HTTP/2 连接可同时打开的请求数（SETTINGS_MAX_CONCURRENT_STREAMS）；超出的流会被拒绝，直到有流结束。默认值 100 是 RFC 9113 建议的最小值；node 自身的值没有上限，这会让一个连接承载成千上万个连接的工作量。它限制一个连接上的工作量，正如 http.maxConnections 限制连接数。新连接会立即遵循更改，已打开的连接会收到新值。"
-  },
-  "saml2.ssoConsent|label": {
-    "en": "0234bf3af48ea8a4",
-    "text": "在让用户登录前先征得同意"
-  },
-  "saml2.ssoConsent|description": {
-    "en": "1ddf528dcc7be0f8",
-    "text": "在 SAML 2.0 用用户已有的会话将其登录到某个应用之前，是否先询问用户，每个应用一次（ASVS 5.0.0 7.6.2）。用户的回答会被保存，只有撤回后才会再次询问；应用上的全局同意代表所有人回答。被动请求不显示该页面，按无法交互的请求作答。产品模式下默认开启，开发模式下关闭；应用条目上的 saml2SsoConsent 可为该应用覆盖此设置。"
-  },
-  "saml11.ssoConsent|label": {
-    "en": "0234bf3af48ea8a4",
-    "text": "在让用户登录前先征得同意"
-  },
-  "saml11.ssoConsent|description": {
-    "en": "53f104813a60ba25",
-    "text": "在 SAML 1.1 用用户已有的会话将其登录到某个应用之前，是否先询问用户，每个应用一次（ASVS 5.0.0 7.6.2）。用户的回答会被保存，只有撤回后才会再次询问；应用上的全局同意代表所有人回答。被动请求不显示该页面，按无法交互的请求作答。产品模式下默认开启，开发模式下关闭；应用条目上的 saml11SsoConsent 可为该应用覆盖此设置。"
-  },
-  "wsfed.ssoConsent|label": {
-    "en": "0234bf3af48ea8a4",
-    "text": "在让用户登录前先征得同意"
-  },
-  "wsfed.ssoConsent|description": {
-    "en": "b60b06fe1664cb06",
-    "text": "在 WS-Federation 用用户已有的会话将其登录到某个应用之前，是否先询问用户，每个应用一次（ASVS 5.0.0 7.6.2）。用户的回答会被保存，只有撤回后才会再次询问；应用上的全局同意代表所有人回答。被动请求不显示该页面，按无法交互的请求作答。产品模式下默认开启，开发模式下关闭；应用条目上的 wsfedSsoConsent 可为该应用覆盖此设置。"
   }
 }

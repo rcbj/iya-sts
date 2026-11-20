@@ -5,6 +5,15 @@
 source ids. Change an operation or a schema there, and it reaches the served document
 and the response checks.
 
+**Every operation carries an `operationId` since #1579 (2026-11-11)**, named as
+the other four documents name theirs (`getDefinitions`, `createDefinition`,
+`replaceDefinition`, `runDefinition`, `queueJob`, `getJobResult`, …). It was the
+only document without them, so `IyaApi.Report.Operations` was keyed by
+`METHOD path`; it is keyed by the id now, and each serving function in
+`report_api.ts` is typed by `ReportRequest<'getJobs'>` /
+`ReportAnswering<'getJobs'>`. A new operation owes one, unique in the
+document: the generator refuses an operation without it.
+
 ## WHAT A REQUEST MAY NAME (#1483, `/admin-api`'s #1476 rule)
 
 `reportRoute()` asks `reportShapeRefused()` first, after the token: the
@@ -49,7 +58,7 @@ resource objects). The machine caller is `sts-api-client`, seeded a member
 of REPORT_USE (`common/roles.js`) and declaring `report:use`; as an
 application it reaches only what it defined (`ownerKind`, below), and its
 `client_credentials` token is unbound, so it arrives as `Bearer`.
-`docs/reporting.md`'s *From another program* is the operator's half.
+`docs/v1.1.0/reporting.md`'s *From another program* is the operator's half.
 With `authn.multipleAccounts` on, the account control is the console's
 menu: the summary is the account this tab is, and the panel lists the
 browser's other signed-in accounts as switch buttons, plus a sign-in as
@@ -60,18 +69,18 @@ tab leaves stays signed in. Off, the control is not drawn.
 The shell's policy is `script-src 'self'`, `style-src 'self'`, and
 `connect-src` the origins of the authorization server and the sign-in
 screen, through `app.contentSecurityPolicy()`. The front door links to it
-(`home/home.ts`). `docs/reporting.md` is the operator's page. The caps are the Reporting group in `common/config.js`
-and `docs/configuration.md`.
+(`home/home.ts`). `docs/v1.1.0/reporting.md` is the operator's page. The caps are the Reporting group in `common/config.js`
+and `docs/v1.1.0/configuration.md`.
 
 | File | What it is |
 |---|---|
 | `report_app.ts` | The shell, the script and the stylesheet. A non-GET is 404 with `STS-REPORT-0033`. |
-| `report_api.ts` | `/report-api`. Every route, including the catalog and the OpenAPI document, takes the token below. |
+| `report_api.ts` | `/report-api`. Every route, including the catalog and the OpenAPI document, takes the token below. A definition, a share and a run's parameters are held to the model's `DefinitionWrite`, `ShareWrite` and `ParameterBag` here, at the door (#1579). A saved parameter's name (1 to 64 characters) is the model's `ParameterBag` `propertyNames` since the document became OpenAPI 3.1.0 (rcbj, #1579, 2026-11-11), and the hand check in `jobs.ts` is gone; the door finds the issue and `jobs.save()` refuses it where that check stood, so a request wrong in its definition id, schedule or document as well is still answered for those first. **A run's parameters are the same `ParameterBag`, and a filter's `param` is a name of 1 to 64 characters (`FilterParam`) — rcbj's decision on #1579, 2026-11-11, a deliberate change**: until then a run's body was `RunParameters`, unbounded in name, and a filter could name a 65-character parameter, so a run naming one was accepted. Now a run's bad name is refused at the run's door with the refusal its bag always had (400 `invalid_query` "Parameters are names and values.", `STS-REPORT-0004`), and a filter naming one is refused when saved for its query ("A parameter name is a string.", `STS-REPORT-0030`). **A definition stored before then with a long `param` is not migrated**: every answer is held to the model, so its document would make the whole definitions list a 500; `reportDefinitionView()` answers such a row without its document and parameters (noted once per row, `STS-REPORT-0060`), so the owner can replace or delete it, and a run of it is refused 400 for its query, a schedule skips it with a note. `tests/report_parameter_names.js` holds all of it. |
 | `web_report.ts`, `web_report_pages.ts` | The browser runtime and the four pages (catalog, query, definitions, jobs). |
 | `catalog.ts` | The seventeen sources and their fields, which operators the store indexes (`indexed`, #985), and a source's predefined queries (`presets`, #1110). Credential attribute ids are absent, so they cannot be named. |
 | `passkey_ceremonies.ts` | The `passkeyCeremonies` source's projection of the ceremony audit rows (#1107). A library; reaches `authn/webauthn_ceremonies` lazily. |
 | `openapi.ts` | `GET /report-api/openapi.json`. Every released route, built from the catalog that is loaded. |
-| `query.ts` | Validates one JSON document and decides sync or async. It sends no HTTP response. |
+| `query.ts` | Validates one JSON document and decides sync or async. It sends no HTTP response. The document's SHAPE is `models/api/report.tsp`'s `QueryDocument` and `Filter*` forms, checked through `ModelZod` (#1579); the catalog, the field types, parameters, the filter's depth and the size caps are checked here, and every refusal keeps its code and sentence. |
 | `limits.ts` | The caps, read when asked. `Limits.fixed` is what a test passes. |
 | `formats.ts` | JSON, RFC 4180 CSV, and a PDF 1.4 file in Helvetica WinAnsi. A PDF cell wraps within its column, up to 256 bytes, and a row is as tall as its tallest cell (#993); the file's header argues the pagination. |
 | `rows.ts`, `sources.ts`, `executor.ts` | Reading one source, bounded, and writing the artifact. |
@@ -104,9 +113,12 @@ rcbj asked for five things on 2026-10-26, all drawn by
   because its token is the service's; this one is the realm's.
 * **A documentation link** under the bar, `DocLinks.markup()` to
   `reporting.html` on the site every surface links to.
-* **The version** under the card, from the index's `version` (`GET
-  /report-api` carries `common/version.js`'s `load()` as the console's
-  shell does; `tests/version.js` lists `report_api.ts` among the drawers).
+* ~~**The version** under the card~~ — gone on 2026-11-14 (rcbj): the
+  page footer every shell draws carries the version, so the line under the
+  card was the version said twice. `GET /report-api` still answers
+  `version` from `common/version.js`'s `load()` (`tests/version.js` lists
+  `report_api.ts` among the sources), and `ensureChrome()` no longer reads
+  the index for it.
 * **One filter row to begin with**, and the `+` on the last row adds the
   next: the runtime clones the last row, renames its controls to the next
   index, empties them and moves the `+`; `queryDocument()` reads rows
@@ -143,9 +155,9 @@ rcbj asked for five things on 2026-10-26, all drawn by
   always shown under the controls. Weekday names are Intl's in the page's
   language, so they cost no catalog.
 
-The index, the realms view and the version are read once per load
-(`ensureChrome()`), after the token is in hand. `tests/report_query.js`'s
-`chrome()` holds the realm field's two shapes, the footer, a row with and
+The realms view is read once per load (`ensureChrome()`), after the token
+is in hand. `tests/report_query.js`'s `chrome()` holds the realm field's two
+shapes, that no version line is drawn, a row with and
 without the `+`, and the variable reader over a form double; what it does
 not hold is the browser's cloning and the navigation.
 
@@ -185,7 +197,7 @@ rcbj, 2026-10-26, after seeing #986's page. Four things:
 * **A tooltip on every field** (rcbj, the same day), the console's shape:
   `tip(t, key)` puts a `title` on the field's label from a `report.tip*`
   sentence (`admin-ui/web_kit.ts`'s `tip()` is the model). A new field
-  owes a `tipX` key in the seven base catalogs.
+  owes a `tipX` key in every base catalog.
 * **The schedule's status** (rcbj: a schedule set, no job seen):
   `jobs.scheduleTimes()` puts `nextRunAt` (croner's `cronNext`) and
   `lastSlotAt` on the definition view, and `scheduleStatusHtml()` draws
@@ -513,7 +525,7 @@ under 100 ms. Six things were wrong, and each is fixed where it lives:
   `mechanism` alone, filtered on nothing but mechanisms
   (`reportOnlyMechanisms()`), takes the password's row from
   `holderCountAsync()`'s counter through `Rows.takeCounted()` and reads the
-  other mechanisms as before. `docs/reporting.md` had promised it since
+  other mechanisms as before. `docs/v1.1.0/reporting.md` had promised it since
   #1019 and nothing did it.
 * **A first page answers a read that wants any rows.** A lookup at
   `CANDIDATE_CAP` hands back its first page when the plan has no order and
@@ -702,7 +714,7 @@ names, as `addFilterRow()` names a clone) and, when the removed row
 carried the `+`, appends one to the new last row
 (`addFilterButtonHtml()`); the only row left is emptied instead, its
 value control a text box again, so `queryDocument()` always finds row
-zero. One prose key, `report.removeFilter`, in the seven catalogs.
+zero. One prose key, `report.removeFilter`, in every base catalog.
 `tests/report_query.js` drives the three cases on a DOM double.
 
 ## The Sort row and the Group by box (#1008, #1013)
@@ -1280,4 +1292,4 @@ the register. It does not run SQL and it does not read the remote table.
 Connection details and secrets are not fields. `serviceMetrics` is one level of
 numeric leaves from `admin_stats.snapshot({ withoutUsers: true })`. It is not a
 time series, and it is not the per-route or per-kind tables. `/admin/metrics`
-and `/admin-api/metrics` stay. `docs/reporting.md` is the migration note.
+and `/admin-api/metrics` stay. `docs/v1.1.0/reporting.md` is the migration note.

@@ -52,7 +52,32 @@
 //   K. the real module: its own history job (a cluster job every ten
 //      minutes, whose rows carry the #333 expiry) and the two P1 jobs are
 //      registered by their owners, the realm-removal hook is wired, and the
-//      singleton leads nothing at load.
+//      singleton leads nothing at load. A finished interval run restored
+//      into scheduler.runs is not held (#883);
+//   P. a finished interval slot is learnt from one read per realm and is
+//      not held; a second tick of that slot does not read again; an empty
+//      answer runs the slot once; a failed read is asked again job by job,
+//      holds back only the job it could not answer (STS-SCHED-0023, the
+//      tick not failed) and is asked again at the next tick; an outage
+//      stops the asking after two job reads; and an absence a reader with
+//      no store answers is remembered for the slot (#883, its review);
+//   Q. the run whose slot ends first goes first: a realm job every two
+//      seconds in forty-one realms that the cap can never clear does not
+//      starve a service job every second, and an hourly job still runs in
+//      every realm inside its slot (2026-11-13, `ssf.internal-poll`);
+//   R. a job filter on the report reads that job's own last slots from the
+//      store, beside a newest window another job fills, on a node that
+//      holds none of its finished rows — a leader that just took over
+//      (2026-11-14, run 28's crash takeover step 3);
+//   S. a run abandoned in place long ago is outside that report and is
+//      found by its id, by one by-id read per realm — what the crash
+//      takeover's step 4 asks (2026-11-14, run 43642810770).
+//   T. one run of a job in a realm at a time (#1757): a Run now while the
+//      scheduled run of the same job and realm is going waits
+//      (STS-SCHED-0024, on its row, said once) and runs once it ends, and
+//      the reverse — the next slot's run waits for a manual run and runs
+//      inside its slot — on one node and across two, where only the
+//      `exclusive|<job>|<realm>` claim knows of the other node's run.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -1184,6 +1209,22 @@ async function run(t) {
             'a manual run restored or replicated into scheduler.runs is in ' +
             'the scheduler\'s index of the rows a tick reads, and stored as ' +
             'it came', JSON.stringify({ indexed: indexed }));
+    const doneId = 's-883-done';
+    handle.restore('default', doneId, {
+      runId: doneId, kind: 'run', jobId: 'scheduler.history',
+      realm: 'default', trigger: 'schedule', state: 'succeeded',
+      endedAt: Date.now(), startedAt: Date.now() - 1000,
+      queuedAt: Date.now() - 2000
+    });
+    t.check(!mod.runStore.realmMap('default').get(doneId) &&
+            handle.restoreExpiring === false &&
+            typeof handle.sortOf === 'function',
+            'a finished interval run is not held on restore (#883), and ' +
+            'the store declares restoreExpiring false and a sort',
+            JSON.stringify({
+              kept: !!mod.runStore.realmMap('default').get(doneId),
+              restoreExpiring: handle.restoreExpiring,
+              sortOf: typeof handle.sortOf }));
     require(ROOT + '/authn/authn');
     t.check(mod.jobIds().indexOf('authn.session-expiry') >= 0,
             'authn/authn registers authn.session-expiry at load',
@@ -1201,6 +1242,720 @@ async function run(t) {
             'pki.start() asks it to keep the directory current',
             mod.jobIds().join(','));
   }
+
+  // -------------------------------------------------------------------------
+  t.log.info('=== P. a finished interval slot is read, not held (#883) ===');
+  {
+    // One world per case: a slot marked finished in the first must not
+    // answer the second. The clock is not advanced, so both ticks are the
+    // same slot. `clustered: false` leads at start and arms no firing timer.
+    function recallWorld(answer) {
+      log.debug('Entering recallWorld().');
+      const calls = [];
+      const w = kit.world({
+        clustered: false,
+        readRuns: function (realmId, ids) {
+          calls.push({ realmId: realmId, ids: ids.slice() });
+          return answer(realmId, ids, w);
+        }
+      });
+      log.debug('Leaving recallWorld().');
+      return { w: w, calls: calls };
+    }
+    function finishedAnswer(realmId, ids) {
+      log.debug('Entering finishedAnswer().');
+      const map = new Map();
+      ids.forEach(function (id) {
+        map.set(id, {
+          runId: id, kind: 'run', jobId: 'test.recall', realm: realmId,
+          trigger: 'schedule', state: 'succeeded', endedAt: 1,
+          startedAt: 1, queuedAt: 1
+        });
+      });
+      log.debug('Leaving finishedAnswer().');
+      return Promise.resolve(map);
+    }
+    const held = recallWorld(finishedAnswer);
+    let ran = 0;
+    const node = held.w.node('a');
+    node.scheduler.register(baseJob({
+      id: 'test.recall',
+      run: function () {
+        ran++;
+      }
+    }));
+    node.scheduler.start('front');
+    await node.scheduler.tick();
+    await held.w.settle();
+    const asked = held.calls[0] || { realmId: '', ids: [] };
+    const kept = asked.ids.filter(function (id) {
+      return held.w.store.realmMap('default').has(id);
+    });
+    t.check(held.calls.length === 1 && asked.realmId === 'default' &&
+            asked.ids.length === 2 && ran === 0 && kept.length === 0,
+            'one read of the default realm\'s current and previous slot, ' +
+            'the slot does not run, and the finished body is not stored',
+            JSON.stringify({ calls: held.calls.length, realm: asked.realmId,
+                             ids: asked.ids.length, ran: ran, kept: kept }));
+    await node.scheduler.tick();
+    await held.w.settle();
+    t.equal(held.calls.length, 1,
+            'a second tick of the same slot does not read again');
+
+    const empty = recallWorld(function () {
+      return Promise.resolve(new Map());
+    });
+    let ranEmpty = 0;
+    const emptyNode = empty.w.node('a');
+    emptyNode.scheduler.register(baseJob({
+      id: 'test.recall',
+      run: function () {
+        ranEmpty++;
+      }
+    }));
+    emptyNode.scheduler.start('front');
+    await emptyNode.scheduler.tick();
+    await empty.w.settle();
+    t.equal(ranEmpty, 1, 'an empty answer runs the slot');
+    await emptyNode.scheduler.tick();
+    await empty.w.settle();
+    t.check(empty.calls.length === 1 && ranEmpty === 1,
+            'and the same slot is not read or run again',
+            JSON.stringify({ calls: empty.calls.length, ran: ranEmpty }));
+
+    // A READ THAT FAILS HOLDS BACK ITS OWN JOB, NOT THE TICK (#883's
+    // review). With one job the realm's batch is that job's read, so the
+    // job is held back under STS-SCHED-0023 rather than the tick failing
+    // under STS-SCHED-0013.
+    const failed = recallWorld(function () {
+      return Promise.reject(new Error('the store did not answer'));
+    });
+    let ranFailed = 0;
+    const failedNode = failed.w.node('a');
+    failedNode.scheduler.register(baseJob({
+      id: 'test.recall',
+      run: function () {
+        ranFailed++;
+      }
+    }));
+    failedNode.scheduler.start('front');
+    await failedNode.scheduler.tick();
+    await failed.w.settle();
+    const logged = failed.w.logs.some(function (row) {
+      return row.level === 'error' &&
+        String(row.m).indexOf('STS-SCHED-0023') >= 0;
+    });
+    const tickFailed = failed.w.logs.some(function (row) {
+      return String(row.m).indexOf('STS-SCHED-0013') >= 0;
+    });
+    t.check(ranFailed === 0 && logged && !tickFailed &&
+            failed.calls.length === 1,
+            'a failed read does not run the slot: the job is held back ' +
+            'under STS-SCHED-0023 and the tick is not failed',
+            JSON.stringify({ ran: ranFailed, logged: logged,
+                             tickFailed: tickFailed,
+                             calls: failed.calls.length,
+                             logs: failed.w.logs }));
+    await failedNode.scheduler.tick();
+    await failed.w.settle();
+    t.check(failed.calls.length === 2 && ranFailed === 0,
+            'the failed read is asked again at the next tick',
+            JSON.stringify({ calls: failed.calls.length, ran: ranFailed }));
+
+    // P2. ONE JOB'S ROWS THE STORE CANNOT ANSWER: the other job runs. The
+    // realm's batch fails because it holds the first job's rows; asked job
+    // by job, only that job's read fails.
+    let poison = '';
+    const partial = recallWorld(function (realmId, ids) {
+      if (ids.length > 2) {
+        poison = poison || ids[0];
+        return Promise.reject(new Error('one row would not open'));
+      }
+      if (ids.indexOf(poison) >= 0) {
+        return Promise.reject(new Error('one row would not open'));
+      }
+      return Promise.resolve(new Map());
+    });
+    const ranPartial = { bad: 0, good: 0 };
+    const partialNode = partial.w.node('a');
+    partialNode.scheduler.register(baseJob({
+      id: 'test.recall-bad',
+      run: function () {
+        ranPartial.bad++;
+      }
+    }));
+    partialNode.scheduler.register(baseJob({
+      id: 'test.recall-good',
+      run: function () {
+        ranPartial.good++;
+      }
+    }));
+    partialNode.scheduler.start('front');
+    await partialNode.scheduler.tick();
+    await partial.w.settle();
+    const partialLogged = partial.w.logs.filter(function (row) {
+      return row.level === 'error' &&
+        String(row.m).indexOf('STS-SCHED-0023') >= 0;
+    });
+    const partialTickFailed = partial.w.logs.some(function (row) {
+      return String(row.m).indexOf('STS-SCHED-0013') >= 0;
+    });
+    t.check(ranPartial.good === 1 && ranPartial.bad === 0 &&
+            partialLogged.length === 1 && !partialTickFailed &&
+            partial.calls.length === 3 &&
+            /1 run\(s\)/.test(String(partialLogged[0] &&
+                                     partialLogged[0].m)),
+            'P2. one job\'s rows the store cannot answer: the other job ' +
+            'runs, that one is held back, and one STS-SCHED-0023 line ' +
+            'names one run (the batch, then each job alone)',
+            JSON.stringify({ ran: ranPartial, calls: partial.calls.length,
+                             logs: partial.w.logs }));
+    await partialNode.scheduler.tick();
+    await partial.w.settle();
+    t.check(ranPartial.good === 1 && ranPartial.bad === 0 &&
+            partial.calls.length === 4,
+            'and the next tick asks about the held-back job alone, and ' +
+            'still does not run it or the other one again',
+            JSON.stringify({ ran: ranPartial,
+                             calls: partial.calls.length }));
+
+    // P3. AN OUTAGE IS NOT ASKED JOB BY JOB FOR EVER: two job reads
+    // failing in a row stop the asking for the tick.
+    const down = recallWorld(function () {
+      return Promise.reject(new Error('connection refused'));
+    });
+    let ranDown = 0;
+    const downNode = down.w.node('a');
+    ['one', 'two', 'three', 'four'].forEach(function (name) {
+      downNode.scheduler.register(baseJob({
+        id: 'test.recall-' + name,
+        run: function () {
+          ranDown++;
+        }
+      }));
+    });
+    downNode.scheduler.start('front');
+    await downNode.scheduler.tick();
+    await down.w.settle();
+    const downLine = down.w.logs.filter(function (row) {
+      return String(row.m).indexOf('STS-SCHED-0023') >= 0;
+    });
+    t.check(ranDown === 0 && down.calls.length === 3 &&
+            downLine.length === 1 &&
+            /4 run\(s\)/.test(String(downLine[0] && downLine[0].m)),
+            'P3. with the store down: the batch and two jobs are asked, ' +
+            'the other two are held back unasked, nothing runs, one line',
+            JSON.stringify({ ran: ranDown, calls: down.calls.length,
+                             logs: down.w.logs }));
+
+    // P4. AN ABSENCE SAID BY NO STORE IS REMEMBERED FOR THE SLOT TOO: the
+    // reader answering null is asked once a slot, not once a tick.
+    const none = recallWorld(function () {
+      return Promise.resolve(null);
+    });
+    let ranNone = 0;
+    const noneNode = none.w.node('a');
+    noneNode.scheduler.register(baseJob({
+      id: 'test.recall',
+      run: function () {
+        ranNone++;
+      }
+    }));
+    noneNode.scheduler.start('front');
+    await noneNode.scheduler.tick();
+    await none.w.settle();
+    await noneNode.scheduler.tick();
+    await none.w.settle();
+    await noneNode.scheduler.tick();
+    await none.w.settle();
+    t.check(none.calls.length === 1 && ranNone === 1,
+            'P4. a reader with no store is asked once for the slot over ' +
+            'three ticks, and the slot runs once (the map decides)',
+            JSON.stringify({ calls: none.calls.length, ran: ranNone }));
+  }
+
+  // -------------------------------------------------------------------------
+  t.log.info('=== Q. the run whose slot ends first goes first ===');
+  {
+    // What starved `ssf.internal-poll` (2026-11-13): a realm job every two
+    // seconds (`report.drain`) in forty-one realms, each run taking 120 ms,
+    // under a cap of two — about seventeen runs a second for some twenty a
+    // second due, so the line never empties. Beside it a service job every
+    // second, nice 0, as the poll is. Oldest-due first, each of the realm
+    // job's runs was due from the start of its slot, at or before the
+    // start of the poll's, and the poll's slot ended unrun every time.
+    const realmIds = ['default'];
+    for (let i = 0; i < 40; i++) {
+      realmIds.push('r' + i);
+    }
+    const w = kit.world({ clustered: false, realmIds: realmIds,
+                          settings: { 'scheduler.maxConcurrentRuns': 2 } });
+    const node = w.node('solo');
+    let drains = 0;
+    let polls = 0;
+    let drainEveryMs = 2000;
+    const slots = new Set();
+    node.scheduler.register(baseJob({ id: 'test.drain', scope: 'realm',
+      nice: 10, everyMs: function () { return drainEveryMs; },
+      run: function () {
+        return new Promise(function (resolve) {
+          node.scheduler.deps.setTimer(function () {
+            drains++;
+            resolve('drained');
+          }, 120);
+        });
+      } }));
+    node.scheduler.register(baseJob({ id: 'test.poll', nice: 0,
+      everyMs: function () { return 1000; },
+      run: function (ctx) {
+        polls++;
+        slots.add(Math.floor(ctx.nowMs() / 1000));
+        return 'polled';
+      } }));
+    // An hourly job in every realm, due since the hour began: it waits
+    // behind both, and runs once the line has room.
+    let hourly = 0;
+    node.scheduler.register(baseJob({ id: 'test.hourly', scope: 'realm',
+      everyMs: function () { return HOUR; },
+      run: function () {
+        hourly++;
+        return 'ok';
+      } }));
+    node.scheduler.start('front');
+    await w.advance(30000);
+    t.check(drains > 300,
+            'Q1. the line is longer than the cap clears: the realm job runs ' +
+            'flat out', JSON.stringify({ drains: drains }));
+    t.check(polls >= 25 && slots.size >= 25,
+            'Q2. and the job every second still runs in nearly every one of ' +
+            'its thirty slots, ahead of runs whose slot ends later',
+            JSON.stringify({ polls: polls, slots: slots.size,
+                             drains: drains }));
+    // The flood stops (its interval set to 0, which is off), and the hourly
+    // job, which waited behind it, runs in the next minute.
+    const hourlyDuringFlood = hourly;
+    drainEveryMs = 0;
+    await w.advance(60000);
+    t.check(hourlyDuringFlood < realmIds.length &&
+            hourly === realmIds.length,
+            'Q3. and the hourly job, whose slot ends last, waited behind ' +
+            'them and runs once in every realm when the line has room',
+            JSON.stringify({ duringFlood: hourlyDuringFlood, hourly: hourly,
+                             realms: realmIds.length }));
+  }
+
+  // -------------------------------------------------------------------------
+  t.log.info('=== R. a job filter reads the job\'s own slots (2026-11-14) ===');
+  {
+    // RUN 28's CRASH TAKEOVER: four seconds after node-b took over, its
+    // `?job=authn.session-expiry` answered no succeeded run. Since #883 a
+    // finished interval run is not resident on the node that did not write
+    // it, and the newest window — twenty rows a realm across every job — is
+    // filled within seconds by the one-second service jobs, so a
+    // thirty-second job is almost never in it. The durable table here holds
+    // six succeeded slots of a thirty-second job and, newer than all of
+    // them, twenty rows of a one-second one, which are the whole window.
+    const durable = new Map();
+    const reads = [];
+    let failReads = false;
+    const w = kit.world({
+      clustered: false,
+      readRuns: function (realmId, ids) {
+        reads.push({ realmId: realmId, ids: ids.slice() });
+        if (failReads) {
+          return Promise.reject(new Error('the store did not answer'));
+        }
+        const out = new Map();
+        ids.forEach(function (id) {
+          const row = durable.get(realmId + '\n' + id);
+          if (row) {
+            out.set(id, row);
+          }
+        });
+        return Promise.resolve(out);
+      },
+      newestRuns: function (realmIds) {
+        const rows = [];
+        durable.forEach(function (row) {
+          if (realmIds.indexOf(row.realm) >= 0) {
+            rows.push(row);
+          }
+        });
+        rows.sort(function (a, b) {
+          return b.startedAt - a.startedAt;
+        });
+        return Promise.resolve(rows.slice(0, 20));
+      }
+    });
+    const node = w.node('b');
+    const slow = baseJob({ id: 'test.slow-sweep',
+      everyMs: function () { return 30000; } });
+    const fast = baseJob({ id: 'test.fast-poll',
+      everyMs: function () { return 1000; } });
+    node.scheduler.register(slow);
+    node.scheduler.register(fast);
+    const now = node.scheduler.nowMs();
+    const slowSlot = Math.floor(now / 30000);
+    const fastSlot = Math.floor(now / 1000);
+    const runIdFor = function (job, realmId, n) {
+      return node.scheduler['runIdFor'](node.scheduler.job(job.id),
+                                        realmId, n);
+    };
+    const put = function (job, n, every) {
+      const id = runIdFor(job, 'default', n);
+      durable.set('default\n' + id, {
+        runId: id, kind: 'run', jobId: job.id, realm: 'default',
+        slot: n, dueAt: n * every, trigger: 'schedule', state: 'succeeded',
+        attempt: 1, fenceAt: 1, queuedAt: n * every,
+        startedAt: n * every + 10, endedAt: n * every + 20,
+        nodeName: 'node-a'
+      });
+      return id;
+    };
+    const slowIds = [];
+    for (let k = 1; k <= 6; k++) {
+      slowIds.push(put(slow, slowSlot - k, 30000));
+    }
+    for (let k = 1; k <= 20; k++) {
+      put(fast, fastSlot - k, 1000);
+    }
+    const resident = Array.from(w.store.realmMap('default').keys());
+    const runs = await node.scheduler.recentRuns({ job: 'test.slow-sweep' });
+    const got = runs.map(function (r) {
+      return r.runId;
+    });
+    t.check(resident.length === 0 && runs.length === 6 &&
+            slowIds.every(function (id) { return got.indexOf(id) >= 0; }) &&
+            runs.every(function (r) {
+              return r.jobId === 'test.slow-sweep' &&
+                r.state === 'succeeded' && r.trigger === 'schedule';
+            }),
+            'R1. on a node holding none of its rows, the job filter answers ' +
+            'all six of the thirty-second job\'s stored slots, though the ' +
+            'newest window is twenty rows of a one-second job',
+            JSON.stringify({ resident: resident.length, got: got,
+                             want: slowIds }));
+    const asked = reads[reads.length - 1] || { realmId: '', ids: [] };
+    t.check(reads.length === 1 && asked.realmId === 'default' &&
+            asked.ids.length === 20 &&
+            asked.ids[0] === runIdFor(slow, 'default', slowSlot),
+            'R2. one batch read of the default realm, of the job\'s current ' +
+            'slot and the nineteen before it',
+            JSON.stringify({ reads: reads.length, realm: asked.realmId,
+                             ids: asked.ids.length }));
+    const unfiltered = await node.scheduler.recentRuns({});
+    t.check(reads.length === 1 && unfiltered.length === 20 &&
+            unfiltered.every(function (r) {
+              return r.jobId === 'test.fast-poll';
+            }),
+            'R3. with no job filter nothing is read by id: the list is the ' +
+            'newest window, as before',
+            JSON.stringify({ reads: reads.length,
+                             listed: unfiltered.length }));
+    const fastRuns = await node.scheduler.recentRuns({ outcome: 'succeeded',
+                                                     job: 'test.fast-poll' });
+    t.check(fastRuns.length === 20,
+            'R4. the window still answers the job it holds',
+            JSON.stringify({ listed: fastRuns.length }));
+    failReads = true;
+    const lost = await node.scheduler.recentRuns({ job: 'test.slow-sweep' });
+    t.check(lost.length === 0,
+            'R5. a slot read that fails answers what the window holds, and ' +
+            'does not throw',
+            JSON.stringify({ listed: lost.length }));
+  }
+
+  // -------------------------------------------------------------------------
+  t.log.info('=== S. a run abandoned long ago is found by its id ' +
+             '(2026-11-14) ===');
+  {
+    // GITHUB ACTIONS RUN 43642810770's CRASH TAKEOVER: node-a left a run of
+    // `ssf.internal-poll` (every second) running, node-b abandoned it in
+    // place (STS-SCHED-0011) inside the bound, and step 4 of
+    // `tests/tools/scheduler-takeover.js` never saw it: the job filter holds
+    // the job's last twenty slots and a twenty-row window (R), and the row
+    // was about six hundred slots back. Step 4 now asks `?run=`, which is
+    // `findRun()`: one by-id read per realm, never a scan.
+    const durable = new Map();
+    const reads = [];
+    const w = kit.world({
+      clustered: false,
+      readRuns: function (realmId, ids) {
+        reads.push({ realmId: realmId, ids: ids.slice() });
+        const out = new Map();
+        ids.forEach(function (id) {
+          const row = durable.get(realmId + '\n' + id);
+          if (row) {
+            out.set(id, row);
+          }
+        });
+        return Promise.resolve(out);
+      },
+      newestRuns: function (realmIds) {
+        const rows = [];
+        durable.forEach(function (row) {
+          if (realmIds.indexOf(row.realm) >= 0) {
+            rows.push(row);
+          }
+        });
+        rows.sort(function (a, b) {
+          return b.startedAt - a.startedAt;
+        });
+        return Promise.resolve(rows.slice(0, 20));
+      }
+    });
+    const node = w.node('b');
+    const poll = baseJob({ id: 'test.internal-poll',
+      everyMs: function () { return 1000; } });
+    node.scheduler.register(poll);
+    const now = node.scheduler.nowMs();
+    const slotNow = Math.floor(now / 1000);
+    const idOf = function (n) {
+      return node.scheduler['runIdFor'](node.scheduler.job(poll.id),
+                                        'default', n);
+    };
+    const put = function (n, fields) {
+      const id = idOf(n);
+      durable.set('default\n' + id, Object.assign({
+        runId: id, kind: 'run', jobId: poll.id, realm: 'default',
+        slot: n, dueAt: n * 1000, trigger: 'schedule', state: 'succeeded',
+        attempt: 1, fenceAt: 1, queuedAt: n * 1000,
+        startedAt: n * 1000 + 10, endedAt: n * 1000 + 20,
+        nodeName: 'node-b'
+      }, fields || {}));
+      return id;
+    };
+    const left = put(slotNow - 600, {
+      state: 'abandoned', nodeName: 'node-a', errorCode: 'STS-SCHED-0011',
+      endedAt: now - 5000
+    });
+    for (let k = 1; k <= 30; k++) {
+      put(slotNow - k);
+    }
+    const listed = await node.scheduler.recentRuns({ job: poll.id });
+    t.check(!listed.some(function (r) { return r.runId === left; }),
+            'S1. the job\'s report does not hold a run abandoned six hundred ' +
+            'slots back: neither its last twenty slots nor the newest window',
+            JSON.stringify({ listed: listed.length }));
+    reads.length = 0;
+    const found = await node.scheduler.findRun(left);
+    t.check(found && found.runId === left && found.state === 'abandoned' &&
+            found.errorCode === 'STS-SCHED-0011',
+            'S2. findRun() answers it from the store, abandoned in place',
+            JSON.stringify(found));
+    t.check(reads.length >= 1 && reads.every(function (one) {
+      return one.ids.length === 1 && one.ids[0] === left;
+    }),
+            'S3. and read it by its id alone, one read per realm asked',
+            JSON.stringify(reads));
+    reads.length = 0;
+    const none = await node.scheduler.findRun(idOf(slotNow - 900));
+    t.check(none === null && reads.every(function (one) {
+      return one.ids.length === 1;
+    }),
+            'S4. a run nobody wrote is null, still read by id alone',
+            JSON.stringify(reads));
+    const takeover = require('./tools/scheduler-takeover');
+    t.check(takeover.runSettled(left, found, []) === true &&
+            takeover.runSettled(left, Object.assign({}, found,
+              { state: 'running' }), []) === false &&
+            takeover.runSettled(left, null, []) === false &&
+            takeover.runSettled(left, null, [{ runId: 'x',
+              abandonedOf: left }]) === true &&
+            takeover.runSettled(left, Object.assign({}, found,
+              { runId: 'another' }), []) === false,
+            'S5. step 4 counts the run settled when it is abandoned in ' +
+            'place by its id, or taken over in the job\'s runs, and not ' +
+            'while it is still running, unknown, or another run');
+    // As source, because the wait is a live cluster's: step 4's condition
+    // asks the dead node's run by its id before the job's report.
+    const text = require('fs').readFileSync(path.join(ROOT, 'tests', 'tools',
+      'scheduler-takeover.js'), 'utf8').replace(/\s+/g, ' ');
+    const wait = text.slice(text.indexOf('await until(\'the dead node'));
+    t.check(/\/admin-api\/scheduler\?run=/.test(text) &&
+            /^await until\('the dead node\\'s run to be taken over', async function \(\) \{ const detail = await runById\(base, one\.runId\);/
+              .test(wait),
+            'S6. step 4 of the crash takeover asks GET /admin-api/scheduler' +
+            '?run= for the run it left behind before the job\'s report');
+  }
+
+  // -------------------------------------------------------------------------
+  t.log.info('=== T. one run of a job in a realm at a time (#1757) ===');
+  {
+    // A MANUAL RUN AND THE SCHEDULED RUN OF ONE REALM JOB OVERLAPPED: their
+    // ids differ, so each won its own claim. Now a run also holds
+    // `exclusive|<job>|<realm>` in the same claim table while it runs, and
+    // the one that cannot have it waits (STS-SCHED-0024). A body here
+    // counts how many runs of the job are going in its realm at once and
+    // stays running until the test lets it end.
+    const harness = function () {
+      const h = { active: {}, max: {}, started: [], open: [] };
+      h.job = baseJob({ id: 'test.exclusive', scope: 'realm',
+        everyMs: function () { return 60000; },
+        run: function (ctx) {
+          const r = ctx.realm;
+          h.active[r] = (h.active[r] || 0) + 1;
+          h.max[r] = Math.max(h.max[r] || 0, h.active[r]);
+          h.started.push({ realm: r, trigger: ctx.trigger,
+                           runId: ctx.runId });
+          return new Promise(function (resolve) {
+            h.open.push({ realm: r, trigger: ctx.trigger, runId: ctx.runId,
+                          end: function () {
+                            h.active[r] -= 1;
+                            resolve({ summary: 'done' });
+                          } });
+          });
+        } });
+      h.count = function (realm, trigger) {
+        return h.started.filter(function (one) {
+          return one.realm === realm && (!trigger || one.trigger === trigger);
+        }).length;
+      };
+      h.end = function (realm, trigger) {
+        const i = h.open.findIndex(function (one) {
+          return one.realm === realm && one.trigger === trigger;
+        });
+        if (i >= 0) {
+          h.open.splice(i, 1)[0].end();
+        }
+        return i >= 0;
+      };
+      return h;
+    };
+    const waitLines = function (w, runId) {
+      return w.logs.filter(function (one) {
+        return /STS-SCHED-0024/.test(String(one.m)) &&
+               String(one.m).indexOf(runId) >= 0;
+      }).length;
+    };
+
+    // ONE NODE.
+    const w = kit.world({ clustered: false });
+    const node = w.node('solo');
+    const h = harness();
+    let other = 0;
+    node.scheduler.register(h.job);
+    node.scheduler.register(baseJob({ id: 'test.exclusive-other',
+      scope: 'realm', manualOnly: true, everyMs: undefined,
+      run: function () { other += 1; } }));
+    node.scheduler.start('front');
+    await w.advance(1000);
+    t.check(h.count('acme', 'schedule') === 1 &&
+            h.count('default', 'schedule') === 1,
+            'T0. the scheduled run of the slot is going in both realms',
+            JSON.stringify(h.started));
+    const manual = node.scheduler.requestRun('test.exclusive',
+                                             { realm: 'acme' });
+    const otherRun = node.scheduler.requestRun('test.exclusive-other',
+                                               { realm: 'acme' });
+    await w.advance(15000);
+    t.check(manual.ok && h.count('acme', 'manual') === 0 &&
+            h.max.acme === 1,
+            'T1. one node: a Run now while the scheduled run of the same ' +
+            'job in the same realm is going does not start',
+            JSON.stringify({ started: h.started, max: h.max }));
+    const queued = w.stores.get('acme').get(manual.runId);
+    t.check(queued && queued.state === 'queued' &&
+            queued.errorCode === 'STS-SCHED-0024' &&
+            /still running/.test(queued.why) &&
+            waitLines(w, manual.runId) === 1,
+            'T2. it waits, queued, with STS-SCHED-0024 and the reason on its ' +
+            'row, and says so once in three ticks',
+            JSON.stringify({ row: queued, lines: waitLines(w, manual.runId) }));
+    t.check(otherRun.ok && other === 1,
+            'T3. another job in the same realm is not held by it',
+            JSON.stringify({ other: other }));
+    h.end('acme', 'schedule');
+    await w.advance(10000);
+    const ran = w.stores.get('acme').get(manual.runId);
+    t.check(h.count('acme', 'manual') === 1 && h.max.acme === 1 &&
+            ran && ran.state === 'running' && ran.errorCode === '',
+            'T4. once the scheduled run ends, the manual run starts, alone, ' +
+            'and its row no longer says it waits',
+            JSON.stringify({ started: h.started, row: ran }));
+    // THE REVERSE: a manual run going when the next slot falls due.
+    h.end('acme', 'manual');
+    h.end('default', 'schedule');
+    const inDefault = node.scheduler.requestRun('test.exclusive', {});
+    await w.advance(10000);
+    t.check(inDefault.ok && h.count('default', 'manual') === 1,
+            'T5. a manual run in the default realm is going',
+            JSON.stringify(h.started));
+    await w.advance(40000);
+    const slot = node.scheduler['runIdFor'](node.scheduler.job(
+      'test.exclusive'), 'default', node.scheduler['slotAt'](
+      node.scheduler.job('test.exclusive'), node.scheduler.nowMs()).slot);
+    t.check(h.count('default', 'schedule') === 1 && h.max.default === 1 &&
+            h.count('acme', 'schedule') === 2 &&
+            !w.stores.get('default').has(slot) && waitLines(w, slot) === 1,
+            'T6. one node, the reverse: the next slot\'s scheduled run in ' +
+            'that realm waits for it (said once, no row written), while the ' +
+            'other realm\'s runs',
+            JSON.stringify({ started: h.started, lines: waitLines(w, slot) }));
+    h.end('default', 'manual');
+    await w.advance(10000);
+    t.check(h.count('default', 'schedule') === 2 && h.max.default === 1,
+            'T7. and runs inside its slot once the manual run has ended',
+            JSON.stringify(h.started));
+    h.open.slice().forEach(function (one) {
+      h.end(one.realm, one.trigger);
+    });
+    await w.advance(1000);
+    node.scheduler.stop();
+
+    // TWO NODES: the run in flight is the other node's, so nothing here
+    // knows of it but the claim.
+    const w2 = kit.world({});
+    const a = w2.node('a');
+    const b = w2.node('b');
+    const h2 = harness();
+    a.scheduler.register(h2.job);
+    b.scheduler.register(Object.assign({}, h2.job));
+    a.scheduler.start('front');
+    b.scheduler.start('front');
+    await w2.advance(1000);
+    t.check(w2.leaderOf() === 'a' && h2.count('acme', 'schedule') === 1,
+            'T8. two nodes: a leads, and its scheduled run in acme is going',
+            JSON.stringify({ leader: w2.leaderOf(), started: h2.started }));
+    await a.cluster.stepDown('ops.scheduler');
+    await w2.advance(3000);
+    const viaB = b.scheduler.requestRun('test.exclusive', { realm: 'acme' });
+    await w2.advance(15000);
+    t.check(w2.leaderOf() === 'b' && viaB.ok &&
+            h2.count('acme', 'manual') === 0 && h2.max.acme === 1 &&
+            w2.stores.get('acme').get(viaB.runId).errorCode ===
+              'STS-SCHED-0024',
+            'T9. b leads, and a Run now there waits for a\'s run, which only ' +
+            'the claim tells it of',
+            JSON.stringify({ leader: w2.leaderOf(), started: h2.started }));
+    h2.end('acme', 'schedule');
+    await w2.advance(10000);
+    t.check(h2.count('acme', 'manual') === 1 && h2.max.acme === 1,
+            'T10. once a\'s run has ended and given its hold back, b runs ' +
+            'the manual run, alone',
+            JSON.stringify(h2.started));
+    // THE REVERSE, ACROSS THE NODES: b's manual run is going when b steps
+    // down and a, leading again, reaches the next slot.
+    h2.end('default', 'schedule');
+    await b.cluster.stepDown('ops.scheduler');
+    await w2.advance(40000);
+    t.check(w2.leaderOf() === 'a' && h2.count('acme', 'schedule') === 1 &&
+            h2.count('default', 'schedule') === 2 && h2.max.acme === 1,
+            'T11. a leads again; its next scheduled run in acme waits for ' +
+            'b\'s manual run, while default\'s runs',
+            JSON.stringify({ leader: w2.leaderOf(), started: h2.started }));
+    h2.end('acme', 'manual');
+    await w2.advance(10000);
+    t.check(h2.count('acme', 'schedule') === 2 && h2.max.acme === 1,
+            'T12. and runs inside its slot once b\'s run has ended',
+            JSON.stringify(h2.started));
+    h2.open.slice().forEach(function (one) {
+      h2.end(one.realm, one.trigger);
+    });
+    await w2.advance(1000);
+    a.scheduler.stop();
+    b.scheduler.stop();
+  }
   log.debug('Leaving run().');
 }
 
@@ -1210,6 +1965,9 @@ module.exports = {
             'once per slot by the database clock, cron, the run lifecycle, ' +
             'off states, manual runs, the report, per-process jobs, the ' +
             'bounded run history, removed realms, a tick that reads no ' +
-            'history',
+            'history, a finished interval slot read once and not held (#883), ' +
+            'the line ordered by the end of each run\'s slot, a job ' +
+            'filter reading the job\'s own slots, a run found by its id, ' +
+            'one run of a job in a realm at a time',
   run: run
 };

@@ -208,6 +208,11 @@ locals {
     db_name     = ""
     db_app_user = ""
   }
+  # Front Door's origin secret (#1341, frontdoor.tf), for the primary cell's
+  # profile. Apart from `global` because it is SENSITIVE and would mark every
+  # value read through that object; a global stack applied before it existed
+  # has none.
+  global_edge_secret = local.multi && local.full ? try(data.terraform_remote_state.global[0].outputs.edge_secret, "") : ""
 
   # THE CONTRACT WITH THE SERVICE — AWS's `cell_environment`, name for name,
   # with the `azure` secret provider where AWS has `aws`. The secrets are in

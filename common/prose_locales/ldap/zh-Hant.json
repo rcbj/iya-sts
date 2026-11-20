@@ -1016,12 +1016,16 @@
     "text": "OIDC ID Token 的同類設定，覆寫 oauth2.idTokenTtlS。之所以與存取權杖分開，是因為兩者交給不同的讀者：ID Token 在登入時取用一次，存取權杖則在其效期內持續出示。"
   },
   "applications.schema.attributes.oauthRefreshTokenTtlS.what": {
-    "en": "47a623e69e617b6d",
-    "text": "重新整理權杖的同類設定，覆寫 oauth2.refreshTokenTtlS。等於或低於 oauthAccessTokenTtlS 的值是合法的，代表一個永遠無法有效更新的授權——/admin/token-lifetimes 會針對全服務的那一對設定回報此組合，而在此處同樣可能出現。"
+    "en": "019d39de89f62aaf",
+    "text": "重新整理權杖的同類設定，覆寫 oauth2.refreshTokenTtlS。等於或低於 oauthAccessTokenTtlS 的值是合法的，代表一個永遠無法有效更新的授權——/admin/token-lifetimes 會針對全服務的那一對設定回報此組合，而在此處同樣可能出現。 對於管理主控台、使用者入口和報表應用程式，實際生效的值是此處的正數與領域設定中較短的那個；這三項不能清空，0 會被拒絕，在儲存時確認一個不同的正數才是變更該界限的方式（#825）。"
   },
   "applications.schema.attributes.oauthRefreshIdleSeconds.what": {
-    "en": "37eeca0107443e0c",
-    "text": "「僅限 RFC 9700 模式」：重新整理鏈在被切斷前可閒置未用的時間，為此用戶端覆寫 oauth2.refreshIdleSeconds。它是從「鏈」中任何權杖最後一次被兌換的時間起算，而非從簽發時起算，因此忙碌的用戶端會保有授權，閒置的則不會。在 RFC 9700 模式之外沒有任何東西讀取它，這是該設定的特性，而非此屬性的特性。"
+    "en": "2fd2c72086342ab0",
+    "text": "「僅限 RFC 9700 模式」：重新整理鏈在被切斷前可閒置未用的時間，為此用戶端覆寫 oauth2.refreshIdleSeconds。它是從「鏈」中任何權杖最後一次被兌換的時間起算，而非從簽發時起算，因此忙碌的用戶端會保有授權，閒置的則不會。在 RFC 9700 模式之外沒有任何東西讀取它，這是該設定的特性，而非此屬性的特性。 對於管理主控台、使用者入口和報表應用程式，實際生效的值是此處的正數與領域設定中較短的那個；這三項不能清空，0 會被拒絕，在儲存時確認一個不同的正數才是變更該界限的方式（#825）。"
+  },
+  "applications.schema.attributes.oauthMaxAuthAgeS.what": {
+    "en": "c79eafa0090748ab",
+    "text": "此用戶端在多少秒以前完成過驗證之後，授權請求必須再次進行驗證，即使該請求沒有傳送 max_age，並覆寫 oauth2.maxAuthAgeS。0 或空值不增加此屬性自身的界限，一般用戶端隨後遵循領域設定，其預設值為 0。對於管理主控台、使用者入口和報表應用程式，實際生效的值是此處的正數與 authn.sessionLifetimeS 中較短的那個，因此提高領域的值永遠不會延長它們。這三項不能清空，0 會被拒絕，在儲存時確認一個不同的正數才是變更該界限的方式（#825）。"
   },
   "applications.schema.attributes.oauthClaimsAccessToken.what": {
     "en": "e284080e7c1bb9a6",
@@ -1227,6 +1231,10 @@
     "en": "00f7ceacfb9304e7",
     "text": "TRUE 或 FALSE：此身分識別提供者是否可以「開始」登入此服務提供者——從 /saml2/unsolicited 或 /launch/{app} 送出的未經請求 Response（saml-profiles-2.0-os section 4.1.5）——覆寫 saml2.idpInitiatedSso。僅對預期會收到這種 Response 的服務提供者設為 TRUE：Response 不攜帶 InResponseTo，因此服務提供者無法分辨它是發給自己的，還是被推入其瀏覽器的。"
   },
+  "applications.schema.attributes.saml2SsoConsent.what": {
+    "en": "f7ca67bc2031ec08",
+    "text": "TRUE 或 FALSE：在 SAML 2.0 以使用者既有的工作階段將其登入此應用程式之前，是否先詢問使用者一次，覆寫 saml2.ssoConsent（ASVS 5.0.0 7.6.2）。FALSE 適合領域內所有人都要使用的應用程式；項目上的全域同意代表所有人回答，並保留誰同意過的紀錄。"
+  },
   "applications.schema.attributes.saml2SpInitiatedSso.what": {
     "en": "1cab33aadc246c17",
     "text": "TRUE 或 FALSE：是否回應此服務提供者自己的 <samlp:AuthnRequest>，覆寫 saml2.spInitiatedSso。FALSE 以 RequestDenied 回應，使由身分識別提供者發起的登入成為唯一的進入方式。"
@@ -1234,6 +1242,10 @@
   "applications.schema.attributes.saml11IdpInitiatedSso.what": {
     "en": "6081871f6aca6a2f",
     "text": "TRUE 或 FALSE：登入此依賴方的 SAML 1.1 登入是否可以在此處「開始」——帶有 TARGET 而沒有 shire 的 /saml11/sso/{rp}，或 /launch/{app}——覆寫 saml11.idpInitiatedSso。"
+  },
+  "applications.schema.attributes.saml11SsoConsent.what": {
+    "en": "0cb7bbf2fb684481",
+    "text": "TRUE 或 FALSE：在 SAML 1.1 以使用者既有的工作階段將其登入此應用程式之前，是否先詢問使用者一次，覆寫 saml11.ssoConsent（ASVS 5.0.0 7.6.2）。FALSE 適合領域內所有人都要使用的應用程式；項目上的全域同意代表所有人回答，並保留誰同意過的紀錄。"
   },
   "applications.schema.attributes.saml11SpInitiatedSso.what": {
     "en": "2376052fceb025ab",
@@ -1259,6 +1271,10 @@
     "en": "d199b15200f6e9de",
     "text": "TRUE 或 FALSE：是否回應此依賴方自己的 wsignin1.0，覆寫 wsfed.spInitiatedSso。wsignin1.0 是未簽署的 URL，因此 FALSE 是把門關上，而不是證明是誰開的門。"
   },
+  "applications.schema.attributes.wsfedSsoConsent.what": {
+    "en": "9a3541460bedfa45",
+    "text": "TRUE 或 FALSE：在 WS-Federation 以使用者既有的工作階段將其登入此應用程式之前，是否先詢問使用者一次，覆寫 wsfed.ssoConsent（ASVS 5.0.0 7.6.2）。FALSE 適合領域內所有人都要使用的應用程式；項目上的全域同意代表所有人回答，並保留誰同意過的紀錄。"
+  },
   "applications.schema.attributes.wsfedSignOutUri.what": {
     "en": "677e7babd8d711d3",
     "text": "此應用程式之 wsignoutcleanup1.0 通知的傳送位置——WS-Federation 的登出 URI，也是此表在 2026-08-30 之前所沒有的。是「宣告的」，而非觀察到的，這使它與 samlSingleLogoutService 而非 wsfedReplyUrl 同類：清理是在「工作階段」結束時傳送，那時原本會攜帶 wreply 的請求早已結束。\n\n**宣告的位址優先於觀察到的位址** (#747)。對於工作階段已登入的領域，`cleanupTargetsFor()` 會通知此處的每個值；只有此處為空白時，才使用登入回應所送往的 wreply，它由 `session.wsfedRealms` 記錄。"
@@ -1270,6 +1286,58 @@
   "applications.schema.attributes.wstrustJwtScope.what": {
     "en": "86ac83dbe366a17b",
     "text": "此應用程式的 WS-TRUST JWT 所攜帶的 OAUTH 2.0 範圍，每個值一個範圍（#485）。WS-Trust 以此應用程式為 AppliesTo 簽發的 JWT（wst:TokenType urn:ietf:params:oauth:token-type:jwt）會在其 `scope` 宣告中攜帶它們，以空格分隔（RFC 9068 第 2.2.3 節）；未設定時則不攜帶 `scope`。SAML 權杖不受影響。\n\n**每個範圍都以 OAuth 存取權杖的範圍方式判斷**，以此應用程式作為用戶端：`oauthAllowedScope` 宣告它可以獲簽發什麼（在產品模式下；本服務的受保護範圍則在每種模式下），並由簽發原則的逐範圍問題決定。被原則丟棄的值會從權杖中「略去」並記錄稽核（STS-OAUTH-0579），絕不簽發。指名未宣告範圍的寫入在此會被接受，因為宣告可能變更，且開發模式會授予未宣告的範圍：也請在 oauthAllowedScope 上宣告它。會被原則丟棄的值，會在設定它的地方發出「警告」（#488）：在此欄位旁、在儲存回覆中，以及在 /admin-api 寫入回覆與應用程式檢視中的 `warnings`。"
+  },
+  "applications.schema.attributes.wstrustEncryptRequest.what": {
+    "en": "1e6b032014941e7e",
+    "text": "TRUE 或 FALSE：要求此應用程式的請求對應所點名的元素以加密形式到達，覆寫 wstrust.encryptRequest。開啟時，若對應為空、某個運算式符合以明文到達的元素，或某個運算式未符合任何從密文還原的內容，則 AppliesTo 為此應用程式的請求即為 FailedCheck。哪些密文會被開啟由 wstrustAcceptEncryptedElements 決定；AppliesTo 從開啟後的請求中讀取，無法開啟的密文在任何情況下都是 FailedCheck。"
+  },
+  "applications.schema.attributes.wstrustAcceptEncryptedElements.what": {
+    "en": "474d9ee5b02559e9",
+    "text": "TRUE 或 FALSE：接受 AppliesTo 為此應用程式的請求中任何位置（標頭或本文）的 XML 加密，而無需請求對應點名，覆寫 wstrust.acceptEncryptedElements。關閉時，僅在 wstrustEncryptRequestElements 點名之處接受密文——每個被還原的元素必須是某個運算式選取的元素或位於其中——沒有對應的密文為 InvalidRequest。無論哪種情況，密文都必須能以本領域的金鑰開啟。"
+  },
+  "applications.schema.attributes.wstrustEncryptRequestElements.what": {
+    "en": "d28549992db71c30",
+    "text": "WS-TRUST 請求中必須以加密形式到達的元素，每個一條 XPath 1.0 運算式。子集為 `/`、`//`、`*`、元素名稱、`prefix:local`、以 `|` 的聯集，以及述詞 `local-name()`、`namespace-uri()` 與 `@attr`，以 `and` 連接。每個運算式必須至少選取一個從密文還原的元素：類型為 Element 或 Content 的 xenc:EncryptedData，或 WS-Security 1.1 的 EncryptedHeader。超出該子集的運算式為 RequestFailed。可以點名 SOAP 標頭、SOAP 本文或任何元素，適用於任何權杖類型。"
+  },
+  "applications.schema.attributes.wstrustEncryptResponse.what": {
+    "en": "aafbbba9cd31d6c9",
+    "text": "TRUE 或 FALSE：將此應用程式的回應對應所點名的元素替換為 xenc:EncryptedData，覆蓋 wstrust.encryptResponse。回應先以明文建構，然後再替換這些元素，適用於任何權杖類型。故障保持明文。開啟時，若加密無法完成——沒有接收方、對應什麼都不比對，或接收方憑證不接受該密碼——該請求在兩種模式下都是故障。"
+  },
+  "applications.schema.attributes.wstrustEncryptResponseElements.what": {
+    "en": "0ee151df13c4663c",
+    "text": "被加密的 WS-Trust 回應元素，每個一條 XPath 1.0 運算式，子集與 wstrustEncryptRequestElements 相同。可以點名 SOAP 標頭、SOAP 本文或任何元素。在已建構的回應中什麼都不比對的運算式是故障。"
+  },
+  "applications.schema.attributes.wstrustEncryptionAlgorithm.what": {
+    "en": "2156045953402736",
+    "text": "此應用程式的 WS-Trust 回應所用的區塊密碼——aes256-gcm、aes128-gcm、aes256-cbc 或 aes128-cbc——覆蓋 wstrust.encryptionAlgorithm。wst:EncryptionAlgorithm 元素可以以其短名或其 XML Encryption URI 點名此密碼，僅在此應用程式的回應加密開啟時。"
+  },
+  "applications.schema.attributes.wstrustEncryptionCertificate.what": {
+    "en": "1ccaa06830162696",
+    "text": "WS-Trust 回應加密所用的憑證，base64 DER 或 PEM。設定之後它就是接收方，無法讀取的憑證是故障，而不會退到下一個來源。未設定時，接收方是 wstrustResponseRecipientXPath 選中的憑證元素；該運算式也未設定時，則是請求的 WS-Security 簽章所點名的第一個簽章者憑證元素。"
+  },
+  "applications.schema.attributes.wstrustKeyTransportAlgorithm.what": {
+    "en": "89c8e142baf59834",
+    "text": "此應用程式的 WS-Trust 回應如何封裝內容金鑰——rsa-oaep-mgf1p、rsa-oaep（SHA-256、MGF1-SHA-256）或 rsa-1_5——覆蓋 wstrust.keyTransportAlgorithm。憑證為 EC 的接收方無論此項如何設定，都透過 ECDH-ES 加密。wst:EncryptWith 元素可以以其短名或其 XML Encryption URI 點名此演算法，僅在此應用程式的回應加密開啟時。"
+  },
+  "applications.schema.attributes.wstrustResponseRecipientXPath.what": {
+    "en": "0462e40dda10b491",
+    "text": "選取 WS-Trust 回應加密所用憑證元素的 XPath 運算式：一個 ds:X509Certificate，或 ValueType 以 #X509v3 結尾的 BinarySecurityToken。子集與元素對應相同。設定之後若什麼都不選中，或選中的元素不是這兩種之一，就沒有接收方，並且不會嘗試下一個來源。選中的憑證元素其文字不是憑證時，是一次已完成加密的故障，並且不會嘗試下一個來源。未設定時，接收方是請求的 WS-Security 簽章所點名的第一個簽章者憑證元素——該簽章的參照所指向的 BinarySecurityToken，或該簽章 KeyInfo 中的 ds:X509Certificate。指紋、Subject Key Identifier 或簽發者與序號不是憑證元素。"
+  },
+  "applications.schema.attributes.wstrustDecryptionCertificate.what": {
+    "en": "b00a63a9bafc49ad",
+    "text": "發給此應用程式的 WS-TRUST 請求所加密到的憑證，PEM。設定後，發給此應用程式的請求以其私密金鑰而非領域的私密金鑰解密，而加密到領域金鑰的發給它的請求是 FailedCheck。公開：應用程式頁面和 GET /admin-api/applications 會提供它。"
+  },
+  "applications.schema.attributes.wstrustDecryptionCertificateChain.what": {
+    "en": "618cc20d5635f6b9",
+    "text": "簽發 wstrustDecryptionCertificate 的憑證授權單位的憑證，PEM，簽發 CA 在前，用於在此簽發的金鑰對。上傳的金鑰對為空。"
+  },
+  "applications.schema.attributes.wstrustDecryptionPrivateKey.what": {
+    "en": "96bb5bc025291cfa",
+    "text": "wstrustDecryptionCertificate 的私密金鑰，PEM。在金鑰持久保存的地方密封，不提供給任何頁面、任何 /admin-api 回應和任何目錄讀取，且從不記錄。"
+  },
+  "applications.schema.attributes.wstrustDecryptionKeySource.what": {
+    "en": "d4894d5258b54b7d",
+    "text": "解密金鑰對的來源：issued（在此產生並由領域的 CA 認證）或 uploaded（上傳）。"
   },
   "applications.schema.attributes.krb5ServicePrincipalName.what": {
     "en": "2e8e5f607172bae7",
@@ -1931,6 +1999,10 @@
     "en": "eb941b100ed53ed4",
     "text": "所屬應用程式被刪除的時間。該原則會被保留並停用以供稽核，直到管理員將其移除。"
   },
+  "xacmlPolicies.schema.attributes.xacmlPepRoute.what": {
+    "en": "4e1dc3fa8c6c3e3c",
+    "text": "此原則為之產生的遠端 PEP 和路由，形式為 PEP 的名稱、一個斜線和路由的 id；原則由反向代理路由表單上路由的授權選擇（簡單或公開）或 generate-pep-route-policy 動作（#1760）產生。這樣的原則在儲存路由時重寫，隨路由重新命名，並隨路由移除；它永遠不是根原則。它可以在原則編輯器中編輯，而路由的簡單或公開選擇的下次儲存會重新寫入它——在路由上選擇現有原則即可保留手寫原則。"
+  },
   "xacmlPeps.schema.objectClasses.xacmlPep.what": {
     "en": "2b063c0577e29981",
     "text": "已向此 Policy Decision Point 註冊的一個遠端 Policy Enforcement Point。「此列是紀錄而不是權限」——從未註冊的 PEP 仍可提取存放庫並執行強制。一列所換得的，是主控台上的一個位置，以及變更通知的位址。"
@@ -1972,8 +2044,8 @@
     "text": "此 PEP 首次註冊的時間。重新註冊時保留，因為每小時重新啟動一次的元件是值得看見的事實，而每次重新啟動就重設年齡的項目永遠無法呈現這一點。"
   },
   "xacmlPeps.schema.attributes.xacmlPepLastSeen.what": {
-    "en": "eca573eaea822db7",
-    "text": "最近一次的活動訊號或提取。xacml.pepStaleAfterS 是自此之後經過多久主控台會顯示「stale」——這刻意不改變本服務所做的任何事。"
+    "en": "2e8561030cee3201",
+    "text": "本條目最後一次寫入時的最近一次活動訊號或提取。不改變任何持久內容的活動訊號不會寫入此處（#1882）：它、各計數器、訊號健康狀況和最近一次推送通知都保存在條目旁邊，主控台顯示兩者中較新的一個。xacml.pepStaleAfterS 是自最近一次之後經過多久主控台會顯示「stale」——這刻意不改變本服務所做的任何事。"
   },
   "xacmlPeps.schema.attributes.xacmlPepSyncToken.what": {
     "en": "44708a3c15a93cf6",
@@ -2003,24 +2075,64 @@
     "en": "b6078cbbbfdb9576",
     "text": "遠端 PEP 對自己的說明。自由文字。"
   },
+  "xacmlPeps.schema.attributes.xacmlPepHostname.what": {
+    "en": "127c84c46465d544",
+    "text": "遠端 PEP 在註冊和心跳時回報的主機名稱（#1760）：環境變數 HOSTNAME，否則為核心的，否則為 /etc/hostname —— 容器在其網路上的名稱，也是其 HTTPS 監聽器憑證包含它時 PEP 推導通知 URL 所依據的名稱。限定為最多 253 個字元的 DNS 名稱，轉為小寫，絕不是 IP 位址；攜帶其他內容的註冊或心跳會被拒絕（STS-XACML-0261）。領域的預設監聽器憑證在 PEP 的註冊名稱和通知主機旁包含它。不含它的註冊會刪除它，不含它的心跳會保留它。較舊的 PEP 沒有此項，其憑證名稱與以前相同。"
+  },
   "xacmlPeps.schema.attributes.xacmlPepLastNotify.what": {
-    "en": "a4283bfe7916574e",
-    "text": "最近一次通知的結果——狀態，或拒絕的語句。「這是唯一記錄通知失敗的地方」，理由如 ssf_streams.js 對被拒絕之推送的說明：從接收端來看，它依定義就是看不見的。"
+    "en": "a512a007219ee216",
+    "text": "本條目最後一次寫入時，最近一次通知的結果——狀態，或拒絕的語句。通知的結果不會寫入此處（#1882）：最新的結果保存在條目旁邊該 PEP 的活動記錄（xacml_pep_registry.liveness）中，主控台顯示兩者中較新的一個。只有本服務記錄通知失敗，理由如 ssf_streams.js 對被拒絕之推送的說明：從接收端來看，它依定義就是看不見的。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepProxy.what": {
+    "en": "1d8edee3c551082e",
+    "text": "遠端 PEP 從 GET /xacml/pep/proxy 拉取的反向代理設定（#1760）：一份 JSON 文件——enabled、上游應用程式的基底 URL、瀏覽器存取代理的公用基底 URL、逾時以及有序的路由表，每條路由包含其路徑、方法、驗證機制、它所保護的領域登錄中的應用程式，以及 XACML 資源和動作。由主控台和管理 API 的 set-pep-proxy 動作寫入，在那裡整體驗證，並在建立拉取時再次驗證，因此 ldapmodify 寫入的未通過驗證的值會以 configured: false 被拉取。在註冊和活動訊號中保留；隨該列一起刪除。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepSignals.what": {
+    "en": "973f5fff5b5df8e8",
+    "text": "遠程 PEP 最近一次在心跳中報告的反向代理 CAEP/RISC 信號流健康狀況（#1760）：一個只包含計數和時長的 JSON 文檔——接收器數量、健康和過期的數量、過期閾值和輪詢間隔、最舊的上次成功時長、最多連續失敗次數、接受和拒絕的 SET、結束的會話，以及庫會話存儲的 held、max、TTL、evicted 和 expired——以及到達時間；來自報告這些內容的 PEP 時，還包括每個流一行：它所服務的 OIDC 客戶端及其流標識（各自限制在一個字符集內）、是否運行和健康、何時啟動、上次輪詢和上次成功的時間（在此處根據 PEP 發送的時長和到達時間計算，從不採用 PEP 的時鐘），以及其計數器。其他成員一律丟棄，任何不是非負整數的值都記為 0，因此從不保存 URL 或錯誤文本。不含它的心跳保留它，值為 null 的心跳清除它，注冊則刪除它，因為注冊意味著一個新進程。從未報告過的 PEP 上沒有此項，控制台顯示為未報告。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepSettings.what": {
+    "en": "2216d5f263d38ea5",
+    "text": "管理員在此遠端 PEP 的主控台頁面上或透過管理 API 的 set-pep-settings 動作為其指定的設定（#1760）：一個只包含已指定設定的 JSON 文件，每項以其成員名稱表示（description、resource、notifyUrl、bias、pip，輪詢、活動訊號和退避間隔，逾時和本文上限，HTTPS 重新載入間隔，記錄層級，AuthZEN 開關、識別碼和轉送逾時，以及反向代理的工作階段、JWKS、上游、信賴方和訊號串流上限），在寫入時整體驗證，並在 PEP 從 GET /xacml/pep/settings 拉取時再次驗證。不在其中的設定取 PEP 的環境變數或其預設值。PEP 首次連線所需的最低設定從不在這裡。在註冊和活動訊號之後保留；隨該列一起刪除。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepSettingsInUse.what": {
+    "en": "b081386a6d832967",
+    "text": "遠端 PEP 最近一次在活動訊號中回報的、對每項受管設定實際生效的內容（#1760）：一個形如 { token, values: { setting: { value, source } } } 的 JSON 文件，source 為 service、environment 或 default，並附有到達時間。表中未列出的設定、類型與其設定不符的值以及其他任何來源都會被捨棄。不帶它的活動訊號會保留它，帶 null 的活動訊號會清除它，註冊會捨棄它。比這些設定更舊的 PEP 上沒有它，主控台將其顯示為未回報。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepListeners.what": {
+    "en": "b2e07443143061b7",
+    "text": "管理員在本遠程 PEP 的控制台頁面上或通過管理 API 的 set-pep-listener 操作為其定義的監聽器（#1760），在其環境綁定的四個之外：一個 JSON 數組，每個監聽器包含標識、協議（http 或 https）、用途（api 或 proxy）、地址和端口，對於 HTTPS 監聽器還包括其證書攜帶的 DNS 名稱和 IP 地址、密鑰算法和續簽計數器。寫入時整體驗證，PEP 從 GET /xacml/pep/settings 拉取時再次驗證，並在運行中綁定和解除綁定。PEP 為每個 HTTPS 監聽器生成密鑰，並向 POST /xacml/pep/listener-certificate 申請證書，因此這裡從不存放私鑰。在注冊和心跳中保留；隨行一起刪除。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepListenersInUse.what": {
+    "en": "b2a987046bb7d733",
+    "text": "遠程 PEP 最近一次在心跳中報告的、關於其每個監聽器的情況（#1760），包括其環境的四個和已定義的監聽器：一個 JSON 文檔 { listeners: [ { id, source, protocol, purpose, address, port, state, reason, renew, certificate } ] }，以及到達時間。狀態是 listening、waiting、failed 和 off 之一，原因來自一個封閉集合，從不是操作系統的文本；證書是其所提供證書的主體、簽發者、序列號、subjectAltName、有效期和指紋。其他成員一律丟棄。不含它的心跳保留它，值為 null 的心跳清除它，注冊則刪除它。早於監聽器功能的 PEP 上沒有此項，控制台顯示為未報告。"
   },
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "PEP 註冊時對自己所做的任何說明。"
   },
-  "applications.schema.attributes.saml2SsoConsent.what": {
-    "en": "f7ca67bc2031ec08",
-    "text": "TRUE 或 FALSE：在 SAML 2.0 以使用者既有的工作階段將其登入此應用程式之前，是否先詢問使用者一次，覆寫 saml2.ssoConsent（ASVS 5.0.0 7.6.2）。FALSE 適合領域內所有人都要使用的應用程式；項目上的全域同意代表所有人回答，並保留誰同意過的紀錄。"
+  "xacmlPepClusters.schema.objectClasses.xacmlPepCluster.what": {
+    "en": "e64d0948328eb8a1",
+    "text": "共用同一組態的遠端原則執行點（PEP）的邏輯叢集（#1760）：反向代理、受管設定和接聽程式定義在此只保存一次，每個成員都將其作為自己的組態拉取。成員之間只有名稱和位址不同。成員資格保存在此，因此 PEP 可以在註冊之前就列入，且一個 PEP 最多屬於一個叢集。"
   },
-  "applications.schema.attributes.saml11SsoConsent.what": {
-    "en": "0cb7bbf2fb684481",
-    "text": "TRUE 或 FALSE：在 SAML 1.1 以使用者既有的工作階段將其登入此應用程式之前，是否先詢問使用者一次，覆寫 saml11.ssoConsent（ASVS 5.0.0 7.6.2）。FALSE 適合領域內所有人都要使用的應用程式；項目上的全域同意代表所有人回答，並保留誰同意過的紀錄。"
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterProxy.what": {
+    "en": "e23df410bfb4fa42",
+    "text": "叢集的每個成員從 GET /xacml/pep/proxy 拉取的反向代理組態（#1760）：與 PEP 自己的文件（xacmlPepProxy）相同，由同一語法驗證，其路由產生的原則命名為 pepc-<cluster>-<route> 並標記為 @<cluster>/<route>。其 publicBaseUrl 是叢集的邏輯基礎 URL，簡單或公開路由的預設資源由它建立，沒有自己 publicBaseUrl 的成員也會收到它。由 set-pep-cluster-proxy 和 set-pep-cluster-route 動作寫入。"
   },
-  "applications.schema.attributes.wsfedSsoConsent.what": {
-    "en": "9a3541460bedfa45",
-    "text": "TRUE 或 FALSE：在 WS-Federation 以使用者既有的工作階段將其登入此應用程式之前，是否先詢問使用者一次，覆寫 wsfed.ssoConsent（ASVS 5.0.0 7.6.2）。FALSE 適合領域內所有人都要使用的應用程式；項目上的全域同意代表所有人回答，並保留誰同意過的紀錄。"
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterSettings.what": {
+    "en": "dc3c4657f5e8a82b",
+    "text": "叢集的每個成員從 GET /xacml/pep/settings 拉取的受管設定（#1760）：與 PEP 自己的文件（xacmlPepSettings）相同，由同一表格驗證，但通知 URL 除外，它是成員的位址，在成員上設定。由 set-pep-cluster-settings 動作寫入。"
+  },
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterListeners.what": {
+    "en": "27e48be388ccf3ed",
+    "text": "為叢集每個成員定義的接聽程式（#1760）：與 PEP 自己的陣列（xacmlPepListeners）相同，由同一語法驗證。成員可以覆寫接聽程式的位址和連接埠，並為其憑證新增 DNS 名稱；每個成員的憑證都是自己的，為其自己的金鑰簽發。由 set-pep-cluster-listener 和 remove-pep-cluster-listener 動作寫入。"
+  },
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterMembers.what": {
+    "en": "189d31ecba7f4c6b",
+    "text": "叢集的成員（#1760）：一個 JSON 陣列，元素為 { pep, publicBaseUrl, notifyUrl, listeners: { <listener id>: { address, port, names } } }，每個 pep 是已註冊 PEP 的名稱或尚未註冊的名稱，其餘是成員自己的位址。一個 PEP 最多是一個叢集的成員。由 create-pep-cluster、add-pep-cluster-member、set-pep-cluster-member 和 remove-pep-cluster-member 動作寫入。"
+  },
+  "xacmlPepClusters.schema.attributes.description.what": {
+    "en": "769286563bacdcb4",
+    "text": "管理員建立叢集時對它的描述。"
   }
 }

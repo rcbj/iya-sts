@@ -147,6 +147,8 @@ async function childBody() {
   const wstrustModule = require(ROOT + '/ws-trust/wstrust');
   const wstrust = new wstrustModule.WsTrust(
     wstrustModule.WsTrust.defaultDeps());
+  const OAuthModel = require(ROOT + '/oauth-oidc/oauth_model');
+  const modelHold = require(ROOT + '/tests/tools/oauth_model_hold');
   const msgs = wire.msgs;
   await keystore.start();
 
@@ -491,6 +493,13 @@ async function childBody() {
   t.check(faultCode(r) === 'STS-WSTRUST-0065',
           'O7. wst:Delegatable to a target not trusted for delegation (0065)',
           faultCode(r));
+  // An xs:boolean (rcbj on #1579): `1` asks for delegation as `true` does;
+  // until 2026-11-11 it read as false and the ticket was issued without it.
+  r = await ask(rst({ security: ut, tokenType: GSS,
+                      inner: '<wst:Delegatable>1</wst:Delegatable>' }));
+  t.check(faultCode(r) === 'STS-WSTRUST-0065',
+          'O7. wst:Delegatable written 1 is a request for delegation too ' +
+          '(0065)', faultCode(r));
   set(backId, 'krb5TrustedForDelegation', 'set', 'TRUE');
   r = await ask(rst({ security: ut, tokenType: GSS,
                       inner: '<wst:Delegatable>true</wst:Delegatable>' }));
@@ -616,6 +625,18 @@ async function childBody() {
           JSON.stringify(x.json).slice(0, 300));
   config.setOverride('oauth2.tokenExchangeKerberosOutput', true);
   proxy = await delegatedToSts(tgts.front);
+  // INTO THE NEXT SECOND before the exchange. X1's Token Request filed a
+  // development sighting under the bare client_id `kt-frontend`, so two
+  // entries register it, and `list()` orders them by their last activity at
+  // one-second resolution: the KDC's sighting of the front end just now, and
+  // the token endpoint's of `kt-frontend` in the exchange below. Across a
+  // second boundary the sighting is the newer, and `forClientId()` answered
+  // it — the PAC named `kt-frontend` rather than the front end's principal
+  // (run 19, single-node). Crossing the boundary every time makes that the
+  // case X2 always holds rather than one in however many runs.
+  await new Promise(function (resolve) {
+    setTimeout(resolve, 1020 - (Date.now() % 1000));
+  });
   x = await exchange({ subject_token: b64u((await apFor(proxy)).token),
                        subject_token_type: GSS, requested_token_type: GSS });
   opened = x.json.access_token
@@ -630,6 +651,19 @@ async function childBody() {
           'PAC names the front end', x.status + ' ' +
           JSON.stringify(x.json).slice(0, 300) + ' ' +
           JSON.stringify(opened.delegation));
+  // The Kerberos token's answer is the model's (#658's `session_key` and
+  // `session_key_etype`, this service's own; #1579's gap scan found both
+  // undeclared in token-response, logged under STS-OAUTH-1005), and the
+  // model without `session_key` names it.
+  const krbHeld = modelHold.hold(OAuthModel, 'token-response', x.json,
+                                 'session_key');
+  t.check(!!x.json.session_key &&
+          Number.isInteger(x.json.session_key_etype) &&
+          krbHeld.gaps.length === 0 && krbHeld.caught,
+          'X2a. the Kerberos token\'s token response is the model\'s ' +
+          '(token-response declares session_key and session_key_etype; ' +
+          'without session_key, a gap)',
+          krbHeld.gaps.concat(krbHeld.mutated).join('; '));
   config.clearOverride('oauth2.tokenExchangeKerberosOutput');
   x = await exchange({ subject_token: b64u((await apFor(proxy)).token),
                        subject_token_type: GSS, requested_token_type: GSS });

@@ -325,11 +325,11 @@ function checks(t, made, other, app, tag) {
                  { username: 'loc-own-' + tag }) === 'es-PA',
             'E. the person\'s preferredLanguage comes before the cookie');
     t.check(lang(req({ cookie: 'sts_lang=es-MX' }),
-                 { username: 'loc-own-' + tag, uiLocales: 'de fil' }) ===
+                 { username: 'loc-own-' + tag, uiLocales: 'ja fil' }) ===
               'fil',
             'E. ui_locales comes first, passing over a tag no catalog ' +
             'answers');
-    t.check(lang(req({ 'accept-language': 'de-CH' }), {}) === 'fr-CA',
+    t.check(lang(req({ 'accept-language': 'ja' }), {}) === 'fr-CA',
             'E. a language no catalog answers falls through to the policy');
     // A POPULATED language is the policy's, and ranks below the browser
     // (rcbj on #539); a chosen one ranks above it.

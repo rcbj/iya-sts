@@ -54,6 +54,9 @@ const personKeySourceSentences = function (t: Json): Json {
     'uploaded-realm-ca': t.html('consoleUsers.keySource.uploadedRealmCa'),
     'uploaded-external-ca':
       t.html('consoleUsers.keySource.uploadedExternalCa'),
+    // A key the person generated, certified from their own request (#1827's
+    // follow-up, phase 3): a remote PEP's assertion key.
+    'issued-from-csr': t.html('consoleUsers.keySource.issuedFromCsr'),
     'unrecorded': t.html('consoleUsers.keySource.unrecorded')
   };
 };
@@ -346,6 +349,10 @@ class UsersPage {
       'SPIFFE</a>.') +
       kit.warn(t.html('consoleUsers.body.oneRow')) +
 
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the list has
+      // no heading, so everything below the tiles and their notes — the
+      // filter, the door to New user, the table and its totals — is one.
+      kit.frame(
       '<form method="get" action="/admin/users"><div class="formrow">' +
         '<label for="q"' + tips.q + '>' +
         t.html('consoleUsers.body.nameContains') + '</label>' +
@@ -494,7 +501,7 @@ class UsersPage {
           limit: String(json.scanLimit),
           people: String(json.directoryPeople) }))) +
       kit.note(t.html('consoleUsers.body.inMemory',
-                      { keeps: json.registryKeeps }));
+                      { keeps: json.registryKeeps })));
 
     return inner;
   }
@@ -672,9 +679,12 @@ class UsersPage {
     // about what it does.
     let inner;
     if (!json.directory) {
-      inner = kit.warn(t.html('consoleUsers.newUserBody.noDirBefore') +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the page is
+      // this one warning, so the warning is its frame.
+      inner = kit.frame(
+        kit.warn(t.html('consoleUsers.newUserBody.noDirBefore') +
         '<a href="/admin/users">' + t.html('consoleUsers.newUserBody.users') +
-        '</a>' + t.html('consoleUsers.newUserBody.noDirAfter'));
+        '</a>' + t.html('consoleUsers.newUserBody.noDirAfter')));
     } else {
 
       inner = '<div class="tiles">' +
@@ -706,7 +716,10 @@ class UsersPage {
         t.html('consoleUsers.newUserBody.emptyAfter')) +
 
         '<form method="post" action="/admin/users/new" class="newapp"><input ' +
-        'type="hidden" name="action" value="create"><h2>' +
+        'type="hidden" name="action" value="create">' +
+        // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each `<h2>`
+        // of the form is a frame inside it, the buttons in the last.
+        kit.frame('<h2>' +
         t.html('consoleUsers.newUserBody.whoHeading') + '</h2><div ' +
         'class="formrow"><label for="new-username">' +
         t.html('consoleUsers.newUserBody.username') + '</label><input ' +
@@ -718,9 +731,10 @@ class UsersPage {
         // NOT THE ONLY REQUIRED FIELD (#1066): the attribute policy requires
         // cn and sn as well, and the realm may add more, each outlined in
         // the grid below.
-        kit.note(t.html('consoleUsers.newUserBody.usernameRequired')) +
+        kit.note(t.html('consoleUsers.newUserBody.usernameRequired'))) +
 
-        '<h2>' + t.html('consoleUsers.newUserBody.howHeading') + '</h2>' +
+        kit.frame('<h2>' + t.html('consoleUsers.newUserBody.howHeading') +
+        '</h2>' +
         '<table><tr><th>' + t.html('consoleUsers.newUserBody.thChoose') +
         '</th><th>' + t.html('consoleUsers.newUserBody.thOption') +
         '</th><th>' + t.html('consoleUsers.newUserBody.thMeans') +
@@ -751,12 +765,13 @@ class UsersPage {
             t.html('consoleUsers.newUserBody.notChecked')) +
         t.html('consoleUsers.newUserBody.passwordRefused')) +
         kit.mailLinkBox(t.text('consoleUsers.newUserBody.activationLink'),
-                        json.mailAvailable, t) +
+                        json.mailAvailable, t)) +
 
         // A SERVICE ACCOUNT FROM THE START (#221): the box, its owner and its
         // push destination, checked before the person is created — so a
         // refused owner creates nobody.
-        '<h2>' + t.html('consoleUsers.newUserBody.saHeading') + '</h2>' +
+        kit.frame('<h2>' + t.html('consoleUsers.newUserBody.saHeading') +
+        '</h2>' +
         '<div class="formrow"><label><input type="checkbox" ' +
         'name="serviceAccount" value="true"' +
         (given.serviceAccount === 'true' || given.serviceAccount === true
@@ -785,6 +800,11 @@ class UsersPage {
         'href="/admin/policies#serviceAccount">' +
         t.html('consoleUsers.newUserBody.saPolicy') + '</a>' +
         t.html('consoleUsers.newUserBody.saAfter')) +
+        // AND IT IS FOR GOOD (rcbj, 2026-11-15): the Service account tab's
+        // own sentence, in the amber box, beside the box that makes one.
+        '<div class="warn">' +
+        t.html('consoleUsers.serviceAccountSection.permanentNote') +
+        '</div>') +
 
         // THE FIELD GRID (rcbj, 2026-10-01): the same typed fields, under the
         // same group headings, as a person's Attributes tab, drawn from
@@ -794,7 +814,7 @@ class UsersPage {
         // names and contact details somebody creating a person usually has; the
         // advanced view is every field. The switch, "+" and the bin are submit
         // buttons that redraw this form with everything typed kept.
-        '<h2>' + (view === 'advanced'
+        kit.frame('<h2>' + (view === 'advanced'
           ? t.html('consoleUsers.newUserBody.everythingHeading')
           : t.html('consoleUsers.newUserBody.whatHeading')) + '</h2>' +
         kit.note(t.html('consoleUsers.newUserBody.gridBefore') +
@@ -866,7 +886,7 @@ class UsersPage {
           : kit.warn(t.html('consoleUsers.newUserBody.productBefore') +
             '<a href="/admin/config">' +
             t.html('consoleUsers.newUserBody.configuration') + '</a>' +
-            t.html('consoleUsers.newUserBody.productAfter'))) +
+            t.html('consoleUsers.newUserBody.productAfter')))) +
 
         // THE INVENTION SWITCH, AND IT IS A HIDDEN FIELD RATHER THAN A CHOICE.
         // This page's whole promise is that nothing is made up unless the
@@ -1032,14 +1052,15 @@ class UsersPage {
     // one source for what those panels say.
     const directory = UsersPage.ldapObjectSection(t, row, json.ldap,
                                                   json.subject);
-    const mfa = UsersPage.mfaSection(t, row, key, gate, back, page.mfa);
+    const mfaParts = UsersPage.mfaSection(t, row, key, gate, back, page.mfa);
+    const mfa = mfaParts.factors;
     const sessionsNav = kit.pageNavPair('/admin/users', params,
                                          json.sessionsPaging, t);
     // A session's tokens arrive with it, paged, and the block draws that page.
     const sessionBlocks = json.sessions.map(function (session) {
-      return UsersPage.sessionBlock(t, session, { shown: session.tokens,
-                                          paging: session.tokensPaging },
-                               back, params);
+      return kit.frame(UsersPage.sessionBlock(t, session,
+        { shown: session.tokens, paging: session.tokensPaging },
+        back, params));
     }).join('');
 
     // ONE NAME PER LIST, and it is the name the reply's array carries: the
@@ -1101,7 +1122,10 @@ class UsersPage {
         '">' + t.html('consoleUsers.detail.seePicture') + '</a> ' +
       t.html('consoleUsers.detail.pictureNote')) +
 
-      '<h2>' + t.html('consoleUsers.detail.namesHeading') + '</h2>' +
+      // EVERY SECTION OF EVERY TAB IS A FRAME (`secframe`, rcbj
+      // 2026-11-16), as Key pairs' are: its heading inside, and each block
+      // under it a frame inside that.
+      kit.frame('<h2>' + t.html('consoleUsers.detail.namesHeading') + '</h2>' +
       kit.note(t.html('consoleUsers.detail.namesNote')) +
       '<table><tr><th>' + t.html('consoleUsers.detail.thPresented') +
       '</th><th class="num">' + t.html('consoleUsers.detail.thTimes') +
@@ -1113,9 +1137,10 @@ class UsersPage {
       (row.realms.length
         ? kit.note(t.html('consoleUsers.detail.kerberosRealms') +
           kit.codeList(row.realms.map(function (r) { return r.realm; })) + '.')
-        : '') +
+        : '')) +
 
-      '<h2>' + t.html('consoleUsers.detail.howHeading') + '</h2><table><tr>' +
+      kit.frame('<h2>' + t.html('consoleUsers.detail.howHeading') +
+      '</h2><table><tr>' +
       '<th>' + t.html('consoleUsers.detail.thProtocol') + '</th><th ' +
       'class="num">' + t.html('consoleUsers.detail.thTimes') + '</th><th>' +
       t.html('consoleUsers.detail.thMethods') + '</th><th>' +
@@ -1130,10 +1155,12 @@ class UsersPage {
       }).join('') || '<tr><td colspan="4">' +
         t.html('consoleUsers.detail.neverHere') + '</td></tr>') +
         '</table>' +
-      UsersPage.authenticationTable(t, row, page.maxEventsPerUser) },
+      UsersPage.authenticationTable(t, row, page.maxEventsPerUser, params,
+                                    json)) },
         { id: 'utab-authentications',
           label: t.text('consoleUsers.detail.tabAuthentications'),
-          html: UsersPage.authenticationsSection(t, params, json) },
+          html: kit.frame(UsersPage.authenticationsSection(t, params,
+                                                           json)) },
         { id: 'utab-activity', label: t.text('consoleUsers.detail.tabActivity'),
           html:
       kit.perPageForm('/admin/users', 'user', key,
@@ -1144,33 +1171,37 @@ class UsersPage {
                        kit.filterOnly(kit.listViewOf('/admin/users',
                                                        ctx.query)), t) +
 
-      '<h2>' + t.html('consoleUsers.detail.sessionsHeading') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleUsers.detail.sessionsHeading') +
+      '</h2>' +
       kit.note(t.html('consoleUsers.detail.sessionsNote')) +
       sessionsNav.head +
       (sessionBlocks || kit.note(t.html('consoleUsers.detail.noSession'))) +
       sessionsNav.foot +
+      UsersPage.withoutActivityLine(t, json.authenticationsWithoutActivity) +
 
       (counts.ended
-        ? '<h3>' + t.html('consoleUsers.detail.endedHeading') + '</h3>' +
+        ? kit.frame('<h3>' + t.html('consoleUsers.detail.endedHeading') +
+          '</h3>' +
           kit.note(t.html('consoleUsers.detail.endedNote')) +
           endedNav.head +
           UsersPage.userTokenTable(t, json.tokensOnEndedSessions, back, '') +
-          endedNav.foot
+          endedNav.foot)
         : '') +
 
       (counts.sessionless
-        ? '<h3>' + t.html('consoleUsers.detail.sessionlessHeading') +
+        ? kit.frame('<h3>' + t.html('consoleUsers.detail.sessionlessHeading') +
           '</h3>' +
           kit.note(t.html('consoleUsers.detail.sessionlessNote')) +
           sessionlessNav.head +
           UsersPage.userTokenTable(t, json.tokensWithNoSession, back, '') +
-          sessionlessNav.foot
-        : '') +
+          sessionlessNav.foot)
+        : '')) +
 
-      '<h2>' + t.html('consoleUsers.detail.artifactsHeading') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleUsers.detail.artifactsHeading') +
+      '</h2>' +
       kit.note(t.html('consoleUsers.detail.artifactsNote')) +
       artifactNav.head + UsersPage.userArtifactTable(t, json.artifacts) +
-      artifactNav.foot },
+      artifactNav.foot) },
         { id: 'utab-attributes',
           label: t.text('consoleUsers.detail.tabAttributes'), html:
           UsersPage.personFieldsSection(t, key, json.attributeEditor, gate,
@@ -1200,7 +1231,12 @@ class UsersPage {
             // What they can SIGN a grant with (2026-09-13).
             { id: 'ucred-keys', label: t.text('consoleUsers.detail.tabKeys'),
               html: UsersPage.userCredentialsSection(t, key, page.keyPairs,
-                                                gate, back) },
+                                                gate, back) +
+                    mfaParts.keyCertificates },
+            // Self-issued subjects and the DIDs this realm publishes.
+            { id: 'ucred-self-issued',
+              label: t.text('consoleUsers.detail.tabSelfIssued'),
+              html: mfaParts.selfIssued },
             // Their Kerberos account, and a keytab for it (#59).
             { id: 'ucred-kerberos', label: 'Kerberos',
               html: UsersPage.userKerberosSection(t, key, json.kerberos,
@@ -1210,28 +1246,34 @@ class UsersPage {
         // in, so it has a tab of its own beside Credentials.
         { id: 'utab-federation',
           label: t.text('consoleUsers.detail.tabFederation'),
-          html: UsersPage.userFederationLinksSection(t, key,
+          html: kit.frame(UsersPage.userFederationLinksSection(t, key,
             { shown: json.federationLinks, paging: json.federationLinksPaging },
-            gate, back, params, page.serviceProviders) },
+            gate, back, params, page.serviceProviders)) },
         // The GNAP grants they are the resource owner of (#432 phase 7): a
         // grant is access they gave an application, so it has a tab of its
         // own beside the links, with a Revoke per grant.
         { id: 'utab-gnap', label: t.text('consoleUsers.detail.tabGnap'),
-          html: UsersPage.userGnapGrantsSection(t, key,
+          html: kit.frame(UsersPage.userGnapGrantsSection(t, key,
             { rows: json.gnapGrants, paging: json.gnapGrantsPaging,
-              cells: json.gnapGrantsCells }, gate, params) },
+              cells: json.gnapGrantsCells }, gate, params)) },
         // Their UMA 2.0 (#1195): the GNAP tab's arrangement for the other
         // grant this realm makes over a person's resources. Read here; an
         // RPT is revoked and an application's document edited on /admin/uma,
         // and a person's own document is theirs, on /portal/shared.
         { id: 'utab-uma', label: t.text('consoleUsers.detail.tabUma'),
-          html: UsersPage.userUmaSection(t, key, json.uma) },
+          html: kit.frame(UsersPage.userUmaSection(t, key, json.uma)) },
         // Every attribute the entry holds, and the one-attribute forms the
         // Attributes tab replaced as the usual door (#228).
         { id: 'utab-entry', label: t.text('consoleUsers.detail.tabEntry'),
-          html: directory +
-            UsersPage.userAttributesSection(t, key, json.attributeEditor,
-                                       gate, back) },
+          html: kit.frame(directory) +
+            kit.frame(UsersPage.userAttributesSection(t, key,
+                                                      json.attributeEditor,
+                                                      gate, back)) },
+        // The person as an LDIF file, out and back in: the application
+        // page's Import / export tab (#546) on a person's page (2026-11-14).
+        { id: 'utab-import-export',
+          label: t.text('consoleUsers.ldif.tab'),
+          html: UsersPage.userLdifSection(t, key, gate, back) },
         { id: 'utab-signout', label: t.text('consoleUsers.detail.tabSignOut'),
           html:
       // ---------------------------------------------------------------------
@@ -1257,7 +1299,8 @@ class UsersPage {
       //
       // The global one is FIRST because it is the one the old label described.
       // ---------------------------------------------------------------------
-      '<h2>' + t.html('consoleUsers.detail.signOutHeading') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleUsers.detail.signOutHeading') +
+      '</h2>' +
       kit.note(t.html('consoleUsers.detail.signOutBefore') + '<a ' +
       'href="' + kit.esc('/admin/logout' + kit.queryWith({}, { user: key })) +
       '">' + t.html('consoleUsers.detail.signOutPage') + '</a>' +
@@ -1271,9 +1314,10 @@ class UsersPage {
         '<div class="formrow"><button class="danger"' +
         kit.tip(t.text('consoleUsers.detail.signOutTip')) + '>' +
         t.html('consoleUsers.detail.signOutButton', { name: row.name }) +
-        '</button></div></form>' +
+        '</button></div></form>') +
 
-      '<h2>' + t.html('consoleUsers.detail.revokeHeading') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleUsers.detail.revokeHeading') +
+      '</h2>' +
       kit.note(t.html('consoleUsers.detail.revokeNote')) +
       '<form method="post" action="/admin/tokens">' +
         '<input type="hidden" name="action" value="revoke-user">' +
@@ -1283,7 +1327,12 @@ class UsersPage {
         '<div class="formrow"><button class="danger"' +
         kit.tip(t.text('consoleUsers.detail.revokeTip')) + '>' +
         t.html('consoleUsers.detail.revokeButton', { name: row.name }) +
-        '</button></div></form>' }
+        '</button></div></form>') },
+        // The person deleted (rcbj, 2026-11-16): the application page's
+        // Remove tab, last, on a person's page.
+        { id: 'utab-delete', label: t.text('consoleUsers.delete.tab'),
+          html: kit.frame(UsersPage.userDeleteSection(t, key, gate,
+                                                      back)) }
       ]);
 
     return inner;
@@ -1475,7 +1524,10 @@ class UsersPage {
   // How they authenticated, most recent first. The whole point of the table is
   // the Method column: "sign-in screen (password)" and "AS-REQ with
   // PA-ENC-TIMESTAMP" are both authentications and only one of them checked
-  // anything.
+  // anything. Paged since #1844, ten a page: the rows are the answer's
+  // `authenticationHistory`, already sliced and most recent first, and the
+  // pager moves `authenticationHistoryPage`. An answer without it (a server
+  // older than the console) draws `row.events` whole, as before.
   /**
    * Draws how a person authenticated, most recent first, with a note when
    * older events have been forgotten past the per-user cap.
@@ -1484,10 +1536,20 @@ class UsersPage {
    * @param row - the person's record in the identity register
    * @param maxEvents - how many events the register keeps per person
    *   (`stats.MAX_EVENTS_PER_USER`)
+   * @param params - the page's query, carried on the pager
+   * @param json - the `?user=` answer
    * @returns the table as HTML
    */
-  static authenticationTable(t, row, maxEvents) {
-    const rows = row.events.slice().reverse().map(function (event) {
+  static authenticationTable(t, row, maxEvents, params?, json?) {
+    const answer = json || {};
+    const paged = Array.isArray(answer.authenticationHistory);
+    const events = paged ? answer.authenticationHistory
+                         : (row.events || []).slice().reverse();
+    const nav = paged && answer.authenticationHistoryPaging
+      ? kit.pageNavPair('/admin/users', params || {},
+                        answer.authenticationHistoryPaging, t)
+      : { head: '', foot: '' };
+    const rows = events.map(function (event) {
       return '<tr><td>' + kit.esc(kit.whenText(event.at)) + '</td>' +
         '<td>' + kit.esc(event.protocol) + '</td>' +
         '<td>' + kit.esc(event.method) + '</td>' +
@@ -1508,7 +1570,7 @@ class UsersPage {
         '<td>' + (event.sessionId ? kit.shortened(event.sessionId, 10) : '—') +
         '</td><td>' + kit.esc(event.note || '') + '</td></tr>';
     }).join('');
-    return '<table><tr><th>' +
+    return nav.head + '<table><tr><th>' +
       t.html('consoleUsers.authenticationTable.thWhen') + '</th><th>' +
       t.html('consoleUsers.detail.thProtocol') + '</th><th>' +
       t.html('consoleUsers.authenticationTable.thMethod') + '</th><th>' +
@@ -1521,7 +1583,7 @@ class UsersPage {
       (rows || '<tr><td colspan="10">' +
                t.html('consoleUsers.authenticationTable.none') +
                '</td></tr>') +
-      '</table>' +
+      '</table>' + nav.foot +
       (row.eventsForgotten > 0
         ? kit.note(t.html('consoleUsers.authenticationTable.forgotten', {
             max: maxEvents,
@@ -1541,6 +1603,29 @@ class UsersPage {
    * @param json - the `?user=` answer
    * @returns the section as HTML
    */
+  // THE AUTHENTICATIONS THIS TAB HAS NOTHING TO SHOW FOR (rcbj,
+  // 2026-11-16): a client certificate on a request, an LDAP bind, a SCIM or
+  // SPIFFE caller's credential start no session and issue nothing, so a
+  // person who authenticated only that way had an empty tab that read as
+  // broken. One line says how many and by what; the rows are on the
+  // Authentications tab. Nothing is drawn when there are none.
+  static withoutActivityLine(t, summary): string {
+    const total = Number((summary && summary.total) || 0);
+    if (!total) {
+      return '';
+    }
+    const list = [].concat((summary && summary.methods) || [])
+      .map(function (one) {
+        return kit.esc(String(one.protocol || '') + ' ' +
+                       String(one.method || '')) + ' &times;' +
+               Number(one.count || 0);
+      }).join(', ');
+    return '<p class="sub withoutactivity">' +
+      t.html('consoleUsers.detail.withoutActivity',
+             { total: String(total) }) + ' ' + list + '. ' +
+      t.html('consoleUsers.detail.withoutActivitySee') + '</p>';
+  }
+
   static authenticationsSection(t, params, json) {
     const rows = [].concat(json.authenticationEvents || []);
     const paging = json.authenticationEventsPaging || { pages: 1, param:
@@ -1770,14 +1855,25 @@ class UsersPage {
    * @param key - the person's key
    * @param state - the gate state; `write` draws the controls
    * @param back - the list to return to after an action
-   * @returns an object of html (the section) and json (its ?format=json
-   *   object, null when no credential store is installed)
+   * @param data - `page.mfa` from the person's management API answer
+   * @returns the three Credentials pieces. `factors` is this pane.
+   *   `keyCertificates` is stored certificates, message-signing and TLS
+   *   client certificates, drawn on Key pairs. `selfIssued` is self-issued
+   *   IDs and published DIDs. With no credential store the note is on
+   *   `factors` and the other two pieces are empty.
    */
   static mfaSection(t, row, key, state, back, data) {
     const heading = '<h2 id="second-factors">' +
                     t.html('consoleUsers.mfaSection.heading') + '</h2>';
     if (!data.storable) {
-      return heading + kit.note(t.html('consoleUsers.mfaSection.noStore'));
+      // The same three pieces as the stored case, so a caller never has
+      // to tell a missing store from a drawn one by the type.
+      return {
+        factors: kit.frame(heading +
+          kit.note(t.html('consoleUsers.mfaSection.noStore'))),
+        keyCertificates: '',
+        selfIssued: ''
+      };
     }
 
     const mech = data.mech;
@@ -2498,8 +2594,15 @@ class UsersPage {
             '>' + t.html('consoleUsers.mfaSection.remove') + '</button></form>'
           : '') + '</td></tr>';
     };
-    const certificatesBlock = '<h3>' +
-      t.html('consoleUsers.mfaSection.certificatesHeading') + '</h3>' +
+    // EACH KIND OF CERTIFICATE ON KEY PAIRS IS A FRAME (.secframe), headed
+    // inside it, and the form that adds one a frame inside that, as each
+    // RFC 7523/7522 profile above them is drawn.
+    const subFrame = function (heading, body) {
+      return '<div class="secframe"><h4>' + heading + '</h4>' + body +
+             '</div>';
+    };
+    const certificatesBlock = '<section class="secframe"><h2>' +
+      t.html('consoleUsers.mfaSection.certificatesHeading') + '</h2>' +
       kit.note(t.html('consoleUsers.mfaSection.certificatesLead')) +
       (certView.certificates.length
         ? '<table><tr><th>' +
@@ -2511,7 +2614,8 @@ class UsersPage {
         : kit.note('<strong>' + t.html('consoleUsers.mfaSection.none') +
                    '</strong>')) +
       (state.write
-        ? '<form method="post" action="/admin/users">' +
+        ? subFrame(t.html('consoleUsers.mfaSection.certAddHeading'),
+          '<form method="post" action="/admin/users">' +
           '<input type="hidden" name="action" value="add-certificate">' +
           '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
           '<input type="hidden" name="from" value="user">' +
@@ -2523,8 +2627,10 @@ class UsersPage {
           'spellcheck="false"></textarea></label></div>' +
           '<div class="formrow"><button type="submit" title="' +
           kit.esc(t.text('consoleUsers.mfaSection.certAddTitle')) + '">' +
-          t.html('consoleUsers.mfaSection.certAdd') + '</button></div></form>'
-        : kit.note(t.html('consoleUsers.mfaSection.certNeedsWrite')));
+          t.html('consoleUsers.mfaSection.certAdd') +
+          '</button></div></form>')
+        : kit.note(t.html('consoleUsers.mfaSection.certNeedsWrite'))) +
+      '</section>';
 
     // --- message-signing certificates (#521, 2026-10-28) ---------------------
     // WHAT THE PERSON SIGNS A WS-TRUST REQUEST WITH, issued by an
@@ -2579,7 +2685,8 @@ class UsersPage {
         : (signView.active >= signView.max
           ? kit.note(t.html('consoleUsers.mfaSection.signingAtMax',
                             { n: signView.active }))
-          : '<form method="post" action="/admin/users">' +
+          : subFrame(t.html('consoleUsers.mfaSection.signingIssueHeading'),
+            '<form method="post" action="/admin/users">' +
             '<input type="hidden" name="action" ' +
             'value="issue-signing-certificate">' +
             '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
@@ -2613,9 +2720,9 @@ class UsersPage {
             t.html('consoleUsers.mfaSection.signingIssue') +
             '</button><span class="sub">' +
             t.html('consoleUsers.mfaSection.signingOnce') +
-            '</span></div></form>'));
-    const signingBlock = '<h3>' +
-      t.html('consoleUsers.mfaSection.signingHeading') + '</h3>' +
+            '</span></div></form>')));
+    const signingBlock = '<section class="secframe"><h2>' +
+      t.html('consoleUsers.mfaSection.signingHeading') + '</h2>' +
       kit.note(t.html('consoleUsers.mfaSection.signingLead',
                       { name: signView.implicitName })) +
       (signView.certificates.length
@@ -2626,7 +2733,115 @@ class UsersPage {
           signView.certificates.map(signRow).join('') + '</table>'
         : kit.note('<strong>' + t.html('consoleUsers.mfaSection.none') +
                    '</strong>')) +
-      signIssue;
+      signIssue + '</section>';
+
+    // --- TLS client certificates, issued here from this realm's CA --------
+    // THE KEY PAIR A CLIENT PRESENTS AT A HANDSHAKE, generated on this
+    // page (or by the same action on /admin-api) and mapped to the person
+    // by the register. The subject is the directory entry's. A certificate
+    // stored from an outside authority is the section above this one, and
+    // is a different credential.
+    const tlsView = data.tls && data.tls.ok
+      ? data.tls
+      : { certificates: [], active: 0, max: 0, keyAlgorithms: [],
+          revocationReasons: [], passwordMin: 8, caAvailable: false,
+          implicitName: '', subjectDn: '', entryDn: '' };
+    const tlsRow = function (one) {
+      return '<tr><td><code>' + kit.esc(one.subject || '—') + '</code>' +
+        '<div class="sub">' +
+        (one.label ? kit.esc(one.label) + ' &middot; ' : '') +
+        t.html('consoleUsers.mfaSection.signingSerial') + ' <code>' +
+        kit.esc(one.serialHex) + '</code> &middot; ' + kit.esc(one.keyAlg) +
+        ' &middot; ' + t.html('consoleUsers.mfaSection.signingUntil') +
+        ' <code>' + kit.esc(one.notAfter) + '</code></div></td><td>' +
+        '<span class="state-' + (one.state === 'valid' ? 'valid' : 'revoked') +
+        '">' + kit.esc(one.state) + '</span>' + (one.reason
+          ? '<div class="sub">' + kit.esc(one.reason) + '</div>' : '') +
+        '</td><td>' +
+        (state.write && one.state === 'valid'
+          ? '<form method="post" action="/admin/users">' +
+            '<input type="hidden" name="action" ' +
+            'value="revoke-tls-client-certificate">' +
+            '<input type="hidden" name="user" value="' + kit.esc(key) +
+            '"><input type="hidden" name="serialHex" value="' +
+            kit.esc(one.serialHex) + '">' +
+            '<input type="hidden" name="from" value="user">' +
+            '<input type="hidden" name="back" value="' + kit.esc(back) +
+            '"><select name="reason" aria-label="' +
+            kit.esc(t.text('consoleUsers.mfaSection.signingReason')) + '">' +
+            tlsView.revocationReasons.map(function (reason) {
+              return '<option value="' + kit.esc(reason) + '">' +
+                     kit.esc(reason) + '</option>';
+            }).join('') + '</select> <button class="danger" type="submit">' +
+            t.html('consoleUsers.mfaSection.signingRevoke') +
+            '</button></form>'
+          : '') + '</td></tr>';
+    };
+    const tlsIssue = !state.write
+      ? kit.note(t.html('consoleUsers.mfaSection.tlsNeedsWrite'))
+      : (!tlsView.caAvailable
+        ? kit.note(t.html('consoleUsers.mfaSection.tlsNoCa') +
+                   ' <a href="/admin/pki">/admin/pki</a>.')
+        : (tlsView.active >= tlsView.max
+          ? kit.note(t.html('consoleUsers.mfaSection.tlsAtMax',
+                            { n: tlsView.active }))
+          : subFrame(t.html('consoleUsers.mfaSection.tlsIssueHeading'),
+            '<form method="post" action="/admin/users">' +
+            '<input type="hidden" name="action" ' +
+            'value="issue-tls-client-certificate">' +
+            '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
+            '<input type="hidden" name="from" value="user">' +
+            '<input type="hidden" name="back" value="' + kit.esc(back) +
+            '">' +
+            '<div class="formrow"><label for="tls-label">' +
+            t.html('consoleUsers.mfaSection.signingLabel') + '</label>' +
+            '<input id="tls-label" name="label" maxlength="40" ' +
+            'placeholder="' +
+            kit.esc(t.text('consoleUsers.mfaSection.signingPlaceholder')) +
+            '"><label for="tls-alg">' +
+            t.html('consoleUsers.mfaSection.signingKey') + '</label>' +
+            '<select id="tls-alg" name="keyAlg">' +
+            tlsView.keyAlgorithms.map(function (alg) {
+              return '<option value="' + kit.esc(alg) + '"' +
+                     (alg === tlsView.defaultKeyAlg ? ' selected' : '') +
+                     '>' + kit.esc(alg) + '</option>';
+            }).join('') + '</select></div>' +
+            '<div class="formrow"><label for="tls-password">' +
+            t.html('consoleUsers.mfaSection.signingPassword') +
+            '</label><input type="password" id="tls-password" ' +
+            'name="password" minlength="' + tlsView.passwordMin +
+            '" required autocomplete="new-password"><label ' +
+            'for="tls-confirm">' +
+            t.html('consoleUsers.mfaSection.signingAgain') + '</label>' +
+            '<input type="password" id="tls-confirm" name="confirm" ' +
+            'minlength="' + tlsView.passwordMin + '" required ' +
+            'autocomplete="new-password"></div>' +
+            '<div class="formrow"><button type="submit">' +
+            t.html('consoleUsers.mfaSection.tlsIssue') +
+            '</button><span class="sub">' +
+            t.html('consoleUsers.mfaSection.signingOnce') +
+            '</span></div></form>')));
+    const tlsBlock = '<section class="secframe"><h2>' +
+      t.html('consoleUsers.mfaSection.tlsHeading') + '</h2>' +
+      kit.note(t.html('consoleUsers.mfaSection.tlsLead',
+                      { name: tlsView.implicitName })) +
+      (tlsView.subjectDn
+        ? kit.note(t.html('consoleUsers.mfaSection.tlsSubject') +
+                   ' <code>' + kit.esc(tlsView.subjectDn) + '</code>')
+        : '') +
+      (tlsView.entryDn
+        ? kit.note(t.html('consoleUsers.mfaSection.tlsEntry') +
+                   ' <code>' + kit.esc(tlsView.entryDn) + '</code>')
+        : '') +
+      (tlsView.certificates.length
+        ? '<table><tr><th>' +
+          t.html('consoleUsers.mfaSection.signingThCertificate') +
+          '</th><th>' + t.html('consoleUsers.mfaSection.signingThState') +
+          '</th><th></th></tr>' +
+          tlsView.certificates.map(tlsRow).join('') + '</table>'
+        : kit.note('<strong>' + t.html('consoleUsers.mfaSection.none') +
+                   '</strong>')) +
+      tlsIssue + '</section>';
 
     // --- self-issued IDs (#129, 2026-09-23) --------------------------------
     // THE WALLET KEYS WHOSE SIOPv2 ID TOKEN SIGNS THIS PERSON IN. The list
@@ -2694,7 +2909,9 @@ class UsersPage {
             '>' + t.html('consoleUsers.mfaSection.remove') + '</button></form>'
           : '') + '</td></tr>';
     };
-    const selfIssuedBlock = '<h3>' +
+    // Framed as Key pairs frames each profile (`secframe`, rcbj 2026-11-16,
+    // #1844): the list, its note and the enrol form read as one block.
+    const selfIssuedBlock = '<section class="secframe"><h3>' +
       t.html('consoleUsers.mfaSection.siopHeading') + '</h3>' +
       kit.note(t.html('consoleUsers.mfaSection.siopNote',
                       { on: siopView.signInEnabled ? 'yes' : 'no' })) +
@@ -2730,26 +2947,34 @@ class UsersPage {
           kit.esc(t.text('consoleUsers.mfaSection.enrolTitle')) + '">' +
           t.html('consoleUsers.mfaSection.enrol') + '</button>' +
           '</div></form>'
-        : kit.note(t.html('consoleUsers.mfaSection.siopNeedsWrite')));
+        : kit.note(t.html('consoleUsers.mfaSection.siopNeedsWrite'))) +
+      '</section>';
 
-    const html = heading +
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the pane is one
+    // frame, and each kind of second factor a frame inside it.
+    const html = kit.frame(heading +
       kit.note(t.html('consoleUsers.mfaSection.leadBefore',
                       { name: row.name }) +
       '<a href="/admin/totp">TOTP MFA</a>' +
       t.html('consoleUsers.mfaSection.leadAnd') +
       '<a href="/admin/webauthn">WebAuthn</a>' +
       t.html('consoleUsers.mfaSection.leadAfter')) +
-      wayIn + totpBlock + UsersPage.emailFactorBlock(t, key, mech, state,
-                                                carryBack, data.mail) +
-      keysBlock + recoveryBlock + appPasswordsBlock +
-      devicesBlock + certificatesBlock + signingBlock +
-      selfIssuedBlock + UsersPage.publishedDidsBlock(t, key, state, back,
-                                                     data.publishedDids) +
-      verificationsBlock;
+      wayIn + [totpBlock, UsersPage.emailFactorBlock(t, key, mech, state,
+                                                     carryBack, data.mail),
+               keysBlock, recoveryBlock, appPasswordsBlock, devicesBlock,
+               verificationsBlock].map(kit.frame).join(''));
 
     // ONE SOURCE for what this panel says (2026-09-12): the layer builds it,
     // this draws it — and since #446 draws it from the answer's `page.mfa`.
-    return html;
+    // Stored certificates, message-signing and TLS client certificates are
+    // drawn on Key pairs. Self-issued IDs and published DIDs are their own
+    // Credentials sub-tab.
+    return {
+      factors: html,
+      keyCertificates: certificatesBlock + signingBlock + tlsBlock,
+      selfIssued: selfIssuedBlock + kit.frame(UsersPage.publishedDidsBlock(
+        t, key, state, back, data.publishedDids))
+    };
   }
 
   // The drill-down. Returns null when the identity is not one this service
@@ -3213,16 +3438,22 @@ class UsersPage {
     const heading = '<h2 id="credentials">' +
       t.html('consoleUsers.userCredentialsSection.heading') + '</h2>' +
       kit.note(t.html('consoleUsers.userCredentialsSection.lead'));
+    // THE WHOLE SECTION IS ONE FRAME, as each certificate kind drawn below it
+    // on Key pairs is: the profiles are frames inside it, and their forms
+    // frames inside those.
+    const frame = function (body) {
+      return '<section class="secframe">' + body + '</section>';
+    };
     if (!state.storable) {
-      return heading +
+      return frame(heading +
         kit.warn(t.html('consoleUsers.userCredentialsSection.noDirectory'),
                  t.text(
-                   'consoleUsers.userCredentialsSection.noDirectoryLabel'));
+                   'consoleUsers.userCredentialsSection.noDirectoryLabel')));
     }
     if (!state.found) {
-      return heading +
+      return frame(heading +
         kit.note(t.html('consoleUsers.userCredentialsSection.noEntry',
-                        { key: key }));
+                        { key: key })));
     }
     const username = state.username;
     const algOptions = state.ca.keyAlgorithms.map(function (one) {
@@ -3351,9 +3582,10 @@ class UsersPage {
       const managed = table + assertsAs;
 
       if (!gate.write) {
-        return '<h3 id="' + anchor + '">' + kit.esc(p.label) + '</h3>' +
-               managed + kit.note(
-                 t.html('consoleUsers.userCredentialsSection.needsWrite'));
+        return '<section class="secframe"><h3 id="' + anchor + '">' +
+               kit.esc(p.label) + '</h3>' + managed + kit.note(
+                 t.html('consoleUsers.userCredentialsSection.needsWrite')) +
+               '</section>';
       }
       const labelField = function (suffix) {
         return '<label for="' + anchor + '-' + suffix + '-label">' +
@@ -3363,6 +3595,13 @@ class UsersPage {
           'maxlength="40" placeholder="' +
           kit.esc(t.text('consoleUsers.userCredentialsSection.labelHint')) +
           '">';
+      };
+      // Each way to add a key pair is a frame of its own, headed, so the
+      // issue form's fields and the upload form's (both carry a Name box)
+      // cannot be read as one form.
+      const subFrame = function (heading, body) {
+        return '<div class="secframe"><h4>' + heading + '</h4>' + body +
+               '</div>';
       };
       const issueForm = state.ca.available
         ? '<form method="post" action="/admin/pki/person">' +
@@ -3425,7 +3664,10 @@ class UsersPage {
           t.html('consoleUsers.userCredentialsSection.upload') +
           '</button></div></form>';
 
-      return '<h3 id="' + anchor + '">' + kit.esc(p.label) + '</h3>' +
+      // One frame per profile: its key pairs, what it asserts as, and the
+      // forms that add one.
+      return '<section class="secframe"><h3 id="' + anchor + '">' +
+             kit.esc(p.label) + '</h3>' +
              managed + '<h4>' +
                t.html('consoleUsers.userCredentialsSection.addHeading') +
                '</h4>' +
@@ -3435,12 +3677,18 @@ class UsersPage {
                         { max: String(state.maxPerPerson) }))
                : kit.note(t.html('consoleUsers.userCredentialsSection.addNote',
                             { max: String(state.maxPerPerson) })) +
-                 issueForm + uploadForm);
+                 subFrame(t.html(
+                   'consoleUsers.userCredentialsSection.issueHeading'),
+                          issueForm) +
+                 subFrame(t.html(
+                   'consoleUsers.userCredentialsSection.uploadHeading'),
+                          uploadForm)) +
+             '</section>';
     }).join('');
-    return heading + purposeHtml +
+    return frame(heading + purposeHtml +
       (state.selfService
         ? kit.note(t.html('consoleUsers.userCredentialsSection.selfService'))
-        : '');
+        : ''));
   }
 
   // ---------------------------------------------------------------------------
@@ -3525,7 +3773,7 @@ class UsersPage {
     // The issuer's placeholder was drawn unescaped (its apostrophe as
     // itself), so it is drawn as markup: a translation holds no quote.
     const add = relationships.length
-      ? '<h3>' + t.html('consoleUsers.federationLinks.linkHeading') +
+      ? kit.frame('<h3>' + t.html('consoleUsers.federationLinks.linkHeading') +
         '</h3>' +
         form('federation-link',
           '<div class="formrow"><label>' +
@@ -3549,7 +3797,7 @@ class UsersPage {
           'name="issuer" size="42" placeholder="' +
           t.html('consoleUsers.federationLinks.issuerHint') +
           '"></label></div>',
-          t.text('consoleUsers.federationLinks.link'), false)
+          t.text('consoleUsers.federationLinks.link'), false))
       : kit.note(t.html('consoleUsers.federationLinks.noRelationship'));
     return heading + nav.head + rows + nav.foot + add;
   }
@@ -3561,6 +3809,105 @@ class UsersPage {
   // /admin-api/users?user=. Read only: a person's document is theirs to
   // edit, and an RPT is revoked on /admin/uma, which each list links to.
   // ---------------------------------------------------------------------------
+  // THE IMPORT / EXPORT TAB (2026-11-14), the application page's
+  // `applicationLdifSection()` for a person. Export writes this person's
+  // entry as an LDIF file: the attributes a create takes, and their
+  // credential material only when the box is ticked — and then UNENCRYPTED,
+  // which the box says. Import creates a person from such a file in this
+  // realm and never overwrites one: the file names its own username, which
+  // is refused when it is already here, so importing from this page cannot
+  // touch the person the page is about. Both post to /admin/users as every
+  // form on this page does; the export's answer is a file the runtime saves.
+  /**
+   * Draws a person's Import / export tab: export to LDIF, with or without
+   * credential material, and import from LDIF.
+   *
+   * @param t - the page's translator
+   * @param key - the person, as the page names them
+   * @param gate - `{ write }`, whether the reader holds Admin Write
+   * @param back - the list view to come back to
+   * @returns the tab's HTML
+   */
+  static userLdifSection(t, key, gate, back) {
+    if (!gate.write) {
+      return kit.frame('<h2>' + t.html('consoleUsers.ldif.heading') + '</h2>' +
+        kit.note(t.html('consoleUsers.ldif.needsWrite')));
+    }
+    const carry = '<input type="hidden" name="from" value="user">' +
+      '<input type="hidden" name="back" value="' + kit.esc(back) + '">';
+    // Export and import, each a frame (`secframe`, rcbj 2026-11-16).
+    return kit.frame('<h2>' + t.html('consoleUsers.ldif.exportHeading') +
+      '</h2>' +
+      kit.note(t.html('consoleUsers.ldif.exportIntro')) +
+      '<form method="post" action="/admin/users">' + carry +
+      '<input type="hidden" name="action" value="export-ldif">' +
+      '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
+      '<div class="formrow"><label>' +
+      '<input type="checkbox" name="credentials" value="on"> ' +
+      t.html('consoleUsers.ldif.withCredentials') + '</label></div>' +
+      kit.note(t.html('consoleUsers.ldif.credentialsWarning')) +
+      '<div class="formrow"><button type="submit">' +
+      t.html('consoleUsers.ldif.export') + '</button></div></form>') +
+      kit.frame('<h2>' + t.html('consoleUsers.ldif.importHeading') +
+      '</h2>' +
+      kit.note(t.html('consoleUsers.ldif.importIntro')) +
+      '<form method="post" action="/admin/users" ' +
+      'enctype="multipart/form-data">' + carry +
+      '<input type="hidden" name="action" value="import-ldif">' +
+      '<div class="formrow"><label for="user-ldif-file">' +
+      t.html('consoleUsers.ldif.file') + '</label>' +
+      '<input type="file" id="user-ldif-file" name="file" ' +
+      'accept=".ldif,text/plain,text/x-ldif"></div>' +
+      '<div class="formrow"><label for="user-ldif-text">' +
+      t.html('consoleUsers.ldif.paste') + '</label>' +
+      '<textarea id="user-ldif-text" name="ldif" rows="8" cols="60">' +
+      '</textarea></div>' +
+      '<div class="formrow"><button type="submit">' +
+      t.html('consoleUsers.ldif.import') + '</button></div></form>');
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE DELETE TAB (rcbj, 2026-11-16), the application page's Remove tab for
+  // a person: `POST /admin-api/users/delete`, the directory's one person
+  // delete. It cannot be undone, so the button is held by a REQUIRED
+  // checkbox — the service account's Make arrangement: the browser refuses
+  // the submit until it is ticked, with no script of this page's own. The
+  // box has no name, so it is the reader's confirmation and not a member of
+  // the request. A deleted person's page is gone, so the answer lands on the
+  // list (`WebAnswers.landing()`).
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws a person's Delete tab: what a delete ends, and the confirmed form.
+   *
+   * @param t - the page's translator
+   * @param key - the person, as the page names them
+   * @param gate - `{ write }`, whether the reader holds Admin Write
+   * @param back - the list view to come back to
+   * @returns the tab's HTML
+   */
+  static userDeleteSection(t, key, gate, back) {
+    const heading = '<h2>' + t.html('consoleUsers.delete.heading') + '</h2>';
+    if (!gate.write) {
+      return heading + kit.note(t.html('consoleUsers.delete.needsWrite'));
+    }
+    return heading +
+      '<div class="warn" id="user-delete-warning">' +
+      t.html('consoleUsers.delete.note', { key: key }) + '</div>' +
+      '<form method="post" action="/admin/users">' +
+      '<input type="hidden" name="action" value="delete">' +
+      '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
+      '<input type="hidden" name="from" value="user">' +
+      '<input type="hidden" name="back" value="' + kit.esc(back) + '">' +
+      '<div class="formrow"><label><input type="checkbox" ' +
+      'id="user-delete-confirm" required> ' +
+      t.html('consoleUsers.delete.confirm', { key: key }) +
+      '</label></div>' +
+      '<div class="formrow"><button type="submit" class="danger" title="' +
+      kit.esc(t.text('consoleUsers.delete.buttonTitle')) + '">' +
+      t.html('consoleUsers.delete.button') + '</button></div></form>' +
+      kit.note(t.html('consoleUsers.delete.refusals'));
+  }
+
   /**
    * Draws a person's UMA tab.
    *
@@ -3614,13 +3961,15 @@ class UsersPage {
           '</code> · ' + permissions(row.permissions) + '</li>';
       }).join('') + '</ul>' : '<p>' + none + '</p>';
     return heading +
-      '<h3>' + t.html('consoleUsers.userUmaSection.resources') + '</h3>' +
-      resources +
-      '<h3>' + t.html('consoleUsers.userUmaSection.shares') + '</h3>' +
-      shares +
-      '<h3>' + t.html('consoleUsers.userUmaSection.held') + '</h3>' + held +
-      '<h3>' + t.html('consoleUsers.userUmaSection.pending') + '</h3>' +
-      pending + '<p class="links"><a href="/admin/uma?owner=' +
+      kit.frame('<h3>' + t.html('consoleUsers.userUmaSection.resources') +
+                '</h3>' + resources) +
+      kit.frame('<h3>' + t.html('consoleUsers.userUmaSection.shares') +
+                '</h3>' + shares) +
+      kit.frame('<h3>' + t.html('consoleUsers.userUmaSection.held') +
+                '</h3>' + held) +
+      kit.frame('<h3>' + t.html('consoleUsers.userUmaSection.pending') +
+                '</h3>' + pending) +
+      '<p class="links"><a href="/admin/uma?owner=' +
       encodeURIComponent(key) + '#uma-tab-owner">' +
       t.html('consoleUsers.userUmaSection.open') + '</a></p>';
   }
@@ -3764,15 +4113,15 @@ class UsersPage {
   static userKerberosSection(t, key, kerberos, gate) {
     const heading = '<h2 id="kerberos">Kerberos</h2>';
     if (!kerberos || !kerberos.kdc) {
-      return heading +
+      return kit.frame(heading +
         kit.note(t.html('consoleUsers.userKerberosSection.noKdc', {
           realm: (kerberos && kerberos.trustRealm) || '',
           reason: (kerberos && kerberos.reason) ||
-            t.text('consoleUsers.userKerberosSection.krb5Off') }));
+            t.text('consoleUsers.userKerberosSection.krb5Off') })));
     }
     if (!kerberos.person) {
-      return heading +
-        kit.note(t.html('consoleUsers.userKerberosSection.noEntry'));
+      return kit.frame(heading +
+        kit.note(t.html('consoleUsers.userKerberosSection.noEntry')));
     }
     const keys = kerberos.keys;
     const etypeList = function (etypes) {
@@ -3831,12 +4180,12 @@ class UsersPage {
       '</table>';
     const why = kit.note(t.html('consoleUsers.userKerberosSection.why'));
     if (!gate.write) {
-      return heading + state + why +
-        kit.note(t.html('consoleUsers.userKerberosSection.needsWrite'));
+      return kit.frame(heading + state + why +
+        kit.note(t.html('consoleUsers.userKerberosSection.needsWrite')));
     }
     if (kerberos.disabled) {
-      return heading + state + why +
-        kit.note(t.html('consoleUsers.userKerberosSection.enableFirst'));
+      return kit.frame(heading + state + why +
+        kit.note(t.html('consoleUsers.userKerberosSection.enableFirst')));
     }
     const form = '<h3>' +
       t.html('consoleUsers.userKerberosSection.resetHeading') +
@@ -3863,7 +4212,9 @@ class UsersPage {
       kit.esc(t.text('consoleUsers.userKerberosSection.resetTitle')) + '">' +
       t.html('consoleUsers.userKerberosSection.resetHeading') +
       '</button></div></form>';
-    return heading + state + why + form;
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab is one
+    // frame, and the reset a frame inside it.
+    return kit.frame(heading + state + why + kit.frame(form));
   }
 
   // ---------------------------------------------------------------------------
@@ -3903,8 +4254,8 @@ class UsersPage {
     const heading = '<h2 id="person-fields">' +
       t.html('consoleUsers.personFieldsSection.heading') + '</h2>';
     if (!editor) {
-      return heading +
-        kit.note(t.html('consoleUsers.personFieldsSection.noEntry'));
+      return kit.frame(heading +
+        kit.note(t.html('consoleUsers.personFieldsSection.noEntry')));
     }
     const draft = state && state.draft ? state.draft : null;
     const values = {};
@@ -4044,7 +4395,9 @@ class UsersPage {
           t.html('consoleUsers.personFieldsSection.pseudonymCap') +
           '</span></div></form>'
         : '');
-    const contactHead = mailForm + aliasCard;
+    // EACH BLOCK A FRAME (`secframe`, rcbj 2026-11-16): the address, the
+    // sign-in names and each group's form, as Key pairs' blocks are.
+    const contactHead = kit.frame(mailForm) + kit.frame(aliasCard);
     // The Policies tab (#1235) only where some kind a person selects has
     // declared its reference: an empty tab would offer nothing to set.
     const panels = groups.filter(function (group) {
@@ -4061,7 +4414,7 @@ class UsersPage {
       }
       if (!gate.write) {
         return { id: 'ufg-' + group.id, label: group.label,
-          html: contact + '<table><tr><th>' +
+          html: contact + kit.frame('<table><tr><th>' +
             t.html('consoleGroups.attributeTable.thName') + '</th><th>' +
             t.html('consoleUsers.personFieldsSection.thWhat') + '</th>' +
             '<th>' + t.html('consoleGroups.attributeTable.thValues') +
@@ -4075,7 +4428,7 @@ class UsersPage {
                   : '<span class="state-none">' +
                     t.html('consoleUsers.secondFactorCell.none') +
                     '</span>') + '</td></tr>';
-            }).join('') + '</table>' };
+            }).join('') + '</table>') };
       }
       // THE SUB-TAB'S TWO VIEWS (#500), the application page's: the
       // simplified one unless this is a redraw of this sub-tab's own form
@@ -4101,7 +4454,7 @@ class UsersPage {
                                     views: views }, t);
       }).join('');
       return { id: 'ufg-' + group.id, label: group.label,
-        html: contact + kit.note(kit.esc(group.what)) +
+        html: contact + kit.frame(kit.note(kit.esc(group.what)) +
           '<form method="post" action="/admin/users/edit#ufg-' +
           kit.esc(group.id) + '" class="appgrid">' +
           '<input type="hidden" name="action" value="update-fields">' +
@@ -4123,9 +4476,9 @@ class UsersPage {
           kit.tip(t.text('consoleUsers.personFieldsSection.saveTip')) + '>' +
           t.html('consoleUsers.personFieldsSection.saveGroup',
                  { group: group.label.toLowerCase() }) +
-          '</button></div></form>' };
+          '</button></div></form>') };
     });
-    return heading +
+    return kit.frame(heading +
       (state && state.error && state.error.length
         ? kit.flash('<div class="err"><strong>Not everything was saved.' +
             '</strong><ul>' + state.error.map(function (one) {
@@ -4148,7 +4501,7 @@ class UsersPage {
             '<a href="/admin/groups">' +
             t.html('consoleGroups.body.tileGroups') + '</a>).')) +
       (gate.write ? ''
-        : kit.note(t.html('consoleUsers.personFieldsSection.needsWrite'))) +
+        : kit.note(t.html('consoleUsers.personFieldsSection.needsWrite')))) +
       kit.subTabbedPanels(t.text('consoleUsers.personFieldsSection.heading'),
                           panels);
   }
@@ -4304,8 +4657,8 @@ class UsersPage {
     const heading = '<h2 id="credential-controls">' +
       t.html('consoleUsers.controls.heading') + '</h2>';
     if (!factors) {
-      return heading +
-        kit.note(t.html('consoleUsers.controls.noStore'));
+      return kit.frame(heading +
+        kit.note(t.html('consoleUsers.controls.noStore')));
     }
     const requirement = factors.mfaRequirement ||
       { required: false, byUser: false, byRealm: false };
@@ -4390,9 +4743,9 @@ class UsersPage {
     const signalsNote =
       kit.note(t.html('consoleUsers.controls.signals'));
     if (!gate.write) {
-      return heading + state + signalsNote +
+      return kit.frame(heading + state + signalsNote +
         kit.note(
-          t.html('consoleUsers.controls.needsWrite'));
+          t.html('consoleUsers.controls.needsWrite')));
     }
     // `extra` is markup for the form's own fields (#146): the reset forms'
     // "compromised" box and the disable form's RISC reason — the console half
@@ -4576,8 +4929,11 @@ class UsersPage {
                  'consoleUsers.controls.noDefault')) +
                '</option>';
            }).join('') + '</select></label></div>');
-    return heading + state + signalsNote + account + reset + passkeys + mfa +
-      delegationBlock;
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab is one
+    // frame, and each control a frame inside it.
+    return kit.frame(heading + state + signalsNote +
+      [account, reset, passkeys, mfa, delegationBlock].map(kit.frame)
+        .join(''));
   }
 
   /**
@@ -4697,9 +5053,13 @@ class UsersPage {
         kind: 'service-account', name: key, back: back, write: write,
         state: pageState }) : '';
     };
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab is one
+    // frame, and each block in it — the owners, the search, the
+    // destination, the owners' protection, the rotation — a frame inside it.
     if (!gate.write) {
-      return heading + lead + state + protection(false) +
-        kit.note(t.html('consoleUsers.serviceAccountSection.needsWrite'));
+      return kit.frame(heading + lead + state +
+        kit.frame(protection(false)) +
+        kit.note(t.html('consoleUsers.serviceAccountSection.needsWrite')));
     }
     // THE TAB AS DRAWN LAST, after a press — or what the account holds, on a
     // fresh page. TWO MODES (#602, rcbj: "The owners table should be
@@ -4811,13 +5171,13 @@ class UsersPage {
         : '') + ' ' +
       t.html('consoleUsers.serviceAccountSection.ownersMax',
              { max: String(held.maxOwners || 25) }));
-    const ownersBlock = '<h3 id="service-account-owners">' +
+    const ownersBlock = kit.frame('<h3 id="service-account-owners">' +
       t.html('consoleUsers.serviceAccountSection.ownersHeading') + '</h3>' +
       ownersLead + said('owners') + table +
       (changed
         ? '<p class="sub"><strong>' +
           t.html('consoleUsers.serviceAccountSection.unsaved') +
-          '</strong></p>' : '');
+          '</strong></p>' : ''));
     // THE PAGER under a search's results, Previous and Next round trips.
     const pager = function (attribute, found, goes) {
       return found.failed || (found.pages || 1) <= 1 ? ''
@@ -4907,7 +5267,7 @@ class UsersPage {
                 '</span>' + pick(one) + '</div>';
             }).join('')) +
         pager('owners', found, '') + '</div>';
-    const search = '<h3 id="service-account-find">' +
+    const search = kit.frame('<h3 id="service-account-find">' +
       t.html('consoleUsers.serviceAccountSection.findHeading') + '</h3>' +
       '<div class="sa-find">' +
       '<div class="fg-bool fg-kinds" role="radiogroup" aria-label="' +
@@ -4925,7 +5285,7 @@ class UsersPage {
       button('fgsearch', 'owners', t.text('consoleKit.find.find'),
              t.text('consoleUsers.serviceAccountSection.findTip',
                     { n: kit.FIND_PER_PAGE }), 'fg-findbtn') +
-      '</div>' + results + '</div>';
+      '</div>' + results + '</div>');
     // THE PUSH DESTINATION (#602): found among the realm's secret
     // destinations and nothing else (GET /admin-api/secret-destinations),
     // FIND_PER_PAGE to a page. On a service account a result's Use is
@@ -5032,7 +5392,7 @@ class UsersPage {
     // first), Enter in the search box is a Find, and a result's Use saves
     // that destination with the name in the box — both or neither.
     const destForm = !immediate ? ''
-      : destHeading +
+      : kit.frame(destHeading +
         kit.note(t.html('consoleUsers.serviceAccountSection.destLead')) +
         said('destination') +
         '<form method="post" action="' + kit.esc(destGoes) +
@@ -5068,7 +5428,7 @@ class UsersPage {
             '>' +
             t.html('consoleUsers.serviceAccountSection.clearDestination') +
             '</button></div></form>'
-          : '');
+          : ''));
     // ON AN ORDINARY PERSON, ONE FORM (#600): the owners, the searches and
     // the destination, and the button at its foot that writes them. Its own
     // route (`route`) is what the runtime answers a Remove, a search or a
@@ -5087,10 +5447,27 @@ class UsersPage {
         // a search box is a Find (the runtime reads `data-fg-find`).
         '<button type="submit" class="default-submit" tabindex="-1" ' +
         'aria-hidden="true">' + makeLabel + '</button>' +
-        ownersBlock + search + destHeading +
+        ownersBlock + search + kit.frame(destHeading +
         kit.note(t.html('consoleUsers.serviceAccountSection.destLeadDraft')) +
         hidden('destination', destination) + current + secretBox +
-        destSearch +
+        destSearch) +
+        // IT CANNOT BE UNDONE (rcbj, 2026-11-15), said where the button is
+        // and held by a REQUIRED checkbox: the browser refuses the Make (and
+        // the Enter that presses the default button) until it is ticked,
+        // with no script of this page's own — `script-src 'self'` allows
+        // none inline. Every other button here is `formnovalidate`, so a
+        // Remove, a search or a Use is never stopped by it. The box has no
+        // name: it is the reader's confirmation, not a member of the
+        // request, and `/admin-api` asks for none.
+        // The amber box UNFOLDED (`kit.warn()` folds anything longer than
+        // a line): the whole warning is the point.
+        '<div class="warn" id="service-account-warning">' +
+        t.html('consoleUsers.serviceAccountSection.irreversibleWarning',
+               { key: key }) + '</div>' +
+        '<div class="formrow"><label><input type="checkbox" ' +
+        'id="service-account-irreversible" required> ' +
+        t.html('consoleUsers.serviceAccountSection.irreversibleConfirm',
+               { key: key }) + '</label></div>' +
         '<div class="formrow"><button title="' +
         kit.esc(t.text('consoleUsers.serviceAccountSection.saveTitle')) +
         '">' + makeLabel + '</button></div></form>' +
@@ -5122,14 +5499,16 @@ class UsersPage {
              t.html('consoleUsers.serviceAccountSection.rotateNow'),
              t.text('consoleUsers.serviceAccountSection.rotateTitle'), '')
       : '';
-    const clear = account
-      ? form('set-service-account',
-             t.html('consoleUsers.serviceAccountSection.ordinaryButton'),
-             t.text('consoleUsers.serviceAccountSection.ordinaryTitle'),
-             '<input type="hidden" name="serviceAccount" value="false">', true)
+    // NO WAY BACK (rcbj, 2026-11-15): a service account is never made an
+    // ordinary person again, so the button that did it is gone and the tab
+    // says why in its place. Deleting the entry is the only end.
+    // Unfolded, as the Make's warning is (`kit.note()` folds past a line).
+    const permanent = account
+      ? '<div class="warn" id="service-account-permanent">' +
+        t.html('consoleUsers.serviceAccountSection.permanentNote') + '</div>'
       : '';
-    return heading + lead + state + set + protection(true) + rotate +
-      clear;
+    return kit.frame(heading + lead + state + set +
+      kit.frame(protection(true)) + kit.frame(rotate) + permanent);
   }
 
   // Not a 404: this service has simply never seen the name, or has forgotten
@@ -5144,14 +5523,16 @@ class UsersPage {
    */
   static unknown(ctx, json) {
     const t = kitEscaping(ctx.t);
-    return kit.note(t.html('consoleUsers.unknown.note', {
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the page has no
+    // heading, so its two notes are one frame.
+    return kit.frame(kit.note(t.html('consoleUsers.unknown.note', {
       user: json.user, keeps: json.registryKeeps })) +
       // The same href the trail's section crumb carries, so the two ways
       // back off this page cannot land in different places.
       kit.note('<a href="' +
       kit.esc('/admin/users' +
               kit.queryWith(kit.listViewOf('/admin/users', ctx.query), {})) +
-      '">' + t.html('consoleUsers.unknown.back') + '</a>.');
+      '">' + t.html('consoleUsers.unknown.back') + '</a>.'));
   }
 }
 

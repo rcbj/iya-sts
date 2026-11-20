@@ -1774,8 +1774,12 @@ class Krb5Trusts {
     log.debug("Entering Krb5Trusts.applicationAcross().");
     const self = this;
     const ours = this.ourKerberosRealm();
-    const values = function (name: string): string[] {
-      const v = (attributes || {})[name];
+    // The delegation an application is registered with is its concepts'
+    // (#1579): who it may act for and to, the Application's; what Kerberos
+    // lets it do across realms, the KerberosService's.
+    const app = Classes.Application.fromEntry(attributes || {});
+    const kdc = Classes.KerberosService.fromEntry(attributes || {});
+    const values = function (v: string | string[] | undefined): string[] {
       return (Array.isArray(v) ? v : (v === undefined || v === null ||
               v === '' ? [] : [v])).map(String);
     };
@@ -1838,7 +1842,7 @@ class Krb5Trusts {
         return config.value('krb5.crossRealmClassicDelegation');
       });
     };
-    const frontEnds = values('appAllowedToActOnBehalfOf')
+    const frontEnds = values(app.allowedToActOnBehalfOf)
       .filter(function (one: string): boolean {
         const realm = realmOf(one);
         return !!realm && realm !== ours;
@@ -1846,7 +1850,7 @@ class Krb5Trusts {
         return Object.assign({ actor: one },
                              trustState(realmOf(one), 'incoming'));
       });
-    const targets = values('appAllowedToDelegateTo')
+    const targets = values(app.allowedToDelegateTo)
       .filter(function (one: string): boolean {
         const realm = realmOf(one);
         return !!realm && realm !== ours;
@@ -1869,12 +1873,12 @@ class Krb5Trusts {
                                  refused.length > 0,
                                classicProblems: refused }, state);
       });
-    const selfRealms = values('krb5S4uSelfRealm').map(function (one: string):
+    const selfRealms = values(kdc.s4uSelfRealm).map(function (one: string):
       Json {
       return Object.assign({ accepted: self.acceptsRealm(one) },
                            trustState(one, 'incoming'));
     });
-    const unconstrained = values('krb5TrustedForDelegation')
+    const unconstrained = values(kdc.trustedForDelegation)
       .some(function (one: string): boolean {
         return one === 'true' || one === 'TRUE';
       });
@@ -1883,7 +1887,7 @@ class Krb5Trusts {
                allowed: self.tgtDelegationAllowed(view.partnerRealm),
                attributes: view.attributes };
     });
-    const foreign = values('krb5ForeignTgtDelegation')[0] || 'inherit';
+    const foreign = values(kdc.foreignTgtDelegation)[0] || 'inherit';
     log.debug("Leaving Krb5Trusts.applicationAcross().");
     return {
       realm: ours,

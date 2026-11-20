@@ -103,6 +103,12 @@ import InstanceSlot = require('./instance_slot');
 import webMessages = require('./web_messages');
 import WebLocale = require('./web_locale');
 
+/**
+ * The page footer's namespace, which `catalogData()` gives every
+ * application with its own.
+ */
+const FOOTER_NAMESPACE = 'footer';
+
 const { log } = helpers;
 
 /**
@@ -384,8 +390,11 @@ class I18n {
     log.debug("Entering I18n.catalogData(). " + prefix);
     this.load();
     const catalogs: Record<string, Record<string, string>> = {};
+    // THE PAGE FOOTER'S WORDS go with every application's (rcbj,
+    // 2026-11-14): the console and the portal draw the footer their shell
+    // drew, from the catalogs this answers (`common/web_footer.ts`).
     const spaces = Object.keys(this.messages).filter(function (ns) {
-      return ns.indexOf(prefix) === 0;
+      return ns.indexOf(prefix) === 0 || ns === FOOTER_NAMESPACE;
     });
     negotiated.chain.forEach((tag) => {
       const flat: Record<string, string> = {};

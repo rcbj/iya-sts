@@ -11,6 +11,14 @@
     "en": "f034b2f597ec08a5",
     "text": "Cuánto tiempo sigue disponible un secreto que se ha MOSTRADO pero aún no se ha confirmado con un código. Se guarda aparte — en memoria, o sellado en el almacén cuando varios procesos comparten uno — y nunca se escribe en el directorio hasta que un código demuestra que la aplicación lo tiene de verdad: un secreto sin confirmar en la entrada de alguien sería un segundo factor que no puede presentar, lo que es un bloqueo y no un control. Diez minutos es tiempo suficiente para encontrar un móvil y lo bastante corto para que un registro abandonado no se quede ahí."
   },
+  "keys.credentialSigner|label": {
+    "en": "550ef73b0777ea78",
+    "text": "Clave de firma de credenciales"
+  },
+  "keys.credentialSigner|description": {
+    "en": "80863e8241a6ca0b",
+    "text": "Qué clave firma las credenciales dc+sd-jwt y jwt_vc_json de este dominio y sus Token Status List Tokens. `dedicated` — el valor predeterminado — es una clave propia, por familia de algoritmos, que no se usa para nada más, bajo un certificado cuyo subjectAltName nombra como URI cada identificador de emisor al que responde el dominio (sin nombre DNS), con el uso extendido de clave id-kp-documentSigning (RFC 9336) y nada que una pila TLS aceptaría, para que un monedero pueda comparar el iss de la credencial con su x5c (HAIP 1.0, sección 6.1.1). El certificado se vuelve a emitir cuando cambian los identificadores de emisor (global.publicBaseUrl, tls.hostnames, un listener). `realm-key` las firma con la clave JOSE general del dominio, como hacía la 1.0.0, cuyo certificado no nombra a ningún emisor. Las credenciales ya emitidas siguen siendo verificables en ambos casos. ldp_vc y mso_mdoc no se ven afectados."
+  },
   "keys.offerKemEncryption|description": {
     "en": "16bd897eb9c3284a",
     "text": "Si los algoritmos JWE ML-KEM y HPKE (#82 — borradores, consulte keys.encryptionKemAlgs) se ofrecen cuando este dominio cifra PARA una clave que tiene un cliente o una cartera: anunciados en `userinfo_encryption_alg_values_supported`, `id_token_encryption_alg_values_supported`, `authorization_encryption_alg_values_supported` (JARM), `introspection_encryption_alg_values_supported` y el `credential_response_encryption` de un emisor OpenID4VCI, y aceptados cuando un cliente registra uno o una cartera nombra uno. **Desactivado de forma predeterminada, y decisión de un administrador:** estos algoritmos proceden de Internet-Drafts, y un cliente o una suite de conformidad que prueba cada algoritmo anunciado se encuentra con algunos que no conoce. Un cliente ya registrado para uno conserva su registro; con esto desactivado su siguiente respuesta cifrada se rechaza, como para cualquier algoritmo que este dominio no ofrezca."
@@ -204,8 +212,8 @@
     "text": "Formatos de credencial del inicio de sesión con cartera"
   },
   "oid4vp.signInFormats|description": {
-    "en": "e90ac91d5df31d20",
-    "text": "Los formatos de credencial que pide un inicio de sesión con cartera, por orden de preferencia: una consulta de credencial DCQL por cada uno, y un conjunto de credenciales que indica que cualquiera sirve. Cada uno inicia sesión solo con una prueba reciente del titular — un Key Binding JWT, un VP JWT o una prueba Data Integrity — para esta solicitud. Los nombres desconocidos se ignoran; ninguno significa los tres. Una cartera que solo responde la primera consulta que lee responde en el primer formato de aquí."
+    "en": "53a49b652b8fa682",
+    "text": "Los formatos de credencial que pide un inicio de sesión con cartera, por orden de preferencia: una consulta de credencial DCQL por cada uno, y un conjunto de credenciales que indica que cualquiera sirve. Cada uno inicia sesión solo con una prueba reciente del titular — un Key Binding JWT, un VP JWT, una prueba Data Integrity o una firma de dispositivo mdoc — para esta solicitud. Los nombres desconocidos se ignoran; ninguno significa los cuatro. Una cartera que solo responde la primera consulta que lee responde en el primer formato de aquí. Un mso_mdoc inicia la sesión de alguien solo si lo emitió este dominio."
   },
   "oid4vp.signInDcApiResponseMode|description": {
     "en": "1721241f011b9a28",

@@ -3,10 +3,20 @@
 #
 # SECURITY.md's windows, checked every day (#1485, ASVS 5.0.0 15.2.1): an
 # advisory can pass its window between two merges, so a check that runs only on
-# a push would miss it. The published image is scanned as well, because `npm
-# audit` cannot see the operating system's packages, the Node runtime or the
+# a push would miss it. The image is scanned as well, because `npm audit`
+# cannot see the operating system's packages, the Node runtime or the
 # debugger's tree. The scanner is pinned by digest and reads a saved copy of
 # the image, so it is given no Docker socket.
+#
+# WHICH IMAGE (2026-11-14). On main, the PUBLISHED image, which is what users
+# pull. On any other ref, an image BUILT FROM THAT REF here, because only
+# main publishes (build-container.yml): until then this copy scanned main's
+# `:latest` whatever ref it ran on, so a fix on develop could not be seen to
+# pass. What forced it: from 2026-11-11 every scheduled run failed on the
+# brace-expansion and undici copies inside the npm bundled with Node in
+# main's image (CVE-2026-102276, CVE-2026-102278, CVE-2026-19534); develop's
+# image ships no npm since the 2026-11-14 slim image, and a dispatch from
+# develop still scanned main's.
 name: Dependency windows
 
 on:
@@ -16,18 +26,53 @@ on:
 
 permissions:
   contents: read
+  # The ghcr.io mirror the build reads its base images from, and the
+  # embedded debugger's image (a build off main only).
+  packages: read
 
 jobs:
   windows:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
+      # submodules: the build copies node-ldapjs, and an empty one builds an
+      # image that is not the service (build-container.yml says why).
       - name: Check out
-        uses: actions/checkout@v4
-      - name: Scan the published image
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - name: Pull the published image
+        if: github.ref == 'refs/heads/main'
         run: |
           docker pull ghcr.io/rcbj/iya-sts:latest
-          docker save ghcr.io/rcbj/iya-sts:latest -o image.tar
+          docker tag ghcr.io/rcbj/iya-sts:latest iya-sts:scan
+      - name: Set up Buildx
+        if: github.ref != 'refs/heads/main'
+        uses: docker/setup-buildx-action@v4
+      - name: Log in to GitHub Container Registry
+        if: github.ref != 'refs/heads/main'
+        run: echo "${{ secrets.GITHUB_TOKEN }}" |
+             docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      # The same build as build-container.yml's, with the same contexts. It
+      # reads that workflow's layer cache where this ref may see it (its own
+      # branch's and main's) and writes none.
+      - name: Build the image of this ref
+        if: github.ref != 'refs/heads/main'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          tags: iya-sts:scan
+          load: true
+          push: false
+          build-args: |
+            GIT_COMMIT=${{ github.sha }}
+          build-contexts: |
+            debian:bookworm-slim=docker-image://ghcr.io/rcbj/iya-sts/mirror/debian:bookworm-slim
+            node:24.22.1-bookworm-slim=docker-image://ghcr.io/rcbj/iya-sts/mirror/node:24.22.1-bookworm-slim
+          cache-from: type=gha
+      - name: Scan the image
+        run: |
+          docker save iya-sts:scan -o image.tar
           docker run --rm -v "$PWD:/out" \
             aquasec/trivy@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c \
             image --quiet --scanners vuln --format json \

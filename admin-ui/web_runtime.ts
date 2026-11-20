@@ -73,6 +73,7 @@ import WebAnswers = require('./web_answers');
 import WebWebAuthn = require('../common/web_webauthn');
 import WebMessages = require('../common/web_messages');
 import WebAccounts = require('../common/web_accounts');
+import WebFooter = require('../common/web_footer');
 
 type Json = any;
 
@@ -124,9 +125,15 @@ class ConsoleRuntime extends SpaClient {
   // `{ path: names }` of each GET operation's query (#1476).
   private declaredQueries: Json;
   private view: Json;
+  // The static files pages are drawn over, by path, once fetched (#444).
+  private assets: Json = {};
   // The path and query of the page last drawn: a `popstate` that changes
   // neither is a fragment's, which the browser has already answered.
   private drawnAt: string;
+  // What the trail of the page last drawn is drawn from, and its tab tree
+  // (`WebShell.tabTreeOf()`), so a fragment change draws the trail again
+  // without drawing the page (redrawTrail()). Null on a page with none.
+  private trailOf: Json;
   private spec: Json;
   // The sign-in again in progress, while the session that ended is replaced
   // (#508): its one-use values, the requests waiting on it and the channel
@@ -180,6 +187,7 @@ class ConsoleRuntime extends SpaClient {
     this.declaredQueries = null;
     this.view = null;
     this.drawnAt = '';
+    this.trailOf = null;
     this.spec = null;
     this.reauth = null;
     this.freshSignIn = false;
@@ -1385,12 +1393,22 @@ class ConsoleRuntime extends SpaClient {
         WebShell.sectionKeyOf(shell.sections, active));
     }
     this.env.document.title = title + ' — IYA STS admin';
+    // THE PAGE FOOTER the shell drew (`common/web_footer.ts`), below the
+    // frame and so below the runtime facts at the foot of the card: one
+    // footer element, in the console's language.
+    const footer = WebFooter.drawnIn(this.env.document, this.t);
+    // THE TRAIL NAMES THE OPEN TAB (rcbj 2026-11-15): the body's tab tree,
+    // read from the string drawn, and the tabs the fragment opens in it.
+    this.trailOf = { title: title, active: active, up: up,
+                     tree: WebShell.tabTreeOf(inner) };
     WebSafeDom.render(this.env.document.body,
       ConsoleRuntime.realmLinks(
       WebShell.frame(shell, {
         title: title, active: active, up: up, inner: messages + inner,
         path: this.here(), t: this.t, openSection: this.openSection,
-        accounts: this.accounts, subject: this.subject }), this.prefix));
+        accounts: this.accounts, subject: this.subject,
+        tabs: this.openTabsNow(), self: this.here() }), this.prefix) +
+      footer);
     // A page just drawn holds nothing typed (#561's unsaved-changes test).
     this.dirty = false;
     // EVERY DRAWING replaces the panels a tab's `:target` named — a page
@@ -1407,9 +1425,51 @@ class ConsoleRuntime extends SpaClient {
     this.markOpenTabs();
     this.wireCopyButtons();
     this.wireViewDownloads();
+    this.wireFileLoads();
     this.wireOrderedChoices();
+    this.wireCheckAll();
+    this.wireChoicePanels();
     this.loadPageScripts();
     this.revealActiveNav();
+  }
+
+  // THE OPEN TAB PATH FOR THE ADDRESS AS IT IS NOW: the tabs of the page
+  // last drawn that its fragment opens (`WebShell.openTabs()`).
+  /**
+   * The tabs the current fragment opens on the page last drawn.
+   *
+   * @returns `{ label, href }` per open tab, outermost first
+   */
+  openTabsNow(): Json[] {
+    const hash = String((this.env.location && this.env.location.hash) || '');
+    return this.trailOf
+      ? WebShell.openTabs(this.trailOf.tree, hash) : [];
+  }
+
+  // THE TRAIL DRAWN AGAIN WHEN ONLY THE FRAGMENT CHANGED (rcbj 2026-11-15):
+  // a tab press, a tab crumb, Back over a fragment. The page is not drawn
+  // again — that would lose the `:target` — so the trail alone is replaced,
+  // from what the page was drawn with and the fragment now. Its tail is
+  // the tab tree's, so it cannot name a tab the bar does not have.
+  /**
+   * Draws the breadcrumb trail again for the current fragment.
+   *
+   * @returns nothing
+   */
+  redrawTrail(): void {
+    const doc = this.env.document;
+    if (!this.trailOf || !doc || typeof doc.querySelector !== 'function') {
+      return;
+    }
+    const element = doc.querySelector('.card p.crumb');
+    if (!element) {
+      return;
+    }
+    const shell = this.shell || { navLabels: {} };
+    WebSafeDom.replace(element, ConsoleRuntime.realmLinks(
+      WebShell.trailBar(this.trailOf.active, this.trailOf.up,
+                        this.trailOf.title, shell.navLabels, this.t,
+                        this.openTabsNow(), this.here()), this.prefix));
   }
 
   // THE TAB BEING READ, ON THE LINK (2026-10-25).
@@ -1591,7 +1651,10 @@ class ConsoleRuntime extends SpaClient {
    * @returns nothing
    */
   drawProblem(title: string, detail: string): void {
+    // No tabbed page is drawn, so a fragment change has no trail to redraw.
+    this.trailOf = null;
     this.env.document.title = title + ' — IYA STS admin';
+    const footer = WebFooter.drawnIn(this.env.document, this.t);
     WebSafeDom.render(this.env.document.body,
       '<div class="shell"><div ' +
       'class="main"><div class="card"><h1>' + kit.esc(title) + '</h1>' +
@@ -1601,7 +1664,7 @@ class ConsoleRuntime extends SpaClient {
       (this.t.has('consoleRuntime.openConsole')
         ? this.t.html('consoleRuntime.openConsole') : 'Open the console') +
       '</a></p>' +
-      '</div></div></div>');
+      '</div></div></div>' + footer);
   }
 
   // A PERSON THE CONSOLE WILL NOT OPEN FOR (#751). A person holding no
@@ -1621,6 +1684,8 @@ class ConsoleRuntime extends SpaClient {
    * @returns nothing
    */
   drawShellRefused(refusal: Json): void {
+    // No tabbed page is drawn, so a fragment change has no trail to redraw.
+    this.trailOf = null;
     const t = this.t;
     const json = (refusal && refusal.json) || {};
     const why = String(json.error_description || json.error || '');
@@ -1638,12 +1703,13 @@ class ConsoleRuntime extends SpaClient {
         WebShell.accountItems(this.accounts, this.subject, t) + '</div>'
       : '';
     this.env.document.title = title + ' — IYA STS admin';
+    const footer = WebFooter.drawnIn(this.env.document, t);
     WebSafeDom.render(this.env.document.body,
       ConsoleRuntime.realmLinks(
       '<div class="shell"><div class="main"><div class="card"><h1>' +
       kit.esc(title) + '</h1>' + kit.note(kit.esc(text)) + menu +
       WebShell.signOutControl({ session: true }, t) +
-      '</div></div></div>', this.prefix));
+      '</div></div></div>', this.prefix) + footer);
   }
 
   // The page row by its path; a drill-down is the same row with its
@@ -1748,8 +1814,51 @@ class ConsoleRuntime extends SpaClient {
         json[one.member] = one.answer.json;
       });
     }
+    if (page.assets) {
+      json = Object.assign({}, json);
+      const members = Object.keys(page.assets);
+      for (let i = 0; i < members.length; i++) {
+        const held = await this.asset(page.assets[members[i]]);
+        if (held !== null) {
+          json[members[i]] = held;
+        }
+      }
+      if (identity !== this.identity) {
+        return;
+      }
+    }
     this.view = { page: page, json: json, query: query };
     this.drawView(null);
+  }
+
+  // A STATIC FILE A PAGE IS DRAWN OVER (#444 phase 2b), fetched once per
+  // load of the console and kept: Geolocation's country outlines are 1.3 MB
+  // the same for every realm, so they are not in any answer. Public, on
+  // this origin under the realm's prefix, with no token. A failure is not
+  // kept, so the next page asks again.
+  /**
+   * Fetches a static JSON file the console draws over, once.
+   *
+   * @param path - the console path, `/admin/geo-outlines.json`
+   * @returns the parsed file, or null when it could not be read
+   */
+  async asset(path: string): Promise<Json> {
+    if (Object.prototype.hasOwnProperty.call(this.assets, path)) {
+      return this.assets[path];
+    }
+    let held: Json = null;
+    try {
+      const res = await this.env.fetch(this.env.location.origin +
+        this.prefix + path);
+      held = res && res.ok ? await res.json() : null;
+    } catch (e) {
+      // The page says what it could not draw; nothing else is owed.
+      held = null;
+    }
+    if (held !== null) {
+      this.assets[path] = held;
+    }
+    return held;
   }
 
   // A TAB IS A FRAGMENT (`#tab-config`), and a panel is shown by CSS's
@@ -1779,17 +1888,27 @@ class ConsoleRuntime extends SpaClient {
     const security = !!(this.me && this.me.security);
     const ctx = kit.context(query, write, this.t, security);
     const drilled = page.drill && query[page.drill.param];
+    // A drill-down whose list is a tab of another page (`upTo`, #1760)
+    // leads back to that tab, and marks that page in the nav.
+    const listPath = page.upTo ? page.upTo.path : page.path;
     const up = drilled
-      ? { href: page.path + kit.queryWith(kit.listViewOf(page.path, query),
-                                          {}),
-          label: (this.shell.navLabels || {})[page.path] || page.title,
+      ? { href: listPath + kit.queryWith(kit.listViewOf(listPath, query),
+                                         {}) +
+                (page.upTo && page.upTo.fragment
+                  ? '#' + page.upTo.fragment : ''),
+          label: (this.shell.navLabels || {})[listPath] || page.title,
           leaf: String(query[page.drill.param]),
-          filtered: Object.keys(kit.listViewOf(page.path, query)).length > 0 }
+          filtered: Object.keys(kit.listViewOf(listPath, query)).length > 0,
+          // CRUMBS BETWEEN THE SECTION AND THE LEAF (#1760): the tab the
+          // drill-down was opened from, and on a route's page its PEP and
+          // that PEP's Reverse proxy tab.
+          via: page.upVia ? page.upVia(query, this.t) : undefined }
       : null;
     // The title in the reader's language (#539 phase 5).
     const title = WebPages.titleOf(page, this.t);
     this.draw(drilled ? title + ' ' + query[page.drill.param] : title,
-              page.path, WebPages.render(page.path, json, ctx), up, banner);
+              drilled ? listPath : page.path,
+              WebPages.render(page.path, json, ctx), up, banner);
   }
 
   /**
@@ -2117,6 +2236,24 @@ class ConsoleRuntime extends SpaClient {
           value = fieldsIn[name];
         }
       }
+      // A COLUMN OF BOXES WHOSE VALUES ARE JSON, where the schema takes a
+      // list of objects: Directory → Policies' selection posts each policy
+      // as `{ kind, name }` (rcbj 2026-11-14). Each is a value; one that is
+      // not JSON is sent as typed, and the operation names what it is.
+      if (Array.isArray(value) && wantsObjects) {
+        value = value.map(function (one: Json) {
+          if (typeof one !== 'string') {
+            return one;
+          }
+          try {
+            const parsed = JSON.parse(one);
+            return parsed && typeof parsed === 'object' ? parsed : one;
+          } catch (e) {
+            // Not JSON: sent as typed.
+            return one;
+          }
+        });
+      }
       if (types.indexOf('array') >= 0 && types.indexOf('string') < 0 &&
           !Array.isArray(value)) {
         value = value === '' ? [] : [value];
@@ -2264,6 +2401,10 @@ class ConsoleRuntime extends SpaClient {
         await this.groupOwnerSearch(fields, 'page', 'applicationOwners');
         return;
       }
+      if (page === WebAnswers.PEP_ROUTES_PAGE) {
+        await this.pepRouteSearch(fields);
+        return;
+      }
       await this.fieldSearch(fields);
       return;
     }
@@ -2383,11 +2524,16 @@ class ConsoleRuntime extends SpaClient {
     // success in `why`, as the PKI page's upload does — that, as the
     // server-rendered console's strip read it.
     const said = String((json && (json.message || json.why)) || 'Done.');
-    const landing = page ? WebAnswers.landing(page, action, json, back)
+    const landing = page ? WebAnswers.landing(page, action, json, back,
+                                              fields)
                          : null;
     if (landing) {
-      await this.go(landing + (landing.indexOf('?') < 0 ? '?' : '&') +
-                    'notice=' + encodeURIComponent(said));
+      // The notice goes in the query, before a landing's fragment (#1760).
+      const hashAt = landing.indexOf('#');
+      const path = hashAt < 0 ? landing : landing.slice(0, hashAt);
+      await this.go(path + (path.indexOf('?') < 0 ? '?' : '&') +
+                    'notice=' + encodeURIComponent(said) +
+                    (hashAt < 0 ? '' : landing.slice(hashAt)));
       return;
     }
     const key = json && json.ok ? 'notice' : 'error';
@@ -2630,6 +2776,55 @@ class ConsoleRuntime extends SpaClient {
     }
   }
 
+  // A REMOTE PEP'S ROUTE FORM'S APPLICATION CHOOSER (#1760): the field
+  // search's Find, Previous, Next and Use, and Clear, for Create a New Route
+  // and the route's own page. A Find asks the Applications page's own list
+  // (`GET /admin-api/applications`, rule 7) for a page of FIND_PER_PAGE; a
+  // Use or a Clear asks nothing and fills the form's `application`. The
+  // form is drawn again from its draft (`WebAnswers.pepRouteState()`), so
+  // nothing typed is lost, and nothing is written until the form's button.
+  /**
+   * Runs a route form's Application search or choice and draws the result.
+   *
+   * @param fields - the form's fields, the pressed button's among them
+   * @returns nothing
+   */
+  async pepRouteSearch(fields: Json): Promise<void> {
+    const before = (this.view.json && this.view.json.state) || {};
+    let found = null;
+    const pressed = WebAnswers.fieldSearchOf(fields);
+    // WHICH LIST (#1760): the Application chooser asks the Applications
+    // page's, the authorization's policy chooser the repository's search
+    // and its role choosers the Roles page's.
+    const kind = WebAnswers.pepRouteKindOf(String(pressed.attribute || ''));
+    if (!WebAnswers.has(fields, 'fgadd')) {
+      const answer = await this.apiJson('GET',
+        WebAnswers.fieldSearchPath(kind, pressed, []));
+      found = WebAnswers.fieldSearchFound(kind, pressed,
+        answer && answer.status === 200 ? answer.json : null);
+    }
+    this.view.json = Object.assign({}, this.view.json, {
+      state: Object.assign({}, before, {
+        pepRoute: WebAnswers.pepRouteState(fields, before.pepRoute || null,
+                                           found) }) });
+    this.drawView(null, '');
+    if (!found) {
+      return;
+    }
+    const doc = this.env.document;
+    const refocus = function () {
+      const box = doc.getElementById('fgq-' + String(pressed.attribute ||
+                                                     'application'));
+      if (box && box.focus) {
+        box.focus({ preventScroll: true });
+      }
+    };
+    refocus();
+    if (this.env.window && this.env.window.setTimeout) {
+      this.env.window.setTimeout(refocus, 0);
+    }
+  }
+
   // A SERVICE ACCOUNT'S OWNER SEARCH (#600): the field search's Find,
   // Previous, Next and Add, for the person page's service account form. The
   // Users or the Groups list is asked for a page of five, and the form drawn
@@ -2783,6 +2978,26 @@ class ConsoleRuntime extends SpaClient {
    * @param disposition - its Content-Disposition
    * @returns nothing
    */
+  /**
+   * Saves text drawn here as a file, as `save()` saves a response.
+   *
+   * @param text - the file's content
+   * @param type - its media type
+   * @param name - the file name
+   * @returns nothing
+   */
+  saveText(text: string, type: string, name: string): void {
+    const blob = new Blob([text], { type: type });
+    const href = URL.createObjectURL(blob);
+    const a = this.env.document.createElement('a');
+    a.href = href;
+    a.download = name;
+    this.env.document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(href);
+  }
+
   async save(res: Json, disposition: string): Promise<void> {
     const name = (/filename="?([^";]+)"?/i.exec(disposition) || [])[1] ||
       'download';
@@ -2856,8 +3071,13 @@ class ConsoleRuntime extends SpaClient {
       }
       return;
     }
+    // AN SVG LINK IS `a`, NOT `A`: an element in the SVG namespace keeps
+    // its case, so a picture's boxes (the PEP picture's routes and
+    // listeners, the delegation and federation pictures' parties, the
+    // geolocation map's places) were full page loads that dropped the
+    // token held in memory.
     let el = event.target;
-    while (el && el.tagName !== 'A') {
+    while (el && String(el.tagName || '').toUpperCase() !== 'A') {
       el = el.parentElement;
     }
     if (!el) {
@@ -2874,6 +3094,19 @@ class ConsoleRuntime extends SpaClient {
       ? url.pathname.slice(this.prefix.length) : null;
     const page = this.consolePath(url.pathname);
     const format = url.searchParams.get('format');
+    // A PICTURE'S DOCUMENT IS DRAWN HERE (#444 phase 2b), from the answer
+    // the page was drawn from, as the picture on the page is: the link's
+    // query is the page's own with `format=svg` added. A page that draws
+    // none, or a link to another page's, still asks the API.
+    const drawn = !apiPath && page && format === 'svg' && this.view &&
+      this.view.page.path === page
+      ? WebPages.documentOf(page, this.view.json) : null;
+    if (drawn !== null) {
+      event.preventDefault();
+      this.saveText(drawn, 'image/svg+xml', (el.getAttribute('download') ||
+        (this.view.page.operation.split('/').pop() || 'drawing') + '.svg'));
+      return;
+    }
     if (apiPath || (page && format)) {
       event.preventDefault();
       this.fetchAndSave(apiPath ? apiPath + url.search
@@ -3217,6 +3450,141 @@ class ConsoleRuntime extends SpaClient {
     }
   }
 
+  // A SELECT THAT SHOWS ONE PANEL OF ITS FORM (#1760, the route forms'
+  // Authorization choice): `select[data-panels="<group>"]`, and in the same
+  // form every `[data-panel-of="<group>"]` is shown when its `data-panel`
+  // holds the select's value (a space-separated list) and hidden
+  // otherwise. The page is drawn with the stored choice's panels shown, so
+  // it reads right before this runs. A hidden panel's fields are still
+  // posted; the save reads only the chosen kind's, and nothing in a panel
+  // is `required`, so a hidden one cannot hold a submit back.
+  /**
+   * Shows each choice select's panels for its value, now and on change.
+   *
+   * @returns nothing
+   */
+  wireChoicePanels(): void {
+    const doc = this.env.document;
+    const selects = doc && doc.querySelectorAll
+      ? doc.querySelectorAll('select[data-panels]') : [];
+    for (let i = 0; i < selects.length; i++) {
+      const select = selects[i];
+      const form = select.form;
+      const group = String(select.getAttribute('data-panels') || '');
+      if (!form || !group) {
+        continue;
+      }
+      const show = function (): void {
+        const panels = form.querySelectorAll('[data-panel-of]');
+        for (let j = 0; j < panels.length; j++) {
+          if (panels[j].getAttribute('data-panel-of') !== group) {
+            continue;
+          }
+          const values = String(panels[j].getAttribute('data-panel') || '')
+            .split(/\s+/);
+          panels[j].hidden = values.indexOf(String(select.value)) < 0;
+        }
+      };
+      select.addEventListener('change', show);
+      show();
+    }
+  }
+
+  // A SELECT ALL BOX (rcbj 2026-11-14): `data-check-all="<name>"` ticks or
+  // unticks every checkbox of that name in its form, and is itself ticked
+  // exactly when every one of them is. It carries no name, so it posts
+  // nothing. Directory → Policies' export and import checklists are the
+  // first; the boxes work without it.
+  //
+  // AND A NONE BOX (#1760, rcbj 2026-11-15, a remote PEP route's Methods:
+  // "Clicking None deselects everything else. Clicking All deselects None
+  // and selects all other options"): `data-check-none="<name>"` unticks
+  // every box of that name and the group's All. Both switches of a form and
+  // name share ONE refresh, run after every change, so each shows the state
+  // rather than the last click: All is ticked when every box is, None when
+  // none is — a method ticked by hand unticks None, the last one ticked
+  // ticks All, and unticking None with nothing ticked leaves it ticked,
+  // because nothing ticked is what None means. Ticking a box by script
+  // fires no `change`, which is why the refresh is called, not awaited.
+  /**
+   * Wires every Select all and None box on the page drawn.
+   *
+   * @returns nothing
+   */
+  wireCheckAll(): void {
+    const doc = this.env.document;
+    const switches = doc && doc.querySelectorAll
+      ? doc.querySelectorAll('input[data-check-all], input[data-check-none]')
+      : [];
+    const groups: Json[] = [];
+    for (let i = 0; i < switches.length; i++) {
+      const sw = switches[i];
+      const form = sw.form;
+      if (!form) {
+        continue;
+      }
+      const allName = sw.getAttribute('data-check-all');
+      const name = String(allName || sw.getAttribute('data-check-none') ||
+        '');
+      if (name === '') {
+        continue;
+      }
+      let group = groups.filter(function (one) {
+        return one.form === form && one.name === name;
+      })[0];
+      if (!group) {
+        const boxes: Json[] = [];
+        const inputs = form.querySelectorAll('input[type="checkbox"]');
+        for (let j = 0; j < inputs.length; j++) {
+          if (String(inputs[j].name || '') === name) {
+            boxes.push(inputs[j]);
+          }
+        }
+        group = { form: form, name: name, boxes: boxes, alls: [],
+                  nones: [] };
+        groups.push(group);
+      }
+      (allName ? group.alls : group.nones).push(sw);
+    }
+    groups.forEach(function (group) {
+      const boxes: Json[] = group.boxes;
+      const refresh = function (): void {
+        group.alls.forEach(function (sw: Json) {
+          sw.checked = boxes.length > 0 && boxes.every(function (box) {
+            return !!box.checked;
+          });
+        });
+        group.nones.forEach(function (sw: Json) {
+          sw.checked = boxes.every(function (box) {
+            return !box.checked;
+          });
+        });
+      };
+      group.alls.forEach(function (sw: Json) {
+        sw.addEventListener('change', function () {
+          boxes.forEach(function (box) {
+            box.checked = !!sw.checked;
+          });
+          refresh();
+        });
+      });
+      group.nones.forEach(function (sw: Json) {
+        sw.addEventListener('change', function () {
+          if (sw.checked) {
+            boxes.forEach(function (box) {
+              box.checked = false;
+            });
+          }
+          refresh();
+        });
+      });
+      boxes.forEach(function (box) {
+        box.addEventListener('change', refresh);
+      });
+      refresh();
+    });
+  }
+
   // AN ORDERED CHOICE'S SELECT ALL / NONE SWITCH (#1130), drawn by
   // `SettingsForms.orderedChoiceControl()`. On ticks what
   // `SettingsForms.selectAllValues()` allows, reading the switches the
@@ -3331,6 +3699,52 @@ class ConsoleRuntime extends SpaClient {
         });
       });
       refresh();
+    }
+  }
+
+  // A FILE READ INTO A FORM'S BOX (#1760, rcbj 2026-11-15: a remote PEP's
+  // proxy configuration "easy to save and transfer between remote PEPs").
+  // A `button[data-load-file]` opens the hidden file input it names, and
+  // that input's `data-load-into` names the box the chosen file's text is
+  // put in — the Manifest's editor. Nothing is sent: the form's own Save
+  // does that, through its operation's validator. A file that cannot be
+  // read says so on the button, in English (failures stay English, #539).
+  /**
+   * Wires the buttons that read a chosen file into a box of the page.
+   *
+   * @returns nothing
+   */
+  wireFileLoads(): void {
+    const self = this;
+    const doc = this.env.document;
+    const buttons = doc.querySelectorAll('button[data-load-file]');
+    for (let i = 0; i < buttons.length; i++) {
+      const button = buttons[i];
+      const input = doc.getElementById(
+        button.getAttribute('data-load-file') || '');
+      const box = input ? doc.getElementById(
+        input.getAttribute('data-load-into') || '') : null;
+      if (!input || !box) {
+        continue;
+      }
+      button.addEventListener('click', function () {
+        input.click();
+      });
+      input.addEventListener('change', function () {
+        const file = input.files && input.files[0];
+        if (!file) {
+          return;
+        }
+        return Promise.resolve(file.text()).then(function (text: string) {
+          box.value = String(text);
+          self.dirty = true;
+          input.value = '';
+        }, function (e: Json) {
+          // The reason is the browser's; the button says the read failed.
+          button.textContent = 'Could not read ' + String(file.name || '') +
+            ': ' + String((e && e.message) || e);
+        });
+      });
     }
   }
 
@@ -3466,6 +3880,7 @@ class ConsoleRuntime extends SpaClient {
       };
       this.env.window.addEventListener('hashchange', function () {
         self.markOpenTabs();
+        self.redrawTrail();
       });
       this.env.window.addEventListener('popstate', function () {
         // A FRAGMENT'S OWN NAVIGATION — a tab pressed, or targetFragment() —
@@ -3476,6 +3891,7 @@ class ConsoleRuntime extends SpaClient {
         if (self.env.location.pathname + self.env.location.search ===
             self.drawnAt) {
           self.markOpenTabs();
+          self.redrawTrail();
           return;
         }
         self.prefix = ConsoleRuntime.prefixOf(self.env.location.pathname);

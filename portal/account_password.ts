@@ -39,6 +39,8 @@ import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
+type AccountAnswering<K extends keyof IyaApi.Account.Operations> =
+  import('../types/account-api').AccountAnswering<K>;
 type AccountContext = import('../types/account-api').AccountContext;
 type AccountCaller = import('../types/account-api').AccountCaller;
 
@@ -123,7 +125,8 @@ class AccountPassword {
    * @param body - the checked body
    * @returns nothing
    */
-  async change(ctx: AccountContext, req: Json, res: Json,
+  async change(ctx: AccountContext, req: Json,
+               res: AccountAnswering<'changePassword'>,
                caller: AccountCaller, body: Json): Promise<unknown> {
     const { log, credentials } = this.deps;
     const { audit, websecurity } = ctx;
@@ -208,15 +211,15 @@ class AccountPassword {
       { method: 'GET', path: ctx.BASE + '/password',
         operationId: 'getPassword', access: 'person',
         query: ModelZod.query('account', 'getPassword'),
-        handler: function (req: Json, res: Json,
+        handler: function (req, res,
                            caller: AccountCaller): unknown {
           return ctx.json(res, 200, self.view(caller.username));
         } },
       { method: 'POST', path: ctx.BASE + '/password',
         operationId: 'changePassword', access: 'person',
         body: PASSWORD_FORM,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return self.change(ctx, req, res, caller, input.body);
         } }
     ];

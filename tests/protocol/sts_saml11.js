@@ -470,6 +470,27 @@ function samlRequest(inner, id) {
     inner + '</samlp:Request>'));
 }
 
+// A SAML 1.1 relying party's metadata: its signing key, and each assertion
+// consumer WITH its profile — what samlAcsEndpoint is written from, and so
+// what the shire a request names is answered by. `endpoints` is a list of
+// [profile, location], the profile `browser-post` or `artifact-01`.
+function saml11Metadata(entityId, certB64, endpoints) {
+  log.debug('Entering saml11Metadata(). ' + entityId);
+  const consumers = endpoints.map(function (one, i) {
+    return '<md:AssertionConsumerService index="' + (i + 1) + '" ' +
+      'Binding="urn:oasis:names:tc:SAML:1.0:profiles:' + one[0] + '" ' +
+      'Location="' + one[1] + '"/>';
+  }).join('');
+  log.debug('Leaving saml11Metadata().');
+  return '<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:' +
+    'metadata" entityID="' + entityId + '"><md:SPSSODescriptor ' +
+    'protocolSupportEnumeration="' + NS_SAMLP11 + '"><md:KeyDescriptor ' +
+    'use="signing"><ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/' +
+    'xmldsig#"><ds:X509Data><ds:X509Certificate>' + certB64 +
+    '</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor>' +
+    consumers + '</md:SPSSODescriptor></md:EntityDescriptor>';
+}
+
 function statusOf(doc) {
   const el = byLocal(doc, 'StatusCode');
   return el ? (el.getAttribute('Value') || '') : '';
@@ -630,10 +651,15 @@ async function theTestPeerRelyingParty(target) {
     log.debug('Leaving theTestPeerRelyingParty(). No peer.');
     return;
   }
+  // The peer registers each consumer with its profile (saml11Fields()), so
+  // the shire picks it: /saml11/acs is Browser/POST and /saml11/artifact
+  // Browser/Artifact. Both requests are Shibboleth's: lower-case `target`.
   const acs = peer11.urls.saml11Acs;
+  const artifactAcs = peer11.urls.saml11Artifact;
   let since = await testPeer.mark(peer11.tenant);
-  let res = await signIn({ providerId: RP_PEER, shire: acs, TARGET: target,
-                           profile: 'post' }, USER_POST);
+  let res = await signIn({ providerId: RP_PEER, shire: acs, target: target,
+                           time: String(Math.floor(Date.now() / 1000)) },
+                         USER_POST);
   const fields = hiddenFieldsOf(res.body);
   check('the Browser/POST page posts to the peer\'s assertion consumer',
         res.status === 200 && formActionOf(res.body) === acs &&
@@ -653,11 +679,15 @@ async function theTestPeerRelyingParty(target) {
         seen.audiences.indexOf(RP_PEER) >= 0,
         'status ' + res.status + ' ' + JSON.stringify(seen).slice(0, 600));
   since = await testPeer.mark(peer11.tenant);
-  res = await signIn({ providerId: RP_PEER, shire: acs, TARGET: target,
-                       profile: 'artifact' }, USER_ARTIFACT);
+  res = await signIn({ providerId: RP_PEER, shire: artifactAcs,
+                       target: target,
+                       time: String(Math.floor(Date.now() / 1000)) },
+                     USER_ARTIFACT);
   const location = res.headers.location || '';
-  check('the artifact profile redirects to the peer\'s assertion consumer',
-        res.status === 303 && location.indexOf(acs + '?') === 0 &&
+  check('the shire registered on artifact-01 redirects to the peer\'s ' +
+        'artifact consumer',
+        res.status === 303 && !!artifactAcs &&
+        location.indexOf(artifactAcs + '?') === 0 &&
         /[?&]SAMLart=/.test(location), 'status ' + res.status + ' ' + location);
   res = await request('GET', location);
   seen = await peerSaw(peer11, 'saml11', since);
@@ -950,6 +980,16 @@ async function main() {
   // provider, so its assertion consumer is an address nothing dials — the
   // service's own `/saml11/rp` was deleted (#592).
   const acs = 'https://rp-' + runStamp() + '.saml11.example.test/SAML/POST';
+  // ITS ARTIFACT CONSUMER, AT A LOCATION OF ITS OWN. Nothing in a SAML 1.1
+  // request picks the profile: the binding registered for the shire does
+  // (samlAcsEndpoint, from consumed metadata), so this relying party's
+  // metadata names `acs` browser-post and `artifactAcs` artifact-01, the way
+  // a Shibboleth SP's /SAML/POST and /SAML/Artifact are. `unboundAcs` is
+  // registered with no binding, so saml11.defaultProfile answers it.
+  const artifactAcs = 'https://rp-' + runStamp() +
+                      '.saml11.example.test/SAML/Artifact/rp';
+  const unboundAcs = 'https://rp-' + runStamp() +
+                     '.saml11.example.test/SAML/Unbound';
 
   // THE RELYING PARTY, IN THE REGISTRY, BEFORE THE FIRST FLOW.
   //
@@ -974,8 +1014,10 @@ async function main() {
     protocols: ['saml11'],
     fields: {
       samlEntityId: [RP],
-      samlAssertionConsumerService: [acs],
-      samlSigningCertificate: [rpSigning.certB64]
+      samlAssertionConsumerService: [acs, artifactAcs, unboundAcs],
+      samlSigningCertificate: [rpSigning.certB64],
+      samlSpMetadata: saml11Metadata(RP, rpSigning.certB64, [
+        ['browser-post', acs], ['artifact-01', artifactAcs]])
     },
     why: 'the relying party providerId names in every flow below'
   });
@@ -1055,8 +1097,7 @@ async function main() {
   const metadataLocation = metadataFlow.headers.location || '';
   const metadataArtifact = decodeURIComponent(
     (/[?&]SAMLart=([^&]+)/.exec(metadataLocation) || [])[1] || '');
-  check('the registered artifact binding selects Browser/Artifact without ' +
-        'profile',
+  check('the registered artifact binding selects Browser/Artifact',
         metadataFlow.status === 303 && !!metadataArtifact,
         'status ' + metadataFlow.status + ' ' + metadataLocation);
   if (metadataArtifact) {
@@ -1082,7 +1123,7 @@ async function main() {
   // (#293, WP5, 2026-10-13). The artifact case above shows the profile chosen
   // by a consumed binding; this is the other one, and the form as the
   // Shibboleth SP 1.3 sends it — `providerId`, `shire`, lower-case `target`
-  // and `time` — with no `profile`. `time` is accepted and ignored
+  // and `time`. `time` is accepted and ignored
   // (saml11_sso.ts), so a stale one is answered exactly as a current one.
   heading('the Shibboleth 1.3 form, its profile from a consumed POST binding');
   const postRp = RP + ':metadata-post';
@@ -1114,7 +1155,7 @@ async function main() {
                                     target: postTarget, time: time },
                                   USER_POST);
     const posted = hiddenFieldsOf(postFlow.body);
-    check('the Shibboleth 1.3 form with ' + when + ' and no profile ends ' +
+    check('the Shibboleth 1.3 form with ' + when + ' ends ' +
           'on the Browser/POST page the consumed binding selects, posting ' +
           'to the shire with the lower-case target as TARGET',
           postFlow.status === 200 && formActionOf(postFlow.body) === postAcs &&
@@ -1143,7 +1184,7 @@ async function main() {
           !!scopedEntityId && scopedEntityId === unscopedEntityId && !!slug,
           'status ' + res.status + ' ' + scopedEntityId);
   }
-  res = await signIn({ providerId: RP, shire: acs, TARGET: target, profile: 'post' }, USER_POST);
+  res = await signIn({ providerId: RP, shire: acs, TARGET: target }, USER_POST);
   check('the flow ends on the auto-post page',
         res.status === 200 && /saml11-form/.test(res.body), 'status ' + res.status);
   const csp = res.headers['content-security-policy'] || '';
@@ -1282,7 +1323,8 @@ async function main() {
 
   // -------------------------------------------------------------------------
   heading('Browser/Artifact, end to end');
-  res = await signIn({ providerId: RP, shire: acs, TARGET: target, profile: 'artifact' }, USER_ARTIFACT);
+  res = await signIn({ providerId: RP, shire: artifactAcs, TARGET: target },
+                     USER_ARTIFACT);
   check('the artifact profile answers with a redirect, not a form',
         res.status === 303, 'status ' + res.status);
   const location = res.headers.location || '';
@@ -1456,7 +1498,7 @@ async function main() {
   // at the unscoped path and the scoped one is the whole point here.
   cookie = '';
   res = await resume('/saml11/sso/' + encodeURIComponent(slug) + '?' +
-                     form({ shire: acs, TARGET: target, profile: 'post' }), 'erin');
+                     form({ shire: acs, TARGET: target }), 'erin');
   const scopedXml = samlResponseIn(res.body);
   check('a scoped inter-site transfer service answers', !!scopedXml, 'status ' + res.status);
   if (scopedXml) {
@@ -1474,9 +1516,10 @@ async function main() {
 
   // -------------------------------------------------------------------------
   heading('the NameIdentifier formats');
-  // SAML 1.1 has no NameIDPolicy to ask in, so the non-spec `format` parameter
-  // is the only way to exercise these at all — and every one of them is a branch
-  // that would otherwise never run.
+  // SAML 1.1 has no NameIDPolicy to ask in, so the relying party's entry
+  // decides (saml11NameIdFormat, over the service's saml11.nameIdFormat):
+  // one relying party per format, and every one of them is a branch that
+  // would otherwise never run.
   const formats = [
     ['urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress', function (v) {
       return v.indexOf('@') > 0; }, 'a mail address'],
@@ -1488,24 +1531,46 @@ async function main() {
       return v === 'frank'; }, 'the username']
   ];
   for (const [format, ok, what] of formats) {
+    const formatRp = RP + ':format:' + format.split(':').pop();
+    await registry.provision(registry.baseOf(BASE), {
+      identifier: formatRp,
+      name: 'SAML 1.1 relying party answered in ' + format.split(':').pop(),
+      protocols: ['saml11'],
+      fields: { samlEntityId: [formatRp],
+                samlAssertionConsumerService: [acs],
+                saml11NameIdFormat: format },
+      why: 'the relying party whose entry names the NameIdentifier format'
+    });
     cookie = '';
-    res = await resume('/saml11/sso?' + form({ providerId: RP, shire: acs, TARGET: target,
-                                               profile: 'post', format: format }), 'frank');
+    res = await resume('/saml11/sso?' + form({ providerId: formatRp, shire: acs,
+                                               TARGET: target }), 'frank');
     const xml = samlResponseIn(res.body);
     const el = xml ? byLocal(parse(xml), 'NameIdentifier') : null;
     const value = el ? (el.textContent || '').trim() : '';
-    check('format ' + format.split(':').pop() + ' is answered with ' + what,
+    check('saml11NameIdFormat ' + format.split(':').pop() +
+          ' on the entry is answered with ' + what,
           !!el && el.getAttribute('Format') === format && ok(value), value);
   }
-  // A format nobody has ever heard of is answered with it, rather than refused:
-  // handing a relying party back its own format is the behaviour worth
-  // exercising.
+  // NOT SHIBBOLETH'S REQUEST PROFILE, SO IGNORED. A `format` or a `profile`
+  // parameter chose these once; neither is in the request profile, and a
+  // parameter nobody defines is ignored rather than honoured: the entry's
+  // format and the shire's registered binding (browser-post) still decide.
   cookie = '';
-  res = await resume('/saml11/sso?' + form({ providerId: RP, shire: acs, TARGET: target,
-                                             profile: 'post', format: 'urn:made:up' }), 'frank');
-  let madeUp = samlResponseIn(res.body);
-  check('a format nobody has heard of is answered with that format, not refused',
-        !!madeUp && byLocal(parse(madeUp), 'NameIdentifier').getAttribute('Format') === 'urn:made:up');
+  const x509Rp = RP + ':format:X509SubjectName';
+  res = await resume('/saml11/sso?' + form({ providerId: x509Rp, shire: acs,
+                                             TARGET: target,
+                                             profile: 'artifact',
+                                             format: 'urn:made:up' }),
+                     'frank');
+  const ignored = samlResponseIn(res.body);
+  const ignoredFormat = ignored
+    ? byLocal(parse(ignored), 'NameIdentifier').getAttribute('Format') : '';
+  check('`profile` and `format` parameters are ignored: Browser/POST, as ' +
+        'the shire is registered, in the entry\'s format',
+        res.status === 200 && !!ignored &&
+        ignoredFormat === 'urn:oasis:names:tc:SAML:1.1:nameid-format:' +
+                          'X509SubjectName',
+        'status ' + res.status + ' ' + ignoredFormat);
 
   // -------------------------------------------------------------------------
   heading('the custom attributes reach a browser-profile assertion');
@@ -1520,8 +1585,9 @@ async function main() {
   check('a custom SAML 1.1 attribute can be configured', added, res.body.slice(0, 120));
   if (added) {
     cookie = '';
-    res = await resume('/saml11/sso?' + form({ providerId: RP, shire: acs, TARGET: target,
-                                               profile: 'post' }), 'grace');
+    res = await resume('/saml11/sso?' +
+                       form({ providerId: RP, shire: acs, TARGET: target }),
+                       'grace');
     const xml = samlResponseIn(res.body);
     const els = xml ? parse(xml).getElementsByTagNameNS('*', 'Attribute') : [];
     let found = null;
@@ -1543,15 +1609,16 @@ async function main() {
   // -------------------------------------------------------------------------
   heading('single sign-on across the flows and the other protocols');
   cookie = '';
-  res = await resume('/saml11/sso?' + form({ providerId: RP, shire: acs, TARGET: target,
-                                             profile: 'post' }), 'heidi');
+  res = await resume('/saml11/sso?' +
+                     form({ providerId: RP, shire: acs, TARGET: target }),
+                     'heidi');
   check('the first flow signs somebody in', !!samlResponseIn(res.body));
   // The same cookie jar, and no username typed. A second screen here would mean
   // this profile had a session of its own, which is exactly what it must not
   // have.
   const before = cookie;
   res = await request('GET', '/saml11/sso?' + form({ providerId: RP, shire: acs,
-                                                     TARGET: target, profile: 'post' }));
+                                                     TARGET: target }));
   const second = samlResponseIn(res.body);
   check('a second flow in the same session never sees the sign-in screen',
         res.status === 200 && !!second, 'status ' + res.status);
@@ -1567,9 +1634,6 @@ async function main() {
   // -------------------------------------------------------------------------
   heading('refusals at the inter-site transfer service');
   cookie = '';
-  res = await request('GET', '/saml11/sso?' + form({ TARGET: target, profile: 'paos' }));
-  check('a profile that is not one of the two is refused BY NAME',
-        res.status === 400 && /paos/.test(res.body), 'status ' + res.status);
   res = await request('GET', '/saml11/sso?' + form({ providerId: RP, shire: '/relative' }));
   // Product mode refuses it as an address nobody registered, before it asks
   // whether it is absolute; either sentence is a refusal of the same request.
@@ -1593,7 +1657,7 @@ async function main() {
     // recorded under the guessed origin.
     cookie = '';
     res = await request('GET', '/saml11/sso?' + form({
-      TARGET: 'https://guessed.example.com/app/page', shire: acs, profile: 'post' }));
+      TARGET: 'https://guessed.example.com/app/page', shire: acs }));
     // 403 since #496: a relying party nobody registered — and none named
     // is none registered — is refused before its address is read.
     check('a flow naming no relying party is REFUSED in product mode',
@@ -1603,7 +1667,7 @@ async function main() {
   } else {
     cookie = '';
     res = await resume('/saml11/sso?' + form({ TARGET: 'https://guessed.example.com/app/page',
-                                               shire: acs, profile: 'post' }), 'ivan');
+                                               shire: acs }), 'ivan');
     const guessedXml = samlResponseIn(res.body);
     check('a flow naming no relying party still completes', !!guessedXml, 'status ' + res.status);
     if (guessedXml) {
@@ -1667,8 +1731,9 @@ async function main() {
   let refused = wrote.status !== 200 ||
                 /refus|development only|STS-CORE-0103/i.test(wrote.body || '');
   cookie = '';
-  res = await resume('/saml11/sso?' + form({ providerId: RP, shire: acs, TARGET: target,
-                                             profile: 'post' }), 'judy');
+  res = await resume('/saml11/sso?' +
+                     form({ providerId: RP, shire: acs, TARGET: target }),
+                     'judy');
   let xml = samlResponseIn(res.body);
   if (PRODUCT && refused) {
     check('product: saml11.signAssertion=false is refused and the assertion is still SIGNED',
@@ -1685,8 +1750,9 @@ async function main() {
   refused = wrote.status !== 200 ||
             /refus|development only|STS-CORE-0103/i.test(wrote.body || '');
   cookie = '';
-  res = await resume('/saml11/sso?' + form({ providerId: RP, shire: acs, TARGET: target,
-                                             profile: 'post' }), 'judy');
+  res = await resume('/saml11/sso?' +
+                     form({ providerId: RP, shire: acs, TARGET: target }),
+                     'judy');
   xml = samlResponseIn(res.body);
   if (PRODUCT && refused) {
     check('product: saml11.signResponse=false is refused and the Response is still SIGNED',
@@ -1702,16 +1768,17 @@ async function main() {
 
   await setSetting('saml11.defaultProfile', 'artifact');
   cookie = '';
-  // No `profile` parameter at all: the setting is what decides, because nothing
-  // in SAML 1.1 lets a relying party ask. The flow is COMPLETED rather than
-  // abandoned at the sign-in screen — an earlier version of this check stopped
-  // at the redirect and left a held flow behind, which made the SECOND run
-  // against one instance fail. A test that leaks state is a test that has to be
-  // run first.
-  res = await resume('/saml11/sso?' + form({ providerId: RP, shire: acs, TARGET: target }),
-                     'lana');
+  // A shire registered with NO binding: the setting is what decides, because
+  // nothing in SAML 1.1 lets a relying party ask. The flow is COMPLETED
+  // rather than abandoned at the sign-in screen — an earlier version of this
+  // check stopped at the redirect and left a held flow behind, which made the
+  // SECOND run against one instance fail. A test that leaks state is a test
+  // that has to be run first.
+  res = await resume('/saml11/sso?' + form({ providerId: RP, shire: unboundAcs,
+                                             TARGET: target }), 'lana');
   const wentByArtifact = res.status === 303 && /[?&]SAMLart=/.test(res.headers.location || '');
-  check('saml11.defaultProfile decides the profile when the request does not',
+  check('saml11.defaultProfile decides the profile for a shire with no ' +
+        'registered binding',
         wentByArtifact, 'status ' + res.status);
   if (wentByArtifact) {
     // Spend it, so this run leaves the artifact store as it found it.
@@ -1721,13 +1788,22 @@ async function main() {
                   samlRequest('<samlp:AssertionArtifact>' + spent +
                               '</samlp:AssertionArtifact>', '_r8'), XML);
   }
+  // And a shire registered on browser-post is answered on it whatever the
+  // setting says: the registered binding comes first.
+  res = await request('GET', '/saml11/sso?' + form({ providerId: RP, shire: acs,
+                                                     TARGET: target }));
+  check('the shire\'s registered binding (browser-post) wins over ' +
+        'saml11.defaultProfile=artifact',
+        res.status === 200 && !!samlResponseIn(res.body),
+        'status ' + res.status);
   await setSetting('saml11.defaultProfile', 'post');
 
   await setSetting('saml11.autocreateApplications', false);
   const unregistered = 'urn:test:not:registered:' + process.pid;
   cookie = '';
   res = await resume('/saml11/sso?' + form({ providerId: unregistered, shire: acs,
-                                             TARGET: target, profile: 'post' }), USER_UNREGISTERED);
+                                             TARGET: target }),
+                     USER_UNREGISTERED);
   // Product mode answers only a registered relying party (#496: a 403 page
   // before its return address is read), so it is refused there.
   check(PRODUCT ? 'autocreateApplications=false: an unregistered relying party is REFUSED'

@@ -34,18 +34,22 @@ statement about the router and a useless one about the service: this port
 answers well over a hundred endpoints across sixteen protocol families and none
 of them was discoverable from `/`.
 
-So the page is a **signpost**: the logo, the name, the version, one sentence
+So the page is a **signpost**: the logo, the name, one sentence
 about what this service is, the warning that it verifies nothing, and six
 links — the repository, its issues, the documentation site, and the three
 surfaces on this instance that a person rather than a client goes to, `/admin`,
-`/portal` and `/report`.
+`/portal` and `/report`. The version
+is not on the card since 2026-11-14 (rcbj): the page footer every shell draws
+(`common/page_footer.ts`) carries it, with its build line as the tooltip, and
+a second line here was the version said twice. `GET /home-api/front` still
+answers `version` and `build`.
 
 **IT LISTS NO ENDPOINTS AND MUST NOT START.** `GET /admin/sts-metadata` builds
 that list by walking the running Express router, so it cannot go stale by
 omission, and this repository's own `tests/protocol/sts_metadata.js` fails on drift in
 either direction. A hand-written set of highlights here would be a second,
 unchecked copy of it — wrong within a month, on the page most likely to be read
-first and least likely to be re-read. `docs/endpoints.md` makes the same
+first and least likely to be re-read. `docs/v1.1.0/endpoints.md` makes the same
 argument for the documentation site. Link to the thing that generates the list.
 
 The same goes for anything else this service already publishes about itself:
@@ -148,7 +152,9 @@ apart by who may open it, which is the sentence on its row.
   derivative of the parent project's debugger artwork, which was white
   lettering drawn for a black band. This one is dark lettering on an off-white
   ground, so the band behind it is the image's own colour (`#fbfaf8`). Copy
-  `docs/logo.png` over it again if the README's logo changes.
+  `docs/logo.png` over it again if the README's logo changes. The Remote
+  PEP embeds the same bytes (`rust/bins/xacml-pep/src/logo.png`); copy that
+  file too. `xacml-pep/CLAUDE.md` says why it cannot read this one.
 
 ## A static surface since #579
 

@@ -803,9 +803,12 @@ function create(deps) {
             state: 'refused', loaded_at: Number(at) || 0,
             refusal: String(why || ''), error_code: String(code || '')
           }).where('state', 'loading')
-            .whereIn(['realm', 'dataset', 'version'], found.map(function (f) {
-              return [f.realm, f.dataset, f.version];
-            }))
+            .where(function () {
+              dialect.whereKeys(this, ['realm', 'dataset', 'version'],
+                found.map(function (f) {
+                  return [f.realm, f.dataset, f.version];
+                }));
+            })
         ).then(function () {
           return found;
         });

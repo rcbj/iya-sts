@@ -15,7 +15,7 @@
 //   b. with `Accept-Language: fr`, a setting's label and description are
 //      French, and its key, value, source and every other member are the
 //      same as in English;
-//   c. a language no catalog answers (`de`) reads English;
+//   c. a language no catalog answers (`ja`) reads English;
 //   d. the OpenAPI document is byte-identical whatever the request names;
 //   e. the answer says `Vary: Accept-Language`;
 //   f. Directory → Policies (#543 phase 2): with `fr`, the password policy's
@@ -259,11 +259,11 @@ async function test() {
   });
 
   log.info("=== c. a language with no catalog reads English ===");
-  const german = settingsOf((await get(api + "/config", "de")).raw);
-  check("de reads every setting as en does", function () {
+  const japanese = settingsOf((await get(api + "/config", "ja")).raw);
+  check("ja reads every setting as en does", function () {
     Object.keys(en).forEach(function (key) {
-      assert.deepStrictEqual(pick(german[key], PROSE), pick(en[key], PROSE),
-                             key);
+      assert.deepStrictEqual(pick(japanese[key], PROSE),
+                             pick(en[key], PROSE), key);
     });
   });
 

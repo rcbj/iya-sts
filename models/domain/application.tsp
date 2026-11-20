@@ -300,6 +300,9 @@ model OAuthClient {
   @fromAttr(#{attr: "oauthRefreshIdleSeconds"})
   `refreshIdleSeconds`?: string;
 
+  @fromAttr(#{attr: "oauthMaxAuthAgeS"})
+  `maxAuthAgeS`?: string;
+
   @fromAttr(#{attr: "oauthClaimsAccessToken"})
   `claimsAccessToken`?: string;
 
@@ -828,6 +831,45 @@ model WsTrustRelyingParty {
 
   @fromAttr(#{attr: "wstrustJwtScope"})
   `jwtScope`?: string[];
+
+  @fromAttr(#{attr: "wstrustEncryptRequest"})
+  `encryptRequest`?: string;
+
+  @fromAttr(#{attr: "wstrustAcceptEncryptedElements"})
+  `acceptEncryptedElements`?: string;
+
+  @fromAttr(#{attr: "wstrustEncryptRequestElements"})
+  `requestElements`?: string[];
+
+  @fromAttr(#{attr: "wstrustEncryptResponse"})
+  `encryptResponse`?: string;
+
+  @fromAttr(#{attr: "wstrustEncryptResponseElements"})
+  `responseElements`?: string[];
+
+  @fromAttr(#{attr: "wstrustEncryptionAlgorithm"})
+  `encryptionAlgorithm`?: string;
+
+  @fromAttr(#{attr: "wstrustEncryptionCertificate"})
+  `encryptionCertificate`?: string;
+
+  @fromAttr(#{attr: "wstrustKeyTransportAlgorithm"})
+  `keyTransportAlgorithm`?: string;
+
+  @fromAttr(#{attr: "wstrustResponseRecipientXPath"})
+  `responseRecipientXPath`?: string;
+
+  @fromAttr(#{attr: "wstrustDecryptionCertificate"})
+  `decryptionCertificate`?: string;
+
+  @fromAttr(#{attr: "wstrustDecryptionCertificateChain"})
+  `decryptionCertificateChain`?: string;
+
+  @fromAttr(#{attr: "wstrustDecryptionPrivateKey", secret: true})
+  `decryptionPrivateKey`?: string;
+
+  @fromAttr(#{attr: "wstrustDecryptionKeySource"})
+  `decryptionKeySource`?: string;
 }
 
 @domain(#{

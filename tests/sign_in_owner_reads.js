@@ -17,8 +17,9 @@
 // clock's rule) and the application owners are read off the kept listing.
 //
 //   A. THE CLOCK: the names are read once and kept across writes to an
-//      ordinary person; flagging a person a service account, and taking the
-//      flag away, is seen by the very next read.
+//      ordinary person; flagging a person a service account, and deleting
+//      one, is seen by the very next read (the flag itself can no longer be
+//      taken away, rcbj 2026-11-15).
 //   B. OWNERSHIP IS STILL COMPUTED AT THE DECISION (rcbj's decision 2): an
 //      owner named on a service account owns something at once, and
 //      nothing once taken off.
@@ -47,6 +48,8 @@ const PERSON = 'owner-reads-person-' + STAMP;
 // The realm's service-account policy requires an owner: this one stands in
 // whenever the probe person is not it.
 const KEEPER = 'owner-reads-keeper-' + STAMP;
+// A second account, deleted: a service account is never un-flagged.
+const GONE = 'owner-reads-gone-' + STAMP;
 
 function counts() {
   log.debug("Entering counts().");
@@ -108,11 +111,24 @@ async function theClock(t, accountDn, personDn, keeperDn) {
           r.error || '');
   t.check(serviceAccounts.names().indexOf(ACCOUNT) >= 0,
           'A6. and the very next read lists it');
+  // A SERVICE ACCOUNT IS FOR GOOD (rcbj, 2026-11-15): the flag cannot be
+  // taken away, so what the clock must see go is a DELETED account.
   r = await modify(accountDn, [['delete', 'stsServiceAccount'],
                                ['delete', 'stsServiceAccountOwner']]);
-  t.check(r.ok === true, 'A7. the flag is taken away', r.error || '');
-  t.check(serviceAccounts.names().indexOf(ACCOUNT) < 0,
-          'A8. and the very next read does not list it');
+  t.check(r.ok === false && serviceAccounts.names().indexOf(ACCOUNT) >= 0,
+          'A7. the flag cannot be taken away, and it is still listed',
+          JSON.stringify(r));
+  ldapServer.createUser(GONE, { invent: false });
+  const goneDn = ldapServer.objectFor(GONE).entry.dn;
+  r = await modify(goneDn, [['replace', 'stsServiceAccount', 'TRUE'],
+                            ['replace', 'stsServiceAccountOwner',
+                             keeperDn]]);
+  t.check(r.ok === true && serviceAccounts.names().indexOf(GONE) >= 0,
+          'A8a. a second account is flagged and listed', r.error || '');
+  ldapServer.performOperation('del', { dn: goneDn, boundDn: '',
+                                       channel: 'ldaps' });
+  t.check(serviceAccounts.names().indexOf(GONE) < 0,
+          'A8. deleted, the very next read does not list it');
   r = await modify(accountDn, [['replace', 'stsServiceAccount', 'TRUE'],
                                ['replace', 'stsServiceAccountOwner',
                                 keeperDn]]);

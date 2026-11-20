@@ -1036,7 +1036,9 @@ class PkiAdmin {
     // and the tiers' names, which it read from the settings and the
     // authority as it drew.
     json.pageDefaults = {
-      keyAlgorithm: config.value('pki.keyAlgorithm'),
+      // What a build naming no key uses: the setting, or the classical
+      // default where it is a composite no listener chain may hold.
+      keyAlgorithm: pki.listenerDefaultKeyAlg(),
       organisation: config.value('pki.organisation'),
       leafLifetimeDays: config.value('pki.leafLifetimeDays'),
       alternativeKeyAlgorithm: config.value('pki.alternativeKeyAlgorithm')
@@ -1317,7 +1319,9 @@ class PkiAdmin {
     const issued = await pki.issueSigningKeyPair(undefined, {
       identifier: identifier,
       purpose: purpose,
-      // WHAT PUTS `urn:sts:person:<name>` IN THE CERTIFICATE, which is what
+      // WHAT PUTS `urn:sts:person:<name>` IN THE CERTIFICATE — or, for a
+      // service account, `urn:sts:sa:<name>`, decided by `pki.js` from the
+      // entry (#1827) — which is what
       // `assertion_grant.js` reads off a presented x5c to hold the person to
       // asserting about themselves. A leaf issued here without it would be
       // indistinguishable from an application's.
@@ -1638,8 +1642,16 @@ class PkiAdmin {
         // AS IN FORCE, so a SHA-1 value stored in a product realm is the
         // key's own default rather than a refused build, and skips a value
         // the key cannot produce, as every other build does.
-        keyAlg: String(body.keyAlg || '').trim() ||
-                config.value('pki.keyAlgorithm'),
+        //
+        // **AND THE KEY ALGORITHM'S DEFAULT IS `pki.js`'s TOO (2026-11-12).**
+        // This sent `pki.keyAlgorithm` as though the form had named it, so a
+        // composite setting — which no branch may hold, every one being on a
+        // TLS listener's chain — was refused as a caller's choice
+        // (STS-PKI-0274) where the startup build, a new realm and a repair
+        // fall back to a classical key (STS-PKI-0275). Unnamed, it reads the
+        // setting in `algorithmsFrom()` exactly as those builds do; `build-
+        // root` and `build-scope` below always sent nothing.
+        keyAlg: String(body.keyAlg || '').trim() || undefined,
         signatureAlg: String(body.signatureAlg || '').trim(),
         // Empty is the setting, read by `pki.js`'s algorithmsFrom() (#68).
         altKeyAlg: String(body.altKeyAlg || '').trim() || undefined,

@@ -87,6 +87,9 @@ import errorCodes = require('../common/error_codes');
 import audit = require('../common/audit');
 import stats = require('../common/admin_stats');
 import stsCrypto = require('../common/crypto');
+// Where a revoked grant is SAID, so a refresh grant waits for it (the
+// review of #879). A leaf over `helpers`.
+import RevokingWrites = require('../common/revoking_writes');
 
 type Json = any;
 type Req = any;
@@ -710,6 +713,9 @@ class GrantManagement {
       return { ok: false };
     }
     grants.delete(held.id);
+    // Its refresh tokens ask the grant register; a refresh on a worker that
+    // has not seen this delete must wait for it (the review of #879).
+    RevokingWrites.note('grant ' + held.id.slice(0, 8) + '… revoked');
     // WHO ENDED IT, for CAEP (#239): the client's DELETE acts for the person
     // who granted it (`user`); every other door is the console's or the
     // management API's (`admin`).

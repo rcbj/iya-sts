@@ -52,6 +52,10 @@
 //      certificate, a scope, an issued certificate and its revocation, and
 //      the realm's door; and the policies' and the catalogue's tokens that
 //      do not.
+//   X. THE CONTROL PLANE IS THE MODEL'S (#1830): register, heartbeat, the
+//      five pulls, a refusal and two validation doors, each real answer held
+//      to xacml-pep/openapi/pep-control-plane.json (tests/tools/
+//      pep_model.js), whose objects are closed.
 //   O. OFF: authzen.enabled off answers 501.
 // ---------------------------------------------------------------------------
 
@@ -98,6 +102,9 @@ const POLICY = [
   '        id = "urn:sts:xacml:authzen:caller" type = string }',
   '    attribute app { category = environmentCat',
   '        id = "urn:sts:xacml:authzen:application" type = string }',
+  '    attribute resourceId { category = resourceCat',
+  '        id = "urn:oasis:names:tc:xacml:1.0:resource:resource-id"',
+  '        type = string }',
   '    policy azevalRoot {',
   '        id = "urn:test:azeval-root"',
   '        apply firstApplicable',
@@ -146,6 +153,16 @@ const POLICY = [
   '            target clause act == "explode"',
   '            condition stringEqual(stringOneAndOnly(tags), "x")',
   '        }',
+  // A resource type this service has no objects of (#936): its candidates
+  // are the resource ids the policy names, rec-1 permitted, rec-2 denied.
+  '        rule peekRecord {',
+  '            permit',
+  '            target clause act == "peek" and resourceId == "rec-1"',
+  '        }',
+  '        rule noPeekRecord2 {',
+  '            deny',
+  '            target clause act == "peek" and resourceId == "rec-2"',
+  '        }',
   '    }',
   '}'
 ].join('\n');
@@ -175,6 +192,13 @@ function request(port, method, urlPath, cred, body, headers) {
     const sent = Object.assign({ 'content-type': 'application/json',
                                  'content-length': Buffer.byteLength(text) },
                                headers || {});
+    // A header given as null is not sent at all (#936's absent
+    // Content-Type).
+    Object.keys(sent).forEach(function (name) {
+      if (sent[name] === null) {
+        delete sent[name];
+      }
+    });
     const req = https.request({ host: '127.0.0.1', port: port,
       path: urlPath, method: method, headers: sent, ca: CA_PEM.value,
       cert: cred ? cred.certPem : undefined,
@@ -633,13 +657,20 @@ async function childBody() {
           'S6. Action Search answers the policy\'s actions the subject is ' +
           'permitted (read, write; not delete, nor approve whose ' +
           'obligation was not declared)', brief(r));
-  since = marks.length;
+  // AuthZEN 1.0 sections 8.6.1 and 10.1.1 (#936): an Action Search's
+  // `action` is an unknown member, ignored, and the answer is S6's.
   r = await request(port, 'POST', SEARCH + 'action', pepCred, {
     subject: { type: 'user', id: 'azalice' }, action: { name: 'read' },
-    resource: { type: 'document', id: 'doc-1' },
-    context: { application: 'todo-app' } });
-  t.check(r.status === 400 && markedSince(since, 'STS-AUTHZEN-0009'),
-          'S7. an Action Search carrying action is refused', brief(r));
+    resource: { type: 'document', id: 'doc-1',
+                properties: { classification: 'internal' } },
+    context: { application: 'todo-app' }, futureField: { nested: true } });
+  const ignoredNames = ((r.json && r.json.results) || []).map(function (one) {
+    return one.name;
+  });
+  t.check(r.status === 200 &&
+          ignoredNames.join() === names.join(),
+          'S7. an Action Search carrying action, and an unknown member, ' +
+          'ignores both and answers what S6 answered', brief(r));
   const paged = { subject: { type: 'user', id: 'azalice' },
                   action: { name: 'inspect' },
                   resource: { type: 'application' },
@@ -688,6 +719,66 @@ async function childBody() {
   });
   t.check(r.status === 501 && markedSince(since, 'STS-AUTHZEN-0044'),
           'S11. authzen.searchEnabled off answers 501', brief(r));
+  // A resource type this service has no objects of (#936): the candidates
+  // are the resource ids the policy names, each decided as that type.
+  r = await request(port, 'POST', SEARCH + 'resource', pepCred, {
+    subject: { type: 'user', id: 'azalice' }, action: { name: 'peek' },
+    resource: { type: 'record' }, context: { application: 'todo-app' } });
+  ids = ((r.json && r.json.results) || []).map(function (one) {
+    return one.type + ':' + one.id;
+  });
+  t.check(r.status === 200 && ids.join() === 'record:rec-1',
+          'S12. a resource type with no objects here is searched over the ' +
+          'resource ids the policy names: rec-1 permitted, rec-2 denied ' +
+          'and not a result', brief(r));
+  r = await request(port, 'POST', SEARCH + 'resource', pepCred, {
+    subject: { type: 'user', id: 'azalice' }, action: { name: 'read' },
+    resource: { type: 'record' }, context: { application: 'todo-app' } });
+  t.check(r.status === 200 && r.json.results.length === 0,
+          'S13. a resource id the policy names is a result only where the ' +
+          'policy permits it', brief(r));
+
+  // -------------------------------------------------------------------------
+  // C. CONTENT-TYPE: application/json, AuthZEN 1.0 section 10.1 (#936)
+  // -------------------------------------------------------------------------
+  const kinds = [['evaluation', URL, asked()],
+                 ['evaluations', PREFIX + '/access/v1/evaluations',
+                  { subject: { type: 'user', id: 'azalice' },
+                    action: { name: 'read' },
+                    context: { application: 'todo-app' },
+                    evaluations: [{ resource: evaluation().resource }] }],
+                 ['search', SEARCH + 'resource',
+                  { subject: { type: 'user', id: 'azalice' },
+                    action: { name: 'inspect' },
+                    resource: { type: 'application' },
+                    context: { application: 'todo-app' } }]];
+  for (let i = 0; i < kinds.length; i += 1) {
+    const kind = kinds[i];
+    since = marks.length;
+    r = await request(port, 'POST', kind[1], pepCred, kind[2],
+                      { 'content-type': 'text/plain' });
+    t.check(r.status === 415 && markedSince(since, 'STS-AUTHZEN-0117') &&
+            r.json && r.json.error && r.json.error.status === 415,
+            'C' + (i + 1) + '. a request to the ' + kind[0] + ' endpoint ' +
+            'sent as text/plain is 415 (STS-AUTHZEN-0117)', brief(r));
+  }
+  since = marks.length;
+  r = await request(port, 'POST', URL, pepCred, asked(),
+                    { 'content-type': null });
+  t.check(r.status === 415 && markedSince(since, 'STS-AUTHZEN-0117'),
+          'C4. a request with no Content-Type is 415', brief(r));
+  r = await request(port, 'POST', URL, pepCred, asked(),
+                    { 'content-type': 'Application/JSON; charset=utf-8' });
+  t.check(r.status === 200 && r.json && r.json.decision === true,
+          'C5. application/json with a charset, in any case, is answered',
+          brief(r));
+  since = marks.length;
+  r = await request(port, 'POST', URL, null, evaluation(),
+                    { 'content-type': 'text/plain' });
+  t.check(r.status === 401 && markedSince(since, 'STS-AUTHZEN-0015') &&
+          !markedSince(since, 'STS-AUTHZEN-0117'),
+          'C6. a caller nobody admitted is told 401 before the media type',
+          brief(r));
 
   // -------------------------------------------------------------------------
   // R. THE SEARCHES AS REPORT SOURCES (#1176): run as the report's owner,
@@ -1006,6 +1097,28 @@ async function childBody() {
   // K. THE CATALOGUE A REMOTE PEP PULLS (#1179)
   // -------------------------------------------------------------------------
   const CATALOGUE = PREFIX + '/xacml/pep/authzen-catalogue';
+  // PHASE 4 OF #1827's FOLLOW-UP MADE `token` THE DEFAULT of
+  // xacml.pepAuthentication. Under it a certificate that WOULD be admitted
+  // is refused alone (401, STS-XACML-0289), and the description names
+  // `either` — what an upgraded deployment whose PEPs still present a
+  // certificate meets first. The rest of K drives the certificate door, so
+  // the realm opts in to `either`, the operator's choice it stays.
+  inRealm(function () {
+    t.check(config.value('xacml.pepAuthentication') === 'token',
+            'K0. xacml.pepAuthentication defaults to token',
+            String(config.value('xacml.pepAuthentication')));
+  });
+  since = marks.length;
+  r = await request(port, 'GET', CATALOGUE, pullCred);
+  t.check(r.status === 401 && markedSince(since, 'STS-XACML-0289') &&
+          /under either/.test(r.text) &&
+          /PEP_ASSERTION_KEY/.test(r.text),
+          'K0a. under the default an admitted certificate alone is refused ' +
+          '(401, STS-XACML-0289), naming either and the assertion key',
+          brief(r));
+  inRealm(function () {
+    config.setOverride('xacml.pepAuthentication', 'either');
+  });
   since = marks.length;
   r = await request(port, 'GET', CATALOGUE, null);
   t.check(r.status === 403 && markedSince(since, 'STS-XACML-0007'),
@@ -1016,6 +1129,30 @@ async function childBody() {
   t.check(r.status === 403 && markedSince(since, 'STS-XACML-0009'),
           'K2. an AuthZEN caller is not a remote PEP: AUTHZEN_PEPS without ' +
           'REMOTE_PEPS is 403 (STS-XACML-0009)', brief(r));
+  // #1827's follow-up: the PEP door reads a TOKEN where one is presented.
+  // Over a real handshake with a certificate that would be admitted, a
+  // token that does not hold decides (401, a DPoP challenge, STS-XACML-0291)
+  // rather than being passed over for the certificate; with
+  // xacml.pepAuthentication certificate the header is not read and the
+  // certificate decides. tests/remote_pep_token_door.js drives a real token.
+  const notAToken = { Authorization: 'DPoP not.a.token', DPoP: 'x' };
+  since = marks.length;
+  r = await request(port, 'GET', CATALOGUE, pullCred, undefined, notAToken);
+  t.check(r.status === 401 && markedSince(since, 'STS-XACML-0291') &&
+          /^DPoP /.test(String(r.headers['www-authenticate'] || '')),
+          'K2a. a token beside an admitted certificate decides: one that ' +
+          'does not verify is 401 with a DPoP challenge (STS-XACML-0291)',
+          brief(r));
+  inRealm(function () {
+    config.setOverride('xacml.pepAuthentication', 'certificate');
+  });
+  r = await request(port, 'GET', CATALOGUE, pullCred, undefined, notAToken);
+  inRealm(function () {
+    config.setOverride('xacml.pepAuthentication', 'either');
+  });
+  t.check(r.status === 200,
+          'K2b. under xacml.pepAuthentication certificate the header is not ' +
+          'read and the certificate admits the pull', brief(r));
   const pulled = await request(port, 'GET', CATALOGUE, pullCred);
   const pulledRows = (pulled.json && pulled.json.rows) || [];
   const classification = pulledRows.filter(function (row) {
@@ -1313,6 +1450,196 @@ async function childBody() {
           'P12. the policies\' and the catalogue\'s tokens do not move with ' +
           'the callers: three pulls, three contracts', policiesToken + ' / ' +
           catalogueToken);
+
+  // -------------------------------------------------------------------------
+  // X. THE CONTROL PLANE IS THE MODEL'S (#1830)
+  //
+  // `models/pep/pep_control_plane.tsp` describes what this service answers a
+  // remote PEP, and `sts-model-pep` is generated from it for the PEP to read
+  // with. Each real answer below is held to the generated document, whose
+  // objects are closed: a member written here and not modelled, or modelled
+  // as required and not written, fails.
+  // -------------------------------------------------------------------------
+  const pepModel = require('./tools/pep_model');
+  const heldToModel = function (label, operationId, answer) {
+    log.debug("Entering heldToModel().");
+    const wrong = answer.json === null ? ['not JSON: ' + brief(answer)] :
+      pepModel.problems('pep-control-plane.json', operationId,
+        answer.status, answer.json);
+    t.check(wrong.length === 0, label + ': ' + operationId + ' ' +
+            answer.status + ' is the model\'s answer', wrong.join('; '));
+    log.debug("Leaving heldToModel().");
+  };
+  r = await request(port, 'POST', PREFIX + '/xacml/pep/register', pullCred,
+    { name: 'azpull', notifyUrl: '', bias: 'deny-biased', resource: '',
+      version: '0.0.0', description: '' });
+  heldToModel('X1', 'postRegister', r);
+  r = await request(port, 'POST', PREFIX + '/xacml/pep/heartbeat', pullCred,
+    { name: 'azpull', syncToken: '', policyCount: 0, decisions: 0,
+      allowed: 0, refused: 0, undischargeable: 0, bias: 'deny-biased',
+      resource: '', version: '0.0.0', notifyUrl: '' });
+  heldToModel('X2', 'postHeartbeat', r);
+  for (const one of [['X3', 'getPolicies', '/xacml/pep/policies'],
+    ['X4', 'getAuthzenCatalogue', '/xacml/pep/authzen-catalogue'],
+    ['X5', 'getAuthzenCallers', '/xacml/pep/authzen-callers'],
+    ['X6', 'getSettings', '/xacml/pep/settings'],
+    ['X7', 'getProxy', '/xacml/pep/proxy']]) {
+    r = await request(port, 'GET', PREFIX + one[2], pullCred);
+    t.check(r.status === 200, one[0] + '. ' + one[2] + ' answers 200',
+            brief(r));
+    heldToModel(one[0], one[1], r);
+  }
+  r = await request(port, 'GET', PREFIX + '/xacml/pep/policies', null);
+  heldToModel('X8 (a refusal)', 'getPolicies', r);
+  r = await request(port, 'POST', PREFIX + '/xacml/pep/session', pullCred,
+    { sid: 'no-such-session' });
+  heldToModel('X9', 'postSession', r);
+  r = await request(port, 'POST', PREFIX + '/xacml/pep/introspect',
+    pullCred, { token: 'not-a-token' });
+  heldToModel('X10', 'postIntrospect', r);
+
+  // X11. `?pep=` NAMES NOBODY WHEN A CERTIFICATE WAS PRESENTED (#1830): a
+  // pull by `azpull` naming another PEP's row touches azpull's, never the
+  // other one's.
+  const pepRegistry = require(ROOT + '/xacml/xacml_pep_registry');
+  const seenOf = function (name) {
+    log.debug("Entering seenOf().");
+    log.debug("Leaving seenOf().");
+    return inRealm(function () {
+      const row = pepRegistry.read(name);
+      return row ? row.lastSeen : null;
+    });
+  };
+  const foreign = inRealm(function () {
+    return pepRegistry.register({ name: 'azforeign', authenticated: false });
+  });
+  t.check(foreign && foreign.ok, 'X11. setup: another PEP\'s row exists',
+          JSON.stringify(foreign));
+  const foreignSeen = seenOf('azforeign');
+  const pullSeen = seenOf('azpull');
+  await new Promise(function (ok) {
+    setTimeout(ok, 5);
+  });
+  r = await request(port, 'GET',
+                    PREFIX + '/xacml/pep/policies?pep=azforeign', pullCred);
+  t.check(r.status === 200 && seenOf('azforeign') === foreignSeen &&
+          seenOf('azpull') !== pullSeen,
+          'X11. a pull naming another PEP with ?pep= touches the ' +
+          'certificate\'s row (azpull) and leaves the named one alone',
+          JSON.stringify({ status: r.status, foreign: [foreignSeen,
+            seenOf('azforeign')], own: [pullSeen, seenOf('azpull')] }));
+  inRealm(function () {
+    pepRegistry.remove('azforeign');
+  });
+
+  // X12. IF-NONE-MATCH IS READ (#1830), on all five pulls, by RFC 9110's
+  // rule: the ETag as sent, weak, in a list, and `*` answer 304; another
+  // tag answers 200; `?since=` still answers 304 on its own.
+  for (const one of [['getPolicies', '/xacml/pep/policies'],
+    ['getAuthzenCatalogue', '/xacml/pep/authzen-catalogue'],
+    ['getAuthzenCallers', '/xacml/pep/authzen-callers'],
+    ['getSettings', '/xacml/pep/settings'],
+    ['getProxy', '/xacml/pep/proxy']]) {
+    const full = await request(port, 'GET', PREFIX + one[1], pullCred);
+    const etag = String(full.headers.etag || '');
+    const bare = etag.replace(/^"|"$/g, '');
+    const asked = [etag, 'W/' + etag, '"other", ' + etag, '*'];
+    const answers = [];
+    for (const field of asked) {
+      const got = await request(port, 'GET', PREFIX + one[1], pullCred,
+                                undefined, { 'if-none-match': field });
+      answers.push(got.status + (got.headers.etag === etag ? '' : '!etag'));
+    }
+    const other = await request(port, 'GET', PREFIX + one[1], pullCred,
+                                undefined, { 'if-none-match': '"other"' });
+    const since = await request(port, 'GET', PREFIX + one[1] + '?since=' +
+                                encodeURIComponent(bare), pullCred);
+    t.check(full.status === 200 && /^"[^"]+"$/.test(etag) &&
+            answers.join() === '304,304,304,304' && other.status === 200 &&
+            since.status === 304,
+            'X12. ' + one[1] + ' answers 304 to If-None-Match (as sent, ' +
+            'weak, in a list, *), 200 to another tag, and 304 to ?since=',
+            JSON.stringify({ etag: etag, answers: answers,
+                             other: other.status, since: since.status }));
+    heldToModel('X12', one[0], other);
+  }
+
+  // X13. THE HEARTBEAT AND THE REGISTRATION ANSWER THE REGISTRY'S STATUS
+  // (#1830): 404 for a row that is gone, 503 with no directory — which
+  // was 404 and 400 until then.
+  const beat = { syncToken: '', policyCount: 0, decisions: 0, allowed: 0,
+                 refused: 0, undischargeable: 0 };
+  inRealm(function () {
+    pepRegistry.remove('azpull');
+  });
+  since = marks.length;
+  r = await request(port, 'POST', PREFIX + '/xacml/pep/heartbeat', pullCred,
+                    beat);
+  t.check(r.status === 404 && markedSince(since, 'STS-XACML-0021'),
+          'X13. a heartbeat from a PEP that is not registered is 404 ' +
+          '(STS-XACML-0021)', brief(r));
+  heldToModel('X13', 'postHeartbeat', r);
+  const directoryWas = pepRegistry.directoryInstalled();
+  pepRegistry.setDirectory(null);
+  since = marks.length;
+  const noDirBeat = await request(port, 'POST',
+    PREFIX + '/xacml/pep/heartbeat', pullCred, beat);
+  const sinceRegister = marks.length;
+  const noDirRegister = await request(port, 'POST',
+    PREFIX + '/xacml/pep/register', pullCred, { name: 'azpull' });
+  pepRegistry.setDirectory(directoryWas);
+  t.check(noDirBeat.status === 503 && markedSince(since, 'STS-XACML-0026') &&
+          noDirRegister.status === 503 &&
+          markedSince(sinceRegister, 'STS-XACML-0026'),
+          'X13. with no directory the heartbeat and the registration are ' +
+          '503 (STS-XACML-0026), not 404 and 400',
+          brief(noDirBeat) + ' / ' + brief(noDirRegister));
+  heldToModel('X13', 'postHeartbeat', noDirBeat);
+  heldToModel('X13', 'postRegister', noDirRegister);
+  r = await request(port, 'POST', PREFIX + '/xacml/pep/register', pullCred,
+                    { name: 'azpull' });
+  t.check(r.status === 201, 'X13. and azpull registers again', brief(r));
+
+  // X14. POST /xacml/pip ANSWERS THE GATE AND THE OFF SWITCH IN ITS OWN XML
+  // (#1830), as it does its own refusals; the codes recorded are the same.
+  const pipRefusal = function (answer, status, error) {
+    log.debug("Entering pipRefusal().");
+    log.debug("Leaving pipRefusal().");
+    return answer.status === status && answer.json === null &&
+      /^application\/xml/.test(String(answer.headers['content-type'])) &&
+      new RegExp('<PIPError xmlns="urn:sts:xacml:pip:1\\.0" error="' +
+                 error + '">').test(answer.text);
+  };
+  const pipAsked = '<PIPRequest xmlns="urn:sts:xacml:pip:1.0"/>';
+  const xmlType = { 'content-type': 'application/xml' };
+  since = marks.length;
+  r = await request(port, 'POST', PREFIX + '/xacml/pip', null, pipAsked,
+                    xmlType);
+  t.check(pipRefusal(r, 403, 'access_denied') &&
+          markedSince(since, 'STS-XACML-0007'),
+          'X14. the gate\'s refusal at /xacml/pip is a 403 PIPError, ' +
+          'access_denied (STS-XACML-0007)', brief(r));
+  r = await request(port, 'GET', PREFIX + '/xacml/pep/policies', null);
+  t.check(r.status === 403 && r.json && r.json.error === 'access_denied',
+          'X14. and the same refusal on /xacml/pep/* stays JSON', brief(r));
+  inRealm(function () {
+    config.setOverride('xacml.remotePeps', false);
+  });
+  since = marks.length;
+  r = await request(port, 'POST', PREFIX + '/xacml/pip', pullCred, pipAsked,
+                    xmlType);
+  const offPolicies = await request(port, 'GET',
+    PREFIX + '/xacml/pep/policies', pullCred);
+  inRealm(function () {
+    config.setOverride('xacml.remotePeps', true);
+  });
+  t.check(pipRefusal(r, 501, 'not_implemented') &&
+          markedSince(since, 'STS-XACML-0002') &&
+          offPolicies.status === 501 && offPolicies.json &&
+          offPolicies.json.error === 'not_implemented',
+          'X14. with remote PEPs off /xacml/pip is a 501 PIPError, ' +
+          'not_implemented (STS-XACML-0002), and /xacml/pep/* a JSON 501',
+          brief(r) + ' / ' + brief(offPolicies));
 
   // -------------------------------------------------------------------------
   // O. OFF

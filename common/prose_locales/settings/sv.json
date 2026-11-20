@@ -1240,8 +1240,8 @@
     "text": "Lösenordsdörrar som godtar enbart ett lösenord"
   },
   "authn.passwordAloneDoors|description": {
-    "en": "c893f7eaeaad4aa7",
-    "text": "Endast produktionsläge. En kommaseparerad lista över de dörrar som bara tar lösenord — ldap, wstrust, scim, ssf, est — där en person som har eller måste ha en andra faktor ÄNDÅ godtas med sitt eget lösenord. Tomt, standardvärdet, vägrar det lösenordet vid alla fem (besvaras som ett felaktigt lösenord) och godtar där bara ett applösenord. **VARNING: varje listad dörr sänker varje sådan person till EN faktor vid den dörren** (NIST SP 800-63B avsnitt 4.2: AAL2 blir AAL1), så ett stulet lösenord öppnar den utan den andra faktorn. Föredra applösenord; lista en dörr bara för en klient som inte kan få ett. Utvecklingsläget kontrollerar inga lösenord någonstans och ignorerar detta."
+    "en": "a01fe4fce9df1599",
+    "text": "Endast produktionsläge. En kommaseparerad lista över de dörrar som bara tar lösenord — ldap, wstrust, scim, ssf, est, xacml-pep — där en person som har eller måste ha en andra faktor ÄNDÅ godtas med sitt eget lösenord. Tomt, standardvärdet, vägrar det lösenordet vid alla sex (besvaras som ett felaktigt lösenord) och godtar där bara ett applösenord. **VARNING: varje listad dörr sänker varje sådan person till EN faktor vid den dörren** (NIST SP 800-63B avsnitt 4.2: AAL2 blir AAL1), så ett stulet lösenord öppnar den utan den andra faktorn. Föredra applösenord; lista en dörr bara för en klient som inte kan få ett. Utvecklingsläget kontrollerar inga lösenord någonstans och ignorerar detta."
   },
   "appPasswords.enabled|label": {
     "en": "2208ee75339ab0f4",
@@ -1718,6 +1718,14 @@
   "keys.signerModel|description": {
     "en": "2cfc3f704d76eaf9",
     "text": "Hur den här sfärens signeringsnycklar är uppdelade. `per-algorithm` — standardvärdet — är en nyckel per JWS-algoritm (en RSA-nyckel, sex kurvnycklar och elva postkvantsäkra nycklar) som delas av varje JOSE-användning, och en RSA-nyckel för varje XML-signatur. `hybrid-groups` ger var och en av fem signerargrupper — OAuth/OIDC-tokener, verifierbara intyg, Security Event Tokens, WS-Trust och GNAP, XML — EGNA nycklar, i en vald uppsättning algoritmer: RSA-3072, P-256 och P-384, var och en certifierad tillsammans med en ML-DSA-nyckel (65, 44 och 87) i ett hybridcertifikat (ITU-T X.509 klausul 9.8), och SLH-DSA-SHA2-128s ensam. En signatur inom en grupps användning signerar med gruppens nyckel för sin algoritm; en algoritm utanför uppsättningen signerar fortfarande med nyckeln per algoritm. Varje nyckel är ett eget nyckelpar; det som hybridcertifikatet delar är certifikatet."
+  },
+  "keys.credentialSigner|label": {
+    "en": "550ef73b0777ea78",
+    "text": "Nyckel som autentiseringsuppgifter signeras med"
+  },
+  "keys.credentialSigner|description": {
+    "en": "80863e8241a6ca0b",
+    "text": "Vilken nyckel som signerar den här sfärens dc+sd-jwt- och jwt_vc_json-autentiseringsuppgifter och deras Token Status List Tokens. `dedicated` — standardvärdet — är en egen nyckel per algoritmfamilj, som inte används till något annat, under ett certifikat vars subjectAltName anger varje utfärdaridentifierare som sfären svarar på som en URI (inget DNS-namn), med den utökade nyckelanvändningen id-kp-documentSigning (RFC 9336) och inget som en TLS-stack skulle godta, så att en plånbok kan jämföra autentiseringsuppgiftens iss med dess x5c (HAIP 1.0 avsnitt 6.1.1). Certifikatet utfärdas på nytt när utfärdaridentifierarna ändras (global.publicBaseUrl, tls.hostnames, en lyssnare). `realm-key` signerar dem med sfärens allmänna JOSE-nyckel, som 1.0.0 gjorde, vars certifikat inte anger någon utfärdare. Autentiseringsuppgifter som redan utfärdats förblir verifierbara i båda fallen. ldp_vc och mso_mdoc påverkas inte."
   },
   "keys.encryptionKemAlgs|label": {
     "en": "c0f9d68cc4ea0925",
@@ -2368,8 +2376,16 @@
     "text": "Read-your-write över begärandearbetare"
   },
   "workers.readYourWrite|description": {
-    "en": "fb1bc46eaab84ce9",
+    "en": "232dadd8bb312926",
     "text": "Om en begäransarbetare måste komma ikapp med skrivningar som gjorts genom de andra arbetarna innan den svarar. Koordinering får arbetarna att konvergera på en halv sekund till en sekund, och det är inte read-your-write. `session` (standard): en begäran som bär en sessionskaka, poolkakan eller ett inloggningsflöde i sin adress väntar på skrivningarna från tidigare begäranden som bar samma sak, på varje skrivning från en begäran som inte bar något av dem, och på frontprocessens egna skrivningar; en begäran som inte bär något av dem, till exempel en tokenbegäran från en klients server, SCIM eller ett anrop till hanterings-API:t med en bearer-token, väntar på varje skrivning som besvarats före den. En webbläsare ser alltså direkt sina egna skrivningar och varje bakkanals, och en annan webbläsares först när arbetarna har konvergerat. `global`: varje begäran väntar på varje skrivning som besvarats före den, vilket kostar tiotals millisekunder per begäran under last. `off`: ingen begäran väntar, och en anropare kanske inte hittar sin egen skrivning. `true` betyder `session` och `false` betyder `off`. Den får inte vara avstängd för en ytpool (workers.surfaceCount)."
+  },
+  "workers.readBarrierTimeoutMs|label": {
+    "en": "3b71b70cca1bcc7d",
+    "text": "Väntetid för läsbarriären (ms)"
+  },
+  "workers.readBarrierTimeoutMs|description": {
+    "en": "5de72cbc57b2e8dc",
+    "text": "Hur länge en begäran totalt får vänta på att dess request worker (eller frontprocessen, för en begäran som den själv besvarar) ska komma ikapp med de skrivningar som besvarats före den, när workers.readYourWrite kräver det. Workern tillfrågas igen var femte sekund tills den har kommit ikapp. Efter denna väntetid avvisas begäran med HTTP 503 och Retry-After (en LDAP-, Kerberos- eller SPIFFE-operation med sitt protokolls svar om att tjänsten inte är tillgänglig) i stället för att besvaras från en kopia som kan vara inaktuell. Höj den där en worker kan behöva längre tid för att tillämpa en skur av skrivningar (en global utloggning, en massinläsning) på långsam hårdvara; sänk den där ett snabbt avslag passar anroparna bättre än en lång väntan. Läses för varje begäran."
   },
   "workers.socketDir|label": {
     "en": "92c5ff3b54b1efde",
@@ -2968,8 +2984,8 @@
     "text": "Besvara en upprepad kodinlösen med samma tokener"
   },
   "oauth2.codeReplayIdempotent|description": {
-    "en": "77b14590b7ee604f",
-    "text": "**SVAGARE ÄN SPECIFIKATIONEN — låt den vara av.** Av (standard) visas en auktoriseringskod upp EN gång: dess första tokenbegäran förbrukar den, vilket utfall den begäran än får — en felaktig code_verifier, en misslyckad klientautentisering, vad som helst — och en andra uppvisning vägras och återkallar det som den första gav (RFC 6749 avsnitt 4.1.2 och 10.5; #424). På lämnar en vägrad begäran koden inlösbar så att klienten kan rätta och försöka igen, och en IDENTISK upprepning av en inlösen besvaras med de tokener den redan fått, under resten av kodens livslängd. RFC 9700, OAuth 2.1, FAPI och produktionsläget ignorerar den. Den finns för moderprojektets jobb i utvecklingsläge som fortfarande förutsätter den gamla artigheten (#187). På behålls HELA tokensvaret för varje inlöst kod — åtkomsttoken, uppdateringstoken och ID-token — under resten av dess livstid så att det kan skickas igen; av behålls bara de utfärdade tokenernas jti-värden (#614)."
+    "en": "be7993ae95611704",
+    "text": "**SVAGARE ÄN SPECIFIKATIONEN — låt den vara av.** Av (standard) visas en auktoriseringskod upp EN gång: dess första tokenbegäran förbrukar den, vilket utfall den begäran än får — en felaktig code_verifier, en misslyckad klientautentisering, vad som helst — och en andra uppvisning vägras och återkallar det som den första gav (RFC 6749 avsnitt 4.1.2 och 10.5; #424). På lämnar en vägrad begäran koden inlösbar så att klienten kan rätta och försöka igen, och en IDENTISK upprepning av en inlösen besvaras med de tokener den redan fått, under resten av kodens livslängd. RFC 9700, OAuth 2.1, FAPI och produktionsläget ignorerar den. På behålls HELA tokensvaret för varje inlöst kod — åtkomsttoken, uppdateringstoken och ID-token — under resten av dess livstid så att det kan skickas igen; av behålls bara de utfärdade tokenernas jti-värden (#614)."
   },
   "oauth2.maxPendingTransactions|label": {
     "en": "5aa99aa732e7fa2e",
@@ -3672,8 +3688,8 @@
     "text": "Standardnyckelalgoritm för CA"
   },
   "pki.keyAlgorithm|description": {
-    "en": "d0667a437e4fd5f6",
-    "text": "Vilken nyckelalgoritm en ny certifikatutfärdare byggs med när formuläret inte anger någon: rsa-2048, rsa-3072, rsa-4096, ec-p256, ec-p384, ec-p521 eller ed25519, eller ett av postkvant-id:na (ML-DSA, SLH-DSA, kompositerna och ML-KEM — som inte kan signera, så den är en subjektnyckel och aldrig en utfärdares). RSA är standard eftersom det LÖV som hierarkin finns till för att utfärda signerar ett klientintyg som någon annans OAuth-bibliotek måste verifiera, och RS256 är den enda algoritm som varje sådant bibliotek har: rsa-2048 i utvecklingsläge, rsa-3072 i produktläge (ASVS 5.0.0 11.2.3). Listan läses från common/crypto_impl/key_material.js — modulen som genererar nyckeln — så ett värde den inte känner till avvisas vid bygget med listan bredvid."
+    "en": "cc69afa5c623e756",
+    "text": "Vilken nyckelalgoritm en ny certifikatutfärdare byggs med när formuläret inte anger någon: rsa-2048, rsa-3072, rsa-4096, ec-p256, ec-p384, ec-p521 eller ed25519, eller ML-DSA eller SLH-DSA. ML-KEM kan inte signera, så den är en subjektnyckel och aldrig en utfärdares. Ett sammansatt ML-DSA-id godtas men används inte för ett CA-certifikat: OpenSSL kan inte läsa en sammansatt nyckel i en TLS-lyssnares kedja, så roten, processgrenen och varje domängren byggs med en klassisk nyckel i stället (STS-PKI-0273, STS-PKI-0275). RSA är standard eftersom det LÖV som hierarkin finns till för att utfärda signerar ett klientintyg som någon annans OAuth-bibliotek måste verifiera, och RS256 är den enda algoritm som varje sådant bibliotek har: rsa-2048 i utvecklingsläge, rsa-3072 i produktläge (ASVS 5.0.0 11.2.3). Listan läses från common/crypto_impl/key_material.js — modulen som genererar nyckeln — så ett värde den inte känner till avvisas vid bygget med listan bredvid."
   },
   "pki.signatureAlgorithm|label": {
     "en": "43cdf39e69d6fdd4",
@@ -4147,6 +4163,22 @@
     "en": "03950106a2822b70",
     "text": "Användningsfall `fido-mds`: signeraren av en importerad FIDO MDS3-BLOB. Redan full; paranoid frågar dörren så att kontrollerna är samma kod. Administratörens reviderade förbikoppling overrideSignature är oförändrad. Ankare: risk.mdsTrustAnchors, GlobalSign Root R3, förtroendelagret för signerare. Av, och bara det här användningsfallet beter sig som före #1360, medan varje annan rad och huvudinställningen lämnas orörda; av i produktionsläge loggas det en gång (STS-PKI-0239) och ritas rött på /admin/pki/trust."
   },
+  "pki.paranoidPolicySigner|label": {
+    "en": "38aa0042d4360db7",
+    "text": "Paranoid: signeraren av en policyexport"
+  },
+  "pki.paranoidPolicySigner|description": {
+    "en": "c64cd02e7a525d75",
+    "text": "Användningsfall `policy-signer`: certifikatet som en policyexport från Directory → Policies signeras med, och kedjan i dess x5c, när den granskas eller importeras (#1713). På gäller de fullständiga kontrollerna i VARJE läge, huvudinställningen pki.paranoid inräknad: giltighet, keyUsage, sökvägen och återkallelsen för varje länk. Ankare: tjänstens rot för denna sfärs egna exporter, det betrodda signerarlagret för en annan sfärs. Av avgör huvudinställningen, som för varje annan rad; av i produktläge loggas det en gång (STS-PKI-0239) och visas i rött på /admin/pki/trust."
+  },
+  "pki.policyExportAlgorithm|label": {
+    "en": "86a4a3a6f65c98bb",
+    "text": "Signeringsalgoritm för policyexporter"
+  },
+  "pki.policyExportAlgorithm|description": {
+    "en": "ef8edd8df33cb131",
+    "text": "JWS-algoritmen som en policyexport från Directory → Policies signeras med (#1713). Varje export signeras av en ny nyckel av denna algoritm, certifierad av denna sfärs Policy Export Signing CA, och dokumentet bär det certifikatet och hela dess kedja i x5c. RS256 som standard: algoritmen för sfärens egen JOSE-signeringsnyckel. En RSA-nyckel är 3072 bitar. En ändring gäller nästa export; en redan gjord export behåller den algoritm den signerades med."
+  },
   "pki.signerTrustAnchorsFile|label": {
     "en": "9d4fabbc6c6918f1",
     "text": "Förtroendelager för signerare: en PEM-fil med ankare och mellancertifikat"
@@ -4324,8 +4356,8 @@
     "text": "Godta ett TLS-klientcertifikat"
   },
   "est.certificateAuthentication|description": {
-    "en": "00c619c4dd5d1658",
-    "text": "Ett klientcertifikat som DEN HÄR SFÄREN utfärdat, verifierat till dess mellanliggande CA och mappat till sin post genom namnet urn:sts:person: eller urn:sts:application: i det (RFC 7030 avsnitt 3.3.2). Krävs för simplereenroll utan Basic-autentiseringsuppgift."
+    "en": "a9bb56c470b2a73f",
+    "text": "Ett klientcertifikat som DEN HÄR SFÄREN utfärdat, verifierat till dess mellanliggande CA och mappat till sin post genom namnet urn:sts:person:, urn:sts:sa: (ett tjänstekonto) eller urn:sts:application: i det (RFC 7030 avsnitt 3.3.2). Krävs för simplereenroll utan Basic-autentiseringsuppgift."
   },
   "est.serverKeyGeneration|label": {
     "en": "ee06989bdc51c67d",
@@ -4438,6 +4470,14 @@
   "oauth2.refreshTokenTtlS|description": {
     "en": "c002260d32d033da",
     "text": "Den ABSOLUTA livslängden för en uppdateringstoken — `exp` på själva token, som upprätthålls i båda lägena av refresh-grantet. TJUGOFYRA TIMMAR som standard, och det ÄR EN ÄNDRING: det var trettio dagar, så en klient som höll en under en lång testkörning möter nu ett invalid_grant där den inte gjorde det tidigare. Sätt detta till 2592000 för exakt det gamla beteendet. Det är inte samma inställning som oauth2.refreshIdleSeconds, som är RFC 9700-lägets INAKTIVITETSgräns för en förnyelseKEDJA och mäts från den senaste inlösen i stället för från utfärdandet: den här är en vägg som en kedja inte kan förnyas förbi hur aktiv den än är."
+  },
+  "oauth2.maxAuthAgeS|label": {
+    "en": "ff5efd87e142a988",
+    "text": "Högsta autentiseringsålder (s)"
+  },
+  "oauth2.maxAuthAgeS|description": {
+    "en": "5a37fced9d4d040e",
+    "text": "Hur länge sedan en klient autentiserades, i sekunder, innan en auktoriseringsbegäran måste autentisera igen, även när begäran inte skickar max_age. 0, standardvärdet, lägger inte till någon egen gräns, så en vanlig klient är oförändrad. Läses vid varje auktoriseringsbegäran: den skriver inte om en session som redan är lagrad. Administratörskonsolen (sts-admin-console), användarportalen (sts-user-portal) och rapportprogrammet (sts-report) bär var sitt eget värde och tar det kortare av det och authn.sessionLifetimeS, så att höja den här inställningen eller sessionens livslängd förlänger aldrig de tre, och att sänka authn.sessionLifetimeS förkortar dem fortfarande. En överskridning per klient är oauthMaxAuthAgeS. Det här är inte en tokens livslängd och den finns inte på /admin/token-lifetimes (#825)."
   },
   "oauth2.expiredTokenRetentionS|label": {
     "en": "4466b89054d69c81",
@@ -5231,6 +5271,14 @@
     "en": "f8e11f4044147d5e",
     "text": "När en relations krypteringsnyckel roteras: hur länge den nyckel den ersätter fortfarande DEKRYPTERAR — så att en partner som ännu inte har hämtat den nya metadatan eller JWKS, eller ett svar som redan finns i en webbläsare, inte avvisas. Därefter dekrypterar den gamla nyckeln ingenting, och schemaläggarjobbet federation.encryption-key-retire tar bort den från posten. 0 avslutar den gamla nyckeln vid rotationen. Endast den nyss ersatta nyckeln behålls: en andra rotation inom fönstret släpper den äldre."
   },
+  "federation.clientCertificateRenewDays|label": {
+    "en": "918bb1aa7c690001",
+    "text": "Förnya ett FAPI-klientcertifikat så här många dagar innan det löper ut"
+  },
+  "federation.clientCertificateRenewDays|description": {
+    "en": "c9ce3366a9d4ba59",
+    "text": "En FAPI 1.0 Advanced-federationsrelation visar upp ett TLS-klientcertifikat från denna sfärs TLS Client Issuing CA för partnern (RFC 8705), och partnern binder sina åtkomsttoken till det. Det schemalagda jobbet federation.client-certificate-renew utfärdar ett nytt, med samma subjekt, så här många dagar innan det nuvarande löper ut. En partner som registrerat subjekt-DN:et (tls_client_auth) behöver inget; en som fäst själva certifikatet måste få det nya, som relationens sida visar."
+  },
   "saml.clockSkewS|label": {
     "en": "34ba47c6439a7089",
     "text": "Klockavvikelse för intyg (s)"
@@ -5383,6 +5431,14 @@
     "en": "d5e8553e9978dfda",
     "text": "Om en OSIGNERAD <samlp:AuthnRequest> — och en osignerad <samlp:LogoutRequest> från en tjänsteleverantör — avvisas. **`auto` är PÅ i produktläge och AV i utvecklingsläge.** `on` och `off` avgör oavsett läge; en tjänsteleverantör vars inlästa metadata säger AuthnRequestsSigned=\"true\" hålls till det även när detta är avstängt. Det är också vad WantAuthnRequestsSigned i den här identitetsleverantörens metadata säger.\n\nEn signatur som FINNS verifieras i alla lägen — HTTP Redirect-bindningens frågesträngssignatur (avsnitt 3.4.4.1) eller HTTP POST-bindningens inneslutna — mot tjänsteleverantörens REGISTRERADE signeringscertifikat (samlSigningCertificate, från dess metadata eller angivet på SAML 2.0-sidan), aldrig mot certifikatet som begäran bär, och en signatur som inte verifieras avvisas. Utan registrerat certifikat registreras en signatur som inte verifierad, vilket räknas som OSIGNERAD när detta är påslaget."
   },
+  "saml2.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "Fråga innan en person loggas in"
+  },
+  "saml2.ssoConsent|description": {
+    "en": "1ddf528dcc7be0f8",
+    "text": "Om en person tillfrågas, en gång per program, innan SAML 2.0 loggar in dem i det från en session de redan har (ASVS 5.0.0 7.6.2). Svaret sparas, så de tillfrågas igen bara om de drar tillbaka det; ett globalt samtycke på programmet svarar för alla. En passiv begäran besvaras utan skärmen, som en begäran som inte kan interagera. PÅ som standard i produktläge, av i utveckling; saml2SsoConsent på ett programs post åsidosätter den för det programmet."
+  },
   "saml2.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Inloggning initierad av identitetsleverantören"
@@ -5508,16 +5564,16 @@
     "text": "Standardformat för NameIdentifier"
   },
   "saml11.nameIdFormat|description": {
-    "en": "2075551ddbb8336f",
-    "text": "Format på <saml:NameIdentifier> när begäran inte begär något — vilket i SAML 1.1 är ALLTID, eftersom profilen inte har något begärandemeddelande att bära en NameIDPolicy i. Det är skillnaden mot saml2.nameIdFormat, som är ett standardvärde som en begäran rutinmässigt åsidosätter: detta är svaret om inte den icke-specificerade parametern `format` åsidosätter det."
+    "en": "1f1bb898326ff544",
+    "text": "Format på <saml:NameIdentifier> när begäran inte begär något — vilket i SAML 1.1 är ALLTID, eftersom profilen inte har något begärandemeddelande att bära en NameIDPolicy i. Det är skillnaden mot saml2.nameIdFormat, som är ett standardvärde som en begäran rutinmässigt åsidosätter: detta är svaret, om inte den förlitande partens post anger saml11NameIdFormat."
   },
   "saml11.defaultProfile|label": {
     "en": "18dccb1d7410af14",
     "text": "Standardprofil för webbläsare"
   },
   "saml11.defaultProfile|description": {
-    "en": "b75b217e5204aad5",
-    "text": "Vilken profil inter-site transfer service använder när begäran inte anger någon: Browser/POST (avsnitt 4.2), där intyget färdas genom webbläsaren i en formulär-POST, eller Browser/Artifact (avsnitt 4.1), där en referens färdas genom webbläsaren och den förlitande parten hämtar intyget över SOAP. POST är standard eftersom den inte kräver någon server bakom den förlitande partens assertion consumer, så den är den som fungerar när någon riktar detta mot en URL och tittar. Den icke-specificerade parametern `profile` åsidosätter det, och det gör även den bindning som en förlitande part har registrerat för den `shire` den skickar (samlAcsEndpoint, från inläst metadata)."
+    "en": "8ce998424bcc2563",
+    "text": "Vilken profil inter-site transfer service använder när den förlitande parten inte har registrerat någon bindning för den `shire` den skickar: Browser/POST (avsnitt 4.2), där intyget färdas genom webbläsaren i en formulär-POST, eller Browser/Artifact (avsnitt 4.1), där en referens färdas genom webbläsaren och den förlitande parten hämtar intyget över SOAP. POST är standard eftersom den inte kräver någon server bakom den förlitande partens assertion consumer, så den är den som fungerar när någon riktar detta mot en URL och tittar. Den bindning som en förlitande part har registrerat för den `shire` den skickar (samlAcsEndpoint, från inläst metadata) åsidosätter det; ingenting i begäran gör det."
   },
   "saml11.doNotCacheCondition|label": {
     "en": "e1fd907d123fa918",
@@ -5542,6 +5598,14 @@
   "saml11.autocreateApplications|description": {
     "en": "2e68718a26d4706c",
     "text": "Skapa en applikationspost under ou=applications första gången en förlitande part anges — genom att ett TARGET kommer in, genom att ett metadatadokument hämtas eller genom att en artefakt löses upp. Avstängt betyder att webbläsarprofilerna fortfarande fungerar och att /admin/saml11 förblir tom, vilket är vad någon som kör ett lasttest vill och ingen annan."
+  },
+  "saml11.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "Fråga innan en person loggas in"
+  },
+  "saml11.ssoConsent|description": {
+    "en": "53f104813a60ba25",
+    "text": "Om en person tillfrågas, en gång per program, innan SAML 1.1 loggar in dem i det från en session de redan har (ASVS 5.0.0 7.6.2). Svaret sparas, så de tillfrågas igen bara om de drar tillbaka det; ett globalt samtycke på programmet svarar för alla. En passiv begäran besvaras utan skärmen, som en begäran som inte kan interagera. PÅ som standard i produktläge, av i utveckling; saml11SsoConsent på ett programs post åsidosätter den för det programmet."
   },
   "saml11.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
@@ -5647,6 +5711,54 @@
     "en": "52a63db9be2c6460",
     "text": "Om en wst:TokenType som anger en av Kerberos Token Profile 1.1:s sex ValueType besvaras med en Kerberos-token: en AP-REQ med en tjänstebiljett som den här sfärens KDC utfärdade för subjektet till den Kerberos-tjänst som AppliesTo anger, med Authenticators undernyckel returnerad som bevistoken över TLS. En ActAs-biljett anger varje part som agerade i sin PAC:s S4U_DELEGATION_INFO. Av: en sådan begäran avvisas."
   },
+  "wstrust.encryptRequest|label": {
+    "en": "8c145f441c1aa7f2",
+    "text": "Kräv att de namngivna elementen i en begäran är krypterade"
+  },
+  "wstrust.encryptRequest|description": {
+    "en": "a4747360d56b0948",
+    "text": "Om ett RequestSecurityToken vars AppliesTo inte namnger någon egen applikation måste anlända med elementen i wstrustEncryptRequestElements krypterade. En applikations wstrustEncryptRequest åsidosätter detta för en begäran vars AppliesTo namnger den. Vilken chiffertext som alls öppnas avgör wstrust.acceptEncryptedElements; AppliesTo läses från den öppnade begäran. På, och kartan är tom, eller ett uttryck matchar ett element som anlände i klartext eller inget som återställts, är begäran ett wsse:FailedCheck. En chiffertext som inte går att öppna är det felet i båda fallen."
+  },
+  "wstrust.acceptEncryptedElements|label": {
+    "en": "fdb0c37def2e9c0a",
+    "text": "Acceptera krypterade element som ingen karta namnger"
+  },
+  "wstrust.acceptEncryptedElements|description": {
+    "en": "91a62934f0ef031e",
+    "text": "Om ett RequestSecurityToken får bära XML-kryptering var som helst, i ett huvud eller i kroppen, utan att en begärankarta namnger den. På öppnas varje krypterat element. Av godtas chiffertext bara där applikationens wstrustEncryptRequestElements namnger den, och chiffertext utan karta är ett wst:InvalidRequest. I båda fallen måste en chiffertext gå att öppna med den här sfärens nycklar. En applikations wstrustAcceptEncryptedElements åsidosätter detta. WSDL:en erbjuder kryptering av begäran bara när detta är på."
+  },
+  "wstrust.advertiseEndpointIdentity|label": {
+    "en": "3c4111aa7ace7ccd",
+    "text": "Annonsera krypteringscertifikatet som varje ports identitet"
+  },
+  "wstrust.advertiseEndpointIdentity|description": {
+    "en": "761faaf79fa0e5b4",
+    "text": "Om varje port i WSDL:en på /sts/metadata bär en wsa:EndpointReference vars wsid:Identity innehåller denna sfärs XML Encryption-certifikat, certifikatet som en begäran krypteras till. Elementet kommer från WS-AddressingIdentity, en Microsoft-specifikation som aldrig standardiserades; WCF läser det, liksom de verktygslådor som efterliknar WCF. Av, namnger WSDL:en inget certifikat och en klient konfigureras med det utanför bandet: KeyDescriptor use=\"encryption\" i /saml2/metadata, som är samma certifikat. Vad en begäran får kryptera ändras inte i något fall."
+  },
+  "wstrust.encryptResponse|label": {
+    "en": "1d9d5a11338444b1",
+    "text": "Kryptera de namngivna elementen i ett svar"
+  },
+  "wstrust.encryptResponse|description": {
+    "en": "cdc7fb979f5c7e5b",
+    "text": "Om ett RequestSecurityTokenResponse får elementen i wstrustEncryptResponseElements ersatta av xenc:EncryptedData efter att det byggts, för vilken tokentyp som helst. En applikations wstrustEncryptResponse åsidosätter detta. Mottagaren är den applikationens wstrustEncryptionCertificate, annars det certifikatelement som wstrustResponseRecipientXPath väljer, annars det första signeringscertifikatelement som begärans WS-Security-signatur namnger. Ett fel skickas i klartext. På, och krypteringen inte kan slutföras, är begäran ett fel i båda lägena."
+  },
+  "wstrust.encryptionAlgorithm|label": {
+    "en": "d91b60a56e964f0a",
+    "text": "Svarets krypteringsalgoritm"
+  },
+  "wstrust.encryptionAlgorithm|description": {
+    "en": "0308b0e0b66692a8",
+    "text": "Blockchiffret som de krypterade elementen i ett WS-Trust-svar krypteras med. De två GCM är autentiserade: en ändrad chiffertext misslyckas med sin tagg och avvisas. De två CBC är det inte. En applikations wstrustEncryptionAlgorithm åsidosätter detta. Ett wst:EncryptionAlgorithm-element får namnge det här chiffret, med dess korta namn eller dess XML Encryption-URI, endast medan svarskryptering är på."
+  },
+  "wstrust.keyTransportAlgorithm|label": {
+    "en": "614f82577349a013",
+    "text": "Svarets nyckeltransportalgoritm"
+  },
+  "wstrust.keyTransportAlgorithm|description": {
+    "en": "ffc141f1ac37ec59",
+    "text": "Hur engångsinnehållsnyckeln i ett WS-Trust-svar omsluts till mottagarens RSA-publika nyckel. `rsa-oaep` är XML Encryption 1.1:s RSA-OAEP med SHA-256 och MGF1-SHA-256; `rsa-oaep-mgf1p` är OAEP över SHA-1. En mottagare vars certifikat är EC krypteras till med ECDH-ES-nyckelöverenskommelse vad det här än säger. En applikations wstrustKeyTransportAlgorithm åsidosätter detta. `rsa-1_5` är RSAES-PKCS1-v1_5 och är brutet, och det erbjuds eftersom en driftsatt begärare kanske inte godtar något annat. VARNING: rsa-1_5 är endast utvecklingsläge — i produktläge ignoreras det där det läses, på den här inställningen och på en applikations wstrustKeyTransportAlgorithm (rsa-oaep-mgf1p används, loggas en gång, STS-CORE-0106), och att ställa in det avvisas (STS-CORE-0103, STS-REG-0193). Ett wst:EncryptWith-element får namnge den här algoritmen endast medan svarskryptering är på."
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Inloggning initierad av identitetsleverantören"
@@ -5654,6 +5766,14 @@
   "wsfed.idpInitiatedSso|description": {
     "en": "62f920d6663c4e4f",
     "text": "Om /wsfed/initiate/{rp} — och /launch/{app} för WS-Federation — loggar in en person till en förlitande part som inte bad om det, med POST till dess registrerade wsfedReplyUrl. AV som standard; wsfedIdpInitiatedSso i en applikations post åsidosätter det för den förlitande parten. Den förlitande parten tar emot ett svar som den inte bad om, och kan inte skilja det från ett som någon annan tryckt in i dess webbläsare."
+  },
+  "wsfed.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "Fråga innan en person loggas in"
+  },
+  "wsfed.ssoConsent|description": {
+    "en": "b60b06fe1664cb06",
+    "text": "Om en person tillfrågas, en gång per program, innan WS-Federation loggar in dem i det från en session de redan har (ASVS 5.0.0 7.6.2). Svaret sparas, så de tillfrågas igen bara om de drar tillbaka det; ett globalt samtycke på programmet svarar för alla. En passiv begäran besvaras utan skärmen, som en begäran som inte kan interagera. PÅ som standard i produktläge, av i utveckling; wsfedSsoConsent på ett programs post åsidosätter den för det programmet."
   },
   "wsfed.spInitiatedSso|label": {
     "en": "705a2297f2762532",
@@ -6116,8 +6236,56 @@
     "text": "Algoritm som autentiseringsuppgifter signeras med"
   },
   "oid4vci.credentialSigningAlgorithm|description": {
-    "en": "64dfa4a593f7ec50",
-    "text": "Den JWS-algoritm som dc+sd-jwt- och jwt_vc_json-autentiseringsuppgifter signeras med — postkvantalgoritmer inräknade — och den som den här sfärens statuslistor signeras med, och den som DID Configurations Domain Linkage Credential använder. Metadatans credential_signing_alg_values_supported anger den, /oauth2/jwks och /.well-known/did.json publicerar nyckeln, och den här tjänstens Verifier kontrollerar mot den. ldp_vc är bbs-2023 och påverkas inte. En redan utfärdad autentiseringsuppgift behåller den algoritm den signerades med. oid4vc.walletCompatibility avvisar här en postkvant- eller kompositalgoritm."
+    "en": "3ed3ccddb91c589b",
+    "text": "Den JWS-algoritm som dc+sd-jwt- och jwt_vc_json-autentiseringsuppgifter signeras med — postkvantalgoritmer inräknade — och den som den här sfärens statuslistor signeras med, och den som DID Configurations Domain Linkage Credential använder. Metadatans credential_signing_alg_values_supported anger den, /oauth2/jwks och /.well-known/did.json publicerar nyckeln, och den här tjänstens Verifier kontrollerar mot den. ldp_vc är bbs-2023 och påverkas inte. En redan utfärdad autentiseringsuppgift behåller den algoritm den signerades med. oid4vc.walletCompatibility avvisar här en postkvant- eller kompositalgoritm. Ett mso_mdoc signeras med COSE ES256 (-7) eller ESP256 (-9), inte med den här algoritmen."
+  },
+  "oid4vci.mdocDoctype|label": {
+    "en": "7c632130b19137d8",
+    "text": "mdoc-dokumenttyp"
+  },
+  "oid4vci.mdocDoctype|description": {
+    "en": "7c9ba6ae8828e218",
+    "text": "Den docType som ett mso_mdoc som den här sfären utfärdar har (ISO/IEC 18013-5). En plånboksinloggning ber om samma typ. Verifierarens fristående slutpunkt använder oid4vp.expectedDoctype, vars standardvärde är detsamma."
+  },
+  "oid4vci.mdocNamespace|label": {
+    "en": "f77603a07120c5c0",
+    "text": "mdoc-datanamnrymd"
+  },
+  "oid4vci.mdocNamespace|description": {
+    "en": "e2007e40d0654a1d",
+    "text": "Den namnrymd som ett utfärdat mdoc:s element namnges i. En inloggning ber om issuing_authority i den här namnrymden. Verifierarens fristående slutpunkt använder oid4vp.mdocNamespace, vars standardvärde är detsamma."
+  },
+  "oid4vci.mdocValidityDays|label": {
+    "en": "59bc5ea950d1023b",
+    "text": "mdoc-giltighet (dagar)"
+  },
+  "oid4vci.mdocValidityDays|description": {
+    "en": "944bf93ff64708d5",
+    "text": "Hur många dagar ett utfärdat mdoc:s validityInfo täcker, från det att det signeras. Dokumentsignerarens certifikat är kortare än CA:n för utfärdande myndighet och kan löpa ut före det här fönstret; en verifierare kontrollerar signaturtiden mot certifikatet, inte dokumentets utgång."
+  },
+  "oid4vci.mdocAgeThresholds|label": {
+    "en": "6c387f6457dff007",
+    "text": "mdoc-åldersgränser"
+  },
+  "oid4vci.mdocAgeThresholds|description": {
+    "en": "dc3119549f240edd",
+    "text": "De age_over_NN-booleaner ett mdoc bär när personen har ett födelsedatum, i hela år. Beräknas från födelsedatumet. Ett porträtt och körbehörigheter hittas inte på."
+  },
+  "oid4vci.mdocIssuingCountry|label": {
+    "en": "58a5fa921fb5157c",
+    "text": "mdoc-utfärdarland"
+  },
+  "oid4vci.mdocIssuingCountry|description": {
+    "en": "599a6893d6e1ecbe",
+    "text": "Det ISO 3166-1 alpha-2-land som CA:n för utfärdande myndighet namnger i sitt subjekt, och elementet issuing_country i varje mdoc. Två bokstäver."
+  },
+  "oid4vci.mdocIssuingAuthority|label": {
+    "en": "f2b2eee4bbbb52fa",
+    "text": "mdoc-utfärdande myndighet"
+  },
+  "oid4vci.mdocIssuingAuthority|description": {
+    "en": "ab81dc9a73b43680",
+    "text": "Namnet i common name för CA:n för utfärdande myndighet och elementet issuing_authority i varje mdoc. En plånboksinloggning ber om det här elementet, som alltid finns."
   },
   "oid4vci.credentialCertificateHeader|label": {
     "en": "dce4ddde19bfc321",
@@ -6223,6 +6391,22 @@
     "en": "de851f5fe529cc0b",
     "text": "vc_did.js läser den en gång när modulen laddas, och utfärdarens metadata byggs utifrån det som lästes"
   },
+  "oid4vci.ldpVcMandatoryPointers|label": {
+    "en": "e98c7ce2b1bc1508",
+    "text": "Obligatoriska JSON-pekare för ldp_vc"
+  },
+  "oid4vci.ldpVcMandatoryPointers|description": {
+    "en": "f4e6bd1a31cb4d3b",
+    "text": "JSON-pekarna (RFC 6901) till de påståenden som varje härlett bevis för en IdentityCredentialLdpVc-legitimation måste avslöja: bbs-2023 (W3C Data Integrity BBS Cryptosuites v1.0) tar med dem i hashen i signaturens huvud, så en innehavare kan inte utelämna något av dem. Standardvärdet anger utfärdaren, typen och giltighetsperioden. En pekare som inte är en JSON-pekare, eller som inte pekar på något i legitimationen, gör att utfärdandet avvisas (STS-VC-0180). En ändring gäller nästa legitimation som utfärdas."
+  },
+  "oid4vci.ldpVcDidMandatoryPointers|label": {
+    "en": "6cd8b076c457cb2b",
+    "text": "Obligatoriska JSON-pekare för ldp_vc (did:web)"
+  },
+  "oid4vci.ldpVcDidMandatoryPointers|description": {
+    "en": "5e7073657a62dae2",
+    "text": "Detsamma för konfigurationen IdentityCredentialLdpVcDid, vars utfärdare anger sig själv med did:web."
+  },
   "oid4vp.clientId|label": {
     "en": "54fc949b8b05b803",
     "text": "Verifierarens klient-ID"
@@ -6310,6 +6494,14 @@
   "oid4vp.requestObjectSigningAlgorithm|description": {
     "en": "c8e10b889bf92533",
     "text": "Den JWS-algoritm som ett signerat Request Object signeras med under Client Identifier-prefixen pre-registered, decentralized_identifier, verifier_attestation och openid_federation (x509-prefixen använder oid4vp.x509SigningAlgorithm). Sfärnyckeln för den är den som begäran anger: i /oauth2/jwks, i DID-dokumentet, i cnf för en självutfärdad Verifier Attestation och i Entity Configurations openid_credential_verifier-jwks. RS256 som standard, vilket varje signerad begäran använde före den här inställningen. Postkvant- och kompositalgoritmerna erbjuds för en plånbok som accepterar dem; oid4vc.walletCompatibility avvisar dem, och det gör även keys.postQuantumSigning avslaget."
+  },
+  "oid4vc.bbs2023LegacyFormat|label": {
+    "en": "48e440849305fead",
+    "text": "Använd bbs-2023-formatet från före 1.1"
+  },
+  "oid4vc.bbs2023LegacyFormat|description": {
+    "en": "da02d5f092c9dd36",
+    "text": "Låter denna sfär utfärda sina ldp_vc-legitimationer i det privata format som iya-sts 1.0 använde, och acceptera en presentation i det, för en plånbok som inte har gått över till W3C:s kryptosvit bbs-2023 (W3C Data Integrity BBS Cryptosuites v1.0). AV, standardvärdet: sfären utfärdar och accepterar endast W3C bbs-2023, och avvisar det gamla formatet med namn (STS-VC-0181). Det gamla formatet är ingen standard, ingen annan implementation läser det, och det heter iya-bbs-2023-legacy i metadata och i legitimationen, aldrig bbs-2023. W3C-presentationer accepteras fortfarande när det är på. Varje legitimation som utfärdas i det loggas under STS-VC-0183 och varje presentation som accepteras i det under STS-VC-0182. Slå på det bara medan en sådan plånbok används; en legitimation som utfärdats med det kan inte presenteras när det är av, och innehavaren behöver en ny."
   },
   "oid4vc.walletCompatibility|label": {
     "en": "50234c10261cc298",
@@ -6620,24 +6812,24 @@
     "text": "Betrodda utfärdande mdoc-myndigheter (IACA-certifikat, PEM)"
   },
   "oid4vp.mdocTrustAnchors|description": {
-    "en": "bc0c2fd840ac9688",
-    "text": "PEM-certifikat, sammanfogade: de CA-certifikat för utfärdande myndighet (ISO/IEC 18013-5 bilaga B) som ett uppvisat mdoc:s dokumentsignerarcertifikat måste kedja till. Kedjan byggs och kontrolleras enligt RFC 5280, dokumentsignerarens återkallelse kontrolleras (pki.revocationCheck), och ett mdoc vars signerare inte kedjar till något av dem nekas. Tomt — standardvärdet — litar inte på någon mdoc-utfärdare, så en mso_mdoc-presentation nekas tills en anges."
+    "en": "725416403bc17a75",
+    "text": "PEM-certifikat, sammanfogade: de CA-certifikat för utfärdande myndighet (ISO/IEC 18013-5 bilaga B) som ett uppvisat mdoc:s dokumentsignerarcertifikat måste kedja till. Kedjan byggs och kontrolleras enligt RFC 5280, dokumentsignerarens återkallelse kontrolleras (pki.revocationCheck), och ett mdoc vars signerare inte kedjar till något av dem nekas. Tomt — standardvärdet — litar inte på någon mdoc-utfärdare utom den här sfärens egen CA för utfärdande myndighet, när en har skapats (GET /oid4vci/mdoc-iaca)."
   },
   "oid4vp.expectedDoctype|label": {
     "en": "49833f72d06c775d",
     "text": "Förväntad mdoc-dokumenttyp (docType)"
   },
   "oid4vp.expectedDoctype|description": {
-    "en": "d718e92b610b1ae9",
-    "text": "Den `docType` som en mso_mdoc-förfrågan ber om (`meta.doctype_value`) och som verifieraren kräver av det uppvisade dokumentet och dess Mobile Security Object. Standardvärdet är det mobila körkortet i ISO/IEC 18013-5."
+    "en": "dcb6e8f85158b0a1",
+    "text": "Den `docType` som en mso_mdoc-förfrågan ber om (`meta.doctype_value`) och som verifieraren kräver av det uppvisade dokumentet och dess Mobile Security Object. Standardvärdet är den typ som den här sfären utfärdar (oid4vci.mdocDoctype). Ett mobilt ISO-körkort är org.iso.18013.5.1.mDL, som anges här och på utfärdaren."
   },
   "oid4vp.mdocNamespace|label": {
     "en": "8e0371b0c93613a5",
     "text": "mdoc-namnrymd som de begärda anspråken läses från"
   },
   "oid4vp.mdocNamespace|description": {
-    "en": "119af9b2a1680a4c",
-    "text": "Den namnrymd som en mso_mdoc-förfrågans anspråkssökvägar namnger (`[namespace, element]`, OpenID4VP 1.0 bilaga B.2.3). Varje begärt anspråk begärs som dataelementet med samma namn, utom birthdate (birth_date) och address (resident_address), som ISO/IEC 18013-5 namnger annorlunda. Standardvärdet är det mobila körkortets."
+    "en": "0ad347251f9b7a85",
+    "text": "Den namnrymd som en mso_mdoc-förfrågans anspråkssökvägar namnger (`[namespace, element]`, OpenID4VP 1.0 bilaga B.2.3). Varje begärt anspråk begärs som dataelementet med samma namn, utom birthdate (birth_date) och address (resident_address), som ISO/IEC 18013-5 namnger annorlunda. Standardvärdet är den namnrymd som den här sfären utfärdar i (oid4vci.mdocNamespace)."
   },
   "oid4vp.maxRequestedClaims|label": {
     "en": "efe099be2d3fb468",
@@ -6700,8 +6892,8 @@
     "text": "Intygsformat för plånboksinloggning"
   },
   "oid4vp.signInFormats|description": {
-    "en": "e90ac91d5df31d20",
-    "text": "De intygsformat som en plånboksinloggning ber om, i prioritetsordning: en DCQL-intygsfråga för varje, och en intygsmängd som säger att vilket som helst av dem duger. Var och en loggar bara in med ett färskt innehavarbevis — en Key Binding JWT, en VP JWT eller ett Data Integrity-bevis — för den här begäran. Okända namn ignoreras; inga alls betyder alla tre. En plånbok som bara besvarar den första fråga den läser svarar i det första formatet här."
+    "en": "53a49b652b8fa682",
+    "text": "De intygsformat som en plånboksinloggning ber om, i prioritetsordning: en DCQL-intygsfråga för varje, och en intygsmängd som säger att vilket som helst av dem duger. Var och en loggar bara in med ett färskt innehavarbevis — en Key Binding JWT, en VP JWT, ett Data Integrity-bevis eller en mdoc-enhetssignatur — för den här begäran. Okända namn ignoreras; inga alls betyder alla fyra. En plånbok som bara besvarar den första fråga den läser svarar i det första formatet här. Ett mso_mdoc loggar in någon bara när den här sfären utfärdade det."
   },
   "oid4vp.signInDcApiResponseMode|label": {
     "en": "65bede388d0c842b",
@@ -6788,8 +6980,8 @@
     "text": "Publicera en did:web åt en person"
   },
   "did.personPublishing|description": {
-    "en": "841dc751d16e1137",
-    "text": "Låt en person skapa en did:web som den här sfären publicerar åt dem, på deras portals Self-issued IDs-sida (#1291): did:web:<host>[:realm:<id>]:users:<rid>, där <rid> är 128 slumpmässiga bitar, så att ingen kan räkna upp konton genom att pröva adresser och två DID:er för samma person inte kan kopplas ihop. Dess dokument tillhandahålls på /users/<rid>/did.json med alla versioner sparade, och den kan vara personens föredragna DID. När den är på erbjuder en DID-bunden credential-konfiguration (oid4vci.didHolderBinding) även did:web för en DID som den här sfären är värd för och som personen bevisat med en plånbok. Av: inget nytt publiceras; en DID som redan publicerats tillhandahålls fortfarande, avaktiverad eller inte, eftersom dess adress behålls för gott. I produktläge publiceras en DID bara på en fastlåst global.publicBaseUrl."
+    "en": "291c209edc596dc6",
+    "text": "Låt en person skapa en did:web som den här sfären publicerar åt dem, på deras portals Self-issued IDs-sida (#1291): did:web:<host>[:realm:<id>]:users:<rid>, där <rid> är 128 slumpmässiga bitar, så att ingen kan räkna upp konton genom att pröva adresser och två DID:er för samma person inte kan kopplas ihop. Dess dokument tillhandahålls på /users/<rid>/did.json med alla versioner sparade, och den kan vara personens föredragna DID. När den är på erbjuder en DID-bunden credential-konfiguration (oid4vci.didHolderBinding) även did:web för en DID som den här sfären är värd för och som personen bevisat med en plånbok. Av: inget nytt publiceras; en DID som redan publicerats tillhandahålls fortfarande, avaktiverad eller inte, eftersom dess adress behålls för gott. I produktläge publiceras en DID bara på en fastlåst global.publicBaseUrl. En nyckel som redan är registrerad för inloggning publiceras inte (#775): plånboken bevisar en nyckel som inte är ett av personens inloggningsämnen, så att dokumentet inte blir en offentlig kopia av en inloggningsnyckel. Att ändra global.publicBaseUrl, eller sfärens sökväg, skriver inte om ett DID som redan publicerats; det behåller den värd och den sökväg det skapades med, och slutar kunna slås upp om den adressen inte längre når den här sfären."
   },
   "did.personCustody|label": {
     "en": "057d429ef011ffab",
@@ -6948,8 +7140,8 @@
     "text": "Förnybar livslängd (s)"
   },
   "krb5.renewLifetimeSeconds|description": {
-    "en": "c5e760b09dd1a975",
-    "text": "Hur långt renew-till sträcker sig för en biljett som utfärdats som förnybar. Sju dagar är Active Directorys standard."
+    "en": "5e2fb0a8cf795055",
+    "text": "Den längsta renew-till för en biljett som utfärdas som förnybar, mätt från dess start. En begärd rtime förkortar den, och utan rtime tar biljetten detta maximum. En rtime vid eller före biljettens endtime markerar den ändå som förnybar, så som MIT krb5 gör. RENEWABLE-OK sätter flaggan bara när den begärda endtime förkortades och den resulterande renew-till är senare än den utfärdade endtime. Sju dagar är Active Directorys standard."
   },
   "krb5.logonServer|label": {
     "en": "430185046b3ddca6",
@@ -7715,6 +7907,22 @@
     "en": "e41d92adf65ec5bc",
     "text": "PÅ som standard. Det var en gång det ENDA avslaget i den här familjen; varje /xacml-slutpunkt ber nu om ett certifikat, och det den här inställningen fortfarande styr är just REGISTRERINGEN — den skriver en post, den är vad konsolen listar, och den är adressen som en knuff skickas till, så \"vilken PEP är det här\" är precis frågan där och ett klientcertifikat är svaret. Åtkomstpolicylagret ovanför är en annan och starkare kontroll (roles.remotePepGroup, och xacml.enforceAccess för att stänga av den); den här handlar om huruvida en registrering UTAN certifikat över huvud taget accepteras och märks som oautentiserad. Som varje annan grind i den här tjänsten är den ett VÄNDKORS: certifikatet behöver inte kedja till något, eftersom RFC 8705:s argument gäller oförändrat — det som bevisas är att samma nyckel slutförde handskakningen. Att stänga av den låter en PEP registrera sig över okrypterad HTTP, vilket är vad en körning med global.https avstängd behöver; en sådan registrering märks som OAUTENTISERAD på sin post och i konsolen i stället för att i tysthet inte gå att skilja från en som bevisade något."
   },
+  "xacml.pepAuthentication|label": {
+    "en": "1666c238e5c498af",
+    "text": "Hur en fjärr-PEP autentiserar sig"
+  },
+  "xacml.pepAuthentication|description": {
+    "en": "223363d0264d3558",
+    "text": "token, standardvärdet sedan 1.1.0: en fjärr-PEP når /xacml/pep/* och POST /xacml/pip endast med en DPoP-bunden åtkomsttoken (RFC 9449) som den får från sitt eget RFC 7523-självintygande via klienten sts-remote-pep, med denna realms /xacml/pep som mottagare och med xacml:pep; ett klientcertifikat ensamt avvisas. either: token eller ett klientcertifikat som denna tjänst verifierar; när en token visas är det den som avgör — sätt det före uppgraderingen så länge någon PEP fortfarande autentiserar sig med sitt certifikat. certificate: endast certifikatet, och Authorization-huvudet läses inte. I alla fall måste PEP:ens post ha REMOTE_PEPS (roles.remotePepGroup) och åtkomstpolicyn avgör. Samma svar gäller en fjärr-PEP:s token vid /access/v1, edge-PDP:ns vidarebefordran av en finkornig utvärdering, oavsett vad authzen.callerAuthentication säger."
+  },
+  "xacml.pepPlainHttpProxyListeners|label": {
+    "en": "25b7e415e05fa392",
+    "text": "En fjärr-PEP får definiera en lyssnare för den omvända proxyn över vanlig HTTP"
+  },
+  "xacml.pepPlainHttpProxyListeners|description": {
+    "en": "b30ff05f28db4d9c",
+    "text": "AV som standard, och läses bara i produktläge, där en lyssnare som definierats på en fjärr-PEP:s sida (#1760) och som serverar dess omvända proxy över vanlig HTTP avvisas (STS-XACML-0249): proxyn är där en webbläsare loggar in och bär sin sessionskaka, så okrypterat är den rätt bara när något framför den avslutar TLS — ett faktum om driftsättningen som bara en administratör kan slå fast, och som det att slå på den här inställningen slår fast. Utvecklingsläget tillåter en sådan lyssnare oavsett vad den här säger. Den styr bara lyssnarna som definieras på sidan; de fyra som PEP:ens miljö binder (PEP_PROXY_PORT bland dem) är dess operatörs."
+  },
   "xacml.pipMaxPerWindow|label": {
     "en": "5e3d588e1a459b92",
     "text": "PIP-frågor som en anropare får göra per hastighetsbegränsningsfönster"
@@ -7764,28 +7972,28 @@
     "text": "Värdnamn som den här tjänsten knuffar. TOMT BETYDER VILKEN SOM HELST, vilket är standardvärdet och motsvarar ssf.pushAllowedHosts exakt — en driftsättning som kan nås av vem som helst den inte litar på ställer in listan, och varje annan värd avvisas MED NAMN på PEP:ens egen rad. Värdar snarare än URL:er, av det skäl som SSF anger: en komponent flyttar legitimt sin sökväg men flyttar inte legitimt till en annan värd."
   },
   "xacml.pepNotifyAllowHttp|label": {
-    "en": "f232b8d66a791160",
-    "text": "Tillåt http:// för en knuff (endast utveckling)"
+    "en": "37d9db04e27a17a9",
+    "text": "Tillåt http:// för en notifiering (pensionerad, ignoreras)"
   },
   "xacml.pepNotifyAllowHttp|description": {
-    "en": "a86a934a3f20a990",
-    "text": "AV som standard, som federationens och SSF:s motsvarigheter — och det som skickas här är SVAGARE än någon av dem, vilket är värt att säga i stället för att lämna åt antaganden. En knuff bär ingen inloggningsuppgift och ingen händelse: hela dess innehåll säger att repositoryt har ändrats, vilket PEP:en ändå är på väg att få reda på. Den är ändå av som standard, eftersom URL:en är en som någon konfigurerat och en begäran som den här tjänsten gör i klartext är en begäran som någon annan kan svara på. PÅ tillåter en http://-notify-URL i utvecklingsläge; i produktläge vägras okrypterad http oavsett vad detta säger (STS-XACML-0073)."
+    "en": "f283479a0bedc4de",
+    "text": "PENSIONERAD 2026-11-14 OCH IGNORERAS. En notifiering skickas bara över https, i alla lägen, så en http://-notifierings-URL rapporteras som oanvändbar på PEP:ens rad och PEP:en konvergerar genom hämtning. Inställningen accepteras fortfarande, så en konfiguration som nämner den startar ändå; påslagen ändrar den ingenting och loggas en gång per process (STS-XACML-0258). Ta bort den."
   },
   "xacml.pepNotifySkipTlsVerification|label": {
-    "en": "dbfe535e5ae02217",
-    "text": "Hoppa över TLS-verifiering för en knuff (endast utveckling)"
+    "en": "da9e36587928e192",
+    "text": "Hoppa över TLS-verifiering för en notifiering (pensionerad, ignoreras)"
   },
   "xacml.pepNotifySkipTlsVerification|description": {
-    "en": "d86b4e5d60f9ad54",
-    "text": "VARNING — ENDAST I UTVECKLINGSLÄGE. På knuffar en https-notify-URL UTAN att verifiera PEP:ens certifikat, så att vem som helst som kan avlyssna anslutningen kan svara i dess ställe. Varje sådan begäran loggas som en varning. I produktläge ignoreras den (STS-XACML-0074, loggas en gång) och kan inte ställas in (STS-CORE-0103): ange i stället en privat CA i xacml.pepNotifyCaFile."
+    "en": "3a27f9a4f0fe5cc1",
+    "text": "PENSIONERAD 2026-11-14 OCH IGNORERAS. En notifiering verifierar alltid PEP:ens certifikat: mot sfärens utfärdande CA för fjärr-PEP-lyssnare (pep-tls), som utfärdar certifikatet för en PEP:s HTTPS-lyssnare, och mot xacml.pepNotifyCaFile och nodes egen lagring. Inställningen accepteras fortfarande, så en konfiguration som nämner den startar ändå; påslagen ändrar den ingenting och loggas en gång per process (STS-XACML-0258). I produktläge kan den fortfarande inte sättas (STS-CORE-0103). Ta bort den."
   },
   "xacml.pepNotifyCaFile|label": {
-    "en": "647c5ee499d1a37b",
-    "text": "CA-certifikat för en knuff"
+    "en": "ba76eb67fd7510d1",
+    "text": "Fler CA-certifikat för en notifiering"
   },
   "xacml.pepNotifyCaFile|description": {
-    "en": "792f75ad9d56b75b",
-    "text": "En PEM-fil med CA-certifikat som en PEP:s notify-lyssnare får kedja till, UTÖVER nodes eget CA-lager — så knuffas en PEP som certifierats av en privat CA med verifiering påslagen. Läses vid varje knuff; en fil som inte kan läsas eller inte innehåller något certifikat avvisar knuffen (STS-CORE-0104)."
+    "en": "69d21c555590f4c8",
+    "text": "En PEM-fil med CA-certifikat som en PEP:s notifieringslyssnare får kedja till, UTÖVER sfärens utfärdande CA för fjärr-PEP-lyssnare (pep-tls) och nodes egen CA-lagring. Behövs inte för en PEP vars HTTPS-lyssnarcertifikat den här sfären utfärdade: det verifieras utan någon inställning. Den är till för en PEP som certifierats av en egen CA. Läses vid varje notifiering; en fil som inte kan läsas eller saknar certifikat avvisar notifieringen (STS-CORE-0104)."
   },
   "xacml.pepNotifyTimeoutMs|label": {
     "en": "6c361a6796002d56",
@@ -8732,8 +8940,8 @@
     "text": "Ta fingeravtryck av webbläsaren vid inloggning"
   },
   "risk.fingerprinting|description": {
-    "en": "fb95d41998827b2a",
-    "text": "AV SOM STANDARD (#62 P6). På: inloggningsskärmen kör ett skript, FingerprintJS (MIT; det skickar ingenting någonstans), som beräknar en identifierare från det webbläsaren exponerar och lägger den i formuläret; tjänsten behåller bara en nycklad sammanfattning, och en webbläsare som den här personen aldrig har loggat in från är signalen new-device (x2). Ett webbläsarfingeravtryck är personuppgifter: genomför konsekvensbedömningen avseende integritet i docs/risk-scoring.md, och informera dem som loggar in, innan du slår på det. Per sfär, som varje inställning."
+    "en": "452ca90f0592fe8b",
+    "text": "AV SOM STANDARD (#62 P6). På: inloggningsskärmen kör ett skript, FingerprintJS (MIT; det skickar ingenting någonstans), som beräknar en identifierare från det webbläsaren exponerar och lägger den i formuläret; tjänsten behåller bara en nycklad sammanfattning, och en webbläsare som den här personen aldrig har loggat in från är signalen new-device (x2). Ett webbläsarfingeravtryck är personuppgifter: genomför konsekvensbedömningen avseende integritet i docs/v1.1.0/risk-scoring.md, och informera dem som loggar in, innan du slår på det. Per sfär, som varje inställning."
   },
   "risk.breachCheck|label": {
     "en": "8b4443cd88527e75",
@@ -10460,8 +10668,8 @@
     "text": "Persistensläge"
   },
   "persistence.mode|description": {
-    "en": "9017af2918cf94be",
-    "text": "Var den inbäddade katalogen, registret över förtroendesfärer och appconfig-åsidosättningarna vid körning skrivs ner. memory skriver ingenting och är vad den här tjänsten alltid har gjort — allt är borta vid omstart. ldif skriver en RFC 2849-fil per sfär plus två JSON-filer i persistence.dataDir, vilket är svaret för lokal utveckling och inte kräver någon databas. postgres skriver en uppsättning tabeller (postgres/schema.sql listar dem) och är det delade lagret. mariadb är samma lager på MariaDB (mariadb/schema.sql), en andra motor som testsviten körs mot: persistence.databaseUrl är då en mariadb://-adress, paketet mysql2 måste vara installerat, och det som kräver PostgreSQL självt (cellerna, massimporten, katalogfönstret) avvisas. DET SOM DEN HÄR TJÄNSTEN SKAPAR — sessioner, token, koder, artefakter, Kerberos-principaler, replay-cacharna, räknarna och granskningsloggen — sparas beständigt i PRODUKTIONSLÄGE på postgres och i ingen annan konfiguration; se persistence.minted. Utvecklingsläge sparar inget av det, eftersom signeringsnyckeln genereras på nytt vid varje start där och en token som överlevde den inte skulle verifieras mot någonting. ldif-lagret håller inget av det i något av lägena och säger det vid start, eftersom det skriver hela filer vid varje tömning."
+    "en": "6c4f506d112de691",
+    "text": "Var den inbäddade katalogen, registret över förtroendesfärer och appconfig-åsidosättningarna vid körning skrivs ner. memory skriver ingenting och är vad den här tjänsten alltid har gjort — allt är borta vid omstart. ldif skriver en RFC 2849-fil per sfär plus två JSON-filer i persistence.dataDir, vilket är svaret för lokal utveckling och inte kräver någon databas. postgres skriver en uppsättning tabeller (postgres/schema.sql listar dem) och är det delade lagret. mariadb är samma lager på MariaDB (mariadb/schema.sql), en andra motor som testsviten körs mot: persistence.databaseUrl är då en mariadb://-adress, paketet mysql2 måste vara installerat, och det som kräver PostgreSQL självt (cellerna, massimporten, katalogfönstret) avvisas. DET SOM DEN HÄR TJÄNSTEN SKAPAR — sessioner, token, koder, artefakter, Kerberos-principaler, replay-cacharna, räknarna och granskningsloggen — sparas beständigt i PRODUKTIONSLÄGE på ett databaslager (postgres eller mariadb) och i ingen annan konfiguration; se persistence.minted. Utvecklingsläge sparar inget av det, eftersom signeringsnyckeln genereras på nytt vid varje start där och en token som överlevde den inte skulle verifieras mot någonting. ldif-lagret håller inget av det i något av lägena och säger det vid start, eftersom det skriver hela filer vid varje tömning."
   },
   "persistence.mode|restartReason": {
     "en": "22887c233a0a0adf",
@@ -10716,8 +10924,8 @@
     "text": "Spara sessioner, token och granskningsloggen beständigt"
   },
   "persistence.minted|description": {
-    "en": "ce7aa21775e90c3f",
-    "text": "Om det som den här tjänsten SKAPAR — sessioner, åtkomst-, ID- och uppdateringstoken, auktoriseringskoder, förauktoriserade koder, SAML-artefakter, Kerberos-principaler och biljetter, replay-cacharna, räknarna och granskningsloggen — överlever en omstart. PÅSLAGET, och det påverkar ingenting alls om inte BÅDE global.mode är \"product\" OCH persistence.mode är \"postgres\". Utvecklingsläge ignorerar det, eftersom signeringsnyckeln genereras på nytt vid varje start där och en återställd token inte skulle verifieras mot någonting; ldif-lagret ignorerar det också och säger det vid start, eftersom det skriver hela filer vid varje tömning och de här raderna ändras vid varje begäran. Varje rad krypteras med samma nyckelkrypteringsnyckel som skyddar signeringsnycklarna, eftersom ett sessions-id är ett cookievärde och en auktoriseringskod kan lösas in."
+    "en": "744fef5983eca02e",
+    "text": "Om det som den här tjänsten SKAPAR — sessioner, åtkomst-, ID- och uppdateringstoken, auktoriseringskoder, förauktoriserade koder, SAML-artefakter, Kerberos-principaler och biljetter, replay-cacharna, räknarna och granskningsloggen — överlever en omstart. PÅSLAGET, och det påverkar ingenting alls om inte BÅDE global.mode är \"product\" OCH persistence.mode är ett databaslager, \"postgres\" eller \"mariadb\". Utvecklingsläge ignorerar det, eftersom signeringsnyckeln genereras på nytt vid varje start där och en återställd token inte skulle verifieras mot någonting; ldif-lagret ignorerar det också och säger det vid start, eftersom det skriver hela filer vid varje tömning och de här raderna ändras vid varje begäran. Varje rad krypteras med samma nyckelkrypteringsnyckel som skyddar signeringsnycklarna, eftersom ett sessions-id är ett cookievärde och en auktoriseringskod kan lösas in."
   },
   "persistence.minted|restartReason": {
     "en": "a1ec511a16ef6535",
@@ -10736,8 +10944,8 @@
     "text": "Samordna med andra processer"
   },
   "persistence.coordinate|description": {
-    "en": "24f904c30ceb01ac",
-    "text": "Om den här processen tillämpar ändringar som andra processer checkat in i samma lager. PÅSLAGET, och det kräver postgres-lagret: varje ändring skrivs till en monoton logg INUTI den transaktion som gjorde den, och varje process läser det den ännu inte har tillämpat. En LISTEN/NOTIFY-knuff väcker den läsningen tidigt, så en missad avisering kostar fördröjning och aldrig en ändring — samma avvägning som den fjärranslutna XACML-PEP:en gör för sin egen hämtning. Att stänga av det är vad den här tjänsten gjorde innan detta fanns: korrekt, och varje process ensam med sin egen kopia. DET DELAR TILLSTÅND OCH INTE SOCKETAR — KDC:n, LDAP-lyssnarna, huvudporten och SPIFFE:s fyra binds per process — och replay-cacharna KONVERGERAR snarare än synkroniseras, så mellan en skrivning i en process och dess ankomst i en annan finns ett fönster där ett bevis som den ena nekade godtas av den andra."
+    "en": "3dff083199972128",
+    "text": "Om den här processen tillämpar ändringar som andra processer har checkat in i samma lager. PÅ kräver ett databaslager (postgres eller MariaDB): varje ändring skrivs till en monoton logg INOM transaktionen som gjorde den, och varje process läser det den ännu inte har tillämpat. På postgres väcker en LISTEN/NOTIFY-knuff den läsningen tidigt (MariaDB skickar ingen och avfrågas), så en missad notifiering kostar latens och aldrig en ändring — samma avvägning som den fjärranslutna XACML-PEP:en gör för sin egen hämtning. Att stänga av det är vad den här tjänsten gjorde innan detta fanns: korrekt, och varje process ensam med sin egen kopia. DET DELAR TILLSTÅND OCH INTE SOCKETAR — KDC:n, LDAP-lyssnarna, huvudporten och SPIFFE:s socketar binds per process. Ett engångsvärde — en auktoriseringskod, en DPoP-jti, en Kerberos-autentiserare — förbrukas en gång över alla processer, genom ett enda atomärt anspråk i lagret, utan något fönster mellan dem."
   },
   "persistence.coordinate|restartReason": {
     "en": "5d0ebf878ed54e42",
@@ -10748,8 +10956,8 @@
     "text": "Pollningsintervall för ändringar (ms)"
   },
   "persistence.pollInterval|description": {
-    "en": "0620a679e69c0d43",
-    "text": "Hur ofta den här processen frågar ändringsloggen vad andra processer har checkat in. Det här är KONTRAKTET och LISTEN/NOTIFY-knuffen är bara en optimering ovanpå det, så det här är den värsta konvergensfördröjningen när en avisering går förlorad — en tappad lyssnare, en omstart av databasen — och den typiska fördröjningen är några millisekunder. Fem sekunder eftersom knuffen normalt kommer först och ett kortare intervall bara köper frågor; 250 ms är golvet. Där lagret inte skickar någon knuff (persistence.sqlDialect portable) och detta inte är satt är intervallet en sekund. Det är också storleken på fönstret för återuppspelningscachen som beskrivs under persistence.coordinate."
+    "en": "60b8dc667d7ddb4d",
+    "text": "Hur ofta den här processen frågar ändringsloggen vad andra processer har checkat in. Det här är KONTRAKTET och LISTEN/NOTIFY-knuffen är bara en optimering ovanpå det, så det här är den värsta konvergensfördröjningen när en avisering går förlorad — en tappad lyssnare, en omstart av databasen — och den typiska fördröjningen är några millisekunder. Fem sekunder eftersom knuffen normalt kommer först och ett kortare intervall bara köper frågor; 250 ms är golvet. Där lagret inte skickar någon knuff (mariadb, eller persistence.sqlDialect portable) och detta inte är satt är intervallet en sekund. Ett engångsvärde påverkas inte av denna fördröjning: det förbrukas genom ett atomärt anspråk i lagret (se persistence.coordinate)."
   },
   "persistence.changeLogRetentionS|label": {
     "en": "110e12ce2099a8a8",
@@ -10764,8 +10972,8 @@
     "text": "Klusterläge"
   },
   "cluster.mode|description": {
-    "en": "69b7eb6339e66112",
-    "text": "Hur flera kopior av den här tjänsten mot ETT postgres-lager beter sig. `off`: inget samordnas utöver ändringsloggen, vilket är korrekt för en container och ger fel svar i tysthet för två. `active-passive`: varje nod ansluter, EN håller tjänstelånet och serverar, och de andra väntar innan de återställer eller binder något — så en andra container är en reserv snarare än en andra skrivare, och tar över inom ett hjärtslag efter ett rent stopp eller inom cluster.nodeTtlMs efter en krasch. `active-active`: varje nod serverar; det kräver beständiga nycklar under en operatörs nyckelkrypteringsnyckel och VÄGRAR STARTA så länge någon förmåga det är beroende av saknas i det här bygget (se cluster.acceptMissingCapabilities). `auto`, standardvärdet, är active-passive i produktionsläge på ett postgres-lager och av överallt annars. Varje skrivning som en klustrad nod gör är INHÄGNAD: den kontrollerar att noden fortfarande är medlem, och i active-passive-läge att den fortfarande håller tjänstelånet, och en nod som har förlorat något av dem avslutas."
+    "en": "ce7fd84fc03cf8ca",
+    "text": "Hur flera kopior av den här tjänsten mot ETT databaslager (postgres eller MariaDB) beter sig. `off`: inget samordnas utöver ändringsloggen, vilket är korrekt för en container och ger fel svar i tysthet för två. `active-passive`: varje nod ansluter, EN håller tjänstelånet och serverar, och de andra väntar innan de återställer eller binder något — så en andra container är en reserv snarare än en andra skrivare, och tar över inom ett hjärtslag efter ett rent stopp eller inom cluster.nodeTtlMs efter en krasch. `active-active`: varje nod serverar; det kräver beständiga nycklar under en operatörs nyckelkrypteringsnyckel och VÄGRAR STARTA så länge någon förmåga det är beroende av saknas i det här bygget (se cluster.acceptMissingCapabilities). `auto`, standardvärdet, är active-passive i produktionsläge på ett databaslager och av överallt annars. Varje skrivning som en klustrad nod gör är INHÄGNAD: den kontrollerar att noden fortfarande är medlem, och i active-passive-läge att den fortfarande håller tjänstelånet, och en nod som har förlorat något av dem avslutas."
   },
   "cluster.mode|restartReason": {
     "en": "ec1b93d98727db81",
@@ -11152,8 +11360,8 @@
     "text": "Avsändaradress"
   },
   "mail.from|description": {
-    "en": "33efdb50c1bacbc3",
-    "text": "Adressen som varje meddelande skickas från. Tomt betyder `no-reply@` sfärens DNS-domän. Leverantören måste tillåtas skicka som den: en verifierad identitet i SES, en MailFrom-adress i en ansluten domän i Azure, den brevlåda som personifieras (eller ett av dess send-as-alias) för Gmail — och SPF, DKIM och DMARC för dess domän är ämnet för docs/mail.md."
+    "en": "b1da52c40fbad767",
+    "text": "Adressen som varje meddelande skickas från. Tomt betyder `no-reply@` sfärens DNS-domän. Leverantören måste tillåtas skicka som den: en verifierad identitet i SES, en MailFrom-adress i en ansluten domän i Azure, den brevlåda som personifieras (eller ett av dess send-as-alias) för Gmail — och SPF, DKIM och DMARC för dess domän är ämnet för docs/v1.1.0/mail.md."
   },
   "mail.fromName|label": {
     "en": "54fc2703a4957936",
@@ -11288,8 +11496,8 @@
     "text": "DKIM-algoritm"
   },
   "mail.dkimAlgorithm|description": {
-    "en": "b319eebbac62f962",
-    "text": "`rsa-sha256` (RFC 6376; en nyckel på 2048 bitar eller större, enligt RFC 8301) eller `ed25519-sha256` (RFC 8463). Många mottagare verifierar fortfarande bara RSA, så en domän som går över till Ed25519 publicerar båda och signerar två gånger på annat håll. DKIM har ännu ingen registrerad postkvantisk algoritm; docs/mail.md säger det."
+    "en": "62ed500aeff2bc8a",
+    "text": "`rsa-sha256` (RFC 6376; en nyckel på 2048 bitar eller större, enligt RFC 8301) eller `ed25519-sha256` (RFC 8463). Många mottagare verifierar fortfarande bara RSA, så en domän som går över till Ed25519 publicerar båda och signerar två gånger på annat håll. DKIM har ännu ingen registrerad postkvantisk algoritm; docs/v1.1.0/mail.md säger det."
   },
   "mail.dkimKeyProvider|label": {
     "en": "7e4fc266794b62d9",
@@ -11512,16 +11720,16 @@
     "text": "Självbetjäningsåterställning kräver en verifierad adress"
   },
   "mail.resetRequiresVerifiedAddress|description": {
-    "en": "76e079f6e1b23b98",
-    "text": "Skicka en länk för självbetjäningsåterställning bara till en adress som personen har VERIFIERAT (en länk som personen följde från den). Påslaget som standard, eftersom länken är kontot: en adress som en import eller ett provisioneringsflöde skrev, och som ingen någonsin bevisade, är inget ställe att skicka den till. **Att stänga av det är en svagare inställning**, för en katalog vars adresser är betrodda som de är skrivna; docs/mail.md innehåller varningen."
+    "en": "81dfbb5f1c67cc3c",
+    "text": "Skicka en länk för självbetjäningsåterställning bara till en adress som personen har VERIFIERAT (en länk som personen följde från den). Påslaget som standard, eftersom länken är kontot: en adress som en import eller ett provisioneringsflöde skrev, och som ingen någonsin bevisade, är inget ställe att skicka den till. **Att stänga av det är en svagare inställning**, för en katalog vars adresser är betrodda som de är skrivna; docs/v1.1.0/mail.md innehåller varningen."
   },
   "mail.resetRequiresBackupCode|label": {
     "en": "addd650807ec39b2",
     "text": "Självbetjäningsåterställning kräver en återställningskod"
   },
   "mail.resetRequiresBackupCode|description": {
-    "en": "d2884302ae8d8475",
-    "text": "Formuläret för glömt lösenord frågar efter ANVÄNDARNAMNET, den verifierade ADRESSEN på kontot och en av personens ÅTERSTÄLLNINGSKODER, och skickar en återställningslänk bara när alla tre stämmer — koden förbrukas då. Varje kombination besvaras med samma mening. **Att stänga av det är en svagare inställning**: formuläret går tillbaka till ett fält (ett användarnamn eller adressen), och en återställning är då lika stark som brevlådan den går till — vilket NIST SP 800-63B-4 tillåter för återställning, och vilket docs/mail.md varnar för. En person som inte har några återställningskoder kan inte återställa sitt lösenord själv medan det är påslaget; en administratör kan."
+    "en": "2d8885388b97eb61",
+    "text": "Formuläret för glömt lösenord frågar efter ANVÄNDARNAMNET, den verifierade ADRESSEN på kontot och en av personens ÅTERSTÄLLNINGSKODER, och skickar en återställningslänk bara när alla tre stämmer — koden förbrukas då. Varje kombination besvaras med samma mening. **Att stänga av det är en svagare inställning**: formuläret går tillbaka till ett fält (ett användarnamn eller adressen), och en återställning är då lika stark som brevlådan den går till — vilket NIST SP 800-63B-4 tillåter för återställning, och vilket docs/v1.1.0/mail.md varnar för. En person som inte har några återställningskoder kan inte återställa sitt lösenord själv medan det är påslaget; en administratör kan."
   },
   "mail.verificationTtlMinutes|label": {
     "en": "49c2a4b66ba8a448",
@@ -12442,29 +12650,5 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "Gäller bara protokollfelsökarens lyssnare: http.http2MaxConcurrentStreams. -1, standardvärdet, följer http.http2MaxConcurrentStreams; allt annat avgör bara för den här lyssnaren. Hur många begäranden en HTTP/2-anslutning får ha öppna samtidigt (SETTINGS_MAX_CONCURRENT_STREAMS); en ström utöver det avvisas tills en annan är klar. 100, standardvärdet, är det minsta värde RFC 9113 rekommenderar; nodes eget är obegränsat, vilket skulle låta en enda anslutning bära arbetet för tusentals. Det begränsar arbetet på en anslutning som http.maxConnections begränsar anslutningarna. En ny anslutning följer en ändring direkt, och en öppen skickas det nya värdet."
-  },
-  "saml2.ssoConsent|label": {
-    "en": "0234bf3af48ea8a4",
-    "text": "Fråga innan en person loggas in"
-  },
-  "saml2.ssoConsent|description": {
-    "en": "1ddf528dcc7be0f8",
-    "text": "Om en person tillfrågas, en gång per program, innan SAML 2.0 loggar in dem i det från en session de redan har (ASVS 5.0.0 7.6.2). Svaret sparas, så de tillfrågas igen bara om de drar tillbaka det; ett globalt samtycke på programmet svarar för alla. En passiv begäran besvaras utan skärmen, som en begäran som inte kan interagera. PÅ som standard i produktläge, av i utveckling; saml2SsoConsent på ett programs post åsidosätter den för det programmet."
-  },
-  "saml11.ssoConsent|label": {
-    "en": "0234bf3af48ea8a4",
-    "text": "Fråga innan en person loggas in"
-  },
-  "saml11.ssoConsent|description": {
-    "en": "53f104813a60ba25",
-    "text": "Om en person tillfrågas, en gång per program, innan SAML 1.1 loggar in dem i det från en session de redan har (ASVS 5.0.0 7.6.2). Svaret sparas, så de tillfrågas igen bara om de drar tillbaka det; ett globalt samtycke på programmet svarar för alla. En passiv begäran besvaras utan skärmen, som en begäran som inte kan interagera. PÅ som standard i produktläge, av i utveckling; saml11SsoConsent på ett programs post åsidosätter den för det programmet."
-  },
-  "wsfed.ssoConsent|label": {
-    "en": "0234bf3af48ea8a4",
-    "text": "Fråga innan en person loggas in"
-  },
-  "wsfed.ssoConsent|description": {
-    "en": "b60b06fe1664cb06",
-    "text": "Om en person tillfrågas, en gång per program, innan WS-Federation loggar in dem i det från en session de redan har (ASVS 5.0.0 7.6.2). Svaret sparas, så de tillfrågas igen bara om de drar tillbaka det; ett globalt samtycke på programmet svarar för alla. En passiv begäran besvaras utan skärmen, som en begäran som inte kan interagera. PÅ som standard i produktläge, av i utveckling; wsfedSsoConsent på ett programs post åsidosätter den för det programmet."
   }
 }

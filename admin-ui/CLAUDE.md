@@ -7,11 +7,11 @@ say; the rest are listed after the table and argued in their own sections.
 |---|---|
 | `admin.ts` | Every page, every form, the shell they are drawn in, and the GATE in front of all of them. The largest file in the repository, because every page's HTML and every page's JSON view are built in the same function — deliberately, for the reason `../mgmt-api/CLAUDE.md` gives. |
 | `admin_rbac.ts` | **Who may use it.** Two roles, held as two ordinary groups in the embedded directory. A library (rule 3): it registers nothing. |
-| `delegation_map.ts` | **The delegation picture**, at `/admin/delegation/map` — and, since 2026-08-26, one person's whole picture at `/admin/delegation/user`, which is the same renderer over a graph carrying two more kinds of line. Layout with `@dagrejs/dagre`, every shape its own SVG. A library (rule 3): it registers nothing, requires nothing in this service but `helpers.js`, and is HANDED what each box is. |
+| `delegation_map.ts`, `web_delegation_map.ts` | **The delegation picture**, at `/admin/delegation/map` — and, since 2026-08-26, one person's whole picture at `/admin/delegation/user`, which is the same renderer over a graph carrying two more kinds of line. Layout with `@dagrejs/dagre`, every shape its own SVG. **Since #444's phase 2b (2026-11-14) the layout and drawing are `web_delegation_map.ts`, which the console's script bundles (dagre with it) and lays the picture out with in the browser; `delegation_map.ts` is the server's wrapper over the same code** (the `svg` answers still carry, the key) — see *The pictures are laid out in the browser*, below. A library (rule 3): it registers nothing and is HANDED what each box is. |
 | `pki_admin.ts` | **The certificate authority**, at `/admin/pki` — Root, Intermediate and Issuing per trust realm, the signing key pairs it issues to applications and (since 2026-09-11) to PEOPLE, and since 2026-09-10 **the Certificate Workbench**: the parent project's *PKI / X.509* workflow as one form of a hundred and fifteen fields, over `common/pki_authoring.ts`. It draws its own page (like `crypto_metadata.ts`) and is required at **18a**, which is why it needs no slot. |
 | `crypto_metadata.ts` | **The crypto report**, at `/admin/crypto-metadata` — what this service does when it signs, verifies, encrypts or decrypts, for every identity service it advertises. It draws its own page (like `../sts_metadata.ts`, not like everything else here) and fills `setCryptoReporter()` so `/admin-api/crypto` can mirror it. See the section below. |
-| `federation_diagram.ts` | **The federation picture**, at `/admin/federation/map`. The SECOND drawing in this console and a SEPARATE renderer — see the section below, where the case for not reusing the one above it is made. A library on the same terms, and the only thing it takes from this service beyond `helpers.js` is `delegation_map.ts`'s palette, hexagon and text metric. |
-| `geo_map.ts` | **The geolocation picture** (#255), for `/admin/geolocation`: the world, a continent or a country as a server-drawn SVG in the Equal Earth projection over Natural Earth's outlines (`natural_earth/countries.json`), countries filled on a five-step scale, cities as circles. The THIRD drawing and a THIRD renderer, and it uses no dagre — see *`/admin/geolocation` is the third drawing* below. A library on `federation_diagram.ts`'s terms: `helpers.js`, and `delegation_map.ts`'s palette and text metric. |
+| `federation_diagram.ts`, `web_federation_diagram.ts` | **The federation picture**, at `/admin/federation/map`. The SECOND drawing in this console and a SEPARATE renderer — see the section below, where the case for not reusing the delegation one is made. Its layout and drawing are `web_federation_diagram.ts` since #444's phase 2b, laid out in the browser; `federation_diagram.ts` wraps it for the server. It takes only the delegation picture's palette, hexagon and text metric. |
+| `geo_map.ts`, `web_geo_map.ts` | **The geolocation picture** (#255), for `/admin/geolocation`: the world, a continent or a country in the Equal Earth projection over Natural Earth's outlines (`natural_earth/countries.json`), countries filled on a five-step scale, cities as circles. The THIRD drawing and a THIRD renderer, and it uses no dagre — see *`/admin/geolocation` is the third drawing* below. Since #444's phase 2b the geometry is `web_geo_map.ts` and the console draws the map in the browser from the answer's `drawing.map` over `/admin/geo-outlines.json`; `geo_map.ts` reads the outlines from disk and wraps it for the server. |
 | `geolocation_admin.ts` | **Monitoring → Geolocation** (#255): the realm's assessments counted by place (`risk_store.geography()` through `risk_engine.geography()`), small counts suppressed, and the page; `GET /admin-api/geolocation` answers its `geoView()`. At 18j-ii. |
 
 The others: `admin_scope.ts` (what a realm administrator may not reach, 8d),
@@ -155,7 +155,110 @@ It also reads the SESSION store, which `../authn/authn.ts` owns.
    the one control the shell had turned off.
 
    A drill-down view returns `up` — `upTo(section, leaf, listView)` — and
-   `respond()` threads it to `page()`. It makes the active tab a LINK as well.
+   `respond()` threads it to `page()`. **A static page row may add crumbs
+   between the section and the leaf** (`upVia(query, t)`, #1760), through
+   `trailBar()`'s `via`, as #1068's person pages are. **Every drill-down's
+   trail names the tab it was opened from** (rcbj, 2026-11-14): a remote
+   PEP's page is *XACML › Remote PEPs › the PEP* and a route's page *XACML ›
+   Remote PEPs › the PEP › Reverse proxy › the route*, each tab crumb a link
+   to that tab (by the tab's own label) and the PEP a link to its page, so
+   the section crumb is the page itself, with no fragment. **A drill-down
+   at a path of its own may be drawn inside its parent's tabs** (the remote
+   PEP route page, rcbj 2026-11-14): `kit.tabbedPanels()` and
+   `subTabbedPanels()` take a panel's `href` (a tab linking to that tab on
+   the parent page, no panel drawn; the one panel drawn is then the `first`,
+   shown and marked current with no fragment), so the route page draws the PEP page's
+   bar with Reverse proxy current and its sub-tabs with Configured Routes
+   current, the route inside. **Both are drawn inside the XACML page's own
+   bar** (rcbj 2026-11-15: three rows on the route page, two on the PEP's),
+   Remote PEPs current and every other XACML tab a link to
+   `/admin/xacml#<tab>` (`XacmlPage.withinXacmlTabs()`, the one tab list
+   `XacmlPage.xacmlTabs()` that `/admin/xacml` draws too). Three levels
+   needed no change to the kit: every rule of the stylesheet is a child
+   rule on its own `.tabs` or `.subtabs`.
+
+   **A DRILL-DOWN DRAWN INSIDE A PARENT'S TABS LINKS EVERY TAB BACK, TITLES
+   ITSELF, AND OFFERS A BACK LINK** (rcbj 2026-11-15: *"clicking on that
+   leaves you trapped on the route detail sub-subtab"*). The trap: the tab
+   of the one panel drawn was `#<its id>`, a fragment of the DRILL-DOWN's
+   own page, so Configured Routes, Reverse proxy and Remote PEPs on a
+   route's page each pointed at the route's page and the runtime, finding
+   the same path and query, only set the fragment. On a drill-down no tab
+   is the page itself, so **every tab carries `href`, the current ones
+   included**: a panel with `html` is drawn whatever its `href`
+   (`WebKit.drawsPanel()`), its tab links to the `href`, and it is still
+   the `first`, shown and marked current with no fragment — the
+   stylesheet's `a.first` rule, and `markOpenTabs()`, which falls back to
+   the `first` link when no link's fragment holds the target. The runtime
+   needed nothing: a tab whose `href` is another page goes through
+   `onClick()`'s `go()` like any link. The panel then opens with
+   `kit.drillTitle()`: *← Back to routes* directly under the innermost tab
+   row (rcbj: *"just below the 'Configured Routes' tab marker"*), then
+   *Route detail: <id>* with the path beside it — an indented heading with
+   the tab colour's bar (`.drilltitle`) as the level below that row, rather
+   than a fourth row of one tab, which would offer nothing to press but the
+   page.
+   The trail names every level: *XACML › Remote PEPs › the PEP › Reverse
+   proxy › Configured Routes › the route*, Reverse proxy linking to
+   `#xacml-pep-tab-proxy` and Configured Routes to
+   `#xacml-pep-proxy-routes`. `tests/xacml_pep_console.js` X/W/T/K hold
+   all of it.
+
+   **A TABBED PAGE'S TRAIL ENDS AT THE OPEN TAB AND SUB-TAB** (rcbj
+   2026-11-15: *"the breadcrumb trail does not correctly show Admin
+   console->XACML->Remote PEPs->PEP Name->Listener->Create a new
+   listener"*). **This reverses the rule recorded with `07f0f12a2` and
+   `f902f7a84`**, that a tabbed page's own trail names no open tab because
+   it is drawn with the view and a tab press changes only the fragment, so
+   a tab crumb would go stale on the first press. The staleness was the
+   whole argument, and the runtime answers it: the trail is drawn again on
+   every fragment change, without drawing the page. **It is generic, in
+   the shared mechanism, never per page**:
+   * `draw()` reads the body's tab tree from the SAME string it draws
+     (`WebShell.tabTreeOf()`: each `.tabs`/`.subtabs` with its
+     `nav.tabbar` links and its `.tabpanel`/`.subpanel`s, every id inside
+     each panel, the bars nested in each), so the trail cannot name a tab
+     the page lacks, and node holds it with no DOM.
+   * `WebShell.openTabs(tree, fragment)` walks it as `markOpenTabs()`
+     marks the bars: in each bar the tab whose panel is or holds the
+     target, else its `first`, else its first — so with no fragment, or
+     one the page lacks, the trail names the first tab, and a tab alone
+     names its first sub-tab. **A tab that links to another page is open
+     but is no crumb** (a drill-down's rows, above): the walk goes on into
+     the panel drawn, and the route and listener pages, whose every tab is
+     such a link, keep their trails unchanged.
+   * `trailBar()`'s `tabs` and `self`: the page's own crumb becomes a link
+     to the page with no fragment, each tab crumb but the deepest a link to
+     its `#<id>`, and the deepest the plain leaf.
+   * `redrawTrail()` replaces `.card p.crumb` on every `hashchange` and
+     fragment `popstate` (a tab press, a tab crumb, Back), from what the
+     page was drawn with; `drawProblem()` and `drawShellRefused()` clear
+     it.
+   So every console page drawn with `kit.tabbedPanels()` or
+   `subTabbedPanels()` is covered: a PEP's page (its six tabs and the
+   Listener and Reverse proxy sub-tabs), `/admin/xacml`, OAuth, SAML,
+   Kerberos, OpenID4VC, SSF and SCIM, every `WebPages.PROTOCOL_TABS` page
+   (delegation, federation, OpenID Federation, provider commands, claim
+   providers, GNAP, UMA, TOTP, recovery codes, WebAuthn, device
+   registration, LDAP, WS-Trust, WS-Federation, PKI, TLS, groups, roles,
+   applications, devices, attribute sources, secret destinations),
+   Certificate issuance with its ACME, EST, SCEP and SPIFFE sub-tabs,
+   Server configuration → Listeners, and the application, user (its
+   Credentials and person-field sub-tabs), group, role and policy pages
+   with their sub-tabs. `tests/xacml_pep_console.js` TR holds it. **A remote PEP
+   LISTENER's page is the second** (rcbj 2026-11-15:
+   `/admin/xacml/pep/listener?pep=&listener=`, Listener › Configured
+   Listeners current, *← Back to listeners*, *Listener detail: <id>*, the
+   trail through Listener › Configured Listeners): both draw through
+   `XacmlPage.withinPepSubTab()`, the one wrapper for a drill-down of a PEP
+   sub-tab, so a third is a call, not a copy. It is drawn from the PEP's
+   own answer, so `listener` is the page row's `ownParams` — a name the
+   page reads from `ctx.query` and `WebPages.operationQuery()` never asks
+   the operation, which does not declare it (#1476) — and rule 7 owed
+   nothing. The environment's four listeners link to the same page,
+   read-only. `tests/xacml_pep_console.js` LS/LD/LT hold it. And `WebAnswers.landing()` sends that page's save to the route as it
+   is now called (a rename moves its address) and its removal to the PEP's
+   tab, the fragment kept with the notice before it. It makes the active tab a LINK as well.
    **The section label comes from `NAV`**, so a renamed tab cannot leave a trail
    naming the old one. **The last crumb is never a link**: a crumb that reloads
    the page you are on teaches a reader not to trust the ones beside it.
@@ -1159,7 +1262,7 @@ PAGE.** It sat beside the family checkboxes and asked the same question in a
 vocabulary that did not line up with theirs: eight kinds against the fourteen
 families there were then, five of those families having no kind at all, and a reader made to
 choose in both. Worse, the two are on opposite sides of the line
-`applications.js`'s `EDITABLE` header draws and this file repeats everywhere — a
+application.tsp's editability header draws and this file repeats everywhere — a
 family is DECLARED and a kind is DERIVED, written by `seen()` when a protocol
 recognises the identifier — so the select was a console form asserting a
 sighting that had not happened, which is exactly what every other form here is
@@ -1366,6 +1469,31 @@ front-channel logout*, with the two doors that do end a session beside it.
 **An entry added here must be true in development mode**; one that holds in
 both modes still belongs only if an operator would look for the control.
 
+**A second pass on 2026-11-10, still #753, brought the entries that had
+drifted since that day back to the code.** The password entry and the
+one-realm entry named two role groups. Since #645 there are three — Admin
+Read, Admin Write and Security Administrator — and the open window hands all
+three in the default realm and only the first two in a trust realm. A role
+held only because that window is open does not count where the directory,
+SCIM or the management API asks who may change security. The same page's
+Admin roles row says so. The invalidate entry said assertion and ticket rows
+carry a dash. Since 2026-09-05 those rows have a button that marks the
+artifact revoked in this service's own record, and nothing consults the mark
+when it is presented. Signing the principal out is the other act: this KDC
+refuses a TGS-REQ whose ticket authenticated before the sign-out, and that
+refusal does not reach a service ticket already in a cache. The delegation
+entry now names Kerberos constrained delegation and a GNAP act beside
+WS-Trust and RFC 8693. Two refusals hold in development as in product: a
+subject token whose may_act names somebody else, and a WS-Trust request
+carrying both elements. The attestation entry no longer says a
+development-mode TCP caller is known by its source address. That port is
+served to anybody who reaches it, an entry selecting only `transport:` or
+`endpoint:` is issued to every such caller, the Unix socket is served
+unattested without the native module, and `spiffe.acceptAssertedSelectors`
+lets a caller assert its own selectors. The session entry's bold claim is
+that this console does not draw front-channel logout. `/logout` renders the
+iframes, in the signed-out person's own browser.
+
 **The section below it, *Reading it from a test*, was stale too** and was
 fixed in the same change: it said every page answers `?format=json` and that
 `/admin-api` "is not gated at all". Every `/admin/*` path answers the
@@ -1421,7 +1549,9 @@ bug rather than a markup one.
 
 ### The foot of every page says what this process is running as (2026-09-13)
 
-Under the version line, `runtimeFooter()` draws four facts: whether requests are
+At the foot of the card, `runtimeFooter()` draws four facts (the version line
+that stood above them went on 2026-11-14: the page footer under every page
+carries the version and its build line): whether requests are
 DISPATCHED to request workers or answered by a single process
 (`workers.requestCount` and `workers.dispatch`, and which worker drew the page),
 the realm's MODE (`mode.current()`), the PERSISTENCE store that is open
@@ -2094,6 +2224,16 @@ scheduler's runs filter offers every job id, which is why the view model keeps
 `jobIds` beside the paged rows. A menu built from `shown` can only filter by
 what is already on the screen.
 
+**A list whose rows cost something to build is paged BEFORE it is built
+(#1766, 2026-11-14).** The scheduler's report built every job view in every
+realm (each reading that realm's run rows) and every run's view, and then
+kept one page: 13 s a walk in run 29. `scheduler.status()` now takes
+`pageJobs(total, everyJobId)` and `pageRuns(total)`: it lists the cheap keys,
+hands each length to the pager (`adminViews.pagingOf()`, the paging
+`pagedRows()` would have made), and builds the slice it names, reading each
+realm's run store once for the page. The answer is byte for byte the old one;
+`tests/scheduler_report_paging.js` compares the two.
+
 ### THE KEY-PAIR HISTORY IS A SUB-PAGE, AND IT IS PAGED (2026-09-22)
 
 `/admin/keys/history` — reached from a *History* link on every row of the
@@ -2746,6 +2886,74 @@ Four things about it are decisions rather than defaults:
   is exactly that.
 
 ---
+
+## THE PICTURES ARE LAID OUT IN THE BROWSER (#444 phase 2b, 2026-11-14)
+
+**Every drawing this console shows is laid out by the console's own script
+from data `/admin-api` answers**, so the Rust runtime (#444, `rust/DESIGN.md`
+section 5.1 item 3) never ports a graph-layout engine. The sections below
+argue each picture's design as it was written, on the server; what moved is
+WHERE the code runs, not what it draws.
+
+* **ONE COPY, TWO PLACES.** The geometry of each picture is a `web_` module —
+  `web_delegation_map.ts`, `web_federation_diagram.ts`, `web_geo_map.ts` —
+  moved verbatim from `delegation_map.ts`, `federation_diagram.ts` and
+  `geo_map.ts`, less their Entering/Leaving lines. Those three are now the
+  server's wrappers over it: the logger, the error code a failed layout is
+  logged under (`STS-ADMIN-0600`, `-0601`), the realm's mode, the outlines
+  read from disk. So the `svg` an answer still carries and the picture a
+  browser draws are one code path, and `tests/console_web_bundle.js`
+  (D1-pictures, D1-map) holds the bundle's drawing of every picture to the
+  answer's own `svg`, to the byte. When the request names a language,
+  `admin-ui/picture_svg.ts` redraws `svg` and `picture.svg` from the
+  translated graph with that same code, and only when the picture's inputs
+  changed, so an English answer stays the bytes the model laid out.
+  `tests/picture_svg.js` holds the French federation map to the browser's
+  drawing, and the other pictures to theirs.
+* **WHAT THE ANSWER CARRIES FOR IT.** The delegation pictures already
+  answered the graph (`graph`, or the map's `nodes` and `edges`) and `looks`;
+  they add `drawing.verifiesCredentials`, the one fact about the realm a
+  tooltip sentence turns on. The federation map adds each node's `realm`,
+  `realmName`, `application` and `peer`, `looks` (each box's link) and the
+  same `drawing.verifiesCredentials`; an edge's relationship row is found in
+  `relationships` by its `relationship`. Geolocation adds `drawing.map`: the
+  level, the counted countries' steps and tooltips, the labels and the
+  cities, each with its coordinates, which on a map are data.
+* **dagre IS BUNDLED.** `@dagrejs/dagre` is the one package a `web_` module
+  requires (`console_web_bundle.js` A2 names it, for the two modules that
+  lay a graph out); it is pure JavaScript, uses `structuredClone` (which the
+  test sandbox is given, as every browser has it) and leaves no `require()`
+  in the bundle. The CSP is unchanged: `script-src 'self'`, no inline script.
+* **THE OUTLINES ARE A STATIC FILE**, `GET /admin/geo-outlines.json`, the
+  1.3 MB `natural_earth/countries.json` as it ships (precompressed by the
+  image build), which the runtime fetches once per load (a page row's
+  `assets`, into the view's `countryOutlines`) rather than in every answer. A view without them says the map
+  could not be drawn and draws the tables.
+* **`?format=svg` IS DRAWN IN THE BROWSER TOO**, from the answer in hand
+  (`WebPages.documentOf()`, a page row's `document`), and saved as a file.
+  The API's own `format=svg` and every answer's `svg` and `picture.svg` are
+  still answered. **KEPT (#1768, 2026-11-18).** An unread member is
+  investigated, not removed. The console lays its page out from the data
+  and does not fetch `svg` to display it. The member, and `format=svg`,
+  stay for a caller that saves the document, and they are the picture the
+  console would draw, in the caller's language. The console operations'
+  `svg` is console-only markup (`mgmt-api/CLAUDE.md` 3cc), while
+  `getCredentialLineage`'s `svg` and `format=svg` and `getGeolocation`'s
+  `picture.svg` are on management operations.
+* **A FOURTH PICTURE WAS BORN IN THE BROWSER** (2026-11-15):
+  `xacml/web_pep_picture.ts`, a remote PEP's Visual sub-tab, has no server
+  wrapper, no `svg` member and no `?format=svg`; it is drawn from the PEP
+  page's answer as it stands, takes this section's palette, hexagon and text
+  metric, and its key is drawn in the browser from its own catalog
+  (`consolePepPicture`). `xacml/CLAUDE.md` has it. A click on a picture's
+  box is a console navigation since then: `ConsoleRuntime.onClick()`
+  compares `tagName` without case, because an SVG `<a>` is `a`, and before it
+  every picture's link was a full page load that dropped the token.
+* **THE KEYS ARE STILL DRAWN ON THE SERVER** (`mapKey`): fixed markup — the
+  delegation key out of the glyph functions, the federation key out of
+  one-box graphs put through the real renderer — whose sentences the server
+  translates as a filled template (#543). They depend on no data; moving them
+  means moving their sentences into the console's catalogs.
 
 ## `/admin/delegation/map` IS THE FIRST DRAWING IN THIS SERVICE
 
@@ -4131,10 +4339,24 @@ decisions, taken as the issue's plan recommended:
 gate over a loopback socket, the debugger, the startup log) and
 `tests/protocol/sts_console_bootstrap_product.js` the HTTP half.
 
-**A grant to somebody who does not exist is allowed and dangles.** That is the
-interesting case for a mock — grant the role, then watch them arrive already
-holding it — and it is why the roster counts membership VALUES rather than
-resolvable members.
+**A CONSOLE ROLE IS GRANTED ONLY TO A PERSON WHO EXISTS (rcbj, 2026-11-11).**
+`grant()` asks `existingUserEntry()` before it writes, and a name with no
+entry in the roster's realm is refused `reason: 'noSuchPerson'`, coded
+`STS-ADMIN-0920`, in a sentence naming the person and saying to create them
+first — nothing is written. It used to be allowed and dangle, the membership
+naming the uid DN where they WOULD be ("the interesting case for a mock"),
+and two rules ended it: the directory refuses a group member that names no
+stored entry (#1624, `writeGroupEntry()`'s `danglingMember`, STS-LDAP-0212),
+which turned the old grant into a refusal worded as a DN, and a person
+created later under an old name inherits no role or group (#1613), which a
+dangling grant was by construction. Every door that grants comes through
+`grant()` — `/admin/rbac`, `POST /admin-api/rbac/grant`, and the bootstrap
+seeding, which creates its account before granting. A test or a script that
+grants a role creates the person first (`createUser()`, or
+`POST /admin-api/users/create`). The roster still counts membership VALUES
+rather than resolvable members, because a `memberOf`, an `ldapmodify` of an
+older store or a deleted person's leftover can still leave one dangling, and
+`danglingCount` is how the page reports it.
 
 ## 8a-ii. THE THIRD ROLE: SECURITY ADMINISTRATOR (2026-11-02, #645)
 
@@ -5372,6 +5594,25 @@ roles is visible: every session in the main table holds `EVERYBODY` **and**
 `ALL_UNAUTHENTICATED_USERS` instead. The section says that, and links to
 `/admin/roles` where it is configured.
 
+### An arrival session is named on that tab and not listed (#888)
+
+During the 1M soak the tab looked empty. It lists only *Continue without
+signing in* (`authenticated: false` on a chosen session), and
+`authn.unauthenticatedSessions` is off by default, so the empty line said every
+session this service was holding had had a credential accepted. An arrival
+(`kind` `arrival`, `chosen: false`) is a browser that reached a front door and
+has not signed in. `liveSessions()` already leaves those out — they are not
+somebody signed in, a cookie-less probe floods the list, and opening every body
+is the cost #820 removed — and the tab now says that, whether or not any
+Continue-without row is present.
+
+They are not drawn as rows, and the unauthenticated tile does not count them.
+A count would be another scan of the session index (`session.count` was about
+130 ms at a million rows and was taken off the sign-in path), and there is no
+index on `NOT chosen`. A new index would be a schema version and a lock on a
+soak store. The empty line no longer claims that every held session had a
+credential accepted.
+
 ## `/admin/roles`: THREE REASONS AN APPLICATION COULD NOT BE FOUND ON IT (2026-09-05)
 
 The capability was never missing. `ROLE_MEMBER_KINDS` has held `application`
@@ -5476,7 +5717,7 @@ with the setting's short label as the summary; that fold is gone.
 
 What pays for it is that a setting's description has **three other doors** —
 `/admin/config?format=json`, `GET /admin-api/config`, and
-`docs/configuration.md`'s table — so the text is reachable without a mouse even though this page no longer draws
+`docs/v1.1.0/configuration.md`'s table — so the text is reachable without a mouse even though this page no longer draws
 it. Both were checked rather than assumed. **A field whose prose has NO other
 door does not get this treatment**, which is why the derived tooltips above add
 a title and remove nothing.
@@ -6493,7 +6734,7 @@ generic field rows.
 ## `/admin/error-codes`: THE ERROR CODE TABLE, UNDER MONITORING (2026-09-12)
 
 The table is `common/error_codes.js` (rule 3ac in `common/CLAUDE.md`) and
-`docs/error-codes.md` is generated from it, so this page is not a third copy of
+`docs/v1.1.0/error-codes.md` is generated from it, so this page is not a third copy of
 the catalogue: it is the table FILTERED and PAGED with the one column a
 document cannot have — how many rows in this realm's held audit log carry each
 code, each count a link to `/admin/audit?code=`. **That column is why it is
@@ -7031,7 +7272,7 @@ the value stored, the value in force and whether it is ignored (a warning box
 lists the ignored ones, which is exactly where a realm was switched to product
 with a development-only value still stored); and NOT_YET. The prose — this
 file's section on the mode, `mode.js`, `global.mode`'s description and
-`docs/what-is-not-checked.md` — cited this page and `GET /admin-api/mode` for
+`docs/v1.1.0/what-is-not-checked.md` — cited this page and `GET /admin-api/mode` for
 two weeks before either was registered.
 
 Three decisions:
@@ -7144,7 +7385,7 @@ while the API documented `page`. It is the default name now.
 
 Monitoring → Caches, drawn by `caches_admin.ts` from
 `common/cache_registry.js` (`common/CLAUDE.md`, 3ap). It has two tables, in
-`docs/caches.md`'s order: the caches, then the replay caches and nonces. Each
+`docs/v1.1.0/caches.md`'s order: the caches, then the replay caches and nonces. Each
 store shows:
 - its name, description, lifetime, scope, owner and settings;
 - its current size, valid and expired entries, and maximum size;
@@ -7253,6 +7494,15 @@ an operator says ahead of time which certificate is whose. The Attributes
 tab's editor still does not offer `userCertificate`: its value is binary, and
 this block is its door. `mgmt-api/CLAUDE.md` has the API twin.
 
+The block is drawn on the **Key pairs** sub-tab (`ucred-keys`), after the
+assertion key pairs, together with **Message-signing certificates** and
+**TLS client certificates**. Self-issued IDs and the published DIDs are the
+next sub-tab, `ucred-self-issued`. The TLS client section issues from this
+realm's TLS Client Issuing CA with the directory entry's subject
+(`issue-tls-client-certificate` / `revoke-tls-client-certificate` on
+`POST /admin/users`). The leaf is not stored in `userCertificate`. The
+portal's own card is a different door and still issues `CN=<username>`.
+
 **An application's** (#1227, 2026-10-30) is the same block at the end of the
 application page's Credentials tab
 (`ApplicationsPage.applicationStoredCertificatesSection()`), drawn from
@@ -7260,7 +7510,7 @@ application page's Credentials tab
 `applicationsAction()`. It is drawn on EVERY application, not behind
 `forFamilies()`: a stored certificate authenticates the application at every
 door that reads a client certificate as one, whatever it is declared for. Its
-words are `consoleApplications.a2.stored*`, in the seven base catalogs.
+words are `consoleApplications.a2.stored*`, in every base catalog.
 
 ## `/admin/mail` AND `/admin/mail/outbox`: THE MAIL CHANNEL'S TWO PAGES (2026-09-22, #63)
 
@@ -7923,7 +8173,20 @@ page now is. He chose:
   (`common/CLAUDE.md`, the refusal paragraph).
   The overview's authentication table stays the identity register's
   acceptances.
-* **Sessions & tokens**.
+* **Sessions & tokens**. Under the sessions, **one line counts the
+  authentications that start no session and issue nothing** (rcbj,
+  2026-11-16): a client certificate on a request to the main port, an LDAP
+  bind, a SCIM or SPIFFE caller's credential, by protocol and method
+  (`UsersPage.withoutActivityLine()`, from `authenticationsWithoutActivity`
+  on the `?user=` reply, counted over the Authentications tab's rows). A
+  remote PEP that authenticated by certificate on every policy pull had an
+  empty tab that read as broken; it now says why it is empty.
+  **Every table on the tab starts at TEN rows a page** (rcbj, 2026-11-16;
+  `AdminViews.DEFAULT_ACTIVITY_PER_PAGE`) — a session's tokens, the tokens on
+  ended sessions, the tokens with no session, the other artifacts — and the
+  session blocks at five (`DEFAULT_BLOCKS_PER_PAGE`), each with the usual
+  `pageNavPair()` pager; `?per=` sets all of them. At the console-wide fifty
+  a remote PEP's RFC 7523 tokens were one long table with no pager.
 * **Attributes**: `personFieldsSection()`.
 * **Credentials**: four sub-tabs, `ucred-factors`, `ucred-password`,
   `ucred-keys` and `ucred-kerberos`, each one of the four sections that were
@@ -8023,7 +8286,7 @@ module always was, and imports the kit by its relative path.
 | `web_listeners.ts` | The body of `/admin/listeners`, a tab per group of settings drawn by `SettingsForms.forms()` from the view's `settings`, which `listenersView()` carries since #446. Each listener's tab opens with what is in force there, its TLS policy and its HTTP pooling (the view's `http`, `tls_server.js`'s `httpPolicyFor()`), and a TLS listener's shows *HTTP/2 offered* and, since #1304, the stream cap beside it (`http2MaxConcurrentStreams`, `consoleListeners.rowHttp2Streams`); `tests/main_port_http2.js` 15. |
 | `web_scheduler.ts` | The body of `/admin/scheduler`, the list and one run, its Run now buttons drawn only when `ctx.write` says so. It draws both lists' paging from the view's `jobsPaging` and `runsPaging` — the page had read two paging objects hidden from JSON — and its view carries `settings` unless the reader is a realm's own administrator. `firstOf()` and `STATE_WORDS` are its; `span()` is the kit's, which `Scheduler.span()` calls. |
 | `web_mail.ts`, `web_mail_outbox.ts` | The bodies of `/admin/mail` (the channel, or one template) and `/admin/mail/outbox` (the list, or one message), each a renderer of its own because each is a page of its own. The outbox's paging is drawn from `rowsPaging`; the page had read a paging object JSON never carried. |
-| `web_geolocation.ts` | The body of `/admin/geolocation`. **The map is laid out by the server and arrives in the view** as `drawing` (the SVG and its legend) with `noDataColour`, as `/admin-api/delegation/map` answers its picture: the outlines and the projection are `geo_map.ts`'s and stay on the server. `hrefOf()`, `countText()` (told the minimum count by the view), `WINDOW_LABELS` and `DEFAULT_WINDOW` are the renderer's, read back by `geolocation_admin.ts`. |
+| `web_geolocation.ts` | The body of `/admin/geolocation`. **The map is drawn here since #444's phase 2b**, from the view's `drawing.map` over the outlines the runtime fetched (`countryOutlines`), by `web_geo_map.ts`; the view still carries the server's drawing (`picture`), the legend and `noDataColour`. `hrefOf()`, `countText()` (told the minimum count by the view), `WINDOW_LABELS` and `DEFAULT_WINDOW` are the renderer's, read back by `geolocation_admin.ts`. |
 | `../oauth-oidc/web_claims_providers.ts` | The body of `/admin/claim-providers`, the redirect URI read from the view's `redirectUri` (which the API always answered and the page computed again). |
 | `../oauth-oidc/web_provider_commands.ts` | The bodies of `/admin/commands` (`render()`) and `/admin/deliveries` (`deliveriesBody()`, whose state filter is the render context's), sharing the delivery row and its Retry form. |
 | `../oidfed/web_oidfed.ts` | The body of `/admin/oidfed`. Its view and `GET /admin-api/oidfed`'s are one function since #446 (`oidfedView()`, the federation view with the page's `settings`); a resolution the reader just asked for is drawn from the view's `resolution`, which only the action's redraw sets. |
@@ -8057,7 +8320,7 @@ module always was, and imports the kit by its relative path.
 | `web_roles.ts` | The body of `/admin/roles`. The page and `GET /admin-api/roles` answer one view since #446 (`admin_views.rolesView(query)`: the register first, then `paging`, `shownRoles`, `applicationChoices`, the two menus and the settings), where the API answered the register alone. **The preview is composed in**: it is `GET /admin-api/roles/preview`, an operation of its own by design, and the page table's `compose` names it — the first page whose view is two answers. |
 | `../kerberos/web_kerberos_trusts.ts` | The Trusts tab on `/admin/kerberos` (#430 Phase 4): the realm's trust records, paged, with the health column, the `?trust=` drill-down with its edit, rotate-key and remove forms, and the add form; words from `consoleKerberosTrusts`, a finding drawn by its `kind`. The application's *Across trusts* panel is `web_applications.ts`'s `applicationAcrossTrustsSection()`, in the same namespace. `kerberos/CLAUDE.md` argues both. |
 | `../kerberos/web_kerberos_principals.ts` | The Principals-tab body on `/admin/kerberos`, formerly `/admin/kerberos/principals`, drawn inside its route until #446; its write controls follow the render context's `write`, where it read the gate's state. It was outside the parent project's COPY closure, owed until #1280. |
-| `../tls/web_tls_connection.ts` | **Monitoring → TLS connection** (#597, 2026-10-12), born static: no page module draws it. From `GET /admin-api/tls-connection` (`tls/tls_server.js`'s `connectionView()`): two tabs, Connection (TLS version, cipher, the client certificate the console's own request presented — verified or not, the identity gate, revocation) and Forwarded headers (`global.trustProxy`, `global.trustedProxies`, what was believed, every forwarding and client-certificate header). It replaced the development pages `/tls` and `/tls/forwarded`; Admin Read in both modes. **Filed under Monitoring because it REPORTS what arrived** (the console's filing rule), beside the node's own pages, and at a path outside `/admin/tls` so `admin_scope.ts`'s service-page prefix does not refuse it to a realm's administrator. **It describes its own API call, not the page load** — the lead says so; `tls/CLAUDE.md` argues why that is acceptable. Pinned to the front process (`NEVER_DISPATCHED`). The words are `consoleTlsConnection`'s, seven languages; the server's sentences are data, English. |
+| `../tls/web_tls_connection.ts` | **Monitoring → TLS connection** (#597, 2026-10-12), born static: no page module draws it. From `GET /admin-api/tls-connection` (`tls/tls_server.js`'s `connectionView()`): two tabs, Connection (TLS version, cipher, the client certificate the console's own request presented — verified or not, the identity gate, revocation) and Forwarded headers (`global.trustProxy`, `global.trustedProxies`, what was believed, every forwarding and client-certificate header). It replaced the development pages `/tls` and `/tls/forwarded`; Admin Read in both modes. **Filed under Monitoring because it REPORTS what arrived** (the console's filing rule), beside the node's own pages, and at a path outside `/admin/tls` so `admin_scope.ts`'s service-page prefix does not refuse it to a realm's administrator. **It describes its own API call, not the page load** — the lead says so; `tls/CLAUDE.md` argues why that is acceptable. Pinned to the front process (`NEVER_DISPATCHED`). The words are `consoleTlsConnection`'s, every base catalog; the server's sentences are data, English. |
 | `../tls/web_tls_trust.ts` | The body of `/admin/tls/trust`, its "not installed" answer included — the first route with an early `respond()`, which the route tool turns into an early return. |
 | `../ssf/web_ssf_dead_letters.ts` | The body of `/admin/ssf/dead-letters` and its chart, with the colours and the section's reasoning, drawn inside its route until #446. `durationText()`, which it and Metrics share, is the kit's. |
 | `web_audit.ts` | The body of `/admin/audit` and its five cell helpers. It drew from the view's server-side half (the wanted filters, the rows, a paging object, the whole known-user set) until #446, and draws from the JSON the API answers now, which gained `paging`, `knownActors` (which actors on the page have a user page) and `settings`. |
@@ -8081,8 +8344,8 @@ module always was, and imports the kit by its relative path.
 | `web_answers.ts` | **What a form's answer draws where a notice is not enough** (#446, the cutover): the three kinds of answer the deleted console handlers answered with a page. A secret shown once — a generated or reset password, an activation or reset link, an app password, a realm's bootstrap password, a keytab, an EAB key, a SCEP challenge, a private key (DID, RFC 8705 client certificate, a person's assertion key, a remote PEP's listener) — drawn in place, never on a URL or in the history (`once()`). A round trip that writes nothing — the grids' "+" and bin, the view switch — drawn again from what the form holds and never sent, because those forms' hidden `action` is the write (`roundTrip()`). A redraw from an answer — a refused create or edit with its boxes, Fill (`GET /admin-api/users/new?invent=`), Generate secret and a loaded RFC 9728 document in the new-application form, the PKI workbench's next draft (`workbench` on a pane action's answer), an OpenID Federation resolution (`redraw()`). `tests/console_answers.js` holds it. |
 | `web_account_api.ts` | `/admin/account-api` (#568): the OpenAPI document of `/account-api`, the user portal's API, drawn by tag from `GET /admin-api/account-api` — each operation, the portal page or form it mirrors, who may call it, its parameters, request body and answers, and the document's own link. **It calls nothing**, unlike the explorer beside it: every account API operation acts on the signed-in person's own account with their token, which a console token is not. Filed under Service beside the explorer. |
 | `web_explorer.ts` | `/admin/api-explorer` for the static console (#446), from `GET /admin-api/console/api-explorer` (#454: the console's own operation; the page documents and calls the MANAGEMENT operations alone, `/admin-api/openapi.json`), whose answer gained `who` and `scope` (the token's subject and scopes, filled by the API's handler), `realmPrefix` and `script`. **No token is embedded**: the page carries `data-console-fetch` and `mgmt-api/admin_api_explorer.js` sends every call, the document included, through `window.stsConsoleFetch`, which the runtime answers with its DPoP-bound token and a proof by its key. The page names its script in `data-script` and the runtime loads it after drawing, since `innerHTML` runs none. The explorer's stylesheet lives here and `admin_api_docs.ts` reads it. |
-| `web_post_login_activities.ts` | **Directory → Post-login activities** (#1111, #1123), born static, beside Policies. From `GET /admin-api/post-login-activities`: Activities (each started one with its state, groups, numbers and its runs' counts, and Pause, Resume or End where the state allows and `ctx.write` says so) and Start an activity (the groups chosen so far, the group search, the form). **The groups are chosen by `kit.chooserPane()`, several at once (#1123, rcbj)**: the pane is a slice the view cut (`groupChooser.pane`, twenty from the clamped `groupfrom`, the chosen left out), and a result is a LINK back to the page that adds its group to the page's own query parameter `groups` — its DNs separated by `;`, because a DN's commas would split a comma list, `pageParamsOf()` keeps only the first of a repeated parameter, a query value may hold no control character (`common/validation.js`), and RFC 4514 escapes a `;` inside a DN value. The list therefore survives the search, its paging and a reload with nothing held in the runtime, as `person` on `/admin/rbac` and `grantto` on `/admin/applications` do for one pick; each chosen group has a Remove link (the same list without it) and the start form carries one hidden `groups` per group, which `shapeFields()` folds into the operation's array. **Not #459's field search**: that machinery (a draft in `state`, presses answered in the browser) exists for a list edited inside a form that SAVES it; here the list is only the start's argument, and the chooser rcbj named is the one every other page uses. Picks and removals land on `#pla-groups`, inside the Start tab, which `:has(:target)` keeps open (#1084). **The CONTROLS, never the report** (rcbj on #1110): who was mailed is the `postLoginProgress` source in `/report`, which the page links to. **Since #1126 both tabs say what a started activity does at sign-in and by mail** (`about`, the Activities tab's `signIn` note, `groupsHint`, `startNote`), and the policy-off warning (`noActivity`) is gone: a running started activity asks its people whatever the policy says (`common/CLAUDE.md` 3ct). The words are `consolePostLoginActivities`'s, seven languages. |
-| `web_passkey_report.ts` | **Monitoring → Passkeys** (#942), born static: no page module draws it. From `GET /admin-api/passkey-report` (`common/passkey_report.ts`'s `reportAsync()`): Metadata (where the numbers came from, the filter as a GET form, Recount now only when `ctx.write` says so), then People, Algorithms, Models, Profiles, Attestation (#941's leaf certificate algorithm; empty when none of the counted keys recorded one) and, when the query names one, List. **The List's Next link carries `from`** (the view's `paging.nextFrom`) beside `page`, because a filtered list has no index and is read from where the page before stopped; its Export links are API resources the runtime fetches with the token and saves. Filed under Monitoring because it REPORTS who holds what; realm-scoped. The words are `consolePasskeyReport`'s, seven languages. |
+| `web_post_login_activities.ts` | **Directory → Post-login activities** (#1111, #1123), born static, beside Policies. From `GET /admin-api/post-login-activities`: Activities (each started one with its state, groups, numbers and its runs' counts, and Pause, Resume or End where the state allows and `ctx.write` says so) and Start an activity (the groups chosen so far, the group search, the form). **The groups are chosen by `kit.chooserPane()`, several at once (#1123, rcbj)**: the pane is a slice the view cut (`groupChooser.pane`, twenty from the clamped `groupfrom`, the chosen left out), and a result is a LINK back to the page that adds its group to the page's own query parameter `groups` — its DNs separated by `;`, because a DN's commas would split a comma list, `pageParamsOf()` keeps only the first of a repeated parameter, a query value may hold no control character (`common/validation.js`), and RFC 4514 escapes a `;` inside a DN value. The list therefore survives the search, its paging and a reload with nothing held in the runtime, as `person` on `/admin/rbac` and `grantto` on `/admin/applications` do for one pick; each chosen group has a Remove link (the same list without it) and the start form carries one hidden `groups` per group, which `shapeFields()` folds into the operation's array. **Not #459's field search**: that machinery (a draft in `state`, presses answered in the browser) exists for a list edited inside a form that SAVES it; here the list is only the start's argument, and the chooser rcbj named is the one every other page uses. Picks and removals land on `#pla-groups`, inside the Start tab, which `:has(:target)` keeps open (#1084). **The CONTROLS, never the report** (rcbj on #1110): who was mailed is the `postLoginProgress` source in `/report`, which the page links to. **Since #1126 both tabs say what a started activity does at sign-in and by mail** (`about`, the Activities tab's `signIn` note, `groupsHint`, `startNote`), and the policy-off warning (`noActivity`) is gone: a running started activity asks its people whatever the policy says (`common/CLAUDE.md` 3ct). The words are `consolePostLoginActivities`'s, every base catalog. |
+| `web_passkey_report.ts` | **Monitoring → Passkeys** (#942), born static: no page module draws it. From `GET /admin-api/passkey-report` (`common/passkey_report.ts`'s `reportAsync()`): Metadata (where the numbers came from, the filter as a GET form, Recount now only when `ctx.write` says so), then People, Algorithms, Models, Profiles, Attestation (#941's leaf certificate algorithm; empty when none of the counted keys recorded one) and, when the query names one, List. **The List's Next link carries `from`** (the view's `paging.nextFrom`) beside `page`, because a filtered list has no index and is read from where the page before stopped; its Export links are API resources the runtime fetches with the token and saves. Filed under Monitoring because it REPORTS who holds what; realm-scoped. The words are `consolePasskeyReport`'s, every base catalog. |
 | `web_vc_status.ts` | Monitoring → Verifiable Credentials, `/admin/vc/monitor` (the Credential status tab on `/admin/vc` until #752): the lists on Metadata, the credentials on a `credentials` tab; its Suspend, Reinstate, Revoke and Publish now buttons are drawn only when `ctx.write` says so, and its paging is drawn from the view's `rowsPaging`. |
 | `../attribute-sources/web_attribute_sources.ts` | The body of `/admin/attribute-sources`. Its operation answered the register WITHOUT the page's `settings` until #446; both now answer `attributeSourcesView()`. |
 | `web_secret_destinations.ts` | **Directory → Secret destinations** (#221 P3, 2026-10-06), from `GET /admin-api/secret-destinations` (`common/secret_destinations.ts`'s `view()`): where a service account's rotated password is pushed, each destination with its location, `credentialSet`, whether it is usable and why not, and — when `ctx.write` says so — Test push, an Edit fold and Remove, and the add form. **Born static**: no page module draws it, and its forms resolve through the operation's `mirrors`. In DIRECTORY, beside Attribute sources, because a destination IS a directory entry (an application entry declared for `secret-destination`); rotation's status is Monitoring's (#221 P4). **The write-credential box is a password input that is never filled**, because the view never carries the credential (`common/CLAUDE.md` 3ce). |
@@ -8310,6 +8573,23 @@ is one:
 `ownerSearch()` in the runtime serves both searches and both modes; on a
 service account what a groups search leaves out is what the account holds,
 since the form carries no `owner` rows.
+
+**THE MAKE IS FOR GOOD, AND THE TAB SAYS SO (rcbj, 2026-11-15).** A service
+account is never made an ordinary person again (`common/CLAUDE.md` 3cd), so
+the *Make them an ordinary person* button and its two strings are gone, and
+the account's tab ends with `permanentNote` in their place. The Make on an
+ordinary person carries an unfolded amber box (`irreversibleWarning`, drawn
+as a bare `div.warn` because `kit.warn()` folds anything over a line) and a
+REQUIRED, UNNAMED checkbox (`#service-account-irreversible`,
+`irreversibleConfirm`): the browser's own constraint validation stops the
+Make, and the hidden default button Enter presses, until it is ticked — no
+script of this page's, which `script-src 'self'` would not run inline, and
+no member of the request, which `/admin-api` does not ask for. Every other
+button in the form is `formnovalidate`, so a Remove, a search or a Use is
+never stopped by it. The new-user screen draws `permanentNote` as a
+`div.warn` beside its Service account box, where a required checkbox could
+not be conditional on the box without a script.
+`tests/service_account_irreversible.js` section C holds both.
 
 ## A GROUP'S PAGE HAS AN OWNERS TAB (#603, 2026-10-12)
 
@@ -8589,7 +8869,7 @@ console request that walks a per-person store holds a request worker still.
   `?session=` reads that session's every record; a set is found by its
   `set:` index. The answer carries `coverage`, and `web_tokens.ts` draws a
   note where the list is not the whole register (`coverageNewest`,
-  `coverageHeld`, `coverageUnread`, in the seven catalogs).
+  `coverageHeld`, `coverageUnread`, in every base catalog).
 * **Monitoring → Metrics and the dashboard** take `userCountsAsync()`, where
   they built a row per person.
 * **Monitoring → Verifiable Credentials** pages before it builds rows:
@@ -8603,8 +8883,8 @@ console request that walks a per-person store holds a request worker still.
 A person's page draws each sign-on session's device binding under the
 session table: "Bound to this browser", then yes (with the algorithm),
 no, or "binding skipped" with the reason tokens
-(`consoleUsers.sessionBlock.deviceBoundSkipped`, in the seven base
-catalogs). The row's `deviceBound` is `deviceBindingOf()` — `fact` is
+(`consoleUsers.sessionBlock.deviceBoundSkipped`, in every base
+catalog). The row's `deviceBound` is `deviceBindingOf()` — `fact` is
 `bound`, `skipped`, `pending`, `timedout` or `none`, and `reasons` are
 the tokens. The API stays language-free. `pending`, `timedout` and
 `none` stay "No".
@@ -8613,7 +8893,7 @@ the tokens. The API stays language-free. `pending`, `timedout` and
 
 Monitoring → Audit export, `/admin/audit-export`. `admin-ui/web_audit_export.ts`
 draws the destination list and the add form from `GET /admin-api/audit-export`.
-The prose is the `consoleAuditExport` namespace (seven base catalogs). The
+The prose is the `consoleAuditExport` namespace (every base catalog). The
 nav label and the page title are `console.nav.audit-export` and
 `consolePages.title.audit-export`. The fourteen `auditExport.*` settings are
 `SettingsForms`, from the settings catalogs, and `SETTING_HOMES` already
@@ -8621,7 +8901,7 @@ names the page. Write controls are drawn when the shell says the reader can
 write (`c.write`); a reader with `admin:read` sees the figures. The lead
 says the figures are this process, and that a token and a secret header are
 sealed and absent afterwards. A test posts `test`. Each tab draws the
-documentation link to `docs/audit-export.md` (`common/web_doc_links.ts`,
+documentation link to `docs/v1.1.0/audit-export.md` (`common/web_doc_links.ts`,
 `audit-export.html`). A refused add or update is
 drawn again in place (`WebAnswers.redraw()`, `state.auditExportDraft`):
 the add form, or that destination's update form, open, with every posted
@@ -8630,7 +8910,7 @@ stored destination still draws both empty. A success stays a notice.
 Body template, Headers and Secret headers are labels beside their
 textareas, each with its own tooltip. A textarea inside the label took
 the hover, so the name's tooltip never appeared. Those sentences are
-also the management API's field descriptions and `docs/audit-export.md`.
+also the management API's field descriptions and `docs/v1.1.0/audit-export.md`.
 The delivery, the cursor and the twenty-first outbound exception are
 `common/CLAUDE.md` (3da). The operations are `mgmt-api/CLAUDE.md`.
 
@@ -8697,8 +8977,8 @@ Four tabs (`PROTOCOL_TABS`: `colours`, `layout`, `preview`, `settings`):
   onto a realm override's Reset.
 
 Every write control is drawn `disabled` for a reader without Admin Write;
-the preview stays usable. The catalog is `consoleSignInAppearance` (seven
-languages); the documentation link is `sign-in-appearance.html`
+the preview stays usable. The catalog is `consoleSignInAppearance` (every
+base catalog); the documentation link is `sign-in-appearance.html`
 (`common/web_doc_links.ts`). `tests/branding_api.js` G holds the page.
 
 ## A page's query is not its operation's (#1476)

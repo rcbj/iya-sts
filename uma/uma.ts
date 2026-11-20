@@ -58,6 +58,7 @@ import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 import audit = require('../common/audit');
 import errorCodes = require('../common/error_codes');
+import DomainMap = require('../common/domain_map');
 import realms = require('../common/realms');
 import applications = require('../common/applications');
 import DescriptionPages = require('../common/description_pages');
@@ -786,14 +787,15 @@ class UmaSurface {
       // AN OWNER DISABLED (#1193): a lock set where there was none revokes
       // every RPT over their resources; the resources and the document stay,
       // for the day the account is enabled again.
+      // The lock is the Credential's, the subject DirectoryEntry's (#1579).
       const lockOf = function (attrs: Json): string {
-        return String([].concat((attrs || {}).pwdaccountlockedtime ||
-                                [])[0] || '');
+        return String(DomainMap.fieldOf('Credential', 'lockedSince',
+          attrs || {}) || '');
       };
       if (String(event.kind) === 'updated' && !lockOf(event.before) &&
           lockOf(event.after)) {
-        const locked = String([].concat((event.after || {}).entryuuid ||
-                                        [])[0] || '');
+        const locked = String(DomainMap.fieldOf('DirectoryEntry',
+          'entryUuid', event.after || {}) || '');
         if (locked) {
           try {
             realms.run(realms.get(String(event.realm || '')) ||
@@ -814,8 +816,8 @@ class UmaSurface {
         return;
       }
       const before = event.before || {};
-      const uuid = String([].concat(before.entryuuid || before.entryUUID ||
-                                    [])[0] || '');
+      const uuid = String(DomainMap.fieldOf('DirectoryEntry', 'entryUuid',
+        before) || '');
       if (!uuid) {
         return;
       }

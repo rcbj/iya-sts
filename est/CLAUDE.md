@@ -2,7 +2,7 @@
 
 **Enrollment over Secure Transport** (RFC 7030, with RFC 8951's clarifications),
 added 2026-09-13 as one of the three certificate-enrollment families beside
-`acme/` and `scep/`. `docs/est.md` is the user-facing half; this is why it is
+`acme/` and `scep/`. `docs/v1.1.0/est.md` is the user-facing half; this is why it is
 built the way it is.
 
 **EVERYTHING THAT IS NOT A WIRE FORMAT IS `common/cert_enrollment.ts`'s.** Who
@@ -24,6 +24,26 @@ when registered).
 | `est_console.ts` | The view and action model both admin doors render — `estView()`, `estMonitorView()`, `estAction()`. No route, no `res`, no markup (`gnap/gnap_console.ts`'s arrangement; `tests/admin_actions_layer.js` allows it to require `admin-core/admin_views`). |
 | `est_admin.ts` | `GET/POST /admin/est` (Protocols) and `GET /admin/est/monitor` (Monitoring), drawn in the console shell through `admin.respond()`. |
 | `est_api.ts` | `module.exports = { ROUTES }` — `GET /admin-api/est`, `GET /admin-api/est/monitor`, `POST /admin-api/est/:action` — spread into `mgmt-api/admin_api.ts`'s table. Requires `./est_console` LAZILY inside each handler (rule 1). |
+
+## WHAT EACH OPERATION TAKES AND ANSWERS IS THE MODEL'S (#1579, 2026-11-10)
+
+EST's bodies are ASN.1, and the DER work stays in `est_codec.ts`.
+**`models/enrollment/est.tsp` states the facts the code reads**: each
+operation's methods (`OPERATIONS`, and so the routes and the 405's `Allow`),
+the media type it reads and writes and whether it is authenticated; the
+media types (`MEDIA`); the refusal statuses, and which of them count against
+a caller (`COUNTED_STATUSES`); the subjectAltName name types a CSR
+attributes answer asks for, by profile; the empty query every operation
+takes; and the one JSON exchange, the nonce request (the draft's CDDL, built
+into the validator `nonceRequestOf()` uses, with its "must be a
+dotted-decimal OID" message) and its answer, held as it is sent: a member
+the model does not allow is recorded under `STS-EST-0037` and the answer
+sent unchanged. The labels are `common/enrollment_profiles.js`'s
+`EST_LABELS`, not repeated. What stays in code: the strict base64 decoding,
+the PKCS#10 and CMS work, authentication, the label and realm reading, the
+signature algorithms a CSR attributes answer lists (the codec's), and every
+decision the core makes. `tests/enrollment_model_wire.js` holds each
+operation's answers and refusals to the record taken before the switch.
 
 ## The decisions
 
@@ -82,6 +102,14 @@ when registered).
   `parseCsr()`'s own `type=value` spelling), and the subjectAltName compared as a
   set, case-folded where the name is case-insensitive. The renewed serial is
   handed to the core as `replaces`, which supersedes it on the EST CRL.
+* **`/serverkeygen` AUTHENTICATES BEFORE IT ASKS `est.serverKeyGeneration`
+  (#36, 2026-11-15)**: the switch is asked by `enrollmentRequest()`'s
+  `afterAuthentication` hook, once the credential is checked and before the
+  template is read. It was asked first, before anybody was authenticated, so
+  an anonymous caller was told the realm's setting (501, `STS-EST-0005`)
+  where every other refusal asks for a credential, and its two exceptions —
+  an administrator, an application whose `estServerKeyGeneration` turns it on
+  — never applied, `ctx.principal` being empty. `sts_enrollment_codes` F.
 * **A KEM KEY IS CERTIFIED FOR `key-encipherment` ONLY**, in `/serverkeygen` and
   in the console's issue-server-key. The core would issue an ML-KEM key under a
   `digitalSignature` profile; a certificate whose key usage its key cannot
@@ -219,7 +247,8 @@ records `appPassword` when one was used. `authn/CLAUDE.md` owns the rule.
 `Est.placeRequest()` runs first in `enrollmentRequest()` — before the
 throttle, the credential and the body — and relays the request WHOLE to the
 home cell of the person its credential names: an HTTP Basic username, or,
-with no Authorization header, the `urn:sts:person:` of the TLS client
+with no Authorization header, the `urn:sts:person:` (or a service account's
+`urn:sts:sa:`, #1827, `common/CLAUDE.md` 3df) of the TLS client
 certificate (read, not verified; the channel forwards the certificate, so
 the home cell checks it as its own). An application's client_id is served
 where it arrives: its entry is the global tier's. The certificate is then
@@ -249,7 +278,7 @@ holds the counts equal to the list's.
 ## Error codes
 
 `STS-EST-0001`–`0022` for the protocol surface, `0030`–`0033` for the console
-and `/admin-api`, `0034`–`0036` for `/nonce` (#257); refusals decided by the core keep their `STS-ENROLL-*` code.
+and `/admin-api`, `0034`–`0036` for `/nonce` (#257), `0037` for a nonce answer that is not its model's (#1579, recorded only); refusals decided by the core keep their `STS-ENROLL-*` code.
 `tests/error_codes.js` carries `estError(req, res` as a failure pattern.
 
 ## Tests

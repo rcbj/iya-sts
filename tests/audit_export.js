@@ -1188,6 +1188,122 @@ async function syslogTcp(AuditExport, base, t) {
   log.debug("Leaving syslogTcp().");
 }
 
+async function framedListeners(AuditExport, base, t) {
+  log.debug("Entering framedListeners().");
+  const net = require('net');
+  const holder = await listenLoopback(net);
+  const exporter = makeExporter(AuditExport, base, {});
+  const pipe = { socket: null };
+  const dest = {
+    id: 'sys', type: 'syslog', host: '127.0.0.1', port: holder.port,
+    transport: 'tcp', facility: 16, appName: 'iya-sts'
+  };
+  try {
+    let allSent = true;
+    for (let i = 0; i < 12; i += 1) {
+      const event = AuditExport.canonical({
+        seq: 10 + i, at: 1700000000000, outcome: 'success',
+        action: 'sign in', summary: 'signed in', category: 'admin'
+      }, {
+        origin: 'node-a', realm: 'default', source: 'sts', names: new Set()
+      });
+      const result = await exporter.sendSyslog(dest, event, pipe);
+      allSent = allSent && result.ok === true;
+    }
+    const sock = pipe.socket;
+    const counts = sock ? {
+      timeout: sock.listenerCount('timeout'),
+      error: sock.listenerCount('error'),
+      drain: sock.listenerCount('drain')
+    } : null;
+    t.check(allSent && counts !== null && counts.timeout === 0 &&
+            counts.error <= 1 && counts.drain === 0,
+            'Y3. twelve frames on one tick socket leave no write or ' +
+            'connect listener behind', JSON.stringify(counts));
+  } catch (e) {
+    // A failed send is a failed check. The listener is still closed below.
+    log.debug("Caught in framedListeners(): " + ((e && e.message) || e));
+    t.check(false, 'Y3. twelve frames on one tick socket',
+            (e && e.message) || e);
+  } finally {
+    exporter.closePipe(pipe);
+    holder.server.close();
+  }
+  log.debug("Leaving framedListeners().");
+}
+
+function listenUdp(dgram) {
+  log.debug("Entering listenUdp().");
+  const pending = new Promise(function (resolve, reject) {
+    const server = dgram.createSocket('udp4');
+    const holder = { server: server, port: 0, datagram: null };
+    holder.datagram = new Promise(function (got, missed) {
+      const timer = setTimeout(function () {
+        missed(new Error('no syslog datagram'));
+      }, 2000);
+      server.once('message', function (msg) {
+        clearTimeout(timer);
+        got(msg.toString('utf8'));
+      });
+    });
+    // A missed datagram is reported by the check that awaits it.
+    holder.datagram.catch(function (e) {
+      log.debug("Caught in listenUdp(): " + ((e && e.message) || e));
+    });
+    server.once('error', function (err) {
+      reject(err);
+    });
+    server.bind(0, '127.0.0.1', function () {
+      holder.port = server.address().port;
+      resolve(holder);
+    });
+  });
+  log.debug("Leaving listenUdp().");
+  return pending;
+}
+
+async function syslogUdp(AuditExport, base, t) {
+  log.debug("Entering syslogUdp().");
+  const dgram = require('dgram');
+  const holder = await listenUdp(dgram);
+  const exporter = makeExporter(AuditExport, base, {});
+  const event = AuditExport.canonical({
+    seq: 4, at: 1700000000000, outcome: 'success', action: 'sign in',
+    summary: 'signed in', category: 'admin'
+  }, {
+    origin: 'node-a', realm: 'default', source: 'sts', names: new Set()
+  });
+  const pipe = { socket: null };
+  let result = null;
+  let text = '';
+  try {
+    result = await exporter.sendSyslog({
+      id: 'sys', type: 'syslog', host: '127.0.0.1',
+      port: holder.port, transport: 'udp', facility: 16, appName: 'iya-sts'
+    }, event, pipe);
+    if (result.ok) {
+      text = await holder.datagram;
+    }
+    t.check(result.ok === true && result.disposition === 'transmitted' &&
+            text === AuditExport.syslogLine(event, {
+              facility: 16, appName: 'iya-sts'
+            }),
+            'Y2. UDP syslog sends one datagram holding the RFC 5424 line',
+            JSON.stringify({
+              ok: result.ok, disposition: result.disposition,
+              code: result.code, why: result.why, got: text.slice(0, 80)
+            }));
+  } catch (e) {
+    // A missed datagram is a failed check. The socket is still closed below.
+    log.debug("Caught in syslogUdp(): " + ((e && e.message) || e));
+    t.check(false, 'Y2. UDP syslog sends one datagram',
+            (e && e.message) || e);
+  } finally {
+    holder.server.close();
+  }
+  log.debug("Leaving syslogUdp().");
+}
+
 async function httpDelivery(AuditExport, base, codes, t) {
   log.debug("Entering httpDelivery().");
   const redirect = fakeTransport(function () {
@@ -1230,6 +1346,32 @@ async function httpDelivery(AuditExport, base, codes, t) {
             code: redirected.code, calls: redirect.calls.length,
             body: call.body
           }));
+  // THE PINNED LOOKUP ANSWERS IN THE SHAPE IT IS ASKED FOR (2026-11-14,
+  // #444's D12): `net.connect()` asks with `{ all: true }` and wants a list;
+  // the single-address answer to it made every delivery to a host NAME fail
+  // with "Invalid IP address: undefined".
+  const asked = { all: null, one: null };
+  if (typeof call.options.lookup === 'function') {
+    call.options.lookup('hooks.example', { all: true },
+      function (err, list) {
+        asked.all = { err: err, list: list };
+      });
+    call.options.lookup('hooks.example', {}, function (err, address, family) {
+      asked.one = { err: err, address: address, family: family };
+    });
+    call.options.lookup('hooks.example', function (err, address) {
+      asked.bare = { err: err, address: address };
+    });
+  }
+  t.check(!!asked.all && !asked.all.err && Array.isArray(asked.all.list) &&
+          asked.all.list.length === 1 &&
+          asked.all.list[0].address === '8.8.8.8' &&
+          asked.all.list[0].family === 4 &&
+          !!asked.one && asked.one.address === '8.8.8.8' &&
+          asked.one.family === 4 && !!asked.bare &&
+          asked.bare.address === '8.8.8.8',
+          'H1b. the pinned lookup answers a list to { all: true } and the ' +
+          'address otherwise, always the checked one', JSON.stringify(asked));
   const rejected = fakeTransport(function () {
     return { status: 400, body: 'no' };
   });
@@ -1463,6 +1605,8 @@ async function childBody() {
   await delivery(AuditExport, base, t);
   await filesOnDisk(AuditExport, base, t);
   await syslogTcp(AuditExport, base, t);
+  await syslogUdp(AuditExport, base, t);
+  await framedListeners(AuditExport, base, t);
   await httpDelivery(AuditExport, base, errorCodes, t);
   await addresses(AuditExport, base, t);
   log.debug("Leaving childBody().");

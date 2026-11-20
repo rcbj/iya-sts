@@ -10,9 +10,11 @@
 #                          every service directory, from the /** */ blocks
 #                          on them, with the TypeScript types beside each
 #
-# The documentation site publishes the same pages under /iya-sts/api/:
-# .github/workflows/pages.yml runs this script in a job of its own and copies
-# the result into the built site. It is modeled on ./run-coverage.sh, and it
+# The documentation site publishes the same pages once per documentation
+# version, under /iya-sts/<version>/api/ (2026-11-17):
+# .github/scripts/api-references.sh runs THIS script in each version's own
+# tree (a release tag's, or the deployed commit's), and pages.yml copies each
+# result into the built site. It is modeled on ./run-coverage.sh, and it
 # differs from that script in the ways worth knowing:
 #
 #   THE GENERATOR IS TypeDoc, NOT THE `jsdoc` TOOL. 317 of the service's

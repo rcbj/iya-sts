@@ -1,0 +1,556 @@
+---
+title: Trust realms
+nav_order: 8
+---
+
+# Trust realms
+
+**One process, several logical identity services.** A *trust realm* has its own
+configuration, its own signing key, and its own sessions, authorization codes,
+access and refresh tokens, credential offers, SAML request state, artifacts,
+statistics and audit log. Every realm answers on the same ports as every other,
+and they are told apart by a segment at the front of the path.
+
+```
+https://localhost:8081/oauth2/token                the DEFAULT realm
+https://localhost:8081/realm/acme/oauth2/token     the realm `acme`
+```
+
+The point is what a client sees. Two realms are two authorization servers with
+two issuer identifiers and two JWKS documents, so a token minted in one **does
+not verify** in the other. That is the property somebody defines a second realm
+to get: a test that a client is checking the `issuer` it was configured with, a
+test that a wallet refuses a credential from an issuer it did not ask, a staging
+identity provider beside a production-shaped one on the same laptop.
+
+> **If you are not using realms, nothing here has changed.** The default realm
+> has an empty prefix. A service with no realms defined strips nothing, rewrites
+> no URL and grows no control — every path this service published before realms
+> existed is a path in the default realm.
+
+## Defining one
+
+```bash
+curl -k -X POST https://localhost:8081/admin-api/realms/create \
+     -H 'content-type: application/json' \
+     -d '{"id":"acme","name":"Acme Corporation","domain":"acme.example.com"}'
+```
+
+Or on **`/admin/realms`** in the console, which is also where a realm's settings,
+its four discovery URLs and the identifier of its signing key are.
+
+**A realm survives a restart when `persistence.realms` has a store under it**:
+its name, its description, its per-realm settings and its own directory all come
+back. In the default `persistence.mode=memory` it does not, so whatever starts
+your stack should create its realms — which is why the API call above exists
+rather than a config-file section. A realm's **signing keys** follow the mode,
+exactly like the default realm's: in development mode they are regenerated on
+every start, so a token minted in a realm today verifies against nothing
+tomorrow; in product mode they are kept, sealed, in the store.
+
+The id becomes a path segment: lower-case letters, digits and hyphens, starting
+with a letter or a digit, at most 31 characters. It may not be `default`, and it
+may not be the first segment of a path this service already serves —
+`GET /admin-api/realms` lists those in `reserved`, read off the live router, so
+the list cannot go stale. **Nor may it be an EST label** — a certificate
+profile id such as `tls-server` or `kdc` — because a realm is also reached at
+`/.well-known/est/<id>/…`, the path position EST gives its labels (see
+[EST](est.md), *Reaching a realm through the label*).
+
+### Its domain
+
+A realm has a DNS **domain** — `iyasec.io`, `dev.iyasec.io`, `craptastic.net` —
+set when it is created and **fixed from then on**. It is the root of every
+*name* the realm makes up:
+
+| What | From the domain `iyasec.io` |
+|---|---|
+| Its directory tree (RFC 2247) | `dc=iyasec,dc=io` |
+| Its Kerberos realm | `IYASEC.IO` |
+| Its Kerberos service principal (derived by the KDC, not seeded) | `HTTP/web.iyasec.io` |
+| Its SPIFFE trust domain | `iyasec.io` |
+| The SAML 2.0 entityID / SAML 1.1 providerID | `urn:iyasec.io:idp` / `urn:iyasec.io:idp:saml11` |
+| The WS-Federation entityID, WS-Trust and SAML assertion issuer | `urn:iyasec.io:sts` |
+| The address a development-mode person is given | `alice@iyasec.io` |
+
+It is **not** where the realm is reached. The OAuth issuer, `did:web`, the
+WebAuthn RP ID and every URL still come from the host a request arrived on,
+because a domain you typed says nothing about which hosts this service answers
+at.
+
+- **Leave it empty** and the realm gets `<id>.<global.domain>` —
+  `acme.example.com` — whose tree `dc=acme,dc=example,dc=com` is the one every
+  realm had before realms had domains.
+- **No two realms may share a domain**, and the default realm's is
+  `global.domain`.
+- **A domain inside another realm's is allowed**: `dev.iyasec.io` beside
+  `iyasec.io` is a separate tree, and a search from `dc=iyasec,dc=io` does not
+  see `dc=dev,dc=iyasec,dc=io`'s entries.
+- **To change it, remove the realm and create it again.** The domain is inside
+  every DN in the realm's directory, every SPIFFE ID it issued and every key its
+  KDC holds, so an update that names a different one is refused.
+
+The names in the table are ordinary settings on the realm, visible on its page
+and changeable like any other; pass `overrides` on the create to choose your own.
+
+## Finding one
+
+`GET /realms` is the directory, and it needs no credential. The prefix segment is
+a setting and the ids are whatever somebody typed, so a client being pointed at a
+realm cannot build a single URL without it.
+
+```json
+{
+  "pathSegment": "realm",
+  "enabled": true,
+  "active": true,
+  "current": "default",
+  "realms": [
+    { "id": "default", "pathPrefix": "",            "baseUrl": "https://localhost:8081" },
+    { "id": "acme",    "pathPrefix": "/realm/acme", "baseUrl": "https://localhost:8081/realm/acme" }
+  ],
+  "support": [ "…which families a realm separates, and which are shared…" ]
+}
+```
+
+Each realm but the default also carries `estLabelUrl`,
+`https://localhost:8081/.well-known/est/acme`: the address of its EST server
+for a client that cannot put a path in front of a well-known URI.
+
+Everything follows from `baseUrl`. Point a client at
+`https://localhost:8081/realm/acme` as its issuer and its discovery, token,
+authorization, userinfo, JWKS, SAML and OpenID4VCI endpoints all fall out of the
+metadata that base URL publishes — with no per-endpoint configuration on your
+side and none on this service's.
+
+`enabled` is the `realms.enabled` setting; `active` is whether any prefix is
+actually answering, which is false when the setting is on and nobody has defined
+a realm yet. They are two flags because "switched off" and "none defined yet"
+send you looking for different problems.
+
+## What a realm separates — and what it does not
+
+**A realm separates what this service ISSUES, not who it knows.** Read this
+before you build a test on it.
+
+### Separated, completely
+
+| | |
+|---|---|
+| **The signing key** | Each realm generates its own. A token minted in one does not verify against another's JWKS. Each realm's `kid` is on `/admin/realms`. |
+| **The OpenID4VCI request-encryption key** | Part of the same per-realm key set. Each realm's credential issuer metadata publishes its own key in `credential_request_encryption.jwks`, and a Credential Request encrypted to one realm's key is refused by every other realm — in every process of a service running request workers, and, in product mode, across a restart. |
+| **Shared Signals registers** | The CAEP session register and the RISC account register behind `/admin/caep-sessions` and `/admin/risc-accounts`: each realm's page lists only that realm's rows. |
+| **Every setting** | Per realm, above whatever the process is configured with. Every settings form in the console — each protocol's page, and `/admin/config` — and `POST /admin-api/config/set` reached under a realm's prefix read *and write* that realm. |
+| **Sessions** | Signing in to one realm signs you in to that realm only. **The admin console is the one exception**: its gate resolves your session cookie in whichever realm minted it, so the realm switcher switches rather than asking you to sign in again — the browser has only one session cookie, and before this a switch overwrote it. Every protocol endpoint is unchanged: in the realm you switched to, `/oauth2/authorize`, `/wsfed` and the two SAML profiles see no session. The console's banner names the realm your session belongs to whenever it is not the one you are looking at. |
+| **Everything in flight** | Authorization codes, access and refresh tokens, refresh families, DPoP replay and nonce state, the RFC 7523 / RFC 7522 used-assertion history, named authorization servers, credential offers, pre-authorized codes, deferred transactions and the access tokens that mark a deferred issuance, issuance nonces, presentation transactions, SAML 2.0 and 1.1 request state and artifacts, SCIM Digest nonces and HOBA challenges, and the SPIRE Server API connections an X509-SVID was recorded for (a gRPC connection belongs to the realm whose listener accepted it). |
+| **What goes into a token** | The custom claim selections, the SAML attribute selections, the credential claims, the verifier's request. |
+| **The statistics and the audit log** | Including the audit sequence numbers, so one realm's rows are contiguous. |
+| **The settings that are NAMES** | The SAML 2.0 entityID, the SAML 1.1 providerID, the WS-Federation entityID, the WS-Trust issuer, the SAML assertion issuer, the SPIFFE trust domain and the Kerberos realm — built from the realm's domain (*Its domain*, above) — and the OpenID4VP verifier client id, suffixed with its id. Two realms carrying one entityID is two identity providers claiming one name. They are ordinary settings — change them, or unset them to go back to sharing the process's name. |
+
+### Separated — the embedded directory, one per realm
+
+Each realm has a directory of its own behind the one socket, rooted at its
+domain — a naming context of its own, published in the root DSE:
+
+```
+dc=example,dc=com                 the DEFAULT realm  (global.domain)
+dc=acme,dc=example,dc=com         the realm `acme`, created with no domain
+dc=iyasec,dc=io                   a realm whose domain is iyasec.io
+```
+
+with its own `ou=users`, `ou=groups`, `ou=applications`, `ou=federations` and
+SPIFFE containers under each. So:
+
+- the same name signing in to two realms is **two entries**, one per realm;
+- an **OAuth client** registered under one realm is unknown to every other;
+- a **SAML service provider** entry belongs to the realm it was created in;
+- the **SPIFFE registry** is per realm, and **so is the X.509 signing
+  authority** — each realm has a SPIFFE Issuing CA of its own on
+  [`/admin/pki`](pki.md) — and **so is the trust domain itself**: a realm is
+  created with its domain as its `spiffe.trustDomain`, so `acme` issues `spiffe://acme.example.com/…`.
+  See *SPIFFE* below, which is no longer on the not-separated list;
+- and a realm is reachable over LDAP: `ldapsearch -b "dc=acme,dc=example,dc=com"`.
+
+That last point is *why* the realm is in the DN rather than in a partition of its
+own. LDAP answers on a socket with no path to put a segment in — a search arrives
+carrying a base DN and nothing else — so a **name** is the only thing a client
+could ever use to say which realm it means.
+
+**Every operation is answered from the directory its DN names.**
+`ldapsearch -b "dc=example,dc=com"` is the default realm's directory;
+`ldapsearch -b "dc=acme,dc=example,dc=com"` is acme's; an entry belonging to
+another realm is filtered out of a search based above it, and the number
+filtered is logged rather than dropped silently. The root DSE publishes one
+`namingContexts` value per realm, which is how a client discovers that the
+others are there.
+
+An operation that names **one DN** — an add, a modify, a delete, a compare, or a
+base-scope search of a single entry — is answered in that DN's realm. Spelling
+out `…,dc=acme,dc=example,dc=com` is how a client says which realm it means on a
+socket that has nowhere else to put one, so refusing it would make a realm
+unreachable rather than isolated.
+
+The one operation that carries **two** DNs is a rename, and a rename may not
+cross a realm: `modifyDN` from one realm's subtree into another is refused with
+`LDAP_AFFECTS_MULTIPLE_DSAS` (71), which is what a directory answers when a
+rename would move an entry out of the server holding it. Two realms here are two
+directories, so that is the truth rather than a borrowed error code.
+
+With no realms defined there is one naming context and one container, and every
+byte of every answer is what it was before realms existed.
+
+### Separated, and confined — the admin console roles
+
+Every realm has two administrator rosters that matter to it:
+
+- **Its own.** The realm's `cn=admin-read` and `cn=admin-write`, in its own
+  `ou=groups`. A new realm is seeded with an `admin` account holding both, which
+  must change its password at its first sign-in; in product mode creating the
+  realm shows that password once. In development mode, until that account
+  signs in to the realm's console, anybody who signs in through the realm holds
+  both of its roles. Product mode never opens it that way: until that account
+  has signed in there with its password, nobody else may use the realm's
+  console, and a sign-in as `admin` by any other method holds nothing.
+- **The service's.** The default realm's two groups. Their members administer
+  every realm, as they always did.
+
+A realm's own administrators are **confined to their realm**. Everything about
+the whole process is hidden from them and refused if asked for: the persistence
+store, the database, encryption, the secret store, the TLS certificate and client
+truststore, the LDAP service page, the embedded debugger and the API explorer.
+(Kerberos is not on that list: a realm has a KDC of its own, so its
+principals and keytabs are its administrator's — what stays service-wide is the
+two Kerberos sockets and the development-mode trust.) So are creating or removing a realm, reading or editing another realm,
+replacing the service Root, exporting the TLS certificate's key, and every setting
+that belongs to the process. That confinement is what makes a per-realm roster
+safe: creating a realm makes somebody an administrator of that realm and of
+nothing else.
+
+The console asks the roster of the realm a person **signed in through**. Sign in
+at `/realm/acme/admin` and acme's roster decides; `admin` in acme and `admin` in
+the default realm are different people. A realm administrator who opens another
+realm's console is told they administer another realm, with a link back.
+
+**Choosing a realm.** When realms are defined, the plain `/admin` and `/portal`
+ask which realm you belong to before signing you in, as a list of every realm.
+The choice is remembered in the browser, and the next visit to those addresses
+opens that realm. Add `?realm=<id>` to choose a different one, or
+`?realm=default` to sign in to the default realm. A link to any page below
+`/admin` or `/portal` never asks.
+
+**The management API.** `/admin-api` accepts a token from the default realm's
+client `sts-api-client` everywhere. Under `/realm/<id>/admin-api` it also
+accepts a token that realm's own `sts-api-client` was issued, with
+the realm's issuer and audience, and refuses that token the same service-wide
+operations the console refuses the realm's administrators.
+
+### Separated — SPIFFE, by ADDRESS
+
+SPIFFE is separated per realm, and the discriminator is neither a path nor a name but the **endpoint address**.
+
+A realm is created with SPIFFE **off** and with a trust domain of its own —
+its domain, `acme.example.com` — and with Unix socket paths of its own. Turning
+`spiffe.enabled` on for that realm builds its authorities and binds a **Workload
+API and a SPIRE Server API of its own** on its Unix sockets. Nothing restarts:
+writing the setting is what binds the sockets.
+
+**A realm is created with its TCP listeners OFF** (`spiffe.workloadPort` and
+`spiffe.serverPort` seeded to 0) and with **no administrators**
+(`spiffe.adminIds` seeded empty). The ports it would otherwise inherit are the
+default realm's, already bound on `0.0.0.0`, so turning SPIFFE on used to mean
+two refused binds; and nothing here can know which addresses a host has. To
+serve a realm over TCP, set `spiffe.grpcHost` on the realm to an address of its
+own and the two ports back to `8092` / `8181` — a client configured for those
+ports then reaches every realm where it expects to. An AWS environment
+publishes the Server API only. A workload there uses a node-local agent
+rather than TCP 8092 ([SPIFFE](spiffe.md#a-workload-agent-beside-the-workload)).
+
+**The address is the only thing a SPIFFE client can name a tenant with.** gRPC
+has a path and it is the method name — `/SpiffeWorkloadAPI/FetchX509SVID` is
+fixed by the Workload API specification — so a realm segment there would be a
+method no conforming client calls. It is also what a real deployment looks like:
+one SPIRE server is one trust domain, and several trust domains are several
+endpoints.
+
+So a container running several realms' SPIFFE needs several addresses, and the
+compose files give it four: a static one for the service and three more added to
+its own interface on the way up (`STS_EXTRA_IPS`, which needs `NET_ADMIN`).
+Join tokens are per realm too — a join token is a credential for joining a trust
+domain.
+
+What is still shared is the **default realm's own four sockets**, which are
+bound when the process starts and stay bound with `spiffe.enabled` off (they
+answer `Unavailable`; a socket that vanished would read as a service that had
+stopped). **Federated bundles are a realm's own**, and no realm may register one
+under a trust domain any realm of this service serves.
+
+### Separated — Kerberos, by REALM NAME
+
+Kerberos is separated per realm — a KDC, a principal database and a
+`krb5.realm` each — and the discriminator is neither a path nor an
+address but the **Kerberos realm name inside every request** — which the
+protocol has always carried, because Kerberos has realms of its own.
+
+**Port 88 is still one socket.** An AS-REQ or TGS-REQ names the realm it is
+for, and the KDC answers it out of that trust realm's principal database.
+
+**A realm is created with Kerberos off, and named by its domain.**
+`krb5.enabled` is seeded `false` and `krb5.realm` is the domain in capitals —
+`ACME.EXAMPLE.COM` for `acme.example.com` — because two realms answering to one
+name is a request nothing can route, and a unique domain is a unique name. So
+turning it on is one setting:
+
+```bash
+curl -X POST .../admin-api/realms/set \
+  -d '{"realm":"acme","key":"krb5.enabled","value":"true"}'
+```
+
+Set `krb5.realm` on the realm first to answer to a different name.
+
+Turning it on builds that realm's principal database from **its own settings**:
+its own `krbtgt`, its own service account, its own fixture accounts in
+development mode, every key salted with its own realm name. **Every name in it
+follows the realm's own domain** — `ACME.EXAMPLE.COM` gives
+`HTTP/web.acme.example.com` and a service account to match, and a realm called
+`CORP.BANK.EXAMPLE` looks like itself throughout, with nothing inherited from
+the service's own domain. Set `krb5.servicePrincipal` on the realm to name its
+acceptor outright. Its people are the
+people in its own directory subtree, and their Kerberos keys (product mode) are
+derived onto their own entries there. Nothing restarts.
+
+Three refusals keep the routing honest, and each is a code in
+[error codes](error-codes.md):
+
+* **Turning Kerberos on without a `krb5.realm` of its own** — `STS-KRB-0123`.
+* **A name another realm already answers to** — `STS-KRB-0124`: another realm's,
+  the default realm's, or the development partner realm (`PARTNER.COM`) the
+  default realm answers as. Compared without regard to case,
+  because two realms that differ only in case are two realms nobody can tell
+  apart in a `krb5.conf`.
+* **Renaming or clearing it while Kerberos is on** — `STS-KRB-0125`. Every key
+  in that realm's database is salted with the name. Turn it off, rename, turn it
+  on.
+
+**A client reaches a realm by naming it**, which is what a `krb5.conf` already
+does:
+
+```ini
+[realms]
+  EXAMPLE.COM      = { kdc = sts-host:88 }
+  ACME.EXAMPLE.COM = { kdc = sts-host:88 }   # the same port
+```
+
+Over MS-KKDCP there are two doors. A bare `/KdcProxy` routes by the name, like
+the socket. A realm's own `/realm/acme/KdcProxy` is **pinned** to that realm and
+refuses another realm's name with `KDC_ERR_WRONG_REALM` (`STS-KRB-0122`) — the
+prefix is an address somebody chose. The SPNEGO acceptor follows the same two
+rules: a ticket is accepted in the realm that issued
+it, and a ticket from another realm presented under a realm's prefix is refused
+(`STS-KRB-0126`).
+
+**Trust realms may trust each other's Kerberos (#430)** — through a Kerberos
+trust record on each side, in each realm's own directory (`ou=kerberosTrusts`);
+nothing is implied by two realms living in one service. A referral from one
+realm's KDC to the other's is followed on the same port 88, each answering for
+its own Kerberos realm. See [Kerberos trusts](kerberos.md#kerberos-trusts).
+Development mode seeds the default realm's trust with `PARTNER.COM`, the second
+realm its KDC answers as.
+
+**What is still the process's:** the KDC's socket (`krb5.kdcPort`), so a realm
+cannot move or take a port of its own. A realm administrator manages their
+realm's Kerberos — principals, keytabs, trusts and the settings the database is
+built from — and that one setting stays service-wide.
+
+### Optionally separated — listeners of its own (#99, #472)
+
+A realm can be reached at a host name and load balancer of its own, on a
+port of its own on every node. **The `/realm/<id>` prefix still decides the
+realm**; what changes is the scheme, host and port the realm's URLs are built
+on — `https://acme.example.com/realm/acme/...` instead of
+`https://idp.example.com/realm/acme/...` — and, if you like, which of its
+applications each port answers.
+
+It is two settings, set **on the realm** (`POST
+/realm/<id>/admin-api/listeners/set-listeners` and `.../set-applications`, or
+Server configuration → Listeners read inside the realm), described on
+[Listeners and hosted applications](listeners.md):
+
+* `listeners.realm`, the realm's own listeners: each an `id`, a `port`, the
+  `publicBaseUrl` its load balancer answers under, and optionally its
+  `hostnames`, certificate files, `clientAuth` and `tls` settings. Without
+  certificate files the realm's own `realm-tls` Issuing CA issues one per
+  node and renews it, trusted only by a client that trusts this service's
+  Root.
+* `listeners.applications`, the realm's mapping, read before the service's.
+  To serve the whole realm on its listener, as a realm's own listener did
+  before #472, map `*` to it, beside `main` to keep the main port answering:
+
+  ```json
+  { "*": { "listeners": ["main", "acme-front"], "advertised": "acme-front" } }
+  ```
+
+What a realm's listener does:
+
+* it is built like the main port — the same truststore, TLS policy and PROXY
+  protocol, its own `clientAuth` and `tls` settings where it has them;
+* **it answers only that realm's paths**: the default realm's and every other
+  realm's are 404 there (`STS-TLS-0041`), so a realm's host fronts that realm
+  alone; and of the realm's paths, only those of the applications mapped to
+  it (`STS-TLS-0047`);
+* it is bound, rebound and closed at once when the realm's listeners change,
+  on every node; one that cannot bind is recorded with its reason
+  (`STS-TLS-0039`, `STS-TLS-0040`) and shown in `GET /admin-api/realms`
+  (`listeners`) and `GET /realm/<id>/admin-api/listeners` — the service keeps
+  running;
+* the realm's console and portal sign-in callbacks on its base are registered
+  on their clients in every mode, because an administrator configured them.
+
+The load balancer and DNS record in front of it are the deployment's: on AWS,
+`var.realm_listeners` in `deploy/aws/environment` makes a network load
+balancer per realm (`realm_listeners.tf`), and its `realm_listener_settings`
+output prints the `/admin-api` calls that match. **Not yet:** custom listeners
+in a service running as several cells (`STS-CORE-0148`), and LDAPS, the KDC or
+SPIFFE ports per realm by this mechanism.
+
+### Not separated — the TLS certificate and client certificates
+
+The certificate a handshake presents, and the client certificate it carries. A
+socket has no path in it, so neither can name a realm; a session started by
+`GET /tls/sign-in` goes in the realm of the authority that signed the
+certificate. LDAP's 389 and 636 are not on this list — the sockets are shared,
+but what they serve is told apart by DN — nor are SPIFFE's sockets, of which
+each realm has its own, nor Kerberos, which routes on the realm name in the
+request.
+
+### Not separated — the key-encryption key
+
+**A realm has keys of its own at rest, but not an independent boundary.**
+Each realm has its own signing keys and its own branch of the certificate
+authority — that is the table above — and since #391 its own DATA ENCRYPTION
+KEYS: everything sealed for a realm is encrypted under keys no other realm's
+values use. Those data keys are all wrapped under a single key-encryption key
+for the whole deployment, read once at startup from `keys.kekProvider`.
+
+So anybody who can read that key can unwrap every realm's data keys, and
+rotating it re-wraps every realm's at once.
+[Encryption at rest](encryption-at-rest.md) argues it, and says what a
+key-encryption key per realm would cost.
+
+`GET /realms` and `/admin/realms` both publish this list family by family, so it
+is something the service tells you rather than something to remember.
+
+## The console
+
+Every page shows **one** realm — the one whose prefix it was reached under — and
+carries a **Trust realm** chooser at the top of the sidebar, inside the same
+card as the sections, that moves to the same page in another realm, carrying the
+filter and the page you were on. It is a `<select>` and a button: pressing the
+button redraws the page you were on in the chosen realm, in place, with the
+realm's prefix taken from the realm registry rather than from anything typed.
+
+Every root-relative link the console draws carries the current realm's
+prefix — the console adds it in the browser, as the service does on the way
+out for a page it draws itself — which is what makes the console work inside a
+realm without a link being edited. The chooser is the one control whose job is
+to leave the realm, so the links it builds are absolute and are left alone.
+
+`/admin-api` is realm-scoped by the same prefix, so `/realm/acme/admin-api/config`
+is that realm's configuration and every one of its operations works per realm.
+The five operations under `/admin-api/realms` manage the registry itself, which
+is process-wide: there is one list of realms in a process, and `remove` refuses
+to remove the realm the call arrived in — the caller would be left talking to a
+prefix that had stopped existing.
+
+## Four settings
+
+| Setting | Environment variable | Default | What it does |
+|---|---|---|---|
+| `realms.enabled` | `STS_REALMS_ENABLED` | `true` | Whether defined realms answer on their prefixes. Turning it **off** leaves every definition in place and stops the paths working — which is what to reach for when a realm is answering something it should not, since nothing has to be deleted to find out whether a realm is the reason for something. |
+| `realms.pathSegment` | `STS_REALMS_PATH_SEGMENT` | `realm` | The segment in front of a realm id. Set it to the empty string for the bare `/acme/oauth2/token` shape, which is what a client ported from a product that spells it that way expects. |
+| `realms.removalDeliveryTimeoutS` | `STS_REALMS_REMOVAL_DELIVERY_TIMEOUT_S` | `10` | How long removing a realm waits for what it owes its receivers and relying parties to be delivered — see *Removing one*. `0` still sends everything and does not wait. Read in the realm the removal is made from. |
+| `realms.maxCount` | `STS_REALMS_MAX_COUNT` | `10` | How many trust realms this cluster may hold, the default realm included. A service administrator sets it, and only in the default realm. Lowering it does not remove realms; a create past the cap is refused. |
+
+No `realms.*` key can be set *on* a realm: a realm that could switch realms off would be
+doing it from inside the request that found it, and a realm that could move its
+own prefix would be changing the prefix already used to find it. `realms.maxCount`
+can additionally be changed only while the default realm is ambient.
+
+**Upgrading a cluster across the release that added `realms.maxCount` restarts
+every node together.** The setting is one of those every node of a cluster must
+agree on, and adding it changed what the nodes compare, so a node on the older
+release and one on the newer refuse each other (`STS-CLUSTER-0002`) whatever
+their settings are. Stop every node, then start every node on the new image;
+there is no mixed-version window.
+
+## Removing one
+
+Removing a realm **takes everything it held with it** — its sessions,
+authorization codes, tokens, offers, service provider state, statistics, audit
+log and signing key. That is deliberate rather than thorough: a realm re-created
+with the same id inheriting the last one's sessions would be the most surprising
+thing a re-created realm could do.
+
+The realm's **directory subtree goes too** — its people, groups, applications,
+federation relationships and SPIFFE registrations — so `dc=acme,dc=example,dc=com`
+answers `NoSuchObject` afterwards and a realm re-created under that id starts
+with a fresh seeded tree. The default realm cannot be removed at all.
+
+**Before it goes, everybody who was relying on it is told**
+([#232](https://github.com/rcbj/iya-sts/issues/232)). Removing a realm from
+`/admin/realms` or `POST /admin-api/realms/remove`:
+
+1. stops anything NEW from starting in it
+   ([#262](https://github.com/rcbj/iya-sts/issues/262)): from this moment,
+   on every node, a sign-in there is refused, and so is every issuance — a
+   token of any grant, an authorization code, a SAML or WS-Federation
+   assertion, a WS-Trust token, a Kerberos ticket, a GNAP grant, an
+   OpenID4VCI credential, an ACME, EST or SCEP certificate and a SPIFFE SVID
+   (`STS-CORE-0121`; the token endpoint answers `invalid_grant`). A sign-out,
+   a revocation, introspection, UserInfo, metadata and a Shared Signals poll
+   still work, so a receiver can collect what the removal sends it;
+2. ends every session in it the way a sign-out does — a CAEP
+   `session-revoked` (`initiating_entity: admin`) for each, and the
+   back-channel Logout Tokens of the relying parties on it;
+3. reports every person in its directory purged — RISC `account-purged`;
+4. tells every Shared Signals stream `stream-updated` with status `disabled`;
+5. waits, at most `realms.removalDeliveryTimeoutS` seconds, for all of that
+   to be delivered, and only then removes the realm.
+
+What had not been delivered when the wait ran out — a push receiver that did
+not answer, a Logout Token still being retried, a SET on a **poll** stream
+that nobody collected — is logged (`STS-CORE-0120`), listed in the answer's
+`retirement` member, and goes with the realm. A poll receiver can collect
+only while the wait lasts; the removal does not wait for somebody to come
+and poll. On a cluster the node that received the removal does this once:
+the other nodes remove the realm when they learn of it, and say nothing
+again.
+
+The first step is written to the store before anything else happens, so
+every node refuses from then on. If the service stops half way through a
+removal, the realm stays in that state — refusing sign-ins — until you
+remove it again, which finishes the job.
+
+**A removal that stopped half way is visible.** Once a realm has been in
+that state for longer than a removal can take
+(`realms.removalDeliveryTimeoutS` plus 30 seconds), it is shown as
+*removal interrupted*:
+
+- on **Trust realms** (`/admin/realms`), the row is marked, and a block at
+  the top says when the removal began and what is refused, with a **Finish
+  removing** button;
+- on the realm's own page there, the same block;
+- on every console page inside the realm, a banner;
+- on the sign-in screen, the refusal says the removal was interrupted;
+- in `GET /admin-api/realms`, each row has a `retiring` member (`null` when
+  the realm is not being removed) with `since`, `sinceIso`, `inProgress`,
+  `interrupted`, `refusing`, `why` and `finish`. The service also logs
+  `STS-CORE-0123` when it starts with such a realm.
+
+To finish, remove the realm again from another realm: the button, or `POST
+/admin-api/realms/remove` with `{"id": "<realm>"}`. It ends whatever is
+still live, reports the realm's people purged and removes it. A receiver may
+be told `account-purged` a second time about somebody the interrupted
+removal had already reported; the service cannot know who that was, and
+telling somebody twice is better than not at all. While a removal is still
+**in progress**, removing the realm again is refused (`STS-CORE-0122`), so a
+second click does not announce everything twice.

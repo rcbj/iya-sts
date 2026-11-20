@@ -672,6 +672,12 @@ CREATE TABLE IF NOT EXISTS sts_sessions (
 );
 
 CREATE INDEX IF NOT EXISTS sts_sessions_subject ON sts_sessions (realm, subject_key, last_seen_at) WHERE chosen AND subject_key <> '';
+-- One base64url first character of subject_key per session sweep (#876).
+-- COLLATE "C" is the order that range uses. The database collation does
+-- not partition base64url, and a range in that collation cannot use
+-- sts_sessions_subject. No new schema version: the owner runs this file
+-- again, and a start that cannot create the index is refused until then.
+CREATE INDEX IF NOT EXISTS sts_sessions_subject_band ON sts_sessions (realm, subject_key COLLATE "C") WHERE chosen AND subject_key <> '';
 CREATE INDEX IF NOT EXISTS sts_sessions_username ON sts_sessions (realm, username_key) WHERE username_key <> '';
 CREATE INDEX IF NOT EXISTS sts_sessions_expires ON sts_sessions (realm, expires_at) WHERE expires_at IS NOT NULL;
 CREATE INDEX IF NOT EXISTS sts_sessions_parent ON sts_sessions (realm, parent_key) WHERE parent_key <> '';
@@ -679,6 +685,16 @@ CREATE INDEX IF NOT EXISTS sts_sessions_credential ON sts_sessions (realm, crede
 CREATE INDEX IF NOT EXISTS sts_sessions_partner ON sts_sessions (realm, partner_relationship) WHERE partner_relationship <> '';
 -- Schema version 22 (#754): a hosted surface's relying-party sessions.
 CREATE INDEX IF NOT EXISTS sts_sessions_surface ON sts_sessions (realm, rp_surface) WHERE rp_surface <> '';
+-- Schema version 32 (#882): the console's live session pages order
+-- `started_at DESC, key`. `WHERE chosen` is that page's predicate, so an
+-- arrival stays out. `key` is ASC, the query's tie-break. On a store that
+-- already holds sessions, build it as the owner before the image starts,
+-- outside a transaction; this statement then finds it:
+--   CREATE INDEX CONCURRENTLY IF NOT EXISTS sts_sessions_started
+--     ON sts_sessions (realm, started_at DESC, key) WHERE chosen;
+-- The procedure, including `pg_index.indisvalid`, is in
+-- `postgres/CLAUDE.md`. The query that walks it stays unnamed.
+CREATE INDEX IF NOT EXISTS sts_sessions_started ON sts_sessions (realm, started_at DESC, key) WHERE chosen;
 
 -- Schema version 24 (#820): an on-demand minted store's index. A store
 -- declared `onDemand` with `indexBy` is not held whole by a process, so what
@@ -832,9 +848,11 @@ CREATE TABLE IF NOT EXISTS sts_cluster_secrets (
   created_at bigint NOT NULL
 );
 
--- A NAMED LOCK AS A ROW (#677, schema version 30): the portable cluster
--- statements lock a row here FOR UPDATE where the native ones take
--- pg_advisory_xact_lock. `persistence/cluster_portable.js` argues it.
+-- A NAMED LOCK AS A ROW (#677, schema version 30). The portable join lock
+-- is a row here, locked FOR UPDATE, where the native join takes
+-- pg_advisory_xact_lock (`persistence/cluster_portable.js`). Since #770
+-- every engine's fence share-locks a row here too, named with the lease
+-- token or the origin reservation (`cluster/CLAUDE.md`).
 CREATE TABLE IF NOT EXISTS sts_cluster_locks (
   name text PRIMARY KEY
 );
@@ -1225,7 +1243,7 @@ CREATE TABLE IF NOT EXISTS sts_schema (
 -- WHAT VERSION OF THE ABOVE THIS IS. The driver writes the same row on open()
 -- and `tests/postgres_schema.js` checks that this number is its SCHEMA_VERSION,
 -- so the two cannot disagree about which schema is on disk.
-INSERT INTO sts_schema (version) VALUES (31) ON CONFLICT (version) DO NOTHING;
+INSERT INTO sts_schema (version) VALUES (32) ON CONFLICT (version) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ROLE: READ AND WRITE THE ROWS, AND NOTHING ELSE.

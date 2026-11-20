@@ -62,6 +62,19 @@
 // (STS-OAUTH-0817) rather than reuse a live position, which section 13.3
 // forbids.
 //
+// **THE PACKED LIST IS CACHED (#885).** Building that buffer and compressing
+// it is the cost a resource server pays once per change, not once per fetch.
+// A publication reuses the compressed bytes until this process's invalid-bit
+// generation for the realm moves, or the earliest INVALID bit's expiry has
+// passed — an expired index is packed VALID, and it may be handed out again.
+// The generation moves when this process revokes or un-revokes an access
+// token, when `fillInvalid()` writes a bit, and when another process's bit
+// is applied through the store. A refresh token or an ID token does not move
+// it: those revocations are the common case, and they do not change this
+// list. The signed token is still made again at half the ttl, from the
+// cached bytes, so a resource server's max-age and a fresh `iat` overlap
+// without another deflate.
+//
 // **INDEXES ARE RANDOM AND CLAIMED ACROSS THE CLUSTER** (section 13.2: an
 // index that counts up says how many tokens came before), through
 // `cluster/cluster_claims.js`, for as long as the token lives. `allocate()`
@@ -172,11 +185,80 @@ const ALLOCATION_ATTEMPTS = 32;
 //   * EVERY allocation goes through a block: there is no index claimed on its
 //     own beside them for a block's owner not to know about.
 //
+// A RESTART LEAVES THE CLAIM (#884). Dropping the in-memory lease does not
+// release the cluster claim, so a process that exits keeps every block for
+// as long as a token from it can live. On 8081 that was 907 of 1,024 blocks,
+// across eight origins and about ten restarts. Each block claim is therefore
+// stamped with this process's origin and, once it has joined, its node
+// (`origin@nodeId`). At start — after the origin is adopted and the node has
+// joined, before anything listens — this process releases every live claim
+// of its own origin, bare or `@node`, including this same membership: a
+// worker restart keeps the node id and the stable origin. The cluster job
+// `oauth2.access-token-block-reap` then releases a claim whose stable origin
+// (`n:…`) no longer holds a live origin claim, and a claim whose `@node`
+// membership has left or expired and is not this process's node. It does not
+// release this process's own live claims, and a bare `pid-…` claim of
+// another origin stays until it expires: that holder took no origin claim,
+// so its absence proves nothing.
+//
+// THE INDEX IS NOT HANDED OUT UNTIL ITS ROW HAS COMMITTED (#884). Releasing
+// a block while `allocate()` is still inside the minted flush would let the
+// next lessee take an index whose row never landed, and two live tokens
+// would share one bit. A block claim therefore installs a fence lock on the
+// database that writes the status row — the one database, or the global
+// tier when the store is two; the claim itself stays on the cell. The lock
+// is registered against the index before the entry is written, and
+// `allocate()` returns only once the minted flush has committed that row
+// while still holding the lock. A flush whose lock is already gone drops
+// the index and does not write it; `allocate()` undoes the local entry
+// without journalling a delete, marks the lease dead and takes another
+// block. A new lessee reads the store for that block's live indexes and
+// skips them, which the key-resident digests do not yet show. Releasing a
+// block deletes the lock first, so the delete waits for a flush that still
+// holds it, and only then deletes the claim. A process with no shared
+// committing store still returns the index at once.
+//
+// ONE COMMIT PER RESPONSE, NOT ONE PER TOKEN (#884's review, 2026-11-13).
+// Waiting for that commit inside `allocate()` was a synchronous commit of
+// its own, ahead of the response's: a rotating refresh waited on two again
+// after #886 had made it one. So the wait is made where it is needed and
+// deferred everywhere else:
+//
+//   * THE FIRST INDEX OF A NEW LEASE WAITS, as before. It proves the lock
+//     is installed on the database that writes the row and the block is
+//     ours, before any token from it is signed; a lost fence there costs
+//     nothing but another block. Once per block, not per token.
+//   * EVERY LATER INDEX OF A PROVEN LEASE IS NOT WAITED FOR HERE, while
+//     this process's origin claim was confirmed within its lifetime
+//     (`persistence.originFresh()`). Its check is handed to the response
+//     being answered (`cluster_barrier.deferUntilCommitted()`), which waits
+//     for its own commit — the same flush, usually, so the status row and
+//     the refresh token commit together — and then asks whether this row
+//     was written under the lock. If it was not, the response is refused
+//     503 (STS-CLUSTER-0166, STS-OAUTH-1010) and the token in it never
+//     leaves; the lease is dead, and the next token takes another block.
+//   * Where there is no held response (a scheduler job, a dispatched
+//     operation, a test calling this directly) or the origin is not known
+//     to be live, the index waits here as it always did.
+//
+// What makes the deferral safe is that a block is released from under a
+// live holder only by the reap job, and only once the holder's origin
+// claim has been lapsed for `cluster_claims.ORIGIN_LAPSE_GRACE_MS` (90 s);
+// an index is deferred only while that claim is fresh, so its row is
+// share-locking the fence long before any such release. And if a process
+// stalls past even that, the check at the commit still catches the drop:
+// a token is never sent on an index whose row did not land.
+//
 // `allocateInProcess()`, a process with no shared claims table, is unchanged.
 // ---------------------------------------------------------------------------
 const BLOCK_SIZE = 1024;
 const BLOCK_USE_MS = 5 * 60 * 1000;
 const BLOCK_ATTEMPTS = 32;
+const BLOCK_SCOPE = 'oauth2.access-token-status-block';
+const REAP_JOB = 'oauth2.access-token-block-reap';
+// Not set until register() has succeeded. A half-built scheduler must not
+// latch the job as registered (`cluster_claims.js`'s ensurePurgeJob).
+let reapJobRegistered = false;
 
 // A block this process leased, per realm.
 interface StatusLease {
@@ -185,6 +267,14 @@ interface StatusLease {
   useUntilMs: number;
   cursor: number;
   taken: Set<number>;
+  // The claim's fence lock, or '' when this process has no shared store.
+  // A dead lease lost that lock before its row committed and hands nothing
+  // else out.
+  lockName: string;
+  dead: boolean;
+  // A row of this lease has committed under its lock (#884's review): the
+  // indexes after it need not wait for their own commit (see the header).
+  proven: boolean;
 }
 
 // idx -> { jti, kind, expiresAt (ms), allocatedAt (ms) }
@@ -227,12 +317,80 @@ const entries = realms.map({ persist: 'access_token_status.entries',
 // marker `admin_stats.setStatusMarker()` calls, installed below — and
 // filled once from every entry before `entries` goes on demand
 // (`fillInvalid()`). Small: the revoked tokens that have not expired.
-const invalid = realms.map({ persist: 'access_token_status.invalid',
-                             expiresAt: realms.expiryField('expiresAt', 1) });
+//
+// realm id -> how many times this process has seen that realm's bits change
+// (#885). Process-local. A publication rebuilds when it has moved.
+const bitsGeneration = new Map<string, number>();
 
-// realm|form -> { digest, token, signedAt, ttlMs }: the last list this
-// process signed, re-signed when the bits change or it is half-way to its
-// ttl. PER PROCESS; a few rows per realm.
+/**
+ * The compressed list last built for one realm.
+ */
+interface PackedList {
+  generation: number;
+  // The earliest expiresAt among the bits that were set, or null when none
+  // of them expires. At or after it the next publication rebuilds, so an
+  // index handed out again is not still published INVALID.
+  validUntil: number | null;
+  compressed: Buffer;
+}
+
+// realm -> that list. PER PROCESS, one row per realm. The signed JWT and
+// the signed CWT share it. A generation move drops the row.
+const packedLists = new Map<string, PackedList>();
+
+// `bytes` is ignored when a caller already holds the compressed list.
+const EMPTY_BYTES = Buffer.alloc(0);
+
+/**
+ * Drops the realm's compressed list and moves its generation.
+ *
+ * One step for a local write and for a bit another process applied. A
+ * second step, when this process's own write is applied back, rebuilds
+ * once more and the bytes match.
+ *
+ * @param realmId - the realm whose bits changed
+ */
+function noteInvalidChange(realmId: string): void {
+  helpers.log.debug("Entering noteInvalidChange().");
+  const id = String(realmId || '');
+  const next = (bitsGeneration.get(id) || 0) + 1;
+  bitsGeneration.set(id, next);
+  packedLists.delete(id);
+  helpers.log.debug("Leaving noteInvalidChange(). " + id + " is " + next +
+                    ".");
+}
+
+const invalid = realms.map({
+  persist: 'access_token_status.invalid',
+  expiresAt: realms.expiryField('expiresAt', 1),
+  // THE TWO ACCESSORS A STORED ROW COMES IN THROUGH (a start's restore and
+  // another process's apply). A local `set` does not come here;
+  // `markRevoked()` moves the generation itself. Admits every row: a throw
+  // would drop it (STS-CORE-0042).
+  reconcile: {
+    restore: function restoreInvalid(k: string, v: any, held: any,
+                                     realmId: string): any {
+      helpers.log.debug("Entering restoreInvalid().");
+      noteInvalidChange(realmId);
+      helpers.log.debug("Leaving restoreInvalid(). " + k +
+                        (held ? " replaced." : " new."));
+      return v;
+    },
+    remove: function removeInvalid(k: string, held: any,
+                                   realmId: string): boolean {
+      helpers.log.debug("Entering removeInvalid().");
+      noteInvalidChange(realmId);
+      helpers.log.debug("Leaving removeInvalid(). " + k +
+                        (held ? " held." : " absent."));
+      return true;
+    }
+  }
+});
+
+// realm|form -> { compressed, token, signedAt, ttlMs }: the last list this
+// process signed. Re-signed when the compressed bytes are a new buffer, or
+// it is half-way to its ttl. PER PROCESS; a few rows per realm. The bytes
+// are the packed list's own buffer (#885), so a rebuild is a new signature.
 const signedLists = new Map<string, any>();
 const MAX_SIGNED = 1024;
 
@@ -309,6 +467,49 @@ const signedCount = cacheRegistry.register({
   }
 });
 
+const packedCount = cacheRegistry.register({
+  name: 'oauth2.access-token-status-packed',
+  title: 'Packed access-token status lists',
+  description: 'The compressed access-token status list this process ' +
+    'last built for each realm, reused until an invalid bit changes or ' +
+    'the earliest one expires.',
+  owner: 'oauth-oidc/access_token_status.ts',
+  scope: 'process',
+  kind: 'cache',
+  persisted: false,
+  hitMeaning: 'a list was served without packing or compressing it again',
+  settings: ['oauth2.accessTokenStatusListTtlS'],
+  maxEntries: function (): number {
+    return Math.max(1, realms.list().length);
+  },
+  bound: 'Structural: one compressed list per realm. A realm that has ' +
+    'gone, or a list whose earliest invalid bit has expired, is dropped ' +
+    'by the caches job.',
+  lifetime: function (): string {
+    return 'until an invalid bit changes, or the earliest one expires.';
+  },
+  eject: cacheRegistry.mapEjector(packedLists,
+    function (row: any, key: unknown, now: number): boolean {
+      const id = String(key);
+      const known = realms.list().some(function (one: any): boolean {
+        return one.id === id;
+      });
+      if (!known) {
+        return true;
+      }
+      return !!(row && row.validUntil !== null &&
+                Number(row.validUntil) <= now);
+    }),
+  entries: function (): unknown[] {
+    const out: unknown[] = [];
+    packedLists.forEach(function (row, key) {
+      out.push({ realm: String(key), key: String(key),
+                 validUntil: row.validUntil });
+    });
+    return out;
+  }
+});
+
 interface AccessTokenStatusDeps {
   log: typeof helpers.log;
   config: { value(key: string): any };
@@ -326,6 +527,26 @@ interface AccessTokenStatusDeps {
   baseUrlOf: typeof helpers.baseUrlOf;
   pinnedBaseUrl: () => string;
   clusterClaims: typeof clusterClaims;
+  // The holder stamped on a block claim (#884): `origin@node` once this
+  // process has joined, the origin alone before that, '' when it has
+  // neither. Empty omits `origin`, and the claim keeps the process id.
+  claimOrigin?: () => string;
+  // Indexes of one block whose rows are already in the store (#884). Empty
+  // when nothing is shared. A test supplies its own.
+  liveInBlock?: (realmId: string, block: number) => Promise<number[]>;
+  // Stands in for the minted commit (#884). Absent in the service: the
+  // publish waits on the store. A test resolves `{ committed: true }`,
+  // `{ lost: true }` or a failure.
+  settlePublished?: (row: { idx: number; lockName: string }) =>
+    Promise<{ committed?: boolean; lost?: boolean; error?: string }>;
+  // Hands a check to the response being answered, run after its commit
+  // (#884's review); false where there is none, and the publish waits.
+  // `cluster_barrier.deferUntilCommitted()` in the service.
+  deferSettle?: (check: (state: { committed: boolean }) =>
+    Promise<string | null>) => boolean;
+  // Whether this process's origin claim was confirmed within its lifetime
+  // (`persistence.originFresh()`). Not fresh: every index waits.
+  originFresh?: () => boolean;
   entries: any;
   invalid?: any;
   now: () => number;
@@ -417,6 +638,101 @@ class AccessTokenStatus {
       baseUrlOf: helpers.baseUrlOf,
       pinnedBaseUrl: helpers.pinnedBaseUrl,
       clusterClaims: clusterClaims,
+      claimOrigin: function claimOrigin(): string {
+        helpers.log.debug("Entering claimOrigin().");
+        let origin = '';
+        let node = '';
+        try {
+          origin = String(
+            require('../persistence/persistence').originId() || '');
+        } catch (e) {
+          helpers.log.debug("Caught in claimOrigin(): " +
+                            ((e && e.message) || e));
+          // A caller that built the list without the store: no origin to
+          // stamp, and the claim keeps the process id.
+          origin = '';
+        }
+        try {
+          node = String(require('../cluster/cluster').nodeId() || '');
+        } catch (e) {
+          helpers.log.debug("Caught in claimOrigin(): " +
+                            ((e && e.message) || e));
+          // The cluster module is not loaded. The origin alone still names
+          // the holder the startup release looks for.
+          node = '';
+        }
+        const holder = origin && node ? origin + '@' + node : origin;
+        helpers.log.debug("Leaving claimOrigin().");
+        return holder;
+      },
+      liveInBlock: function liveInBlock(realmId: string,
+                                        block: number): Promise<number[]> {
+        helpers.log.debug("Entering liveInBlock().");
+        let store: any = null;
+        try {
+          store = require('../persistence/persistence').clusterStore();
+        } catch (e) {
+          helpers.log.debug("Caught in liveInBlock(): " +
+                            ((e && e.message) || e));
+          // No store in this process. Nothing is shared, and the local
+          // entry is what freeLocally() already sees.
+          store = null;
+        }
+        if (!store || typeof store.mintedLiveKeys !== 'function') {
+          helpers.log.debug("Leaving liveInBlock(). No shared store.");
+          return Promise.resolve([]);
+        }
+        const keys: string[] = [];
+        const first = block * BLOCK_SIZE;
+        for (let i = 0; i < BLOCK_SIZE; i++) {
+          keys.push(String(first + i));
+        }
+        helpers.log.debug("Leaving liveInBlock().");
+        return Promise.resolve().then(function () {
+          return store.mintedLiveKeys('access_token_status.entries',
+                                      String(realmId || ''), keys);
+        }).then(function (found: any) {
+          return (found || []).map(function (key: any) {
+            return Number(key);
+          }).filter(function (idx: number) {
+            return Number.isInteger(idx);
+          });
+        });
+      },
+      deferSettle: function deferSettle(check: (state: {
+        committed: boolean }) => Promise<string | null>): boolean {
+        helpers.log.debug("Entering deferSettle().");
+        let barrier: any = null;
+        try {
+          barrier = require('../cluster/cluster_barrier');
+        } catch (e) {
+          helpers.log.debug("Caught in deferSettle(): " +
+                            ((e && e.message) || e));
+          // No barrier in this process: the publish waits for itself.
+          barrier = null;
+        }
+        const held = !!barrier &&
+          typeof barrier.deferUntilCommitted === 'function' &&
+          barrier.deferUntilCommitted(check) === true;
+        helpers.log.debug("Leaving deferSettle(). " + held);
+        return held;
+      },
+      originFresh: function originFresh(): boolean {
+        helpers.log.debug("Entering originFresh().");
+        let fresh = false;
+        try {
+          const persistence = require('../persistence/persistence');
+          fresh = typeof persistence.originFresh === 'function' &&
+            persistence.originFresh() === true;
+        } catch (e) {
+          helpers.log.debug("Caught in originFresh(): " +
+                            ((e && e.message) || e));
+          // Not known: the publish waits, which is the safe answer.
+          fresh = false;
+        }
+        helpers.log.debug("Leaving originFresh(). " + fresh);
+        return fresh;
+      },
       entries: entries,
       invalid: invalid,
       now: function now(): number {
@@ -565,7 +881,8 @@ class AccessTokenStatus {
    *   `base` (any base URL in the ambient realm)
    * @returns the reference the token carries in `status.status_list`
    * @throws Error marked STS-OAUTH-0816 when the claim store cannot be asked,
-   *   STS-OAUTH-0817 when the list is full
+   *   STS-OAUTH-0817 when the list is full, STS-OAUTH-1009 when the block
+   *   claim's fence was lost before the status row committed
    */
   async allocate(opts: { jti: string; kind: string; expiresAt: number;
                          base: string }): Promise<StatusReference> {
@@ -573,24 +890,302 @@ class AccessTokenStatus {
     log.debug("Entering AccessTokenStatus.allocate(). kind=" + opts.kind);
     const { expiresAt } = this.wanted(opts);
     const realmId = String(realms.currentId());
-    // Two tries: the block held, then a fresh one when that one is full or
-    // ends too soon for this token.
+    // Two blocks, and up to three publishes on each. A lost fence drops the
+    // block. A store error tries another index of the same block. A block
+    // with no free index is given up, and the next round leases another.
+    let lost = 0;
+    let failed = 0;
     for (let round = 0; round < 2; round++) {
       let lease = this.leases.get(realmId) || null;
       if (!this.leaseServes(lease, expiresAt)) {
         lease = await this.leaseBlock(realmId, expiresAt);
       }
-      const idx = this.pickInLease(lease as StatusLease);
-      if (idx !== null) {
-        const ref = this.take(idx, opts, expiresAt);
-        log.debug("Leaving AccessTokenStatus.allocate(). idx=" + idx + ".");
-        return ref;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (!this.leaseServes(lease, expiresAt)) {
+          break;
+        }
+        const idx = this.pickInLease(lease as StatusLease);
+        if (idx === null) {
+          break;
+        }
+        const published = await this.publish(lease as StatusLease, idx, opts,
+                                             expiresAt, realmId);
+        if (published.ok && published.ref) {
+          log.debug("Leaving AccessTokenStatus.allocate(). idx=" +
+                    published.ref.idx + ".");
+          return published.ref;
+        }
+        if (published.lost) {
+          lost += 1;
+          (lease as StatusLease).dead = true;
+          this.leases.delete(realmId);
+          break;
+        }
+        failed += 1;
       }
-      // Full: let it go, and lease another.
-      this.leases.delete(realmId);
+      if (this.leases.get(realmId) === lease) {
+        this.leases.delete(realmId);
+      }
+    }
+    if (failed > 0) {
+      log.debug("Leaving AccessTokenStatus.allocate(). The store failed.");
+      throw this.storeFailure('the status row did not commit');
+    }
+    if (lost > 0) {
+      log.debug("Leaving AccessTokenStatus.allocate(). The fence was lost.");
+      throw this.fenceLost();
     }
     log.debug("Leaving AccessTokenStatus.allocate(). Full.");
     throw this.full();
+  }
+
+  // Writes the entry and, when the block is fenced, settles it: waits until
+  // that row has committed under the lock, or — a proven lease, a fresh
+  // origin and a response to ride on — hands that wait to the response's
+  // own commit (see the header). A lost lock or a store error undoes the
+  // local entry. The undo does not journal a delete: a delete flushed after
+  // the next lessee had written the index would remove that token's row.
+  private async publish(lease: StatusLease, idx: number,
+                        opts: { jti: string; kind: string; base: string },
+                        expiresAt: number, realmId: string):
+      Promise<{ ok: boolean; lost: boolean; ref: StatusReference | null }> {
+    const { log } = this.deps;
+    log.debug("Entering AccessTokenStatus.publish(). idx=" + idx);
+    const lockName = lease.lockName || '';
+    const standIn = typeof this.deps.settlePublished === 'function';
+    if (lockName && !standIn) {
+      this.holdFence(lockName, realmId, idx);
+    }
+    const ref = this.take(idx, opts, expiresAt);
+    if (!lockName) {
+      log.debug("Leaving AccessTokenStatus.publish(). No shared store.");
+      return { ok: true, lost: false, ref: ref };
+    }
+    // The write position the row was journalled at: the commit that covers
+    // it is the one that decides whether it landed.
+    const target = standIn ? null : this.writePosition();
+    if (this.mayDefer(lease)) {
+      const self = this;
+      const deferSettle = this.deps.deferSettle as (check: (state: {
+        committed: boolean }) => Promise<string | null>) => boolean;
+      const deferred = deferSettle(
+        function settleAtCommit(state: { committed: boolean }):
+            Promise<string | null> {
+          log.debug("Entering settleAtCommit(). idx=" + idx);
+          return self.settle(idx, lockName, realmId, target,
+                             !!(state && state.committed))
+            .then(function (settled) {
+              if (settled.ok) {
+                log.debug("Leaving settleAtCommit(). Committed.");
+                return null;
+              }
+              self.retire(lease, realmId);
+              log.error(self.deps.errorCodes.tag('STS-OAUTH-1010') +
+                        'access_token_status: an index handed out without ' +
+                        'its own commit wait was ' +
+                        (settled.lost ? 'dropped, its block claim\'s ' +
+                         'fence gone,' : 'not written') + ' at the ' +
+                        'response\'s commit; the response carrying the ' +
+                        'token is refused and the block is given up.');
+              log.debug("Leaving settleAtCommit(). Refused.");
+              return settled.lost
+                ? 'the access-token status row was dropped: its block ' +
+                  'claim\'s fence was lost'
+                : 'the access-token status row was not written';
+            });
+        });
+      if (deferred === true) {
+        log.debug("Leaving AccessTokenStatus.publish(). Settled at the " +
+                  "response's commit.");
+        return { ok: true, lost: false, ref: ref };
+      }
+    }
+    const settled = await this.settle(idx, lockName, realmId, target, true);
+    if (settled.ok) {
+      lease.proven = true;
+      log.debug("Leaving AccessTokenStatus.publish(). Committed.");
+      return { ok: true, lost: false, ref: ref };
+    }
+    log.debug("Leaving AccessTokenStatus.publish(). " +
+              (settled.lost ? "Lost." : "Not committed."));
+    return { ok: false, lost: settled.lost, ref: null };
+  }
+
+  // Whether an index of this lease may leave without its own commit wait.
+  // Hot path (every access token): no Entering/Leaving pair.
+  private mayDefer(lease: StatusLease): boolean {
+    if (!lease.proven || lease.dead ||
+        typeof this.deps.deferSettle !== 'function') {
+      return false;
+    }
+    return typeof this.deps.originFresh === 'function' &&
+      this.deps.originFresh() === true;
+  }
+
+  // A lease whose row did not land hands nothing else out.
+  private retire(lease: StatusLease, realmId: string): void {
+    const { log } = this.deps;
+    log.debug("Entering AccessTokenStatus.retire().");
+    lease.dead = true;
+    if (this.leases.get(realmId) === lease) {
+      this.leases.delete(realmId);
+    }
+    log.debug("Leaving AccessTokenStatus.retire().");
+  }
+
+  // This process's write position, or null where there is no store.
+  private writePosition(): any {
+    const { log } = this.deps;
+    log.debug("Entering AccessTokenStatus.writePosition().");
+    const persistence = require('../persistence/persistence');
+    const position = typeof persistence.writeGeneration === 'function'
+      ? persistence.writeGeneration() : null;
+    log.debug("Leaving AccessTokenStatus.writePosition().");
+    return position;
+  }
+
+  // Waits until the published row has committed under its lock, and says
+  // whether it did. `committed` false is a response whose own commit failed
+  // or that closed unsent: nothing is waited for, and the row is undone.
+  // Never rejects.
+  private async settle(idx: number, lockName: string, realmId: string,
+                       target: any, committed: boolean):
+      Promise<{ ok: boolean; lost: boolean }> {
+    const { log } = this.deps;
+    log.debug("Entering AccessTokenStatus.settle(). idx=" + idx);
+    const settleStandIn = this.deps.settlePublished;
+    if (typeof settleStandIn === 'function') {
+      let answer: { committed?: boolean; lost?: boolean; error?: string }
+        | null = null;
+      if (committed) {
+        try {
+          answer = await settleStandIn({ idx: idx, lockName: lockName });
+        } catch (e) {
+          log.debug("Caught in AccessTokenStatus.settle(): " +
+                    ((e && (e as Error).message) || e));
+          // The stand-in failed closed. The index is not returned.
+          answer = { error: (e && (e as Error).message) || String(e) };
+        }
+      }
+      if (answer && answer.committed && !answer.lost && !answer.error) {
+        log.debug("Leaving AccessTokenStatus.settle(). Committed.");
+        return { ok: true, lost: false };
+      }
+      this.undoEntry(realmId, idx);
+      log.debug("Leaving AccessTokenStatus.settle(). Not committed.");
+      return { ok: false, lost: !!(answer && answer.lost) };
+    }
+    if (!committed) {
+      // The response that carried this index was not sent. The hold is
+      // dropped so a later flush does not wait on it.
+      this.endFence(lockName, realmId, idx);
+      this.undoEntry(realmId, idx);
+      log.debug("Leaving AccessTokenStatus.settle(). Not sent.");
+      return { ok: false, lost: false };
+    }
+    let answers: any[] = [];
+    let dropped = false;
+    try {
+      const persistence = require('../persistence/persistence');
+      answers = await persistence.commitThrough(
+        target || persistence.writeGeneration());
+      dropped = typeof persistence.claimFenceDropped === 'function' &&
+        !!persistence.claimFenceDropped('access_token_status.entries',
+                                        realmId, String(idx));
+      this.endFence(lockName, realmId, idx);
+    } catch (e) {
+      log.debug("Caught in AccessTokenStatus.settle(): " +
+                ((e && (e as Error).message) || e));
+      // The wait failed. The index is not returned, and the hold is
+      // dropped so a later flush of some other row does not wait on it.
+      this.endFence(lockName, realmId, idx);
+      this.undoEntry(realmId, idx);
+      log.debug("Leaving AccessTokenStatus.settle(). The wait failed.");
+      return { ok: false, lost: false };
+    }
+    const erred = (answers || []).some(function (one: any) {
+      return one && one.error;
+    });
+    if (!dropped && !erred) {
+      log.debug("Leaving AccessTokenStatus.settle(). Committed.");
+      return { ok: true, lost: false };
+    }
+    this.undoEntry(realmId, idx);
+    log.debug("Leaving AccessTokenStatus.settle(). " +
+              (dropped ? "Lost." : "The store failed."));
+    return { ok: false, lost: !!dropped };
+  }
+
+  // The in-memory hold the minted flush share-locks. Registered before the
+  // entry is written, so the flush that the write schedules already sees it.
+  private holdFence(lockName: string, realmId: string, idx: number): void {
+    const { log } = this.deps;
+    log.debug("Entering AccessTokenStatus.holdFence().");
+    const persistence = require('../persistence/persistence');
+    persistence.holdClaimFence(lockName, {
+      handle: 'access_token_status.entries', realm: realmId,
+      key: String(idx)
+    });
+    log.debug("Leaving AccessTokenStatus.holdFence().");
+  }
+
+  private endFence(lockName: string, realmId: string, idx: number): void {
+    const { log } = this.deps;
+    log.debug("Entering AccessTokenStatus.endFence().");
+    const persistence = require('../persistence/persistence');
+    if (typeof persistence.endClaimFence === 'function') {
+      persistence.endClaimFence(lockName, {
+        handle: 'access_token_status.entries', realm: realmId,
+        key: String(idx)
+      });
+    }
+    log.debug("Leaving AccessTokenStatus.endFence().");
+  }
+
+  // Drops the local entry of an index that was not published. The realms
+  // map's remove does not journal; a journalled delete could land after the
+  // next lessee's row and remove it. A test map has no such door, and its
+  // delete journals nothing.
+  private undoEntry(realmId: string, idx: number): void {
+    const { log, entries, realms } = this.deps;
+    log.debug("Entering AccessTokenStatus.undoEntry(). idx=" + idx);
+    if (typeof entries.onDemandLive === 'function') {
+      const handle = realms.handleFor('access_token_status.entries');
+      if (handle && typeof handle.remove === 'function') {
+        handle.remove(realmId, String(idx));
+        log.debug("Leaving AccessTokenStatus.undoEntry(). Removed.");
+        return;
+      }
+    }
+    if (typeof entries.delete === 'function') {
+      entries.delete(String(idx));
+    }
+    log.debug("Leaving AccessTokenStatus.undoEntry().");
+  }
+
+  private storeFailure(why: string): Error {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AccessTokenStatus.storeFailure().");
+    log.error(errorCodes.tag('STS-OAUTH-0816') + 'access_token_status: ' +
+              'the claim store could not be asked for a block of indexes (' +
+              (why || 'no reason given') + '), so the access token is not ' +
+              'minted.');
+    const e: any = new Error('no access-token status index could be ' +
+                             'allocated: the claim store could not be asked');
+    log.debug("Leaving AccessTokenStatus.storeFailure().");
+    return errorCodes.mark(e, 'STS-OAUTH-0816');
+  }
+
+  private fenceLost(): Error {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AccessTokenStatus.fenceLost().");
+    log.error(errorCodes.tag('STS-OAUTH-1009') + 'access_token_status: the ' +
+              'block claim\'s fence was lost before the status row ' +
+              'committed, so the access token is not minted on that index.');
+    const e: any = new Error('no access-token status index could be ' +
+                             'allocated: the block claim\'s fence was lost');
+    log.debug("Leaving AccessTokenStatus.fenceLost().");
+    return errorCodes.mark(e, 'STS-OAUTH-1009');
   }
 
   // The blocks this process holds, per realm, and the leases being taken.
@@ -602,7 +1197,7 @@ class AccessTokenStatus {
   // Hot path (every access token): no Entering/Leaving pair.
   private leaseServes(lease: StatusLease | null, expiresAt: number): boolean {
     const t = this.deps.now();
-    return !!lease && t < lease.useUntilMs &&
+    return !!lease && !lease.dead && t < lease.useUntilMs &&
       expiresAt + CLAIM_SKEW_MS <= lease.untilMs;
   }
 
@@ -657,6 +1252,24 @@ class AccessTokenStatus {
     return leasing;
   }
 
+  // Indexes of the block whose rows are already stored. Empty when the
+  // dependency does not answer, which is a process with nothing shared.
+  private async liveIndexes(realmId: string, block: number): Promise<number[]> {
+    const { log } = this.deps;
+    log.debug("Entering AccessTokenStatus.liveIndexes().");
+    const ask = this.deps.liveInBlock;
+    if (typeof ask !== 'function') {
+      log.debug("Leaving AccessTokenStatus.liveIndexes(). None.");
+      return [];
+    }
+    const found = await ask(realmId, block);
+    const indexes = (found || []).map((idx) => Number(idx)).filter((idx) => {
+      return Number.isInteger(idx);
+    });
+    log.debug("Leaving AccessTokenStatus.liveIndexes().");
+    return indexes;
+  }
+
   private async leaseBlockNow(realmId: string,
                               expiresAt: number): Promise<StatusLease> {
     const { log, clusterClaims, errorCodes, config, now } = this.deps;
@@ -669,30 +1282,50 @@ class AccessTokenStatus {
       Number(config.value('gnap.accessTokenLifetimeS')) * 1000 || 0);
     const ttlMs = BLOCK_USE_MS + lifeMs + CLAIM_SKEW_MS;
     const blocks = LIST_SIZE / BLOCK_SIZE;
+    const holder = typeof this.deps.claimOrigin === 'function'
+      ? String(this.deps.claimOrigin() || '') : '';
     for (let attempt = 0; attempt < BLOCK_ATTEMPTS; attempt++) {
       const block = stsCrypto.randomInt(0, blocks);
-      const claimed = await clusterClaims.claim({
-        scope: 'oauth2.access-token-status-block', value: String(block),
-        ttlMs: ttlMs });
+      const spec: { scope: string; value: string; ttlMs: number;
+                    origin?: string; fence?: boolean } = {
+        scope: BLOCK_SCOPE, value: String(block), ttlMs: ttlMs, fence: true
+      };
+      if (holder) {
+        spec.origin = holder;
+      }
+      const claimed = await clusterClaims.claim(spec);
       if (!claimed.ok) {
         if (claimed.reason !== 'used') {
-          log.error(errorCodes.tag('STS-OAUTH-0816') + 'access_token_status: ' +
-                    'the claim store could not be asked for a block of ' +
-                    'indexes (' + (claimed.why || 'no reason given') + '), ' +
-                    'so the access token is not minted.');
           log.debug("Leaving AccessTokenStatus.leaseBlockNow(). The store " +
                     "failed.");
-          const e: any = new Error('no access-token status index could be ' +
-                                   'allocated: the claim store could not be ' +
-                                   'asked');
-          throw errorCodes.mark(e, 'STS-OAUTH-0816');
+          throw this.storeFailure(claimed.why || 'no reason given');
         }
         continue;
       }
+      const lockName = claimed.fenced && claimed.lockName
+        ? String(claimed.lockName) : '';
       const lease: StatusLease = {
         block: block, untilMs: t + ttlMs, useUntilMs: t + BLOCK_USE_MS,
-        cursor: stsCrypto.randomInt(0, BLOCK_SIZE), taken: new Set<number>()
+        cursor: stsCrypto.randomInt(0, BLOCK_SIZE), taken: new Set<number>(),
+        lockName: lockName, dead: false, proven: false
       };
+      if (lockName) {
+        try {
+          const live = await this.liveIndexes(realmId, block);
+          live.forEach((one) => {
+            lease.taken.add(one);
+          });
+        } catch (e) {
+          log.debug("Caught in AccessTokenStatus.leaseBlockNow(): " +
+                    ((e && (e as Error).message) || e));
+          // The block is leased and its live indexes could not be read.
+          // Handing one out would reuse a row this process has not seen.
+          // The claim stays until it expires, which wastes the block.
+          log.debug("Leaving AccessTokenStatus.leaseBlockNow(). The live " +
+                    "indexes could not be read.");
+          throw this.storeFailure((e && (e as Error).message) || String(e));
+        }
+      }
       this.leases.set(realmId, lease);
       log.debug("Leaving AccessTokenStatus.leaseBlockNow(). block=" + block +
                 ".");
@@ -829,11 +1462,20 @@ class AccessTokenStatus {
   // rows are set: an expired row is an index nobody holds, and section 13.3's
   // default for an index nobody holds is VALID (0x00) — a resource server
   // rejects the expired token on its own `exp`.
-  private listBytes(): Buffer {
+  private listBytes(): { bytes: Buffer; validUntil: number | null } {
     const { log, entries, now } = this.deps;
     log.debug("Entering AccessTokenStatus.listBytes().");
     const values: number[] = [];
     const t = now();
+    let validUntil: number | null = null;
+    // Hot path: one call per INVALID bit while the 2 MiB buffer is built.
+    // No Entering/Leaving pair.
+    const noteExpiry = function (expiresAt: unknown): void {
+      const exp = Number(expiresAt);
+      if (exp > t && (validUntil === null || exp < validUntil)) {
+        validUntil = exp;
+      }
+    };
     if (this.onDemand()) {
       // From the revoked bits (#820 part 3): every live entry whose token
       // is revoked has one, and an expired one is VALID here as it always
@@ -841,6 +1483,7 @@ class AccessTokenStatus {
       this.deps.invalid.forEach((row: any, idx: string) => {
         if (row && (!row.expiresAt || row.expiresAt > t)) {
           values[Number(idx)] = INVALID;
+          noteExpiry(row.expiresAt);
         }
       });
     } else {
@@ -850,12 +1493,13 @@ class AccessTokenStatus {
         }
         if (this.statusOf(idx) !== VALID) {
           values[Number(idx)] = INVALID;
+          noteExpiry(row && row.expiresAt);
         }
       });
     }
     const bytes = codec.packTsl(values, BITS, LIST_SIZE);
     log.debug("Leaving AccessTokenStatus.listBytes().");
-    return bytes;
+    return { bytes: bytes, validUntil: validUntil };
   }
 
   /**
@@ -924,6 +1568,7 @@ class AccessTokenStatus {
                         "Not an access token.");
       return;
     }
+    let changed = false;
     entries.lookup('j:' + String(jti)).forEach(function (idx: string): void {
       const row = entries.get(idx);
       if (!row || row.jti !== String(jti)) {
@@ -934,7 +1579,11 @@ class AccessTokenStatus {
       } else {
         invalid.delete(idx);
       }
+      changed = true;
     });
+    if (changed) {
+      noteInvalidChange(realms.currentId());
+    }
     helpers.log.debug("Leaving AccessTokenStatus.markRevoked().");
   }
 
@@ -955,6 +1604,9 @@ class AccessTokenStatus {
         written += 1;
       }
     });
+    if (written > 0) {
+      noteInvalidChange(realms.currentId());
+    }
     helpers.log.debug("Leaving AccessTokenStatus.fillInvalid(). " + written);
   }
 
@@ -977,14 +1629,42 @@ class AccessTokenStatus {
              headerKid: publishedKidFor(signer.kid) };
   }
 
-  // One cached signed list, or a slot to sign into.
-  private reuse(form: string, bytes: Buffer): any {
+  // The compressed list for the ambient realm, rebuilt when the bits
+  // change or the earliest invalid bit has expired (#885).
+  private packed(): PackedList {
+    const { log, realms, now } = this.deps;
+    log.debug("Entering AccessTokenStatus.packed().");
+    const realmId = String(realms.currentId());
+    const generation = bitsGeneration.get(realmId) || 0;
+    const held = packedLists.get(realmId);
+    const t = now();
+    if (held && held.generation === generation &&
+        (held.validUntil === null || t < held.validUntil)) {
+      packedCount.hit();
+      log.debug("Leaving AccessTokenStatus.packed(). Reused.");
+      return held;
+    }
+    packedCount.miss();
+    const built = this.listBytes();
+    const row: PackedList = {
+      generation: generation,
+      validUntil: built.validUntil,
+      compressed: codec.compress(built.bytes)
+    };
+    packedLists.set(realmId, row);
+    log.debug("Leaving AccessTokenStatus.packed(). Rebuilt, " +
+              row.compressed.length + " byte(s).");
+    return row;
+  }
+
+  // One cached signed list, or a slot to sign into. The compressed bytes
+  // are the identity of the list: a new buffer means the bits were rebuilt.
+  private reuse(form: string, packed: PackedList): any {
     const { log, realms, now } = this.deps;
     log.debug("Entering AccessTokenStatus.reuse(). " + form);
     const key = realms.currentId() + '|' + form;
-    const digest = stsCrypto.digest('sha256', bytes, 'hex');
     const held = signedLists.get(key);
-    if (held && held.digest === digest &&
+    if (held && held.compressed === packed.compressed &&
         now() - held.signedAt < held.ttlMs / 2) {
       signedCount.hit();
       log.debug("Leaving AccessTokenStatus.reuse(). Reused.");
@@ -992,7 +1672,7 @@ class AccessTokenStatus {
     }
     signedCount.miss();
     log.debug("Leaving AccessTokenStatus.reuse(). Sign again.");
-    return { key: key, digest: digest, token: null };
+    return { key: key, compressed: packed.compressed, token: null };
   }
 
   private remember(slot: any, token: any): void {
@@ -1002,7 +1682,7 @@ class AccessTokenStatus {
       cacheRegistry.makeRoom(signedLists, MAX_SIGNED,
                              { counter: signedCount });
     }
-    signedLists.set(slot.key, { digest: slot.digest, token: token,
+    signedLists.set(slot.key, { compressed: slot.compressed, token: token,
                                 signedAt: now(),
                                 ttlMs: this.ttlSeconds() * 1000 });
     log.debug("Leaving AccessTokenStatus.remember().");
@@ -1018,8 +1698,8 @@ class AccessTokenStatus {
     const { log, stsCrypto, certificateHeaderFor, baseUrlOf, now } =
       this.deps;
     log.debug("Entering AccessTokenStatus.listJwt().");
-    const bytes = this.listBytes();
-    const slot = this.reuse('jwt', bytes);
+    const packed = this.packed();
+    const slot = this.reuse('jwt', packed);
     if (slot.token) {
       log.debug("Leaving AccessTokenStatus.listJwt(). Reused.");
       return slot.token;
@@ -1029,7 +1709,8 @@ class AccessTokenStatus {
     const base = baseUrlOf(req);
     const payload = codec.statusListJwtPayload({
       sub: this.listUri(base), iat: iat, exp: iat + this.lifetimeSeconds(),
-      ttl: this.ttlSeconds(), bits: BITS, bytes: bytes,
+      ttl: this.ttlSeconds(), bits: BITS, bytes: EMPTY_BYTES,
+      compressed: packed.compressed,
       aggregationUri: this.aggregationUri(base) });
     const token = await stsCrypto.signJwsAsync(payload, signer.key, {
       algorithm: signer.alg,
@@ -1052,8 +1733,8 @@ class AccessTokenStatus {
   async listCwt(req: any): Promise<Buffer> {
     const { log, baseUrlOf, now } = this.deps;
     log.debug("Entering AccessTokenStatus.listCwt().");
-    const bytes = this.listBytes();
-    const slot = this.reuse('cwt', bytes);
+    const packed = this.packed();
+    const slot = this.reuse('cwt', packed);
     if (slot.token) {
       log.debug("Leaving AccessTokenStatus.listCwt(). Reused.");
       return slot.token;
@@ -1063,12 +1744,137 @@ class AccessTokenStatus {
     const base = baseUrlOf(req);
     const token = await codec.statusListCwtAsync({
       sub: this.listUri(base), iat: iat, exp: iat + this.lifetimeSeconds(),
-      ttl: this.ttlSeconds(), bits: BITS, bytes: bytes,
+      ttl: this.ttlSeconds(), bits: BITS, bytes: EMPTY_BYTES,
+      compressed: packed.compressed,
       aggregationUri: this.aggregationUri(base),
       key: signer.key, alg: signer.alg, kid: signer.headerKid });
     this.remember(slot, token);
     log.debug("Leaving AccessTokenStatus.listCwt().");
     return token;
+  }
+
+  // ---------------------------------------------------------------------------
+  // BLOCK LEASES A STOPPED PROCESS LEFT BEHIND (#884). The decision is
+  // `cluster_claims.selectAbandoned()`; this asks the store and logs the
+  // failure. Never rejects: the leases stay until they expire, and a start
+  // that called this still comes up.
+  // ---------------------------------------------------------------------------
+  /**
+   * Releases block leases a stopped process left behind.
+   *
+   * @param opts - `{ bareOwn }` releases this process's own origin too,
+   *   which a start does once and the periodic job never does
+   * @returns how many leases were released; 0 when there is no shared table
+   */
+  reclaimAbandoned(opts?: { bareOwn?: boolean }): Promise<number> {
+    const { log, errorCodes, clusterClaims } = this.deps;
+    log.debug("Entering AccessTokenStatus.reclaimAbandoned().");
+    if (!clusterClaims ||
+        typeof clusterClaims.releaseAbandoned !== 'function') {
+      log.debug("Leaving AccessTokenStatus.reclaimAbandoned(). No release.");
+      return Promise.resolve(0);
+    }
+    return Promise.resolve().then(function () {
+      return clusterClaims.releaseAbandoned(BLOCK_SCOPE, opts || {});
+    }).then(function (n: number) {
+      const count = Number(n) || 0;
+      log.debug("Leaving AccessTokenStatus.reclaimAbandoned(). " + count +
+                ".");
+      return count;
+    }, function (e: any) {
+      log.debug("Caught in AccessTokenStatus.reclaimAbandoned(): " +
+                ((e && e.message) || e));
+      // Recorded, never sent. The blocks stay until they expire.
+      log.warn(errorCodes.tag('STS-OAUTH-1008') + 'access-token status: ' +
+               'releasing block leases held by a stopped process failed: ' +
+               ((e && e.message) || e) + '. They stay until they expire.');
+      log.debug("Leaving AccessTokenStatus.reclaimAbandoned(). Failed.");
+      return 0;
+    });
+  }
+
+  /**
+   * Registers `oauth2.access-token-block-reap` once per process.
+   *
+   * Called from `service_state.start()`, before the scheduler starts, rather
+   * than at this module's load: requiring the scheduler there would pull it
+   * ahead of the console. Does nothing until a scheduler with `register()`
+   * is reachable, so a call through a half-loaded one can be repeated.
+   */
+  static ensureReapJob(): void {
+    helpers.log.debug("Entering AccessTokenStatus.ensureReapJob().");
+    if (reapJobRegistered) {
+      helpers.log.debug("Leaving AccessTokenStatus.ensureReapJob(). " +
+                        "Registered.");
+      return;
+    }
+    let scheduler: any = null;
+    try {
+      scheduler = require('../cluster/scheduler');
+    } catch (e) {
+      helpers.log.debug("Caught in AccessTokenStatus.ensureReapJob(): " +
+                        ((e && e.message) || e));
+      // Not built in this process yet. The next start retries, and the
+      // latch stays unset so it can.
+      scheduler = null;
+    }
+    if (!scheduler || typeof scheduler.register !== 'function') {
+      helpers.log.debug("Leaving AccessTokenStatus.ensureReapJob(). No " +
+                        "scheduler.");
+      return;
+    }
+    if (typeof scheduler.job === 'function' && scheduler.job(REAP_JOB)) {
+      reapJobRegistered = true;
+      helpers.log.debug("Leaving AccessTokenStatus.ensureReapJob(). " +
+                        "Already.");
+      return;
+    }
+    try {
+      scheduler.register({
+        id: REAP_JOB,
+        title: 'Access-token status block leases',
+        describe: 'Releases access-token status-list blocks whose holder ' +
+                  'has gone: a stable origin with no live origin claim, or ' +
+                  'a node membership that has left or expired (#884).',
+        owner: 'oauth-oidc/access_token_status.ts',
+        kind: 'cluster',
+        scope: 'service',
+        everyMs: function (): number {
+          return 60 * 1000;
+        },
+        manual: true,
+        off: function (): string {
+          let store: any = null;
+          try {
+            store = require('../persistence/persistence').clusterStore();
+          } catch (e) {
+            helpers.log.debug("Caught in " + REAP_JOB + " off(): " +
+                              ((e && e.message) || e));
+            // No store in this process. The job has nothing to ask.
+            store = null;
+          }
+          return store && typeof store.claimsOfScope === 'function' ? ''
+            : 'no shared claims table in this process';
+        },
+        run: function (): Promise<{ released: number }> {
+          const mod = require('../oauth-oidc/access_token_status');
+          return Promise.resolve(mod.reclaimAbandoned({ bareOwn: false }))
+            .then(function (n: unknown) {
+              return { released: Number(n) || 0 };
+            });
+        }
+      });
+      reapJobRegistered = true;
+    } catch (e) {
+      helpers.log.debug("Caught in AccessTokenStatus.ensureReapJob(): " +
+                        ((e && e.message) || e));
+      // Not latched: a later start can register it. The leases stay until
+      // they expire, which is the failure the code names.
+      helpers.log.warn(errorCodes.tag('STS-OAUTH-1008') + 'access-token ' +
+                       'status: the block-lease reap job was not ' +
+                       'registered: ' + ((e && e.message) || e) + '.');
+    }
+    helpers.log.debug("Leaving AccessTokenStatus.ensureReapJob().");
   }
 
   // ---------------------------------------------------------------------------
@@ -1203,6 +2009,8 @@ export = {
   aggregationUri: slot.forward('aggregationUri'),
   allocate: slot.forward('allocate'),
   allocateInProcess: slot.forward('allocateInProcess'),
+  reclaimAbandoned: slot.forward('reclaimAbandoned'),
+  ensureReapJob: (): void => AccessTokenStatus.ensureReapJob(),
   statusOf: slot.forward('statusOf'),
   statusOfJti: slot.forward('statusOfJti'),
   counts: slot.forward('counts'),

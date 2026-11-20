@@ -16,6 +16,7 @@ relationship (#373); see *A PARTNER'S SHARED SIGNALS* below.
 | `federation_links.ts` | **The link between a partner's subject and a person** (#109): the `federationLink` format, the stable subject a verified response carries, the one check a requested link goes through (console, `/admin-api`, SCIM), and what removing one ends. A static utility class. |
 | `federation_blocks.ts` | **A partner's stop on one person** (#373): the (relationship, person) pairs a verified `account-disabled` from the partner's own Shared Signals put there, which `federation_sp.ts`'s `subjectDecision()` refuses (`STS-FED-0156`). A leaf store; `ssf/ssf_transmitters.ts` writes it. |
 | `federation_encryption.ts` | **What a partner encrypts to** (#168): each relationship's encryption key — issued under the realm's Intermediate, sealed, rotated with a grace period, retired by the scheduler job `federation.encryption-key-retire`, published — and the policy a partner's `EncryptedAssertion`, `EncryptedID`, `EncryptedAttribute`, WS-Federation token and JWE ID Token or Logout Token is decrypted under. A static utility class. See *A PARTNER'S ENCRYPTED ASSERTION* below. |
+| `federation_client_certificate.ts` | **A FAPI 1.0 Advanced relationship's TLS client certificate** (#931): issued from the realm's TLS Client Issuing CA, sealed on `fedClientCertificate`, renewed by the scheduler job `federation.client-certificate-renew`, presented to the partner's token and UserInfo endpoints (RFC 8705), published for the partner to register. A static utility class. See *1-ADVANCED OVER MUTUAL TLS* below. |
 | `consumer_providers.ts` | **Consumer and social providers as profiles** (#565): the catalogue (Google, Discord, GitHub, `generic-oidc`, `generic-oauth2`), `apply()` (the defaults written onto an entry at creation), `extract()` (the `source:path` rules read at sign-in) and `issuersFor()`. A leaf static utility class. See *CONSUMER AND SOCIAL PROVIDERS* below. |
 | `federation_provision.ts` | **The idle sweep of a relationship's created people** (#358): the cluster job `federation.provision-idle`. A static utility class. It registers the job at load and `federation_sp.ts` calls `registerIdleJob()` again, which finds the job already there. See *DYNAMIC PROVISIONING* below. |
 
@@ -809,7 +810,10 @@ end up half-written.
 **IT IS THE FIRST OF THIS REPOSITORY'S OUTBOUND REQUESTS**, in a module of its
 own that will not take a URL from anywhere but a relationship entry. It is the
 STRONGEST of them and the others each argue their own case rather than citing
-it — SSF's is `ssf/ssf_http.ts`, XACML's nudge is `xacml/xacml_pep_http.ts`,
+it — SSF's is `ssf/ssf_http.ts`, XACML's nudge is `xacml/xacml_pep_http.ts`
+(a URL the registering PEP names, so the caller's kind; since 2026-11-14 https
+only in every mode, verified against the registering realm's `pep-tls` Issuing
+CA with the leaf pinned to it, and never dialled for an `http://` URL),
 and the embedded debugger's api, the RFC 9728 import, a registered RFC 9101
 `request_uri` and the rest are listed under *The URLs this service dials that
 a caller's kind of URL could name*, below.
@@ -944,7 +948,7 @@ argued in its own file — `common/CLAUDE.md` (3cf), `common/CLAUDE.md` (3ce), `
 * **The nineteenth is a SIOPv2 `did:web` BEING ENROLLED (2026-10-20, #693)** — the twelfth's URL, before anybody enrolled it, at two doors only. (1) A person's OWN ENROLMENT TRANSACTION: started from a sign-on session they already hold (`/authn/wallet?siop=1&enrol=1`, refused with no session), answered with an ID Token whose nonce, `aud`, `exp`, `iat`, `iss === sub` and DID syntax have ALL passed before anything is dialled — so the token must answer that transaction, which an unauthenticated caller cannot start — and fetched at most ONCE per transaction (the mark written through the store before the fetch; a second is `STS-VC-0128`). (2) An administrator's by-value enrolment (Admin Write), which fetches the document to pin its `authentication` keys and refuses one it cannot fetch (`STS-ADMIN-0871`) — the checks that need no fetch run first. Both through `fetchPublished()`: the kill switch, https, internal addresses refused in product mode, no redirect, the body cap and timeout. What it buys is the PIN: the key the proof used is recorded, and the twelfth row's later fetches can no longer hand the sign-in to whoever holds the host next (`oid4vc/CLAUDE.md`, 3ba).
 * **The twentieth is an AuthZEN access request's CALLBACK (2026-10-30, #1180)** — the companion profile's `callback.endpoint`, which the request names, so the caller's kind of URL; what makes it an administrator's is that it must EQUAL one of the URLs registered for the requesting PEP (`appAuthzenCallbackUri` on an application, `stsAuthzenCallbackUri` on a person's or service account's entry, written only by the AuthZEN tab's `set-callbacks`, https, no credentials or fragment), checked at the submission, and never one taken from the request alone (rcbj's decision 4). It is SENT to, never fetched from: `federation_http.deliverJson()` under the SENDABLE attribute `authzenCallbackEndpoint` — the kill switch, https verified, no redirect, the internal-address refusal with the connection pinned, the cap — once per finished task, with a 300-second JWT the realm signs as the Bearer, carrying no `result`. A failure is recorded (`STS-AUTHZEN-0091`) and not retried, because the task status endpoint is the record (`authzen/CLAUDE.md`).
 * **The twenty-first is an AUDIT EXPORT DESTINATION an administrator names (2026-11-01, #641)** — a webhook URL, a Splunk HEC URL, or a syslog TLS host, SENT to, never a caller-supplied fetch. `https` by default (`common/outbound_tls.ts`); product mode refuses plain `http`; skip-TLS is development-only and ignored in product mode; a CA file sits beside node's store; no userinfo. Loopback, link-local and private addresses, including RFC 6598 `100.64.0.0/10`, are refused in product mode unless `auditExport.allowPrivateDestinations` is on. Cloud metadata addresses are refused in every mode, and while that setting is on. Development mode still allows a loopback host whose every resolved address is loopback. The name is resolved before connect, a private answer is refused, a lookup failure at send pauses the destination, and a redirect is left unfollowed (`common/audit_export.ts`, `common/CLAUDE.md` 3da).
-* **The twenty-second is a PERSON'S WEBFINGER (2026-11-03, #930, rcbj's decision)** — `/federation/webfinger/{id}`, where a person types an identifier and this service asks the host it names who their OpenID Provider is (OpenID Connect Discovery 1.0 section 2). The host is the caller's to choose, which is why it is an exception: OFF by default per relationship (`fedWebFinger`, with `fedDiscovery`), through `fetchPublished()` (https only, verified; internal addresses refused in product mode with the connection pinned; no redirect; the cap and timeout); the issuer it names must lie WITHIN `fedPeer` — parsed, never a string prefix: the same scheme, host and effective port, no userinfo, query or fragment, and `fedPeer`'s path or one below it at a `/` boundary (`FederationSp.issuerWithin()`) — so it selects only within the partner an administrator configured; its discovery document must name it exactly; and nothing continues until the person follows the link the answer shows. The registration endpoint and the discovery document after it are the administrator's kind (named by a document of an issuer bounded by `fedPeer`).
+* **The twenty-second is a PERSON'S WEBFINGER (2026-11-03, #930, rcbj's decision)** — `/federation/webfinger/{id}`, where a person types an identifier and this service asks the host it names who their OpenID Provider is (OpenID Connect Discovery 1.0 section 2). The host is the caller's to choose, which is why it is an exception: OFF by default per relationship (`fedWebFinger`, with `fedDiscovery`), through `fetchPublished()` (https only, verified; internal addresses refused in product mode with the connection pinned; no redirect; the cap and timeout); the issuer it names must lie WITHIN `fedPeer` — parsed, never a string prefix: the same scheme, host and effective port, no userinfo, query or fragment, and `fedPeer`'s path or one below it at a `/` boundary (`FederationSp.issuerWithin()`) — so it selects only within the partner an administrator configured; its discovery document must name it exactly; and nothing continues until the person follows the link the answer shows. The registration endpoint and the discovery document after it are the administrator's kind (named by a document of an issuer bounded by `fedPeer`). A FAPI 2 profile's pushed authorization request endpoint is the same kind (#931): that document names it, `fetchPublished()` dials it, and it is not a directory attribute and not in `DIALLABLE`. So are the `mtls_endpoint_aliases` a `1-advanced` relationship dials instead of the token and UserInfo endpoints (#931, RFC 8705 section 5): the issuer's own document names them, and they are dialled as the attributes they replace.
 * **The twenty-third is a PARTNER'S PROFILE PHOTO (2026-11-05, #719, rcbj's ticket)** — the `pictureUrl` a configured partner's signed assertion or verified token mapped onto a person, so a URL an administrator's partner names and not a request. Dialled only after that sign-in has a session, never awaited (`federation_sp.ts` `copyPartnerPhoto()`, `common/profile_photo.ts` `noteFederated()`), through `fetchPublished()`: the kill switch, the transport policy, internal addresses refused in product mode with the connection pinned, no redirect, `profilePhoto.maxStoredBytes` as the cap, ten seconds. What comes back is an image or it is dropped, the bytes deciding (`STS-FED-0221`), and it is rewritten without its metadata before it is kept. Off with `profilePhoto.cacheFederated`; not asked again of the same address within a week. Failing leaves the partner's address on the claim, as before #719.
 * **The twenty-fourth is a BLUESKY ACCOUNT'S DATA SERVER (2026-11-05, #746)** — named by a DID's document, so the caller's kind of URL; what bounds it is that it is reached only with a DID the relationship's own issuer answered, a did:plc read from the operator's `federation.atprotoPlcDirectory`, through `fetchPublished()`, and only to ask whether that server names this issuer. `atproto_client.ts`. A did:web is refused rather than dialled.
 * **The twenty-fifth is an OpenID CONNECT CLAIMS PROVIDER (#147, 2026-09-24; named here #1358)** — OpenID Connect Claims Aggregation (`oauth-oidc/CLAUDE.md` 3bh). When an administrator registers or updates a provider on `/admin/claim-providers` (`POST /admin-api/claim-providers/add-provider`, `update-provider`), and when a claim is later aggregated, `oauth-oidc/claims_providers.ts` dials the PROVIDER'S own addresses — its `.well-known/openid-configuration`, `jwksUri`, `tokenEndpoint` and `claimsEndpoint`, all configured by the administrator, none named by a request — through `federation_http.requestConfigured()` (the outbound kill switch, https only in product, the outbound TLS policy). On the no-egress fuzz stack the dial fails closed at the network, so the refusal carries a `getaddrinfo`/`ENOTFOUND` the `no_outbound_fetch` check now allows for this route alone.
@@ -1335,7 +1339,7 @@ should have held. The ACS's refusal page escapes them as it always did.
 
 | `kind` | Page | Words |
 |---|---|---|
-| `index` | `GET /federation` | the `federationPages` catalogs, in seven languages |
+| `index` | `GET /federation` | the `federationPages` catalogs, in every base catalog |
 | `signedIn` | `/federation/link/{handle}`'s outcome where nothing asked to be returned to | the `handoff` catalogs' `federation.signedIn.*` — the same keys `signedInPage()` still draws for the ACS |
 | `refused` | every refusal of the two endpoints: `what`, `why`, the relationship | English, every word (#539's decision 6) |
 | `off`, `noRelationship` | the two 404s | English |
@@ -2198,7 +2202,7 @@ partner. Unchanged with the setting off. Federation's own Single Logout and
 
 ## WHAT ASVS 5.0.0 LEVEL 2 ADDED TO THE SERVICE-PROVIDER HALF (#1497-#1499, #1523, #1541, #1542, #1554)
 
-`docs/federation.md` says what each refuses; this is why each is shaped so.
+`docs/v1.1.0/federation.md` says what each refuses; this is why each is shaped so.
 
 * **The browser that started the flow (#1497, product only,
   `bindsSignInSteps()`).** The context was found by its handle alone, so a flow
@@ -2388,7 +2392,7 @@ The adapters (what a source and a path cannot say) are a CLOSED set named in
 the profile. `github-verified-email` is the first. Apple's client-secret JWT
 and `user` field, the Microsoft tenant issuer and TikTok's `client_key` are
 the next. Which platforms can be supported is
-`../docs/federation-consumer-providers.md`.
+`../docs/v1.1.0/federation-consumer-providers.md`.
 
 ### Steam is the one provider that is not OAuth (#746, 2026-11-05)
 
@@ -2449,7 +2453,9 @@ login endpoint, creation from the profile, the list's category, a newcomer's
 own entry with a namesake left alone, and any-existing refused. The first
 file's section N holds rcbj's #729 decisions 2-4, and its A11 decision 1.
 Its sections O and P drive #746's providers the same way, with Steam's,
-Discourse's and Bluesky's refusals.
+Discourse's and Bluesky's refusals. `tests/social_idp_signins.js` signs in
+through a dummy of each named provider that `companion/social_idps.js`
+serves, one assertion each.
 **Not covered yet:** a consumer provider on an application's chooser beside
 an enterprise partner, the details form after Apple's second authorization
 (the mechanism is the generic one N drives), and any profile against its
@@ -2553,7 +2559,7 @@ dial a URL a caller supplies.
 **The OpenID Foundation's suite plays the OpenID Provider, and this service
 is its relying party through an inbound OpenID Connect relationship** — the
 one way this service is somebody's relying party (`common/oidc_rp.ts`, the
-embedded debugger's client, is not the target). `docs/conformance.md` said
+embedded debugger's client, is not the target). `docs/v1.1.0/conformance.md` said
 the relying-party plans were not run because "this service is no one's
 relying party but its own"; federation made that untrue, and
 `tests/protocol/sts_oidcc_rp_conformance.js` runs eleven of them
@@ -2696,6 +2702,20 @@ credential at another service held by this one; off, nothing changed.
 * **IT DIES WITH THE SESSION.** An entry whose session is gone — ended here,
   by the partner, by expiry — is dropped the next time the job reads it, and
   so is one whose relationship turned the switch off.
+* **ONE RUN PRESENTS A TOKEN, HOWEVER MANY SAW IT DUE** (run 28,
+  2026-11-14). The scheduler lets a Run now of the job overlap a scheduled
+  run in the same realm, and both read the same entry as due: both
+  presented its refresh token, the suite had rotated it at the first, and
+  the second was refused ("Invalid refresh_token parameter"), failing the
+  invalid-sub module and ending the session (`STS-FED-0210`) while the first
+  was still checking the answer (`STS-FED-0211`). A rotating partner may
+  read a second use of a spent token as theft (RFC 9700 section 4.14.2).
+  So `refreshOnce()` claims the entry's STATE (session, sealed token, due)
+  through `cluster/cluster_claims.js` before `refreshOne()` dials, and never
+  releases it: every outcome writes a new due or deletes the entry, so the
+  next run claims a different value, and a run holding the old state — in
+  this process or another node's — skips it. A run that died half-way holds
+  the token for the claim's five minutes, then it is tried again.
 
 **Signed and encrypted UserInfo** came with it (the dynamic plan's
 `userinfo-signed` module asks for it): a UserInfo answer that is a JWT is
@@ -2768,3 +2788,268 @@ dynamic plan still runs as its classical twin too (rcbj), with
 **What the plans' harness had to do differently** is in `tests/CLAUDE.md`:
 the registration and the WebFinger modules end at the registration or the
 discovery document, so the person does not sign in for them.
+
+### THIS SERVICE AS A FAPI CLIENT (#931)
+
+An inbound OpenID Connect relationship can be held to a FAPI profile the
+partner enforces. The partner is a bank, or another financial OpenID
+Provider, that refuses an ordinary code-flow client and a client secret.
+The person still starts here. After the partner answers, this service's own
+applications see only this service: the partner's tokens are not handed on.
+`oauth2.fapi` is the other role, this service as the authorization server
+(`tests/protocol/sts_fapi_conformance.js`). Empty `fedFapi` is the relying
+party above, unchanged.
+
+`federation/fapi_client.ts` names the profile and signs. `federation_sp.ts`
+dials. A profile is ignored when the protocol is not OpenID Connect and when
+`fedTrustAnchor` is set, because that path is an OpenID Federation OP and
+signs its own request.
+
+* **`1-advanced`** — FAPI 1.0 Advanced. `code id_token`, PKCE S256, a PS256
+  request object by value on the browser URL (RFC 9101, the parameters stay
+  on the query as Core 6.1 requires), and `private_key_jwt` — or
+  `tls_client_auth` where `fedTokenAuth` says so. Configured endpoints are
+  enough. **Its access tokens are bound to a TLS client certificate**
+  (RFC 8705 section 3, the profile's normative sender constraint; rcbj's
+  decision of 2026-11-13): see *1-ADVANCED OVER MUTUAL TLS* below. It sends
+  no DPoP: a proof to an authorization server that does not advertise DPoP
+  fails the plan.
+* **`2-security`** — FAPI 2.0 Security Profile. `fedDiscovery` is required
+  and is not turned on for it (`STS-FED-0243` when it is off, or when the
+  document names no `pushed_authorization_request_endpoint`). The
+  authorization request is pushed (RFC 9126) through `fetchPublished()` to
+  the endpoint the document names — not a directory attribute, not in
+  `DIALLABLE` — and the browser is sent only `client_id` and `request_uri`.
+  `code`, PKCE S256, `private_key_jwt`, and a DPoP-bound access token
+  (RFC 9449) on the push, the token request, the refresh and UserInfo.
+* **`2-message-signing`** — the same, plus a PS256 request object inside
+  the push (it does not ride on the browser URL) and `response_mode=jwt`.
+  The JARM response is verified, and `state` / `code` / `error` taken out of
+  it, before the code is redeemed (`STS-FED-0246`). `state` is read
+  unverified only to relay the request to the cell that holds the flow; the
+  signature is checked there, where the discovered keys are.
+
+`private_key_jwt` is this realm's RSA key as PS256. `iss` and `sub` are
+`fedClientId`. `aud` is `fedPeer`, the issuer, not the token endpoint, and
+the assertion lives 60 seconds. The same bound is on the request object.
+That is not `oidfed_rp.ts`'s `clientAssertion()`, whose audience is the OP's
+Entity Identifier and whose lifetime is five minutes. A profile forces
+`private_key_jwt` whatever `fedTokenAuth` says, except `tls_client_auth` on
+`1-advanced` (below). Registration, where
+`fedRegister` is on, sends that method, the PS256 key alone, and PAR, DPoP
+or JARM where the profile uses them.
+
+The DPoP key is made for the sign-in (ES256, the public JWK in the proof's
+header) and kept on the flow context, as the PKCE verifier is. One retry
+when the partner answers `use_dpop_nonce` with a different nonce — in the
+JSON body from the authorization server (RFC 9449 section 8), in
+`WWW-Authenticate` from UserInfo (section 9, scheme and parameter
+case-insensitive) — and the same nonce is not sent again. **Each attempt is
+signed afresh**: a new client assertion and, for message signing, a new
+request object, never the first attempt's again (RFC 7523 section 3's
+`jti`). **The authorization server's nonce and UserInfo's are kept apart**
+(`fapiNonce` / `dpopNonce` for the push, token and refresh requests,
+`fapiResourceNonce` / `dpopResourceNonce` for UserInfo): the first UserInfo
+call of a sign-in sends none and answers the challenge. A success that
+omits `DPoP-Nonce` keeps the nonce that was sent. UserInfo presents `Authorization: DPoP` and hashes the access
+token as `ath`. A missing key is `STS-FED-0247`, not a bearer request. When
+`fedRefreshTokens` is on, the key is sealed with the refresh token
+(`sealPartnerToken`) and opened for the refresh; the same key is kept across
+a rotation. A signing failure is `STS-FED-0245`. A push the partner refuses
+is `STS-FED-0244`.
+
+**WHAT A PROFILE HOLDS THE ANSWER TO, BESIDE A PLAIN RELATIONSHIP'S
+CHECKS (#931's review, 2026-11-13).** An independent review found four
+client-side checks the profiles owed and did not make. Each is a refusal of
+its own, asked only when `FapiClient.profileOf()` names a profile, so a
+relationship with no profile behaves exactly as before:
+
+* **`s_hash`, for `1-advanced`** (FAPI 1.0 Advanced Part 2, 5.1.1 and
+  5.2.2.1). The front-channel ID Token is a detached signature over the
+  response, `state` included, so it must carry `s_hash`, the left half of
+  the state's hash under the token's own algorithm — the `c_hash` rule
+  (`STS-FED-0248`, before the code is redeemed). A plain hybrid
+  relationship still ignores `s_hash`, as Core does not require it.
+* **`iss`, for a 2.x profile** (FAPI 2.0 Security Profile 5.3.2.2, RFC
+  9207). An authorization response with no `iss` is refused
+  (`STS-FED-0249`) before anything is spent; a plain relationship still
+  checks `iss` only when it is sent. Under JARM the `iss` is the response
+  JWT's, verified against `fedPeer` by `openJarm()` before it is merged, so
+  `2-message-signing` passes on that and a bare query `iss` is not needed.
+  A partner's ERROR response is not asked: it is refused as the partner's
+  error (`STS-FED-0025`) whatever it names, and nothing is redeemed.
+* **JARM's `exp`** (JARM 4.4). `jwt.verify()` checks `exp` only when it is
+  present, so a response JWT without one is refused (`STS-FED-0250`)
+  rather than good for ever. `FapiClient.jarmExpiryProblem()`.
+* **`token_type` DPoP, for a 2.x profile** (RFC 9449 section 5). A token
+  response whose `token_type` is not `DPoP` (case-insensitive) is a token
+  the partner did not bind: at the sign-in it is refused 502
+  (`STS-FED-0251`) and UserInfo is never asked with it, and at a refresh
+  the session is ended under the same code. Bluesky's path makes the same
+  check for its own profile (`STS-FED-0231`).
+
+**WHAT THE CONFORMANCE SUITE'S FIRST RUN FOUND (2026-11-13, develop
+9300a96d1, memory mode).** Of ~156 modules, 3 passed:
+
+* **Every 2.x module failed `CheckForClientAssertionJtiReuse`.** The
+  `use_dpop_nonce` retry at the push and at the token endpoint resent the
+  first attempt's client assertion. Each attempt now signs its own (above).
+* **Every 2.x module that reaches UserInfo timed out.** The suite's UserInfo
+  answers `401` with `WWW-Authenticate: DPoP error="use_dpop_nonce"` (and
+  `dPoP` in one module) and a nonce of its own; `withNonce()` read only a
+  JSON body, so UserInfo was never asked again and the sign-in stood on
+  the ID Token alone. `FapiClient.asksForNonce()` reads both.
+* **An ID Token issued before the sign-in began, or in the future, is
+  refused** (`STS-FED-0253`, every relationship, not only a profile): the
+  FAPI 1.0 Advanced plan's `iat-is-week-in-past` module, OpenID Connect
+  Core 3.1.3.7 step 10. The range is the flow's own — from when its
+  context was stored to now, each end widened by `oauth2.clockSkewS`.
+* **THIS CLIENT CALLS NO RESOURCE SERVER, AND THE PLANS' POSITIVE MODULES
+  WAIT FOR ONE.** Each finishes only when the client calls the suite's
+  `accounts_endpoint`. A relationship is a relying party: the person is
+  authenticated by the ID Token and UserInfo (Core 3.1.3, 5.3), and the
+  partner's tokens are used to learn who the person is and are never
+  handed on (*THIS SERVICE AS A FAPI CLIENT*, above), so there is no API
+  call to make. The suite itself ends a module at UserInfo for the profiles
+  whose resource UserInfo is (`userInfoIsResourceEndpoint()`). So
+  `tests/protocol/sts_fapi_client_conformance.js` stops a positive module
+  once the suite has answered its UserInfo `200` and judges it `REACHED
+  RESOURCE` — passed only with no FAILURE logged, its warnings judged as
+  any module's. Calling a partner's API on a person's behalf would be a
+  feature of its own, with its own argument.
+
+**WHAT THE SECOND RUN FOUND (2026-11-14, develop 48e343c65, memory mode).**
+The 2.x plans passed. Every POSITIVE FAPI 1.0 Advanced module (the plain
+one, both encrypted-ID-Token ones, `valid-aud-as-array`,
+`no-scope-in-token-endpoint-response`, `missing-athash`, in all four
+plans) TIMED OUT, the suite's log ending at
+`SendAuthorizationResponseWithResponseModeFragment`: the client never
+reached the token endpoint.
+
+* **The fragment page was decided on the STORED response type.**
+  `awaitsFragment()` read `responseTypeParts()` of the record as stored,
+  and a `1-advanced` relationship stores `code` (the default) while
+  `FapiClient.shapedRecord()` asks for `code id_token`. So the bare GET
+  the fragment answer arrives as was not recognised: it was refused 401
+  (`STS-FED-0021`, no state) and nothing was posted back. It now reads
+  the shaped record, as `consumeOauthResponse()` and
+  `authorizationParams()` already did (`tests/federation_oidc_rp.js`
+  10ao).
+* **The negative modules had passed for nothing.** A negative passes when
+  the client dials nothing after the bad answer, and a client that never
+  received the answer dials nothing too. Their passes in that run say
+  nothing about the client; the next run is the first that does.
+* **The suite's FAPI 1.0 Advanced discovery document names no
+  `response_modes_supported`**, so form_post is not offered (the default is
+  `query` and `fragment`, OpenID Connect Discovery 1.0 section 3). The job
+  sets `fedResponseMode=fragment`; a `1-advanced` relationship left empty
+  still asks for form_post, the operator's choice for a partner that
+  supports it.
+
+**WHAT THE THIRD RUN FOUND (run 27, 2026-11-14, develop 522bce127, memory
+mode).** The 2.x plans passed. In all four FAPI 1.0 Advanced plans the five
+positive modules got past the token endpoint and FAILED on `Got unexpected
+HTTP (using mtls) call to userinfo`. Read from the suite's source
+(release-v5.3.1, `AbstractFAPI1AdvancedFinalClientTest`):
+
+* **Its discovery document names UserInfo twice and serves it once.**
+  `GenerateServerConfigurationMTLS` (the `condition.as` one) publishes
+  `userinfo_endpoint` on the plain host and the same in
+  `mtls_endpoint_aliases`. `handleHttp()` answers the plain `userinfo`;
+  `handleHttpMtls()` answers only `token`, the accounts endpoint and `par`,
+  and throws for anything else. A positive module finishes only in
+  `accountsEndpoint()` (`resourceEndpointCallComplete()`); UserInfo on
+  either host leaves it waiting. This client is right to dial the alias:
+  its access token is bound to its certificate, and RFC 8705 section 5 has
+  such a client use the aliases.
+* **So `fedUserinfo` exists, on by default.** `FALSE` asks no UserInfo at
+  sign-in (`completeOidc()`) or at a refresh (`refreshOne()`), whatever
+  `fedUserinfoUrl` or the discovery document names
+  (`federation.asksUserinfo()`), and the person's claims are the ID
+  Token's. OpenID Connect Core 1.0 section 5.3 makes UserInfo the relying
+  party's to ask. The four FAPI 1.0 Advanced plans set it; the 2.x plans
+  and the RP plans keep the default, and rcbj's decision that a 2.x
+  positive module ends at UserInfo stands.
+* **The FAPI 1.0 Advanced end condition is the token endpoint.** The job
+  stops a positive module once the suite's log shows the token endpoint
+  answered 200 AND the relationship shows the outcome: its sign-in count up
+  (judged `REACHED TOKEN`), or a refusal on `fedLastError` (FAILED). A
+  NEGATIVE module whose answer this client signed somebody in on is FAILED
+  whatever the suite says, because without UserInfo a client that accepted
+  a bad ID Token at the token endpoint calls nothing more, and that is
+  exactly what the suite passes a negative module for.
+
+#### 1-ADVANCED OVER MUTUAL TLS (#931, rcbj's decision of 2026-11-13)
+
+**The root `CLAUDE.md`'s row "authenticate to a partner with a client
+certificate" is REVERSED FOR THIS PROFILE ONLY.** A plain relationship, the
+2.x profiles (DPoP) and every other protocol present nothing, as before.
+`federation_client_certificate.ts` is the whole of it beside the dials:
+
+* **ONE CERTIFICATE PER RELATIONSHIP**, a `clientAuth` leaf of the realm's
+  TLS Client Issuing CA (`pki.issueFederationClientKeyPair()`, through
+  `certify()`, so OCSP and the CRL know it), its only subjectAltName a
+  `urn:sts:federation:<id>` — which `tls_client_certificates.js`'s gate
+  reads as nobody, so it signs nobody in at this service — and its subject
+  fixed per relationship (`CN=federation <id> client`, the realm's O and C),
+  so a renewal keeps the DN a partner registered. It is one JSON row on
+  `fedClientCertificate` (sensitive: withheld from LDAP in product and from
+  every page and reply), the private key SEALED wherever keys persist
+  (label `federation-client-certificate`, a class on `/admin/encryption`)
+  and refused rather than written in clear there, as `fedEncryptionKey`'s.
+* **WHEN IT IS MADE.** When `fedFapi` becomes `1-advanced` through the
+  console or `/admin-api` (`federationAction()`'s `set`), so the
+  administrator can register it before the first sign-in; at the first
+  token request that finds none usable (`materialFor()`, one issue per
+  relationship in flight per process, `issueOnce()`), which is what keeps a
+  relationship that was `1-advanced` before this change signing in; and by
+  the cluster job `federation.client-certificate-renew` (hourly, per realm),
+  which also renews one `federation.clientCertificateRenewDays` (30) before
+  its end. A renewal overwrites the row: a token bound to the old
+  certificate stops working at the partner, which is why it is weeks early.
+* **WHERE IT IS PRESENTED.** The token request, the refresh and UserInfo
+  (`fapiTokenRequest()`, `userinfoFetch()`), as node's `cert`/`key` on the
+  https request (`federation_http.ts`'s `clientCertificate`, never on plain
+  http). Where the discovery document names `mtls_endpoint_aliases`
+  (RFC 8705 section 5), those token, UserInfo and PAR addresses replace the
+  plain ones (`discovered()`). A certificate that cannot be issued, written
+  or opened is `STS-FED-0252` and nothing is dialled: 500 at a sign-in, the
+  session ended at a refresh.
+* **`tls_client_auth`** (`fedTokenAuth`, RFC 8705 section 2.1): the token
+  request carries the `client_id` and nothing else to authenticate. Named
+  on a relationship that is not `1-advanced` it is not ready (the
+  certificate exists only for that profile). A registration (`fedRegister`)
+  sends `tls_client_auth`, `tls_client_auth_subject_dn` (the certificate's
+  RFC 4514 subject) and `tls_client_certificate_bound_access_tokens`;
+  `private_key_jwt` registrations send the last as well.
+* **WHAT THE ADMINISTRATOR READS** (rule 7, both doors): the relationship's
+  console page draws a *TLS client certificate* section, and
+  `GET /admin-api/federation?relationship=` answers `clientCertificate` —
+  the certificate and chain as PEM, the subject DN, the `x5t#S256` a bound
+  token carries, the validity and when it renews. Never the private key.
+* **What this client does NOT check**: an access token is opaque to it, so
+  the partner's `cnf.x5t#S256` is not read here; the binding is the
+  partner's to enforce, and the client's part is presenting one
+  certificate everywhere.
+
+`tests/federation_oidc_rp.js` 10ad-10al holds it against an in-file partner
+on a listener that asks for a certificate and binds the token to it.
+
+There is no CIBA client. `POST /oauth2/bc-authorize` is this service as the
+authorization server, which `sts_fapi_conformance.js` already certifies.
+`fapi-ciba-id1-client-test-plan` is not a plan this service can run. The
+three client plans run in `tests/protocol/sts_fapi_client_conformance.js`
+(`tests/CLAUDE.md`, *THE FAPI CLIENT PLANS*), FAPI 1.0 Advanced twice —
+`private_key_jwt` and `tls_client_auth`, both over the certificate.
+
+`tests/federation_fapi_client.js` holds the profile, the proof and the
+retry. `tests/federation_oidc_rp.js` case 10 holds the three sign-ins, the
+two `STS-FED-0243` refusals, a refused push (`STS-FED-0244`), the JARM
+refusals (`STS-FED-0246`, and a partner error as `STS-FED-0025` that does
+not redeem the code), the DPoP nonce on the wire, the registration
+metadata, `beginConnect`'s refusal of a profile (`STS-FED-0184`), the
+refresh of a DPoP profile and of 1-advanced, the four refusals above
+with the accepted path beside each (10v–10ab), and (10am, 10an) a partner
+demanding nonces at the push, the token request, the refresh and UserInfo
+with no assertion or request object jti sent twice and the two servers'
+nonces kept apart. 1h and 1i hold `STS-FED-0253`.

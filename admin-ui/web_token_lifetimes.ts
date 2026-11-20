@@ -74,7 +74,10 @@ class TokenLifetimesPage {
         json.lifetimes.accessTokenTtlS, json.lifetimes.refreshTokenTtlS,
         json.lifetimes.clockSkewS, t) +
 
-      '<h2>' + t.html('consoleTokenLifetimes.sixHeading') + '</h2>' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each section,
+      // its heading inside.
+      kit.frame('<h2>' + t.html('consoleTokenLifetimes.sixHeading') +
+      '</h2>' +
       kit.note(t.html('consoleTokenLifetimes.units')) +
       '<form method="post" action="/admin/token-lifetimes"><input ' +
       'type="hidden" name="action" ' +
@@ -116,12 +119,14 @@ class TokenLifetimesPage {
         : kit.note(t.html('consoleTokenLifetimes.noneOverridden',
           { configFile: (json.context || {}).configFile ||
               t.text('consoleTokenLifetimes.appconfigFile'),
-            defaultsFile: (json.context || {}).defaultsFile }))) +
+            defaultsFile: (json.context || {}).defaultsFile })))) +
 
-      '<h2>' + t.html('consoleTokenLifetimes.skewHeading') + '</h2>' +
-      kit.note(t.html('consoleTokenLifetimes.skewNote')) +
+      kit.frame('<h2>' + t.html('consoleTokenLifetimes.skewHeading') +
+      '</h2>' +
+      kit.note(t.html('consoleTokenLifetimes.skewNote'))) +
 
-      '<h2>' + t.html('consoleTokenLifetimes.outHeading') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleTokenLifetimes.outHeading') +
+      '</h2>' +
       kit.note(t.html('consoleTokenLifetimes.outNote',
                       { held: String(json.tokens.held),
                         cap: String(json.tokens.cap),
@@ -150,12 +155,13 @@ class TokenLifetimesPage {
       }).join('') ||
        '<tr><td colspan="7">' + t.html('consoleTokenLifetimes.noneIssued') +
        '</td></tr>') +
-      '</table>' +
+      '</table>') +
 
-      '<h2>' + t.html('consoleTokenLifetimes.idleHeading') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleTokenLifetimes.idleHeading') +
+      '</h2>' +
       kit.note(t.html('consoleTokenLifetimes.idleNote') + '<a ' +
       'href="/admin/oauth2">' + t.html('consoleTokenLifetimes.oauthLink') +
-      '</a>.') +
+      '</a>.')) +
 
       kit.note(t.html('consoleTokenLifetimes.json'));
 

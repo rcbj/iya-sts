@@ -122,6 +122,14 @@
 //   node tests/tools/run-report.js [options]
 //
 //   --only=<substr>[,...]  only these test files / job names
+//   --mode-only=<substr>[,...]
+//                          the MODE's own job filter (2026-11-14), the same
+//                          grammar, INTERSECTED with --only: a job runs only
+//                          if both keep it. ./run-tests.sh passes it for a
+//                          mode whose tests/tools/modes.sh stsModeJobFilter()
+//                          names one (`fuzz`: schemathesis) and for that mode
+//                          alone, so an operator's --only still narrows it and
+//                          can never widen it.
 //   --conformance-only     only the protocol jobs MANIFEST.js marks
 //                          `conformance: true` (the OpenID conformance
 //                          suite's) and no in-process file. By the FLAG and
@@ -233,6 +241,11 @@
 //                   service, then render it. `./run-coverage.sh` is the way in.
 //   COVERAGE_DIR    where the raw data and the rendered report go
 //                   (default ./coverage).
+//   STS_TEST_444    `on` runs the jobs #444 created (MANIFEST.js
+//                   `optIn: '444'`, and UNIT_OPT_IN's in-process files);
+//                   `off`, the default, reports each SKIPPED with the reason
+//                   (rcbj, 2026-11-15). ./run-tests.sh --with-444 sets it.
+//                   Any other value is refused. See OPT-IN SWITCHES below.
 // ===========================================================================
 
 const { spawn, spawnSync, execFileSync } = require('child_process');
@@ -255,6 +268,8 @@ const coverage = require('./coverage-report');
 const SELF_SKIP_EXIT = 42;
 const SELF_SKIP_MARKER = '===== SELF-SKIP: ';
 const adminApiToken = require('./admin-api-token');
+const realmLedger = require('./realm-ledger');
+const clusterRestart = require('./cluster-restart');
 
 const { testFiles } = require('../run');
 
@@ -273,7 +288,8 @@ const RUN_ID = new Date().toISOString().replace(/:/g, '-').replace(/\..+$/, '');
 // ---------------------------------------------------------------------------
 function parseArgs(argv) {
   log.debug('Entering parseArgs().');
-  const opts = { only: [], list: false, protocol: 'on', parent: '',
+  const opts = { only: [], modeOnly: [], list: false, protocol: 'on',
+                 parent: '',
                  conformanceOnly: false, lanes: [], notLanes: [],
                  reportDir: path.join(TESTS_DIR, 'report'),
                  timeoutMs: 300000, timeoutScale: 1, quiet: false,
@@ -330,6 +346,12 @@ function parseArgs(argv) {
       opts.timeoutMs = Number(a.slice('--timeout='.length));
     } else if (a.indexOf('--timeout-scale=') === 0) {
       opts.timeoutScale = Number(a.slice('--timeout-scale='.length)) || 1;
+    } else if (a.indexOf('--mode-only=') === 0) {
+      a.slice('--mode-only='.length).split(',').forEach(function (p) {
+        if (p.trim()) {
+          opts.modeOnly.push(p.trim());
+        }
+      });
     } else if (a.indexOf('--only=') === 0) {
       a.slice('--only='.length).split(',').forEach(function (p) {
         if (p.trim()) {
@@ -481,7 +503,10 @@ function vendoredJobs(options) {
                 // Which protocol jobs run at the same time — see WHICH JOBS
                 // RUN AT THE SAME TIME in MANIFEST.js, and runScheduled().
                 lane: String(entry.lane || 'main'),
-                exclusive: !!entry.exclusive });
+                exclusive: !!entry.exclusive,
+                // The switch this job runs behind, '' for none — see
+                // OPT-IN SWITCHES above main().
+                optIn: String(entry.optIn || '') });
   });
   const browserJobs = jobs.filter(function (j) { return j.browser; });
   if (browserJobs.length) {
@@ -1553,7 +1578,9 @@ const UNIT_WATCHDOG_MS = {
   x509_limbo: 2700000,
   nist_pkits: 600000,
   acvp_pqc: 600000,
-  wycheproof: 600000
+  wycheproof: 600000,
+  // Its child's own bound is 540s (run 22: 180s was not enough under load).
+  directory_window_requests: 720000
 };
 
 // ---------------------------------------------------------------------------
@@ -1585,6 +1612,9 @@ const UNIT_WATCHDOG_MS = {
 const UNIT_ALONE = new Set([
   'request_barrier', 'request_proxy_replay',
   'request_worker_replacement', 'key_residency',
+  // Its sections time a barrier against syncNow()'s 4.6 s deadline and a
+  // 2 s bound (2026-11-14); a loaded host would move both.
+  'read_barrier_slow_apply',
   // The outbound SCIM client's pacing (S3: requests 250 ms apart, a gap no
   // shorter than 200 ms) read one gap of 199 ms under the pool in the
   // cluster mode of the full run on 71607cbd (2026-10-27); alone it holds.
@@ -1595,6 +1625,146 @@ const UNIT_ALONE = new Set([
   // a ceiling of 10). Alone it holds.
   'notify_after_commit'
 ]);
+
+// ---------------------------------------------------------------------------
+// OPT-IN SWITCHES (rcbj, 2026-11-15): "put a flag around all #444 related
+// tests". A protocol job carries its switch in MANIFEST.js (`optIn: '444'`),
+// whose OPT_IN_SWITCHES is the closed set of switches and the variable each
+// reads; an in-process file carries it here, beside UNIT_ALONE, for the same
+// reason that list is here. A job behind a switch that is off is SKIPPED with
+// the reason — in the summary's SKIPPED line, `<skipped>` in the JUnit —
+// never dropped and never counted as passed, and a run in which every chosen
+// job is switched off checked nothing and fails.
+//
+// THE IN-PROCESS LIST FOR `444` IS EMPTY, AND THAT IS THE FINDING: every file
+// #444 created is a protocol job (D12, phases 3-8). Two in-process files were
+// written because #444's port FOUND something — `ldap_malformed_pdu` and
+// `users_create_secrets` — and they guard the TypeScript service's own fixes,
+// which is exactly what the integrator's runs are for, so they run.
+// tests/suite_444_switch.js holds every name here to an existing file.
+// ---------------------------------------------------------------------------
+const UNIT_OPT_IN = {
+  '444': []
+};
+
+// The state of every switch, read from `env`: { state: { '444': { on, env,
+// value, flag } }, problem }. A value that is neither `on` nor `off` is a
+// problem rather than a guess, because a typo that read as `off` would skip
+// two hundred jobs and a typo that read as `on` would run them unasked.
+function optInSwitches(env) {
+  log.debug('Entering optInSwitches().');
+  const out = { state: {}, problem: '' };
+  Object.keys(manifest.OPT_IN_SWITCHES).forEach(function (name) {
+    const def = manifest.OPT_IN_SWITCHES[name];
+    const raw = String(env[def.env] === undefined ? '' : env[def.env]).trim();
+    const value = raw === '' ? def.defaultValue : raw;
+    if (value !== 'on' && value !== 'off') {
+      out.problem = def.env + ' must be on or off, not \'' + raw + '\'';
+    }
+    out.state[name] = { on: value === 'on', env: def.env, value: value,
+                        flag: def.launcherFlag };
+  });
+  log.debug('Leaving optInSwitches().');
+  return out;
+}
+
+// The switch an in-process file runs behind, '' for none.
+function unitOptIn(name) {
+  log.debug('Entering unitOptIn().');
+  const found = Object.keys(UNIT_OPT_IN).filter(function (sw) {
+    return UNIT_OPT_IN[sw].indexOf(name) >= 0;
+  });
+  log.debug('Leaving unitOptIn().');
+  return found.length ? found[0] : '';
+}
+
+// Why `job` is not run under `switches`, or '' when it is.
+function switchedOffWhy(job, switches) {
+  log.debug('Entering switchedOffWhy().');
+  const sw = job.optIn ? switches.state[job.optIn] : null;
+  if (!sw || sw.on) {
+    log.debug('Leaving switchedOffWhy(). Runs.');
+    return '';
+  }
+  log.debug('Leaving switchedOffWhy(). Off.');
+  return '#' + job.optIn + ' tests switched off (' + sw.env + '=off)';
+}
+
+// The result a switched-off job is reported with.
+function switchedOffResult(job, why) {
+  log.debug('Entering switchedOffResult().');
+  log.debug('Leaving switchedOffResult().');
+  return Object.assign({}, job, {
+    status: 'skipped', ms: 0, code: null, assertions: [],
+    failures: [], why: why
+  });
+}
+
+// The summary's line for a skipped job — exported so the reason a switch
+// gives is held to reach it.
+function skippedLine(j) {
+  log.debug('Entering skippedLine().');
+  log.debug('Leaving skippedLine().');
+  return 'SKIPPED: ' + j.name + ' — ' + j.why;
+}
+
+// ---------------------------------------------------------------------------
+// A PASSING JOB REMOVES ITS REALMS; A FAILING ONE KEEPS THEM (rcbj,
+// 2026-11-18). The realms `tools/realm-ledger.js` noted for `job` are removed
+// once it PASSED, through the default realm's `/admin-api/realms/remove`, one
+// at a time; a failed, timed-out or declined job keeps every one, because its
+// realm is the record of what it did (tests/CLAUDE.md, *A passing job removes
+// its realms*). `STS_TEST_KEEP_REALM_IDS` and the remote PEP containers'
+// realms are never removed: those containers poll them for the rest of the
+// run. Never fails the job: a realm that could not be removed is said, and
+// stays. Answers the number removed.
+// ---------------------------------------------------------------------------
+async function removeRealmsOfPassedJob(job, result, instance) {
+  log.debug('Entering removeRealmsOfPassedJob(). ' + job.name);
+  if (result.status !== 'passed') {
+    const kept = realmLedger.readLedger(job.realmLedger);
+    if (kept.length) {
+      log.info('    ' + job.name + ' did not pass; its ' + kept.length +
+               ' realm(s) stay as evidence: ' + kept.map(function (row) {
+                 return row.id;
+               }).join(', '));
+    }
+    log.debug('Leaving removeRealmsOfPassedJob(). Kept.');
+    return 0;
+  }
+  const keep = new Set(String(process.env.STS_TEST_KEEP_REALM_IDS || '')
+    .split(',').concat([process.env.XACML_PEP_REALM || '',
+                        process.env.XACML_PEP_CLUSTER_REALM || ''])
+    .map(function (id) {
+      return id.trim();
+    }).filter(Boolean));
+  const done = await realmLedger.removeRecorded({
+    file: job.realmLedger,
+    keep: keep,
+    timeoutMs: 120000,
+    tokenFor: async function (base) {
+      log.debug('Entering tokenFor().');
+      // A token of its own: the job may have revoked every token the
+      // service held, its own and the run's among them.
+      const fresh = await adminApiToken.tokenFor(base ||
+                                                 (instance && instance.url) ||
+                                                 '');
+      log.debug('Leaving tokenFor().');
+      return fresh;
+    }
+  });
+  if (done.removed.length) {
+    log.info('    removed ' + done.removed.length + ' realm(s) ' + job.name +
+             ' created');
+  }
+  if (done.failed.length) {
+    log.warn('    ' + job.name + ' passed and ' + done.failed.length +
+             ' of its realm(s) could not be removed, so they stay: ' +
+             done.failed.join('; '));
+  }
+  log.debug('Leaving removeRealmsOfPassedJob().');
+  return done.removed.length;
+}
 
 async function runScheduled(jobs, runOne, opts) {
   log.debug('Entering runScheduled().');
@@ -1668,6 +1838,23 @@ async function runScheduled(jobs, runOne, opts) {
     const deferred = indexed.filter(function (i) {
       return i.job.suite !== 'unit' && bulkLast && i.job.lane === 'bulk';
     });
+    // ------------------------------------------------------------------
+    // THE CLUSTER RESTARTED PART WAY THROUGH, WHERE THE MODE SAYS SO (rcbj,
+    // 2026-11-18: "Restart the cluster a couple of times during the test
+    // run"). STS_TEST_RESTART_POINTS (tools/modes.sh: the cluster modes
+    // only) splits this half into that many plus one stretches of equal
+    // job count; at each boundary the lanes drain, so no job is running,
+    // and opts.restart() has the launcher restart every node and waits for
+    // it. The bulk lane deferred above runs after the last stretch.
+    // ------------------------------------------------------------------
+    const points = typeof opts.restart === 'function'
+      ? Math.max(0, Math.floor(Number(opts.restartPoints) || 0)) : 0;
+    const marks = [];
+    for (let k = 1; k <= points; k++) {
+      marks.push(Math.floor(protocol.length * k / (points + 1)));
+    }
+    let dispatched = 0;
+    let nextMark = 0;
     let segment = [];
     async function runSegment() {
       log.debug('Entering runSegment(). ' + segment.length + ' job(s).');
@@ -1684,6 +1871,13 @@ async function runScheduled(jobs, runOne, opts) {
       log.debug('Leaving runSegment().');
     }
     for (const item of protocol) {
+      if (nextMark < marks.length && marks[nextMark] > 0 &&
+          dispatched >= marks[nextMark]) {
+        await runSegment();
+        await opts.restart(nextMark + 1, points);
+        nextMark += 1;
+      }
+      dispatched += 1;
       if (item.job.exclusive) {
         await runSegment();
         log.info('[' + item.n + '/' + jobs.length + '] ' + item.job.name +
@@ -1798,11 +1992,22 @@ async function main() {
 
   // ---- the jobs ---------------------------------------------------------
   const jobs = [];
+  // The mode's own filter (--mode-only), applied after --only, so the two
+  // intersect. Empty keeps everything.
+  const keptByMode = function keptByMode(file) {
+    log.debug('Entering keptByMode().');
+    const kept = !opts.modeOnly.length || opts.modeOnly.some(function (p) {
+      return file.indexOf(p) >= 0;
+    });
+    log.debug('Leaving keptByMode().');
+    return kept;
+  };
   if (wantUnit) {
-    testFiles(opts.only).forEach(function (file) {
+    testFiles(opts.only).filter(keptByMode).forEach(function (file) {
       const name = file.replace(/\.js$/, '');
       jobs.push({ suite: 'unit', name: name, file: file, dir: TESTS_DIR,
-                  timeoutMs: UNIT_WATCHDOG_MS[name] || 0 });
+                  timeoutMs: UNIT_WATCHDOG_MS[name] || 0,
+                  optIn: unitOptIn(name) });
     });
   }
   // THE PROTOCOL JOBS ARE VENDORED HERE SINCE 2026-08-28 and are no longer
@@ -1818,6 +2023,9 @@ async function main() {
         return opts.only.some(function (p) { return j.file.indexOf(p) >= 0; });
       });
     }
+    theirs = theirs.filter(function (j) {
+      return keptByMode(j.file);
+    });
     if (opts.conformanceOnly) {
       theirs = theirs.filter(function (j) {
         return j.conformance;
@@ -1838,14 +2046,75 @@ async function main() {
     // An empty run must never read as a pass — the same rule tests/run.js
     // holds, for the same reason.
     log.error('No jobs to run' + (opts.only.length
-      ? ' matching ' + opts.only.join(', ') : '') + '. Nothing was checked.');
+      ? ' matching ' + opts.only.join(', ') : '') + (opts.modeOnly.length
+      ? ' within this mode\'s own ' + opts.modeOnly.join(', ') : '') +
+      '. Nothing was checked.');
     process.exit(1);
   }
-  if (opts.list) {
-    jobs.forEach(function (j) {
-      process.stdout.write(j.suite + '  ' + j.name + '\n');
+  // ---- the opt-in switches (rcbj, 2026-11-15) ---------------------------
+  const switches = optInSwitches(process.env);
+  if (switches.problem) {
+    log.error(switches.problem + '. Nothing was run.');
+    // The line is flushed first: stdout to a pipe is asynchronous in node.
+    await new Promise(function (resolve) {
+      process.stdout.write('', resolve);
     });
+    process.exit(2);
+  }
+  const switchedOff = jobs.filter(function (j) {
+    return switchedOffWhy(j, switches) !== '';
+  });
+  if (opts.list) {
+    // ONE write, and the exit after it has been flushed: stdout to a pipe is
+    // asynchronous in node, and process.exit() straight after a few hundred
+    // writes cut the list short now and then (tests/suite_444_switch.js
+    // counted it a job or two short, about one run in six).
+    const listing = jobs.map(function (j) {
+      const why = switchedOffWhy(j, switches);
+      return j.suite + '  ' + j.name +
+             (why ? '  [SKIPPED: ' + why + ']' : '') + '\n';
+    }).join('');
+    await new Promise(function (resolve) {
+      process.stdout.write(listing, resolve);
+    });
+    log.debug('Leaving main(). Listed.');
     process.exit(0);
+  }
+  if (switchedOff.length) {
+    const names = {};
+    switchedOff.forEach(function (j) {
+      names[j.optIn] = (names[j.optIn] || 0) + 1;
+    });
+    Object.keys(names).forEach(function (sw) {
+      const st = switches.state[sw];
+      const line = names[sw] + ' job(s) behind the #' + sw + ' switch are ' +
+                   'SKIPPED: ' + st.env + '=off. ' + st.env + '=on (or ' +
+                   './run-tests.sh ' + st.flag + ') runs them.';
+      if (opts.only.length) {
+        // An operator who NAMED them must not find out from a grey row.
+        log.warn('--only ' + opts.only.join(',') + ' chose ' + line);
+      } else {
+        log.info(line);
+      }
+    });
+  }
+  if (switchedOff.length === jobs.length) {
+    // Every job chosen is behind a switch that is off: a run of skips
+    // checked nothing, and "No jobs to run" is the rule for that.
+    const sws = Object.keys(switches.state).filter(function (sw) {
+      return !switches.state[sw].on;
+    }).map(function (sw) {
+      return switches.state[sw].env + '=on (./run-tests.sh ' +
+             switches.state[sw].flag + ')';
+    });
+    log.error('Every job chosen' + (opts.only.length
+      ? ' by --only ' + opts.only.join(',') : '') + ' is switched off (' +
+      switchedOffWhy(switchedOff[0], switches) + '). Nothing was checked. ' +
+      'Turn it on with ' + sws.join(' or ') + '.');
+    await new Promise(function (resolve) {
+      process.stdout.write('', resolve);
+    });
+    process.exit(1);
   }
 
   // ---- where it is written ----------------------------------------------
@@ -1880,7 +2149,7 @@ async function main() {
   let instance = null;
   let protocolWhy = '';
   const haveProtocolJobs = jobs.some(function (j) {
-    return j.suite === 'protocol';
+    return j.suite === 'protocol' && !switchedOffWhy(j, switches);
   });
   if (haveProtocolJobs && opts.serviceUrl) {
     // COVERAGE CANNOT COME OUT OF A SERVICE THIS RUNNER ONLY SPEAKS HTTP TO,
@@ -2066,8 +2335,20 @@ async function main() {
   // ONE JOB, FROM THE DECISION WHETHER IT RUNS TO ITS RESULT. It was the body
   // of a `for` loop until 2026-09-26; runScheduled() decides when each is
   // called. A job that is not run answers its result without spawning.
+  // The realm removals of passed jobs, one after another (runOne()), held
+  // around an exclusive job and a cluster restart (realm-ledger.js).
+  const removals = new realmLedger.RemovalQueue();
   async function runOne(job, n) {
     log.debug('Entering runOne(). ' + job.name);
+    // A DELIBERATE EXCLUSION, by an opt-in switch (rcbj, 2026-11-15): first,
+    // so a switched-off job is never reported for lacking what it would need.
+    const offWhy = switchedOffWhy(job, switches);
+    if (offWhy) {
+      log.warn('[' + n + '/' + jobs.length + '] SKIPPING ' + job.name +
+               ' — ' + offWhy);
+      log.debug('Leaving runOne(). Switched off.');
+      return switchedOffResult(job, offWhy);
+    }
     // A JOB THAT COULD NOT BE RUN IS A FAILURE, NOT A SKIP, and this used to
     // be the other way round. The throwaway service failing to start left
     // thirteen jobs marked `skipped`, which the summary counts as passing —
@@ -2296,9 +2577,9 @@ async function main() {
         // THE DIRECTORY'S PORT UNDER THE NAME A JOB LOOKS IT UP BY, AND THAT
         // IS NOT THE NAME THE SERVICE READS IT FROM.
         //
-        // The service takes `LDAP_PORT` (docs/configuration.md's settings
-        // table is the authority, and `service.js`'s PORT_VARS uses those
-        // spellings);
+        // The service takes `LDAP_PORT` (docs/v1.1.0/configuration.md's
+        // settings table is the authority, and `service.js`'s PORT_VARS uses
+        // those spellings);
         // `sts_global_logout.js` reads **`STS_LDAP_PORT`**. Every other
         // listener in that block is spelt the same on both sides, so the loop
         // below covers it — this one has to be said, and saying it is what the
@@ -2375,6 +2656,22 @@ async function main() {
           ? job.env.NODE_OPTIONS + ' ' + preload : preload;
       }
       // ------------------------------------------------------------------
+      // THE REALMS THIS JOB CREATES, WRITTEN DOWN (rcbj, 2026-11-18: "Delete
+      // realms as we go"). `tools/realm-ledger.js` notes every create the
+      // service accepted in a file beside the job's log, and
+      // removeRealmsOfPassedJob() below removes them once the job PASSED; a
+      // failed job's realms stay as its evidence. Only where this runner can
+      // reach `/admin-api`, and never under STS_TEST_KEEP_REALMS=1.
+      // ------------------------------------------------------------------
+      if (process.env.STS_ADMIN_API_TOKEN &&
+          process.env.STS_TEST_KEEP_REALMS !== '1') {
+        job.realmLedger = job.logFile.replace(/\.log$/, '') + '.realms.jsonl';
+        job.env.STS_TEST_REALM_LEDGER = job.realmLedger;
+        const ledger = '--require ' + path.join(__dirname, 'realm-ledger.js');
+        job.env.NODE_OPTIONS = job.env.NODE_OPTIONS
+          ? job.env.NODE_OPTIONS + ' ' + ledger : ledger;
+      }
+      // ------------------------------------------------------------------
       // A NEW CONNECTION PER REQUEST, IN THE `cluster` MODE (2026-09-14).
       //
       // That mode's load balancer picks a node per CONNECTION, and a job
@@ -2444,7 +2741,17 @@ async function main() {
       delete job.env.NODE_V8_COVERAGE;
     }
     log.info('[' + n + '/' + jobs.length + '] ' + job.suite + ' — ' + job.name);
-    const result = await runJob(job, opts);
+    // AN EXCLUSIVE JOB HAS THE SERVICE TO ITSELF, realm removals included
+    // (run #493: sts_realm_count_limit saw the count move under it).
+    const release = job.exclusive ? await removals.hold() : null;
+    let result = null;
+    try {
+      result = await runJob(job, opts);
+    } finally {
+      if (release) {
+        release();
+      }
+    }
     // The name is on the result line because, with jobs running side by
     // side, the line above it is often another job's. A job that declined
     // to run is SKIPPED here as in the report: this line said FAILED for
@@ -2455,10 +2762,51 @@ async function main() {
              ' in ' + result.ms + 'ms' +
              (result.assertions.length ? ', ' + result.assertions.length +
               ' assertion(s)' : '') + ' — ' + job.name);
+    // QUEUED, NOT AWAITED: the removals run one at a time beside the jobs,
+    // so a lane does not wait out a realm's retirement (up to
+    // realms.removalDeliveryTimeoutS each) before its next job. Drained
+    // before a cluster restart and before the reports are written.
+    if (job.realmLedger) {
+      removals.enqueue(function () {
+        return removeRealmsOfPassedJob(job, result, instance)
+          .then(function (removed) {
+            result.realmsRemoved = removed;
+          }, function (e) {
+            log.warn('    the realms ' + job.name + ' created could not be ' +
+                     'removed: ' + ((e && e.message) || e));
+          });
+      });
+    }
     log.debug('Leaving runOne(). ' + job.name);
     return result;
   }
-  const results = await runScheduled(jobs, runOne, opts);
+  const restarts = [];
+  const results = await runScheduled(jobs, runOne, Object.assign({}, opts, {
+    restartPoints: Number(process.env.STS_TEST_RESTART_POINTS) || 0,
+    restart: async function (k, of) {
+      log.debug('Entering restart().');
+      // No realm removal may be in flight across a restart either.
+      const releaseRemovals = await removals.hold();
+      try {
+        restarts.push(await clusterRestart.restart({
+          k: k, of: of, dir: process.env.STS_TEST_RESTART_DIR || '',
+          url: (instance && instance.url) || '',
+          nodes: Number(process.env.STS_TEST_CLUSTER_NODES) || 1,
+          tokenFor: function (base) {
+            log.debug('Entering tokenFor().');
+            log.debug('Leaving tokenFor().');
+            return adminApiToken.tokenFor(base);
+          },
+          log: log
+        }));
+      } finally {
+        releaseRemovals();
+      }
+      log.debug('Leaving restart().');
+    }
+  }));
+  // Every queued realm removal has landed before anything is reported.
+  await removals.drain();
   const wallMs = Date.now() - started;
 
   // The service goes down BEFORE the coverage is rendered, because under
@@ -2527,6 +2875,9 @@ async function main() {
     serviceKind: instance ? (instance.external ? 'container' : 'in-process')
                           : '',
     protocolWhy: protocolWhy,
+    // The cluster restarts of this run (STS_TEST_RESTART_POINTS), each with
+    // every node's memory before and after; tools/cluster-restart.js.
+    restarts: restarts,
     coverage: coverageLink,
     commandLine: [path.basename(process.argv[0])].concat(
       process.argv.slice(1).map(function (a) {
@@ -2542,7 +2893,8 @@ async function main() {
                assertionsFailed: j.assertions.filter(function (a) {
                  return !a.ok;
                }).length,
-               failures: j.failures, why: j.why || '', log: j.logName };
+               failures: j.failures, why: j.why || '', log: j.logName,
+               realmsRemoved: j.realmsRemoved || 0 };
     }) }, null, 2) + '\n');
   pointLatestAt(opts.reportDir, runDir);
 
@@ -2562,11 +2914,20 @@ async function main() {
     log.error('FAILED: ' + j.name + ' — ' + j.failures.join('; '));
   });
   skipped.forEach(function (j) {
-    log.warn('SKIPPED: ' + j.name + ' — ' + j.why);
+    log.warn(skippedLine(j));
+  });
+  // A RESTART THAT DID NOT COME BACK FAILS THE RUN: every job after it ran
+  // against a cluster that was not the one the mode describes.
+  const restartsFailed = restarts.filter(function (one) {
+    return !one.ok;
+  });
+  restartsFailed.forEach(function (one) {
+    log.error('FAILED: cluster restart ' + one.k + ' of ' + one.of + ' — ' +
+              one.why);
   });
   log.info('report: ' + path.join(runDir, 'report.html'));
   log.debug('Leaving main().');
-  process.exit(failed.length ? 1 : 0);
+  process.exit(failed.length || restartsFailed.length ? 1 : 0);
   log.debug("Leaving main().");
 }
 
@@ -2587,4 +2948,16 @@ module.exports = { vendoredJobs: vendoredJobs, assertionOf: assertionOf,
                    // must not inherit, and a test that computed it for
                    // itself would pass while this file read modes.sh
                    // differently — which is the only way this can break.
-                   stackDeploymentVariables: stackDeploymentVariables };
+                   stackDeploymentVariables: stackDeploymentVariables,
+                   // EXPORTED FOR tests/unit_job_environment.js too
+                   // (2026-11-14): `--mode-only` is parsed apart from
+                   // `--only`, which is what lets the two intersect.
+                   parseArgs: parseArgs,
+                   // EXPORTED FOR tests/suite_444_switch.js (2026-11-15).
+                   optInSwitches: optInSwitches, unitOptIn: unitOptIn,
+                   switchedOffWhy: switchedOffWhy,
+                   switchedOffResult: switchedOffResult,
+                   skippedLine: skippedLine, UNIT_OPT_IN: UNIT_OPT_IN,
+                   // EXPORTED FOR tests/cluster_restart_points.js
+                   // (2026-11-18): where the cluster restarts fall.
+                   runScheduled: runScheduled };

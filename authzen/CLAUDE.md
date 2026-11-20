@@ -36,6 +36,7 @@ their own, and each is advertised only while it is on.
 | `authzen.ts` | The routes, registered at 23c-ii (`common/protocol_stack.ts`): `POST /access/v1/evaluation`, `POST /access/v1/evaluations`, and the metadata. Thin, as `xacml/xacml.ts` is. |
 | `authzen_exchange.ts` | The OAuth 2.0 Token Exchange Binding, direction A (#1181): which tuples are its gates and scopes, the FIXED conversion rules, and each tuple's answer from the questions a local RFC 8693 exchange asks. Built by `authzen.ts`'s `defaultDeps()` beside the caller and the search. |
 | `authzen_access_request.ts` | The Access Request and Approval Profile and its CALLBACK companion (#1180): the requestable denial and its `binding_token`, the submission, the per-realm task store and its index, the status and cancellation, `decide()` (the one door the portal and the console reach), the approval's verification at re-evaluation, the mail, the callback and the `authzen.access-requests` job. A library; `authzen.ts` registers its three routes. |
+| `authzen_model.ts` | **The AuthZEN model, as the endpoints read it (#1579).** Builds every request's shape pass from `models/generated/authzen.json`, answers the lists the code branches on, and holds every answer to its member set. A leaf. See *THE REQUEST SHAPES ARE THE MODEL'S*, below. |
 | `authzen_admin.ts` | What the AuthZEN tab of `/admin/xacml` shows and does: `view()` and `act()` (`set-attribute`, `remove-attribute`, `set-scope`), shared by the console and `mgmt-api/authzen_api.ts`'s `/admin-api/xacml/authzen` operations (rule 7). A library, built by the root beside the other API modules. |
 
 `tests/authzen_map.js` holds the two pure modules in process;
@@ -49,14 +50,62 @@ evaluation decided by an application's own fine-grained policy (#564).
 the same questions over HTTP in a throwaway realm, and carries the **AuthZEN
 interop "Todo" scenario** — its five people, five actions and owner rule
 written in ALFA as the realm's root policy — through mutual TLS, the default
-door. The bearer door is held in process only: issuing a client a delegated
-permission grant and a token over the network is a second stack's worth of
-setup for checks the report API's jobs already drive.
+door. The bearer door is held in process by `tests/authzen_evaluation.js`,
+and over HTTP only by the conformance job below, which registers its own
+`client_credentials` client in a realm of its own.
+
+**THE OPENID FOUNDATION'S AUTHZEN PDP PLANS RUN AT `api_key` (#936, rcbj's
+decision of 2026-11-13).** `tests/protocol/sts_authzen_conformance.js`
+(`conformance: true`, lane `conformance-b`) runs the six plans with the suite
+as the PEP, in a throwaway realm with `authzen.callerAuthentication`
+`bearer`; the suite's API key (`pdp.api_key`, sent as `Authorization:
+Bearer`) is a `client_credentials` token carrying `authzen:evaluate`,
+audienced to the realm's `/access/v1`, its client in `authzen-peps` and
+holding a delegated permission grant of the scope on `sts-authzen-api`
+(`POST /admin-api/permissions/grant-permission`; listing it in
+`oauthAllowedScope` is refused `STS-OAUTH-0577`, which was the job's first
+run). **The
+service's default door stays `mtls`**; nothing here changed it. Two things
+about suite release-v5.3.1 decide the variants, both read in its source:
+
+* **`mtls` never reaches the PDP**: `SupportMTLSEndpointAliases` requires an
+  environment object `server` that `configure()` maps only afterwards. The
+  job keeps those plans as `mtls-*`, run only when `CONFORMANCE_PLANS` names
+  them.
+* **`api_key` needs `pdp_server_metadata=static`**: discovery replaces the
+  `pdp` object, and the key with it, by the fetched document. The job copies
+  the realm's metadata endpoints into the static configuration;
+  `sts_authzen.js` holds the metadata and `signed_metadata`.
+
+**What the plans found, fixed rather than ledgered**: the
+`*-unknown-*-fields-ignored` modules, and the Action Search's
+`extra-action-ignored`, expect 200 under section 10.1.1 ("receivers MUST
+ignore unknown fields"), and this API refused such a member with `0009`.
+rcbj decided to follow the specification (2026-11-13): *Unknown members are
+IGNORED*, below. **And two more (2026-11-14)**: every plan's
+`*-reject-non-json-content-type` expects 400 or 415 for `text/plain`, and
+this API read any body as JSON (`app.js`'s text parser takes every type):
+section 10.1's "Requests MUST include a `Content-Type` header with the
+value `application/json`" is now held, 415 `0117` (`notJson()`, after the
+caller is admitted, before the body is read; a parameter is allowed, an
+absent header is refused). And the Resource Search of type `record` found
+nothing, since this service has no records: a type with no objects here
+now takes the policy's `resource-id` literals as its candidates (*The
+searches*). **One module is LEDGERED, not fixed**: the batch's
+`default-value-merging` expects an item's `resource: { id, properties }`
+to take `type` from the top-level `resource`, a member-by-member merge;
+section 7.1.1 says "Any of these keys specified within an individual
+evaluation object overrides the corresponding top-level default", the key
+being `resource` whole, which is this API's reading (*The batch*), so the
+item has no `type` and is its own 400. The job's own fixture
+(`CERT_POLICY`) is the suite's: rule 2 (alice reads record-2), and rule 6's
+admin and archived record known to the PDP as bob and record-2, because the
+searches send neither property.
 
 ## The mapping, in one table
 
 **The public statement of the conversion, and the guidelines for a realm's
-conversion rules and the policies that read them, is `docs/authzen.md`**
+conversion rules and the policies that read them, is `docs/v1.1.0/authzen.md`**
 (#1182). This file is why the code is the way it is; that page is what a
 policy author relies on, and `tests/authzen_map.js` X holds its worked
 example (the ALFA policy and the request) to the code.
@@ -143,9 +192,26 @@ KIND, and this directory maps each kind to the code it always had
 category, `context.application`, the request's shape and the codes.
 `tests/fga_map.js` S holds the two refusing by one function.
 
-**Unknown members of the request itself are refused too** (`0009`): a member
-AuthZEN 1.0 does not define is either a newer version's or a mistake, and
-silently dropping either would decide a question the caller did not ask.
+**Unknown members are IGNORED, at every depth (#936, rcbj's decision of
+2026-11-13).** AuthZEN 1.0 section 10.1.1: "receivers MUST ignore unknown
+fields present in request or response bodies". So a member no field of the
+model names, at the top, in `subject`, `action`, `resource`, `page` or
+`options`, on every `/access/v1` request (the evaluation, the batch, the
+three searches and the access request submission), is accepted and never
+read, and the Action Search's `action`, which section 8.6.1 does not list,
+is declared `ignored`. **What it does not loosen**: a member that IS
+defined keeps every check (its type, its presence, its values); a property
+under `properties` or a member of `context` is still read against the
+catalogue and refused when no row declares it (`0004`), because there the
+caller is naming an attribute for the policy, which section 10.1.1 does not
+speak to; and BULK's `items` on a submission is still refused (`0071`), a
+member a profile defines and this service does not implement. **It is this
+API's rule alone**: every other API this service serves still refuses a
+member it does not declare. Until #936 this API refused one with `0009`, on
+the argument that dropping it might decide a question the caller did not
+ask; the specification decides otherwise, and `0009` is retired. The edge
+PDP (`rust/bins/xacml-pep`) ignores them too, held by
+`xacml-pep/authzen_cases.json` R9, R10 and R12.
 
 ## The result (decision 8)
 
@@ -333,7 +399,13 @@ between them): directory people for a resolved subject type; `application`,
 (`appAllowedToDelegateTo`, as `<source>|<target>`) resources; and as
 actions, every literal the repository's policies compare action-id with
 (a static walk of the model) plus an application's own `oauthPermission`
-names. A type with no source answers empty results, never a 400.
+names. **A resource type that is none of the three takes the same walk over
+`resource-id`** (#936, `policyLiterals()`): until then it answered nothing
+whatever the policy permitted, which section 8.5's "all of the resources
+of that type" does not allow when the PDP can name them, and the
+conformance suite's `record` search was that case. A literal is still a
+result only where the policy permits it as the searched type. A subject
+type with no source answers empty results, never a 400.
 
 * **Bounded, and said so**: `authzen.searchMaxCandidates` caps the decisions;
   past it, or with a candidate the PDP could not decide, `context.incomplete`
@@ -363,7 +435,7 @@ names. A type with no source answers empty results, never a 400.
 it may perform an RFC 8693 exchange (rcbj, 2026-10-30, decision 1);
 direction B — this AS consulting an external PDP — is not built. The
 binding's draft and the Token Issuance Profile it builds on are on the
-ticket; `docs/authzen.md` is the public statement, with the fixed-rule
+ticket; `docs/v1.1.0/authzen.md` is the public statement, with the fixed-rule
 table (`authzen_exchange.ts`'s `FIXED_RULES`, which
 `tests/authzen_token_exchange.js` F3 holds to that page).
 
@@ -581,8 +653,28 @@ or the two drift with both suites green.
   `0046` included (`xacml-pep/CLAUDE.md` has the status mapping). Until the
   edge's next poll an application just switched on is still decided there
   from the root: the same convergence as the caller list, stated in
-  `docs/remote-pep.md`. An embedded FGA PDP in the edge remains future work;
+  `docs/v1.1.0/remote-pep.md`. An embedded FGA PDP in the edge remains future work;
   forwarding rules it out no more than it did.
+
+### The forward on the PEP's token (#1827's follow-up)
+
+**rcbj's decision 3 on the PEP token plan (2026-11-16): the edge PDP's
+forward is accepted on the PEP's DPoP-bound token under EVERY
+`authzen.callerAuthentication`, `mtls` included.** It is the same caller on a
+different credential, so it is scoped exactly as the certificate-holding
+PEP: `authenticate()` asks `xacml/pep_token.ts`'s `isPepToken()` first (a
+token this realm issued to `sts-remote-pep`), and `byPepToken()` reads it
+for this realm's `/access/v1` and `authzen:evaluate` and answers the caller
+as `kind: 'entry'`, the PEP's DN — what its certificate named — so
+`mayAsk()`'s AUTHZEN_PEPS and `scopeOf()`'s `stsAuthzenApplication` decide
+as before. **It must name a REMOTE_PEPS holder as well** (`0120`): every PEP
+shares the client, and the token is not a way for anybody else in
+AUTHZEN_PEPS to arrive. `authzen:evaluate` is not role-gated at issuance
+(AUTHZEN_PEPS authorizes no permission), so a non-PEP person can be issued
+one through `sts-remote-pep` and is refused here; AUTHZEN_PEPS is widened
+for nobody. A token of any other client goes through the realm's door as
+it always did. A refusal carries a `DPoP` challenge, not the Bearer one.
+`tests/remote_pep_token_door.js` Z.
 
 ### The callers the edge PDP admits (#1189)
 
@@ -685,16 +777,94 @@ header argues each. What a maintainer needs quickly:
   expired by `task()`) and the `authzen.access-requests` cluster job, realm
   scope, every minute, which also removes rows past `keepUntil` (a day after
   finishing, or the approval's end).
+* **A DELETED SUBJECT'S TASKS END WITH THEM (2026-11-16, #1612's rule: a
+  person deleted and made again under the same name inherits nothing).** A
+  task names its subject as the PEP sent it — a username, often — and
+  `verify()` matches that exactly, so a namesake was the subject of the
+  deleted person's approvals. `ldap_server.js`'s `forgetPersonHoldings()`
+  calls `forgetSubject()` with the username, the `urn:uuid:` subject and the
+  mail addresses: a pending task is cancelled and an approval revoked, each
+  with its audit row (actor `the directory`). They are found through a
+  SUBJECT INDEX, not a walk: `subject:<SHA-256 of the lower-cased id>` in
+  `authzen.accessRequestIndex` — the module's existing per-realm,
+  cell-tier store, so no new store and no new tier — holding that subject's
+  task ids and kept as long as the latest of them. `save()` writes it (one
+  get, a set only when it changes) and the sweep takes a removed task out.
+  **A task from before the index** is noted by the sweep job, which walks
+  every task already: the backfill, within a minute of the upgrade and never
+  on the delete path; a delete inside that minute misses such a task.
 * Not built: `evaluation_id` binding by reference, `approval.state`, the
   hashed binding, `form_url` / `request_schema_url`, `display`, BULK, ACTOR,
   CATALOG, a `failed` transition, and revocation from the portal (the console
   revokes). `tests/authzen_access_request.js` holds it in process and
   `tests/protocol/sts_authzen.js` section 9 over HTTP.
 
+## THE REQUEST SHAPES ARE THE MODEL'S (#1579, 2026-11-10)
+
+**`models/authzen/authzen.tsp` is the source of every request this API
+reads**: the access evaluation (section 6), the evaluations request with its
+`options` and `evaluations_semantic` (section 7), the three searches with
+`page` (section 8), and the access request submission (#1180). Each property
+is a member, checked IN THE ORDER IT IS DECLARED, because the order decides
+which refusal a request with two wrong members gets. Its TypeSpec type says
+what it is — a model (an object, its own properties checked the same way), a
+bounded `string`, `string[]`, an integer, a union of string literals (its
+values), `unknown` (read by somebody else) or `never` (a member the request
+must not carry) — and whether it must be present; `@field` says the bounds,
+the error code and the sentence a refusal carries. `@request` gives the
+request's own sentences (a body that is not an object, a member it does not
+take) and the codes of each kind, and since #936 `unknownMembers:
+"ignored"`, which every request here carries: a member no field names is
+accepted and not read, at every depth, and the request has no `stray`
+sentence (`checkAuthzen()` refuses one). **Every sentence is the one the
+hand-written reader sent, word for word**, and `tests/authzen_model_wire.js`
+holds 326 recorded answers to it, in a development and a product realm with
+each switch turned.
+
+* **The pass, in `authzen_model.ts`'s `read()`**: the body an object, the
+  leading members it must not carry (BULK's `items`), then (only on a
+  request whose `unknownMembers` is `refused`, which none here is since
+  #936) the first member it does not take, then every field. A field with a
+  `refusal` answers it for everything it holds, at the request's type code
+  unless it names its own (`context.approval`, `page`, a search's entity).
+* **Deferred fields are read where the code reads them**, with `field(id,
+  path, value)`: a submission's `denial`, `requested_access` and `callback`
+  (and `callback.events`) sit between checks that need state — the binding
+  token, the clock, the registered callbacks — and moving them would change
+  which refusal comes first. `item(id, path, value)` is a batch item, refused
+  alone.
+* **The lists the code branches on are the model's**: the reserved context
+  members (`authzen_catalogue.ts`'s `RESERVED_CONTEXT` is the evaluation's
+  `Context`, in its check order, which since #1579 is the order the console's
+  catalogue tab lists them too), the obligation types and their required and
+  array properties (`authzen_members.tsp`'s `obligation` sets), the batch
+  semantics and the default one, the task statuses and the callback events
+  (the terminal statuses), and the problem types' URIs and titles.
+* **Every answer is HELD, never reshaped**: the metadata, an evaluation's and
+  a batch's answers (each item, its Decision Context and its `context.error`
+  through the nested sets), a search's answer and page, the error object,
+  every problem, every task response and the callback's payload. A member a
+  closed set does not name, a wrong type or value, or a missing required
+  member is logged under STS-AUTHZEN-0116 and the answer is sent as it was
+  built.
+
+**What stays in the code, because it needs state**: the catalogue's rows and
+their value rules (`xacml/xacml_attribute_rows.ts`), the token-exchange
+binding's fixed context (`authzen_exchange.ts`'s `strayContext()`, which
+depends on `authzen.tokenExchange`), the caller's application scope, the
+batch's `maxBodyBytes` and `maxEvaluations`, a search's page token against the
+request it continues, a submission's binding token, `expires_at`, freshness,
+idempotency, scope and registered callbacks, and `requested_until` (the
+clock). The access request's cancellation body is read leniently and never
+refused, so it is not a request in the model. `tests/model_authzen.js` holds
+the build's refusals, that `authzen/` writes no shape check or sentence of its
+own, and every recorded answer to its member set.
+
 ## Error codes
 
-`STS-AUTHZEN-*` is its own subsystem (`common/error_codes.js`). 0001–0009 are
-the request's shape and values, 0010–0012 the catalogue's writes, 0013–0014
+`STS-AUTHZEN-*` is its own subsystem (`common/error_codes.js`). 0001–0008 are
+the request's shape and values (0009, a member AuthZEN 1.0 does not define,
+is retired by #936), 0010–0012 the catalogue's writes, 0013–0014
 the API being off, 0015–0023 the caller's authentication, 0024–0027 its
 admission and scope, 0028–0029 the result, 0030–0034 the tab's acts, 0035
 the metadata path, 0036–0039 the batch, 0046 an application's fine-grained
@@ -707,4 +877,9 @@ binding, 0088–0090 and 0094–0095 the approvers' and the tab's acts, 0091–0
 the callback, the job and the mail; 0100–0115 the token-exchange binding
 (#1181): 0100–0102 a tuple's shape, 0103–0107 a fixed-rule `false`, 0108–0110
 the exchange question's answer, 0111–0113 a scope's, 0114 an expired subject
-token, 0115 the no-broadening check.
+token, 0115 the no-broadening check; 0116 an answer that is not its model's
+(#1579); 0117 a request whose `Content-Type` is not `application/json`
+(#936); 0118–0121 a remote PEP's DPoP-bound token from `sts-remote-pep`
+(#1827's follow-up): 0118 refused as a token, 0119 without
+`authzen:evaluate`, 0120 naming no entry or one outside REMOTE_PEPS, 0121
+`xacml.pepAuthentication` set to `certificate`.

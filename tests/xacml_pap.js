@@ -583,6 +583,46 @@ function checkMatchTypeFollowsFunction(t) {
   log.debug("Leaving checkMatchTypeFollowsFunction().");
 }
 
+// A literal that is not a value of its datatype is refused at the edit,
+// for a Match and for a plain value, and the policy is left as it was. It
+// used to be stored, and only a decision said so, as a syntax-error status
+// that a deny-unless-permit policy turns into a plain Deny.
+function checkIllTypedLiteralsRefused(t) {
+  log.debug("Entering checkIllTypedLiteralsRefused().");
+  const policy = templates.build('rbac', {}, { name: 'literals' }).policy;
+  const path = 'rules.0.target.anyOf.0.allOf.0.matches.0';
+  const before = JSON.stringify(policy);
+  const refused = editor.applyEdit(policy, path, 'edit-match', {
+    matchId: F1 + 'integer-equal', value: 'notanint'
+  });
+  t.check(!refused.ok && /not a valid integer/.test(refused.why || ''),
+          'an integer Match with a non-integer literal is refused',
+          refused.why || '');
+  t.equal(JSON.stringify(policy), before,
+          'the refused Match edit left the policy untouched');
+  const accepted = editor.applyEdit(policy, path, 'edit-match', {
+    matchId: F1 + 'integer-equal', value: '42'
+  });
+  t.check(accepted.ok, 'a valid integer literal is accepted',
+          accepted.why || '');
+  const added = editor.applyEdit(policy, 'rules.0', 'add-condition', {});
+  t.check(added.ok, 'a condition can be added to hold a plain value',
+          added.why || '');
+  const valuePath = 'rules.0.condition.args.0';
+  const located = editor.nodeAt(policy, valuePath);
+  t.equal(located && located.node && located.node.kind, 'value',
+          'the new condition\'s first argument is a plain value');
+  const beforeValue = JSON.stringify(policy);
+  const badValue = editor.applyEdit(policy, valuePath, 'edit-value', {
+    lexical: 'soon', type: 'http://www.w3.org/2001/XMLSchema#dateTime'
+  });
+  t.check(!badValue.ok, 'an edit-value that is not a dateTime is refused',
+          badValue.why || '');
+  t.equal(JSON.stringify(policy), beforeValue,
+          'the refused value edit left the policy untouched');
+  log.debug("Leaving checkIllTypedLiteralsRefused().");
+}
+
 // ---------------------------------------------------------------------------
 // THE PAP'S ACTIONS, AGAINST THE REAL STORE.
 // ---------------------------------------------------------------------------
@@ -622,6 +662,92 @@ function checkPapActions(t) {
           'an unknown action is refused, and the refusal lists every action ' +
           'there is');
   log.debug("Leaving checkPapActions().");
+}
+
+
+// ---------------------------------------------------------------------------
+// A PATH NAMES THE POLICY'S OWN MEMBERS, AND NOTHING THEY INHERIT (2026-11-12).
+//
+// The fuzz stage of a full run sent `add-rule` a path that walked to
+// `Object.prototype`. The edit "added" the rule there, answered "Rule added.",
+// and every object in the process inherited an enumerable `rules`: every
+// closed response model then refused every answer of every operation, and
+// compiling a new one overflowed the stack. Every such path is refused here,
+// by every kind of edit, directly and through the PAP action the API calls,
+// and nothing anywhere inherits a member afterwards.
+// ---------------------------------------------------------------------------
+function inheritedEnumerables() {
+  log.debug("Entering inheritedEnumerables().");
+  const found = [];
+  [{}, [], Object.create(Object.prototype)].forEach(function (probe) {
+    for (const name in probe) {
+      if (!Object.prototype.hasOwnProperty.call(probe, name)) {
+        found.push(name);
+      }
+    }
+  });
+  log.debug("Leaving inheritedEnumerables().");
+  return found;
+}
+
+function checkPathsStayOwn(t) {
+  log.debug("Entering checkPathsStayOwn().");
+  const hostile = ['__proto__', 'constructor', 'constructor.prototype',
+                   'rules.__proto__', 'rules.0.__proto__',
+                   'rules.0.constructor.prototype', 'rules.constructor',
+                   'rules.length', 'toString', 'hasOwnProperty',
+                   'target.__proto__', 'rules.-1', 'rules.1e0'];
+  const actions = [['add-rule', { effect: 'Deny' }],
+                   ['edit-rule', { id: 'urn:x', effect: 'Deny' }],
+                   ['edit-policy', { description: 'polluted' }],
+                   ['add-target-anyof', { value: 'x',
+                                          attributeId: 'employeeType' }],
+                   ['add-condition', {}],
+                   ['add-rule-obligation', { on: 'Permit' }],
+                   ['remove', {}]];
+  let refusedAll = true;
+  hostile.forEach(function (one) {
+    actions.forEach(function (action) {
+      const policy = templates.build('rbac', {}, { name: 'own' }).policy;
+      const result = editor.applyEdit(policy, one, action[0], action[1]);
+      if (result.ok) {
+        refusedAll = false;
+        t.check(false, action[0] + ' at "' + one + '" is refused',
+                result.what);
+      }
+    });
+  });
+  t.check(refusedAll, 'every edit at a path through an inherited member is ' +
+          'refused (' + hostile.length * actions.length + ' tried)');
+  t.equal(inheritedEnumerables().join(','), '',
+          'and no object in this process inherits a member afterwards');
+
+  const created = pap.combinedAction({
+    action: 'create-from-template', template: 'abac', name: 'pap-own',
+    p_subjectAttribute: 'employeeType', p_subjectValue: 'staff'
+  });
+  t.check(created.ok, 'a policy to edit through the PAP',
+          created.why || created.what);
+  ['__proto__', 'constructor.prototype'].forEach(function (one) {
+    const through = pap.combinedAction({ action: 'add-rule',
+                                         policy: 'pap-own', path: one });
+    t.check(!through.ok, 'the PAP action refuses add-rule at "' + one + '"',
+            through.why || through.what);
+  });
+  t.equal(inheritedEnumerables().join(','), '',
+          'and still nothing inherits a member');
+  t.equal(({}).rules, undefined, 'an empty object has no rules');
+
+  const policy = templates.build('rbac', {}, { name: 'own' }).policy;
+  const count = policy.rules.length;
+  t.check(editor.applyEdit(policy, '', 'add-rule', {}).ok &&
+          policy.rules.length === count + 1,
+          'the root path still takes a rule');
+  t.check(editor.applyEdit(policy, 'rules.0', 'edit-rule',
+                           { id: 'urn:test:own', effect: 'Deny' }).ok,
+          'and an index into its own rules still resolves');
+  pap.combinedAction({ action: 'delete', name: 'pap-own' });
+  log.debug("Leaving checkPathsStayOwn().");
 }
 
 
@@ -1076,12 +1202,14 @@ function run(t) {
   checkMenuAndApiAgree(t);
   checkEdits(t);
   checkMatchTypeFollowsFunction(t);
+  checkIllTypedLiteralsRefused(t);
   checkPolicySets(t);
   checkVariables(t);
   checkSelectorsAndFunctions(t);
   checkOptionalSyntax(t);
   checkCombinerParameters(t);
   checkPapActions(t);
+  checkPathsStayOwn(t);
   log.debug("Leaving run().");
 }
 

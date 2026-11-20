@@ -57,5 +57,12 @@
   "checks.result": "结果",
   "checks.detail": "详细信息",
   "checks.passed": "通过",
-  "checks.failed": "失败"
+  "checks.failed": "失败",
+  "withheld.title": "未执行双向认证",
+  "withheld.heading": "未执行双向认证",
+  "withheld.body": "票据已被接受，但 AP-REP 被扣留，因为请求了 <code>?mutual=off</code>。没有任何东西证明是哪台服务器作出了应答，也没有启动会话。",
+  "withheld.principal": "票据指明的是 <code>{principal}</code>。",
+  "mutualClosed.title": "该测试控制已关闭",
+  "mutualClosed.heading": "该测试控制已关闭",
+  "mutualClosed.body": "扣留 AP-REP（<code>?mutual=off</code>）仅在开发模式下开放。票据未被接受，也没有启动会话。"
 }

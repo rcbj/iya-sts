@@ -346,7 +346,16 @@ function childMain() {
        'invalid_client_metadata', 'an http jwks_uri'],
       [{ redirect_uris: ['https://rp.or.example/cb'],
          initiate_login_uri: 'http://rp.or.example/login' },
-       'invalid_client_metadata', 'an http initiate_login_uri']
+       'invalid_client_metadata', 'an http initiate_login_uri'],
+      // A member of the wrong JSON type that no specific refusal tests
+      // (rcbj on #1579): accepted and only recorded until 2026-11-11.
+      [{ redirect_uris: ['https://rp.or.example/cb'],
+         grant_types: 'authorization_code' },
+       'invalid_client_metadata', 'grant_types as a string'],
+      [{ redirect_uris: ['https://rp.or.example/cb'], client_name: 5 },
+       'invalid_client_metadata', 'client_name as a number'],
+      [{ redirect_uris: ['https://rp.or.example/cb'], contacts: [5] },
+       'invalid_client_metadata', 'contacts holding a number']
     ];
     for (const one of refusals) {
       r = await request(port, 'POST', '/oauth2/register', { json: one[0] });

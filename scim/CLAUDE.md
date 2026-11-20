@@ -7,7 +7,7 @@ into the LDAP directory, entry for entry, with **no store of its own**.
 |---|---|
 | `scim.ts` | The seventeen routes, and the scimmy resources behind them. |
 | `scim_auth.ts` | Who is asking. The first authentication this service ENFORCED, and one of several now (the root `CLAUDE.md` lists them). |
-| `scim_map.ts` | Which LDAP attribute each SCIM member is, in both directions. |
+| `scim_map.ts` | Which LDAP attribute each SCIM member is, in both directions — the conversions, over the mapping tables `models/scim/scim.tsp` states (#1579). *THE SCHEMAS AND THE MAPPING ARE THE MODEL'S*, below. |
 | `scim_realm_schema.ts` | **The realm's half of the schemas (#699)**: its custom attributes as the `CustomAttributes` extension, and its attribute policy's `required` on what `/Schemas` and `/ResourceTypes` answer. *THE REALM'S SCHEMAS*, below. |
 | `scim_client.ts` | **The other direction (#552)**: the OUTBOUND SCIM client — this realm's people and groups pushed to remote service providers. *The outbound SCIM client*, below. |
 | `scim_client_rules.ts` | Its closed vocabularies, its address rule, its retry list and its reading of an Error body: a leaf, so `common/applications.js` and the API can offer the sets without loading the client. |
@@ -267,8 +267,11 @@ into the LDAP directory, entry for entry, with **no store of its own**.
    is a set of tick boxes. This says which LDAP attribute each SCIM MEMBER is, in
    both directions, and there is nothing to tick: RFC 7643 decides what a User
    carries, so the only question left is where each member is stored. That is a
-   mapping, and a mapping is a table. It registers no route and requires
-   `helpers.js` and `vc_claims.ts`, neither of which requires it back.
+   mapping, and a mapping is a table — **the model's since #1579**
+   (`models/scim/scim.tsp`), which this reads from `models/generated/scim.json`
+   through `common/model_tables.ts`. It registers no route and requires
+   `helpers.js`, `model_tables.ts` and `vc_claims.ts`, none of which requires it
+   back.
 
    **THE CONVERSIONS ARE HERE RATHER THAN IN `scim.ts` FOR ONE REASON**, and it
    is the route-order one: `admin.js` draws the mapping table on `/admin/scim`
@@ -782,15 +785,18 @@ holds each fix in process. What they found, and where each fix lives:
   `nickName`, `locale`, `timezone`, `ims`, `photos`, `entitlements`, `roles`,
   `x509Certificates`, `name.middleName`, `name.honorificSuffix`, `costCenter`,
   `manager.displayName` and every `display` and `primary` of a multi-valued
-  member have no row in `scim_map.ts` — each was accepted, answered 201, and
-  gone on the next read. `scim.ts`'s `narrowSchemas()` takes them off the
-  definitions (`NOT_PUBLISHED_*`), so `/Schemas` is the list of what is
-  supported (RFC 7643 section 7) and scimmy's coercion no longer pretends to
-  keep them. **A ROW IN `scim_map.ts` IS HOW ONE COMES BACK**, and it has to
-  come off the list in the same change. `password` stays published: it is
+  member have no mapping row — each was accepted, answered 201, and gone on
+  the next read. **The model does not write them** (`models/scim/scim.tsp`;
+  until #1579 `scim.ts`'s `narrowSchemas()` truncated them off scimmy's copies,
+  `NOT_PUBLISHED_*`), so `/Schemas` is the list of what is supported (RFC 7643
+  section 7) and scimmy's coercion no longer pretends to keep them. **The
+  build refuses one that comes back without a row** (`checkScim()`'s
+  *published and the directory has no place for it*), so A ROW IS HOW ONE
+  COMES BACK, written beside the attribute. `password` stays published: it is
   `writeOnly`/`returned: never`, and refusing a create that carries one would
   break provisioning clients for a member nothing reads back.
-* **`type` OFFERS ONLY THE TYPES A ROW STORES** (`CANONICAL_TYPES`): `emails`
+* **`type` OFFERS ONLY THE TYPES A ROW STORES** — the attribute's literal
+  type in the model, which the build holds to its rows' types: `emails`
   `work`, `phoneNumbers` `work` and `mobile`, `addresses` `work`. RFC 7643
   section 2.3.1 lets a provider restrict canonical values; a `home` email was
   silently dropped and is now refused 400 `invalidValue`. (scimmy's
@@ -818,7 +824,8 @@ holds each fix in process. What they found, and where each fix lives:
   attribute is 400 `invalidFilter` (`STS-SCIM-0082`). The comparison is still
   scimmy's.
 * **`schemas` IS RETURNED ALWAYS** — `?attributes=userName` sent resources
-  with none (RFC 7644 section 3.9).
+  with none (RFC 7644 section 3.9). It is a common attribute of the model's
+  (`CommonAttributes`), which replaces scimmy's on a core schema.
 * **`If-Match` ON A WRITE IS 412** (`preconditionRefusal()`, `STS-SCIM-0081`).
   There are no entity-tags, so no `If-Match` but `*` can be true (RFC 9110
   section 13.1.1); it used to be ignored, which `sendScim()`'s note already
@@ -844,6 +851,59 @@ holds each fix in process. What they found, and where each fix lives:
 be removed (above, *`active` IS THE ACCOUNT'S DISABLED STATE*); there is no
 ETag, now refused rather than ignored; and the members the directory cannot
 hold are unpublished rather than stored.
+
+## THE SCHEMAS AND THE MAPPING ARE THE MODEL'S (#1579, 2026-11-10)
+
+**`models/scim/scim.tsp` is the source of every schema `/Schemas` lists, of
+the User resource type's extensions `/ResourceTypes` lists, and of both
+mapping tables.** Each property is one RFC 7643 attribute: its TypeSpec type
+states the attribute's type, multi-valued (an array), required (not
+optional), sub-attributes (a model) and canonical values (string literals);
+`@scimAttribute` states mutability, returned, uniqueness, caseExact,
+referenceTypes and the description; `@maps` the directory attribute, the
+row's kind, type, citation and note (`models/lib/scim_lib.*`). The image
+build writes `models/generated/scim.json`; `scim_map.ts` reads its rows,
+URNs and own-type prose, and `scim.ts`'s `installSchemas()` builds scimmy's
+definitions from its schemas — replacing the attributes of scimmy's shipped
+User, Group and EnterpriseUser (a core schema's common attributes too), and
+constructing the iya-sts extension and the realm's `CustomAttributes` shell
+(`scim_realm_schema.ts` reads its URN, name and description). **So the
+request validation is the model as well**: every POST, PUT and PATCH body is
+coerced through those definitions, and that coercion is what refuses a
+member of the wrong type, a non-canonical value and a missing required
+attribute. What `scim.ts` checks by hand — the `__proto__` refusal and the
+query bounds — is not a shape of a resource, and stays there.
+
+**The build refuses** (`checkScim()`, held by `tests/model_scim.js`): a row
+kept in an attribute the person (User) or group (Group) object does not
+declare; a type a multi-valued member offers that no row stores, or the
+reverse; a published leaf with no row on itself, a sibling or an ancestor
+(#206; a write-only one is fine); a reference without `referenceTypes`; a
+`resource`/`shipped` schema scimmy has no class for; an extension that is not
+declared; rows out of sequence; a required row with no `section` for its
+refusal. A Group's `scimExternalId`, written since SCIM arrived, is declared
+on the group object since; it and the person's are in `names.tsp`'s own
+list, which replaced `scim_map.ts`'s `OWN_NAMES`.
+
+**What stays in code, and why**: the conversions themselves (`kind` is the
+switch they branch on), the `postalAddress` transform's two functions (a row
+names it; a function is not a value), the padding the filter matcher needs
+(but WHICH members are padded is the model's complex attributes), and
+scimmy's own spelling of two characteristics (`mutable: false`, a write-only
+attribute taken only `in`, a `uniqueness` of `false` for `unpublished`),
+which `scimmyConfig()` translates. `/ServiceProviderConfig` is not a schema
+of resources and is still `scim.ts`'s and `scim_auth.ts`'s.
+
+**THE WIRE DID NOT CHANGE, AND A TEST HOLDS IT**: `tests/scim_model_wire.js`
+recorded, from the image of the tree before the switch, every definition
+attribute by attribute (what `/Schemas` draws and what the coercion reads),
+the published mapping, the four conversions on fixed inputs, and a scripted
+conversation with `/scim/v2` — discovery, a full User and Group through
+create, read, filter, PUT, PATCH and delete, and the refusals with their
+status, `scimType` and `detail` — in `tests/scim_model_wire.snapshot.json`.
+Every build is compared to it, run-to-run values aside. A change MEANT to
+change the wire rewrites the file (`SCIM_WIRE_PRINT=1 node
+tests/scim_model_wire.js`, in the tests image) in the same commit.
 
 ## A startIndex past totalResults is an empty page (#354, 2026-10-18)
 
@@ -874,7 +934,7 @@ count stop stays: it is what ended the loop while the page repeated.
 Everything above is a SERVICE PROVIDER. `scim_client.ts` is a CLIENT of
 somebody else's: per realm, any number of clients, each pushing this realm's
 people and groups to one remote SCIM service provider over RFC 7644. rcbj's
-decisions are on #552 and the user's half is `docs/scim.md`, *The outbound
+decisions are on #552 and the user's half is `docs/v1.1.0/scim.md`, *The outbound
 SCIM client*; what follows is why it is built the way it is.
 
 **A CLIENT IS AN APPLICATION ENTRY, NOT A SETTING AND NOT A STORE OF ITS
@@ -921,6 +981,26 @@ to retry and the retry sends the current state anyway. **Each client has its
 own retry and dead-letter queue** — its rows of the one store, by
 `clientId`: a store is per realm at its declaration and a client is a runtime
 entry, so a store per client cannot be declared.
+
+**AND SO A ROW MAY NEVER REACH A PROCESS AHEAD OF ITS ENTRY (run #500,
+2026-11-18).** A data-free row is only right if whoever sees it can read the
+change it was queued for, and against a shared store that did not hold: the
+directory flush and the minted flush the row rides are two transactions, the
+minted one could commit first, and a change-log pull applies a page row by
+row with turns between. In run #500's `cluster` mode a title set through
+node A was queued there; node B's deliver-now saw the row ~200 ms later, read
+the person from a replica without the title, PUT the old one and marked the
+row sent — `changedAt` was before the attempt, so nothing requeued it. A LOST
+UPDATE, every queue reading empty (`sts_scim_client` section 3). Two halves
+close it, and each needs the other: the WRITER writes a change's rows only
+once the directory has committed what was dirty (`queueAfterCommit()`,
+batched per flush, and at once where nothing commits later — memory, a
+stub), so the row's change-log row follows the entry's; and the SENDER's
+sweep takes a read barrier (`persistence.syncNow()`, through the queue's
+`beforeAttempts` hook) before attempting what it found due, so everything
+committed before it — that entry included — is applied first.
+`tests/scim_client.js` T holds both in one process; the cross-node race
+itself is held only by the `cluster` mode's run of `sts_scim_client`.
 
 **TWO THINGS ABOUT THAT KEY WERE WRONG UNTIL 2026-10-13**, both because every
 other kind of the queue keys its rows by a RANDOM id and this one keys by a
@@ -1002,6 +1082,23 @@ section of `tests/scim_client.js`:
 * a 409 ADOPTS only on `scimType` `uniqueness`; any other 409 is a dead
   letter — adopting a resource on a conflict the provider did not call
   uniqueness would be overwriting somebody else's resource on a guess;
+* **and never ANOTHER ENTRY'S resource (2026-11-16, #1612's rule: a person
+  deleted and made again under the same name inherits nothing).** A person
+  deleted under `deprovision: deactivate` leaves their User there, inactive,
+  with their `entryUUID` as `externalId`; a person made again under the name
+  has a new one, so the externalId search finds nothing, the `userName`
+  search found the deleted person's User, and the PUT handed it — and
+  everything the service provider kept under it — to the namesake. `create()`
+  now compares: a resource found by `userName` or `displayName` whose
+  `externalId` is set and is not this entry's is not adopted, not deleted (the
+  operator chose to keep it) and not retried — a dead letter,
+  `STS-SCIMC-0035`; the operator removes it there, or chooses
+  `deprovision: delete`. A resource with NO `externalId` is adopted as before:
+  one somebody made there, which no entry ever claimed. A resource carrying
+  ANOTHER client's `externalId` is refused the same way, which it should
+  always have been — RFC 7643 section 3.1 makes `externalId` the client's
+  own identifier. Nothing linked changes: a person already linked is found
+  by the link and never reaches the search (`tests/scim_client.js` M3);
 * a REQUIRED extension from `/ResourceTypes` is honoured: the enterprise one is
   added, empty if need be (RFC 7643 section 4.3 requires none of its
   attributes), and any other is a dead letter naming it (`STS-SCIMC-0029`) —
@@ -1065,7 +1162,7 @@ cap on a `Retry-After`; and the summary log line (`STS-SCIMC-0013`).
 
 rcbj's three decisions are on #553 (one jurisdiction attribute per client,
 providers without PATCH supported through the owner cell, a GLOBAL pause);
-the user's half is `docs/scim.md`, *In a service deployed as cells*. **In a
+the user's half is `docs/v1.1.0/scim.md`, *In a service deployed as cells*. **In a
 service that is one cell every answer below is the single-cell one** —
 `multi()` is false, `pushingCells()` is `['']`, the transfer question is not
 asked, no operation is called — and `tests/scim_client.js` runs unchanged to
@@ -1181,7 +1278,11 @@ residents' names and UUIDs, so they cross only where the policy releases
 that cell's residents to the asking cell (purpose `directory-list`, the
 Directory page's question); the counts always cross. `act()` routes the five
 cell acts: `cell` to that cell over `scim-client-act`, none to every cell
-(`cells` in the answer, a refusal only when no cell did it); a `cell` on a
+(`cells` in the answer, a refusal only when no cell did it; a `reconcile`
+also answers `mergedReconcile()`'s top-level counts — `users` and
+`deprovisioned` summed, `groups` the most one cell queued, because every
+pushing cell queues each group in scope for its own share — which until CI
+run #250 it did not, so `sts_scim_client` read nothing in cells); a `cell` on a
 client act, an unknown cell, or one cell's service, is `STS-SCIMC-0033`, an
 unreachable named cell `STS-SCIMC-0034`. The console's per-cell row carries
 `cell` on each act form, and a dead letter's Retry in another cell's list

@@ -1,0 +1,18 @@
+{
+  "title": "SAML 1.1",
+  "heading": "SAML 1.1",
+  "sub": "Die beiden Browser-Profile und der SAML-Responder hinter einem von ihnen",
+  "lead": "Dieser Dienst stellt Assertions von SAML 1.1 über drei Zugänge aus, und dies ist der neueste davon: die <strong>Browser-Profile</strong>, bei denen sich eine Person anmeldet und eine Assertion eine Relying Party erreicht. Die beiden anderen sind {wsfed}, das dieselbe Assertion in ein <code>wresult</code> hüllt, und {wstrust}, das eine in einem <code>RSTR</code> zurückgibt. Alle drei rufen denselben Erzeuger auf, daher erscheint ein auf <code>/admin/saml-attributes</code> konfiguriertes Attribut in allen dreien.",
+  "endpoints": "Die Endpunkte",
+  "endpoint": "Endpunkt",
+  "what": "Was es ist",
+  "sso": "der Inter-Site-Transfer-Dienst — die Bezeichnung in SAML 1.1 für das, was SAML 2.0 den Single-Sign-On-Dienst nennt",
+  "responder": "der SAML-Responder über SOAP. Löst Artefakte auf, gibt Assertions anhand der AssertionID zurück und beantwortet AttributeQuery und AuthenticationQuery — die Attributautoritäts-Hälfte von SAML 1.1",
+  "metadata": "signierte Metadaten. Ein Metadatendokument von SAML 2.0, das einen Identitätsanbieter von SAML 1.1 beschreibt, und genau das, was jede Relying Party tatsächlich verwendet",
+  "different": "Was es von SAML 2.0 unterscheidet",
+  "noRequest": "<strong>Keine Anfragenachricht.</strong> Kein AuthnRequest, daher identifiziert sich die Relying Party nie, fordert nie ein Binding, ein NameID-Format oder einen Authentifizierungskontext an und erhält nie einen Fehler — es gibt nichts zu beantworten.",
+  "noSlo": "<strong>Kein Single Logout.</strong> Das kam mit SAML 2.0.",
+  "spellings": "<strong>Durchgängig andere Schreibweisen.</strong> <code>AssertionID</code> statt <code>ID</code>, ein Attribut <code>Issuer</code> statt eines Elements, ein Statuscode, der ein QName und kein URI ist, <code>AudienceRestrictionCondition</code> statt <code>AudienceRestriction</code>, und eine Signatur, die in einer Assertion ZULETZT und in einer Antwort ZUERST steht.",
+  "artifact": "<strong>Ein Artefakt von 42 Byte</strong>, Typ 0x0001, während das von SAML 2.0 44 Byte hat und vom Typ 0x0004 ist.",
+  "theMetadata": "Die Metadaten"
+}

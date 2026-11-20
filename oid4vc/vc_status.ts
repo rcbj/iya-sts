@@ -32,6 +32,12 @@
 //     credential is both a JWT and a W3C credential, so it carries both
 //     mechanisms and a verifier may use either.
 //
+// **AN mdoc NAMES A SECOND CWT** (#1862). The index is the one above.
+// `/oid4vci/status-lists/mdoc` is that bitstring signed by the document
+// signer, `x5chain` its certificate and `sub` that URI. The JOSE list
+// and the aggregation document are unchanged: the aggregation still
+// names the one JOSE list, and the mdoc names its own URI.
+//
 // **ONE INDEX PER CREDENTIAL, THE SAME IN EVERY LIST.** A credential is given
 // one random index (draft section 13.2: an index that counts up says how many
 // credentials came before), and that index is its position in the Token
@@ -133,6 +139,11 @@ const ALLOCATED_LOOKBACK_DAYS = 800;
  * The path of the realm's Token Status List.
  */
 const TSL_PATH = '/oid4vci/status-lists/1';
+// The same bitstring, signed by the mdoc document signer (#1862). An
+// mdoc's Mobile Security Object names this URI. The JOSE list above is
+// unchanged: its signer has no x5chain, and a presented mdoc will not
+// accept it.
+const MDOC_TSL_PATH = '/oid4vci/status-lists/mdoc';
 /**
  * The path of the Status List Aggregation.
  */
@@ -334,6 +345,7 @@ interface VcStatusDeps {
   // #820: every artifact key the issued register marks revoked.
   revokedArtifactKeys: () => string[];
   signingKeyForAsync: typeof helpers.signingKeyForAsync;
+  credentialSignerForAsync: typeof helpers.credentialSignerForAsync;
   publishedKidFor: typeof helpers.publishedKidFor;
   certificateHeaderFor: typeof helpers.certificateHeaderFor;
   STS: typeof helpers.STS;
@@ -414,6 +426,7 @@ class VcStatus {
       artifactRevokedByKey: stats.artifactRevokedByKey,
       revokedArtifactKeys: stats.revokedArtifactKeys,
       signingKeyForAsync: helpers.signingKeyForAsync,
+      credentialSignerForAsync: helpers.credentialSignerForAsync,
       publishedKidFor: helpers.publishedKidFor,
       certificateHeaderFor: helpers.certificateHeaderFor,
       STS: helpers.STS,
@@ -478,6 +491,20 @@ class VcStatus {
   }
 
   /**
+   * Returns the mdoc Status List URI a credential issued under a base
+   * names (#1862).
+   *
+   * @param base - the credential issuer's URL, realm prefix included
+   * @returns the URI
+   */
+  tslMdocUri(base: string): string {
+    const { log } = this.deps;
+    log.debug("Entering VcStatus.tslMdocUri().");
+    log.debug("Leaving VcStatus.tslMdocUri().");
+    return String(base).replace(/\/+$/, '') + MDOC_TSL_PATH;
+  }
+
+  /**
    * Returns the Bitstring Status List credential URI for one purpose.
    *
    * @param base - the credential issuer's URL, realm prefix included
@@ -506,16 +533,27 @@ class VcStatus {
    *
    * @param chosen - the algorithm a credential's offer chose, or '' for the
    *   configured one
+   * @param issuer - the credential's `iss`, where it has one: checked
+   *   against what the credential signer's certificate names (#1880)
    * @returns `{ alg, key, kid, headerKid }`
    */
-  async signerAsync(chosen?: string): Promise<{ alg: string; key: any;
-                                                kid: string;
-                                                headerKid: string }> {
-    const { log, config, STS, signingKeyForAsync, publishedKidFor } =
-      this.deps;
+  async signerAsync(chosen?: string, issuer?: string): Promise<{
+      alg: string; key: any; kid: string; headerKid: string }> {
+    const { log, config, STS, signingKeyForAsync, publishedKidFor,
+            credentialSignerForAsync } = this.deps;
     log.debug("Entering VcStatus.signerAsync().");
     const alg = stsCrypto.signaturePolicy.underPqcOnly(String(chosen ||
       config.value('oid4vci.credentialSigningAlgorithm') || 'RS256'));
+    // THE DEDICATED CREDENTIAL SIGNER (#1880), unless the realm asked for
+    // 1.0.0's `realm-key`: a key of its own whose certificate names the
+    // issuer, for the credentials and the lists alike.
+    if (String(config.value('keys.credentialSigner') || 'dedicated') !==
+        'realm-key') {
+      const own = await credentialSignerForAsync(alg, { issuer: issuer || '' });
+      log.debug("Leaving VcStatus.signerAsync(). The credential signer.");
+      return { alg: alg, key: own.key, kid: own.kid,
+               headerKid: publishedKidFor(own.kid) };
+    }
     // THE CREDENTIALS GROUP'S KEY in a hybrid-groups realm (#68) — the list
     // and the credentials it describes are both `vci-credential`, so they
     // still sign with one key — else the per-algorithm key.
@@ -1021,6 +1059,40 @@ class VcStatus {
       key: signer.key, alg: signer.alg, kid: signer.headerKid });
     this.remember(slot, token);
     log.debug("Leaving VcStatus.tslCwt().");
+    return token;
+  }
+
+  // The same bitstring, signed by the document signer with its
+  // certificate in x5chain (#1862). `sub` is the mdoc list's own URI,
+  // which is what a presented mdoc's status reference names.
+  /**
+   * Builds the mdoc Status List Token: the shared bitstring, COSE_Sign1
+   * by the document signer, `x5chain` that certificate.
+   *
+   * @param req - the request
+   * @returns the CWT bytes
+   */
+  async tslMdocCwt(req: any): Promise<Buffer> {
+    const { log, now, baseUrlOf } = this.deps;
+    log.debug("Entering VcStatus.tslMdocCwt().");
+    const bytes = this.tslBytes();
+    const slot = this.reuse('tsl-mdoc-cwt', bytes);
+    if (slot.token) {
+      log.debug("Leaving VcStatus.tslMdocCwt(). Reused.");
+      return slot.token;
+    }
+    const authority = require('./mdoc_authority');
+    const base = String(baseUrlOf(req) || '').replace(/\/+$/, '');
+    const ensured = await authority.ensure(helpers.stsKeysFor(), base);
+    const iat = Math.floor(now() / 1000);
+    const token = await codec.statusListCwtAsync({
+      sub: this.tslMdocUri(base), iat: iat,
+      exp: iat + this.lifetimeSeconds(), ttl: this.ttlSeconds(),
+      bits: TSL_BITS, bytes: bytes,
+      aggregationUri: base + AGGREGATION_PATH,
+      key: ensured.dsKey, alg: 'ES256', x5chain: ensured.dsDer });
+    this.remember(slot, token);
+    log.debug("Leaving VcStatus.tslMdocCwt().");
     return token;
   }
 
@@ -1672,6 +1744,24 @@ class VcStatus {
         self.failed(res, e);
       });
     });
+    app.get(MDOC_TSL_PATH, function (req, res) {
+      log.debug('Entering GET ' + MDOC_TSL_PATH + '.');
+      if (self.historical(req, res)) {
+        log.debug('Leaving GET ' + MDOC_TSL_PATH + '. Historical.');
+        return;
+      }
+      self.tslMdocCwt(req).then(function (token: any) {
+        res.status(200).set('Content-Type', CWT_TYPE)
+          .set('Cache-Control', 'max-age=' + self.ttlSeconds())
+          .set('Vary', 'Accept')
+          .send(token);
+        log.debug('Leaving GET ' + MDOC_TSL_PATH + '.');
+      }).catch(function (e: any) {
+        log.debug("Caught in VcStatus.registerRoutes(): " +
+                  ((e && e.message) || e));
+        self.failed(res, e);
+      });
+    });
     app.get(AGGREGATION_PATH, function (req, res) {
       log.debug('Entering GET ' + AGGREGATION_PATH + '.');
       res.status(200).type('application/json')
@@ -1745,6 +1835,7 @@ export = {
   bitstringFormFor: slot.forward('bitstringFormFor'),
   LIST_SIZE: LIST_SIZE,
   TSL_PATH: TSL_PATH,
+  MDOC_TSL_PATH: MDOC_TSL_PATH,
   AGGREGATION_PATH: AGGREGATION_PATH,
   BITSTRING_PATH: BITSTRING_PATH,
   VALID: VALID,
@@ -1765,6 +1856,8 @@ export = {
   counts: slot.forward('counts'),
   newestRows: slot.forward('newestRows'),
   tslUri: slot.forward('tslUri'),
+  tslMdocUri: slot.forward('tslMdocUri'),
+  tslMdocCwt: slot.forward('tslMdocCwt'),
   bitstringUri: slot.forward('bitstringUri'),
   checkPresented: slot.forward('checkPresented'),
   forgetFetched: slot.forward('forgetFetched')

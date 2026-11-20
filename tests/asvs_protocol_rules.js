@@ -282,8 +282,16 @@ async function run(t) {
     return passwordPolicy.hashSpec({ hashAlgorithm: 'scrypt', scryptLogN: 15,
       scryptBlockSize: 8, scryptParallelism: 1 }).p;
   };
-  t.equal(scryptP(), 1, 'development hashes at the profile\'s p');
+  t.equal(scryptP(), 3,
+          'a profile at 2^15 with p=1 is hashed at p=3, OWASP\'s pair (#872)');
   t.equal(inProduct(scryptP), 3, 'product hashes at p=3 at the least');
+  const highP = function () {
+    return passwordPolicy.hashSpec({ hashAlgorithm: 'scrypt', scryptLogN: 17,
+      scryptBlockSize: 8, scryptParallelism: 1 }).p;
+  };
+  t.equal(highP(), 1, '2^17 with p=1 is already on OWASP\'s table');
+  t.equal(inProduct(highP), 3,
+          'product\'s floor is still p=3, including at 2^17');
   const budget = require(ROOT + '/common/request_budget');
   const at = Date.now();
   t.equal(budget.allowed('198.51.100.7', 2, at), true, 'a first request passes');

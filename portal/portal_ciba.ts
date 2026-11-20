@@ -54,7 +54,6 @@ import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import authn = require('../authn/authn');
 import config = require('../common/config');
-import validation = require('../common/validation');
 import ciba = require('../oauth-oidc/ciba');
 import stepUp = require('../oauth-oidc/step_up');
 // #432 phase 5: a waiting right's limits, drawn and read back as the approval
@@ -64,11 +63,10 @@ import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
+type AccountAnswering<K extends keyof IyaApi.Account.Operations> =
+  import('../types/account-api').AccountAnswering<K>;
 type AccountContext = import('../types/account-api').AccountContext;
 type AccountCaller = import('../types/account-api').AccountCaller;
-
-const vz = validation.z;
-const vt = validation.types;
 
 // GNAP's approval library, LAZILY (#432 phase 6): the portal is built at
 // 8a and GNAP at 23d, and requiring it here would load GNAP's stores and
@@ -91,15 +89,12 @@ interface PortalCibaDeps {
 // request's limit controls (`lim_t<k>r<r>_<member>`, #432 phase 5) are not
 // this form's, a receiver control repeats, and `LimitsForm.strip()` takes
 // them off before the schema is asked — as it did on the page. `right` is a
-// repeated checkbox, an array in a JSON body.
-const FORM = vz.object({
-  action: vt.oneOf(['approve', 'deny', 'set-code', 'clear-code',
-                    'gnap-approve', 'gnap-deny']),
-  id: vz.string().max(256).optional(),
-  code: vz.string().max(64).optional(),
-  right: vt.repeatable(vt.token).optional(),
-  subject: vt.opt(vt.oneOf(['yes']))
-});
+// repeated checkbox, an array in a JSON body. The schema is the operation's
+// own in the model (#1579), which names the limit controls as its
+// `patternProperties`, so the document says what the page sends; the strip
+// still comes first, because the request wrapper refuses a repeated value of
+// a member the schema does not declare repeatable.
+const FORM = ModelZod.body('account', 'answerSignInRequest');
 
 const QUERY = ModelZod.query('account', 'getSignInRequests');
 
@@ -279,7 +274,8 @@ class PortalCiba {
    * @param query - the checked query
    * @returns nothing
    */
-  getView(ctx: AccountContext, res: Json, caller: AccountCaller,
+  getView(ctx: AccountContext, res: AccountAnswering<'getSignInRequests'>,
+          caller: AccountCaller,
           query: Json): unknown {
     const { log, ciba } = this.deps;
     log.debug("Entering PortalCiba.getView().");
@@ -327,7 +323,8 @@ class PortalCiba {
    * @param caller - the signed-in person
    * @returns nothing
    */
-  async answer(ctx: AccountContext, req: Json, res: Json,
+  async answer(ctx: AccountContext, req: Json,
+               res: AccountAnswering<'answerSignInRequest'>,
                caller: AccountCaller): Promise<unknown> {
     const { log, ciba, authn, stepUp } = this.deps;
     log.debug("Entering PortalCiba.answer().");
@@ -376,12 +373,14 @@ class PortalCiba {
                       prompt: 'login' } });
       }
     }
+    // The session's authentication, read through the `Session` concept.
+    const proved = authn.sessionView(signOn);
     const answered = await ciba.answerAndNotify(body.id, who, approve, {
-      acr: signOn.acr || '', amr: signOn.amr || [],
-      authTime: signOn.authTime,
+      acr: proved.assuranceLevel || '', amr: proved.methods || [],
+      authTime: proved.authTime,
       // The tokens are issued ON this session (#239), so its end revokes
       // their refresh token as a sign-out does every grant's.
-      sessionId: signOn.id || '' });
+      sessionId: proved.id || '' });
     if (!answered.ok) {
       log.debug("Leaving PortalCiba.answer(). Refused.");
       return ctx.refuse(res, 400, 'STS-PORTAL-0089', answered.why);
@@ -480,13 +479,13 @@ class PortalCiba {
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/ciba',
         operationId: 'getSignInRequests', access: 'person', query: QUERY,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return self.getView(ctx, res, caller, input.query);
         } },
       { method: 'POST', path: ctx.BASE + '/ciba',
-        operationId: 'answerSignInRequest', access: 'person', handler: function (req: Json, res: Json,
-                           caller: AccountCaller): unknown {
+        operationId: 'answerSignInRequest', access: 'person',
+        handler: function (req, res, caller: AccountCaller): unknown {
           return self.answer(ctx, req, res, caller);
         } }
     ];

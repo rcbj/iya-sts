@@ -241,12 +241,35 @@ function saml2Fields(view) {
            samlSigningCertificate: [view.saml.certB64] };
 }
 
+// A SAML 1.1 relying party: both consumers, and the metadata that
+// registers each WITH its profile (samlAcsEndpoint), because the binding
+// registered for the shire a request names is what picks Browser/POST or
+// Browser/Artifact — nothing in the request does.
 function saml11Fields(view) {
   log.debug("Entering saml11Fields().");
+  const acs = function (index, profile, location) {
+    log.debug("Entering acs().");
+    log.debug("Leaving acs().");
+    return "<md:AssertionConsumerService index=\"" + index + "\" " +
+      "Binding=\"urn:oasis:names:tc:SAML:1.0:profiles:" + profile + "\" " +
+      "Location=\"" + location + "\"/>";
+  };
+  const metadata = "<md:EntityDescriptor xmlns:md=\"urn:oasis:names:tc:" +
+    "SAML:2.0:metadata\" entityID=\"" + view.saml.entityId + "\">" +
+    "<md:SPSSODescriptor protocolSupportEnumeration=\"urn:oasis:names:tc:" +
+    "SAML:1.1:protocol\"><md:KeyDescriptor use=\"signing\"><ds:KeyInfo " +
+    "xmlns:ds=\"http://www.w3.org/2000/09/xmldsig#\"><ds:X509Data>" +
+    "<ds:X509Certificate>" + view.saml.certB64 + "</ds:X509Certificate>" +
+    "</ds:X509Data></ds:KeyInfo></md:KeyDescriptor>" +
+    acs(1, "browser-post", view.urls.saml11Acs) +
+    acs(2, "artifact-01", view.urls.saml11Artifact) +
+    "</md:SPSSODescriptor></md:EntityDescriptor>";
   log.debug("Leaving saml11Fields().");
   return { samlEntityId: [view.saml.entityId],
-           samlAssertionConsumerService: [view.urls.saml11Acs],
-           samlSigningCertificate: [view.saml.certB64] };
+           samlAssertionConsumerService: [view.urls.saml11Acs,
+                                          view.urls.saml11Artifact],
+           samlSigningCertificate: [view.saml.certB64],
+           samlSpMetadata: metadata };
 }
 
 function wsfedFields(view, realm) {

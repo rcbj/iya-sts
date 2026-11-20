@@ -124,6 +124,8 @@ import vcStatus = require('./vc_status');
 // names its holder by, and which key types a proof can be made with. A pure
 // library over `common/` leaves.
 import vcDataIntegrity = require('./vc_data_integrity');
+// bbs-2023, the W3C cryptosuite every ldp_vc is secured with (#1878).
+import vcBbs = require('./vc_bbs');
 // DID RESOLUTION (#199) for a proof whose `kid` names a did:jwk or did:key
 // (#693 phase 2b): the DID document, so the method is checked against its
 // `authentication`. A pure library over `vc_data_integrity` and `vc_did`,
@@ -178,6 +180,7 @@ interface VcIssuerDeps {
   stsCrypto: typeof stsCrypto;
   config: typeof config;
   bbs2023: typeof bbs2023;
+  vcBbs: typeof vcBbs;
   dpop: typeof dpop;
   mode: typeof mode;
   errorCodes: typeof errorCodes;
@@ -519,6 +522,7 @@ class VcIssuer {
       stsCrypto: stsCrypto,
       config: config,
       bbs2023: bbs2023,
+      vcBbs: vcBbs,
       dpop: dpop,
       mode: mode,
       errorCodes: errorCodes,
@@ -668,11 +672,14 @@ class VcIssuer {
   //
   // `chosen` (2026-10-16): the algorithm the credential's offer chose on
   // `/portal/wallet`, or '' for the configured one.
-  private credentialSignerAsync(chosen?: string) {
+  //
+  // `issuer` (#1880): the credential's `iss`, which the credential signer's
+  // certificate is checked against (`common/credential_signer.js`).
+  private credentialSignerAsync(chosen?: string, issuer?: string) {
     const { log, vcStatus } = this.deps;
     log.debug("Entering VcIssuer.credentialSignerAsync().");
     log.debug("Leaving VcIssuer.credentialSignerAsync().");
-    return vcStatus.signerAsync(chosen || '');
+    return vcStatus.signerAsync(chosen || '', issuer || '');
   }
 
   private encValuesFrom(settingKey) {
@@ -824,7 +831,10 @@ class VcIssuer {
       // holder's Data Integrity proof at sign-in is verified against. It said
       // `did:key` while the credential carried a `did:jwk`.
       cryptographic_binding_methods_supported: ['did:jwk'],
-      credential_signing_alg_values_supported: ['bbs-2023'],
+      // `bbs-2023`, or `iya-bbs-2023-legacy` in a realm on the pre-1.1
+      // format (#1878) — never the old format under the W3C name.
+      credential_signing_alg_values_supported:
+        this.deps.vciSigningAlgsFor(VCI_LDP_CONFIG_ID),
       // Only the algorithms a Data Integrity cryptosuite exists for: a key of
       // any other kind could be bound and never proved at presentation, so
       // the credential would verify and never sign its holder in.
@@ -896,6 +906,28 @@ class VcIssuer {
     //                       which it varies, and computed from issuerDidFor() —
     //                       the same function the builders use — so the
     //                       advertisement and the credential cannot disagree.
+    // AN mdoc (#1862, OpenID4VCI 1.0 Appendix A.2). Written here, not as
+    // a clone: it has no sibling to copy, and its signing algorithms are
+    // COSE numbers. doctype stays on the configuration; display and
+    // claims move into credential_metadata with the others below.
+    const mdocIssue = require('./vc_mdoc_issue');
+    const mdocId = vcConfigs.VCI_MDOC_CONFIG_ID;
+    meta.credential_configurations_supported[mdocId] = {
+      format: 'mso_mdoc',
+      doctype: String(config.value('oid4vci.mdocDoctype') || ''),
+      scope: vcConfigs.VCI_MDOC_SCOPE,
+      cryptographic_binding_methods_supported: ['cose_key'],
+      credential_signing_alg_values_supported:
+        this.deps.vciSigningAlgsFor(mdocId).map(Number),
+      proof_types_supported: this.proofTypesSupported(['ES256']),
+      display: [{
+        name: 'Identity Credential',
+        locale: 'en-US',
+        background_color: '#12107c',
+        text_color: '#FFFFFF'
+      }],
+      claims: mdocIssue.claimPaths()
+    };
     meta.issuer_did = stsDid(req);
     vciConfigIds().forEach((id) => {
       const entry = meta.credential_configurations_supported[id];
@@ -1741,7 +1773,7 @@ class VcIssuer {
                                .concat([decoy])
                                .sort();
 
-    const signer = await this.credentialSignerAsync(signingAlg);
+    const signer = await this.credentialSignerAsync(signingAlg, issuerId);
     const times = this.unlinkableTimes(now);
     const payload: Record<string, any> = {
       iss: issuerId,
@@ -1843,7 +1875,7 @@ class VcIssuer {
     const rounded = this.unlinkableTimes(Math.floor(Date.now() / 1000));
     const now = rounded.nbf;
     const exp = rounded.exp;
-    const signer = await this.credentialSignerAsync(signingAlg);
+    const signer = await this.credentialSignerAsync(signingAlg, issuerId);
     // BOUND TO THE PERSON'S DID (#693 phase 2b), the credential IS about the
     // DID: VCDM 1.1's JWT encoding has `sub` "represent the id property
     // contained in the credentialSubject", and a DID there is the VCDM's own
@@ -1991,7 +2023,46 @@ class VcIssuer {
     return members;
   }
 
-  // A W3C credential with an EMBEDDED bbs-2023 proof (OID4VCI format ldp_vc).
+  // ---------------------------------------------------------------------------
+  // THE MANDATORY JSON POINTERS of an ldp_vc credential configuration
+  // (#1878): `oid4vci.ldpVcDidMandatoryPointers` for the did:web one,
+  // `oid4vci.ldpVcMandatoryPointers` for the plain one. Each pointer is held
+  // to RFC 6901 here; one that names nothing in the credential is refused
+  // by the cryptosuite as it groups the statements. Either refusal is the
+  // configuration's fault and is STS-VC-0180.
+  // ---------------------------------------------------------------------------
+  private ldpMandatoryPointers(configId: string): string[] {
+    const { log, config, vcBbs, errorCodes } = this.deps;
+    log.debug("Entering VcIssuer.ldpMandatoryPointers(). " + configId);
+    const key = this.deps.VCI_CONFIGS[configId] &&
+      this.deps.VCI_CONFIGS[configId].issuerDid
+      ? 'oid4vci.ldpVcDidMandatoryPointers'
+      : 'oid4vci.ldpVcMandatoryPointers';
+    const raw = config.value(key);
+    const pointers = (Array.isArray(raw) ? raw : String(raw || '').split(','))
+      .map(function (p: any): string { return String(p).trim(); })
+      .filter(function (p: string): boolean { return p.length > 0; });
+    void vcBbs;
+    for (const pointer of pointers) {
+      if (pointer.charAt(0) !== '/') {
+        log.error(errorCodes.tag('STS-VC-0180') + key + ' holds "' +
+                  pointer + '", which is not a JSON pointer (RFC 6901: ' +
+                  'it starts with "/"); no ' + configId + ' credential ' +
+                  'is issued until it is corrected.');
+        log.debug("Leaving VcIssuer.ldpMandatoryPointers(). Not a pointer.");
+        throw errorCodes.mark(new Error(key + ' holds "' + pointer +
+                                        '", which is not a JSON pointer'),
+                              'STS-VC-0180');
+      }
+    }
+    log.debug("Leaving VcIssuer.ldpMandatoryPointers(). " +
+              pointers.length + " pointer(s) from " + key + ".");
+    return pointers;
+  }
+
+  // A W3C credential with an EMBEDDED bbs-2023 proof (OID4VCI format ldp_vc):
+  // W3C Data Integrity BBS Cryptosuites v1.0's base proof since #1878
+  // (`vc_bbs.ts`), the mandatory statements chosen per configuration.
   //
   // Async, unlike the other two, because canonicalization is — which is why
   // buildCredentialFor and the credential endpoint are async as well.
@@ -2003,9 +2074,10 @@ class VcIssuer {
   // (`vc_data_integrity.ts`, rule 3at). This comment said did:key and "no
   // separate signature by the holder" until 2026-09-21, both since changed.
   private async buildLdpVc(subjectClaims, holderJwk, credentialIssuer,
-                            issuerDid, status, holderKid?: string) {
-    const { log, logArtifact, b64u, bbsKeyPair, bbs2023, VCI_JWT_TYPES
-            } = this.deps;
+                            issuerDid, status, holderKid?: string,
+                            configId?: string) {
+    const { log, logArtifact, b64u, bbsKeyPair, bbs2023, vcBbs,
+            VCI_JWT_TYPES } = this.deps;
     // VC Data Model 2.0 is DID-native, so naming the issuer by DID here is
     // ordinary rather than an extension. The verification method moves with it:
     // a DID URL fragment into this issuer's DID document instead of a
@@ -2055,47 +2127,87 @@ class VcIssuer {
       log.debug("Leaving VcIssuer. bbs-2023 is not signed here.");
       throw errorCodes.mark(new Error(unsignable.message), unsignable.code);
     }
-    const issued = await bbs2023.issue(unsecured, {
-      verificationMethod: bbsVerificationMethod,
-      created: new Date(now * 1000).toISOString()
-    }, keys.secretKey, keys.publicKey);
+    // THE PRE-1.1 FORMAT, IN A REALM THAT ASKED FOR IT (#1878, rcbj's
+    // decision): `oid4vc.bbs2023LegacyFormat`, off by default. The
+    // credential is signed as iya-sts 1.0 signed it, under the label
+    // `iya-bbs-2023-legacy`, and each one is logged (STS-VC-0183).
+    if (this.deps.config.value('oid4vc.bbs2023LegacyFormat')) {
+      const old = await bbs2023.legacyIssue(unsecured, {
+        verificationMethod: bbsVerificationMethod,
+        created: new Date(now * 1000).toISOString()
+      }, keys.secretKey, keys.publicKey);
+      const oldCheck = await bbs2023.legacyVerifyBase(old.credential,
+                                                      keys.publicKey);
+      if (!oldCheck.ok) {
+        log.error(errorCodes.tag('STS-VC-0079') + 'vc_issuer: the ldp_vc ' +
+                  'credential this issuer just built in the pre-1.1 format ' +
+                  'does not verify under the key that signed it (' + bbsKid +
+                  ').');
+        log.debug("Leaving VcIssuer.buildLdpVc(). It does not verify.");
+        throw new Error('the ldp_vc credential this issuer just ' +
+                        'built does not verify');
+      }
+      log.warn(errorCodes.tag('STS-VC-0183') + 'an ldp_vc credential was ' +
+               'issued in the pre-1.1 bbs-2023 format (' +
+               bbs2023.LEGACY_CRYPTOSUITE + ') because ' +
+               'oid4vc.bbs2023LegacyFormat is on in this realm.');
+      logArtifact('ldp_vc credential', 'after signing (pre-1.1 format, ' +
+                  old.statements.length + ' statements)', old.credential);
+      log.debug("Leaving VcIssuer.buildLdpVc(). The pre-1.1 format.");
+      return { credential: old.credential, disclosures: [],
+               payload: old.credential,
+               validFrom: unsecured.validFrom,
+               validUntil: unsecured.validUntil };
+    }
+    const pointers = this.ldpMandatoryPointers(
+      String(configId || this.deps.VCI_LDP_CONFIG_ID));
+    let credential: any;
+    try {
+      credential = await vcBbs.createBaseProof(unsecured, {
+        secretKey: keys.secretKey, publicKey: keys.publicKey,
+        verificationMethod: bbsVerificationMethod,
+        mandatoryPointers: pointers, proofPurpose: 'assertionMethod'
+      });
+    } catch (e) {
+      log.debug("Caught in VcIssuer.buildLdpVc(): " +
+                ((e && e.message) || e));
+      // A pointer that names nothing in this credential is the only thing
+      // the cryptosuite refuses a well-formed document for.
+      const why = String((e && e.message) || e);
+      if (/the JSON pointer|is not a JSON pointer|invalid escape/
+            .test(why)) {
+        log.error(errorCodes.tag('STS-VC-0180') + 'the ldp_vc mandatory ' +
+                  'pointers ' + JSON.stringify(pointers) + ' do not fit ' +
+                  'this credential: ' + ((e && e.message) || e));
+        log.debug("Leaving VcIssuer.buildLdpVc(). A pointer refused.");
+        throw errorCodes.mark(new Error('an ldp_vc mandatory pointer does ' +
+                                        'not fit the credential'),
+                              'STS-VC-0180');
+      }
+      log.debug("Leaving VcIssuer.buildLdpVc(). Not signed.");
+      throw e;
+    }
 
     // Verified immediately, by this service, before it is handed out: the
     // requirement is that the STS validate every crypto operation, and an
     // issuer that cannot verify its own output has no business emitting it.
-    const check = await bbs2023.verifyBase(issued.credential, keys.publicKey);
+    // The check regroups the statements with the proof's own HMAC key and
+    // pointers, so it covers the canonical form as well as the signature.
+    const check = await vcBbs.verifyBaseProof(credential, keys.publicKey);
     if (!check.ok) {
-      // WHY IT DID NOT VERIFY, because the two causes need different fixes
-      // and the refusal alone names neither (2026-09-22). `verifyBase()`
-      // re-derives the canonical statements and the header from the SIGNED
-      // document and swallows the library's own error, so a failure is either
-      // the document canonicalising differently than it did at signing — the
-      // statements or the header differ — or the key: same statements, same
-      // header, and a signature that does not verify under this public key.
-      // Both halves are here rather than in bbs2023.js, which was a vendored
-      // copy when this was written and is kept a plain cryptosuite (#663).
-      const signedStatements = (issued.statements || []) as string[];
-      const checkedStatements = (check.statements || []) as string[];
-      const differing = signedStatements.filter(function (one, i) {
-        return checkedStatements[i] !== one;
-      });
-      const headerSame = Buffer.from(issued.header || []).equals(
-        Buffer.from(check.header || []));
+      // WHY IT DID NOT VERIFY, because the causes need different fixes and
+      // the refusal alone names none (2026-09-22): the document hashing to a
+      // different header (it canonicalizes differently than it did at
+      // signing), or the same header and a signature that does not verify
+      // under this public key — the signature or the KEY.
       log.error(errorCodes.tag('STS-VC-0079') +
                 'vc_issuer: the ldp_vc credential this issuer just built ' +
                 'does not verify under the key that signed it (' + bbsKid +
-                '). ' + signedStatements.length + ' statement(s) signed, ' +
-                checkedStatements.length + ' re-derived, ' + differing.length +
-                ' differing; the proof header is ' +
-                (headerSame ? 'the same' : 'DIFFERENT') + '. ' +
-                (differing.length || !headerSame
-                  ? 'The document does not canonicalise the way it did when ' +
-                    'it was signed: ' +
-                    JSON.stringify(differing.slice(0, 3))
-                  : 'The document canonicalises the same and the proof ' +
-                    'header is the same, so what is left is the SIGNATURE ' +
-                    'or the KEY — which need different fixes, so the pair ' +
-                    'was tried against a control document: ' +
+                '): ' + check.detail + ' ' +
+                (check.headerMatches === false
+                  ? 'The document does not canonicalise the way it did ' +
+                    'when it was signed.'
+                  : 'So the pair was tried against a control document: ' +
                     (await this.bbsPairWorks(keys)) + ' Secret ' +
                     (keys.secretKey ? keys.secretKey.length : 0) +
                     ' byte(s), public ' +
@@ -2108,16 +2220,53 @@ class VcIssuer {
     }
 
     logArtifact('ldp_vc credential',
-                'after signing (' + issued.statements.length + ' ' +
-                'statements)',
-                issued.credential);
-    log.debug("Leaving VcIssuer.buildLdpVc(). " + issued.statements.length +
-              " canonical statement(s).");
-    return { credential: issued.credential, disclosures: [],
-             payload: issued.credential,
-             statements: issued.statements,
+                'after signing (' + check.nonMandatory + ' message(s), ' +
+                check.mandatory + ' mandatory statement(s))',
+                credential);
+    log.debug("Leaving VcIssuer.buildLdpVc(). " + check.nonMandatory +
+              " message(s), " + check.mandatory + " mandatory.");
+    return { credential: credential, disclosures: [],
+             payload: credential,
              validFrom: unsecured.validFrom,
              validUntil: unsecured.validUntil };
+  }
+
+  // An ISO mdoc (#1862). The document signer is minted on this call.
+  // The status index is the one allocate() just took, and the list it
+  // names is the document signer's CWT, not the JOSE Token Status List.
+  private async buildMdoc(subjectClaims, holderJwk, credentialIssuer,
+                          status, chosen) {
+    const { log, config } = this.deps;
+    log.debug("Entering VcIssuer.buildMdoc().");
+    const mdocIssue = require('./vc_mdoc_issue');
+    const authority = require('./mdoc_authority');
+    const issuer = String(credentialIssuer || '').replace(/\/+$/, '');
+    const ensured = await authority.ensure(helpers.stsKeysFor(), issuer);
+    const days = Number(config.value('oid4vci.mdocValidityDays'));
+    const span = Number.isFinite(days) && days >= 1 ? Math.floor(days)
+                                                     : 365;
+    const validFromMs = Date.now();
+    const validUntilMs = validFromMs + span * 86400000;
+    const elements = mdocIssue.elementsOf(subjectClaims, validFromMs,
+                                          validUntilMs);
+    const alg = Number(chosen);
+    const coseAlg = alg === -7 || alg === -9 ? alg : -7;
+    let statusRef = null;
+    if (status && status.key !== undefined && status.key !== null &&
+        String(status.key) !== '') {
+      statusRef = { idx: Number(status.key),
+                    uri: issuer + '/oid4vci/status-lists/mdoc' };
+    }
+    const built = await mdocIssue.issue({
+      holderJwk: holderJwk, elements: elements,
+      doctype: String(config.value('oid4vci.mdocDoctype') || ''),
+      namespace: String(config.value('oid4vci.mdocNamespace') || ''),
+      validFromMs: validFromMs, validUntilMs: validUntilMs,
+      signedMs: validFromMs, dsKey: ensured.dsKey, dsDer: ensured.dsDer,
+      coseAlg: coseAlg, status: statusRef
+    });
+    log.debug("Leaving VcIssuer.buildMdoc().");
+    return built;
   }
 
   // Mint whichever format the requested configuration names.
@@ -2147,11 +2296,11 @@ class VcIssuer {
                         type: ['VerifiableCredential'],
                         issuer: 'did:example:control',
                         credentialSubject: { id: 'did:example:subject' } };
-      const made = await bbs2023.issue(control,
+      const made = await this.deps.vcBbs.createBaseProof(control,
         { verificationMethod: 'did:example:control#bbs',
-          created: new Date().toISOString() },
-        keys.secretKey, keys.publicKey);
-      const ok = await bbs2023.verifyBase(made.credential, keys.publicKey);
+          secretKey: keys.secretKey, publicKey: keys.publicKey,
+          mandatoryPointers: ['/issuer'] });
+      const ok = await this.deps.vcBbs.verifyBaseProof(made, keys.publicKey);
       log.debug("Leaving VcIssuer.bbsPairWorks(). " + !!(ok && ok.ok));
       return (ok && ok.ok)
         ? 'the pair SIGNS AND VERIFIES a control document, so the halves ' +
@@ -2220,12 +2369,19 @@ class VcIssuer {
     // the one point every format and both endpoints meet: the portal
     // checked it when the offer was made, and the configured algorithm may
     // have changed since. A JOSE algorithm only — ldp_vc is bbs-2023.
-    const chosen = String(signingAlg || '');
+    let chosen = String(signingAlg || '');
+    // An mdoc is signed with COSE -7 unless the offer named -7 or -9
+    // (#1862). The JOSE compatibility check does not apply: those
+    // identifiers are not JWS algorithms.
+    if (format === 'mso_mdoc' && !chosen) {
+      chosen = '-7';
+    }
     // THE WALLET COMPATIBILITY MODE (#657) refuses a post-quantum or
     // composite algorithm here, before a status index is allocated, and
     // signs nothing in its place (STS-VC-0152): the offer's choice, else the
-    // configured one. ldp_vc is bbs-2023 and not this mode's.
-    if (format !== 'ldp_vc') {
+    // configured one. ldp_vc is bbs-2023 and an mdoc is COSE, and neither
+    // is this mode's.
+    if (format !== 'ldp_vc' && format !== 'mso_mdoc') {
       const effective = chosen || String(this.deps.config.value(
         'oid4vci.credentialSigningAlgorithm') || 'RS256');
       const refused = VcAlgorithms.signingRefusal(effective, chosen ?
@@ -2241,17 +2397,21 @@ class VcIssuer {
                       ' credentials are not signed with: ' +
                       vciSigningAlgsFor(configId).join(', '));
     }
-    const jwsAlg = format === 'ldp_vc' ? '' : chosen;
+    const jwsAlg = format === 'ldp_vc' || format === 'mso_mdoc' ? ''
+      : chosen;
     // THE STATUS-LIST INDEX FIRST (vc_status.ts), because the reference is
     // signed into the credential.
     const status = await vcStatus.allocate({
       base: credentialIssuer, format: format, configId: configId,
       expiresAt: Date.now() + this.credentialLifetimeSeconds() * 1000 });
     let built;
-    if (format === 'ldp_vc') {
+    if (format === 'mso_mdoc') {
+      built = await this.buildMdoc(subjectClaims, holderJwk,
+                                   credentialIssuer, status, chosen);
+    } else if (format === 'ldp_vc') {
       built = await this.buildLdpVc(subjectClaims, holderJwk,
                                     credentialIssuer, issuerDid, status,
-                                    holderKid || '');
+                                    holderKid || '', configId);
     } else if (format === 'jwt_vc_json') {
       built = await this.buildJwtVcJson(subjectClaims, holderJwk,
                                         credentialIssuer, issuerDid, status,
@@ -2548,7 +2708,11 @@ class VcIssuer {
         const holderDid = boundTo || (format === 'ldp_vc' && holderJwks[i]
           ? String(didOf(holderJwks[i]) || '') : '');
         vcIssued.record({
-          credential: built && built.credential,
+          // An mdoc is registered by issuerAuth's payload, which is
+          // what a presentation's credentialJwt carries (#1862). The
+          // wallet is handed the IssuerSigned in `credential`.
+          credential: (built && built.recordCredential) ||
+                      (built && built.credential),
           format: format,
           configId: configId,
           subject: subject,
@@ -3413,6 +3577,34 @@ class VcIssuer {
         () => this.sendJwtVcIssuerMetadata(req, res));
     });
 
+    // GET /oid4vci/mdoc-iaca (#1862). The Issuing Authority CA an mdoc's
+    // document signer chains to. Minted on the first read, the same
+    // certificate an issuance uses. Ungated: a wallet is configured with
+    // it before it will accept this realm's mdocs. `no-store`, the rule
+    // for every document that publishes key material.
+    app.get('/oid4vci/mdoc-iaca', async (req, res) => {
+      log.debug("Entering the mdoc IACA endpoint.");
+      res.set('Cache-Control', 'no-store');
+      try {
+        const authority = require('./mdoc_authority');
+        const issuer = String(baseUrlOf(req) || '').replace(/\/+$/, '');
+        const held = await authority.ensure(helpers.stsKeysFor(), issuer);
+        res.status(200).type('application/pem-certificate-chain')
+           .send(String(held.iacaPem).replace(/\s*$/, '') + '\n');
+        log.debug("Leaving the mdoc IACA endpoint.");
+      } catch (e) {
+        log.debug("Caught in the mdoc IACA endpoint: " +
+                  ((e && e.message) || e));
+        const code = (e && e.code) || 'STS-PKI-0288';
+        log.error(errorCodes.tag(code) + 'the mdoc authority could not ' +
+                  'be minted: ' + ((e && e.message) || e));
+        errorCodes.mark(res, code);
+        res.status(500).type('text/plain')
+           .send('The mdoc authority could not be minted.\n');
+        log.debug("Leaving the mdoc IACA endpoint. Not minted.");
+      }
+    });
+
     // --- Nonce Endpoint ------------------------------------------------------
     app.post('/oid4vci/nonce', (req, res) => {
       log.debug("Entering the OID4VCI nonce endpoint.");
@@ -3465,8 +3657,10 @@ class VcIssuer {
 
     // The BBS public key the ldp_vc proofs are made with. A BBS key is not a
     // JWK — there is no registered kty for BLS12-381 G2 in the JOSE registry —
-    // so it is published as its raw compressed bytes in multibase base64url,
-    // which is what the Data Integrity multikey encoding uses and what
+    // so it is published as a Multikey: since #1878 the encoding vc-di-bbs
+    // section 2.1.1 requires, `z` and the base58btc of the bls12_381-g2-pub
+    // multicodec (0xeb01) and the 96 compressed bytes (it was `u` and the
+    // raw bytes, which no other implementation reads). It is what the
     // verificationMethod above points at. Served no-store because the key is
     // regenerated on every start. Its CORS header is `common/cors.js`'s
     // decision like every other response's; the `*` this route used to set for
@@ -3494,11 +3688,12 @@ class VcIssuer {
         return;
       }
       res.status(200).type('application/json').send(JSON.stringify({
+        '@context': 'https://w3id.org/security/multikey/v1',
         id: baseUrlOf(req) + '/bbs/keys/' + asked,
         type: 'Multikey',
         controller: baseUrlOf(req),
         cryptosuite: bbs2023.CRYPTOSUITE,
-        publicKeyMultibase: 'u' + bbs2023.bytesToB64u(one.publicKey),
+        publicKeyMultibase: bbs2023.publicKeyMultibase(one.publicKey),
         state: one.role
       }));
       log.debug("Leaving the BBS key endpoint.");
@@ -3851,6 +4046,17 @@ class VcIssuer {
                     "compatibility mode.");
           return vciError(res, 400, 'credential_request_denied', e.message);
         }
+        // An mdoc that cannot be built, or an authority that cannot be
+        // minted, already named its code (#1862). The answer stays
+        // server_error; the recorded code is the one that was found.
+        if (e && (e.code === 'STS-VC-0187' || e.code === 'STS-PKI-0288')) {
+          errorCodes.mark(res, e.code);
+          log.error(errorCodes.tag(e.code) + 'the credential could not ' +
+                    'be built: ' + e.message);
+          log.debug("Leaving the OID4VCI credential endpoint. " + e.code);
+          return vciError(res, 500, 'server_error',
+                          'The credential could not be built: ' + e.message);
+        }
         log.error(errorCodes.tag('STS-VC-0079') + 'the credential could not ' +
                   'be built: ' + e.message);
         errorCodes.mark(res, 'STS-VC-0079');
@@ -3990,6 +4196,14 @@ class VcIssuer {
           log.debug("Leaving the OID4VCI deferred credential endpoint. " +
                     "Wallet compatibility mode.");
           return vciError(res, 400, 'credential_request_denied', e.message);
+        }
+        if (e && (e.code === 'STS-VC-0187' || e.code === 'STS-PKI-0288')) {
+          errorCodes.mark(res, e.code);
+          log.error(errorCodes.tag(e.code) + 'the deferred credential ' +
+                    'could not be built: ' + e.message);
+          log.debug("Leaving deferred credential endpoint. " + e.code);
+          return vciError(res, 500, 'server_error',
+                          'The credential could not be built: ' + e.message);
         }
         log.error(errorCodes.tag('STS-VC-0079') + 'the deferred credential ' +
                   'could not be built: ' + e.message);

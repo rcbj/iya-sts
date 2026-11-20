@@ -70,33 +70,37 @@ class VcVerifierConfigPage {
       '<a href="/admin/vc">/admin/vc</a>' +
       t.html('consoleVcVerifierConfig.asks3')) +
 
-      '<h2>' + t.html('consoleVcVerifierConfig.hClaims') + '</h2>' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each section,
+      // its heading inside.
+      kit.frame('<h2>' + t.html('consoleVcVerifierConfig.hClaims') +
+      '</h2>' +
       (requested.length
         ? kit.note(t.html('consoleVcVerifierConfig.askingFor',
                           { n: requested.length }) +
                     kit.codeList(requested) +
                     '.')
         : kit.warn(t.html('consoleVcVerifierConfig.noClaim'))) +
-      VcVerifierConfigPage.vpClaimsSection(json, t) +
+      VcVerifierConfigPage.vpClaimsSection(json, t)) +
 
-      '<h2>' + t.html('consoleVcVerifierConfig.hFormats') + '</h2>' +
-      VcVerifierConfigPage.vpFormatsSection(json, t) +
+      kit.frame('<h2>' + t.html('consoleVcVerifierConfig.hFormats') +
+      '</h2>' +
+      VcVerifierConfigPage.vpFormatsSection(json, t)) +
 
-      '<h2>' + t.html('consoleVcVerifierConfig.hQuery') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleVcVerifierConfig.hQuery') + '</h2>' +
       kit.note(t.html('consoleVcVerifierConfig.queryNote')) +
       '<textarea readonly spellcheck="false">' +
-      kit.esc(JSON.stringify(query, null, 2)) + '</textarea>' +
+      kit.esc(JSON.stringify(query, null, 2)) + '</textarea>') +
 
-      '<h2>' + t.html('consoleVcVerifierConfig.hStart') + '</h2>' +
-      VcVerifierConfigPage.startSection(json, t) +
-      '<h2>' + t.html('consoleVcVerifierConfig.hOpen') + '</h2>' +
-      VcVerifierConfigPage.openSection(json.recentVerifications, t) +
+      kit.frame('<h2>' + t.html('consoleVcVerifierConfig.hStart') + '</h2>' +
+      VcVerifierConfigPage.startSection(json, t)) +
+      kit.frame('<h2>' + t.html('consoleVcVerifierConfig.hOpen') + '</h2>' +
+      VcVerifierConfigPage.openSection(json.recentVerifications, t)) +
 
-      '<h2>' +
+      kit.frame('<h2>' +
       t.html('consoleVcVerifierConfig.hNotChange') + '</h2>' +
       kit.note(t.html('consoleVcVerifierConfig.notChange1') + '<a ' +
       'href="/admin/vc">/admin/vc</a>' +
-      t.html('consoleVcVerifierConfig.notChange2'));
+      t.html('consoleVcVerifierConfig.notChange2')));
 
     return inner;
   }
@@ -373,7 +377,9 @@ class VcVerifierConfigPage {
     if (!extras.length) {
       return '';
     }
-    return '<h3>' + t.html('consoleVcVerifierConfig.hExtras') + '</h3>' +
+    // A frame inside its section's (`secframe`, rcbj 2026-11-16).
+    return kit.frame('<h3>' + t.html('consoleVcVerifierConfig.hExtras') +
+      '</h3>' +
       kit.note(t.html('consoleVcVerifierConfig.extrasNote')) +
       '<table><tr><th>' + t.html('consoleVcVerifierConfig.thIn') +
       '</th><th>' + t.html('consoleVcVerifierConfig.thClaim') + '</th><th>' +
@@ -387,7 +393,7 @@ class VcVerifierConfigPage {
           '<td>' + paths.map(function (path) {
             return '<code>' + kit.esc(JSON.stringify(path)) + '</code>';
           }).join('<br>') + '</td></tr>';
-      }).join('') + '</table>';
+      }).join('') + '</table>');
   }
 
   // Whether the ISSUER currently mints the claim this Verifier is asking for.

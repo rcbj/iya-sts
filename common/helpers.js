@@ -96,6 +96,11 @@ const mode = require('./mode');
 // which requires this file: a failure logged here leads with
 // `errorCodes.tag()` rather than writing a row.
 const errorCodes = require('./error_codes');
+// THE CREDENTIAL SIGNERS (#1880): the dedicated per-realm key that signs
+// credentials and their status lists, and its certificate. A LEAF below this
+// file (it requires none of it), wired by the functions near
+// `credentialSignerForAsync()`.
+const credentialSigner = require('./credential_signer');
 const cacheRegistry = require('./cache_registry');
 // WHICH `x5c` OR `x5u` A SIGNED TOKEN CARRIES, per use case and per realm
 // (2026-09-13). It requires `config`, `realms` and `error_codes` and reaches
@@ -328,9 +333,11 @@ function hasSubjectResolver() {
  * fills it.
  *
  * An object without both `subjectFor()` and `nameFor()` is ignored
- * (STS-CORE-0090). `namesFor(subs)`, many subjects at once, is optional.
+ * (STS-CORE-0090). `namesFor(subs)`, many subjects at once, is optional,
+ * and so is `subjectsForAsync(names)` (#881).
  *
- * @param resolver - `{ subjectFor(name), nameFor(sub), namesFor?(subs) }`
+ * @param resolver - `{ subjectFor(name), nameFor(sub), namesFor?(subs),
+ *   subjectsForAsync?(names) }`
  */
 function setSubjectResolver(resolver) {
   log.debug("Entering setSubjectResolver().");
@@ -643,6 +650,62 @@ async function namesForSubjectsAsync(subjects) {
               'synchronously: ' + ((e && e.message) || e));
     log.debug("Leaving namesForSubjectsAsync(). Asked synchronously.");
     return namesForSubjects(subjects);
+  }
+}
+
+// MANY NAMES AT ONCE (#881). `subjectForName()` per shown row of
+// `/admin/users` was one synchronous directory read per row while the token
+// register is on demand. The resolver's optional `subjectsForAsync` asks
+// them together, off the event loop. Never rejects, and a failure is NOT
+// asked again one name at a time: that fallback is the blocking read this
+// exists to retire (`namesForSubjectsAsync` still falls back, because a
+// name for a subject is a different question). No method at all is
+// `subjectForName()` per name, which is what a process with no window
+// already does inside the resolver.
+/**
+ * Returns each name's subject, as `subjectForName()` would, asking the
+ * directory once for them all where it can. Never rejects.
+ *
+ * @param names - the names, in order
+ * @returns a promise of one subject per name, or ''
+ */
+async function subjectsForNamesAsync(names) {
+  log.debug("Entering subjectsForNamesAsync().");
+  const list = (names || []).map(function (one) {
+    return String(one == null ? '' : one);
+  });
+  if (!subjectResolver ||
+      typeof subjectResolver.subjectsForAsync !== 'function') {
+    log.debug("Leaving subjectsForNamesAsync(). No asynchronous door.");
+    return list.map(subjectForName);
+  }
+  try {
+    const answered = await subjectResolver.subjectsForAsync(list);
+    const out = list.map(function (unused, i) {
+      return String((answered && answered[i]) || '');
+    });
+    log.debug("Leaving subjectsForNamesAsync(). " + list.length +
+              " name(s).");
+    return out;
+  } catch (e) {
+    // A spent budget would be spent again once per name, and any other
+    // throw retried that way would be the synchronous read this batch
+    // exists so a page does not do. Each name has no subject.
+    if (budgetSpent(e)) {
+      log.debug("Leaving subjectsForNamesAsync(). The request's " +
+                "directory budget is spent.");
+      return list.map(function () {
+        return '';
+      });
+    }
+    log.error(errorCodes.tag('STS-CORE-0091') +
+              'helpers: the subject resolver threw looking up ' +
+              list.length + ' names asynchronously, and each was given ' +
+              'no subject: ' + ((e && e.message) || e));
+    log.debug("Leaving subjectsForNamesAsync(). The resolver threw.");
+    return list.map(function () {
+      return '';
+    });
   }
 }
 
@@ -1362,6 +1425,12 @@ function plainKeySet(realmId, stored) {
   if ((stored.signerGroups || []).length) {
     set.signerGroups = stored.signerGroups;
   }
+  // AND THE CREDENTIAL SIGNERS (#1880), already parsed, for the same reason:
+  // dropped here, this process would make its own and sign credentials with
+  // keys its siblings do not publish.
+  if ((stored.credentialSigners || []).length) {
+    set.credentialSigners = stored.credentialSigners;
+  }
   set.generations = generationsView(realmId, stored.generations, null);
   log.debug("Leaving plainKeySet(). kid=" + set.kid);
   return set;
@@ -1408,8 +1477,46 @@ function plainKeySet(realmId, stored) {
 // a function of its own so that the `require` stays lazy — see
 // `certifiedView()` — and so that the fire-and-forget is written down once
 // rather than at each of the three places a key set is built.
+//
+// **AND IT LEAVES A PROMISE BEHIND, WHICH A REQUEST WAITS ON (2026-11-17).**
+// The factory that calls this is a property read and cannot wait, so the
+// first signature under a new key went out before the certification landed
+// and carried no `x5c` or `x5u` — and the NEXT one, a few milliseconds
+// later, usually did. The same document, signed by the same key, fetched
+// twice, with two different headers: `tests/authzen_model_wire.js` had
+// recorded that race as the AuthZEN metadata's wire (the first fetch without
+// `x5u`, the second with it) and failed on GitHub the one time the
+// certification lost it (PR run 44173065871). A PEP refetching the document
+// would have seen the same flip. So the certification in flight is kept here
+// per realm, and `prepareKeySet()` — the request middleware every request
+// passes before a handler reads a key — waits for it, bounded by
+// `CERTIFICATE_WAIT_MS`. A read that cannot wait still signs at once, as
+// before; it is the requests that no longer do.
+const certifying = new Map();   // realm id -> promise of the certification
+
 function certifyLater(realmId, keys) {
   log.debug("Entering certifyLater().");
+  const id = String(realmId || '');
+  /** @type {{ resolve: (() => void) | null }} */
+  const deferred = { resolve: null };
+  const done = new Promise(function (resolve) {
+    deferred.resolve = function () {
+      resolve(undefined);
+    };
+  });
+  certifying.set(id, done);
+  // Settled whichever way the certification ends; a later set's promise for
+  // the same realm is left in place.
+  const finish = function () {
+    log.debug("Entering finish().");
+    if (certifying.get(id) === done) {
+      certifying.delete(id);
+    }
+    if (deferred.resolve) {
+      deferred.resolve();
+    }
+    log.debug("Leaving finish().");
+  };
   setImmediate(function () {
     let pki = null;
     try {
@@ -1420,6 +1527,7 @@ function certifyLater(realmId, keys) {
       // No certificate authority in this process. The key set keeps the
       // self-signed certificate it was born with, which is what this service
       // did before the hierarchy existed.
+      finish();
       return;
     }
     // **NOT `certifyKeySet()` DIRECTLY (2026-11-04).** A realm created at
@@ -1455,9 +1563,18 @@ function certifyLater(realmId, keys) {
                   'certified under its Issuing CAs: ' + e.message + '. They ' +
                   'still SIGN — what they lack is a certificate chaining to ' +
                   'this service\'s Root.');
-      });
+      }).then(finish);
   });
   log.debug("Leaving certifyLater().");
+}
+
+// The certification `certifyLater()` has in flight for a realm's key set, or
+// null. A map lookup: `prepareKeySet()` asks it on every request made while
+// any realm's certification is in flight.
+function certificationInFlight(realmId) {
+  log.debug("Entering certificationInFlight().");
+  log.debug("Leaving certificationInFlight().");
+  return certifying.get(String(realmId || '')) || null;
 }
 
 // ---------------------------------------------------------------------------
@@ -2876,20 +2993,37 @@ function generateRsaPairAsync(bits, asPem) {
  * Makes a realm's key set in the background where it does not exist yet, so the
  * read that follows does not generate synchronously. Never rejects.
  *
+ * Where the set was made here, the promise also waits — bounded by
+ * `CERTIFICATE_WAIT_MS` — for its certification, so the request that follows
+ * signs with a certified key; `options.awaitCertificate` false skips that,
+ * for a caller that reads the set and signs nothing.
+ *
  * @param realmId - the realm
+ * @param options - optionally `{ awaitCertificate }`, true unless false
  * @returns a promise resolving once the set is held (false when there was
  * nothing to prepare)
  */
-function prepareKeySet(realmId) {
+function prepareKeySet(realmId, options) {
   log.debug("Entering prepareKeySet(). realm=" + realmId);
   const id = String(realmId || '');
+  const awaitCertificate = !(options && options.awaitCertificate === false);
   if (!keySetNeedsMaking(id)) {
+    // HELD — BUT PERHAPS NOT YET CERTIFIED (2026-11-17): a set a read made
+    // a moment ago, by whatever road, whose certification `certifyLater()`
+    // has in flight. A request signing now would carry no `x5c` or `x5u`
+    // where the next one does; see that function's header.
+    if (awaitCertificate && certifying.size) {
+      log.debug("Leaving prepareKeySet(). Held; any certification in " +
+                "flight is awaited.");
+      return thenCertified(id, Promise.resolve(false));
+    }
     log.debug("Leaving prepareKeySet(). Nothing to make.");
     return Promise.resolve(false);
   }
   if (preparing.has(id)) {
     log.debug("Leaving prepareKeySet(). Already under way.");
-    return preparing.get(id);
+    return awaitCertificate ? thenCertified(id, preparing.get(id))
+                            : preparing.get(id);
   }
   const realm = realmForKeys(id);
   const started = Date.now();
@@ -2939,7 +3073,56 @@ function prepareKeySet(realmId) {
   });
   preparing.set(id, work);
   log.debug("Leaving prepareKeySet(). Generating.");
-  return work;
+  return awaitCertificate ? thenCertified(id, work) : work;
+}
+
+// `answer` once the certification `certifyLater()` has in flight for the
+// realm's set, if any, has landed or `CERTIFICATE_WAIT_MS` has passed — so
+// the request `prepareKeySet()` lets through signs with a certified key
+// (2026-11-17, `certifyLater()`'s header). Asked AFTER `answer` settles,
+// because that is when a set made by it has scheduled its certification.
+// Nothing is in flight where the factory took a stored or a sibling's set.
+function thenCertified(realmId, answer) {
+  log.debug("Entering thenCertified().");
+  log.debug("Leaving thenCertified().");
+  return answer.then(function (made) {
+    const pending = certificationInFlight(realmForKeys(realmId).id);
+    if (!pending) {
+      return made;
+    }
+    return withinCertificateWait(pending).then(function () {
+      return made;
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// A HANDLER THAT ENTERS A REALM THE PATH NAMES AFTER THE PREFIX (2026-11-17).
+//
+// The RFC 8414 inserted forms — `/.well-known/<document>/realm/<id>` —
+// arrive at the host root, so `app.js`'s key-set middleware prepared the
+// DEFAULT realm's keys and the handler enters the named one itself. Its keys,
+// on a realm's first request, were then generated inside the handler and the
+// document signed before `certifyLater()` had certified them: no `x5u`, where
+// the appended form a moment later carried one (`tests/authzen_model_wire.js`
+// recorded exactly that). This runs `fn` in the realm once its key set is
+// prepared and certified, as the middleware does for a realm in the prefix.
+// ---------------------------------------------------------------------------
+/**
+ * Runs `fn` in `realm` once that realm's key set is held and any certification
+ * of it in flight has landed (bounded), as `app.js`'s middleware does for the
+ * realm a path's prefix names. Never rejects on the preparation.
+ *
+ * @param realm - the realm, as `realms.get()` answers it
+ * @param fn - what to run in it
+ * @returns a promise of what `fn` returns
+ */
+function runInPreparedRealm(realm, fn) {
+  log.debug("Entering runInPreparedRealm().");
+  log.debug("Leaving runInPreparedRealm().");
+  return prepareKeySet(realm.id).then(function () {
+    return realms.run(realm, fn);
+  });
 }
 
 // Several realms ONE AFTER ANOTHER, yielding to the event loop between them —
@@ -2958,8 +3141,10 @@ function prepareKeySets(realmIds) {
   const ids = (realmIds || []).slice();
   let chain = Promise.resolve();
   ids.forEach(function (id) {
+    // A list reads each set's `kid` and signs nothing, so it does not wait
+    // for a certification in flight; a request in the realm still does.
     chain = chain.then(function () {
-      return prepareKeySet(id);
+      return prepareKeySet(id, { awaitCertificate: false });
     }).then(function () {
       return new Promise(function (resolve) {
         setImmediate(resolve);
@@ -5846,6 +6031,80 @@ function groupJwkEntries(keys) {
 }
 
 // ---------------------------------------------------------------------------
+// THE CREDENTIAL SIGNERS (#1880) — `common/credential_signer.js` argues them.
+//
+// `credentialSignerForAsync()` is what `oid4vc/vc_status.ts`'s `signerAsync()`
+// asks, which is the one answer to "which key signs a credential and its
+// status list". The keys are PUBLISHED in `/oauth2/jwks` (which JWT VC Issuer
+// Metadata's `jwks_uri` names) and in the DID document, each with its own
+// chain in `x5c`; they are found by kid for `publishedKidFor()` and the
+// certificate header. They are NOT among `allVerificationKeys()`: a realm's
+// own access tokens, ID Tokens and Security Event Tokens are never accepted
+// on a credential key, and only the OpenID4VP Verifier's issuer check
+// (`credentialVerificationKeys()`) takes them.
+// ---------------------------------------------------------------------------
+/**
+ * The key the ambient realm signs a credential of `alg` with: its dedicated
+ * credential signer, made and certified where it needs to be (#1880).
+ *
+ * @param alg - the JWS algorithm
+ * @param opts - optionally `issuer`, the credential's `iss`, which is checked
+ *   against what the certificate names
+ * @returns a promise of `{ alg, key, kid, slot, pkiSlot, uris, named }`
+ */
+function credentialSignerForAsync(alg, opts) {
+  log.debug("Entering credentialSignerForAsync(). alg=" + alg);
+  const refused = pqSignatureRefusal(alg);
+  if (refused) {
+    log.debug("Leaving credentialSignerForAsync(). Post-quantum is off.");
+    return Promise.reject(refused);
+  }
+  log.debug("Leaving credentialSignerForAsync().");
+  return credentialSigner.signerForAsync(stsKeysFor(), alg, {
+    curveSpecs: CURVE_KEY_SPECS, issuer: (opts && opts.issuer) || '' });
+}
+
+/**
+ * The ambient realm's credential signers as published JWKs, each with its own
+ * certificate chain in `x5c` where it has one (#1880).
+ *
+ * @param keys - the realm's key set
+ * @returns the JWKs
+ */
+function credentialPublishedJwks(keys) {
+  log.debug("Entering credentialPublishedJwks().");
+  const set = keys || stsKeysFor();
+  // Not a key a revocation distrusts (credential_signer.js, trustOf()).
+  const out = credentialSigner.trustedMembersOf(set)
+    .map(function (one) {
+      const jwk = Object.assign({}, one.publicJwk);
+      // Never a REVOKED certificate (#1880's follow-up, run #478): see
+      // credential_signer.js's publishableCertificate().
+      const held = credentialSigner.publishableCertificate(
+        String(set.realm || ''), one);
+      if (held) {
+        jwk.x5c = x5cOf(held.certificatePem, held.chainPem || []);
+      }
+      return jwk;
+    });
+  log.debug("Leaving credentialPublishedJwks(). " + out.length + ".");
+  return out;
+}
+
+/**
+ * The ambient realm's credential signers as `{ alg, publicJwk, role }` rows,
+ * for the OpenID4VP Verifier's issuer check and nothing else (#1880).
+ *
+ * @returns the rows
+ */
+function credentialVerificationKeys() {
+  log.debug("Entering credentialVerificationKeys().");
+  const out = credentialSigner.verificationRows(stsKeysFor());
+  log.debug("Leaving credentialVerificationKeys(). " + out.length + ".");
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // MINTING ONE UNIT'S NEXT KEY — off the event loop where there is an async
 // door (RSA, the curves and the post-quantum keys all on libuv's thread
 // pool), with the builders the current keys were made by.
@@ -6056,6 +6315,14 @@ function plainCopyOf(keys, overrides) {
     signerGroups: (keys.signerGroups || []).map(function (one) {
       return { group: one.group, slot: one.slot, alg: one.alg,
                kind: one.kind, pairedSlot: one.pairedSlot || null,
+               privateKey: one.privateKey, publicJwk: one.publicJwk };
+    }),
+    // The credential signers (#1880) carry over a rotation unchanged, as the
+    // VC-API keys do: a credential outlives the realm's token keys, and the
+    // key that signed it is the one its certificate names.
+    credentialSigners: credentialSigner.membersOf(keys).map(function (one) {
+      return { group: one.group, slot: one.slot, alg: one.alg,
+               kind: one.kind, pairedSlot: null,
                privateKey: one.privateKey, publicJwk: one.publicJwk };
     }),
     generations: {
@@ -7992,6 +8259,23 @@ function certificateSignerFor(alg, kid) {
         return pinnedSpki;
       }
     };
+  } else if (credentialSigner.isCredentialKid(kid)) {
+    // A CREDENTIAL SIGNER (#1880): its certificate is its own slot's,
+    // `vc-issuer:<key family>`, and its subjectPublicKeyInfo is this key.
+    const own = credentialSigner.membersOf(keys).filter(function (one) {
+      return one.publicJwk && one.publicJwk.kid === kid;
+    })[0];
+    if (own) {
+      signer = {
+        realm: keys.realm, slot: credentialSigner.pkiSlotOf(own.slot),
+        kid: kid,
+        spkiPem: function () {
+          log.debug("Entering spkiPem().");
+          log.debug("Leaving spkiPem(). A credential signer.");
+          return credentialSigner.spkiPemOf(own);
+        }
+      };
+    }
   } else if (kid === keys.kid) {
     signer = {
       realm: keys.realm, slot: 'RS256', kid: kid,
@@ -8200,6 +8484,9 @@ function publicJwkOfKid(kid) {
     .concat(standbyOf(keys)).concat(groupMembersOf(keys))
     .concat(kid && String(kid).indexOf('sts-pinned-') === 0
       ? pinnedSignersOf(keys) : [])
+    // A credential signer (#1880), asked only for a kid that names one.
+    .concat(credentialSigner.isCredentialKid(kid)
+      ? credentialSigner.membersOf(keys) : [])
     .filter(function (one) {
       return one && one.publicJwk && one.publicJwk.kid === kid;
     })[0];
@@ -9430,6 +9717,9 @@ module.exports = {
   groupSignerFor: groupSignerFor,
   groupJwkEntries: groupJwkEntries,
   groupPublishedJwks: groupPublishedJwks,
+  credentialSignerForAsync: credentialSignerForAsync,
+  credentialPublishedJwks: credentialPublishedJwks,
+  credentialVerificationKeys: credentialVerificationKeys,
   xmlSignatureChoice: xmlSignatureChoice,
   ownXmlSigningCertificates: ownXmlSigningCertificates,
   ownXmlEncryptionCertificates: ownXmlEncryptionCertificates,
@@ -9439,6 +9729,7 @@ module.exports = {
   publicJwkOfKid: publicJwkOfKid,
   prepareKeySet: prepareKeySet,
   prepareKeySets: prepareKeySets,
+  runInPreparedRealm: runInPreparedRealm,
   log: log,
   logArtifact: logArtifact,
   headersOf: headersOf,
@@ -9500,6 +9791,7 @@ module.exports = {
   warmPeopleAsync: warmPeopleAsync,
   namesForSubjects: namesForSubjects,
   namesForSubjectsAsync: namesForSubjectsAsync,
+  subjectsForNamesAsync: subjectsForNamesAsync,
   LEGACY_SUBJECT_PREFIX: LEGACY_SUBJECT_PREFIX,
   hasScope: hasScope,
   escapeRdnValue: escapeRdnValue,

@@ -74,18 +74,43 @@
 //    sets the list. Hosts rather than URLs, because a component legitimately
 //    moves its path and does not legitimately move to another host.
 //
-// 3. **https, WITH THE PEP'S CERTIFICATE VERIFIED.** What travels here is
-//    weaker than what travels on either of the other two — no credential and
-//    no event — and it is still held to TLS, because a request this service
-//    makes in the clear is a request somebody else can answer for, and a PEP
-//    that acted on a forged nudge would pull from wherever it was told to
-//    pull from. What protects it is that the PEP holds the PDP's address
-//    itself and a nudge cannot change it; what TLS protects is the rest.
-//    Since #171 the policy is `common/outbound_tls.ts`'s: plain http only
-//    with `xacml.pepNotifyAllowHttp`, and never in product mode; verification
-//    off only with `xacml.pepNotifySkipTlsVerification`, and only in
-//    development; a PEP certified by a private CA through
-//    `xacml.pepNotifyCaFile`.
+// 3. **https ONLY, WITH THE PEP'S CERTIFICATE VERIFIED, ALWAYS.** What
+//    travels here is weaker than what travels on either of the other two —
+//    no credential and no event — and it is still held to TLS, because a
+//    request this service makes in the clear is a request somebody else can
+//    answer for, and a PEP that acted on a forged nudge would pull from
+//    wherever it was told to pull from. What protects it is that the PEP
+//    holds the PDP's address itself and a nudge cannot change it; what TLS
+//    protects is the rest.
+//
+//    **SINCE 2026-11-14 (rcbj: "Let's assume always HTTPS") THERE IS NO
+//    PLAIN-HTTP NUDGE AND NO UNVERIFIED ONE, IN EITHER MODE.** An `http://`
+//    notify URL is reported unusable with a short reason (`STS-XACML-0259`
+//    when one is refused at dialling) and the PEP converges by polling, as a
+//    PEP with no notify URL always has. The two settings #171 gave the
+//    escape — `xacml.pepNotifyAllowHttp` and
+//    `xacml.pepNotifySkipTlsVerification` — are RETIRED, not removed: a
+//    deployment that names either still starts, the value is ignored, and
+//    the first nudge that would have read it says so once per process
+//    (`STS-XACML-0258`). That is the backwards-compatible half; the
+//    secure half is that nothing it says reaches the wire.
+//
+//    **AND IT VERIFIES WITH NO SETTING AT ALL.** A PEP's HTTPS listener
+//    certificate is issued by the `pep-tls` Issuing CA of the realm it
+//    registered to (`xacml_pep_tls.ts`, the issue and the CSR paths), so a
+//    nudge is verified against THAT CHAIN by default — the realm's `pep-tls`
+//    Issuing CA, its Intermediate and the service Root — with the host
+//    checked against the notify URL's host (RFC 9525, the outbound host
+//    check). **A LEAF THAT CHAINS TO THIS SERVICE'S ROOT MUST HAVE BEEN
+//    ISSUED BY THIS REALM'S `pep-tls` CA** (`pinProblem()`,
+//    `STS-XACML-0260`): the Root also vouches for every other Issuing CA of
+//    every realm, and a custom listener's certificate or another realm's
+//    PEP's is not "a PEP of this realm". `xacml.pepNotifyCaFile` stays as an
+//    ADDITIONAL anchor, for a PEP whose listener certificate comes from
+//    elsewhere, beside node's own store, as it always was; an unusable file
+//    still refuses the nudge (`STS-CORE-0104`). Under paranoid PKI mode the
+//    handshake is held by the door's `tls-server-outbound` purpose like every
+//    other outbound connection (rule 3dd), which already names this nudge.
 //
 // 4. **NO REDIRECTS, A CAPPED BODY AND A TIMEOUT**, for federation's reasons.
 //    A 302 from a notify endpoint is not a protocol this service speaks.
@@ -124,6 +149,11 @@ import audit = require('../common/audit');
 import errorCodes = require('../common/error_codes');
 import version = require('../common/version');
 import OutboundTls = require('../common/outbound_tls');
+// The realm's `pep-tls` chain, the default trust of a nudge (2026-11-14). A
+// LIBRARY (rule 3w) that registers no route and requires nothing here.
+import pki = require('../common/pki');
+// The one place this service parses a certificate (#453), for the pin.
+import stsCrypto = require('../common/crypto');
 
 const { URL } = url;
 
@@ -159,11 +189,24 @@ interface PepNotifierDeps {
   audit: { failure(code: string, event: object): unknown };
   http: Transport;
   https: Transport;
+  // The realm's `pep-tls` Issuing CA with the Intermediate and Root above
+  // it, or null (`pki.useCaseChainPems()`).
+  pepTlsChain(): { issuing: string; intermediate: string; root: string } |
+    null;
   // Built once at require time: the version cannot change while the process
   // runs. See the comment on the headers block in `nudge()` for why the nudge
   // carries one at all.
   userAgent: string;
+  // The `pdp` member of the body (#1830): the base this realm's PDP is
+  // reached at, '' when it cannot be known. `nudge()` argues it.
+  pdpIdentity(): string;
 }
+
+/**
+ * The path every remote PEP's base URL (`PEP_PDP_URL`) is the base of: the
+ * pull, whose hosted application the `pdp` member's base is that of.
+ */
+const PDP_PULL_PATH = '/xacml/pep/policies';
 
 // A PEP that answers a nudge with more than this is not answering a nudge. The
 // expected reply is 204 with nothing in it; 16 KiB is generous for the error
@@ -173,12 +216,15 @@ interface PepNotifierDeps {
  */
 const MAX_BODY_BYTES = 16 * 1024;
 
-// THE OUTBOUND TRANSPORT POLICY, as `common/outbound_tls.ts` takes it (#171).
-// No plain http in product: nothing about a nudge names loopback.
+// THE OUTBOUND TRANSPORT SETTINGS, as `common/outbound_tls.ts` names a
+// family's (#171). KEPT, and still exported, for what reads its names — the
+// CA file is `caFileKey` — but the nudge no longer asks `httpVerdict()` or
+// `tlsVerdict()`: plain http is refused and verification is never skipped
+// (2026-11-14), so the two settings those would read are RETIRED (below).
 /**
- * The outbound transport policy for a nudge, as `common/outbound_tls.ts`
- * takes it: the three `xacml.pepNotify*` transport settings and the codes
- * for plain http refused and verification skipping ignored.
+ * The nudge's transport settings in `common/outbound_tls.ts`'s shape. Since
+ * 2026-11-14 only `caFileKey` is in force: the other two settings are
+ * retired and ignored.
  */
 const NOTIFY_TRANSPORT = {
   what: 'an XACML PEP nudge',
@@ -189,6 +235,18 @@ const NOTIFY_TRANSPORT = {
   httpRefusedCode: 'STS-XACML-0073',
   skipIgnoredCode: 'STS-XACML-0074'
 };
+
+// THE TWO RETIRED SETTINGS (2026-11-14). Accepted wherever a setting is
+// accepted — an appconfig file, the environment, a stored override — so a
+// deployment that named one still starts, and IGNORED: a nudge is https and
+// verified whatever they say. Said once per process per setting, with
+// `STS-XACML-0258`, the first time a nudge would have read it.
+const RETIRED_SETTINGS = ['xacml.pepNotifyAllowHttp',
+                          'xacml.pepNotifySkipTlsVerification'];
+const RETIRED_CODE = 'STS-XACML-0258';
+const HTTP_REFUSED_CODE = 'STS-XACML-0259';
+const PIN_REFUSED_CODE = 'STS-XACML-0260';
+const announcedRetired = new Set<string>();
 
 /**
  * Sends the "the repository changed, pull now" nudge to a remote PEP's
@@ -229,7 +287,24 @@ class PepNotifier {
       audit: audit,
       http: http,
       https: https,
-      userAgent: version.userAgent('xacml-pdp-notify')
+      pepTlsChain: function () {
+        helpers.log.debug("Entering pepTlsChain().");
+        helpers.log.debug("Leaving pepTlsChain().");
+        return pki.useCaseChainPems('', 'pep-tls');
+      },
+      userAgent: version.userAgent('xacml-pdp-notify'),
+      pdpIdentity: function () {
+        helpers.log.debug("Entering pdpIdentity().");
+        // The base `/xacml/pep/*` is served under in this realm: pinned
+        // where the listener or `global.publicBaseUrl` pins it, else the
+        // base the request that made the change was answered under, moved
+        // to the PDP's application (`helpers.urlOf()`) — the rule every URL
+        // this service builds follows. Nothing pinned and no request is ''.
+        const url = helpers.urlOf(audit.currentRequest(), PDP_PULL_PATH);
+        helpers.log.debug("Leaving pdpIdentity().");
+        return /^https?:\/\//i.test(url)
+          ? url.slice(0, url.length - PDP_PULL_PATH.length) : '';
+      }
     };
   }
 
@@ -245,17 +320,157 @@ class PepNotifier {
     return on;
   }
 
-  // The three transport settings as they are IN FORCE in this realm (#171).
+  // The three transport settings as they are IN FORCE in this realm (#171),
+  // in the shape `GET /admin-api/xacml/peps`' `notify.transport` has always
+  // answered. Since 2026-11-14 the first two are false whatever is stored —
+  // plain http and an unverified nudge do not exist — and
+  // `skipTlsVerificationSet` still says whether a stored value names the
+  // retired skip, so a reader can see it is set and ignored.
   /**
    * Describes the three transport settings as they are in force in this
-   * realm (#171).
-   * @returns `common/outbound_tls.ts`'s description of the nudge's policy
+   * realm: plain http and skipped verification are never in force.
+   * @returns `{ allowHttp, skipTlsVerification, skipTlsVerificationSet,
+   *   caFile }`
    */
   transportSettings(): ReturnType<typeof OutboundTls.describe> {
-    const { log } = this.deps;
+    const { log, config } = this.deps;
     log.debug('Entering PepNotifier.transportSettings().');
     log.debug('Leaving PepNotifier.transportSettings().');
-    return OutboundTls.describe(NOTIFY_TRANSPORT);
+    return {
+      allowHttp: false,
+      skipTlsVerification: false,
+      skipTlsVerificationSet:
+        !!config.value(NOTIFY_TRANSPORT.skipTlsKey),
+      caFile: String(config.value(NOTIFY_TRANSPORT.caFileKey) || '')
+    };
+  }
+
+  // A RETIRED SETTING THAT IS ON IS SAID ONCE PER PROCESS (2026-11-14), the
+  // first time a nudge would have read it, and changes nothing.
+  private announceRetired(): void {
+    const { log, config } = this.deps;
+    log.debug('Entering PepNotifier.announceRetired().');
+    RETIRED_SETTINGS.forEach(function (key) {
+      if (!config.value(key) || announcedRetired.has(key)) {
+        return;
+      }
+      announcedRetired.add(key);
+      log.warn(errorCodes.tag(RETIRED_CODE) + 'xacml: ' + key + ' is on ' +
+               'and is IGNORED: it was retired on 2026-11-14, and a nudge ' +
+               'is sent over https with the PEP\'s certificate verified, in ' +
+               'every mode. A PEP whose notify URL is http converges by ' +
+               'polling. Remove the setting to silence this; said once per ' +
+               'process.');
+    });
+    log.debug('Leaving PepNotifier.announceRetired().');
+  }
+
+  // -------------------------------------------------------------------------
+  // THE PIN (2026-11-14). A chain node verified that runs through THIS
+  // SERVICE'S Root must have been issued, at the leaf, by this realm's
+  // `pep-tls` Issuing CA. A chain that reaches some other anchor — the CA
+  // file, node's store — is not this service's to judge further: the
+  // operator named that anchor, and the host check has already been made.
+  // Compared by SHA-256 fingerprint, the certificate itself, never by name:
+  // every realm's `pep-tls` CA has the same subject.
+  // -------------------------------------------------------------------------
+  /**
+   * Says why a verified chain is refused for a nudge: one that reaches this
+   * service's Root but whose leaf was not issued by the realm's `pep-tls`
+   * Issuing CA.
+   * @param cert - the peer certificate node verified, with its chain
+   * @param chain - the realm's `pep-tls` chain, or null
+   * @returns a sentence, or '' when the chain may be used
+   */
+  static pinProblem(cert: any,
+                    chain: { issuing: string; root: string } | null): string {
+    helpers.log.debug('Entering PepNotifier.pinProblem().');
+    if (!chain) {
+      helpers.log.debug('Leaving PepNotifier.pinProblem(). No realm chain.');
+      return '';
+    }
+    let rootPrint = '';
+    let issuingPrint = '';
+    try {
+      rootPrint = stsCrypto.parseCertificate(chain.root).fingerprint256;
+      issuingPrint = stsCrypto.parseCertificate(chain.issuing).fingerprint256;
+    } catch (e) {
+      helpers.log.debug('Caught in PepNotifier.pinProblem(): ' +
+                        ((e && e.message) || e));
+      // A tier node cannot read pins nothing; the chain it would have pinned
+      // could not have verified through it either.
+      return '';
+    }
+    const seen: string[] = [];
+    let at = cert;
+    for (let hop = 0; at && hop < 10; hop++) {
+      seen.push(String(at.fingerprint256 || ''));
+      if (!at.issuerCertificate || at.issuerCertificate === at) {
+        break;
+      }
+      at = at.issuerCertificate;
+    }
+    if (seen.indexOf(rootPrint) < 0) {
+      helpers.log.debug('Leaving PepNotifier.pinProblem(). Another anchor.');
+      return '';
+    }
+    const issuer = cert && cert.issuerCertificate;
+    if (issuer && String(issuer.fingerprint256 || '') === issuingPrint) {
+      helpers.log.debug('Leaving PepNotifier.pinProblem(). This realm\'s.');
+      return '';
+    }
+    helpers.log.debug('Leaving PepNotifier.pinProblem(). Refused.');
+    return 'the certificate chains to this service\'s Root but was not ' +
+      'issued by this realm\'s Remote PEP listeners (pep-tls) Issuing CA';
+  }
+
+  // THE TRUST FOR ONE NUDGE: node's store, this realm's `pep-tls` chain and
+  // the CA file, the RFC 9525 host check and the path rules, then the pin.
+  // A CA file that cannot be used refuses (`STS-CORE-0104`), as before.
+  private trust(origin: string): { ok: boolean; why: string;
+                                   options: Record<string, unknown> } {
+    const { log, config } = this.deps;
+    log.debug('Entering PepNotifier.trust(). ' + origin);
+    const chain = this.deps.pepTlsChain();
+    const anchors: string[] = chain
+      ? [chain.issuing, chain.intermediate, chain.root] : [];
+    const file = String(config.value(NOTIFY_TRANSPORT.caFileKey) || '');
+    if (file) {
+      const pems = OutboundTls.caFilePems(file);
+      if (typeof pems === 'string') {
+        log.warn(errorCodes.tag(OutboundTls.CA_FILE_CODE) + 'outbound: ' +
+                 NOTIFY_TRANSPORT.what + ' to ' + origin + ' was not sent: ' +
+                 pems);
+        log.debug('Leaving PepNotifier.trust(). The CA file is unusable.');
+        return { ok: false, options: {},
+                 why: NOTIFY_TRANSPORT.caFileKey + ' names "' + file +
+                      '", and ' + pems };
+      }
+      pems.forEach(function (pem) {
+        anchors.push(pem);
+      });
+    }
+    const verified: any = OutboundTls.verifiedOptions(anchors);
+    const hostCheck = verified.checkServerIdentity;
+    verified.checkServerIdentity = function (host: string, cert: any) {
+      const problem = hostCheck(host, cert);
+      if (problem) {
+        return problem;
+      }
+      const pinned = PepNotifier.pinProblem(cert, chain);
+      if (!pinned) {
+        return undefined;
+      }
+      log.warn(errorCodes.tag(PIN_REFUSED_CODE) + 'xacml: a nudge to ' +
+               host + ' was refused before anything was sent: ' + pinned +
+               '.');
+      return Object.assign(new Error('the PEP\'s certificate is refused: ' +
+                                     pinned),
+                           { code: 'ERR_STS_PEP_TLS_PIN' });
+    };
+    log.debug('Leaving PepNotifier.trust(). ' + anchors.length +
+              ' anchor(s) beside node\'s store.');
+    return { ok: true, why: '', options: verified };
   }
 
   /**
@@ -308,16 +523,18 @@ class PepNotifier {
     return this.urlVerdict(raw).why || null;
   }
 
-  // The same answer with `STS-XACML-0073` when the refusal is plain http in
-  // product mode, and '' for every other (whose code is STS-XACML-0066).
+  // The same answer with `STS-XACML-0259` when the refusal is plain http
+  // (since 2026-11-14, every mode), and '' for every other (whose code is
+  // STS-XACML-0066).
   /**
    * Says why a notify URL would be refused, with the error code when the
-   * refusal is plain http in product mode.
+   * refusal is plain http (`STS-XACML-0259`, in every mode since
+   * 2026-11-14).
    *
    * An absent URL is refused with a note that it is not a fault.
    * @param raw - the notify URL
    * @returns `{ why, errorCode }`: `why` '' when fine, `errorCode`
-   * `STS-XACML-0073` for plain http refused and '' otherwise
+   * `STS-XACML-0259` for plain http refused and '' otherwise
    */
   urlVerdict(raw: unknown): { why: string; errorCode: string } {
     const { log } = this.deps;
@@ -342,21 +559,20 @@ class PepNotifier {
     }
     if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
       log.debug('Leaving PepNotifier.urlVerdict(). Wrong scheme.');
-      return { why: 'A notify URL is http or https; this one is "' +
+      return { why: 'A notify URL is https; this one is "' +
                parsed.protocol.replace(/:$/, '') + '".', errorCode: '' };
     }
     if (parsed.protocol === 'http:') {
-      const verdict = OutboundTls.httpVerdict(NOTIFY_TRANSPORT,
-                                              parsed.hostname);
-      if (!verdict.ok) {
-        log.debug('Leaving PepNotifier.urlVerdict(). Plain http refused.');
-        return { why: 'This notify URL is plain http: ' + verdict.why +
-                 '. A nudge carries no credential and no event, so this is ' +
-                 'the mildest of this service\'s outbound refusals — but a ' +
-                 'request made in the clear is a request somebody else can ' +
-                 'answer for.',
-                 errorCode: verdict.errorCode };
-      }
+      // ALWAYS REFUSED (2026-11-14), in both modes: the retired
+      // `xacml.pepNotifyAllowHttp` is not read. Short, because the console
+      // draws it as the row's reason; the PEP still converges by polling.
+      this.announceRetired();
+      log.debug('Leaving PepNotifier.urlVerdict(). Plain http refused.');
+      return { why: 'This notify URL is plain http, and a nudge is sent ' +
+               'over https only: register the PEP\'s HTTPS notify URL, ' +
+               'https://<host>:<PEP_HTTPS_PORT>/notify. Until then it ' +
+               'converges by polling.',
+               errorCode: HTTP_REFUSED_CODE };
     }
     const list = this.allowedHosts();
     if (list.length && list.indexOf(parsed.hostname.toLowerCase()) < 0) {
@@ -403,17 +619,18 @@ class PepNotifier {
    * It resolves and never rejects; a nudge refused before dialling is
    * recorded on the audit log.
    * @param url - the PEP's notify URL
-   * @param issuer - the PDP's identifier, carried as `pdp` in the body
-   * @param options - reserved, unused
+   * @param issuer - the PDP's identifier, carried as `pdp` in the body;
+   *   empty asks `pdpIdentity()` for this realm's (#1830)
+   * @param options - `{ full: true }` asks the PEP to pull every document
+   *   whole (a Sync from the console, 2026-11-16)
    * @returns a promise of `{ ok, status, why }`
    */
   nudge(url: unknown, issuer?: unknown,
-        options?: object): Promise<NudgeResult> {
+        options?: { full?: boolean }): Promise<NudgeResult> {
     const self = this;
-    const { log, http, https, userAgent } = this.deps;
+    const { log, https, userAgent } = this.deps;
     log.debug('Entering PepNotifier.nudge(). url=' + url);
-    const settings = options || {};
-    void settings;
+    const full = !!(options && options.full);
     log.debug("Leaving PepNotifier.nudge().");
     return new Promise(function (resolve: (r: NudgeResult) => void) {
       if (!self.notifyAllowed()) {
@@ -426,11 +643,11 @@ class PepNotifier {
       const problem = self.urlVerdict(url);
       if (problem.why) {
         log.debug('Leaving nudge(). Refused before dialling.');
-        if (problem.errorCode === 'STS-XACML-0073') {
-          self.recordUndelivered('STS-XACML-0073', '',
+        if (problem.errorCode === HTTP_REFUSED_CODE) {
+          self.recordUndelivered(HTTP_REFUSED_CODE, '',
                                  'A change nudge was not sent: the PEP\'s ' +
-                                 'notify URL is plain http and this realm ' +
-                                 'is in product mode.');
+                                 'notify URL is plain http, and a nudge is ' +
+                                 'sent over https only.');
         } else {
           self.recordUndelivered('STS-XACML-0066', '',
                                  'A change nudge was not sent: ' +
@@ -440,15 +657,13 @@ class PepNotifier {
         resolve({ ok: false, status: 0, why: problem.why });
         return;
       }
+      self.announceRetired();
       const parsed = new URL(String(url));
-      const insecure = parsed.protocol === 'http:';
-      // The certificate policy (#171): node's store and
-      // `xacml.pepNotifyCaFile`, skipped only in development with
-      // `xacml.pepNotifySkipTlsVerification` on. A PEP's certificate is its
-      // own and this service is not the authority for it.
-      const policy = insecure ? null :
-        OutboundTls.tlsVerdict(NOTIFY_TRANSPORT, parsed.origin);
-      if (policy && !policy.ok) {
+      // The certificate policy (2026-11-14): this realm's `pep-tls` chain,
+      // node's store and `xacml.pepNotifyCaFile`, ALWAYS verified, with the
+      // host check and the pin. The retired skip is not read.
+      const policy = self.trust(parsed.origin);
+      if (!policy.ok) {
         log.debug('Leaving nudge(). ' + policy.why);
         self.recordUndelivered('STS-CORE-0104', parsed.origin,
                                'A change nudge was not sent: the CA file ' +
@@ -456,23 +671,30 @@ class PepNotifier {
         resolve({ ok: false, status: 0, why: policy.why });
         return;
       }
-      const body = JSON.stringify({
+      // `full` (2026-11-16) is a Sync's: the PEP pulls every document whole
+      // rather than being answered 304. It carries no content, so the
+      // nudge is still never the mechanism; a PEP that does not read it
+      // pulls as it always did.
+      // `pdp` IS THIS REALM'S PDP (#1830): the base the PEP's own
+      // `PEP_PDP_URL` names, realm prefix included, so a receiver can tell
+      // which PDP — and which realm of it — is asking. Every caller passed
+      // '' until then, so the member was always empty. An explicit issuer
+      // still wins; '' asks `pdpIdentity()`, which is '' only with nothing
+      // pinned and no request in hand. The PEP reads none of it.
+      const fields: Record<string, unknown> = {
         event: 'policy-repository-changed',
         at: new Date().toISOString(),
-        pdp: String(issuer || '')
-      });
-      if (insecure) {
-        // Logged per REQUEST rather than once when the setting was read, for
-        // federation's reason: a check disabled six months ago and forgotten
-        // is the worst kind of leftover.
-        log.warn('xacml: nudging ' + parsed.origin + ' over plain http ' +
-                 '(xacml.pepNotifyAllowHttp is on).');
+        pdp: String(issuer || self.deps.pdpIdentity() || '')
+      };
+      if (full) {
+        fields.full = true;
       }
-      const transport = insecure ? http : https;
+      const body = JSON.stringify(fields);
+      const transport = https;
       const request = transport.request(Object.assign({
         method: 'POST',
         hostname: parsed.hostname,
-        port: parsed.port || (insecure ? 80 : 443),
+        port: parsed.port || 443,
         path: parsed.pathname + parsed.search,
         headers: { 'Content-Type': 'application/json',
                    'Content-Length': Buffer.byteLength(body),
@@ -484,17 +706,10 @@ class PepNotifier {
                    // unsolicited POST it never asked for is. RFC 9110 product
                    // form; common/version.js owns the product token.
                    'User-Agent': userAgent },
-        timeout: self.timeoutMs(),
-        // Two settings since #171, where there was one that turned off both
-        // halves of "insecure" at once — and product mode honoured it. The
-        // policy above decides this; `ca` is added only when a CA file names
-        // one, because node reads that option by value.
-        rejectUnauthorized: !policy || policy.rejectUnauthorized
-      }, policy && policy.ca ? { ca: policy.ca } : {},
-      // The host check, and the verified chain held to the path rules
-      // (#201, `OutboundTls.checkServerIdentity()`); only when present.
-      policy && policy.checkServerIdentity
-        ? { checkServerIdentity: policy.checkServerIdentity } : {}),
+        timeout: self.timeoutMs()
+      // Verification ON, the anchors above beside node's store, the RFC 9525
+      // host check with the path rules (#201), and the pin.
+      }, policy.options),
       function (response) {
         let received = 0;
         const chunks: Buffer[] = [];
@@ -630,6 +845,7 @@ slot.buildNowUnlessDeferred();
  */
 export = {
   PepNotifier: PepNotifier,
+  pinProblem: PepNotifier.pinProblem,
   installInstance: (instance: PepNotifier): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   MAX_BODY_BYTES: PepNotifier.MAX_BODY_BYTES,

@@ -254,7 +254,12 @@ class FlowError extends Error {
 
 function dueFromTtl(now, ttlS) {
   const base = ttlS * 1000 * REFRESH_AT;
-  const jitter = ttlS * 1000 * JITTER * (Math.random() * 2 - 1);
+  // Uniform on [0, 1). crypto.randomInt: the house rule and
+  // js/insecure-randomness both follow Math.random, and this file is in
+  // the walk tests/random_values.js makes. The value is refresh jitter.
+  const span = 1000000;
+  const unit = crypto.randomInt(span) / span;
+  const jitter = ttlS * 1000 * JITTER * (unit * 2 - 1);
   return now + Math.max(30000, base + jitter);
 }
 

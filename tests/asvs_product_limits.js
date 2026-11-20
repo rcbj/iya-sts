@@ -269,9 +269,12 @@ function childMain() {
         note(list.indexOf("'" + name + "'") >= 0,
              name + ' is withheld from every LDAP reader');
       });
-    const scimMap = fs.readFileSync(ROOT_DIR + '/scim/scim_map.ts', 'utf8');
-    note(!/ldap:\s*'(stsTotp|stsBackup|oauthClientSecret|stsActivation)/
-      .test(scimMap), 'and SCIM maps none of them');
+    // The SCIM mapping is the model's since #1579.
+    const scimMap = fs.readFileSync(ROOT_DIR + '/models/scim/scim.tsp',
+                                    'utf8');
+    note(/ldap:\s*"uid"/.test(scimMap) &&
+         !/ldap:\s*"(stsTotp|stsBackup|oauthClientSecret|stsActivation)/i
+           .test(scimMap), 'and SCIM maps none of them');
 
     // --- 10. a person with no scope needs a role (#1473) --------------------
     const ldap = require(ROOT_DIR + '/ldap/ldap_server');
@@ -332,6 +335,40 @@ function childMain() {
     r = await scimAs('pl-plain', PASS);
     note(r.status === 200, 'the opt-out lifts it', r.status);
     config.value = realAllow;
+    // --- 10b. IN A TRUST REALM, ITS OWN ROSTER (2026-11-14, #444's D12) -----
+    // The realm's Admin Read / Admin Write were read off the DEFAULT realm's
+    // roster (rolesOf() with no realm), so they were never seen here.
+    const realms = require(ROOT_DIR + '/common/realms');
+    const TR = 'plr' + process.pid;
+    realms.create({ id: TR, name: 'Unscoped people in a realm' });
+    realms.run(realms.get(TR), function () {
+      ['pl-r-reader', 'pl-r-writer'].forEach(function (name) {
+        ldap.createUser(name, { invent: false, attributes: { cn: name,
+          givenName: 'Probe', sn: name, mail: name + '@example.test' } });
+        const set = credentials.setPassword(name, PASS);
+        note(set.ok, name + ' has a password in ' + TR,
+             JSON.stringify(set.errors || []));
+      });
+    });
+    rbac.grant('pl-r-reader', 'read', { via: 'test', realm: TR });
+    rbac.grant('pl-r-writer', 'write', { via: 'test', realm: TR });
+    const inRealm = function (method, p, who, body, type) {
+      return ask(method, '/realm/' + TR + p, Object.assign({
+        authorization: 'Basic ' + Buffer.from(who + ':' + PASS)
+          .toString('base64') }, type ? { 'content-type': type,
+        accept: 'application/scim+json' } : {}), body);
+    };
+    r = await inRealm('GET', '/scim/v2/Users', 'pl-r-reader', undefined,
+                      'application/scim+json');
+    note(r.status === 200, 'in a trust realm its own Admin Read may read ' +
+         'SCIM', r.status + ' ' + r.text.slice(0, 160));
+    r = await inRealm('GET', '/ssf/stream', 'pl-r-writer');
+    note(r.status !== 403 && r.status !== 401, 'and its own Admin Write ' +
+         'may use SSF', r.status + ' ' + r.text.slice(0, 160));
+    r = await inRealm('GET', '/ssf/stream', 'pl-r-reader');
+    note(r.status === 403, 'while its Admin Read is still not enough there',
+         r.status);
+    realms.remove(TR);
 
     // --- 12. a CA file an administrator names (#1481) ------------------------
     const outbound = require(ROOT_DIR + '/common/outbound_tls');

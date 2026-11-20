@@ -56,6 +56,7 @@ import keyMaterial = require('../common/crypto_impl/key_material');
 import adminViews = require('../admin-core/admin_views');
 import codec = require('./est_codec');
 import InstanceSlot = require('../common/instance_slot');
+import ModelZod = require('../common/model_zod');
 
 /**
  * The enrollment family's name in the core and the monitor, `est`.
@@ -100,32 +101,29 @@ const OPERATIONS = [
           '(authenticated); empty under a label that reads no attestation' }
 ];
 
-/**
- * The RFC 5280 revocation reasons a revoke may name.
- */
-const REVOCATION_REASONS = ['unspecified', 'keyCompromise', 'cACompromise',
-                            'affiliationChanged', 'superseded',
-                            'cessationOfOperation', 'certificateHold',
-                            'privilegeWithdrawn', 'aACompromise'];
+// EACH ACTION'S BODY IS ITS OPERATION'S IN THE MANAGEMENT API OPENAPI DOCUMENT
+// (#1579): `models/api/management.tsp`, which `/admin-api` already holds the
+// request to. The validator is built from it, so an in-process caller meets
+// the same check, and which members are REQUIRED is the operation's.
+const ACTION_OPERATIONS: Record<string, string> = {
+  'issue-server-key': 'issueEstServerKey',
+  'revoke-certificate': 'revokeEstCertificate',
+  'add-host-name': 'addEstHostName',
+  'remove-host-name': 'removeEstHostName'
+};
 
-const vz = validation.z;
-const vt = validation.types;
-
-// The console form and the API body. Loose because the console posts its CSRF
-// token beside the fields; the API's own ajv schema is strict. Every field is a
-// string of a bounded shape, and which are REQUIRED is decided per action.
-const ACTION_BODY = vz.looseObject({
-  action: vt.opt(vt.token),
-  kind: vt.opt(vt.oneOf(['person', 'application'])),
-  identifier: vt.opt(vt.name),
-  profile: vt.opt(vt.oneOf(core.PROFILE_IDS)),
-  keyAlg: vt.opt(vt.identifier),
-  serial: vt.opt(vz.string().min(1).max(80)
-    .regex(/^[0-9A-Fa-f:]+$/, 'must be a hexadecimal serial number')),
-  reason: vt.opt(vt.oneOf(REVOCATION_REASONS)),
-  hostName: vt.opt(vz.string().min(1).max(253)),
-  csrf_token: vt.opt(vt.token)
+const SCHEMAS: Record<string, any> = {};
+Object.keys(ACTION_OPERATIONS).forEach(function (action) {
+  SCHEMAS[action] = ModelZod.body('management', ACTION_OPERATIONS[action]);
 });
+
+/**
+ * The RFC 5280 revocation reasons a revoke may name: the revoke operation's
+ * own list in the model.
+ */
+const REVOCATION_REASONS: string[] = ModelZod.operation('management',
+  'revokeEstCertificate').requestBody.content['application/json'].schema
+  .properties.reason.enum.slice(0);
 
 // What `EstConsole` needs from the rest of the service: the modules this file
 // used to reach for itself, passed in so that the composition root can build
@@ -508,62 +506,51 @@ class EstConsole {
    */
   async estAction(body, context) {
     const { log, validation, core, monitor } = this.deps;
-    const self = this;
     log.debug("Entering EstConsole.estAction(). action=" +
               (body && body.action));
     const ctx = context || {};
     const via = ctx.via === 'console' ? 'console' : 'api';
-    const posted = validation.checkParsed(body || {}, 'body', ACTION_BODY);
+    const action = String((body && body.action) || '');
+    if (!SCHEMAS[action]) {
+      log.debug("Leaving EstConsole.estAction(). Unknown action.");
+      return this.refused('STS-EST-0032', 400, 'Unknown action "' +
+                          action.slice(0, 60) + '". The four are: ' +
+                          EST_ACTIONS.join(', ') + '.');
+    }
+    // What the request carries beside the operation's body: the action (the
+    // path's). Who acts is the context's, never a member (#1579).
+    const fields = Object.assign({}, body || {});
+    delete fields.action;
+    const posted = validation.checkParsed(fields, 'body', SCHEMAS[action]);
     if (!posted.ok) {
       log.debug("Leaving EstConsole.estAction(). Malformed.");
       return this.refused('STS-EST-0031', 400, posted.detail);
     }
     const asked = posted.value;
-    const action = String(asked.action || '');
     const actor = this.actorOf(ctx.req, via);
-    const need = function need(names) {
-      log.debug("Entering need().");
-      const missing = names.filter(function (name) {
-        return !asked[name];
-      });
-      log.debug("Leaving need(). " + missing.length + " missing.");
-      return missing.length ?
-             self.refused('STS-EST-0031', 400, 'The ' + action +
-        ' action needs ' + missing.join(', ') + '.') : null;
-    };
     let result = null;
     if (action === 'issue-server-key') {
-      result = need(['kind', 'identifier']) ||
-               await this.issueServerKey(asked, actor, via);
+      result = await this.issueServerKey(asked, actor, via);
     } else if (action === 'revoke-certificate') {
-      result = need(['serial']);
-      if (!result) {
-        const done = await core.revokeEnrolled(asked.serial,
-                                               asked.reason || 'unspecified',
-                                               actor, { family: FAMILY });
-        result = done.ok ? Object.assign({}, done, {
-          message: 'The EST certificate ' + done.serialHex + ' of ' +
-                   core.entryUri(done.entry) + ' is revoked (' + done.reason +
-                   ') and on the EST Issuing CA\'s CRL.' }) : done;
-      }
-    } else if (action === 'add-host-name' || action === 'remove-host-name') {
-      result = need(['kind', 'identifier', 'hostName']);
-      if (!result) {
-        const entry = { kind: asked.kind, id: asked.identifier };
-        const adding = action === 'add-host-name';
-        const done = adding ? core.addHostName(entry, asked.hostName, actor)
-                            : core.removeHostName(entry, asked.hostName, actor);
-        result = done.ok ? Object.assign({}, done, {
-          message: 'The host name ' + asked.hostName + ' was ' +
-                   (adding ? (done.unchanged ? 'already registered on '
-                                             : 'registered on ')
-                           : 'removed from ') +
-                   core.entryUri(entry) + '.' }) : done;
-      }
+      const done = await core.revokeEnrolled(asked.serial,
+                                             asked.reason || 'unspecified',
+                                             actor, { family: FAMILY });
+      result = done.ok ? Object.assign({}, done, {
+        message: 'The EST certificate ' + done.serialHex + ' of ' +
+                 core.entryUri(done.entry) + ' is revoked (' + done.reason +
+                 ') and on the EST Issuing CA\'s CRL.' }) : done;
     } else {
-      result = this.refused('STS-EST-0032', 400, 'Unknown action "' +
-                            action.slice(0, 60) + '". The four are: ' +
-                            EST_ACTIONS.join(', ') + '.');
+      // add-host-name or remove-host-name: the four are SCHEMAS' keys.
+      const entry = { kind: asked.kind, id: asked.identifier };
+      const adding = action === 'add-host-name';
+      const done = adding ? core.addHostName(entry, asked.hostName, actor)
+                          : core.removeHostName(entry, asked.hostName, actor);
+      result = done.ok ? Object.assign({}, done, {
+        message: 'The host name ' + asked.hostName + ' was ' +
+                 (adding ? (done.unchanged ? 'already registered on '
+                                           : 'registered on ')
+                         : 'removed from ') +
+                 core.entryUri(entry) + '.' }) : done;
     }
     if (result && result.ok) {
       monitor.record(FAMILY, { operation: action, outcome:

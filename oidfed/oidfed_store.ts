@@ -71,6 +71,7 @@ import stsCrypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 import credentials = require('../common/credentials');
 import Classes = require('../common/domain_classes');
+import DomainMap = require('../common/domain_map');
 
 type Json = any;
 
@@ -172,9 +173,8 @@ class OidfedStore {
     log.debug("Entering OidfedStore.read().");
     const a = stored.attributes || {};
     // The domain model's reading (#1390). The two timestamps below are the
-    // directory's own operational attributes, which this concept does not
-    // carry, and a second concept per entry for them would cost more than
-    // reading them does.
+    // directory's own operational attributes, DirectoryEntry's, read one
+    // field at a time so that no second concept is made per entry (#1579).
     const held = Classes.OpenIdFederationEntity.fromEntry(a);
     let data: Json = null;
     try {
@@ -187,8 +187,10 @@ class OidfedStore {
     log.debug("Leaving OidfedStore.read().");
     return { cn: cn, kind: held.kind || '',
              entityId: held.entityId || '', data: data,
-             createdAt: OidfedStore.timeOf(a.createtimestamp),
-             updatedAt: OidfedStore.timeOf(a.modifytimestamp) };
+             createdAt: OidfedStore.timeOf(DomainMap.fieldOf('DirectoryEntry',
+               'createTimestamp', a)),
+             updatedAt: OidfedStore.timeOf(DomainMap.fieldOf('DirectoryEntry',
+               'modifyTimestamp', a)) };
   }
 
   // Every entry of `kind` in the ambient realm, oldest first.

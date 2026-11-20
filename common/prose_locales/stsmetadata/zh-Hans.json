@@ -252,8 +252,12 @@
     "text": "partial：响应程序应尽的部分。明文 HTTP（第 5 节）——响应程序在 `pki.httpPort` 以及 TLS 主端口上应答，证书指明明文端口；附加 base64 请求的 GET；任何 GeneralizedTime 中都没有小数秒（第 2.2.4 节）；响应程序 ID 按密钥哈希给出（第 2.2.2 节）；对其无权威的请求返回 `unauthorized`（第 2.2.3 节）；以及第 6.2 节的缓存标头——max-age 不晚于 nextUpdate、Last-Modified、Expires 和强 ETag，权威应答上从不使用 no-cache 或 no-store。未完成：响应按请求签名，而不是预先生成（第 2.2.1 节建议在高流量时预先生成），并且对携带 nonce 的请求的应答被标记为 private，而不是从缓存提供。"
   },
   "stsmetadata.specs.ws-trust.coverage": {
-    "en": "cafeffef561dcd9a",
-    "text": "partial：基于 SOAP 1.1 和 1.2 的 Issue、Renew、Validate 和 Cancel。请求签名不会被验证。OnBehalfOf 和 ActAs 由签发策略决定（#186，令牌交换和 Kerberos S4U 共用的规则）——OnBehalfOf 请求的是模拟身份，ActAs 请求的是委托，条目的委托语义必须允许它，AppliesTo 必须是委托关系所允许的已注册应用，个人请求方需要 delegation.actorRole——在产品模式下以 wst:RequestFailed 故障（第 11 节）拒绝；同时出现两个元素则为 wst:InvalidRequest；开发模式记录本应被拒绝的内容。在产品模式下（2026-09-12），每个操作都需要凭据——针对目录验证的 UsernameToken，或由本 STS 签名且处于其 Conditions 之内的 SAML 断言——而 OnBehalfOf/ActAs 需要请求方自己的凭据，以及其中的此类断言；开发模式一概不要求，一如既往。在两种模式下，请求的 wst:Lifetime 都会被限制（wstrust.maxTokenLifetimeMin），所签发断言的 AuthnContext 指明的是所用凭据，而不是密码。若请求方的 wsse:Security 不携带任何凭据，则在两种模式下均以连接上的 TLS 客户端证书认证请求方，前提是该证书由本领域颁发给某个人或某个应用程序（#1046），或者来自外部证书颁发机构并存储在其恰好一个条目的 userCertificate 中（#1061）。"
+    "en": "34e462a3c1215584",
+    "text": "partial：基于 SOAP 1.1 和 1.2 的 Issue、Renew、Validate 和 Cancel。GET /sts/metadata 是 WSDL 1.1，每个 trust 版本一个 port type，凭据以 WS-SecurityPolicy 表示；凭据/令牌类型组合是位于 /sts/metadata/capabilities 的 IYA-STS 扩展；WS-MetadataExchange 在 /sts/mex 应答。对 Body 和 Timestamp 的 WS-Security 签名是一种凭据（#521），在产品模式下加以验证。OnBehalfOf 和 ActAs 由签发策略决定（#186，令牌交换和 Kerberos S4U 共用的规则）——OnBehalfOf 请求的是模拟身份，ActAs 请求的是委托，条目的委托语义必须允许它，AppliesTo 必须是委托关系所允许的已注册应用，个人请求方需要 delegation.actorRole——在产品模式下以 wst:RequestFailed 故障（第 11 节）拒绝；同时出现两个元素则为 wst:InvalidRequest；开发模式记录本应被拒绝的内容。在产品模式下（2026-09-12），每个操作都需要凭据——针对目录验证的 UsernameToken、本 STS 签发的 SAML 2.0 或 SAML 1.1 断言或 JWT、WS-Security 签名，或针对本服务自身 SPN 的 Kerberos 令牌——而 OnBehalfOf/ActAs 需要请求方自己的凭据，以及其中由本 STS 签发的令牌；开发模式一概不要求，一如既往。在两种模式下，请求的 wst:Lifetime 都会被限制（wstrust.maxTokenLifetimeMin），所签发断言的 AuthnContext 指明的是所用凭据，而不是密码。若请求方的 wsse:Security 不携带任何凭据，则在两种模式下均以连接上的 TLS 客户端证书认证请求方，前提是该证书由本领域颁发给某个人或某个应用程序（#1046），或者来自外部证书颁发机构并存储在其恰好一个条目的 userCertificate 中（#1061）。"
+  },
+  "stsmetadata.specs.ws-mex.coverage": {
+    "en": "252983aa08edd8d9",
+    "text": "partial：POST /sts/mex 以请求所用的 SOAP 版本和 WS-Addressing 命名空间应答 WS-Transfer Get 和 GetMetadata（可按 Dialect 和 Identifier 缩小范围），并将 WSDL、令牌能力文档及其架构作为节嵌入。未实现：MetadataReference 或 Location 节、W3C WS-MetadataExchange 1.1 推荐标准的命名空间，以及 EPR 中的元数据。"
   },
   "stsmetadata.specs.wss-kerberos.coverage": {
     "en": "a6d4bfc032b7d23e",
@@ -300,8 +304,8 @@
     "text": "full：覆盖其所发出的内容：封装签名、排他规范化，默认 RSA-SHA256，通过 saml.signatureAlgorithm 可选 RSA-SHA384/512 或已被攻破的 RSA-SHA1（2026-09-12；自 #181 起仅限开发模式）；AES-GCM 或 AES-CBC 内容加密，密钥以 RSA-OAEP（rsa-oaep-mgf1p，或 XML Encryption 1.1 中配 SHA-256 和 MGF1-SHA-256 的 rsa-oaep，#168）封装，或仅在开发模式下以 RSA-1_5 封装——产品模式既不以 RSA-1_5 封装也不以其解封（XML Encryption 1.1 第 6.1.2 节）——对于 EC 接收方，则使用带 ConcatKDF 和 AES 密钥封装的 ECDH-ES 密钥协商（第 5.6.4 节；#168）。联合关系只按其公布的算法解密伙伴的 EncryptedAssertion、EncryptedID 和 EncryptedAttribute，并在每种模式下拒绝 AES-CBC 和 rsa-1_5。没有为 XML Encryption 注册任何 ML-KEM 方法。验证（自 2026-09-17 起）node 的 OpenSSL 所实现的 RFC 9231 和 XMLDSig 1.1 的每个 SignatureMethod——RSA PKCS#1 v1.5 和 RSASSA-PSS（带或不带 RSAPSSParams）、ECDSA、EdDSA Ed25519/Ed448、DSA——以及草案 draft-eastlake-rfc9231bis-xmlsec-uris 中的 ML-DSA 和 SLH-DSA 标识符；SHA-224、SHA-2、SHA-3 和 RIPEMD-160 摘要；SHA-1 仅在开发模式下配合 saml.allowSha1Signatures 可用。不验证并按名称拒绝的：MD5、各种 MAC、Whirlpool、ESIGN、预哈希 EdDSA 以及有状态的 HSS/LMS 和 XMSS。"
   },
   "stsmetadata.specs.rfc6749.coverage": {
-    "en": "56137411ddc592b3",
-    "text": "partial：authorization_code、implicit、password、client_credentials 和 refresh_token。客户端身份验证被接受但不验证——RFC 9700 模式除外，在该模式下，在此注册为机密客户端的客户端必须出示本服务签发给它的 client_secret（第 2.5 节，本服务中唯一被检查的凭据）。该模式还会直接拒绝 password 授权；拒绝 implicit 授权的访问令牌——即每一种从授权端点签发访问令牌的响应类型——除非管理员为该领域豁免 RFC 9700 第 2.1.2 节，且即便如此也只对已启用该类型的应用程序生效（#1295、#1296）；并轮换刷新令牌。第 3.3 节：范围与客户端绑定（#110）——本服务自己的受保护范围（admin:*、SCIM 和共享信号范围、调试器权限）在每种模式下都只签发给其 oauthAllowedScope 声明了它们的客户端，在产品模式下每个范围都受限于该列表或一组有文档记载的默认范围；超出范围的请求为 invalid_scope。"
+    "en": "77e091b183d9dd7b",
+    "text": "partial：authorization_code、implicit、password、client_credentials 和 refresh_token。客户端认证会被接受但不验证——RFC 9700 模式除外，在该模式下，在此注册为机密客户端的客户端必须出示本服务颁发给它的 client_secret（第 2.5 节，这是本服务中唯一被检查的凭据）。该模式还完全拒绝 password 授权，拒绝 implicit 授权的访问令牌——即从授权端点颁发访问令牌的每种响应类型——除非管理员为该领域豁免 RFC 9700 第 2.1.2 节，此时也仅对启用了该类型的应用程序予以支持（#1295、#1296），并轮换刷新令牌。第 3.3 节：作用域与客户端绑定（#110）——本服务自己的受保护作用域（admin:*、SCIM 和 Shared Signals 作用域）在每种模式下都只颁发给其 oauthAllowedScope 声明了它们的客户端，在产品模式下每个作用域都受该列表或一个有文档的默认集合约束；超出范围的请求为 invalid_scope。"
   },
   "stsmetadata.specs.rfc6750.coverage": {
     "en": "32af4b1d310ee331",
@@ -476,12 +480,12 @@
     "text": "full：覆盖授权服务器，并且默认关闭——配置文件 oauth2.fapi=1-advanced（按领域设置，或命名授权服务器的 fapi 成员），即 Baseline 再加更多要求（#139）：按值或按引用传递的 JWS 签名请求对象（第 1 项），exp 和 nbf 在 60 分钟内，aud 为颁发者（第 13、15、17 项）；response_type 为 code id_token，或 code 配 JARM（第 2 项）；ID 令牌作为带 s_hash 的分离签名（5.2.2.1）；仅限受发送方约束的访问令牌——mTLS，或 DPoP（除非设置了 oauth2.fapiRequireMtls）——并公布 mtls_endpoint_aliases（第 5、6 项）；tls_client_auth、self_signed_tls_client_auth 或 private_key_jwt，且不允许公共客户端（第 14、16 项）；推送的请求需 PKCE S256（第 18 项，并按该节所述放宽 Baseline 第 7 项）；双向的每个签名都使用 PS256 或 ES256，绝不使用 RSA1_5（8.6），本服务器默认以 PS256 签名。控制台、门户和调试器均符合要求：推送到 PAR 的签名请求对象、JARM 以及绑定令牌。未覆盖：一致性测试套件（#176）。"
   },
   "stsmetadata.specs.fapi2-security.coverage": {
-    "en": "f8972d88b2277611",
-    "text": "full：覆盖授权服务器，并且默认关闭——配置文件 oauth2.fapi=2-security（按领域设置，或命名授权服务器的 fapi 成员），一个独立的配置文件（#140）：开启 RFC 9700 模式；仅限机密客户端，通过 mTLS 或 private_key_jwt，断言的 aud 为字符串形式的颁发者（5.3.2.1 第 3、6、8 项）；仅限受发送方约束的令牌，通过 mTLS 或 DPoP（第 4-5 项）；除非 oauth2.refreshTokenRotation 强制，否则不轮换刷新令牌（第 9 项）；授权码有效期 60 秒（第 11 项）；iat 或 nbf 超前 60 秒以上会被拒绝（第 13 项）；仅限 code，需要 PAR 并对客户端进行身份验证，PKCE S256，推送 redirect_uri，request_uri 短于 600 秒（5.3.2.2）；PS256、ES256 或 EdDSA，RSA 2048 位和 EC 224 位（5.4.1）。TLS（5.2）：BCP 195 的套件是每个监听器的默认值，优先 TLS 1.3。DPoP nonce 仍为可选，同意遵循普通规则。攻击者模型没有规范性要求；docs/oauth-security.md 将每类攻击者对应到阻止它的措施。控制台、门户和调试器均符合要求。未覆盖：一致性测试套件（#176）。"
+    "en": "f7a75985a1885edb",
+    "text": "full：覆盖授权服务器，并且默认关闭——配置文件 oauth2.fapi=2-security（按领域设置，或命名授权服务器的 fapi 成员），一个独立的配置文件（#140）：开启 RFC 9700 模式；仅限机密客户端，通过 mTLS 或 private_key_jwt，断言的 aud 为字符串形式的颁发者（5.3.2.1 第 3、6、8 项）；仅限受发送方约束的令牌，通过 mTLS 或 DPoP（第 4-5 项）；除非 oauth2.refreshTokenRotation 强制，否则不轮换刷新令牌（第 9 项）；授权码有效期 60 秒（第 11 项）；iat 或 nbf 超前 60 秒以上会被拒绝（第 13 项）；仅限 code，需要 PAR 并对客户端进行身份验证，PKCE S256，推送 redirect_uri，request_uri 短于 600 秒（5.3.2.2）；PS256、ES256 或 EdDSA，RSA 2048 位和 EC 224 位（5.4.1）。TLS（5.2）：BCP 195 的套件是每个监听器的默认值，优先 TLS 1.3。DPoP nonce 仍为可选，同意遵循普通规则。攻击者模型没有规范性要求；docs/v1.1.0/oauth-security.md 将每类攻击者对应到阻止它的措施。控制台、门户和调试器均符合要求。未覆盖：一致性测试套件（#176）。"
   },
   "stsmetadata.specs.fapi2-message-signing.coverage": {
-    "en": "455b8d25419e467e",
-    "text": "full：覆盖授权服务器，并且默认关闭——配置文件 oauth2.fapi=2-message-signing，即安全配置文件加上全部三个组件（#141，rcbj 的决定）：PAR 上必须提供 JAR 签名的请求对象，aud 为颁发者，exp 和 nbf 在 60 分钟内（5.3）；必须使用 JARM，iss 位于 JWT 内（5.4）；RFC 9701 内省响应需签名（5.5）。第 5.2 节的不可否认性是指导性内容，在 docs/oauth-security.md 中作答。控制台、门户和调试器均符合要求。RFC 9421 HTTP 签名不属于最终规范：它们是 FAPI 2.0 Http Signatures，即下一条（#178）。"
+    "en": "35f9077fddbb7a8e",
+    "text": "full：覆盖授权服务器，并且默认关闭——配置文件 oauth2.fapi=2-message-signing，即安全配置文件加上全部三个组件（#141，rcbj 的决定）：PAR 上必须提供 JAR 签名的请求对象，aud 为颁发者，exp 和 nbf 在 60 分钟内（5.3）；必须使用 JARM，iss 位于 JWT 内（5.4）；RFC 9701 内省响应需签名（5.5）。第 5.2 节的不可否认性是指导性内容，在 docs/v1.1.0/oauth-security.md 中作答。控制台、门户和调试器均符合要求。RFC 9421 HTTP 签名不属于最终规范：它们是 FAPI 2.0 Http Signatures，即下一条（#178）。"
   },
   "stsmetadata.specs.fapi2-http-signatures.coverage": {
     "en": "84f23a449916fdc1",
@@ -572,12 +576,12 @@
     "text": "full（#124，并入了 #115，2026-09-23）：end_session_endpoint 应答 GET 和 POST；请求在会话结束之前进行校验；id_token_hint 会被验证为本授权服务器签发的 ID 令牌（按第 2 节的允许，接受已过期的），其受众为该客户端，未签发给它的 client_id 会被拒绝；会请求最终用户确认——一个带真实按钮、不带脚本的页面——除非提示指明了本会话且任何 logout_hint 都指明了此人；post_logout_redirect_uri 只有在与客户端已注册列表精确匹配时才会被跟随，在每种模式下都如此（开发模式仍会为未注册任何列表的客户端跟随；产品模式和 OAuth 2.1 模式则不会），并返回 state。接受 ui_locales，而每个页面都是英文，这是本服务唯一的语言。前通道和后通道注销各有其行。作为依赖方（#167）：/logout 上的注销会提供联合伙伴的 end_session_endpoint，附带 id_token_hint、client_id、post_logout_redirect_uri 和 state，返回在 /federation/slo/{id} 上匹配。"
   },
   "stsmetadata.specs.oid4vci.coverage": {
-    "en": "9ec03ba02c69a7ce",
-    "text": "partial：但范围广泛：颁发者元数据、nonce、持有证明、批量签发、延迟签发、凭证要约（附录 H.1/H.2/H.3）、带 tx_code 的预授权码授权、credential_identifiers、请求和响应加密（第 10 节），以及通知端点（第 11 节）。jwt 证明标头中以及作为 attestation 证明类型的密钥证明（附录 D），针对已配置的证书进行验证；每个凭证都有状态列表；凭证可用后量子算法签名。没有钱包证明（附录 E）。"
+    "en": "15dc78bbb604ec84",
+    "text": "partial：但范围广泛：颁发者元数据、nonce、持有证明、批量签发、延迟签发、凭证要约（附录 H.1/H.2/H.3）、带 tx_code 的预授权码授权、credential_identifiers、请求和响应加密（第 10 节），以及通知端点（第 11 节）。jwt 证明标头中以及作为 attestation 证明类型的密钥证明（附录 D），针对已配置的证书进行验证；每个凭证都有状态列表；凭证可用后量子算法签名。签发 mso_mdoc（IdentityCredentialMdoc，#1862）：COSE ES256（-7）或 ESP256（-9），证明仍为 ES256 的 jwt。没有钱包证明（附录 E）。"
   },
   "stsmetadata.specs.oid4vp.coverage": {
-    "en": "7b2694beee176000",
-    "text": "partial：按值传递以及作为按引用传递的已签名请求对象的授权请求，response_mode=direct_post，DCQL 查询（包括 credential_sets），以及对返回的全部四种格式内容的完整验证——密钥绑定 JWT、带 nonce、aud 和 iat 的 VP JWT、带 Data Integrity 证明的 VerifiablePresentation（B.1.3.2.5），以及自 #935 起的 ISO mdoc（B.2：文档签名者链接到 oid4vp.mdocTrustAnchors、MSO、每个元素的摘要、设备对 B.2.6.1 会话记录的签名；拒绝 deviceMac）——以及每个凭证的状态，每个出示的凭证都必须指明其状态（oid4vp.requireStatusReference，默认全部；ldp_vc 查询会请求 credentialStatus，不提供它的凭证会被拒绝）。自 2026-09-17 起，展示可以在 /authn/wallet 上让某人登录——通过 Digital Credentials API（附录 A：openid4vp-v1-signed、expected_origins、dc_api.jwt 或 dc_api、origin: 受众）、通过带第 8.2 节 response_code 的同设备方式，以及仅在 oid4vp.signInCrossDevice 开启时通过普通二维码——但只限本领域签发的、绑定持有者的凭证，三种格式中任意一种均可，并且只能以该凭证所签发给的目录条目身份登录；其他任何展示都会验证但不会让任何人登录。没有 presentation_definition（DIF PE）——仅限 DCQL；没有未签名或多重签名的 DC API 请求；不通过 DC API 或为登录接受 mdoc；没有钱包证明；没有 transaction_data。自 #129 起，已签名的请求按 oid4vp.clientIdPrefix 所选的前缀指明其客户端标识符（第 5.9 节）：pre-registered、decentralized_identifier（本领域的 did:web，kid 为 DID URL）、verifier_attestation（`jwt` 标头中的验证方证明 JWT，已配置或自证明），或 openid_federation（本领域的实体配置），以及自 #230 起的 x509_san_dns 和 x509_hash（第 5.9.3 节：x5c 中来自本领域 JOSE 签发 CA 的验证方自身证书、作为响应 URI 主机的 dNSName，或叶证书的 SHA-256），按领域或按请求选择；未签名的请求使用 redirect_uri。不提供 origin 前缀（它是 Digital Credentials API 自己的前缀，由浏览器设置）。"
+    "en": "65e427209cdba492",
+    "text": "partial：按值传递以及作为按引用传递的已签名请求对象的授权请求，response_mode=direct_post，DCQL 查询（包括 credential_sets），以及对返回的全部四种格式内容的完整验证——密钥绑定 JWT、带 nonce、aud 和 iat 的 VP JWT、带 Data Integrity 证明的 VerifiablePresentation（B.1.3.2.5），以及自 #935 起的 ISO mdoc（B.2：文档签名者链接到 oid4vp.mdocTrustAnchors、MSO、每个元素的摘要、设备对 B.2.6.1 会话记录的签名；拒绝 deviceMac）——以及每个凭证的状态，每个出示的凭证都必须指明其状态（oid4vp.requireStatusReference，默认全部；ldp_vc 查询会请求 credentialStatus，不提供它的凭证会被拒绝）。自 2026-09-17 起，展示可以在 /authn/wallet 上让某人登录——通过 Digital Credentials API（附录 A：openid4vp-v1-signed、expected_origins、dc_api.jwt 或 dc_api、origin: 受众）、通过带第 8.2 节 response_code 的同设备方式，以及仅在 oid4vp.signInCrossDevice 开启时通过普通二维码——但只限本领域签发的、绑定持有者的凭证，四种格式中任意一种均可，并且只能以该凭证所签发给的目录条目身份登录；其他任何展示都会验证但不会让任何人登录。没有 presentation_definition（DIF PE）——仅限 DCQL；没有未签名或多重签名的 DC API 请求；不通过 DC API 接受 mdoc（附录 A）；只有本领域签发的 mso_mdoc 才能让人登录（#1862）；没有钱包证明；没有 transaction_data。自 #129 起，已签名的请求按 oid4vp.clientIdPrefix 所选的前缀指明其客户端标识符（第 5.9 节）：pre-registered、decentralized_identifier（本领域的 did:web，kid 为 DID URL）、verifier_attestation（`jwt` 标头中的验证方证明 JWT，已配置或自证明），或 openid_federation（本领域的实体配置），以及自 #230 起的 x509_san_dns 和 x509_hash（第 5.9.3 节：x5c 中来自本领域 JOSE 签发 CA 的验证方自身证书、作为响应 URI 主机的 dNSName，或叶证书的 SHA-256），按领域或按请求选择；未签名的请求使用 redirect_uri。不提供 origin 前缀（它是 Digital Credentials API 自己的前缀，由浏览器设置）。"
   },
   "stsmetadata.specs.siopv2.coverage": {
     "en": "7b5596036282fc19",
@@ -636,8 +640,8 @@
     "text": "partial: 签发者（issue）、持有者（prove、derive）、验证者（凭证和出示）和状态服务，基于本服务自己的密码套件、状态列表和 VC API 专用密钥；在领域开启之前处于关闭状态（vcApi.enabled），在所有模式下都需要带有 vc-api:issue 或 vc-api:verify 的 OAuth 2.0 访问令牌，按客户端限速，不理解的选项会被拒绝。尚未构建：zcap 授权、工作流和交换、挑战、凭证和出示的存储（/credentials/{id} 的 GET 和 DELETE）、VCALM 的 operation:path 范围，以及按领域配置的签发者实例（实例是固定的，每种加固机制和曲线各一个）。"
   },
   "stsmetadata.specs.token-status-list.coverage": {
-    "en": "b7932392e5841ca6",
-    "text": "partial：每个领域一个列表，每个凭证两位（VALID、INVALID、SUSPENDED），根据 Accept 以 JWT 和 CWT 形式作为 Status List Token 提供，带有 ttl 和 exp，一个聚合端点，以及每个 SD-JWT VC 和 jwt_vc_json 凭证中的 status 声明；验证方会解析受信任的外部颁发者的列表，并在无法给出任何陈述时拒绝。此外，每个领域还有第二个用于访问令牌的列表（#432）：每个令牌一位，每个 OAuth RFC 9068 访问令牌以及每个 GNAP jwt-signed 和 jwt-encrypted 令牌都携带其 status 声明，并在授权服务器元数据中以 status_list_aggregation_endpoint（第 9.1 节）公布。不支持历史解析（501），不跟随重定向。不签发任何 mdoc；验证方会解析出示的 mdoc 的 Mobile Security Object 所指明的 CWT 列表，该列表由其 x5chain 中链接到 oid4vp.mdocTrustAnchors 的证书签名（#935）。"
+    "en": "1159352758ad21d3",
+    "text": "partial：每个领域一个列表，每个凭证两位（VALID、INVALID、SUSPENDED），根据 Accept 以 JWT 和 CWT 形式作为 Status List Token 提供，带有 ttl 和 exp，一个聚合端点，以及每个 SD-JWT VC 和 jwt_vc_json 凭证中的 status 声明；验证方会解析受信任的外部颁发者的列表，并在无法给出任何陈述时拒绝。此外，每个领域还有第二个用于访问令牌的列表（#432）：每个令牌一位，每个 OAuth RFC 9068 访问令牌以及每个 GNAP jwt-signed 和 jwt-encrypted 令牌都携带其 status 声明，并在授权服务器元数据中以 status_list_aggregation_endpoint（第 9.1 节）公布。不支持历史解析（501），不跟随重定向。已签发的 mdoc 指明位于 /oid4vci/status-lists/mdoc 的 CWT，由文档签名者以 x5chain 签名（#1862）。验证方依据 oid4vp.mdocTrustAnchors 以及本领域已生成的 IACA 解析出示的 mdoc 的 CWT（#935）。"
   },
   "stsmetadata.specs.etsi-ts-119-602.coverage": {
     "en": "d648e3ad690b8900",
@@ -764,8 +768,8 @@
     "text": "PDP 所见的每条策略，包括文档在内，以及每条策略的静态类型检查问题。与 /admin/ldap/* 隐藏的秘密不同，这些文档是刻意展示的：策略是规则而不是凭据，而一条没人能读的规则就是一条没人能检查的规则。谁可以读取它，与它是否被遮盖是两个不同的问题，而此端点需要 XACML_USER：自从访问 PEP 和签发 PEP 被嵌入以来，这些文档就是本服务用来决定自身准入的文档，而把放行他人的确切条件交给匿名调用方，与发布一条演示策略并不是同一回事。存储位置是嵌入式目录中的 ou=policies——该容器本身就是存储库。"
   },
   "stsmetadata.endpoints./xacml/pep/register.what": {
-    "en": "2d66266ac296ab90",
-    "text": "另一个进程中的策略执行点（PEP）通过同一端口上的双向 TLS 声明自己的存在——server.js 已经设置了 requestCert: true，因此不需要新的监听器。这是此系列中唯一要求凭据的端点，它问的问题与 /xacml/pdp 不同：不是决策针对谁，而是这是哪个 PEP——因为注册会写入一个条目，并提供一个本服务之后会拨号的地址。它与此处其他所有关卡一样是一道闸口（证书无需链接到任何东西，依据 RFC 8705 第 3 节的论证），它并不是让 PEP 能够执行的条件：未注册的 PEP 同样可以拉取并作出决策。xacml.pepRequireCertificate 可将其关闭。"
+    "en": "f25896a0df078725",
+    "text": "另一个进程中的策略执行点（PEP）通过同一端口上的双向 TLS 声明自己的存在——server.js 已经设置了 requestCert: true，因此不需要新的监听器。这是此系列中唯一要求凭据的端点，它问的问题与 /xacml/pdp 不同：不是决策针对谁，而是这是哪个 PEP——因为注册会写入一个条目，并提供一个本服务之后会拨号的地址。它与此处其他所有关卡一样是一道闸口（证书无需链接到任何东西，依据 RFC 8705 第 3 节的论证），它并不是让 PEP 能够执行的条件：未注册的 PEP 同样可以拉取并作出决策。xacml.pepRequireCertificate 可将其关闭。 由 sts-remote-pep 签发、受众为 /xacml/pep 并携带 xacml:pep 的 DPoP 绑定访问令牌，可在此处以及每个 /xacml/pep 端点和 /xacml/pip 上代替证书，具体取决于 xacml.pepAuthentication 的设置；此时 PEP 以其条目的用户名命名。"
   },
   "stsmetadata.endpoints./xacml/pep/policies.what": {
     "en": "f21e16beea449f7d",
@@ -778,6 +782,38 @@
   "stsmetadata.endpoints./xacml/pep/authzen-callers.what": {
     "en": "59db273e0a0989c3",
     "text": "此领域现在准许谁访问其 AuthZEN API，供 xacml-pep 容器的边缘 PDP 据此准入：访问控制策略准许访问 /access/v1/* 的每个调用方（AUTHZEN_PEPS，由策略决定），以策略在 urn:sts:xacml:authzen:caller 中看到的名称命名，附上本服务会解析到该名称的每个证书的 DER 的 SHA-256、其应用范围以及其被准许访问的端点，另有自己的同步令牌；?since=<token> 返回 304。成员、证书、范围或策略的答复发生变化时令牌随之改变，边缘在下一次轮询时趋于一致。需要 REMOTE_PEPS，与策略拉取相同，因此持有该角色的任何人都能读到谁可以询问 PDP（rcbj 于 #1189）。为新增内容：/xacml/pep/policies 和 /xacml/pep/authzen-catalogue 保持不变。"
+  },
+  "stsmetadata.endpoints./xacml/pep/proxy.what": {
+    "en": "dbd48be2ca7bfe7b",
+    "text": "xacml-pep 容器位于应用程序之前时执行的内容（#1760）：它转发到的上游、有序的路由及每条路由接受的机制和对应的 XACML 资源与操作、从注册表解析的每条路由的应用程序、它在本地验证所用的领域信息（颁发者、JWKS、登录端点、SAML 签名证书、监听器的证书链、会话路由的客户端）以及下面四个验证 URL，带有自己的同步令牌；?since=<token> 回答 304。未配置的 PEP 为 configured: false，其代理拒绝一切。与策略拉取一样需要 REMOTE_PEPS；不发送提示。"
+  },
+  "stsmetadata.endpoints./xacml/pep/settings.what": {
+    "en": "1d0f3cc8f4e76c25",
+    "text": "管理员在此 PEP 的控制台页面上为其设置的设置（#1760）——其描述和资源、推送通知 URL、偏向、PIP 开关、轮询、心跳和退避间隔、超时和请求体上限、日志级别、AuthZEN 边缘 PDP 的开关、标识符和转发超时，以及反向代理的上限——带有自己的同步令牌；?since=<token> 返回 304。只发送已设置的内容：其余由 PEP 使用其环境，而其首次连接所需的最低配置从不在此。与策略拉取一样需要 REMOTE_PEPS；没有推送通知。"
+  },
+  "stsmetadata.endpoints./xacml/pep/listener-certificate.what": {
+    "en": "2e12c8c3ee45d622",
+    "text": "管理员在本 PEP 的控制台页面上为其定义的 HTTPS 监听器的证书（#1760）：PEP 生成密钥并 POST { listener, csr }，即一个以签名证明其持有该密钥的 PKCS #10 请求，并收到由领域的 pep-tls 签发 CA 签发的证书及直到根证书的证书链，no-store 且不含任何密钥。名称来自 PEP 和定义，从不来自请求；同一密钥再次请求时，只要证书还剩三分之一的有效期，就返回已持有的证书。需要 REMOTE_PEPS，与心跳相同。"
+  },
+  "stsmetadata.endpoints./xacml/pep/introspect.what": {
+    "en": "b3f9e293393b2e8a",
+    "text": "授权服务器自身按 RFC 7662 对代理无法自行验证的 OAuth 2.0 访问令牌（不透明令牌，或密钥不在 JWKS 中）的读取，通过 PEP 的双向 TLS，而不是其自己的客户端注册。需要 REMOTE_PEPS。"
+  },
+  "stsmetadata.endpoints./xacml/pep/basic.what": {
+    "en": "96fe8e90091c87a2",
+    "text": "一个人的用户名和密码，在此处验证，从不在 PEP 中验证，受登录自身限制保护（429，附 retryAfterS）；拒绝为 { valid: false }，不再说明其他。需要 REMOTE_PEPS。"
+  },
+  "stsmetadata.endpoints./xacml/pep/saml.what": {
+    "en": "360f706d92daab1b",
+    "text": "此领域签发的断言，在代理无法自行检查时于此处检查：根断言上的封装签名对照领域的 XML 签名证书、颁发者、条件以及路由的受众。EncryptedAssertion 会被拒绝。需要 REMOTE_PEPS。"
+  },
+  "stsmetadata.endpoints./xacml/pep/session.what": {
+    "en": "da3c9a2559ab1433",
+    "text": "ID Token 的 sid 指明的登录会话是否仍然有效，因此在此处注销会在代理下次检查时结束代理自己的会话。需要 REMOTE_PEPS。"
+  },
+  "stsmetadata.endpoints./xacml/pep/identity.what": {
+    "en": "5a190f936df62f6b",
+    "text": "对于发出请求的 PEP 的一条路由，其凭证（访问令牌、SAML 断言或 Basic 票据，均再次验证）所指明的身份，按路由的模式给出：其请求头的声明、用于该应用程序的访问令牌，或发往其断言使用者服务的已签名 SAML 响应。需要 REMOTE_PEPS。"
   },
   "stsmetadata.endpoints./xacml/pep/heartbeat.what": {
     "en": "d05c08b4b281db67",
@@ -1027,6 +1063,10 @@
     "en": "102e5302d8a29ce7",
     "text": "登记册，以及每个 PEP 最近报告的内容：它是否持有当前存储库、最后一次联系的时间、它声称所用的偏向，以及最近一次提醒的结果——这是唯一记录提醒失败的地方，因为按定义，接收端看不到失败的提醒。"
   },
+  "stsmetadata.endpoints./admin-api/xacml/pep-clusters.what": {
+    "en": "456664ae403ea3f3",
+    "text": "每个共享同一配置的远程 PEP 集群：每个成员拉取的反向代理、设置和侦听器定义，以及每个成员自己的地址和保存现在会拒绝它的原因。"
+  },
   "stsmetadata.endpoints./admin-api/xacml/monitor.what": {
     "en": "a0f18506f38d22b3",
     "text": "GET /admin/xacml/monitor 所绘制的内容：全局决策数据，以及每个执行点（嵌入式和远程）一行。三个总数刻意分开——`here` 是本进程在发生时计数的，`remote` 是其他进程在心跳中报告的，当某个进程重启时会下降，`combined` 是二者的算术结果。在 `pdp` 行上，`allowed` 和 `refused` 为 null 而不是 0，因为本服务作出了该决策，却从未看到执行情况。旁边没有 POST：该页面没有控件，而重置是被拒绝的，并非被遗忘。"
@@ -1215,6 +1255,10 @@
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC（#570）。登录屏幕卡片和语言选择器的规则，合为一个样式表，供静态公共界面的外壳链接（common/web_card_css.ts）。在每个监听器上提供；带有本构建 ?v= 的地址会被永久缓存。"
   },
+  "stsmetadata.endpoints./web/footer.css.what": {
+    "en": "32bce90003b1f15c",
+    "text": "NON-SPEC（2026-11-14）。每个静态界面的外壳所绘制的页脚规则——文档、联系和关于链接、社交媒体图标、版权和版本（common/web_footer.ts）。在每个监听器上提供；带有本构建 ?v= 的地址会被永久缓存。"
+  },
   "stsmetadata.endpoints./web/theme.css.what": {
     "en": "3f3b19caa8978c23",
     "text": "NON-SPEC (#717)。域的登录颜色，作为 /web/card.css 读取的 CSS 自定义属性（common/branding.ts）：四种 branding.* 颜色以及由它们派生的色调，仅由经过验证的值构建。仅当域的外观与服务的外观不同时，外壳才在卡片之后链接它；带有其摘要作为 ?v= 的地址被永久缓存。"
@@ -1306,6 +1350,10 @@
   "stsmetadata.endpoints./admin/console.css.what": {
     "en": "4750f8f23393c7dd",
     "text": "非规范。控制台唯一的样式表（#446）。"
+  },
+  "stsmetadata.endpoints./admin/geo-outlines.json.what": {
+    "en": "16b6c492ce9b90e3",
+    "text": "非规范。Natural Earth 的公有领域 1:50m 国家数据，与 admin-ui/natural_earth/countries.json 所附带的一致；控制台只获取一次，并在浏览器中据此绘制“监控 → 地理位置”的地图（#444）。与脚本一样公开。"
   },
   "stsmetadata.endpoints./portal.what": {
     "en": "773d1d1c4e26f434",
@@ -1575,6 +1623,10 @@
     "en": "959c608dca54eb96",
     "text": "非规范。`rotate` 和 `emergency`（#48）是 /admin/keys/rotate 的两种形式：`{ \"units\": [...] }`（为空或 \"all\" 表示所有单元），紧急情况下还需 `\"confirm\": \"compromised\"`；每种都以 202 应答，并附带已排队的 signing.rotate-now 运行的 runId，可在 /admin-api/scheduler?run= 跟踪。`export`：此操作返回私钥材料，以 base64 放在 JSON 回复中，因为此 API 在其他所有地方都以 JSON 应答。接收密钥 id、格式（pem、der、jwk、pkcs12）和密码——pkcs12 必需，其他格式可选，用于加密私钥部分。此 API 完全不设关卡，这与此处每个操作的如实后果相同，对这个操作值得强调两遍。对应 POST /admin/keys/export。"
   },
+  "stsmetadata.endpoints./admin-api/mdoc-iaca.what": {
+    "en": "371ef1954001d46d",
+    "text": "NON-SPEC (#1862)。GET /oid4vci/mdoc-iaca 发布的证书，以 JSON 形式：PEM、其主体、notBefore 和 notAfter。在首次调用时生成，方式与该公开读取相同。没有私钥。生成失败时以纯文本应答 500。"
+  },
   "stsmetadata.endpoints./admin-api/pki.what": {
     "en": "83b11af065a98038",
     "text": "非规范。/admin/pki 绘制的所有内容，以 JSON 形式提供：三个 CA 层级及其主题、序列号、有效期、算法、指纹和证书；构建时可请求的词汇；以及对于持有已签发密钥对的一切，每个应用每个配置文件一行，因为这样一行上的每个事实——句柄、到期时间、声明的颁发者——都是按配置文件区分的，而一个应用可能同时持有 RFC 7523 和 RFC 7522 的密钥对。**此回复中从不包含任何私钥**：common/pki.js 在输出时会将其丢弃，因此这里的调用方不会因疏忽而泄露根 CA 的密钥。证书是完整的，因为证书就是密钥对中用于分发的那一半。与层级结构本身一样按领域划分。自 2026-09-11 起，`revocation` 就是登记册——每个证书颁发机构一项，包括它签发了什么、其列表上有什么，以及其基于 http 和 ldap 的 CRL 和 OCSP 地址——旁边的 `revocationNote` 则是持久不变的那句话：此处的吊销是发布出来的，从不被查询，因此在此页面上吊销的证书仍能向本服务进行身份验证。它们是两个成员，因为空列表和根本没有列表是不同的答案，一个字段只能承载其中一种。`residency` 是另一个限制：在开发模式下，层级结构随进程一同消亡。对应 GET /admin/pki。"
@@ -1768,8 +1820,8 @@
     "text": "非规范。两个控制台角色及其每项授予、关卡背后的四个设置，以及调用方是谁。这些角色是两个普通的目录组，因此此操作和 ldapsearch 针对的是同样的条目。对应 GET /admin/rbac。"
   },
   "stsmetadata.endpoints./admin-api/rbac/:action.what": {
-    "en": "0c8ab0417104c2c7",
-    "text": "非规范。一个模式背后有两个 URL：grant 和 revoke。它所需的凭据与它所授予的控制台不同——是携带 admin:write 的访问令牌，而不是控制台会话——正因如此，当没有任何持有角色的人能够登录时，它就是重新进入的途径，而在那种状态下没有任何浏览器能访问控制台。在 2026-09-09 之前它完全不设关卡，其后果值得说明，现已修复：任何能访问此端口的人都可以给自己授予两个角色。授予某人已持有的角色，或撤销其未持有的角色，以 200 和 changed:false 应答。不存在的人也可以被授予角色：该成员关系会处于悬空状态，直到此人首次登录。对应 POST /admin/rbac。"
+    "en": "762545bfac400a73",
+    "text": "非规范。一个模式背后有两个 URL：grant 和 revoke。它所需的凭据与它所授予的控制台不同——是携带 admin:write 的访问令牌，而不是控制台会话——正因如此，当没有任何持有角色的人能够登录时，它就是重新进入的途径，而在那种状态下没有任何浏览器能访问控制台。在 2026-09-09 之前它完全不设关卡，其后果值得说明，现已修复：任何能访问此端口的人都可以给自己授予两个角色。授予某人已持有的角色，或撤销其未持有的角色，以 200 和 changed:false 应答。角色只授予已存在的人员：目录中没有条目的名称会被拒绝，且不写入任何内容，这样以后以该名称创建的人员不会继承任何东西。对应 POST /admin/rbac。"
   },
   "stsmetadata.endpoints./admin-api/rbac/:action.effect": {
     "en": "d4fe53d89f2efabd",
@@ -1846,6 +1898,14 @@
   "stsmetadata.endpoints./admin-api/device-compliance.effect": {
     "en": "3ca2a7e72576096b",
     "text": "设置一个设备或一批设备的合规状态"
+  },
+  "stsmetadata.endpoints./admin-api/pep-audit.what": {
+    "en": "0b396bb699707086",
+    "text": "NON-SPEC (#1827)。远程 XACML PEP 推送它在自身进程中所作决定的记录——/protected 的执行、它自己决定的 AuthZEN 评估（从不包括它转发的）以及其反向代理对某条路由的请求——至少一次且按顺序，每批最多 500 条，每条按其 seq 确认。令牌携带受保护的 xacml:pep-audit 范围，此处没有其他操作接受它：PEP 自己的 RFC 7523 自我断言，经由预置的公共客户端 sts-remote-pep，绑定到其证书，仅在其条目属于远程 PEP 组（REMOTE_PEPS）时签发和接受。PEP 必须已在该领域注册。/admin/audit 上的行为 xacml.remote.enforcement、authzen.remote.decision，以及反向代理请求的 xacml.remote.proxy。"
+  },
+  "stsmetadata.endpoints./admin-api/pep-audit.effect": {
+    "en": "6d8bfdfca2b19127",
+    "text": "将远程 PEP 作出的一批决定记录为审计行"
   },
   "stsmetadata.endpoints./admin-api/device-registration.what": {
     "en": "4050dc9d2959597e",
@@ -2095,6 +2155,14 @@
     "en": "148c1a64de18a40e",
     "text": "每种策略的 save-<kind>-policy 和 reset-<kind>-policy——目前为 save-password-policy、reset-password-policy、save-authn-policy 和 reset-authn-policy——与控制台提交到 /admin/policies 的相同，通过同一个函数执行。保存会替换配置文件，并且每个字段都是必需的，因此遗漏的字段会被按名称拒绝，而不是悄悄重置。重置会删除已存储的条目并恢复内置默认值。两者都适用于该领域中设置的下一个密码，而不适用于任何已存储的密码。"
   },
+  "stsmetadata.endpoints./admin-api/policies/transfer.what": {
+    "en": "accd8d6a469cce08",
+    "text": "非规范。与 export、inspect 和 import 并列的读取操作（#1713）：生效的 pki.policyExportAlgorithm、pki.paranoidPolicySigner 是否开启、本领域的策略导出签名颁发 CA（主题、有效期、直到服务根但不含根的证书链，以及其他领域为信任其导出而填写的 SHA-256 指纹和 x5t#S256；在第一次导出创建它之前为 null），以及签名者信任库中用于 policy-signer 的条目：它已信任的其他领域。只有证书，绝无私钥。"
+  },
+  "stsmetadata.endpoints./admin-api/policies/transfer/:action.what": {
+    "en": "c9ad043e74f40a37",
+    "text": "NON-SPEC. export、inspect 和 import（#1713）：一个领域在 Directory → Policies 上存储的每个配置文件，作为一个 JSON 文档，即扁平 JSON 序列化的 JWS，由领域的 Policy Export Signing CA 下的一把新密钥签名，整条链在其 x5c 中。inspect 验证签名并将链交给验证门（用途 policy-signer，在 pki.paranoidPolicySigner 开启时执行完整的偏执检查）；import 通过各类型自己的保存写入每个配置文件。本领域自己的签名者受信任；另一领域的仅在管理员点名其 Issuing CA 表示同意后才受信任，这会把该链加入签名者信任库，仅用于 policy-signer。"
+  },
   "stsmetadata.endpoints./admin-api/consent.what": {
     "en": "4454328af36e5774",
     "text": "非规范。同意登记册，包括两半，并且是这一系列中继 /admin-api/delegation（已经发生的事情）和 /admin-api/permissions（两个应用之间被允许的事情）之后的第三个：这是一个人同意过的内容。`users` 是记录——此人条目上每个（人员、应用、范围）一个 oauthConsent 值，在其于 /oauth2/consent 点击“允许”时写入。`globals` 是覆盖项——应用条目上的 oauthGlobalConsent，每个范围一个值，它为所有人跳过提示，而不写入关于任何人的任何内容。`globals[].resource` 在范围解析为某项权限时说明哪个应用公开了该权限，`globals[].granted` 说明该客户端是否也持有它，这是两个独立的问题。`users[].unreadable` 是 ldapmodify 放到条目上、但不符合本服务写入格式的值：它不表示任何同意，会被报告而不是丢弃。`storable: false` 表示登记册背后没有安装目录，因此一次应答只被采纳一次就会被遗忘，每次都会绘制同意界面。只读——四个控件位于下面的资源上。对应 GET /admin/consent。"
@@ -2108,8 +2176,8 @@
     "text": "基于规范行为的非规范接口。以 JSON 形式提供的已用断言历史：本领域接受过且尚未过期的每个 RFC 7523 和 RFC 7522 断言，以及该历史保存在哪里（持久化，跨进程原子操作）、相对于 oauth2.assertionReplayCacheSize 的实时计数，可按文本、格式、用途和状态过滤，并通过 ?page= 和 ?per= 分页。任何行中都不包含断言或凭据。只读。对应 GET /admin/used-assertions。"
   },
   "stsmetadata.endpoints./admin-api/error-codes.what": {
-    "en": "853d31fe2e7b16e4",
-    "text": "非规范。本服务可能产生的每种失败情况的中央表，STS-<SUBSYSTEM>-<NNNN>，以 JSON 形式提供：每个代码及其子系统、什么失败了、以客户端自身协议的词汇告诉客户端什么，以及本领域保存的审计日志中有多少行带有该代码——可按子系统、文本和 ?seen=1 过滤，并通过 ?page= 和 ?per= 分页。代码从不发送给客户端：它只出现在审计记录和日志行中。只读——该表就是源代码。对应 GET /admin/error-codes；同一张表即 docs/error-codes.md。"
+    "en": "6a8ddafe4157455e",
+    "text": "非规范。本服务可能产生的每种失败情况的中央表，STS-<SUBSYSTEM>-<NNNN>，以 JSON 形式提供：每个代码及其子系统、什么失败了、以客户端自身协议的词汇告诉客户端什么，以及本领域保存的审计日志中有多少行带有该代码——可按子系统、文本和 ?seen=1 过滤，并通过 ?page= 和 ?per= 分页。代码从不发送给客户端：它只出现在审计记录和日志行中。只读——该表就是源代码。对应 GET /admin/error-codes；同一张表即 docs/v1.1.0/error-codes.md。"
   },
   "stsmetadata.endpoints./admin-api/audit-export.what": {
     "en": "c975b83632fa12f4",
@@ -2456,8 +2524,24 @@
     "text": "非规范（#594）。使用 ?id= 时，钱包就该 notification_id 所指明的凭证告诉 Notification Endpoint 的内容：事件、其描述以及时间（对于此颁发者未签发的 id 返回 404）。Admin Read；在 #594 之前是仅限开发的 /oid4vci/notification/:id。"
   },
   "stsmetadata.endpoints./sts.what": {
-    "en": "66812a407152a91b",
-    "text": "POST 一个 SOAP RequestSecurityToken；按 wst:RequestType（Issue、Renew、Validate、Cancel）分派并返回 RSTR。GET 描述该端点。添加 ?encrypt=1 可使所颁发的断言以 EncryptedAssertion 形式返回。"
+    "en": "dd027a41936ae3af",
+    "text": "POST 一个 SOAP RequestSecurityToken；按 wst:RequestType（Issue、Renew、Validate、Cancel）分派并返回 RSTR。GET 描述该端点。应用可以要求请求和响应中被点名的元素是 XML Encryption（xenc:EncryptedData）。与该映射不匹配的消息是故障，处理立即停止。"
+  },
+  "stsmetadata.endpoints./sts/metadata.what": {
+    "en": "8ffa0771ab14417f",
+    "text": "带有 WS-SecurityPolicy 的 WSDL 1.1。每个 trust 版本（2004 年 5 月、2005 年 2 月、1.3 和 1.4）都有自己的 port type，包含该版本定义的操作，每个输入和输出都指明其 wsa:Action，并在 /sts 上有一个 SOAP 1.1 端口和一个 SOAP 1.2 端口。凭据为 UsernameToken、SAML 2.0 或 SAML 1.1 断言、JWT、X.509 签名、在 wstrust.acceptKerberos 开启时的 Kerberos 令牌，以及在 wstrust.acceptClientCertificate 开启时的 TLS 客户端证书。以 Cache-Control: no-store 提供。"
+  },
+  "stsmetadata.endpoints./sts/metadata/capabilities.what": {
+    "en": "58631087b8e5323a",
+    "text": "IYA-STS 扩展（urn:iya-sts:metadata:token-capabilities:1）：/sts 接受的每种凭据、它签发的每种令牌类型，以及每一对组合是受支持、有条件支持还是不受支持及其条件，依据当前运行的设置生成。以 Cache-Control: no-store 提供。"
+  },
+  "stsmetadata.endpoints./sts/metadata/capabilities.xsd.what": {
+    "en": "c38652777c26f595",
+    "text": "令牌能力文档的 XML 架构。"
+  },
+  "stsmetadata.endpoints./sts/mex.what": {
+    "en": "5940ecbdab434650",
+    "text": "以 POST 发送 WS-Transfer Get 或 WS-MetadataExchange GetMetadata（2004/09），SOAP 1.1 或 1.2；应答是一个 mex:Metadata，其中以三个节包含 WSDL、令牌能力文档及其架构。"
   },
   "stsmetadata.endpoints./sts/cert.what": {
     "en": "bb1a31c1486e5138",
@@ -3348,12 +3432,20 @@
     "text": "用于持有证明的新 c_nonce。一次性使用。"
   },
   "stsmetadata.endpoints./oid4vci/credential.what": {
-    "en": "183d47a992f2e527",
-    "text": "按所请求的配置签发 dc+sd-jwt、jwt_vc_json 或 ldp_vc，每个都携带其状态列表引用。验证钱包的证明——jwt 证明（在发送或要求时，其标头中带有密钥证明），或 attestation 证明类型——支持批量颁发，并接受加密请求和/或返回加密响应。"
+    "en": "691a18d16548af3b",
+    "text": "按所请求的配置签发 dc+sd-jwt、jwt_vc_json、ldp_vc 或 mso_mdoc，每个都携带其状态列表引用。验证钱包的证明——jwt 证明（在发送或要求时，其标头中带有密钥证明），或 attestation 证明类型——支持批量颁发，并接受加密请求和/或返回加密响应。"
   },
   "stsmetadata.endpoints./oid4vci/status-lists/1.what": {
     "en": "0f0ea3feaea47fa8",
     "text": "本领域的 Status List Token：application/statuslist+jwt，或在 Accept 要求时为 application/statuslist+cwt（COSE_Sign1，不带 CWT 标签）。每个凭证两位；ttl 为 oid4vci.statusListTtlS，exp 为 oid4vci.statusListLifetimeS，使用凭证密钥签名。?time= 应答 501：不保留历史列表。"
+  },
+  "stsmetadata.endpoints./oid4vci/status-lists/mdoc.what": {
+    "en": "635d4fa4e34ca898",
+    "text": "与 /oid4vci/status-lists/1 相同的位串，以 application/statuslist+cwt 形式，由本领域的 mdoc 文档签名者签名。x5chain 即该证书。Cache-Control 为列表 ttl 的 max-age，Vary 为 Accept。?time= 应答 501。"
+  },
+  "stsmetadata.endpoints./oid4vci/mdoc-iaca.what": {
+    "en": "ef6376b2dcb0c9f8",
+    "text": "本领域的 mdoc 签发机构 CA，PEM，application/pem-certificate-chain，Cache-Control no-store。在首次调用时生成。没有私钥。"
   },
   "stsmetadata.endpoints./oid4vci/status-lists.what": {
     "en": "76f52e390d2c1987",
@@ -3852,8 +3944,8 @@
     "text": "1.2 Web（被动）请求方配置文件：按 wa 分派的 /wsfed、登录页面、位于 AD FS 路径的已签名联合元数据，以及 wsignout1.0。"
   },
   "stsmetadata.protocols.WS-Trust.what": {
-    "en": "3d88db91fab2cd5f",
-    "text": "在 /sts 上通过 SOAP 进行 RST / RSTR，支持全部四个版本（1.0 至 1.4），签发任一种 SAML 方言（断言已签名，并可选择加密给请求者的证书）、JWT 或 Kerberos 票据。"
+    "en": "2e317d1cfa752dc2",
+    "text": "在 /sts 上通过 SOAP 进行 RST / RSTR，支持全部四个版本（1.0 至 1.4），签发任一种 SAML 方言（断言已签名，并可选择加密给请求者的证书）、JWT 或 Kerberos 票据，由每个版本一个 port type 的 WSDL 描述，并通过 WS-MetadataExchange 发布。"
   },
   "stsmetadata.protocols.Kerberos.what": {
     "en": "3048c833f899933d",

@@ -27,7 +27,9 @@
 //      page's translator is called `t`, by convention, so a scan finds it.)
 //   F. Negotiation: `zh-HK` reads the Hong Kong overlay over Traditional and
 //      never Simplified; `tl` is Filipino; `fr-CA` overlays `fr`; a language
-//      with no catalog falls through to the next preference.
+//      with no catalog falls through to the next preference. Arabic is drawn
+//      right to left. A base catalog answers its offered regions once
+//      `catalogs.json` lists it.
 //   G. The protocol name `SAML` is invariant in the console navigation.
 // ===========================================================================
 
@@ -212,12 +214,12 @@ async function run(t) {
   t.check(i18n.chainFor('es-PA').chain.join('>') === 'es>en' &&
           i18n.chainFor('es-ES').chain.join('>') === 'es-ES>es>en',
           'F. es-PA reads Spanish, es-ES the Spain overlay');
-  const passedOver = i18n.negotiate(['de-CH', 'sv'], 'fr');
+  const passedOver = i18n.negotiate(['ja-JP', 'sv'], 'fr');
   t.check(passedOver.locale === 'sv', 'F. a language with no catalog is ' +
           'passed over for the next preference', passedOver.locale);
-  t.check(i18n.negotiate(['de'], 'fr-CA').locale === 'fr-CA',
+  t.check(i18n.negotiate(['ja'], 'fr-CA').locale === 'fr-CA',
           'F. and the last resort answers when no preference does');
-  t.check(i18n.negotiate(['de']).locale === 'en', 'F. and English when ' +
+  t.check(i18n.negotiate(['ja']).locale === 'en', 'F. and English when ' +
           'nothing does');
   t.check(i18n.canonical('not a tag!') === '' &&
           i18n.canonical('*') === '', 'F. a malformed tag and the wildcard ' +
@@ -225,6 +227,31 @@ async function run(t) {
   t.check(i18n.acceptLanguage('de-CH, fr;q=0.9, sv;q=0, *;q=0.1')
             .join(' ') === 'de-CH fr',
           'F. Accept-Language is read by q, q=0 and the wildcard left out');
+  // Direction comes from Intl, whether or not a catalog exists yet.
+  ['ar', 'ar-EG', 'ar-SA'].forEach(function (tag) {
+    t.check(i18n.chainFor(tag).direction === 'rtl',
+            'F. ' + tag + ' is drawn right to left',
+            i18n.chainFor(tag).direction);
+  });
+  ['hi-IN', 'de-DE', 'de-CH'].forEach(function (tag) {
+    t.check(i18n.chainFor(tag).direction === 'ltr',
+            'F. ' + tag + ' is drawn left to right',
+            i18n.chainFor(tag).direction);
+  });
+  // A base catalog answers its regions only once catalogs.json lists the
+  // tag. Until then the chain is English and the check waits.
+  [['de-DE', 'de'], ['de-AT', 'de'], ['de-CH', 'de'],
+   ['ar-EG', 'ar'], ['ar-SA', 'ar'],
+   ['hi-IN', 'hi']].forEach(function (pair) {
+    const tag = pair[0];
+    const base = pair[1];
+    const found = i18n.chainFor(tag);
+    const ready = tags.indexOf(base) >= 0;
+    t.check(!ready ||
+            (found.matched && found.chain.indexOf(base) >= 0),
+            'F. ' + tag + ' reads catalog ' + base +
+            ' once that catalog is listed', found.chain.join('>'));
+  });
 
   // G. A translated role description is not the name of this protocol page.
   index.offered.forEach(function (o) {

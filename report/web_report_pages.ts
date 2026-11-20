@@ -26,6 +26,7 @@ import WebAccounts = require('../common/web_accounts');
 import WebMessages = require('../common/web_messages');
 import DocLinks = require('../common/web_doc_links');
 import WebAnnouncements = require('../common/web_announcements');
+import WebFooter = require('../common/web_footer');
 
 const CLIENT_ID = 'sts-report';
 const SCOPE = 'openid profile email offline_access report:use report:admin';
@@ -784,16 +785,6 @@ function becauseHtml(t: any, why: any): string {
   return '<p class="sub because">' + esc(t.text(key)) + '</p>';
 }
 
-// The service version under the card (#986), from the index's `version`.
-function footerHtml(t: any, version: any): string {
-  if (!version || !version.version) {
-    return '';
-  }
-  return '<p class="foot" title="' + esc(version.buildInfo || '') + '">' +
-    esc(t.text('report.version', { version: String(version.version) })) +
-    '</p>';
-}
-
 // THE PAGER (#997), the console's `pageNavPair()` and `perPageForm()` in
 // one line: first and previous, a window of up to seven page numbers with
 // the current one marked, next and last, then "page x of y — rows a–b of
@@ -1320,17 +1311,6 @@ class ReportRuntime extends SpaClient {
   }
 
   /**
-   * The footer, for a test (#986).
-   *
-   * @param t - the translator
-   * @param version - the index's `version`
-   * @returns the footer's HTML
-   */
-  static footerHtml(t: any, version: any): string {
-    return footerHtml(t, version);
-  }
-
-  /**
    * The realm prefix before `/report`.
    *
    * @param pathname - the path
@@ -1671,6 +1651,10 @@ class ReportRuntime extends SpaClient {
     } catch (e) {
       this.t = WebMessages.WebTranslator.fromData(null);
     }
+    // THE PAGE FOOTER the shell drew, outside `<main>`, which is all this
+    // runtime draws: put in the page's language once its catalogs are in
+    // hand (`common/web_footer.ts`).
+    WebFooter.redraw(this.env.document, this.t, WebSafeDom.replace);
   }
 
   /**
@@ -1693,7 +1677,7 @@ class ReportRuntime extends SpaClient {
       this.t.text('report.docsLink'));
     const html = '<h1>' + esc(this.t.text('report.title')) + '</h1>' +
       navHtml(this.t, realm, accounts, chooser, this.reportPath()) + docs +
-      body + footerHtml(this.t, chrome.version);
+      body;
     const main = this.env.document.getElementById('report');
     if (main) {
       WebSafeDom.render(main,
@@ -1702,9 +1686,8 @@ class ReportRuntime extends SpaClient {
   }
 
   /**
-   * Reads the index (the version) and the realms once per load, after the
-   * token is in hand (#986). A failure leaves the chrome without them;
-   * nothing else is held up.
+   * Reads the realms once per load, after the token is in hand (#986). A
+   * failure leaves the chrome without them; nothing else is held up.
    *
    * @returns nothing
    */
@@ -1712,11 +1695,10 @@ class ReportRuntime extends SpaClient {
     if (this.chrome) {
       return;
     }
-    const chrome: any = { version: null, realms: null };
-    const index = await this.call('GET', API);
-    if (index && index.json) {
-      chrome.version = index.json.version || null;
-    }
+    // The index's `version` was read here for a version line under the
+    // card (#986); the page footer draws the version now (rcbj,
+    // 2026-11-14), so only the realms are read.
+    const chrome: any = { realms: null };
     const realms = await this.call('GET', API + '/realms');
     if (realms && realms.json && realms.json.current) {
       chrome.realms = realms.json;

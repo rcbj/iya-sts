@@ -199,6 +199,22 @@
     "en": "3d4cea483bdd4763",
     "text": "HINDI NAGPE-PERSIST KAHIT KAUNTI, sa alinmang mode, kaya walang anumang at rest na ise-seal. Pinangalanan ang tatlo sa `NOT_YET` ng `common/mode.js` sa halip na hayaang matuklasan, dahil pareho ang basa mula sa labas ng *hindi naka-store* at *hindi protektado* at hindi sila parehong bagay."
   },
+  "encryption.classes.25.what": {
+    "en": "676f5f32f70780f8",
+    "text": "Ang private key ng TLS client certificate ng isang FAPI 1.0 Advanced na federation relationship (#931) — ang ipinapakita ng serbisyong ito sa token at UserInfo endpoint ng partner, sa `fedClientCertificate`"
+  },
+  "encryption.classes.25.why": {
+    "en": "7aa85457f3f98d8b",
+    "text": "Sinumang may hawak nito ay makapag-a-authenticate sa partner na iyon bilang serbisyong ito (`tls_client_auth`) at makapagpapakita ng mga access token na itinali ng partner sa certificate. Naka-seal kapag nakaimbak saanman nagpe-persist ang mga key, at itinatago — kasama ang ciphertext — sa bawat LDAP search, page at sagot ng `/admin-api`, na certificate lamang ang dala."
+  },
+  "encryption.classes.26.what": {
+    "en": "6b9f0476194b0ed3",
+    "text": "Ang sariling WS-Trust na private key na pang-decrypt ng isang application (#1668) — `wstrustDecryptionPrivateKey`: ang ginagamit para i-decrypt ang WS-Trust request para sa application na iyon, na naka-encrypt sa certificate nito"
+  },
+  "encryption.classes.26.why": {
+    "en": "d1b5cf75485762fa",
+    "text": "Sinumang may hawak nito ay nakababasa ng bawat request na naka-encrypt sa application na iyon — ang mga credential at claim na inilalayo ng encryption sa network. Naka-seal habang nakaimbak saanman nananatili ang mga key, at hindi ibinibigay — kasama ang ciphertext — sa anumang paghahanap sa LDAP, pahina at sagot ng `/admin-api`, na certificate lamang ang dala."
+  },
   "encryption.notes.what": {
     "en": "69ba4b884ae9c0f6",
     "text": "Ang ine-encrypt ng serbisyong ito AT REST, gamit ang aling key, sa ilalim ng aling algorithm, at gaano karami na nito ang nangyari sa process na ito."
@@ -220,8 +236,8 @@
     "text": "IISA ANG KEY-ENCRYPTION KEY PARA SA SERBISYONG ITO, HINDI ISA BAWAT TRUST REALM, AT MAY ISANG DATA ENCRYPTION KEY BAWAT REALM BAWAT DATA CLASS (#391). Walang data encryption key na pinaghahatian ng mga realm, kaya ang value ng isang realm ay hindi kailanman naka-seal sa ilalim ng key ng mga value ng ibang realm. Pero bawat data encryption key ay naka-wrap sa ilalim ng iisang key-encryption key, kaya HINDI independiyenteng hangganan ang realm at rest: sinumang makakabasa ng key na iyon ay makaka-unwrap ng mga data key ng bawat realm, at ang pag-rotate nito ay muling nagwa-wrap ng sa bawat realm nang sabay-sabay."
   },
   "encryption.notes.storage": {
-    "en": "18686e2b1d638124",
-    "text": "LAHAT NG WALA SA TABLE SA ITAAS AY PLAINTEXT SA STORE — ang mga directory entry, ang mga group, ang mga application, ang mga realm at ang mga setting, at sa development mode halos lahat ng ito. Credential at private key lang ang sine-seal ng serbisyong ito at wala nang iba, nang sadya: ang column-level encryption ay nag-iiwan ng plaintext sa write-ahead log, sa mga temporary file kapag umaapaw ang sort, sa isang pg_dump, sa mga replica at sa mga query log, kaya ang layer na sumasaklaw sa buong store ay nasa ILALIM ng database sa halip na sa loob nito. Ang layer na iyon ay sa operator — LUKS o isang encrypted na ZFS dataset sa ilalim ng PGDATA, isang cloud disk na may customer-managed key, o isa sa mga PostgreSQL fork na may TDE, dahil walang ganito ang community build. Ang docs/encryption-at-rest.md ang paliwanag ng repository na ito sa mga opsyon."
+    "en": "ee0a54241e7767c7",
+    "text": "LAHAT NG WALA SA TABLE SA ITAAS AY PLAINTEXT SA STORE — ang mga directory entry, ang mga group, ang mga application, ang mga realm at ang mga setting, at sa development mode halos lahat ng ito. Credential at private key lang ang sine-seal ng serbisyong ito at wala nang iba, nang sadya: ang column-level encryption ay nag-iiwan ng plaintext sa write-ahead log, sa mga temporary file kapag umaapaw ang sort, sa isang pg_dump, sa mga replica at sa mga query log, kaya ang layer na sumasaklaw sa buong store ay nasa ILALIM ng database sa halip na sa loob nito. Ang layer na iyon ay sa operator — LUKS o isang encrypted na ZFS dataset sa ilalim ng PGDATA, isang cloud disk na may customer-managed key, o isa sa mga PostgreSQL fork na may TDE, dahil walang ganito ang community build. Ang docs/v1.1.0/encryption-at-rest.md ang paliwanag ng repository na ito sa mga opsyon."
   },
   "encryption.notes.keyResidency": {
     "en": "612d0883b63631fd",

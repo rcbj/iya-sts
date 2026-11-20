@@ -8,8 +8,8 @@
 // ===========================================================================
 // THE SETTINGS TABLES, AGAINST THE TABLE THAT DECLARES THE SETTINGS.
 //
-// The tables are in `docs/configuration.md` (*Every setting*). They were in
-// README.md, which is where this file's name comes from.
+// The tables are in `docs/v1.1.0/configuration.md` (*Every setting*). They were
+// in README.md, which is where this file's name comes from.
 //
 // `readme_ports.js` next door holds ten rows of README to `config.js`. This
 // file holds the other two hundred, and it exists because of what those ten
@@ -34,9 +34,9 @@
 // WHY IN PROCESS, which is the question tests/CLAUDE.md asks first.
 //
 // Every claim here is a comparison between two FILES in this repository —
-// `docs/configuration.md` and `common/config.js`. No running service could be
-// asked, and nothing here binds a port or issues anything. Same shape as
-// `readme_ports.js`, `postgres_schema.js` and `xacml_pep.js`'s COPY set.
+// `docs/v1.1.0/configuration.md` and `common/config.js`. No running service
+// could be asked, and nothing here binds a port or issues anything. Same shape
+// as `readme_ports.js`, `postgres_schema.js` and `xacml_pep.js`'s COPY set.
 //
 // ---------------------------------------------------------------------------
 // IT CHECKS THE DIRECTION THAT GOES UNNOTICED, AND SAYS WHY IT DOES NOT CHECK
@@ -82,7 +82,8 @@ const config = require('../common/config');
 const log = require('bunyan').createLogger({ name: 'readme_settings',
   level: process.env.LOG_LEVEL || 'info' });
 
-const README = path.join(__dirname, '..', 'docs', 'configuration.md');
+const README = path.join(__dirname, '..', 'docs', 'v1.1.0',
+                         'configuration.md');
 
 // A settings row is `| \`key\` | \`ENV_VAR\` | ... |`. The key may carry a
 // parenthetical after the backticks — `global.https` is written
@@ -112,7 +113,7 @@ function run(t) {
   log.debug("Entering run().");
   const found = rows();
   if (!t.check(found.length > 150,
-               'docs/configuration.md has a settings table to check',
+               'docs/v1.1.0/configuration.md has a settings table to check',
                'found ' + found.length + ' rows, which is too few to be that ' +
                'table; either the format changed — in which case change ROW ' +
                'here too — or a table that was being kept honest is gone')) {
@@ -196,6 +197,6 @@ function run(t) {
 
 module.exports = {
   name: 'readme_settings',
-  describe: "docs/configuration.md's settings tables against config.js",
+  describe: "docs/v1.1.0/configuration.md's settings tables against config.js",
   run: run
 };

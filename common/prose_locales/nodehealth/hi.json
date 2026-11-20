@@ -1,0 +1,226 @@
+{
+  "nodehealth.s.notLinux": {
+    "en": "ac134999be57211b",
+    "text": "यह नोड Linux पर नहीं चल रहा ({{platform}}), इसलिए पढ़ने के लिए कोई cgroup फ़ाइल नहीं है।"
+  },
+  "nodehealth.s.noCgroup": {
+    "en": "cfb5ff8634555626",
+    "text": "{{root}} पर कोई cgroup नहीं है: कोई cgroup v2 नहीं ({{why}}) और कोई cgroup v1 memory या cpuacct नियंत्रक नहीं।"
+  },
+  "nodehealth.s.noCgroupShort": {
+    "en": "1d7d3ad5d4c2cff6",
+    "text": "कोई cgroup नहीं।"
+  },
+  "nodehealth.s.cpuUnreadable": {
+    "en": "b432aeb2d043a073",
+    "text": "कंटेनर का CPU समय नहीं पढ़ा जा सकता: {{source}} — {{why}}।"
+  },
+  "nodehealth.s.cpuOnce": {
+    "en": "57b1b0ecc3ad0f76",
+    "text": "कंटेनर का CPU समय एक बार पढ़ा जा सका, दूसरी बार नहीं: {{why}}।"
+  },
+  "nodehealth.s.cpuQuota": {
+    "en": "8b09a34dcc8f0d59",
+    "text": "कंटेनर {{vcpus}} vCPU उपयोग कर सकता है ({{version}}, {{file}}), और प्रतिशत उसी का है।"
+  },
+  "nodehealth.s.cpuNoFile": {
+    "en": "6b6c407a2b6d6ed9",
+    "text": "इस cgroup ({{version}}) में {{file}} नहीं है, इसलिए उसका अपना कोई CPU कोटा नहीं है; प्रतिशत उन {{cpus}} CPU का है जिन्हें node उपलब्ध रिपोर्ट करता है (os.availableParallelism())।"
+  },
+  "nodehealth.s.cpuUnlimited": {
+    "en": "8adcac77773bed89",
+    "text": "कोई CPU कोटा नहीं ({{version}}, {{file}} कहता है कि कोई नहीं): कंटेनर होस्ट द्वारा दी गई प्रत्येक CPU उपयोग कर सकता है, और प्रतिशत उन {{cpus}} CPU का है जिन्हें node उपलब्ध रिपोर्ट करता है (os.availableParallelism())।"
+  },
+  "nodehealth.s.noThrottling": {
+    "en": "bfb9a25b633fb541",
+    "text": "cgroup में कोई थ्रॉटलिंग काउंटर नहीं है: कोटा के बिना थ्रॉटल करने के लिए कुछ नहीं है।"
+  },
+  "nodehealth.s.noV1Memory": {
+    "en": "5723c888e24a6c87",
+    "text": "इस cgroup v1 होस्ट के पास इस प्रक्रिया के लिए कोई memory नियंत्रक नहीं है।"
+  },
+  "nodehealth.s.memoryUnreadable": {
+    "en": "cccf53439f4218fb",
+    "text": "कंटेनर की मेमोरी नहीं पढ़ी जा सकती: {{source}} — {{why}}।"
+  },
+  "nodehealth.s.memoryLimit": {
+    "en": "43bd4f8d1fca16b6",
+    "text": "कंटेनर {{mib}} MiB उपयोग कर सकता है ({{version}}, {{file}})।"
+  },
+  "nodehealth.s.memoryNoFile": {
+    "en": "0a4e77f5cdd09462",
+    "text": "इस cgroup ({{version}}) में {{file}} नहीं है, इसलिए उसकी अपनी कोई मेमोरी सीमा नहीं है और देने के लिए कोई प्रतिशत नहीं है।"
+  },
+  "nodehealth.s.memoryUnlimited": {
+    "en": "05d48cbc055b3dcc",
+    "text": "कोई मेमोरी सीमा नहीं ({{version}}, {{file}} कहता है कि कोई नहीं), इसलिए देने के लिए कोई प्रतिशत नहीं है।"
+  },
+  "nodehealth.s.memoryStat": {
+    "en": "eca3a32e60df5435",
+    "text": "{{anon}} प्रक्रियाओं की अपनी मेमोरी है; {{file}} पेज कैश है जिसे कर्नेल दबाव में कुछ भी समाप्त करने से पहले वापस ले लेता है।"
+  },
+  "nodehealth.s.memoryNoStat": {
+    "en": "27d7d62f39225e1a",
+    "text": "memory.stat नहीं पढ़ा जा सकता, इसलिए मेमोरी किससे बनी है यह ज्ञात नहीं।"
+  },
+  "nodehealth.s.ecsMemoryContainer": {
+    "en": "663d3b0c433cdcd5",
+    "text": "ECS एजेंट से (/task/stats), क्योंकि cgroup यहाँ नहीं पढ़ा जा सकता। सीमा कंटेनर की है, जैसा एजेंट रिपोर्ट करता है।"
+  },
+  "nodehealth.s.ecsMemoryTask": {
+    "en": "4709f1b3e88ece76",
+    "text": "ECS एजेंट से (/task/stats), क्योंकि cgroup यहाँ नहीं पढ़ा जा सकता। कंटेनर की अपनी कोई सीमा नहीं है, इसलिए सीमा ECS TASK की है, {{mib}} MiB।"
+  },
+  "nodehealth.s.ecsMemoryNone": {
+    "en": "623f85e6019c9f17",
+    "text": "ECS एजेंट से (/task/stats), क्योंकि cgroup यहाँ नहीं पढ़ा जा सकता। मापने के लिए कोई सीमा नहीं है।"
+  },
+  "nodehealth.s.ecsTotalOnly": {
+    "en": "738818f8f9ed3688",
+    "text": "ECS एजेंट केवल कुल रिपोर्ट करता है।"
+  },
+  "nodehealth.s.taskMemoryLimit": {
+    "en": "1d50381ef5f6beb7",
+    "text": "कंटेनर की अपनी कोई मेमोरी सीमा नहीं है (cgroup v{{version}}), इसलिए सीमा ECS TASK की है, {{mib}} MiB (/task Limits.Memory), और प्रतिशत उसी का है।"
+  },
+  "nodehealth.s.ecsCpuTask": {
+    "en": "46a283473a98fadd",
+    "text": "ECS एजेंट से (/task/stats), उसके अंतिम दो नमूनों के बीच, क्योंकि cgroup यहाँ नहीं पढ़ा जा सकता; प्रतिशत ECS TASK के {{vcpus}} vCPU का है।"
+  },
+  "nodehealth.s.ecsCpuNone": {
+    "en": "963eed85938ef0ff",
+    "text": "ECS एजेंट से (/task/stats), उसके अंतिम दो नमूनों के बीच, क्योंकि cgroup यहाँ नहीं पढ़ा जा सकता; कार्य कोई CPU सीमा नामित नहीं करता, इसलिए कोई प्रतिशत नहीं है।"
+  },
+  "nodehealth.s.ecsNoThrottling": {
+    "en": "8438e4d4c2164180",
+    "text": "ECS एजेंट थ्रॉटलिंग रिपोर्ट नहीं करता।"
+  },
+  "nodehealth.s.taskCpuLimit": {
+    "en": "09cf5b42b5195d57",
+    "text": "कंटेनर का अपना कोई CPU कोटा नहीं है (cgroup v{{version}}), इसलिए प्रतिशत ECS TASK के {{vcpus}} vCPU का है (/task Limits.CPU)।"
+  },
+  "nodehealth.s.procUnreadable": {
+    "en": "6f8585ebce3cec95",
+    "text": "{{file}} नहीं पढ़ी जा सकी ({{why}})"
+  },
+  "nodehealth.s.noVmRss": {
+    "en": "d79873fa923521bb",
+    "text": "उसकी स्थिति फ़ाइल में VmRSS नहीं है"
+  },
+  "nodehealth.s.threadProcessWide": {
+    "en": "a8a03a58820add4f",
+    "text": "एक थ्रेड का निवासी आकार और CPU समय पूरी प्रक्रिया के हैं, इसलिए वे फ्रंट प्रक्रिया की पंक्ति पर हैं (pid {{pid}}) और यहाँ दोहराए नहीं गए"
+  },
+  "nodehealth.s.frontProcessWide": {
+    "en": "89d33b8a5b54333d",
+    "text": "उसका निवासी आकार और CPU समय पूरी प्रक्रिया के हैं, प्रत्येक वर्कर थ्रेड सहित; उसके हीप आँकड़े उसके मुख्य थ्रेड के हैं"
+  },
+  "nodehealth.s.roleFront": {
+    "en": "75deb58e8b2da9ac",
+    "text": "फ्रंट प्रक्रिया"
+  },
+  "nodehealth.s.roleDebugger": {
+    "en": "d6ac144f9cca9cfd",
+    "text": "प्रोटोकॉल डिबगर api"
+  },
+  "nodehealth.s.roleSurface": {
+    "en": "23537a06c2f897b3",
+    "text": "होस्टेड-सरफ़ेस वर्कर थ्रेड {{thread}}"
+  },
+  "nodehealth.s.roleProtocol": {
+    "en": "ebf155c21104d8aa",
+    "text": "प्रोटोकॉल वर्कर थ्रेड {{thread}}"
+  },
+  "nodehealth.s.childNoMemory": {
+    "en": "fe0107a65425b792",
+    "text": "उसने अपनी मेमोरी के बिना उत्तर दिया, इसलिए केवल उसका निवासी आकार दिखाया गया है, /proc से"
+  },
+  "nodehealth.s.childNoAnswer": {
+    "en": "669c342b6c312314",
+    "text": "{{why}}, इसलिए केवल उसका निवासी आकार दिखाया गया है, /proc से"
+  },
+  "nodehealth.s.debuggerSilent": {
+    "en": "9d943bb21aef1785",
+    "text": "उसने {{ms}}ms के भीतर उत्तर नहीं दिया (उसका मेमोरी प्रीलोड, debugger_api_status.js, तब उत्तर देता है जब वह स्थापित हो)"
+  },
+  "nodehealth.s.threadSilent": {
+    "en": "97f9516d214ff777",
+    "text": "उसने {{ms}}ms के भीतर उत्तर नहीं दिया"
+  },
+  "nodehealth.s.threadUnanswered": {
+    "en": "48973579a304dbb9",
+    "text": "{{why}}; थ्रेड की अपनी कोई /proc प्रविष्टि नहीं होती, इसलिए उसका हीप उसके बाहर से नहीं पढ़ा जा सकता"
+  },
+  "nodehealth.s.debuggerNoPid": {
+    "en": "51c89e184c1f8aff",
+    "text": "प्रोटोकॉल डिबगर की api प्रक्रिया से उसका pid नहीं पूछा जा सका: {{error}}।"
+  },
+  "nodehealth.s.totals": {
+    "en": "2dff2a67ff7a9cbb",
+    "text": "अनुरोध और होस्टेड-सरफ़ेस वर्कर फ्रंट प्रक्रिया के थ्रेड हैं (#364), इसलिए उनका निवासी आकार और CPU समय फ्रंट प्रक्रिया के अपने आँकड़े हैं और एक बार, उसकी पंक्ति पर, गिने जाते हैं। निवासी कुल उन {{rss}} प्रक्रिया(ओं) का योग है जिनका आकार पढ़ा जा सका — फ्रंट प्रक्रिया और डिबगर का api चाइल्ड — इसलिए वे पृष्ठ जो दोनों साझा करते हैं (उनमें node का अपना कोड) प्रत्येक के लिए एक बार गिने जाते हैं और यह कंटेनर के memory.current से अधिक हो सकता है। हीप आँकड़े वे {{heap}} V8 आइसोलेट हैं जिन्होंने स्वयं process.memoryUsage() रिपोर्ट किया: फ्रंट प्रक्रिया का मुख्य थ्रेड, प्रत्येक वर्कर थ्रेड, और चाइल्ड; समय पर उत्तर न देने वाली चाइल्ड प्रक्रिया /proc से निवासी आकार के साथ और बिना हीप दिखाई जाती है, और जिस वर्कर थ्रेड ने उत्तर नहीं दिया उसे अनुत्तरित सूचीबद्ध किया जाता है, क्योंकि थ्रेड की अपनी कोई /proc प्रविष्टि नहीं होती। पोस्ट-क्वांटम हस्ताक्षर और scrypt के #363 से अपनी कोई प्रक्रिया नहीं है: वे libuv के थ्रेड पूल पर चलते हैं, और उनकी मेमोरी उस प्रक्रिया में गिनी जाती है जिसने माँगा।"
+  },
+  "nodehealth.s.ecsNotSet": {
+    "en": "25e73265a0ab3460",
+    "text": "ECS_CONTAINER_METADATA_URI_V4 सेट नहीं है: यह नोड Amazon ECS कार्य नहीं है (यह Fargate पर या ECS कंटेनर इंस्टेंस पर नहीं है), इसलिए cgroup से मिलान करने के लिए कोई कार्य मेटाडेटा एंडपॉइंट नहीं है।"
+  },
+  "nodehealth.s.ecsSilent": {
+    "en": "ea361fddcfbd6473",
+    "text": "ECS_CONTAINER_METADATA_URI_V4 सेट है, परंतु कार्य मेटाडेटा एंडपॉइंट ने {{ms}}ms के भीतर उत्तर नहीं दिया: {{why}}।"
+  },
+  "nodehealth.s.ecsPartial": {
+    "en": "2e1374baf8ec261f",
+    "text": "एंडपॉइंट के एक भाग ने उत्तर नहीं दिया: {{whys}}. "
+  },
+  "nodehealth.s.ecsPartialNoStats": {
+    "en": "8f9f3b438a9519f4",
+    "text": "एंडपॉइंट के एक भाग ने उत्तर नहीं दिया: {{whys}}. /task/stats में इस कंटेनर के कोई आँकड़े नहीं हैं।"
+  },
+  "nodehealth.s.ecsPartialNoStatsId": {
+    "en": "766991a4c65c4d97",
+    "text": "एंडपॉइंट के एक भाग ने उत्तर नहीं दिया: {{whys}}. /task/stats में इस कंटेनर के कोई आँकड़े नहीं हैं ({{dockerId}})।"
+  },
+  "nodehealth.s.ecsNoStats": {
+    "en": "c4a76877bec7635b",
+    "text": "/task/stats में इस कंटेनर के कोई आँकड़े नहीं हैं।"
+  },
+  "nodehealth.s.ecsNoStatsId": {
+    "en": "311637e77e640edd",
+    "text": "/task/stats में इस कंटेनर के कोई आँकड़े नहीं हैं ({{dockerId}})।"
+  },
+  "nodehealth.s.ecsText": {
+    "en": "29afe6977819399d",
+    "text": "इस कंटेनर के लिए ECS एजेंट के अपने आँकड़े, cgroup के मिलान के रूप में: एजेंट अपने कार्यक्रम पर नमूने लेता है, इसलिए वे बाइट या प्रतिशत तक मेल नहीं खाएँगे।"
+  },
+  "nodehealth.s.scope": {
+    "en": "0015d209990c639c",
+    "text": "ये नोड {{node}} के आँकड़े हैं — उसका कंटेनर — उसकी फ्रंट प्रक्रिया द्वारा बनाए गए, pid {{pid}}। क्लस्टर का प्रत्येक नोड अपना कंटेनर है, अपने आँकड़ों के साथ।"
+  },
+  "nodehealth.s.machine": {
+    "en": "8664a6decee4a16b",
+    "text": "वह मशीन जिस पर यह कंटेनर चलता है — Fargate पर, माइक्रो-VM; वर्कस्टेशन पर, पूरा वर्कस्टेशन। कंटेनर नहीं: उसकी मुक्त मेमोरी और लोड कंटेनर की सीमा के बारे में कुछ नहीं कहते।"
+  },
+  "nodehealth.s.clusterTotals": {
+    "en": "b1792e3f40531627",
+    "text": "उन {{count}} नोड पर जो समाप्त नहीं हुए और जिनका स्नैपशॉट है, बासी वाले शामिल और चिह्नित। सीमाएँ केवल तभी जोड़ी जाती हैं जब प्रत्येक नोड के पास एक हो।"
+  },
+  "nodehealth.param.notThere": {
+    "en": "b364d72dd5108365",
+    "text": "वह वहाँ नहीं है"
+  },
+  "nodehealth.param.notANumber": {
+    "en": "853f79c9985ef19d",
+    "text": "वह संख्या नहीं है"
+  },
+  "nodehealth.param.noUsage": {
+    "en": "003e13e8685bb8db",
+    "text": "उसमें usage_usec नहीं है"
+  },
+  "nodehealth.param.noCpuacct": {
+    "en": "d7c137a0c7c3c40c",
+    "text": "कोई cgroup v1 cpuacct नियंत्रक नहीं है"
+  },
+  "nodehealth.param.noMemory": {
+    "en": "d877352712c29a9a",
+    "text": "उसने अपनी मेमोरी के बिना उत्तर दिया"
+  }
+}

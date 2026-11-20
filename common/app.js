@@ -86,6 +86,12 @@ const certificateHeader = require('./jose_certificate_header');
 // order. `common/validation.js` is where every decision about what a value
 // from outside may be is argued.
 const validation = require('./validation');
+// A refusal made ahead of every route, answered in the error shape of the API
+// its path belongs to (2026-11-16). A LEAF that requires nothing of this
+// service, so it closes no cycle and moves no route.
+const SurfaceRefusals = require('./surface_refusals');
+// The registry of failure codes, a LEAF.
+const errorCodes = require('./error_codes');
 // The request worker pool. A LIBRARY as far as rule 1 goes — it registers no
 // route, and at load it requires only `config`, `keystore`, the error-code
 // table, `client_address` and node builtins (the modules that register routes
@@ -222,9 +228,22 @@ function enterRealm(req, res, next) {
   // again. A realm that still does not exist falls through exactly as before,
   // to the same `Cannot GET` body. The barrier middleware below is told, so
   // one request catches up once.
+  //
+  // **AND IN A FRONT PROCESS WITH REQUEST WORKERS (2026-11-15)**, for the
+  // same reason one process over: a worker creates a realm, and this process
+  // learns of it from the change log. Until then everything the front decides
+  // here is decided in the DEFAULT realm — above all `cookie_wire.ts`'s
+  // names, which follow the realm's mode. A realm created in development
+  // under a product process (the job's own throwaway realm in every product
+  // mode) had its cookies prefixed and translated as the default realm's
+  // while this process was behind, and NOT once it caught up, so the cookie
+  // set on one answer arrived at the worker under its wire name on the next
+  // and was not found: `sts_est_attestation_freshness` in GitHub Actions run
+  // 43672106260's mariadb mode, "The request carried no EST nonce cookie"
+  // (STS-DEVICE-0016) three seconds after the realm was made.
   // ---------------------------------------------------------------------
-  if (!match && clusterBarrier.isActive() &&
-      realms.unknownRealmPath(pathname)) {
+  if (!match && realms.unknownRealmPath(pathname) &&
+      (clusterBarrier.isActive() || requestPool.frontWithWorkers())) {
     clusterBarrier.syncShared().then(function (answer) {
       clusterBarrier.markSynced(req, answer);
       const again = realms.matchPath(pathname);
@@ -376,6 +395,19 @@ function enterListener(req, res, next) {
     } catch (e) {
       log.debug("Caught in enterListener(): " + ((e && e.message) || e));
     }
+    // ITS OWN AUDIT ROW (2026-11-14, found by #444's D12): this is above the
+    // call log's middleware, which is what writes a marked refusal's row, so
+    // the refusal reached neither the audit log nor the service's log. It is
+    // written here, as the body parsers' refusals below write theirs.
+    audit.failure('STS-TLS-0047', {
+      protocol: 'HTTP', channel: req.secure ? 'https' : 'http',
+      address: require('./client_address').clientAddressOf(req),
+      target: audit.redactedPath(path),
+      summary: 'A request for ' + hostedApplications.labelOf(application) +
+               ' was refused on the "' + at + '" listener, which does not ' +
+               'serve it.',
+      outcome: 'refused'
+    });
     require('./error_codes').mark(res, 'STS-TLS-0047');
     res.status(404).type('text/plain')
       .send('Not found: ' + hostedApplications.labelOf(application) +
@@ -451,6 +483,18 @@ app.use(function refuseForeignEdge(req, res, next) {
     log.debug("Leaving refuseForeignEdge().");
     return next();
   }
+  // ITS OWN AUDIT ROW, AND WITH IT THE LOG LINE (2026-11-14, found by #444's
+  // D12): above the call log, this refusal reached neither. The row names
+  // the path and not the header, whose value is a secret or a guess at one.
+  audit.failure('STS-CORE-0165', {
+    protocol: 'HTTP', channel: req.secure ? 'https' : 'http',
+    address: require('./client_address').clientAddressOf(req),
+    target: audit.redactedPath(String(req.originalUrl || req.url || '')
+      .split('?')[0]),
+    summary: 'A request from a CDN edge address (global.edgeProxies) ' +
+             'without this deployment\'s edge secret was refused 403.',
+    outcome: 'refused'
+  });
   require('./error_codes').mark(res, 'STS-CORE-0165');
   res.status(403).type('text/plain').set({
     'Cache-Control': 'no-store',
@@ -540,9 +584,16 @@ app.use(function (req, res, next) {
 // carrying one posted to the DEFAULT realm from inside any other: the export
 // on /admin/pki, the reset on /admin/config, and Generate Secret on
 // /admin/applications/new, which is where it was noticed.
+//
+// **A LINK THAT ALREADY CARRIES THE PREFIX IS LEFT ALONE (2026-11-14, found
+// by #444's D12)**, as `realms.href()` leaves a redirect target alone. The
+// authorization error page drew its portal link as `currentPrefix() +
+// '/portal'` and this added the prefix again, `/realm/<id>/realm/<id>/portal`,
+// a 404. That page now draws `/portal` like every other page; this is so that
+// the next one written the other way still links where it means to.
 /**
  * Prefixes every root-relative `href`, `action`, `formaction` and `src` in a
- * page with a realm's path prefix.
+ * page with a realm's path prefix, except one that already carries it.
  *
  * @param html - the page
  * @param prefix - the realm's prefix, or '' for the default realm
@@ -554,9 +605,11 @@ function withRealmLinks(html, prefix) {
     log.debug("Leaving withRealmLinks().");
     return html;
   }
+  const own = String(prefix).slice(1).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const link = new RegExp('\\b(href|action|formaction|src)="\\/(?!\\/)' +
+                          '(?!' + own + '(?:[/?#"]))', 'g');
   log.debug("Leaving withRealmLinks().");
-  return html.replace(/\b(href|action|formaction|src)="\/(?!\/)/g,
-                      '$1="' + prefix + '/');
+  return html.replace(link, '$1="' + prefix + '/');
 }
 
 // WHICH REALM IDS ARE ALREADY SPOKEN FOR — the first path segment of every
@@ -1236,7 +1289,7 @@ app.use(unlessStreamedUpload(bodyParser.text({
 app.use(corsPolicy.response());
 
 // ---------------------------------------------------------------------------
-// A BODY THE PARSERS ABOVE REFUSED, WRITTEN DOWN — AND NOTHING ELSE ABOUT IT.
+// A BODY THE PARSERS REFUSED, WRITTEN DOWN — AND, ON A JSON API, ANSWERED.
 //
 // A body too large, in a charset or content encoding body-parser does not
 // read, or cut off before its Content-Length arrived is refused by the parser
@@ -1246,11 +1299,35 @@ app.use(corsPolicy.response());
 // every other ordinary middleware, and a 413 or a 415 left no audit row at all.
 //
 // So this one error middleware writes the failure row itself, with the code for
-// the condition, and hands the error straight on. It changes nothing a client
-// receives — the same error reaches the same final handler — and it cannot
-// throw, because audit.failure() cannot. The target is the PATH only: a query
-// string on this service carries codes and hints the audit log redacts.
+// the condition, and it cannot throw, because audit.failure() cannot. The
+// target is the PATH only: a query string on this service carries codes and
+// hints the audit log redacts.
+//
+// **AND ON A JSON API IT ANSWERS, IN THAT API'S OWN ERROR SHAPE (2026-11-16).**
+// Handed on, a 413, a 415 or a 400 reached Express's final handler, which
+// answers with an HTML page: on `/admin-api`, `/xacml/pep/*` or `/scim/v2` a
+// body no client of the API reads and no model of it declares (the fuzzing of
+// the PEP control plane, PR #1858). `common/surface_refusals.ts` knows each
+// API's shape from the path and argues the list; any other path, and any
+// error of 500 or more, is handed on exactly as before, so a page and an
+// unrouted path answer as they did. The code is marked on the response and
+// written on the row; it is never in the body.
 // ---------------------------------------------------------------------------
+const surfaceRefusals = new SurfaceRefusals({ log: helpers.log });
+
+// The sentence for a body the parsers refused, by body-parser's `type`.
+const BODY_REFUSALS = {
+  'entity.too.large': 'The request body is larger than the 5 MB this ' +
+    'service reads.',
+  'charset.unsupported': 'The request body is in a character set this ' +
+    'service does not read. Send it as UTF-8.',
+  'encoding.unsupported': 'The request body is in a content encoding this ' +
+    'service does not read. Send it as identity, gzip, deflate or br.',
+  'request.aborted': 'The request body ended before it was complete.',
+  'request.size.invalid': 'The request body did not match its ' +
+    'Content-Length.'
+};
+
 app.use(function (err, req, res, next) {
   const type = String((err && err.type) || '');
   let code = 'STS-HTTP-0014';
@@ -1272,6 +1349,16 @@ app.use(function (err, req, res, next) {
     outcome: (err && (err.status || err.statusCode) >= 500) ? 'error' :
               'refused'
   });
+  const status = Number((err && (err.status || err.statusCode)) || 500);
+  errorCodes.mark(res, code);
+  if (status >= 400 && status < 500 &&
+      surfaceRefusals.answer(req, res, status,
+                             Object.prototype.hasOwnProperty.call(
+                               BODY_REFUSALS, type) ? BODY_REFUSALS[type] :
+                               'The request body could not be read.',
+                             { part: 'body' })) {
+    return;
+  }
   next(err);
 });
 

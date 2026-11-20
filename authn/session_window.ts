@@ -23,6 +23,7 @@ import minted = require('../persistence/persistence_minted');
 import BoundedLru = require('../common/bounded_lru');
 import cacheRegistry = require('../common/cache_registry');
 import SyncQuery = require('../common/sync_query');
+import sessionQueries = require('../persistence/session_queries');
 
 const log = bunyan.createLogger({ name: 'sts-session-window' });
 
@@ -588,10 +589,47 @@ class SessionWindow {
     }
     const slot = this.lru.peek(key);
     if ((slot && slot.dirty) || this.journalledSafe(realm, id)) {
-      log.debug("Leaving SessionWindow.considerApply(). Kept.");
+      // KEPT, AND THE OTHER NODE'S ROW MERGED INTO IT (2026-11-14,
+      // `sts_siop_did_web` in the cluster mode). This process's copy has a
+      // write not yet committed, so it is not replaced — but it was not
+      // touched either, and that lost a write another node had committed:
+      // an arrival session node A upgraded to a sign-in stayed the arrival
+      // here, the account selection ticket A handed out named a session
+      // node B read as not live (STS-AUTHN-0346), and the browser was sent
+      // to sign in again. The same row reached here a second time, as the
+      // flush's merged answer (`settleDecided()`), and was dropped again,
+      // because that runs before `onCommitted()` unpins the slot — so the
+      // stale copy outlived the commit. The store's own `mergeRow()` is
+      // what the two copies become when this process's write lands; it is
+      // applied to the held object in place now, so the next read here
+      // answers what the flush will write.
+      this.mergeIntoHeld(realm, id, slot, value);
+      log.debug("Leaving SessionWindow.considerApply(). Kept, merged.");
       return 'keep';
     }
     const inMap = this.mapRead(realm, id).present;
+    // A HELD COPY WITH NO WRITE PENDING IS MERGED TOO, NEVER REPLACED (run
+    // #325, `cells`, `sts_jar_admin_client`). Another process's row is READ
+    // when its change-log page is prepared and APPLIED later, serially, and
+    // a page of a bulk load is slow to apply. A sign-in this process
+    // committed in between left its slot clean, so the row read before it —
+    // the arrival — was admitted over it, and the very next request here
+    // found the session not live (STS-AUTHN-0346) and sent the person to
+    // sign in again. `mergeRow()` (`authn.ts`'s `mergeSessionRows()`) is
+    // what the store holds after every write: the copy further along, the
+    // latest clocks, the unions. Merging the arriving row into the held copy
+    // is therefore never behind either of them, and a real change still
+    // lands — a later sign-in or rotation outranks, and an end or sign-out
+    // is a tombstone, taken above.
+    // Only a slot's copy: a map read may be a copy, and a merge into a copy
+    // would drop the arriving row's real changes with nothing kept.
+    if (slot && slot.session && typeof slot.session === 'object' &&
+        value && typeof value === 'object' && this.storeMerges()) {
+      this.negative.delete(key);
+      this.mergeIntoHeld(realm, id, slot, value);
+      log.debug("Leaving SessionWindow.considerApply(). Held, merged.");
+      return 'keep';
+    }
     if (slot || inMap || this.freshNegative(key)) {
       this.negative.delete(key);
       this.admit(realm, id, value, false);
@@ -601,6 +639,69 @@ class SessionWindow {
     }
     log.debug("Leaving SessionWindow.considerApply(). Skipped.");
     return 'skip';
+  }
+
+  /**
+   * Merges another process's committed row into the copy this process holds
+   * with a write of its own still to commit, IN PLACE, through the store's
+   * `mergeRow()` (`authn.ts`'s `mergeSessionRows()`): what the flush of
+   * that write will store. In place because a request may hold the object,
+   * and the map and the slot share it. Without a merge function, or when it
+   * throws, the held copy is left as it was — the behaviour before.
+   *
+   * @param realm - the realm
+   * @param id - the session id
+   * @param slot - the window's slot, or undefined
+   * @param value - the other process's opened row
+   */
+  // Hot path: asked for every replicated session row. No Entering/Leaving
+  // pair, which would drown the log.
+  // Whether the sessions store merges two copies of a row (`mergeRow`).
+  private storeMerges(): boolean {
+    try {
+      const store = realms.handleFor(HANDLE);
+      return !!(store && typeof store.mergeRow === 'function');
+    } catch (e) {
+      log.debug("Caught in SessionWindow.storeMerges(): " +
+                ((e && (e as Error).message) || e));
+      return false;
+    }
+  }
+
+  private mergeIntoHeld(realm: string, id: string, slot: Slot | undefined,
+                        value: any): void {
+    log.debug("Entering SessionWindow.mergeIntoHeld().");
+    try {
+      const store = realms.handleFor(HANDLE);
+      const merge = store && typeof store.mergeRow === 'function'
+        ? store.mergeRow : null;
+      const mapped = this.mapRead(realm, id);
+      const held = [slot && slot.session,
+                    mapped.present ? mapped.value : null]
+        .filter(function (one, i, all) {
+          return !!one && typeof one === 'object' && all.indexOf(one) === i;
+        });
+      if (!merge || !held.length || !value || typeof value !== 'object') {
+        log.debug("Leaving SessionWindow.mergeIntoHeld(). Nothing to merge.");
+        return;
+      }
+      held.forEach(function (mine: any) {
+        const merged = merge(mine, value);
+        if (!merged || typeof merged !== 'object' || merged === mine) {
+          return;
+        }
+        Object.keys(mine).forEach(function (field) {
+          if (!Object.prototype.hasOwnProperty.call(merged, field)) {
+            delete mine[field];
+          }
+        });
+        Object.assign(mine, merged);
+      });
+    } catch (e) {
+      log.debug("Caught in SessionWindow.mergeIntoHeld(): " +
+                ((e && (e as Error).message) || e));
+    }
+    log.debug("Leaving SessionWindow.mergeIntoHeld().");
   }
 
   // Hot path: a lastSeenAt touch. No Entering/Leaving pair.
@@ -797,9 +898,9 @@ class SessionWindow {
   }
 
   /**
-   * The chosen sessions of the subjects holding more than `per` of them,
-   * grouped by subject — every row of at most `maxSubjects` such subjects,
-   * in one question (2026-10-21; `session.overCapRows`).
+   * The chosen sessions of the subjects holding more than `per` of them in
+   * this sweep's subject-key band — every row of at most `maxSubjects`
+   * such subjects, in one question (`session.overCapRows`, #876).
    *
    * @param realmId - the realm
    * @param per - the per-subject cap
@@ -809,8 +910,11 @@ class SessionWindow {
   overCapBySubject(realmId: string, per: number, maxSubjects: number):
       Array<{ subjectKey: string; rows: any[] }> | null {
     log.debug("Entering SessionWindow.overCapBySubject().");
+    const sweepS = Number(config.value('authn.sessionSweepS'));
+    const band = sessionQueries.subjectCapBand(Date.now(), sweepS);
     const page = this.indexAnswer('session.overCapRows',
-      [String(realmId), Math.floor(per), Math.floor(maxSubjects)]);
+      [String(realmId), band.lo, band.hi, Math.floor(per),
+       Math.floor(maxSubjects)]);
     if (page === null) {
       log.debug("Leaving SessionWindow.overCapBySubject(). Unread.");
       return null;

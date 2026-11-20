@@ -117,6 +117,7 @@
 // refusals below. It reaches for no setting and no store, so this driver still
 // reaches for nothing.
 const ModelTables = require('../common/model_tables');
+const OnlineIndexes = require('./online_indexes');
 const errorCodes = require('../common/error_codes');
 // The process origin's UUID, a jitter and a reservation are drawn from
 // `common/crypto.js` (#453), required where each is drawn rather than here,
@@ -178,8 +179,9 @@ const capabilities = require('../cluster/cluster_capabilities');
 // the writes; it has a connection of its own now, with the heartbeat and the
 // leases, so a full pool delays a write and can no longer end the process.
 // The writes themselves do not scale with connections: a process flushes its
-// directory one transaction at a time and its minted rows one at a time
-// (`persistence.js`, `persistence_minted.js`), so a writer holds at most two
+// directory one transaction at a time and its minted rows at most two at a
+// time, and only for keys the other minted flush does not hold (#877,
+// `persistence.js`, `persistence_minted.js`), so a writer holds at most three
 // connections however many requests are waiting, and the rest are the
 // change-log pull, claims and reads. A bigger pool per process would multiply
 // the server's connections by every process on every node — the cost above —
@@ -310,15 +312,22 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // whole body and is still read.
 // 30 SINCE 2026-11-03 (#677): `sts_cluster_locks`, a row per named lock,
 // locked FOR UPDATE by the portable cluster statements in place of
-// `pg_advisory_xact_lock` (`persistence/cluster_portable.js`). Empty and
-// unread on a store that runs the native statements.
+// `pg_advisory_xact_lock` (`persistence/cluster_portable.js`). Since #770
+// the native fence share-locks rows of it too (`fence:lease:<name>:<token>`,
+// `fence:origin:<key>:<reservation>`); `cluster/CLAUDE.md` argues why the
+// lease and claim rows themselves are no longer the rows that are shared.
 // 31 SINCE 2026-11-03 (#1290): `sts_ldap_entries_asked_names` rebuilt with
 // `stsassertionkeypair` and `stssamlassertionkeypair` among the asked names
 // in place of `stsassertionjwks` and `stssamlassertioncertificate`: a
 // person's RFC 7523 and RFC 7522 key pairs are several records per profile
 // now, and `person_assertions.js` asks for their holders by the new names.
 // The same advisory step as 27 and 28, looking for the newest name.
-const SCHEMA_VERSION = 31;
+// 32 SINCE 2026-11-12 (#882): `sts_sessions_started`, the partial index
+// the console's newest-first live session pages walk (`ORDER BY
+// started_at DESC, key`, `WHERE chosen`). `started_at` is set once, so
+// the index does not newly make an update non-HOT. How a large store
+// builds it is in `postgres/CLAUDE.md`.
+const SCHEMA_VERSION = 32;
 // How many times a directory flush re-reads the data-key rows and tries
 // again when a locked row is sealed under a key this process does not hold
 // yet, and the pause between tries (2026-10-27; saveDirectory()).
@@ -371,10 +380,13 @@ const RELEASE_CLAIMS_SQL =
 //
 // **NOT THE RELEASE INSIDE THE FLUSH**: `saveDirectory()` sends
 // RELEASE_CLAIMS_SQL in the entry's own transaction, whose commit must stay
-// synchronous, and it costs no flush of its own. Only `claimMany()` and the
-// standalone `releaseClaims()` are asynchronous; `claimOnce()` and
-// `releaseClaim()`, which every other single-use value spends through, are
-// not changed.
+// synchronous, and it costs no flush of its own. `claimMany()` and the
+// standalone `releaseClaims()` are asynchronous. `claimOnce()` is too, only
+// when the caller passes `noFlushWait` (#886): the refresh spend, whose
+// later synchronous minted commit flushes this record before the response
+// is sent. Every other `claimOnce()`, and `releaseClaim()`, stay
+// synchronous. A claim that is the only write of its request must not pass
+// the flag — nothing later would flush it.
 // ---------------------------------------------------------------------------
 const NO_FLUSH_WAIT =
   'quiet AS (SELECT set_config(\'synchronous_commit\', \'off\', ' +
@@ -1202,7 +1214,7 @@ const SCHEMA_ROUTINES = [
 // fall between the count and the first trigger. Only when the counters hold
 // nothing: a second run, a second process, or the script after the driver,
 // adds nothing. Linear in the rows, ONCE: at 200M a long first start, said
-// in `docs/postgres-schema.md`.
+// in `docs/v1.1.0/postgres-schema.md`.
 // ---------------------------------------------------------------------------
 const LOCK_FOR_BACKFILL =
   'LOCK TABLE sts_ldap_entries IN SHARE ROW EXCLUSIVE MODE';
@@ -1551,6 +1563,27 @@ const METRIC_PROBES = [
 // The claim scope a stable origin is held under (`adoptOrigin()`).
 const ORIGIN_SCOPE = 'persistence.origin';
 
+// The fence's share-lock row (#770). `kind` is `lease` or `origin`, `id`
+// the lease name or the origin key, `identity` the token or the
+// reservation. The identity is IN the name: a takeover deletes this row,
+// and a one-statement flush that locked it then finds it gone. A stable
+// name would still be there, and READ COMMITTED would keep the stale
+// holder. No Entering/Leaving pair: every fenced write and every minted
+// flush calls it, and the line would drown the log.
+function fenceLockName(kind, id, identity) {
+  return 'fence:' + kind + ':' + String(id) + ':' + String(identity);
+}
+
+// How long a renewal may wait on a lock before it is a failed beat rather
+// than a hung one (#770). A third of the lifetime, and never more than two
+// seconds: the next beat is already armed, and this one has to come back
+// in time to be retried inside what remains. No Entering/Leaving pair, for
+// fenceLockName()'s reason — every heartbeat and every origin renewal.
+function renewalBoundMs(ttlMs) {
+  const ttl = Math.max(1000, Number(ttlMs) || 30000);
+  return Math.max(250, Math.min(2000, Math.floor(ttl / 3)));
+}
+
 // ---------------------------------------------------------------------------
 // A MINTED FLUSH IS ONE STATEMENT (2026-10-22, #820).
 //
@@ -1570,9 +1603,16 @@ const ORIGIN_SCOPE = 'persistence.origin';
 // is made of DATA DEPENDENCIES, each a scalar subquery the planner makes a
 // one-time filter (an InitPlan read before the first row is fetched):
 //
-//   1. `fence`: the origin claim (FOR SHARE), the node's membership and
-//      its leases (FOR SHARE) — `checkFence()`'s three questions. `lk`
-//      reads it, so nothing is locked by a fenced flush.
+//   1. `fence`: the origin's and the leases' rows of `sts_cluster_locks`
+//      (FOR SHARE), then the claim, the membership and the leases read
+//      with no lock — `checkFence()`'s questions (#770). The lock's NAME
+//      carries the reservation or the token, so a takeover that deletes
+//      the old name fails this statement closed after the wait: READ
+//      COMMITTED rechecks only the locked row, and a lock row that is
+//      gone is not a stale holder still matching. The heartbeat and the
+//      origin renewal update the data rows and do not touch these, so
+//      they do not queue behind the flush. `lk` reads `fence`, so nothing
+//      is written by a fenced flush.
 //   2. `lk`: EVERY existing row the flush touches, locked FOR UPDATE in
 //      ORDER BY handle, realm, key, before any write — the one lock order
 //      every flush takes (2026-09-12). `lkn` counts it, which reads it to
@@ -1701,23 +1741,30 @@ function buildMintedFlush() {
   const after = '(SELECT go FROM ok) AND (SELECT n FROM done) >= 0';
   const text = p(
     '/* sts:minted-flush */ ' +
-    'WITH oc AS MATERIALIZED (SELECT 1 FROM sts_cluster_claims WHERE ' +
+    'WITH ocl AS MATERIALIZED (SELECT 1 FROM sts_cluster_locks WHERE ' +
+    '{claim_key} IS NOT NULL AND name = \'fence:origin:\' || ' +
+    '{claim_key} || \':\' || {claim_reservation} FOR SHARE), ' +
+    'oc AS MATERIALIZED (SELECT 1 FROM sts_cluster_claims WHERE ' +
     '{claim_key} IS NOT NULL AND scope = \'' + ORIGIN_SCOPE + '\' AND ' +
     'realm = \'\' AND key = {claim_key} AND ' +
-    'reservation = {claim_reservation} AND expires_at > ' + DB_NOW +
-    ' FOR SHARE), ' +
+    'reservation = {claim_reservation} AND expires_at > ' + DB_NOW + '), ' +
     'nd AS MATERIALIZED (SELECT 1 FROM sts_cluster_nodes WHERE ' +
     '{node_id} IS NOT NULL AND node_id = {node_id} AND left_at = 0 AND ' +
     'expires_at > ' + DB_NOW + '), ' +
+    'lsl AS MATERIALIZED (SELECT l.name FROM sts_cluster_locks l ' +
+    'JOIN unnest({lease_names}, {lease_tokens}) AS w(name, token) ' +
+    'ON l.name = \'fence:lease:\' || w.name || \':\' || w.token::text ' +
+    'WHERE {node_id} IS NOT NULL FOR SHARE OF l), ' +
     'ls AS MATERIALIZED (SELECT l.name FROM sts_cluster_leases l ' +
     'JOIN unnest({lease_names}, {lease_tokens}) AS w(name, token) ' +
     'ON l.name = w.name AND l.token = w.token WHERE ' +
     '{node_id} IS NOT NULL AND l.holder = {node_id} AND l.expires_at > ' +
-    DB_NOW + ' FOR SHARE OF l), ' +
+    DB_NOW + '), ' +
     'fence AS MATERIALIZED (SELECT ({claim_key} IS NULL OR ' +
-    'EXISTS (SELECT 1 FROM oc)) AND ({node_id} IS NULL OR ' +
-    '(EXISTS (SELECT 1 FROM nd) AND (SELECT count(*) FROM ls) = ' +
-    'cardinality({lease_names}))) AS ok), ' +
+    '(EXISTS (SELECT 1 FROM ocl) AND EXISTS (SELECT 1 FROM oc))) AND ' +
+    '({node_id} IS NULL OR (EXISTS (SELECT 1 FROM nd) AND ' +
+    '(SELECT count(*) FROM ls) = cardinality({lease_names}) AND ' +
+    '(SELECT count(*) FROM lsl) = cardinality({lease_names}))) AS ok), ' +
     'lk AS MATERIALIZED (SELECT handle, realm, key, body FROM sts_minted ' +
     'WHERE (handle, realm, key) IN (SELECT u.h, u.r, u.k FROM ' +
     'unnest({lock_h}, {lock_r}, {lock_k}) AS u(h, r, k)) AND ' +
@@ -2251,6 +2298,18 @@ const ORIGIN_RETAIN_MS = 24 * 60 * 60 * 1000;
 // `hostnameUnchecked` instead and `common/sync_query_thread.ts` puts the
 // function back (`bridgeConnection()`, below).
 //
+// **AN ADDRESS IS CHECKED AS THAT ADDRESS (#951).** `pg` sets `servername`
+// only when the host is not an IP, and it passes no `host` to
+// `tls.connect`. The default check then runs against `localhost`, so a
+// certificate that names `localhost` was accepted for every address. When
+// the host name IS checked, the hook calls `tls.checkServerIdentity` with
+// the host from the connection string and ignores the name it was given.
+// An IPv6 literal is that address without the brackets `URL.hostname`
+// keeps. The function is read at the handshake, so the process-wide check
+// (`outbound_tls`, once installed) is what runs, against that host. The
+// bridge cannot be posted a function, so the same host goes as `checkHost`
+// and the thread puts this hook back.
+//
 // A PURE FUNCTION with no log line, for `poolMax()`'s reason: this module's
 // logger arrives with create(). `refused` carries why a string cannot be
 // dialled, and each caller throws it, tagged, on its own logger.
@@ -2323,7 +2382,7 @@ function dialOptions(url, verifyTls, ca, engine) {
   const verifyHostname = sslmode === 'verify-ca' ? false : verifyChain;
   /**
    * @type {{ rejectUnauthorized: boolean, ca?: string,
-   *          checkServerIdentity?: Function }}
+   *          checkServerIdentity?: Function, checkHost?: string }}
    */
   // `stsOutboundVariant`: the store's row of the outbound gate (#1360,
   // `common/certificate_trust.ts`); node ignores a member it does not know.
@@ -2337,10 +2396,23 @@ function dialOptions(url, verifyTls, ca, engine) {
   if (verifyChain && !verifyHostname) {
     // libpq's verify-ca: the chain, and no host name. Node checks the host
     // name through this hook whenever it verifies the chain, so answering
-    // "no error" is how the check is left out — and only that check.
-    ssl.checkServerIdentity = function () {
-      return undefined;
-    };
+    // "no error" is how the check is left out — and only that check. The
+    // hook is `knex_store.js`'s, the one the bridge's thread puts back.
+    ssl.checkServerIdentity = require('./knex_store').chainOnlyCheck();
+  } else if (verifyHostname && parsed.hostname) {
+    // The name in the string, not the one `pg` leaves node (#951, above).
+    // Anonymous: this module has no logger yet, and the hook runs on the
+    // driver's handshake. `_presented` is `localhost` for an address.
+    // Brackets are the URL's, not the address a certificate names.
+    let host = parsed.hostname;
+    if (host.charAt(0) === '[' && host.charAt(host.length - 1) === ']') {
+      host = host.slice(1, -1);
+    }
+    ssl.checkHost = host;
+    // `knex_store.js`'s hook, which the bridge's thread is handed back
+    // from the same function (#951's review): one place says how the
+    // database's name is checked, in every process and thread.
+    ssl.checkServerIdentity = require('./knex_store').hostCheck(host);
   }
   return {
     connectionString: parsed.toString(),
@@ -2424,6 +2496,12 @@ function checkChangeLogDense(client, log) {
 function create(options) {
   const url = options.url;
   const log = options.log;
+  // A block claim's fence (#884). Only the driver that writes the status
+  // row holds it: the one driver, or the global tier. The cell tier must
+  // not treat a lock it does not store as lost, or every publish fails.
+  const claimFenceOwner = !!options.claimFenceOwner;
+  const claimFences = claimFenceOwner &&
+    typeof options.claimFences === 'function' ? options.claimFences : null;
 
   // The four parameter arrays of RELEASE_CLAIMS_SQL (above, at module level),
   // for `[{ scope, realm, key, reservation }]` (#628). Here for the driver's
@@ -3427,9 +3505,11 @@ function create(options) {
   // answering, which needs the connection attempt to give up — the 5 s in
   // `clientOptions()` bounds both the dial and the wait for a free slot.
   const pool = knexStore.openPool(clientOptions(), {
-    // Small on purpose. Every query this driver makes is on the flush path,
-    // there is one flush at a time by construction (persistence.js serialises
-    // them), and a mock does not need a connection per core.
+    // Small on purpose. The directory flush is one transaction at a time
+    // (persistence.js). At most two minted flushes of non-overlapping keys
+    // may run beside it (#877), so a writer holds at most three of these
+    // connections. The floor of four leaves one for the change-log pull.
+    // A mock does not need a connection per core.
     max: Number(options.poolMax) > 0 ? Number(options.poolMax)
       : POOL_FLOOR,
     idleTimeoutMillis: 30000
@@ -3510,8 +3590,12 @@ function create(options) {
   // (`wal_writer_delay`, 200 ms); a crash of POSTGRES (not of this service)
   // can lose the last fraction of a second of them. What is lost is a few
   // attempts uncounted, or a statistic one sign-in short — rcbj's call on
-  // 2026-10-22. Sessions, codes, tokens, the directory and every minted row
-  // stay on `pool`, durable at commit. Small: these are single statements.
+  // 2026-10-22. Sessions, codes, tokens, every minted row, and a directory
+  // batch that changed anything but an application's authentication counts
+  // stay on `pool`, durable at commit. A directory batch that is ONLY those
+  // counts uses this pool (#878): the same crash can lose the last fraction
+  // of a second of `appAuthentications` and the session and user counts. A
+  // batch that also changed a record rides the durable transaction instead.
   // -------------------------------------------------------------------------
   const tallyPool = knexStore.openPool(
     Object.assign({}, clientOptions(),
@@ -3600,14 +3684,29 @@ function create(options) {
   // (STS-STORE-0070): a server at `max_connections` refuses a new connection
   // while a pooled one may be free, and a renewal that could run must.
   //
-  // **A TRANSACTION'S OWN FENCE CHECKS STAY IN ITS TRANSACTION** —
-  // `checkOriginFence()`, `checkClusterFence()` and the lapse re-assertion
-  // they make run on the transaction's client under its locks, because the
-  // check is only worth anything held to that transaction's COMMIT.
+  // **A TRANSACTION'S FENCE STAYS IN ITS TRANSACTION**, on its client,
+  // held to COMMIT — but what it share-locks is a row of `sts_cluster_locks`
+  // named with the token or the reservation, not the lease or the claim
+  // (#770, `cluster/CLAUDE.md`). The heartbeat and `renewOrigin()` update
+  // those data rows and do not touch the lock rows, so a fence cannot
+  // queue them. A lapse re-assertion is a short autocommit on THIS
+  // connection, bounded, not an exclusive lock held to the write's COMMIT.
+  //
+  // NOTHING SENDS A STATEMENT HERE OUTSIDE `liveExclusive()`. Once any
+  // caller BEGINs, node-postgres would otherwise queue the next statement
+  // into that transaction. A transaction is only `liveTransact()`, which
+  // holds the mutex until COMMIT or ROLLBACK, and the function it runs
+  // queries the client directly — a nested `liveQuery()` would deadlock
+  // on the mutex. A bounded renewal (`liveBounded()`) is the same shape
+  // for one statement: BEGIN, the timeout, the statement, COMMIT.
   // -------------------------------------------------------------------------
   let liveClient = null;
   let liveConnecting = null;
   let liveClosed = false;
+  // THE ONLINE INDEXES (#876, #882): the background build's connection, so
+  // close() can end it, and the promise its settlement is.
+  const onlineBuild = { client: null };
+  let onlineSettled = Promise.resolve({ built: [], told: [] });
   const liveStats = { queries: 0, connects: 0, drops: 0, viaPool: 0 };
 
   function liveConnection() {
@@ -3658,25 +3757,332 @@ function create(options) {
     return liveConnecting;
   }
 
-  /**
-   * Runs one liveness statement on the liveness connection, or through the
-   * pool when that connection cannot be opened.
-   * @param sql - the statement
-   * @param params - its parameters
-   * @returns the query's result
-   */
-  function liveQuery(sql, params) {
-    log.debug("Entering liveQuery().");
-    liveStats.queries += 1;
-    log.debug("Leaving liveQuery().");
-    return Promise.resolve().then(liveConnection).then(function (client) {
+  // One liveness caller at a time. The tail always settles, so a rejected
+  // statement does not stall every renewal behind it. No Entering/Leaving
+  // pair: it wraps every heartbeat.
+  let liveTail = Promise.resolve();
+  function liveExclusive(fn) {
+    const run = liveTail.then(function () {
+      return fn();
+    }, function () {
+      return fn();
+    });
+    liveTail = run.then(function () {
+      return null;
+    }, function () {
+      return null;
+    });
+    return run;
+  }
+
+  // A timeout is digits only. The value is concatenated into SET, and a
+  // caller's string must not be able to ride along.
+  function boundDigits(ms) {
+    const n = Math.floor(Number(ms) || 2000);
+    return String(Math.max(1, Math.min(60000, n)));
+  }
+
+  function dropLive(client) {
+    log.debug("Entering dropLive().");
+    if (liveClient === client) {
+      liveClient = null;
+    }
+    Promise.resolve(client.end()).catch(function (e) {
+      log.debug("Caught in dropLive(): " + ((e && e.message) || e));
+    });
+    log.debug("Leaving dropLive().");
+  }
+
+  function rollbackLive(client, err) {
+    log.debug("Entering rollbackLive().");
+    log.debug("Leaving rollbackLive().");
+    return client.query('ROLLBACK').then(function () {
+      throw err;
+    }, function (rollbackErr) {
+      log.warn(errorCodes.tag('STS-STORE-0032') + 'persistence: a ' +
+               'liveness rollback failed (' + ((rollbackErr &&
+               rollbackErr.message) || rollbackErr) + '); the connection ' +
+               'is being discarded.');
+      dropLive(client);
+      throw err;
+    });
+  }
+
+  // A server setting read back and written into SET must be a number.
+  function numericSetting(value, fallback) {
+    log.debug("Entering numericSetting().");
+    const text = String(value == null ? '' : value);
+    log.debug("Leaving numericSetting().");
+    return /^[0-9]+(\.[0-9]+)?$/.test(text) ? text : fallback;
+  }
+
+  // MariaDB's statement and lock-wait limits are SESSION, so they outlive
+  // the statement. Read the SESSION's values, set, run `work`, put them
+  // back; a restore that fails drops the connection so the next renewal
+  // dials a clean one. It read @@GLOBAL until 2026-11-13 and wrote those
+  // back into the session, which is the same number only while nothing
+  // set the session's own (#770's review): a restore leaves the session
+  // as it found it.
+  function mariadbWithBound(client, ms, work) {
+    log.debug("Entering mariadbWithBound().");
+    const seconds = String(Math.max(1, Math.ceil(Number(ms) / 1000)));
+    log.debug("Leaving mariadbWithBound().");
+    return client.query(
+      'SELECT @@SESSION.max_statement_time AS stmt, ' +
+      '@@SESSION.innodb_lock_wait_timeout AS lockwait'
+    ).then(function (read) {
+      const row = (read.rows && read.rows[0]) || {};
+      const stmt = numericSetting(row.stmt, '0');
+      const lockwait = numericSetting(row.lockwait, '50');
+      const restore = function () {
+        return client.query('SET SESSION max_statement_time = ' + stmt)
+          .then(function () {
+            return client.query(
+              'SET SESSION innodb_lock_wait_timeout = ' + lockwait);
+          });
+      };
+      return client.query('SET SESSION max_statement_time = ' + seconds)
+        .then(function () {
+          return client.query(
+            'SET SESSION innodb_lock_wait_timeout = ' + seconds);
+        }).then(function () {
+          return work();
+        }).then(function (result) {
+          return restore().then(function () {
+            return result;
+          }, function (err) {
+            log.debug("Caught in mariadbWithBound(): " +
+                      ((err && err.message) || err));
+            dropLive(client);
+            return result;
+          });
+        }, function (err) {
+          return restore().then(function () {
+            throw err;
+          }, function (restoreErr) {
+            log.debug("Caught in mariadbWithBound(): " +
+                      ((restoreErr && restoreErr.message) || restoreErr));
+            dropLive(client);
+            throw err;
+          });
+        });
+    });
+  }
+
+  // One statement under mariadbWithBound().
+  function mariadbBounded(client, sql, params, ms) {
+    log.debug("Entering mariadbBounded().");
+    log.debug("Leaving mariadbBounded().");
+    return mariadbWithBound(client, ms, function () {
       return client.query(sql, params);
+    });
+  }
+
+  // A lock or statement wait that ran out on the liveness connection: a
+  // bounded statement's own timeout, on either engine. PostgreSQL answers
+  // 55P03 (lock_timeout) or 57014 (statement_timeout); MariaDB 1205
+  // (innodb_lock_wait_timeout) or 1969 (max_statement_time).
+  function isBoundTimeout(err) {
+    log.debug("Entering isBoundTimeout().");
+    const code = err && err.code;
+    log.debug("Leaving isBoundTimeout().");
+    return code === '55P03' || code === '57014' ||
+      code === 'ER_LOCK_WAIT_TIMEOUT' || code === 'ER_STATEMENT_TIMEOUT' ||
+      (!!err && (err.errno === 1205 || err.errno === 1969));
+  }
+
+  // One autocommit statement with lock_timeout and statement_timeout.
+  // PostgreSQL's SET LOCAL dies with the transaction. A timeout REJECTS
+  // (55P03, 57014): the caller logs STS-CLUSTER-0003. It is not a dead
+  // membership, which would exit the process. Connect failure falls back
+  // to the pool unbounded, as an unbounded statement does — the incident
+  // was a lock wait on an open connection, not a failure to dial.
+  function liveBounded(sql, params, boundMs) {
+    log.debug("Entering liveBounded().");
+    const ms = boundDigits(boundMs);
+    log.debug("Leaving liveBounded().");
+    return Promise.resolve().then(liveConnection).then(function (client) {
+      if (engine === 'mariadb') {
+        return mariadbBounded(client, sql, params, ms);
+      }
+      return client.query('BEGIN').then(function () {
+        return client.query('SET LOCAL lock_timeout = ' + ms);
+      }).then(function () {
+        return client.query('SET LOCAL statement_timeout = ' + ms);
+      }).then(function () {
+        return client.query(sql, params);
+      }).then(function (result) {
+        return client.query('COMMIT').then(function () {
+          return result;
+        });
+      }, function (err) {
+        return rollbackLive(client, err);
+      });
     }, function (err) {
       liveStats.viaPool += 1;
       log.warn(errorCodes.tag('STS-STORE-0070') + 'persistence: the ' +
                'liveness connection could not be opened (' + err.message +
                '); this statement goes through the pool.');
       return pool.query(sql, params);
+    });
+  }
+
+  /**
+   * Runs one liveness statement on the liveness connection, or through the
+   * pool when that connection cannot be opened. `boundMs` caps the lock
+   * and statement wait (#770); omitted, the statement waits as before.
+   * @param sql - the statement
+   * @param params - its parameters
+   * @param [boundMs] - the lock and statement timeout, milliseconds
+   * @returns the query's result
+   */
+  function liveQuery(sql, params, boundMs) {
+    log.debug("Entering liveQuery().");
+    liveStats.queries += 1;
+    log.debug("Leaving liveQuery().");
+    return liveExclusive(function () {
+      if (boundMs > 0) {
+        return liveBounded(sql, params, boundMs);
+      }
+      return Promise.resolve().then(liveConnection).then(function (client) {
+        return client.query(sql, params);
+      }, function (err) {
+        liveStats.viaPool += 1;
+        log.warn(errorCodes.tag('STS-STORE-0070') + 'persistence: the ' +
+                 'liveness connection could not be opened (' +
+                 err.message + '); this statement goes through the pool.');
+        return pool.query(sql, params);
+      });
+    });
+  }
+
+  // BEGIN…COMMIT on the liveness connection, holding the mutex for the
+  // whole of it. `fn` queries the runner, never `liveQuery()`.
+  //
+  // `boundMs` caps every lock and statement wait inside it (#770's review,
+  // 2026-11-13): a lease taken over or given up deletes fence lock rows,
+  // and that DELETE waits for every write still share-locking them — a
+  // write that can last thirty seconds. Unbounded, the wait held this
+  // connection, and every heartbeat queued behind it in `liveExclusive()`
+  // where its own bound had not started; the beat never settled and the
+  // node fenced itself (STS-CLUSTER-0004) in the middle of a takeover. A
+  // timeout rolls the whole transaction back and rejects (`isBoundTimeout()`),
+  // and the caller asks again on its next beat. PostgreSQL's SET LOCAL dies
+  // with the transaction; MariaDB's limits are the session's and are put
+  // back after it (`mariadbWithBound()`).
+  function liveTransact(fn, boundMs) {
+    log.debug("Entering liveTransact().");
+    const ms = boundMs > 0 ? boundDigits(boundMs) : '';
+    log.debug("Leaving liveTransact().");
+    return liveExclusive(function () {
+      return Promise.resolve().then(liveConnection).then(function (client) {
+        const runner = {
+          query: function (text, values) {
+            return client.query(text, values);
+          }
+        };
+        const transact = function () {
+          return client.query('BEGIN').then(function () {
+            if (!ms || engine === 'mariadb') {
+              return null;
+            }
+            return client.query('SET LOCAL lock_timeout = ' + ms)
+              .then(function () {
+                return client.query('SET LOCAL statement_timeout = ' + ms);
+              });
+          }).then(function () {
+            return fn(runner);
+          }).then(function (result) {
+            return client.query('COMMIT').then(function () {
+              return result;
+            });
+          }, function (err) {
+            return rollbackLive(client, err);
+          });
+        };
+        if (ms && engine === 'mariadb') {
+          return mariadbWithBound(client, ms, transact);
+        }
+        return transact();
+      }, function (err) {
+        liveStats.viaPool += 1;
+        log.warn(errorCodes.tag('STS-STORE-0070') + 'persistence: the ' +
+                 'liveness connection could not be opened (' +
+                 err.message + '); this transaction goes through the pool.');
+        return poolTransact(fn, ms);
+      });
+    });
+  }
+
+  // A short transaction on the pool that is NOT a fenced write: an origin
+  // claim's lock row has to commit with the claim, and `withTransaction()`
+  // would re-enter the fence. `ms`, digits or empty, is the liveness
+  // transaction's bound carried here when that connection could not be
+  // opened; PostgreSQL's SET LOCAL ends with the transaction. On MariaDB the
+  // limits are the SESSION's and a pooled connection is somebody else's
+  // next, so the fallback there is unbounded, as `liveBounded()`'s is.
+  function poolTransact(fn, ms) {
+    log.debug("Entering poolTransact().");
+    log.debug("Leaving poolTransact().");
+    return pool.connect().then(function (client) {
+      return client.query('BEGIN').then(function () {
+        if (!ms || engine === 'mariadb') {
+          return null;
+        }
+        return client.query('SET LOCAL lock_timeout = ' + ms)
+          .then(function () {
+            return client.query('SET LOCAL statement_timeout = ' + ms);
+          });
+      }).then(function () {
+        return fn(client);
+      }).then(function (result) {
+        return client.query('COMMIT').then(function () {
+          client.release();
+          return result;
+        });
+      }, function (err) {
+        return client.query('ROLLBACK').then(function () {
+          client.release();
+          throw err;
+        }, function (rollbackErr) {
+          log.warn(errorCodes.tag('STS-STORE-0032') + 'persistence: a ' +
+                   'rollback failed (' + ((rollbackErr &&
+                   rollbackErr.message) || rollbackErr) + '); the ' +
+                   'connection is being discarded.');
+          client.release(rollbackErr);
+          throw err;
+        });
+      });
+    });
+  }
+
+  // The runner a bounded renewal is given. Each statement is its own
+  // autocommit with the timeout; three of them are three beats' worth of
+  // waiting, not one wait of three times.
+  function boundedRunner(ttlMs) {
+    const ms = renewalBoundMs(ttlMs);
+    return {
+      query: function (text, values) {
+        return liveQuery(text, values, ms);
+      }
+    };
+  }
+
+  // The origin's fence lock, written in the same transaction as the claim
+  // and cleared of every other reservation of this key. Native only: the
+  // portable statements build the same pair.
+  function swapOriginLock(client, key, reservation) {
+    log.debug("Entering swapOriginLock().");
+    const name = fenceLockName('origin', key, reservation);
+    const prefix = 'fence:origin:' + String(key) + ':';
+    log.debug("Leaving swapOriginLock().");
+    return client.query(
+      'INSERT INTO sts_cluster_locks (name) VALUES ($1) ON CONFLICT ' +
+      '(name) DO NOTHING', [name]
+    ).then(function () {
+      return client.query(
+        'DELETE FROM sts_cluster_locks WHERE left(name, ' +
+        'char_length($1)) = $1 AND name <> $2', [prefix, name]);
     });
   }
 
@@ -3721,7 +4127,17 @@ function create(options) {
                     options.sqlDialect === 'portable')
     ? clusterPortable.forDriver({
         dialect: dialect, pool: pool, tallyPool: tallyPool,
-        live: liveRunner, originScope: ORIGIN_SCOPE,
+        live: liveRunner, liveTransact: liveTransact,
+        boundQuery: function (text, values, ttl) {
+          return liveQuery(text, values, renewalBoundMs(ttl));
+        },
+        // A lease taken or given up is a bounded liveness transaction
+        // (#770's review), and its timeout is told apart from a failure.
+        boundTransact: function (fn, ttl) {
+          return liveTransact(fn, renewalBoundMs(ttl));
+        },
+        isBoundTimeout: isBoundTimeout,
+        originScope: ORIGIN_SCOPE,
         processId: function () {
           return processId;
         }
@@ -3857,31 +4273,76 @@ function create(options) {
                                        ttlMs);
     }
     log.debug("Leaving takeOverFromGone().");
-    return pool.query(
-      'UPDATE sts_cluster_claims c SET reservation = $3, origin = $4, ' +
-      'claimed_at = ' + DB_NOW + ', expires_at = ' + DB_NOW + ' + $5 ' +
-      'WHERE c.scope = $1 AND c.realm = \'\' AND c.key = $2 ' +
-      'AND position(\'@\' in c.origin) > 0 ' +
-      'AND split_part(c.origin, \'@\', 2) <> $6 ' +
-      'AND EXISTS (SELECT 1 FROM sts_cluster_nodes n WHERE n.node_id = ' +
-      'split_part(c.origin, \'@\', 2) AND (n.left_at > 0 OR n.expires_at <= ' +
-      DB_NOW + ')) RETURNING c.claimed_at',
-      [ORIGIN_SCOPE, key, reservation, holder,
-       Math.max(1000, Number(ttlMs) || 30000), nodeId]
-    ).then(function (r) {
-      return (r.rowCount || 0) > 0;
+    // The lock row moves in the same transaction as the reservation. A
+    // fence that share-locks the old name waits, then finds it gone.
+    return poolTransact(function (client) {
+      return client.query(
+        'UPDATE sts_cluster_claims c SET reservation = $3, origin = $4, ' +
+        'claimed_at = ' + DB_NOW + ', expires_at = ' + DB_NOW + ' + $5 ' +
+        'WHERE c.scope = $1 AND c.realm = \'\' AND c.key = $2 ' +
+        'AND position(\'@\' in c.origin) > 0 ' +
+        'AND split_part(c.origin, \'@\', 2) <> $6 ' +
+        'AND EXISTS (SELECT 1 FROM sts_cluster_nodes n WHERE n.node_id = ' +
+        'split_part(c.origin, \'@\', 2) AND (n.left_at > 0 OR ' +
+        'n.expires_at <= ' + DB_NOW + ')) RETURNING c.claimed_at',
+        [ORIGIN_SCOPE, key, reservation, holder,
+         Math.max(1000, Number(ttlMs) || 30000), nodeId]
+      ).then(function (r) {
+        if (!((r.rowCount || 0) > 0)) {
+          return false;
+        }
+        return swapOriginLock(client, key, reservation).then(function () {
+          return true;
+        });
+      });
     });
   }
 
   // ---------------------------------------------------------------------
   // THE ORIGIN FENCE (2026-09-18). A process that ADOPTED a stable origin
   // holds a claim on it (`adoptOrigin()`), and every transaction checks the
-  // claim is still its own — under a SHARE lock held to COMMIT, so a
-  // successor cannot take the origin between the check and the write. That
-  // is what makes a shared origin safe: a process paused past its claim's
-  // lifetime wakes to find its writes refused, rather than overwriting the
-  // rows its successor has taken over.
+  // claim is still its own, so a successor cannot take the origin between
+  // the check and the write. That is what makes a shared origin safe: a
+  // process paused past its claim's lifetime wakes to find its writes
+  // refused, rather than overwriting the rows its successor has taken over.
+  //
+  // THE SHARE LOCK IS A ROW OF `sts_cluster_locks` NAMED WITH THE
+  // RESERVATION, not the claim row (#770). Two statements, in this order:
+  // the lock, then a plain read of the claim. After the lock wait, READ
+  // COMMITTED rechecks the locked row and the next statement takes a new
+  // snapshot, so a takeover that committed while we waited — and deleted
+  // this name — is either still holding the lock (we see the new claim) or
+  // has removed the name (we fence). A missing lock is a fence, not a
+  // re-assertion: the successor already replaced the reservation. A lock
+  // we hold whose claim has lapsed with our reservation is extended by a
+  // short bounded autocommit on the liveness connection, not by an UPDATE
+  // that would pin the claim row until this write commits.
   // ---------------------------------------------------------------------
+  function readOriginFence(client, held) {
+    log.debug("Entering readOriginFence().");
+    if (portable) {
+      log.debug("Leaving readOriginFence(). Portable.");
+      return portable.originFence(client, held);
+    }
+    const lockName = fenceLockName('origin', held.key, held.reservation);
+    log.debug("Leaving readOriginFence().");
+    return client.query(
+      'SELECT 1 FROM sts_cluster_locks WHERE name = $1 FOR SHARE',
+      [lockName]
+    ).then(function (locked) {
+      if (!((locked.rowCount || 0) > 0)) {
+        return { lock: false, claim: false };
+      }
+      return client.query(
+        'SELECT 1 FROM sts_cluster_claims WHERE scope = $1 AND realm = ' +
+        '\'\' AND key = $2 AND reservation = $3 AND expires_at > ' +
+        DB_NOW, [ORIGIN_SCOPE, held.key, held.reservation]
+      ).then(function (claim) {
+        return { lock: true, claim: (claim.rowCount || 0) > 0 };
+      });
+    });
+  }
+
   function checkOriginFence(client) {
     log.debug("Entering checkOriginFence().");
     if (!originClaim) {
@@ -3890,26 +4351,22 @@ function create(options) {
     }
     const held = originClaim;
     log.debug("Leaving checkOriginFence().");
-    return (portable
-      ? portable.originFence(client, held).then(function (holds) {
-        return { rowCount: holds ? 1 : 0 };
-      })
-      : client.query(
-        'SELECT 1 FROM sts_cluster_claims WHERE scope = $1 AND realm = ' +
-        '\'\' AND key = $2 AND reservation = $3 AND expires_at > ' + DB_NOW +
-        ' FOR SHARE', [ORIGIN_SCOPE, held.key, held.reservation])
-    ).then(function (r) {
-      if (r.rowCount) {
+    return readOriginFence(client, held).then(function (seen) {
+      if (seen.lock && seen.claim) {
         return null;
+      }
+      if (!seen.lock) {
+        throw fenced('origin', 'this process no longer holds its origin ' +
+                     held.key + ' (its fence lock is gone, so another ' +
+                     'process took the claim), so it may not write.');
       }
       // -------------------------------------------------------------------
       // LAPSED IS NOT TAKEN (2026-09-21). The claim's time ran out, but that
       // alone does not mean another process holds it: a process that TAKES
-      // the claim replaces its reservation, in one statement on this row. So
-      // when the row still carries OUR reservation nobody wrote under this
-      // origin in between, and extending it is exactly as safe as the
-      // renewal that should have happened — which is what this does, inside
-      // the write's own transaction. Only a reservation that is somebody
+      // the claim replaces its reservation, and with it the lock's name. So
+      // when the lock is still ours nobody wrote under this origin in
+      // between, and extending the claim is exactly as safe as the renewal
+      // that should have happened. Only a reservation that is somebody
       // else's is fenced.
       //
       // Found in the suite's first product-mode run: a single process under
@@ -3918,15 +4375,34 @@ function create(options) {
       // anywhere, the next write was fenced, and the process EXITED saying
       // another process held its origin (STS-STORE-0061) — which killed the
       // service for the last three jobs.
+      //
+      // THE EXTENSION IS NOT HELD TO THIS COMMIT (#770). It used to be an
+      // UPDATE on this client, so the exclusive lock on the claim row lasted
+      // as long as the write did, and the renewal queued behind it. It is a
+      // bounded autocommit on the liveness connection, then a fresh read.
       // -------------------------------------------------------------------
-      return reassertOrigin(client, held).then(function (still) {
-        if (!still) {
-          throw fenced('origin', 'this process no longer holds its origin ' +
-                       held.key + ' (another process took it after the ' +
-                       'claim lapsed), so it may not write.');
-        }
-        return null;
-      });
+      return reassertOrigin(boundedRunner(held.ttlMs), held)
+        .then(function (still) {
+          if (!still) {
+            throw fenced('origin', 'this process no longer holds its ' +
+                         'origin ' + held.key + ' (another process took it ' +
+                         'after the claim lapsed), so it may not write.');
+          }
+          return client.query(
+            'SELECT 1 FROM sts_cluster_claims WHERE scope = $1 AND ' +
+            'realm = \'\' AND key = $2 AND reservation = $3 AND ' +
+            'expires_at > ' + DB_NOW,
+            [ORIGIN_SCOPE, held.key, held.reservation]
+          ).then(function (again) {
+            if (!((again.rowCount || 0) > 0)) {
+              throw fenced('origin', 'this process no longer holds its ' +
+                           'origin ' + held.key + ' (the claim was not ' +
+                           'live after it was extended), so it may not ' +
+                           'write.');
+            }
+            return null;
+          });
+        });
     });
   }
 
@@ -3994,23 +4470,38 @@ function create(options) {
       if (!leases.length) {
         return null;
       }
-      // THE LEASES UNDER A SHARE LOCK, held to COMMIT: a takeover is an UPDATE
-      // of the lease row, so it waits for this transaction and cannot land
-      // between the check and the write.
+      // THE SHARE LOCK IS THE LOCK ROW, held to COMMIT (#770). A takeover
+      // deletes that name in the same transaction as it changes the token,
+      // so it waits for this transaction. The lease row is read by the NEXT
+      // statement, which takes a new snapshot: locking it in the same
+      // statement as the data would keep a stale holder after the wait.
       return (portable
         ? portable.leaseFence(client, wanted.nodeId, leases)
         : client.query(
-          'SELECT l.name FROM sts_cluster_leases l ' +
-          'JOIN unnest($2::text[], $3::bigint[]) AS w(name, token) ' +
-          '  ON l.name = w.name AND l.token = w.token ' +
-          'WHERE l.holder = $1 AND l.expires_at > ' + DB_NOW + ' ' +
-          'FOR SHARE OF l',
-          [wanted.nodeId,
-           leases.map(function (one) { return String(one.name); }),
-           leases.map(function (one) { return String(one.token); })]
+          'SELECT l.name FROM sts_cluster_locks l WHERE l.name = ' +
+          'ANY($1::text[]) FOR SHARE',
+          [leases.map(function (one) {
+            return fenceLockName('lease', one.name, one.token);
+          })]
         ).then(function (locked) {
-          return (locked.rows || []).map(function (row) {
-            return row.name;
+          const heldLocks = {};
+          (locked.rows || []).forEach(function (row) {
+            heldLocks[row.name] = true;
+          });
+          return client.query(
+            'SELECT l.name, l.token FROM sts_cluster_leases l ' +
+            'JOIN unnest($2::text[], $3::bigint[]) AS w(name, token) ' +
+            '  ON l.name = w.name AND l.token = w.token ' +
+            'WHERE l.holder = $1 AND l.expires_at > ' + DB_NOW,
+            [wanted.nodeId,
+             leases.map(function (one) { return String(one.name); }),
+             leases.map(function (one) { return String(one.token); })]
+          ).then(function (data) {
+            return (data.rows || []).filter(function (row) {
+              return heldLocks[fenceLockName('lease', row.name, row.token)];
+            }).map(function (row) {
+              return row.name;
+            });
           });
         })
       ).then(function (names) {
@@ -4491,6 +4982,18 @@ function create(options) {
     });
   }
 
+  // A directory batch that is only counters (#878). Same retry as a
+  // transaction, on the tally pool: visible at once, durable at the WAL
+  // writer's next flush. MariaDB's tally pool has no asynchronous commit;
+  // the generation skip is the win there.
+  function tallyTransaction(fn) {
+    log.debug('Entering tallyTransaction().');
+    log.debug("Leaving tallyTransaction().");
+    return retryingConflicts('a tally transaction', function () {
+      return transactionOn(tallyPool, fn);
+    });
+  }
+
   // `once` run again on a deadlock or a serialization failure, as a whole
   // transaction always was (2026-10-02): a transaction that `once` runs,
   // or since 2026-10-22 (#820) ONE statement outside a transaction — the
@@ -4682,30 +5185,42 @@ function create(options) {
     log.debug("Entering flushMintedInTransaction().");
     log.debug("Leaving flushMintedInTransaction().");
     return withTransaction(function (client) {
-      // Only a merging row needs its body before the write; every other
-      // row is locked by MINTED_FLUSH itself, in the same order.
-      const locked = !plan.merging.length ? Promise.resolve(null)
-        : client.query(
-          'SELECT handle, realm, key, body FROM sts_minted WHERE ' +
-          '(handle, realm, key) IN (SELECT h, r, k FROM ' +
-          'unnest($1::text[], $2::text[], $3::text[]) AS u(h, r, k)) ' +
-          'ORDER BY handle, realm, key FOR UPDATE',
-          [plan.touched.map(function (row) { return String(row.handle); }),
-           plan.touched.map(function (row) { return String(row.realm); }),
-           plan.touched.map(function (row) { return String(row.key); })]);
-      return locked.then(function (r) {
-        const stored = new Map();
-        ((r && r.rows) || []).forEach(function (found) {
-          stored.set(mintedIdOf(found), found.body);
-        });
-        const resolved = resolveMerges(plan, stored);
-        return client.query(mintedFlushQuery(
-          mintedFlushWrites(plan, resolved, processId)))
-          .then(function (answer) {
-            return settleMintedFlush(client, plan, resolved,
-                                     mintedFlushAnswer(answer));
-          });
+      return flushMintedLocked(client, plan);
+    });
+  }
+
+  // The read-then-write half of the transaction above, on a connection
+  // that is already inside one: the merging rows locked and read in order,
+  // merged with what was read, and MINTED_FLUSH sent with no
+  // compare-and-set, since nothing can change a row this transaction holds.
+  // `flushMintedOn()` ends here too, on the connection that holds the claim
+  // fences (2026-11-12).
+  function flushMintedLocked(client, plan) {
+    log.debug("Entering flushMintedLocked().");
+    // Only a merging row needs its body before the write; every other
+    // row is locked by MINTED_FLUSH itself, in the same order.
+    const locked = !plan.merging.length ? Promise.resolve(null)
+      : client.query(
+        'SELECT handle, realm, key, body FROM sts_minted WHERE ' +
+        '(handle, realm, key) IN (SELECT h, r, k FROM ' +
+        'unnest($1::text[], $2::text[], $3::text[]) AS u(h, r, k)) ' +
+        'ORDER BY handle, realm, key FOR UPDATE',
+        [plan.touched.map(function (row) { return String(row.handle); }),
+         plan.touched.map(function (row) { return String(row.realm); }),
+         plan.touched.map(function (row) { return String(row.key); })]);
+    log.debug("Leaving flushMintedLocked().");
+    return locked.then(function (r) {
+      const stored = new Map();
+      ((r && r.rows) || []).forEach(function (found) {
+        stored.set(mintedIdOf(found), found.body);
       });
+      const resolved = resolveMerges(plan, stored);
+      return client.query(mintedFlushQuery(
+        mintedFlushWrites(plan, resolved, processId)))
+        .then(function (answer) {
+          return settleMintedFlush(client, plan, resolved,
+                                   mintedFlushAnswer(answer));
+        });
     });
   }
 
@@ -4799,10 +5314,138 @@ function create(options) {
     return flushMintedInTransaction(plan);
   }
 
+  // Share-locks the claim fences a flush still publishes under (#884).
+  // The names come back in order, which is the order two flushes lock
+  // them in. A name that is already gone is simply absent: that is a
+  // lost block, not an origin fence, and it does not stop the process.
+  function shareClaimFences(client, names) {
+    log.debug("Entering shareClaimFences().");
+    const ordered = names.slice().sort();
+    log.debug("Leaving shareClaimFences().");
+    if (portable) {
+      return dialect.run(client, 'claimFence.share',
+        kx('sts_cluster_locks').select('name').whereIn('name', ordered)
+          .orderBy('name').forShare()
+      ).then(function (r) {
+        return dialect.rowsOf(r).map(function (row) {
+          return String(row.name);
+        });
+      });
+    }
+    return client.query(
+      'SELECT name FROM sts_cluster_locks WHERE name = ANY($1::text[]) ' +
+      'ORDER BY name FOR SHARE', [ordered]
+    ).then(function (r) {
+      return (r.rows || []).map(function (row) {
+        return String(row.name);
+      });
+    });
+  }
+
+  // Rows whose journal key is not one a lost fence dropped. The stored
+  // key can differ from the journal key; the fence is registered on the
+  // journal key, which is what allocate() undoes.
+  function withoutLostFences(rows, drop) {
+    log.debug("Entering withoutLostFences().");
+    const kept = (rows || []).filter(function (row) {
+      const key = row.journalKey !== undefined && row.journalKey !== null
+        ? row.journalKey : row.key;
+      const id = String(row.handle) + '\n' + String(row.realm) + '\n' +
+        String(key);
+      return !drop[id];
+    });
+    log.debug("Leaving withoutLostFences().");
+    return kept;
+  }
+
+  // MINTED_FLUSH on a connection that already holds the claim-fence share
+  // locks. A fence that did not hold throws: the outer transaction rolls
+  // back. A compare-and-set that missed is tried again on THIS connection
+  // (below); writing the batch again on another connection would publish a
+  // status row without those locks.
+  async function flushMintedOn(client, plan) {
+    log.debug("Entering flushMintedOn().");
+    if (mintedStatements) {
+      log.debug("Leaving flushMintedOn(). Portable.");
+      const out = await mintedStatements.flush(client, plan.touched,
+        function (stored) {
+          const resolved = resolveMerges(plan, stored);
+          return { resolved: resolved,
+                   named: mintedFlushWrites(plan, resolved, processId) };
+        });
+      return settleMintedFlush(client, plan, out.resolved,
+                               { unwritten: out.unwritten });
+    }
+    // A COMPARE-AND-SET THAT MISSES IS NOT A FAILURE HERE EITHER
+    // (2026-11-12). Until then a miss threw, the transaction rolled back,
+    // and the request whose rows were in the batch was answered 503
+    // (STS-STORE-0021, STS-STORE-0066) — on a single node, with nothing
+    // wrong: a merging row (`admin_stats.tokenHolders`, written blindly by
+    // every process at its first token for a holder) written by a sibling
+    // request worker since this process last read it. The fuzz stage hit
+    // it on four concurrent client_credentials grants. A miss is answered
+    // with the stored bodies, so the statement is sent again with them, as
+    // `flushMinted()` does; its first try locked the rows that exist, so
+    // the second matches unless a row was inserted meanwhile, and after
+    // MINTED_CAS_ATTEMPTS the rows are locked and read on this connection
+    // and written with no compare-and-set — still under these fences.
+    let expected = new Map();
+    plan.merging.forEach(function (row) {
+      const id = mintedIdOf(row);
+      if (mintedBodies.has(id)) {
+        expected.set(id, mintedBodies.get(id));
+      }
+    });
+    for (let attempt = 0; attempt < MINTED_CAS_ATTEMPTS; attempt++) {
+      const resolved = resolveMerges(plan, expected);
+      const named = Object.assign(mintedFlushWrites(plan, resolved,
+                                                    processId),
+                                  flushFence());
+      const wanted = expected;
+      named.cas_h = plan.merging.map(function (row) {
+        return String(row.handle);
+      });
+      named.cas_r = plan.merging.map(function (row) {
+        return String(row.realm);
+      });
+      named.cas_k = plan.merging.map(function (row) {
+        return String(row.key);
+      });
+      named.cas_body = plan.merging.map(function (row) {
+        const body = wanted.get(mintedIdOf(row));
+        return body === undefined ? null : body;
+      });
+      const answer = mintedFlushAnswer(await client.query(
+        mintedFlushQuery(named)));
+      if (!answer.known || !answer.fenceOk) {
+        log.debug("Leaving flushMintedOn(). The fence did not hold.");
+        throw new Error('a minted flush under a claim fence did not ' +
+                        'commit: the fence did not hold');
+      }
+      if (answer.go) {
+        log.debug("Leaving flushMintedOn(). Attempt " + (attempt + 1) +
+                  ".");
+        return settleMintedFlush(client, plan, resolved, answer);
+      }
+      expected = answer.current || new Map();
+    }
+    log.debug("Leaving flushMintedOn(). The stored rows kept moving; " +
+              "locked and read.");
+    return flushMintedLocked(client, plan);
+  }
+
   function transactionOnce(fn) {
     log.debug('Entering transactionOnce().');
     log.debug("Leaving transactionOnce().");
-    return pool.connect().then(function (client) {
+    return transactionOn(pool, fn);
+  }
+
+  // `which` is `pool` or the tally pool (#878). The body is the one
+  // transaction either pool runs: BEGIN, the fence, `fn`, COMMIT.
+  function transactionOn(which, fn) {
+    log.debug('Entering transactionOn().');
+    log.debug("Leaving transactionOn().");
+    return which.connect().then(function (client) {
       const unguard = guardClient(client, 'a transaction');
       // THE CHANGE ROWS THIS TRANSACTION RECORDS, held until COMMIT returns —
       // see `written` above. Keyed by the client, which is what
@@ -4828,7 +5471,7 @@ function create(options) {
           announce(kinds, rows);
           unguard();
           client.release();
-          log.debug('Leaving transactionOnce(). Committed.');
+          log.debug('Leaving transactionOn(). Committed.');
           return result;
         });
       }).catch(function (err) {
@@ -4848,7 +5491,7 @@ function create(options) {
         }).then(function () {
           unguard();
           client.release(err);
-          log.debug('Leaving transactionOnce(). Rolled back.');
+          log.debug('Leaving transactionOn(). Rolled back.');
           if (err && err.fenced && typeof onFenced === 'function') {
             onFenced(err);
           } else if (err && err.fenced && err.reason === 'origin' &&
@@ -4873,12 +5516,20 @@ function create(options) {
       // older to bring forward. `persistence/open_mariadb.js` argues each.
       if (engine === 'mariadb') {
         log.debug('Leaving the postgres driver open(). MariaDB.');
-        return require('./open_mariadb').open(pool, log).then(function () {
-          return null;
-        });
+        const owedOnline = [];
+        return require('./open_mariadb').open(pool, log, owedOnline)
+          .then(function () {
+            // The online index it found missing, built in place in the
+            // background and not waited for (#882).
+            onlineSettled = OnlineIndexes.settleMariadb(pool, log,
+                                                        owedOnline);
+            return null;
+          });
       }
       const created = [];
       let late = [];
+      let onlineMissing = [];
+      let onlinePlan = null;
       log.debug("Leaving open().");
       return withTransaction(function (client) {
         // -------------------------------------------------------------
@@ -4899,8 +5550,20 @@ function create(options) {
         });
         return client.query('SELECT ' + probes, names).then(function (result) {
           const row = result.rows[0] || {};
-          const missing = SCHEMA_OBJECTS.filter(function (object, index) {
+          // AN INDEX THE MODEL MARKS `online` (#876, #882) is never built
+          // here: a plain CREATE INDEX in this transaction held every write
+          // to its table for the build and refused a role that does not own
+          // it. It is settled after the commit (`online_indexes.js`).
+          const absent = SCHEMA_OBJECTS.filter(function (object, index) {
             return !row['o' + index];
+          });
+          onlineMissing = absent.filter(function (object) {
+            return object.online === true;
+          }).map(function (object) {
+            return object.name;
+          });
+          const missing = absent.filter(function (object) {
+            return object.online !== true;
           });
           // AN OBJECT BUILT ON A COLUMN THAT SCHEMA_COLUMNS MAY STILL HAVE TO
           // ADD (#333, #349) waits for the column step below.
@@ -5070,6 +5733,14 @@ function create(options) {
           // storage parameters — before the routines below.
           return upgradeSchema(client, created);
         }).then(function () {
+          // WHAT THE ONLINE INDEXES ARE OWED: missing, or left invalid by a
+          // dead concurrent build, and whether this role owns the table.
+          return OnlineIndexes.probePostgres(client,
+            OnlineIndexes.onlineObjects(SCHEMA_OBJECTS), onlineMissing)
+            .then(function (plan) {
+              onlinePlan = plan;
+            });
+        }).then(function () {
           return checkChangeLogDense(client, log);
         }).then(function () {
           // THE COUNTS' FUNCTIONS AND TRIGGERS (#618), probed by name — a
@@ -5196,8 +5867,21 @@ function create(options) {
                  'PERSISTENCE and not COORDINATION — a second process ' +
                  'pointed at this database will not see this one\'s writes ' +
                  'until it restarts.');
+        // AFTER THE COMMIT, AND NOT WAITED FOR: an owed online index is
+        // told (STS-STORE-0172) or built concurrently in the background.
+        onlineSettled = OnlineIndexes.settlePostgres(pool, log, onlinePlan,
+                                                     onlineBuild);
         log.debug('Leaving the postgres driver open().');
       });
+    },
+
+    // The online indexes' settlement (#876, #882), for a caller that wants
+    // to know it is over: `{ built, told }` (MariaDB's adds `failed`).
+    // Never rejects.
+    onlineIndexes: function () {
+      log.debug('Entering the postgres driver onlineIndexes().');
+      log.debug('Leaving the postgres driver onlineIndexes().');
+      return onlineSettled;
     },
 
     // =====================================================================
@@ -5375,6 +6059,16 @@ function create(options) {
       log.debug('Entering the postgres driver close().');
       log.debug("Leaving close().");
       liveClosed = true;
+      // A CONCURRENT INDEX BUILD STILL RUNNING is cancelled with its
+      // connection (#876, #882); the next start finds the index invalid
+      // and builds it again.
+      if (onlineBuild.client) {
+        const building = onlineBuild.client;
+        onlineBuild.client = null;
+        Promise.resolve(building.end()).catch(function (e) {
+          log.debug("Caught in close(): " + ((e && e.message) || e));
+        });
+      }
       const live = liveClient;
       liveClient = null;
       // A NUDGE STILL DUE goes before the pool closes (#630): its commits
@@ -5554,8 +6248,12 @@ function create(options) {
     // then merged by `mergeLostRow()`, one transaction per row, in
     // primary-key order. That transaction locks only the row it merges.
     // -----------------------------------------------------------------------
-    saveDirectory: function (change) {
+    saveDirectory: function (change, how) {
       log.debug('Entering the postgres driver saveDirectory().');
+      // Counters only (#878). The body and the lost-row merges are one
+      // choice: a tally batch stays off the durable pool for both.
+      const transact = (how && how.tally) ? tallyTransaction :
+                       withTransaction;
       const outcomes = [];
       const pendingLost = [];
       const idOf = function (realm, key) {
@@ -5601,7 +6299,7 @@ function create(options) {
         let chain = Promise.resolve();
         ordered.forEach(function (row) {
           chain = chain.then(function () {
-            return withTransaction(function (client) {
+            return transact(function (client) {
               return directoryStore
                 ? directoryStore.mergeLostRow(client, row, outcomes)
                 : mergeLostRow(client, row, outcomes);
@@ -5631,7 +6329,7 @@ function create(options) {
           outcomes.length = 0;
           pendingLost.length = 0;
           try {
-            await withTransaction(transactionBody);
+            await transact(transactionBody);
             const merged = await mergeLostRows(pendingLost);
             log.debug("Leaving attempt().");
             return merged;
@@ -5656,6 +6354,14 @@ function create(options) {
         throw last;
       };
       const transactionBody = function (client) {
+        // A DEADLOCK RETRY RUNS THIS BODY AGAIN (`retryingConflicts()`)
+        // without coming back through `attempt()`, so what a rolled-back
+        // attempt decided is forgotten here, on both engines (2026-11-14).
+        // `pendingLost` always was; `outcomes` was not, and an outcome the
+        // rolled-back attempt read from an older row was applied to the live
+        // directory and the shadow after the attempt that committed.
+        outcomes.length = 0;
+        pendingLost.length = 0;
         if (directoryStore) {
           // MARIADB'S FLUSH (#677): the same locks, merge, writes, claims and
           // change rows, and the key rows and counts this engine keeps in
@@ -6030,6 +6736,29 @@ function create(options) {
     },
 
     // -----------------------------------------------------------------------
+    // THE DATA-KEY ROWS ALONE (2026-11-11), for `keystore.refreshDekRows()`,
+    // which runs before every key-row write and used to read the whole table
+    // for them — every realm's key set and hierarchy, tens of megabytes on a
+    // store with a few hundred realms — to keep a few kilobytes. The filter
+    // is on `realm`, so no other row's material leaves the server; the same
+    // `LIKE` the encryption counts below already use.
+    // -----------------------------------------------------------------------
+    loadDekRows: function () {
+      log.debug('Entering the postgres driver loadDekRows().');
+      if (small) {
+        log.debug("Leaving loadDekRows(). Portable.");
+        return small.loadDekRows();
+      }
+      log.debug("Leaving loadDekRows().");
+      return readPool.query('SELECT realm, material FROM sts_keys WHERE ' +
+                            'realm LIKE \'dek:%\'').then(function (r) {
+        return (r.rows || []).map(function (row) {
+          return { realm: row.realm, material: row.material };
+        });
+      });
+    },
+
+    // -----------------------------------------------------------------------
     // THE KEY MATERIAL. See the CREATE TABLE above for why a column of text is
     // the right shape and why this driver never holds a private key.
     // -----------------------------------------------------------------------
@@ -6141,6 +6870,10 @@ function create(options) {
       // `persistence_minted.js`, notInWorkers()).
       const skipped = Array.isArray(filter.skipHandles)
         ? filter.skipHandles.map(String) : [];
+      // Stores whose expiring rows a start does not read (#883). A NULL
+      // expires_at — the operational row — is still read.
+      const nullExpiry = Array.isArray(filter.nullExpiryHandles)
+        ? filter.nullExpiryHandles.map(String) : [];
       const binds = [TOMBSTONE, filter.realms.map(String),
                      Number(filter.nowMs) || Date.now()];
       let where = 'WHERE body <> $1 AND realm = ANY($2::text[]) AND ' +
@@ -6153,6 +6886,11 @@ function create(options) {
       if (skipped.length) {
         binds.push(skipped);
         where += ' AND NOT (handle = ANY($' + binds.length + '::text[]))';
+      }
+      if (nullExpiry.length) {
+        binds.push(nullExpiry);
+        where += ' AND NOT (handle = ANY($' + binds.length +
+          '::text[]) AND expires_at IS NOT NULL)';
       }
       log.debug("Leaving loadMinted().");
       return (mintedStatements ? mintedStatements.loadMinted(filter)
@@ -6249,21 +6987,82 @@ function create(options) {
       log.debug('Entering the postgres driver saveMinted(). ' +
                 upserts.length + ' upsert(s), ' + deletes.length +
                 ' delete(s).');
-      const plan = planMintedFlush(upserts, deletes);
-      log.debug("Leaving saveMinted().");
-      return flushMinted(plan).then(function (settled) {
-        rememberFlush(plan, settled.resolved, settled.refused);
-        log.debug('Leaving the postgres driver saveMinted(). ' +
-                  settled.refused.length + ' refused by a tombstone, ' +
-                  settled.merged.length + ' merged.');
-        return { refused: settled.refused, merged: settled.merged };
-      }, function (err) {
-        // Nothing of it was committed, and what the rows hold now is not
-        // known here: the next flush of them asks the store again.
-        log.debug("Caught in saveMinted(): " + ((err && err.message) || err));
-        plan.touched.forEach(function (row) {
-          mintedBodies.delete(mintedIdOf(row));
+      const view = claimFences ? claimFences() : null;
+      const names = view && view.names && view.names.length
+        ? view.names : null;
+      if (!names) {
+        const plan = planMintedFlush(upserts, deletes);
+        log.debug("Leaving saveMinted().");
+        return flushMinted(plan).then(function (settled) {
+          rememberFlush(plan, settled.resolved, settled.refused);
+          log.debug('Leaving the postgres driver saveMinted(). ' +
+                    settled.refused.length + ' refused by a tombstone, ' +
+                    settled.merged.length + ' merged.');
+          return { refused: settled.refused, merged: settled.merged };
+        }, function (err) {
+          // Nothing of it was committed, and what the rows hold now is not
+          // known here: the next flush of them asks the store again.
+          log.debug("Caught in saveMinted(): " +
+                    ((err && err.message) || err));
+          plan.touched.forEach(function (row) {
+            mintedBodies.delete(mintedIdOf(row));
+          });
+          throw err;
         });
+      }
+      // The status row's block-claim lock is share-locked in THIS
+      // transaction, and the one-statement flush runs on the same
+      // connection. A lock that is already gone drops that index; the rest
+      // of the batch still commits. A fence that does not hold throws, and
+      // the transaction rolls back, rather than writing the batch on a
+      // second connection that does not hold these locks.
+      log.debug("Leaving saveMinted(). Under the claim fence.");
+      let lostIds = [];
+      let lastPlan = null;
+      return withTransaction(function (client) {
+        lastPlan = null;
+        return shareClaimFences(client, names).then(function (held) {
+          const have = {};
+          held.forEach(function (name) {
+            have[name] = true;
+          });
+          const missing = names.filter(function (name) {
+            return !have[name];
+          });
+          lostIds = view.lose(missing);
+          const drop = {};
+          lostIds.forEach(function (id) {
+            drop[id] = true;
+          });
+          const keptUp = withoutLostFences(upserts, drop);
+          const keptDown = withoutLostFences(deletes, drop);
+          if (!keptUp.length && !keptDown.length) {
+            return { refused: [], merged: [] };
+          }
+          const plan = planMintedFlush(keptUp, keptDown);
+          lastPlan = plan;
+          return flushMintedOn(client, plan).then(function (settled) {
+            return { refused: settled.refused, merged: settled.merged,
+                     remember: settled };
+          });
+        });
+      }).then(function (answer) {
+        if (lastPlan && answer.remember) {
+          rememberFlush(lastPlan, answer.remember.resolved, answer.refused);
+        }
+        view.commitLost(lostIds);
+        log.debug('Leaving the postgres driver saveMinted(). ' +
+                  answer.refused.length + ' refused by a tombstone, ' +
+                  answer.merged.length + ' merged.');
+        return { refused: answer.refused, merged: answer.merged };
+      }, function (err) {
+        log.debug("Caught in saveMinted(): " +
+                  ((err && err.message) || err));
+        if (lastPlan) {
+          lastPlan.touched.forEach(function (row) {
+            mintedBodies.delete(mintedIdOf(row));
+          });
+        }
         throw err;
       });
     },
@@ -6570,8 +7369,12 @@ function create(options) {
       // the claim extended by its reservation, and said so.
       const held = { key: originClaim.key,
                      reservation: originClaim.reservation, ttlMs: ttlMs };
-      // On the LIVENESS connection (#351), both statements.
-      return dialect.run(liveRunner, 'renewOrigin',
+      // On the LIVENESS connection (#351), both statements, each bounded
+      // (#770): a renewal that waits out a lock is a failed beat, not a
+      // connection pinned until the write in front of it commits. Neither
+      // statement touches the fence's lock row.
+      const runner = boundedRunner(ttlMs);
+      return dialect.run(runner, 'renewOrigin',
         kx('sts_cluster_claims')
           .update({ expires_at:
             dialect.now(Math.max(1000, Number(ttlMs) || 30000)) })
@@ -6579,7 +7382,7 @@ function create(options) {
                    reservation: held.reservation })
           .where('expires_at', '>', dialect.now())
       ).then(function (r) {
-        return r.rowCount > 0 ? true : reassertOrigin(liveRunner, held);
+        return r.rowCount > 0 ? true : reassertOrigin(runner, held);
       });
     },
 
@@ -6818,20 +7621,16 @@ function create(options) {
     bridgeConnection: function () {
       log.debug("Entering bridgeConnection().");
       const options = readClientOptions();
-      // A function cannot be posted to a thread, and verify-ca's ssl option
-      // carries one (dialOptions()). Said as data instead, and put back by
-      // `common/sync_query_thread.ts`, so the thread checks exactly what
-      // this side's pools check rather than failing to start — or, with the
-      // hook merely dropped, checking a host name verify-ca does not.
-      // The trust anchors (`ca`, PEM text) cross as they are.
-      const ssl = options.ssl;
-      if (ssl && typeof ssl.checkServerIdentity === 'function') {
-        options.ssl = { rejectUnauthorized: ssl.rejectUnauthorized,
-                        hostnameUnchecked: true };
-        if (ssl.ca) {
-          options.ssl.ca = ssl.ca;
-        }
-      }
+      // A function cannot be posted to a thread. verify-ca's hook checks
+      // nothing, said as `hostnameUnchecked`. A hook that checks the
+      // configured host (#951) is said as `checkHost`. The thread puts
+      // the same hook back: dropping verify-ca's would check a name the
+      // pools do not, and dropping `checkHost` would check `localhost`
+      // for an address. `ca` and `stsOutboundVariant` cross as data; the
+      // variant is what the outbound gate reads.
+      // `knex_store.postableSsl()` says it, and the thread's
+      // `restoredSsl()` is its inverse in the same file (#951's review).
+      options.ssl = require('./knex_store').postableSsl(options.ssl);
       log.debug("Leaving bridgeConnection().");
       return options;
     },
@@ -7389,7 +8188,11 @@ function create(options) {
         return portable.heartbeat(nodeId, ttlMs, info);
       }
       log.debug("Leaving heartbeat().");
-      // On the LIVENESS connection (#351).
+      // On the LIVENESS connection (#351), bounded (#770). The statement
+      // updates the node and the leases and does not touch sts_cluster_locks,
+      // so a fence's share lock does not queue it. A lock wait that does
+      // happen (a takeover's UPDATE of the lease row) rejects inside the
+      // bound instead of holding the connection for the lifetime.
       return liveQuery(
         'WITH n AS (UPDATE sts_cluster_nodes SET heartbeat_at = ' + DB_NOW +
         ', expires_at = ' + DB_NOW + ' + $2, info = COALESCE($3::jsonb, ' +
@@ -7401,7 +8204,8 @@ function create(options) {
         'SELECT (SELECT count(*) FROM n) AS alive, ' +
         'COALESCE((SELECT json_agg(json_build_object(\'name\', name, ' +
         '\'token\', token)) FROM l), \'[]\'::json) AS leases',
-        [nodeId, Number(ttlMs), info ? JSON.stringify(info) : null]
+        [nodeId, Number(ttlMs), info ? JSON.stringify(info) : null],
+        renewalBoundMs(ttlMs)
       ).then(function (r) {
         const row = r.rows[0] || {};
         return {
@@ -7424,11 +8228,19 @@ function create(options) {
         return portable.leaveCluster(nodeId);
       }
       log.debug("Leaving leaveCluster().");
+      // The fence locks of the leases this holder has go in the same
+      // statement as the leases. `held` reads them before `l` expires them;
+      // a data-modifying CTE does not see a sibling's write.
       return liveQuery(
         'WITH n AS (UPDATE sts_cluster_nodes SET left_at = ' + DB_NOW +
-        ', expires_at = LEAST(expires_at, ' + DB_NOW + ') WHERE node_id = $1 ' +
-        'RETURNING node_id) ' +
-        'UPDATE sts_cluster_leases SET expires_at = 0 WHERE holder = $1',
+        ', expires_at = LEAST(expires_at, ' + DB_NOW + ') WHERE node_id = ' +
+        '$1 RETURNING node_id), held AS (SELECT name, token FROM ' +
+        'sts_cluster_leases WHERE holder = $1), gone AS (DELETE FROM ' +
+        'sts_cluster_locks WHERE name IN (SELECT \'fence:lease:\' || ' +
+        'held.name || \':\' || held.token::text FROM held) RETURNING ' +
+        'name), l AS (UPDATE sts_cluster_leases SET expires_at = 0 WHERE ' +
+        'holder = $1 RETURNING name) SELECT (SELECT count(*) FROM n) + ' +
+        '(SELECT count(*) FROM gone) + (SELECT count(*) FROM l)',
         [nodeId]).then(function () {
         return true;
       });
@@ -7445,38 +8257,77 @@ function create(options) {
         return portable.acquireLease(name, nodeId, ttlMs);
       }
       log.debug("Leaving acquireLease().");
+      // The fence lock is written in the same statement, and only when this
+      // node holds the lease afterwards. Other tokens' rows of this lease
+      // are deleted with it, so an in-flight fence of the old token waits
+      // and then finds its name gone. A takeover still waits for those
+      // fences: it cannot commit until they have. But it waits in bounded
+      // ATTEMPTS (#770's review, 2026-11-13), the heartbeat's bound, not in
+      // one statement that holds the liveness connection for as long as the
+      // old holder's slowest write. That statement queued this node's own
+      // heartbeat behind it in `liveExclusive()`, where the heartbeat's
+      // bound had not started, and a standby fenced itself
+      // (STS-CLUSTER-0004) in the middle of taking over. A timeout rolls
+      // the whole statement back (the token and the lock rows with it) and
+      // answers `{ held: false, pending: true }`; the caller asks again on
+      // its next beat, and the old holder's fences, which find their lease
+      // expired, cannot start new writes meanwhile.
+      const holderOf = function (pending) {
+        return dialect.run(liveRunner, 'acquireLease.holder',
+          kx('sts_cluster_leases').select('holder', 'token', 'expires_at')
+            .where({ name: name })
+        ).then(function (found) {
+          const other = (found.rows || [])[0] || null;
+          const answer = { held: false, holder: other ? other.holder : '',
+                           token: other ? Number(other.token) : 0,
+                           expiresAt: other ? Number(other.expires_at) : 0 };
+          if (pending) {
+            answer.pending = true;
+          }
+          return answer;
+        });
+      };
       return liveQuery(
-        'INSERT INTO sts_cluster_leases (name, holder, token, acquired_at, ' +
-        'expires_at) SELECT $1, $2, 1, ' + DB_NOW + ', ' + DB_NOW + ' + $3 ' +
-        'WHERE EXISTS (SELECT 1 FROM sts_cluster_nodes WHERE node_id = $2 ' +
-        'AND left_at = 0 AND expires_at > ' + DB_NOW + ') ' +
-        'ON CONFLICT (name) DO UPDATE SET holder = EXCLUDED.holder, ' +
+        'WITH up AS (INSERT INTO sts_cluster_leases (name, holder, token, ' +
+        'acquired_at, expires_at) SELECT $1, $2, 1, ' + DB_NOW + ', ' +
+        DB_NOW + ' + $3 WHERE EXISTS (SELECT 1 FROM sts_cluster_nodes ' +
+        'WHERE node_id = $2 AND left_at = 0 AND expires_at > ' + DB_NOW +
+        ') ON CONFLICT (name) DO UPDATE SET holder = EXCLUDED.holder, ' +
         'token = CASE WHEN sts_cluster_leases.holder = EXCLUDED.holder AND ' +
         'sts_cluster_leases.expires_at > ' + DB_NOW + ' THEN ' +
         'sts_cluster_leases.token ELSE sts_cluster_leases.token + 1 END, ' +
-        'acquired_at = CASE WHEN sts_cluster_leases.holder = EXCLUDED.holder ' +
-        'AND sts_cluster_leases.expires_at > ' + DB_NOW + ' THEN ' +
-        'sts_cluster_leases.acquired_at ELSE EXCLUDED.acquired_at END, ' +
-        'expires_at = EXCLUDED.expires_at ' +
-        'WHERE sts_cluster_leases.expires_at <= ' + DB_NOW + ' OR ' +
-        'sts_cluster_leases.holder = EXCLUDED.holder ' +
-        'RETURNING holder, token, expires_at',
-        [name, nodeId, Number(ttlMs)]
+        'acquired_at = CASE WHEN sts_cluster_leases.holder = ' +
+        'EXCLUDED.holder AND sts_cluster_leases.expires_at > ' + DB_NOW +
+        ' THEN sts_cluster_leases.acquired_at ELSE EXCLUDED.acquired_at ' +
+        'END, expires_at = EXCLUDED.expires_at WHERE ' +
+        'sts_cluster_leases.expires_at <= ' + DB_NOW + ' OR ' +
+        'sts_cluster_leases.holder = EXCLUDED.holder RETURNING holder, ' +
+        'token, expires_at), lk AS (INSERT INTO sts_cluster_locks (name) ' +
+        'SELECT \'fence:lease:\' || $1 || \':\' || up.token::text FROM up ' +
+        'WHERE up.holder = $2 ON CONFLICT (name) DO NOTHING RETURNING ' +
+        'name), gone AS (DELETE FROM sts_cluster_locks WHERE EXISTS ' +
+        '(SELECT 1 FROM up WHERE up.holder = $2) AND left(name, ' +
+        'char_length(\'fence:lease:\' || $1 || \':\')) = \'fence:lease:\' ' +
+        '|| $1 || \':\' AND name <> (SELECT \'fence:lease:\' || $1 || ' +
+        '\':\' || up.token::text FROM up WHERE up.holder = $2) RETURNING ' +
+        'name) SELECT up.holder, up.token, up.expires_at, (SELECT ' +
+        'count(*) FROM lk) AS locked, (SELECT count(*) FROM gone) AS ' +
+        'cleared FROM up',
+        [name, nodeId, Number(ttlMs)],
+        renewalBoundMs(ttlMs)
       ).then(function (r) {
         const row = (r.rows || [])[0];
         if (row && row.holder === nodeId) {
           return { held: true, token: Number(row.token),
                    expiresAt: Number(row.expires_at) };
         }
-        return dialect.run(liveRunner, 'acquireLease.holder',
-          kx('sts_cluster_leases').select('holder', 'token', 'expires_at')
-            .where({ name: name })
-        ).then(function (found) {
-          const other = (found.rows || [])[0] || null;
-          return { held: false, holder: other ? other.holder : '',
-                   token: other ? Number(other.token) : 0,
-                   expiresAt: other ? Number(other.expires_at) : 0 };
-        });
+        return holderOf(false);
+      }, function (err) {
+        if (!isBoundTimeout(err)) {
+          throw err;
+        }
+        log.debug("Caught in acquireLease(): " + err.message);
+        return holderOf(true);
       });
     },
 
@@ -7484,12 +8335,30 @@ function create(options) {
     releaseLease: function (name, nodeId, token) {
       log.debug("Entering releaseLease(). name=" + name);
       log.debug("Leaving releaseLease().");
-      return dialect.run(liveRunner, 'releaseLease',
-        kx('sts_cluster_leases').update({ expires_at: 0 })
-          .where({ name: name, holder: nodeId, token: Number(token) })
-      ).then(function (r) {
-        return (r.rowCount || 0) > 0;
-      });
+      // The lock goes only when the lease did. One transaction, so a
+      // rollback puts both back; deleting the lock of a lease we did not
+      // release would drop a fence another holder still needs. Bounded as
+      // a takeover is (#770's review): deleting the lock waits for this
+      // node's own writes still fenced by it, and the heartbeat queues
+      // behind that wait. A timeout rejects, and `stepDown()` reports it
+      // (STS-CLUSTER-0041).
+      return liveTransact(function (runner) {
+        return dialect.run(runner, 'releaseLease',
+          kx('sts_cluster_leases').update({ expires_at: 0 })
+            .where({ name: name, holder: nodeId, token: Number(token) })
+        ).then(function (r) {
+          if (!((r.rowCount || 0) > 0)) {
+            return false;
+          }
+          return dialect.run(runner, 'releaseLease.lock',
+            kx('sts_cluster_locks').where({
+              name: fenceLockName('lease', name, token)
+            }).del()
+          ).then(function () {
+            return true;
+          });
+        });
+      }, renewalBoundMs());
     },
 
     // Every node row still retained and every lease, with the database clock
@@ -7624,28 +8493,35 @@ function create(options) {
       // What the row's informational `origin` says took it: this process,
       // or (an origin claim, #617) this process and its node's membership.
       const claimant = o.origin ? String(o.origin) : processId;
-      log.debug("Leaving claimOnce().");
-      return pool.query(
-        'INSERT INTO sts_cluster_claims (scope, realm, key, reservation, ' +
-        'origin, claimed_at, expires_at) VALUES ($1, $2, $3, $4, $5, ' +
-        DB_NOW + ', ' + DB_NOW + ' + $6) ON CONFLICT (scope, realm, key) DO ' +
-        'UPDATE SET reservation = EXCLUDED.reservation, origin = ' +
-        'EXCLUDED.origin, claimed_at = EXCLUDED.claimed_at, expires_at = ' +
-        'EXCLUDED.expires_at WHERE sts_cluster_claims.expires_at <= ' +
-        'EXCLUDED.claimed_at RETURNING claimed_at, expires_at',
-        [String(scope), String(realmId || ''), String(key), reservation,
-         claimant, ttlMs]
-      ).then(function (r) {
-        if (r.rowCount) {
-          const row = r.rows[0];
-          return { claimed: true, claimedAt: Number(row.claimed_at),
-                   expiresAt: Number(row.expires_at) };
-        }
-        return dialect.run(pool, 'claimOnce.holder',
+      const realm = String(realmId || '');
+      const claimKey = String(key);
+      const claimColumns = 'scope, realm, key, reservation, origin, ' +
+        'claimed_at, expires_at';
+      const claimConflict =
+        'ON CONFLICT (scope, realm, key) DO UPDATE SET reservation = ' +
+        'EXCLUDED.reservation, origin = EXCLUDED.origin, claimed_at = ' +
+        'EXCLUDED.claimed_at, expires_at = EXCLUDED.expires_at WHERE ' +
+        'sts_cluster_claims.expires_at <= EXCLUDED.claimed_at RETURNING ' +
+        'claimed_at, expires_at';
+      const claimSql = 'INSERT INTO sts_cluster_claims (' + claimColumns +
+        ') VALUES ($1, $2, $3, $4, $5, ' + DB_NOW + ', ' + DB_NOW +
+        ' + $6) ' + claimConflict;
+      // THE REFRESH SPEND (#886). `quiet` is read, so the CTE runs. The
+      // commit is visible at once and does not wait for the log flush. The
+      // caller owes a later synchronous commit that flushes this record
+      // before anything is issued. The origin claim never takes this form:
+      // its lock commits with it, and that commit stays synchronous.
+      const claimSqlNoFlush = 'WITH ' + NO_FLUSH_WAIT +
+        ' INSERT INTO sts_cluster_claims (' + claimColumns +
+        ') SELECT $1, $2, $3, $4, $5, ' + DB_NOW + ', ' + DB_NOW +
+        ' + $6 FROM quiet ' + claimConflict;
+      const claimParams = [String(scope), realm, claimKey, reservation,
+                           claimant, ttlMs];
+      const refused = function (runner) {
+        return dialect.run(runner, 'claimOnce.holder',
           kx('sts_cluster_claims')
             .select('origin', 'claimed_at', 'expires_at')
-            .where({ scope: String(scope), realm: String(realmId || ''),
-                     key: String(key) })
+            .where({ scope: String(scope), realm: realm, key: claimKey })
         ).then(function (found) {
           const row = (found.rows || [])[0] || null;
           return { claimed: false, existing: row ? {
@@ -7654,6 +8530,42 @@ function create(options) {
             expiresAt: Number(row.expires_at)
           } : null };
         });
+      };
+      log.debug("Leaving claimOnce().");
+      const answerOf = function (r, runner) {
+        log.debug("Entering answerOf().");
+        if (r.rowCount) {
+          const row = r.rows[0];
+          log.debug("Leaving answerOf(). Claimed.");
+          return { claimed: true, claimedAt: Number(row.claimed_at),
+                   expiresAt: Number(row.expires_at) };
+        }
+        log.debug("Leaving answerOf(). Refused.");
+        return refused(runner);
+      };
+      // An origin claim's fence lock commits with the claim. Any other
+      // scope stays one statement: directory claims are not fenced this way.
+      // `noFlushWait` is ignored here. The lock and the claim are one
+      // synchronous commit.
+      if (String(scope) === ORIGIN_SCOPE) {
+        return poolTransact(function (client) {
+          return client.query(claimSql, claimParams).then(function (r) {
+            if (r.rowCount) {
+              const row = r.rows[0];
+              return swapOriginLock(client, claimKey, reservation)
+                .then(function () {
+                  return { claimed: true,
+                           claimedAt: Number(row.claimed_at),
+                           expiresAt: Number(row.expires_at) };
+                });
+            }
+            return refused(client);
+          });
+        });
+      }
+      const sql = o.noFlushWait ? claimSqlNoFlush : claimSql;
+      return pool.query(sql, claimParams).then(function (r) {
+        return answerOf(r, pool);
       });
     },
 
@@ -7662,13 +8574,32 @@ function create(options) {
     // claimant's.
     releaseClaim: function (scope, realmId, key, reservation) {
       log.debug("Entering releaseClaim(). scope=" + scope);
+      const where = { scope: String(scope), realm: String(realmId || ''),
+                      key: String(key), reservation: String(reservation) };
       log.debug("Leaving releaseClaim().");
-      return dialect.run(pool, 'releaseClaim',
-        kx('sts_cluster_claims')
-          .where({ scope: String(scope), realm: String(realmId || ''),
-                   key: String(key), reservation: String(reservation) })
-          .del()
-      ).then(function (r) {
+      const drop = function (runner) {
+        return dialect.run(runner, 'releaseClaim',
+          kx('sts_cluster_claims').where(where).del());
+      };
+      // The origin's lock is deleted only when the claim was. Same
+      // transaction: a commit cannot drop the lock and leave the claim.
+      if (String(scope) === ORIGIN_SCOPE) {
+        return poolTransact(function (client) {
+          return drop(client).then(function (r) {
+            if (!((r.rowCount || 0) > 0)) {
+              return false;
+            }
+            return dialect.run(client, 'releaseClaim.lock',
+              kx('sts_cluster_locks').where({
+                name: fenceLockName('origin', key, reservation)
+              }).del()
+            ).then(function () {
+              return true;
+            });
+          });
+        });
+      }
+      return drop(pool).then(function (r) {
         return (r.rowCount || 0) > 0;
       });
     },
@@ -7685,6 +8616,166 @@ function create(options) {
           .where('expires_at', '>', dialect.now())
       ).then(function (r) {
         return dialect.rowsOf(r).length > 0;
+      });
+    },
+
+    // THE LIVE CLAIMS OF ONE SCOPE (#884). The block number is not in the
+    // row — the key is a digest — so a restart releases by the row, not by
+    // guessing blocks. Every realm: one origin serves all of them. Expired
+    // rows are already free. The same knex `claimHeld()` uses, so both
+    // engines. No reservation is logged by the caller.
+    claimsOfScope: function (scope) {
+      log.debug("Entering claimsOfScope(). scope=" + scope);
+      log.debug("Leaving claimsOfScope().");
+      return dialect.run(pool, 'claimsOfScope',
+        kx('sts_cluster_claims')
+          .select('scope', 'realm', 'key', 'reservation', 'origin')
+          .where({ scope: String(scope || '') })
+          .where('expires_at', '>', dialect.now())
+      ).then(function (r) {
+        return dialect.rowsOf(r).map(function (row) {
+          return { scope: String(row.scope), realm: String(row.realm),
+                   key: String(row.key),
+                   reservation: String(row.reservation),
+                   origin: String(row.origin || '') };
+        });
+      });
+    },
+
+    // MEMBERSHIPS THAT HAVE LEFT OR EXPIRED (#884). Not `clusterState()`:
+    // that list is the newest 200 rows, and a soak keeps more dead nodes
+    // than that. Dead rows are bounded by the node's retention. A node id
+    // that has no row at all is not here — absence proves nothing.
+    goneNodeIds: function () {
+      log.debug("Entering goneNodeIds().");
+      log.debug("Leaving goneNodeIds().");
+      return dialect.run(pool, 'goneNodeIds',
+        kx('sts_cluster_nodes').select('node_id').where(function () {
+          this.where('left_at', '>', 0)
+            .orWhere('expires_at', '<=', dialect.now());
+        })
+      ).then(function (r) {
+        return dialect.rowsOf(r).map(function (row) {
+          return String(row.node_id || '');
+        }).filter(function (id) {
+          return !!id;
+        });
+      });
+    },
+
+    // STABLE ORIGINS THAT STILL HOLD THEIR CLAIM (#884). The key is the
+    // origin (`n:…`); the row's origin column is the membership text and
+    // is not what a block claim is matched on.
+    //
+    // `graceMs` COUNTS A CLAIM THAT LAPSED LESS THAN THAT LONG AGO AS LIVE
+    // (#884's review, 2026-11-13). A live process whose renewal was late
+    // (#770's bounded renewals time out rather than wait) has a lapsed
+    // claim for a few seconds and re-asserts it on its next write; the
+    // reap job must not take its blocks for that. A lapsed origin row is
+    // kept for ORIGIN_RETAIN_MS, so how long ago it lapsed is read off the
+    // row. A row that is gone (a clean stop releases it) is not live.
+    // Omitted, nothing lapsed counts, which is what the job asked before.
+    liveOriginKeys: function (graceMs) {
+      log.debug("Entering liveOriginKeys().");
+      const grace = Number(graceMs) > 0 ? Number(graceMs) : 0;
+      log.debug("Leaving liveOriginKeys().");
+      return dialect.run(pool, 'liveOriginKeys',
+        kx('sts_cluster_claims').select('key')
+          .where({ scope: ORIGIN_SCOPE })
+          .where('expires_at', '>',
+                 grace ? dialect.now(grace, '-') : dialect.now())
+      ).then(function (r) {
+        return dialect.rowsOf(r).map(function (row) {
+          return String(row.key || '');
+        }).filter(function (key) {
+          return !!key;
+        });
+      });
+    },
+
+    // THE BLOCK CLAIM'S FENCE LOCK (#884), on THIS database, which is the
+    // one that writes the status row. Inserted after the claim, and every
+    // other reservation of the same claim is deleted in the same
+    // transaction, so a new lessee waits for a flush that still holds the
+    // previous lock. The name is not logged: it carries the reservation.
+    installClaimFence: function (scope, realm, key, reservation) {
+      log.debug("Entering installClaimFence().");
+      const claims = require('../cluster/cluster_claims');
+      const name = claims.claimFenceLockName(scope, realm, key, reservation);
+      const prefix = name.slice(0, name.length -
+        String(reservation || '').length);
+      log.debug("Leaving installClaimFence().");
+      if (portable) {
+        return portable.installClaimLock(name, prefix);
+      }
+      return poolTransact(function (client) {
+        return client.query(
+          'INSERT INTO sts_cluster_locks (name) VALUES ($1) ' +
+          'ON CONFLICT (name) DO NOTHING', [name]
+        ).then(function () {
+          return client.query(
+            'DELETE FROM sts_cluster_locks WHERE left(name, ' +
+            'char_length($1)) = $1 AND name <> $2', [prefix, name]);
+        });
+      });
+    },
+
+    // Deletes the fence locks of the claims about to be released, in one
+    // transaction so the delete waits for an in-flight share lock. The
+    // claim rows are a different statement, on purpose: this database may
+    // not be the one that holds them.
+    releaseClaimFences: function (rows) {
+      log.debug("Entering releaseClaimFences().");
+      const claims = require('../cluster/cluster_claims');
+      const names = (rows || []).filter(function (row) {
+        return row && row.key && row.reservation;
+      }).map(function (row) {
+        return claims.claimFenceLockName(row.scope, row.realm, row.key,
+                                         row.reservation);
+      });
+      if (!names.length) {
+        log.debug("Leaving releaseClaimFences(). None.");
+        return Promise.resolve(0);
+      }
+      log.debug("Leaving releaseClaimFences().");
+      if (portable) {
+        return portable.releaseClaimLocks(names);
+      }
+      return poolTransact(function (client) {
+        return client.query(
+          'DELETE FROM sts_cluster_locks WHERE name = ANY($1::text[])',
+          [names.slice().sort()]);
+      }).then(function () {
+        return names.length;
+      });
+    },
+
+    // Which of `keys` are live minted rows: not a tombstone, and not past
+    // their expiry. The writer, not the replica, so a row that just
+    // committed is visible. A text range would order '1000' before '999'.
+    mintedLiveKeys: function (handle, realmId, keys) {
+      log.debug("Entering mintedLiveKeys().");
+      const list = (keys || []).map(String).filter(function (key) {
+        return key !== '';
+      });
+      if (!list.length) {
+        log.debug("Leaving mintedLiveKeys(). None.");
+        return Promise.resolve([]);
+      }
+      log.debug("Leaving mintedLiveKeys().");
+      return dialect.run(pool, 'mintedLiveKeys',
+        kx('sts_minted').select('key')
+          .where({ handle: String(handle), realm: String(realmId || '') })
+          .whereIn('key', list)
+          .whereNot({ body: TOMBSTONE })
+          .where(function () {
+            this.whereNull('expires_at')
+              .orWhere('expires_at', '>', dialect.now());
+          })
+      ).then(function (r) {
+        return dialect.rowsOf(r).map(function (row) {
+          return String(row.key);
+        });
       });
     },
 

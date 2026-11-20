@@ -33,6 +33,10 @@
 public_hostname  = "global-idp.iyasec.io"
 public_zone_name = "iyasec.io"
 
+# CLOUDFRONT IN FRONT OF THE CELLS (#1341): testidpna's arrangement.
+cloudfront_enabled = true
+direct_hostname    = "direct.global-idp.iyasec.io"
+
 extra_environment = {
   STS_DOMAIN              = "iyasec.io"
   KRB5_REALM              = "IYASEC.IO"

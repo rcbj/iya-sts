@@ -50,7 +50,7 @@ locals {
     STS_KEYS_SOURCE             = "persisted"
     STS_CLUSTER_MODE            = "active-active"
     STS_PUBLIC_BASE_URL         = local.public_base_url
-    STS_TLS_HOSTNAMES           = join(",", distinct(compact([local.public_name ? var.public_hostname : "", local.cell_console_host, "localhost"])))
+    STS_TLS_HOSTNAMES           = join(",", distinct(compact([local.public_name ? var.public_hostname : "", local.cdn ? var.direct_hostname : "", local.cell_console_host, "localhost"])))
     STS_TLS_IPS                 = join(",", ["127.0.0.1", local.lb_address])
     STS_WORKERS_REQUEST_COUNT   = tostring(var.workers_request_count)
     STS_WORKERS_SURFACE_COUNT   = tostring(var.workers_surface_count)
@@ -58,9 +58,9 @@ locals {
     STS_WORKERS_READ_YOUR_WRITE = tostring(var.workers_read_your_write)
 
     # NO PROXY HEADER: a pass-through load balancer delivers the client's
-    # own packets (lb.tf), so the peer IS the client and no proxy is trusted.
-    STS_PROXY_PROTOCOL  = "off"
-    STS_TRUSTED_PROXIES = ""
+    # own packets (lb.tf), so the peer IS the client and no proxy is trusted —
+    # unless Front Door is in front (frontdoor.tf, `edge_environment`).
+    STS_PROXY_PROTOCOL = "off"
 
     # The database password, from Key Vault through common/secrets.js — the
     # path issue #51 exists to exercise, on the `azure` provider — and the
@@ -84,7 +84,7 @@ locals {
     # Where a certificate says its CRL and OCSP are: the FRONT-END port
     # (AWS's argument, deploy/aws/environment/ecs.tf).
     PKI_DISTRIBUTION_BASE_URL  = local.pki_public_url
-    PKI_DISTRIBUTION_LDAP_HOST = local.public_host
+    PKI_DISTRIBUTION_LDAP_HOST = local.direct_host
     # 389 is what an ldap:// address names (RFC 4516; RFC 5280 section 8 rules
     # out ldaps://); it is no longer published (locals.tf), so from outside
     # that address does not resolve.
@@ -112,6 +112,8 @@ locals {
     local.kek_environment,
     # A CELL'S CONTRACT WITH THE SERVICE (cells.tf); empty otherwise.
     local.cell_environment,
+    # WHO IS IN FRONT: nobody, or Front Door (frontdoor.tf).
+    local.edge_environment,
   var.extra_environment)
 
   # `KEY=<secret name>` pairs, comma-separated, for node-init's secrets.sh.
@@ -146,6 +148,10 @@ locals {
     ["--add-host ${local.db_hostname}:${local.db_endpoint_ip}"],
     local.global_hosts,
     [for id in sort(keys(local.peers)) : "--add-host ${local.cell_private[id].intercell_host}:${local.cell_private[id].intercell_ip}"],
+    # BEHIND FRONT DOOR, THE NODE'S OWN PUBLIC NAME IS ITS OWN LOAD BALANCER
+    # (frontdoor.tf): the `self` rule admits it, as before Front Door, where
+    # the edge's allowlist would not.
+    local.cdn ? ["--add-host ${var.public_hostname}:${local.lb_address}"] : [],
   ))
 
   unit_files = {
@@ -194,7 +200,7 @@ locals {
         vault_url       = local.vault_uri
         tls_secret      = "tls"
         hostname        = var.public_hostname
-        alt_names       = local.cell_console_host
+        alt_names       = join(",", compact([local.cell_console_host, local.cdn ? var.direct_hostname : ""]))
         issuer          = node == "node-a" ? "true" : "false"
         acme_server     = var.acme_server
         acme_email      = var.acme_email

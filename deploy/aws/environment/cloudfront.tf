@@ -45,9 +45,49 @@
 # behaviour: CloudFront then sends that Host as the SNI and checks the node's
 # certificate against it. A behaviour that did not forward Host would fail at
 # the handshake with a 502.
+#
+# A MULTI-CELL ENVIRONMENT (#1341, rcbj 2026-11-13) HAS ONE DISTRIBUTION, and
+# its origin is the cells' Route 53 tree, moved to the DIRECT name:
+#
+#   browser ─ CloudFront ─ direct_hostname (geolocation → latency, dns_cells.tf)
+#                            ─ the nearest healthy cell's NLB ─ node
+#
+#   * THE PRIMARY CELL WRITES IT, in its `full` phase: the distribution, its
+#     certificate, the web ACL and the cache policy are global things, and the
+#     primary is the one cell applied alone, first, in every step. `full`
+#     because the origin secret is the global/ stack's (`edge-secret`,
+#     replicated into every cell's region), which a `base` phase cannot read.
+#   * EVERY CELL admits the edges on 443 and believes them (the security group
+#     and the node's settings below), and reads the secret's replica.
+#   * THE ORIGIN IS A NAME, NOT A LOAD BALANCER. CloudFront resolves it from
+#     its own resolvers, so the geolocation pins see the EDGE's place, not the
+#     browser's. An edge is near its browser, and the service, not DNS, is
+#     authoritative on residency (issue #98, section 6), so a client that
+#     lands in the wrong cell is relayed or refused there, as before.
+#   * Host is still forwarded, and every cell's certificate carries the public
+#     name (and the direct name, deploy/aws/certificate), so the handshake to
+#     any cell matches.
+#   * A MULTI-CLOUD environment (#97) is the same distribution: its GCP cells
+#     are in the tree deploy/multicloud/interconnect writes at the direct name,
+#     and they believe the edges and hold the secret too.
 # ---------------------------------------------------------------------------
 locals {
   cloudfront = var.cloudfront_enabled
+  # WHETHER THIS STACK WRITES THE DISTRIBUTION AND WHAT IS ONLY ITS: every
+  # single-cell environment with CloudFront, and a multi-cell one's primary
+  # cell once the global tier exists (the header).
+  cloudfront_here = local.cloudfront && (!local.multi || (local.is_primary && local.full))
+  # The origin: the load balancer, or the cells' tree at the direct name.
+  cloudfront_origin = local.multi ? var.direct_hostname : aws_lb.main.dns_name
+  # What the distribution proves itself with: this stack's own, or the global
+  # tier's in a cell (empty in `base`, when nothing here reads it).
+  edge_secret_value = local.multi ? local.global_edge_secret : try(random_password.edge_secret[0].result, "")
+  # The secret's ARN in THIS region, for the node: this stack's own, or the
+  # global tier's replica — empty in a cell's `base`, which ecs.tf drops.
+  edge_secret_arn = !local.cloudfront ? "" : (
+    local.multi ? lookup(local.global_secret_arns, "edge-secret", "") :
+    aws_secretsmanager_secret.main["cloudfront-edge-secret"].arn
+  )
 
   # Each surface's runtime is `*.js` at any depth; the catalogs, the brand
   # assets and the theme are under `/web` (common/public_assets.ts,
@@ -70,13 +110,13 @@ locals {
 # ACL. This one is not the node's exportable certificate (dns.tf): it is free,
 # so it lives and dies with the environment.
 resource "random_password" "edge_secret" {
-  count   = local.cloudfront ? 1 : 0
+  count   = local.cloudfront && !local.multi ? 1 : 0
   length  = 48
   special = false
 }
 
 resource "aws_acm_certificate" "cloudfront" {
-  count             = local.cloudfront ? 1 : 0
+  count             = local.cloudfront_here ? 1 : 0
   provider          = aws.us_east_1
   domain_name       = var.public_hostname
   validation_method = "DNS"
@@ -86,8 +126,8 @@ resource "aws_acm_certificate" "cloudfront" {
   lifecycle {
     create_before_destroy = true
     precondition {
-      condition     = !local.multi && local.public_name && var.direct_hostname != "" && endswith(var.direct_hostname, ".${var.public_zone_name}")
-      error_message = "cloudfront_enabled needs a single-cell environment, public_hostname, and a direct_hostname inside public_zone_name."
+      condition     = local.public_name && var.direct_hostname != "" && var.direct_hostname != var.public_hostname && endswith(var.direct_hostname, ".${var.public_zone_name}")
+      error_message = "cloudfront_enabled needs public_hostname, and a direct_hostname of its own inside public_zone_name."
     }
   }
 }
@@ -96,7 +136,7 @@ resource "aws_acm_certificate" "cloudfront" {
 # each stack may overwrite the other's. An environment destroy deleting it is
 # repaired by the certificate stack's next apply, which runs first.
 resource "aws_route53_record" "cloudfront_validation" {
-  count           = local.cloudfront ? 1 : 0
+  count           = local.cloudfront_here ? 1 : 0
   zone_id         = data.aws_route53_zone.public[0].zone_id
   name            = tolist(aws_acm_certificate.cloudfront[0].domain_validation_options)[0].resource_record_name
   type            = tolist(aws_acm_certificate.cloudfront[0].domain_validation_options)[0].resource_record_type
@@ -106,14 +146,14 @@ resource "aws_route53_record" "cloudfront_validation" {
 }
 
 resource "aws_acm_certificate_validation" "cloudfront" {
-  count                   = local.cloudfront ? 1 : 0
+  count                   = local.cloudfront_here ? 1 : 0
   provider                = aws.us_east_1
   certificate_arn         = aws_acm_certificate.cloudfront[0].arn
   validation_record_fqdns = aws_route53_record.cloudfront_validation[*].fqdn
 }
 
 resource "aws_wafv2_ip_set" "allowed" {
-  count              = local.cloudfront ? 1 : 0
+  count              = local.cloudfront_here ? 1 : 0
   provider           = aws.us_east_1
   name               = "${local.prefix}-allowed"
   description        = "iya-sts ${var.environment}: allowed_cidrs"
@@ -123,7 +163,7 @@ resource "aws_wafv2_ip_set" "allowed" {
 }
 
 resource "aws_wafv2_web_acl" "allowlist" {
-  count       = local.cloudfront ? 1 : 0
+  count       = local.cloudfront_here ? 1 : 0
   provider    = aws.us_east_1
   name        = "${local.prefix}-allowlist"
   description = var.waf_report_only ? "iya-sts ${var.environment}: REPORT ONLY - counts what is outside allowed_cidrs, blocks nothing" : "iya-sts ${var.environment}: allowed_cidrs and nobody else"
@@ -209,7 +249,7 @@ resource "aws_wafv2_web_acl" "allowlist" {
 # The origin's Cache-Control decides, and an address that differs only by its
 # build query is a different file. No cookie reaches a static file.
 resource "aws_cloudfront_cache_policy" "static" {
-  count       = local.cloudfront ? 1 : 0
+  count       = local.cloudfront_here ? 1 : 0
   name        = "${local.prefix}-static"
   comment     = "iya-sts ${var.environment}: static surfaces; the origin's Cache-Control decides"
   min_ttl     = 0
@@ -233,7 +273,7 @@ resource "aws_cloudfront_cache_policy" "static" {
 }
 
 resource "aws_cloudfront_distribution" "main" {
-  count           = local.cloudfront ? 1 : 0
+  count           = local.cloudfront_here ? 1 : 0
   enabled         = true
   comment         = "iya-sts ${var.environment}: ${var.public_hostname}"
   aliases         = [var.public_hostname]
@@ -245,7 +285,7 @@ resource "aws_cloudfront_distribution" "main" {
 
   origin {
     origin_id   = "nlb"
-    domain_name = aws_lb.main.dns_name
+    domain_name = local.cloudfront_origin
 
     custom_origin_config {
       http_port              = 80
@@ -260,7 +300,7 @@ resource "aws_cloudfront_distribution" "main" {
 
     custom_header {
       name  = "X-Origin-Verify"
-      value = random_password.edge_secret[0].result
+      value = local.edge_secret_value
     }
     custom_header {
       name  = "X-Forwarded-Host"
@@ -363,9 +403,11 @@ data "aws_ip_ranges" "cloudfront" {
 
 # THE DIRECT NAME, outside and inside the VPC. Inside, a name under
 # public_hostname resolves only through that name's private zone (dns.tf), so
-# without the second record a node could not dial it.
+# without the second record a node could not dial it. A CELL'S direct name
+# outside is the record tree (dns_cells.tf), so only the inside one is here;
+# inside, like the public name's (dns.tf), it is this cell's load balancer.
 resource "aws_route53_record" "direct" {
-  count   = local.cloudfront ? 1 : 0
+  count   = local.cloudfront && !local.multi ? 1 : 0
   zone_id = data.aws_route53_zone.public[0].zone_id
   name    = var.direct_hostname
   type    = "CNAME"

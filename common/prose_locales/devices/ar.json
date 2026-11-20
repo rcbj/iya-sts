@@ -1,0 +1,66 @@
+{
+  "devices.enrolment.native-sso.what": {
+    "en": "16178c8191c0cc60",
+    "text": "OpenID Connect Native SSO for Mobile Apps: منحة رمز التفويض للتطبيق الأول مع النطاق device_sso تصنع الجهاز وتسلّمه device_secret، مجزَّأً على الإدخال وصالحًا لجلسة تسجيل الدخول تلك فقط."
+  },
+  "devices.enrolment.admin.what": {
+    "en": "71254afa1953e5ae",
+    "text": "مسؤول، في الدليل → الأجهزة أو POST /admin-api/devices/create: يملكه شخص أو تطبيق، مع مفاتيح تُكتب بالقيمة. المفتاح المضاف بهذه الطريقة يُسجَّل على أنه لم يثبته أحد وأنه مُقرّ ذاتيًا."
+  },
+  "devices.enrolment.portal.what": {
+    "en": "91e4899bb82f5cd4",
+    "text": "المالك على /portal/devices (أو أبوابه عبر JSON، POST /portal/devices/challenge و/portal/devices/proof)، وهو يثبت مفتاحًا: JWS من النوع device-key-proof+jwt فوق تحدٍ مرتبط بجلسته — مع Android Key Attestation في x5c الخاص به، أو بيان Apple App Attest بدلًا منه — أو يربط بيانات اعتماد منصة WebAuthn سجّلها، مع تأكيد جديد."
+  },
+  "devices.enrolment.est.what": {
+    "en": "ac3c63e37bbad2e4",
+    "text": "EST (RFC 7030) simpleenroll عند /.well-known/est/device/: شهادة تُصدر لإدخال الجهاز الذي يسميه urn:sts:device:<id> في الطلب — أو لإدخال جديد يملكه مقدم الطلب — مع إقرار مفتاح TPM (draft-ietf-lamps-csr-attestation, tcg-attest-tpm-certify). المالك لجهازه، وAdmin Write لأي جهاز."
+  },
+  "devices.enrolment.scep.what": {
+    "en": "f2790d20081d2a71",
+    "text": "PKCSReq عبر SCEP (RFC 8894) مع كلمة مرور تحدٍ صادرة لملف تعريف الجهاز — والأمر نفسه للأجهزة التي لا تتحدث إلا به."
+  },
+  "devices.recognition.x509.what": {
+    "en": "f8ebc837f9bfb4b7",
+    "text": "شهادة العميل على اتصال TLS — عند تسجيل الدخول وعند نقطة نهاية الرمز (RFC 8705) — تُطابق بـ SHA-256 لـ SubjectPublicKeyInfo، لذلك تكون الشهادة المجدَّدة على المفتاح نفسه الجهاز نفسه. تثبت المصافحة الحيازة؛ ويُسجَّل ما إذا تم التحقق من السلسلة، ولا يُتعرَّف على شهادة رُفضت بسبب الإبطال."
+  },
+  "devices.recognition.jwk.what": {
+    "en": "18f6dc11a05f7b7b",
+    "text": "إثبات DPoP عند نقطة نهاية الرمز، يُطابق بـ jkt الخاص به — بصمة RFC 7638 التي يحملها كل مفتاح jwk."
+  },
+  "devices.recognition.webauthn.what": {
+    "en": "baffd188b35ca245",
+    "text": "تأكيد WebAuthn عند تسجيل دخول تكون بيانات اعتماده مرتبطة بالجهاز."
+  },
+  "devices.recognition.native-sso.what": {
+    "en": "a79805a282a5905a",
+    "text": "device_secret الخاص بـ Native SSO، ما دامت جلسة تسجيل الدخول التي أُصدر من أجلها حية."
+  },
+  "devices.notes.caepSessions": {
+    "en": "60b89495e94226ce",
+    "text": "عضو device في session-established وsession-presented وsession-revoked"
+  },
+  "devices.notes.riscSessionsRevoked": {
+    "en": "c792bbacab53a2bf",
+    "text": "sessions-revoked (حيث يسميه risc.autoEmitTypes؛ وليس افتراضيًا)"
+  },
+  "devices.notes.subject": {
+    "en": "5701918ef6842f24",
+    "text": "مركّب: device (iss_sub — مُصدِر نطاق الثقة هذا ومعرّف الجهاز) وuser (المالك، حين يكون شخصًا)"
+  },
+  "devices.notes.recordedAtSignIn": {
+    "en": "9f2344eae59daae5",
+    "text": "registeredDevice لحدث المصادقة (يقرأ authn.registeredDeviceOf(session) الأحدث)"
+  },
+  "devices.notes.recordedAtTokenEndpoint": {
+    "en": "e5325ebe82720b8e",
+    "text": "registered_device لطلب الإصدار، قبل بوابة الإصدار"
+  },
+  "devices.notes.adminKeys": {
+    "en": "4a9c1c956ea1c116",
+    "text": "يُقبل مفتاح المسؤول المكتوب بالقيمة في الوضعين، ويُسجَّل الإثبات admin وself-asserted"
+  },
+  "devices.notes.scepFreshness": {
+    "en": "de8bddcb2b76d6c1",
+    "text": "ليس لدى SCEP عملية nonce، لذلك لا يُعرض بيان TPM عبره على أنه حديث أبدًا"
+  }
+}

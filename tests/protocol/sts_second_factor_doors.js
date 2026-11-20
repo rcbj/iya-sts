@@ -90,6 +90,13 @@ const ALICE = names.usernameFor("sfd-alice");     // portal-made app password
 const BOB = names.usernameFor("sfd-bob");         // API-made, scim only
 const CAROL = names.usernameFor("sfd-carol");     // no second factor
 const DOORS = ["ldap", "wstrust", "scim", "ssf", "est"];
+// AND THE SIXTH, which this job does not drive (2026-11-16): a remote XACML
+// PEP's reverse proxy, HTTP Basic checked at POST /xacml/pep/basic (#1760,
+// common/app_password_doors.js). It needs a PEP proxy in front of a route,
+// which sts_xacml_remote_pep.js drives. The POLICY covers all six, so what
+// the service says it refuses is the six, and the GitHub mariadb run of
+// 2026-11-17 failed on the five.
+const POLICY_DOORS = DOORS.concat(["xacml-pep"]);
 
 let checks = 0;
 function check(what, fn) {
@@ -622,7 +629,7 @@ async function test() {
         "password, and (in product) records the last use", function () {
     assert.strictEqual(doors.status, 200, doors.raw.slice(0, 300));
     assert.deepStrictEqual(doors.body.passwordOnlyDoors.refused,
-                           product ? DOORS : []);
+                           product ? POLICY_DOORS : []);
     // Development checks no password, so it never gets as far as asking
     // which app password was presented; product records the use.
     assert.ok(!product || doors.body.passwords[0].lastUsedAt > 0,

@@ -20,6 +20,20 @@
 // attribute id — which the catalog does not register — is an unknown field
 // even when the limit is also too big. A refusal carries no partial plan.
 //
+// THE SHAPE IS THE MODEL'S (#1579). `QueryDocument` and the six `Filter`
+// forms in `models/api/report.tsp` say what a document may hold — its keys,
+// each one's type, the enumerations, the caps on every list, the language
+// tag, which keys each kind of filter node takes — and `ModelZod` builds the
+// check from them, so the Reports API OpenAPI document and the check are one
+// declaration. What stays here is what one document cannot answer alone:
+// whether the catalog has the source and the fields and lets a field be
+// grouped, sorted or filtered, which operators a field's type takes, what
+// type a value must be for that field, a saved parameter's value, a field
+// ordered twice, a count's grouping, how deep a filter nests (JSON Schema
+// bounds no recursion), and the size caps. Each refusal keeps the code, the
+// error token and the sentence it always had: the model's issue is read for
+// WHERE the document is wrong, and the sentence is chosen here.
+//
 // `mode: auto` runs synchronously when the source is bounded and the limit
 // fits the synchronous cap, and asynchronously otherwise. A source a test
 // marks unbounded cannot run synchronously at any limit.
@@ -27,24 +41,103 @@
 
 import bunyan = require('bunyan');
 import errorCodes = require('../common/error_codes');
+import ModelZod = require('../common/model_zod');
 import Catalog = require('./catalog');
 import Limits = require('./limits');
 
 const log = bunyan.createLogger({ name: 'sts-report-query' });
 
-const DOCUMENT_KEYS = ['source', 'select', 'where', 'orderBy', 'limit',
-  'format', 'mode', 'locale', 'aggregate', 'groupBy'];
-const FORMATS = ['json', 'csv', 'pdf'];
-const MODES = ['sync', 'async', 'auto'];
-const DIRS = ['asc', 'desc'];
-const LOCALE = /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;
 const WHERE_DEPTH = 8;
-const SELECT_CAP = 64;
-const ARGS_CAP = 16;
-const IN_CAP = 50;
-const ORDER_CAP = 8;
-const GROUP_CAP = 8;
 const STAMP_CAP = 40;
+
+// The six forms a filter node takes, as the model names them.
+const FORMS = ['FilterLogical', 'FilterNot', 'FilterIsNull', 'FilterValue',
+  'FilterIn', 'FilterParam'];
+
+type Issue = { code: string; path: Array<string | number>;
+               input?: unknown; params?: Record<string, unknown> };
+
+/**
+ * The model's checks, built once: the document's and each filter form's,
+ * the operators each form names, and the caps a refusal quotes.
+ */
+interface Shapes {
+  document: any;
+  forms: Record<string, any>;
+  operators: Record<string, string[]>;
+  caps: { select: number; groupBy: number; orderBy: number; args: number;
+          inMin: number; inMax: number };
+}
+
+let shapes: Shapes | null = null;
+
+function shapesOf(): Shapes {
+  log.debug("Entering shapesOf().");
+  if (!shapes) {
+    const forms: Record<string, any> = {};
+    const operators: Record<string, string[]> = {};
+    FORMS.forEach(function (name: string): void {
+      forms[name] = ModelZod.component('report', name, { typed: true });
+      operators[name] = ModelZod.schemaOf('report', name).properties.op.enum
+        .slice();
+    });
+    const document = ModelZod.schemaOf('report', 'QueryDocument').properties;
+    const logical = ModelZod.schemaOf('report', 'FilterLogical').properties;
+    const within = ModelZod.schemaOf('report', 'FilterIn').properties;
+    shapes = {
+      document: ModelZod.component('report', 'QueryDocument',
+                                   { typed: true }),
+      forms: forms,
+      operators: operators,
+      caps: { select: document.select.maxItems,
+              groupBy: document.groupBy.maxItems,
+              orderBy: document.orderBy.maxItems,
+              args: logical.args.maxItems,
+              inMin: within.value.minItems, inMax: within.value.maxItems }
+    };
+  }
+  log.debug("Leaving shapesOf().");
+  return shapes;
+}
+
+// The model's issues with one value; an empty list when it holds.
+function issuesOf(check: any, value: unknown): Issue[] {
+  log.debug("Entering issuesOf().");
+  // The input is reported so that a member left out can be told from one
+  // of the wrong type.
+  const held = check.safeParse(value, { reportInput: true });
+  log.debug("Leaving issuesOf().");
+  return held.success ? [] : held.error.issues;
+}
+
+// The issues under one top-level key, in the order the model reported them.
+function under(issues: Issue[], key: string): Issue[] {
+  log.debug("Entering under().");
+  const out = issues.filter(function (one: Issue): boolean {
+    return one.path.length > 0 && one.path[0] === key;
+  });
+  log.debug("Leaving under().");
+  return out;
+}
+
+// A key the document's schema does not name.
+function unrecognised(issues: Issue[]): boolean {
+  log.debug("Entering unrecognised().");
+  const out = issues.some(function (one: Issue): boolean {
+    return one.code === 'unrecognized_keys';
+  });
+  log.debug("Leaving unrecognised().");
+  return out;
+}
+
+// A required member left out: an issue whose reported input is nothing,
+// whichever check (a type, an enumeration) was asked first.
+function missing(one: Issue): boolean {
+  log.debug("Entering missing().");
+  log.debug("Leaving missing().");
+  return Object.prototype.hasOwnProperty.call(one, 'input') &&
+    one.input === undefined;
+}
 
 interface LimitSource {
   syncMaxRows(): number;
@@ -183,20 +276,24 @@ class Query {
       return this.fail('STS-REPORT-0004', 'invalid_query',
         'A report is a document, not a statement.');
     }
+    // The model refuses both as keys it does not name. They are told apart
+    // because they are how a statement or a second source arrives, and the
+    // refusal says so without repeating them.
     const keys = ownKeys(document);
     if (keys.indexOf('query') >= 0 || keys.indexOf('sources') >= 0) {
       log.debug("Leaving Query.document(). A statement or a second source.");
       return this.fail('STS-REPORT-0004', 'invalid_query',
         'A report is a document, not a statement.');
     }
-    for (let i = 0; i < keys.length; i++) {
-      if (DOCUMENT_KEYS.indexOf(keys[i]) < 0) {
-        log.debug("Leaving Query.document(). Unknown key.");
-        return this.fail('STS-REPORT-0004', 'invalid_query',
-          'The document has a key this service does not read.');
-      }
+    const issues = issuesOf(shapesOf().document, document);
+    if (unrecognised(issues.filter(function (one: Issue): boolean {
+      return one.path.length === 0;
+    }))) {
+      log.debug("Leaving Query.document(). Unknown key.");
+      return this.fail('STS-REPORT-0004', 'invalid_query',
+        'The document has a key this service does not read.');
     }
-    const shaped = this.shape(document);
+    const shaped = this.shape(document, issues);
     log.debug("Leaving Query.document().");
     return shaped;
   }
@@ -206,37 +303,39 @@ class Query {
    * Fields are resolved before the size cap.
    *
    * @param document - a plain document whose keys are already known
+   * @param issues - what the model found wrong with it
    * @returns a refusal, or null
    */
-  private shape(document: Record<string, unknown>): QueryFailure | null {
+  private shape(document: Record<string, unknown>,
+                issues: Issue[]): QueryFailure | null {
     log.debug("Entering Query.shape().");
-    const source = this.sourceOf(document);
+    const source = this.sourceOf(document, under(issues, 'source'));
     if (source) {
       log.debug("Leaving Query.shape(). Source.");
       return source;
     }
     this.boundSource = String(document.source);
-    const format = this.formatOf(document);
-    if (format) {
+    if (under(issues, 'format').length) {
       log.debug("Leaving Query.shape(). Format.");
-      return format;
+      return this.fail('STS-REPORT-0003', 'unsupported_format',
+        'The format is not json, csv or pdf.');
     }
-    const mode = this.modeOf(document);
-    if (mode) {
+    if (under(issues, 'mode').length) {
       log.debug("Leaving Query.shape(). Mode.");
-      return mode;
+      return this.fail('STS-REPORT-0003', 'unsupported_operation',
+        'The mode is not sync, async or auto.');
     }
-    const locale = this.localeOf(document);
-    if (locale) {
+    if (under(issues, 'locale').length) {
       log.debug("Leaving Query.shape(). Locale.");
-      return locale;
+      return this.fail('STS-REPORT-0004', 'invalid_query',
+        'The locale is not a language tag.');
     }
-    const aggregate = this.aggregateOf(document);
-    if (aggregate) {
+    if (under(issues, 'aggregate').length) {
       log.debug("Leaving Query.shape(). Aggregate.");
-      return aggregate;
+      return this.fail('STS-REPORT-0003', 'unsupported_operation',
+        'The only aggregate is count.');
     }
-    const fields = this.fieldsOf(document);
+    const fields = this.fieldsOf(document, issues);
     if (fields) {
       log.debug("Leaving Query.shape(). Fields.");
       return fields;
@@ -246,30 +345,27 @@ class Query {
       log.debug("Leaving Query.shape(). Filter.");
       return where;
     }
-    const limit = this.limitOf(document);
-    if (limit) {
+    if (under(issues, 'limit').length) {
       log.debug("Leaving Query.shape(). Limit.");
-      return limit;
+      return this.fail('STS-REPORT-0004', 'invalid_query',
+        'A limit is a positive whole number.');
     }
     const size = this.sizeOf(document);
     log.debug("Leaving Query.shape().");
     return size;
   }
 
-  private sourceOf(document: Record<string, unknown>): QueryFailure | null {
+  private sourceOf(document: Record<string, unknown>,
+                   issues: Issue[]): QueryFailure | null {
     log.debug("Entering Query.sourceOf().");
-    if (!Object.prototype.hasOwnProperty.call(document, 'source') ||
-        document.source === '') {
-      log.debug("Leaving Query.sourceOf(). Missing.");
+    if (issues.length) {
+      const first = issues[0];
+      log.debug("Leaving Query.sourceOf(). Shape.");
       return this.fail('STS-REPORT-0004', 'invalid_query',
-        'The document names no source.');
+        missing(first) || first.code === 'too_small' ?
+          'The document names no source.' : 'A report reads one source.');
     }
-    if (typeof document.source !== 'string') {
-      log.debug("Leaving Query.sourceOf(). Not one source.");
-      return this.fail('STS-REPORT-0004', 'invalid_query',
-        'A report reads one source.');
-    }
-    if (!this.catalog.source(document.source)) {
+    if (!this.catalog.source(String(document.source))) {
       log.debug("Leaving Query.sourceOf(). Unknown.");
       return this.fail('STS-REPORT-0001', 'unknown_source',
         'No such source.');
@@ -278,133 +374,63 @@ class Query {
     return null;
   }
 
-  private formatOf(document: Record<string, unknown>): QueryFailure | null {
-    log.debug("Entering Query.formatOf().");
-    if (!Object.prototype.hasOwnProperty.call(document, 'format')) {
-      log.debug("Leaving Query.formatOf(). Default.");
-      return null;
-    }
-    if (FORMATS.indexOf(String(document.format)) < 0 ||
-        typeof document.format !== 'string') {
-      log.debug("Leaving Query.formatOf(). Unsupported.");
-      return this.fail('STS-REPORT-0003', 'unsupported_format',
-        'The format is not json, csv or pdf.');
-    }
-    log.debug("Leaving Query.formatOf().");
-    return null;
-  }
-
-  private modeOf(document: Record<string, unknown>): QueryFailure | null {
-    log.debug("Entering Query.modeOf().");
-    if (!Object.prototype.hasOwnProperty.call(document, 'mode')) {
-      log.debug("Leaving Query.modeOf(). Default.");
-      return null;
-    }
-    if (MODES.indexOf(String(document.mode)) < 0 ||
-        typeof document.mode !== 'string') {
-      log.debug("Leaving Query.modeOf(). Unsupported.");
-      return this.fail('STS-REPORT-0003', 'unsupported_operation',
-        'The mode is not sync, async or auto.');
-    }
-    log.debug("Leaving Query.modeOf().");
-    return null;
-  }
-
-  private localeOf(document: Record<string, unknown>): QueryFailure | null {
-    log.debug("Entering Query.localeOf().");
-    if (!Object.prototype.hasOwnProperty.call(document, 'locale') ||
-        document.locale == null) {
-      log.debug("Leaving Query.localeOf(). None.");
-      return null;
-    }
-    const tag = String(document.locale);
-    if (typeof document.locale !== 'string' || tag.length > 35 ||
-        !LOCALE.test(tag)) {
-      log.debug("Leaving Query.localeOf(). Not a tag.");
-      return this.fail('STS-REPORT-0004', 'invalid_query',
-        'The locale is not a language tag.');
-    }
-    log.debug("Leaving Query.localeOf().");
-    return null;
-  }
-
-  private aggregateOf(document: Record<string, unknown>):
-      QueryFailure | null {
-    log.debug("Entering Query.aggregateOf().");
-    if (!Object.prototype.hasOwnProperty.call(document, 'aggregate') ||
-        document.aggregate == null) {
-      log.debug("Leaving Query.aggregateOf(). None.");
-      return null;
-    }
-    if (document.aggregate !== 'count') {
-      log.debug("Leaving Query.aggregateOf(). Unsupported.");
-      return this.fail('STS-REPORT-0003', 'unsupported_operation',
-        'The only aggregate is count.');
-    }
-    log.debug("Leaving Query.aggregateOf().");
-    return null;
-  }
-
   /**
    * select, groupBy and orderBy, against the catalog. An unknown field is
    * reported before a flag the field does not have.
    *
    * @param document - the document
+   * @param issues - what the model found wrong with it
    * @returns a refusal, or null
    */
-  private fieldsOf(document: Record<string, unknown>): QueryFailure | null {
+  private fieldsOf(document: Record<string, unknown>,
+                   issues: Issue[]): QueryFailure | null {
     log.debug("Entering Query.fieldsOf().");
+    const caps = shapesOf().caps;
     const sourceId = String(document.source);
     const counted = document.aggregate === 'count';
-    const select = this.names(document.select, 'select', true);
-    if (select.failure) {
+    const select = this.names(under(issues, 'select'), 'select',
+      'A query selects at most ' + caps.select + ' fields.');
+    if (select) {
       log.debug("Leaving Query.fieldsOf(). Select.");
-      return select.failure;
+      return select;
     }
-    if (select.names.length > SELECT_CAP) {
-      log.debug("Leaving Query.fieldsOf(). Too many fields.");
-      return this.fail('STS-REPORT-0004', 'invalid_query',
-        'A query selects at most ' + SELECT_CAP + ' fields.');
-    }
-    if (!select.names.length && !counted) {
+    const selected = this.listOf(document.select);
+    if (!selected.length && !counted) {
       log.debug("Leaving Query.fieldsOf(). Nothing selected.");
       return this.fail('STS-REPORT-0004', 'invalid_query',
         'A query with no aggregate names no field.');
     }
-    const groupBy = this.names(document.groupBy, 'groupBy', false);
-    if (groupBy.failure) {
+    const group = this.names(under(issues, 'groupBy'), 'groupBy',
+      'A query groups by at most ' + caps.groupBy + ' fields.');
+    if (group) {
       log.debug("Leaving Query.fieldsOf(). Group.");
-      return groupBy.failure;
+      return group;
     }
-    if (groupBy.names.length && !counted) {
+    const groupBy = this.listOf(document.groupBy);
+    if (groupBy.length && !counted) {
       log.debug("Leaving Query.fieldsOf(). Group without a count.");
       return this.fail('STS-REPORT-0004', 'invalid_query',
         'groupBy needs a count.');
     }
-    if (groupBy.names.length > GROUP_CAP) {
-      log.debug("Leaving Query.fieldsOf(). Too many groups.");
-      return this.fail('STS-REPORT-0004', 'invalid_query',
-        'A query groups by at most ' + GROUP_CAP + ' fields.');
-    }
-    const order = this.orderOf(document.orderBy);
+    const order = this.orderOf(document.orderBy, under(issues, 'orderBy'));
     if (order.failure) {
       log.debug("Leaving Query.fieldsOf(). Order.");
       return order.failure;
     }
     const unknown = this.unknown(sourceId,
-      select.names.concat(groupBy.names, order.fields));
+      selected.concat(groupBy, order.fields));
     if (unknown) {
       log.debug("Leaving Query.fieldsOf(). Unknown field.");
       return unknown;
     }
-    const flags = this.flags(sourceId, select.names, groupBy.names,
+    const flags = this.flags(sourceId, selected, groupBy,
       order.fields, counted);
     if (flags) {
       log.debug("Leaving Query.fieldsOf(). Flag.");
       return flags;
     }
     if (counted) {
-      const grouped = this.grouped(select.names, groupBy.names, order.fields);
+      const grouped = this.grouped(selected, groupBy, order.fields);
       if (grouped) {
         log.debug("Leaving Query.fieldsOf(). Not grouped.");
         return grouped;
@@ -414,86 +440,106 @@ class Query {
     return null;
   }
 
-  private names(value: unknown, key: string, required: boolean):
-      { names: string[]; failure: QueryFailure | null } {
-    log.debug("Entering Query.names().");
-    if (value == null) {
-      log.debug("Leaving Query.names(). Omitted. " + required);
-      return { names: [], failure: null };
-    }
-    if (!Array.isArray(value)) {
-      log.debug("Leaving Query.names(). Not a list.");
-      return { names: [], failure: this.fail('STS-REPORT-0004',
-        'invalid_query', 'The ' + key + ' list is not a list.') };
-    }
-    const names: string[] = [];
-    for (let i = 0; i < value.length; i++) {
-      if (typeof value[i] !== 'string' || !value[i]) {
-        log.debug("Leaving Query.names(). Not a field id.");
-        return { names: [], failure: this.fail('STS-REPORT-0004',
-          'invalid_query', 'A ' + key + ' entry is not a field id.') };
-      }
-      if (names.indexOf(value[i]) >= 0) {
-        log.debug("Leaving Query.names(). Twice.");
-        return { names: [], failure: this.fail('STS-REPORT-0004',
-          'invalid_query', 'A field is named twice.') };
-      }
-      names.push(value[i]);
-    }
-    log.debug("Leaving Query.names().");
-    return { names: names, failure: null };
+  // A list of field ids the model has already held to its shape.
+  private listOf(value: unknown): string[] {
+    log.debug("Entering Query.listOf().");
+    const out = Array.isArray(value) ? (value as string[]).slice() : [];
+    log.debug("Leaving Query.listOf().");
+    return out;
   }
 
-  private orderOf(value: unknown):
+  /**
+   * The sentence for what the model found wrong with a list of field ids:
+   * the list itself first, then the first entry, then its length.
+   *
+   * @param issues - the issues under the list's key
+   * @param key - `select` or `groupBy`
+   * @param tooLong - the sentence for a list over its cap
+   * @returns a refusal, or null
+   */
+  private names(issues: Issue[], key: string,
+                tooLong: string): QueryFailure | null {
+    log.debug("Entering Query.names().");
+    if (!issues.length) {
+      log.debug("Leaving Query.names(). Held.");
+      return null;
+    }
+    if (issues.some(function (one: Issue): boolean {
+      return one.path.length === 1 && one.code === 'invalid_type';
+    })) {
+      log.debug("Leaving Query.names(). Not a list.");
+      return this.fail('STS-REPORT-0004', 'invalid_query',
+        'The ' + key + ' list is not a list.');
+    }
+    const entry = issues.filter(function (one: Issue): boolean {
+      return one.path.length > 1;
+    })[0];
+    if (entry && entry.params && entry.params.uniqueItems) {
+      log.debug("Leaving Query.names(). Twice.");
+      return this.fail('STS-REPORT-0004', 'invalid_query',
+        'A field is named twice.');
+    }
+    if (entry) {
+      log.debug("Leaving Query.names(). Not a field id.");
+      return this.fail('STS-REPORT-0004', 'invalid_query',
+        'A ' + key + ' entry is not a field id.');
+    }
+    log.debug("Leaving Query.names(). Too long.");
+    return this.fail('STS-REPORT-0004', 'invalid_query', tooLong);
+  }
+
+  private orderOf(value: unknown, issues: Issue[]):
       { fields: string[]; failure: QueryFailure | null } {
     log.debug("Entering Query.orderOf().");
-    if (value == null) {
-      log.debug("Leaving Query.orderOf(). None.");
-      return { fields: [], failure: null };
-    }
-    if (!Array.isArray(value)) {
+    const self = this;
+    const refused = function (description: string):
+        { fields: string[]; failure: QueryFailure } {
+      return { fields: [],
+               failure: self.fail('STS-REPORT-0004', 'invalid_query',
+                                  description) };
+    };
+    if (issues.some(function (one: Issue): boolean {
+      return one.path.length === 1 && one.code === 'invalid_type';
+    })) {
       log.debug("Leaving Query.orderOf(). Not a list.");
-      return { fields: [], failure: this.fail('STS-REPORT-0004',
-        'invalid_query', 'The order is not a list.') };
+      return refused('The order is not a list.');
     }
-    if (value.length > ORDER_CAP) {
+    if (issues.some(function (one: Issue): boolean {
+      return one.path.length === 1 && one.code === 'too_big';
+    })) {
       log.debug("Leaving Query.orderOf(). Too long.");
-      return { fields: [], failure: this.fail('STS-REPORT-0004',
-        'invalid_query',
-        'A query orders by at most ' + ORDER_CAP + ' fields.') };
+      return refused('A query orders by at most ' +
+        shapesOf().caps.orderBy + ' fields.');
     }
+    const entry = issues[0];
+    if (entry && entry.path.length === 2) {
+      log.debug("Leaving Query.orderOf(). Not an entry.");
+      return refused(unrecognised([entry]) ?
+        'An order entry is a field and a direction.' :
+        'An order entry is not a field and a direction.');
+    }
+    if (entry && missing(entry)) {
+      log.debug("Leaving Query.orderOf(). A key left out.");
+      return refused('An order entry is a field and a direction.');
+    }
+    if (entry && entry.path[2] === 'field') {
+      log.debug("Leaving Query.orderOf(). No field.");
+      return refused('An order entry names no field.');
+    }
+    if (entry) {
+      log.debug("Leaving Query.orderOf(). Direction.");
+      return refused('An order direction is asc or desc.');
+    }
+    // A field ordered twice is two distinct entries to the model.
     const fields: string[] = [];
-    for (let i = 0; i < value.length; i++) {
-      const item = value[i];
-      if (!plainObject(item)) {
-        log.debug("Leaving Query.orderOf(). Not an entry.");
-        return { fields: [], failure: this.fail('STS-REPORT-0004',
-          'invalid_query',
-          'An order entry is not a field and a direction.') };
-      }
-      const keys = ownKeys(item);
-      if (keys.length !== 2 || keys.indexOf('field') < 0 ||
-          keys.indexOf('dir') < 0) {
-        log.debug("Leaving Query.orderOf(). Extra key.");
-        return { fields: [], failure: this.fail('STS-REPORT-0004',
-          'invalid_query', 'An order entry is a field and a direction.') };
-      }
-      if (typeof item.field !== 'string' || !item.field) {
-        log.debug("Leaving Query.orderOf(). No field.");
-        return { fields: [], failure: this.fail('STS-REPORT-0004',
-          'invalid_query', 'An order entry names no field.') };
-      }
-      if (DIRS.indexOf(String(item.dir)) < 0) {
-        log.debug("Leaving Query.orderOf(). Direction.");
-        return { fields: [], failure: this.fail('STS-REPORT-0004',
-          'invalid_query', 'An order direction is asc or desc.') };
-      }
-      if (fields.indexOf(String(item.field)) >= 0) {
+    const list = Array.isArray(value) ? value : [];
+    for (let i = 0; i < list.length; i++) {
+      const field = String(list[i].field);
+      if (fields.indexOf(field) >= 0) {
         log.debug("Leaving Query.orderOf(). Twice.");
-        return { fields: [], failure: this.fail('STS-REPORT-0004',
-          'invalid_query', 'A field is named twice.') };
+        return refused('A field is named twice.');
       }
-      fields.push(String(item.field));
+      fields.push(field);
     }
     log.debug("Leaving Query.orderOf().");
     return { fields: fields, failure: null };
@@ -572,17 +618,19 @@ class Query {
       return this.fail('STS-REPORT-0004', 'invalid_query',
         'The filter is nested too deep.');
     }
+    // The operator says which of the model's forms the node is meant to be.
     if (!plainObject(node) || typeof node.op !== 'string') {
       log.debug("Leaving Query.whereOf(). Not a node.");
       return this.fail('STS-REPORT-0004', 'invalid_query',
         'The filter is not a tree of operators.');
     }
-    if (node.op === 'and' || node.op === 'or') {
+    const operators = shapesOf().operators;
+    if (operators.FilterLogical.indexOf(node.op) >= 0) {
       const both = this.logical(node, depth);
       log.debug("Leaving Query.whereOf().");
       return both;
     }
-    if (node.op === 'not') {
+    if (operators.FilterNot.indexOf(node.op) >= 0) {
       const negated = this.negation(node, depth);
       log.debug("Leaving Query.whereOf().");
       return negated;
@@ -592,22 +640,47 @@ class Query {
     return leaf;
   }
 
+  /**
+   * What the model found wrong with this node itself, leaving out what it
+   * found inside a child filter, which the child's own visit reports.
+   *
+   * @param form - the model's form the node is meant to be
+   * @param node - the node
+   * @returns the node's own issues
+   */
+  private ownIssues(form: string, node: Record<string, unknown>): Issue[] {
+    log.debug("Entering Query.ownIssues().");
+    const issues = issuesOf(shapesOf().forms[form], node);
+    const out = issues.filter(function (one: Issue): boolean {
+      if (one.path[0] === 'arg' && node.arg !== undefined) {
+        return false;
+      }
+      return !(one.path[0] === 'args' && one.path.length > 1 &&
+               Array.isArray(node.args));
+    });
+    log.debug("Leaving Query.ownIssues().");
+    return out;
+  }
+
   private logical(node: Record<string, unknown>,
                   depth: number): QueryFailure | null {
     log.debug("Entering Query.logical().");
-    const keys = ownKeys(node);
-    if (keys.length !== 2 || keys.indexOf('op') < 0 ||
-        keys.indexOf('args') < 0 || !Array.isArray(node.args)) {
+    const issues = this.ownIssues('FilterLogical', node);
+    if (issues.length && Array.isArray(node.args) &&
+        issues.every(function (one: Issue): boolean {
+          return one.path.length === 1 && one.path[0] === 'args';
+        })) {
+      log.debug("Leaving Query.logical(). Length.");
+      return this.fail('STS-REPORT-0004', 'invalid_query',
+        'An and or an or takes between 1 and ' + shapesOf().caps.args +
+        ' filters.');
+    }
+    if (issues.length) {
       log.debug("Leaving Query.logical(). Shape.");
       return this.fail('STS-REPORT-0004', 'invalid_query',
         'An and or an or takes a list of filters.');
     }
     const args = node.args as unknown[];
-    if (args.length < 1 || args.length > ARGS_CAP) {
-      log.debug("Leaving Query.logical(). Length.");
-      return this.fail('STS-REPORT-0004', 'invalid_query',
-        'An and or an or takes between 1 and ' + ARGS_CAP + ' filters.');
-    }
     for (let i = 0; i < args.length; i++) {
       const child = this.whereOf(args[i], depth + 1);
       if (child) {
@@ -622,9 +695,7 @@ class Query {
   private negation(node: Record<string, unknown>,
                    depth: number): QueryFailure | null {
     log.debug("Entering Query.negation().");
-    const keys = ownKeys(node);
-    if (keys.length !== 2 || keys.indexOf('op') < 0 ||
-        keys.indexOf('arg') < 0) {
+    if (this.ownIssues('FilterNot', node).length) {
       log.debug("Leaving Query.negation(). Shape.");
       return this.fail('STS-REPORT-0004', 'invalid_query',
         'A not takes one filter.');
@@ -634,20 +705,31 @@ class Query {
     return child;
   }
 
+  /**
+   * A comparison, or isNull: the model's form first, then the field against
+   * the catalog, then the operator against the field's type, then the value
+   * against that type.
+   *
+   * @param node - the node
+   * @returns a refusal, or null
+   */
   private leaf(node: Record<string, unknown>): QueryFailure | null {
     log.debug("Entering Query.leaf().");
-    const op = String(node.op);
-    const keys = ownKeys(node);
-    if (op === 'isNull') {
-      if (keys.length !== 2 || keys.indexOf('field') < 0) {
+    const operators = shapesOf().operators;
+    if (operators.FilterIsNull.indexOf(String(node.op)) >= 0) {
+      const issues = this.ownIssues('FilterIsNull', node);
+      if (issues.some(function (one: Issue): boolean {
+        return one.path.length === 0 || missing(one);
+      })) {
         log.debug("Leaving Query.leaf(). isNull shape.");
         return this.fail('STS-REPORT-0004', 'invalid_query',
           'isNull names a field and nothing else.');
       }
-      const named = this.leafField(node);
+      const named = this.leafField(node, issues);
       log.debug("Leaving Query.leaf().");
       return named;
     }
+    const keys = ownKeys(node);
     const hasValue = keys.indexOf('value') >= 0;
     const hasParam = keys.indexOf('param') >= 0;
     if (hasValue && hasParam) {
@@ -665,34 +747,41 @@ class Query {
       return this.fail('STS-REPORT-0004', 'invalid_query',
         'A saved parameter was not given.');
     }
-    const allowed = op === 'in' ?
-      ['op', 'field', hasParam ? 'param' : 'value'] :
-      ['op', 'field', hasParam ? 'param' : 'value'];
-    if (keys.length !== allowed.length) {
-      log.debug("Leaving Query.leaf(). Extra.");
+    let form = 'FilterParam';
+    if (!hasParam) {
+      form = node.op === 'in' ? 'FilterIn' : 'FilterValue';
+    }
+    // The operator and the value are answered after the field, as they
+    // always were: an operator the grammar does not have is one the field
+    // does not take, and a value is held to the field's type below.
+    const issues = this.ownIssues(form, node).filter(
+      function (one: Issue): boolean {
+        return one.path[0] !== 'op' && one.path[0] !== 'value';
+      });
+    if (unrecognised(issues)) {
+      log.debug("Leaving Query.leaf(). Unknown key.");
       return this.fail('STS-REPORT-0004', 'invalid_query',
         'The filter has a key this service does not read.');
     }
-    for (let i = 0; i < keys.length; i++) {
-      if (allowed.indexOf(keys[i]) < 0) {
-        log.debug("Leaving Query.leaf(). Unknown key.");
-        return this.fail('STS-REPORT-0004', 'invalid_query',
-          'The filter has a key this service does not read.');
-      }
-    }
-    const named = this.leafField(node);
+    const named = this.leafField(node, issues);
     if (named) {
       log.debug("Leaving Query.leaf(). Field.");
       return named;
     }
-    const typed = this.leafValue(node, op);
+    if (under(issues, 'param').length) {
+      log.debug("Leaving Query.leaf(). Param name.");
+      return this.fail('STS-REPORT-0004', 'invalid_query',
+        'A parameter name is a string of 1 to 64 characters.');
+    }
+    const typed = this.leafValue(node, String(node.op));
     log.debug("Leaving Query.leaf().");
     return typed;
   }
 
-  private leafField(node: Record<string, unknown>): QueryFailure | null {
+  private leafField(node: Record<string, unknown>,
+                    issues: Issue[]): QueryFailure | null {
     log.debug("Entering Query.leafField().");
-    if (typeof node.field !== 'string' || !node.field) {
+    if (under(issues, 'field').length) {
       log.debug("Leaving Query.leafField(). No field.");
       return this.fail('STS-REPORT-0004', 'invalid_query',
         'A filter names no field.');
@@ -720,42 +809,54 @@ class Query {
     return null;
   }
 
+  /**
+   * The value a comparison is made with — its own, or the saved parameter's
+   * — held to the model's form for the operator, then to the field's type.
+   *
+   * @param node - a comparison whose field is the catalog's
+   * @param op - its operator
+   * @returns a refusal, or null
+   */
   private leafValue(node: Record<string, unknown>,
                     op: string): QueryFailure | null {
     log.debug("Entering Query.leafValue().");
     const spec = this.catalog.field(this.boundSource, String(node.field));
     let value = node.value;
     if (Object.prototype.hasOwnProperty.call(node, 'param')) {
-      if (typeof node.param !== 'string' || !node.param) {
-        log.debug("Leaving Query.leafValue(). Param name.");
-        return this.fail('STS-REPORT-0004', 'invalid_query',
-          'A parameter name is a string.');
-      }
       const bag = this.parameters || {};
-      if (!Object.prototype.hasOwnProperty.call(bag, node.param)) {
+      if (!Object.prototype.hasOwnProperty.call(bag, node.param as string)) {
         log.debug("Leaving Query.leafValue(). Missing param.");
         return this.fail('STS-REPORT-0004', 'invalid_query',
           'A parameter is missing.');
       }
       value = bag[String(node.param)];
     }
+    if (op === 'in') {
+      const listed = issuesOf(shapesOf().forms.FilterIn,
+        { op: op, field: node.field, value: value });
+      if (listed.some(function (one: Issue): boolean {
+        return one.path.length === 1 && one.path[0] === 'value';
+      })) {
+        const caps = shapesOf().caps;
+        log.debug("Leaving Query.leafValue(). in.");
+        return this.fail('STS-REPORT-0004', 'invalid_query',
+          'in takes between ' + caps.inMin + ' and ' + caps.inMax +
+          ' values.');
+      }
+    }
     const typed = this.typed(spec ? spec.type : '', op, value);
     log.debug("Leaving Query.leafValue().");
     return typed;
   }
 
+  // The value against the field's type; `in`'s list is the model's already.
   private typed(type: string, op: string, value: unknown):
       QueryFailure | null {
     log.debug("Entering Query.typed().");
     if (op === 'in') {
-      if (!Array.isArray(value) || value.length < 1 ||
-          value.length > IN_CAP) {
-        log.debug("Leaving Query.typed(). in.");
-        return this.fail('STS-REPORT-0004', 'invalid_query',
-          'in takes between 1 and ' + IN_CAP + ' values.');
-      }
-      for (let i = 0; i < value.length; i++) {
-        const one = this.oneValue(type, value[i]);
+      const list = value as unknown[];
+      for (let i = 0; i < list.length; i++) {
+        const one = this.oneValue(type, list[i]);
         if (one) {
           log.debug("Leaving Query.typed(). Element.");
           return one;
@@ -815,23 +916,6 @@ class Query {
     log.debug("Leaving Query.oneValue(). No type.");
     return this.fail('STS-REPORT-0004', 'invalid_query',
       'The value is not usable.');
-  }
-
-  private limitOf(document: Record<string, unknown>): QueryFailure | null {
-    log.debug("Entering Query.limitOf().");
-    if (!Object.prototype.hasOwnProperty.call(document, 'limit')) {
-      log.debug("Leaving Query.limitOf(). Default.");
-      return null;
-    }
-    const limit = document.limit;
-    if (typeof limit !== 'number' || !Number.isFinite(limit) ||
-        Math.floor(limit) !== limit || limit < 1) {
-      log.debug("Leaving Query.limitOf(). Not a positive integer.");
-      return this.fail('STS-REPORT-0004', 'invalid_query',
-        'A limit is a positive whole number.');
-    }
-    log.debug("Leaving Query.limitOf().");
-    return null;
   }
 
   /**

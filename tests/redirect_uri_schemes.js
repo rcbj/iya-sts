@@ -135,6 +135,22 @@ function registerWrites(t) {
           problem.errorCode === 'STS-REG-0070',
           'a registration naming javascript: among its redirect_uris is ' +
           'refused as invalid_redirect_uri', problem);
+  // An empty string among the redirect_uris is no URI (2026-11-14, #444's
+  // D12): it was dropped before any check, and a development realm
+  // registered `redirect_uris: [""]`.
+  ['', '   '].forEach(function (blank) {
+    const empty = applications.registrationUriProblem({
+      redirect_uris: [blank] });
+    t.check(empty && empty.error === 'invalid_redirect_uri' &&
+            empty.errorCode === 'STS-REG-0070',
+            'a registration with redirect_uris [' + JSON.stringify(blank) +
+            '] is refused as invalid_redirect_uri', empty);
+  });
+  const emptyLogout = applications.registrationUriProblem({
+    redirect_uris: ['https://ok.example/cb'],
+    post_logout_redirect_uris: ['https://ok.example/bye', ''] });
+  t.check(emptyLogout && emptyLogout.error === 'invalid_client_metadata',
+          'and so is an empty post_logout_redirect_uris member', emptyLogout);
   const frontchannel = applications.registrationUriProblem({
     redirect_uris: ['com.example.app:/cb'],
     frontchannel_logout_uri: 'com.example.app:/fc' });

@@ -127,17 +127,19 @@ class MetricsPage {
                       { when: kit.whenText(snap.startedAt) })) +
 
       // A TAB PER COUNT (2026-10-12): the tiles and the note above are
-      // Metadata (`WebPages.protocolTabs()`).
+      // Metadata (`WebPages.protocolTabs()`). FRAMED AS KEY PAIRS IS
+      // (`secframe`, rcbj 2026-11-16): each tab's content after its heading,
+      // each h3 block a frame inside it.
       '<h2 data-tab="calls">' + t.html('consoleMetrics.calls.heading') +
       '</h2>' +
-      kit.note(t.html('consoleMetrics.calls.noteA') + ' ' +
+      kit.frame(kit.note(t.html('consoleMetrics.calls.noteA') + ' ' +
       '<a href="/admin/sts-metadata">/admin/sts-metadata</a> ' +
       t.html('consoleMetrics.calls.noteB')) +
-      MetricsPage.callTable(snap, t) +
+      MetricsPage.callTable(snap, t)) +
 
       '<h2 data-tab="tokens">' + t.html('consoleMetrics.tokens.heading') +
       '</h2>' +
-      kit.note(t.html('consoleMetrics.tokens.noteA') + ' ' +
+      kit.frame(kit.note(t.html('consoleMetrics.tokens.noteA') + ' ' +
       '<a href="/admin/tokens">' + t.html('consoleMetrics.link.tokensPage') +
       '</a> ' + t.html('consoleMetrics.tokens.noteB')) +
       MetricsPage.tokenKindTable(snap, t) +
@@ -145,11 +147,11 @@ class MetricsPage {
         ? kit.note(t.html('consoleMetrics.tokens.forgotten',
                           { n: snap.tokens.forgotten,
                             cap: snap.tokens.cap }))
-        : '') +
+        : '')) +
 
       '<h2 data-tab="artifacts">' +
       t.html('consoleMetrics.artifacts.heading') + '</h2>' +
-      kit.note(t.html('consoleMetrics.artifacts.noteA') + ' ' +
+      kit.frame(kit.note(t.html('consoleMetrics.artifacts.noteA') + ' ' +
       '<a href="/admin/tokens">' + t.html('consoleMetrics.link.tokensPageLc') +
       '</a>' + t.html('consoleMetrics.artifacts.noteB')) +
       MetricsPage.artifactKindTable(snap, t) +
@@ -157,14 +159,14 @@ class MetricsPage {
         ? kit.note(t.html('consoleMetrics.artifacts.forgotten',
                           { n: snap.artifacts.forgotten,
                             cap: snap.artifacts.cap }))
-        : '') +
+        : '')) +
 
       '<h2 data-tab="sessions">' +
       t.html('consoleMetrics.sessions.heading') + '</h2>' +
-      kit.note(t.html('consoleMetrics.sessions.noteA') + ' ' +
+      kit.frame(kit.note(t.html('consoleMetrics.sessions.noteA') + ' ' +
       '<a href="/admin/users">' + t.html('consoleMetrics.link.usersPage') +
       '</a> ' + t.html('consoleMetrics.sessions.noteB')) +
-      '<h3>' + t.html('consoleMetrics.signOn.heading',
+      kit.frame('<h3>' + t.html('consoleMetrics.signOn.heading',
                       { active: activeCount, held: heldCount }) +
       '</h3><table><tr><th>' + t.html('consoleMetrics.th.user') +
       '</th><th>' + t.html('consoleMetrics.th.state') +
@@ -176,8 +178,8 @@ class MetricsPage {
       (signOnRows || '<tr><td colspan="8">' +
                      t.html('consoleMetrics.signOn.none') + '</td></tr>') +
       '</table>' +
-      kit.note(t.html('consoleMetrics.signOn.expiredNote')) +
-      '<h3>' + t.html('consoleMetrics.derived.heading',
+      kit.note(t.html('consoleMetrics.signOn.expiredNote'))) +
+      kit.frame('<h3>' + t.html('consoleMetrics.derived.heading',
                       { n: snap.sessions.distinctSubjects }) +
       '</h3><table><tr><th>' + t.html('consoleMetrics.th.family') +
       '</th><th class="num">' + t.html('consoleMetrics.th.subjects') +
@@ -186,7 +188,7 @@ class MetricsPage {
        '<tr><td colspan="3">' + t.html('consoleMetrics.derived.none') +
        '</td></tr>') +
       '</table>' +
-      kit.note(t.html('consoleMetrics.derived.tgtNote'));
+      kit.note(t.html('consoleMetrics.derived.tgtNote'))));
 
     return inner;
   }

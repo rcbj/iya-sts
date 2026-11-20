@@ -471,18 +471,20 @@ async function mintedGenerations(t, dir) {
   const g2 = minted.generation();
   const behind = minted.flushThrough(g2);
   await settle();
-  t.equal(calls.length, 1,
-          'a write made after the take waits for the flush in flight to ' +
-          'settle before its own starts');
+  t.equal(calls.length, 2,
+          'a disjoint key starts its own write while the earlier flush is ' +
+          'still held (#877)');
   t.check(minted.committedGeneration() < g1,
-          'nothing counts as committed while the transaction is open');
+          'a later flush finishing first does not move the commit position ' +
+          'past the older open take');
   calls[0].release();
   await bounded(first);
   t.check(minted.committedGeneration() >= g1,
           'the generation the take covered is committed when it lands');
   const later = await bounded(behind);
   t.check(later !== 'timed out' && minted.committedGeneration() >= g2,
-          'and the later write\'s own flush follows and commits it',
+          'the later write\'s flush has committed it once the older take ' +
+          'has settled',
           JSON.stringify(later));
   t.equal(calls.length, 2, 'two writes, one per take');
   await bounded(minted.flushThrough(g2));

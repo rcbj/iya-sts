@@ -120,7 +120,9 @@ class UsedAssertionsPage {
 
       kit.note(t.html('consoleUsedAssertions.leadKept')) +
 
-      '<form method="get" action="/admin/used-assertions"><div ' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the filter,
+      // the pager and the table are the page's one section.
+      kit.frame('<form method="get" action="/admin/used-assertions"><div ' +
       'class="formrow">' +
         '<label for="q">' + t.html('consoleUsedAssertions.labelText') +
         '</label>' +
@@ -163,7 +165,7 @@ class UsedAssertionsPage {
         ? t.html('consoleUsedAssertions.nothingMatches')
         : t.html('consoleUsedAssertions.empty')) + '</td></tr>') +
       '</table>' +
-      nav.foot +
+      nav.foot) +
 
       kit.note(t.html('consoleUsedAssertions.footer',
                       { max: kit.MAX_ROWS }));

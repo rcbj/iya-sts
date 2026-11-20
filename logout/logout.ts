@@ -161,6 +161,8 @@ import errorCodes = require('../common/error_codes');
 // revocation and the single `session.end` audit row — is behind
 // endSessionById(), which is why this module never touches the map itself.
 import authn = require('../authn/authn');
+// An issued token's register row as the model says it means (#1579).
+import DomainClasses = require('../common/domain_classes');
 // The authorization codes, and the issuer identifier a front-channel
 // notification's `iss` carries.
 import oauth2 = require('../oauth-oidc/oauth2');
@@ -915,6 +917,9 @@ class Logout {
           log.debug("Entering collect().");
           log.debug("Leaving collect().");
           return ctx.sessions.map((session) => {
+            // Read through the `Session` concept (#1579); what rides on the
+            // session is not part of it, and is asked of its owners.
+            const view = authn.sessionView(session);
             const rides = [];
             const oidc = frontchannel.clientsOf(session).length;
             const realms = Object.keys(session.wsfedRealms || {}).length;
@@ -925,20 +930,19 @@ class Logout {
                                    (realms === 1 ? '' : 's'));
             if (sps) rides.push(sps + ' SAML 2.0 service provider' +
                                 (sps === 1 ? '' : 's'));
-            return this.row('session', 'sign-on session', session.id, {
-              label: session.id,
-              detail: 'signed in as ' +
-                      ((session.user && session.user.username) || '?') +
-                      ' (' + ((session.amr || []).join(', ') ||
+            return this.row('session', 'sign-on session', view.id, {
+              label: view.id,
+              detail: 'signed in as ' + (view.username || '?') +
+                      ' (' + ((view.methods || []).join(', ') ||
                               'no amr recorded') +
-                      ', acr ' + (session.acr || 'none') + ')' +
+                      ', acr ' + (view.assuranceLevel || 'none') + ')' +
                       (rides.length ? '; carries ' + rides.join(', ') : '; ' +
                           'nothing signed into on it'),
               // The FIRST authentication, not the latest: see
               // authn.sessionStartedAt().
               startedAt: authn.sessionStartedAt(session),
-              expiresAt: session.expires || 0,
-              sessionId: session.id
+              expiresAt: view.expires || 0,
+              sessionId: view.id
             });
           });
         },
@@ -1108,23 +1112,68 @@ class Logout {
           log.debug("Entering wsfed-rp.terminate().");
           const parts = String(r.handle).split('|');
           const session = authn.sessionById(parts[0]);
-          const realm = parts.slice(1).join('|');
           if (!session) {
             log.debug("Leaving wsfed-rp.terminate().");
             return { ok: false, message: 'the session that realm was signed ' +
                                          'into on has already ended, which ' +
                                          'took its cleanup list with it' };
           }
-          const target = wsfed.cleanupTargetsFor(session).filter((one) => {
+          // WHICH REALM THE HANDLE NAMES (2026-11-15). `collect()` gives a
+          // realm's first address `<sid>|<realm>` and each later one
+          // `<sid>|<realm>|<n>` (#747), so everything after the session id
+          // is the realm only on the first row. Until this, a later row read
+          // its realm as `<realm>|1`: it matched nothing, sent no cleanup,
+          // deleted a key that was never there and still said the realm was
+          // forgotten. The realm is whatever follows the id when the session
+          // holds that name (a realm may itself carry a `|`), and otherwise
+          // that less a trailing row index.
+          const held = session.wsfedRealms || {};
+          const named = parts.slice(1).join('|');
+          const realm = (Object.prototype.hasOwnProperty.call(held, named) ||
+                         parts.length < 3 ||
+                         !/^\d+$/.test(parts[parts.length - 1])) ?
+                        named : parts.slice(1, -1).join('|');
+          if (!Object.prototype.hasOwnProperty.call(held, realm)) {
+            // A sibling row of the same realm ended it first, and sent the
+            // cleanup to every one of its addresses as it did so (below).
+            log.debug("Leaving wsfed-rp.terminate().");
+            return { ok: true,
+                     message: realm + ' was already forgotten on session ' +
+                              session.id + ', with a cleanup request to ' +
+                              'each of its addresses' };
+          }
+          // EVERY ADDRESS THE REALM DECLARED IS TOLD (2026-11-15). The rows
+          // of one realm are one sign-in: the session holds the realm once,
+          // and its addresses are where the one relying party wants its
+          // cleanup (`wsfedSignOutUri`, every value). So whichever row of the
+          // realm is ended first sends a cleanup to all of them and forgets
+          // the realm. Until this, only the first address was ever sent one,
+          // because the lookup took the first match and the realm was gone by
+          // the time a later row looked. The list is read before the delete,
+          // which empties it.
+          const targets = wsfed.cleanupTargetsFor(session).filter((one) => {
             return one.realm === realm;
-          })[0];
-          if (target) ctx.cleanups.push(target);
-          if (session.wsfedRealms) delete session.wsfedRealms[realm];
+          });
+          const target = targets[0];
+          targets.forEach((one) => { ctx.cleanups.push(one); });
+          // AND THE STORE IS TOLD (2026-11-15, found by #444's D12): the
+          // delete edits an object the session store holds and does not
+          // journal, so without this the realm stayed on the session in the
+          // store — on another node, and after a restart — as the
+          // `oidc-rp` row's delete above has always told it.
+          // `authn.noteSessionChanged()` carries the argument.
+          if (session.wsfedRealms) {
+            delete session.wsfedRealms[realm];
+            authn.noteSessionChanged(session);
+          }
           log.debug("Leaving wsfed-rp.terminate().");
           return { ok: true,
                    message: realm + ' was forgotten on session ' + session.id +
-                            (target && target.url ? ' and a cleanup request ' +
-                                                    'was sent'
+                            (target && target.url ?
+                             (targets.length > 1 ?
+                              ' and a cleanup request was sent to each of ' +
+                              'its ' + targets.length + ' addresses' :
+                              ' and a cleanup request was sent')
                                                   : ' (there was nowhere to ' +
                                                     'send a cleanup request' +
                                                     ')') };
@@ -1179,8 +1228,10 @@ class Logout {
             return one.entityId === entityId;
           })[0];
           if (target) ctx.logoutRequests.push(target);
+          // And the store is told, as for `wsfed-rp` above (2026-11-15).
           if (session.saml2ServiceProviders) {
             delete session.saml2ServiceProviders[entityId];
+            authn.noteSessionChanged(session);
           }
           log.debug("Leaving saml2-sp.terminate().");
           return { ok: true,
@@ -1352,26 +1403,29 @@ class Logout {
             return [];
           }
           log.debug("Leaving token.collect().");
-          return detail.tokens.filter((record) => {
+          // Each register row read through the `IssuedToken` concept (#1579).
+          return detail.tokens.map((record) => {
+            return DomainClasses.IssuedToken.fromRecord(record);
+          }).filter((token) => {
             // Only what can still be presented AND can still be acted on. A
             // revoked one is already ended, an expired one ended itself, and
             // one with no jti cannot be revoked at all — which the registry
             // already records as `revocable: false` rather than leaving to be
             // inferred.
-            return record.revocable && record.state !== 'revoked' &&
-                   record.state !== 'expired';
-          }).map((record) => {
-            return this.row('token', record.kind, record.jti, {
-              label: record.kind + ' ' + record.jti,
-              detail: 'for ' + (record.client_id || 'no client') +
-                      (record.scope ? ', scope ' + record.scope : '') +
-                      (record.jkt ? ', DPoP-bound' : '') +
-                      (record.sessionId ? ', issued on session ' +
-                       record.sessionId
-                                        : ', issued with no browser session'),
-              startedAt: record.issuedAt || 0,
-              expiresAt: (record.exp || 0) * 1000,
-              sessionId: record.sessionId || ''
+            return token.revocable && token.state !== 'revoked' &&
+                   token.state !== 'expired';
+          }).map((token) => {
+            return this.row('token', token.kind, token.id, {
+              label: token.kind + ' ' + token.id,
+              detail: 'for ' + (token.clientId || 'no client') +
+                      (token.scope ? ', scope ' + token.scope : '') +
+                      (token.dpopThumbprint ? ', DPoP-bound' : '') +
+                      (token.sessionId ? ', issued on session ' +
+                       token.sessionId
+                                       : ', issued with no browser session'),
+              startedAt: token.issuedAt || 0,
+              expiresAt: (token.expires || 0) * 1000,
+              sessionId: token.sessionId || ''
             });
           });
         },
@@ -2462,6 +2516,10 @@ class Logout {
       //
       // The row appears the moment it becomes a sign-in: startSession()
       // upgrades it in place and `chosen` becomes true.
+      //
+      // The Unauthenticated tab says this exclusion (#888). It does not
+      // list these rows and it does not count them: a count is a scan of
+      // the session index, and there is no index on an arrival.
       // ---------------------------------------------------------------------
       if (session.chosen === false) {
         return;
@@ -2474,7 +2532,13 @@ class Logout {
           authn.sessionEnded(session, nowMs)) {
         return;
       }
-      const username = (session.user && session.user.username) || '';
+      // THE ROW IS THE `Session` CONCEPT (#1579): every member drawn here
+      // that the session record holds is read through it. What rides on the
+      // session (`oidcClients` and the two below) is each family's own, and
+      // whether a relying party holds a refresh token is asked of the record
+      // because the concept never carries a token.
+      const view = authn.sessionView(session);
+      const username = view.username || '';
       const rides = [];
       const oidc = Object.keys(session.oidcClients || {}).length;
       const realms = Object.keys(session.wsfedRealms || {}).length;
@@ -2486,7 +2550,7 @@ class Logout {
       if (sps) rides.push(sps + ' SAML 2.0 service provider' +
                           (sps === 1 ? '' : 's'));
       out.push({
-        id: 'session:' + session.id,
+        id: 'session:' + view.id,
         family: 'session',
         // ONE STORE, TWO KINDS OF ROW (2026-09-06). The management API, SCIM
         // and the SPIRE Server API sign in through `authn.startSession()` like
@@ -2513,38 +2577,38 @@ class Logout {
         // and leaving the sign-on session — and every other application on it —
         // alive. The two rows are visibly different, and `derivedFrom` says
         // which sign-on session this one hangs off.
-        kind: session.rpSurface
-          ? (session.rpLabel || session.rpSurface) + ' session'
+        kind: view.relyingPartySurface
+          ? (view.relyingPartyLabel || view.relyingPartySurface) + ' session'
           : session.credentialKey
-            ? (session.via || 'API') + ' session'
+            ? (view.startedThrough || 'API') + ' session'
             : 'Browser sign-on session',
         // The sign-on session this one was derived from, where there is one.
         // Empty on every other row. It is what makes the cascade visible:
         // ending the parent ends this, and a reader looking at two rows for one
         // person can see which is which rather than inferring it from the
         // times.
-        derivedFrom: session.derivedFrom || '',
-        rpClientId: session.rpClientId || '',
-        key: stats.holderKeyOf(username, session.user && session.user.sub),
+        derivedFrom: view.derivedFrom || '',
+        rpClientId: view.relyingPartyClientId || '',
+        key: stats.holderKeyOf(username, view.sub),
         username: username,
-        sub: (session.user && session.user.sub) || '',
+        sub: view.sub || '',
         // The protocol the sign-in came THROUGH. See startSession(): every
         // browser family reads this one session, so this is not the list of
         // protocols using it — `carries` is.
-        protocol: session.via || 'OAuth 2.0 / OIDC',
-        handle: session.id,
+        protocol: view.startedThrough || 'OAuth 2.0 / OIDC',
+        handle: view.id,
         // The session id, which is what a token issued on it records — so this
         // is the join to /admin/tokens and the only row kind that has one.
-        sessionId: session.id,
+        sessionId: view.id,
         startedAt: authn.sessionStartedAt(session),
-        expiresAt: session.expires || 0,
+        expiresAt: view.expires || 0,
         expiryRule: session.credentialKey ? this.sessionExpiryRules.api
-          : (session.rpSurface && session.rpTokens &&
+          : (view.relyingPartySurface && session.rpTokens &&
              session.rpTokens.refreshToken)
             ? this.sessionExpiryRules.relyingParty
             : this.sessionExpiryRules.session,
-        amr: (session.amr || []).slice(),
-        acr: session.acr || '',
+        amr: (view.methods || []).slice(),
+        acr: view.assuranceLevel || '',
         // Whether the session is bound to a key its browser holds (#725):
         // `{ bound, alg, boundAt, refreshes, refreshedAt }`.
         deviceBound: authn.deviceBindingOf(session),
@@ -2553,24 +2617,25 @@ class Logout {
         // is a record that a credential keeps being accepted — so it reports
         // the thing that IS true of it and that a reader wants: how much it is
         // being used and when it last was.
-        detail: session.rpSurface
+        detail: view.relyingPartySurface
           // A relying party session carries no relying parties of its own: it
           // IS one. What a reader wants is which client holds it and which
           // sign-on session it rests on, because ending THAT ends this.
-          ? 'held by ' + (session.rpClientId || session.rpSurface) +
-            (session.derivedFrom
-              ? ', derived from sign-on session ' + session.derivedFrom
+          ? 'held by ' + (view.relyingPartyClientId ||
+                          view.relyingPartySurface) +
+            (view.derivedFrom
+              ? ', derived from sign-on session ' + view.derivedFrom
               : ', with no sign-on session behind it') +
             // How often it has renewed its tokens, and when — the one thing on
             // this row a renewal changes. Never the tokens.
-            (session.rpRenewals
-              ? '; tokens renewed ' + session.rpRenewals +
-                ' time(s), last at ' + new Date(session.rpRenewedAt ||
+            (view.relyingPartyRenewals
+              ? '; tokens renewed ' + view.relyingPartyRenewals +
+                ' time(s), last at ' + new Date(view.relyingPartyRenewedAt ||
                                                 0).toISOString()
               : '')
           : session.credentialKey
-            ? (session.calls || 1) + ' call(s), last at ' +
-              new Date(session.lastSeenAt || session.expires || 0).toISOString()
+            ? (view.apiCalls || 1) + ' call(s), last at ' +
+              new Date(view.lastSeenAt || view.expires || 0).toISOString()
             : (rides.length ? 'carries ' + rides.join(', ')
                             : 'nothing is signed into on it yet'),
         // WHETHER ANYBODY AUTHENTICATED FOR IT (2026-09-05).
@@ -2585,7 +2650,7 @@ class Logout {
         //
         // `!== false` for the usual reason: a session made before the field
         // existed is one somebody signed into.
-        authenticated: session.authenticated !== false,
+        authenticated: view.authenticated !== false,
         // THE BROWSER'S ACCOUNT SET (#561, #731), where the session is in
         // one: several signed-in accounts in one browser
         // (`authn/CLAUDE.md`). Rows that share it are sessions of ONE
@@ -2594,7 +2659,7 @@ class Logout {
         // cookie's HANDLE is, and it is never on a row — and '' where the
         // session is in no set, so a row is otherwise what it was with
         // `authn.multipleAccounts` off.
-        accountSet: String(session.accountSetId || ''),
+        accountSet: String(view.accountSetId || ''),
         terminable: true,
         why: ''
       });
@@ -4111,7 +4176,7 @@ class Logout {
   // Signing yourself out never does, and that includes signing out everywhere:
   // nothing may stand between a person and leaving.
   private reauthenticationOwed(subject: any, body: any): boolean {
-    const { log, config } = this.deps;
+    const { log, config, authn } = this.deps;
     log.debug("Entering Logout.reauthenticationOwed().");
     const limit = Number(config.value('account.recentAuthMinutes')) * 60;
     const raw = body.select === undefined ? [] : body.select;
@@ -4123,10 +4188,7 @@ class Logout {
       log.debug("Leaving Logout.reauthenticationOwed(). Not asked.");
       return false;
     }
-    const signOn = subject.session || {};
-    const events = Array.isArray(signOn.events) ? signOn.events : [];
-    const latest = events.length ? events[events.length - 1] : null;
-    const at = Number((latest && latest.at) || signOn.authTime || 0);
+    const at = authn.lastAuthenticatedAt(subject.session);
     log.debug("Leaving Logout.reauthenticationOwed().");
     return !(at > 0 && Date.now() / 1000 - at <= limit);
   }

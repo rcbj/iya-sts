@@ -1,0 +1,3851 @@
+{
+ "wire": [
+  {
+   "mode": "development",
+   "step": "the bundle endpoint",
+   "service": "http",
+   "method": "GET /spiffe/bundle",
+   "body": {
+    "keys": [
+     {
+      "crv": "P-256",
+      "kty": "EC",
+      "use": "x509-svid",
+      "x": "<x>",
+      "x5c": [
+       {
+        "certificate": true,
+        "subject": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+        "issuer": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+        "san": "URI:spiffe://model-wire.example.test",
+        "ca": true,
+        "keyUsage": {
+         "critical": true,
+         "usages": [
+          "keyCertSign",
+          "cRLSign"
+         ]
+        },
+        "extKeyUsage": null,
+        "keyType": "ec",
+        "lifetime": "<lifetime>"
+       }
+      ],
+      "y": "<y>"
+     },
+     {
+      "crv": "P-256",
+      "kid": "<kid>",
+      "kty": "EC",
+      "use": "jwt-svid",
+      "x": "<x>",
+      "y": "<y>"
+     }
+    ],
+    "spiffe_refresh_hint": 300,
+    "spiffe_sequence": 1
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   },
+   "status": 200
+  },
+  {
+   "mode": "development",
+   "step": "an X509-SVID",
+   "service": "workload",
+   "method": "FetchX509SVID",
+   "code": 0,
+   "details": "(first message)",
+   "trailers": {},
+   "messages": [
+    {
+     "crl": [],
+     "federated_bundles": {},
+     "svids": [
+      {
+       "bundle": [
+        {
+         "certificate": true,
+         "subject": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+         "issuer": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+         "san": "URI:spiffe://model-wire.example.test",
+         "ca": true,
+         "keyUsage": {
+          "critical": true,
+          "usages": [
+           "keyCertSign",
+           "cRLSign"
+          ]
+         },
+         "extKeyUsage": null,
+         "keyType": "ec",
+         "lifetime": "<lifetime>"
+        }
+       ],
+       "hint": "wire",
+       "spiffe_id": "spiffe://model-wire.example.test/d/workload",
+       "x509_svid": [
+        {
+         "certificate": true,
+         "subject": "C=US\nO=SPIRE",
+         "issuer": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+         "san": "URI:spiffe://model-wire.example.test/d/workload",
+         "ca": false,
+         "keyUsage": {
+          "critical": true,
+          "usages": [
+           "digitalSignature"
+          ]
+         },
+         "extKeyUsage": [
+          "1.3.6.1.5.5.7.3.1",
+          "1.3.6.1.5.5.7.3.2"
+         ],
+         "keyType": "ec",
+         "lifetime": "<lifetime>"
+        }
+       ],
+       "x509_svid_key": {
+        "privateKey": "ec"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "mode": "development",
+   "step": "the X.509 bundles",
+   "service": "workload",
+   "method": "FetchX509Bundles",
+   "code": 0,
+   "details": "(first message)",
+   "trailers": {},
+   "messages": [
+    {
+     "bundles": {
+      "spiffe://model-wire.example.test": [
+       {
+        "certificate": true,
+        "subject": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+        "issuer": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+        "san": "URI:spiffe://model-wire.example.test",
+        "ca": true,
+        "keyUsage": {
+         "critical": true,
+         "usages": [
+          "keyCertSign",
+          "cRLSign"
+         ]
+        },
+        "extKeyUsage": null,
+        "keyType": "ec",
+        "lifetime": "<lifetime>"
+       }
+      ]
+     },
+     "crl": []
+    }
+   ]
+  },
+  {
+   "mode": "development",
+   "step": "a JWT-SVID",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "svids": [
+      {
+       "hint": "wire",
+       "spiffe_id": "spiffe://model-wire.example.test/d/workload",
+       "svid": {
+        "jwt": {
+         "header": {
+          "alg": "ES256",
+          "typ": "JWT",
+          "kid": "<kid>"
+         },
+         "claims": {
+          "sub": "spiffe://model-wire.example.test/d/workload",
+          "aud": [
+           "urn:wire:one",
+           "urn:wire:two"
+          ],
+          "exp": "<epoch>",
+          "iat": "<epoch>",
+          "jti": "<jti>"
+         }
+        }
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "mode": "development",
+   "step": "a JWT-SVID for a named id",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "svids": [
+      {
+       "hint": "wire",
+       "spiffe_id": "spiffe://model-wire.example.test/d/workload",
+       "svid": {
+        "jwt": {
+         "header": {
+          "alg": "ES256",
+          "typ": "JWT",
+          "kid": "<kid>"
+         },
+         "claims": {
+          "sub": "spiffe://model-wire.example.test/d/workload",
+          "aud": "urn:wire:one",
+          "exp": "<epoch>",
+          "iat": "<epoch>",
+          "jti": "<jti>"
+         }
+        }
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "mode": "development",
+   "step": "no audience",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "FetchJWTSVID requires at least one audience. A JWT-SVID is a bearer credential — whoever holds it can present it — so the audience is what stops one issued for service A being replayed against service B. Every conforming Workload API refuses this call without one.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "a blank audience",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "FetchJWTSVID requires at least one audience. A JWT-SVID is a bearer credential — whoever holds it can present it — so the audience is what stops one issued for service A being replayed against service B. Every conforming Workload API refuses this call without one.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "a malformed spiffe_id (0)",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "spiffe_id: A SPIFFE ID begins with spiffe://; this one begins with not-an-id.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "a malformed spiffe_id (1)",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "spiffe_id: A trust domain name is lower-case: UPPER.example is not a valid trust domain, and it is not another spelling of upper.example either — they are different identifiers.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "a malformed spiffe_id (2)",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "spiffe_id: A SPIFFE ID path has no empty segment, so no trailing slash and no //.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "a malformed spiffe_id (3)",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "spiffe_id: A SPIFFE ID path has no relative segment: . and .. are not permitted.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "a malformed spiffe_id (4)",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "spiffe_id: A SPIFFE ID carries no port; the trust domain is the whole authority.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "a malformed spiffe_id (5)",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "spiffe_id: A SPIFFE ID carries no userinfo; the trust domain is the whole authority.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "a malformed spiffe_id (6)",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "spiffe_id: A SPIFFE ID carries no query and no fragment.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "a malformed spiffe_id (7)",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "spiffe_id: A SPIFFE ID path is not percent-encoded; % is not a permitted character.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "a malformed spiffe_id (8)",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "spiffe_id: A SPIFFE ID path segment holds only letters, digits, dots, dashes and underscores; this one is x$y.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "a malformed spiffe_id (9)",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "spiffe_id: A SPIFFE ID names a trust domain between spiffe:// and the first /; this one names none.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "a malformed spiffe_id (10)",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "spiffe_id: A trust domain name holds only lower-case letters, digits, dots, dashes and underscores; this one is a!b.test.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "a malformed spiffe_id (11)",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "spiffe_id: A trust domain name may be at most 255 bytes; this one is 256.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "a malformed spiffe_id (12)",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "spiffe_id: A SPIFFE ID may be at most 2048 bytes; this one is 2064.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "an id the caller is not entitled to",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 7,
+   "details": "no identity issued: FetchJWTSVID — the caller is not entitled to spiffe://model-wire.example.test/nobody (no registration entry matches it). Register one on /admin/spiffe/entries or through the SPIRE Server API.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "no security header",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "Every call to the SPIFFE Workload API must carry the metadata header \"workload.spiffe.io: true\" (SPIFFE Workload Endpoint specification). This one did not. Every conforming Workload API will refuse it, which is why this service does too; spiffe.requireSecurityHeader turns the check off if you are deliberately testing something else.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "the JWT bundles",
+   "service": "workload",
+   "method": "FetchJWTBundles",
+   "code": 0,
+   "details": "(first message)",
+   "trailers": {},
+   "messages": [
+    {
+     "bundles": {
+      "spiffe://model-wire.example.test": {
+       "json": {
+        "keys": [
+         {
+          "kty": "EC",
+          "x": "<x>",
+          "y": "<y>",
+          "crv": "P-256",
+          "use": "jwt-svid",
+          "kid": "<kid>"
+         }
+        ]
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "mode": "development",
+   "step": "a JWT-SVID validated",
+   "service": "workload",
+   "method": "ValidateJWTSVID",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "claims": {
+      "fields": {
+       "aud": {
+        "kind": "stringValue",
+        "stringValue": "urn:wire:one"
+       },
+       "exp": "<exp>",
+       "iat": "<iat>",
+       "jti": "<jti>",
+       "sub": {
+        "kind": "stringValue",
+        "stringValue": "spiffe://model-wire.example.test/d/workload"
+       }
+      }
+     },
+     "spiffe_id": "spiffe://model-wire.example.test/d/workload"
+    }
+   ]
+  },
+  {
+   "mode": "development",
+   "step": "the wrong audience",
+   "service": "workload",
+   "method": "ValidateJWTSVID",
+   "code": 3,
+   "details": "jwt audience invalid. expected: urn:wire:other",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "no audience to validate",
+   "service": "workload",
+   "method": "ValidateJWTSVID",
+   "code": 3,
+   "details": "ValidateJWTSVID requires the audience the validating party goes by; a JWT-SVID is only meaningful against one.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "no token to validate",
+   "service": "workload",
+   "method": "ValidateJWTSVID",
+   "code": 3,
+   "details": "No JWT-SVID was given.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "a token that is not a JWT",
+   "service": "workload",
+   "method": "ValidateJWTSVID",
+   "code": 3,
+   "details": "That is not a JWT.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "a bad signature",
+   "service": "workload",
+   "method": "ValidateJWTSVID",
+   "code": 3,
+   "details": "\"ES256\" signatures must be \"64\" bytes, saw \"6\"",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "a WIT-SVID",
+   "service": "workload",
+   "method": "FetchWITSVID",
+   "code": 12,
+   "details": "This service does not issue WIT-SVIDs. The methods are on the service because they are in the SPIFFE project's own workloadapi.proto, and `wit-svid` is a `use` value the bundle specification names — but the Workload Identity Token's own format is not settled in a specification this service could implement against. Minting something JWS-shaped and calling it a WIT-SVID would be inventing a credential format, which is the one thing this service must not do: code written against the invention would work here and interoperate with nothing. X509-SVIDs and JWT-SVIDs are fully implemented.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "no security header, the requirement off",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "svids": [
+      {
+       "hint": "wire",
+       "spiffe_id": "spiffe://model-wire.example.test/d/workload",
+       "svid": {
+        "jwt": {
+         "header": {
+          "alg": "ES256",
+          "typ": "JWT",
+          "kid": "<kid>"
+         },
+         "claims": {
+          "sub": "spiffe://model-wire.example.test/d/workload",
+          "aud": "urn:wire:one",
+          "exp": "<epoch>",
+          "iat": "<epoch>",
+          "jti": "<jti>"
+         }
+        }
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "mode": "development",
+   "step": "a caller nothing selects, invention off",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 7,
+   "details": "no identity issued: FetchJWTSVID — the caller is not entitled to any JWT-SVID (no registration entry matches it). Register one on /admin/spiffe/entries or through the SPIRE Server API.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "an X509-SVID for a caller nothing selects",
+   "service": "workload",
+   "method": "FetchX509SVID",
+   "code": 7,
+   "details": "no identity issued: FetchX509SVID — the caller is not entitled to any X509-SVID (no registration entry matches it). Register one on /admin/spiffe/entries or through the SPIRE Server API.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "a caller nothing selects, invention on",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "svids": [
+      {
+       "hint": "",
+       "spiffe_id": "spiffe://model-wire.example.test/workload",
+       "svid": {
+        "jwt": {
+         "header": {
+          "alg": "ES256",
+          "typ": "JWT",
+          "kid": "<kid>"
+         },
+         "claims": {
+          "sub": "spiffe://model-wire.example.test/workload",
+          "aud": "urn:wire:one",
+          "exp": "<epoch>",
+          "iat": "<epoch>",
+          "jti": "<jti>"
+         }
+        }
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "mode": "development",
+   "step": "the bundle",
+   "service": "bundle",
+   "method": "GetBundle",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "jwt_authorities": [
+      {
+       "expires_at": "<expires_at>",
+       "key_id": "<key_id>",
+       "public_key": {
+        "publicKey": "ec"
+       },
+       "tainted": false
+      }
+     ],
+     "refresh_hint": "300",
+     "sequence_number": "1",
+     "trust_domain": "model-wire.example.test",
+     "wit_authorities": [],
+     "x509_authorities": [
+      {
+       "asn1": [
+        {
+         "certificate": true,
+         "subject": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+         "issuer": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+         "san": "URI:spiffe://model-wire.example.test",
+         "ca": true,
+         "keyUsage": {
+          "critical": true,
+          "usages": [
+           "keyCertSign",
+           "cRLSign"
+          ]
+         },
+         "extKeyUsage": null,
+         "keyType": "ec",
+         "lifetime": "<lifetime>"
+        }
+       ],
+       "tainted": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "mode": "development",
+   "step": "the bundle count",
+   "service": "bundle",
+   "method": "CountBundles",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "count": 0
+    }
+   ]
+  },
+  {
+   "mode": "development",
+   "step": "a federated bundle created",
+   "service": "bundle",
+   "method": "BatchCreateFederatedBundle",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "results": [
+      {
+       "bundle": {
+        "jwt_authorities": [],
+        "refresh_hint": "300",
+        "sequence_number": "1",
+        "trust_domain": "federatedd.example.test",
+        "wit_authorities": [],
+        "x509_authorities": [
+         {
+          "asn1": [
+           {
+            "certificate": true,
+            "subject": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+            "issuer": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+            "san": "URI:spiffe://model-wire.example.test",
+            "ca": true,
+            "keyUsage": {
+             "critical": true,
+             "usages": [
+              "keyCertSign",
+              "cRLSign"
+             ]
+            },
+            "extKeyUsage": null,
+            "keyType": "ec",
+            "lifetime": "<lifetime>"
+           }
+          ],
+          "tainted": false
+         }
+        ]
+       },
+       "status": {
+        "code": 0,
+        "message": "OK"
+       }
+      },
+      {
+       "bundle": null,
+       "status": {
+        "code": 3,
+        "message": "model-wire.example.test is this realm's own trust domain. A trust domain does not federate with itself, and accepting this would give it two bundles that could disagree."
+       }
+      },
+      {
+       "bundle": null,
+       "status": {
+        "code": 3,
+        "message": "A trust domain name holds only lower-case letters, digits, dots, dashes and underscores; this one is not a domain."
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "mode": "development",
+   "step": "the federated bundles",
+   "service": "bundle",
+   "method": "ListFederatedBundles",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "bundles": [
+      {
+       "jwt_authorities": [],
+       "refresh_hint": "300",
+       "sequence_number": "1",
+       "trust_domain": "federatedd.example.test",
+       "wit_authorities": [],
+       "x509_authorities": [
+        {
+         "asn1": [
+          {
+           "certificate": true,
+           "subject": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+           "issuer": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+           "san": "URI:spiffe://model-wire.example.test",
+           "ca": true,
+           "keyUsage": {
+            "critical": true,
+            "usages": [
+             "keyCertSign",
+             "cRLSign"
+            ]
+           },
+           "extKeyUsage": null,
+           "keyType": "ec",
+           "lifetime": "<lifetime>"
+          }
+         ],
+         "tainted": false
+        }
+       ]
+      }
+     ],
+     "next_page_token": ""
+    }
+   ]
+  },
+  {
+   "mode": "development",
+   "step": "one federated bundle",
+   "service": "bundle",
+   "method": "GetFederatedBundle",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "jwt_authorities": [],
+     "refresh_hint": "300",
+     "sequence_number": "1",
+     "trust_domain": "federatedd.example.test",
+     "wit_authorities": [],
+     "x509_authorities": [
+      {
+       "asn1": [
+        {
+         "certificate": true,
+         "subject": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+         "issuer": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+         "san": "URI:spiffe://model-wire.example.test",
+         "ca": true,
+         "keyUsage": {
+          "critical": true,
+          "usages": [
+           "keyCertSign",
+           "cRLSign"
+          ]
+         },
+         "extKeyUsage": null,
+         "keyType": "ec",
+         "lifetime": "<lifetime>"
+        }
+       ],
+       "tainted": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "mode": "development",
+   "step": "a federated bundle nobody created",
+   "service": "bundle",
+   "method": "GetFederatedBundle",
+   "code": 5,
+   "details": "This service holds no bundle for the trust domain nobody.example.test.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "federated bundles deleted",
+   "service": "bundle",
+   "method": "BatchDeleteFederatedBundle",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "results": [
+      {
+       "status": {
+        "code": 0,
+        "message": "OK"
+       },
+       "trust_domain": "federatedd.example.test"
+      },
+      {
+       "status": {
+        "code": 5,
+        "message": "No bundle for nobody.example.test is held here."
+       },
+       "trust_domain": "nobody.example.test"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "mode": "development",
+   "step": "a WIT authority",
+   "service": "bundle",
+   "method": "PublishWITAuthority",
+   "code": 7,
+   "details": "Bundle.PublishWITAuthority is allowed to: downstream. This call came from an anonymous caller over the Unix socket (local). The rule is SPIRE's own — see GET /spiffe for the whole table.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "entries created",
+   "service": "entry",
+   "method": "BatchCreateEntry",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "results": [
+      {
+       "entry": {
+        "admin": false,
+        "created_at": "<created_at>",
+        "dns_names": [],
+        "downstream": false,
+        "expires_at": "<expires_at>",
+        "federates_with": [],
+        "hint": "made",
+        "id": "<digest>",
+        "jwt_svid_ttl": 0,
+        "parent_id": {
+         "path": "/spire/server",
+         "trust_domain": "model-wire.example.test"
+        },
+        "revision_number": "<revision_number>",
+        "selectors": [
+         {
+          "type": "unix",
+          "value": "<uid>"
+         }
+        ],
+        "spiffe_id": {
+         "path": "/d/created",
+         "trust_domain": "model-wire.example.test"
+        },
+        "store_svid": false,
+        "x509_svid_ttl": 600
+       },
+       "status": {
+        "code": 0,
+        "message": "OK"
+       }
+      },
+      {
+       "entry": null,
+       "status": {
+        "code": 3,
+        "message": "spiffeId: spiffe://model-wire.example.test/spire/reserved is under the reserved /spire path, which belongs to this server and the agents it attests. An entry there would be an identifier issued for two unrelated reasons."
+       }
+      },
+      {
+       "entry": null,
+       "status": {
+        "code": 3,
+        "message": "spiffeId: spiffe://other.example.test/x is in the trust domain other.example.test, and this service is the issuing authority for model-wire.example.test only. It cannot sign an SVID naming somebody else's trust domain — that is what federation is for, and a federated bundle is somebody ELSE's authority, published here."
+       }
+      },
+      {
+       "entry": {
+        "admin": false,
+        "created_at": "<created_at>",
+        "dns_names": [],
+        "downstream": false,
+        "expires_at": "<expires_at>",
+        "federates_with": [],
+        "hint": "",
+        "id": "<digest>",
+        "jwt_svid_ttl": 0,
+        "parent_id": {
+         "path": "/spire/server",
+         "trust_domain": "model-wire.example.test"
+        },
+        "revision_number": "<revision_number>",
+        "selectors": [],
+        "spiffe_id": {
+         "path": "/d/no-selectors",
+         "trust_domain": "model-wire.example.test"
+        },
+        "store_svid": false,
+        "x509_svid_ttl": 0
+       },
+       "status": {
+        "code": 0,
+        "message": "OK"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "mode": "development",
+   "step": "the entry count",
+   "service": "entry",
+   "method": "CountEntries",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "count": 5
+    }
+   ]
+  },
+  {
+   "mode": "development",
+   "step": "the entries, by SPIFFE ID",
+   "service": "entry",
+   "method": "ListEntries",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "entries": [
+      {
+       "admin": false,
+       "created_at": "<created_at>",
+       "dns_names": [],
+       "downstream": false,
+       "expires_at": "<expires_at>",
+       "federates_with": [],
+       "hint": "made",
+       "id": "<digest>",
+       "jwt_svid_ttl": 0,
+       "parent_id": {
+        "path": "/spire/server",
+        "trust_domain": "model-wire.example.test"
+       },
+       "revision_number": "<revision_number>",
+       "selectors": [
+        {
+         "type": "unix",
+         "value": "<uid>"
+        }
+       ],
+       "spiffe_id": {
+        "path": "/d/created",
+        "trust_domain": "model-wire.example.test"
+       },
+       "store_svid": false,
+       "x509_svid_ttl": 600
+      }
+     ],
+     "next_page_token": ""
+    }
+   ]
+  },
+  {
+   "mode": "development",
+   "step": "the entries, by selector",
+   "service": "entry",
+   "method": "ListEntries",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "entries": [
+      {
+       "admin": false,
+       "created_at": "<created_at>",
+       "dns_names": [],
+       "downstream": false,
+       "expires_at": "<expires_at>",
+       "federates_with": [],
+       "hint": "made",
+       "id": "<digest>",
+       "jwt_svid_ttl": 0,
+       "parent_id": {
+        "path": "/spire/server",
+        "trust_domain": "model-wire.example.test"
+       },
+       "revision_number": "<revision_number>",
+       "selectors": [
+        {
+         "type": "unix",
+         "value": "<uid>"
+        }
+       ],
+       "spiffe_id": {
+        "path": "/d/created",
+        "trust_domain": "model-wire.example.test"
+       },
+       "store_svid": false,
+       "x509_svid_ttl": 600
+      }
+     ],
+     "next_page_token": ""
+    }
+   ]
+  },
+  {
+   "mode": "development",
+   "step": "one entry",
+   "service": "entry",
+   "method": "GetEntry",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "admin": false,
+     "created_at": "<created_at>",
+     "dns_names": [],
+     "downstream": false,
+     "expires_at": "<expires_at>",
+     "federates_with": [],
+     "hint": "made",
+     "id": "<digest>",
+     "jwt_svid_ttl": 0,
+     "parent_id": {
+      "path": "/spire/server",
+      "trust_domain": "model-wire.example.test"
+     },
+     "revision_number": "<revision_number>",
+     "selectors": [
+      {
+       "type": "unix",
+       "value": "<uid>"
+      }
+     ],
+     "spiffe_id": {
+      "path": "/d/created",
+      "trust_domain": "model-wire.example.test"
+     },
+     "store_svid": false,
+     "x509_svid_ttl": 600
+    }
+   ]
+  },
+  {
+   "mode": "development",
+   "step": "an entry nobody created",
+   "service": "entry",
+   "method": "GetEntry",
+   "code": 5,
+   "details": "No registration entry has the id no-such-entry.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "an entry updated",
+   "service": "entry",
+   "method": "BatchUpdateEntry",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "results": [
+      {
+       "entry": {
+        "admin": false,
+        "created_at": "<created_at>",
+        "dns_names": [],
+        "downstream": false,
+        "expires_at": "<expires_at>",
+        "federates_with": [],
+        "hint": "changed",
+        "id": "<digest>",
+        "jwt_svid_ttl": 0,
+        "parent_id": {
+         "path": "/spire/server",
+         "trust_domain": "model-wire.example.test"
+        },
+        "revision_number": "<revision_number>",
+        "selectors": [
+         {
+          "type": "unix",
+          "value": "<uid>"
+         }
+        ],
+        "spiffe_id": {
+         "path": "/d/created",
+         "trust_domain": "model-wire.example.test"
+        },
+        "store_svid": false,
+        "x509_svid_ttl": 900
+       },
+       "status": {
+        "code": 0,
+        "message": "OK"
+       }
+      },
+      {
+       "entry": null,
+       "status": {
+        "code": 5,
+        "message": "No registration entry has the id no-such-entry."
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "mode": "development",
+   "step": "entries deleted",
+   "service": "entry",
+   "method": "BatchDeleteEntry",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "results": [
+      {
+       "id": "<digest>",
+       "status": {
+        "code": 0,
+        "message": "OK"
+       }
+      },
+      {
+       "id": "no-such-entry",
+       "status": {
+        "code": 5,
+        "message": "No registration entry has the id no-such-entry."
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "mode": "development",
+   "step": "a join token",
+   "service": "agent",
+   "method": "CreateJoinToken",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "expires_at": "<expires_at>",
+     "value": "<random>"
+    }
+   ]
+  },
+  {
+   "mode": "development",
+   "step": "a join token with no lifetime",
+   "service": "agent",
+   "method": "CreateJoinToken",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "expires_at": "<expires_at>",
+     "value": "<random>"
+    }
+   ]
+  },
+  {
+   "mode": "development",
+   "step": "an agent attested",
+   "service": "agent",
+   "method": "AttestAgent",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "result": {
+      "reattestable": false,
+      "svid": {
+       "cert_chain": [
+        [
+         {
+          "certificate": true,
+          "subject": "C=US\nO=SPIRE",
+          "issuer": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+          "san": "URI:spiffe://model-wire.example.test/spire/agent/join_token/<digest>",
+          "ca": false,
+          "keyUsage": {
+           "critical": true,
+           "usages": [
+            "digitalSignature"
+           ]
+          },
+          "extKeyUsage": [
+           "1.3.6.1.5.5.7.3.1",
+           "1.3.6.1.5.5.7.3.2"
+          ],
+          "keyType": "ec",
+          "lifetime": "<lifetime>"
+         }
+        ]
+       ],
+       "expires_at": "<expires_at>",
+       "hint": "",
+       "id": {
+        "path": "/spire/agent/join_token/<digest>",
+        "trust_domain": "model-wire.example.test"
+       }
+      }
+     },
+     "step": "result"
+    }
+   ]
+  },
+  {
+   "mode": "development",
+   "step": "a spent join token",
+   "service": "agent",
+   "method": "AttestAgent",
+   "code": 7,
+   "details": "That join token was not issued by this server, or it has already been spent — a join token is single-use, and the one it attested is on /admin/spiffe/agents. Ask for a new one with CreateJoinToken.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "an attestation with no type",
+   "service": "agent",
+   "method": "AttestAgent",
+   "code": 3,
+   "details": "AttestAgent names its attestor in params.data.type, and this one is empty.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "an attestor nobody configured",
+   "service": "agent",
+   "method": "AttestAgent",
+   "code": 9,
+   "details": "could not find node attestor type \"aws_iid\": this realm accepts join_token (spiffe.nodeAttestors). An attestation type this server cannot verify is refused rather than taken on trust.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "an attestation with no CSR",
+   "service": "agent",
+   "method": "AttestAgent",
+   "code": 3,
+   "details": "AttestAgent needs a certificate signing request in params.params.csr: the agent keeps its own private key, so there is nothing to issue against without one.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "a challenge response nobody asked for",
+   "service": "agent",
+   "method": "AttestAgent",
+   "code": 3,
+   "details": "No attestation challenge is outstanding on this stream, so there is nothing a challenge_response can answer. Send the params step first.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "the agent count",
+   "service": "agent",
+   "method": "CountAgents",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "count": 1
+    }
+   ]
+  },
+  {
+   "mode": "development",
+   "step": "the agents",
+   "service": "agent",
+   "method": "ListAgents",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "agents": [
+      {
+       "agent_version": "",
+       "attestation_type": "join_token",
+       "banned": false,
+       "can_reattest": false,
+       "id": {
+        "path": "/spire/agent/join_token/<digest>",
+        "trust_domain": "model-wire.example.test"
+       },
+       "selectors": [
+        {
+         "type": "join_token",
+         "value": "<token-sha256>"
+        }
+       ],
+       "x509svid_expires_at": "<epoch>",
+       "x509svid_serial_number": "<digest>"
+      }
+     ],
+     "next_page_token": ""
+    }
+   ]
+  },
+  {
+   "mode": "development",
+   "step": "an agent nobody attested",
+   "service": "agent",
+   "method": "GetAgent",
+   "code": 5,
+   "details": "No agent has attested here as spiffe://model-wire.example.test/spire/agent/none/x.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "a renewal on the local socket",
+   "service": "agent",
+   "method": "RenewAgent",
+   "code": 7,
+   "details": "Agent.RenewAgent is allowed to: agent. This call came from an anonymous caller over the Unix socket (local). The rule is SPIRE's own — see GET /spiffe for the whole table.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "a renewal with no CSR",
+   "service": "agent",
+   "method": "RenewAgent",
+   "code": 7,
+   "details": "Agent.RenewAgent is allowed to: agent. This call came from an anonymous caller over the Unix socket (local). The rule is SPIRE's own — see GET /spiffe for the whole table.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "an X509-SVID minted",
+   "service": "svid",
+   "method": "MintX509SVID",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "svid": {
+      "cert_chain": [
+       [
+        {
+         "certificate": true,
+         "subject": "C=US\nO=SPIRE",
+         "issuer": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+         "san": "URI:spiffe://model-wire.example.test/d/minted",
+         "ca": false,
+         "keyUsage": {
+          "critical": true,
+          "usages": [
+           "digitalSignature"
+          ]
+         },
+         "extKeyUsage": [
+          "1.3.6.1.5.5.7.3.1",
+          "1.3.6.1.5.5.7.3.2"
+         ],
+         "keyType": "ec",
+         "lifetime": "<lifetime>"
+        }
+       ]
+      ],
+      "expires_at": "<expires_at>",
+      "hint": "",
+      "id": {
+       "path": "/d/minted",
+       "trust_domain": "model-wire.example.test"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "mode": "development",
+   "step": "an X509-SVID with no CSR",
+   "service": "svid",
+   "method": "MintX509SVID",
+   "code": 3,
+   "details": "MintX509SVID takes a certificate signing request; the SPIFFE ID is read from its URI subjectAltName.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "an X509-SVID with no SPIFFE ID",
+   "service": "svid",
+   "method": "MintX509SVID",
+   "code": 3,
+   "details": "That certificate signing request carries no SPIFFE ID in a URI subjectAltName, so there is nothing to mint. This is the one method here that reads the identity out of the CSR: there is no registration entry to take it from.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "a JWT-SVID minted",
+   "service": "svid",
+   "method": "MintJWTSVID",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "svid": {
+      "expires_at": "<expires_at>",
+      "hint": "",
+      "id": {
+       "path": "/d/jwt",
+       "trust_domain": "model-wire.example.test"
+      },
+      "issued_at": "<epoch>",
+      "token": {
+       "jwt": {
+        "header": {
+         "alg": "ES256",
+         "typ": "JWT",
+         "kid": "<kid>"
+        },
+        "claims": {
+         "sub": "spiffe://model-wire.example.test/d/jwt",
+         "aud": "urn:wire:mint",
+         "exp": "<epoch>",
+         "iat": "<epoch>",
+         "jti": "<jti>"
+        }
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "mode": "development",
+   "step": "a JWT-SVID with no id",
+   "service": "svid",
+   "method": "MintJWTSVID",
+   "code": 3,
+   "details": "MintJWTSVID needs the SPIFFE ID to mint for, as a trust_domain and a path.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "a JWT-SVID with no audience",
+   "service": "svid",
+   "method": "MintJWTSVID",
+   "code": 3,
+   "details": "MintJWTSVID requires at least one audience: a JWT-SVID is a bearer credential, and the audience is what stops one being replayed against a different service.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "a WIT-SVID minted",
+   "service": "svid",
+   "method": "MintWITSVID",
+   "code": 12,
+   "details": "This service issues no WIT-SVIDs; see GET /spiffe for why. X509-SVIDs and JWT-SVIDs are fully implemented.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "the federation relationships",
+   "service": "trustdomain",
+   "method": "ListFederationRelationships",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "federation_relationships": [],
+     "next_page_token": ""
+    }
+   ]
+  },
+  {
+   "mode": "development",
+   "step": "a bundle refreshed",
+   "service": "trustdomain",
+   "method": "RefreshBundle",
+   "code": 5,
+   "details": "No federation relationship with federated.example.test is configured here.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "the server's information",
+   "service": "debug",
+   "method": "GetInfo",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "agents_count": 1,
+     "entries_count": 4,
+     "federated_bundles_count": 0,
+     "svid_chain": [
+      {
+       "expires_at": "<expires_at>",
+       "id": {
+        "path": "/spire/server",
+        "trust_domain": "model-wire.example.test"
+       },
+       "subject": "CN=iya-sts SPIFFE CA (model-wire.example.test), O=iya-sts"
+      }
+     ],
+     "uptime": "<uptime>"
+    }
+   ]
+  },
+  {
+   "mode": "development",
+   "step": "no broker header",
+   "service": "broker",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "security header missing from request: every call to the SPIFFE Broker Endpoint must carry the metadata header \"broker.spiffe.io: true\" (SPIFFE Broker Endpoint section 3).",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "no client certificate",
+   "service": "broker",
+   "method": "FetchJWTSVID",
+   "code": 16,
+   "details": "The SPIFFE Broker Endpoint requires mutual TLS with an X509-SVID (SPIFFE Broker Endpoint section 5), and none was presented.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "a caller that is no broker",
+   "service": "broker",
+   "method": "FetchJWTSVID",
+   "code": 7,
+   "details": "spiffe://model-wire.example.test/d/stranger is not an authorized broker here (spiffe.brokers).",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "a JWT-SVID for a pid",
+   "service": "broker",
+   "method": "FetchJWTSVID",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "svids": [
+      {
+       "hint": "",
+       "spiffe_id": "spiffe://model-wire.example.test/d/no-selectors",
+       "svid": {
+        "jwt": {
+         "header": {
+          "alg": "ES256",
+          "typ": "JWT",
+          "kid": "<kid>"
+         },
+         "claims": {
+          "sub": "spiffe://model-wire.example.test/d/no-selectors",
+          "aud": "urn:wire:broker",
+          "exp": "<epoch>",
+          "iat": "<epoch>",
+          "jti": "<jti>"
+         }
+        }
+       }
+      },
+      {
+       "hint": "wire",
+       "spiffe_id": "spiffe://model-wire.example.test/d/workload",
+       "svid": {
+        "jwt": {
+         "header": {
+          "alg": "ES256",
+          "typ": "JWT",
+          "kid": "<kid>"
+         },
+         "claims": {
+          "sub": "spiffe://model-wire.example.test/d/workload",
+          "aud": "urn:wire:broker",
+          "exp": "<epoch>",
+          "iat": "<epoch>",
+          "jti": "<jti>"
+         }
+        }
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "mode": "development",
+   "step": "no audience for a pid",
+   "service": "broker",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "audience must be specified",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "a malformed spiffe_id for a pid",
+   "service": "broker",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "invalid requested SPIFFE ID: A SPIFFE ID begins with spiffe://; this one begins with not-an-id.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "no reference",
+   "service": "broker",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "workload reference must be provided",
+   "trailers": {
+    "content-type": "application/grpc+proto",
+    "grpc-status-details-bin": "...#workload reference must be provided.S.(type.googleapis.com/google.rpc.ErrorInfo.'..WORKLOAD_REFERENCE_INVALID..spiffe.io"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "a reference of an unknown type",
+   "service": "broker",
+   "method": "FetchJWTSVID",
+   "code": 7,
+   "details": "broker \"spiffe://model-wire.example.test/d/broker\" is not allowed to use reference type \"type.example/x\"",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "development",
+   "step": "an X509-SVID for a pid",
+   "service": "broker",
+   "method": "SubscribeToX509SVID",
+   "code": 0,
+   "details": "(first message)",
+   "trailers": {},
+   "messages": [
+    {
+     "crl": [],
+     "federated_bundles": {},
+     "svids": [
+      {
+       "bundle": [
+        {
+         "certificate": true,
+         "subject": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+         "issuer": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+         "san": "URI:spiffe://model-wire.example.test",
+         "ca": true,
+         "keyUsage": {
+          "critical": true,
+          "usages": [
+           "keyCertSign",
+           "cRLSign"
+          ]
+         },
+         "extKeyUsage": null,
+         "keyType": "ec",
+         "lifetime": "<lifetime>"
+        }
+       ],
+       "hint": "",
+       "spiffe_id": "spiffe://model-wire.example.test/d/no-selectors",
+       "x509_svid": [
+        {
+         "certificate": true,
+         "subject": "C=US\nO=SPIRE",
+         "issuer": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+         "san": "URI:spiffe://model-wire.example.test/d/no-selectors",
+         "ca": false,
+         "keyUsage": {
+          "critical": true,
+          "usages": [
+           "digitalSignature"
+          ]
+         },
+         "extKeyUsage": [
+          "1.3.6.1.5.5.7.3.1",
+          "1.3.6.1.5.5.7.3.2"
+         ],
+         "keyType": "ec",
+         "lifetime": "<lifetime>"
+        }
+       ],
+       "x509_svid_key": {
+        "privateKey": "ec"
+       }
+      },
+      {
+       "bundle": [
+        {
+         "certificate": true,
+         "subject": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+         "issuer": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+         "san": "URI:spiffe://model-wire.example.test",
+         "ca": true,
+         "keyUsage": {
+          "critical": true,
+          "usages": [
+           "keyCertSign",
+           "cRLSign"
+          ]
+         },
+         "extKeyUsage": null,
+         "keyType": "ec",
+         "lifetime": "<lifetime>"
+        }
+       ],
+       "hint": "wire",
+       "spiffe_id": "spiffe://model-wire.example.test/d/workload",
+       "x509_svid": [
+        {
+         "certificate": true,
+         "subject": "C=US\nO=SPIRE",
+         "issuer": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+         "san": "URI:spiffe://model-wire.example.test/d/workload",
+         "ca": false,
+         "keyUsage": {
+          "critical": true,
+          "usages": [
+           "digitalSignature"
+          ]
+         },
+         "extKeyUsage": [
+          "1.3.6.1.5.5.7.3.1",
+          "1.3.6.1.5.5.7.3.2"
+         ],
+         "keyType": "ec",
+         "lifetime": "<lifetime>"
+        }
+       ],
+       "x509_svid_key": {
+        "privateKey": "ec"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "mode": "development",
+   "step": "the X.509 bundles for a pid",
+   "service": "broker",
+   "method": "SubscribeToX509Bundles",
+   "code": 0,
+   "details": "(first message)",
+   "trailers": {},
+   "messages": [
+    {
+     "bundles": {
+      "spiffe://model-wire.example.test": [
+       {
+        "certificate": true,
+        "subject": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+        "issuer": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+        "san": "URI:spiffe://model-wire.example.test",
+        "ca": true,
+        "keyUsage": {
+         "critical": true,
+         "usages": [
+          "keyCertSign",
+          "cRLSign"
+         ]
+        },
+        "extKeyUsage": null,
+        "keyType": "ec",
+        "lifetime": "<lifetime>"
+       }
+      ]
+     },
+     "crl": []
+    }
+   ]
+  },
+  {
+   "mode": "development",
+   "step": "the JWT bundles for a pid",
+   "service": "broker",
+   "method": "SubscribeToJWTBundles",
+   "code": 0,
+   "details": "(first message)",
+   "trailers": {},
+   "messages": [
+    {
+     "bundles": {
+      "spiffe://model-wire.example.test": {
+       "json": {
+        "keys": [
+         {
+          "kty": "EC",
+          "x": "<x>",
+          "y": "<y>",
+          "crv": "P-256",
+          "use": "jwt-svid",
+          "kid": "<kid>"
+         }
+        ]
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "mode": "product",
+   "step": "the bundle endpoint",
+   "service": "http",
+   "method": "GET /spiffe/bundle",
+   "body": {
+    "keys": [
+     {
+      "crv": "P-256",
+      "kty": "EC",
+      "use": "x509-svid",
+      "x": "<x>",
+      "x5c": [
+       {
+        "certificate": true,
+        "subject": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+        "issuer": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+        "san": "URI:spiffe://model-wire.example.test",
+        "ca": true,
+        "keyUsage": {
+         "critical": true,
+         "usages": [
+          "keyCertSign",
+          "cRLSign"
+         ]
+        },
+        "extKeyUsage": null,
+        "keyType": "ec",
+        "lifetime": "<lifetime>"
+       }
+      ],
+      "y": "<y>"
+     },
+     {
+      "crv": "P-256",
+      "kid": "<kid>",
+      "kty": "EC",
+      "use": "jwt-svid",
+      "x": "<x>",
+      "y": "<y>"
+     }
+    ],
+    "spiffe_refresh_hint": 300,
+    "spiffe_sequence": 3
+   },
+   "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8"
+   },
+   "status": 200
+  },
+  {
+   "mode": "product",
+   "step": "an X509-SVID",
+   "service": "workload",
+   "method": "FetchX509SVID",
+   "code": 0,
+   "details": "(first message)",
+   "trailers": {},
+   "messages": [
+    {
+     "crl": [],
+     "federated_bundles": {},
+     "svids": [
+      {
+       "bundle": [
+        {
+         "certificate": true,
+         "subject": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+         "issuer": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+         "san": "URI:spiffe://model-wire.example.test",
+         "ca": true,
+         "keyUsage": {
+          "critical": true,
+          "usages": [
+           "keyCertSign",
+           "cRLSign"
+          ]
+         },
+         "extKeyUsage": null,
+         "keyType": "ec",
+         "lifetime": "<lifetime>"
+        }
+       ],
+       "hint": "wire",
+       "spiffe_id": "spiffe://model-wire.example.test/p/workload",
+       "x509_svid": [
+        {
+         "certificate": true,
+         "subject": "C=US\nO=SPIRE",
+         "issuer": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+         "san": "URI:spiffe://model-wire.example.test/p/workload",
+         "ca": false,
+         "keyUsage": {
+          "critical": true,
+          "usages": [
+           "digitalSignature"
+          ]
+         },
+         "extKeyUsage": [
+          "1.3.6.1.5.5.7.3.1",
+          "1.3.6.1.5.5.7.3.2"
+         ],
+         "keyType": "ec",
+         "lifetime": "<lifetime>"
+        }
+       ],
+       "x509_svid_key": {
+        "privateKey": "ec"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "mode": "product",
+   "step": "the X.509 bundles",
+   "service": "workload",
+   "method": "FetchX509Bundles",
+   "code": 0,
+   "details": "(first message)",
+   "trailers": {},
+   "messages": [
+    {
+     "bundles": {
+      "spiffe://model-wire.example.test": [
+       {
+        "certificate": true,
+        "subject": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+        "issuer": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+        "san": "URI:spiffe://model-wire.example.test",
+        "ca": true,
+        "keyUsage": {
+         "critical": true,
+         "usages": [
+          "keyCertSign",
+          "cRLSign"
+         ]
+        },
+        "extKeyUsage": null,
+        "keyType": "ec",
+        "lifetime": "<lifetime>"
+       }
+      ]
+     },
+     "crl": []
+    }
+   ]
+  },
+  {
+   "mode": "product",
+   "step": "a JWT-SVID",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "svids": [
+      {
+       "hint": "wire",
+       "spiffe_id": "spiffe://model-wire.example.test/p/workload",
+       "svid": {
+        "jwt": {
+         "header": {
+          "alg": "ES256",
+          "typ": "JWT",
+          "kid": "<kid>"
+         },
+         "claims": {
+          "sub": "spiffe://model-wire.example.test/p/workload",
+          "aud": [
+           "urn:wire:one",
+           "urn:wire:two"
+          ],
+          "exp": "<epoch>",
+          "iat": "<epoch>",
+          "jti": "<jti>"
+         }
+        }
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "mode": "product",
+   "step": "a JWT-SVID for a named id",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "svids": [
+      {
+       "hint": "wire",
+       "spiffe_id": "spiffe://model-wire.example.test/p/workload",
+       "svid": {
+        "jwt": {
+         "header": {
+          "alg": "ES256",
+          "typ": "JWT",
+          "kid": "<kid>"
+         },
+         "claims": {
+          "sub": "spiffe://model-wire.example.test/p/workload",
+          "aud": "urn:wire:one",
+          "exp": "<epoch>",
+          "iat": "<epoch>",
+          "jti": "<jti>"
+         }
+        }
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "mode": "product",
+   "step": "no audience",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "FetchJWTSVID requires at least one audience. A JWT-SVID is a bearer credential — whoever holds it can present it — so the audience is what stops one issued for service A being replayed against service B. Every conforming Workload API refuses this call without one.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "a blank audience",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "FetchJWTSVID requires at least one audience. A JWT-SVID is a bearer credential — whoever holds it can present it — so the audience is what stops one issued for service A being replayed against service B. Every conforming Workload API refuses this call without one.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "a malformed spiffe_id (0)",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "spiffe_id: A SPIFFE ID begins with spiffe://; this one begins with not-an-id.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "a malformed spiffe_id (1)",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "spiffe_id: A trust domain name is lower-case: UPPER.example is not a valid trust domain, and it is not another spelling of upper.example either — they are different identifiers.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "a malformed spiffe_id (2)",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "spiffe_id: A SPIFFE ID path has no empty segment, so no trailing slash and no //.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "a malformed spiffe_id (3)",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "spiffe_id: A SPIFFE ID path has no relative segment: . and .. are not permitted.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "a malformed spiffe_id (4)",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "spiffe_id: A SPIFFE ID carries no port; the trust domain is the whole authority.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "a malformed spiffe_id (5)",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "spiffe_id: A SPIFFE ID carries no userinfo; the trust domain is the whole authority.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "a malformed spiffe_id (6)",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "spiffe_id: A SPIFFE ID carries no query and no fragment.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "a malformed spiffe_id (7)",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "spiffe_id: A SPIFFE ID path is not percent-encoded; % is not a permitted character.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "a malformed spiffe_id (8)",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "spiffe_id: A SPIFFE ID path segment holds only letters, digits, dots, dashes and underscores; this one is x$y.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "a malformed spiffe_id (9)",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "spiffe_id: A SPIFFE ID names a trust domain between spiffe:// and the first /; this one names none.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "a malformed spiffe_id (10)",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "spiffe_id: A trust domain name holds only lower-case letters, digits, dots, dashes and underscores; this one is a!b.test.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "a malformed spiffe_id (11)",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "spiffe_id: A trust domain name may be at most 255 bytes; this one is 256.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "a malformed spiffe_id (12)",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "spiffe_id: A SPIFFE ID may be at most 2048 bytes; this one is 2064.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "an id the caller is not entitled to",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 7,
+   "details": "no identity issued: FetchJWTSVID — the caller is not entitled to spiffe://model-wire.example.test/nobody (no registration entry matches it). Register one on /admin/spiffe/entries or through the SPIRE Server API.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "no security header",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "Every call to the SPIFFE Workload API must carry the metadata header \"workload.spiffe.io: true\" (SPIFFE Workload Endpoint specification). This one did not. Every conforming Workload API will refuse it, which is why this service does too; spiffe.requireSecurityHeader turns the check off if you are deliberately testing something else.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "the JWT bundles",
+   "service": "workload",
+   "method": "FetchJWTBundles",
+   "code": 0,
+   "details": "(first message)",
+   "trailers": {},
+   "messages": [
+    {
+     "bundles": {
+      "spiffe://model-wire.example.test": {
+       "json": {
+        "keys": [
+         {
+          "kty": "EC",
+          "x": "<x>",
+          "y": "<y>",
+          "crv": "P-256",
+          "use": "jwt-svid",
+          "kid": "<kid>"
+         }
+        ]
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "mode": "product",
+   "step": "a JWT-SVID validated",
+   "service": "workload",
+   "method": "ValidateJWTSVID",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "claims": {
+      "fields": {
+       "aud": {
+        "kind": "stringValue",
+        "stringValue": "urn:wire:one"
+       },
+       "exp": "<exp>",
+       "iat": "<iat>",
+       "jti": "<jti>",
+       "sub": {
+        "kind": "stringValue",
+        "stringValue": "spiffe://model-wire.example.test/p/workload"
+       }
+      }
+     },
+     "spiffe_id": "spiffe://model-wire.example.test/p/workload"
+    }
+   ]
+  },
+  {
+   "mode": "product",
+   "step": "the wrong audience",
+   "service": "workload",
+   "method": "ValidateJWTSVID",
+   "code": 3,
+   "details": "jwt audience invalid. expected: urn:wire:other",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "no audience to validate",
+   "service": "workload",
+   "method": "ValidateJWTSVID",
+   "code": 3,
+   "details": "ValidateJWTSVID requires the audience the validating party goes by; a JWT-SVID is only meaningful against one.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "no token to validate",
+   "service": "workload",
+   "method": "ValidateJWTSVID",
+   "code": 3,
+   "details": "No JWT-SVID was given.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "a token that is not a JWT",
+   "service": "workload",
+   "method": "ValidateJWTSVID",
+   "code": 3,
+   "details": "That is not a JWT.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "a bad signature",
+   "service": "workload",
+   "method": "ValidateJWTSVID",
+   "code": 3,
+   "details": "\"ES256\" signatures must be \"64\" bytes, saw \"6\"",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "a WIT-SVID",
+   "service": "workload",
+   "method": "FetchWITSVID",
+   "code": 12,
+   "details": "This service does not issue WIT-SVIDs. The methods are on the service because they are in the SPIFFE project's own workloadapi.proto, and `wit-svid` is a `use` value the bundle specification names — but the Workload Identity Token's own format is not settled in a specification this service could implement against. Minting something JWS-shaped and calling it a WIT-SVID would be inventing a credential format, which is the one thing this service must not do: code written against the invention would work here and interoperate with nothing. X509-SVIDs and JWT-SVIDs are fully implemented.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "a caller nothing selects, invention off",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 7,
+   "details": "no identity issued: FetchJWTSVID — the caller is not entitled to any JWT-SVID (no registration entry matches it). Register one on /admin/spiffe/entries or through the SPIRE Server API.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "an X509-SVID for a caller nothing selects",
+   "service": "workload",
+   "method": "FetchX509SVID",
+   "code": 7,
+   "details": "no identity issued: FetchX509SVID — the caller is not entitled to any X509-SVID (no registration entry matches it). Register one on /admin/spiffe/entries or through the SPIRE Server API.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "a caller nothing selects, invention on",
+   "service": "workload",
+   "method": "FetchJWTSVID",
+   "code": 7,
+   "details": "no identity issued: FetchJWTSVID — the caller is not entitled to any JWT-SVID (no registration entry matches it). Register one on /admin/spiffe/entries or through the SPIRE Server API.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "the bundle",
+   "service": "bundle",
+   "method": "GetBundle",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "jwt_authorities": [
+      {
+       "expires_at": "<expires_at>",
+       "key_id": "<key_id>",
+       "public_key": {
+        "publicKey": "ec"
+       },
+       "tainted": false
+      }
+     ],
+     "refresh_hint": "300",
+     "sequence_number": "3",
+     "trust_domain": "model-wire.example.test",
+     "wit_authorities": [],
+     "x509_authorities": [
+      {
+       "asn1": [
+        {
+         "certificate": true,
+         "subject": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+         "issuer": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+         "san": "URI:spiffe://model-wire.example.test",
+         "ca": true,
+         "keyUsage": {
+          "critical": true,
+          "usages": [
+           "keyCertSign",
+           "cRLSign"
+          ]
+         },
+         "extKeyUsage": null,
+         "keyType": "ec",
+         "lifetime": "<lifetime>"
+        }
+       ],
+       "tainted": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "mode": "product",
+   "step": "the bundle count",
+   "service": "bundle",
+   "method": "CountBundles",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "count": 0
+    }
+   ]
+  },
+  {
+   "mode": "product",
+   "step": "a federated bundle created",
+   "service": "bundle",
+   "method": "BatchCreateFederatedBundle",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "results": [
+      {
+       "bundle": {
+        "jwt_authorities": [],
+        "refresh_hint": "300",
+        "sequence_number": "1",
+        "trust_domain": "federatedp.example.test",
+        "wit_authorities": [],
+        "x509_authorities": [
+         {
+          "asn1": [
+           {
+            "certificate": true,
+            "subject": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+            "issuer": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+            "san": "URI:spiffe://model-wire.example.test",
+            "ca": true,
+            "keyUsage": {
+             "critical": true,
+             "usages": [
+              "keyCertSign",
+              "cRLSign"
+             ]
+            },
+            "extKeyUsage": null,
+            "keyType": "ec",
+            "lifetime": "<lifetime>"
+           }
+          ],
+          "tainted": false
+         }
+        ]
+       },
+       "status": {
+        "code": 0,
+        "message": "OK"
+       }
+      },
+      {
+       "bundle": null,
+       "status": {
+        "code": 3,
+        "message": "model-wire.example.test is this realm's own trust domain. A trust domain does not federate with itself, and accepting this would give it two bundles that could disagree."
+       }
+      },
+      {
+       "bundle": null,
+       "status": {
+        "code": 3,
+        "message": "A trust domain name holds only lower-case letters, digits, dots, dashes and underscores; this one is not a domain."
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "mode": "product",
+   "step": "the federated bundles",
+   "service": "bundle",
+   "method": "ListFederatedBundles",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "bundles": [
+      {
+       "jwt_authorities": [],
+       "refresh_hint": "300",
+       "sequence_number": "1",
+       "trust_domain": "federatedp.example.test",
+       "wit_authorities": [],
+       "x509_authorities": [
+        {
+         "asn1": [
+          {
+           "certificate": true,
+           "subject": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+           "issuer": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+           "san": "URI:spiffe://model-wire.example.test",
+           "ca": true,
+           "keyUsage": {
+            "critical": true,
+            "usages": [
+             "keyCertSign",
+             "cRLSign"
+            ]
+           },
+           "extKeyUsage": null,
+           "keyType": "ec",
+           "lifetime": "<lifetime>"
+          }
+         ],
+         "tainted": false
+        }
+       ]
+      }
+     ],
+     "next_page_token": ""
+    }
+   ]
+  },
+  {
+   "mode": "product",
+   "step": "one federated bundle",
+   "service": "bundle",
+   "method": "GetFederatedBundle",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "jwt_authorities": [],
+     "refresh_hint": "300",
+     "sequence_number": "1",
+     "trust_domain": "federatedp.example.test",
+     "wit_authorities": [],
+     "x509_authorities": [
+      {
+       "asn1": [
+        {
+         "certificate": true,
+         "subject": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+         "issuer": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+         "san": "URI:spiffe://model-wire.example.test",
+         "ca": true,
+         "keyUsage": {
+          "critical": true,
+          "usages": [
+           "keyCertSign",
+           "cRLSign"
+          ]
+         },
+         "extKeyUsage": null,
+         "keyType": "ec",
+         "lifetime": "<lifetime>"
+        }
+       ],
+       "tainted": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "mode": "product",
+   "step": "a federated bundle nobody created",
+   "service": "bundle",
+   "method": "GetFederatedBundle",
+   "code": 5,
+   "details": "This service holds no bundle for the trust domain nobody.example.test.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "federated bundles deleted",
+   "service": "bundle",
+   "method": "BatchDeleteFederatedBundle",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "results": [
+      {
+       "status": {
+        "code": 0,
+        "message": "OK"
+       },
+       "trust_domain": "federatedp.example.test"
+      },
+      {
+       "status": {
+        "code": 5,
+        "message": "No bundle for nobody.example.test is held here."
+       },
+       "trust_domain": "nobody.example.test"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "mode": "product",
+   "step": "a WIT authority",
+   "service": "bundle",
+   "method": "PublishWITAuthority",
+   "code": 7,
+   "details": "Bundle.PublishWITAuthority is allowed to: downstream. This call came from an anonymous caller over the Unix socket (local). The rule is SPIRE's own — see GET /spiffe for the whole table.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "entries created",
+   "service": "entry",
+   "method": "BatchCreateEntry",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "results": [
+      {
+       "entry": {
+        "admin": false,
+        "created_at": "<created_at>",
+        "dns_names": [],
+        "downstream": false,
+        "expires_at": "<expires_at>",
+        "federates_with": [],
+        "hint": "made",
+        "id": "<digest>",
+        "jwt_svid_ttl": 0,
+        "parent_id": {
+         "path": "/spire/server",
+         "trust_domain": "model-wire.example.test"
+        },
+        "revision_number": "<revision_number>",
+        "selectors": [
+         {
+          "type": "unix",
+          "value": "<uid>"
+         }
+        ],
+        "spiffe_id": {
+         "path": "/p/created",
+         "trust_domain": "model-wire.example.test"
+        },
+        "store_svid": false,
+        "x509_svid_ttl": 600
+       },
+       "status": {
+        "code": 0,
+        "message": "OK"
+       }
+      },
+      {
+       "entry": null,
+       "status": {
+        "code": 3,
+        "message": "spiffeId: spiffe://model-wire.example.test/spire/reserved is under the reserved /spire path, which belongs to this server and the agents it attests. An entry there would be an identifier issued for two unrelated reasons."
+       }
+      },
+      {
+       "entry": null,
+       "status": {
+        "code": 3,
+        "message": "spiffeId: spiffe://other.example.test/x is in the trust domain other.example.test, and this service is the issuing authority for model-wire.example.test only. It cannot sign an SVID naming somebody else's trust domain — that is what federation is for, and a federated bundle is somebody ELSE's authority, published here."
+       }
+      },
+      {
+       "entry": null,
+       "status": {
+        "code": 3,
+        "message": "selectors: an entry with no selectors is issued to every caller. This realm is in product mode, where an entry must select something that identifies its workload: an attested selector (unix:, docker:, k8s:) for the Unix socket, or peer:<address> for TCP where spiffe.workloadTcpSourceAuthenticated declares the network authenticates source addresses."
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "mode": "product",
+   "step": "the entry count",
+   "service": "entry",
+   "method": "CountEntries",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "count": 5
+    }
+   ]
+  },
+  {
+   "mode": "product",
+   "step": "the entries, by SPIFFE ID",
+   "service": "entry",
+   "method": "ListEntries",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "entries": [
+      {
+       "admin": false,
+       "created_at": "<created_at>",
+       "dns_names": [],
+       "downstream": false,
+       "expires_at": "<expires_at>",
+       "federates_with": [],
+       "hint": "made",
+       "id": "<digest>",
+       "jwt_svid_ttl": 0,
+       "parent_id": {
+        "path": "/spire/server",
+        "trust_domain": "model-wire.example.test"
+       },
+       "revision_number": "<revision_number>",
+       "selectors": [
+        {
+         "type": "unix",
+         "value": "<uid>"
+        }
+       ],
+       "spiffe_id": {
+        "path": "/p/created",
+        "trust_domain": "model-wire.example.test"
+       },
+       "store_svid": false,
+       "x509_svid_ttl": 600
+      }
+     ],
+     "next_page_token": ""
+    }
+   ]
+  },
+  {
+   "mode": "product",
+   "step": "the entries, by selector",
+   "service": "entry",
+   "method": "ListEntries",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "entries": [
+      {
+       "admin": false,
+       "created_at": "<created_at>",
+       "dns_names": [],
+       "downstream": false,
+       "expires_at": "<expires_at>",
+       "federates_with": [],
+       "hint": "made",
+       "id": "<digest>",
+       "jwt_svid_ttl": 0,
+       "parent_id": {
+        "path": "/spire/server",
+        "trust_domain": "model-wire.example.test"
+       },
+       "revision_number": "<revision_number>",
+       "selectors": [
+        {
+         "type": "unix",
+         "value": "<uid>"
+        }
+       ],
+       "spiffe_id": {
+        "path": "/p/created",
+        "trust_domain": "model-wire.example.test"
+       },
+       "store_svid": false,
+       "x509_svid_ttl": 600
+      }
+     ],
+     "next_page_token": ""
+    }
+   ]
+  },
+  {
+   "mode": "product",
+   "step": "one entry",
+   "service": "entry",
+   "method": "GetEntry",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "admin": false,
+     "created_at": "<created_at>",
+     "dns_names": [],
+     "downstream": false,
+     "expires_at": "<expires_at>",
+     "federates_with": [],
+     "hint": "made",
+     "id": "<digest>",
+     "jwt_svid_ttl": 0,
+     "parent_id": {
+      "path": "/spire/server",
+      "trust_domain": "model-wire.example.test"
+     },
+     "revision_number": "<revision_number>",
+     "selectors": [
+      {
+       "type": "unix",
+       "value": "<uid>"
+      }
+     ],
+     "spiffe_id": {
+      "path": "/p/created",
+      "trust_domain": "model-wire.example.test"
+     },
+     "store_svid": false,
+     "x509_svid_ttl": 600
+    }
+   ]
+  },
+  {
+   "mode": "product",
+   "step": "an entry nobody created",
+   "service": "entry",
+   "method": "GetEntry",
+   "code": 5,
+   "details": "No registration entry has the id no-such-entry.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "an entry updated",
+   "service": "entry",
+   "method": "BatchUpdateEntry",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "results": [
+      {
+       "entry": {
+        "admin": false,
+        "created_at": "<created_at>",
+        "dns_names": [],
+        "downstream": false,
+        "expires_at": "<expires_at>",
+        "federates_with": [],
+        "hint": "changed",
+        "id": "<digest>",
+        "jwt_svid_ttl": 0,
+        "parent_id": {
+         "path": "/spire/server",
+         "trust_domain": "model-wire.example.test"
+        },
+        "revision_number": "<revision_number>",
+        "selectors": [
+         {
+          "type": "unix",
+          "value": "<uid>"
+         }
+        ],
+        "spiffe_id": {
+         "path": "/p/created",
+         "trust_domain": "model-wire.example.test"
+        },
+        "store_svid": false,
+        "x509_svid_ttl": 900
+       },
+       "status": {
+        "code": 0,
+        "message": "OK"
+       }
+      },
+      {
+       "entry": null,
+       "status": {
+        "code": 5,
+        "message": "No registration entry has the id no-such-entry."
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "mode": "product",
+   "step": "entries deleted",
+   "service": "entry",
+   "method": "BatchDeleteEntry",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "results": [
+      {
+       "id": "<digest>",
+       "status": {
+        "code": 0,
+        "message": "OK"
+       }
+      },
+      {
+       "id": "no-such-entry",
+       "status": {
+        "code": 5,
+        "message": "No registration entry has the id no-such-entry."
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "mode": "product",
+   "step": "a join token",
+   "service": "agent",
+   "method": "CreateJoinToken",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "expires_at": "<expires_at>",
+     "value": "<random>"
+    }
+   ]
+  },
+  {
+   "mode": "product",
+   "step": "a join token with no lifetime",
+   "service": "agent",
+   "method": "CreateJoinToken",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "expires_at": "<expires_at>",
+     "value": "<random>"
+    }
+   ]
+  },
+  {
+   "mode": "product",
+   "step": "an agent attested",
+   "service": "agent",
+   "method": "AttestAgent",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "result": {
+      "reattestable": false,
+      "svid": {
+       "cert_chain": [
+        [
+         {
+          "certificate": true,
+          "subject": "C=US\nO=SPIRE",
+          "issuer": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+          "san": "URI:spiffe://model-wire.example.test/spire/agent/join_token/<digest>",
+          "ca": false,
+          "keyUsage": {
+           "critical": true,
+           "usages": [
+            "digitalSignature"
+           ]
+          },
+          "extKeyUsage": [
+           "1.3.6.1.5.5.7.3.1",
+           "1.3.6.1.5.5.7.3.2"
+          ],
+          "keyType": "ec",
+          "lifetime": "<lifetime>"
+         }
+        ]
+       ],
+       "expires_at": "<expires_at>",
+       "hint": "",
+       "id": {
+        "path": "/spire/agent/join_token/<digest>",
+        "trust_domain": "model-wire.example.test"
+       }
+      }
+     },
+     "step": "result"
+    }
+   ]
+  },
+  {
+   "mode": "product",
+   "step": "a spent join token",
+   "service": "agent",
+   "method": "AttestAgent",
+   "code": 7,
+   "details": "That join token was not issued by this server, or it has already been spent — a join token is single-use, and the one it attested is on /admin/spiffe/agents. Ask for a new one with CreateJoinToken.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "an attestation with no type",
+   "service": "agent",
+   "method": "AttestAgent",
+   "code": 3,
+   "details": "AttestAgent names its attestor in params.data.type, and this one is empty.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "an attestor nobody configured",
+   "service": "agent",
+   "method": "AttestAgent",
+   "code": 9,
+   "details": "could not find node attestor type \"aws_iid\": this realm accepts join_token (spiffe.nodeAttestors). An attestation type this server cannot verify is refused rather than taken on trust.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "an attestation with no CSR",
+   "service": "agent",
+   "method": "AttestAgent",
+   "code": 3,
+   "details": "AttestAgent needs a certificate signing request in params.params.csr: the agent keeps its own private key, so there is nothing to issue against without one.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "a challenge response nobody asked for",
+   "service": "agent",
+   "method": "AttestAgent",
+   "code": 3,
+   "details": "No attestation challenge is outstanding on this stream, so there is nothing a challenge_response can answer. Send the params step first.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "the agent count",
+   "service": "agent",
+   "method": "CountAgents",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "count": 2
+    }
+   ]
+  },
+  {
+   "mode": "product",
+   "step": "the agents",
+   "service": "agent",
+   "method": "ListAgents",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "agents": [
+      {
+       "agent_version": "",
+       "attestation_type": "join_token",
+       "banned": false,
+       "can_reattest": false,
+       "id": {
+        "path": "/spire/agent/join_token/<digest>",
+        "trust_domain": "model-wire.example.test"
+       },
+       "selectors": [
+        {
+         "type": "join_token",
+         "value": "<token-sha256>"
+        }
+       ],
+       "x509svid_expires_at": "<epoch>",
+       "x509svid_serial_number": "<digest>"
+      },
+      {
+       "agent_version": "",
+       "attestation_type": "join_token",
+       "banned": false,
+       "can_reattest": false,
+       "id": {
+        "path": "/spire/agent/join_token/<digest>",
+        "trust_domain": "model-wire.example.test"
+       },
+       "selectors": [
+        {
+         "type": "join_token",
+         "value": "<token-sha256>"
+        }
+       ],
+       "x509svid_expires_at": "<epoch>",
+       "x509svid_serial_number": "<digest>"
+      }
+     ],
+     "next_page_token": ""
+    }
+   ]
+  },
+  {
+   "mode": "product",
+   "step": "an agent nobody attested",
+   "service": "agent",
+   "method": "GetAgent",
+   "code": 5,
+   "details": "No agent has attested here as spiffe://model-wire.example.test/spire/agent/none/x.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "a renewal on the local socket",
+   "service": "agent",
+   "method": "RenewAgent",
+   "code": 7,
+   "details": "Agent.RenewAgent is allowed to: agent. This call came from an anonymous caller over the Unix socket (local). The rule is SPIRE's own — see GET /spiffe for the whole table.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "a renewal with no CSR",
+   "service": "agent",
+   "method": "RenewAgent",
+   "code": 7,
+   "details": "Agent.RenewAgent is allowed to: agent. This call came from an anonymous caller over the Unix socket (local). The rule is SPIRE's own — see GET /spiffe for the whole table.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "an X509-SVID minted",
+   "service": "svid",
+   "method": "MintX509SVID",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "svid": {
+      "cert_chain": [
+       [
+        {
+         "certificate": true,
+         "subject": "C=US\nO=SPIRE",
+         "issuer": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+         "san": "URI:spiffe://model-wire.example.test/p/minted",
+         "ca": false,
+         "keyUsage": {
+          "critical": true,
+          "usages": [
+           "digitalSignature"
+          ]
+         },
+         "extKeyUsage": [
+          "1.3.6.1.5.5.7.3.1",
+          "1.3.6.1.5.5.7.3.2"
+         ],
+         "keyType": "ec",
+         "lifetime": "<lifetime>"
+        }
+       ]
+      ],
+      "expires_at": "<expires_at>",
+      "hint": "",
+      "id": {
+       "path": "/p/minted",
+       "trust_domain": "model-wire.example.test"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "mode": "product",
+   "step": "an X509-SVID with no CSR",
+   "service": "svid",
+   "method": "MintX509SVID",
+   "code": 3,
+   "details": "MintX509SVID takes a certificate signing request; the SPIFFE ID is read from its URI subjectAltName.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "an X509-SVID with no SPIFFE ID",
+   "service": "svid",
+   "method": "MintX509SVID",
+   "code": 3,
+   "details": "That certificate signing request carries no SPIFFE ID in a URI subjectAltName, so there is nothing to mint. This is the one method here that reads the identity out of the CSR: there is no registration entry to take it from.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "a JWT-SVID minted",
+   "service": "svid",
+   "method": "MintJWTSVID",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "svid": {
+      "expires_at": "<expires_at>",
+      "hint": "",
+      "id": {
+       "path": "/p/jwt",
+       "trust_domain": "model-wire.example.test"
+      },
+      "issued_at": "<epoch>",
+      "token": {
+       "jwt": {
+        "header": {
+         "alg": "ES256",
+         "typ": "JWT",
+         "kid": "<kid>"
+        },
+        "claims": {
+         "sub": "spiffe://model-wire.example.test/p/jwt",
+         "aud": "urn:wire:mint",
+         "exp": "<epoch>",
+         "iat": "<epoch>",
+         "jti": "<jti>"
+        }
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "mode": "product",
+   "step": "a JWT-SVID with no id",
+   "service": "svid",
+   "method": "MintJWTSVID",
+   "code": 3,
+   "details": "MintJWTSVID needs the SPIFFE ID to mint for, as a trust_domain and a path.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "a JWT-SVID with no audience",
+   "service": "svid",
+   "method": "MintJWTSVID",
+   "code": 3,
+   "details": "MintJWTSVID requires at least one audience: a JWT-SVID is a bearer credential, and the audience is what stops one being replayed against a different service.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "a WIT-SVID minted",
+   "service": "svid",
+   "method": "MintWITSVID",
+   "code": 12,
+   "details": "This service issues no WIT-SVIDs; see GET /spiffe for why. X509-SVIDs and JWT-SVIDs are fully implemented.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "the federation relationships",
+   "service": "trustdomain",
+   "method": "ListFederationRelationships",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "federation_relationships": [],
+     "next_page_token": ""
+    }
+   ]
+  },
+  {
+   "mode": "product",
+   "step": "a bundle refreshed",
+   "service": "trustdomain",
+   "method": "RefreshBundle",
+   "code": 5,
+   "details": "No federation relationship with federated.example.test is configured here.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "the server's information",
+   "service": "debug",
+   "method": "GetInfo",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "agents_count": 2,
+     "entries_count": 4,
+     "federated_bundles_count": 0,
+     "svid_chain": [
+      {
+       "expires_at": "<expires_at>",
+       "id": {
+        "path": "/spire/server",
+        "trust_domain": "model-wire.example.test"
+       },
+       "subject": "CN=iya-sts SPIFFE CA (model-wire.example.test), O=iya-sts"
+      }
+     ],
+     "uptime": "<uptime>"
+    }
+   ]
+  },
+  {
+   "mode": "product",
+   "step": "no broker header",
+   "service": "broker",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "security header missing from request: every call to the SPIFFE Broker Endpoint must carry the metadata header \"broker.spiffe.io: true\" (SPIFFE Broker Endpoint section 3).",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "no client certificate",
+   "service": "broker",
+   "method": "FetchJWTSVID",
+   "code": 16,
+   "details": "The SPIFFE Broker Endpoint requires mutual TLS with an X509-SVID (SPIFFE Broker Endpoint section 5), and none was presented.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "a caller that is no broker",
+   "service": "broker",
+   "method": "FetchJWTSVID",
+   "code": 7,
+   "details": "spiffe://model-wire.example.test/p/stranger is not an authorized broker here (spiffe.brokers).",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "a JWT-SVID for a pid",
+   "service": "broker",
+   "method": "FetchJWTSVID",
+   "code": 0,
+   "details": "OK",
+   "trailers": {},
+   "messages": [
+    {
+     "svids": [
+      {
+       "hint": "wire",
+       "spiffe_id": "spiffe://model-wire.example.test/p/workload",
+       "svid": {
+        "jwt": {
+         "header": {
+          "alg": "ES256",
+          "typ": "JWT",
+          "kid": "<kid>"
+         },
+         "claims": {
+          "sub": "spiffe://model-wire.example.test/p/workload",
+          "aud": "urn:wire:broker",
+          "exp": "<epoch>",
+          "iat": "<epoch>",
+          "jti": "<jti>"
+         }
+        }
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "mode": "product",
+   "step": "no audience for a pid",
+   "service": "broker",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "audience must be specified",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "a malformed spiffe_id for a pid",
+   "service": "broker",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "invalid requested SPIFFE ID: A SPIFFE ID begins with spiffe://; this one begins with not-an-id.",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "no reference",
+   "service": "broker",
+   "method": "FetchJWTSVID",
+   "code": 3,
+   "details": "workload reference must be provided",
+   "trailers": {
+    "content-type": "application/grpc+proto",
+    "grpc-status-details-bin": "...#workload reference must be provided.S.(type.googleapis.com/google.rpc.ErrorInfo.'..WORKLOAD_REFERENCE_INVALID..spiffe.io"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "a reference of an unknown type",
+   "service": "broker",
+   "method": "FetchJWTSVID",
+   "code": 7,
+   "details": "broker \"spiffe://model-wire.example.test/p/broker\" is not allowed to use reference type \"type.example/x\"",
+   "trailers": {
+    "content-type": "application/grpc+proto"
+   },
+   "messages": []
+  },
+  {
+   "mode": "product",
+   "step": "an X509-SVID for a pid",
+   "service": "broker",
+   "method": "SubscribeToX509SVID",
+   "code": 0,
+   "details": "(first message)",
+   "trailers": {},
+   "messages": [
+    {
+     "crl": [],
+     "federated_bundles": {},
+     "svids": [
+      {
+       "bundle": [
+        {
+         "certificate": true,
+         "subject": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+         "issuer": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+         "san": "URI:spiffe://model-wire.example.test",
+         "ca": true,
+         "keyUsage": {
+          "critical": true,
+          "usages": [
+           "keyCertSign",
+           "cRLSign"
+          ]
+         },
+         "extKeyUsage": null,
+         "keyType": "ec",
+         "lifetime": "<lifetime>"
+        }
+       ],
+       "hint": "wire",
+       "spiffe_id": "spiffe://model-wire.example.test/p/workload",
+       "x509_svid": [
+        {
+         "certificate": true,
+         "subject": "C=US\nO=SPIRE",
+         "issuer": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+         "san": "URI:spiffe://model-wire.example.test/p/workload",
+         "ca": false,
+         "keyUsage": {
+          "critical": true,
+          "usages": [
+           "digitalSignature"
+          ]
+         },
+         "extKeyUsage": [
+          "1.3.6.1.5.5.7.3.1",
+          "1.3.6.1.5.5.7.3.2"
+         ],
+         "keyType": "ec",
+         "lifetime": "<lifetime>"
+        }
+       ],
+       "x509_svid_key": {
+        "privateKey": "ec"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "mode": "product",
+   "step": "the X.509 bundles for a pid",
+   "service": "broker",
+   "method": "SubscribeToX509Bundles",
+   "code": 0,
+   "details": "(first message)",
+   "trailers": {},
+   "messages": [
+    {
+     "bundles": {
+      "spiffe://model-wire.example.test": [
+       {
+        "certificate": true,
+        "subject": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+        "issuer": "CN=iya-sts SPIFFE CA (model-wire.example.test)\nO=iya-sts",
+        "san": "URI:spiffe://model-wire.example.test",
+        "ca": true,
+        "keyUsage": {
+         "critical": true,
+         "usages": [
+          "keyCertSign",
+          "cRLSign"
+         ]
+        },
+        "extKeyUsage": null,
+        "keyType": "ec",
+        "lifetime": "<lifetime>"
+       }
+      ]
+     },
+     "crl": []
+    }
+   ]
+  },
+  {
+   "mode": "product",
+   "step": "the JWT bundles for a pid",
+   "service": "broker",
+   "method": "SubscribeToJWTBundles",
+   "code": 0,
+   "details": "(first message)",
+   "trailers": {},
+   "messages": [
+    {
+     "bundles": {
+      "spiffe://model-wire.example.test": {
+       "json": {
+        "keys": [
+         {
+          "kty": "EC",
+          "x": "<x>",
+          "y": "<y>",
+          "crv": "P-256",
+          "use": "jwt-svid",
+          "kid": "<kid>"
+         }
+        ]
+       }
+      }
+     }
+    }
+   ]
+  }
+ ],
+ "problems": [],
+ "gaps": []
+}

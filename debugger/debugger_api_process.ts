@@ -111,6 +111,8 @@ let listeningAt = 0;
 let lastExit = null;
 let lastError = '';
 let restartTimer = null;
+// When the scheduled restart is due, for a caller's Retry-After.
+let restartAt = 0;
 let startTimer = null;
 let allowedRanges = [];
 let allowListProblems = [];
@@ -124,6 +126,17 @@ let anchorReplacements = 0;
 const MEMORY_STATUS = 'sts-memory-status';
 let nextMemoryStatusId = 1;
 const memoryStatusWaiters = new Map();
+// THE CALLS WAITING FOR A CHILD THAT IS ON ITS WAY (#1717's first run, CI
+// run #510). A forwarded call that finds the child starting, being replaced
+// or about to be restarted waits here for it to report listening rather than
+// being answered at once: that state is this service's own doing and lasts
+// well under a second for a replacement, so answering it 502 was answering a
+// healthy debugger as broken. Each waiter is `{ settle }`, called with true
+// when the child reports listening and with false when it will not be coming
+// (given up, stopped); its own timeout is the caller's, not this module's.
+const listeningWaiters = new Set<{ settle: (ok: boolean) => void }>();
+// The states a child is ON ITS WAY from, which a caller may wait out.
+const TRANSIENT_STATES = ['starting', 'replacing', 'restarting'];
 
 // What `DebuggerApiProcess` needs from the rest of the service: the modules
 // this file used to reach for itself, passed in so that the composition root
@@ -508,6 +521,7 @@ class DebuggerApiProcess {
       clearTimeout(restartTimer);
       restartTimer = null;
     }
+    restartAt = 0;
     log.debug("Leaving DebuggerApiProcess.clearTimers().");
   }
 
@@ -526,6 +540,7 @@ class DebuggerApiProcess {
     const limit = Number(config.value('debugger.restartLimit'));
     if (consecutiveFailures >= limit) {
       state = 'given-up';
+      this.settleWaiters(false);
       log.error(errorCodes.tag('STS-DBG-0014') + 'debugger: the api process ' +
                 'failed ' + consecutiveFailures + ' time(s) in a row ' +
                 '(debugger.restartLimit=' + limit + ') and will not be ' +
@@ -539,8 +554,10 @@ class DebuggerApiProcess {
                            FIRST_BACKOFF_MS * Math.pow(2,
                              Math.max(0, consecutiveFailures - 1)));
     state = 'restarting';
+    restartAt = Date.now() + delay;
     restartTimer = setTimeout(function () {
       restartTimer = null;
+      restartAt = 0;
       self.fork();
     }, delay);
     restartTimer.unref();
@@ -626,6 +643,7 @@ class DebuggerApiProcess {
           clearTimeout(startTimer);
           startTimer = null;
         }
+        self.settleWaiters(true);
         log.info('debugger: the api process ' + spawned.pid + ' is listening ' +
                  'on ' + socketFile + (allowedRanges.length
                    ? ', allowed to dial ' + allowedRanges.length + ' range(s)'
@@ -646,6 +664,7 @@ class DebuggerApiProcess {
       lastExit = { code: code, signal: signal, at: Date.now(), upMs: upMs };
       if (!wanted) {
         state = 'stopped';
+        self.settleWaiters(false);
         return;
       }
       if (replacing) {
@@ -744,9 +763,11 @@ class DebuggerApiProcess {
   //
   // The caller decides when to ask (`debugger_server.ts` compares, at most
   // every few seconds, the anchor `tls_server.js` publishes now with the one
-  // the child was started with). A call in flight when the old child exits gets
-  // the 502 a dead child always gives; an anchor change is an operator's act
-  // and rare. Answers whether a replacement was started.
+  // the child was started with, and at once when the listener certificate is
+  // re-issued). A call that arrives during the hand-over WAITS for the
+  // successor (`whenListening()`); one already in flight when the old child
+  // exits gets the 502 a dead child always gives — an anchor change is an
+  // operator's act and rare. Answers whether a replacement was started.
   // ---------------------------------------------------------------------------
   /**
    * Replaces the running child so it trusts a new trust anchor, which node
@@ -896,6 +917,90 @@ class DebuggerApiProcess {
     });
   }
 
+  // Every waiter is told at once, and forgotten: see `listeningWaiters`.
+  /**
+   * Settles every call waiting for the child to report listening.
+   *
+   * @param ok - true when it is listening; false when it will not be
+   */
+  settleWaiters(ok: boolean) {
+    const { log } = this.deps;
+    log.debug("Entering DebuggerApiProcess.settleWaiters(). ok=" + ok +
+              " waiting=" + listeningWaiters.size);
+    const waiting = Array.from(listeningWaiters);
+    listeningWaiters.clear();
+    waiting.forEach(function (one) {
+      one.settle(ok);
+    });
+    log.debug("Leaving DebuggerApiProcess.settleWaiters().");
+  }
+
+  /**
+   * Says whether the child is ON ITS WAY — starting, being replaced for a
+   * new trust anchor, or due to be restarted — so a caller may wait for it.
+   *
+   * @returns true in one of those states
+   */
+  transient() {
+    const { log } = this.deps;
+    log.debug("Entering DebuggerApiProcess.transient().");
+    log.debug("Leaving DebuggerApiProcess.transient().");
+    return wanted && TRANSIENT_STATES.indexOf(state) >= 0;
+  }
+
+  /**
+   * Waits for the child to report listening, at most `timeoutMs`. A
+   * per-call bound, not a periodic timer (root `CLAUDE.md`, *Anything
+   * periodic is a scheduler job*).
+   *
+   * @param timeoutMs - the longest the caller will wait
+   * @returns a promise of true once it is ready; false when it is not on its
+   *   way (given up, stopped, not installed) or did not come in time
+   */
+  whenListening(timeoutMs: number): Promise<boolean> {
+    const { log } = this.deps;
+    log.debug("Entering DebuggerApiProcess.whenListening(). " + timeoutMs +
+              "ms");
+    if (this.ready()) {
+      log.debug("Leaving DebuggerApiProcess.whenListening(). Ready.");
+      return Promise.resolve(true);
+    }
+    if (!this.transient() || !(timeoutMs > 0)) {
+      log.debug("Leaving DebuggerApiProcess.whenListening(). Not on its " +
+                "way: " + state + ".");
+      return Promise.resolve(false);
+    }
+    log.debug("Leaving DebuggerApiProcess.whenListening(). Waiting.");
+    return new Promise<boolean>(function (resolve) {
+      const waiter = {
+        settle: function (ok: boolean) {
+          clearTimeout(timer);
+          listeningWaiters.delete(waiter);
+          resolve(ok);
+        }
+      };
+      const timer = setTimeout(function () {
+        waiter.settle(false);
+      }, timeoutMs);
+      timer.unref();
+      listeningWaiters.add(waiter);
+    });
+  }
+
+  /**
+   * How long a caller should wait before asking again while the child is on
+   * its way: the rest of a scheduled restart's backoff, otherwise one second.
+   *
+   * @returns whole seconds, at least one
+   */
+  retryAfterS() {
+    const { log } = this.deps;
+    log.debug("Entering DebuggerApiProcess.retryAfterS().");
+    const rest = restartAt ? restartAt - Date.now() : 0;
+    log.debug("Leaving DebuggerApiProcess.retryAfterS().");
+    return Math.max(1, Math.ceil(rest / 1000));
+  }
+
   /**
    * Says whether the api is running and has reported listening.
    *
@@ -988,6 +1093,9 @@ export = {
   start: slot.forward('start'),
   stop: slot.forward('stop'),
   ready: slot.forward('ready'),
+  transient: slot.forward('transient'),
+  whenListening: slot.forward('whenListening'),
+  retryAfterS: slot.forward('retryAfterS'),
   socketPath: slot.forward('socketPath'),
   status: slot.forward('status'),
   // Monitoring → Node Health (#329): the child's own memory.

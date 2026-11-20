@@ -119,6 +119,97 @@ function linksOf(program, model) {
 }
 
 /**
+ * An entry's closed lists: those it states, and the ids of each list of
+ * terms, in order.
+ *
+ * @param options - the entry's `@entry` value
+ * @returns the lists, by name
+ */
+function listsOf(options) {
+  log.debug("Entering listsOf().");
+  const lists = Object.assign({}, options.lists || {});
+  Object.keys(options.terms || {}).forEach(function (name) {
+    lists[name] = options.terms[name].map(function (term) {
+      return term.id;
+    });
+  });
+  log.debug("Leaving listsOf().");
+  return lists;
+}
+
+/**
+ * What the decorators cannot refuse alone: a list stated twice, a term or a
+ * mechanism or door id twice, and a pairing whose value is in none of the
+ * lists it names.
+ *
+ * @param objects - objects from `readDirectory()`
+ * @returns one sentence per problem, empty when there is none
+ */
+export function checkFacts(objects) {
+  log.debug("Entering checkFacts().");
+  const problems = [];
+  const unique = function (where, ids) {
+    ids.forEach(function (id, at) {
+      if (ids.indexOf(id) !== at) {
+        problems.push(where + ' names ' + id + ' twice');
+      }
+    });
+  };
+  objects.forEach(function (object) {
+    const stated = Object.keys(object.terms || {});
+    stated.forEach(function (name) {
+      const own = (object.lists || {})[name];
+      if (own === undefined) {
+        problems.push(object.id + ': terms ' + name + ' has no list');
+      }
+      unique(object.id + ': terms ' + name, own || []);
+    });
+    unique(object.id + ': mechanisms', (object.mechanisms || []).map(
+      function (row) {
+        return row.id;
+      }));
+    unique(object.id + ': doors', (object.doors || []).map(function (row) {
+      return row.id;
+    }));
+    const lists = object.lists || {};
+    Object.keys(object.pairings || {}).forEach(function (name) {
+      const pairing = object.pairings[name];
+      const among = function (names) {
+        return names.reduce(function (out, one) {
+          if (!lists[one]) {
+            problems.push(object.id + ': pairing ' + name + ' names ' + one +
+              ', which is no list');
+          }
+          return out.concat(lists[one] || []);
+        }, []);
+      };
+      const from = among(pairing.from);
+      const to = among(pairing.to);
+      Object.keys(pairing.values).forEach(function (key) {
+        if (from.indexOf(key) < 0) {
+          problems.push(object.id + ': pairing ' + name + ' pairs ' + key +
+            ', which is in none of ' + pairing.from.join(', '));
+        }
+        pairing.values[key].forEach(function (value) {
+          if (to.indexOf(value) < 0) {
+            problems.push(object.id + ': pairing ' + name + ' gives ' + key +
+              ' ' + value + ', which is in none of ' + pairing.to.join(', '));
+          }
+        });
+      });
+      from.forEach(function (key) {
+        if (!pairing.values[key]) {
+          problems.push(object.id + ': pairing ' + name + ' says nothing ' +
+            'of ' + key);
+        }
+      });
+    });
+  });
+  log.debug("Leaving checkFacts().");
+  return problems;
+}
+
+/**
  * The directory namespace of a compiled program. A model marked `onPerson`
  * is folded into the object of the same id as its person attributes.
  *
@@ -142,17 +233,19 @@ export function readDirectory(program) {
       personAttributes: [],
       relationships: []
     };
+    const lists = listsOf(options);
     attributes.forEach(function (attribute) {
       if (attribute.allowedFrom) {
         attribute.allowed = attribute.allowedFrom.reduce(function (out, name) {
-          return out.concat(options.lists[name]);
+          return out.concat(lists[name] || []);
         }, []);
       }
     });
     if (options.onPerson) {
       object.personAttributes = attributes;
     } else {
-      Object.assign(object, options, {
+      Object.assign(object, options, options.lists || options.terms ?
+        { lists: lists } : {}, {
         objectClasses: options.objectClasses || [],
         attributes: attributes,
         relationships: linksOf(program, model)
@@ -183,10 +276,13 @@ const ROW_KEYS = new Set(['from', 'what', 'editable', 'standard', 'identifier',
  * @param authored - whether the object is written by hand
  * @returns the row
  */
-function schemaRow(attribute, authored) {
+function schemaRow(attribute, authored, editing) {
   log.debug("Entering schemaRow().");
   const row = { name: attribute.name };
   Object.keys(attribute).forEach(function (key) {
+    if (editing && key === 'editable') {
+      return;
+    }
     if (ROW_KEYS.has(key)) {
       row[key] = attribute[key];
     } else if (key === 'declaredKind') {
@@ -198,6 +294,11 @@ function schemaRow(attribute, authored) {
       row.enum = attribute[key];
     }
   });
+  // An object whose every row answers "may a console change it?" says so on
+  // each, last, and a row that states nothing may not be changed.
+  if (editing) {
+    row.editable = attribute.editable || false;
+  }
   log.debug("Leaving schemaRow().");
   return row;
 }
@@ -219,7 +320,7 @@ export function schemaOf(object) {
   }
   const authored = object.authored === true;
   const toRow = function (attribute) {
-    return schemaRow(attribute, authored);
+    return schemaRow(attribute, authored, object.editing === true);
   };
   if (object.section !== undefined) {
     schema.section = object.section;
@@ -249,7 +350,7 @@ export function schemaOf(object) {
 // What an entry states as structure, kept out of its SCHEMA table because
 // that table's sentences are console prose and these are not.
 const FACT_KEYS = ['key', 'naming', 'derived', 'registration', 'declaration',
-  'observation', 'lists'];
+  'observation', 'lists', 'terms', 'pairings', 'mechanisms', 'doors'];
 
 /**
  * What each object states about itself beyond its rows.

@@ -1016,12 +1016,16 @@
     "text": "Detsamma för OIDC ID Token, vilket åsidosätter oauth2.idTokenTtlS. Separat från åtkomsttokens eftersom de två går till olika läsare: en ID Token konsumeras en gång vid inloggningen och en åtkomsttoken presenteras så länge den varar."
   },
   "applications.schema.attributes.oauthRefreshTokenTtlS.what": {
-    "en": "47a623e69e617b6d",
-    "text": "Detsamma för uppdateringstoken, vilket åsidosätter oauth2.refreshTokenTtlS. Ett värde lika med eller under oauthAccessTokenTtlS är tillåtet och är en beviljning som aldrig kan förnyas på ett meningsfullt sätt — /admin/token-lifetimes rapporterar den kombinationen för det tjänstevida paret, och den är lika nåbar här."
+    "en": "019d39de89f62aaf",
+    "text": "Detsamma för uppdateringstoken, vilket åsidosätter oauth2.refreshTokenTtlS. Ett värde lika med eller under oauthAccessTokenTtlS är tillåtet och är en beviljning som aldrig kan förnyas på ett meningsfullt sätt — /admin/token-lifetimes rapporterar den kombinationen för det tjänstevida paret, och den är lika nåbar här. För administratörskonsolen, användarportalen och rapportprogrammet är värdet som gäller det kortare av ett positivt tal här och sfärens inställning; de tre kan inte tömmas, 0 avvisas, och ett annat positivt tal som bekräftas vid sparningen är hur gränsen ändras (#825)."
   },
   "applications.schema.attributes.oauthRefreshIdleSeconds.what": {
-    "en": "37eeca0107443e0c",
-    "text": "ENDAST I RFC 9700-LÄGE: hur länge en uppdateringskedja får vara oanvänd innan den kapas, vilket åsidosätter oauth2.refreshIdleSeconds för den här klienten. Det mäts från senaste gången någon token i KEDJAN löstes in snarare än från utfärdandet, så en aktiv klient behåller sin beviljning och en tyst gör det inte. Utanför RFC 9700-läge läser ingenting det, vilket är en egenskap hos inställningen snarare än hos det här attributet."
+    "en": "2fd2c72086342ab0",
+    "text": "ENDAST I RFC 9700-LÄGE: hur länge en uppdateringskedja får vara oanvänd innan den kapas, vilket åsidosätter oauth2.refreshIdleSeconds för den här klienten. Det mäts från senaste gången någon token i KEDJAN löstes in snarare än från utfärdandet, så en aktiv klient behåller sin beviljning och en tyst gör det inte. Utanför RFC 9700-läge läser ingenting det, vilket är en egenskap hos inställningen snarare än hos det här attributet. För administratörskonsolen, användarportalen och rapportprogrammet är värdet som gäller det kortare av ett positivt tal här och sfärens inställning; de tre kan inte tömmas, 0 avvisas, och ett annat positivt tal som bekräftas vid sparningen är hur gränsen ändras (#825)."
+  },
+  "applications.schema.attributes.oauthMaxAuthAgeS.what": {
+    "en": "c79eafa0090748ab",
+    "text": "Hur länge sedan den här klienten autentiserades, i sekunder, innan en auktoriseringsbegäran måste autentisera igen, även när begäran inte skickar max_age, och den åsidosätter oauth2.maxAuthAgeS. 0 eller ett tomt värde lägger inte till någon egen gräns för det här attributet, och en vanlig klient följer då sfärens inställning, vars standard är 0. För administratörskonsolen, användarportalen och rapportprogrammet är värdet som gäller det kortare av ett positivt tal här och authn.sessionLifetimeS, så att höja sfären förlänger dem aldrig. De tre kan inte tömmas, 0 avvisas, och ett annat positivt tal som bekräftas vid sparningen är hur gränsen ändras (#825)."
   },
   "applications.schema.attributes.oauthClaimsAccessToken.what": {
     "en": "e284080e7c1bb9a6",
@@ -1227,6 +1231,10 @@
     "en": "00f7ceacfb9304e7",
     "text": "TRUE eller FALSE: får den här identitetsleverantören STARTA en inloggning till den här tjänsteleverantören — ett obegärt Response (saml-profiles-2.0-os avsnitt 4.1.5) från /saml2/unsolicited eller /launch/{app} — vilket åsidosätter saml2.idpInitiatedSso. TRUE endast för en tjänsteleverantör som förväntar sig ett: Response bär ingen InResponseTo, så den kan inte skilja ett som skickades till den från ett som trycktes in i dess webbläsare."
   },
+  "applications.schema.attributes.saml2SsoConsent.what": {
+    "en": "f7ca67bc2031ec08",
+    "text": "TRUE eller FALSE: tillfrågas en person, en gång, innan SAML 2.0 loggar in dem i det här programmet från en session de redan har, vilket åsidosätter saml2.ssoConsent (ASVS 5.0.0 7.6.2). FALSE passar ett program som alla i domänen förväntas använda; ett globalt samtycke på posten svarar för alla och behåller uppgiften om vem som godkände."
+  },
   "applications.schema.attributes.saml2SpInitiatedSso.what": {
     "en": "1cab33aadc246c17",
     "text": "TRUE eller FALSE: besvaras den här tjänsteleverantörens egen <samlp:AuthnRequest>, vilket åsidosätter saml2.spInitiatedSso. FALSE besvarar den med RequestDenied och lämnar inloggning initierad av identitetsleverantören som den enda vägen in."
@@ -1234,6 +1242,10 @@
   "applications.schema.attributes.saml11IdpInitiatedSso.what": {
     "en": "6081871f6aca6a2f",
     "text": "TRUE eller FALSE: får en SAML 1.1-inloggning till den här förlitande parten STARTA här — /saml11/sso/{rp} med ett TARGET och ingen shire, eller /launch/{app} — vilket åsidosätter saml11.idpInitiatedSso."
+  },
+  "applications.schema.attributes.saml11SsoConsent.what": {
+    "en": "0cb7bbf2fb684481",
+    "text": "TRUE eller FALSE: tillfrågas en person, en gång, innan SAML 1.1 loggar in dem i det här programmet från en session de redan har, vilket åsidosätter saml11.ssoConsent (ASVS 5.0.0 7.6.2). FALSE passar ett program som alla i domänen förväntas använda; ett globalt samtycke på posten svarar för alla och behåller uppgiften om vem som godkände."
   },
   "applications.schema.attributes.saml11SpInitiatedSso.what": {
     "en": "2376052fceb025ab",
@@ -1259,6 +1271,10 @@
     "en": "d199b15200f6e9de",
     "text": "TRUE eller FALSE: besvaras den här förlitande partens egen wsignin1.0, vilket åsidosätter wsfed.spInitiatedSso. En wsignin1.0 är en osignerad URL, så FALSE stänger dörren snarare än bevisar vem som öppnade den."
   },
+  "applications.schema.attributes.wsfedSsoConsent.what": {
+    "en": "9a3541460bedfa45",
+    "text": "TRUE eller FALSE: tillfrågas en person, en gång, innan WS-Federation loggar in dem i det här programmet från en session de redan har, vilket åsidosätter wsfed.ssoConsent (ASVS 5.0.0 7.6.2). FALSE passar ett program som alla i domänen förväntas använda; ett globalt samtycke på posten svarar för alla och behåller uppgiften om vem som godkände."
+  },
   "applications.schema.attributes.wsfedSignOutUri.what": {
     "en": "677e7babd8d711d3",
     "text": "DIT ETT wsignoutcleanup1.0-ANROP SKICKAS för den här applikationen — WS-Federations utloggnings-URI, och den som den här tabellen saknade fram till 2026-08-30. DEKLARERAT, inte observerat, vilket gör det till ett syskon till samlSingleLogoutService snarare än till wsfedReplyUrl: en cleanup skickas när en SESSION avslutas, och då är den begäran som skulle ha burit en wreply sedan länge över.\n\n**EN DEKLARERAD ADRESS GÅR FÖRE EN OBSERVERAD** (#747). `cleanupTargetsFor()` anropar varje värde här för en sfär som sessionen loggat in på, och den wreply som inloggningssvaret gick till, som `session.wsfedRealms` registrerar, bara där detta är tomt."
@@ -1270,6 +1286,58 @@
   "applications.schema.attributes.wstrustJwtScope.what": {
     "en": "86ac83dbe366a17b",
     "text": "DE OAUTH 2.0-SCOPES SOM EN WS-TRUST-JWT FÖR DEN HÄR APPLIKATIONEN BÄR, ett scope-värde vardera (#485). En JWT som WS-Trust utfärdar med den här applikationen som AppliesTo (wst:TokenType urn:ietf:params:oauth:token-type:jwt) bär dem i sitt `scope`-anspråk, blankstegsavgränsade (RFC 9068 avsnitt 2.2.3); om inga är satta bär den inget `scope`. En SAML-token påverkas inte.\n\n**VART OCH ETT BEDÖMS SOM EN OAUTH-ÅTKOMSTTOKENS**, med den här applikationen som klient: `oauthAllowedScope` deklarerar vad den får utfärdas (i produktläge; den här tjänstens skyddade scopes i alla lägen), och utfärdandepolicyns fråga per scope avgör. Ett värde som policyn tar bort UTELÄMNAS från token och granskas (STS-OAUTH-0579), utfärdas aldrig. En skrivning som anger ett odeklarerat scope godtas här, eftersom deklarationen kan ändras och utvecklingsläget beviljar odeklarerade scopes: deklarera det även i oauthAllowedScope. Ett värde som policyn kommer att ta bort VARNAS för där det sätts (#488): bredvid det här fältet, i svaret på Spara, och som `warnings` i svaren på skrivningar via /admin-api och i applikationens vy."
+  },
+  "applications.schema.attributes.wstrustEncryptRequest.what": {
+    "en": "1e6b032014941e7e",
+    "text": "TRUE eller FALSE: kräv att elementen som applikationens begärankarta namnger anländer krypterade, vilket åsidosätter wstrust.encryptRequest. På är en begäran vars AppliesTo är den här applikationen ett FailedCheck när kartan är tom, ett uttryck matchar ett element som anlände i klartext, eller ett uttryck inte matchar något som återställts från chiffertext. Vilken chiffertext som alls öppnas avgör wstrustAcceptEncryptedElements; AppliesTo läses från den öppnade begäran, och en chiffertext som inte går att öppna är ett FailedCheck i båda fallen."
+  },
+  "applications.schema.attributes.wstrustAcceptEncryptedElements.what": {
+    "en": "474d9ee5b02559e9",
+    "text": "TRUE eller FALSE: acceptera XML-kryptering var som helst i en begäran vars AppliesTo är den här applikationen, i ett huvud eller i kroppen, utan att en begärankarta namnger den, vilket åsidosätter wstrust.acceptEncryptedElements. Av godtas chiffertext bara där wstrustEncryptRequestElements namnger den – varje återställt element måste väljas av ett uttryck eller ligga inuti ett sådant – och chiffertext utan karta är ett InvalidRequest. I båda fallen måste en chiffertext gå att öppna med den här sfärens nycklar."
+  },
+  "applications.schema.attributes.wstrustEncryptRequestElements.what": {
+    "en": "d28549992db71c30",
+    "text": "ELEMENTEN I EN WS-TRUST-BEGÄRAN SOM MÅSTE ANLÄNDA KRYPTERADE, ett XPath 1.0-uttryck vardera. Delmängden är `/`, `//`, `*`, ett elementnamn, `prefix:local`, en union med `|`, och predikaten `local-name()`, `namespace-uri()` och `@attr`, sammanfogade med `and`. Varje uttryck måste välja minst ett element som återställts från chiffertext: ett xenc:EncryptedData av typen Element eller Content, eller ett EncryptedHeader från WS-Security 1.1. Ett uttryck utanför den delmängden är ett RequestFailed. Ett SOAP-huvud, SOAP-kroppen eller vilket element som helst kan namnges, för vilken tokentyp som helst."
+  },
+  "applications.schema.attributes.wstrustEncryptResponse.what": {
+    "en": "aafbbba9cd31d6c9",
+    "text": "SANT eller FALSKT: ersätt de element som den här applikationens svarskarta namnger med xenc:EncryptedData, och åsidosätt wstrust.encryptResponse. Svaret byggs i klartext och sedan ersätts de elementen, för vilken tokentyp som helst. Ett fel förblir i klartext. På, och krypteringen inte kan slutföras — ingen mottagare, en karta som inte matchar något, eller ett chiffer som mottagarens certifikat inte tar — är begäran ett fel i båda lägena."
+  },
+  "applications.schema.attributes.wstrustEncryptResponseElements.what": {
+    "en": "0ee151df13c4663c",
+    "text": "DE ELEMENT I ETT WS-TRUST-SVAR SOM KRYPTERAS, ett XPath 1.0-uttryck vardera, samma delmängd som wstrustEncryptRequestElements. Ett SOAP-huvud, SOAP-kroppen eller vilket element som helst får namnges. Ett uttryck som inte matchar något i det svar som byggdes är ett fel."
+  },
+  "applications.schema.attributes.wstrustEncryptionAlgorithm.what": {
+    "en": "2156045953402736",
+    "text": "Blockchiffret som används för den här applikationens WS-Trust-svar — aes256-gcm, aes128-gcm, aes256-cbc eller aes128-cbc — och åsidosätter wstrust.encryptionAlgorithm. Ett wst:EncryptionAlgorithm-element får namnge det här chiffret, med dess korta namn eller dess XML Encryption-URI, endast medan svarskryptering är på för den här applikationen."
+  },
+  "applications.schema.attributes.wstrustEncryptionCertificate.what": {
+    "en": "1ccaa06830162696",
+    "text": "DET CERTIFIKAT SOM ETT WS-TRUST-SVAR KRYPTERAS TILL, base64 DER eller PEM. När det är satt är det mottagaren, och ett certifikat som inte kan läsas är ett fel i stället för ett steg ned till nästa källa. När det inte är satt är mottagaren det certifikatelement som wstrustResponseRecipientXPath väljer, eller, när det uttrycket inte heller är satt, det första signeringscertifikatelement som begärans WS-Security-signatur namnger."
+  },
+  "applications.schema.attributes.wstrustKeyTransportAlgorithm.what": {
+    "en": "89c8e142baf59834",
+    "text": "Hur innehållsnyckeln omsluts för den här applikationens WS-Trust-svar — rsa-oaep-mgf1p, rsa-oaep (SHA-256, MGF1-SHA-256) eller rsa-1_5 — och åsidosätter wstrust.keyTransportAlgorithm. En mottagare vars certifikat är EC krypteras till med ECDH-ES vad det här än säger. Ett wst:EncryptWith-element får namnge den här algoritmen, med dess korta namn eller dess XML Encryption-URI, endast medan svarskryptering är på för den här applikationen."
+  },
+  "applications.schema.attributes.wstrustResponseRecipientXPath.what": {
+    "en": "0462e40dda10b491",
+    "text": "ETT XPATH-UTTRYCK SOM VÄLJER DET CERTIFIKATELEMENT SOM ETT WS-TRUST-SVAR KRYPTERAS TILL: ett ds:X509Certificate eller en BinarySecurityToken vars ValueType slutar på #X509v3. Samma delmängd som elementkartorna. När det är satt och inte väljer något, eller väljer ett element som inte är ett av de två, finns ingen mottagare och nästa källa prövas inte. Ett valt certifikatelement vars text inte är ett certifikat är ett fel för slutförd kryptering, och nästa källa prövas inte. När det inte är satt är mottagaren det första signeringscertifikatelement som begärans WS-Security-signatur namnger — den BinarySecurityToken som den signaturens referens pekar på, eller ett ds:X509Certificate i den signaturens KeyInfo. Ett tumavtryck, en Subject Key Identifier eller en utfärdare och ett serienummer är inte ett certifikatelement."
+  },
+  "applications.schema.attributes.wstrustDecryptionCertificate.what": {
+    "en": "b00a63a9bafc49ad",
+    "text": "CERTIFIKATET SOM EN WS-TRUST-BEGÄRAN FÖR DET HÄR PROGRAMMET KRYPTERAS TILL, PEM. Så länge det är satt dekrypteras en begäran för programmet med dess privata nyckel och inte sfärens, och en begäran för det som krypterats till sfärens nyckel är en FailedCheck. Offentligt: programsidan och GET /admin-api/applications lämnar ut det."
+  },
+  "applications.schema.attributes.wstrustDecryptionCertificateChain.what": {
+    "en": "618cc20d5635f6b9",
+    "text": "Certifikaten för den certifikatutfärdare som utfärdade wstrustDecryptionCertificate, PEM, den utfärdande CA:n först, för ett nyckelpar som utfärdats här. Tomt för ett uppladdat."
+  },
+  "applications.schema.attributes.wstrustDecryptionPrivateKey.what": {
+    "en": "96bb5bc025291cfa",
+    "text": "Den privata nyckeln till wstrustDecryptionCertificate, PEM. Förseglad där nycklar sparas varaktigt, undanhållen från varje sida, varje /admin-api-svar och varje katalogläsning, och loggas aldrig."
+  },
+  "applications.schema.attributes.wstrustDecryptionKeySource.what": {
+    "en": "d4894d5258b54b7d",
+    "text": "Var nyckelparet för dekryptering kom ifrån: issued (genererat här och certifierat av sfärens CA) eller uploaded (uppladdat)."
   },
   "applications.schema.attributes.krb5ServicePrincipalName.what": {
     "en": "2e8e5f607172bae7",
@@ -1931,6 +1999,10 @@
     "en": "eb941b100ed53ed4",
     "text": "När den ägande applikationen togs bort. Policyn behålls, inaktiverad, för granskning tills en administratör tar bort den."
   },
+  "xacmlPolicies.schema.attributes.xacmlPepRoute.what": {
+    "en": "4e1dc3fa8c6c3e3c",
+    "text": "Fjärr-PEP:en och vägen, som PEP:ens namn, ett snedstreck och vägens id, som denna policy GENERERADES för av vägens auktoriseringsval (enkel eller offentlig) i den omvända proxyns vägformulär eller av åtgärden generate-pep-route-policy (#1760). En sådan policy skrivs om när vägen sparas, byter namn med vägen och tas bort med den; den är aldrig roten. Den kan redigeras i policyredigeraren, och nästa sparande av vägens enkla eller offentliga val skriver den igen — välj en befintlig policy på vägen för att behålla en handskriven."
+  },
   "xacmlPeps.schema.objectClasses.xacmlPep.what": {
     "en": "2b063c0577e29981",
     "text": "En fjärransluten Policy Enforcement Point som har registrerat sig hos den här Policy Decision Point. RADEN ÄR EN REGISTRERING OCH INTE EN BEHÖRIGHET — en PEP som aldrig registrerar sig kan ändå hämta repositoriet och upprätthålla. Det en rad ger är en plats i konsolen och en adress för ändringsknuffen."
@@ -1972,8 +2044,8 @@
     "text": "När den här PEP:en först registrerade sig. Behålls vid en omregistrering, eftersom en komponent som startar om varje timme är ett faktum värt att se och en post vars ålder nollställdes vid varje omstart aldrig skulle kunna visa det."
   },
   "xacmlPeps.schema.attributes.xacmlPepLastSeen.what": {
-    "en": "eca573eaea822db7",
-    "text": "Det senaste pulsslaget eller den senaste hämtningen. xacml.pepStaleAfterS är hur lång tid sedan detta innan konsolen säger \"inaktuell\" — vilket medvetet inte ändrar något som den här tjänsten gör."
+    "en": "2e8561030cee3201",
+    "text": "Det senaste pulsslaget eller den senaste hämtningen när den här posten senast skrevs. Ett pulsslag som inte ändrar något beständigt skrivs inte här (#1882): det, räknarna, signalernas hälsa och den senaste knuffen sparas bredvid posten, och konsolen visar den senare av de två. xacml.pepStaleAfterS är hur lång tid sedan det senaste innan konsolen säger \"inaktuell\" — vilket medvetet inte ändrar något som den här tjänsten gör."
   },
   "xacmlPeps.schema.attributes.xacmlPepSyncToken.what": {
     "en": "44708a3c15a93cf6",
@@ -2003,24 +2075,64 @@
     "en": "b6078cbbbfdb9576",
     "text": "Vad den fjärranslutna PEP:en säger att den är. Fritext."
   },
+  "xacmlPeps.schema.attributes.xacmlPepHostname.what": {
+    "en": "127c84c46465d544",
+    "text": "Värdnamnet som fjärr-PEP:en rapporterar vid registrering och i sina livstecken (#1760): miljövariabeln HOSTNAME, annars kärnans, annars /etc/hostname — namnet containern är känd under i sitt nätverk, och det den härleder sin notifierings-URL från när certifikatet för dess HTTPS-lyssnare anger det. Begränsat till ett DNS-namn på högst 253 tecken, med gemener, aldrig en IP-adress; en registrering eller ett livstecken med något annat avvisas (STS-XACML-0261). Sfärens standardcertifikat för lyssnaren anger det bredvid PEP:ens registrerade namn och dess aviseringsvärd. En registrering utan det tar bort det, ett livstecken utan det behåller det. Saknas hos en äldre PEP, vars certifikatnamn är som förut."
+  },
   "xacmlPeps.schema.attributes.xacmlPepLastNotify.what": {
-    "en": "a4283bfe7916574e",
-    "text": "Vad som hände med den senaste knuffen — statusen, eller avvisningsmeningen. DET ENDA STÄLLE DÄR EN MISSLYCKAD KNUFF REGISTRERAS, av det skäl som ssf_streams.js anger om en avvisad push: den är per definition osynlig från den mottagande änden."
+    "en": "a512a007219ee216",
+    "text": "Vad som hände med den senaste knuffen — statusen, eller avvisningsmeningen — när den här posten senast skrevs. En knuffs utfall skrivs inte här (#1882): det senaste sparas i PEP:ens aktivitetspost bredvid posten (xacml_pep_registry.liveness), och konsolen visar det senare av de två. Den här tjänsten är den enda som registrerar en misslyckad knuff, av det skäl som ssf_streams.js anger om en avvisad push: den är per definition osynlig från den mottagande änden."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepProxy.what": {
+    "en": "1d8edee3c551082e",
+    "text": "Konfigurationen för omvänd proxy som fjärr-PEP:en hämtar från GET /xacml/pep/proxy (#1760): ett JSON-dokument — enabled, uppströmsprogrammets bas-URL, den publika bas-URL som en webbläsare når proxyn på, tidsgränserna och den ordnade vägtabellen, varje väg med sin sökväg, sina metoder, sina autentiseringsmekanismer, programmet i realmens register som den står framför samt XACML-resurs och åtgärd. Skrivs av åtgärden set-pep-proxy i konsolen och hanterings-API:et, valideras helt där och igen när hämtningen byggs, så ett värde som ldapmodify skrev och som inte validerar hämtas som configured: false. Behålls vid en registrering och ett hjärtslag; tas bort med raden."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepSignals.what": {
+    "en": "973f5fff5b5df8e8",
+    "text": "Hälsan hos den omvända proxyns CAEP/RISC-signalflöden så som fjärr-PEP:en senast rapporterade den i ett hjärtslag (#1760): ett JSON-dokument med enbart antal och åldrar — mottagarna, hur många som är friska och inaktuella, gränsen för inaktualitet och avfrågningsintervallet, åldern på den äldsta senaste lyckade avfrågningen, flest fel i rad, accepterade och avvisade SET, avslutade sessioner, samt held, max, TTL, evicted och expired för bibliotekets sessionslager — med när det kom, och, från en PEP som rapporterar dem, en rad per flöde: OIDC-klienten den betjänar och dess flödes-id, vart och ett begränsat till en teckenuppsättning, om den körs och är frisk, när den startade, senast avfrågades och senast lyckades (beräknat här från åldrarna PEP:en skickade och ankomsten, aldrig från en klocka hos PEP:en), och dess räknare. Alla andra medlemmar kastas och varje värde som inte är ett icke-negativt heltal blir 0, så ingen URL eller feltext lagras någonsin. Ett hjärtslag utan det behåller det, ett med null rensar det och en registrering tar bort det, eftersom en registrering är en ny process. Saknas hos en PEP som aldrig rapporterat det, vilket konsolen visar som inte rapporterat."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepSettings.what": {
+    "en": "2216d5f263d38ea5",
+    "text": "De inställningar som en administratör har angett för den här fjärr-PEP:en på dess konsolsida eller med åtgärden set-pep-settings i hanterings-API:t (#1760): ett JSON-dokument som bara innehåller de inställningar som angetts, var och en med sitt medlemsnamn (description, resource, notifyUrl, bias, pip, intervallen för hämtning, hjärtslag och väntan före nytt försök, tidsgränsen och kroppsgränsen, intervallet för HTTPS-omläsning, loggnivån, AuthZEN-brytaren, -identifieraren och -tidsgränsen för vidarebefordran, samt den omvända proxyns gränser för session, JWKS, uppströms, förlitande part och signalström), validerat i sin helhet vid skrivning och igen när PEP:en hämtar dem från GET /xacml/pep/settings. En inställning som inte finns i det är PEP:ens miljövariabel, eller dess standardvärde. Det minsta PEP:en behöver för att ansluta första gången finns aldrig här. Behålls vid registrering och hjärtslag; tas bort med raden."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepSettingsInUse.what": {
+    "en": "b081386a6d832967",
+    "text": "Vad fjärr-PEP:en senast rapporterade, i ett hjärtslag, att den har i kraft för varje hanterad inställning (#1760): ett JSON-dokument av formen { token, values: { setting: { value, source } } }, där source är service, environment eller default, med när det kom fram. Varje inställning som tabellen inte namnger, varje värde som inte är av inställningens typ och varje annan källa släpps. Ett hjärtslag utan det behåller det, ett med null rensar det, och en registrering släpper det. Saknas för en PEP som är äldre än inställningarna, vilket konsolen visar som inte rapporterad."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepListeners.what": {
+    "en": "b2e07443143061b7",
+    "text": "Lyssnarna som en administratör definierat för den här fjärr-PEP:en på dess sida i konsolen eller med hanterings-API:ets åtgärd set-pep-listener (#1760), utöver de fyra som dess miljö binder: en JSON-array, varje lyssnare med sitt id, sitt protokoll (http eller https), sitt syfte (api eller proxy), sin adress och port, och för en HTTPS-lyssnare de DNS-namn och IP-adresser dess certifikat bär, dess nyckelalgoritm och en förnyelseräknare. Valideras i sin helhet vid skrivning och igen när PEP:en hämtar dem från GET /xacml/pep/settings, som binder och kopplar bort dem medan den körs. PEP:en genererar varje HTTPS-lyssnares nyckel och ber POST /xacml/pep/listener-certificate om dess certifikat, så ingen privat nyckel finns någonsin här. Behålls vid en registrering och ett hjärtslag; tas bort med raden."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepListenersInUse.what": {
+    "en": "b2a987046bb7d733",
+    "text": "Vad fjärr-PEP:en senast rapporterade, i ett hjärtslag, om varje lyssnare den har (#1760), miljöns fyra och de definierade: ett JSON-dokument { listeners: [ { id, source, protocol, purpose, address, port, state, reason, renew, certificate } ] }, med när det kom. Tillståndet är ett av listening, waiting, failed och off och orsaken en ur en sluten mängd, aldrig operativsystemets text; certifikatet är subjekt, utfärdare, serienummer, subjectAltName, giltighet och fingeravtryck för det den serverar. Alla andra medlemmar kastas. Ett hjärtslag utan det behåller det, ett med null rensar det och en registrering tar bort det. Saknas hos en PEP som är äldre än lyssnarna, vilket konsolen visar som inte rapporterat."
   },
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "Vad PEP:en än sade om sig själv när den registrerade sig."
   },
-  "applications.schema.attributes.saml2SsoConsent.what": {
-    "en": "f7ca67bc2031ec08",
-    "text": "TRUE eller FALSE: tillfrågas en person, en gång, innan SAML 2.0 loggar in dem i det här programmet från en session de redan har, vilket åsidosätter saml2.ssoConsent (ASVS 5.0.0 7.6.2). FALSE passar ett program som alla i domänen förväntas använda; ett globalt samtycke på posten svarar för alla och behåller uppgiften om vem som godkände."
+  "xacmlPepClusters.schema.objectClasses.xacmlPepCluster.what": {
+    "en": "e64d0948328eb8a1",
+    "text": "Ett logiskt kluster av fjärr-PEP:er (policytillämpningspunkter) som delar en konfiguration (#1760): den omvända proxyn, de hanterade inställningarna och lyssnardefinitionerna hålls här en gång, och varje medlem hämtar dem som sina egna. En medlem skiljer sig bara i sitt namn och sina adresser. Medlemskapet hålls här, så en PEP kan listas innan den registrerar sig, och en PEP tillhör högst ett kluster."
   },
-  "applications.schema.attributes.saml11SsoConsent.what": {
-    "en": "0cb7bbf2fb684481",
-    "text": "TRUE eller FALSE: tillfrågas en person, en gång, innan SAML 1.1 loggar in dem i det här programmet från en session de redan har, vilket åsidosätter saml11.ssoConsent (ASVS 5.0.0 7.6.2). FALSE passar ett program som alla i domänen förväntas använda; ett globalt samtycke på posten svarar för alla och behåller uppgiften om vem som godkände."
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterProxy.what": {
+    "en": "e23df410bfb4fa42",
+    "text": "Den omvända proxyns konfiguration som varje medlem i klustret hämtar från GET /xacml/pep/proxy (#1760): samma dokument som PEP:ens eget (xacmlPepProxy), validerat av samma grammatik, med vägarnas genererade policyer namngivna pepc-<cluster>-<route> och märkta @<cluster>/<route>. Dess publicBaseUrl är klustrets logiska bas-URL, som en enkel eller offentlig vägs standardresurs byggs från och som skickas till en medlem utan egen publicBaseUrl. Skrivs av åtgärderna set-pep-cluster-proxy och set-pep-cluster-route."
   },
-  "applications.schema.attributes.wsfedSsoConsent.what": {
-    "en": "9a3541460bedfa45",
-    "text": "TRUE eller FALSE: tillfrågas en person, en gång, innan WS-Federation loggar in dem i det här programmet från en session de redan har, vilket åsidosätter wsfed.ssoConsent (ASVS 5.0.0 7.6.2). FALSE passar ett program som alla i domänen förväntas använda; ett globalt samtycke på posten svarar för alla och behåller uppgiften om vem som godkände."
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterSettings.what": {
+    "en": "dc3c4657f5e8a82b",
+    "text": "De hanterade inställningar som varje medlem i klustret hämtar från GET /xacml/pep/settings (#1760): samma dokument som PEP:ens eget (xacmlPepSettings), validerat av samma tabell, utom aviserings-URL:en, som är en medlems adress och sätts på medlemmen. Skrivs av åtgärden set-pep-cluster-settings."
+  },
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterListeners.what": {
+    "en": "27e48be388ccf3ed",
+    "text": "Lyssnarna som definierats för varje medlem i klustret (#1760): samma vektor som PEP:ens egen (xacmlPepListeners), validerad av samma grammatik. En medlem kan ersätta en lyssnares adress och port och lägga till DNS-namn i dess certifikat; varje medlems certifikat är dess eget, utfärdat för dess egen nyckel. Skrivs av åtgärderna set-pep-cluster-listener och remove-pep-cluster-listener."
+  },
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterMembers.what": {
+    "en": "189d31ecba7f4c6b",
+    "text": "Klustrets medlemmar (#1760): en JSON-vektor av { pep, publicBaseUrl, notifyUrl, listeners: { <listener id>: { address, port, names } } }, där varje pep är namnet på en registrerad PEP eller en som ännu inte registrerats, och resten medlemmens egna adresser. En PEP är medlem i högst ett kluster. Skrivs av åtgärderna create-pep-cluster, add-pep-cluster-member, set-pep-cluster-member och remove-pep-cluster-member."
+  },
+  "xacmlPepClusters.schema.attributes.description.what": {
+    "en": "769286563bacdcb4",
+    "text": "Vad en administratör sade om klustret när det skapades."
   }
 }

@@ -283,11 +283,14 @@ class EstPage {
       // EACH SECTION A SUB-TAB (2026-10-12): the EST tab of Protocols →
       // Cert issuance, one sub-tab per section, the ids in `admin.ts`'s
       // CERT_SUB_TAB_IDS.
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each sub-tab's
+      // content one frame, an `<h3>` block a frame inside it; the settings
+      // forms frame themselves.
       kit.subTabbedPanels(t.text('console.nav.est'), [
         { id: 'cert-est-ca', label: t.text('consoleEst.hIssuingCa'),
-          html: caBlock },
+          html: kit.frame(caBlock) },
         { id: 'cert-est-profiles', label: t.text('consoleEst.hProfiles'),
-          html: '<p class="sub">' +
+          html: kit.frame('<p class="sub">' +
       t.html('consoleEst.profilesNote', { profile: json.defaultProfile }) +
       '</p><table><thead><tr><th>' + t.html('consoleEst.profile') +
       '</th><th>' + t.html('consoleEst.thAllowed') + '</th><th>' +
@@ -295,12 +298,12 @@ class EstPage {
       t.html('consoleEst.thLabelledUrls') + '</th></tr></thead><tbody>' +
       profileRows +
       '</tbody></table>' +
-      '<h3>' + t.html('consoleEst.hNeverIssued') +
+      kit.frame('<h3>' + t.html('consoleEst.hNeverIssued') +
       '</h3><table><thead><tr><th>' + t.html('consoleEst.profile') +
       '</th><th>' + t.html('consoleEst.thWhy') +
-      '</th></tr></thead><tbody>' + refusedRows + '</tbody></table>' },
+      '</th></tr></thead><tbody>' + refusedRows + '</tbody></table>')) },
         { id: 'cert-est-credentials', label: t.text('consoleEst.hCredentials'),
-          html: '<p class="sub">' +
+          html: kit.frame('<p class="sub">' +
       t.html('consoleEst.noCredential') + ' ' +
       'Basic ' + this.yesNo(json.authentication.basic, t) +
       ', ' + t.html('consoleEst.clientCertificates') + ' ' +
@@ -309,19 +312,19 @@ class EstPage {
       '.</p><table><thead><tr><th>' + t.html('consoleEst.thCredential') +
       '</th><th>' + t.html('consoleEst.thWhat') + '</th><th>' +
       t.html('consoleEst.thManagedAt') +
-      '</th></tr></thead><tbody>' + credentialRows + '</tbody></table>' },
+      '</th></tr></thead><tbody>' + credentialRows + '</tbody></table>') },
         { id: 'cert-est-issue', label: t.text('consoleEst.hIssue'),
-          html: '<p class="sub">' + t.html('consoleEst.issueNote') + '</p>' +
-      issueForm },
+          html: kit.frame('<p class="sub">' + t.html('consoleEst.issueNote') +
+      '</p>' + issueForm) },
         { id: 'cert-est-host-names', label: t.text('consoleEst.hHostNames'),
-          html: '<p class="sub">' +
+          html: kit.frame('<p class="sub">' +
       t.html('consoleEst.hostNamesNote') + '</p><table><thead>' +
       '<tr><th>' + t.html('consoleEst.thEntry') + '</th><th>' +
       t.html('consoleEst.thHostNames') + '</th></tr></thead><tbody>' +
       hostRows +
-      '</tbody></table>' + hostForm },
+      '</tbody></table>' + hostForm) },
         { id: 'cert-est-certificates', label: t.text('consoleEst.hEnrolled'),
-          html: nav.head +
+          html: kit.frame(nav.head +
       '<table><thead><tr><th>' + t.html('consoleEst.serial') + '</th><th>' +
       t.html('consoleEst.thEntry') + '</th><th>' +
       t.html('consoleEst.profile') + '</th><th>' +
@@ -330,7 +333,7 @@ class EstPage {
       t.html('consoleEst.thExpires') + '</th><th>' +
       t.html('consoleEst.thRequestedBy') + '</th><th>' +
       '</th></tr></thead><tbody>' + certificateRows + '</tbody></table>' +
-      nav.foot },
+      nav.foot) },
         { id: 'cert-est-settings', label: t.text('consoleEst.hSettings'),
           html: SettingsForms.forms(json.settings,
                                     '/admin/cert-issuance#cert-est-settings',
@@ -359,14 +362,21 @@ class EstPage {
   static countTable(title, rows, t, tab?) {
     // `tab` (2026-10-12): the Monitoring page is drawn as tabs, one per
     // table of counts (`WebPages.protocolTabs()`).
-    return '<h3' + (tab ? ' data-tab="' + esc(tab) + '"' : '') + '>' +
-      esc(title) + '</h3><table><tbody>' + (rows.length
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): a tab's heading
+    // stays at the top level for the splitter and its table is the frame;
+    // an unmarked heading goes inside its frame.
+    const heading = '<h3' + (tab ? ' data-tab="' + esc(tab) + '"' : '') +
+      '>' + esc(title) + '</h3>';
+    const framed = function (html) {
+      return tab ? heading + kit.frame(html) : kit.frame(heading + html);
+    };
+    return framed('<table><tbody>' + (rows.length
       ? rows.map(function (row) {
         return '<tr><td><code>' + esc(row.name) + '</code></td><td ' +
                'class="num">' + row.count + '</td></tr>';
       }).join('')
       : '<tr><td class="sub">' + t.html('consoleEst.noneYet') +
-        '</td></tr>') + '</tbody></table>';
+        '</td></tr>') + '</tbody></table>');
   }
 
   // MONITORING → EST ENROLLMENTS' BODY (#446), one method so that it can be
@@ -428,7 +438,7 @@ class EstPage {
                       'statuses') +
       '<h2 id="list-page" data-tab="recent">' + t.html('consoleEst.recent') +
       '</h2>' +
-      nav.head +
+      kit.frame(nav.head +
       '<table><thead><tr><th>' + t.html('consoleEst.thAt') + '</th><th>' +
       t.html('consoleEst.thOperation') + '</th><th>' +
       t.html('consoleEst.thOutcome') + '</th><th>' +
@@ -439,7 +449,7 @@ class EstPage {
       t.html('consoleEst.thCode') +
       '</th><th>' + t.html('consoleEst.serial') + '</th></tr></thead><tbody>' +
       recentRows +
-      '</tbody></table>' + nav.foot +
+      '</tbody></table>' + nav.foot) +
       '<div data-metadata>' + kit.note(t.html('consoleEst.noReset')) +
       '</div>' +
       '<p class="links" data-metadata>' +

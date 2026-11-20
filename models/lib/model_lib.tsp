@@ -74,6 +74,68 @@ model EntryOptions {
 
   /** Closed lists a row's `allowedFrom` and the owning module both read. */
   lists?: Record<string[]>;
+
+  /**
+   * Closed lists whose values each carry what a page says about them. Each
+   * one's ids are a list as well, in this order, so `allowedFrom` may name
+   * it; a name may not be both a list and one of these.
+   */
+  terms?: Record<TermRow[]>;
+
+  /**
+   * For each value of some lists, the values of other lists it permits. The
+   * build refuses a value that is in none of the lists named.
+   */
+  pairings?: Record<Pairing>;
+
+  /**
+   * Every row says whether a console may change it: `set`, `multi`, or
+   * nothing, which is not editable. The table read carries `editable` last
+   * on each row.
+   */
+  editing?: boolean;
+
+  /** The sign-in mechanisms a policy decides on, in the order drawn. */
+  mechanisms?: MechanismRow[];
+
+  /** The password doors a policy may allow, in the order drawn. */
+  doors?: DoorRow[];
+}
+
+/** One value of a closed list, and what a page says about it. */
+model TermRow {
+  id: string;
+  label: string;
+  what?: string;
+}
+
+/** Which values of the `to` lists each value of the `from` lists permits. */
+model Pairing {
+  from: string[];
+  to: string[];
+  values: Record<string[]>;
+}
+
+/**
+ * A sign-in mechanism and its built-in setting as a first and as a second
+ * factor; `null` where it can never take that role, so it has no setting.
+ */
+model MechanismRow {
+  id: string;
+  label: string;
+  primary: boolean | null;
+  secondFactor: boolean | null;
+  email?: boolean;
+}
+
+/**
+ * A password door: the id a door passes to `credentials.verify()`, the key of
+ * its setting, and its name on a page.
+ */
+model DoorRow {
+  id: string;
+  key: string;
+  label: string;
 }
 
 /** The attribute an entry is filed under. */

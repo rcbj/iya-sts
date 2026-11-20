@@ -186,20 +186,22 @@ class ScimPage {
        ScimPage.authenticationSection(t, json.authentication, counters) :
        '') +
 
-      '<h2>' + t.html('consoleScim.operations') + '</h2>' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each h2 is
+      // one frame.
+      kit.frame('<h2>' + t.html('consoleScim.operations') + '</h2>' +
       kit.note(t.html('consoleScim.operationsNote')) +
       '<table><tr><th>' + t.html('consoleScim.colOperation') +
       '</th><th class="num">' + t.html('consoleScim.colCount') + '</th><th>' +
       t.html('consoleScim.colWhatItIs') + '</th></tr>' +
-      operationRows + '</table>' +
+      operationRows + '</table>') +
 
-      '<h2>' + t.html('consoleScim.byResourceType') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleScim.byResourceType') + '</h2>' +
       '<table><tr><th>' + t.html('consoleScim.colResourceType') +
       '</th><th class="num">' + t.html('consoleScim.colCount') + '</th></tr>' +
       typeRows +
-      '</table>' +
+      '</table>') +
 
-      '<h2>' + t.html('consoleScim.whatWentBack') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleScim.whatWentBack') + '</h2>' +
       kit.note(t.html('consoleScim.whatWentBackNote')) +
       '<div class="tiles tiles-top">' +
       '<div><table><tr><th>' + t.html('consoleScim.colStatus') +
@@ -208,53 +210,54 @@ class ScimPage {
       '</table></div>' +
       '<div><table><tr><th>scimType</th><th class="num">' +
       t.html('consoleScim.colCount') + '</th></tr>' +
-      scimTypeRows + '</table></div></div>' +
+      scimTypeRows + '</table></div></div>') +
 
       (json.identifiers
-        ? '<h2>' + t.html('consoleScim.idIsDn') + '</h2>' +
+        ? kit.frame('<h2>' + t.html('consoleScim.idIsDn') + '</h2>' +
           kit.note(kit.esc(json.identifiers.why)) +
           kit.note(t.html('consoleScim.forExample') + ' <code>' +
                     kit.esc(json.identifiers.example) +
-          '</code>')
+          '</code>'))
         : '') +
 
       (endpointRows
         // NOT "Endpoints": that heading is the realm's addresses, which
         // `respond()` draws at the top of every Protocols page. This table is
         // what each operation DOES, by method and path under `/scim/v2`.
-        ? '<h2>' + t.html('consoleScim.whatEachDoes') + '</h2><table><tr><th>' +
+        ? kit.frame('<h2>' + t.html('consoleScim.whatEachDoes') +
+          '</h2><table><tr><th>' +
           t.html('consoleScim.colMethod') + '</th>' +
           '<th>' + t.html('consoleScim.colPath') + '</th><th>' +
           t.html('consoleScim.colWhat') + '</th></tr>' + endpointRows +
-          '</table>'
+          '</table>')
         : '') +
 
       (json.doesNotDo.length
-        ? '<h2>' + t.html('consoleScim.doesNotDo') + '</h2><ul>' +
+        ? kit.frame('<h2>' + t.html('consoleScim.doesNotDo') + '</h2><ul>' +
           json.doesNotDo.map(function (text) {
             return ScimPage.bullet(kit.esc(text));
-          }).join('') + '</ul>'
+          }).join('') + '</ul>')
         : '') +
 
       (negativeRows
-        ? '<h2>' + t.html('consoleScim.makeFail') + '</h2>' +
+        ? kit.frame('<h2>' + t.html('consoleScim.makeFail') + '</h2>' +
           kit.note(t.html('consoleScim.makeFailNote')) +
           '<table><tr><th>' + t.html('consoleScim.colDoThis') + '</th><th>' +
           t.html('consoleScim.colGetThis') + '</th></tr>' + negativeRows +
-          '</table>'
+          '</table>')
         : '') +
 
-      '<h2>' + t.html('consoleScim.userMapping') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleScim.userMapping') + '</h2>' +
       kit.note(t.html('consoleScim.mapping1') + ' <a href="/admin/vc">' +
       t.html('consoleScim.linkCredentialClaims') + '</a> ' +
       t.html('consoleScim.and') +
       ' <a href="/admin/claims">' + t.html('consoleScim.linkCustomClaims') +
       '</a> ' +
       t.html('consoleScim.mapping2')) +
-      mappingTable(json.mapping.user) +
+      mappingTable(json.mapping.user)) +
 
-      '<h2>' + t.html('consoleScim.groupMapping') + '</h2>' +
-      mappingTable(json.mapping.group);
+      kit.frame('<h2>' + t.html('consoleScim.groupMapping') + '</h2>' +
+      mappingTable(json.mapping.group));
 
     // The server's settings, a tab of their own (2026-10-12).
     const serverSettings =
@@ -394,7 +397,10 @@ class ScimPage {
     }).join('');
     // The realm, the scopes, the algorithms and the HOBA path are the view's
     // and are escaped here, between the messages, as they always were.
-    const out = '<h2>' + t.html('consoleScim.authentication') + '</h2>' +
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16); its one caller
+    // is `body()`, which draws it as an h2 section like its others.
+    const out = kit.frame('<h2>' + t.html('consoleScim.authentication') +
+      '</h2>' +
       kit.note(t.html('consoleScim.authNote1') + ' <code>' +
       kit.esc(auth.realm) + '</code>' +
       t.html('consoleScim.authNote2',
@@ -417,8 +423,8 @@ class ScimPage {
       t.html('consoleScim.scopes4') + ' <a ' +
       'href="/admin/users">' + t.html('consoleScim.linkUsers') + '</a> ' +
       t.html('consoleScim.showsThem')) +
-      '<h3>' + t.html('consoleScim.accessPolicy') + '</h3><ul class="note">' +
-      policy + '</ul>';
+      kit.frame('<h3>' + t.html('consoleScim.accessPolicy') +
+      '</h3><ul class="note">' + policy + '</ul>'));
     return out;
   }
 
@@ -621,8 +627,11 @@ class ScimPage {
 
       tiles +
 
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): a tab's
+      // heading stays at the top level, where `protocolTabs()` cuts, and what
+      // follows it is the frame; Volume, Metadata's, is a metadata frame.
       '<h2 data-tab="calls">' + t.html('consoleScim.byCallType') + '</h2>' +
-      kit.note(t.html('consoleScim.byCallTypeNote')) +
+      kit.frame(kit.note(t.html('consoleScim.byCallTypeNote')) +
       '<table><tr><th>' + t.html('consoleScim.colOperation') +
       '</th><th class="num">' + t.html('consoleScim.colCalls') + '</th>' +
       '<th class="num">' + t.html('consoleScim.colOk') +
@@ -633,16 +642,16 @@ class ScimPage {
       t.html('consoleScim.colMaxMs') + '</th>' +
       '<th class="num">' + t.html('consoleScim.colBytesOut') + '</th><th>' +
       t.html('consoleScim.colWhatItIs') + '</th></tr>' +
-      operationRows + '</table>' +
+      operationRows + '</table>') +
 
       '<h2 data-tab="resources">' +
       t.html('consoleScim.byResourceType') + '</h2>' +
-      '<table><tr><th>' + t.html('consoleScim.colResourceType') +
+      kit.frame('<table><tr><th>' + t.html('consoleScim.colResourceType') +
       '</th><th class="num">' + t.html('consoleScim.colCalls') + '</th></tr>' +
-      resourceRows + '</table>' +
+      resourceRows + '</table>') +
 
       '<h2 data-tab="clients">' + t.html('consoleScim.clients') + '</h2>' +
-      kit.note(t.html('consoleScim.clientsNote')) +
+      kit.frame(kit.note(t.html('consoleScim.clientsNote')) +
       '<div class="tiles">' +
       kit.tile(c.authentication.distinct,
                t.text('consoleScim.tileDistinctClients')) +
@@ -670,19 +679,19 @@ class ScimPage {
       t.html('consoleScim.colLast') + '</th><th>' +
       t.html('consoleScim.colFirstSeen') +
       '</th><th>' + t.html('consoleScim.colLastSeen') + '</th></tr>' +
-      clientRows + '</table>' +
+      clientRows + '</table>') +
 
       '<h2 data-tab="schemes">' + t.html('consoleScim.byScheme') + '</h2>' +
-      kit.note(t.html('consoleScim.bySchemeNote')) +
+      kit.frame(kit.note(t.html('consoleScim.bySchemeNote')) +
       '<table><tr><th>' + t.html('consoleScim.colScheme') + '</th><th>' +
       t.html('consoleScim.colEnabled') + '</th><th class="num">' +
       t.html('consoleScim.colCalls') + '</th>' +
       '<th>' + t.html('consoleScim.colNotes') + '</th></tr>' + schemeRows +
-      '</table>' +
+      '</table>') +
 
       '<h2 data-tab="responses">' +
       t.html('consoleScim.whatWentBack') + '</h2>' +
-      kit.note(t.html('consoleScim.whatWentBackMonitorNote')) +
+      kit.frame(kit.note(t.html('consoleScim.whatWentBackMonitorNote')) +
       '<div class="tiles tiles-top">' +
       '<div><table><tr><th>' + t.html('consoleScim.colClass') +
       '</th><th class="num">' + t.html('consoleScim.colCount') + '</th></tr>' +
@@ -692,9 +701,9 @@ class ScimPage {
       statusRows + '</table></div>' +
       '<div><table><tr><th>scimType</th><th class="num">' +
       t.html('consoleScim.colCount') + '</th></tr>' +
-      scimTypeRows + '</table></div></div>' +
+      scimTypeRows + '</table></div></div>') +
 
-      '<h2>' + t.html('consoleScim.volume') + '</h2>' +
+      kit.metadataFrame('<h2>' + t.html('consoleScim.volume') + '</h2>' +
       '<div class="tiles">' +
       kit.tile(c.bytesOut, t.text('consoleScim.tileBytesReturned')) +
       kit.tile(c.latency.maxMs, t.text('consoleScim.tileSlowest')) +
@@ -708,12 +717,12 @@ class ScimPage {
       // The two instants are ISO strings or a dash, so they go in as
       // parameters.
       kit.note(t.html('consoleScim.volumeNote', {
-        first: kit.whenText(c.firstAt), last: kit.whenText(c.lastAt) })) +
+        first: kit.whenText(c.firstAt), last: kit.whenText(c.lastAt) }))) +
 
       '<h2 data-tab="recent">' +
       t.html('consoleScim.lastCalls', { n: c.recentCap }) +
       '</h2>' +
-      kit.note(t.html('consoleScim.recentNote1', { n: c.recentCap }) +
+      kit.frame(kit.note(t.html('consoleScim.recentNote1', { n: c.recentCap }) +
       ' <a href="/admin/audit">' + t.html('consoleScim.linkAuditLog') + '</a>' +
       t.html('consoleScim.recentNote2')) +
       '<table><tr><th>' + t.html('consoleScim.colWhen') + '</th><th>' +
@@ -724,11 +733,11 @@ class ScimPage {
       t.html('consoleScim.colWho') +
       '</th><th class="num">ms</th><th ' +
       'class="num">' + t.html('consoleScim.colBytes') + '</th></tr>' +
-      recentRows + '</table>' +
+      recentRows + '</table>') +
 
       (json.store
         ? '<h2 data-tab="written">' +
-          t.html('consoleScim.whatItWrote') + '</h2>' +
+          t.html('consoleScim.whatItWrote') + '</h2>' + kit.frame(
           // The opening sentence carries no HTML entity, deliberately: the
           // console derives an h2 tooltip from it through plainTextOf() and
           // esc(), which leaves an entity showing as its own source text.
@@ -745,7 +754,7 @@ class ScimPage {
           kit.tile(json.store.groupCount, t.text('consoleScim.tileGroups')) +
           kit.tile(json.store.entryCount + ' / ' + json.store.maxEntries,
                     t.text('consoleScim.tileEntries')) +
-          '</div>'
+          '</div>')
         : '') +
 
       // Metadata's, after whichever tab is last (2026-10-12).

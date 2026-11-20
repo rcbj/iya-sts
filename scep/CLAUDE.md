@@ -23,6 +23,23 @@ What a certificate may be issued for, what goes in it and where it is kept are
 and `common/CLAUDE.md` and that file's header argue it. The counters are
 `common/enrollment_monitor.ts`'s.
 
+## WHAT SCEP TAKES AND ANSWERS IS THE MODEL'S (#1579, 2026-11-10)
+
+SCEP's messages are CMS, and the DER work stays in `scep_cms.ts`.
+**`models/enrollment/scep.tsp` states the facts the code reads**: the query
+every request carries (`operation` one of the operations, `message` bounded
+and possibly empty; a parameter the model does not name is dropped), the
+four operations with their methods (only one that answers POST may be POSTed;
+the 405's `Allow` is the operation's methods) and media types, the
+capabilities GetCACaps announces in order (`CAPABILITIES`), and the values
+of a CertRep's signed attributes: `MESSAGE_TYPES`, `PKI_STATUS` and
+`FAIL_INFO` are the model's registers, read by `scep_cms.ts`. What stays in
+code: everything about a message's bytes, the algorithms (`DIGESTS`,
+`SIGNATURES`, `CIPHERS`, the OIDs), which failInfo a core refusal maps to,
+the transaction store and every decision the core makes.
+`tests/enrollment_model_wire.js` holds every operation's answer, each
+refusal and the CertRep values to the record taken before the switch.
+
 ## The decisions
 
 ### The authorization is the challenge, and the principal is the entry it names
@@ -272,7 +289,7 @@ certificate in product is an EST one.
   `scep-submit` passes `-R` (its CA file) to GetCACaps and GetCACert, and its
   PKIOperation request to `cm_submit_h_init()` with none (0.79.21, `scep.c`),
   so libcurl uses the system trust store and fails error 60. Over the plain
-  listener it enrolls, renews and rekeys; `docs/scep.md` tells an operator.
+  listener it enrolls, renews and rekeys; `docs/v1.1.0/scep.md` tells an operator.
 * **jscep needed nothing else.** It negotiates AES and SHA-512 from GetCACaps,
   renews with a PKCSReq signed by the old certificate, polls, gets
   certificates and CRLs, refuses to ask GetNextCACert because it is not
@@ -287,7 +304,8 @@ challenge spent. The RA key is in the realm's PKI row (global tier), so any
 cell can open the envelope far enough to read whose the message is:
 
 * **a signer this realm issued** (RenewalReq, GetCert, GetCRL, a PKCSReq in
-  the historical renewal form) — the person its `urn:sts:person:` names goes
+  the historical renewal form) — the person its `urn:sts:person:` (or a
+  service account's `urn:sts:sa:`, #1827) names goes
   to their home cell;
 * **a PKCSReq's challenge password** — the challenge id names its entry
   (`common/cert_enrollment.ts`'s `credentialId()`, stamped with the minting

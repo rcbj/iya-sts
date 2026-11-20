@@ -60,10 +60,17 @@ const { log, subjectForName } = require('../common/helpers');
 // library that can join no cycle.
 const mode = require('../common/mode');
 const realms = require('../common/realms');
+// THE TABLES ARE THE MODEL'S (#1579): `models/ssf/ssf.tsp`, through a leaf
+// that requires nothing of this service but `common/model_tables`.
+const SsfModel = require('./ssf_model');
 
 // ---------------------------------------------------------------------------
 // THE ELEVEN FORMATS: RFC 9493 SECTION 3.2'S EIGHT AND SSF 1.0 SECTION 3.5'S
-// THREE, EACH WITH ITS CLOSED MEMBER SET.
+// THREE, EACH WITH ITS CLOSED MEMBER SET — `models/ssf/ssf.tsp` since #1579,
+// where each format is a model whose properties are its members and
+// `@subjectMember` names the check each value is held to. This file keeps
+// the checks themselves and their sentences (`CHECKS`, below), which are
+// what a refusal says, and builds its rows from the generated table.
 //
 // `members` is what the format defines; `required` is which of them a
 // conforming subject MUST carry. For every row those two lists are the same,
@@ -80,97 +87,35 @@ const realms = require('../common/realms');
 // to the wrong name (#144). No old spelling is accepted on input: a receiver
 // that learnt it here learnt something no other transmitter will take.
 //
-// `section` is where the row is defined, for the page. `what` is prose for the
-// console and for `GET /ssf`; `example` is a real value of that format, used
-// by the page and by the test as a fixture. None of the three is read by the
-// validator.
+// `cite` is where the row is defined. `what` is prose for the console and for
+// `GET /ssf`; `example` is a real value of that format, used by the page and
+// by the test as a fixture. None of the three is read by the validator.
 // ---------------------------------------------------------------------------
 /**
  * The Subject Identifier formats of RFC 9493 and SSF 1.0 section 3.5, each with
- * its closed member set, the members it requires, the section that defines it,
- * a description and an example.
+ * its closed member set, the members it requires, the check each member's
+ * value is held to, the document that defines it, a description and an
+ * example — the model's rows.
  */
-const FORMATS = [
-  { format: 'account',
-    members: ['uri'], required: ['uri'],
-    what: 'An "acct" URI (RFC 7565) — a user at a service, the identifier ' +
-          'form WebFinger uses.',
-    example: { format: 'account', uri: 'acct:alice@example.com' } },
-  { format: 'email',
-    members: ['email'], required: ['email'],
-    what: 'An email address (RFC 5322 addr-spec). The commonest subject in ' +
-          'practice and the one most likely to be RECYCLED, which is why ' +
-          'RISC has an event type about exactly that.',
-    example: { format: 'email', email: 'alice@example.com' } },
-  { format: 'iss_sub',
-    members: ['iss', 'sub'], required: ['iss', 'sub'],
-    what: 'The pair an OpenID Connect ID Token is identified by — the ' +
-          'issuer and the subject within it. The only format that is ' +
-          'globally unique by construction rather than by convention.',
-    example: { format: 'iss_sub',
-               iss: 'https://issuer.example.com/', sub: '145234573' } },
-  { format: 'opaque',
-    members: ['id'], required: ['id'],
-    what: 'A string meaningful only to the parties that agreed it. It says ' +
-          'nothing about what kind of thing it names, which is the point: a ' +
-          'transmitter that must not leak an email address uses this.',
-    example: { format: 'opaque', id: '11112222333344445555' } },
-  { format: 'phone_number',
-    members: ['phone_number'], required: ['phone_number'],
-    what: 'A phone number in E.164 form. RFC 9493 requires the leading "+" ' +
-          'and digits only — no spaces, no punctuation, no extension.',
-    example: { format: 'phone_number', phone_number: '+12065550100' } },
-  { format: 'did',
-    members: ['url'], required: ['url'],
-    what: 'A DID or a DID URL (W3C DID Core). The identifier resolves to a ' +
-          'document rather than to a record at the transmitter.',
-    example: { format: 'did',
-               url: 'did:example:123456789abcdefghi' } },
-  { format: 'uri',
-    members: ['uri'], required: ['uri'],
-    what: 'Any URI. The escape hatch, and the one to reach for LAST — a ' +
-          'receiver can do nothing with it but compare it, so a format that ' +
-          'says what kind of thing this is is always better.',
-    example: { format: 'uri', uri: 'https://example.com/users/1234' } },
-  { format: 'aliases',
-    members: ['identifiers'], required: ['identifiers'],
-    what: 'SEVERAL identifiers for ONE subject, so a receiver that knows the ' +
-          'person by any of them can act. It MUST NOT contain another ' +
-          'aliases identifier — RFC 9493 section 3.2.8 forbids the nesting ' +
-          'outright, and this service refuses it rather than flattening, ' +
-          'because flattening would accept a document a conforming receiver ' +
-          'rejects.',
-    example: { format: 'aliases', identifiers: [
-      { format: 'email', email: 'alice@example.com' },
-      { format: 'phone_number', phone_number: '+12065550100' }
-    ] } },
-  // SSF 1.0 SECTION 3.5's THREE. Not in RFC 9493's registry; SSF defines them
-  // for its own events, and CAEP's session and token events use the first two.
-  { format: 'jwt_id', section: 'SSF 1.0 section 3.5.1',
-    members: ['iss', 'jti'], required: ['iss', 'jti'],
-    what: 'One JWT, by the issuer that minted it and its "jti" — which is ' +
-          'how an event can be about a single token rather than about a ' +
-          'person or a session.',
-    example: { format: 'jwt_id', iss: 'https://idp.example.com/123456789/',
-               jti: 'B70BA622-9515-4353-A866-823539EECBC8' } },
-  { format: 'saml_assertion_id', section: 'SSF 1.0 section 3.5.2',
-    members: ['issuer', 'assertion_id'], required: ['issuer', 'assertion_id'],
-    what: 'One SAML 2.0 assertion, by its Issuer and its ID. The SAML ' +
-          'counterpart of jwt_id; note the members are "issuer" and ' +
-          '"assertion_id", not "iss" and "id".',
-    example: { format: 'saml_assertion_id',
-               issuer: 'https://idp.example.com/123456789/',
-               assertion_id: '_8e8dc5f69a98cc4c1ff3427e5ce34606fd672f91e6' } },
-  { format: 'ip-addresses', section: 'SSF 1.0 section 3.5.3',
-    members: ['ip-addresses'], required: ['ip-addresses'],
-    what: 'The IP addresses the transmitter observed the subject at, as a ' +
-          'non-empty array of RFC 4001 strings. The only format whose value ' +
-          'is an array, and the only one whose name and member are the same ' +
-          'hyphenated word.',
-    example: { format: 'ip-addresses',
-               'ip-addresses': ['10.29.37.75',
-                                '2001:0db8:0000:0000:0000:8a2e:0370:7334'] } }
-];
+const FORMATS = SsfModel.formats().map(function (row) {
+  return { format: row.format,
+    members: row.members.map(function (member) {
+      return member.name;
+    }),
+    required: row.members.filter(function (member) {
+      return member.required;
+    }).map(function (member) {
+      return member.name;
+    }),
+    checks: row.members.reduce(function (out, member) {
+      out[member.name] = member.check;
+      return out;
+    }, {}),
+    person: row.person,
+    what: row.what,
+    example: JSON.parse(row.example),
+    cite: row.cite };
+});
 
 const FORMAT_BY_NAME = {};
 FORMATS.forEach(function (row) {
@@ -211,21 +156,17 @@ const FORMAT_NAMES = FORMATS.map(function (row) {
 /**
  * The `format` value of a complex subject (SSF 1.0 section 3.3).
  */
-const COMPLEX_FORMAT = 'complex';
+const COMPLEX = SsfModel.complex();
+
+const COMPLEX_FORMAT = COMPLEX.format;
 
 /**
  * The seven complex-subject member names SSF 1.0 defines, each with a
  * description. Other names are allowed.
  */
-const COMPLEX_MEMBERS = [
-  { name: 'user', what: 'The person.' },
-  { name: 'device', what: 'The device they are on.' },
-  { name: 'session', what: 'The one session, of possibly many.' },
-  { name: 'application', what: 'The application the event concerns.' },
-  { name: 'tenant', what: 'The tenant, in a multi-tenant service.' },
-  { name: 'org_unit', what: 'The organizational unit within the tenant.' },
-  { name: 'group', what: 'The group membership the event is about.' }
-];
+const COMPLEX_MEMBERS = COMPLEX.members.map(function (row) {
+  return { name: row.name, what: row.what };
+});
 
 /**
  * The names in `COMPLEX_MEMBERS`, in order.
@@ -242,7 +183,7 @@ const COMPLEX_MEMBER_NAMES = COMPLEX_MEMBERS.map(function (row) {
  * The shape an additional complex-subject member name must have: a letter
  * followed by up to 63 letters, digits, `_`, `.` or `-`.
  */
-const MEMBER_NAME = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/;
+const MEMBER_NAME = new RegExp(COMPLEX.memberName);
 
 /**
  * Says whether a value is a complex subject, that is an object whose `format`
@@ -284,55 +225,56 @@ const DID_URL = /^did:[a-z0-9]+:[^\s]+$/;
 const ABSOLUTE_URI = /^[A-Za-z][A-Za-z0-9+.-]*:[^\s]+$/;
 
 // ---------------------------------------------------------------------------
-// The per-format value checks, one function each, keyed by MEMBER name rather
-// than by format so that `uri` on the `uri` format and `uri` on the `account`
-// format can differ — which they do, and the difference is the whole of what
-// tells those two formats apart on the wire.
+// The value checks, one function each, keyed by the CHECK the model names for
+// a member (`@subjectMember`) rather than by the member's name, so that `uri`
+// on the `uri` format and `uri` on the `account` format can differ — which
+// they do, and the difference is the whole of what tells those two formats
+// apart on the wire. Each function's sentence is what a refusal says.
 // ---------------------------------------------------------------------------
-const VALUE_CHECKS = {
-  'account.uri': function (value) {
-    log.debug("Entering account.uri().");
-    log.debug("Leaving account.uri().");
+const CHECKS = {
+  acct: function (value) {
+    log.debug("Entering acct().");
+    log.debug("Leaving acct().");
     return ACCT_URI.test(value)
       ? null
       : 'is not an "acct" URI (RFC 7565) — it has to begin "acct:" and ' +
         'carry a user and a host, as in acct:alice@example.com';
   },
-  'email.email': function (value) {
-    log.debug("Entering email.email().");
-    log.debug("Leaving email.email().");
+  addrSpec: function (value) {
+    log.debug("Entering addrSpec().");
+    log.debug("Leaving addrSpec().");
     return ADDR_SPEC.test(value)
       ? null
       : 'is not an email address — one "@", something either side of it, ' +
         'and no whitespace';
   },
-  'phone_number.phone_number': function (value) {
-    log.debug("Entering phone_number.phone_number().");
-    log.debug("Leaving phone_number.phone_number().");
+  e164: function (value) {
+    log.debug("Entering e164().");
+    log.debug("Leaving e164().");
     return E164.test(value)
       ? null
       : 'is not an E.164 number — RFC 9493 section 3.2.5 wants a leading ' +
         '"+" and digits only, so "+1 206 555 0100" is a DIFFERENT subject ' +
         'from "+12065550100" to any receiver that compares them';
   },
-  'did.url': function (value) {
-    log.debug("Entering did.url().");
-    log.debug("Leaving did.url().");
+  did: function (value) {
+    log.debug("Entering did().");
+    log.debug("Leaving did().");
     return DID_URL.test(value)
       ? null
       : 'is not a DID or a DID URL — it has to begin "did:", name a method ' +
         'and carry a method-specific identifier';
   },
-  'uri.uri': function (value) {
-    log.debug("Entering uri.uri().");
-    log.debug("Leaving uri.uri().");
+  absoluteUri: function (value) {
+    log.debug("Entering absoluteUri().");
+    log.debug("Leaving absoluteUri().");
     return ABSOLUTE_URI.test(value)
       ? null
       : 'is not an absolute URI — it needs a scheme and a colon';
   },
-  'iss_sub.iss': function (value) {
-    log.debug("Entering iss_sub.iss().");
-    log.debug("Leaving iss_sub.iss().");
+  issuer: function (value) {
+    log.debug("Entering issuer().");
+    log.debug("Leaving issuer().");
     return ABSOLUTE_URI.test(value)
       ? null
       : 'is not an absolute URI. An issuer identifier is one, always — it ' +
@@ -340,9 +282,9 @@ const VALUE_CHECKS = {
   },
   // RFC 7519's `iss` is a StringOrURI, so a jwt_id's issuer is checked the way
   // an iss_sub's is: it is the same member of the same kind of token.
-  'jwt_id.iss': function (value) {
-    log.debug("Entering jwt_id.iss().");
-    log.debug("Leaving jwt_id.iss().");
+  jwtIssuer: function (value) {
+    log.debug("Entering jwtIssuer().");
+    log.debug("Leaving jwtIssuer().");
     return ABSOLUTE_URI.test(value)
       ? null
       : 'is not an absolute URI — it is the "iss" claim of the JWT being ' +
@@ -373,12 +315,12 @@ function checkIpAddresses(value) {
     : null;
 }
 
-// Every member that has no check of its own is a non-empty string and nothing
+// Every member whose check is `string` is a non-empty string and nothing
 // more. `opaque.id` is the case that matters: it is opaque BY DEFINITION, so a
 // check on its shape would be this service inventing a rule.
-function checkMemberValue(format, member, value) {
-  log.debug('Entering checkMemberValue(). ' + format + '.' + member);
-  if (format === 'ip-addresses') {
+function checkMemberValue(check, value) {
+  log.debug('Entering checkMemberValue(). ' + check);
+  if (check === 'ipAddresses') {
     log.debug('Leaving checkMemberValue(). An array of addresses.');
     return checkIpAddresses(value);
   }
@@ -386,12 +328,12 @@ function checkMemberValue(format, member, value) {
     log.debug('Leaving checkMemberValue(). Not a non-empty string.');
     return 'must be a non-empty string';
   }
-  const check = VALUE_CHECKS[format + '.' + member];
-  if (!check) {
+  const one = CHECKS[check];
+  if (!one) {
     log.debug('Leaving checkMemberValue(). No shape rule for this member.');
     return null;
   }
-  const problem = check(value);
+  const problem = one(value);
   log.debug('Leaving checkMemberValue(). ' + (problem ? 'refused' : 'ok'));
   return problem;
 }
@@ -473,19 +415,22 @@ function validateSubject(subject, path, options) {
     }
   });
 
-  if (format === 'aliases') {
-    validateAliases(subject, where, errors, settings);
-  } else {
-    row.members.forEach(function (name) {
-      if (!Object.prototype.hasOwnProperty.call(subject, name)) {
-        return;
-      }
-      const problem = checkMemberValue(format, name, subject[name]);
-      if (problem) {
-        errors.push(where + '.' + name + ' ' + problem + '.');
-      }
-    });
-  }
+  row.members.forEach(function (name) {
+    // A LIST OF IDENTIFIERS (`aliases`) is the one check that recurses, the
+    // one with a nesting ban, and the one that says what is wrong with a
+    // list that is not there as well as the missing member above.
+    if (row.checks[name] === 'identifiers') {
+      validateAliases(subject, where, errors, settings);
+      return;
+    }
+    if (!Object.prototype.hasOwnProperty.call(subject, name)) {
+      return;
+    }
+    const problem = checkMemberValue(row.checks[name], subject[name]);
+    if (problem) {
+      errors.push(where + '.' + name + ' ' + problem + '.');
+    }
+  });
 
   log.debug('Leaving validateSubject(). ' + errors.length + ' problem(s).');
   return { ok: errors.length === 0, format: format, errors: errors };
@@ -510,7 +455,7 @@ function validateAliases(subject, where, errors, options) {
   }
   list.forEach(function (one, index) {
     const inner = where + '.identifiers[' + index + ']';
-    if (one && typeof one === 'object' && one.format === 'aliases') {
+    if (one && typeof one === 'object' && one.format === subject.format) {
       errors.push(inner + ' is itself an "aliases" identifier. RFC 9493 ' +
           'section 3.2.8 forbids the nesting outright. This service refuses ' +
           'it rather than flattening it, because flattening would accept a ' +
@@ -783,8 +728,11 @@ function describeSubject(subject) {
  * The formats a person can be named in: every format but `jwt_id`,
  * `saml_assertion_id` and `ip-addresses`.
  */
-const PERSON_FORMATS = ['account', 'email', 'iss_sub', 'opaque',
-                        'phone_number', 'did', 'uri', 'aliases'];
+const PERSON_FORMATS = FORMATS.filter(function (row) {
+  return row.person;
+}).map(function (row) {
+  return row.format;
+});
 
 function realOrInventedMail(name, facts) {
   log.debug("Entering realOrInventedMail().");

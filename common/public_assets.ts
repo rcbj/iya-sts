@@ -19,6 +19,8 @@
 //                                           (`faviconFile()`).
 //   GET /web/card.css                       `WebCardCss`: the card, and the
 //                                           chooser's rules
+//   GET /web/footer.css                     `WebFooter`: the page footer
+//                                           every shell draws
 //   GET /web/locales/catalogs.json          the catalog index: which
 //                                           catalogs exist, their status, and
 //                                           what the chooser offers
@@ -67,6 +69,7 @@ import errorCodes = require('./error_codes');
 import version = require('./version');
 import ShellDocument = require('./shell_document');
 import WebCardCss = require('./web_card_css');
+import WebFooter = require('./web_footer');
 
 type Json = any;
 
@@ -83,6 +86,7 @@ interface PublicAssetsDeps {
 const PATHS = {
   favicon: '/favicon.ico',
   card: '/web/card.css',
+  footer: '/web/footer.css',
   index: '/web/locales/catalogs.json',
   catalog: '/web/locales/:ns/:file'
 };
@@ -234,7 +238,7 @@ class PublicAssets {
   }
 
   /**
-   * Registers the four routes; `common/protocol_stack.ts` calls it.
+   * Registers the five routes; `common/protocol_stack.ts` calls it.
    *
    * @param app - the shared express app
    * @returns nothing
@@ -267,6 +271,13 @@ class PublicAssets {
          .set('Cache-Control', self.cachingFor(req));
       ShellDocument.sendCompressed(req, res, WebCardCss.CARD_CSS, null, null);
       log.debug("Leaving GET " + PATHS.card + ".");
+    });
+    app.get(PATHS.footer, function (req: Json, res: Json) {
+      log.debug("Entering GET " + PATHS.footer + ".");
+      res.status(200).type('text/css')
+         .set('Cache-Control', self.cachingFor(req));
+      ShellDocument.sendCompressed(req, res, WebFooter.CSS, null, null);
+      log.debug("Leaving GET " + PATHS.footer + ".");
     });
     app.get(PATHS.index, function (req: Json, res: Json) {
       log.debug("Entering GET " + PATHS.index + ".");

@@ -53,7 +53,7 @@
 // ---------------------------------------------------------------------------
 
 const { log, setJwtRecorder, userFor, nameForSubject, subjectForName,
-        namesForSubjects, namesForSubjectsAsync, warmPeopleAsync,
+        namesForSubjects, namesForSubjectsAsync, subjectsForNamesAsync,
         LEGACY_SUBJECT_PREFIX } = require('./helpers');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
 // config.js and the error-code table and nothing else here, so it cannot join a
@@ -90,6 +90,9 @@ const errorCodes = require('./error_codes');
 const stsCrypto = require('./crypto');
 // Which attributes a claim may carry out (#94). A leaf.
 const SourcedAttributes = require('./sourced_attributes');
+// Where a revocation is SAID, so a refresh grant waits for it (the review of
+// #879). A leaf over `helpers.js`, which this file already requires.
+const RevokingWrites = require('./revoking_writes');
 // THE FEDERATION RELEASE FILTER, and it is a plain require in the ordinary
 // direction rather than a hook. Rule 3e's test both ways round: that module
 // registers no route, and it requires only helpers.js, config.js, realms.js,
@@ -667,7 +670,15 @@ function recordJwt(payload, signed, context) {
     username: payload.username || payload.preferred_username ||
               (issuedUnder.grant === 'client_credentials'
                 ? String(payload.client_id || '') : ''),
-    client_id: payload.client_id || payload.azp || payload.aud || '',
+    // ONE STRING, ALWAYS (rcbj on #1579, 2026-11-11): with no client_id and
+    // no azp the fallback is the audience, and an array `aud` (RFC 7519
+    // section 4.1.3) gives its FIRST member. Until then the array itself was
+    // stored, which the model's IssuedToken.clientId (a string) does not
+    // read: the sign-out page showed "no client" and OpenID Provider
+    // Commands skipped the row. `audience` below keeps every member.
+    client_id: String(payload.client_id || payload.azp ||
+                      (Array.isArray(payload.aud) ? payload.aud[0]
+                                                  : payload.aud) || ''),
     // WHAT THIS TOKEN IS ADDRESSED TO, as its own fact. `client_id` above falls
     // back to the `aud` when nothing better names the client, which is right
     // for the tokens page's one party column and loses the audience entirely on
@@ -1293,6 +1304,13 @@ function revoke(jti, via, how, expSec) {
   // register's readers ask both (`tokenStateOf()`, and `tokenList()`'s
   // `revoked` for the console). Every other revocation still writes it.
   const superseded = !!(how && how.superseded);
+  // ENDED, NOT SUPERSEDED: a refresh grant must not answer ahead of it (the
+  // review of #879). A token rotated on use ends nothing — its successor
+  // carries the grant on — and is every refresh's own write, so marking it
+  // would make each refresh wait for every other.
+  if (!superseded) {
+    RevokingWrites.note('a token revoked (' + (via || 'unstated') + ')');
+  }
   if (record && !superseded) {
     record.revoked = true;
     record.revokedAt = record.revokedAt || Date.now();
@@ -3259,6 +3277,41 @@ function renameIdentity(from, to) {
 }
 
 // ---------------------------------------------------------------------------
+// A DELETED PERSON'S ROW GOES WITH THEM (2026-11-16, rcbj's rule on #1612: a
+// person deleted and made again under the same name inherits nothing). Both
+// stores are keyed by the NAME, so /admin/users drew the new person's row
+// with the deleted one's sign-ins, counts and first-seen time. Called by the
+// directory's one person delete (`removePersonEntry()`); never by a
+// re-homing, and a rename moves the row instead (renameIdentity()).
+//
+// One key each, blind: a delete of a key this process does not hold is
+// still written (`realms.map()`'s delete). WHAT IT CANNOT REACH: another
+// process's own row of `admin_stats.users` (`merge: 'own'`, one row per
+// origin, `persistence/CLAUDE.md`), which only that process writes. Those
+// rows are display only — what the console counts, never a decision — and
+// they are what an earlier start or another node saw of the deleted
+// person, until their own retention ends them.
+// ---------------------------------------------------------------------------
+/**
+ * Forgets a deleted person's register row and token-holder row.
+ *
+ * @param username - the deleted person's name
+ * @returns true when either was held
+ */
+function forgetIdentity(username) {
+  log.debug("Entering forgetIdentity().");
+  const key = identityKeyOf(username);
+  if (!key) {
+    log.debug("Leaving forgetIdentity(). Nobody named.");
+    return false;
+  }
+  const held = users.delete(key);
+  const holder = tokenHolders.delete(key);
+  log.debug("Leaving forgetIdentity(). " + (held || holder));
+  return !!(held || holder);
+}
+
+// ---------------------------------------------------------------------------
 // ONE RECORD FOLDED INTO ANOTHER — a rename's two rows, and the fan-in below.
 //
 // Counts are SUMMED, first and last seen are the earliest and latest, the
@@ -3763,11 +3816,13 @@ function recordAuthentication(detail) {
         // AS-REQ and a UsernameToken have no amr to state, and an entry with no
         // factors recorded is the honest answer for them rather than a default.
         amr: info.amr || [], acr: info.acr || '',
-        // Passed through untouched, and only `tls/tls_server.js` sets it: a
-        // client certificate's identity IS a DN, so the entry the directory
-        // seeds for it is not `uid=<name>` and the facts that go in it —
-        // issuer, serial, validity — are on the certificate rather than in
-        // anything this file holds. It rides on the observer rather than on a second hook because
+        // Passed through untouched, and only `tls/tls_server.js` sets it, and
+        // only for a leaf this realm issued. The actor is the mapped
+        // username; this object is the certificate facts the directory
+        // merges onto that person (`certificatePlan()` folds a CN it already
+        // holds). An outside certificate is not passed: its subject is a
+        // name another authority chose, and filing it seeded an entry.
+        // It rides on the observer rather than on a second hook because
         // this is already the funnel, and a second call at the certificate
         // sighting would be a second thing to keep right. Nothing here reads
         // it.
@@ -3965,7 +4020,7 @@ function recordAuthentication(detail) {
  * Records that a presented credential was refused. Increments nothing.
  *
  * @param detail - `presented`, `protocol`, `method`, `errorCode`, and
- *   optionally `client_id`, `application`, `amr`, `acr`, `sessionId`,
+ *   optionally `codedElsewhere`, `client_id`, `application`, `amr`, `acr`, `sessionId`,
  *   `isClient`, `sub`, `note`, `channel` and `address`
  * @returns the audit row, or null when there was no identity
  */
@@ -3990,7 +4045,13 @@ function recordRefusedAuthentication(detail) {
     action: 'authentication.refused',
     // error-code: none — the caller names the code; this row copies it
     outcome: 'refused',
-    errorCode: info.errorCode || '',
+    // ONE FAILURE, ONE CODED ROW (`tests/protocol/sts_service_accounts.js`'s
+    // refusedWith()). A door that already records its refusal's code on a
+    // row of its own — the token endpoint, WS-Trust, the KDC, the directory,
+    // SPNEGO, /tls/sign-in, each since 2026-11-16 — passes `codedElsewhere`,
+    // and this row carries the code in its detail only, so a count of the
+    // code's rows does not see one failure twice.
+    errorCode: info.codedElsewhere ? '' : (info.errorCode || ''),
     actor: identity.key,
     actorForm: identity.form,
     protocol: protocol,
@@ -4011,7 +4072,8 @@ function recordRefusedAuthentication(detail) {
       acr: info.acr || '',
       sessionId: info.sessionId || '',
       isClient: !!info.isClient,
-      note: info.note || ''
+      note: info.note || '',
+      code: info.codedElsewhere ? String(info.errorCode || '') : ''
     }
   });
   log.debug("Leaving recordRefusedAuthentication().");
@@ -5641,10 +5703,12 @@ function recordsHeldBy(name) {
 // (`lookupEntriesAsync()`, which answers what `lookup()` and `get()`
 // would), resolves every subject the answers name in one asynchronous
 // question, and then builds the rows as `userRow()` builds one — the same
-// builder, handed the records (`preloadedHeld`). The person's own subject is
-// still `subjectForName()`'s, after the names were warmed into the window.
-// Held whole, there is no store to ask, and only the subjects are asked
-// asynchronously.
+// builder, handed the records (`preloadedHeld`). The person's OWN subject
+// is one `subjectsForNamesAsync()` of the rows' identity keys (#881), not
+// `subjectForName()` per row and not a warm of `uid=<name>`: a certificate
+// DN, a DID, a SPIFFE ID and a name that is not the uid all miss that warm
+// and were still one blocking read each. Held whole, there is no store to
+// ask, and only the subjects are asked asynchronously.
 // ---------------------------------------------------------------------------
 let preloadedHeld = null;
 // The users page's register entries per shown key (#1001), the same way.
@@ -5653,7 +5717,10 @@ let preloadedUserEntries = null;
 // The candidate records filed under one person by the register's index —
 // by each name and by the subject — read asynchronously. Unfiltered: the
 // holder test resolves subjects, so it is made where they are resolved.
-async function recordsHeldByAsync(name) {
+// `resolvedSubject` is that subject's answer when the caller already asked
+// for the page (#881). Undefined keeps today's `subjectForName()`; a
+// string, including '', is the answer and is not asked again.
+async function recordsHeldByAsync(name, resolvedSubject) {
   log.debug("Entering recordsHeldByAsync().");
   const wanted = String(name || '');
   const key = identityKeyOf(wanted);
@@ -5662,11 +5729,16 @@ async function recordsHeldByAsync(name) {
       return 'u:' + one;
     });
   let subject = '';
-  try {
-    subject = String(subjectForName(key) || '');
-  } catch (e) {
-    log.debug("Caught in recordsHeldByAsync(): " + ((e && e.message) || e));
-    subject = '';
+  if (resolvedSubject === undefined) {
+    try {
+      subject = String(subjectForName(key) || '');
+    } catch (e) {
+      log.debug("Caught in recordsHeldByAsync(): " +
+                ((e && e.message) || e));
+      subject = '';
+    }
+  } else {
+    subject = String(resolvedSubject || '');
   }
   if (subject) {
     indexKeys.push('s:' + subject);
@@ -5719,8 +5791,31 @@ async function userRowsOfAsync(keys) {
     });
   }
   if (tokens.onDemandLive() && list.length) {
-    await warmPeopleAsync(list);
-    const answers = await Promise.all(list.map(recordsHeldByAsync));
+    // THE ROW'S OWN SUBJECT, ASKED WITH THE OTHERS (#881). The key is the
+    // one `userRow()` would hand `subjectForName()` — folded here, because
+    // the batch itself tries the whole string first and a page of identity
+    // keys has already decided the fold. A failure is still a page: the
+    // u: tokens remain and the s: ones are absent for this draw.
+    const folded = list.map(function (key) {
+      return identityKeyOf(key);
+    });
+    let subjects = [];
+    try {
+      subjects = await subjectsForNamesAsync(folded);
+    } catch (e) {
+      log.debug("Caught in userRowsOfAsync(): " +
+                ((e && e.message) || e));
+      subjects = folded.map(function () {
+        return '';
+      });
+    }
+    if (!Array.isArray(subjects)) {
+      subjects = [];
+    }
+    const answers = await Promise.all(list.map(function (key, i) {
+      const one = subjects.length > i ? subjects[i] : '';
+      return recordsHeldByAsync(key, one);
+    }));
     held = new Map();
     list.forEach(function (key, i) {
       held.set(key, answers[i]);
@@ -8381,6 +8476,7 @@ module.exports = {
   identityKeyOf: identityKeyOf,
   holderKeyOf: holderKeyOf,
   renameIdentity: renameIdentity,
+  forgetIdentity: forgetIdentity,
   userRows: userRows,
   userRowsAsync: userRowsAsync,
   userCountsAsync: userCountsAsync,

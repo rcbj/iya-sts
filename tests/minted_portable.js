@@ -163,7 +163,8 @@ const SESSION_NAMES = [
   ['session.read', ['r', 'k']], ['session.count', ['r']],
   ['session.exists', ['r', 'k']], ['session.oldest', ['r', 's']],
   ['session.expired', ['r', 1, 1]], ['session.subjectRows', ['r', '', '']],
-  ['session.overCapRows', ['r', 2, 10]], ['session.children', ['r', 'p']],
+  ['session.overCapRows', ['r', '-', '.', 2, 10]],
+  ['session.children', ['r', 'p']],
   ['session.credential', ['r', 'c']], ['session.username', ['r', 'u']],
   ['session.subject', ['r', 's']], ['session.page', ['r', '', 10]],
   ['session.surface', ['r', 's']], ['session.partner', ['r', 'p']],
@@ -372,19 +373,25 @@ async function staticChecks(t) {
   });
   t.check(same, 'A6. without an engine (the bridge\'s thread) and for ' +
           'PostgreSQL the builders answer PostgreSQL\'s text, unchanged');
-  const twice = sessionQueries.build('session.overCapRows', ['r', 2, 10],
-                                     'mariadb');
+  const twice = sessionQueries.build('session.overCapRows',
+    ['r', '-', '.', 2, 10], 'mariadb');
+  const pgCap = sessionQueries.build('session.overCapRows',
+    ['r', '-', '.', 2, 10]);
   const many = sessionQueries.build('session.liveByUsername',
                                     ['r', ['u1', 'u2'], 9], 'mariadb');
   const none = sessionQueries.build('session.liveByUsername', ['r', [], 9],
                                     'mariadb');
-  t.check(JSON.stringify(twice.values) === '["r","r",2,10]' &&
+  t.check(JSON.stringify(twice.values) ===
+          '["r","-",".","r","-",".",2,10]' &&
+          /COLLATE "C"/.test(pgCap.text) && !/COLLATE/.test(twice.text) &&
+          JSON.stringify(pgCap.values) === '["r","-",".",2,10]' &&
           /IN \(\?, \?\)/.test(many.text) &&
           JSON.stringify(many.values) === '["r","u1","u2",9]' &&
           /IN \(NULL\)/.test(none.text),
           'A7. a parameter used twice is bound twice, and an array is one ' +
           'placeholder per element (none matches nothing)',
-          JSON.stringify([twice.values, many.values, none.text]));
+          JSON.stringify([twice.values, pgCap.values, many.values,
+                          none.text]));
   const estimate = mintedQueries.answerOf('minted.estimate', [{
     EXPLAIN: JSON.stringify({ query_block: { select_id: 1, table: {
       table_name: 'sts_minted', rows: 4321 } } }) }]);

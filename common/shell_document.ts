@@ -114,6 +114,11 @@ interface ShellSpec {
   // How an attribute value or the title is escaped; `&#39;` for an
   // apostrophe where left out (the console passes its `&apos;` one).
   esc?: (value: unknown) => string;
+  // THE PAGE FOOTER (rcbj, 2026-11-14; `common/page_footer.ts`): drawn at
+  // the end of the body, with `/web/footer.css` linked last, unless this is
+  // false — which only a specification's own response says
+  // (`kerberos/spnego_authn.ts`, RFC 4559's exchange).
+  footer?: boolean;
 }
 
 /**
@@ -165,6 +170,11 @@ interface BuiltFile {
  * realm's sign-in appearance (#717).
  */
 const CARD_PATH = '/web/card.css';
+
+/**
+ * The page footer's stylesheet (`common/public_assets.ts`).
+ */
+const FOOTER_PATH = '/web/footer.css';
 
 /**
  * The default viewport.
@@ -251,6 +261,31 @@ class ShellDocument {
   }
 
   /**
+   * The page footer in the ambient request's language
+   * (`common/page_footer.ts`).
+   *
+   * @returns its markup, or '' where it cannot be drawn
+   */
+  static footerHtml(): string {
+    log.debug("Entering ShellDocument.footerHtml().");
+    let out = '';
+    try {
+      // LAZILY, as `branding.ts` is: the footer reads the page's language
+      // through `page_locale.ts`, which a module drawing a shell at load
+      // need not have loaded yet.
+      out = require('./page_footer').html();
+    } catch (e) {
+      // A footer that cannot be drawn leaves the shell without one; it must
+      // not cost the page.
+      log.debug("Caught in ShellDocument.footerHtml(): " +
+                ((e && (e as Error).message) || e));
+      out = '';
+    }
+    log.debug("Leaving ShellDocument.footerHtml(). " + out.length);
+    return out;
+  }
+
+  /**
    * Draws a shell document.
    *
    * @param spec - what it is drawn from
@@ -270,6 +305,15 @@ class ShellDocument {
       });
       stylesheets.splice(at >= 0 ? at + 1 : stylesheets.length, 0,
                          brand.stylesheet);
+    }
+    // EVERY SHELL CARRIES THE FOOTER, drawn here rather than by each surface
+    // for `data-sts-accounts`' reason: no shell can forget it. Its runtime
+    // draws it again from the facts it carries (`WebFooter.drawnIn()`), so
+    // a shell drawn without one gets none from its runtime either.
+    const footer = spec.footer === false ? ''
+      : ShellDocument.footerHtml();
+    if (footer) {
+      stylesheets.push(FOOTER_PATH);
     }
     const attributes = (spec.attributes || []).concat(
       [['data-sts-accounts', ShellDocument.accountsOn() ? 'on' : ''] as
@@ -291,7 +335,7 @@ class ShellDocument {
       '</head><body>' + spec.open +
       (refused ? spec.refusal
                : '<noscript>' + spec.noscript + '</noscript>' + spec.loading) +
-      spec.close + '</body></html>\n';
+      spec.close + footer + '</body></html>\n';
     log.debug("Leaving ShellDocument.document(). " + html.length +
               " characters.");
     return html;
@@ -479,6 +523,74 @@ class ShellDocument {
     res.set('Content-Encoding', encoding).send(bytes);
     log.debug("Leaving ShellDocument.sendCompressed(). " + encoding + ", " +
               bytes.length + " bytes.");
+  }
+
+  // AN OPENAPI DOCUMENT, COMPRESSED WHERE THE REQUEST ACCEPTS IT (GitHub run
+  // 44544256231, memory mode). `GET /admin-api/openapi.json` is about 7 MB,
+  // and the console fetches it before it sends a form. Over HTTP/2, Chrome
+  // sometimes stops delivering such a body to the page part-way — 4 to 5 MB
+  // in — although this service has written all of it and closed the stream,
+  // and while every other request on the same connection (a small API call,
+  // a 1.2 MB console file) is answered in milliseconds. The form then waited
+  // for ever, and a person pressing Remove saw nothing happen. Compressed,
+  // the document is about 0.5 MB on the wire. Measured with the suite
+  // image's Chrome 152 over a docker network, reloading the console and
+  // fetching the document through its own runtime: 11 stalls in about 650
+  // rounds uncompressed, none in 440 compressed.
+  //
+  // ONLY FOR A DOCUMENT WITH NO SECRET AND NOTHING A CALLER CHOSE IN IT, which
+  // the OpenAPI documents are: BREACH (see the header) needs both in one
+  // compressed answer. So it is the caller that decides, by calling this,
+  // never a rule about size. It wraps `end()` rather than `send()`, so the
+  // answer's model check (`common/response_models.ts`) and the call log read
+  // the JSON, and only the bytes handed to the connection are compressed.
+  /**
+   * Compresses the body this response is about to end with, in the coding
+   * the request accepts, and says `Vary: Accept-Encoding` either way. Call
+   * it before the answer is sent.
+   *
+   * @param req - the request
+   * @param res - the response, not yet sent
+   * @returns nothing
+   */
+  static compressDocument(req: Json, res: Json): void {
+    log.debug("Entering ShellDocument.compressDocument().");
+    res.vary('Accept-Encoding');
+    const encoding = ShellDocument.acceptedEncoding(
+      req.headers && req.headers['accept-encoding']);
+    if (!encoding) {
+      log.debug("Leaving ShellDocument.compressDocument(). Identity.");
+      return;
+    }
+    const end = res.end;
+    res.end = function compressedEnd(chunk?: Json, how?: Json,
+                                      cb?: Json): Json {
+      log.debug("Entering compressedEnd().");
+      res.end = end;
+      // A HEAD, a 304 and an answer with no body end with no chunk: theirs
+      // is the response's own end, untouched.
+      if (chunk === undefined || chunk === null ||
+          typeof chunk === 'function' || res.headersSent ||
+          res.getHeader('Content-Encoding')) {
+        log.debug("Leaving compressedEnd(). Nothing to compress.");
+        return end.apply(res, arguments);
+      }
+      const coding = (typeof how === 'string' ? how
+                                              : 'utf8') as BufferEncoding;
+      const bytes = Buffer.isBuffer(chunk) ? chunk
+        : Buffer.from(String(chunk), coding);
+      const packed = encoding === 'br'
+        ? zlib.brotliCompressSync(bytes, { params: {
+            [zlib.constants.BROTLI_PARAM_QUALITY]: 5,
+            [zlib.constants.BROTLI_PARAM_SIZE_HINT]: bytes.length } })
+        : zlib.gzipSync(bytes, { level: 6 });
+      res.setHeader('Content-Encoding', encoding);
+      res.setHeader('Content-Length', String(packed.length));
+      log.debug("Leaving compressedEnd(). " + encoding + ", " + bytes.length +
+                " bytes as " + packed.length + ".");
+      return end.call(res, packed, typeof how === 'function' ? how : cb);
+    };
+    log.debug("Leaving ShellDocument.compressDocument(). " + encoding + ".");
   }
 
   /**

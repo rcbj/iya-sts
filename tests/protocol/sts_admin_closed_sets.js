@@ -170,11 +170,83 @@ function ownScopeOf(op) {
 // The native role that authorizes a scope of its own (#309), where one does.
 const NATIVE_ROLE_OF = { "device:compliance": "DEVICE_COMPLIANCE" };
 
+// A REMOTE PEP'S PUSH (#1827): `POST /admin-api/pep-audit` takes
+// `xacml:pep-audit` on a token whose SUBJECT holds REMOTE_PEPS, and the
+// scope is held by a delegated permission grant (#1141), never by
+// `oauthAllowedScope` — so the device-compliance recipe above is refused
+// `invalid_scope` (the first local memory run on 2026-11-16 found it). It
+// is minted the way the PEP mints its own: an entry put in `remote-peps`,
+// a key pair `/admin-api/pki/issue` gives that person, and a public
+// jwt-bearer client holding the grant, asked for the scope with the
+// person's own RFC 7523 self-assertion (tests/remote_pep_audit.js's shape).
+async function pepAuditToken() {
+  log.debug("Entering pepAuditToken().");
+  const stamp = Date.now().toString(36);
+  const who = "closed-sets-pep-" + stamp;
+  const id = "closed-sets-pep-client-" + stamp;
+  const made = await postJson(API + "/users/create", {
+    username: who, invent: false,
+    attributes: { cn: who, givenName: "Closed", sn: "Sets",
+                  mail: who + "@closed-sets.test", displayName: who } });
+  assert.ok(made.status === 200, "creating " + who + ": " + made.status +
+            " " + made.text.slice(0, 300));
+  const joined = await postJson(API + "/groups/add-member",
+                                { group: "remote-peps", member: who });
+  assert.ok(joined.status === 200, "adding " + who + " to remote-peps: " +
+            joined.status + " " + joined.text.slice(0, 300));
+  const issued = await postJson(API + "/pki/issue",
+                                { target: "person", identifier: who });
+  const key = issued.body && issued.body.privateKeyPem;
+  assert.ok(issued.status === 200 && key, "issuing " + who + " a key " +
+            "pair: " + issued.status + " " + issued.text.slice(0, 200));
+  const client = await postJson(API + "/applications/create", {
+    identifier: id, kind: "oauth2-client", name: id, protocols: ["oauth2"],
+    fields: { oauthClientId: [id], oauthTokenEndpointAuthMethod: "none",
+              oauthGrantType: [
+                "urn:ietf:params:oauth:grant-type:jwt-bearer"],
+              oauthDelegatedPermission: [
+                "urn:sts:admin-api:xacml:pep-audit"],
+              oauthGlobalConsent: ["xacml:pep-audit"] } });
+  assert.ok(client.status === 200 || client.status === 201,
+            "registering " + id + ": " + client.status + " " +
+            client.text.slice(0, 300));
+  const crypto = require("crypto");
+  const b64 = function (o) {
+    log.debug("Entering b64().");
+    log.debug("Leaving b64().");
+    return Buffer.from(JSON.stringify(o)).toString("base64url");
+  };
+  const now = Math.floor(Date.now() / 1000);
+  const head = b64({ alg: "RS256", typ: "JWT" });
+  const claims = b64({ iss: who, sub: who, aud: base + "/oauth2/token",
+                       iat: now, exp: now + 120,
+                       jti: crypto.randomBytes(16).toString("hex") });
+  const signature = crypto.sign("sha256", Buffer.from(head + "." + claims),
+                                key).toString("base64url");
+  const r = await call("POST", base + "/oauth2/token", {
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion: head + "." + claims + "." + signature, client_id: id,
+      scope: "xacml:pep-audit", resource: API }).toString()
+  });
+  assert.ok(r.status === 200 && r.body && r.body.access_token,
+            "a xacml:pep-audit token for " + who + ": " + r.status + " " +
+            r.text.slice(0, 300));
+  log.debug("Leaving pepAuditToken().");
+  return r.body.access_token;
+}
+
 const scopeTokens = {};
 async function tokenForScope(scope) {
   log.debug("Entering tokenForScope(). " + scope);
   if (scopeTokens[scope]) {
     log.debug("Leaving tokenForScope(). Cached.");
+    return scopeTokens[scope];
+  }
+  if (scope === "xacml:pep-audit") {
+    scopeTokens[scope] = await pepAuditToken();
+    log.debug("Leaving tokenForScope(). A remote PEP's.");
     return scopeTokens[scope];
   }
   const id = "closed-sets-" + scope.replace(/[^a-z0-9]+/gi, "-")

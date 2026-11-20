@@ -1516,6 +1516,16 @@ reason token and the error code. The password stays off the row.
 accepted, is a different act and is not written again here.
 `common/CLAUDE.md` (3c) argues the line; the application's tab reads it.
 
+**`startSession()` writes the authentication's row, and a door that already
+wrote it says `recorded: true`** (rcbj, 2026-11-16). A WS-Trust UsernameToken
+is recorded by `WsTrust.authenticate()` as WS-Trust and its method, and its
+exchange then starts a session; without the flag the person's tab carried the
+same sign-in twice, the second as `WS-Trust issue / sign-in screen
+(password)`. A door that does not record it itself passes its `protocol` and
+`method` in `extra` instead, which override the defaults (the `via` sentence
+and `methodPhraseFor()`'s "sign-in screen (password)"): `GET /tls/sign-in`
+passes `TLS` and its certificate.
+
 ## TWO KINDS OF BROWSER SESSION, ONE STORE (2026-09-06)
 
 `/admin` and `/portal` are OpenID Connect relying parties of this service's own
@@ -2268,9 +2278,15 @@ ends somebody else's session.
   `authn.session-expiry` job then ends at most that realm's
   `authn.sessionShedPerSweep` such rows, oldest first, one subject at a
   time. The budget is read while that realm is ambient and is spent only
-  on that realm; the rows are part of the job's `{ ended }` count. A
-  subject at or under their cap is not ended because the realm is over
-  `authn.maxSessions`. Rows otherwise leave by lifetime, sign-out or revoke.
+  on that realm; the rows are part of the job's `{ ended }` count. Each
+  run asks one of the 64 base64url first characters of `subject_key`
+  (`session.overCapRows`, index `sts_sessions_subject_band`, #876), so a
+  lowered cap reaches every subject in 64 intervals and the aggregate does
+  not count the whole realm. The band is the wall clock divided by
+  `authn.sessionSweepS`, which needs no cursor when the job moves to
+  another worker. A subject at or under their cap is not ended because the
+  realm is over `authn.maxSessions`. Rows otherwise leave by lifetime,
+  sign-out or revoke.
 * **A refused sign-in leaves the browser's current session.** Admission is
   decided before that session is ended. A realm exactly at the cap still
   admits a different person in the same browser, because the current row
@@ -2303,13 +2319,53 @@ fixed at start: turning it off while running is refused, because a start
 that skipped the session bodies would then answer committed sessions as
 absent. `tests/session_window.js` holds it.
 
+**ANOTHER NODE'S ROW IS MERGED INTO A COPY HELD WITH A WRITE PENDING
+(2026-11-14).** `considerApply()` keeps this process's copy of a session
+whose own write has not committed, and until then it ignored the other
+node's row. In the `cluster` mode node A upgraded an arrival to a sign-in
+while node B held the arrival with a touch still in flight. B kept the
+arrival, the account selection ticket A handed out named a session B read
+as not live (`STS-AUTHN-0346`), and `sts_siop_did_web` was sent to sign in
+again. The flush's merged answer reached the same branch before
+`onCommitted()` unpinned the slot, so the stale copy outlived the commit
+too. The kept copy now takes `mergeSessionRows()` of the two, in place: it
+is what the flush will write. `tests/session_window.js`,
+`upgradedElsewhereCase()`.
+
+**AND WITH THE WINDOW OFF THE SAME MERGE HAPPENS IN THE APPLIER
+(2026-11-17).** The window's merges are on its own path, and a service of
+several cells runs with the window off (`active()` needs one cell): there
+`applyLocally()` handed another process's row to the store's `restore()`,
+which put it over the held session whole, and the account set's row the
+same way. `authn.sessions` and `authn.accountSets` declare `mergeOnApply`
+(`common/realms.js`), so the arriving row is merged into the held copy
+with `mergeSessionRows()` / `AccountSets.merge()`. `sts_jar_admin_client`'s
+STS-AUTHN-0346 in the cells mode (three GitHub runs in a row) went through
+it: a flush asked from a DEVELOPMENT realm in that product cell emptied the
+journal, and an older flight's merged arrival was then applied over the
+sign-in. `persistence/CLAUDE.md` has both halves;
+`tests/session_window.js`, `windowOffMergeCase()`.
+
+**AND THAT MERGE KEEPS A CLIENT'S `iss` AND `sub` (run 27, 2026-11-14).**
+`mergeSessionRows()` rebuilt an `oidcClients` entry both copies held from
+`first`, `last` and `count`, dropping the issuer and subject
+`noteClient()` records. The merge above made that an ordinary sign-in's
+path in the single-node mode: `sts_frontchannel_logout`'s iframe carried
+the sign-out's issuer instead of the named authorization server's, and
+`sts_backchannel_logout`'s Logout Token was dead-lettered
+`STS-OAUTH-0542`. The later answer's (`last`) values win, an empty one
+never wipes a recorded one. `tests/session_window.js`,
+`dirtyClientCase()`; `tests/cluster_lww_stores.js` section E.
+
 **A CONSOLE PAGE MAY NOT BE "A WALK THAT NEEDS EVERY SESSION" (2026-10-22,
 #820).** On 8081, Monitoring → Sessions opened all ~470,000 sealed bodies,
 one synchronous read each, on a request worker, and held it for two minutes.
 Through read-your-write every other worker waited behind it, and sign-ins and
 refreshes stopped.
 - **Monitoring → Sessions** pages with `liveSessionPageAsync()`, on the
-  driver's read pool, and opens only the page's bodies:
+  driver's read pool, and opens only the page's bodies. The view reaches
+  it through `Logout.liveSessionsPageAsync()`. The newest-first page is
+  the query `sts_sessions_started` matches (#882):
   - `session.liveTotals` and `session.livePage` count and page the live
     rows, newest first;
   - a search is an exact username, subject or session id, matched by digest;
@@ -2510,7 +2566,7 @@ beside the User-Agent's. The risk engine scores a digest this person never
 signed in from as `new-device` (×2).
 
 **Turning it on is the operator's decision**, after the privacy impact
-assessment `docs/risk-scoring.md` sets out: a browser fingerprint is personal
+assessment `docs/v1.1.0/risk-scoring.md` sets out: a browser fingerprint is personal
 data about the device, collected without the person doing anything.
 
 ## EVERY SIGN-IN SCREEN ANSWERS A REFUSED SESSION, AND THE REFUSAL SAYS WHY (2026-09-22, #62 P0)
@@ -3548,8 +3604,13 @@ map; with none held it sets nothing (said at debug). The cost: a parent held
 nowhere, read while the store fails, does not record `backsConsole`, a flag
 no decision reads. `tests/session_window.js`, `noteChangedCase()`.
 `notePresented()` spends
-`firstPresentationIsTheSignIn` through it too. An in-place edit of a session
-anywhere else owes the same call; `tests/cluster_node_state_sharing.js` holds
+`firstPresentationIsTheSignIn` through it too. **So does a REMOVAL**: the
+sign-out's `oidc-rp` row always called it after forgetting a client, and the
+`wsfed-rp` and `saml2-sp` rows (`logout/logout.ts`) did not until 2026-11-15
+(found by #444's D12), so a realm or service provider forgotten on one node
+stayed on the stored row — on every other node, and after a restart.
+`tests/logout_api.js` 6j. An in-place edit of a session anywhere else owes
+the same call; `tests/cluster_node_state_sharing.js` holds
 the four call sites to it.
 
 ## SEVERAL NODES: A SESSION'S END IS REPORTED ONCE (2026-09-14, #46 section 6)
@@ -3697,7 +3758,7 @@ The design is `common/CLAUDE.md` 3cq; what this module does with it:
   (`recoveryEnrolment()`) at the sign-in screen's doors, which pass the
   pending record: `factor: 'enrol'`, `proved`, `recovery`, `mfaAllowed:
   ['securityKey']`. `mfaSetupFacts()` says `recovery`, and the page draws
-  `authn.mfaSetup.subRecovery` (seven catalogs). `webauthnFacts()` draws a
+  `authn.mfaSetup.subRecovery` (every base catalog). `webauthnFacts()` draws a
   REGISTRATION for a recovery step whatever keys the person holds, and
   `finishWebauthn()` starts no session for one: `returnToCaller()`, so the
   application asks for a sign-in and the new passkey answers it.

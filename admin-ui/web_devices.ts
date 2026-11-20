@@ -175,7 +175,7 @@ class DevicesPage {
     const create = canWrite
       ? '<h2 data-tab="register">' +
       t.html('consoleDevices.listHtml.registerHeading') + '</h2>' +
-      kit.note(t.html('consoleDevices.listHtml.registerNote')) +
+      kit.frame(kit.note(t.html('consoleDevices.listHtml.registerNote')) +
       '<form method="post" action="' + LIST + '">' +
       '<input type="hidden" name="action" value="create">' +
       '<div class="formrow"><label for="dev-n-label">' +
@@ -216,7 +216,7 @@ class DevicesPage {
       '"></textarea></div>' +
       '<div class="formrow"><button type="submit">' +
       t.html('consoleDevices.listHtml.register') + '</button></div>' +
-      '</form>'
+      '</form>')
       : kit.note(t.html('consoleDevices.listHtml.readOnly'));
     // The note's three links carry hrefs, which a message may not: the
     // words between them are messages and the anchors are code.
@@ -239,7 +239,9 @@ class DevicesPage {
       // THE LIST IS A TAB (2026-10-12), headed by the page's own name; the
       // tiles and the lead are Metadata.
       '<h2 data-tab="devices">' + t.html('console.nav.devices') + '</h2>' +
-      filters + nav.head + '<table class="grid"><thead><tr><th>' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each tab's
+      // content is one frame, its heading being the tab's label.
+      kit.frame(filters + nav.head + '<table class="grid"><thead><tr><th>' +
       t.html('consoleDevices.listHtml.thDevice') + '</th>' +
       '<th>' + t.html('consoleDevices.listHtml.thOwner') + '</th><th>' +
       t.html('consoleDevices.listHtml.thKeys') + '</th><th>' +
@@ -251,7 +253,7 @@ class DevicesPage {
       (rows || '<tr><td colspan="7">' + (Object.keys(f).length
         ? t.html('consoleDevices.listHtml.noMatch')
         : t.html('consoleDevices.listHtml.noneYet')) + '</td></tr>') +
-      '</tbody></table>' + nav.foot +
+      '</tbody></table>' + nav.foot) +
       create;
   }
 
@@ -294,7 +296,9 @@ class DevicesPage {
         (c.reason ? ': ' + esc(c.reason) : '')
         : t.html('consoleDevices.deviceHtml.neverChanged');
     };
-    const facts = '<table class="grid"><tbody>' +
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the facts and
+    // each section below are a frame each.
+    const facts = kit.frame('<table class="grid"><tbody>' +
       '<tr><th>' + t.html('consoleDevices.deviceHtml.thId') +
       '</th><td><code>' + esc(d.id) + '</code><br><small><code>' +
       esc(d.dn) + '</code></small></td></tr>' +
@@ -342,9 +346,9 @@ class DevicesPage {
       '</td></tr>' +
       '<tr><th>' + t.html('consoleDevices.deviceHtml.thLastUsed') +
       '</th><td>' + esc(d.lastUsed || '—') + '</td></tr>' +
-      '</tbody></table>';
-    const apps = '<h2>' + t.html('consoleDevices.deviceHtml.appsHeading') +
-      '</h2>' +
+      '</tbody></table>');
+    const apps = kit.frame('<h2>' +
+      t.html('consoleDevices.deviceHtml.appsHeading') + '</h2>' +
       (d.applications.length ? '<ul>' + d.applications.map(
         function (dn: string, i: number): string {
           const name = d.applicationNames[i];
@@ -352,7 +356,7 @@ class DevicesPage {
             'application=' + encodeURIComponent(name) + '">' + esc(name) +
             '</a> ' : '') + '<small><code>' + esc(dn) + '</code></small></li>';
         }).join('') + '</ul>'
-        : kit.note(t.html('consoleDevices.deviceHtml.none')));
+        : kit.note(t.html('consoleDevices.deviceHtml.none'))));
     const keyRows = d.keys.map(function (k: Json): string {
       return '<tr><td>' + esc(k.label) + '<br><small><code>' + esc(k.id) +
         '</code></small></td><td>' + esc(k.kind) + '</td><td><small><code>' +
@@ -375,8 +379,9 @@ class DevicesPage {
             t.html('consoleDevices.deviceHtml.remove') + '</button></form>'
           : '') + '</td></tr>';
     }).join('');
-    const keys = '<h2>' + t.html('consoleDevices.deviceHtml.keysHeading') +
-      '</h2>' + kit.note(t.html('consoleDevices.deviceHtml.keysNote')) +
+    const keys = kit.frame('<h2>' +
+      t.html('consoleDevices.deviceHtml.keysHeading') + '</h2>' +
+      kit.note(t.html('consoleDevices.deviceHtml.keysNote')) +
       (keyRows
         ? '<table class="grid"><thead><tr><th>' +
           t.html('consoleDevices.deviceHtml.thKey') + '</th><th>' +
@@ -386,9 +391,9 @@ class DevicesPage {
           '</th><th>' + t.html('consoleDevices.deviceHtml.thAttestation') +
           '</th><th>' + t.html('consoleDevices.deviceHtml.thAdded') +
           '</th><th></th></tr></thead><tbody>' + keyRows + '</tbody></table>'
-        : kit.note(t.html('consoleDevices.deviceHtml.none')));
+        : kit.note(t.html('consoleDevices.deviceHtml.none'))));
     const v = { platforms: vocabulary.platforms };
-    const compliance = '<h2>' +
+    const compliance = kit.frame('<h2>' +
       t.html('consoleDevices.deviceHtml.complianceHeading') + '</h2>' +
       kit.note(t.html('consoleDevices.deviceHtml.complianceNote')) +
       '<form method="post" action="' + LIST + '">' +
@@ -403,8 +408,8 @@ class DevicesPage {
       'id="dev-c-reason" name="reason" size="40" maxlength="500"></div>' +
       '<div class="formrow"><button type="submit">' +
       t.html('consoleDevices.deviceHtml.setCompliance') + '</button>' +
-      '</div></form>';
-    const status = '<h2>' +
+      '</div></form>');
+    const status = kit.frame('<h2>' +
       t.html('consoleDevices.deviceHtml.compromiseHeading') + '</h2>' +
       (d.status === 'compromised'
       ? kit.note(t.html('consoleDevices.deviceHtml.compromisedNote')) +
@@ -425,10 +430,10 @@ class DevicesPage {
         'id="dev-s-reason" name="reason" size="40" maxlength="500">' +
         '<button type="submit" class="danger">' +
         t.html('consoleDevices.deviceHtml.markCompromised') + '</button>' +
-        '</div></form>');
+        '</div></form>'));
     const forms = canWrite
       ? compliance + status +
-        '<h2>' + t.html('consoleDevices.deviceHtml.addKeyHeading') +
+        kit.frame('<h2>' + t.html('consoleDevices.deviceHtml.addKeyHeading') +
         '</h2>' + kit.note(t.html('consoleDevices.deviceHtml.addKeyNote')) +
         '<form method="post" action="' + LIST + '">' +
         hidden('action', 'add-key') + hidden('id', d.id) +
@@ -445,8 +450,9 @@ class DevicesPage {
         '"></textarea></div>' +
         '<div class="formrow"><button type="submit">' +
         t.html('consoleDevices.deviceHtml.addKey') + '</button>' +
-        '</div></form>' +
-        '<h2>' + t.html('consoleDevices.deviceHtml.editHeading') + '</h2>' +
+        '</div></form>') +
+        kit.frame('<h2>' + t.html('consoleDevices.deviceHtml.editHeading') +
+        '</h2>' +
         kit.note(t.html('consoleDevices.deviceHtml.editNote')) +
         '<form method="post" action="' + LIST + '">' +
         hidden('action', 'update') + hidden('id', d.id) +
@@ -482,14 +488,15 @@ class DevicesPage {
         'value="' + esc(d.applicationNames.filter(Boolean).join(', ')) +
         '"></div><div class="formrow"><button type="submit">' +
         t.html('consoleDevices.deviceHtml.save') + '</button>' +
-        '</div></form>' +
-        '<h2>' + t.html('consoleDevices.deviceHtml.remove') + '</h2>' +
+        '</div></form>') +
+        kit.frame('<h2>' + t.html('consoleDevices.deviceHtml.remove') +
+        '</h2>' +
         kit.note(t.html('consoleDevices.deviceHtml.removeNote')) +
         '<form method="post" action="' + LIST + '">' +
         hidden('action', 'remove') + hidden('id', d.id) +
         '<button type="submit" class="danger">' +
         t.html('consoleDevices.deviceHtml.removeDevice') + '</button>' +
-        '</form>'
+        '</form>')
       : kit.note(t.html('consoleDevices.deviceHtml.readOnly'));
     return facts + apps + keys + forms;
   }

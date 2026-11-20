@@ -1,0 +1,22 @@
+{
+  "everySettingLives": "<strong>Jede Einstellung, die dieser Dienst hat, liegt auf der Seite des Protokolls, das sie konfiguriert.</strong> Diese Seite ist das Verzeichnis dazu — und das Formular für die {mine} Zeilen, die zu keinem Protokoll gehören, also Tatsachen über den Prozess und nicht über etwas, das er spricht. Es waren alle {total}, bis 2026-08-27; verschoben wurde, wo sie GEZEICHNET werden, und nichts daran, was sie tun oder wie sie gelesen werden.",
+  "fourPlaces": "Ein Wert kann von vier Stellen kommen, und die Spalte <em>Quelle</em> auf jeder dieser Seiten sagt, von welcher: eine zur Laufzeit auf der Seite gesetzte Überschreibung, eine Umgebungsvariable, die Appconfig-Datei, mit der dieser Prozess gestartet wurde (<code>{configFile}</code>), oder <code>{defaultsFile}</code> — die Standard-Appconfig-Datei, über die jene vereinigt wird. Die höhere schlägt die niedrigere, daher gewinnt eine am Container gesetzte Umgebungsvariable weiterhin gegenüber der Datei — und das hält jede bestehende Bereitstellung unverändert arbeitsfähig.",
+  "noFifthPlace": "<strong>Es gibt keine fünfte Stelle.</strong> Eine Einstellung ohne Wert in beiden Appconfig-Dateien und ohne Umgebungsvariable hindert diesen Dienst am Start, mit Namen, statt auf eine in einem Modul vergrabene Konstante zurückzufallen. Jeder Wert auf diesen Seiten ist also einer, den jemand in einer Datei finden kann — und das macht die Spalte <em>Quelle</em> lesenswert.",
+  "survives": "<strong>Änderungen ÜBERSTEHEN EINEN NEUSTART.</strong>",
+  "fileLeftAlone": "Die Datei bleibt bewusst unangetastet: Ein Dienst, der eine in ein Repository eingecheckte Datei bearbeitete, ließe eine vergessene Änderung eines Tests dauerhaft zurück.",
+  "inMemory": "<strong>Änderungen liegen im Speicher und sind nach einem Neustart weg.</strong> Nichts schreibt in die Appconfig-Datei, bewusst: Ein Dienst, der eine in ein Repository eingecheckte Datei bearbeitete, ließe eine vergessene Änderung eines Tests dauerhaft zurück.",
+  "settingsHeading": "{total} Einstellungen, {editable} davon änderbar, während dieser Dienst läuft",
+  "overridesInForce": "{n} Laufzeitüberschreibung(en) in Kraft, irgendwo im Dienst:",
+  "resetAll": "Alle zurücksetzen",
+  "noOverrides": "Nirgendwo in diesem Dienst ist eine Laufzeitüberschreibung in Kraft: Jeder Wert kommt aus der Umgebung oder aus einer der beiden Appconfig-Dateien.",
+  "resetAllHere": "<strong>Alle zurücksetzen steht hier und auf keiner Protokollseite</strong>, weil es jede Überschreibung im Dienst löscht und nicht nur die darunter. Eine Schaltfläche, die das von der Kerberos-Seite aus erreichte, wäre das einzige Steuerelement dieser Konsole, dessen Wirkungsradius von der Stelle des Drückens aus unsichtbar wäre.",
+  "whereEdited": "Wo jede Einstellung bearbeitet wird",
+  "wholeTable": "Die gesamte Tabelle, Gruppe für Gruppe, in der Reihenfolge, in der <code>config.js</code> sie deklariert. Die Spalte <em>Seite</em> ist, wo das Formular dieser Gruppe gezeichnet wird; die Zahlen gelten für die Gruppe, und <em>Überschrieben</em> ist, wie viele davon gerade eine Laufzeitüberschreibung in Kraft haben.",
+  "thGroup": "Gruppe",
+  "thSettings": "Einstellungen",
+  "thRestartOnly": "Nur bei Neustart",
+  "thOverridden": "Überschrieben",
+  "thPage": "Seite",
+  "pagesAnd": " und ",
+  "overJson": "Die gesamte Tabelle über JSON — jede Einstellung, gleich welche Seite sie bearbeitet — liegt unter <code>/admin/config?format=json</code> und <code>GET /admin-api/config</code>; die vier Aktionen auf diesen Seiten sind <code>POST /admin-api/config/set</code>, <code>/set-many</code>, <code>/reset</code> und <code>/reset-all</code>."
+}

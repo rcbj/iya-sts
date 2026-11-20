@@ -152,12 +152,15 @@ class SessionsPage {
 
       // A TAB PER LIST (2026-10-12): the lead, the tiles and the kinds are
       // Metadata (`WebPages.protocolTabs()`).
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each tab's
+      // heading stays at the top level, its content one frame.
       '<h2 data-tab="live">' + t.html('consoleSessions.hLive') + '</h2>' +
       // No `page` input in this form, and that is the point: changing the
       // filter or the page size sends the reader back to page 1. Carrying the
       // old page number over would land somebody on page 6 of a two-page
       // result.
-      '<form method="get" action="/admin/sessions"><div class="formrow">' +
+      kit.frame('<form method="get" action="/admin/sessions">' +
+        '<div class="formrow">' +
         '<label for="q">' + t.html('consoleSessions.search') + '</label>' +
         '<input type="text" id="q" name="q" size="28" value="' +
         kit.esc((json.filter.q || '')) +
@@ -187,7 +190,7 @@ class SessionsPage {
             first: paging.firstRow, last: paging.lastRow,
             page: paging.page, pages: paging.pages })
         : '') +
-      t.html('consoleSessions.liveInTotal', { held: json.held })) +
+      t.html('consoleSessions.liveInTotal', { held: json.held }))) +
 
       // ---------------------------------------------------------------------
       // THE UNAUTHENTICATED SESSIONS (2026-09-05).
@@ -205,7 +208,7 @@ class SessionsPage {
       '<h2 data-tab="unauthenticated">' +
       t.html('consoleSessions.hUnauthenticated') + '</h2>' +
 
-      kit.note(t.html('consoleSessions.unauthLead')) +
+      kit.frame(kit.note(t.html('consoleSessions.unauthLead')) +
 
       kit.note(t.html('consoleSessions.rolesBefore') + '<a ' +
       'href="/admin/roles">' + t.html('consoleSessions.rolesLink') + '</a>' +
@@ -219,6 +222,20 @@ class SessionsPage {
           'href="/admin/roles">' + t.html('consoleSessions.turnOn') +
           '</a>' + t.html('consoleSessions.offAfter'))) +
 
+      // AN ARRIVAL SESSION IS NOT THIS SECTION (#888).
+      //
+      // What is listed here is somebody who pressed Continue without
+      // signing in: a chosen session, authenticated false. An arrival
+      // is a browser that reached a front door and has not signed in
+      // (kind arrival, chosen false). liveSessions() leaves it out,
+      // and this tab says so rather than listing it. A row would be
+      // the cookie-less flood that filled the page, and opening every
+      // body is the cost #820 took off this page. A count would scan
+      // the session index. There is no index on an arrival, and
+      // session.count at a million rows was taken off the sign-in
+      // path for that cost.
+      kit.note(t.html('consoleSessions.arrivalExcluded')) +
+
       (json.unauthenticatedHeld
         ? anonNav.head + '<table>' + thead +
           json.unauthenticatedSessions.map(function (row) {
@@ -226,7 +243,7 @@ class SessionsPage {
           }).join('') + '</table>' + anonNav.foot +
           kit.note(t.html('consoleSessions.unauthCount', {
             n: json.unauthenticatedHeld, held: json.held }))
-        : kit.note(t.html('consoleSessions.unauthNone'))) +
+        : kit.note(t.html('consoleSessions.unauthNone')))) +
 
       SessionsPage.accountChoicesSection(t, json.accountChoices) +
 
@@ -378,15 +395,17 @@ class SessionsPage {
     if (!choices || (!choices.enabled && !any)) {
       return '';
     }
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab's
+    // heading stays at the top level, its content one frame.
     return '<h2 data-tab="accounts">' + t.html('consoleSessions.hAccounts') +
       '</h2>' +
-      kit.note(t.html('consoleSessions.accountsLead')) +
+      kit.frame(kit.note(t.html('consoleSessions.accountsLead')) +
       (choices.enabled ? ''
                        : kit.warn(t.html('consoleSessions.accountsOff'))) +
       '<div class="tiles">' + kinds.map(function (kind) {
         return kit.tile(Number(c[kind]) || 0, labels[kind]);
       }).join('') + '</div>' +
-      kit.note(t.html('consoleSessions.accountsNote'));
+      kit.note(t.html('consoleSessions.accountsNote')));
   }
 
   // WHAT CAME OUT OF THIS SESSION, as a link into /admin/tokens.

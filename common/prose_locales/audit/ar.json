@@ -1,0 +1,2286 @@
+{
+  "audit.categories.authentication.label": {
+    "en": "66880d2d8216260d",
+    "text": "المصادقة"
+  },
+  "audit.categories.authentication.what": {
+    "en": "8daae95bb7977a6c",
+    "text": "قُبلت بيانات اعتماد، في أيٍّ من عائلات البروتوكول الست عشرة هنا. يُسجَّل ذلك عند القمع الواحد الذي تمر به كل واحدة منها أصلًا، فهذا موضع واحد وليس ستة عشر. انضم SCIM متأخرًا وSPIFFE بعد ذلك أيضًا. SCIM: ثلاثة من المخططات التي تقبلها نقاط نهايته — Basic وDigest وHOBA — تقدّم بيانات اعتماد في كل طلب، وقبول أحدها مصادقة. أما الثلاثة الأخرى فلا تظهر هنا، لأن كلًا منها يواصل مصادقة سُجّلت في موضع آخر: قُبل رمز الوصول عند إصداره، وقُبل ملف تعريف ارتباط الجلسة عندما بدأت جلستها، وقُبلت شهادة العميل مرة لكل اتصال لا مرة لكل طلب. SPIFFE هو السادس عشر ويبلغ هذا بثلاث طرق: تقديم X509-SVID عبر TLS المتبادل عند SPIRE Server API (مرة لكل اتصال، للسبب ذاته الذي تُقبل به شهادة العميل)، وإثبات وكيل، والتحقق من JWT-SVID عند ValidateJWTSVID. أما إصدار SVID فليس من بينها. رفض المحاولة هو `authentication.refused` إلى جانب القبول: التفصيل نفسه، والنتيجة مرفوضة، ولم يتحرك أي عدّاد (#954). تسرد صفحة التطبيق الاثنين معًا، و`session.refuse` و`session.refused` عندما تسمّيه."
+  },
+  "audit.categories.session.label": {
+    "en": "6fa3cbf451b2a1d5",
+    "text": "الجلسات"
+  },
+  "audit.categories.session.what": {
+    "en": "da2cf9fdd76b22ff",
+    "text": "أُنشئت جلسة تسجيل دخول في المتصفح أو أُنهيت. وهي مشتركة بين OAuth 2.0 / OIDC وWS-Federation، لذا ينتج تسجيل الخروج في WS-Federation و/oauth2/logout الصف نفسه."
+  },
+  "audit.categories.directory.label": {
+    "en": "c8f84c3c5378b920",
+    "text": "الدليل"
+  },
+  "audit.categories.directory.what": {
+    "en": "1783abc24177bf60",
+    "text": "دليل LDAP المضمّن: مدخلات تُنشأ وتُحذف وتُحدَّث وتُعاد تسميتها وتُستعلم، عبر 389 العادي وعبر LDAPS 636 على السواء."
+  },
+  "audit.categories.admin.label": {
+    "en": "ddf870cabeb295ab",
+    "text": "وحدة تحكم المسؤول"
+  },
+  "audit.categories.admin.what": {
+    "en": "84e06d85d9c8036d",
+    "text": "كل صفحة من /admin عُرضت وكل نموذج أُرسل. ويشمل ذلك الطلب الذي رسم الصفحة التي تقرأها."
+  },
+  "audit.categories.api.label": {
+    "en": "60e425d8c33fe555",
+    "text": "API الإدارة"
+  },
+  "audit.categories.api.what": {
+    "en": "71c007163c40d555",
+    "text": "كل استدعاء إلى /admin-api، قراءة وكتابة على السواء."
+  },
+  "audit.categories.application.label": {
+    "en": "98e33b0f3104fcf1",
+    "text": "التطبيقات"
+  },
+  "audit.categories.application.what": {
+    "en": "8a3b5678fb8d56d1",
+    "text": "تطبيق — عميل OAuth، أو طرف معتمد في OIDC، أو موفّر خدمة SAML، أو تطبيق WS-Federation، أو طرف معتمد في WS-Trust، أو خدمة Kerberos — شوهد للمرة الأولى، أو سجّل شيئًا جديدًا. وهو مقابل صف المصادقة أعلاه: ذاك يقول مَن، وهذا يقول إلامَ كانوا يسجّلون الدخول. وكثيرًا ما يكتب الفعل الواحد الاثنين معًا."
+  },
+  "audit.categories.protocol.label": {
+    "en": "00052adcbc9e9b70",
+    "text": "نقاط نهاية البروتوكول"
+  },
+  "audit.categories.protocol.what": {
+    "en": "8a7c104883a4462f",
+    "text": "كل نقطة نهاية HTTP أخرى: نقطة نهاية الرمز، ووكيل KDC، ونقطة نهاية بيانات الاعتماد، ووثائق البيانات الوصفية، وكل ذلك."
+  },
+  "audit.categories.spiffe.label": {
+    "en": "6d5acbdc8de3d29a",
+    "text": "SPIFFE"
+  },
+  "audit.categories.spiffe.what": {
+    "en": "a3485b52ee7b4222",
+    "text": "أسطح SPIFFE الثلاثة من جانب الخادم: سكّ SVID، وإنشاء مدخلة تسجيل أو تغييرها أو حذفها، وإثبات وكيل، وجلب حزمة الثقة أو اتحادها. صف SVID ليس صف مصادقة — فإصدار بيانات اعتماد ليس تقديمها — لذا يكون الإصدار هنا ولا يكون أبدًا في `authentication`. وما يكون في الاثنين معًا هو بيانات اعتماد تُقدَّم إلى أحد هذه الأسطح وتُقبل: X509-SVID عبر TLS المتبادل، ووكيل يُثبِت، وJWT-SVID يُتحقَّق منه. وتلك تكتب صف مصادقة أيضًا، عند القمع، على النحو الذي يكتب به الفعل الواحد صفوفًا في طبقات عدة في كل موضع آخر هنا."
+  },
+  "audit.categories.signals.label": {
+    "en": "ac7e7751c687c2a8",
+    "text": "Shared Signals"
+  },
+  "audit.categories.signals.what": {
+    "en": "a6fc952d57a89b4d",
+    "text": "إطار Shared Signals: تدفق يُتفق عليه أو يُغيَّر أو يُحذف، وموضوع يُضاف أو يُزال، وحالة تُنقَل، وكل Security Event Token أرسلته هذه الخدمة أو تلقّته — بما في ذلك ما رفضه مستقبِل، وهو الصف الأهم، لأن الدفع المرفوض غير مرئي من طرف الاستقبال بحكم التعريف."
+  },
+  "audit.categories.authorization.label": {
+    "en": "046aa6d90a3b5a93",
+    "text": "XACML"
+  },
+  "audit.categories.authorization.what": {
+    "en": "4180c00619794c80",
+    "text": "قرارات التفويض: ما سُئل عنه PDP، وما أجاب به، وبشكل منفصل ما فعله PEP المضمّن بتلك الإجابة. والاثنان صفان منفصلان عن قصد: PDP يقول Indeterminate وPEP منحاز إلى الرفض يرفض الطلب هما حدث واحد للمستخدم وقراران من مكوّنين اثنين، وعندما يخالفان توقع أحدهم فذلك دائمًا لأن واحدًا منهما فقط كان قيد النظر. تغييرات السياسة صفوف LDAP على ou=policies، وليست صفوفًا هنا، لأن المستودع هو الدليل."
+  },
+  "audit.categories.service.label": {
+    "en": "d677190e0a9990e7",
+    "text": "الخدمة"
+  },
+  "audit.categories.service.what": {
+    "en": "a7f7b67a23b45276",
+    "text": "إخفاقات شيء تفعله هذه الخدمة من تلقاء نفسها لا ردًا على طلب واحد: الاستمرارية، والتنسيق بين العمليات، ومجمّعات العمال، والتعامل مع المفاتيح والأسرار، والمهام الخلفية والطلبات الصادرة. يحمل كل صف رمز خطأ."
+  },
+  "audit.categories.mail.label": {
+    "en": "07ed6ccf6bf6393d",
+    "text": "البريد"
+  },
+  "audit.categories.mail.what": {
+    "en": "8e53272332ff4aba",
+    "text": "وُضعت رسالة في الطابور أو أُرسلت أو التُقطت أو صارت رسالة متعذّر تسليمها أو رُفضت (سقف معدّل، أو إلغاء اشتراك، أو انعدام عنوان)، وأفعال قناة البريد ذاتها: إعادة محاولة، أو رسالة اختبار، أو حفظ قالب. يسمّي الصف المستلم والفئة، ولا يسمّي المتن أبدًا."
+  },
+  "audit.actions.authentication.label": {
+    "en": "579808c825684965",
+    "text": "قُبلت بيانات اعتماد"
+  },
+  "audit.actions.authentication.refused.label": {
+    "en": "0b0281ef1e0768e4",
+    "text": "رُفضت بيانات اعتماد"
+  },
+  "audit.actions.portal.activate.label": {
+    "en": "979387f5c20ade32",
+    "text": "أتمّ أحدهم إعداد الحساب من رابط تفعيل"
+  },
+  "audit.actions.portal.activate.refused.label": {
+    "en": "b70b90f7c094681b",
+    "text": "رُفض رابط تفعيل"
+  },
+  "audit.actions.portal.password.changed.label": {
+    "en": "f1da75066d25fade",
+    "text": "غيّر أحدهم كلمة المرور الخاصة به"
+  },
+  "audit.actions.authn.password.changed.label": {
+    "en": "d386485290b35131",
+    "text": "غيّر أحدهم كلمة مرور كان مطلوبًا منه تغييرها عند تسجيل الدخول"
+  },
+  "audit.actions.portal.password.refused.label": {
+    "en": "47f69cc67c7ed68a",
+    "text": "رُفض تغيير كلمة المرور"
+  },
+  "audit.actions.portal.password.csrf.label": {
+    "en": "d0d17a1db73fc8e9",
+    "text": "رُفض نموذج في البوابة بسبب رمز CSRF غير صالح"
+  },
+  "audit.actions.portal.signout.label": {
+    "en": "3cacdea93eb86a99",
+    "text": "سجّل أحدهم الخروج من بوابة المستخدم"
+  },
+  "audit.actions.portal.signout.csrf.label": {
+    "en": "5c6a2c095c428958",
+    "text": "رُفض تسجيل خروج من البوابة بسبب رمز CSRF غير صالح"
+  },
+  "audit.actions.portal.key.enrolled.label": {
+    "en": "a3f3da7733b18c08",
+    "text": "سجّل أحدهم مفتاح أمان على حسابه"
+  },
+  "audit.actions.portal.key.removed.label": {
+    "en": "9df626538a846900",
+    "text": "أزال أحدهم مفتاح أمان من حسابه"
+  },
+  "audit.actions.portal.key.renamed.label": {
+    "en": "60304bcfd89153d4",
+    "text": "أعاد أحدهم تسمية أحد مفاتيح المرور الخاصة به"
+  },
+  "audit.actions.portal.tls-client.issued.label": {
+    "en": "76a5695181ec00c2",
+    "text": "أصدر أحدهم لنفسه شهادة عميل TLS"
+  },
+  "audit.actions.portal.tls-client.revoked.label": {
+    "en": "e21ff5a6b5510412",
+    "text": "أبطل أحدهم إحدى شهادات عميل TLS الخاصة به"
+  },
+  "audit.actions.activation.issued.label": {
+    "en": "5889a60b1396424b",
+    "text": "أصدر المسؤول رابط تفعيل"
+  },
+  "audit.actions.portal.password-reset.label": {
+    "en": "92c286943e08eabe",
+    "text": "عيّن أحدهم كلمة مرور جديدة من رابط إعادة تعيين كلمة المرور"
+  },
+  "audit.actions.portal.password-reset.refused.label": {
+    "en": "23968f6638f00db4",
+    "text": "رُفض رابط إعادة تعيين كلمة المرور"
+  },
+  "audit.actions.authn.mfa.enrolment.required.label": {
+    "en": "7c0e0aaea8f8b2c4",
+    "text": "طُلب من تسجيل دخول إعداد عامل ثانٍ مطلوب"
+  },
+  "audit.actions.authn.mfa.enrolment.started.label": {
+    "en": "209d46dc07311972",
+    "text": "عُرض سر تطبيق مصادقة عند تسجيل الدخول"
+  },
+  "audit.actions.authn.mfa.enrolment.offered.label": {
+    "en": "1ed9cdf1827f2e5b",
+    "text": "عُرض على مسؤول بلا عامل ثانٍ عاملٌ"
+  },
+  "audit.actions.authn.mfa.enrolment.declined.label": {
+    "en": "ba0e0e725746bbf3",
+    "text": "تجاهل المسؤول العرض وسجّل الدخول بكلمة المرور"
+  },
+  "audit.actions.authn.second-factor.skipped.label": {
+    "en": "8ea4bca1ff36014e",
+    "text": "قام متصفح متذكَّر مقام العامل الثاني (#265)"
+  },
+  "audit.actions.authn.mfa.enrolment.at-risk.label": {
+    "en": "c9d54d1c53954c0d",
+    "text": "أُعدّ عامل ثانٍ عند تسجيل دخول ذي خطر مرتفع"
+  },
+  "audit.actions.authn.mfa.enrolled.label": {
+    "en": "9f66bf08890386c9",
+    "text": "أعدّ أحدهم عاملًا ثانيًا مطلوبًا عند تسجيل الدخول"
+  },
+  "audit.actions.authn.recovery.refused.label": {
+    "en": "d8ba643a9e0a83b8",
+    "text": "رفضت سياسة مفتاح المرور استرداد الحساب ذاتي الخدمة"
+  },
+  "audit.actions.authn.recovery.limited.label": {
+    "en": "497fee88cee8044f",
+    "text": "اقتصر تسجيل الدخول بعد استرداد الحساب على تسجيل مفتاح مرور"
+  },
+  "audit.actions.authn.recovery.completed.label": {
+    "en": "6c8028e5950a3cd4",
+    "text": "سجّل مفتاح مرور دخول أحدهم بعد استرداد الحساب"
+  },
+  "audit.actions.authn.sign-in.started-over.label": {
+    "en": "2773b5e084cf4499",
+    "text": "غادر أحدهم خطوة تسجيل دخول وبدأ تسجيل الدخول من جديد"
+  },
+  "audit.actions.portal.mfa.started.label": {
+    "en": "d51f6daad15168fd",
+    "text": "عُرض على أحدهم سر جديد لتطبيق المصادقة"
+  },
+  "audit.actions.portal.mfa.enrolled.label": {
+    "en": "06603e0b57ab3156",
+    "text": "أعدّ أحدهم تطبيق مصادقة على حسابه"
+  },
+  "audit.actions.portal.mfa.refused.label": {
+    "en": "2118006526a28182",
+    "text": "لم يُؤكَّد إعداد تطبيق المصادقة"
+  },
+  "audit.actions.portal.mfa.removed.label": {
+    "en": "5bb7d0985ef3e565",
+    "text": "أزال أحدهم تطبيق المصادقة من حسابه"
+  },
+  "audit.actions.portal.mfa.csrf.label": {
+    "en": "228f7d738861aa3c",
+    "text": "رُفض تغيير تطبيق المصادقة بسبب رمز CSRF غير صالح"
+  },
+  "audit.actions.portal.activate.mfa.started.label": {
+    "en": "df561a24375c8165",
+    "text": "عُرض سر تطبيق مصادقة أثناء استهلاك رابط تفعيل"
+  },
+  "audit.actions.portal.activate.mfa.refused.label": {
+    "en": "7a566c67501c3cbf",
+    "text": "لم يُؤكَّد تطبيق مصادقة أثناء التفعيل"
+  },
+  "audit.actions.portal.activate.key.started.label": {
+    "en": "df93eecfc112a97a",
+    "text": "بُدئت مراسم مفتاح أمان أثناء استهلاك رابط تفعيل"
+  },
+  "audit.actions.portal.activate.key.enrolled.label": {
+    "en": "6f06ac6bc8ba305b",
+    "text": "سُجّل مفتاح أمان أثناء استهلاك رابط تفعيل"
+  },
+  "audit.actions.portal.activate.key.refused.label": {
+    "en": "0a96c72ca7f0d27e",
+    "text": "لم يُسجَّل مفتاح أمان أثناء التفعيل"
+  },
+  "audit.actions.session.start.label": {
+    "en": "e88b0f8f798c2f1f",
+    "text": "أُنشئت جلسة تسجيل دخول"
+  },
+  "audit.actions.session.end.label": {
+    "en": "4edfa53f58db7a9b",
+    "text": "أُنهيت جلسة تسجيل دخول"
+  },
+  "audit.actions.session.renew.label": {
+    "en": "0bfd5e67a3f0fdc2",
+    "text": "جدّد سطح مستضاف رموزه ضمن الجلسة نفسها"
+  },
+  "audit.actions.authn.session.bound.label": {
+    "en": "027a6091ae35ff05",
+    "text": "رُبطت جلسة تسجيل دخول بمفتاح يحتفظ به متصفحها"
+  },
+  "audit.actions.authn.session.refreshed.label": {
+    "en": "bbbad25d367ffcdf",
+    "text": "جُدّد ملف تعريف ارتباط جلسة مربوطة بجهاز بناءً على إثبات مفتاحها"
+  },
+  "audit.actions.authn.session.binding-skipped.label": {
+    "en": "193de5f1ab249962",
+    "text": "تخطّت جلسة تسجيل دخول ربط الجهاز"
+  },
+  "audit.actions.logout.global.label": {
+    "en": "db32c1466e054343",
+    "text": "أُنهي كل ما يُحفظ لهوية واحدة، عبر كل بروتوكول"
+  },
+  "audit.actions.logout.selective.label": {
+    "en": "e291d5be7d6ee6b6",
+    "text": "أُنهيت جلسات أو بيانات اعتماد مسمّاة لهوية واحدة"
+  },
+  "audit.actions.logout.backchannel.label": {
+    "en": "8814d3131ad9808b",
+    "text": "بلغ Logout Token عبر القناة الخلفية طرفًا معتمدًا، أو لم يبلغه في النهاية"
+  },
+  "audit.actions.mail.queued.label": {
+    "en": "b3de8ca7af29b8f6",
+    "text": "وُضعت رسالة في الطابور لمستلم"
+  },
+  "audit.actions.mail.sent.label": {
+    "en": "fa6f816945723d59",
+    "text": "قبل النقل رسالة، أو التُقطت"
+  },
+  "audit.actions.mail.dead.label": {
+    "en": "9af6832caf6ce8ab",
+    "text": "لم تُسلَّم رسالة وهي رسالة متعذّر تسليمها"
+  },
+  "audit.actions.mail.refused.label": {
+    "en": "ad552eb0de5cd96e",
+    "text": "لم تُوضع رسالة في الطابور (سقف معدّل، أو إلغاء اشتراك، أو انعدام عنوان، أو انعدام نقل)"
+  },
+  "audit.actions.mail.reset-requested.label": {
+    "en": "96d00a4e43d335ab",
+    "text": "طلب شخص رابط إعادة تعيين كلمة المرور ذاتي الخدمة؛ يقول الصف هل أُرسل رابط، ولا يفصح النموذج عن ذلك أبدًا"
+  },
+  "audit.actions.mail.retry.label": {
+    "en": "bf173570a8065c71",
+    "text": "أعاد المسؤول وضع رسالة متعذّر تسليمها في الطابور"
+  },
+  "audit.actions.mail.template.label": {
+    "en": "e647419ca1d6ef3f",
+    "text": "حُفظ قالب رسائل نطاق ثقة أو أُعيد تعيينه"
+  },
+  "audit.actions.branding.logo.label": {
+    "en": "66180a1e9a6ade1e",
+    "text": "رُفع شعار تسجيل دخول نطاق ثقة أو أُزيل"
+  },
+  "audit.actions.mail.verified.label": {
+    "en": "3b2f440c71a1db39",
+    "text": "تحقق شخص من العنوان على مدخلته"
+  },
+  "audit.actions.mail.preferences.label": {
+    "en": "3bcffd401e71abf8",
+    "text": "غيّر شخص الرسائل الاختيارية التي يتلقاها"
+  },
+  "audit.actions.scheduler.run.label": {
+    "en": "cd8826405462df3b",
+    "text": "نُفّذت مهمة مجدولة، أو وُضعت في الطابور يدويًا، أو تولاها غيرها"
+  },
+  "audit.actions.scheduler.step-down.label": {
+    "en": "c632cf6ff6fe1c5f",
+    "text": "طُلب من قائد المجدول التنحي"
+  },
+  "audit.actions.keys.rotate.label": {
+    "en": "d6193043627c50dd",
+    "text": "دُوّرت مفاتيح توقيع نطاق ثقة"
+  },
+  "audit.actions.keys.rotate.emergency.label": {
+    "en": "d17d27c22826e4ce",
+    "text": "دُوّرت مفاتيح توقيع نطاق ثقة في حالة طارئة: أُبطلت شهادات بسبب keyCompromise، وأُنهيت الجلسات"
+  },
+  "audit.actions.application.secret-expiring.label": {
+    "en": "cb6de4ce226bc1a6",
+    "text": "ينتهي سر عميل تطبيق قريبًا"
+  },
+  "audit.actions.application.secret-expired.label": {
+    "en": "5f2e200ae7ddf231",
+    "text": "انتهى سر عميل تطبيق"
+  },
+  "audit.actions.keys.retire.label": {
+    "en": "04a39be278dba264",
+    "text": "أُسقطت مفاتيح توقيع متقاعدة تجاوزت مهلة السماح"
+  },
+  "audit.actions.keys.data-key-rotate.label": {
+    "en": "a92aef70eea08562",
+    "text": "دُوّرت مفاتيح تشفير البيانات"
+  },
+  "audit.actions.keys.data-key-reencrypt.label": {
+    "en": "d0f2b55086c5b0cc",
+    "text": "أُعيد ختم القيم الخاضعة لمفاتيح تشفير بيانات حلّت محلها أخرى"
+  },
+  "audit.actions.keys.data-key-destroy.label": {
+    "en": "2cd8ec4e418d90bd",
+    "text": "دُمّرت مفاتيح تشفير بيانات حلّت محلها أخرى ولا شيء مختوم تحتها"
+  },
+  "audit.actions.keys.kek-rotate.label": {
+    "en": "45a347f68e6cd67b",
+    "text": "دُوّر مفتاح تشفير المفاتيح في خدمة إدارة المفاتيح وأُعيد تغليف مفاتيح البيانات"
+  },
+  "audit.actions.keys.pin.label": {
+    "en": "d76686444b21987a",
+    "text": "ثُبّت زوج مفاتيح بوصفه مفتاح توقيع نطاق ثقة لخوارزمية واحدة"
+  },
+  "audit.actions.keys.unpin.label": {
+    "en": "54192b081654a36e",
+    "text": "أُلغي تثبيت مفتاح توقيع مثبّت؛ ويعود المفتاح المولَّد إلى التوقيع"
+  },
+  "audit.actions.oidfed.key-minted.label": {
+    "en": "757374057c690128",
+    "text": "صُنع أول مفتاح كيان Federation لنطاق ثقة"
+  },
+  "audit.actions.oidfed.key-rotated.label": {
+    "en": "421ae5fd8aeff013",
+    "text": "دُوّر مفتاح كيان Federation لنطاق ثقة"
+  },
+  "audit.actions.oidfed.key-revoked.label": {
+    "en": "d44e60f7c3b5dfd2",
+    "text": "أُبطل مفتاح كيان Federation"
+  },
+  "audit.actions.oidfed.subordinate-set.label": {
+    "en": "9bed214a635cd3f6",
+    "text": "سُجّل كيان بوصفه تابعًا في الاتحاد"
+  },
+  "audit.actions.oidfed.subordinate-removed.label": {
+    "en": "0c067c73e73448f8",
+    "text": "أُزيل تابع في الاتحاد"
+  },
+  "audit.actions.oidfed.anchor-set.label": {
+    "en": "ead499e281c4e6de",
+    "text": "كُوّنت مرساة ثقة في الاتحاد"
+  },
+  "audit.actions.oidfed.anchor-removed.label": {
+    "en": "2b7251797963c5ef",
+    "text": "أُزيلت مرساة ثقة في الاتحاد"
+  },
+  "audit.actions.oidfed.mark-type-set.label": {
+    "en": "9e9372675eaa32ad",
+    "text": "سُجّل نوع علامة ثقة للإصدار"
+  },
+  "audit.actions.oidfed.remove-mark-type.label": {
+    "en": "835f965dca447e5d",
+    "text": "توقّف إصدار نوع علامة ثقة"
+  },
+  "audit.actions.oidfed.mark-policy-set.label": {
+    "en": "d5ab1ca537a13651",
+    "text": "عُيّنت سياسة مرساة ثقة لنوع علامة ثقة"
+  },
+  "audit.actions.oidfed.remove-mark-policy.label": {
+    "en": "9dccb0790296dce2",
+    "text": "أُزيلت سياسة مرساة ثقة لنوع علامة ثقة"
+  },
+  "audit.actions.oidfed.mark-issued.label": {
+    "en": "e64f13f3406e1762",
+    "text": "أُصدرت علامة ثقة"
+  },
+  "audit.actions.oidfed.mark-revoked.label": {
+    "en": "6f2328d050fa14d0",
+    "text": "أُبطلت علامة ثقة"
+  },
+  "audit.actions.oidfed.held-mark-added.label": {
+    "en": "c74d829506487db2",
+    "text": "أُضيفت علامة ثقة صادرة إلى نطاق الثقة إلى تهيئة كيانه"
+  },
+  "audit.actions.oidfed.held-mark-removed.label": {
+    "en": "95a2ca1dbc9523c2",
+    "text": "أُزيلت علامة ثقة محمولة"
+  },
+  "audit.actions.oidfed.act-refused.label": {
+    "en": "401bfc3383109058",
+    "text": "رُفض فعل OpenID Federation بسبب مدخله"
+  },
+  "audit.actions.oidfed.resolved.label": {
+    "en": "f143a7ceda9e1a0a",
+    "text": "حلّ المسؤول سلسلة ثقة كيان"
+  },
+  "audit.actions.device.create.label": {
+    "en": "3db68946dc0a58b8",
+    "text": "سُجّل جهاز"
+  },
+  "audit.actions.device.browser.remembered.label": {
+    "en": "49ff1994e426c867",
+    "text": "طلب شخص تذكّر هذا المتصفح (#265)"
+  },
+  "audit.actions.device.update.label": {
+    "en": "3bc1ce21da5ded97",
+    "text": "غُيّر جهاز: تسميته أو مالكه أو تطبيقاته أو حالته"
+  },
+  "audit.actions.device.delete.label": {
+    "en": "65e418409a57cb08",
+    "text": "أُزيل جهاز"
+  },
+  "audit.actions.device.evict.label": {
+    "en": "b1cb118450f0fbef",
+    "text": "أُزيل جهاز لإفساح المجال عند حد شخصه"
+  },
+  "audit.actions.device.attestation-revoked.label": {
+    "en": "3571d30810b2d9c7",
+    "text": "لم يعد مفتاح جهاز مُثبَتًا: قائمة حالة إثبات Android من Google تبطل سلسلته"
+  },
+  "audit.actions.webauthn.ceremony.label": {
+    "en": "49406d0c31568578",
+    "text": "جرى تسجيل WebAuthn أو تأكيد، اكتمل أو لم يكتمل"
+  },
+  "audit.actions.webauthn.algorithm-mismatch.label": {
+    "en": "712b402391b059c6",
+    "text": "سجّل شخص يحمل مفتاح مرور ما بعد الكم الدخول بمفتاح تقليدي"
+  },
+  "audit.actions.webauthn.client.learned.label": {
+    "en": "6bc383e0e6f3432f",
+    "text": "لم يعد يُعرض على عميل ML-DSA عند تسجيل مفتاح المرور"
+  },
+  "audit.actions.webauthn.attestation-revoked.label": {
+    "en": "0be46b8b29aaf446",
+    "text": "لم يعد إثبات مفتاح الأمان موثوقًا: قائمة حالة إثبات Android من Google تبطل سلسلته"
+  },
+  "audit.actions.device.key-add.label": {
+    "en": "6c1b2513c20532ef",
+    "text": "أُضيف مفتاح إلى جهاز"
+  },
+  "audit.actions.device.key-remove.label": {
+    "en": "edae701aed965cc2",
+    "text": "أُزيل مفتاح من جهاز"
+  },
+  "audit.actions.device.compliance.label": {
+    "en": "60bbcc3da44c2094",
+    "text": "عُيّن امتثال جهاز"
+  },
+  "audit.actions.device.enrol.refused.label": {
+    "en": "9dd9615a103316c6",
+    "text": "رُفض مفتاح جهاز بلا إثبات متحقَّق منه"
+  },
+  "audit.actions.user.create.label": {
+    "en": "3598d15a7df16d24",
+    "text": "أُنشئ مستخدم"
+  },
+  "audit.actions.user.delete.label": {
+    "en": "6577ec900f17cf27",
+    "text": "حُذف مستخدم"
+  },
+  "audit.actions.user.update.label": {
+    "en": "49d84d7d40f82651",
+    "text": "حُدّث مستخدم"
+  },
+  "audit.actions.user.rename.label": {
+    "en": "13b017cf352d6b64",
+    "text": "أُعيدت تسمية مستخدم"
+  },
+  "audit.actions.user.export.label": {
+    "en": "13bfbf4853070b8e",
+    "text": "صُدّر مستخدم إلى ملف LDIF"
+  },
+  "audit.actions.user.import.label": {
+    "en": "9afa273a898e8879",
+    "text": "استُورد مستخدم من ملف LDIF"
+  },
+  "audit.actions.cells.rehome.label": {
+    "en": "5d1b93eaa6c979c6",
+    "text": "نُقل شخص إلى خلية أخرى"
+  },
+  "audit.actions.user.query.label": {
+    "en": "e3ae11dd4e3fe2c4",
+    "text": "أعاد بحث مستخدمًا واحدًا على الأقل"
+  },
+  "audit.actions.group.create.label": {
+    "en": "58d10c676bac86f0",
+    "text": "أُنشئت مجموعة"
+  },
+  "audit.actions.group.delete.label": {
+    "en": "c09f3ad40bb637a6",
+    "text": "حُذفت مجموعة"
+  },
+  "audit.actions.group.update.label": {
+    "en": "7b8bdc21120a364b",
+    "text": "حُدّثت مجموعة"
+  },
+  "audit.actions.group.rename.label": {
+    "en": "7249c5235cd5c992",
+    "text": "أُعيدت تسمية مجموعة"
+  },
+  "audit.actions.entry.create.label": {
+    "en": "d15a6deade1530ee",
+    "text": "أُنشئت مدخلة في موضع آخر من الشجرة"
+  },
+  "audit.actions.entry.delete.label": {
+    "en": "7c1e5a26bd61edeb",
+    "text": "حُذفت مدخلة في موضع آخر من الشجرة"
+  },
+  "audit.actions.entry.update.label": {
+    "en": "a04e6a7c2bb7c122",
+    "text": "حُدّثت مدخلة في موضع آخر من الشجرة"
+  },
+  "audit.actions.entry.rename.label": {
+    "en": "ca4b7726b4ea6fc4",
+    "text": "أُعيدت تسمية مدخلة في موضع آخر من الشجرة"
+  },
+  "audit.actions.directory.search.label": {
+    "en": "1846cbca767766ec",
+    "text": "بحث لم يُعد أي مستخدم"
+  },
+  "audit.actions.directory.compare.label": {
+    "en": "3045c116ef8b9c13",
+    "text": "قُورنت قيمة سمة"
+  },
+  "audit.actions.directory.bind.label": {
+    "en": "df3057c73cc1b56c",
+    "text": "ربط"
+  },
+  "audit.actions.application.create.label": {
+    "en": "24f5ef2da42260cf",
+    "text": "شوهد تطبيق للمرة الأولى"
+  },
+  "audit.actions.application.secret-revealed.label": {
+    "en": "8f3f50eb41e457f1",
+    "text": "كُشفت بيانات اعتماد تطبيق لمسؤول"
+  },
+  "audit.actions.application.export.label": {
+    "en": "6cf3b675c20a94b9",
+    "text": "صُدّر تطبيق إلى ملف LDIF"
+  },
+  "audit.actions.application.import.label": {
+    "en": "11baa5a45c403972",
+    "text": "استُورد تطبيق من ملف LDIF"
+  },
+  "audit.actions.application.add-owner.label": {
+    "en": "5fb5f4fb1a5e6255",
+    "text": "أُضيف مالك إلى تطبيق"
+  },
+  "audit.actions.application.remove-owner.label": {
+    "en": "74db31f6ed42d060",
+    "text": "أُزيل مالك من تطبيق"
+  },
+  "audit.actions.application.update.label": {
+    "en": "fdd9e6c7aff9da36",
+    "text": "سجّل تطبيق شيئًا جديدًا"
+  },
+  "audit.actions.consent.grant.label": {
+    "en": "b293aef893d9084c",
+    "text": "وافق شخص على نطاقات الوصول لتطبيق"
+  },
+  "audit.actions.consent.deny.label": {
+    "en": "39e3064d53842768",
+    "text": "رفض شخص نطاقات الوصول لتطبيق"
+  },
+  "audit.actions.consent.revoke.label": {
+    "en": "3f62e1d9194a46d3",
+    "text": "سُحبت موافقة مسجّلة"
+  },
+  "audit.actions.application.delete.label": {
+    "en": "d0041a29161906a3",
+    "text": "حُذف تطبيق من السجل"
+  },
+  "audit.actions.oidfed.registered.label": {
+    "en": "477befa37c2832e8",
+    "text": "سُجّل طرف معتمد عبر OpenID Federation"
+  },
+  "audit.actions.oidfed.registration-refused.label": {
+    "en": "da4aeca7dea3666c",
+    "text": "رُفض تسجيل عبر OpenID Federation"
+  },
+  "audit.actions.admin.view.label": {
+    "en": "0e19d702f1b129e8",
+    "text": "عُرضت صفحة من وحدة التحكم"
+  },
+  "audit.actions.admin.change.label": {
+    "en": "cfd6adfa05969133",
+    "text": "أُرسل نموذج من وحدة التحكم"
+  },
+  "audit.actions.admin.config-dump.label": {
+    "en": "2da852eeb075a014",
+    "text": "صُدّر التكوين"
+  },
+  "audit.actions.claims.change.label": {
+    "en": "34e69552072a4ab5",
+    "text": "غُيّرت مجموعة مطالبات رمز أو تأكيد"
+  },
+  "audit.actions.admin.role.change.label": {
+    "en": "01b01e9a91df66f7",
+    "text": "مُنح دور في وحدة تحكم المسؤول أو سُحب"
+  },
+  "audit.actions.admin.console.bootstrap.label": {
+    "en": "fb5ea855b492ffb3",
+    "text": "بُذر المسؤول الأولي، أو سجّل الدخول إلى وحدة التحكم للمرة الأولى"
+  },
+  "audit.actions.admin.mail.set.label": {
+    "en": "00a6e30371abdc2d",
+    "text": "عيّن المسؤول عنوان شخص"
+  },
+  "audit.actions.admin.pseudonym.set.label": {
+    "en": "eee8659e029f0eb1",
+    "text": "غيّر المسؤول أسماء تسجيل دخول شخص"
+  },
+  "audit.actions.admin.mfa.totp.cleared.label": {
+    "en": "478c7ee15248637f",
+    "text": "أزال مشغّل تطبيق المصادقة الخاص بأحدهم"
+  },
+  "audit.actions.admin.mfa.key.cleared.label": {
+    "en": "d62700d9f7751e8b",
+    "text": "أزال مشغّل مفتاح الأمان الخاص بأحدهم"
+  },
+  "audit.actions.admin.mfa.key.renamed.label": {
+    "en": "c179dbd3cb227763",
+    "text": "أعاد مشغّل تسمية مفتاح المرور الخاص بأحدهم"
+  },
+  "audit.actions.admin.password.reset.label": {
+    "en": "079b0b2fbe1a3633",
+    "text": "أعاد مشغّل تعيين كلمة المرور الخاصة بأحدهم"
+  },
+  "audit.actions.admin.password.reset-link.label": {
+    "en": "852a4863afb8c14c",
+    "text": "أصدر مشغّل لأحدهم رابط إعادة تعيين كلمة المرور"
+  },
+  "audit.actions.admin.mfa.primary-keys.removed.label": {
+    "en": "862aab6d15756275",
+    "text": "عطّل مشغّل تسجيل الدخول دون كلمة مرور الخاص بأحدهم"
+  },
+  "audit.actions.admin.mfa.disabled.label": {
+    "en": "3173c5ea3812f14e",
+    "text": "أزال مشغّل كل عامل ثانٍ كان أحدهم يحمله"
+  },
+  "audit.actions.admin.mfa.required.label": {
+    "en": "26c5d8ef5b36a4ad",
+    "text": "ألزم مشغّل أحدهم بعامل ثانٍ"
+  },
+  "audit.actions.admin.mfa.unrequired.label": {
+    "en": "e9ee0fbe15904e35",
+    "text": "أوقف مشغّل إلزام أحدهم بعامل ثانٍ"
+  },
+  "audit.actions.admin.delegation.not-delegated.label": {
+    "en": "305dc1462bc75cc4",
+    "text": "علّم مشغّل أحدهم بوصفه ممن لا يمكن تفويضه، أو أزال ذلك"
+  },
+  "audit.actions.admin.delegation.may-act.label": {
+    "en": "2d5a617736d0c319",
+    "text": "سمّى مشغّل الطرف الذي يجوز له أن يتصرف نيابة عن أحدهم، أو أزال ذلك"
+  },
+  "audit.actions.admin.delegation.semantics.label": {
+    "en": "370cb73f7a19a60b",
+    "text": "عيّن مشغّل دلالات التفويض التي يسمح بها شخص، أو وضعها الافتراضي (#186)"
+  },
+  "audit.actions.portal.delegation.may-act.label": {
+    "en": "faa7f1245749fea5",
+    "text": "سمّى شخص الطرف الذي يجوز له أن يتصرف نيابة عنه، أو أزال ذلك"
+  },
+  "audit.actions.portal.delegation.search.label": {
+    "en": "ce14f3c18b0c3f60",
+    "text": "بحث شخص عمّن يجوز له أن يتصرف نيابة عنه"
+  },
+  "audit.actions.admin.password-policy.change.label": {
+    "en": "3919c9c6efb6ee77",
+    "text": "غُيّر ملف تعريف سياسة كلمة المرور"
+  },
+  "audit.actions.admin.policies.export.label": {
+    "en": "b4c871ea9e88127c",
+    "text": "صُدّرت سياسات نطاق ثقة، موقَّعة"
+  },
+  "audit.actions.admin.policies.import.label": {
+    "en": "18769044ecea4c1c",
+    "text": "استُورد تصدير سياسة موقَّع"
+  },
+  "audit.actions.admin.policies.trust-signer.label": {
+    "en": "ba7acd0fc8b6667f",
+    "text": "اعتُمد موقّع تصدير سياسة نطاق ثقة آخر"
+  },
+  "audit.actions.admin.authn-policy.change.label": {
+    "en": "be6362a1a19bae26",
+    "text": "غُيّر ملف تعريف سياسة المصادقة"
+  },
+  "audit.actions.admin.locale-policy.change.label": {
+    "en": "4dfe507526bb6dd5",
+    "text": "غُيّر ملف تعريف سياسة الإعداد المحلي"
+  },
+  "audit.actions.admin.post-login-policy.change.label": {
+    "en": "e74a408dc31b37db",
+    "text": "غُيّر ملف تعريف سياسة نشاط ما بعد تسجيل الدخول"
+  },
+  "audit.actions.authn.post-login.asked.label": {
+    "en": "ec90327ee62f8401",
+    "text": "طُلب من شخص أداء نشاط ما بعد تسجيل الدخول"
+  },
+  "audit.actions.authn.post-login.skipped.label": {
+    "en": "484d440e21fbde9e",
+    "text": "تخطّى شخص نشاط ما بعد تسجيل الدخول"
+  },
+  "audit.actions.authn.post-login.done.label": {
+    "en": "f9ec190773672fc7",
+    "text": "أدّى شخص نشاط ما بعد تسجيل الدخول"
+  },
+  "audit.actions.authn.post-login.held.label": {
+    "en": "9b31304e9f8a3131",
+    "text": "عُلّق تسجيل الدخول: نشاط ما بعد تسجيل الدخول متأخر عن موعده"
+  },
+  "audit.actions.admin.post-login-activity.change.label": {
+    "en": "decd347b6d992cc1",
+    "text": "بُدئ نشاط ما بعد تسجيل الدخول أو أُوقف مؤقتًا أو استُؤنف أو أُنهي"
+  },
+  "audit.actions.authn.post-login.activity-run.label": {
+    "en": "0ce42a59606f1d17",
+    "text": "أرسل نشاط ما بعد تسجيل الدخول الذي بُدئ رسائل تذكيره"
+  },
+  "audit.actions.authn.post-login.unsupported.label": {
+    "en": "7d131d7e4638de23",
+    "text": "لم يستطع جهاز صنع مفتاح المرور الذي طلبه نشاط ما بعد تسجيل الدخول"
+  },
+  "audit.actions.webauthn.key.possibly-replaced.label": {
+    "en": "55f7e610db14e36d",
+    "text": "ربما استُبدل مفتاح مرور على أداة المصادقة الخاصة به"
+  },
+  "audit.actions.authn.mail-factor.change.label": {
+    "en": "4f4ca73f8a45e801",
+    "text": "شُغّل عامل ثانٍ بالبريد أو أُوقف"
+  },
+  "audit.actions.authn.mail-factor.sent.label": {
+    "en": "995183f127e13d83",
+    "text": "أُرسل رمز تسجيل دخول أو رابط بالبريد"
+  },
+  "audit.actions.authn.mail-factor.accepted.label": {
+    "en": "4efa82bd5d58ca32",
+    "text": "قُبل رمز تسجيل دخول أو رابط بالبريد"
+  },
+  "audit.actions.authn.mail-factor.refused.label": {
+    "en": "7c4eb49623da157f",
+    "text": "رُفض رمز تسجيل دخول أو رابط بالبريد"
+  },
+  "audit.actions.admin.truststore.change.label": {
+    "en": "feb59a61d26db396",
+    "text": "أُضيفت مرساة ثقة لشهادة عميل أو أُزيلت"
+  },
+  "audit.actions.admin.pki.trust.change.label": {
+    "en": "ab34b1a9778d5c8e",
+    "text": "غُيّر مخزن ثقة الموقّعين أو إعداد PKI paranoid"
+  },
+  "audit.actions.krb5.keys.derived.label": {
+    "en": "048452fd758565c6",
+    "text": "اشتُقت مفاتيح Kerberos لشخص من كلمة المرور الخاصة به"
+  },
+  "audit.actions.krb5.trust.sid-filtered.label": {
+    "en": "0cb1d7c8c214f1f1",
+    "text": "خضعت تذكرة عبرت ثقة Kerberos لتصفية SID"
+  },
+  "audit.actions.admin.krb5.keys.cleared.label": {
+    "en": "a9405f7ee523fd30",
+    "text": "أزال مشغّل مفاتيح Kerberos الخاصة بأحدهم"
+  },
+  "audit.actions.admin.krb5.service.created.label": {
+    "en": "c81b1d8c217579ec",
+    "text": "أُنشئ principal خدمة Kerberos بمفتاح عشوائي"
+  },
+  "audit.actions.admin.krb5.service.rotated.label": {
+    "en": "322d960ee729793c",
+    "text": "دُوّر مفتاح principal خدمة Kerberos"
+  },
+  "audit.actions.admin.krb5.service.deleted.label": {
+    "en": "e9d7662a459d7ad5",
+    "text": "حُذف المفتاح المخزَّن لـ principal خدمة Kerberos"
+  },
+  "audit.actions.admin.krb5.previous.dropped.label": {
+    "en": "1016d50b8a7601b9",
+    "text": "أسقط مشغّل إصدارات مفتاح Kerberos السابقة التي كان شخص أو principal خدمة ما يزال يحتفظ بها"
+  },
+  "audit.actions.api.read.label": {
+    "en": "5d856ba543153b94",
+    "text": "قراءة عبر API الإدارة"
+  },
+  "audit.actions.api.change.label": {
+    "en": "258c82b64e15408a",
+    "text": "كتابة عبر API الإدارة"
+  },
+  "audit.actions.protocol.call.label": {
+    "en": "9f6c67e10d66e597",
+    "text": "استُدعيت نقطة نهاية بروتوكول"
+  },
+  "audit.actions.oauth.token.revoke.label": {
+    "en": "b95aa059ba49c87d",
+    "text": "أبطل عميل رمز OAuth 2.0 عند /oauth2/revoke، أو رُفض له إبطال رمز عميل آخر"
+  },
+  "audit.actions.protocol.failure.label": {
+    "en": "7a4b45f0a9763acd",
+    "text": "رُفضت عملية بروتوكول أو أخفقت"
+  },
+  "audit.actions.service.failure.label": {
+    "en": "20f1fa365cfbca21",
+    "text": "أخفق شيء تفعله هذه الخدمة من تلقاء نفسها"
+  },
+  "audit.actions.spiffe.svid.issue.label": {
+    "en": "f6a1c6d754b03f45",
+    "text": "أُصدر SVID"
+  },
+  "audit.actions.spiffe.svid.validate.label": {
+    "en": "2985e02244f967c8",
+    "text": "تم التحقق من JWT-SVID"
+  },
+  "audit.actions.spiffe.entry.create.label": {
+    "en": "9949b94180356b54",
+    "text": "أُنشئت مدخلة تسجيل"
+  },
+  "audit.actions.spiffe.entry.update.label": {
+    "en": "4d768a07aee4e2c9",
+    "text": "غُيّرت مدخلة تسجيل"
+  },
+  "audit.actions.spiffe.entry.delete.label": {
+    "en": "53297b800cad6afc",
+    "text": "حُذفت مدخلة تسجيل"
+  },
+  "audit.actions.spiffe.agent.create.label": {
+    "en": "3d5c2896da415cbe",
+    "text": "أثبت وكيل للمرة الأولى"
+  },
+  "audit.actions.spiffe.agent.attest.label": {
+    "en": "2878b0a388b202ab",
+    "text": "أثبت وكيل مرة أخرى"
+  },
+  "audit.actions.spiffe.agent.ban.label": {
+    "en": "da40021ba677279f",
+    "text": "حُظر وكيل"
+  },
+  "audit.actions.spiffe.agent.unban.label": {
+    "en": "77326a7c253442bb",
+    "text": "رُفع الحظر عن وكيل"
+  },
+  "audit.actions.spiffe.agent.delete.label": {
+    "en": "d7b8483047ba641e",
+    "text": "حُذف وكيل"
+  },
+  "audit.actions.spiffe.bundle.read.label": {
+    "en": "7f6e38b4ab094630",
+    "text": "جُلبت حزمة الثقة"
+  },
+  "audit.actions.spiffe.bundle.change.label": {
+    "en": "61fe1f3cbe80f39c",
+    "text": "دُوّرت سلطة، أو عُيّنت حزمة متحدة أو أُزيلت"
+  },
+  "audit.actions.spiffe.call.refuse.label": {
+    "en": "40d52233dda92cda",
+    "text": "رُفض استدعاء SPIRE Server API بسبب هوية المتصل"
+  },
+  "audit.actions.xacml.decision.label": {
+    "en": "8930a657b99988a7",
+    "text": "بلغ PDP قرارًا"
+  },
+  "audit.actions.xacml.enforcement.label": {
+    "en": "d9fe267d0aae76d6",
+    "text": "نفّذ PEP المضمّن قرارًا"
+  },
+  "audit.actions.authzen.decision.label": {
+    "en": "9a9264e25acb9778",
+    "text": "حُسم تقييم وصول AuthZEN"
+  },
+  "audit.actions.xacml.remote.enforcement.label": {
+    "en": "3a824d93232f38d8",
+    "text": "نفّذ PEP بعيد قرارًا"
+  },
+  "audit.actions.authzen.remote.decision.label": {
+    "en": "da762559d8e1e972",
+    "text": "حسم PEP بعيد تقييم وصول AuthZEN"
+  },
+  "audit.actions.xacml.remote.proxy.label": {
+    "en": "a32829555b5b2525",
+    "text": "حسم الوكيل العكسي لـ PEP بعيد طلبًا"
+  },
+  "audit.actions.authzen.search.label": {
+    "en": "c7d970c13ae99f25",
+    "text": "أُجيب عن بحث AuthZEN"
+  },
+  "audit.actions.fga.decision.label": {
+    "en": "c2696096c0749879",
+    "text": "اتُّخذ قرار تفويض دقيق عند الإصدار"
+  },
+  "audit.actions.admin.authzen.attribute.set.label": {
+    "en": "c5eff2fc8ecdf500",
+    "text": "أُضيف صف في فهرس سمات AuthZEN أو استُبدل"
+  },
+  "audit.actions.admin.authzen.attribute.removed.label": {
+    "en": "9da1f55642984ce8",
+    "text": "أُزيل صف من فهرس سمات AuthZEN"
+  },
+  "audit.actions.admin.authzen.scope.set.label": {
+    "en": "bacc42f309e8f6f8",
+    "text": "عُيّن نطاق تطبيقات متصل AuthZEN"
+  },
+  "audit.actions.admin.authzen.pep.granted.label": {
+    "en": "e4ce0755a11d0f80",
+    "text": "مُنح PEP بعيد وصول AuthZEN إلى تطبيق يفرض تفويضًا دقيقًا"
+  },
+  "audit.actions.admin.authzen.callbacks.set.label": {
+    "en": "e8439c3ddb41d93f",
+    "text": "عُيّنت عناوين URL لرد نداء طلب الوصول لمتصل AuthZEN"
+  },
+  "audit.actions.authzen.access-request.submitted.label": {
+    "en": "ce6c6f5f15939b8e",
+    "text": "قُدّم طلب وصول AuthZEN"
+  },
+  "audit.actions.authzen.access-request.approved.label": {
+    "en": "5148eda4f7a84802",
+    "text": "وُوفق على طلب وصول AuthZEN"
+  },
+  "audit.actions.authzen.access-request.denied.label": {
+    "en": "22560158f5a3aaca",
+    "text": "رُفض طلب وصول AuthZEN"
+  },
+  "audit.actions.authzen.access-request.expired.label": {
+    "en": "2ced214d20f8f301",
+    "text": "انتهت صلاحية طلب وصول AuthZEN"
+  },
+  "audit.actions.authzen.access-request.cancelled.label": {
+    "en": "f00e80626f3daa82",
+    "text": "أُلغي طلب وصول AuthZEN"
+  },
+  "audit.actions.authzen.access-request.revoked.label": {
+    "en": "fdf6095a2de11ed6",
+    "text": "أُبطلت الموافقة على طلب وصول AuthZEN"
+  },
+  "audit.actions.authzen.access-request.approver-refused.label": {
+    "en": "fbeebe0256b7890e",
+    "text": "رفضت السياسة أن يحسم شخص قرار طلب وصول AuthZEN"
+  },
+  "audit.actions.authzen.access-request.callback.label": {
+    "en": "432e877d55af1913",
+    "text": "أُرسل رد نداء طلب وصول AuthZEN أو أخفق"
+  },
+  "audit.actions.xacml.issuance.refused.label": {
+    "en": "f1b5bcbea74861a0",
+    "text": "رفض PEP الإصدار أن تسكّ هذه الخدمة شيئًا"
+  },
+  "audit.actions.xacml.access.refused.label": {
+    "en": "82838f9e909973d8",
+    "text": "رفض PEP الوصول طلبًا إلى سطح مقيَّد"
+  },
+  "audit.actions.xacml.issuance.alarm.label": {
+    "en": "38060f35597fa37d",
+    "text": "أجاز PEP الإصدار خطرًا مرتفعًا، بلا عامل يمكن التصعيد إليه، لتطبيق لا يجوز للخطر أن يقفله أبدًا"
+  },
+  "audit.actions.xacml.pep.register.label": {
+    "en": "f6687cc2fa5b3bac",
+    "text": "سجّلت نقطة إنفاذ سياسة بعيدة"
+  },
+  "audit.actions.xacml.pep.certificate.label": {
+    "en": "419007622035492d",
+    "text": "أُصدرت لـ PEP بعيد شهادة مستمع HTTPS"
+  },
+  "audit.actions.xacml.pep.credential.label": {
+    "en": "b86f230b79b40252",
+    "text": "اعتُمد مفتاح تأكيد PEP بعيد من طلبه"
+  },
+  "audit.actions.xacml.pip.query.label": {
+    "en": "af3eace9dacb68c6",
+    "text": "طلب PEP بعيد من PIP سمات موضوع"
+  },
+  "audit.actions.saml2.request.signature.label": {
+    "en": "2c3788ba6491a142",
+    "text": "فُحص توقيع طلب موفّر خدمة SAML 2.0"
+  },
+  "audit.actions.gnap.grant.request.label": {
+    "en": "76968511df03acf3",
+    "text": "طُلبت منحة GNAP"
+  },
+  "audit.actions.gnap.grant.consent.label": {
+    "en": "c353731b459990c0",
+    "text": "وافق مالك المورد على منحة GNAP"
+  },
+  "audit.actions.gnap.grant.deny.label": {
+    "en": "55de39fc99dc456d",
+    "text": "لم يوافق مالك المورد على منحة GNAP"
+  },
+  "audit.actions.gnap.grant.approve.label": {
+    "en": "d2aa94094296bd99",
+    "text": "وُوفق على منحة GNAP وأُطلقت رموزها"
+  },
+  "audit.actions.gnap.grant.revoke.label": {
+    "en": "5fb758cf8f654e10",
+    "text": "أُبطلت منحة GNAP"
+  },
+  "audit.actions.gnap.grant.owner-queued.label": {
+    "en": "27d7c634cbbfeeca",
+    "text": "تنتظر منحة GNAP موافقة مالك موردها الغائب على البوابة (#432 phase 6)"
+  },
+  "audit.actions.gnap.grant.forward.label": {
+    "en": "9756220c110d11f1",
+    "text": "لم يكن الشخص في صفحة موافقة GNAP هو المستخدم الذي سمّاه الطلب، وأُرسلت المنحة إلى بوابة ذلك المستخدم (#432 phase 6)"
+  },
+  "audit.actions.uma.resource.register.label": {
+    "en": "b253bd03b622448e",
+    "text": "سجّل خادم موارد UMA موردًا نيابة عن مالك"
+  },
+  "audit.actions.uma.resource.update.label": {
+    "en": "3705331ffcb119be",
+    "text": "حدّث خادم موارد UMA موردًا مسجّلًا"
+  },
+  "audit.actions.uma.resource.delete.label": {
+    "en": "43c1511735e515a1",
+    "text": "حذف خادم موارد UMA موردًا مسجّلًا"
+  },
+  "audit.actions.uma.permission.ticket.label": {
+    "en": "6a4630a842c26dac",
+    "text": "أُصدر لخادم موارد UMA تذكرة إذن"
+  },
+  "audit.actions.uma.decision.label": {
+    "en": "8e90efa24878623e",
+    "text": "حُسم إذن UMA بإحدى سياساته"
+  },
+  "audit.actions.uma.grant.label": {
+    "en": "cb954f9d1f566208",
+    "text": "أُجيب عن منحة uma-ticket في UMA"
+  },
+  "audit.actions.uma.pct.revoke.label": {
+    "en": "38d7090318287cda",
+    "text": "أُبطل رمز مطالبات UMA المحفوظ"
+  },
+  "audit.actions.uma.approval.request.label": {
+    "en": "34301d2d0b4b6f39",
+    "text": "وُضع طلب UMA في الطابور لموافقة مالك مورده"
+  },
+  "audit.actions.uma.approval.answer.label": {
+    "en": "24003dd09f3f1d9f",
+    "text": "وافق مالك مورد على طلب UMA أو رفضه"
+  },
+  "audit.actions.uma.claims.gathered.label": {
+    "en": "44ba2fb4c324cb10",
+    "text": "سُجّل دخول طرف طالب عند نقطة نهاية تفاعل مطالبات UMA"
+  },
+  "audit.actions.uma.share.add.label": {
+    "en": "306e44da983c55b0",
+    "text": "شارك مالك مورد موردًا عبر UMA"
+  },
+  "audit.actions.uma.share.remove.label": {
+    "en": "ed6819ba0bfca606",
+    "text": "أزال مالك مورد مشاركة UMA"
+  },
+  "audit.actions.uma.policy.alfa.label": {
+    "en": "5bd6dabe5bfd8ac3",
+    "text": "أعاد مالك مورد كتابة سياسة UMA الخاصة به بصيغة ALFA"
+  },
+  "audit.actions.uma.resource-server.enable.label": {
+    "en": "a078fa03b48e7906",
+    "text": "جُعل تطبيق خادم موارد UMA على وحدة التحكم"
+  },
+  "audit.actions.uma.resource-server.disable.label": {
+    "en": "49fc6c6f0a6a54e6",
+    "text": "لم يعد تطبيق خادم موارد UMA على وحدة التحكم، وأُبطلت RPT الخاصة به"
+  },
+  "audit.actions.uma.owns-resources.set.label": {
+    "en": "cb2b2176a5885cc3",
+    "text": "غُيّر على وحدة التحكم ما إذا كان يجوز لتطبيق أن يملك موارد UMA"
+  },
+  "audit.actions.uma.rpt.revoke.label": {
+    "en": "568d9ae5728f93c4",
+    "text": "أُبطل UMA RPT على وحدة التحكم"
+  },
+  "audit.actions.gnap.grant.finalize.label": {
+    "en": "fee9afbd448956f2",
+    "text": "أُنجزت منحة GNAP، مع السبب: أُصدرت أو أُبطلت أو رُفضت أو انتهت صلاحيتها"
+  },
+  "audit.actions.gnap.token.issue.label": {
+    "en": "01a8a01e0a6de666",
+    "text": "أُصدر رمز وصول GNAP"
+  },
+  "audit.actions.gnap.token.rotate.label": {
+    "en": "2577dadbfe39e706",
+    "text": "دُوّر رمز وصول GNAP"
+  },
+  "audit.actions.gnap.token.revoke.label": {
+    "en": "400717d57ee49589",
+    "text": "أُبطل رمز وصول GNAP"
+  },
+  "audit.actions.gnap.rs.introspect.label": {
+    "en": "95163051792199f3",
+    "text": "استعلم خادم موارد عن رمز وصول GNAP"
+  },
+  "audit.actions.gnap.rs.register.label": {
+    "en": "616528ec363696a9",
+    "text": "سجّل خادم موارد مجموعة موارد GNAP"
+  },
+  "audit.actions.ssf.stream.create.label": {
+    "en": "3d4873ca2f3e8a95",
+    "text": "أُنشئ تدفق Shared Signals"
+  },
+  "audit.actions.ssf.stream.update.label": {
+    "en": "153bad40b9661b0f",
+    "text": "غُيّر تدفق Shared Signals"
+  },
+  "audit.actions.ssf.stream.delete.label": {
+    "en": "ab202e818b58bb83",
+    "text": "حُذف تدفق Shared Signals"
+  },
+  "audit.actions.ssf.stream.status.label": {
+    "en": "b7b5eb76ca067916",
+    "text": "شُغّل تدفق أو أُوقف مؤقتًا أو عُطّل"
+  },
+  "audit.actions.ssf.subject.change.label": {
+    "en": "b5aedc901f3aa327",
+    "text": "أُضيف موضوع إلى تدفق أو أُزيل منه"
+  },
+  "audit.actions.ssf.event.transmit.label": {
+    "en": "3a3cd80f6d3a215a",
+    "text": "سُلّم Security Event Token إلى مستقبِل"
+  },
+  "audit.actions.ssf.announcement.broadcast.label": {
+    "en": "1e249bba761a1865",
+    "text": "بُثّ إعلان إلى التطبيقات التي سجّلت الدخول"
+  },
+  "audit.actions.ssf.event.refused.label": {
+    "en": "29910e5a49b21a0c",
+    "text": "رفض مستقبِل Security Event Token"
+  },
+  "audit.actions.ssf.stream.dead.label": {
+    "en": "06c053574e130b1a",
+    "text": "أُعلن موت تدفق دفع بعد إخفاق الدفعات وحدها"
+  },
+  "audit.actions.ssf.stream.revived.label": {
+    "en": "bb572a202bd6c70a",
+    "text": "أُحيي تدفق دفع ميت"
+  },
+  "audit.actions.ssf.stream.delivery.label": {
+    "en": "3df44dec0e09a7e4",
+    "text": "انتقل تدفق مستقبِل من تسليم الدفع إلى تسليم الاستطلاع"
+  },
+  "audit.actions.ssf.deadletter.clear.label": {
+    "en": "1caaf3043e122f70",
+    "text": "أُفرغ طابور الرسائل المتعذّر تسليمها لتدفق يدويًا"
+  },
+  "audit.actions.ssf.event.receive.label": {
+    "en": "12ab6669f5a136e8",
+    "text": "دُفع Security Event Token إلى هذه الخدمة"
+  },
+  "audit.actions.caep.event.auto.label": {
+    "en": "b5f40accc5e9e150",
+    "text": "أصبح حدث CAEP مستحقًا لأن جلسة تغيّرت"
+  },
+  "audit.actions.caep.event.emit.label": {
+    "en": "b0c8137c489493d5",
+    "text": "أُصدر حدث CAEP يدويًا"
+  },
+  "audit.actions.caep.session.reset.label": {
+    "en": "dc5cd9a8d40da255",
+    "text": "أُعيد تعيين حالة CAEP لجلسة واحدة"
+  },
+  "audit.actions.caep.session.clear.label": {
+    "en": "5d7001f86cd8a1e9",
+    "text": "مُسح سجل جلسات CAEP"
+  },
+  "audit.actions.risc.event.auto.label": {
+    "en": "1ce902ca9f8e640a",
+    "text": "أصبح حدث RISC مستحقًا لأن الدليل تغيّر"
+  },
+  "audit.actions.risc.event.emit.label": {
+    "en": "b1167bf71ee133e2",
+    "text": "أُصدر حدث RISC يدويًا"
+  },
+  "audit.actions.risc.account.reset.label": {
+    "en": "94728541aaba5150",
+    "text": "أُعيد تعيين حالة RISC لحساب واحد"
+  },
+  "audit.actions.risc.account.clear.label": {
+    "en": "38e9f05ac95fd655",
+    "text": "مُسح سجل حسابات RISC"
+  },
+  "audit.actions.persistence.minted-drop.label": {
+    "en": "065f403ac7419f76",
+    "text": "أُسقط صف مسكوك لم يكن ليمكن إيداعه أبدًا"
+  },
+  "audit.actions.admin.aud-sub.set.label": {
+    "en": "67489d67e805ecfd",
+    "text": "غيّر المسؤول إعداد aud_sub لشخص"
+  },
+  "audit.actions.admin.mfa.backup-codes.cleared.label": {
+    "en": "ea84314da98659bf",
+    "text": "أزال المسؤول رموز الاسترداد الخاصة بشخص"
+  },
+  "audit.actions.admin.password.reset-keytab.label": {
+    "en": "b038ba117b4de668",
+    "text": "أعاد المسؤول تعيين كلمة مرور وسلّم keytab الشخص"
+  },
+  "audit.actions.admin.user.attribute.label": {
+    "en": "52f81d95b080366d",
+    "text": "عيّن المسؤول سمة شخص أو أضافها أو أزالها"
+  },
+  "audit.actions.admin.service-account.set.label": {
+    "en": "5f269de6647c621b",
+    "text": "جعل المسؤول من شخص حساب خدمة، أو غيّر مالكه أو وجهته"
+  },
+  "audit.actions.admin.service-account.cleared.label": {
+    "en": "b2581e6ddce1f837",
+    "text": "أعاد المسؤول حساب خدمة شخصًا عاديًا"
+  },
+  "audit.actions.admin.service-account.owner-added.label": {
+    "en": "c687ebbfdb720dfc",
+    "text": "أضاف المسؤول مالكًا إلى حساب خدمة"
+  },
+  "audit.actions.admin.service-account.owner-removed.label": {
+    "en": "992391801a921812",
+    "text": "أزال المسؤول مالكًا من حساب خدمة"
+  },
+  "audit.actions.admin.service-account.destination-set.label": {
+    "en": "8565f4cfb53f2a32",
+    "text": "عيّن المسؤول وجهة دفع حساب خدمة أو أزالها"
+  },
+  "audit.actions.admin.service-account.rotate.label": {
+    "en": "9eab836b051b0346",
+    "text": "طلب المسؤول تدوير كلمة مرور حساب خدمة"
+  },
+  "audit.actions.admin.app-password.created.label": {
+    "en": "39ab2dba96dcf58b",
+    "text": "أنشأ المسؤول كلمة مرور تطبيق لشخص"
+  },
+  "audit.actions.admin.app-password.revoked.label": {
+    "en": "0509990ff43e2d9e",
+    "text": "أبطل المسؤول كلمة مرور تطبيق خاصة بشخص"
+  },
+  "audit.actions.admin.ciba.answered.label": {
+    "en": "0f2e483fa60b8d8f",
+    "text": "وافق المسؤول على طلب CIBA أو رفضه (أداة اختبار)"
+  },
+  "audit.actions.admin.device.removed.label": {
+    "en": "893a2ce1d871ed95",
+    "text": "أزال المسؤول جهاز شخص"
+  },
+  "audit.actions.admin.ida.recorded.label": {
+    "en": "b68f52de80751f43",
+    "text": "سجّل المسؤول تحققًا من الهوية لشخص"
+  },
+  "audit.actions.admin.ida.removed.label": {
+    "en": "071852997fcc15ca",
+    "text": "أزال المسؤول تحقق الهوية الخاص بشخص"
+  },
+  "audit.actions.admin.siop.enrolled.label": {
+    "en": "f6e33546d3d23472",
+    "text": "سجّل المسؤول موضوعًا ذاتي الإصدار (SIOPv2) لشخص"
+  },
+  "audit.actions.admin.siop.removed.label": {
+    "en": "f6af7681f3d25fd7",
+    "text": "أزال المسؤول الموضوع ذاتي الإصدار (SIOPv2) لشخص"
+  },
+  "audit.actions.admin.siop.preferred.label": {
+    "en": "3c3a62cf5e46c516",
+    "text": "علّم المسؤول DID المُثبَت لشخص بوصفه المفضّل، أو أزال العلامة"
+  },
+  "audit.actions.admin.passkey.enrolment-started.label": {
+    "en": "571c0a6bca1d9163",
+    "text": "بدأ المسؤول تسجيل مفتاح مرور لشخص"
+  },
+  "audit.actions.admin.passkey.enrolment-refused.label": {
+    "en": "1853c2bfff1cb208",
+    "text": "رُفض تسجيل المسؤول مفتاح مرور لشخص"
+  },
+  "audit.actions.admin.passkey.enrolled.label": {
+    "en": "62dfd8780a0a16af",
+    "text": "سجّل المسؤول مفتاح مرور لشخص"
+  },
+  "audit.actions.admin.passkey.upgrade-started.label": {
+    "en": "85e2c7f2d669f98e",
+    "text": "بدأ المسؤول ترقية مفتاح مرور شخص"
+  },
+  "audit.actions.admin.passkey.upgrade-refused.label": {
+    "en": "e1490e5ffb7d9199",
+    "text": "رُفضت ترقية المسؤول لمفتاح مرور"
+  },
+  "audit.actions.admin.passkey.upgrade-proved.label": {
+    "en": "92550d6a5a04ca93",
+    "text": "أثبت المسؤول مفتاح المرور التقليدي لشخص"
+  },
+  "audit.actions.admin.passkey.upgrade-cancelled.label": {
+    "en": "3653731050769a1b",
+    "text": "ألغى المسؤول ترقية مفتاح مرور شخص"
+  },
+  "audit.actions.admin.passkey.upgraded.label": {
+    "en": "de2f45f4af0eafa5",
+    "text": "رقّى المسؤول مفتاح مرور شخص إلى ML-DSA"
+  },
+  "audit.actions.ssf.signals.discover.label": {
+    "en": "55d2d7d9682c339a",
+    "text": "اكتُشف تكوين Shared Signals لشريك اتحاد"
+  },
+  "audit.actions.ssf.signals.stream.label": {
+    "en": "737beffd42f5852e",
+    "text": "أُنشئ تدفق عند مرسِل Shared Signals لشريك اتحاد"
+  },
+  "audit.actions.ssf.signals.unblock.label": {
+    "en": "5219dcbe14570844",
+    "text": "أُجيزت من جديد عمليات تسجيل الدخول التي كانت إشارة شريك اتحاد قد حجبها"
+  },
+  "audit.actions.ssf.signals.read-stream.label": {
+    "en": "ffea29094f8154a0",
+    "text": "قُرأ تدفق شريك اتحاد"
+  },
+  "audit.actions.ssf.signals.update-stream.label": {
+    "en": "9450fed407b4c350",
+    "text": "حُدّث تدفق شريك اتحاد"
+  },
+  "audit.actions.ssf.signals.delete-stream.label": {
+    "en": "b15530168632eb08",
+    "text": "حُذف تدفق شريك اتحاد"
+  },
+  "audit.actions.ssf.signals.set-status.label": {
+    "en": "285b162026e85285",
+    "text": "عُيّنت حالة تدفق شريك اتحاد"
+  },
+  "audit.actions.ssf.signals.add-subject.label": {
+    "en": "b63bb92d96373ae3",
+    "text": "أُضيف موضوع إلى تدفق شريك اتحاد"
+  },
+  "audit.actions.ssf.signals.remove-subject.label": {
+    "en": "c316b73a1a06cc62",
+    "text": "أُزيل موضوع من تدفق شريك اتحاد"
+  },
+  "audit.actions.ssf.signals.verify.label": {
+    "en": "d9dca81bc6808ffa",
+    "text": "طُلب من تدفق شريك اتحاد حدث تحقق"
+  },
+  "audit.actions.application.key-issued.label": {
+    "en": "03ad47a14907e857",
+    "text": "أصدر CA زوج مفاتيح عميل سطح مستضاف"
+  },
+  "audit.actions.enrollment.acme.account.create.label": {
+    "en": "3e069a334b19666a",
+    "text": "أُنشئ حساب ACME"
+  },
+  "audit.actions.enrollment.acme.account.deactivate.label": {
+    "en": "72423ecca6d7a8d3",
+    "text": "عُطّل حساب ACME"
+  },
+  "audit.actions.enrollment.acme.account.key-change.label": {
+    "en": "45caca51b10836c9",
+    "text": "غُيّر مفتاح حساب ACME"
+  },
+  "audit.actions.enrollment.eab.create.label": {
+    "en": "02cae811cec833c3",
+    "text": "صُنع مفتاح External Account Binding في ACME"
+  },
+  "audit.actions.enrollment.eab.delete.label": {
+    "en": "c8aa53e6726431da",
+    "text": "أُزيل مفتاح External Account Binding في ACME"
+  },
+  "audit.actions.enrollment.challenge.create.label": {
+    "en": "28c2f31734c71daf",
+    "text": "صُنعت كلمة مرور تحدّي SCEP"
+  },
+  "audit.actions.enrollment.challenge.delete.label": {
+    "en": "f6ccc4485e9cef99",
+    "text": "أُزيلت كلمة مرور تحدّي SCEP"
+  },
+  "audit.actions.enrollment.issue.label": {
+    "en": "3727fd2f52338653",
+    "text": "أُصدرت شهادة عبر ACME أو EST أو SCEP"
+  },
+  "audit.actions.enrollment.issue.refused.label": {
+    "en": "41f6f9d7815ffff2",
+    "text": "رُفض تسجيل شهادة"
+  },
+  "audit.actions.enrollment.revoke.label": {
+    "en": "c3925444750a1015",
+    "text": "أُبطلت شهادة مسجّلة"
+  },
+  "audit.actions.federation.signal-block.label": {
+    "en": "0f06883b0dbb2366",
+    "text": "حجبت Shared Signals لشريك اتحاد عمليات تسجيل الدخول الخاصة به لشخص (#373)"
+  },
+  "audit.actions.federation.signal-unblock.label": {
+    "en": "f1b6331059f472d3",
+    "text": "رفعت Shared Signals لشريك اتحاد حجبها عن شخص (#373)"
+  },
+  "audit.actions.federation.signout.label": {
+    "en": "2e6c01e23921383f",
+    "text": "أنهى تسجيل خروج شريك اتحاد جلسة"
+  },
+  "audit.actions.federation.signout-answered.label": {
+    "en": "156d4e2f462e9126",
+    "text": "أكّد شريك اتحاد تسجيل خروج أرسلته هذه الخدمة"
+  },
+  "audit.actions.federation.unlink.label": {
+    "en": "a5c85407fff2c148",
+    "text": "أُزيل ارتباط اتحاد من شخص"
+  },
+  "audit.actions.federation.connected.label": {
+    "en": "3466387fa24f3d55",
+    "text": "ربط شخص موفّرًا استهلاكيًا أو اجتماعيًا بحسابه"
+  },
+  "audit.actions.federation.provider-notification.label": {
+    "en": "bf89c99cd7734f16",
+    "text": "قُبل إشعار موفّر استهلاكي عن أحد أشخاصه"
+  },
+  "audit.actions.federation.group-ignored.label": {
+    "en": "a64e9612670b278c",
+    "text": "لم يُطبَّق اسم مجموعة شريك، لأنه يسمّي مجموعة لم تُنشئها تلك العلاقة أو مجموعة تمنح شيئًا بمجرد الانتماء إليها (#358)"
+  },
+  "audit.actions.group.add-member.label": {
+    "en": "37da254923cef1b6",
+    "text": "أُضيف عضو إلى مجموعة"
+  },
+  "audit.actions.group.add-owner.label": {
+    "en": "6ba2e67208b445ff",
+    "text": "أُضيف مالك إلى مجموعة"
+  },
+  "audit.actions.group.remove-owner.label": {
+    "en": "e5e65ad85891ab58",
+    "text": "أُزيل مالك من مجموعة"
+  },
+  "audit.actions.group.owner-protected.label": {
+    "en": "872bbc2dca2a5974",
+    "text": "أُغلقت مجموعة دون مالكيها، أو فُتحت لهم من جديد"
+  },
+  "audit.actions.group.set-mail.label": {
+    "en": "39413bc03154f800",
+    "text": "أُعطيت مجموعة عنوانًا، أو سُحب عنوانها"
+  },
+  "audit.actions.group.set-policy.label": {
+    "en": "7ca8946df0f9aee5",
+    "text": "أُعطيت مجموعة سياسة مسمّاة، أو مُسح الاسم"
+  },
+  "audit.actions.krb5.keytab.person.label": {
+    "en": "7f9ec638380e53d7",
+    "text": "صُنع keytab شخص من كلمة مرور متاحة"
+  },
+  "audit.actions.logout.backchannel.retry.label": {
+    "en": "48c1b798cbbd16cc",
+    "text": "أُعيدت محاولة تسليم Logout Token ميت عبر القناة الخلفية"
+  },
+  "audit.actions.oauth.device-secret.revoke.label": {
+    "en": "f382e451311ceacd",
+    "text": "أُبطل سر جهاز Native SSO"
+  },
+  "audit.actions.oauth2.ciba.notify.label": {
+    "en": "40247d2486a53b3f",
+    "text": "سُلّم إشعار ping أو push في CIBA أو أخفق"
+  },
+  "audit.actions.oauth2.claim-source-linked.label": {
+    "en": "378743408d814c69",
+    "text": "ربط شخص موفّر مطالبات"
+  },
+  "audit.actions.oauth2.claim-source-link-refused.label": {
+    "en": "304917d0872335a3",
+    "text": "رُفض رد نداء موفّر مطالبات: كان الارتباط مجهولًا، أو وصل في جلسة تسجيل دخول أخرى (#568)"
+  },
+  "audit.actions.oauth2.claims-providers.add-provider.label": {
+    "en": "32689eddc489b284",
+    "text": "سُجّل موفّر مطالبات"
+  },
+  "audit.actions.oauth2.claims-providers.update-provider.label": {
+    "en": "47c730b95278173b",
+    "text": "غُيّر موفّر مطالبات"
+  },
+  "audit.actions.oauth2.claims-providers.remove-provider.label": {
+    "en": "be1f28b2db7c1656",
+    "text": "أُزيل موفّر مطالبات"
+  },
+  "audit.actions.oauth2.claims-providers.revoke-link.label": {
+    "en": "a320d071faf639f1",
+    "text": "أُبطل ارتباط شخص بموفّر مطالبات"
+  },
+  "audit.actions.oauth2.command.label": {
+    "en": "e00f7bb85d9450bc",
+    "text": "استُلم OpenID Provider Command"
+  },
+  "audit.actions.oauth2.command.tenant.label": {
+    "en": "9615a82791bf97fd",
+    "text": "نُفّذ أمر مستأجر OpenID Provider"
+  },
+  "audit.actions.oauth2.grant-revoked.label": {
+    "en": "822d13c8d94685a0",
+    "text": "أُبطلت منحة Grant Management"
+  },
+  "audit.actions.oauth2.par.withdraw.label": {
+    "en": "f3413ee65719b6eb",
+    "text": "سُحب طلب تفويض مدفوع"
+  },
+  "audit.actions.password.set.label": {
+    "en": "2a1b07a8ecbc1d84",
+    "text": "عيّن المسؤول كلمة مرور شخص"
+  },
+  "audit.actions.service-account.rotated.label": {
+    "en": "260f3e0c6496aafe",
+    "text": "دُوّرت كلمة مرور حساب خدمة ودُفعت إلى وجهتها"
+  },
+  "audit.actions.service-account.rotation-failed.label": {
+    "en": "e37cc3c875768aba",
+    "text": "لم تُدوَّر كلمة مرور حساب خدمة؛ ولم يتغيّر شيء"
+  },
+  "audit.actions.portal.app-password.created.label": {
+    "en": "1128ac83789c2235",
+    "text": "أنشأ شخص كلمة مرور تطبيق"
+  },
+  "audit.actions.portal.app-password.revoked.label": {
+    "en": "cc585fef9d245590",
+    "text": "أبطل شخص كلمة مرور تطبيق"
+  },
+  "audit.actions.portal.app-password.csrf.label": {
+    "en": "e77bbbd5f3d6480d",
+    "text": "رُفض نموذج كلمة مرور تطبيق بسبب رمز CSRF الخاص به"
+  },
+  "audit.actions.portal.certificates.csrf.label": {
+    "en": "13f12b8682b65338",
+    "text": "رُفض نموذج شهادات بسبب رمز CSRF الخاص به"
+  },
+  "audit.actions.portal.device.remove.label": {
+    "en": "a23e3b91423c45b6",
+    "text": "أزال شخص جهاز Native SSO"
+  },
+  "audit.actions.portal.device.remember-browser.label": {
+    "en": "3e6dd7c211c0de5a",
+    "text": "تذكّر شخص المتصفح الذي كان يستخدمه على /portal/devices (#265)"
+  },
+  "audit.actions.portal.kerberos.keytab.label": {
+    "en": "d228ad6c8de67f3a",
+    "text": "نزّل شخص keytab الخاص به"
+  },
+  "audit.actions.portal.kerberos.refused.label": {
+    "en": "06c1bf49bafd77aa",
+    "text": "رُفض طلب keytab لشخص"
+  },
+  "audit.actions.portal.kerberos.csrf.label": {
+    "en": "45607efabeb88b85",
+    "text": "رُفض نموذج Kerberos بسبب رمز CSRF الخاص به"
+  },
+  "audit.actions.portal.key.started.label": {
+    "en": "94d7c38c91fd3cbe",
+    "text": "بدأ شخص تسجيل مفتاح أمان"
+  },
+  "audit.actions.portal.key.refused.label": {
+    "en": "6679aa8b834badee",
+    "text": "رُفض تسجيل مفتاح أمان لشخص"
+  },
+  "audit.actions.portal.key.upgrade-started.label": {
+    "en": "dbf67e17e370e57b",
+    "text": "بدأ شخص ترقية مفتاح مرور تقليدي إلى ML-DSA"
+  },
+  "audit.actions.portal.key.upgrade-refused.label": {
+    "en": "704e6bb3a4472960",
+    "text": "رُفضت ترقية مفتاح مرور لشخص"
+  },
+  "audit.actions.portal.key.upgraded.label": {
+    "en": "f16ccefcc9eb6aec",
+    "text": "رقّى شخص مفتاح مرور تقليدي إلى ML-DSA"
+  },
+  "audit.actions.portal.mfa.backup-codes.generated.label": {
+    "en": "18ec89def789c4a2",
+    "text": "ولّد شخص مجموعة من رموز الاسترداد"
+  },
+  "audit.actions.portal.mfa.backup-codes.confirmed.label": {
+    "en": "d00909f08b87672d",
+    "text": "أكّد شخص أنه احتفظ برموز الاسترداد الخاصة به"
+  },
+  "audit.actions.portal.mfa.backup-codes.discarded.label": {
+    "en": "6dd158a3c30ffda1",
+    "text": "تخلّى شخص عن مجموعة مولَّدة من رموز الاسترداد"
+  },
+  "audit.actions.portal.risc.optOutInitiated.label": {
+    "en": "5ab0bc8a8b2b737e",
+    "text": "بدأ شخص إلغاء الاشتراك في RISC"
+  },
+  "audit.actions.portal.risc.optOutCancelled.label": {
+    "en": "b84e60c2060ee85e",
+    "text": "ألغى شخص إلغاء اشتراك في RISC"
+  },
+  "audit.actions.portal.risc.optIn.label": {
+    "en": "fddad4840e8f7000",
+    "text": "أعاد شخص الاشتراك في RISC"
+  },
+  "audit.actions.portal.signing-key.issued.label": {
+    "en": "ef02d14e5ec6fe11",
+    "text": "أصدر شخص زوج مفاتيح التوقيع الخاص به"
+  },
+  "audit.actions.portal.signing-key.removed.label": {
+    "en": "cc45482e315cf6a0",
+    "text": "أزال شخص زوج مفاتيح التوقيع الخاص به"
+  },
+  "audit.actions.portal.signing-key.csrf.label": {
+    "en": "51cd295b713684de",
+    "text": "رُفض نموذج مفتاح توقيع بسبب رمز CSRF الخاص به"
+  },
+  "audit.actions.portal.signing-key.revoked.label": {
+    "en": "55c1155d5daa1c68",
+    "text": "أبطل شخص أحد أزواج مفاتيح التوقيع الخاصة به"
+  },
+  "audit.actions.did.person.published.label": {
+    "en": "36165dbbaae0269a",
+    "text": "نشر شخص did:web خاصًا به"
+  },
+  "audit.actions.did.person.version.label": {
+    "en": "0817a3adcc1f1b73",
+    "text": "اكتسبت وثيقة DID المنشورة لشخص إصدارًا جديدًا"
+  },
+  "audit.actions.did.person.authorized.label": {
+    "en": "ea87815291cf0868",
+    "text": "فوّض شخص مفتاحًا على DID المنشور الخاص به"
+  },
+  "audit.actions.did.person.deactivated.label": {
+    "en": "9ec36f274ed073e6",
+    "text": "عطّل شخص DID المنشور الخاص به"
+  },
+  "audit.actions.admin.did.deactivated.label": {
+    "en": "c5c4cc37c96da0e8",
+    "text": "عطّل المسؤول DID المنشور لشخص"
+  },
+  "audit.actions.portal.siop.enrol.label": {
+    "en": "9c4ac2b8893fae20",
+    "text": "سجّل شخص موضوعًا ذاتي الإصدار بإثباته بمحفظة"
+  },
+  "audit.actions.portal.siop.remove.label": {
+    "en": "b6f77328c0b99b89",
+    "text": "أزال شخص موضوعًا ذاتي الإصدار"
+  },
+  "audit.actions.portal.siop.prefer.label": {
+    "en": "7e6377e63c113f97",
+    "text": "علّم شخص DID مُثبَتًا بوصفه المفضّل لديه، أو أزال العلامة"
+  },
+  "audit.actions.portal.siop.view.label": {
+    "en": "e7a28d6d72970a6f",
+    "text": "تعذّر عرض الموضوعات ذاتية الإصدار على شخص"
+  },
+  "audit.actions.portal.siop.did.label": {
+    "en": "7fa86b94eee6535e",
+    "text": "تعذّر عرض وثيقة DID لموضوع ذاتي الإصدار على شخص"
+  },
+  "audit.actions.siop.key.pinned.label": {
+    "en": "a2cc99b16a4a406e",
+    "text": "ثُبّت موضوع ذاتي الإصدار did:web سُجّل بلا مفتاح مثبّت على المفتاح الذي سجّل الدخول به (في التطوير فقط)"
+  },
+  "audit.actions.siop.key.refused.label": {
+    "en": "ce5975b773d8c9d7",
+    "text": "رُفض تسجيل دخول ذاتي الإصدار did:web: لم يكن المفتاح هو المُثبَّت عند التسجيل، أو لم يُثبَّت أي مفتاح"
+  },
+  "audit.actions.portal.vc.offer.label": {
+    "en": "631dece03539cd4a",
+    "text": "أنشأ شخص Credential Offer لمحفظته"
+  },
+  "audit.actions.portal.vc.remove.label": {
+    "en": "bc144eaf5bf2222e",
+    "text": "أزال شخص بيانات اعتماد أصدرها له نطاق الثقة هذا"
+  },
+  "audit.actions.risk.feedback.label": {
+    "en": "e244d70b4d5a8c39",
+    "text": "سُجّلت ملاحظات على تقييم خطر"
+  },
+  "audit.actions.risk.response.label": {
+    "en": "36887af166b69ed0",
+    "text": "نُفّذت استجابة خطر"
+  },
+  "audit.actions.risk.terms.accept.label": {
+    "en": "68438e41825d8a4d",
+    "text": "قُبلت شروط موفّر مجموعة بيانات خطر"
+  },
+  "audit.actions.attribute-sources.add.label": {
+    "en": "7723c84bf547c28f",
+    "text": "أُضيف مصدر سمات"
+  },
+  "audit.actions.attribute-sources.update.label": {
+    "en": "3b252df30382723d",
+    "text": "غُيّر مصدر سمات"
+  },
+  "audit.actions.attribute-sources.remove.label": {
+    "en": "ba337c73fb4dc623",
+    "text": "أُزيل مصدر سمات"
+  },
+  "audit.actions.attribute-sources.refresh.label": {
+    "en": "9b6a000459343ab3",
+    "text": "قُرئ أشخاص من مصدر سمات يدويًا"
+  },
+  "audit.actions.scim-client.change.label": {
+    "en": "64156684e8c56596",
+    "text": "أُضيف عميل SCIM صادر أو غُيّر أو أُزيل"
+  },
+  "audit.actions.scim-client.delivery.label": {
+    "en": "daca3d57491288f9",
+    "text": "سُلّم تغيير إلى موفّر خدمة SCIM، أو صار رسالة متعذّر تسليمها"
+  },
+  "audit.actions.scim-client.reconcile.label": {
+    "en": "737369e31fa0ff1f",
+    "text": "طابَق عميل SCIM صادر موفّر خدمته"
+  },
+  "audit.actions.scim-client.queue.label": {
+    "en": "91401140d4bddd06",
+    "text": "أُعيدت محاولة رسالة متعذّر تسليمها لعميل SCIM صادر أو مُحيت"
+  },
+  "audit.actions.secret-destination.push.label": {
+    "en": "184a296748506865",
+    "text": "دُفعت كلمة مرور حساب خدمة إلى وجهة أسرار"
+  },
+  "audit.actions.secret-destination.test-push.label": {
+    "en": "38f7979ecec34d0a",
+    "text": "دُفع إصدار canary إلى السر الاختباري لوجهة أسرار"
+  },
+  "audit.actions.roles.add-owner.label": {
+    "en": "9c16fca67e86536f",
+    "text": "أُضيف مالك إلى دور"
+  },
+  "audit.actions.roles.remove-owner.label": {
+    "en": "904fa8504a89cb35",
+    "text": "أُزيل مالك من دور"
+  },
+  "audit.actions.roles.confer.label": {
+    "en": "5a52f4105ae28f80",
+    "text": "جُعل عميل يمنح دورًا لكل من يسجّل الدخول عبره"
+  },
+  "audit.actions.roles.unconfer.label": {
+    "en": "f4487269d3051eb8",
+    "text": "لم يعد عميل يمنح دورًا لكل من يسجّل الدخول عبره"
+  },
+  "audit.actions.roles.create.label": {
+    "en": "a510e6ae7b1a9adb",
+    "text": "أُنشئ دور"
+  },
+  "audit.actions.roles.delete.label": {
+    "en": "2426599aa1c52b19",
+    "text": "حُذف دور"
+  },
+  "audit.actions.roles.describe.label": {
+    "en": "896007dff32a6824",
+    "text": "عُيّن وصف دور أو اسم عرضه أو أنواع أعضائه"
+  },
+  "audit.actions.node-health.collect-garbage.label": {
+    "en": "cb2531d8ee2f27ce",
+    "text": "أُجري جمع قمامة كامل في عملية أو خيط عامل لعقدة"
+  },
+  "audit.actions.saml2.authnrequest.label": {
+    "en": "8d29d93421323443",
+    "text": "رُفض AuthnRequest في SAML 2.0"
+  },
+  "audit.actions.saml2.artifact.resolve.label": {
+    "en": "0f9a2c3b3c7b36ea",
+    "text": "رُفض حل artifact في SAML 2.0"
+  },
+  "audit.actions.saml2.attribute-query.label": {
+    "en": "c93dbc04d8c0ead5",
+    "text": "أُجيب عن استعلام سمات SAML 2.0 أو رُفض"
+  },
+  "audit.actions.saml2.metadata.mdq.label": {
+    "en": "a151672004b5a83f",
+    "text": "أُجري بحث MDQ في بيانات SAML الوصفية أو رُفض"
+  },
+  "audit.actions.saml2.metadata.refresh.label": {
+    "en": "775ac5b1f475f76f",
+    "text": "حُدّثت البيانات الوصفية SAML لموفّر خدمة"
+  },
+  "audit.actions.account.add.label": {
+    "en": "0fc7d9b61dee994d",
+    "text": "انضمّت جلسة إلى مجموعة حسابات متصفح"
+  },
+  "audit.actions.account.select.label": {
+    "en": "1fcc762640b7ba22",
+    "text": "اختير حساب عند منتقي الحسابات"
+  },
+  "audit.actions.account.switch.label": {
+    "en": "0b9681ea51a0edfa",
+    "text": "تغيّر الحساب الافتراضي لمتصفح"
+  },
+  "audit.actions.account.forget.label": {
+    "en": "17a75cbf0a350b17",
+    "text": "نسي متصفح حسابًا سُجّل خروجه"
+  },
+  "audit.actions.account.ambiguous.label": {
+    "en": "cc103c68ea2f6ef9",
+    "text": "لم يبيّن طلب أي حسابات المتصفح يخصّه"
+  },
+  "audit.actions.session.reauthenticate.label": {
+    "en": "f6867c3c6a1d35bd",
+    "text": "سجّل الشخص نفسه الدخول مرة أخرى على جلسة قائمة"
+  },
+  "audit.actions.session.presented.label": {
+    "en": "d1629f19f6dc2282",
+    "text": "قُدّمت جلسة تسجيل دخول قائمة إلى تطبيق"
+  },
+  "audit.actions.session.refuse.label": {
+    "en": "c8703bfa89913b23",
+    "text": "رُفضت جلسة بسبب آلية تسجيل الدخول الخاصة بها"
+  },
+  "audit.actions.session.refused.label": {
+    "en": "9422128afb69d8ad",
+    "text": "رفض سطح مستضاف جلسة"
+  },
+  "audit.actions.ssf.event.act.label": {
+    "en": "bf25b2c0497d20f6",
+    "text": "اتُّخذ إجراء بشأن Security Event متلقًّى"
+  },
+  "audit.actions.ssf.stream.swept.label": {
+    "en": "a5277d5fd80dfb8e",
+    "text": "كُنس تدفق مستقبِل قديم"
+  },
+  "audit.actions.xacml.pep.enable.label": {
+    "en": "4584cff2d4f455e6",
+    "text": "شُغّل PEP بعيد"
+  },
+  "audit.actions.xacml.pep.disable.label": {
+    "en": "1ca5e416c1bfdf45",
+    "text": "عُطّل PEP بعيد"
+  },
+  "audit.actions.xacml.pep.forget.label": {
+    "en": "82df232dbe72d709",
+    "text": "نُسي PEP بعيد"
+  },
+  "audit.actions.xacml.pep.proxy.set.label": {
+    "en": "b27a6eab052ea9fa",
+    "text": "عُيّن تكوين الوكيل العكسي لـ PEP بعيد"
+  },
+  "audit.actions.xacml.pep.proxy.clear.label": {
+    "en": "faee586bfee3cbf0",
+    "text": "أُزيل تكوين الوكيل العكسي لـ PEP بعيد"
+  },
+  "audit.actions.xacml.pep.validate.label": {
+    "en": "c3a780c6921b5dd8",
+    "text": "طلب وكيل PEP بعيد التحقق من بيانات اعتماد"
+  },
+  "audit.actions.xacml.pep.sync.label": {
+    "en": "a1e3feab83951fcf",
+    "text": "طُلب من PEP بعيد سحب كامل إعداده الآن"
+  },
+  "audit.actions.xacml.pep.listener.certificate.label": {
+    "en": "be45d48c8c187916",
+    "text": "أُصدرت شهادة لمستمع HTTPS الخاص بـ PEP بعيد"
+  },
+  "audit.actions.xacml.pep.cluster.create.label": {
+    "en": "6f6a985e3173c03a",
+    "text": "أُنشئ عنقود PEP بعيد"
+  },
+  "audit.actions.xacml.pep.cluster.delete.label": {
+    "en": "65ee97f601bfa789",
+    "text": "حُذف عنقود PEP بعيد"
+  },
+  "audit.actions.xacml.pep.cluster.member.add.label": {
+    "en": "dc0f84c7fa737cee",
+    "text": "أُضيف PEP بعيد إلى عنقود"
+  },
+  "audit.actions.xacml.pep.cluster.member.set.label": {
+    "en": "f40e76a089d7b7e1",
+    "text": "ضُبطت عناوين عضو في عنقود PEP بعيد"
+  },
+  "audit.actions.xacml.pep.cluster.member.remove.label": {
+    "en": "a59512e4ad700e39",
+    "text": "أُزيل PEP بعيد من عنقود"
+  },
+  "audit.actions.xacml.policy.write.label": {
+    "en": "29b7a729b51d40c7",
+    "text": "كُتبت سياسة XACML"
+  },
+  "audit.actions.xacml.policy.delete.label": {
+    "en": "90274c33f8a0cbe3",
+    "text": "حُذفت سياسة XACML"
+  },
+  "audit.actions.report.definition.create.label": {
+    "en": "8afc9b8a912421fa",
+    "text": "أُنشئ تعريف تقرير"
+  },
+  "audit.actions.report.definition.update.label": {
+    "en": "c00aee36399477bb",
+    "text": "حُدّث تعريف تقرير"
+  },
+  "audit.actions.report.definition.share.label": {
+    "en": "02777829b1842fad",
+    "text": "شُورِك تعريف تقرير مع مجموعة"
+  },
+  "audit.actions.report.definition.delete.label": {
+    "en": "eab7ce893f26b998",
+    "text": "حُذف تعريف تقرير"
+  },
+  "audit.actions.report.job.submit.label": {
+    "en": "3a48a543fc6fd27e",
+    "text": "قُدّمت مهمة تقرير"
+  },
+  "audit.actions.report.job.start.label": {
+    "en": "c2145542f6189d5c",
+    "text": "بدأت مهمة تقرير"
+  },
+  "audit.actions.report.job.complete.label": {
+    "en": "0df392f7d726487c",
+    "text": "اكتملت مهمة تقرير"
+  },
+  "audit.actions.report.job.fail.label": {
+    "en": "d342e8699921dd5d",
+    "text": "فشلت مهمة تقرير"
+  },
+  "audit.actions.report.job.cancel.label": {
+    "en": "0ead0c5eaedc5eb1",
+    "text": "أُلغيت مهمة تقرير"
+  },
+  "audit.actions.report.notify.label": {
+    "en": "98a351693fca3699",
+    "text": "أُرسل إشعار باكتمال تقرير"
+  },
+  "audit.actions.report.query.label": {
+    "en": "0de138fe9e778bd8",
+    "text": "نُفّذ استعلام تقرير"
+  },
+  "audit.actions.report.job.retrieve.label": {
+    "en": "2f81320658ea37b8",
+    "text": "استُرجعت نتيجة تقرير"
+  },
+  "audit.actions.admin.audit-export.add.label": {
+    "en": "8c0a46b4a7286c31",
+    "text": "أُضيفت وجهة تصدير تدقيق"
+  },
+  "audit.actions.admin.audit-export.update.label": {
+    "en": "5dffabe5c58492fb",
+    "text": "حُدّثت وجهة تصدير تدقيق"
+  },
+  "audit.actions.admin.audit-export.remove.label": {
+    "en": "a1ce8547b7eb7431",
+    "text": "أُزيلت وجهة تصدير تدقيق"
+  },
+  "audit.actions.admin.audit-export.enable.label": {
+    "en": "8b7b2ef9c33fe419",
+    "text": "فُعّلت وجهة تصدير تدقيق"
+  },
+  "audit.actions.admin.audit-export.disable.label": {
+    "en": "7dbb1b1d2bdf4aec",
+    "text": "عُطّلت وجهة تصدير تدقيق"
+  },
+  "audit.actions.admin.audit-export.test.label": {
+    "en": "e523fcd6d4957e6d",
+    "text": "اختُبرت وجهة تصدير تدقيق"
+  },
+  "audit.actions.audit.export.test.label": {
+    "en": "25d9164b7269ce2d",
+    "text": "أُرسل حدث اختبار إلى وجهة تصدير تدقيق"
+  },
+  "audit.actions.certificate.stored.label": {
+    "en": "fcec1bd6f10fd5cc",
+    "text": "خُزّنت شهادة على قيد شخص أو تطبيق"
+  },
+  "audit.actions.certificate.unstored.label": {
+    "en": "6e2d0aef72c7b82c",
+    "text": "أُزيلت شهادة من قيد شخص أو تطبيق"
+  },
+  "audit.actions.wstrust.decryption-key.issue.label": {
+    "en": "852f10d64b4ff6b8",
+    "text": "أُصدر زوج مفاتيح لفك تشفير WS-Trust لتطبيق"
+  },
+  "audit.actions.wstrust.decryption-key.upload.label": {
+    "en": "2ee5026151a98054",
+    "text": "رُفع زوج مفاتيح لفك تشفير WS-Trust لتطبيق"
+  },
+  "audit.actions.wstrust.decryption-key.remove.label": {
+    "en": "213e9a56f6e8e48b",
+    "text": "أُزيل زوج مفاتيح فك تشفير WS-Trust الخاص بتطبيق"
+  },
+  "audit.actions.federation.link.add.label": {
+    "en": "5e6953235158adac",
+    "text": "ربط المسؤول شخصًا بموضوع شريك"
+  },
+  "audit.actions.federation.link.remove.label": {
+    "en": "4a6ebcf9e0c4f69e",
+    "text": "فك المسؤول ارتباط شخص بموضوع شريك"
+  },
+  "audit.actions.roles.grant.label": {
+    "en": "6e1aacb692156ad2",
+    "text": "مُنح دور لشخص أو مجموعة أو تطبيق"
+  },
+  "audit.actions.roles.revoke.label": {
+    "en": "d4772fbd49ab2048",
+    "text": "سُحب دور من شخص أو مجموعة أو تطبيق"
+  },
+  "audit.actions.roles.authorize.label": {
+    "en": "190dc5bd1b682898",
+    "text": "جُعل دور مفوِّضًا لإذن"
+  },
+  "audit.actions.roles.unauthorize.label": {
+    "en": "633291edd4fb6eba",
+    "text": "لم يعد دور يفوّض إذنًا"
+  },
+  "audit.actions.krb5.trust.add.label": {
+    "en": "35ee62b7c98a22a0",
+    "text": "أُضيفت ثقة Kerberos"
+  },
+  "audit.actions.krb5.trust.update.label": {
+    "en": "91295a7233165143",
+    "text": "غُيّرت ثقة Kerberos"
+  },
+  "audit.actions.krb5.trust.enable.label": {
+    "en": "be6b3132d857d428",
+    "text": "فُعّلت ثقة Kerberos"
+  },
+  "audit.actions.krb5.trust.disable.label": {
+    "en": "689c9295e8a342c1",
+    "text": "عُطّلت ثقة Kerberos"
+  },
+  "audit.actions.krb5.trust.rotate-key.label": {
+    "en": "cea8ab994f72f176",
+    "text": "دُوّر مفتاح ثقة Kerberos"
+  },
+  "audit.actions.krb5.trust.remove.label": {
+    "en": "c7be95e7265a0f91",
+    "text": "أُزيلت ثقة Kerberos"
+  },
+  "audit.actions.krb5.trust.pair.label": {
+    "en": "5aaa9caed768fb99",
+    "text": "اقترنت ثقة Kerberos بنطاق ثقة آخر"
+  },
+  "audit.actions.admin.authn-policy.save-named.label": {
+    "en": "ae73731a4c9b5201",
+    "text": "أُنشئت سياسة مصادقة مسماة أو استُبدلت"
+  },
+  "audit.actions.admin.authn-policy.delete-named.label": {
+    "en": "20cf17485f5112f0",
+    "text": "حُذفت سياسة مصادقة مسماة"
+  },
+  "audit.actions.admin.service-account-policy.change.label": {
+    "en": "c43377ee4ee62d65",
+    "text": "غُيّر ملف تعريف سياسة حساب خدمة"
+  },
+  "audit.actions.admin.passkey-policy.change.label": {
+    "en": "d6cd0159f9f4f42f",
+    "text": "غُيّر ملف تعريف سياسة مفتاح المرور"
+  },
+  "audit.actions.admin.passkey-client.clear.label": {
+    "en": "caac9fcf2aacd596",
+    "text": "عُرض ML-DSA مجددًا على عميل مفتاح مرور مُتعلَّم واحد، أو على كل واحد"
+  },
+  "audit.actions.admin.attribute-policy.change.label": {
+    "en": "def95fa5be84d974",
+    "text": "غُيّر ملف تعريف سياسة سمات"
+  },
+  "audit.actions.admin.attribute-policy.define.label": {
+    "en": "efb3c94b0f679855",
+    "text": "عُرّفت سمة مخصصة في نطاق ثقة"
+  },
+  "audit.actions.admin.attribute-policy.update.label": {
+    "en": "2ac2f1f56a0abb78",
+    "text": "غُيّرت سمة مخصصة لنطاق ثقة"
+  },
+  "audit.actions.admin.attribute-policy.undefine.label": {
+    "en": "f86e0a469574ebc8",
+    "text": "أُزيلت سمة مخصصة لنطاق ثقة"
+  },
+  "audit.actions.authn.session.registration.refused.label": {
+    "en": "be4013bf84068a75",
+    "text": "رُفض ربط جلسة تسجيل الدخول بمفتاح متصفحها"
+  },
+  "audit.actions.authn.session.refresh.refused.label": {
+    "en": "9e63e887ac8bc909",
+    "text": "رُفض تجديد ملف تعريف ارتباط جلسة مرتبطة بجهاز"
+  },
+  "audit.actions.account.disable.label": {
+    "en": "46bd2589fcc45fc9",
+    "text": "عُطّل حساب شخص"
+  },
+  "audit.actions.account.enable.label": {
+    "en": "8e93f6c58f12f275",
+    "text": "فُعّل حساب شخص"
+  },
+  "audit.actions.enrollment.hostname.add.label": {
+    "en": "d87645d47198c4be",
+    "text": "سُجّل اسم مضيف على قيد لتسجيل الشهادات"
+  },
+  "audit.actions.enrollment.hostname.remove.label": {
+    "en": "6741b0eed245a1e4",
+    "text": "أُزيل اسم مضيف من قيد لتسجيل الشهادات"
+  },
+  "audit.actions.device.risk.label": {
+    "en": "229ae42804651e11",
+    "text": "ضُبط مستوى مخاطر جهاز مسجّل"
+  },
+  "audit.actions.federation.create.label": {
+    "en": "d39349db65bbbeac",
+    "text": "أُنشئت علاقة اتحاد"
+  },
+  "audit.actions.federation.update.label": {
+    "en": "e42d4ad8c054a018",
+    "text": "غُيّرت علاقة اتحاد"
+  },
+  "audit.actions.federation.delete.label": {
+    "en": "a2446b9385d97441",
+    "text": "حُذفت علاقة اتحاد"
+  },
+  "audit.actions.federation.encryption-key.label": {
+    "en": "f1edb957b2f0924b",
+    "text": "تغيّرت مفاتيح تشفير علاقة اتحاد"
+  },
+  "audit.actions.federation.client-certificate.label": {
+    "en": "43510962ed549172",
+    "text": "مُنحت علاقة اتحاد شهادة عميل"
+  },
+  "audit.actions.federation.refused.label": {
+    "en": "ec3bda0f9fafeef9",
+    "text": "رُفض تسجيل دخول اتحادي عبر علاقة"
+  },
+  "audit.actions.krb5.krbtgt.created.label": {
+    "en": "b7cafb8b01f4edf5",
+    "text": "أُنشئ مفتاح krbtgt لنطاق ثقة"
+  },
+  "audit.actions.krb5.krbtgt.rotated.label": {
+    "en": "44b713e96a2117cb",
+    "text": "دُوّر مفتاح krbtgt لنطاق ثقة"
+  },
+  "audit.actions.krb5.krbtgt.invalidated.label": {
+    "en": "eb890adb9a5d4927",
+    "text": "استُبدل مفتاح krbtgt لنطاق ثقة وأُبطل كل مفتاح أقدم"
+  },
+  "audit.actions.admin.krb5.krbtgt.created.label": {
+    "en": "094c69cb63255f7f",
+    "text": "أنشأ مشغّل مفتاح krbtgt لنطاق ثقة"
+  },
+  "audit.actions.admin.krb5.krbtgt.rotated.label": {
+    "en": "da65e2043c944e92",
+    "text": "دوّر مشغّل مفتاح krbtgt لنطاق ثقة"
+  },
+  "audit.actions.admin.krb5.krbtgt.invalidated.label": {
+    "en": "3f717cdcd547e8fa",
+    "text": "استبدل مشغّل مفتاح krbtgt لنطاق ثقة وأبطل كل مفتاح أقدم"
+  },
+  "audit.actions.ciba.approved.label": {
+    "en": "bf1e09c296b342d8",
+    "text": "وافق شخص على طلب تسجيل دخول عبر القناة الخلفية"
+  },
+  "audit.actions.ciba.denied.label": {
+    "en": "ef1a7cf6cc1d03c9",
+    "text": "رفض شخص طلب تسجيل دخول عبر القناة الخلفية"
+  },
+  "audit.actions.oidfed.subordinate-suspended.label": {
+    "en": "6675877d77c0566f",
+    "text": "عُلّق تابع OpenID Federation"
+  },
+  "audit.actions.oidfed.subordinate-reinstated.label": {
+    "en": "7986bb422295e58b",
+    "text": "أُعيد تابع OpenID Federation"
+  },
+  "audit.actions.oidfed.collection-crawled.label": {
+    "en": "7607eb6d5f234343",
+    "text": "زُحفت مجموعة كيانات OpenID Federation"
+  },
+  "audit.actions.portal.device.approve.label": {
+    "en": "b3f3ad8f3bef6764",
+    "text": "وافق شخص على تسجيل دخول جهاز على البوابة"
+  },
+  "audit.actions.portal.device.deny.label": {
+    "en": "b6ec1ec11487f09e",
+    "text": "رفض شخص تسجيل دخول جهاز على البوابة"
+  },
+  "audit.actions.portal.device.prove.label": {
+    "en": "18f9f5e553c02d46",
+    "text": "أثبت شخص مفتاح جهاز على البوابة"
+  },
+  "audit.actions.portal.device.link.label": {
+    "en": "981a3df836380a9f",
+    "text": "ربط شخص جهازًا بمفتاح مرور على البوابة"
+  },
+  "audit.actions.portal.vc.view.label": {
+    "en": "5bf708d5ba3e1335",
+    "text": "رُفض عرض بيانات الاعتماد التي قد تُعرض على شخص"
+  },
+  "audit.actions.risk.dataset.import.label": {
+    "en": "a6752612f66f4e39",
+    "text": "استُوردت مجموعة بيانات مخاطر"
+  },
+  "audit.actions.risk.dataset.activate.label": {
+    "en": "91fef9a13928d970",
+    "text": "جُعل إصدار من مجموعة بيانات مخاطر هو الإصدار النشط"
+  },
+  "audit.actions.risk.dataset.delete.label": {
+    "en": "160c256ebf676ac4",
+    "text": "حُذف إصدار من مجموعة بيانات مخاطر"
+  },
+  "audit.actions.ssf.signals.replace-stream.label": {
+    "en": "34f7435fe1e7831e",
+    "text": "استُبدل تدفق Shared Signals لشريك"
+  },
+  "audit.actions.ssf.signals.read-status.label": {
+    "en": "8836857266e386f3",
+    "text": "قُرئت حالة تدفق Shared Signals لشريك"
+  },
+  "audit.actions.xacml.pep.listener.set.label": {
+    "en": "e6d3d068edd0c700",
+    "text": "عُرّف مستمع PEP بعيد"
+  },
+  "audit.actions.xacml.pep.listener.remove.label": {
+    "en": "22371f2d5a219bd9",
+    "text": "أُزيل مستمع PEP بعيد"
+  },
+  "audit.actions.xacml.pep.listener.renew.label": {
+    "en": "e2fadf6c2e12e48a",
+    "text": "طُلبت من PEP بعيد شهادة جديدة لمستمع"
+  },
+  "audit.actions.xacml.pep.listener.environment.label": {
+    "en": "bbc3fa7f73024a89",
+    "text": "ضُبطت معايرة مستمع البيئة لـ PEP بعيد"
+  },
+  "audit.actions.xacml.pep.settings.set.label": {
+    "en": "67e23ea4e64903a9",
+    "text": "ضُبطت الإعدادات المُدارة لـ PEP بعيد"
+  },
+  "audit.actions.xacml.pep.settings.clear.label": {
+    "en": "e3d844d8e92ded2e",
+    "text": "مُسحت الإعدادات المُدارة لـ PEP بعيد"
+  },
+  "audit.actions.xacml.pep.cluster.listener.set.label": {
+    "en": "5b7e185e98dfd54a",
+    "text": "عُرّف مستمع عنقود PEP بعيد"
+  },
+  "audit.actions.xacml.pep.cluster.listener.remove.label": {
+    "en": "7b2dcfb3707fb0ab",
+    "text": "أُزيل مستمع عنقود PEP بعيد"
+  },
+  "audit.actions.xacml.pep.cluster.listener.renew.label": {
+    "en": "0516e0cae2b0cffd",
+    "text": "طُلبت من عنقود PEP بعيد شهادة جديدة لمستمع"
+  },
+  "audit.actions.xacml.pep.cluster.listener.environment.label": {
+    "en": "54c7af5c001fd2d3",
+    "text": "ضُبطت معايرة مستمع البيئة لعنقود PEP بعيد"
+  },
+  "audit.actions.xacml.pep.cluster.settings.set.label": {
+    "en": "fddab35861f79541",
+    "text": "ضُبطت الإعدادات المُدارة لعنقود PEP بعيد"
+  },
+  "audit.actions.xacml.pep.cluster.settings.clear.label": {
+    "en": "cfb6935d3e45461e",
+    "text": "مُسحت الإعدادات المُدارة لعنقود PEP بعيد"
+  },
+  "audit.actions.xacml.pep.cluster.proxy.set.label": {
+    "en": "0990d52a28561ed0",
+    "text": "ضُبط إعداد الوكيل العكسي لعنقود PEP بعيد"
+  },
+  "audit.actions.xacml.pep.cluster.proxy.clear.label": {
+    "en": "c2812e5d21fb6dd4",
+    "text": "أُزيل إعداد الوكيل العكسي لعنقود PEP بعيد"
+  }
+}

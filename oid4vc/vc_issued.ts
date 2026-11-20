@@ -258,7 +258,7 @@ interface VcIssuedDeps {
 }
 
 // The formats a row may describe: every format this issuer issues.
-const KEPT_FORMATS = ['dc+sd-jwt', 'jwt_vc_json', 'ldp_vc'];
+const KEPT_FORMATS = ['dc+sd-jwt', 'jwt_vc_json', 'ldp_vc', 'mso_mdoc'];
 
 // How many credentials one Data Integrity row lists. A wallet re-issuing
 // every few minutes for a year is the case this bounds; the oldest go first,
@@ -321,8 +321,9 @@ const issuedCount = cacheRegistry.register({
   title: 'Wallet sign-in register',
   description: 'The credentials this realm issued for a person on an ' +
     'access token it verified, which are the only ones a wallet may sign ' +
-    'in with — keyed by a digest of the issuer-signed JWT, or for ldp_vc by ' +
-    'the holder key and the person.',
+    'in with — keyed by a digest of the issuer-signed JWT (for an mdoc, ' +
+    'of issuerAuth\'s payload), or for ldp_vc by the holder key and the ' +
+    'person.',
   owner: 'oid4vc/vc_issued.ts',
   scope: 'realm',
   kind: 'replay',

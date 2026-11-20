@@ -65,11 +65,12 @@
 // committed, so the store answers. A record whose DN is already there is
 // PRESENT and skipped, which is what makes a re-run add nothing.
 //
-// **WHAT IT DOES NOT DO**, each argued on #629 and in `docs/bulk-import.md`:
-// no credentials (a password, Kerberos keys, a factor — the allowlist below
-// refuses every one), no audit row per entry, no `noteAccountChange()` (so no
-// RISC or CAEP event and no outbound SCIM push), no groups, no update of an
-// existing entry, no multi-cell store (the routing index), no ldif store.
+// **WHAT IT DOES NOT DO**, each argued on #629 and in
+// `docs/v1.1.0/bulk-import.md`: no credentials (a password, Kerberos keys, a
+// factor — the allowlist below refuses every one), no audit row per entry, no
+// `noteAccountChange()` (so no RISC or CAEP event and no outbound SCIM push),
+// no groups, no update of an existing entry, no multi-cell store (the routing
+// index), no ldif store.
 // ===========================================================================
 
 const fs = require('fs');
@@ -407,7 +408,7 @@ const DROP_OWN =
 // transaction committed. Every import of the realm commits
 // that way, ONE AT A TIME, and a commit becomes visible before its lock is
 // released, so each check sees every other import's committed rows: two
-// files that overlap cannot both admit a name (`docs/bulk-import.md`,
+// files that overlap cannot both admit a name (`docs/v1.1.0/bulk-import.md`,
 // *Several imports at once*). No correlated guard is needed in the insert,
 // and none would be cheap (above).
 //

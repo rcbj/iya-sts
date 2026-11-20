@@ -83,6 +83,7 @@ import realms = require('../common/realms');
 import cacheRegistry = require('../common/cache_registry');
 import subjects = require('./ssf_subjects');
 import events = require('./ssf_events');
+import SsfModel = require('./ssf_model');
 
 // stream_id -> stream record, one partition per trust realm.
 const streams = realms.map({ persist: 'ssf_streams.streams' });
@@ -202,20 +203,12 @@ const DELIVERY_PUSH = 'urn:ietf:rfc:8935';
 const DELIVERY_POLL = 'urn:ietf:rfc:8936';
 
 /**
- * The two delivery methods, each with its URN, a name and a description.
+ * The two delivery methods, each with its URN, a name and a description —
+ * the model's rows (`models/ssf/ssf.tsp`, #1579).
  */
-const DELIVERY_METHODS = [
-  { method: DELIVERY_PUSH, name: 'Push (RFC 8935)',
-    what: 'The transmitter POSTs each SET to a URL the receiver gave it. ' +
-          'The receiver has to be reachable, which is what makes this the ' +
-          'hard one for a browser: a page cannot be an HTTP server, so the ' +
-          'debugger hosts its receiver endpoint in its api layer.' },
-  { method: DELIVERY_POLL, name: 'Poll (RFC 8936)',
-    what: 'The receiver POSTs to the transmitter and is handed whatever has ' +
-          'queued up, acknowledging what it read. Nothing has to be ' +
-          'reachable but the transmitter, which is why a browser can be a ' +
-          'receiver over this method and not over the other one.' }
-];
+const DELIVERY_METHODS = SsfModel.deliveries().map(function (row: any) {
+  return { method: row.method, name: row.name, what: row.what };
+});
 
 // Whether an event about this subject belongs on this stream. `defaultSubjects`
 // is what decides it when the list is empty; see the header above.
@@ -478,8 +471,9 @@ class SsfStreams {
    *
    * @param asked - the Stream Configuration the receiver posted
    * @param context - `principal` (the authenticated receiver, recorded as the
-   * owner), `issuer`, and, for this service's own receivers, `internalSurface`,
-   * `streamId` and `audience`
+   * owner), `issuer`, `pepMember` (a cluster member's registered name, from
+   * `X-Iya-Pep-Name` and never the body), and, for this service's own
+   * receivers, `internalSurface`, `streamId` and `audience`
    * @returns `{ ok, stream, errors }`
    */
   createStream(asked?, context?) {
@@ -603,6 +597,13 @@ class SsfStreams {
       // caller could present itself as whatever string the internal streams
       // were created under. A marked stream is owned by no remote receiver.
       internalSurface: internal ? String(ctx.internalSurface) : undefined,
+      // A CLUSTER MEMBER'S STREAM (#1760 phase 3). From the context, which
+      // read X-Iya-Pep-Name, and never from the body: the members share
+      // one client, so a body field would let one of them tag the stream
+      // it creates as another's. This service's own streams are not
+      // members. Bookkeeping, like `subjects`: the wire form omits it.
+      pepMember: !internal && ctx.pepMember
+        ? String(ctx.pepMember) : undefined,
       // SSF 1.0 section 8.1.1's "eligible Receiver activity", in epoch
       // seconds: set here, on every management call naming the stream and on
       // every poll. What the inactivity timeout counts from.
@@ -1070,8 +1071,12 @@ class SsfStreams {
       return norm(a) === norm(b);
     };
     const expected = this.streamConfiguration(record, {});
-    const members = ['iss', 'aud', 'events_supported', 'events_delivered',
-                     'min_verification_interval', 'inactivity_timeout'];
+    // THE MODEL SAYS WHICH (#1579): every Transmitter-Supplied member of
+    // a stream configuration but `stream_id`, which is how an update names
+    // the stream, in the model's order.
+    const members = SsfModel.supplied('transmitter').filter((name) => {
+      return name !== 'stream_id';
+    });
     for (let i = 0; i < members.length; i++) {
       const name = members[i];
       if (!Object.prototype.hasOwnProperty.call(body, name)) {
@@ -2971,10 +2976,10 @@ class SsfStreams {
   }
 
   // The wire form of a stream configuration — what a receiver gets back from
-  // the management API. It is NOT the record: `subjects`, the queue, the log
-  // and the counters are this service's own bookkeeping and no member of SSF
-  // 1.0's Stream Configuration, so sending them would be inventing members a
-  // receiver might come to depend on.
+  // the management API. It is NOT the record: `subjects`, the queue, the log,
+  // the counters and `pepMember` are this service's own bookkeeping and no
+  // member of SSF 1.0's Stream Configuration, so sending them would be
+  // inventing members a receiver might come to depend on.
   /**
    * Returns a stream's wire form, as the management API answers it, without
    * this service's own bookkeeping.

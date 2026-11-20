@@ -112,8 +112,9 @@ function leaf(keyUsage: string[], oids?: string[], required?: boolean): Json {
            mayBeCa: false };
 }
 
-// THE PURPOSE TABLE. One row per use case; `docs/pki-use-cases.md` is written
-// from it, and `tests/paranoid_settings.js` holds it to `common/config.js`.
+// THE PURPOSE TABLE. One row per use case; `docs/v1.1.0/pki-use-cases.md` is
+// written from it, and `tests/paranoid_settings.js` holds it to
+// `common/config.js`.
 const PURPOSES: Purpose[] = [
   { id: 'tls-client', setting: 'pki.paranoidTlsClient',
     title: 'A client certificate at a TLS handshake',
@@ -476,7 +477,28 @@ const PURPOSES: Purpose[] = [
     anchors: ['caller', 'signer-truststore'],
     leaf: leaf(SIGNS),
     selfSigned: 'refuse', validity: 'now', revocation: 'required',
-    exemptions: [], baseline: 'caller-path', code: 'STS-PKI-0262', phase: 5 }
+    exemptions: [], baseline: 'caller-path', code: 'STS-PKI-0262', phase: 5 },
+  // THE SIGNER OF A POLICY EXPORT (#1713). rcbj: "Do full PKI paranoid mode
+  // validation on these certs", so the site forces the full checks while this
+  // row is on, in development as in product: `admin-core/policy_transfer.ts`
+  // passes `force` from `rowOn()`, and with the row off it is an ordinary
+  // row the master decides. `caller` is the chain's own Root, handed in by
+  // the site; `signer-truststore` is the realm's store, where an
+  // administrator's acceptance of another realm's chain is kept for this use
+  // case alone.
+  { id: 'policy-signer', setting: 'pki.paranoidPolicySigner',
+    title: 'The signer of a policy export',
+    covers: 'The certificate a policy export from Directory → Policies ' +
+      'is signed with, and the chain in its x5c, when it is inspected or ' +
+      'imported.',
+    adds: 'While this row is on the full checks apply in every mode, the ' +
+      'master included: validity, keyUsage, the path, revocation of every ' +
+      'link. Off, the master decides as for any other row.',
+    sites: ['admin-core/policy_transfer.ts verifySigner'],
+    anchors: ['caller', 'signer-truststore'],
+    leaf: leaf(SIGNS),
+    selfSigned: 'refuse', validity: 'now', revocation: 'required',
+    exemptions: [], baseline: 'caller-path', code: 'STS-PKI-0276', phase: 5 }
 ];
 
 const BY_ID: Json = {};
@@ -2556,16 +2578,38 @@ class CertificateTrust {
   }
 
   /**
+   * A markdown table cell. A backslash is escaped before a pipe, so a cell
+   * cannot open a column and a backslash cannot unescape the pipe after it.
+   *
+   * @param text - the cell's text
+   * @returns the escaped cell
+   */
+  static markdownCell(text: string): string {
+    helpers.log.debug("Entering CertificateTrust.markdownCell().");
+    const value = String(text || '');
+    let out = '';
+    let i = 0;
+    while (i < value.length) {
+      const ch = value.charAt(i);
+      if (ch === '\\' || ch === '|') {
+        out += '\\';
+      }
+      out += ch;
+      i += 1;
+    }
+    helpers.log.debug("Leaving CertificateTrust.markdownCell().");
+    return out;
+  }
+
+  /**
    * The published table of use cases, generated from the purpose table so the
    * documentation and the code cannot disagree.
    *
-   * @returns the whole of `docs/pki-use-cases.md`
+   * @returns the whole of `docs/v1.1.0/pki-use-cases.md`
    */
   static docsPage(): string {
     helpers.log.debug("Entering CertificateTrust.docsPage().");
-    const cell = function (text: string): string {
-      return String(text || '').replace(/\|/g, '\\|');
-    };
+    const cell = CertificateTrust.markdownCell;
     const anchorWords: Json = {
       realm: 'this service\'s own Root',
       'signer-truststore': 'the signer truststore',
@@ -2614,7 +2658,9 @@ class CertificateTrust {
   static docsPath(): string {
     helpers.log.debug("Entering CertificateTrust.docsPath().");
     helpers.log.debug("Leaving CertificateTrust.docsPath().");
-    return path.join(__dirname, '..', 'docs', 'pki-use-cases.md');
+    // The latest documentation version's folder; the frozen releases
+    // beside it are never regenerated (docs/CLAUDE.md).
+    return path.join(__dirname, '..', 'docs', 'v1.1.0', 'pki-use-cases.md');
   }
 }
 

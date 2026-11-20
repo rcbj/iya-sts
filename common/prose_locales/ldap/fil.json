@@ -1016,12 +1016,16 @@
     "text": "Pareho para sa OIDC ID Token, na nangingibabaw sa oauth2.idTokenTtlS. Hiwalay sa sa access token dahil magkaibang mambabasa ang pinupuntahan ng dalawa: kinokonsumo ang ID Token nang isang beses sa sign-in at ipinapakita ang access token hangga't tumatagal ito."
   },
   "applications.schema.attributes.oauthRefreshTokenTtlS.what": {
-    "en": "47a623e69e617b6d",
-    "text": "Pareho para sa refresh token, na nangingibabaw sa oauth2.refreshTokenTtlS. Legal ang value na katumbas o mas mababa sa oauthAccessTokenTtlS at isa itong grant na hindi kailanman mapapanibago nang may silbi — iniuulat ng /admin/token-lifetimes ang kombinasyong iyon para sa pares para sa buong serbisyo, at kasing-abot din ito rito."
+    "en": "019d39de89f62aaf",
+    "text": "Pareho para sa refresh token, na nangingibabaw sa oauth2.refreshTokenTtlS. Legal ang value na katumbas o mas mababa sa oauthAccessTokenTtlS at isa itong grant na hindi kailanman mapapanibago nang may silbi — iniuulat ng /admin/token-lifetimes ang kombinasyong iyon para sa pares para sa buong serbisyo, at kasing-abot din ito rito. Para sa admin console, sa user portal at sa reports application, ang halagang ipinapatupad ay ang mas maikli sa isang positibong numero rito at sa setting ng realm; hindi maaaring walangin ang tatlong ito, tinatanggihan ang 0, at ang ibang positibong numero na kinumpirma sa pag-save ang paraan ng pagbabago ng hangganan (#825)."
   },
   "applications.schema.attributes.oauthRefreshIdleSeconds.what": {
-    "en": "37eeca0107443e0c",
-    "text": "SA RFC 9700 MODE LANG: gaano katagal puwedeng hindi magamit ang isang refresh chain bago ito putulin, na nangingibabaw sa oauth2.refreshIdleSeconds para sa client na ito. Sinusukat ito mula sa huling pagkakataong na-redeem ang anumang token sa CHAIN sa halip na mula sa issuance, kaya napapanatili ng abalang client ang grant nito at hindi ng tahimik. Sa labas ng RFC 9700 mode, walang bumabasa nito, na katangian ng setting at hindi ng attribute na ito."
+    "en": "2fd2c72086342ab0",
+    "text": "SA RFC 9700 MODE LANG: gaano katagal puwedeng hindi magamit ang isang refresh chain bago ito putulin, na nangingibabaw sa oauth2.refreshIdleSeconds para sa client na ito. Sinusukat ito mula sa huling pagkakataong na-redeem ang anumang token sa CHAIN sa halip na mula sa issuance, kaya napapanatili ng abalang client ang grant nito at hindi ng tahimik. Sa labas ng RFC 9700 mode, walang bumabasa nito, na katangian ng setting at hindi ng attribute na ito. Para sa admin console, sa user portal at sa reports application, ang halagang ipinapatupad ay ang mas maikli sa isang positibong numero rito at sa setting ng realm; hindi maaaring walangin ang tatlong ito, tinatanggihan ang 0, at ang ibang positibong numero na kinumpirma sa pag-save ang paraan ng pagbabago ng hangganan (#825)."
+  },
+  "applications.schema.attributes.oauthMaxAuthAgeS.what": {
+    "en": "c79eafa0090748ab",
+    "text": "Kung gaano katagal ang nakalipas na na-authenticate ang client na ito, sa segundo, bago dapat mag-authenticate muli ang isang authorization request, kahit na walang max_age ang ipinadala ng request, na nag-o-override sa oauth2.maxAuthAgeS. Ang 0 o ang walang laman na halaga ay hindi nagdaragdag ng sariling hangganan ng attribute na ito, at ang ordinaryong client ay sumusunod sa setting ng realm, na ang default ay 0. Para sa admin console, sa user portal at sa reports application, ang halagang ipinapatupad ay ang mas maikli sa isang positibong numero rito at sa authn.sessionLifetimeS, kaya ang pagpapahaba ng realm ay hindi kailanman nagpapahaba sa kanila. Hindi maaaring walangin ang tatlong ito, tinatanggihan ang 0, at ang ibang positibong numero na kinumpirma sa pag-save ang paraan ng pagbabago ng hangganan (#825)."
   },
   "applications.schema.attributes.oauthClaimsAccessToken.what": {
     "en": "e284080e7c1bb9a6",
@@ -1227,6 +1231,10 @@
     "en": "00f7ceacfb9304e7",
     "text": "TRUE o FALSE: puwede bang SIMULAN ng identity provider na ito ang sign-in sa service provider na ito — isang unsolicited na Response (saml-profiles-2.0-os section 4.1.5) mula sa /saml2/unsolicited o /launch/{app} — na nangingibabaw sa saml2.idpInitiatedSso. TRUE lang para sa service provider na umaasa nito: walang dalang InResponseTo ang Response, kaya hindi nito matutukoy ang ipinadala rito mula sa itinulak sa browser nito."
   },
+  "applications.schema.attributes.saml2SsoConsent.what": {
+    "en": "f7ca67bc2031ec08",
+    "text": "TRUE o FALSE: tinatanong ba ang isang tao, minsan, bago siya i-sign in ng SAML 2.0 sa application na ito mula sa isang session na mayroon na siya, na nangingibabaw sa saml2.ssoConsent (ASVS 5.0.0 7.6.2). Bagay ang FALSE sa application na inaasahang gamitin ng lahat sa realm; ang global na pahintulot sa entry ay sumasagot para sa lahat at nag-iingat ng tala kung sino ang pumayag."
+  },
   "applications.schema.attributes.saml2SpInitiatedSso.what": {
     "en": "1cab33aadc246c17",
     "text": "TRUE o FALSE: sinasagot ba ang sariling <samlp:AuthnRequest> ng service provider na ito, na nangingibabaw sa saml2.spInitiatedSso. Sinasagot ito ng FALSE ng RequestDenied, kaya ang sign-in na sinimulan ng identity provider na lang ang tanging daan papasok."
@@ -1234,6 +1242,10 @@
   "applications.schema.attributes.saml11IdpInitiatedSso.what": {
     "en": "6081871f6aca6a2f",
     "text": "TRUE o FALSE: puwede bang MAGSIMULA rito ang isang SAML 1.1 sign-in sa relying party na ito — /saml11/sso/{rp} na may TARGET at walang shire, o /launch/{app} — na nangingibabaw sa saml11.idpInitiatedSso."
+  },
+  "applications.schema.attributes.saml11SsoConsent.what": {
+    "en": "0cb7bbf2fb684481",
+    "text": "TRUE o FALSE: tinatanong ba ang isang tao, minsan, bago siya i-sign in ng SAML 1.1 sa application na ito mula sa isang session na mayroon na siya, na nangingibabaw sa saml11.ssoConsent (ASVS 5.0.0 7.6.2). Bagay ang FALSE sa application na inaasahang gamitin ng lahat sa realm; ang global na pahintulot sa entry ay sumasagot para sa lahat at nag-iingat ng tala kung sino ang pumayag."
   },
   "applications.schema.attributes.saml11SpInitiatedSso.what": {
     "en": "2376052fceb025ab",
@@ -1259,6 +1271,10 @@
     "en": "d199b15200f6e9de",
     "text": "TRUE o FALSE: sinasagot ba ang sariling wsignin1.0 ng relying party na ito, na nangingibabaw sa wsfed.spInitiatedSso. Unsigned URL ang wsignin1.0, kaya isinasara ng FALSE ang pinto sa halip na patunayan kung sino ang nagbukas nito."
   },
+  "applications.schema.attributes.wsfedSsoConsent.what": {
+    "en": "9a3541460bedfa45",
+    "text": "TRUE o FALSE: tinatanong ba ang isang tao, minsan, bago siya i-sign in ng WS-Federation sa application na ito mula sa isang session na mayroon na siya, na nangingibabaw sa wsfed.ssoConsent (ASVS 5.0.0 7.6.2). Bagay ang FALSE sa application na inaasahang gamitin ng lahat sa realm; ang global na pahintulot sa entry ay sumasagot para sa lahat at nag-iingat ng tala kung sino ang pumayag."
+  },
   "applications.schema.attributes.wsfedSignOutUri.what": {
     "en": "677e7babd8d711d3",
     "text": "KUNG SAAN IPINAPADALA ANG wsignoutcleanup1.0 PING para sa application na ito — ang logout URI ng WS-Federation, at ang wala sa table na ito hanggang 2026-08-30. IDINEKLARA, hindi naobserbahan, kaya kapatid ito ng samlSingleLogoutService at hindi ng wsfedReplyUrl: ipinapadala ang cleanup kapag nagtapos ang isang SESSION, at sa oras na iyon ay matagal nang tapos ang request na magdadala sana ng wreply.\n\n**NANGUNGUNA ANG IDINEKLARANG ADDRESS SA NAOBSERBAHAN** (#747). Pina-ping ng `cleanupTargetsFor()` ang bawat value dito para sa realm na na-sign in-an ng session, at ang wreply na pinuntahan ng sign-in response, na itinatala ng `session.wsfedRealms`, kapag walang laman lang ito."
@@ -1270,6 +1286,58 @@
   "applications.schema.attributes.wstrustJwtScope.what": {
     "en": "86ac83dbe366a17b",
     "text": "ANG MGA OAUTH 2.0 SCOPE NA DALA NG WS-TRUST JWT PARA SA APPLICATION NA ITO, isang scope value bawat isa (#485). Ang JWT na ini-issue ng WS-Trust na ang application na ito ang AppliesTo (wst:TokenType urn:ietf:params:oauth:token-type:jwt) ay dinadala ang mga ito sa `scope` claim nito, pinaghihiwalay ng espasyo (RFC 9068 section 2.2.3); kapag walang itinakda, walang dala itong `scope`. Hindi naaapektuhan ang SAML token.\n\n**HINUHUSGAHAN ANG BAWAT ISA TULAD NG SA ISANG OAUTH ACCESS TOKEN**, na ang application na ito ang client: idinedeklara ng `oauthAllowedScope` ang puwedeng i-issue dito (sa product; ang mga protected scope ng serbisyong ito sa bawat mode), at ang per-scope na tanong ng issuance policy ang nagpapasya. Ang value na tinatanggal ng policy ay INIIWAN sa labas ng token at ina-audit (STS-OAUTH-0579), hindi kailanman ini-issue. Ang pagsulat na nagpapangalan ng hindi idineklarang scope ay tinatanggap dito, dahil puwedeng magbago ang deklarasyon at nagkakaloob ang development ng mga hindi idineklarang scope: ideklara rin ito sa oauthAllowedScope. Ang value na tatanggalin ng policy ay BINABABALAAN kung saan ito itinatakda (#488): sa tabi ng field na ito, sa sagot ng Save, at bilang `warnings` sa mga sagot sa pagsulat ng /admin-api at sa view ng application."
+  },
+  "applications.schema.attributes.wstrustEncryptRequest.what": {
+    "en": "1e6b032014941e7e",
+    "text": "TRUE o FALSE: hingin na dumating nang naka-encrypt ang mga elementong pinangalanan ng request map ng application na ito, na pumapalit sa wstrust.encryptRequest. Kapag naka-on, ang request na ang AppliesTo ay ang application na ito ay isang FailedCheck kapag walang laman ang map, may expression na tumutugma sa elementong dumating nang hindi naka-encrypt, o may expression na walang tinutugmang naibalik mula sa ciphertext. Ang wstrustAcceptEncryptedElements ang nagpapasya kung aling ciphertext ang bubuksan; binabasa ang AppliesTo mula sa nabuksang request, at ang ciphertext na hindi mabuksan ay isang FailedCheck sa alinmang kaso."
+  },
+  "applications.schema.attributes.wstrustAcceptEncryptedElements.what": {
+    "en": "474d9ee5b02559e9",
+    "text": "TRUE o FALSE: tanggapin ang XML Encryption saanman sa isang request na ang AppliesTo ay ang application na ito, sa isang header o sa body, nang walang request map na nagpapangalan dito, na pumapalit sa wstrust.acceptEncryptedElements. Kapag naka-off, tinatanggap lang ang ciphertext kung saan ito pinangalanan ng wstrustEncryptRequestElements — ang bawat naibalik na elemento ay dapat piliin ng isang expression, o nasa loob ng isa — at ang ciphertext na walang map ay isang InvalidRequest. Sa alinmang kaso, dapat mabuksan ang ciphertext gamit ang mga key ng realm na ito."
+  },
+  "applications.schema.attributes.wstrustEncryptRequestElements.what": {
+    "en": "d28549992db71c30",
+    "text": "ANG MGA ELEMENTO NG ISANG WS-TRUST REQUEST NA DAPAT DUMATING NANG NAKA-ENCRYPT, isang XPath 1.0 expression bawat isa. Ang subset ay `/`, `//`, `*`, isang pangalan ng elemento, `prefix:local`, isang union gamit ang `|`, at ang mga predicate na `local-name()`, `namespace-uri()` at `@attr`, pinagdugtong ng `and`. Ang bawat expression ay dapat pumili ng kahit isang elementong naibalik mula sa ciphertext: isang xenc:EncryptedData na may uring Element o Content, o isang EncryptedHeader ng WS-Security 1.1. Ang expression na nasa labas ng subset na iyon ay isang RequestFailed. Maaaring pangalanan ang isang SOAP header, ang SOAP body, o anumang elemento, para sa anumang uri ng token."
+  },
+  "applications.schema.attributes.wstrustEncryptResponse.what": {
+    "en": "aafbbba9cd31d6c9",
+    "text": "TRUE o FALSE: palitan ng xenc:EncryptedData ang mga elementong pinangalanan ng response map ng application na ito, na nag-o-override sa wstrust.encryptResponse. Binubuo ang response nang klaro at pagkatapos ay pinapalitan ang mga elementong iyon, para sa anumang uri ng token. Nanatiling klaro ang fault. Naka-on, at hindi makumpleto ang encryption — walang recipient, isang map na walang tinutugma, o isang cipher na hindi tatanggapin ng certificate ng recipient — ang request ay fault sa parehong mode."
+  },
+  "applications.schema.attributes.wstrustEncryptResponseElements.what": {
+    "en": "0ee151df13c4663c",
+    "text": "ANG MGA ELEMENTONG NAKA-ENCRYPT NG ISANG WS-TRUST RESPONSE, isang XPath 1.0 expression bawat isa, kapareho ng subset ng wstrustEncryptRequestElements. Maaaring pangalanan ang isang SOAP header, ang SOAP body, o anumang elemento. Ang expression na walang tinutugma sa nabuong response ay fault."
+  },
+  "applications.schema.attributes.wstrustEncryptionAlgorithm.what": {
+    "en": "2156045953402736",
+    "text": "Ang block cipher na ginagamit para sa mga WS-Trust response ng application na ito — aes256-gcm, aes128-gcm, aes256-cbc o aes128-cbc — na nag-o-override sa wstrust.encryptionAlgorithm. Maaaring pangalanan ng elementong wst:EncryptionAlgorithm ang cipher na ito, sa maikling pangalan nito o sa XML Encryption URI nito, habang naka-on lang ang response encryption para sa application na ito."
+  },
+  "applications.schema.attributes.wstrustEncryptionCertificate.what": {
+    "en": "1ccaa06830162696",
+    "text": "ANG CERTIFICATE NA PINAG-E-ENCRYPT-AN NG ISANG WS-TRUST RESPONSE, base64 DER o PEM. Kapag nakatakda ito ang recipient, at ang certificate na hindi mabasa ay fault sa halip na bumaba sa susunod na pinagmulan. Kapag hindi nakatakda, ang recipient ay ang elemento ng certificate na pinipili ng wstrustResponseRecipientXPath, o, kapag hindi rin nakatakda ang expression na iyon, ang unang elemento ng certificate ng signer na pinangalanan ng WS-Security signature ng request."
+  },
+  "applications.schema.attributes.wstrustKeyTransportAlgorithm.what": {
+    "en": "89c8e142baf59834",
+    "text": "Paano ibinabalot ang content key para sa mga WS-Trust response ng application na ito — rsa-oaep-mgf1p, rsa-oaep (SHA-256, MGF1-SHA-256) o rsa-1_5 — na nag-o-override sa wstrust.keyTransportAlgorithm. Ang recipient na EC ang certificate ay ini-encrypt sa pamamagitan ng ECDH-ES anuman ang sabihin nito. Maaaring pangalanan ng elementong wst:EncryptWith ang algorithm na ito, sa maikling pangalan nito o sa XML Encryption URI nito, habang naka-on lang ang response encryption para sa application na ito."
+  },
+  "applications.schema.attributes.wstrustResponseRecipientXPath.what": {
+    "en": "0462e40dda10b491",
+    "text": "ISANG XPATH EXPRESSION NA PUMIPILI SA ELEMENTO NG CERTIFICATE NA PINAG-E-ENCRYPT-AN NG ISANG WS-TRUST RESPONSE: isang ds:X509Certificate o isang BinarySecurityToken na ang ValueType ay nagtatapos sa #X509v3. Kapareho ng subset ng mga element map. Kapag nakatakda ito at walang pinipili, o pumipili ito ng elementong hindi isa sa dalawang iyon, walang recipient at hindi sinusubukan ang susunod na pinagmulan. Ang napiling elemento ng certificate na ang teksto ay hindi certificate ay fault ng natapos na encryption, at hindi sinusubukan ang susunod na pinagmulan. Kapag hindi nakatakda, ang recipient ay ang unang elemento ng certificate ng signer na pinangalanan ng WS-Security signature ng request — ang BinarySecurityToken na tinutukoy ng reference ng signature na iyon, o isang ds:X509Certificate sa KeyInfo ng signature na iyon. Ang thumbprint, ang Subject Key Identifier o ang issuer at serial ay hindi elemento ng certificate."
+  },
+  "applications.schema.attributes.wstrustDecryptionCertificate.what": {
+    "en": "b00a63a9bafc49ad",
+    "text": "ANG CERTIFICATE NA PINAG-E-ENCRYPT-AN NG WS-TRUST REQUEST PARA SA APPLICATION NA ITO, PEM. Habang nakatakda ito, dine-decrypt ang request para sa application na ito gamit ang private key nito at hindi ang sa realm, at FailedCheck ang request para rito na naka-encrypt sa key ng realm. Pampubliko: ibinibigay ito ng pahina ng application at ng GET /admin-api/applications."
+  },
+  "applications.schema.attributes.wstrustDecryptionCertificateChain.what": {
+    "en": "618cc20d5635f6b9",
+    "text": "Ang mga certificate ng certificate authority na nag-isyu ng wstrustDecryptionCertificate, PEM, una ang Issuing CA, para sa key pair na inisyu dito. Walang laman para sa in-upload."
+  },
+  "applications.schema.attributes.wstrustDecryptionPrivateKey.what": {
+    "en": "96bb5bc025291cfa",
+    "text": "Ang private key ng wstrustDecryptionCertificate, PEM. Naka-seal kung saan nananatili ang mga key, hindi ibinibigay sa anumang pahina, sagot ng /admin-api o pagbasa ng directory, at hindi kailanman nilo-log."
+  },
+  "applications.schema.attributes.wstrustDecryptionKeySource.what": {
+    "en": "d4894d5258b54b7d",
+    "text": "Kung saan nagmula ang key pair na pang-decrypt: issued (ginawa dito at sinertipikahan ng CA ng realm) o uploaded (in-upload)."
   },
   "applications.schema.attributes.krb5ServicePrincipalName.what": {
     "en": "2e8e5f607172bae7",
@@ -1931,6 +1999,10 @@
     "en": "eb941b100ed53ed4",
     "text": "Kung kailan binura ang application na may-ari. Itinatago ang policy, naka-disable, para sa audit, hanggang alisin ito ng isang administrator."
   },
+  "xacmlPolicies.schema.attributes.xacmlPepRoute.what": {
+    "en": "4e1dc3fa8c6c3e3c",
+    "text": "Ang remote PEP at ruta, bilang pangalan ng PEP, isang slash at ang id ng ruta, kung para saan GINAWA ang policy na ito ng pagpili ng awtorisasyon ng ruta (simple o pampubliko) sa mga form ng ruta ng reverse proxy o ng aksyong generate-pep-route-policy (#1760). Ang ganitong policy ay isinusulat muli kapag sine-save ang ruta, pinapalitan ang pangalan kasama ng ruta at inaalis kasama nito; hindi ito kailanman ang root. Maaari itong i-edit sa policy editor, at isinusulat itong muli ng susunod na pag-save ng simple o pampublikong pagpili ng ruta — pumili ng umiiral na policy sa ruta para panatilihin ang isinulat nang mano-mano."
+  },
   "xacmlPeps.schema.objectClasses.xacmlPep.what": {
     "en": "2b063c0577e29981",
     "text": "Isang remote Policy Enforcement Point na nag-register sa Policy Decision Point na ito. ANG ROW AY ISANG TALAAN AT HINDI PAHINTULOT — ang PEP na hindi kailanman nagre-register ay makakapag-pull pa rin ng repository at makapagpapatupad. Ang naibibigay ng row ay puwesto sa console at address para sa change nudge."
@@ -1972,8 +2044,8 @@
     "text": "Kung kailan unang nag-register ang PEP na ito. Pinapanatili sa muling pag-register, dahil ang component na nagre-restart bawat oras ay katotohanang sulit makita at hindi ito maipapakita ng entry na nare-reset ang edad sa bawat restart."
   },
   "xacmlPeps.schema.attributes.xacmlPepLastSeen.what": {
-    "en": "eca573eaea822db7",
-    "text": "Ang huling heartbeat o pull. Ang xacml.pepStaleAfterS ay kung gaano katagal mula rito bago sabihin ng console na \"stale\" — na walang binabago sa ginagawa ng serbisyong ito, nang sadya."
+    "en": "2e8561030cee3201",
+    "text": "Ang huling heartbeat o pull noong huling isinulat ang entry na ito. Ang heartbeat na walang binabagong pangmatagalan ay hindi isinusulat dito (#1882): ito, ang mga counter, ang kalusugan ng signal at ang huling nudge ay itinatabi sa tabi ng entry, at ipinapakita ng console ang mas huli sa dalawa. Ang xacml.pepStaleAfterS ay kung gaano katagal mula sa huli bago sabihin ng console na \"stale\" — na walang binabago sa ginagawa ng serbisyong ito, nang sadya."
   },
   "xacmlPeps.schema.attributes.xacmlPepSyncToken.what": {
     "en": "44708a3c15a93cf6",
@@ -2003,24 +2075,64 @@
     "en": "b6078cbbbfdb9576",
     "text": "Kung ano ang sinasabi ng remote PEP na ito. Malayang teksto."
   },
+  "xacmlPeps.schema.attributes.xacmlPepHostname.what": {
+    "en": "127c84c46465d544",
+    "text": "Ang hostname na iniuulat ng remote PEP sa pagrehistro at heartbeat nito (#1760): ang environment variable na HOSTNAME, kung wala ay ang sa kernel, kung wala ay /etc/hostname — ang pangalang kilala ang container sa network nito, at ang pinagmumulan ng notify URL nito kapag pinapangalanan ito ng certificate ng HTTPS listener nito. Limitado sa isang DNS name na hindi hihigit sa 253 character, naka-lowercase, hindi kailanman IP address; tinatanggihan ang pagrehistro o heartbeat na may iba pa (STS-XACML-0261). Pinapangalanan ito ng default na listener certificate ng realm katabi ng nakarehistrong pangalan ng PEP at ng notify host nito. Inaalis ito ng pagrehistrong wala nito, pinananatili ng heartbeat na wala nito. Wala sa mas lumang PEP, na ang mga pangalan sa certificate ay gaya ng dati."
+  },
   "xacmlPeps.schema.attributes.xacmlPepLastNotify.what": {
-    "en": "a4283bfe7916574e",
-    "text": "Ano ang nangyari sa huling nudge — ang status, o ang pangungusap ng pagtanggi. ANG TANGING LUGAR KUNG SAAN ITINATALA ANG NABIGONG NUDGE, sa dahilang ibinibigay ng ssf_streams.js tungkol sa tinanggihang push: hindi ito nakikita mula sa tumatanggap na dulo ayon sa depinisyon."
+    "en": "a512a007219ee216",
+    "text": "Ano ang nangyari sa huling nudge — ang status, o ang pangungusap ng pagtanggi — noong huling isinulat ang entry na ito. Ang kinalabasan ng nudge ay hindi isinusulat dito (#1882): ang pinakabago ay itinatabi sa liveness record ng PEP sa tabi ng entry (xacml_pep_registry.liveness), at ipinapakita ng console ang mas huli sa dalawa. Ang serbisyong ito lamang ang nagtatala ng nabigong nudge, sa dahilang ibinibigay ng ssf_streams.js tungkol sa tinanggihang push: hindi ito nakikita mula sa tumatanggap na dulo ayon sa depinisyon."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepProxy.what": {
+    "en": "1d8edee3c551082e",
+    "text": "Ang reverse-proxy configuration na kinukuha ng remote PEP mula sa GET /xacml/pep/proxy (#1760): isang JSON document — enabled, ang base URL ng upstream application, ang public base URL na inaabot ng browser ang proxy, ang mga timeout at ang nakaayos na route table, bawat route kasama ang path, mga method, mga mekanismo ng authentication, ang application sa registry ng realm na pinoprotektahan nito, at ang XACML resource at action. Isinusulat ng set-pep-proxy action ng console at ng management API, bina-validate nang buo roon at muli kapag binubuo ang pull, kaya ang value na isinulat ng ldapmodify na hindi pumapasa ay kinukuha bilang configured: false. Pinapanatili sa registration at heartbeat; inaalis kasama ng row."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepSignals.what": {
+    "en": "973f5fff5b5df8e8",
+    "text": "Ang kalusugan ng mga CAEP/RISC signal stream ng reverse proxy ayon sa huling iniulat ng remote PEP sa isang heartbeat (#1760): isang JSON document ng mga bilang at edad lang — ang mga receiver, ilan ang malusog at luma na, ang hangganan ng pagkaluma at ang poll interval, ang edad ng pinakamatandang huling tagumpay, ang pinakamaraming sunod-sunod na pagkabigo, ang mga SET na tinanggap at tinanggihan, ang mga session na tinapos, at ang held, max, TTL, evicted at expired ng mga session store ng library — kasama kung kailan ito dumating, at, mula sa isang PEP na nag-uulat nito, isang hilera bawat stream: ang OIDC client na sine-serve nito at ang stream id nito, bawat isa ay limitado sa isang charset, kung tumatakbo ito at malusog, kung kailan ito nagsimula, huling nag-poll at huling nagtagumpay (kinukuwenta rito mula sa mga edad na ipinadala ng PEP at sa pagdating, hindi kailanman mula sa orasan ng PEP), at ang mga counter nito. Itinatapon ang anumang ibang member at nagiging 0 ang anumang value na hindi non-negative integer, kaya walang URL o teksto ng error na naiimbak kailanman. Pinananatili ito ng isang heartbeat na wala nito, binubura ito ng isang may null, at inaalis ito ng isang registration, dahil ang registration ay isang bagong proseso. Wala ito sa isang PEP na hindi kailanman nag-ulat nito, na ipinapakita ng console bilang hindi iniulat."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepSettings.what": {
+    "en": "2216d5f263d38ea5",
+    "text": "Ang mga setting na itinakda ng isang administrator para sa remote PEP na ito sa console page nito o gamit ang action na set-pep-settings ng management API (#1760): isang JSON document na naglalaman lang ng mga setting na itinakda, bawat isa ayon sa member name nito (description, resource, notifyUrl, bias, pip, ang mga interval ng poll, heartbeat at back-off, ang timeout at hangganan ng body, ang interval ng HTTPS reload, ang log level, ang switch, identifier at forward timeout ng AuthZEN, at ang mga hangganan ng session, JWKS, upstream, relying party at signal stream ng reverse proxy), na vina-validate nang buo sa pagsulat at muli kapag kinukuha ng PEP ang mga ito mula sa GET /xacml/pep/settings. Ang setting na wala rito ay ang environment variable ng PEP, o ang default nito. Hindi kailanman narito ang pinakamababang kailangan ng PEP para kumonekta sa unang pagkakataon. Pinananatili sa isang pagpaparehistro at isang heartbeat; inaalis kasama ng row."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepSettingsInUse.what": {
+    "en": "b081386a6d832967",
+    "text": "Ang huling iniulat ng remote PEP, sa isang heartbeat, na ipinapatupad nito para sa bawat pinamamahalaang setting (#1760): isang JSON document na { token, values: { setting: { value, source } } }, na ang source ay service, environment o default, kasama kung kailan ito dumating. Itinatapon ang bawat setting na hindi pinangangalanan ng talahanayan, bawat value na hindi ayon sa uri ng setting nito, at bawat ibang source. Pinananatili ito ng heartbeat na wala nito, binubura ito ng heartbeat na may null, at itinatapon ito ng pagpaparehistro. Wala ito sa PEP na mas luma kaysa sa mga setting, na ipinapakita ng console bilang hindi iniulat."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepListeners.what": {
+    "en": "b2e07443143061b7",
+    "text": "Ang mga listener na itinakda ng isang administrator para sa remote PEP na ito sa pahina nito sa console o sa set-pep-listener na aksyon ng management API (#1760), bukod sa apat na ibinibigkis ng environment nito: isang JSON array, bawat listener ay may id, protocol (http o https), layunin (api o proxy), address at port, at para sa isang HTTPS listener ang mga DNS name at IP address na dala ng sertipiko nito, ang key algorithm nito at isang renewal counter. Buong sinusuri sa pagsulat at muli kapag kinukuha ito ng PEP mula sa GET /xacml/pep/settings, na nagbibigkis at nag-aalis sa mga ito habang tumatakbo ito. Ginagawa ng PEP ang susi ng bawat HTTPS listener at humihingi ng sertipiko nito sa POST /xacml/pep/listener-certificate, kaya walang private key na naririto kailanman. Pinananatili sa isang registration at isang heartbeat; inaalis kasama ng row."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepListenersInUse.what": {
+    "en": "b2a987046bb7d733",
+    "text": "Ang huling iniulat ng remote PEP, sa isang heartbeat, tungkol sa bawat listener nito (#1760), ang apat ng environment nito at ang mga itinakda: isang JSON document na { listeners: [ { id, source, protocol, purpose, address, port, state, reason, renew, certificate } ] }, kasama kung kailan ito dumating. Ang state ay isa sa listening, waiting, failed at off at ang reason ay isa sa isang saradong set, hindi kailanman ang teksto ng operating system; ang sertipiko ay ang subject, issuer, serial, subjectAltName, bisa at fingerprint ng sine-serve nito. Itinatapon ang anumang ibang member. Pinananatili ito ng isang heartbeat na wala nito, binubura ito ng isang may null, at inaalis ito ng isang registration. Wala ito sa isang PEP na mas luma kaysa sa mga listener, na ipinapakita ng console bilang hindi iniulat."
   },
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "Anuman ang sinabi ng PEP tungkol sa sarili nito nang mag-register ito."
   },
-  "applications.schema.attributes.saml2SsoConsent.what": {
-    "en": "f7ca67bc2031ec08",
-    "text": "TRUE o FALSE: tinatanong ba ang isang tao, minsan, bago siya i-sign in ng SAML 2.0 sa application na ito mula sa isang session na mayroon na siya, na nangingibabaw sa saml2.ssoConsent (ASVS 5.0.0 7.6.2). Bagay ang FALSE sa application na inaasahang gamitin ng lahat sa realm; ang global na pahintulot sa entry ay sumasagot para sa lahat at nag-iingat ng tala kung sino ang pumayag."
+  "xacmlPepClusters.schema.objectClasses.xacmlPepCluster.what": {
+    "en": "e64d0948328eb8a1",
+    "text": "Isang lohikal na cluster ng mga remote Policy Enforcement Point na may iisang configuration (#1760): ang reverse proxy, ang mga pinamamahalaang setting at ang mga depinisyon ng listener ay iniingatan dito nang minsan, at kinukuha ng bawat miyembro ang mga ito bilang sarili nito. Ang miyembro ay naiiba lamang sa pangalan at mga address nito. Dito iniingatan ang pagiging miyembro, kaya maaaring ilista ang isang PEP bago ito magparehistro, at ang isang PEP ay kabilang sa hindi hihigit sa isang cluster."
   },
-  "applications.schema.attributes.saml11SsoConsent.what": {
-    "en": "0cb7bbf2fb684481",
-    "text": "TRUE o FALSE: tinatanong ba ang isang tao, minsan, bago siya i-sign in ng SAML 1.1 sa application na ito mula sa isang session na mayroon na siya, na nangingibabaw sa saml11.ssoConsent (ASVS 5.0.0 7.6.2). Bagay ang FALSE sa application na inaasahang gamitin ng lahat sa realm; ang global na pahintulot sa entry ay sumasagot para sa lahat at nag-iingat ng tala kung sino ang pumayag."
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterProxy.what": {
+    "en": "e23df410bfb4fa42",
+    "text": "Ang configuration ng reverse proxy na kinukuha ng bawat miyembro ng cluster mula sa GET /xacml/pep/proxy (#1760): ang sariling dokumento ng PEP (xacmlPepProxy), na sinusuri ng parehong gramatika, at ang mga nabuong policy ng mga ruta nito ay pinangalanang pepc-<cluster>-<route> at minarkahang @<cluster>/<route>. Ang publicBaseUrl nito ay ang lohikal na base URL ng cluster, kung saan binubuo ang default na resource ng isang simple o pampublikong ruta at ipinapadala sa isang miyembrong walang sariling publicBaseUrl. Isinusulat ng mga aksyong set-pep-cluster-proxy at set-pep-cluster-route."
   },
-  "applications.schema.attributes.wsfedSsoConsent.what": {
-    "en": "9a3541460bedfa45",
-    "text": "TRUE o FALSE: tinatanong ba ang isang tao, minsan, bago siya i-sign in ng WS-Federation sa application na ito mula sa isang session na mayroon na siya, na nangingibabaw sa wsfed.ssoConsent (ASVS 5.0.0 7.6.2). Bagay ang FALSE sa application na inaasahang gamitin ng lahat sa realm; ang global na pahintulot sa entry ay sumasagot para sa lahat at nag-iingat ng tala kung sino ang pumayag."
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterSettings.what": {
+    "en": "dc3c4657f5e8a82b",
+    "text": "Ang mga pinamamahalaang setting na kinukuha ng bawat miyembro ng cluster mula sa GET /xacml/pep/settings (#1760): ang sariling dokumento ng PEP (xacmlPepSettings), na sinusuri ng parehong talahanayan, maliban sa notify URL, na address ng isang miyembro at itinatakda sa miyembro. Isinusulat ng aksyong set-pep-cluster-settings."
+  },
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterListeners.what": {
+    "en": "27e48be388ccf3ed",
+    "text": "Ang mga listener na tinukoy para sa bawat miyembro ng cluster (#1760): ang sariling array ng PEP (xacmlPepListeners), na sinusuri ng parehong gramatika. Maaaring palitan ng isang miyembro ang address at port ng isang listener at magdagdag ng mga DNS name sa certificate nito; ang certificate ng bawat miyembro ay sarili nito, na inisyu para sa sarili nitong key. Isinusulat ng mga aksyong set-pep-cluster-listener at remove-pep-cluster-listener."
+  },
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterMembers.what": {
+    "en": "189d31ecba7f4c6b",
+    "text": "Ang mga miyembro ng cluster (#1760): isang JSON array ng { pep, publicBaseUrl, notifyUrl, listeners: { <listener id>: { address, port, names } } }, ang bawat pep ay pangalan ng isang rehistradong PEP o ng isang hindi pa rehistrado, at ang iba ay ang sariling mga address ng miyembro. Ang isang PEP ay miyembro ng hindi hihigit sa isang cluster. Isinusulat ng mga aksyong create-pep-cluster, add-pep-cluster-member, set-pep-cluster-member at remove-pep-cluster-member."
+  },
+  "xacmlPepClusters.schema.attributes.description.what": {
+    "en": "769286563bacdcb4",
+    "text": "Ang sinabi ng isang administrator tungkol sa cluster nang likhain ito."
   }
 }

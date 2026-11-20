@@ -30,6 +30,7 @@ const minted = require('../persistence/persistence_minted');
 const tiers = require('../persistence/tiers');
 const authn = require('../authn/authn');
 const sessionWindow = require('../authn/session_window');
+const sessionQueries = require('../persistence/session_queries');
 
 const log = require('bunyan').createLogger({ name: 'session_window',
   level: process.env.LOG_LEVEL || 'info' });
@@ -37,7 +38,7 @@ const log = require('bunyan').createLogger({ name: 'session_window',
 const REALM = 'session-window';
 const TOMBSTONE = '$tombstone$1';
 
-const answer = { read: null, load: [], filter: null };
+const answer = { read: null, load: [], filter: null, mergedNext: null };
 const captured = { upserts: [], deletes: [] };
 let queryFn = function () {
   log.debug("Entering queryFn().");
@@ -330,7 +331,8 @@ function stubDriver() {
         });
       });
       log.debug("Leaving saveMinted().");
-      return Promise.resolve({ refused: [], merged: [] });
+      return Promise.resolve({ refused: [],
+                               merged: answer.mergedNext || [] });
     }
   };
 }
@@ -835,10 +837,11 @@ async function tombstoneCase(t) {
 
 async function dirtyCase(t) {
   log.debug("Entering dirtyCase().");
-  t.log.info('on: a dirty pin keeps this process\'s object');
+  t.log.info('on: a dirty pin keeps this process\'s object, merged');
   freshWindow();
   const local = sessionBody('dirty-window', { lastSeenAt: 111 });
   authn.sessions.set(local.id, local);
+  const held0 = sessionWindow.get(REALM, 'dirty-window').session;
   const remote = sessionBody('dirty-window', { lastSeenAt: 999 });
   const sealed = sealSession(remote);
   const opened = keystore.open(sealed, 'minted-rows');
@@ -849,12 +852,294 @@ async function dirtyCase(t) {
     key: changeKey(local.id), realm: REALM
   });
   t.equal(applied, true, 'the live change is applied');
-  t.equal((authn.sessions.get('dirty-window') || {}).lastSeenAt, 111,
-          'the map keeps this process\'s lastSeenAt');
   const held = sessionWindow.get(REALM, 'dirty-window');
-  t.equal(held.ok && held.session.lastSeenAt, 111,
-          'the window keeps this process\'s object');
+  t.check(!!(held.ok && held0 && held.session === held0),
+          'the window keeps this process\'s object (the one a request ' +
+          'may hold)');
+  t.equal(held.ok && held.session.lastSeenAt, 999,
+          'and it holds what mergeSessionRows() makes of the two: the ' +
+          'later lastSeenAt');
+  t.equal((authn.sessions.get('dirty-window') || {}).lastSeenAt, 999,
+          'the map reads the same merged object');
+  t.check(sessionWindow.slotState(REALM, 'dirty-window').pinned,
+          'and the local write is still pinned for its flush');
   log.debug("Leaving dirtyCase().");
+}
+
+// THE CLUSTER MODE'S sts_siop_did_web (2026-11-14). Node B held a browser's
+// ARRIVAL session with a write of its own not yet committed; node A
+// upgraded the same sid to a sign-in and committed it. B applied A's row and
+// KEPT its arrival, so the account selection ticket A handed out named a
+// session B read as not live (STS-AUTHN-0346) and the flow was sent to sign
+// in again. The same row came back as B's flush's merged answer
+// (`settleDecided()`, which runs before `onCommitted()` unpins) and was
+// dropped again, so the stale copy outlived the commit.
+function arrivalAndSignIn(id) {
+  log.debug("Entering arrivalAndSignIn().");
+  const arrival = sessionBody(id, {
+    chosen: false, authenticated: false,
+    user: { username: 'anonymous', sub: '' }, subjectId: '', authTime: 0,
+    lastSeenAt: 500, startedAt: 400
+  });
+  const signedIn = sessionBody(id, {
+    chosen: true, authenticated: true,
+    user: { username: 'up-elsewhere', sub: 'urn:uuid:up-elsewhere' },
+    subjectId: 'urn:uuid:up-elsewhere', authTime: Date.now(),
+    lastSeenAt: 400, startedAt: 400, amr: ['swk'], via: 'SIOPv2'
+  });
+  log.debug("Leaving arrivalAndSignIn().");
+  return { arrival: arrival, signedIn: signedIn };
+}
+
+function liveSignOn(session) {
+  log.debug("Entering liveSignOn().");
+  log.debug("Leaving liveSignOn().");
+  return !!(session && session.user && session.chosen !== false &&
+            session.authenticated !== false &&
+            authn.sessionEnded(session) === '' &&
+            session.user.username === 'up-elsewhere');
+}
+
+// RUN 27'S SINGLE-NODE MODE (2026-11-14). Since #1753 a held copy with a
+// write pending takes `mergeSessionRows()` of another worker's row in place,
+// and that merge rebuilt a client both copies held from first/last/count:
+// the `iss` and `sub` `noteClient()` recorded were dropped, so the
+// front-channel iframe carried the sign-out's issuer
+// (`sts_frontchannel_logout`) and the Logout Token was dead-lettered
+// STS-OAUTH-0542 (`sts_backchannel_logout`).
+async function dirtyClientCase(t) {
+  log.debug("Entering dirtyClientCase().");
+  t.log.info('on: a dirty pin merged with a row naming the same client ' +
+             'keeps the client\'s iss and sub');
+  freshWindow();
+  const named = 'https://sts.example/realm/r/fcx';
+  const local = sessionBody('dirty-client', { lastSeenAt: 111,
+    oidcClients: { c1: { first: 10, last: 20, count: 1, iss: named,
+                         sub: 'urn:uuid:dirty-client' } } });
+  authn.sessions.set(local.id, local);
+  const remote = sessionBody('dirty-client', { lastSeenAt: 999,
+    oidcClients: { c1: { first: 10, last: 20, count: 1, iss: named,
+                         sub: 'urn:uuid:dirty-client' } } });
+  answer.read = { body: sealSession(remote) };
+  const applied = await minted.applyChange({
+    key: changeKey(local.id), realm: REALM
+  });
+  t.equal(applied, true, 'the live change is applied');
+  const held = sessionWindow.get(REALM, 'dirty-client');
+  const row = (held.ok && held.session.oidcClients &&
+               held.session.oidcClients.c1) || {};
+  t.equal(held.ok && held.session.lastSeenAt, 999,
+          'the held copy took the merge (the later lastSeenAt)');
+  t.equal(row.iss + ' ' + row.sub, named + ' urn:uuid:dirty-client',
+          'and the client it signed into keeps the iss and sub its ID ' +
+          'Token named, which both logouts are built from');
+  log.debug("Leaving dirtyClientCase().");
+}
+
+async function upgradedElsewhereCase(t) {
+  log.debug("Entering upgradedElsewhereCase().");
+  t.log.info('on: an arrival upgraded on another node is a sign-in here ' +
+             'at once, though this process holds a write of its own');
+  freshWindow();
+  const rows = arrivalAndSignIn('upgraded-elsewhere');
+  // Node B's touch of the arrival, journalled and not yet flushed.
+  authn.sessions.set(rows.arrival.id, rows.arrival);
+  t.check(sessionWindow.slotState(REALM, rows.arrival.id).pinned,
+          'node B holds the arrival with an uncommitted write');
+  answer.read = { body: sealSession(rows.signedIn) };
+  await minted.applyChange({ key: changeKey(rows.arrival.id), realm: REALM });
+  const read = sessionWindow.get(REALM, rows.arrival.id);
+  t.check(read.ok && liveSignOn(read.session),
+          'NODE A\'S SIGN-IN IS WHAT NODE B READS NEXT: a live sign-on ' +
+          'session, so the ticket A minted for it counts on B',
+          JSON.stringify(read.session || read));
+  t.equal(read.ok && read.session.lastSeenAt, 500,
+          'and B\'s own touch is kept in the merge (the later lastSeenAt)');
+
+  // The flush's merged answer, applied before the slot is unpinned.
+  freshWindow();
+  const again = arrivalAndSignIn('upgraded-at-flush');
+  authn.sessions.set(again.arrival.id, again.arrival);
+  answer.mergedNext = [{ handle: 'authn.sessions', realm: REALM,
+                         journalKey: again.arrival.id,
+                         body: sealSession(again.signedIn) }];
+  try {
+    await minted.flush();
+  } finally {
+    answer.mergedNext = null;
+  }
+  const after = sessionWindow.get(REALM, again.arrival.id);
+  t.check(after.ok && liveSignOn(after.session),
+          'AND THE FLUSH\'S MERGED ROW IS NOT DROPPED: once B\'s write ' +
+          'commits over A\'s stored sign-in, B holds the sign-in',
+          JSON.stringify(after.session || after));
+  t.equal(sessionWindow.slotState(REALM, again.arrival.id).pinned, false,
+          'and the slot is unpinned once its write committed');
+  log.debug("Leaving upgradedElsewhereCase().");
+}
+
+// RUN #325'S CELLS MODE (2026-11-16, `sts_jar_admin_client`). A row another
+// process wrote is read when its change-log page is prepared and applied
+// later; a sign-in this process committed in between left its slot clean,
+// and the arrival read before it was admitted over the sign-in — the next
+// request here found the session not live (STS-AUTHN-0346).
+async function staleAfterCommitCase(t) {
+  log.debug("Entering staleAfterCommitCase().");
+  t.log.info('on: a row read before a local sign-in committed does not ' +
+             'put the arrival back over it');
+  freshWindow();
+  const rows = arrivalAndSignIn('stale-after-commit');
+  authn.sessions.set(rows.signedIn.id, rows.signedIn);
+  await minted.flush();
+  t.equal(sessionWindow.slotState(REALM, rows.signedIn.id).pinned, false,
+          'the local sign-in committed, and its slot is clean');
+  answer.read = { body: sealSession(rows.arrival) };
+  await minted.applyChange({ key: changeKey(rows.arrival.id), realm: REALM });
+  const read = sessionWindow.get(REALM, rows.arrival.id);
+  t.check(read.ok && liveSignOn(read.session),
+          'THE STALE ARRIVAL IS MERGED, NOT ADMITTED: the session is still ' +
+          'the live sign-in', JSON.stringify(read.session || read));
+  t.equal(read.ok && read.session.lastSeenAt, 500,
+          'and the arriving row\'s later lastSeenAt is kept');
+
+  // The other way round: a clean arrival here still takes a sign-in made
+  // elsewhere.
+  freshWindow();
+  const up = arrivalAndSignIn('clean-upgraded');
+  authn.sessions.set(up.arrival.id, up.arrival);
+  await minted.flush();
+  answer.read = { body: sealSession(up.signedIn) };
+  await minted.applyChange({ key: changeKey(up.arrival.id), realm: REALM });
+  const upgraded = sessionWindow.get(REALM, up.arrival.id);
+  t.check(upgraded.ok && liveSignOn(upgraded.session),
+          'and a clean arrival still becomes a sign-in made elsewhere',
+          JSON.stringify(upgraded.session || upgraded));
+  log.debug("Leaving staleAfterCommitCase().");
+}
+
+// RUN 43936849276'S CLUSTER MODE (2026-11-16, `sts_idp_initiated_launch`).
+// `/launch/{app}` on node B recorded an OpenID Connect launch on the session;
+// node A, which held a clean copy of the same sign-in, merged B's row into
+// it and kept its own `launches` (none), so the client's authorization
+// request a second later was refused STS-OAUTH-0959. The merge keeps each
+// client's later launch and later take, and drops a launch its take spent.
+async function launchMergeCase(t) {
+  log.debug("Entering launchMergeCase().");
+  t.log.info('on: a launch recorded on another node survives the merge, ' +
+             'and a spent one is not brought back');
+  const plain = sessionBody('launch-merge');
+  const launched = sessionBody('launch-merge', { lastSeenAt: 2000,
+    launches: { rp: 5000 } });
+  const one = authn.mergeSessionRows(plain, launched);
+  const other = authn.mergeSessionRows(launched, plain);
+  t.equal((one.launches || {}).rp + ' ' + (other.launches || {}).rp,
+          '5000 5000',
+          'THE LAUNCH IS KEPT whichever copy is the base');
+  const spent = sessionBody('launch-merge', { lastSeenAt: 3000,
+    launches: {}, launchesTaken: { rp: 5000 } });
+  const back = authn.mergeSessionRows(launched, spent);
+  const backOther = authn.mergeSessionRows(spent, launched);
+  t.check(!(back.launches || {}).rp && !(backOther.launches || {}).rp &&
+          back.launchesTaken.rp === 5000,
+          'a launch its take spent is not brought back by a copy from ' +
+          'before the take, in either order',
+          JSON.stringify([back.launches, backOther.launches]));
+  const again = sessionBody('launch-merge', { lastSeenAt: 4000,
+    launches: { rp: 6000 }, launchesTaken: { rp: 5000 } });
+  t.equal((authn.mergeSessionRows(spent, again).launches || {}).rp, 6000,
+          'and a later launch of the same client counts again');
+
+  // The window's own path: a clean held copy takes another node's row.
+  freshWindow();
+  const held = sessionBody('launch-held');
+  authn.sessions.set(held.id, held);
+  await minted.flush();
+  answer.read = { body: sealSession(sessionBody('launch-held', {
+    lastSeenAt: 2000, launches: { rp: 5000 } })) };
+  await minted.applyChange({ key: changeKey(held.id), realm: REALM });
+  const read = sessionWindow.get(REALM, held.id);
+  t.equal(read.ok && (read.session.launches || {}).rp, 5000,
+          'A CLEAN HELD COPY TAKES THE LAUNCH another node recorded');
+  log.debug("Leaving launchMergeCase().");
+}
+
+// THE CLUSTER MODE'S `sts_caep_oauth_grants` (runs #412 and 44025839154,
+// 2026-11-17). Node A spent the sign-in's free presentation; node B, which
+// held a copy from before that, merged A's row into its own (same sign-in, so
+// B's was the base) and put `firstPresentationIsTheSignIn: true` back — and
+// swallowed the CIBA approval's real presentation, so its CAEP
+// `session-presented` event was never sent. The flag is taken from the copy
+// whose `presentationHeldAt` is later, in either merge order.
+async function presentationMergeCase(t) {
+  log.debug("Entering presentationMergeCase().");
+  t.log.info('on: a spent presentation stays spent when a stale copy that ' +
+             'still holds it is merged, and a re-armed one stays armed');
+  const armed = sessionBody('held-merge', { firstPresentationIsTheSignIn: true,
+    presentationHeldAt: 1000 });
+  const spent = sessionBody('held-merge', { lastSeenAt: 2000,
+    firstPresentationIsTheSignIn: false, presentationHeldAt: 2000 });
+  const one = authn.mergeSessionRows(armed, spent);
+  const other = authn.mergeSessionRows(spent, armed);
+  t.equal(String(one.firstPresentationIsTheSignIn) + ' ' +
+          String(other.firstPresentationIsTheSignIn), 'false false',
+          'THE SPENT FLAG IS KEPT whichever copy is the base');
+  t.equal(one.presentationHeldAt + ' ' + other.presentationHeldAt,
+          '2000 2000', 'and the merged row carries the later stamp');
+  const rearmed = sessionBody('held-merge', { lastSeenAt: 3000,
+    firstPresentationIsTheSignIn: true, presentationHeldAt: 3000 });
+  t.equal(String(authn.mergeSessionRows(spent, rearmed)
+    .firstPresentationIsTheSignIn) + ' ' + String(authn.mergeSessionRows(
+    rearmed, spent).firstPresentationIsTheSignIn), 'true true',
+          'a hold armed AFTER the spend (the consent trip) is kept too');
+  const tieArmed = sessionBody('held-merge', {
+    firstPresentationIsTheSignIn: true, presentationHeldAt: 4000 });
+  const tieSpent = sessionBody('held-merge', {
+    firstPresentationIsTheSignIn: false, presentationHeldAt: 4000 });
+  t.equal(String(authn.mergeSessionRows(tieArmed, tieSpent)
+    .firstPresentationIsTheSignIn) + ' ' + String(authn.mergeSessionRows(
+    tieSpent, tieArmed).firstPresentationIsTheSignIn), 'false false',
+          'a tie is spent in either order, so two nodes converge');
+
+  // Backwards compatibility: a row stored before the stamp existed.
+  const legacyArmed = sessionBody('held-merge', {
+    firstPresentationIsTheSignIn: true });
+  t.equal(String(authn.mergeSessionRows(legacyArmed, spent)
+    .firstPresentationIsTheSignIn) + ' ' + String(authn.mergeSessionRows(
+    spent, legacyArmed).firstPresentationIsTheSignIn), 'false false',
+          'AN UNSTAMPED (OLDER) ROW loses to a stamped one in either order');
+  const legacySpent = sessionBody('held-merge', { lastSeenAt: 2000,
+    firstPresentationIsTheSignIn: false });
+  const legacy = authn.mergeSessionRows(legacyArmed, legacySpent);
+  t.check(legacy.firstPresentationIsTheSignIn === true &&
+          !('presentationHeldAt' in legacy),
+          'two unstamped rows keep the base\'s flag, as they always did, ' +
+          'and gain no stamp', JSON.stringify(legacy));
+
+  // The writer: every change advances the stamp past the one it saw, even
+  // when the copy carries a stamp from a node whose clock is ahead.
+  const ahead = { id: 'held-writer',
+    presentationHeldAt: Date.now() + 60 * 60 * 1000 };
+  authn.markPresentationHeld(ahead, false);
+  t.check(ahead.firstPresentationIsTheSignIn === false &&
+          ahead.presentationHeldAt > Date.now() + 59 * 60 * 1000,
+          'markPresentationHeld() orders a change after the stamp it saw',
+          JSON.stringify(ahead));
+
+  // The window's own path: a held copy still armed takes another node's
+  // spent row.
+  freshWindow();
+  const held = sessionBody('held-window', { firstPresentationIsTheSignIn: true,
+    presentationHeldAt: 1000 });
+  authn.sessions.set(held.id, held);
+  await minted.flush();
+  answer.read = { body: sealSession(sessionBody('held-window', {
+    lastSeenAt: 2000, firstPresentationIsTheSignIn: false,
+    presentationHeldAt: 2000 })) };
+  await minted.applyChange({ key: changeKey(held.id), realm: REALM });
+  const read = sessionWindow.get(REALM, held.id);
+  t.equal(read.ok && read.session.firstPresentationIsTheSignIn, false,
+          'A HELD COPY STILL ARMED TAKES THE SPEND another node recorded');
+  log.debug("Leaving presentationMergeCase().");
 }
 
 async function restoreCase(t) {
@@ -1126,6 +1411,38 @@ function cooledIndexCase(t) {
   log.debug("Leaving cooledIndexCase().");
 }
 
+function subjectBandCase(t) {
+  log.debug("Entering subjectBandCase().");
+  t.log.info('the shed walks one base64url band per sweep (#876)');
+  const alphabet = '-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_' +
+    'abcdefghijklmnopqrstuvwxyz';
+  let walk = '';
+  for (let i = 0; i < alphabet.length; i++) {
+    const band = sessionQueries.subjectCapBand(i * 30000, 30);
+    walk += band.lo;
+    t.equal(band.hi, String.fromCharCode(band.lo.charCodeAt(0) + 1),
+            'band ' + band.lo + ' ends at the next code point');
+  }
+  t.equal(walk, alphabet,
+          'sixty-four sweeps visit each base64url character once');
+  const again = sessionQueries.subjectCapBand(30000 * 64, 30);
+  t.equal(again.lo, '-', 'the sixty-fifth sweep is the hyphen again');
+  const pg = sessionQueries.build('session.overCapRows',
+    ['r', '-', '.', 32, 100]);
+  const maria = sessionQueries.build('session.overCapRows',
+    ['r', '-', '.', 32, 100], 'mariadb');
+  t.check(/COLLATE "C" >= \$2/.test(pg.text) &&
+          /COLLATE "C" < \$3/.test(pg.text) &&
+          /GROUP BY subject_key COLLATE "C"/.test(pg.text) &&
+          !/COLLATE/.test(maria.text) &&
+          /subject_key >= \?/.test(maria.text) &&
+          JSON.stringify(pg.values) === '["r","-",".",32,100]',
+          'PostgreSQL bounds the aggregate with COLLATE "C" and MariaDB ' +
+          'uses the same range without it',
+          JSON.stringify({ pg: pg.values, maria: maria.text.slice(0, 80) }));
+  log.debug("Leaving subjectBandCase().");
+}
+
 function shedErrorCase(t) {
   log.debug("Entering shedErrorCase().");
   t.log.info('on: a failed shed load ends nobody for that subject');
@@ -1134,8 +1451,8 @@ function shedErrorCase(t) {
   const older = 'digest-older';
   const newer = 'digest-newer';
   const reads = [];
-  // 2026-10-21: the shed asks the store for the over-cap subjects alone,
-  // with the cap and the sweep's budget, and pages nobody else.
+  // #876: the shed asks one subject-key band, with the cap and the sweep's
+  // budget, and pages nobody else.
   let overCapArgs = null;
   let pagedEverySession = false;
   queryFn = function (name, args) {
@@ -1170,15 +1487,23 @@ function shedErrorCase(t) {
     return emptyAnswer(name);
   };
   try {
+    const sweepS = Number(config.value('authn.sessionSweepS'));
+    const before = sessionQueries.subjectCapBand(Date.now(), sweepS);
     const ended = runSweep();
+    const after = sessionQueries.subjectCapBand(Date.now(), sweepS);
+    const lo = overCapArgs && overCapArgs[1];
+    const hi = overCapArgs && overCapArgs[2];
     t.equal(ended && ended.ended, 0, 'a failed load ends nobody');
     t.equal(reads.indexOf(newer), -1, 'the later live row is not read');
     t.equal(audits('session.end', 'shed-newer').length, 0,
             'the later row has no session.end');
-    t.check(!!overCapArgs && overCapArgs[1] === 1 && overCapArgs[2] >= 1 &&
+    t.check(!!overCapArgs && overCapArgs[3] === 1 &&
+            overCapArgs[4] >= 1 &&
+            (lo === before.lo || lo === after.lo) &&
+            hi === String.fromCharCode(String(lo).charCodeAt(0) + 1) &&
             !pagedEverySession,
-            'the shed asks for the over-cap subjects alone, with the cap ' +
-            'and its budget, and pages no other session (2026-10-21)',
+            'the shed asks one subject-key band, with the cap and its ' +
+            'budget, and pages no other session (#876)',
             JSON.stringify({ args: overCapArgs, paged: pagedEverySession }));
   } finally {
     config.clearOverride('authn.maxSessionsPerSubject');
@@ -1301,6 +1626,7 @@ async function onHalf(t) {
   zeroWaitCase(t);
   await bridgeWaitCase(t);
   cooledIndexCase(t);
+  subjectBandCase(t);
   shedErrorCase(t);
   await warmCase(t);
   middlewareCase(t);
@@ -1310,11 +1636,207 @@ async function onHalf(t) {
   cascadeCase(t);
   await tombstoneCase(t);
   await dirtyCase(t);
+  await dirtyClientCase(t);
+  await upgradedElsewhereCase(t);
+  await staleAfterCommitCase(t);
+  await launchMergeCase(t);
+  await presentationMergeCase(t);
   await restoreCase(t);
   upgradeCase(t);
   partialWalkCase(t);
   accountSetCase(t);
   log.debug("Leaving onHalf().");
+}
+
+// A change-log key for a row of any minted store.
+function storeChangeKey(handle, key) {
+  log.debug("Entering storeChangeKey().");
+  log.debug("Leaving storeChangeKey().");
+  return Buffer.from(handle).toString('base64url') + '.' +
+    Buffer.from(key).toString('base64url');
+}
+
+// The last body a flush wrote for one journal key, opened; null if none.
+function lastWritten(journalKey) {
+  log.debug("Entering lastWritten().");
+  const written = upsertsOf(journalKey);
+  let body = null;
+  try {
+    body = written.length
+      ? JSON.parse(keystore.open(written[written.length - 1].body,
+                                 'minted-rows'))
+      : null;
+  } catch (e) {
+    log.debug("Caught in lastWritten(): " + ((e && e.message) || e));
+    body = null;
+  }
+  log.debug("Leaving lastWritten().");
+  return body;
+}
+
+// A sealed account-set row, as another process's flush wrote it.
+function sealAccountSet(value) {
+  log.debug("Entering sealAccountSet().");
+  log.debug("Leaving sealAccountSet().");
+  return keystore.seal(JSON.stringify(value), 'minted-rows',
+                       tiers.mintedTierOf('authn.accountSets'),
+                       { realm: REALM });
+}
+
+// FOUND CHASING THE CELLS MODE'S `sts_jar_admin_client` (runs
+// 43762819441, 43996600299, 44025839154, 2026-11-17). A service of several
+// cells runs with the session window OFF (`sessionWindow.active()` needs
+// one cell), and so does `authn.sessionWindow: off` anywhere. With it off, another process's
+// row went through `applyLocally()` to the store's plain `restore()`,
+// which REPLACED the held copy whole: the window's merges (2026-11-14,
+// 2026-11-16) are on the window's own path only. A row read before this
+// process's sign-in committed and applied after it put the arrival back
+// over the sign-in; one applied while the sign-in's write was pending
+// replaced it, and the flush then wrote the arrival; an account set copied
+// before the sign-in joined it dropped the session that had just joined.
+// Either way the selection ticket the sign-in handed out would name a
+// session not live in this browser (STS-AUTHN-0346). A store that merges
+// (`mergeRow`) now merges the arriving row into the held copy, and a real
+// change made elsewhere still lands.
+async function windowOffMergeCase(t) {
+  log.debug("Entering windowOffMergeCase().");
+  t.log.info('off, persisted: another process\'s row is merged into the ' +
+             'copy held here, never put over it');
+  const AccountSets = require('../authn/account_sets');
+  t.equal(sessionWindow.active(), false,
+          'the window is off, as in a service of several cells');
+  clearSessions();
+  await minted.flush();
+
+  // 1. A sign-in that committed here, and the arrival read before it.
+  const one = arrivalAndSignIn('off-stale-after-commit');
+  authn.sessions.set(one.signedIn.id, one.signedIn);
+  await minted.flush();
+  answer.read = { body: sealSession(one.arrival) };
+  await minted.applyChange({ key: changeKey(one.arrival.id), realm: REALM });
+  const held = authn.sessions.get(one.arrival.id);
+  t.check(liveSignOn(held),
+          'A COMMITTED SIGN-IN STAYS ONE: the stale arrival is merged into ' +
+          'it, not put over it', JSON.stringify(held));
+  t.equal(held && held.lastSeenAt, 500,
+          'and the arriving row\'s later lastSeenAt is kept');
+
+  // 2. The same, with the sign-in's own write not yet flushed.
+  const two = arrivalAndSignIn('off-stale-pending');
+  authn.sessions.set(two.signedIn.id, two.signedIn);
+  answer.read = { body: sealSession(two.arrival) };
+  await minted.applyChange({ key: changeKey(two.arrival.id), realm: REALM });
+  t.check(liveSignOn(authn.sessions.get(two.arrival.id)),
+          'A PENDING SIGN-IN STAYS ONE too',
+          JSON.stringify(authn.sessions.get(two.arrival.id)));
+  captured.upserts.length = 0;
+  await minted.flush();
+  t.check(liveSignOn(lastWritten(two.arrival.id)),
+          'and its flush writes the sign-in, not the arrival',
+          JSON.stringify(lastWritten(two.arrival.id)));
+
+  // 3. The other way round: a clean arrival here still becomes a sign-in
+  // another process made.
+  const three = arrivalAndSignIn('off-upgraded-elsewhere');
+  authn.sessions.set(three.arrival.id, three.arrival);
+  await minted.flush();
+  answer.read = { body: sealSession(three.signedIn) };
+  await minted.applyChange({ key: changeKey(three.arrival.id),
+                             realm: REALM });
+  t.check(liveSignOn(authn.sessions.get(three.arrival.id)),
+          'a clean arrival still becomes the sign-in another process made',
+          JSON.stringify(authn.sessions.get(three.arrival.id)));
+
+  // 4. The browser's account set, and a copy from before the sign-in
+  // joined it.
+  const row = AccountSets.fresh();
+  AccountSets.addSession(row, 'off-older', { sub: 'urn:uuid:off-older',
+    username: 'off-older', displayName: 'off-older' });
+  AccountSets.rotate(row);
+  const stale = JSON.parse(JSON.stringify(row));
+  AccountSets.addSession(row, one.signedIn.id, {
+    sub: one.signedIn.user.sub, username: one.signedIn.user.username,
+    displayName: one.signedIn.user.username });
+  AccountSets.rotate(row);
+  AccountSets.save(row);
+  await minted.flush();
+  answer.read = { body: sealAccountSet(stale) };
+  await minted.applyChange({
+    key: storeChangeKey('authn.accountSets', row.id), realm: REALM });
+  const set = AccountSets.byId(row.id);
+  t.check(!!(set && set.sessions && set.sessions[one.signedIn.id] &&
+             set.sessions['off-older']),
+          'AN ACCOUNT SET KEEPS THE SESSION THAT HAD JUST JOINED IT when ' +
+          'an older copy arrives', JSON.stringify(set));
+
+  // 5. And a session another process ENDED leaves the set here.
+  const ended = JSON.parse(JSON.stringify(set || row));
+  AccountSets.endSession(ended, 'off-older', Date.now());
+  answer.read = { body: sealAccountSet(ended) };
+  await minted.applyChange({
+    key: storeChangeKey('authn.accountSets', row.id), realm: REALM });
+  const after = AccountSets.byId(row.id);
+  t.check(!!(after && after.sessions && !after.sessions['off-older'] &&
+             after.sessions[one.signedIn.id]),
+          'while a session another process ended leaves it',
+          JSON.stringify(after));
+  answer.read = null;
+  AccountSets.remove(row.id);
+  clearSessions();
+  await minted.flush();
+  log.debug("Leaving windowOffMergeCase().");
+}
+
+// THE ROOT OF THE SAME RUNS: a realm in development mode, in a product
+// process with no workers and no cluster — each cell of the `cells` mode.
+// `minted.enabled()` read the AMBIENT realm's mode, so inside that realm the
+// process was "not persisting", and a flush scheduled from one of its
+// requests cleared the whole journal: every realm's pending writes, never
+// written. The sign-in's own entry went with them, so the merged answer of
+// an older flight still holding the arrival could be applied over the
+// sign-in.
+async function devRealmFlushCase(t) {
+  log.debug("Entering devRealmFlushCase().");
+  t.log.info('a development realm in a product process: a flush asked ' +
+             'from it writes every realm\'s pending rows');
+  const id = REALM + '-dev';
+  const made = realms.create({ id: id, name: id,
+                               description: 'Created by ' + __filename });
+  if (!made.ok) {
+    t.bad('could not create the realm "' + id + '"',
+          (made.errors || []).join(' '));
+    log.debug("Leaving devRealmFlushCase().");
+    return;
+  }
+  try {
+    realms.run(made.realm, function () {
+      config.setOverride('global.mode', 'development');
+    });
+    t.equal(realms.run(made.realm, function () {
+      return minted.enabled();
+    }), true, 'MINTED STATE IS PERSISTED INSIDE A DEVELOPMENT REALM of a ' +
+              'product process');
+    await minted.flush();
+    captured.upserts.length = 0;
+    const row = sessionBody('dev-realm-flush');
+    authn.sessions.set(row.id, row);
+    await realms.run(made.realm, function () {
+      return minted.flush();
+    });
+    t.equal(upsertsOf(row.id).length, 1,
+            'and a flush asked from that realm writes the row another realm ' +
+            'had pending, rather than clearing the journal');
+    t.equal(minted.journalled('authn.sessions', REALM, row.id), false,
+            'nothing of it is left pending');
+    authn.sessions.delete(row.id);
+    await minted.flush();
+  } finally {
+    realms.run(made.realm, function () {
+      config.clearOverride('global.mode');
+    });
+    realms.remove(id);
+  }
+  log.debug("Leaving devRealmFlushCase().");
 }
 
 // Rows that exist only in the index stub. The realm map stays empty, so a
@@ -1934,6 +2456,16 @@ async function body(t, dir) {
     });
     await realms.run(made.realm, function () {
       return refusalCases(t, dir);
+    });
+    // The window OFF with minted persistence on: a service of several
+    // cells, or `authn.sessionWindow: off`.
+    windowSetting('off');
+    sessionWindow.resetForTests();
+    await realms.run(made.realm, function () {
+      return windowOffMergeCase(t);
+    });
+    await realms.run(made.realm, function () {
+      return devRealmFlushCase(t);
     });
   } finally {
     try {

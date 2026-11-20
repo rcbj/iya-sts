@@ -74,28 +74,6 @@ interface RouteTable {
     unknown;
 }
 
-const vz = validation.z;
-const vt = validation.types;
-
-const PAGE_QUERY = vz.looseObject({
-  state: vt.opt(vt.oneOf(['processing', 'pending', 'approved', 'finalized'])),
-  grantsPage: vt.opt(vt.integer(1, 1000000)),
-  resourcesPage: vt.opt(vt.integer(1, 1000000)),
-  page: vt.opt(vt.integer(1, 1000000)),
-  per: vt.opt(vt.integer(1, 1000)),
-  format: vt.opt(vt.oneOf(['json', 'JSON', 'html']))
-});
-
-const ACTION_FORM = vz.looseObject({
-  action: vt.opt(vt.token),
-  grant: vt.opt(vt.base64url),
-  reference: vt.opt(vt.base64url),
-  // The person whose grant it is (#432 phase 7): set by the GNAP grants tab
-  // of their page on /admin/users, which the answer goes back to.
-  user: vt.opt(vt.name),
-  csrf_token: vt.opt(vt.token)
-});
-
 /**
  * The two GNAP console pages, Protocols -> GNAP (`/admin/gnap`) and Monitoring
  * -> GNAP grants (`/admin/gnap/monitor`), drawn in the console's shell from one
@@ -110,23 +88,6 @@ class GnapAdmin {
   constructor(private readonly deps: GnapAdminDeps) {
     deps.log.debug("Entering GnapAdmin.constructor().");
     deps.log.debug("Leaving GnapAdmin.constructor().");
-  }
-
-  private queryRefused(req: Req, res: Res): boolean {
-    const { log, validation, errorCodes } = this.deps;
-    log.debug("Entering GnapAdmin.queryRefused().");
-    const query = validation.check(req, 'query', PAGE_QUERY);
-    if (!query.ok) {
-      errorCodes.mark(res, 'STS-GNAP-0663');
-      res.status(400)
-         .type('text/plain')
-         .set('Cache-Control', 'no-store')
-         .send(query.detail);
-      log.debug("Leaving GnapAdmin.queryRefused().");
-      return true;
-    }
-    log.debug("Leaving GnapAdmin.queryRefused().");
-    return false;
   }
 
   // The three routes, in the order this file has always registered them.

@@ -40,13 +40,27 @@
 //       and its worker is synced to their write; its body reaches the
 //       worker byte for byte;
 //  R10. an unknown code is the global wait, never "wait for nothing";
-//  R11. a refresh grant is the global wait;
+//  R11. a chunked refresh grant is the global wait (its body is not read
+//       first);
 //  R12. a body over 16 KiB, and a chunked one, are the global wait, and each
 //       reaches the worker whole;
 //  R13. over HTTP/2: with a `content-length` keyed by its code, without one
 //       global, the body whole either way.
 //  R14. a request with no client key is everybody's write: a keyed request
 //       waits for it (a back channel writes what a browser then reads).
+//  R15. a refresh grant naming one token waits for that token (#879): the
+//       token response files it before the bytes are sent, an unknown token
+//       does not wait for another browser, a replay of the same token does,
+//       a keyless write still holds it, and a token response that was not
+//       JSON is one of those keyless writes. The table keys it by the
+//       token's digest, never the token.
+//  R16. a refresh grant waits for a write that ended what it rests on (the
+//       review of #879): a sign-out on another worker, filed by its path,
+//       and a revocation the worker said on its answer, each hold a refresh
+//       until announced, and the worker the refresh lands on has then
+//       applied it and refuses; an unrelated browser write does not hold
+//       it, and the client never sees the worker's header. Which requests
+//       the path files is a table in R1.
 // ===========================================================================
 
 const http = require('http');
@@ -56,6 +70,7 @@ const fs = require('fs');
 const path = require('path');
 const express = require('express');
 const pool = require('../common/request_pool');
+const stsCrypto = require('../common/crypto');
 
 const log = require('bunyan').createLogger({
   name: 'request_ryw_session',
@@ -120,13 +135,56 @@ const STUB = [
   "      if (req.url.indexOf('/login') === 0) {",
   "        res.setHeader('set-cookie', 'sts_session=ccc.h; Path=/');",
   "      }",
-  "      const code = /^\\/authorize-code\\?code=([^&]+)/.exec(req.url);",
+  "      if (req.url.indexOf('revoke=1') >= 0) {",
+  "        res.setHeader('x-sts-pool-revoking', '1');",
+  "      }",
+  "      const need = /^\\/oauth2\\/token\\?need=([0-9]+)/.exec(req.url);",
+  "      if (need) {",
+  "        const refused = syncs >= Number(need[1]);",
+  "        res.statusCode = refused ? 400 : 200;",
+  "        res.setHeader('content-type', 'application/json');",
+  "        res.end(refused ? '{\"error\":\"invalid_grant\"}' : '{}');",
+  "        return;",
+  "      }",
+  "      const code =/^\\/authorize-code\\?code=([^&]+)/.exec(req.url);",
   "      if (code) {",
   "        res.statusCode = 302;",
   "        res.setHeader('location', 'https://rp.example/cb?code=' +",
   "                      code[1] + '&state=s');",
   "      }",
+  "      const issued = /[?&]issue=([^&]*)/.exec(req.url || '');",
+  "      if (issued && String(req.url).indexOf('/oauth2/token') >= 0) {",
+  "        const token = decodeURIComponent(issued[1]);",
+  "        const payload = token === 'BAD' ? 'not-json' :",
+  "          '{\"access_token\":\"a\",\"token_type\":\"Bearer\",' +",
+  "          '\"refresh_token\":\"' + token + '\"}';",
+  "        res.statusCode = 200;",
+  "        res.setHeader('content-type', 'application/json');",
+  "        res.setHeader('content-length',",
+  "                      String(Buffer.byteLength(payload)));",
+  "        res.end(payload);",
+  "        return;",
+  "      }",
   "      res.end(body.length ? body : 'ok');",
+  "    });",
+  "  });",
+  // WHAT CLOSED A CONNECTION THE FRONT WAS STILL WRITING (GitHub Actions
+  // run 43672106260 and two before it: R15's issuance to W answered 502,
+  // `write EPIPE`, after its bytes were accepted, so not sent again). This
+  // server closes a connection early only on a parse error or a socket
+  // error, and neither said anything. Written to stderr, which the run's
+  // log for this file keeps; it decides nothing.
+  "  server.on('clientError', function (e, sock) {",
+  "    process.stderr.write('[ryw stub ' + wt.threadId + '] clientError ' +",
+  "      (e && e.code) + ': ' + (e && e.message) + ' raw=' +",
+  "      JSON.stringify(e && e.rawPacket ?",
+  "        e.rawPacket.toString('latin1').slice(0, 600) : '') + '\\n');",
+  "    sock.destroy();",
+  "  });",
+  "  server.on('connection', function (sock) {",
+  "    sock.on('error', function (e) {",
+  "      process.stderr.write('[ryw stub ' + wt.threadId + '] socket ' +",
+  "        (e && e.code) + ': ' + (e && e.message) + '\\n');",
   "    });",
   "  });",
   "  server.listen(m.socket, function () {",
@@ -166,11 +224,14 @@ function start(port, urlPath, cookie) {
 // One POST, as a promise that remembers whether it has settled yet, with the
 // answer's body. `chunked` sends no content-length and writes the body in
 // pieces, so node frames it with Transfer-Encoding: chunked.
-function post(port, urlPath, body, chunked) {
+function post(port, urlPath, body, chunked, cookie) {
   log.debug("Entering post().");
   const call = { done: false, answer: null };
   call.promise = new Promise(function (resolve) {
     const headers = { 'content-type': 'application/x-www-form-urlencoded' };
+    if (cookie) {
+      headers.cookie = cookie;
+    }
     if (!chunked) {
       headers['content-length'] = String(Buffer.byteLength(body));
     }
@@ -261,6 +322,19 @@ function announceAll(entries) {
   log.debug("Leaving announceAll().");
 }
 
+// Every ticket `entry` may still hold, announced as a WRITING commit: its
+// generation moves, so a reader that waits for one of those tickets' keys is
+// sent to a worker synced past it.
+function commitAll(entry) {
+  log.debug("Entering commitAll().");
+  const range = [];
+  for (let i = 1; i <= 2000; i++) {
+    range.push(i);
+  }
+  pool.receiveCommitted(entry, { wrote: true, tickets: range });
+  log.debug("Leaving commitAll().");
+}
+
 // A finished, unannounced ticket on `entry`, filed under `keys`.
 function arm(entry, keys) {
   log.debug("Entering arm().");
@@ -288,6 +362,38 @@ function checkTheReaders(t) {
   t.equal(pool.clientKeysOf({ headers: {}, originalUrl: '/oauth2/token' },
                             pool.PROTOCOL_POOL).length, 0,
           'R1. a back-channel request carries no key');
+  // R16. Which requests are filed under REVOKE_KEY by their method and path
+  // alone (the review of #879).
+  const revoking = function (method, url) {
+    return pool.revokingRequest({ method: method, originalUrl: url });
+  };
+  const filed = [
+    ['GET', '/logout'], ['POST', '/logout'],
+    ['GET', '/realm/r1/oauth2/logout?id_token_hint=x'],
+    ['POST', '/saml2/slo'], ['GET', '/authn-api/logout'],
+    ['GET', '/wsfed?wa=wsignout1.0&wreply=x'],
+    ['GET', '/realm/r1/wsfed?wa=wsignoutcleanup1.0'],
+    ['POST', '/oauth2/revoke'], ['POST', '/as1/oauth2/revoke'],
+    ['DELETE', '/oauth2/grants/g1'], ['POST', '/admin-api/users/disable'],
+    ['POST', '/realm/r1/account-api/sessions/end'],
+    ['PATCH', '/scim/v2/Users/u1'], ['POST', '/ssf/events'],
+    ['DELETE', '/anything/at/all']
+  ].filter(function (one) {
+    return !revoking(one[0], one[1]);
+  });
+  t.equal(filed.join(' | '), '',
+          'R16. every sign-out door, a write to a revoking surface and any ' +
+          'DELETE is filed under REVOKE_KEY by its path');
+  const notFiled = [
+    ['GET', '/oauth2/authorize?client_id=x'], ['POST', '/oauth2/token'],
+    ['POST', '/authn-api/pending/p1/password'], ['GET', '/admin-api/users'],
+    ['GET', '/wsfed?wa=wsignin1.0'], ['GET', '/portal/logouts-help'],
+    ['GET', '/oauth2/revoke'], ['POST', '/oauth2/revoked']
+  ].filter(function (one) {
+    return revoking(one[0], one[1]);
+  });
+  t.equal(notFiled.join(' | '), '',
+          'R16. a sign-in, a token request, a read and a near miss are not');
   // Which requests are read before the barrier (#820).
   const form = 'application/x-www-form-urlencoded';
   const ask = function (method, url, headers) {
@@ -409,8 +515,8 @@ async function checkTheCodeExchange(t, port, port2) {
     const unknown = post(port, '/oauth2/token',
                          'grant_type=authorization_code&code=NEVER-SEEN',
                          false);
-    const refresh = post(port, '/oauth2/token',
-                         'grant_type=refresh_token&refresh_token=C9', false);
+    const refreshBody = 'grant_type=refresh_token&refresh_token=C9';
+    const refresh = post(port, '/oauth2/token', refreshBody, true);
     const oversized = post(port, '/oauth2/token', big, false);
     const chunkedBody = 'grant_type=authorization_code&code=C9&x=' +
                         'y'.repeat(300);
@@ -418,7 +524,7 @@ async function checkTheCodeExchange(t, port, port2) {
     await sleep(HELD_MS);
     t.check(!unknown.done, 'R10. an unknown code waits globally: held by ' +
             'another client\'s write', JSON.stringify(unknown.answer));
-    t.check(!refresh.done, 'R11. a refresh grant waits globally',
+    t.check(!refresh.done, 'R11. a chunked refresh grant waits globally',
             JSON.stringify(refresh.answer));
     t.check(!oversized.done && !chunked.done,
             'R12. a body over 16 KiB, and a chunked one, wait globally',
@@ -432,14 +538,19 @@ async function checkTheCodeExchange(t, port, port2) {
             held.map(function (a) {
               return a.status;
             }).join(','));
-    t.check(held[2].body.equals(Buffer.from(big)) &&
+    t.check(held[1].body.equals(Buffer.from(refreshBody)) &&
+            held[2].body.equals(Buffer.from(big)) &&
             held[3].body.equals(Buffer.from(chunkedBody)),
-            'R12. both bodies reach the worker whole',
-            held[2].body.length + ' ' + held[3].body.length);
+            'R11-R12. the chunked refresh and both other bodies reach the ' +
+            'worker whole',
+            held[1].body.length + ' ' + held[2].body.length + ' ' +
+            held[3].body.length);
     const after = pool.stats().sessionBarrier;
     t.check(after.codeKeyed === now.codeKeyed &&
+            after.refreshKeyed === now.refreshKeyed &&
             after.global >= now.global + 4,
-            'R10-R12. counted as global dispatches, none keyed by a code',
+            'R10-R12. counted as global dispatches, none keyed by a code ' +
+            'or a refresh token',
             JSON.stringify(after));
 
     // R13. Over HTTP/2. A code learnt and its writes announced; another
@@ -471,6 +582,222 @@ async function checkTheCodeExchange(t, port, port2) {
     t.check(late.status === 200 && late.body.equals(Buffer.from(h2Body)),
             'R13. and is answered once it is announced, its body whole',
             late.status + ' ' + late.body.length);
+
+    // R15. The refresh grant, keyed by the presented token (#879). The
+    // issuance carries the browser's cookie, so it is answered by W and
+    // does not take the body-first path. W.served is still huge, so a
+    // refresh with no cookie is answered by O.
+    await sleep(50);
+    announceAll(workers);
+    const beforeR = pool.stats().sessionBarrier;
+    const otherR = arm(W, ['s:eee']);
+    const signR = arm(W, ['s:ddd']);
+    const want = '{"access_token":"a","token_type":"Bearer",' +
+                 '"refresh_token":"RT1"}';
+    const tIssue = Date.now();
+    const issued = await post(port, '/oauth2/token?issue=RT1', 'n=1',
+                              false, C).promise;
+    t.check(issued.status === 200 && (Date.now() - tIssue) < 1000 &&
+            issued.headers['x-worker'] === String(W.pid) &&
+            issued.body.toString('utf8') === want,
+            'R15. the token response is answered by the browser\'s worker ' +
+            'and names the refresh token',
+            (Date.now() - tIssue) + 'ms ' + issued.status + ' ' +
+            issued.body.toString('utf8'));
+    t.equal(pool.stats().sessionBarrier.refreshLearnt,
+            beforeR.refreshLearnt + 1,
+            'R15. that refresh token was learnt');
+    // The review of #879: the key is a digest through the one crypto
+    // module, and no key the table holds carries the token.
+    const rt1Key = pool.refreshKeyOf('RT1');
+    const keyNames = pool.clientKeyNames();
+    t.check(rt1Key === 'rt:' + stsCrypto.credentialDigest('RT1') &&
+            keyNames.indexOf(rt1Key) >= 0 &&
+            keyNames.every(function (k) {
+              return k.indexOf('RT1') < 0;
+            }),
+            'R15. the token is held under its digest, and no key is the token',
+            rt1Key + ' ' + JSON.stringify(keyNames.filter(function (k) {
+              return k.indexOf('rt:') === 0;
+            })));
+    const mintedR = signR + 1;
+    const refresh1 = post(port, '/oauth2/token',
+                          'grant_type=refresh_token&refresh_token=RT1',
+                          false);
+    const refresh2 = post(port, '/oauth2/token',
+                          'grant_type=refresh_token&refresh_token=RT2',
+                          false);
+    await sleep(HELD_MS);
+    t.check(!refresh1.done, 'R15. a refresh of a token this process issued ' +
+            'is held by that issuance, not by another browser',
+            JSON.stringify(refresh1.answer));
+    t.check(refresh2.done && refresh2.answer.status === 200 &&
+            refresh2.answer.headers['x-worker'] === String(O.pid),
+            'R15. an unknown refresh token does not wait for another ' +
+            'browser or for another token',
+            JSON.stringify(refresh2.answer && refresh2.answer.headers));
+    pool.receiveCommitted(W, { wrote: true, tickets: [signR, mintedR] });
+    const tR = Date.now();
+    const answeredR = await refresh1.promise;
+    t.check(answeredR.status === 200 && (Date.now() - tR) < 1000 &&
+            answeredR.headers['x-worker'] === String(O.pid),
+            'R15. and is answered on O once the issuance is announced',
+            (Date.now() - tR) + 'ms ' + JSON.stringify(answeredR.headers));
+    await refresh2.promise;
+
+    // The first refresh's ticket is on O, unannounced, under RT1's key. The
+    // replay has to land on W or the same-worker exception would not hold it.
+    const oServed = O.served;
+    O.served = 1e9;
+    W.served = 0;
+    const replay = post(port, '/oauth2/token',
+                        'grant_type=refresh_token&refresh_token=RT1', false);
+    await sleep(HELD_MS);
+    t.check(!replay.done, 'R15. a second refresh of the same token is held ' +
+            'by the first, while another browser\'s write is still out',
+            JSON.stringify(replay.answer));
+    announceAll([O]);
+    const tReplay = Date.now();
+    const replayed = await replay.promise;
+    t.check(replayed.status === 200 && (Date.now() - tReplay) < 1000 &&
+            replayed.headers['x-worker'] === String(W.pid),
+            'R15. and is answered on W once that refresh is announced',
+            (Date.now() - tReplay) + 'ms ' +
+            JSON.stringify(replayed.headers));
+    O.served = oServed;
+    W.served = 1e9;
+
+    // A keyless write is still everybody's. The unknown token waits for it
+    // and not for otherR, which is still outstanding on W.
+    const keyless = arm(W, ['*']);
+    const refresh3 = post(port, '/oauth2/token',
+                          'grant_type=refresh_token&refresh_token=RT3',
+                          false);
+    await sleep(HELD_MS);
+    t.check(!refresh3.done, 'R15. an unknown refresh token still waits for ' +
+            'a keyless write', JSON.stringify(refresh3.answer));
+    pool.receiveCommitted(W, { wrote: false, tickets: [keyless] });
+    const answered3 = await refresh3.promise;
+    t.check(answered3.status === 200 &&
+            answered3.headers['x-worker'] === String(O.pid),
+            'R15. and is answered once that keyless write is announced, ' +
+            'without the other browser\'s',
+            JSON.stringify(answered3.headers));
+
+    // A 200 JSON body that is not JSON may have issued a token and was not
+    // keyed. The next refresh waits for it.
+    const bad = await post(port, '/oauth2/token?issue=BAD', 'n=1',
+                           false, C).promise;
+    t.check(bad.status === 200 && bad.body.toString('utf8') === 'not-json' &&
+            bad.headers['x-worker'] === String(W.pid),
+            'R15. a token response that is not JSON is still answered',
+            bad.status + ' ' + bad.body.toString('utf8'));
+    const refresh9 = post(port, '/oauth2/token',
+                          'grant_type=refresh_token&refresh_token=RT9',
+                          false);
+    await sleep(HELD_MS);
+    t.check(!refresh9.done, 'R15. and holds the next refresh, as a keyless ' +
+            'write', JSON.stringify(refresh9.answer));
+    announceAll([W]);
+    const answered9 = await refresh9.promise;
+    t.check(answered9.status === 200, 'R15. and is answered once that ' +
+            'response is announced', String(answered9.status));
+    const endR = pool.stats().sessionBarrier;
+    t.check(endR.refreshLearnt === beforeR.refreshLearnt + 1 &&
+            endR.refreshKeyed >= beforeR.refreshKeyed + 5,
+            'R15. five refresh grants were keyed and one token was learnt',
+            JSON.stringify(endR));
+    // otherR stays until the finally below announces every worker. Naming
+    // it keeps the ticket that must not have released the refreshes above.
+    t.check(otherR > 0, 'R15. the other browser\'s ticket was armed',
+            String(otherR));
+
+    // R16. The writes a refresh must not answer ahead of (the review of
+    // #879). The browser C signs out on W; a refresh with no cookie goes to
+    // O, which has not applied it. The stub at `/oauth2/token?need=<n>`
+    // refuses once it has answered n sync rounds: a worker that has applied
+    // the sign-out refuses the refresh, as the service does.
+    await sleep(50);
+    announceAll(workers);
+    const beforeV = pool.stats().sessionBarrier;
+    const probe = await post(port, '/oauth2/token',
+                             'grant_type=refresh_token&refresh_token=RTP',
+                             false).promise;
+    const sV = Number(probe.headers['x-syncs']);
+    t.check(probe.status === 200 &&
+            probe.headers['x-worker'] === String(O.pid),
+            'R16. a refresh with no cookie is answered by O',
+            JSON.stringify(probe.headers));
+    const signOut = await start(port, '/logout', C).promise;
+    t.check(signOut.headers['x-worker'] === String(W.pid),
+            'R16. the browser signs out on W',
+            JSON.stringify(signOut.headers));
+    await sleep(50);
+    const afterOut = post(port, '/oauth2/token?need=' + (sV + 1),
+                          'grant_type=refresh_token&refresh_token=RTA',
+                          false);
+    await sleep(HELD_MS);
+    t.check(!afterOut.done, 'R16. a refresh sent after a sign-out on another ' +
+            'worker is held by it, though it carries another key',
+            JSON.stringify(afterOut.answer));
+    commitAll(W);
+    const refusedOut = await afterOut.promise;
+    t.check(refusedOut.status === 400 &&
+            refusedOut.headers['x-worker'] === String(O.pid) &&
+            Number(refusedOut.headers['x-syncs']) === sV + 1,
+            'R16. and once the sign-out is announced, is answered by a ' +
+            'worker that has applied it, and refused',
+            refusedOut.status + ' ' + JSON.stringify(refusedOut.headers));
+
+    // An unrelated write of the same browser does not hold a refresh.
+    const sW = Number(refusedOut.headers['x-syncs']);
+    await sleep(50);
+    announceAll(workers);
+    const plain = await post(port, '/authn-api/pending/p1/password', 'x=1',
+                             false, C).promise;
+    t.check(plain.headers['x-worker'] === String(W.pid),
+            'R16. an ordinary browser write is answered on W',
+            JSON.stringify(plain.headers));
+    await sleep(50);
+    const tPlain = Date.now();
+    const afterPlain = post(port, '/oauth2/token?need=' + (sW + 1),
+                            'grant_type=refresh_token&refresh_token=RTB',
+                            false);
+    await sleep(HELD_MS);
+    t.check(afterPlain.done && afterPlain.answer.status === 200 &&
+            afterPlain.answer.headers['x-worker'] === String(O.pid) &&
+            (Date.now() - tPlain) < HELD_MS + 300,
+            'R16. a refresh is not held by an unrelated browser write',
+            JSON.stringify(afterPlain.answer && afterPlain.answer.headers));
+
+    // A revocation the worker said on its answer (a disabled account, a
+    // session replaced at sign-in): the path files nothing; the header does.
+    const said = await post(port, '/authn-api/pending/p1/password?revoke=1',
+                            'x=1', false, C).promise;
+    t.check(said.headers['x-worker'] === String(W.pid) &&
+            said.headers['x-sts-pool-revoking'] === undefined,
+            'R16. a revoking answer is answered on W, and the client does ' +
+            'not see the worker\'s header', JSON.stringify(said.headers));
+    await sleep(50);
+    const afterSaid = post(port, '/oauth2/token?need=' + (sW + 1),
+                           'grant_type=refresh_token&refresh_token=RTC',
+                           false);
+    await sleep(HELD_MS);
+    t.check(!afterSaid.done, 'R16. a refresh sent after a revocation said on ' +
+            'its answer is held by it', JSON.stringify(afterSaid.answer));
+    commitAll(W);
+    const refusedSaid = await afterSaid.promise;
+    t.check(refusedSaid.status === 400 &&
+            refusedSaid.headers['x-worker'] === String(O.pid),
+            'R16. and once it is announced, is refused by a worker that has ' +
+            'applied it', refusedSaid.status + ' ' +
+            JSON.stringify(refusedSaid.headers));
+    const endV = pool.stats().sessionBarrier;
+    t.check(endV.revokingDispatched >= beforeV.revokingDispatched + 1 &&
+            endV.revokingAnswered === beforeV.revokingAnswered + 1 &&
+            endV.revokeWaits >= beforeV.revokeWaits + 4,
+            'R16. counted: one by its path, one by its answer, and the waits',
+            JSON.stringify(endV));
   } finally {
     W.served = served;
     session.close();

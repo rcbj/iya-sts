@@ -58,24 +58,6 @@ import consoleModel = require('./acme_console');
 import InstanceSlot = require('../common/instance_slot');
 
 const esc = admin.esc;
-const vz = validation.z;
-const vt = validation.types;
-
-const PAGE_QUERY = vz.looseObject({
-  per: vt.opt(vt.integer(1, 1000)),
-  page: vt.opt(vt.integer(1, 1000000)),
-  certificatesPage: vt.opt(vt.integer(1, 1000000)),
-  credentialsPage: vt.opt(vt.integer(1, 1000000)),
-  accountsPage: vt.opt(vt.integer(1, 1000000)),
-  hostNamesPage: vt.opt(vt.integer(1, 1000000)),
-  format: vt.opt(vt.oneOf(['json', 'JSON', 'html']))
-});
-
-const ACTION_FORM = vz.looseObject({
-  action: vt.token,
-  csrf_token: vt.opt(vt.token)
-});
-
 // What `AcmeAdmin` needs from the rest of the service: the modules this file
 // used to reach for itself, passed in so that the composition root can build
 // one and a test can build one with stubs.
@@ -130,31 +112,6 @@ class AcmeAdmin {
       consoleModel: consoleModel,
       esc: esc
     };
-  }
-
-  /**
-   * Checks a page's query and, when it is not acceptable, answers 400
-   * (STS-ACME-0097).
-   *
-   * @param req - the request
-   * @param res - its response
-   * @returns true when the request was refused and answered
-   */
-  queryRefused(req, res) {
-    const { log, validation, errorCodes } = this.deps;
-    log.debug("Entering AcmeAdmin.queryRefused().");
-    const query = validation.check(req, 'query', PAGE_QUERY);
-    if (!query.ok) {
-      errorCodes.mark(res, 'STS-ACME-0097');
-      res.status(400)
-         .type('text/plain')
-         .set('Cache-Control', 'no-store')
-         .send(query.detail);
-      log.debug("Leaving AcmeAdmin.queryRefused(). Refused.");
-      return true;
-    }
-    log.debug("Leaving AcmeAdmin.queryRefused().");
-    return false;
   }
 
   // THE ROUTES, registered where they always were: the module exports

@@ -13,6 +13,11 @@ public_hostname = "test-idp.iyasec.io"
 dns_zone_name   = "gcp.iyasec.io"
 acme_email      = "tester1@iyasec.io"
 
+# BEHIND THE AWS PRIMARY CELL'S CLOUDFRONT DISTRIBUTION (#1341): the cells
+# believe its edges and require its origin secret; direct_hostname is in the
+# cells file (deploy/gcp/environment/cdn.tf).
+cdn_enabled = true
+
 extra_environment = {
   STS_DOMAIN                       = "iyasec.io"
   KRB5_REALM                       = "IYASEC.IO"

@@ -177,6 +177,9 @@ const validation = require('../common/validation');
 const clusterClaims = require('../cluster/cluster_claims');
 const capabilities = require('../cluster/cluster_capabilities');
 const errorCodes = require('../common/error_codes');
+// Where a family's revocation is SAID, so the next refresh of any of its
+// members waits for it (the review of #879). A leaf over `helpers.js`.
+const RevokingWrites = require('../common/revoking_writes');
 
 // ---------------------------------------------------------------------------
 // THE TABLE.
@@ -3756,6 +3759,9 @@ function grantMembersOf(familyId, alsoJti) {
 // How long a family revoked by a replay stays revoked: as long as any member
 // minted before the revocation could still be presented. The window is the
 // family bookkeeping's own, and the client's lifetime where it is longer.
+// settingFor() rather than hostedEffective() (#825): a token already issued
+// at the client's own lifetime must stay inside the revocation mark even
+// after the realm cap is lowered.
 function familyRevocationTtlMs(clientId) {
   log.debug("Entering familyRevocationTtlMs().");
   const perClient = Number(applications.settingFor(String(clientId || ''),
@@ -3784,6 +3790,10 @@ function revokeFamily(familyId, clientId) {
     log.debug("Leaving revokeFamily(). No family.");
     return Promise.resolve(false);
   }
+  // Said BEFORE the claim, while the request that revokes is still being
+  // answered: a member of this family refreshed on another worker waits for
+  // this answer's ticket (the review of #879).
+  RevokingWrites.note('refresh family ' + familyId + ' revoked');
   log.debug("Leaving revokeFamily(). Claiming the mark.");
   return clusterClaims.claim({
     scope: 'oauth.refresh-family-revoked', value: String(familyId),
@@ -3891,7 +3901,17 @@ async function spendRefreshToken(opts) {
     scope: 'oauth.refresh', value: jti,
     ttlMs: (isFinite(expiresMs) ? Math.max(0, expiresMs - Date.now())
                                 : refreshFamilyWindowMs()) +
-           (isFinite(skew) ? skew * 1000 : 0)
+           (isFinite(skew) ? skew * 1000 : 0),
+    // THE SPEND DOES NOT WAIT FOR ITS OWN WAL FLUSH (#886). It has to be
+    // visible before the mint, so another worker presenting the same token
+    // loses. It must not be its own fsync: postgres flushes the log one
+    // fsync at a time, and this claim plus the minted flush were two of
+    // them on every refresh. The minted flush of the new refresh token
+    // stays synchronous, and that commit flushes the log through its own
+    // position, this claim's record included. The response is not sent
+    // until that flush returns, so a crash before it loses a token that
+    // was not issued. The token's own row is not written this way.
+    noFlushWait: true
   });
   const settleUnused = function () {
     claiming.then(function (unused) {
@@ -4174,7 +4194,10 @@ function checkRefreshRequest(opts) {
   // PER CLIENT: the presented client's own `oauthRefreshIdleSeconds` where it
   // has one. A deployment giving a background job a long idle window and a
   // browser client a short one is the ordinary case this serves.
-  const idleSeconds = applications.settingFor(presentedClient,
+  // #825: the console, the portal and the reports application take the
+  // shorter of their own bound and the realm, and an absent bound uses the
+  // shipped number rather than a realm idle of 0.
+  const idleSeconds = applications.hostedEffective(presentedClient,
                                              'oauth2.refreshIdleSeconds',
                                              config);
   if (idleSeconds > 0 && known && known.family) {
@@ -4375,9 +4398,8 @@ function codeRedemptionRelaxed() {
 function checkCodeReplay(opts) {
   log.debug("Entering checkCodeReplay().");
   // RFC 6749 section 4.1.2's MUST, in every mode since #187: the relaxation
-  // that answered an identical repeat with the same tokens is now an opt-in
-  // (`oauth2.codeReplayIdempotent`, off by default, never in this mode), for
-  // the parent project's development-mode job that still asserts it.
+  // that answered an identical repeat with the same tokens is an opt-in
+  // (`oauth2.codeReplayIdempotent`, off by default, never in this mode).
   if (!enabled() && config.value('oauth2.codeReplayIdempotent')) {
     log.debug("Leaving checkCodeReplay(). RFC 9700 mode is off and " +
               "oauth2.codeReplayIdempotent is on; the relaxation stands.");
@@ -4447,6 +4469,12 @@ function checkCodeReplay(opts) {
 //     made a decision; asking them to confirm the consequence of it would be a
 //     second question about the same answer.
 //
+// AND ONE BY rcbj's DECISION (#26, 2026-11-15): RFC 8707's `invalid_target`
+// for a REGISTERED client at a redirect URI matched against that client's own
+// registration (`verifiedRedirect`). It is the authorization server's answer
+// to the client about the client's own request, at the address the client
+// vouched for; showing it on this server's page meant no client ever saw it.
+//
 // A SUCCESS is never affected. Reaching one means a session exists, which means
 // the person was authenticated first, which is exactly what the MUST asks for.
 // ---------------------------------------------------------------------------
@@ -4454,7 +4482,7 @@ function checkCodeReplay(opts) {
  * Decides whether an authorization error may be redirected to the client: not
  * when nobody has been authenticated (section 4.11.2).
  *
- * @param opts - `hasSession`, `fromSignIn` and `prompt`
+ * @param opts - `hasSession`, `fromSignIn`, `prompt` and `verifiedRedirect`
  * @returns `{ redirect, why, requirement }`
  */
 function redirectPolicyFor(opts) {
@@ -4484,6 +4512,20 @@ function redirectPolicyFor(opts) {
     log.debug("Leaving redirectPolicyFor().");
     return { redirect: true, why: 'the person declined at the sign-in screen ' +
                                   'a moment ago' };
+  }
+  // RFC 8707'S `invalid_target` AT A VERIFIED ADDRESS (#26, rcbj,
+  // 2026-11-15). The caller passes `verifiedRedirect` for that one refusal
+  // only, and only where the client is registered and the redirect URI was
+  // matched against the client's OWN registered URIs. The danger the rule
+  // below guards against is a browser bounced to an address with
+  // parameters an attacker chose; an error naming a resource the client
+  // asked for, sent to the address the client registered, is the answer
+  // RFC 8707 section 2 asks for. Every other refusal keeps the rule.
+  if (info.verifiedRedirect) {
+    log.debug("Leaving redirectPolicyFor(). An invalid_target for a " +
+              "registered client's own redirect URI.");
+    return { redirect: true, why: 'RFC 8707 section 2: invalid_target, ' +
+             'sent to the redirect URI registered for this client' };
   }
   log.debug("Leaving redirectPolicyFor(). Nobody is authenticated; the error " +
             "is shown, not sent.");

@@ -48,8 +48,8 @@
     "text": "Certifikatet som den här sfärens KDC signerar sina PKINIT-svar med (RFC 4556): id-pkinit-KPKdc i dess utökade nyckelanvändning och sfärens biljettutdelningstjänst, krbtgt/REALM@REALM, i ett id-pkinit-san. Ett per process, skapat när PKINIT används första gången; den privata nyckeln lämnar aldrig processen som skapade den."
   },
   "pki.useCases.acme.what": {
-    "en": "85c88fe668bcb64d",
-    "text": "Certifikat utfärdade över ACME (RFC 8555) på /enroll/acme, till en person- eller applikationspost som en External Account Binding-nyckel utfärdades för. Varje löv namnger den posten i ett urn:sts:person:- eller urn:sts:application:-subjectAltName."
+    "en": "2f0eeec1390c0623",
+    "text": "Certifikat utfärdade över ACME (RFC 8555) på /enroll/acme, till en person- eller applikationspost som en External Account Binding-nyckel utfärdades för. Varje löv namnger den posten i ett urn:sts:person:- (urn:sts:sa: för ett tjänstekonto) eller urn:sts:application:-subjectAltName."
   },
   "pki.useCases.est.what": {
     "en": "20925fe97c792b47",
@@ -60,12 +60,16 @@
     "text": "Certifikat utfärdade över SCEP (RFC 8894) på /enroll/scep, till den post som ett engångslösenord för utmaning utfärdades för. RA-certifikatet som SCEP krypterar begäranden till är också ett löv från den här CA:n, med en RSA-nyckel eftersom SCEP:s nyckeltransport är RSA."
   },
   "pki.useCases.tls-client.what": {
-    "en": "903e048677f8ab58",
-    "text": "TLS-klientcertifikaten som personer utfärdar till sig själva i användarportalen: clientAuth, personens urn:sts:person:-namn och en privat nyckel som lämnas över en gång som PKCS#12. Ett certifikat från den här utfärdaren loggar in sin innehavare på GET /tls/sign-in på huvudporten, i den här sfären; ett certifikat från någon annan av den här tjänstens utfärdare gör det inte, även om alla kedjar till samma rot."
+    "en": "1b378238cd4bc7ec",
+    "text": "TLS-klientcertifikaten som personer utfärdar till sig själva i användarportalen: clientAuth, personens urn:sts:person:-namn (ett tjänstekontos urn:sts:sa:) och en privat nyckel som lämnas över en gång som PKCS#12. Ett certifikat från den här utfärdaren loggar in sin innehavare på GET /tls/sign-in på huvudporten, i den här sfären; ett certifikat från någon annan av den här tjänstens utfärdare gör det inte, även om alla kedjar till samma rot."
   },
   "pki.useCases.message-signing.what": {
-    "en": "4aacf430b5a390f0",
-    "text": "Certifikaten som en person eller en applikation signerar en WS-Trust-begäran med (en WS-Security 1.1-signatur över SOAP-Body och Timestamp): bara digitalSignature, innehavarens urn:sts:person:- eller urn:sts:application:-namn, och en privat nyckel som lämnas ut en gång som PKCS#12. Utfärdas av en administratör från konsolen eller /admin-api. Ett certifikat från den här utfärdaren autentiserar sin innehavare som begärare av en signerad RST, i den här sfären; ett TLS-klientcertifikat från tjänsten gör det inte, och det här loggar inte in någon över TLS."
+    "en": "f585bff7b006f247",
+    "text": "Certifikaten som en person eller en applikation signerar en WS-Trust-begäran med (en WS-Security 1.1-signatur över SOAP-Body och Timestamp): bara digitalSignature, innehavarens urn:sts:person:-, urn:sts:sa:- (ett tjänstekonto) eller urn:sts:application:-namn, och en privat nyckel som lämnas ut en gång som PKCS#12. Utfärdas av en administratör från konsolen eller /admin-api. Ett certifikat från den här utfärdaren autentiserar sin innehavare som begärare av en signerad RST, i den här sfären; ett TLS-klientcertifikat från tjänsten gör det inte, och det här loggar inte in någon över TLS."
+  },
+  "pki.useCases.policy-signing.what": {
+    "en": "9dd7e80fa0d8f1eb",
+    "text": "De certifikat som en policyexport från Directory → Policies signeras under (#1713): en ny nyckel per export, endast digitalSignature, dess certifikat och hela denna kedja i exportens x5c. En sfär som importerar exporten litar på den direkt när det är dess egen utfärdare, och frågar en administratör innan den litar på en annan sfärs, och lägger då till den sfärens kedja i sitt betrodda signerarlager för denna användning och ingen annan."
   },
   "pki.subjectKinds.application.what": {
     "en": "52037236b4cfff5f",

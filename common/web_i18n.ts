@@ -102,6 +102,11 @@ class WebI18n {
     if (this.namespaces.indexOf('chooser') < 0) {
       this.namespaces.push('chooser');
     }
+    // The page footer's words (`common/web_footer.ts`): every surface draws
+    // the footer its shell drew, so every surface loads them.
+    if (this.namespaces.indexOf('footer') < 0) {
+      this.namespaces.push('footer');
+    }
     this.index = null;
     this.parts = [];
     this.files = {};

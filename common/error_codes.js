@@ -83,7 +83,7 @@
 //      is not an HTTP response, or `errorCodes.tag('STS-…')` at the front of a
 //      log message for a failure no audit row can hold;
 //   3. `node common/error_codes.js --docs`, which regenerates
-//      `docs/error-codes.md`.
+//      `docs/v1.1.0/error-codes.md`.
 //
 // `tests/error_codes.js` fails on a code used and not registered, a code
 // registered and used nowhere, a documentation page that is stale, and a
@@ -92,7 +92,7 @@
 // property of the build rather than of anybody remembering.
 //
 // Run directly:
-//   node common/error_codes.js --docs     regenerate docs/error-codes.md
+//   node common/error_codes.js --docs     regenerate docs/v1.1.0/error-codes.md
 //   node common/error_codes.js --check    non-zero if the page is stale
 //   node common/error_codes.js --json     the table
 // ===========================================================================
@@ -549,33 +549,40 @@ const CODES = [
   { code: 'STS-HTTP-0004',
     summary: 'The request body exceeded the 5 MB limit the body parsers ' +
       'enforce.',
-    spec: 'HTTP 413' },
+    spec: 'HTTP 413, in the error shape of the JSON API the path belongs ' +
+      'to (common/surface_refusals.ts); Express\'s own page elsewhere' },
   { code: 'STS-HTTP-0010',
     summary: 'A query string carried a parameter named constructor, ' +
       'prototype or __proto__, which the validation guard refuses ' +
       'before any endpoint sees the request.',
-    spec: 'HTTP 400 text/plain' },
+    spec: 'HTTP 400, in the error shape of the JSON API the path belongs ' +
+      'to (common/surface_refusals.ts); text/plain elsewhere' },
   { code: 'STS-HTTP-0011',
     summary: 'A query-string value contained a control character (a CR, LF, ' +
       'NUL or similar), which the validation guard refuses before any ' +
       'endpoint sees the request.',
-    spec: 'HTTP 400 text/plain' },
+    spec: 'HTTP 400, in the error shape of the JSON API the path belongs ' +
+      'to (common/surface_refusals.ts); text/plain elsewhere' },
   { code: 'STS-HTTP-0012',
     summary: 'The request body was in a charset or content encoding the body ' +
       'parsers do not read, so it was refused before any endpoint ' +
       'saw it.',
-    spec: 'HTTP 415' },
+    spec: 'HTTP 415, in the error shape of the JSON API the path belongs ' +
+      'to (common/surface_refusals.ts); Express\'s own page elsewhere' },
   { code: 'STS-HTTP-0013',
     summary: 'The request body was cut off before it was complete, or did ' +
       'not match its Content-Length, so it was refused before any ' +
       'endpoint saw it.',
-    spec: 'HTTP 400' },
+    spec: 'HTTP 400, in the error shape of the JSON API the path belongs ' +
+      'to (common/surface_refusals.ts); Express\'s own page elsewhere' },
   { code: 'STS-HTTP-0014',
     summary: 'A middleware ahead of the router raised an error the body ' +
       'parsers do not classify (a body stream that could not be read, ' +
       'most often), so the request failed before any endpoint saw ' +
       'it.',
-    spec: 'HTTP status as Express\'s final handler sends it' },
+    spec: 'HTTP status as Express\'s final handler sends it; a 4xx in ' +
+      'the error shape of the JSON API the path belongs to ' +
+      '(common/surface_refusals.ts)' },
   { code: 'STS-HTTP-0015',
     summary: 'A state-changing form post from a signed-in session carried no ' +
       'CSRF token.',
@@ -704,9 +711,11 @@ const CODES = [
       'the service refused to start.',
     spec: '' },
   { code: 'STS-CORE-0002',
-    summary: 'One or more settings have no value in the appconfig layer or ' +
-      'the environment (env/defaults.js has not been regenerated), so ' +
-      'the service refused to start.',
+    summary: 'One or more settings have no default of their own and no ' +
+      'value in the appconfig layer or the environment, so the service ' +
+      'refused to start. Since 2026-11-16 a setting WITH a default takes it ' +
+      'when env/defaults.js lacks it (STS-CORE-0177) rather than stopping ' +
+      'the start.',
     spec: '' },
   { code: 'STS-CORE-0003',
     summary: 'A runtime setting change could not be handed to persistence. ' +
@@ -1246,7 +1255,8 @@ const CODES = [
     spec: 'a refusal naming the setting or field, never the value' },
   { code: 'STS-CORE-0172',
     summary: 'A request was refused because its address made too many in a minute.',
-    spec: 'HTTP 429' },
+    spec: 'HTTP 429 and Retry-After, in the error shape of the JSON API the ' +
+      'path belongs to (common/surface_refusals.ts); text/plain elsewhere' },
   { code: 'STS-CORE-0173',
     summary: 'A SAML or WS-Federation request gave a parameter more than once.',
     spec: 'HTTP 400' },
@@ -1254,6 +1264,45 @@ const CODES = [
     summary: 'An XML document was refused because it carries a DOCTYPE or ' +
       'ENTITY declaration (ASVS 5.0.0 1.5.2).',
     spec: 'SOAP 1.2 Part 1 section 5: no Document Type Declaration' },
+  // A BUILD OF main STAMPS THE PATCH ITS WORKFLOW WORKED OUT (2026-11-11).
+  { code: 'STS-CORE-0175',
+    summary: 'The build stamp (common/version.js --stamp, or xacml-pep ' +
+      '--stamp) was refused: STS_VERSION_RELEASE names the release a build ' +
+      'carries in place of the VERSION file\'s, and it was not M.N.O ' +
+      'exactly (three non-negative integers with no leading zero). Nothing ' +
+      'is written and the image build fails.',
+    spec: 'none — the image build exits non-zero' },
+  // A SETTING THAT HOLDS A URI, SET TO TEXT THAT IS NOT ONE (2026-11-12).
+  { code: 'STS-CORE-0176',
+    summary: 'A setting that holds an absolute URI (saml2.nameIdFormat, ' +
+      'saml11.nameIdFormat) is set to text that is not one in the ' +
+      'environment or an appconfig file. The service starts and uses it as ' +
+      'configured, so its SAML assertions carry a NameID Format the schema ' +
+      'refuses; /admin/config and the management API refuse the same value ' +
+      'on a save (STS-CORE-0006).',
+    spec: 'saml-schema-assertion-2.0 (Format is xs:anyURI) — a warning ' +
+      'logged at startup; nothing is refused' },
+  // AN env/ OLDER THAN THE IMAGE COSTS A WARNING, NOT THE START (2026-11-16).
+  { code: 'STS-CORE-0177',
+    summary: 'One or more settings have no row in env/defaults.js (or the ' +
+      'file is not there) and no value in any layer above it, so each takes ' +
+      'the image\'s own default. The defaults file is older than the image ' +
+      '— usually an env/ directory mounted or copied from an earlier ' +
+      'release. The service starts; the warning names each setting and ' +
+      'the file.',
+    spec: 'none — a warning logged at startup; nothing is refused' },
+  { code: 'STS-CORE-0178',
+    summary: 'One or more settings in env/defaults.js hold a value that is ' +
+      'not the image\'s default. The file\'s value is used, as before the ' +
+      'upgrade; a defaults file copied from an earlier release pins every ' +
+      'default changed since. The warning names each setting and the file.',
+    spec: 'none — a warning logged at startup; nothing is refused' },
+  { code: 'STS-CORE-0179',
+    summary: 'env/defaults.js is present and could not be loaded (it does ' +
+      'not parse, or throws), so the service refused to start. A missing ' +
+      'file is not this: the image\'s own defaults are used ' +
+      '(STS-CORE-0177).',
+    spec: '' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.' +
@@ -1387,9 +1436,11 @@ const CODES = [
     summary: 'Only some of the configured request workers started.',
     spec: '' },
   { code: 'STS-WORKER-0027',
-    summary: 'A request worker did not answer a read barrier in time, so the ' +
-      'request was served from whatever that worker holds, possibly ' +
-      'stale.',
+    summary: 'A request worker had not caught up after one read-barrier ' +
+      'round (it did not answer within 5 s, or answered that its change ' +
+      'pull was still running). The request keeps waiting, for up to ' +
+      'workers.readBarrierTimeoutMs in all, and is refused (STS-WORKER-' +
+      '0053) rather than served stale if the worker never catches up.',
     spec: '' },
   { code: 'STS-WORKER-0028',
     summary: 'A request matched workers.dispatch while a pool is configured ' +
@@ -1512,6 +1563,29 @@ const CODES = [
       'four times the limit is it reported as failed (STS-WORKER-0017) and ' +
       'replaced.',
     spec: '' },
+  { code: 'STS-WORKER-0052',
+    summary: 'A request worker revoked something a refresh token rests on ' +
+      '(a session, a token, a refresh family, a grant or an account) after ' +
+      'the answer\'s headers had gone, so the front process could not file ' +
+      'it for the refresh grant\'s wait before the client saw the answer ' +
+      '(the review of #879). The revocation stands; a refresh routed to a ' +
+      'worker that has not applied it may be answered until the workers ' +
+      'converge. Logged at the first and every hundredth.',
+    spec: 'Nothing: the request is answered as it was' },
+  { code: 'STS-WORKER-0053',
+    summary: 'A dispatched request or operation was refused because its ' +
+      'request worker had not caught up with the writes answered before ' +
+      'it within workers.readBarrierTimeoutMs; answering from what that ' +
+      'worker held could have been wrong. The worker\'s STS-STORE-0039 ' +
+      'line says where its change pull\'s time went.',
+    spec: 'HTTP 503 (Retry-After: 5), plain text; an LDAP operation ' +
+      'LDAP_UNAVAILABLE, a Kerberos message KDC_ERR_SVC_UNAVAILABLE' },
+  { code: 'STS-WORKER-0054',
+    summary: 'A request the front process answers itself was refused ' +
+      'because that process had not caught up with the change log within ' +
+      'workers.readBarrierTimeoutMs; answering from its own copy could ' +
+      'have been wrong.',
+    spec: 'HTTP 503 (Retry-After: 5), plain text' },
   { code: 'STS-STORE-0001',
     summary: 'A scheduled persistence flush threw past its own handler.',
     spec: '' },
@@ -1672,12 +1746,16 @@ const CODES = [
       'failed; this process is behind until a retry succeeds.',
     spec: '' },
   { code: 'STS-STORE-0039',
-    summary: 'A read barrier gave up before catching up with the change log; ' +
-      'the request is answered from this process\'s copy.',
+    summary: 'A read barrier gave up before catching up with the change log ' +
+      'and told its caller so; a request pool barrier asks again and ' +
+      'refuses once workers.readBarrierTimeoutMs has passed. The line ' +
+      'breaks the pull\'s time down: reading pages, the rows by kind, ' +
+      'preparing, the event loop\'s turns, and the rest.',
     spec: '' },
   { code: 'STS-STORE-0040',
-    summary: 'A read barrier could not read the change log; the request is ' +
-      'answered from this process\'s copy.',
+    summary: 'A read barrier could not read the change log and told its ' +
+      'caller it did not catch up; a request pool barrier asks again and ' +
+      'refuses once workers.readBarrierTimeoutMs has passed.',
     spec: '' },
   { code: 'STS-STORE-0041',
     summary: 'Preparing a page of replicated rows of one kind failed; they ' +
@@ -2066,6 +2144,37 @@ const CODES = [
       'database password was in a file or in the connection string rather ' +
       'than in a secret store.',
     spec: 'ASVS 5.0.0 13.3.1' },
+  { code: 'STS-STORE-0172',
+    summary: 'The store is owed an index added after release 1.0.0 ' +
+      '(sts_sessions_subject_band, #876, or sts_sessions_started, #882): ' +
+      'it is missing, or left invalid by an interrupted concurrent build, ' +
+      'and the role this service dials with does not own the table to ' +
+      'build it. The service starts and every question is answered, by a ' +
+      'slower plan. Run postgres/upgrade-1.0.0.sql (or ' +
+      'mariadb/upgrade-1.0.0.sql) as the table\'s owner; it builds the ' +
+      'index without blocking writers.',
+    spec: 'none — the store opens without it' },
+  { code: 'STS-STORE-0173',
+    summary: 'A background build of an index the store was owed (#876, ' +
+      '#882) — CREATE INDEX CONCURRENTLY on PostgreSQL, an in-place ALTER ' +
+      'on MariaDB — failed. The service goes on without the index, by a ' +
+      'slower plan; the next start tries again, or the owner runs the ' +
+      'upgrade script.',
+    spec: 'none — the store opens without it' },
+  { code: 'STS-STORE-0174',
+    summary: 'A realm another process changed could not be applied in ' +
+      'this one: the realm registry refused the replicated update. This ' +
+      'process keeps the realm as it was until a later change applies, ' +
+      'and does not write its copy back over the store.',
+    spec: 'none — logged; the request that wrote it was already answered' },
+  // 2026-11-17, the cells mode's sts_jar_admin_client:
+  // persistence/persistence_minted.js, mergedWithHeld().
+  { code: 'STS-STORE-0175',
+    summary: 'A minted row another process wrote could not be merged into ' +
+      'the copy this process holds (the store\'s merge threw), so the ' +
+      'arriving row replaced the held copy, as it did before such rows ' +
+      'were merged.',
+    spec: 'none — logged' },
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
       'membership row had expired, or a lease the write needed was no longer ' +
@@ -2211,6 +2320,22 @@ const CODES = [
       'back with it (#628). A create of one of those names before then ' +
       'waits and is refused as in progress (STS-LDAP-0092).',
     spec: '' },
+  { code: 'STS-CLUSTER-0165',
+    summary: 'Taking over a lease is waiting for writes the previous ' +
+      'holder still has in flight under it: the ask is bounded by the ' +
+      'heartbeat\'s own bound, rolls back when the bound runs out, and is ' +
+      'made again on the next heartbeat, so this node\'s own renewal never ' +
+      'waits behind it (#770). Logged once per wait; one that repeats for a ' +
+      'node lifetime names a write that does not finish.',
+    spec: '' },
+  { code: 'STS-CLUSTER-0166',
+    summary: 'A response\'s writes committed, and a check deferred onto ' +
+      'that commit refused it, so it was answered 503 with Retry-After ' +
+      'instead of its success (#884\'s review). The one check today is an ' +
+      'access-token status index published without its own commit wait, ' +
+      'whose row the flush dropped because the block claim\'s fence was ' +
+      'gone: the token in the discarded body is not delivered.',
+    spec: 'RFC 9110 section 15.6.4' },
   // ===== CELL ==============================================================
   { code: 'STS-CELL-0001',
     summary: 'The cell settings are inconsistent (an id without a ' +
@@ -2746,6 +2871,19 @@ const CODES = [
   // ===== KEYS ==============================================================
   { code: 'STS-SCHED-0022',
     summary: 'The clock of this node differs from the database clock.' },
+  { code: 'STS-SCHED-0023',
+    summary: 'The store could not say whether some runs of the current ' +
+      'slot had already run (#883\'s review): those runs were held back ' +
+      'for this tick, neither run nor taken as finished, and are asked ' +
+      'about again at the next; every other run in the tick went on.',
+    spec: '' },
+  { code: 'STS-SCHED-0024',
+    summary: 'A run of a cluster job waited because another run of the ' +
+      'same job in the same realm was still running, on this node or ' +
+      'another (#1757): a manual run waits until that run ends, and a ' +
+      'scheduled run until it ends or its slot does, after which the next ' +
+      'slot is due.',
+    spec: '' },
   { code: 'STS-KEYS-0001',
     summary: 'The artifact logger handed to an XML encryption threw and was ' +
       'ignored.',
@@ -3692,6 +3830,19 @@ const CODES = [
       'key-encryption key was to be read from a file rather than a secret ' +
       'store or a key management service.',
     spec: 'ASVS 5.0.0 13.3.1' },
+  { code: 'STS-KEYS-0198',
+    summary: 'The Azure Key Vault or Managed HSM key named as the ' +
+      'key-encryption key (azure-keys) was answered with no key version, ' +
+      'or one that is not letters and digits. A wrapped data key is stored ' +
+      'with the version that wrapped it, so nothing is wrapped and the ' +
+      'service does not start.',
+    spec: '' },
+  { code: 'STS-KEYS-0199',
+    summary: 'A stored signing-key, certificate-authority or data-key row ' +
+      'belongs to a realm that no longer exists — a write that landed ' +
+      'after the realm was removed — and was skipped and deleted rather ' +
+      'than refusing the start or kept.',
+    spec: '' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +
@@ -4425,8 +4576,10 @@ const CODES = [
   { code: 'STS-PKI-0155',
     summary: 'An uploaded certificate this realm issued would widen its ' +
       'holder: for a person, its subjectAltName names somebody else ' +
-      '(another urn:sts:person: or an urn:sts:application:); for an ' +
-      'application, it names a urn:sts:person:.',
+      '(another urn:sts:person: or urn:sts:sa:, or an ' +
+      'urn:sts:application:); for an application, it names a person in ' +
+      'either spelling, urn:sts:person: or a service account\'s urn:sts:sa: ' +
+      '(#1827).',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
   { code: 'STS-PKI-0156',
@@ -4500,8 +4653,11 @@ const CODES = [
     spec: 'the caller\'s refusal: console page or /admin-api HTTP 400 ' +
       '{ ok: false, errors }' },
   { code: 'STS-PKI-0168',
-    summary: 'A TLS client certificate was asked for with no holder named.',
-    spec: 'the caller\'s refusal: /portal/signing-key HTTP 400 page' },
+    summary: 'A TLS client certificate was asked for with no holder named, ' +
+      'or with a subject whose first RDN is not that holder\'s CN, or with ' +
+      'a subject attribute this service does not encode.',
+    spec: 'the caller\'s refusal: /portal/signing-key HTTP 400 page, or a ' +
+      'console or /admin-api reply' },
   { code: 'STS-PKI-0169',
     summary: 'A TLS client certificate was asked for with a key algorithm a ' +
       'browser does not present (RSA 2048/3072, ECDSA P-256/P-384 only), or ' +
@@ -4532,11 +4688,15 @@ const CODES = [
   { code: 'STS-PKI-0183',
     summary: 'A certificate authority was not built because the store could ' +
       'not be asked whether another node is building it.',
-    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+    spec: 'HTTP 503 with Retry-After from /admin-api/pki; the caller\'s ' +
+      'refusal (errors on a console reply) elsewhere' },
   { code: 'STS-PKI-0184',
-    summary: 'Another node held the build of a certificate authority for ' +
-      'longer than this node waits, and nothing appeared in the store.',
-    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+    summary: 'A build of a certificate authority was waited for longer than ' +
+      'a caller waits — held by another node or process under its claim, or ' +
+      'queued behind builds of the same scope in this process — so the ' +
+      'caller was refused rather than left waiting.',
+    spec: 'HTTP 503 with Retry-After from /admin-api/pki; the caller\'s ' +
+      'refusal (errors on a console reply) elsewhere' },
   { code: 'STS-PKI-0185',
     summary: 'A CRL was not signed because its CRL number could not be ' +
       'advanced in the store shared by this service\'s nodes.',
@@ -5041,6 +5201,119 @@ const CODES = [
       'not exist, one removed a moment ago included; refused rather than ' +
       'judged by the policy of whichever realm was ambient (#1147).',
     spec: 'the caller\'s own refusal' },
+  { code: 'STS-PKI-0272',
+    summary: 'The service Root or the process branch was asked for a ' +
+      'composite ML-DSA signing key. Both are on the TLS listeners\' chain, ' +
+      'and OpenSSL cannot read a composite key, so every listener would ' +
+      'have refused the new certificate (STS-TLS-0011) and kept serving ' +
+      'the old one. Refused before any key is made; nothing is stored.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0273',
+    summary: 'pki.keyAlgorithm names a composite ML-DSA key, which the TLS ' +
+      'listeners cannot load, so the service Root or the process branch ' +
+      'being built without a named algorithm used the classical default ' +
+      'instead. A realm branch falls back too, as STS-PKI-0275.',
+    spec: 'none: a log line; the build goes on' },
+  { code: 'STS-PKI-0274',
+    summary: 'A realm\'s certificate authority branch was asked for a ' +
+      'composite ML-DSA signing key. Its Intermediate is on the chain of ' +
+      'the realm\'s SPIFFE gRPC listeners, Remote PEP listeners and custom ' +
+      'listeners, and OpenSSL cannot read a composite key, so each of them ' +
+      'would have refused the chain. Refused before any key is made; ' +
+      'nothing is stored.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0275',
+    summary: 'pki.keyAlgorithm names a composite ML-DSA key, which the ' +
+      'realm\'s TLS listeners cannot load, so a realm branch being built ' +
+      'without a named algorithm used the classical default instead.',
+    spec: 'none: a log line; the build goes on' },
+  { code: 'STS-PKI-0276',
+    summary: 'Refused under paranoid PKI mode for policy-signer: the ' +
+      'signer of a policy export (#1713); nothing established what the ' +
+      'use case needs, or the use case itself refused (a self-signed ' +
+      'leaf, an anchor source out of reach).',
+    spec: 'the use case\'s refusal (#1360)' },
+  { code: 'STS-PKI-0277',
+    summary: 'A certificate uploaded for a person was issued by this realm as ' +
+      'a service account\'s (urn:sts:sa:<name>, #1827), and that person is ' +
+      'not a service account in this realm.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0278',
+    summary: 'A person\'s RFC 7523 key was to be certified from their own ' +
+      'certificate request, and no request was sent or it could not be ' +
+      'read (#1827, phase 3).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0279',
+    summary: 'A certificate a deleted person or application still held ' +
+      'valid (a TLS client or message-signing certificate, an RFC 7523 or ' +
+      'RFC 7522 key pair, an enrolled leaf) could not be revoked ' +
+      '(cessationOfOperation) when its holder was deleted. The delete ' +
+      'stands; revoke the serial on /admin/pki.',
+    spec: 'none: a log line; the delete is answered as it was' },
+  { code: 'STS-PKI-0280',
+    summary: 'A deleted person\'s or application\'s TLS client or ' +
+      'message-signing certificate could not be detached from its name in ' +
+      'the certificate register, so a holder made again under that name is ' +
+      'listed it.',
+    spec: 'none: a log line; the delete is answered as it was' },
+  { code: 'STS-PKI-0281',
+    summary: 'A certificate request for a person\'s RFC 7523 key carries a ' +
+      'key that is neither EC P-256 nor RSA of 2048 bits or more (#1827, ' +
+      'phase 3).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0282',
+    summary: 'A credential was to be signed with an algorithm the ' +
+      'dedicated credential signer has no key family for (#1880): not an ' +
+      'asymmetric JWS algorithm this service holds keys for.',
+    spec: 'The credential request fails as the credential endpoint fails ' +
+      'any signing error (OpenID4VCI 1.0 section 8.3.1)' },
+  { code: 'STS-PKI-0283',
+    summary: 'A credential\'s iss is not one of the issuer identifiers its ' +
+      'credential-signing certificate names (#1880): the request reached ' +
+      'the service under a name that neither global.publicBaseUrl nor ' +
+      'tls.hostnames, tls.ips or a listener names. The credential is ' +
+      'still signed, with its x5c; a wallet that compares iss with the ' +
+      'certificate (HAIP 1.0 section 6.1.1) refuses it. Logged once per ' +
+      'realm and address.',
+    spec: 'none: the credential is issued' },
+  { code: 'STS-PKI-0284',
+    summary: 'A realm answers to more issuer identifiers than one ' +
+      'credential-signing certificate names (#1880), and the certificate ' +
+      'names the first 64.',
+    spec: 'none: the credential is issued' },
+  { code: 'STS-PKI-0285',
+    summary: 'A realm\'s credential-signing key could not be made, did not ' +
+      'arrive from the process that claimed it in time, or is held ' +
+      'encrypted and could not be decrypted (#1880).',
+    spec: 'The credential request fails as the credential endpoint fails ' +
+      'any signing error; a late key is made here instead' },
+  { code: 'STS-PKI-0286',
+    summary: 'A realm\'s credential-signing key could not be certified ' +
+      '(#1880): no issuer identifier or key to name, or the JOSE Issuing ' +
+      'CA refused. It still signs; its credentials carry no x5c until it ' +
+      'is certified.',
+    spec: 'none: the credential is issued without x5c' },
+  { code: 'STS-PKI-0287',
+    summary: 'A realm\'s live credential-signing certificate was revoked ' +
+      'for a reason that distrusts its key (keyCompromise, cACompromise, ' +
+      'aACompromise, privilegeWithdrawn, certificateHold, unspecified or ' +
+      'an unknown reason), so credentials are signed by a new key of the ' +
+      'family from now on and the old key is neither published nor ' +
+      'accepted while that revocation stands (#1880).',
+    spec: 'none: the credential is issued under the new key' },
+  { code: 'STS-PKI-0288',
+    summary: 'This realm\'s mdoc Issuing Authority CA or document signer ' +
+      'could not be minted or restored (#1862): no credential issuer ' +
+      'URI, a country code that is not ISO 3166-1 alpha-2, or the ' +
+      'certificates could not be issued. An mdoc is not issued, and ' +
+      'GET /oid4vci/mdoc-iaca answers 500.',
+    spec: 'the credential endpoint fails as it fails any signing error; ' +
+      'the public certificate answers 500' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
@@ -5224,6 +5497,11 @@ const CODES = [
       '/serverkeygen that its own estBasicAuthentication, ' +
       'estCertificateAuthentication or estServerKeyGeneration turns off.',
     spec: 'RFC 7030 HTTP 403' },
+  { code: 'STS-ENROLL-0097',
+    summary: 'An enrollment request, or the certificate presented to ' +
+      're-enroll, names a person as a service account (urn:sts:sa:<name>, ' +
+      '#1827), and in this realm that entry is not one.',
+    spec: 'ACME rejectedIdentifier, EST HTTP 403, SCEP badRequest' },
   { code: 'STS-ACME-0001',
     summary: 'ACME is turned off in this realm (acme.enabled is false).',
     spec: 'HTTP 503, ACME serverInternal problem' },
@@ -5433,7 +5711,7 @@ const CODES = [
     spec: 'Console error notice; HTTP 400 {ok: false, errors} from /admin-api' },
   { code: 'STS-ACME-0097',
     summary: 'The query string of an ACME console page failed validation.',
-    spec: 'HTTP 400 text/plain' },
+    spec: 'HTTP 400 text/plain', retired: true },
   { code: 'STS-ACME-0098',
     summary: 'An ACME finalize was refused because the order is already ' +
       'being finalized by another request, on this node or another.',
@@ -5443,6 +5721,19 @@ const CODES = [
       'claimed because the cluster store could not be asked, so the request ' +
       'was refused.',
     spec: 'HTTP 500, ACME serverInternal problem' },
+  { code: 'STS-ACME-0100',
+    summary: 'An ACME answer or problem document carried a member its model ' +
+      'in models/enrollment/acme.tsp does not name, one of a type or a ' +
+      'value the model does not allow, or lacked a required one (#1579). ' +
+      'The answer is sent as it was built: the model describes the wire ' +
+      'and does not reshape it, so this is a model gap to close.',
+    spec: 'none (recorded only; the answer is unchanged)' },
+  { code: 'STS-ACME-0101',
+    summary: 'An ACME problem document carried an error type ' +
+      'models/enrollment/acme.tsp does not declare (#1579). The problem is ' +
+      'sent as it was built; the type is to be declared, with the document ' +
+      'that defines it.',
+    spec: 'none (recorded only; the problem is unchanged)' },
   // ===== EST ===============================================================
   { code: 'STS-EST-0001',
     summary: 'An EST request reached a realm whose est.enabled is off.',
@@ -5514,7 +5805,7 @@ const CODES = [
     spec: 'HTTP 404 with a plain-text sentence' },
   { code: 'STS-EST-0030',
     summary: 'A query string on /admin/est or /admin/est/monitor failed validation.',
-    spec: 'HTTP 400 on the console' },
+    spec: 'HTTP 400 on the console', retired: true },
   { code: 'STS-EST-0031',
     summary: 'An EST console or /admin-api action body failed validation.',
     spec: 'HTTP 400 on the console or /admin-api' },
@@ -5541,6 +5832,13 @@ const CODES = [
       'defines no reqInfo/respInfo for, so it is unable to answer it ' +
       '(draft-ietf-lamps-attestation-freshness section 5.1) (#257).',
     spec: 'HTTP 503 (section 5.1)' },
+  { code: 'STS-EST-0037',
+    summary: 'An EST /nonce answer carried a member its model in ' +
+      'models/enrollment/est.tsp does not name, or one of a type the model ' +
+      'does not allow (#1579). The answer is sent as it was built: the ' +
+      'model describes the wire and does not reshape it, so this is a ' +
+      'model gap to close.',
+    spec: 'none (recorded only; the answer is unchanged)' },
   // ===== SCEP ==============================================================
   { code: 'STS-SCEP-0001',
     summary: 'A SCEP request reached a realm where scep.enabled is off.',
@@ -8004,6 +8302,22 @@ const CODES = [
       'or tracing family defines, and was refused before the handler ran ' +
       '(#1483).',
     spec: 'HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-AUTHN-0556',
+    summary: 'An administrator\'s passkey enrolment was begun or finished ' +
+      'for a person named with a control character, a NUL or half of a ' +
+      'surrogate pair. No directory name holds one, the pending record is ' +
+      'keyed by the two names joined with a newline, and PostgreSQL cannot ' +
+      'store a NUL, so it was refused before the pending record was ' +
+      'touched (STS-STORE-0063).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-AUTHN-0557',
+    summary: 'An authenticator app enrolment was begun for a name holding ' +
+      'a control character or a NUL. No directory name holds one, and the ' +
+      'pending enrolment is keyed by the name, which PostgreSQL cannot ' +
+      'store with a NUL in it (STS-STORE-0063), so it was refused before ' +
+      'the pending record was touched.',
+    spec: 'action result with the reason' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -11540,6 +11854,60 @@ const CODES = [
       'resolves to a loopback, private, link-local or reserved address ' +
       '(ASVS 5.0.0 1.3.6).',
     spec: 'invalid_request_uri (HTTP 400)' },
+  { code: 'STS-OAUTH-1005',
+    summary: 'An OAuth 2.0 or OpenID Connect answer carried a member its ' +
+      'model in models/oauth/oauth_members.tsp does not name, or one of ' +
+      'a type the model does not allow (#1579). The answer is sent as it ' +
+      'was built: the model describes the wire and does not reshape it, ' +
+      'so this is a model gap to close.',
+    spec: 'none (recorded only; the answer is unchanged)' },
+  { code: 'STS-OAUTH-1006',
+    summary: 'An OAuth 2.0 or OpenID Connect error response carried an ' +
+      'error code models/oauth/oauth_members.tsp does not declare (#1579). ' +
+      'The response is sent as it was built; the code is to be declared, ' +
+      'with the document that defines it.',
+    spec: 'none (recorded only; the response is unchanged)' },
+  { code: 'STS-OAUTH-1007',
+    summary: 'A dynamic client registration, an RFC 7592 update or an ' +
+      'OpenID Federation automatic registration carried a member of a JSON ' +
+      'type models/oauth/oauth_members.tsp\'s RegistrationRequest does not ' +
+      'allow (grant_types as a string, client_name as a number, an array ' +
+      'holding a non-string) that no more specific refusal tested (rcbj on ' +
+      '#1579). Until 2026-11-11 it was recorded under STS-OAUTH-1005 and ' +
+      'accepted.',
+    spec: 'invalid_client_metadata (HTTP 400), RFC 7591 section 3.2.2' },
+  { code: 'STS-OAUTH-1008',
+    summary: 'Releasing access-token status-list block leases held by a ' +
+      'stopped process failed (#884). The leases stay until they expire, ' +
+      'so a restarted process keeps wasting blocks until then.',
+    spec: 'none (recorded only)' },
+  { code: 'STS-OAUTH-1009',
+    summary: 'An access-token status index was not published because the ' +
+      'block claim\'s fence was lost before its status row committed ' +
+      '(#884). The access token is not minted on that index.',
+    spec: 'none (recorded only)' },
+  { code: 'STS-OAUTH-1010',
+    summary: 'An access-token status index handed out without waiting for ' +
+      'its own commit (#884\'s review: a block already proven durable, ' +
+      'this process\'s origin claim fresh) was found, at the response\'s ' +
+      'commit, not to have been written: its block claim\'s fence was ' +
+      'gone, or the write failed. The response carrying the token is ' +
+      'refused (STS-CLUSTER-0166), and the block is handed out from no ' +
+      'more.',
+    spec: 'none (recorded; the response is the 503 STS-CLUSTER-0166 names)' },
+  { code: 'STS-OAUTH-1011',
+    summary: 'An assertion\'s x5c leaf, issued by this realm, names its ' +
+      'holder as a service account (urn:sts:sa:<name>, #1827), and in this ' +
+      'realm that entry is not one. RETIRED before release (#1827, rcbj ' +
+      '2026-11-16): the assertion grant follows WS-Trust and authenticates ' +
+      'the person whichever spelling names them.',
+    spec: '', retired: true },
+  { code: 'STS-OAUTH-1012',
+    summary: 'A token request through sts-remote-pep, the public client a ' +
+      'remote PEP presents its RFC 7523 self-assertion through, carried no ' +
+      'DPoP proof: every token issued to that client is DPoP-bound (RFC ' +
+      '9449) to the PEP\'s assertion key (#1827\'s follow-up).',
+    spec: 'invalid_dpop_proof (HTTP 400)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -11659,8 +12027,10 @@ const CODES = [
     spec: 'HTTP 400 page' },
   { code: 'STS-SAML-0026',
     summary: 'A SAML 1.1 flow named a profile other than post or artifact in ' +
-      'the non-spec profile parameter.',
-    spec: 'HTTP 400 page' },
+      'the non-spec profile parameter. Retired 2026-11-13: the parameter ' +
+      'was removed for spec compliance, and the binding registered for the ' +
+      'shire decides the profile.',
+    spec: 'HTTP 400 page', retired: true },
   { code: 'STS-SAML-0027',
     summary: 'saml11.providerId is empty in a product-mode realm, so the ' +
       'SAML 1.1 identity provider has no name to issue or publish ' +
@@ -12175,6 +12545,13 @@ const CODES = [
       'the consent screen, to sign in to the application (ASVS 5.0.0 ' +
       '7.6.2).',
     spec: 'RequestDenied (SAML 2.0); a page (SAML 1.1)' },
+  { code: 'STS-SAML-0121',
+    summary: 'A SAML message or metadata document this service built does ' +
+      'not match its model in models/saml/ (#1579): its root, an ' +
+      'attribute, a fixed value, or a child element or its order. The ' +
+      'document is sent as it was built: the model describes the wire and ' +
+      'does not reshape it, so this is a model gap to close.',
+    spec: 'none (recorded only; the document is unchanged)' },
   { code: 'STS-WSTRUST-0001',
     summary: 'The RequestSecurityToken body is not well-formed XML (or is ' +
       'empty), so no operation could be read from it.',
@@ -12239,18 +12616,16 @@ const CODES = [
     spec: 'SOAP Fault wst:RequestFailed (HTTP 403), WS-Trust 1.4 ' +
       'section 11' },
   { code: 'STS-WSTRUST-0012',
-    summary: '?encrypt=1 was requested but the request carries no recipient ' +
-      'X509Certificate to encrypt the assertion to. Product mode ' +
-      'refuses; development returns the assertion in clear and logs ' +
-      'this.',
-    spec: 'SOAP Fault wst:InvalidRequest (HTTP 500) in product; none ' +
-      'in development' },
+    summary: 'RETIRED (#1668). ?encrypt=1 was requested but the request ' +
+      'named no recipient certificate. WS-Trust encrypts a response only ' +
+      'when the application\'s response switch is on, and a missing ' +
+      'recipient is STS-WSTRUST-0076.',
+    spec: '', retired: true },
   { code: 'STS-WSTRUST-0013',
-    summary: '?encrypt=1 was requested and encrypting the assertion to the ' +
-      'request\'s certificate failed. Product mode refuses; ' +
-      'development returns the assertion in clear and logs this.',
-    spec: 'SOAP Fault wst:RequestFailed (HTTP 500) in product; none ' +
-      'in development' },
+    summary: 'RETIRED (#1668). ?encrypt=1 was requested and encrypting the ' +
+      'assertion failed. A response that cannot be encrypted is ' +
+      'STS-WSTRUST-0077.',
+    spec: '', retired: true },
   { code: 'STS-WSTRUST-0014',
     summary: 'A Validate request carried no token in its ValidateTarget, so ' +
       'it was answered with a status of invalid.',
@@ -12575,6 +12950,114 @@ const CODES = [
     summary: 'A UsernameToken was refused without being checked: too many ' +
       'recent failures for that identity (#1448).',
     spec: 'SOAP FailedAuthentication' },
+  { code: 'STS-WSTRUST-0071',
+    summary: 'A SOAP envelope /sts built — an RSTR, an RSTR collection or a ' +
+      'Fault — does not match its model in models/ws/ (#1579): its root, ' +
+      'an attribute, a fixed value, or a child element or its order, the ' +
+      'SAML assertion inside held to models/saml/. The envelope is sent as ' +
+      'it was built: the model describes the wire and does not reshape it, ' +
+      'so this is a model gap to close.',
+    spec: 'none (recorded only; the envelope is unchanged)' },
+  { code: 'STS-WSTRUST-0072',
+    summary: 'A request to POST /sts/mex (WS-MetadataExchange, #958) was ' +
+      'not a SOAP 1.1 or SOAP 1.2 envelope: no body, XML that is not ' +
+      'well-formed, or a root that is not soap:Envelope.',
+    spec: 'SOAP 1.1 Client fault, HTTP 400, as POST /sts answers a body ' +
+      'that is not XML (STS-WSTRUST-0001)' },
+  { code: 'STS-WSTRUST-0073',
+    summary: 'A request to POST /sts/mex (#958) carried a wsa:Action that ' +
+      'is neither WS-Transfer Get nor WS-MetadataExchange GetMetadata ' +
+      '(2004/09), or none, so there is no metadata request to answer.',
+    spec: 'SOAP Client (SOAP 1.2: Sender) fault, HTTP 500' },
+  { code: 'STS-WSTRUST-0074',
+    summary: 'A WS-Trust requester\'s certificate (a WS-Security signer, or ' +
+      'the TLS client certificate on the connection) names its holder as a ' +
+      'service account (urn:sts:sa:<name>, #1827), and in this realm that ' +
+      'entry is not one. RETIRED before release (#1827, rcbj 2026-11-16: ' +
+      '"any user with valid credentials should be able to authenticate ' +
+      'through WS-Trust"): WS-Trust authenticates the entry whichever ' +
+      'spelling names it.',
+    spec: '', retired: true },
+  { code: 'STS-WSTRUST-0075',
+    summary: 'XML Encryption of a WS-Trust request does not match the ' +
+      'application\'s request map: the map is empty while request ' +
+      'encryption is on, an expression matches an element that arrived in ' +
+      'the clear or matches nothing restored from ciphertext, or a ' +
+      'ciphertext will not open with this realm\'s keys. Encryption is ' +
+      'optional on the wire: whatever arrives encrypted is opened, and ' +
+      'the map is applied only where the application requires it, read ' +
+      'from the opened request. More than 64 ciphertexts, or nesting ' +
+      'more than eight deep, is this code too.',
+    spec: 'SOAP Fault wsse:FailedCheck (HTTP 500), WS-Security 1.1 ' +
+      'section 12' },
+  { code: 'STS-WSTRUST-0076',
+    summary: 'Response encryption is on and the request names no recipient ' +
+      'certificate element. The application\'s encryption certificate is ' +
+      'unset, its recipient XPath matches nothing or not a certificate ' +
+      'element, or the WS-Security signature names no certificate element. ' +
+      'A thumbprint, a Subject Key Identifier or an issuer and serial is ' +
+      'not one, and a configured step that cannot be used is not replaced ' +
+      'by the next. A certificate element whose text is not a certificate ' +
+      'is STS-WSTRUST-0077.',
+    spec: 'SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0077',
+    summary: 'Response encryption is on and could not be completed: the ' +
+      'response map is empty or matches nothing, a selected certificate ' +
+      'element or the application\'s encryption certificate is not a ' +
+      'certificate this process can read, the recipient is refused as an ' +
+      'encryption recipient, or the cipher failed. The fault is sent in ' +
+      'the clear.',
+    spec: 'SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0078',
+    summary: 'The request carries wst:EncryptionAlgorithm or wst:EncryptWith ' +
+      'while response encryption is off, or names a block cipher or a key ' +
+      'transport other than the one configured for this application.',
+    spec: 'SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0079',
+    summary: 'An XPath expression on a WS-Trust encryption map or recipient ' +
+      'is outside the subset this service evaluates, or uses a prefix the ' +
+      'element does not declare and this service does not know.',
+    spec: 'SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0080',
+    summary: 'A WS-Trust request carries XML Encryption the application ' +
+      'does not accept: arbitrary encrypted elements are off ' +
+      '(wstrust.acceptEncryptedElements, the application\'s ' +
+      'wstrustAcceptEncryptedElements, the default), and either no ' +
+      'request map is configured or an element restored from the ' +
+      'ciphertext is not one an expression of the map selects or inside ' +
+      'one. Nothing is issued.',
+    spec: 'SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0081',
+    summary: 'Response encryption is on and the certificate ' +
+      'wstrustResponseRecipientXPath selects is neither the BinarySecurity' +
+      'Token the request\'s accepted WS-Security signature names nor ' +
+      'inside a part that signature references, so it is a certificate a ' +
+      'party on the path could have put there. An unsigned request has no ' +
+      'such certificate. Nothing is issued.',
+    spec: 'SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0082',
+    summary: 'A WS-Trust request carried ciphertext encrypted to an ' +
+      'application\'s own decryption key, and the request is not for that ' +
+      'application: the AppliesTo the opened request names is another ' +
+      'application, or none, or its ciphertexts were encrypted to the keys ' +
+      'of more than one application. A key that opens a request does not ' +
+      'choose whose it is. Nothing is issued (#1668).',
+    spec: 'SOAP Fault wsse:FailedCheck (HTTP 500), WS-Security 1.1 ' +
+      'section 12' },
+  { code: 'STS-WSTRUST-0083',
+    summary: 'A WS-Trust request for an application that holds its own ' +
+      'decryption key pair carried ciphertext encrypted to the realm\'s ' +
+      'XML Encryption key. While the application holds one, a request for ' +
+      'it is encrypted to its certificate and to nothing else. Nothing is ' +
+      'issued (#1668).',
+    spec: 'SOAP Fault wsse:FailedCheck (HTTP 500), WS-Security 1.1 ' +
+      'section 12' },
   { code: 'STS-WSFED-0001',
     summary: 'A wsignin1.0 request carried wreqptr, which this service ' +
       'refuses to dereference (fetching a URL from a query parameter ' +
@@ -12735,6 +13218,14 @@ const CODES = [
       'declined, on the consent screen, to sign in to the relying party ' +
       '(ASVS 5.0.0 7.6.2).',
     spec: '' },
+  { code: 'STS-WSFED-0032',
+    summary: 'A WS-Federation sign-in response (the RSTR posted in ' +
+      'wresult) or the metadata role this service built does not match ' +
+      'its model in models/ws/ (#1579): its root, an attribute, a fixed ' +
+      'value, or a child element or its order. It is sent as it was ' +
+      'built: the model describes the wire and does not reshape it, so ' +
+      'this is a model gap to close.',
+    spec: 'none (recorded only; the document is unchanged)' },
   { code: 'STS-FED-0001',
     summary: 'A federation endpoint (login or assertion consumer service) ' +
       'was reached while federation.enabled is off.',
@@ -13799,6 +14290,60 @@ const CODES = [
   { code: 'STS-FED-0242',
     summary: 'A partner was asked for a fresh sign-in and answered with an earlier authentication.',
     spec: 'HTTP 401' },
+  { code: 'STS-FED-0243',
+    summary: 'A FAPI 2 client profile cannot start: discovery is off, or ' +
+      'the partner\'s discovery document names no pushed authorization ' +
+      'request endpoint.',
+    spec: 'HTTP 502' },
+  { code: 'STS-FED-0244',
+    summary: 'The pushed authorization request to a FAPI partner failed.',
+    spec: 'HTTP 502' },
+  { code: 'STS-FED-0245',
+    summary: 'A FAPI client could not sign its private_key_jwt or its ' +
+      'request object.',
+    spec: 'HTTP 500' },
+  { code: 'STS-FED-0246',
+    summary: 'A FAPI partner\'s JARM response was missing or did not ' +
+      'verify.',
+    spec: 'HTTP 401' },
+  { code: 'STS-FED-0247',
+    summary: 'A DPoP proof for a FAPI partner could not be made.',
+    spec: 'HTTP 500' },
+  { code: 'STS-FED-0248',
+    summary: 'A FAPI 1.0 Advanced partner\'s front-channel ID Token ' +
+      'carries no s_hash, or one that is not the left half of the ' +
+      'state\'s hash: the detached signature does not cover the state.',
+    spec: 'HTTP 401' },
+  { code: 'STS-FED-0249',
+    summary: 'A FAPI 2 partner\'s authorization response names no ' +
+      'issuer (RFC 9207), which FAPI 2.0 Security Profile section ' +
+      '5.3.2.2 has the client verify.',
+    spec: 'HTTP 401' },
+  { code: 'STS-FED-0250',
+    summary: 'A FAPI partner\'s JARM response JWT carries no exp, which ' +
+      'JARM section 4.4 has the client check.',
+    spec: 'HTTP 401' },
+  { code: 'STS-FED-0251',
+    summary: 'A FAPI 2 partner\'s token response is not DPoP-bound: its ' +
+      'token_type is not DPoP (RFC 9449 section 5). At sign-in the ' +
+      'sign-in is refused; at a refresh the session is ended.',
+    spec: 'HTTP 502' },
+  { code: 'STS-FED-0252',
+    summary: 'A FAPI 1.0 Advanced relationship\'s TLS client certificate ' +
+      '(RFC 8705) could not be issued, sealed, written or opened — when ' +
+      'fedFapi became 1-advanced, by the scheduler job ' +
+      'federation.client-certificate-renew, or at a token, refresh or ' +
+      'UserInfo request that needed it. Nothing is dialled without it: ' +
+      'at a sign-in the sign-in is refused, at a refresh the session is ' +
+      'ended.',
+    spec: 'HTTP 500 at a sign-in; console: the message; job: logged' },
+  { code: 'STS-FED-0253',
+    summary: 'An OpenID Connect partner\'s ID Token was issued before the ' +
+      'sign-in it answers began, or in the future, beyond ' +
+      'oauth2.clockSkewS either way (OpenID Connect Core 1.0 section ' +
+      '3.1.3.7 step 10; #931). Refused before any code is redeemed or ' +
+      'UserInfo asked.',
+    spec: 'HTTP 401, the refusal page' },
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +
       'section 6.1.2 describes, or an operator\'s value is of a type ' +
@@ -15292,6 +15837,15 @@ const CODES = [
     summary: 'A person whose password must be changed asked for a ticket, ' +
       'in product (ASVS 5.0.0 6.4.1).',
     spec: 'KDC_ERR_KEY_EXPIRED' },
+  { code: 'STS-KRB-0258',
+    summary: 'GET /authn/spnego was asked to withhold the AP-REP ' +
+      '(?mutual=off) where the test controls are closed (#896).',
+    spec: 'none (RFC 4120 section 3.2.5; a development test control)' },
+  { code: 'STS-KRB-0259',
+    summary: 'An AS-REQ or TGS-REQ changed the store and the commit of ' +
+      'that change failed, so it was answered KDC_ERR_SVC_UNAVAILABLE ' +
+      'instead of its reply; the change is retried (GitHub run #569).',
+    spec: 'KDC_ERR_SVC_UNAVAILABLE (29); RFC 4120 7.5.9' },
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
       'service refuses in every protocol.',
@@ -15540,14 +16094,17 @@ const CODES = [
       'the socket may test.',
     spec: 'LDAP result code 50, insufficientAccessRights' },
   { code: 'STS-LDAP-0076',
-    summary: 'In product mode, an add or modify named createTimestamp, ' +
-      'modifyTimestamp or entryDN, which the directory maintains itself.',
+    summary: 'An add or modify named an attribute the directory maintains ' +
+      'itself: entryUUID or stsProvisionedBy in every mode, and in product ' +
+      'mode createTimestamp, modifyTimestamp and entryDN as well.',
     spec: 'LDAP result code 19, constraintViolation' },
   { code: 'STS-LDAP-0077',
-    summary: 'A delete or rename of the default realm\'s bootstrap ' +
-      'administrator (admin.bootstrapUsername) was refused — over LDAP or ' +
-      'SCIM — because that account cannot be removed.',
-    spec: 'LDAP result code 53, unwillingToPerform; SCIM 403' },
+    summary: 'A delete or rename of a realm\'s bootstrap administrator ' +
+      '(admin.bootstrapUsername, or the name product mode generates) was ' +
+      'refused — over LDAP, SCIM or the management API — because that ' +
+      'account cannot be removed.',
+    spec: 'LDAP result code 53, unwillingToPerform; SCIM 403; /admin-api ' +
+      'HTTP 400' },
   { code: 'STS-LDAP-0078',
     summary: 'A flag of the bootstrap administrator (pwdReset, ' +
       'stsBootstrapAdministrator or stsConsoleClaimedAt) could not be ' +
@@ -16156,6 +16713,72 @@ const CODES = [
       'application that is not there (2026-11-10).',
     spec: 'HTTP 400 (console, /admin-api), SCIM 400 invalidValue, LDAP ' +
       'constraintViolation (19). Nothing is stored' },
+  { code: 'STS-LDAP-0213',
+    summary: 'The node-ldapjs in use does not support the errorCloseDelay ' +
+      'server option, so a connection that fails is destroyed at once and a ' +
+      'TLS alert about why it failed can be lost to the TCP reset that ' +
+      'closing it with unread data sends (run 21, 2026-11-13).',
+    spec: 'none — logged at startup' },
+  // A person exported to, and imported from, an LDIF file (2026-11-14), on
+  // the user page's Import / export tab and /admin-api/users/{action}.
+  { code: 'STS-LDAP-0214',
+    summary: 'A person export was refused: nobody by that name is in this ' +
+      'realm\'s directory.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-LDAP-0215',
+    summary: 'A person export with credential material was refused: a ' +
+      'sealed credential on the entry (the authenticator app\'s secret, a ' +
+      'legacy recovery-code set) will not open under this process\'s ' +
+      'key-encryption key, so it cannot be written in the clear. Nothing ' +
+      'was exported.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-LDAP-0216',
+    summary: 'A person import was refused: the file is not LDIF holding ' +
+      'exactly one record.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-LDAP-0217',
+    summary: 'A person import was refused: the record is not a person\'s ' +
+      'entry (its DN is not uid=<name>,ou=users,…, or its one uid is not ' +
+      'that name), or it is an application\'s, which the application page ' +
+      'imports.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-LDAP-0218',
+    summary: 'A person import was refused: a person with that username is ' +
+      'already in this realm. Nothing is overwritten.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-LDAP-0219',
+    summary: 'A person import was refused: the record carries an attribute ' +
+      'no import writes — what this service records about a person, the ' +
+      'entryUUID, a credential a subsystem mints (Kerberos keys, key pairs, ' +
+      'enrolment secrets), or a name that is not a person\'s attribute.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-LDAP-0220',
+    summary: 'A person import was refused: a credential in the file is not ' +
+      'in the form an export writes (a password that is not a stored hash, ' +
+      'a record that is not JSON, a certificate that is not one), is ' +
+      'already held by somebody else in this realm (a passkey user handle, ' +
+      'a stored certificate), or could not be sealed. Nothing was created.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-LDAP-0221',
+    summary: 'A person import created the entry but could not write the ' +
+      'credentials the file carried. The person is there without them.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-LDAP-0222',
+    summary: 'Something a deleted person held outside their entry, under ' +
+      'their name or DN (devices, post-login progress, mail preferences, ' +
+      'federation blocks, GNAP approvals, the identity register, pending ' +
+      'enrolments, rich authorization Allows, the risk standing; the RISC ' +
+      'register row, moved ' +
+      'out of the name when it is taken again), could not be forgotten, so ' +
+      'a person made again under the name may inherit it. The delete ' +
+      'itself stands.',
+    spec: '' },
+  { code: 'STS-LDAP-0223',
+    summary: 'An LDAP operation\'s handler threw after the cluster read ' +
+      'barrier it waited for (active-active), where the socket\'s own ' +
+      'handling can no longer catch it: the client is answered ' +
+      'operationsError (1) rather than left without a result (run #510).',
+    spec: 'RFC 4511 section 4.1.9' },
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +
       'dialect\'s package is an optional one, installed into the image with ' +
@@ -16402,6 +17025,9 @@ const CODES = [
     summary: 'In a service deployed as cells, another cell did not answer scim-client-summary or scim-client-act (#553): the console draws that cell as unreachable, never leaves it off, and an act sent to it was not done there (an act sent to every cell reports that cell\'s result as unreachable).',
     spec: 'HTTP 400 (/admin-api) when the act named that cell; none ' +
       'otherwise' },
+  { code: 'STS-SCIMC-0035',
+    summary: 'A create answered 409 uniqueness (RFC 7644 section 3.3) and the resource found by userName or displayName carries the externalId of another entry — a deleted person\'s User that deprovisioning left there, or another client\'s — so it was not adopted (a person made again under a deleted person\'s name inherits nothing, #1612); dead-lettered for an operator.',
+    spec: 'none' },
   { code: 'STS-SCIM-0001',
     summary: 'A SCIM endpoint (or HOBA key registration) was called while ' +
       'SCIM is turned off (scim.enabled).',
@@ -17473,6 +18099,21 @@ const CODES = [
     summary: 'The SPIRE Server API could not be given a TLS identity under ' +
       'paranoid PKI mode, so its address was not bound plain (#1360).',
     spec: 'none: the address does not answer, and GET /spiffe says so' },
+  { code: 'STS-SPIFFE-0154',
+    summary: 'A SPIFFE answer — a Workload API, SPIRE Server API or Broker ' +
+      'API message a handler handed grpc-js, a bundle, a minted ' +
+      'JWT-SVID\'s header or claims — carried a member its model in ' +
+      'models/spiffe/*.tsp does not name (protobufjs drops it without a ' +
+      'word), a value of a type the field does not take, or lacked one the ' +
+      'model requires (#1579). The answer is sent as it was built: the ' +
+      'model describes the wire and does not reshape it, so this is a ' +
+      'model gap or a defect to close.',
+    spec: 'none (recorded only; the answer is unchanged)' },
+  { code: 'STS-SPIFFE-0155',
+    summary: 'A SPIFFE gRPC call ended with a status its service and method ' +
+      'in models/spiffe/*.tsp do not declare (#1579). The status is sent ' +
+      'as it was: this is a model gap to close.',
+    spec: 'none (recorded only; the status is unchanged)' },
   { code: 'STS-TLS-0001',
     summary: 'The service did not start: tls.minVersion, tls.ciphers, ' +
       'tls.groups or tls.signatureAlgorithms cannot build a TLS context.',
@@ -17795,6 +18436,26 @@ const CODES = [
   { code: 'STS-TLS-0060',
     summary: 'A certificate sign-in started no session because the person owes a second factor.',
     spec: 'HTTP 200' },
+  { code: 'STS-TLS-0061',
+    summary: 'A TLS listener already held its bound of connections that ' +
+      'failed at the TLS layer, so another was closed at once rather than ' +
+      'held for its alert to be read, and the TCP reset could discard the ' +
+      'alert (tls/alert_close.ts, 2026-11-13).',
+    spec: 'none (logged): the connection closes with its alert sent' },
+  { code: 'STS-TLS-0062',
+    summary: 'A server-side TLS socket has no raw socket under it ' +
+      '(TLSSocket._parent), so a connection that fails at the TLS layer is ' +
+      'closed at once and its alert can be lost to the TCP reset ' +
+      '(tls/alert_close.ts, 2026-11-13).',
+    spec: 'none (logged once)' },
+  { code: 'STS-TLS-0063',
+    summary: 'A certificate this realm issued names its holder as a service ' +
+      'account (urn:sts:sa:<name>, #1827), and in its realm that entry is ' +
+      'not a service account, or there is none. The TLS client gate ' +
+      '(tls_client_certificates.js identityOf()) refuses it as an identity ' +
+      'at every door that asks it; each door refuses it under its own code ' +
+      'for a certificate that is not an identity.',
+    spec: 'none (logged): the door\'s own refusal' },
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +
       '(enc) this issuer implements, so the implemented list is ' +
@@ -18662,6 +19323,69 @@ const CODES = [
       'not be fetched from that cell over the inter-cell channel (#1291).',
     spec: 'HTTP 503 {error: temporarily_unavailable} at ' +
       '/users/{rid}/did.json' },
+  { code: 'STS-VC-0178',
+    summary: 'A key a wallet proved for a person\'s published DID was ' +
+      'refused because it is already enrolled for that person as a ' +
+      'sign-in key (#775). The document would have been a public copy ' +
+      'of a sign-in key. A published DID takes a key that is not ' +
+      'enrolled for sign-in.',
+    spec: 'HTTP 400 refusal at /authn-api/wallet' },
+  { code: 'STS-VC-0179',
+    summary: 'A key was refused as a person\'s self-issued sign-in ' +
+      'subject (did:jwk, did:key or JWK thumbprint) because a version of ' +
+      'a DID this realm publishes for that person names it (#775, the ' +
+      'reverse of STS-VC-0178). The public document and the sign-in key ' +
+      'would have been one key.',
+    spec: 'HTTP 400 refusal at /authn-api/wallet, or at ' +
+      '/admin-api/users/enrol-self-issued-subject' },
+  { code: 'STS-VC-0180',
+    summary: 'An ldp_vc credential was not issued because a bbs-2023 ' +
+      'mandatory JSON pointer configured for its credential configuration ' +
+      '(oid4vci.ldpVcMandatoryPointers, oid4vci.ldpVcDidMandatoryPointers) ' +
+      'is not a JSON pointer or names nothing in the credential (#1878).',
+    spec: 'server_error (HTTP 500) at the OID4VCI credential endpoint' },
+  { code: 'STS-VC-0181',
+    summary: 'An ldp_vc presentation in the pre-W3C, non-standard bbs-2023 ' +
+      'format iya-sts 1.0 used (disclosed statements beside a raw BBS ' +
+      'proof) was refused: this realm accepts only W3C bbs-2023 (W3C Data ' +
+      'Integrity BBS Cryptosuites v1.0), because oid4vc.bbs2023LegacyFormat ' +
+      'is off. The holder needs a credential issued since 1.1.0 (#1878).',
+    spec: 'a failed check in the OpenID4VP Verifier\'s result' },
+  { code: 'STS-VC-0182',
+    summary: 'An ldp_vc presentation in the pre-W3C bbs-2023 format ' +
+      '(iya-bbs-2023-legacy) was read because this realm has ' +
+      'oid4vc.bbs2023LegacyFormat on. Not a refusal: recorded so that an ' +
+      'operator can see the old format is still in use (#1878).',
+    spec: 'none: the presentation is checked as 1.0 checked it' },
+  { code: 'STS-VC-0183',
+    summary: 'An ldp_vc credential was issued in the pre-W3C bbs-2023 ' +
+      'format (iya-bbs-2023-legacy) because this realm has ' +
+      'oid4vc.bbs2023LegacyFormat on. Not a refusal: recorded so that an ' +
+      'operator can see the old format is still in use (#1878).',
+    spec: 'none: the credential is issued' },
+  { code: 'STS-VC-0184',
+    summary: 'A bbs-2023 derived proof was refused because its ' +
+      'verificationMethod names no BBS key this realm publishes, so no ' +
+      'issuer this Verifier trusts stands behind it (#1878).',
+    spec: 'a failed check in the OpenID4VP Verifier\'s result' },
+  { code: 'STS-VC-0185',
+    summary: 'A bbs-2023 derived proof was refused because its ' +
+      'presentation header is not this request\'s nonce: a bare derived ' +
+      'proof must carry the nonce, and one inside a Verifiable ' +
+      'Presentation may carry the nonce or nothing (#1878).',
+    spec: 'a failed check in the OpenID4VP Verifier\'s result' },
+  { code: 'STS-VC-0186',
+    summary: 'A bbs-2023 derived proof did not verify (W3C Data Integrity ' +
+      'BBS Cryptosuites v1.0, section 3.3.5): the reveal document, the ' +
+      'issuer key, the label map, the indexes or the presentation header ' +
+      'is not what it was derived for, or the proof is malformed (#1878).',
+    spec: 'a failed check in the OpenID4VP Verifier\'s result' },
+  { code: 'STS-VC-0187',
+    summary: 'An mso_mdoc credential could not be built (#1862): the ' +
+      'holder key the proof named is not P-256, or the document signer ' +
+      'could not sign the Mobile Security Object.',
+    spec: 'OpenID4VCI section 8.3: the credential endpoint answers ' +
+      'server_error' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',
@@ -19318,6 +20042,41 @@ const CODES = [
     summary: 'A push delivery address is internal or could not be ' +
       'resolved, in product (ASVS 5.0.0 1.3.6).',
     spec: 'the delivery fails' },
+  { code: 'STS-SSF-0159',
+    summary: 'A Shared Signals answer — the transmitter metadata, a stream ' +
+      'configuration, a status or a poll — carried a member its model in ' +
+      'models/ssf/ssf.tsp does not name, one of a type the model does not ' +
+      'allow, or lacked one it requires (#1579). The answer is sent as it ' +
+      'was built: the model describes the wire and does not reshape it, so ' +
+      'this is a model gap to close.',
+    spec: 'none (recorded only; the answer is unchanged)' },
+  { code: 'STS-SSF-0160',
+    summary: 'A Shared Signals refusal carried an err value ' +
+      'models/ssf/ssf.tsp does not declare (#1579). The refusal is sent as ' +
+      'it was built; the value is to be declared, or the refusal to use a ' +
+      'declared one.',
+    spec: 'none (recorded only; the refusal is unchanged)' },
+  { code: 'STS-SSF-0161',
+    summary: 'A Security Event Token this service built carried a claim ' +
+      'models/ssf/ssf.tsp does not name, one of a type it does not allow, ' +
+      'or lacked one RFC 8417 requires (#1579). The SET is sent as it was ' +
+      'built; this is a model gap to close.',
+    spec: 'none (recorded only; the SET is unchanged)' },
+  { code: 'STS-SSF-0162',
+    summary: 'A document this realm exchanged with a federation partner\'s ' +
+      'Shared Signals transmitter is not the shape models/ssf/ssf.tsp gives ' +
+      'it (#1579): a configuration or a SET the partner sent, or a stream ' +
+      'request or poll this realm sent. Recorded; what was received is ' +
+      'still judged by the receiver\'s own checks, and what is sent is sent ' +
+      'unchanged.',
+    spec: 'none (recorded only)' },
+  { code: 'STS-SSF-0163',
+    summary: 'X-Iya-Pep-Name was sent and is not a PEP name: one token of ' +
+      '1 to 128 letters, digits, ".", "_" or "-". A cluster member sends ' +
+      'its registered name so its CAEP/RISC stream is its own; a header ' +
+      'that is not one is refused rather than read as no header ' +
+      '(#1760 phase 3).',
+    spec: 'HTTP 400' },
   // ===== RISK ==============================================================
   { code: 'STS-RISK-0001',
     summary: 'A dataset import was refused before anything was loaded: the ' +
@@ -19615,6 +20374,14 @@ const CODES = [
     summary: 'Too many lines of a dataset file were not rows of its ' +
       'format (ASVS 5.0.0 5.2.2).',
     spec: 'the version is refused' },
+  { code: 'STS-RISK-0057',
+    summary: 'A dataset version named to an import, an activation, a ' +
+      'deletion or a reload is not one this service could have recorded — ' +
+      'empty, longer than 200 characters, or holding a control character ' +
+      'or half of a surrogate pair — or a licence, attribution, source or ' +
+      'SHA-256 an import names holds a NUL or half of a surrogate pair. ' +
+      'Refused before the store is asked (fuzz run #500).',
+    spec: 'HTTP 400' },
   // ===== MAIL ==============================================================
   { code: 'STS-MAIL-0001',
     summary: 'A message was not queued because no mail transport is ' +
@@ -21188,7 +21955,7 @@ const CODES = [
       '/admin-api' },
   { code: 'STS-GNAP-0663',
     summary: 'The query string of a GNAP console page failed validation.',
-    spec: 'HTTP 400 text/plain' },
+    spec: 'HTTP 400 text/plain', retired: true },
   { code: 'STS-GNAP-0664',
     summary: 'A GNAP console action form post failed validation.',
     spec: 'Console error notice', retired: true },
@@ -21676,6 +22443,19 @@ const CODES = [
       'The protocol claims are unaffected.',
     spec: 'RFC 9635 section 3.2.1 (the access token is opaque to the ' +
       'client); the JWT is what a resource server verifies' },
+  { code: 'STS-GNAP-0910',
+    summary: 'A GNAP answer carried a member its model in ' +
+      'models/gnap/gnap.tsp does not name, one of a type or value the ' +
+      'model does not allow, or lacked one the model requires (#1579). The ' +
+      'answer is sent as it was built: the model describes the wire and ' +
+      'does not reshape it, so this is a model gap to close.',
+    spec: 'none (recorded only; the answer is unchanged)' },
+  { code: 'STS-GNAP-0911',
+    summary: 'A GNAP error response carried an error code ' +
+      'models/gnap/gnap.tsp does not declare (#1579). The response is sent ' +
+      'as it was built; the code is to be declared, with the document that ' +
+      'defines it.',
+    spec: 'none (recorded only; the response is unchanged)' },
   { code: 'STS-DEVICE-0001',
     summary: 'A device named an owner that is not a person or an application' +
       ' in the realm\'s directory, named no owner, or an owner kind ' +
@@ -21961,6 +22741,11 @@ const CODES = [
       'device\'s keys are rechecked only once a later write of it derives ' +
       'the marker (#615).',
     spec: '' },
+  { code: 'STS-DEVICE-0053',
+    summary: 'A device of a deleted person could not be removed from the ' +
+      'register, so a person made again under the name owns it. Remove it ' +
+      'on the Devices page.',
+    spec: '' },
   // ===== SVCACCT ===========================================================
   { code: 'STS-SVCACCT-0001',
     summary: 'A service-account policy profile was named with something ' +
@@ -22114,16 +22899,72 @@ const CODES = [
       'create, naming neither `default` nor a service-account policy of ' +
       'this realm (#1240).',
     spec: 'HTTP 400 (management API); constraintViolation (19) over LDAP' },
+  { code: 'STS-SVCACCT-0051',
+    summary: 'A remote PEP\'s identity (a person holding REMOTE_PEPS) was ' +
+      'not made a service account yet: the realm has neither an Admin ' +
+      'Write group nor its bootstrap administrator to own it, and a ' +
+      'service account is never written without an owner. Retried at the ' +
+      'next start and the next membership change (#1760).',
+    spec: '' },
+  { code: 'STS-SVCACCT-0052',
+    summary: 'A remote PEP\'s identity (a person holding REMOTE_PEPS) could ' +
+      'not be made a service account: the directory refused the write, or ' +
+      'the owner it named was refused (#1760).',
+    spec: '' },
+  { code: 'STS-SVCACCT-0060',
+    summary: 'A service account was asked to become an ordinary person ' +
+      'again (`serviceAccount` false); once a service account, always one ' +
+      '— delete the entry to end it (rcbj, 2026-11-15).',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-SVCACCT-0061',
+    summary: 'A change would have left a service account that names an ' +
+      'owner with none — the last owner removed, or `owners` emptied — ' +
+      'whatever the policy\'s requireOwner says (rcbj, 2026-11-15).',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-SVCACCT-0062',
+    summary: 'An owner tried to take their own DN off a service account\'s ' +
+      'owners; another administrator may (rcbj, 2026-11-15).',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-SVCACCT-0063',
+    summary: 'An owner tried to take off a service account the group that ' +
+      'was their only way of owning it, which removes themselves (rcbj, ' +
+      '2026-11-15).',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-SVCACCT-0064',
+    summary: 'An LDAP modify removed or changed stsServiceAccount on a ' +
+      'service account; once a service account, always one (rcbj, ' +
+      '2026-11-15).',
+    spec: 'constraintViolation (19) over LDAP' },
+  { code: 'STS-SVCACCT-0065',
+    summary: 'An LDAP modify would have left a service account that names ' +
+      'an owner with no stsServiceAccountOwner, whatever requireOwner says ' +
+      '(rcbj, 2026-11-15).',
+    spec: 'constraintViolation (19) over LDAP' },
+  { code: 'STS-SVCACCT-0066',
+    summary: 'An LDAP modify by the bound DN took that DN off a service ' +
+      'account\'s stsServiceAccountOwner (rcbj, 2026-11-15).',
+    spec: 'constraintViolation (19) over LDAP' },
+  { code: 'STS-SVCACCT-0067',
+    summary: 'An LDAP modify took off a service account the group that was ' +
+      'the bound DN\'s only way of owning it (rcbj, 2026-11-15).',
+    spec: 'constraintViolation (19) over LDAP' },
+  { code: 'STS-SVCACCT-0068',
+    summary: 'A service account\'s last owner (a person or a group) was ' +
+      'deleted and the realm has neither an Admin Write group nor a ' +
+      'bootstrap administrator to own it instead, so it names no owner ' +
+      'now. An administrator adding an owner repairs it (rcbj, ' +
+      '2026-11-15).',
+    spec: 'none — a warning in the log' },
   // ===== XACML =============================================================
   { code: 'STS-XACML-0001',
     summary: 'A request reached an XACML endpoint while the family is ' +
       'switched off (xacml.enabled).',
-    spec: 'HTTP 501 not_implemented' },
+    spec: 'HTTP 501 not_implemented (PIPError XML on /xacml/pip)' },
   { code: 'STS-XACML-0002',
     summary: 'A request reached a remote-PEP endpoint or POST /xacml/pip ' +
       'while remote enforcement points are switched off ' +
       '(xacml.remotePeps).',
-    spec: 'HTTP 501 not_implemented' },
+    spec: 'HTTP 501 not_implemented (PIPError XML on /xacml/pip)' },
   { code: 'STS-XACML-0003',
     summary: 'The XACML surface (GET /xacml, /xacml/pdp, /xacml/policies) ' +
       'was refused to a caller that presented no client certificate.',
@@ -22149,17 +22990,17 @@ const CODES = [
   { code: 'STS-XACML-0008',
     summary: 'A remote-PEP endpoint was refused to a caller whose client ' +
       'certificate did not verify against this service\'s truststore.',
-    spec: 'HTTP 403 access_denied' },
+    spec: 'HTTP 403 access_denied (PIPError XML on /xacml/pip)' },
   { code: 'STS-XACML-0009',
     summary: 'A remote-PEP endpoint was refused to a verified certificate ' +
       'whose subject resolves to no directory entry holding ' +
       'REMOTE_PEPS (not in roles.remotePepGroup).',
-    spec: 'HTTP 403 access_denied' },
+    spec: 'HTTP 403 access_denied (PIPError XML on /xacml/pip)' },
   { code: 'STS-XACML-0010',
     summary: 'A remote-PEP endpoint was refused by the access policy to a ' +
       'verified caller that does hold REMOTE_PEPS — an ' +
       'operator-edited access-control document denied it.',
-    spec: 'HTTP 403 access_denied' },
+    spec: 'HTTP 403 access_denied (PIPError XML on /xacml/pip)' },
   { code: 'STS-XACML-0011',
     summary: 'A decision request to POST /xacml/pdp was not a well-formed ' +
       'JSON Profile request.',
@@ -22235,14 +23076,14 @@ const CODES = [
       'because no embedded directory is loaded in this process.',
     spec: 'console: 303 back to the page with error=…; /admin-api: HTTP ' +
       '400 { ok: false, errors }; remote PEP register/heartbeat: HTTP ' +
-      '400/404 invalid_request' },
+      '503 server_error' },
   { code: 'STS-XACML-0027',
     summary: 'The embedded directory refused a write or removal in ' +
       'ou=policies, ou=peps or ou=roles — usually a container at its ' +
       'maximum.',
     spec: 'console: 303 back to the page with error=…; /admin-api: HTTP ' +
       '400 { ok: false, errors }; remote PEP register/heartbeat: HTTP ' +
-      '400/404 invalid_request' },
+      '507 server_error' },
   { code: 'STS-XACML-0028',
     summary: 'A policy document was refused at write: it does not parse or ' +
       'fails XACML static type checking.',
@@ -22418,9 +23259,9 @@ const CODES = [
     spec: '' },
   { code: 'STS-XACML-0066',
     summary: 'A change nudge was not sent because the PEP\'s notify URL is ' +
-      'outside the outbound bounds (not a URL, wrong scheme, plain ' +
-      'http without xacml.pepNotifyAllowHttp, or a host not in ' +
-      'xacml.pepNotifyAllowedHosts).',
+      'outside the outbound bounds (not a URL, a scheme other than https, ' +
+      'or a host not in xacml.pepNotifyAllowedHosts). Plain http has its ' +
+      'own code since 2026-11-14, STS-XACML-0259.',
     spec: '' },
   { code: 'STS-XACML-0067',
     summary: 'A PEP\'s notify endpoint answered a change nudge with a ' +
@@ -22451,13 +23292,15 @@ const CODES = [
   { code: 'STS-XACML-0073',
     summary: 'A change nudge was not sent because the PEP\'s notify URL is ' +
       'plain http and the realm is in product mode, whatever ' +
-      'xacml.pepNotifyAllowHttp says (#171).',
-    spec: '' },
+      'xacml.pepNotifyAllowHttp says (#171). Retired 2026-11-14: plain http ' +
+      'is refused in every mode, STS-XACML-0259.',
+    spec: '', retired: true },
   { code: 'STS-XACML-0074',
     summary: 'Product mode ignored xacml.pepNotifySkipTlsVerification: a ' +
       'nudge verifies the PEP\'s certificate whatever it says. Logged once ' +
-      'per process (#171).',
-    spec: 'none — a warning in the log' },
+      'per process (#171). Retired 2026-11-14: the setting is retired in ' +
+      'every mode, STS-XACML-0258.',
+    spec: 'none — a warning in the log', retired: true },
   { code: 'STS-XACML-0075',
     summary: 'A write put a person or a group on ADMIN_READ or ADMIN_WRITE; ' +
       'their people are the console roster\'s, granted on /admin/rbac, and ' +
@@ -22601,13 +23444,13 @@ const CODES = [
       'outside certificate authority that is not stored in ' +
       'userCertificate on any entry of the realm, so it resolved to ' +
       'nobody (#1061).',
-    spec: 'HTTP 403 access_denied' },
+    spec: 'HTTP 403 access_denied (PIPError XML on /xacml/pip)' },
   { code: 'STS-XACML-0180',
     summary: 'The access policy refused a remote PEP request (/xacml/pep/*, ' +
       'POST /xacml/pip): the client certificate verified and is from an ' +
       'outside certificate authority that is stored in userCertificate ' +
       'on more than one entry of the realm (#1061).',
-    spec: 'HTTP 403 access_denied' },
+    spec: 'HTTP 403 access_denied (PIPError XML on /xacml/pip)' },
   { code: 'STS-XACML-0181',
     summary: 'The access gate had no decider, or its decider answered ' +
       'nothing: refused in product mode, allowed in development (#1450).',
@@ -22621,6 +23464,625 @@ const CODES = [
     summary: 'The issuance gate refused because no decision could be ' +
       'made, in product (ASVS 5.0.0 16.5.3).',
     spec: 'the token is not issued' },
+  { code: 'STS-XACML-0184',
+    summary: 'A remote PEP\'s reverse-proxy configuration (#1760) is not ' +
+      'JSON, or not a JSON object.',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0185',
+    summary: 'A remote PEP\'s reverse-proxy configuration, or one of its ' +
+      'routes, carries a member the grammar does not name (the document is ' +
+      'closed).',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0186',
+    summary: 'A reverse-proxy configuration\'s `enabled` is not true or ' +
+      'false.',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0187',
+    summary: 'A reverse-proxy configuration\'s `upstream` is not an ' +
+      'absolute http(s) URL with no userinfo, query or fragment.',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0188',
+    summary: 'A reverse-proxy configuration\'s `publicBaseUrl` is not an ' +
+      'http(s) origin, is not https in product mode or for a session route, ' +
+      'or is missing while a route uses the session mechanism.',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0189',
+    summary: 'A reverse-proxy configuration\'s `upstreamTimeoutMs` is not ' +
+      'an integer from 1 to 120000.',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0190',
+    summary: 'A reverse-proxy configuration\'s `maxBodyBytes` is not an ' +
+      'integer from 0 to 104857600.',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0191',
+    summary: 'A reverse-proxy configuration\'s `routes` is not a list of ' +
+      'at most 64 objects.',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0192',
+    summary: 'A reverse-proxy route\'s `id` is not 1 to 64 letters, ' +
+      'digits, dots, dashes or underscores, or two routes share one.',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0193',
+    summary: 'A reverse-proxy route\'s `path` does not start with /, or ' +
+      'holds a . or .. segment, //, %, a backslash, ?, # or a control ' +
+      'character.',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0194',
+    summary: 'A reverse-proxy route\'s `match` is not prefix or exact.',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0195',
+    summary: 'A reverse-proxy route\'s `methods` is not a list of distinct ' +
+      'methods from GET, HEAD, POST, PUT, PATCH, DELETE and OPTIONS.',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0196',
+    summary: 'A reverse-proxy route\'s `mechanisms` names an unknown or ' +
+      'repeated mechanism, a public route names one, or a route that is not ' +
+      'public names none.',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0197',
+    summary: 'A reverse-proxy route that is not public (authorization ' +
+      'kind public) names no `application`, or a public route names one ' +
+      '(#1760, D10).',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0198',
+    summary: 'A reverse-proxy route\'s identity header name is not an RFC ' +
+      '9110 token, or names a header the proxy itself writes or strips ' +
+      '(hop-by-hop, framing, Authorization, Cookie, Host, Forwarded, ' +
+      'X-Forwarded-*).',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0199',
+    summary: 'A reverse-proxy route\'s `forwardCredentials`, `signals`, ' +
+      '`multipleAccounts` or `application` is of the wrong type or too long.',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0200',
+    summary: 'The reverse-proxy configuration stored on a remote PEP\'s ' +
+      'entry (written by ldapmodify, or before a rule changed) does not ' +
+      'validate; the pull answers configured: false and the proxy denies ' +
+      'everything.',
+    spec: 'GET /xacml/pep/proxy answers 200 with configured: false' },
+  { code: 'STS-XACML-0201',
+    summary: 'set-pep-proxy was sent with no `proxy` document.',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0202',
+    summary: 'The directory refused to write or remove a remote PEP\'s ' +
+      'reverse-proxy configuration.',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0203',
+    summary: 'The reverse-proxy configuration was saved and the session ' +
+      'mechanism\'s public OpenID Connect client (xacml-pep-<name>) could ' +
+      'not be created or its redirect URI updated. Retired before ' +
+      'release: a session route names an existing application (#1760).',
+    spec: '', retired: true },
+  { code: 'STS-XACML-0204',
+    summary: 'POST /xacml/pep/basic was not { username, password } of the ' +
+      'right shape.',
+    spec: 'HTTP 400 invalid_request' },
+  { code: 'STS-XACML-0205',
+    summary: 'POST /xacml/pep/basic: the username or the address is past ' +
+      'the sign-in door\'s limit (door xacml-pep-basic).',
+    spec: 'HTTP 429 with { valid: false, retryAfterS }' },
+  { code: 'STS-XACML-0206',
+    summary: 'POST /xacml/pep/basic: the credential was refused (no such ' +
+      'person, a wrong password, a disabled account, a second factor owed); ' +
+      'the reason is in the log and the audit row only.',
+    spec: 'HTTP 200 { valid: false }' },
+  { code: 'STS-XACML-0207',
+    summary: 'POST /xacml/pep/introspect was not { token } of the right ' +
+      'shape.',
+    spec: 'HTTP 400 invalid_request' },
+  { code: 'STS-XACML-0208',
+    summary: 'POST /xacml/pep/saml was not { assertion, audience }, the ' +
+      'assertion not base64 of a SAML 2.0 Assertion, or larger than 256 ' +
+      'KiB.',
+    spec: 'HTTP 400 invalid_request, or 200 { valid: false } for a ' +
+      'document that is not an assertion' },
+  { code: 'STS-XACML-0209',
+    summary: 'POST /xacml/pep/saml was given an EncryptedAssertion, which ' +
+      'neither the PEP nor this service can decrypt.',
+    spec: 'HTTP 200 { valid: false }' },
+  { code: 'STS-XACML-0210',
+    summary: 'POST /xacml/pep/saml: the assertion is not signed at its ' +
+      'root, or the signature does not verify against this realm\'s XML ' +
+      'signing certificates.',
+    spec: 'HTTP 200 { valid: false }' },
+  { code: 'STS-XACML-0211',
+    summary: 'POST /xacml/pep/saml: the assertion\'s Issuer is not this ' +
+      'realm\'s issuer.',
+    spec: 'HTTP 200 { valid: false }' },
+  { code: 'STS-XACML-0212',
+    summary: 'POST /xacml/pep/saml: the assertion is outside its ' +
+      'Conditions\' NotBefore / NotOnOrAfter (with oauth2.clockSkewS), or ' +
+      'names no NotOnOrAfter.',
+    spec: 'HTTP 200 { valid: false }' },
+  { code: 'STS-XACML-0213',
+    summary: 'POST /xacml/pep/saml: an AudienceRestriction does not hold ' +
+      'the route\'s audience, or the assertion has none.',
+    spec: 'HTTP 200 { valid: false }' },
+  { code: 'STS-XACML-0214',
+    summary: 'POST /xacml/pep/session was not { sid } of the right shape.',
+    spec: 'HTTP 400 invalid_request' },
+  { code: 'STS-XACML-0215',
+    summary: 'A remote PEP\'s validation calls (/xacml/pep/introspect, ' +
+      'basic, saml, session) are past xacml.pipMaxPerWindow for the window.',
+    spec: 'HTTP 429 too_many_requests with Retry-After' },
+  { code: 'STS-XACML-0216',
+    summary: 'One of a remote PEP\'s validation doors (/xacml/pep/' +
+      'introspect, basic, saml, session) threw: a defect, logged with ' +
+      'its stack.',
+    spec: 'HTTP 500 server_error' },
+  { code: 'STS-XACML-0217',
+    summary: 'A reverse-proxy route names an application this realm\'s ' +
+      'registry does not hold (#1760, D10).',
+    spec: 'HTTP 400 on /admin-api; the route usable: false at the pull' },
+  { code: 'STS-XACML-0218',
+    summary: 'A reverse-proxy route accepts oauth2 and its application ' +
+      'declares no audience (oauthAudience or oauthPermissionBaseUri).',
+    spec: 'HTTP 400 on /admin-api; the route usable: false at the pull' },
+  { code: 'STS-XACML-0219',
+    summary: 'A reverse-proxy route accepts saml2 and its application has ' +
+      'no SAML entity ID (samlEntityId).',
+    spec: 'HTTP 400 on /admin-api; the route usable: false at the pull' },
+  { code: 'STS-XACML-0220',
+    summary: 'A reverse-proxy session route\'s application is not a ' +
+      'confidential OpenID Connect client (client_secret_basic or ' +
+      'client_secret_post).',
+    spec: 'HTTP 400 on /admin-api; the route usable: false at the pull' },
+  { code: 'STS-XACML-0221',
+    summary: 'A reverse-proxy session route\'s application does not allow ' +
+      'the authorization_code grant.',
+    spec: 'HTTP 400 on /admin-api; the route usable: false at the pull' },
+  { code: 'STS-XACML-0222',
+    summary: 'A reverse-proxy session route\'s application does not ' +
+      'register <publicBaseUrl>/.iya-pep/callback among its redirect URIs.',
+    spec: 'HTTP 400 on /admin-api; the route usable: false at the pull' },
+  { code: 'STS-XACML-0223',
+    summary: 'A reverse-proxy session route\'s application holds no ' +
+      'unexpired client secret.',
+    spec: 'HTTP 400 on /admin-api; the route usable: false at the pull' },
+  { code: 'STS-XACML-0224',
+    summary: 'A reverse-proxy route\'s `identity` is not an object, names ' +
+      'an unknown mode, carries headers or a separator in mode saml or jwt, ' +
+      'or is set on a public route (#1760, D11).',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0225',
+    summary: 'A reverse-proxy route\'s `identity.headers` is not a list of ' +
+      'at most 16 { name, claim }, a row names no header, or one name ' +
+      'appears twice (compared without case).',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0226',
+    summary: 'A reverse-proxy route\'s identity header names a claim that ' +
+      'is not sub, username, email, name, given_name, family_name, groups, ' +
+      'mechanism, acr or amr.',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0227',
+    summary: 'A reverse-proxy route\'s `identity.separator` is not one ' +
+      'printable ASCII character other than a letter or a digit.',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0228',
+    summary: 'A reverse-proxy route forwards the identity as a SAML ' +
+      'assertion and its application has no SAML entity ID or no registered ' +
+      'assertion consumer service.',
+    spec: 'HTTP 400 on /admin-api; the route usable: false at the pull' },
+  { code: 'STS-XACML-0229',
+    summary: 'POST /xacml/pep/identity was not { route, evidence: { kind, ' +
+      'value }, claims? } of the right shape, or `claims` names a claim the ' +
+      'route\'s headers do not.',
+    spec: 'HTTP 400 invalid_request' },
+  { code: 'STS-XACML-0230',
+    summary: 'POST /xacml/pep/identity named a route that is not a ' +
+      'non-public route of the asking PEP\'s own proxy configuration.',
+    spec: 'HTTP 403 access_denied' },
+  { code: 'STS-XACML-0231',
+    summary: 'POST /xacml/pep/identity\'s evidence did not validate: an ' +
+      'access token not active in this realm or issued neither to nor for ' +
+      'the route\'s application, or a SAML assertion this realm did not ' +
+      'issue for it.',
+    spec: 'HTTP 403 access_denied' },
+  { code: 'STS-XACML-0232',
+    summary: 'POST /xacml/pep/identity\'s ticket is unknown, was handed to ' +
+      'another PEP, or has expired.',
+    spec: 'HTTP 403 access_denied' },
+  { code: 'STS-XACML-0233',
+    summary: 'POST /xacml/pep/identity cannot answer: the route is not ' +
+      'usable, its application has no SAML entity ID for an assertion, or ' +
+      'the directory holds no entry for the person.',
+    spec: 'HTTP 422 invalid_request' },
+  { code: 'STS-XACML-0234',
+    summary: 'POST /xacml/pep/identity: the issuance policy refused the ' +
+      'access token or SAML assertion a route forwards.',
+    spec: 'HTTP 403 access_denied' },
+  { code: 'STS-XACML-0235',
+    summary: 'POST /xacml/pep/identity: the access token or SAML Response ' +
+      'could not be issued (for example an assertion that must be encrypted ' +
+      'and cannot be).',
+    spec: 'HTTP 422 invalid_request' },
+  { code: 'STS-XACML-0236',
+    summary: 'set-pep-settings: the settings are not an object, or name a ' +
+      'member that is not a setting this service manages for a remote PEP ' +
+      '(#1760).',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0237',
+    summary: 'set-pep-settings: a remote PEP setting has the wrong type ' +
+      '(not an integer, not true or false, not a string) or is not one of ' +
+      'its closed set (bias, logLevel).',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0238',
+    summary: 'set-pep-settings: a remote PEP integer setting is outside ' +
+      'its bounds.',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0239',
+    summary: 'set-pep-settings: a remote PEP text setting is too long or ' +
+      'carries a control character, notifyUrl is not an absolute https ' +
+      'URL without user name or fragment, or authzenPdpIdentifier is not ' +
+      'an https origin.',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0240',
+    summary: 'set-pep-settings: product mode refuses proxyUpstreamInsecure ' +
+      'or proxyRpAllowInsecure true, which turn a certificate or scheme ' +
+      'check off at the remote PEP.',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0241',
+    summary: 'set-pep-settings or clear-pep-settings: the directory refused ' +
+      'writing the remote PEP\'s entry.',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0242',
+    summary: 'The settings stored for a remote PEP (xacmlPepSettings) do ' +
+      'not validate — an ldapmodify wrote them — so GET ' +
+      '/xacml/pep/settings sends configured: false and the PEP uses its ' +
+      'environment; the console names why.',
+    spec: 'none; logged at the pull' },
+  { code: 'STS-XACML-0243',
+    summary: 'A listener defined for a remote PEP (#1760) is not an ' +
+      'object, carries a member a listener does not have, has a ' +
+      'renew that is not a non-negative integer, or the list is ' +
+      'not an array or holds more than 32.',
+    spec: 'HTTP 400 on /admin-api; the console names why' },
+  { code: 'STS-XACML-0244',
+    summary: 'A listener defined for a remote PEP has an id that is not ' +
+      '1 to 64 letters, digits, dots, dashes or underscores, is ' +
+      'one of the four environment listeners\' ids, or is used ' +
+      'twice.',
+    spec: 'HTTP 400 on /admin-api; the console names why' },
+  { code: 'STS-XACML-0245',
+    summary: 'A listener defined for a remote PEP has a protocol other ' +
+      'than http or https, or a purpose other than api or proxy.',
+    spec: 'HTTP 400 on /admin-api; the console names why' },
+  { code: 'STS-XACML-0246',
+    summary: 'A listener defined for a remote PEP has an address that is ' +
+      'not an IPv4 or IPv6 literal, or a port outside 1 to 65535.',
+    spec: 'HTTP 400 on /admin-api; the console names why' },
+  { code: 'STS-XACML-0247',
+    summary: 'A listener defined for a remote PEP would hold an address ' +
+      'and port another of its listeners holds, a defined one or ' +
+      'one of the environment\'s four as the PEP last reported ' +
+      'them.',
+    spec: 'HTTP 400 on /admin-api; the console names why' },
+  { code: 'STS-XACML-0248',
+    summary: 'A listener defined for a remote PEP names certificate ' +
+      'names or a key algorithm while plain HTTP, or, as HTTPS, ' +
+      'more than 16 DNS names or IP addresses, a name a ' +
+      'certificate cannot carry, or a key algorithm outside the ' +
+      'closed set.',
+    spec: 'HTTP 400 on /admin-api; the console names why' },
+  { code: 'STS-XACML-0249',
+    summary: 'Product mode refuses a plain-HTTP reverse-proxy listener ' +
+      'defined for a remote PEP unless ' +
+      'xacml.pepPlainHttpProxyListeners is on.',
+    spec: 'HTTP 400 on /admin-api; the console names why' },
+  { code: 'STS-XACML-0250',
+    summary: 'No listener of that id is defined for the remote PEP (one ' +
+      'of the environment\'s four is changed only by its ' +
+      'environment), or renew-pep-listener-certificate named a ' +
+      'plain-HTTP listener.',
+    spec: 'HTTP 400 on /admin-api; the console names why' },
+  { code: 'STS-XACML-0251',
+    summary: 'The directory refused to write a remote PEP\'s listener ' +
+      'definitions.',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0252',
+    summary: 'The listener definitions stored for a remote PEP ' +
+      '(xacmlPepListeners) do not validate — an ldapmodify wrote ' +
+      'them — so GET /xacml/pep/settings sends none and the PEP ' +
+      'binds only its environment\'s; the console names why.',
+    spec: 'none; logged at the pull' },
+  { code: 'STS-XACML-0253',
+    summary: 'POST /xacml/pep/listener-certificate named no listener, or ' +
+      'one that is not an HTTPS listener defined for the calling ' +
+      'PEP in this realm, or the calling PEP is not registered ' +
+      'here.',
+    spec: 'HTTP 400 or 404, invalid_request' },
+  { code: 'STS-XACML-0254',
+    summary: 'POST /xacml/pep/listener-certificate carried no readable ' +
+      'PKCS #10 request, one whose signature does not prove ' +
+      'possession of its key, or a key the pep-tls Issuing CA ' +
+      'does not certify for a listener.',
+    spec: 'HTTP 400, invalid_request' },
+  { code: 'STS-XACML-0255',
+    summary: 'A remote PEP\'s listener certificate could not be issued ' +
+      'from the realm\'s pep-tls Issuing CA.',
+    spec: 'HTTP 500, server_error' },
+  { code: 'STS-XACML-0256',
+    summary: 'set-pep-route was sent no route object, or ' +
+      'set-pep-route-application named no application; ' +
+      'set-pep-route\'s position is outside the route list.',
+    spec: 'HTTP 400 on /admin-api; the console names why' },
+  { code: 'STS-XACML-0257',
+    summary: 'A remote PEP proxy route sets multipleAccounts without the ' +
+      'session mechanism: several accounts in one browser are several ' +
+      'browser sign-ins, which only that mechanism makes (#1760).',
+    spec: 'HTTP 400 on /admin-api; the console names why' },
+  { code: 'STS-XACML-0258',
+    summary: 'xacml.pepNotifyAllowHttp or ' +
+      'xacml.pepNotifySkipTlsVerification is on, and is ignored: both were ' +
+      'retired on 2026-11-14, and a nudge is https with the PEP\'s ' +
+      'certificate verified in every mode. Logged once per process per ' +
+      'setting.',
+    spec: 'none — a warning in the log' },
+  { code: 'STS-XACML-0259',
+    summary: 'A change nudge was not sent because the PEP\'s notify URL is ' +
+      'plain http: a nudge is sent over https only, in every mode, since ' +
+      '2026-11-14. The PEP converges by polling.',
+    spec: 'none — the PEP\'s row and the registration reply say the URL ' +
+      'is unusable' },
+  { code: 'STS-XACML-0260',
+    summary: 'A change nudge was refused at the handshake: the PEP\'s ' +
+      'certificate chains to this service\'s Root but was not issued by the ' +
+      'realm\'s Remote PEP listeners (pep-tls) Issuing CA.',
+    spec: 'none — the PEP\'s row records the failed nudge' },
+  { code: 'STS-XACML-0261',
+    summary: 'A remote PEP\'s registration or heartbeat was refused: the ' +
+      '`hostname` it reported is not a DNS name (letters, digits and ' +
+      'hyphens in labels of at most 63 characters, 253 in all, not an IP ' +
+      'address), and it would be put in the realm\'s default listener ' +
+      'certificate.',
+    spec: 'none — 400 invalid_request on POST /xacml/pep/register or ' +
+      '/xacml/pep/heartbeat' },
+  { code: 'STS-XACML-0262',
+    summary: 'A reverse-proxy route has no `methods` member (#1760): every ' +
+      'route states the methods it allows, the whole list for any method ' +
+      'and an empty list for none (deny-all).',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0263',
+    summary: 'A reverse-proxy route has no `authorization`, or it is not an ' +
+      'object, carries a member it does not have, or its `kind` is not ' +
+      'policy, simple or public (#1760): every route makes exactly one ' +
+      'authorization choice.',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0264',
+    summary: 'A reverse-proxy route\'s `authorization` holds a member of the ' +
+      'wrong shape: a policy name that is not one, a resource that is not ' +
+      'an absolute http(s) URL, an action model outside its set or not ' +
+      'allowed for the kind, or `roles` that are not one to eight role ' +
+      'names for an action of the model (#1760).',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0265',
+    summary: 'A reverse-proxy route chooses an existing policy that this ' +
+      'realm\'s repository does not hold, holds disabled, or never sends to ' +
+      'a remote PEP (this service\'s own access and issuance policies, an ' +
+      'application\'s fine-grained policy) (#1760).',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0266',
+    summary: 'A reverse-proxy route\'s simple policy names a role that is ' +
+      'not a configured role of this realm (#1760): a role must exist, ' +
+      'since the PIP answers configured roles only.',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0267',
+    summary: 'The policy generated for a reverse-proxy route could not be ' +
+      'written: its name is held by a policy that was not generated for ' +
+      'that route, or the repository refused the document (#1760).',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0268',
+    summary: 'A reverse-proxy route whose policy was generated for it was ' +
+      'removed without `removePolicy` confirming that the generated policy ' +
+      'goes with it (#1760).',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0269',
+    summary: 'A remote PEP cluster action named no cluster, a cluster this ' +
+      'realm does not hold, or a PEP that is not a member of the ' +
+      'cluster named (#1760, Remote PEP clusters).',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0270',
+    summary: 'A remote PEP cluster could not be created: its name is not 1 ' +
+      'to 64 letters, digits, dots, dashes or underscores, or a ' +
+      'cluster of that name already exists in the realm (#1760).',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0271',
+    summary: 'A PEP was added to a remote PEP cluster, or a cluster created ' +
+      'from it, while it is already a member of a cluster, or listed ' +
+      'twice in one: a PEP is a member of one cluster at most ' +
+      '(#1760).',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0272',
+    summary: 'A PEP holding a reverse proxy, managed settings or listeners ' +
+      'of its own was added to a remote PEP cluster without `discard: ' +
+      'true` confirming that joining replaces them with the ' +
+      'cluster\'s (#1760).',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0273',
+    summary: 'A remote PEP cluster that still has members was deleted ' +
+      'without `release` (keep or empty) saying what its members are ' +
+      'left with (#1760).',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0274',
+    summary: 'A remote PEP cluster\'s simple or public route names no ' +
+      'resource and the cluster has no publicBaseUrl, its logical ' +
+      'base URL, to build the default from: every member decides with ' +
+      'the cluster\'s one policy, so no member\'s address may stand ' +
+      'for it (#1760).',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0275',
+    summary: 'A remote PEP cluster would have more than one member while one ' +
+      'of its session routes ends sessions by CAEP/RISC signals: the ' +
+      'members would share one signal stream, so a sign-out could be ' +
+      'consumed by a member that does not hold the session. A stream ' +
+      'per member is phase 3 (#1760). Retired by #1760 phase 3: each ' +
+      'member polls a stream of its own, named by X-Iya-Pep-Name, so a ' +
+      'cluster no longer refuses the second member.',
+    spec: '', retired: true },
+  { code: 'STS-XACML-0276',
+    summary: 'An action that edits a PEP\'s own reverse proxy, settings or ' +
+      'listeners was asked of a member of a remote PEP cluster, whose ' +
+      'configuration is the cluster\'s; the refusal names the cluster ' +
+      '(#1760).',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0277',
+    summary: 'A remote PEP cluster member is not of the member\'s shape: a ' +
+      'PEP name that is not one, an address that is not text of at ' +
+      'most 2048 characters with no space, or a listener override ' +
+      'that is not { address, port, names } under a listener id ' +
+      '(#1760).',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0278',
+    summary: 'A remote PEP cluster\'s managed settings carried a notify URL, ' +
+      'which is a member\'s address and is set on the member (#1760).',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0279',
+    summary: 'The directory refused a write or a removal of a remote PEP ' +
+      'cluster\'s entry under ou=pepClusters (#1760).',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0280',
+    summary: 'The members stored on a remote PEP cluster\'s entry do not ' +
+      'validate (an ldapmodify, say); the cluster is read with none, ' +
+      'so no PEP pulls its configuration until an administrator ' +
+      'corrects it (#1760).',
+    spec: 'none — a warning in the log' },
+  { code: 'STS-XACML-0281',
+    summary: 'A remote PEP listener\'s tuning — the TLS policy, the TLS ' +
+      'session cache, HTTP pooling, HTTP/2, the client-certificate ' +
+      'questions or the thread pool — does not fit: a value outside its ' +
+      'range, a cipher suite this service does not name, a ' +
+      'post-quantum-only choice with nothing post-quantum left, a ' +
+      'thread-pool maximum below its minimum (#1760), or ' +
+      'requireClientCertificate with no trust source to verify a ' +
+      'certificate against — no trustAnchorsFile, and on an API listener ' +
+      'trustIssuedClientCertificates off (2026-11-16).',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0282',
+    summary: 'A remote PEP\'s Sync was refused before anything was sent: ' +
+      'remote PEPs (xacml.remotePeps) or nudging (xacml.pepNotify) is off ' +
+      'in this realm. The PEP converges on its own poll.',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0283',
+    summary: 'A remote PEP\'s Sync was refused because nudging is stopped ' +
+      'for that PEP (disable-pep). Retired the day it was added: Sync dials ' +
+      'a PEP whose change nudges are stopped (rcbj, 2026-11-16).',
+    spec: 'HTTP 400 on /admin-api', retired: true },
+  { code: 'STS-XACML-0284',
+    summary: 'A remote PEP\'s Sync was refused because the PEP has no ' +
+      'notify URL, or its notify URL cannot be dialled (not https, or ' +
+      'outside xacml.pepNotifyAllowedHosts).',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0285',
+    summary: 'A remote PEP\'s Sync dialled the PEP and the nudge was not ' +
+      'delivered: the connection failed, the certificate did not verify, ' +
+      'or the PEP refused it. The result is recorded on the PEP\'s row.',
+    spec: 'HTTP 400 on /admin-api' },
+  // #1827: a remote PEP's decision records pushed to /admin-api.
+  { code: 'STS-XACML-0286',
+    summary: 'A remote PEP pushed decision records to POST ' +
+      '/admin-api/pep-audit in a body that is not { instance, events } ' +
+      'with events a non-empty array of objects, or with more events than ' +
+      'one batch may carry (#1827). Nothing in the batch is recorded.',
+    spec: 'HTTP 400, an error message' },
+  { code: 'STS-XACML-0287',
+    summary: 'A remote PEP pushed decision records to POST ' +
+      '/admin-api/pep-audit and is not registered in this realm\'s ' +
+      'ou=peps under the name its token\'s subject carries (#1827). It ' +
+      'must register (POST /xacml/pep/register) before its records are ' +
+      'taken.',
+    spec: 'HTTP 404, an error message' },
+  { code: 'STS-XACML-0288',
+    summary: 'A decision record a remote PEP pushed to POST ' +
+      '/admin-api/pep-audit was not recorded: it had no positive ' +
+      'integer seq, or a kind other than enforcement, authzen or proxy ' +
+      '(#1827). The rest of the batch is recorded and the record is ' +
+      'counted as ignored.',
+    spec: 'none; counted as ignored in the answer' },
+  // #1827's follow-up: a remote PEP's DPoP-bound access token at the PEP
+  // door (/xacml/pep/* and POST /xacml/pip), xacml/pep_token.ts.
+  { code: 'STS-XACML-0289',
+    summary: 'A remote PEP reached /xacml/pep/* or POST /xacml/pip with no ' +
+      'access token while xacml.pepAuthentication is token, the default ' +
+      'since 1.1.0: a client certificate alone is not accepted in this ' +
+      'realm (#1827). Where the certificate verified, the description says ' +
+      'that either would accept it, and a warning under this code is ' +
+      'logged once per realm and process.',
+    spec: 'HTTP 401, WWW-Authenticate: DPoP error="invalid_request"' },
+  { code: 'STS-XACML-0290',
+    summary: 'A remote PEP reached /xacml/pep/* or POST /xacml/pip with an ' +
+      'access token and no client certificate while ' +
+      'xacml.pepAuthentication is certificate: the token is not read in ' +
+      'this realm (#1827).',
+    spec: 'HTTP 401, WWW-Authenticate: DPoP error="invalid_token"' },
+  { code: 'STS-XACML-0291',
+    summary: 'A remote PEP\'s access token at the PEP door was not one this ' +
+      'realm issued and holds: its signature did not verify, it expired, ' +
+      'it is not an access token, another authorization server issued it, ' +
+      'it was revoked, or its certificate binding did not hold (#1827).',
+    spec: 'HTTP 401, WWW-Authenticate: DPoP error="invalid_token"' },
+  { code: 'STS-XACML-0292',
+    summary: 'A remote PEP\'s access token at the PEP door is not ' +
+      'DPoP-bound (no cnf.jkt), or a DPoP-bound one was sent as Bearer ' +
+      '(#1827).',
+    spec: 'HTTP 401, WWW-Authenticate: DPoP error="invalid_token"' },
+  { code: 'STS-XACML-0293',
+    summary: 'A remote PEP\'s access token at the PEP door is not ' +
+      'audienced to this realm\'s /xacml/pep (#1827).',
+    spec: 'HTTP 401, WWW-Authenticate: DPoP error="invalid_token"' },
+  { code: 'STS-XACML-0294',
+    summary: 'An access token at the PEP door was issued to a client other ' +
+      'than sts-remote-pep, the one a remote PEP\'s token comes from ' +
+      '(#1827).',
+    spec: 'HTTP 401, WWW-Authenticate: DPoP error="invalid_token"' },
+  { code: 'STS-XACML-0295',
+    summary: 'A remote PEP\'s access token at the PEP door does not carry ' +
+      'xacml:pep, or sts-remote-pep no longer holds the delegated ' +
+      'permission grant of it on sts-xacml-pep-api (#1827).',
+    spec: 'HTTP 401, WWW-Authenticate: DPoP error="insufficient_scope"' },
+  { code: 'STS-XACML-0296',
+    summary: 'A remote PEP\'s DPoP proof at the PEP door was refused: ' +
+      'missing, malformed, not for this method and URL, outside its iat ' +
+      'window, a replay, without the token\'s ath, by another key than ' +
+      'the token is bound to, or without the server nonce the realm asks ' +
+      'for (#1827). The log line names the proof\'s own STS-OAUTH code.',
+    spec: 'HTTP 401, WWW-Authenticate: DPoP error="invalid_token" or ' +
+      '"use_dpop_nonce" with a DPoP-Nonce header (RFC 9449 section 9)' },
+  { code: 'STS-XACML-0297',
+    summary: 'A remote PEP\'s access token at the PEP door names no entry ' +
+      'under this realm\'s ou=users: its sub is not urn:uuid: of exactly ' +
+      'one person\'s entry, the PEP\'s own (#1827).',
+    spec: 'HTTP 401, WWW-Authenticate: DPoP error="invalid_token"' },
+  { code: 'STS-XACML-0298',
+    summary: 'issue-pep-credential named no person in this realm\'s ' +
+      'ou=users, or named none at all: a remote PEP\'s key is certified ' +
+      'for an entry that exists (#1827, phase 3).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-XACML-0299',
+    summary: 'issue-pep-credential named a person who is not a service ' +
+      'account: a remote PEP\'s identity is one, and its key names it ' +
+      'urn:sts:sa:<name> (#1827, phase 3).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-XACML-0300',
+    summary: 'A reverse-proxy route\'s `path` is /.iya-pep or under ' +
+      '/.iya-pep/, the prefix the proxy reserves for its own callback and ' +
+      'sign-out (#1830): an updated PEP refuses the whole configuration.',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0301',
+    summary: 'issue-pep-credential named a service account that does not ' +
+      'hold REMOTE_PEPS (it is not in the group roles.remotePepGroup ' +
+      'names), so the key would authenticate an entry no PEP door admits ' +
+      '(#1827, phase 3).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-XACML-0302',
+    summary: 'issue-pep-credential certified and registered the new key, ' +
+      'and revokePrevious could not revoke one of the entry\'s other RFC ' +
+      '7523 keys; the new key works, and the old one still does too ' +
+      '(#1827, phase 3).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +
@@ -22820,7 +24282,10 @@ const CODES = [
     summary: 'The remote PEP has no usable PEP_AUTHZEN_CLIENT_CA (unset, ' +
       'unreadable or holding no certificate), so its HTTPS listener asks ' +
       'no caller for a certificate and its AuthZEN edge PDP admits nobody ' +
-      '(#1179).',
+      '(#1179); or an AuthZEN request arrived on an HTTPS listener whose ' +
+      'acceptor asks for no certificate it can verify (no client CA or ' +
+      'trust anchors, or its tuning asks for none) — asked of that ' +
+      'listener, not of the environment\'s (#1830).',
     spec: 'HTTP 401 from the AuthZEN endpoints; logged at start' },
   { code: 'STS-XPEP-0040',
     summary: 'The remote PEP could not reach the PDP to pull the AuthZEN ' +
@@ -22848,7 +24313,8 @@ const CODES = [
     spec: 'HTTP 501, an error message' },
   { code: 'STS-XPEP-0045',
     summary: 'The remote PEP\'s AuthZEN metadata was asked for with no PDP ' +
-      'identifier to name (plain HTTP and no PEP_AUTHZEN_PDP_IDENTIFIER), ' +
+      'identifier to name (no identifier set, and plain HTTP or no usable ' +
+      'Host header or HTTP/2 authority), ' +
       'or PEP_AUTHZEN_PDP_IDENTIFIER is not an https origin with no path ' +
       'and was ignored (#1179).',
     spec: 'HTTP 404 from GET /.well-known/authzen-configuration; logged at ' +
@@ -22933,7 +24399,490 @@ const CODES = [
       'identifiers. The catalogue is refused whole and the one held is ' +
       'kept: which evaluations must be forwarded cannot be told (#564).',
     spec: 'none; the edge keeps what it holds' },
+  { code: 'STS-XPEP-0060',
+    summary: 'The remote PEP could not reach the PDP to pull its reverse ' +
+      'proxy configuration (GET /xacml/pep/proxy, #1760). The ' +
+      'configuration last pulled is kept and the proxy goes on routing ' +
+      'with it; with none held it answers 404 to everything.',
+    spec: 'none; the proxy keeps what it holds' },
+  { code: 'STS-XPEP-0061',
+    summary: 'The PDP answered the remote PEP\'s reverse proxy configuration ' +
+      'pull with a status other than 200 or 304, or with something that is ' +
+      'not JSON (a PDP older than #1760 answers 404). The configuration ' +
+      'last pulled is kept.',
+    spec: 'none; the proxy keeps what it holds' },
+  { code: 'STS-XPEP-0062',
+    summary: 'The reverse proxy configuration the remote PEP pulled did not ' +
+      'validate under the configuration document\'s own rules (an upstream ' +
+      'that is not an absolute http(s) URL without userinfo, query or ' +
+      'fragment, a route path with a dot segment, //, % or a backslash, an ' +
+      'unknown method or mechanism, a duplicate route id, more than 64 ' +
+      'routes, a missing audience or publicBaseUrl, a signing certificate ' +
+      'that is not PEM, and the like). It is refused WHOLE and the one held ' +
+      'is kept: a route table loaded in part would forward what nobody ' +
+      'configured (#1760).',
+    spec: 'none; the proxy keeps what it holds' },
+  { code: 'STS-XPEP-0063',
+    summary: 'The remote PEP\'s reverse proxy could not listen on ' +
+      'PEP_PROXY_PORT (commonly the port is taken). The PEP\'s own ' +
+      'endpoints and enforcement are unaffected (#1760).',
+    spec: '' },
+  { code: 'STS-XPEP-0064',
+    summary: 'The reverse proxy refused a request whose path does not ' +
+      'normalise: a . or .. segment, //, a backslash, a NUL or control ' +
+      'character, an invalid percent-escape, or an encoded ., /, \\ or NUL ' +
+      '(%2e, %2f, %5c, %00). The application is not reached (#1760).',
+    spec: 'HTTP 400, invalid_request' },
+  { code: 'STS-XPEP-0065',
+    summary: 'The reverse proxy answered a path no route matches, or any ' +
+      'path while the configuration it received holds none that is ' +
+      'switched on: deny by default, the application is not reached ' +
+      '(#1760). Before any configuration is received it is STS-XPEP-0118.',
+    spec: 'HTTP 404, not_found' },
+  { code: 'STS-XPEP-0066',
+    summary: 'The reverse proxy refused a method the matched route does not ' +
+      'take (#1760).',
+    spec: 'HTTP 405, method_not_allowed, with Allow' },
+  { code: 'STS-XPEP-0067',
+    summary: 'The reverse proxy refused a request body larger than the ' +
+      'configuration\'s maxBodyBytes — declared by Content-Length, or ' +
+      'counted as it streamed to the application (#1760).',
+    spec: 'HTTP 413, payload_too_large' },
+  { code: 'STS-XPEP-0068',
+    summary: 'The application behind the reverse proxy did not answer within ' +
+      'the configuration\'s upstreamTimeoutMs (#1760).',
+    spec: 'HTTP 504, gateway_timeout' },
+  { code: 'STS-XPEP-0069',
+    summary: 'The reverse proxy could not reach the application at the ' +
+      'configured upstream, or the connection failed (#1760).',
+    spec: 'HTTP 502, bad_gateway' },
+  { code: 'STS-XPEP-0070',
+    summary: 'A request to a reverse proxy route that is not public carried ' +
+      'no credential the route takes (#1760).',
+    spec: 'HTTP 401, unauthorized, with a WWW-Authenticate per mechanism' },
+  { code: 'STS-XPEP-0071',
+    summary: 'The reverse proxy refused a JWT access token it verified ' +
+      'against the realm\'s JWKS: unsigned (alg none), a key of the wrong ' +
+      'type, a signature that does not verify, a segment that is not ' +
+      'strict base64url, or an issuer, audience, exp or nbf that does not ' +
+      'hold (#1760).',
+    spec: 'HTTP 401, invalid_token' },
+  { code: 'STS-XPEP-0072',
+    summary: 'The reverse proxy refused a DPoP-bound access token (the DPoP ' +
+      'scheme, or cnf.jkt): this proxy proves no DPoP key (#1760).',
+    spec: 'HTTP 401, invalid_token' },
+  { code: 'STS-XPEP-0073',
+    summary: 'The reverse proxy refused a certificate-bound access token ' +
+      '(cnf.x5t#S256) presented without a client certificate on the ' +
+      'connection or with another one, or a token whose cnf names a key it ' +
+      'cannot check (#1760).',
+    spec: 'HTTP 401, invalid_token' },
+  { code: 'STS-XPEP-0074',
+    summary: 'The service\'s introspection (POST /xacml/pep/introspect) said ' +
+      'the access token is not active, or named an issuer or audience that ' +
+      'is not the realm\'s or the route\'s, or no subject (#1760).',
+    spec: 'HTTP 401, invalid_token' },
+  { code: 'STS-XPEP-0075',
+    summary: 'The reverse proxy could not get an answer from one of the ' +
+      'service\'s validation endpoints (introspection, Basic, SAML, session ' +
+      'liveness, or the token endpoint): unreachable, a status that is not ' +
+      'an answer, or no endpoint named in the pull. The request is refused, ' +
+      'never admitted (#1760).',
+    spec: 'HTTP 502, bad_gateway' },
+  { code: 'STS-XPEP-0076',
+    summary: 'The reverse proxy refused an EncryptedAssertion presented as a ' +
+      'SAML credential: neither the proxy nor the service holds a service ' +
+      'provider\'s decryption key (#1760).',
+    spec: 'HTTP 401, unauthorized' },
+  { code: 'STS-XPEP-0077',
+    summary: 'A SAML assertion presented to the reverse proxy could not be ' +
+      'established locally (a signature shape not read here, a digest or ' +
+      'signature that does not verify against the pulled certificates, or ' +
+      'an issuer, condition or audience that does not hold), so the ' +
+      'service is asked. Not a refusal on its own (#1760).',
+    spec: 'none; the service decides' },
+  { code: 'STS-XPEP-0078',
+    summary: 'The service (POST /xacml/pep/saml) said the SAML assertion a ' +
+      'reverse proxy route was presented is not valid (#1760).',
+    spec: 'HTTP 401, unauthorized' },
+  { code: 'STS-XPEP-0079',
+    summary: 'The service (POST /xacml/pep/basic) said the Basic credential ' +
+      'presented to the reverse proxy is not valid (#1760).',
+    spec: 'HTTP 401, unauthorized' },
+  { code: 'STS-XPEP-0080',
+    summary: 'The service refused a Basic sign-in at the reverse proxy under ' +
+      'its lockout and limits (429); the answer and its Retry-After are ' +
+      'passed on (#1760).',
+    spec: 'HTTP 429, too_many_requests, with Retry-After' },
+  { code: 'STS-XPEP-0081',
+    summary: 'A request that is not a browser\'s reached a session route of ' +
+      'the reverse proxy with no proxy session; a browser is sent to sign ' +
+      'in instead (#1760).',
+    spec: 'HTTP 401, unauthorized' },
+  { code: 'STS-XPEP-0082',
+    summary: 'The reverse proxy refused a sign-in callback ' +
+      '(/.iya-pep/callback): an unknown, spent or expired state, or a ' +
+      'sign-in whose relying party is no longer held (#1760).',
+    spec: 'HTTP 401, unauthorized' },
+  { code: 'STS-XPEP-0083',
+    summary: 'The relying party library (oidc-caep-risc) refused to ' +
+      'complete a reverse proxy sign-in: an error from the authorization ' +
+      'server, no code, a code already used, a token endpoint that would ' +
+      'not redeem it with the application\'s client authentication, or an ' +
+      'ID Token whose signature, issuer, audience, nonce, iat, exp, typ or ' +
+      'at_hash does not hold (#1760).',
+    spec: 'HTTP 401, unauthorized' },
+  { code: 'STS-XPEP-0084',
+    summary: 'The sign-on session behind a proxy session has ended at the ' +
+      'service — a CAEP/RISC signal on the library\'s poll stream removed ' +
+      'it, or (signals off) POST /xacml/pep/session said it is not live — ' +
+      'so the proxy session is ended (#1760).',
+    spec: 'HTTP 302 to sign in for a browser, otherwise HTTP 401' },
+  { code: 'STS-XPEP-0085',
+    summary: 'The reverse proxy could not make a proxy session: ' +
+      'PEP_PROXY_MAX_SESSIONS live sessions are held (none is evicted, ' +
+      'which would sign somebody else out), or no random value could be ' +
+      'drawn (#1760).',
+    spec: 'HTTP 503, temporarily_unavailable' },
+  { code: 'STS-XPEP-0086',
+    summary: 'The reverse proxy\'s decision refused the request: the policy ' +
+      'this PEP holds, under its bias and obligation rule, did not permit ' +
+      'the subject, resource and action (#1760).',
+    spec: 'HTTP 403, access_denied' },
+  { code: 'STS-XPEP-0087',
+    summary: 'The reverse proxy could not carry the subject in a route\'s ' +
+      'subjectHeader. Retired before release with that member: a route\'s ' +
+      'identity (D11) replaced it, and a value an identity header cannot ' +
+      'carry is STS-XPEP-0096 (#1760).',
+    spec: '', retired: true },
+  { code: 'STS-XPEP-0088',
+    summary: 'The reverse proxy could not fetch the realm\'s JWKS. The keys ' +
+      'fetched before are kept; with none, a JWT access token is asked of ' +
+      'the service\'s introspection (#1760).',
+    spec: 'none' },
+  { code: 'STS-XPEP-0089',
+    summary: 'The reverse proxy refused an Authorization header it cannot ' +
+      'read (not text, no credential, Basic or SAML that is not base64) or ' +
+      'whose scheme the route does not take (#1760).',
+    spec: 'HTTP 401, unauthorized, with a WWW-Authenticate per mechanism' },
+  { code: 'STS-XPEP-0090',
+    summary: 'The relying party of the application behind a session route ' +
+      'could not be built from the pull: the library refused the ' +
+      'configuration (an http issuer without PEP_PROXY_RP_ALLOW_INSECURE, a ' +
+      'redirect URI that is not https or loopback, a public client), or the ' +
+      'service\'s discovery document could not be read, so nobody can be ' +
+      'signed in there (#1760).',
+    spec: 'HTTP 503, temporarily_unavailable' },
+  { code: 'STS-XPEP-0091',
+    summary: 'The upstream URL the reverse proxy built for a request would ' +
+      'not stay on the configured upstream\'s origin and path, so the ' +
+      'request is not sent (#1760).',
+    spec: 'HTTP 502, bad_gateway' },
+  { code: 'STS-XPEP-0092',
+    summary: 'PEP_PROXY_UPSTREAM_CA could not be read or would not load, so ' +
+      'an https upstream is verified against the system\'s anchors alone; ' +
+      'or the client to the upstream would not build (#1760).',
+    spec: 'HTTP 502 when the client would not build; otherwise none' },
   // ===== AUTHZEN ===========================================================
+  { code: 'STS-XPEP-0093',
+    summary: 'The reverse proxy refused a request on a route whose ' +
+      'application the service no longer resolves (deleted, or no longer ' +
+      'qualifying for the route\'s mechanisms): the pull marked it usable: ' +
+      'false. Never admitted on what an earlier pull said; the reason is ' +
+      'in the log only (#1760, D10).',
+    spec: 'HTTP 403, access_denied' },
+  { code: 'STS-XPEP-0094',
+    summary: 'The CAEP/RISC receiver of a session route\'s relying party ' +
+      'would not start (the service\'s SSF configuration, stream or ' +
+      'client-credentials token could not be had), so that application\'s ' +
+      'proxy sessions are checked with POST /xacml/pep/session instead ' +
+      'until a later pull rebuilds it (#1760).',
+    spec: 'none; the fallback decides liveness' },
+  { code: 'STS-XPEP-0095',
+    summary: 'The service\'s identity endpoint (POST /xacml/pep/identity) ' +
+      'did not give the identity a reverse proxy route sends: it refused ' +
+      '(403: the policy or the issuance said no), answered something that ' +
+      'is not an answer (no claims, no Bearer token, no samlResponse or ' +
+      'notOnOrAfter), could not be reached, or the pull named no such ' +
+      'endpoint. The request is refused, NEVER forwarded without the ' +
+      'identity (#1760, D11).',
+    spec: 'HTTP 403 when the service said 403, otherwise HTTP 502' },
+  { code: 'STS-XPEP-0096',
+    summary: 'A value the reverse proxy would have sent as identity was ' +
+      'refused: a claim holding CR, LF or NUL, a list member holding the ' +
+      'route\'s separator, an object, or a token or cookie that is not a ' +
+      'header value (#1760, D11).',
+    spec: 'HTTP 502, bad_gateway' },
+  { code: 'STS-XPEP-0097',
+    summary: 'The reverse proxy could not establish the application\'s ' +
+      'session for a saml-mode route: the ACS the service named is not an ' +
+      'absolute http(s) URL, could not be reached, answered 400 or more, or ' +
+      'set no cookie (#1760, D11).',
+    spec: 'HTTP 502, bad_gateway' },
+  { code: 'STS-XPEP-0098',
+    summary: 'The reverse proxy had no evidence to ask the identity ' +
+      'endpoint with: a Basic answer that carried no ticket, or a proxy ' +
+      'session whose relying party or access token could not be had ' +
+      '(#1760, D11).',
+    spec: 'HTTP 502, bad_gateway' },
+  { code: 'STS-XPEP-0099',
+    summary: 'The CAEP/RISC stream of a session route\'s relying party ' +
+      'has not answered a poll within PEP_PROXY_SIGNALS_STALE_MS (the ' +
+      'library\'s receiver health: no successful poll, the failures and ' +
+      'the last error in the log line), so its signals no longer decide ' +
+      'whether a proxy session is live: the service\'s session endpoint ' +
+      '(POST /xacml/pep/session) is asked instead until the stream answers ' +
+      'again. Logged once when it goes stale; the recovery is logged ' +
+      'without a code (#1760).',
+    spec: 'none; the fallback decides liveness' },
+  { code: 'STS-XPEP-0100',
+    summary: 'The remote PEP could not pull its settings from GET ' +
+      '/xacml/pep/settings (unreachable, or an answer other than 200, 304 ' +
+      'or 404); it keeps the settings it holds, or the environment\'s ' +
+      'when it holds none (#1760).',
+    spec: 'none; the held settings stay in force' },
+  { code: 'STS-XPEP-0101',
+    summary: 'The service answered 404 to GET /xacml/pep/settings: it is ' +
+      'older than the managed settings, so every setting is the remote ' +
+      'PEP\'s environment variable or its default. Logged once (#1760).',
+    spec: 'none; the environment is in force' },
+  { code: 'STS-XPEP-0102',
+    summary: 'A setting the service sent fails the remote PEP\'s own ' +
+      'reading of its bounds or type; that setting is the environment\'s ' +
+      'or the default, and the others are applied (#1760).',
+    spec: 'none; that one setting falls back' },
+  { code: 'STS-XPEP-0103',
+    summary: 'A listener the service defined for this remote PEP (#1760) ' +
+      'could not bind its address and port; it is reported failed ' +
+      'on the heartbeat and the others are unaffected.',
+    spec: 'none; reported on the heartbeat' },
+  { code: 'STS-XPEP-0104',
+    summary: 'The remote PEP could not obtain a certificate for an HTTPS ' +
+      'listener the service defined: the request was refused, the ' +
+      'answer was not a usable chain for its key, or the PDP ' +
+      'could not be reached; the listener waits and asks again.',
+    spec: 'none; reported on the heartbeat' },
+  { code: 'STS-XPEP-0105',
+    summary: 'A listener definition the service sent fails the remote ' +
+      'PEP\'s own reading of it; that listener is left out and the ' +
+      'others are bound (#1760).',
+    spec: 'none; that one listener is left out' },
+  { code: 'STS-XPEP-0106',
+    summary: 'The remote PEP started with PEP_PORT (or PEP_PROXY_PORT) set ' +
+      'and PEP_HTTP (or PEP_PROXY_HTTP) not set: plain HTTP is off by ' +
+      'default since #1760, so that listener is not bound. Logged once at ' +
+      'start; PEP_HTTP=true (or PEP_PROXY_HTTP=true) brings it back.',
+    spec: 'none; the listener is reported off (http-off)' },
+  { code: 'STS-XPEP-0107',
+    summary: 'PEP_HTTP or PEP_PROXY_HTTP holds a value that is neither ' +
+      'true nor false; the plain-HTTP listener it switches stays off ' +
+      '(#1760). Logged once at start.',
+    spec: 'none; the listener is reported off (http-off)' },
+  { code: 'STS-XPEP-0108',
+    summary: 'A sign-in on a remote PEP proxy route with multipleAccounts ' +
+      'was refused: the browser\'s account set already holds ' +
+      'proxyMaxAccounts accounts (PEP_PROXY_MAX_ACCOUNTS). The new ' +
+      'session is ended; the others are kept (#1760).',
+    spec: 'HTTP 403, the proxy\'s own page' },
+  { code: 'STS-XPEP-0109',
+    summary: 'A remote PEP proxy account act (switch, sign out) came from ' +
+      'another site (Origin or Sec-Fetch-Site) and was refused (#1760).',
+    spec: 'HTTP 403' },
+  { code: 'STS-XPEP-0110',
+    summary: 'A remote PEP proxy account page was asked for something it ' +
+      'does not answer: no such page, or an add whose return path is not ' +
+      'on a session route with multipleAccounts (#1760).',
+    spec: 'HTTP 404' },
+  { code: 'STS-XPEP-0111',
+    summary: 'A remote PEP proxy account act named an account the ' +
+      'browser\'s set does not hold (#1760).',
+    spec: 'HTTP 404' },
+  { code: 'STS-XPEP-0112',
+    summary: 'A remote PEP was nudged (POST /notify) over plain HTTP. The ' +
+      'nudge is answered on its HTTPS listener only since 2026-11-14.',
+    spec: 'HTTP 404 not_found, saying where the nudge is answered' },
+  { code: 'STS-XPEP-0113',
+    summary: 'The remote PEP\'s notify URL (PEP_NOTIFY_URL, or the ' +
+      'notifyUrl the service set) is not https, so it is REJECTED: the ' +
+      'service nudges over https only and nothing allows http. The PEP ' +
+      'advertises no notify URL, does not fall back to the one it would ' +
+      'derive, reports the setting rejected in settingsInUse, and ' +
+      'converges by polling until it is fixed or unset. Logged once per ' +
+      'value.',
+    spec: 'none — an error in the PEP\'s log; settingsInUse rejected' },
+  { code: 'STS-XPEP-0114',
+    summary: 'A request reached the remote PEP\'s CRL-only plain-HTTP ' +
+      'listener for something other than GET /crl/<name>; that listener ' +
+      'serves its credential\'s CRLs and nothing else.',
+    spec: 'HTTP 404 not_found' },
+  { code: 'STS-XPEP-0115',
+    summary: 'PEP_CRL_HTTP holds a value that is neither true nor false; ' +
+      'the CRL-only listener keeps its default (not bound: since phase 4 ' +
+      'of #1827\'s follow-up only PEP_CRL_HTTP=true binds it). Logged once ' +
+      'at start.',
+    spec: 'none; the listener keeps its default' },
+  { code: 'STS-XPEP-0116',
+    summary: 'A request on a remote PEP proxy route whose methods list is ' +
+      'empty (deny-all) was refused after the route\'s policy was asked, ' +
+      'whatever it decided; nothing reached the application (#1760).',
+    spec: 'HTTP 403' },
+  { code: 'STS-XPEP-0117',
+    summary: 'A remote PEP proxy route names a policy (authorization.policy) ' +
+      'this PEP does not hold — never pulled, disabled, withheld or failed ' +
+      'to load — so its request was refused whatever the bias; nothing ' +
+      'reached the application (#1760).',
+    spec: 'HTTP 403' },
+  { code: 'STS-XPEP-0118',
+    summary: 'The remote PEP\'s reverse proxy has received no configuration ' +
+      'since it started — its first pull has not succeeded yet — so every ' +
+      'path, its own /.iya-pep/* included, is answered "try again later" ' +
+      'rather than "not found". Logged when first met, then as a count at ' +
+      'most once a minute, and once more when the first configuration ' +
+      'arrives; a configuration received empty or switched off is ' +
+      'STS-XPEP-0065 (#1760).',
+    spec: 'HTTP 503, temporarily_unavailable, with Retry-After (the poll ' +
+      'interval in seconds, at least 1)' },
+  { code: 'STS-XPEP-0119',
+    summary: 'A remote PEP could not apply one part of a listener\'s ' +
+      'tuning. A TLS knob the library refused keeps the acceptor already ' +
+      'served, or serves the certificate without that knob when none is ' +
+      'served yet. sessionTimeoutS is not applied (the PEP\'s TLS library ' +
+      'has no safe session-lifetime call), so a session lives OpenSSL\'s ' +
+      '7200 seconds; any other value is logged once per value, as a ' +
+      'warning, and the other settings are applied. A thread-pool worker ' +
+      'that does not start leaves the workers already running (#1760).',
+    spec: 'none — an error in the PEP\'s log (a warning for ' +
+      'sessionTimeoutS)' },
+  { code: 'STS-XPEP-0120',
+    summary: 'A remote PEP was nudged with `full` within a poll interval of ' +
+      'its last full pull, so it pulled as usual: a full pull is honoured ' +
+      'at most once a poll interval, because POST /notify is not ' +
+      'authenticated (2026-11-16).',
+    spec: 'none — an info line in the PEP\'s log' },
+  { code: 'STS-XPEP-0121',
+    summary: 'A job on a remote PEP listener\'s thread pool panicked. Its ' +
+      'connection is lost; the worker catches the panic and takes the next ' +
+      'job (2026-11-16).',
+    spec: 'none — an error in the PEP\'s log' },
+  // #1827: the decision records shipped to the service.
+  { code: 'STS-XPEP-0122',
+    summary: 'The remote PEP\'s queue of decision records waiting for ' +
+      'the service was full, so the oldest record was dropped to make ' +
+      'room (#1827). Enforcement goes on; the dropped decision is still on ' +
+      'the PEP\'s own log. Logged at the first drop and then sparingly, ' +
+      'with the count.',
+    spec: 'none; the PEP keeps enforcing' },
+  { code: 'STS-XPEP-0123',
+    summary: 'The remote PEP sent a batch of decision records to the ' +
+      'management API without an access token, because none could be had ' +
+      '(#1827; STS-XPEP-0129 says why the grant failed). The records stay ' +
+      'queued.',
+    spec: 'none; the records are kept and sent later' },
+  { code: 'STS-XPEP-0124',
+    summary: 'The remote PEP could not deliver a batch of decision records ' +
+      'to POST /admin-api/pep-audit: no answer, a refusal of its token, or ' +
+      'a status other than 200 and 400 (#1827). The records stay queued ' +
+      'and are sent again.',
+    spec: 'none; the records are kept and sent later' },
+  { code: 'STS-XPEP-0125',
+    summary: 'The service refused a batch of decision records as malformed ' +
+      '(HTTP 400, STS-XACML-0286 on its side), so the remote PEP dropped ' +
+      'that batch rather than send it forever (#1827). Each decision is ' +
+      'still on the PEP\'s own log.',
+    spec: 'none; the batch is dropped' },
+  // #1827 follow-up: the PEP's one credential, a DPoP-bound token from the
+  // RFC 7523 self-assertion grant on every call to the service.
+  { code: 'STS-XPEP-0126',
+    summary: 'The remote PEP has no assertion key: neither ' +
+      'PEP_ASSERTION_KEY nor PEP_TLS_KEY is set, or the file named could ' +
+      'not be read. A key already loaded is kept; without one, every call ' +
+      'to the service goes without an access token and is refused (the PEP ' +
+      'presents no client certificate since phase 4 of #1827\'s ' +
+      'follow-up).',
+    spec: 'none — a warning in the PEP\'s log' },
+  { code: 'STS-XPEP-0127',
+    summary: 'PEP_ASSERTION_KEY is not set, so the remote PEP signs its ' +
+      'self-assertion and its DPoP proofs with the key file PEP_TLS_KEY ' +
+      'names (its client certificate\'s key, before phase 4 of #1827\'s ' +
+      'follow-up retired the certificate). A notice: it works when that ' +
+      'key is the one registered on the PEP\'s entry.',
+    spec: 'none — an info line in the PEP\'s log' },
+  { code: 'STS-XPEP-0128',
+    summary: 'The remote PEP refused its assertion key: it would not ' +
+      'parse, or it is neither RSA (RS256) nor EC P-256 (ES256). A key ' +
+      'already loaded is kept.',
+    spec: 'none — a warning in the PEP\'s log' },
+  { code: 'STS-XPEP-0129',
+    summary: 'The remote PEP could not obtain an access token for one of ' +
+      'its three resources (/xacml/pep, /admin-api, /access/v1): the token ' +
+      'endpoint did not answer or refused the RFC 7523 self-assertion ' +
+      'grant. The log names the missing provisioning step — the assertion ' +
+      'key registered on the entry, the client, the remote PEPs group. ' +
+      'Calls to that resource go without a token; the grant is not asked ' +
+      'again for five seconds.',
+    spec: 'none — a warning in the PEP\'s log, at the first refusal and ' +
+      'when the reason changes' },
+  { code: 'STS-XPEP-0130',
+    summary: 'The token endpoint or a resource demanded a DPoP nonce ' +
+      '(use_dpop_nonce) again after the remote PEP retried with the nonce ' +
+      'it handed. The PEP retries once only; the call\'s answer stands.',
+    spec: 'none — a warning in the PEP\'s log' },
+  { code: 'STS-XPEP-0131',
+    summary: 'A resource refused the remote PEP\'s access token with a 401 ' +
+      'again after the PEP dropped it and fetched a new one. The PEP ' +
+      'retries once only; the call\'s answer stands.',
+    spec: 'none — a warning in the PEP\'s log' },
+  { code: 'STS-XPEP-0132',
+    summary: 'A request reached a remote PEP reverse proxy\'s sign-in ' +
+      'callback, /.iya-pep/callback, with a method other than GET or HEAD; ' +
+      'it was refused before its state was looked up, so no pending ' +
+      'sign-in was spent (#1830).',
+    spec: 'HTTP 405, method_not_allowed, Allow: GET, HEAD' },
+  { code: 'STS-XPEP-0133',
+    summary: 'A request reached a remote PEP reverse proxy\'s sign-out, ' +
+      '/.iya-pep/logout, with a method other than GET or HEAD; no session ' +
+      'was ended (#1830).',
+    spec: 'HTTP 405, method_not_allowed, Allow: GET, HEAD' },
+  { code: 'STS-XPEP-0134',
+    summary: 'A request on a remote PEP reverse proxy named a path under ' +
+      '/.iya-pep/ that is none of the proxy\'s own pages. The prefix is ' +
+      'the proxy\'s whole, so the path never reaches the route table and ' +
+      'is never forwarded upstream (#1830).',
+    spec: 'HTTP 404, not_found' },
+  // #1827's follow-up, phase 4 (rcbj, 2026-11-16): the PEP's client
+  // certificate retired for authenticating to the service. 0132-0134 are
+  // #1830's.
+  { code: 'STS-XPEP-0135',
+    summary: 'PEP_TLS_CERT is set, or PEP_TLS_KEY is set beside ' +
+      'PEP_ASSERTION_KEY, and the remote PEP no longer presents a client ' +
+      'certificate to the service: it authenticates every call with a ' +
+      'DPoP-bound access token from its assertion key (PEP_ASSERTION_KEY, ' +
+      'certified by issue-pep-credential). The variable is ignored for ' +
+      'that; PEP_TLS_KEY alone is still read as the fallback assertion key ' +
+      '(STS-XPEP-0127). Logged once at start.',
+    spec: 'none — a warning in the PEP\'s log' },
+  { code: 'STS-XPEP-0136',
+    summary: 'The remote PEP has a CRL directory (PEP_CRL_DIR, or crl/ ' +
+      'beside PEP_TLS_CERT) and PEP_CRL_HTTP is not set, so the CRL-only ' +
+      'plain-HTTP listener on PEP_PORT is not bound: it served the CRLs of ' +
+      'the client certificate the PEP no longer presents (phase 4 of ' +
+      '#1827\'s follow-up). PEP_CRL_HTTP=true binds it. Logged once at ' +
+      'start.',
+    spec: 'none — a notice in the PEP\'s log' },
+  { code: 'STS-XPEP-0137',
+    summary: 'A remote PEP HTTPS listener requires a client certificate ' +
+      '(requireClientCertificate) and has no authority to verify one ' +
+      'against: no readable trustAnchorsFile, and ' +
+      'trustIssuedClientCertificates off or PEP_AUTHZEN_CLIENT_CA not set ' +
+      '(a reverse-proxy listener has only the anchors file). The listener ' +
+      'is refused, fail-closed: a listener the service defined is not ' +
+      'bound and is reported failed (reason other); one of the ' +
+      'environment\'s keeps its socket and closes every connection ' +
+      'unanswered, reported failed, with the sentence as GET /\'s ' +
+      'https.problem. Until 2026-11-16 the API listener asked nobody and ' +
+      'admitted everybody. A tuning with a trust source, or without the ' +
+      'requirement, serves again.',
+    spec: 'none — an error in the PEP\'s log; the listener serves nothing' },
   { code: 'STS-AUTHZEN-0001',
     summary: 'An AuthZEN access evaluation request was not a JSON object.',
     spec: 'HTTP 400, an error message' },
@@ -22974,8 +24923,11 @@ const CODES = [
     spec: 'HTTP 400, an error message' },
   { code: 'STS-AUTHZEN-0009',
     summary: 'An AuthZEN request, or its subject, action or resource, ' +
-      'carried a member AuthZEN 1.0 does not define.',
-    spec: 'HTTP 400, an error message' },
+      'carried a member AuthZEN 1.0 does not define. Retired by #936 ' +
+      '(2026-11-13): AuthZEN 1.0 section 10.1.1 has a receiver ignore an ' +
+      'unknown member, so every /access/v1 request now accepts and ignores ' +
+      'one, and an Action Search\'s action with it.',
+    spec: '', retired: true },
   { code: 'STS-AUTHZEN-0010',
     summary: 'An AuthZEN attribute catalogue row was refused: not a JSON ' +
       'object, an unknown member, or an object, property path, attributeId, ' +
@@ -23392,6 +25344,41 @@ const CODES = [
       'no-broadening rule held at the last moment, which is a defect ' +
       '(#1181).',
     spec: 'none — logged; the envelope is sent without it' },
+  { code: 'STS-AUTHZEN-0116',
+    summary: 'An AuthZEN answer carried a member its model in ' +
+      'models/authzen/authzen_members.tsp does not name, one of a type or ' +
+      'value the model does not allow, or lacked a member it requires ' +
+      '(#1579). The answer is sent as it was built: the model describes ' +
+      'the wire and does not reshape it, so this is a model gap to close.',
+    spec: 'none (recorded only; the answer is unchanged)' },
+  { code: 'STS-AUTHZEN-0117',
+    summary: 'An AuthZEN evaluation, batch or search request did not carry ' +
+      'Content-Type: application/json, which AuthZEN 1.0 section 10.1 ' +
+      'requires; refused before its body was read (#936).',
+    spec: 'HTTP 415 Unsupported Media Type (RFC 9110 section 15.5.16)' },
+  { code: 'STS-AUTHZEN-0118',
+    summary: 'A remote PEP\'s access token from sts-remote-pep at ' +
+      '/access/v1 was refused: not one this realm issued and holds, not ' +
+      'DPoP-bound or sent as Bearer, not audienced to this realm\'s ' +
+      '/access/v1, or its DPoP proof was refused (#1827).',
+    spec: 'HTTP 401, WWW-Authenticate: DPoP error="invalid_token" or ' +
+      '"use_dpop_nonce"' },
+  { code: 'STS-AUTHZEN-0119',
+    summary: 'A remote PEP\'s access token at /access/v1 does not carry ' +
+      'authzen:evaluate, or sts-remote-pep no longer holds the delegated ' +
+      'permission grant of it on sts-authzen-api (#1827).',
+    spec: 'HTTP 403, WWW-Authenticate: DPoP error="insufficient_scope"' },
+  { code: 'STS-AUTHZEN-0120',
+    summary: 'A remote PEP\'s access token at /access/v1 names no entry ' +
+      'under this realm\'s ou=users, or one that does not hold ' +
+      'REMOTE_PEPS: the token of the client every PEP shares admits only ' +
+      'a remote PEP (#1827).',
+    spec: 'HTTP 401 (no entry) or 403 (not a remote PEP)' },
+  { code: 'STS-AUTHZEN-0121',
+    summary: 'A remote PEP\'s access token arrived at /access/v1 while ' +
+      'xacml.pepAuthentication is certificate, which accepts a remote PEP ' +
+      'only by its client certificate (#1827).',
+    spec: 'HTTP 401, WWW-Authenticate: DPoP error="invalid_token"' },
   // ===== FGA ===============================================================
   { code: 'STS-FGA-0001',
     summary: 'A policy that belongs to an application (it carries ' +
@@ -25120,6 +27107,211 @@ const CODES = [
       '(roles.forgetMember(), roles.renameMember(), the directory\'s ' +
       'forgetGroupMemberships() and moveGroupMemberships()).',
     spec: '' },
+  { code: 'STS-ADMIN-0920',
+    summary: 'A console role grant named somebody with no entry in the ' +
+      'realm\'s directory; a role is granted only to a person who exists ' +
+      '(admin_rbac.ts grant(), reason noSuchPerson).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-ADMIN-0921',
+    summary: 'A deleted application\'s identifier could not be taken off ' +
+      'the clients conferring a role, so whatever is next registered under ' +
+      'that identifier still confers it (roles.forgetConferrer()).',
+    spec: '' },
+  { code: 'STS-ADMIN-0922',
+    summary: 'A deleted or renamed person or group could not be taken off, ' +
+      'or moved on, the owners of a role, group, application or service ' +
+      'account that named its DN, so that object still names the old DN ' +
+      '(roles.forgetOwner(), applications.forgetOwner(), the directory\'s ' +
+      'forgetOwnerReferences() and moveOwnerReferences()).',
+    spec: '' },
+  { code: 'STS-ADMIN-0923',
+    summary: 'The store named as many entries as one question answers for a ' +
+      'deleted or renamed DN held in an owner attribute, so some groups or ' +
+      'service accounts may still name it as an owner ' +
+      '(entriesNamingOwner()).',
+    spec: '' },
+  { code: 'STS-ADMIN-0924',
+    summary: 'A role a deleted application owned (its roleApplication named ' +
+      'the application) could not be deleted with it, so an application ' +
+      'registered later under that identifier finds the role already there ' +
+      '(roles.forgetApplicationRoles()).',
+    spec: '' },
+  { code: 'STS-ADMIN-0925',
+    summary: 'A policy export could not be signed (#1713): ' +
+      'pki.policyExportAlgorithm names no algorithm an export is signed ' +
+      'with, the realm has no certificate authority branch or service ' +
+      'Root, the signing key could not be made, or the realm\'s Policy ' +
+      'Export Signing CA would not certify it. Nothing was exported.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0926',
+    summary: 'A document offered as a policy export is not one (#1713): ' +
+      'not JSON, larger than 2 MiB, not a JWS in the flattened JSON ' +
+      'serialization, a protected header without typ ' +
+      'policy-export+json, an algorithm an export is signed with or the ' +
+      'signer\'s chain in x5c, or signed content of another format or ' +
+      'version. Nothing was imported.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0927',
+    summary: 'A policy export\'s signature does not verify with the key in ' +
+      'its x5c, or a certificate there is not X.509 (#1713): it was ' +
+      'altered after it was signed, or never signed by that certificate. ' +
+      'Nothing was imported.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0928',
+    summary: 'A policy export\'s signer chain was refused by the ' +
+      'validation door for policy-signer (#1713), forced to the full ' +
+      'paranoid checks while pki.paranoidPolicySigner is on; the answer ' +
+      'carries the verdict and its own STS-PKI code. Or a chain just ' +
+      'added to the signer truststore still did not validate through it. ' +
+      'Nothing was imported.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0929',
+    summary: 'A policy export was signed by another realm, of this service ' +
+      'or another, whose chain this realm\'s signer truststore does not ' +
+      'hold, and the import did not confirm it is to be trusted ' +
+      '(trustSigner). The answer carries needsTrust and the chain to ' +
+      'ask an administrator about. Nothing was imported.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0930',
+    summary: 'A policy import confirmed trust in a chain whose Issuing CA ' +
+      'fingerprint is not the export\'s (#1713), so the confirmation is ' +
+      'not an answer about this signer. Nothing was imported or trusted.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0931',
+    summary: 'An administrator confirmed trust in another realm\'s policy ' +
+      'export signer and the signer truststore refused part of its chain ' +
+      '(the admission rule, or a full store), so nothing was imported ' +
+      '(#1713). What was added before the refusal is named, and stays ' +
+      'until it is removed on /admin/pki/trust.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0932',
+    summary: 'A verified policy export was imported and one or more of its ' +
+      'profiles was refused by its kind\'s own save (#1713); each is named ' +
+      'with that kind\'s code. The others were written.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0933',
+    summary: 'A policy export names a kind of policy this service does not ' +
+      'have, or carries one without a list of profiles (#1713). Nothing ' +
+      'was imported.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0934',
+    summary: 'A policy transfer action was asked for that is not export, ' +
+      'inspect or import (#1713).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0935',
+    summary: 'A service provider\'s metadata document written to an ' +
+      'existing application (set, add, or the field grid\'s save) was ' +
+      'refused when it was consumed; nothing on the entry changed.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0936',
+    summary: 'The policy transfer view (GET /admin-api/policies/transfer: ' +
+      'the export algorithm, the realm\'s Policy Export Signing CA and the ' +
+      'signers it trusts) could not be built, #1713.',
+    spec: '/admin-api HTTP 500 with {ok:false, errors}' },
+  { code: 'STS-ADMIN-0937',
+    summary: 'A policy export\'s selection was refused: it was not a list ' +
+      'of 1 to 256 policies each named by kind and name, or it named a ' +
+      'policy this realm does not store (an inherited one included); ' +
+      'nothing was exported.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors, missing}' },
+  { code: 'STS-ADMIN-0938',
+    summary: 'A policy import\'s selection was refused: it was not a list ' +
+      'of 1 to 256 policies each named by kind and name, or it named a ' +
+      'profile the export does not carry; nothing was trusted or written.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors, missing}' },
+  { code: 'STS-ADMIN-0939',
+    summary: 'A TLS client certificate was asked for a person this realm ' +
+      'has no entry for, or with no person named. Issuing one creates ' +
+      'nobody.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0940',
+    summary: 'The password for a person\'s TLS client certificate files ' +
+      'was refused: shorter than 8 characters, longer than 256, or the ' +
+      'confirmation did not match.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0941',
+    summary: 'A person\'s TLS client certificate was not issued. The ' +
+      'certificate module\'s own code names the specific refusal when it ' +
+      'has one.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0942',
+    summary: 'A person\'s TLS client certificate was not revoked. The ' +
+      'certificate module\'s own code names the specific refusal when it ' +
+      'has one.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0943',
+    summary: 'An administrator asked to delete their own directory entry ' +
+      '(POST /admin-api/users/delete, the Delete control on a person\'s ' +
+      'console page). Another administrator has to.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0944',
+    summary: 'A person delete was refused because the person is the last ' +
+      'one the realm\'s console roster lists for Admin Write or the ' +
+      'Security Administrator, and nobody would be left to grant it.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  // #1668: an application's own WS-Trust decryption key pair, issued,
+  // uploaded and removed on its page and through /admin-api.
+  { code: 'STS-ADMIN-0945',
+    summary: 'A WS-Trust decryption key pair could not be issued to an ' +
+      'application from the realm\'s certificate authority: the realm has ' +
+      'none yet, the key type is not rsa-3072 or ec-p256, or the issue ' +
+      'failed. Nothing was written (#1668).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0946',
+    summary: 'An uploaded WS-Trust decryption key pair was refused because ' +
+      'the certificate is not exactly one PEM certificate, or the private ' +
+      'key is not an unencrypted PEM private key. Nothing was written ' +
+      '(#1668).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0947',
+    summary: 'An uploaded WS-Trust decryption key pair was refused because ' +
+      'the private key is not the private half of the certificate. Nothing ' +
+      'was written (#1668).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0948',
+    summary: 'An uploaded WS-Trust decryption key pair was refused for its ' +
+      'key type: XML Encryption here unwraps a content key with RSA of at ' +
+      'least 2048 bits or EC on P-256, P-384 or P-521 and nothing else. ' +
+      'Nothing was written (#1668).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0949',
+    summary: 'An uploaded WS-Trust decryption certificate was refused ' +
+      'because its keyUsage leaves out keyEncipherment (an RSA key) or ' +
+      'keyAgreement (an EC key), or its validity has ended. Nothing was ' +
+      'written (#1668).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0950',
+    summary: 'An application\'s WS-Trust decryption key pair was asked to ' +
+      'be issued, uploaded or removed and the realm\'s registry holds no ' +
+      'such application, or a remove found no key pair on it, or an ' +
+      'uploaded certificate is already another application\'s. Nothing ' +
+      'was written (#1668).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -25590,6 +27782,22 @@ const CODES = [
   { code: 'STS-API-0145',
     summary: 'A change to how somebody signs in was refused because the administrator did not sign in recently enough.',
     spec: 'HTTP 401 (RFC 9470)' },
+  { code: 'STS-API-0146',
+    summary: 'An answer was refused by its response model (STS-API-0139) in ' +
+      'a process where every plain object or array inherits an enumerable ' +
+      'member: something wrote to Object.prototype or Array.prototype, so ' +
+      'every closed model refuses every answer. The log line names the ' +
+      'members, once per set of names; the process needs a restart and the ' +
+      'write that polluted it a fix.',
+    spec: '' },
+  { code: 'STS-API-0147',
+    summary: 'A remote PEP\'s decision-record push (POST ' +
+      '/admin-api/pep-audit) arrived on a token that does not carry ' +
+      'xacml:pep-audit or whose subject is not in the remote PEPs\' group ' +
+      '(REMOTE_PEPS) now, or a token carrying xacml:pep-audit was presented ' +
+      'at another operation (#1827). Refused at the gate itself, so that ' +
+      'the separation does not depend on xacml.enforceAccess.',
+    spec: 'HTTP 403, an error message' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +
@@ -27258,45 +29466,84 @@ const CODES = [
       'permission, and a code is recorded rather than sent. At a create ' +
       'and at an attribute add (#1426).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
+  // #825: the console, the portal and the reports application keep a
+  // session bound of their own. A change is confirmed; a clear or a 0 is
+  // refused, so emptying the attribute cannot follow a longer realm.
+  { code: 'STS-REG-0368',
+    summary: 'A change to the admin console, the user portal or the ' +
+      'reports application\'s own session bound (oauthMaxAuthAgeS, ' +
+      'oauthRefreshTokenTtlS or oauthRefreshIdleSeconds) was not ' +
+      'confirmed. The save is refused and nothing is written (#825).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0369',
+    summary: 'The admin console, the user portal or the reports ' +
+      'application\'s own session bound was cleared, or set to 0 or to a ' +
+      'value the setting does not accept. Those three keep a positive ' +
+      'number, so a longer realm setting cannot lengthen them. An ' +
+      'attribute removed outside this door is restored at the next start ' +
+      '(#825).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  // #1668: an application's own WS-Trust decryption key pair.
+  { code: 'STS-REG-0370',
+    summary: 'A WS-Trust decryption key pair was written to, or cleared ' +
+      'from, an application the realm\'s registry does not hold. Nothing ' +
+      'was written (#1668).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0371',
+    summary: 'An application\'s WS-Trust decryption private key could not ' +
+      'be sealed under the key-encryption key where keys persist, so the ' +
+      'key pair was not written: a private key is never stored in the ' +
+      'clear there (#1668).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0372',
+    summary: 'The directory refused the write of an application\'s ' +
+      'WS-Trust decryption key pair (the certificate, its chain, the ' +
+      'sealed private key and its source, written together). Nothing ' +
+      'changed (#1668).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0373',
+    summary: 'More than one application holds the same WS-Trust decryption ' +
+      'certificate, so a request whose EncryptedKey names it is opened by ' +
+      'none of them: the key would otherwise decide whose request it was. ' +
+      'Logged at the request; remove the certificate from all but one ' +
+      '(#1668).',
+    spec: 'none (logged; the request is then refused STS-WSTRUST-0075)' },
   { code: 'STS-DBG-0001',
-    summary: 'The debugger permission was asked for by somebody who may ' +
-      'not hold it — not a person, not signed in, not in the ' +
-      'default realm, or not a console administrator — and was left ' +
-      'off the token.',
-    spec: 'none — the token is issued without that scope (RFC 6749 ' +
-      'section 3.3)' },
+    summary: 'The debugger was refused to a subject that is not a person, ' +
+      'is not named, or did not authenticate.',
+    spec: 'HTTP 403 page or JSON' },
   { code: 'STS-DBG-0002',
-    summary: 'A request to the debugger carried no debugger session and no ' +
-      'bearer token, and was not a page a browser could be sent to ' +
-      'sign in from.',
-    spec: 'HTTP 401 with WWW-Authenticate: Bearer' },
+    summary: 'A request to the debugger carried no debugger session, and ' +
+      'was not a page a browser could be sent to sign in from. The ' +
+      'debugger accepts no access token (#1717).',
+    spec: 'HTTP 401' },
   { code: 'STS-DBG-0003',
     summary: 'A debugger access token did not verify against the default ' +
       'realm\'s signing key, or could not be read.',
-    spec: 'HTTP 401 invalid_token' },
+    spec: 'HTTP 401 invalid_token', retired: true },
   { code: 'STS-DBG-0004',
     summary: 'A debugger access token had expired.',
-    spec: 'HTTP 401 invalid_token' },
+    spec: 'HTTP 401 invalid_token', retired: true },
   { code: 'STS-DBG-0005',
     summary: 'A token presented to the debugger was not a JWT access token ' +
       '(typ at+jwt).',
-    spec: 'HTTP 401 invalid_token' },
+    spec: 'HTTP 401 invalid_token', retired: true },
   { code: 'STS-DBG-0006',
     summary: 'A debugger access token was issued by somebody other than ' +
       'this service\'s default authorization server.',
-    spec: 'HTTP 401 invalid_token' },
+    spec: 'HTTP 401 invalid_token', retired: true },
   { code: 'STS-DBG-0007',
     summary: 'A debugger access token was addressed to a different ' +
       'audience.',
-    spec: 'HTTP 403 insufficient_scope' },
+    spec: 'HTTP 403 insufficient_scope', retired: true },
   { code: 'STS-DBG-0008',
     summary: 'A debugger access token did not carry the debugger ' +
       'permission.',
-    spec: 'HTTP 403 insufficient_scope' },
+    spec: 'HTTP 403 insufficient_scope', retired: true },
   { code: 'STS-DBG-0009',
-    summary: 'The access policy refused the debugger to the token\'s ' +
-      'subject — ordinarily because they no longer hold a console ' +
-      'role.',
+    summary: 'The debugger was refused to the signed-in person — they hold ' +
+      'no console role (perhaps no longer), or the access policy ' +
+      'refused them.',
     spec: 'HTTP 403 page or JSON' },
   { code: 'STS-DBG-0010',
     summary: 'The debugger\'s api process is not running, so an /api call ' +
@@ -27356,31 +29603,36 @@ const CODES = [
       'build its report.',
     spec: 'HTTP 500 page or JSON' },
   { code: 'STS-DBG-0024',
-    summary: 'The debugger permission was refused because neither console ' +
-      'role group has a member: the empty-roster rule that opens the ' +
-      'console to everybody does not open the debugger.',
-    spec: 'none at issuance (the scope is left off); HTTP 403 at the ' +
-      'debugger' },
+    summary: 'The debugger was refused because neither console role group ' +
+      'has a member: the empty-roster rule that opens the console to ' +
+      'everybody does not open the debugger.',
+    spec: 'HTTP 403 at the debugger' },
   { code: 'STS-DBG-0030',
     summary: 'A certificate-bound access token (RFC 8705 cnf x5t#S256) was ' +
       'presented to the debugger on a connection without that certificate.',
-    spec: 'invalid_token (HTTP 401)' },
+    spec: 'invalid_token (HTTP 401)', retired: true },
   // #34 (2026-09-15), the DPoP half of the row above.
   { code: 'STS-DBG-0031',
     summary: 'A DPoP-bound access token (cnf.jkt) was presented to the ' +
       'debugger as a Bearer token.',
-    spec: 'invalid_token (HTTP 401)' },
+    spec: 'invalid_token (HTTP 401)', retired: true },
   { code: 'STS-DBG-0032',
     summary: 'A DPoP proof presented to the debugger did not verify, and the ' +
       'proof check reported no code of its own.',
-    spec: 'invalid_dpop_proof (HTTP 401)' },
+    spec: 'invalid_dpop_proof (HTTP 401)', retired: true },
   { code: 'STS-DBG-0033',
-    summary: 'Product mode: the debugger permission was refused to the ' +
-      'bootstrap administrator because it has not yet claimed the console ' +
-      'with its password; until it has, its roles are honoured at the ' +
-      'console alone, from a password sign-in (#103).',
-    spec: 'none at issuance (the scope is left off); HTTP 403 at the ' +
-      'debugger' },
+    summary: 'Product mode: the debugger was refused to the bootstrap ' +
+      'administrator because it has not yet claimed the console with its ' +
+      'password; until it has, its roles are honoured at the console ' +
+      'alone, from a password sign-in (#103).',
+    spec: 'HTTP 403 at the debugger' },
+  // CI run #510: a child on its way is waited for, then answered 503.
+  { code: 'STS-DBG-0034',
+    summary: 'The debugger\'s api process was starting, being replaced for ' +
+      'a new trust anchor or due to restart, and did not report listening ' +
+      'within the /api call\'s debugger.proxyTimeoutS, so the call was not ' +
+      'forwarded.',
+    spec: 'HTTP 503 with Retry-After' },
   // #956. Recorded, never sent. The public token is named in `spec`.
   { code: 'STS-REPORT-0001',
     summary: 'A report query named a source the catalog does not publish.',
@@ -27640,6 +29892,12 @@ const CODES = [
   { code: 'STS-REPORT-0059',
     summary: 'A token was refused because the person it names no longer exists.',
     spec: 'HTTP 401' },
+  { code: 'STS-REPORT-0060',
+    summary: 'A stored report definition no longer holds to the Reports API ' +
+      'model (a filter naming a parameter longer than 64 characters, saved ' +
+      'before #1579 bounded it), so it is answered without its document and ' +
+      'parameters, and a run of it is refused for its query.',
+    spec: 'recorded' },
   { code: 'STS-AUDIT-0001',
     summary: 'An audit export destination was refused because its ' +
       'configuration is not usable: an unknown action or type, a missing ' +
@@ -27964,7 +30222,7 @@ function escapeCell(text) {
 }
 
 /**
- * Generates `docs/error-codes.md` from the table.
+ * Generates `docs/v1.1.0/error-codes.md` from the table.
  *
  * @returns the page's Markdown
  */
@@ -28097,7 +30355,8 @@ function markdown() {
 }
 
 /**
- * Returns the path of the generated documentation page, `docs/error-codes.md`.
+ * Returns the path of the generated documentation page,
+ * `docs/v1.1.0/error-codes.md`.
  *
  * @returns the absolute path
  */
@@ -28105,7 +30364,9 @@ function docsPath() {
   log.debug("Entering docsPath().");
   const path = require('path');
   log.debug("Leaving docsPath().");
-  return path.join(__dirname, '..', 'docs', 'error-codes.md');
+  // The latest documentation version's folder; the frozen releases beside
+  // it are never regenerated (docs/CLAUDE.md, *The versioned site*).
+  return path.join(__dirname, '..', 'docs', 'v1.1.0', 'error-codes.md');
 }
 
 /**
@@ -28152,12 +30413,12 @@ if (require.main === module) {
       current = '';
     }
     if (current !== markdown()) {
-      console.error('[error_codes] docs/error-codes.md is stale. Run: ' +
+      console.error('[error_codes] docs/v1.1.0/error-codes.md is stale. Run: ' +
                     'node common/error_codes.js --docs');
       process.exit(1);
     }
-    console.log('docs/error-codes.md matches the table (' + CODES.length + ' ' +
-        'codes)');
+    console.log('docs/v1.1.0/error-codes.md matches the table (' +
+        CODES.length + ' codes)');
   } else {
     console.log(JSON.stringify({ subsystems: SUBSYSTEMS, codes: CODES }, null,
                                2));

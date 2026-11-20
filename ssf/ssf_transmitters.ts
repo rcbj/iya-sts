@@ -89,6 +89,9 @@ import audit = require('../common/audit');
 import mode = require('../common/mode');
 import stsCrypto = require('../common/crypto');
 import fedBlocks = require('../federation/federation_blocks');
+// The shapes of what this realm sends to and receives from a partner
+// (#1579): a leaf.
+import SsfModel = require('./ssf_model');
 
 type Json = any;
 type Req = import('express').Request;
@@ -129,6 +132,42 @@ const locks = realms.map({ persist: 'ssf.relationshipLocks' });
 // Access tokens, per process and short-lived: `<realm>|<id>|<client>` →
 // { token, until }. A process that has none asks again; nothing is lost.
 const tokens = new Map<string, Json>();
+
+// ---------------------------------------------------------------------------
+// ONE POLL OF A STREAM AT A TIME (GitHub Actions run #493, 2026-11-18).
+//
+// Two pollers reach a relationship's stream: the `ssf.foreign-poll` job, every
+// `ssf.foreignPollS`, and an administrator's `signals-poll-now`. Nothing kept
+// them apart, so a job run that fell inside a poll-now overlapped it at the
+// partner. The conformance suite's CAEP interoperability module (release
+// v5.3.1, poll delivery) answers the acknowledgement of its verification
+// event by generating the profile's events, a second's wait inside that very
+// request; a second poll arriving in that second left the module holding
+// six SETs it never handed anybody — reproduced against the suite's own
+// image with a second poller 30, 300 and 900 ms behind the first, and at 0
+// and 5 ms the module died of a NullPointerException. Run #493's
+// `rx-caep-poll` stopped exactly there: one SET (the verification) arrived,
+// the session-revoked never did, and the module timed out WAITING.
+//
+// RFC 8936 does not forbid a receiver two polls of one stream, but nothing
+// is gained by them and a partner may well keep one conversation per stream
+// (acknowledgements ride on the NEXT request). So a poll waits for the one
+// before it:
+//
+//   * IN THIS PROCESS, strictly: `polling` chains the polls of one
+//     `<realm>|<relationship>`, so the second starts when the first ends.
+//   * ACROSS PROCESSES (a request worker's poll-now beside the job on
+//     another), as far as the shared store carries it: a poll marks the
+//     stream row `pollingBy` (this isolate's `POLLER`) until `pollingUntil`,
+//     and clears it when it ends. The job SKIPS a stream another process is
+//     polling — its next run polls it — and a poll-now WAITS for that mark
+//     to clear or expire. The mark is bounded by what one poll may take, so
+//     a process that died mid-poll holds nobody up for longer than that.
+// ---------------------------------------------------------------------------
+const polling = new Map<string, Promise<void>>();
+const POLLER = stsCrypto.randomBytes(8).toString('hex');
+// How often a poll-now looks again at another process's mark.
+const POLL_MARK_RECHECK_MS = 250;
 
 interface TransmittersDeps {
   log: typeof helpers.log;
@@ -322,6 +361,28 @@ class SsfTransmitters {
       String(c.tokenEndpoint || '') + '|' + String(c.clientId || '');
   }
 
+  // HELD TO THE MODEL (#1579). What this realm SENDS a partner — a stream
+  // request, a status, a subject, a verification, a poll — is the shape
+  // `models/ssf/ssf.tsp` gives it, and what the partner SENDS — its
+  // configuration, a stream configuration, a poll's answer, a SET's claims —
+  // is held to the same documents, OPEN, since a partner may extend them.
+  // Either way a problem is recorded under STS-SSF-0162 and nothing is
+  // changed or refused here: the receiver's own checks decide what it
+  // accepts. Returns the document.
+  private heldTo(id: string, value: Json, options: Json,
+                 direction: string): Json {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering SsfTransmitters.heldTo(). " + id);
+    const problems = SsfModel.undeclared(id, value, options);
+    if (problems.length > 0) {
+      log.warn(errorCodes.tag('STS-SSF-0162') + 'the ' + id + ' ' +
+               direction + ' is not the shape models/ssf/ssf.tsp gives it: ' +
+               problems.join('; ') + '.');
+    }
+    log.debug("Leaving SsfTransmitters.heldTo().");
+    return value;
+  }
+
   // One outbound request to an endpoint the partner's document named, JSON
   // both ways. `{ ok, status, json, why }`; never rejects.
   private async call(record: Json, method: string, url: string,
@@ -507,6 +568,7 @@ class SsfTransmitters {
         discovery + ' could not be read: ' + String(fetched.why ||
                                                     fetched.status) + '.');
     }
+    this.heldTo('transmitter-metadata', doc, { open: true }, 'received');
     if (doc.issuer !== issuer || !doc.jwks_uri ||
         !doc.configuration_endpoint) {
       state.lastError = 'discovery: not the issuer\'s document';
@@ -624,7 +686,9 @@ class SsfTransmitters {
     const secret = supplied.secret;
     const answer = await this.call(record, 'POST',
                                    state.config.configuration_endpoint,
-                                   supplied.asked);
+                                   this.heldTo('stream-configuration',
+                                     supplied.asked, { partial: true,
+                                       supplier: 'receiver' }, 'sent'));
     if (!answer.ok || !answer.json || !answer.json.stream_id) {
       state.lastError = 'create stream: ' + answer.why;
       this.save(state);
@@ -685,6 +749,7 @@ class SsfTransmitters {
   private adoptStream(state: Json, stream: Json): void {
     const { log } = this.deps;
     log.debug("Entering SsfTransmitters.adoptStream().");
+    this.heldTo('stream-configuration', stream, { open: true }, 'received');
     state.streamId = String(stream.stream_id || state.streamId);
     state.stream = { stream_id: stream.stream_id, aud: stream.aud,
       events_supported: stream.events_supported,
@@ -746,7 +811,9 @@ class SsfTransmitters {
       const events = [].concat(record.fedSignalsEvents || []).map(String);
       answer = await this.call(record, 'PATCH',
         state.config.configuration_endpoint,
-        { stream_id: state.streamId, events_requested: events });
+        this.heldTo('stream-configuration',
+          { stream_id: state.streamId, events_requested: events },
+          { partial: true, supplier: 'receiver' }, 'sent'));
       if (answer.ok && answer.json) {
         this.adoptStream(state, answer.json);
       }
@@ -765,7 +832,9 @@ class SsfTransmitters {
       }
       answer = await this.call(record, 'PUT',
         state.config.configuration_endpoint,
-        Object.assign({ stream_id: state.streamId }, supplied.asked));
+        this.heldTo('stream-configuration',
+          Object.assign({ stream_id: state.streamId }, supplied.asked),
+          { partial: true, supplier: 'receiver' }, 'sent'));
       if (answer.ok && answer.json) {
         this.adoptStream(state, answer.json);
       }
@@ -804,15 +873,20 @@ class SsfTransmitters {
       what = 'stream deleted';
     } else if (action === 'set-status') {
       const status = String(b.status || '');
-      if (['enabled', 'paused', 'disabled'].indexOf(status) < 0) {
+      // SSF 1.0 section 8.1.2's three, the model's list (#1579).
+      const statuses = SsfModel.list('stream-statuses');
+      if (statuses.indexOf(status) < 0) {
         log.debug("Leaving SsfTransmitters.streamAct(). Status.");
-        return this.refusal('STS-SSF-0113', 'status must be enabled, ' +
-                                            'paused or disabled.');
+        return this.refusal('STS-SSF-0113', 'status must be ' +
+          statuses.slice(0, -1).join(', ') + ' or ' +
+          statuses[statuses.length - 1] + '.');
       }
       answer = await this.call(record, 'POST',
         state.config.status_endpoint,
-        { stream_id: state.streamId, status: status,
-          reason: String(b.reason || 'set by an administrator') });
+        this.heldTo('stream-status', { stream_id: state.streamId,
+          status: status,
+          reason: String(b.reason || 'set by an administrator') }, {},
+          'sent'));
       if (answer.ok) {
         state.streamStatus = String((answer.json && answer.json.status) ||
                                     status);
@@ -838,15 +912,19 @@ class SsfTransmitters {
       answer = await this.call(record, 'POST', action === 'add-subject'
         ? state.config.add_subject_endpoint
         : state.config.remove_subject_endpoint,
-        Object.assign({ stream_id: state.streamId, subject: subject },
-                      action === 'add-subject' ? { verified: true } : {}));
+        this.heldTo('subject-request',
+          Object.assign({ stream_id: state.streamId, subject: subject },
+                        action === 'add-subject' ? { verified: true } : {}),
+          {}, 'sent'));
       what = (action === 'add-subject' ? 'subject added'
                                        : 'subject removed');
     } else if (action === 'verify') {
       state.verifyState = stsCrypto.randomBytes(16).toString('base64url');
       answer = await this.call(record, 'POST',
         state.config.verification_endpoint,
-        { stream_id: state.streamId, state: state.verifyState });
+        this.heldTo('verification-request',
+          { stream_id: state.streamId, state: state.verifyState }, {},
+          'sent'));
       what = 'verification asked';
     }
     if (!answer) {
@@ -884,79 +962,169 @@ class SsfTransmitters {
   // -------------------------------------------------------------------------
   /**
    * Polls a partner (RFC 8936) for up to `ssf.foreignPollMaxRounds` rounds,
-   * receiving each SET and acknowledging it on the next request.
+   * receiving each SET and acknowledging it on the next request — once the
+   * poll of the same stream before it has ended (ONE POLL OF A STREAM AT A
+   * TIME, above).
    *
    * @param record - the relationship
    * @returns a promise of `{ received, acted, refused, rounds, why }`
    */
   async pollOnce(record: Json): Promise<Json> {
-    const { log, now } = this.deps;
+    const { log, realms } = this.deps;
     log.debug("Entering SsfTransmitters.pollOnce(). " + record.fedId);
+    const key = realms.currentId() + '|' + record.fedId;
+    const before = polling.get(key) || Promise.resolve();
+    let release!: () => void;
+    const mine = new Promise<void>(function (resolve) {
+      release = resolve;
+    });
+    const tail = before.then(function () {
+      return mine;
+    });
+    polling.set(key, tail);
+    try {
+      await before;
+      await this.otherPollerDone(record.fedId);
+      const out = await this.pollAlone(record);
+      log.debug("Leaving SsfTransmitters.pollOnce(). " + out.received);
+      return out;
+    } catch (e) {
+      // The caller's to report (pollAll() logs STS-SSF-0116, an act answers
+      // its own error); the next poll of this stream is let go below.
+      log.debug("Caught in SsfTransmitters.pollOnce(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving SsfTransmitters.pollOnce(). Failed.");
+      throw e;
+    } finally {
+      release();
+      if (polling.get(key) === tail) {
+        polling.delete(key);
+      }
+    }
+  }
+
+  // Whether ANOTHER process is polling this stream now: its mark on the
+  // shared row, not yet cleared or expired.
+  private otherPoller(state: Json): boolean {
+    const { log, now } = this.deps;
+    log.debug("Entering SsfTransmitters.otherPoller().");
+    const other = !!state.pollingBy && state.pollingBy !== POLLER &&
+                  Number(state.pollingUntil) > now();
+    log.debug("Leaving SsfTransmitters.otherPoller(). " + other);
+    return other;
+  }
+
+  // Waits — within one poll, never past the other process's own bound — for
+  // another process's poll of this stream to end.
+  private async otherPollerDone(fedId: string): Promise<void> {
+    const { log, now } = this.deps;
+    log.debug("Entering SsfTransmitters.otherPollerDone(). " + fedId);
+    const first = this.stateOf(fedId);
+    if (!this.otherPoller(first)) {
+      log.debug("Leaving SsfTransmitters.otherPollerDone(). Nobody.");
+      return;
+    }
+    const until = Number(first.pollingUntil);
+    while (now() < until && this.otherPoller(this.stateOf(fedId))) {
+      await new Promise<void>(function (resolve) {
+        setTimeout(resolve, POLL_MARK_RECHECK_MS);
+      });
+    }
+    log.debug("Leaving SsfTransmitters.otherPollerDone(). Waited.");
+  }
+
+  // How long one poll may take, which bounds its mark: every round's
+  // request, each perhaps after a token request and a 401's second try.
+  private pollBoundMs(): number {
+    this.deps.log.debug("Entering SsfTransmitters.pollBoundMs().");
+    const rounds = Math.max(1, this.setting('ssf.foreignPollMaxRounds')) + 1;
+    this.deps.log.debug("Leaving SsfTransmitters.pollBoundMs().");
+    return rounds * 3 * Math.max(1, this.setting('ssf.foreignTimeoutMs'));
+  }
+
+  // The poll itself, with no other poll of this stream running.
+  private async pollAlone(record: Json): Promise<Json> {
+    const { log, now } = this.deps;
+    log.debug("Entering SsfTransmitters.pollAlone(). " + record.fedId);
     const out = { received: 0, acted: 0, refused: 0, rounds: 0, why: '' };
     const state = this.stateOf(record.fedId);
     if (!state.pollEndpoint || state.delivery !== 'poll') {
-      log.debug("Leaving SsfTransmitters.pollOnce(). No poll stream.");
+      log.debug("Leaving SsfTransmitters.pollAlone(). No poll stream.");
       out.why = 'no poll stream';
       return out;
     }
     if (!this.receives(record)) {
-      log.debug("Leaving SsfTransmitters.pollOnce(). Not receiving.");
+      log.debug("Leaving SsfTransmitters.pollAlone(). Not receiving.");
       out.why = 'the relationship, or its signals, are turned off';
       return out;
     }
-    let ack: string[] = [];
-    let setErrs: Json = {};
-    const rounds = Math.max(1, this.setting('ssf.foreignPollMaxRounds'));
-    for (let i = 0; i < rounds + 1; i++) {
-      const last = i === rounds;
-      // `stream_id` too: RFC 8936 has no such member because a poll URL is
-      // per stream, but a transmitter publishing ONE poll URL for every
-      // stream (this service's own does) needs it, and one that does not
-      // ignores a member it does not know.
-      const asked: Json = { returnImmediately: true, stream_id:
-        state.streamId,
-        maxEvents: last ? 0 : this.setting('ssf.foreignPollMaxEvents') };
-      if (ack.length) {
-        asked.ack = ack;
-      }
-      if (Object.keys(setErrs).length) {
-        asked.setErrs = setErrs;
-      }
-      const answer = await this.call(record, 'POST', state.pollEndpoint,
-                                     asked);
-      out.rounds++;
-      if (!answer.ok || !answer.json) {
-        out.why = answer.why;
-        break;
-      }
-      ack = [];
-      setErrs = {};
-      const sets = answer.json.sets || {};
-      for (const jti of Object.keys(sets)) {
-        const result = await this.receive(record, String(sets[jti]), 'poll');
-        out.received++;
-        if (result.ok) {
-          ack.push(jti);
-          out.acted += result.acted || 0;
-        } else {
-          out.refused++;
-          setErrs[jti] = { err: result.err, description: result.description };
+    // THE MARK another process reads (ONE POLL OF A STREAM AT A TIME).
+    const marked = this.stateOf(record.fedId);
+    marked.pollingBy = POLLER;
+    marked.pollingUntil = now() + this.pollBoundMs();
+    this.save(marked);
+    try {
+      let ack: string[] = [];
+      let setErrs: Json = {};
+      const rounds = Math.max(1, this.setting('ssf.foreignPollMaxRounds'));
+      for (let i = 0; i < rounds + 1; i++) {
+        const last = i === rounds;
+        // `stream_id` too: RFC 8936 has no such member because a poll URL is
+        // per stream, but a transmitter publishing ONE poll URL for every
+        // stream (this service's own does) needs it, and one that does not
+        // ignores a member it does not know.
+        const asked: Json = { returnImmediately: true, stream_id:
+          state.streamId,
+          maxEvents: last ? 0 : this.setting('ssf.foreignPollMaxEvents') };
+        if (ack.length) {
+          asked.ack = ack;
+        }
+        if (Object.keys(setErrs).length) {
+          asked.setErrs = setErrs;
+        }
+        const answer = await this.call(record, 'POST', state.pollEndpoint,
+                                       this.heldTo('poll-request', asked, {},
+                                                   'sent'));
+        out.rounds++;
+        if (!answer.ok || !answer.json) {
+          out.why = answer.why;
+          break;
+        }
+        this.heldTo('poll-response', answer.json, { open: true }, 'received');
+        ack = [];
+        setErrs = {};
+        const sets = answer.json.sets || {};
+        for (const jti of Object.keys(sets)) {
+          const result = await this.receive(record, String(sets[jti]), 'poll');
+          out.received++;
+          if (result.ok) {
+            ack.push(jti);
+            out.acted += result.acted || 0;
+          } else {
+            out.refused++;
+            setErrs[jti] = { err: result.err, description: result.description };
+          }
+        }
+        if (!answer.json.moreAvailable && !ack.length &&
+            !Object.keys(setErrs).length) {
+          break;
+        }
+        if (last) {
+          break;
         }
       }
-      if (!answer.json.moreAvailable && !ack.length &&
-          !Object.keys(setErrs).length) {
-        break;
+    } finally {
+      const current = this.stateOf(record.fedId);
+      current.lastPollAt = now();
+      current.lastPollResult = out.why ? 'failed: ' + out.why
+        : out.received + ' received, ' + out.refused + ' refused';
+      if (current.pollingBy === POLLER) {
+        current.pollingBy = '';
+        current.pollingUntil = 0;
       }
-      if (last) {
-        break;
-      }
+      this.save(current);
     }
-    const current = this.stateOf(record.fedId);
-    current.lastPollAt = now();
-    current.lastPollResult = out.why ? 'failed: ' + out.why
-      : out.received + ' received, ' + out.refused + ' refused';
-    this.save(current);
-    log.debug("Leaving SsfTransmitters.pollOnce(). " + out.received);
+    log.debug("Leaving SsfTransmitters.pollAlone(). " + out.received);
     return out;
   }
 
@@ -985,6 +1153,13 @@ class SsfTransmitters {
         for (const row of due) {
           const record = self.deps.federation().get(row.fedId);
           if (!self.receives(record)) {
+            continue;
+          }
+          // Another process is polling it now (ONE POLL OF A STREAM AT A
+          // TIME): this run leaves it, and the next one polls it.
+          if (self.otherPoller(self.stateOf(row.fedId))) {
+            log.debug("SsfTransmitters.pollAll(): " + row.fedId + " is " +
+                      "being polled by another process; skipped.");
             continue;
           }
           try {
@@ -1146,6 +1321,7 @@ class SsfTransmitters {
       return this.refused(record, null, 'invalid_request',
         'This is not a Security Event Token.', 'STS-SSF-0118', via);
     }
+    this.heldTo('set-claims', claims, { open: true }, 'received');
     const key = record.fedId + '|' + String(claims.jti || '');
     if (claims.jti && inbox.get(key)) {
       // A SET seen before: acknowledged, never acted on twice.

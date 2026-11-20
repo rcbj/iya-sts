@@ -17,6 +17,13 @@
 # ---------------------------------------------------------------------------
 public_hostname = "test-idp.azure.iyasec.io"
 
+# AZURE FRONT DOOR IN FRONT OF THE LOAD BALANCER (rcbj, 2026-11-13, #1341): a
+# browser reaches test-idp.azure.iyasec.io through it; a client certificate,
+# Kerberos, LDAP, SPIFFE and the revocation listener use direct_hostname,
+# the load balancer (environment/frontdoor.tf).
+cdn_enabled     = true
+direct_hostname = "direct.test-idp.azure.iyasec.io"
+
 # The ACME account's contact (expiry notices): an address at iyasec.io, the
 # one mail is delivered to for this project.
 acme_email = "tester1@iyasec.io"

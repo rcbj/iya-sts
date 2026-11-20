@@ -68,6 +68,7 @@ import InstanceSlot = require('../common/instance_slot');
 import stsCrypto = require('../common/crypto');
 import pki = require('../common/pki');
 import errorCodes = require('../common/error_codes');
+import GnapModel = require('./gnap_model');
 
 // A result in the one shape every GNAP library returns: `ok`, and either the
 // refusal's members or the descriptor's (see the header).
@@ -93,11 +94,13 @@ interface GnapKeysDeps {
   log: { debug(message: string): void };
 }
 
-// RFC 9635 section 7.3 / 10.16. The ORDER is the order discovery publishes.
-const PROOF_METHODS = ['httpsig', 'mtls', 'jwsd', 'jws'];
+// RFC 9635 section 7.3 / 10.16, the model's registry (#1579). The ORDER is
+// the order discovery publishes.
+const PROOF_METHODS: string[] = GnapModel.registry('proof-methods');
 
-// Section 7.1 / 10.17. Exactly one of these may be present on a key by value.
-const KEY_FORMATS = ['jwk', 'cert', 'cert#S256'];
+// Section 7.1 / 10.17, the model's registry (#1579). Exactly one of these may
+// be present on a key by value.
+const KEY_FORMATS: string[] = GnapModel.registry('key-formats');
 
 // Members that make a JWK a PRIVATE or SYMMETRIC key. Section 7.1: "A key
 // presented by value MUST be a public key", and 7.1.2: symmetric keys MUST NOT

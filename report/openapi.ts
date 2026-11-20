@@ -27,7 +27,7 @@ const log = bunyan.createLogger({ name: 'sts-report-openapi' });
 class OpenApi {
   /**
    * @param catalog - the catalog, so the description names its sources
-   * @returns an OpenAPI 3.0.3 document
+   * @returns an OpenAPI 3.1.0 document
    */
   static document(catalog: any): any {
     log.debug("Entering OpenApi.document().");

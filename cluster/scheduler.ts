@@ -71,13 +71,15 @@
 // runs are the default realm's), so /admin/scheduler drawn by the front
 // process of ANY node shows what the leader did. (By the front process since
 // #617: a request worker no longer reads the history back at its start, and
-// the page and its API are pinned to the front — see `runStore` below.) So
-// are the leader's own row (who leads, since when, when it last ticked), the
-// per-process jobs' latest run in each process, and the queued commands — a
-// manual run (#48's button) and a step-down — which are written by whichever
-// process served the request and picked up by the leader at its next tick.
-// Nothing here is answered out of one front process's memory that another
-// would answer differently.
+// the page and its API are pinned to the front — see `runStore` below. Since
+// #883 the front itself does not hold a finished interval run: it restores
+// the rows with no expiry, recalls the current slot from the store, and the
+// page asks for a bounded newest window.) So are the leader's own row (who
+// leads, since when, when it last ticked), the per-process jobs' latest run
+// in each process, and the queued commands — a manual run (#48's button) and
+// a step-down — which are written by whichever process served the request
+// and picked up by the leader at its next tick. Nothing here is answered out
+// of one front process's memory that another would answer differently.
 //
 // **6. IT NEVER HOLDS THE THREAD.** A job's `run()` is asynchronous and is
 // expected to yield: the cluster heartbeat is a JavaScript timer, and a job
@@ -366,7 +368,13 @@ interface SchedulerDeps {
   // see learns of them. A store without it is one this process alone
   // writes (a test's), whose rows all pass through `writeRow()`.
   store: { realmMap(realmId: string): Map<string, Json>;
-           watch?: (fn: (realmId: string, row: Json) => void) => void };
+           watch?: (fn: (realmId: string, row: Json) => void) => void;
+           // Drops a held key without journalling a delete (#883). False
+           // when the key is still journalled: that absence would be written
+           // as a delete of the durable row.
+           dropHeld?: (realmId: string, key: string) => boolean;
+           // Admits a row the tick read back, without journalling it.
+           restoreRow?: (realmId: string, key: string, row: Json) => void };
   // The database's clock, where there is one; this process's otherwise.
   dbNow: () => Promise<number>;
   now: () => number;
@@ -387,6 +395,18 @@ interface SchedulerDeps {
   // history purge waits on it between batches, so one flush never carries
   // more than one batch of deletes (#338). Optional; a test has no store.
   settle?: () => Promise<Json>;
+  // True when a finished interval run has a durable copy to drop from
+  // memory against (#883). Absent, or false, keeps every row: a test's
+  // store, and development, where the map is the only copy.
+  persisted?: () => boolean;
+  // The current and previous slot's rows, by the run id, from the durable
+  // store (#883). Null means there is no store and the tick must not treat
+  // a missing row as finished or as absent. A rejection fails the tick.
+  readRuns?: (realmId: string, runIds: string[]) =>
+    Promise<Map<string, Json> | null>;
+  // The newest run rows of the named realms, for the page (#883). Null
+  // means the list is whatever the map holds. The rows are not cached.
+  newestRuns?: (realmIds: string[], limit: number) => Promise<Json[] | null>;
   host: string;
   pid: number;
   isRequestWorker: () => boolean;
@@ -434,6 +454,20 @@ function compareRows(a: Json, b: Json): number {
 // `Scheduler.notePending()`.
 const runWatchers = new Set<(realmId: string, row: Json) => void>();
 
+// A FINISHED INTERVAL RUN (#883): the front does not keep its body. Null
+// until the scheduler exists, and null for a row the purge keeps in memory
+// — the leader, a queued or running run, a manual or cron run, a process
+// row. A hot path (every admitted row): no Entering/Leaving pair.
+function expiringRun(row: Json): boolean {
+  if (!scheduler || !row || row.kind !== 'run') {
+    return false;
+  }
+  if (FINAL.indexOf(row.state) < 0) {
+    return false;
+  }
+  return scheduler.expiryOf(row) !== null;
+}
+
 // PER TRUST REALM, AT ITS DECLARATION (root CLAUDE.md, trust realms rule 2),
 // PERSISTED where this service persists what it mints, TOMBSTONED — a
 // removed run must not be brought back by a node holding an old copy — and
@@ -448,16 +482,26 @@ const runStore = realms.map({
   // EVERY ROW THE STORE ADMITS FROM OUTSIDE THIS PROCESS — read back at a
   // start, or brought by the change log from another process — is shown to
   // the watchers (#623): the leader's index of the rows a tick has to see
-  // (`Scheduler.notePending()`). The row is admitted unchanged, exactly as
-  // a store with no reconciler admits it.
+  // (`Scheduler.notePending()`). A finished interval run is NOT held
+  // (#883): the watchers learn it, any copy already held is dropped, and
+  // `undefined` means the held value stays only when nothing was deleted.
+  // Deleting and then returning `undefined` is what forgets a running row
+  // this process was holding; returning `undefined` alone would keep it.
   // A hot path (every run row restored or replicated): no Entering/Leaving
   // pair.
   reconcile: {
     restore: function (key: string, incoming: Json, held: Json,
-                       realmId: string): Json {
+                       realmId: string, target?: Map<string, Json>):
+        Json | undefined {
       runWatchers.forEach(function (fn): void {
         fn(realmId, incoming);
       });
+      if (expiringRun(incoming)) {
+        if (target && typeof target.delete === 'function') {
+          target.delete(key);
+        }
+        return undefined;
+      }
       return incoming;
     }
   },
@@ -470,6 +514,21 @@ const runStore = realms.map({
   // brings after its start. Point 5 above holds for the processes that draw
   // the page: every FRONT process, on any node.
   restoreInWorkers: false,
+  // THE FRONT DOES NOT RESTORE A ROW THAT CARRIES AN EXPIRY (#883). The
+  // 239,000 run rows were finished interval history with a future
+  // expires_at. The leader, a queued or running run, a manual or cron run
+  // and a process row have none (`expiryOf`) and are what a start reads.
+  // The page's newest window is the sort index, not this map.
+  restoreExpiring: false,
+  // A hot path (every run row a flush writes): no Entering/Leaving pair.
+  sortBy: function (row: Json): number | null {
+    if (!row || row.kind !== 'run') {
+      return null;
+    }
+    const at = Number(row.startedAt) || Number(row.queuedAt) ||
+      Number(row.endedAt) || 0;
+    return at > 0 ? at : null;
+  },
   mergeRow: function (mine: Json, theirs: Json): Json {
     helpers.log.debug("Entering mergeRow().");
     helpers.log.debug("Leaving mergeRow().");
@@ -515,6 +574,13 @@ const EXPIRY_SLACK_MS = 2 * 60 * 60 * 1000;
 // raised after the row was written.
 const PIN_AHEAD_MS = 60 * 60 * 1000;
 const PIN_FOR_MS = 24 * 60 * 60 * 1000;
+// The page's newest window (#883): a few rows per realm, and the list the
+// page actually draws. Filters apply to that window, and a job filter adds
+// the job's own last JOB_SLOTS_PER_REALM slots, read by id (2026-11-14,
+// `jobSlotRuns()`).
+const NEWEST_PER_REALM = 20;
+const NEWEST_WINDOW = 200;
+const JOB_SLOTS_PER_REALM = 20;
 
 /**
  * The one scheduler for every periodic job (#49): a cluster job runs once for
@@ -645,6 +711,23 @@ class Scheduler {
   private readonly runningRows = new Map<string, Json>();
   private readonly orphanClaims = new Set<string>();
   // -------------------------------------------------------------------------
+  // FINISHED INTERVAL SLOTS THE TICK ALREADY KNOWS (#883). The body is not
+  // kept: a start does not restore it, and this process drops its own once
+  // the flush has written it. The set is the current slot and the one before
+  // it, pruned every tick, so it is one id per job and realm and not the
+  // history. `slotAsked` is an id looked up and found absent, so the next
+  // tick of the same slot does not ask again. `latestRun` is one row per
+  // job and realm, for the page's last-run figure. `heldFinished` is a body
+  // this process wrote and has not yet dropped.
+  // -------------------------------------------------------------------------
+  private readonly finishedSlots = new Set<string>();
+  private readonly slotAsked = new Set<string>();
+  // The current slots this tick's read could not answer (#883's review):
+  // held back for this tick only, neither run nor taken as finished.
+  private readonly unknownSlots = new Set<string>();
+  private readonly heldFinished = new Set<string>();
+  private readonly latestRun = new Map<string, Json>();
+  // -------------------------------------------------------------------------
   // #408's BOOKKEEPING, all of it in memory and none of it a row: a run's
   // history is the store's, and these only say what this process is doing.
   //
@@ -666,6 +749,16 @@ class Scheduler {
   // instant that claim cannot outlast. See `attempt()`.
   private readonly claimedByAnotherCell = new Map<string, number>();
   private readonly delegated = new Map<string, Json>();
+  // -------------------------------------------------------------------------
+  // ONE RUN OF A JOB IN A REALM AT A TIME (#1757, rcbj 2026-11-15).
+  // `exclusiveHolders`: `jobId|realm` -> the runId this process is
+  // attempting or running for it, so a second attempt here waits without a
+  // round trip. `exclusiveNoted`: the runIds already recorded as waiting
+  // (STS-SCHED-0024), so a run that waits through many ticks says so once.
+  // See `attempt()`.
+  // -------------------------------------------------------------------------
+  private readonly exclusiveHolders = new Map<string, string>();
+  private readonly exclusiveNoted = new Set<string>();
 
   /**
    * Builds a scheduler from its dependencies.
@@ -706,7 +799,57 @@ class Scheduler {
         },
         watch: function (fn: (realmId: string, row: Json) => void): void {
           runWatchers.add(fn);
+        },
+        dropHeld: function (realmId: string, key: string): boolean {
+          return runStore.dropHeld(realmId, key);
+        },
+        restoreRow: function (realmId: string, key: string,
+                              row: Json): void {
+          const handle = realms.handleFor('scheduler.runs');
+          if (handle && typeof handle.restore === 'function') {
+            handle.restore(realmId, key, row);
+          }
         }
+      },
+      persisted: function (): boolean {
+        return !!require('../persistence/persistence_minted').enabled();
+      },
+      readRuns: function (realmId: string, runIds: string[]):
+          Promise<Map<string, Json> | null> {
+        const minted = require('../persistence/persistence_minted');
+        if (!minted.enabled()) {
+          return Promise.resolve(null);
+        }
+        return minted.readMany('scheduler.runs', realmId, runIds);
+      },
+      newestRuns: function (realmIds: string[], limit: number):
+          Promise<Json[] | null> {
+        const minted = require('../persistence/persistence_minted');
+        if (!minted.enabled() ||
+            typeof minted.newestAsync !== 'function') {
+          return Promise.resolve(null);
+        }
+        return Promise.all(realmIds.map(function (realmId: string):
+            Promise<Json[]> {
+          return minted.newestAsync('scheduler.runs', realmId, limit)
+            .then(function (rows: Json): Json[] {
+              return rows || [];
+            }, function (e: Json): Json[] {
+              helpers.log.debug('Caught in Scheduler.defaultDeps(): ' +
+                                ((e && e.message) || e));
+              return [];
+            });
+        })).then(function (pages: Json[][]): Json[] {
+          const out: Json[] = [];
+          pages.forEach(function (page: Json[]): void {
+            page.forEach(function (row: Json): void {
+              if (row && row.value && row.value.kind === 'run') {
+                out.push(row.value);
+              }
+            });
+          });
+          return out;
+        });
       },
       dbNow: Scheduler.databaseNow,
       settle: function (): Promise<Json> {
@@ -1423,6 +1566,14 @@ class Scheduler {
     }
     map.set(row.runId, Object.assign({}, row));
     this.notePending(realmId, row);
+    // A finished interval body stays until the flush has it, then the tick
+    // drops it (#883). Dropping it while it is still journalled would delete
+    // the durable row.
+    if (row.kind === 'run' && FINAL.indexOf(row.state) >= 0 &&
+        this.expiryOf(row) !== null) {
+      this.heldFinished.add(String(realmId || realms.DEFAULT_ID) + '\n' +
+                            String(row.runId));
+    }
     log.debug("Leaving Scheduler.writeRow().");
     return row;
   }
@@ -1454,10 +1605,31 @@ class Scheduler {
     if (row.kind === 'run' && row.state === 'running') {
       this.runningRows.set(key, { realm: realm, runId: String(row.runId) });
     }
+    if (row.kind === 'run' && FINAL.indexOf(row.state) >= 0) {
+      this.finishedSlots.add(String(row.runId));
+      this.noteLatest(realm, row);
+    }
     if (!Scheduler.isPending(row)) {
       return;
     }
     this.pendingRows.set(key, { realm: realm, runId: String(row.runId) });
+  }
+
+  // THE LATEST FINISHED RUN OF ONE JOB IN ONE REALM (#883), kept when the
+  // body is not. A hot path (every finished row): no Entering/Leaving pair.
+  private noteLatest(realmId: string, row: Json): void {
+    if (!row || row.kind !== 'run' || !row.jobId) {
+      return;
+    }
+    const key = String(row.jobId) + '|' + String(row.realm || realmId);
+    const held = this.latestRun.get(key);
+    const ended = Number(row.endedAt) || Number(row.startedAt) ||
+      Number(row.queuedAt) || 0;
+    const heldEnded = held ? (Number(held.endedAt) || Number(held.startedAt) ||
+      Number(held.queuedAt) || 0) : -1;
+    if (!held || ended >= heldEnded) {
+      this.latestRun.set(key, Object.assign({}, row));
+    }
   }
 
   // THE ROWS A TICK HAS TO SEE, read through the index (#623): each entry's
@@ -1557,6 +1729,18 @@ class Scheduler {
           m.delete(key);
         }
       });
+    });
+    const latestRun = this.latestRun;
+    Array.from(latestRun.keys()).forEach(function (key: string): void {
+      if (key.endsWith(suffix)) {
+        latestRun.delete(key);
+      }
+    });
+    const heldFinished = this.heldFinished;
+    Array.from(heldFinished).forEach(function (key: string): void {
+      if (key.startsWith(prefix)) {
+        heldFinished.delete(key);
+      }
     });
     log.debug("Leaving Scheduler.forgetRealm(). " + fenced + " fenced.");
     return fenced;
@@ -1791,6 +1975,307 @@ class Scheduler {
   }
 
   // -------------------------------------------------------------------------
+  // THE CURRENT AND PREVIOUS INTERVAL SLOT, WITHOUT THE HISTORY (#883).
+  // A start does not restore a finished interval run, so the row that says
+  // this slot already ran is not in the map. One read per realm asks for
+  // the current slot and the one before it. The previous slot is for the
+  // page's last run after a restart; the tick still runs only the current
+  // one. A cron row has no expiry and stays restored, so it is not asked.
+  // -------------------------------------------------------------------------
+  // Each realm's ids come as ONE GROUP PER JOB (the current slot, and the
+  // one before it), so a read that fails can be asked again job by job and
+  // hold back only the job whose rows the store cannot answer (#883's
+  // review).
+  private slotIdsAt(at: number): Map<string, string[][]> {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering Scheduler.slotIdsAt().");
+    const byRealm = new Map<string, string[][]>();
+    this.clusterJobs().forEach(function (job: JobSpec): void {
+      if (job.cron || job.manualOnly || self.serviceOffReason(job)) {
+        return;
+      }
+      const slot = self.slotAt(job, at);
+      if (!slot || slot.slot === null || !(Number(slot.slot) >= 0)) {
+        return;
+      }
+      const n = Number(slot.slot);
+      self.realmIdsFor(job).forEach(function (realmId: string): void {
+        if (self.ownOffReason(job, realmId)) {
+          return;
+        }
+        let groups = byRealm.get(realmId);
+        if (!groups) {
+          groups = [];
+          byRealm.set(realmId, groups);
+        }
+        const ids = [self.runIdFor(job, realmId, n)];
+        if (n > 0) {
+          ids.push(self.runIdFor(job, realmId, n - 1));
+        }
+        groups.push(ids);
+      });
+    });
+    log.debug("Leaving Scheduler.slotIdsAt(). " + byRealm.size +
+              " realm(s).");
+    return byRealm;
+  }
+
+  // Drop slot ids the clock has moved past. `latestRun` is one row per job
+  // and realm and is not pruned here.
+  private pruneSlotMemory(needed: Map<string, string[][]>): void {
+    const { log } = this.deps;
+    log.debug("Entering Scheduler.pruneSlotMemory().");
+    const keep = new Set<string>();
+    needed.forEach(function (groups: string[][]): void {
+      groups.forEach(function (ids: string[]): void {
+        ids.forEach(function (id: string): void {
+          keep.add(id);
+        });
+      });
+    });
+    const finished = this.finishedSlots;
+    Array.from(finished).forEach(function (id: string): void {
+      if (!keep.has(id)) {
+        finished.delete(id);
+      }
+    });
+    const asked = this.slotAsked;
+    Array.from(asked).forEach(function (id: string): void {
+      if (!keep.has(id)) {
+        asked.delete(id);
+      }
+    });
+    log.debug("Leaving Scheduler.pruneSlotMemory().");
+  }
+
+  // A running or queued row the batch read found. Not journalled: it is
+  // already in the store. A test's store has no restore, so the map is set
+  // directly and the index learns the row the same way a write does.
+  private admitRecalled(realmId: string, runId: string, row: Json): void {
+    const { log } = this.deps;
+    log.debug("Entering Scheduler.admitRecalled(). " + runId);
+    const copy = Object.assign({}, row, { runId: row.runId || runId });
+    const restore = this.deps.store && this.deps.store.restoreRow;
+    if (typeof restore === 'function') {
+      restore(realmId, runId, copy);
+      log.debug("Leaving Scheduler.admitRecalled().");
+      return;
+    }
+    this.storeOf(realmId).set(runId, copy);
+    this.notePending(realmId, copy);
+    log.debug("Leaving Scheduler.admitRecalled().");
+  }
+
+  // -------------------------------------------------------------------------
+  // WHAT THE STORE SAYS OF THE CURRENT SLOTS, ONE JOB'S FAILURE ITS OWN
+  // (#883's review, 2026-11-13). Two things changed:
+  //
+  //   * AN ABSENCE IS REMEMBERED WHATEVER SAID IT. An id the store answered
+  //     with no row was remembered in `slotAsked`; an id asked of NO store
+  //     (the reader answers null: development, a store with no minted
+  //     persistence) was not, so every tick asked again, in every realm.
+  //     Both are now remembered for the slot and forgotten with it
+  //     (`pruneSlotMemory()`, the invalidation `finishedSlots` has).
+  //     Remembering asks nothing of the due loop, which reads the map and
+  //     `finishedSlots` and never `slotAsked`: with no store the map is the
+  //     only copy, as before.
+  //   * A READ THAT FAILS HOLDS BACK ITS OWN JOBS, NOT THE TICK. The read
+  //     is one batch per realm, and a rejection used to fail the whole tick
+  //     (STS-SCHED-0013): one row the store could not answer stopped every
+  //     job in every realm, manual runs included. Now that realm's ids are
+  //     asked again ONE JOB AT A TIME; a job whose read still fails is held
+  //     back this tick (`unknownSlots`, which the due loop skips, so its
+  //     slot is neither run twice nor taken as finished) and asked about
+  //     again at the next; the rest run. Two job reads failing in a row is
+  //     an outage rather than a row, so the rest of the tick asks nothing
+  //     more and holds back every job it has not heard about. One
+  //     STS-SCHED-0023 line a tick says what was held back.
+  // -------------------------------------------------------------------------
+  private async recallFinishedSlots(at: number): Promise<void> {
+    const { log, errorCodes } = this.deps;
+    const self = this;
+    log.debug("Entering Scheduler.recallFinishedSlots().");
+    this.unknownSlots.clear();
+    const needed = this.slotIdsAt(at);
+    this.pruneSlotMemory(needed);
+    const read = this.deps.readRuns;
+    // No reader: the map is the only copy (a test). Do not touch it here.
+    // The due loop reads the current slot by key, as it always did.
+    if (typeof read !== 'function') {
+      log.debug("Leaving Scheduler.recallFinishedSlots(). No reader.");
+      return;
+    }
+    const heldBack: string[] = [];
+    let firstWhy = '';
+    let outage = false;
+    const realmIds = Array.from(needed.keys());
+    for (let i = 0; i < realmIds.length; i++) {
+      const realmId = realmIds[i];
+      const map = this.storeOf(realmId);
+      const groups = (needed.get(realmId) || [])
+        .map(function (ids: string[]): string[] {
+          return ids.filter(function (id: string): boolean {
+            return !(map.has(id) || self.finishedSlots.has(id) ||
+                     self.slotAsked.has(id));
+          });
+        })
+        .filter(function (ids: string[]): boolean {
+          return ids.length > 0;
+        });
+      if (!groups.length) {
+        continue;
+      }
+      if (outage) {
+        groups.forEach(function (ids: string[]): void {
+          self.holdBackSlot(ids, heldBack);
+        });
+        continue;
+      }
+      const ask: string[] = [];
+      groups.forEach(function (ids: string[]): void {
+        ask.push.apply(ask, ids);
+      });
+      try {
+        this.learnSlots(realmId, ask, await read(realmId, ask));
+        continue;
+      } catch (e) {
+        log.debug("Caught in Scheduler.recallFinishedSlots(): " +
+                  (((e as Json) && (e as Json).message) || e));
+        firstWhy = firstWhy || this.sentenceOf(e);
+      }
+      // The realm's batch failed: one job at a time. A batch of one job
+      // was that job's read already.
+      if (groups.length === 1) {
+        this.holdBackSlot(groups[0], heldBack);
+        continue;
+      }
+      let failedInARow = 0;
+      for (let g = 0; g < groups.length; g++) {
+        if (failedInARow >= 2) {
+          this.holdBackSlot(groups[g], heldBack);
+          continue;
+        }
+        try {
+          this.learnSlots(realmId, groups[g],
+                          await read(realmId, groups[g]));
+          failedInARow = 0;
+        } catch (e) {
+          log.debug("Caught in Scheduler.recallFinishedSlots(): " +
+                    (((e as Json) && (e as Json).message) || e));
+          firstWhy = firstWhy || this.sentenceOf(e);
+          failedInARow++;
+          this.holdBackSlot(groups[g], heldBack);
+        }
+      }
+      if (failedInARow >= 2) {
+        outage = true;
+      }
+    }
+    if (heldBack.length) {
+      log.error(errorCodes.tag('STS-SCHED-0023') + 'scheduler: the store ' +
+                'could not say whether ' + heldBack.length + ' run(s) of ' +
+                'the current slot had already run (' + firstWhy + '), so ' +
+                'they were held back this tick and are asked about again ' +
+                'at the next; every other run went on. Held back: ' +
+                heldBack.slice(0, 10).join(', ') +
+                (heldBack.length > 10 ? ', and more' : '') + '.');
+    }
+    log.debug("Leaving Scheduler.recallFinishedSlots().");
+  }
+
+  // What one read answered about some slot ids. Null is no store: an
+  // absence all the same, remembered for the slot (#883's review).
+  private learnSlots(realmId: string, ask: string[],
+                     got: Map<string, Json> | null): void {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering Scheduler.learnSlots(). " + realmId);
+    if (got == null) {
+      ask.forEach(function (id: string): void {
+        self.slotAsked.add(id);
+      });
+      log.debug("Leaving Scheduler.learnSlots(). No store.");
+      return;
+    }
+    if (!(got instanceof Map)) {
+      log.debug("Leaving Scheduler.learnSlots(). Not a map.");
+      throw new Error('the slot read for realm ' + realmId +
+                      ' did not answer a map');
+    }
+    ask.forEach(function (id: string): void {
+      const row = got.get(id);
+      if (!row) {
+        self.slotAsked.add(id);
+        return;
+      }
+      if (row.kind === 'run' && FINAL.indexOf(row.state) >= 0) {
+        self.finishedSlots.add(id);
+        self.noteLatest(realmId, row);
+        return;
+      }
+      self.admitRecalled(realmId, id, row);
+    });
+    log.debug("Leaving Scheduler.learnSlots().");
+  }
+
+  // One job's current slot held back for this tick. The previous slot's id
+  // only feeds the page, so it is neither held nor named.
+  private holdBackSlot(ids: string[], heldBack: string[]): void {
+    const { log } = this.deps;
+    log.debug("Entering Scheduler.holdBackSlot().");
+    if (ids.length) {
+      this.unknownSlots.add(ids[0]);
+      heldBack.push(ids[0]);
+    }
+    log.debug("Leaving Scheduler.holdBackSlot().");
+  }
+
+  // An error as the end of a sentence.
+  private sentenceOf(e: unknown): string {
+    const { log } = this.deps;
+    log.debug("Entering Scheduler.sentenceOf().");
+    log.debug("Leaving Scheduler.sentenceOf().");
+    return String(((e as Json) && (e as Json).message) || e)
+      .replace(/\.+$/, '');
+  }
+
+  // A finished interval body this process wrote, once the flush has it.
+  // Walks `heldFinished` only. A key still journalled stays: deleting it
+  // would be written as a delete of the durable row. Absent, or false,
+  // `persisted` keeps every row — a test's store, and development, where
+  // the map is the only copy.
+  private releaseFinishedHistory(): void {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering Scheduler.releaseFinishedHistory().");
+    const drop = this.deps.store && this.deps.store.dropHeld;
+    const persisted = this.deps.persisted;
+    if (typeof drop !== 'function' || typeof persisted !== 'function' ||
+        !persisted()) {
+      log.debug("Leaving Scheduler.releaseFinishedHistory(). Kept.");
+      return;
+    }
+    Array.from(this.heldFinished).forEach(function (key: string): void {
+      const cut = key.indexOf('\n');
+      if (cut < 0) {
+        self.heldFinished.delete(key);
+        return;
+      }
+      const realmId = key.slice(0, cut);
+      const runId = key.slice(cut + 1);
+      if (!self.storeOf(realmId).has(runId)) {
+        self.heldFinished.delete(key);
+        return;
+      }
+      if (drop(realmId, runId)) {
+        self.heldFinished.delete(key);
+      }
+    });
+    log.debug("Leaving Scheduler.releaseFinishedHistory().");
+  }
+
+  // -------------------------------------------------------------------------
   // ONE TICK OF THE LEADER. Serialised: a tick that is still going when the
   // next is asked for is the one that answers.
   // -------------------------------------------------------------------------
@@ -1840,6 +2325,14 @@ class Scheduler {
       return;
     }
     const at = this.nowMs();
+    // THE CURRENT SLOT, LEARNT WITHOUT HOLDING THE HISTORY (#883). A start
+    // does not restore a finished interval run, so the row that says this
+    // slot already ran is not in the map. One read per realm covers the
+    // current slot and the one before it. A read that fails holds back
+    // only the jobs it could not answer (STS-SCHED-0023): treating them as
+    // finished would skip the work, and as absent would run it twice.
+    await this.recallFinishedSlots(at);
+    this.releaseFinishedHistory();
     const self = this;
     // A QUEUE, AND AT MOST scheduler.maxConcurrentRuns RUNS AT ONCE
     // (2026-09-27). A slot is a multiple of the interval, so every hourly job
@@ -1849,7 +2342,8 @@ class Scheduler {
     // and for ninety seconds nothing else on that node could reach the store
     // — LDAPS timed out, a provider command was never delivered. So a tick
     // lines up everything due — a person's Run now first, then scheduled
-    // runs oldest-due first — and starts only as many as there is room for.
+    // runs whose slot ends first (below) — and starts only as many as there
+    // is room for.
     // The rest are not claimed, so they are still due at the next tick, and
     // a run that ends asks for that tick at once.
     const line: Json[] = [];
@@ -1891,10 +2385,13 @@ class Scheduler {
         }
         const runId = this.runIdFor(job, realmId, slot.slot);
         const row = this.storeOf(realmId).get(runId);
-        if (row && FINAL.indexOf(row.state) >= 0) {
+        if ((row && FINAL.indexOf(row.state) >= 0) ||
+            (!row && this.finishedSlots.has(runId)) ||
+            (!row && this.unknownSlots.has(runId))) {
           continue;
         }
-        scheduled.push({ job: job, realm: realmId, row: row || {
+        scheduled.push({ job: job, realm: realmId,
+                         endsAt: slot.nextAt, row: row || {
           runId: runId, kind: 'run', jobId: job.id, realm: realmId,
           slot: slot.slot, dueAt: slot.startsAt, trigger: 'schedule',
           params: null, requestedBy: '', state: 'queued', attempt: 0,
@@ -1902,7 +2399,35 @@ class Scheduler {
         } });
       }
     }
+    // THE RUN WHOSE SLOT ENDS FIRST GOES FIRST (2026-11-13), then the
+    // lower `nice`, then the older. It was oldest-due first, and that
+    // starved every job with a short interval as soon as the line was
+    // longer than the cap could clear: a realm job every two seconds in
+    // eighty realms (`report.drain`) is forty runs a second, the memory
+    // mode runs them inline under a cap of two, and on a loaded machine
+    // the line never emptied. Each of those runs was due from the start of
+    // ITS slot, at or before the start of `ssf.internal-poll`'s one-second
+    // slot, so the poll was always behind them; its slot ended unrun, the
+    // next began behind the next two seconds' runs, and a run 23 broadcast
+    // went undelivered for thirty seconds (`sts_broadcast_announcement`).
+    // A run not started before its slot ends is never started (only the
+    // current slot is due), so the slot's end is the deadline the order is
+    // for: an hourly job waiting a few seconds loses nothing, a one-second
+    // job waiting one loses its run. Under a line the cap can never clear
+    // something still waits, but it is the run with the most time left.
     scheduled.sort(function (a: Json, b: Json): number {
+      const endA = a.endsAt === null || a.endsAt === undefined ? Infinity
+        : Number(a.endsAt);
+      const endB = b.endsAt === null || b.endsAt === undefined ? Infinity
+        : Number(b.endsAt);
+      if (endA !== endB) {
+        return endA < endB ? -1 : 1;
+      }
+      const niceA = Number(a.job.nice) || 0;
+      const niceB = Number(b.job.nice) || 0;
+      if (niceA !== niceB) {
+        return niceA - niceB;
+      }
       return (Number(a.row.dueAt) || 0) - (Number(b.row.dueAt) || 0);
     });
     const cap = this.maxConcurrentRuns();
@@ -1951,6 +2476,11 @@ class Scheduler {
       runId: string): void {
       if (!seen.has(runId)) {
         self.claimedByAnotherCell.delete(runId);
+      }
+    });
+    Array.from(this.exclusiveNoted).forEach(function (runId: string): void {
+      if (!seen.has(runId) && !self.inFlight.has(runId)) {
+        self.exclusiveNoted.delete(runId);
       }
     });
     this.abandonOrphans(at);
@@ -2114,6 +2644,34 @@ class Scheduler {
       log.debug("Leaving Scheduler.attempt(). Running here already.");
       return;
     }
+    // ONE RUN OF A JOB IN A REALM AT A TIME (#1757). A manual run and the
+    // scheduled run of the same job in the same realm have different ids,
+    // so each won its own claim and the two bodies overlapped; a job whose
+    // body is not safe under overlap (`federation.partner-refresh` before
+    // #1756) did its work twice. So beside the run's own claim a run holds
+    // one more claim of the same kind, `exclusive|<job>|<realm>`, for the
+    // run's time limit, and gives it back when it ends. A run that cannot
+    // have it WAITS, as a run waiting for the cap does: it is not claimed,
+    // so it is still due at the next tick — a manual run until it runs, a
+    // scheduled one until its slot ends, after which only the next slot is
+    // due (the scheduler's rule: a missed slot is not run late). Here first,
+    // with no round trip, for a run this process is already attempting or
+    // running; the claim decides between nodes. It lapses with the run's
+    // own claim, so a crashed node's hold ends when its run can be taken
+    // over.
+    const exclusiveKey = String(job.id) + '|' + String(realmId);
+    const holder = this.exclusiveHolders.get(exclusiveKey);
+    if (holder && holder !== row.runId) {
+      this.noteExclusiveWait(job, realmId, row, holder);
+      log.debug("Leaving Scheduler.attempt(). Another run of it is here.");
+      return;
+    }
+    this.exclusiveHolders.set(exclusiveKey, row.runId);
+    const dropHolder = function (): void {
+      if (self.exclusiveHolders.get(exclusiveKey) === row.runId) {
+        self.exclusiveHolders.delete(exclusiveKey);
+      }
+    };
     const timeoutMs = this.timeoutMsOf(job);
     // Held while the claim is being asked, so the next tick does not ask too.
     this.inFlight.set(row.runId, { fence: 0, realm: realmId,
@@ -2123,6 +2681,7 @@ class Scheduler {
                    realm: realmId,
                    ttlMs: timeoutMs + 1000 }).then(function (answer: Json) {
       if (!answer.ok) {
+        dropHolder();
         self.inFlight.delete(row.runId);
         // THE CELL THAT LOSES A GLOBAL JOB'S CLAIM NEVER SEES THE RUN END
         // (#98, 2026-11-06). The winner writes the run's row in its OWN
@@ -2145,8 +2704,31 @@ class Scheduler {
         }
         return;
       }
-      return self.runClaimed(job, realmId, row, answer, timeoutMs);
+      return claims.claim({ scope: scope, value: 'exclusive|' + exclusiveKey,
+                            realm: realmId, ttlMs: timeoutMs + 1000 })
+        .then(function (exclusive: Json): Json {
+          if (!exclusive.ok) {
+            // The run's own claim goes back, so the run can be attempted
+            // again once the other run of the job has ended.
+            dropHolder();
+            self.inFlight.delete(row.runId);
+            claims.release(answer.handle);
+            if (exclusive.reason === 'store') {
+              log.warn(errorCodes.tag('STS-SCHED-0008') + 'scheduler: the ' +
+                       'claim store could not be asked about run ' +
+                       row.runId + ' of ' + job.id + ' (' +
+                       (exclusive.why || '') + '). It is not started ' +
+                       'until it can be.');
+            } else {
+              self.noteExclusiveWait(job, realmId, row, '');
+            }
+            return undefined;
+          }
+          return self.runClaimed(job, realmId, row, answer, timeoutMs,
+                                 exclusive.handle);
+        });
     }).catch(function (e: Json): void {
+      dropHolder();
       self.inFlight.delete(row.runId);
       log.error(errorCodes.tag('STS-SCHED-0013') + 'scheduler: run ' +
                 row.runId + ' of ' + job.id + ' could not be started: ' +
@@ -2155,11 +2737,55 @@ class Scheduler {
     log.debug("Leaving Scheduler.attempt().");
   }
 
+  // A RUN THAT WAITS FOR ANOTHER RUN OF ITS JOB IN ITS REALM (#1757),
+  // recorded once per run: one info line with STS-SCHED-0024, and on a
+  // manual run's queued row the code and the reason, which the page and the
+  // API show beside it until it runs (the run's own start clears both). A
+  // scheduled run's row is not written while it waits: it is not stored
+  // until it starts, and a queued row its slot left behind would stay for
+  // good. The tick is asked again as soon as a run ends.
+  private noteExclusiveWait(job: JobSpec, realmId: string, row: Json,
+                            holder: string): void {
+    const { log, errorCodes, realms } = this.deps;
+    log.debug("Entering Scheduler.noteExclusiveWait(). " + row.runId);
+    this.waiting = true;
+    const why = 'Another run of ' + job.id +
+      (realmId !== realms.DEFAULT_ID ? ' in "' + realmId + '"' : '') +
+      (holder ? ' (' + holder + ')' : ' on another node') +
+      ' was still running; this run waits until it ends.';
+    if (row.trigger === 'manual' && row.state === 'queued') {
+      const stored = this.storeOf(realmId).get(row.runId);
+      if (stored && stored.state === 'queued' &&
+          stored.errorCode !== 'STS-SCHED-0024') {
+        this.writeRow(realmId, Object.assign({}, stored, {
+          errorCode: 'STS-SCHED-0024', why: why }));
+      }
+    }
+    if (!this.exclusiveNoted.has(row.runId)) {
+      this.exclusiveNoted.add(row.runId);
+      log.info(errorCodes.tag('STS-SCHED-0024') + 'scheduler: run ' +
+               row.runId + ' of ' + job.id + ' waits: ' + why);
+    }
+    log.debug("Leaving Scheduler.noteExclusiveWait().");
+  }
+
   private runClaimed(job: JobSpec, realmId: string, row: Json, answer: Json,
-                     timeoutMs: number): Promise<void> {
+                     timeoutMs: number,
+                     exclusiveHandle?: Json): Promise<void> {
     const { log, audit, realms, setTimer, clearTimer, claims } = this.deps;
     const self = this;
     log.debug("Entering Scheduler.runClaimed(). " + row.runId);
+    // The run's hold on its job in its realm (#1757), given back however
+    // the run ends, so the run that waited for it starts at the next tick.
+    const exclusiveKey = String(job.id) + '|' + String(realmId);
+    const giveBackExclusive = function (): void {
+      if (self.exclusiveHolders.get(exclusiveKey) === row.runId) {
+        self.exclusiveHolders.delete(exclusiveKey);
+      }
+      if (exclusiveHandle) {
+        claims.release(exclusiveHandle);
+      }
+    };
     // A REALM REMOVED BETWEEN THE TICK AND THE CLAIM (#338): nothing is run
     // for it. It used to run in the DEFAULT realm instead (`realms.get()`
     // answering null fell back to it), so a removed realm's krbtgt rotation
@@ -2167,6 +2793,7 @@ class Scheduler {
     if (!this.realmDefined(realmId)) {
       this.inFlight.delete(row.runId);
       claims.release(answer.handle);
+      giveBackExclusive();
       log.info(errorCodes.tag('STS-SCHED-0018') + 'scheduler: run ' +
                row.runId + ' of ' + job.id + ' was not started: the realm "' +
                realmId + '" has been removed.');
@@ -2280,6 +2907,7 @@ class Scheduler {
       clearTimer(flight.watch);
       flight.watch = null;
       self.inFlight.delete(row.runId);
+      giveBackExclusive();
       // A place is free: start what the last tick left waiting, now rather
       // than at the next tick. Only after a run that RAN, so a store that
       // refuses every claim is not asked again in a loop.
@@ -3302,14 +3930,16 @@ class Scheduler {
   // next, and at most HISTORY_MAX_BATCHES a run. What a run leaves is the
   // next run's.
   //
-  // THE START READS LESS THAN THE STORE HOLDS: each row carries an expiry
-  // (`expiryOf()`, #333's hook) past the instant this purge could first
-  // drop it, so a start skips a row the purge has not got to yet. The one
-  // thing that could make a start skip a row the purge would KEEP is a job
-  // that stopped running (its rows age by time and no newer run pushes them
-  // out of the count) or a bound raised after the row was written; the
-  // purge PINS such a row — rewrites it with `keepUntil` a day ahead —
-  // before its expiry is within PIN_AHEAD_MS.
+  // THE START DOES NOT RESTORE AN EXPIRING ROW (#883). A finished interval
+  // run carries an expiry (`expiryOf()`), the front's restore leaves it in
+  // the table, and this job only walks the rows the process holds. The
+  // table's bound for that history is the expiry — the slack past the later
+  // of the time bound and (count + 1) intervals — and the minted expiry
+  // purge is what deletes it. A row with no expiry (a manual or cron run,
+  // the leader's, a process row, a run written before #338) is what this
+  // walk trims. The purge still PINS a kept row whose expiry is within
+  // PIN_AHEAD_MS — rewrites it with `keepUntil` a day ahead — when a job
+  // stopped running, or a bound was raised after the row was written.
   // -------------------------------------------------------------------------
   private historyBounds(): Json {
     const { log } = this.deps;
@@ -3345,8 +3975,8 @@ class Scheduler {
    *
    * @param row - the stored row
    * @returns epoch milliseconds, or null for a row that does not expire —
-   *   the leader's, a queued or running one, one of a job not registered
-   *   here, one of a job with no interval
+   *   the leader's, a process row, a queued or running one, one of a job
+   *   not registered here, one of a job with no interval
    */
   expiryOf(row: Json): number | null {
     // A HOT PATH: every row a flush writes. No Entering/Leaving pair.
@@ -3361,10 +3991,10 @@ class Scheduler {
       at = row.state === 'queued' || !ended ? null
         : ended + bounds.keepMs + EXPIRY_SLACK_MS;
     } else if (row.kind === 'process') {
-      const job = this.jobs.get(String(row.jobId));
-      at = job && ended ? ended + Math.max(bounds.keepMs,
-                                           3 * this.processEveryMs(job)) +
-                          EXPIRY_SLACK_MS : null;
+      // #883: one row per process. A non-null expiry would leave it out of
+      // the front's restore, and the page would show no process until the
+      // job ran again. The history walk still deletes a stale one.
+      at = null;
     } else if (row.kind === 'run' && FINAL.indexOf(row.state) >= 0 &&
                ended) {
       const job = this.jobs.get(String(row.jobId));
@@ -3547,7 +4177,9 @@ class Scheduler {
    * store on the database's clock.
    *
    * @param opts - `realm` confines it to one realm's realm-scoped rows; also
-   *   the filters of recentRuns()
+   *   the filters of recentRuns(); `pageJobs(total, everyJobId)` and
+   *   `pageRuns(total)`, each answering `{ offset, perPage }`, name the
+   *   slice of each list to build (#1766), and without them every row is
    * @returns a promise of the report
    */
   async status(opts?: Json): Promise<Json> {
@@ -3562,17 +4194,55 @@ class Scheduler {
     const onlyRealm = o.realm ? String(o.realm) : '';
     const leaderRow = this.storeOf(realms.DEFAULT_ID).get(LEADER_KEY) || null;
     const leader = await this.leaderView(leaderRow, at);
-    const jobs: Json[] = [];
+    // THE ROWS ARE LISTED, THEN PAGED, THEN BUILT (#1766, 2026-11-14). A
+    // job view reads that job's run rows in its realm, so building every
+    // (job, realm) pair and slicing afterwards cost every realm's store once
+    // per job for one page of fifty: 13 s a walk in run 29, with the realms
+    // the suite leaves standing. The pairs are cheap to list; with a
+    // `pageJobs(total, everyJobId)` the caller says which slice it answers
+    // and only those views are built, and the realm stores they need are
+    // read once each (`runsByJob`). Without one, every pair, as before.
+    const pairs: Array<{ job: JobSpec; realmId: string }> = [];
+    const everyJobId: string[] = [];
+    const seenJob = new Set<string>();
     this.jobIds().forEach(function (id: string): void {
       const job = self.jobs.get(id);
       const realmIds = self.realmIdsFor(job).filter(function (r: string) {
         return !onlyRealm || job.scope === 'service' || r === onlyRealm;
       });
       realmIds.forEach(function (realmId: string): void {
-        jobs.push(self.jobView(job, realmId, at, leader, onlyRealm));
+        pairs.push({ job: job, realmId: realmId });
+        if (!seenJob.has(job.id)) {
+          seenJob.add(job.id);
+          everyJobId.push(job.id);
+        }
       });
     });
-    const runs = this.recentRuns(o, at);
+    let shownPairs = pairs;
+    if (typeof o.pageJobs === 'function') {
+      const asked = o.pageJobs(pairs.length, everyJobId) || {};
+      const from = Math.max(0, Number(asked.offset) || 0);
+      shownPairs = pairs.slice(from, from + Math.max(0, Number(asked.perPage)
+                                                    || 0));
+    }
+    const runsByJob = new Map<string, Map<string, Json[]>>();
+    const jobs: Json[] = shownPairs.map(function (pair): Json {
+      return self.jobView(pair.job, pair.realmId, at, leader, onlyRealm,
+                          runsByJob);
+    });
+    // The runs likewise: listed and ordered from the rows, paged by
+    // `pageRuns(total)`, and only the rows shown turned into views.
+    const runRows = await this.recentRunRows(o, at);
+    let shownRuns = runRows;
+    if (typeof o.pageRuns === 'function') {
+      const asked = o.pageRuns(runRows.length) || {};
+      const from = Math.max(0, Number(asked.offset) || 0);
+      shownRuns = runRows.slice(from, from + Math.max(0, Number(asked.perPage)
+                                                      || 0));
+    }
+    const runs = shownRuns.map(function (row: Json): Json {
+      return self.runView(row);
+    });
     const out = {
       generatedAt: new Date(at).toISOString(),
       nowMs: at,
@@ -3656,17 +4326,58 @@ class Scheduler {
     return view;
   }
 
-  // Every run row of one job in one realm, newest first.
-  private runsOf(jobId: string, realmId: string): Json[] {
+  // Every run row of one job in one realm, newest first. A finished
+  // interval body is not resident (#883); `latestRun` keeps one of it so
+  // lastRun does not depend on the page's window.
+  //
+  // `byRealm` (#1766): a report's index of each realm's run rows by job,
+  // filled the first time a realm is asked, so a page of views reads each
+  // realm's store once rather than once per job. The rows are in the
+  // store's order either way, so the answer is the same.
+  private runsOf(jobId: string, realmId: string,
+                 byRealm?: Map<string, Map<string, Json[]>>): Json[] {
     const { log } = this.deps;
     log.debug("Entering Scheduler.runsOf().");
-    const out: Json[] = [];
-    this.storeOf(realmId).forEach(function (row: Json): void {
-      if (row && (row.kind === 'run') && row.jobId === jobId &&
-          row.realm === realmId) {
-        out.push(row);
+    let out: Json[] = [];
+    const seen = new Set<string>();
+    if (byRealm) {
+      let index = byRealm.get(realmId);
+      if (!index) {
+        const built = new Map<string, Json[]>();
+        this.storeOf(realmId).forEach(function (row: Json): void {
+          if (row && (row.kind === 'run') && row.realm === realmId) {
+            const key = String(row.jobId);
+            const list = built.get(key);
+            if (list) {
+              list.push(row);
+            } else {
+              built.set(key, [row]);
+            }
+          }
+        });
+        byRealm.set(realmId, built);
+        index = built;
       }
-    });
+      out = (index.get(String(jobId)) || []).filter(function (row: Json) {
+        return row.jobId === jobId;
+      });
+      out.forEach(function (row: Json): void {
+        seen.add(String(row.runId));
+      });
+    } else {
+      this.storeOf(realmId).forEach(function (row: Json): void {
+        if (row && (row.kind === 'run') && row.jobId === jobId &&
+            row.realm === realmId) {
+          out.push(row);
+          seen.add(String(row.runId));
+        }
+      });
+    }
+    const latest = this.latestRun.get(String(jobId) + '|' +
+                                       String(realmId));
+    if (latest && !seen.has(String(latest.runId))) {
+      out.push(latest);
+    }
     out.sort(function (a: Json, b: Json): number {
       return (Number(b.startedAt) || Number(b.queuedAt) || 0) -
              (Number(a.startedAt) || Number(a.queuedAt) || 0);
@@ -3676,7 +4387,8 @@ class Scheduler {
   }
 
   private jobView(job: JobSpec, realmId: string, at: number, leader: Json,
-                  onlyRealm: string): Json {
+                  onlyRealm: string,
+                  byRealm?: Map<string, Map<string, Json[]>>): Json {
     const { log } = this.deps;
     log.debug("Entering Scheduler.jobView(). " + job.id + " " + realmId);
     const off = this.offReason(job, realmId);
@@ -3717,7 +4429,7 @@ class Scheduler {
       log.debug("Leaving Scheduler.jobView(). Per-process.");
       return view;
     }
-    const runs = this.runsOf(job.id, realmId);
+    const runs = this.runsOf(job.id, realmId, byRealm);
     const finished = runs.filter(function (row: Json): boolean {
       return FINAL.indexOf(row.state) >= 0;
     });
@@ -3771,7 +4483,12 @@ class Scheduler {
     const currentId = slot.slot === null ? null
       : this.runIdFor(job, realmId, slot.slot);
     const current = currentId ? this.storeOf(realmId).get(currentId) : null;
-    if (slot.slot === null || (current && current.state !== 'queued')) {
+    // A finished interval body is not in the map (#883). The tick already
+    // learnt this slot, so the next run is the next slot, not an overdue one.
+    const knownFinished = !current && !!currentId &&
+      this.finishedSlots.has(currentId);
+    if (slot.slot === null || knownFinished ||
+        (current && current.state !== 'queued')) {
       view.nextRunState = current && current.state === 'running'
         ? 'running' : 'scheduled';
       view.nextRunAt = slot.nextAt === null ? null
@@ -3799,6 +4516,19 @@ class Scheduler {
     log.debug("Leaving Scheduler.nextRunOf(). " + view.nextRunState + ".");
   }
 
+  // A run row's instant as `runView()` writes it: the ISO text, or null for
+  // no instant. One function, so the order recentRunRows() sorts the rows in
+  // is the order of the views' own text. Called per row; no log pair.
+  /**
+   * Answers a stored instant as `runView()` writes it.
+   *
+   * @param ms - milliseconds since the epoch, or anything falsy
+   * @returns the ISO text, or null
+   */
+  static isoOf(ms: Json): string | null {
+    return Number(ms) ? new Date(Number(ms)).toISOString() : null;
+  }
+
   /**
    * Returns a run row as the page and the API show it, times as ISO strings.
    *
@@ -3808,9 +4538,7 @@ class Scheduler {
   runView(row: Json): Json {
     const { log } = this.deps;
     log.debug("Entering Scheduler.runView().");
-    const iso = function (ms: Json): string | null {
-      return Number(ms) ? new Date(Number(ms)).toISOString() : null;
-    };
+    const iso = Scheduler.isoOf;
     const out = {
       runId: row.runId, jobId: row.jobId || null, realm: row.realm || null,
       trigger: row.trigger || 'schedule', state: row.state,
@@ -3889,76 +4617,302 @@ class Scheduler {
     return out.slice(0, 20);
   }
 
+  // Whether a run row passes the page's filters. `partition` is the realm
+  // whose map held it; a window row is filtered as its own realm.
+  private acceptsRun(row: Json, partition: string, o: Json): boolean {
+    const { log, realms } = this.deps;
+    log.debug("Entering Scheduler.acceptsRun().");
+    let ok = true;
+    if (!row || row.kind !== 'run') {
+      ok = false;
+    } else if (o.realm && partition !== String(o.realm) &&
+               partition !== realms.DEFAULT_ID) {
+      ok = false;
+    } else if (o.realm && partition === realms.DEFAULT_ID &&
+               String(o.realm) !== realms.DEFAULT_ID) {
+      const job = this.jobs.get(row.jobId);
+      if (job && job.scope === 'realm') {
+        ok = false;
+      }
+    }
+    if (ok && o.job && row.jobId !== String(o.job)) {
+      ok = false;
+    }
+    if (ok && o.outcome && row.state !== String(o.outcome)) {
+      ok = false;
+    }
+    log.debug("Leaving Scheduler.acceptsRun(). " + ok);
+    return ok;
+  }
+
+  // The realms the newest-window read asks. A filter names that realm and
+  // the default one, which holds the service jobs.
+  private newestRealmIds(o: Json): string[] {
+    const { log, realms } = this.deps;
+    log.debug("Entering Scheduler.newestRealmIds().");
+    const all = realms.list().map(function (realm: Json): string {
+      return String(realm.id);
+    });
+    let ids = all;
+    if (o.realm) {
+      const want = String(o.realm);
+      ids = all.filter(function (id: string): boolean {
+        return id === want || id === realms.DEFAULT_ID;
+      });
+      if (!ids.length) {
+        ids = [want];
+      }
+    }
+    log.debug("Leaving Scheduler.newestRealmIds(). " + ids.length + ".");
+    return ids;
+  }
+
   // Recent runs, newest first, filtered by job, realm and outcome.
+  // With no newest reader — a test, or minted persistence off — the list is
+  // every resident row, uncapped, which is the whole history there. With
+  // one, the resident rows win by id over a bounded window, and the page
+  // draws at most NEWEST_WINDOW. The window is not written into the map.
+  //
+  // A JOB FILTER READS THAT JOB'S OWN SLOTS (2026-11-14). The newest window
+  // is twenty rows a realm across EVERY job, and the filter was applied to
+  // it afterwards, so in the default realm — where the one-second and
+  // two-second service jobs fill those twenty rows within seconds — a
+  // thirty-second job was almost never in it. Since #883 a finished
+  // interval run is not resident (the leader drops the body it wrote once
+  // the flush has it, a follower is never handed one), so the window was
+  // all `?job=authn.session-expiry` had: run 28's cluster crash takeover
+  // found no succeeded run of it on the new leader four seconds after it
+  // took over (step 3, `tests/tools/scheduler-takeover.js`), and from #883
+  // on the step had passed on two lucky slots where it once saw a hundred.
+  // A run's id is its slot's (`runIdFor()`), so the job's last slots are
+  // read by id, one batch per realm, beside the window.
   /**
    * Returns recent runs, newest first.
    *
    * @param opts - filters: `realm`, `job` and `outcome`
-   * @param at - accepted for the caller's convenience and not read
-   * @returns the runs' views
+   * @param at - the instant by the database's clock whose slots a job
+   *   filter reads back from; now when omitted
+   * @returns a promise of the runs' views
    */
-  recentRuns(opts: Json, at?: number): Json[] {
-    const { log, realms } = this.deps;
+  async recentRuns(opts: Json, at?: number): Promise<Json[]> {
+    const { log } = this.deps;
     const self = this;
     log.debug("Entering Scheduler.recentRuns().");
+    const rows = await this.recentRunRows(opts, at);
+    log.debug("Leaving Scheduler.recentRuns(). " + rows.length + ".");
+    return rows.map(function (row: Json): Json {
+      return self.runView(row);
+    });
+  }
+
+  // THE ROWS recentRuns() ANSWERS, in its order, before any becomes a view
+  // (#1766): the report pages these and builds the views of one page. The
+  // order is the views' own — newest by the ISO text of `startedAt`, else
+  // `queuedAt`, as `runView()` writes them — read from the row.
+  private async recentRunRows(opts: Json, at?: number): Promise<Json[]> {
+    const { log, realms } = this.deps;
+    const self = this;
+    log.debug("Entering Scheduler.recentRunRows().");
     const o = opts || {};
-    const out: Json[] = [];
+    const byId = new Map<string, Json>();
     realms.list().forEach(function (realm: Json): void {
       const id = String(realm.id);
       if (o.realm && id !== String(o.realm) && id !== realms.DEFAULT_ID) {
         return;
       }
       self.storeOf(id).forEach(function (row: Json): void {
-        if (!row || row.kind !== 'run') {
+        if (!self.acceptsRun(row, id, o)) {
           return;
         }
-        if (o.realm && id === realms.DEFAULT_ID &&
-            String(o.realm) !== realms.DEFAULT_ID) {
-          const job = self.jobs.get(row.jobId);
-          if (job && job.scope === 'realm') {
-            return;
-          }
-        }
-        if (o.job && row.jobId !== String(o.job)) {
-          return;
-        }
-        if (o.outcome && row.state !== String(o.outcome)) {
-          return;
-        }
-        out.push(self.runView(row));
+        byId.set(String(row.runId), row);
       });
     });
-    out.sort(function (a: Json, b: Json): number {
-      return String(b.startedAt || b.queuedAt || '').localeCompare(
-        String(a.startedAt || a.queuedAt || ''));
+    let windowed = false;
+    const newest = this.deps.newestRuns;
+    if (typeof newest === 'function') {
+      try {
+        const extra = await newest(this.newestRealmIds(o), NEWEST_PER_REALM);
+        if (Array.isArray(extra)) {
+          windowed = true;
+          extra.forEach(function (row: Json): void {
+            if (!row || !row.runId || byId.has(String(row.runId))) {
+              return;
+            }
+            const partition = String(row.realm || realms.DEFAULT_ID);
+            if (!self.acceptsRun(row, partition, o)) {
+              return;
+            }
+            byId.set(String(row.runId), row);
+          });
+        }
+      } catch (e) {
+        // The list was not read. The resident rows are what the page shows,
+        // uncapped, rather than an empty window that reads as no history.
+        log.debug("Caught in Scheduler.recentRunRows(): " +
+                  ((e && e.message) || e));
+        windowed = false;
+      }
+    }
+    if (await this.jobSlotRuns(o, Number(at) || this.nowMs(), byId)) {
+      windowed = true;
+    }
+    // Each key worked out once, not once per comparison; the sort is
+    // stable, so rows with one key keep the order they were gathered in.
+    const keyed = Array.from(byId.values()).map(function (row: Json): Json {
+      return { row: row,
+               key: String(Scheduler.isoOf(row.startedAt) ||
+                           Scheduler.isoOf(row.queuedAt) || '') };
     });
-    log.debug("Leaving Scheduler.recentRuns(). " + out.length + ".");
-    return out;
+    keyed.sort(function (a: Json, b: Json): number {
+      return b.key.localeCompare(a.key);
+    });
+    const out = keyed.map(function (one: Json): Json {
+      return one.row;
+    });
+    const shown = windowed ? out.slice(0, NEWEST_WINDOW) : out;
+    log.debug("Leaving Scheduler.recentRunRows(). " + shown.length + ".");
+    return shown;
   }
 
-  // One run by id, in whichever realm holds it.
+  // The filtered job's last JOB_SLOTS_PER_REALM interval slots, read by id
+  // from the durable store into `byId` (see recentRuns()). Nothing for no
+  // job filter, a job not registered here, a per-process, cron or manual
+  // job (their finished rows carry no expiry and are resident), or no
+  // reader. Answers whether any read reached a store, so the caller caps
+  // the list. A failed read is that realm's loss only. Not cached.
+  private async jobSlotRuns(o: Json, at: number,
+                            byId: Map<string, Json>): Promise<boolean> {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering Scheduler.jobSlotRuns().");
+    const read = this.deps.readRuns;
+    const job = o.job ? this.jobs.get(String(o.job)) : null;
+    if (!job || typeof read !== 'function' || job.kind === 'per-process' ||
+        job.cron || job.manualOnly) {
+      log.debug("Leaving Scheduler.jobSlotRuns(). Nothing to read.");
+      return false;
+    }
+    const slot = this.slotAt(job, at);
+    if (!slot || slot.slot === null || !(Number(slot.slot) >= 0)) {
+      log.debug("Leaving Scheduler.jobSlotRuns(). No slot.");
+      return false;
+    }
+    const wanted = new Set<string>(this.newestRealmIds(o));
+    const realmIds = this.realmIdsFor(job).filter(function (id: string) {
+      return wanted.has(id);
+    });
+    let reached = false;
+    for (const realmId of realmIds) {
+      const ids: string[] = [];
+      for (let k = 0; k < JOB_SLOTS_PER_REALM; k++) {
+        const n = Number(slot.slot) - k;
+        if (n < 0) {
+          break;
+        }
+        const id = this.runIdFor(job, realmId, n);
+        if (!byId.has(id)) {
+          ids.push(id);
+        }
+      }
+      if (!ids.length) {
+        continue;
+      }
+      let got: Map<string, Json> | null = null;
+      try {
+        got = await read(realmId, ids);
+      } catch (e) {
+        log.debug("Caught in Scheduler.jobSlotRuns(): " +
+                  (((e as Json) && (e as Json).message) || e));
+        continue;
+      }
+      if (!(got instanceof Map)) {
+        continue;
+      }
+      reached = true;
+      got.forEach(function (row: Json, id: string): void {
+        if (!row || byId.has(String(row.runId || id))) {
+          return;
+        }
+        const copy = Object.assign({}, row, { runId: row.runId || id });
+        if (!self.acceptsRun(copy, realmId, o)) {
+          return;
+        }
+        byId.set(String(copy.runId), copy);
+      });
+    }
+    log.debug("Leaving Scheduler.jobSlotRuns(). " + reached);
+    return reached;
+  }
+
+  // One run by id, in whichever realm holds it. The map first, then the one
+  // remembered row per job, then one read per realm. A row found in the
+  // store is not cached: the page asked, and the map stays the operational
+  // rows. Null from the reader is no store. A failed read is logged and the
+  // page says the run was not found.
   /**
    * Finds a run by id, in whichever realm holds it.
    *
    * @param runId - the run's id
-   * @returns the run's view, or null
+   * @returns a promise of the run's view, or null
    */
-  findRun(runId: string): Json | null {
+  async findRun(runId: string): Promise<Json | null> {
     const { log, realms } = this.deps;
     const self = this;
     log.debug("Entering Scheduler.findRun().");
+    const id = String(runId);
     let found: Json = null;
     realms.list().forEach(function (realm: Json): void {
       if (found) {
         return;
       }
-      const row = self.storeOf(String(realm.id)).get(String(runId));
+      const row = self.storeOf(String(realm.id)).get(id);
       if (row && (row.kind === 'run' || row.kind === 'process')) {
         found = self.runView(row);
       }
     });
-    log.debug("Leaving Scheduler.findRun(). " + (found ? 'found' : 'none'));
-    return found;
+    if (!found) {
+      this.latestRun.forEach(function (row: Json): void {
+        if (found || !row || String(row.runId) !== id) {
+          return;
+        }
+        if (row.kind === 'run' || row.kind === 'process') {
+          found = self.runView(row);
+        }
+      });
+    }
+    if (found) {
+      log.debug("Leaving Scheduler.findRun(). Found.");
+      return found;
+    }
+    const read = this.deps.readRuns;
+    if (typeof read !== 'function') {
+      log.debug("Leaving Scheduler.findRun(). None.");
+      return null;
+    }
+    const list = realms.list();
+    for (let i = 0; i < list.length; i++) {
+      const realmId = String(list[i].id);
+      let got: Map<string, Json> | null = null;
+      try {
+        got = await read(realmId, [id]);
+      } catch (e) {
+        log.debug("Caught in Scheduler.findRun(): " +
+                  ((e && e.message) || e));
+        log.debug("Leaving Scheduler.findRun(). Not read.");
+        return null;
+      }
+      if (got == null) {
+        log.debug("Leaving Scheduler.findRun(). No store.");
+        return null;
+      }
+      const row = got.get(id);
+      if (row && (row.kind === 'run' || row.kind === 'process')) {
+        log.debug("Leaving Scheduler.findRun(). Found in the store.");
+        return self.runView(row);
+      }
+    }
+    log.debug("Leaving Scheduler.findRun(). None.");
+    return null;
   }
 
   // For tests: forget what this instance holds in memory.
@@ -3972,6 +4926,11 @@ class Scheduler {
     this.stop();
     this.inFlight.clear();
     this.processSlots.clear();
+    this.finishedSlots.clear();
+    this.slotAsked.clear();
+    this.unknownSlots.clear();
+    this.heldFinished.clear();
+    this.latestRun.clear();
     this.ticking = null;
     log.debug("Leaving Scheduler.resetForTests().");
   }
@@ -3997,12 +4956,16 @@ scheduler.register({
             'realm that was removed — in batches of ' + HISTORY_BATCH +
             ', at most ' + HISTORY_MAX_BATCHES + ' a run.',
   owner: 'cluster/scheduler.ts',
-  // #408: the history it reads whole is `scheduler.runs`, which a request
-  // worker does not read back at its start (`restoreInWorkers: false`, #617),
-  // so in a worker it would find a fraction of the rows and keep the rest.
-  onFront: 'it reads the whole run history, which only a front process ' +
-           'restores (scheduler.runs is not read back by a request worker, ' +
-           '#617)',
+  // #408, #883: it deletes the null-expiry rows only a front process
+  // restores. A request worker does not read `scheduler.runs` back
+  // (`restoreInWorkers: false`, #617), so in a worker it would find a
+  // fraction of those rows and keep the rest. Finished interval runs are
+  // left to the minted expiry purge. The reason names "restores":
+  // tests/scheduler_workers.js F requires that word.
+  onFront: 'it deletes the null-expiry rows only a front process ' +
+           'restores (scheduler.runs is not read back by a request ' +
+           'worker, #617), and finished interval runs are left to the ' +
+           'minted expiry purge (#883)',
   everyMs: function (): number {
     return HISTORY_PURGE_MS;
   },

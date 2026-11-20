@@ -356,3 +356,26 @@ variable "bootstrap_admin_username" {
   default     = ""
   sensitive   = true
 }
+
+variable "cdn_enabled" {
+  description = <<-EOT
+    Azure Front Door in front of the load balancer (frontdoor.tf, #1341):
+    public_hostname goes to it, and direct_hostname stays on the load balancer
+    (or, in a multi-region environment, the Traffic Manager tree) for mutual
+    TLS, Kerberos, LDAP, SPIFFE and the plain-HTTP revocation listener, and
+    is Front Door's origin. In a multi-region environment the primary cell
+    holds the one profile. Needs a foundation re-applied with `Microsoft.Cdn/*`.
+  EOT
+  type        = bool
+  default     = false
+  validation {
+    condition     = !var.cdn_enabled || (var.public_hostname != "" && var.direct_hostname != "" && var.direct_hostname != var.public_hostname)
+    error_message = "cdn_enabled needs public_hostname and a direct_hostname of its own."
+  }
+}
+
+variable "direct_hostname" {
+  description = "The name that reaches the load balancer itself where cdn_enabled is on, e.g. `direct.test-idp.azure.iyasec.io`; in a multi-region environment it is in the cells file, beside public_hostname. The node's ACME certificate names it too."
+  type        = string
+  default     = ""
+}

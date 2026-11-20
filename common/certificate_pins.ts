@@ -84,7 +84,10 @@ class CertificatePins {
       .match(PEM_BLOCK) || [];
   }
 
-  // The first value of an attribute, as a string.
+  // The first value of an attribute, as a string. BY NAME ON PURPOSE
+  // (#1579): the audit reports each pin as `<application> <attribute>`, so
+  // the attribute is the answer as well as where the value is read from,
+  // and the tables below name the attributes that hold a certificate.
   private static fieldOf(record: Json, name: string): string {
     helpers.log.debug("Entering CertificatePins.fieldOf().");
     const raw = record && record.fields ? record.fields[name] : undefined;

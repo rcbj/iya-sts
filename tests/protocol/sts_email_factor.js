@@ -633,8 +633,12 @@ async function aLink() {
   const link = (String(got.message.Text).match(
     /(https?:\/\/\S+\/authn\/email-link\/open\S+)/) || [])[1] || "";
   check("3. the link is mailed, on this service's pinned origin", function () {
-    assert.ok(link.indexOf(base + "/realm/" + REALM +
-                           "/authn/email-link/open?") === 0, link);
+    // The step's ids are in the query in development and the fragment in
+    // product (#1454, `mode.hidesStepIds()`).
+    assert.ok(/^[?#]/.test(link.slice((base + "/realm/" + REALM +
+              "/authn/email-link/open").length)) &&
+              link.indexOf(base + "/realm/" + REALM +
+                           "/authn/email-link/open") === 0, link);
   });
   const other = browser("elsewhere");
   r = await openStep(other, link);

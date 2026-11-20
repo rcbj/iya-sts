@@ -199,9 +199,14 @@ class GnapPage {
       kit.note(t.html('consoleGnap.intro') +
         (json.enabled ? '' : t.html('consoleGnap.turnedOff'))) +
       kit.warn(t.html('consoleGnap.keyProofWarn')) +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each Metadata
+      // section with its heading; each tab's content after its heading,
+      // which `WebPages.protocolTabs()` cuts at the top level.
+      kit.frame(
       '<h2>' + t.html('consoleGnap.endpoints') + '</h2><table class="kv">' +
       endpointRows +
-      '</table><h2>' + t.html('consoleGnap.authorizationServers') +
+      '</table>') + kit.frame('<h2>' +
+      t.html('consoleGnap.authorizationServers') +
       '</h2><p class="sub">' +
       // The path's `{id}` is a parameter's value rather than message text: a
       // catalog message cannot carry a literal brace (#539). The link is
@@ -229,7 +234,7 @@ class GnapPage {
       list(caps.key_proofs_supported) + '</td><td>' +
       list(caps.token_formats_supported) + '</td><td>' +
       esc(caps.key_rotation_supported) + '</td></tr>' + capabilityRows +
-      '</tbody></table>' + serversNav.foot + '<h2>' +
+      '</tbody></table>' + serversNav.foot) + kit.frame('<h2>' +
       t.html('consoleGnap.tokenFormats') +
       '</h2><table class="kv"><tr><th>jwt-signed</th><td>' +
       t.html('consoleGnap.jwtSigned',
@@ -246,9 +251,9 @@ class GnapPage {
       t.html('consoleGnap.zcap',
              { suite: material ? material.zcap.cryptosuite : '',
                controller: material ? material.zcap.controller : '' }) +
-      '</td></tr></table><h2 ' +
+      '</td></tr></table>') + '<h2 ' +
       'id="list-grantsPage" data-tab="grants">' + t.html('consoleGnap.grants') +
-      '</h2><p ' +
+      '</h2>' + kit.frame('<p ' +
       'class="sub">' + stateLinks + ' — ' +
       t.html('consoleGnap.grantCount', { n: json.grants.paging.total }) +
       '</p>' + grantNav.head +
@@ -261,10 +266,10 @@ class GnapPage {
       '<th>' + t.html('consoleGnap.thTokens') + '</th>' +
       '<th>' + t.html('consoleGnap.thUpdated') +
       '</th><th></th></tr></thead><tbody>' + grantRows +
-      '</tbody></table>' + grantNav.foot +
+      '</tbody></table>' + grantNav.foot) +
       '<h2 id="list-resourcesPage" data-tab="resources">' +
       t.html('consoleGnap.registeredResourceSets') + '</h2>' +
-      resourceNav.head +
+      kit.frame(resourceNav.head +
       '<table><thead><tr><th>' + t.html('consoleGnap.thReference') +
       '</th><th>' + t.html('consoleGnap.thResourceServer') + '</th><th>' +
       t.html('consoleGnap.thAccess') + '</th><th>' +
@@ -272,7 +277,7 @@ class GnapPage {
       t.html('consoleGnap.thIntrospection') + '</th>' +
       '<th>' + t.html('consoleGnap.thRegistered') + '</th><th>' +
       '</th></tr></thead><tbody>' + resourceRows +
-      '</tbody></table>' + resourceNav.foot +
+      '</tbody></table>' + resourceNav.foot) +
       '<h2 data-tab="settings">' + t.html('consoleGnap.settings') + '</h2>' +
       SettingsForms.forms(json.settings, '/admin/gnap', undefined, t) +
       '<p class="links" data-metadata><a href="/admin/gnap?format=json">' +
@@ -379,15 +384,17 @@ class GnapPage {
       tiles +
       // A TAB PER TABLE (2026-10-12): the intro and the tiles above, and the
       // closing note and links, are Metadata (`WebPages.protocolTabs()`).
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each tab's
+      // content after its heading, which the splitter cuts at.
       '<h2 data-tab="formats">' + t.html('consoleGnap.tokensByFormat') +
-      '</h2><table><thead><tr>' + Object.keys(
+      '</h2>' + kit.frame('<table><thead><tr>' + Object.keys(
           json.tokensByFormat).map(function (f) {
         return '<th>' + esc(f) + '</th>';
       }).join('') + '</tr></thead><tbody><tr>' + formatRow +
-      '</tr></tbody></table><h2 ' +
+      '</tr></tbody></table>') + '<h2 ' +
       'id="list-page" data-tab="applications">' +
       t.html('consoleGnap.applications') + '</h2>' +
-      nav.head +
+      kit.frame(nav.head +
       '<table><thead><tr><th>' + t.html('consoleGnap.thApplication') +
       '</th><th>' + t.html('consoleGnap.thRole') + '</th><th>' +
       t.html('consoleGnap.thGrantsHeld') + '<div ' +
@@ -405,7 +412,7 @@ class GnapPage {
       t.html('consoleGnap.thErrorsReturned') + '</th><th>' +
       t.html('consoleGnap.thLastActivity') +
       '</th></tr></thead><tbody>' + rows + '</tbody></table>' +
-      nav.foot +
+      nav.foot) +
       // The link is markup a message cannot carry (#539), so the sentence
       // is the words before it, the link's text, and the words after.
       '<div data-metadata>' +

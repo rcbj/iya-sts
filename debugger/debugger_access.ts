@@ -13,20 +13,24 @@
 // KDC, a directory, a TLS handshake — so the one question that matters about
 // it is who may make it do that. The answer rcbj gave is one sentence: **any
 // console administrator, and nobody else.** This file is that sentence, asked
-// at the two moments it has to be:
+// by `debugger/debugger_server.ts`'s gate on EVERY request it lets through,
+// for the user of the relying-party session the request's cookie names — so a
+// console role revoked after a person signed in stops working at their next
+// request.
 //
-//   * **WHEN THE SCOPE WOULD BE ISSUED.** The debugger's api is a resource
-//     server with one delegated permission, `urn:sts:debugger-api:debugger`.
-//     `oauth-oidc/oauth2.ts` hands every scope it is about to grant through
-//     `narrowScope()`, and the permission is taken off the grant for anybody
-//     who may not hold it. Taken off rather than refused: RFC 6749 section 3.3
-//     lets an authorization server issue less than was asked for, and the
-//     debugger's own sign-in then reports "not an administrator" rather than
-//     an error from a flow the person did nothing wrong in.
-//   * **ON EVERY CALL THE GATE FORWARDS.** `debugger/debugger_server.ts` asks
-//     `isAdministrator()` again for the token's subject, because a console
-//     role revoked after a token was minted must stop working before that
-//     token runs out.
+// **NO PERMISSION, NO RESOURCE SERVER (#1717, 2026-11-13).** Until then the
+// debugger's api was a second application, `sts-debugger-api`, exposing one
+// delegated permission (`urn:sts:debugger-api:debugger`) that `narrowScope()`
+// here took off any grant to somebody who was not an administrator, and the
+// gate verified the session's access token for it. That access token was
+// also accepted on the request's own `Authorization` header — and the
+// debugger sends `Authorization` to its api as PART OF ITS WORK (a UserInfo
+// Bearer token, introspection's Basic credentials, SCIM's and GNAP's own), so
+// the gate read the debugger's traffic as its own credential. The gate is the
+// session alone now, the UI and its api are one client (`sts-debugger-ui`),
+// and the only question left is the one below. The retired row's identifier
+// is kept as RETIRED_API_IDENTIFIER, for `applications.js`'s retirement of a
+// seeded copy.
 //
 // **WHAT "ADMINISTRATOR" MEANS IS THE CONSOLE'S AND IS NOT RESTATED HERE.**
 // `admin-ui/admin_rbac.ts` decides who holds Admin Read or Admin Write, and it
@@ -54,8 +58,8 @@
 // the window, and before the bootstrap administrator has claimed the console
 // its roles are honoured from a password sign-in only. The console can see
 // the session; this module sees a name, so it refuses that account the
-// permission until the claim (`STS-DBG-0033`) — a partner asserting `admin`
-// must not be issued it.
+// debugger until the claim (`STS-DBG-0033`) — a partner asserting `admin`
+// must not be let in.
 //
 // **AND THE POLICY IS ASKED AS WELL, NEVER INSTEAD.** The roles are put into a
 // request to `common/access_gate.ts` under `RESOURCE.DEBUGGER`, so an operator
@@ -90,44 +94,19 @@ import accessGate = require('../common/access_gate');
 import adminRbac = require('../admin-ui/admin_rbac');
 import audit = require('../common/audit');
 
-// THE PERMISSION, AND WHY ITS BASE IS A URN RATHER THAN THE DEBUGGER'S ADDRESS.
-//
-// `applications.js` joins a resource's `oauthPermissionBaseUri` and a
-// permission name into the scope value a client asks for, and that base
-// becomes the access token's `aud`. An address would make the scope depend on
-// which host name somebody reached the debugger by — `localhost` and
-// `127.0.0.1` would be two permissions, one of them matching nothing, and the
-// token for the other addressed to a resource that does not exist. A URN is
-// the same string everywhere the service is deployed, which is what a
-// permission identifier has to be. Microsoft Entra ID's `api://` is the same
-// idea.
+// The one seeded application: the client a person signs in through, which is
+// the UI and its api together (#1717). The id is the one it had while there
+// were two, so registrations, grants and sessions made before survive.
 /**
- * The debugger api's permission base URI, a URN so the scope is the same
- * wherever the service is deployed.
- */
-const PERMISSION_BASE = 'urn:sts:debugger-api:';
-/**
- * The name of the debugger api's one delegated permission.
- */
-const PERMISSION_NAME = 'debugger';
-/**
- * The scope value that grants use of the debugger:
- * `urn:sts:debugger-api:debugger`.
- */
-const PERMISSION_ID = PERMISSION_BASE + PERMISSION_NAME;
-
-// The two seeded applications. The UI is the client a person signs in through;
-// the api is the resource server that exposes the permission.
-/**
- * The client_id of the seeded debugger UI application a person signs in
+ * The client_id of the seeded debugger application a person signs in
  * through.
  */
 const UI_CLIENT_ID = 'sts-debugger-ui';
 /**
- * The identifier of the seeded resource-server application that defines the
- * permission.
+ * The identifier of the resource-server application seeded before #1717,
+ * which a start removes when it was seeded rather than made by hand.
  */
-const API_IDENTIFIER = 'sts-debugger-api';
+const RETIRED_API_IDENTIFIER = 'sts-debugger-api';
 
 // The console roles, as `admin_rbac.rolesOf()` names them. Either is enough.
 /**
@@ -150,8 +129,7 @@ interface DebuggerAccessDeps {
  * Decides who may use the embedded protocol debugger: any console
  * administrator of the default realm, and nobody else.
  *
- * Asked when the permission would be issued and again on every call the
- * debugger's gate forwards.
+ * Asked by the debugger's gate on every request it lets through.
  */
 class DebuggerAccess {
   /**
@@ -187,10 +165,9 @@ class DebuggerAccess {
   // ---------------------------------------------------------------------------
   // isAdministrator({ name, authenticated, kind, path })
   //
-  // `{ allowed, why, code, roles }`. `kind` is the issuance subject's — a
-  // `client_credentials` grant's subject is an application, and an application
+  // `{ allowed, why, code, roles }`. `kind` is the subject's — an application
   // is never a debugger user, because the debugger is a PERSON's tool and rcbj
-  // chose that no machine client holds the permission.
+  // chose that no machine client uses it.
   // ---------------------------------------------------------------------------
   /**
    * Says whether a subject may use the debugger: a person, authenticated,
@@ -210,8 +187,8 @@ class DebuggerAccess {
     if (who.kind && who.kind !== 'user') {
       log.debug("Leaving DebuggerAccess.isAdministrator(). Not a person.");
       return { allowed: false, code: 'STS-DBG-0001', roles: [],
-               why: 'the subject is an application, and the debugger ' +
-                    'permission is issued to people only' };
+               why: 'the subject is an application, and the debugger is ' +
+                    'for people only' };
     }
     if (!name) {
       log.debug("Leaving DebuggerAccess.isAdministrator(). Nobody named.");
@@ -251,9 +228,9 @@ class DebuggerAccess {
     // #103). It holds both roles by membership, and until it has claimed the
     // console with its password those roles are honoured at the console alone,
     // from a password session. Nothing here knows how the subject signed in —
-    // at issuance a subject is a name, and at the debugger a token's claims —
-    // so the debugger waits for the claim rather than guessing. A federation
-    // partner asserting `admin` would otherwise be issued the permission.
+    // the gate hands it the session's user name and no more — so the debugger
+    // waits for the claim rather than guessing. A federation partner asserting
+    // `admin` would otherwise be let in.
     if (held && held.claimPending === true) {
       log.debug("Leaving DebuggerAccess.isAdministrator(). The bootstrap " +
                 "administrator has not claimed the console.");
@@ -293,94 +270,6 @@ class DebuggerAccess {
     log.debug("Leaving DebuggerAccess.isAdministrator(). Allowed.");
     return { allowed: true, roles: roles, why: '' };
   }
-
-  // Whether a space-delimited scope carries the permission.
-  /**
-   * Says whether a space-delimited scope carries the debugger permission.
-   *
-   * @param scope - the scope string
-   * @returns true when PERMISSION_ID is among its values
-   */
-  asksForPermission(scope) {
-    const { log } = this.deps;
-    log.debug("Entering DebuggerAccess.asksForPermission().");
-    const asked = String(scope || '').split(/\s+/).indexOf(PERMISSION_ID) >= 0;
-    log.debug("Leaving DebuggerAccess.asksForPermission(). " + asked);
-    return asked;
-  }
-
-  // ---------------------------------------------------------------------------
-  // narrowScope(scope, subject, context)
-  //
-  // The scope to GRANT: `scope` unchanged unless it names the debugger
-  // permission for somebody who may not hold it, in which case that one value
-  // is removed and the rest are left exactly as they were. `context` is
-  // `{ clientId, grant }`, for the log and the audit row.
-  //
-  // **THE REALM IS PART OF THE RULE.** The permission is defined in the default
-  // realm only, and the console roster is the default realm's — so in another
-  // realm the value is taken off whoever asks. A person in `acme` who shares a
-  // name with a default-realm administrator is somebody else.
-  // ---------------------------------------------------------------------------
-  /**
-   * Returns the scope to grant: unchanged, unless it names the debugger
-   * permission for somebody who may not hold it, in which case that one
-   * value is removed and the removal audited.
-   *
-   * Outside the default realm the permission is always removed.
-   * @param scope - the scope about to be granted
-   * @param subject - the issuance subject, as isAdministrator() takes it
-   * @param context - `{ clientId, grant }`, for the audit row
-   * @returns the scope string to grant
-   */
-  narrowScope(scope, subject, context) {
-    const { log, realms, audit } = this.deps;
-    log.debug("Entering DebuggerAccess.narrowScope().");
-    if (!this.asksForPermission(scope)) {
-      log.debug("Leaving DebuggerAccess.narrowScope(). The permission was " +
-                "not asked for.");
-      return String(scope == null ? '' : scope);
-    }
-    const ctx = context || {};
-    const inDefault = realms.currentId() === realms.DEFAULT_ID;
-    const answer = inDefault
-      ? this.isAdministrator(subject)
-      : { allowed: false, code: 'STS-DBG-0001',
-          why:
-            'the debugger permission exists in the default realm only, and ' +
-               'this request is in the realm "' + realms.currentId() + '"' };
-    if (answer.allowed) {
-      log.debug("Leaving DebuggerAccess.narrowScope(). Granted.");
-      return String(scope);
-    }
-    const kept = String(scope).split(/\s+/).filter(function (one) {
-      return one && one !== PERMISSION_ID;
-    }).join(' ');
-    const name = String((subject && subject.name) || '');
-    // ONE line in the log, and it is the audit row's: `audit.js` writes a row
-    // carrying an errorCode to the log itself, so a tagged log line here too
-    // would be the same refusal twice.
-    // The empty roster has a code of its own, because what an operator does
-    // about it is different: grant somebody a role, rather than find out why
-    // this person does not hold one.
-    // The unclaimed bootstrap account (#103) likewise: what to do is sign in
-    // to the console with the password, not look for a missing role.
-    audit.failure(answer.code === 'STS-DBG-0024' ||
-                  answer.code === 'STS-DBG-0033' ? answer.code
-                                                 : 'STS-DBG-0001', {
-      actor: name,
-      protocol: 'OAuth 2.0 / OIDC',
-      channel: 'http',
-      target: PERMISSION_ID,
-      outcome: 'refused',
-      summary: 'the debugger permission was not granted to ' +
-               (name || 'an unnamed subject') + ': ' + answer.why,
-      detail: { client_id: String(ctx.clientId || ''),
-                grant: String(ctx.grant || ''), why: answer.why }
-    });
-    log.debug("Leaving DebuggerAccess.narrowScope(). Taken off.");
-    return kept;
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -414,13 +303,8 @@ export = {
   installInstance: (instance: DebuggerAccess): void => slot.install(instance),
   /** Says where the installed instance came from. */
   instanceOrigin: (): string => slot.origin(),
-  PERMISSION_BASE: PERMISSION_BASE,
-  PERMISSION_NAME: PERMISSION_NAME,
-  PERMISSION_ID: PERMISSION_ID,
   UI_CLIENT_ID: UI_CLIENT_ID,
-  API_IDENTIFIER: API_IDENTIFIER,
+  RETIRED_API_IDENTIFIER: RETIRED_API_IDENTIFIER,
   CONSOLE_ROLES: CONSOLE_ROLES,
-  isAdministrator: slot.forward('isAdministrator'),
-  asksForPermission: slot.forward('asksForPermission'),
-  narrowScope: slot.forward('narrowScope')
+  isAdministrator: slot.forward('isAdministrator')
 };

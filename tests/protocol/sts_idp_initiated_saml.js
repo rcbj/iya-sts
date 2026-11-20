@@ -50,9 +50,11 @@
 // A session's risk comes from the sign-in's assessment over datasets the
 // suite does not load, so nothing over HTTP can hold a session at MEDIUM.
 // `tests/saml_initiation.js` runs D a second time in product mode instead.
-// And the error codes (STS-SAML-0091, 0111, 0113, 0114, 0099, 0100): they
-// are recorded and never sent, so a client cannot read them; this asserts
-// what a client sees.
+// The error codes (STS-SAML-0091, 0111, 0113, 0114, 0100) are recorded and
+// never sent, so they are read off the realm's audit log (#444 D12, phase
+// 7); STS-SAML-0099 is the mechanism re-prompt's on the AuthnRequest path,
+// which a session held on a mechanism the service provider allows never
+// reaches here.
 //
 // WHAT PRODUCT ASKS, AND HOW THIS PAYS IT: every application and the person
 // are created by this run through `/admin-api` with unique names; each
@@ -333,6 +335,36 @@ function brief(r) {
          String(r.body || "").replace(/\s+/g, " ").slice(0, 240);
 }
 
+// THE CODE A REFUSAL RECORDS (#444 D12, phase 7): a code is recorded and
+// never sent, so it is read off this realm's audit log — the rows of
+// `code`, waited for briefly to pass `above`.
+async function codeRows(code, above) {
+  log.debug("Entering codeRows(). " + code);
+  let n = 0;
+  for (let i = 0; i < 20; i += 1) {
+    const r = await api(REALM, "GET", "/audit?per=500&code=" +
+                        encodeURIComponent(code));
+    n = Number((r.body && r.body.matched) || 0);
+    if (above === undefined || n > above) {
+      break;
+    }
+    await sleep(150);
+  }
+  log.debug("Leaving codeRows(). " + n);
+  return n;
+}
+
+async function recorded(label, code, before) {
+  log.debug("Entering recorded(). " + code);
+  const after = await codeRows(code, before);
+  await check(label + " — recorded " + code + " on the realm's audit log",
+              async function () {
+    assert.ok(after > before, "no new " + code + " row (" + before + " -> " +
+              after + ")");
+  });
+  log.debug("Leaving recorded().");
+}
+
 // ---------------------------------------------------------------------------
 // THE SERVICE PROVIDERS SIGN THEIR AUTHNREQUESTS, as sts_global_logout.js's
 // do: a product-mode service refuses an unsigned one
@@ -515,7 +547,9 @@ async function setUp() {
 async function sectionA(w) {
   log.debug("Entering sectionA().");
   log.info("=== A. SAML 2.0, /saml2/unsolicited ===");
+  const before91 = await codeRows("STS-SAML-0091");
   const refused = await hop(null, unsolicited(w.spOff));
+  await recorded("A1b. the refused link", "STS-SAML-0091", before91);
   await check("A1. a registered service provider with no override is " +
               "REFUSED by default — 403, and no sign-in screen first",
               async function () {
@@ -635,7 +669,9 @@ async function sectionB(w) {
   log.debug("Entering sectionB().");
   log.info("=== B. SAML 2.0, an AuthnRequest ===");
   const closed = authnRequestUrl(w.spClosed);
+  const before111 = await codeRows("STS-SAML-0111");
   const denied = await follow(jar(), closed.url);
+  await recorded("B1b. the denied AuthnRequest", "STS-SAML-0111", before111);
   const deniedXml = messageOf(denied.r.body);
   await check("B1. an AuthnRequest from a service provider whose entry " +
               "sets saml2SpInitiatedSso FALSE is answered RequestDenied, " +
@@ -669,7 +705,10 @@ async function sectionB(w) {
 async function sectionC(w) {
   log.debug("Entering sectionC().");
   log.info("=== C. SAML 1.1, /saml11/sso/{rp} ===");
+  const before113 = await codeRows("STS-SAML-0113");
   const refused = await hop(null, sso11(w.rpOff));
+  await recorded("C1b. the refused SAML 1.1 link", "STS-SAML-0113",
+                 before113);
   await check("C1. a link with only a TARGET, for a relying party that did " +
               "not opt in, is REFUSED by default — 403, no sign-in screen",
               async function () {
@@ -712,8 +751,11 @@ async function sectionC(w) {
     assert.strictEqual(shire.r.status, 200, brief(shire.r));
     assert.ok(/name="SAMLResponse"/.test(shire.r.body), brief(shire.r));
   });
+  const before114 = await codeRows("STS-SAML-0114");
   const closed = await hop(w.cookies,
                            sso11(w.rpClosed, { shire: acsOf(w.rpClosed) }));
+  await recorded("C5b. the refused shire request", "STS-SAML-0114",
+                 before114);
   await check("C5. and REFUSED for one whose entry sets " +
               "saml11SpInitiatedSso FALSE — 403", async function () {
     assert.strictEqual(closed.status, 403, brief(closed));
@@ -736,8 +778,11 @@ async function sectionE(w) {
               brief(reprompt));
     assert.ok(/\/authn\//.test(reprompt.location), brief(reprompt));
   });
+  const before100 = await codeRows("STS-SAML-0100");
   const back = await hop(w.cookies,
                          unsolicited(w.spMech, { reprompted: "1" }));
+  await recorded("E2b. the mechanism still unmet", "STS-SAML-0100",
+                 before100);
   const backXml = messageOf(back.body);
   await check("E2. back from that one trip still on a password: " +
               "RequestDenied, not another trip", async function () {
@@ -769,7 +814,7 @@ async function test() {
   }
   // A FLOOR ON THE COUNT: a section that stops being called takes its
   // assertions with it and the run would still say "passed".
-  assert.ok(checks >= 17, "only " + checks + " checks ran; a section " +
+  assert.ok(checks >= 22, "only " + checks + " checks ran; a section " +
                           "stopped being called");
   log.info(checks + " checks passed.");
   log.info("Test completed successfully.");

@@ -57,5 +57,12 @@
   "checks.result": "Resultat",
   "checks.detail": "Detalj",
   "checks.passed": "godkänd",
-  "checks.failed": "MISSLYCKADES"
+  "checks.failed": "MISSLYCKADES",
+  "withheld.title": "Ömsesidig autentisering utfördes inte",
+  "withheld.heading": "Ömsesidig autentisering utfördes inte",
+  "withheld.body": "Biljetten godtogs och AP-REP hölls inne, eftersom <code>?mutual=off</code> begärdes. Inget har bevisat vilken server som svarade, och ingen session startades.",
+  "withheld.principal": "Biljetten namngav <code>{principal}</code>.",
+  "mutualClosed.title": "Den testkontrollen är stängd",
+  "mutualClosed.heading": "Den testkontrollen är stängd",
+  "mutualClosed.body": "Att hålla inne AP-REP (<code>?mutual=off</code>) är öppet endast under utveckling. Biljetten godtogs inte och ingen session startades."
 }

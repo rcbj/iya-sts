@@ -403,13 +403,50 @@ class ServiceState {
               })
             : Promise.resolve(null);
           return landed.then(function () {
-            return { started: started, keys: keys, minted: mintedResult,
-                     coordinating: coordinating, pki: pkiResult };
+            // Block leases a previous life of this origin still holds
+            // (#884). The origin is adopted and the node has joined by
+            // here, and the sockets bind only after this promise resolves.
+            // A failure is logged and does not stop the start.
+            return self.reclaimStatusBlocks().then(function () {
+              return { started: started, keys: keys, minted: mintedResult,
+                       coordinating: coordinating, pki: pkiResult };
+            });
           });
         });
         });
       });
     });
+    });
+  }
+
+  // Releases access-token status-list blocks a previous life of this origin
+  // still holds (#884), and registers the reap job. Never rejects: a failure
+  // is logged under STS-OAUTH-1008 and the start continues.
+  private reclaimStatusBlocks(): Promise<void> {
+    const { log, helpers } = this.deps;
+    log.debug("Entering ServiceState.reclaimStatusBlocks().");
+    log.debug("Leaving ServiceState.reclaimStatusBlocks().");
+    return Promise.resolve().then(function () {
+      const status = require('../oauth-oidc/access_token_status');
+      if (typeof status.ensureReapJob === 'function') {
+        status.ensureReapJob();
+      }
+      if (typeof status.reclaimAbandoned === 'function') {
+        return status.reclaimAbandoned({ bareOwn: true });
+      }
+      return 0;
+    }).then(function () {
+      return undefined;
+    }, function (e: any) {
+      // The status list logs its own failure and resolves. This is the
+      // start's backstop when the require or the registration throws: the
+      // process still serves, and the blocks stay until they expire.
+      log.debug("Caught in ServiceState.reclaimStatusBlocks(): " +
+                ((e && e.message) || e));
+      helpers.log.warn(require('./error_codes').tag('STS-OAUTH-1008') +
+               'access-token status: releasing block leases held by a ' +
+               'stopped process failed at start: ' +
+               ((e && e.message) || e) + '. They stay until they expire.');
     });
   }
 }

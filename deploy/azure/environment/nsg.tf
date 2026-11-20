@@ -108,6 +108,17 @@ locals {
         dests       = [local.nodes_cidr], ports = [tostring(local.published_ports.https.container)]
       }
     } : {},
+    # FRONT DOOR'S EDGES (frontdoor.tf, #1341), to the main port only — by
+    # service tag, which stays current by itself. Every Front Door
+    # customer's, which is what the origin secret is for.
+    local.cdn ? {
+      front-door = {
+        description = "Azure Front Door's edges, to the main port (#1341)"
+        priority    = 145, direction = "Inbound", protocol = "Tcp"
+        sources     = [], source_tag = "AzureFrontDoor.Backend"
+        dests       = [local.nodes_cidr], ports = [tostring(local.published_ports.https.container)]
+      }
+    } : {},
     # THE INTER-CELL LISTENER (intercell.tf): from the other cells' VNets,
     # over the peering, and to their load balancers.
     local.multi ? {

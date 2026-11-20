@@ -321,9 +321,11 @@ class SchedulerPage {
         '</form> <small>' + t.html('consoleScheduler.leader.stepDownWhat') +
         '</small>'
       : '';
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each tab's
+    // heading stays at the top level, its content one frame.
     return '<h3 data-tab="leader">' +
-      t.html('consoleScheduler.leader.heading') + '</h3><p>' +
-      who + '</p>' + stepDown;
+      t.html('consoleScheduler.leader.heading') + '</h3>' +
+      kit.frame('<p>' + who + '</p>' + stepDown);
   }
 
   static runsTable(json: Json, query: Json, t: Json): string {
@@ -375,7 +377,7 @@ class SchedulerPage {
     }).join('');
     return '<h3 data-tab="runs">' + t.html('consoleScheduler.runs.heading') +
       '</h3>' +
-      filter + nav.head +
+      kit.frame(filter + nav.head +
       '<table class="grid"><thead><tr><th>' +
       t.html('consoleScheduler.th.run') + '</th><th>' +
       t.html('consoleScheduler.th.job') + '</th>' +
@@ -390,7 +392,7 @@ class SchedulerPage {
       '</tr></thead><tbody>' +
       (rows || '<tr><td colspan="10">' +
                t.html('consoleScheduler.runs.none') + '</td></tr>') +
-      '</tbody></table>' + nav.foot;
+      '</tbody></table>' + nav.foot);
   }
 
   static listHtml(ctx: Json, json: Json): string {
@@ -432,7 +434,7 @@ class SchedulerPage {
     const commands = json.commands.length
       ? '<h3 data-tab="commands">' +
         t.html('consoleScheduler.commands.heading') +
-        '</h3><table class="grid"><thead><tr><th>' +
+        '</h3>' + kit.frame('<table class="grid"><thead><tr><th>' +
         t.html('consoleScheduler.th.command') + '</th>' +
         '<th>' + t.html('consoleScheduler.th.state') + '</th><th>' +
         t.html('consoleScheduler.th.requested') + '</th><th>' +
@@ -445,7 +447,7 @@ class SchedulerPage {
             kit.esc(c.requestedBy || '—') + '</td><td>' +
             kit.esc(c.obeyedBy ? (c.obeyedBy.nodeName || c.obeyedBy.host) +
                       ' pid ' + c.obeyedBy.pid : '—') + '</td></tr>';
-        }).join('') + '</tbody></table>'
+        }).join('') + '</tbody></table>')
       : '';
     // TABS (2026-10-12, `WebPages.protocolTabs()`): the leader, the jobs,
     // the runs, the commands and the settings; the tiles, the warnings and
@@ -453,7 +455,7 @@ class SchedulerPage {
     return tiles + asOf + disabled + unknown + what +
       this.leaderBlock(json, canWrite, t) + '<h3 data-tab="jobs">' +
       t.html('consoleScheduler.jobs.heading') + '</h3>' +
-      this.jobsTable(json, canWrite, ctx.query || {}, t) +
+      kit.frame(this.jobsTable(json, canWrite, ctx.query || {}, t)) +
       this.runsTable(json, ctx.query || {}, t) +
       commands + (json.confinedToRealm ? ''
         : '<h2 data-tab="settings">' +
@@ -474,7 +476,9 @@ class SchedulerPage {
     const row = function (label: string, value: string): string {
       return '<tr><th>' + label + '</th><td>' + value + '</td></tr>';
     };
-    return '<table class="grid"><tbody>' +
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): one run's
+    // table, the page's one block, is one frame.
+    return kit.frame('<table class="grid"><tbody>' +
       row(t.html('consoleScheduler.th.run'),
           '<code>' + kit.esc(r.runId) + '</code>') +
       row(t.html('consoleScheduler.th.job'),
@@ -521,7 +525,7 @@ class SchedulerPage {
         '<a href="' +
         kit.esc(PAGE + '?run=' + encodeURIComponent(r.abandonedOf)) +
         '"><code>' + kit.esc(r.abandonedOf) + '</code></a>') : '') +
-      '</tbody></table>';
+      '</tbody></table>');
   }
 
   // THE PAGE'S BODY, the list or one run (#446): one method, so that it can

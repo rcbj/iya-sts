@@ -61,7 +61,6 @@
   "indexedNote": "Un operador indexado lo responde el directorio sin leer a cada persona. Una consulta sobre usuarios cuyo filtro no usa ninguno, o que ordena o cuenta, lee a cada persona: se rechaza en modo síncrono y se convierte en un trabajo en modo auto.",
   "trustRealm": "Dominio de confianza",
   "go": "Ir",
-  "version": "versión de iya-sts {version}",
   "docsLink": "Documentación",
   "addFilter": "Añadir un filtro",
   "removeFilter": "Quitar este filtro",

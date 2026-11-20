@@ -133,13 +133,27 @@
 # what was verified when the image was built; tests/tools/build-corpora-image.sh
 # rebuilds it after a pin changes and rewrites this line.
 # ---------------------------------------------------------------------------
-ARG STS_CORPORA_IMAGE=ghcr.io/rcbj/iya-sts-test-corpora@sha256:17961e5dd3b1288f790cdbb125c768eb6d3ee48c266e920d43f3b731c769b9aa
+ARG STS_CORPORA_IMAGE=ghcr.io/rcbj/iya-sts-test-corpora@sha256:36f60adcffd341180f7a9185712b90e6cc2ac3eb9321e68ca79278db9a8f7d36
 FROM ${STS_CORPORA_IMAGE} AS corpora
 
 FROM golang:1.26.8-bookworm AS enroll-go
 ENV CGO_ENABLED=0 GOFLAGS=-trimpath GOTOOLCHAIN=local
-RUN go install github.com/go-acme/lego/v5@v5.5.2 \
- && go install github.com/micromdm/scep/v2/cmd/scepclient@v2.3.0 \
+# RETRIED, AND WITH `direct` BEHIND THE PROXY (2026-11-14). Two of ten CI
+# builds sampled died here on a stream error from proxy.golang.org or
+# sum.golang.org (runs 41108435039, 40736293033), which is the network and
+# not the tree. `direct` fetches from the module's own repository when the
+# proxy will not answer; either way every module is still checked against
+# sum.golang.org, which GONOSUMDB stays unset for. Five tries, the wait
+# growing; a fifth failure fails the stage as it always did.
+ENV GOPROXY=https://proxy.golang.org,direct
+RUN for try in 1 2 3 4 5; do \
+      go install github.com/go-acme/lego/v5@v5.5.2 \
+      && go install github.com/micromdm/scep/v2/cmd/scepclient@v2.3.0 \
+      && break; \
+      echo "go install failed (try ${try} of 5)" >&2; \
+      [ "${try}" -lt 5 ] || exit 1; \
+      sleep $(( try * 15 )); \
+    done \
  && mkdir -p /out/licenses \
  && cp /go/bin/lego /go/bin/scepclient /out/ \
  && cp /go/pkg/mod/github.com/go-acme/lego/v5@v5.5.2/LICENSE \

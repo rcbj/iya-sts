@@ -79,6 +79,10 @@ const GROUPS = [
     pkiUseCase: 'jose',
     useCases: ['access-token', 'id-token', 'refresh-token', 'userinfo',
                'introspection', 'oauth-signed-metadata'] },
+  // `vci-credential` signs here only under `keys.credentialSigner=realm-key`
+  // (#1880): by default a credential and its status list are signed by the
+  // realm's dedicated credential signer, whose certificate names the issuer
+  // (`common/credential_signer.js`), in either signer model.
   { id: 'credentials', label: 'Verifiable credentials',
     pkiUseCase: 'jose',
     useCases: ['vci-credential', 'vci-signed-metadata', 'vci-trusted-list',

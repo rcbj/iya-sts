@@ -48,10 +48,13 @@
 //     lock ends with its transaction on every engine, and a process that dies
 //     holding one releases it with its connection.
 //
-// NOTHING HERE STARTS A TRANSACTION ON THE LIVENESS CONNECTION. It is one
-// connection that the heartbeat, the leases and the origin renewal share,
-// and a BEGIN on it would sweep another caller's statement into this one's
-// transaction. Every statement sent there is a single autocommit statement.
+// A MULTI-STATEMENT CHANGE ON THE LIVENESS CONNECTION GOES THROUGH
+// `onLive()` (#770). The module does not BEGIN on `live` itself: the driver
+// serializes `liveTransact` on that one connection and holds the mutex until
+// COMMIT, because a BEGIN there would otherwise sweep the next caller's
+// statement into this transaction. A test that does not pass `liveTransact`
+// runs the same body with `inTransaction` on the pool. A single renewal
+// statement stays one autocommit, bounded when the driver passed `boundQuery`.
 //
 // A LIBRARY: handed the dialect, the pools and the driver's helpers; it
 // requires only the error-code table and bunyan, and holds no state.
@@ -71,11 +74,23 @@ const RACE_RETRIES = 3;
 // timeout is run again (see inTransaction()).
 const TRANSACTION_RETRIES = 8;
 
+// The fence's share-lock name. The same spelling as
+// `persistence_postgres.js`'s `fenceLockName`: the identity is in the name
+// so a takeover deletes the row a flush locked. No Entering/Leaving pair —
+// a fence calls it on every write, and the line would drown the log.
+function fenceLockName(kind, id, identity) {
+  return 'fence:' + kind + ':' + String(id) + ':' + String(identity);
+}
+
 /**
  * Builds the portable statements over one driver's connections.
  *
- * @param deps - `{ dialect, pool, tallyPool, live, processId, originScope }`:
- *   the dialect, the write pool, the tally pool, the liveness runner, a
+ * @param deps - `{ dialect, pool, tallyPool, live, liveTransact, boundQuery,
+ *   boundTransact, isBoundTimeout, processId, originScope }`: the dialect,
+ *   the write pool, the tally pool, the liveness runner, the driver's
+ *   serialized liveness transaction, a bounded liveness query
+ *   `(sql, params, ttlMs)`, a bounded liveness transaction `(fn, ttlMs)`
+ *   and the test that tells its timeout from a failure (#770's review), a
  *   function answering this process's origin, and the origin claims' scope
  * @returns the portable operations, each answering what the driver's
  *   PostgreSQL statement answers
@@ -203,6 +218,122 @@ function create(deps) {
              key: String(key) };
   }
 
+  /**
+   * A transaction on the liveness connection when the driver serializes
+   * one, and on the pool otherwise (a test that did not pass `liveTransact`).
+   *
+   * @param fn - given the held connection
+   * @returns what `fn` answered
+   */
+  function onLive(fn) {
+    log.debug("Entering onLive().");
+    log.debug("Leaving onLive().");
+    if (typeof deps.liveTransact === 'function') {
+      return deps.liveTransact(fn);
+    }
+    return inTransaction(pool, fn);
+  }
+
+  /**
+   * The origin's fence lock, in the transaction that changed the claim.
+   * Every other reservation of this key is deleted with it.
+   *
+   * @param client - the held connection
+   * @param key - the origin
+   * @param reservation - the reservation now held
+   * @returns a promise settled when the rows match
+   */
+  function installOriginLock(client, key, reservation) {
+    log.debug("Entering installOriginLock().");
+    const name = fenceLockName('origin', key, reservation);
+    const prefix = 'fence:origin:' + String(key) + ':';
+    log.debug("Leaving installOriginLock().");
+    return run(client, 'originLock.insert',
+      kx('sts_cluster_locks').insert({ name: name })
+        .onConflict('name').ignore()
+    ).then(function () {
+      return run(client, 'originLock.clear',
+        kx('sts_cluster_locks')
+          .whereRaw('left(??, char_length(?)) = ?', ['name', prefix, prefix])
+          .whereNot({ name: name }).del());
+    });
+  }
+
+  /**
+   * The lease's fence lock, in the transaction that took or released it.
+   *
+   * @param client - the held connection
+   * @param name - the lease
+   * @param token - the token now held
+   * @returns a promise settled when the rows match
+   */
+  function installLeaseLock(client, name, token) {
+    log.debug("Entering installLeaseLock().");
+    const lockName = fenceLockName('lease', name, token);
+    const prefix = 'fence:lease:' + String(name) + ':';
+    log.debug("Leaving installLeaseLock().");
+    return run(client, 'leaseLock.insert',
+      kx('sts_cluster_locks').insert({ name: lockName })
+        .onConflict('name').ignore()
+    ).then(function () {
+      return run(client, 'leaseLock.clear',
+        kx('sts_cluster_locks')
+          .whereRaw('left(??, char_length(?)) = ?', ['name', prefix, prefix])
+          .whereNot({ name: lockName }).del());
+    });
+  }
+
+  /**
+   * One claim's fence lock, committed on its own. Every other reservation
+   * of the same claim is deleted with it, so the delete waits for a flush
+   * that still share-locks the previous name (#884).
+   *
+   * @param name - the lock row
+   * @param prefix - the claim's lock names, through the reservation's colon
+   * @returns a promise settled when the rows match
+   */
+  function installClaimLock(name, prefix) {
+    log.debug("Entering installClaimLock().");
+    log.debug("Leaving installClaimLock().");
+    return inTransaction(pool, function (client) {
+      return run(client, 'claimLock.insert',
+        kx('sts_cluster_locks').insert({ name: name })
+          .onConflict('name').ignore()
+      ).then(function () {
+        return run(client, 'claimLock.clear',
+          kx('sts_cluster_locks')
+            .whereRaw('left(??, char_length(?)) = ?',
+                      ['name', prefix, prefix])
+            .whereNot({ name: name }).del());
+      });
+    });
+  }
+
+  /**
+   * Deletes claim fence locks. One transaction, so the delete waits for a
+   * flush that still share-locks any of the names (#884).
+   *
+   * @param names - the lock rows
+   * @returns a promise of how many statements ran
+   */
+  function releaseClaimLocks(names) {
+    log.debug("Entering releaseClaimLocks().");
+    const list = (names || []).map(String).filter(function (name) {
+      return !!name;
+    }).sort();
+    if (!list.length) {
+      log.debug("Leaving releaseClaimLocks(). None.");
+      return Promise.resolve(0);
+    }
+    log.debug("Leaving releaseClaimLocks().");
+    return inTransaction(pool, function (client) {
+      return run(client, 'claimLock.release',
+        kx('sts_cluster_locks').whereIn('name', list).del());
+    }).then(function () {
+      return list.length;
+    });
+  }
+
   // ===================================================================
   // CLAIMS
   // ===================================================================
@@ -213,44 +344,71 @@ function create(deps) {
    * @param scope - the claim's scope
    * @param realmId - its realm
    * @param key - its key
-   * @param opts - `{ ttlMs, reservation, origin }`
+   * @param opts - `{ ttlMs, reservation, origin, noFlushWait }`.
+   *   `noFlushWait` is ignored: MariaDB has no asynchronous commit here.
    * @returns `{ claimed, claimedAt, expiresAt }` or `{ claimed: false,
    *   existing }`
    */
   function claimOnce(scope, realmId, key, opts) {
     log.debug("Entering claimOnce(). scope=" + scope);
     const o = opts || {};
+    // `noFlushWait` is PostgreSQL's set_config('synchronous_commit','off')
+    // (#886). MariaDB has no equivalent on this statement, so a refresh
+    // spend here still commits synchronously. The refresh token's own
+    // write is unchanged on both engines.
     const ttlMs = Math.max(1, Math.floor(Number(o.ttlMs) || 0));
     const reservation = String(o.reservation || '');
     const claimant = o.origin ? String(o.origin) : processId();
     const where = at(scope, realmId, key);
+    // The insert-or-nothing, then the row. Anonymous: claimOnce is the
+    // named function, and this is its body on whichever connection holds it.
+    const body = function (runner) {
+      return run(runner, 'claimOnce.expired',
+        kx('sts_cluster_claims').where(where)
+          .where('expires_at', '<=', dialect.now()).del()
+      ).then(function () {
+        return run(runner, 'claimOnce.insert',
+          kx('sts_cluster_claims').insert(Object.assign({}, where, {
+            reservation: reservation, origin: claimant,
+            claimed_at: dialect.now(), expires_at: dialect.now(ttlMs)
+          })).onConflict(['scope', 'realm', 'key']).ignore());
+      }).then(function (inserted) {
+        const won = dialect.affected(inserted) > 0;
+        return run(runner, 'claimOnce.read',
+          kx('sts_cluster_claims')
+            .select('origin', 'reservation', 'claimed_at', 'expires_at')
+            .where(where)
+        ).then(function (found) {
+          const row = first(found);
+          if (won && row && row.reservation === reservation) {
+            return { claimed: true, claimedAt: Number(row.claimed_at),
+                     expiresAt: Number(row.expires_at) };
+          }
+          return { claimed: false, existing: row ? {
+            origin: row.origin,
+            claimedAt: Number(row.claimed_at),
+            expiresAt: Number(row.expires_at)
+          } : null };
+        });
+      });
+    };
+    // An origin claim's fence lock commits with the claim, on the POOL.
+    // The liveness connection is the heartbeat's. A claim there that waited
+    // on a fence's share lock would hold that connection, and the fence's
+    // re-assertion needs it. Any other scope stays one autocommit.
+    if (String(scope) !== String(originScope)) {
+      log.debug("Leaving claimOnce().");
+      return body(pool);
+    }
     log.debug("Leaving claimOnce().");
-    return run(pool, 'claimOnce.expired',
-      kx('sts_cluster_claims').where(where)
-        .where('expires_at', '<=', dialect.now()).del()
-    ).then(function () {
-      return run(pool, 'claimOnce.insert',
-        kx('sts_cluster_claims').insert(Object.assign({}, where, {
-          reservation: reservation, origin: claimant,
-          claimed_at: dialect.now(), expires_at: dialect.now(ttlMs)
-        })).onConflict(['scope', 'realm', 'key']).ignore());
-    }).then(function (inserted) {
-      const won = dialect.affected(inserted) > 0;
-      return run(pool, 'claimOnce.read',
-        kx('sts_cluster_claims')
-          .select('origin', 'reservation', 'claimed_at', 'expires_at')
-          .where(where)
-      ).then(function (found) {
-        const row = first(found);
-        if (won && row && row.reservation === reservation) {
-          return { claimed: true, claimedAt: Number(row.claimed_at),
-                   expiresAt: Number(row.expires_at) };
+    return inTransaction(pool, function (client) {
+      return body(client).then(function (answer) {
+        if (!answer.claimed) {
+          return answer;
         }
-        return { claimed: false, existing: row ? {
-          origin: row.origin,
-          claimedAt: Number(row.claimed_at),
-          expiresAt: Number(row.expires_at)
-        } : null };
+        return installOriginLock(client, key, reservation).then(function () {
+          return answer;
+        });
       });
     });
   }
@@ -351,8 +509,9 @@ function create(deps) {
       return Promise.resolve({ rows: [], rowCount: 0 });
     }
     return run(runner, 'releaseClaims',
-      kx('sts_cluster_claims')
-        .whereIn(['scope', 'realm', 'key', 'reservation'], tuples).del());
+      dialect.whereKeys(kx('sts_cluster_claims'),
+                        ['scope', 'realm', 'key', 'reservation'], tuples)
+        .del());
   }
 
   /**
@@ -401,7 +560,16 @@ function create(deps) {
                                                30000))
             }).where(where).where({ reservation: row.reservation })
           ).then(function (r) {
-            return dialect.affected(r) > 0;
+            if (!(dialect.affected(r) > 0)) {
+              return false;
+            }
+            // The reservation moved, so the fence's name moves with it.
+            // A writer still share-locking the old name waits, then finds
+            // it gone.
+            return installOriginLock(client, key, reservation)
+              .then(function () {
+                return true;
+              });
           });
         });
       });
@@ -413,22 +581,33 @@ function create(deps) {
   // ===================================================================
 
   /**
-   * The origin claim, still this process's and live, under a shared lock.
+   * The origin claim, still this process's. The share lock is the lock
+   * row named with the reservation; the claim is read by the next
+   * statement, which takes a new snapshot (#770).
    *
    * @param client - the write's held connection
    * @param held - `{ key, reservation }`
-   * @returns true when it holds
+   * @returns `{ lock, claim }`
    */
   function originFence(client, held) {
     log.debug("Entering originFence().");
+    const name = fenceLockName('origin', held.key, held.reservation);
     log.debug("Leaving originFence().");
-    return run(client, 'originFence',
-      kx('sts_cluster_claims').select(kx.raw('1 AS held'))
-        .where(at(originScope, '', held.key))
-        .where({ reservation: held.reservation })
-        .where('expires_at', '>', dialect.now()).forShare()
-    ).then(function (r) {
-      return !!first(r);
+    return run(client, 'originFence.lock',
+      kx('sts_cluster_locks').select(kx.raw('1 AS held'))
+        .where({ name: name }).forShare()
+    ).then(function (locked) {
+      if (!first(locked)) {
+        return { lock: false, claim: false };
+      }
+      return run(client, 'originFence',
+        kx('sts_cluster_claims').select(kx.raw('1 AS held'))
+          .where(at(originScope, '', held.key))
+          .where({ reservation: held.reservation })
+          .where('expires_at', '>', dialect.now())
+      ).then(function (claim) {
+        return { lock: true, claim: !!first(claim) };
+      });
     });
   }
 
@@ -452,7 +631,10 @@ function create(deps) {
   }
 
   /**
-   * The leases a write needs, still this node's, under a shared lock.
+   * The leases a write needs, still this node's. The share lock is each
+   * lease's lock row, named with its token; the lease rows are read by
+   * the next statement (#770). A name whose lock was not held is not
+   * returned, even when the lease row still matches.
    *
    * @param client - the write's held connection
    * @param nodeId - the node
@@ -461,24 +643,45 @@ function create(deps) {
    */
   function leaseFence(client, nodeId, leases) {
     log.debug("Entering leaseFence().");
-    const tuples = leases.map(function (one) {
-      return [String(one.name), Number(one.token)];
+    const wanted = (leases || []).map(function (one) {
+      return { name: String(one.name), token: Number(one.token),
+               lock: fenceLockName('lease', one.name, one.token) };
     });
+    if (!wanted.length) {
+      log.debug("Leaving leaseFence(). None.");
+      return Promise.resolve([]);
+    }
     log.debug("Leaving leaseFence().");
-    return run(client, 'leaseFence',
-      kx('sts_cluster_leases').select('name')
-        .whereIn(['name', 'token'], tuples)
-        .where({ holder: nodeId })
-        .where('expires_at', '>', dialect.now()).forShare()
-    ).then(function (r) {
-      return dialect.rowsOf(r).map(function (row) {
-        return row.name;
+    return run(client, 'leaseFence.lock',
+      kx('sts_cluster_locks').select('name')
+        .whereIn('name', wanted.map(function (one) {
+          return one.lock;
+        })).forShare()
+    ).then(function (locked) {
+      const heldLocks = {};
+      dialect.rowsOf(locked).forEach(function (row) {
+        heldLocks[row.name] = true;
+      });
+      return run(client, 'leaseFence',
+        kx('sts_cluster_leases').select('name', 'token')
+          .whereIn(['name', 'token'], wanted.map(function (one) {
+            return [one.name, one.token];
+          }))
+          .where({ holder: nodeId })
+          .where('expires_at', '>', dialect.now())
+      ).then(function (data) {
+        return dialect.rowsOf(data).filter(function (row) {
+          return heldLocks[fenceLockName('lease', row.name, row.token)];
+        }).map(function (row) {
+          return row.name;
+        });
       });
     });
   }
 
   // ===================================================================
-  // MEMBERSHIP AND LEASES (the liveness connection: no transactions)
+  // MEMBERSHIP AND LEASES. A multi-statement change on the liveness
+  // connection goes through onLive(); a renewal stays separate autocommits.
   // ===================================================================
 
   /**
@@ -503,7 +706,30 @@ function create(deps) {
   }
 
   /**
+   * A renewal's runner. Each statement is its own bounded autocommit when
+   * the driver passed `boundQuery`, and the plain liveness runner otherwise.
+   * Three statements are three waits, not one transaction: wrapping them
+   * would put the heartbeat back behind a lock it holds itself.
+   *
+   * @param ttlMs - the lifetime the bound is taken from
+   * @returns a runner with `query(text, values)`
+   */
+  function renewalRunner(ttlMs) {
+    log.debug("Entering renewalRunner().");
+    log.debug("Leaving renewalRunner().");
+    if (typeof deps.boundQuery !== 'function') {
+      return live;
+    }
+    return {
+      query: function (text, values) {
+        return deps.boundQuery(text, values, ttlMs);
+      }
+    };
+  }
+
+  /**
    * The heartbeat: this node's membership and every lease it holds renewed.
+   * Neither statement touches `sts_cluster_locks` (#770).
    *
    * @param nodeId - the node
    * @param ttlMs - the new lifetime
@@ -517,8 +743,9 @@ function create(deps) {
     if (info) {
       set.info = dialect.json(info);
     }
+    const runner = renewalRunner(ttlMs);
     log.debug("Leaving heartbeat().");
-    return run(live, 'heartbeat.node',
+    return run(runner, 'heartbeat.node',
       kx('sts_cluster_nodes').update(set)
         .where({ node_id: nodeId, left_at: 0 })
         .where('expires_at', '>', dialect.now())
@@ -526,13 +753,13 @@ function create(deps) {
       if (dialect.affected(r) === 0) {
         return { alive: false, leases: [] };
       }
-      return run(live, 'heartbeat.leases',
+      return run(runner, 'heartbeat.leases',
         kx('sts_cluster_leases')
           .update({ expires_at: dialect.now(Number(ttlMs)) })
           .where({ holder: nodeId })
           .where('expires_at', '>', dialect.now())
       ).then(function () {
-        return run(live, 'heartbeat.held',
+        return run(runner, 'heartbeat.held',
           kx('sts_cluster_leases').select('name', 'token')
             .where({ holder: nodeId })
             .where('expires_at', '>', dialect.now()));
@@ -553,20 +780,38 @@ function create(deps) {
   function leaveCluster(nodeId) {
     log.debug("Entering leaveCluster(). node=" + nodeId);
     log.debug("Leaving leaveCluster().");
-    return run(live, 'leave.node',
-      kx('sts_cluster_nodes').update({
-        // `expires_at` before `left_at`: MariaDB reads a later assignment's
-        // new value, and neither expression reads the other column.
-        expires_at: kx.raw('LEAST(??, ' + dialect.nowText + ')',
-                           ['expires_at']),
-        left_at: dialect.now()
-      }).where({ node_id: nodeId })
-    ).then(function () {
-      return run(live, 'leave.leases',
-        kx('sts_cluster_leases').update({ expires_at: 0 })
-          .where({ holder: nodeId }));
-    }).then(function () {
-      return true;
+    // The fence locks of the leases this holder has go in the same
+    // transaction as the leases. Read them before the leases expire.
+    return onLive(function (client) {
+      return run(client, 'leave.held',
+        kx('sts_cluster_leases').select('name', 'token')
+          .where({ holder: nodeId })
+      ).then(function (held) {
+        const names = dialect.rowsOf(held).map(function (row) {
+          return fenceLockName('lease', row.name, row.token);
+        });
+        const clear = names.length
+          ? run(client, 'leave.locks',
+              kx('sts_cluster_locks').whereIn('name', names).del())
+          : Promise.resolve();
+        return clear.then(function () {
+          return run(client, 'leave.node',
+            kx('sts_cluster_nodes').update({
+              // `expires_at` before `left_at`: MariaDB reads a later
+              // assignment's new value, and neither expression reads
+              // the other column.
+              expires_at: kx.raw('LEAST(??, ' + dialect.nowText + ')',
+                                 ['expires_at']),
+              left_at: dialect.now()
+            }).where({ node_id: nodeId }));
+        });
+      }).then(function () {
+        return run(client, 'leave.leases',
+          kx('sts_cluster_leases').update({ expires_at: 0 })
+            .where({ holder: nodeId }));
+      }).then(function () {
+        return true;
+      });
     });
   }
 
@@ -589,53 +834,93 @@ function create(deps) {
     // Kept by the same holder within its lifetime; otherwise a new token.
     const kept = '?? = ? AND ?? > ' + dialect.nowText;
     log.debug("Leaving acquireLease().");
-    return run(live, 'acquireLease.renew',
-      kx('sts_cluster_leases').update({
-        token: kx.raw('CASE WHEN ' + kept + ' THEN ?? ELSE ?? + 1 END',
-                      ['holder', nodeId, 'expires_at', 'token', 'token']),
-        acquired_at: kx.raw('CASE WHEN ' + kept + ' THEN ?? ELSE ' +
-                            dialect.nowText + ' END',
-                            ['holder', nodeId, 'expires_at', 'acquired_at']),
-        expires_at: dialect.now(Number(ttlMs)),
-        // LAST: the two CASEs above read the holder it replaces.
-        holder: nodeId
-      }).where({ name: name })
-        .where(function () {
-          this.where('expires_at', '<=', dialect.now())
-            .orWhere({ holder: nodeId });
-        })
-        .whereExists(function () {
-          nodeLive(this);
-        })
-    ).then(function (r) {
-      if (dialect.affected(r) > 0) {
-        return null;
-      }
-      return run(live, 'acquireLease.nodeLive',
-        nodeLive(kx.queryBuilder())
-      ).then(function (alive) {
-        if (!first(alive)) {
-          return null;
-        }
-        return run(live, 'acquireLease.insert',
-          kx('sts_cluster_leases').insert({
-            name: name, holder: nodeId, token: 1,
-            acquired_at: dialect.now(), expires_at: dialect.now(Number(ttlMs))
-          }).onConflict('name').ignore());
-      });
-    }).then(function () {
+    // The fence lock commits with the tenure, and a takeover still waits
+    // for the fences that share-lock the old name: it cannot commit before
+    // they have. It waits in bounded attempts (#770's review, 2026-11-13),
+    // `boundTransact()` when the driver passed one: unbounded, the wait held
+    // the liveness connection, the node's own heartbeat queued behind it
+    // where its bound had not started, and a standby fenced itself
+    // (STS-CLUSTER-0004) while taking over. A timeout rolls the whole
+    // transaction back and answers `{ held: false, pending: true }`; the
+    // caller asks again on its next beat.
+    const holderOf = function () {
       return run(live, 'acquireLease.holder',
         kx('sts_cluster_leases').select('holder', 'token', 'expires_at')
-          .where({ name: name }));
-    }).then(function (found) {
-      const row = first(found);
-      if (row && row.holder === nodeId) {
-        return { held: true, token: Number(row.token),
-                 expiresAt: Number(row.expires_at) };
+          .where({ name: name })
+      ).then(function (found) {
+        const row = first(found);
+        return { held: false, pending: true,
+                 holder: row ? row.holder : '',
+                 token: row ? Number(row.token) : 0,
+                 expiresAt: row ? Number(row.expires_at) : 0 };
+      });
+    };
+    const transact = typeof deps.boundTransact === 'function'
+      ? function (fn) {
+        return deps.boundTransact(fn, ttlMs);
       }
-      return { held: false, holder: row ? row.holder : '',
-               token: row ? Number(row.token) : 0,
-               expiresAt: row ? Number(row.expires_at) : 0 };
+      : onLive;
+    return transact(function (client) {
+      return run(client, 'acquireLease.renew',
+        kx('sts_cluster_leases').update({
+          token: kx.raw('CASE WHEN ' + kept + ' THEN ?? ELSE ?? + 1 END',
+                        ['holder', nodeId, 'expires_at', 'token', 'token']),
+          acquired_at: kx.raw('CASE WHEN ' + kept + ' THEN ?? ELSE ' +
+                              dialect.nowText + ' END',
+                              ['holder', nodeId, 'expires_at', 'acquired_at']),
+          expires_at: dialect.now(Number(ttlMs)),
+          // LAST: the two CASEs above read the holder it replaces.
+          holder: nodeId
+        }).where({ name: name })
+          .where(function () {
+            this.where('expires_at', '<=', dialect.now())
+              .orWhere({ holder: nodeId });
+          })
+          .whereExists(function () {
+            nodeLive(this);
+          })
+      ).then(function (r) {
+        if (dialect.affected(r) > 0) {
+          return null;
+        }
+        return run(client, 'acquireLease.nodeLive',
+          nodeLive(kx.queryBuilder())
+        ).then(function (alive) {
+          if (!first(alive)) {
+            return null;
+          }
+          return run(client, 'acquireLease.insert',
+            kx('sts_cluster_leases').insert({
+              name: name, holder: nodeId, token: 1,
+              acquired_at: dialect.now(),
+              expires_at: dialect.now(Number(ttlMs))
+            }).onConflict('name').ignore());
+        });
+      }).then(function () {
+        return run(client, 'acquireLease.holder',
+          kx('sts_cluster_leases').select('holder', 'token', 'expires_at')
+            .where({ name: name }));
+      }).then(function (found) {
+        const row = first(found);
+        if (row && row.holder === nodeId) {
+          const answer = { held: true, token: Number(row.token),
+                           expiresAt: Number(row.expires_at) };
+          return installLeaseLock(client, name, answer.token)
+            .then(function () {
+              return answer;
+            });
+        }
+        return { held: false, holder: row ? row.holder : '',
+                 token: row ? Number(row.token) : 0,
+                 expiresAt: row ? Number(row.expires_at) : 0 };
+      });
+    }).then(null, function (err) {
+      if (typeof deps.isBoundTimeout !== 'function' ||
+          !deps.isBoundTimeout(err)) {
+        throw err;
+      }
+      log.debug("Caught in acquireLease(): " + ((err && err.message) || err));
+      return holderOf();
     });
   }
 
@@ -929,6 +1214,8 @@ function create(deps) {
     claimOnce: claimOnce,
     claimMany: claimMany,
     releaseClaims: releaseClaims,
+    installClaimLock: installClaimLock,
+    releaseClaimLocks: releaseClaimLocks,
     takeOverFromGone: takeOverFromGone,
     originFence: originFence,
     nodeFence: nodeFence,

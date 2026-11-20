@@ -103,7 +103,6 @@
 // and moves nothing in the route order.
 // ===========================================================================
 
-const cors = require('cors');
 const helpers = require('./helpers');
 // Every listener's origin is this service's own (#472). A LEAF.
 const listenerMap = require('./listener_map');
@@ -598,11 +597,16 @@ function continuesToRoute(req) {
 // twice for one request.
 const PREFLIGHT_DECIDED = Symbol('cors.preflightDecided');
 
-// The methods a preflight on a GNAP grant endpoint allows: the cors package's
-// default (GET,HEAD,PUT,PATCH,POST,DELETE) and OPTIONS, the method of GNAP
-// discovery itself (#1214).
-const GNAP_PREFLIGHT_METHODS = ['GET', 'HEAD', 'PUT', 'PATCH', 'POST',
-                                'DELETE', 'OPTIONS'];
+// The methods a preflight allows. The default is what the `cors` package
+// 2.8.5 sent (no OPTIONS). A GNAP grant endpoint adds OPTIONS, because RFC
+// 9635 section 9's discovery IS an OPTIONS request and a browser sends it
+// only when the answer lists it (#1214). Written here, not through
+// `cors({ origin })`: that option is what js/cors-permissive-configuration
+// reports when the origin was taken from the request, even after decide()
+// has allowlisted it. Joined with ',' and no spaces, as that package did.
+const DEFAULT_PREFLIGHT_METHODS = ['GET', 'HEAD', 'PUT', 'PATCH', 'POST',
+                                   'DELETE'];
+const GNAP_PREFLIGHT_METHODS = DEFAULT_PREFLIGHT_METHODS.concat(['OPTIONS']);
 
 /**
  * Builds the middleware that answers every OPTIONS request.
@@ -627,16 +631,29 @@ function preflight() {
     const decision = decide(req, { preflight: true });
     const onward = continuesToRoute(req);
     if (decision.allowed) {
-      // On a GNAP grant endpoint the request being preflighted IS an OPTIONS
-      // (RFC 9635 section 9), and a browser sends it only when OPTIONS is in
-      // Access-Control-Allow-Methods, which the cors package's default list
-      // leaves out (#1214). Every other path keeps that default.
-      const options = { origin: decision.origin, preflightContinue: onward,
-                        exposedHeaders: EXPOSED_HEADERS };
-      if (onward) {
-        options.methods = GNAP_PREFLIGHT_METHODS;
+      // The same headers cors 2.8.5 set for a string origin: the allowlisted
+      // origin echoed as given, the method list above, the request's
+      // Access-Control-Request-Headers reflected, and Vary on that header.
+      // No credentials, no max-age. A GNAP grant endpoint continues so the
+      // route can answer RFC 9635 section 9; every other preflight is 204.
+      res.setHeader('Access-Control-Allow-Origin', decision.origin);
+      const methods = onward ? GNAP_PREFLIGHT_METHODS
+        : DEFAULT_PREFLIGHT_METHODS;
+      res.setHeader('Access-Control-Allow-Methods', methods.join(','));
+      res.vary('Access-Control-Request-Headers');
+      const asked = req.headers['access-control-request-headers'];
+      if (asked) {
+        res.setHeader('Access-Control-Allow-Headers', asked);
       }
-      cors(options)(req, res, next);
+      res.setHeader('Access-Control-Expose-Headers',
+                    EXPOSED_HEADERS.join(','));
+      if (onward) {
+        next();
+        return;
+      }
+      res.statusCode = 204;
+      res.setHeader('Content-Length', '0');
+      res.end();
       return;
     }
     if (decision.code) {

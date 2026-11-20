@@ -749,19 +749,8 @@ class Mail {
       return null;
     }
     const attrs = entry.attributes || {};
-    const first = function (name: string): string {
-      const keys = Object.keys(attrs);
-      for (let i = 0; i < keys.length; i++) {
-        if (keys[i].toLowerCase() === name.toLowerCase()) {
-          const values = attrs[keys[i]] || [];
-          return values.length ? String(values[0]) : '';
-        }
-      }
-      return '';
-    };
-    // `mail` is the one read left by name: the Group concept has no address.
-    const address = first('mail').trim();
     const group = Classes.Group.fromEntry(attrs);
+    const address = String(group.email || '').trim();
     log.debug("Leaving Mail.groupRecipient().");
     return {
       username: String(dn),
@@ -782,6 +771,33 @@ class Mail {
       String(username || ''));
     log.debug("Leaving Mail.declined().");
     return ((held && held.declined) || []).slice();
+  }
+
+  // A DELETED PERSON'S CHOICES GO WITH THEM (2026-11-16, rcbj's rule on
+  // #1612). The store is keyed by the NAME, so a person made again under it
+  // was never sent what the deleted one had declined. The directory's one
+  // person delete (`removePersonEntry()`) calls this; one key, as written
+  // and lower-cased (a door may have written either). A re-homing keeps it.
+  /**
+   * Forgets what a deleted person declined.
+   *
+   * @param username - the deleted person's name
+   * @returns true where a row was held
+   */
+  forgetPerson(username: string): boolean {
+    const { log, realms } = this.deps;
+    log.debug("Entering Mail.forgetPerson().");
+    const store = preferences.realmMap(realms.currentId());
+    const name = String(username || '');
+    let held = false;
+    [name, name.toLowerCase()].forEach(function (key: string) {
+      if (key && store.has(key)) {
+        held = true;
+        store.delete(key);
+      }
+    });
+    log.debug("Leaving Mail.forgetPerson(). " + held);
+    return held;
   }
 
   /**
@@ -2394,6 +2410,7 @@ export = {
   recipient: slot.forward('recipient'),
   declined: slot.forward('declined'),
   setDeclined: slot.forward('setDeclined'),
+  forgetPerson: slot.forward('forgetPerson'),
   templateFor: slot.forward('templateFor'),
   listTemplates: slot.forward('listTemplates'),
   templateView: slot.forward('templateView'),

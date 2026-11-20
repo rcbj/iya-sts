@@ -1025,6 +1025,29 @@ class RiskEngine {
     return row;
   }
 
+  // A DELETED PERSON'S STANDING GOES WITH THEM (2026-11-16, rcbj's rule on
+  // #1612). It is held under the NAME, so a person made again under it was
+  // issued a Kerberos ticket or a WS-Trust token on the deleted one's level
+  // until `risk.standingValidMinutes` ran out. The directory's one person
+  // delete (`ldap_server.js`'s forgetPersonHoldings()) drops it here; one
+  // key. Another process's copy is that process's, and ages out by the same
+  // setting.
+  /**
+   * Drops the standing this process holds for a deleted person.
+   *
+   * @param realm - the realm
+   * @param username - the deleted person's name
+   * @returns true where one was held
+   */
+  forgetStanding(realm: string, username: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering RiskEngine.forgetStanding().");
+    const key = String(realm || '') + '\u0000' + String(username || '');
+    const held = standings.delete(key);
+    log.debug("Leaving RiskEngine.forgetStanding(). " + held);
+    return held;
+  }
+
   // Held from an assessment made in this process, or read from the store.
   // The person's `sub` is remembered beside it (#666), because a change of
   // level made in ANOTHER process arrives naming the `sub`, and the
@@ -3257,6 +3280,7 @@ export = {
   factsOf: slot.forward('factsOf'),
   factsForIssuance: slot.forward('factsForIssuance'),
   standingOf: slot.forward('standingOf'),
+  forgetStanding: slot.forward('forgetStanding'),
   loadStanding: slot.forward('loadStanding'),
   noteStandingMoved: slot.forward('noteStandingMoved'),
   settle: slot.forward('settle'),

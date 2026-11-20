@@ -131,6 +131,7 @@ import https = require('https');
 import fs = require('fs');
 import helpers = require('../common/helpers');
 import Classes = require('../common/domain_classes');
+import DomainMap = require('../common/domain_map');
 import config = require('../common/config');
 import realms = require('../common/realms');
 import mode = require('../common/mode');
@@ -286,6 +287,13 @@ interface ScimClientsDeps {
   // Members laid over the delivery queue's own dependencies (a test's
   // claims).
   deliveryDeps?: Json;
+  // THE ORDER OF A ROW AND ITS ENTRY ACROSS PROCESSES (run #500): whether
+  // this process's writes commit after they are made (a database store),
+  // a wait for the directory writes made so far to commit, and the read
+  // barrier a sweep takes before it sends. See `queueAfterCommit()`.
+  writesCommitLater?(): boolean;
+  directoryCommitted?(): Promise<Json[] | null>;
+  catchUp?(): Promise<Json | null>;
 }
 
 /**
@@ -323,6 +331,11 @@ class ScimClients {
   // rows of `list()`, kept by the applications listing's clock
   // (`applications.listingVersion()`). See `observedClients()`.
   private readonly observing: Json;
+  // The changes observed and not yet queued, waiting for the directory
+  // write they are for to commit (`queueAfterCommit()`), and whether the
+  // drain that writes them is running.
+  private readonly afterCommit: Json[] = [];
+  private draining = false;
 
   /**
    * Builds the client from its dependencies, and its delivery queue.
@@ -389,6 +402,9 @@ class ScimClients {
       },
       holdUntil: function (row: Json, at: number): number {
         return self.holdUntil(row, at);
+      },
+      beforeAttempts: function (): Promise<void> {
+        return self.catchUp();
       },
       laneOf: function (row: Json): Json {
         return self.laneOf(row);
@@ -472,6 +488,22 @@ class ScimClients {
       projected: function (realmId: string, uuid: string): boolean {
         return require('../common/cell_sessions')
           .isProjected(realmId, 'uuid', uuid);
+      },
+      writesCommitLater: function (): boolean {
+        const persistence = require('../persistence/persistence');
+        return typeof persistence.answersAfterCommit === 'function' &&
+          !!persistence.answersAfterCommit();
+      },
+      directoryCommitted: function (): Promise<Json[] | null> {
+        const persistence = require('../persistence/persistence');
+        const at = persistence.writeGeneration();
+        return persistence.commitThrough({ directory: at.directory,
+                                           minted: 0 });
+      },
+      catchUp: function (): Promise<Json | null> {
+        const persistence = require('../persistence/persistence');
+        return typeof persistence.syncNow === 'function'
+          ? persistence.syncNow() : Promise.resolve(null);
       }
     };
   }
@@ -713,13 +745,22 @@ class ScimClients {
     const fields = view.fields || {};
     const row: Json = { id: view.identifier, identifier: view.identifier,
                         dn: view.dn || '', name: view.name || view.identifier };
+    // THE TWO TABLES ARE READ BY NAME ON PURPOSE (#1579): MEMBERS and
+    // LIST_MEMBERS map a row's member to the attribute it is written to as
+    // well as read from (`writeDefinition()` below), so the two directions are
+    // one table and cannot disagree. The fixed reads after them are the
+    // ScimProvisioningTarget concept's; its three secrets are named only to
+    // say whether each is set, and none leaves this function.
+    const target = Classes.ScimProvisioningTarget.fromEntry(fields,
+      { secrets: ['clientPassword', 'clientOAuthClientSecret',
+                  'clientTlsPrivateKey'] });
     MEMBERS.forEach((pair) => {
       row[pair[0]] = this.one(fields, pair[1]);
     });
     LIST_MEMBERS.forEach((pair) => {
       row[pair[0]] = this.many(fields, pair[1]);
     });
-    row.enabled = /^true$/i.test(this.one(fields, 'scimClientEnabled'));
+    row.enabled = /^true$/i.test(String(target.clientEnabled || '').trim());
     row.authMethod = row.authMethod || 'basic';
     row.oauthClientAuth = row.oauthClientAuth || 'client_secret_basic';
     row.tlsSource = row.tlsSource || 'none';
@@ -728,10 +769,10 @@ class ScimClients {
     row.deprovision = row.deprovision || 'deactivate';
     row.reconcileMinutes = row.reconcileMinutes || '0';
     row.jurisdiction = String(row.jurisdiction || '').toLowerCase();
-    row.passwordSet = !!this.one(fields, 'scimClientPassword');
-    row.oauthClientSecretSet = !!this.one(fields,
-                                          'scimClientOAuthClientSecret');
-    row.tlsPrivateKeySet = !!this.one(fields, 'scimClientTlsPrivateKey');
+    row.passwordSet = !!String(target.clientPassword || '').trim();
+    row.oauthClientSecretSet =
+      !!String(target.clientOAuthClientSecret || '').trim();
+    row.tlsPrivateKeySet = !!String(target.clientTlsPrivateKey || '').trim();
     row.certificate = this.certificateFacts(row.tlsCertificate);
     row.problems = this.problemsOf(row);
     row.usable = row.problems.length === 0;
@@ -1174,8 +1215,7 @@ class ScimClients {
   }
 
   // A group's name, as the domain model says it is (#1390); '' when the entry
-  // holds none. firstOf() below stays for entryUUID, which is read from a
-  // person or a group and which the Group concept does not carry.
+  // holds none.
   private groupNameOf(group: Json): string {
     const { log } = this.deps;
     log.debug("Entering ScimClients.groupNameOf().");
@@ -1184,24 +1224,13 @@ class ScimClients {
     return name;
   }
 
-  // The first value of an attribute, by any spelling of its name.
-  private firstOf(attributes: Json, name: string): string {
-    const { log } = this.deps;
-    log.debug("Entering ScimClients.firstOf(). " + name);
-    const key = Object.keys(attributes || {}).filter(function (one) {
-      return one.toLowerCase() === name.toLowerCase();
-    })[0];
-    const value = key ? [].concat(attributes[key])[0] : '';
-    log.debug("Leaving ScimClients.firstOf().");
-    return value == null ? '' : String(value);
-  }
-
   // The entry's UUID, from an entry object.
   private uuidOf(entry: Json): string {
     const { log } = this.deps;
     log.debug("Entering ScimClients.uuidOf().");
-    const value = this.firstOf((entry && entry.attributes) || {},
-                               'entryUUID').toLowerCase();
+    // A person's or a group's: DirectoryEntry's (#1579).
+    const value = String(DomainMap.fieldOf('DirectoryEntry', 'entryUuid',
+      (entry && entry.attributes) || {}) || '').toLowerCase();
     log.debug("Leaving ScimClients.uuidOf().");
     return UUID_SHAPED.test(value) ? value : '';
   }
@@ -1612,9 +1641,9 @@ class ScimClients {
     const dir = directory();
     const kind = String(event.kind || '');
     const pick = function (snapshot: Json): string {
-      const value = snapshot && (snapshot.entryuuid || snapshot.entryUUID);
-      return String((Array.isArray(value) ? value[0] : value) || '')
-        .toLowerCase();
+      const value = snapshot && DomainMap.fieldOf('DirectoryEntry',
+        'entryUuid', snapshot);
+      return String(value || '').toLowerCase();
     };
     let uuid = pick(event.after) || pick(event.before);
     if (!uuid && kind.indexOf('deleted') !== 0) {
@@ -1624,26 +1653,148 @@ class ScimClients {
     // A PROJECTION IS NOT A RESIDENT (#553 section 1): a person whose
     // session this cell holds is pushed by their home cell, never here.
     const projection = UUID_SHAPED.test(uuid) && this.projectedHere(uuid);
-    clients.forEach((c: Json) => {
-      if (UUID_SHAPED.test(uuid) && !projection &&
-          this.wantsDelivery(c, uuid)) {
+    // What is queued is decided NOW, against the directory as this write
+    // left it; the rows are WRITTEN once the write has committed
+    // (`queueAfterCommit()`, below).
+    const users = clients.filter((c: Json) => {
+      return UUID_SHAPED.test(uuid) && !projection &&
+        this.wantsDelivery(c, uuid);
+    });
+    const grouped = clients.filter((c: Json) => {
+      return c.groupMode !== 'none';
+    });
+    // The person's groups: a person entering or leaving the scope changes
+    // who those groups' members are there.
+    const groupDns = grouped.length
+      ? (dir.groupsOfUser(event.dn).groups || []).map((group: Json) => {
+        return String(group.dn);
+      }) : [];
+    if (kind === 'membership' && event.group) {
+      groupDns.unshift(String(event.group));
+    }
+    this.queueAfterCommit(() => {
+      users.forEach((c: Json) => {
         this.enqueue(c, 'User', uuid, name);
-      }
-      if (c.groupMode === 'none') {
-        return;
-      }
-      if (kind === 'membership' && event.group) {
-        this.enqueueGroupByDn(c, String(event.group));
-      }
-      // The person's groups: a person entering or leaving the scope changes
-      // who those groups' members are there.
-      const groups = (dir.groupsOfUser(event.dn).groups || []);
-      groups.forEach((group: Json) => {
-        this.enqueueGroupByDn(c, String(group.dn));
+      });
+      grouped.forEach((c: Json) => {
+        groupDns.forEach((dn: string) => {
+          this.enqueueGroupByDn(c, dn);
+        });
       });
     });
     log.debug("Leaving ScimClients.observeInRealm(). " + clients.length +
               " client(s).");
+  }
+
+  // -------------------------------------------------------------------------
+  // A ROW IS WRITTEN ONLY ONCE THE DIRECTORY WRITE IT IS FOR HAS COMMITTED
+  // (run #500, 2026-11-18).
+  //
+  // The row carries no data — the send reads the entry as it is THEN — so
+  // the whole design rests on one thing: a process that sees the row can
+  // read the change it was queued for. Against a shared store that was not
+  // true. The directory flush and the minted flush the row rides are two
+  // transactions (`persistence/CLAUDE.md`, the pool's floor of four), and
+  // the minted one could commit first; and a change-log pull applies a page
+  // row by row, asynchronously, so a sweep could run between the row and
+  // the entry. In the `cluster` mode of run #500 a title set through node A
+  // was queued there, node B's deliver-now saw the row 200 ms later, read
+  // the person from a replica that did not yet hold the title, PUT the old
+  // one and marked the row sent — and nothing queued it again, because the
+  // change had landed before the attempt began. A LOST UPDATE: the service
+  // provider kept the old title for good, every queue reading empty.
+  //
+  // Two halves close it, and each needs the other:
+  // * HERE, the writer: where this process's writes are answered after
+  //   they commit (a database store), the rows a change queues are written
+  //   once the directory has committed everything dirty when they are
+  //   written — so the row's own change-log row comes after the entry's;
+  // * at the SENDER, the sweep: before it attempts anything it catches up
+  //   with everything committed before it (`catchUp()`, the queue's
+  //   `beforeAttempts` hook), which then includes the entry.
+  // Where nothing commits later (memory, a test's stub) the rows are
+  // written at once, as they always were. The changes are batched: one
+  // wait for every change observed while the previous one ran, so a bulk
+  // load waits once per directory flush rather than once per entry.
+  // -------------------------------------------------------------------------
+  private queueAfterCommit(work: () => void): void {
+    const { log, realms } = this.deps;
+    log.debug("Entering ScimClients.queueAfterCommit().");
+    if (!this.deps.writesCommitLater || !this.deps.writesCommitLater()) {
+      work();
+      log.debug("Leaving ScimClients.queueAfterCommit(). Written now.");
+      return;
+    }
+    this.afterCommit.push({ realm: realms.current(), work: work });
+    if (!this.draining) {
+      this.draining = true;
+      // A MICROTASK LATER, so the generation read covers the whole write:
+      // some doors tell the observers before they mark the entry dirty.
+      Promise.resolve().then(() => this.drainAfterCommit());
+    }
+    log.debug("Leaving ScimClients.queueAfterCommit(). " +
+              this.afterCommit.length + " waiting for the commit.");
+  }
+
+  private async drainAfterCommit(): Promise<void> {
+    const { log, realms } = this.deps;
+    log.debug("Entering ScimClients.drainAfterCommit().");
+    let batches = 0;
+    while (this.afterCommit.length) {
+      const batch = this.afterCommit.splice(0);
+      batches++;
+      try {
+        const committed = this.deps.directoryCommitted
+          ? await this.deps.directoryCommitted() : null;
+        if ((committed || []).some((one: Json) => one && one.error)) {
+          // The write is the store's to retry and report; the change is
+          // queued anyway, because a row queued too early is a send
+          // repeated, and a row never queued is a change lost.
+          log.debug("ScimClients.drainAfterCommit(): the directory flush " +
+                    "failed; the change is queued regardless.");
+        }
+      } catch (e) {
+        log.debug("Caught in ScimClients.drainAfterCommit(): " +
+                  ((e && e.message) || e));
+      }
+      batch.forEach((one: Json) => {
+        try {
+          realms.run(one.realm, one.work);
+        } catch (e) {
+          log.debug("Caught in ScimClients.drainAfterCommit(): " +
+                    ((e && e.message) || e));
+          log.error(errorCodes.tag('STS-SCIMC-0023') + 'scim client: a ' +
+                    'directory change could not be queued: ' +
+                    ((e && e.message) || e));
+        }
+      });
+    }
+    this.draining = false;
+    log.debug("Leaving ScimClients.drainAfterCommit(). " + batches +
+              " batch(es).");
+  }
+
+  /**
+   * The sender's half of the ordering above: before a sweep attempts
+   * anything, everything committed before it is applied in this process —
+   * the entry a due row was queued for included. Never rejects.
+   *
+   * @returns a promise that settles once caught up, or at once where this
+   *   process shares no store
+   */
+  async catchUp(): Promise<void> {
+    const { log } = this.deps;
+    log.debug("Entering ScimClients.catchUp().");
+    try {
+      const state = this.deps.catchUp ? await this.deps.catchUp() : null;
+      log.debug("Leaving ScimClients.catchUp(). " +
+                (state && state.caughtUp === false ? "Not caught up."
+                                                   : "Caught up."));
+    } catch (e) {
+      log.debug("Caught in ScimClients.catchUp(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving ScimClients.catchUp(). The barrier failed.");
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -2565,7 +2716,8 @@ class ScimClients {
     log.debug("Leaving ScimClients.findBy(). " + (one ? 'found' : 'none'));
     return { ok: true, id: one && one.id ? String(one.id) : '',
              etag: one && one.meta && one.meta.version
-               ? String(one.meta.version) : '' };
+               ? String(one.meta.version) : '',
+             externalId: one && one.externalId ? String(one.externalId) : '' };
   }
 
   // The ETag of an answer: the header, else meta.version (RFC 7644 section
@@ -2721,6 +2873,29 @@ class ScimClients {
                                   String(body.externalId || ''));
     if (found.ok && !found.id && second[1] && !adoptOnly) {
       found = await this.findBy(c, disc, type, second[0], second[1]);
+      // NOT ANOTHER ENTRY'S (2026-11-16, #1612's rule: a person deleted and
+      // made again under the same name inherits nothing). Found by userName
+      // or displayName, a resource whose `externalId` names a DIFFERENT
+      // entry is not this one's to adopt: it is, above all, the deleted
+      // person's User that `deprovision: deactivate` left there, and
+      // adopting it handed a namesake the deleted person's account at the
+      // service provider. RFC 7643 section 3.1 makes `externalId` the
+      // client's identifier, so a value that is not this entry's is never
+      // overwritten either. Not adopted, not deleted (the operator chose to
+      // keep it), and not retried: a dead letter carrying STS-SCIMC-0035, as
+      // STS-SCIMC-0020's nothing-to-adopt is. A resource
+      // with NO externalId is adopted as before — one somebody made there,
+      // which no entry of this realm ever claimed.
+      const theirs = String(found.externalId || '').toLowerCase();
+      const ours = String(body.externalId || '').toLowerCase();
+      if (found.ok && found.id && theirs && theirs !== ours) {
+        log.debug("Leaving ScimClients.create(). Another entry's.");
+        return { ok: false, answer: answer, code: 'STS-SCIMC-0035',
+                 why: 'HTTP 409 uniqueness, and the ' + type + ' found by ' +
+                      second[0] + ' carries the externalId of another ' +
+                      'entry (a deleted one\'s, or another client\'s), so ' +
+                      'it was not adopted' };
+      }
     }
     if (!found.ok || !found.id) {
       log.debug("Leaving ScimClients.create(). Nothing to adopt.");
@@ -3275,6 +3450,52 @@ class ScimClients {
     return answer;
   }
 
+  // A MOVE REACHES THE GROUP FIRST (run #325, `sts_cells_scim_client` 5).
+  // A person moved out of this cell leaves this cell's share of each group
+  // they are in, and the group's row and the person's row are both queued
+  // here. Where the group's row was taken first, the person had not been
+  // handed over yet (handOver(), from nothingToSend()), so the group's link
+  // still named them as this cell's, and patchShare() took them out of a
+  // group their new home cell had just put them back in. So a member this
+  // cell linked who is missing from its share, and is not resident here,
+  // is asked of the routing index first: homed in another cell, they are
+  // handed over now, and are never this cell's to remove. Nobody holding
+  // them is a person gone everywhere, whom this cell does take out.
+  private async handOverMovedMembers(c: Json, link: Json | null,
+                                     share: string[]): Promise<void> {
+    const { log, directory, realms } = this.deps;
+    log.debug("Entering ScimClients.handOverMovedMembers().");
+    const before: string[] = link && Array.isArray(link.members)
+      ? link.members.map(String) : [];
+    const leaving = before.filter(function (id: string) {
+      return id && share.indexOf(id) < 0;
+    });
+    if (!leaving.length || !this.multi()) {
+      log.debug("Leaving ScimClients.handOverMovedMembers(). None.");
+      return;
+    }
+    const prefix = c.identifier + '|User|';
+    const uuids: string[] = [];
+    this.links.realmMap(realms.currentId()).forEach(function (one: Json,
+                                                             key: string) {
+      if (key.indexOf(prefix) === 0 && one &&
+          leaving.indexOf(String(one.remoteId || '')) >= 0) {
+        uuids.push(key.slice(prefix.length));
+      }
+    });
+    const dir = directory();
+    for (const uuid of uuids) {
+      const stored = dir.entryByUuid(uuid);
+      const resident = !!stored && dir.isPersonEntry(stored) &&
+        !this.projectedHere(uuid);
+      if (!resident && await this.homedElsewhere(uuid)) {
+        this.handOver(c, uuid);
+      }
+    }
+    log.debug("Leaving ScimClients.handOverMovedMembers(). " +
+              uuids.length + " asked.");
+  }
+
   // One group in a service deployed as cells.
   private async syncGroupCells(c: Json, disc: Json, row: Json):
       Promise<Json> {
@@ -3285,6 +3506,8 @@ class ScimClients {
     const group = stored ? dir.readGroupEntry(stored.dn) : null;
     const defined = !!group && this.groupDefined(c, group);
     const share = defined ? this.shareOf(c, group, true) : [];
+    await this.handOverMovedMembers(c, this.linkOf(c, 'Group', row.uuid),
+                                    share);
     const link = this.linkOf(c, 'Group', row.uuid);
     const facts: Json = {
       group: group, defined: defined, share: share, link: link,
@@ -4214,6 +4437,45 @@ class ScimClients {
   // One cell's answer to an act. Another cell's code crossed the channel spelt
   // out (`code`, `answerAct()`), because a mark does not survive JSON; it is a
   // mark again here, so that what this act answers never carries it (#1355).
+  // THE COUNTS OF A RECONCILIATION DONE IN EVERY CELL, merged into the one
+  // answer (#553 section 7). Until CI run #250 the fan-out answer carried
+  // only each cell's sentence, so a caller reading `users` and `groups` —
+  // the single-cell answer's members — read nothing. The merge is not a sum
+  // throughout, because the two kinds of resource are held differently:
+  //   * `users` and `deprovisioned` ARE summed: a person is reconciled only
+  //     in their home cell (section 1), and a deprovision is queued by the
+  //     cell that linked the resource, so no two cells count the same one;
+  //   * `groups` is the MOST any cell queued: a group's definition is every
+  //     cell's (section 3), so each pushing cell queues every group in scope
+  //     to PATCH its own share of the membership. That is one queued row per
+  //     cell, by design, and still one group — summing would report a group
+  //     in two cells as two.
+  // A cell that could not be reached adds nothing; `ok` is false when any
+  // reachable cell's reconciliation failed part way.
+  private static mergedReconcile(results: Json[]): Json {
+    helpers.log.debug("Entering ScimClients.mergedReconcile().");
+    const out: Json = { users: 0, groups: 0, deprovisioned: 0 };
+    let failed = false;
+    results.forEach(function (one: Json) {
+      if (!one || !one.reachable) {
+        return;
+      }
+      out.users += Number(one.users) || 0;
+      out.deprovisioned += Number(one.deprovisioned) || 0;
+      out.groups = Math.max(out.groups, Number(one.groups) || 0);
+      if (one.ok === false) {
+        failed = true;
+      }
+    });
+    if (failed) {
+      out.why = 'The reconciliation failed part way in at least one ' +
+                'cell; each cell\'s result is listed in cells.';
+    }
+    helpers.log.debug("Leaving ScimClients.mergedReconcile(). " + out.users +
+                      " user(s), " + out.groups + " group(s).");
+    return out;
+  }
+
   private cellResult(cell: string, answer: Json): Json {
     const { log, errorCodes } = this.deps;
     log.debug("Entering ScimClients.cellResult(). " + cell);
@@ -4484,6 +4746,9 @@ class ScimClients {
                                         (one.errors || []).join(' ') || '');
       }).join(' ')
     };
+    if (action === 'reconcile') {
+      Object.assign(out, ScimClients.mergedReconcile(results));
+    }
     if (!ok) {
       log.debug("Leaving ScimClients.act(). Refused in every cell.");
       const first = results.filter(function (one) {

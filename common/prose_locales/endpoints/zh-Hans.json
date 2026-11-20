@@ -31,6 +31,38 @@
     "en": "3cca9630a4d544af",
     "text": "AuthZEN 调用方，供远程 PEP 准入"
   },
+  "endpoints.route./xacml/pep/proxy.name": {
+    "en": "739682a1ecd3fb3e",
+    "text": "反向代理配置，供远程 PEP 执行"
+  },
+  "endpoints.route./xacml/pep/settings.name": {
+    "en": "6bae1b3fbf022a6d",
+    "text": "远程 PEP 的托管设置，供其应用"
+  },
+  "endpoints.route./xacml/pep/listener-certificate.name": {
+    "en": "96d34844bd14ca01",
+    "text": "远程 PEP 监听器的证书，基于其自身密钥"
+  },
+  "endpoints.route./xacml/pep/introspect.name": {
+    "en": "82423c6f4bbc4b7f",
+    "text": "令牌自省，供远程 PEP 的代理使用"
+  },
+  "endpoints.route./xacml/pep/basic.name": {
+    "en": "386c0d38a90c8eea",
+    "text": "HTTP Basic，为远程 PEP 的代理验证"
+  },
+  "endpoints.route./xacml/pep/saml.name": {
+    "en": "f5df4c2323752626",
+    "text": "SAML 2.0 断言，为远程 PEP 的代理验证"
+  },
+  "endpoints.route./xacml/pep/session.name": {
+    "en": "839d7610564c5a81",
+    "text": "登录会话是否仍然有效，供远程 PEP 的代理使用"
+  },
+  "endpoints.route./xacml/pep/identity.name": {
+    "en": "b9af583a88501df2",
+    "text": "远程 PEP 的路由转发给其应用程序的内容"
+  },
   "endpoints.route./xacml/pep/heartbeat.name": {
     "en": "9570c5ba15aef084",
     "text": "远程 PEP 已执行的内容"
@@ -279,6 +311,10 @@
     "en": "7f8ea0c37cf4776c",
     "text": "以 JSON 形式提供的远程执行点"
   },
+  "endpoints.route./admin-api/xacml/pep-clusters.name": {
+    "en": "eb3f571462b2ef4a",
+    "text": "以 JSON 表示的远程 PEP 集群"
+  },
   "endpoints.route./admin-api/xacml/monitor.name": {
     "en": "c31e79f61be7e43b",
     "text": "授权正在做什么（JSON 形式）"
@@ -443,6 +479,10 @@
     "en": "96ed2387e40a779a",
     "text": "公共界面的卡片样式表"
   },
+  "endpoints.route./web/footer.css.name": {
+    "en": "b1ae9012425d7c77",
+    "text": "页面页脚样式表"
+  },
   "endpoints.route./web/theme.css.name": {
     "en": "955c14dc632bdf90",
     "text": "域登录外观的样式表"
@@ -526,6 +566,10 @@
   "endpoints.route./admin/console.css.name": {
     "en": "cd6aeb9c9e8ebf8a",
     "text": "控制台的样式表"
+  },
+  "endpoints.route./admin/geo-outlines.json.name": {
+    "en": "54575728e7ed9de1",
+    "text": "控制台地图的国家轮廓"
   },
   "endpoints.route./portal.name": {
     "en": "5212610fe0e7c89a",
@@ -775,6 +819,10 @@
     "en": "02bd417f55c9790f",
     "text": "导出密钥对，或轮换签名密钥"
   },
+  "endpoints.route./admin-api/mdoc-iaca.name": {
+    "en": "2a0f7fa3f4260418",
+    "text": "本领域的 mdoc 签发机构 CA"
+  },
   "endpoints.route./admin-api/pki.name": {
     "en": "bc458d477b4de7d9",
     "text": "本领域持有的证书颁发机构"
@@ -962,6 +1010,10 @@
   "endpoints.route./admin-api/device-compliance.name": {
     "en": "1b28ca2ff0e0999f",
     "text": "设备合规性源（MDM / 状态评估）"
+  },
+  "endpoints.route./admin-api/pep-audit.name": {
+    "en": "df3ac1026eab32fe",
+    "text": "远程 PEP 的决定记录"
   },
   "endpoints.route./admin-api/device-registration.name": {
     "en": "f8fcb8ceb53f6ebf",
@@ -1175,6 +1227,14 @@
     "en": "a5461fc6541725a3",
     "text": "更改策略"
   },
+  "endpoints.route./admin-api/policies/transfer.name": {
+    "en": "d0e1c015c9f2a694",
+    "text": "策略传输视图"
+  },
+  "endpoints.route./admin-api/policies/transfer/:action.name": {
+    "en": "bc0714219f3243c3",
+    "text": "导出和导入策略"
+  },
   "endpoints.route./admin-api/consent/:action.name": {
     "en": "a7acd63ff9b05a72",
     "text": "授予和撤销同意"
@@ -1207,6 +1267,10 @@
     "en": "d7fa23e10dac9b1d",
     "text": "更改登录外观"
   },
+  "endpoints.route./admin-api/audit/integrity.name": {
+    "en": "79de5da36fba17bd",
+    "text": "检查审计日志完整性"
+  },
   "endpoints.route./admin-api/audit.name": {
     "en": "e4d36f9a4e22d3a2",
     "text": "审计日志"
@@ -1226,6 +1290,14 @@
   "endpoints.route./admin-api/cells/people.name": {
     "en": "3487e884b7bb0884",
     "text": "单元驻留者"
+  },
+  "endpoints.route./admin-api/malware-scanning.name": {
+    "en": "48adceb89b5e59c8",
+    "text": "恶意软件扫描"
+  },
+  "endpoints.route./admin-api/malware-scanning/:action.name": {
+    "en": "5fea7fc18a3a67b9",
+    "text": "测试恶意软件扫描器"
   },
   "endpoints.route./admin-api/listeners/:action.name": {
     "en": "f35429cc1bbc09a8",
@@ -1446,6 +1518,18 @@
   "endpoints.route./sts.name": {
     "en": "974efec49bd38548",
     "text": "安全令牌服务"
+  },
+  "endpoints.route./sts/metadata.name": {
+    "en": "6d139ba55ee24788",
+    "text": "WS-Trust 元数据"
+  },
+  "endpoints.route./sts/metadata/capabilities.name": {
+    "en": "5976fe018c7df889",
+    "text": "WS-Trust 令牌能力"
+  },
+  "endpoints.route./sts/metadata/capabilities.xsd.name": {
+    "en": "c89390ca99682b92",
+    "text": "WS-Trust 令牌能力架构"
   },
   "endpoints.route./sts/cert.name": {
     "en": "a8e401846d25c111",
@@ -2131,6 +2215,14 @@
     "en": "6bc2372d3bb214c3",
     "text": "令牌状态列表"
   },
+  "endpoints.route./oid4vci/status-lists/mdoc.name": {
+    "en": "0f85cae8f7648bb1",
+    "text": "mdoc 令牌状态列表"
+  },
+  "endpoints.route./oid4vci/mdoc-iaca.name": {
+    "en": "005a19a028c1adc0",
+    "text": "mdoc 签发机构 CA"
+  },
   "endpoints.route./oid4vci/status-lists.name": {
     "en": "b7c39aa8efc43f99",
     "text": "状态列表聚合"
@@ -2462,17 +2554,5 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS（请求客户端证书，但从不强制要求）"
-  },
-  "endpoints.route./admin-api/malware-scanning.name": {
-    "en": "48adceb89b5e59c8",
-    "text": "恶意软件扫描"
-  },
-  "endpoints.route./admin-api/malware-scanning/:action.name": {
-    "en": "5fea7fc18a3a67b9",
-    "text": "测试恶意软件扫描器"
-  },
-  "endpoints.route./admin-api/audit/integrity.name": {
-    "en": "79de5da36fba17bd",
-    "text": "检查审计日志完整性"
   }
 }

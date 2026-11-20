@@ -742,7 +742,26 @@ async function nothingShowsAStoredSet(state) {
       "the old action drew codes.");
   });
 
-  const api = await apiGet("/mfa");
+  // UNTIL THE SET IS THERE, a few times (GitHub run #449, cluster mode). The
+  // portal's confirm and this read are two clients, and
+  // `workers.readYourWrite`'s default, `session`, holds a client to its OWN
+  // writes only: behind the cluster's balancer the read 0.2 s later reached
+  // the node that had not yet pulled the confirm, and reported no set. What
+  // this section asserts is what /admin-api says of a stored set, not how
+  // fast two nodes converge (sts_two_realm_domains.js's walk, the same way).
+  let api = null;
+  for (let attempt = 0; attempt < 10; attempt++) {
+    api = await apiGet("/mfa");
+    const seen = mfaRowFor(api.body, OWNER);
+    if (seen && seen.backupCodes && seen.backupCodes.present) {
+      break;
+    }
+    log.info("the set is not reported yet (attempt " + (attempt + 1) +
+             "); asking again");
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 1000);
+    });
+  }
   check("and /admin-api reports the COUNTS and never the codes, which was " +
         "true before this change and is now true by construction", function () {
     const raw = JSON.stringify(api.body);

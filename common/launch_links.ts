@@ -44,6 +44,7 @@
 import applications = require('./applications');
 import config = require('./config');
 import helpers = require('./helpers');
+import Classes = require('./domain_classes');
 
 type Json = any;
 
@@ -238,10 +239,10 @@ class LaunchLinks {
     helpers.log.debug("Entering LaunchLinks.endpointUrl(). " + protocol);
     const fields = (view && view.fields) || {};
     const identifier = String((view && view.identifier) || '');
-    // A field is a value or a list of them; the first is the identifier.
-    const first = function (name: string): string {
-      const value = fields[name];
-      return String((Array.isArray(value) ? value[0] : value) || '');
+    // The first of each list is the identifier, read through the protocol's
+    // concept (#1579).
+    const first = function (values: string[] | undefined): string {
+      return String((values || [])[0] || '');
     };
     const there = String(target || '');
     // EACH ENDPOINT IS ITS PROTOCOL'S APPLICATION'S (#472), which need not
@@ -249,18 +250,21 @@ class LaunchLinks {
     // application is advertised.
     let url = '';
     if (protocol === 'saml2') {
-      const sp = first('samlEntityId') || identifier;
+      const sp = first(Classes.SamlServiceProvider.fromEntry(fields)
+        .entityIds) || identifier;
       url = helpers.rebaseTo(base, 'saml2') + '/saml2/unsolicited/' +
         encodeURIComponent(sp) +
         (there ? '?target=' + encodeURIComponent(there) : '');
     } else if (protocol === 'saml11') {
-      const rp = first('samlEntityId') || identifier;
+      const rp = first(Classes.SamlServiceProvider.fromEntry(fields)
+        .entityIds) || identifier;
       url = helpers.rebaseTo(base, 'saml11') + '/saml11/sso/' +
         encodeURIComponent(rp) +
         '?providerId=' + encodeURIComponent(rp) +
         (there ? '&TARGET=' + encodeURIComponent(there) : '');
     } else if (protocol === 'wsfed') {
-      const realm = first('wsfedRealm') || identifier;
+      const realm = first(Classes.WsFederationRelyingParty.fromEntry(fields)
+        .realms) || identifier;
       url = helpers.rebaseTo(base, 'ws-federation') + '/wsfed/initiate/' +
         encodeURIComponent(realm) +
         (there ? '?wctx=' + encodeURIComponent(there) : '');
@@ -444,7 +448,17 @@ class LaunchLinks {
       return;
     }
     session.launches = Object.assign({}, session.launches || {});
-    session.launches[clientId] = Math.floor(Number(nowS) || 0);
+    // A LAUNCH IN THE SECOND OF THE LAST TAKE IS MOVED PAST IT. The merge of
+    // two copies treats a launch no later than its take as spent
+    // (`takeLaunch()`), so a launch in the same second as the previous take
+    // — or a second or two before it, on a node whose clock is behind —
+    // would vanish at the next merge. It is moved one second past the take,
+    // which shortens its window by at most that much. A launch further in
+    // the past than that is recorded as given: it is not this one.
+    const at = Math.floor(Number(nowS) || 0);
+    const taken = Number((session.launchesTaken || {})[clientId]) || 0;
+    session.launches[clientId] = taken && at <= taken && at >= taken - 2
+      ? taken + 1 : at;
     helpers.log.debug("Leaving LaunchLinks.noteLaunch().");
   }
 
@@ -462,7 +476,9 @@ class LaunchLinks {
     helpers.log.debug("Entering LaunchLinks.launchIsFresh().");
     const at = Number(session && session.launches &&
                       session.launches[clientId]);
-    const fresh = isFinite(at) && at > 0 && nowS - at >= 0 &&
+    // `>= -3`: `noteLaunch()` places a launch one second past a take up to
+    // two seconds later than the clock, so it can be that far ahead.
+    const fresh = isFinite(at) && at > 0 && nowS - at >= -3 &&
                   nowS - at <= Number(windowS);
     helpers.log.debug("Leaving LaunchLinks.launchIsFresh(). " + fresh);
     return fresh;
@@ -482,6 +498,16 @@ class LaunchLinks {
       helpers.log.debug("Leaving LaunchLinks.takeLaunch(). None.");
       return false;
     }
+    // THE LAUNCH TAKEN IS WRITTEN DOWN, not only removed (run 43936849276).
+    // Two nodes' copies of a session are merged (`authn.mergeSessionRows()`),
+    // and the merge keeps every launch either copy holds; a copy from before
+    // this take would otherwise bring the spent launch back. So the instant
+    // of the launch spent stays in `launchesTaken`, and the merge drops a
+    // launch no later than it.
+    session.launchesTaken = Object.assign({}, session.launchesTaken || {});
+    session.launchesTaken[clientId] = Math.max(
+      Number(session.launchesTaken[clientId]) || 0,
+      Number(session.launches[clientId]) || 0);
     const kept = Object.assign({}, session.launches);
     delete kept[clientId];
     session.launches = kept;

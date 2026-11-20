@@ -47,13 +47,18 @@ COPY --from=build /usr/src/rust/target/release/xacml-pep /usr/local/bin/xacml-pe
 # release flag without a valid number fails this RUN; without the flag
 # BUILD_NUMBER is ignored. The commit and the build instant are recorded
 # beside it. `version.json` is in the working directory, where the binary
-# looks for it and where CI reads it.
+# looks for it and where CI reads it. STS_VERSION_RELEASE (2026-11-11), the
+# third argument the service's Dockerfile takes, is the release a build of
+# main stamps in place of VERSION's (M.N.O exactly, or this RUN fails with
+# STS-CORE-0175); empty, the default, it is VERSION's.
 COPY VERSION ./VERSION
 ARG GIT_COMMIT=
 ARG STS_RELEASE=
 ARG BUILD_NUMBER=
+ARG STS_VERSION_RELEASE=
 RUN GIT_COMMIT="${GIT_COMMIT}" STS_RELEASE="${STS_RELEASE}" \
     BUILD_NUMBER="${BUILD_NUMBER}" \
+    STS_VERSION_RELEASE="${STS_VERSION_RELEASE}" \
     xacml-pep --stamp . && cat version.json
 
 LABEL org.opencontainers.image.source="https://github.com/rcbj/iya-sts" \
@@ -68,6 +73,9 @@ LABEL org.opencontainers.image.source="https://github.com/rcbj/iya-sts" \
 
 EXPOSE 9090
 EXPOSE 9443
+# The reverse proxy (#1760), plain and HTTPS: xacml-pep/CLAUDE.md.
+EXPOSE 9180
+EXPOSE 9543
 
 # LIVENESS ONLY, never whether the policy is current: a PEP holding a stale
 # copy is working, and failing on staleness would turn a PDP outage into a

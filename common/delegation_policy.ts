@@ -68,6 +68,7 @@ import applications = require('./applications');
 import credentials = require('./credentials');
 import gate = require('./issuance_gate');
 import roles = require('./roles');
+import Classes = require('./domain_classes');
 
 type Json = any;
 
@@ -213,23 +214,35 @@ class DelegationPolicy {
     };
   }
 
-  // Every value of one attribute on an application view, as strings.
+  // A concept's value as trimmed non-empty strings.
   /**
-   * Returns every value of one attribute on an application view, as trimmed
-   * non-empty strings.
+   * Returns a concept's value as trimmed non-empty strings: what this policy
+   * has always read an application's delegation settings as.
    *
-   * @param row - an application view with `fields`
-   * @param attribute - the attribute name
+   * @param raw - a field of a concept
    * @returns the values, empty when there are none
    */
-  static valuesOf(row: Json, attribute: string): string[] {
+  static valuesOf(raw: unknown): string[] {
     helpers.log.debug("Entering DelegationPolicy.valuesOf().");
-    const raw = row && row.fields ? row.fields[attribute] : undefined;
     const out = (Array.isArray(raw) ? raw : (raw === undefined ||
       raw === null || raw === '' ? [] : [raw]))
       .map(function (one) { return String(one).trim(); })
       .filter(function (one) { return !!one; });
     helpers.log.debug("Leaving DelegationPolicy.valuesOf().");
+    return out;
+  }
+
+  // WHAT AN APPLICATION SAYS ABOUT DELEGATION IS ITS CONCEPTS' (#1579): who
+  // it may act for and to, the Application's; its realms across a trust,
+  // the KerberosService's. ATTRIBUTES above stays for the answers that
+  // name the attribute a pair was set by.
+  private static delegationOf(row: Json): { app: IyaDomain.Application;
+      kdc: IyaDomain.KerberosService } {
+    helpers.log.debug("Entering DelegationPolicy.delegationOf().");
+    const fields = (row && row.fields) || {};
+    const out = { app: Classes.Application.fromEntry(fields),
+                  kdc: Classes.KerberosService.fromEntry(fields) };
+    helpers.log.debug("Leaving DelegationPolicy.delegationOf().");
     return out;
   }
 
@@ -491,7 +504,6 @@ class DelegationPolicy {
    */
   partyFacts(name: string): Json {
     const { log, credentials, roles } = this.deps;
-    const A = DelegationPolicy.ATTRIBUTES;
     log.debug("Entering DelegationPolicy.partyFacts().");
     const wanted = String(name || '').trim();
     const rolesFor = function (kind: string, who: string): string[] {
@@ -507,31 +519,32 @@ class DelegationPolicy {
     const application = this.applicationFor(wanted);
     if (application) {
       const id = String(application.identifier);
+      const held = DelegationPolicy.delegationOf(application);
       log.debug("Leaving DelegationPolicy.partyFacts(). An application.");
       return {
         id: id, kind: 'application', registered: true,
         roles: rolesFor('application', id),
-        notDelegated: DelegationPolicy.valuesOf(application, A.NOT_DELEGATED)
+        notDelegated: DelegationPolicy.valuesOf(held.app.notDelegated)
           .some(function (one) { return one.toUpperCase() === 'TRUE'; }),
         groups: [],
-        semantics: DelegationPolicy.valuesOf(application, A.SEMANTICS)
+        semantics: DelegationPolicy.valuesOf(held.app.delegationSemantics)
           .map(function (one) { return one.toLowerCase(); }),
-        defaultSemantics: (DelegationPolicy.valuesOf(application,
-          A.DEFAULT_SEMANTICS)[0] || '').toLowerCase(),
-        delegatesTo: this.resolvedList(DelegationPolicy.valuesOf(application,
-          A.DELEGATE_TO)),
-        subjectGroups: DelegationPolicy.valuesOf(application, A.SUBJECT_GROUP)
+        defaultSemantics: (DelegationPolicy.valuesOf(
+          held.app.defaultDelegationSemantics)[0] || '').toLowerCase(),
+        delegatesTo: this.resolvedList(DelegationPolicy.valuesOf(
+          held.app.allowedToDelegateTo)),
+        subjectGroups: DelegationPolicy.valuesOf(
+          held.app.delegationSubjectGroup)
           .map(function (one) { return DelegationPolicy.normalizeDn(one); }),
-        accepts: this.resolvedList(DelegationPolicy.valuesOf(application,
-          A.ACT_ON_BEHALF_OF)),
+        accepts: this.resolvedList(DelegationPolicy.valuesOf(
+          held.app.allowedToActOnBehalfOf)),
         mayAct: '',
         // #430: the realms whose users this service may obtain S4U2Self
         // tickets for, and what it says of a TGT delegated to it across a
         // trust.
-        selfRealms: DelegationPolicy.valuesOf(application,
-                                              'krb5S4uSelfRealm'),
-        foreignTgtDelegation: (DelegationPolicy.valuesOf(application,
-          'krb5ForeignTgtDelegation')[0] || '').toLowerCase()
+        selfRealms: DelegationPolicy.valuesOf(held.kdc.s4uSelfRealm),
+        foreignTgtDelegation: (DelegationPolicy.valuesOf(
+          held.kdc.foreignTgtDelegation)[0] || '').toLowerCase()
       };
     }
     const facts = wanted ? (credentials.delegationFactsFor(wanted) || {}) : {};
@@ -983,9 +996,8 @@ class DelegationPolicy {
     if (application) {
       subjectId = String(application.identifier);
       kind = 'application';
-      const dn = DelegationPolicy.valuesOf(application,
-                                           DelegationPolicy.ATTRIBUTES
-                                             .MAY_ACT)[0] || '';
+      const dn = DelegationPolicy.valuesOf(
+        DelegationPolicy.delegationOf(application).app.mayAct)[0] || '';
       declared = dn ? this.claimForDn(dn) : null;
     } else {
       const facts = credentials.delegationFactsFor(name);
@@ -1046,7 +1058,8 @@ class DelegationPolicy {
     log.debug("Entering DelegationPolicy.claimForDn().");
     const row = this.applicationByDn(dn);
     if (row) {
-      const clientIds = DelegationPolicy.valuesOf(row, 'oauthClientId');
+      const clientIds = DelegationPolicy.valuesOf(Classes.OAuthClient
+        .fromEntry(row.fields || {}).clientIds);
       log.debug("Leaving DelegationPolicy.claimForDn(). An application.");
       return { sub: clientIds[0] || String(row.identifier) };
     }
@@ -1125,38 +1138,42 @@ class DelegationPolicy {
       return !!self.applicationFor(identifier);
     };
     rows.forEach(function (row: Json) {
-      const semantics = DelegationPolicy.valuesOf(row, A.SEMANTICS)
+      const held = DelegationPolicy.delegationOf(row).app;
+      const semantics = DelegationPolicy.valuesOf(held.delegationSemantics)
         .map(function (one) { return one.toLowerCase(); });
       const trusted = semantics.indexOf('impersonation') >= 0;
-      const defaultSemantics = (DelegationPolicy.valuesOf(row,
-        A.DEFAULT_SEMANTICS)[0] || '').toLowerCase();
-      const notDelegated = DelegationPolicy.valuesOf(row, A.NOT_DELEGATED)
+      const defaultSemantics = (DelegationPolicy.valuesOf(
+        held.defaultDelegationSemantics)[0] || '').toLowerCase();
+      const notDelegated = DelegationPolicy.valuesOf(held.notDelegated)
         .some(function (one) { return one.toUpperCase() === 'TRUE'; });
-      const groups = DelegationPolicy.valuesOf(row, A.SUBJECT_GROUP);
-      DelegationPolicy.valuesOf(row, A.DELEGATE_TO).forEach(function (target) {
-        const resolved = self.resolveTarget(target, 'audience') ||
-          self.resolveTarget(target, 'appliesTo');
-        pairs.push({ mechanism: 'constrained', intermediary: row.identifier,
-          target: target, targetApplication: resolved,
-          attribute: A.DELEGATE_TO, setOn: row.identifier,
-          setOnRole: 'intermediary', impersonates: trusted,
-          subjectGroups: groups, targetKnown: !!resolved,
-          warning: resolved ? '' : 'No application here has registered "' +
-            target + '"; it is matched exactly as written.' });
-      });
-      DelegationPolicy.valuesOf(row, A.ACT_ON_BEHALF_OF)
+      const groups = DelegationPolicy.valuesOf(held.delegationSubjectGroup);
+      DelegationPolicy.valuesOf(held.allowedToDelegateTo)
+        .forEach(function (target) {
+          const resolved = self.resolveTarget(target, 'audience') ||
+            self.resolveTarget(target, 'appliesTo');
+          pairs.push({ mechanism: 'constrained', intermediary: row.identifier,
+            target: target, targetApplication: resolved,
+            attribute: A.DELEGATE_TO, setOn: row.identifier,
+            setOnRole: 'intermediary', impersonates: trusted,
+            subjectGroups: groups, targetKnown: !!resolved,
+            warning: resolved ? '' : 'No application here has registered "' +
+              target + '"; it is matched exactly as written.' });
+        });
+      DelegationPolicy.valuesOf(held.allowedToActOnBehalfOf)
         .forEach(function (who) {
           const found = self.applicationFor(who);
+          const theirs = found ? DelegationPolicy.delegationOf(found).app :
+            null;
           pairs.push({ mechanism: 'resource-based', intermediary: who,
             target: row.identifier, targetApplication: row.identifier,
             attribute: A.ACT_ON_BEHALF_OF, setOn: row.identifier,
             setOnRole: 'target',
-            impersonates: found ? DelegationPolicy.valuesOf(found,
-              A.SEMANTICS).some(function (one) {
+            impersonates: theirs ? DelegationPolicy.valuesOf(
+              theirs.delegationSemantics).some(function (one) {
               return one.toLowerCase() === 'impersonation';
             }) : false,
-            subjectGroups: found ? DelegationPolicy.valuesOf(found,
-              A.SUBJECT_GROUP) : [],
+            subjectGroups: theirs ? DelegationPolicy.valuesOf(
+              theirs.delegationSubjectGroup) : [],
             targetKnown: true,
             warning: known(who) ? '' : 'No application here is called "' +
               who + '", so nothing can act under that name.' });

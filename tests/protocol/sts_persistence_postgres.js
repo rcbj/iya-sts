@@ -114,6 +114,7 @@
 // Needs no browser and no Keycloak.
 // ---------------------------------------------------------------------------
 const assert = require("assert");
+const dns = require("dns");
 const fs = require("fs");
 const net = require("net");
 const path = require("path");
@@ -832,19 +833,59 @@ async function noSslmodeIsStillTls(root, plainUrl) {
 // each instance is started with the CA and verification on, and reaches the
 // database.
 //
-// THE HOST NAME HALF IS NOT HERE, AND WHY IS A FINDING (2026-10-23). The
-// obvious case — the same CA, the server dialled by its IP address, which its
-// certificate does not name — STARTS. `pg` sets `servername` only when the
-// host is not an IP and passes no `host` to `tls.connect`, so node checks the
-// certificate against `localhost`, which this stack's certificate names.
-// So a database dialled by address is never checked against that address.
-// The case belongs here once the driver checks the address itself.
+// THE HOST NAME, INCLUDING AN ADDRESS (#951). The stack's certificate names
+// `postgres`, `localhost` and `127.0.0.1`. Dialling the same server by the
+// address that name resolves to — with the CA still in place, so the chain
+// verifies — must refuse the start. Until the driver checked that address
+// itself, `pg` left node to check `localhost` and the service started.
 // ---------------------------------------------------------------------------
+async function addressTheCertificateDoesNotName(databaseUrl) {
+  log.debug("Entering addressTheCertificateDoesNotName().");
+  const named = new URL(databaseUrl);
+  let address = "";
+  if (net.isIP(named.hostname) !== 0) {
+    address = named.hostname;
+  } else {
+    let found = [];
+    try {
+      found = await dns.promises.lookup(named.hostname, { all: true });
+    } catch (e) {
+      log.debug("Caught in addressTheCertificateDoesNotName(): " +
+                ((e && e.message) || e));
+      found = [];
+    }
+    const others = found.filter(function (one) {
+      return one.address !== "127.0.0.1" && one.address !== "::1";
+    });
+    const v4 = others.filter(function (one) {
+      return one.family === 4;
+    })[0];
+    address = (v4 || others[0] || {}).address || "";
+  }
+  log.debug("Leaving addressTheCertificateDoesNotName(). " +
+            (address || "none"));
+  return address;
+}
+
 async function theServerCertificateIsVerified(root, database) {
   log.debug("Entering theServerCertificateIsVerified().");
   log.info("=== The database's certificate is verified ===");
-  const cases = [{ label: "with no CA to verify against", url: database.url,
-                   env: { STS_DATABASE_TLS_CA_FILE: null } }];
+  const address = await addressTheCertificateDoesNotName(database.url);
+  assert.ok(address && address !== "127.0.0.1" && address !== "::1",
+    "the database must be reachable at an address its certificate does " +
+    "not name (the stack certificate names postgres, localhost and " +
+    "127.0.0.1). " + new URL(database.url).hostname + " gave " +
+    JSON.stringify(address) + ".");
+  const byAddress = new URL(database.url);
+  byAddress.hostname = address;
+  const cases = [
+    { label: "with no CA to verify against", url: database.url,
+      env: { STS_DATABASE_TLS_CA_FILE: null },
+      reason: /certificate|self[- ]signed|altname|verify|hostname/i },
+    { label: "dialled by " + address + ", which the certificate does not name",
+      url: byAddress.toString(), env: {},
+      reason: /altname|hostname|does not match/i }
+  ];
   for (const c of cases) {
     const ended = await startMockExpectingFailure(root, c.url, c.env);
     assert.notStrictEqual(ended.code, 0,
@@ -854,8 +895,7 @@ async function theServerCertificateIsVerified(root, database) {
     assert.ok(!ended.everAnswered,
       "and it must never have answered a request (" + c.label + ").");
     const fatal = fatalMessage(ended.output);
-    assert.ok(/certificate|self[- ]signed|altname|verify|hostname/i
-      .test(fatal),
+    assert.ok(c.reason.test(fatal),
       "and the FATAL record must name the certificate as the reason (" +
       c.label + "). It said:\n" + (fatal || ended.output.slice(-1200)));
     log.info("[verify] OK — refused to start " + c.label + ": " +

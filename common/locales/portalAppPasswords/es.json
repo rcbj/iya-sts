@@ -5,6 +5,7 @@
   "door.scim": "HTTP Basic en /scim/v2 (RFC 7617)",
   "door.ssf": "HTTP Basic en los endpoints /ssf (RFC 7617)",
   "door.est": "HTTP Basic en /.well-known/est (RFC 7030, sección 3.2.3)",
+  "door.xacml-pep": "HTTP Basic en el proxy inverso de un PEP XACML remoto, comprobado en POST /xacml/pep/basic",
   "fresh.heading": "Su nueva contraseña de aplicación",
   "fresh.copyNow": "<strong>Cópiela ahora.</strong> Se muestra en esta página una sola vez y no se puede volver a mostrar: este servicio solo guarda un hash de ella.",
   "fresh.note": "Póngala en el cliente en lugar de su contraseña, con su nombre de usuario de siempre. Solo funciona en los accesos de arriba y nunca en la pantalla de inicio de sesión. Los guiones son opcionales.",

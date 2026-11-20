@@ -36,6 +36,7 @@ libraries that decide things on its behalf.
 | `access_token_status.ts` | **The access-token Token Status List (#432 phase 2, rcbj's decision 4, 2026-10-03)** — one list per realm for every RFC 9068 access token AND GNAP's two JWT formats, at `/status-lists/access-tokens` with its aggregation at `/status-lists`; indexes handed out from blocks each process leases across the cluster (#820); the bit computed from the revocation register. A ROUTE MODULE AND A LIBRARY (`oid4vc/vc_status.ts`'s shape), built and registered just after `oauth2` and `grant_management`. See *The access-token status list*, below. |
 | `oauth_grant_signals.ts` | **An OAuth grant revoked is CAEP's `session-revoked` about the grant (#239, 2026-09-26).** Fills `common/admin_stats.js`'s `setRevocationObserver()` slot: one event per grant, subject `oauth-grant:<id>` beside the person, the door's own `initiating_entity`, and a replay also a `risk-level-change`. Built at 23b-vi; registers nothing. See *OAuth grants on CAEP*, below. |
 | `opaque_access_token.ts` | **Opaque OAuth access tokens (#501), off by default.** A 256-bit handle in place of the RFC 9068 JWT when `oauth2.accessTokenFormat` is `opaque`; the claims stay in the realm. A library: no route. See 3cw. |
+| `oauth_model.ts` | **The OAuth 2.0 and OpenID Connect model, as the endpoints read it (#1579).** Builds every endpoint's request validator from `models/generated/oauth.json` and holds the discovery documents, the token response and every error code to it. A leaf. See *THE REQUEST SHAPES ARE THE MODEL'S*, below. |
 
 **Everything but `oauth2.ts` — and, since 2026-09-13, the console page
 `oauth2_monitor_admin.ts`, required at 18f rather than from here, and since
@@ -469,13 +470,14 @@ so must `admin-ui/admin.ts`.
    oidcc-codereuse called that what it is — RFC 6749 section 4.1.2's MUST
    broken — so `checkCodeReplay()` now refuses in every mode unless
    `oauth2.codeReplayIdempotent` is on (off by default, a documented weaker
-   option, on in `env/test.js` and `env/docker-tests.js` only for the
-   parent's vendored `oauth2_sts_endpoints.js`), and RFC 9700 mode refuses
-   whatever it says. **Since #614 the record keeps the issued `jti`s and NOT
-   the token response, except under that setting**: a refusal revokes by
-   `jti`, and only an identical repeat answered with the same bytes needs the
-   bytes. A row written with the setting off has nothing to replay, so a
-   repeat of it after the setting is turned on is refused (`STS-OAUTH-0958`)
+   option), and RFC 9700 mode refuses whatever it says. The test stacks
+   leave the option off, and `tests/protocol/oauth2_sts_endpoints.js`
+   asserts the refusal. **Since #614 the record keeps the issued `jti`s
+   and NOT the token response, except under that setting**: a refusal
+   revokes by `jti`, and only an identical repeat answered with the same
+   bytes needs the bytes. A row written with the setting off has nothing
+   to replay, so a repeat of it after the setting is turned on is refused
+   (`STS-OAUTH-0958`)
    and what it bought revoked.
    It revokes the access, refresh and ID Tokens that
    code bought (RFC 6749 section 10.5), through `stats.revoke()` called by
@@ -800,7 +802,7 @@ so must `admin-ui/admin.ts`.
    push, `code`, `private_key_jwt`, DPoP — and, with the ordinary consent
    rules, their seeded global consent counts again.
    `tests/fapi2_units.js` and `tests/protocol/sts_fapi2.js` hold it; the
-   Attacker Model's mapping is in `docs/oauth-security.md`.
+   Attacker Model's mapping is in `docs/v1.1.0/oauth-security.md`.
 
    **FAPI 2.0 MESSAGE SIGNING (#141, 2026-09-22) IS THE FOURTH VALUE,
    `2-message-signing`: the Security Profile PLUS ALL THREE COMPONENTS** —
@@ -813,7 +815,7 @@ so must `admin-ui/admin.ts`.
    JARM required (`STS-OAUTH-0591`, and discovery lists JARM's modes alone);
    and RFC 9701's signed introspection, which every JWT introspection response
    here already was. Section 5.2's non-repudiation is guidance, answered in
-   `docs/oauth-security.md` (keep the retired keys and the audit log). **THE
+   `docs/v1.1.0/oauth-security.md` (keep the retired keys and the audit log). **THE
    FINAL SPECIFICATION HAS NO RFC 9421 SECTIONS**, though the #45 review was
    written against a draft that did; rcbj split HTTP signatures on the resource
    servers out to #178. The surfaces ask for JARM under this profile as under
@@ -1074,7 +1076,21 @@ so must `admin-ui/admin.ts`.
    the configured `adminApi.audience` where there is none. A token for any
    other resource is untouched: binding stays the client's choice there, and
    the rule is the one resource server where a stolen token administers the
-   service. **The gate holds the other end** (`STS-API-0137`,
+   service. **ONE CLIENT'S DPoP KEY STOOD FOR ITS CERTIFICATE THROUGH
+   PHASE 3 OF THE PEP TOKEN PLAN (#1827's follow-up), AND NO LONGER DOES:**
+   `sts-remote-pep` declared the section 3.4 flag from #1827, and while it
+   did, `sender_constraints.js`'s `dpopStandsForCertificate()` let a
+   verified DPoP proof satisfy `declaredRefusal()`, a `jkt` satisfy
+   `adminApiBindingRefusal()` and a `cnf.jkt` token pass `0137`. **Phase 4
+   (rcbj, 2026-11-16) retired the PEP's client certificate**: the seed no
+   longer declares the flag, an entry an earlier build seeded has it
+   CLEARED at every start (`applications.js`'s `fillRetiredClientFlags()`,
+   audited as `application.update`), and the exception is gone — so
+   `sts-remote-pep` meets these rules as any client does, and declares
+   nothing they ask about. A token request from it with no DPoP proof is
+   `STS-OAUTH-1012` (`sender_constraints.js`'s `REMOTE_PEP_CLIENT`),
+   reachable now that `0487` no longer answers first.
+   **The gate holds the other end** (`STS-API-0137`,
    `mgmt-api/CLAUDE.md`), reading the declaration NOW, so a token issued
    before the rule or before the declaration is refused too. In every mode,
    for `declaredRefusal()`'s reason. `tests/rfc8705_mtls.js` section m.
@@ -1261,7 +1277,10 @@ so must `admin-ui/admin.ts`.
    on the entry and for a certificate presented in an `x5c` that this service
    can see it issued to a person — that second path does not consult the
    registry at all, which is the point of it, so `common/pki.js` puts the answer
-   in the certificate as a `urn:sts:person:<name>` subjectAltName. That
+   in the certificate as a `urn:sts:person:<name>` subjectAltName — a service
+   account's `urn:sts:sa:<name>` since #1827, read as the person whichever
+   spelling names them (rcbj: the grant follows WS-Trust; `common/CLAUDE.md`
+   3df). That
    file argues the whole thing; what belongs here is that `keysForParty()` is
    told which KIND of party it is reading rather than trying every attribute
    name it knows, because the store is schemaless and a function that read both
@@ -2286,6 +2305,15 @@ so must `admin-ui/admin.ts`.
    production. All five are `runtime: true` and therefore per trust realm, which
    is why every predicate is read PER REQUEST rather than cached.
 
+   **WHOSE REALM ASKS `oauth2.accessTokenRequireDpop` AT `/admin-api` (#28,
+   rcbj, 2026-11-15): the realm that ISSUED the token.** Every other resource
+   reads it in the request's realm, which is the issuing one there; the
+   management API also accepts the default realm's service-wide API client at
+   every realm's door, and a realm's switch refused that client's bearer.
+   So the gate passes `accessTokenRefusal({ dpopRequired })`, read in the
+   token's realm — a realm's own clients meet its rule, the service-wide
+   client the default realm's (`mgmt-api/CLAUDE.md`).
+
    | Setting | What it does |
    |---|---|
    | `oauth2.refreshTokenRotation` | Rotation with replay detection, with both modes off. The only one of the five that changes what is ISSUED rather than what is accepted |
@@ -2355,6 +2383,16 @@ so must `admin-ui/admin.ts`.
    Beside those, `admin_stats.tokenHolders` rows are written a day past their
    token, so they are rewritten about once a day, not on every refresh.
    `tests/refresh_writes.js`.
+
+   **A REFRESH WAITS FOR ONE SYNCHRONOUS COMMIT (#886).** The rows above
+   are how many a refresh writes. What held the rate was how many of those
+   commits waited for the log flush. A successful rotating refresh waited
+   twice: the spend of the presented token, then the minted flush of the
+   new one. The spend now commits without waiting (`noFlushWait`,
+   `persistence/CLAUDE.md`). The minted flush stays synchronous and flushes
+   the spend before the response is sent. The refresh token's own row is
+   not written that way. The family-revocation claim stays synchronous: it
+   is the durable record of a replay, and it is rare.
 
    **THE FOUR REFUSALS REFUSE, AND REFUSING IS THE DESIGN.** Everywhere else
    this service prefers to answer with something weaker rather than not answer
@@ -4354,7 +4392,10 @@ secret.
 **WHAT DID NOT CHANGE, AND SAYS SO.** `urn:sts:client:` (the RFC 9700
 client subject) and the `urn:sts:application:` / `urn:sts:person:`
 certificate SANs are identifiers already inside issued tokens and certificates;
-renaming them is a migration, not a setting.
+renaming them is a migration, not a setting. **#1827 is the one such
+migration, and it is additive**: a service account's NEW leaves say
+`urn:sts:sa:`, and `urn:sts:person:` stays read for it for ever
+(`common/CLAUDE.md` 3df).
 
 
 ## 3x / 3z, CONTINUED: SEVERAL KEY PAIRS PER PERSON (#1290, 2026-11-03)
@@ -4427,7 +4468,7 @@ otherwise. The capability rows `oauth.codes-once`, `oauth.refresh-rotation` and
 |---|---|---|---|
 | authorization code | `oauth.code` | `tokenGrant()`, below every check and above the mint; bound to the response | waits (≤5s, catching up through `cluster_barrier.syncShared()`) for the winner's `redeemedCodes` record, then goes down `replayOrRefuseRedemption()` — refusal and revocation (the same token set only with `oauth2.codeReplayIdempotent` on outside RFC 9700 mode, #187); no record in time is `STS-OAUTH-0512` |
 | PAR `request_uri` | `oauth.par` | `issueAuthorizationResponse()`, where `par.spend()` was; bound to the response | `invalid_request_uri` 400, `STS-OAUTH-0514` |
-| rotated refresh token (RFC 9700 / 2.1 mode) | `oauth.refresh` | `bcp.spendRefreshToken()`, just before the mint; bound to the response | a replay: family revoked by id and by the members known, `STS-OAUTH-0516` |
+| rotated refresh token (RFC 9700 / 2.1 mode) | `oauth.refresh` | `bcp.spendRefreshToken()`, just before the mint, without waiting for the log flush (#886); bound to the response | a replay: family revoked by id and by the members known, `STS-OAUTH-0516` |
 | a revoked family | `oauth.refresh-family-revoked` | `bcp.revokeFamily()`, on every replay (local or claimed) | any member presented later, including one no node listed, `STS-OAUTH-0517` |
 | DPoP proof `jti` | `oauth.dpop-jti` | reserved on arrival by `dpop.proofClaims()`; kept by `verifyProof()` on acceptance, released otherwise | `invalid_dpop_proof`, `STS-OAUTH-0519` |
 | hosted-surface renewal | `oidc_rp.renewal` | `common/oidc_rp.ts` `renewOnce()` | does not redeem; waits for the winner's tokens on the session |
@@ -4681,7 +4722,7 @@ every action, the API gated by two scopes tied to the client, a DELETE
 revoking the grant's tokens, consent records staying the source of "the
 person agreed", a console page and `/admin-api`, on in every mode;
 FAPI-CIBA FOLLOWS `oauth2.fapi` with no setting of its own; lodging intent
-DOCUMENTED as RAR through PAR (`docs/oauth-oidc.md`); the conformance suite
+DOCUMENTED as RAR through PAR (`docs/v1.1.0/oauth-oidc.md`); the conformance suite
 a job — which is #176's, where it lives.
 
 * **`grant_management.ts` is the register and every rule** (its header
@@ -4776,8 +4817,8 @@ request to the Token Endpoint failed."*
   That, and the identical-repeat replay, are now
   `bcp.codeRedemptionRelaxed()`: `oauth2.codeReplayIdempotent` (off by
   default), ignored in RFC 9700 mode and therefore in OAuth 2.1, FAPI and
-  product. The test stacks still turn it on, for the parent project's
-  `oauth2_sts_endpoints.js`, which asserts the leniency.
+  product. The test stacks leave it off.
+  `tests/protocol/oauth2_sts_endpoints.js` asserts the refusal.
 * **At most five minutes.** `oauth2.authorizationCodeTtlS` has `max: 300` (the
   default, as before); FAPI 2.0 still caps it at 60.
 * **Tests.** `tests/authorization_code_once.js` covers each kind of failed first
@@ -5345,12 +5386,8 @@ otherwise; each carries its regression check.
   answered with the same tokens outside the mode (the courtesy argued at 3a
   above). It is refused and what the code bought revoked in every mode
   (STS-OAUTH-0143); the courtesy survives as `oauth2.codeReplayIdempotent`,
-  off by default, a documented weaker option, on in `env/test.js` and
-  `env/docker-tests.js` ONLY because the parent's vendored
-  `oauth2_sts_endpoints.js` still asserts it in development — the parent
-  owes that job's update
-  (rcbj/id-proto-debugger#306, with `vc_did.js`'s for OpenID4VCI's
-  `credential_metadata`), after which the appconfig line goes.
+  off by default, a documented weaker option. The test stacks leave it off.
+  `tests/protocol/oauth2_sts_endpoints.js` asserts the refusal.
 * **The hybrid flow's nonce.** OIDC Core 3.3.2.1 makes `nonce` REQUIRED for
   `code id_token` and `code id_token token` — this file said the hybrid flow
   kept it optional. STS-OAUTH-0562 now covers every response type that
@@ -5768,7 +5805,10 @@ the decisions rcbj made on #118:
   is a step-up requirement: `step_up.ts`'s `essentialAcrValuesOf()`.
 * **A forced second sign-in says why (#1302)**: where a person WITH a
   session is sent to sign in because of `prompt=login`, or because the
-  session is older than `max_age` (the request's, or `default_max_age`),
+  session is older than `max_age` (the request's, or `default_max_age`,
+  or, for the console, the portal and the reports application, the shorter
+  of `oauth2.maxAuthAgeS` and `authn.sessionLifetimeS` even when the
+  request sends none, #825),
   `beginAuthentication()` is given `reauthentication: 'prompt_login'` or
   `'max_age'`, and the sign-in screen draws one line for it
   (`authn/CLAUDE.md`, *Why a second sign-in*). Nothing for a first sign-in,
@@ -5829,7 +5869,7 @@ Left for their own tickets:
 
 **A REVOKED GRANT IS A `session-revoked` ABOUT THE GRANT.** The design is in
 `oauth_grant_signals.ts`'s header and the receiver's view is in
-`docs/caep-events.md`. What reaches outside that file:
+`docs/v1.1.0/caep-events.md`. What reaches outside that file:
 
 * **The grant is named when a token is issued, not when it is revoked.**
   `issuanceContext()` states `grantId` and `grantRefresh` into `signJwt()`'s
@@ -5905,6 +5945,28 @@ of THIS directory needs:
   every token from it has expired; a token that would outlive the lease gets
   a block of its own; every allocation goes through a block. The header of
   `access_token_status.ts` argues it.
+* **A restart releases the blocks its own origin still holds (#884)**, at
+  `service_state.start()`, and `oauth2.access-token-block-reap` releases a
+  block whose holder has gone. An index is not returned until its status
+  row has committed under that block claim's fence lock, and a new lessee
+  skips an index whose row is already in the store. The header of
+  `access_token_status.ts` argues it.
+* **One commit per response, not per token (#884's review, 2026-11-13).**
+  Only the first index of a new block waits for its own commit. A later
+  index of that proven block, while this process's origin claim is fresh,
+  hands its check to the response's commit
+  (`cluster_barrier.deferUntilCommitted()`), so a rotating refresh is one
+  synchronous commit again (#886); a row the flush dropped refuses that
+  response 503 (`STS-CLUSTER-0166`, `STS-OAUTH-1010`) and the next token
+  takes a fresh block. The reap job counts an origin claim lapsed for less
+  than `cluster_claims.ORIGIN_LAPSE_GRACE_MS` (90 s) as live, so a late
+  renewal no longer costs a live holder its block.
+* **The packed list is cached per realm, for this process (#885).** A
+  publication reuses the compressed bytes until this process's invalid-bit
+  generation for the realm moves, or the earliest INVALID bit's expiry has
+  passed. The signed token is still made again at half the ttl, from those
+  bytes. A refresh token or an ID token does not move the generation. The
+  header of `access_token_status.ts` argues it.
 * **The row's expiry is the configured lifetime**, not the FAPI-capped one
   (#138 only shortens it): a row outliving its token costs an index for a few
   minutes, never a wrong bit.
@@ -6020,7 +6082,8 @@ other client are untouched, and the API explorer's unbound token still works.
     issued the token, and only for a client the list names. A BOUND token
     presented without its proof was already refused by every resource.
   * `oauth2.accessTokenRequireDpop` and `oauth2.refreshTokenRequireDpop` stay
-    the realm's own question for everybody else (rule 3ao).
+    the realm's own question for everybody else (rule 3ao) — at `/admin-api`
+    the question of the realm that issued the token (#28).
 * **IT IS THE ONE PUBLIC CLIENT A CONFIDENTIAL-ONLY FAPI PROFILE ALLOWS**
   (`fapi.js`: `PUBLIC_CLIENT_EXEMPT`, `publicClientExempt()`).
   `clientAuthenticationRefusal(method, clientId)` lets it past at the token
@@ -6029,7 +6092,7 @@ other client are untouched, and the API explorer's unbound token still works.
   refusing it would leave such a realm with no console. **The console does
   not conform to the profile there**: the two requirement rows
   (`no-public-clients`, `confidential-only`) say so, and so do
-  `docs/oauth-security.md` and `docs/spec-departures.md`. This qualifies 3av's
+  `docs/v1.1.0/oauth-security.md` and `docs/v1.1.0/spec-departures.md`. This qualifies 3av's
   *the hosted surfaces conforming*: the portal still does.
 
 **THE PORTAL JOINED BOTH LISTS ON #568 (2026-10-12)**: rcbj's decision made
@@ -6165,9 +6228,9 @@ one definition of that phrase, shared with GNAP's locations
 * **or a registered application** (`appRegisteredBy`), found by its
   `oauthAudience`, client_id, identifier — `resolveTarget()`'s lookups — or
   permission base URI (normalised), the four names
-  `applications.audienceNamesEntry()` reads. The embedded debugger's api is
-  one: `sts-debugger-api`, seeded registered in every install (#541),
-  under `urn:sts:debugger-api:`.
+  `applications.audienceNamesEntry()` reads. The embedded debugger's api
+  was one (`sts-debugger-api`, under `urn:sts:debugger-api:`) until #1717
+  made the debugger accept no access token at all.
 
 Every target is compared whole, because it becomes an `aud` and every
 resource server here compares an `aud` whole (RFC 9068 section 4).
@@ -6178,6 +6241,18 @@ resource server here compares an `aud` whole (RFC 9068 section 4).
   `invalid_target` (RFC 8707 section 2), REDIRECTED from the authorization
   endpoint and a 400 at PAR, `STS-OAUTH-0950`. A malformed resource is left
   to the shape check that answers it after sign-in (`STS-OAUTH-0154`).
+  **REDIRECTED WITH NOBODY SIGNED IN TOO, IN RFC 9700 MODE (#26, rcbj,
+  2026-11-15)**, where it was this service's 400 page until then: RFC 9700
+  section 4.11.2's authenticate-before-redirect (`redirectPolicyFor()`)
+  showed it, so a product client never received the error RFC 8707 asks
+  for. The exception is this one refusal, and only where the request's
+  client is REGISTERED and its redirect_uri matched one of that client's OWN
+  registered URIs (`verifiedRedirect`) — not the service-wide
+  `oauth2.redirectUris` list, and not an address RFC 9126 section 2.4 let a
+  pushed request through with. A request less verified than that keeps the
+  page, which is section 4.11.2's reasoning: a browser forwarded to an
+  address nobody vouched for is the open redirector, whatever rides along.
+  Every other refusal at the endpoint keeps the rule.
 * **The token endpoint**: once above every grant but the token exchange, and
   before anything a grant spends — 400 `invalid_target`, `STS-OAUTH-0951`.
 * **The token exchange is not asked**: its `resource` and `audience` are RFC
@@ -6329,7 +6404,7 @@ token". Tests: `tests/kerberos_tokens.js` X and
 
 ## ASVS 5.0.0 IN THIS FAMILY (#1453-#1565, 2026-11-09)
 
-`docs/product-security.md` is the user's account and `docs/oauth-oidc.md` the
+`docs/v1.1.0/product-security.md` is the user's account and `docs/v1.1.0/oauth-oidc.md` the
 behaviour; this is why each is shaped as it is. Every product-only rule is a
 `common/mode.js` predicate, never `isProduct()`.
 
@@ -6384,3 +6459,117 @@ behaviour; this is why each is shaped as it is. Every product-only rule is a
   `/report-api` and in `common/role_permissions.ts`, and in product a `sub`
   that resolves to nobody is refused rather than matched by username (#1543,
   `helpers.subjectIsGone()`), which may since name somebody else.
+
+## THE REQUEST SHAPES ARE THE MODEL'S (#1579, 2026-11-10)
+
+**`models/oauth/oauth.tsp` is the source of every endpoint's request
+parameters**: the authorization request (which PAR's body is checked as
+too), PAR's own form, the token request (every grant's parameters in one
+form), introspection, revocation, device authorization, `bc-authorize`,
+RP-Initiated Logout, UserInfo's claims request, the registered-client and
+authorization-server path parameters, and `/oauth2/consent`'s query. Each
+property is one parameter: its TypeSpec type says required (not optional),
+repeatable (an array) and integer; `@param` says the shared type of
+`common/validation.js` it is checked as (`identifier`, `name`,
+`redirectUri`, `scope`, `opaque`, `uri`, `base64url`, `integer` or a plain
+bounded `string`), its bounds, whether an empty value is no value
+(`validation.types.opt()`), and its citation. `@endpoint` says the input
+group and whether undeclared parameters PASS THROUGH (the authorization and
+token requests do, for the reasons argued above their names in `oauth2.ts`)
+or are dropped. `oauth_model.ts`'s `request(id)` builds each zod object from
+`models/generated/oauth.json` as THE SAME EXPRESSION the hand-written schema
+was — the same shared type, `min`, `max` and `regex` in the order they were
+written, `repeatable()` then `opt()` — so a refusal reads word for word as it
+did. The twelve hand-written schemas in `oauth2.ts` and the one in
+`consent_screen.ts` are gone; the reasoning about each stays above its name.
+A new parameter is added to the model, never to a zod object here.
+
+**`models/oauth/oauth_members.tsp` states the members of every answer**: the
+two discovery documents (every member either carries in any mode with every
+switch on), the token, error, introspection, registration, device
+authorization, backchannel authentication and pushed authorization
+responses, the claim sets of the ID Token, the RFC 9068 access token, the
+Logout Token and the RFC 9701 introspection response, and the error codes
+(RFC 6749 section 5.2's and every extension's this family sends). A
+`closed` set is every member that may appear; an `open` one is the members a
+specification names, others riding along (an administrator's custom claims,
+a client's own registration metadata).
+
+**THE MODEL DESCRIBES AND VALIDATES THE WIRE; IT DOES NOT RESHAPE IT.** So
+the holding RECORDS and never refuses: `sendAsMetadata()`,
+`sendOidcMetadata()` and the token endpoint's `respond()` hold their answer
+to its set (`holdToModel()`, `STS-OAUTH-1005`), and `oauthError()` holds the
+code (`STS-OAUTH-1006`); the answer is sent as built. A recorded problem is a
+model gap to close in the TypeSpec. The open claim sets and the other answers
+are held by `tests/model_oauth.js`, against every answer, decoded token and
+error code `tests/protocol/oauth_model_wire.snapshot.json` recorded in development,
+RFC 9700, OAuth 2.1 and FAPI 2.0 modes, and it builds both discovery
+documents with every `oauth2.*` switch on in each FAPI profile — and with an
+attester trusted, since attestation-based client authentication's four members
+appear only then and no switch says so (they were a gap a stack run found
+while this check stayed green, 2026-11-14). A member that only one grant
+answers is held where that grant is tested, with
+`tests/tools/oauth_model_hold.js` (which also takes the member out of the set
+and requires the gap): UMA's `pct` (`uma_claims.js` C6a) and `upgraded`
+(`uma_grant.js` U1a), the Kerberos token's `session_key` and
+`session_key_etype` (`kerberos_tokens.js` X2a, this service's own). **That is a
+decision rcbj may reverse**: refusing (a 500, as the published APIs do with
+`STS-API-0139`) would make the model the gate, at the cost of a client
+seeing a 500 for a member the model forgot.
+
+**WHAT STAYS IN CODE, AND READS THE GENERATED SHAPE.** What a refusal needs
+to know beyond the request's shape stays where it was, run on the value the
+generated validator produced: which client is calling and what it
+registered (`clientFrom()`, the declared methods, `oauthAllowedScope`),
+the realm's mode (`oauth2_bcp.js`'s RFC 9700 table, `oauth21.js`'s
+decisions, `fapi.js`'s profiles), and every check that compares two
+parameters or reads a store (PKCE's verifier against the stored challenge,
+a `redirect_uri` against the registered list, a `request_uri` against PAR's
+store). Each answers with its own error and code, as before. The repeated
+`resource` at the token endpoint is still read off the raw body by
+`bodyValues()`, for the reason argued above `TokenRequest`'s name.
+
+**THE WIRE IS HELD BYTE FOR BYTE.** `tests/oauth_model_wire.js` drives every
+endpoint in-process — discovery, the authorization endpoint's refusals and
+its hand-off to sign-in, PAR, every grant at the token endpoint and its
+refusals, introspection (JSON and RFC 9701), revocation, UserInfo, RFC 7591
+and RFC 7592, device authorization, CIBA, RP-Initiated Logout, grant and
+session management — in the four modes, and holds the 412 answers (status,
+headers, body, decoded JWT claim sets) to the record taken from the tree
+before any of this changed. `OAUTH_WIRE_PRINT=1` prints a new record when the
+wire is MEANT to change.
+
+**It reaches a signed-in browser too**, in development mode (`flows`): the
+code flow through the sign-in screen over `/authn-api`, its redemption,
+refresh and replay; the hybrid, implicit, `form_post` and JARM responses; a
+signed request object by value and pushed; a DPoP-bound token; a
+certificate-bound one over a TLS listener the child opens; a CIBA poll
+client; a verifying RFC 7522 assertion; and RP-Initiated Logout ending in
+the back-channel Logout Token a relying party in the child receives, whose
+claim set `tests/model_oauth.js` holds. And it sends each RFC 7591 member as
+a JSON type its definition does not allow. **What it still does not reach**:
+the consent screen's answer, encrypted ID Tokens and JARM, a ping or push
+CIBA delivery, and the other modes' signed-in paths; the OpenID conformance
+harness and the `tests/protocol/` OAuth jobs reach those on a stack.
+
+**A REGISTRATION'S CLIENT METADATA IS THE MODEL'S TOO.** `RegistrationRequest`
+in `models/oauth/oauth_members.tsp` states every member this service reads,
+from RFC 7591 section 2, OpenID Connect Registration section 2 and each
+extension specification, with its JSON type. Every refusal that tests a
+member's type — in `common/applications.js`'s `*MetadataProblem()` and
+`requestDefaultsProblem()`, and `redirect_uris` here — asks
+`OAuthModel.memberFits()` / `itemFits()` (`registrationTypeFits()` there)
+and keeps its own words and code; the problems that read a value's meaning
+(an algorithm this service signs with, an https URL, a delivery mode, the
+RFC 8705 subject grammar in `certificate_subject.js`) stay code. **Every
+other member of a wrong JSON type is refused** (rcbj's decision on #1579,
+2026-11-11): `registrationTypeProblem()` is the LAST check of a
+registration, an RFC 7592 update and an OpenID Federation automatic
+registration, so a member a specific refusal tests keeps its words, and the
+rest — `jwks: "x"`, `client_name: 5`, `contacts: "x"`, `client_uri: 42`,
+`software_id: 5`, the two `*_logout_session_required: "yes"`,
+`token_endpoint_auth_method: 5`, `grant_types` / `response_types` as a
+string, an array holding a non-string — are `invalid_client_metadata`
+(RFC 7591 section 3.2.2), `STS-OAUTH-1007`. Until then each was recorded
+under `STS-OAUTH-1005` and accepted. A member the model does not name is
+still ignored, as section 2 says.

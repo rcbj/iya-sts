@@ -38,7 +38,7 @@
 // and since 2026-09-13 the used-assertion history persists in every store and
 // both modes (`common/used_assertions.js`). `persistence/CLAUDE.md`'s *The
 // sentence this directory reverses* is the exact current wording, and
-// `docs/persistence.md` the operator's.
+// `docs/v1.1.0/persistence.md` the operator's.
 //
 // ---------------------------------------------------------------------------
 // WHY THIS IS NOT A node-ldapjs FEATURE, WHICH IS THE FIRST QUESTION ANYBODY
@@ -144,7 +144,8 @@
 // done — ~600 deleted people came back on testidp. A request that changed the
 // store is now answered only once that change has COMMITTED, and 503 (an LDAP
 // operation `unavailable`) when it did not: `cluster/cluster_barrier.js`'s
-// rule 2, which `answersAfterCommit()` turns on for every postgres process.
+// rule 2, which `answersAfterCommit()` turns on for every process on a
+// database store (postgres or MariaDB, `store_modes.isDatabase()`).
 // This file's old argument against refusing — "a database outage would take
 // down sixteen protocol families that do not need a database" — is answered
 // by what is refused: a request that WROTE, which a database outage cannot
@@ -604,6 +605,12 @@ function enabled() {
 // ---------------------------------------------------------------------------
 let dirtyDns = new Set();
 let dirtyEverything = false;
+// Counter-only application sightings (#878). Not a generation: the barrier
+// does not wait, and when the batch is nothing else the flush writes them on
+// the tally pool. A DN already in `dirtyDns`, or a change that names no DN,
+// stays on the durable write. A crash of postgres can lose the last fraction
+// of a second of those counts, the same trade as the rate-limit windows.
+let observationDns = new Set();
 
 // ---------------------------------------------------------------------------
 // WRITE GENERATIONS FOR THE DIRECTORY, THE REALMS AND THE SETTINGS
@@ -901,20 +908,39 @@ function releaseClaimsAlone(list) {
 
 /**
  * Reports that a directory entry changed, and schedules a flush.
+ *
+ * `how.observation` is a counter on an entry that already exists (#878),
+ * the authentication counts on an application. It does not move the
+ * directory generation, so a response is not held for it. A DN already in
+ * the durable journal, or a change that names no DN, stays durable.
  * @param dn - the entry's DN; empty or undefined marks the whole directory
+ * @param how - `{ observation: true }` for a counter sighting
  */
-function directoryChanged(dn) {
+function directoryChanged(dn, how) {
   log.debug("Entering directoryChanged().");
   if (!enabled() || restoring) {
     log.debug("Leaving directoryChanged().");
     return;
   }
+  const named = !(dn === undefined || dn === null || dn === '');
+  const key = named ? String(dn) : '';
+  // A counter on a DN this flush does not already owe a durable write. An
+  // empty DN is the whole directory and is never a counter.
+  if (how && how.observation && named && !dirtyEverything &&
+      !dirtyDns.has(key)) {
+    observationDns.add(key);
+    schedule();
+    log.debug("Leaving directoryChanged(). A counter, not a generation.");
+    return;
+  }
   directoryDirty = true;
   dirGeneration += 1;
-  if (dn === undefined || dn === null || dn === '') {
+  if (!named || dirtyEverything) {
     dirtyEverything = true;
-  } else if (!dirtyEverything) {
-    dirtyDns.add(String(dn));
+    observationDns.clear();
+  } else {
+    dirtyDns.add(key);
+    observationDns.delete(key);
   }
   schedule();
   log.debug("Leaving directoryChanged().");
@@ -1357,23 +1383,29 @@ function realmRows() {
   log.debug("Leaving realmRows().");
   return realms.list().filter(function (realm) {
     return !realm.builtin;
-  }).map(function (realm) {
-    return {
-      id: realm.id,
-      name: realm.name,
-      description: realm.description,
-      // Fixed at creation, so it is written with the row and never compared
-      // as a change (realmChangeOf() has nothing to say about it).
-      domain: realm.domain,
-      createdAt: realm.createdAt,
-      overrides: realm.overrides || {},
-      // THE RETIRING MARK (#262): set by `realms.retire()` before it ends
-      // anything, and carried to every other process with the row. Null
-      // for a realm nobody is removing.
-      retiringSince: Number(realm.retiringSince) > 0
-        ? Number(realm.retiringSince) : null
-    };
-  });
+  }).map(liveRealmRow);
+}
+
+// One live realm as the row it would be written as — realmRows()'s, and what
+// restoreRealms() compares a stored row against.
+function liveRealmRow(realm) {
+  log.debug("Entering liveRealmRow().");
+  log.debug("Leaving liveRealmRow().");
+  return {
+    id: realm.id,
+    name: realm.name,
+    description: realm.description,
+    // Fixed at creation, so it is written with the row and never compared
+    // as a change (realmChangeOf() has nothing to say about it).
+    domain: realm.domain,
+    createdAt: realm.createdAt,
+    overrides: realm.overrides || {},
+    // THE RETIRING MARK (#262): set by `realms.retire()` before it ends
+    // anything, and carried to every other process with the row. Null
+    // for a realm nobody is removing.
+    retiringSince: Number(realm.retiringSince) > 0
+      ? Number(realm.retiringSince) : null
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1703,6 +1735,96 @@ function applyDirectoryOutcomes(changes, outcomes) {
 }
 
 // ---------------------------------------------------------------------------
+// COUNTER SIGHTINGS, ON THE TALLY POOL WHEN THEY ARE THE WHOLE BATCH (#878).
+//
+// The directory generation did not move for these DNs, so the barrier has
+// already answered. This write still has to land, and another node still has
+// to see it: `saveDirectory(..., { tally: true })` is the driver's tally
+// transaction, `synchronous_commit = off` on postgres. A failure is retried
+// from here. It must not set `dirFailedAt` — that 503s the next writing
+// response for a count the last one was not held for.
+// ---------------------------------------------------------------------------
+function writeObservations(dns) {
+  log.debug("Entering writeObservations().");
+  const requeue = function (err) {
+    log.debug("Entering requeue().");
+    dns.forEach(function (dn) {
+      if (!dirtyEverything && !dirtyDns.has(dn)) {
+        observationDns.add(dn);
+      }
+    });
+    schedule();
+    log.error(errorCodes.tag('STS-STORE-0002') +
+              'persistence: a counter sighting could not be written to ' +
+              'the ' + activeMode + ' store: ' +
+              ((err && err.message) || err) + '. It is retried, and the ' +
+              'response is not held for it and is not answered 503. A ' +
+              'crash of postgres can lose the last fraction of a second ' +
+              'of these counts (#878).' +
+              (err && err instanceof TypeError ? ' ' + err.stack : ''));
+    log.debug("Leaving requeue().");
+  };
+  if (!dns || !dns.size || !driver ||
+      typeof driver.saveDirectory !== 'function') {
+    log.debug("Leaving writeObservations(). Nothing to write.");
+    return null;
+  }
+  log.debug("Leaving writeObservations().");
+  return Promise.resolve().then(function () {
+    // A durable write of one of these DNs arrived while this flush was
+    // already out. That write owns the DN: sending the live entry here
+    // would put a structural change on the tally pool, ahead of the
+    // transaction the response is waiting for.
+    if (dirtyEverything) {
+      return null;
+    }
+    const still = new Set();
+    dns.forEach(function (dn) {
+      if (!dirtyDns.has(dn)) {
+        still.add(dn);
+      }
+    });
+    if (!still.size) {
+      return null;
+    }
+    const changes = diff(null, still, []);
+    if (!changes.upserts.length && !changes.deletes.length &&
+        !changes.removedRealms.length) {
+      return null;
+    }
+    let live = null;
+    if (driver.name === 'ldif') {
+      live = new Map();
+      changes.touched.forEach(function (realmId) {
+        const rows = new Map();
+        (directory.realmEntries(realmId) || []).forEach(function (row) {
+          rows.set(row.key, row.entry);
+        });
+        live.set(realmId, rows);
+      });
+    }
+    changes.upserts.forEach(function (row) {
+      inFlightDirectory.set(row.realm + '\n' + row.key, row.json);
+    });
+    return driver.saveDirectory({
+      upserts: changes.upserts,
+      deletes: changes.deletes,
+      touched: changes.touched,
+      removedRealms: changes.removedRealms,
+      releaseClaims: [],
+      all: live
+    }, { tally: true }).then(function (result) {
+      advanceShadow(changes, changes.removedRealms);
+      applyDirectoryOutcomes(changes, result && result.outcomes);
+      return { written: true };
+    });
+  }).catch(function (err) {
+    requeue(err);
+    return null;
+  });
+}
+
+// ---------------------------------------------------------------------------
 // THE FLUSH. One at a time, and a second caller waits for the first rather than
 // starting a competing write — two transactions computing their diff against
 // the same shadow would each think they had to write everything.
@@ -1782,7 +1904,8 @@ function flush() {
     directoryDirty = true;
     dirGeneration += 1;
   }
-  if (!directoryDirty && !realmsDirty && !configDirty && !minted.dirty()) {
+  if (!directoryDirty && !realmsDirty && !configDirty && !minted.dirty() &&
+      observationDns.size === 0) {
     // Nothing in flight and nothing dirty: every generation has committed, or
     // its failure put a dirty bit back.
     dirCommittedAt = dirGeneration;
@@ -1806,6 +1929,22 @@ function flush() {
   const wantRealms = realmsDirty;
   const wantConfig = configDirty;
   const takenAt = dirGeneration;
+  // COUNTER SIGHTINGS (#878), taken now for the journal's reason: one that
+  // lands while this flush is out starts the next flush. A batch that also
+  // has a durable directory write carries them in that write — one
+  // transaction, which the barrier is already waiting on. A batch that is
+  // only these counts is written below, on the tally pool, and does not move
+  // `takenAt`. A full walk already covers them.
+  const observedNow = observationDns;
+  observationDns = new Set();
+  if (dirtyEverything) {
+    observedNow.clear();
+  } else if (wantDirectory) {
+    observedNow.forEach(function (dn) {
+      dirtyDns.add(dn);
+    });
+    observedNow.clear();
+  }
   // Cleared BEFORE the write rather than after it, so that a change made while
   // the write is in flight sets the bit again and gets its own flush. Clearing
   // afterwards would drop it.
@@ -2165,6 +2304,10 @@ function flush() {
         removedHere.delete(id);
       }
     });
+    // The counts, after the generation this flush took has been published.
+    // A failure here is swallowed: it must not look like this flush failed.
+    return observedNow.size ? writeObservations(observedNow) : null;
+  }).then(function () {
     // ---------------------------------------------------------------------
     // THE MINTED ROWS RIDE THE SAME SCHEDULE AND NOT THE SAME TRANSACTION.
     //
@@ -3024,6 +3167,12 @@ let originAdoption = null;
 // When the last renewal STARTED, on the monotonic clock, for the lateness
 // check below; 0 before the first.
 let originRenewStartedAt = 0;
+// When the last renewal that the store CONFIRMED started (or the adoption
+// did), on the monotonic clock; 0 before the claim is held. The claim's
+// expiry is at least this plus ORIGIN_TTL_MS, by the store's clock, so
+// `originFresh()` can say "my claim has not lapsed" without asking (#884's
+// review, 2026-11-13).
+let originConfirmedAt = 0;
 
 // ---------------------------------------------------------------------------
 // HOW LONG THE EVENT LOOP WAS BLOCKED, MEASURED (2026-09-29, #351).
@@ -3234,6 +3383,7 @@ function adoptStableOrigin() {
   const nodeId = slot && cluster.mode() !== 'off' ? cluster.plannedNodeId()
                                                     : '';
   log.debug("Leaving adoptStableOrigin().");
+  const adoptionStartedAt = performance.now();
   return driver.adoptOrigin({ name: name, ttlMs: ORIGIN_TTL_MS,
                               waitMs: ORIGIN_WAIT_MS,
                               nodeId: nodeId }).then(function (a) {
@@ -3254,12 +3404,16 @@ function adoptStableOrigin() {
               'holder\'s claim to lapse' : '') + '; what that origin wrote ' +
              'before a restart is restored as this process\'s own.');
     originRenewStartedAt = 0;
+    originConfirmedAt = adoptionStartedAt;
     originTimer = setInterval(function () {
       const startedAt = performance.now();
       const previous = originRenewStartedAt;
       originRenewStartedAt = startedAt;
       driver.renewOrigin(ORIGIN_TTL_MS).then(function (still) {
         checkRenewalTiming(previous, startedAt, performance.now());
+        if (still) {
+          originConfirmedAt = Math.max(originConfirmedAt, startedAt);
+        }
         if (!still) {
           originLost(new Error('the claim on ' + a.origin + ' could not ' +
                                'be renewed'));
@@ -3287,6 +3441,27 @@ function originStatus() {
     ? { origin: originAdoption.origin, adopted: !!originAdoption.adopted,
         why: originAdoption.why || '' }
     : null;
+}
+
+// WHETHER THIS PROCESS'S ORIGIN CLAIM IS CERTAINLY STILL LIVE (#884's
+// review, 2026-11-13): a renewal the store confirmed started less than one
+// claim lifetime ago. Read without a round trip on every access token a
+// leased status block hands out, so it is a clock comparison and nothing
+// else; false means "not known", never "lost". A process that holds no
+// renewing claim (no stable origin, or a store without origins) has no
+// claim that can lapse, and answers true.
+// Hot path (every access token): no Entering/Leaving pair.
+/**
+ * Whether this process's origin claim was confirmed within its lifetime.
+ *
+ * @returns true when it was, or when this process renews no origin claim
+ */
+function originFresh() {
+  if (!originTimer || !originAdoption || !originAdoption.adopted) {
+    return true;
+  }
+  return originConfirmedAt > 0 &&
+    performance.now() - originConfirmedAt < ORIGIN_TTL_MS;
 }
 
 // THIS PROCESS'S ORIGIN AS A STRING (#465), for the audit log and the
@@ -3325,7 +3500,13 @@ function openStore(chosen, resolvedUrl, globalUrls) {
           // Which coordination statements it sends (#677): read here, for
           // the reason `verifyTls` is.
           sqlDialect: String(config.value('persistence.sqlDialect') ||
-                             'native')
+                             'native'),
+          // The block-claim fence (#884). This driver is the writer when
+          // the process has one database. A cell's own database is not:
+          // the status row is global, and a lock checked here would be
+          // reported lost after that row had already been written.
+          claimFences: claimFences,
+          claimFenceOwner: !globalUrls
         })
       : require('./persistence_ldif').create({ dir: dataDir(), log: log });
     // A CELL'S STORE IS TWO DATABASES (#98): the one just made is the cell's
@@ -3344,7 +3525,10 @@ function openStore(chosen, resolvedUrl, globalUrls) {
         tlsCa: tlsCa,
         poolMax: require('./persistence_postgres').poolMax(workerCount()),
         sqlDialect: String(config.value('persistence.sqlDialect') ||
-                           'native')
+                           'native'),
+        // The status row's database, so the fence lock lives here (#884).
+        claimFences: claimFences,
+        claimFenceOwner: true
       });
       driver = tiered.create({
         global: globalDriver, cell: driver, cellId: cells.id(),
@@ -3469,11 +3653,39 @@ function openStore(chosen, resolvedUrl, globalUrls) {
         log.debug("Leaving loadKeys().");
         return driver.loadKeys();
       },
+      // THE DATA-KEY ROWS ALONE (2026-11-11), offered only by a driver that
+      // can select them; `keystore.refreshDekRows()` reads them before every
+      // key-row write, and otherwise falls back to `loadKeys()`.
+      loadDekRows: typeof driver.loadDekRows === 'function'
+        ? function () {
+          log.debug("Entering loadDekRows().");
+          log.debug("Leaving loadDekRows().");
+          return driver.loadDekRows();
+        }
+        : undefined,
       saveKeys: function (realmId, ciphertext) {
         log.debug("Entering saveKeys().");
         log.debug("Leaving saveKeys().");
         return driver.saveKeys(realmId, ciphertext);
       },
+      // THE REALMS THE STORE HOLDS (2026-11-18), for the keystore's start:
+      // a key row of a realm that is not among them was written after the
+      // realm's removal and names a destroyed data key, and is skipped and
+      // deleted rather than stopping the start (keystore.js, STS-KEYS-0199).
+      // Offered only where realms are written down; read before
+      // `restoreRealms()`, which runs after the keystore has started.
+      storedRealmIds: persistsRealms() &&
+                      typeof driver.loadRealms === 'function'
+        ? function () {
+          log.debug("Entering storedRealmIds().");
+          log.debug("Leaving storedRealmIds().");
+          return driver.loadRealms().then(function (rows) {
+            return (rows || []).map(function (row) {
+              return String(row.id);
+            });
+          });
+        }
+        : undefined,
       deleteKeys: function (realmId) {
         log.debug("Entering deleteKeys().");
         log.debug("Leaving deleteKeys().");
@@ -3731,7 +3943,7 @@ function openStore(chosen, resolvedUrl, globalUrls) {
       // the wholesale write used to delete it at the first flush.
       rows.forEach(function (row) {
         if (realms.get(row.id)) {
-          realmShadow.set(row.id, shadowRowOf(row));
+          realmShadow.set(row.id, heldShadowRowOf(row, null));
         }
       });
     }
@@ -3899,9 +4111,10 @@ function openStore(chosen, resolvedUrl, globalUrls) {
 // `xacml.enforceAccess` turned off and still refusing, `oauth2.consentRequired`
 // set and the consent screen still drawn — settings that reported success and
 // did nothing anywhere but the process that took the call.
-function restoreRealms(rows, replicated) {
+function restoreRealms(rows, replicated, refused) {
   log.debug('Entering restoreRealms(). ' + rows.length + ' row(s).');
   let made = 0;
+  let unchanged = 0;
   rows.forEach(function (row) {
     const existing = realms.get(row.id);
     if (existing && !replicated) {
@@ -3913,6 +4126,21 @@ function restoreRealms(rows, replicated) {
                'the stored row was left alone.');
       return;
     }
+    if (existing && replicated &&
+        !realmChangeOf(row, liveRealmRow(existing))) {
+      // AN UNCHANGED ROW IS NOT AN UPDATE (2026-11-18). applyRealmsChange()
+      // hands EVERY stored realm here whenever ANY realm row changes, so
+      // each change cost every process one `realms.update()` per realm —
+      // one `realms.onChange()` round (SPIFFE's and the listeners'
+      // reconciles, the TLS policy, Kerberos, persistence) and one info
+      // line each. The cluster mode of GitHub Actions run #468 logged
+      // 554,190 "updated" lines on node A for 252 realms, about 2,200 per
+      // realm, and that walk's CPU and garbage grew with the square of the
+      // realm count. A row equal to what this process holds changes
+      // nothing, so nobody is told.
+      unchanged++;
+      return;
+    }
     if (existing) {
       // The realm is here because it replicated. Take what another process
       // changed — its overrides above all, which is what a realm-scoped
@@ -3922,10 +4150,25 @@ function restoreRealms(rows, replicated) {
       // kerberosOverrideProblem()).
       // `retiringSince` too (#262): another process's `retire()` marked
       // the realm, and this one must refuse new sign-ins in it as well.
-      realms.update(row.id, { name: row.name, description: row.description,
-                              overrides: row.overrides || {},
-                              retiringSince: row.retiringSince || null,
-                              replicated: true });
+      const updated = realms.update(row.id, {
+        name: row.name, description: row.description,
+        overrides: row.overrides || {},
+        retiringSince: row.retiringSince || null,
+        replicated: true });
+      // A REFUSED UPDATE WAS DROPPED WITH NOTHING SAID until GitHub Actions
+      // run #300 (2026-11-15), and this process went on holding the realm
+      // as it was. Said now, and handed back so the caller keeps this
+      // realm's shadow where it was: see applyRealmsChange().
+      if (updated && updated.ok === false) {
+        log.error(errorCodes.tag('STS-STORE-0174') + 'persistence: the "' +
+                  row.id + '" realm another process changed could not be ' +
+                  'applied here: ' + (updated.errors || []).join(' ') +
+                  ' This process keeps the realm as it was and does not ' +
+                  'write it back.');
+        if (refused) {
+          refused.add(row.id);
+        }
+      }
       return;
     }
     const result = realms.create({
@@ -3975,8 +4218,39 @@ function restoreRealms(rows, replicated) {
     }
     made++;
   });
-  log.debug('Leaving restoreRealms(). ' + made + ' restored.');
+  log.debug('Leaving restoreRealms(). ' + made + ' restored, ' + unchanged +
+            ' unchanged.');
   return made;
+}
+
+// ---------------------------------------------------------------------------
+// THE SHADOW OF A ROW THIS PROCESS HAS JUST TAKEN, LESS WHAT IT LEFT OUT
+// (2026-11-15, GitHub Actions run #300).
+//
+// The shadow is what a flush diffs the live realm against, so a stored
+// override the live realm does not hold reads as one CLEARED HERE, and the
+// next flush deletes it from the store for every process. A value
+// restorableOverrides() left out (STS-CORE-0008, "left in the store") was
+// deleted that way; so was every override of a replicated update the realm
+// registry refused, the moment this process flushed anything in that realm
+// — run #300 measured `oauth2.accessTokenSigningAlg` gone from the writer
+// too, and a reset of it refused STS-CORE-0007. So the shadow keeps a stored
+// override only where the realm holds it, or where this process cleared it
+// and has not written that yet (`cleared`).
+// ---------------------------------------------------------------------------
+function heldShadowRowOf(row, cleared) {
+  log.debug("Entering heldShadowRowOf().");
+  const live = realms.get(row.id);
+  const held = (live && live.overrides) || {};
+  const overrides = {};
+  Object.keys(row.overrides || {}).forEach(function (key) {
+    if (Object.prototype.hasOwnProperty.call(held, key) ||
+        (cleared && cleared.indexOf(key) >= 0)) {
+      overrides[key] = row.overrides[key];
+    }
+  });
+  log.debug("Leaving heldShadowRowOf().");
+  return shadowRowOf(Object.assign({}, row, { overrides: overrides }));
 }
 
 // One stored realm row as the realm shadow holds it.
@@ -4679,6 +4953,8 @@ function applyRealmsChange() {
       return !storedIds.has(id) && !!realms.get(id);
     });
     const was = restoring;
+    // The realms whose replicated update was refused (STS-STORE-0174).
+    const refused = new Set();
     restoring = true;
     try {
       // THROUGH `restoreRealms()`, the same function the startup restore uses,
@@ -4686,7 +4962,7 @@ function applyRealmsChange() {
       // another process created — including ldap_server.js's, which seeds the
       // subtree. A second way to make a realm is the one that is missing a
       // step, and this service already learnt that once.
-      restoreRealms(merged, true);
+      restoreRealms(merged, true, refused);
       gone.forEach(function (id) {
         log.info('persistence: the "' + id + '" realm was removed by another ' +
                  'node; removing it here.');
@@ -4720,8 +4996,17 @@ function applyRealmsChange() {
     } finally {
       restoring = was;
     }
+    // A REFUSED REALM KEEPS ITS SHADOW (run #300): its live copy is the old
+    // one, and a shadow advanced to the stored row made the next flush write
+    // that old copy back over the store. Every other realm's shadow is the
+    // stored row, less what this process left out (heldShadowRowOf()).
     stored.forEach(function (row) {
-      realmShadow.set(row.id, shadowRowOf(row));
+      if (refused.has(row.id)) {
+        return;
+      }
+      const mine = pendingById.get(row.id);
+      realmShadow.set(row.id,
+                      heldShadowRowOf(row, mine ? mine.cleared : null));
     });
     gone.forEach(function (id) {
       realmShadow.delete(id);
@@ -4979,23 +5264,26 @@ function coordinate() {
 // ---------------------------------------------------------------------------
 const MINTED_TAIL = 'What this service MINTS — sessions, tokens, codes, ' +
   'artifacts, Kerberos tickets, the counters and the audit log — is ' +
-  'persisted in PRODUCT mode on a postgres store, encrypted under the same ' +
-  'key-encryption key as the signing keys, and in no other configuration: ' +
+  'persisted in PRODUCT mode on a database store (postgres or MariaDB), ' +
+  'encrypted under the same key-encryption key as the signing keys, and in ' +
+  'no other configuration: ' +
   'development mode regenerates the signing key on every start, so a ' +
   'restored token would verify against nothing.';
 const STATUS_PROSE = Object.freeze({
   coordinating: 'Processes against this store COORDINATE: every change is ' +
     'written to a monotonic log inside the transaction that made it, and ' +
-    'each process applies what the others committed. The LISTEN/NOTIFY ' +
-    'nudge only makes that prompt — the log is the contract, so a missed ' +
-    'notification costs latency and never a change. What is NOT shared is ' +
-    'sockets: the KDC, the LDAP listeners, the TLS ports and SPIFFE\'s four ' +
-    'are per process, and the replay caches converge rather than ' +
-    'synchronise. ' + MINTED_TAIL,
+    'each process applies what the others committed. A nudge (postgres\'s ' +
+    'LISTEN/NOTIFY) or a poll (MariaDB) only makes that prompt — the log is ' +
+    'the contract, so a missed nudge costs latency and never a change. ' +
+    'What is NOT shared is ' +
+    'sockets: the KDC, the LDAP listeners, the main port and SPIFFE\'s ' +
+    'sockets are per process. A single-use value — an authorization code, ' +
+    'a DPoP jti, a Kerberos authenticator — is spent once across every ' +
+    'process, through one atomic claim in the store. ' + MINTED_TAIL,
   notCoordinating: 'Persistence is not coordination in this configuration. ' +
     'Two processes pointed at one store each hold their own copy in memory ' +
     'and will not see each other\'s writes until they restart. Set ' +
-    'persistence.coordinate on a postgres store to change that. ' +
+    'persistence.coordinate on a database store to change that. ' +
     MINTED_TAIL,
   // WHAT THE CONNECTION IS, SAID THE WAY `persistence_postgres.dialOptions()`
   // DIALS IT (#543 follow-up). Until then this table described libpq's
@@ -5524,6 +5812,155 @@ function directoryWindowWanted() {
   return wanted;
 }
 
+// ---------------------------------------------------------------------------
+// CLAIM FENCES IN FLIGHT (#884).
+//
+// A block claim's lock is held across the minted flush that publishes the
+// index it guards. The driver share-locks every name still registered here,
+// drops the rows whose locks are already gone, and commits the rest.
+// `lose()` does not mark them lost: a transaction that then rolls back must
+// leave the holds in place for the retry. `commitLost()` marks them once
+// that transaction has committed, and `claimFenceDropped()` is how the
+// publisher learns that its own row was one of them. A missing lock is not
+// an origin fence and does not stop the process.
+// ---------------------------------------------------------------------------
+// lock name -> (handle \n realm \n key -> row)
+const claimFenceByName = new Map();
+const claimFenceDroppedSet = new Set();
+
+function claimFenceIdOf(row) {
+  return String(row.handle) + '\n' + String(row.realm) + '\n' +
+    String(row.key);
+}
+
+/**
+ * Registers one row as published under a claim's fence lock. The minted
+ * flush that writes the row share-locks the name.
+ *
+ * @param lockName - the lock `claim()` returned
+ * @param row - `{ handle, realm, key }`, `key` the journal key
+ */
+function holdClaimFence(lockName, row) {
+  log.debug("Entering holdClaimFence().");
+  const name = String(lockName || '');
+  if (!name || !row || row.key === undefined || row.key === null) {
+    log.debug("Leaving holdClaimFence(). Nothing to hold.");
+    return;
+  }
+  let rows = claimFenceByName.get(name);
+  if (!rows) {
+    rows = new Map();
+    claimFenceByName.set(name, rows);
+  }
+  rows.set(claimFenceIdOf({
+    handle: row.handle, realm: row.realm || '', key: row.key
+  }), {
+    handle: String(row.handle), realm: String(row.realm || ''),
+    key: String(row.key)
+  });
+  log.debug("Leaving holdClaimFence().");
+}
+
+/**
+ * Drops one row's hold. A second index still publishing under the same
+ * lock keeps the name registered.
+ *
+ * @param lockName - the lock
+ * @param row - `{ handle, realm, key }`
+ */
+function endClaimFence(lockName, row) {
+  log.debug("Entering endClaimFence().");
+  const rows = claimFenceByName.get(String(lockName || ''));
+  if (rows && row) {
+    rows.delete(claimFenceIdOf({
+      handle: row.handle, realm: row.realm || '', key: row.key
+    }));
+    if (!rows.size) {
+      claimFenceByName.delete(String(lockName || ''));
+    }
+  }
+  log.debug("Leaving endClaimFence().");
+}
+
+/**
+ * The fence locks a minted flush should share-lock, and the two ways a
+ * flush reports the ones that were already gone.
+ *
+ * @returns `{ names, lose(missingNames), commitLost(ids) }`
+ */
+function claimFences() {
+  log.debug("Entering claimFences().");
+  const names = Array.from(claimFenceByName.keys()).sort();
+  log.debug("Leaving claimFences().");
+  return {
+    names: names,
+    lose: function lose(missingNames) {
+      log.debug("Entering lose().");
+      const missing = {};
+      (missingNames || []).forEach(function (name) {
+        missing[String(name)] = true;
+      });
+      const dropped = [];
+      names.forEach(function (name) {
+        if (!missing[name]) {
+          return;
+        }
+        const rows = claimFenceByName.get(name);
+        if (!rows) {
+          return;
+        }
+        rows.forEach(function (_row, id) {
+          dropped.push(id);
+        });
+      });
+      log.debug("Leaving lose().");
+      return dropped;
+    },
+    commitLost: function commitLost(ids) {
+      log.debug("Entering commitLost().");
+      const gone = {};
+      (ids || []).forEach(function (id) {
+        claimFenceDroppedSet.add(id);
+        gone[id] = true;
+      });
+      names.forEach(function (name) {
+        const rows = claimFenceByName.get(name);
+        if (!rows) {
+          return;
+        }
+        Array.from(rows.keys()).forEach(function (id) {
+          if (gone[id]) {
+            rows.delete(id);
+          }
+        });
+        if (!rows.size) {
+          claimFenceByName.delete(name);
+        }
+      });
+      log.debug("Leaving commitLost().");
+    }
+  };
+}
+
+/**
+ * Whether a published row was dropped because its fence lock was gone.
+ * The answer is consumed, so a later publish of the same key starts clean.
+ *
+ * @param handle - the minted handle
+ * @param realm - the realm
+ * @param key - the journal key
+ * @returns true when that row was dropped
+ */
+function claimFenceDropped(handle, realm, key) {
+  log.debug("Entering claimFenceDropped().");
+  const id = claimFenceIdOf({
+    handle: handle, realm: realm || '', key: key
+  });
+  const dropped = claimFenceDroppedSet.delete(id);
+  log.debug("Leaving claimFenceDropped().");
+  return dropped;
+}
+
 module.exports = {
   // For tests/unstorable_text.js, which hands them a save that fails (#1463).
   saveRealmsIsolated: saveRealmsIsolated,
@@ -5532,6 +5969,7 @@ module.exports = {
   PROSE_ROUTES: PROSE_ROUTES,
   prose: prose,
   originId: originId,
+  originFresh: originFresh,
   currentDriver: currentDriver,
   materializeEntry: materializeEntry,
   dematerializeEntry: dematerializeEntry,
@@ -5648,9 +6086,10 @@ module.exports = {
   // WHAT THIS PROCESS HAS WRITTEN, AS A POSITION, AND A WAIT FOR ITS COMMIT
   // (2026-09-14, #46), for cluster/cluster_barrier.js's rule 2. A request
   // reads the position when it arrives and again when it answers; if it moved,
-  // `commitThrough()` resolves once everything up to the second reading is in
-  // the store — the one flush in flight that covers it where there is one, a
-  // new one otherwise — with an array of the answers, any of which may carry
+  // `commitThrough()` resolves once the flush that covers the second reading
+  // has settled — since #877 that may be a second minted flush of keys the
+  // older one does not hold, so the wait is not the previous flush's SQL —
+  // with an array of the answers, any of which may carry
   // `error`. The keystore's queued rows have no generation, so a request that
   // answers while any are queued waits for all of them, as it always did.
   // ---------------------------------------------------------------------
@@ -5761,6 +6200,12 @@ module.exports = {
   // `cluster/cluster_barrier.js` and its LDAP wrapper ask it.
   // ---------------------------------------------------------------------
   answersAfterCommit: answersAfterCommit,
+  // A block claim's fence across the minted flush that publishes under it
+  // (#884). See the block above holdClaimFence().
+  holdClaimFence: holdClaimFence,
+  endClaimFence: endClaimFence,
+  claimFences: claimFences,
+  claimFenceDropped: claimFenceDropped,
   // ---------------------------------------------------------------------
   // A WRITE THAT WAS TRIED AND REFUSED AND HAS NOT LANDED SINCE (#351): a
   // directory flush that failed and nothing after it committed, a minted

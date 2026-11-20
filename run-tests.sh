@@ -71,22 +71,48 @@
 # Usage:
 #   ./run-tests.sh
 #   ./run-tests.sh --no-build                 # reuse the images already built
+#   ./run-tests.sh --build-only               # build every image a run needs
+#                                             # (all profiles) and stop; CI's
+#                                             # `build` job, which hands the
+#                                             # images to the test jobs as an
+#                                             # artifact (tests.yml)
 #   ./run-tests.sh --keep-stack               # leave the LAST mode's stack
 #                                             # running, to look at
+#   ./run-tests.sh                            # ALL SIX modes of
+#                                             # tests/tools/modes.sh, in order:
+#                                             # memory, single-node, mariadb,
+#                                             # cluster, cells, fuzz
+#                                             # (2026-11-14; about eleven hours
+#                                             # on the development laptop)
 #   ./run-tests.sh --modes=single-node        # one mode of tests/tools/modes.sh
-#                                             # rather than all three (memory,
-#                                             # single-node, cluster), in that
+#                                             # rather than all six, in that
 #                                             # file's own spelling
-#   ./run-tests.sh --modes=memory,single-node # what CI's `tests` job runs; its
-#                                             # `cluster` job runs the third
-#                                             # (2026-09-21)
+#   ./run-tests.sh --modes=memory,single-node # two modes, one after the other;
+#                                             # CI runs each mode on a runner
+#                                             # of its own (2026-11-14)
+#   ./run-tests.sh --modes=fuzz               # the Schemathesis gate (#1299):
+#                                             # the mode runs its own jobs only
+#                                             # (modes.sh, stsModeJobFilter()),
+#                                             # with no --only typed
 #   ./run-tests.sh --modes=cells --only=sts_cells --no-browser
+#                                             # the cells jobs alone; an --only
+#                                             # narrows every mode, and a mode
+#                                             # with a filter of its own runs
+#                                             # what both keep (none: skipped,
+#                                             # with the reason)
+#   ./run-tests.sh --modes=cluster-portable   # by name only: `cluster` on the
+#                                             # portable statements (#677)
 #   ./run-tests.sh --modes=schema-validation  # every answer held to its model,
 #                                             # one container, every deployment
-#                                             # the fourth mode, two cells of
-#                                             # one service (#98): run only
-#                                             # when named, never by a bare
-#                                             # run or by CI
+#                                             # (#1353); by name only
+#   ./run-tests.sh --plan                     # print what a run of these
+#                                             # arguments would do, mode by
+#                                             # mode, and start nothing
+#   ./run-tests.sh --with-444                 # also run the jobs #444 created
+#                                             # (MANIFEST.js `optIn: '444'`);
+#                                             # off by default, each reported
+#                                             # SKIPPED (rcbj, 2026-11-15).
+#                                             # STS_TEST_444=on is the same
 #   ./run-tests.sh --only=crypto --no-browser
 #                                             # anything else is passed straight
 #                                             # to tests/tools/run-report.js
@@ -108,16 +134,31 @@
 #                                             # skip the install-time risk
 #                                             # loader step in the postgres
 #                                             # modes (#213; riskInstallCheck)
+#   STS_TEST_MODEL_GAP_CHECK=0 ./run-tests.sh
+#                                             # do not fail a mode on a model
+#                                             # gap in a service log (#1579;
+#                                             # modelGapCheck)
 #   STS_TEST_CONFORMANCE_MODES=memory,single-node ./run-tests.sh
 #                                             # the modes that run the OpenID
 #                                             # conformance suite's FAPI plans
 #                                             # (#176; default `memory`, empty
 #                                             # for none); see below
+#   STS_TEST_ATTACH_RUNNER_ONLY=1 ./run-tests.sh
+#                                             # print only the runner's output,
+#                                             # not every service container's
+#                                             # (CI: the job log was 20-38 MB);
+#                                             # the service logs are still
+#                                             # captured into the report
 #   STS_TEST_SAML_PEERS_MODES=memory ./run-tests.sh
 #                                             # the modes that bring up the four
 #                                             # SAML interoperability peers
 #                                             # (#189-#192; default memory and
 #                                             # single-node, empty for none)
+#   STS_TEST_PEP_CLUSTER_MODES=memory ./run-tests.sh
+#                                             # the modes that bring up the
+#                                             # two-member remote PEP cluster
+#                                             # and its balancer (default every
+#                                             # mode but fuzz, empty for none)
 #
 # ---------------------------------------------------------------------------
 # WHAT THIS RUN LEAVES BEHIND TO BE READ AFTERWARDS.
@@ -181,17 +222,18 @@ COMPOSE_FILE="${COMPOSE_FILE:-docker-compose-run-tests.yml}"
 CLUSTER_COMPOSE_FILE="tests/docker-compose-run-tests-cluster.yml"
 # THE `cells` MODE'S LAYER (#98, 2026-09-28): a second cell, a global-tier
 # database, cell B's own database and the cell keys, over the same file. Read
-# only in that mode, which runs only when named (`--modes=cells`); its header
-# argues the stack and tests/tools/modes.sh the mode.
+# only in that mode (in a bare run since 2026-11-14); its header argues the
+# stack and tests/tools/modes.sh the mode.
 CELLS_COMPOSE_FILE="tests/docker-compose-run-tests-cells.yml"
 # THE `mariadb` MODE'S LAYER (#677): the store on the stack's MariaDB server,
-# its schema built by a one-shot from mariadb/schema.sql. Only in that mode,
-# which runs only when named (`--modes=mariadb`); its header argues it.
+# its schema built by a one-shot from mariadb/schema.sql. Only in that mode
+# (in a bare run since 2026-11-14); its header argues it.
 MARIADB_COMPOSE_FILE="tests/docker-compose-run-tests-mariadb.yml"
 # THE `fuzz` MODE'S LAYER (#1299): the stack's network made `internal` — no
 # egress — so Schemathesis can throw any input at the service without anything
-# leaving the device. Only in that mode, which runs only when named
-# (`--modes=fuzz --only=schemathesis`); its header argues it.
+# leaving the device. Only in that mode (in a bare run since 2026-11-14, last,
+# with its own job filter: tests/tools/modes.sh, stsModeJobFilter()); its
+# header argues it.
 FUZZ_COMPOSE_FILE="tests/docker-compose-run-tests-fuzz.yml"
 COMPOSE_FILE_ARGS=(-f "${COMPOSE_FILE}")
 # Overridable so that two runs on one machine — a CI agent with two workspaces —
@@ -232,6 +274,9 @@ STS_SAML_PYSAML2_CONTAINER_NAME="${STS_SAML_PYSAML2_CONTAINER_NAME:-sts-docker-t
 STS_SAML_KEYCLOAK_CONTAINER_NAME="${STS_SAML_KEYCLOAK_CONTAINER_NAME:-sts-docker-tests-saml-keycloak}"
 # The test peer (#586), named for the same reason.
 STS_TEST_PEER_CONTAINER_NAME="${STS_TEST_PEER_CONTAINER_NAME:-sts-docker-tests-test-peer}"
+# The companion (#1760: the application the remote PEP's proxy protects),
+# named for the same reason.
+STS_COMPANION_CONTAINER_NAME="${STS_COMPANION_CONTAINER_NAME:-sts-docker-tests-companion}"
 # ---------------------------------------------------------------------------
 # AND THE IMAGE TAGS, WHEN A PROJECT IS NAMED (2026-09-14). A tag is
 # machine-wide like a container name: this launcher builds once and then
@@ -241,8 +286,9 @@ STS_TEST_PEER_CONTAINER_NAME="${STS_TEST_PEER_CONTAINER_NAME:-sts-docker-tests-t
 # tags.
 #
 # THE NAMES ARE UNDER ghcr.io SINCE 2026-09-27 (IMAGE_REGISTRY, default
-# ghcr.io/rcbj/iya-sts): tests.yml pushes what a run built
-# (.github/scripts/push-stack-images.sh). The tag is IMAGE_TAG when set (CI
+# ghcr.io/rcbj/iya-sts). NOTHING PUSHES THEM SINCE 2026-11-14: tests.yml
+# builds them once and hands them to its test jobs as an artifact
+# (.github/scripts/stack-images.sh). The tag is IMAGE_TAG when set (CI
 # sets the commit), the named project otherwise, and `latest` for an unnamed
 # local run — the compose files' own default. Always set, because the
 # one-shot containers below name STS_IMAGE directly.
@@ -265,6 +311,7 @@ SAML_SSP_IMAGE="${SAML_SSP_IMAGE:-${IMAGE_REGISTRY}/sts-saml-simplesamlphp:${ima
 SAML_PYSAML2_IMAGE="${SAML_PYSAML2_IMAGE:-${IMAGE_REGISTRY}/sts-saml-pysaml2:${imageTag}}"
 SAML_KEYCLOAK_IMAGE="${SAML_KEYCLOAK_IMAGE:-${IMAGE_REGISTRY}/sts-saml-keycloak:${imageTag}}"
 TEST_PEER_IMAGE="${TEST_PEER_IMAGE:-${IMAGE_REGISTRY}/sts-test-peer:${imageTag}}"
+STS_COMPANION_IMAGE="${STS_COMPANION_IMAGE:-${IMAGE_REGISTRY}/sts-companion:${imageTag}}"
 # The appconfig layer the SERVICE reads. EMPTY here and resolved after the
 # arguments are parsed, by THE SERVICE'S LOG LEVEL below: which file this stack
 # wants is decided by the level, because the candidates differ in nothing else.
@@ -361,7 +408,7 @@ STS_CONFORMANCE_TIMEOUT="${STS_CONFORMANCE_TIMEOUT:-15600}"
 #
 #   STS_TEST_SAML_PEERS_MODES    a comma list of modes, in modes.sh's
 #                                spelling (default `memory,single-node`, what
-#                                CI's `tests` job runs); empty runs them in
+#                                CI runs in those modes); empty runs them in
 #                                none. `single-node` because it is the
 #                                deployment the peers stand in for the
 #                                clients of — product mode, postgres, the
@@ -381,8 +428,32 @@ STS_CONFORMANCE_TIMEOUT="${STS_CONFORMANCE_TIMEOUT:-15600}"
 STS_TEST_SAML_PEERS_MODES="${STS_TEST_SAML_PEERS_MODES-memory,single-node}"
 STS_SAML_PEERS_TIMEOUT="${STS_SAML_PEERS_TIMEOUT:-900}"
 
+# ---------------------------------------------------------------------------
+# THE REMOTE PEP CLUSTER (2026-11-16, rcbj: "add the reverse proxy cluster
+# test. Model it after the two node remote pep cluster we have on 8081").
+#
+# Two more remote PEPs from the stack's own image, `pep-cluster-1` and
+# `pep-cluster-2`, members of one cluster in a realm of their own, and an
+# HAProxy in front of them (`pep-cluster-lb`, tests/cluster/pep-haproxy.cfg),
+# brought up behind the `pep-cluster` compose profile and driven by
+# tests/protocol/sts_xacml_pep_proxy_cluster.js. Each authenticates with its
+# own RFC 7523 key alone, generated by mintThePepClusterCredentials() below
+# in the same window as the first PEP's.
+#
+#   STS_TEST_PEP_CLUSTER_MODES   a comma list of modes, in modes.sh's
+#                                spelling (default every mode but `fuzz`,
+#                                which runs its own jobs only); empty runs
+#                                them in none, and the job then declines to
+#                                run with the reason. No time is added to a
+#                                mode's bound: three small containers, and a
+#                                job of a few minutes in the main lane.
+# ---------------------------------------------------------------------------
+STS_TEST_PEP_CLUSTER_MODES="${STS_TEST_PEP_CLUSTER_MODES-memory,single-node,mariadb,cluster,cells}"
+
 BUILD=1
+BUILD_ONLY=0
 KEEP_STACK=0
+PLAN_ONLY=0
 TARGET=local
 MODES_GIVEN=0
 STS_TEST_ARGS="${STS_TEST_ARGS:-}"
@@ -394,6 +465,10 @@ STACK_UP=0
 # teardown() takes them if it has not, which is what an interrupted mode
 # needs — a cancelled CI job used to lose every service log with the stack.
 LOGS_TAKEN=0
+# The service logs captureContainerLogs() took for the mode, and the last one
+# captureOneContainerLog() wrote: modelGapCheck() reads them (#1579's review).
+CAPTURED_SERVICE_LOGS=()
+LAST_CAPTURED_LOG=""
 
 # The header of this file IS the usage, printed by reading it back rather than
 # by keeping a second copy of it in a here-document — which is the only way the
@@ -414,14 +489,27 @@ while [ $# -gt 0 ];
 do
   case "$1" in
     --no-build)   BUILD=0 ;;
+    # BUILD AND STOP (2026-11-14): CI builds every image once, in a job of
+    # its own, and the test jobs load them (--no-build). The same build as a
+    # run's, with the SAML peers' profile on, so nothing is left to `up`.
+    --build-only) BUILD=1; BUILD_ONLY=1 ;;
     --keep-stack) KEEP_STACK=1 ;;
+    # WHAT A RUN WOULD DO, AND NOTHING ELSE (2026-11-14): the modes, each
+    # one's bound, layers and job filter, and which would be skipped. It
+    # reads modes.sh and this file and touches no docker — so it is safe
+    # beside somebody else's run, which a second stack is not.
+    --plan)       PLAN_ONLY=1 ;;
+    # THE #444 JOBS (rcbj, 2026-11-15): the jobs #444 created are switched
+    # off unless this is given or STS_TEST_444=on; tests/CLAUDE.md, *The #444
+    # switch*. The runner reads the variable, which COMPOSE_ENV carries.
+    --with-444)   STS_TEST_444=on ;;
     # WHICH MODES TO RUN, AND THIS LAUNCHER LACKED IT UNTIL 2026-09-09.
     # ./local-run-tests.sh (removed 2026-09-16) had `--modes=` since the
     # matrix arrived, and the asymmetry cost an afternoon: the failure being
     # chased was in `dispatch`, on a listener only THIS stack publishes, so
     # reproducing it meant running `memory` and `postgres` first every time.
     # It took the other launcher's spelling and meaning. A run with no
-    # `--modes=` is unchanged: all three, in order.
+    # `--modes=` is STS_ALL_MODES in order: all six since 2026-11-14.
     --modes=*)    IFS=',' read -r -a RUN_MODES <<< "${1#--modes=}"
                   MODES_GIVEN=1 ;;
     # WHERE THE SUITE RUNS (2026-09-21) — see *THE TARGET* below.
@@ -441,6 +529,273 @@ then
   exec "${CURRENT_DIR}/tests/schema-validation/run.sh" ${STS_TEST_ARGS}
 fi
 STS_TEST_ARGS="${STS_TEST_ARGS# }"
+
+# The #444 switch's value, refused here rather than inside the first mode's
+# runner when it is neither word.
+STS_TEST_444="${STS_TEST_444:-off}"
+case "${STS_TEST_444}" in
+  on|off) ;;
+  *)
+    echo "run-tests.sh: STS_TEST_444 must be on or off, not" \
+         "'${STS_TEST_444}'." >&2
+    exit 2
+    ;;
+esac
+
+# ---------------------------------------------------------------------------
+# A MODE'S OWN JOB FILTER, AND THE OPERATOR'S (2026-11-14).
+#
+# rcbj put all six modes into a bare run, and `fuzz` runs only its own jobs.
+# Typing `--only=schemathesis` would narrow EVERY mode of the invocation, so
+# the launcher hands that mode's filter (modes.sh, stsModeJobFilter()) to the
+# runner as `--mode-only=` for that mode alone: run-report.js keeps a job only
+# if the operator's --only (when there is one) AND the mode's filter both
+# keep it. A mode with no filter is handed nothing and runs what --only says.
+#
+# THE INTERSECTION CAN BE EMPTY — `./run-tests.sh --only=crypto` asks fuzz for
+# a crypto job that is not Schemathesis — and starting the isolated stack to
+# have the runner refuse an empty list would be a failed mode for a run that
+# asked for nothing wrong. So the launcher works it out first, over the same
+# names the runner chooses from (tests/*.js and MANIFEST.js's `file:`
+# entries; under --conformance-only, the conformance entries alone), and SKIPS
+# the mode with the reason. The runner's own "No jobs to run" stays the
+# backstop for what this cannot see (--lanes, --protocol=off).
+# ---------------------------------------------------------------------------
+
+# The operator's --only fragments, one per line: every `--only=` value split
+# at its commas, and every bare word, which run-report.js reads as one too.
+operatorOnlyFragments()
+{
+  local word
+  # shellcheck disable=SC2086
+  for word in ${STS_TEST_ARGS};
+  do
+    case "${word}" in
+      --only=*) printf '%s\n' "${word#--only=}" | tr ',' '\n' ;;
+      -*)       ;;
+      *)        printf '%s\n' "${word}" ;;
+    esac
+  done | sed '/^$/d'
+}
+
+# The job names the runner chooses from: the in-process files and the
+# protocol jobs' manifest entries — under `--conformance-only`, which keeps
+# no in-process file, only the entries marked `conformance: true`. A
+# superset is harmless here: it can only make this say "something is left"
+# where the runner then says otherwise.
+candidateJobFiles()
+{
+  local f manifest="${CURRENT_DIR}/tests/protocol/MANIFEST.js"
+  if [[ " ${STS_TEST_ARGS} " == *" --conformance-only "* ]];
+  then
+    awk '/\{ *file: *'"'"'/ { buf = ""; on = 1 }
+         on { buf = buf $0 " " }
+         on && /\}/ {
+           if (buf ~ /conformance: *true/ &&
+               match(buf, /file: *'"'"'[^'"'"']*'"'"'/)) {
+             s = substr(buf, RSTART, RLENGTH)
+             sub(/file: *'"'"'/, "", s); sub(/'"'"'$/, "", s); print s
+           }
+           on = 0
+         }' "${manifest}"
+    return 0
+  fi
+  for f in "${CURRENT_DIR}"/tests/*.js;
+  do
+    basename "${f}"
+  done
+  sed -n "s/.*file: *'\([^']*\.js\)'.*/\1/p" "${manifest}"
+}
+
+# 0 when the mode's own filter and the operator's narrowing keep no job at
+# all, which is the mode to skip; 1 otherwise (no filter, or something is
+# kept).
+modeFilterLeavesNothing()
+{
+  local mode="$1" filter frag job op ops
+  filter="$(stsModeJobFilter "${mode}")"
+  [ -z "${filter}" ] && return 1
+  ops="$(operatorOnlyFragments)"
+  # No --only: the mode's own filter decides, unless --conformance-only has
+  # emptied the candidates, which the loop below finds as it does an --only.
+  if [ -z "${ops}" ];
+  then
+    ops="${filter//,/$'\n'}"
+  fi
+  while IFS= read -r job;
+  do
+    for frag in ${filter//,/ };
+    do
+      case "${job}" in
+        *"${frag}"*) ;;
+        *) continue ;;
+      esac
+      while IFS= read -r op;
+      do
+        case "${job}" in
+          *"${op}"*) return 1 ;;
+        esac
+      done <<< "${ops}"
+    done
+  done < <(candidateJobFiles)
+  return 0
+}
+
+# The protocol jobs behind the #444 switch: MANIFEST.js's entries carrying
+# `optIn: '444'`, read as candidateJobFiles() reads `conformance: true`. The
+# in-process ones are run-report.js's UNIT_OPT_IN, empty for 444.
+optIn444Jobs()
+{
+  awk '/\{ *file: *'"'"'/ { buf = ""; on = 1 }
+       on { buf = buf $0 " " }
+       on && /\}/ {
+         if (buf ~ /optIn: *'"'"'444'"'"'/ &&
+             match(buf, /file: *'"'"'[^'"'"']*'"'"'/)) {
+           s = substr(buf, RSTART, RLENGTH)
+           sub(/file: *'"'"'/, "", s); sub(/'"'"'$/, "", s); print s
+         }
+         on = 0
+       }' "${CURRENT_DIR}/tests/protocol/MANIFEST.js"
+}
+
+# The #444 jobs this run's --only keeps (all of them with no --only).
+optIn444Chosen()
+{
+  local job op ops
+  ops="$(operatorOnlyFragments)"
+  while IFS= read -r job;
+  do
+    [ -z "${job}" ] && continue
+    if [ -z "${ops}" ];
+    then
+      echo "${job}"
+      continue
+    fi
+    while IFS= read -r op;
+    do
+      case "${job}" in
+        *"${op}"*) echo "${job}"; break ;;
+      esac
+    done <<< "${ops}"
+  done < <(optIn444Jobs)
+}
+
+# 0 when the switch is off, an --only was typed, and every job it keeps is a
+# #444 one: the run would check nothing, which the runner fails in every mode
+# — so the launcher says so before building or starting anything.
+onlyChoosesSwitchedOff()
+{
+  local job op ops kept=0 tagged
+  [ "${STS_TEST_444}" = "on" ] && return 1
+  ops="$(operatorOnlyFragments)"
+  [ -z "${ops}" ] && return 1
+  tagged="$(optIn444Jobs)"
+  while IFS= read -r job;
+  do
+    while IFS= read -r op;
+    do
+      case "${job}" in
+        *"${op}"*)
+          if ! grep -qxF "${job}" <<< "${tagged}";
+          then
+            return 1
+          fi
+          kept=1
+          break
+          ;;
+      esac
+    done <<< "${ops}"
+  done < <(candidateJobFiles)
+  [ "${kept}" = "1" ]
+}
+
+# --plan: the run these arguments make, and nothing started. The bounds are
+# the mode's own plus what the launcher adds for the conformance suite and
+# the SAML peers, the same arithmetic as the loop below.
+printPlan()
+{
+  local mode bound filter total=0 chosen444 n444
+  chosen444="$(optIn444Chosen)"
+  n444=0
+  [ -n "${chosen444}" ] && n444="$(wc -l <<< "${chosen444}")"
+  if [ "${STS_TEST_444}" = "on" ];
+  then
+    echo "#444 jobs: ON (STS_TEST_444=on): ${n444} job(s) run."
+  else
+    echo "#444 jobs: OFF (STS_TEST_444=off; --with-444 runs them):" \
+         "${n444} job(s) reported SKIPPED in every mode, with the reason" \
+         "\"#444 tests switched off (STS_TEST_444=off)\":"
+    # shellcheck disable=SC2001
+    [ -n "${chosen444}" ] && sed 's/^/  SKIPPED: /' <<< "${chosen444}"
+    if onlyChoosesSwitchedOff;
+    then
+      echo "  REFUSED: every job --only keeps is a #444 one, so this run" \
+           "would check nothing; --with-444 runs them."
+    fi
+  fi
+  echo ""
+  echo "Modes, in order (${#RUN_MODES[@]}):"
+  for mode in "${RUN_MODES[@]}";
+  do
+    if ! stsModeEnv "${mode}" > /dev/null;
+    then
+      exit 2
+    fi
+    bound="$(stsModeTimeout "${mode}")"
+    if printf ',%s,' "${STS_TEST_CONFORMANCE_MODES}" | grep -q ",${mode},";
+    then
+      bound=$(( bound + STS_CONFORMANCE_TIMEOUT ))
+    fi
+    if printf ',%s,' "${STS_TEST_SAML_PEERS_MODES}" | grep -q ",${mode},";
+    then
+      bound=$(( bound + STS_SAML_PEERS_TIMEOUT ))
+    fi
+    filter="$(stsModeJobFilter "${mode}")"
+    echo ""
+    echo "  ${mode}: $(stsModeDescription "${mode}")"
+    echo "    bound:  ${bound}s"
+    printf '    layers: %s' "${COMPOSE_FILE}"
+    stsModeIsCluster "${mode}" && printf ' + %s' "${CLUSTER_COMPOSE_FILE}"
+    stsModeIsMariadb "${mode}" && printf ' + %s' "${MARIADB_COMPOSE_FILE}"
+    stsModeIsFuzz "${mode}" && printf ' + %s' "${FUZZ_COMPOSE_FILE}"
+    stsModeIsCells "${mode}" && printf ' + %s' "${CELLS_COMPOSE_FILE}"
+    echo ""
+    echo "    jobs:   ${filter:-every job}${STS_TEST_ARGS:+ (narrowed by: ${STS_TEST_ARGS})}"
+    if printf ',%s,' "${STS_TEST_PEP_CLUSTER_MODES}" | grep -q ",${mode},";
+    then
+      echo "    pep cluster: two members and a balancer (STS_TEST_PEP_CLUSTER_MODES)"
+    fi
+    if [ "${STS_TEST_444}" != "on" ] && [ -z "${filter}" ] &&
+       [ "${n444}" != "0" ];
+    then
+      echo "    #444:   ${n444} job(s) SKIPPED (STS_TEST_444=off)"
+    fi
+    if modeFilterLeavesNothing "${mode}";
+    then
+      echo "    SKIPPED: its own filter (${filter}) and the run's --only or --conformance-only keep no job"
+    else
+      total=$(( total + bound ))
+    fi
+  done
+  echo ""
+  echo "Worst case: ${total}s of mode bounds, plus the build and one" \
+       "teardown (${STS_TEARDOWN_TIMEOUT}s) per mode."
+}
+
+if [ "${PLAN_ONLY}" = "1" ];
+then
+  printPlan
+  exit 0
+fi
+
+if onlyChoosesSwitchedOff;
+then
+  echo "run-tests.sh: every job --only keeps (${STS_TEST_ARGS}) is one #444" \
+       "created, and the #444 switch is off (STS_TEST_444=off), so this" \
+       "run would check nothing. ./run-tests.sh --with-444 (or" \
+       "STS_TEST_444=on) runs them." >&2
+  exit 2
+fi
 
 # ---------------------------------------------------------------------------
 # THE TARGET: WHERE THE SUITE RUNS (2026-09-21).
@@ -809,6 +1164,17 @@ XACML_PEP_NAME="$(printf '%s' "${XACML_PEP_SUBJECT}" \
 # file's directory. Inside the run's own report directory so that a private key
 # this script generates goes when somebody clears the reports.
 XACML_PEP_CERT_DIR="${CURRENT_DIR}/tests/report/pep-credential"
+# THE REMOTE PEP CLUSTER'S TWO MEMBERS (2026-11-16): their names, which are
+# also their compose host names (docker-compose-run-tests.yml), the realm they
+# poll, which tests/protocol/sts_xacml_pep_proxy_cluster.js creates and leaves
+# standing, and one credential directory per member under the report tree, as
+# the first PEP's is.
+XACML_PEP_CLUSTER_REALM="${XACML_PEP_CLUSTER_REALM:-pep-cluster-e2e}"
+XACML_PEP_CLUSTER_MEMBERS="pep-cluster-1 pep-cluster-2"
+XACML_PEP_CLUSTER_CERT_DIR="${CURRENT_DIR}/tests/report/pep-cluster-credential"
+XACML_PEP_CLUSTER_1_CONTAINER_NAME="${XACML_PEP_CLUSTER_1_CONTAINER_NAME:-xacml-pep-docker-tests-cluster-1}"
+XACML_PEP_CLUSTER_2_CONTAINER_NAME="${XACML_PEP_CLUSTER_2_CONTAINER_NAME:-xacml-pep-docker-tests-cluster-2}"
+XACML_PEP_CLUSTER_LB_CONTAINER_NAME="${XACML_PEP_CLUSTER_LB_CONTAINER_NAME:-xacml-pep-docker-tests-cluster-lb}"
 
 ADMIN_API_CLIENT_SECRET="${ADMIN_API_CLIENT_SECRET:-$(head -c 24 /dev/urandom \
   | base64 | tr -d '/+=' | head -c 24)}"
@@ -929,8 +1295,19 @@ COMPOSE_ENV=(
   "TEST_PEER_ADDRESS=${STS_NETWORK_PREFIX}.48"
   "STS_TEST_PEER_URL=http://test-peer:9600"
   "TEST_PEER_CA_FILE=/run/sts-test/test-peer/ca.crt"
+  # ---- the companion (#1760) -----------------------------------------------
+  # In EVERY local mode, for one thing: `/pep-app`, the application the
+  # remote PEP's reverse proxy protects in sts_xacml_remote_pep.js. Pinned
+  # beside the test peer, for its reason. The URL is where the PEP and the
+  # runner both reach it; an AWS target names none, and that section skips.
+  "STS_COMPANION_CONTAINER_NAME=${STS_COMPANION_CONTAINER_NAME}"
+  "COMPANION_ADDRESS=${STS_NETWORK_PREFIX}.49"
+  "XACML_PEP_UPSTREAM_URL=http://companion:9700"
   "CONFIG_FILE=${CONFIG_FILE}"
   "STS_TEST_ARGS=${STS_TEST_ARGS}"
+  # The #444 switch (rcbj, 2026-11-15), `off` unless --with-444 or the host
+  # said `on`: the runner in the tests container reads it.
+  "STS_TEST_444=${STS_TEST_444}"
   # The token-exchange chain job's token log, off unless the host sets it.
   "STS_TOKEN_LOG=${STS_TOKEN_LOG:-}"
   # ---------------------------------------------------------------------
@@ -957,18 +1334,22 @@ COMPOSE_ENV=(
   # service the way the runner does — `sts`, on the plain-HTTP revocation
   # listener, which is plain whatever STS_HTTPS says about the main port.
   "PKI_DISTRIBUTION_BASE_URL=http://sts:8082"
-  # ---- the remote PEP and the client certificate it presents --------------
-  # The three /xacml/pep endpoints are gated: a PEP is admitted by a client
-  # certificate this service VERIFIES, whose subject DN resolves to a directory
-  # entry in the `remote-peps` group. Nothing in either image provides that
-  # certificate — mintThePepCredential() below makes one between bringing the
-  # service up and starting the PEP, which is the only window: pep.js reads the
-  # files at process start and never again.
+  # ---- the remote PEP and the key it authenticates with -------------------
+  # The /xacml/pep endpoints are gated: a PEP is admitted by a DPoP-bound
+  # access token from its RFC 7523 self-assertion, signed with a key
+  # registered on a directory entry in the `remote-peps` group. Since phase 4
+  # of #1827's follow-up (2026-11-16) that is its ONLY credential: no client
+  # certificate is minted or mounted, and XACML_PEP_TLS_CERT/KEY are no
+  # longer set. mintThePepCredential() below generates the key between
+  # bringing the service up and starting the PEP.
   # As compose.exe reads a path on Windows (#512); this script's own
   # `rm` and `mkdir` of it keep the shell's form.
   "XACML_PEP_CERT_DIR=$(hostPath "${XACML_PEP_CERT_DIR}")"
-  "XACML_PEP_TLS_CERT=/certs/pep.crt"
-  "XACML_PEP_TLS_KEY=/certs/pep.key"
+  # THE ASSERTION KEY (#1827's follow-up, phase 3): mintThePepCredential()
+  # generates it with a certificate request, and the job registers the
+  # request once the PEP's entry exists in its realm. The service never
+  # sees the key.
+  "XACML_PEP_ASSERTION_KEY=/certs/pep-assertion.key"
   # THE REGISTERED NAME IS THE CERTIFICATE'S COMMON NAME. `xacml.js` files a
   # registration under the certificate and ignores the body, so a PEP_NAME that
   # differed would leave `sync.js` polling with a `?pep=` nobody has a row for.
@@ -986,6 +1367,27 @@ COMPOSE_ENV=(
   "XACML_PEP_HTTPS_KEY=/certs/server/pep-server.key"
   "XACML_PEP_HTTPS_URL=https://xacml-pep:9443"
   "XACML_PEP_SERVER_CERT_DIR=/usr/src/sts/tests/report/pep-credential/server"
+  # ---- the PEP's reverse proxy (#1760) -------------------------------------
+  # Its two listeners, by the PEP's compose name: 9180 plain, and 9543 over
+  # the same pair as 9443, which listens once the job has written it. And
+  # the session recheck at zero, so a sign-out at the service is seen on the
+  # very next access the job makes.
+  "XACML_PEP_PROXY_URL=http://xacml-pep:9180"
+  "XACML_PEP_PROXY_HTTPS_URL=https://xacml-pep:9543"
+  "XACML_PEP_PROXY_SESSION_RECHECK_MS=0"
+  # ---- the remote PEP cluster (2026-11-16) --------------------------------
+  # Its three containers' names and pinned addresses, and the members'
+  # credential directory as compose mounts it, in every mode: compose reads
+  # them only where the mode turns the `pep-cluster` profile on (the mode
+  # loop, which also hands the runner where everything is). `.50` to `.52`,
+  # above the companion's `.49`, for the conformance suite's reason.
+  "XACML_PEP_CLUSTER_1_CONTAINER_NAME=${XACML_PEP_CLUSTER_1_CONTAINER_NAME}"
+  "XACML_PEP_CLUSTER_2_CONTAINER_NAME=${XACML_PEP_CLUSTER_2_CONTAINER_NAME}"
+  "XACML_PEP_CLUSTER_LB_CONTAINER_NAME=${XACML_PEP_CLUSTER_LB_CONTAINER_NAME}"
+  "PEP_CLUSTER_1_ADDRESS=${STS_NETWORK_PREFIX}.50"
+  "PEP_CLUSTER_2_ADDRESS=${STS_NETWORK_PREFIX}.51"
+  "PEP_CLUSTER_LB_ADDRESS=${STS_NETWORK_PREFIX}.52"
+  "XACML_PEP_CLUSTER_CERT_DIR=$(hostPath "${XACML_PEP_CLUSTER_CERT_DIR}")"
   # ---- the management API's client secret, pinned for this run ------------
   # `/admin-api` requires an access token, and the token is obtained by the
   # seeded `sts-api-client` client with `client_credentials`. That client's
@@ -1028,7 +1430,7 @@ then
   COMPOSE_ENV+=("IMAGE_MIRROR=${IMAGE_MIRROR}")
 fi
 for peerImage in SAML_SHIB_IMAGE SAML_SSP_IMAGE SAML_PYSAML2_IMAGE \
-                 SAML_KEYCLOAK_IMAGE TEST_PEER_IMAGE;
+                 SAML_KEYCLOAK_IMAGE TEST_PEER_IMAGE STS_COMPANION_IMAGE;
 do
   if [ -n "${!peerImage:-}" ];
   then
@@ -1080,17 +1482,20 @@ serviceUrl()
 captureContainerLogs()
 {
   local mode="$1"
+  CAPTURED_SERVICE_LOGS=()
   if [ "${STACK_UP}" != "1" ];
   then
     return 0
   fi
   captureOneContainerLog "${mode}" sts   "00-iya-sts-service.log" "Service log"
+  CAPTURED_SERVICE_LOGS+=("${LAST_CAPTURED_LOG}")
   # The `cluster` mode's node B and balancer, whose logs go with their
   # containers too (2026-09-14). Node A keeps the name every mode uses.
   if stsModeIsCluster "${mode}";
   then
     captureOneContainerLog "${mode}" sts2   "00-iya-sts-service-node-b.log" \
       "Node B log"
+    CAPTURED_SERVICE_LOGS+=("${LAST_CAPTURED_LOG}")
     captureOneContainerLog "${mode}" sts-lb "00-load-balancer.log" \
       "Balancer log"
   fi
@@ -1099,11 +1504,28 @@ captureContainerLogs()
   then
     captureOneContainerLog "${mode}" sts2   "00-iya-sts-service-cell-b.log" \
       "Cell B log"
+    CAPTURED_SERVICE_LOGS+=("${LAST_CAPTURED_LOG}")
   fi
   # The test peer's (#586): one line per message any role received, and
   # why it refused one — what a job's failure against it is read beside.
   captureOneContainerLog "${mode}" test-peer "00-test-peer.log" \
     "Test peer log"
+  # The companion's (#1760): one line per request that reached `/pep-app`,
+  # the application behind the remote PEP's proxy.
+  captureOneContainerLog "${mode}" companion "00-companion.log" \
+    "Companion log"
+  # The remote PEP cluster's (2026-11-16), in the modes that start it: each
+  # member's own account of its registration, pulls and proxied requests,
+  # and the balancer's connection log.
+  if [ "${PEP_CLUSTER_THIS_MODE:-0}" = "1" ];
+  then
+    captureOneContainerLog "${mode}" pep-cluster-1 "00-pep-cluster-1.log" \
+      "PEP member 1"
+    captureOneContainerLog "${mode}" pep-cluster-2 "00-pep-cluster-2.log" \
+      "PEP member 2"
+    captureOneContainerLog "${mode}" pep-cluster-lb "00-pep-cluster-lb.log" \
+      "PEP balancer"
+  fi
   captureOneContainerLog "${mode}" tests "00-test-runner.log"      "Runner log"
 }
 
@@ -1155,6 +1577,66 @@ captureOneContainerLog()
     "${COMPOSE_FILE_ARGS[@]}" logs --no-color "${service}" \
     > "${dest}" 2>&1 || true
   printf '%-12s %s\n' "${label}:" "${dest}"
+  # Where it went, for modelGapCheck(): the fallback name is as likely as
+  # the report's own, and recomputing it here would be a second copy.
+  LAST_CAPTURED_LOG="${dest}"
+}
+
+# ---------------------------------------------------------------------------
+# A MODEL GAP IN A SERVICE LOG FAILS THE MODE (#1579's review, 2026-11-13).
+#
+# The model HOLDS what the service answers rather than refusing it (rcbj's
+# decision on #1579): a member the model does not name, a wrong type, an
+# undeclared error code is logged under the family's code — STS-OAUTH-1005,
+# STS-SAML-0121, STS-GNAP-0910 and the rest — and the answer is sent as it
+# was built. So nothing failed on one: #1655 shipped a GNAP model that logged
+# STS-GNAP-0910 on every approval view, and every mode stayed green until
+# #1686 read a log. The service stays advisory; THIS is where a gap fails.
+#
+# tests/tools/model-gap-scan.js reads every node's captured log (node A, and
+# node B or cell B where the mode has one) for the bracketed tag of any code
+# in its MODEL_GAP_CODES — a list tests/model_gap_scan.js holds to the error
+# table and to every hold() site, so a family added later cannot be missed —
+# and names each code with its count and its first line. Run on the HOST
+# after the logs are taken, which is why it is a leaf needing only node: the
+# host already runs node for tests/tools/compose.sh's subnet choice. Its
+# report is tests/report/<mode>-97-model-gaps.log. A log that could not be
+# read fails the check too: a check that could not run has not passed.
+# STS_TEST_MODEL_GAP_CHECK=0 skips it, and says so.
+# ---------------------------------------------------------------------------
+modelGapCheck()
+{
+  local mode="$1" dest rc one
+  local paths=()
+  dest="${CURRENT_DIR}/tests/report/${mode}-97-model-gaps.log"
+  if [ "${STS_TEST_MODEL_GAP_CHECK:-1}" != "1" ];
+  then
+    echo "Mode ${mode}: the model-gap check is off" \
+         "(STS_TEST_MODEL_GAP_CHECK=${STS_TEST_MODEL_GAP_CHECK})."
+    return 0
+  fi
+  if [ "${#CAPTURED_SERVICE_LOGS[@]}" -eq 0 ];
+  then
+    # No stack came up, so no log was taken; the mode's own verdict says why.
+    return 0
+  fi
+  for one in "${CAPTURED_SERVICE_LOGS[@]}"; do
+    paths+=("$(hostPath "${one}")")
+  done
+  mkdir -p "${CURRENT_DIR}/tests/report" 2> /dev/null || true
+  node "$(hostPath "${CURRENT_DIR}/tests/tools/model-gap-scan.js")" \
+    "${paths[@]}" > "${dest}" 2>&1
+  rc=$?
+  echo ""
+  echo "Mode ${mode}: model gaps in the service log(s) (#1579):"
+  sed 's/^/  /' "${dest}"
+  if [ "${rc}" -ne 0 ];
+  then
+    echo "Mode ${mode}: FAILED — a service answer is not its model's, or" \
+         "a log could not be read; see ${dest}." >&2
+    return 1
+  fi
+  return 0
 }
 
 # ---------------------------------------------------------------------------
@@ -1255,6 +1737,123 @@ riskInstallCheck()
 # ---------------------------------------------------------------------------
 # THE SCHEDULER SURVIVES A CRASHED LEADER (#49, rcbj's D10(a), 2026-09-22).
 #
+# THE CLUSTER RESTARTED PART WAY THROUGH THE RUN (rcbj, 2026-11-18: "Restart
+# the cluster a couple of times during the test run").
+#
+# The runner is a container with no docker, so it ASKS: at each of the mode's
+# STS_TEST_RESTART_POINTS (tools/modes.sh: the cluster modes only) it drains
+# its lanes, writes request-<k>.json into the restart directory (the report
+# tree, bind-mounted), and waits (tests/tools/cluster-restart.js). This
+# broker, a background job of the launcher for the length of the mode,
+# answers: it restarts node A and then node B — one at a time, each waited for
+# until healthy, so the balancer always has a node and the scheduler hands
+# over rather than stopping — and writes done-<k>.json with each container's
+# memory (`docker stats`) before and after. Every docker call is bounded
+# (tests/teardown_bounds.js's rule) and nothing here is a timeout raised: a
+# node that is not healthy within STS_TEST_READY_SECONDS is a failed restart,
+# and the runner fails the run on it.
+#
+# It is killed once the runner has exited (the caller holds its pid), and
+# writes broker.ready only once it is listening, so a runner that reaches a
+# restart point with no broker goes on without one.
+# ---------------------------------------------------------------------------
+# One of the mode's own values (tools/modes.sh), '' when it names none.
+modeValue()
+{
+  local key="$1" line
+  for line in ${MODE_ENV[@]+"${MODE_ENV[@]}"};
+  do
+    case "${line}" in
+      "${key}="*)
+        printf '%s' "${line#*=}"
+        return 0
+        ;;
+    esac
+  done
+  return 0
+}
+
+containerMemory()
+{
+  dockerBounded 60 stats --no-stream \
+    --format '{"name":"{{.Name}}","mem":"{{.MemUsage}}","cpu":"{{.CPUPerc}}"}' \
+    "$@" 2> /dev/null | paste -sd, -
+}
+
+clusterRestartBroker()
+{
+  local mode="$1"
+  local dir="${CURRENT_DIR}/tests/report/${mode}/restarts"
+  local request k done before after ok why started container
+  mkdir -p "${dir}" 2> /dev/null || true
+  rm -f "${dir}"/request-* "${dir}"/done-* "${dir}/broker.ready" \
+    2> /dev/null || true
+  : > "${dir}/broker.ready"
+  while true;
+  do
+    for request in "${dir}"/request-*.json;
+    do
+      [ -f "${request}" ] || continue
+      k="$(basename "${request}" .json)"
+      k="${k#request-}"
+      done="${dir}/done-${k}.json"
+      [ -f "${done}" ] && continue
+      started="$(date +%s)"
+      echo ""
+      echo "Mode ${mode}: the runner asked for cluster restart ${k}; no job" \
+           "is running."
+      before="$(containerMemory "${STS_CONTAINER_NAME}" \
+                                "${STS2_CONTAINER_NAME}")"
+      ok=true
+      why=""
+      for container in "${STS_CONTAINER_NAME}" "${STS2_CONTAINER_NAME}";
+      do
+        # A FRESH START-UP TOKEN FIRST (GitHub Actions run #493). A node
+        # takes the secret store's secrets at start through a SINGLE-USE
+        # wrapping token the seeder left for it (openbao/seed.js, #254), and
+        # its first start used it: restarted without one, node A refused to
+        # start ("the start-up token for sts could not be unwrapped"), was
+        # never healthy, and the rest of the mode ran on node B alone —
+        # sts_ldaps saw one leaf, sts_kerberos_keytab and sts_spiffe_grpc
+        # reached node A's own address. `docker compose up` re-runs the
+        # seeder; `docker restart` does not, so the broker does. The seeder
+        # is idempotent and mints a token per node it names.
+        echo "  a fresh start-up token for ${container}..."
+        if ! dockerBounded 180 start -a "${STS_BAO_SEED_CONTAINER_NAME}" \
+             > /dev/null;
+        then
+          ok=false
+          why="the secret store's seeder did not mint a start-up token"
+          break
+        fi
+        echo "  restarting ${container}..."
+        if ! dockerBounded 180 restart -t 60 "${container}" > /dev/null;
+        then
+          ok=false
+          why="docker restart ${container} failed"
+          break
+        fi
+        if ! waitForStsHealthy "${container}";
+        then
+          ok=false
+          why="${container} was not healthy after its restart"
+          break
+        fi
+      done
+      after="$(containerMemory "${STS_CONTAINER_NAME}" \
+                               "${STS2_CONTAINER_NAME}")"
+      echo "  restart ${k}: ok=${ok} in $(( $(date +%s) - started ))s"
+      echo "    before: ${before}"
+      echo "    after:  ${after}"
+      printf '{"k":%s,"ok":%s,"why":"%s","seconds":%s,%s}\n' \
+        "${k}" "${ok}" "${why}" "$(( $(date +%s) - started ))" \
+        "\"before\":[${before}],\"after\":[${after}]" > "${done}.tmp"
+      mv "${done}.tmp" "${done}"
+    done
+    sleep 2
+  done
+}
+
 # The LAST step of the `cluster` mode, because it removes a node: the runner
 # has finished, the stack is still up (the mode runs detached for this), and
 # `tests/tools/scheduler-takeover.js` names the scheduler's leader, this
@@ -1321,6 +1920,65 @@ schedulerTakeover()
   return "${rc}"
 }
 
+# ---------------------------------------------------------------------------
+# WHAT A `down` LEFT OF THIS PROJECT, REMOVED (2026-11-14).
+#
+# A bare run is six modes on four different sets of compose files since that
+# day, and `down` removes only what the files it is given declare — and only
+# when it finishes inside its bound. So after each mode's down, and before the
+# first mode, every container, network and volume still carrying this run's
+# PROJECT label goes too. The label is what makes it safe: compose stamps
+# `com.docker.compose.project=<project>` on everything it creates, and the
+# `sts` container a plain `docker compose up` here gives somebody is in
+# another project. Each docker call is bounded (tests/teardown_bounds.js's
+# rule): a daemon that hangs costs a warning, never the run.
+# ---------------------------------------------------------------------------
+dockerBounded()
+{
+  local seconds="$1"
+  shift
+  local timeoutCmd
+  local cmd=(docker "$@")
+  if [ -n "${DOCKER_SUDO}" ];
+  then
+    cmd=(sudo docker "$@")
+  fi
+  timeoutCmd="$(command -v timeout 2> /dev/null || true)"
+  if [ -z "${timeoutCmd}" ];
+  then
+    "${cmd[@]}" < /dev/null
+    return $?
+  fi
+  "${timeoutCmd}" --kill-after=30s "${seconds}" "${cmd[@]}" < /dev/null
+}
+
+removeProjectLeftovers()
+{
+  local filter="label=com.docker.compose.project=${COMPOSE_PROJECT}"
+  local kind ids
+  for kind in container network volume;
+  do
+    case "${kind}" in
+      container) ids="$(dockerBounded 60 ps -aq --filter "${filter}" \
+                        2> /dev/null)" ;;
+      *)         ids="$(dockerBounded 60 "${kind}" ls -q \
+                        --filter "${filter}" 2> /dev/null)" ;;
+    esac
+    [ -z "${ids}" ] && continue
+    local list=()
+    mapfile -t list <<< "${ids}"
+    echo "Removing what the teardown left of ${COMPOSE_PROJECT}:" \
+         "${#list[@]} ${kind}(s)." >&2
+    case "${kind}" in
+      container) dockerBounded "${STS_TEARDOWN_TIMEOUT}" rm -f -v \
+                   "${list[@]}" > /dev/null 2>&1 || true ;;
+      *)         dockerBounded "${STS_TEARDOWN_TIMEOUT}" "${kind}" rm \
+                   "${list[@]}" > /dev/null 2>&1 || true ;;
+    esac
+  done
+  return 0
+}
+
 # Always tear the stack down, even when the tests fail, so the next run starts
 # clean. A TRAP rather than a line at the end: an interrupted run (^C, a failing
 # step) would otherwise leave the stack's containers, volumes and network
@@ -1373,6 +2031,9 @@ trap 'exit 143' TERM
 docker_compose_bounded "${STS_TEARDOWN_TIMEOUT}" \
   "${COMPOSE_FILE_ARGS[@]}" down --remove-orphans --volumes \
   > /dev/null 2>&1 || true
+# The base file's down cannot name a layer's volumes or its network; an
+# interrupted `cells` or `fuzz` mode leaves both (removeProjectLeftovers()).
+removeProjectLeftovers
 
 # ---------------------------------------------------------------------------
 # BUILD, THEN RUN.
@@ -1391,7 +2052,8 @@ docker_compose_bounded "${STS_TEARDOWN_TIMEOUT}" \
 BUILD_ENV=(${COMPOSE_ENV[@]+"${COMPOSE_ENV[@]}"})
 for buildMode in "${RUN_MODES[@]}";
 do
-  if printf ',%s,' "${STS_TEST_SAML_PEERS_MODES}" | grep -q ",${buildMode},";
+  if [ "${BUILD_ONLY}" = "1" ] ||
+     printf ',%s,' "${STS_TEST_SAML_PEERS_MODES}" | grep -q ",${buildMode},";
   then
     COMPOSE_ENV+=("COMPOSE_PROFILES=saml-peers")
     break
@@ -1419,6 +2081,11 @@ else
   echo "a result surprises you."
 fi
 COMPOSE_ENV=(${BUILD_ENV[@]+"${BUILD_ENV[@]}"})
+if [ "${BUILD_ONLY}" = "1" ];
+then
+  echo "Built (--build-only); nothing was run."
+  exit 0
+fi
 
 # ---------------------------------------------------------------------------
 # THE SERVICE FIRST, THEN THE CREDENTIAL, THEN EVERYTHING ELSE.
@@ -1580,19 +2247,26 @@ mintThePepCredential()
 {
   rm -rf "${XACML_PEP_CERT_DIR}"
   mkdir -p "${XACML_PEP_CERT_DIR}"
-  echo "Minting the remote PEP's client certificate (${XACML_PEP_SUBJECT})"
-  echo "and adding its Root CA to the mock's truststore..."
+  echo "Generating the remote PEP's assertion key and its certificate"
+  echo "request (${XACML_PEP_NAME})..."
   # ---------------------------------------------------------------------
+  # THE ASSERTION KEY ALONE SINCE PHASE 4 OF #1827's FOLLOW-UP (rcbj,
+  # 2026-11-16). Until then this minted a Root, an Issuing CA and a TLS
+  # client leaf with tests/tools/pep-credential.js and added the Root to
+  # the service's truststore; the PEP no longer presents a client
+  # certificate (STS-XPEP-0135), so none is minted, no anchor is posted,
+  # and XACML_PEP_CA_PEM is no longer exported. The key and its request
+  # are generated here, and sts_xacml_remote_pep.js sends the request to
+  # issue-pep-credential once it has made the PEP's entry in its realm.
+  # Nothing here talks to the service, which the old step did.
+  #
   # RUN IN THE SERVICE IMAGE, WHICH IS HOW THIS STAYS "DOCKER AND NOTHING
   # ELSE". The tool is a node script that needs `common/crypto_impl/x509.js` and
-  # its three npm packages (and bunyan, for its logger — see NODE_PATH at
+  # its npm packages (and bunyan, for its logger — see NODE_PATH at
   # mintAdminApiToken()); this host may have neither node nor node_modules.
   # The service image has both — so the REPOSITORY is mounted read-only for the
   # tool itself (the image deletes ./tests, see the root Dockerfile) and
   # MOCK_STS_DIR points the tool at the image's own copy of the engine.
-  #
-  # On the project's network, so it dials `sts` by the name in the
-  # certificate rather than a published port this stack does not have.
   # ---------------------------------------------------------------------
   # AS THE HOST USER (#254): the service image runs as uid 10001 since #254,
   # which may not write the host directory mounted at /out. Root could, and
@@ -1602,55 +2276,87 @@ mintThePepCredential()
   # container reads them as it always did. On Windows there is no owner to
   # match and HOST_USER_ARGS is empty (tests/tools/host-platform.sh).
   if ! docker run --rm ${HOST_USER_ARGS[@]+"${HOST_USER_ARGS[@]}"} \
-       --network "${COMPOSE_PROJECT}_default" \
        -v "$(hostPath "${CURRENT_DIR}"):/repo:ro" \
        -v "$(hostPath "${XACML_PEP_CERT_DIR}"):/out" \
        -e MOCK_STS_DIR=/usr/src/sts \
        -e NODE_PATH=/usr/src/sts/node_modules \
-       -e "STS_ADMIN_API_TOKEN=${STS_ADMIN_API_TOKEN:-}" \
        -w /usr/src/sts \
        "${STS_IMAGE}" \
-       sh -c '
-         # THE SERVICE'"'"'S OWN CERTIFICATE FIRST (2026-09-21). The gated
-         # door VERIFIES the connection, because it carries the token, and
-         # this one-shot container had no anchor for the per-start
-         # certificate: the handshake was aborted, the tool fell back to the
-         # open POST /tls/trust, product mode refused it, and the PEP ran the
-         # whole mode unverified. This is the fetch run-report.js makes for
-         # every job (tests/tools/trust.js), made here for this child.
-         case "$1" in
-           https:*)
-             node -e "require(\"/repo/tests/tools/trust.js\")
-               .readTrust(process.argv[1]).then(function (t) {
-                 require(\"fs\").writeFileSync(
-                   \"/out/sts-certificate.pem\", t.pem); })" "$1" || exit 1
-             export NODE_EXTRA_CA_CERTS=/out/sts-certificate.pem ;;
-         esac
-         exec node /repo/tests/tools/pep-credential.js \
-           --url="$1" --out=/out --subject="$2" \
-           --crl-base=http://xacml-pep:9090/crl' \
-         sh "$(serviceUrl)" "${XACML_PEP_SUBJECT}" > /dev/null;
+       node /repo/tests/tools/pep-credential.js --assertion --csr-only \
+         --out=/out --name="${XACML_PEP_NAME}" \
+         > /dev/null;
   then
     echo "" >&2
-    echo "WARNING: the remote PEP's client certificate could not be minted." >&2
+    echo "WARNING: the remote PEP's assertion key could not be generated." >&2
     echo "         That container will start without one, every /xacml/pep" >&2
-    echo "         call it makes will be refused by the access policy, and" >&2
-    echo "         sts_xacml_remote_pep will say so. The rest of the run is" >&2
-    echo "         unaffected." >&2
+    echo "         call it makes will be refused, and sts_xacml_remote_pep" >&2
+    echo "         will say so. The rest of the run is unaffected." >&2
     echo "" >&2
   fi
-  # THE FILES HAVE TO BE READABLE INSIDE THE PEP CONTAINER, which runs as a
-  # different user from whatever wrote them. `pep-credential.js` chmods the key
+  # THE KEY HAS TO BE READABLE INSIDE THE PEP CONTAINER, which runs as a
+  # different user from whatever wrote it. `pep-credential.js` chmods the key
   # to 0600 for the ordinary reason and that is 0600 for the WRITER — so it is
   # relaxed here, deliberately and narrowly, because this key exists for the
   # length of one test run and protects nothing.
-  chmod 0644 "${XACML_PEP_CERT_DIR}/pep.key" 2>/dev/null || true
+  chmod 0644 "${XACML_PEP_CERT_DIR}/pep-assertion.key" 2>/dev/null || true
   # WHERE THE JOB WRITES THE HTTPS LISTENER'S PAIR, made now because the PEP
   # container mounts its parent and the job — in the tests container — writes
   # into it later. World-writable because that container may not be this user;
   # it holds one test run's key and is removed with the reports.
   mkdir -p "${XACML_PEP_CERT_DIR}/server"
   chmod 0777 "${XACML_PEP_CERT_DIR}/server" 2>/dev/null || true
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# THE REMOTE PEP CLUSTER'S TWO KEYS (2026-11-16), ONCE PER MODE THAT RUNS IT,
+# in the same window as mintThePepCredential() and for its reason: each
+# member reads PEP_ASSERTION_KEY when it starts. The same tool the same way —
+# an RFC 7523 key and its certificate request per member, generated in the
+# service image as the host user, nothing sent to the service — so the two
+# members are provisioned exactly as the first PEP is, and as 8081's two
+# were. tests/protocol/sts_xacml_pep_proxy_cluster.js sends each request to
+# issue-pep-credential once it has made the member's entry in its realm, and
+# writes each member's listener pair into its `server/`.
+#
+# A FAILURE HERE IS A WARNING, for mintThePepCredential()'s reason: the one
+# job that drives these members says so, and nothing else reads them.
+# ---------------------------------------------------------------------------
+mintThePepClusterCredentials()
+{
+  local member
+  rm -rf "${XACML_PEP_CLUSTER_CERT_DIR}"
+  for member in ${XACML_PEP_CLUSTER_MEMBERS};
+  do
+    mkdir -p "${XACML_PEP_CLUSTER_CERT_DIR}/${member}"
+    echo "Generating the assertion key and its certificate request of the"
+    echo "remote PEP cluster's member ${member}..."
+    if ! docker run --rm ${HOST_USER_ARGS[@]+"${HOST_USER_ARGS[@]}"} \
+         -v "$(hostPath "${CURRENT_DIR}"):/repo:ro" \
+         -v "$(hostPath "${XACML_PEP_CLUSTER_CERT_DIR}/${member}"):/out" \
+         -e MOCK_STS_DIR=/usr/src/sts \
+         -e NODE_PATH=/usr/src/sts/node_modules \
+         -w /usr/src/sts \
+         "${STS_IMAGE}" \
+         node /repo/tests/tools/pep-credential.js --assertion --csr-only \
+           --out=/out --name="${member}" \
+           > /dev/null;
+    then
+      echo "" >&2
+      echo "WARNING: ${member}'s assertion key could not be generated. That" >&2
+      echo "         member will start without one, and" >&2
+      echo "         sts_xacml_pep_proxy_cluster will say so. The rest of" >&2
+      echo "         the run is unaffected." >&2
+      echo "" >&2
+    fi
+    # Readable inside the member, and its `server/` writable by the runner,
+    # for mintThePepCredential()'s two reasons.
+    chmod 0644 "${XACML_PEP_CLUSTER_CERT_DIR}/${member}/pep-assertion.key" \
+      2>/dev/null || true
+    mkdir -p "${XACML_PEP_CLUSTER_CERT_DIR}/${member}/server"
+    chmod 0777 "${XACML_PEP_CLUSTER_CERT_DIR}/${member}/server" \
+      2>/dev/null || true
+  done
   return 0
 }
 
@@ -1775,6 +2481,8 @@ fi
 RC=0
 MODES_RUN=()
 MODES_FAILED=()
+# Modes a run named and did not start, each with its reason (2026-11-14).
+MODES_SKIPPED=()
 MODE_COUNT="${#RUN_MODES[@]}"
 MODE_INDEX=0
 
@@ -1795,6 +2503,18 @@ do
   echo " $(stsModeDescription "${MODE}")"
   echo "==========================================================="
 
+  # A MODE WHOSE OWN JOB FILTER AND THE OPERATOR'S --only KEEP NOTHING is
+  # skipped before its stack starts (modeFilterLeavesNothing(), above): not a
+  # failure, and not a pass either — the summary names it with the reason.
+  MODE_FILTER="$(stsModeJobFilter "${MODE}")"
+  if modeFilterLeavesNothing "${MODE}";
+  then
+    echo " SKIPPED: this mode runs only its own jobs (${MODE_FILTER}), and" \
+         "the run's --only or --conformance-only keeps none of them (${STS_TEST_ARGS})."
+    MODES_SKIPPED+=("${MODE} (its own jobs, ${MODE_FILTER}, are outside the run's narrowing)")
+    continue
+  fi
+
   # The mode's environment, added to what compose is already given. Every mode
   # names every variable it cares about — see modes.sh — so a later mode cannot
   # inherit an earlier one's.
@@ -1808,6 +2528,21 @@ do
   # the path is the one inside it and the report lands in the host tree beside
   # every other mode's.
   MODE_ENV+=("STS_TEST_REPORT_DIR=/usr/src/sts/tests/report/${MODE}")
+  # Where the runner asks for a cluster restart and clusterRestartBroker()
+  # answers (the cluster modes' STS_TEST_RESTART_POINTS), inside the runner.
+  MODE_ENV+=("STS_TEST_RESTART_DIR=/usr/src/sts/tests/report/${MODE}/restarts")
+
+  # THE MODE'S OWN JOB FILTER, FOR THIS MODE ALONE (2026-11-14). The base
+  # environment carries the operator's STS_TEST_ARGS; this later assignment
+  # wins (`env` applies them in order) and adds `--mode-only=`, which the
+  # runner intersects with any --only. The next mode starts from the base
+  # again, so no other mode sees it.
+  if [ -n "${MODE_FILTER}" ];
+  then
+    MODE_ENV+=("STS_TEST_ARGS=${STS_TEST_ARGS:+${STS_TEST_ARGS} }--mode-only=${MODE_FILTER}")
+    echo " This mode runs its own jobs only: --mode-only=${MODE_FILTER}" \
+         "(tests/tools/modes.sh, stsModeJobFilter())."
+  fi
 
   # -------------------------------------------------------------------------
   # THE SERVICE FIRST, THEN ITS CREDENTIALS, THEN THE RUNNER (2026-09-09).
@@ -1968,7 +2703,7 @@ do
   UP_NO_ATTACH=(--no-attach openbao-tls --no-attach openbao-seed
                 --no-attach mailpit-tls --no-attach mailpit
                 --no-attach mariadb-tls
-                --no-attach test-peer)
+                --no-attach test-peer --no-attach companion)
   # The `cells` mode's one-shot cell-key writer exits 0 by design, and an
   # attached exit ends the mode (see THE TWO ONE-SHOT CONTAINERS below).
   if stsModeIsCells "${MODE}";
@@ -2021,9 +2756,46 @@ do
     echo " The SAML interoperability peers run in this mode (#189-#192);" \
          "its bound is ${STS_MODE_TIMEOUT}s."
   fi
+  # ---- THE REMOTE PEP CLUSTER, IN THE MODES THAT RUN IT (2026-11-16) -----
+  #
+  # The profile starts its three containers with the runner's `up`; the
+  # members poll the realm the job creates, through the address every other
+  # one-shot here dials (the balancer in `cluster`), and the runner is told
+  # where the members, the balancer and their credentials are. Not attached,
+  # so a member that dies fails the one job that drives it rather than ending
+  # the mode; their logs are captured beside the jobs'.
+  # mintThePepClusterCredentials() writes the two keys in the gap below.
+  PEP_CLUSTER_THIS_MODE=0
+  if printf ',%s,' "${STS_TEST_PEP_CLUSTER_MODES}" | grep -q ",${MODE},";
+  then
+    PEP_CLUSTER_THIS_MODE=1
+    MODE_PROFILES+=(pep-cluster)
+    MODE_ENV+=(
+      "XACML_PEP_CLUSTER_PDP_URL=$(serviceUrl)/realm/${XACML_PEP_CLUSTER_REALM}"
+      "XACML_PEP_CLUSTER_REALM=${XACML_PEP_CLUSTER_REALM}"
+      "XACML_PEP_CLUSTER_MEMBERS=$(printf '%s' "${XACML_PEP_CLUSTER_MEMBERS}" | tr ' ' ',')"
+      "XACML_PEP_CLUSTER_LB=pep-cluster-lb"
+      "XACML_PEP_CLUSTER_CERT_DIR_HERE=/usr/src/sts/tests/report/pep-cluster-credential"
+    )
+    UP_NO_ATTACH+=(--no-attach pep-cluster-1 --no-attach pep-cluster-2
+                   --no-attach pep-cluster-lb)
+    echo " The remote PEP cluster and its balancer run in this mode" \
+         "(STS_TEST_PEP_CLUSTER_MODES)."
+  fi
   if [ "${#MODE_PROFILES[@]}" -gt 0 ];
   then
     MODE_ENV+=("COMPOSE_PROFILES=$(IFS=','; echo "${MODE_PROFILES[*]}")")
+  fi
+  # ONLY THE RUNNER'S OUTPUT ON THE TERMINAL, WHEN ASKED (2026-11-14). Every
+  # attached service streams its log into this one, which in CI made a job
+  # log of 20-38 MB that GitHub truncated before the summary. Each service's
+  # log is captured into the report anyway (captureContainerLogs()). The
+  # cost: `--abort-on-container-exit` watches attached containers only, so a
+  # service that dies no longer ends the mode at once; the runner's jobs fail
+  # against it and the runner's exit still ends the mode.
+  if [ "${STS_TEST_ATTACH_RUNNER_ONLY:-0}" = "1" ];
+  then
+    UP_NO_ATTACH+=(--attach tests)
   fi
 
   COMPOSE_ENV=(
@@ -2074,6 +2846,10 @@ do
     # established.
     # -----------------------------------------------------------------------
     mintThePepCredential
+    if [ "${PEP_CLUSTER_THIS_MODE}" = "1" ];
+    then
+      mintThePepClusterCredentials
+    fi
 
     # The install-time risk loader against this stack's own database (#213),
     # before the runner stops the stack. Its failure fails the mode after
@@ -2106,7 +2882,10 @@ do
     # credential in that file already does for itself. It travels as TEXT
     # because the runner container cannot see the directory the PEP mounts.
     #
-    # Read per mode, because the certificate above is minted per mode.
+    # Read per mode, because the certificate above was minted per mode.
+    # SINCE PHASE 4 OF #1827's FOLLOW-UP NO CERTIFICATE IS MINTED, so there
+    # is no ca.crt and nothing is exported; the job reads the variable only
+    # where a launcher still sets it.
     if [ -f "${XACML_PEP_CERT_DIR}/ca.crt" ];
     then
       COMPOSE_ENV+=("XACML_PEP_CA_PEM=$(cat "${XACML_PEP_CERT_DIR}/ca.crt")")
@@ -2157,6 +2936,15 @@ do
         --abort-on-container-exit --exit-code-from tests
       MODE_RC=$?
     else
+      # The cluster restarts' broker (clusterRestartBroker(), above), for
+      # the mode's restart points; listening before the runner can ask.
+      RESTART_BROKER_PID=""
+      if [ "$(modeValue STS_TEST_RESTART_POINTS)" -gt 0 ] 2> /dev/null &&
+         [ "${KEEP_THIS_MODE}" = "0" ];
+      then
+        clusterRestartBroker "${MODE}" &
+        RESTART_BROKER_PID=$!
+      fi
       docker_compose_bounded "${STS_MODE_TIMEOUT}" "${COMPOSE_FILE_ARGS[@]}" up -d
       MODE_RC=$?
       if [ "${MODE_RC}" -eq 0 ];
@@ -2170,6 +2958,13 @@ do
           wait tests
         MODE_RC=$?
         wait "${KEEP_LOG_PID}" 2> /dev/null || true
+      fi
+      if [ -n "${RESTART_BROKER_PID}" ];
+      then
+        kill "${RESTART_BROKER_PID}" 2> /dev/null || true
+        wait "${RESTART_BROKER_PID}" 2> /dev/null || true
+        rm -f "${CURRENT_DIR}/tests/report/${MODE}/restarts/broker.ready" \
+          2> /dev/null || true
       fi
     fi
     if [ "${MODE_RC}" -ge 124 ];
@@ -2214,6 +3009,20 @@ do
 
   captureContainerLogs "${MODE}"
   LOGS_TAKEN=1
+  # After the logs, because they are what it reads: a gap fails the mode
+  # whatever the runner said (modelGapCheck(), above).
+  if ! modelGapCheck "${MODE}";
+  then
+    if [ "${MODE_RC}" -eq 0 ];
+    then
+      MODES_FAILED+=("${MODE}")
+      MODE_RC=1
+    fi
+    if [ "${RC}" -eq 0 ];
+    then
+      RC=1
+    fi
+  fi
 
   # KEPT: the last mode under --keep-stack stays up for the teardown trap to
   # describe, and is the one stack this launcher leaves behind.
@@ -2232,19 +3041,30 @@ do
     echo "The stack did not come down cleanly after mode ${MODE}." >&2
     echo "That is NOT a verdict on the suite — the mode's result above is." >&2
   fi
+  # AND NOTHING OF THE PROJECT IS LEFT FOR THE NEXT MODE (2026-11-14), whose
+  # layers differ: `cells` brings three databases and a volume per cell key,
+  # `fuzz` an `internal` network. A down that timed out, or a container a
+  # layer started that the next mode's files do not name, would otherwise
+  # meet the next mode's fixed container names or its network.
+  removeProjectLeftovers
   STACK_UP=0
 done
 
-if [ "${MODE_COUNT}" -gt 1 ];
+if [ "${MODE_COUNT}" -gt 1 ] || [ "${#MODES_SKIPPED[@]}" -gt 0 ];
 then
   echo ""
   echo "==========================================================="
-  echo " ${MODE_COUNT} mode(s): ${MODES_RUN[*]}"
+  echo " ${MODE_COUNT} mode(s): ${MODES_RUN[*]+${MODES_RUN[*]}}"
+  if [ "${#MODES_SKIPPED[@]}" -gt 0 ];
+  then
+    printf ' SKIPPED: %s\n' "${MODES_SKIPPED[@]}"
+  fi
   if [ "${#MODES_FAILED[@]}" -gt 0 ];
   then
     echo " FAILED in: ${MODES_FAILED[*]}"
-  else
-    echo " all modes passed"
+  elif [ "${#MODES_RUN[@]}" -gt 0 ];
+  then
+    echo " all modes run passed"
   fi
   echo " reports: tests/report/<mode>/latest"
   echo "==========================================================="
@@ -2276,6 +3096,15 @@ done
 # try to delete the old ones. It is written from inside the container, which
 # is root; the workflow chowns it before uploading and a person can too:
 #   sudo chown -R "$(id -u):$(id -g)" tests/report
+
+# EVERY MODE SKIPPED IS NOTHING CHECKED, which is never a pass (2026-11-14):
+# `--modes=fuzz --only=crypto` asks for a mode and then for none of its jobs.
+if [ "${RC}" -eq 0 ] && [ "${#MODES_RUN[@]}" -eq 0 ];
+then
+  echo "No mode ran: every one named was skipped (above). Nothing was" \
+       "checked." >&2
+  RC=1
+fi
 
 if [ "${RC}" -ne 0 ];
 then

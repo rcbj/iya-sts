@@ -234,12 +234,23 @@ function fakeDatabase() {
         return { rows: [], rowCount: 0 };
       });
     }
-    // The origin fence and its renewal: held.
+    // The origin fence and its renewal: held. The share lock is a row of
+    // sts_cluster_locks (#770); a lock query that answered nothing would
+    // fence the create.
+    if (/sts_cluster_locks/.test(text) && /FOR SHARE/i.test(text)) {
+      return Promise.resolve({ rows: [{ name: 'held' }], rowCount: 1 });
+    }
     if (/^SELECT 1 FROM sts_cluster_claims WHERE scope = \$1 AND realm = '' /
           .test(text) ||
         /^UPDATE sts_cluster_claims SET expires_at = /.test(text) ||
         /sts:renewOrigin /.test(text)) {
       return Promise.resolve({ rows: [{ one: 1 }], rowCount: 1 });
+    }
+    if (/^SET LOCAL /.test(text) ||
+        /^INSERT INTO sts_cluster_locks/.test(text) ||
+        /^DELETE FROM sts_cluster_locks/.test(text) ||
+        /sts:releaseClaim\.lock /.test(text)) {
+      return Promise.resolve({ rows: [], rowCount: 1 });
     }
     if (/^INSERT INTO sts_changes/.test(text)) {
       for (let i = 0; i + 3 < p.length; i += 4) {

@@ -38,10 +38,10 @@ node-ldapjs/.github
 # whatever) edits this repository. They are excluded because the Dockerfile now
 # copies the context whole — before that they were left out by not being named.
 # `docs` WAS HERE until 2026-09-14 and went the way of the three files below:
-# tests/error_codes.js asserts that docs/error-codes.md is what the error-code
-# table generates and that docs/_config.yml lists it, so the directory is the
-# subject of a test that runs in the TESTS image. The service Dockerfile
-# removes it.
+# tests/error_codes.js asserts that docs/v1.1.0/error-codes.md is what the
+# error-code table generates and that docs/_config.yml lists it, so the
+# directory is the subject of a test that runs in the TESTS image. The service
+# Dockerfile removes it.
 .github
 # ...EXCEPT THE ONE WORKFLOW THAT IS THE SUBJECT OF A TEST (2026-09-10). This is
 # the block below's argument a fourth step out: tests/teardown_bounds.js reads
@@ -54,7 +54,7 @@ node-ldapjs/.github
 # list, the compose files, every Dockerfile and build-container.yml's named
 # contexts to each other. The service Dockerfile removes .github whole.
 !.github/image-mirror.txt
-!.github/scripts/push-stack-images.sh
+!.github/scripts/stack-images.sh
 !.github/workflows/build-container.yml
 # ./run-jsdoc.sh's output, never read by an image.
 apidocs
@@ -139,6 +139,10 @@ clean.sh
 # either image — least of all the tests image, where the container mounts the
 # host's directory over the top of it.
 tests/report
+# Coverage output (./run-coverage.sh writes ./coverage: an HTML page per file,
+# lcov.info, raw V8 JSON). Never part of an image: on 2026-11-14 it was 2.0 GB
+# of a 2.81 GB service image built from a checkout that had run coverage.
+coverage/
 
 # THE BUILD STAMP FROM A HOST RUN. `common/version.js --stamp .` writes
 # version.json at the package root, and the Dockerfile runs it INSIDE the image
@@ -212,3 +216,8 @@ kerberos/spnego-pages-spa.js*
 utilities
 # The configuration dump's command-line client ships with the service.
 !utilities/config-dump.js
+# So does the remote PEP registration tool, and the key and certificate
+# request code it shares with tests/tools/pep-credential.js (which the
+# launchers run with the image's copy of the tree, MOCK_STS_DIR).
+!utilities/register-remote-pep.js
+!utilities/pep-assertion-request.js
