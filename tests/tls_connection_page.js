@@ -74,9 +74,18 @@ function childMain() {
     // The open API, development only: the gate is `tests/protocol/
     // sts_tls_connection.js`'s to hold; what is asked here is the view.
     config.setOverride('adminApi.authRequired', false);
+    // BUILT AS THE MAIN PORT IS (`server.js`): a client certificate asked
+    // for and not required at the handshake, which is what the view reports
+    // on — the service verifies one after the handshake
+    // (`trustClientCertificatesOn()`), and the cases below present a
+    // certificate it trusts and one it does not.
     const listener = https.createServer(
-      Object.assign({ requestCert: true, rejectUnauthorized: false },
+      Object.assign(tls.clientAuthOptions('optional'),
                     tls.clientTruststoreOptions()), app);
+    // What every request below verifies the listener against: the anchor a
+    // loopback caller of this process pins. The listener presents the leaf,
+    // its chain and the Root (`clientTruststoreOptions()`).
+    const anchors = tls.trustAnchorPems();
     await new Promise(function (ok) {
       listener.listen(0, '127.0.0.1', ok);
     });
@@ -87,7 +96,7 @@ function childMain() {
       const o = opts || {};
       return new Promise(function (resolve) {
         const req = https.request({ host: '127.0.0.1', port: port,
-          method: method, path: p, agent: false, rejectUnauthorized: false,
+          method: method, path: p, agent: false, ca: anchors,
           cert: o.cert, key: o.key,
           headers: Object.assign({ accept: 'application/json' },
                                  o.headers || {}) },
