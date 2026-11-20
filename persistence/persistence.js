@@ -4534,6 +4534,210 @@ function stop() {
 }
 
 // ---------------------------------------------------------------------------
+// THE WAIT ON THIS PROCESS'S OWN FLUSH, BOUNDED (#1934).
+//
+// `applyDirectoryChange()` waits for the running flush when the entry it is
+// about to apply is in it (the 2026-09-23 blocks inside it say why), and
+// until #1934 that wait was `flushing.then(...)` with no bound and no line.
+// In run #551 a flush that never settled — a removed realm's empty journal
+// map, fixed by #1933 — held a request worker's change-log pull for 44
+// minutes: every read-your-write request on it was refused (STS-WORKER-0053)
+// and the barrier's STS-STORE-0039 line named the row being applied and not
+// that the applier was waiting on its own process. Any other cause of a flush
+// that never settles would do the same, so the wait itself is now bounded
+// and said out loud:
+//
+//   * **WHILE IT WAITS, IT IS VISIBLE.** Each wait is in `ownFlushWaits`, and
+//     the directory applier carries `ownFlushWait()` beside itself (the
+//     `prepare` arrangement), which `persistence_replication.js`'s
+//     STS-STORE-0039 line reads: the key, how long it has waited, and the
+//     bound.
+//   * **THE BOUND IS `workers.readBarrierTimeoutMs`**, read at each wait. No
+//     save has a timeout of its own to borrow — the driver bounds a
+//     connection and a pool slot (`connectionTimeoutMillis`), never a
+//     transaction — so the bound is the point past which the wait has
+//     already cost this process every read-your-write request it was asked:
+//     each one waited that long for a pull that could not finish and was
+//     refused. A flush still out then is no longer a slow save worth waiting
+//     for; it is the wedge.
+//   * **PAST IT THE ROW IS NOT DROPPED.** The wait rejects with
+//     STS-STORE-0176, and `persistence_replication.js` fails the PAGE on that
+//     code rather than the row (every other applier failure is the row's,
+//     STS-STORE-0042, and is never applied again): the high-water mark is
+//     not advanced, so the next pull reads the same rows, and if the flush
+//     has settled meanwhile they apply.
+//   * **AND A REQUEST WORKER ASKS TO BE REPLACED**, once, over the channel
+//     it already has (`reportLag()`'s arrangement): the front process
+//     retires it through the drain a stop uses and forks a replacement into
+//     its slot (`request_pool.js`, `receiveReplaceWorker()`). The
+//     replacement restores from the store and follows the change log from
+//     the head it read when it opened the store, so every row this worker
+//     could not apply reaches it — they are committed rows, and the store is
+//     where they are. The front process has nobody to replace it: there the
+//     line says so and the pulls go on failing, a bound at a time, until the
+//     flush settles or the process restarts.
+//
+// ONE LINE A FLUSH: a wedged flush meets one pull after another, each
+// waiting out the bound, and a line for each would be a line every
+// `readBarrierTimeoutMs` for as long as it lasts. The first wait to run out
+// on a given flush reports at error; the rest at debug.
+// ---------------------------------------------------------------------------
+const ownFlushWaits = new Set();
+// The `flushing` promise whose wedge has been reported, and whether this
+// worker has asked to be replaced (once in its life: it is being retired).
+let reportedWedgeOf = null;
+let replacementAsked = false;
+// The latest wait that ran out, with the flush it waited for, so that a
+// barrier giving up between two pulls still says what holds them.
+let lastRanOut = null;
+const OWN_FLUSH_RAN_OUT = { ranOut: true };
+
+/**
+ * The longest a change-log apply waits on this process's own flush.
+ * @returns milliseconds, `workers.readBarrierTimeoutMs`
+ */
+function ownFlushWaitLimitMs() {
+  log.debug("Entering ownFlushWaitLimitMs().");
+  // Read directly: the row's `min` (1000) bounds it, and 0 is not legal.
+  // The row's own default stands in only for a configuration that answers
+  // nothing at all (a test's stub), where NaN would make the bound 1 ms.
+  const ms = Number(config.value('workers.readBarrierTimeoutMs'));
+  log.debug("Leaving ownFlushWaitLimitMs().");
+  return ms > 0 ? ms : 30000;
+}
+
+/**
+ * The longest-running wait on this process's own flush, for the read
+ * barrier's STS-STORE-0039 line — or, between two pulls, the latest wait
+ * that ran out while the flush it waited for is still out.
+ * @returns `{ active, realm, key, waitedMs, limitMs, count }` (`active`
+ *   false for a wait that ran out, `waitedMs` then since it began), or null
+ *   when the change-log apply is waiting on nothing here
+ */
+function ownFlushWait() {
+  log.debug("Entering ownFlushWait().");
+  let oldest = null;
+  ownFlushWaits.forEach(function (one) {
+    if (!oldest || one.since < oldest.since) {
+      oldest = one;
+    }
+  });
+  if (oldest) {
+    log.debug("Leaving ownFlushWait(). Waiting.");
+    return { active: true, realm: oldest.realm, key: oldest.key,
+             waitedMs: Date.now() - oldest.since, limitMs: oldest.limitMs,
+             count: ownFlushWaits.size };
+  }
+  if (lastRanOut && flushing && lastRanOut.held === flushing) {
+    log.debug("Leaving ownFlushWait(). Ran out; the flush is still out.");
+    return { active: false, realm: lastRanOut.wait.realm,
+             key: lastRanOut.wait.key,
+             waitedMs: Date.now() - lastRanOut.wait.since,
+             limitMs: lastRanOut.wait.limitMs, count: 0 };
+  }
+  log.debug("Leaving ownFlushWait(). None.");
+  return null;
+}
+
+/**
+ * Waits for this process's running flush, then applies the change again —
+ * or, past `ownFlushWaitLimitMs()`, rejects with STS-STORE-0176 so that the
+ * page is read again, and a request worker asks to be replaced. See the
+ * block above.
+ * @param change - the change row being applied
+ * @param key - the key found in the flush
+ * @returns a promise of `applyDirectoryChange(change)`'s answer
+ */
+function waitForOwnFlush(change, key) {
+  log.debug("Entering waitForOwnFlush().");
+  const held = flushing;
+  const limitMs = ownFlushWaitLimitMs();
+  const wait = { realm: String(change.realm || ''), key: String(key),
+                 since: Date.now(), limitMs: limitMs };
+  ownFlushWaits.add(wait);
+  // A ONE-SHOT BOUND inside one apply, cleared when the flush wins the race:
+  // nothing repeats it but the next pull, which is the change log's own
+  // schedule. Unreferenced, so a process that is ending is not held for it.
+  let timer = null;
+  const ranOut = new Promise(function (resolve) {
+    timer = setTimeout(function () {
+      resolve(OWN_FLUSH_RAN_OUT);
+    }, limitMs);
+    if (timer && typeof timer.unref === 'function') {
+      timer.unref();
+    }
+  });
+  // A flush that REJECTED has settled as surely as one that resolved, and
+  // the change is applied against what it left; it used to fail the row.
+  const settled = held.then(function () {
+    return null;
+  }, function (e) {
+    log.debug("Caught in waitForOwnFlush(): " + ((e && e.message) || e));
+    return null;
+  });
+  log.debug("Leaving waitForOwnFlush().");
+  return Promise.race([settled, ranOut]).then(function (out) {
+    clearTimeout(timer);
+    ownFlushWaits.delete(wait);
+    if (out !== OWN_FLUSH_RAN_OUT) {
+      return applyDirectoryChange(change);
+    }
+    throw ownFlushWedged(wait, held);
+  });
+}
+
+/**
+ * Reports a wait on this process's own flush that ran out, asks the front
+ * process to replace this worker, and answers the error the apply rejects
+ * with.
+ * @param wait - `{ realm, key, since, limitMs }`
+ * @param held - the `flushing` promise that did not settle
+ * @returns the Error, marked STS-STORE-0176
+ */
+function ownFlushWedged(wait, held) {
+  log.debug("Entering ownFlushWedged().");
+  const inWorker = !!process.env.STS_REQUEST_WORKER;
+  const what = 'a change-log apply of directory entry "' + wait.key +
+    '" in realm "' + (wait.realm || 'default') + '" waited ' +
+    (Date.now() - wait.since) + ' ms for this process\'s own flush of that ' +
+    'entry, past workers.readBarrierTimeoutMs (' + wait.limitMs + ' ms), ' +
+    'and the flush has not settled';
+  lastRanOut = { wait: wait, held: held };
+  const err = errorCodes.mark(new Error(errorCodes.tag('STS-STORE-0176') +
+    what + '. The page is read again by the next pull; no row is dropped.'),
+  'STS-STORE-0176');
+  if (reportedWedgeOf === held) {
+    log.debug('persistence: ' + what + ' (already reported).');
+    log.debug("Leaving ownFlushWedged(). Already reported.");
+    return err;
+  }
+  reportedWedgeOf = held;
+  log.error(errorCodes.tag('STS-STORE-0176') + 'persistence: ' + what +
+            '. The change is not applied and not dropped: the next pull ' +
+            'reads it again. ' + (inWorker
+    ? 'This request worker is asking the front process to replace it; ' +
+      'the replacement restores from the store and follows the change log ' +
+      'from there.'
+    : 'This is the front process, which nothing replaces: its pulls fail ' +
+      'a bound at a time until the flush settles or the process restarts.'));
+  if (inWorker && !replacementAsked) {
+    replacementAsked = true;
+    try {
+      // Lazily, as reportLag() does: a process that is not a worker loads
+      // nothing, and outside a worker thread send() is a no-op.
+      require('../common/worker_channel').send({ replaceWorker: {
+        code: 'STS-STORE-0176', reason: what } });
+    } catch (e) {
+      // The channel has gone: this worker is ending already, and the front
+      // replaces it from its exit.
+      log.debug("Caught in ownFlushWedged(): " + ((e && e.message) || e));
+    }
+  }
+  log.debug("Leaving ownFlushWedged().");
+  return err;
+}
+
+// ---------------------------------------------------------------------------
 // THE APPLIERS: HOW ANOTHER PROCESS'S WRITE BECOMES THIS PROCESS'S MEMORY.
 //
 // One per kind of change. Each is handed a POINTER — a kind, a realm and a
@@ -4614,9 +4818,7 @@ function applyDirectoryChange(change) {
   if (flushing && inFlightDirectory.has(change.realm + '\n' + change.key)) {
     log.debug('applyDirectoryChange(): a flush of ' + change.key + ' is ' +
               'out; applying the change once it settles.');
-    return flushing.then(function () {
-      return applyDirectoryChange(change);
-    });
+    return waitForOwnFlush(change, change.key);
   }
   return driver.readEntry(change.realm, change.key).then(function (row) {
     const rows = shadow.get(change.realm) || new Map();
@@ -4642,9 +4844,7 @@ function applyDirectoryChange(change) {
     if (flushing && inFlightDirectory.has(change.realm + '\n' + key)) {
       log.debug('applyDirectoryChange(): a flush of ' + key + ' started ' +
                 'during the read; applying the change once it settles.');
-      return flushing.then(function () {
-        return applyDirectoryChange(change);
-      });
+      return waitForOwnFlush(change, key);
     }
     const live = entryAt(change.realm, key);
     // THE BASE IS THE SHADOW: no flush of this key is out (both checks
@@ -5135,7 +5335,12 @@ function coordinate() {
   }
   log.debug("Leaving coordinate().");
   const appliers = {
-    directory: applyDirectoryChange,
+    // WITH `ownFlushWait` BESIDE IT (#1934), the `prepare` arrangement: the
+    // read barrier's STS-STORE-0039 line asks it whether the apply in
+    // flight is waiting on this process's own flush, and for how long.
+    directory: Object.assign(function (change) {
+      return applyDirectoryChange(change);
+    }, { ownFlushWait: ownFlushWait }),
     realms: applyRealmsChange,
     appconfig: applyAppconfigChange,
     keys: applyKeysChange,

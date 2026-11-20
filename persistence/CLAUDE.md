@@ -1435,6 +1435,39 @@ STS-STORE-0039 naming one directory row "for" ever-growing milliseconds) for
 emptied handle, and `flush()` answers "nothing journalled" when a take finds
 nothing and no save or batch is out. `tests/minted_removed_realm_flush.js`.
 
+**AND THE WAIT ON ONE'S OWN FLUSH IS BOUNDED, WHATEVER HOLDS THE FLUSH
+(#1934).** #1933 fixed that cause; any other flush that never settles would
+wedge the pull the same way, silently. `applyDirectoryChange()` now waits
+through `waitForOwnFlush()`:
+
+* **The bound is `workers.readBarrierTimeoutMs`**, read at each wait. No save
+  has a timeout of its own to borrow — the driver bounds a connection and a
+  pool slot, never a transaction — so the bound is the point past which the
+  wait has already cost every read-your-write request its whole wait: a
+  flush still out then is the wedge, not a slow save.
+* **Past it the apply rejects with `STS-STORE-0176`, and the PAGE fails, not
+  the row.** Every other applier failure is the row's (STS-STORE-0042) and
+  that row is never applied again; `persistence_replication.js` rethrows
+  this one, so `highest` does not move and the next pull reads the same rows
+  (a row held for its realm is held again). If the flush has settled by
+  then, they apply. One error line a flush, however many pulls wait it out;
+  the pull's own STS-STORE-0038 is debug for this code.
+* **A request worker asks to be replaced**, once, over the worker channel
+  (`{ replaceWorker }`, `reportLag()`'s arrangement); `common/CLAUDE.md` has
+  the front process's half. The replacement restores from the store and
+  follows the log from there, so the rows this worker could not apply reach
+  it. The front process has nobody to replace it: its pulls go on failing a
+  bound at a time, and the line says so.
+* **The STS-STORE-0039 line says it**: the directory applier carries
+  `ownFlushWait()` beside itself (the `prepare` arrangement), and the line
+  names the entry, how long the apply has waited on this process's own flush
+  and the bound — or, between two pulls, that the latest apply ran out and
+  the flush is still out.
+
+`tests/own_flush_wait_bound.js` holds a flush open at its COMMIT over
+`cluster_lww_stores.js`'s double and asserts all four, then lets the flush go
+and shows the other node's row applied.
+
 **`stop()` WAITS TOO, AND THAT MOVED A TEST ORDERING.**
 `appconfig_persistence.js` calls `persistence.stop()` without awaiting it, and
 `minted.stop()` marks the module stopped after its flush — so the mark can land

@@ -4327,6 +4327,12 @@ function fork(pool, slot) {
         receivePoolStatus(entry, message);
         return;
       }
+      // A WORKER WHOSE CHANGE-LOG PULL WAITED OUT ITS OWN FLUSH (#1934):
+      // see receiveReplaceWorker().
+      if (message && message.replaceWorker) {
+        receiveReplaceWorker(entry, message);
+        return;
+      }
       if (message && message.collectGarbage) {
         receiveCollectGarbage(entry, message);
         return;
@@ -9255,6 +9261,97 @@ function failSchedulerRunsOf(entry, code, reason) {
                              (reason || code) + ') before it answered' });
   });
   log.debug("Leaving failSchedulerRunsOf().");
+}
+
+// ---------------------------------------------------------------------------
+// A WORKER THAT ASKS TO BE REPLACED IS RETIRED AND REPLACED (#1934).
+//
+// A request worker whose change-log pull has waited on its OWN flush past
+// `workers.readBarrierTimeoutMs` (`persistence.js`, `waitForOwnFlush()`)
+// has refused every read-your-write request for that long and will go on
+// refusing them for as long as the flush stays out: in run #551 that was 44
+// minutes, until a restart. It says so once, `{ replaceWorker: { code,
+// reason } }`, and this retires it the way a drain does — `retiring`, so no
+// request, session pin or scheduler run is routed to it from here
+// (`readyWorkers()`), then `stop` — and `reap()` forks the replacement into
+// its slot when it exits, as for any worker that goes (`replaceIfWanted()`).
+// Nothing it could not apply is lost: those are committed rows, and the
+// replacement restores from the store and follows the log from there. What
+// may be lost is what its wedged flush never wrote, and `reap()` already
+// says that out loud (STS-WORKER-0021).
+//
+// **BOUNDED LIKE A SHUTDOWN'S DRAIN**: a wedged worker's requests in flight
+// may be waiting on the very commit that never comes, so its drain may never
+// finish on its own. Past RETIRE_DRAIN_MS — `stop()`'s default bound, 8000
+// ms — it is ended (STS-WORKER-0056). A one-shot timer within one
+// retirement.
+//
+// NOT when the pool is stopping or has given up, or for a worker already
+// retiring: `replacementFor()` decides as it does for a death, and a worker
+// it would not replace is left serving, wedged, with the line saying why.
+// ---------------------------------------------------------------------------
+const RETIRE_DRAIN_MS = 8000;
+
+/**
+ * Retires a worker that reported its change-log pull wedged on its own
+ * flush, so that `reap()` replaces it. See the block above.
+ *
+ * @param entry - the worker's entry
+ * @param message - `{ replaceWorker: { code, reason } }`
+ */
+function receiveReplaceWorker(entry, message) {
+  log.debug("Entering receiveReplaceWorker(). pid=" + entry.pid);
+  const ask = message.replaceWorker || {};
+  const pool = entry.pool || PROTOCOL_POOL;
+  if (entry.retiring) {
+    log.debug("Leaving receiveReplaceWorker(). Already retiring.");
+    return;
+  }
+  const plan = replacementFor(entry, workers.concat(queuedForks()));
+  log.error(errorCodes.tag('STS-WORKER-0055') +
+            'request_pool: ' + pool + ' worker ' + entry.pid + ' reported ' +
+            'that its change-log pull is wedged on its own flush (' +
+            String(ask.code || 'no code') + ': ' +
+            String(ask.reason || 'no reason given') + ')' +
+            (plan.replace
+              ? ', so it is retired and replaced: nothing more is routed to ' +
+                'it, it is drained, and a replacement is forked into slot ' +
+                plan.slot + ' once it exits.'
+              : '; it is NOT replaced, because ' + plan.why + ', and it ' +
+                'goes on serving with the pull failing a bound at a time.'));
+  if (!plan.replace) {
+    log.debug("Leaving receiveReplaceWorker(). Not replaced.");
+    return;
+  }
+  entry.retiring = true;
+  const timer = setTimeout(function () {
+    if (entry.child.exitCode === null && entry.child.signalCode === null) {
+      log.warn(errorCodes.tag('STS-WORKER-0056') +
+               'request_pool: retired ' + pool + ' worker ' + entry.pid +
+               ' did not finish draining within ' + RETIRE_DRAIN_MS +
+               ' ms and was ended; its replacement follows.');
+      try {
+        entry.child.kill();
+      } catch (e) {
+        log.debug("Caught in receiveReplaceWorker(): " +
+                  ((e && e.message) || e));
+      }
+    }
+  }, RETIRE_DRAIN_MS);
+  if (timer && typeof timer.unref === 'function') {
+    timer.unref();
+  }
+  entry.child.on('exit', function () {
+    clearTimeout(timer);
+  });
+  try {
+    entry.child.send({ stop: true });
+  } catch (e) {
+    // The channel has already gone; the exit is reap()'s, and the timer
+    // above is cleared by it.
+    log.debug("Caught in receiveReplaceWorker(): " + ((e && e.message) || e));
+  }
+  log.debug("Leaving receiveReplaceWorker().");
 }
 
 let nextPoolStatusId = 1;
