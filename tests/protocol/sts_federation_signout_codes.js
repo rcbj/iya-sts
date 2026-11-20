@@ -92,6 +92,16 @@ function signJwt(header, payload, privateKey) {
                                        privateKey).toString("base64url");
 }
 
+// A text as a regular expression that matches it and nothing else: every
+// character the syntax gives a meaning to is escaped, the backslash
+// included. Escaping only the dots left `?`, `+` and a backslash in a
+// partner URL live, which matched other addresses or did not compile.
+function literal(text) {
+  log.debug("Entering literal().");
+  log.debug("Leaving literal().");
+  return String(text).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function htmlDecode(text) {
   log.debug("Entering htmlDecode().");
   log.debug("Leaving htmlDecode().");
@@ -561,12 +571,12 @@ async function frontChannel(w) {
   await setRel(w, "oidc-t", "fedEndSessionUrl", PARTNER_OIDC + "/logout");
   const again = await oidcSignIn(w, "fso-rsid-" + K.rand(4));
   const bye = await signOutHere(w, again.b);
-  const link = htmlDecode((new RegExp("href=\"(" + PARTNER_OIDC
-    .replace(/[.]/g, "\\.") + "/logout\\?[^\"]+)\"").exec(bye.text) ||
+  const link = htmlDecode((new RegExp("href=\"(" + literal(PARTNER_OIDC) +
+    "/logout\\?[^\"]+)\"").exec(bye.text) ||
     [])[1] || JSON.stringify(bye.json || {}).match(new RegExp("\"(" +
-    PARTNER_OIDC.replace(/[.]/g, "\\.") + "/logout\\?[^\"]+)\"")) &&
+    literal(PARTNER_OIDC) + "/logout\\?[^\"]+)\"")) &&
     JSON.stringify(bye.json || {}).match(new RegExp("\"(" +
-    PARTNER_OIDC.replace(/[.]/g, "\\.") + "/logout\\?[^\"]+)\""))[1] || "");
+    literal(PARTNER_OIDC) + "/logout\\?[^\"]+)\""))[1] || "");
   const asked = link ? new URL(link.replace(/\\u0026/g, "&")) : null;
   const ended = !(await liveIn(w, again.b));
   K.check(tag(w, "R1. /logout ends the session and offers RP-Initiated " +
@@ -700,7 +710,7 @@ async function saml(w) {
   // The service-provider-initiated round trip.
   const two = await samlSignIn(w, "idx-two-" + K.rand(3), "");
   const bye = await signOutHere(w, two.b);
-  const re = new RegExp("(" + PARTNER_SLO.replace(/[.]/g, "\\.") +
+  const re = new RegExp("(" + literal(PARTNER_SLO) +
                         "\\?[^\"]+)\"");
   const outLink = htmlDecode((re.exec(String(bye.text || "")) ||
     re.exec(JSON.stringify(bye.json || {})) || [])[1] || "")

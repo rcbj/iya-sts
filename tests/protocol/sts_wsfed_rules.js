@@ -72,6 +72,9 @@ const assert = require("assert");
 const nodeCrypto = require("crypto");
 const authnSignin = require("./authn_signin");
 const K = require("./oauth_wire_kit.js").kit("sts_wsfed_rules");
+// A method URI named in a page or a token, parsed rather than searched
+// for as text (`url_match.js`).
+const urls = require("./url_match.js");
 
 const log = K.log;
 const REALM_URI = "urn:wsfed-rules:" + K.STAMP;
@@ -546,7 +549,8 @@ async function stepUp() {
   K.check("Sm1. a password wauth still issues PasswordProtectedTransport, " +
           "neither EAP URI", function () {
     assert.strictEqual(classRefOf(r.text), PPT, K.shown(r));
-    assert.ok(r.text.indexOf(PHR) < 0 && r.text.indexOf(PHRH) < 0);
+    assert.ok(!urls.namesAddress(r.text, PHR) &&
+              !urls.namesAddress(r.text, PHRH));
   });
   r = await dave.go(signInUrl({ saml2: true }));
   K.check("Sm2. a request with no wauth is unchanged", function () {
@@ -556,7 +560,7 @@ async function stepUp() {
   K.check("Sm3. a multi-factor wauth still issues multipleauthn",
           function () {
             assert.strictEqual(classRefOf(r.text), MFA, K.shown(r));
-            assert.ok(r.text.indexOf(PHR) < 0);
+            assert.ok(!urls.namesAddress(r.text, PHR));
           });
   r = await dave.go(signInUrl({ wauth: PASSWORD }));
   K.check("Sm4. the default SAML 1.1 token keeps am:password", function () {
@@ -707,7 +711,7 @@ async function keys() {
     assert.strictEqual(n2.mode, "get", K.shown(n2.answer));
     assert.strictEqual(n2.answer.status, 200, K.shown(n2.answer));
     assert.strictEqual(classRefOf(n2.answer.text), PHR);
-    assert.ok(n2.answer.text.indexOf(PHRH) < 0);
+    assert.ok(!urls.namesAddress(n2.answer.text, PHRH));
   });
   const n3 = await n2.b.go(signInUrl({ wauth: PHR }));
   K.check("Sn3. the same session meets phr at once, and the SAML 1.1 " +
@@ -720,7 +724,8 @@ async function keys() {
           "the session earned phr", function () {
     assert.strictEqual(n4.status, 200, K.shown(n4));
     assert.strictEqual(classRefOf(n4.text), UNSPECIFIED);
-    assert.ok(n4.text.indexOf(PHR) < 0 && n4.text.indexOf(PHRH) < 0);
+    assert.ok(!urls.namesAddress(n4.text, PHR) &&
+              !urls.namesAddress(n4.text, PHRH));
   });
   log.debug("Leaving keys().");
 }

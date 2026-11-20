@@ -74,6 +74,9 @@ const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
 const authnSignin = require("./authn_signin");
 const navigation = require("./navigation.js");
+// An address named in a page or an answer, parsed rather than searched
+// for as text (`url_match.js`).
+const urls = require("./url_match.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -424,7 +427,7 @@ async function confirmSection() {
                                              "https://evil.example/x"));
     assert.ok(leads(w.text));
     assert.strictEqual(whyOf(w.text), "");
-    assert.ok(w.text.indexOf(BACK) < 0);
+    assert.ok(!urls.namesAddress(w.text, BACK));
   });
   const asked = hiddenOf((await logout({ client_id: "rl-rp",
     post_logout_redirect_uri: BACK, state: "st-b" })).text);
@@ -602,7 +605,7 @@ async function returnSection() {
       .test(r.text));
     assert.ok(/<h1>Sign-out request partly refused<\/h1>/.test(r.text));
     assert.ok(/<title>Sign-out request partly refused<\/title>/.test(r.text));
-    assert.ok(r.text.indexOf(BACK) < 0);
+    assert.ok(!urls.namesAddress(r.text, BACK));
   });
   idToken = await signIn();
   r = await logout({ id_token_hint: idToken,
@@ -627,7 +630,7 @@ async function returnSection() {
     assert.ok(boxOf(r.text).indexOf(BOX_FR) > 0, boxOf(r.text));
     assert.ok(boxOf(r.text).indexOf("<code>https://evil.example/x</code>") >
               0);
-    assert.ok(r.text.indexOf(BACK) < 0);
+    assert.ok(!urls.namesAddress(r.text, BACK));
     assert.ok(/<h1>Demande de déconnexion refusée en partie<\/h1>/.test(
       r.text));
   });
@@ -725,7 +728,7 @@ async function authorizeSection() {
     assert.ok(!plain.location);
     assert.strictEqual(plain.json.error, "invalid_request");
     assert.ok(described.indexOf(SENTENCE) >= 0, described);
-    assert.ok(described.indexOf(REDIRECT) < 0);
+    assert.ok(!urls.namesAddress(described, REDIRECT));
     assert.ok(!/the 1 |\(s\)|ou=|oauthRedirectUri|none of/.test(described));
   });
   check("e2. and a browser is shown that refusal on the error page, with " +
@@ -738,7 +741,7 @@ async function authorizeSection() {
     assert.ok(page.text.indexOf("invalid_request") >= 0);
     assert.ok(page.text.replace(/&#39;|&#x27;|&apos;/g, "'")
       .indexOf(SENTENCE) >= 0);
-    assert.ok(page.text.indexOf(REDIRECT) < 0);
+    assert.ok(!urls.namesAddress(page.text, REDIRECT));
   });
   const NONE = "This authorization request has no redirect_uri, and one is " +
     "required: without it there is nowhere to send the response.";

@@ -130,8 +130,11 @@ async function run(t) {
     enabled: true, notify: { on: true },
     listenerCertificates: { keyAlgorithms: ['ec-p256'],
                             defaultKeyAlg: 'ec-p256' } });
-  const heads = (peps.match(/<th[^>]*>[^<]*<\/th>/g) || [])
-    .map(function (one) { return one.replace(/<[^>]+>/g, ''); });
+  // Each header cell's text, captured rather than its tags stripped.
+  const heads = Array.from(peps.matchAll(/<th[^>]*>([^<]*)<\/th>/g),
+    function (one) {
+      return one[1];
+    });
   t.check(heads[0] === 'PEP' && heads[1] === 'Clustered',
           'CS3. the table\'s second column is Clustered',
           JSON.stringify(heads));
@@ -350,7 +353,9 @@ async function run(t) {
                               'route=orders-api') >= 0 &&
           routesPanel.indexOf('http://companion:9700') >= 0 &&
           routesPanel.indexOf('Enabled.') >= 0 &&
-          routesPanel.indexOf('https://orders.example.test') >= 0 &&
+          // The whole sentence, so the address is bounded on both sides.
+          /A browser reaches it at https:\/\/orders\.example\.test\.(?:\s|<)/
+            .test(routesPanel) &&
           routesPanel.indexOf('set-pep-route"') < 0 &&
           routesPanel.indexOf('set-pep-proxy') < 0,
           'S2. Configured Routes: the summary (upstream, enabled, ' +

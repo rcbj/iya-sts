@@ -1425,6 +1425,25 @@ async function waitForItToFindTheRealm() {
 // which this job sends once the PEP's entry exists in its realm.
 // ===========================================================================
 
+// This run's anchor for the service, the PEM NODE_EXTRA_CA_CERTS names
+// (`tools/trust.js`), re-read at each call because a rebuilt Root replaces
+// it; '' when there is none (a plain-HTTP run).
+function runAnchorPem() {
+  log.debug("Entering runAnchorPem().");
+  const file = String(process.env.NODE_EXTRA_CA_CERTS || "");
+  let pem = "";
+  if (file) {
+    try {
+      pem = fs.readFileSync(file, "utf8");
+    } catch (e) {
+      log.debug("Caught in runAnchorPem(): " + ((e && e.message) || e));
+      pem = "";
+    }
+  }
+  log.debug("Leaving runAnchorPem(). " + (pem ? "found" : "none"));
+  return pem.indexOf("-----BEGIN CERTIFICATE-----") >= 0 ? pem : "";
+}
+
 // The launcher's request, beside the server pair's directory as pep.crt is
 // (`launcherLeafPem()`); '' where the launcher wrote none.
 function launcherAssertionCsr() {
@@ -3419,6 +3438,9 @@ async function startTheCompanion() {
                   "--network", pep.network,
                   "--env", "COMPANION_KRB5_SERVICE_PORT=off",
                   "--env", "COMPANION_STS_TLS_INSECURE=true",
+                  // `/pep-app` dials only this origin for the realm's
+                  // metadata and JWKS (`companion/pep_app_identity.js`).
+                  "--env", "COMPANION_STS_URL=" + new URL(pep.pdpUrl).origin,
                   "--env", "COMPANION_LOG_LEVEL=" +
                            (appconfig.LOG_LEVEL || "info")];
   let port = 9700;
@@ -4272,13 +4294,17 @@ async function itProxiesAnApplication() {
   // the realm's JWKS. Both as the COMPANION reaches the service.
   const realmAsTheCompanionSees = LAUNCHER_STARTED_IT ? realmUrl("")
                                                       : pep.pdpUrl;
+  // AND THE ANCHOR IT VERIFIES THEM WITH: this run's service Root, which
+  // the launcher hands this job and no companion image can hold. The
+  // companion never dials with verification off.
   const setUp = await proxyRequest("POST", pep.upstreamDirectUrl +
     "/pep-app/saml/_setup", {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       audience: PROXY_SAML_AUDIENCE,
       metadataUrl: realmAsTheCompanionSees + "/saml2/metadata",
-      jwksUrl: realmAsTheCompanionSees + "/oauth2/jwks" }) });
+      jwksUrl: realmAsTheCompanionSees + "/oauth2/jwks",
+      caPem: runAnchorPem() }) });
   assert.ok(setUp.status === 200 && setUp.json &&
             setUp.json.certificates > 0,
     "POST /pep-app/saml/_setup should read the realm's signing " +
@@ -4934,8 +4960,11 @@ async function theProxyForwardsTheIdentity() {
       "and it verifies against the realm's JWKS: " + jwt.why);
     assert.strictEqual(String((jwt.payload || {}).sub), adminSub,
       "its sub is the person's; it is " + JSON.stringify(jwt.payload));
+    // An element of aud EQUAL to the audience, not a string search.
     assert.ok([].concat((jwt.payload || {}).aud || [])
-      .indexOf(PROXY_API_AUDIENCE) >= 0,
+      .some(function (one) {
+        return one === PROXY_API_AUDIENCE;
+      }),
       "its aud is the application's audience " + PROXY_API_AUDIENCE);
   });
   check("jwt mode: the client's own Authorization is gone", function () {

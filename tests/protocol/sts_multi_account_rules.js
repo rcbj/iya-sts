@@ -708,7 +708,10 @@ async function iframeScript() {
   log.debug("Entering iframeScript().");
   const page = await call("GET", realmBase() + "/oauth2/check_session",
                           undefined, { accept: "text/html" });
-  const m = /<script>([\s\S]*?)<\/script>/.exec(String(page.text || ""));
+  // Any case, any attributes, and the end tag as HTML ends it
+  // (`</script >` too), so a page written otherwise is still read.
+  const m = /<script\b[^>]*>([\s\S]*?)<\/script\s*>/i
+    .exec(String(page.text || ""));
   log.debug("Leaving iframeScript(). " + page.status);
   return { status: page.status, text: m ? m[1] : "" };
 }

@@ -177,6 +177,17 @@ function closedTo(json, kind) {
   return !!json && stray.length === 0;
 }
 
+// A SAML Response's Destination, the address it is FOR, read from the
+// Response element itself: a search of the whole document for the ACS
+// would be satisfied by any element that merely mentions it.
+function destinationOf(xml) {
+  log.debug("Entering destinationOf().");
+  const m = /<samlp:Response\b[^>]*\sDestination="([^"]*)"/
+    .exec(String(xml || ""));
+  log.debug("Leaving destinationOf().");
+  return m ? m[1] : null;
+}
+
 // THE ROUTE SHAPE SINCE THE AUTHORIZATION CHOICE (#1760, rcbj 2026-11-15:
 // "force them to pick one of these two policies or Public ... All
 // authorization decisions are made in XACML"). The fixtures below were
@@ -1415,7 +1426,9 @@ async function childBody() {
           r.json.expiresIn > 0 && issuedRead.active === true &&
           issuedRead.username === 'ppxalice' &&
           issuedRead.client_id === 'ppx-api' &&
-          issuedAud.indexOf(AUDIENCE) >= 0 &&
+          issuedAud.some(function (one) {
+            return one === AUDIENCE;
+          }) &&
           Object.keys(r.json).sort().join(',') ===
             'accessToken,expiresIn,tokenType',
           'H8. jwt: an access token about the person, issued to and for ' +
@@ -1460,7 +1473,7 @@ async function childBody() {
     ? Buffer.from(r.json.samlResponse, 'base64').toString('utf8') : '';
   t.check(r.status === 200 && r.json && r.json.acsUrl === ACS &&
           r.json.notOnOrAfter && /<samlp:Response[^>]*Destination="/
-            .test(response) && response.indexOf(ACS) >= 0 &&
+            .test(response) && destinationOf(response) === ACS &&
           /Signature/.test(response) && response.indexOf('ppxalice') >= 0 &&
           !/InResponseTo="[^"]/.test(response) &&
           Object.keys(r.json).sort().join(',') ===

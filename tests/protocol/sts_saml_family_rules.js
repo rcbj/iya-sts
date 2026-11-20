@@ -93,8 +93,12 @@ function authnAt(realm, issuer, acs) {
 function text(r) {
   log.debug("Entering text().");
   log.debug("Leaving text().");
-  return String(r.text || "").replace(/<style[\s\S]*?<\/style>/g, "")
-    .replace(/<[^>]*>/g, " ").replace(/\s+/g, " ");
+  // The page's words: style blocks in any case dropped, every complete
+  // tag a space, and then any `<` left over (an unterminated tag) a space
+  // too, so what is returned carries no markup at all, however the page
+  // was written. A text holds `&lt;`, never a raw `<`.
+  return String(r.text || "").replace(/<style\b[\s\S]*?<\/style\s*>/gi, "")
+    .replace(/<[^>]*>/g, " ").replace(/</g, " ").replace(/\s+/g, " ");
 }
 
 // --------------------------------------------------------------------- B

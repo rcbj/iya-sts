@@ -3231,6 +3231,10 @@ const LOCAL_HELPERS = [
   // A GET sent as a browser's top-level navigation (#1443), which Node's
   // fetch cannot send: sts_backchannel_logout.js, sts_multi_account.js.
   'navigation.js',
+  // Whether a page, an answer or a token names an address, by parsing
+  // every URL in it rather than searching for a substring (CodeQL
+  // js/incomplete-url-substring-sanitization, 2026-11-20).
+  'url_match.js',
   // The sign-in screen over `/authn-api` (#571): the shell, the view and
   // the act, with the CSRF binding — what every job that signs somebody in
   // at /authn/login goes through since the screen became a static surface.

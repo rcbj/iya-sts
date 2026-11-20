@@ -786,8 +786,10 @@ async function sectionD() {
   check("D2. hr.read granted: its email and given_name are in — without " +
         "the email or profile scope — and nothing it does not map",
         function () {
-    assert.ok([].concat(granted.aud).indexOf(HR) >= 0,
-              JSON.stringify(granted));
+    // An element of aud EQUAL to the audience, not a string search.
+    assert.ok([].concat(granted.aud).some(function (one) {
+      return one === HR;
+    }), JSON.stringify(granted));
     assert.strictEqual(granted.email, ALICE + "@appclaims.example.test");
     assert.strictEqual(granted.given_name, "Alice");
     assert.strictEqual(granted.name, undefined);
@@ -835,8 +837,9 @@ async function sectionE() {
                                   ALICE, { resource: RS });
   check("E1. a resource server that declares nothing gets no section 5.4 " +
         "claim, preferred_username included; username stays", function () {
-    assert.ok([].concat(nothing.aud).indexOf(RS) >= 0,
-              JSON.stringify(nothing));
+    assert.ok([].concat(nothing.aud).some(function (one) {
+      return one === RS;
+    }), JSON.stringify(nothing));
     assert.ok(nothing.preferred_username === undefined &&
               nothing.name === undefined && nothing.email === undefined,
               JSON.stringify(nothing));

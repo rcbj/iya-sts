@@ -971,9 +971,11 @@ async function endpoints(M) {
   check("j2. and written to the entry the token endpoint reads",
         function () {
     const fields = (creds.body && creds.body.fields) || {};
+    // An element of the attribute EQUAL to the DNS name, not a search.
     assert.ok([].concat(fields.oauthTlsClientAuthSanDns || [])
-      .indexOf("ext.example.com") >= 0, JSON.stringify(fields)
-      .slice(0, 300));
+      .some(function (one) {
+        return one === "ext.example.com";
+      }), JSON.stringify(fields).slice(0, 300));
   });
   r = await token({ grant_type: "client_credentials", client_id: regId },
                   M.ext);
