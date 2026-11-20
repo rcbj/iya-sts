@@ -490,6 +490,56 @@ async function mintedGenerations(t, dir) {
   await bounded(minted.flushThrough(g2));
   t.equal(calls.length, 2,
           'A GENERATION ALREADY COMMITTED IS ANSWERED WITHOUT A WRITE');
+
+  // 2b. ONE REQUEST'S WRITES SPLIT ACROSS TWO SAVES (#1923, run #532's
+  // mariadb mode). The token endpoint notes a token's `oauth2.grantIssued`
+  // row, awaits the refresh token and the ID Token, and only then writes the
+  // grant; another request answering in between flushes the first row. The
+  // grant's save covers the answer's position and committed first, so the
+  // answer — and its ticket — went out while the token row was still in the
+  // older save, and the worker that served the DELETE held the grant and
+  // none of its tokens.
+  t.log.info('=== 2b. and the older save that took its earlier writes ===');
+  const arrival = minted.generation();
+  sessions.set('token-row', { v: 1 });
+  state.hold = true;
+  const other = minted.flush();
+  await settle();
+  sessions.set('grant-row', { v: 1 });
+  const answeredAt = minted.generation();
+  let released = false;
+  const held = minted.flushThrough(answeredAt, arrival).then(function (a) {
+    released = true;
+    return a;
+  });
+  await settle();
+  await settle();
+  t.equal(calls.length, 4,
+          'the later key went out in a save of its own beside the held one');
+  t.check(!released,
+          'A RESPONSE IS NOT RELEASED BY ITS LATER SAVE while an older save ' +
+          'that took after it arrived — its earlier write — is still out');
+  calls[2].release();
+  const landed = await bounded(held);
+  t.check(released && landed !== 'timed out' && !landed.error,
+          'it is released once that older save has landed',
+          JSON.stringify(landed));
+  await bounded(other);
+  // And #877's gain kept: a save that took BEFORE the work arrived holds
+  // nothing it wrote, and is not waited for.
+  sessions.set('before-arrival', { v: 1 });
+  state.hold = true;
+  const unrelated = minted.flush();
+  await settle();
+  const lateArrival = minted.generation();
+  sessions.set('after-arrival', { v: 1 });
+  const own = await bounded(
+    minted.flushThrough(minted.generation(), lateArrival), 1000);
+  t.check(own !== 'timed out' && !own.error,
+          'a save taken before the work arrived is not waited for',
+          JSON.stringify(own));
+  calls[calls.length - 2].release();
+  await bounded(unrelated);
   sessions.clear();
   minted.reset();
   config.setOverride('global.mode', 'development');

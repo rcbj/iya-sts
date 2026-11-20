@@ -1412,9 +1412,30 @@ interaction reference the approval wrote (STS-GNAP-0135). A non-covering take
 now chains until its held keys have gone out, and a chain that finds the
 journal empty with saves still out (another caller's save took its key)
 waits for them, as does `flush()` with nothing journalled beside an unsent
-batch. Those are the rare paths; a covering take still waits only for its
-own save. `tests/minted_flush_order.js` section 3a. `stop()` still waits for every save already sent,
+batch. Those are the rare paths. `tests/minted_flush_order.js` section 3a. `stop()` still waits for every save already sent,
 including an older disjoint one a covering second batch did not.
+
+**AND A COVERING TAKE WAITS FOR THE OLDER SAVES THAT TOOK AFTER ITS CALLER
+ARRIVED (#1923, 2026-11-20).** A covering take emptied the journal at its own
+generation, so a key journalled at or below the target that is not in it is
+committed or in an OLDER save still out — and one request journals across
+several turns. The token endpoint notes the access token's
+`oauth2.grantIssued` row, awaits the refresh token and the ID Token, then
+writes the grant; another request on the worker answering in between flushed
+the token rows, the grant went out in a second save that covered the answer,
+that save committed first, and the answer and its ticket were released
+(`announceAnswered()` names the ticket at the answer). The worker that served
+the DELETE caught up to a store holding the grant and none of its tokens:
+"0 token(s) revoked with it", `sts_grant_management` in run #532's mariadb
+mode, where a minted flush is a locking, retryable transaction that outlasts
+a later one. `flushThrough(target, since)` now also waits for every save still
+out whose take (a non-covering one's read) is above `since` and below the
+chosen save's; `persistence.commitThrough(target, since)` passes the minted
+half of `since`, and `cluster/cluster_barrier.js` passes the request's
+arrival position, so a save taken before the work arrived — #877's case, the
+queue a sign-in paid — is still not waited for. A caller with no arrival
+waits for every older save still out, which is only slower.
+`tests/cluster_barrier_throughput.js` section 2b.
 **Two different processes writing one key is untouched** and is still
 last-writer-wins, as above.
 

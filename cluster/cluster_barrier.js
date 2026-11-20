@@ -209,11 +209,16 @@ function failuresOf(results) {
 
 // The commit a held answer waits for, as a promise of its failures' texts —
 // never a rejection. `now` is the position to commit through, or null for a
-// persistence module without positions (a test double).
-function commitFailures(store, now) {
+// persistence module without positions (a test double). `arrival`, where the
+// caller has it, is the position when the work arrived: a minted save taken
+// at or below it holds nothing this work wrote and is not waited for, while
+// one taken after it is, even when a later save covers `now` (#1923).
+function commitFailures(store, now, arrival) {
   log.debug("Entering commitFailures().");
   const committing = now
-    ? Promise.resolve().then(function () { return store.commitThrough(now); })
+    ? Promise.resolve().then(function () {
+      return store.commitThrough(now, arrival || null);
+    })
     : Promise.all([
       Promise.resolve().then(function () { return store.flush(); }),
       Promise.resolve().then(function () { return store.flushMinted(); })
@@ -612,7 +617,7 @@ function holdUntilCommitted(res, arrival, req) {
     if (backlog) {
       stats.heldForBacklog += 1;
     }
-    commitFailures(store, now).then(function (failed) {
+    commitFailures(store, now, arrival).then(function (failed) {
       return runChecks(res, !failed.length).then(function (refusals) {
         return { failed: failed, refusals: refusals };
       });
@@ -739,7 +744,7 @@ function answerAfterCommit(operation, handler, refusal) {
       if (backlog) {
         stats.heldForBacklog += 1;
       }
-      commitFailures(store, now).then(function (failed) {
+      commitFailures(store, now, arrival).then(function (failed) {
         if (!failed.length) {
           end.apply(res, args);
           next.apply(null, nextArgs || []);
@@ -899,7 +904,7 @@ function commitAnswered(arrival) {
   stats.heldForCommit += 1;
   const began = Date.now();
   log.debug("Leaving commitAnswered(). Held for the commit.");
-  return commitFailures(store, now).then(function (failed) {
+  return commitFailures(store, now, arrival).then(function (failed) {
     stats.totalHoldMs += Date.now() - began;
     if (failed.length) {
       stats.commitFailures += 1;
