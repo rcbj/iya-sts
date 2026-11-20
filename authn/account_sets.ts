@@ -143,13 +143,26 @@ const SWEEP_SLICE_MS = 25;
 // did and a worker gives the sweep a percent or two rather than a minute.
 const SWEEP_RUN_BUDGET_MS = 1000;
 
+// HOW MANY SETS ONE ASYNCHRONOUS READ-AHEAD COVERS (#780, reopened
+// 2026-11-13): their sessions are read off the event loop together, then
+// decided on in memory. Small enough that one batch's decisions are a few
+// milliseconds of work; large enough that a pass is not a read per set.
+const SWEEP_BATCH_SETS = 64;
+
+// THE LONGEST A RUN MAY LAST BY THE CLOCK (#780): with the reads off the
+// event loop the budget counts only the time the run HOLDS it, so a slow
+// store could stretch one run past the next; this stops it well inside the
+// minute between runs, and the next run resumes where it stopped.
+const SWEEP_RUN_WALL_MS = 20 * 1000;
+
 // WHERE THE PASS HAS GOT TO, per realm (#784): the ids the pass is visiting,
 // taken when it began, and how far through them it is. This process's own:
 // the job runs on one node, and a pass that moves to another starts again
 // there, which costs a repeated set and never a missed one.
 const sweepPasses = realms.keyed(function (): { ids: string[] | null;
-                                                at: number } {
-  return { ids: null, at: 0 };
+                                                at: number;
+                                                running: boolean } {
+  return { ids: null, at: 0, running: false };
 });
 
 /**
@@ -888,47 +901,138 @@ class AccountSets {
   // has been visited, and the next run begins another. Sets made during a
   // pass wait for the next one, which nothing is waiting on: a set is
   // pruned again whenever its browser draws the picker.
+  //
+  // AND ITS READS OFF THE EVENT LOOP (#780, reopened by rcbj 2026-11-13: "a
+  // run holds no worker"). With `readAhead` the sessions a batch of
+  // SWEEP_BATCH_SETS sets lists are read asynchronously, all at once, and
+  // the batch is then decided on from those answers in memory — so what the
+  // run holds is the deciding, never a store round trip. The budget counts
+  // the time the run held the loop, not the time it waited, and
+  // SWEEP_RUN_WALL_MS bounds the wait. A set is read again after the batch's
+  // read returns (a request may have changed or removed it meanwhile), and
+  // a session it lists that the read-ahead did not cover — one added in
+  // between — is KEPT: the next pass decides it, as a failed read is kept.
+  // Without `readAhead`, `isLive` answers each session as before.
   // ---------------------------------------------------------------------------
   /**
-   * Sweeps for at most SWEEP_RUN_BUDGET_MS from where the last run stopped,
-   * yielding between slices (#784). The scheduler job's body.
+   * Sweeps for at most SWEEP_RUN_BUDGET_MS of held time from where the last
+   * run stopped, yielding between slices (#784) and, given `readAhead`,
+   * reading each batch's sessions off the event loop first (#780). The
+   * scheduler job's body.
    *
-   * @param isLive - says whether a set should keep listing a session
+   * @param isLive - says whether a set should keep listing a session; used
+   *   where no `readAhead` is given
    * @param budgetMs - the run's budget; SWEEP_RUN_BUDGET_MS when absent
+   * @param readAhead - given a batch's session ids, a promise of the
+   *   answer for each, `sid -> keep`; a sid it leaves out is kept
    * @returns a promise of the run's counts, with `at` and `of` for the pass
    */
   static async sweepBudgeted(isLive: (sid: string) => boolean,
-                             budgetMs?: number): Promise<Json> {
+                             budgetMs?: number,
+                             readAhead?: ((sids: string[]) =>
+                               Promise<Map<string, boolean>>) | null):
+      Promise<Json> {
     helpers.log.debug("Entering AccountSets.sweepBudgeted().");
     const budget = Number(budgetMs) > 0 ? Number(budgetMs)
                                         : SWEEP_RUN_BUDGET_MS;
     const pass = sweepPasses();
+    if (pass.running) {
+      // A run still waiting on its reads when the next one is due: one
+      // walk of a pass at a time, or both would advance the same cursor.
+      helpers.log.debug("Leaving AccountSets.sweepBudgeted(). Running.");
+      return { sets: 0, ended: 0, expired: 0, deleted: 0, slices: 0,
+               at: pass.at, of: pass.ids ? pass.ids.length : 0,
+               skipped: true };
+    }
     if (!pass.ids || pass.at >= pass.ids.length) {
       pass.ids = AccountSets.sweptRows().map(function (row: Json): string {
         return String(row.id);
       });
       pass.at = 0;
     }
+    const ids = pass.ids;
     const now = Date.now();
     const started = Date.now();
     const out: Json = { sets: 0, ended: 0, expired: 0, deleted: 0, slices: 1,
-                        at: 0, of: pass.ids.length };
-    let sliceStarted = started;
-    while (pass.at < pass.ids.length && Date.now() - started < budget) {
-      if (Date.now() - sliceStarted >= SWEEP_SLICE_MS) {
-        await new Promise(function (resolve): void {
-          setImmediate(resolve);
-        });
-        out.slices++;
-        sliceStarted = Date.now();
-      }
-      const stored = sets.get(pass.ids[pass.at]);
-      pass.at++;
-      if (stored && stored.id) {
-        AccountSets.sweepOne(stored, isLive, now, out);
-      }
+                        at: 0, of: ids.length };
+    if (readAhead) {
+      out.reads = 0;
     }
+    // The time this run has held the event loop, and since when it has.
+    let held = 0;
+    let since = started;
+    const yieldLoop = async function (): Promise<void> {
+      held += Date.now() - since;
+      await new Promise(function (resolve): void {
+        setImmediate(resolve);
+      });
+      out.slices++;
+      since = Date.now();
+    };
+    pass.running = true;
+    try {
+      while (pass.at < ids.length && held + (Date.now() - since) < budget &&
+             Date.now() - started < SWEEP_RUN_WALL_MS) {
+        if (!readAhead) {
+          if (Date.now() - since >= SWEEP_SLICE_MS) {
+            await yieldLoop();
+          }
+          const stored = sets.get(ids[pass.at]);
+          pass.at++;
+          if (stored && stored.id) {
+            AccountSets.sweepOne(stored, isLive, now, out);
+          }
+          continue;
+        }
+        const batch = ids.slice(pass.at, pass.at + SWEEP_BATCH_SETS);
+        const sids: string[] = [];
+        batch.forEach(function (id) {
+          const stored = sets.get(id);
+          Object.keys((stored && stored.sessions) || {}).forEach(
+            function (sid) {
+              sids.push(sid);
+            });
+        });
+        // The reads: the loop is not held while they are out.
+        held += Date.now() - since;
+        let answers: Map<string, boolean> | null = null;
+        try {
+          answers = sids.length ? await readAhead(sids)
+                                : new Map<string, boolean>();
+        } catch (e) {
+          // A read-ahead that failed decides nothing: the batch is visited
+          // again by the next run, and nothing is ended on it.
+          helpers.log.error(errorCodes.tag('STS-AUTHN-0558') + 'authn: the ' +
+                            'account-set expiry could not read a batch\'s ' +
+                            'sessions: ' + ((e && e.message) || e));
+          since = Date.now();
+          break;
+        }
+        out.reads++;
+        out.slices++;
+        since = Date.now();
+        const known = answers || new Map<string, boolean>();
+        const keep = function (sid: string): boolean {
+          return known.has(sid) ? known.get(sid) === true : true;
+        };
+        for (const id of batch) {
+          // Read again: a request may have changed or removed it meanwhile.
+          const stored = sets.get(id);
+          pass.at++;
+          if (stored && stored.id) {
+            AccountSets.sweepOne(stored, keep, now, out);
+          }
+        }
+        if (Date.now() - since >= SWEEP_SLICE_MS) {
+          await yieldLoop();
+        }
+      }
+    } finally {
+      pass.running = false;
+    }
+    held += Date.now() - since;
     out.at = pass.at;
+    out.heldMs = held;
     helpers.log.debug("Leaving AccountSets.sweepBudgeted(). " +
                       JSON.stringify(out));
     return out;

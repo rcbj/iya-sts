@@ -1015,10 +1015,22 @@ written; the cookies stay.
   and a fresh state would tell every relying party of that account
   `changed` under OpenID Connect Session Management (`oauth-oidc/CLAUDE.md`
   3ax).
-* **`authn.account-set-expiry`**, a cluster job per realm, hourly
-  (`cluster/CLAUDE.md`'s table): `sweepAccountSets()` prunes every set and
-  deletes an empty one. It walks the realm's sets, as the session expiry
-  walks sessions; nothing on a request path does.
+* **`authn.account-set-expiry`**, a cluster job per realm
+  (`cluster/CLAUDE.md`'s table): every set pruned and an empty one deleted.
+  It walks the realm's sets, as the session expiry walks sessions; nothing
+  on a request path does. **A pass is spread over the hour** (#784): a run a
+  minute, `sweepAccountSetsBudgeted()`, at most a second of held time, from
+  where the last run stopped. **And it reads no session synchronously**
+  (#780, reopened by rcbj 2026-11-13: "a run holds no worker"): a batch of
+  64 sets' sessions is read on the store's read pool
+  (`accountSessionsKeptAsync()` over `SessionWindow.readAsync()`, which
+  admits nothing, so the walk does not push live sessions out of the
+  window), and the batch is then decided on in memory. A failed read is
+  kept (#350); a session added to a set while its batch was out is kept for
+  the next pass; a read-ahead that fails decides nothing and the next run
+  starts that batch again (`STS-AUTHN-0558`); a run due while one is still
+  reading is skipped; a run lasts at most 20 s by the clock.
+  `tests/account_set_sweep_slices.js` A1–A4 and W1–W3.
 * **Audit rows**, each with the set, the sid and `sub`: `account.add` (with
   `adopted: true` for D12), `account.select`, `account.switch` (the default
   changed), `account.forget`, `account.ambiguous` (the picker shown, or

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5758** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5759** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 48
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 436
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 437
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 760
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 83
@@ -1804,6 +1804,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0555` | A /authn-api request carried a custom header that its operation does not declare and no specification or known proxy, CDN or tracing family defines, and was refused before the handler ran (#1483). | HTTP 400 with {ok:false, errors} |
 | `STS-AUTHN-0556` | An administrator's passkey enrolment was begun or finished for a person named with a control character, a NUL or half of a surrogate pair. No directory name holds one, the pending record is keyed by the two names joined with a newline, and PostgreSQL cannot store a NUL, so it was refused before the pending record was touched (STS-STORE-0063). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-AUTHN-0557` | An authenticator app enrolment was begun for a name holding a control character or a NUL. No directory name holds one, and the pending enrolment is keyed by the name, which PostgreSQL cannot store with a NUL in it (STS-STORE-0063), so it was refused before the pending record was touched. | action result with the reason |
+| `STS-AUTHN-0558` | The account-set expiry job could not read the sessions a batch of browsers' account sets lists, asynchronously (#780). The batch decides nothing: no session is moved to remembered and no set is deleted on it, and the next run starts again at that batch. | none: a scheduler job; logged, never sent |
 
 ## STS-OAUTH
 
