@@ -87,10 +87,11 @@ function connect(port, ca, session, maxVersion) {
   return new Promise(function (resolve, reject) {
     let got = null;
     let reused = false;
-    // Not verified: which certificate a node presents is not under test,
-    // and resumption is decided before verification either way.
+    // VERIFIED against both nodes' certificates (`ca` holds A's and B's,
+    // each self-signed for `localhost`): which one a node presents is not
+    // under test, but a ticket resumed across nodes still has to land on a
+    // listener this client trusts, as a real client's would.
     const c = tls.connect({ host: '127.0.0.1', port: port, ca: ca,
-                            rejectUnauthorized: false,
                             servername: 'localhost',
                             session: session || undefined,
                             maxVersion: maxVersion, minVersion: maxVersion },
