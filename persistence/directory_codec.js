@@ -103,10 +103,18 @@ const DIGEST_LABEL = 'directory-index';
 // it. Like `usercertificatesha256`, no attribute of that name is ever on an
 // entry, and an entry written before this carries no key until it is next
 // written (rcbj's no-migration rule on #636 and #1061).
+//
+// **AND `stspivcarduuid` (#1955 P2, D8)**: an outside PIV or CAC card's FIPS
+// 201 card UUID, which `ldap_server.js`'s `pivCardHolders()` asks for when a
+// card certificate from a configured outside issuer is presented. An
+// attribute an administrator writes, compared lower-cased, and like the two
+// above it moves no schema version: an entry written before this carries no
+// key until it is next written, and recording the UUID IS that write.
 const VALUE_INDEXED = ['uid', 'didsubject', 'spiffesubject', 'x509subject',
                        'federationlink', 'stsdevicekeythumbprint',
                        'stsdevicesecrethash', 'stsdevicecredentialid',
-                       'owner', 'usercertificatesha256', 'grantinggroup'];
+                       'owner', 'usercertificatesha256', 'grantinggroup',
+                       'stspivcarduuid'];
 
 // The attributes that confer something on the members of the group they
 // name (#358, #607): a role's member group, the three owner attributes, an

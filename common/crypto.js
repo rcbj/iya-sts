@@ -12376,6 +12376,171 @@ function csrAttestationBundle(der) {
   return { attestations: attestations, certs: certs, otherCerts: otherCerts };
 }
 
+// ----- YubiKey PIV key attestation (#1955 P2) -------------------------------
+//
+// `ykman piv keys attest` (YKPIV's ATTEST instruction) answers a certificate
+// for a slot's key, signed by the key's factory "f9" attestation key, and
+// `common/piv_attestation.ts` verifies it. What it reads off that certificate
+// is Yubico's extensions under 1.3.6.1.4.1.41482.3, decoded here as every
+// other vendor's extension is (section 10 above). Yubico's PIV attestation
+// page (developers.yubico.com/PIV/Introduction/PIV_attestation.html) and its
+// OID page (.../Yubico_Attestation_OID.html) define them:
+//
+//   .3.3  firmware: "encoded as 3 bytes, like: 040300 for 4.3.0" — raw
+//         octets (major, minor, patch), not DER-wrapped;
+//   .3.7  serial: "encoded as an integer" — the DER of an INTEGER on every
+//         key we know of; the page does not say DER, so a value that is
+//         not one is read as a raw big-endian integer of 1 to 8 octets;
+//   .3.8  two octets: the PIN policy, then the touch policy. PIN: 01 never,
+//         02 once per session, 03 always; YubiKit's PinPolicy adds 04
+//         match-once and 05 match-always for the Bio series, read here and
+//         drawn as such. Touch: 01 never, 02 always, 03 cached (15 s);
+//   .3.9  one octet: the form factor, 01 USB-A keychain, 02 USB-A nano,
+//         03 USB-C keychain, 04 USB-C nano, 05 USB-C and Lightning (YubiKit
+//         adds 06 USB-A Bio and 07 USB-C Bio); the page gives 81-85 for FIPS
+//         keys, read as the 0x80 bit, and YubiKit's 0x40 is CSPN;
+//   .3.10 and .3.11: present only on the factory f9 certificate, of a FIPS
+//         and of a CSPN certified key; PRESENCE is their whole meaning.
+//
+// A value that cannot be read is answered as '' rather than guessed, and the
+// caller's policy then sees "not stated", which refuses wherever the policy
+// asks for that fact.
+/** The statement type this service reads a YubiKey PIV attestation under. */
+const YUBICO_PIV_STATEMENT = '1.3.6.1.4.1.41482.3.2';
+/** Yubico's PIV attestation extension OIDs, by what they carry. */
+const YUBICO_PIV_EXTENSIONS = Object.freeze({
+  firmware: '1.3.6.1.4.1.41482.3.3',
+  serial: '1.3.6.1.4.1.41482.3.7',
+  policy: '1.3.6.1.4.1.41482.3.8',
+  formFactor: '1.3.6.1.4.1.41482.3.9',
+  fips: '1.3.6.1.4.1.41482.3.10',
+  cspn: '1.3.6.1.4.1.41482.3.11'
+});
+const YUBICO_PIN_POLICIES = { 1: 'never', 2: 'once', 3: 'always',
+                              4: 'match-once', 5: 'match-always' };
+const YUBICO_TOUCH_POLICIES = { 1: 'never', 2: 'always', 3: 'cached' };
+const YUBICO_FORM_FACTORS = {
+  1: { name: 'USB-A Keychain', shape: 'usb-a' },
+  2: { name: 'USB-A Nano', shape: 'usb-a' },
+  3: { name: 'USB-C Keychain', shape: 'usb-c' },
+  4: { name: 'USB-C Nano', shape: 'usb-c' },
+  5: { name: 'USB-C and Lightning', shape: 'lightning' },
+  6: { name: 'USB-A Bio', shape: 'usb-a' },
+  7: { name: 'USB-C Bio', shape: 'usb-c' }
+};
+
+// The serial's integer, from a DER INTEGER or from raw octets.
+function yubicoSerialOf(bytes) {
+  log.debug("Entering yubicoSerialOf().");
+  let raw = Buffer.from(bytes || []);
+  if (raw.length >= 3 && raw[0] === 0x02 && raw[1] === raw.length - 2) {
+    raw = raw.subarray(2);
+  }
+  if (!raw.length || raw.length > 8) {
+    log.debug("Leaving yubicoSerialOf(). Unreadable.");
+    return '';
+  }
+  let n = BigInt(0);
+  for (const octet of raw) {
+    n = (n << BigInt(8)) | BigInt(octet);
+  }
+  log.debug("Leaving yubicoSerialOf().");
+  return n.toString(10);
+}
+
+/**
+ * Reads Yubico's PIV attestation extensions off an attestation
+ * certificate's extensions, as `pki.attestationCertificateFacts()` answers
+ * them.
+ *
+ * @param extensions - `{ oid: { critical, value } }`
+ * @returns `{ firmware, serial, pinPolicy, touchPolicy, formFactor,
+ *   formFactorName, shape, fips, cspn }`, each '' (or false) where the
+ *   certificate does not state it readably
+ */
+function yubicoPivAttestationFacts(extensions) {
+  log.debug("Entering yubicoPivAttestationFacts().");
+  const ext = extensions || {};
+  const valueOf = function (oid) {
+    return ext[oid] && ext[oid].value ? Buffer.from(ext[oid].value) : null;
+  };
+  const out = { firmware: '', serial: '', pinPolicy: '', touchPolicy: '',
+                formFactor: 0, formFactorName: '', shape: '', fips: false,
+                cspn: false };
+  let fw = valueOf(YUBICO_PIV_EXTENSIONS.firmware);
+  if (fw && fw.length === 5 && fw[0] === 0x04 && fw[1] === 3) {
+    fw = fw.subarray(2);
+  }
+  if (fw && fw.length === 3) {
+    out.firmware = fw[0] + '.' + fw[1] + '.' + fw[2];
+  }
+  const serial = valueOf(YUBICO_PIV_EXTENSIONS.serial);
+  out.serial = serial ? yubicoSerialOf(serial) : '';
+  const policy = valueOf(YUBICO_PIV_EXTENSIONS.policy);
+  if (policy && policy.length === 2) {
+    out.pinPolicy = YUBICO_PIN_POLICIES[policy[0]] || '';
+    out.touchPolicy = YUBICO_TOUCH_POLICIES[policy[1]] || '';
+  }
+  const shape = valueOf(YUBICO_PIV_EXTENSIONS.formFactor);
+  if (shape && shape.length === 1) {
+    const known = YUBICO_FORM_FACTORS[shape[0] & 0x0f];
+    out.formFactor = shape[0];
+    out.formFactorName = known ? known.name : '';
+    out.shape = known ? known.shape : 'other';
+    out.fips = (shape[0] & 0x80) !== 0;
+    out.cspn = (shape[0] & 0x40) !== 0;
+  }
+  if (valueOf(YUBICO_PIV_EXTENSIONS.fips)) {
+    out.fips = true;
+  }
+  if (valueOf(YUBICO_PIV_EXTENSIONS.cspn)) {
+    out.cspn = true;
+  }
+  log.debug("Leaving yubicoPivAttestationFacts(). serial " +
+            (out.serial ? 'read' : 'absent') + ".");
+  return out;
+}
+
+// A certificate's certificatePolicies (RFC 5280 section 4.2.1.4): the
+// policy identifiers, in order, or [] when it carries none. Read for the
+// FIPS 201 PIV Authentication policy an outside PIV or CAC card's
+// certificate asserts (#1955 P2, D8).
+/**
+ * Lists a certificate's certificatePolicies identifiers.
+ *
+ * @param cert - PEM text, DER bytes or a parsed certificate
+ * @returns the policy OIDs, dotted
+ */
+function certificatePolicyOids(cert) {
+  log.debug("Entering certificatePolicyOids().");
+  const out = [];
+  try {
+    const parsed = parseCertificate(cert);
+    const pkijs = require('pkijs');
+    const pk = pkijs.Certificate.fromBER(new Uint8Array(parsed.raw));
+    (pk.extensions || []).forEach(function (ext) {
+      if (ext.extnID !== '2.5.29.32') {
+        return;
+      }
+      const node = berOf(Buffer.from(ext.extnValue.valueBlock.valueHexView));
+      ((node && node.valueBlock && node.valueBlock.value) || [])
+        .forEach(function (info) {
+          const first = info && info.valueBlock && info.valueBlock.value &&
+            info.valueBlock.value[0];
+          if (first instanceof asn1js.ObjectIdentifier) {
+            out.push(first.valueBlock.toString());
+          }
+        });
+    });
+  } catch (e) {
+    log.debug("Caught in certificatePolicyOids(): " +
+              ((e && e.message) || e));
+    // Unreadable policies assert nothing; the caller refuses on absence.
+  }
+  log.debug("Leaving certificatePolicyOids(). " + out.length);
+  return out;
+}
+
 // A TPM2B's contents when `bytes` is exactly one TPM2B (a big-endian size
 // then that many bytes), else `bytes` unchanged. Revision 20's appendix said
 // the attester sends "TPM2B_ATTEST in binary format" and "TPM2B_PUBLIC"
@@ -18934,6 +19099,10 @@ module.exports = {
   ID_AA_ATTESTATION: ID_AA_ATTESTATION,
   TCG_ATTEST_TPM_CERTIFY: TCG_ATTEST_TPM_CERTIFY,
   csrAttestationBundle: csrAttestationBundle,
+  YUBICO_PIV_STATEMENT: YUBICO_PIV_STATEMENT,
+  YUBICO_PIV_EXTENSIONS: YUBICO_PIV_EXTENSIONS,
+  yubicoPivAttestationFacts: yubicoPivAttestationFacts,
+  certificatePolicyOids: certificatePolicyOids,
   tpm2bContents: tpm2bContents,
   tcgTpmCertifyStatement: tcgTpmCertifyStatement,
   // --- the algorithm URIs, so that there is one spelling of each in the

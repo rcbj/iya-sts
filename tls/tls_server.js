@@ -5495,6 +5495,14 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
   const cert = peer.cert;
   const subject = peer.subject;
   const username = peer.username;
+  // A PIV CARD AUTHENTICATION CERTIFICATE (#1955 P2) works without a PIN
+  // and signs nobody in unless the realm says (`piv.cardAuthSignIn`).
+  const cardAuth = cardAuthRefusalOf(cert);
+  if (cardAuth) {
+    errorCodes.mark(res, 'STS-PIV-0013');
+    log.debug('Leaving startCertificateSessionIn(). A card-auth key.');
+    return { started: false, why: cardAuth };
+  }
   // A PERSON AT A BROWSER OWES THE SECOND FACTOR THE SCREEN WOULD ASK FOR
   // (#1516), so product mode starts no one-factor
   // session here for somebody who needs one; the sign-in screen's certificate
@@ -5599,6 +5607,23 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
     answer.account = held ? 'reauthenticated' : 'added';
   }
   return answer;
+}
+
+// Why a client certificate may not sign in for the PIV profile it was
+// enrolled under (#1955 P2: piv-card-auth, without `piv.cardAuthSignIn`),
+// or '' when it may. `common/piv_attestation.ts` argues it.
+function cardAuthRefusalOf(cert) {
+  log.debug('Entering cardAuthRefusalOf().');
+  let refusal = null;
+  try {
+    refusal = require('../common/piv_attestation').signInRefusal(
+      String((cert && cert.serialNumber) || ''));
+  } catch (e) {
+    log.debug('Caught in cardAuthRefusalOf(): ' + ((e && e.message) || e));
+    refusal = null;
+  }
+  log.debug('Leaving cardAuthRefusalOf().');
+  return refusal ? String(refusal.why || '') : '';
 }
 
 // The RFC 8176 amr a client certificate's sign-in earns (#1955 P1): what
@@ -5860,6 +5885,15 @@ function screenCertificateHolder(req) {
                'certificate: ' + peer.why);
       log.debug('Leaving screenCertificateHolder(). ' + peer.why);
       return none;
+    }
+    // A PIV CARD AUTHENTICATION CERTIFICATE (#1955 P2): see
+    // `startCertificateSessionIn()`.
+    const cardAuth = cardAuthRefusalOf(peer.cert);
+    if (cardAuth) {
+      log.info('tls: the sign-in screen refused a PIV card authentication ' +
+               'certificate: ' + cardAuth);
+      log.debug('Leaving screenCertificateHolder(). A card-auth key.');
+      return { ok: false, code: 'STS-PIV-0013', why: cardAuth };
     }
     const revocationSaid = revocation && revocation.checked
       ? 'its revocation was consulted (' + revocation.policy + '): ' +

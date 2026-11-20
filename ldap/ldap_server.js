@@ -13427,6 +13427,66 @@ function certificateHolders(sha256) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// THE PEOPLE AN OUTSIDE PIV OR CAC CARD'S UUID NAMES (#1955 P2, D8).
+//
+// `common/piv_attestation.ts`'s `cardIdentityOf()` maps a card certificate
+// from one of the realm's `piv.externalIssuers` to the person whose
+// `stsPivCardUuid` holds the card UUID its subjectAltName names, and never by
+// a name on the certificate. It asks this, through certificate enrollment's
+// slot (`pivCardHolders`), for `certificateHolders()`'s reason: that slot is
+// already the one that answers "which entry is this certificate", and a
+// second would be a second answer to it.
+//
+// FOUND AS A DID IS (`entryByDidSubject()`): a windowed process asks the
+// store's index (`stspivcarduuid` is in the codec's VALUE_INDEXED, a key the
+// service writes, so no schema moves), and the resident entries (every
+// entry, outside a window) are walked. The question is asked only for a
+// certificate from a configured outside PIV issuer that is stored on nobody,
+// so it is not on every handshake. At most three are answered: the caller
+// asks whether there is exactly one person.
+// ---------------------------------------------------------------------------
+/**
+ * The entries of the ambient realm whose stsPivCardUuid holds a card UUID,
+ * each `{ kind, id, dn }`.
+ *
+ * @param uuid - the card UUID, lower case, no `urn:uuid:` prefix
+ * @returns at most three holders, each once
+ */
+function pivCardHolders(uuid) {
+  log.debug('Entering pivCardHolders().');
+  const wanted = String(uuid || '').toLowerCase();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+    .test(wanted)) {
+    log.debug('Leaving pivCardHolders(). Not a card UUID.');
+    return [];
+  }
+  const holds = function (stored) {
+    return !!stored && (stored.attributes.stspivcarduuid || [])
+      .some(function (one) {
+        return String(one).trim().toLowerCase() === wanted;
+      });
+  };
+  const found = new Map();
+  const add = function (stored) {
+    const key = normalizeDn(stored.dn);
+    if (!found.has(key) && found.size < 3) {
+      found.set(key, certificateHolderOf(stored));
+    }
+  };
+  const asked = windowedFind('byAttribute', ['stspivcarduuid', wanted, 3],
+                             holds);
+  (asked || []).forEach(add);
+  (asked ? eachResidentEntry : eachEntryInRealm)(function (entry) {
+    if (holds(entry)) {
+      add(entry);
+    }
+  });
+  const out = Array.from(found.values());
+  log.debug('Leaving pivCardHolders(). ' + out.length + '.');
+  return out;
+}
+
 // What the stored-certificate index has done in the ambient realm, for the
 // tests: `userHandleIndexState()`'s shape.
 function certificateIndexState() {
@@ -16892,6 +16952,9 @@ if (typeof certEnrollment.setDirectory === 'function') {
     // same reason this one did (a require from there to here drags every
     // `/admin/ldap/*` route forward) and add nothing but an indirection.
     certificateHolders: certificateHolders,
+    // THE PEOPLE A PIV CARD UUID NAMES (#1955 P2, D8), on this slot for
+    // `certificateHolders`' reason (see `pivCardHolders()`).
+    pivCardHolders: pivCardHolders,
     // `holders()` WITH THE VALUES, in the same walk and the same order
     // (#352, 2026-09-29): `[{ id, values }]`. The enrollment listings asked
     // `holders()` for the ids and then `read()` for each — a second lookup
@@ -32291,6 +32354,7 @@ module.exports = {
   // stores, the one writer the console and /admin-api go through, and the
   // index's state for the tests.
   certificateHolders: certificateHolders,
+  pivCardHolders: pivCardHolders,
   storedCertificatesOf: storedCertificatesOf,
   changeStoredCertificate: changeStoredCertificate,
   certificateIndexState: certificateIndexState,

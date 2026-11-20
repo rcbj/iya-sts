@@ -304,6 +304,12 @@ namespace IyaSts.Directory;
   // about, derived on every write of the keys (`deriveAndroidMarker()`) so
   // that the recheck reads its holders rather than everybody.
   "stsAndroidAttestedCredential",
+  // AN OUTSIDE PIV OR CAC CARD'S FIPS 201 CARD UUID (#1955 P2, D8): the
+  // value a card certificate from one of a realm's `piv.externalIssuers`
+  // names in its `urn:uuid:` subjectAltName, which maps it to this person
+  // (`common/piv_attestation.ts`, `ldap_server.js`'s `pivCardHolders()`).
+  // Not a secret: the card says it to every reader.
+  "stsPivCardUuid",
   // THE WEBAUTHN USER HANDLE (#474): 64 random bytes, base64url, one per
   // person, that every passkey they register is created under and that a
   // discoverable credential hands back to say whose it is. Not a secret —

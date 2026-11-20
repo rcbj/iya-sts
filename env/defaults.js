@@ -708,6 +708,8 @@ var config = {
     paranoidSpiffeSvid: true,                   // Paranoid: an X509-SVID presented to the SPIRE Server or Broker API
     paranoidSpiffeAttestation: true,            // Paranoid: a SPIFFE node attestor's certificate
     paranoidPkinit: true,                       // Paranoid: a PKINIT client certificate
+    paranoidPivAttestation: true,               // Paranoid: a YubiKey PIV key attestation chain
+    paranoidPivCard: true,                      // Paranoid: an outside PIV or CAC card mapped by card UUID
     paranoidEnrollmentCredential: true,         // Paranoid: a certificate presented to enroll or renew
     paranoidVcKeyAttestation: true,             // Paranoid: an OpenID4VCI key attestation chain
     paranoidVcIssuer: true,                     // Paranoid: a credential issuer's or status-list signer's certificate
@@ -788,9 +790,21 @@ var config = {
     browserTokenCertificateHeader: "x5u"                                   // Remembered browser token certificate header
   },
 
-  // --- Hardware tokens -------------------------------------------------
+  // --- Devices ---------------------------------------------------------
   hardwareTokens: {
     hardwareClaims: "inference"  // What earns a hardware-key claim
+  },
+
+  // --- Devices ---------------------------------------------------------
+  piv: {
+    attestationAnchors: "",                                                    // PIV attestation roots (PEM)
+    requireAttestation: false,                                                 // Require a PIV attestation for the PIV profiles
+    pinPolicy: "any",                                                          // Weakest PIN policy an attested PIV key may have
+    touchPolicy: "any",                                                        // Weakest touch policy an attested PIV key may have
+    cardAuthSignIn: false,                                                     // Let a piv-card-auth certificate sign in
+    keyEscrow: false,                                                          // Escrow piv-key-management keys
+    externalIssuers: "",                                                       // Outside PIV or CAC issuing CAs mapped by card UUID (PEM)
+    externalPolicyOids: "2.16.840.1.101.3.2.1.3.13,2.16.840.1.101.3.2.1.3.18"  // PIV Authentication policies an outside card must assert
   },
 
   // --- ACME ------------------------------------------------------------
