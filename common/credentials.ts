@@ -3995,9 +3995,10 @@ class Credentials {
       minPinLength: typeof credential.minPinLength === 'number'
         ? credential.minPinLength : null,
       // THE CREDPROTECT LEVEL THE KEY REPORTED (#1955 P7), CTAP 2.1 section
-      // 12.1: 1, 2 or 3, or null where it reported none or no ceremony ran.
+      // 12.1: 1, 2 or 3; absent where it reported none or no ceremony ran,
+      // so a row is written as it was before unless a key reported one.
       credProtect: passkeyPolicy.reportedCredProtect(
-        { credProtect: credential.credProtect }),
+        { credProtect: credential.credProtect }) || undefined,
       // THE LEGACY U2F APPID IT WAS IMPORTED UNDER (#1955 P7), and who
       // imported it and when — absent for every key registered here. An
       // assertion by it is checked against SHA-256 of this AppID only where

@@ -1086,6 +1086,7 @@ Scope: `admin:read`.
 | `(shape 2).page.mfa.mech.keys[].algorithm.name` | object |  | Nested deeper than this page draws. |
 | `(shape 2).page.mfa.mech.keys[].algorithm.postQuantum` | object |  | Nested deeper than this page draws. |
 | `(shape 2).page.mfa.mech.keys[].algorithm.text` | object |  | Nested deeper than this page draws. |
+| `(shape 2).page.mfa.mech.keys[].appid` | string |  |  |
 | `(shape 2).page.mfa.mech.keys[].attachment` | string, or null |  |  |
 | `(shape 2).page.mfa.mech.keys[].attestation` | object |  |  |
 | `(shape 2).page.mfa.mech.keys[].attestation.aaguid` | string, or null |  |  |
@@ -1138,6 +1139,7 @@ Scope: `admin:read`.
 | `(shape 2).page.mfa.mech.keys[].backupEligible` | boolean, or null |  |  |
 | `(shape 2).page.mfa.mech.keys[].backupState` | boolean, or null |  |  |
 | `(shape 2).page.mfa.mech.keys[].coseAlg` | number, or null |  |  |
+| `(shape 2).page.mfa.mech.keys[].credProtect` | number, or null |  |  |
 | `(shape 2).page.mfa.mech.keys[].credentialId` | string |  |  |
 | `(shape 2).page.mfa.mech.keys[].discoverable` | boolean, or null |  |  |
 | `(shape 2).page.mfa.mech.keys[].enrolledAt` | number |  |  |
@@ -1146,6 +1148,10 @@ Scope: `admin:read`.
 | `(shape 2).page.mfa.mech.keys[].enrolledBy.sub` | string |  |  |
 | `(shape 2).page.mfa.mech.keys[].enrolledBy.username` | string |  |  |
 | `(shape 2).page.mfa.mech.keys[].group` | string |  |  |
+| `(shape 2).page.mfa.mech.keys[].importedBy` | object |  |  |
+| `(shape 2).page.mfa.mech.keys[].importedBy.at` | number |  |  |
+| `(shape 2).page.mfa.mech.keys[].importedBy.sub` | string |  |  |
+| `(shape 2).page.mfa.mech.keys[].importedBy.username` | string |  |  |
 | `(shape 2).page.mfa.mech.keys[].label` | string |  |  |
 | `(shape 2).page.mfa.mech.keys[].lane` | string |  |  |
 | `(shape 2).page.mfa.mech.keys[].lastUsedAt` | number |  |  |
