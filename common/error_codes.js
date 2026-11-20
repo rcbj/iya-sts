@@ -3919,6 +3919,13 @@ const CODES = [
       'hardware security module: the module offers no key-pair generation ' +
       'for that algorithm or curve, or answered no public key (#1955).',
     spec: '' },
+  { code: 'STS-KEYS-0208',
+    summary: 'A realm key in the HSM was asked to decrypt (RSA-OAEP) or to ' +
+      'agree (ECDH) and the module refused it: the key was made without ' +
+      'CKA_DECRYPT or CKA_DERIVE, by a build before the HSM keys could ' +
+      'decrypt. Rotating the realm\'s signing keys makes keys that can ' +
+      '(#1955).',
+    spec: '' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +

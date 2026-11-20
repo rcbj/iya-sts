@@ -118,7 +118,7 @@ const CK = Object.freeze({
   CKA_CLASS: 0x0, CKA_TOKEN: 0x1, CKA_PRIVATE: 0x2, CKA_LABEL: 0x3,
   CKA_VALUE: 0x11, CKA_KEY_TYPE: 0x100, CKA_ID: 0x102, CKA_SENSITIVE: 0x103,
   CKA_ENCRYPT: 0x104, CKA_DECRYPT: 0x105, CKA_WRAP: 0x106, CKA_UNWRAP: 0x107,
-  CKA_SIGN: 0x108, CKA_VERIFY: 0x10a, CKA_MODULUS: 0x120,
+  CKA_SIGN: 0x108, CKA_VERIFY: 0x10a, CKA_DERIVE: 0x10c, CKA_MODULUS: 0x120,
   CKA_MODULUS_BITS: 0x121, CKA_PUBLIC_EXPONENT: 0x122, CKA_VALUE_LEN: 0x161,
   CKA_EXTRACTABLE: 0x162, CKA_EC_PARAMS: 0x180, CKA_EC_POINT: 0x181,
   CKM_RSA_PKCS_KEY_PAIR_GEN: 0x0, CKM_SHA256_RSA_PKCS: 0x40,
@@ -129,6 +129,9 @@ const CK = Object.freeze({
   CKG_MGF1_SHA512: 0x4, CKM_EC_KEY_PAIR_GEN: 0x1040, CKM_ECDSA: 0x1041,
   CKM_EC_EDWARDS_KEY_PAIR_GEN: 0x1055, CKM_EDDSA: 0x1057,
   CKM_AES_KEY_GEN: 0x1080, CKM_AES_GCM: 0x1087, CKM_AES_KEY_WRAP_PAD: 0x210a,
+  CKM_RSA_PKCS_OAEP: 0x9, CKM_ECDH1_DERIVE: 0x1050, CKM_SHA_1: 0x220,
+  CKM_SHA224: 0x255, CKG_MGF1_SHA1: 0x1, CKG_MGF1_SHA224: 0x5,
+  CKD_NULL: 0x1, CKZ_DATA_SPECIFIED: 0x1,
   // CKM_VENDOR_DEFINED | YUBICO_BASE_VENDOR (0x59554200) | YH_WRAP_KEY (4),
   // yubihsm-shell's pkcs11y.h.
   CKM_YUBICO_AES_CCM_WRAP: 0xd9554204,
@@ -162,6 +165,10 @@ const REINITIALIZE_ON = new Set([0x30, 0x32, 0xe0, 0x190]);
 // template it does not support) rather than that it failed: STS-KEYS-0207,
 // which a caller may answer by making the key elsewhere.
 const UNSUPPORTED = new Set([0x70, 0x71, 0x130, 0x140, 0xd1, 0xd0]);
+// The answers that say THIS KEY may not do it — a key made without
+// CKA_DECRYPT or CKA_DERIVE (every HSM signing key before #1955 P8's
+// follow-up): STS-KEYS-0208, whose remedy is a new key, not a retry.
+const NOT_PERMITTED = new Set([0x68, 0x63]);
 
 // The named curves a key may be made on, as the DER of their OID (what
 // CKA_EC_PARAMS holds) and their JWK spelling.
@@ -198,6 +205,15 @@ const SIGNING = Object.freeze({
   EdDSA: { kty: 'OKP', mech: CK.CKM_EDDSA }
 });
 
+// OAEP's digest and MGF1 by the digest's name.
+const OAEP = Object.freeze({
+  sha1: [CK.CKM_SHA_1, CK.CKG_MGF1_SHA1],
+  sha224: [CK.CKM_SHA224, CK.CKG_MGF1_SHA224],
+  sha256: [CK.CKM_SHA256, CK.CKG_MGF1_SHA256],
+  sha384: [CK.CKM_SHA384, CK.CKG_MGF1_SHA384],
+  sha512: [CK.CKM_SHA512, CK.CKG_MGF1_SHA512]
+});
+
 // The PKCS#11 return value an error carries (pkcs11js's `Pkcs11Error.code`),
 // or 0 when it is not one.
 function ckrOf(err) {
@@ -207,13 +223,26 @@ function ckrOf(err) {
   return code;
 }
 
+// The code an operation's own failure is refused with.
+function codeFor(err) {
+  log.debug('Entering codeFor().');
+  const ckr = ckrOf(err);
+  log.debug('Leaving codeFor().');
+  return NOT_PERMITTED.has(ckr) ? 'STS-KEYS-0208' :
+         UNSUPPORTED.has(ckr) ? 'STS-KEYS-0207' : 'STS-KEYS-0201';
+}
+
 // A refusal from the token, named, with its code; the module's own words
 // (`CKR_…`) are kept, because they are what an operator searches for.
 function refusal(code, what, err) {
   log.debug('Entering refusal(). ' + code);
   const said = err ? ': ' + ((err && err.message) || String(err)) : '';
+  const out = errorCodes.mark(new Error(what + said), code);
+  // The module's own answer travels with the refusal, for a caller that
+  // reads it (`decryptOaep()`'s "this module does not do that digest").
+  /** @type {any} */ (out).ckr = ckrOf(err) || ckrOf(err && err.cause);
   log.debug('Leaving refusal().');
-  return errorCodes.mark(new Error(what + said), code);
+  return out;
 }
 
 // A boolean attribute as the module answers it: one byte.
@@ -655,8 +684,7 @@ class Pkcs11Token {
         }
         this.release(session);
         log.debug('Leaving Pkcs11Token.run(). Refused.');
-        throw errorCodes.codeOf(e) ? e : refusal(UNSUPPORTED.has(ckrOf(e))
-          ? 'STS-KEYS-0207' : 'STS-KEYS-0201',
+        throw errorCodes.codeOf(e) ? e : refusal(codeFor(e),
           what + ' failed on ' + this.describe(), e);
       }
     }
@@ -699,8 +727,7 @@ class Pkcs11Token {
         }
         this.release(session);
         log.debug('Leaving Pkcs11Token.runSync(). Refused.');
-        throw errorCodes.codeOf(e) ? e : refusal(UNSUPPORTED.has(ckrOf(e))
-          ? 'STS-KEYS-0207' : 'STS-KEYS-0201',
+        throw errorCodes.codeOf(e) ? e : refusal(codeFor(e),
           what + ' failed on ' + this.describe(), e);
       }
     }
@@ -1155,6 +1182,19 @@ class Pkcs11Token {
       { type: CK.CKA_EXTRACTABLE, value: false },
       { type: CK.CKA_SIGN, value: true }]);
     let mech;
+    // THE REALM'S SIGNING KEYS ARE ITS DECRYPTION KEYS TOO (#1955 P8
+    // follow-up): this service models one RSA key per unit that signs AND
+    // opens what a partner encrypted to its certificate (`helpers.js`'s
+    // `ownRsaDecryptionKeys()` — XML Encryption, a JWE assertion), and its
+    // P-256/P-384/P-521 keys answer ECDH-ES. So an RSA pair is made with
+    // CKA_DECRYPT (used with CKM_RSA_PKCS_OAEP only) and a NIST-curve pair
+    // with CKA_DERIVE (CKM_ECDH1_DERIVE); still never extractable.
+    if (spec.kty === 'RSA') {
+      priv.push({ type: CK.CKA_DECRYPT, value: true });
+      pub.push({ type: CK.CKA_ENCRYPT, value: true });
+    } else if (spec.kty === 'EC' && /^P-/.test(String(spec.crv))) {
+      priv.push({ type: CK.CKA_DERIVE, value: true });
+    }
     if (spec.kty === 'RSA') {
       mech = CK.CKM_RSA_PKCS_KEY_PAIR_GEN;
       pub.push({ type: CK.CKA_MODULUS_BITS, value: Number(spec.bits) || 3072 },
@@ -1317,6 +1357,124 @@ class Pkcs11Token {
     });
     log.debug('Leaving Pkcs11Token.signSync().');
     return Buffer.from(sig);
+  }
+
+  /**
+   * Decrypts with an RSA private key in the token, RSA-OAEP only (PKCS#1
+   * v1.5 is never asked of an HSM key: the module cannot do OpenSSL's
+   * implicit rejection, so its failure would be a padding oracle).
+   *
+   * @param key - the private key, as `keyPair()` answered it
+   * @param hash - the OAEP digest (sha1, sha224, sha256, sha384, sha512);
+   *   MGF1 over the same digest, as XML Encryption and JOSE use it
+   * @param label - the OAEP label, or undefined
+   * @param data - the ciphertext
+   * @param async - true for a promise, off the event loop
+   * @returns the plaintext, or a promise of it
+   */
+  decryptOaep(key, hash, label, data, async) {
+    log.debug('Entering Pkcs11Token.decryptOaep(). ' + hash);
+    const pair = OAEP[String(hash)];
+    if (!pair) {
+      throw refusal('STS-KEYS-0206', 'the HSM does not decrypt RSA-OAEP ' +
+                    'over "' + hash + '"');
+    }
+    const binding = this.binding;
+    const self = this;
+    const mechanism = { mechanism: CK.CKM_RSA_PKCS_OAEP,
+      parameter: { type: binding.CK_PARAMS_RSA_OAEP, hashAlg: pair[0],
+                   mgf: pair[1], source: CK.CKZ_DATA_SPECIFIED,
+                   sourceData: label && label.length ? Buffer.from(label)
+                                                     : undefined } };
+    const input = Buffer.from(data);
+    const op = function (lib, session) {
+      lib.C_DecryptInit(session, mechanism, self.handleOf(key));
+      return async ? decryptAsync(lib, session, input, input.length)
+                   : lib.C_Decrypt(session, input, Buffer.alloc(input.length));
+    };
+    // A MODULE THAT DOES NOT DO THIS DIGEST answers CKR_ARGUMENTS_BAD or
+    // CKR_MECHANISM_PARAM_INVALID — SoftHSM2 2.6 offers OAEP over SHA-1
+    // only (measured) — which is STS-KEYS-0207, a limit of the module, and
+    // not a failure of the device.
+    const describe = this.describe();
+    const limited = function (e) {
+      const ckr = /** @type {any} */ (e).ckr;
+      if (ckr === 0x7 || ckr === 0x71) {
+        return refusal('STS-KEYS-0207', 'the PKCS#11 module on ' + describe +
+          ' does not decrypt RSA-OAEP over ' + hash + ' (SoftHSM2 2.6 ' +
+          'offers SHA-1 only)');
+      }
+      return e;
+    };
+    log.debug('Leaving Pkcs11Token.decryptOaep().');
+    if (async) {
+      return this.run('an RSA-OAEP decryption', op).then(function (out) {
+        return Buffer.from(out);
+      }, function (e) {
+        throw limited(e);
+      });
+    }
+    try {
+      return Buffer.from(this.runSync('an RSA-OAEP decryption', op));
+    } catch (e) {
+      log.debug('Caught in Pkcs11Token.decryptOaep(): ' +
+                ((e && e.message) || e));
+      throw limited(e);
+    }
+  }
+
+  /**
+   * ECDH with an EC private key in the token: the shared secret Z (the
+   * x-coordinate), which the caller's KDF (JOSE's or XML's Concat KDF)
+   * turns into a key. The secret comes back as a short-lived session object
+   * that is read and destroyed.
+   *
+   * @param key - the private key, as `keyPair()` answered it
+   * @param point - the other party's uncompressed point (0x04 || x || y)
+   * @param bytes - the secret's length (the curve's field size)
+   * @param async - true for a promise, off the event loop
+   * @returns Z, or a promise of it
+   */
+  deriveEcdh(key, point, bytes, async) {
+    log.debug('Entering Pkcs11Token.deriveEcdh().');
+    const binding = this.binding;
+    const self = this;
+    const mechanism = { mechanism: CK.CKM_ECDH1_DERIVE,
+      parameter: { type: binding.CK_PARAMS_EC_DH, kdf: CK.CKD_NULL,
+                   publicData: Buffer.from(point) } };
+    /** @type {Array<{ type: number, value?: any }>} */
+    const template = [
+      { type: CK.CKA_CLASS, value: CK.CKO_SECRET_KEY },
+      { type: CK.CKA_KEY_TYPE, value: CK.CKK_GENERIC_SECRET },
+      { type: CK.CKA_TOKEN, value: false },
+      { type: CK.CKA_SENSITIVE, value: false },
+      { type: CK.CKA_EXTRACTABLE, value: true },
+      { type: CK.CKA_VALUE_LEN, value: Number(bytes) }];
+    const read = function (lib, session, obj) {
+      try {
+        const got = lib.C_GetAttributeValue(session, obj,
+                                            [{ type: CK.CKA_VALUE }]);
+        return Buffer.from(got[0].value);
+      } finally {
+        lib.C_DestroyObject(session, obj);
+      }
+    };
+    const op = function (lib, session) {
+      const handle = self.handleOf(key);
+      if (async && typeof lib.C_DeriveKeyAsync === 'function') {
+        return lib.C_DeriveKeyAsync(session, mechanism, handle, template)
+          .then(function (obj) {
+            return read(lib, session, obj);
+          });
+      }
+      return read(lib, session,
+                  lib.C_DeriveKey(session, mechanism, handle, template));
+    };
+    log.debug('Leaving Pkcs11Token.deriveEcdh().');
+    if (async) {
+      return this.run('an ECDH agreement', op);
+    }
+    return this.runSync('an ECDH agreement', op);
   }
 
   /**

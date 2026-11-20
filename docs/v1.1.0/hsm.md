@@ -131,22 +131,56 @@ signs through its own sessions.
   `STS-KEYS-0206`.
 * The realm's signer-group, pinned and credential-signer keys stay in
   software.
-* A document encrypted to the realm's signing certificate cannot be decrypted:
-  the key in the HSM signs and does nothing else.
 
-**Latency.** These figures are from SoftHSM2 on a laptop with two cores:
+**The same keys decrypt.** In iya-sts a realm's RSA signing keys are also its
+decryption keys, and its P-256, P-384 and P-521 keys answer ECDH-ES. A partner
+that encrypts to the realm's SAML or WS-Trust certificate or to its JWKS uses
+these keys. So the HSM makes the RSA keys with `CKA_DECRYPT` and the NIST-curve
+keys with `CKA_DERIVE`. They still cannot be extracted. Every decryption with
+them is done in the HSM:
 
-| Signature | Time per signature |
+| What arrives | The HSM operation |
 |---|---|
-| RS256 (RSA 2048), synchronous | about 0.75–0.95 ms |
-| ES256, synchronous | about 0.05–0.07 ms |
-| ES256, 200 at a time without blocking the event loop | about 0.05–0.07 ms each |
+| A SAML `EncryptedID`, `EncryptedAssertion` in an RFC 7522 grant, or a WS-Trust encrypted request (`rsa-oaep-mgf1p`, `rsa-oaep`) | `CKM_RSA_PKCS_OAEP` with the document's digest |
+| A JWE assertion with `RSA-OAEP` or `RSA-OAEP-256` | `CKM_RSA_PKCS_OAEP`, without blocking the event loop |
+| A JWE with `ECDH-ES` or `ECDH-ES+A*KW` to an EC key | `CKM_ECDH1_DERIVE`, without blocking the event loop; the Concat KDF runs in the service |
 
-A YubiHSM 2 is much slower. Its published figures are tens of milliseconds for
-ECDSA P-256 and hundreds of milliseconds for RSA-2048. The ID Token, the signed
-UserInfo response and Security Event Tokens are signed without blocking the
-event loop (`C_SignAsync`). Other signatures, such as an access token or a SAML
-assertion, wait for the HSM.
+* **RSA PKCS#1 v1.5 (`rsa-1_5`) is never decrypted with a key in the HSM.**
+  The service is safe with it only through OpenSSL's implicit rejection, which
+  a module does not have. Product mode refuses it anyway.
+* **SoftHSM2 2.6 decrypts RSA-OAEP over SHA-1 only.** In product mode
+  (`crypto.allowLegacyHashes` off), SoftHSM2 cannot open `rsa-oaep` over
+  SHA-256 or `RSA-OAEP-256`, and the service refuses with `STS-KEYS-0207`. The
+  YubiHSM 2's module offers OAEP over SHA-1, SHA-256, SHA-384 and SHA-512.
+* **Keys made by an earlier build of this feature** carry only `CKA_SIGN`.
+  The service does not try to add `CKA_DECRYPT` to an existing object: most
+  modules do not allow it. A decryption with such a key is refused with
+  `STS-KEYS-0208`, and the message says to rotate:
+  `POST /admin-api/keys/rotate` or the `signing.rotate-now` job makes new keys
+  that can decrypt. Until then, documents encrypted to that key do not open.
+
+**Latency and the event loop.** These figures are from SoftHSM2 on a laptop
+with two cores:
+
+| Operation | Time each |
+|---|---|
+| RS256 (RSA 2048) signature, synchronous | about 0.7–0.95 ms (0.47 ms in software) |
+| ES256 signature, synchronous | about 0.05–0.07 ms |
+| ES256, 200 at a time without blocking the event loop | about 0.05 ms each |
+| SAML assertion signature (RSA), synchronous | about 1.2 ms |
+| XML RSA-OAEP decryption, synchronous | about 0.2 ms |
+
+These paths do not block the event loop (`C_SignAsync`, `C_DecryptAsync`,
+`C_DeriveKeyAsync`): the ID Token, the signed UserInfo response, Security Event
+Tokens, a key set's generation and rotation, and a JWE assertion's decryption.
+
+Other signatures (an access token, a SAML assertion, a WS-Federation
+response) and XML decryptions are synchronous, as they are with a software key.
+On SoftHSM2 they hold the event loop for about as long as a software key does.
+A YubiHSM 2 is much slower: Yubico's published figures are tens of milliseconds
+for ECDSA P-256 and hundreds for RSA-2048. Each synchronous operation holds
+the loop for that long, so a realm signing a high volume of access tokens with
+a YubiHSM 2 should sign them with an EC key (`keys.signingAlgorithms`).
 
 ## Sessions, workers and outages
 
@@ -163,7 +197,9 @@ assertion, wait for the HSM.
   `STS-KEYS-0203` (the key), `STS-KEYS-0204` (no mechanism), `STS-KEYS-0205`
   (the URI or PIN), `STS-KEYS-0206` (a key in the HSM was asked to do
   something it cannot do, or cannot be reached), `STS-KEYS-0207` (the module
-  cannot make a key of that kind). See [Error codes](error-codes.md).
+  cannot make a key of that kind, or cannot decrypt with that digest),
+  `STS-KEYS-0208` (a key made before the HSM keys could decrypt). See
+  [Error codes](error-codes.md).
 
 ## SoftHSM2
 
@@ -186,8 +222,8 @@ must be a volume that outlives the container.
    Set `YUBIHSM_PKCS11_CONF` to that file's path in the service's environment.
 2. Create an authentication key for the service with only the capabilities it
    needs: `wrap-data` and `unwrap-data` for the key-encryption key, plus
-   `sign-pkcs`, `sign-pss`, `sign-ecdsa`, `sign-eddsa` and `generate-asymmetric-key`
-   for signing keys.
+   `sign-pkcs`, `sign-pss`, `sign-ecdsa`, `sign-eddsa`, `decrypt-oaep`,
+   `derive-ecdh` and `generate-asymmetric-key` for signing keys.
 3. Create the key-encryption key as a **wrap key** with `yubihsm-shell`, for
    example
    `generate wrapkey 0 0 sts-kek 1 wrap-data,unwrap-data none aes256-ccm-wrap`.

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5767** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5768** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -57,7 +57,7 @@ is an ordinary outcome.
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 34
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 24
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 196
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 197
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 275
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 57
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
@@ -837,6 +837,7 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0205` | The PKCS#11 location or PIN is wrong: the location is not an RFC 7512 URI naming an object, it carries a PIN (pin-value, pin-source), the PIN secret could not be read or holds none for the token, or the token refused it (#1955). | — |
 | `STS-KEYS-0206` | A realm whose signing keys are in the HSM was asked for something only a key in this process can do — the private key itself, a decryption, or an algorithm the HSM does not sign — and refused it rather than making a software key (#1955). | — |
 | `STS-KEYS-0207` | A signing key could not be made in, or read back from, the hardware security module: the module offers no key-pair generation for that algorithm or curve, or answered no public key (#1955). | — |
+| `STS-KEYS-0208` | A realm key in the HSM was asked to decrypt (RSA-OAEP) or to agree (ECDH) and the module refused it: the key was made without CKA_DECRYPT or CKA_DERIVE, by a build before the HSM keys could decrypt. Rotating the realm's signing keys makes keys that can (#1955). | — |
 
 ## STS-PKI
 

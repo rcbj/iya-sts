@@ -259,6 +259,96 @@ function childMain() {
     note(samlOk === true, 'C4. a SAML assertion signed by the XML key in the ' +
          'HSM verifies against its certificate', String(samlOk));
 
+    // ------------------------------------------------------------ I
+    // DECRYPTION WITH THE REALM'S KEYS IN THE HSM (#1955 P8 follow-up):
+    // what a partner encrypted to the realm's certificate or JWKS key.
+    const plainXml = '<saml:Assertion xmlns:saml="urn:oasis:names:tc:' +
+      'SAML:2.0:assertion" ID="_p8">hsm</saml:Assertion>';
+    // SoftHSM2 2.6 decrypts RSA-OAEP over SHA-1 only (measured), so there
+    // SHA-256 is asserted to be REFUSED with the module's limit, and SHA-1
+    // to open; the fake module (and a YubiHSM 2) does both.
+    const codeOf = require(ROOT + '/common/error_codes').codeOf;
+    const sealedXml = stsCrypto.encryptElement(plainXml,
+      helpers.STS.xml.certPem, { keyTransport: 'rsa-oaep-mgf1p' });
+    const openedXml = helpers.decryptOwnElement(sealedXml);
+    note(openedXml && openedXml.ok && openedXml.xml === plainXml,
+         'I1. an assertion encrypted to the XML key\'s certificate ' +
+         '(rsa-oaep-mgf1p) opens through decryptOwnElement(), RSA-OAEP in ' +
+         'the HSM', openedXml && openedXml.why);
+    const sealed256 = stsCrypto.encryptElement(plainXml,
+      helpers.STS.xml.certPem, { keyTransport: 'rsa-oaep' });
+    const opened256 = stsCrypto.decryptElement(sealed256,
+      keys.xmlKey.privateKeyPem);
+    note(WHICH === 'softhsm'
+      ? !opened256.ok && codeOf(opened256) === 'STS-KEYS-0207'
+      : opened256.ok && opened256.xml === plainXml,
+         WHICH === 'softhsm'
+           ? 'I1a. rsa-oaep over SHA-256, which SoftHSM2 cannot decrypt, is ' +
+             'refused with the module\'s limit (STS-KEYS-0207), not a crash'
+           : 'I1a. and rsa-oaep over SHA-256 opens too',
+         codeOf(opened256) + ' ' + (opened256.why || ''));
+    const rsaJwk = keys.privateKey.publicKey.export({ format: 'jwk' });
+    const rsaJwe = stsCrypto.encryptJweCompact('jwe-rsa',
+      { alg: 'RSA-OAEP', enc: 'A256GCM', jwk: rsaJwk });
+    const rsaBack = await stsCrypto.decryptJweCompactAsync(rsaJwe,
+      { privateKey: keys.privateKey, allowedEnc: ['A256GCM'] });
+    const rsaBackSync = stsCrypto.decryptJweCompact(rsaJwe,
+      { privateKey: keys.privateKey, allowedEnc: ['A256GCM'] });
+    note(rsaBack.plaintext === 'jwe-rsa' && rsaBackSync.plaintext ===
+         'jwe-rsa', 'I2. a JWE RSA-OAEP to the RS256 key opens, off the ' +
+         'loop and in place');
+    const rsa256 = stsCrypto.encryptJweCompact('jwe-rsa-256',
+      { alg: 'RSA-OAEP-256', enc: 'A256GCM', jwk: rsaJwk });
+    const rsa256Back = await refusedWith(async function () {
+      const got = await stsCrypto.decryptJweCompactAsync(rsa256,
+        { privateKey: keys.privateKey, allowedEnc: ['A256GCM'] });
+      if (got.plaintext !== 'jwe-rsa-256') {
+        throw new Error('wrong plaintext');
+      }
+    });
+    note(WHICH === 'softhsm' ? /STS-KEYS-0207/.test(rsa256Back)
+                             : rsa256Back === 'not refused',
+         WHICH === 'softhsm'
+           ? 'I2a. RSA-OAEP-256 on SoftHSM2 is refused with STS-KEYS-0207'
+           : 'I2a. and RSA-OAEP-256 opens too', rsa256Back);
+    const ecJwe = stsCrypto.encryptJweCompact('jwe-ec',
+      { alg: 'ECDH-ES+A128KW', enc: 'A128GCM', jwk: es.publicJwk });
+    const ecBack = await stsCrypto.decryptJweCompactAsync(ecJwe,
+      { privateKey: es.privateKey, allowedEnc: ['A128GCM'] });
+    const ecDirect = stsCrypto.encryptJweCompact('jwe-ec-dir',
+      { alg: 'ECDH-ES', enc: 'A256GCM', jwk: es.publicJwk });
+    const ecDirectBack = stsCrypto.decryptJweCompact(ecDirect,
+      { privateKey: es.privateKey, allowedEnc: ['A256GCM'] });
+    note(ecBack.plaintext === 'jwe-ec' &&
+         ecDirectBack.plaintext === 'jwe-ec-dir',
+         'I3. a JWE ECDH-ES (direct and +A128KW) to the ES256 key opens, ' +
+         'the agreement made in the HSM');
+    const legacyXml = stsCrypto.encryptElement(plainXml,
+      helpers.STS.xml.certPem, { keyTransport: 'rsa-1_5' });
+    const legacyOpened = stsCrypto.decryptElement(legacyXml,
+      keys.xmlKey.privateKeyPem);
+    note(legacyOpened && !legacyOpened.ok,
+         'I4. RSA PKCS#1 v1.5 is never asked of an HSM key',
+         legacyOpened && (legacyOpened.why || ''));
+    if (WHICH !== 'softhsm') {
+      // A KEY MADE BEFORE THE KEYS COULD DECRYPT: its CKA_DECRYPT and
+      // CKA_DERIVE taken away, as the first cut of P8 made them.
+      const xmlRef = stsCrypto.hsmRefOf(keys.xmlKey.privateKeyPem);
+      const xmlHandles = token.find([{ type: 0x0, value: 3 },
+        { type: 0x102, value: Buffer.from(xmlRef.id, 'hex') }]);
+      xmlHandles.forEach(function (h) {
+        binding.withoutDecrypt(h);
+      });
+      const oldOpened = stsCrypto.decryptElement(sealedXml,
+        keys.xmlKey.privateKeyPem);
+      const oldCode = require(ROOT + '/common/error_codes').codeOf(oldOpened);
+      note(!oldOpened.ok && oldCode === 'STS-KEYS-0208' &&
+           /rotate/.test(oldOpened.why),
+           'I5. an HSM key made without decryption is refused with ' +
+           'STS-KEYS-0208 and the rotation that replaces it',
+           oldCode + ' ' + oldOpened.why);
+    }
+
     // ------------------------------------------------------------ D
     await keystore.settleAll();
     // What the keystore wrote, sealed, opened again: the members a PEM was
@@ -367,6 +457,34 @@ function childMain() {
                                       { algorithm: 'ES256' });
       }));
       const esAsync = Number(process.hrtime.bigint() - a) / 1e6 / N;
+      const soft = nodeCrypto.generateKeyPairSync('rsa',
+        { modulusLength: 2048 }).privateKey;
+      a = process.hrtime.bigint();
+      for (let i = 0; i < N; i++) {
+        stsCrypto.signJws({ sub: 'm' + i }, soft, { algorithm: 'RS256' });
+      }
+      const softSync = Number(process.hrtime.bigint() - a) / 1e6 / N;
+      const xmlDoc = '<saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:' +
+        '2.0:assertion" ID="_m" IssueInstant="2026-11-20T00:00:00Z" ' +
+        'Version="2.0"><saml:Issuer>p8</saml:Issuer></saml:Assertion>';
+      a = process.hrtime.bigint();
+      for (let i = 0; i < 50; i++) {
+        stsCrypto.signXml(xmlDoc, { privateKeyPem: k.xmlKey.privateKeyPem,
+                                    certPem: helpers.STS.xml.certPem });
+      }
+      const xmlSync = Number(process.hrtime.bigint() - a) / 1e6 / 50;
+      const sealedM = stsCrypto.encryptElement(plainXml,
+        helpers.STS.xml.certPem, { keyTransport: 'rsa-oaep' });
+      a = process.hrtime.bigint();
+      for (let i = 0; i < 50; i++) {
+        stsCrypto.decryptElement(sealedM, k.xmlKey.privateKeyPem);
+      }
+      const decSync = Number(process.hrtime.bigint() - a) / 1e6 / 50;
+      note(true, 'H2. what holds the event loop, measured: a software ' +
+           'RS256 (RSA-2048) signature ' + softSync.toFixed(3) + ' ms in ' +
+           'place against ' + rsSync.toFixed(3) + ' ms in the HSM; a SAML ' +
+           'signature in the HSM ' + xmlSync.toFixed(3) + ' ms; an XML ' +
+           'RSA-OAEP decryption in the HSM ' + decSync.toFixed(3) + ' ms');
       note(true, 'H1. latency per signature, measured (' + N + ' each): ' +
            'RS256 ' + rsSync.toFixed(3) + ' ms in place; ES256 ' +
            esSync.toFixed(3) + ' ms in place, ' + esAsync.toFixed(3) +

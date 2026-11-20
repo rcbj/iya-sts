@@ -2675,6 +2675,10 @@ function refusedAlgorithm(opts, list, name, what) {
 // The private key, as node's KeyObject, from a PEM or a KeyObject.
 function privateKeyObject(key) {
   log.debug("Entering privateKeyObject().");
+  if (typeof key === 'string' && isHsmKey(key)) {
+    log.debug("Leaving privateKeyObject(). An HSM key.");
+    return hsmKeyOf(key);
+  }
   if (key && typeof key === 'object' && key.type === 'private') {
     log.debug("Leaving privateKeyObject(). A KeyObject.");
     return key;
@@ -2753,8 +2757,7 @@ function agreedKey(agreement, privateKey, keyBytes) {
     kty: 'EC', crv: curve.crv,
     x: point.subarray(1, 1 + curve.bytes).toString('base64url'),
     y: point.subarray(1 + curve.bytes).toString('base64url') } });
-  const z = nodeCrypto.diffieHellman({ privateKey: privateKey,
-                                       publicKey: originatorKey });
+  const z = ecdhSecret(privateKey, originatorKey);
   log.debug("Leaving agreedKey().");
   return xmlConcatKdf(z, keyBytes, hash, otherInfo);
 }
@@ -3160,8 +3163,7 @@ function decryptElement(xml, privateKeyPem, opts) {
       key = wrap ? aesKeyUnwrap(agreed, wrappedBytes).toString('binary')
                  : agreed.toString('binary');
     } else if (transport.node) {
-      key = nodeCrypto.privateDecrypt({
-        key: privateKeyObject(privateKeyPem),
+      key = rsaPrivateDecrypt(privateKeyPem, {
         padding: nodeCrypto.constants.RSA_PKCS1_OAEP_PADDING,
         oaepHash: oaepHash,
         oaepLabel: oaepLabel
@@ -3174,8 +3176,7 @@ function decryptElement(xml, privateKeyPem, opts) {
       // does not check unwraps to a deterministic random value instead of
       // throwing, so the length check below is still what names a wrong
       // key, and the timing no longer tells a caller which it was.
-      key = nodeCrypto.privateDecrypt({
-        key: privateKeyObject(privateKeyPem),
+      key = rsaPrivateDecrypt(privateKeyPem, {
         padding: transport.scheme === 'RSA-OAEP'
           ? nodeCrypto.constants.RSA_PKCS1_OAEP_PADDING
           : nodeCrypto.constants.RSA_PKCS1_PADDING,
@@ -3267,6 +3268,16 @@ function decryptElement(xml, privateKeyPem, opts) {
     // NamespaceError from a perfectly good NameID was reported as a wrong
     // certificate — which sends somebody to re-fetch metadata over a bug in the
     // parser three lines away.
+    // A KEY IN THE HSM THAT MAY NOT DO IT (#1955 P8 follow-up) is said as
+    // itself: a key made before it could decrypt (STS-KEYS-0208), or a
+    // scheme never asked of one (0206) — not "a different certificate".
+    const hsmCode = errorCodes.codeOf(e);
+    if (hsmCode === 'STS-KEYS-0208' || hsmCode === 'STS-KEYS-0206' ||
+        hsmCode === 'STS-KEYS-0207' || hsmCode === 'STS-KEYS-0201') {
+      log.debug("Leaving decryptElement(). The HSM: " + hsmCode);
+      return errorCodes.mark({ ok: false, why: 'the HSM key could not ' +
+        'unwrap it: ' + e.message }, hsmCode);
+    }
     const aboutTheKey = /oaep|padding|rsa|decrypt|key|wrap|agree|ecdh|kdf/i
       .test(e.message || '');
     log.debug("Leaving decryptElement(). " + e.message);
@@ -7147,11 +7158,14 @@ function unwrapCek(header, encryptedKey, options, spec) {
     // SHA-1 — an unwrap under the wrong digest fails, and it fails in the way
     // an unwrap under the wrong KEY fails, so the two are indistinguishable
     // from the message. See wrapCek().
-    const out = nodeCrypto.privateDecrypt({
-      key: options.privateKey,
-      padding: nodeCrypto.constants.RSA_PKCS1_OAEP_PADDING,
-      oaepHash: alg === 'RSA-OAEP' ? 'sha1' : 'sha256'
-    }, encryptedKey);
+    // An HSM key's decryption made off the loop by the async door
+    // (`decryptJweCompactAsync()`), handed in; made here otherwise.
+    const out = options.hsmPrecomputed && options.hsmPrecomputed.rsa
+      ? options.hsmPrecomputed.rsa
+      : rsaPrivateDecrypt(options.privateKey, {
+        padding: nodeCrypto.constants.RSA_PKCS1_OAEP_PADDING,
+        oaepHash: alg === 'RSA-OAEP' ? 'sha1' : 'sha256'
+      }, encryptedKey);
     log.debug('Leaving unwrapCek(). RSA.');
     return out;
   }
@@ -7170,8 +7184,9 @@ function unwrapCek(header, encryptedKey, options, spec) {
   }
   const senderKey = nodeCrypto.createPublicKey({ key: header.epk,
                                                  format: 'jwk' });
-  const z = nodeCrypto.diffieHellman({ privateKey: options.privateKey,
-                                       publicKey: senderKey });
+  const z = options.hsmPrecomputed && options.hsmPrecomputed.z
+    ? options.hsmPrecomputed.z
+    : ecdhSecret(options.privateKey, senderKey);
   if (alg === 'ECDH-ES') {
     // The AlgorithmID is the content encryption `enc` and the length is the
     // WHOLE CEK — both halves for a CBC-HMAC enc, which is why this needs the
@@ -7462,6 +7477,39 @@ async function decryptJweCompactAsync(compact, opts) {
               ((e && e.message) || e));
   }
   const alg = header && typeof header === 'object' ? String(header.alg) : '';
+  // A REALM KEY IN THE HSM (#1955 P8 follow-up): its RSA-OAEP decryption or
+  // ECDH agreement is made here, off the event loop, and handed to the
+  // synchronous door, which does everything else exactly as it would. Only
+  // for a JWE that door would get as far as the key with: anything it is
+  // going to refuse costs the HSM nothing.
+  if (parts.length === 5 && isHsmKey(options.privateKey) &&
+      (!options.allowedAlg || options.allowedAlg.indexOf(alg) >= 0)) {
+    const hsmKey = hsmKeyOf(options.privateKey);
+    let pre = null;
+    if (JWE_RSA_ALGS.indexOf(alg) >= 0 &&
+        (alg !== 'RSA-OAEP' || mode.allowsLegacyHashes())) {
+      pre = { rsa: await hsmKey.decryptOaep(
+        alg === 'RSA-OAEP' ? 'sha1' : 'sha256', undefined,
+        Buffer.from(parts[1], 'base64url'), true)
+        .catch(function (e) {
+          throw hsmDecryptRefusal(e);
+        }) };
+    } else if (JWE_ECDH_ALGS.indexOf(alg) >= 0 && header.epk &&
+               EC_CURVES[header.epk.crv]) {
+      const sender = nodeCrypto.createPublicKey({ key: header.epk,
+                                                 format: 'jwk' });
+      pre = { z: await hsmKey.deriveEcdh(ecPointOf(sender),
+        EC_FIELD_BYTES[(hsmKey.asymmetricKeyDetails || {}).namedCurve] ||
+        32, true).catch(function (e) {
+          throw hsmDecryptRefusal(e);
+        }) };
+    }
+    if (pre) {
+      log.debug('Leaving decryptJweCompactAsync(). The HSM, off the loop.');
+      return decryptJweCompact(compact, Object.assign({}, options,
+                                                      { hsmPrecomputed: pre }));
+    }
+  }
   // Only a PBES2 JWE this caller would open is derived for: one it is going to
   // refuse anyway costs nothing, and the refusal is decryptJweCompact()'s.
   if (parts.length !== 5 || JWE_PBES2_ALGS.indexOf(alg) === -1 ||
@@ -18785,11 +18833,124 @@ function makeHsmKey(token, engineKey, publicKey, ref) {
     },
     sign: function (alg, data) {
       return token.sign(engineKey, alg, data);
+    },
+    // RSA-OAEP and ECDH in the token (#1955 P8 follow-up), for the doors
+    // below: `hsmRsaDecrypt()` and `hsmEcdh()`.
+    decryptOaep: function (hash, label, data, async) {
+      return token.decryptOaep(engineKey, hash, label, data, async);
+    },
+    deriveEcdh: function (point, bytes, async) {
+      return token.deriveEcdh(engineKey, point, bytes, async);
     }
   });
   hsmKeys.set(text, out);
   log.debug('Leaving makeHsmKey(). ' + kind);
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// DECRYPTING WITH A REALM KEY IN THE HSM (#1955 P8 follow-up). The realm's
+// signing keys are also what opens a document a partner encrypted to them
+// (XML Encryption's key transport and key agreement, a JWE assertion's
+// RSA-OAEP and ECDH-ES), so every private-key decryption here goes through
+// these two: node's own for a software key, the token's for an HSM key.
+// RSA PKCS#1 v1.5 is refused for an HSM key (STS-KEYS-0206) — OpenSSL's
+// implicit rejection is what makes it safe here, and a module has none.
+// ---------------------------------------------------------------------------
+/**
+ * Decrypts with an RSA private key: node's OAEP or PKCS#1 v1.5, or RSA-OAEP
+ * in the HSM.
+ *
+ * @param key - a KeyObject, a PEM, an HSM key or its reference
+ * @param params - `{ padding, oaepHash, oaepLabel }`, node's
+ * @param data - the ciphertext
+ * @returns the plaintext
+ */
+function rsaPrivateDecrypt(key, params, data) {
+  log.debug('Entering rsaPrivateDecrypt().');
+  if (isHsmKey(key)) {
+    if (params.padding !== nodeCrypto.constants.RSA_PKCS1_OAEP_PADDING) {
+      throw errorCodes.mark(new Error('RSA PKCS#1 v1.5 decryption is never ' +
+        'asked of a key in the HSM (a module has no implicit rejection, so ' +
+        'its refusal would be a padding oracle); use RSA-OAEP'),
+        'STS-KEYS-0206');
+    }
+    let out;
+    try {
+      out = hsmKeyOf(key).decryptOaep(params.oaepHash || 'sha1',
+                                      params.oaepLabel, data, false);
+    } catch (e) {
+      log.debug('Caught in rsaPrivateDecrypt(): ' + ((e && e.message) || e));
+      throw hsmDecryptRefusal(e);
+    }
+    log.debug('Leaving rsaPrivateDecrypt(). In the HSM.');
+    return out;
+  }
+  const out = nodeCrypto.privateDecrypt(Object.assign({},
+    params, { key: privateKeyObject(key) }), data);
+  log.debug('Leaving rsaPrivateDecrypt().');
+  return out;
+}
+
+// A KEY MADE BEFORE IT COULD DECRYPT (STS-KEYS-0208): the HSM keys the first
+// cut of #1955 P8 made carried CKA_SIGN alone, and an object's usage cannot
+// be widened from here (CKA_DECRYPT is not modifiable on most modules and
+// this service will not try). The remedy is a new key, so the refusal says
+// which rotation makes one. Any other HSM failure passes through unchanged.
+function hsmDecryptRefusal(e) {
+  log.debug('Entering hsmDecryptRefusal().');
+  if (errorCodes.codeOf(e) !== 'STS-KEYS-0208') {
+    log.debug('Leaving hsmDecryptRefusal(). Not that.');
+    return e;
+  }
+  log.debug('Leaving hsmDecryptRefusal().');
+  return errorCodes.mark(new Error('this HSM key was made without ' +
+    'decryption (CKA_DECRYPT, or CKA_DERIVE for ECDH), by a build before ' +
+    'the realm\'s keys in the HSM could decrypt: rotate the realm\'s ' +
+    'signing keys (POST /admin-api/keys/rotate, or signing.rotate-now) and ' +
+    'the new keys are made with it. ' + ((e && e.message) || e)),
+    'STS-KEYS-0208');
+}
+
+// The field size of a NIST curve, by node's name, for Z's length.
+const EC_FIELD_BYTES = { prime256v1: 32, secp384r1: 48, secp521r1: 66 };
+
+/**
+ * ECDH's shared secret Z with an EC private key: node's, or the HSM's.
+ *
+ * @param privateKey - a KeyObject, an HSM key or its reference
+ * @param publicKey - the other party's public KeyObject
+ * @returns Z
+ */
+function ecdhSecret(privateKey, publicKey) {
+  log.debug('Entering ecdhSecret().');
+  if (isHsmKey(privateKey)) {
+    const hsmKey = hsmKeyOf(privateKey);
+    let out;
+    try {
+      out = hsmKey.deriveEcdh(ecPointOf(publicKey),
+        EC_FIELD_BYTES[(hsmKey.asymmetricKeyDetails || {}).namedCurve] || 32,
+        false);
+    } catch (e) {
+      log.debug('Caught in ecdhSecret(): ' + ((e && e.message) || e));
+      throw hsmDecryptRefusal(e);
+    }
+    log.debug('Leaving ecdhSecret(). In the HSM.');
+    return out;
+  }
+  const out = nodeCrypto.diffieHellman({ privateKey: privateKey,
+                                         publicKey: publicKey });
+  log.debug('Leaving ecdhSecret().');
+  return out;
+}
+
+// The uncompressed point of an EC public KeyObject.
+function ecPointOf(publicKey) {
+  log.debug('Entering ecPointOf().');
+  const jwk = publicKey.export({ format: 'jwk' });
+  log.debug('Leaving ecPointOf().');
+  return Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x, 'base64url'),
+                        Buffer.from(jwk.y, 'base64url')]);
 }
 
 // The kind of key a JWS or XML algorithm signs with in the HSM, and what it

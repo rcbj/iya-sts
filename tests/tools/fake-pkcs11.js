@@ -35,7 +35,7 @@ const CKM = { AES_KEY_GEN: 0x1080, AES_GCM: 0x1087, KWP: 0x210a,
               YUBICO_CCM: 0xd9554204, RSA_GEN: 0x0, EC_GEN: 0x1040,
               ED_GEN: 0x1055, ECDSA: 0x1041, EDDSA: 0x1057,
               RS256: 0x40, RS384: 0x41, RS512: 0x42, PS256: 0x43,
-              PS384: 0x44, PS512: 0x45 };
+              PS384: 0x44, PS512: 0x45, OAEP: 0x9, ECDH: 0x1050 };
 const FLAGS = { ENCRYPT: 0x100, DECRYPT: 0x200, SIGN: 0x800, WRAP: 0x20000,
                 UNWRAP: 0x40000, GENERATE_PAIR: 0x10000, GENERATE: 0x8000 };
 const CURVES = { '06082a8648ce3d030107': 'prime256v1',
@@ -54,8 +54,12 @@ const ALL_MECHS = new Map([
   [CKM.ED_GEN, FLAGS.GENERATE_PAIR], [CKM.ECDSA, FLAGS.SIGN],
   [CKM.EDDSA, FLAGS.SIGN], [CKM.RS256, FLAGS.SIGN], [CKM.RS384, FLAGS.SIGN],
   [CKM.RS512, FLAGS.SIGN], [CKM.PS256, FLAGS.SIGN], [CKM.PS384, FLAGS.SIGN],
-  [CKM.PS512, FLAGS.SIGN]
+  [CKM.PS512, FLAGS.SIGN], [CKM.OAEP, FLAGS.DECRYPT],
+  [CKM.ECDH, 0x80000]
 ]);
+const OAEP_HASHES = { 0x220: 'sha1', 0x255: 'sha224', 0x250: 'sha256',
+                      0x260: 'sha384', 0x270: 'sha512' };
+const NAMED = { prime256v1: 'P-256', secp384r1: 'P-384', secp521r1: 'P-521' };
 
 class Pkcs11Error extends Error {
   constructor(name, code) {
@@ -319,6 +323,14 @@ function fakeBinding(options) {
     if (!t.mechs.has(mech.mechanism)) {
       fail('CKR_MECHANISM_INVALID', 0x70);
     }
+    if (mech.mechanism === CKM.OAEP) {
+      const may = obj.attrs.get(0x105);
+      if (encrypt || !obj.privateKey || !may || !may[0]) {
+        fail('CKR_KEY_FUNCTION_NOT_PERMITTED', 0x68);
+      }
+      sess.op = { kind: 'rsa-dec', mech: mech, key: obj.privateKey };
+      return;
+    }
     sess.op = { kind: encrypt ? 'enc' : 'dec', mech: mech, key: obj.secret };
   }
   function cipherRun(s, data) {
@@ -328,6 +340,17 @@ function fakeBinding(options) {
     sess.op = null;
     if (!op) {
       fail('CKR_OPERATION_NOT_INITIALIZED', 0x91);
+    }
+    if (op.kind === 'rsa-dec') {
+      const p = op.mech.parameter;
+      try {
+        return nodeCrypto.privateDecrypt({ key: op.key,
+          padding: nodeCrypto.constants.RSA_PKCS1_OAEP_PADDING,
+          oaepHash: OAEP_HASHES[p.hashAlg],
+          oaepLabel: p.sourceData }, data);
+      } catch (e) {
+        fail('CKR_ENCRYPTED_DATA_INVALID', 0x40);
+      }
     }
     if (op.mech.mechanism === CKM.AES_GCM) {
       const p = op.mech.parameter;
@@ -472,6 +495,33 @@ function fakeBinding(options) {
                              publicAttr: publicAttr });
     return { publicKey: pub, privateKey: priv };
   };
+  PKCS11.prototype.C_DeriveKey = function (s, mech, h, template) {
+    check('C_DeriveKey');
+    const sess = session(s);
+    const obj = object(sess, h);
+    const may = obj.attrs.get(0x10c);
+    if (mech.mechanism !== CKM.ECDH || !obj.privateKey || !may || !may[0]) {
+      fail('CKR_KEY_FUNCTION_NOT_PERMITTED', 0x68);
+    }
+    const crv = NAMED[obj.privateKey.asymmetricKeyDetails.namedCurve];
+    const point = Buffer.from(mech.parameter.publicData);
+    const half = (point.length - 1) / 2;
+    const peer = nodeCrypto.createPublicKey({ format: 'jwk', key: {
+      kty: 'EC', crv: crv,
+      x: point.subarray(1, 1 + half).toString('base64url'),
+      y: point.subarray(1 + half).toString('base64url') } });
+    const z = nodeCrypto.diffieHellman({ privateKey: obj.privateKey,
+                                         publicKey: peer });
+    return addObject(token(sess.slot), template, { secret: z });
+  };
+  PKCS11.prototype.C_DeriveKeyAsync = function (s, mech, h, template) {
+    const self = this;
+    return new Promise(function (resolve) {
+      setImmediate(resolve);
+    }).then(function () {
+      return self.C_DeriveKey(s, mech, h, template);
+    });
+  };
   PKCS11.prototype.C_SignInit = function (s, mech, h) {
     check('C_SignInit');
     const sess = session(s);
@@ -521,6 +571,19 @@ function fakeBinding(options) {
     Pkcs11Error: Pkcs11Error,
     CK_PARAMS_AES_GCM: 3,
     CK_PARAMS_RSA_PSS: 5,
+    CK_PARAMS_RSA_OAEP: 4,
+    CK_PARAMS_EC_DH: 6,
+    // A key made by the first cut of #1955 P8: CKA_DECRYPT and CKA_DERIVE
+    // taken away, as they were never set.
+    withoutDecrypt: function (handle) {
+      state.tokens.forEach(function (t) {
+        const obj = t.objects.get(Number(handle));
+        if (obj) {
+          obj.attrs.delete(0x105);
+          obj.attrs.delete(0x10c);
+        }
+      });
+    },
     state: state,
     // An existing AES key (or a YubiHSM wrap key), made "with the HSM's own
     // tool".

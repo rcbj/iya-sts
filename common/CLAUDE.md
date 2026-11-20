@@ -8049,8 +8049,22 @@ realm's keys are made. `docs/v1.1.0/hsm.md` is the operator half.
   signature is discarded), `signJwsAsync()` (`C_SignAsync`), `signXml()` (the
   general engine with a signer, RSA included), `signQueryString()`, a
   self-signed certificate. **Anything else fails closed** — node refuses the
-  reference, a JWK export is `STS-KEYS-0206`; a document encrypted to the
-  signing certificate does not decrypt.
+  reference, a JWK export is `STS-KEYS-0206`.
+* **AND THEY DECRYPT, BECAUSE THE CODE MODELS NO KEY SEPARATION** (the P8
+  follow-up): `ownRsaDecryptionKeys()` IS the realm's RSA signing keys (XML
+  Encryption for a SAML EncryptedID, an RFC 7522 encrypted assertion, a
+  WS-Trust request; a JWE assertion's RSA-OAEP), and `assertion_grant.js`'s
+  ECDH-ES candidates ARE its curve keys. So an RSA pair is made with
+  CKA_DECRYPT and a NIST-curve pair with CKA_DERIVE, and every private-key
+  decryption in `crypto.js` goes through `rsaPrivateDecrypt()` and
+  `ecdhSecret()` (XML key transport and agreement, JWE `unwrapCek()`);
+  `decryptJweCompactAsync()` makes the HSM's part off the loop
+  (`hsmPrecomputed`). **PKCS#1 v1.5 is never asked of an HSM key**: OpenSSL's
+  implicit rejection is what makes it safe here, and a module has none.
+  SoftHSM2 2.6 does OAEP over SHA-1 only (measured): SHA-256 is
+  `STS-KEYS-0207`. A key made by the first cut (CKA_SIGN alone) answers
+  CKR_KEY_FUNCTION_NOT_PERMITTED, which is `STS-KEYS-0208` with the rotation
+  that replaces it; its attributes are not widened from here.
 * **WHERE THE KEYS ARE MADE IS `helpers.js`'s `hsmSigning()`**: refused
   (`STS-KEYS-0206`), never quietly software, where the keystore does not
   persist (each start would leave objects in the token) or no token is open
@@ -8062,8 +8076,13 @@ realm's keys are made. `docs/v1.1.0/hsm.md` is the operator half.
   a rotation's `mintStandbyKey()` generate off the loop
   (`C_GenerateKeyPairAsync`). Signer-group, pinned and credential-signer keys
   stay software.
-* **Measured on SoftHSM2** (2 CPUs): RS256 ~0.75–0.95 ms per signature in
-  place, ES256 ~0.05–0.07 ms in place or 200 at once off the loop.
+* **Measured on SoftHSM2** (2 CPUs): RS256 ~0.7–0.95 ms per signature in
+  place (0.47 ms in software), ES256 ~0.05 ms in place or 200 at once off the
+  loop, a SAML signature ~1.2 ms, an XML OAEP decryption ~0.2 ms. The
+  synchronous doors (access tokens, SAML, XML decryption) were left
+  synchronous: on SoftHSM2 they hold the loop about as long as software did,
+  and moving every caller is not this change; `docs/v1.1.0/hsm.md` gives the
+  YubiHSM's cost and the EC-key advice.
   `tests/pkcs11_kek.js` and `tests/pkcs11_signing.js` hold both features to a
   fake module and to SoftHSM2; no real YubiHSM 2 has been run.
 
