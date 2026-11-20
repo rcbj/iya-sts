@@ -2397,6 +2397,13 @@ impl Proxy {
         }
     }
 
+    /// A test harness dropped: every CAEP/RISC receiver stopped, so no
+    /// poll outlives it (#1935, `RpSet::stop_all`).
+    #[cfg(test)]
+    pub fn stop_signals(&self) {
+        self.rps.stop_all();
+    }
+
     pub async fn reconcile(&self) {
         // THE SETTINGS IN FORCE (#1760), handed to the two parts that hold
         // a bound of their own: a relying party built under other bounds
