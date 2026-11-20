@@ -24123,7 +24123,7 @@ const CODES = [
       '(#1827, phase 3).',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
-  { code: 'STS-XACML-0303',
+  { code: 'STS-XACML-0331',
     summary: 'A remote PEP\'s heartbeat was refused: a member its entry ' +
       'stores carries a value the service cannot hold (fuzz run #595) — ' +
       'a counter that is not a non-negative integer of at most 2^53 - 1, ' +

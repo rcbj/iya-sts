@@ -946,7 +946,7 @@ class PepRegistry {
   // (`syncToken`, `bias`, `resource`, `version`, `notifyUrl`) a string with
   // no C0, DEL or C1 control character, or null, which has always cleared
   // it, and `signals`, `settings` and `listeners` an object or null. A
-  // refusal is 400 STS-XACML-0303 naming the member and writes nothing —
+  // refusal is 400 STS-XACML-0331 naming the member and writes nothing —
   // `hostname`'s rule (STS-XACML-0261). The PEP sends nothing else
   // (`rust/bins/xacml-pep/src/sync.rs`: u64 counters, Strings), so a
   // well-behaved one never meets it.
@@ -1488,7 +1488,7 @@ class PepRegistry {
                     '2^53 - 1, a text member a string with no control ' +
                     'character, and signals, settings and listeners an ' +
                     'object or null.' },
-             'STS-XACML-0303');
+             'STS-XACML-0331');
     }
     // THE HOSTNAME (#1760): absent keeps, as every member here does; a bad
     // one refuses the heartbeat before anything is written.

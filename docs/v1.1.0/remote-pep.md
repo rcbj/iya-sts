@@ -1032,7 +1032,7 @@ older than this sends none, and its default names are as before. An older
 service ignores the member.
 
 The service also refuses a heartbeat that carries a value it cannot store
-on the PEP's row (`STS-XACML-0303`), and records nothing of it. A counter
+on the PEP's row (`STS-XACML-0331`), and records nothing of it. A counter
 must be a whole number from 0 to 2^53 - 1, and a text member such as
 `version` a string with no control character. The PEP never sends anything
 else, so it does not meet this refusal.

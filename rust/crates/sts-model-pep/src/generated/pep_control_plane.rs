@@ -243,7 +243,7 @@ pub mod components {
     /// Absent keeps what the service holds; null clears signals, settings and
     /// listeners; a value replaces it. The counters are set, not added. A member
     /// the PEP's entry stores that carries a value the service cannot hold refuses
-    /// the whole heartbeat, 400 STS-XACML-0303 naming the member, and nothing of it
+    /// the whole heartbeat, 400 STS-XACML-0331 naming the member, and nothing of it
     /// is recorded: a counter that is not a non-negative integer of at most 2^53 -
     /// 1, a text member that is not a string (or null) or carries a control
     /// character, or signals, settings or listeners that are not an object or null.

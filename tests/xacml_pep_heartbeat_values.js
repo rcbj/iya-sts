@@ -326,10 +326,10 @@ async function childBody() {
   r = await request(port, 'POST', BEAT, pepCred, reproducingBody());
   const after = readRow();
   t.check(r.status === 400 && r.json && r.json.error === 'invalid_request' &&
-          marks.slice(since).indexOf('STS-XACML-0303') >= 0 &&
+          marks.slice(since).indexOf('STS-XACML-0331') >= 0 &&
           !/STS-/.test(r.text),
           'V1. the fuzz gate\'s body (case S1VvpM) is refused 400 with a ' +
-          'coded refusal (STS-XACML-0303, recorded, not sent), not a 500',
+          'coded refusal (STS-XACML-0331, recorded, not sent), not a 500',
           brief(r));
   t.check(after && before && after.refused === before.refused &&
           after.version === before.version &&

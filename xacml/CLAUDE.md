@@ -1389,7 +1389,7 @@ Three decisions on the row that each prevent a specific wrong reading:
   `resource`, `version`, `notifyUrl`) to strings with no C0, DEL or C1
   control character (or null), and `signals`, `settings` and `listeners` to
   an object or null, before `heartbeat()` reads or writes anything, and
-  refuses with 400 `STS-XACML-0303` naming the member — `hostname`'s rule.
+  refuses with 400 `STS-XACML-0331` naming the member — `hostname`'s rule.
   `HeartbeatRequest` in `models/pep/pep_control_plane.tsp` says the same
   (`minimum`/`maximum`/`pattern`). The Rust PEP sends u64 counters and
   Strings and never meets the refusal. `tests/xacml_pep_heartbeat_values.js`
