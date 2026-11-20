@@ -350,7 +350,9 @@ async function run(t) {
                               'route=orders-api') >= 0 &&
           routesPanel.indexOf('http://companion:9700') >= 0 &&
           routesPanel.indexOf('Enabled.') >= 0 &&
-          routesPanel.indexOf('https://orders.example.test') >= 0 &&
+          // The whole sentence, so the address is bounded on both sides.
+          /A browser reaches it at https:\/\/orders\.example\.test\.(?:\s|<)/
+            .test(routesPanel) &&
           routesPanel.indexOf('set-pep-route"') < 0 &&
           routesPanel.indexOf('set-pep-proxy') < 0,
           'S2. Configured Routes: the summary (upstream, enabled, ' +

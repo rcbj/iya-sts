@@ -80,6 +80,9 @@
 const assert = require("assert");
 const http = require("http");
 const names = require("./random_username.js");
+// An address named in an answer, parsed rather than searched for as
+// text (`url_match.js`).
+const urls = require("./url_match.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -742,7 +745,7 @@ async function createSection() {
   });
   const read = await send(api + "?application=prm-created");
   check("J. the document and the permissions are on the entry", function () {
-    assert.ok(read.raw.indexOf("api.example.com") >= 0 &&
+    assert.ok(urls.namesOrigin(read.raw, "https://api.example.com") &&
               /Change widgets/.test(read.raw), read.raw.slice(0, 400));
   });
   const badUpdate = await postJson(api + "/set", {

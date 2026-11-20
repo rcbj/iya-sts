@@ -58,6 +58,9 @@ const assert = require("assert");
 const http = require("http");
 const nodeCrypto = require("crypto");
 const portal = require("./portal_signin.js");
+// An address named in an answer, parsed rather than searched for as
+// text (`url_match.js`).
+const urls = require("./url_match.js");
 const K = require("./oauth_wire_kit.js").kit(
   "sts_federation_consumer_providers");
 
@@ -341,7 +344,7 @@ async function discord() {
   K.check("D4. the link is the relationship, the issuer and the id",
           function () {
             assert.ok(/cp-discord/.test(links) &&
-                      links.indexOf("https://discord.com") >= 0 &&
+                      urls.namesOrigin(links, "https://discord.com") &&
                       links.indexOf("80351110224678912") >= 0, links);
           });
   K.check("D5. the newcomer carries stsProvisionedBy federation:cp-discord",

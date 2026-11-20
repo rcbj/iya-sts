@@ -55,6 +55,9 @@
 
 const assert = require("assert");
 const K = require("./oauth_wire_kit.js").kit("sts_oidc_registration");
+// An address named in an answer, parsed rather than searched for as
+// text (`url_match.js`).
+const urls = require("./url_match.js");
 const log = K.log;
 
 const FLOOR = 62;
@@ -474,8 +477,8 @@ async function encryptionAndDisplay() {
     assert.strictEqual(r.status, 200, K.shown(r));
     assert.strictEqual(r.json.logo_uri, LOGO);
     assert.strictEqual(r.json.tos_uri, undefined);
-    assert.ok(entry.indexOf("https://rp.or.example/terms") < 0 &&
-              entry.indexOf("https://rp.or.example/privacy") < 0,
+    assert.ok(!urls.namesAddress(entry, "https://rp.or.example/terms") &&
+              !urls.namesAddress(entry, "https://rp.or.example/privacy"),
               entry.slice(0, 400));
   });
   r = await manage("PUT", shown, { client_id: shown.client_id,

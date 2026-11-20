@@ -4960,8 +4960,11 @@ async function theProxyForwardsTheIdentity() {
       "and it verifies against the realm's JWKS: " + jwt.why);
     assert.strictEqual(String((jwt.payload || {}).sub), adminSub,
       "its sub is the person's; it is " + JSON.stringify(jwt.payload));
+    // An element of aud EQUAL to the audience, not a string search.
     assert.ok([].concat((jwt.payload || {}).aud || [])
-      .indexOf(PROXY_API_AUDIENCE) >= 0,
+      .some(function (one) {
+        return one === PROXY_API_AUDIENCE;
+      }),
       "its aud is the application's audience " + PROXY_API_AUDIENCE);
   });
   check("jwt mode: the client's own Authorization is gone", function () {
