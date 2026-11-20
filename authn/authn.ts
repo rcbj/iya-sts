@@ -16417,6 +16417,26 @@ class Authn {
     }, usable.length ? 'STS-AUTHN-0026' : 'STS-AUTHN-0025');
   }
 
+  // A SECOND-FACTOR STEP THAT NAMES A LEGACY U2F KEY (#1955 P7): the
+  // request options with the `appid` extension, and `userVerification`
+  // `preferred` where the realm asks `required` — a U2F authenticator
+  // cannot verify the person, and a client asked to require it never offers
+  // one. Nothing is weakened by it: the verifier still REQUIRES the UV flag
+  // of every key that is not a legacy one (the step's verification), so a
+  // FIDO2 key answering the same ceremony is held to it as before. With no
+  // AppID the options are `requestOptions()`'s, byte for byte.
+  private legacyRequestOptions(rpId: string, appid: string): any {
+    const { log, webauthnPolicy } = this.deps;
+    log.debug("Entering Authn.legacyRequestOptions().");
+    const out = webauthnPolicy.requestOptions(rpId, appid || undefined);
+    if (out.appid && out.userVerification === 'required') {
+      out.userVerification = 'preferred';
+    }
+    log.debug("Leaving Authn.legacyRequestOptions(). " +
+              (out.appid ? 'With an AppID.' : 'Plain.'));
+    return out;
+  }
+
   // ---------------------------------------------------------------------------
   // TWO SMALL READERS OF WHAT THE BROWSER SAID (2026-09-10).
   //
@@ -16507,7 +16527,25 @@ class Authn {
     // ceremony's options read it.
     this.deps.passkeyPolicy.select(username,
                                    step.authn && step.authn.application);
-    const held = credentials.keysOf(username);
+    // Read ONCE: rpIdOf() logs when it refuses a configured value.
+    const rpId = this.rpIdOf(base);
+    // A LEGACY U2F KEY (#1955 P7) IS OFFERED ONLY WHERE IT CAN ANSWER: a
+    // second-factor step, while the realm still permits its AppID at this
+    // RP ID (`webauthn.u2fAppIds`). It cannot verify the person, so a
+    // passwordless step never names it; with its AppID no longer permitted
+    // it could not be asserted at all. Left out, it decides nothing here —
+    // a person holding only such keys is offered a registration, as a
+    // person holding none is.
+    const held = credentials.keysOf(username).filter(function (one) {
+      const appid = credentials.appIdOf(one);
+      return !appid || (!passwordless &&
+                        webauthnPolicy.legacyAppIdPermitted(appid, rpId));
+    });
+    // The AppID this step's request names (#1955 P7): that of the first
+    // legacy key it may offer, '' where it offers none.
+    const legacyAppId = held.map(function (one) {
+      return credentials.appIdOf(one);
+    }).filter(Boolean)[0] || '';
     // ONLY THE POST-QUANTUM KEYS WHILE THE PROFILE REQUIRES ONE AT SIGN-IN
     // (#718, rcbj's decision 3), by the question's own reading of each
     // key's algorithm (`postQuantumRefusal()`), so `allowCredentials` never
@@ -16622,8 +16660,6 @@ class Authn {
                         credentials.newUserHandle();
       pendingMfa.set(mfaId, step);
     }
-    // Read ONCE: rpIdOf() logs when it refuses a configured value.
-    const rpId = this.rpIdOf(base);
     const options = webauthnPolicy.settings();
     // THE CLASSICAL RETRY (#944), where a registration is drawn: whether
     // the ceremony asks for ML-DSA at all (`asksPostQuantum`, so the page
@@ -16752,7 +16788,10 @@ class Authn {
           : mode === 'create'
           ? webauthnPolicy.creationOptions(rpId, undefined, stepLane,
                                            !!step.classicalOnly)
-          : webauthnPolicy.requestOptions(rpId),
+          : this.legacyRequestOptions(rpId,
+              allowed.some(function (one) {
+                return !!credentials.appIdOf(one);
+              }) ? legacyAppId : ''),
         // The retry's facts (#944), for the script — and any caller of the
         // API that runs the ceremony itself.
         fallback: fallback } };
@@ -19734,6 +19773,9 @@ class Authn {
               // CTAP 2.1's minPinLength, as the key reported it (#529).
               minPinLength: credentials.Credentials.reportedMinPinLength(
                 verdict),
+              // And its credProtect level (#1955 P7), null for none.
+              credProtect: credentials.Credentials.reportedCredProtect(
+                verdict),
               // The handle the page created it under (#474), and the lane
               // the step was armed in (#643).
               userHandle: step.userHandle || undefined,
@@ -19799,6 +19841,23 @@ class Authn {
           throw errorCodes.mark(new Error(handled.why),
                                 errorCodes.codeOf(handled));
         }
+        // A LEGACY U2F KEY (#1955 P7) answers only a second-factor step, and
+        // only while the realm permits its AppID at this RP ID — what the
+        // options offered; `allowCredentials` is a hint, and this is the
+        // enforcement.
+        const legacyAppId = credentials.appIdOf(known);
+        if (legacyAppId && (step.passwordless ||
+            !webauthnPolicy.legacyAppIdPermitted(legacyAppId,
+                                                 expectedRpId))) {
+          throw errorCodes.mark(new Error(step.passwordless
+            ? 'That security key was imported from a U2F service and ' +
+              'cannot verify who you are, so it cannot sign you in on its ' +
+              'own. Use it after your password.'
+            : 'That security key was imported from a U2F service this ' +
+              'realm no longer accepts (webauthn.u2fAppIds).'),
+          'STS-AUTHN-0565');
+        }
+        const extensionResults = credential.clientExtensionResults || {};
         verdict = webauthnVerifier.verifyAssertion({
           authenticatorData: credential.response.authenticatorData,
           clientDataJSON: credential.response.clientDataJSON,
@@ -19811,11 +19870,18 @@ class Authn {
           // reason. Both halves of the ceremony or neither: a service that
           // demanded user verification to enrol and not to sign in would be
           // demanding it exactly once, at the moment it matters least.
-          requireUserVerification: webauthnPolicy.requireUserVerification(),
+          // NOT OF A LEGACY U2F KEY (#1955 P7), which has no user
+          // verification to give; it answers a second-factor step only.
+          requireUserVerification: !legacyAppId &&
+            webauthnPolicy.requireUserVerification(),
           previousSignCount: known.signCount,
           // RS1 only where `webauthn.insecureAlgorithms` allows it
           // (2026-10-01).
-          allowInsecure: webauthnPolicy.insecureAlgorithmsAllowed()
+          allowInsecure: webauthnPolicy.insecureAlgorithmsAllowed(),
+          // ITS APPID (#1955 P7): the rpIdHash is SHA-256 of it only where
+          // the client reports it used the appid extension.
+          expectedAppId: legacyAppId || undefined,
+          appidUsed: extensionResults.appid === true
         });
         // A CLONE, BY THE ENTRY'S COUNTER (#231): everything else verified
         // and the counter did not go up. Refused below like any failed

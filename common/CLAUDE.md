@@ -14371,6 +14371,45 @@ which reads the RECORDED value off the key row — decided on the ticket, so a
 raised minimum stops a key enrolled under a lower one). `pinLengthRefusal()`
 is the one sentence; `/portal/keys` shows it on such a key.
 
+**#1955 P7 ADDED CTAP 2.1's credProtect (2026-11-20)**: `credProtect`
+(`none`) and `enforceCredProtect` (off), both OPTIONAL on a save.
+`credProtectRule()` resolves them; `creationOptions()` carries
+`credProtect: { credentialProtectionPolicy, enforceCredentialProtectionPolicy }`
+only while a level is asked, and `common/web_webauthn.ts`'s
+`creationExtensions()` makes the client extension inputs of it — **the one
+copy of the flat-options-to-`extensions` step**, which four runtimes had
+written by hand until then (`requestExtensions()` and `dropFlatExtensions()`
+beside it). `Credentials.reportedCredProtect()` records the level on the key
+row (`credProtect`, null where none). **REGISTRATION ONLY, unlike #528 and
+#529**: the authenticator enforces the level at every assertion and a
+credential's level never changes, so there is no sign-in funnel; the refusal
+is the issuance policy's `cred-protect` rule at `addKey()` (`STS-AUTHN-0559`),
+on the question's `cred-protect` group, whose level is 1 where the key reported
+none (CTAP's own level of a credential made without the extension) so silence
+never satisfies a higher one. A save enforcing with `none` is refused
+(`STS-AUTHN-0560`). The issue's `hints` half needed nothing: #531's
+`passkeyHints`/`securityKeyHints`/`signInHints` already send them per policy,
+and their defaults stay as they were for backwards compatibility.
+
+**#1955 P7 ALSO ADDED LEGACY U2F CREDENTIALS (rcbj's reversal of the issue's
+D5)**, off until `webauthn.u2fAppIds` lists an AppID (write rule
+`STS-AUTHN-0566`). `Credentials.importU2fKey()` checks the four values a U2F
+relying party kept and writes through `addKey()` — the one writer, so the
+profile's registration question, the duplicate check and the cap hold — a row
+with `appid`, `importedBy`, ES256, not discoverable, `userVerified` false
+(`Credentials.appIdOf()` reads it). Where an AppID is permitted at an RP ID
+(`webauthnPolicy.legacyAppIdPermitted()`: listed, and its host the RP ID or
+one a dot-suffix of the other — the conservative half of the FIDO AppID and
+Facet algorithm, since there is no public suffix list here), `creationOptions()`
+sends `appidExclude` and `authn.ts`'s passkey step sends `appid` and offers
+the key **at a second-factor step only** (a U2F key cannot verify the person;
+`userVerification` `required` becomes `preferred` in that step's options so a
+client offers the key, and the verifier still requires UV of every other key).
+`authn/webauthn.js` holds the rpIdHash to SHA-256 of the AppID only when the
+caller names the key's AppID AND the client's extension outputs say
+`appid: true`; anything else is held to the RP ID. The portal's own ceremonies
+do not send `appid`: an imported key cannot re-authenticate on `/portal`.
+
 **#530 ADDED `enforceAttestationAtSignIn` (2026-10-08)**, off: on, every
 passkey sign-in is held to the `webauthn.attestation*` rules in force by
 `webauthn_attestation.ts`'s `signInVerdict()`. It reads the key's RECORDED

@@ -447,6 +447,12 @@ const VOCABULARY = Object.freeze({
   // resource, an integer: the minimum PIN length the key reported (CTAP
   // 2.1's minPinLength extension, #529); absent when it reported none.
   PASSKEY_MIN_PIN_LENGTH: 'urn:sts:xacml:passkey:min-pin-length',
+  // resource, an integer: the credProtect level the key reported at
+  // registration (CTAP 2.1 section 12.1, #1955 P7), 1 where it reported
+  // none; and a boolean saying whether it reported one.
+  PASSKEY_CRED_PROTECT: 'urn:sts:xacml:passkey:cred-protect',
+  PASSKEY_CRED_PROTECT_REPORTED:
+    'urn:sts:xacml:passkey:cred-protect-reported',
   // resource: the device serial a trusted attestation certificate named
   // (#532), and a boolean saying whether it is one of the person's (their
   // entry holds it in the attribute the passkey policy names).
@@ -965,6 +971,9 @@ class AuthorizationRequest {
   //   policy { registrationMode, registrationAlgorithmsFrom }, and
   //   policy.registrationAlgorithms, a bag     always (#940)
   //   enrolledByAdmin, enrolledBy              with `enrolment` (#945)
+  //   credProtect, credProtectReported         with `cred-protect`
+  //                                            (#1955 P7)
+  //   policy { credProtectLevel, enforceCredProtect }  always (#1955 P7)
   //   policy.adminEnrolment                    always (#945)
   //   policy { backupEligibility, enforcePinLength, minPinLength,
   //            pinLengthOnlyIfSupported, enforceAttestationAtSignIn,
@@ -1008,6 +1017,14 @@ class AuthorizationRequest {
     if (has('pin-length')) {
       this.resource(V.PASSKEY_MIN_PIN_LENGTH, whole(given.minPinLength),
                     T.INTEGER);
+    }
+    // THE CREDPROTECT LEVEL (#1955 P7): a whole number always with its
+    // group (question() sends 1 for none), so silence never compares.
+    if (has('cred-protect')) {
+      this.resource(V.PASSKEY_CRED_PROTECT, whole(given.credProtect),
+                    T.INTEGER);
+      this.resource(V.PASSKEY_CRED_PROTECT_REPORTED,
+                    [given.credProtectReported === true], T.BOOLEAN);
     }
     if (has('serial')) {
       this.resource(V.PASSKEY_SERIAL, one(given.serial));
@@ -1111,6 +1128,12 @@ class AuthorizationRequest {
     this.environment(P + 'recoveryAssurance', one(policy.recoveryAssurance));
     // #945: whether an administrator may enrol a passkey, `off` or `on`.
     this.environment(P + 'adminEnrolment', one(policy.adminEnrolment));
+    // #1955 P7: the credProtect level asked for (0 for none), and whether
+    // a lower reported level is refused.
+    this.environment(P + 'credProtectLevel', whole(policy.credProtectLevel),
+                     T.INTEGER);
+    this.environment(P + 'enforceCredProtect',
+                     [policy.enforceCredProtect === true], T.BOOLEAN);
     this.environment(P + 'attestationAlgorithms',
                      (Array.isArray(policy.attestationAlgorithms)
                        ? policy.attestationAlgorithms : []).map(String));

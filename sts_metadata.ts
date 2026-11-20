@@ -2739,11 +2739,45 @@ const SPECS: Spec[] = [
               '(webauthn.pqcAlongsideClassical): each lane has its own user ' +
               'handle (section 5.4.3), algorithm list and ' +
               'excludeCredentials, and the Signal API (section 5.1.10) is ' +
-              'sent once per lane. Missing: enterprise attestation ' +
-              '(section 5.4.7) has no RP ID allow-list, and the ' +
-              'authentication extensions are not processed. Written ' +
+              'sent once per lane. Enterprise attestation (section 5.4.7) ' +
+              'is asked only for the RP IDs ' +
+              'webauthn.attestationEnterpriseRpIds lists. The hints member ' +
+              '(section 5.4.8) is sent as the passkey policy says. ' +
+              'Extensions (section 10): credProps (10.1.3) is asked and its ' +
+              'rk recorded; CTAP 2.1\'s credProtect and minPinLength are ' +
+              'asked as the passkey policy says and their outputs read from ' +
+              'the authenticator data (see CTAP 2.1); appid (10.1.1) and ' +
+              'appidExclude (10.1.2) serve legacy FIDO U2F credentials an ' +
+              'administrator imported onto a person\'s entry, off until ' +
+              'webauthn.u2fAppIds names their AppID: an assertion\'s ' +
+              'rpIdHash is held to SHA-256 of the AppID only when the client ' +
+              'returned appid true, such a key answers a second-factor step ' +
+              'only, and a registration asks appidExclude so the same key ' +
+              'is not registered twice. Missing: the other registered ' +
+              'extensions (largeBlob, prf and the rest) are neither asked ' +
+              'for nor processed, and an AppID is used only at an RP ID ' +
+              'whose host it shares or is a suffix of — the FIDO AppID and ' +
+              'Facet Specification\'s TrustedFacets list is not fetched or ' +
+              'served here. Written ' +
               'independently of the debugger\'s own decoder so the two can ' +
               'be checked against each other (tests/webauthn_cross_impl.js).' },
+  // #1955 P7: the two CTAP 2.1 extensions a registration asks for.
+  { id: 'ctap21', name: 'Client to Authenticator Protocol (CTAP) 2.1',
+    where: 'FIDO Alliance',
+    url: 'https://fidoalliance.org/specs/fido-v2.1-ps-20210615/' +
+         'fido-client-to-authenticator-protocol-v2.1-ps-20210615.html',
+    coverage: 'minimal, the relying party\'s half of two extensions, since ' +
+              'this service is neither a client nor an authenticator: ' +
+              'credProtect (section 12.1) — the passkey policy\'s ' +
+              'credProtect asks for a level as credentialProtectionPolicy, ' +
+              'enforceCredProtect sends enforceCredentialProtectionPolicy and ' +
+              'refuses a registration whose authenticator data reports a ' +
+              'lower level (none reported is level 1), and the level is ' +
+              'recorded on the passkey; and minPinLength (section 12.4), ' +
+              'asked while the passkey policy enforces a PIN length and held ' +
+              'to its minimum at registration and at sign-in. Nothing else ' +
+              'of CTAP: the authenticator API, the PIN protocols, large ' +
+              'blobs and credential management are the platform\'s.' },
   // #725: the sign-on session bound to a key the browser holds.
   { id: 'dbsc', name: 'Device Bound Session Credentials',
     where: 'W3C WebAppSec (Editor\'s Draft)',
@@ -10817,7 +10851,8 @@ const PROTOCOLS: Protocol[] = [
              'were deleted and a client certificate is presented to the main ' +
              'port, which every row here is on. LDAPS 636 shares the ' +
              'certificate and is under LDAP.' },
-  { name: 'WebAuthn / CTAP', groups: ['Authentication'], specs: ['webauthn'],
+  { name: 'WebAuthn / CTAP', groups: ['Authentication'],
+    specs: ['webauthn', 'ctap21'],
     what: 'A second factor on the sign-in screen every protocol here sends a ' +
           'person to: registration and assertion ceremonies against a real ' +
           'security key, with the attestation and the authenticator data ' +

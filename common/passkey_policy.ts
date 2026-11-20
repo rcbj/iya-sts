@@ -315,6 +315,34 @@
 // registration question carries it as the `enrolment` fact group, so a
 // realm's own rule can forbid it by policy; no built-in rule reads it.
 //
+// #1955 P7 (2026-11-20) added two rows for CTAP 2.1 section 12.1's
+// credProtect extension, both OPTIONAL on a save:
+//
+//   credProtect              `none`: no extension asked, the options as they
+//                            always were. Otherwise the level a registration
+//                            asks the authenticator to protect the new
+//                            credential at — `userVerificationOptional` (1),
+//                            `userVerificationOptionalWithCredentialIDList`
+//                            (2), `userVerificationRequired` (3) — sent as
+//                            the client extension input
+//                            `credentialProtectionPolicy`. The level the key
+//                            reports in its authenticator data's extensions
+//                            is recorded on the passkey (`credProtect`, an
+//                            integer, null where it reported none).
+//   enforceCredProtect       off. On, `enforceCredentialProtectionPolicy` is
+//                            sent too, and a registration whose key reports
+//                            a LOWER level — none reported is level 1, the
+//                            level every credential has without the
+//                            extension — is refused by the issuance policy
+//                            (`cred-protect`, STS-AUTHN-0559). Saving it on
+//                            with `credProtect` none is refused
+//                            (STS-AUTHN-0560): it would enforce nothing.
+//
+// Registration only, and on purpose: the AUTHENTICATOR enforces the level at
+// every later assertion (a level-3 credential is not used without user
+// verification), and the level of a credential never changes, so there is no
+// sign-in half to hold as #528 and #529 have.
+//
 // One profile per realm, inherited from the default realm (answer 3); named
 // policies chosen by application or group are #535.
 //
@@ -668,6 +696,22 @@ const BACKUP_ELIGIBILITY_VALUES = ['allow', 'disallow'];
 const MIN_PIN_LENGTH = 4;
 const MAX_PIN_LENGTH = 63;
 /**
+ * What `credProtect` may be (#1955 P7): `none`, or CTAP 2.1 section 12.1's
+ * three `credentialProtectionPolicy` values, in the order of their levels.
+ */
+const CRED_PROTECT_VALUES = ['none', 'userVerificationOptional',
+                             'userVerificationOptionalWithCredentialIDList',
+                             'userVerificationRequired'];
+/**
+ * The level of each `credentialProtectionPolicy` value (CTAP 2.1 section
+ * 12.1: the authenticator reports the level as the integer 1, 2 or 3).
+ */
+const CRED_PROTECT_LEVELS: Readonly<Record<string, number>> = Object.freeze({
+  none: 0, userVerificationOptional: 1,
+  userVerificationOptionalWithCredentialIDList: 2,
+  userVerificationRequired: 3
+});
+/**
  * The WebAuthn hints (Level 3 section 5.4.8) and the attachment each implies
  * (#531). An empty list is written `none`.
  */
@@ -796,7 +840,8 @@ const FIELDS: PolicyField[] =
   rpNameExtras: { values: RP_NAME_EXTRAS.slice() },
   recoveryAssurance: { values: RECOVERY_ASSURANCE.slice() },
   attestationAlgorithms: { values: ATTESTATION_ALGORITHM_VALUES.slice(), dflt: NO_HINTS },
-  adminEnrolment: { values: ADMIN_ENROLMENT_VALUES.slice() }
+  adminEnrolment: { values: ADMIN_ENROLMENT_VALUES.slice() },
+  credProtect: { values: CRED_PROTECT_VALUES.slice() }
 });
 
 /**
@@ -2425,6 +2470,47 @@ class PasskeyPolicy {
   }
 
   /**
+   * The credProtect rule in force (#1955 P7): the policy name a registration
+   * asks for (`''` for none), its level, and whether it is enforced. An
+   * `enforceCredProtect` with no level enforces nothing and reads false.
+   *
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns `{ policy, level, enforce }`
+   */
+  credProtectRule(profile?: PasskeyProfile | null):
+      { policy: string; level: number; enforce: boolean } {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.credProtectRule().");
+    const rules = profile || this.read();
+    const named = String(rules.credProtect || 'none');
+    const level = CRED_PROTECT_LEVELS[named] || 0;
+    const out = { policy: level ? named : '', level: level,
+                  enforce: level > 0 && rules.enforceCredProtect === true };
+    log.debug("Leaving PasskeyPolicy.credProtectRule(). level=" + level +
+              " enforce=" + out.enforce);
+    return out;
+  }
+
+  /**
+   * The credProtect level an authenticator reported (#1955 P7): CTAP 2.1
+   * section 12.1's `credProtect` output, an integer 1 to 3, in the
+   * authenticator data's extensions; null for anything else.
+   *
+   * @param extensions - the authenticator data's extension outputs, as
+   *   `webauthn.verifyRegistration()` returns them
+   * @returns the level, or null
+   */
+  static reportedCredProtect(extensions: unknown): number | null {
+    log.debug("Entering PasskeyPolicy.reportedCredProtect().");
+    const value = extensions && typeof extensions === 'object'
+      ? (extensions as Record<string, unknown>).credProtect : null;
+    const out = typeof value === 'number' && Number.isInteger(value) &&
+      value >= 1 && value <= 3 ? value : null;
+    log.debug("Leaving PasskeyPolicy.reportedCredProtect(). " + out);
+    return out;
+  }
+
+  /**
    * The refusal of a key's PIN length, or null (#529): a reported minimum
    * below the rule's, or none reported where the rule needs one.
    *
@@ -2505,6 +2591,17 @@ class PasskeyPolicy {
       groups.push('pin-length');
       out.minPinLength = typeof given.minPinLength === 'number' &&
         Number.isInteger(given.minPinLength) ? given.minPinLength : null;
+    }
+    // THE LEVEL THE KEY REPORTED (#1955 P7), at registration: always a
+    // whole number with its group, 1 where the key reported none — CTAP 2.1
+    // section 12.1's level of a credential made without the extension — so
+    // the rule never reads silence as a level.
+    if (has('credProtect')) {
+      groups.push('cred-protect');
+      const reported = PasskeyPolicy.reportedCredProtect(
+        { credProtect: given.credProtect });
+      out.credProtect = reported || 1;
+      out.credProtectReported = reported !== null;
     }
     const attribute = this.enterpriseSerialAttribute(rules);
     if (has('serial')) {
@@ -2615,6 +2712,7 @@ class PasskeyPolicy {
     }
     out.groups = groups;
     const pin = this.pinLengthRule(rules);
+    const credProtect = this.credProtectRule(rules);
     out.policy = {
       backupEligibility: String(rules.backupEligibility || 'allow'),
       enforcePinLength: pin.enforce,
@@ -2645,7 +2743,11 @@ class PasskeyPolicy {
       registrationAlgorithms: offeredHere.slice(),
       registrationAlgorithmsFrom: this.registrationAlgorithmsFrom(rules),
       // #945: whether an administrator may enrol one, `off` or `on`.
-      adminEnrolment: this.adminEnrolmentAllowed(rules) ? 'on' : 'off'
+      adminEnrolment: this.adminEnrolmentAllowed(rules) ? 'on' : 'off',
+      // #1955 P7: the credProtect level asked for (0 for none) and whether
+      // a lower reported level is refused.
+      credProtectLevel: credProtect.level,
+      enforceCredProtect: credProtect.enforce
     };
     log.debug("Leaving PasskeyPolicy.question(). " + out.action + ' [' +
               groups.join(', ') + ']');
@@ -2735,6 +2837,17 @@ class PasskeyPolicy {
           ? 'Use a key configured with a longer minimum PIN.'
           : 'Sign in another way, and register a key whose minimum PIN ' +
             'is long enough.');
+    } else if (reason === 'cred-protect') {
+      // #1955 P7: CTAP 2.1 section 12.1, at registration only.
+      why = 'That passkey protects its credential at level ' +
+            String(asked.credProtect || 1) +
+            (asked.credProtectReported === false
+              ? ' (it reported no credential protection, which is level 1)'
+              : '') +
+            ', and this realm requires level ' +
+            String(policy.credProtectLevel || '') + ' (the passkey ' +
+            'policy\'s credProtect, enforced). Use a security key that ' +
+            'supports CTAP 2.1 credential protection.';
     } else if (reason === 'serial-missing') {
       why = 'That security key\'s attestation names no device ' +
             'serial this service can read, and this realm binds ' +
@@ -3235,6 +3348,21 @@ class PasskeyPolicy {
                         'sessions on first.'] },
                              'STS-AUTHN-0461');
     }
+    // CREDENTIAL PROTECTION ENFORCED WITH NONE ASKED FOR (#1955 P7): the
+    // switch would refuse nothing and say it did. Asked of the profile as
+    // it will stand, for the reason above.
+    if (standing.enforceCredProtect === true &&
+        String(standing.credProtect || 'none') === 'none') {
+      log.debug('Leaving PasskeyPolicy.save(). credProtect enforced and ' +
+                'not asked for.');
+      return errorCodes.mark({ ok: false,
+               errors: ['`enforceCredProtect` (' +
+                        FIELD_BY_KEY.enforceCredProtect.label + ') is on, ' +
+                        'and `credProtect` (' +
+                        FIELD_BY_KEY.credProtect.label + ') is none, so ' +
+                        'there is no level to enforce. Choose a level, or ' +
+                        'turn enforcement off.'] }, 'STS-AUTHN-0560');
+    }
     if (!this.haveDirectory()) {
       log.debug('Leaving PasskeyPolicy.save(). No directory.');
       return errorCodes.mark({ ok: false,
@@ -3421,6 +3549,10 @@ export = {
   refusesBackupEligible: slot.forward('refusesBackupEligible'),
   backupEligibleRefusal: slot.forward('backupEligibleRefusal'),
   pinLengthRule: slot.forward('pinLengthRule'),
+  // #1955 P7: credProtect.
+  CRED_PROTECT_VALUES: CRED_PROTECT_VALUES,
+  credProtectRule: slot.forward('credProtectRule'),
+  reportedCredProtect: PasskeyPolicy.reportedCredProtect,
   enforcesAttestationAtSignIn: slot.forward('enforcesAttestationAtSignIn'),
   // #941.
   ATTESTATION_ALGORITHM_VALUES: ATTESTATION_ALGORITHM_VALUES,

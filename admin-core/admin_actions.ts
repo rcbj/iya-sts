@@ -379,6 +379,8 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        'clear-totp', 'clear-key', 'clear-backup-codes',
                        // A passkey's name (#470, rcbj's decision D).
                        'rename-key',
+                       // A legacy U2F credential imported (#1955 P7).
+                       'import-u2f-key',
                        // The emailed second factor, and the address
                        // (#64, 2026-09-23).
                        'clear-email-factor', 'set-mail',
@@ -5296,6 +5298,53 @@ class AdminActions {
         ? { ok: true, message: 'The passkey of ' + who + ' is now called "' +
             result.label + '".', label: result.label }
         : this.refusedBy('STS-ADMIN-0850', result);
+    }
+
+    // A LEGACY FIDO U2F CREDENTIAL IMPORTED ONTO A PERSON (#1955 P7, rcbj's
+    // reversal of the issue's D5). THROUGH `credentials.importU2fKey()`,
+    // which checks the four values and writes through `addKey()`, the one
+    // writer — so the duplicate check, the cap and the registration rules of
+    // the person's passkey policy hold. Off until `webauthn.u2fAppIds` names
+    // the AppID (STS-AUTHN-0561). The importer is the caller, recorded on the
+    // key; audited, and no ceremony ran, so nothing about the key is
+    // attested — the console says so.
+    if (action === 'import-u2f-key') {
+      const who = String(body.user || body.username || '').trim();
+      if (!who) {
+        log.debug("Leaving AdminActions.usersAction(). No person named.");
+        return this.refused('STS-ADMIN-0951', { ok: false, errors: ['Name ' +
+          'the person the U2F security key is imported for, in `user`.'] });
+      }
+      const admin: any = (context && (context as any).admin) || {};
+      const result = credentials.importU2fKey(who, {
+        keyHandle: body.keyHandle, publicKey: body.publicKey,
+        appId: body.appId, counter: body.counter, label: body.label
+      }, { importedBy: { username: String(admin.username || ctx.actor ||
+                                          'operator'),
+                         sub: String(admin.sub || ''), at: Date.now() } });
+      auditLog.record({
+        category: 'authentication', action: 'admin.mfa.key.imported',
+        actor: ctx.actor, target: who,
+        outcome: result.ok ? 'success' : 'failure',
+        summary: (result.ok ? 'imported' : 'could not import') +
+                 ' a U2F security key for ' + who,
+        detail: { username: who, via: ctx.via,
+                  appId: String(body.appId || '').slice(0, 200),
+                  credentialId: result.ok
+                    ? String(result.credentialId || '') : undefined,
+                  errors: result.ok ? undefined : (result.errors || []) }
+      });
+      log.debug("Leaving AdminActions.usersAction(). import-u2f-key " +
+                (result.ok ? "ok." : "refused."));
+      return result.ok
+        ? { ok: true, message: 'A U2F security key registered under ' +
+            String(body.appId || '') + ' is imported for ' + who + '. It ' +
+            'answers a second-factor step only.' }
+        // THE ERRORS AND THE CODE ONLY: the writer's `reason` is a member
+        // this operation's answer does not carry.
+        : this.refusedBy('STS-ADMIN-0952', this.deps.errorCodes.mark(
+            { ok: false, errors: (result.errors || []).slice() },
+            this.deps.errorCodes.codeOf(result) || 'STS-ADMIN-0952'));
     }
 
     // ---------------------------------------------------------------------

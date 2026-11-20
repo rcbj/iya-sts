@@ -678,6 +678,8 @@ declare namespace IyaDomain {
     attestationAlgorithms?: string;
     adminEnrolment?: string;
     deviceBoundRequired?: string;
+    credProtect?: string;
+    enforceCredProtect?: string;
     precedence?: number;
     description?: string[];
     stsRecoveryPending?: string;

@@ -1971,6 +1971,15 @@ class AdminApi {
               'optional major-version range, `;` between rules — whose ' +
               'registrations offer the list less ML-DSA, where a classical ' +
               'passkey is allowed. ' +
+              '`credProtect` (`none`, #1955; optional) asks a ' +
+              'registration\'s authenticator for CTAP 2.1 credential ' +
+              'protection at `userVerificationOptional`, ' +
+              '`userVerificationOptionalWithCredentialIDList` or ' +
+              '`userVerificationRequired`, and records the level the ' +
+              'key reports; `enforceCredProtect` (off; optional) asks ' +
+              'the browser to enforce it and refuses a key reporting a ' +
+              'lower level (STS-AUTHN-0559), and is refused on while ' +
+              '`credProtect` is `none` (STS-AUTHN-0560). ' +
               'Refused: `classical-only` with `postQuantumRequired` not ' +
               '`off` or with `attestationAlgorithms` set (STS-AUTHN-0430), ' +
               'and `pq-only` or `pq-first` where the list offered names no ' +
@@ -1991,7 +2000,8 @@ class AdminApi {
                    postQuantumAllowCredentials: 'realm',
                    registrationAlgorithms: 'realm',
                    registrationMode: 'realm', lanes: 'realm',
-                   clientRules: '' }
+                   clientRules: '', credProtect: 'none',
+                   enforceCredProtect: false }
       },
       // #539: the fifth kind, with named profiles an application or a
       // group names (#1238).
@@ -5268,6 +5278,10 @@ class AdminApi {
           // Passkeys table, and the same writer the person's own
           // `/portal/rename-key` calls.
           { action: 'rename-key', operationId: 'renameUserPasskey' },
+
+          // #1955 P7: a legacy FIDO U2F credential imported by value, the
+          // console's *Import a U2F security key* on a person's page.
+          { action: 'import-u2f-key', operationId: 'importUserU2fKey' },
 
           // #945: AN ADMINISTRATOR ENROLS A PASSKEY ON A PERSON'S BEHALF,
           // the console's *Enrol a passkey for this person* on their page.

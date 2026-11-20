@@ -197,6 +197,21 @@ model PolicyPasskey {
     field: #{key: "deviceBoundRequired", type: "bool", dflt: false, optional: true, label: "Require a device-bound session"}
   })
   stsPasskeyDeviceBoundRequired?: boolean;
+  // #1955 P7: CTAP 2.1 section 12.1's credProtect, asked of a security key
+  // at registration. Both rows optional, so a save written before they
+  // existed keeps the built-in "not requested".
+  @attr(#{
+    kind: "single",
+    what: "`none` BY DEFAULT: a registration asks for no credential protection, and its options are what they always were. Otherwise a registration asks the authenticator (CTAP 2.1 section 12.1, the credProtect extension) to protect the new credential at that level: `userVerificationOptional` (level 1, what a credential has without the extension), `userVerificationOptionalWithCredentialIDList` (level 2: the key does not reveal or use the credential without user verification unless the relying party names it in allowCredentials, so nobody holding the key can find a discoverable credential on it) or `userVerificationRequired` (level 3: the key uses the credential only after a PIN or biometric). The level the key reports is recorded on the passkey. Most platform and synced passkeys report nothing. Left out of a save, the built-in default is kept.",
+    field: #{key: "credProtect", type: "enum", dflt: "none", optional: true, label: "Credential protection a registration asks a security key for"}
+  })
+  stsPasskeyCredProtect?: string;
+  @attr(#{
+    kind: "single",
+    what: "OFF BY DEFAULT. On, the browser is asked to enforce the row above (enforceCredentialProtectionPolicy), and a registration whose authenticator reports a lower level than the row above asks for is refused; a key that reports nothing is at level 1. Needs the row above set to a level other than none. Left out of a save, the built-in default is kept.",
+    field: #{key: "enforceCredProtect", type: "bool", dflt: false, optional: true, label: "Refuse a key that does not apply that protection"}
+  })
+  stsPasskeyEnforceCredProtect?: boolean;
   @attr(#{
     kind: "single",
     what: "Which named passkey policy wins where several match: the lowest, from 1 to 1000.",

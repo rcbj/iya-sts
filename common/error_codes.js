@@ -6181,7 +6181,9 @@ const CODES = [
     spec: 'HTTP 200 page naming the failed check' },
   { code: 'STS-AUTHN-0031',
     summary: 'WebAuthn verification failed: the RP ID hash in the ' +
-      'authenticator data is not SHA-256 of the expected RP ID.',
+      'authenticator data is not SHA-256 of the expected RP ID — or, for a ' +
+      'legacy U2F key whose client used the appid extension, of the AppID ' +
+      'it was imported under (#1955).',
     spec: 'HTTP 200 page naming the failed check' },
   { code: 'STS-AUTHN-0032',
     summary: 'WebAuthn verification failed: the authenticator data does not ' +
@@ -8358,6 +8360,55 @@ const CODES = [
       'batch decides nothing: no session is moved to remembered and no set ' +
       'is deleted on it, and the next run starts again at that batch.',
     spec: 'none: a scheduler job; logged, never sent' },
+  { code: 'STS-AUTHN-0559',
+    summary: 'A passkey was not registered: the passkey policy asks a ' +
+      'security key for CTAP 2.1 credential protection and enforces it ' +
+      '(credProtect, enforceCredProtect, #1955), and the authenticator ' +
+      'reported a lower credProtect level, or none, which is level 1. The ' +
+      'issuance policy\'s cred-protect rule. Asked where every key is ' +
+      'written.',
+    spec: 'HTTP 200 page naming the refusal; /admin-api and /account-api ' +
+      'HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-AUTHN-0560',
+    summary: 'A passkey policy save was refused: enforceCredProtect was on ' +
+      'while credProtect was none, so there was no level to enforce ' +
+      '(#1955). Nothing was written.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-AUTHN-0561',
+    summary: 'A legacy U2F security key was not imported: its AppID is not ' +
+      'one webauthn.u2fAppIds lists, or that setting is empty, which is ' +
+      'the feature off (#1955). Nothing was written.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-AUTHN-0562',
+    summary: 'A legacy U2F security key was not imported: its key handle ' +
+      'is not base64 or base64url of 1 to 255 bytes (#1955).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-AUTHN-0563',
+    summary: 'A legacy U2F security key was not imported: its public key ' +
+      'is not an uncompressed P-256 point (65 bytes starting 0x04, on the ' +
+      'curve) (#1955).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-AUTHN-0564',
+    summary: 'A legacy U2F security key was not imported: its counter is ' +
+      'not a whole number from 0 to 4294967295 (#1955).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-AUTHN-0565',
+    summary: 'A sign-in step was answered by a legacy U2F security key ' +
+      'that may not answer it: the step is passwordless (a U2F key cannot ' +
+      'verify the person), or webauthn.u2fAppIds no longer permits its ' +
+      'AppID at this RP ID (#1955).',
+    spec: 'HTTP 200 page naming the refusal' },
+  { code: 'STS-AUTHN-0566',
+    summary: 'A write of webauthn.u2fAppIds was refused: an entry is not a ' +
+      'U2F AppID — an absolute https URL with a host, no user name or ' +
+      'password and no fragment, at most 2048 characters (#1955).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -27358,6 +27409,15 @@ const CODES = [
       'was written (#1668).',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
+  { code: 'STS-ADMIN-0951',
+    summary: 'An operator\'s import of a legacy U2F security key named ' +
+      'nobody (#1955).',
+    spec: 'HTTP 400 (API)' },
+  { code: 'STS-ADMIN-0952',
+    summary: 'An operator\'s import of a legacy U2F security key was ' +
+      'refused; the inner code says why — the AppID, the key handle, the ' +
+      'public key, the counter, or the writer\'s own rules (#1955).',
+    spec: 'HTTP 400 (API)' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
