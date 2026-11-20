@@ -752,6 +752,16 @@ class DeviceEnrolment {
       return this.refuse('STS-DEVICE-0022', 'The security key\'s assertion ' +
         'does not belong to this account: ' + handled.why + '.');
     }
+    // A LEGACY U2F KEY (#1955 P7): the one set of expectations every
+    // assertion door uses (`webauthn_policy.ts`'s
+    // `assertionExpectations()`). A device link is not a way in.
+    const legacy = webauthnPolicy.assertionExpectations(key,
+      String(s.rpId || ''), credential, false);
+    if (legacy.refusal) {
+      challenges.delete(challenge);
+      log.debug("Leaving DeviceEnrolment.checkLink(). A U2F key refused.");
+      return this.refuse(legacy.refusal.code, legacy.refusal.why);
+    }
     let verdict: Json = null;
     try {
       verdict = webauthnVerifier.verifyAssertion({
@@ -762,9 +772,11 @@ class DeviceEnrolment {
         expectedChallenge: challenge,
         expectedOrigin: String(s.origin || ''),
         expectedRpId: String(s.rpId || ''),
-        requireUserVerification: webauthnPolicy.requireUserVerification(),
+        requireUserVerification: legacy.requireUserVerification,
         previousSignCount: key.signCount,
-        allowInsecure: webauthnPolicy.insecureAlgorithmsAllowed() });
+        allowInsecure: webauthnPolicy.insecureAlgorithmsAllowed(),
+        expectedAppId: legacy.expectedAppId,
+        appidUsed: legacy.appidUsed });
     } catch (e) {
       log.debug("Caught in DeviceEnrolment.checkLink(): " +
                 ((e && e.message) || e));

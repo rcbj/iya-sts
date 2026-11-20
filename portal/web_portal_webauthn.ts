@@ -106,6 +106,8 @@ class PortalWebAuthn {
       }) : undefined,
       userVerification: o.userVerification || 'preferred',
       hints: o.hints && o.hints.length ? o.hints : undefined,
+      // The legacy U2F appid (#1955 P7), where the server asks it.
+      extensions: WebWebAuthn.requestExtensions(o),
       timeout: o.timeout || 60000 } }).then(PortalWebAuthn.asserted);
   }
 

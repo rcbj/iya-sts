@@ -434,7 +434,7 @@ declare namespace IyaApi.Management {
   type WithCellHereReachable3 = Array<WithIdRealmClientId3>;
   type WithCellHereReachable4 = { "cell"?: string; "here"?: boolean; "reachable"?: boolean; "error"?: string; "withheld"?: string; "identifier"?: string; "pushes"?: boolean; "counts"?: { "queued"?: number; "retrying"?: number; "dead"?: number; "sent"?: number }; "pausedUntil"?: string; "failures"?: number; "lastReconcileAt"?: string; "queued"?: WithCellHereReachable3; "retrying"?: WithCellHereReachable3; "dead"?: WithCellHereReachable3 };
   type WithCertificateSubjectIssuer = { "certificate"?: string; "subject"?: string | null; "issuer"?: string | null; "serial"?: string | null; "notAfter"?: string | number | null; "jwk"?: Record<string, unknown>; "credentialId"?: string; "aaguid"?: string; "attachment"?: string };
-  type WithChallengeRpIdAllow = { "challenge"?: string; "rpId"?: string; "allow"?: string; "options"?: { "userVerification"?: string } };
+  type WithChallengeRpIdAllow = { "challenge"?: string; "rpId"?: string; "allow"?: string; "options"?: { "userVerification"?: string; "appid"?: string } };
   type WithChallengeRpIdUser = { "challenge"?: string; "rpId"?: string; "user"?: { "id"?: string; "name"?: string; "displayName"?: string }; "exclude"?: Array<string>; "options"?: WithRpAlgorithmsAttestation };
   type WithCheckedMatchesExpected = Array<WithMemberValueKnown>;
   type WithCheckedMatchesExpected2 = { "checked"?: boolean; "matches"?: boolean | null; "expected"?: Array<string>; "wellKnownUrl"?: string | null; "why"?: string };

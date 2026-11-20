@@ -30,6 +30,21 @@
 //       used the appid extension; without that it is held to the RP ID and
 //       fails; and a key registered here is held to the RP ID even when the
 //       client claims appid true.
+//   U6. ONE BUILDER AND ONE SET OF EXPECTATIONS (`assertionOptions()`,
+//       `assertionExpectations()`): a ceremony naming the U2F key asks
+//       `appid` and `preferred` UV, one naming only a key registered here is
+//       `requestOptions()` byte for byte (the portal's device link, whose
+//       linkable keys are never roaming U2F keys); a passwordless use and an
+//       AppID no longer permitted are refused (STS-AUTHN-0565).
+//   U7. EACH SURFACE THAT ASSERTS A KEY, through those two: the sign-in
+//       screen's passkey step (which every re-authentication, step-up,
+//       consent, GNAP interaction and the portal reach), a passwordless step
+//       (a registration with appidExclude instead), a post-login upgrade's
+//       proof, and the console's upgrade proof.
+//   U8. A RE-AUTHENTICATION END TO END: the console's upgrade proof
+//       (`credentials.proveKeyUpgrade()`, the one verifier of both upgrade
+//       proofs) by the imported key is refused without `appid: true` and
+//       accepted with it.
 //
 // IN PROCESS, in a realm created and removed here.
 // ===========================================================================
@@ -299,13 +314,131 @@ function hashRule(t, key, stored) {
   log.debug('Leaving hashRule().');
 }
 
+/**
+ * U6: the shared builder and expectations.
+ *
+ * @param {object} t - the test context
+ * @param {object} stored - the imported key's row
+ * @returns {void}
+ */
+function shared(t, stored) {
+  log.debug('Entering shared().');
+  const plainKey = { credentialId: 'registered-here', algorithm: 'ES256' };
+  const withU2f = webauthnPolicy.assertionOptions(RP_ID, [plainKey, stored]);
+  const plainOnly = webauthnPolicy.assertionOptions(RP_ID, [plainKey]);
+  const passwordless = webauthnPolicy.assertionExpectations(stored, RP_ID,
+    { clientExtensionResults: { appid: true } }, true);
+  const elsewhere = webauthnPolicy.assertionExpectations(stored,
+    'example.org', { clientExtensionResults: { appid: true } }, false);
+  const second = webauthnPolicy.assertionExpectations(stored, RP_ID,
+    { clientExtensionResults: { appid: true } }, false);
+  const ordinary = webauthnPolicy.assertionExpectations(plainKey, RP_ID,
+    { clientExtensionResults: { appid: true } }, false);
+  t.check(withU2f.appid === APP_ID && withU2f.userVerification ===
+            'preferred' &&
+          JSON.stringify(plainOnly) ===
+            JSON.stringify(webauthnPolicy.requestOptions(RP_ID)) &&
+          passwordless.refusal &&
+          errorCodes.codeOf(passwordless.refusal) === 'STS-AUTHN-0565' &&
+          elsewhere.refusal &&
+          errorCodes.codeOf(elsewhere.refusal) === 'STS-AUTHN-0565' &&
+          !second.refusal && second.expectedAppId === APP_ID &&
+          second.appidUsed === true &&
+          second.requireUserVerification === false &&
+          !ordinary.refusal && ordinary.expectedAppId === undefined &&
+          ordinary.requireUserVerification ===
+            webauthnPolicy.requireUserVerification(),
+          'U6. one builder and one set of expectations: appid and ' +
+          'preferred UV where a U2F key is named, requestOptions() ' +
+          'otherwise; passwordless or unpermitted refused (STS-AUTHN-0565)',
+          JSON.stringify([withU2f, passwordless.refusal, elsewhere.refusal,
+                          second, ordinary]));
+  log.debug('Leaving shared().');
+}
+
+/**
+ * U7 and U8: each surface's options, and the upgrade proof end to end.
+ *
+ * @param {object} t - the test context
+ * @param {string} name - the person
+ * @param {object} key - the U2F key
+ * @returns {Promise<void>} when checked
+ */
+async function surfaces(t, name, key) {
+  log.debug('Entering surfaces().');
+  const authnModule = require('../authn/authn');
+  const surface = new authnModule.Authn(authnModule.Authn.defaultDeps());
+  const base = 'https://localhost:8081';
+  const step = surface.webauthnFacts(base, 'u2f-step', { username: name,
+    passwordless: false, challenge: 'AAAA' });
+  const alone = surface.webauthnFacts(base, 'u2f-alone', { username: name,
+    passwordless: true, challenge: 'AAAA' });
+  t.check(step.mode === 'get' && step.ceremony.options.appid === APP_ID &&
+          step.ceremony.options.userVerification === 'preferred' &&
+          step.ceremony.allow.indexOf(key.handle) >= 0 &&
+          alone.mode === 'create' &&
+          alone.ceremony.options.appidExclude === APP_ID &&
+          alone.ceremony.exclude.indexOf(key.handle) >= 0,
+          'U7. the sign-in step names the U2F key with appid; a ' +
+          'passwordless step offers a registration with appidExclude ' +
+          'instead', JSON.stringify([step.ceremony, alone.ceremony.options]));
+  const ctx = { via: 'api', actor: 'tester', base: base };
+  const begin = function () {
+    log.debug('Entering surfaces() begin().');
+    log.debug('Leaving surfaces() begin().');
+    return adminActions.usersAction({ action: 'begin-passkey-upgrade',
+      user: name, credentialId: key.handle }, ctx);
+  };
+  const first = await begin();
+  const postLogin = surface.webauthnFacts(base, 'u2f-upgrade',
+    { username: name, upgradeId: String(first.upgradeId || 'x'),
+      upgradeKey: key.handle });
+  t.check(first.ok === true && first.ceremony.options.appid === APP_ID &&
+          first.ceremony.options.userVerification === 'preferred' &&
+          postLogin.mode === 'get' &&
+          postLogin.ceremony.options.appid === APP_ID,
+          'U7b. the console\'s upgrade proof and a post-login upgrade\'s ' +
+          'proof ask appid through the same builder',
+          JSON.stringify([first.errors, first.ceremony,
+                          postLogin.ceremony && postLogin.ceremony.options]));
+  const prove = function (begun, results) {
+    log.debug('Entering surfaces() prove().');
+    const made = assertion(key, APP_ID, 7 + (++proofs));
+    const posted = { id: key.handle, rawId: key.handle, type: 'public-key',
+      clientExtensionResults: results,
+      response: { authenticatorData: made.authenticatorData,
+                  clientDataJSON: Buffer.from(JSON.stringify({
+                    type: 'webauthn.get',
+                    challenge: begun.ceremony.challenge, origin: ORIGIN }))
+                    .toString('base64url'),
+                  signature: '', userHandle: null } };
+    const cdj = Buffer.from(posted.response.clientDataJSON, 'base64url');
+    posted.response.signature = nodeCrypto.sign('sha256', Buffer.concat([
+      Buffer.from(made.authenticatorData, 'base64url'),
+      nodeCrypto.createHash('sha256').update(cdj).digest()]),
+    key.pair.privateKey).toString('base64url');
+    log.debug('Leaving surfaces() prove().');
+    return credentials.proveKeyUpgrade(name, String(begun.upgradeId),
+      posted, { origin: ORIGIN, rpId: RP_ID });
+  };
+  let proofs = 0;
+  const refused = await prove(first, {});
+  const again = await begin();
+  const proven = await prove(again, { appid: true });
+  t.check(refused.ok === false && again.ok === true && proven.ok === true,
+          'U8. a re-authentication by the imported key (the upgrade proof): ' +
+          'refused without appid true, accepted with it',
+          JSON.stringify([refused.errors, again.errors, proven.errors]));
+  log.debug('Leaving surfaces().');
+}
+
 module.exports = {
   name: 'webauthn U2F appid',
   describe: 'Legacy FIDO U2F credentials (#1955 P7): webauthn.u2fAppIds ' +
             'off by default, the import and its refusals, the appid and ' +
             'appidExclude extensions in the options, and the rpIdHash held ' +
             'to the AppID only when the client used the extension',
-  run: function (t) {
+  run: async function (t) {
     log.debug('Entering run().');
     void ldap;
     const id = 'u2f-appid-' + nodeCrypto.randomBytes(3).toString('hex');
@@ -318,7 +451,7 @@ module.exports = {
       return;
     }
     try {
-      realms.run(made.realm, function () {
+      await realms.run(made.realm, async function () {
         const name = 'u2f-' + nodeCrypto.randomBytes(3).toString('hex');
         ldap.createUser(name, { invent: false });
         const key = u2fKey();
@@ -333,6 +466,8 @@ module.exports = {
           const stored = importOn(t, name, key);
           extensionsIn(t, true);
           hashRule(t, key, stored);
+          shared(t, stored);
+          await surfaces(t, name, key);
         } finally {
           config.clearOverride('webauthn.u2fAppIds');
         }

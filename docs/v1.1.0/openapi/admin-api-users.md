@@ -2254,6 +2254,7 @@ Scope: `admin:write`.
 | `ceremony.allow` | string |  |  |
 | `ceremony.challenge` | string |  |  |
 | `ceremony.options` | object |  |  |
+| `ceremony.options.appid` | string |  |  |
 | `ceremony.options.userVerification` | string |  |  |
 | `ceremony.rpId` | string |  |  |
 | `errors` | list |  |  |
@@ -2271,6 +2272,7 @@ Scope: `admin:write`.
 | `ceremony.allow` | string |  |  |
 | `ceremony.challenge` | string |  |  |
 | `ceremony.options` | object |  |  |
+| `ceremony.options.appid` | string |  |  |
 | `ceremony.options.userVerification` | string |  |  |
 | `ceremony.rpId` | string |  |  |
 | `errors` | list |  |  |

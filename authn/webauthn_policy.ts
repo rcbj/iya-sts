@@ -697,6 +697,109 @@ class WebauthnPolicy {
     return out;
   }
 
+  // ---------------------------------------------------------------------------
+  // EVERY CEREMONY THAT ASSERTS A KEY THE PERSON HOLDS, ONE BUILDER AND ONE
+  // SET OF EXPECTATIONS (#1955 P7). A legacy U2F key can be asked for at
+  // every surface that names a person's keys — the sign-in screen's passkey
+  // step (which is also how the portal, the account API, consent, GNAP's
+  // interaction, step-up and every re-authentication reach a passkey: each
+  // goes back through `authn/`), a post-login upgrade's proof, the console's
+  // upgrade proof (`credentials.proveKeyUpgrade()`, the one verifier for
+  // both) and the portal's device link (`device_enrolment.ts`). Each builds
+  // its request options with `assertionOptions()` and hands the verifier
+  // `assertionExpectations()`, so the rule cannot differ between them. The
+  // usernameless sign-in is not among them: it names no key, and a U2F key
+  // holds no user handle to be found by.
+  // ---------------------------------------------------------------------------
+  /**
+   * The legacy U2F AppID a stored key was imported under (#1955 P7), `''`
+   * for a key registered through WebAuthn.
+   *
+   * @param key - a stored key
+   * @returns the AppID, or `''`
+   */
+  static keyAppId(key: any): string {
+    helpers.log.debug('Entering WebauthnPolicy.keyAppId().');
+    helpers.log.debug('Leaving WebauthnPolicy.keyAppId().');
+    return key && typeof key.appid === 'string' ? key.appid : '';
+  }
+
+  /**
+   * The request options of a ceremony asserting one of `keys` (#1955 P7):
+   * `requestOptions()`, with the `appid` extension where one of them is a
+   * legacy U2F key whose AppID is permitted at the RP ID, and then
+   * `userVerification` `preferred` where the realm asks `required` — a U2F
+   * authenticator cannot verify the person, and a client asked to require
+   * it never offers one. The verifier still requires the UV flag of every
+   * other key (`assertionExpectations()`). With no such key the options are
+   * `requestOptions()`'s, byte for byte.
+   *
+   * @param rpId - the relying party id
+   * @param keys - the stored keys the ceremony may name
+   * @returns the request options
+   */
+  assertionOptions(rpId, keys?: any[]) {
+    const { log } = this.deps;
+    log.debug('Entering WebauthnPolicy.assertionOptions().');
+    const appid = (keys || []).map(function (one) {
+      return WebauthnPolicy.keyAppId(one);
+    }).filter((one) => {
+      return !!one && this.legacyAppIdPermitted(one, rpId);
+    })[0] || '';
+    const out = this.requestOptions(rpId, appid || undefined);
+    if (out.appid && out.userVerification === 'required') {
+      out.userVerification = 'preferred';
+    }
+    log.debug('Leaving WebauthnPolicy.assertionOptions(). ' +
+              (out.appid ? 'With an AppID.' : 'Plain.'));
+    return out;
+  }
+
+  /**
+   * What the verifier is held to for an assertion by `key` (#1955 P7), and
+   * the refusal of a legacy U2F key where it may not answer: at a
+   * passwordless step (it cannot verify the person), or once its AppID is
+   * no longer permitted at the RP ID (STS-AUTHN-0565). For such a key the
+   * rpIdHash is SHA-256 of its AppID only where the client's extension
+   * outputs say `appid: true`, and the UV flag is not required; every other
+   * key is held to the RP ID and to `requireUserVerification()` as before.
+   *
+   * @param key - the stored key the assertion names
+   * @param rpId - the relying party id
+   * @param posted - the credential's JSON form, with
+   *   `clientExtensionResults`
+   * @param passwordless - whether the assertion is a way in on its own
+   * @param requireUv - the UV requirement for any other key; the realm's
+   *   `requireUserVerification()` when omitted
+   * @returns `{ refusal, expectedAppId, appidUsed, requireUserVerification }`
+   */
+  assertionExpectations(key: any, rpId: string, posted: any,
+                        passwordless?: boolean, requireUv?: boolean) {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering WebauthnPolicy.assertionExpectations().');
+    const appid = WebauthnPolicy.keyAppId(key);
+    const results = (posted && posted.clientExtensionResults) || {};
+    const uv = typeof requireUv === 'boolean' ? requireUv
+                                              : this.requireUserVerification();
+    let refusal: { code: string; why: string } | null = null;
+    if (appid && passwordless) {
+      refusal = { code: 'STS-AUTHN-0565',
+        why: 'That security key was imported from a U2F service and ' +
+             'cannot verify who you are, so it cannot sign you in on its ' +
+             'own. Use it after your password.' };
+    } else if (appid && !this.legacyAppIdPermitted(appid, rpId)) {
+      refusal = { code: 'STS-AUTHN-0565',
+        why: 'That security key was imported from a U2F service this ' +
+             'realm no longer accepts (webauthn.u2fAppIds).' };
+    }
+    log.debug('Leaving WebauthnPolicy.assertionExpectations(). ' +
+              (refusal ? 'Refused.' : (appid ? 'A U2F key.' : 'Plain.')));
+    return { refusal: refusal ? errorCodes.mark(refusal, refusal.code) : null,
+             expectedAppId: appid || undefined,
+             appidUsed: results.appid === true,
+             requireUserVerification: !appid && uv };
+  }
+
   // THE RULE ON `webauthn.u2fAppIds` (#1955 P7), handed to `config.js`'s
   // `addWriteRule()` as the enterprise rule is: every entry an https AppID,
   // so the list never holds one the browser would refuse the ceremony over.
@@ -2500,6 +2603,9 @@ export = {
   legacyAppIds: slot.forward('legacyAppIds'),
   legacyAppIdPermitted: slot.forward('legacyAppIdPermitted'),
   legacyAppIdFor: slot.forward('legacyAppIdFor'),
+  keyAppId: WebauthnPolicy.keyAppId,
+  assertionOptions: slot.forward('assertionOptions'),
+  assertionExpectations: slot.forward('assertionExpectations'),
   useAllowed: slot.forward('useAllowed'),
   enrolmentAllowed: slot.forward('enrolmentAllowed'),
   algorithmsOffered: slot.forward('algorithmsOffered'),

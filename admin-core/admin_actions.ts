@@ -4549,11 +4549,19 @@ class AdminActions {
         audit('admin.passkey.upgrade-started', 'success', {
           stage: 'begin', mode: begun.mode, lane: begun.lane,
           previousAlgorithm: begun.previousAlgorithm });
+        // THE ONE BUILDER OF AN ASSERTION'S OPTIONS (#1955 P7): its user
+        // verification, and the `appid` extension where the key upgraded is
+        // a permitted legacy U2F key — the two members this answer carries.
+        const proofOptions = webauthnPolicy.assertionOptions(rpId,
+          credentials.keysOf(who).filter(function (one) {
+            return String(one.credentialId) === String(begun.credentialId);
+          }));
         return { ok: true, upgradeId: begun.upgradeId,
           ceremony: { challenge: begun.challenge, rpId: rpId,
             allow: begun.credentialId,
-            options: { userVerification:
-              webauthnPolicy.settings().userVerification } } };
+            options: Object.assign({ userVerification:
+              proofOptions.userVerification },
+              proofOptions.appid ? { appid: proofOptions.appid } : {}) } };
       }
       let posted: any = null;
       try {

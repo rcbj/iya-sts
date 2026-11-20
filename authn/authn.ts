@@ -16417,26 +16417,6 @@ class Authn {
     }, usable.length ? 'STS-AUTHN-0026' : 'STS-AUTHN-0025');
   }
 
-  // A SECOND-FACTOR STEP THAT NAMES A LEGACY U2F KEY (#1955 P7): the
-  // request options with the `appid` extension, and `userVerification`
-  // `preferred` where the realm asks `required` — a U2F authenticator
-  // cannot verify the person, and a client asked to require it never offers
-  // one. Nothing is weakened by it: the verifier still REQUIRES the UV flag
-  // of every key that is not a legacy one (the step's verification), so a
-  // FIDO2 key answering the same ceremony is held to it as before. With no
-  // AppID the options are `requestOptions()`'s, byte for byte.
-  private legacyRequestOptions(rpId: string, appid: string): any {
-    const { log, webauthnPolicy } = this.deps;
-    log.debug("Entering Authn.legacyRequestOptions().");
-    const out = webauthnPolicy.requestOptions(rpId, appid || undefined);
-    if (out.appid && out.userVerification === 'required') {
-      out.userVerification = 'preferred';
-    }
-    log.debug("Leaving Authn.legacyRequestOptions(). " +
-              (out.appid ? 'With an AppID.' : 'Plain.'));
-    return out;
-  }
-
   // ---------------------------------------------------------------------------
   // TWO SMALL READERS OF WHAT THE BROWSER SAID (2026-09-10).
   //
@@ -16541,11 +16521,6 @@ class Authn {
       return !appid || (!passwordless &&
                         webauthnPolicy.legacyAppIdPermitted(appid, rpId));
     });
-    // The AppID this step's request names (#1955 P7): that of the first
-    // legacy key it may offer, '' where it offers none.
-    const legacyAppId = held.map(function (one) {
-      return credentials.appIdOf(one);
-    }).filter(Boolean)[0] || '';
     // ONLY THE POST-QUANTUM KEYS WHILE THE PROFILE REQUIRES ONE AT SIGN-IN
     // (#718, rcbj's decision 3), by the question's own reading of each
     // key's algorithm (`postQuantumRefusal()`), so `allowCredentials` never
@@ -16788,10 +16763,9 @@ class Authn {
           : mode === 'create'
           ? webauthnPolicy.creationOptions(rpId, undefined, stepLane,
                                            !!step.classicalOnly)
-          : this.legacyRequestOptions(rpId,
-              allowed.some(function (one) {
-                return !!credentials.appIdOf(one);
-              }) ? legacyAppId : ''),
+          // THE ONE BUILDER OF AN ASSERTION'S OPTIONS (#1955 P7): `appid`
+          // where a key it names is a permitted legacy U2F key.
+          : webauthnPolicy.assertionOptions(rpId, allowed),
         // The retry's facts (#944), for the script — and any caller of the
         // API that runs the ceremony itself.
         fallback: fallback } };
@@ -16856,7 +16830,9 @@ class Authn {
         user: user,
         allow: proof ? [String(pending.credentialId || '')] : [],
         exclude: proof ? [] : (held.exclude || []).map(String),
-        options: proof ? webauthnPolicy.requestOptions(rpId)
+        // The proof names one key, through the one builder (#1955 P7).
+        options: proof ? webauthnPolicy.assertionOptions(rpId,
+                                                         key ? [key] : [])
           : webauthnPolicy.upgradeCreationOptions(rpId, held.kind),
         fallback: fallback } };
     log.debug("Leaving Authn.upgradeStepFacts(). " + mode);
@@ -19844,20 +19820,14 @@ class Authn {
         // A LEGACY U2F KEY (#1955 P7) answers only a second-factor step, and
         // only while the realm permits its AppID at this RP ID — what the
         // options offered; `allowCredentials` is a hint, and this is the
-        // enforcement.
-        const legacyAppId = credentials.appIdOf(known);
-        if (legacyAppId && (step.passwordless ||
-            !webauthnPolicy.legacyAppIdPermitted(legacyAppId,
-                                                 expectedRpId))) {
-          throw errorCodes.mark(new Error(step.passwordless
-            ? 'That security key was imported from a U2F service and ' +
-              'cannot verify who you are, so it cannot sign you in on its ' +
-              'own. Use it after your password.'
-            : 'That security key was imported from a U2F service this ' +
-              'realm no longer accepts (webauthn.u2fAppIds).'),
-          'STS-AUTHN-0565');
+        // enforcement. The one set of expectations every assertion door
+        // uses (`assertionExpectations()`).
+        const legacy = webauthnPolicy.assertionExpectations(known,
+          expectedRpId, credential, !!step.passwordless);
+        if (legacy.refusal) {
+          throw errorCodes.mark(new Error(legacy.refusal.why),
+                                legacy.refusal.code);
         }
-        const extensionResults = credential.clientExtensionResults || {};
         verdict = webauthnVerifier.verifyAssertion({
           authenticatorData: credential.response.authenticatorData,
           clientDataJSON: credential.response.clientDataJSON,
@@ -19872,16 +19842,15 @@ class Authn {
           // demanding it exactly once, at the moment it matters least.
           // NOT OF A LEGACY U2F KEY (#1955 P7), which has no user
           // verification to give; it answers a second-factor step only.
-          requireUserVerification: !legacyAppId &&
-            webauthnPolicy.requireUserVerification(),
+          requireUserVerification: legacy.requireUserVerification,
           previousSignCount: known.signCount,
           // RS1 only where `webauthn.insecureAlgorithms` allows it
           // (2026-10-01).
           allowInsecure: webauthnPolicy.insecureAlgorithmsAllowed(),
           // ITS APPID (#1955 P7): the rpIdHash is SHA-256 of it only where
           // the client reports it used the appid extension.
-          expectedAppId: legacyAppId || undefined,
-          appidUsed: extensionResults.appid === true
+          expectedAppId: legacy.expectedAppId,
+          appidUsed: legacy.appidUsed
         });
         // A CLONE, BY THE ENTRY'S COUNTER (#231): everything else verified
         // and the counter did not go up. Refused below like any failed

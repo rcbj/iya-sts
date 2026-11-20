@@ -5443,7 +5443,7 @@ namespace IyaSts.Api.Management {
     `challenge`?: string;
     `rpId`?: string;
     `allow`?: string;
-    `options`?: {`userVerification`?: string}
+    `options`?: {`userVerification`?: string; `appid`?: string}
   }
 
 @component model `WithOkMessageErrors49` {

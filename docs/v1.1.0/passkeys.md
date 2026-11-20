@@ -621,7 +621,10 @@ AppID's hash only when the browser says it used the extension. Where the
 realm requires user verification, that step asks for it as *preferred*, so the
 browser offers the U2F key; every other key in the same step is still held to
 user verification. An imported key is never offered for a passwordless
-sign-in, and is refused there (`STS-AUTHN-0565`).
+sign-in, and is refused there (`STS-AUTHN-0565`). The same holds wherever a
+passkey is asked for again: a step-up or recent sign-in for the portal, the
+account API, consent or GNAP, upgrading the key to a post-quantum passkey
+(from the console or as a post-login activity), and linking a device.
 
 While an AppID is listed, every registration also asks the browser for
 `appidExclude`, so a person cannot register the same key a second time over

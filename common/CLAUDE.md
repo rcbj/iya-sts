@@ -14407,8 +14407,17 @@ the key **at a second-factor step only** (a U2F key cannot verify the person;
 client offers the key, and the verifier still requires UV of every other key).
 `authn/webauthn.js` holds the rpIdHash to SHA-256 of the AppID only when the
 caller names the key's AppID AND the client's extension outputs say
-`appid: true`; anything else is held to the RP ID. The portal's own ceremonies
-do not send `appid`: an imported key cannot re-authenticate on `/portal`.
+`appid: true`; anything else is held to the RP ID. **EVERY CEREMONY THAT
+ASSERTS A KEY GOES THROUGH ONE BUILDER AND ONE SET OF EXPECTATIONS**:
+`webauthn_policy.ts`'s `assertionOptions(rpId, keys)` and
+`assertionExpectations(key, rpId, posted, passwordless)`. Their callers are
+the sign-in step (which is also every re-authentication, step-up, consent and
+GNAP interaction, and the portal's and account API's, since all of them come
+back through `authn/`), the post-login upgrade's proof, the console's upgrade
+proof (`credentials.proveKeyUpgrade()` verifies both), and the portal's device
+link (`device_enrolment.ts`). A new door that asserts a person's key uses
+them, never `requestOptions()` alone. The usernameless sign-in is the one
+exception: it names no key, and a U2F key holds no user handle.
 
 **#530 ADDED `enforceAttestationAtSignIn` (2026-10-08)**, off: on, every
 passkey sign-in is held to the `webauthn.attestation*` rules in force by

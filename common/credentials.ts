@@ -463,7 +463,8 @@ class Credentials {
    */
   static appIdOf(key: any): string {
     helpers.log.debug("Entering Credentials.appIdOf().");
-    const out = key && typeof key.appid === 'string' ? key.appid : '';
+    // The one reading, `webauthn_policy.ts`'s.
+    const out = webauthnPolicy.keyAppId(key);
     helpers.log.debug("Leaving Credentials.appIdOf().");
     return out;
   }
@@ -10741,6 +10742,18 @@ class Credentials {
         'different passkey from the one you are upgrading. Nothing was ' +
         'changed; start again and use the passkey you chose.'));
     }
+    // A LEGACY U2F KEY'S PROOF (#1955 P7): the one set of expectations
+    // every assertion door uses — the AppID's hash only with `appid: true`,
+    // no UV flag of a key that cannot give one, and a refusal once its
+    // AppID is no longer permitted. The person is signed in already, so it
+    // is not a passwordless use.
+    const legacy = webauthnPolicy.assertionExpectations(key,
+      String(options.rpId || ''), assertion, false);
+    if (legacy.refusal) {
+      log.debug("Leaving Credentials.proveKeyUpgrade(). A U2F key refused.");
+      return Promise.resolve(dropped(legacy.refusal.code,
+                                     legacy.refusal.why));
+    }
     let verdict;
     try {
       verdict = webauthnVerifier.verifyAssertion({
@@ -10751,9 +10764,11 @@ class Credentials {
         expectedChallenge: held.challenge,
         expectedOrigin: String(options.origin || ''),
         expectedRpId: String(options.rpId || ''),
-        requireUserVerification: webauthnPolicy.requireUserVerification(),
+        requireUserVerification: legacy.requireUserVerification,
         previousSignCount: key.signCount,
-        allowInsecure: webauthnPolicy.insecureAlgorithmsAllowed()
+        allowInsecure: webauthnPolicy.insecureAlgorithmsAllowed(),
+        expectedAppId: legacy.expectedAppId,
+        appidUsed: legacy.appidUsed
       });
     } catch (e) {
       log.debug("Caught in Credentials.proveKeyUpgrade(): " +

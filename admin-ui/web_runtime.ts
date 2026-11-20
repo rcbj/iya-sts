@@ -2583,7 +2583,9 @@ class ConsoleRuntime extends SpaClient {
         allowCredentials: [{ type: 'public-key',
           id: WebWebAuthn.bytes(proof.allow) }],
         userVerification: (proof.options && proof.options.userVerification) ||
-                          'preferred' } });
+                          'preferred',
+        // The legacy U2F appid (#1955 P7), where the server asks it.
+        extensions: WebWebAuthn.requestExtensions(proof.options) } });
       if (!asserted) { throw new Error('The passkey did not answer.'); }
       const proved = await this.apiJson('POST',
         '/admin-api/users/prove-passkey-upgrade', {
