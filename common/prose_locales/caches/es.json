@@ -219,6 +219,22 @@
     "en": "080afaefbe52c342",
     "text": "Hasta que devices.eventsKept eventos más recientes lo desplazan."
   },
+  "caches.store.hardware_tokens.register.title": {
+    "en": "f1c8d3f653154823",
+    "text": "Registro de tokens de hardware"
+  },
+  "caches.store.hardware_tokens.register.description": {
+    "en": "5efc16810cb7f48e",
+    "text": "Una fila por cada token de hardware físico (una YubiKey, una tarjeta inteligente) de este dominio, indexada por fabricante y número de serie: quién lo tiene, su modelo y las credenciales que contiene. Un número de serie solo se registra a partir de una atestación. Nunca un secreto."
+  },
+  "caches.store.hardware_tokens.register.bound": {
+    "en": "260467c777c74957",
+    "text": "Las filas que guarda un proceso son una caché de 5000 por dominio; el propio registro está limitado por las credenciales que enumera (webauthn.maxKeysPerPerson para FIDO)."
+  },
+  "caches.store.hardware_tokens.register.lifetime": {
+    "en": "c18bfda6fa452b2b",
+    "text": "Hasta que se elimina el token; un token perdido se conserva, marcado como perdido."
+  },
   "caches.store.dpop.nonces.title": {
     "en": "a131d3dea3731f75",
     "text": "Nonces de DPoP"

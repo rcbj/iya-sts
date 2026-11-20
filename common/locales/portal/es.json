@@ -40,6 +40,8 @@
   "nav.password.heading": "Cambie su contraseña",
   "nav.keys.label": "Llaves de acceso",
   "nav.keys.heading": "Llaves de acceso",
+  "nav.tokens.label": "Llaves de seguridad",
+  "nav.tokens.heading": "Sus llaves de seguridad y tarjetas inteligentes",
   "nav.mfa.label": "Aplicación de autenticación",
   "nav.mfa.heading": "Su aplicación de autenticación",
   "nav.signing-key.label": "Claves de firma",

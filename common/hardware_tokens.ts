@@ -54,9 +54,9 @@
 // (`realms.map()`, `persist: 'hardware_tokens.register'`), cell tier
 // (`persistence/tiers.js`: a token is somebody's), sealed in `sts_minted`
 // like every other minted row, ON DEMAND (#820) with an index: by holder
-// (`h:`) and by credential (`c:<kind>:<ref>`), both rewritten on every
-// `set()` (the upsert replaces a row's index rows), so a person's tokens
-// and a credential's token are one indexed question and never a walk. No
+// (`h:`), by serial (`s:`) and by credential (`c:<kind>:<ref>`), rewritten
+// on every `set()` (the upsert replaces a row's index rows), so a person's
+// tokens and a credential's token are one indexed question, never a walk. No
 // table is added, so no schema version and no upgrade script. **Like every
 // minted store it is not kept across a restart in DEVELOPMENT mode**
 // (`persistence/CLAUDE.md`), where the certificate authorities are not
@@ -160,7 +160,7 @@ const MAX_EVIDENCE = 16;
 const MAX_TEXT = 128;
 // The most rows one console page asks for; the newest-rows question the
 // on-demand store answers is capped at a thousand (`minted.newest`).
-const MAX_PAGE = 100;
+const MAX_PAGE = 500;
 const NEWEST_CAP = 1000;
 
 // ---------------------------------------------------------------------------
@@ -179,6 +179,9 @@ const register = realms.map({
     }
     if (record.holder) {
       out.push('h:' + String(record.holder));
+    }
+    if (record.serial) {
+      out.push('s:' + String(record.serial));
     }
     (record.credentials || []).forEach(function (c: Json) {
       if (c && c.kind && c.ref) {
@@ -749,11 +752,22 @@ class HardwareTokens {
     let total: number | null = null;
     if (q) {
       const byPerson = await this.tokensOf(q);
-      const bySerial: Json[] = [];
-      register.forEach((value: Json, key: Json) => {
-        if (value && String(value.serial) === q) {
-          bySerial.push(this.view(String(key), value));
-        }
+      // A serial is one indexed question (`s:`), never a walk.
+      let found: Json[] = [];
+      try {
+        found = await register.lookupEntriesAsync('s:' + q);
+      } catch (e) {
+        log.debug("Caught in HardwareTokens.list(): " +
+                  ((e && e.message) || e));
+        // The read pool cannot be asked: what this process holds.
+        found = register.lookup('s:' + q).map(function (k: Json) {
+          return { key: k, value: register.get(k) };
+        });
+      }
+      const bySerial: Json[] = found.filter(function (r: Json) {
+        return r && r.value && String(r.value.serial) === q;
+      }).map((r: Json) => {
+        return this.view(String(r.key), r.value);
       });
       rows = byPerson.concat(bySerial.filter(function (one) {
         return !byPerson.some(function (p) {
@@ -979,7 +993,10 @@ class HardwareTokens {
       { key: key, via: ctx.via, retired: retired, notRetired: notRetired,
         errorCode: notRetired.length ? notRetired[0].errorCode : undefined });
     if (notRetired.length) {
-      log.error(this.deps.errorCodes.tag(String(notRetired[0].errorCode)) +
+      // The first row's own code (STS-HWTOKEN-0007, -0009 or -0010, the
+      // retirer's), read off the answer; STS-HWTOKEN-0007 when it has none.
+      log.error(this.deps.errorCodes.tag(String(notRetired[0].errorCode ||
+                                                'STS-HWTOKEN-0007')) +
                 'hardware_tokens: token ' + key + ' was reported lost and ' +
                 notRetired.length + ' credential(s) on it were not ' +
                 'retired.');

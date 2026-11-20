@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5771** of them, in **53** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5773** of them, in **53** subsystems.
 
 ## Where a code appears
 
@@ -85,7 +85,7 @@ is an ordinary outcome.
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 15
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 53
-* [Hardware tokens (`STS-HWTOKEN`)](#sts-hwtoken) — 11
+* [Hardware tokens (`STS-HWTOKEN`)](#sts-hwtoken) — 13
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 224
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 137
@@ -4936,7 +4936,7 @@ Raised from: common/devices.ts, admin-ui/devices_admin.ts.
 
 **Hardware tokens.** The hardware token register (#1955): one record per physical token (a YubiKey, a smart card) keyed by vendor and serial, the serial taken only from attestation, the credentials on it, and the lost-key act that retires every one of them.
 
-Raised from: common/hardware_tokens.ts, admin-ui/hardware_tokens_admin.ts, portal/account_tokens.ts.
+Raised from: common/hardware_tokens.ts, mgmt-api/hardware_tokens_api.ts, portal/account_tokens.ts.
 
 | Code | What failed | Client sees |
 |---|---|---|
@@ -4951,6 +4951,8 @@ Raised from: common/hardware_tokens.ts, admin-ui/hardware_tokens_admin.ts, porta
 | `STS-HWTOKEN-0009` | A credential on a hardware token reported lost is of a kind no retire action is installed for, so it was not retired and is still live (#1955). | — |
 | `STS-HWTOKEN-0010` | At the portal's lost-key act a credential on the token was registered by another person, so it was left for an administrator to retire (#1955). | — |
 | `STS-HWTOKEN-0011` | A passkey was written and the hardware token register could not record the token its attestation named; the key stands, and the token is recorded when it is next registered (#1955). | — |
+| `STS-HWTOKEN-0012` | A hardware token act named an action that is not one of the page's (#1955). | HTTP 400 (the page with the sentence) |
+| `STS-HWTOKEN-0013` | The hardware token list or the lost-key act failed with an unexpected error at /admin-api; the log line has the stack (#1955). | HTTP 500 |
 
 ## STS-SVCACCT
 

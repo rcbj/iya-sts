@@ -487,6 +487,22 @@
     "en": "0be46b8b29aaf446",
     "text": "En säkerhetsnyckels attestering är inte längre betrodd: Googles statuslista för Android-attestering återkallar dess kedja"
   },
+  "audit.actions.hardware-token.create.label": {
+    "en": "23939dae5f4b89dc",
+    "text": "En maskinvarutoken registrerades utifrån sin attestering"
+  },
+  "audit.actions.hardware-token.credential-add.label": {
+    "en": "79c33d3849e02f0c",
+    "text": "En inloggningsuppgift lades till på en maskinvarutoken"
+  },
+  "audit.actions.hardware-token.holder-change.label": {
+    "en": "06fc03f7983fd5ad",
+    "text": "En maskinvarutoken registrerades av någon annan än innehavaren"
+  },
+  "audit.actions.hardware-token.lost.label": {
+    "en": "f7fb5461e2325e1e",
+    "text": "En maskinvarutoken anmäldes förlorad och dess inloggningsuppgifter återkallades"
+  },
   "audit.actions.device.key-add.label": {
     "en": "6c1b2513c20532ef",
     "text": "En nyckel lades till på en enhet"

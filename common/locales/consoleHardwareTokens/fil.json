@@ -1,0 +1,22 @@
+{
+  "whatThisIs": "Ano ito",
+  "lead": "Bawat pisikal na security key at smart card na naitala ng realm na ito. Naitatala lamang ang isang token mula sa sarili nitong attestation: sa ngayon, isang security key na inirehistro na may enterprise attestation, na ang sertipiko ay nagsasabi ng serial nito. Hindi kailanman naitatala ang serial na itinype ng sinuman. Inililista ng bawat token ang mga passkey at sertipiko na nasa ito at kung sino ang nagrehistro ng mga ito.",
+  "search": "Serial o tao",
+  "status": "Katayuan",
+  "any": "Anuman",
+  "active": "Ginagamit",
+  "lost": "Nawala",
+  "filter": "I-filter",
+  "capped": "Ang listahang ito ay ang isang libong pinakabagong token. Maghanap ayon sa serial o tao para sa iba.",
+  "none": "Walang hardware token na naitala sa realm na ito.",
+  "thToken": "Token",
+  "thHolder": "May hawak",
+  "thEvidence": "Naitala mula sa",
+  "thCredentials": "Mga credential na nasa ito",
+  "thStatus": "Katayuan",
+  "smartCard": "nasa smart card",
+  "retired": "inalis",
+  "lostOn": "Nawala {at} (iniulat ni {by})",
+  "reportLost": "Iulat na nawala",
+  "lostWhat": "Ang pag-uulat na nawala ang isang token ay agad itong minamarkahang nawala, saka inaalis ang bawat passkey dito, binabawi ang bawat sertipiko nito dahil sa key compromise, nagpapadala ng CAEP credential-change para sa bawat isa at isinasara ang mga session na binuksan ng mga ito. Ang credential na hindi maalis ay nakasaad sa sagot at sa audit row, at aktibo pa rin."
+}

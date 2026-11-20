@@ -3139,6 +3139,14 @@
     "en": "72d46974270d0c03",
     "text": "Nombre de créations, suppressions, évictions et changements de conformité d’appareils que ce domaine conserve pour Supervision → Appareils. Le plus ancien est supprimé lorsqu’un nouveau est enregistré au-delà."
   },
+  "hardwareTokens.hardwareClaims|label": {
+    "en": "8373111eef4bf812",
+    "text": "Ce qui donne droit à une revendication de clé matérielle"
+  },
+  "hardwareTokens.hardwareClaims|description": {
+    "en": "e0341e4e47f3b2f8",
+    "text": "Ce qui permet à une connexion PKINIT de revendiquer une clé liée au matériel (l'indicateur pkinit-hardware et amr hwk). `inference`, la valeur par défaut et le comportement d'avant #1955 : un certificat d'ouverture de session par carte à puce dont ce service n'a pas généré la clé, ou une preuve d'attestation enregistrée. `evidence` : seulement une clé couverte par l'attestation d'un jeton matériel. Une connexion par certificat sur TLS n'obtient hwk, et sc pour une clé sur une carte à puce, qu'à partir d'une preuve, dans les deux cas."
+  },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
     "text": "Rapports de conformité par requête de flux"

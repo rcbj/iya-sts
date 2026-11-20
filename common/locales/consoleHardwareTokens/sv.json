@@ -1,0 +1,22 @@
+{
+  "whatThisIs": "Vad det här är",
+  "lead": "Varje fysisk säkerhetsnyckel och smart kort som den här sfären har registrerat. En token registreras bara utifrån sin egen attestering: i dag en säkerhetsnyckel som registrerats med företagsattestering, vars certifikat anger dess serienummer. Ett serienummer som någon har skrivit in registreras aldrig. Varje token listar de nycklar och certifikat som finns på den och vem som registrerade dem.",
+  "search": "Serienummer eller person",
+  "status": "Status",
+  "any": "Alla",
+  "active": "Används",
+  "lost": "Förlorad",
+  "filter": "Filtrera",
+  "capped": "Listan visar de tusen senaste tokens. Sök på serienummer eller person för andra.",
+  "none": "Ingen maskinvarutoken är registrerad i den här sfären.",
+  "thToken": "Token",
+  "thHolder": "Innehavare",
+  "thEvidence": "Registrerad utifrån",
+  "thCredentials": "Inloggningsuppgifter på den",
+  "thStatus": "Status",
+  "smartCard": "på ett smart kort",
+  "retired": "återkallad",
+  "lostOn": "Förlorad {at} (anmäld av {by})",
+  "reportLost": "Anmäl förlorad",
+  "lostWhat": "När en token anmäls som förlorad markeras den direkt, därefter tas varje nyckel på den bort, varje certifikat återkallas för nyckelkompromettering, en CAEP-ändring av inloggningsuppgift skickas för var och en och de sessioner de loggade in avslutas. En inloggningsuppgift som inte kunde återkallas anges i svaret och i granskningsloggen och är fortfarande aktiv."
+}

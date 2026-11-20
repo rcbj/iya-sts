@@ -7145,7 +7145,7 @@ const SETTINGS = [
 
   // #1955 P1: WHAT A HARDWARE CLAIM STANDS ON. `common/hardware_tokens.ts`
   // argues it; the default is the behaviour before #1955.
-  { key: 'hardwareTokens.hardwareClaims', group: 'Hardware tokens',
+  { key: 'hardwareTokens.hardwareClaims', group: 'Devices',
     label: 'What earns a hardware-key claim',
     env: 'STS_HARDWARE_TOKENS_HARDWARE_CLAIMS', type: 'enum',
     enumValues: ['inference', 'evidence'], dflt: 'inference',

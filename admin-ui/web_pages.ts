@@ -76,6 +76,7 @@ import BroadcastPage = require('./web_broadcast');
 import NodeHealthPage = require('./web_node_health');
 import PasskeyReportPage = require('./web_passkey_report');
 import PostLoginActivitiesPage = require('./web_post_login_activities');
+import HardwareTokensPage = require('./web_hardware_tokens');
 import PkiPage = require('./web_pki');
 import ProtocolSettingsPage = require('./web_protocol_settings');
 import PoliciesPage = require('./web_policies');
@@ -341,6 +342,8 @@ const PROTOCOL_TABS: Record<string, string[]> = {
                    'preview', 'settings'],
   '/admin/applications': ['applications', 'add', 'settings'],
   '/admin/devices': ['devices', 'register'],
+  // #1955 P1: the register's one list.
+  '/admin/hardware-tokens': ['tokens'],
   '/admin/attribute-sources': ['sources', 'add', 'person', 'settings'],
   '/admin/secret-destinations': ['destinations', 'add'],
   // #1111, #1123: the started activities and their controls; the report
@@ -852,6 +855,11 @@ const PAGES: WebPage[] = [
   { path: '/admin/post-login-activities', title: 'Post-login activities',
     operation: '/admin-api/post-login-activities',
     render: PostLoginActivitiesPage.render },
+  // #1955 P1: Directory → Hardware tokens, the physical keys and cards the
+  // realm recorded from attestation, and the lost-key act.
+  { path: '/admin/hardware-tokens', title: 'Hardware tokens',
+    operation: '/admin-api/hardware-tokens',
+    render: HardwareTokensPage.render },
   { path: '/admin/pki/trust', title: 'PKI trust',
     operation: '/admin-api/pki/trust', render: PkiTrustPage.render },
   { path: '/admin/pki', title: 'PKI', operation: '/admin-api/pki',

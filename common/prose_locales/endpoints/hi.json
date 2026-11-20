@@ -1207,6 +1207,14 @@
     "en": "6bfc2bea96fee884",
     "text": "एक लॉगिन-पश्चात गतिविधि शुरू करें, रोकें, फिर शुरू करें या समाप्त करें"
   },
+  "endpoints.route./admin-api/hardware-tokens.name": {
+    "en": "386404ef0cf5e649",
+    "text": "हार्डवेयर टोकन"
+  },
+  "endpoints.route./admin-api/hardware-tokens/:action.name": {
+    "en": "d2326b0fb8b09689",
+    "text": "किसी हार्डवेयर टोकन को खोया हुआ बताएँ"
+  },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",
     "text": "जावक SCIM क्लाइंट"

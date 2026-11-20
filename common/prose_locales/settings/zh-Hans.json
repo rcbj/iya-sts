@@ -3139,6 +3139,14 @@
     "en": "72d46974270d0c03",
     "text": "此领域为“监控 → 设备”保留多少条设备创建、移除、逐出和合规性变更记录。超出后记录新事件时，最旧的一条会被丢弃。"
   },
+  "hardwareTokens.hardwareClaims|label": {
+    "en": "8373111eef4bf812",
+    "text": "凭什么获得硬件密钥声明"
+  },
+  "hardwareTokens.hardwareClaims|description": {
+    "en": "e0341e4e47f3b2f8",
+    "text": "什么能让 PKINIT 登录声明硬件绑定的密钥（pkinit-hardware 指示符和 amr hwk）。`inference`：默认值，也是 #1955 之前的行为——本服务未生成其密钥的智能卡登录证书，或已记录的证明证据。`evidence`：仅限硬件令牌的证明所覆盖的密钥。通过 TLS 的证书登录只有在有证据时才获得 hwk，以及智能卡上密钥的 sc，两种情况都是如此。"
+  },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
     "text": "每个合规源请求的报告数"

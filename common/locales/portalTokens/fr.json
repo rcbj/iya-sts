@@ -1,0 +1,20 @@
+{
+  "heading": "Vos clés de sécurité et cartes à puce",
+  "intro": "Chaque clé ou carte physique que ce service a enregistrée comme vous appartenant. Une clé n'est enregistrée que lorsque sa propre attestation indique son numéro de série ; une clé enregistrée sans l'attestation d'entreprise de votre organisation n'apparaît donc pas ici. Sa clé d'accès figure sur la page Clés d'accès.",
+  "none": "Aucune clé de sécurité ni carte à puce n'est enregistrée pour vous.",
+  "col.model": "Clé",
+  "col.serial": "Numéro de série",
+  "col.credentials": "Vos identifiants sur cette clé",
+  "col.status": "État",
+  "kind.fido": "Clé d'accès",
+  "kind.x509": "Certificat",
+  "retired": "retiré",
+  "status.active": "En service",
+  "status.lost": "Déclarée perdue {at}",
+  "lost.button": "J'ai perdu cette clé",
+  "lost.what": "Déclarer une clé perdue supprime aussitôt ses clés d'accès, révoque ses certificats et ferme les sessions qu'ils ont ouvertes. Si vous la retrouvez, enregistrez-la de nouveau.",
+  "done.lost": "La clé est déclarée perdue et {n} de vos identifiants sur cette clé ont été retirés.",
+  "done.notAll": "{n} n'ont pas pu être retirés : demandez à votre administrateur de les supprimer.",
+  "done.sessionsEnded": "{n} sessions ouvertes avec cette clé ont été fermées.",
+  "done.noWayIn": "C'était votre seul moyen de vous connecter : demandez un lien d'activation à votre administrateur ou utilisez vos codes de récupération."
+}

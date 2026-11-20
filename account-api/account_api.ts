@@ -161,6 +161,10 @@ const PROVIDERS: Array<() => Json> = [
   function () {
     return require('../portal/portal_devices');
   },
+  // #1955 P1: /portal/tokens, the person's hardware tokens, beside devices.
+  function () {
+    return require('../portal/account_tokens');
+  },
   function () {
     return require('../portal/portal_ciba');
   },

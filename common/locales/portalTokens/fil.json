@@ -1,0 +1,20 @@
+{
+  "heading": "Ang iyong mga security key at smart card",
+  "intro": "Bawat pisikal na key o card na naitala ng serbisyong ito na hawak mo. Naitatala lamang ang isang key kapag ang sarili nitong attestation ang nagsasabi ng serial nito, kaya ang key na inirehistro nang walang enterprise attestation ng iyong organisasyon ay hindi nakalista rito; nasa pahinang Mga passkey ang passkey nito.",
+  "none": "Walang security key o smart card na naitala para sa iyo.",
+  "col.model": "Key",
+  "col.serial": "Serial",
+  "col.credentials": "Ang iyong mga credential dito",
+  "col.status": "Katayuan",
+  "kind.fido": "Passkey",
+  "kind.x509": "Sertipiko",
+  "retired": "inalis",
+  "status.active": "Ginagamit",
+  "status.lost": "Iniulat na nawala {at}",
+  "lost.button": "Nawala ko ang key na ito",
+  "lost.what": "Ang pag-uulat na nawala ang isang key ay agad na nag-aalis ng mga passkey nito, nagbabawi ng mga sertipiko nito at nagsasara ng mga session na binuksan ng mga ito. Kung makita mo ito muli, irehistro itong muli.",
+  "done.lost": "Naiulat nang nawala ang key, at {n} sa iyong mga credential dito ang inalis.",
+  "done.notAll": "{n} ang hindi maalis: hilingin sa iyong administrator na alisin ang mga ito.",
+  "done.sessionsEnded": "{n} session na binuksan nito ang isinara.",
+  "done.noWayIn": "Ito lamang ang paraan mo para mag-sign in: humingi ng activation link sa iyong administrator, o gamitin ang iyong mga recovery code."
+}

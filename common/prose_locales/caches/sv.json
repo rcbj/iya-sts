@@ -219,6 +219,22 @@
     "en": "080afaefbe52c342",
     "text": "Tills devices.eventsKept nyare händelser tränger ut den."
   },
+  "caches.store.hardware_tokens.register.title": {
+    "en": "f1c8d3f653154823",
+    "text": "Register över maskinvarutokens"
+  },
+  "caches.store.hardware_tokens.register.description": {
+    "en": "5efc16810cb7f48e",
+    "text": "En rad per fysisk maskinvarutoken (en YubiKey, ett smart kort) i den här sfären, nycklad på tillverkare och serienummer: vem som innehar den, dess modell och inloggningsuppgifterna på den. Ett serienummer registreras bara utifrån attestering. Aldrig en hemlighet."
+  },
+  "caches.store.hardware_tokens.register.bound": {
+    "en": "260467c777c74957",
+    "text": "Raderna en process håller är en cache på 5 000 per sfär; registret självt begränsas av de inloggningsuppgifter det listar (webauthn.maxKeysPerPerson för FIDO)."
+  },
+  "caches.store.hardware_tokens.register.lifetime": {
+    "en": "c18bfda6fa452b2b",
+    "text": "Tills token tas bort; en förlorad token behålls, markerad som förlorad."
+  },
   "caches.store.dpop.nonces.title": {
     "en": "a131d3dea3731f75",
     "text": "DPoP-nonces"

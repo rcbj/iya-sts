@@ -375,7 +375,7 @@ const SUBSYSTEMS = [
           'a person or an application holds, and the console\'s and the ' +
           'management API\'s doors to it.' },
   { id: 'HWTOKEN', label: 'Hardware tokens',
-    where: 'common/hardware_tokens.ts, admin-ui/hardware_tokens_admin.ts, ' +
+    where: 'common/hardware_tokens.ts, mgmt-api/hardware_tokens_api.ts, ' +
            'portal/account_tokens.ts',
     what: 'The hardware token register (#1955): one record per physical ' +
           'token (a YubiKey, a smart card) keyed by vendor and serial, ' +
@@ -22848,6 +22848,15 @@ const CODES = [
       'stands, and the token is recorded when it is next registered ' +
       '(#1955).',
     spec: '' },
+  { code: 'STS-HWTOKEN-0012',
+    summary: 'A hardware token act named an action that is not one of ' +
+      'the page\'s (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-HWTOKEN-0013',
+    summary: 'The hardware token list or the lost-key act failed with ' +
+      'an unexpected error at /admin-api; the log line has the stack ' +
+      '(#1955).',
+    spec: 'HTTP 500' },
   // ===== SVCACCT ===========================================================
   { code: 'STS-SVCACCT-0001',
     summary: 'A service-account policy profile was named with something ' +

@@ -2952,6 +2952,21 @@ be asked (`STS-LDAP-0139` on the rejection) is 503, anything else 500, both
 `STS-AUTHN-0415`. `list` and `lane` are closed sets, held at the gate (#86).
 `tests/protocol/sts_passkey_report.js` drives it.
 
+## `/admin-api/hardware-tokens` — DIRECTORY → HARDWARE TOKENS (#1955 P1, 2026-11-20)
+
+`mgmt-api/hardware_tokens_api.ts`, spread into the table as the post-login
+activities' are: `GET /admin-api/hardware-tokens` (the page's view: `tokens`,
+`paging`, `capped`, `q`, `status`) and `POST
+/admin-api/hardware-tokens/lost` (`{ key }`, mirroring `POST
+/admin/hardware-tokens`). Both are `common/hardware_tokens.ts`'s. Nothing
+here records a serial: a token reaches the register only from attestation.
+The act's answer lists `retired` and `notRetired` WITHOUT their error codes
+(the codes are on the audit row). Reporting a Security Administrator's token
+lost clears their factors, so `common/security_operations.ts` classifies it
+as a holder change (`admin:security`), the holder read from the register,
+never the body. 404 for no such token (STS-HWTOKEN-0005), 409 for one
+already lost (0006), 400 for an unknown action (0012).
+
 ## `/admin-api/post-login-activities` — DIRECTORY → POST-LOGIN ACTIVITIES (#1111, 2026-10-28; #1123)
 
 `mgmt-api/post_login_activities_api.ts`, spread into the table as the

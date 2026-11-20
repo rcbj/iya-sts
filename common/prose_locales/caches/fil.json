@@ -219,6 +219,22 @@
     "en": "080afaefbe52c342",
     "text": "Hanggang itulak ito palabas ng devices.eventsKept na mas bagong event."
   },
+  "caches.store.hardware_tokens.register.title": {
+    "en": "f1c8d3f653154823",
+    "text": "Rehistro ng mga hardware token"
+  },
+  "caches.store.hardware_tokens.register.description": {
+    "en": "5efc16810cb7f48e",
+    "text": "Isang row bawat pisikal na hardware token (isang YubiKey, isang smart card) sa realm na ito, naka-key ayon sa vendor at serial: sino ang may hawak, ang modelo nito at ang mga credential dito. Naitatala lamang ang serial mula sa attestation. Hindi kailanman isang lihim."
+  },
+  "caches.store.hardware_tokens.register.bound": {
+    "en": "260467c777c74957",
+    "text": "Ang mga row na hawak ng isang proseso ay cache na 5,000 bawat realm; ang rehistro mismo ay nililimitahan ng mga credential na inililista nito (webauthn.maxKeysPerPerson para sa FIDO)."
+  },
+  "caches.store.hardware_tokens.register.lifetime": {
+    "en": "c18bfda6fa452b2b",
+    "text": "Hanggang maalis ang token; ang nawalang token ay pinananatili, minarkahang nawala."
+  },
   "caches.store.dpop.nonces.title": {
     "en": "a131d3dea3731f75",
     "text": "Mga DPoP nonce"

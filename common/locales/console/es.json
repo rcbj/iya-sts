@@ -129,6 +129,7 @@
   "nav.roles": "Roles",
   "nav.applications": "Aplicaciones",
   "nav.devices": "Dispositivos",
+  "nav.hardware-tokens": "Tokens de hardware",
   "nav.attribute-sources": "Fuentes de atributos",
   "nav.secret-destinations": "Destinos de secretos",
   "nav.policies": "Políticas",

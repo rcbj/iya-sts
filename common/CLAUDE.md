@@ -12605,6 +12605,40 @@ removals of `oauthDelegatedPermission`, `oauthPermission` and
 `oauthAllowedScope` call it or `claimsFanOut()` directly. Each lazily, after
 its write, never into it. `ssf/CLAUDE.md` has the fan-out.
 
+## `hardware_tokens.ts`: THE HARDWARE TOKEN REGISTER (#1955 P1, 2026-11-20)
+
+One record per physical token (a YubiKey, a smart card) per realm, keyed by
+`<vendor>/<serial>`, with its holder's entryUUID and the credentials on it
+as `{ kind, ref }`. The file's header is the argument; what a maintainer of
+this directory has to know beside it:
+
+* **A serial is recorded only from attestation**: `recordAttested()` is the
+  one writer and takes an evidence source from a closed list
+  (`fido-enterprise-attestation`, and `piv-attestation` and
+  `vendor-import` for P2 and P4). No door takes a serial from a body.
+* **It is NOT the device register, and the header says why**: a roaming key
+  identifies no device (`device_enrolment.ts`, STS-DEVICE-0022), and filing
+  one there would make every sign-in with it "from a registered device" for
+  recognition, the compliant-device acr, risk scoring and Native SSO's
+  eviction.
+* **`credentials.addKey()` records the token at the one writer**
+  (`noteFidoKey()`, lazily), and `removeKey()` drops the credential unless
+  the lost-key act is the caller (`{ lost: true }`, which also passes the
+  last-way-in guard).
+* **The lost-key act is a dispatch by kind, and `registerRetirer()` is a
+  hook under rule 3e**: later phases' modules record their credentials here,
+  so this file requiring them back to retire them would close a cycle. A
+  kind with no retirer is reported as not retired (STS-HWTOKEN-0009), never
+  skipped. A FIDO credential is REMOVED rather than disabled, because no
+  sign-in door reads a disabled mark.
+* **X3**: `evidenceFor()` and `certificateAmr()` answer what recorded
+  evidence says of a credential's key; PKINIT keeps its old inference while
+  `hardwareTokens.hardwareClaims` is `inference` (the default).
+* **The store** is `hardware_tokens.register`, cell tier, on demand with an
+  index by holder (`h:`) and by credential (`c:<kind>:<ref>`). No table, so
+  no schema version or upgrade script; development does not keep it across
+  a restart, as it keeps no minted store.
+
 ## `devices.ts`: THE DEVICE REGISTER (#130, 2026-09-23; #164 and #218, 2026-09-26)
 
 A device is an entry under `ou=devices` (`ldap/CLAUDE.md`) with ONE owner —
