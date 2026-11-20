@@ -51,9 +51,6 @@
 // reason.
 // ===========================================================================
 
-// An address compared by parsing it, not searched for as text
-// (`protocol/url_match.js`).
-const urls = require('./protocol/url_match.js');
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
@@ -68,6 +65,9 @@ const ROOT = path.join(__dirname, '..');
 // from the Entering/Leaving lines; its findings are written to BK_OUT.
 function childMain() {
   const ROOT = process.env.BK_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT + '/tests/protocol/url_match.js');
   const OUT = process.env.BK_OUT;
   const REALM = 'spiffe-broker';
   const POD = '0f0e0d0c-0b0a-4908-8706-050403020100';

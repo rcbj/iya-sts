@@ -23,9 +23,6 @@
 // subject's member) is the SET's `iss`. A partner's subject is left alone,
 // which is the control that the rewrite is not "every iss becomes ours".
 
-// An address compared by parsing it, not searched for as text
-// (`protocol/url_match.js`).
-const urls = require('./protocol/url_match.js');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -36,6 +33,9 @@ const log = require('bunyan').createLogger({ name: 'ssf_subject_issuer',
 
 function child() {
   const ROOT = process.env.SSI_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT + '/tests/protocol/url_match.js');
   const OUT = process.env.SSI_OUT;
   const findings = [];
   const note = function (ok, what, detail) {

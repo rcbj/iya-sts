@@ -78,9 +78,6 @@
 
 delete process.env.CONFIG_FILE;
 
-// An address compared by parsing it, not searched for as text
-// (`protocol/url_match.js`).
-const urls = require('./protocol/url_match.js');
 const childProcess = require('child_process');
 const fs = require('fs');
 const nodeCrypto = require('crypto');
@@ -188,6 +185,9 @@ function registry(t) {
 // ---------------------------------------------------------------------------
 function childMain() {
   const ROOT_DIR = process.env.M_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT_DIR + '/tests/protocol/url_match.js');
   const OUT = process.env.M_OUT;
   const M = JSON.parse(process.env.M_MATERIAL);
   const fsC = require('fs');

@@ -36,9 +36,6 @@
 
 delete process.env.CONFIG_FILE;
 
-// An address compared by parsing it, not searched for as text
-// (`protocol/url_match.js`).
-const urls = require('./protocol/url_match.js');
 const kit = require('./wallet_kit');
 
 const log = require('bunyan').createLogger({ name: 'self_issued_location',
@@ -49,6 +46,9 @@ const log = require('bunyan').createLogger({ name: 'self_issued_location',
 // ---------------------------------------------------------------------------
 function childMain() {
   const ROOT = process.env.WSI_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT + '/tests/protocol/url_match.js');
   const OUT = process.env.WSI_OUT;
   const walletKit = require(ROOT + '/tests/wallet_kit');
 

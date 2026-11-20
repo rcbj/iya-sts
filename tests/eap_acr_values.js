@@ -59,9 +59,6 @@
 
 delete process.env.CONFIG_FILE;
 
-// An address compared by parsing it, not searched for as text
-// (`protocol/url_match.js`).
-const urls = require('./protocol/url_match.js');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
@@ -376,6 +373,9 @@ function issuancePolicy(t) {
 // rule (root CLAUDE.md, *Code style*).
 function childMain() {
   const ROOT = process.env.EAP_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT + '/tests/protocol/url_match.js');
   const OUT = process.env.EAP_OUT;
   const http = require('http');
   const nodeCrypto = require('crypto');

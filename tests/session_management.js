@@ -35,9 +35,6 @@
 
 delete process.env.CONFIG_FILE;
 
-// An address compared by parsing it, not searched for as text
-// (`protocol/url_match.js`).
-const urls = require('./protocol/url_match.js');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -277,6 +274,9 @@ async function library(t) {
 function childMain() {
   /* eslint-disable no-console */
   const ROOT = process.env.SM_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT + '/tests/protocol/url_match.js');
   const OUT = process.env.SM_OUT;
   const http = require('http');
   const crypto = require('crypto');

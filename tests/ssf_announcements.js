@@ -23,9 +23,6 @@
 //      that closes it, and it closes itself after ten seconds.
 // ===========================================================================
 
-// An address compared by parsing it, not searched for as text
-// (`protocol/url_match.js`).
-const urls = require('./protocol/url_match.js');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -39,6 +36,9 @@ const ROOT = path.join(__dirname, '..');
 // Runs in a child, with the whole stack loaded, and writes its findings.
 function childMain() {
   const ROOT = process.env.SA_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT + '/tests/protocol/url_match.js');
   const OUT = process.env.SA_OUT;
   const fs = require('fs');
   const findings = [];
