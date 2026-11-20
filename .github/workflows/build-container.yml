@@ -19,6 +19,9 @@
 # The second is the remote XACML PEP (xacml-pep/), checked for liveness
 # before anything is published. A develop build is built and checked and
 # publishes nothing (rcbj, 2026-10-02): what goes out is what reached main.
+# The one exception is a RELEASE CANDIDATE (rcbj, 2026-11-19), started by
+# hand with `candidate` on another branch: M.N.O.<build> and M.N.O-candidate,
+# never the bare release or `latest` (the `candidate` input, below).
 #
 # See *Publish the image* below.
 #
@@ -51,6 +54,31 @@ on:
         description: 'The release build number (e.g. 0 for 1.0.0.0)'
         type: string
         default: ''
+      # A RELEASE CANDIDATE (rcbj, 2026-11-19), the parent project's
+      # arrangement (its dockerimage.yml, ad5d2f03 there), dispatched on any
+      # branch but main. It publishes this branch's images so the live-site
+      # suites have something to run against before a release exists, with
+      # four differences from a build of main:
+      #   * the images are tagged M.N.O.<build> and M.N.O-candidate only;
+      #     NOT the bare M.N.O (that names a release, and is made once) and
+      #     NOT `latest`;
+      #   * the release is VERSION's as written, as on any develop build: no
+      #     patch is worked out from the tags, and no pre-release suffix
+      #     reaches the version (common/CLAUDE.md, *Versioning*);
+      #   * the git tags are v<M.N.O>.<build> and v<M.N.O>-candidate, the
+      #     second FORCE-MOVED by each candidate build. Neither is a
+      #     three-component vM.N.P, so tests/tools/release-number.js counts
+      #     neither, and the real release later finds no v<M.N.O> and makes
+      #     it as usual;
+      #   * NO GitHub release is made, because a release is permanent. The
+      #     notes it would carry go to the run summary instead.
+      # Ignored on main, which always publishes the real release.
+      candidate:
+        description: >-
+          Release candidate: publish this branch as M.N.O-candidate (no bare
+          M.N.O, no `latest`, no GitHub release). Ignored on main.
+        type: boolean
+        default: false
 
 # ONE BUILD OF main AT A TIME (2026-11-11): each one works out the next
 # patch from the git tags and tags it once it has published, so two at once
@@ -72,6 +100,11 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # 'true' only for a dispatched candidate on a branch other than main.
+      CANDIDATE: >-
+        ${{ github.event_name == 'workflow_dispatch' &&
+        inputs.candidate == true && github.ref != 'refs/heads/main' }}
     steps:
       # submodules: recursive is LOAD-BEARING and its absence is silent until the
       # container starts. The LDAP directory's library is `"ldapjs":
@@ -434,7 +467,9 @@ jobs:
       # (rcbj, 2026-10-02): develop
       # published a `develop` tag for a day, and too much went out that was
       # not ready. A develop build, and a run started by hand from any branch
-      # but main, publishes nothing. The image's
+      # but main, publishes nothing, unless it is started as a candidate
+      # (rcbj, 2026-11-19): then `:<M.N.O.build>` and `:<M.N.O>-candidate`,
+      # with no bare `:<M.N.O>` and no `latest`. The image's
       # org.opencontainers.image.revision label names the commit.
       #
       # NOT ghcr.io/rcbj/iya-sts/<name>. That namespace is the test stack's
@@ -463,10 +498,17 @@ jobs:
         id: publish-plan
         run: |
           set -euo pipefail
-          case "${{ github.ref_name }}" in
-            main) FLOAT=latest ;;
-            *)    FLOAT="" ;;
-          esac
+          # FLOAT is the moving tag, and a non-empty FLOAT is what publishes.
+          # BARE is the bare M.N.O, a release's: on main only, never on a
+          # candidate.
+          if [ "${CANDIDATE}" = true ]; then
+            FLOAT="${{ steps.release.outputs.release }}-candidate"
+          else
+            case "${{ github.ref_name }}" in
+              main) FLOAT=latest ;;
+              *)    FLOAT="" ;;
+            esac
+          fi
           VERSION="$(docker run --rm --entrypoint cat rcbj/sts:ci \
                      version.json | jq -r .version)"
           PEP_VERSION="$(docker run --rm --entrypoint cat \
@@ -498,7 +540,8 @@ jobs:
           # ordinary course; it is what stops a publish if a tag was made by
           # hand, or by a run outside that group, while this one built —
           # before an image is pushed under a release somebody else has.
-          if [ -n "${FLOAT}" ]; then
+          # Main only: a candidate claims no release number.
+          if [ "${FLOAT}" = latest ]; then
             again="$(git ls-remote --tags origin 'refs/tags/v*' |
               node tests/tools/release-number.js \
                 --commit "${{ github.sha }}" --version-file VERSION)"
@@ -512,8 +555,16 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "pep_version=${PEP_VERSION}" >> "$GITHUB_OUTPUT"
           echo "release_tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
+          if [ "${CANDIDATE}" = true ]; then
+            echo "bare=" >> "$GITHUB_OUTPUT"
+          else
+            echo "bare=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
+          fi
           if [ -z "${FLOAT}" ]; then
-            echo "Not main: nothing is published."
+            echo "Not main and not a candidate: nothing is published."
+          elif [ "${CANDIDATE}" = true ]; then
+            echo "Publishing candidate ${VERSION} (PEP ${PEP_VERSION})" \
+                 "as ${FLOAT}; no bare ${RELEASE_TAG}, no latest."
           else
             echo "Publishing ${VERSION} (PEP ${PEP_VERSION})," \
                  "${RELEASE_TAG} and ${FLOAT}."
@@ -540,7 +591,7 @@ jobs:
           VERSION: ${{ steps.publish-plan.outputs.version }}
           PEP_VERSION: ${{ steps.publish-plan.outputs.pep_version }}
           FLOAT: ${{ steps.publish-plan.outputs.float }}
-          RELEASE_TAG: ${{ steps.publish-plan.outputs.release_tag }}
+          RELEASE_TAG: ${{ steps.publish-plan.outputs.bare }}
         run: |
           set -euo pipefail
           rows=""
@@ -549,6 +600,10 @@ jobs:
             for registry in ghcr.io/rcbj docker.io/iyasec; do
               dst="${registry}/${name}"
               for tag in "${version}" "${RELEASE_TAG}" "${FLOAT}"; do
+                # A candidate has no bare release tag.
+                if [ -z "${tag}" ]; then
+                  continue
+                fi
                 docker tag "${src}" "${dst}:${tag}"
                 docker push "${dst}:${tag}"
               done
@@ -656,6 +711,25 @@ jobs:
             gh api -X POST "repos/${repo}/git/refs" \
               -f ref="refs/tags/${full}" -f sha="${SHA}" >/dev/null
           fi
+          # A CANDIDATE's tag is v<M.N.O>-candidate, MOVED to this commit
+          # by each candidate build, and the release tag v<M.N.O> is not
+          # touched: it is made once, by the real release on main.
+          if [ "${CANDIDATE}" = true ]; then
+            release="v${RELEASE_TAG}-candidate"
+            if gh api "repos/${repo}/git/ref/tags/${release}" >/dev/null 2>&1; then
+              gh api -X PATCH "repos/${repo}/git/refs/tags/${release}" \
+                -f sha="${SHA}" -F force=true >/dev/null
+            else
+              gh api -X POST "repos/${repo}/git/refs" \
+                -f ref="refs/tags/${release}" -f sha="${SHA}" >/dev/null
+            fi
+            echo "Tagged ${SHA} as ${full} and ${release} (moved)."
+            {
+              echo ""
+              echo "Git tags: \`${full}\` and \`${release}\` (moved) on \`${SHA}\`."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           # The release names this commit: made once, kept on a re-run of
           # the same commit, refused if it already names another.
           if gh api "repos/${repo}/git/ref/tags/${release}" >/dev/null 2>&1; then
@@ -713,7 +787,13 @@ jobs:
           set -euo pipefail
           repo="${GITHUB_REPOSITORY}"
           release="v${RELEASE_TAG}"
-          if gh release view "${release}" --repo "${repo}" >/dev/null 2>&1; then
+          also="\`${RELEASE_TAG}\` and \`latest\`"
+          if [ "${CANDIDATE}" = true ]; then
+            # The notes are worked out against the release this candidate
+            # rehearses, from the previous real vM.N.P, and published to the
+            # run summary only.
+            also="\`${RELEASE_TAG}-candidate\`"
+          elif gh release view "${release}" --repo "${repo}" >/dev/null 2>&1; then
             echo "Release ${release} already exists; it is left as it is."
             exit 0
           fi
@@ -729,18 +809,41 @@ jobs:
             echo "## Images"
             echo ""
             echo "Service \`${VERSION}\`, remote XACML PEP \`${PEP_VERSION}\`," \
-                 "also tagged \`${RELEASE_TAG}\` and \`latest\`."
+                 "also tagged ${also}."
             echo ""
             echo "| Image | Digest |"
             echo "|---|---|"
             cat "${RUNNER_TEMP}/published-images.md"
             echo ""
-            echo "Commit \`${SHA}\`; git tags \`v${VERSION}\` and \`${release}\`."
+            if [ "${CANDIDATE}" = true ]; then
+              echo "Commit \`${SHA}\`; git tags \`v${VERSION}\` and" \
+                   "\`${release}-candidate\`."
+            else
+              echo "Commit \`${SHA}\`; git tags \`v${VERSION}\` and \`${release}\`."
+            fi
             if [ "${IS_RELEASE_BUILD}" = true ]; then
               echo "A release build (build number named by hand)."
             fi
             echo ""
           } > "${notes}"
+          if [ "${CANDIDATE}" = true ]; then
+            # GitHub's generated notes without a release: the same endpoint
+            # `--generate-notes` uses, asked for the candidate tag.
+            gen=(-f tag_name="${release}-candidate" -f target_commitish="${SHA}")
+            if [ -n "${previous}" ]; then
+              gen+=(-f previous_tag_name="${previous}")
+            fi
+            gh api -X POST "repos/${repo}/releases/generate-notes" \
+              "${gen[@]}" --jq .body >> "${notes}"
+            {
+              echo ""
+              echo "### Release notes (candidate; no GitHub release made)"
+              echo ""
+              cat "${notes}"
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "Candidate ${release}-candidate: its notes are in the summary."
+            exit 0
+          fi
           args=(--repo "${repo}" --verify-tag --latest
                 --title "${release} (${VERSION})" --notes-file "${notes}"
                 --generate-notes)
