@@ -119,8 +119,24 @@ function connect(port, ca, session, maxVersion) {
 async function run(t) {
   const mod = require('../tls/session_tickets');
   const stsCrypto = require('../common/crypto');
-  const certA = stsCrypto.selfSignedRsaCertificate({ commonName: 'localhost' });
-  const certB = stsCrypto.selfSignedRsaCertificate({ commonName: 'localhost' });
+  // Each self-signed for `localhost` by its subjectAltName, and NAMED APART:
+  // two self-signed certificates with one subject are, to OpenSSL's path
+  // builder, two candidate issuers for each other, and it picked the wrong
+  // one ("self-signed certificate") once the client verified.
+  const nodeCertificate = function (name) {
+    log.debug("Entering nodeCertificate(). " + name);
+    log.debug("Leaving nodeCertificate().");
+    return stsCrypto.selfSignedRsaCertificate({ commonName: name,
+      extensions: [
+        { name: 'basicConstraints', cA: false, critical: true },
+        { name: 'keyUsage', digitalSignature: true, keyEncipherment: true,
+          critical: true },
+        { name: 'extKeyUsage', serverAuth: true },
+        { name: 'subjectAltName', altNames: [{ type: 2, value: 'localhost' }] }
+      ] });
+  };
+  const certA = nodeCertificate('session_tickets node A');
+  const certB = nodeCertificate('session_tickets node B');
   const ca = [certA.certPem, certB.certPem];
   const shared = new Map();
   const state = { intervalS: 3600, activeActive: true, scheduler: null };
