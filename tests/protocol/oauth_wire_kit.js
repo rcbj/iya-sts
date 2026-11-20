@@ -627,8 +627,13 @@ function kit(name) {
     const server = http.createServer(function (req, res) {
       const path = String(req.url || "").split("?")[0];
       hits.push(path);
-      const route = routes[path];
-      if (route) {
+      // Only an OWN member that is a function, looked up as each request
+      // arrives (a job adds to `routes` after the listener starts): a path
+      // is a request's text, and `routes[path]` alone would answer
+      // `/constructor` or `/__proto__` with something inherited.
+      const route = Object.prototype.hasOwnProperty.call(routes, path)
+        ? routes[path] : null;
+      if (typeof route === "function") {
         route(req, res);
         return;
       }
