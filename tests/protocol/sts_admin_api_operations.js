@@ -1788,8 +1788,8 @@ async function theObservedReturnAddressesAreDecided() {
              detail: now.rows,
              now: now };
   });
-  assert.ok(fieldValues(afterConfirm.now.entry,
-                        "samlAssertionConsumerService").indexOf(ONE) >= 0,
+  assert.ok(urls.holds(fieldValues(afterConfirm.now.entry,
+                                   "samlAssertionConsumerService"), ONE),
     "CONFIRM takes the mark off and KEEPS the address; " + ONE + " is gone " +
         "from " +
     JSON.stringify(fieldValues(afterConfirm.now.entry,
@@ -1842,8 +1842,8 @@ async function theObservedReturnAddressesAreDecided() {
                    !urls.holds(acs, TWO),
              detail: { rows: now.rows, acs: acs }, now: now };
   });
-  assert.ok(fieldValues(afterDiscard.now.entry,
-                        "samlAssertionConsumerService").indexOf(ONE) >= 0,
+  assert.ok(urls.holds(fieldValues(afterDiscard.now.entry,
+                                   "samlAssertionConsumerService"), ONE),
     "a discard takes only the address it named; the confirmed one must still " +
     "be there");
   await refused("/applications/discard-address",
