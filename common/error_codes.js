@@ -1303,6 +1303,11 @@ const CODES = [
       'file is not this: the image\'s own defaults are used ' +
       '(STS-CORE-0177).',
     spec: '' },
+  { code: 'STS-CORE-0180',
+    summary: 'A store could not forget what it held for a trust realm this ' +
+      'process never defined and the store no longer lists (#1938); it is ' +
+      'asked again at the next realm read.',
+    spec: '' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.' +
@@ -3842,6 +3847,11 @@ const CODES = [
       'belongs to a realm that no longer exists — a write that landed ' +
       'after the realm was removed — and was skipped and deleted rather ' +
       'than refusing the start or kept.',
+    spec: '' },
+  { code: 'STS-KEYS-0200',
+    summary: 'The signing keys of a trust realm this process never defined ' +
+      'were dropped once the store no longer listed it (#1938), and the ' +
+      'cached key set built from them could not be.',
     spec: '' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
