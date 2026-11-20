@@ -989,7 +989,7 @@ op `setCustomAttribute`(`requestBody/content/application~1json/schema`: {
   })
 op `getApplications`(@js(#{`maxLength`:200}) `parameters/0/schema`: string,
   @js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"integer",`minimum`:1,`maximum`:100000}]}}) `parameters/1/schema`: unknown,
-  `parameters/2/schema`: "" | "1",
+  `parameters/2/schema`: "1" | "",
   `responses/200/content/application~1json/schema`: {
     `rows`?: ({
       `identifier`?: string;

@@ -12246,7 +12246,8 @@ class Authn {
    * @param chosen - the role names ticked
    * @returns nothing; the answer is sent
    */
-  rolesAct(req: any, res: any, stepId: string, chosen: string[]): void {
+  rolesAct(req: any, res: IyaApi.AuthnAnswering<'chooseRoles'>,
+           stepId: string, chosen: string[]): void {
     const { log, baseUrlOf, audit, errorCodes } = this.deps;
     log.debug("Entering Authn.rolesAct().");
     const base = baseUrlOf(req);

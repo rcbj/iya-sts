@@ -94,7 +94,10 @@ const PORTAL_QUERY = ModelZod.query('account', 'getOverview');
 // `page` is an INTEGER through `vt.integer()`: a handler never parses a query
 // string itself. The bound is generous; the view clamps to the last real
 // page, which is what a bookmark to page 40 of a list that shrank should do.
-const PAGED_QUERY = ModelZod.query('account', 'getApplications');
+const PAGED_QUERY = ModelZod.query('account', 'getSecurityActivity');
+
+// The Applications page's: the page, and "Sign in again" (#1072).
+const APPLICATIONS_QUERY = ModelZod.query('account', 'getApplications');
 
 // THE LANGUAGE ON THE PERSON'S OWN ENTRY (#539). One field, the tag — empty
 // for "use my browser's language", which removes the attribute.
@@ -1014,7 +1017,8 @@ class AccountOverview {
           return self.setCustomAttribute(ctx, res, caller, input.body);
         } },
       { method: 'GET', path: ctx.BASE + '/applications',
-        operationId: 'getApplications', access: 'person', query: PAGED_QUERY,
+        operationId: 'getApplications', access: 'person',
+        query: APPLICATIONS_QUERY,
         handler: function (req, res, caller: AccountCaller,
                            input): unknown {
           return ctx.json(res, 200, self.applicationsView(caller,

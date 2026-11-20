@@ -4158,3 +4158,39 @@ one click from skipped.
   process; `tests/post_login_started.js` holds #1126's selection.
 
 **An app password at a password-only door needs no second factor, deliberately (rcbj, 2026-11-09).** Those doors cannot ask for one. `mode.requiresSecondFactorOfEveryone()` (#1490) refuses a person's own password there and leaves the app password working; do not extend the requirement to it.
+
+## THE ROLE STEP (#1072, 2026-11-20; rule 3dg)
+
+A dynamic selectable role is chosen HERE, after every factor and before a
+post-login activity, on the post-login hold's pattern (`startSessionHere()`):
+
+* **The screen's box** "Choose roles for this sign-in" is drawn where
+  `roleBoxOffered()`: the application's `roles.dynamicSelection` (with
+  `appDynamicRoleSelection` overriding it) is on and the realm defines a
+  dynamic role. It says nothing about the person. Ticked, it rides as
+  `choose_roles` beside `remember_browser` and lands on the pending record
+  (`record.chooseRoles`).
+* **Held** when `roleOfferFor()` finds a role the person is eligible for and
+  the door is the screen's (`postLoginHold`); `refusedSession()` then draws
+  the step (`/authn/roles`, factor `roles`) where the box was ticked or a
+  `required` role is offered (rcbj's decision 3), and otherwise starts the
+  session at once with no role (`finishRoles(…, [])`). A door that cannot
+  draw it is refused for a required role (STS-XACML-0329) and otherwise
+  starts with none.
+* **The step holds the OFFER** — the server's own list — and `rolesAct()`
+  checks the ticked names against it and the policies again
+  (`role_selection.ts`'s `validateChoice()`: 0325–0328). `mfaStepFor()`
+  answers a role step only to its own act, as a post-login step: a code
+  posted to its id would start the held session without the choice.
+* **The choice is on the session** — `selectedRoles`, `{ role, application,
+  at }` — stamped by `startSessionHere()`'s record, carried through a
+  post-login step's `held`, and on a re-authentication REPLACED for that
+  application only (`reauthenticateSession()`), which is what the portal's
+  "Sign in again" relies on. Nothing is written to the directory.
+
+`role_selection.ts` is the other half: `selectedFor()`, the reader
+`roles.js`'s selection slot calls at every issuance, re-asking each chosen
+role's policy (`roles.selection.dropped` where it no longer permits) and
+answering nothing for an ended, expired or somebody else's session — which
+is also what an `offline_access` refresh token outliving its session gets.
+`tests/role_selection.js` holds both halves.

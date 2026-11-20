@@ -320,10 +320,10 @@ function sectionDtoF(t, k) {
     return one.action === 'roles.eligibility';
   });
   t.check(recorded.some(function (one) {
-    return /dyn-operator/.test(String(one.detail || '')) &&
+    return /dyn-operator/.test(String(one.summary || '')) &&
            one.target === 'oncall';
   }) && recorded.some(function (one) {
-    return /dyn-clerk/.test(String(one.detail || '')) &&
+    return /dyn-clerk/.test(String(one.summary || '')) &&
            one.errorCode === 'STS-XACML-0319';
   }), 'D4. each offer decision is audited as roles.eligibility, a refusal ' +
      'with its code', String(recorded.length));
