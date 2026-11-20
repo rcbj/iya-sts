@@ -31,6 +31,7 @@ const https = require('https');
 const nodeCrypto = require('crypto');
 const os = require('os');
 const path = require('path');
+const tls = require('tls');
 
 const testCa = require('./protocol/outbound_test_ca');
 const serviceTrust = require('./tools/service_trust');
@@ -187,8 +188,10 @@ async function run(t) {
             String(held.error && held.error.message));
 
     // ---- E ------------------------------------------------------------
+    // The held bundle is the leaf and the Root, so the known anchors are
+    // the system's roots and those two, and nothing is appended to them.
     const knownOnly = await trust.anchorsFor(url, { pkiPort: nowhere });
-    t.check(knownOnly.indexOf(root.certPem) < 0 &&
+    t.check(knownOnly.length === tls.rootCertificates.length + 2 &&
             (await get(url + '/', knownOnly)).status === 200,
             'E1. anchorsFor() answers the known anchors alone when they ' +
             'verify the listener');
