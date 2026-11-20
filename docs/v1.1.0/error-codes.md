@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5752** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5753** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -70,7 +70,7 @@ is an ordinary outcome.
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 32
 * [Federation (`STS-FED`)](#sts-fed) — 228
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 258
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 259
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 177
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
@@ -3411,6 +3411,7 @@ Raised from: kerberos/.
 | `STS-KRB-0256` | An S4U2Self request was refused: its PA-FOR-USER checksum is HMAC-MD5 and crypto.allowLegacyHashes is off (#1469). | KDC_ERR_POLICY |
 | `STS-KRB-0257` | A person whose password must be changed asked for a ticket, in product (ASVS 5.0.0 6.4.1). | KDC_ERR_KEY_EXPIRED |
 | `STS-KRB-0258` | GET /authn/spnego was asked to withhold the AP-REP (?mutual=off) where the test controls are closed (#896). | none (RFC 4120 section 3.2.5; a development test control) |
+| `STS-KRB-0259` | An AS-REQ or TGS-REQ changed the store and the commit of that change failed, so it was answered KDC_ERR_SVC_UNAVAILABLE instead of its reply; the change is retried (GitHub run #569). | KDC_ERR_SVC_UNAVAILABLE (29); RFC 4120 7.5.9 |
 
 ## STS-LDAP
 

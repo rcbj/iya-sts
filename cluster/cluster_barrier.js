@@ -824,6 +824,91 @@ function commitBeforeSending() {
 }
 
 // ---------------------------------------------------------------------------
+// RULE 2 FOR AN ANSWER NEITHER `app.js` NOR LDAPJS SENDS (2026-11-19, GitHub
+// run #569, cluster mode).
+//
+// `holdUntilCommitted()` holds an HTTP response and `answerAfterCommit()` an
+// LDAP result; a Kerberos reply on TCP or UDP 88 is neither, and nothing
+// held it. Samba's `fast_tests.test_fast_ad_fx_fast_armor` made an AS-REQ for
+// a name nobody had configured, answered on node A at 04:01:38.567 — the
+// development KDC creates that principal on first sight, a row of
+// `krb5.principals` — and the TGS-REQ the test made 22 ms later with that
+// TGT was balanced to node B, whose copy of the table did not have the name
+// yet: "not in the principal table; issuing a service ticket with NO PAC",
+// and the test's assertion that the ticket carries a PAC failed. The AS-REP
+// had gone before its row committed, so no pull B could have made would
+// have found it.
+//
+// So the caller reads `writePosition()` when the message arrives and hands
+// it to `commitAnswered()` once its answer is built, and sends that answer
+// only when the promise resolves. The test of whether it wrote is
+// `answerAfterCommit()`'s for a write: the directory's position, the minted
+// position less the tallies (`mintedWrites()`), and keys pending. Where rule
+// 2 does not hold (`holds()`: no database, not active-active) it resolves at
+// once. It never rejects: it resolves the commit's failures, and the caller
+// answers its own protocol's "unavailable" for any — a reply sent before a
+// commit that failed is an acknowledgement this process can lose (#351).
+// ---------------------------------------------------------------------------
+/**
+ * Reads the store's write position for `commitAnswered()`, or null where
+ * rule 2 does not hold or the persistence module has no positions.
+ *
+ * @returns the position, or null
+ */
+function writePosition() {
+  log.debug("Entering writePosition().");
+  if (!holds()) {
+    log.debug("Leaving writePosition(). Rule 2 does not hold here.");
+    return null;
+  }
+  const store = persistence();
+  if (typeof store.writeGeneration !== 'function' ||
+      typeof store.commitThrough !== 'function') {
+    log.debug("Leaving writePosition(). No positioned commit.");
+    return null;
+  }
+  log.debug("Leaving writePosition().");
+  return store.writeGeneration();
+}
+
+/**
+ * Waits, where rule 2 holds, until what this process wrote since `arrival`
+ * has committed, so an answer cannot reach a client before its writes can
+ * reach another node.
+ *
+ * @param arrival - `writePosition()` when the work arrived, or null
+ * @returns a promise of the commit's failures as texts, empty when nothing
+ *   was written or it committed; it never rejects
+ */
+function commitAnswered(arrival) {
+  log.debug("Entering commitAnswered().");
+  if (!arrival) {
+    log.debug("Leaving commitAnswered(). Not held.");
+    return Promise.resolve([]);
+  }
+  const store = persistence();
+  const now = store.writeGeneration();
+  const wrote = now.directory !== arrival.directory ||
+    mintedWrites(now) !== mintedWrites(arrival) ||
+    (typeof store.keysPending === 'function' && !!store.keysPending());
+  if (!wrote) {
+    stats.answeredUnheld += 1;
+    log.debug("Leaving commitAnswered(). Nothing written.");
+    return Promise.resolve([]);
+  }
+  stats.heldForCommit += 1;
+  const began = Date.now();
+  log.debug("Leaving commitAnswered(). Held for the commit.");
+  return commitFailures(store, now).then(function (failed) {
+    stats.totalHoldMs += Date.now() - began;
+    if (failed.length) {
+      stats.commitFailures += 1;
+    }
+    return failed;
+  });
+}
+
+// ---------------------------------------------------------------------------
 // RULE 1 FOR SOMETHING THAT IS NOT AN HTTP REQUEST (2026-11-18, run #510).
 //
 // The middleware below is the only caller of rule 1 that `app.js` installs,
@@ -1005,6 +1090,8 @@ module.exports = {
   answerAfterCommit: answerAfterCommit,
   onCommitRefused: onCommitRefused,
   commitBeforeSending: commitBeforeSending,
+  writePosition: writePosition,
+  commitAnswered: commitAnswered,
   callLogStarts: callLogStarts,
   isActive: isActive,
   markSynced: markSynced,

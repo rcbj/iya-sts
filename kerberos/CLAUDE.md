@@ -1887,6 +1887,24 @@ operation that moves a stamp backwards, the development-only
 `restore-kerberos`, does it with an instant of its own that merges the same
 way.
 
+**EVERY KDC REQUEST, AND BOTH RULES, SINCE 2026-11-19 (GitHub run #569,
+cluster mode).** The catch-up was gated on `logout.kerberosSignOut`, on the
+claim that nothing else here reads replicated state, and the KDC's reply was
+sent before what its request wrote had committed. Samba's
+`fast_tests.test_fast_ad_fx_fast_armor` made an AS-REQ for a fresh name on node
+A — the development KDC creates the principal on first sight, a
+`krb5.principals` row — and its TGS-REQ 22 ms later reached node B, which did
+not have the row: "not in the principal table; issuing a service ticket with
+NO PAC", and the test's PAC assertion failed. Single-node passed. Now, in
+`handleMessage()`, every AS-REQ and TGS-REQ in active-active first goes
+through `cluster_barrier.catchUp()` (rule 1, LDAP's arrangement since run
+#510, whatever the setting; STS-KRB-0118 is still logged beside the barrier's
+STS-CLUSTER-0018 when the setting is on), and its reply is held by
+`cluster_barrier.commitAnswered()` until what it wrote has committed (rule 2,
+wherever `holds()`: a database store or active-active). A commit that fails
+is KDC_ERR_SVC_UNAVAILABLE (29) under STS-KRB-0259, which clients retry. A
+store with no database is unchanged.
+
 The two requires are LAZY and guarded. `cluster/cluster_barrier.js` is already
 in the parent project's COPY closure through `common/app.js`, and
 `cluster/cluster.js` with it (the barrier requires it lazily); if that set does
