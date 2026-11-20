@@ -126,10 +126,11 @@ function run(t) {
   t.check(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)\s*$/.test(raw),
           'the repo-root VERSION file is M.N.O and nothing else',
           'read ' + JSON.stringify(raw));
-  t.equal(raw.trim(), '1.1.0',
-          'and it says 1.1.0, the release rcbj named on 2026-11-13 (an ' +
-          'upgrade script from 1.0.0 makes it a minor release) — change ' +
-          'this line with the file when the release is bumped');
+  t.equal(raw.trim(), '1.1.1',
+          'and it says 1.1.1, the release rcbj named on 2026-11-20 for ' +
+          'develop after 1.1.0 shipped (a patch: it may add no upgrade ' +
+          'script) — change this line with the file when the release is ' +
+          'bumped');
 
   const record = version.resolve();
   t.equal([record.major, record.minor, record.patch].join('.'), raw.trim(),
