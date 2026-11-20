@@ -3184,6 +3184,18 @@ function realmAccepted(dekRealmId) {
   return !id || id === 'default' || realms.acceptsRows(id);
 }
 
+// Whether `dekRealmId` is a realm DEFINED in this process now — the default
+// realm, or one `realms.get()` answers. Narrower than realmAccepted(): a
+// realm that has not arrived here is accepted (its rows may come first) and
+// is not defined. See dataKeys() and forgetUnlistedDeks() for why the
+// difference matters (GitHub Actions run #569).
+function realmDefinedHere(dekRealmId) {
+  log.debug("Entering realmDefinedHere().");
+  const id = String(dekRealmId || '');
+  log.debug("Leaving realmDefinedHere().");
+  return !id || id === 'default' || !!realms.get(id);
+}
+
 function dekRealm(realm) {
   log.debug("Entering dekRealm().");
   log.debug("Leaving dekRealm().");
@@ -3562,11 +3574,14 @@ function refreshDekRows(opts) {
     };
   dekReloading = Promise.resolve().then(reading).then(async function (rows) {
     let adopted = 0;
+    const listed = new Set();
     for (const row of rows || []) {
       if (String(row.realm || '').indexOf(DEK_ROW_PREFIX) === 0) {
+        listed.add(String(row.realm));
         adopted += await adoptDekRow(String(row.realm), row.material, false);
       }
     }
+    forgetUnlistedDeks(listed);
     return adopted;
   }, function (e) {
     log.debug("Caught in reloadDekRows(): " + ((e && e.message) || e));
@@ -3577,6 +3592,61 @@ function refreshDekRows(opts) {
   });
   log.debug("Leaving refreshDekRows().");
   return dekReloading;
+}
+
+// ---------------------------------------------------------------------------
+// THE DATA KEYS OF A REALM THAT NEVER ARRIVED HERE, WHOSE ROW IS GONE, ARE
+// DROPPED (2026-11-20, GitHub Actions run #569).
+//
+// A process that never defined a realm still adopts its data-key row — a
+// realm's rows may reach a process before the realm does, so
+// `realmAccepted()` takes them — and when that realm is created and removed
+// between two of this process's realm loads, it never runs `realms.remove()`
+// for it, so the keystore purge (above, `realms.onRemove()`) never drops
+// what it adopted. In run #569's single-node stack `cbc-mwoe2uxmho123` was
+// created and removed within nine seconds; four processes removed it, one
+// held its data keys from then on, listed them as current in the encryption
+// report for the 26 minutes until `sts_data_keys` ran, and no count could
+// reach them: the counting worker held none of them, and their row had been
+// deleted. The same process wrote that row back during the re-encryption
+// pass (every other process then deleted it again, STS-KEYS-0199).
+//
+// The store is the judge, not a timer: a data-key row is deleted only with
+// its realm (the purge) or as a removed realm's orphan, so a row this
+// process adopted that the store no longer lists is a removed realm's. Only
+// a realm NOT DEFINED here qualifies — a defined realm's row may simply not
+// be written yet — and never one whose own write is queued or failed here.
+// Dropping is safe even when wrong: the realm is not retired, so its row is
+// adopted again whenever it is listed (`noteDekMiss()` reads it on demand).
+// ---------------------------------------------------------------------------
+function forgetUnlistedDeks(listedRowKeys) {
+  log.debug("Entering forgetUnlistedDeks().");
+  const gone = new Set();
+  deks.forEach(function (rec) {
+    if (rec.derived || realmDefinedHere(rec.realm)) {
+      return;
+    }
+    const rowKey = dekRowKey(rec.scope, rec.realm);
+    if (listedRowKeys.has(rowKey) || writes.has(rowKey) ||
+        failedWrites.has(rowKey)) {
+      return;
+    }
+    gone.add(rowKey);
+  });
+  if (!gone.size) {
+    log.debug("Leaving forgetUnlistedDeks(). None.");
+    return 0;
+  }
+  const dropped = dropDeks(function (rec) {
+    return !rec.derived && gone.has(dekRowKey(rec.scope, rec.realm));
+  });
+  log.info('keystore: ' + dropped + ' data encryption key(s) of ' +
+           gone.size + ' realm(s) never defined in this process were ' +
+           'dropped: their row is no longer in the store, so the realm was ' +
+           'removed before it arrived here (' +
+           Array.from(gone).join(', ') + ').');
+  log.debug("Leaving forgetUnlistedDeks(). " + dropped + " dropped.");
+  return dropped;
 }
 
 // Whether a sealed row names a data encryption key this process does not
@@ -4145,7 +4215,11 @@ function dataKeys() {
   deks.forEach(function (rec) {
     // Not a removed realm's (see adoptDekRow()): its keys are on their way
     // out of this process and the store, and are no key anything uses.
-    if (!realmAccepted(rec.realm)) {
+    // NOR A REALM NOT DEFINED HERE (run #569, forgetUnlistedDeks()): nothing
+    // in this process can seal or open under its keys, and where it was
+    // removed before it arrived they would be listed as current for ever,
+    // with no count to come.
+    if (!realmDefinedHere(rec.realm)) {
       return;
     }
     rows.push({ id: rec.id, scope: rec.scope, realm: rec.realm, cls: rec.cls,
@@ -4394,8 +4468,11 @@ function recordCounts(counts, options) {
   deks.forEach(function (rec) {
     // Only this process's own scopes: another cell's keys are held unopened,
     // and its values are in a database this one did not count.
+    // Nor a realm not defined here (run #569): its row written from here
+    // is a removed realm's written back, which every other process deletes
+    // on arrival (STS-KEYS-0199). See forgetUnlistedDeks().
     if (rec.derived || rec.status === 'destroyed' ||
-        !wrappingKeyOf(rec.scope)) {
+        !wrappingKeyOf(rec.scope) || !realmDefinedHere(rec.realm)) {
       return;
     }
     const has = Object.prototype.hasOwnProperty.call(map, rec.id);

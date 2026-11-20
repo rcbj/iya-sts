@@ -41,7 +41,9 @@
 //      and is written again by the retry with what it held.
 //   G. AND ONE OF A REALM THAT HAS SINCE BEEN REMOVED is dropped with it
 //      rather than retried (2026-11-18); its key set published afterwards
-//      is not adopted, and its data-key row read back is not either.
+//      is not adopted, and its data-key row read back is not either; and
+//      the data keys of a realm this process never defined are not
+//      reported, and are dropped once their row is gone (run #569).
 //
 // IN A CHILD PROCESS, for `cluster_barrier_throughput.js`'s reason: the store
 // modules are one per process, and this file installs stubs on them.
@@ -353,6 +355,54 @@ async function keyRows(t, dir) {
             'G: a removed realm\'s data-key row read back from the store is ' +
             'not adopted, and the report lists none of its keys',
             JSON.stringify({ rows: dekRows, listed: listed.length }));
+
+    // G4 (run #569): the data keys of a realm this process never defined —
+    // created and removed elsewhere between two of its realm loads, so it
+    // never ran the purge — are not reported, and are dropped once their
+    // row is gone from the store; a realm that has not arrived yet, whose
+    // row is still there, keeps its keys for when it does.
+    keystore.ensureDek('directory', 'service', { realm: 'aac-early' });
+    keystore.ensureDek('directory', 'service', { realm: 'aac-never' });
+    await keystore.settleAll();
+    const idsOf = function (realmId) {
+      log.debug("Entering idsOf().");
+      const text = store.rows.get('dek:service:' + realmId);
+      log.debug("Leaving idsOf().");
+      return text ? JSON.parse(text).deks.map(function (d) {
+        return d.id;
+      }) : [];
+    };
+    const earlyIds = idsOf('aac-early');
+    const neverIds = idsOf('aac-never');
+    const hidden = keystore.dataKeys().filter(function (d) {
+      return d.realm === 'aac-early' || d.realm === 'aac-never';
+    });
+    store.loadDekRows = function () {
+      log.debug("Entering loadDekRows().");
+      log.debug("Leaving loadDekRows().");
+      return Promise.resolve([{ realm: 'dek:service:aac-early',
+                                material: store.rows.get(
+                                  'dek:service:aac-early') }]);
+    };
+    await keystore.refreshDekRows({ fresh: true });
+    delete store.loadDekRows;
+    realms.create({ id: 'aac-early', name: 'aac-early' });
+    realms.create({ id: 'aac-never', name: 'aac-never' });
+    const reported = keystore.dataKeys().map(function (d) {
+      return d.id;
+    });
+    t.check(earlyIds.length === 1 && neverIds.length === 1 &&
+            hidden.length === 0,
+            'G: the data keys of a realm not defined in this process are ' +
+            'not reported — none of them could ever be counted here',
+            JSON.stringify({ early: earlyIds, never: neverIds,
+                             hidden: hidden }));
+    t.check(reported.indexOf(earlyIds[0]) >= 0 &&
+            reported.indexOf(neverIds[0]) < 0,
+            'G: and once their row is gone from the store they are dropped, ' +
+            'while a realm whose row is still there keeps its keys for when ' +
+            'it arrives', JSON.stringify({ early: earlyIds, never: neverIds,
+                                          reported: reported }));
   } finally {
     delete process.env.STS_KEYS_SOURCE;
     delete process.env.STS_KEYS_KEK_PROVIDER;
