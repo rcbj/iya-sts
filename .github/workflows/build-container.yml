@@ -764,7 +764,10 @@ jobs:
       #     table);
       #   * the commit, and whether it is a release build (#1317);
       #   * GitHub's generated notes from the previous `vM.N.P` release tag,
-      #     which list the pull requests merged since it.
+      #     which list the pull requests merged since it, rewritten by
+      #     tests/tools/release-changelog.js (rcbj, 2026-11-20): each ticket
+      #     `#NNNN`, linked, and each entry its issue or its pull request,
+      #     not both.
       #
       # IT IS MADE AS A DRAFT (rcbj, 2026-11-20): "for each new release I
       # want to review exactly what gets printed in the change log." Nothing
@@ -833,15 +836,25 @@ jobs:
             fi
             echo ""
           } > "${notes}"
+          # THE CHANGELOG (rcbj, 2026-11-20): GitHub's generated notes since
+          # the previous vM.N.P, asked for without making a release (the
+          # endpoint `--generate-notes` uses), then rewritten by
+          # tests/tools/release-changelog.js: every ticket `#NNNN`, linked,
+          # and each entry its original issue (named in its title) or its
+          # pull request, not both.
+          tag_for_notes="${release}"
           if [ "${CANDIDATE}" = true ]; then
-            # GitHub's generated notes without a release: the same endpoint
-            # `--generate-notes` uses, asked for the candidate tag.
-            gen=(-f tag_name="${release}-candidate" -f target_commitish="${SHA}")
-            if [ -n "${previous}" ]; then
-              gen+=(-f previous_tag_name="${previous}")
-            fi
-            gh api -X POST "repos/${repo}/releases/generate-notes" \
-              "${gen[@]}" --jq .body >> "${notes}"
+            tag_for_notes="${release}-candidate"
+          fi
+          gen=(-f tag_name="${tag_for_notes}" -f target_commitish="${SHA}")
+          if [ -n "${previous}" ]; then
+            gen+=(-f previous_tag_name="${previous}")
+          fi
+          gh api -X POST "repos/${repo}/releases/generate-notes" \
+            "${gen[@]}" --jq .body |
+            node tests/tools/release-changelog.js --repo "${repo}" \
+            >> "${notes}"
+          if [ "${CANDIDATE}" = true ]; then
             {
               echo ""
               echo "### Release notes (candidate; no GitHub release made)"
@@ -854,11 +867,7 @@ jobs:
           # --draft, for rcbj's review (above); --latest is set when the
           # draft is published, not here.
           args=(--repo "${repo}" --verify-tag --draft
-                --title "${release} (${VERSION})" --notes-file "${notes}"
-                --generate-notes)
-          if [ -n "${previous}" ]; then
-            args+=(--notes-start-tag "${previous}")
-          fi
+                --title "${release} (${VERSION})" --notes-file "${notes}")
           gh release create "${release}" "${args[@]}"
           echo "Created the DRAFT release ${release}" \
                "${previous:+(since ${previous}) }for review."

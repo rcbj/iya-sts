@@ -11443,7 +11443,9 @@ previous `vM.N.P` included, go to the run's summary. The input is ignored on
 each new release I want to review exactly what gets printed in the change
 log." The images and the git tags are published as before, and the release
 page is created as a draft, with the image table, the commit and GitHub's
-generated notes since the previous `vM.N.P`. rcbj edits it on the Releases
+generated notes since the previous `vM.N.P`, rewritten by
+`tests/tools/release-changelog.js` (each ticket `#NNNN`, linked; each entry its
+issue or its pull request, not both). rcbj edits it on the Releases
 page and publishes it with `gh release edit v<M.N.O> --draft=false --latest`.
 Nobody else publishes a release draft. The candidate's run summary shows
 the same notes before the release is built.
