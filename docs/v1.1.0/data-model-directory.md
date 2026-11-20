@@ -57,7 +57,7 @@ Do not edit it by hand.
 | [Trust anchor](#trust-anchor) | `TrustAnchor` | ou=trustAnchors | 3 |
 | [XACML policy enforcement point](#xacml-policy-enforcement-point) | `XacmlPep` | ou=peps | 26 |
 | [XACML policy enforcement point cluster](#xacml-policy-enforcement-point-cluster) | `XacmlPepCluster` | ou=pepClusters | 5 |
-| [XACML policy](#xacml-policy) | `XacmlPolicy` | ou=policies | 11 |
+| [XACML policy](#xacml-policy) | `XacmlPolicy` | ou=policies | 12 |
 
 ## Application
 
@@ -1376,4 +1376,5 @@ Recorded in `../xacml/xacml_store`.
 | `xacmlPepRoute` | one | this service | `1.3.6.1.4.1.67607.1.1.759` | The remote PEP and route, as the PEP's name, a slash and the route's id, this policy was GENERATED for by the route's Authorization choice (simple or public) on the reverse-proxy route forms or by the generate-pep-route-policy action (#1760). Such a policy is rewritten when the route is saved, renamed with the route and removed with it; it is never the root. It may be edited in the policy editor, and the next save of the route's simple or public choice writes it again — choose an existing policy on the route to keep a hand-written one. |
 | `xacmlPolicyDocument` | one | this service | `1.3.6.1.4.1.67607.1.1.740` | The XACML 3.0 XML. THIS IS THE POLICY. Everything else on the entry is derived from it. |
 | `xacmlPolicyId` | one | this service | `1.3.6.1.4.1.67607.1.1.741` | The PolicyId or PolicySetId inside the document. DERIVED at write time and used for listing and for resolving a PolicyIdReference; the document is the truth. |
+| `xacmlRole` | one | this service | `1.3.6.1.4.1.67607.1.1.782` | The role (by its name in ou=roles) that OWNS this policy as its eligibility policy (#1072): the PDP decides it alone, for one person, to say whether they may be offered that dynamic selectable role at sign-in. Such a policy is never the root, is never reached by a PolicyIdReference from the root, and is never sent to a remote PEP. |
 | `xacmlVersion` | one | this service | `1.3.6.1.4.1.67607.1.1.742` | The Version attribute of the document. Derived. |

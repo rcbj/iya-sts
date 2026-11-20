@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5759** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5780** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -86,7 +86,7 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 53
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 224
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 244
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 137
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 99
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
@@ -5216,6 +5216,26 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0300` | A reverse-proxy route's `path` is /.iya-pep or under /.iya-pep/, the prefix the proxy reserves for its own callback and sign-out (#1830): an updated PEP refuses the whole configuration. | HTTP 400 on /admin-api; configured: false at the pull |
 | `STS-XACML-0301` | issue-pep-credential named a service account that does not hold REMOTE_PEPS (it is not in the group roles.remotePepGroup names), so the key would authenticate an entry no PEP door admits (#1827, phase 3). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-XACML-0302` | issue-pep-credential certified and registered the new key, and revokePrevious could not revoke one of the entry's other RFC 7523 keys; the new key works, and the old one still does too (#1827, phase 3). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-XACML-0303` | A role was written with a membership mode other than static or dynamic-selectable (#1072). | — |
+| `STS-XACML-0304` | A dynamic selectable role was written with a member or a conferring client (#1072): such a role is held by nobody and offered at sign-in, so the write was refused, whether it made a role with members dynamic or added a member to a dynamic role. | — |
+| `STS-XACML-0305` | A console or native role was to be made dynamic selectable (#1072); their holders are fixed, so the write was refused. | — |
+| `STS-XACML-0306` | A dynamic role's selection was neither optional nor required (#1072). | — |
+| `STS-XACML-0307` | A dynamic role's exclusive group was not a name of up to 64 letters, digits and . _ : - (#1072). | — |
+| `STS-XACML-0308` | A role only applications may hold was to be made dynamic selectable (#1072); a dynamic role is chosen by a person at sign-in. | — |
+| `STS-XACML-0309` | The selection of a static role was to be set (#1072); only a dynamic selectable role is chosen at sign-in. | — |
+| `STS-XACML-0310` | A dynamic role's eligibility policy (xacmlRole, #1072) was to be made the root of the repository; it is decided alone, for one role, so the write was refused. | — |
+| `STS-XACML-0311` | A dynamic role's eligibility was asked about, or its policy set, for a role this realm does not hold (#1072); nobody is eligible. | — |
+| `STS-XACML-0312` | A static role was asked about as a dynamic one, or given an eligibility policy (#1072); only a dynamic selectable role is offered. | — |
+| `STS-XACML-0313` | A dynamic role has no eligibility policy (#1072), so nobody is eligible for it. | — |
+| `STS-XACML-0314` | A dynamic role names an eligibility policy that is not in ou=policies (#1072); nobody is eligible for it. | — |
+| `STS-XACML-0315` | A dynamic role names a policy that is not its own: it carries another role's xacmlRole, or none (#1072). It is never adopted, and nobody is eligible. | — |
+| `STS-XACML-0316` | A dynamic role's eligibility policy is disabled (#1072); nobody is eligible. | — |
+| `STS-XACML-0317` | A dynamic role's eligibility policy does not parse (#1072); nobody is eligible. | — |
+| `STS-XACML-0318` | A dynamic role's eligibility could not be decided: the PDP met a processing or syntax error, or the decision threw (#1072). The person is not eligible. | — |
+| `STS-XACML-0319` | A person is not eligible for a dynamic role: its policy did not answer Permit, or no person was named (#1072). | — |
+| `STS-XACML-0320` | A dynamic role that belongs to one application was asked about for a sign-in to another (#1072); it is offered only on its own application's. | — |
+| `STS-XACML-0321` | A dynamic role's eligibility policy was given as neither or both of document (XACML XML) and alfa (#1072). | — |
+| `STS-XACML-0322` | A dynamic role would not take the reference to its new eligibility policy (#1072); a new policy was taken back. | — |
 
 ## STS-XPEP
 

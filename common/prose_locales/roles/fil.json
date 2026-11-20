@@ -51,6 +51,22 @@
     "en": "dcc4499eac844938",
     "text": "TRUE: hindi maaaring pangasiwaan ng mga may-ari ng role ito sa pamamagitan ng /admin-api (#607), anuman ang pag-aari nila — isang marka ng administrator, na binabasa ng owner rule ng access-control policy bilang urn:sts:xacml:object-protected. Kapag wala, FALSE."
   },
+  "roles.schema.attributes.roleMembershipMode.what": {
+    "en": "723a14578f3a1d6e",
+    "text": "Kung paano hinahawakan ang tungkulin (#1072). Ang `static`, at kapag wala, ay pagiging miyembro gaya ng dati: ang mga nakalistang user, grupo at application. Ang `dynamic-selectable` ay tungkuling walang miyembro, INIAALOK sa pag-sign in sa bawat taong pinapayagan ng patakaran nito sa pagiging karapat-dapat, at hawak para sa application ng pag-sign in na iyon kapag pinili lang nila ito. Hindi mababago ang mode habang may mga miyembro ang tungkulin."
+  },
+  "roles.schema.attributes.roleEligibilityPolicy.what": {
+    "en": "7a735d2e83fa9333",
+    "text": "Ang pangalan ng entry sa ou=policies ng patakarang XACML na pag-aari ng dynamic na tungkuling ito (#1072), na pinagpapasyahan ng PDP nang mag-isa para sa bawat tao sa pag-sign in at muli sa bawat pag-isyu. Permit lang ang nagpapakarapat-dapat sa tao; hindi ang Deny, NotApplicable, Indeterminate, nawawalang attribute, o nawawalang patakaran."
+  },
+  "roles.schema.attributes.roleSelection.what": {
+    "en": "2b5c2729294972e1",
+    "text": "Kung ang pagpili sa dynamic na tungkulin ay `optional`, at kapag wala, o `required` (#1072). Ang kailangang tungkulin na karapat-dapat ang isang tao ay nagpapakita ng hakbang ng tungkulin kahit hindi naka-tsek ang kahon sa pahina ng pag-sign in, at kahit isang kailangang tungkulin ay dapat piliin; tinatanggihan para dito ang pag-sign in na walang browser."
+  },
+  "roles.schema.attributes.roleSelectionExclusive.what": {
+    "en": "2c0357c376a85536",
+    "text": "Isang pangalang ibinabahagi ng mga dynamic na tungkuling hindi maaaring piliin nang sabay (#1072): sa mga tungkuling may parehong value, isa lang ang mapipili ng isang pag-sign in. Kapag wala, maaaring piliin ang tungkulin kasama ng anumang iba."
+  },
   "roles.builtIn.EVERYBODY.what": {
     "en": "40f390becf1977a2",
     "text": "Kahit sino, authenticated man o hindi, tao man o application. ITO ANG DEFAULT NA REQUIREMENT: ang application na walang pinangangalanang required role ay nangangailangan nito, hawak ito ng lahat, at walang tinatanggihan — eksaktong ganito kumilos ang serbisyong ito bago umiral ang mga role."

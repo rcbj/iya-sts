@@ -1851,6 +1851,10 @@
     "en": "498689e2da216b2e",
     "text": "當此 UMA 2.0 資源伺服器可透過以 client_credentials 取得的保護 API 權杖，註冊其「自身擁有」的資源時為 TRUE。缺少或 FALSE（預設值）表示 PAT 必須屬於某個人（授權碼流程），並由該人擁有其所註冊的內容。"
   },
+  "applications.schema.attributes.appDynamicRoleSelection.what": {
+    "en": "8d2e7ba443673616",
+    "text": "FALSE 會關閉此應用程式登入時的動態角色選擇（#1072）：登入頁不提供「為此次登入選擇角色」核取方塊，不提供任何角色，此應用程式的權杖也不攜帶任何動態選擇的角色。缺省或為 TRUE（預設值）時，由領域的 roles.dynamicSelection 設定決定。"
+  },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",
     "text": "cn，以及標準的 owner 與 description。"
@@ -2002,6 +2006,10 @@
   "xacmlPolicies.schema.attributes.xacmlPepRoute.what": {
     "en": "4e1dc3fa8c6c3e3c",
     "text": "此原則為之產生的遠端 PEP 和路由，形式為 PEP 的名稱、一個斜線和路由的 id；原則由反向代理路由表單上路由的授權選擇（簡單或公開）或 generate-pep-route-policy 動作（#1760）產生。這樣的原則在儲存路由時重寫，隨路由重新命名，並隨路由移除；它永遠不是根原則。它可以在原則編輯器中編輯，而路由的簡單或公開選擇的下次儲存會重新寫入它——在路由上選擇現有原則即可保留手寫原則。"
+  },
+  "xacmlPolicies.schema.attributes.xacmlRole.what": {
+    "en": "665602e5460193b1",
+    "text": "將此政策作為其資格政策而擁有它的角色（依其在 ou=roles 中的名稱，#1072）：PDP 針對一個人單獨判定它，以說明登入時是否可以向此人提供該可動態選擇的角色。此類政策永遠不是根政策，永遠不會被根政策透過 PolicyIdReference 引用，也永遠不會傳送給遠端 PEP。"
   },
   "xacmlPeps.schema.objectClasses.xacmlPep.what": {
     "en": "2b063c0577e29981",

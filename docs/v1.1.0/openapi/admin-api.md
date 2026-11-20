@@ -60,7 +60,7 @@ Every answer is checked against the model shown here before it is sent, and no a
 | [RISC](admin-api-risc.html) | 5 |  |
 | [Recovery codes](admin-api-recovery-codes.html) | 1 |  |
 | [Risk](admin-api-risk.html) | 10 |  |
-| [Roles](admin-api-roles.html) | 13 | Who holds a role, and what requires one. A role is a name a person, a GROUP or an APPLICATION can be mapped into, and holding one is what an ISSUANCE is decided on — which is the whole difference from Groups above, where a group grants nothing. The decision is made by the XACML PDP against a policy, never by an `if` in an issuance site, so a refusal is a document somebody can read. It is not Admin roles either: those are two directory groups that grant the /admin console and nothing else. |
+| [Roles](admin-api-roles.html) | 17 | Who holds a role, and what requires one. A role is a name a person, a GROUP or an APPLICATION can be mapped into, and holding one is what an ISSUANCE is decided on — which is the whole difference from Groups above, where a group grants nothing. The decision is made by the XACML PDP against a policy, never by an `if` in an issuance site, so a refusal is a document somebody can read. It is not Admin roles either: those are two directory groups that grant the /admin console and nothing else. |
 | [SAML 1.1](admin-api-saml-1-1.html) | 2 |  |
 | [SAML 2.0](admin-api-saml-2-0.html) | 13 |  |
 | [SAML assertions](admin-api-saml-assertions.html) | 3 |  |

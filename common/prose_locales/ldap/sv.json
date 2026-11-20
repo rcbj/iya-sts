@@ -1851,6 +1851,10 @@
     "en": "498689e2da216b2e",
     "text": "TRUE när den här UMA 2.0-resursservern får registrera resurser den SJÄLV ÄGER, med en skydds-API-token som skaffats med client_credentials. Saknas eller FALSE, standardvärdet, betyder att en PAT måste tillhöra en person (kodflödet) och att den personen äger det den registrerar."
   },
+  "applications.schema.attributes.appDynamicRoleSelection.what": {
+    "en": "8d2e7ba443673616",
+    "text": "FALSE stänger av dynamiskt rollval för inloggningar till det här programmet (#1072): inloggningssidan erbjuder ingen ruta ”Välj roller för den här inloggningen”, ingen roll erbjuds och en token för programmet bär ingen dynamiskt vald roll. Saknas värdet eller är det TRUE, standardvärdet, avgör sfärens inställning roles.dynamicSelection."
+  },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",
     "text": "cn, samt standardattributen owner och description."
@@ -2002,6 +2006,10 @@
   "xacmlPolicies.schema.attributes.xacmlPepRoute.what": {
     "en": "4e1dc3fa8c6c3e3c",
     "text": "Fjärr-PEP:en och vägen, som PEP:ens namn, ett snedstreck och vägens id, som denna policy GENERERADES för av vägens auktoriseringsval (enkel eller offentlig) i den omvända proxyns vägformulär eller av åtgärden generate-pep-route-policy (#1760). En sådan policy skrivs om när vägen sparas, byter namn med vägen och tas bort med den; den är aldrig roten. Den kan redigeras i policyredigeraren, och nästa sparande av vägens enkla eller offentliga val skriver den igen — välj en befintlig policy på vägen för att behålla en handskriven."
+  },
+  "xacmlPolicies.schema.attributes.xacmlRole.what": {
+    "en": "665602e5460193b1",
+    "text": "Rollen (med sitt namn i ou=roles) som ÄGER den här policyn som sin behörighetspolicy (#1072): PDP:n beslutar den ensam, för en person, för att säga om den dynamiskt valbara rollen får erbjudas personen vid inloggning. En sådan policy är aldrig roten, nås aldrig via en PolicyIdReference från roten och skickas aldrig till en fjärr-PEP."
   },
   "xacmlPeps.schema.objectClasses.xacmlPep.what": {
     "en": "2b063c0577e29981",

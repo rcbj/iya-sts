@@ -51,6 +51,22 @@
     "en": "dcc4499eac844938",
     "text": "TRUE: rollens ägare får inte administrera den via /admin-api (#607), vad de än äger — en administratörs markering, som ägarregeln i policyn access-control läser som urn:sts:xacml:object-protected. Saknas betyder FALSE."
   },
+  "roles.schema.attributes.roleMembershipMode.what": {
+    "en": "723a14578f3a1d6e",
+    "text": "Hur rollen innehas (#1072). `static`, och ett saknat värde, är medlemskap som alltid: de användare, grupper och program som listas. `dynamic-selectable` är en roll utan medlemmar som ERBJUDS vid inloggning till varje person som behörighetspolicyn tillåter, och som innehas för inloggningens program bara om personen väljer den. Läget kan inte ändras så länge rollen har medlemmar."
+  },
+  "roles.schema.attributes.roleEligibilityPolicy.what": {
+    "en": "7a735d2e83fa9333",
+    "text": "Postnamnet i ou=policies för den XACML-policy som den här dynamiska rollen äger (#1072), som PDP:n beslutar ensam för varje person vid inloggning och igen vid varje utfärdande. Endast Permit gör personen behörig; Deny, NotApplicable, Indeterminate, ett saknat attribut och en saknad policy gör det inte."
+  },
+  "roles.schema.attributes.roleSelection.what": {
+    "en": "2b5c2729294972e1",
+    "text": "Om valet av den dynamiska rollen är `optional`, även när värdet saknas, eller `required` (#1072). En obligatorisk roll som en person är behörig till visar rollsteget även när rutan på inloggningssidan inte är markerad, och minst en obligatorisk roll måste väljas; en inloggning utan webbläsare nekas för den."
+  },
+  "roles.schema.attributes.roleSelectionExclusive.what": {
+    "en": "2c0357c376a85536",
+    "text": "Ett namn som delas av dynamiska roller som inte får väljas tillsammans (#1072): av rollerna med samma värde får en inloggning välja högst en. Saknas det kan rollen väljas tillsammans med vilken annan som helst."
+  },
   "roles.builtIn.EVERYBODY.what": {
     "en": "40f390becf1977a2",
     "text": "Vem som helst, autentiserad eller inte, person eller applikation. DETTA ÄR STANDARDKRAVET: en applikation som inte namnger någon krävd roll kräver den här, alla har den, och ingenting vägras — vilket är precis hur den här tjänsten betedde sig innan roller fanns."

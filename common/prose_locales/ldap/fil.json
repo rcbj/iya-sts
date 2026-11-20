@@ -1851,6 +1851,10 @@
     "en": "498689e2da216b2e",
     "text": "TRUE kapag puwedeng mag-register ang UMA 2.0 resource server na ito ng mga resource na SARILI NITONG PAG-AARI, gamit ang protection API token na nakuha sa client_credentials. Kapag wala o FALSE, ang default, ang PAT ay dapat sa isang tao (ang code flow) at ang taong iyon ang may-ari ng nire-register nito."
   },
+  "applications.schema.attributes.appDynamicRoleSelection.what": {
+    "en": "8d2e7ba443673616",
+    "text": "Pinapatay ng FALSE ang dynamic na pagpili ng tungkulin para sa mga pag-sign in sa application na ito (#1072): walang kahong \"Pumili ng mga tungkulin para sa pag-sign in na ito\" sa pahina ng pag-sign in, walang tungkuling iniaalok, at walang dinamikong napiling tungkulin ang isang token para sa application na ito. Kapag wala o TRUE, ang default, ang setting na roles.dynamicSelection ng realm ang magpapasya."
+  },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",
     "text": "cn, at ang standard na owner at description."
@@ -2002,6 +2006,10 @@
   "xacmlPolicies.schema.attributes.xacmlPepRoute.what": {
     "en": "4e1dc3fa8c6c3e3c",
     "text": "Ang remote PEP at ruta, bilang pangalan ng PEP, isang slash at ang id ng ruta, kung para saan GINAWA ang policy na ito ng pagpili ng awtorisasyon ng ruta (simple o pampubliko) sa mga form ng ruta ng reverse proxy o ng aksyong generate-pep-route-policy (#1760). Ang ganitong policy ay isinusulat muli kapag sine-save ang ruta, pinapalitan ang pangalan kasama ng ruta at inaalis kasama nito; hindi ito kailanman ang root. Maaari itong i-edit sa policy editor, at isinusulat itong muli ng susunod na pag-save ng simple o pampublikong pagpili ng ruta — pumili ng umiiral na policy sa ruta para panatilihin ang isinulat nang mano-mano."
+  },
+  "xacmlPolicies.schema.attributes.xacmlRole.what": {
+    "en": "665602e5460193b1",
+    "text": "Ang tungkulin (ayon sa pangalan nito sa ou=roles) na MAY-ARI ng patakarang ito bilang patakaran nito sa pagiging karapat-dapat (#1072): pinagpapasyahan ito ng PDP nang mag-isa, para sa isang tao, upang sabihin kung maaaring ialok sa kanila ang dynamic na tungkuling iyon sa pag-sign in. Ang ganitong patakaran ay hindi kailanman ang ugat, hindi naaabot ng PolicyIdReference mula sa ugat, at hindi ipinapadala sa isang remote PEP."
   },
   "xacmlPeps.schema.objectClasses.xacmlPep.what": {
     "en": "2b063c0577e29981",

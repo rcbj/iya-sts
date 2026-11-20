@@ -1779,6 +1779,18 @@
     "en": "896007dff32a6824",
     "text": "Beschreibung, Anzeigename oder Mitgliedstypen einer Rolle wurden gesetzt"
   },
+  "audit.actions.roles.set-mode.label": {
+    "en": "b1e0f3b6e5738f21",
+    "text": "Eine Rolle wurde statisch oder dynamisch auswählbar gemacht"
+  },
+  "audit.actions.roles.set-selection.label": {
+    "en": "0fbfbe0d177c5543",
+    "text": "Es wurde festgelegt, wie eine dynamische Rolle bei der Anmeldung gewählt wird"
+  },
+  "audit.actions.roles.eligibility.label": {
+    "en": "28d96273b40dea3f",
+    "text": "Über die Berechtigung einer Person für eine dynamische Rolle wurde entschieden"
+  },
   "audit.actions.node-health.collect-garbage.label": {
     "en": "cb2531d8ee2f27ce",
     "text": "Eine vollständige Garbage Collection wurde in einem Prozess oder Worker-Thread eines Knotens ausgeführt"

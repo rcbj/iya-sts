@@ -1779,6 +1779,18 @@
     "en": "896007dff32a6824",
     "text": "Se establecieron la descripción, el nombre para mostrar o los tipos de miembro de un rol"
   },
+  "audit.actions.roles.set-mode.label": {
+    "en": "b1e0f3b6e5738f21",
+    "text": "Un rol se hizo estático o dinámico seleccionable"
+  },
+  "audit.actions.roles.set-selection.label": {
+    "en": "0fbfbe0d177c5543",
+    "text": "Se estableció cómo se elige un rol dinámico al iniciar sesión"
+  },
+  "audit.actions.roles.eligibility.label": {
+    "en": "28d96273b40dea3f",
+    "text": "Se decidió la elegibilidad de una persona para un rol dinámico"
+  },
   "audit.actions.node-health.collect-garbage.label": {
     "en": "cb2531d8ee2f27ce",
     "text": "Se ejecutó una recolección de basura completa en un proceso o hilo worker de un nodo"

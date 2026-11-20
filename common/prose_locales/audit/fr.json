@@ -1779,6 +1779,18 @@
     "en": "896007dff32a6824",
     "text": "La description, le nom d’affichage ou les types de membres d’un rôle ont été définis"
   },
+  "audit.actions.roles.set-mode.label": {
+    "en": "b1e0f3b6e5738f21",
+    "text": "Un rôle a été rendu statique ou dynamique sélectionnable"
+  },
+  "audit.actions.roles.set-selection.label": {
+    "en": "0fbfbe0d177c5543",
+    "text": "La manière de choisir un rôle dynamique à la connexion a été définie"
+  },
+  "audit.actions.roles.eligibility.label": {
+    "en": "28d96273b40dea3f",
+    "text": "L’éligibilité d’une personne à un rôle dynamique a été décidée"
+  },
   "audit.actions.node-health.collect-garbage.label": {
     "en": "cb2531d8ee2f27ce",
     "text": "Un ramasse-miettes complet a été exécuté dans un processus ou un thread de travail d’un nœud"

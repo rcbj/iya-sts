@@ -1851,6 +1851,10 @@
     "en": "498689e2da216b2e",
     "text": "TRUE, wenn dieser Ressourcenserver nach UMA 2.0 Ressourcen registrieren darf, die er SELBST BESITZT, über ein Protection-API-Token, das mit client_credentials bezogen wurde. Abwesend oder FALSE, der Standard, bedeutet, dass ein PAT einer Person gehören muss (der Code-Flow) und dass diese Person besitzt, was es registriert."
   },
+  "applications.schema.attributes.appDynamicRoleSelection.what": {
+    "en": "8d2e7ba443673616",
+    "text": "FALSE schaltet die dynamische Rollenauswahl für Anmeldungen an dieser Anwendung ab (#1072): Die Anmeldeseite bietet kein Kästchen „Rollen für diese Anmeldung wählen“ an, keine Rolle wird angeboten, und ein Token für diese Anwendung trägt keine dynamisch gewählte Rolle. Fehlt der Wert oder ist er TRUE (die Vorgabe), entscheidet die Einstellung roles.dynamicSelection des Bereichs."
+  },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",
     "text": "cn sowie die üblichen Attribute owner und description."
@@ -2002,6 +2006,10 @@
   "xacmlPolicies.schema.attributes.xacmlPepRoute.what": {
     "en": "4e1dc3fa8c6c3e3c",
     "text": "Der entfernte PEP und die Route, als der Name des PEP, ein Schrägstrich und die ID der Route, für die diese Richtlinie durch die Authorization-Wahl der Route (simple oder public) auf den Formularen der Reverse-Proxy-Routen oder durch die Aktion generate-pep-route-policy ERZEUGT wurde (#1760). Eine solche Richtlinie wird neu geschrieben, wenn die Route gespeichert wird, mit der Route umbenannt und mit ihr entfernt; sie ist niemals die Wurzel. Sie darf im Richtlinieneditor bearbeitet werden, und das nächste Speichern der Wahl simple oder public der Route schreibt sie erneut — wählen Sie auf der Route eine vorhandene Richtlinie, um eine von Hand geschriebene zu behalten."
+  },
+  "xacmlPolicies.schema.attributes.xacmlRole.what": {
+    "en": "665602e5460193b1",
+    "text": "Die Rolle (über ihren Namen in ou=roles), der diese Richtlinie als Berechtigungsrichtlinie GEHÖRT (#1072): Der PDP entscheidet sie allein, für eine Person, um zu sagen, ob ihr diese dynamisch auswählbare Rolle bei der Anmeldung angeboten werden darf. Eine solche Richtlinie ist nie die Wurzel, wird nie über eine PolicyIdReference von der Wurzel erreicht und nie an einen entfernten PEP gesendet."
   },
   "xacmlPeps.schema.objectClasses.xacmlPep.what": {
     "en": "2b063c0577e29981",

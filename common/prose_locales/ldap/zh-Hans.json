@@ -1851,6 +1851,10 @@
     "en": "498689e2da216b2e",
     "text": "当此 UMA 2.0 资源服务器可通过以 client_credentials 获取的保护 API 令牌注册其自身拥有的资源时为 TRUE。缺失或 FALSE（默认值）表示 PAT 必须属于某个人（授权码流程），并由该人拥有其注册的内容。"
   },
+  "applications.schema.attributes.appDynamicRoleSelection.what": {
+    "en": "8d2e7ba443673616",
+    "text": "FALSE 会关闭此应用程序登录时的动态角色选择（#1072）：登录页不提供“为此次登录选择角色”复选框，不提供任何角色，此应用程序的令牌也不携带任何动态选择的角色。缺省或为 TRUE（默认值）时，由领域的 roles.dynamicSelection 设置决定。"
+  },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",
     "text": "cn，以及标准的 owner 和 description。"
@@ -2002,6 +2006,10 @@
   "xacmlPolicies.schema.attributes.xacmlPepRoute.what": {
     "en": "4e1dc3fa8c6c3e3c",
     "text": "此策略为之生成的远程 PEP 和路由，形式为 PEP 的名称、一个斜杠和路由的 id；策略由反向代理路由表单上路由的授权选择（简单或公开）或 generate-pep-route-policy 操作（#1760）生成。这样的策略在保存路由时重写，随路由重命名，并随路由移除；它永远不是根策略。它可以在策略编辑器中编辑，而路由的简单或公开选择的下次保存会重新写入它——在路由上选择现有策略即可保留手写策略。"
+  },
+  "xacmlPolicies.schema.attributes.xacmlRole.what": {
+    "en": "665602e5460193b1",
+    "text": "将此策略作为其资格策略而拥有它的角色（按其在 ou=roles 中的名称，#1072）：PDP 针对一个人单独判定它，以说明登录时是否可以向此人提供该可动态选择的角色。此类策略永远不是根策略，永远不会被根策略通过 PolicyIdReference 引用，也永远不会发送给远程 PEP。"
   },
   "xacmlPeps.schema.objectClasses.xacmlPep.what": {
     "en": "2b063c0577e29981",

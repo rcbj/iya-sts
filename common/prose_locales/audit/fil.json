@@ -1779,6 +1779,18 @@
     "en": "896007dff32a6824",
     "text": "Naitakda ang description, display name o mga member type ng isang role"
   },
+  "audit.actions.roles.set-mode.label": {
+    "en": "b1e0f3b6e5738f21",
+    "text": "Ginawang static o dynamic na mapipili ang isang tungkulin"
+  },
+  "audit.actions.roles.set-selection.label": {
+    "en": "0fbfbe0d177c5543",
+    "text": "Itinakda kung paano pinipili ang isang dynamic na tungkulin sa pag-sign in"
+  },
+  "audit.actions.roles.eligibility.label": {
+    "en": "28d96273b40dea3f",
+    "text": "Napagpasyahan ang pagiging karapat-dapat ng isang tao sa isang dynamic na tungkulin"
+  },
   "audit.actions.node-health.collect-garbage.label": {
     "en": "cb2531d8ee2f27ce",
     "text": "Nagpatakbo ng buong garbage collection sa isang proseso o worker thread ng isang node"
