@@ -1243,6 +1243,15 @@ Scope: `admin:read`.
 | `key.where.wraps` | string |  |  |
 | `mode` | string |  |  |
 | `noSamples` | string |  |  |
+| `signingKeys` | object |  |  |
+| `signingKeys.inHsm` | list |  |  |
+| `signingKeys.inHsm[]` | string |  |  |
+| `signingKeys.inSoftware` | list |  |  |
+| `signingKeys.inSoftware[]` | string |  |  |
+| `signingKeys.note` | string |  |  |
+| `signingKeys.refused` | boolean |  |  |
+| `signingKeys.store` | string |  |  |
+| `signingKeys.token` | string |  |  |
 | `store` | object |  |  |
 | `store.configuredMode` | string |  |  |
 | `store.fellBack` | boolean |  |  |

@@ -158,6 +158,10 @@ const RECONNECT_ON = new Set([
 // session that met them.
 const DEVICE_LOST = new Set([0x30, 0x32, 0xb0, 0xb3, 0xe0, 0x101, 0x190]);
 const REINITIALIZE_ON = new Set([0x30, 0x32, 0xe0, 0x190]);
+// The answers that say the module cannot do THIS (a curve, a mechanism, a
+// template it does not support) rather than that it failed: STS-KEYS-0207,
+// which a caller may answer by making the key elsewhere.
+const UNSUPPORTED = new Set([0x70, 0x71, 0x130, 0x140, 0xd1, 0xd0]);
 
 // The named curves a key may be made on, as the DER of their OID (what
 // CKA_EC_PARAMS holds) and their JWK spelling.
@@ -639,12 +643,20 @@ class Pkcs11Token {
           log.debug('Caught in Pkcs11Token.run(): ' + ((e && e.message) || e) +
                     '; reconnecting once.');
           this.discard(session);
-          this.recover(e);
+          try {
+            this.recover(e);
+          } catch (r) {
+            // The device is still away: the reconnect itself failed, which
+            // is this operation's refusal, not a different one.
+            throw refusal('STS-KEYS-0201', what + ' failed on ' +
+                          this.describe() + ', and reconnecting failed', r);
+          }
           continue;
         }
         this.release(session);
         log.debug('Leaving Pkcs11Token.run(). Refused.');
-        throw errorCodes.codeOf(e) ? e : refusal('STS-KEYS-0201',
+        throw errorCodes.codeOf(e) ? e : refusal(UNSUPPORTED.has(ckrOf(e))
+          ? 'STS-KEYS-0207' : 'STS-KEYS-0201',
           what + ' failed on ' + this.describe(), e);
       }
     }
@@ -675,12 +687,20 @@ class Pkcs11Token {
           log.debug('Caught in Pkcs11Token.runSync(): ' +
                     ((e && e.message) || e) + '; reconnecting once.');
           this.discard(session);
-          this.recover(e);
+          try {
+            this.recover(e);
+          } catch (r) {
+            // The device is still away: the reconnect itself failed, which
+            // is this operation's refusal, not a different one.
+            throw refusal('STS-KEYS-0201', what + ' failed on ' +
+                          this.describe() + ', and reconnecting failed', r);
+          }
           continue;
         }
         this.release(session);
         log.debug('Leaving Pkcs11Token.runSync(). Refused.');
-        throw errorCodes.codeOf(e) ? e : refusal('STS-KEYS-0201',
+        throw errorCodes.codeOf(e) ? e : refusal(UNSUPPORTED.has(ckrOf(e))
+          ? 'STS-KEYS-0207' : 'STS-KEYS-0201',
           what + ' failed on ' + this.describe(), e);
       }
     }
@@ -1081,6 +1101,49 @@ class Pkcs11Token {
    */
   generateKeyPair(spec, label, id) {
     log.debug('Entering Pkcs11Token.generateKeyPair(). ' + spec.kty);
+    const plan = this.keyPairPlan(spec, label, id);
+    const pair = this.runSync('generating a signing key',
+      function (lib, session) {
+        return lib.C_GenerateKeyPair(session, { mechanism: plan.mech },
+                                     plan.pub, plan.priv);
+      });
+    const publicKey = this.publicKeyOf(pair.publicKey, spec);
+    log.debug('Leaving Pkcs11Token.generateKeyPair().');
+    return { key: this.privateKeyRef(id, pair.privateKey),
+             publicKey: publicKey };
+  }
+
+  /**
+   * The same as `generateKeyPair()`, with the generation off the event loop
+   * where the binding offers C_GenerateKeyPairAsync — an RSA key in a
+   * YubiHSM 2 takes seconds.
+   *
+   * @param spec - as for `generateKeyPair()`
+   * @param label - CKA_LABEL
+   * @param id - CKA_ID
+   * @returns a promise of `{ key, publicKey }`
+   */
+  async generateKeyPairAsync(spec, label, id) {
+    log.debug('Entering Pkcs11Token.generateKeyPairAsync(). ' + spec.kty);
+    const plan = this.keyPairPlan(spec, label, id);
+    const pair = await this.run('generating a signing key',
+      function (lib, session) {
+        if (typeof lib.C_GenerateKeyPairAsync === 'function') {
+          return lib.C_GenerateKeyPairAsync(session,
+            { mechanism: plan.mech }, plan.pub, plan.priv);
+        }
+        return lib.C_GenerateKeyPair(session, { mechanism: plan.mech },
+                                     plan.pub, plan.priv);
+      });
+    const publicKey = this.publicKeyOf(pair.publicKey, spec);
+    log.debug('Leaving Pkcs11Token.generateKeyPairAsync().');
+    return { key: this.privateKeyRef(id, pair.privateKey),
+             publicKey: publicKey };
+  }
+
+  // The templates and mechanism a key pair is made with.
+  keyPairPlan(spec, label, id) {
+    log.debug('Entering Pkcs11Token.keyPairPlan(). ' + spec.kty);
     /** @type {Array<{ type: number, value?: any }>} */
     const common = [{ type: CK.CKA_TOKEN, value: true },
                     { type: CK.CKA_LABEL, value: String(label) },
@@ -1112,14 +1175,31 @@ class Pkcs11Token {
       throw refusal('STS-KEYS-0207', describeMechFailure(this) + ' It ' +
         'cannot generate a ' + (spec.crv || 'RSA') + ' key pair.');
     }
-    const pair = this.runSync('generating a signing key',
-      function (lib, session) {
-        return lib.C_GenerateKeyPair(session, { mechanism: mech }, pub, priv);
-      });
-    const publicKey = this.publicKeyOf(pair.publicKey, spec);
-    log.debug('Leaving Pkcs11Token.generateKeyPair().');
-    return { key: this.privateKeyRef(id, pair.privateKey),
-             publicKey: publicKey };
+    log.debug('Leaving Pkcs11Token.keyPairPlan().');
+    return { mech: mech, pub: pub, priv: priv };
+  }
+
+  /**
+   * Whether this token can make a key pair of this kind.
+   *
+   * @param spec - `{ kty: 'RSA' }` or `{ kty, crv }`
+   * @returns true where the generation mechanism is offered
+   */
+  canGenerate(spec) {
+    log.debug('Entering Pkcs11Token.canGenerate().');
+    let mech = Number(CK.CKM_RSA_PKCS_KEY_PAIR_GEN);
+    if (spec.kty !== 'RSA') {
+      const curve = CURVES[spec.crv];
+      if (!curve) {
+        log.debug('Leaving Pkcs11Token.canGenerate(). No such curve here.');
+        return false;
+      }
+      mech = curve.edwards ? CK.CKM_EC_EDWARDS_KEY_PAIR_GEN :
+                             CK.CKM_EC_KEY_PAIR_GEN;
+    }
+    const has = this.mechanismFlags().has(mech);
+    log.debug('Leaving Pkcs11Token.canGenerate(). ' + has);
+    return has;
   }
 
   /**

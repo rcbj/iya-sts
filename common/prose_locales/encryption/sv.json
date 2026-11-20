@@ -243,6 +243,10 @@
     "en": "612d0883b63631fd",
     "text": "OCH NYCKELN FÅR INTE LIGGA PÅ DEN DISK DEN SKYDDAR. En nyckelfil på samma okrypterade volym som lagret ger båda halvorna till den som tar volymen; det duger för en utvecklingsstack och är varför `file`-leverantören är standard, och det är inte en driftsättning. keys.kekProvider väljer ett hemlighetslager i stället."
   },
+  "encryption.notes.signingKeys": {
+    "en": "570cb0f374a99427",
+    "text": "VAR DEN HÄR SFÄREN SIGNERAR (#1955). Med keys.signingKeyStore pkcs11 skapades de klassiska signeringsnycklar som anges som i HSM:en i det token som keys.signingKeyToken namnger, och de lämnar det aldrig: varje signatur är ett PKCS#11-anrop. Postkvantnycklar skapas alltid i mjukvara, eftersom ingen PKCS#11-modul här erbjuder ML-DSA eller SLH-DSA, och detsamma gäller varje kurva som modulen inte skapar. Inställningen gäller nyckeluppsättningar som skapas eller roteras efter att den ändrats."
+  },
   "encryption.notes.accountingNote": {
     "en": "4e3af979f8ed8bd7",
     "text": "Räknas i den ENDA tratt som båda operationerna passerar — `crypto.js`:s `encryptWithDek()` och `decryptWithDek()`, med datakrypteringsnycklarnas egna omslutningar och avomslutningar under `data-keys` — snarare än på anropsställena, eftersom en summa som sätts ihop från anropsställen blir fel första gången någon lägger till ett till, och blir fel I TYSTHET. Uppdelningen nedan är efter en ETIKETT som varje anropsställe skickar; en anropare som inte skickar någon räknas ändå, under `(unlabelled)`. DESSA GÄLLER HELA PROCESSEN OCH INTE PER SFÄR — en nyckelkrypteringsnyckel tillhör processen, så att dela upp räkningen per sfär vore att räkna den sfär som en begäran råkade befinna sig i — och de finns i minnet, så en omstart är hur man får en tom."

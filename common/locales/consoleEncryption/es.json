@@ -93,5 +93,10 @@
   "hKey": "La clave",
   "hAlgorithm": "El algoritmo",
   "hDataKeys": "Las claves de cifrado de datos",
-  "hCounting": "El recuento"
+  "hCounting": "El recuento",
+  "signingTitle": "Las claves de firma de este reino",
+  "signingStore": "Dónde se crean",
+  "signingInHsm": "En el HSM",
+  "signingInSoftware": "En software",
+  "signingRefused": "rechazado: el HSM no se puede usar aquí (el registro dice por qué)"
 }

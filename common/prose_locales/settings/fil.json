@@ -1876,8 +1876,8 @@
     "text": "Provider ng key-encryption key"
   },
   "keys.kekProvider|description": {
-    "en": "b48b052bc689c8e3",
-    "text": "Kung nasaan ang key-encryption key na bumabalot sa bawat data encryption key. BUMABASA ang `file`, `aws`, `gcp`, `azure` at `vault` ng 32-byte na key papasok sa process na ito mula sa naka-mount na file o secret store; `file` ang default dahil wala itong kailangan. Ang `vault-transit` (Vault o OpenBao Transit), `aws-kms`, `gcp-kms` (Cloud KMS) at `azure-keys` (isang Key Vault o Managed HSM key; ang keys.kekVault ang vault nito) ay mga key management service: HINDI KAILANMAN umaalis sa kanila ang key, pinangangalanan ito ng keys.kekRef, at binabalot at binubuksan ng KMS ang bawat data key — isang tawag bawat data key sa pag-start, wala bawat value. Bawat provider maliban sa `file` ay lazy na nangangailangan ng opisyal nitong SDK, na sinadyang HINDI dependency ng serbisyong ito; iniuulat ang nawawala kasama ang pangalan ng package na ii-install."
+    "en": "bf4e717bed6b7e03",
+    "text": "Kung nasaan ang key-encryption key na bumabalot sa bawat data encryption key. BUMABASA ang `file`, `aws`, `gcp`, `azure` at `vault` ng 32-byte na key papasok sa process na ito mula sa naka-mount na file o secret store; `file` ang default dahil wala itong kailangan. Ang `vault-transit` (Vault o OpenBao Transit), `aws-kms`, `gcp-kms` (Cloud KMS) at `azure-keys` (isang Key Vault o Managed HSM key; ang keys.kekVault ang vault nito) ay mga key management service: HINDI KAILANMAN umaalis sa kanila ang key, pinangangalanan ito ng keys.kekRef, at binabalot at binubuksan ng KMS ang bawat data key — isang tawag bawat data key sa pag-start, wala bawat value. Ganoon din ang `pkcs11` pero nasa hardware security module ang key (YubiHSM 2, SoftHSM2 o anumang PKCS#11 module, keys.pkcs11Module), at PKCS#11 URI ang keys.kekRef. Bawat provider maliban sa `file` ay lazy na nangangailangan ng opisyal nitong SDK, na sinadyang HINDI dependency ng serbisyong ito; iniuulat ang nawawala kasama ang pangalan ng package na ii-install."
   },
   "keys.kekProvider|restartReason": {
     "en": "0956d2f97d1df86a",
@@ -1924,8 +1924,8 @@
     "text": "Reference ng key-encryption key"
   },
   "keys.kekRef|description": {
-    "en": "a5a5b6e7f2c06fdc",
-    "text": "Kung paano pinangangalanan ng mga cloud provider ang secret: isang AWS Secrets Manager name o ARN, isang GCP resource name (projects/<p>/secrets/<s>, idinadagdag ang /versions/latest kapag walang ibinigay na version), isang Azure Key Vault secret name, o isang HashiCorp Vault read path. Hindi ginagamit ng `file` provider."
+    "en": "b28c82e37153639d",
+    "text": "Kung paano pinangangalanan ng mga cloud provider ang secret: isang AWS Secrets Manager name o ARN, isang GCP resource name (projects/<p>/secrets/<s>, idinadagdag ang /versions/latest kapag walang ibinigay na version), isang Azure Key Vault secret name, o isang HashiCorp Vault read path. Para sa `pkcs11`, isang RFC 7512 PKCS#11 URI, pkcs11:token=<token label>;object=<key label>. Hindi ginagamit ng `file` provider."
   },
   "keys.kekRef|restartReason": {
     "en": "d51b3caaa6125e92",
@@ -2047,13 +2047,117 @@
     "en": "d51b3caaa6125e92",
     "text": "binabasa nang isang beses sa startup"
   },
+  "keys.pkcs11Module|label": {
+    "en": "0fb904cb6844253b",
+    "text": "PKCS#11 module"
+  },
+  "keys.pkcs11Module|description": {
+    "en": "dd4fdc39cd1aed44",
+    "text": "Ang path ng PKCS#11 module na nilo-load ng `pkcs11` provider: /usr/lib/x86_64-linux-gnu/pkcs11/yubihsm_pkcs11.so para sa YubiHSM 2 (habang tumatakbo ang yubihsm-connector at nakaturo ang YUBIHSM_PKCS11_CONF sa configuration nito), /usr/lib/softhsm/libsofthsm2.so para sa SoftHSM2. Kailangan nito ang pkcs11js package, na sinadyang hindi dependency ng serbisyong ito."
+  },
+  "keys.pkcs11Module|restartReason": {
+    "en": "34a60604acae5870",
+    "text": "isang beses nilo-load ang module, sa pag-start"
+  },
+  "keys.pkcs11Mechanism|label": {
+    "en": "f9f19afe01ab43ad",
+    "text": "Paano binabalot ng HSM ang isang data key"
+  },
+  "keys.pkcs11Mechanism|description": {
+    "en": "85ff0e656695f323",
+    "text": "Ang mechanism na ginagamit sa pagbalot ng bagong data key sa HSM. Kinukuha ng `auto` ang CKM_AES_GCM kung saan ito iniaalok ng module (SoftHSM2 at karamihan ng network HSM), saka ang CKM_AES_KEY_WRAP_PAD, saka ang sariling CKM_YUBICO_AES_CCM_WRAP ng YubiHSM 2 (ang mga wrap-key object nito). Nabubuksan pa rin ang data key na binalot bago ang pagbabago: pinangangalanan ng naka-store na anyo ang mechanism nito."
+  },
+  "keys.pkcs11Mechanism|restartReason": {
+    "en": "091df5146f3d6f79",
+    "text": "isang beses inaabot ang key-encryption key, sa pag-start"
+  },
+  "keys.pkcs11GenerateKey|label": {
+    "en": "c9dac3afbed86d44",
+    "text": "Gawin ang HSM key sa unang paggamit"
+  },
+  "keys.pkcs11GenerateKey|description": {
+    "en": "82a5d89dd1a4c872",
+    "text": "Kapag naka-on, ang key-encryption key na pinangangalanan ng PKCS#11 URI at wala sa token ay gine-generate doon: AES-256, sensitive at HINDI extractable. Ang front process lang ang nagge-generate; para sa cluster, gawin na lang ang key gamit ang sariling tool ng HSM, dahil ang dalawang node na sabay na nag-start ay gagawa ng dalawa. Kapag naka-off, ang default, pinipigilan ng nawawalang key ang pag-start."
+  },
+  "keys.pkcs11GenerateKey|restartReason": {
+    "en": "091df5146f3d6f79",
+    "text": "isang beses inaabot ang key-encryption key, sa pag-start"
+  },
+  "keys.pkcs11Sessions|label": {
+    "en": "4a2da0042402bee1",
+    "text": "Mga PKCS#11 session bawat process"
+  },
+  "keys.pkcs11Sessions|description": {
+    "en": "f5b20f8d3e577d1a",
+    "text": "Ilang session ang pinakamaraming pinananatiling bukas ng bawat process at request worker sa isang token, na bawat isa ay nagpapatakbo ng isang HSM operation sa isang pagkakataon. May 16 na session sa kabuuan ang YubiHSM 2, na pinaghahatian ng bawat process ng bawat node: panatilihing mas mababa roon ang product nito, ng mga process at ng mga node."
+  },
+  "keys.pkcs11Sessions|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "isang beses binubuksan ang token, sa pag-start"
+  },
+  "keys.pkcs11PinProvider|label": {
+    "en": "3e1d9c989bcacc3d",
+    "text": "Kung saan binabasa ang PKCS#11 PIN"
+  },
+  "keys.pkcs11PinProvider|description": {
+    "en": "1c344b0b12c35ec4",
+    "text": "Ang secret store na pinagbabasahan ng PIN ng HSM token, hindi kailanman ang value ng isang setting: isang naka-mount na file, AWS Secrets Manager, Google Cloud Secret Manager, Azure Key Vault o Vault/OpenBao, inaabot gaya ng sinasabi ng keys.kek*. Para sa YubiHSM 2, ang PIN ay ang id ng authentication key sa apat na hex digit na sinusundan ng password nito (0001password). Ang JSON object ng mga PIN ayon sa token label ay nagsisilbi sa mga token na may magkakaibang PIN. Hindi nagla-log in ang `none` sa anuman."
+  },
+  "keys.pkcs11PinProvider|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "isang beses binabasa ang PIN, kapag binuksan ang token"
+  },
+  "keys.pkcs11PinRef|label": {
+    "en": "de50e9f1904c80fc",
+    "text": "Ang lokasyon ng PKCS#11 PIN"
+  },
+  "keys.pkcs11PinRef|description": {
+    "en": "dffce1d68f8495de",
+    "text": "Kung nasaan ang PIN, sa provider na pinangangalanan ng keys.pkcs11PinProvider: isang path, isang ARN, isang resource o isang Vault read path. Wala itong fallback."
+  },
+  "keys.pkcs11PinRef|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "isang beses binabasa ang PIN, kapag binuksan ang token"
+  },
+  "keys.pkcs11PinField|label": {
+    "en": "55008836b9ff61fe",
+    "text": "Ang field na kinalalagyan ng PKCS#11 PIN"
+  },
+  "keys.pkcs11PinField|description": {
+    "en": "f333042737800292",
+    "text": "Ang member ng isang JSON secret na naglalaman ng PIN. Kapag walang laman, kinukuha ang buong value."
+  },
+  "keys.pkcs11PinField|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "isang beses binabasa ang PIN, kapag binuksan ang token"
+  },
+  "keys.signingKeyStore|label": {
+    "en": "e6e0b403d7b8a000",
+    "text": "Kung saan ginagawa ang mga signing key ng isang realm"
+  },
+  "keys.signingKeyStore|description": {
+    "en": "5cc22ee909529ecc",
+    "text": "Ang `software`, ang default, ay gumagawa ng mga signing key ng isang realm sa process na ito at pinananatili silang naka-seal sa store. Ginagawa ng `pkcs11` ang mga classical nito — ang RS256 key, ang XML key at ang mga P-256, P-384, P-521, secp256k1 at Ed25519 key na kayang gawin ng module — sa HSM na pinangangalanan ng keys.signingKeyToken, non-extractable, at doon pumipirma; ang key na hindi kayang gawin ng module, at bawat post-quantum key, ay nananatili sa software. Nalalapat ito sa key set na ginawa o ni-rotate pagkatapos ng pagbabago, nangangailangan ng keystore na nagpe-persist (product mode), at kailangan ng bawat process at node ang token. Maitatakda bawat realm."
+  },
+  "keys.signingKeyToken|label": {
+    "en": "a6e7fb05dd49b8a9",
+    "text": "Ang HSM token na pinaggagawaan ng mga signing key"
+  },
+  "keys.signingKeyToken|description": {
+    "en": "0bd2c707f6ff2e69",
+    "text": "Ang PKCS#11 URI ng token kung saan ginagawa ng realm na may keys.signingKeyStore `pkcs11` ang mga signing key nito: pkcs11:token=<token label>, na may serial= o slot-id= kapag may dalawang token na pareho ang label. Ang module, ang PIN at ang mga session ay ang mga setting na keys.pkcs11*. Kapag walang laman, walang binubuksang token."
+  },
+  "keys.signingKeyToken|restartReason": {
+    "en": "1a04369397b30563",
+    "text": "isang beses binubuksan ang token, sa pag-start, sa bawat process"
+  },
   "keys.cellKekProvider|label": {
     "en": "9103eeef061197fd",
     "text": "Saan binabasa ang key-encryption key ng cell"
   },
   "keys.cellKekProvider|description": {
-    "en": "f779ece8f10a07ec",
-    "text": "Ang provider ng key-encryption key ng CELL NA ITO, na nagse-seal sa sariling ini-store ng cell (#98). Limang provider, gaya ng `keys.kekProvider`. Sine-seal ng `none` ang cell tier sa ilalim ng service key-encryption key, na tama para sa single-cell mode at para sa isang test; ang multi-cell deployment sa product mode ay TUMATANGGING mag-start gamit ito, dahil kung gayon ang kopya ng mga row ng isang cell ay mabubuksan sa bawat iba."
+    "en": "73b7f0bab09392e8",
+    "text": "Ang provider ng key-encryption key ng CELL NA ITO, na nagse-seal sa sariling ini-store ng cell (#98). Limang provider, gaya ng `keys.kekProvider`, at `pkcs11`, ang sariling HSM ng cell. Sine-seal ng `none` ang cell tier sa ilalim ng service key-encryption key, na tama para sa single-cell mode at para sa isang test; ang multi-cell deployment sa product mode ay TUMATANGGING mag-start gamit ito, dahil kung gayon ang kopya ng mga row ng isang cell ay mabubuksan sa bawat iba."
   },
   "keys.cellKekProvider|restartReason": {
     "en": "bfe49ff259fac42d",

@@ -10984,6 +10984,14 @@ op `getEncryption`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
       `note`?: string
     };
     `algorithmNote`?: string;
+    `signingKeys`?: {
+      `store`?: string;
+      `token`?: string;
+      `inHsm`?: (string)[];
+      `inSoftware`?: (string)[];
+      `refused`?: boolean;
+      `note`?: string
+    };
     `boundaries`?: {
       `perRealmKey`?: boolean;
       `perRealmDataKey`?: boolean;

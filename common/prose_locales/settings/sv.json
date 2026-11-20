@@ -1876,8 +1876,8 @@
     "text": "Leverantör av nyckelkrypteringsnyckel"
   },
   "keys.kekProvider|description": {
-    "en": "b48b052bc689c8e3",
-    "text": "Var nyckelkrypteringsnyckeln som omsluter varje datakrypteringsnyckel finns. `file`, `aws`, `gcp`, `azure` och `vault` LÄSER in en 32-bytes nyckel i den här processen från en monterad fil eller ett hemlighetslager; `file` är standard eftersom den inte kräver något. `vault-transit` (Vault eller OpenBao Transit), `aws-kms`, `gcp-kms` (Cloud KMS) och `azure-keys` (en nyckel i Key Vault eller Managed HSM; keys.kekVault är dess valv) är nyckelhanteringstjänster: nyckeln lämnar dem ALDRIG, keys.kekRef namnger den, och KMS:en omsluter och packar upp varje datanyckel — ett anrop per datanyckel vid start, inget per värde. Varje leverantör utom `file` laddar sitt officiella SDK först när det behövs, och det är avsiktligt INTE ett beroende för tjänsten; ett saknat SDK rapporteras med namnet på paketet som ska installeras."
+    "en": "bf4e717bed6b7e03",
+    "text": "Var nyckelkrypteringsnyckeln som omsluter varje datakrypteringsnyckel finns. `file`, `aws`, `gcp`, `azure` och `vault` LÄSER in en 32-bytes nyckel i den här processen från en monterad fil eller ett hemlighetslager; `file` är standard eftersom den inte kräver något. `vault-transit` (Vault eller OpenBao Transit), `aws-kms`, `gcp-kms` (Cloud KMS) och `azure-keys` (en nyckel i Key Vault eller Managed HSM; keys.kekVault är dess valv) är nyckelhanteringstjänster: nyckeln lämnar dem ALDRIG, keys.kekRef namnger den, och KMS:en omsluter och packar upp varje datanyckel — ett anrop per datanyckel vid start, inget per värde. `pkcs11` är detsamma med nyckeln i en hårdvarusäkerhetsmodul (en YubiHSM 2, SoftHSM2 eller valfri PKCS#11-modul, keys.pkcs11Module), med keys.kekRef som en PKCS#11-URI. Varje leverantör utom `file` laddar sitt officiella SDK först när det behövs, och det är avsiktligt INTE ett beroende för tjänsten; ett saknat SDK rapporteras med namnet på paketet som ska installeras."
   },
   "keys.kekProvider|restartReason": {
     "en": "0956d2f97d1df86a",
@@ -1924,8 +1924,8 @@
     "text": "Referens till nyckelkrypteringsnyckel"
   },
   "keys.kekRef|description": {
-    "en": "a5a5b6e7f2c06fdc",
-    "text": "Vad molnleverantörerna namnger hemligheten med: ett namn eller ARN i AWS Secrets Manager, ett GCP-resursnamn (projects/<p>/secrets/<s>, med /versions/latest tillagt när ingen version anges), ett hemlighetsnamn i Azure Key Vault, eller en lässökväg i HashiCorp Vault. Används inte av leverantören `file`."
+    "en": "b28c82e37153639d",
+    "text": "Vad molnleverantörerna namnger hemligheten med: ett namn eller ARN i AWS Secrets Manager, ett GCP-resursnamn (projects/<p>/secrets/<s>, med /versions/latest tillagt när ingen version anges), ett hemlighetsnamn i Azure Key Vault, eller en lässökväg i HashiCorp Vault. För `pkcs11` en PKCS#11-URI enligt RFC 7512, pkcs11:token=<token label>;object=<key label>. Används inte av leverantören `file`."
   },
   "keys.kekRef|restartReason": {
     "en": "d51b3caaa6125e92",
@@ -2047,13 +2047,117 @@
     "en": "d51b3caaa6125e92",
     "text": "läses en gång vid start"
   },
+  "keys.pkcs11Module|label": {
+    "en": "0fb904cb6844253b",
+    "text": "PKCS#11-modul"
+  },
+  "keys.pkcs11Module|description": {
+    "en": "dd4fdc39cd1aed44",
+    "text": "Sökvägen till PKCS#11-modulen som leverantören `pkcs11` laddar: /usr/lib/x86_64-linux-gnu/pkcs11/yubihsm_pkcs11.so för en YubiHSM 2 (med yubihsm-connector igång och YUBIHSM_PKCS11_CONF pekande på dess konfiguration), /usr/lib/softhsm/libsofthsm2.so för SoftHSM2. Den kräver paketet pkcs11js, som avsiktligt inte är ett beroende för tjänsten."
+  },
+  "keys.pkcs11Module|restartReason": {
+    "en": "34a60604acae5870",
+    "text": "modulen laddas en gång, vid start"
+  },
+  "keys.pkcs11Mechanism|label": {
+    "en": "f9f19afe01ab43ad",
+    "text": "Hur HSM:en omsluter en datanyckel"
+  },
+  "keys.pkcs11Mechanism|description": {
+    "en": "85ff0e656695f323",
+    "text": "Mekanismen som en ny datanyckel omsluts med i HSM:en. `auto` tar CKM_AES_GCM där modulen erbjuder den (SoftHSM2 och de flesta nätverks-HSM:er), därefter CKM_AES_KEY_WRAP_PAD, därefter YubiHSM 2:s egen CKM_YUBICO_AES_CCM_WRAP (dess wrap-key-objekt). En datanyckel som omslöts före en ändring går fortfarande att packa upp: den lagrade formen namnger sin mekanism."
+  },
+  "keys.pkcs11Mechanism|restartReason": {
+    "en": "091df5146f3d6f79",
+    "text": "nyckelkrypteringsnyckeln nås en gång, vid start"
+  },
+  "keys.pkcs11GenerateKey|label": {
+    "en": "c9dac3afbed86d44",
+    "text": "Skapa HSM-nyckeln vid första användning"
+  },
+  "keys.pkcs11GenerateKey|description": {
+    "en": "82a5d89dd1a4c872",
+    "text": "På: en nyckelkrypteringsnyckel som PKCS#11-URI:n namnger och som tokenet inte innehåller genereras där: AES-256, känslig och INTE extraherbar. Bara frontprocessen genererar; för ett kluster, skapa i stället nyckeln med HSM:ens eget verktyg, eftersom två noder som startar samtidigt skulle skapa två. Av, standard: en saknad nyckel stoppar starten."
+  },
+  "keys.pkcs11GenerateKey|restartReason": {
+    "en": "091df5146f3d6f79",
+    "text": "nyckelkrypteringsnyckeln nås en gång, vid start"
+  },
+  "keys.pkcs11Sessions|label": {
+    "en": "4a2da0042402bee1",
+    "text": "PKCS#11-sessioner per process"
+  },
+  "keys.pkcs11Sessions|description": {
+    "en": "f5b20f8d3e577d1a",
+    "text": "Hur många sessioner varje process och varje förfrågningsarbetare högst håller öppna mot ett token, där var och en kör en HSM-operation åt gången. En YubiHSM 2 har 16 sessioner totalt, delade av varje process på varje nod: håll produkten av detta värde, processerna och noderna under det."
+  },
+  "keys.pkcs11Sessions|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "tokenet öppnas en gång, vid start"
+  },
+  "keys.pkcs11PinProvider|label": {
+    "en": "3e1d9c989bcacc3d",
+    "text": "Var PKCS#11-PIN-koden läses från"
+  },
+  "keys.pkcs11PinProvider|description": {
+    "en": "1c344b0b12c35ec4",
+    "text": "Hemlighetslagret som HSM-tokenets PIN-kod läses från, aldrig en inställnings värde: en monterad fil, AWS Secrets Manager, Google Cloud Secret Manager, Azure Key Vault eller Vault/OpenBao, nått så som keys.kek* anger. För en YubiHSM 2 är PIN-koden autentiseringsnyckelns id med fyra hexsiffror följt av dess lösenord (0001password). Ett JSON-objekt med PIN-koder per tokenetikett betjänar token med olika PIN-koder. `none` loggar inte in på något."
+  },
+  "keys.pkcs11PinProvider|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "PIN-koden läses en gång, när tokenet öppnas"
+  },
+  "keys.pkcs11PinRef|label": {
+    "en": "de50e9f1904c80fc",
+    "text": "Var PKCS#11-PIN-koden finns"
+  },
+  "keys.pkcs11PinRef|description": {
+    "en": "dffce1d68f8495de",
+    "text": "Var PIN-koden finns, i den leverantör som keys.pkcs11PinProvider namnger: en sökväg, ett ARN, en resurs eller en lässökväg i Vault. Den har ingen reserv."
+  },
+  "keys.pkcs11PinRef|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "PIN-koden läses en gång, när tokenet öppnas"
+  },
+  "keys.pkcs11PinField|label": {
+    "en": "55008836b9ff61fe",
+    "text": "Fältet som PKCS#11-PIN-koden finns i"
+  },
+  "keys.pkcs11PinField|description": {
+    "en": "f333042737800292",
+    "text": "Den medlem i en JSON-hemlighet som innehåller PIN-koden. Tomt tar hela värdet."
+  },
+  "keys.pkcs11PinField|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "PIN-koden läses en gång, när tokenet öppnas"
+  },
+  "keys.signingKeyStore|label": {
+    "en": "e6e0b403d7b8a000",
+    "text": "Var en sfärs signeringsnycklar skapas"
+  },
+  "keys.signingKeyStore|description": {
+    "en": "5cc22ee909529ecc",
+    "text": "`software`, standard, skapar en sfärs signeringsnycklar i den här processen och håller dem förseglade i lagret. `pkcs11` skapar dess klassiska — RS256-nyckeln, XML-nyckeln och de P-256-, P-384-, P-521-, secp256k1- och Ed25519-nycklar som modulen kan skapa — i den HSM som keys.signingKeyToken namnger, icke-extraherbara, och signerar där; en nyckel som modulen inte kan skapa, och varje postkvantnyckel, stannar i mjukvara. Det gäller en nyckeluppsättning som skapas eller roteras efter ändringen, kräver ett nyckellager som består (produktionsläge), och varje process och nod behöver tokenet. Kan sättas per sfär."
+  },
+  "keys.signingKeyToken|label": {
+    "en": "a6e7fb05dd49b8a9",
+    "text": "HSM-tokenet som signeringsnycklar skapas på"
+  },
+  "keys.signingKeyToken|description": {
+    "en": "0bd2c707f6ff2e69",
+    "text": "PKCS#11-URI:n för det token som en sfär med keys.signingKeyStore `pkcs11` skapar sina signeringsnycklar på: pkcs11:token=<token label>, med serial= eller slot-id= där två token delar etikett. Modulen, PIN-koden och sessionerna är inställningarna keys.pkcs11*. Tomt öppnar inget token."
+  },
+  "keys.signingKeyToken|restartReason": {
+    "en": "1a04369397b30563",
+    "text": "tokenet öppnas en gång, vid start, i varje process"
+  },
   "keys.cellKekProvider|label": {
     "en": "9103eeef061197fd",
     "text": "Varifrån cellens nyckelkrypteringsnyckel läses"
   },
   "keys.cellKekProvider|description": {
-    "en": "f779ece8f10a07ec",
-    "text": "Leverantören av DEN HÄR CELLENS nyckelkrypteringsnyckel, som förseglar det som cellen lagrar av sitt eget (#98). Fem leverantörer, som för `keys.kekProvider`. `none` förseglar cellnivån under tjänstens nyckelkrypteringsnyckel, vilket är korrekt för encellsläge och för ett test; en flercellsdriftsättning i produktionsläge VÄGRAR att starta med det, eftersom en kopia av en cells rader då skulle gå att öppna i varje annan."
+    "en": "73b7f0bab09392e8",
+    "text": "Leverantören av DEN HÄR CELLENS nyckelkrypteringsnyckel, som förseglar det som cellen lagrar av sitt eget (#98). Fem leverantörer, som för `keys.kekProvider`, och `pkcs11`, cellens egen HSM. `none` förseglar cellnivån under tjänstens nyckelkrypteringsnyckel, vilket är korrekt för encellsläge och för ett test; en flercellsdriftsättning i produktionsläge VÄGRAR att starta med det, eftersom en kopia av en cells rader då skulle gå att öppna i varje annan."
   },
   "keys.cellKekProvider|restartReason": {
     "en": "bfe49ff259fac42d",

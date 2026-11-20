@@ -1454,6 +1454,14 @@ async function startOnce() {
   } else {
     cellKek = null;
   }
+  // THE SIGNING KEYS' TOKEN (#1955 P8), opened in this process BEFORE a key
+  // set is read: a realm's signing keys in the HSM are stored as references,
+  // and a reference is resolved synchronously through a token already held
+  // (`secrets.openSigningToken()`). A token that will not open stops the
+  // start, as a key-encryption key that will not read does.
+  if (String(config.value('keys.signingKeyToken') || '').trim()) {
+    await secrets.openSigningToken();
+  }
   let rows = [];
   try {
     rows = (await store.loadKeys()) || [];

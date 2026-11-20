@@ -132,8 +132,9 @@ function childMain() {
     } catch (e) {
       const m = /STS-[A-Z0-9]+-\d{4}/g;
       const all = String((e && e.message) || e).match(m) || [];
-      return all.join(' ') + ' :: ' + String((e && e.message) || e)
-        .slice(0, 300);
+      const marked = require(ROOT + '/common/error_codes').codeOf(e);
+      return (marked ? marked + ' ' : '') + all.join(' ') + ' :: ' +
+        String((e && e.message) || e).slice(0, 300);
     }
     return 'not refused';
   }

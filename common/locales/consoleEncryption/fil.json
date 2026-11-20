@@ -93,5 +93,10 @@
   "hKey": "Ang key",
   "hAlgorithm": "Ang algorithm",
   "hDataKeys": "Ang mga data encryption key",
-  "hCounting": "Ang pagbilang"
+  "hCounting": "Ang pagbilang",
+  "signingTitle": "Ang mga signing key ng realm na ito",
+  "signingStore": "Kung saan ginagawa ang mga ito",
+  "signingInHsm": "Sa HSM",
+  "signingInSoftware": "Sa software",
+  "signingRefused": "tinanggihan: hindi magagamit dito ang HSM (sinasabi ng log kung bakit)"
 }

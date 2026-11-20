@@ -1876,8 +1876,8 @@
     "text": "金鑰加密金鑰提供者"
   },
   "keys.kekProvider|description": {
-    "en": "b48b052bc689c8e3",
-    "text": "包裝每把資料加密金鑰之金鑰加密金鑰的所在位置。`file`、`aws`、`gcp`、`azure` 與 `vault` 會從掛載的檔案或秘密存放區將一把 32 位元組的金鑰「讀入」此程序；`file` 是預設值，因為它不需要任何東西。`vault-transit`（Vault 或 OpenBao Transit）、`aws-kms`、`gcp-kms`（Cloud KMS）與 `azure-keys`（Key Vault 或 Managed HSM 金鑰；keys.kekVault 為其保存庫）是金鑰管理服務：金鑰「絕不」離開它們，keys.kekRef 指名它，由 KMS 包裝與解包每把資料金鑰——啟動時每把資料金鑰呼叫一次，每個值則不需呼叫。除 `file` 外的每個提供者都會延遲載入其官方 SDK，而這些 SDK 刻意「不」是本服務的相依套件；缺少時會回報需安裝的套件名稱。"
+    "en": "bf4e717bed6b7e03",
+    "text": "包裝每把資料加密金鑰之金鑰加密金鑰的所在位置。`file`、`aws`、`gcp`、`azure` 與 `vault` 會從掛載的檔案或秘密存放區將一把 32 位元組的金鑰「讀入」此程序；`file` 是預設值，因為它不需要任何東西。`vault-transit`（Vault 或 OpenBao Transit）、`aws-kms`、`gcp-kms`（Cloud KMS）與 `azure-keys`（Key Vault 或 Managed HSM 金鑰；keys.kekVault 為其保存庫）是金鑰管理服務：金鑰「絕不」離開它們，keys.kekRef 指名它，由 KMS 包裝與解包每把資料金鑰——啟動時每把資料金鑰呼叫一次，每個值則不需呼叫。`pkcs11` 與之相同，只是金鑰位於硬體安全模組中（YubiHSM 2、SoftHSM2 或任何 PKCS#11 模組，見 keys.pkcs11Module），keys.kekRef 為 PKCS#11 URI。除 `file` 外的每個提供者都會延遲載入其官方 SDK，而這些 SDK 刻意「不」是本服務的相依套件；缺少時會回報需安裝的套件名稱。"
   },
   "keys.kekProvider|restartReason": {
     "en": "0956d2f97d1df86a",
@@ -1924,8 +1924,8 @@
     "text": "金鑰加密金鑰參照"
   },
   "keys.kekRef|description": {
-    "en": "a5a5b6e7f2c06fdc",
-    "text": "雲端提供者用來指名秘密的名稱：AWS Secrets Manager 名稱或 ARN、GCP 資源名稱（projects/<p>/secrets/<s>，未指定版本時加上 /versions/latest）、Azure Key Vault 秘密名稱，或 HashiCorp Vault 讀取路徑。`file` 提供者不使用。"
+    "en": "b28c82e37153639d",
+    "text": "雲端提供者用來指名秘密的名稱：AWS Secrets Manager 名稱或 ARN、GCP 資源名稱（projects/<p>/secrets/<s>，未指定版本時加上 /versions/latest）、Azure Key Vault 秘密名稱，或 HashiCorp Vault 讀取路徑。對於 `pkcs11`，為 RFC 7512 PKCS#11 URI，pkcs11:token=<token label>;object=<key label>。`file` 提供者不使用。"
   },
   "keys.kekRef|restartReason": {
     "en": "d51b3caaa6125e92",
@@ -2047,13 +2047,117 @@
     "en": "d51b3caaa6125e92",
     "text": "在啟動時讀取一次"
   },
+  "keys.pkcs11Module|label": {
+    "en": "0fb904cb6844253b",
+    "text": "PKCS#11 模組"
+  },
+  "keys.pkcs11Module|description": {
+    "en": "dd4fdc39cd1aed44",
+    "text": "`pkcs11` 提供者載入的 PKCS#11 模組路徑：YubiHSM 2 為 /usr/lib/x86_64-linux-gnu/pkcs11/yubihsm_pkcs11.so（需執行 yubihsm-connector，並讓 YUBIHSM_PKCS11_CONF 指向其設定），SoftHSM2 為 /usr/lib/softhsm/libsofthsm2.so。它需要 pkcs11js 套件，而該套件刻意不是本服務的相依套件。"
+  },
+  "keys.pkcs11Module|restartReason": {
+    "en": "34a60604acae5870",
+    "text": "模組只在啟動時載入一次"
+  },
+  "keys.pkcs11Mechanism|label": {
+    "en": "f9f19afe01ab43ad",
+    "text": "HSM 如何包裝資料金鑰"
+  },
+  "keys.pkcs11Mechanism|description": {
+    "en": "85ff0e656695f323",
+    "text": "在 HSM 中包裝新資料金鑰所用的機制。`auto` 在模組提供時採用 CKM_AES_GCM（SoftHSM2 與大多數網路 HSM），其次是 CKM_AES_KEY_WRAP_PAD，再其次是 YubiHSM 2 自己的 CKM_YUBICO_AES_CCM_WRAP（其包裝金鑰物件）。變更前包裝的資料金鑰仍可解包：儲存的形式載明其機制。"
+  },
+  "keys.pkcs11Mechanism|restartReason": {
+    "en": "091df5146f3d6f79",
+    "text": "金鑰加密金鑰只在啟動時存取一次"
+  },
+  "keys.pkcs11GenerateKey|label": {
+    "en": "c9dac3afbed86d44",
+    "text": "首次使用時建立 HSM 金鑰"
+  },
+  "keys.pkcs11GenerateKey|description": {
+    "en": "82a5d89dd1a4c872",
+    "text": "開啟時，PKCS#11 URI 指名而權杖中沒有的金鑰加密金鑰會在權杖中產生：AES-256、敏感且「不可」匯出。只有前端程序會產生；若是叢集，請改用 HSM 本身的工具建立金鑰，因為兩個同時啟動的節點會建立兩把。關閉（預設）時，缺少金鑰會使啟動中止。"
+  },
+  "keys.pkcs11GenerateKey|restartReason": {
+    "en": "091df5146f3d6f79",
+    "text": "金鑰加密金鑰只在啟動時存取一次"
+  },
+  "keys.pkcs11Sessions|label": {
+    "en": "4a2da0042402bee1",
+    "text": "每個程序的 PKCS#11 工作階段數"
+  },
+  "keys.pkcs11Sessions|description": {
+    "en": "f5b20f8d3e577d1a",
+    "text": "每個程序與請求工作程序在一個權杖上最多保持開啟的工作階段數，每個工作階段一次執行一項 HSM 作業。YubiHSM 2 總共有 16 個工作階段，由每個節點的每個程序共用：請讓此值、程序數與節點數的乘積低於該數。"
+  },
+  "keys.pkcs11Sessions|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "權杖只在啟動時開啟一次"
+  },
+  "keys.pkcs11PinProvider|label": {
+    "en": "3e1d9c989bcacc3d",
+    "text": "PKCS#11 PIN 的讀取來源"
+  },
+  "keys.pkcs11PinProvider|description": {
+    "en": "1c344b0b12c35ec4",
+    "text": "讀取 HSM 權杖 PIN 的秘密存放區，絕不是某項設定的值：掛載的檔案、AWS Secrets Manager、Google Cloud Secret Manager、Azure Key Vault 或 Vault/OpenBao，依 keys.kek* 所述存取。對 YubiHSM 2 而言，PIN 是驗證金鑰的 id（四位十六進位數字）後接其密碼（0001password）。依權杖標籤列出 PIN 的 JSON 物件可用於 PIN 各不相同的權杖。`none` 不登入任何權杖。"
+  },
+  "keys.pkcs11PinProvider|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "PIN 在開啟權杖時讀取一次"
+  },
+  "keys.pkcs11PinRef|label": {
+    "en": "de50e9f1904c80fc",
+    "text": "PKCS#11 PIN 的位置"
+  },
+  "keys.pkcs11PinRef|description": {
+    "en": "dffce1d68f8495de",
+    "text": "PIN 在 keys.pkcs11PinProvider 所指名之提供者中的位置：路徑、ARN、資源或 Vault 讀取路徑。它沒有備援值。"
+  },
+  "keys.pkcs11PinRef|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "PIN 在開啟權杖時讀取一次"
+  },
+  "keys.pkcs11PinField|label": {
+    "en": "55008836b9ff61fe",
+    "text": "PKCS#11 PIN 所在的欄位"
+  },
+  "keys.pkcs11PinField|description": {
+    "en": "f333042737800292",
+    "text": "JSON 秘密中存放 PIN 的成員。空白則取整個值。"
+  },
+  "keys.pkcs11PinField|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "PIN 在開啟權杖時讀取一次"
+  },
+  "keys.signingKeyStore|label": {
+    "en": "e6e0b403d7b8a000",
+    "text": "領域簽署金鑰的建立位置"
+  },
+  "keys.signingKeyStore|description": {
+    "en": "5cc22ee909529ecc",
+    "text": "`software`（預設）在此程序中建立領域的簽署金鑰，並將其密封保存在存放區中。`pkcs11` 在 keys.signingKeyToken 所指名的 HSM 中建立其傳統金鑰——RS256 金鑰、XML 金鑰，以及模組能建立的 P-256、P-384、P-521、secp256k1 與 Ed25519 金鑰——不可匯出，並在其中簽署；模組無法建立的金鑰以及所有後量子金鑰都保留在軟體中。它適用於變更後建立或輪替的金鑰組，需要可持久保存的金鑰庫（產品模式），且每個程序與節點都需要該權杖。可依領域設定。"
+  },
+  "keys.signingKeyToken|label": {
+    "en": "a6e7fb05dd49b8a9",
+    "text": "建立簽署金鑰的 HSM 權杖"
+  },
+  "keys.signingKeyToken|description": {
+    "en": "0bd2c707f6ff2e69",
+    "text": "keys.signingKeyStore 為 `pkcs11` 的領域在其上建立簽署金鑰之權杖的 PKCS#11 URI：pkcs11:token=<token label>，兩個權杖共用同一標籤時加上 serial= 或 slot-id=。模組、PIN 與工作階段由 keys.pkcs11* 設定指定。空白則不開啟任何權杖。"
+  },
+  "keys.signingKeyToken|restartReason": {
+    "en": "1a04369397b30563",
+    "text": "權杖在啟動時於每個程序中開啟一次"
+  },
   "keys.cellKekProvider|label": {
     "en": "9103eeef061197fd",
     "text": "Cell 金鑰加密金鑰的讀取來源"
   },
   "keys.cellKekProvider|description": {
-    "en": "f779ece8f10a07ec",
-    "text": "「此 Cell」的金鑰加密金鑰的提供者，用來密封該 Cell 自己儲存的內容（#98）。五種提供者，與 `keys.kekProvider` 相同。`none` 以服務金鑰加密金鑰密封 Cell 層，這在單一 Cell 模式及測試中是正確的；產品模式下的多 Cell 部署會因此「拒絕」啟動，因為如此一來，一個 Cell 之資料列的副本能在其他每個 Cell 中被開啟。"
+    "en": "73b7f0bab09392e8",
+    "text": "「此 Cell」的金鑰加密金鑰的提供者，用來密封該 Cell 自己儲存的內容（#98）。五種提供者，與 `keys.kekProvider` 相同，另有 `pkcs11`，即該 Cell 自己的 HSM。`none` 以服務金鑰加密金鑰密封 Cell 層，這在單一 Cell 模式及測試中是正確的；產品模式下的多 Cell 部署會因此「拒絕」啟動，因為如此一來，一個 Cell 之資料列的副本能在其他每個 Cell 中被開啟。"
   },
   "keys.cellKekProvider|restartReason": {
     "en": "bfe49ff259fac42d",

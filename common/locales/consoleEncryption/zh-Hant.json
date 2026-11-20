@@ -93,5 +93,10 @@
   "hKey": "金鑰",
   "hAlgorithm": "演算法",
   "hDataKeys": "資料加密金鑰",
-  "hCounting": "統計"
+  "hCounting": "統計",
+  "signingTitle": "此領域的簽章金鑰",
+  "signingStore": "在何處產生",
+  "signingInHsm": "在 HSM 中",
+  "signingInSoftware": "在軟體中",
+  "signingRefused": "已拒絕：此處無法使用 HSM（記錄說明原因）"
 }

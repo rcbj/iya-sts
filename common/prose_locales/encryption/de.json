@@ -243,6 +243,10 @@
     "en": "612d0883b63631fd",
     "text": "UND DER SCHLÜSSEL DARF NICHT AUF DER PLATTE LEBEN, DIE ER SCHÜTZT. Eine Schlüsseldatei auf demselben unverschlüsselten Volume wie der Speicher händigt beide Hälften dem aus, der das Volume an sich nimmt; das ist für einen Entwicklungsstack in Ordnung und der Grund, warum der Provider `file` der Standard ist, und es ist kein Deployment. keys.kekProvider wählt stattdessen einen Secret Store."
   },
+  "encryption.notes.signingKeys": {
+    "en": "570cb0f374a99427",
+    "text": "WO DIESER VERTRAUENSBEREICH SIGNIERT (#1955). Mit keys.signingKeyStore pkcs11 wurden die als im HSM aufgeführten klassischen Signaturschlüssel in dem Token erzeugt, das keys.signingKeyToken nennt, und verlassen es nie: Jede Signatur ist ein PKCS#11-Aufruf. Post-Quanten-Schlüssel werden immer in Software erzeugt, weil kein PKCS#11-Modul hier ML-DSA oder SLH-DSA anbietet, und ebenso jede Kurve, die das Modul nicht erzeugt. Die Einstellung gilt für Schlüsselsätze, die nach ihrer Änderung erzeugt oder rotiert werden."
+  },
   "encryption.notes.accountingNote": {
     "en": "4e3af979f8ed8bd7",
     "text": "Gezählt an dem EINEN Trichter, durch den beide Operationen gehen — `encryptWithDek()` und `decryptWithDek()` von `crypto.js`, mit den eigenen Wraps und Unwraps der Datenverschlüsselungsschlüssel unter `data-keys` — und nicht an den Aufrufstellen, weil eine aus Aufrufstellen zusammengesetzte Summe falsch ist, sobald jemand eine weitere hinzufügt, und sie ist STILLSCHWEIGEND falsch. Die Aufschlüsselung unten erfolgt nach einem LABEL, das jede Aufrufstelle übergibt; ein Aufrufer, der keines übergibt, wird trotzdem gezählt, unter `(unlabelled)`. DIESE SIND PROZESSWEIT UND NICHT JE VERTRAUENSBEREICH — ein Schlüsselverschlüsselungsschlüssel gehört zum Prozess, also würde das Aufteilen der Zählung nach Vertrauensbereich den Vertrauensbereich zählen, in dem eine Anfrage zufällig lag — und sie liegen im Speicher, also ist ein Neustart der Weg, wie Sie eine leere erhalten."

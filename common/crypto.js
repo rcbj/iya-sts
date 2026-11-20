@@ -355,6 +355,34 @@ function signXml(xml, opts) {
   const chainKeyInfo = options.includeKeyInfo === false ? ''
     : String(options.keyInfoXml || '');
   const method = XML_SIGNATURE_METHODS[options.sigAlg] || null;
+  // A SIGNING KEY IN THE HSM (#1955 P8): the general engine, as ECDSA below,
+  // with the signature made by C_Sign — RSA too, since `signEnveloped()`'s
+  // RSA branch needs the PEM the HSM will not give.
+  const hsmCandidate = options.privateKey || options.privateKeyPem;
+  if (isHsmKey(hsmCandidate)) {
+    const hsmKey = hsmKeyOf(hsmCandidate);
+    const hsmMethod = method ||
+      XML_SIGNATURE_METHODS[xmldsig.SIG_ALG_RSA_SHA256];
+    const hsmAlg = hsmXmlAlg(hsmMethod);
+    const hsmSigned = xmldsig.signXml(xml, {
+      mode: 'enveloped',
+      sigAlg: options.sigAlg || xmldsig.SIG_ALG_RSA_SHA256,
+      c14nAlg: options.c14nAlg || xmldsig.C14N_EXCLUSIVE,
+      keyInfo: options.includeKeyInfo === false ? 'none' : 'x509',
+      keyInfoXml: chainKeyInfo
+        ? '<ds:KeyInfo>' + chainKeyInfo + '</ds:KeyInfo>' : undefined,
+      certPem: options.certPem,
+      refUri: refUri,
+      placement: options.placement || PLACEMENT.AFTER_ISSUER,
+      signer: function (octets) {
+        return hsmKey.signSync(hsmAlg, Buffer.from(octets, 'binary'));
+      }
+    });
+    const hsmXml = typeof hsmSigned === 'string' ? hsmSigned : hsmSigned.xml;
+    log.debug('Leaving signXml(). ' + hsmAlg + ' in the HSM, ' +
+              hsmXml.length + ' characters.');
+    return hsmXml;
+  }
   const pqMethod = xmldsig.SIG_METHODS[options.sigAlg] &&
     xmldsig.SIG_METHODS[options.sigAlg].postQuantum
     ? xmldsig.SIG_METHODS[options.sigAlg] : null;
@@ -1900,6 +1928,13 @@ function signQueryString(queryString, privateKeyPem, sigAlg, privateKey) {
     xmldsig.SIG_METHODS[sigAlg].postQuantum
     ? xmldsig.SIG_METHODS[sigAlg] : null;
   const method = XML_SIGNATURE_METHODS[sigAlg] || null;
+  if (isHsmKey(privateKey || privateKeyPem)) {
+    const hsmKey = hsmKeyOf(privateKey || privateKeyPem);
+    const hsmSignature = hsmKey.signSync(hsmXmlAlg(method),
+      Buffer.from(String(queryString), 'utf8')).toString('base64');
+    log.debug('Leaving signQueryString(). In the HSM.');
+    return hsmSignature;
+  }
   if (pqMethod && privateKey) {
     const pqSignature = Buffer.from(pqJose.sign(String(pqMethod.alg),
       privateKey, Buffer.from(String(queryString), 'utf8')))
@@ -3520,6 +3555,12 @@ function signJws(payload, key, opts) {
   }
   const algorithm = options.algorithm || 'RS256';
   const spec = jwsSpec(algorithm);
+  // A SIGNING KEY IN THE HSM (#1955 P8): the same framing, C_Sign.
+  if (isHsmKey(key)) {
+    const hsmOut = hsmSignJws(payload, key, options, false);
+    log.debug('Leaving signJws(). ' + algorithm + ', in the HSM.');
+    return hsmOut;
+  }
   if (spec.family === 'pq') {
     const pqInput = pqSigningInput(payload, algorithm, options);
     const pqSig = jwsSignatureOver(algorithm, key,
@@ -3614,6 +3655,18 @@ function signJwsAsync(payload, key, opts) {
   } catch (e) {
     log.debug('Leaving signJwsAsync(). Refused.');
     return Promise.reject(e);
+  }
+  // A SIGNING KEY IN THE HSM (#1955 P8): C_SignAsync, off the loop.
+  if (isHsmKey(key)) {
+    let hsmOut;
+    try {
+      hsmOut = hsmSignJws(payload, key, options, true);
+    } catch (e) {
+      log.debug('Leaving signJwsAsync(). Refused for the HSM.');
+      return Promise.reject(e);
+    }
+    log.debug('Leaving signJwsAsync(). ' + algorithm + ', in the HSM.');
+    return hsmOut;
   }
   const plan = spec.family === 'pq' ? null
     : classicalSigningInput(payload, key, algorithm, spec, options);
@@ -4221,6 +4274,12 @@ function jwsSignatureOver(alg, key, signingInput) {
   log.debug('Entering jwsSignatureOver(). alg=' + alg);
   const spec = jwsSpec(alg);
   const input = Buffer.from(signingInput);
+  if (isHsmKey(key)) {
+    const hsmKey = hsmKeyOf(key);
+    const hsmSig = hsmKey.signSync(hsmSigningAlg(hsmKey, alg), input);
+    log.debug('Leaving jwsSignatureOver(). In the HSM.');
+    return hsmSig;
+  }
   if (spec.family === 'pq') {
     const pqSig = Buffer.from(pqJose.sign(alg, key, input));
     log.debug('Leaving jwsSignatureOver(). Post-quantum.');
@@ -7744,8 +7803,9 @@ function signCertificateNatively(cert, privateKeyPem) {
   cert.tbsCertificate = forge.pki.getTBSCertificate(cert);
   const tbs = Buffer.from(forge.asn1.toDer(cert.tbsCertificate).getBytes(),
                           'binary');
-  cert.signature = nodeCrypto.sign('sha256', tbs, privateKeyPem)
-                             .toString('binary');
+  cert.signature = (isHsmKey(privateKeyPem)
+    ? hsmKeyOf(privateKeyPem).signSync('RS256', tbs)
+    : nodeCrypto.sign('sha256', tbs, privateKeyPem)).toString('binary');
   log.debug("Leaving signCertificateNatively().");
 }
 
@@ -7768,7 +7828,15 @@ function selfSignedRsaCertificate(opts) {
   // burst of realms does not stop this process for a tenth of a second each.
   // forge's generation is node's synchronous one underneath; the certificate
   // built over a given key is the same certificate in every other respect.
-  const pair = options.rsaPrivateKeyPem
+  // A KEY IN THE HSM (#1955 P8): its public half is the certificate's, and
+  // the TBSCertificate is signed by C_Sign (RS256 is sha256WithRSAEncryption
+  // over the same octets `signCertificateNatively()` hands OpenSSL).
+  const hsmKey = isHsmKey(options.rsaPrivateKeyPem)
+    ? hsmKeyOf(options.rsaPrivateKeyPem) : null;
+  const pair = hsmKey
+    ? { publicKey: forge.pki.publicKeyFromPem(hsmKey.publicKey.export({
+          type: 'spki', format: 'pem' })), privateKey: null }
+    : options.rsaPrivateKeyPem
     ? rsaPairFromPem(options.rsaPrivateKeyPem)
     : forge.pki.rsa.generateKeyPair({ bits: options.bits || 2048,
                                       e: 0x10001 });
@@ -7795,8 +7863,9 @@ function selfSignedRsaCertificate(opts) {
   if (options.extensions && options.extensions.length) {
     cert.setExtensions(options.extensions);
   }
-  const privateKeyPem = forge.pki.privateKeyToPem(pair.privateKey);
-  signCertificateNatively(cert, privateKeyPem);
+  const privateKeyPem = hsmKey ? hsmKey.ref
+    : forge.pki.privateKeyToPem(pair.privateKey);
+  signCertificateNatively(cert, hsmKey || privateKeyPem);
   const certPem = forge.pki.certificateToPem(cert);
   log.debug('Leaving selfSignedRsaCertificate().');
   return {
@@ -15431,6 +15500,10 @@ function publicKeyFromJwk(jwk) {
  */
 function publicKeyOf(key) {
   log.debug("Entering publicKeyOf().");
+  if (isHsmKey(key)) {
+    log.debug("Leaving publicKeyOf(). An HSM key's.");
+    return hsmKeyOf(key).publicKey;
+  }
   const out = key && key.type === 'public' ? key
                                            : nodeCrypto.createPublicKey(key);
   log.debug("Leaving publicKeyOf().");
@@ -15605,6 +15678,13 @@ function isParsedCertificate(value) {
  */
 function privateKeyFrom(input) {
   log.debug("Entering privateKeyFrom().");
+  // A signing key in the HSM (#1955 P8): its reference is its PEM, and this
+  // is where every structure that re-parses a PEM gets the key back.
+  if (isHsmKey(input)) {
+    const hsm = hsmKeyOf(input);
+    log.debug("Leaving privateKeyFrom(). In the HSM.");
+    return hsm;
+  }
   const key = input && input.type === 'private' &&
               input instanceof nodeCrypto.KeyObject
     ? input
@@ -18545,6 +18625,384 @@ function forgetPkcs11Libraries() {
   log.debug('Leaving forgetPkcs11Libraries().');
 }
 
+// ---------------------------------------------------------------------------
+// A SIGNING KEY IN THE HSM, AS THE REST OF THE SERVICE HOLDS IT.
+//
+// A realm whose `keys.signingKeyStore` is `pkcs11` has its classical signing
+// keys made in the token — RSA for RS256 and the XML key, P-256, P-384,
+// P-521, secp256k1 and Ed25519 where the module can make them — sensitive and
+// non-extractable. The rest of the service never had a private key it did
+// not hold as a PEM or a KeyObject, and it passes them around in a dozen
+// structures (`helpers.js`'s key set, its generations, the sealed blob
+// `keystore.js` writes, the pool's key channel). So an HSM key is made to
+// travel EXACTLY where a PEM travels:
+//
+//   * its PEM is a REFERENCE, `pkcs11-key:v1:<b64url JSON>` — the token it is
+//     on (a PKCS#11 URI without an object), its CKA_ID, its kind — which is
+//     what `export()` answers and what `keystore.js` seals; it names the key
+//     and opens nothing;
+//   * `privateKeyFrom()` turns that reference back into the key object,
+//     through the token this thread already holds (`secrets.js` fills the
+//     resolver, below), so every structure that re-parses a PEM gets the HSM
+//     key back without being told;
+//   * the key object answers `type: 'private'`, `asymmetricKeyType` and
+//     `asymmetricKeyDetails` like a KeyObject, so the checks that decide HOW
+//     to sign (`classicalSigningInput()`) still decide; and every signing
+//     door here — `signJws()`, `signJwsAsync()`, `jwsSignatureOver()`,
+//     `signXml()`, `signQueryString()`, a self-signed certificate — asks
+//     `isHsmKey()` first and signs with C_Sign.
+//
+// AND ANYTHING ELSE FAILS CLOSED. A caller that hands an HSM key to node
+// itself (a decryption, `createPrivateKey()` on the reference) gets node's
+// refusal or STS-KEYS-0206, never a software copy: there is none.
+// ---------------------------------------------------------------------------
+const HSM_KEY_PREFIX = 'pkcs11-key:v1:';
+
+// THE ONE INVERTED HOOK HERE (rule 3e): a reference names a token, and the
+// tokens are `secrets.js`'s (it reads their PIN). This file may not require
+// `secrets.js` — that file requires this one — so `secrets.js` hands in the
+// function that finds a reference's key on a token it holds.
+let pkcs11KeyResolver = null;
+
+// The key objects this thread has resolved, by reference: a find on the
+// token is a round trip, and a reference names one key for ever.
+const hsmKeys = new Map();
+
+/**
+ * Hands in how a reference is resolved: `(ref) => { token, key, publicKey }`
+ * on a token this thread holds. Filled by `secrets.js` when it loads.
+ *
+ * @param fn - the resolver, or null
+ */
+function setPkcs11KeyResolver(fn) {
+  log.debug('Entering setPkcs11KeyResolver().');
+  pkcs11KeyResolver = typeof fn === 'function' ? fn : null;
+  log.debug('Leaving setPkcs11KeyResolver().');
+}
+
+function hsmRefText(ref) {
+  log.debug('Entering hsmRefText().');
+  log.debug('Leaving hsmRefText().');
+  return HSM_KEY_PREFIX + Buffer.from(JSON.stringify(ref), 'utf8')
+    .toString('base64url');
+}
+
+/**
+ * Reads an HSM key reference back: `{ token, id, kty, crv, bits }`, or null
+ * when the text is not one.
+ *
+ * @param text - the reference
+ * @returns the reference's members, or null
+ */
+function hsmRefOf(text) {
+  log.debug('Entering hsmRefOf().');
+  const s = typeof text === 'string' ? text : '';
+  if (s.indexOf(HSM_KEY_PREFIX) !== 0) {
+    log.debug('Leaving hsmRefOf(). Not one.');
+    return null;
+  }
+  try {
+    const ref = JSON.parse(Buffer.from(s.slice(HSM_KEY_PREFIX.length),
+                                       'base64url').toString('utf8'));
+    log.debug('Leaving hsmRefOf().');
+    return ref && typeof ref === 'object' ? ref : null;
+  } catch (e) {
+    log.debug('Caught in hsmRefOf(): ' + ((e && e.message) || e));
+    log.debug('Leaving hsmRefOf(). Malformed.');
+    return null;
+  }
+}
+
+/**
+ * Answers whether a key is a signing key in the HSM: its key object, or its
+ * reference.
+ *
+ * @param key - anything a signer is handed
+ * @returns true for an HSM key
+ */
+function isHsmKey(key) {
+  log.debug('Entering isHsmKey().');
+  const out = !!(key && typeof key === 'object' && key.hsm === true) ||
+              (typeof key === 'string' && key.indexOf(HSM_KEY_PREFIX) === 0);
+  log.debug('Leaving isHsmKey(). ' + out);
+  return out;
+}
+
+// The key object an HSM key's reference or object names; STS-KEYS-0206 when
+// this thread cannot reach it.
+function hsmKeyOf(key) {
+  log.debug('Entering hsmKeyOf().');
+  if (key && typeof key === 'object' && key.hsm === true) {
+    log.debug('Leaving hsmKeyOf(). An object.');
+    return key;
+  }
+  const text = String(key);
+  const held = hsmKeys.get(text);
+  if (held) {
+    log.debug('Leaving hsmKeyOf(). Held.');
+    return held;
+  }
+  const ref = hsmRefOf(text);
+  if (!ref || !pkcs11KeyResolver) {
+    throw errorCodes.mark(new Error('a signing key in the HSM was named ' +
+      'and this process holds no PKCS#11 token to find it on (is ' +
+      'keys.signingKeyToken set, and the keystore persisting?)'),
+      'STS-KEYS-0206');
+  }
+  const found = pkcs11KeyResolver(ref);
+  const made = makeHsmKey(found.token, found.key, found.publicKey, ref);
+  hsmKeys.set(text, made);
+  log.debug('Leaving hsmKeyOf(). Resolved.');
+  return made;
+}
+
+// The key object: a KeyObject's shape where a check reads one, and the
+// token's C_Sign behind it.
+function makeHsmKey(token, engineKey, publicKey, ref) {
+  log.debug('Entering makeHsmKey().');
+  const text = hsmRefText(ref);
+  const kind = publicKey.asymmetricKeyType;
+  const out = Object.freeze({
+    hsm: true,
+    type: 'private',
+    asymmetricKeyType: kind,
+    asymmetricKeyDetails: publicKey.asymmetricKeyDetails,
+    publicKey: publicKey,
+    ref: text,
+    token: token.describe(),
+    // Its "PEM" is its reference: what a set serialises and seals.
+    export: function (opts) {
+      log.debug('Entering hsmKey.export().');
+      if (opts && opts.format === 'jwk') {
+        throw errorCodes.mark(new Error('a signing key in the HSM has no ' +
+          'private JWK; it does not leave the HSM'), 'STS-KEYS-0206');
+      }
+      log.debug('Leaving hsmKey.export(). The reference.');
+      return text;
+    },
+    signSync: function (alg, data) {
+      return token.signSync(engineKey, alg, data);
+    },
+    sign: function (alg, data) {
+      return token.sign(engineKey, alg, data);
+    }
+  });
+  hsmKeys.set(text, out);
+  log.debug('Leaving makeHsmKey(). ' + kind);
+  return out;
+}
+
+// The kind of key a JWS or XML algorithm signs with in the HSM, and what it
+// is called in the engine (`crypto_impl/pkcs11.js`'s SIGNING).
+function hsmSigningAlg(key, jwsAlg) {
+  log.debug('Entering hsmSigningAlg(). ' + jwsAlg);
+  const spec = JWS_ALGS[jwsAlg];
+  const kind = key.asymmetricKeyType;
+  const details = key.asymmetricKeyDetails || {};
+  const fits = spec && ((spec.family === 'rsa' && kind === 'rsa') ||
+    (spec.family === 'ec' && kind === 'ec' &&
+     details.namedCurve === spec.namedCurve) ||
+    (jwsAlg === 'EdDSA' && (kind === 'ed25519' || kind === 'ed448')));
+  if (!fits || pkcs11Engine.SIGNING[jwsAlg] === undefined) {
+    throw errorCodes.mark(new Error('the HSM key (' + kind + ') does not ' +
+      'sign ' + jwsAlg + '; post-quantum, HMAC and Ed448 signatures are ' +
+      'made in software, never by a key in the HSM'), 'STS-KEYS-0206');
+  }
+  log.debug('Leaving hsmSigningAlg().');
+  return jwsAlg;
+}
+
+// jsonwebtoken's framing for a call `classicalSigningInput()` cannot
+// reproduce (a claim convenience): the library is asked to sign with a
+// THROWAWAY key of the same kind, and only its header and payload are kept —
+// the signature is the HSM's. One throwaway per kind, per process.
+const framingKeys = new Map();
+function jsonwebtokenFraming(payload, algorithm, options) {
+  log.debug('Entering jsonwebtokenFraming(). ' + algorithm);
+  const spec = JWS_ALGS[algorithm];
+  const want = spec.family === 'rsa' ? 'rsa' :
+    { ES256: 'prime256v1', ES384: 'secp384r1', ES512: 'secp521r1' }[algorithm];
+  let throwaway = framingKeys.get(want);
+  if (!throwaway) {
+    throwaway = want === 'rsa'
+      ? nodeCrypto.generateKeyPairSync('rsa', { modulusLength: 2048 })
+        .privateKey
+      : nodeCrypto.generateKeyPairSync('ec', { namedCurve: want }).privateKey;
+    framingKeys.set(want, throwaway);
+  }
+  const signOptions = { algorithm: algorithm };
+  for (let i = 0; i < SIGN_OPTIONS.length; i++) {
+    const name = SIGN_OPTIONS[i];
+    if (options[name] !== undefined) {
+      signOptions[name] = options[name];
+    }
+  }
+  const parts = jwt.sign(payload, throwaway, signOptions).split('.');
+  log.debug('Leaving jsonwebtokenFraming().');
+  return parts[0] + '.' + parts[1];
+}
+
+// The signing input an HSM key signs for one JWS: the same framing the
+// software door would have made, so a token signed in the HSM is the token
+// this service always issued.
+function hsmSigningInput(payload, key, algorithm, spec, options) {
+  log.debug('Entering hsmSigningInput(). ' + algorithm);
+  const asked = options || {};
+  if (spec.ownSigner) {
+    const header = protectedHeaderFor(algorithm, asked);
+    const body = Object.assign({}, payload);
+    if (body.iat === undefined) {
+      body.iat = Math.floor(Date.now() / 1000);
+    }
+    log.debug('Leaving hsmSigningInput(). signJws()\'s own framing.');
+    return b64u(Buffer.from(JSON.stringify(header), 'utf8')) + '.' +
+           b64u(Buffer.from(JSON.stringify(body), 'utf8'));
+  }
+  const plan = classicalSigningInput(payload, key, algorithm, spec, asked);
+  if (plan) {
+    log.debug('Leaving hsmSigningInput(). classicalSigningInput().');
+    return plan.input;
+  }
+  log.debug('Leaving hsmSigningInput(). jsonwebtoken\'s, by a throwaway.');
+  return jsonwebtokenFraming(payload, algorithm, asked);
+}
+
+/**
+ * Signs a JWT payload with a signing key in the HSM, synchronously (the
+ * event loop waits for the HSM) or not.
+ *
+ * @param payload - the claims
+ * @param key - the HSM key or its reference
+ * @param opts - as for `signJws()`
+ * @param async - true for a promise, the signature computed off the loop
+ * @returns the compact JWS, or a promise of it
+ */
+function hsmSignJws(payload, key, opts, async) {
+  log.debug('Entering hsmSignJws().');
+  const options = opts || {};
+  const algorithm = options.algorithm || 'RS256';
+  const hsmKey = hsmKeyOf(key);
+  const spec = jwsSpec(algorithm);
+  hsmSigningAlg(hsmKey, algorithm);
+  const input = hsmSigningInput(payload, hsmKey, algorithm, spec, options);
+  if (async) {
+    log.debug('Leaving hsmSignJws(). Off the loop.');
+    return hsmKey.sign(algorithm, Buffer.from(input, 'ascii'))
+      .then(function (sig) {
+        return input + '.' + b64u(sig);
+      });
+  }
+  const sig = hsmKey.signSync(algorithm, Buffer.from(input, 'ascii'));
+  log.debug('Leaving hsmSignJws(). In place.');
+  return input + '.' + b64u(sig);
+}
+
+// The engine's name for an XML SignatureMethod an HSM key signs: RSA and
+// RSA-PSS over SHA-2, ECDSA over SHA-2. SHA-1, SHA-224 and the rest are
+// refused rather than made in software.
+function hsmXmlAlg(method) {
+  log.debug('Entering hsmXmlAlg().');
+  const bits = { sha256: '256', sha384: '384', sha512: '512' }[
+    String(method && method.hash)];
+  const prefix = { rsa: 'RS', 'rsa-pss': 'PS', ecdsa: 'ES' }[
+    String(method && method.family)];
+  if (!bits || !prefix) {
+    throw errorCodes.mark(new Error('a signing key in the HSM signs XML ' +
+      'with RSA, RSA-PSS or ECDSA over SHA-256, SHA-384 or SHA-512 only (' +
+      ((method && method.label) || 'this method') + ' is not one)'),
+      'STS-KEYS-0206');
+  }
+  log.debug('Leaving hsmXmlAlg().');
+  return prefix + bits;
+}
+
+/**
+ * Generates a signing key pair in an HSM token: sensitive, non-extractable,
+ * a token object under a random CKA_ID. Synchronous: the event loop waits
+ * for the module (an RSA key in a YubiHSM 2 takes seconds), which is why
+ * `helpers.js` generates off a request where it can.
+ *
+ * @param token - the token (`secrets.openHsmToken()`)
+ * @param tokenUri - the token's PKCS#11 URI, recorded in the reference
+ * @param spec - `{ kty: 'RSA', bits }` or `{ kty: 'EC'|'OKP', crv }`
+ * @param label - CKA_LABEL, for an operator listing the token
+ * @returns `{ privateKey, publicKey }`: the HSM key object and a KeyObject
+ */
+function generatePkcs11KeyPair(token, tokenUri, spec, label) {
+  log.debug('Entering generatePkcs11KeyPair(). ' + spec.kty);
+  const id = nodeCrypto.randomBytes(16);
+  const made = token.generateKeyPair(spec, label, id);
+  const ref = { token: String(tokenUri), id: id.toString('hex'),
+                kty: spec.kty, crv: spec.crv || '',
+                bits: spec.bits || 0 };
+  const key = makeHsmKey(token, made.key, made.publicKey, ref);
+  log.debug('Leaving generatePkcs11KeyPair().');
+  return { privateKey: key, publicKey: made.publicKey };
+}
+
+/**
+ * The same as `generatePkcs11KeyPair()`, with the generation off the event
+ * loop where the binding can.
+ *
+ * @param token - the token
+ * @param tokenUri - the token's PKCS#11 URI
+ * @param spec - `{ kty: 'RSA', bits }` or `{ kty: 'EC'|'OKP', crv }`
+ * @param label - CKA_LABEL
+ * @returns a promise of `{ privateKey, publicKey }`
+ */
+async function generatePkcs11KeyPairAsync(token, tokenUri, spec, label) {
+  log.debug('Entering generatePkcs11KeyPairAsync(). ' + spec.kty);
+  const id = nodeCrypto.randomBytes(16);
+  const made = await token.generateKeyPairAsync(spec, label, id);
+  const ref = { token: String(tokenUri), id: id.toString('hex'),
+                kty: spec.kty, crv: spec.crv || '',
+                bits: spec.bits || 0 };
+  const key = makeHsmKey(token, made.key, made.publicKey, ref);
+  log.debug('Leaving generatePkcs11KeyPairAsync().');
+  return { privateKey: key, publicKey: made.publicKey };
+}
+
+/**
+ * Makes an HSM key object for a key pair found on a token — what the
+ * resolver answers, for `secrets.js`.
+ *
+ * @param token - the token
+ * @param ref - the reference's members
+ * @returns `{ token, key, publicKey }` for the resolver to hand back
+ */
+function findPkcs11KeyPair(token, ref) {
+  log.debug('Entering findPkcs11KeyPair().');
+  const found = token.keyPair(Buffer.from(String(ref.id), 'hex'),
+                              { kty: ref.kty, crv: ref.crv });
+  log.debug('Leaving findPkcs11KeyPair().');
+  return { token: token, key: found.key, publicKey: found.publicKey };
+}
+
+/**
+ * The JWS algorithms a token can make a key for and sign, of those a
+ * realm's key set holds — what the console and the docs say per realm.
+ *
+ * @param token - the token
+ * @returns `{ signs, generates }`, each a list of algorithm or curve names
+ */
+function pkcs11Capabilities(token) {
+  log.debug('Entering pkcs11Capabilities().');
+  const CK = pkcs11Engine.CK;
+  const flags = token.mechanismFlags();
+  const generates = [];
+  if (flags.has(CK.CKM_RSA_PKCS_KEY_PAIR_GEN)) {
+    generates.push('RSA');
+  }
+  if (flags.has(CK.CKM_EC_KEY_PAIR_GEN)) {
+    generates.push('P-256', 'P-384', 'P-521', 'secp256k1');
+  }
+  if (flags.has(CK.CKM_EC_EDWARDS_KEY_PAIR_GEN)) {
+    generates.push('Ed25519');
+  }
+  log.debug('Leaving pkcs11Capabilities().');
+  return { signs: token.signingAlgorithms(), generates: generates };
+}
+
 /**
  * The one place this service signs, verifies, encrypts and decrypts.
  *
@@ -18561,6 +19019,13 @@ module.exports = {
   openPkcs11Token: openPkcs11Token,
   forgetPkcs11Libraries: forgetPkcs11Libraries,
   PKCS11_SIGNING_ALGS: Object.keys(pkcs11Engine.SIGNING),
+  setPkcs11KeyResolver: setPkcs11KeyResolver,
+  isHsmKey: isHsmKey,
+  hsmRefOf: hsmRefOf,
+  generatePkcs11KeyPair: generatePkcs11KeyPair,
+  generatePkcs11KeyPairAsync: generatePkcs11KeyPairAsync,
+  findPkcs11KeyPair: findPkcs11KeyPair,
+  pkcs11Capabilities: pkcs11Capabilities,
   // --- section 18: certificate field checks (#1360) ---
   CERTIFICATE_ROLES: CERTIFICATE_ROLES,
   KEY_USAGE_BITS: KEY_USAGE_BITS,

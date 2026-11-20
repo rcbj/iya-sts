@@ -4769,6 +4769,39 @@ const SETTINGS = [
                  'takes the value whole.' },
 
   // -------------------------------------------------------------------------
+  // A REALM'S CLASSICAL SIGNING KEYS IN THE HSM (#1955 P8, rcbj's D6:
+  // "both"). Off by default. `common/helpers.js` makes the realm's RS256,
+  // curve and XML keys in the token when its key set is made or rotated;
+  // `common/crypto.js` signs with C_Sign. Post-quantum keys stay in software.
+  // -------------------------------------------------------------------------
+  { key: 'keys.signingKeyStore', group: 'Key material',
+    label: 'Where a realm\'s signing keys are made',
+    env: 'STS_KEYS_SIGNING_KEY_STORE', type: 'enum',
+    enumValues: ['software', 'pkcs11'], dflt: 'software', runtime: true,
+    description: '`software`, the default, makes a realm\'s signing keys in ' +
+                 'this process and keeps them sealed in the store. `pkcs11` ' +
+                 'makes its classical ones — the RS256 key, the XML key and ' +
+                 'the P-256, P-384, P-521, secp256k1 and Ed25519 keys the ' +
+                 'module can make — in the HSM keys.signingKeyToken names, ' +
+                 'non-extractable, and signs there; a key the module cannot ' +
+                 'make, and every post-quantum key, stays in software. It ' +
+                 'applies to a key set made or rotated after the change, ' +
+                 'needs a keystore that persists (product mode), and every ' +
+                 'process and node needs the token. Settable per realm.' },
+
+  { key: 'keys.signingKeyToken', group: 'Key material',
+    label: 'The HSM token signing keys are made on',
+    env: 'STS_KEYS_SIGNING_KEY_TOKEN', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'the token is opened once, at startup, in every process',
+    description: 'The PKCS#11 URI of the token a realm with ' +
+                 'keys.signingKeyStore `pkcs11` makes its signing keys on: ' +
+                 'pkcs11:token=<token label>, with serial= or slot-id= where ' +
+                 'two tokens share a label. The module, the PIN and the ' +
+                 'sessions are the keys.pkcs11* settings. Empty opens no ' +
+                 'token.' },
+
+  // -------------------------------------------------------------------------
   // THE CELL KEY-ENCRYPTION KEY (#98, 2026-09-28). What a cell stores of its
   // own — the people homed here and everything it mints — is sealed under a
   // key that lives only in the cell's region and is never replicated, so a

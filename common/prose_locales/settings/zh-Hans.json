@@ -1876,8 +1876,8 @@
     "text": "密钥加密密钥提供方"
   },
   "keys.kekProvider|description": {
-    "en": "b48b052bc689c8e3",
-    "text": "包装每个数据加密密钥的密钥加密密钥所在之处。`file`、`aws`、`gcp`、`azure` 和 `vault` 从挂载的文件或密钥存储中将一个 32 字节的密钥读入本进程；`file` 是默认值，因为它不需要任何依赖。`vault-transit`（Vault 或 OpenBao Transit）、`aws-kms`、`gcp-kms`（Cloud KMS）和 `azure-keys`（Key Vault 或 Managed HSM 密钥；keys.kekVault 是其保管库）是密钥管理服务：密钥从不离开它们，keys.kekRef 指明它，由 KMS 包装和解包每个数据密钥——启动时每个数据密钥一次调用，每个值不再调用。除 `file` 外，每个提供方都会延迟加载其官方 SDK，而该 SDK 有意不作为本服务的依赖项；缺失时会报告需要安装的包名。"
+    "en": "bf4e717bed6b7e03",
+    "text": "包装每个数据加密密钥的密钥加密密钥所在之处。`file`、`aws`、`gcp`、`azure` 和 `vault` 从挂载的文件或密钥存储中将一个 32 字节的密钥读入本进程；`file` 是默认值，因为它不需要任何依赖。`vault-transit`（Vault 或 OpenBao Transit）、`aws-kms`、`gcp-kms`（Cloud KMS）和 `azure-keys`（Key Vault 或 Managed HSM 密钥；keys.kekVault 是其保管库）是密钥管理服务：密钥从不离开它们，keys.kekRef 指明它，由 KMS 包装和解包每个数据密钥——启动时每个数据密钥一次调用，每个值不再调用。`pkcs11` 与之相同，只是密钥位于硬件安全模块中（YubiHSM 2、SoftHSM2 或任何 PKCS#11 模块，见 keys.pkcs11Module），keys.kekRef 为 PKCS#11 URI。除 `file` 外，每个提供方都会延迟加载其官方 SDK，而该 SDK 有意不作为本服务的依赖项；缺失时会报告需要安装的包名。"
   },
   "keys.kekProvider|restartReason": {
     "en": "0956d2f97d1df86a",
@@ -1924,8 +1924,8 @@
     "text": "密钥加密密钥引用"
   },
   "keys.kekRef|description": {
-    "en": "a5a5b6e7f2c06fdc",
-    "text": "云提供方用来指称该秘密的名称：AWS Secrets Manager 名称或 ARN、GCP 资源名称（projects/<p>/secrets/<s>，未指定版本时附加 /versions/latest）、Azure Key Vault 秘密名称，或 HashiCorp Vault 读取路径。`file` 提供方不使用此项。"
+    "en": "b28c82e37153639d",
+    "text": "云提供方用来指称该秘密的名称：AWS Secrets Manager 名称或 ARN、GCP 资源名称（projects/<p>/secrets/<s>，未指定版本时附加 /versions/latest）、Azure Key Vault 秘密名称，或 HashiCorp Vault 读取路径。对于 `pkcs11`，为 RFC 7512 PKCS#11 URI，pkcs11:token=<token label>;object=<key label>。`file` 提供方不使用此项。"
   },
   "keys.kekRef|restartReason": {
     "en": "d51b3caaa6125e92",
@@ -2047,13 +2047,117 @@
     "en": "d51b3caaa6125e92",
     "text": "启动时读取一次"
   },
+  "keys.pkcs11Module|label": {
+    "en": "0fb904cb6844253b",
+    "text": "PKCS#11 模块"
+  },
+  "keys.pkcs11Module|description": {
+    "en": "dd4fdc39cd1aed44",
+    "text": "`pkcs11` 提供方加载的 PKCS#11 模块的路径：YubiHSM 2 为 /usr/lib/x86_64-linux-gnu/pkcs11/yubihsm_pkcs11.so（需运行 yubihsm-connector，并让 YUBIHSM_PKCS11_CONF 指向其配置），SoftHSM2 为 /usr/lib/softhsm/libsofthsm2.so。它需要 pkcs11js 包，该包有意不作为本服务的依赖项。"
+  },
+  "keys.pkcs11Module|restartReason": {
+    "en": "34a60604acae5870",
+    "text": "模块只在启动时加载一次"
+  },
+  "keys.pkcs11Mechanism|label": {
+    "en": "f9f19afe01ab43ad",
+    "text": "HSM 如何包装数据密钥"
+  },
+  "keys.pkcs11Mechanism|description": {
+    "en": "85ff0e656695f323",
+    "text": "在 HSM 中包装新数据密钥所用的机制。`auto` 在模块提供时采用 CKM_AES_GCM（SoftHSM2 和大多数网络 HSM），其次是 CKM_AES_KEY_WRAP_PAD，再次是 YubiHSM 2 自己的 CKM_YUBICO_AES_CCM_WRAP（其包装密钥对象）。更改之前包装的数据密钥仍可解包：存储的形式记录了其机制。"
+  },
+  "keys.pkcs11Mechanism|restartReason": {
+    "en": "091df5146f3d6f79",
+    "text": "密钥加密密钥只在启动时访问一次"
+  },
+  "keys.pkcs11GenerateKey|label": {
+    "en": "c9dac3afbed86d44",
+    "text": "首次使用时创建 HSM 密钥"
+  },
+  "keys.pkcs11GenerateKey|description": {
+    "en": "82a5d89dd1a4c872",
+    "text": "开启时，PKCS#11 URI 指明而令牌中没有的密钥加密密钥会在令牌中生成：AES-256、敏感且不可导出。只有前端进程会生成；对于集群，请改用 HSM 自带的工具创建密钥，因为两个同时启动的节点会创建两个。关闭（默认）时，缺少密钥会阻止启动。"
+  },
+  "keys.pkcs11GenerateKey|restartReason": {
+    "en": "091df5146f3d6f79",
+    "text": "密钥加密密钥只在启动时访问一次"
+  },
+  "keys.pkcs11Sessions|label": {
+    "en": "4a2da0042402bee1",
+    "text": "每个进程的 PKCS#11 会话数"
+  },
+  "keys.pkcs11Sessions|description": {
+    "en": "f5b20f8d3e577d1a",
+    "text": "每个进程和请求工作进程在一个令牌上最多保持打开的会话数，每个会话一次执行一个 HSM 操作。YubiHSM 2 总共有 16 个会话，由每个节点的每个进程共享：请让此值、进程数与节点数的乘积低于该数。"
+  },
+  "keys.pkcs11Sessions|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "令牌只在启动时打开一次"
+  },
+  "keys.pkcs11PinProvider|label": {
+    "en": "3e1d9c989bcacc3d",
+    "text": "PKCS#11 PIN 的读取来源"
+  },
+  "keys.pkcs11PinProvider|description": {
+    "en": "1c344b0b12c35ec4",
+    "text": "读取 HSM 令牌 PIN 的机密存储，绝不是某个设置的值：挂载的文件、AWS Secrets Manager、Google Cloud Secret Manager、Azure Key Vault 或 Vault/OpenBao，按 keys.kek* 的说明访问。对于 YubiHSM 2，PIN 是认证密钥的 id（四位十六进制数字）后接其密码（0001password）。按令牌标签列出 PIN 的 JSON 对象可用于 PIN 各不相同的令牌。`none` 不登录任何令牌。"
+  },
+  "keys.pkcs11PinProvider|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "PIN 在打开令牌时读取一次"
+  },
+  "keys.pkcs11PinRef|label": {
+    "en": "de50e9f1904c80fc",
+    "text": "PKCS#11 PIN 的位置"
+  },
+  "keys.pkcs11PinRef|description": {
+    "en": "dffce1d68f8495de",
+    "text": "PIN 在 keys.pkcs11PinProvider 所指提供方中的位置：路径、ARN、资源或 Vault 读取路径。它没有后备值。"
+  },
+  "keys.pkcs11PinRef|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "PIN 在打开令牌时读取一次"
+  },
+  "keys.pkcs11PinField|label": {
+    "en": "55008836b9ff61fe",
+    "text": "PKCS#11 PIN 所在的字段"
+  },
+  "keys.pkcs11PinField|description": {
+    "en": "f333042737800292",
+    "text": "JSON 机密中保存 PIN 的成员。为空则取整个值。"
+  },
+  "keys.pkcs11PinField|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "PIN 在打开令牌时读取一次"
+  },
+  "keys.signingKeyStore|label": {
+    "en": "e6e0b403d7b8a000",
+    "text": "领域签名密钥的创建位置"
+  },
+  "keys.signingKeyStore|description": {
+    "en": "5cc22ee909529ecc",
+    "text": "`software`（默认）在本进程中创建领域的签名密钥，并将其密封保存在存储中。`pkcs11` 在 keys.signingKeyToken 所指的 HSM 中创建其经典密钥——RS256 密钥、XML 密钥，以及模块能创建的 P-256、P-384、P-521、secp256k1 和 Ed25519 密钥——不可导出，并在其中签名；模块无法创建的密钥以及所有后量子密钥都保留在软件中。它适用于更改后创建或轮换的密钥集，需要可持久化的密钥库（产品模式），并且每个进程和节点都需要该令牌。可按领域设置。"
+  },
+  "keys.signingKeyToken|label": {
+    "en": "a6e7fb05dd49b8a9",
+    "text": "创建签名密钥的 HSM 令牌"
+  },
+  "keys.signingKeyToken|description": {
+    "en": "0bd2c707f6ff2e69",
+    "text": "keys.signingKeyStore 为 `pkcs11` 的领域在其上创建签名密钥的令牌的 PKCS#11 URI：pkcs11:token=<token label>，两个令牌共用同一标签时加上 serial= 或 slot-id=。模块、PIN 和会话由 keys.pkcs11* 设置指定。为空则不打开任何令牌。"
+  },
+  "keys.signingKeyToken|restartReason": {
+    "en": "1a04369397b30563",
+    "text": "令牌在启动时于每个进程中打开一次"
+  },
   "keys.cellKekProvider|label": {
     "en": "9103eeef061197fd",
     "text": "单元密钥加密密钥的读取来源"
   },
   "keys.cellKekProvider|description": {
-    "en": "f779ece8f10a07ec",
-    "text": "本单元密钥加密密钥的提供方，它密封该单元自己存储的内容（#98）。五种提供方，与 `keys.kekProvider` 相同。`none` 用服务密钥加密密钥密封单元层，这对单单元模式和测试是正确的；多单元部署在产品模式下使用它会拒绝启动，因为那样一个单元的行的副本在其他每个单元中都能打开。"
+    "en": "73b7f0bab09392e8",
+    "text": "本单元密钥加密密钥的提供方，它密封该单元自己存储的内容（#98）。五种提供方，与 `keys.kekProvider` 相同，另有 `pkcs11`，即该单元自己的 HSM。`none` 用服务密钥加密密钥密封单元层，这对单单元模式和测试是正确的；多单元部署在产品模式下使用它会拒绝启动，因为那样一个单元的行的副本在其他每个单元中都能打开。"
   },
   "keys.cellKekProvider|restartReason": {
     "en": "bfe49ff259fac42d",

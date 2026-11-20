@@ -93,5 +93,10 @@
   "hKey": "कुंजी",
   "hAlgorithm": "एल्गोरिथ्म",
   "hDataKeys": "डेटा एन्क्रिप्शन कुंजियाँ",
-  "hCounting": "गिनती"
+  "hCounting": "गिनती",
+  "signingTitle": "इस रीयल्म की हस्ताक्षर कुंजियाँ",
+  "signingStore": "वे कहाँ बनाई जाती हैं",
+  "signingInHsm": "HSM में",
+  "signingInSoftware": "सॉफ़्टवेयर में",
+  "signingRefused": "अस्वीकृत: यहाँ HSM का उपयोग नहीं हो सकता (लॉग कारण बताता है)"
 }

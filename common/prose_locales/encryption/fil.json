@@ -243,6 +243,10 @@
     "en": "612d0883b63631fd",
     "text": "AT HINDI DAPAT NAKATIRA ANG KEY SA DISK NA PINOPROTEKTAHAN NITO. Ang key file sa parehong hindi naka-encrypt na volume ng store ay nag-aabot ng dalawang kalahati sa sinumang kukuha ng volume; ayos iyon para sa development stack at iyan ang dahilan kung bakit default ang `file` provider, at hindi iyon isang deployment. Pumipili ng secret store ang keys.kekProvider sa halip."
   },
+  "encryption.notes.signingKeys": {
+    "en": "570cb0f374a99427",
+    "text": "KUNG SAAN PUMIPIRMA ANG REALM NA ITO (#1955). Kapag keys.signingKeyStore pkcs11, ang mga classical signing key na nakalistang nasa HSM ay ginawa sa token na pinangangalanan ng keys.signingKeyToken at hindi kailanman umaalis doon: bawat signature ay isang PKCS#11 call. Laging ginagawa sa software ang mga post-quantum key, dahil walang PKCS#11 module dito na nag-aalok ng ML-DSA o SLH-DSA, at ganoon din ang anumang curve na hindi ginagawa ng module. Nalalapat ang setting sa mga key set na ginawa o ni-rotate pagkatapos itong magbago."
+  },
   "encryption.notes.accountingNote": {
     "en": "4e3af979f8ed8bd7",
     "text": "Binibilang sa IISANG funnel na dinadaanan ng dalawang operation — ang `encryptWithDek()` at `decryptWithDek()` ng `crypto.js`, kasama ang sariling mga wrap at unwrap ng mga data encryption key sa ilalim ng `data-keys` — sa halip na sa mga call site, dahil ang kabuuang binuo mula sa mga call site ay mali sa unang beses na may magdagdag ng isa pa at mali nang TAHIMIK. Ang breakdown sa ibaba ay ayon sa LABEL na ipinapasa ng bawat call site; ang caller na walang ipinapasa ay binibilang pa rin, sa ilalim ng `(unlabelled)`. PANG-BUONG PROCESS ANG MGA ITO AT HINDI BAWAT REALM — pag-aari ng process ang key-encryption key, kaya ang paghahati ng bilang ayon sa realm ay pagbibilang sa realm na nagkataong kinaroroonan ng request — at nasa memory ang mga ito, kaya restart ang paraan para makakuha ng walang laman."

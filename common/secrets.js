@@ -1926,10 +1926,12 @@ const PKCS11_PATH_ATTRS = ['token', 'object', 'id', 'serial', 'slot-id',
  * Reads an RFC 7512 PKCS#11 URI naming a token and an object.
  *
  * @param text - the URI
+ * @param tokenOnly - true where the URI names a token and no object (the
+ *   signing keys' token, keys.signingKeyToken)
  * @returns `{ token, object, id (Buffer|null), serial, slotId, modulePath }`
  * @throws STS-KEYS-0205 when it is not one, or names a PIN
  */
-function parsePkcs11Uri(text) {
+function parsePkcs11Uri(text, tokenOnly) {
   log.debug('Entering parsePkcs11Uri().');
   const raw = String(text || '').trim();
   if (raw.toLowerCase().indexOf('pkcs11:') !== 0) {
@@ -1997,7 +1999,7 @@ function parsePkcs11Uri(text) {
       out.modulePath = value;
     }
   });
-  if (!out.object && !out.id) {
+  if (!tokenOnly && !out.object && !out.id) {
     throw errorCodes.mark(new Error('the PKCS#11 URI "' + raw.slice(0, 80) +
       '" names no object: give object=<key label> or id=<%xx bytes>.'),
       'STS-KEYS-0205');
@@ -2064,6 +2066,86 @@ function pkcs11Binding() {
   }
 }
 
+// Which open token a URI names: its module, label, serial and slot.
+function tokenKeyOf(uri) {
+  log.debug('Entering tokenKeyOf().');
+  const modulePath = String(uri.modulePath ||
+                            config.value('keys.pkcs11Module') || '').trim();
+  log.debug('Leaving tokenKeyOf().');
+  return [modulePath, uri.token, uri.serial, uri.slotId].join('|');
+}
+
+// ---------------------------------------------------------------------------
+// THE SIGNING KEYS' TOKEN (#1955 P8, D6: "both"). `keys.signingKeyToken` is
+// the PKCS#11 URI of the token a realm with `keys.signingKeyStore=pkcs11`
+// makes its classical signing keys on. It is opened in EVERY process and
+// request worker at `keystore.start()`, before a key set is read, because a
+// key set is read synchronously (a property read) and a key's reference is
+// resolved through a token already held — `crypto.js`'s resolver, filled
+// below. Only where the keystore persists: a key that is not written down
+// would be a new object in the token at every start.
+// ---------------------------------------------------------------------------
+/**
+ * Opens the signing keys' token in this thread, where keys.signingKeyToken
+ * names one.
+ *
+ * @returns a promise of the token, or null where none is configured
+ */
+async function openSigningToken() {
+  log.debug('Entering openSigningToken().');
+  const text = String(config.value('keys.signingKeyToken') || '').trim();
+  if (!text) {
+    log.debug('Leaving openSigningToken(). None configured.');
+    return null;
+  }
+  const token = await openHsmToken(parsePkcs11Uri(text, true));
+  log.info('secrets: the signing keys\' PKCS#11 token is open: ' +
+           token.describe() + '.');
+  log.debug('Leaving openSigningToken().');
+  return token;
+}
+
+/**
+ * The signing keys' token this thread holds, and its URI.
+ *
+ * @returns `{ token, uri }`, or null where it is not configured or not open
+ */
+function heldSigningToken() {
+  log.debug('Entering heldSigningToken().');
+  const text = String(config.value('keys.signingKeyToken') || '').trim();
+  if (!text) {
+    log.debug('Leaving heldSigningToken(). None configured.');
+    return null;
+  }
+  let uri;
+  try {
+    uri = parsePkcs11Uri(text, true);
+  } catch (e) {
+    log.debug('Caught in heldSigningToken(): ' + ((e && e.message) || e));
+    log.debug('Leaving heldSigningToken(). Malformed.');
+    return null;
+  }
+  const token = pkcs11Tokens.get(tokenKeyOf(uri)) || null;
+  log.debug('Leaving heldSigningToken(). ' + (token ? 'Held.' : 'Not open.'));
+  return token ? { token: token, uri: text.split('?')[0] } : null;
+}
+
+// THE RESOLVER `crypto.js` ASKS for a signing key's reference: the token the
+// reference names, held by this thread, and the key on it by CKA_ID.
+crypto.setPkcs11KeyResolver(function (ref) {
+  log.debug('Entering the PKCS#11 key resolver.');
+  const uri = parsePkcs11Uri(String(ref.token || ''), true);
+  const token = pkcs11Tokens.get(tokenKeyOf(uri));
+  if (!token) {
+    throw errorCodes.mark(new Error('the signing key ' + String(ref.id) +
+      ' is on the PKCS#11 token "' + String(ref.token).split('?')[0] +
+      '", which this process has not opened. keys.signingKeyToken must name ' +
+      'it (and the keystore persist) in every process.'), 'STS-KEYS-0206');
+  }
+  log.debug('Leaving the PKCS#11 key resolver.');
+  return crypto.findPkcs11KeyPair(token, ref);
+});
+
 /**
  * Opens (or finds open) the token a PKCS#11 URI names, logged in with its
  * PIN, for this thread.
@@ -2081,7 +2163,7 @@ async function openHsmToken(uri) {
       'libsofthsm2.so), or name it in the URI\'s module-path.'),
       'STS-KEYS-0202');
   }
-  const key = [modulePath, uri.token, uri.serial, uri.slotId].join('|');
+  const key = tokenKeyOf(uri);
   const held = pkcs11Tokens.get(key);
   if (held) {
     log.debug('Leaving openHsmToken(). Held.');
@@ -3112,6 +3194,9 @@ const PROBE_WHAT = Object.freeze({
   'azure-keys/vault-key':
     'What the vault says about the key that wraps the data keys: its type, ' +
     'size, operations, version and rotation.',
+  'pkcs11/hsm-key':
+    'What the HSM token says about the key that wraps the data keys: ' +
+    'whether it is there, its type, and whether it may ever leave the HSM.',
   'gcp/secret':
     'The secret\'s own metadata: replication, labels, rotation and expiry.',
   'gcp/version':
@@ -3864,6 +3949,66 @@ PROBES['aws-kms'] = {
                  usage: m.KeyUsage, spec: m.KeySpec, origin: m.Origin,
                  manager: m.KeyManager, multiRegion: !!m.MultiRegion,
                  created: m.CreationDate, rotation: rotation };
+      })
+    ];
+  }
+};
+
+// ---------------------------------------------------------------------------
+// pkcs11 (#1955 P8) — asked of a token THIS PROCESS ALREADY HOLDS, never by
+// opening one: opening needs the PIN, and no probe here reads a secret's
+// value. A key-encryption key read at start left its token open, so the row
+// is there whenever the key is in use.
+// ---------------------------------------------------------------------------
+PROBES.pkcs11 = {
+  scope: function (spec) {
+    log.debug("Entering scope().");
+    log.debug("Leaving scope().");
+    return locationOf(spec, 'ref').where;
+  },
+  store: function () {
+    log.debug("Entering store().");
+    log.debug("Leaving store().");
+    return [];
+  },
+  secret: function (spec) {
+    log.debug("Entering secret().");
+    const where = locationOf(spec, 'ref').where;
+    log.debug("Leaving secret().");
+    return [
+      runProbe('hsm-key', PROBE_WHAT['pkcs11/hsm-key'], async function () {
+        if (!where) {
+          throw new Error('no PKCS#11 URI is configured');
+        }
+        const uri = parsePkcs11Uri(where);
+        const token = pkcs11Tokens.get(tokenKeyOf(uri));
+        if (!token) {
+          return { open: false, token: uri.token, object: uri.object };
+        }
+        // A probe that ANSWERS: an absent key is a finding, not a failure.
+        /** @type {Array<{ type: number, value: any }>} */
+        const template = [{ type: 0x0, value: 4 }];
+        if (uri.object) {
+          template.push({ type: 0x3, value: uri.object });
+        }
+        if (uri.id) {
+          template.push({ type: 0x102, value: uri.id });
+        }
+        const found = token.find(template);
+        const facts = found.length === 1
+          ? token.attributes(found[0], [0x100, 0x161, 0x162, 0x103])
+          : new Map();
+        const flag = function (t) {
+          return facts.has(t) ? facts.get(t)[0] !== 0 : null;
+        };
+        return { open: true, token: token.describe(),
+                 module: token.modulePath, matches: found.length,
+                 keyType: facts.has(0x100) ? facts.get(0x100)
+                   .readUInt32LE(0) : null,
+                 valueLen: facts.has(0x161) ? facts.get(0x161)
+                   .readUInt32LE(0) : null,
+                 extractable: flag(0x162), sensitive: flag(0x103),
+                 sessionsOpen: token.open, reconnects: token.reconnects };
       })
     ];
   }
@@ -4918,6 +5063,8 @@ module.exports = {
   parsePkcs11Uri: parsePkcs11Uri,
   openHsmToken: openHsmToken,
   forgetHsmTokens: forgetHsmTokens,
+  openSigningToken: openSigningToken,
+  heldSigningToken: heldSigningToken,
   setSdkLoader: setSdkLoader,
   // The second secret (2026-09-12). The descriptors are exported for
   // `tests/database_password.js`, which asserts the fallback and the field

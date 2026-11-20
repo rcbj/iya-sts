@@ -35,6 +35,10 @@
     "en": "20bde19870bf41f3",
     "text": "Azure Key Vault 或 Managed HSM 密钥（密钥从不离开它）"
   },
+  "secretstore.providers.pkcs11.label": {
+    "en": "b69f31334968d051",
+    "text": "PKCS#11 硬件安全模块（密钥从不离开它）"
+  },
   "secretstore.source.reportWhat": {
     "en": "22bc75be21c4a09a",
     "text": "本服务从何处读取其初始机密——用于封存其所有封存内容的密钥加密密钥，以及数据库密码——它是否确实读取到了，以及另一端的存储正在做什么。"
@@ -282,6 +286,10 @@
   "secretstore.probe.azure-keys/vault-key": {
     "en": "4c46af2b365b08fe",
     "text": "vault 对包装数据密钥的那个密钥的说明：其类型、大小、操作、版本和轮换。"
+  },
+  "secretstore.probe.pkcs11/hsm-key": {
+    "en": "31b1bb76fbe8c7ce",
+    "text": "HSM 令牌对包装数据密钥的那把密钥的说明：它是否存在、它的类型，以及它是否可能离开 HSM。"
   },
   "secretstore.probe.gcp/secret": {
     "en": "f7750717cdd5bfbc",
