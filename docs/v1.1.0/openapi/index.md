@@ -13,9 +13,9 @@ Every answer is checked against the model shown here before it is sent, and no a
 
 | API | Base path | Operations |
 |---|---|---|
-| [Management API](admin-api.html) | `/admin-api` | 717 |
+| [Management API](admin-api.html) | `/admin-api` | 719 |
 | [Admin console operations](admin-console-api.html) | `/admin-api/console` | 20 |
-| [Account API](account-api.html) | `/account-api` | 80 |
+| [Account API](account-api.html) | `/account-api` | 82 |
 | [Sign-in API](authn-api.html) | `/authn-api` | 46 |
 | [Report API](report-api.html) | `/report-api` | 23 |
 {% endraw %}
