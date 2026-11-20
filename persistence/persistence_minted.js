@@ -3052,27 +3052,55 @@ function committedGeneration() {
 //
 // Already committed: nothing to wait for. Otherwise the earliest in-flight
 // save whose take covered the target — the one that holds this caller's
-// keys, which since #877 may be a second save running beside an older one
-// of other keys. Waiting for that older save is the queue the sign-in was
-// paying. A save that did not empty the journal is not covering. Otherwise
-// flush(), which takes what is free. Resolves flush()'s answer; `error` set
-// means the write did not land.
+// LATER keys, which since #877 may be a second save running beside an older
+// one of other keys. A save that did not empty the journal is not covering.
+// Otherwise flush(), which takes what is free. Resolves flush()'s answer, or
+// the first failure among what it waited for; `error` set means a write did
+// not land.
+//
+// **AND THE OLDER SAVES THAT TOOK THIS CALLER'S EARLIER KEYS (#1923,
+// 2026-11-20).** A covering take emptied the journal at ITS generation, so
+// every key journalled at or below the target is in that save, already
+// committed, or in a save that took BEFORE it and is still out. One request
+// journals across several turns — the token endpoint notes the access
+// token's `oauth2.grantIssued` row, awaits the refresh token and the ID
+// Token, and only then writes the grant — and another request on the same
+// worker answering in between calls flush(), which takes the first rows. The
+// grant then went out in a second, covering save; that save committed first;
+// the answer and its ticket were released (`commit_announcer.ts`'s
+// `announceAnswered()` names a ticket on the premise that everything the
+// answer waited for is in the store); and another worker, made to catch up,
+// held the grant and none of its token rows. Run #532's mariadb mode, where a
+// minted flush is a locking transaction that can be retried and so outlasts
+// a later one: `sts_grant_management` deleted a grant and revoked "0
+// token(s) with it". So the saves still out whose take is above `since` and
+// below the chosen one are waited for as well. `since` is the generation when
+// the caller's work arrived — a save that took at or below it holds nothing
+// the caller wrote, and is still not waited for, which keeps #877's gain;
+// without it every older save still out is waited for, which is correct and
+// only slower.
 // ---------------------------------------------------------------------------
 /**
  * Makes sure the writes up to a generation are in the store.
  *
  * Answers at once when already committed, returns the earliest covering save
- * when one is in flight or waiting to be sent, and otherwise calls `flush()`.
+ * when one is in flight or waiting to be sent, and otherwise calls `flush()` —
+ * in each case together with every older save still out that took after
+ * `since`, because those hold the caller's earlier writes.
  * @param target - the generation to cover
- * @returns a promise of `flush()`'s answer; `error` set means the write did
- * not land
+ * @param since - the generation when the caller's work arrived; a save taken
+ *   at or below it is not waited for. Optional: 0 waits for every older save
+ *   still out
+ * @returns a promise of `flush()`'s answer, or the first failure among the
+ *   saves waited for; `error` set means the write did not land
  */
-function flushThrough(target) {
+function flushThrough(target, since) {
   log.debug("Entering flushThrough().");
   if (committedAt >= target) {
     log.debug("Leaving flushThrough(). Already committed.");
     return Promise.resolve({ written: false });
   }
+  const floor = Number(since) > 0 ? Number(since) : 0;
   let best = null;
   flights.forEach(function (flight) {
     if (flight.life !== flightLife || !flight.covers) {
@@ -3083,17 +3111,65 @@ function flushThrough(target) {
       best = flight;
     }
   });
+  let main = null;
+  let limit = Infinity;
+  let how = 'Flushing.';
   if (best) {
-    log.debug("Leaving flushThrough(). A flush in flight covers it.");
-    return best.promise;
+    main = best.promise;
+    limit = best.takenAt;
+    how = 'A flush in flight covers it.';
+  } else if (openBatch && openBatch.life === flightLife && !openBatch.sent &&
+             openBatch.covers && openBatch.takenAt >= target) {
+    main = openBatch.promise;
+    limit = openBatch.takenAt;
+    how = 'The unsent batch covers it.';
   }
-  if (openBatch && openBatch.life === flightLife && !openBatch.sent &&
-      openBatch.covers && openBatch.takenAt >= target) {
-    log.debug("Leaving flushThrough(). The unsent batch covers it.");
-    return openBatch.promise;
+  // Read BEFORE flush() below, which may add the save it starts: that one
+  // is `main`, not an older one.
+  const older = olderSavesBetween(floor, limit, main);
+  if (!main) {
+    main = flush();
   }
-  log.debug("Leaving flushThrough(). Flushing.");
-  return flush();
+  if (!older.length) {
+    log.debug("Leaving flushThrough(). " + how);
+    return main;
+  }
+  log.debug("Leaving flushThrough(). " + how + " And " + older.length +
+            " older save(s) still out that took after " + floor + ".");
+  return Promise.all([main].concat(older)).then(function (answers) {
+    return firstFailure(answers);
+  });
+}
+
+/**
+ * The promises of the saves of this life still out — the sent ones and an
+ * unsent batch — whose take is above `floor` and below `limit`, other than
+ * `except`: those that may hold a caller's earlier writes (#1923). A
+ * non-covering save is placed by the generation it read at, as
+ * `advanceCommitted()` places it.
+ * @param {number} floor - the generation a save must have taken above
+ * @param {number} limit - the generation a save must have taken below
+ * @param {any} except - the promise already waited for, or null
+ * @returns {Array<Promise<any>>} the promises
+ */
+function olderSavesBetween(floor, limit, except) {
+  log.debug("Entering olderSavesBetween().");
+  const out = [];
+  const consider = function (save) {
+    if (!save || save.life !== flightLife || save.promise === except) {
+      return;
+    }
+    const mark = save.takenAt > 0 ? save.takenAt : save.readAt;
+    if (mark > floor && mark < limit) {
+      out.push(save.promise);
+    }
+  };
+  flights.forEach(consider);
+  if (openBatch && !openBatch.sent) {
+    consider(openBatch);
+  }
+  log.debug("Leaving olderSavesBetween(). " + out.length);
+  return out;
 }
 
 /**

@@ -6325,10 +6325,14 @@ module.exports = {
   /**
    * Waits until every write up to a position is committed to the store.
    * @param target - a `writeGeneration()` answer; defaults to the current one
+   * @param since - optional: the `writeGeneration()` answer when the work
+   *   arrived. A minted save taken at or below it holds nothing that work
+   *   wrote and is not waited for; without it every older minted save still
+   *   out is (#1923, `persistence_minted.flushThrough()`)
    * @returns a promise of an array of the flush answers, any of which may carry
    * `error`
    */
-  commitThrough: function (target) {
+  commitThrough: function (target, since) {
     log.debug("Entering commitThrough().");
     const wanted = target || { directory: dirGeneration,
                                minted: minted.generation() };
@@ -6347,7 +6351,8 @@ module.exports = {
       timed('directory', directoryThrough(Number(wanted.directory) || 0)),
       // A minted flush started HERE is not inside flush(), whose tail arms
       // the retry, so its failure arms it here (#351).
-      timed('minted', minted.flushThrough(Number(wanted.minted) || 0))
+      timed('minted', minted.flushThrough(Number(wanted.minted) || 0,
+        since ? Number(since.minted) || 0 : 0))
         .then(function (answer) {
           if (answer && answer.error) {
             retryAfterFailure('a minted write a response waited for failed');
