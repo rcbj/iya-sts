@@ -24,9 +24,9 @@ administrator gets in.
 * **[What a protocol debugger is](what-is-a-protocol-debugger.md)**: what the
   tool is for, and what it deliberately is not.
 
-The user guides below are copied from the debugger's release **0.9.3**, which
+The user guides below are copied from the debugger's release **0.9.5**, which
 is the version this service's image embeds
-(`ghcr.io/rcbj/id-proto-debugger-embedded:0.9.3`):
+(`ghcr.io/rcbj/id-proto-debugger-embedded:0.9.5`):
 
 | Guide | What it covers |
 |---|---|
@@ -35,16 +35,24 @@ is the version this service's image embeds
 | [OpenID Connect authentication flows](oauth2-oidc/oidc-flows.md) | The Authorization Code flow, both Implicit flows, the three Hybrid flows, DPoP |
 | [Dynamic client registration](oauth2-oidc/dynamic-client-registration.md) | The registration pane on step 1 |
 | [Token detail, introspection, UserInfo and JWKS](oauth2-oidc/related-tools.md) | The pages that read a token you already hold, and the logout status page |
-| [Using the SAML workflow](saml.md) | The SAML 2.0 request and response pages |
+| [Using the SAML workflow](saml/index.md) | The SAML 2.0 request and response pages: where to start and what is kept |
+| [SAML in the debugger](saml/protocol.md) | What is sent and what comes back, Single Logout, SAML 1.1 and encrypted assertions |
+| [SAML workflow — configuration reference](saml/reference.md) | Every field on the request and response pages |
+| [Pointing the SAML workflow at iya-sts](saml/setup-iya-sts.md) | The metadata URL, and what product and development mode need |
+| [SAML tutorials](saml/tutorials.md) | Redirect, POST and Artifact sign-ins, Single Logout and SAML 1.1, with screenshots |
 | [SAML Assertion Tool](saml-assertion.md) | Build, sign and encrypt an assertion in the browser |
 | [SAML decoders and certificate details](saml-decoders.md) | Read an AuthnRequest, a Response or a certificate you already have |
-| [Using the WS-Trust workflow](wstrust.md) | A WS-Trust RST and the response |
+| [Using the WS-Trust workflow](wstrust/index.md) | A WS-Trust RST and the response: where to start |
+| [WS-Trust in the debugger](wstrust/protocol.md) | The request, who is asking, signing and encryption, delegation and WS-Addressing |
+| [WS-Trust workflow — configuration reference](wstrust/reference.md) | Every field on the request and response pages |
+| [Pointing the WS-Trust workflow at iya-sts](wstrust/setup-iya-sts.md) | The account, `AppliesTo`, signing, encryption, TLS and delegation |
+| [WS-Trust tutorials](wstrust/tutorials.md) | Issue, the token lifecycle, a signed request, an encrypted token and delegation, with screenshots |
 | [JWT Tools](jwt-tools.md) | Build, sign, encrypt, verify and decrypt a JWT |
 | [Digital Signature](digital-signature.md) | Generate keys, then sign or MAC a value and check it |
 
 The debugger has workflows these guides do not cover yet, among them
 Kerberos and SPNEGO, LDAP, SCIM, Shared Signals with CAEP and RISC, SPIFFE,
 PKI, WebAuthn, smart cards, GNAP and XACML. Their notes are in the debugger's
-own [`docs/`](https://github.com/rcbj/id-proto-debugger/tree/0.9.3/docs)
+own [`docs/`](https://github.com/rcbj/id-proto-debugger/tree/0.9.5/docs/v0.9.5)
 directory. They are written for somebody changing the debugger, but each page
 is also documented on screen.

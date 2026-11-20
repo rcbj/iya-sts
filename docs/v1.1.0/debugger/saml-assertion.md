@@ -1,11 +1,11 @@
 ---
 title: "SAML Assertion Tool"
-nav_order: 21
+nav_order: 25
 ---
 
 # SAML Assertion Tool
 
-> Copied from the [id-proto-debugger](https://github.com/rcbj/id-proto-debugger) release 0.9.3 user guide, which is the debugger this service embeds. Its addresses are the embedded ones: the debugger is `https://localhost:8444/` and its api `https://localhost:8444/api`. [Accessing the debugger](access.md) says how to reach, enable and disable it.
+> Copied from the [id-proto-debugger](https://github.com/rcbj/id-proto-debugger) release 0.9.5 user guide, which is the debugger this service embeds. Its addresses are the embedded ones: the debugger is `https://localhost:8444/` and its api `https://localhost:8444/api`. [Accessing the debugger](access.md) says how to reach, enable and disable it.
 
 `/saml_tools.html` builds a SAML assertion, signs it, and encrypts it, in
 the browser. It does not send anything. Open it from the **Tools** pane on
@@ -28,6 +28,27 @@ those jobs were not re-run for this pass.
 
 * TOC
 {:toc}
+
+## Overview
+
+**SAML Assertion Tool** (`/saml_tools.html`) builds a SAML 1.0, 1.1, or 2.0
+assertion, signs it, and encrypts it, in the browser. It does not send
+anything. Open it from the **Tools** pane on the SAML pages. **Assertion
+Version** defaults to SAML 2.0. **Issuer** defaults to this debugger's
+origin plus `/issuer`.
+
+The signature menu starts at RSA-SHA256. On load it gains the same draft
+post-quantum group as the SAML request page. Where `<ds:Signature>` sits
+follows the version: after `<saml:Issuer>` in 2.0, and the last child of
+the assertion in 1.1 and 1.0.
+
+Every stored field on this page is written to `localStorage`, including
+the private keys. There is no checkbox to turn that off. Do not paste a
+production key. Timestamps are the exception: they are regenerated on each
+visit.
+
+The fields and the encryption defaults are in
+[SAML Assertion Tool](saml-assertion.md).
 
 ## 1. Compose Assertion
 
@@ -85,7 +106,7 @@ An enveloped signature over the assertion.
 
 | Field | Default | What it does |
 |---|---|---|
-| **Signature Algorithm** | RSA-SHA256 | Also RSA-SHA1, RSA-SHA384, RSA-SHA512. After load, the post-quantum group from [Post-quantum XML Signature](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/xmldsig-pqc.md) is appended. |
+| **Signature Algorithm** | RSA-SHA256 | Also RSA-SHA1, RSA-SHA384, RSA-SHA512. After load, the post-quantum group from [Post-quantum XML Signature](https://github.com/rcbj/id-proto-debugger/blob/0.9.5/docs/v0.9.5/xmldsig-pqc.md) is appended. |
 | **Canonicalization** | Exclusive XML Canonicalization 1.0 | Or inclusive C14N 1.0. |
 | **Key Size** | 2048 | Also 3072 and 4096. |
 | **Generate Keys** | | RSA pair and a self-signed certificate, embedded in `KeyInfo`. |
@@ -131,4 +152,4 @@ throwaway recipient pair.
 | **EncryptedAssertion to Decrypt** / **Decrypt** | | Round-trip with the recipient private key. |
 
 The page builds an assertion, not a `<samlp:Response>`. A full sign-in is
-the [SAML workflow](saml.md).
+the [SAML workflow](saml/index.md).
