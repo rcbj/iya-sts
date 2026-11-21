@@ -122,8 +122,17 @@
     "html": "<div>{{content}}</div><hr><p><small>{{service}} ({{realm}}). Natanggap mo ito dahil ito ay {{reason}}.</small></p>"
   },
   "categories": {
-    "security": { "reason": "isang security notice tungkol sa iyong account, na hindi puwedeng i-off" },
-    "account": { "reason": "isang bagay na hiniling mo o ng isang administrator" },
-    "notification": { "reason": "isang notification, na puwede mong i-off sa iyong portal" }
+    "security": {
+      "reason": "isang security notice tungkol sa iyong account, na hindi puwedeng i-off",
+      "encryptedSubject": "Isang abiso sa seguridad mula sa {{service}}"
+    },
+    "account": {
+      "reason": "isang bagay na hiniling mo o ng isang administrator",
+      "encryptedSubject": "Isang mensahe mula sa {{service}}"
+    },
+    "notification": {
+      "reason": "isang notification, na puwede mong i-off sa iyong portal",
+      "encryptedSubject": "Isang notipikasyon mula sa {{service}}"
+    }
   }
 }

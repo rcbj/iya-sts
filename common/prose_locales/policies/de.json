@@ -564,8 +564,8 @@
     "text": "Wofür das Profil gedacht ist, für die nächste Person."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicyMechanism.what": {
-    "en": "66db848b0bb1c58f",
-    "text": "Bei einer BENANNTEN Authentifizierungsrichtlinie (#1148, #1237): ein Mechanismus des ersten Faktors, den eine Anmeldung zulässt, auf die sie zutrifft — dort, wo die Anwendung (appAuthnPolicy) oder eine der Gruppen der Person (stsAuthnPolicy) sie benennt und ihr Vorrang der niedrigste benannte ist — password, password-mfa, webauthn, spnego, wallet oder federation, je ein Wert. Fehlt jeder Wert, ist jeder erlaubt, den der Bereich erlaubt."
+    "en": "783db3d7da8c29c5",
+    "text": "Bei einer BENANNTEN Authentifizierungsrichtlinie (#1148, #1237): ein Mechanismus des ersten Faktors, den eine Anmeldung zulässt, auf die sie zutrifft — dort, wo die Anwendung (appAuthnPolicy) oder eine der Gruppen der Person (stsAuthnPolicy) sie benennt und ihr Vorrang der niedrigste benannte ist — password, password-mfa, webauthn, attested-hardware (ein Passkey oder Zertifikat auf einem durch Attestierung nachgewiesenen Hardware-Token, #1955), spnego, wallet oder federation, je ein Wert. Fehlt jeder Wert, ist jeder erlaubt, den der Bereich erlaubt."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicySecondFactor.what": {
     "en": "7c8e4d8b4cce7c08",

@@ -306,7 +306,12 @@ protected is how to avoid losing that.
   because that is the identity the certificate asserts.
 * **`amr` is `["swk"]`** — RFC 8176's software key — and `acr` is `"1"`. One
   factor, and a factor whose private key sits in a file: claiming `hwk` would
-  say a hardware key was used and this service cannot know that.
+  say a hardware key was used and this service cannot know that. **Unless
+  it can (#1955 P1)**: where an active hardware token's attestation evidence
+  covers the certificate, `certificateAmrOf()` answers `["hwk"]`, and
+  `["hwk","sc"]` where the evidence says the key is on a smart card. The
+  sign-in screen's certificate door takes the same answer from
+  `screenCertificateHolder()`. Never inferred: `common/hardware_tokens.ts`.
 * **One session per browser at most.** `startCertificateSessionIn()` reads an
   existing session rather than replacing it, so a second call to
   `/tls/sign-in` from a browser that already holds one starts nothing — which
@@ -2220,6 +2225,14 @@ module's:
   here. The connection page (`/admin/tls-connection`) still calls
   `issuedIdentityOf()` WITHOUT `stored`: it describes what arrived, and
   reports an outside certificate as `issuedHere: false` as before.
+* **AN OUTSIDE PIV OR CAC CARD (#1955 P2, D8)** reaches `storedIdentityOf()`
+  as any outside certificate does, and is answered by its card UUID when no
+  entry stores it (`common/CLAUDE.md` 3ag argues the mapping): this module
+  changes nothing for it, and its refusals are the same `NOT_STORED` /
+  `STORED_TWICE` with the same codes. **A `piv-card-auth` certificate is
+  refused at both sign-in doors** (`cardAuthRefusalOf()`, `STS-PIV-0013`) by
+  `startCertificateSessionIn()` and `screenCertificateHolder()` unless
+  `piv.cardAuthSignIn`: its key needs no PIN.
 * **WHAT HAS NO IN-PROCESS TEST**: a stored outside certificate over a real
   HTTP request to `/tls/sign-in` is held only by the protocol jobs that
   present one (`sts_tls_connection`, `sts_main_port_pooling`,

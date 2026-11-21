@@ -4716,11 +4716,27 @@ function resolvedRoleClaims(context) {
   const username = String(ctx.username || ctx.subject || '');
   try {
     const forApplications = claimApplicationsOf(ctx);
+    // The session (#1072): its chosen dynamic roles, for the client the
+    // token is issued to as well as the applications it is for.
+    let client = null;
+    try {
+      client = ctx.client_id ? applications.forClientId(String(ctx.client_id))
+                             : null;
+    } catch (e) {
+      log.debug("Caught in resolvedRoleClaims(): " + ((e && e.message) || e));
+      client = null;
+    }
+    const chosenFor = forApplications.concat(
+      client && client.identifier &&
+      forApplications.indexOf(String(client.identifier)) < 0
+        ? [String(client.identifier)] : []);
     log.debug("Leaving resolvedRoleClaims().");
     return roles.claimFor(
       username
         ? { kind: 'user', name: username, authenticated: true,
-            applications: forApplications }
+            applications: forApplications,
+            sessionId: String(ctx.session_id || ctx.sessionId || ''),
+            selectionApplications: chosenFor }
         : { kind: 'application', name: String(ctx.client_id || ''),
             authenticated: true, applications: forApplications }) || {};
   } catch (e) {

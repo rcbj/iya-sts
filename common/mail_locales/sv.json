@@ -122,8 +122,17 @@
     "html": "<div>{{content}}</div><hr><p><small>{{service}} ({{realm}}). Du fick detta eftersom det är {{reason}}.</small></p>"
   },
   "categories": {
-    "security": { "reason": "ett säkerhetsmeddelande om ditt konto, som inte kan stängas av" },
-    "account": { "reason": "något som du eller en administratör bad om" },
-    "notification": { "reason": "en avisering, som du kan stänga av i din portal" }
+    "security": {
+      "reason": "ett säkerhetsmeddelande om ditt konto, som inte kan stängas av",
+      "encryptedSubject": "Ett säkerhetsmeddelande från {{service}}"
+    },
+    "account": {
+      "reason": "något som du eller en administratör bad om",
+      "encryptedSubject": "Ett meddelande från {{service}}"
+    },
+    "notification": {
+      "reason": "en avisering, som du kan stänga av i din portal",
+      "encryptedSubject": "En avisering från {{service}}"
+    }
   }
 }

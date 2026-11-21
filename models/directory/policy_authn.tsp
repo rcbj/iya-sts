@@ -193,7 +193,7 @@ model PolicyAuthn {
   description?: (string)[];
   @attr(#{
     kind: "multi",
-    what: "On a NAMED authentication policy (#1148, #1237): a first-factor mechanism a sign-in it applies to allows — where the application (appAuthnPolicy) or one of the person's groups (stsAuthnPolicy) names it and its precedence is the lowest named — password, password-mfa, webauthn, spnego, wallet or federation, one value each. None allows every one the realm allows."
+    what: "On a NAMED authentication policy (#1148, #1237): a first-factor mechanism a sign-in it applies to allows — where the application (appAuthnPolicy) or one of the person's groups (stsAuthnPolicy) names it and its precedence is the lowest named — password, password-mfa, webauthn, attested-hardware (a passkey or certificate on a hardware token proven by attestation, #1955), spnego, wallet or federation, one value each. None allows every one the realm allows."
   })
   stsAuthnPolicyMechanism?: (string)[];
   @attr(#{

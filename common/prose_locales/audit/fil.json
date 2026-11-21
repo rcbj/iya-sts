@@ -487,6 +487,50 @@
     "en": "0be46b8b29aaf446",
     "text": "Hindi na pinagkakatiwalaan ang attestation ng isang security key: binabawi ng Android attestation status list ng Google ang chain nito"
   },
+  "audit.actions.hardware-token.create.label": {
+    "en": "23939dae5f4b89dc",
+    "text": "Naitala ang isang hardware token mula sa attestation nito"
+  },
+  "audit.actions.hardware-token.credential-add.label": {
+    "en": "79c33d3849e02f0c",
+    "text": "Nagdagdag ng credential sa isang hardware token"
+  },
+  "audit.actions.hardware-token.holder-change.label": {
+    "en": "06fc03f7983fd5ad",
+    "text": "Inirehistro ang isang hardware token ng ibang tao kaysa sa may hawak nito"
+  },
+  "audit.actions.hardware-token.lost.label": {
+    "en": "f7fb5461e2325e1e",
+    "text": "Iniulat na nawala ang isang hardware token at inalis ang mga credential nito"
+  },
+  "audit.actions.openpgp.challenge.label": {
+    "en": "454a22b5bcd9d6a2",
+    "text": "May na-issue na challenge para sa pagrehistro ng OpenPGP key"
+  },
+  "audit.actions.openpgp.key-registered.label": {
+    "en": "1ed8de1f8777a015",
+    "text": "May OpenPGP key na nairehistro batay sa proof of possession"
+  },
+  "audit.actions.openpgp.key-refused.label": {
+    "en": "f1e7e3c6808ba33b",
+    "text": "May OpenPGP key na hindi nairehistro"
+  },
+  "audit.actions.openpgp.key-removed.label": {
+    "en": "89a284fa6508eae4",
+    "text": "May OpenPGP key na inalis"
+  },
+  "audit.actions.openpgp.publication.label": {
+    "en": "f6d12f16eca6796a",
+    "text": "May OpenPGP key na inilathala sa, o binawi mula sa, Web Key Directory"
+  },
+  "audit.actions.openpgp.mail-encryption.label": {
+    "en": "ba0fb7a4133d94e2",
+    "text": "Binago kung paano naka-encrypt ang mail para sa isang tao"
+  },
+  "audit.actions.openpgp.smime-certificate.label": {
+    "en": "663072a33ce1e178",
+    "text": "Naitakda o naalis ang S/MIME certificate ng isang tao"
+  },
   "audit.actions.device.key-add.label": {
     "en": "6c1b2513c20532ef",
     "text": "May key na idinagdag sa isang device"
@@ -1783,6 +1827,34 @@
     "en": "896007dff32a6824",
     "text": "Naitakda ang description, display name o mga member type ng isang role"
   },
+  "audit.actions.roles.set-mode.label": {
+    "en": "b1e0f3b6e5738f21",
+    "text": "Ginawang static o dynamic na mapipili ang isang tungkulin"
+  },
+  "audit.actions.roles.set-selection.label": {
+    "en": "0fbfbe0d177c5543",
+    "text": "Itinakda kung paano pinipili ang isang dynamic na tungkulin sa pag-sign in"
+  },
+  "audit.actions.roles.eligibility.label": {
+    "en": "28d96273b40dea3f",
+    "text": "Napagpasyahan ang pagiging karapat-dapat ng isang tao sa isang dynamic na tungkulin"
+  },
+  "audit.actions.roles.selection.offered.label": {
+    "en": "dd135469babd9bdc",
+    "text": "Inialok ang mga dynamic na tungkulin sa isang pag-sign in"
+  },
+  "audit.actions.roles.selection.chosen.label": {
+    "en": "2daaeb4ea81b1012",
+    "text": "Pinili ang mga dynamic na tungkulin sa isang pag-sign in"
+  },
+  "audit.actions.roles.selection.refused.label": {
+    "en": "cbed03565474afc0",
+    "text": "Tinanggihan ang pagpili ng mga dynamic na tungkulin ng isang pag-sign in"
+  },
+  "audit.actions.roles.selection.dropped.label": {
+    "en": "042b7f95a92cd6d2",
+    "text": "Inalis sa isang token ang isang piniling dynamic na tungkulin"
+  },
   "audit.actions.node-health.collect-garbage.label": {
     "en": "cb2531d8ee2f27ce",
     "text": "Nagpatakbo ng buong garbage collection sa isang proseso o worker thread ng isang node"
@@ -2286,5 +2358,9 @@
   "audit.actions.xacml.pep.cluster.proxy.clear.label": {
     "en": "c2812e5d21fb6dd4",
     "text": "Inalis ang reverse-proxy configuration ng isang remote PEP cluster"
+  },
+  "audit.actions.piv-escrow.recover.label": {
+    "en": "0cad829ec7cafc72",
+    "text": "Nabawi ang isang naka-escrow na PIV key-management key"
   }
 }

@@ -448,12 +448,20 @@
     "text": "Un jeton à clé publique qu’un détenteur peut atténuer HORS LIGNE, comme un macaroon, mais vérifiable par quiconque détient la clé publique racine. Sa logique d’autorisation est du Datalog transporté dans le jeton, de sorte que le vérificateur s’exécute TOUJOURS avec des limites de temps et d’itérations."
   },
   "crypto.standards.cms.coverage": {
-    "en": "abe1a25e47d96baf",
-    "text": "partial : SignedData avec un seul signataire et des attributs signés, vérifiés sur les octets des attributs tels que reçus et écrits triés en DER ; EnvelopedData avec KeyTransRecipientInfo (RSA PKCS#1 v1.5 et OAEP) et contenu AES-CBC ; SignedData dégénéré « certs-only » avec certificats et CRL. Pas de KeyAgreeRecipientInfo, pas de données authentifiées ou compressées, pas de contre-signatures."
+    "en": "d33248e25a15b5a7",
+    "text": "partial : SignedData avec un seul signataire et des attributs signés, vérifiés sur les octets des attributs tels que reçus et écrits triés selon DER ; EnvelopedData avec KeyTransRecipientInfo (RSA PKCS#1 v1.5 et OAEP) et contenu AES-CBC ; SignedData dégénéré (certificats seuls) avec certificats et CRL ; pour les messages S/MIME (#1955), un EnvelopedData écrit avec un KeyTransRecipientInfo OAEP SHA-256 ou un KeyAgreeRecipientInfo ECDH. Ni données authentifiées ou compressées, ni contre-signatures."
   },
   "crypto.standards.cms.what": {
-    "en": "0f35f026a507dc11",
-    "text": "L’enveloppe que SCEP (scep/scep_cms.ts) lit et écrit : une requête signée par le demandeur et chiffrée vers la RA, et un CertRep signé par la RA dont le certificat est chiffré vers le demandeur."
+    "en": "e09c8508abab483b",
+    "text": "L'enveloppe que SCEP (scep/scep_cms.ts) lit et écrit : une requête signée par le demandeur et chiffrée pour la RA, et un CertRep signé par la RA dont le certificat est chiffré pour le demandeur. Depuis #1955, également l'EnvelopedData S/MIME dans lequel les messages sont chiffrés, qui ajoute un KeyAgreeRecipientInfo pour un destinataire EC (dhSinglePass-stdDH-sha256kdf, encapsulation de clé AES-256) et un KeyTransRecipientInfo OAEP SHA-256 pour un destinataire RSA."
+  },
+  "crypto.standards.openpgp.coverage": {
+    "en": "5d4c9889762ddbd2",
+    "text": "partial : lecture des clés publiques transférables v4 et v6, vérification d'une signature en clair et chiffrement d'un message PGP/MIME, le tout via openpgp.js ; les recherches avancée et directe du Web Key Directory et son fichier de politique. Ni signature, ni déchiffrement, ni soumission au Web Key Service, ni serveur de clés."
+  },
+  "crypto.standards.openpgp.what": {
+    "en": "039de4dd3b49b9ab",
+    "text": "La clé publique propre à une personne, enregistrée sur preuve de possession et publiée dans le Web Key Directory si elle le souhaite ; la clé pour laquelle ses messages sont chiffrés."
   },
   "crypto.families.pki.signs": {
     "en": "fdcf723f4622f28f",
@@ -678,6 +686,78 @@
   "crypto.families.reporting.algorithms.3.how": {
     "en": "9d40176053fec31b",
     "text": "SHA-256, conservé avec l’artefact et contrôlé à la lecture"
+  },
+  "crypto.families.openpgp.signs": {
+    "en": "0f38445050f33bd1",
+    "text": "Rien. Un enregistrement porte la signature de la PERSONNE, et un message chiffré n'est pas signé (DKIM signe le message extérieur, comme il signe chaque message)."
+  },
+  "crypto.families.openpgp.verifies": {
+    "en": "c3dbfb38087cb3de",
+    "text": "Une PREUVE DE POSSESSION à l'enregistrement : une signature en clair (gpg --clearsign) portant exactement sur le défi que ce service a émis pour la personne, par une clé apte à signer de la clé qu'elle enregistre, faite après l'émission du défi (openpgp.signatureSkewS) et valide à ce moment ; la clé elle-même ni révoquée ni expirée, avec un identifiant utilisateur valide contenant l'adresse de l'entrée. Clés RFC 9580 v6 et RFC 4880 v4, lues par openpgp.js. Un certificat S/MIME est contrôlé quant à sa validité, sa clé et son usage, sans vérification de chaîne : il sert uniquement à choisir le destinataire pour lequel un message est chiffré."
+  },
+  "crypto.families.openpgp.encrypts": {
+    "en": "1a05c1b540cd5082",
+    "text": "Les MESSAGES, lorsque la personne l'a choisi ou que le domaine de confiance l'exige (mail.encryptionRequired) : PGP/MIME (RFC 3156) pour la clé de chiffrement de la clé, selon le choix d'openpgp.js (SEIPD avec AES pour une clé v4, AEAD pour une clé v6) ; S/MIME (RFC 8551) sous forme de CMS EnvelopedData, chiffrement du contenu en AES-256-CBC, la clé de contenu protégée par RSAES-OAEP avec SHA-256 ou par ECDH (dhSinglePass-stdDH-sha256kdf, encapsulation de clé AES-256)."
+  },
+  "crypto.families.openpgp.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Rien."
+  },
+  "crypto.families.openpgp.hashes": {
+    "en": "c51e067261932787",
+    "text": "SHA-1 de la partie locale en minuscules, en z-base-32, comme le Web Key Directory nomme une adresse (un nom fixé par le projet de spécification, jamais utilisé pour garantir l'intégrité). L'empreinte de la clé est celle de la RFC 9580 (SHA-256 pour v6, SHA-1 pour v4)."
+  },
+  "crypto.families.openpgp.keys": {
+    "en": "201cc09e750d0c79",
+    "text": "Aucune qui lui soit propre. La clé publique de la personne figure dans son entrée (stsOpenPgpKey), jamais une clé secrète, que l'enregistrement refuse ; une clé sur une carte OpenPGP de YubiKey ne se distingue pas d'une clé dans un fichier, de sorte que rien n'est enregistré comme lié au matériel."
+  },
+  "crypto.families.openpgp.algorithms.0.what": {
+    "en": "b7a04c64879be952",
+    "text": "Clé enregistrée, signature"
+  },
+  "crypto.families.openpgp.algorithms.0.how": {
+    "en": "91736ec1cb35b5f2",
+    "text": "Ed25519, Ed448, ECDSA P-256/P-384/P-521, RSA d'au moins openpgp.minRsaBits (3072 au minimum)"
+  },
+  "crypto.families.openpgp.algorithms.1.what": {
+    "en": "9f7b65405a49bedd",
+    "text": "Clé enregistrée, chiffrement"
+  },
+  "crypto.families.openpgp.algorithms.1.how": {
+    "en": "e28f57b2d61b83be",
+    "text": "X25519, X448, ECDH Curve25519 et P-256/P-384/P-521, RSA d'au moins openpgp.minRsaBits"
+  },
+  "crypto.families.openpgp.algorithms.2.what": {
+    "en": "66b873543aebf01b",
+    "text": "Refusés"
+  },
+  "crypto.families.openpgp.algorithms.2.how": {
+    "en": "18369a474bec2b97",
+    "text": "DSA, ElGamal, courbes Brainpool"
+  },
+  "crypto.families.openpgp.algorithms.3.what": {
+    "en": "429d783fabc235c9",
+    "text": "Contenu S/MIME"
+  },
+  "crypto.families.openpgp.algorithms.3.how": {
+    "en": "8c2686ee3dd3948f",
+    "text": "AES-256-CBC (CMS EnvelopedData)"
+  },
+  "crypto.families.openpgp.algorithms.4.what": {
+    "en": "cc09e2a5306928f5",
+    "text": "Transport de clé S/MIME"
+  },
+  "crypto.families.openpgp.algorithms.4.how": {
+    "en": "acf5bad1301fd2cc",
+    "text": "RSAES-OAEP SHA-256 ; ECDH stdDH KDF SHA-256, encapsulation AES-256"
+  },
+  "crypto.families.openpgp.algorithms.5.what": {
+    "en": "727e1a6e39e36a93",
+    "text": "Nom dans le Web Key Directory"
+  },
+  "crypto.families.openpgp.algorithms.5.how": {
+    "en": "a2b773a0ce72bc44",
+    "text": "SHA-1, z-base-32"
   },
   "crypto.families.gnap.signs": {
     "en": "ad4b982edb070f2c",
@@ -1596,12 +1676,12 @@
     "text": "Chaque certificat qu’il délivre, avec la clé de l’Issuing CA EST de ce domaine, via issueEnrolled() de common/pki.js — le même encodeur dont proviennent tous les autres certificats ici. Les messages CMS certs-only qu’il renvoie sont DÉGÉNÉRÉS : un SignedData avec des certificats et sans signataire, de sorte qu’ils ne portent aucune signature propre et sont approuvés pour les certificats qu’ils contiennent."
   },
   "crypto.families.est.verifies": {
-    "en": "d40d37c4bd83de49",
-    "text": "La preuve de possession PKCS#10 — la signature de la requête avec sa propre clé publique, classique et post-quantique, dans common/cert_enrollment.ts — et, pour l’authentification par certificat, le chemin du certificat client jusqu’à l’Intermediate de ce domaine et à la Root du service, la révocation étant consultée. Un modèle /serverkeygen n’est pas vérifié : sa clé est remplacée."
+    "en": "6b27c8877d509c46",
+    "text": "La preuve de possession PKCS#10 — la signature de la demande par sa propre clé publique, classique et post-quantique, dans common/cert_enrollment.ts — et, pour l’authentification par certificat, le chemin du certificat client jusqu’à l’Intermediate de ce domaine et la Root du service, avec consultation de la révocation. Un modèle /serverkeygen n’est pas vérifié : sa clé est remplacée. Une attestation de clé PIV de YubiKey dans la demande (#1955, ici ainsi que via ACME et SCEP) : la signature ECDSA ou RSA du certificat de l’emplacement par le certificat f9, et le chemin du certificat f9 jusqu’aux ancres d’attestation PIV du domaine, par la porte de validation."
   },
   "crypto.families.est.encrypts": {
-    "en": "2f48e10a9ad6494d",
-    "text": "La clé privée d’une paire de clés générée par le serveur, scellée en AES-256-GCM sous la clé de chiffrement de clé sur l’entrée, partout où cette clé survit au processus. Elle n’est PAS chiffrée pour le client (RFC 7030 section 4.4.1.2) : une requête qui le demande est refusée, et la clé ne circule qu’à l’intérieur de TLS."
+    "en": "a18df4311029b728",
+    "text": "La clé privée d’une paire de clés générée par le serveur, scellée en AES-256-GCM sous la clé de chiffrement de clés sur l’entrée, partout où cette clé survit au processus ; une clé piv-key-management séquestrée (#1955) dans tous les modes, ou bien elle n’est pas générée du tout. Elle n’est PAS chiffrée pour le client (RFC 7030 section 4.4.1.2) : une demande qui le réclame est refusée, et la clé ne circule qu’à l’intérieur de TLS."
   },
   "crypto.families.est.decrypts": {
     "en": "8d5c676935439726",
@@ -1906,5 +1986,9 @@
   "crypto.param.totp.encoding": {
     "en": "d9613131364834bc",
     "text": "base32 RFC 4648, sans remplissage, comme l’attend le format otpauth Key Uri."
+  },
+  "crypto.families.est.algorithms.4.what": {
+    "en": "4dd4db2fd60c28f7",
+    "text": "Signatures d’attestation PIV vérifiées"
   }
 }

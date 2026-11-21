@@ -3147,6 +3147,54 @@
     "en": "72d46974270d0c03",
     "text": "Ilang paggawa, pag-alis, pag-evict at pagbabago ng compliance ng device ang itinatago ng realm na ito para sa Monitoring → Devices. Tinatanggal ang pinakaluma kapag may bagong nire-record na lampas dito."
   },
+  "hardwareTokens.hardwareClaims|label": {
+    "en": "8373111eef4bf812",
+    "text": "Ano ang nagbibigay ng claim na hardware key"
+  },
+  "hardwareTokens.hardwareClaims|description": {
+    "en": "e0341e4e47f3b2f8",
+    "text": "Ano ang nagpapahintulot sa PKINIT sign-in na mag-claim ng key na nakatali sa hardware (ang pkinit-hardware indicator at amr hwk). `inference`, ang default at ang gawi bago ang #1955: isang smart-card logon certificate na ang key ay hindi ginawa ng serbisyong ito, o naitalang ebidensya ng attestation. `evidence`: tanging key na sakop ng attestation ng isang hardware token. Ang certificate sign-in sa TLS ay nakakakuha ng hwk, at sc para sa key na nasa smart card, mula lamang sa ebidensya sa alinmang kaso."
+  },
+  "openpgp.wkd|label": {
+    "en": "1f05a7518c3d2275",
+    "text": "Ilathala ang mga key sa Web Key Directory"
+  },
+  "openpgp.wkd|description": {
+    "en": "7822103f89ac59b3",
+    "text": "Sagutin ang Web Key Directory (draft-koch-openpgp-webkey-service) para sa mga mail domain ng realm na ito: /.well-known/openpgpkey/<domain>/hu/<hash> (ang advanced method, sa openpgpkey.<domain>) at /.well-known/openpgpkey/hu/<hash> (ang direct method), at ang policy file ng bawat isa. Ang key lang ng taong pumayag sa portal ang sinasagot. Naka-off bilang default."
+  },
+  "openpgp.wkdDomains|label": {
+    "en": "d1c4b728593ff000",
+    "text": "Mga mail domain na sineserbisyuhan ng Web Key Directory"
+  },
+  "openpgp.wkdDomains|description": {
+    "en": "ad64f7216191123c",
+    "text": "Ang mga mail domain na sinasagot ng Web Key Directory ng realm na ito, pinaghihiwalay ng kuwit. Kapag walang laman, ang default, ito ang sariling DNS domain ng realm. Ang request na walang realm sa path nito ay sinasagot ng realm na nagseserbisyo sa domain nito, ang default realm muna."
+  },
+  "openpgp.challengeLifetimeS|label": {
+    "en": "dbf558cf0b4b8f90",
+    "text": "Tagal ng challenge sa pagrehistro (segundo)"
+  },
+  "openpgp.challengeLifetimeS|description": {
+    "en": "e9130c8e82368cc6",
+    "text": "Gaano katagal valid ang challenge na pinipirmahan ng isang tao gamit ang gpg --clearsign para magrehistro ng OpenPGP key. Isang beses lang itong ginagamit, at isa lang ang hawak ng tao sa bawat pagkakataon."
+  },
+  "openpgp.signatureSkewS|label": {
+    "en": "d927cf1f04bd9d51",
+    "text": "Clock skew ng proof signature (segundo)"
+  },
+  "openpgp.signatureSkewS|description": {
+    "en": "2772763d3d363b6d",
+    "text": "Gaano kalayo ang orasan ng pumipirmang computer mula sa orasan ng serbisyong ito: ang proof na pinirmahan nang mas maaga kaysa sa pag-issue ng challenge, o mas huli kaysa ngayon, nang lampas dito ay tinatanggihan (STS-OPENPGP-0010)."
+  },
+  "openpgp.minRsaBits|label": {
+    "en": "f3dc9f85de143630",
+    "text": "Pinakamaliit na RSA OpenPGP key"
+  },
+  "openpgp.minRsaBits|description": {
+    "en": "ad48516e31a7c45b",
+    "text": "Ang pinakamaikling RSA key, primary man o subkey, na tinatanggap ng pagrehistro ng OpenPGP. Tinatanggap ang Ed25519, Ed448, ECDSA at ECDH sa P-256, P-384 at P-521, X25519 at X448; hindi kailanman tinatanggap ang DSA, ElGamal at ang mga Brainpool curve (STS-OPENPGP-0004)."
+  },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
     "text": "Mga compliance report bawat feed request"
@@ -9383,6 +9431,14 @@
     "en": "05185a4a554d5f71",
     "text": "Kapag naka-on, pinapangalanan ng bawat access token, ID Token, SAML 2.0 assertion at SAML 1.1 assertion ang mga role na hawak ng subject nito. NAKA-ON bilang default at wala pa rin itong binabago para sa karamihan ng caller, sa parehong dahilan kung bakit naka-on bilang default ang groups claim: GANAP NA HINDI ISINASAMA ang claim para sa sinumang walang hawak na NAKA-CONFIGURE na role, at hindi kailanman kasama rito ang anim na built-in na role — totoo ang EVERYBODY at ALL_AUTHENTICATED_USERS para sa halos bawat token dito, kaya ang pagdadala sa mga ito ay magdadagdag ng dalawang walang kahulugang member sa bawat token na pina-parse ng bawat kasalukuyang client at walang sasabihin sa relying party na hindi pa nito alam mula sa paghawak ng token. Umiiral ang mga ito para HINGIN, hindi para dalhin."
   },
+  "roles.dynamicSelection|label": {
+    "en": "86d2654ef3dec8fd",
+    "text": "Mag-alok ng mga dynamic na tungkulin sa pag-sign in"
+  },
+  "roles.dynamicSelection|description": {
+    "en": "68b1b4af3db5e6d8",
+    "text": "Kung maaaring pumili ng mga dynamic na mapipiling tungkulin ang taong nagsa-sign in (#1072): sa realm na may kahit isang dynamic na tungkulin, nag-aalok ang pahina ng pag-sign in ng kahong \"Pumili ng mga tungkulin para sa pag-sign in na ito\", at ipinapakita ng naka-tsek na kahon ang mga tungkuling pinapayagan ng pagiging karapat-dapat ng tao. NAKA-ON bilang default; pinapalitan ito ng appDynamicRoleSelection sa entry ng application para sa application na iyon. Kapag naka-off, walang kahon, walang iniaalok na tungkulin, walang hinihinging kailangang dynamic na tungkulin, at walang token na may dinamikong napiling tungkulin."
+  },
   "roles.claimName|label": {
     "en": "d56be861543f5305",
     "text": "Pangalan ng role claim"
@@ -11715,6 +11771,14 @@
     "en": "50195b20fe00e9fa",
     "text": "Ang abiso na pumapangalan sa kung tungkol saan ito (ang parehong kilos sa parehong account) ay ipinapadala nang isang beses sa window na ito, gaano man karaming pinto ang nag-ulat nito. Ino-off ng 0 ang pagsugpo."
   },
+  "mail.encryptionRequired|label": {
+    "en": "81e5dc8eb5332f2b",
+    "text": "Mga mensaheng dapat naka-encrypt"
+  },
+  "mail.encryptionRequired|description": {
+    "en": "895bdb616e169134",
+    "text": "Ang mga mensahe, ayon sa template id (password-reset, account-activation, sign-in-code, sign-in-link, credential-compromised at ang iba pa sa listahan ng Monitoring → Mail), na ipinapadala lang nang naka-encrypt — PGP/MIME sa OpenPGP key ng tao o S/MIME sa kanyang certificate, ayon sa pinili niya sa portal. Ang taong walang pinili sa dalawa ay hindi padadalhan nito (STS-MAIL-0240), at sinasabi iyon ng gamit na humiling nito, gaya ng sa anumang mensaheng hindi naipadala. Kapag walang laman, ang default, walang hinihingi; iginagalang ang pinili ng tao alinman ang kaso."
+  },
   "mail.selfServiceReset|label": {
     "en": "8525111d1c0be58a",
     "text": "Self-service password reset"
@@ -12658,5 +12722,93 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "Para lang sa listener ng Protocol debugger: http.http2MaxConcurrentStreams. Ang -1, ang default, ay sumusunod sa http.http2MaxConcurrentStreams; ang anumang iba ay nagpapasya para sa listener na ito lang. Ilang request ang puwedeng sabay-sabay na bukas sa isang HTTP/2 connection (SETTINGS_MAX_CONCURRENT_STREAMS); tinatanggihan ang stream na lampas dito hanggang may matapos. Ang 100, ang default, ang pinakamaliit na halagang inirerekomenda ng RFC 9113; walang limit ang sa node mismo, kaya madadala ng iisang connection ang trabaho ng libu-libo. Nililimitahan nito ang trabaho sa isang connection gaya ng paglimita ng http.maxConnections sa mga connection. Sinusunod agad ng bagong connection ang pagbabago, at pinapadalhan ng bagong halaga ang bukas na."
+  },
+  "piv.attestationAnchors|label": {
+    "en": "ebc10f6a7dcbbf58",
+    "text": "Mga PIV attestation root (PEM)"
+  },
+  "piv.attestationAnchors|description": {
+    "en": "487e76edeb4446b9",
+    "text": "Ang mga root na dapat pagkadenahan ng isang YubiKey PIV key attestation, bilang PEM bundle. Kapag walang laman, ginagamit ang dalawang inilalathala ng Yubico (Yubico PIV Root CA Serial 263751, at Yubico Attestation Root 1 para sa firmware 5.7.4 pataas), kasama sa common/pki_piv_anchors.json at naka-pin doon sa SHA-256, kasama ang mga PIV intermediate ng Yubico. Pinapalitan ng isang sertipiko rito ang mga kasamang root."
+  },
+  "piv.requireAttestation|label": {
+    "en": "4e11b0db111faccf",
+    "text": "Hingin ang PIV attestation para sa mga PIV profile"
+  },
+  "piv.requireAttestation|description": {
+    "en": "ef38975436c5ac4f",
+    "text": "Kapag naka-on, tinatanggihan ang kahilingan para sa piv-auth, piv-sign, piv-key-management o piv-card-auth na sertipiko maliban kung may dala itong YubiKey PIV attestation na nave-verify (STS-PIV-0010). Ang naka-escrow na piv-key-management key mula sa EST /serverkeygen ang eksepsiyon: ang serbisyong ito ang bumuo nito. Kapag naka-off, ang default, inilalabas ang ganitong kahilingan na walang attestation nang walang hardware evidence; ang kahilingang may dalang attestation na hindi nave-verify ay tinatanggihan alinman ang kaso."
+  },
+  "piv.pinPolicy|label": {
+    "en": "0f683a0cb1db1988",
+    "text": "Pinakamahinang PIN policy na maaaring taglayin ng na-attest na PIV key"
+  },
+  "piv.pinPolicy|description": {
+    "en": "c3f9fcec406b9806",
+    "text": "Kung ano man lang dapat ang PIN policy ng attestation. `once`: ang PIN nang isang beses bawat session (binibilang ang match-once ng isang Bio key); `always`: ang PIN bago ang bawat paggamit (binibilang ang match-always). Walang hinihinging PIN policy ang `any`, ang default. Tinatanggihan ang key na mas mahina ang attestation (STS-PIV-0011)."
+  },
+  "piv.touchPolicy|label": {
+    "en": "a88f111c7b13657f",
+    "text": "Pinakamahinang touch policy na maaaring taglayin ng na-attest na PIV key"
+  },
+  "piv.touchPolicy|description": {
+    "en": "d78f0d5df0256787",
+    "text": "Kung ano man lang dapat ang touch policy ng attestation. `cached`: isang pindot, tinatandaan nang 15 segundo; `always`: isang pindot sa bawat paggamit. Walang hinihingi ang `any`, ang default. Tinatanggihan ang key na mas mahina ang attestation (STS-PIV-0012)."
+  },
+  "piv.cardAuthSignIn|label": {
+    "en": "61b2226403ad5c61",
+    "text": "Payagang mag-sign in ang piv-card-auth na sertipiko"
+  },
+  "piv.cardAuthSignIn|description": {
+    "en": "1852da24c3fbfade",
+    "text": "Gumagana ang piv-card-auth key (slot 9e) nang walang PIN, para sa pisikal na pagpasok, kaya tinatanggihan ang sertipiko nito sa TLS sign-in at sa PKINIT (STS-PIV-0013) maliban kung naka-on ito."
+  },
+  "piv.keyEscrow|label": {
+    "en": "f2efc85c3d2bac38",
+    "text": "I-escrow ang mga piv-key-management key"
+  },
+  "piv.keyEscrow|description": {
+    "en": "cf9618144b67dff3",
+    "text": "Kapag naka-on, iniingatan ng EST /serverkeygen para sa piv-key-management profile ang nabuong private key, selyado sa ilalim ng key-encryption key, para mabawi ito ng may hawak (sa portal, pagkatapos ng bagong sign-in) o ng administrator na may role sa pagbawi ng PIV key, at ma-decrypt ang lumang mail kapag nawala ang card. Tinatanggihan kung walang hawak na key-encryption key (STS-PIV-0020). Hindi kailanman hardware evidence ang naka-escrow na key. Kapag naka-off, ang default, tinatanggihan ng /serverkeygen ang piv-key-management profile (STS-PIV-0021), kaya ang 9d key ay binubuo sa card at hindi iniingatan saanman."
+  },
+  "piv.externalIssuers|label": {
+    "en": "e96143ab9556db35",
+    "text": "Mga panlabas na PIV o CAC issuing CA na itinutugma ayon sa card UUID (PEM)"
+  },
+  "piv.externalIssuers|description": {
+    "en": "0fb91dba2cb957d3",
+    "text": "Ang mga issuing CA na ang mga PIV o CAC card certificate ay nagsa-sign in ng isang tao ayon sa FIPS 201 card UUID: ang client certificate na direktang inilabas ng isa sa mga ito, na nagsasaad ng policy sa piv.externalPolicyOids at may dalang eksaktong isang urn:uuid subjectAltName, ay itinutugma sa iisang taong ang stsPivCardUuid ay may hawak ng UUID na iyon. Hindi kailanman ayon sa pangalan nito, at walang entry na nililikha. Dapat ding nasa isang client truststore ang CA, kung hindi ay tatanggihan muna ito ng handshake. Kapag walang laman, ang default, walang itinutugma."
+  },
+  "piv.externalPolicyOids|label": {
+    "en": "930c5800dfa36905",
+    "text": "Mga PIV Authentication policy na dapat isaad ng panlabas na card"
+  },
+  "piv.externalPolicyOids|description": {
+    "en": "2398931e8d58f5c4",
+    "text": "Ang mga certificate policy na dapat isaad ng sertipiko ng panlabas na card ang isa para maitugma ayon sa card UUID nito: bilang default ang id-fpki-common-authentication (ang PIV Authentication ng Federal PKI Common Policy) at id-fpki-certpcy-pivi-hardware (PIV-I). Idagdag dito ang sariling hardware policy ng isang CAC issuer."
+  },
+  "pki.paranoidPivAttestation|label": {
+    "en": "e645d02c49d2f9bf",
+    "text": "Paranoid: isang YubiKey PIV key attestation chain"
+  },
+  "pki.paranoidPivAttestation|description": {
+    "en": "fdb7c0eb631758ea",
+    "text": "Use case na `piv-attestation` (#1955): ang attestation na sertipiko ng slot at ang f9 attestation na sertipiko ng isang PIV enrolment. Sinusuri ng paranoid ang validity window sa kasalukuyan, ang path patungo sa piv.attestationAnchors at ang revocation kung saan may pinangalanang listahan ang chain. Kapag naka-off, ang use case na ito lamang ang nagpapatakbo ng path check nang walang field check, habang hindi ginagalaw ang bawat ibang row at ang master; kapag naka-off sa product mode, nilo-log ito nang isang beses (STS-PKI-0239) at iginuguhit nang pula sa /admin/pki/trust."
+  },
+  "pki.paranoidPivCard|label": {
+    "en": "4078a93e7117d6f9",
+    "text": "Paranoid: isang panlabas na PIV o CAC card na itinutugma ayon sa card UUID"
+  },
+  "pki.paranoidPivCard|description": {
+    "en": "d4d5fb070575e1c6",
+    "text": "Use case na `piv-card` (#1955): isang client certificate mula sa issuing CA sa piv.externalIssuers, itinutugma ayon sa card UUID nito. Sinusuri ng paranoid ang keyUsage digitalSignature at ang validity window ng leaf bukod sa one-hop issuer check. Kapag naka-off, ang use case na ito lamang ang nagpapatakbo ng issuer check lamang, habang hindi ginagalaw ang bawat ibang row at ang master; kapag naka-off sa product mode, nilo-log ito nang isang beses (STS-PKI-0239) at iginuguhit nang pula sa /admin/pki/trust."
+  },
+  "roles.pivKeyRecoveryGroup|label": {
+    "en": "2f231e1e99785dc6",
+    "text": "Grupong nagbibigay ng role na PIV_KEY_RECOVERY"
+  },
+  "roles.pivKeyRecoveryGroup|description": {
+    "en": "801616eea12559a5",
+    "text": "Ang directory group na ang mga miyembro ay may hawak ng built-in na role na PIV_KEY_RECOVERY (#1955), na hinihingi ng access-control policy, bukod sa Admin Write, para mabawi ang naka-escrow na piv-key-management key ng ibang tao (piv.keyEscrow). Dine-decrypt ng key na iyon ang mail ng tao, kaya walang may hawak ng role hanggang idagdag sila ng administrator sa grupo. Kapag walang laman, walang makakabawi ng key ng ibang tao; binabawi ng may hawak ang sarili niya sa portal."
   }
 }

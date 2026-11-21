@@ -3832,13 +3832,18 @@ class OAuth2Server {
   // `admin_stats.js`'s claim layers resolve the client as an APPLICATION —
   // its roles through `roleMemberApplication` — rather than looking up a
   // person named after its client_id, which found nobody's roles.
+  //
+  // `sessionId` (#1072): the sign-on session the token rests on, whose
+  // chosen dynamic roles the roles claim may carry (`roles.js`'s selection
+  // reader). A direct grant has none, and gets none.
   private customClaimContext(base: Json, payload: Json, user: Json,
-                             grant?: string): Json {
+                             grant?: string, sessionId?: string): Json {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.customClaimContext().");
     const aboutClient = grant === 'client_credentials';
     log.debug("Leaving OAuth2Server.customClaimContext().");
     return {
+      session_id: aboutClient ? '' : String(sessionId || ''),
       username: aboutClient ? ''
         : ((user && user.username) || payload.username || ''),
       sub: payload.sub || '',
@@ -4230,7 +4235,8 @@ class OAuth2Server {
                                                      : opts.scope;
     const clientClaims = stats.jwtClaims('access_token',
                                          self.customClaimContext(
-                                           base, payload, user, opts.grant));
+                                           base, payload, user, opts.grant,
+                                           opts.session_id));
     const resourceLayer = opts.grant === 'client_credentials' ? null
       : self.resourceServerClaims(payload.aud, user, granted);
     const combined = resourceLayer
@@ -5146,7 +5152,10 @@ class OAuth2Server {
     const payloadWithCustom = Object.assign(
       scopeClaims.gate(stats.jwtClaims('id_token',
                                        self.customClaimContext(base, payload,
-                                                               user)),
+                                                               user,
+                                                               opts.grant,
+                                                               opts.session_id
+                                                               )),
                        opts.scope, 'ID Token'),
       payload);
     // ---------------------------------------------------------------------
@@ -5581,7 +5590,10 @@ class OAuth2Server {
     if (rolePermissions.asksFor(opts.scope, self.issuanceSubjectOf(opts))) {
       const narrowed = rolePermissions.narrowScope(opts.scope,
         self.issuanceSubjectOf(opts),
-        { clientId: opts.client_id, grant: opts.grant });
+        { clientId: opts.client_id, grant: opts.grant,
+          // #1072: the session's chosen dynamic roles count, for this
+          // client; a direct grant has no session and none.
+          sessionId: opts.session_id || '' });
       if (narrowed.emptied) {
         log.debug("Leaving OAuth2Server.tokenSet(). Nothing but gated " +
                   "permissions the subject may not hold was asked for.");
@@ -9380,7 +9392,8 @@ class OAuth2Server {
           sessionId ? self.deps.authn.sessionById(String(sessionId)) : null)
       });
       const narrowed = rolePermissions.narrowScope(scope, person,
-        { clientId: query.client_id, grant: 'authorization_code' });
+        { clientId: query.client_id, grant: 'authorization_code',
+          sessionId: sessionId ? String(sessionId) : '' });
       if (narrowed.emptied) {
         log.debug("Leaving OAuth2Server.issueAuthorizationResponse(). " +
                   "Nothing but gated permissions the person may not hold " +
@@ -14090,7 +14103,9 @@ class OAuth2Server {
     // UserInfo accepts is for this service's own resource server, which keeps
     // the OpenID Connect scopes on its scope claim (RFC 9068's plan).
     const configured = scopeClaims.gate(
-      stats.jwtClaims('userinfo', self.customClaimContext(base, claims, user)),
+      stats.jwtClaims('userinfo', self.customClaimContext(
+        base, claims, user, undefined,
+        String(claims.sid || stats.sessionIdOfJti(claims.jti) || ''))),
       claims.scope, 'UserInfo response');
     Object.assign(body, configured);
     if (Object.keys(configured).length) {

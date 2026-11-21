@@ -6993,6 +6993,38 @@ The test asserts that rather than leaving the missing negative to be noticed: it
 checks the catalogue still describes `EVERYBODY` as the DEFAULT requirement, so
 that anybody who gives it a `holds()` that can answer false fails there.
 
+## 3dg. Dynamic selectable roles (#1072, rcbj's decisions of 2026-11-20)
+
+A role is held one of two ways (`roles.js`, DYNAMIC SELECTABLE ROLES):
+`static`, membership as it always was, or `dynamic-selectable`, a role
+NOBODY holds — offered at sign-in to each person its own XACML policy
+permits (`xacml/role_eligibility.ts`, `xacml/CLAUDE.md`) and held for that
+sign-in's application only when chosen (`authn/CLAUDE.md`, *THE ROLE STEP*).
+It is still a role: its permissions, application, display name and
+description are the ones every role has, so nothing about what a role DOES
+is duplicated.
+
+* **A dynamic role has no members** (decision 1): making one with members
+  dynamic, adding a member, a conferring client, a console or native role,
+  and one only applications hold are refused (STS-XACML-0303–0309).
+  `configuredRolesOf()` never counts a member on a dynamic role, so an
+  `ldapmodify` cannot make one held.
+* **The effective role set** is `configuredRolesOf()` plus the session's
+  choice, read through `setSelectionReader()` (rule 3e: `roles.js` is a leaf
+  and `authn/role_selection.ts` requires it, so a require from here closes a
+  cycle; and the answer needs the session and the PDP). **Empty is nobody's
+  choice.** The context carries `sessionId` and `selectionApplications`
+  (the applications the token is for AND the client it is issued to — a
+  person chooses signing in to a CLIENT whose access token is often for
+  another resource); `applications` still decides where an application's
+  own role is carried (#310). The callers that pass a session: the roles
+  claim (`admin_stats.js`'s `resolvedRoleClaims()`, from `oauth2.ts`'s
+  `customClaimContext()` and the two SAML builders' SessionIndex), the role
+  PEP (`asked.session`) and `narrowScope()` (`context.sessionId`). A direct
+  grant, WS-Trust, Kerberos and LDAP pass none and carry none (decision 5).
+* **`roles.dynamicSelection`**, with `appDynamicRoleSelection` overriding it,
+  turns the box, the offer and the carrying off together.
+
 ## `setId` IS THE THIRD THING THE TOKEN REGISTRY IS TOLD OUT OF BAND (2026-09-05)
 
 `recordJwt()` keeps three facts that are on no token as a claim, and all three
@@ -11939,6 +11971,25 @@ stored again. What carries it:
   identifier the registry does not hold, and the CAEP event under the
   application's own subject.
 
+**AND, SINCE #1955 P2 (D8, rcbj's decision of 2026-11-20), AN OUTSIDE PIV OR
+CAC CARD IS THE ONE PERSON HOLDING ITS CARD UUID.** #1061's rule had one
+mapping, and rcbj asked for a second for government cards, which nobody
+stores byte for byte: a card is reissued, and an agency's directory holds the
+card UUID, not the certificate. It is NOT a name match, which is what #1061
+forbade: `storedIdentityOf()` asks `piv_attestation.ts`'s `cardIdentityOf()`
+only when no entry stores the leaf, and that maps it only when one of the
+realm's `piv.externalIssuers` issued it DIRECTLY (the door's `piv-card` use
+case), it asserts one of `piv.externalPolicyOids` (FIPS 201-3's PIV
+Authentication policy by default), and it carries exactly ONE `urn:uuid:`
+subjectAltName (FIPS 201-3 section 4.2.1's card UUID), which exactly ONE
+person's `stsPivCardUuid` holds. Never the CN or subject (an issuing CA we do
+not run could write anybody's), no entry created, two holders or two UUIDs
+refused with #1061's `NOT_STORED` / `STORED_TWICE`, so every door's refusal
+and code stand. Off unless `piv.externalIssuers` holds a certificate; the
+issuer must still be in a client truststore for the handshake to admit the
+leaf at all. The directory half is `pivCardHolders()` on the same slot as
+`certificateHolders` (`ldap/CLAUDE.md`).
+
 **THE REALM IS THE ISSUING CA'S.** A socket has no path to carry a realm, so
 `identityOf()` answers the realm of the authority that signed the leaf, and
 `GET /tls/sign-in` starts the session and records the
@@ -12604,6 +12655,139 @@ pulls nothing in); `admin_stats.setClaimSet()`,
 removals of `oauthDelegatedPermission`, `oauthPermission` and
 `oauthAllowedScope` call it or `claimsFanOut()` directly. Each lazily, after
 its write, never into it. `ssf/CLAUDE.md` has the fan-out.
+
+## `hardware_tokens.ts`: THE HARDWARE TOKEN REGISTER (#1955 P1, 2026-11-20)
+
+One record per physical token (a YubiKey, a smart card) per realm, keyed by
+`<vendor>/<serial>`, with its holder's entryUUID and the credentials on it
+as `{ kind, ref }`. The file's header is the argument; what a maintainer of
+this directory has to know beside it:
+
+* **A serial is recorded only from attestation**: `recordAttested()` is the
+  one writer and takes an evidence source from a closed list
+  (`fido-enterprise-attestation`, `piv-attestation` since P2, and
+  `vendor-import` for P4). No door takes a serial from a body.
+  `attachCredential()` (P2, D7) adds a credential to a token that is
+  ALREADY in the register and held by the caller, with `hardware: false`
+  evidence; it records no serial.
+* **It is NOT the device register, and the header says why**: a roaming key
+  identifies no device (`device_enrolment.ts`, STS-DEVICE-0022), and filing
+  one there would make every sign-in with it "from a registered device" for
+  recognition, the compliant-device acr, risk scoring and Native SSO's
+  eviction.
+* **`credentials.addKey()` records the token at the one writer**
+  (`noteFidoKey()`, lazily), and `removeKey()` drops the credential unless
+  the lost-key act is the caller (`{ lost: true }`, which also passes the
+  last-way-in guard).
+* **The lost-key act is a dispatch by kind, and `registerRetirer()` is a
+  hook under rule 3e**: later phases' modules record their credentials here,
+  so this file requiring them back to retire them would close a cycle. A
+  kind with no retirer is reported as not retired (STS-HWTOKEN-0009), never
+  skipped. A FIDO credential is REMOVED rather than disabled, because no
+  sign-in door reads a disabled mark.
+* **X4**: the authentication event records the credential's token
+  (`authn.ts`'s `hardwareTokenOf()`), which is the authentication policy's
+  `attested-hardware` mechanism (`authn_mechanisms.ts`) and the issuance
+  policy's hardware-token attributes (`issuance_gate.js`'s
+  `hardwareTokenFactsOf()`, `xacml/CLAUDE.md`). The lost-key act notes a
+  `lost-key` recovery (3cq) for a person it leaves with no passkey.
+* **X3**: `evidenceFor()` and `certificateAmr()` answer what recorded
+  evidence says of a credential's key; PKINIT keeps its old inference while
+  `hardwareTokens.hardwareClaims` is `inference` (the default).
+* **The store** is `hardware_tokens.register`, cell tier, on demand with an
+  index by holder (`h:`) and by credential (`c:<kind>:<ref>`). No table, so
+  no schema version or upgrade script; development does not keep it across
+  a restart, as it keeps no minted store.
+
+## `piv_attestation.ts` and `piv_enrolment.ts`: YUBIKEY PIV KEY ATTESTATION (#1955 P2, 2026-11-20)
+
+The two headers are the argument. What a maintainer of this directory has to
+know beside them:
+
+* **Two carriers, one verifier.** The request's id-aa-attestation attribute
+  (read by `parseCsr()` for every family, so EST, SCEP and ACME get it alike)
+  and the enrolment form's two PEM certificates both become a statement that
+  `verify()` holds to the request's key, the realm's PIV anchors (through the
+  door, use case `piv-attestation`), a serial, the profile's slot and
+  `piv.pinPolicy` / `piv.touchPolicy`. **The statement type
+  1.3.6.1.4.1.41482.3.2 is this service's choice**: draft-ietf-lamps-csr-
+  attestation-33 registers no statement type, and says so (section 4.2).
+* **`issue()` asks `evidenceForRequest()` once**, after the names and before
+  the authority signs. A statement that does not verify REFUSES the request;
+  none is `facts: null`, refused only under `piv.requireAttestation` for a PIV
+  profile. A verified one makes the row `keySource: 'attested-hardware'` with
+  `attestation`, and `recordToken()` records the YubiKey (`recordAttested()`,
+  source `piv-attestation`, smart card), which is all P1's `evidenceFor()`
+  needs for `hwk`/`sc` at the TLS doors and `pkinit-hardware` /
+  `pkinit-smartcard` at PKINIT.
+* **The anchors are SHIPPED** (`pki_piv_anchors.json`, pinned, STS-PIV-0001 on
+  a mismatch), as the device anchors are and for their reason: one vendor
+  whose format this verifies, whose roots everybody needs. The PIV
+  intermediates are offered to the path builder, never as anchors.
+* **The four PIV profiles are in no default `allowedProfiles`**: a realm
+  issues none until an operator lists one, so existing realms are unchanged.
+  `piv-card-auth` signs nobody in unless `piv.cardAuthSignIn`
+  (`signInRefusal()`, asked by the two TLS sign-in doors; PKINIT refuses it by
+  its EKU anyway).
+* **Escrow (D7)** is the existing server-key record with `escrowed: true`,
+  sealed by `sealEscrow()` under its own data-key class in EVERY mode — never
+  `sealText()`, which keeps a key in plain where nothing persists — and
+  refused before anything is generated where no key-encryption key is held.
+  An administrator's recovery asks the access gate (resource
+  `piv-key-escrow`, PIV_KEY_RECOVERY) and needs a POLICY PERMIT: the gate's
+  "allowed" with no decision (no decider, XACML off) recovers nothing.
+  `attach()` puts an escrowed certificate on a token with `hardware: false`
+  evidence (`hardware_tokens.attachCredential()`), so the lost-key act revokes
+  it; `revokeEnrolled()` never touches the sealed key, so the escrow outlives
+  the card.
+* **No store and no schema**: the token is P1's register, the attestation
+  rides on the certificate row, the escrowed key on the entry's existing
+  `privateKey` values, and `stsPivCardUuid` is an attribute.
+* **WHAT HAS NO TEST HERE**: a real YubiKey's output (the kit builds
+  Yubico-shaped chains from Yubico's text); the Bio series' match policies
+  and the CSPN flag beyond decoding; the 5.7.4 chain through the shipped
+  intermediates (they load and match their pins; nothing signed by them is
+  available without a key).
+## `openpgp_keys.ts`: A PERSON'S OpenPGP KEY, THE WEB KEY DIRECTORY, ENCRYPTED MAIL (#1955 P6, 2026-11-20)
+
+The file's header is the argument; what a maintainer needs beside it:
+
+* **The mechanism is openpgp.js (rcbj's D3), the policy is `crypto.js` section
+  19.** `crypto_impl/openpgp_engine.js` is the only requirer of `openpgp`;
+  the allow list (Ed25519/Ed448, ECDSA and ECDH on the NIST curves,
+  X25519/X448, RSA of `openpgp.minRsaBits` ≥ 3072; never DSA, ElGamal or
+  Brainpool) is a documented list there, because #1368's registry has no
+  OpenPGP surface. S/MIME is pkijs's EnvelopedData on node's Web Crypto,
+  AES-256-CBC and not GCM: RFC 5083 puts GCM in AuthEnvelopedData and pkijs
+  writes it into an EnvelopedData.
+* **Proof of possession, never a key on somebody's word.** A challenge per
+  person (keyed by entryUUID, `openpgp.challenges`, per realm, minted,
+  expiring), signed with `gpg --clearsign`; the key's valid user id must carry
+  the entry's `mail`; the nonce is spent by a cluster claim before anything is
+  written. An administrator's registration takes the PERSON'S signature too.
+* **Nothing is recorded as hardware-bound**, and no `openpgp` credential is put
+  on a token record here: the server cannot see an OpenPGP card. The
+  `openpgp` retirer IS installed (`hardware_tokens.registerRetirer()`, from
+  this module's wire step), so a later phase that records an attested card
+  key gets the lost-key removal for free.
+* **The key is on the entry** (`stsOpenPgpKey`, `-Fingerprint`, `-KeyInfo`,
+  `stsMailEncryption`; OIDs 920–923, a jump clear of P2/P4/P7's numbers) and
+  written through `setDirectory()`'s narrow writer, filled by
+  `ldap/ldap_server.js` (rule 3e: `mail.ts` reaches this module at 8a). No
+  table, so no schema change.
+* **The Web Key Directory** register (`openpgp.wkd`) is a POINTER checked
+  against the entry at every lookup; in development, where minted stores do
+  not survive a restart, the draft's `l` parameter finds the person by
+  `mail`. A request with no realm segment is answered by the realm serving
+  the domain, default first. CORS is `cors.js`'s realm union, not the draft's
+  `*` (rcbj's allowlist decision); the route sets no CORS header.
+* **Mail** (`mail.ts` header point 9): decided at the queue — the person's
+  choice and `mail.encryptionRequired` — and composed at the attempt
+  (`mail_transports.ts` `composeEncrypted()`), never sent in the clear
+  against either (STS-MAIL-0240..0243). The refusal is the uses' existing
+  handling of an unsent message, so no use grew a second path.
+* **Tests**: `tests/openpgp_keys.js` (every key and certificate made at run
+  time; S/MIME opened by `openssl cms`), `tests/protocol/sts_openpgp.js`.
 
 ## `devices.ts`: THE DEVICE REGISTER (#130, 2026-09-23; #164 and #218, 2026-09-26)
 
@@ -15559,6 +15743,11 @@ not refused, and the default stays.
   passkey registered at the step sends `credential-change` (create) where it
   is written, so the portal's Security activity shows both.
 * Codes `STS-AUTHN-0380` to `0383`. `tests/recovery_assurance.js` holds it.
+* **A LOST SECURITY KEY (#1955 P1)** is the eighth source of a pending
+  recovery, `lost-key`: the lost-key act writes it before it removes the
+  person's last passkeys, `holdsPasskey()` keeps such a person covered while
+  it is pending, and a later door's write keeps it. `authn/CLAUDE.md` and
+  `tests/hardware_tokens.js` 7a–7d.
 
 ## 3cs. `passkey_report.ts`: WHO HOLDS WHICH PASSKEY ALGORITHM, KEPT RATHER THAN COUNTED (#942, 2026-10-23)
 

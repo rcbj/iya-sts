@@ -265,19 +265,19 @@ op `postRegister`(`requestBody/content/application~1json/schema`: `RegisterReque
   @js(#{`maxItems`:256}) `paths`?: `PathCount`[];
 }
 
-@js(#{`description`:"Absent keeps what the service holds; null clears signals, settings and listeners; a value replaces it. The counters are set, not added."})
+@js(#{`description`:"Absent keeps what the service holds; null clears signals, settings and listeners; a value replaces it. The counters are set, not added. A member the PEP's entry stores that carries a value the service cannot hold refuses the whole heartbeat, 400 STS-XACML-0331 naming the member, and nothing of it is recorded: a counter that is not a non-negative integer of at most 2^53 - 1, a text member that is not a string (or null) or carries a control character, or signals, settings or listeners that are not an object or null. Within signals and listeners a value is held to its member instead: a count that is not a non-negative integer is 0, and an age that is not one, or is older than the epoch, is no time."})
 @component model `HeartbeatRequest` {
   @js(#{`description`:"Read only when no certificate was presented."}) `name`?: string;
-  @js(#{`description`:"The policy set held, empty if none."}) `syncToken`?: string;
-  `policyCount`?: int64;
-  `decisions`?: int64;
-  `allowed`?: int64;
-  `refused`?: int64;
-  `undischargeable`?: int64;
-  `bias`?: string;
-  `resource`?: string;
-  `version`?: string;
-  `notifyUrl`?: string;
+  @js(#{`pattern`:"^[^\\u0000-\\u001f\\u007f-\\u009f]*$",`description`:"The policy set held, empty if none."}) `syncToken`?: string;
+  @js(#{`minimum`:0,`maximum`:9007199254740991}) `policyCount`?: int64;
+  @js(#{`minimum`:0,`maximum`:9007199254740991}) `decisions`?: int64;
+  @js(#{`minimum`:0,`maximum`:9007199254740991}) `allowed`?: int64;
+  @js(#{`minimum`:0,`maximum`:9007199254740991}) `refused`?: int64;
+  @js(#{`minimum`:0,`maximum`:9007199254740991}) `undischargeable`?: int64;
+  @js(#{`pattern`:"^[^\\u0000-\\u001f\\u007f-\\u009f]*$"}) `bias`?: string;
+  @js(#{`pattern`:"^[^\\u0000-\\u001f\\u007f-\\u009f]*$"}) `resource`?: string;
+  @js(#{`pattern`:"^[^\\u0000-\\u001f\\u007f-\\u009f]*$"}) `version`?: string;
+  @js(#{`pattern`:"^[^\\u0000-\\u001f\\u007f-\\u009f]*$"}) `notifyUrl`?: string;
   @js(#{`maxLength`:253}) `hostname`?: string | null;
   `settings`?: `SettingsReport` | null;
   `signals`?: `PepSignals` | null;
@@ -300,7 +300,7 @@ op `postRegister`(`requestBody/content/application~1json/schema`: `RegisterReque
   `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
   `responses`:#{
     `200`:#{`description`:"Acknowledged.",`content`:#{`application/json`:#{`schema`:null}}},
-    `400`:#{`description`:"No name (STS-XACML-0020) or a bad hostname (0261). Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",`content`:#{`application/json`:#{`schema`:null}}},
+    `400`:#{`description`:"No name (STS-XACML-0020), a bad hostname (0261) or a value the service cannot hold (0303; see HeartbeatRequest). Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",`content`:#{`application/json`:#{`schema`:null}}},
     `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
     `404`:#{`description`:"Not registered (STS-XACML-0021).",`content`:#{`application/json`:#{`schema`:null}}},

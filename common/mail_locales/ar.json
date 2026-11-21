@@ -123,13 +123,16 @@
   },
   "categories": {
     "security": {
-      "reason": "إشعار أمني بشأن حسابك، ولا يمكن إيقافه"
+      "reason": "إشعار أمني بشأن حسابك، ولا يمكن إيقافه",
+      "encryptedSubject": "إشعار أمني من {{service}}"
     },
     "account": {
-      "reason": "ما طلبته أنت أو أحد المسؤولين"
+      "reason": "ما طلبته أنت أو أحد المسؤولين",
+      "encryptedSubject": "رسالة من {{service}}"
     },
     "notification": {
-      "reason": "إشعار يمكنك إيقافه في بوابتك"
+      "reason": "إشعار يمكنك إيقافه في بوابتك",
+      "encryptedSubject": "إشعار من {{service}}"
     }
   }
 }

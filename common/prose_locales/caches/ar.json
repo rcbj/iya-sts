@@ -351,6 +351,22 @@
     "en": "1d89a0731fc525e7",
     "text": "توقيع رُئي بالفعل، لذا رُفض الطلب"
   },
+  "caches.store.hardware_tokens.register.title": {
+    "en": "f1c8d3f653154823",
+    "text": "سجل الرموز المادية"
+  },
+  "caches.store.hardware_tokens.register.description": {
+    "en": "5efc16810cb7f48e",
+    "text": "صف لكل رمز مادي (مفتاح YubiKey أو بطاقة ذكية) في هذا النطاق، مفهرس بالمورّد والرقم التسلسلي: من يحمله، وطرازه، وبيانات الاعتماد عليه. لا يُسجَّل الرقم التسلسلي إلا من شهادة. لا يحتوي سرًّا أبدًا."
+  },
+  "caches.store.hardware_tokens.register.bound": {
+    "en": "260467c777c74957",
+    "text": "الصفوف التي تحتفظ بها العملية ذاكرة تخزين مؤقت من 5000 لكل نطاق؛ والسجل نفسه محدود ببيانات الاعتماد التي يسردها (webauthn.maxKeysPerPerson لـ FIDO)."
+  },
+  "caches.store.hardware_tokens.register.lifetime": {
+    "en": "c18bfda6fa452b2b",
+    "text": "حتى إزالة الرمز؛ يُحتفظ بالرمز المفقود مع علامة المفقود."
+  },
   "caches.store.jose.kid-thumbprint-uris.title": {
     "en": "336e569778455530",
     "text": "معرّفات المفاتيح في RFC 9278"
@@ -1106,6 +1122,34 @@
   "caches.store.oidfed.resolutions.lifetime": {
     "en": "ce6f4a649ea6af77",
     "text": "إلى أن تنتهي صلاحية السلسلة (أقل exp لها، 10.4)، وعلى الأكثر oidfed.resolveCacheS."
+  },
+  "caches.store.openpgp.challenges.title": {
+    "en": "c0c95c44e5f3835e",
+    "text": "تحديات تسجيل OpenPGP"
+  },
+  "caches.store.openpgp.challenges.description": {
+    "en": "be9e39edb5fb9e44",
+    "text": "تحدٍّ واحد لكل شخص يسجّل مفتاح OpenPGP: النص الذي يوقّعه باستخدام gpg --clearsign، وقيمة nonce الخاصة به ووقت انقضائه. يُستهلك مرة واحدة، بمطالبة على مستوى العنقود بقيمة nonce."
+  },
+  "caches.store.openpgp.challenges.bound": {
+    "en": "70f8ecd02c4392d1",
+    "text": "واحد لكل شخص (مفهرس بـ entryUUID)، كل منها صالح لمدة openpgp.challengeLifetimeS."
+  },
+  "caches.store.openpgp.wkd.title": {
+    "en": "dc47d455d5283de5",
+    "text": "عمليات النشر في دليل مفاتيح الويب (Web Key Directory)"
+  },
+  "caches.store.openpgp.wkd.description": {
+    "en": "f79c85531015261b",
+    "text": "أي مفتاح OpenPGP يجيب به دليل مفاتيح الويب لكل عنوان مُجزَّأ: الحائز (entryUUID) والبصمة التي نشرها. مؤشر فقط: المفتاح نفسه يُقرأ من الإدخال. ليس سرًا أبدًا."
+  },
+  "caches.store.openpgp.wkd.bound": {
+    "en": "e8a7abbcc8bba7fc",
+    "text": "الصفوف التي تحتفظ بها العملية ذاكرة تخزين مؤقت من 5,000 لكل نطاق؛ ويحتفظ السجل بصف واحد لكل شخص وافق على النشر."
+  },
+  "caches.store.openpgp.wkd.lifetime": {
+    "en": "06861887c7e6c8f1",
+    "text": "إلى أن يوقف الشخص النشر أو يزيل المفتاح."
   },
   "caches.store.passwords.breach-ranges.title": {
     "en": "5746db291bee19b3",

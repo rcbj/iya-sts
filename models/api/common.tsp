@@ -1229,7 +1229,7 @@ namespace IyaSts.Api.Common;
 
 @hoisted model WithIdNameProviderEtc5 { `id`?: string; `name`?: NullableString; `provider`?: NullableString; `providerLabel`?: NullableString; `connected`?: boolean }
 
-@hoisted model WithRememberBrowserMaxLengthPatternEtc4 { `remember_browser`?: EmptyTextOr01TrueFalseOnOffYesNo; @js(#{`maxLength`:64,`pattern`:"^[A-Za-z0-9]*$"}) `device_fp`?: string }
+@hoisted model WithRememberBrowserMaxLengthPatternEtc4 { `remember_browser`?: EmptyTextOr01TrueFalseOnOffYesNo; `choose_roles`?: EmptyTextOr01TrueFalseOnOffYesNo; @js(#{`maxLength`:64,`pattern`:"^[A-Za-z0-9]*$"}) `device_fp`?: string }
 
 @hoisted model WithNamedMissingAppliesEtc6 { `named`?: string; `missing`?: boolean; `applies`?: string; `precedence`?: numeric; `groupPolicies`?: integer; `link`?: string }
 
@@ -1443,7 +1443,7 @@ namespace IyaSts.Api.Common;
 
 @hoisted model WithEventReactionDoneEtc13 { `event`?: string; `reaction`?: string; `done`?: boolean; `skipped`?: string; `observed`?: boolean; `why`?: string; `ended`?: integer; `revoked`?: integer; `gnapGrants`?: integer; `oauthGrants`?: integer; `tokens`?: integer; `codes`?: integer; `status`?: string }
 
-@hoisted model WithNamePolicyIdKindEtc11 { `name`?: string; `policyId`?: NullableString; `kind`?: string; `version`?: string; `enabled`?: boolean; `isRoot`?: boolean; `combiningAlgId`?: string; `description`?: string; `application`?: NullableString; `orphanedAt`?: NullableString; @js(#{ `description`:"The remote PEP route, <pep>/<route>, this policy was generated for (#1760), or null." }) `pepRoute`?: NullableString; @js(#{ `description`:"Whether a reverse-proxy route may choose it: enabled, and sent to a remote PEP (#1760)." }) `routable`?: boolean; `problems`?: (string)[] }
+@hoisted model WithNamePolicyIdKindEtc11 { `name`?: string; `policyId`?: NullableString; `kind`?: string; `version`?: string; `enabled`?: boolean; `isRoot`?: boolean; `combiningAlgId`?: string; `description`?: string; `application`?: NullableString; @js(#{ `description`:"The dynamic role whose eligibility this policy decides (#1072), or null." }) `role`?: NullableString; `orphanedAt`?: NullableString; @js(#{ `description`:"The remote PEP route, <pep>/<route>, this policy was generated for (#1760), or null." }) `pepRoute`?: NullableString; @js(#{ `description`:"Whether a reverse-proxy route may choose it: enabled, and sent to a remote PEP (#1760)." }) `routable`?: boolean; `problems`?: (string)[] }
 
 @hoisted model WithIdLabelKindEtc11 { `id`?: string; `label`?: string; `kind`?: string; `kinds`?: (string)[]; `identifierAttribute`?: string; `redirectAttribute`?: string; `logoutAttribute`?: string; `deliveryAttribute`?: string; `eventsAttribute`?: string; `secretAttribute`?: string; `what`?: string }
 
@@ -2153,7 +2153,7 @@ model XacmlPepListenerTuningFields {
 
 @hoisted model WithKeyNameFormsEtc22 { `key`?: string; `name`?: string; `forms`?: (WithFormCount)[]; `realms`?: (WithRealmCount)[]; `protocols`?: (WithProtocolCountFirstAtEtc5)[]; `authentications`?: numeric; `firstAt`?: numeric; `lastAt`?: numeric; `isClient`?: boolean; `authenticated`?: boolean; `knownBy`?: string; `events`?: (WithAtProtocolMethodEtc12)[]; `eventsForgotten`?: numeric; `tokens`?: WithIssuedValidExpiredEtc5; `artifactKinds`?: (WithKindCount)[]; `artifacts`?: numeric; `lastActivityAt`?: numeric; `factors`?: NullableObject42; `inDirectory`?: boolean; `serviceAccount`?: boolean; `liveSessions`?: NullableNumber; `dn`?: string }
 
-@hoisted model WithPageIdUsernameEtc22 { `page`?: string; `id`?: string; `username`?: string; `passwordless`?: boolean; `links`?: WithTotpWebauthnWalletEtc6; `clientDisplay`?: NullableObject30; `totp`?: WithDigitsPeriod; `amr`?: (string)[]; `backup`?: WithFactorBackRemainingEtc5; `webauthn`?: WithModePasswordlessChoicesEtc21; `setup`?: WithStateOfferedOptionalEtc6; `postLogin`?: WithActivityReasonRequiredEtc9; `state`?: "ask" | "code" | "wait" | "open" | "elsewhere" | "end"; `kind`?: "code" | "link"; `primary`?: boolean; `address`?: string; `minutes`?: numeric; `seconds`?: numeric; `notice`?: string; `others`?: WithTotpWebauthnPasswordEtc4; `title`?: string; `sentence`?: string }
+@hoisted model WithPageIdUsernameEtc22 { `page`?: string; `id`?: string; `username`?: string; `passwordless`?: boolean; `links`?: WithTotpWebauthnWalletEtc6; `clientDisplay`?: NullableObject30; `totp`?: WithDigitsPeriod; `amr`?: (string)[]; `backup`?: WithFactorBackRemainingEtc5; `webauthn`?: WithModePasswordlessChoicesEtc21; `setup`?: WithStateOfferedOptionalEtc6; `postLogin`?: WithActivityReasonRequiredEtc9; `roles`?: { `required`?: boolean; `offered`?: ({ `name`?: string; `label`?: string; `description`?: string; `required`?: boolean; `exclusiveGroup`?: string })[] }; `state`?: "ask" | "code" | "wait" | "open" | "elsewhere" | "end"; `kind`?: "code" | "link"; `primary`?: boolean; `address`?: string; `minutes`?: numeric; `seconds`?: numeric; `notice`?: string; `others`?: WithTotpWebauthnPasswordEtc4; `title`?: string; `sentence`?: string }
 
 @hoisted model WithKeyGroupLabelEtc27 { `key`?: string; `group`?: string; `label`?: string; `description`?: string; `type`?: string; `enumValues`?: (string)[]; `csvValues`?: (string)[]; `ordered`?: boolean; @js(#{`description`:"The sentence beside each of a list's values."}) `csvValueNotes`?: Record<string>; `selectAll`?: WithOnlyWhileOnAloneWhileOn; `min`?: numeric; `max`?: numeric; `step`?: numeric; `value`?: StringOrNumericOrBooleanEtc2; `text`?: string; `source`?: string; `editable`?: boolean; `restartReason`?: string; `editRefusal`?: string; `env`?: NullableString; `legacyEnv`?: NullableString; `appconfigPath`?: string; `default`?: StringOrNumericOrBooleanEtc2; `masked`?: boolean; `realmSettable`?: boolean; `overridden`?: boolean }
 
@@ -2311,3 +2311,41 @@ model XacmlPepListenerTuningFields {
 @component model `WithOkMessageErrors63` is (`WithKindCountIdentifiers`)[];
 
 @component model `WithIdFromTo2` is Record<`WithKindCountIdentifiers`>;
+
+// #1955 P6: A PERSON'S OpenPGP KEY, ITS WEB KEY DIRECTORY PUBLICATION AND THEIR
+// MAIL ENCRYPTION (`common/openpgp_keys.ts`'s `view()`), shared by
+// `/account-api/openpgp` and `/admin-api/openpgp`.
+@js(#{`description`:"The person's registered OpenPGP public key (#1955)."}) @hoisted model OpenPgpKeyView {
+  @js(#{`description`:"The fingerprint, lower-case hex: 40 characters for a v4 key, 64 for a v6 one."}) `fingerprint`: string;
+  @js(#{`description`:"The key version, 4 or 6."}) `version`: integer;
+  @js(#{`description`:"The primary key's algorithm, as openpgp.js names it (`ed25519`, `eddsaLegacy ed25519Legacy`, `ecdsa nistP256`, `rsaEncryptSign 4096`)."}) `algorithm`: string;
+  @js(#{`description`:"The encryption key's algorithm; empty for a key with none valid when registered."}) `encryption`: string;
+  @js(#{`description`:"The user ids that carried the entry's address when it was registered."}) `userIds`: (string)[];
+  @js(#{`description`:"When the key was made, ISO 8601."}) `created`: string;
+  @js(#{`description`:"When it expires, ISO 8601; empty for never."}) `expiresAt`: string;
+  @js(#{`description`:"When it was registered, ISO 8601."}) `registeredAt`: string;
+  @js(#{`description`:"Where: `portal` or `api`."}) `registeredVia`: string;
+  @js(#{`description`:"The public key, ASCII-armored."}) `armored`: string
+}
+
+@js(#{`description`:"The person's outstanding registration challenge (#1955): the text to sign with `gpg --clearsign`."}) @hoisted model OpenPgpChallengeView {
+  `text`: string;
+  @js(#{`description`:"When it lapses, ISO 8601."}) `expiresAt`: string
+}
+
+@js(#{`description`:"The person's Web Key Directory publication (#1955)."}) @hoisted model OpenPgpWkdView {
+  @js(#{`description`:"Whether the realm answers the Web Key Directory (`openpgp.wkd`)."}) `enabled`: boolean;
+  @js(#{`description`:"Whether the person chose to publish their key."}) `optedIn`: boolean;
+  @js(#{`description`:"Whether it is answered now: a key, the choice, the realm's switch and a domain the realm serves."}) `published`: boolean;
+  @js(#{`description`:"Whether the domain of the person's address is one the realm's directory serves."}) `domainServed`: boolean;
+  @js(#{`description`:"The hashed local part of the person's address, z-base-32."}) `hash`: string;
+  @js(#{`description`:"The advanced method's URL for the address; empty without one."}) `url`: string
+}
+
+@js(#{`description`:"How mail to the person is encrypted (#1955)."}) @hoisted model OpenPgpMailView {
+  @js(#{`description`:"`none`, `openpgp` or `smime`."}) `choice`: string;
+  @js(#{`description`:"Whether the registered OpenPGP key has an encryption key valid now."}) `openpgpUsable`: boolean;
+  @js(#{`description`:"Whether the person's userSMIMECertificate holds a certificate that can receive now."}) `smimeUsable`: boolean;
+  @js(#{`description`:"That certificate's subject and serial, or null."}) `smimeCertificate`: { `subject`: string; `serial`: string } | null;
+  @js(#{`description`:"Why no S/MIME certificate on the entry can receive, in English; empty otherwise."}) `smimeProblem`: string
+}

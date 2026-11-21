@@ -140,6 +140,24 @@ class WebAuthnLogin {
   }
 
   /**
+   * "Choose roles for this sign-in" (#1072), where the realm and the
+   * application offer dynamic roles. Ticked, the roles this person may
+   * choose are shown once they have signed in.
+   *
+   * @param v - the view
+   * @param t - the translator
+   * @returns the markup, or ''
+   */
+  static roleBox(v: Json, t: Json): string {
+    return v.chooseRoles
+      ? '<label class="chk"><input type="checkbox" id="choose_roles" ' +
+        'name="choose_roles" value="1"> ' +
+        t.html('authn.login.chooseRoles') + ' <span class="sub">' +
+        t.html('authn.login.chooseRolesNote') + '</span></label>'
+      : '';
+  }
+
+  /**
    * The form: the username, the password, the boxes and the buttons — or,
    * where the application allows nothing on this screen, only Cancel.
    *
@@ -168,6 +186,7 @@ class WebAuthnLogin {
           : '') +
         WebAuthnLogin.keyBoxes(v, t) +
         WebAuthnLogin.rememberBox(v, t) +
+        WebAuthnLogin.roleBox(v, t) +
         '<div class="row"><button type="submit" id="wa-passkey-go" ' +
         'name="action" value="passkey">' + t.html('authn.login.passkey') +
         '</button><button type="submit" id="kc-cancel" name="action" ' +
@@ -193,6 +212,7 @@ class WebAuthnLogin {
         : '') +
       WebAuthnLogin.keyBoxes(v, t) +
       WebAuthnLogin.rememberBox(v, t) +
+      WebAuthnLogin.roleBox(v, t) +
       '<div class="row"><button type="submit" id="kc-login" name="action" ' +
       'value="login">' + t.html('authn.login.signIn') + '</button>' +
       (v.anonymous

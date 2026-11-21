@@ -122,5 +122,11 @@
   "pepCredential.urn": "名称",
   "pepCredential.env": "使用以下环境变量启动 PEP。私钥从未离开生成请求的机器；本服务没有私钥可以提供。",
   "pepCredential.chain": "证书及其到服务根证书的链。公开信息：PEP 进行身份验证时不需要它，它也列在该条目的密钥列表中。",
-  "pepCredential.download": "下载证书"
+  "pepCredential.download": "下载证书",
+  "once.pivCertificate": "PIV 证书",
+  "once.pivKey": "托管的 PIV 密钥",
+  "piv.keyWarn": "这是此人的私有解密密钥。它只显示一次，其恢复操作会记入审计日志。请像移交卡片一样移交它。",
+  "piv.privateKey": "私钥",
+  "piv.certificate": "证书",
+  "piv.import": "使用以下命令将其写入 YubiKey 插槽：ykman piv certificates import SLOT cert.pem"
 }

@@ -150,6 +150,10 @@ const { AuthorizationRequest } = xacmlRequest;
 
 // The question an issuance site asks, through `common/issuance_gate.js`.
 interface IssuanceQuestion {
+  // (#1072) The sign-on session the issuance rests on, as
+  // `common/issuance_gate.js` documents `request.session`: its id is what
+  // reads the dynamic roles it chose.
+  session?: any;
   application?: any;
   kind?: string;
   subject?: any;
@@ -190,6 +194,12 @@ interface IssuanceQuestion {
   // EAP ACR Values 1.0's `phr` and `phrh` earned, or [`none`], sent by the
   // gate on every browser issuance. See `common/phishing_resistance.ts`.
   phishingResistance?: string[] | null;
+  // THE HARDWARE TOKEN THE AUTHENTICATION'S CREDENTIAL IS ON (#1955 P1):
+  // `{ attested, key, vendor, model, source, smartCard, holderMatches,
+  // status }` from `issuance_gate.js`'s `hardwareTokenFactsOf()`, `{
+  // attested: false }` for a browser issuance with none, and absent where
+  // the gate described no browser authentication.
+  hardwareToken?: Record<string, any> | null;
   // THE DEVICE-BOUND SESSION (#740): `bound`, `skipped`, `pending`,
   // `timedout` or `none`, computed by `issuance_gate.js` from the session.
   // Absent is `none`. The PEP holds `pending` and refuses `skipped` and
@@ -363,6 +373,7 @@ interface XacmlRolePepDeps {
   templates: { build(id: string, answers: any, options: any): any;
                ISSUANCE_ATTRIBUTE: Record<string, string>;
                DEVICE_ATTRIBUTE?: Record<string, string>;
+               HARDWARE_TOKEN_ATTRIBUTE?: Record<string, string>;
                PROTOCOL_ATTRIBUTE?: Record<string, string> };
 }
 
@@ -371,6 +382,8 @@ const ATTRIBUTE = templates.ISSUANCE_ATTRIBUTE;
 const RISK = templates.RISK_ATTRIBUTE;
 // #164 phase 6: the registered device an issuance came from.
 const DEVICE = templates.DEVICE_ATTRIBUTE;
+// #1955 P1: the hardware token the authentication's credential is on.
+const HARDWARE_TOKEN = templates.HARDWARE_TOKEN_ATTRIBUTE;
 // The protocol families an issuance satisfies and the application's
 // declaration (2026-10-01).
 const PROTOCOL = templates.PROTOCOL_ATTRIBUTE;
@@ -692,6 +705,7 @@ class XacmlRolePep {
     this.mechanismAttributes(req, asked);
     this.mfaAttributes(req, asked);
     this.phishingAttributes(req, asked);
+    this.hardwareTokenAttributes(req, asked);
     this.deviceBoundAttributes(req, asked);
     this.deviceAttributes(req, asked);
     // THE PROTOCOL DECLARATION, only where the gate named both halves: the
@@ -843,6 +857,60 @@ class XacmlRolePep {
     req.environment(AUTHN.PHISHING_RESISTANCE,
                     asked.phishingResistance.map(String));
     log.debug("Leaving XacmlRolePep.phishingAttributes().");
+  }
+
+  // THE HARDWARE TOKEN (#1955 P1) — `xacml_templates.ts`'s
+  // HARDWARE_TOKEN_ATTRIBUTE. Sent only where the gate described a browser
+  // authentication: ATTESTED always, the rest for a token in hand.
+  private hardwareTokenAttributes(req: any, asked: IssuanceQuestion): void {
+    const { log, model } = this.deps;
+    log.debug("Entering XacmlRolePep.hardwareTokenAttributes().");
+    const fact = asked.hardwareToken;
+    if (!fact || typeof fact !== 'object') {
+      log.debug("Leaving XacmlRolePep.hardwareTokenAttributes(). Not " +
+                "asked.");
+      return;
+    }
+    req.environment(HARDWARE_TOKEN.ATTESTED, [fact.attested === true],
+                    model.TYPE.BOOLEAN);
+    if (fact.key) {
+      req.environment(HARDWARE_TOKEN.KEY, [String(fact.key)])
+        .environment(HARDWARE_TOKEN.STATUS, [String(fact.status || 'active')])
+        .environment(HARDWARE_TOKEN.SMART_CARD, [fact.smartCard === true],
+                     model.TYPE.BOOLEAN)
+        .environment(HARDWARE_TOKEN.HOLDER_MATCHES,
+                     [fact.holderMatches === true], model.TYPE.BOOLEAN);
+      if (fact.vendor) {
+        req.environment(HARDWARE_TOKEN.VENDOR, [String(fact.vendor)]);
+      }
+      if (fact.model) {
+        req.environment(HARDWARE_TOKEN.MODEL, [String(fact.model)]);
+      }
+      if (fact.source) {
+        req.environment(HARDWARE_TOKEN.EVIDENCE, [String(fact.source)]);
+      }
+      // The attestation's facts (#1955 P2, X4): the gate sends them only
+      // for an attested token whose evidence said them.
+      if (fact.pinPolicy) {
+        req.environment(HARDWARE_TOKEN.PIN_POLICY, [String(fact.pinPolicy)]);
+      }
+      if (fact.touchPolicy) {
+        req.environment(HARDWARE_TOKEN.TOUCH_POLICY,
+                        [String(fact.touchPolicy)]);
+      }
+      if (fact.firmware) {
+        req.environment(HARDWARE_TOKEN.FIRMWARE, [String(fact.firmware)]);
+      }
+      if (fact.formFactor) {
+        req.environment(HARDWARE_TOKEN.FORM_FACTOR,
+                        [String(fact.formFactor)]);
+      }
+      if (fact.fips === true) {
+        req.environment(HARDWARE_TOKEN.FIPS, [true], model.TYPE.BOOLEAN);
+      }
+    }
+    log.debug("Leaving XacmlRolePep.hardwareTokenAttributes(). " +
+              (fact.key ? String(fact.key) : 'No token.'));
   }
 
   // THE DEVICE-BOUND SESSION (#740), sent only while the feature is on, so
@@ -1141,8 +1209,13 @@ class XacmlRolePep {
     // and this application's own roles by their name inside it — which is
     // what its `appRequiredRole` names. Another application's role is not
     // held here, so it can never satisfy this one's requirement.
+    // AND THE SESSION'S CHOSEN DYNAMIC ROLES (#1072): a role chosen
+    // signing in to this application is held for it, as long as its own
+    // policy still permits the person (`authn/role_selection.ts`).
     const held = roles.rolesOf(Object.assign({}, subject,
-      { application: String(asked.application || '') }));
+      { application: String(asked.application || ''),
+        sessionId: String((asked.session && (asked.session.id ||
+                                             asked.session.sid)) || '') }));
     const fromToken = roles.rolesInClaims(asked.claims);
     const narrowed = applications.requiresNarrowedRoles(asked.application);
 

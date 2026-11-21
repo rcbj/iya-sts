@@ -564,8 +564,8 @@
     "text": "Para saan ang profile, para sa susunod na tao."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicyMechanism.what": {
-    "en": "66db848b0bb1c58f",
-    "text": "Sa isang NAMED authentication policy (#1148, #1237): isang first-factor mechanism na pinapayagan ng sign-in na sakop nito — kapag pinangalanan ito ng application (appAuthnPolicy) o ng isa sa mga group ng tao (stsAuthnPolicy) at ang precedence nito ang pinakamababa sa mga pinangalanan — password, password-mfa, webauthn, spnego, wallet o federation, isang value bawat isa. Kapag wala, pinapayagan ang lahat ng pinapayagan ng realm."
+    "en": "783db3d7da8c29c5",
+    "text": "Sa isang NAMED authentication policy (#1148, #1237): isang first-factor mechanism na pinapayagan ng sign-in na sakop nito — kapag pinangalanan ito ng application (appAuthnPolicy) o ng isa sa mga group ng tao (stsAuthnPolicy) at ang precedence nito ang pinakamababa sa mga pinangalanan — password, password-mfa, webauthn, attested-hardware (isang passkey o sertipiko sa hardware token na napatunayan ng attestation, #1955), spnego, wallet o federation, isang value bawat isa. Kapag wala, pinapayagan ang lahat ng pinapayagan ng realm."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicySecondFactor.what": {
     "en": "7c8e4d8b4cce7c08",

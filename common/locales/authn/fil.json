@@ -201,5 +201,13 @@
   "postLogin.failedHelp": "Kung hindi kayang gumawa ng iyong device o browser ng ML-DSA na passkey, irehistro ito sa hiwalay na security key na sumusuporta sa ML-DSA, o lumapit sa isang administrator: kung pinapayagan ng iyong passkey policy ang isang administrator na magrehistro ng passkey para sa iyo, magagawa niya iyon, at maaari niyang i-upgrade ang iyong passkey mula sa console.",
   "postLogin.failedSkip": "Puwede mo rin itong laktawan muna sa ngayon.",
   "client.policy": "Patakaran sa privacy",
-  "client.tos": "Mga tuntunin ng serbisyo"
+  "client.tos": "Mga tuntunin ng serbisyo",
+  "login.chooseRoles": "Pumili ng mga tungkulin para sa pag-sign in na ito",
+  "login.chooseRolesNote": "Pagkatapos mag-sign in, piliin ang mga tungkuling gagamitin sa application na ito.",
+  "roles.heading": "Piliin ang iyong mga tungkulin",
+  "roles.sub": "Naka-sign in bilang si {name}. I-tsek ang mga tungkuling gagamitin sa pag-sign in na ito.",
+  "roles.required": "Kailangan mong pumili ng kahit isang tungkuling may markang kailangan.",
+  "roles.requiredTag": "kailangan",
+  "roles.exclusive": "(hindi maisasama sa mga tungkuling kauri nito)",
+  "roles.continue": "Magpatuloy"
 }

@@ -564,8 +564,8 @@
     "text": "Para qué sirve el perfil, para la próxima persona que lo lea."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicyMechanism.what": {
-    "en": "66db848b0bb1c58f",
-    "text": "En una política de autenticación CON NOMBRE (#1148, #1237): un mecanismo de primer factor que permite un inicio de sesión al que se aplica — cuando la aplicación (appAuthnPolicy) o uno de los grupos de la persona (stsAuthnPolicy) la indica y su precedencia es la menor de las indicadas —: password, password-mfa, webauthn, spnego, wallet o federation, un valor cada uno. Si no hay ninguno, se permiten todos los que permite el dominio."
+    "en": "783db3d7da8c29c5",
+    "text": "En una política de autenticación CON NOMBRE (#1148, #1237): un mecanismo de primer factor que permite un inicio de sesión al que se aplica — cuando la aplicación (appAuthnPolicy) o uno de los grupos de la persona (stsAuthnPolicy) la indica y su precedencia es la menor de las indicadas —: password, password-mfa, webauthn, attested-hardware (una llave de acceso o un certificado en un token de hardware probado por atestación, #1955), spnego, wallet o federation, un valor cada uno. Si no hay ninguno, se permiten todos los que permite el dominio."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicySecondFactor.what": {
     "en": "7c8e4d8b4cce7c08",

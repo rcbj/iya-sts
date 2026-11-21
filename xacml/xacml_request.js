@@ -119,6 +119,21 @@ const VOCABULARY = Object.freeze({
   PURPOSE: 'urn:sts:xacml:purpose',
   // environment: the trust realm the question is asked in.
   REALM: 'urn:sts:xacml:realm',
+  // THE FACTS OF A ROLE ELIGIBILITY QUESTION (#1072): may this person be
+  // OFFERED this dynamic selectable role, and may they keep holding the one
+  // they chose. Gathered by `xacml/role_eligibility.ts`; the policy is the
+  // role's own, decided alone. action-id is ROLE_ELIGIBILITY_ACTION, the
+  // resource-id the role's name. environment: WHEN it is asked — `offer`
+  // (the sign-in's role step), `issue` (every issuance that carries a
+  // chosen role) or `test` (an administrator's dry run); the application
+  // the sign-in is for (its identifier in ou=applications) and the session's
+  // authentication methods (RFC 8176 values), beside ACR and REALM above.
+  // resource: the application the role belongs to, absent for a realm-wide
+  // role.
+  ROLE_ELIGIBILITY_STAGE: 'urn:sts:xacml:role-eligibility:stage',
+  ROLE_ELIGIBILITY_APPLICATION: 'urn:sts:xacml:role-eligibility:application',
+  ROLE_APPLICATION: 'urn:sts:xacml:role-eligibility:role-application',
+  AMR: 'urn:sts:xacml:amr',
   // THE FACTS OF AN EXCHANGE QUESTION (#186): who may act for whom, and as
   // what, at an RFC 8693 token exchange, a WS-Trust OnBehalfOf / ActAs or a
   // Kerberos S4U request — one vocabulary for the three, so one policy
@@ -566,6 +581,11 @@ const VOCABULARY = Object.freeze({
 // The principal types a request may name. Anything else is a person, which
 // is what a request that never said meant.
 const SUBJECT_KINDS = Object.freeze(['user', 'application']);
+// #1072: the action-id of every role eligibility question, and when one is
+// asked. A question whose stage is not one of these is asked as `test`,
+// which no rule written for a sign-in reads.
+const ROLE_ELIGIBILITY_ACTION = 'select-role';
+const ROLE_ELIGIBILITY_STAGES = Object.freeze(['offer', 'issue', 'test']);
 
 // THE STAGES A FINE-GRAINED AUTHORIZATION QUESTION IS ASKED AT (#564), as
 // `urn:sts:xacml:fga:stage` carries them: the authorization endpoint, the
@@ -1347,6 +1367,48 @@ class AuthorizationRequest {
     return this;
   }
 
+  // THE FACTS OF A ROLE ELIGIBILITY QUESTION (#1072). `facts`:
+  //   subject              the person's username; principal_type `user`,
+  //                        so the PIP fills the person's own attributes
+  //   role                 the dynamic role's name, the resource-id
+  //   roleApplication      the application the role belongs to, or none
+  //   application          the application the sign-in is for, or none
+  //   clientId             the OAuth client, where there is one
+  //   stage                one of ROLE_ELIGIBILITY_STAGES
+  //   realm, protocol, acr, amr
+  // Every fact is the service's own knowledge — the session's, the role's,
+  // the registry's — never a value the person sent. A fact not known is
+  // left out rather than sent as '', so no rule reads an absent one as a
+  // value (`fga()`'s rule).
+  roleEligibility(facts) {
+    log.debug("Entering AuthorizationRequest.roleEligibility().");
+    const given = facts || {};
+    const V = VOCABULARY;
+    const one = function (value) {
+      log.debug("Entering one().");
+      log.debug("Leaving one().");
+      return value ? [String(value)] : [];
+    };
+    const stage = ROLE_ELIGIBILITY_STAGES.indexOf(String(given.stage)) >= 0
+      ? String(given.stage) : 'test';
+    this.principal(given.subject, 'user');
+    if (given.clientId) {
+      this.client(given.clientId);
+    }
+    this.requestedAction(ROLE_ELIGIBILITY_ACTION);
+    this.target(given.role);
+    this.resource(V.ROLE_APPLICATION, one(given.roleApplication));
+    this.protocol(given.protocol || 'authn');
+    this.environment(V.REALM, one(given.realm));
+    this.environment(V.ROLE_ELIGIBILITY_STAGE, [stage]);
+    this.environment(V.ROLE_ELIGIBILITY_APPLICATION, one(given.application));
+    this.environment(V.ACR, one(given.acr));
+    this.environment(V.AMR, (Array.isArray(given.amr) ? given.amr : [])
+      .map(String).filter(Boolean));
+    log.debug("Leaving AuthorizationRequest.roleEligibility().");
+    return this;
+  }
+
   // THE FACTS OF A FINE-GRAINED AUTHORIZATION QUESTION (#564). `facts`:
   //   realm, protocol      trusted; the protocol `oauth2` unless named
   //   subject { id, kind } the principal and principal_type; BOTH left out
@@ -1600,6 +1662,8 @@ module.exports = {
   AuthorizationRequest: AuthorizationRequest,
   VOCABULARY: VOCABULARY,
   SUBJECT_KINDS: SUBJECT_KINDS,
+  ROLE_ELIGIBILITY_ACTION: ROLE_ELIGIBILITY_ACTION,
+  ROLE_ELIGIBILITY_STAGES: ROLE_ELIGIBILITY_STAGES,
   FGA_STAGES: FGA_STAGES,
   FGA_ISSUANCE_STAGES: FGA_ISSUANCE_STAGES,
   FGA_GRANT_ACTION: FGA_GRANT_ACTION,

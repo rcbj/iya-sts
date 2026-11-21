@@ -7209,6 +7209,7 @@ Scope: `admin:read`.
 | `policies[].policyId` | string, or null |  |  |
 | `policies[].problems` | list |  |  |
 | `policies[].problems[]` | string |  |  |
+| `policies[].role` | string, or null |  | The dynamic role whose eligibility this policy decides (#1072), or null. |
 | `policies[].routable` | boolean |  | Whether a reverse-proxy route may choose it: enabled, and sent to a remote PEP (#1760). |
 | `policies[].version` | string |  |  |
 | `protocolEndpoints` | list |  |  |

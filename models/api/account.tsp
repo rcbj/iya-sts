@@ -952,6 +952,13 @@ op `setCustomAttribute`(`requestBody/content/application~1json/schema`: {
         `schema`:null,
         `description`:"The page of the list, 1 for the first.",
         `example`:1
+      },
+      #{
+        `name`:"reauthenticate",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"`1`: each launch link asks for a fresh sign-in (#1072) — `forceAuthn=true` for SAML, `wfresh=0` for WS-Federation, `prompt=login` passed to an OpenID Connect client — so the person may choose dynamic roles for that application. The portal's *Sign in again*."
       }
     ],
     `responses`:#{
@@ -982,6 +989,7 @@ op `setCustomAttribute`(`requestBody/content/application~1json/schema`: {
   })
 op `getApplications`(@js(#{`maxLength`:200}) `parameters/0/schema`: string,
   @js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"integer",`minimum`:1,`maximum`:100000}]}}) `parameters/1/schema`: unknown,
+  `parameters/2/schema`: "1" | "",
   `responses/200/content/application~1json/schema`: {
     `rows`?: ({
       `identifier`?: string;
@@ -1001,7 +1009,9 @@ op `getApplications`(@js(#{`maxLength`:200}) `parameters/0/schema`: string,
     `scanned`?: integer;
     `total`?: integer;
     `truncated`?: boolean;
-    `limit`?: numeric
+    `limit`?: numeric;
+    `reauthenticate`?: boolean;
+    `rolesOffered`?: boolean
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
@@ -4830,6 +4840,381 @@ op `actOnDevices`(`requestBody/content/application~1json/schema`: {
     `description`:"A refusal or a failure, in English. No error code is ever in it."
   }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
+
+// #1955 P1: THE PERSON'S HARDWARE TOKENS (`portal/account_tokens.ts`).
+@hoisted model HardwareTokenPortalCredential {
+  @js(#{`description`:"The credential's kind: `fido` or `x509` (later `hotp`, `yubico-otp`, `ssh`, `openpgp`)."}) `kind`: string;
+  @js(#{`description`:"Its name, where it has one."}) `label`: string;
+  @js(#{`description`:"When it was recorded on the token, ISO 8601."}) `addedAt`: string;
+  @js(#{`description`:"Whether the lost-key act retired it."}) `retired`: boolean
+}
+
+@hoisted model HardwareTokenPortalRow {
+  @js(#{`description`:"The token's register key, `<vendor>/<serial>`: what `actOnTokens` names."}) `key`: string;
+  `vendor`: string;
+  @js(#{`description`:"The serial its attestation named."}) `serial`: string;
+  `model`: string;
+  @js(#{`description`:"How it is made, where its evidence says; empty where it does not."}) `formFactor`: string;
+  @js(#{`description`:"Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation)."}) `attested`: boolean;
+  @js(#{`description`:"`active` or `lost`."}) `status`: string;
+  @js(#{`description`:"When it was reported lost, or empty."}) `lostAt`: string;
+  `registeredAt`: string;
+  @js(#{`description`:"The caller's own credentials on it."}) `credentials`: (HardwareTokenPortalCredential)[]
+}
+
+// #1955 P2: an escrowed piv-key-management certificate of the caller's, and
+// the realm's PIV rules the enrolment form draws.
+@hoisted model PivEscrowedPortalRow {
+  @js(#{`description`:"The certificate's serial, lower-case hex: what `recover-key` and `attach-key` name."}) `serialHex`: string;
+  `profile`: string;
+  `subject`: string;
+  `notAfter`: string;
+  `issuedAt`: string;
+  @js(#{`description`:"Whether the certificate was revoked; its escrowed key is still recoverable."}) `revoked`: boolean
+}
+
+@hoisted model PivPortalRules {
+  @js(#{`description`:"The PIV slot profiles this realm's EST may issue (est.allowedProfiles)."}) `profiles`: (string)[];
+  @js(#{`description`:"Whether a PIV profile needs a YubiKey PIV attestation (piv.requireAttestation)."}) `requireAttestation`: boolean;
+  @js(#{`description`:"Whether piv-key-management keys may be escrowed (piv.keyEscrow)."}) `keyEscrow`: boolean
+}
+
+@hoisted model HardwareTokensPortalView {
+  @js(#{`description`:"Every token the caller holds or has a credential on, newest first."}) `tokens`: (HardwareTokenPortalRow)[];
+  @js(#{`description`:"The caller's escrowed piv-key-management certificates (#1955 P2), newest first; never a key."}) `escrowed`: (PivEscrowedPortalRow)[];
+  @js(#{`description`:"What the PIV enrolment form may issue here."}) `piv`: PivPortalRules;
+  @js(#{`description`:"`enrol-piv`'s answer only: the certificate issued, drawn once."}) `issued`?: PivIssuedPortal;
+  @js(#{`description`:"`recover-key`'s answer only: the escrowed key and its certificate, drawn once."}) `recovered`?: PivRecoveredPortal
+}
+
+@hoisted model PivIssuedPortal {
+  @js(#{`description`:"The issued certificate's serial, lower-case hex."}) `serialHex`: string;
+  `profile`: string;
+  @js(#{`description`:"The certificate, PEM: import it with ykman piv certificates import."}) `certificatePem`: string;
+  @js(#{`description`:"The issuing chain, PEM, nearest first."}) `chainPem`: (string)[];
+  @js(#{`description`:"Whether a YubiKey PIV attestation of the key verified."}) `attested`: boolean;
+  @js(#{`description`:"The hardware token it was recorded on, `<vendor>/<serial>`, or empty."}) `token`: string
+}
+
+@hoisted model PivRecoveredPortal {
+  `serialHex`: string;
+  @js(#{`description`:"The escrowed private key, PEM. Sent with Cache-Control: no-store; keep it as you would the card."}) `privateKeyPem`: string;
+  `certificatePem`: string;
+  `chainPem`: (string)[]
+}
+
+@endpoint("/account-api/tokens",
+  "get",
+  #{
+    `operationId`:"getTokens",
+    `tags`:#["Devices"],
+    `summary`:"Your hardware tokens",
+    `description`:"Each physical security key or smart card this realm recorded you as holding, from its attestation: its vendor, serial, model and form factor, whether it is active or was reported lost, and your credentials on it.\n\nThe door of the portal's `GET /portal/tokens`.",
+    `parameters`:#[
+
+    ],
+    `responses`:#{
+      `200`:#{
+        `description`:"The answer.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The request did not validate, or was refused: `{ ok: false, errors: [...] }`.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"No access token, or one that does not verify, has expired, was revoked, outlived its sign-on session, or came without its DPoP proof. `WWW-Authenticate` says which.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"The token is for another audience or does not carry `account:manage`, or the access policy refused the person.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`portal`:#["account:manage"]}],
+    `x-access`:"person",
+    `x-mirrors`:"GET /portal/tokens"
+  })
+op `getTokens`(`responses/200/content/application~1json/schema`: HardwareTokensPortalView,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
+
+
+@js(#{`description`:"What to do; `lost` where none is named."}) @hoisted union post_account_api_tokens_b_application_json_action {
+    EmptyText,
+    "lost",
+    "enrol-piv",
+    "recover-key",
+    "attach-key"
+  }
+
+@endpoint("/account-api/tokens",
+  "post",
+  #{
+    `operationId`:"actOnTokens",
+    `tags`:#["Devices"],
+    `summary`:"Reports one of your hardware tokens lost, enrols a PIV certificate, or recovers an escrowed key",
+    `description`:"`lost` marks the token lost and retires every credential of yours on it: its passkeys are removed, its certificates revoked (keyCompromise), a CAEP credential-change is sent for each, and the sign-on sessions they signed in end. `enrol-piv` issues you a PIV slot certificate (`profile`) from a certificate request (`csr`) and, optionally, its YubiKey PIV attestation: the slot's attestation certificate (`attestationCertificate`) and the f9 attestation certificate (`attestationIssuer`). `recover-key` answers your escrowed piv-key-management key for certificate `serial`. `attach-key` notes which of your tokens (`key`) the escrowed key of certificate `serial` was loaded on, so reporting the token lost revokes it. Each asks for a recent sign-in. A refusal carries the page's `view`.\n\nThe door of the portal's `POST /portal/tokens`.",
+    `parameters`:#[
+
+    ],
+    `responses`:#{
+      `200`:#{
+        `description`:"The answer.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The request did not validate, or was refused: `{ ok: false, errors: [...] }`.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `404`:#{
+        `description`:"No such token is held by you.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `409`:#{
+        `description`:"The token was already reported lost, or the person already holds as many certificates as the realm allows.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `503`:#{
+        `description`:"The certificate could not be issued or recorded, or an escrowed key could not be opened.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"No access token, or one that does not verify, has expired, was revoked, outlived its sign-on session, or came without its DPoP proof. `WWW-Authenticate` says which.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"The token is for another audience or does not carry `account:manage`, or the access policy refused the person.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`portal`:#["account:manage"]}],
+    `x-access`:"person",
+    `x-mirrors`:"POST /portal/tokens",
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`action`:"lost",`key`:"yubico/no-such-serial"}}}}
+  })
+op `actOnTokens`(`requestBody/content/application~1json/schema`: {
+    `action`?: post_account_api_tokens_b_application_json_action;
+    @js(#{`description`:"`lost` and `attach-key`: the token's key, `<vendor>/<serial>`.",`maxLength`:200}) `key`?: string;
+    @js(#{`description`:"`enrol-piv`: piv-auth, piv-sign, piv-key-management or piv-card-auth.",`maxLength`:64}) `profile`?: string;
+    @js(#{`description`:"`enrol-piv`: the PKCS#10 certificate request, PEM.",`maxLength`:32768}) `csr`?: string;
+    @js(#{`description`:"`enrol-piv`: the slot's attestation certificate, PEM (ykman piv keys attest).",`maxLength`:32768}) `attestationCertificate`?: string;
+    @js(#{`description`:"`enrol-piv`: the f9 attestation certificate, PEM (ykman piv certificates export f9), and any intermediate after it.",`maxLength`:32768}) `attestationIssuer`?: string;
+    @js(#{`description`:"`recover-key` and `attach-key`: the escrowed certificate's serial, hex.",`maxLength`:64}) `serial`?: string
+  },
+  `responses/200/content/application~1json/schema`: {
+    `ok`: boolean;
+    `message`: string;
+    `view`: HardwareTokensPortalView
+  },
+  `responses/400/content/application~1json/schema`: {
+    `ok`: boolean;
+    `errors`: (string)[];
+    `error`?: string;
+    `view`?: HardwareTokensPortalView
+  },
+  `responses/404/content/application~1json/schema`: {
+    `ok`: boolean;
+    `errors`: (string)[];
+    `error`?: string;
+    `view`?: HardwareTokensPortalView
+  },
+  `responses/409/content/application~1json/schema`: {
+    `ok`: boolean;
+    `errors`: (string)[];
+    `error`?: string;
+    `view`?: HardwareTokensPortalView
+  },
+  `responses/503/content/application~1json/schema`: {
+    `ok`: boolean;
+    `errors`: (string)[];
+    `error`?: string;
+    `view`?: HardwareTokensPortalView
+  },
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
+
+
+// #1955 P6: THE PERSON'S OpenPGP KEY AND MAIL ENCRYPTION (`portal/account_openpgp.ts`).
+@hoisted model OpenPgpPortalView {
+  @js(#{`description`:"The address on the caller's entry, which a key's user id must carry."}) `mail`: string;
+  @js(#{`description`:"The registered key, or null."}) `key`: OpenPgpKeyView | null;
+  @js(#{`description`:"The outstanding registration challenge, or null."}) `challenge`: OpenPgpChallengeView | null;
+  `wkd`: OpenPgpWkdView;
+  `mailEncryption`: OpenPgpMailView
+}
+
+@endpoint("/account-api/openpgp",
+  "get",
+  #{
+    `operationId`:"getOpenPgp",
+    `tags`:#["Devices"],
+    `summary`:"Your OpenPGP key and mail encryption",
+    `description`:"Your registered OpenPGP public key, the registration challenge you were issued, whether your key is published in the Web Key Directory, your S/MIME certificate and how mail to you is encrypted.\n\nThe door of the portal's `GET /portal/openpgp`.",
+    `parameters`:#[
+
+    ],
+    `responses`:#{
+      `200`:#{
+        `description`:"The answer.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The request did not validate, or was refused: `{ ok: false, errors: [...] }`.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"No access token, or one that does not verify, has expired, was revoked, outlived its sign-on session, or came without its DPoP proof. `WWW-Authenticate` says which.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"The token is for another audience or does not carry `account:manage`, or the access policy refused the person.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`portal`:#["account:manage"]}],
+    `x-access`:"person",
+    `x-mirrors`:"GET /portal/openpgp"
+  })
+op `getOpenPgp`(`responses/200/content/application~1json/schema`: OpenPgpPortalView,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
+
+
+@js(#{`description`:"What to do."}) @hoisted union post_account_api_openpgp_b_application_json_action {
+    "challenge",
+    "register",
+    "remove",
+    "publish",
+    "withdraw",
+    "mail-encryption",
+    "smime"
+  }
+
+@endpoint("/account-api/openpgp",
+  "post",
+  #{
+    `operationId`:"actOnOpenPgp",
+    `tags`:#["Devices"],
+    `summary`:"Registers, removes or publishes your OpenPGP key, or sets your mail encryption",
+    `description`:"`challenge` issues a registration challenge (one at a time, for `openpgp.challengeLifetimeS`). `register` takes `publicKey` (one armored public key) and `signed` (the challenge signed with `gpg --clearsign`; on a YubiKey OpenPGP card the card signs): the key must be neither revoked nor expired, use an accepted algorithm, carry a valid user id with your entry's address, and have signed exactly the challenge since it was issued. `remove` removes it. `publish` and `withdraw` set whether the Web Key Directory answers it. `mail-encryption` takes `choice` (`none`, `openpgp`, `smime`). `smime` takes `certificate` (a PEM certificate naming your address; empty removes it). It asks for a recent sign-in. A refusal carries the page's `view`.\n\nThe door of the portal's `POST /portal/openpgp`.",
+    `parameters`:#[
+
+    ],
+    `responses`:#{
+      `200`:#{
+        `description`:"The answer.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The request did not validate, or was refused: `{ ok: false, errors: [...] }`.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `404`:#{
+        `description`:"There is no entry for you in this realm.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `500`:#{
+        `description`:"The act verified but could not be written, or threw.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"No access token, or one that does not verify, has expired, was revoked, outlived its sign-on session, or came without its DPoP proof. `WWW-Authenticate` says which.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"The token is for another audience or does not carry `account:manage`, or the access policy refused the person.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`portal`:#["account:manage"]}],
+    `x-access`:"person",
+    `x-mirrors`:"POST /portal/openpgp",
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`action`:"challenge"}}}}
+  })
+op `actOnOpenPgp`(`requestBody/content/application~1json/schema`: {
+    `action`: post_account_api_openpgp_b_application_json_action;
+    @js(#{`description`:"`register`: the armored OpenPGP public key.",`maxLength`:65536}) `publicKey`?: string;
+    @js(#{`description`:"`register`: the challenge signed with `gpg --clearsign`.",`maxLength`:16384}) `signed`?: string;
+    @js(#{`description`:"`mail-encryption`: `none`, `openpgp` or `smime`.",`maxLength`:16}) `choice`?: string;
+    @js(#{`description`:"`smime`: a PEM or base64 DER certificate; empty removes it.",`maxLength`:16384}) `certificate`?: string
+  },
+  `responses/200/content/application~1json/schema`: {
+    `ok`: boolean;
+    `message`: string;
+    `view`: OpenPgpPortalView
+  },
+  `responses/400/content/application~1json/schema`: {
+    `ok`: boolean;
+    `errors`: (string)[];
+    `error`?: string;
+    `view`?: OpenPgpPortalView
+  },
+  `responses/404/content/application~1json/schema`: {
+    `ok`: boolean;
+    `errors`: (string)[];
+    `error`?: string;
+    `view`?: OpenPgpPortalView
+  },
+  `responses/500/content/application~1json/schema`: {
+    `ok`: boolean;
+    `errors`: (string)[];
+    `error`?: string;
+    `view`?: OpenPgpPortalView
+  },
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
+
 
 @endpoint("/account-api/devices/challenge",
   "post",
