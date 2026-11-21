@@ -537,6 +537,8 @@
   "keys.signingKeyToken|label": "The HSM token signing keys are made on",
   "keys.signingKeyToken|description": "The PKCS#11 URI of the token a realm with keys.signingKeyStore `pkcs11` makes its signing keys on: pkcs11:token=<token label>, with serial= or slot-id= where two tokens share a label. The module, the PIN and the sessions are the keys.pkcs11* settings. Empty opens no token.",
   "keys.signingKeyToken|restartReason": "the token is opened once, at startup, in every process",
+  "keys.pkcs11SynchronousSign|label": "Allow synchronous PKCS#11 signing",
+  "keys.pkcs11SynchronousSign|description": "Off, the default: a signature with a key in the HSM is made only through the binding's asynchronous `C_Sign`. The synchronous doors (a JWS, an XML signature, a SAML assertion) refuse an HSM key (`STS-KEYS-0209`) rather than wait for the token on the event loop. On, those doors call `C_Sign` and the event loop waits. A module with no asynchronous sign can sign only while this is on. Decryption is not changed. Settable per realm.",
   "keys.cellKekProvider|label": "Where the cell key-encryption key is read from",
   "keys.cellKekProvider|description": "The provider of THIS CELL's key-encryption key, which seals what the cell stores of its own (#98). Five providers, as `keys.kekProvider`, and `pkcs11`, the cell's own HSM. `none` seals the cell tier under the service key-encryption key, which is correct for single-cell mode and for a test; a multi-cell deployment in product mode REFUSES to start with it, because then a copy of one cell's rows would open in every other.",
   "keys.cellKekProvider|restartReason": "the key is read once, before the store is restored",

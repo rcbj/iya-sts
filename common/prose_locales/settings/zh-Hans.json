@@ -2151,6 +2151,14 @@
     "en": "1a04369397b30563",
     "text": "令牌在启动时于每个进程中打开一次"
   },
+  "keys.pkcs11SynchronousSign|label": {
+    "en": "c8e3fedf4601518d",
+    "text": "允许同步 PKCS#11 签名"
+  },
+  "keys.pkcs11SynchronousSign|description": {
+    "en": "1cb742f146d4c7c1",
+    "text": "关闭为默认：用 HSM 中的密钥签名只通过绑定的异步 `C_Sign`。同步路径（JWS、XML 签名、SAML 断言）拒绝 HSM 密钥（`STS-KEYS-0209`），而不在事件循环上等待令牌。开启后这些路径调用 `C_Sign`，事件循环会等待。没有异步签名的模块只有在此项开启时才能签名。解密不变。可按领域设置。"
+  },
   "keys.cellKekProvider|label": {
     "en": "9103eeef061197fd",
     "text": "单元密钥加密密钥的读取来源"

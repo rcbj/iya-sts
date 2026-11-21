@@ -613,6 +613,7 @@ var config = {
     pkcs11PinField: "",                // The field the PKCS#11 PIN is in; restart to apply
     signingKeyStore: "software",       // Where a realm's signing keys are made
     signingKeyToken: "",               // The HSM token signing keys are made on; restart to apply
+    pkcs11SynchronousSign: false,      // Allow synchronous PKCS#11 signing
     cellKekProvider: "none",           // Where the cell key-encryption key is read from; restart to apply
     cellKekRef: "",                    // The cell key-encryption key's location; restart to apply
     cellKekField: "",                  // The field the cell key is in; restart to apply

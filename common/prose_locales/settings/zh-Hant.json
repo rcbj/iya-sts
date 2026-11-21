@@ -2151,6 +2151,14 @@
     "en": "1a04369397b30563",
     "text": "權杖在啟動時於每個程序中開啟一次"
   },
+  "keys.pkcs11SynchronousSign|label": {
+    "en": "c8e3fedf4601518d",
+    "text": "允許同步 PKCS#11 簽章"
+  },
+  "keys.pkcs11SynchronousSign|description": {
+    "en": "1cb742f146d4c7c1",
+    "text": "關閉為預設：以 HSM 中的金鑰簽章只透過繫結的非同步 `C_Sign`。同步路徑（JWS、XML 簽章、SAML 宣告）拒絕 HSM 金鑰（`STS-KEYS-0209`），而不在事件迴圈上等待權杖。開啟後這些路徑呼叫 `C_Sign`，事件迴圈會等待。沒有非同步簽章的模組只有在此項開啟時才能簽章。解密不變。可依領域設定。"
+  },
   "keys.cellKekProvider|label": {
     "en": "9103eeef061197fd",
     "text": "Cell 金鑰加密金鑰的讀取來源"

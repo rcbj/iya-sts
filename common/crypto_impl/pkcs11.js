@@ -16,6 +16,10 @@
 //   * a realm's classical SIGNING KEYS held in the HSM (`generateKeyPair()`,
 //     `publicKeyOf()`, `sign()` / `signSync()`), for
 //     `keys.signingKeyStore=pkcs11` (`common/helpers.js`, `common/crypto.js`).
+//     `sign()` uses `C_SignAsync`. `signSync()`, and a module with no
+//     asynchronous sign, call blocking `C_Sign` only while
+//     `keys.pkcs11SynchronousSign` is on; otherwise they refuse
+//     (STS-KEYS-0209).
 //
 // IT IS AN ENGINE, AND `common/crypto.js` IS THE DOOR. Nothing outside
 // `crypto.js` requires this file; `crypto.js` hands out a `Pkcs11Token` and
@@ -230,6 +234,28 @@ function codeFor(err) {
   log.debug('Leaving codeFor().');
   return NOT_PERMITTED.has(ckr) ? 'STS-KEYS-0208' :
          UNSUPPORTED.has(ckr) ? 'STS-KEYS-0207' : 'STS-KEYS-0201';
+}
+
+// Whether a blocking C_Sign is allowed. Off by default
+// (keys.pkcs11SynchronousSign): a synchronous door refuses rather than
+// holding the event loop for the token. Read lazily. This file is required
+// by crypto.js, which has already required config.js, so the require hits
+// the cache; a load that is not ready is treated as off.
+function synchronousSignAllowed() {
+  log.debug('Entering synchronousSignAllowed().');
+  let allowed = false;
+  try {
+    const config = require('../config');
+    allowed = config.value('keys.pkcs11SynchronousSign') === true;
+  } catch (e) {
+    // The default is off. A half-loaded config refuses the blocking call
+    // rather than waiting on the token.
+    log.debug('Caught in synchronousSignAllowed(): ' +
+              ((e && e.message) || e));
+    allowed = false;
+  }
+  log.debug('Leaving synchronousSignAllowed().');
+  return allowed;
 }
 
 // A refusal from the token, named, with its code; the module's own words
@@ -1328,6 +1354,14 @@ class Pkcs11Token {
     const self = this;
     log.debug('Leaving Pkcs11Token.sign().');
     return this.run('a signature', function (lib, session) {
+      if (typeof lib.C_SignAsync !== 'function' &&
+          !synchronousSignAllowed()) {
+        // No asynchronous sign, and blocking C_Sign is off. Refuse before
+        // C_SignInit so the session is not left mid-operation.
+        throw refusal('STS-KEYS-0209', 'synchronous PKCS#11 signing is ' +
+                      'off (keys.pkcs11SynchronousSign), and this module ' +
+                      'has no asynchronous C_Sign');
+      }
       lib.C_SignInit(session, plan.mechanism, self.handleOf(key));
       if (typeof lib.C_SignAsync === 'function') {
         return lib.C_SignAsync(session, plan.input, Buffer.alloc(1024));
@@ -1340,7 +1374,8 @@ class Pkcs11Token {
 
   /**
    * Signs synchronously — the event loop waits for the HSM — for the
-   * synchronous signing door.
+   * synchronous signing door, only while `keys.pkcs11SynchronousSign` is
+   * on. Off, this refuses (`STS-KEYS-0209`) and does not call the token.
    *
    * @param key - the private key, as `keyPair()` answered it
    * @param alg - the JWS algorithm
@@ -1349,6 +1384,11 @@ class Pkcs11Token {
    */
   signSync(key, alg, data) {
     log.debug('Entering Pkcs11Token.signSync(). ' + alg);
+    if (!synchronousSignAllowed()) {
+      log.debug('Leaving Pkcs11Token.signSync(). Refused.');
+      throw refusal('STS-KEYS-0209', 'synchronous PKCS#11 signing is ' +
+                    'off (keys.pkcs11SynchronousSign)');
+    }
     const plan = signingPlan(this.binding, alg, data);
     const self = this;
     const sig = this.runSync('a signature', function (lib, session) {

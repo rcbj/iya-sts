@@ -35,6 +35,10 @@
 //   G. the refusals: the HSM away is STS-KEYS-0201 and no crash, and comes
 //      back; a realm asking for the HSM where the keystore does not persist is
 //      STS-KEYS-0206; a post-quantum algorithm with an HSM key is 0206.
+//   J. synchronous signing is off unless keys.pkcs11SynchronousSign is on
+//      (STS-KEYS-0209). The child opts in so C–H can sign, then turns it
+//      off. A module with no C_SignAsync refuses sign() the same way, and
+//      signs once the setting is on.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -116,6 +120,8 @@ function childMain() {
   process.env.STS_KEYS_KEK_FILE = kekFile;
   process.env.STS_SECRETS_ALLOW_LOCAL_SECRETS = 'true';
   process.env.STS_KEYS_SIGNING_KEY_STORE = 'pkcs11';
+  // The synchronous doors below are the opt-in. The default is off.
+  process.env.STS_KEYS_PKCS11_SYNCHRONOUS_SIGN = 'true';
   process.env.STS_KEYS_PKCS11_PIN_PROVIDER = 'file';
   process.env.STS_KEYS_PKCS11_PIN_REF = pinFile;
 
@@ -258,6 +264,34 @@ function childMain() {
     }
     note(samlOk === true, 'C4. a SAML assertion signed by the XML key in the ' +
          'HSM verifies against its certificate', String(samlOk));
+
+    // ------------------------------------------------------------ J
+    // The child opted in. Off, a synchronous JWS refuses; the asynchronous
+    // door still signs. On again before the rest of the cases.
+    const config = require(ROOT + '/common/config');
+    config.setOverride('keys.pkcs11SynchronousSign', false);
+    const syncOff = await refusedWith(function () {
+      return stsCrypto.signJws({ sub: 'off' }, keys.privateKey,
+                               { algorithm: 'RS256' });
+    });
+    note(/STS-KEYS-0209/.test(syncOff),
+         'J1. a synchronous JWS with an HSM key is refused while ' +
+         'keys.pkcs11SynchronousSign is off', syncOff);
+    const asyncStill = await stsCrypto.signJwsAsync({ sub: 'off' },
+      es.privateKey, { algorithm: 'ES256', keyid: es.publicJwk.kid });
+    note(asyncStill.split('.').length === 3,
+         'J2. an asynchronous signature still signs while that setting ' +
+         'is off');
+    config.setOverride('keys.pkcs11SynchronousSign', true);
+    let syncOn = 'not signed';
+    try {
+      syncOn = stsCrypto.signJws({ sub: 'on' }, keys.privateKey,
+                                 { algorithm: 'RS256' }) ? 'signed' : '';
+    } catch (e) {
+      syncOn = String((e && e.message) || e);
+    }
+    note(syncOn === 'signed',
+         'J3. the same door signs once the setting is on', syncOn);
 
     // ------------------------------------------------------------ I
     // DECRYPTION WITH THE REALM'S KEYS IN THE HSM (#1955 P8 follow-up):
@@ -490,6 +524,53 @@ function childMain() {
            esSync.toFixed(3) + ' ms in place, ' + esAsync.toFixed(3) +
            ' ms each with ' + N + ' at once off the loop');
     }
+
+    // A module with no C_SignAsync. The fake used above has one, so this
+    // is a second token. Key generation stays synchronous.
+    if (WHICH !== 'softhsm') {
+      const pkcs11 = require(ROOT + '/common/crypto_impl/pkcs11');
+      const nosyncPath = '/fake/libfake-pkcs11-nosync.so';
+      const b2 = require(ROOT + '/tests/tools/fake-pkcs11.js')
+        .fakeBinding({ modulePath: nosyncPath,
+                       tokens: [{ label: 'nosync', pin: '4321' }] });
+      delete b2.PKCS11.prototype.C_SignAsync;
+      const token = pkcs11.openToken(b2, {
+        modulePath: nosyncPath, tokenLabel: 'nosync', pin: '4321' });
+      const pair = token.generateKeyPair({ kty: 'EC', crv: 'P-256' },
+                                          'ns', Buffer.from('ns'));
+      config.setOverride('keys.pkcs11SynchronousSign', false);
+      let noAsync = 'not refused';
+      try {
+        await token.sign(pair.key, 'ES256', Buffer.from('abc'));
+        noAsync = 'signed';
+      } catch (e) {
+        noAsync = (codeOf(e) || '') + ' ' + ((e && e.message) || e);
+      }
+      let noSync = 'not refused';
+      try {
+        token.signSync(pair.key, 'ES256', Buffer.from('abc'));
+        noSync = 'signed';
+      } catch (e) {
+        noSync = (codeOf(e) || '') + ' ' + ((e && e.message) || e);
+      }
+      note(/STS-KEYS-0209/.test(noAsync) && /STS-KEYS-0209/.test(noSync),
+           'J4. with no C_SignAsync, sign() and signSync refuse while ' +
+           'synchronous signing is off', noAsync + ' | ' + noSync);
+      config.setOverride('keys.pkcs11SynchronousSign', true);
+      let blocked = null;
+      try {
+        blocked = token.signSync(pair.key, 'ES256', Buffer.from('abc'));
+      } catch (e) {
+        blocked = String((e && e.message) || e);
+      }
+      note(Buffer.isBuffer(blocked) && blocked.length > 0,
+           'J5. and signSync uses C_Sign once the setting is on',
+           Buffer.isBuffer(blocked) ? blocked.length : blocked);
+      const fallen = await token.sign(pair.key, 'ES256',
+                                      Buffer.from('def'));
+      note(Buffer.isBuffer(fallen) && fallen.length > 0,
+           'J6. sign() falls back to C_Sign only while the setting is on');
+    }
   })().catch(function (e) {
     note(false, 'the child ran to the end', e && e.stack);
   }).then(function () {
@@ -580,6 +661,8 @@ module.exports = {
   name: 'pkcs11_signing',
   describe: 'a realm\'s classical signing keys in a PKCS#11 HSM: made there, ' +
             'published, signing JWTs and SAML, restored, rotated, refused ' +
-            'where they cannot be held — against a fake module and SoftHSM2',
+            'where they cannot be held, and refusing a synchronous signature ' +
+            'while keys.pkcs11SynchronousSign is off — against a fake module ' +
+            'and SoftHSM2',
   run: run
 };

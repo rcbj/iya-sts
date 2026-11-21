@@ -175,12 +175,18 @@ These paths do not block the event loop (`C_SignAsync`, `C_DecryptAsync`,
 Tokens, a key set's generation and rotation, and a JWE assertion's decryption.
 
 Other signatures (an access token, a SAML assertion, a WS-Federation
-response) and XML decryptions are synchronous, as they are with a software key.
-On SoftHSM2 they hold the event loop for about as long as a software key does.
-A YubiHSM 2 is much slower: Yubico's published figures are tens of milliseconds
-for ECDSA P-256 and hundreds for RSA-2048. Each synchronous operation holds
-the loop for that long, so a realm signing a high volume of access tokens with
-a YubiHSM 2 should sign them with an EC key (`keys.signingAlgorithms`).
+response) are synchronous, as they are with a software key. They call
+`C_Sign` only while `keys.pkcs11SynchronousSign` is on. Off, the default,
+those doors refuse an HSM key (`STS-KEYS-0209`) rather than wait for the
+token on the event loop. A module with no asynchronous sign can sign only
+while the setting is on. XML decryptions stay synchronous either way.
+On SoftHSM2 an opted-in signature holds the event loop for about as long as
+a software key does. A YubiHSM 2 is much slower: Yubico's published figures
+are tens of milliseconds for ECDSA P-256 and hundreds for RSA-2048. Each
+synchronous operation holds the loop for that long, so a realm signing a
+high volume of access tokens with a YubiHSM 2 should sign them with an EC
+key (`keys.signingAlgorithms`), and should leave synchronous signing off
+unless a door has no asynchronous path.
 
 ## Sessions, workers and outages
 
@@ -198,7 +204,9 @@ a YubiHSM 2 should sign them with an EC key (`keys.signingAlgorithms`).
   (the URI or PIN), `STS-KEYS-0206` (a key in the HSM was asked to do
   something it cannot do, or cannot be reached), `STS-KEYS-0207` (the module
   cannot make a key of that kind, or cannot decrypt with that digest),
-  `STS-KEYS-0208` (a key made before the HSM keys could decrypt). See
+  `STS-KEYS-0208` (a key made before the HSM keys could decrypt),
+  `STS-KEYS-0209` (a synchronous signature while
+  `keys.pkcs11SynchronousSign` is off). See
   [Error codes](error-codes.md).
 
 ## SoftHSM2

@@ -8079,10 +8079,11 @@ realm's keys are made. `docs/v1.1.0/hsm.md` is the operator half.
 * **Measured on SoftHSM2** (2 CPUs): RS256 ~0.7–0.95 ms per signature in
   place (0.47 ms in software), ES256 ~0.05 ms in place or 200 at once off the
   loop, a SAML signature ~1.2 ms, an XML OAEP decryption ~0.2 ms. The
-  synchronous doors (access tokens, SAML, XML decryption) were left
-  synchronous: on SoftHSM2 they hold the loop about as long as software did,
-  and moving every caller is not this change; `docs/v1.1.0/hsm.md` gives the
-  YubiHSM's cost and the EC-key advice.
+  synchronous signing doors (access tokens, SAML) call `C_Sign` only while
+  `keys.pkcs11SynchronousSign` is on — off by default, and a door that would
+  block refuses (`STS-KEYS-0209`). XML decryption stays synchronous. On
+  SoftHSM2 an opted-in signature holds the loop about as long as software
+  did; `docs/v1.1.0/hsm.md` gives the YubiHSM's cost and the EC-key advice.
   `tests/pkcs11_kek.js` and `tests/pkcs11_signing.js` hold both features to a
   fake module and to SoftHSM2; no real YubiHSM 2 has been run.
 

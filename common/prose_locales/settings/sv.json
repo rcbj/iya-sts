@@ -2151,6 +2151,14 @@
     "en": "1a04369397b30563",
     "text": "tokenet öppnas en gång, vid start, i varje process"
   },
+  "keys.pkcs11SynchronousSign|label": {
+    "en": "c8e3fedf4601518d",
+    "text": "Tillåt synkron PKCS#11-signering"
+  },
+  "keys.pkcs11SynchronousSign|description": {
+    "en": "1cb742f146d4c7c1",
+    "text": "Av, standard: en signatur med en nyckel i HSM:en görs bara genom bindningens asynkrona `C_Sign`. De synkrona dörrarna (en JWS, en XML-signatur, en SAML-assertion) nekar en HSM-nyckel (`STS-KEYS-0209`) i stället för att vänta på token på händelseloopen. På anropar de dörrarna `C_Sign` och händelseloopen väntar. En modul utan asynkron signering kan signera bara medan detta är på. Dekryptering ändras inte. Ställbar per sfär."
+  },
   "keys.cellKekProvider|label": {
     "en": "9103eeef061197fd",
     "text": "Varifrån cellens nyckelkrypteringsnyckel läses"

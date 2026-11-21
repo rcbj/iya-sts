@@ -2151,6 +2151,14 @@
     "en": "1a04369397b30563",
     "text": "isang beses binubuksan ang token, sa pag-start, sa bawat process"
   },
+  "keys.pkcs11SynchronousSign|label": {
+    "en": "c8e3fedf4601518d",
+    "text": "Payagan ang kasabay na pagpirma ng PKCS#11"
+  },
+  "keys.pkcs11SynchronousSign|description": {
+    "en": "1cb742f146d4c7c1",
+    "text": "Naka-off, ang default: ang isang lagda na may susi sa HSM ay ginagawa lamang sa pamamagitan ng asynchronous na `C_Sign` ng binding. Ang magkakasabay na pinto (isang JWS, isang XML na lagda, isang SAML assertion) ay tumatanggi sa isang HSM na susi (`STS-KEYS-0209`) sa halip na maghintay sa token sa event loop. Naka-on, tinatawag ng mga pintong iyon ang `C_Sign` at naghihintay ang event loop. Ang isang module na walang asynchronous na pagpirma ay makakapirma lamang habang ito ay naka-on. Hindi nababago ang decryption. Naitatakda bawat realm."
+  },
   "keys.cellKekProvider|label": {
     "en": "9103eeef061197fd",
     "text": "Saan binabasa ang key-encryption key ng cell"

@@ -2151,6 +2151,14 @@
     "en": "1a04369397b30563",
     "text": "el token se abre una vez, al arrancar, en cada proceso"
   },
+  "keys.pkcs11SynchronousSign|label": {
+    "en": "c8e3fedf4601518d",
+    "text": "Permitir la firma PKCS#11 síncrona"
+  },
+  "keys.pkcs11SynchronousSign|description": {
+    "en": "1cb742f146d4c7c1",
+    "text": "Apagado, el valor predeterminado: una firma con una clave en el HSM se hace solo mediante el `C_Sign` asíncrono del enlace. Las puertas síncronas (un JWS, una firma XML, una aserción SAML) rechazan una clave del HSM (`STS-KEYS-0209`) en lugar de esperar al token en el bucle de eventos. Encendido, esas puertas llaman a `C_Sign` y el bucle de eventos espera. Un módulo sin firma asíncrona solo puede firmar mientras esto está encendido. El descifrado no cambia. Ajustable por dominio."
+  },
   "keys.cellKekProvider|label": {
     "en": "9103eeef061197fd",
     "text": "Origen de la clave de cifrado de claves de la celda"

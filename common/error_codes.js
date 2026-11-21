@@ -3926,6 +3926,12 @@ const CODES = [
       'decrypt. Rotating the realm\'s signing keys makes keys that can ' +
       '(#1955).',
     spec: '' },
+  { code: 'STS-KEYS-0209',
+    summary: 'A signature with a key in the HSM was asked of a synchronous ' +
+      'door, or of a module with no asynchronous C_Sign, while ' +
+      'keys.pkcs11SynchronousSign is off. The event loop is not held for ' +
+      'the token; turn the setting on to sign that way (#1955).',
+    spec: '' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +

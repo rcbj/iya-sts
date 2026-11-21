@@ -4801,6 +4801,22 @@ const SETTINGS = [
                  'sessions are the keys.pkcs11* settings. Empty opens no ' +
                  'token.' },
 
+  // Off by default (#1955): a synchronous door (JWS, XML, SAML) must not
+  // hold the event loop for the token unless an operator asks. Decryption
+  // is not gated here.
+  { key: 'keys.pkcs11SynchronousSign', group: 'Key material',
+    label: 'Allow synchronous PKCS#11 signing',
+    env: 'STS_KEYS_PKCS11_SYNCHRONOUS_SIGN', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'Off, the default: a signature with a key in the HSM is ' +
+                 'made only through the binding\'s asynchronous `C_Sign`. ' +
+                 'The synchronous doors (a JWS, an XML signature, a SAML ' +
+                 'assertion) refuse an HSM key (`STS-KEYS-0209`) rather ' +
+                 'than wait for the token on the event loop. On, those ' +
+                 'doors call `C_Sign` and the event loop waits. A module ' +
+                 'with no asynchronous sign can sign only while this is ' +
+                 'on. Decryption is not changed. Settable per realm.' },
+
   // -------------------------------------------------------------------------
   // THE CELL KEY-ENCRYPTION KEY (#98, 2026-09-28). What a cell stores of its
   // own — the people homed here and everything it mints — is sealed under a

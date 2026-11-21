@@ -2151,6 +2151,14 @@
     "en": "1a04369397b30563",
     "text": "das Token wird einmal geöffnet, beim Start, in jedem Prozess"
   },
+  "keys.pkcs11SynchronousSign|label": {
+    "en": "c8e3fedf4601518d",
+    "text": "Synchrones PKCS#11-Signieren erlauben"
+  },
+  "keys.pkcs11SynchronousSign|description": {
+    "en": "1cb742f146d4c7c1",
+    "text": "Aus, der Standard: eine Signatur mit einem Schlüssel im HSM wird nur über das asynchrone `C_Sign` der Bindung erzeugt. Die synchronen Türen (ein JWS, eine XML-Signatur, eine SAML-Assertion) verweigern einen HSM-Schlüssel (`STS-KEYS-0209`), statt auf dem Ereignisloop auf das Token zu warten. Ein, rufen diese Türen `C_Sign` auf und der Ereignisloop wartet. Ein Modul ohne asynchrones Signieren kann nur signieren, solange dies eingeschaltet ist. Die Entschlüsselung ändert sich nicht. Je Vertrauensbereich setzbar."
+  },
   "keys.cellKekProvider|label": {
     "en": "9103eeef061197fd",
     "text": "Woher der Schlüsselverschlüsselungsschlüssel der Zelle gelesen wird"

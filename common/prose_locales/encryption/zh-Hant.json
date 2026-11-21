@@ -244,8 +244,8 @@
     "text": "而且金鑰絕不能存放在它所保護的磁碟上。與存放區位於同一未加密磁碟區上的金鑰檔案，會把兩半都交給取走該磁碟區的人；這對開發堆疊來說沒問題，也是 `file` 提供者為預設值的原因，但這不是部署。keys.kekProvider 可改為選擇秘密存放區。"
   },
   "encryption.notes.signingKeys": {
-    "en": "570cb0f374a99427",
-    "text": "此領域在何處簽署（#1955）。當 keys.signingKeyStore 為 pkcs11 時，列為位於 HSM 中的傳統簽署金鑰是在 keys.signingKeyToken 所指名的權杖中建立的，且絕不離開它：每次簽署都是一次 PKCS#11 呼叫。後量子金鑰一律在軟體中建立，因為這裡沒有任何 PKCS#11 模組提供 ML-DSA 或 SLH-DSA，模組不建立的任何曲線也是如此。此設定適用於其變更後建立或輪替的金鑰組。"
+    "en": "d0eeec647d97c442",
+    "text": "此領域在何處簽署（#1955）。當 keys.signingKeyStore 為 pkcs11 時，列為位於 HSM 中的傳統簽署金鑰是在 keys.signingKeyToken 所指名的權杖中建立的，且絕不離開它：每次簽署都是一次 PKCS#11 呼叫。後量子金鑰一律在軟體中建立，因為這裡沒有任何 PKCS#11 模組提供 ML-DSA 或 SLH-DSA，模組不建立的任何曲線也是如此。此設定適用於其變更後建立或輪替的金鑰組。 同步簽章只在 keys.pkcs11SynchronousSign 開啟時進行；否則該路徑拒絕（STS-KEYS-0209），非同步路徑仍然簽章。"
   },
   "encryption.notes.accountingNote": {
     "en": "4e3af979f8ed8bd7",

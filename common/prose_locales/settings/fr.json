@@ -2151,6 +2151,14 @@
     "en": "1a04369397b30563",
     "text": "le jeton est ouvert une fois, au démarrage, dans chaque processus"
   },
+  "keys.pkcs11SynchronousSign|label": {
+    "en": "c8e3fedf4601518d",
+    "text": "Autoriser la signature PKCS#11 synchrone"
+  },
+  "keys.pkcs11SynchronousSign|description": {
+    "en": "1cb742f146d4c7c1",
+    "text": "Désactivé, la valeur par défaut : une signature avec une clé dans le HSM n’est faite que par le `C_Sign` asynchrone de la liaison. Les portes synchrones (un JWS, une signature XML, une assertion SAML) refusent une clé HSM (`STS-KEYS-0209`) plutôt que d’attendre le jeton sur la boucle d’événements. Activé, ces portes appellent `C_Sign` et la boucle d’événements attend. Un module sans signature asynchrone ne peut signer que tant que ceci est activé. Le déchiffrement ne change pas. Réglable par domaine."
+  },
   "keys.cellKekProvider|label": {
     "en": "9103eeef061197fd",
     "text": "Provenance de la clé de chiffrement de clés de la cellule"
