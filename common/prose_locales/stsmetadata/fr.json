@@ -2151,6 +2151,18 @@
     "en": "0550e836ba364102",
     "text": "lance, met en pause, reprend ou termine une activité après connexion"
   },
+  "stsmetadata.endpoints./admin-api/hardware-tokens.what": {
+    "en": "fe8d3ba310ad762b",
+    "text": "NON-SPEC (#1955). Ce que dessine Annuaire → Jetons matériels : les clés de sécurité et cartes à puce physiques que ce domaine a enregistrées, chacune à partir de sa propre attestation, paginées et recherchées par numéro de série ou par personne, avec les clés d'accès et certificats de chacune. Reflète GET /admin/hardware-tokens."
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
+    "en": "1303a5c415b09d44",
+    "text": "NON-SPEC (#1955). lost, avec { key } : le jeton est marqué perdu, chaque clé d'accès qu'il porte est supprimée, chaque certificat qu'il porte est révoqué pour keyCompromise, un changement d'identifiant CAEP est envoyé pour chacun et les sessions qu'ils ont ouvertes sont fermées. La seule action de la console sur cette page."
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
+    "en": "7b39ad029e0234ed",
+    "text": "déclare un jeton matériel perdu et retire ses identifiants"
+  },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
     "text": "NON-SPEC (#552). Ce qu’affiche Protocols → SCIM → Clients : les entrées d’application déclarées pour scim-client — les fournisseurs de services vers lesquels ce domaine pousse ses personnes et ses groupes — chacune avec les décomptes de sa file et sa pause de temporisation, et avec ?client= les files de nouvelles tentatives et de lettres mortes et la découverte d’un client. Jamais un justificatif."

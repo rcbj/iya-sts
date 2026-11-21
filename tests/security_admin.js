@@ -334,10 +334,43 @@ function issuance(t, realm, names) {
   log.debug("Leaving issuance().");
 }
 
+// B33-B35. A HARDWARE TOKEN REPORTED LOST (#1955 P1) clears its holder's
+// factors, so it is a holder change as `/admin/mfa`'s are — the holder read
+// from the register, never from the body.
+function hardwareTokens(t) {
+  log.debug("Entering hardwareTokens().");
+  t.log.info('=== B33-B35. a hardware token reported lost ===');
+  const tokens = require('../common/hardware_tokens');
+  [HOLDER, ORDINARY].forEach(function (name) {
+    ldap.createUser(name, { invent: false, attributes: {} });
+  });
+  const made = [HOLDER, ORDINARY].map(function (name) {
+    return tokens.recordAttested({ username: name, vendor: 'yubico',
+      serial: 'sa-' + name + '-' + RUN,
+      credential: { kind: 'fido', ref: 'sa-cred-' + name + '-' + RUN },
+      evidence: { source: 'fido-enterprise-attestation' } });
+  });
+  t.check(made.every(function (one) {
+    return one.ok;
+  }), 'precondition: a token held by each', JSON.stringify(made));
+  t.equal(kindOf('POST', '/admin/hardware-tokens', 'lost',
+                 { key: 'yubico/sa-' + HOLDER + '-' + RUN }), 'holder',
+          'B33. reporting a Security Administrator\'s token lost is a ' +
+          'holder change (admin:security)');
+  t.equal(kindOf('POST', '/admin/hardware-tokens', 'lost',
+                 { key: 'yubico/sa-' + ORDINARY + '-' + RUN,
+                   user: HOLDER }), null,
+          'B34. anybody else\'s is Admin Write\'s, whatever the body names');
+  t.check(SecurityOperations.PATHS.indexOf('/admin/hardware-tokens') >= 0,
+          'B35. the page is one the gate reads the body of');
+  log.debug("Leaving hardwareTokens().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   tables(t);
   classifier(t);
+  hardwareTokens(t);
   const realm = realms.create({ id: 'sa-' + RUN,
                                 name: 'security admin ' + RUN }).realm;
   try {

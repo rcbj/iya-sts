@@ -4831,6 +4831,170 @@ op `actOnDevices`(`requestBody/content/application~1json/schema`: {
   }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
+// #1955 P1: THE PERSON'S HARDWARE TOKENS (`portal/account_tokens.ts`).
+@hoisted model HardwareTokenPortalCredential {
+  @js(#{`description`:"The credential's kind: `fido` or `x509` (later `hotp`, `yubico-otp`, `ssh`, `openpgp`)."}) `kind`: string;
+  @js(#{`description`:"Its name, where it has one."}) `label`: string;
+  @js(#{`description`:"When it was recorded on the token, ISO 8601."}) `addedAt`: string;
+  @js(#{`description`:"Whether the lost-key act retired it."}) `retired`: boolean
+}
+
+@hoisted model HardwareTokenPortalRow {
+  @js(#{`description`:"The token's register key, `<vendor>/<serial>`: what `actOnTokens` names."}) `key`: string;
+  `vendor`: string;
+  @js(#{`description`:"The serial its attestation named."}) `serial`: string;
+  `model`: string;
+  @js(#{`description`:"How it is made, where its evidence says; empty where it does not."}) `formFactor`: string;
+  @js(#{`description`:"Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation)."}) `attested`: boolean;
+  @js(#{`description`:"`active` or `lost`."}) `status`: string;
+  @js(#{`description`:"When it was reported lost, or empty."}) `lostAt`: string;
+  `registeredAt`: string;
+  @js(#{`description`:"The caller's own credentials on it."}) `credentials`: (HardwareTokenPortalCredential)[]
+}
+
+@hoisted model HardwareTokensPortalView {
+  @js(#{`description`:"Every token the caller holds or has a credential on, newest first."}) `tokens`: (HardwareTokenPortalRow)[]
+}
+
+@endpoint("/account-api/tokens",
+  "get",
+  #{
+    `operationId`:"getTokens",
+    `tags`:#["Devices"],
+    `summary`:"Your hardware tokens",
+    `description`:"Each physical security key or smart card this realm recorded you as holding, from its attestation: its vendor, serial, model and form factor, whether it is active or was reported lost, and your credentials on it.\n\nThe door of the portal's `GET /portal/tokens`.",
+    `parameters`:#[
+
+    ],
+    `responses`:#{
+      `200`:#{
+        `description`:"The answer.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The request did not validate, or was refused: `{ ok: false, errors: [...] }`.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"No access token, or one that does not verify, has expired, was revoked, outlived its sign-on session, or came without its DPoP proof. `WWW-Authenticate` says which.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"The token is for another audience or does not carry `account:manage`, or the access policy refused the person.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`portal`:#["account:manage"]}],
+    `x-access`:"person",
+    `x-mirrors`:"GET /portal/tokens"
+  })
+op `getTokens`(`responses/200/content/application~1json/schema`: HardwareTokensPortalView,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
+
+
+@js(#{`description`:"What to do; `lost` where none is named."}) @hoisted union post_account_api_tokens_b_application_json_action {
+    EmptyText,
+    "lost"
+  }
+
+@endpoint("/account-api/tokens",
+  "post",
+  #{
+    `operationId`:"actOnTokens",
+    `tags`:#["Devices"],
+    `summary`:"Reports one of your hardware tokens lost",
+    `description`:"`lost` marks the token lost and retires every credential of yours on it: its passkeys are removed, its certificates revoked (keyCompromise), a CAEP credential-change is sent for each, and the sign-on sessions they signed in end. It asks for a recent sign-in. A refusal carries the page's `view`.\n\nThe door of the portal's `POST /portal/tokens`.",
+    `parameters`:#[
+
+    ],
+    `responses`:#{
+      `200`:#{
+        `description`:"The answer.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The request did not validate, or was refused: `{ ok: false, errors: [...] }`.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `404`:#{
+        `description`:"No such token is held by you.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `409`:#{
+        `description`:"The token was already reported lost.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"No access token, or one that does not verify, has expired, was revoked, outlived its sign-on session, or came without its DPoP proof. `WWW-Authenticate` says which.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"The token is for another audience or does not carry `account:manage`, or the access policy refused the person.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`portal`:#["account:manage"]}],
+    `x-access`:"person",
+    `x-mirrors`:"POST /portal/tokens",
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`action`:"lost",`key`:"yubico/no-such-serial"}}}}
+  })
+op `actOnTokens`(`requestBody/content/application~1json/schema`: {
+    `action`?: post_account_api_tokens_b_application_json_action;
+    @js(#{`description`:"`lost`: the token's key, `<vendor>/<serial>`.",`maxLength`:200}) `key`?: string
+  },
+  `responses/200/content/application~1json/schema`: {
+    `ok`: boolean;
+    `message`: string;
+    `view`: HardwareTokensPortalView
+  },
+  `responses/400/content/application~1json/schema`: {
+    `ok`: boolean;
+    `errors`: (string)[];
+    `error`?: string;
+    `view`?: HardwareTokensPortalView
+  },
+  `responses/404/content/application~1json/schema`: {
+    `ok`: boolean;
+    `errors`: (string)[];
+    `error`?: string;
+    `view`?: HardwareTokensPortalView
+  },
+  `responses/409/content/application~1json/schema`: {
+    `ok`: boolean;
+    `errors`: (string)[];
+    `error`?: string;
+    `view`?: HardwareTokensPortalView
+  },
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
+
+
 @endpoint("/account-api/devices/challenge",
   "post",
   #{

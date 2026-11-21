@@ -332,6 +332,14 @@ class ProtocolStack {
     // #130: the device register (ou=devices), a library over the directory
     // hooks `credentials.ts` carries; Native SSO mints its devices.
     this.build('common/devices', require('./devices'), 'Devices');
+    // #1955 P1: the hardware token register, the device register's sibling
+    // (its header says why it is not one of its entries). A library (rule
+    // 3) over a store of its own; `credentials.addKey()` reaches it at the
+    // write, so it is built beside the credential store, and everything it
+    // calls back (credentials, enrolment, SSF, logout) is reached at the
+    // moment of use.
+    this.build('common/hardware_tokens', require('./hardware_tokens'),
+               'HardwareTokens');
     // #164 phase 2: what a device key's attestation proves
     // (`device_attestation`), which device a request came from
     // (`device_recognition`, asked by `authn` and `oauth2` below), and a
@@ -570,6 +578,10 @@ class ProtocolStack {
                'AccountPassword');
     this.build('portal/account_keys', require('../portal/account_keys'),
                'AccountKeys');
+    // #1955 P1: /portal/tokens' operations, over the token register (built
+    // with the credential store above).
+    this.build('portal/account_tokens', require('../portal/account_tokens'),
+               'AccountTokens');
     this.build('portal/account_mfa', require('../portal/account_mfa'),
                'AccountMfa');
     this.build('portal/account_signing_key', require('../portal/account_signing_key'),
@@ -1631,6 +1643,11 @@ class ProtocolStack {
     this.build('mgmt-api/post_login_activities_api',
                require('../mgmt-api/post_login_activities_api'),
                'PostLoginActivitiesApi');
+    // #1955 P1: the hardware token operations, spread the same way; the
+    // register (built beside the credential store) is reached lazily.
+    this.build('mgmt-api/hardware_tokens_api',
+               require('../mgmt-api/hardware_tokens_api'),
+               'HardwareTokensApi');
     // #641: the audit export operations, spread by `mgmt-api/admin_api`.
     // The register is built at 18j-vii and reached from the handlers lazily.
     this.build('mgmt-api/audit_export_api',

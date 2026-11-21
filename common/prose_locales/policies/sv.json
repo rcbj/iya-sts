@@ -564,8 +564,8 @@
     "text": "Vad profilen är till för, för nästa person."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicyMechanism.what": {
-    "en": "66db848b0bb1c58f",
-    "text": "På en NAMNGIVEN autentiseringspolicy (#1148, #1237): en förstafaktormekanism som en inloggning den gäller för tillåter — när applikationen (appAuthnPolicy) eller en av personens grupper (stsAuthnPolicy) namnger den och dess prioritet är den lägsta av de namngivna — password, password-mfa, webauthn, spnego, wallet eller federation, ett värde var. Ingen tillåter alla som sfären tillåter."
+    "en": "783db3d7da8c29c5",
+    "text": "På en NAMNGIVEN autentiseringspolicy (#1148, #1237): en förstafaktormekanism som en inloggning den gäller för tillåter — när applikationen (appAuthnPolicy) eller en av personens grupper (stsAuthnPolicy) namnger den och dess prioritet är den lägsta av de namngivna — password, password-mfa, webauthn, attested-hardware (en nyckel eller ett certifikat på en maskinvarutoken bevisad genom attestering, #1955), spnego, wallet eller federation, ett värde var. Ingen tillåter alla som sfären tillåter."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicySecondFactor.what": {
     "en": "7c8e4d8b4cce7c08",

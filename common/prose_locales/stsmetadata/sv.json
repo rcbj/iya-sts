@@ -2151,6 +2151,18 @@
     "en": "0550e836ba364102",
     "text": "startar, pausar, återupptar eller avslutar en aktivitet efter inloggning"
   },
+  "stsmetadata.endpoints./admin-api/hardware-tokens.what": {
+    "en": "fe8d3ba310ad762b",
+    "text": "NON-SPEC (#1955). Det som Katalog → Maskinvarutokens visar: de fysiska säkerhetsnycklar och smarta kort som den här sfären registrerat, var och en utifrån sin egen attestering, sidindelade och sökbara på serienummer eller person, med nycklarna och certifikaten på var och en. Speglar GET /admin/hardware-tokens."
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
+    "en": "1303a5c415b09d44",
+    "text": "NON-SPEC (#1955). lost, med { key }: token markeras som förlorad, varje nyckel på den tas bort, varje certifikat på den återkallas för keyCompromise, en CAEP-ändring av inloggningsuppgift skickas för var och en och de sessioner de loggade in avslutas. Konsolens enda åtgärd på den sidan."
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
+    "en": "7b39ad029e0234ed",
+    "text": "anmäler en maskinvarutoken som förlorad och återkallar dess inloggningsuppgifter"
+  },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
     "text": "ICKE-SPEC (#552). Det som Protokoll → SCIM → Klienter ritar: de applikationsposter som deklarerats för scim-client — de tjänsteleverantörer som den här sfären pushar sina personer och grupper till — var och en med sina köantal och sin backoff-paus, och med ?client= en klients omförsöks- och dödbrevsköer och upptäckt. Aldrig en inloggningsuppgift."

@@ -1231,6 +1231,14 @@
     "en": "6bfc2bea96fee884",
     "text": "Iniciar, pausar, reanudar o terminar una actividad posterior al inicio de sesión"
   },
+  "endpoints.route./admin-api/hardware-tokens.name": {
+    "en": "386404ef0cf5e649",
+    "text": "Tokens de hardware"
+  },
+  "endpoints.route./admin-api/hardware-tokens/:action.name": {
+    "en": "d2326b0fb8b09689",
+    "text": "Notificar la pérdida de un token de hardware"
+  },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",
     "text": "Clientes SCIM salientes"

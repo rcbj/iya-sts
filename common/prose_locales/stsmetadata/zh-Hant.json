@@ -2151,6 +2151,18 @@
     "en": "0550e836ba364102",
     "text": "啟動、暫停、繼續或結束登入後活動"
   },
+  "stsmetadata.endpoints./admin-api/hardware-tokens.what": {
+    "en": "fe8d3ba310ad762b",
+    "text": "NON-SPEC (#1955)。目錄 → 硬體權杖所顯示的內容：本領域記錄的實體安全金鑰與智慧卡，每個都依其本身的證明記錄，可分頁並依序號或人員搜尋，並列出每個權杖上的密碼金鑰與憑證。對應 GET /admin/hardware-tokens。"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
+    "en": "1303a5c415b09d44",
+    "text": "NON-SPEC (#1955)。lost，參數 { key }：權杖標示為遺失，移除其上的每個密碼金鑰，以 keyCompromise 撤銷其上的每張憑證，為每一項傳送 CAEP 憑證變更，並結束由它們登入的工作階段。主控台在該頁面上的唯一操作。"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
+    "en": "7b39ad029e0234ed",
+    "text": "回報硬體權杖遺失並停用其憑證"
+  },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
     "text": "非規格端點（#552）。協定 → SCIM → 用戶端所繪製的內容：宣告為 scim-client 的應用程式項目——此領域將其人員與群組推送至的服務提供者——各附其佇列計數與退避暫停，指定 ?client= 時則為單一用戶端的重試與無法投遞佇列以及探索資訊。絕不含認證資訊。"

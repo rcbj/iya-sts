@@ -788,6 +788,11 @@ var config = {
     browserTokenCertificateHeader: "x5u"                                   // Remembered browser token certificate header
   },
 
+  // --- Hardware tokens -------------------------------------------------
+  hardwareTokens: {
+    hardwareClaims: "inference"  // What earns a hardware-key claim
+  },
+
   // --- ACME ------------------------------------------------------------
   acme: {
     enabled: true,                                                                                                                                 // Run the ACME server

@@ -219,6 +219,22 @@
     "en": "080afaefbe52c342",
     "text": "Jusqu’à ce que devices.eventsKept événements plus récents le poussent dehors."
   },
+  "caches.store.hardware_tokens.register.title": {
+    "en": "f1c8d3f653154823",
+    "text": "Registre des jetons matériels"
+  },
+  "caches.store.hardware_tokens.register.description": {
+    "en": "5efc16810cb7f48e",
+    "text": "Une ligne par jeton matériel physique (une YubiKey, une carte à puce) dans ce domaine, indexée par fabricant et numéro de série : qui le détient, son modèle et les identifiants qu'il porte. Un numéro de série n'est enregistré qu'à partir d'une attestation. Jamais un secret."
+  },
+  "caches.store.hardware_tokens.register.bound": {
+    "en": "260467c777c74957",
+    "text": "Les lignes qu'un processus détient sont un cache de 5 000 par domaine ; le registre lui-même est borné par les identifiants qu'il liste (webauthn.maxKeysPerPerson pour FIDO)."
+  },
+  "caches.store.hardware_tokens.register.lifetime": {
+    "en": "c18bfda6fa452b2b",
+    "text": "Jusqu'à la suppression du jeton ; un jeton perdu est conservé, marqué comme perdu."
+  },
   "caches.store.dpop.nonces.title": {
     "en": "a131d3dea3731f75",
     "text": "Nonces DPoP"

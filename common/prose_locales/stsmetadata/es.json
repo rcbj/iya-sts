@@ -2151,6 +2151,18 @@
     "en": "0550e836ba364102",
     "text": "inicia, pausa, reanuda o termina una actividad posterior al inicio de sesión"
   },
+  "stsmetadata.endpoints./admin-api/hardware-tokens.what": {
+    "en": "fe8d3ba310ad762b",
+    "text": "NON-SPEC (#1955). Lo que dibuja Directorio → Tokens de hardware: las llaves de seguridad y tarjetas inteligentes físicas que este dominio registró, cada una a partir de su propia atestación, paginadas y buscadas por número de serie o persona, con las llaves de acceso y certificados de cada una. Refleja GET /admin/hardware-tokens."
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
+    "en": "1303a5c415b09d44",
+    "text": "NON-SPEC (#1955). lost, con { key }: el token se marca como perdido, se elimina cada llave de acceso que contiene, se revoca cada certificado por keyCompromise, se envía un cambio de credencial CAEP por cada uno y se cierran las sesiones que iniciaron. La única acción de la consola en esa página."
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
+    "en": "7b39ad029e0234ed",
+    "text": "notifica la pérdida de un token de hardware y retira sus credenciales"
+  },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
     "text": "NO ESTÁNDAR (#552). Lo que dibuja Protocolos → SCIM → Clientes: las entradas de aplicación declaradas para scim-client (los proveedores de servicios a los que este dominio envía sus personas y grupos), cada una con los recuentos de su cola y la pausa de espera progresiva, y con ?client= las colas de reintento y de mensajes fallidos y el descubrimiento de un cliente. Nunca una credencial."

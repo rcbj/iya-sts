@@ -1372,6 +1372,28 @@ Three decisions on the row that each prevent a specific wrong reading:
   different fact from a proxy with no streams. Backwards compatibility both
   ways: an older PEP sends no member, and an older service's heartbeat reads
   the members it names and ignores this one.
+* **A heartbeat value the service cannot hold (fuzz run #595).** The fuzz
+  gate's pep-control-plane profile sent a stream `lastSuccessAgeMs` of
+  2^53 - 1, a safe integer and no safe AGE: its instant fell before the
+  earliest a Date holds, `signalsOf()`'s `toISOString()` threw a RangeError,
+  and the answer was express's HTML 500 in all three fuzz realms. **Within
+  `signals` and `listeners` a value is still held to its member**, the rule
+  above: `timeOf()` answers null (no time) for an age older than the epoch,
+  as for a negative one, so neither a report nor a stored value can throw.
+  **The members the ENTRY stores are refused instead**, because beside the
+  throw a `refused` of -5e22 had been stored as -5 (`parseInt()` of the
+  exponent form) and `version` went into its attribute with a control
+  character: `PepRegistry.reportProblem()` holds the counters
+  (`policyCount`, `decisions`, `allowed`, `refused`, `undischargeable`) to
+  non-negative safe integers, the text members (`syncToken`, `bias`,
+  `resource`, `version`, `notifyUrl`) to strings with no C0, DEL or C1
+  control character (or null), and `signals`, `settings` and `listeners` to
+  an object or null, before `heartbeat()` reads or writes anything, and
+  refuses with 400 `STS-XACML-0331` naming the member — `hostname`'s rule.
+  `HeartbeatRequest` in `models/pep/pep_control_plane.tsp` says the same
+  (`minimum`/`maximum`/`pattern`). The Rust PEP sends u64 counters and
+  Strings and never meets the refusal. `tests/xacml_pep_heartbeat_values.js`
+  holds both halves.
 
 ## A heartbeat writes the entry only when something durable changed (#1882)
 
@@ -3599,6 +3621,22 @@ rule names it, so the risk rules decide it as they decide a session, and it
 is the action an operator's rule targets to refuse creation (by category, an
 unverified address, a level) while existing people still sign in.
 `STS-FED-0179` is its refusal.
+
+## The hardware token an authentication used (#1955 P1, 2026-11-20)
+
+`xacml_templates.ts`'s `HARDWARE_TOKEN_ATTRIBUTE`, sent by
+`xacml_role_pep.ts`'s `hardwareTokenAttributes()` as ENVIRONMENT attributes
+on every browser issuance the gate describes: `hardware-token-attested`
+(always, false with no token), and for a token in hand its `key`, `vendor`,
+`model`, `evidence` source, `smart-card`, `holder-matches` (the subject is
+the register's holder) and `status`. The facts are
+`common/issuance_gate.js`'s `hardwareTokenFactsOf()`: the authentication
+event's snapshot (`authn.ts`'s `hardwareTokenOf()`) brought up to date
+against the register, so a token reported lost since the sign-in reads not
+attested. **No built-in rule reads them**: "administrators sign in with an
+attested key" is a realm's own rule over these, or the authentication
+policy's `attested-hardware` mechanism, which the built-in `authn-mechanism`
+rule already enforces. They ride along and never make the policy asked.
 
 ## A device-bound session an application requires (#740, 2026-10-25)
 

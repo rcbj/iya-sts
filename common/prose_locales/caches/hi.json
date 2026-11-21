@@ -219,6 +219,22 @@
     "en": "080afaefbe52c342",
     "text": "जब तक devices.eventsKept नए इवेंट इसे बाहर न धकेल दें।"
   },
+  "caches.store.hardware_tokens.register.title": {
+    "en": "f1c8d3f653154823",
+    "text": "हार्डवेयर टोकन रजिस्टर"
+  },
+  "caches.store.hardware_tokens.register.description": {
+    "en": "5efc16810cb7f48e",
+    "text": "इस रीयल्म में हर भौतिक हार्डवेयर टोकन (YubiKey, स्मार्ट कार्ड) की एक पंक्ति, विक्रेता और सीरियल नंबर से: इसे कौन रखता है, इसका मॉडल और इस पर क्रेडेंशियल। सीरियल नंबर केवल सत्यापन से दर्ज होता है। कभी कोई रहस्य नहीं।"
+  },
+  "caches.store.hardware_tokens.register.bound": {
+    "en": "260467c777c74957",
+    "text": "कोई प्रक्रिया जो पंक्तियाँ रखती है वे प्रति रीयल्म 5,000 का कैश हैं; रजिस्टर स्वयं उन क्रेडेंशियल से सीमित है जिन्हें यह सूचीबद्ध करता है (FIDO के लिए webauthn.maxKeysPerPerson)।"
+  },
+  "caches.store.hardware_tokens.register.lifetime": {
+    "en": "c18bfda6fa452b2b",
+    "text": "टोकन हटाए जाने तक; खोया हुआ टोकन रखा जाता है, खोया हुआ चिह्नित।"
+  },
   "caches.store.dpop.nonces.title": {
     "en": "a131d3dea3731f75",
     "text": "DPoP नॉन्स"

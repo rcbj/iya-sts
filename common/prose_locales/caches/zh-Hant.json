@@ -219,6 +219,22 @@
     "en": "080afaefbe52c342",
     "text": "直到 devices.eventsKept 個較新的事件將其擠出。"
   },
+  "caches.store.hardware_tokens.register.title": {
+    "en": "f1c8d3f653154823",
+    "text": "硬體權杖登錄冊"
+  },
+  "caches.store.hardware_tokens.register.description": {
+    "en": "5efc16810cb7f48e",
+    "text": "本領域中每個實體硬體權杖（YubiKey、智慧卡）一列，依廠商與序號索引：誰持有、型號及其上的憑證。序號只依證明記錄。從不包含機密。"
+  },
+  "caches.store.hardware_tokens.register.bound": {
+    "en": "260467c777c74957",
+    "text": "處理程序持有的列是每個領域 5,000 筆的快取；登錄冊本身受其列出的憑證限制（FIDO 為 webauthn.maxKeysPerPerson）。"
+  },
+  "caches.store.hardware_tokens.register.lifetime": {
+    "en": "c18bfda6fa452b2b",
+    "text": "直到權杖被移除；遺失的權杖會保留，並標示為遺失。"
+  },
   "caches.store.dpop.nonces.title": {
     "en": "a131d3dea3731f75",
     "text": "DPoP nonce"

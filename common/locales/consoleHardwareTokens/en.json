@@ -1,0 +1,22 @@
+{
+  "whatThisIs": "What this is",
+  "lead": "Every physical security key and smart card this realm has recorded. A token is recorded only from its own attestation: today a security key registered with enterprise attestation, whose certificate names its serial. A serial typed by anybody is never recorded. Each token lists the passkeys and certificates on it and who registered them.",
+  "search": "Serial or person",
+  "status": "Status",
+  "any": "Any",
+  "active": "In use",
+  "lost": "Lost",
+  "filter": "Filter",
+  "capped": "This list is the newest thousand tokens. Search by serial or person for any other.",
+  "none": "No hardware token is recorded in this realm.",
+  "thToken": "Token",
+  "thHolder": "Holder",
+  "thEvidence": "Recorded from",
+  "thCredentials": "Credentials on it",
+  "thStatus": "Status",
+  "smartCard": "on a smart card",
+  "retired": "retired",
+  "lostOn": "Lost {at} (reported by {by})",
+  "reportLost": "Report lost",
+  "lostWhat": "Reporting a token lost marks it lost at once, then removes each passkey on it, revokes each certificate on it for key compromise, sends a CAEP credential-change for each and ends the sessions they signed in. A credential that could not be retired is named in the answer and on the audit row, and is still live."
+}

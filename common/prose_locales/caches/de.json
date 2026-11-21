@@ -219,6 +219,22 @@
     "en": "080afaefbe52c342",
     "text": "Bis devices.eventsKept neuere Ereignisse es verdrängen."
   },
+  "caches.store.hardware_tokens.register.title": {
+    "en": "f1c8d3f653154823",
+    "text": "Hardware-Token-Register"
+  },
+  "caches.store.hardware_tokens.register.description": {
+    "en": "5efc16810cb7f48e",
+    "text": "Eine Zeile pro physischem Hardware-Token (ein YubiKey, eine Smartcard) in diesem Bereich, nach Hersteller und Seriennummer geschlüsselt: wer es besitzt, sein Modell und die Anmeldedaten darauf. Eine Seriennummer wird nur aus einer Attestierung erfasst. Nie ein Geheimnis."
+  },
+  "caches.store.hardware_tokens.register.bound": {
+    "en": "260467c777c74957",
+    "text": "Die Zeilen, die ein Prozess hält, sind ein Cache von 5.000 pro Bereich; das Register selbst ist durch die Anmeldedaten begrenzt, die es listet (webauthn.maxKeysPerPerson für FIDO)."
+  },
+  "caches.store.hardware_tokens.register.lifetime": {
+    "en": "c18bfda6fa452b2b",
+    "text": "Bis das Token entfernt wird; ein verlorenes Token bleibt erhalten, als verloren markiert."
+  },
   "caches.store.dpop.nonces.title": {
     "en": "a131d3dea3731f75",
     "text": "DPoP-Nonces"

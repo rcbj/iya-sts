@@ -487,6 +487,22 @@
     "en": "0be46b8b29aaf446",
     "text": "एक सुरक्षा कुंजी का अनुप्रमाणन अब विश्वसनीय नहीं है: Google की Android अनुप्रमाणन स्थिति सूची उसकी श्रृंखला को निरस्त करती है"
   },
+  "audit.actions.hardware-token.create.label": {
+    "en": "23939dae5f4b89dc",
+    "text": "सत्यापन से एक हार्डवेयर टोकन दर्ज किया गया"
+  },
+  "audit.actions.hardware-token.credential-add.label": {
+    "en": "79c33d3849e02f0c",
+    "text": "एक हार्डवेयर टोकन में क्रेडेंशियल जोड़ा गया"
+  },
+  "audit.actions.hardware-token.holder-change.label": {
+    "en": "06fc03f7983fd5ad",
+    "text": "एक हार्डवेयर टोकन उसके धारक के अलावा किसी और ने पंजीकृत किया"
+  },
+  "audit.actions.hardware-token.lost.label": {
+    "en": "f7fb5461e2325e1e",
+    "text": "एक हार्डवेयर टोकन खोया हुआ बताया गया और उसके क्रेडेंशियल हटाए गए"
+  },
   "audit.actions.device.key-add.label": {
     "en": "6c1b2513c20532ef",
     "text": "एक उपकरण में एक कुंजी जोड़ी गई"

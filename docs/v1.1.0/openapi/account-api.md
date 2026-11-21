@@ -9550,6 +9550,219 @@ Scope: `account:manage`.
 | `view.tokenEndpoint` | string |  |  |
 | `view.username` | string |  |  |
 
+## GET /account-api/tokens
+
+`getTokens`
+
+**Your hardware tokens**
+
+Each physical security key or smart card this realm recorded you as holding, from its attestation: its vendor, serial, model and form factor, whether it is active or was reported lost, and your credentials on it.
+
+The door of the portal's `GET /portal/tokens`.
+
+Scope: `account:manage`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
+**200**: The answer.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `tokens` | list | yes | Every token the caller holds or has a credential on, newest first. |
+| `tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
+| `tokens[].credentials` | list | yes | The caller's own credentials on it. |
+| `tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
+| `tokens[].credentials[].kind` | string | yes | The credential's kind: `fido` or `x509` (later `hotp`, `yubico-otp`, `ssh`, `openpgp`). |
+| `tokens[].credentials[].label` | string | yes | Its name, where it has one. |
+| `tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
+| `tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |
+| `tokens[].key` | string | yes | The token's register key, `<vendor>/<serial>`: what `actOnTokens` names. |
+| `tokens[].lostAt` | string | yes | When it was reported lost, or empty. |
+| `tokens[].model` | string | yes |  |
+| `tokens[].registeredAt` | string | yes |  |
+| `tokens[].serial` | string | yes | The serial its attestation named. |
+| `tokens[].status` | string | yes | `active` or `lost`. |
+| `tokens[].vendor` | string | yes |  |
+
+**400**: The request did not validate, or was refused: `{ ok: false, errors: [...] }`.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**401**: No access token, or one that does not verify, has expired, was revoked, outlived its sign-on session, or came without its DPoP proof. `WWW-Authenticate` says which.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**403**: The token is for another audience or does not carry `account:manage`, or the access policy refused the person.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+## POST /account-api/tokens
+
+`actOnTokens`
+
+**Reports one of your hardware tokens lost**
+
+`lost` marks the token lost and retires every credential of yours on it: its passkeys are removed, its certificates revoked (keyCompromise), a CAEP credential-change is sent for each, and the sign-on sessions they signed in end. It asks for a recent sign-in. A refusal carries the page's `view`.
+
+The door of the portal's `POST /portal/tokens`.
+
+Scope: `account:manage`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `action` | empty, or one of `lost` |  | What to do; `lost` where none is named. |
+| `key` | string |  | `lost`: the token's key, `<vendor>/<serial>`. |
+
+**200**: The answer.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `message` | string | yes |  |
+| `ok` | boolean | yes |  |
+| `view` | object | yes |  |
+| `view.tokens` | list | yes | Every token the caller holds or has a credential on, newest first. |
+| `view.tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
+| `view.tokens[].credentials` | list | yes | The caller's own credentials on it. |
+| `view.tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
+| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido` or `x509` (later `hotp`, `yubico-otp`, `ssh`, `openpgp`). |
+| `view.tokens[].credentials[].label` | string | yes | Its name, where it has one. |
+| `view.tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
+| `view.tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |
+| `view.tokens[].key` | string | yes | The token's register key, `<vendor>/<serial>`: what `actOnTokens` names. |
+| `view.tokens[].lostAt` | string | yes | When it was reported lost, or empty. |
+| `view.tokens[].model` | string | yes |  |
+| `view.tokens[].registeredAt` | string | yes |  |
+| `view.tokens[].serial` | string | yes | The serial its attestation named. |
+| `view.tokens[].status` | string | yes | `active` or `lost`. |
+| `view.tokens[].vendor` | string | yes |  |
+
+**400**: The request did not validate, or was refused: `{ ok: false, errors: [...] }`.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `errors` | list | yes |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean | yes |  |
+| `view` | object |  |  |
+| `view.tokens` | list | yes | Every token the caller holds or has a credential on, newest first. |
+| `view.tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
+| `view.tokens[].credentials` | list | yes | The caller's own credentials on it. |
+| `view.tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
+| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido` or `x509` (later `hotp`, `yubico-otp`, `ssh`, `openpgp`). |
+| `view.tokens[].credentials[].label` | string | yes | Its name, where it has one. |
+| `view.tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
+| `view.tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |
+| `view.tokens[].key` | string | yes | The token's register key, `<vendor>/<serial>`: what `actOnTokens` names. |
+| `view.tokens[].lostAt` | string | yes | When it was reported lost, or empty. |
+| `view.tokens[].model` | string | yes |  |
+| `view.tokens[].registeredAt` | string | yes |  |
+| `view.tokens[].serial` | string | yes | The serial its attestation named. |
+| `view.tokens[].status` | string | yes | `active` or `lost`. |
+| `view.tokens[].vendor` | string | yes |  |
+
+**401**: No access token, or one that does not verify, has expired, was revoked, outlived its sign-on session, or came without its DPoP proof. `WWW-Authenticate` says which.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**403**: The token is for another audience or does not carry `account:manage`, or the access policy refused the person.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**404**: No such token is held by you.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `errors` | list | yes |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean | yes |  |
+| `view` | object |  |  |
+| `view.tokens` | list | yes | Every token the caller holds or has a credential on, newest first. |
+| `view.tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
+| `view.tokens[].credentials` | list | yes | The caller's own credentials on it. |
+| `view.tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
+| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido` or `x509` (later `hotp`, `yubico-otp`, `ssh`, `openpgp`). |
+| `view.tokens[].credentials[].label` | string | yes | Its name, where it has one. |
+| `view.tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
+| `view.tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |
+| `view.tokens[].key` | string | yes | The token's register key, `<vendor>/<serial>`: what `actOnTokens` names. |
+| `view.tokens[].lostAt` | string | yes | When it was reported lost, or empty. |
+| `view.tokens[].model` | string | yes |  |
+| `view.tokens[].registeredAt` | string | yes |  |
+| `view.tokens[].serial` | string | yes | The serial its attestation named. |
+| `view.tokens[].status` | string | yes | `active` or `lost`. |
+| `view.tokens[].vendor` | string | yes |  |
+
+**409**: The token was already reported lost.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `errors` | list | yes |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean | yes |  |
+| `view` | object |  |  |
+| `view.tokens` | list | yes | Every token the caller holds or has a credential on, newest first. |
+| `view.tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
+| `view.tokens[].credentials` | list | yes | The caller's own credentials on it. |
+| `view.tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
+| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido` or `x509` (later `hotp`, `yubico-otp`, `ssh`, `openpgp`). |
+| `view.tokens[].credentials[].label` | string | yes | Its name, where it has one. |
+| `view.tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
+| `view.tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |
+| `view.tokens[].key` | string | yes | The token's register key, `<vendor>/<serial>`: what `actOnTokens` names. |
+| `view.tokens[].lostAt` | string | yes | When it was reported lost, or empty. |
+| `view.tokens[].model` | string | yes |  |
+| `view.tokens[].registeredAt` | string | yes |  |
+| `view.tokens[].serial` | string | yes | The serial its attestation named. |
+| `view.tokens[].status` | string | yes | `active` or `lost`. |
+| `view.tokens[].vendor` | string | yes |  |
+
 ## GET /account-api/verify-email
 
 `getEmailVerification`

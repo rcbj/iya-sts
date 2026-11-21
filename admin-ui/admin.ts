@@ -1513,6 +1513,16 @@ const SECTIONS = [
                'compliance, and when it was last used. Click one to edit ' +
                'it, add or remove a key, give it to another owner or remove ' +
                'it; register one by hand at the foot of the list.' },
+      // HARDWARE TOKENS (#1955 P1): the device register's sibling, beside
+      // it and in Directory for its reason — the register is somebody's,
+      // and the page is a destination. Drawn by `web_hardware_tokens.ts`
+      // from `mgmt-api/hardware_tokens_api.ts`.
+      { path: '/admin/hardware-tokens', label: 'Hardware tokens',
+        blurb: 'Every physical security key and smart card this realm has ' +
+               'recorded, each from its own attestation (a self-declared ' +
+               'serial is never recorded): its vendor, serial and model, ' +
+               'who holds it, and the passkeys and certificates on it. ' +
+               'Report one lost to retire every credential on it at once.' },
       // ATTRIBUTE SOURCES (#94): in Directory because what they write is
       // on people's directory entries, and the register is `ou=
       // attributesources` in this realm's directory.

@@ -39,7 +39,7 @@ Every answer is checked against the model shown here before it is sent, and no a
 | [Custom claims](admin-api-custom-claims.html) | 9 | What to add to every access token and ID Token issued from now on. The assertions are next door, under Custom SAML attributes. |
 | [Delegation](admin-api-delegation.html) | 17 |  |
 | [Devices](admin-api-devices.html) | 12 |  |
-| [Directory](admin-api-directory.html) | 19 |  |
+| [Directory](admin-api-directory.html) | 21 |  |
 | [EST](admin-api-est.html) | 6 |  |
 | [Federation](admin-api-federation.html) | 24 |  |
 | [GNAP](admin-api-gnap.html) | 4 | The Grant Negotiation and Authorization Protocol (RFC 9635) and its resource server connections (RFC 9767): the authorization server of this realm, what the applications using it have done, and the two things an operator does to its state by hand. |

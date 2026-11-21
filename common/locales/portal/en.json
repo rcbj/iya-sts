@@ -40,6 +40,8 @@
   "nav.password.heading": "Change your password",
   "nav.keys.label": "Passkeys",
   "nav.keys.heading": "Passkeys",
+  "nav.tokens.label": "Security keys",
+  "nav.tokens.heading": "Your security keys and smart cards",
   "nav.mfa.label": "Authenticator app",
   "nav.mfa.heading": "Your authenticator app",
   "nav.signing-key.label": "Signing keys",

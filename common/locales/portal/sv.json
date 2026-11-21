@@ -40,6 +40,8 @@
   "nav.password.heading": "Ändra ditt lösenord",
   "nav.keys.label": "Nycklar",
   "nav.keys.heading": "Nycklar",
+  "nav.tokens.label": "Säkerhetsnycklar",
+  "nav.tokens.heading": "Dina säkerhetsnycklar och smarta kort",
   "nav.mfa.label": "Autentiseringsapp",
   "nav.mfa.heading": "Din autentiseringsapp",
   "nav.signing-key.label": "Signeringsnycklar",

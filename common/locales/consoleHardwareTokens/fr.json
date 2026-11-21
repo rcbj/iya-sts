@@ -1,0 +1,22 @@
+{
+  "whatThisIs": "De quoi il s'agit",
+  "lead": "Chaque clé de sécurité et carte à puce physique que ce domaine a enregistrée. Un jeton n'est enregistré qu'à partir de sa propre attestation : aujourd'hui, une clé de sécurité enregistrée avec l'attestation d'entreprise, dont le certificat indique le numéro de série. Un numéro de série saisi par quelqu'un n'est jamais enregistré. Chaque jeton liste les clés d'accès et certificats qu'il porte et qui les a enregistrés.",
+  "search": "Numéro de série ou personne",
+  "status": "État",
+  "any": "Tous",
+  "active": "En service",
+  "lost": "Perdu",
+  "filter": "Filtrer",
+  "capped": "Cette liste contient les mille jetons les plus récents. Recherchez par numéro de série ou par personne pour les autres.",
+  "none": "Aucun jeton matériel n'est enregistré dans ce domaine.",
+  "thToken": "Jeton",
+  "thHolder": "Détenteur",
+  "thEvidence": "Enregistré à partir de",
+  "thCredentials": "Identifiants qu'il porte",
+  "thStatus": "État",
+  "smartCard": "sur une carte à puce",
+  "retired": "retiré",
+  "lostOn": "Perdu {at} (signalé par {by})",
+  "reportLost": "Déclarer perdu",
+  "lostWhat": "Déclarer un jeton perdu le marque aussitôt comme perdu, puis supprime chaque clé d'accès qu'il porte, révoque chacun de ses certificats pour compromission de clé, envoie un changement d'identifiant CAEP pour chacun et ferme les sessions qu'ils ont ouvertes. Un identifiant qui n'a pas pu être retiré est indiqué dans la réponse et dans le journal d'audit, et reste actif."
+}

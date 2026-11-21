@@ -105,6 +105,7 @@ const CONSOLE: Record<string, string> = {
   '/admin/devices/new':
     'devices.html#registering-a-device--admindevicesnew',
   '/admin/devices/monitor': 'devices.html',
+  '/admin/hardware-tokens': 'hardware-tokens.html',
   '/admin/service-accounts': 'service-accounts.html',
   '/admin/encryption': 'encryption-at-rest.html',
   '/admin/error-codes': 'error-codes.html',
@@ -412,6 +413,7 @@ const PORTAL: Record<string, string> = {
   '/portal/self-issued/did': 'oid4vp.html',
   '/portal/wallet': 'oid4vci.html',
   '/portal/devices': 'devices.html',
+  '/portal/tokens': 'hardware-tokens.html',
   '/portal/ciba': 'configure-oidc-flows.html',
   '/portal/device': 'configure-oidc-flows.html',
   '/portal/claim-sources': 'oauth-oidc.html',

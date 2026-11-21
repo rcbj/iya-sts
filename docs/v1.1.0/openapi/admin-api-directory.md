@@ -965,6 +965,172 @@ Scope: `admin:write`.
 | `source.user` | string |  |  |
 | `why` | string |  |  |
 
+## GET /admin-api/hardware-tokens
+
+`getHardwareTokens`
+
+**The realm's hardware tokens (#1955)**
+
+Everything Directory → Hardware tokens draws: `tokens`, one page of the physical security keys and smart cards this realm recorded from attestation — vendor, serial, model, holder, where the serial came from, status and the credentials on each — newest first, with `paging`. `capped` is true where the store is read on demand and the unsearched list is its newest thousand rows; search by serial or username (`q`) for any other.
+
+**Mirrors** `GET /admin/hardware-tokens` on the admin console.
+
+Scope: `admin:read`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `q` | query | string |  | A serial, matched exactly, or a username for that person's tokens; empty for every token. |
+| `status` | query | one of empty, `active`, `lost` |  | `active` or `lost`; empty for both. |
+| `page` | query | integer |  | Which page; a page past the end answers the last one. |
+| `per` | query | integer |  | Rows per page, 50 by default and at most 300. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**200**: The page of tokens.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `capped` | boolean | yes |  |
+| `paging` | object | yes |  |
+| `paging.firstRow` | integer |  |  |
+| `paging.lastRow` | integer |  |  |
+| `paging.noun` | string |  |  |
+| `paging.page` | integer |  |  |
+| `paging.pages` | integer |  |  |
+| `paging.param` | string |  |  |
+| `paging.perPage` | integer |  |  |
+| `paging.total` | integer |  |  |
+| `q` | string | yes |  |
+| `status` | string | yes |  |
+| `tokens` | list | yes |  |
+| `tokens[].attested` | boolean | yes |  |
+| `tokens[].credentials` | list | yes |  |
+| `tokens[].credentials[].addedAt` | string | yes |  |
+| `tokens[].credentials[].holder` | string | yes | Who registered it, by username. |
+| `tokens[].credentials[].kind` | string | yes | `fido` or `x509` (later `hotp`, `yubico-otp`, `ssh`, `openpgp`). |
+| `tokens[].credentials[].label` | string | yes |  |
+| `tokens[].credentials[].ref` | string | yes | The credential id, or the certificate's serial in lower-case hex. |
+| `tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
+| `tokens[].credentials[].smartCard` | boolean | yes | Whether the evidence says its key is on a smart card. |
+| `tokens[].credentials[].source` | string | yes | The evidence source it was recorded from. |
+| `tokens[].evidenceSources` | list | yes | Where its serial came from: `fido-enterprise-attestation`, `piv-attestation`, `vendor-import`. |
+| `tokens[].evidenceSources[]` | string |  |  |
+| `tokens[].firmware` | string | yes |  |
+| `tokens[].formFactor` | string | yes |  |
+| `tokens[].holder` | string | yes | Who holds it, by username; empty for an entry since deleted. |
+| `tokens[].key` | string | yes | `<vendor>/<serial>`, what `reportHardwareTokenLost` names. |
+| `tokens[].lostAt` | string | yes |  |
+| `tokens[].lostBy` | string | yes |  |
+| `tokens[].model` | string | yes |  |
+| `tokens[].registeredAt` | string | yes |  |
+| `tokens[].serial` | string | yes |  |
+| `tokens[].status` | string | yes | `active` or `lost`. |
+| `tokens[].updatedAt` | string | yes |  |
+| `tokens[].vendor` | string | yes |  |
+
+## POST /admin-api/hardware-tokens/lost
+
+`reportHardwareTokenLost`
+
+**Report a hardware token lost (#1955)**
+
+Marks the token lost, then retires every credential on it by its kind: a passkey is removed from its holder's entry (passing the last-way-in guard) and the sessions it signed in end, a certificate is revoked for keyCompromise; a CAEP credential-change goes for each. `retired` and `notRetired` list them; a credential not retired is still live. 404 for no such token, 409 for one already lost. Acting on a Security Administrator's token needs admin:security.
+
+**Mirrors** `POST /admin/hardware-tokens` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `key` | string | yes | The token, `<vendor>/<serial>`. |
+
+**200**: The token is lost, and what was retired.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `message` | string | yes |  |
+| `notRetired` | list | yes |  |
+| `notRetired[].kind` | string | yes |  |
+| `notRetired[].label` | string |  |  |
+| `notRetired[].ok` | boolean |  |  |
+| `notRetired[].ref` | string | yes |  |
+| `notRetired[].sessionsEnded` | integer |  |  |
+| `notRetired[].why` | string | yes | Why it was not retired, in English; empty where it was. |
+| `ok` | boolean | yes |  |
+| `retired` | list | yes |  |
+| `retired[].kind` | string | yes |  |
+| `retired[].label` | string |  |  |
+| `retired[].ok` | boolean |  |  |
+| `retired[].ref` | string | yes |  |
+| `retired[].sessionsEnded` | integer |  |  |
+| `retired[].why` | string | yes | Why it was not retired, in English; empty where it was. |
+| `token` | object | yes |  |
+| `token.attested` | boolean | yes |  |
+| `token.credentials` | list | yes |  |
+| `token.credentials[].addedAt` | string | yes |  |
+| `token.credentials[].holder` | string | yes | Who registered it, by username. |
+| `token.credentials[].kind` | string | yes | `fido` or `x509` (later `hotp`, `yubico-otp`, `ssh`, `openpgp`). |
+| `token.credentials[].label` | string | yes |  |
+| `token.credentials[].ref` | string | yes | The credential id, or the certificate's serial in lower-case hex. |
+| `token.credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
+| `token.credentials[].smartCard` | boolean | yes | Whether the evidence says its key is on a smart card. |
+| `token.credentials[].source` | string | yes | The evidence source it was recorded from. |
+| `token.evidenceSources` | list | yes | Where its serial came from: `fido-enterprise-attestation`, `piv-attestation`, `vendor-import`. |
+| `token.evidenceSources[]` | string |  |  |
+| `token.firmware` | string | yes |  |
+| `token.formFactor` | string | yes |  |
+| `token.holder` | string | yes | Who holds it, by username; empty for an entry since deleted. |
+| `token.key` | string | yes | `<vendor>/<serial>`, what `reportHardwareTokenLost` names. |
+| `token.lostAt` | string | yes |  |
+| `token.lostBy` | string | yes |  |
+| `token.model` | string | yes |  |
+| `token.registeredAt` | string | yes |  |
+| `token.serial` | string | yes |  |
+| `token.status` | string | yes | `active` or `lost`. |
+| `token.updatedAt` | string | yes |  |
+| `token.vendor` | string | yes |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**404**: No such token in this realm.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**409**: The token was already reported lost.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
 ## GET /admin-api/post-login-activities
 
 `getPostLoginActivities`

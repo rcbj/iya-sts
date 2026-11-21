@@ -1231,6 +1231,14 @@
     "en": "6bfc2bea96fee884",
     "text": "启动、暂停、继续或结束登录后活动"
   },
+  "endpoints.route./admin-api/hardware-tokens.name": {
+    "en": "386404ef0cf5e649",
+    "text": "硬件令牌"
+  },
+  "endpoints.route./admin-api/hardware-tokens/:action.name": {
+    "en": "d2326b0fb8b09689",
+    "text": "报告硬件令牌丢失"
+  },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",
     "text": "出站 SCIM 客户端"

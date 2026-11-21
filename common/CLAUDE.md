@@ -12605,6 +12605,46 @@ removals of `oauthDelegatedPermission`, `oauthPermission` and
 `oauthAllowedScope` call it or `claimsFanOut()` directly. Each lazily, after
 its write, never into it. `ssf/CLAUDE.md` has the fan-out.
 
+## `hardware_tokens.ts`: THE HARDWARE TOKEN REGISTER (#1955 P1, 2026-11-20)
+
+One record per physical token (a YubiKey, a smart card) per realm, keyed by
+`<vendor>/<serial>`, with its holder's entryUUID and the credentials on it
+as `{ kind, ref }`. The file's header is the argument; what a maintainer of
+this directory has to know beside it:
+
+* **A serial is recorded only from attestation**: `recordAttested()` is the
+  one writer and takes an evidence source from a closed list
+  (`fido-enterprise-attestation`, and `piv-attestation` and
+  `vendor-import` for P2 and P4). No door takes a serial from a body.
+* **It is NOT the device register, and the header says why**: a roaming key
+  identifies no device (`device_enrolment.ts`, STS-DEVICE-0022), and filing
+  one there would make every sign-in with it "from a registered device" for
+  recognition, the compliant-device acr, risk scoring and Native SSO's
+  eviction.
+* **`credentials.addKey()` records the token at the one writer**
+  (`noteFidoKey()`, lazily), and `removeKey()` drops the credential unless
+  the lost-key act is the caller (`{ lost: true }`, which also passes the
+  last-way-in guard).
+* **The lost-key act is a dispatch by kind, and `registerRetirer()` is a
+  hook under rule 3e**: later phases' modules record their credentials here,
+  so this file requiring them back to retire them would close a cycle. A
+  kind with no retirer is reported as not retired (STS-HWTOKEN-0009), never
+  skipped. A FIDO credential is REMOVED rather than disabled, because no
+  sign-in door reads a disabled mark.
+* **X4**: the authentication event records the credential's token
+  (`authn.ts`'s `hardwareTokenOf()`), which is the authentication policy's
+  `attested-hardware` mechanism (`authn_mechanisms.ts`) and the issuance
+  policy's hardware-token attributes (`issuance_gate.js`'s
+  `hardwareTokenFactsOf()`, `xacml/CLAUDE.md`). The lost-key act notes a
+  `lost-key` recovery (3cq) for a person it leaves with no passkey.
+* **X3**: `evidenceFor()` and `certificateAmr()` answer what recorded
+  evidence says of a credential's key; PKINIT keeps its old inference while
+  `hardwareTokens.hardwareClaims` is `inference` (the default).
+* **The store** is `hardware_tokens.register`, cell tier, on demand with an
+  index by holder (`h:`) and by credential (`c:<kind>:<ref>`). No table, so
+  no schema version or upgrade script; development does not keep it across
+  a restart, as it keeps no minted store.
+
 ## `devices.ts`: THE DEVICE REGISTER (#130, 2026-09-23; #164 and #218, 2026-09-26)
 
 A device is an entry under `ou=devices` (`ldap/CLAUDE.md`) with ONE owner —
@@ -15511,6 +15551,11 @@ not refused, and the default stays.
   passkey registered at the step sends `credential-change` (create) where it
   is written, so the portal's Security activity shows both.
 * Codes `STS-AUTHN-0380` to `0383`. `tests/recovery_assurance.js` holds it.
+* **A LOST SECURITY KEY (#1955 P1)** is the eighth source of a pending
+  recovery, `lost-key`: the lost-key act writes it before it removes the
+  person's last passkeys, `holdsPasskey()` keeps such a person covered while
+  it is pending, and a later door's write keeps it. `authn/CLAUDE.md` and
+  `tests/hardware_tokens.js` 7a–7d.
 
 ## 3cs. `passkey_report.ts`: WHO HOLDS WHICH PASSKEY ALGORITHM, KEPT RATHER THAN COUNTED (#942, 2026-10-23)
 

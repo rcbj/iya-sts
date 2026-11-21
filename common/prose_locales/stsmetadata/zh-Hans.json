@@ -2151,6 +2151,18 @@
     "en": "0550e836ba364102",
     "text": "启动、暂停、继续或结束登录后活动"
   },
+  "stsmetadata.endpoints./admin-api/hardware-tokens.what": {
+    "en": "fe8d3ba310ad762b",
+    "text": "NON-SPEC (#1955)。目录 → 硬件令牌所显示的内容：本领域记录的实体安全密钥和智能卡，每个都根据其自身证明记录，可分页并按序列号或人员搜索，并列出每个令牌上的通行密钥和证书。对应 GET /admin/hardware-tokens。"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
+    "en": "1303a5c415b09d44",
+    "text": "NON-SPEC (#1955)。lost，参数 { key }：令牌标记为丢失，删除其上的每个通行密钥，以 keyCompromise 吊销其上的每个证书，为每一项发送 CAEP 凭据变更，并结束由它们登录的会话。控制台在该页面上的唯一操作。"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
+    "en": "7b39ad029e0234ed",
+    "text": "报告硬件令牌丢失并停用其凭据"
+  },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
     "text": "非规范（#552）。协议 → SCIM → 客户端所绘制的内容：声明用于 scim-client 的应用条目——本领域向其推送人员和组的服务提供方——每个附带其队列计数和退避暂停，带 ?client= 时为某个客户端的重试队列、死信队列和发现信息。从不包含凭据。"

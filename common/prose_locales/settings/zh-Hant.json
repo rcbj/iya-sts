@@ -3139,6 +3139,14 @@
     "en": "72d46974270d0c03",
     "text": "此領域為 Monitoring → Devices 保留多少筆裝置建立、移除、逐出與合規性變更。超過此數時記錄新事件，最舊的會被捨棄。"
   },
+  "hardwareTokens.hardwareClaims|label": {
+    "en": "8373111eef4bf812",
+    "text": "憑什麼取得硬體金鑰聲明"
+  },
+  "hardwareTokens.hardwareClaims|description": {
+    "en": "e0341e4e47f3b2f8",
+    "text": "什麼能讓 PKINIT 登入聲明硬體繫結的金鑰（pkinit-hardware 指示符與 amr hwk）。`inference`：預設值，也是 #1955 之前的行為——本服務未產生其金鑰的智慧卡登入憑證，或已記錄的證明證據。`evidence`：僅限硬體權杖的證明所涵蓋的金鑰。透過 TLS 的憑證登入只有在有證據時才取得 hwk，以及智慧卡上金鑰的 sc，兩種情況皆然。"
+  },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
     "text": "每次摘要要求的合規性報告數"

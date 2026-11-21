@@ -7143,6 +7143,23 @@ const SETTINGS = [
                  'Devices. The oldest is dropped when a new one is ' +
                  'recorded past it.' },
 
+  // #1955 P1: WHAT A HARDWARE CLAIM STANDS ON. `common/hardware_tokens.ts`
+  // argues it; the default is the behaviour before #1955.
+  { key: 'hardwareTokens.hardwareClaims', group: 'Devices',
+    label: 'What earns a hardware-key claim',
+    env: 'STS_HARDWARE_TOKENS_HARDWARE_CLAIMS', type: 'enum',
+    enumValues: ['inference', 'evidence'], dflt: 'inference',
+    runtime: true,
+    description: 'What lets a PKINIT sign-in claim a hardware-bound key ' +
+                 '(the pkinit-hardware indicator and amr hwk). ' +
+                 '`inference`, the default and the behaviour before ' +
+                 '#1955: a smart-card logon certificate whose key this ' +
+                 'service did not generate, or recorded attestation ' +
+                 'evidence. `evidence`: only a key a hardware token\'s ' +
+                 'attestation covers. A certificate sign-in over TLS ' +
+                 'earns hwk, and sc for a key on a smart card, only from ' +
+                 'evidence in either case.' },
+
   // #164 PHASE 3 (2026-09-26): the MDM / posture feed.
   // `admin-ui/devices_admin.ts`'s `mdmFeed()` argues it.
   { key: 'devices.complianceFeedMaxReports', group: 'Devices',

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5760** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5774** of them, in **53** subsystems.
 
 ## Where a code appears
 
@@ -85,8 +85,9 @@ is an ordinary outcome.
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 15
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 53
+* [Hardware tokens (`STS-HWTOKEN`)](#sts-hwtoken) — 13
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 224
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 225
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 137
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 99
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
@@ -4931,6 +4932,28 @@ Raised from: common/devices.ts, admin-ui/devices_admin.ts.
 | `STS-DEVICE-0052` | The Android attestation recheck's backfill could not write a device whose stsDeviceAndroidKey marker is missing or wrong; that device's keys are rechecked only once a later write of it derives the marker (#615). | — |
 | `STS-DEVICE-0053` | A device of a deleted person could not be removed from the register, so a person made again under the name owns it. Remove it on the Devices page. | — |
 
+## STS-HWTOKEN
+
+**Hardware tokens.** The hardware token register (#1955): one record per physical token (a YubiKey, a smart card) keyed by vendor and serial, the serial taken only from attestation, the credentials on it, and the lost-key act that retires every one of them.
+
+Raised from: common/hardware_tokens.ts, mgmt-api/hardware_tokens_api.ts, portal/account_tokens.ts.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-HWTOKEN-0001` | A hardware token's serial was offered with an evidence source that is not attestation (the FIDO enterprise attestation, a PIV key attestation or a vendor import); nothing was recorded (#1955). | — |
+| `STS-HWTOKEN-0002` | An attestation named no vendor and serial the hardware token register can key a token by; nothing was recorded (#1955). | — |
+| `STS-HWTOKEN-0003` | A credential of an unknown kind, or with an empty reference, was offered to the hardware token register (#1955). | — |
+| `STS-HWTOKEN-0004` | A hardware token's credential named a person with no directory entry to hold it (#1955). | — |
+| `STS-HWTOKEN-0005` | The lost-key act named a hardware token that is not in the realm's register, or (at the portal) not held by the caller (#1955). | HTTP 404 (the page with the sentence) |
+| `STS-HWTOKEN-0006` | The lost-key act named a hardware token already reported lost (#1955). | HTTP 409 (the page with the sentence) |
+| `STS-HWTOKEN-0007` | A credential on a hardware token reported lost could not be retired: its kind's retire action refused or threw. The token is marked lost; the credential named on the audit row is still live and must be removed by hand (#1955). | — |
+| `STS-HWTOKEN-0008` | A retire action for a hardware token credential kind was refused at installation: it named an unknown kind, no label or no retire function (#1955, rule 3e). | — |
+| `STS-HWTOKEN-0009` | A credential on a hardware token reported lost is of a kind no retire action is installed for, so it was not retired and is still live (#1955). | — |
+| `STS-HWTOKEN-0010` | At the portal's lost-key act a credential on the token was registered by another person, so it was left for an administrator to retire (#1955). | — |
+| `STS-HWTOKEN-0011` | A passkey was written and the hardware token register could not record the token its attestation named; the key stands, and the token is recorded when it is next registered (#1955). | — |
+| `STS-HWTOKEN-0012` | A hardware token act named an action that is not one of the page's (#1955). | HTTP 400 (the page with the sentence) |
+| `STS-HWTOKEN-0013` | The hardware token list or the lost-key act failed with an unexpected error at /admin-api; the log line has the stack (#1955). | HTTP 500 |
+
 ## STS-SVCACCT
 
 **Service accounts.** Service accounts (#221): person entries carrying stsServiceAccount, the service-account policy that governs them (the third kind on Directory → Policies), the doors that policy closes, and the rotation that pushes a new password to a secrets manager before committing it.
@@ -5216,6 +5239,7 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0300` | A reverse-proxy route's `path` is /.iya-pep or under /.iya-pep/, the prefix the proxy reserves for its own callback and sign-out (#1830): an updated PEP refuses the whole configuration. | HTTP 400 on /admin-api; configured: false at the pull |
 | `STS-XACML-0301` | issue-pep-credential named a service account that does not hold REMOTE_PEPS (it is not in the group roles.remotePepGroup names), so the key would authenticate an entry no PEP door admits (#1827, phase 3). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-XACML-0302` | issue-pep-credential certified and registered the new key, and revokePrevious could not revoke one of the entry's other RFC 7523 keys; the new key works, and the old one still does too (#1827, phase 3). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-XACML-0331` | A remote PEP's heartbeat was refused: a member its entry stores carries a value the service cannot hold (fuzz run #595) — a counter that is not a non-negative integer of at most 2^53 - 1, a text member that is not a string or carries a control character, or signals, settings or listeners that are not an object or null. Nothing of it is recorded; the refusal names the member. | none — 400 invalid_request on POST /xacml/pep/heartbeat |
 
 ## STS-XPEP
 

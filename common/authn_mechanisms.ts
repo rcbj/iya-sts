@@ -56,6 +56,10 @@
 //     sets.
 //   * `wallet` — a wallet presentation (`amr` `pop`, which only
 //     `/authn/wallet` records).
+//   * `attested-hardware` (#1955) — the passkey or certificate that answered
+//     is on a hardware token the register recorded from attestation (the
+//     event's `context.credential.hardwareToken`), so a policy can require
+//     a key whose hardware is PROVEN rather than any passkey.
 //
 // An event this service did not record the authority of (`unrecorded`, a
 // session row older than events) satisfies nothing, and neither does an
@@ -140,6 +144,15 @@ class AuthnMechanisms {
     }
     if (amr.indexOf('pop') >= 0) {
       out.push('wallet');
+    }
+    // `attested-hardware` (#1955 P1, design X4): the credential that
+    // answered — a passkey or a certificate — is on a hardware token whose
+    // attestation the register recorded, as the event's snapshot says
+    // (`authn.ts`'s `hardwareTokenOf()`). It is IN ADDITION to `webauthn`:
+    // a list naming only `attested-hardware` is satisfied by an attested
+    // security key or smart card and by nothing else.
+    if (((one.context || {}).credential || {}).hardwareToken) {
+      out.push('attested-hardware');
     }
     log.debug('Leaving AuthnMechanisms.ofEvent(). ' +
               (out.join(', ') || 'none'));

@@ -1231,6 +1231,14 @@
     "en": "6bfc2bea96fee884",
     "text": "Simulan, i-pause, ituloy o tapusin ang isang aktibidad pagkatapos mag-sign in"
   },
+  "endpoints.route./admin-api/hardware-tokens.name": {
+    "en": "386404ef0cf5e649",
+    "text": "Mga hardware token"
+  },
+  "endpoints.route./admin-api/hardware-tokens/:action.name": {
+    "en": "d2326b0fb8b09689",
+    "text": "Iulat na nawala ang isang hardware token"
+  },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",
     "text": "Mga outbound SCIM client"

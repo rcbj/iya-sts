@@ -1,0 +1,22 @@
+{
+  "whatThisIs": "Qué es esto",
+  "lead": "Cada llave de seguridad y tarjeta inteligente física que este dominio ha registrado. Un token solo se registra a partir de su propia atestación: hoy, una llave de seguridad registrada con atestación empresarial, cuyo certificado indica su número de serie. Nunca se registra un número de serie escrito por alguien. Cada token muestra las llaves de acceso y certificados que contiene y quién los registró.",
+  "search": "Número de serie o persona",
+  "status": "Estado",
+  "any": "Cualquiera",
+  "active": "En uso",
+  "lost": "Perdido",
+  "filter": "Filtrar",
+  "capped": "Esta lista contiene los mil tokens más recientes. Busque por número de serie o persona para cualquier otro.",
+  "none": "No hay ningún token de hardware registrado en este dominio.",
+  "thToken": "Token",
+  "thHolder": "Titular",
+  "thEvidence": "Registrado a partir de",
+  "thCredentials": "Credenciales que contiene",
+  "thStatus": "Estado",
+  "smartCard": "en una tarjeta inteligente",
+  "retired": "retirada",
+  "lostOn": "Perdido {at} (notificado por {by})",
+  "reportLost": "Notificar pérdida",
+  "lostWhat": "Notificar un token como perdido lo marca como perdido al instante y después elimina cada llave de acceso que contiene, revoca cada uno de sus certificados por compromiso de clave, envía un cambio de credencial CAEP por cada uno y cierra las sesiones que iniciaron. Una credencial que no se pudo retirar se indica en la respuesta y en el registro de auditoría, y sigue activa."
+}

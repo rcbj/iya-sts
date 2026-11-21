@@ -40,6 +40,8 @@
   "nav.password.heading": "Changer votre mot de passe",
   "nav.keys.label": "Clés d’accès",
   "nav.keys.heading": "Clés d’accès",
+  "nav.tokens.label": "Clés de sécurité",
+  "nav.tokens.heading": "Vos clés de sécurité et cartes à puce",
   "nav.mfa.label": "Application d’authentification",
   "nav.mfa.heading": "Votre application d’authentification",
   "nav.signing-key.label": "Clés de signature",

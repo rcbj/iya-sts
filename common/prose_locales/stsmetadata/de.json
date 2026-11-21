@@ -2151,6 +2151,18 @@
     "en": "0550e836ba364102",
     "text": "startet, pausiert, setzt fort oder beendet eine Aktivität nach der Anmeldung"
   },
+  "stsmetadata.endpoints./admin-api/hardware-tokens.what": {
+    "en": "fe8d3ba310ad762b",
+    "text": "NON-SPEC (#1955). Was Verzeichnis → Hardware-Token zeigt: die physischen Sicherheitsschlüssel und Smartcards, die dieser Bereich erfasst hat, jedes aus seiner eigenen Attestierung, seitenweise und nach Seriennummer oder Person durchsuchbar, mit den Passkeys und Zertifikaten auf jedem. Spiegelt GET /admin/hardware-tokens."
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
+    "en": "1303a5c415b09d44",
+    "text": "NON-SPEC (#1955). lost, mit { key }: das Token wird als verloren markiert, jeder Passkey darauf entfernt, jedes Zertifikat darauf wegen keyCompromise widerrufen, für jedes eine CAEP-Änderung der Anmeldedaten gesendet und die damit angemeldeten Sitzungen beendet. Die einzige Aktion der Konsole auf dieser Seite."
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
+    "en": "7b39ad029e0234ed",
+    "text": "meldet ein Hardware-Token als verloren und zieht seine Anmeldedaten zurück"
+  },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
     "text": "NON-SPEC (#552). Was Protokolle → SCIM → Clients darstellt: die Anwendungseinträge, die für scim-client deklariert sind — die Dienstanbieter, an die dieser Vertrauensbereich seine Personen und Gruppen per Push überträgt —, jeder mit seinen Warteschlangenzahlen und seiner Backoff-Pause, und mit ?client= die Wiederholungs- und Dead-Letter-Warteschlangen sowie die Discovery eines Clients. Niemals Anmeldedaten."

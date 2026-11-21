@@ -3139,6 +3139,14 @@
     "en": "72d46974270d0c03",
     "text": "Cuántas creaciones, eliminaciones, desalojos y cambios de cumplimiento de dispositivos conserva este dominio para Monitoreo → Dispositivos. Al registrar uno nuevo por encima del límite se descarta el más antiguo."
   },
+  "hardwareTokens.hardwareClaims|label": {
+    "en": "8373111eef4bf812",
+    "text": "Qué da derecho a declarar una clave de hardware"
+  },
+  "hardwareTokens.hardwareClaims|description": {
+    "en": "e0341e4e47f3b2f8",
+    "text": "Qué permite que un inicio de sesión PKINIT declare una clave vinculada al hardware (el indicador pkinit-hardware y amr hwk). `inference`, el valor predeterminado y el comportamiento anterior a #1955: un certificado de inicio de sesión con tarjeta inteligente cuya clave no generó este servicio, o una prueba de atestación registrada. `evidence`: solo una clave que cubre la atestación de un token de hardware. Un inicio de sesión con certificado sobre TLS obtiene hwk, y sc para una clave en una tarjeta inteligente, solo a partir de pruebas, en ambos casos."
+  },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
     "text": "Informes de cumplimiento por solicitud del feed"
