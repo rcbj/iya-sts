@@ -38,7 +38,8 @@
 // WHAT IT ANSWERS: `submit()` takes the FORM's fields as the jobs wrote them
 // before — `action` (`login`, `cancel`, `anonymous`, `email-code`,
 // `email-link`, `passkey`), `username`, `password`, `use_webauthn`,
-// `webauthn_only`, `remember_browser`, `device_fp`, `passkey_credential` —
+// `webauthn_only`, `remember_browser`, `choose_roles` (#1072), `device_fp`,
+// `passkey_credential` —
 // and answers:
 //
 //   { status, json, next, location, step, id, errors, view, csrf,
@@ -329,6 +330,7 @@ function bodyFor(action, fields) {
             use_webauthn: flag(f.use_webauthn),
             webauthn_only: flag(f.webauthn_only),
             remember_browser: flag(f.remember_browser),
+            choose_roles: flag(f.choose_roles),
             device_fp: f.device_fp || undefined };
   } else if (action === "anonymous") {
     out = { remember_browser: flag(f.remember_browser),
@@ -337,10 +339,12 @@ function bodyFor(action, fields) {
     out = { username: f.username,
             kind: action === "email-link" ? "link" : "code",
             remember_browser: flag(f.remember_browser),
+            choose_roles: flag(f.choose_roles),
             device_fp: f.device_fp || undefined };
   } else if (action === "passkey") {
     out = { credential: f.passkey_credential || f.credential,
             remember_browser: flag(f.remember_browser),
+            choose_roles: flag(f.choose_roles),
             device_fp: f.device_fp || undefined };
   }
   Object.keys(out).forEach(function (k) {
@@ -518,7 +522,9 @@ const STEP_PAGES = {
   "/authn/email-link": "email-link",
   "/authn/email-link/open": "email-link-open",
   // The post-login activity (#1096).
-  "/authn/post-login": "post-login"
+  "/authn/post-login": "post-login",
+  // The role step (#1072).
+  "/authn/roles": "roles"
 };
 
 /**

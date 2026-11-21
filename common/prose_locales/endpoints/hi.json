@@ -1251,6 +1251,10 @@
     "en": "c2e62734c4466542",
     "text": "क्या यह जारी होगा?"
   },
+  "endpoints.route./admin-api/roles/eligibility.name": {
+    "en": "7bf17441c33aaafb",
+    "text": "क्या यह व्यक्ति इस गतिशील भूमिका के लिए पात्र है?"
+  },
   "endpoints.route./admin-api/roles/:action.name": {
     "en": "1baadaaa0e1df852",
     "text": "भूमिकाएँ बनाएँ और बदलें"
@@ -1879,6 +1883,10 @@
     "en": "69876d051e66729c",
     "text": "लॉगिन-पश्चात गतिविधि चरण"
   },
+  "endpoints.route./authn/roles.name": {
+    "en": "d10487ebcbc8b238",
+    "text": "गतिशील भूमिका चरण"
+  },
   "endpoints.route./authn/totp.name": {
     "en": "a89de574ee2c21ab",
     "text": "एकबारगी कोड का दूसरा-कारक चरण"
@@ -2034,6 +2042,10 @@
   "endpoints.route./authn-api/mfa/:id/post-login/skip.name": {
     "en": "3d081a5b28f53bd6",
     "text": "एक लॉगिन-पश्चात गतिविधि टाल दें"
+  },
+  "endpoints.route./authn-api/mfa/:id/roles.name": {
+    "en": "77d2211c8b1e2d93",
+    "text": "इस साइन-इन की गतिशील भूमिकाएँ चुनें"
   },
   "endpoints.route./authn-api/mfa/:id/email/send.name": {
     "en": "f974b23b7838f712",

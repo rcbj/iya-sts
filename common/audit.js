@@ -1697,6 +1697,23 @@ const ACTIONS = [
     label: 'A role was deleted' },
   { action: 'roles.describe', category: 'admin',
     label: 'A role\'s description, display name or member types were set' },
+  // DYNAMIC SELECTABLE ROLES (#1072): how a role is held, how a dynamic one
+  // is chosen, and each eligibility decision (an offer at sign-in, an
+  // administrator's test).
+  { action: 'roles.set-mode', category: 'admin',
+    label: 'A role was made static or dynamic selectable' },
+  { action: 'roles.set-selection', category: 'admin',
+    label: 'How a dynamic role is chosen at sign-in was set' },
+  { action: 'roles.eligibility', category: 'authorization',
+    label: 'A person\'s eligibility for a dynamic role was decided' },
+  { action: 'roles.selection.offered', category: 'authentication',
+    label: 'Dynamic roles were offered at a sign-in' },
+  { action: 'roles.selection.chosen', category: 'authentication',
+    label: 'Dynamic roles were chosen at a sign-in' },
+  { action: 'roles.selection.refused', category: 'authentication',
+    label: 'A sign-in\'s choice of dynamic roles was refused' },
+  { action: 'roles.selection.dropped', category: 'authorization',
+    label: 'A chosen dynamic role was left off a token' },
   // MONITORING → NODE HEALTH'S COLLECT BUTTONS (#611): one row per press,
   // however many isolates it reached. `admin-ui/node_health_admin.ts`.
   { action: 'node-health.collect-garbage', category: 'admin',

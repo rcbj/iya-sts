@@ -518,8 +518,22 @@ class OverviewPages {
             }).join(', ')) + '</td></tr>';
         }).join('') + '</table>'
       : '<p class="note">' + t.html('portal.apps.nothing') + '</p>';
+    // "SIGN IN AGAIN" (#1072, rcbj's decision 4): with it ticked, each Sign
+    // in link asks for a fresh sign-in, at which the person may choose
+    // dynamic roles for that application. A GET of this page, so the links
+    // the API builds carry it; drawn where the realm defines dynamic roles.
+    const again = view.rolesOffered
+      ? '<form method="get" action="' + BASE + '/applications" ' +
+        'class="inline"><label class="chk"><input type="checkbox" ' +
+        'id="reauthenticate" name="reauthenticate" value="1"' +
+        (view.reauthenticate ? ' checked' : '') + '> ' +
+        t.html('portal.apps.reauthenticate') + ' <span class="sub">' +
+        t.html('portal.apps.reauthenticateNote') + '</span></label> ' +
+        '<button type="submit">' + t.html('portal.apps.reauthenticateApply') +
+        '</button></form>'
+      : '';
     return '<div class="card"><p class="sub">' + t.html('portal.apps.sub') +
-      '</p>' + table +
+      '</p>' + again + table +
       OverviewPages.paging(BASE + '/applications', view.page, view.pages, t) +
       '</div><div class="card"><h2>' + t.html('portal.apps.notListed') +
       '</h2><table><tr><th>' + t.html('portal.apps.notPermitted') +

@@ -770,6 +770,9 @@ model Application {
   @fromAttr(#{attr: "umaOwnsResources"})
   `umaOwnsResources`?: string;
 
+  @fromAttr(#{attr: "appDynamicRoleSelection"})
+  `appDynamicRoleSelection`?: string;
+
   @embedded
   `verifiableCredentialPartner`?: VerifiableCredentialPartner;
 

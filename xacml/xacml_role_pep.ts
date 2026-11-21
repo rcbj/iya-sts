@@ -150,6 +150,10 @@ const { AuthorizationRequest } = xacmlRequest;
 
 // The question an issuance site asks, through `common/issuance_gate.js`.
 interface IssuanceQuestion {
+  // (#1072) The sign-on session the issuance rests on, as
+  // `common/issuance_gate.js` documents `request.session`: its id is what
+  // reads the dynamic roles it chose.
+  session?: any;
   application?: any;
   kind?: string;
   subject?: any;
@@ -1205,8 +1209,13 @@ class XacmlRolePep {
     // and this application's own roles by their name inside it — which is
     // what its `appRequiredRole` names. Another application's role is not
     // held here, so it can never satisfy this one's requirement.
+    // AND THE SESSION'S CHOSEN DYNAMIC ROLES (#1072): a role chosen
+    // signing in to this application is held for it, as long as its own
+    // policy still permits the person (`authn/role_selection.ts`).
     const held = roles.rolesOf(Object.assign({}, subject,
-      { application: String(asked.application || '') }));
+      { application: String(asked.application || ''),
+        sessionId: String((asked.session && (asked.session.id ||
+                                             asked.session.sid)) || '') }));
     const fromToken = roles.rolesInClaims(asked.claims);
     const narrowed = applications.requiresNarrowedRoles(asked.application);
 

@@ -6993,6 +6993,38 @@ The test asserts that rather than leaving the missing negative to be noticed: it
 checks the catalogue still describes `EVERYBODY` as the DEFAULT requirement, so
 that anybody who gives it a `holds()` that can answer false fails there.
 
+## 3dg. Dynamic selectable roles (#1072, rcbj's decisions of 2026-11-20)
+
+A role is held one of two ways (`roles.js`, DYNAMIC SELECTABLE ROLES):
+`static`, membership as it always was, or `dynamic-selectable`, a role
+NOBODY holds — offered at sign-in to each person its own XACML policy
+permits (`xacml/role_eligibility.ts`, `xacml/CLAUDE.md`) and held for that
+sign-in's application only when chosen (`authn/CLAUDE.md`, *THE ROLE STEP*).
+It is still a role: its permissions, application, display name and
+description are the ones every role has, so nothing about what a role DOES
+is duplicated.
+
+* **A dynamic role has no members** (decision 1): making one with members
+  dynamic, adding a member, a conferring client, a console or native role,
+  and one only applications hold are refused (STS-XACML-0303–0309).
+  `configuredRolesOf()` never counts a member on a dynamic role, so an
+  `ldapmodify` cannot make one held.
+* **The effective role set** is `configuredRolesOf()` plus the session's
+  choice, read through `setSelectionReader()` (rule 3e: `roles.js` is a leaf
+  and `authn/role_selection.ts` requires it, so a require from here closes a
+  cycle; and the answer needs the session and the PDP). **Empty is nobody's
+  choice.** The context carries `sessionId` and `selectionApplications`
+  (the applications the token is for AND the client it is issued to — a
+  person chooses signing in to a CLIENT whose access token is often for
+  another resource); `applications` still decides where an application's
+  own role is carried (#310). The callers that pass a session: the roles
+  claim (`admin_stats.js`'s `resolvedRoleClaims()`, from `oauth2.ts`'s
+  `customClaimContext()` and the two SAML builders' SessionIndex), the role
+  PEP (`asked.session`) and `narrowScope()` (`context.sessionId`). A direct
+  grant, WS-Trust, Kerberos and LDAP pass none and carry none (decision 5).
+* **`roles.dynamicSelection`**, with `appDynamicRoleSelection` overriding it,
+  turns the box, the offer and the carrying off together.
+
 ## `setId` IS THE THIRD THING THE TOKEN REGISTRY IS TOLD OUT OF BAND (2026-09-05)
 
 `recordJwt()` keeps three facts that are on no token as a claim, and all three

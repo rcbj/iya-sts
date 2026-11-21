@@ -1438,6 +1438,7 @@ var config = {
   // --- Roles -----------------------------------------------------------
   roles: {
     claim: true,                             // Carry a roles claim
+    dynamicSelection: true,                             // Offer dynamic roles at sign-in
     claimName: "roles",                      // Role claim name
     enforceIssuance: true,                   // Decide issuance on roles
     maxRoles: 200,                           // Maximum roles

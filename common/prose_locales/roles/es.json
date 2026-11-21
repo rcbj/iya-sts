@@ -51,6 +51,22 @@
     "en": "dcc4499eac844938",
     "text": "TRUE: los propietarios del rol no pueden administrarlo a través de /admin-api (#607), sea lo que sea lo que posean — una marca del administrador, que la regla de propietarios de la política access-control lee como urn:sts:xacml:object-protected. Ausente es FALSE."
   },
+  "roles.schema.attributes.roleMembershipMode.what": {
+    "en": "723a14578f3a1d6e",
+    "text": "Cómo se tiene el rol (#1072). `static`, y la ausencia de valor, es la pertenencia de siempre: los usuarios, grupos y aplicaciones listados. `dynamic-selectable` es un rol sin miembros, OFRECIDO al iniciar sesión a cada persona que su política de elegibilidad permite, y que se tiene para la aplicación de ese inicio de sesión solo si la persona lo elige. El modo no puede cambiar mientras el rol tenga miembros."
+  },
+  "roles.schema.attributes.roleEligibilityPolicy.what": {
+    "en": "7a735d2e83fa9333",
+    "text": "El nombre de entrada en ou=policies de la política XACML que posee este rol dinámico (#1072), que el PDP decide sola para cada persona al iniciar sesión y de nuevo en cada emisión. Solo Permit hace elegible a la persona; Deny, NotApplicable, Indeterminate, un atributo ausente y una política inexistente no."
+  },
+  "roles.schema.attributes.roleSelection.what": {
+    "en": "2b5c2729294972e1",
+    "text": "Si elegir el rol dinámico es `optional`, o ausente, o `required` (#1072). Un rol obligatorio para el que una persona es elegible muestra el paso de roles aunque la casilla de la página de inicio de sesión no esté marcada, y se debe elegir al menos un rol obligatorio; un inicio de sesión sin navegador se rechaza para él."
+  },
+  "roles.schema.attributes.roleSelectionExclusive.what": {
+    "en": "2c0357c376a85536",
+    "text": "Un nombre compartido por roles dinámicos que no pueden elegirse juntos (#1072): de los roles con el mismo valor, un inicio de sesión puede elegir como máximo uno. Ausente, el rol puede elegirse junto con cualquier otro."
+  },
   "roles.builtIn.EVERYBODY.what": {
     "en": "40f390becf1977a2",
     "text": "Cualquiera, autenticado o no, persona o aplicación. ESTE ES EL REQUISITO PREDETERMINADO: una aplicación que no nombra ningún rol obligatorio exige este, todos lo tienen y no se rechaza nada — que es exactamente como se comportaba este servicio antes de que existieran los roles."

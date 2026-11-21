@@ -9423,6 +9423,14 @@
     "en": "05185a4a554d5f71",
     "text": "När den är på namnger varje åtkomsttoken, ID Token, SAML 2.0-intygande och SAML 1.1-intygande de roller som dess subjekt har. PÅ som standard och det ändrar ändå ingenting för de flesta anropare, av samma skäl som gruppanspråket är på som standard: anspråket UTELÄMNAS HELT för den som inte har någon KONFIGURERAD roll, och de sex inbyggda rollerna finns aldrig i det — EVERYBODY och ALL_AUTHENTICATED_USERS gäller för nästan varje token här, så att bära dem skulle lägga till två meningslösa medlemmar i varje token som varje befintlig klient tolkar och inte berätta något för en förlitande part som den inte visste genom att ha token. De finns för att KRÄVAS, inte för att bäras."
   },
+  "roles.dynamicSelection|label": {
+    "en": "86d2654ef3dec8fd",
+    "text": "Erbjud dynamiska roller vid inloggning"
+  },
+  "roles.dynamicSelection|description": {
+    "en": "68b1b4af3db5e6d8",
+    "text": "Om en person som loggar in får välja dynamiskt valbara roller (#1072): i en sfär som definierar minst en dynamisk roll erbjuder inloggningssidan rutan ”Välj roller för den här inloggningen”, och en markerad ruta visar de roller personens behörighet tillåter. PÅ som standard; appDynamicRoleSelection på ett programs post åsidosätter den för programmet. Av visas ingen ruta, ingen roll erbjuds, ingen obligatorisk dynamisk roll efterfrågas och ingen token bär en dynamiskt vald roll."
+  },
   "roles.claimName|label": {
     "en": "d56be861543f5305",
     "text": "Namn på rollanspråket"

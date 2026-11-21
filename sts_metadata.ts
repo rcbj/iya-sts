@@ -7070,6 +7070,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'becomes the XACML action-id, so a policy may permit an access ' +
           'token and refuse a refresh token. `available: false` means the ' +
           'engine is not loaded here. Mirrors the dry run on /admin/roles.' },
+  { path: '/admin-api/roles/eligibility', group: 'Management API',
+    name: 'Is this person eligible for this dynamic role?',
+    specs: ['openapi', 'xacml30'],
+    what: 'NON-SPEC (#1072). One dynamic selectable role\'s own XACML ' +
+          'eligibility policy decided by the PDP for one person, as a ' +
+          'sign-in to `application` would ask it, without a sign-in: ' +
+          'eligible or not, the code when not, the decision and status (a ' +
+          'missing attribute names itself there). Only Permit is eligible. ' +
+          'It writes nothing but the roles.eligibility audit row and never ' +
+          'shows the policy or the person\'s attributes. `role` and `user` ' +
+          'are both needed; with either missing it answers `answered: ' +
+          'false`. Mirrors the test on a dynamic role\'s /admin/roles page.' },
   { path: '/admin-api/roles/:action', group: 'Management API',
     name: 'Make and change roles',
     specs: ['openapi', 'xacml30'],
@@ -9214,6 +9226,26 @@ const ENDPOINTS: EndpointEntry[] = [
           'the amr and acr of the sign-in. Needs an ?mfa= id minted by the ' +
           'held sign-in, so following it bare answers 400.'
   },
+  { path: '/authn/roles', group: 'Authentication',
+    name: 'Dynamic role step',
+    specs: ['xacml30', 'oidc'],
+    effect: 'asks which dynamic selectable roles to use for this sign-in, ' +
+            'then establishes the sign-on session it held with the choice',
+    what: 'DYNAMIC SELECTABLE ROLES (#1072). After every factor, a sign-in ' +
+          'to an application whose realm defines a dynamic role (and where ' +
+          'roles.dynamicSelection or the application\'s ' +
+          'appDynamicRoleSelection does not turn it off) is HELD while each ' +
+          'dynamic role\'s own XACML eligibility policy is decided for the ' +
+          'person — only Permit offers a role. Where the person ticked ' +
+          '"Choose roles for this sign-in" on the sign-in screen, or a ' +
+          'required role is offered, this page lists what may be chosen; ' +
+          'Continue (/authn-api/mfa/{id}/roles) holds the choice to the ' +
+          'step\'s own offer and to the policies again, and starts the ' +
+          'session with it on the session record — never in the directory. ' +
+          'A token for that application then carries the chosen roles, ' +
+          'each asked of its policy again at every issuance. Needs an ?mfa= ' +
+          'id minted by the held sign-in, so following it bare answers 400.'
+  },
   { path: '/authn/totp', group: 'Authentication',
     name: 'One-time code second-factor step',
     specs: ['rfc6238', 'rfc4226', 'oidc'],
@@ -9441,6 +9473,11 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Put a post-login activity off', specs: [],
     what: 'NON-SPEC (#1096). For the profile\'s snoozeDays; refused once ' +
           'the allotted time has passed. The held session starts.' },
+  { path: '/authn-api/mfa/:id/roles', group: 'Authentication',
+    name: 'Choose the dynamic roles for this sign-in', specs: [],
+    what: 'NON-SPEC (#1072). The role step\'s choice, held to the step\'s ' +
+          'own offer and each role\'s eligibility policy now; the held ' +
+          'session starts with it.' },
   { path: '/authn-api/mfa/:id/email/send', group: 'Authentication',
     name: 'Mail a sign-in code or link', specs: [],
     what: 'NON-SPEC (#573). To the verified address only; a resend ' +

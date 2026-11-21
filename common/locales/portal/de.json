@@ -550,5 +550,8 @@
   "photo.errRead": "Diese Datei konnte nicht als Bild gelesen werden.",
   "done.photo": "Ihr Profilfoto ist gespeichert.",
   "done.photoRemoved": "Ihr Profilfoto ist entfernt.",
-  "done.endOthers": "Sie können Ihre anderen Sitzungen unter /logout beenden."
+  "done.endOthers": "Sie können Ihre anderen Sitzungen unter /logout beenden.",
+  "apps.reauthenticate": "Erneut anmelden",
+  "apps.reauthenticateNote": "Jeder Anmeldelink verlangt eine neue Anmeldung, damit Sie die Rollen für diese Anwendung wählen können.",
+  "apps.reauthenticateApply": "Übernehmen"
 }

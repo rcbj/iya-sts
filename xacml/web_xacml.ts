@@ -634,7 +634,9 @@ class XacmlPage {
     // beside the root's offering the same three buttons would invite the
     // two the server refuses.
     const rows = json.policies.filter(function (row) {
-      return !row.application;
+      // An owned policy is drawn with its owner: an application's on its
+      // Fine-grained authorization tab, a role's on its role page (#1072).
+      return !row.application && !row.role;
     }).map(function (row) {
       const problems = row.problems.length
         ? '<div class="sub xacml-alert">' +

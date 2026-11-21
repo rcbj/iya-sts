@@ -9423,6 +9423,14 @@
     "en": "05185a4a554d5f71",
     "text": "Wenn eingeschaltet, nennt jedes Zugriffstoken, jedes ID Token, jede SAML-2.0-Assertion und jede SAML-1.1-Assertion die Rollen, die sein Subject hält. Standardmäßig EIN, und es ändert für die meisten Aufrufer dennoch nichts, aus demselben Grund, aus dem der groups-Claim standardmäßig ein ist: der Claim wird für jeden, der keine KONFIGURIERTE Rolle hält, VOLLSTÄNDIG WEGGELASSEN, und die sechs eingebauten Rollen stehen nie darin — EVERYBODY und ALL_AUTHENTICATED_USERS treffen auf fast jedes Token hier zu, daher würde ihr Mitführen jedem Token, das jeder bestehende Client auswertet, zwei bedeutungslose Member hinzufügen und einer Relying Party nichts sagen, was sie nicht schon daraus wusste, dass sie das Token hält. Sie existieren, um ERFORDERLICH zu sein, nicht um mitgeführt zu werden."
   },
+  "roles.dynamicSelection|label": {
+    "en": "86d2654ef3dec8fd",
+    "text": "Dynamische Rollen bei der Anmeldung anbieten"
+  },
+  "roles.dynamicSelection|description": {
+    "en": "68b1b4af3db5e6d8",
+    "text": "Ob eine Person bei der Anmeldung dynamisch auswählbare Rollen wählen darf (#1072): In einem Bereich mit mindestens einer dynamischen Rolle bietet die Anmeldeseite das Kästchen „Rollen für diese Anmeldung wählen“ an, und ein angekreuztes Kästchen zeigt die Rollen, die die Berechtigung der Person zulässt. Standardmäßig AN; appDynamicRoleSelection im Eintrag einer Anwendung überschreibt es für diese Anwendung. Aus wird kein Kästchen gezeigt, keine Rolle angeboten, keine erforderliche dynamische Rolle verlangt, und kein Token trägt eine dynamisch gewählte Rolle."
+  },
   "roles.claimName|label": {
     "en": "d56be861543f5305",
     "text": "Name des Rollen-Claims"

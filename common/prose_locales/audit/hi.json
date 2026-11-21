@@ -1823,6 +1823,34 @@
     "en": "896007dff32a6824",
     "text": "एक भूमिका का विवरण, प्रदर्शन नाम या सदस्य प्रकार सेट किए गए"
   },
+  "audit.actions.roles.set-mode.label": {
+    "en": "b1e0f3b6e5738f21",
+    "text": "किसी भूमिका को स्थिर या गतिशील रूप से चयन-योग्य बनाया गया"
+  },
+  "audit.actions.roles.set-selection.label": {
+    "en": "0fbfbe0d177c5543",
+    "text": "साइन-इन पर किसी गतिशील भूमिका के चुने जाने का तरीका सेट किया गया"
+  },
+  "audit.actions.roles.eligibility.label": {
+    "en": "28d96273b40dea3f",
+    "text": "किसी गतिशील भूमिका के लिए किसी व्यक्ति की पात्रता तय की गई"
+  },
+  "audit.actions.roles.selection.offered.label": {
+    "en": "dd135469babd9bdc",
+    "text": "किसी साइन-इन पर गतिशील भूमिकाएँ पेश की गईं"
+  },
+  "audit.actions.roles.selection.chosen.label": {
+    "en": "2daaeb4ea81b1012",
+    "text": "किसी साइन-इन पर गतिशील भूमिकाएँ चुनी गईं"
+  },
+  "audit.actions.roles.selection.refused.label": {
+    "en": "cbed03565474afc0",
+    "text": "किसी साइन-इन की गतिशील भूमिकाओं का चयन अस्वीकार किया गया"
+  },
+  "audit.actions.roles.selection.dropped.label": {
+    "en": "042b7f95a92cd6d2",
+    "text": "चुनी गई एक गतिशील भूमिका किसी टोकन से हटा दी गई"
+  },
   "audit.actions.node-health.collect-garbage.label": {
     "en": "cb2531d8ee2f27ce",
     "text": "एक नोड की किसी प्रक्रिया या वर्कर थ्रेड में पूर्ण कचरा संग्रहण चलाया गया"

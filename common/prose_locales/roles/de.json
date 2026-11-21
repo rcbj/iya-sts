@@ -51,6 +51,22 @@
     "en": "dcc4499eac844938",
     "text": "TRUE: Die Eigentümer der Rolle dürfen sie über /admin-api nicht verwalten (#607), unabhängig davon, was sie besitzen — eine Markierung eines Administrators, gelesen von der Eigentümerregel der Zugriffssteuerungsrichtlinie als urn:sts:xacml:object-protected. Fehlt der Wert, gilt FALSE."
   },
+  "roles.schema.attributes.roleMembershipMode.what": {
+    "en": "723a14578f3a1d6e",
+    "text": "Wie die Rolle gehalten wird (#1072). `static`, und ein fehlender Wert, ist die Mitgliedschaft wie bisher: die aufgeführten Benutzer, Gruppen und Anwendungen. `dynamic-selectable` ist eine Rolle ohne Mitglieder, die bei der Anmeldung jeder Person ANGEBOTEN wird, die ihre Berechtigungsrichtlinie zulässt, und die für die Anwendung dieser Anmeldung nur gehalten wird, wenn die Person sie wählt. Der Modus kann sich nicht ändern, solange die Rolle Mitglieder hat."
+  },
+  "roles.schema.attributes.roleEligibilityPolicy.what": {
+    "en": "7a735d2e83fa9333",
+    "text": "Der Eintragsname in ou=policies der XACML-Richtlinie, die dieser dynamischen Rolle gehört (#1072); der PDP entscheidet sie allein für jede Person bei der Anmeldung und erneut bei jeder Ausstellung. Nur Permit macht die Person berechtigt; Deny, NotApplicable, Indeterminate, ein fehlendes Attribut und eine fehlende Richtlinie nicht."
+  },
+  "roles.schema.attributes.roleSelection.what": {
+    "en": "2b5c2729294972e1",
+    "text": "Ob die Wahl der dynamischen Rolle `optional` ist, auch wenn der Wert fehlt, oder `required` (#1072). Eine erforderliche Rolle, für die eine Person berechtigt ist, zeigt den Rollenschritt auch dann, wenn das Kästchen auf der Anmeldeseite nicht angekreuzt ist, und mindestens eine erforderliche Rolle muss gewählt werden; eine Anmeldung ohne Browser wird dafür abgelehnt."
+  },
+  "roles.schema.attributes.roleSelectionExclusive.what": {
+    "en": "2c0357c376a85536",
+    "text": "Ein Name, den dynamische Rollen teilen, die nicht zusammen gewählt werden dürfen (#1072): Von den Rollen mit demselben Wert darf eine Anmeldung höchstens eine wählen. Fehlt er, kann die Rolle neben jeder anderen gewählt werden."
+  },
   "roles.builtIn.EVERYBODY.what": {
     "en": "40f390becf1977a2",
     "text": "Jedermann, authentifiziert oder nicht, Person oder Anwendung. DIES IST DIE STANDARDANFORDERUNG: Eine Anwendung, die keine erforderliche Rolle nennt, verlangt diese, jeder hat sie inne, und nichts wird abgelehnt — genau so verhielt sich dieser Dienst, bevor es Rollen gab."

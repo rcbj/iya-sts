@@ -550,5 +550,8 @@
   "photo.errRead": "無法將該檔案作為圖片讀取。",
   "done.photo": "已儲存您的個人資料相片。",
   "done.photoRemoved": "已移除您的個人資料相片。",
-  "done.endOthers": "您可以在 /logout 結束其他工作階段。"
+  "done.endOthers": "您可以在 /logout 結束其他工作階段。",
+  "apps.reauthenticate": "重新登入",
+  "apps.reauthenticateNote": "每個登入連結都會要求您重新登入，以便您選擇要在該應用程式中使用的角色。",
+  "apps.reauthenticateApply": "套用"
 }

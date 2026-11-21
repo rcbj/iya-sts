@@ -1251,6 +1251,10 @@
     "en": "c2e62734c4466542",
     "text": "Cela serait-il émis ?"
   },
+  "endpoints.route./admin-api/roles/eligibility.name": {
+    "en": "7bf17441c33aaafb",
+    "text": "Cette personne est-elle éligible à ce rôle dynamique ?"
+  },
   "endpoints.route./admin-api/roles/:action.name": {
     "en": "1baadaaa0e1df852",
     "text": "Créer et modifier des rôles"
@@ -1879,6 +1883,10 @@
     "en": "69876d051e66729c",
     "text": "Étape d’activité après connexion"
   },
+  "endpoints.route./authn/roles.name": {
+    "en": "d10487ebcbc8b238",
+    "text": "Étape des rôles dynamiques"
+  },
   "endpoints.route./authn/totp.name": {
     "en": "a89de574ee2c21ab",
     "text": "Étape de second facteur par code à usage unique"
@@ -2034,6 +2042,10 @@
   "endpoints.route./authn-api/mfa/:id/post-login/skip.name": {
     "en": "3d081a5b28f53bd6",
     "text": "Reporter une activité après connexion"
+  },
+  "endpoints.route./authn-api/mfa/:id/roles.name": {
+    "en": "77d2211c8b1e2d93",
+    "text": "Choisir les rôles dynamiques de cette connexion"
   },
   "endpoints.route./authn-api/mfa/:id/email/send.name": {
     "en": "f974b23b7838f712",

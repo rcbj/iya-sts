@@ -696,6 +696,14 @@ const JOBS = [
   // profile a group names (#1239), not deleted while named. `local: true`: this repository's own /authn
   // and /admin-api.
   { file: 'sts_post_login_activity.js', browser: false },
+  // DYNAMIC SELECTABLE ROLES (#1072): a dynamic role made and given its
+  // ALFA eligibility policy over /admin-api, the administrator's test, the
+  // sign-in screen's box, the role step (a fabricated role refused, the
+  // offered one chosen), the ID Token's roles claim carrying it only when
+  // chosen, a person the policy does not permit offered nothing, and the
+  // box turned off by appDynamicRoleSelection. `local: true`: this
+  // repository's own /authn, /oauth2 and /admin-api.
+  { file: 'sts_dynamic_roles.js', browser: false, local: true },
   // GOOGLE'S ANDROID ATTESTATION STATUS LIST (#256): a synthetic list
   // uploaded through POST /admin-api/risk/upload with no terms to accept,
   // active with a row per REVOKED or SUSPENDED entry, named by

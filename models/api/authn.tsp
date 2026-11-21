@@ -423,6 +423,7 @@ op `getScreen`(`parameters/0/schema`: SignInId,
         `via`?: string
       };
       `remember`?: boolean;
+      `chooseRoles`?: boolean;
       `anonymous`?: boolean;
       `passkey`?: boolean;
       `usernameless`?: boolean;
@@ -587,6 +588,7 @@ op `signInWithPassword`(`parameters/0/schema`: SignInId,
     `use_webauthn`?: EmptyTextOr01TrueFalseOnOffYesNo;
     `webauthn_only`?: EmptyTextOr01TrueFalseOnOffYesNo;
     `remember_browser`?: EmptyTextOr01TrueFalseOnOffYesNo;
+    `choose_roles`?: EmptyTextOr01TrueFalseOnOffYesNo;
     @js(#{`maxLength`:64,`pattern`:"^[A-Za-z0-9]*$"}) `device_fp`?: string
   },
   @js(#{
@@ -914,6 +916,7 @@ op `signInByEmail`(`parameters/0/schema`: SignInId,
     `username`?: EmptyTextOrStringMin1Max256;
     `kind`: "code" | "link";
     `remember_browser`?: EmptyTextOr01TrueFalseOnOffYesNo;
+    `choose_roles`?: EmptyTextOr01TrueFalseOnOffYesNo;
     @js(#{`maxLength`:64,`pattern`:"^[A-Za-z0-9]*$"}) `device_fp`?: string
   },
   @js(#{
@@ -1065,6 +1068,7 @@ op `signInWithPasskey`(`parameters/0/schema`: SignInId,
   `requestBody/content/application~1json/schema`: {
     @js(#{`maxLength`:65536}) `credential`?: string;
     `remember_browser`?: EmptyTextOr01TrueFalseOnOffYesNo;
+    `choose_roles`?: EmptyTextOr01TrueFalseOnOffYesNo;
     @js(#{`maxLength`:64,`pattern`:"^[A-Za-z0-9]*$"}) `device_fp`?: string
   },
   @js(#{
@@ -1342,10 +1346,10 @@ op `startOverFromPasswordChange`(`parameters/0/schema`: SignInId,
       }
     },
     `security`:#[],
-    `x-mirrors`:"GET /authn/totp, /authn/webauthn, /authn/backup-code, /authn/password-factor, /authn/mfa-setup, /authn/email-code, /authn/email-link, /authn/email-link/open, /authn/post-login"
+    `x-mirrors`:"GET /authn/totp, /authn/webauthn, /authn/backup-code, /authn/password-factor, /authn/mfa-setup, /authn/email-code, /authn/email-link, /authn/email-link/open, /authn/post-login, /authn/roles"
   })
 op `getStep`(`parameters/0/schema`: SignInId,
-  @js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`enum`:#["totp","webauthn","backup-code","password","setup","email-code","email-link","email-link-open","post-login"]}]}}) `parameters/1/schema`: unknown,
+  @js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`enum`:#["totp","webauthn","backup-code","password","setup","email-code","email-link","email-link-open","post-login","roles"]}]}}) `parameters/1/schema`: unknown,
   @js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`minLength`:1,`maxLength`:4096,`pattern`:"^[A-Za-z0-9_-]+$"}]}}) `parameters/2/schema`: unknown,
   `responses/200/content/application~1json/schema`: WithOkCsrfUiLocalesEtc82,
   `responses/400/content/application~1json/schema`: WithOkCsrfUiLocalesEtc82,
@@ -2116,6 +2120,85 @@ op `ignoreOffer`(`parameters/0/schema`: SignInId,
 op `registerPostLoginPasskey`(`parameters/0/schema`: SignInId,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {},
+  @js(#{
+    `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
+  }) `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc13,
+  @js(#{
+    `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc13,
+  @js(#{
+    `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc13,
+  @js(#{
+    `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
+  }) `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc13,
+  @js(#{
+    `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
+  }) `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc13,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
+  
+
+@endpoint("/authn-api/mfa/{id}/roles",
+  "post",
+  #{
+    `operationId`:"chooseRoles",
+    `tags`:#["Sign-in"],
+    `summary`:"Chooses the dynamic roles to use for this sign-in",
+    `description`:"The role step (#1072): the dynamic selectable roles ticked, by name, from those the step offered. The choice is held against the step's own offer — never what the browser says was offered — and against each role's eligibility policy now: a role not offered (STS-XACML-0325), two of one exclusive group (0326), a required role left out (0327) or a role no longer eligible (0328) is refused, and the step is drawn again. Accepted, the session the sign-in was held for starts with the choice on it, for the application this sign-in is for. An empty list chooses none, where no role offered is required.\n\nThe door of the sign-in surface's `POST /authn/roles`.\n\nSent with `Content-Type: application/json`, an `Origin` of this service and `X-CSRF-Token` — the `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
+    `parameters`:#[
+      #{
+        `name`:"id",
+        `in`:"path",
+        `required`:true,
+        `description`:"The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with.",
+        `schema`:null,
+        `example`:"noSuchStepExample"
+      },
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
+        `schema`:null
+      }
+    ],
+    `responses`:#{
+      `200`:#{
+        `description`:"The answer.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"Refused: `{ ok: false, errors }` — the body, the id, or the act itself.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"No Origin of this service, or no CSRF token bound to this browser's session.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `415`:#{
+        `description`:"Not a JSON body.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `429`:#{
+        `description`:"Too many attempts.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[],
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`roles`:#["oncall"]}}}},
+    `x-mirrors`:"POST /authn/roles"
+  })
+op `chooseRoles`(`parameters/0/schema`: SignInId,
+  `parameters/1/schema`: string,
+  `requestBody/content/application~1json/schema`: {
+    @js(#{`maxItems`:50}) `roles`?: (EmptyTextOrStringMin1Max256)[]
+  },
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
   }) `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc13,

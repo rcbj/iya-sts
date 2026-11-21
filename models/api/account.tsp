@@ -952,6 +952,13 @@ op `setCustomAttribute`(`requestBody/content/application~1json/schema`: {
         `schema`:null,
         `description`:"The page of the list, 1 for the first.",
         `example`:1
+      },
+      #{
+        `name`:"reauthenticate",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"`1`: each launch link asks for a fresh sign-in (#1072) — `forceAuthn=true` for SAML, `wfresh=0` for WS-Federation, `prompt=login` passed to an OpenID Connect client — so the person may choose dynamic roles for that application. The portal's *Sign in again*."
       }
     ],
     `responses`:#{
@@ -982,6 +989,7 @@ op `setCustomAttribute`(`requestBody/content/application~1json/schema`: {
   })
 op `getApplications`(@js(#{`maxLength`:200}) `parameters/0/schema`: string,
   @js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"integer",`minimum`:1,`maximum`:100000}]}}) `parameters/1/schema`: unknown,
+  `parameters/2/schema`: "1" | "",
   `responses/200/content/application~1json/schema`: {
     `rows`?: ({
       `identifier`?: string;
@@ -1001,7 +1009,9 @@ op `getApplications`(@js(#{`maxLength`:200}) `parameters/0/schema`: string,
     `scanned`?: integer;
     `total`?: integer;
     `truncated`?: boolean;
-    `limit`?: numeric
+    `limit`?: numeric;
+    `reauthenticate`?: boolean;
+    `rolesOffered`?: boolean
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."

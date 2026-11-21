@@ -2199,6 +2199,10 @@
     "en": "efc872210c98747b",
     "text": "NON-SPEC. Une décision d’émission, prise puis jetée : rien n’est émis et rien n’est enregistré. Elle passe par le MÊME appel que font les neuf points d’émission — issuance_gate.check(), le PEP intégré et le PDP face à la politique que nomme xacml.issuancePolicy — de sorte qu’un aperçu qui ne concorderait avec l’application que par coïncidence est impossible, ce qui est sa seule raison d’être. Ce n’est PAS POST /xacml/pdp, qui interroge le même moteur sur la RACINE du référentiel : ce document répond à des questions sur la frontière de quelqu’un D’AUTRE, et celui-ci répond à une question sur ce service. `application` et `subject` sont tous deux obligatoires, car une émission qui ne nomme ni l’un ni l’autre est autorisée par définition plutôt que par politique. `kind` devient l’action-id XACML ; une politique peut donc autoriser un jeton d’accès et refuser un jeton d’actualisation. `available: false` signifie que le moteur n’est pas chargé ici. Reflète la simulation de /admin/roles."
   },
+  "stsmetadata.endpoints./admin-api/roles/eligibility.what": {
+    "en": "8d1e213c972caef4",
+    "text": "HORS SPÉCIFICATION (#1072). La politique d’éligibilité XACML propre à un rôle dynamique sélectionnable, décidée par le PDP pour une personne, comme le ferait une connexion à `application`, sans connexion : éligible ou non, le code sinon, la décision et le statut (un attribut manquant s’y nomme). Seul Permit rend éligible. Rien n’est écrit hormis la ligne d’audit roles.eligibility, et ni la politique ni les attributs de la personne ne sont montrés. `role` et `user` sont tous deux nécessaires ; sinon la réponse est `answered: false`. Reflète le test de la page /admin/roles d’un rôle dynamique."
+  },
   "stsmetadata.endpoints./admin-api/roles/:action.what": {
     "en": "824b769ad7e2e401",
     "text": "create-role, delete-role, describe-role, add-member et remove-member — les cinq mêmes que publient les formulaires de la console vers /admin/roles, via la même fonction, de sorte qu’aucune porte ne peut appliquer une règle que l’autre n’applique pas. `kind`, sur les deux actions de membre, choisit dans laquelle de TROIS listes va la valeur, et celles-ci sont consultées à trois endroits différents ; nommer la mauvaise réussit donc et écrit quelque chose qui ne correspondra jamais. `member` est nommé séparément de `role` à dessein : un corps qui les confondrait réussirait et créerait un rôle appelé alice. Un rôle INTÉGRÉ est refusé par son nom plutôt que de tomber dans « aucun rôle de ce nom », car ces six rôles figurent dans chaque menu de la page et n’ont aucune appartenance à modifier. delete-role RÉUSSIT même lorsque des applications exigent encore le rôle, et les NOMME : chacune d’elles ne se voit désormais plus rien émettre du tout, et le dire au moment où cela se produit vaut mieux que de refuser jusqu’à ce que chaque entrée d’application ait été modifiée. Rien de ce qui a déjà été ÉMIS n’est touché par aucune des cinq."
@@ -3083,6 +3087,14 @@
     "en": "9547cda6898c37a6",
     "text": "demande une clé d’accès post-quantique après une connexion, puis établit la session de connexion qu’elle retenait"
   },
+  "stsmetadata.endpoints./authn/roles.what": {
+    "en": "88814e89f81f8d86",
+    "text": "RÔLES DYNAMIQUES SÉLECTIONNABLES (#1072). Après tous les facteurs, une connexion à une application dont le domaine définit un rôle dynamique (sauf si roles.dynamicSelection ou appDynamicRoleSelection de l’application le désactive) est SUSPENDUE pendant que la politique d’éligibilité XACML de chaque rôle dynamique est décidée pour la personne ; seul Permit propose un rôle. Si la personne a coché « Choisir des rôles pour cette connexion » ou si un rôle obligatoire est proposé, cette page liste les choix possibles ; Continuer (/authn-api/mfa/{id}/roles) confronte le choix à l’offre de l’étape et de nouveau aux politiques, puis démarre la session avec ce choix inscrit sur l’enregistrement de session, jamais dans l’annuaire. Un jeton pour cette application porte alors les rôles choisis, chacun soumis de nouveau à sa politique à chaque émission. Exige un identifiant ?mfa= émis par la connexion suspendue ; suivi seul, il répond 400."
+  },
+  "stsmetadata.endpoints./authn/roles.effect": {
+    "en": "fc2116e31d3ead37",
+    "text": "demande quels rôles dynamiques sélectionnables utiliser pour cette connexion, puis établit la session qu’elle avait suspendue avec ce choix"
+  },
   "stsmetadata.endpoints./authn/totp.what": {
     "en": "b62d7bad9442ea5c",
     "text": "LE SECOND SECOND FACTEUR (2026-09-10). Une étape de mot de passe réussie pour quelqu’un ayant une application d’authentification enrôlée aboutit ici, et ce point de terminaison demande les six chiffres qu’affiche son application. En cas de succès, la session enregistre amr [\"pwd\",\"otp\"] — la valeur de la RFC 8176, dont l’entrée de registre nomme la RFC 4226 et la RFC 6238 — et acr \"mfa\", le seul cas où ce service peut honnêtement parler de deux facteurs. **LE CODE EST RÉELLEMENT VÉRIFIÉ DANS LES DEUX MODES**, contrairement au mot de passe qui le précède : un vérificateur de mot de passe à usage unique qui accepterait n’importe quels six chiffres ne serait pas permissif, il serait cassé, et c’est l’argument de SPNEGO lu une seconde fois. Débit limité par identité ET par adresse, car six chiffres représentent un million de valeurs et c’est le plus petit espace de recherche du service. LE GET EST LE LIEN *utiliser plutôt un code* de l’écran de clé de sécurité et ne crée rien — il affiche la page pour une étape qui existe déjà, et la refuse à quelqu’un qui ne détient aucun enrôlement. **IL N’ENRÔLE PERSONNE**, ce qui fait toute la différence avec /authn/webauthn à côté : enrôler signifie se voir montrer un secret partagé, cela se fait donc sur /portal/mfa ou lors de l’utilisation d’un lien d’activation, et jamais sur un écran de connexion. Une page de la surface de connexion depuis #572 : le code est envoyé à /authn-api/mfa/{id}/totp."
@@ -3262,6 +3274,10 @@
   "stsmetadata.endpoints./authn-api/mfa/:id/post-login/skip.what": {
     "en": "b1be682232332278",
     "text": "NON-SPEC (#1096). Pour le snoozeDays du profil ; refusé une fois le délai accordé écoulé. La session retenue démarre."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/roles.what": {
+    "en": "26fc9f7a66659a20",
+    "text": "HORS SPÉCIFICATION (#1072). Le choix de l’étape des rôles, confronté à l’offre de l’étape et à la politique d’éligibilité de chaque rôle ; la session suspendue démarre avec ce choix."
   },
   "stsmetadata.endpoints./authn-api/mfa/:id/email/send.what": {
     "en": "7b9faf3a24fd710d",

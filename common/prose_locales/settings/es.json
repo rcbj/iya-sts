@@ -9423,6 +9423,14 @@
     "en": "05185a4a554d5f71",
     "text": "Si está activado, todo token de acceso, ID Token, aserción SAML 2.0 y aserción SAML 1.1 nombra los roles que tiene su sujeto. ACTIVADO por defecto y aun así no cambia nada para la mayoría de los llamantes, por la misma razón por la que el claim de grupos está activado por defecto: el claim se OMITE POR COMPLETO para quien no tiene ningún rol CONFIGURADO, y los seis roles integrados nunca están en él — EVERYBODY y ALL_AUTHENTICATED_USERS son ciertos para casi todos los tokens aquí, así que incluirlos añadiría dos miembros sin sentido a cada token que analiza cada cliente existente y no diría a una parte que confía nada que no supiera por tener el token. Existen para EXIGIRSE, no para incluirse."
   },
+  "roles.dynamicSelection|label": {
+    "en": "86d2654ef3dec8fd",
+    "text": "Ofrecer roles dinámicos al iniciar sesión"
+  },
+  "roles.dynamicSelection|description": {
+    "en": "68b1b4af3db5e6d8",
+    "text": "Si una persona que inicia sesión puede elegir roles dinámicos seleccionables (#1072): en un dominio que define al menos un rol dinámico, la página de inicio de sesión ofrece la casilla «Elegir roles para este inicio de sesión», y al marcarla se muestran los roles que la elegibilidad de la persona permite. ACTIVADO de forma predeterminada; appDynamicRoleSelection en la entrada de una aplicación lo reemplaza para esa aplicación. Desactivado, no se muestra la casilla, no se ofrece ningún rol, no se pide ningún rol dinámico obligatorio y ningún token lleva un rol seleccionado dinámicamente."
+  },
   "roles.claimName|label": {
     "en": "d56be861543f5305",
     "text": "Nombre del claim de roles"

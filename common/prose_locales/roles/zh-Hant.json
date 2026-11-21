@@ -51,6 +51,22 @@
     "en": "dcc4499eac844938",
     "text": "TRUE：該角色的擁有者不能透過 /admin-api 管理它（#607），無論他們擁有什麼——這是管理員的標記，access-control 原則的擁有者規則將其讀作 urn:sts:xacml:object-protected。未設定即為 FALSE。"
   },
+  "roles.schema.attributes.roleMembershipMode.what": {
+    "en": "723a14578f3a1d6e",
+    "text": "角色的持有方式（#1072）。`static` 以及缺省值表示一貫的成員資格：所列的使用者、群組和應用程式。`dynamic-selectable` 是沒有成員的角色，登入時向其資格政策允許的每個人提供，只有在此人選擇時才為此次登入的應用程式持有。角色有成員時不能變更此模式。"
+  },
+  "roles.schema.attributes.roleEligibilityPolicy.what": {
+    "en": "7a735d2e83fa9333",
+    "text": "此動態角色所擁有的 XACML 政策在 ou=policies 中的條目名稱（#1072），登入時以及每次簽發時都由 PDP 針對每個人單獨判定。只有 Permit 才使此人具備資格；Deny、NotApplicable、Indeterminate、缺少屬性以及缺少政策都不會。"
+  },
+  "roles.schema.attributes.roleSelection.what": {
+    "en": "2b5c2729294972e1",
+    "text": "選擇此動態角色是 `optional`（包括缺省）還是 `required`（#1072）。對於某人具備資格的必選角色，即使未勾選登入頁上的核取方塊也會顯示角色步驟，並且必須至少選擇一個必選角色；沒有瀏覽器的登入會因此被拒絕。"
+  },
+  "roles.schema.attributes.roleSelectionExclusive.what": {
+    "en": "2c0357c376a85536",
+    "text": "不能同時選擇的動態角色所共用的名稱（#1072）：在具有相同值的角色中，一次登入最多只能選擇一個。缺省時，此角色可以與任何其他角色一起選擇。"
+  },
   "roles.builtIn.EVERYBODY.what": {
     "en": "40f390becf1977a2",
     "text": "任何人，無論是否已驗證，無論是人或應用程式。「這是預設需求」：未指名所需角色的應用程式就需要這個角色，每個人都持有它，不會拒絕任何東西——這正是本服務在角色出現之前的行為方式。"

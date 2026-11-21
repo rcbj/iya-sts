@@ -2199,6 +2199,10 @@
     "en": "efc872210c98747b",
     "text": "NON-SPEC. Isang issuance decision, ginawa at itinapon: walang ini-issue at walang itinatala. Dumadaan ito sa PAREHONG tawag na ginagawa ng siyam na issuance site — issuance_gate.check(), ang embedded PEP at ang PDP laban sa policy na pinangangalanan ng xacml.issuancePolicy — kaya imposible ang preview na sumang-ayon sa enforcement nang nagkataon lang, na siyang nag-iisang dahilan kung bakit ito umiiral. HINDI ito ang POST /xacml/pdp, na nagtatanong sa parehong engine tungkol sa ROOT ng repository: sumasagot ang dokumentong iyon ng mga tanong tungkol sa boundary ng IBA at sumasagot ito ng tanong tungkol sa serbisyong ito. Parehong kailangan ang `application` at `subject`, dahil ang issuance na walang pinangalanan sa dalawa ay pinapayagan ayon sa kahulugan at hindi ayon sa policy. Nagiging XACML action-id ang `kind`, kaya puwedeng payagan ng policy ang access token at tanggihan ang refresh token. Ang `available: false` ay nangangahulugang hindi naka-load dito ang engine. Sinasalamin ang dry run sa /admin/roles."
   },
+  "stsmetadata.endpoints./admin-api/roles/eligibility.what": {
+    "en": "8d1e213c972caef4",
+    "text": "HINDI SPEC (#1072). Ang sariling patakarang XACML sa pagiging karapat-dapat ng isang dynamic na tungkulin, pinagpasyahan ng PDP para sa isang tao gaya ng itatanong ng pag-sign in sa `application`, nang walang pag-sign in: karapat-dapat o hindi, ang code kapag hindi, ang desisyon at status (nakapangalan doon ang nawawalang attribute). Permit lang ang nagpapakarapat-dapat. Walang isinusulat maliban sa audit row na roles.eligibility at hindi kailanman ipinapakita ang patakaran o ang mga attribute ng tao. Kailangan ang `role` at `user`; kapag kulang, ang sagot ay `answered: false`. Katulad ng pagsubok sa pahinang /admin/roles ng isang dynamic na tungkulin."
+  },
   "stsmetadata.endpoints./admin-api/roles/:action.what": {
     "en": "824b769ad7e2e401",
     "text": "create-role, delete-role, describe-role, add-member at remove-member — ang parehong limang ipino-post ng mga form ng console sa /admin/roles, sa pamamagitan ng parehong function, kaya walang pintong makakapagpatupad ng patakarang hindi ipinapatupad ng isa pa. Pinipili ng `kind` sa dalawang member action kung alin sa TATLONG listahan papunta ang value at hinahanap ang mga ito sa tatlong magkakaibang lugar, kaya ang pagpapangalan sa mali ay nagtatagumpay at nagsusulat ng isang bagay na hindi kailanman tutugma. Sadyang hiwalay ang pangalan ng `member` sa `role`: ang body na nagkamali sa dalawa ay magtatagumpay at gagawa ng role na tinatawag na alice. Ang BUILT-IN na role ay tinatanggihan ayon sa pangalan sa halip na mapunta sa \"walang ganoong role\", dahil ang anim na iyon ay iginuguhit sa bawat menu sa page at walang membership na mae-edit. NAGTATAGUMPAY ang delete-role kahit may mga application pang nangangailangan ng role at PINANGANGALANAN sila: wala nang iniissue sa bawat isa sa mga iyon, at mas mabuting sabihin iyon sa sandaling nangyari kaysa tumanggi hanggang ma-edit ang bawat application entry. Walang anumang na-ISSUE na ang ginagalaw ng alinman sa lima."
@@ -3083,6 +3087,14 @@
     "en": "9547cda6898c37a6",
     "text": "humihingi ng post-quantum na passkey pagkatapos ng sign-in, saka itinatatag ang sign-on session na pinigil nito"
   },
+  "stsmetadata.endpoints./authn/roles.what": {
+    "en": "88814e89f81f8d86",
+    "text": "MGA DYNAMIC NA MAPIPILING TUNGKULIN (#1072). Pagkatapos ng lahat ng factor, ang pag-sign in sa application na ang realm ay may dynamic na tungkulin (maliban kung pinapatay ito ng roles.dynamicSelection o ng appDynamicRoleSelection ng application) ay PINAPAHINTO habang pinagpapasyahan para sa tao ang patakarang XACML ng bawat dynamic na tungkulin; Permit lang ang nag-aalok ng tungkulin. Kapag tinsek ng tao ang \"Pumili ng mga tungkulin para sa pag-sign in na ito\", o may iniaalok na kailangang tungkulin, inililista ng pahinang ito ang mapipili; ang Magpatuloy (/authn-api/mfa/{id}/roles) ay sinusuri ang pinili laban sa alok ng hakbang at muli sa mga patakaran, at sinisimulan ang session na nakatala ang pinili sa session record, hindi kailanman sa directory. Dadalhin ng token para sa application na iyon ang mga piniling tungkulin, bawat isa ay muling sinusuri sa patakaran nito sa bawat pag-isyu. Kailangan ng ?mfa= id mula sa pinahintong pag-sign in; kapag wala, 400 ang sagot."
+  },
+  "stsmetadata.endpoints./authn/roles.effect": {
+    "en": "fc2116e31d3ead37",
+    "text": "nagtatanong kung aling mga dynamic na mapipiling tungkulin ang gagamitin sa pag-sign in na ito, saka sinisimulan ang pinahintong session kasama ang pinili"
+  },
   "stsmetadata.endpoints./authn/totp.what": {
     "en": "b62d7bad9442ea5c",
     "text": "ANG IKALAWANG SECOND FACTOR (2026-09-10). Ang password step na nagtagumpay para sa taong may naka-enrol na authenticator app ay bumabagsak dito, at humihingi ang endpoint na ito ng anim na digit na ipinapakita ng kanilang app. Kapag nagtagumpay, nire-record ng session ang amr [\"pwd\",\"otp\"] — ang value ng RFC 8176, na ang registry entry ay nagpapangalan sa RFC 4226 at RFC 6238 — at acr \"mfa\", na siyang nag-iisang kaso kung saan tapat na masasabi ng serbisyong ito na dalawang factor. **TUNAY NA SINUSURI ANG CODE SA PAREHONG MODE**, hindi tulad ng password sa harap nito: ang one-time password verifier na tumatanggap ng anumang anim na digit ay hindi permissive, kundi sira, at ito ang argumento ng SPNEGO na binasa sa ikalawang pagkakataon. Naka-rate limit ayon sa identity AT ayon sa address, dahil isang milyong value ang anim na digit at ito ang pinakamaliit na search space sa serbisyo. ANG GET AY ANG *use a code instead* NA LINK mula sa security-key screen at walang ginagawa — iginuguhit nito ang page para sa step na umiiral na, at tinatanggihan ito para sa taong walang enrolment. **WALA ITONG INIEENROL**, na siyang buong pagkakaiba sa /authn/webauthn sa tabi nito: ang pag-enrol ay nangangahulugang ipinapakita ang shared secret, kaya nangyayari ito sa /portal/mfa o habang ginagamit ang activation link, at hindi kailanman sa sign-in screen. Isang page ng sign-in surface mula noong #572: pumupunta ang code sa /authn-api/mfa/{id}/totp."
@@ -3262,6 +3274,10 @@
   "stsmetadata.endpoints./authn-api/mfa/:id/post-login/skip.what": {
     "en": "b1be682232332278",
     "text": "NON-SPEC (#1096). Nang snoozeDays ng profile; tinatanggihan kapag lumipas na ang itinakdang panahon. Sinisimulan ang pinigil na session."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/roles.what": {
+    "en": "26fc9f7a66659a20",
+    "text": "HINDI SPEC (#1072). Ang pinili sa hakbang ng tungkulin, sinuri laban sa alok ng hakbang at sa patakaran ng bawat tungkulin; nagsisimula ang pinahintong session kasama ito."
   },
   "stsmetadata.endpoints./authn-api/mfa/:id/email/send.what": {
     "en": "7b9faf3a24fd710d",

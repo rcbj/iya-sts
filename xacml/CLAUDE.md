@@ -3985,3 +3985,37 @@ its editor link, `usable` with the resolve's `code` and `why`, each type's
   switch, `xacml.policy.delete` naming the orphan's application).
 
 `tests/fga_console.js` holds it.
+
+## A dynamic role's eligibility policy (#1072, 2026-11-20; rule 3dg)
+
+**rcbj's decision: XACML is the policy language and the PDP the decider.** A
+dynamic selectable role (`common/roles.js`, `common/CLAUDE.md` 3dg) is
+offered at sign-in to each person its OWN policy permits, and
+`role_eligibility.ts` is that question. It is `fga_pep.ts`'s arrangement:
+
+* **The policy is OWNED**: an entry in `ou=policies` carrying `xacmlRole`
+  (the role's name), named on the role as `roleEligibilityPolicy`, written
+  only by `setPolicy()` (XACML XML or ALFA, compiled to XML as the editor's
+  import does) and removed with the role. `xacml_store.ts`'s `owned()` —
+  application OR role — is the one test the root, the reference map, the
+  remote PEP's pull, the sync token, the route policies and the Policies tab
+  read, so a role's Permit can never become an issuance Permit. A policy that
+  merely carries the name is never adopted (STS-XACML-0315).
+* **Decided alone**, `decidePolicy()` with no PolicyIdReference map, and read
+  deny-biased: **only Permit is eligible**. Deny, NotApplicable, an
+  Indeterminate over a missing attribute, an undischargeable obligation, a
+  missing (0313, 0314), disabled (0316) or unparseable (0317) policy and a
+  fault (0318) all answer NOT eligible, each under its code.
+* **The request** is the builder's `roleEligibility()`: the person (PIP
+  resolved), `action-id` `select-role`, the role as `resource-id`, the role's
+  application, the stage (`offer`, `issue`, `test`), the sign-in's
+  application, acr and amr. An application's role is refused for another
+  application BEFORE the policy is asked (0320).
+* **Audited per offer and per test** (`roles.eligibility`), never with the
+  policy or the attributes; the `issue` stage only where it drops a role
+  (`authn/role_selection.ts`).
+* **The administrator's test** is `GET /admin-api/roles/eligibility`
+  (`answered: false` with no question, the role preview's rule) and the
+  role page's Eligibility section, composed in by `web_pages.ts`.
+
+`tests/role_eligibility.js` holds the definition and the decision.

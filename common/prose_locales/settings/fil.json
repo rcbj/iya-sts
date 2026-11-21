@@ -9423,6 +9423,14 @@
     "en": "05185a4a554d5f71",
     "text": "Kapag naka-on, pinapangalanan ng bawat access token, ID Token, SAML 2.0 assertion at SAML 1.1 assertion ang mga role na hawak ng subject nito. NAKA-ON bilang default at wala pa rin itong binabago para sa karamihan ng caller, sa parehong dahilan kung bakit naka-on bilang default ang groups claim: GANAP NA HINDI ISINASAMA ang claim para sa sinumang walang hawak na NAKA-CONFIGURE na role, at hindi kailanman kasama rito ang anim na built-in na role — totoo ang EVERYBODY at ALL_AUTHENTICATED_USERS para sa halos bawat token dito, kaya ang pagdadala sa mga ito ay magdadagdag ng dalawang walang kahulugang member sa bawat token na pina-parse ng bawat kasalukuyang client at walang sasabihin sa relying party na hindi pa nito alam mula sa paghawak ng token. Umiiral ang mga ito para HINGIN, hindi para dalhin."
   },
+  "roles.dynamicSelection|label": {
+    "en": "86d2654ef3dec8fd",
+    "text": "Mag-alok ng mga dynamic na tungkulin sa pag-sign in"
+  },
+  "roles.dynamicSelection|description": {
+    "en": "68b1b4af3db5e6d8",
+    "text": "Kung maaaring pumili ng mga dynamic na mapipiling tungkulin ang taong nagsa-sign in (#1072): sa realm na may kahit isang dynamic na tungkulin, nag-aalok ang pahina ng pag-sign in ng kahong \"Pumili ng mga tungkulin para sa pag-sign in na ito\", at ipinapakita ng naka-tsek na kahon ang mga tungkuling pinapayagan ng pagiging karapat-dapat ng tao. NAKA-ON bilang default; pinapalitan ito ng appDynamicRoleSelection sa entry ng application para sa application na iyon. Kapag naka-off, walang kahon, walang iniaalok na tungkulin, walang hinihinging kailangang dynamic na tungkulin, at walang token na may dinamikong napiling tungkulin."
+  },
   "roles.claimName|label": {
     "en": "d56be861543f5305",
     "text": "Pangalan ng role claim"

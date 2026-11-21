@@ -1823,6 +1823,34 @@
     "en": "896007dff32a6824",
     "text": "En rolls beskrivning, visningsnamn eller medlemstyper sattes"
   },
+  "audit.actions.roles.set-mode.label": {
+    "en": "b1e0f3b6e5738f21",
+    "text": "En roll gjordes statisk eller dynamiskt valbar"
+  },
+  "audit.actions.roles.set-selection.label": {
+    "en": "0fbfbe0d177c5543",
+    "text": "Det angavs hur en dynamisk roll väljs vid inloggning"
+  },
+  "audit.actions.roles.eligibility.label": {
+    "en": "28d96273b40dea3f",
+    "text": "En persons behörighet till en dynamisk roll avgjordes"
+  },
+  "audit.actions.roles.selection.offered.label": {
+    "en": "dd135469babd9bdc",
+    "text": "Dynamiska roller erbjöds vid en inloggning"
+  },
+  "audit.actions.roles.selection.chosen.label": {
+    "en": "2daaeb4ea81b1012",
+    "text": "Dynamiska roller valdes vid en inloggning"
+  },
+  "audit.actions.roles.selection.refused.label": {
+    "en": "cbed03565474afc0",
+    "text": "En inloggnings val av dynamiska roller nekades"
+  },
+  "audit.actions.roles.selection.dropped.label": {
+    "en": "042b7f95a92cd6d2",
+    "text": "En vald dynamisk roll utelämnades från en token"
+  },
   "audit.actions.node-health.collect-garbage.label": {
     "en": "cb2531d8ee2f27ce",
     "text": "En fullständig skräpinsamling kördes i en process eller arbetstråd på en nod"

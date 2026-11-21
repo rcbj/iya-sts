@@ -201,5 +201,13 @@
   "postLogin.failedHelp": "如果您的裝置或瀏覽器無法建立 ML-DSA 通行金鑰，請在支援 ML-DSA 的獨立安全金鑰上註冊，或洽詢管理員：在您的通行金鑰原則允許管理員為您註冊通行金鑰的情況下，管理員可以為您註冊一個，並且可以從主控台升級您的通行金鑰。",
   "postLogin.failedSkip": "您也可以暫時略過此步驟。",
   "client.policy": "隱私權政策",
-  "client.tos": "服務條款"
+  "client.tos": "服務條款",
+  "login.chooseRoles": "為此次登入選擇角色",
+  "login.chooseRolesNote": "登入後，選擇要在此應用程式中使用的角色。",
+  "roles.heading": "選擇您的角色",
+  "roles.sub": "已以 {name} 身分登入。勾選此次登入要使用的角色。",
+  "roles.required": "您至少需要選擇一個標示為必選的角色。",
+  "roles.requiredTag": "必選",
+  "roles.exclusive": "（不能與同類角色一起選擇）",
+  "roles.continue": "繼續"
 }
