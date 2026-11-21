@@ -544,6 +544,7 @@ var config = {
     rpName: "IYA STS",                                             // Relying party name
     rpId: "",                                                      // RP ID override
     allowedOrigins: "",                                            // Allowed origins
+    u2fAppIds: "",                                                 // Legacy U2F AppIDs
     algorithms: "ML-DSA-87,ML-DSA-65,ML-DSA-44,EdDSA,ES256,RS256", // Algorithms offered
     insecureAlgorithms: false,                                     // Use insecure algorithms (development only)
     pqcOnly: false,                                                // Request post-quantum algorithms only
@@ -604,6 +605,16 @@ var config = {
     kekToken: "",                      // Vault token; restart to apply
     storeProbeTimeoutMs: 5000,         // Secret store probe timeout (ms)
     kekRegion: "",                     // AWS region; restart to apply
+    pkcs11Module: "",                  // PKCS#11 module; restart to apply
+    pkcs11Mechanism: "auto",           // How the HSM wraps a data key; restart to apply
+    pkcs11GenerateKey: false,          // Make the HSM key on first use; restart to apply
+    pkcs11Sessions: 4,                 // PKCS#11 sessions per process; restart to apply
+    pkcs11PinProvider: "none",         // Where the PKCS#11 PIN is read from; restart to apply
+    pkcs11PinRef: "",                  // The PKCS#11 PIN's location; restart to apply
+    pkcs11PinField: "",                // The field the PKCS#11 PIN is in; restart to apply
+    signingKeyStore: "software",       // Where a realm's signing keys are made
+    signingKeyToken: "",               // The HSM token signing keys are made on; restart to apply
+    pkcs11SynchronousSign: false,      // Allow synchronous PKCS#11 signing
     cellKekProvider: "none",           // Where the cell key-encryption key is read from; restart to apply
     cellKekRef: "",                    // The cell key-encryption key's location; restart to apply
     cellKekField: "",                  // The field the cell key is in; restart to apply
@@ -708,6 +719,8 @@ var config = {
     paranoidSpiffeSvid: true,                   // Paranoid: an X509-SVID presented to the SPIRE Server or Broker API
     paranoidSpiffeAttestation: true,            // Paranoid: a SPIFFE node attestor's certificate
     paranoidPkinit: true,                       // Paranoid: a PKINIT client certificate
+    paranoidPivAttestation: true,               // Paranoid: a YubiKey PIV key attestation chain
+    paranoidPivCard: true,                      // Paranoid: an outside PIV or CAC card mapped by card UUID
     paranoidEnrollmentCredential: true,         // Paranoid: a certificate presented to enroll or renew
     paranoidVcKeyAttestation: true,             // Paranoid: an OpenID4VCI key attestation chain
     paranoidVcIssuer: true,                     // Paranoid: a credential issuer's or status-list signer's certificate
@@ -786,6 +799,32 @@ var config = {
     browserTokenLifetimeDays: 180,                                         // Remembered browser cookie lifetime (days)
     browserReissueGraceSeconds: 60,                                        // Remembered browser: previous token accepted for (seconds)
     browserTokenCertificateHeader: "x5u"                                   // Remembered browser token certificate header
+  },
+
+  // --- Devices ---------------------------------------------------------
+  hardwareTokens: {
+    hardwareClaims: "inference"  // What earns a hardware-key claim
+  },
+
+  // --- PIV -------------------------------------------------------------
+  piv: {
+    attestationAnchors: "",                                                    // PIV attestation roots (PEM)
+    requireAttestation: false,                                                 // Require a PIV attestation for the PIV profiles
+    pinPolicy: "any",                                                          // Weakest PIN policy an attested PIV key may have
+    touchPolicy: "any",                                                        // Weakest touch policy an attested PIV key may have
+    cardAuthSignIn: false,                                                     // Let a piv-card-auth certificate sign in
+    keyEscrow: false,                                                          // Escrow piv-key-management keys
+    externalIssuers: "",                                                       // Outside PIV or CAC issuing CAs mapped by card UUID (PEM)
+    externalPolicyOids: "2.16.840.1.101.3.2.1.3.13,2.16.840.1.101.3.2.1.3.18"  // PIV Authentication policies an outside card must assert
+  },
+
+  // --- OpenPGP ---------------------------------------------------------
+  openpgp: {
+    wkd: false,              // Publish keys in the Web Key Directory
+    wkdDomains: "",          // Mail domains the Web Key Directory serves
+    challengeLifetimeS: 600, // Registration challenge lifetime (seconds)
+    signatureSkewS: 300,     // Proof signature clock skew (seconds)
+    minRsaBits: 3072         // Smallest RSA OpenPGP key
   },
 
   // --- ACME ------------------------------------------------------------
@@ -1409,13 +1448,15 @@ var config = {
 
   // --- Roles -----------------------------------------------------------
   roles: {
-    claim: true,                     // Carry a roles claim
-    claimName: "roles",              // Role claim name
-    enforceIssuance: true,           // Decide issuance on roles
-    maxRoles: 200,                   // Maximum roles
-    remotePepGroup: "remote-peps",   // Group granting the REMOTE_PEPS role
-    xacmlUserGroup: "xacml-users",   // Group granting the XACML_USER role
-    authzenPepGroup: "authzen-peps"  // Group granting the AUTHZEN_PEPS role
+    claim: true,                             // Carry a roles claim
+    dynamicSelection: true,                             // Offer dynamic roles at sign-in
+    claimName: "roles",                      // Role claim name
+    enforceIssuance: true,                   // Decide issuance on roles
+    maxRoles: 200,                           // Maximum roles
+    remotePepGroup: "remote-peps",           // Group granting the REMOTE_PEPS role
+    xacmlUserGroup: "xacml-users",           // Group granting the XACML_USER role
+    pivKeyRecoveryGroup: "piv-key-recovery", // Group granting the PIV_KEY_RECOVERY role
+    authzenPepGroup: "authzen-peps"          // Group granting the AUTHZEN_PEPS role
   },
 
   // --- Audit export ----------------------------------------------------
@@ -1684,6 +1725,7 @@ var config = {
     ratePerCategory: 5,                  // Messages per recipient per category per window
     rateWindowS: 3600,                   // Rate window (seconds)
     dedupWindowS: 600,                   // Duplicate suppression window (seconds)
+    encryptionRequired: "",              // Messages that must be encrypted
     selfServiceReset: true,              // Self-service password reset
     resetRequiresVerifiedAddress: true,  // Self-service reset needs a verified address
     resetRequiresBackupCode: true,       // Self-service reset needs a recovery code

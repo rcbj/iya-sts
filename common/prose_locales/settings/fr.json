@@ -1379,6 +1379,14 @@
     "en": "cba85726ee4e8673",
     "text": "Les origines — schéma, hôte et port, sans chemin — depuis lesquelles une cérémonie WebAuthn est acceptée, séparées par des virgules. **VIDE, la valeur par défaut, déduit l’unique origine de l’adresse par laquelle ce service a été atteint**, ce qu’il a toujours fait et que global.publicBaseUrl fixe déjà lorsqu’elle est définie. Défini, c’est la liste complète : un clientDataJSON dont l’origine n’y figure pas est refusé quel que soit le Host porté par la requête. Nommez-en plusieurs lorsqu’un même identifiant est utilisé depuis des hôtes voisins sous un webauthn.rpId partagé."
   },
+  "webauthn.u2fAppIds|label": {
+    "en": "b0b6d4158c6357e8",
+    "text": "AppID U2F anciens"
+  },
+  "webauthn.u2fAppIds|description": {
+    "en": "05b1b01773d86d5d",
+    "text": "Les AppID FIDO U2F — les URL https sous lesquelles une ancienne partie de confiance U2F a enregistré ses clés de sécurité — dont les identifiants peuvent être importés sur les entrées des personnes et utilisés pour se connecter ici, séparés par des virgules. **VIDE, la valeur par défaut, signifie la fonction désactivée** : rien ne peut être importé, aucune cérémonie ne porte l’extension appid ou appidExclude (WebAuthn Level 3 sections 10.1.1 et 10.1.2), et une clé importée ne connecte personne. Un AppID n’est utilisé qu’à un RP ID auquel il se rapporte : son hôte est le RP ID, ou l’un est un suffixe de l’autre. Là où l’hôte diffère de celui de l’origine, le navigateur récupère l’URL de l’AppID pour une liste TrustedFacets nommant cette origine, que l’ancien service doit continuer à servir. Une clé importée n’est qu’un second facteur : une clé U2F ne peut pas vérifier la personne."
+  },
   "webauthn.algorithms|label": {
     "en": "47c0895479d03828",
     "text": "Algorithmes proposés"
@@ -1876,8 +1884,8 @@
     "text": "Fournisseur de la clé de chiffrement de clés"
   },
   "keys.kekProvider|description": {
-    "en": "b48b052bc689c8e3",
-    "text": "Où se trouve la clé de chiffrement de clés qui enveloppe chaque clé de chiffrement de données. `file`, `aws`, `gcp`, `azure` et `vault` LISENT une clé de 32 octets dans ce processus depuis un fichier monté ou un magasin de secrets ; `file` est la valeur par défaut parce qu’il ne nécessite rien. `vault-transit` (Vault ou OpenBao Transit), `aws-kms`, `gcp-kms` (Cloud KMS) et `azure-keys` (une clé Key Vault ou Managed HSM ; keys.kekVault est son coffre) sont des services de gestion de clés : la clé n’en sort JAMAIS, keys.kekRef la nomme, et le KMS enveloppe et désenveloppe chaque clé de données — un appel par clé de données au démarrage, aucun par valeur. Chaque fournisseur sauf `file` charge à la demande son SDK officiel, qui n’est délibérément PAS une dépendance de ce service ; un SDK manquant est signalé avec le nom du paquet à installer."
+    "en": "bf4e717bed6b7e03",
+    "text": "Où se trouve la clé de chiffrement de clés qui enveloppe chaque clé de chiffrement de données. `file`, `aws`, `gcp`, `azure` et `vault` LISENT une clé de 32 octets dans ce processus depuis un fichier monté ou un magasin de secrets ; `file` est la valeur par défaut parce qu’il ne nécessite rien. `vault-transit` (Vault ou OpenBao Transit), `aws-kms`, `gcp-kms` (Cloud KMS) et `azure-keys` (une clé Key Vault ou Managed HSM ; keys.kekVault est son coffre) sont des services de gestion de clés : la clé n’en sort JAMAIS, keys.kekRef la nomme, et le KMS enveloppe et désenveloppe chaque clé de données — un appel par clé de données au démarrage, aucun par valeur. `pkcs11` est la même chose avec la clé dans un module matériel de sécurité (un YubiHSM 2, SoftHSM2 ou tout module PKCS#11, keys.pkcs11Module), keys.kekRef étant une URI PKCS#11. Chaque fournisseur sauf `file` charge à la demande son SDK officiel, qui n’est délibérément PAS une dépendance de ce service ; un SDK manquant est signalé avec le nom du paquet à installer."
   },
   "keys.kekProvider|restartReason": {
     "en": "0956d2f97d1df86a",
@@ -1924,8 +1932,8 @@
     "text": "Référence de la clé de chiffrement de clés"
   },
   "keys.kekRef|description": {
-    "en": "a5a5b6e7f2c06fdc",
-    "text": "Le nom par lequel les fournisseurs cloud désignent le secret : un nom ou un ARN AWS Secrets Manager, un nom de ressource GCP (projects/<p>/secrets/<s>, avec /versions/latest ajouté si aucune version n’est indiquée), un nom de secret Azure Key Vault, ou un chemin de lecture HashiCorp Vault. Inutilisé par le fournisseur `file`."
+    "en": "b28c82e37153639d",
+    "text": "Le nom par lequel les fournisseurs cloud désignent le secret : un nom ou un ARN AWS Secrets Manager, un nom de ressource GCP (projects/<p>/secrets/<s>, avec /versions/latest ajouté si aucune version n’est indiquée), un nom de secret Azure Key Vault, ou un chemin de lecture HashiCorp Vault. Pour `pkcs11`, une URI PKCS#11 au sens de la RFC 7512, pkcs11:token=<token label>;object=<key label>. Inutilisé par le fournisseur `file`."
   },
   "keys.kekRef|restartReason": {
     "en": "d51b3caaa6125e92",
@@ -2047,13 +2055,125 @@
     "en": "d51b3caaa6125e92",
     "text": "lu une seule fois au démarrage"
   },
+  "keys.pkcs11Module|label": {
+    "en": "0fb904cb6844253b",
+    "text": "Module PKCS#11"
+  },
+  "keys.pkcs11Module|description": {
+    "en": "dd4fdc39cd1aed44",
+    "text": "Le chemin du module PKCS#11 que charge le fournisseur `pkcs11` : /usr/lib/x86_64-linux-gnu/pkcs11/yubihsm_pkcs11.so pour un YubiHSM 2 (avec yubihsm-connector en cours d’exécution et YUBIHSM_PKCS11_CONF pointant vers sa configuration), /usr/lib/softhsm/libsofthsm2.so pour SoftHSM2. Il nécessite le paquet pkcs11js, qui n’est délibérément pas une dépendance de ce service."
+  },
+  "keys.pkcs11Module|restartReason": {
+    "en": "34a60604acae5870",
+    "text": "le module est chargé une fois, au démarrage"
+  },
+  "keys.pkcs11Mechanism|label": {
+    "en": "f9f19afe01ab43ad",
+    "text": "Comment le HSM enveloppe une clé de données"
+  },
+  "keys.pkcs11Mechanism|description": {
+    "en": "85ff0e656695f323",
+    "text": "Le mécanisme avec lequel une nouvelle clé de données est enveloppée dans le HSM. `auto` prend CKM_AES_GCM là où le module le propose (SoftHSM2 et la plupart des HSM réseau), puis CKM_AES_KEY_WRAP_PAD, puis le CKM_YUBICO_AES_CCM_WRAP propre au YubiHSM 2 (ses objets de clé d’enveloppement). Une clé de données enveloppée avant un changement se désenveloppe toujours : la forme stockée nomme son mécanisme."
+  },
+  "keys.pkcs11Mechanism|restartReason": {
+    "en": "091df5146f3d6f79",
+    "text": "la clé de chiffrement de clés est atteinte une fois, au démarrage"
+  },
+  "keys.pkcs11GenerateKey|label": {
+    "en": "c9dac3afbed86d44",
+    "text": "Créer la clé HSM à la première utilisation"
+  },
+  "keys.pkcs11GenerateKey|description": {
+    "en": "82a5d89dd1a4c872",
+    "text": "Activé, une clé de chiffrement de clés que nomme l’URI PKCS#11 et que le jeton ne détient pas y est générée : AES-256, sensible et NON extractible. Seul le processus frontal la génère ; pour un cluster, créez plutôt la clé avec l’outil propre au HSM, car deux nœuds démarrant en même temps en créeraient deux. Désactivé, la valeur par défaut, une clé manquante arrête le démarrage."
+  },
+  "keys.pkcs11GenerateKey|restartReason": {
+    "en": "091df5146f3d6f79",
+    "text": "la clé de chiffrement de clés est atteinte une fois, au démarrage"
+  },
+  "keys.pkcs11Sessions|label": {
+    "en": "4a2da0042402bee1",
+    "text": "Sessions PKCS#11 par processus"
+  },
+  "keys.pkcs11Sessions|description": {
+    "en": "f5b20f8d3e577d1a",
+    "text": "Le nombre maximal de sessions que chaque processus et chaque worker de requêtes garde ouvertes sur un jeton, chacune exécutant une opération HSM à la fois. Un YubiHSM 2 a 16 sessions en tout, partagées par chaque processus de chaque nœud : gardez le produit de cette valeur, des processus et des nœuds en dessous de ce nombre."
+  },
+  "keys.pkcs11Sessions|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "le jeton est ouvert une fois, au démarrage"
+  },
+  "keys.pkcs11PinProvider|label": {
+    "en": "3e1d9c989bcacc3d",
+    "text": "D’où le PIN PKCS#11 est lu"
+  },
+  "keys.pkcs11PinProvider|description": {
+    "en": "1c344b0b12c35ec4",
+    "text": "Le magasin de secrets d’où le PIN du jeton HSM est lu, jamais la valeur d’un paramètre : un fichier monté, AWS Secrets Manager, Google Cloud Secret Manager, Azure Key Vault ou Vault/OpenBao, atteint comme l’indique keys.kek*. Pour un YubiHSM 2, le PIN est l’identifiant de la clé d’authentification en quatre chiffres hexadécimaux suivi de son mot de passe (0001password). Un objet JSON de PIN par libellé de jeton sert des jetons aux PIN différents. `none` ne se connecte à rien."
+  },
+  "keys.pkcs11PinProvider|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "le PIN est lu une fois, à l’ouverture du jeton"
+  },
+  "keys.pkcs11PinRef|label": {
+    "en": "de50e9f1904c80fc",
+    "text": "L’emplacement du PIN PKCS#11"
+  },
+  "keys.pkcs11PinRef|description": {
+    "en": "dffce1d68f8495de",
+    "text": "Où se trouve le PIN, dans le fournisseur que nomme keys.pkcs11PinProvider : un chemin, un ARN, une ressource ou un chemin de lecture Vault. Il n’a pas de valeur de repli."
+  },
+  "keys.pkcs11PinRef|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "le PIN est lu une fois, à l’ouverture du jeton"
+  },
+  "keys.pkcs11PinField|label": {
+    "en": "55008836b9ff61fe",
+    "text": "Le champ qui contient le PIN PKCS#11"
+  },
+  "keys.pkcs11PinField|description": {
+    "en": "f333042737800292",
+    "text": "Le membre d’un secret JSON qui contient le PIN. Vide prend la valeur entière."
+  },
+  "keys.pkcs11PinField|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "le PIN est lu une fois, à l’ouverture du jeton"
+  },
+  "keys.signingKeyStore|label": {
+    "en": "e6e0b403d7b8a000",
+    "text": "Où sont créées les clés de signature d’un domaine"
+  },
+  "keys.signingKeyStore|description": {
+    "en": "5cc22ee909529ecc",
+    "text": "`software`, la valeur par défaut, crée les clés de signature d’un domaine dans ce processus et les garde scellées dans le magasin. `pkcs11` crée ses clés classiques — la clé RS256, la clé XML et les clés P-256, P-384, P-521, secp256k1 et Ed25519 que le module sait créer — dans le HSM que nomme keys.signingKeyToken, non extractibles, et y signe ; une clé que le module ne sait pas créer, et toute clé post-quantique, reste logicielle. Cela s’applique à un jeu de clés créé ou renouvelé après le changement, exige un magasin de clés persistant (mode produit), et chaque processus et chaque nœud a besoin du jeton. Réglable par domaine."
+  },
+  "keys.signingKeyToken|label": {
+    "en": "a6e7fb05dd49b8a9",
+    "text": "Le jeton HSM sur lequel les clés de signature sont créées"
+  },
+  "keys.signingKeyToken|description": {
+    "en": "0bd2c707f6ff2e69",
+    "text": "L’URI PKCS#11 du jeton sur lequel un domaine avec keys.signingKeyStore `pkcs11` crée ses clés de signature : pkcs11:token=<token label>, avec serial= ou slot-id= lorsque deux jetons partagent un libellé. Le module, le PIN et les sessions sont les paramètres keys.pkcs11*. Vide n’ouvre aucun jeton."
+  },
+  "keys.signingKeyToken|restartReason": {
+    "en": "1a04369397b30563",
+    "text": "le jeton est ouvert une fois, au démarrage, dans chaque processus"
+  },
+  "keys.pkcs11SynchronousSign|label": {
+    "en": "c8e3fedf4601518d",
+    "text": "Autoriser la signature PKCS#11 synchrone"
+  },
+  "keys.pkcs11SynchronousSign|description": {
+    "en": "1cb742f146d4c7c1",
+    "text": "Désactivé, la valeur par défaut : une signature avec une clé dans le HSM n’est faite que par le `C_Sign` asynchrone de la liaison. Les portes synchrones (un JWS, une signature XML, une assertion SAML) refusent une clé HSM (`STS-KEYS-0209`) plutôt que d’attendre le jeton sur la boucle d’événements. Activé, ces portes appellent `C_Sign` et la boucle d’événements attend. Un module sans signature asynchrone ne peut signer que tant que ceci est activé. Le déchiffrement ne change pas. Réglable par domaine."
+  },
   "keys.cellKekProvider|label": {
     "en": "9103eeef061197fd",
     "text": "Provenance de la clé de chiffrement de clés de la cellule"
   },
   "keys.cellKekProvider|description": {
-    "en": "f779ece8f10a07ec",
-    "text": "Le fournisseur de la clé de chiffrement de clés de CETTE CELLULE, qui scelle ce que la cellule stocke en propre (#98). Cinq fournisseurs, comme pour `keys.kekProvider`. `none` scelle le niveau cellule sous la clé de chiffrement de clés du service, ce qui est correct en mode cellule unique et pour un test ; un déploiement multicellule en mode produit REFUSE de démarrer avec cette valeur, car une copie des lignes d’une cellule s’ouvrirait alors dans toutes les autres."
+    "en": "73b7f0bab09392e8",
+    "text": "Le fournisseur de la clé de chiffrement de clés de CETTE CELLULE, qui scelle ce que la cellule stocke en propre (#98). Cinq fournisseurs, comme pour `keys.kekProvider`, et `pkcs11`, le HSM propre à la cellule. `none` scelle le niveau cellule sous la clé de chiffrement de clés du service, ce qui est correct en mode cellule unique et pour un test ; un déploiement multicellule en mode produit REFUSE de démarrer avec cette valeur, car une copie des lignes d’une cellule s’ouvrirait alors dans toutes les autres."
   },
   "keys.cellKekProvider|restartReason": {
     "en": "bfe49ff259fac42d",
@@ -3138,6 +3258,54 @@
   "devices.eventsKept|description": {
     "en": "72d46974270d0c03",
     "text": "Nombre de créations, suppressions, évictions et changements de conformité d’appareils que ce domaine conserve pour Supervision → Appareils. Le plus ancien est supprimé lorsqu’un nouveau est enregistré au-delà."
+  },
+  "hardwareTokens.hardwareClaims|label": {
+    "en": "8373111eef4bf812",
+    "text": "Ce qui donne droit à une revendication de clé matérielle"
+  },
+  "hardwareTokens.hardwareClaims|description": {
+    "en": "e0341e4e47f3b2f8",
+    "text": "Ce qui permet à une connexion PKINIT de revendiquer une clé liée au matériel (l'indicateur pkinit-hardware et amr hwk). `inference`, la valeur par défaut et le comportement d'avant #1955 : un certificat d'ouverture de session par carte à puce dont ce service n'a pas généré la clé, ou une preuve d'attestation enregistrée. `evidence` : seulement une clé couverte par l'attestation d'un jeton matériel. Une connexion par certificat sur TLS n'obtient hwk, et sc pour une clé sur une carte à puce, qu'à partir d'une preuve, dans les deux cas."
+  },
+  "openpgp.wkd|label": {
+    "en": "1f05a7518c3d2275",
+    "text": "Publier les clés dans le Web Key Directory"
+  },
+  "openpgp.wkd|description": {
+    "en": "7822103f89ac59b3",
+    "text": "Répondre au Web Key Directory (draft-koch-openpgp-webkey-service) pour les domaines de messagerie de ce domaine de confiance : /.well-known/openpgpkey/<domain>/hu/<hash> (la méthode avancée, sur openpgpkey.<domain>) et /.well-known/openpgpkey/hu/<hash> (la méthode directe), ainsi que le fichier de politique de chacune. Seule la clé d'une personne ayant accepté la publication sur le portail est renvoyée. Désactivé par défaut."
+  },
+  "openpgp.wkdDomains|label": {
+    "en": "d1c4b728593ff000",
+    "text": "Domaines de messagerie servis par le Web Key Directory"
+  },
+  "openpgp.wkdDomains|description": {
+    "en": "ad64f7216191123c",
+    "text": "Les domaines de messagerie pour lesquels le Web Key Directory de ce domaine de confiance répond, séparés par des virgules. Vide, la valeur par défaut, désigne le propre domaine DNS du domaine de confiance. Une requête dont le chemin ne comporte aucun domaine de confiance reçoit la réponse du domaine de confiance qui sert son domaine DNS, le domaine par défaut en premier."
+  },
+  "openpgp.challengeLifetimeS|label": {
+    "en": "dbf558cf0b4b8f90",
+    "text": "Durée de validité du défi d'enregistrement (secondes)"
+  },
+  "openpgp.challengeLifetimeS|description": {
+    "en": "e9130c8e82368cc6",
+    "text": "Durée pendant laquelle reste valable le défi qu'une personne signe avec gpg --clearsign pour enregistrer une clé OpenPGP. Il n'est consommé qu'une fois, et une personne n'en a qu'un à la fois."
+  },
+  "openpgp.signatureSkewS|label": {
+    "en": "d927cf1f04bd9d51",
+    "text": "Décalage d'horloge admis pour la signature de preuve (secondes)"
+  },
+  "openpgp.signatureSkewS|description": {
+    "en": "2772763d3d363b6d",
+    "text": "L'écart admis entre l'horloge de l'ordinateur signataire et celle de ce service : une preuve signée avant l'émission du défi, ou après l'instant présent, de plus que cette valeur est refusée (STS-OPENPGP-0010)."
+  },
+  "openpgp.minRsaBits|label": {
+    "en": "f3dc9f85de143630",
+    "text": "Plus petite clé OpenPGP RSA"
+  },
+  "openpgp.minRsaBits|description": {
+    "en": "ad48516e31a7c45b",
+    "text": "La clé RSA la plus courte, principale ou sous-clé, qu'un enregistrement OpenPGP accepte. Ed25519, Ed448, ECDSA et ECDH sur P-256, P-384 et P-521, X25519 et X448 sont acceptés ; DSA, ElGamal et les courbes Brainpool ne le sont jamais (STS-OPENPGP-0004)."
   },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
@@ -9375,6 +9543,14 @@
     "en": "05185a4a554d5f71",
     "text": "Activé, chaque jeton d’accès, ID Token, assertion SAML 2.0 et assertion SAML 1.1 nomme les rôles que détient son sujet. ACTIVÉ par défaut, et cela ne change toujours rien pour la plupart des appelants, pour la même raison que la revendication de groupes est activée par défaut : la revendication est ENTIÈREMENT OMISE pour quiconque ne détient aucun rôle CONFIGURÉ, et les six rôles intégrés n’y figurent jamais — EVERYBODY et ALL_AUTHENTICATED_USERS sont vrais pour presque tous les jetons ici ; les porter ajouterait deux membres dénués de sens à chaque jeton qu’analyse chaque client existant et n’apprendrait à une partie de confiance rien qu’elle ne sache déjà en détenant le jeton. Ils existent pour être EXIGÉS, pas pour être portés."
   },
+  "roles.dynamicSelection|label": {
+    "en": "86d2654ef3dec8fd",
+    "text": "Proposer des rôles dynamiques à la connexion"
+  },
+  "roles.dynamicSelection|description": {
+    "en": "68b1b4af3db5e6d8",
+    "text": "Si une personne qui se connecte peut choisir des rôles dynamiques sélectionnables (#1072) : dans un domaine qui définit au moins un rôle dynamique, la page de connexion propose une case « Choisir des rôles pour cette connexion », et une case cochée affiche les rôles que l’éligibilité de la personne permet. ACTIVÉ par défaut ; appDynamicRoleSelection sur l’entrée d’une application le remplace pour cette application. Désactivé, aucune case n’est affichée, aucun rôle n’est proposé, aucun rôle dynamique obligatoire n’est demandé, et aucun jeton ne porte de rôle sélectionné dynamiquement."
+  },
   "roles.claimName|label": {
     "en": "d56be861543f5305",
     "text": "Nom de la revendication de rôles"
@@ -11707,6 +11883,14 @@
     "en": "50195b20fe00e9fa",
     "text": "Un avis qui nomme son objet (le même acte sur le même compte) est envoyé une seule fois dans cette fenêtre, quel que soit le nombre de portes qui l’ont signalé. 0 désactive la suppression."
   },
+  "mail.encryptionRequired|label": {
+    "en": "81e5dc8eb5332f2b",
+    "text": "Messages devant être chiffrés"
+  },
+  "mail.encryptionRequired|description": {
+    "en": "895bdb616e169134",
+    "text": "Les messages, par identifiant de modèle (password-reset, account-activation, sign-in-code, sign-in-link, credential-compromised et le reste de la liste de Monitoring → Mail), qui ne sont envoyés que chiffrés — en PGP/MIME pour la clé OpenPGP de la personne ou en S/MIME pour son certificat, selon son choix sur le portail. Une personne qui n'a choisi ni l'un ni l'autre ne reçoit pas le message (STS-MAIL-0240), et l'usage qui l'a demandé le signale comme pour tout message non envoyé. Vide, la valeur par défaut, n'en exige aucun ; le choix d'une personne est respecté dans tous les cas."
+  },
   "mail.selfServiceReset|label": {
     "en": "8525111d1c0be58a",
     "text": "Réinitialisation du mot de passe en libre-service"
@@ -12650,5 +12834,93 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "Pour l’écouteur du débogueur de protocoles uniquement : http.http2MaxConcurrentStreams. -1, la valeur par défaut, suit http.http2MaxConcurrentStreams ; toute autre valeur ne s’applique qu’à cet écouteur. Combien de requêtes une connexion HTTP/2 peut avoir ouvertes simultanément (SETTINGS_MAX_CONCURRENT_STREAMS) ; un flux au-delà est refusé jusqu’à ce qu’un autre se termine. 100, la valeur par défaut, est la plus petite valeur que recommande la RFC 9113 ; celle de node est illimitée, ce qui permettrait à une seule connexion de porter le travail de milliers. Elle borne le travail d’une connexion comme http.maxConnections borne les connexions. Une nouvelle connexion suit un changement immédiatement, et la nouvelle valeur est envoyée à une connexion ouverte."
+  },
+  "piv.attestationAnchors|label": {
+    "en": "ebc10f6a7dcbbf58",
+    "text": "Racines d’attestation PIV (PEM)"
+  },
+  "piv.attestationAnchors|description": {
+    "en": "487e76edeb4446b9",
+    "text": "Les racines auxquelles une attestation de clé PIV de YubiKey doit se chaîner, sous forme de lot PEM. Vide, utilise les deux que publie Yubico (Yubico PIV Root CA Serial 263751, et Yubico Attestation Root 1 pour le micrologiciel 5.7.4 et ultérieur), livrées dans common/pki_piv_anchors.json et épinglées là par SHA-256, avec les intermédiaires PIV de Yubico. Un certificat indiqué ici remplace les racines livrées."
+  },
+  "piv.requireAttestation|label": {
+    "en": "4e11b0db111faccf",
+    "text": "Exiger une attestation PIV pour les profils PIV"
+  },
+  "piv.requireAttestation|description": {
+    "en": "ef38975436c5ac4f",
+    "text": "Activé, une demande de certificat piv-auth, piv-sign, piv-key-management ou piv-card-auth est refusée si elle ne porte pas une attestation PIV de YubiKey qui se vérifie (STS-PIV-0010). Une clé piv-key-management séquestrée issue d’EST /serverkeygen fait exception : c’est ce service qui l’a générée. Désactivé, la valeur par défaut, une telle demande sans attestation est émise sans preuve matérielle ; une demande qui en porte une qui ne se vérifie pas est refusée dans les deux cas."
+  },
+  "piv.pinPolicy|label": {
+    "en": "0f683a0cb1db1988",
+    "text": "Politique de PIN la plus faible qu’une clé PIV attestée peut avoir"
+  },
+  "piv.pinPolicy|description": {
+    "en": "c3f9fcec406b9806",
+    "text": "Ce que la politique de PIN de l’attestation doit être au minimum. `once` : le PIN une fois par session (le match-once d’une clé Bio compte) ; `always` : le PIN avant chaque utilisation (match-always compte). `any`, la valeur par défaut, n’impose aucune politique de PIN. Une clé dont l’attestation est plus faible est refusée (STS-PIV-0011)."
+  },
+  "piv.touchPolicy|label": {
+    "en": "a88f111c7b13657f",
+    "text": "Politique de toucher la plus faible qu’une clé PIV attestée peut avoir"
+  },
+  "piv.touchPolicy|description": {
+    "en": "d78f0d5df0256787",
+    "text": "Ce que la politique de toucher de l’attestation doit être au minimum. `cached` : un toucher, mémorisé pendant 15 secondes ; `always` : un toucher à chaque utilisation. `any`, la valeur par défaut, n’en impose aucune. Une clé dont l’attestation est plus faible est refusée (STS-PIV-0012)."
+  },
+  "piv.cardAuthSignIn|label": {
+    "en": "61b2226403ad5c61",
+    "text": "Permettre à un certificat piv-card-auth de se connecter"
+  },
+  "piv.cardAuthSignIn|description": {
+    "en": "1852da24c3fbfade",
+    "text": "Une clé piv-card-auth (emplacement 9e) fonctionne sans PIN, pour l’accès physique ; son certificat est donc refusé à la connexion TLS et à PKINIT (STS-PIV-0013), sauf si ce réglage est activé."
+  },
+  "piv.keyEscrow|label": {
+    "en": "f2efc85c3d2bac38",
+    "text": "Séquestrer les clés piv-key-management"
+  },
+  "piv.keyEscrow|description": {
+    "en": "cf9618144b67dff3",
+    "text": "Activé, EST /serverkeygen pour le profil piv-key-management conserve la clé privée générée, scellée sous la clé de chiffrement de clés, afin que son détenteur (sur le portail, après une nouvelle connexion) ou un administrateur détenant le rôle de récupération des clés PIV puisse la récupérer et déchiffrer d’anciens courriels après la perte d’une carte. Refusé là où aucune clé de chiffrement de clés n’est détenue (STS-PIV-0020). Une clé séquestrée n’est jamais une preuve matérielle. Désactivé, la valeur par défaut, /serverkeygen refuse le profil piv-key-management (STS-PIV-0021), de sorte qu’une clé 9d est générée sur la carte et conservée nulle part ailleurs."
+  },
+  "piv.externalIssuers|label": {
+    "en": "e96143ab9556db35",
+    "text": "AC émettrices PIV ou CAC externes, associées par UUID de carte (PEM)"
+  },
+  "piv.externalIssuers|description": {
+    "en": "0fb91dba2cb957d3",
+    "text": "Les AC émettrices dont les certificats de carte PIV ou CAC connectent une personne par l’UUID de carte FIPS 201 : un certificat client émis directement par l’une d’elles, affirmant une politique de piv.externalPolicyOids et portant exactement un subjectAltName urn:uuid, est associé à la seule personne dont stsPivCardUuid contient cet UUID. Jamais par son nom, et aucune entrée n’est créée. L’AC doit aussi figurer dans un magasin de confiance client, sinon la négociation la refuse d’abord. Vide, la valeur par défaut, n’associe rien."
+  },
+  "piv.externalPolicyOids|label": {
+    "en": "930c5800dfa36905",
+    "text": "Politiques PIV Authentication qu’une carte externe doit affirmer"
+  },
+  "piv.externalPolicyOids|description": {
+    "en": "2398931e8d58f5c4",
+    "text": "Les politiques de certificat dont le certificat d’une carte externe doit affirmer l’une pour être associé par son UUID de carte : par défaut id-fpki-common-authentication (la PIV Authentication de la Federal PKI Common Policy) et id-fpki-certpcy-pivi-hardware (PIV-I). Ajoutez ici les politiques matérielles propres à un émetteur de CAC."
+  },
+  "pki.paranoidPivAttestation|label": {
+    "en": "e645d02c49d2f9bf",
+    "text": "Paranoïaque : une chaîne d’attestation de clé PIV de YubiKey"
+  },
+  "pki.paranoidPivAttestation|description": {
+    "en": "fdb7c0eb631758ea",
+    "text": "Cas d’usage `piv-attestation` (#1955) : le certificat d’attestation de l’emplacement et le certificat d’attestation f9 d’un enregistrement PIV. Le mode paranoïaque vérifie la fenêtre de validité à l’instant présent, le chemin vers piv.attestationAnchors et la révocation lorsque la chaîne désigne une liste. Désactivé, ce seul cas d’usage effectue la vérification du chemin sans les vérifications des champs, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivé en mode produit, c’est journalisé une fois (STS-PKI-0239) et affiché en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidPivCard|label": {
+    "en": "4078a93e7117d6f9",
+    "text": "Paranoïaque : une carte PIV ou CAC externe associée par UUID de carte"
+  },
+  "pki.paranoidPivCard|description": {
+    "en": "d4d5fb070575e1c6",
+    "text": "Cas d’usage `piv-card` (#1955) : un certificat client d’une AC émettrice de piv.externalIssuers, associé par son UUID de carte. Le mode paranoïaque vérifie keyUsage digitalSignature et la fenêtre de validité du certificat final en plus de la vérification de l’émetteur à un saut. Désactivé, ce seul cas d’usage n’effectue que la vérification de l’émetteur, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivé en mode produit, c’est journalisé une fois (STS-PKI-0239) et affiché en rouge sur /admin/pki/trust."
+  },
+  "roles.pivKeyRecoveryGroup|label": {
+    "en": "2f231e1e99785dc6",
+    "text": "Groupe accordant le rôle PIV_KEY_RECOVERY"
+  },
+  "roles.pivKeyRecoveryGroup|description": {
+    "en": "801616eea12559a5",
+    "text": "Le groupe de l’annuaire dont les membres détiennent le rôle intégré PIV_KEY_RECOVERY (#1955), que la politique de contrôle d’accès exige, en plus d’Admin Write, pour récupérer la clé piv-key-management séquestrée d’une autre personne (piv.keyEscrow). Cette clé déchiffre le courrier de la personne : personne ne détient donc le rôle tant qu’un administrateur ne l’a pas ajouté au groupe. Vide, ne permet à personne de récupérer la clé d’une autre personne ; le détenteur récupère la sienne sur le portail."
   }
 }

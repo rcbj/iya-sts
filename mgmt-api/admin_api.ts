@@ -706,6 +706,9 @@ interface AdminApiDeps {
   loadPasskeyReportApi(): typeof import('./passkey_report_api');
   // Directory → Post-login activities' operations (#1111).
   loadPostLoginActivitiesApi(): typeof import('./post_login_activities_api');
+  loadHardwareTokensApi(): typeof import('./hardware_tokens_api');
+  // Directory → OpenPGP keys' operations (#1955 P6).
+  loadOpenPgpApi(): typeof import('./openpgp_api');
   // Monitoring → Audit export's operations (#641).
   loadAuditExportApi(): typeof import('./audit_export_api');
   // Server configuration → Sign-in appearance's operations (#717).
@@ -852,6 +855,12 @@ class AdminApi {
       },
       loadPostLoginActivitiesApi: function () {
         return require('./post_login_activities_api');
+      },
+      loadHardwareTokensApi: function () {
+        return require('./hardware_tokens_api');
+      },
+      loadOpenPgpApi: function () {
+        return require('./openpgp_api');
       },
       loadAuditExportApi: function () {
         return require('./audit_export_api');
@@ -1971,6 +1980,15 @@ class AdminApi {
               'optional major-version range, `;` between rules — whose ' +
               'registrations offer the list less ML-DSA, where a classical ' +
               'passkey is allowed. ' +
+              '`credProtect` (`none`, #1955; optional) asks a ' +
+              'registration\'s authenticator for CTAP 2.1 credential ' +
+              'protection at `userVerificationOptional`, ' +
+              '`userVerificationOptionalWithCredentialIDList` or ' +
+              '`userVerificationRequired`, and records the level the ' +
+              'key reports; `enforceCredProtect` (off; optional) asks ' +
+              'the browser to enforce it and refuses a key reporting a ' +
+              'lower level (STS-AUTHN-0559), and is refused on while ' +
+              '`credProtect` is `none` (STS-AUTHN-0560). ' +
               'Refused: `classical-only` with `postQuantumRequired` not ' +
               '`off` or with `attestationAlgorithms` set (STS-AUTHN-0430), ' +
               'and `pq-only` or `pq-first` where the list offered names no ' +
@@ -1991,7 +2009,8 @@ class AdminApi {
                    postQuantumAllowCredentials: 'realm',
                    registrationAlgorithms: 'realm',
                    registrationMode: 'realm', lanes: 'realm',
-                   clientRules: '' }
+                   clientRules: '', credProtect: 'none',
+                   enforceCredProtect: false }
       },
       // #539: the fifth kind, with named profiles an application or a
       // group names (#1238).
@@ -2662,6 +2681,7 @@ class AdminApi {
             loadAttributeSourcesApi, loadSecretDestinationsApi, loadAuthzenApi,
             loadUmaApi,
             loadPasskeyReportApi, loadPostLoginActivitiesApi,
+            loadHardwareTokensApi, loadOpenPgpApi,
             loadAuditExportApi, loadBrandingApi,
             loadScimClientsApi,
             loadProviderCommandsApi, loadSsfTransmittersApi,
@@ -5268,6 +5288,10 @@ class AdminApi {
           // Passkeys table, and the same writer the person's own
           // `/portal/rename-key` calls.
           { action: 'rename-key', operationId: 'renameUserPasskey' },
+
+          // #1955 P7: a legacy FIDO U2F credential imported by value, the
+          // console's *Import a U2F security key* on a person's page.
+          { action: 'import-u2f-key', operationId: 'importUserU2fKey' },
 
           // #945: AN ADMINISTRATOR ENROLS A PASSKEY ON A PERSON'S BEHALF,
           // the console's *Enrol a passkey for this person* on their page.
@@ -9907,6 +9931,61 @@ class AdminApi {
           log.debug("Leaving the management API role preview endpoint.");
         } },
 
+      // A DYNAMIC ROLE'S ELIGIBILITY, TESTED (#1072; the ticket's 5.3):
+      // one role's own policy against one person, decided by the PDP as a
+      // sign-in would ask it. A READ beside the preview: nothing is written
+      // but the audit row every eligibility decision leaves.
+      { method: 'GET', path: BASE + '/roles/eligibility', tag: 'Roles',
+        operationId: 'testRoleEligibility',
+        mirrors: 'GET /admin/roles',
+        parameters: [
+          { name: 'role', in: 'query', required: false,
+            schema: { type: 'string', examples: ['oncall-operator'] },
+            description: 'The dynamic selectable role.' },
+          { name: 'user', in: 'query', required: false,
+            schema: { type: 'string', examples: ['alice'] },
+            description: 'The person, by username.' },
+          { name: 'application', in: 'query', required: false,
+            schema: { type: 'string', examples: ['payroll'] },
+            description: 'The application a sign-in would be for. A role ' +
+                         'that belongs to an application is offered only ' +
+                         'on a sign-in to it.' },
+          { name: 'acr', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The authentication context class the sign-in ' +
+                         'would have met, as `urn:sts:xacml:acr`.' },
+          { name: 'amr', in: 'query', required: false,
+            schema: { type: 'string', examples: ['pwd otp'] },
+            description: 'The sign-in\'s authentication methods (RFC 8176), ' +
+                         'separated by spaces, as `urn:sts:xacml:amr`.' }
+        ],
+        handler: function (req, res) {
+          log.debug("Entering the management API role eligibility endpoint.");
+          const q = req.query || {};
+          const role = String(q.role || '').trim();
+          const user = String(q.user || '').trim();
+          // NOTHING ASKED IS `answered: false`, NOT A 400 — the preview's
+          // rule beside it, and for its reason: the role page's test is a
+          // GET form, and a read with no question in it has nothing to
+          // refuse.
+          if (!role || !user) {
+            self.sendJson(res, 200, { ok: true, answered: false,
+              why: '`role` and `user` are both needed: eligibility is one ' +
+                   'person\'s for one role.' });
+            log.debug("Leaving the management API role eligibility " +
+                      "endpoint. Not asked.");
+            return;
+          }
+          const answer = require('../xacml/role_eligibility').test(role, user, {
+            application: String(q.application || '').trim(),
+            acr: String(q.acr || '').trim(),
+            amr: String(q.amr || '').split(/\s+/).filter(Boolean),
+            actor: self.callerNameOf(res) });
+          self.sendJson(res, 200, Object.assign({ ok: true, answered: true },
+                                                answer));
+          log.debug("Leaving the management API role eligibility endpoint.");
+        } },
+
       ApiRows.actions({ method: 'POST',
         route: BASE + '/roles/:action', tag: 'Roles',
         // A SECOND CONSOLE PATH SINCE #604: the role page's Owners tab posts
@@ -9949,7 +10028,15 @@ class AdminApi {
           // A ROLE'S OWNERS (#604): what the role page's Owners tab saves the
           // moment Add or Remove is pressed.
           { action: 'add-owner', operationId: 'addRoleOwner' },
-          { action: 'remove-owner', operationId: 'removeRoleOwner' }
+          { action: 'remove-owner', operationId: 'removeRoleOwner' },
+
+          // DYNAMIC SELECTABLE ROLES (#1072): how a role is held, and how a
+          // dynamic one is chosen at sign-in.
+          { action: 'set-membership-mode',
+            operationId: 'setRoleMembershipMode' },
+          { action: 'set-selection', operationId: 'setRoleSelection' },
+          { action: 'set-eligibility-policy',
+            operationId: 'setRoleEligibilityPolicy' }
         ] }),
 
       // -----------------------------------------------------------------------
@@ -10503,6 +10590,13 @@ class AdminApi {
       // DIRECTORY → POST-LOGIN ACTIVITIES (#1111): the started activities
       // and their four acts (`mgmt-api/post_login_activities_api.ts`).
       ...loadPostLoginActivitiesApi().ROUTES,
+      // DIRECTORY → HARDWARE TOKENS (#1955 P1): the register and its
+      // lost-key act (`mgmt-api/hardware_tokens_api.ts`).
+      ...loadHardwareTokensApi().ROUTES,
+      // DIRECTORY → OpenPGP KEYS (#1955 P6): one person's key, publication
+      // and mail encryption, and the portal's seven acts for them
+      // (`mgmt-api/openpgp_api.ts`).
+      ...loadOpenPgpApi().ROUTES,
       // MONITORING → AUDIT EXPORT (#641): the destinations and their six
       // acts (`mgmt-api/audit_export_api.ts`).
       ...loadAuditExportApi().ROUTES,

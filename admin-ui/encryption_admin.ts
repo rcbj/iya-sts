@@ -602,6 +602,17 @@ const NOTES = Object.freeze({
     'whoever takes the volume; that is fine for a development stack ' +
     'and is why the `file` provider is the default, and it is not a ' +
     'deployment. keys.kekProvider selects a secret store instead.',
+  signingKeys:
+    'WHERE THIS REALM SIGNS (#1955). With keys.signingKeyStore pkcs11 ' +
+    'the classical signing keys listed as in the HSM were made in the ' +
+    'token keys.signingKeyToken names and never leave it: every ' +
+    'signature is a PKCS#11 call. A synchronous signature is made only ' +
+    'while keys.pkcs11SynchronousSign is on; otherwise that door ' +
+    'refuses (STS-KEYS-0209) and the asynchronous doors still sign. ' +
+    'Post-quantum keys are always made ' +
+    'in software, because no PKCS#11 module here offers ML-DSA or ' +
+    'SLH-DSA, and so is any curve the module does not make. The ' +
+    'setting applies to key sets made or rotated after it changes.',
   accountingNote: 'Counted at the ONE funnel both operations pass through — ' +
     '`crypto.js`’s `encryptWithDek()` and `decryptWithDek()`, with ' +
     'the data encryption keys’ own wraps and unwraps under ' +
@@ -842,6 +853,22 @@ class EncryptionAdmin {
         // key file beside the database volume.
         keyResidency: NOTES.keyResidency
       },
+      // THIS REALM'S SIGNING KEYS, IN THE HSM OR NOT (#1955 P8): which of
+      // them are, by algorithm, never a key. A realm that asks for the HSM
+      // and cannot have it answers `refused` rather than failing the page.
+      signingKeys: (function () {
+        try {
+          return Object.assign(helpers.hsmKeyReport(), { refused: false,
+            note: NOTES.signingKeys });
+        } catch (e) {
+          log.debug('Caught in EncryptionAdmin.encryptionJson(): ' +
+                    ((e && e.message) || e));
+          return { store: String(config.value('keys.signingKeyStore') ||
+                                 'software'),
+                   token: '', inHsm: [], inSoftware: [], refused: true,
+                   note: NOTES.signingKeys };
+        }
+      })(),
       store: store,
       classes: classes,
       unclassified: unclassified,

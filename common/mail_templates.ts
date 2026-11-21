@@ -82,17 +82,22 @@ const CATEGORIES = [
     // #64: the layout's `{{reason}}`, finishing "because it is ...".
     reason: 'a security notice about your account, which cannot be turned ' +
             'off',
+    // #1955 P6: the Subject an ENCRYPTED message of this category goes out
+    // under (`encryptedSubjectFor()`), the real one being inside.
+    encryptedSubject: 'A security notice from {{service}}',
     what: 'Something happened to your account: it was disabled, your ' +
           'sessions were ended, your password changed, a credential was ' +
           'marked compromised, recovery was started, your address changed.' },
   { id: 'account', optional: false,
     label: 'Links you or an administrator asked for',
     reason: 'something you or an administrator asked for',
+    encryptedSubject: 'A message from {{service}}',
     what: 'A password reset link, an activation link, an address ' +
           'verification link, a test message.' },
   { id: 'notification', optional: true,
     label: 'Notifications',
     reason: 'a notification, which you can turn off on your portal',
+    encryptedSubject: 'A notification from {{service}}',
     what: 'Everything else this service may tell you about: an ' +
           'application asking for access that waits for your approval on ' +
           'the portal (#432). (#64\'s sign-in codes and links are SECURITY ' +
@@ -778,6 +783,41 @@ class MailTemplates {
     }
     helpers.log.debug("Leaving MailTemplates.reasonFor(). English.");
     return cat.reason;
+  }
+
+  // THE SUBJECT OF AN ENCRYPTED MESSAGE (#1955 P6): the category's neutral
+  // subject in a language — the translation along the chain, else the
+  // English of `CATEGORIES` — with `{{service}}` filled in. The Subject of
+  // an encrypted message is not encrypted, so it says no more than which
+  // kind of message it is and whose.
+  /**
+   * The neutral Subject an encrypted message of a category goes out under.
+   *
+   * @param id - the category's id
+   * @param language - the language the message went out in
+   * @param values - the message's values (`service` is read)
+   * @returns the subject
+   */
+  static encryptedSubjectFor(id: string, language: string,
+                             values: Json): string {
+    helpers.log.debug("Entering MailTemplates.encryptedSubjectFor(). " + id);
+    const cat = MailTemplates.category(id) || MailTemplates.category('account');
+    const files = MailTemplates.localeFiles();
+    const chain = MailTemplates.chainFor(language);
+    let text = String(cat.encryptedSubject || '');
+    for (let i = 0; i < chain.length; i++) {
+      const file = files[chain[i]];
+      const one = file && file.categories && file.categories[cat.id];
+      if (one && typeof one.encryptedSubject === 'string' &&
+          one.encryptedSubject) {
+        text = one.encryptedSubject;
+        break;
+      }
+    }
+    const service = String((values && values.service) || 'this service')
+      .replace(/[\r\n]+/g, ' ');
+    helpers.log.debug("Leaving MailTemplates.encryptedSubjectFor().");
+    return text.replace(/\{\{\s*service\s*\}\}/g, service);
   }
 
   // Every `{{name}}` in a piece of text.

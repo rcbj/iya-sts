@@ -15980,6 +15980,13 @@ class AdminViews {
                  // (#532), or null.
                  deviceSerial: (one.attestation &&
                                 one.attestation.deviceSerial) || null,
+                 // ITS CREDPROTECT LEVEL (#1955 P7), 1 to 3 as the key
+                 // reported it at registration, or null; and the legacy U2F
+                 // AppID it was imported under, or null for a key
+                 // registered here.
+                 credProtect: typeof one.credProtect === 'number'
+                   ? one.credProtect : null,
+                 appid: credentials.appIdOf(one) || null,
                  // A LATER REGISTRATION MAY HAVE REPLACED IT ON ITS
                  // AUTHENTICATOR (#1101): the newer key's id and when, or
                  // null.
@@ -16012,7 +16019,10 @@ class AdminViews {
                 webauthnEnabled: keyLive.enabled,
                 primaryAllowed: keyLive.primaryAllowed,
                 mfaAllowed: keyLive.mfaAllowed,
-                maxKeysPerPerson: keyLive.maxKeysPerPerson }
+                maxKeysPerPerson: keyLive.maxKeysPerPerson,
+                // THE LEGACY U2F APPIDS THIS REALM PERMITS (#1955 P7): the
+                // page draws the import form only where there is one.
+                legacyAppIds: webauthnPolicy.legacyAppIds() }
     };
   }
 

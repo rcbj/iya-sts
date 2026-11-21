@@ -35,6 +35,10 @@
     "en": "20bde19870bf41f3",
     "text": "Azure Key Vault 或 Managed HSM 金鑰（金鑰絕不離開其中）"
   },
+  "secretstore.providers.pkcs11.label": {
+    "en": "b69f31334968d051",
+    "text": "PKCS#11 硬體安全模組（金鑰絕不離開其中）"
+  },
   "secretstore.source.reportWhat": {
     "en": "22bc75be21c4a09a",
     "text": "本服務從何處讀取其原始秘密——用來密封其所密封之一切的金鑰加密金鑰，以及資料庫密碼——是否確實讀取了它們，以及另一端的儲存區正在做什麼。"
@@ -282,6 +286,10 @@
   "secretstore.probe.azure-keys/vault-key": {
     "en": "4c46af2b365b08fe",
     "text": "vault 對包裝資料金鑰之金鑰的說明：其類型、大小、作業、版本與輪替。"
+  },
+  "secretstore.probe.pkcs11/hsm-key": {
+    "en": "31b1bb76fbe8c7ce",
+    "text": "HSM 權杖對包裝資料金鑰的那把金鑰的說明：它是否存在、它的類型，以及它是否可能離開 HSM。"
   },
   "secretstore.probe.gcp/secret": {
     "en": "f7750717cdd5bfbc",

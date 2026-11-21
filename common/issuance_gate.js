@@ -371,6 +371,10 @@ function check(request) {
   // four browser kinds whenever the policy is asked, and does not make it
   // asked — the rules that read it are an operator's choice.
   const phishing = phishingFactsOf(asked);
+  // THE HARDWARE TOKEN THE CREDENTIAL IS ON (#1955 P1), on the same browser
+  // issuances, the same way: it rides along and does not make the policy
+  // asked.
+  const hardwareToken = hardwareTokenFactsOf(asked);
   if (!enforceRoles && !risk && !deviceMatters && !protocolMatters &&
       !mechanisms && !mfa && !deviceBoundMatters) {
     log.debug('Leaving check(). Enforcement is switched off.');
@@ -397,6 +401,7 @@ function check(request) {
     allowedMfaMechanisms: mfa ? mfa.allowed : null,
     authority: authorityFactsOf(asked),
     phishingResistance: phishing,
+    hardwareToken: hardwareToken,
     // #740. The fact token. The PEP holds `pending` and refuses `skipped`
     // and `timedout` when the application's profile requires a binding.
     deviceBoundSession: deviceBoundSession,
@@ -676,6 +681,78 @@ function phishingFactsOf(asked) {
     out = null;
   }
   log.debug('Leaving phishingFactsOf(). ' + (out ? out.join(' ') : 'none'));
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE HARDWARE TOKEN FACTS OF A BROWSER ISSUANCE (#1955 P1, design X4): the
+// token the authentication's credential is on, from the event's snapshot
+// (`authn.ts`'s `hardwareTokenOf()`), brought up to date against the
+// register: a token reported lost since reads `attested: false` and its
+// status, and whether the subject is its holder is asked NOW. `{ attested:
+// false }` for a browser authentication with no token; null where the gate
+// described none, so the PEP sends nothing. The register is required
+// LAZILY, for `disabledSubject()`'s reason. Never throws.
+// ---------------------------------------------------------------------------
+function hardwareTokenFactsOf(asked) {
+  log.debug('Entering hardwareTokenFactsOf().');
+  const session = asked.session || null;
+  if (asked.browser === false ||
+      BROWSER_KINDS.indexOf(String(asked.kind)) < 0 ||
+      (!asked.authenticationEvent && !session) ||
+      (String(asked.kind) === ISSUANCE.SESSION && !asked.authenticationEvent)) {
+    log.debug('Leaving hardwareTokenFactsOf(). Not a browser sign-in.');
+    return null;
+  }
+  let event = asked.authenticationEvent || null;
+  try {
+    if (!event) {
+      event = require('./phishing_resistance').latestEventOf(session);
+    }
+  } catch (e) {
+    log.debug('Caught in hardwareTokenFactsOf(): ' + ((e && e.message) || e));
+    event = null;
+  }
+  const snap = ((event && event.context) || {}).credential || {};
+  const token = snap.hardwareToken || null;
+  if (!token || !token.key) {
+    log.debug('Leaving hardwareTokenFactsOf(). No token.');
+    return { attested: false };
+  }
+  let now = null;
+  try {
+    now = require('./hardware_tokens').byKey(String(token.key));
+  } catch (e) {
+    // A register that cannot be asked proves nothing now: not attested.
+    log.debug('Caught in hardwareTokenFactsOf(): ' + ((e && e.message) || e));
+    now = null;
+  }
+  const person = personOf(asked);
+  const out = {
+    attested: !!now && now.status === 'active',
+    key: String(token.key), vendor: String(token.vendor || ''),
+    model: String(token.model || ''), source: String(token.source || ''),
+    smartCard: token.smartCard === true,
+    holderMatches: !!now && !!person && String(now.holder || '') === person,
+    status: now ? String(now.status || 'active') : 'unknown'
+  };
+  // WHAT THE ATTESTATION SAID OF THE KEY (#1955 P2, X4), from the sign-in's
+  // snapshot, and ONLY for a token still attested: a lost token's policies
+  // prove nothing about the key now. Absent where the evidence said none,
+  // so a rule about them is inapplicable rather than matching ''.
+  if (out.attested) {
+    ['pinPolicy', 'touchPolicy', 'firmware', 'formFactor']
+      .forEach(function (name) {
+        if (token[name]) {
+          out[name] = String(token[name]);
+        }
+      });
+    if (token.fips === true) {
+      out.fips = true;
+    }
+  }
+  log.debug('Leaving hardwareTokenFactsOf(). ' + out.key + ' ' +
+            (out.attested ? 'attested' : 'not attested'));
   return out;
 }
 
@@ -1471,6 +1548,8 @@ module.exports = {
   PROTOCOL_OF_KIND: PROTOCOL_OF_KIND,
   FAMILIES_OF_KIND: FAMILIES_OF_KIND,
   deviceFactsOf: deviceFactsOf,
+  // #1955 P1: the hardware token facts of a browser issuance.
+  hardwareTokenFactsOf: hardwareTokenFactsOf,
   deviceRequirementOf: deviceRequirementOf,
   // #432 phase 3: the GNAP right question gathers the same risk facts a
   // token's issuance is decided on.

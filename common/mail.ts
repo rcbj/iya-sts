@@ -90,6 +90,27 @@
 // became of it. A dead letter keeps its body for the retry, a captured one
 // because the body is all it is for, and neither leaves this module except
 // to the monitor page's detail view of a captured message in development.
+//
+// **9. A MESSAGE MAY BE ENCRYPTED TO ITS RECIPIENT (#1955 P6)** — PGP/MIME
+// (RFC 3156) to the person's OpenPGP key or S/MIME (RFC 8551) to their
+// `userSMIMECertificate`, as they chose on the portal
+// (`common/openpgp_keys.ts`). WHAT is decided at the queue, here: the
+// person's choice, and the realm's `mail.encryptionRequired`, the templates
+// that go only encrypted. **A message is never sent in the clear against
+// either**: a required message to somebody who chose nothing is refused
+// (STS-MAIL-0240), and so is any message whose chosen encryption cannot be
+// honoured now (an expired key, a certificate that can no longer receive;
+// STS-MAIL-0241). A refusal is what every use already handles — the
+// forgot-password form answers the same sentence, an administrator's mailed
+// link says it was not sent and the console offers the link instead, a
+// security notice is audited as not sent — so no use grows a second path.
+// THE ENCRYPTION ITSELF happens at the attempt, in the transport's
+// composer (`mail_transports.ts`), because `send()` is synchronous and
+// openpgp.js is not; a key that no longer reads then is a dead letter
+// (STS-MAIL-0243). The outer Subject is replaced by a neutral one per
+// category (an encrypted message's Subject is not encrypted) and the real
+// one travels inside, as a protected header. Nothing new is signed: DKIM
+// already signs the outer message.
 // ===========================================================================
 
 import os = require('os');
@@ -195,6 +216,9 @@ interface Message {
   lastAttemptAt: number;
   finishedAt: number;
   updatedAt: number;
+  // #1955 P6 (header point 9): how the message is encrypted to its
+  // recipient, decided at the queue; absent or `kind: 'none'` is not.
+  encryption?: Json;
 }
 
 interface SendRequest {
@@ -244,6 +268,10 @@ interface MailDeps {
   // the console's (admin-ui/admin_rbac.ts) and this module is below it.
   administrators: () => string[];
   scheduler: () => Json;
+  // #1955 P6: the person's mail encryption choice, lazily — a library that
+  // requires nothing here, reached at the queue. Optional, so a test's fake
+  // built before it encrypts nothing.
+  openpgpKeys?: () => Json;
 }
 
 // WHICH OF TWO COPIES OF A ROW IS NEWER — back-channel logout's total order:
@@ -431,6 +459,9 @@ class Mail {
       },
       scheduler: function (): Json {
         return require('../cluster/scheduler');
+      },
+      openpgpKeys: function (): Json {
+        return require('./openpgp_keys');
       }
     };
   }
@@ -1492,6 +1523,56 @@ class Mail {
       .replace(/&#39;/g, "'").replace(/&amp;/g, '&');
   }
 
+  // -------------------------------------------------------------------------
+  // HOW ONE MESSAGE IS ENCRYPTED (header point 9): the person's choice, held
+  // to the realm's requirement for its template, and to what the transport
+  // in force can carry.
+  // -------------------------------------------------------------------------
+  /**
+   * Decides how one message is encrypted to its recipient.
+   *
+   * @param spec - the template
+   * @param username - the person; '' for a group or nobody
+   * @returns `{ kind: 'none' | 'openpgp' | 'smime', ... }`, or `{ refused:
+   *   true, code, why }`
+   */
+  encryptionPlan(spec: Json, username: string): Json {
+    const { log } = this.deps;
+    log.debug("Entering Mail.encryptionPlan(). " + spec.id);
+    const required = [].concat(this.setting('mail.encryptionRequired') || [])
+      .map(function (one: unknown): string {
+        return String(one || '').trim();
+      }).indexOf(String(spec.id)) >= 0;
+    let plan: Json = { kind: 'none' };
+    if (username && this.deps.openpgpKeys) {
+      plan = this.deps.openpgpKeys().encryptionFor(username) ||
+        { kind: 'none' };
+    }
+    if (plan.kind === 'unavailable') {
+      log.debug("Leaving Mail.encryptionPlan(). The choice cannot be kept.");
+      return { refused: true, code: 'STS-MAIL-0241',
+               why: username + ' chose ' + (plan.chosen === 'smime'
+                 ? 'S/MIME' : 'OpenPGP') + ' for their mail and ' +
+                 String(plan.why || 'it cannot be used now') + ', so the ' +
+                 'message is not sent in the clear' };
+    }
+    if (plan.kind === 'none' && required) {
+      log.debug("Leaving Mail.encryptionPlan(). Required, and no key.");
+      return { refused: true, code: 'STS-MAIL-0240',
+               why: 'mail.encryptionRequired names ' + spec.id + ', and ' +
+                 (username ? username + ' has chosen no mail encryption'
+                           : 'a group has no key') };
+    }
+    if (plan.kind !== 'none' && this.effectiveTransport() === 'acs') {
+      log.debug("Leaving Mail.encryptionPlan(). The transport cannot.");
+      return { refused: true, code: 'STS-MAIL-0242',
+               why: 'the acs transport sends structured content and cannot ' +
+                 'carry an encrypted MIME message' };
+    }
+    log.debug("Leaving Mail.encryptionPlan(). " + plan.kind);
+    return plan;
+  }
+
   // One recipient: every check, then the row. `former` overrides the
   // address on the entry: a former address, a pending recovery address,
   // or a pending sign-in name (#644).
@@ -1532,6 +1613,14 @@ class Mail {
       log.debug("Leaving Mail.queueOne(). Declined.");
       return { refused: this.refuse(req, username, 'STS-MAIL-0013',
         username + ' declined ' + cat.label.toLowerCase()) };
+    }
+    // ENCRYPTION (header point 9), decided here, before the dedup window and
+    // the ceilings count the message.
+    const encryption = this.encryptionPlan(spec, group ? '' : username);
+    if (encryption.refused) {
+      log.debug("Leaving Mail.queueOne(). Encryption.");
+      return { refused: this.refuse(req, username, encryption.code,
+                                    encryption.why) };
     }
     const dedup = req.dedupKey
       ? stsCrypto.digest('sha256', username + '\n' + spec.id +
@@ -1623,13 +1712,21 @@ class Mail {
       errorCode: '', why: '', providerId: '', queuedAt: at,
       nextAttemptAt: at, lastAttemptAt: 0, finishedAt: 0, updatedAt: at
     };
+    if (encryption.kind !== 'none') {
+      row.encryption = Object.assign({}, encryption, {
+        // THE NEUTRAL SUBJECT (header point 9), in the language the message
+        // went out in.
+        outerSubject: MailTemplates.encryptedSubjectFor(spec.category,
+          chosen.lang, values) });
+    }
     this.writeRow(row);
     audit.audit({ action: 'mail.queued', actor: row.actor,
       target: username, protocol: 'Mail', channel: 'internal',
       summary: 'a ' + spec.id + ' message (' + spec.category + ') was ' +
                'queued for ' + username,
       detail: { message: id, template: spec.id, category: spec.category,
-                to: who.address, via: row.via, transport: row.transport } });
+                to: who.address, via: row.via, transport: row.transport,
+                encryption: encryption.kind } });
     log.debug("Leaving Mail.queueOne(). Queued " + id + ".");
     return { queued: this.view(row) };
   }
@@ -1817,7 +1914,10 @@ class Mail {
             from: row.from, fromName: row.fromName, to: row.to,
             subject: row.subject, text: row.text, html: row.html,
             messageId: row.messageId, date: new Date(row.queuedAt),
-            lang: row.lang });
+            lang: row.lang,
+            // #1955 P6 (header point 9): encrypted by the composer.
+            encryption: row.encryption && row.encryption.kind !== 'none'
+              ? row.encryption : undefined });
         });
     } catch (e) {
       log.debug("Caught in Mail.attempt(): " + ((e && e.message) || e));

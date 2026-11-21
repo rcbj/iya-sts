@@ -36,6 +36,7 @@
     - { title: Data classification, url: /data-classification.html }
     - { title: Logging inventory, url: /logging-inventory.html }
     - { title: Key management, url: /key-management.html }
+    - { title: Keys in a hardware security module, url: /hsm.html }
     - { title: Field-level access, url: /field-access.html }
     - { title: Communication inventory, url: /communications.html }
     - { title: File uploads, url: /file-uploads.html }
@@ -145,6 +146,7 @@
     - { title: XACML 3.0 and ALFA, url: /xacml.html }
     - { title: "Configuring XACML and ALFA", url: /configure-xacml.html }
     - { title: Fine-grained authorization, url: /fga.html }
+    - { title: Dynamic selectable roles, url: /dynamic-roles.html }
     - { title: AuthZEN, url: /authzen.html }
     - { title: User-Managed Access, url: /uma.html }
     - { title: Remote PEP, url: /remote-pep.html }

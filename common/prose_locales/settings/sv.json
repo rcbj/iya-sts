@@ -1379,6 +1379,14 @@
     "en": "cba85726ee4e8673",
     "text": "De ursprung — schema, värd och port, ingen sökväg — som en WebAuthn-ceremoni godtas från, kommaseparerade. **TOMT, standardvärdet, härleder det enda ursprunget från adressen som tjänsten nåddes på**, vilket är vad den alltid har gjort och vad global.publicBaseUrl redan låser när den är satt. Satt är det hela listan: en clientDataJSON vars ursprung inte finns på den vägras oavsett vilken Host begäran bar. Namnge flera där en autentiseringsuppgift används från syskonvärdar under en delad webauthn.rpId."
   },
+  "webauthn.u2fAppIds|label": {
+    "en": "b0b6d4158c6357e8",
+    "text": "Äldre U2F-AppID:n"
+  },
+  "webauthn.u2fAppIds|description": {
+    "en": "05b1b01773d86d5d",
+    "text": "FIDO U2F-AppID:n — https-URL:erna som en äldre U2F-förlitande part registrerade sina säkerhetsnycklar under — vars autentiseringsuppgifter får importeras till personers poster och användas för att logga in här, kommaseparerade. **TOMT, standard, betyder att funktionen är av**: ingenting kan importeras, ingen ceremoni bär tillägget appid eller appidExclude (WebAuthn Level 3 avsnitt 10.1.1 och 10.1.2), och en importerad nyckel loggar inte in någon. Ett AppID används bara vid ett RP ID det hör till: dess värd är RP ID:t, eller så är det ena ett suffix av det andra. Där värden skiljer sig från ursprungets hämtar webbläsaren AppID-URL:en efter en TrustedFacets-lista som nämner detta ursprung, som den äldre tjänsten måste fortsätta att tillhandahålla. En importerad nyckel är bara en andra faktor: en U2F-nyckel kan inte verifiera personen."
+  },
   "webauthn.algorithms|label": {
     "en": "47c0895479d03828",
     "text": "Erbjudna algoritmer"
@@ -1876,8 +1884,8 @@
     "text": "Leverantör av nyckelkrypteringsnyckel"
   },
   "keys.kekProvider|description": {
-    "en": "b48b052bc689c8e3",
-    "text": "Var nyckelkrypteringsnyckeln som omsluter varje datakrypteringsnyckel finns. `file`, `aws`, `gcp`, `azure` och `vault` LÄSER in en 32-bytes nyckel i den här processen från en monterad fil eller ett hemlighetslager; `file` är standard eftersom den inte kräver något. `vault-transit` (Vault eller OpenBao Transit), `aws-kms`, `gcp-kms` (Cloud KMS) och `azure-keys` (en nyckel i Key Vault eller Managed HSM; keys.kekVault är dess valv) är nyckelhanteringstjänster: nyckeln lämnar dem ALDRIG, keys.kekRef namnger den, och KMS:en omsluter och packar upp varje datanyckel — ett anrop per datanyckel vid start, inget per värde. Varje leverantör utom `file` laddar sitt officiella SDK först när det behövs, och det är avsiktligt INTE ett beroende för tjänsten; ett saknat SDK rapporteras med namnet på paketet som ska installeras."
+    "en": "bf4e717bed6b7e03",
+    "text": "Var nyckelkrypteringsnyckeln som omsluter varje datakrypteringsnyckel finns. `file`, `aws`, `gcp`, `azure` och `vault` LÄSER in en 32-bytes nyckel i den här processen från en monterad fil eller ett hemlighetslager; `file` är standard eftersom den inte kräver något. `vault-transit` (Vault eller OpenBao Transit), `aws-kms`, `gcp-kms` (Cloud KMS) och `azure-keys` (en nyckel i Key Vault eller Managed HSM; keys.kekVault är dess valv) är nyckelhanteringstjänster: nyckeln lämnar dem ALDRIG, keys.kekRef namnger den, och KMS:en omsluter och packar upp varje datanyckel — ett anrop per datanyckel vid start, inget per värde. `pkcs11` är detsamma med nyckeln i en hårdvarusäkerhetsmodul (en YubiHSM 2, SoftHSM2 eller valfri PKCS#11-modul, keys.pkcs11Module), med keys.kekRef som en PKCS#11-URI. Varje leverantör utom `file` laddar sitt officiella SDK först när det behövs, och det är avsiktligt INTE ett beroende för tjänsten; ett saknat SDK rapporteras med namnet på paketet som ska installeras."
   },
   "keys.kekProvider|restartReason": {
     "en": "0956d2f97d1df86a",
@@ -1924,8 +1932,8 @@
     "text": "Referens till nyckelkrypteringsnyckel"
   },
   "keys.kekRef|description": {
-    "en": "a5a5b6e7f2c06fdc",
-    "text": "Vad molnleverantörerna namnger hemligheten med: ett namn eller ARN i AWS Secrets Manager, ett GCP-resursnamn (projects/<p>/secrets/<s>, med /versions/latest tillagt när ingen version anges), ett hemlighetsnamn i Azure Key Vault, eller en lässökväg i HashiCorp Vault. Används inte av leverantören `file`."
+    "en": "b28c82e37153639d",
+    "text": "Vad molnleverantörerna namnger hemligheten med: ett namn eller ARN i AWS Secrets Manager, ett GCP-resursnamn (projects/<p>/secrets/<s>, med /versions/latest tillagt när ingen version anges), ett hemlighetsnamn i Azure Key Vault, eller en lässökväg i HashiCorp Vault. För `pkcs11` en PKCS#11-URI enligt RFC 7512, pkcs11:token=<token label>;object=<key label>. Används inte av leverantören `file`."
   },
   "keys.kekRef|restartReason": {
     "en": "d51b3caaa6125e92",
@@ -2047,13 +2055,125 @@
     "en": "d51b3caaa6125e92",
     "text": "läses en gång vid start"
   },
+  "keys.pkcs11Module|label": {
+    "en": "0fb904cb6844253b",
+    "text": "PKCS#11-modul"
+  },
+  "keys.pkcs11Module|description": {
+    "en": "dd4fdc39cd1aed44",
+    "text": "Sökvägen till PKCS#11-modulen som leverantören `pkcs11` laddar: /usr/lib/x86_64-linux-gnu/pkcs11/yubihsm_pkcs11.so för en YubiHSM 2 (med yubihsm-connector igång och YUBIHSM_PKCS11_CONF pekande på dess konfiguration), /usr/lib/softhsm/libsofthsm2.so för SoftHSM2. Den kräver paketet pkcs11js, som avsiktligt inte är ett beroende för tjänsten."
+  },
+  "keys.pkcs11Module|restartReason": {
+    "en": "34a60604acae5870",
+    "text": "modulen laddas en gång, vid start"
+  },
+  "keys.pkcs11Mechanism|label": {
+    "en": "f9f19afe01ab43ad",
+    "text": "Hur HSM:en omsluter en datanyckel"
+  },
+  "keys.pkcs11Mechanism|description": {
+    "en": "85ff0e656695f323",
+    "text": "Mekanismen som en ny datanyckel omsluts med i HSM:en. `auto` tar CKM_AES_GCM där modulen erbjuder den (SoftHSM2 och de flesta nätverks-HSM:er), därefter CKM_AES_KEY_WRAP_PAD, därefter YubiHSM 2:s egen CKM_YUBICO_AES_CCM_WRAP (dess wrap-key-objekt). En datanyckel som omslöts före en ändring går fortfarande att packa upp: den lagrade formen namnger sin mekanism."
+  },
+  "keys.pkcs11Mechanism|restartReason": {
+    "en": "091df5146f3d6f79",
+    "text": "nyckelkrypteringsnyckeln nås en gång, vid start"
+  },
+  "keys.pkcs11GenerateKey|label": {
+    "en": "c9dac3afbed86d44",
+    "text": "Skapa HSM-nyckeln vid första användning"
+  },
+  "keys.pkcs11GenerateKey|description": {
+    "en": "82a5d89dd1a4c872",
+    "text": "På: en nyckelkrypteringsnyckel som PKCS#11-URI:n namnger och som tokenet inte innehåller genereras där: AES-256, känslig och INTE extraherbar. Bara frontprocessen genererar; för ett kluster, skapa i stället nyckeln med HSM:ens eget verktyg, eftersom två noder som startar samtidigt skulle skapa två. Av, standard: en saknad nyckel stoppar starten."
+  },
+  "keys.pkcs11GenerateKey|restartReason": {
+    "en": "091df5146f3d6f79",
+    "text": "nyckelkrypteringsnyckeln nås en gång, vid start"
+  },
+  "keys.pkcs11Sessions|label": {
+    "en": "4a2da0042402bee1",
+    "text": "PKCS#11-sessioner per process"
+  },
+  "keys.pkcs11Sessions|description": {
+    "en": "f5b20f8d3e577d1a",
+    "text": "Hur många sessioner varje process och varje förfrågningsarbetare högst håller öppna mot ett token, där var och en kör en HSM-operation åt gången. En YubiHSM 2 har 16 sessioner totalt, delade av varje process på varje nod: håll produkten av detta värde, processerna och noderna under det."
+  },
+  "keys.pkcs11Sessions|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "tokenet öppnas en gång, vid start"
+  },
+  "keys.pkcs11PinProvider|label": {
+    "en": "3e1d9c989bcacc3d",
+    "text": "Var PKCS#11-PIN-koden läses från"
+  },
+  "keys.pkcs11PinProvider|description": {
+    "en": "1c344b0b12c35ec4",
+    "text": "Hemlighetslagret som HSM-tokenets PIN-kod läses från, aldrig en inställnings värde: en monterad fil, AWS Secrets Manager, Google Cloud Secret Manager, Azure Key Vault eller Vault/OpenBao, nått så som keys.kek* anger. För en YubiHSM 2 är PIN-koden autentiseringsnyckelns id med fyra hexsiffror följt av dess lösenord (0001password). Ett JSON-objekt med PIN-koder per tokenetikett betjänar token med olika PIN-koder. `none` loggar inte in på något."
+  },
+  "keys.pkcs11PinProvider|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "PIN-koden läses en gång, när tokenet öppnas"
+  },
+  "keys.pkcs11PinRef|label": {
+    "en": "de50e9f1904c80fc",
+    "text": "Var PKCS#11-PIN-koden finns"
+  },
+  "keys.pkcs11PinRef|description": {
+    "en": "dffce1d68f8495de",
+    "text": "Var PIN-koden finns, i den leverantör som keys.pkcs11PinProvider namnger: en sökväg, ett ARN, en resurs eller en lässökväg i Vault. Den har ingen reserv."
+  },
+  "keys.pkcs11PinRef|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "PIN-koden läses en gång, när tokenet öppnas"
+  },
+  "keys.pkcs11PinField|label": {
+    "en": "55008836b9ff61fe",
+    "text": "Fältet som PKCS#11-PIN-koden finns i"
+  },
+  "keys.pkcs11PinField|description": {
+    "en": "f333042737800292",
+    "text": "Den medlem i en JSON-hemlighet som innehåller PIN-koden. Tomt tar hela värdet."
+  },
+  "keys.pkcs11PinField|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "PIN-koden läses en gång, när tokenet öppnas"
+  },
+  "keys.signingKeyStore|label": {
+    "en": "e6e0b403d7b8a000",
+    "text": "Var en sfärs signeringsnycklar skapas"
+  },
+  "keys.signingKeyStore|description": {
+    "en": "5cc22ee909529ecc",
+    "text": "`software`, standard, skapar en sfärs signeringsnycklar i den här processen och håller dem förseglade i lagret. `pkcs11` skapar dess klassiska — RS256-nyckeln, XML-nyckeln och de P-256-, P-384-, P-521-, secp256k1- och Ed25519-nycklar som modulen kan skapa — i den HSM som keys.signingKeyToken namnger, icke-extraherbara, och signerar där; en nyckel som modulen inte kan skapa, och varje postkvantnyckel, stannar i mjukvara. Det gäller en nyckeluppsättning som skapas eller roteras efter ändringen, kräver ett nyckellager som består (produktionsläge), och varje process och nod behöver tokenet. Kan sättas per sfär."
+  },
+  "keys.signingKeyToken|label": {
+    "en": "a6e7fb05dd49b8a9",
+    "text": "HSM-tokenet som signeringsnycklar skapas på"
+  },
+  "keys.signingKeyToken|description": {
+    "en": "0bd2c707f6ff2e69",
+    "text": "PKCS#11-URI:n för det token som en sfär med keys.signingKeyStore `pkcs11` skapar sina signeringsnycklar på: pkcs11:token=<token label>, med serial= eller slot-id= där två token delar etikett. Modulen, PIN-koden och sessionerna är inställningarna keys.pkcs11*. Tomt öppnar inget token."
+  },
+  "keys.signingKeyToken|restartReason": {
+    "en": "1a04369397b30563",
+    "text": "tokenet öppnas en gång, vid start, i varje process"
+  },
+  "keys.pkcs11SynchronousSign|label": {
+    "en": "c8e3fedf4601518d",
+    "text": "Tillåt synkron PKCS#11-signering"
+  },
+  "keys.pkcs11SynchronousSign|description": {
+    "en": "1cb742f146d4c7c1",
+    "text": "Av, standard: en signatur med en nyckel i HSM:en görs bara genom bindningens asynkrona `C_Sign`. De synkrona dörrarna (en JWS, en XML-signatur, en SAML-assertion) nekar en HSM-nyckel (`STS-KEYS-0209`) i stället för att vänta på token på händelseloopen. På anropar de dörrarna `C_Sign` och händelseloopen väntar. En modul utan asynkron signering kan signera bara medan detta är på. Dekryptering ändras inte. Ställbar per sfär."
+  },
   "keys.cellKekProvider|label": {
     "en": "9103eeef061197fd",
     "text": "Varifrån cellens nyckelkrypteringsnyckel läses"
   },
   "keys.cellKekProvider|description": {
-    "en": "f779ece8f10a07ec",
-    "text": "Leverantören av DEN HÄR CELLENS nyckelkrypteringsnyckel, som förseglar det som cellen lagrar av sitt eget (#98). Fem leverantörer, som för `keys.kekProvider`. `none` förseglar cellnivån under tjänstens nyckelkrypteringsnyckel, vilket är korrekt för encellsläge och för ett test; en flercellsdriftsättning i produktionsläge VÄGRAR att starta med det, eftersom en kopia av en cells rader då skulle gå att öppna i varje annan."
+    "en": "73b7f0bab09392e8",
+    "text": "Leverantören av DEN HÄR CELLENS nyckelkrypteringsnyckel, som förseglar det som cellen lagrar av sitt eget (#98). Fem leverantörer, som för `keys.kekProvider`, och `pkcs11`, cellens egen HSM. `none` förseglar cellnivån under tjänstens nyckelkrypteringsnyckel, vilket är korrekt för encellsläge och för ett test; en flercellsdriftsättning i produktionsläge VÄGRAR att starta med det, eftersom en kopia av en cells rader då skulle gå att öppna i varje annan."
   },
   "keys.cellKekProvider|restartReason": {
     "en": "bfe49ff259fac42d",
@@ -3138,6 +3258,54 @@
   "devices.eventsKept|description": {
     "en": "72d46974270d0c03",
     "text": "Hur många skapanden, borttagningar, utträngningar och efterlevnadsändringar av enheter som den här sfären sparar för Övervakning → Enheter. Den äldsta tas bort när en ny registreras utöver gränsen."
+  },
+  "hardwareTokens.hardwareClaims|label": {
+    "en": "8373111eef4bf812",
+    "text": "Vad som ger anspråk på maskinvarunyckel"
+  },
+  "hardwareTokens.hardwareClaims|description": {
+    "en": "e0341e4e47f3b2f8",
+    "text": "Vad som låter en PKINIT-inloggning göra anspråk på en maskinvarubunden nyckel (indikatorn pkinit-hardware och amr hwk). `inference`, standardvärdet och beteendet före #1955: ett certifikat för smartkortsinloggning vars nyckel den här tjänsten inte genererade, eller registrerat attesteringsbevis. `evidence`: endast en nyckel som en maskinvarutokens attestering täcker. En certifikatinloggning över TLS får hwk, och sc för en nyckel på ett smart kort, endast utifrån bevis i båda fallen."
+  },
+  "openpgp.wkd|label": {
+    "en": "1f05a7518c3d2275",
+    "text": "Publicera nycklar i Web Key Directory"
+  },
+  "openpgp.wkd|description": {
+    "en": "7822103f89ac59b3",
+    "text": "Besvara Web Key Directory (draft-koch-openpgp-webkey-service) för den här sfärens e-postdomäner: /.well-known/openpgpkey/<domain>/hu/<hash> (den avancerade metoden, på openpgpkey.<domain>) och /.well-known/openpgpkey/hu/<hash> (den direkta metoden), och respektive policyfil. Bara nyckeln för en person som har valt att delta på portalen besvaras. Avstängt som standard."
+  },
+  "openpgp.wkdDomains|label": {
+    "en": "d1c4b728593ff000",
+    "text": "E-postdomäner som Web Key Directory betjänar"
+  },
+  "openpgp.wkdDomains|description": {
+    "en": "ad64f7216191123c",
+    "text": "E-postdomänerna som den här sfärens Web Key Directory svarar för, kommaseparerade. Tomt, standardvärdet, betyder sfärens egen DNS-domän. En begäran utan sfär i sökvägen besvaras av den sfär som betjänar dess domän, standardsfären först."
+  },
+  "openpgp.challengeLifetimeS|label": {
+    "en": "dbf558cf0b4b8f90",
+    "text": "Registreringsutmaningens livslängd (sekunder)"
+  },
+  "openpgp.challengeLifetimeS|description": {
+    "en": "e9130c8e82368cc6",
+    "text": "Hur länge den utmaning som en person signerar med gpg --clearsign för att registrera en OpenPGP-nyckel är giltig. Den förbrukas en gång, och en person har en åt gången."
+  },
+  "openpgp.signatureSkewS|label": {
+    "en": "d927cf1f04bd9d51",
+    "text": "Tillåten klockavvikelse för bevissignaturen (sekunder)"
+  },
+  "openpgp.signatureSkewS|description": {
+    "en": "2772763d3d363b6d",
+    "text": "Hur mycket den signerande datorns klocka får avvika från tjänstens: ett bevis signerat tidigare än utmaningen utfärdades, eller senare än nu, med mer än så avvisas (STS-OPENPGP-0010)."
+  },
+  "openpgp.minRsaBits|label": {
+    "en": "f3dc9f85de143630",
+    "text": "Minsta RSA-nyckel för OpenPGP"
+  },
+  "openpgp.minRsaBits|description": {
+    "en": "ad48516e31a7c45b",
+    "text": "Den kortaste RSA-nyckel, primärnyckel eller undernyckel, som en OpenPGP-registrering accepterar. Ed25519, Ed448, ECDSA och ECDH på P-256, P-384 och P-521, X25519 och X448 accepteras; DSA, ElGamal och Brainpool-kurvorna accepteras aldrig (STS-OPENPGP-0004)."
   },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
@@ -9375,6 +9543,14 @@
     "en": "05185a4a554d5f71",
     "text": "När den är på namnger varje åtkomsttoken, ID Token, SAML 2.0-intygande och SAML 1.1-intygande de roller som dess subjekt har. PÅ som standard och det ändrar ändå ingenting för de flesta anropare, av samma skäl som gruppanspråket är på som standard: anspråket UTELÄMNAS HELT för den som inte har någon KONFIGURERAD roll, och de sex inbyggda rollerna finns aldrig i det — EVERYBODY och ALL_AUTHENTICATED_USERS gäller för nästan varje token här, så att bära dem skulle lägga till två meningslösa medlemmar i varje token som varje befintlig klient tolkar och inte berätta något för en förlitande part som den inte visste genom att ha token. De finns för att KRÄVAS, inte för att bäras."
   },
+  "roles.dynamicSelection|label": {
+    "en": "86d2654ef3dec8fd",
+    "text": "Erbjud dynamiska roller vid inloggning"
+  },
+  "roles.dynamicSelection|description": {
+    "en": "68b1b4af3db5e6d8",
+    "text": "Om en person som loggar in får välja dynamiskt valbara roller (#1072): i en sfär som definierar minst en dynamisk roll erbjuder inloggningssidan rutan ”Välj roller för den här inloggningen”, och en markerad ruta visar de roller personens behörighet tillåter. PÅ som standard; appDynamicRoleSelection på ett programs post åsidosätter den för programmet. Av visas ingen ruta, ingen roll erbjuds, ingen obligatorisk dynamisk roll efterfrågas och ingen token bär en dynamiskt vald roll."
+  },
   "roles.claimName|label": {
     "en": "d56be861543f5305",
     "text": "Namn på rollanspråket"
@@ -11707,6 +11883,14 @@
     "en": "50195b20fe00e9fa",
     "text": "Ett meddelande som anger vad det gäller (samma handling på samma konto) skickas en gång inom det här fönstret, hur många dörrar som än rapporterade det. 0 stänger av undertryckningen."
   },
+  "mail.encryptionRequired|label": {
+    "en": "81e5dc8eb5332f2b",
+    "text": "Meddelanden som måste krypteras"
+  },
+  "mail.encryptionRequired|description": {
+    "en": "895bdb616e169134",
+    "text": "Meddelandena, efter mall-id (password-reset, account-activation, sign-in-code, sign-in-link, credential-compromised och resten av listan under Övervakning → E-post), som bara skickas krypterade — PGP/MIME till personens OpenPGP-nyckel eller S/MIME till personens certifikat, enligt personens val på portalen. En person som inte har valt något av dem får inget sådant meddelande (STS-MAIL-0240), och den användning som begärde det säger det, som för alla meddelanden som inte skickas. Tomt, standardvärdet, kräver inga; det en person har valt respekteras i båda fallen."
+  },
   "mail.selfServiceReset|label": {
     "en": "8525111d1c0be58a",
     "text": "Självbetjäning för lösenordsåterställning"
@@ -12650,5 +12834,93 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "Gäller bara protokollfelsökarens lyssnare: http.http2MaxConcurrentStreams. -1, standardvärdet, följer http.http2MaxConcurrentStreams; allt annat avgör bara för den här lyssnaren. Hur många begäranden en HTTP/2-anslutning får ha öppna samtidigt (SETTINGS_MAX_CONCURRENT_STREAMS); en ström utöver det avvisas tills en annan är klar. 100, standardvärdet, är det minsta värde RFC 9113 rekommenderar; nodes eget är obegränsat, vilket skulle låta en enda anslutning bära arbetet för tusentals. Det begränsar arbetet på en anslutning som http.maxConnections begränsar anslutningarna. En ny anslutning följer en ändring direkt, och en öppen skickas det nya värdet."
+  },
+  "piv.attestationAnchors|label": {
+    "en": "ebc10f6a7dcbbf58",
+    "text": "PIV-attesteringsrötter (PEM)"
+  },
+  "piv.attestationAnchors|description": {
+    "en": "487e76edeb4446b9",
+    "text": "Rötterna som en YubiKey-PIV-nyckelattestering måste kedja till, som ett PEM-paket. Tomt använder de två som Yubico publicerar (Yubico PIV Root CA Serial 263751, och Yubico Attestation Root 1 för firmware 5.7.4 och senare), levererade i common/pki_piv_anchors.json och fästa där med SHA-256, tillsammans med Yubicos PIV-mellancertifikat. Ett certifikat här ersätter de levererade rötterna."
+  },
+  "piv.requireAttestation|label": {
+    "en": "4e11b0db111faccf",
+    "text": "Kräv en PIV-attestering för PIV-profilerna"
+  },
+  "piv.requireAttestation|description": {
+    "en": "ef38975436c5ac4f",
+    "text": "På: en begäran om ett piv-auth-, piv-sign-, piv-key-management- eller piv-card-auth-certifikat avvisas om den inte bär en YubiKey-PIV-attestering som kan verifieras (STS-PIV-0010). En deponerad piv-key-management-nyckel från EST /serverkeygen är undantaget: den här tjänsten genererade den. Av, standardvärdet: en sådan begäran utan attestering utfärdas utan maskinvarubevis; en begäran som bär en attestering som inte kan verifieras avvisas i båda fallen."
+  },
+  "piv.pinPolicy|label": {
+    "en": "0f683a0cb1db1988",
+    "text": "Svagaste PIN-policy som en attesterad PIV-nyckel får ha"
+  },
+  "piv.pinPolicy|description": {
+    "en": "c3f9fcec406b9806",
+    "text": "Vad attesteringens PIN-policy minst måste vara. `once`: PIN-koden en gång per session (en Bio-nyckels match-once räknas); `always`: PIN-koden före varje användning (match-always räknas). `any`, standardvärdet, kräver ingen PIN-policy. En nyckel vars attestering är svagare avvisas (STS-PIV-0011)."
+  },
+  "piv.touchPolicy|label": {
+    "en": "a88f111c7b13657f",
+    "text": "Svagaste beröringspolicy som en attesterad PIV-nyckel får ha"
+  },
+  "piv.touchPolicy|description": {
+    "en": "d78f0d5df0256787",
+    "text": "Vad attesteringens beröringspolicy minst måste vara. `cached`: en beröring som kommer ihåg i 15 sekunder; `always`: en beröring vid varje användning. `any`, standardvärdet, kräver ingen. En nyckel vars attestering är svagare avvisas (STS-PIV-0012)."
+  },
+  "piv.cardAuthSignIn|label": {
+    "en": "61b2226403ad5c61",
+    "text": "Låt ett piv-card-auth-certifikat logga in"
+  },
+  "piv.cardAuthSignIn|description": {
+    "en": "1852da24c3fbfade",
+    "text": "En piv-card-auth-nyckel (plats 9e) fungerar utan PIN-kod, för fysisk åtkomst, så dess certifikat avvisas vid TLS-inloggningen och vid PKINIT (STS-PIV-0013) om inte detta är på."
+  },
+  "piv.keyEscrow|label": {
+    "en": "f2efc85c3d2bac38",
+    "text": "Deponera piv-key-management-nycklar"
+  },
+  "piv.keyEscrow|description": {
+    "en": "cf9618144b67dff3",
+    "text": "På: EST /serverkeygen för profilen piv-key-management behåller den genererade privata nyckeln, förseglad under nyckelkrypteringsnyckeln, så att innehavaren (på portalen, efter en ny inloggning) eller en administratör med rollen för återställning av PIV-nycklar kan återställa den och dekryptera gammal e-post när ett kort har gått förlorat. Avvisas där ingen nyckelkrypteringsnyckel finns (STS-PIV-0020). En deponerad nyckel är aldrig maskinvarubevis. Av, standardvärdet: /serverkeygen avvisar profilen piv-key-management (STS-PIV-0021), så en 9d-nyckel genereras på kortet och förvaras ingen annanstans."
+  },
+  "piv.externalIssuers|label": {
+    "en": "e96143ab9556db35",
+    "text": "Externa utfärdande PIV- eller CAC-CA:er som mappas via kort-UUID (PEM)"
+  },
+  "piv.externalIssuers|description": {
+    "en": "0fb91dba2cb957d3",
+    "text": "De utfärdande CA:er vars PIV- eller CAC-kortcertifikat loggar in en person via FIPS 201-kort-UUID: ett klientcertifikat som en av dem har utfärdat direkt, som anger en policy i piv.externalPolicyOids och bär exakt ett urn:uuid-subjectAltName, mappas till den enda person vars stsPivCardUuid innehåller det UUID:t. Aldrig via namnet, och ingen post skapas. CA:n måste också finnas i ett förtroendelager för klienter, annars avvisar handskakningen den först. Tomt, standardvärdet, mappar ingenting."
+  },
+  "piv.externalPolicyOids|label": {
+    "en": "930c5800dfa36905",
+    "text": "PIV Authentication-policyer som ett externt kort måste ange"
+  },
+  "piv.externalPolicyOids|description": {
+    "en": "2398931e8d58f5c4",
+    "text": "Certifikatpolicyerna, av vilka ett externt korts certifikat måste ange en för att mappas via sitt kort-UUID: som standard id-fpki-common-authentication (Federal PKI Common Policys PIV Authentication) och id-fpki-certpcy-pivi-hardware (PIV-I). Lägg till en CAC-utfärdares egna maskinvarupolicyer här."
+  },
+  "pki.paranoidPivAttestation|label": {
+    "en": "e645d02c49d2f9bf",
+    "text": "Paranoid: en attesteringskedja för en YubiKey-PIV-nyckel"
+  },
+  "pki.paranoidPivAttestation|description": {
+    "en": "fdb7c0eb631758ea",
+    "text": "Användningsfall `piv-attestation` (#1955): platsens attesteringscertifikat och f9-attesteringscertifikatet vid en PIV-registrering. Paranoid kontrollerar giltighetsfönstret vid nuvarande tidpunkt, sökvägen till piv.attestationAnchors och återkallelse där kedjan anger en lista. Av: endast detta användningsfall kör sökvägskontrollen utan fältkontrollerna, medan alla andra rader och huvudinställningen lämnas orörda; av i produktläge loggas det en gång (STS-PKI-0239) och visas i rött på /admin/pki/trust."
+  },
+  "pki.paranoidPivCard|label": {
+    "en": "4078a93e7117d6f9",
+    "text": "Paranoid: ett externt PIV- eller CAC-kort som mappas via kort-UUID"
+  },
+  "pki.paranoidPivCard|description": {
+    "en": "d4d5fb070575e1c6",
+    "text": "Användningsfall `piv-card` (#1955): ett klientcertifikat från en utfärdande CA i piv.externalIssuers, mappat via sitt kort-UUID. Paranoid kontrollerar keyUsage digitalSignature och lövcertifikatets giltighetsfönster utöver utfärdarkontrollen ett steg upp. Av: endast detta användningsfall kör bara utfärdarkontrollen, medan alla andra rader och huvudinställningen lämnas orörda; av i produktläge loggas det en gång (STS-PKI-0239) och visas i rött på /admin/pki/trust."
+  },
+  "roles.pivKeyRecoveryGroup|label": {
+    "en": "2f231e1e99785dc6",
+    "text": "Grupp som ger rollen PIV_KEY_RECOVERY"
+  },
+  "roles.pivKeyRecoveryGroup|description": {
+    "en": "801616eea12559a5",
+    "text": "Katalogruppen vars medlemmar innehar den inbyggda rollen PIV_KEY_RECOVERY (#1955), som åtkomstkontrollpolicyn kräver, utöver Admin Write, för att återställa en annan persons deponerade piv-key-management-nyckel (piv.keyEscrow). Den nyckeln dekrypterar personens e-post, så ingen innehar rollen förrän en administratör lägger till dem i gruppen. Tomt låter ingen återställa en annan persons nyckel; innehavaren återställer sin egen på portalen."
   }
 }

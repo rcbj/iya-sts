@@ -1379,6 +1379,14 @@
     "en": "cba85726ee4e8673",
     "text": "接受 WebAuthn 儀式的來源——通訊協定、主機與連接埠，不含路徑——以逗號分隔。**空白（預設）從本服務被存取的位址推導出唯一的來源**，這是一直以來的行為，而設定 global.publicBaseUrl 時它已將其釘選。設定後，它就是完整清單：來源不在清單上的 clientDataJSON 會被拒絕，無論請求攜帶何種 Host。當同一認證在共用 webauthn.rpId 的同層主機間使用時，請列出多個來源。"
   },
+  "webauthn.u2fAppIds|label": {
+    "en": "b0b6d4158c6357e8",
+    "text": "舊版 U2F AppID"
+  },
+  "webauthn.u2fAppIds|description": {
+    "en": "05b1b01773d86d5d",
+    "text": "FIDO U2F AppID——舊版 U2F 信賴方註冊其安全金鑰時使用的 https URL——其憑證可以匯入到人員項目上並在此用於登入，以逗號分隔。**為空（預設值）即該功能關閉**：不能匯入任何內容，任何儀式都不攜帶 appid 或 appidExclude 延伸（WebAuthn Level 3 第 10.1.1 與 10.1.2 節），匯入的金鑰也無法登入。AppID 只在與其相關的 RP ID 上使用：其主機就是該 RP ID，或其中一個是另一個的尾碼。當主機與來源的主機不同時，瀏覽器會取得 AppID URL，以查找列出此來源的 TrustedFacets 清單，舊服務必須繼續提供該清單。匯入的金鑰只能作為第二因素：U2F 金鑰無法驗證使用者本人。"
+  },
   "webauthn.algorithms|label": {
     "en": "47c0895479d03828",
     "text": "提供的演算法"
@@ -1876,8 +1884,8 @@
     "text": "金鑰加密金鑰提供者"
   },
   "keys.kekProvider|description": {
-    "en": "b48b052bc689c8e3",
-    "text": "包裝每把資料加密金鑰之金鑰加密金鑰的所在位置。`file`、`aws`、`gcp`、`azure` 與 `vault` 會從掛載的檔案或秘密存放區將一把 32 位元組的金鑰「讀入」此程序；`file` 是預設值，因為它不需要任何東西。`vault-transit`（Vault 或 OpenBao Transit）、`aws-kms`、`gcp-kms`（Cloud KMS）與 `azure-keys`（Key Vault 或 Managed HSM 金鑰；keys.kekVault 為其保存庫）是金鑰管理服務：金鑰「絕不」離開它們，keys.kekRef 指名它，由 KMS 包裝與解包每把資料金鑰——啟動時每把資料金鑰呼叫一次，每個值則不需呼叫。除 `file` 外的每個提供者都會延遲載入其官方 SDK，而這些 SDK 刻意「不」是本服務的相依套件；缺少時會回報需安裝的套件名稱。"
+    "en": "bf4e717bed6b7e03",
+    "text": "包裝每把資料加密金鑰之金鑰加密金鑰的所在位置。`file`、`aws`、`gcp`、`azure` 與 `vault` 會從掛載的檔案或秘密存放區將一把 32 位元組的金鑰「讀入」此程序；`file` 是預設值，因為它不需要任何東西。`vault-transit`（Vault 或 OpenBao Transit）、`aws-kms`、`gcp-kms`（Cloud KMS）與 `azure-keys`（Key Vault 或 Managed HSM 金鑰；keys.kekVault 為其保存庫）是金鑰管理服務：金鑰「絕不」離開它們，keys.kekRef 指名它，由 KMS 包裝與解包每把資料金鑰——啟動時每把資料金鑰呼叫一次，每個值則不需呼叫。`pkcs11` 與之相同，只是金鑰位於硬體安全模組中（YubiHSM 2、SoftHSM2 或任何 PKCS#11 模組，見 keys.pkcs11Module），keys.kekRef 為 PKCS#11 URI。除 `file` 外的每個提供者都會延遲載入其官方 SDK，而這些 SDK 刻意「不」是本服務的相依套件；缺少時會回報需安裝的套件名稱。"
   },
   "keys.kekProvider|restartReason": {
     "en": "0956d2f97d1df86a",
@@ -1924,8 +1932,8 @@
     "text": "金鑰加密金鑰參照"
   },
   "keys.kekRef|description": {
-    "en": "a5a5b6e7f2c06fdc",
-    "text": "雲端提供者用來指名秘密的名稱：AWS Secrets Manager 名稱或 ARN、GCP 資源名稱（projects/<p>/secrets/<s>，未指定版本時加上 /versions/latest）、Azure Key Vault 秘密名稱，或 HashiCorp Vault 讀取路徑。`file` 提供者不使用。"
+    "en": "b28c82e37153639d",
+    "text": "雲端提供者用來指名秘密的名稱：AWS Secrets Manager 名稱或 ARN、GCP 資源名稱（projects/<p>/secrets/<s>，未指定版本時加上 /versions/latest）、Azure Key Vault 秘密名稱，或 HashiCorp Vault 讀取路徑。對於 `pkcs11`，為 RFC 7512 PKCS#11 URI，pkcs11:token=<token label>;object=<key label>。`file` 提供者不使用。"
   },
   "keys.kekRef|restartReason": {
     "en": "d51b3caaa6125e92",
@@ -2047,13 +2055,125 @@
     "en": "d51b3caaa6125e92",
     "text": "在啟動時讀取一次"
   },
+  "keys.pkcs11Module|label": {
+    "en": "0fb904cb6844253b",
+    "text": "PKCS#11 模組"
+  },
+  "keys.pkcs11Module|description": {
+    "en": "dd4fdc39cd1aed44",
+    "text": "`pkcs11` 提供者載入的 PKCS#11 模組路徑：YubiHSM 2 為 /usr/lib/x86_64-linux-gnu/pkcs11/yubihsm_pkcs11.so（需執行 yubihsm-connector，並讓 YUBIHSM_PKCS11_CONF 指向其設定），SoftHSM2 為 /usr/lib/softhsm/libsofthsm2.so。它需要 pkcs11js 套件，而該套件刻意不是本服務的相依套件。"
+  },
+  "keys.pkcs11Module|restartReason": {
+    "en": "34a60604acae5870",
+    "text": "模組只在啟動時載入一次"
+  },
+  "keys.pkcs11Mechanism|label": {
+    "en": "f9f19afe01ab43ad",
+    "text": "HSM 如何包裝資料金鑰"
+  },
+  "keys.pkcs11Mechanism|description": {
+    "en": "85ff0e656695f323",
+    "text": "在 HSM 中包裝新資料金鑰所用的機制。`auto` 在模組提供時採用 CKM_AES_GCM（SoftHSM2 與大多數網路 HSM），其次是 CKM_AES_KEY_WRAP_PAD，再其次是 YubiHSM 2 自己的 CKM_YUBICO_AES_CCM_WRAP（其包裝金鑰物件）。變更前包裝的資料金鑰仍可解包：儲存的形式載明其機制。"
+  },
+  "keys.pkcs11Mechanism|restartReason": {
+    "en": "091df5146f3d6f79",
+    "text": "金鑰加密金鑰只在啟動時存取一次"
+  },
+  "keys.pkcs11GenerateKey|label": {
+    "en": "c9dac3afbed86d44",
+    "text": "首次使用時建立 HSM 金鑰"
+  },
+  "keys.pkcs11GenerateKey|description": {
+    "en": "82a5d89dd1a4c872",
+    "text": "開啟時，PKCS#11 URI 指名而權杖中沒有的金鑰加密金鑰會在權杖中產生：AES-256、敏感且「不可」匯出。只有前端程序會產生；若是叢集，請改用 HSM 本身的工具建立金鑰，因為兩個同時啟動的節點會建立兩把。關閉（預設）時，缺少金鑰會使啟動中止。"
+  },
+  "keys.pkcs11GenerateKey|restartReason": {
+    "en": "091df5146f3d6f79",
+    "text": "金鑰加密金鑰只在啟動時存取一次"
+  },
+  "keys.pkcs11Sessions|label": {
+    "en": "4a2da0042402bee1",
+    "text": "每個程序的 PKCS#11 工作階段數"
+  },
+  "keys.pkcs11Sessions|description": {
+    "en": "f5b20f8d3e577d1a",
+    "text": "每個程序與請求工作程序在一個權杖上最多保持開啟的工作階段數，每個工作階段一次執行一項 HSM 作業。YubiHSM 2 總共有 16 個工作階段，由每個節點的每個程序共用：請讓此值、程序數與節點數的乘積低於該數。"
+  },
+  "keys.pkcs11Sessions|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "權杖只在啟動時開啟一次"
+  },
+  "keys.pkcs11PinProvider|label": {
+    "en": "3e1d9c989bcacc3d",
+    "text": "PKCS#11 PIN 的讀取來源"
+  },
+  "keys.pkcs11PinProvider|description": {
+    "en": "1c344b0b12c35ec4",
+    "text": "讀取 HSM 權杖 PIN 的秘密存放區，絕不是某項設定的值：掛載的檔案、AWS Secrets Manager、Google Cloud Secret Manager、Azure Key Vault 或 Vault/OpenBao，依 keys.kek* 所述存取。對 YubiHSM 2 而言，PIN 是驗證金鑰的 id（四位十六進位數字）後接其密碼（0001password）。依權杖標籤列出 PIN 的 JSON 物件可用於 PIN 各不相同的權杖。`none` 不登入任何權杖。"
+  },
+  "keys.pkcs11PinProvider|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "PIN 在開啟權杖時讀取一次"
+  },
+  "keys.pkcs11PinRef|label": {
+    "en": "de50e9f1904c80fc",
+    "text": "PKCS#11 PIN 的位置"
+  },
+  "keys.pkcs11PinRef|description": {
+    "en": "dffce1d68f8495de",
+    "text": "PIN 在 keys.pkcs11PinProvider 所指名之提供者中的位置：路徑、ARN、資源或 Vault 讀取路徑。它沒有備援值。"
+  },
+  "keys.pkcs11PinRef|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "PIN 在開啟權杖時讀取一次"
+  },
+  "keys.pkcs11PinField|label": {
+    "en": "55008836b9ff61fe",
+    "text": "PKCS#11 PIN 所在的欄位"
+  },
+  "keys.pkcs11PinField|description": {
+    "en": "f333042737800292",
+    "text": "JSON 秘密中存放 PIN 的成員。空白則取整個值。"
+  },
+  "keys.pkcs11PinField|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "PIN 在開啟權杖時讀取一次"
+  },
+  "keys.signingKeyStore|label": {
+    "en": "e6e0b403d7b8a000",
+    "text": "領域簽署金鑰的建立位置"
+  },
+  "keys.signingKeyStore|description": {
+    "en": "5cc22ee909529ecc",
+    "text": "`software`（預設）在此程序中建立領域的簽署金鑰，並將其密封保存在存放區中。`pkcs11` 在 keys.signingKeyToken 所指名的 HSM 中建立其傳統金鑰——RS256 金鑰、XML 金鑰，以及模組能建立的 P-256、P-384、P-521、secp256k1 與 Ed25519 金鑰——不可匯出，並在其中簽署；模組無法建立的金鑰以及所有後量子金鑰都保留在軟體中。它適用於變更後建立或輪替的金鑰組，需要可持久保存的金鑰庫（產品模式），且每個程序與節點都需要該權杖。可依領域設定。"
+  },
+  "keys.signingKeyToken|label": {
+    "en": "a6e7fb05dd49b8a9",
+    "text": "建立簽署金鑰的 HSM 權杖"
+  },
+  "keys.signingKeyToken|description": {
+    "en": "0bd2c707f6ff2e69",
+    "text": "keys.signingKeyStore 為 `pkcs11` 的領域在其上建立簽署金鑰之權杖的 PKCS#11 URI：pkcs11:token=<token label>，兩個權杖共用同一標籤時加上 serial= 或 slot-id=。模組、PIN 與工作階段由 keys.pkcs11* 設定指定。空白則不開啟任何權杖。"
+  },
+  "keys.signingKeyToken|restartReason": {
+    "en": "1a04369397b30563",
+    "text": "權杖在啟動時於每個程序中開啟一次"
+  },
+  "keys.pkcs11SynchronousSign|label": {
+    "en": "c8e3fedf4601518d",
+    "text": "允許同步 PKCS#11 簽章"
+  },
+  "keys.pkcs11SynchronousSign|description": {
+    "en": "1cb742f146d4c7c1",
+    "text": "關閉為預設：以 HSM 中的金鑰簽章只透過繫結的非同步 `C_Sign`。同步路徑（JWS、XML 簽章、SAML 宣告）拒絕 HSM 金鑰（`STS-KEYS-0209`），而不在事件迴圈上等待權杖。開啟後這些路徑呼叫 `C_Sign`，事件迴圈會等待。沒有非同步簽章的模組只有在此項開啟時才能簽章。解密不變。可依領域設定。"
+  },
   "keys.cellKekProvider|label": {
     "en": "9103eeef061197fd",
     "text": "Cell 金鑰加密金鑰的讀取來源"
   },
   "keys.cellKekProvider|description": {
-    "en": "f779ece8f10a07ec",
-    "text": "「此 Cell」的金鑰加密金鑰的提供者，用來密封該 Cell 自己儲存的內容（#98）。五種提供者，與 `keys.kekProvider` 相同。`none` 以服務金鑰加密金鑰密封 Cell 層，這在單一 Cell 模式及測試中是正確的；產品模式下的多 Cell 部署會因此「拒絕」啟動，因為如此一來，一個 Cell 之資料列的副本能在其他每個 Cell 中被開啟。"
+    "en": "73b7f0bab09392e8",
+    "text": "「此 Cell」的金鑰加密金鑰的提供者，用來密封該 Cell 自己儲存的內容（#98）。五種提供者，與 `keys.kekProvider` 相同，另有 `pkcs11`，即該 Cell 自己的 HSM。`none` 以服務金鑰加密金鑰密封 Cell 層，這在單一 Cell 模式及測試中是正確的；產品模式下的多 Cell 部署會因此「拒絕」啟動，因為如此一來，一個 Cell 之資料列的副本能在其他每個 Cell 中被開啟。"
   },
   "keys.cellKekProvider|restartReason": {
     "en": "bfe49ff259fac42d",
@@ -3138,6 +3258,54 @@
   "devices.eventsKept|description": {
     "en": "72d46974270d0c03",
     "text": "此領域為 Monitoring → Devices 保留多少筆裝置建立、移除、逐出與合規性變更。超過此數時記錄新事件，最舊的會被捨棄。"
+  },
+  "hardwareTokens.hardwareClaims|label": {
+    "en": "8373111eef4bf812",
+    "text": "憑什麼取得硬體金鑰聲明"
+  },
+  "hardwareTokens.hardwareClaims|description": {
+    "en": "e0341e4e47f3b2f8",
+    "text": "什麼能讓 PKINIT 登入聲明硬體繫結的金鑰（pkinit-hardware 指示符與 amr hwk）。`inference`：預設值，也是 #1955 之前的行為——本服務未產生其金鑰的智慧卡登入憑證，或已記錄的證明證據。`evidence`：僅限硬體權杖的證明所涵蓋的金鑰。透過 TLS 的憑證登入只有在有證據時才取得 hwk，以及智慧卡上金鑰的 sc，兩種情況皆然。"
+  },
+  "openpgp.wkd|label": {
+    "en": "1f05a7518c3d2275",
+    "text": "在 Web 金鑰目錄中發布金鑰"
+  },
+  "openpgp.wkd|description": {
+    "en": "7822103f89ac59b3",
+    "text": "為此領域的郵件網域回應 Web 金鑰目錄（draft-koch-openpgp-webkey-service）：/.well-known/openpgpkey/<domain>/hu/<hash>（進階方式，位於 openpgpkey.<domain>）與 /.well-known/openpgpkey/hu/<hash>（直接方式），以及各自的政策檔案。只回應在入口網站上選擇發布者的金鑰。預設關閉。"
+  },
+  "openpgp.wkdDomains|label": {
+    "en": "d1c4b728593ff000",
+    "text": "Web 金鑰目錄服務的郵件網域"
+  },
+  "openpgp.wkdDomains|description": {
+    "en": "ad64f7216191123c",
+    "text": "此領域的 Web 金鑰目錄所回應的郵件網域，以逗號分隔。留空（預設）表示領域自身的 DNS 網域。路徑中不含領域的請求，由服務其網域的領域回應，預設領域優先。"
+  },
+  "openpgp.challengeLifetimeS|label": {
+    "en": "dbf558cf0b4b8f90",
+    "text": "註冊挑戰有效期（秒）"
+  },
+  "openpgp.challengeLifetimeS|description": {
+    "en": "e9130c8e82368cc6",
+    "text": "個人為註冊 OpenPGP 金鑰而以 gpg --clearsign 簽署的挑戰維持有效的時間。挑戰只能使用一次，每人同一時間只有一個。"
+  },
+  "openpgp.signatureSkewS|label": {
+    "en": "d927cf1f04bd9d51",
+    "text": "證明簽章時鐘偏差（秒）"
+  },
+  "openpgp.signatureSkewS|description": {
+    "en": "2772763d3d363b6d",
+    "text": "簽署電腦的時鐘與本服務時鐘可相差多少：證明的簽署時間早於挑戰發出時間或晚於現在，且超過此值者，將被拒絕（STS-OPENPGP-0010）。"
+  },
+  "openpgp.minRsaBits|label": {
+    "en": "f3dc9f85de143630",
+    "text": "最小 RSA OpenPGP 金鑰"
+  },
+  "openpgp.minRsaBits|description": {
+    "en": "ad48516e31a7c45b",
+    "text": "OpenPGP 註冊所接受的最短 RSA 金鑰（主金鑰或子金鑰）。接受 Ed25519、Ed448、P-256、P-384 與 P-521 上的 ECDSA 與 ECDH、X25519 與 X448；DSA、ElGamal 與 Brainpool 曲線一律不接受（STS-OPENPGP-0004）。"
   },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
@@ -9375,6 +9543,14 @@
     "en": "05185a4a554d5f71",
     "text": "開啟時，每個存取權杖、ID Token、SAML 2.0 斷言與 SAML 1.1 斷言都會指名其主體所擁有的角色。預設開啟，但對大多數呼叫者而言仍不會改變任何事，理由與 groups 宣告預設開啟相同：對未擁有任何「已設定」角色的人，此宣告會「完全省略」，而六個內建角色永遠不會出現在其中——EVERYBODY 與 ALL_AUTHENTICATED_USERS 對這裡幾乎每個權杖都成立，因此攜帶它們會為每個既有用戶端所解析的每個權杖加上兩個毫無意義的成員，而且不會告訴信賴方任何它從持有權杖本身還不知道的事。它們的存在是為了被「要求」，而不是被攜帶。"
   },
+  "roles.dynamicSelection|label": {
+    "en": "86d2654ef3dec8fd",
+    "text": "登入時提供動態角色"
+  },
+  "roles.dynamicSelection|description": {
+    "en": "68b1b4af3db5e6d8",
+    "text": "登入的人是否可以選擇可動態選擇的角色（#1072）：在至少定義了一個動態角色的領域中，登入頁會提供「為此次登入選擇角色」核取方塊，勾選後會顯示此人的資格允許的角色。預設開啟；應用程式條目上的 appDynamicRoleSelection 會為該應用程式覆寫此設定。關閉時，不顯示核取方塊，不提供任何角色，不要求任何必選動態角色，也沒有權杖攜帶動態選擇的角色。"
+  },
   "roles.claimName|label": {
     "en": "d56be861543f5305",
     "text": "角色宣告名稱"
@@ -11707,6 +11883,14 @@
     "en": "50195b20fe00e9fa",
     "text": "指明其所涉事項的通知（同一帳戶上的同一行為），在此時間窗口內只會傳送一次，無論有多少入口回報它。0 會關閉抑制。"
   },
+  "mail.encryptionRequired|label": {
+    "en": "81e5dc8eb5332f2b",
+    "text": "必須加密的郵件"
+  },
+  "mail.encryptionRequired|description": {
+    "en": "895bdb616e169134",
+    "text": "以範本 ID 指定的郵件（password-reset、account-activation、sign-in-code、sign-in-link、credential-compromised 以及「監控 → 郵件」清單中的其他範本），這些郵件只以加密方式寄送——依本人在入口網站上的選擇，以 PGP/MIME 加密至其 OpenPGP 金鑰或以 S/MIME 加密至其憑證。兩者都未選擇的人不會收到該郵件（STS-MAIL-0240），而要求寄送的用途會如同處理任何未寄出的郵件一樣說明此事。留空（預設）表示不要求加密；無論如何，都會遵從個人的選擇。"
+  },
   "mail.selfServiceReset|label": {
     "en": "8525111d1c0be58a",
     "text": "自助式密碼重設"
@@ -12650,5 +12834,93 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "僅適用於協定偵錯工具監聽器：http.http2MaxConcurrentStreams。預設值 -1 依循 http.http2MaxConcurrentStreams；其他任何值只對此監聽器生效。一條 HTTP/2 連線可同時開啟的請求數（SETTINGS_MAX_CONCURRENT_STREAMS）；超出的串流會被拒絕，直到有串流結束。預設值 100 是 RFC 9113 建議的最小值；node 自己的值沒有上限，這會讓一條連線承載成千上萬條連線的工作量。它限制一條連線上的工作量，正如 http.maxConnections 限制連線數。新連線會立即依循變更，已開啟的連線會收到新值。"
+  },
+  "piv.attestationAnchors|label": {
+    "en": "ebc10f6a7dcbbf58",
+    "text": "PIV 證明根憑證（PEM）"
+  },
+  "piv.attestationAnchors|description": {
+    "en": "487e76edeb4446b9",
+    "text": "YubiKey PIV 金鑰證明必須鏈結到的根憑證，以 PEM 套件形式提供。空白時使用 Yubico 發布的兩個根憑證（Yubico PIV Root CA Serial 263751，以及適用於韌體 5.7.4 及更新版本的 Yubico Attestation Root 1），它們隨附於 common/pki_piv_anchors.json 並在其中以 SHA-256 釘選，同時附帶 Yubico 的 PIV 中繼憑證。此處填入的憑證會取代隨附的根憑證。"
+  },
+  "piv.requireAttestation|label": {
+    "en": "4e11b0db111faccf",
+    "text": "要求 PIV 設定檔提供 PIV 證明"
+  },
+  "piv.requireAttestation|description": {
+    "en": "ef38975436c5ac4f",
+    "text": "開啟時，piv-auth、piv-sign、piv-key-management 或 piv-card-auth 憑證的要求若未攜帶可驗證的 YubiKey PIV 證明即會被拒絕（STS-PIV-0010）。來自 EST /serverkeygen 的託管 piv-key-management 金鑰是例外：它由本服務產生。關閉（預設值）時，此類未帶證明的要求會在沒有硬體證據的情況下簽發；攜帶無法驗證之證明的要求在兩種情況下都會被拒絕。"
+  },
+  "piv.pinPolicy|label": {
+    "en": "0f683a0cb1db1988",
+    "text": "經證明的 PIV 金鑰可具有的最弱 PIN 原則"
+  },
+  "piv.pinPolicy|description": {
+    "en": "c3f9fcec406b9806",
+    "text": "證明中的 PIN 原則至少必須達到的程度。`once`：每個工作階段輸入一次 PIN（Bio 金鑰的 match-once 也算）；`always`：每次使用前都輸入 PIN（match-always 也算）。`any`（預設值）不要求任何 PIN 原則。證明較弱的金鑰會被拒絕（STS-PIV-0011）。"
+  },
+  "piv.touchPolicy|label": {
+    "en": "a88f111c7b13657f",
+    "text": "經證明的 PIV 金鑰可具有的最弱觸碰原則"
+  },
+  "piv.touchPolicy|description": {
+    "en": "d78f0d5df0256787",
+    "text": "證明中的觸碰原則至少必須達到的程度。`cached`：一次觸碰，記住 15 秒；`always`：每次使用都需觸碰。`any`（預設值）不作要求。證明較弱的金鑰會被拒絕（STS-PIV-0012）。"
+  },
+  "piv.cardAuthSignIn|label": {
+    "en": "61b2226403ad5c61",
+    "text": "允許 piv-card-auth 憑證登入"
+  },
+  "piv.cardAuthSignIn|description": {
+    "en": "1852da24c3fbfade",
+    "text": "piv-card-auth（插槽 9e）金鑰無需 PIN 即可使用，用於實體門禁，因此除非開啟此項，否則其憑證在 TLS 登入與 PKINIT 時會被拒絕（STS-PIV-0013）。"
+  },
+  "piv.keyEscrow|label": {
+    "en": "f2efc85c3d2bac38",
+    "text": "託管 piv-key-management 金鑰"
+  },
+  "piv.keyEscrow|description": {
+    "en": "cf9618144b67dff3",
+    "text": "開啟時，針對 piv-key-management 設定檔的 EST /serverkeygen 會保留所產生的私密金鑰，並以金鑰加密金鑰密封，讓持有人（在入口網站上，重新登入後）或擁有 PIV 金鑰復原角色的管理員在卡片遺失後復原它並解密舊郵件。若未持有金鑰加密金鑰則拒絕（STS-PIV-0020）。託管金鑰絕不是硬體證據。關閉（預設值）時，/serverkeygen 會拒絕 piv-key-management 設定檔（STS-PIV-0021），因此 9d 金鑰在卡片上產生，且不保存在其他任何地方。"
+  },
+  "piv.externalIssuers|label": {
+    "en": "e96143ab9556db35",
+    "text": "依卡片 UUID 對應的外部 PIV 或 CAC 簽發 CA（PEM）"
+  },
+  "piv.externalIssuers|description": {
+    "en": "0fb91dba2cb957d3",
+    "text": "其 PIV 或 CAC 卡片憑證可依 FIPS 201 卡片 UUID 為某人登入的簽發 CA：由其中一個 CA 直接簽發、宣告 piv.externalPolicyOids 中某項原則、且恰好攜帶一個 urn:uuid subjectAltName 的用戶端憑證，會對應到其 stsPivCardUuid 保存該 UUID 的唯一一個人。絕不依其名稱對應，也不會建立任何項目。該 CA 也必須位於某個用戶端信任存放區中，否則交握會先拒絕它。空白（預設值）時不對應任何內容。"
+  },
+  "piv.externalPolicyOids|label": {
+    "en": "930c5800dfa36905",
+    "text": "外部卡片必須宣告的 PIV Authentication 原則"
+  },
+  "piv.externalPolicyOids|description": {
+    "en": "2398931e8d58f5c4",
+    "text": "外部卡片的憑證必須宣告其中之一才能依其卡片 UUID 對應的憑證原則：預設為 id-fpki-common-authentication（Federal PKI Common Policy 的 PIV Authentication）與 id-fpki-certpcy-pivi-hardware（PIV-I）。請在此加入 CAC 簽發者自己的硬體原則。"
+  },
+  "pki.paranoidPivAttestation|label": {
+    "en": "e645d02c49d2f9bf",
+    "text": "偏執：YubiKey PIV 金鑰證明鏈"
+  },
+  "pki.paranoidPivAttestation|description": {
+    "en": "fdb7c0eb631758ea",
+    "text": "使用情境 `piv-attestation`（#1955）：PIV 註冊的插槽證明憑證與 f9 證明憑證。偏執模式檢查目前時刻的有效期間、到 piv.attestationAnchors 的路徑，以及在憑證鏈指明清單時的撤銷狀態。關閉時，只有此使用情境僅執行路徑檢查而不執行欄位檢查，其他每一列與主開關皆不受影響；在產品模式下關閉時，會記錄一次日誌（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示。"
+  },
+  "pki.paranoidPivCard|label": {
+    "en": "4078a93e7117d6f9",
+    "text": "偏執：依卡片 UUID 對應的外部 PIV 或 CAC 卡片"
+  },
+  "pki.paranoidPivCard|description": {
+    "en": "d4d5fb070575e1c6",
+    "text": "使用情境 `piv-card`（#1955）：來自 piv.externalIssuers 中簽發 CA、依其卡片 UUID 對應的用戶端憑證。偏執模式在一跳簽發者檢查之外，還檢查 keyUsage digitalSignature 與葉憑證的有效期間。關閉時，只有此使用情境僅執行簽發者檢查，其他每一列與主開關皆不受影響；在產品模式下關閉時，會記錄一次日誌（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示。"
+  },
+  "roles.pivKeyRecoveryGroup|label": {
+    "en": "2f231e1e99785dc6",
+    "text": "授予 PIV_KEY_RECOVERY 角色的群組"
+  },
+  "roles.pivKeyRecoveryGroup|description": {
+    "en": "801616eea12559a5",
+    "text": "其成員持有內建 PIV_KEY_RECOVERY 角色（#1955）的目錄群組；存取控制原則要求在 Admin Write 之外還具備該角色，才能復原他人的託管 piv-key-management 金鑰（piv.keyEscrow）。該金鑰可以解密此人的郵件，因此在管理員將人員加入該群組之前，沒有人持有該角色。空白時，任何人都不能復原他人的金鑰；持有人可在入口網站上復原自己的金鑰。"
   }
 }

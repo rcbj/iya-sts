@@ -23,6 +23,14 @@
     "en": "7e9175bdd8dd3808",
     "text": "Son propre entityID et son propre providerID (amorcés distincts lors de la création du domaine), sa propre clé de signature, son état de requête, ses artefacts et ses métadonnées par fournisseur de services — dont l’URL porte donc le domaine en plus de l’empreinte du SP. Les ENTRÉES DE FOURNISSEURS DE SERVICES sont propres à chaque domaine, pour la même raison que les clients OAuth : ce sont des applications de l’annuaire propre au domaine."
   },
+  "realms.support.openpgp-and-the-web-key-directory.family": {
+    "en": "05e19f1c690a88a0",
+    "text": "OpenPGP et le Web Key Directory"
+  },
+  "realms.support.openpgp-and-the-web-key-directory.note": {
+    "en": "400ad738502f9d1f",
+    "text": "La clé OpenPGP d'une personne figure dans son entrée de l'annuaire propre au domaine de confiance, son défi d'enregistrement appartient au domaine de confiance, et le Web Key Directory répond pour les domaines de messagerie propres au domaine de confiance (openpgp.wkdDomains, ou son domaine DNS) avec les clés de ses propres personnes. Un client WKD connaît un domaine DNS et jamais un chemin de domaine de confiance ; une requête sans segment de domaine de confiance reçoit donc la réponse du domaine de confiance qui sert son domaine DNS, le domaine par défaut en premier."
+  },
   "realms.support.ws-trust.family": {
     "en": "3b83c15d86c7c8b4",
     "text": "WS-Trust"

@@ -1851,6 +1851,10 @@
     "en": "498689e2da216b2e",
     "text": "TRUE lorsque ce serveur de ressources UMA 2.0 peut enregistrer des ressources DONT IL EST LUI-MÊME PROPRIÉTAIRE, au moyen d’un jeton d’API de protection obtenu par client_credentials. Absent ou FALSE, la valeur par défaut, signifie qu’un PAT doit être celui d’une personne (le flux de code) et que cette personne possède ce qu’il enregistre."
   },
+  "applications.schema.attributes.appDynamicRoleSelection.what": {
+    "en": "b508dc418113551c",
+    "text": "TRUE ou FALSE : des rôles dynamiques sélectionnables sont-ils proposés lors des connexions à cette application (#1072), en remplacement de roles.dynamicSelection. FALSE n’affiche pas la case « Choisir des rôles pour cette connexion », ne propose aucun rôle, et un jeton pour cette application ne porte aucun rôle sélectionné dynamiquement."
+  },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",
     "text": "cn, ainsi que les attributs standard owner et description."
@@ -2002,6 +2006,10 @@
   "xacmlPolicies.schema.attributes.xacmlPepRoute.what": {
     "en": "4e1dc3fa8c6c3e3c",
     "text": "Le PEP distant et la route, sous la forme du nom du PEP, d’une barre oblique et de l’id de la route, pour lesquels cette politique a été GÉNÉRÉE par le choix d’autorisation de la route (simple ou publique) dans les formulaires de routes du proxy inverse ou par l’action generate-pep-route-policy (#1760). Une telle politique est réécrite quand la route est enregistrée, renommée avec la route et retirée avec elle ; elle n’est jamais la racine. Elle peut être modifiée dans l’éditeur de politiques, et le prochain enregistrement du choix simple ou public de la route la réécrit : choisis une politique existante sur la route pour en garder une écrite à la main."
+  },
+  "xacmlPolicies.schema.attributes.xacmlRole.what": {
+    "en": "665602e5460193b1",
+    "text": "Le rôle (par son nom dans ou=roles) qui POSSÈDE cette politique comme politique d’éligibilité (#1072) : le PDP la décide seule, pour une personne, afin de dire si ce rôle dynamique sélectionnable peut lui être proposé à la connexion. Une telle politique n’est jamais la racine, n’est jamais atteinte par un PolicyIdReference depuis la racine et n’est jamais envoyée à un PEP distant."
   },
   "xacmlPeps.schema.objectClasses.xacmlPep.what": {
     "en": "2b063c0577e29981",

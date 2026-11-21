@@ -884,12 +884,14 @@ const SET_SIGNING_ALGORITHMS = algorithmRegistry.asymmetricJoseNames();
 const RISC_SUBJECT_FORMATS = ['account', 'email', 'iss_sub', 'opaque',
                               'phone_number', 'did', 'uri', 'aliases'];
 
-// common/cert_enrollment.ts's PROFILE_IDS — the nine leaf profiles an
-// enrollment protocol may issue, shared by ACME, EST and SCEP.
+// common/cert_enrollment.ts's PROFILE_IDS — the thirteen leaf profiles an
+// enrollment protocol may issue, shared by ACME, EST and SCEP: the nine, and
+// the four PIV slot profiles of #1955 P2, which no default list holds.
 const ENROLLMENT_PROFILES = ['tls-server', 'tls-client', 'tls-server-client',
                              'digital-signature', 'key-encipherment',
                              'code-signing', 'email', 'timestamping',
-                             'smartcard-logon'];
+                             'smartcard-logon', 'piv-auth', 'piv-sign',
+                             'piv-key-management', 'piv-card-auth'];
 
 // EST and SCEP also issue `device` (#164): cert_enrollment.ts's
 // DEVICE_PROFILE, for the families in its DEVICE_PROFILE_FAMILIES. ACME does
@@ -3374,6 +3376,29 @@ const SETTINGS = [
                  'carried. Name several where one credential is used from ' +
                  'sibling hosts under a shared webauthn.rpId.' },
 
+  // Added 2026-11-20 (#1955 P7, rcbj's reversal of the issue's D5): the
+  // legacy FIDO U2F AppIDs whose imported credentials may still sign in.
+  // EMPTY, THE DEFAULT, IS THE FEATURE OFF. `authn/webauthn_policy.ts`'s
+  // write rule refuses an entry that is not an https AppID (STS-AUTHN-0566).
+  { key: 'webauthn.u2fAppIds', group: 'WebAuthn',
+    label: 'Legacy U2F AppIDs', path: 'webauthn.u2fAppIds',
+    env: 'STS_WEBAUTHN_U2F_APP_IDS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'The FIDO U2F AppIDs — the https URLs a legacy U2F ' +
+                 'relying party registered its security keys under — whose ' +
+                 'credentials may be imported onto people\'s entries and ' +
+                 'used to sign in here, comma-separated. **EMPTY, the ' +
+                 'default, is the feature off**: nothing can be imported, ' +
+                 'no ceremony carries the appid or appidExclude extension ' +
+                 '(WebAuthn Level 3 sections 10.1.1 and 10.1.2), and an ' +
+                 'imported key does not sign in. An AppID is used only at ' +
+                 'an RP ID it relates to: its host is the RP ID, or one is ' +
+                 'a suffix of the other. Where the host differs from the ' +
+                 'origin\'s, the browser fetches the AppID URL for a ' +
+                 'TrustedFacets list naming this origin, which the legacy ' +
+                 'service must keep serving. An imported key is a second ' +
+                 'factor only: a U2F key cannot verify the person.' },
+
   { key: 'webauthn.algorithms', group: 'WebAuthn',
     label: 'Algorithms offered', path: 'webauthn.algorithms',
     env: 'STS_WEBAUTHN_ALGORITHMS', type: 'csv',
@@ -4455,7 +4480,7 @@ const SETTINGS = [
     label: 'Key-encryption key provider',
     path: 'keys.kekProvider', env: 'STS_KEYS_KEK_PROVIDER', type: 'enum',
     enumValues: ['file', 'aws', 'gcp', 'azure', 'vault', 'vault-transit',
-                 'aws-kms', 'gcp-kms', 'azure-keys'],
+                 'aws-kms', 'gcp-kms', 'azure-keys', 'pkcs11'],
     dflt: 'file', runtime: false,
     restartReason: 'the key-encryption key is read once, at startup, before ' +
                    'the signing keys are decrypted',
@@ -4469,7 +4494,10 @@ const SETTINGS = [
                  'keys.kekVault is its vault) are key management ' +
                  'services: the key NEVER leaves them, keys.kekRef names it, ' +
                  'and the KMS wraps and unwraps each data key — one call per ' +
-                 'data key at start, none per value. Every provider but ' +
+                 'data key at start, none per value. `pkcs11` is the same ' +
+                 'with the key in a hardware security module (a YubiHSM 2, ' +
+                 'SoftHSM2 or any PKCS#11 module, keys.pkcs11Module), ' +
+                 'keys.kekRef a PKCS#11 URI. Every provider but ' +
                  '`file` lazily requires its official SDK, which is ' +
                  'deliberately NOT a dependency of this service; a missing ' +
                  'one is reported with the package name to install.' },
@@ -4522,8 +4550,9 @@ const SETTINGS = [
                  'Secrets Manager name or ARN, a GCP resource name ' +
                  '(projects/<p>/secrets/<s>, with /versions/latest added ' +
                  'when no version is given), an Azure Key Vault secret name, ' +
-                 'or a HashiCorp Vault read path. Unused by the `file` ' +
-                 'provider.' },
+                 'or a HashiCorp Vault read path. For `pkcs11`, an RFC 7512 ' +
+                 'PKCS#11 URI, pkcs11:token=<token label>;object=<key ' +
+                 'label>. Unused by the `file` provider.' },
 
   { key: 'keys.kekVault', group: 'Key material',
     label: 'Vault or Key Vault URL',
@@ -4673,6 +4702,147 @@ const SETTINGS = [
                  'deployment relies on.' },
 
   // -------------------------------------------------------------------------
+  // A KEY-ENCRYPTION KEY IN A HARDWARE SECURITY MODULE (#1955 P8). One HSM
+  // per deployment, as one secret store is: the module, the PIN and how a key
+  // is wrapped are shared by the three positions (keys.kekProvider,
+  // keys.cellKekProvider, keys.previousKekProvider), each naming its own key
+  // with a PKCS#11 URI in its location row — whose `module-path` may name
+  // another module for that position alone. `common/secrets.js` argues it.
+  // -------------------------------------------------------------------------
+  { key: 'keys.pkcs11Module', group: 'Key material',
+    label: 'PKCS#11 module',
+    env: 'STS_KEYS_PKCS11_MODULE', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'the module is loaded once, at startup',
+    description: 'The path of the PKCS#11 module the `pkcs11` provider ' +
+                 'loads: /usr/lib/x86_64-linux-gnu/pkcs11/yubihsm_pkcs11.so ' +
+                 'for a YubiHSM 2 (with yubihsm-connector running and ' +
+                 'YUBIHSM_PKCS11_CONF pointing at its configuration), ' +
+                 '/usr/lib/softhsm/libsofthsm2.so for SoftHSM2. It needs ' +
+                 'the pkcs11js package, which is deliberately not a ' +
+                 'dependency of this service.' },
+
+  { key: 'keys.pkcs11Mechanism', group: 'Key material',
+    label: 'How the HSM wraps a data key',
+    env: 'STS_KEYS_PKCS11_MECHANISM', type: 'enum',
+    enumValues: ['auto', 'aes-gcm', 'aes-key-wrap-pad',
+                 'yubico-aes-ccm-wrap'],
+    dflt: 'auto', runtime: false, perProcess: true,
+    restartReason: 'the key-encryption key is reached once, at startup',
+    description: 'The mechanism a new data key is wrapped with in the HSM. ' +
+                 '`auto` takes CKM_AES_GCM where the module offers it ' +
+                 '(SoftHSM2 and most network HSMs), then ' +
+                 'CKM_AES_KEY_WRAP_PAD, then the YubiHSM 2\'s own ' +
+                 'CKM_YUBICO_AES_CCM_WRAP (its wrap-key objects). A data ' +
+                 'key wrapped before a change still unwraps: the stored ' +
+                 'form names its mechanism.' },
+
+  { key: 'keys.pkcs11GenerateKey', group: 'Key material',
+    label: 'Make the HSM key on first use',
+    env: 'STS_KEYS_PKCS11_GENERATE_KEY', type: 'bool', dflt: false,
+    runtime: false, perProcess: true,
+    restartReason: 'the key-encryption key is reached once, at startup',
+    description: 'On, a key-encryption key the PKCS#11 URI names and the ' +
+                 'token does not hold is generated there: AES-256, ' +
+                 'sensitive and NOT extractable. Only the front process ' +
+                 'generates; for a cluster, make the key with the HSM\'s ' +
+                 'own tool instead, because two nodes starting at once ' +
+                 'would make two. Off, the default, a missing key stops ' +
+                 'the start.' },
+
+  { key: 'keys.pkcs11Sessions', group: 'Key material',
+    label: 'PKCS#11 sessions per process',
+    env: 'STS_KEYS_PKCS11_SESSIONS', type: 'int', dflt: 4, min: 1, max: 64,
+    runtime: false, perProcess: true,
+    restartReason: 'the token is opened once, at startup',
+    description: 'How many sessions each process and request worker keeps ' +
+                 'open on a token at most, each running one HSM operation ' +
+                 'at a time. A YubiHSM 2 has 16 sessions in all, shared by ' +
+                 'every process of every node: keep the product of this, ' +
+                 'the processes and the nodes under that.' },
+
+  { key: 'keys.pkcs11PinProvider', group: 'Key material',
+    label: 'Where the PKCS#11 PIN is read from',
+    env: 'STS_KEYS_PKCS11_PIN_PROVIDER', type: 'enum',
+    enumValues: ['none', 'file', 'aws', 'gcp', 'azure', 'vault'],
+    dflt: 'none', runtime: false, perProcess: true,
+    restartReason: 'the PIN is read once, when the token is opened',
+    description: 'The secret store the HSM token\'s PIN is read from, ' +
+                 'never a setting\'s value: a mounted file, AWS Secrets ' +
+                 'Manager, Google Cloud Secret Manager, Azure Key Vault or ' +
+                 'Vault/OpenBao, reached as keys.kek* says. For a YubiHSM ' +
+                 '2 the PIN is the authentication key\'s id in four hex ' +
+                 'digits followed by its password (0001password). A JSON ' +
+                 'object of PINs by token label serves tokens with ' +
+                 'different PINs. `none` logs in to nothing.' },
+
+  { key: 'keys.pkcs11PinRef', group: 'Key material',
+    label: 'The PKCS#11 PIN\'s location',
+    env: 'STS_KEYS_PKCS11_PIN_REF', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'the PIN is read once, when the token is opened',
+    description: 'Where the PIN is, in the provider ' +
+                 'keys.pkcs11PinProvider names: a path, an ARN, a resource ' +
+                 'or a Vault read path. It has no fallback.' },
+
+  { key: 'keys.pkcs11PinField', group: 'Key material',
+    label: 'The field the PKCS#11 PIN is in',
+    env: 'STS_KEYS_PKCS11_PIN_FIELD', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'the PIN is read once, when the token is opened',
+    description: 'The member of a JSON secret that holds the PIN. Empty ' +
+                 'takes the value whole.' },
+
+  // -------------------------------------------------------------------------
+  // A REALM'S CLASSICAL SIGNING KEYS IN THE HSM (#1955 P8, rcbj's D6:
+  // "both"). Off by default. `common/helpers.js` makes the realm's RS256,
+  // curve and XML keys in the token when its key set is made or rotated;
+  // `common/crypto.js` signs with C_Sign. Post-quantum keys stay in software.
+  // -------------------------------------------------------------------------
+  { key: 'keys.signingKeyStore', group: 'Key material',
+    label: 'Where a realm\'s signing keys are made',
+    env: 'STS_KEYS_SIGNING_KEY_STORE', type: 'enum',
+    enumValues: ['software', 'pkcs11'], dflt: 'software', runtime: true,
+    description: '`software`, the default, makes a realm\'s signing keys in ' +
+                 'this process and keeps them sealed in the store. `pkcs11` ' +
+                 'makes its classical ones — the RS256 key, the XML key and ' +
+                 'the P-256, P-384, P-521, secp256k1 and Ed25519 keys the ' +
+                 'module can make — in the HSM keys.signingKeyToken names, ' +
+                 'non-extractable, and signs there; a key the module cannot ' +
+                 'make, and every post-quantum key, stays in software. It ' +
+                 'applies to a key set made or rotated after the change, ' +
+                 'needs a keystore that persists (product mode), and every ' +
+                 'process and node needs the token. Settable per realm.' },
+
+  { key: 'keys.signingKeyToken', group: 'Key material',
+    label: 'The HSM token signing keys are made on',
+    env: 'STS_KEYS_SIGNING_KEY_TOKEN', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'the token is opened once, at startup, in every process',
+    description: 'The PKCS#11 URI of the token a realm with ' +
+                 'keys.signingKeyStore `pkcs11` makes its signing keys on: ' +
+                 'pkcs11:token=<token label>, with serial= or slot-id= where ' +
+                 'two tokens share a label. The module, the PIN and the ' +
+                 'sessions are the keys.pkcs11* settings. Empty opens no ' +
+                 'token.' },
+
+  // Off by default (#1955): a synchronous door (JWS, XML, SAML) must not
+  // hold the event loop for the token unless an operator asks. Decryption
+  // is not gated here.
+  { key: 'keys.pkcs11SynchronousSign', group: 'Key material',
+    label: 'Allow synchronous PKCS#11 signing',
+    env: 'STS_KEYS_PKCS11_SYNCHRONOUS_SIGN', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'Off, the default: a signature with a key in the HSM is ' +
+                 'made only through the binding\'s asynchronous `C_Sign`. ' +
+                 'The synchronous doors (a JWS, an XML signature, a SAML ' +
+                 'assertion) refuse an HSM key (`STS-KEYS-0209`) rather ' +
+                 'than wait for the token on the event loop. On, those ' +
+                 'doors call `C_Sign` and the event loop waits. A module ' +
+                 'with no asynchronous sign can sign only while this is ' +
+                 'on. Decryption is not changed. Settable per realm.' },
+
+  // -------------------------------------------------------------------------
   // THE CELL KEY-ENCRYPTION KEY (#98, 2026-09-28). What a cell stores of its
   // own — the people homed here and everything it mints — is sealed under a
   // key that lives only in the cell's region and is never replicated, so a
@@ -4684,12 +4854,13 @@ const SETTINGS = [
   { key: 'keys.cellKekProvider', group: 'Key material',
     label: 'Where the cell key-encryption key is read from',
     env: 'STS_CELL_KEK_PROVIDER', type: 'enum',
-    enumValues: ['none', 'file', 'aws', 'gcp', 'azure', 'vault'],
+    enumValues: ['none', 'file', 'aws', 'gcp', 'azure', 'vault', 'pkcs11'],
     dflt: 'none', runtime: false, perProcess: true,
     restartReason: 'the key is read once, before the store is restored',
     description: 'The provider of THIS CELL\'s key-encryption key, which ' +
                  'seals what the cell stores of its own (#98). Five ' +
-                 'providers, as `keys.kekProvider`. `none` seals the cell ' +
+                 'providers, as `keys.kekProvider`, and `pkcs11`, the ' +
+                 'cell\'s own HSM. `none` seals the cell ' +
                  'tier under the service key-encryption key, which is ' +
                  'correct for single-cell mode and for a test; a multi-cell ' +
                  'deployment in product mode REFUSES to start with it, ' +
@@ -4801,7 +4972,8 @@ const SETTINGS = [
     label: 'Where the previous key-encryption key is read from',
     env: 'STS_PREVIOUS_KEK_PROVIDER', type: 'enum',
     enumValues: ['none', 'file', 'aws', 'gcp', 'azure', 'vault',
-                 'vault-transit', 'aws-kms', 'gcp-kms', 'azure-keys'],
+                 'vault-transit', 'aws-kms', 'gcp-kms', 'azure-keys',
+                 'pkcs11'],
     dflt: 'none', runtime: false, perProcess: true,
     restartReason: 'the key is read once, before the store is restored',
     description: 'To rotate the key-encryption key: point keys.kek* at the ' +
@@ -7143,6 +7315,159 @@ const SETTINGS = [
                  'Devices. The oldest is dropped when a new one is ' +
                  'recorded past it.' },
 
+  // #1955 P1: WHAT A HARDWARE CLAIM STANDS ON. `common/hardware_tokens.ts`
+  // argues it; the default is the behaviour before #1955.
+  { key: 'hardwareTokens.hardwareClaims', group: 'Devices',
+    label: 'What earns a hardware-key claim',
+    env: 'STS_HARDWARE_TOKENS_HARDWARE_CLAIMS', type: 'enum',
+    enumValues: ['inference', 'evidence'], dflt: 'inference',
+    runtime: true,
+    description: 'What lets a PKINIT sign-in claim a hardware-bound key ' +
+                 '(the pkinit-hardware indicator and amr hwk). ' +
+                 '`inference`, the default and the behaviour before ' +
+                 '#1955: a smart-card logon certificate whose key this ' +
+                 'service did not generate, or recorded attestation ' +
+                 'evidence. `evidence`: only a key a hardware token\'s ' +
+                 'attestation covers. A certificate sign-in over TLS ' +
+                 'earns hwk, and sc for a key on a smart card, only from ' +
+                 'evidence in either case.' },
+
+  // #1955 P2: YUBIKEY PIV KEY ATTESTATION, THE SLOT PROFILES' RULES, 9d KEY
+  // ESCROW (D7) AND THE OUTSIDE PIV / CAC MAPPING (D8). Every one is off or
+  // empty by default, so a realm behaves as it did before #1955 until an
+  // operator sets one. `common/piv_attestation.ts` argues them.
+  { key: 'piv.attestationAnchors', group: 'Devices',
+    label: 'PIV attestation roots (PEM)',
+    env: 'STS_PIV_ATTESTATION_ANCHORS', type: 'string', dflt: '',
+    runtime: true,
+    description: 'The roots a YubiKey PIV key attestation must chain to, ' +
+                 'as a PEM bundle. Empty uses the two Yubico publishes ' +
+                 '(Yubico PIV Root CA Serial 263751, and Yubico Attestation ' +
+                 'Root 1 for firmware 5.7.4 and later), shipped in ' +
+                 'common/pki_piv_anchors.json and pinned there by SHA-256, ' +
+                 'with Yubico\'s PIV intermediates. A certificate here ' +
+                 'replaces the shipped roots.' },
+  { key: 'piv.requireAttestation', group: 'Devices',
+    label: 'Require a PIV attestation for the PIV profiles',
+    env: 'STS_PIV_REQUIRE_ATTESTATION', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'On, a request for a piv-auth, piv-sign, ' +
+                 'piv-key-management or piv-card-auth certificate is ' +
+                 'refused unless it carries a YubiKey PIV attestation that ' +
+                 'verifies (STS-PIV-0010). An escrowed piv-key-management ' +
+                 'key from EST /serverkeygen is the exception: this service ' +
+                 'generated it. Off, the default, such a request without ' +
+                 'one is issued with no hardware evidence; a request that ' +
+                 'carries one that does not verify is refused either way.' },
+  { key: 'piv.pinPolicy', group: 'Devices',
+    label: 'Weakest PIN policy an attested PIV key may have',
+    env: 'STS_PIV_PIN_POLICY', type: 'enum',
+    enumValues: ['any', 'once', 'always'], dflt: 'any', runtime: true,
+    description: 'What the attestation\'s PIN policy must be at least. ' +
+                 '`once`: the PIN once per session (a Bio key\'s ' +
+                 'match-once counts); `always`: the PIN before every use ' +
+                 '(match-always counts). `any`, the default, holds no ' +
+                 'PIN policy. A key whose attestation is weaker is refused ' +
+                 '(STS-PIV-0011).' },
+  { key: 'piv.touchPolicy', group: 'Devices',
+    label: 'Weakest touch policy an attested PIV key may have',
+    env: 'STS_PIV_TOUCH_POLICY', type: 'enum',
+    enumValues: ['any', 'cached', 'always'], dflt: 'any', runtime: true,
+    description: 'What the attestation\'s touch policy must be at least. ' +
+                 '`cached`: a touch, remembered for 15 seconds; `always`: ' +
+                 'a touch for every use. `any`, the default, holds none. A ' +
+                 'key whose attestation is weaker is refused (STS-PIV-0012).' },
+  { key: 'piv.cardAuthSignIn', group: 'Devices',
+    label: 'Let a piv-card-auth certificate sign in',
+    env: 'STS_PIV_CARD_AUTH_SIGN_IN', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'A piv-card-auth (slot 9e) key works without a PIN, for ' +
+                 'physical access, so its certificate is refused at the ' +
+                 'TLS sign-in and at PKINIT (STS-PIV-0013) unless this is ' +
+                 'on.' },
+  { key: 'piv.keyEscrow', group: 'Devices',
+    label: 'Escrow piv-key-management keys',
+    env: 'STS_PIV_KEY_ESCROW', type: 'bool', dflt: false, runtime: true,
+    description: 'On, EST /serverkeygen for the piv-key-management profile ' +
+                 'keeps the generated private key, sealed under the ' +
+                 'key-encryption key, so the holder (on the portal, after ' +
+                 'a fresh sign-in) or an administrator holding the PIV key ' +
+                 'recovery role can recover it and decrypt old mail after a ' +
+                 'card is lost. Refused where no key-encryption key is ' +
+                 'held (STS-PIV-0020). An escrowed key is never hardware ' +
+                 'evidence. Off, the default, /serverkeygen refuses the ' +
+                 'piv-key-management profile (STS-PIV-0021), so a 9d key ' +
+                 'is generated on the card and kept nowhere else.' },
+  { key: 'piv.externalIssuers', group: 'Devices',
+    label: 'Outside PIV or CAC issuing CAs mapped by card UUID (PEM)',
+    env: 'STS_PIV_EXTERNAL_ISSUERS', type: 'string', dflt: '',
+    runtime: true,
+    description: 'The issuing CAs whose PIV or CAC card certificates sign a ' +
+                 'person in by the FIPS 201 card UUID: a client certificate ' +
+                 'one of these issued directly, asserting a policy in ' +
+                 'piv.externalPolicyOids and carrying exactly one urn:uuid ' +
+                 'subjectAltName, maps to the one person whose ' +
+                 'stsPivCardUuid holds that UUID. Never by its name, and ' +
+                 'no entry is created. The CA must also be in a client ' +
+                 'truststore, or the handshake refuses it first. Empty, the ' +
+                 'default, maps nothing.' },
+  { key: 'piv.externalPolicyOids', group: 'Devices',
+    label: 'PIV Authentication policies an outside card must assert',
+    env: 'STS_PIV_EXTERNAL_POLICY_OIDS', type: 'csv',
+    dflt: '2.16.840.1.101.3.2.1.3.13,2.16.840.1.101.3.2.1.3.18',
+    runtime: true,
+    description: 'The certificate policies, one of which an outside card\'s ' +
+                 'certificate must assert to be mapped by its card UUID: ' +
+                 'by default id-fpki-common-authentication (the Federal ' +
+                 'PKI Common Policy\'s PIV Authentication) and ' +
+                 'id-fpki-certpcy-pivi-hardware (PIV-I). Add a CAC ' +
+                 'issuer\'s own hardware policies here.' },
+  // #1955 P6: A PERSON'S OpenPGP KEY AND THE WEB KEY DIRECTORY.
+  // `common/openpgp_keys.ts` argues all five; the directory is OFF by
+  // default, and nothing a realm already does changes.
+  { key: 'openpgp.wkd', group: 'OpenPGP',
+    label: 'Publish keys in the Web Key Directory',
+    env: 'STS_OPENPGP_WKD', type: 'bool', dflt: false, runtime: true,
+    description: 'Answer the Web Key Directory (draft-koch-openpgp-webkey-' +
+                 'service) for this realm\'s mail domains: /.well-known/' +
+                 'openpgpkey/<domain>/hu/<hash> (the advanced method, on ' +
+                 'openpgpkey.<domain>) and /.well-known/openpgpkey/hu/' +
+                 '<hash> (the direct method), and each one\'s policy file. ' +
+                 'Only the key of a person who opted in on the portal is ' +
+                 'answered. Off by default.' },
+  { key: 'openpgp.wkdDomains', group: 'OpenPGP',
+    label: 'Mail domains the Web Key Directory serves',
+    env: 'STS_OPENPGP_WKD_DOMAINS', type: 'csv', dflt: '', runtime: true,
+    description: 'The mail domains this realm\'s Web Key Directory ' +
+                 'answers for, comma-separated. Empty, the default, is the ' +
+                 'realm\'s own DNS domain. A request with no realm in its ' +
+                 'path is answered by the realm that serves its domain, the ' +
+                 'default realm first.' },
+  { key: 'openpgp.challengeLifetimeS', group: 'OpenPGP',
+    label: 'Registration challenge lifetime (seconds)',
+    env: 'STS_OPENPGP_CHALLENGE_LIFETIME_S', type: 'int', dflt: 600,
+    min: 60, max: 3600, runtime: true,
+    description: 'How long the challenge a person signs with gpg ' +
+                 '--clearsign to register an OpenPGP key stays good. It is ' +
+                 'spent once, and a person has one at a time.' },
+  { key: 'openpgp.signatureSkewS', group: 'OpenPGP',
+    label: 'Proof signature clock skew (seconds)',
+    env: 'STS_OPENPGP_SIGNATURE_SKEW_S', type: 'int', dflt: 300, min: 0,
+    max: 3600, runtime: true,
+    description: 'How far the signing computer\'s clock may be from this ' +
+                 'service\'s: a proof signed earlier than the challenge ' +
+                 'was issued, or later than now, by more than this is ' +
+                 'refused (STS-OPENPGP-0010).' },
+  { key: 'openpgp.minRsaBits', group: 'OpenPGP',
+    label: 'Smallest RSA OpenPGP key',
+    env: 'STS_OPENPGP_MIN_RSA_BITS', type: 'int', dflt: 3072, min: 3072,
+    max: 16384, runtime: true,
+    description: 'The shortest RSA key, primary or subkey, an OpenPGP ' +
+                 'registration accepts. Ed25519, Ed448, ECDSA and ECDH on ' +
+                 'P-256, P-384 and P-521, X25519 and X448 are accepted; ' +
+                 'DSA, ElGamal and the Brainpool curves never are ' +
+                 '(STS-OPENPGP-0004).' },
+
   // #164 PHASE 3 (2026-09-26): the MDM / posture feed.
   // `admin-ui/devices_admin.ts`'s `mdmFeed()` argues it.
   { key: 'devices.complianceFeedMaxReports', group: 'Devices',
@@ -8666,6 +8991,31 @@ const SETTINGS = [
                  'other row and the master are untouched; off in product ' +
                  'mode it is logged once (STS-PKI-0239) and drawn red on ' +
                  '/admin/pki/trust.' },
+  { key: 'pki.paranoidPivAttestation', group: 'PKI',
+    label: 'Paranoid: a YubiKey PIV key attestation chain',
+    env: 'STS_PKI_PARANOID_PIV_ATTESTATION', type: 'bool',
+    dflt: true, runtime: true,
+    description: 'Use case `piv-attestation` (#1955): the slot attestation ' +
+                 'certificate and the f9 attestation certificate of a PIV ' +
+                 'enrolment. Paranoid asks the validity window at now, the ' +
+                 'path to piv.attestationAnchors and revocation where the ' +
+                 'chain names a list. Off, this use case alone runs the ' +
+                 'path check without the field checks, while every other ' +
+                 'row and the master are untouched; off in product mode it ' +
+                 'is logged once (STS-PKI-0239) and drawn red on ' +
+                 '/admin/pki/trust.' },
+  { key: 'pki.paranoidPivCard', group: 'PKI',
+    label: 'Paranoid: an outside PIV or CAC card mapped by card UUID',
+    env: 'STS_PKI_PARANOID_PIV_CARD', type: 'bool',
+    dflt: true, runtime: true,
+    description: 'Use case `piv-card` (#1955): a client certificate from ' +
+                 'an issuing CA in piv.externalIssuers, mapped by its card ' +
+                 'UUID. Paranoid asks keyUsage digitalSignature and the ' +
+                 'validity window of the leaf beside the one-hop issuer ' +
+                 'check. Off, this use case alone runs the issuer check ' +
+                 'only, while every other row and the master are ' +
+                 'untouched; off in product mode it is logged once ' +
+                 '(STS-PKI-0239) and drawn red on /admin/pki/trust.' },
   { key: 'pki.paranoidEnrollmentCredential', group: 'PKI',
     label: 'Paranoid: a certificate presented to enroll or renew',
     env: 'STS_PKI_PARANOID_ENROLLMENT_CREDENTIAL', type: 'bool',
@@ -8889,7 +9239,8 @@ const SETTINGS = [
     env: 'STS_ACME_DEFAULT_PROFILE', type: 'enum',
     enumValues: ['tls-server', 'tls-client', 'tls-server-client',
                  'digital-signature', 'key-encipherment', 'code-signing',
-                 'email', 'timestamping', 'smartcard-logon'],
+                 'email', 'timestamping', 'smartcard-logon', 'piv-auth',
+                 'piv-sign', 'piv-key-management', 'piv-card-auth'],
     dflt: 'tls-client', runtime: true,
     description: 'Most ACME clients never name a profile. An order naming ' +
                  'none whose identifiers are all dns or ip is issued ' +
@@ -8985,7 +9336,8 @@ const SETTINGS = [
     env: 'STS_EST_DEFAULT_PROFILE', type: 'enum',
     enumValues: ['tls-server', 'tls-client', 'tls-server-client',
                  'digital-signature', 'key-encipherment', 'code-signing',
-                 'email', 'timestamping', 'smartcard-logon'],
+                 'email', 'timestamping', 'smartcard-logon', 'piv-auth',
+                 'piv-sign', 'piv-key-management', 'piv-card-auth'],
     dflt: 'tls-client', runtime: true,
     description: 'What /.well-known/est/simpleenroll issues, with no label.' },
   { key: 'est.certificateLifetimeDays', group: 'EST',
@@ -9071,7 +9423,8 @@ const SETTINGS = [
     env: 'STS_SCEP_DEFAULT_PROFILE', type: 'enum',
     enumValues: ['tls-server', 'tls-client', 'tls-server-client',
                  'digital-signature', 'key-encipherment', 'code-signing',
-                 'email', 'timestamping', 'smartcard-logon'],
+                 'email', 'timestamping', 'smartcard-logon', 'piv-auth',
+                 'piv-sign', 'piv-key-management', 'piv-card-auth'],
     dflt: 'tls-client', runtime: true,
     description: 'The profile preselected when a challenge password is made.' },
   { key: 'scep.certificateLifetimeDays', group: 'SCEP',
@@ -17767,6 +18120,24 @@ const SETTINGS = [
                  'from holding the token. They exist to be REQUIRED, not to ' +
                  'be carried.' },
 
+  // DYNAMIC SELECTABLE ROLES (#1072, rcbj's decision 2): the sign-in page's
+  // "Choose roles for this sign-in" box, offered in a realm that defines a
+  // dynamic role, unless this or the application's appDynamicRoleSelection
+  // turns it off.
+  { key: 'roles.dynamicSelection', group: 'Roles',
+    label: 'Offer dynamic roles at sign-in',
+    env: 'STS_ROLES_DYNAMIC_SELECTION', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Whether a person signing in may choose dynamic selectable ' +
+                 'roles (#1072): the sign-in page offers a "Choose roles for ' +
+                 'this sign-in" box in a realm that defines at least one ' +
+                 'dynamic role, and a ticked box shows the roles the ' +
+                 'person\'s eligibility permits. ON by default; ' +
+                 'appDynamicRoleSelection on an application\'s entry ' +
+                 'overrides it for that application. Off, no box is drawn, ' +
+                 'no role is offered, a required dynamic role is not asked ' +
+                 'for, and a token carries no dynamically selected role.' },
+
   { key: 'roles.claimName', group: 'Roles', label: 'Role claim name',
     env: 'STS_ROLES_CLAIM_NAME', type: 'string', dflt: 'roles', runtime: true,
     description: 'What the claim is called, and ALSO what is looked for on ' +
@@ -17886,6 +18257,18 @@ const SETTINGS = [
                  'to every caller; that is the way to take the XACML surface ' +
                  'away without turning xacml.enabled off and losing the ' +
                  'embedded issuance and access PEPs with it.' },
+  { key: 'roles.pivKeyRecoveryGroup', group: 'Roles',
+    label: 'Group granting the PIV_KEY_RECOVERY role',
+    env: 'STS_ROLES_PIV_KEY_RECOVERY_GROUP', type: 'string',
+    dflt: 'piv-key-recovery', runtime: true,
+    description: 'The directory group whose members hold the built-in ' +
+                 'PIV_KEY_RECOVERY role (#1955), which the access-control ' +
+                 'policy requires, beside Admin Write, to recover another ' +
+                 'person\'s escrowed piv-key-management key (piv.keyEscrow). ' +
+                 'That key decrypts the person\'s mail, so nobody holds the ' +
+                 'role until an administrator adds them to the group. Empty ' +
+                 'lets nobody recover another person\'s key; the holder ' +
+                 'recovers their own on the portal.' },
   { key: 'roles.authzenPepGroup', group: 'Roles',
     label: 'Group granting the AUTHZEN_PEPS role',
     env: 'STS_ROLES_AUTHZEN_PEP_GROUP', type: 'string',
@@ -21088,6 +21471,23 @@ const SETTINGS = [
     description: 'A notice that names what it is about (the same act on the ' +
                  'same account) is sent once in this window, however many ' +
                  'doors reported it. 0 turns suppression off.' },
+
+  // #1955 P6: SECURITY MAIL THAT MUST BE ENCRYPTED. `common/mail.ts`
+  // argues the refusal.
+  { key: 'mail.encryptionRequired', group: 'Mail',
+    label: 'Messages that must be encrypted',
+    env: 'STS_MAIL_ENCRYPTION_REQUIRED', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'The messages, by template id (password-reset, ' +
+                 'account-activation, sign-in-code, sign-in-link, ' +
+                 'credential-compromised and the rest of Monitoring → ' +
+                 'Mail\'s list), that are sent only encrypted — PGP/MIME to ' +
+                 'the person\'s OpenPGP key or S/MIME to their certificate, ' +
+                 'as they chose on the portal. A person who chose neither ' +
+                 'is not sent one (STS-MAIL-0240), and the use that asked ' +
+                 'says so as it does for any message not sent. Empty, the ' +
+                 'default, requires none; whatever a person chose is ' +
+                 'honoured either way.' },
 
   { key: 'mail.selfServiceReset', group: 'Mail',
     label: 'Self-service password reset',

@@ -122,8 +122,17 @@
     "html": "<div>{{content}}</div><hr><p><small>{{service}}（{{realm}}）。您收到此郵件，是因為它是{{reason}}。</small></p>"
   },
   "categories": {
-    "security": { "reason": "一則關於您帳戶的安全通知，無法關閉" },
-    "account": { "reason": "您或管理員要求的內容" },
-    "notification": { "reason": "一則通知，您可以在入口網站中關閉" }
+    "security": {
+      "reason": "一則關於您帳戶的安全通知，無法關閉",
+      "encryptedSubject": "來自 {{service}} 的安全通知"
+    },
+    "account": {
+      "reason": "您或管理員要求的內容",
+      "encryptedSubject": "來自 {{service}} 的訊息"
+    },
+    "notification": {
+      "reason": "一則通知，您可以在入口網站中關閉",
+      "encryptedSubject": "來自 {{service}} 的通知"
+    }
   }
 }

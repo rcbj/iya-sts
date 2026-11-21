@@ -41,6 +41,8 @@
   "title.deliveries": "Envois sortants",
   "title.device-registration": "Enregistrement des appareils",
   "title.devices": "Appareils",
+  "title.hardware-tokens": "Jetons matériels",
+  "title.openpgp": "Clés OpenPGP",
   "title.devices-monitor": "Appareils (supervision)",
   "title.service-accounts": "Comptes de service",
   "title.encryption": "Chiffrement",

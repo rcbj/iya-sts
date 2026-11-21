@@ -1243,6 +1243,15 @@ Scope: `admin:read`.
 | `key.where.wraps` | string |  |  |
 | `mode` | string |  |  |
 | `noSamples` | string |  |  |
+| `signingKeys` | object |  |  |
+| `signingKeys.inHsm` | list |  |  |
+| `signingKeys.inHsm[]` | string |  |  |
+| `signingKeys.inSoftware` | list |  |  |
+| `signingKeys.inSoftware[]` | string |  |  |
+| `signingKeys.note` | string |  |  |
+| `signingKeys.refused` | boolean |  |  |
+| `signingKeys.store` | string |  |  |
+| `signingKeys.token` | string |  |  |
 | `store` | object |  |  |
 | `store.configuredMode` | string |  |  |
 | `store.fellBack` | boolean |  |  |
@@ -2350,6 +2359,7 @@ Scope: `admin:read`.
 | `buildProblem.at` | string |  |  |
 | `buildProblem.why` | string |  |  |
 | `categories` | list |  |  |
+| `categories[].encryptedSubject` | string |  | The Subject an ENCRYPTED message of this category goes out under (#1955), `{{service}}` filled in at send; the real subject is inside. |
 | `categories[].id` | string |  |  |
 | `categories[].label` | string |  |  |
 | `categories[].optional` | boolean |  |  |

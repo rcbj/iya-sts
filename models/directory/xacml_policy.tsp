@@ -87,4 +87,12 @@ model XacmlPolicy {
     what: "The remote PEP and route, as the PEP's name, a slash and the route's id, this policy was GENERATED for by the route's Authorization choice (simple or public) on the reverse-proxy route forms or by the generate-pep-route-policy action (#1760). Such a policy is rewritten when the route is saved, renamed with the route and removed with it; it is never the root. It may be edited in the policy editor, and the next save of the route's simple or public choice writes it again — choose an existing policy on the route to keep a hand-written one."
   })
   xacmlPepRoute?: string;
+  // #1072: THE DYNAMIC ROLE WHOSE ELIGIBILITY THIS POLICY DECIDES. A fact
+  // about the deployment, like xacmlApplication, so an edit of the document
+  // through any door keeps it.
+  @attr(#{
+    kind: "single",
+    what: "The role (by its name in ou=roles) that OWNS this policy as its eligibility policy (#1072): the PDP decides it alone, for one person, to say whether they may be offered that dynamic selectable role at sign-in. Such a policy is never the root, is never reached by a PolicyIdReference from the root, and is never sent to a remote PEP."
+  })
+  xacmlRole?: string;
 }

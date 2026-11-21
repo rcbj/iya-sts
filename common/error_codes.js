@@ -374,6 +374,30 @@ const SUBSYSTEMS = [
           'its attestation, compliance and status, the bounds on how many ' +
           'a person or an application holds, and the console\'s and the ' +
           'management API\'s doors to it.' },
+  { id: 'HWTOKEN', label: 'Hardware tokens',
+    where: 'common/hardware_tokens.ts, mgmt-api/hardware_tokens_api.ts, ' +
+           'portal/account_tokens.ts',
+    what: 'The hardware token register (#1955): one record per physical ' +
+          'token (a YubiKey, a smart card) keyed by vendor and serial, ' +
+          'the serial taken only from attestation, the credentials on it, ' +
+          'and the lost-key act that retires every one of them.' },
+  { id: 'PIV', label: 'PIV key attestation',
+    where: 'common/piv_attestation.ts, common/cert_enrollment.ts, ' +
+           'common/piv_enrolment.ts, portal/account_tokens.ts, ' +
+           'mgmt-api/hardware_tokens_api.ts',
+    what: 'YubiKey PIV key attestation at certificate enrolment (#1955 ' +
+          'P2): the request\'s attestation read and verified against the ' +
+          'realm\'s PIV attestation anchors and its PIN and touch policy, ' +
+          'the four PIV slot profiles, the escrow of piv-key-management ' +
+          'keys, and the mapping of an outside PIV or CAC card by its card ' +
+          'UUID.' },
+  { id: 'OPENPGP', label: 'OpenPGP keys and mail encryption',
+    where: 'common/openpgp_keys.ts, common/crypto.js (section 19), ' +
+           'portal/account_openpgp.ts, mgmt-api/openpgp_api.ts',
+    what: 'A person\'s OpenPGP public key registered with a proof of ' +
+          'possession (#1955 P6), its publication in the Web Key ' +
+          'Directory, their S/MIME certificate, and how mail to them is ' +
+          'encrypted.' },
   { id: 'SVCACCT', label: 'Service accounts',
     where: 'common/service_accounts.ts, common/service_account_policy.ts, ' +
            'common/service_account_rotation.ts, common/credentials.ts, ' +
@@ -3877,6 +3901,61 @@ const CODES = [
       'were dropped once the store no longer listed it (#1938), and the ' +
       'cached key set built from them could not be.',
     spec: '' },
+  { code: 'STS-KEYS-0201',
+    summary: 'A PKCS#11 operation failed on the hardware security module: ' +
+      'no session could be opened, or a wrap, unwrap, signature or search ' +
+      'was refused, including after one reconnect (a connector restart or a ' +
+      'lost device is met by the next operation, never by a timer). A data ' +
+      'key that does not unwrap at start stops the start; a signature is ' +
+      'refused (#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0202',
+    summary: 'The PKCS#11 module could not be used: keys.pkcs11Module is ' +
+      'empty, the module would not load or initialize, or no single token ' +
+      'matches the URI\'s token label, serial and slot (#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0203',
+    summary: 'The key a PKCS#11 URI names is not usable: it is not on the ' +
+      'token (and keys.pkcs11GenerateKey is off, or this is a request ' +
+      'worker), more than one object matches, or it is extractable or not ' +
+      'AES-256 (#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0204',
+    summary: 'The PKCS#11 token offers no mechanism this service wraps a ' +
+      'data key with for this key (CKM_AES_GCM, CKM_AES_KEY_WRAP_PAD, ' +
+      'CKM_YUBICO_AES_CCM_WRAP), or not the one keys.pkcs11Mechanism ' +
+      'names (#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0205',
+    summary: 'The PKCS#11 location or PIN is wrong: the location is not an ' +
+      'RFC 7512 URI naming an object, it carries a PIN (pin-value, ' +
+      'pin-source), the PIN secret could not be read or holds none for the ' +
+      'token, or the token refused it (#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0206',
+    summary: 'A realm whose signing keys are in the HSM was asked for ' +
+      'something only a key in this process can do — the private key ' +
+      'itself, a decryption, or an algorithm the HSM does not sign — and ' +
+      'refused it rather than making a software key (#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0207',
+    summary: 'A signing key could not be made in, or read back from, the ' +
+      'hardware security module: the module offers no key-pair generation ' +
+      'for that algorithm or curve, or answered no public key (#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0208',
+    summary: 'A realm key in the HSM was asked to decrypt (RSA-OAEP) or to ' +
+      'agree (ECDH) and the module refused it: the key was made without ' +
+      'CKA_DECRYPT or CKA_DERIVE, by a build before the HSM keys could ' +
+      'decrypt. Rotating the realm\'s signing keys makes keys that can ' +
+      '(#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0209',
+    summary: 'A signature with a key in the HSM was asked of a synchronous ' +
+      'door, or of a module with no asynchronous C_Sign, while ' +
+      'keys.pkcs11SynchronousSign is off. The event loop is not held for ' +
+      'the token; turn the setting on to sign that way (#1955).',
+    spec: '' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +
@@ -6181,7 +6260,9 @@ const CODES = [
     spec: 'HTTP 200 page naming the failed check' },
   { code: 'STS-AUTHN-0031',
     summary: 'WebAuthn verification failed: the RP ID hash in the ' +
-      'authenticator data is not SHA-256 of the expected RP ID.',
+      'authenticator data is not SHA-256 of the expected RP ID — or, for a ' +
+      'legacy U2F key whose client used the appid extension, of the AppID ' +
+      'it was imported under (#1955).',
     spec: 'HTTP 200 page naming the failed check' },
   { code: 'STS-AUTHN-0032',
     summary: 'WebAuthn verification failed: the authenticator data does not ' +
@@ -8358,6 +8439,55 @@ const CODES = [
       'batch decides nothing: no session is moved to remembered and no set ' +
       'is deleted on it, and the next run starts again at that batch.',
     spec: 'none: a scheduler job; logged, never sent' },
+  { code: 'STS-AUTHN-0559',
+    summary: 'A passkey was not registered: the passkey policy asks a ' +
+      'security key for CTAP 2.1 credential protection and enforces it ' +
+      '(credProtect, enforceCredProtect, #1955), and the authenticator ' +
+      'reported a lower credProtect level, or none, which is level 1. The ' +
+      'issuance policy\'s cred-protect rule. Asked where every key is ' +
+      'written.',
+    spec: 'HTTP 200 page naming the refusal; /admin-api and /account-api ' +
+      'HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-AUTHN-0560',
+    summary: 'A passkey policy save was refused: enforceCredProtect was on ' +
+      'while credProtect was none, so there was no level to enforce ' +
+      '(#1955). Nothing was written.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-AUTHN-0561',
+    summary: 'A legacy U2F security key was not imported: its AppID is not ' +
+      'one webauthn.u2fAppIds lists, or that setting is empty, which is ' +
+      'the feature off (#1955). Nothing was written.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-AUTHN-0562',
+    summary: 'A legacy U2F security key was not imported: its key handle ' +
+      'is not base64 or base64url of 1 to 255 bytes (#1955).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-AUTHN-0563',
+    summary: 'A legacy U2F security key was not imported: its public key ' +
+      'is not an uncompressed P-256 point (65 bytes starting 0x04, on the ' +
+      'curve) (#1955).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-AUTHN-0564',
+    summary: 'A legacy U2F security key was not imported: its counter is ' +
+      'not a whole number from 0 to 4294967295 (#1955).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-AUTHN-0565',
+    summary: 'A sign-in step was answered by a legacy U2F security key ' +
+      'that may not answer it: the step is passwordless (a U2F key cannot ' +
+      'verify the person), or webauthn.u2fAppIds no longer permits its ' +
+      'AppID at this RP ID (#1955).',
+    spec: 'HTTP 200 page naming the refusal' },
+  { code: 'STS-AUTHN-0566',
+    summary: 'A write of webauthn.u2fAppIds was refused: an entry is not a ' +
+      'U2F AppID — an absolute https URL with a host, no user name or ' +
+      'password and no fragment, at most 2048 characters (#1955).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -20594,6 +20724,29 @@ const CODES = [
       'approval on the portal could not be queued; the request still waits ' +
       'there (#432 phase 6).',
     spec: 'log only' },
+  { code: 'STS-MAIL-0240',
+    summary: 'A message whose template mail.encryptionRequired names was ' +
+      'not queued: the person has chosen no mail encryption, so ' +
+      'nothing could encrypt it. The use\'s own refusal handling ' +
+      'applies (#1955).',
+    spec: 'log only (the use refuses as for any unsent message)' },
+  { code: 'STS-MAIL-0241',
+    summary: 'A message was not queued because the encryption the person ' +
+      'chose cannot be honoured now (no usable OpenPGP encryption ' +
+      'key, no S/MIME certificate that can receive); it is not ' +
+      'sent in the clear against their choice (#1955).',
+    spec: 'log only (the use refuses as for any unsent message)' },
+  { code: 'STS-MAIL-0242',
+    summary: 'An encrypted message cannot be carried by the realm\'s ' +
+      'transport: Azure Communication Services takes structured ' +
+      'content and cannot send a MIME entity this service composed ' +
+      '(#1955).',
+    spec: 'log only' },
+  { code: 'STS-MAIL-0243',
+    summary: 'An encrypted message could not be encrypted at send time ' +
+      '(the stored key or certificate no longer reads); it is a ' +
+      'dead letter, never sent in the clear (#1955).',
+    spec: 'log only' },
   // ===== I18N ==============================================================
   { code: 'STS-I18N-0001',
     summary: 'A catalog file under common/locales or a built-in mail ' +
@@ -22786,6 +22939,321 @@ const CODES = [
       'register, so a person made again under the name owns it. Remove it ' +
       'on the Devices page.',
     spec: '' },
+  // ===== HWTOKEN ===========================================================
+  { code: 'STS-HWTOKEN-0001',
+    summary: 'A hardware token\'s serial was offered with an evidence ' +
+      'source that is not attestation (the FIDO enterprise ' +
+      'attestation, a PIV key attestation or a vendor import); ' +
+      'nothing was recorded (#1955).',
+    spec: '' },
+  { code: 'STS-HWTOKEN-0002',
+    summary: 'An attestation named no vendor and serial the hardware token ' +
+      'register can key a token by; nothing was recorded (#1955).',
+    spec: '' },
+  { code: 'STS-HWTOKEN-0003',
+    summary: 'A credential of an unknown kind, or with an empty reference, ' +
+      'was offered to the hardware token register (#1955).',
+    spec: '' },
+  { code: 'STS-HWTOKEN-0004',
+    summary: 'A hardware token\'s credential named a person with no ' +
+      'directory entry to hold it (#1955).',
+    spec: '' },
+  { code: 'STS-HWTOKEN-0005',
+    summary: 'The lost-key act named a hardware token that is not in the ' +
+      'realm\'s register, or (at the portal) not held by the caller ' +
+      '(#1955).',
+    spec: 'HTTP 404 (the page with the sentence)' },
+  { code: 'STS-HWTOKEN-0006',
+    summary: 'The lost-key act named a hardware token already reported ' +
+      'lost (#1955).',
+    spec: 'HTTP 409 (the page with the sentence)' },
+  { code: 'STS-HWTOKEN-0007',
+    summary: 'A credential on a hardware token reported lost could not be ' +
+      'retired: its kind\'s retire action refused or threw. The ' +
+      'token is marked lost; the credential named on the audit row ' +
+      'is still live and must be removed by hand (#1955).',
+    spec: '' },
+  { code: 'STS-HWTOKEN-0008',
+    summary: 'A retire action for a hardware token credential kind was ' +
+      'refused at installation: it named an unknown kind, no label ' +
+      'or no retire function (#1955, rule 3e).',
+    spec: '' },
+  { code: 'STS-HWTOKEN-0009',
+    summary: 'A credential on a hardware token reported lost is of a kind ' +
+      'no retire action is installed for, so it was not retired and ' +
+      'is still live (#1955).',
+    spec: '' },
+  { code: 'STS-HWTOKEN-0010',
+    summary: 'At the portal\'s lost-key act a credential on the token was ' +
+      'registered by another person, so it was left for an ' +
+      'administrator to retire (#1955).',
+    spec: '' },
+  { code: 'STS-HWTOKEN-0011',
+    summary: 'A passkey was written and the hardware token register ' +
+      'could not record the token its attestation named; the key ' +
+      'stands, and the token is recorded when it is next registered ' +
+      '(#1955).',
+    spec: '' },
+  { code: 'STS-HWTOKEN-0012',
+    summary: 'A hardware token act named an action that is not one of ' +
+      'the page\'s (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-HWTOKEN-0013',
+    summary: 'The hardware token list or the lost-key act failed with ' +
+      'an unexpected error at /admin-api; the log line has the stack ' +
+      '(#1955).',
+    spec: 'HTTP 500' },
+  // ===== OPENPGP ===========================================================
+  { code: 'STS-OPENPGP-0001',
+    summary: 'An OpenPGP public key offered for registration did not ' +
+      'read: it was empty, larger than the 64 KiB this service ' +
+      'reads, more than one key, or not an OpenPGP key at all ' +
+      '(#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0002',
+    summary: 'A SECRET OpenPGP key was offered for registration; nothing ' +
+      'was stored. The person is told to export the public key ' +
+      '(#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0003',
+    summary: 'An OpenPGP key offered for registration is revoked or has ' +
+      'expired (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0004',
+    summary: 'An OpenPGP key, or the subkey that made its proof, uses an ' +
+      'algorithm the allow list refuses (DSA, ElGamal, a Brainpool ' +
+      'curve, or RSA shorter than openpgp.minRsaBits), or has no ' +
+      'valid signing key (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0005',
+    summary: 'No valid user id of an OpenPGP key offered for registration ' +
+      'carries the address on the person\'s entry (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0006',
+    summary: 'A person with no mail address asked for an OpenPGP ' +
+      'registration challenge, or offered a key; a key is ' +
+      'registered for the address its user id names (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0007',
+    summary: 'The proof of possession offered with an OpenPGP key is not ' +
+      'a readable cleartext-signed message (gpg --clearsign) ' +
+      '(#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0008',
+    summary: 'The proof of possession offered with an OpenPGP key does ' +
+      'not verify, or was made by a key that is not a signing key ' +
+      'of it (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0009',
+    summary: 'The text an OpenPGP proof of possession signs is not the ' +
+      'challenge this service issued the person (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0010',
+    summary: 'An OpenPGP proof of possession was signed before the ' +
+      'challenge was issued or after now, beyond ' +
+      'openpgp.signatureSkewS (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0011',
+    summary: 'No value of a person\'s userSMIMECertificate holds a ' +
+      'certificate that can receive S/MIME now (expired, an ' +
+      'unsupported key, a key usage or extended key usage that ' +
+      'excludes it), so mail to them cannot be S/MIME-encrypted ' +
+      '(#1955).',
+    spec: 'log only' },
+  { code: 'STS-OPENPGP-0012',
+    summary: 'An OpenPGP key was offered with no outstanding challenge ' +
+      'for the person, a lapsed one, or one already spent by ' +
+      'another request (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0013',
+    summary: 'An OpenPGP operation named a person with no entry in the ' +
+      'realm (#1955).',
+    spec: 'HTTP 404' },
+  { code: 'STS-OPENPGP-0014',
+    summary: 'An OpenPGP operation named an unknown action, or an unknown ' +
+      'mail encryption choice (#1955).',
+    spec: 'HTTP 400' },
+  { code: 'STS-OPENPGP-0015',
+    summary: 'A person with no OpenPGP key registered asked to remove or ' +
+      'publish one (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0016',
+    summary: 'A person chose OpenPGP for their mail while no registered ' +
+      'key of theirs has an encryption key valid now (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0017',
+    summary: 'A person chose S/MIME for their mail while their ' +
+      'userSMIMECertificate holds no certificate that can receive ' +
+      '(#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0018',
+    summary: 'An S/MIME certificate offered for a person\'s entry is not ' +
+      'a certificate, cannot receive S/MIME now, or does not name ' +
+      'the address on the entry (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0019',
+    summary: 'An OpenPGP key, a publication choice, a mail encryption ' +
+      'choice or an S/MIME certificate verified but could not be ' +
+      'written to the person\'s entry (#1955).',
+    spec: 'HTTP 500' },
+  { code: 'STS-OPENPGP-0020',
+    summary: 'An OpenPGP operation was asked before the directory filled ' +
+      'its slot (ldap/ldap_server.js), so no person could be read ' +
+      '(#1955).',
+    spec: 'HTTP 500' },
+  { code: 'STS-OPENPGP-0021',
+    summary: 'A Web Key Directory request named a domain or a hashed ' +
+      'local part that is not one (#1955).',
+    spec: 'HTTP 404' },
+  { code: 'STS-OPENPGP-0022',
+    summary: 'A Web Key Directory request named a domain no realm serves: ' +
+      'openpgp.wkd is off, or no realm\'s openpgp.wkdDomains (or ' +
+      'own domain) is it (#1955).',
+    spec: 'HTTP 404' },
+  { code: 'STS-OPENPGP-0023',
+    summary: 'A Web Key Directory lookup threw; the client is told the ' +
+      'key could not be read (#1955).',
+    spec: 'HTTP 500' },
+  { code: 'STS-OPENPGP-0024',
+    summary: 'A Web Key Directory request named an address with no ' +
+      'published key: nobody holds it, the person did not opt in, ' +
+      'the key was removed or replaced, or it expired (#1955).',
+    spec: 'HTTP 404' },
+  { code: 'STS-OPENPGP-0025',
+    summary: 'An OpenPGP operation of the account API or the management ' +
+      'API threw (#1955).',
+    spec: 'HTTP 500' },
+  // ===== PIV ===============================================================
+  { code: 'STS-PIV-0001',
+    summary: 'A shipped PIV attestation certificate ' +
+      '(common/pki_piv_anchors.json) did not match its pinned ' +
+      'SHA-256 and is not used (#1955).',
+    spec: '' },
+  { code: 'STS-PIV-0002',
+    summary: 'Refused under paranoid PKI mode for piv-attestation: a ' +
+      'YubiKey PIV key attestation chain; nothing established what ' +
+      'the use case needs, or the use case itself refused (a ' +
+      'self-signed leaf, an anchor out of reach).',
+    spec: 'the use case\'s refusal (#1360, #1955)' },
+  { code: 'STS-PIV-0003',
+    summary: 'Refused under paranoid PKI mode for piv-card: an outside PIV ' +
+      'or CAC card\'s certificate mapped by its card UUID; the ' +
+      'leaf\'s keyUsage or validity failed, or the use case itself ' +
+      'refused.',
+    spec: 'the use case\'s refusal (#1360, #1955)' },
+  { code: 'STS-PIV-0004',
+    summary: 'A PIV attestation could not be read: the request\'s ' +
+      'id-aa-attestation attribute is no AttestationBundle, the ' +
+      'form\'s two certificates are not one slot certificate and an ' +
+      'f9 certificate, or a server-generated key carried one ' +
+      '(#1955).',
+    spec: 'HTTP 400; EST, SCEP and ACME refuse the request' },
+  { code: 'STS-PIV-0005',
+    summary: 'A PIV attestation certifies a different public key from the ' +
+      'certificate request\'s (#1955).',
+    spec: 'HTTP 400' },
+  { code: 'STS-PIV-0006',
+    summary: 'A PIV attestation does not chain to a PIV attestation anchor ' +
+      'of the realm (piv.attestationAnchors, Yubico\'s roots by ' +
+      'default), or the realm has none (#1955).',
+    spec: 'HTTP 400' },
+  { code: 'STS-PIV-0007',
+    summary: 'A PIV attestation names no serial number (Yubico extension ' +
+      '1.3.6.1.4.1.41482.3.7), so no hardware token can be recorded ' +
+      'from it (#1955).',
+    spec: 'HTTP 400' },
+  { code: 'STS-PIV-0008',
+    summary: 'A PIV attestation is of another slot than the PIV profile ' +
+      'asked is for (9a piv-auth, 9c piv-sign, 9d ' +
+      'piv-key-management, 9e piv-card-auth) (#1955).',
+    spec: 'HTTP 400' },
+  { code: 'STS-PIV-0009',
+    summary: 'The PIV enrolment form was sent without a certificate ' +
+      'request, without a PIV profile, or for a person the caller ' +
+      'may not enrol (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-PIV-0010',
+    summary: 'A PIV profile was asked without a PIV attestation in a realm ' +
+      'that requires one (piv.requireAttestation) (#1955).',
+    spec: 'HTTP 400' },
+  { code: 'STS-PIV-0011',
+    summary: 'An attested PIV key\'s PIN policy is weaker than the realm ' +
+      'requires (piv.pinPolicy) (#1955).',
+    spec: 'HTTP 400' },
+  { code: 'STS-PIV-0012',
+    summary: 'An attested PIV key\'s touch policy is weaker than the realm ' +
+      'requires (piv.touchPolicy) (#1955).',
+    spec: 'HTTP 400' },
+  { code: 'STS-PIV-0013',
+    summary: 'A piv-card-auth (slot 9e) certificate was refused at a ' +
+      'sign-in, because that key works without a PIN ' +
+      '(piv.cardAuthSignIn) (#1955).',
+    spec: 'the TLS sign-in and PKINIT refusals' },
+  { code: 'STS-PIV-0014',
+    summary: 'A certificate was issued from a verified PIV attestation and ' +
+      'the hardware token register could not record its token; the ' +
+      'certificate stands and earns no hardware claim (#1955).',
+    spec: '' },
+  { code: 'STS-PIV-0016',
+    summary: 'A PIV enrolment or key-recovery act failed with an ' +
+      'unexpected error; the log line has the stack (#1955).',
+    spec: 'HTTP 500' },
+  { code: 'STS-PIV-0020',
+    summary: 'A piv-key-management key was to be escrowed and no ' +
+      'key-encryption key is held to seal it, so it was neither ' +
+      'generated nor kept (#1955, D7).',
+    spec: 'HTTP 503' },
+  { code: 'STS-PIV-0021',
+    summary: 'EST /serverkeygen was asked for a piv-key-management key in ' +
+      'a realm that does not escrow them (piv.keyEscrow): a ' +
+      'server-generated 9d key exists only to be escrowed (#1955, ' +
+      'D7).',
+    spec: 'HTTP 501' },
+  { code: 'STS-PIV-0022',
+    summary: 'An escrowed key was asked for and no escrowed ' +
+      'piv-key-management key is held for that certificate on that ' +
+      'person (#1955, D7).',
+    spec: 'HTTP 404' },
+  { code: 'STS-PIV-0023',
+    summary: 'An administrator\'s recovery of an escrowed key was refused ' +
+      'by the access-control policy: the caller does not hold ' +
+      'PIV_KEY_RECOVERY (roles.pivKeyRecoveryGroup), or no policy ' +
+      'decider is installed (#1955, D7).',
+    spec: 'HTTP 403' },
+  { code: 'STS-PIV-0024',
+    summary: 'An escrowed key could not be opened (its data encryption key ' +
+      'is not held, or the sealed value is damaged) (#1955, D7).',
+    spec: 'HTTP 503' },
+  { code: 'STS-PIV-0025',
+    summary: 'An escrowed certificate could not be attached to a hardware ' +
+      'token: the token is not the caller\'s, is lost, or the ' +
+      'certificate is not an escrowed one of theirs (#1955, D7).',
+    spec: 'HTTP 404' },
+  { code: 'STS-PIV-0030',
+    summary: 'An outside PIV or CAC card\'s certificate, from an issuer in ' +
+      'piv.externalIssuers, was not mapped: it asserts none of ' +
+      'piv.externalPolicyOids, or does not carry exactly one ' +
+      'urn:uuid subjectAltName (#1955, D8).',
+    spec: 'the outside-certificate refusal (STS-TLS-0054, STS-AUTHN-0468)' },
+  { code: 'STS-PIV-0031',
+    summary: 'An outside PIV or CAC card\'s certificate names a card UUID ' +
+      'that is in stsPivCardUuid on no person of the realm (#1955, ' +
+      'D8).',
+    spec: 'the outside-certificate refusal (STS-TLS-0054, STS-AUTHN-0468)' },
+  { code: 'STS-PIV-0032',
+    summary: 'An outside PIV or CAC card\'s card UUID is in stsPivCardUuid ' +
+      'on more than one person, so it names nobody (#1955, D8).',
+    spec: 'the outside-certificate refusal (STS-TLS-0055, STS-AUTHN-0469)' },
+  { code: 'STS-PIV-0034',
+    summary: 'A value written to stsPivCardUuid is not a card UUID in ' +
+      'RFC 9562 form (or is the nil UUID); nothing was written (#1955, ' +
+      'D8).',
+    spec: 'HTTP 400 (the directory write); LDAP constraintViolation' },
+  { code: 'STS-PIV-0035',
+    summary: 'A card UUID written to stsPivCardUuid is already held by ' +
+      'another entry of the realm, which would make the card name two ' +
+      'people; nothing was written (#1955, D8).',
+    spec: 'HTTP 400 (the directory write); LDAP constraintViolation' },
   // ===== SVCACCT ===========================================================
   { code: 'STS-SVCACCT-0001',
     summary: 'A service-account policy profile was named with something ' +
@@ -24123,7 +24591,132 @@ const CODES = [
       '(#1827, phase 3).',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
+  { code: 'STS-XACML-0331',
+    summary: 'A remote PEP\'s heartbeat was refused: a member its entry ' +
+      'stores carries a value the service cannot hold (fuzz run #595) — ' +
+      'a counter that is not a non-negative integer of at most 2^53 - 1, ' +
+      'a text member that is not a string or carries a control ' +
+      'character, or signals, settings or listeners that are not an ' +
+      'object or null. Nothing of it is recorded; the refusal names the ' +
+      'member.',
+    spec: 'none — 400 invalid_request on POST /xacml/pep/heartbeat' },
   // ===== XPEP ==============================================================
+  { code: 'STS-XACML-0303',
+    summary: 'A role was written with a membership mode other than static ' +
+      'or dynamic-selectable (#1072).',
+    spec: '' },
+  { code: 'STS-XACML-0304',
+    summary: 'A dynamic selectable role was written with a member or a ' +
+      'conferring client (#1072): such a role is held by nobody and offered ' +
+      'at sign-in, so the write was refused, whether it made a role with ' +
+      'members dynamic or added a member to a dynamic role.',
+    spec: '' },
+  { code: 'STS-XACML-0305',
+    summary: 'A console or native role was to be made dynamic selectable ' +
+      '(#1072); their holders are fixed, so the write was refused.',
+    spec: '' },
+  { code: 'STS-XACML-0306',
+    summary: 'A dynamic role\'s selection was neither optional nor ' +
+      'required (#1072).',
+    spec: '' },
+  { code: 'STS-XACML-0307',
+    summary: 'A dynamic role\'s exclusive group was not a name of up to 64 ' +
+      'letters, digits and . _ : - (#1072).',
+    spec: '' },
+  { code: 'STS-XACML-0308',
+    summary: 'A role only applications may hold was to be made dynamic ' +
+      'selectable (#1072); a dynamic role is chosen by a person at sign-in.',
+    spec: '' },
+  { code: 'STS-XACML-0309',
+    summary: 'The selection of a static role was to be set (#1072); only a ' +
+      'dynamic selectable role is chosen at sign-in.',
+    spec: '' },
+  { code: 'STS-XACML-0310',
+    summary: 'A dynamic role\'s eligibility policy (xacmlRole, #1072) was ' +
+      'to be made the root of the repository; it is decided alone, for ' +
+      'one role, so the write was refused.',
+    spec: '' },
+  { code: 'STS-XACML-0311',
+    summary: 'A dynamic role\'s eligibility was asked about, or its policy ' +
+      'set, for a role this realm does not hold (#1072); nobody is eligible.',
+    spec: '' },
+  { code: 'STS-XACML-0312',
+    summary: 'A static role was asked about as a dynamic one, or given an ' +
+      'eligibility policy (#1072); only a dynamic selectable role is offered.',
+    spec: '' },
+  { code: 'STS-XACML-0313',
+    summary: 'A dynamic role has no eligibility policy (#1072), so nobody is ' +
+      'eligible for it.',
+    spec: '' },
+  { code: 'STS-XACML-0314',
+    summary: 'A dynamic role names an eligibility policy that is not in ' +
+      'ou=policies (#1072); nobody is eligible for it.',
+    spec: '' },
+  { code: 'STS-XACML-0315',
+    summary: 'A dynamic role names a policy that is not its own: it carries ' +
+      'another role\'s xacmlRole, or none (#1072). It is never adopted, and ' +
+      'nobody is eligible.',
+    spec: '' },
+  { code: 'STS-XACML-0316',
+    summary: 'A dynamic role\'s eligibility policy is disabled (#1072); ' +
+      'nobody is eligible.',
+    spec: '' },
+  { code: 'STS-XACML-0317',
+    summary: 'A dynamic role\'s eligibility policy does not parse (#1072); ' +
+      'nobody is eligible.',
+    spec: '' },
+  { code: 'STS-XACML-0318',
+    summary: 'A dynamic role\'s eligibility could not be decided: the PDP ' +
+      'met a processing or syntax error, or the decision threw (#1072). The ' +
+      'person is not eligible.',
+    spec: '' },
+  { code: 'STS-XACML-0319',
+    summary: 'A person is not eligible for a dynamic role: its policy did ' +
+      'not answer Permit, or no person was named (#1072).',
+    spec: '' },
+  { code: 'STS-XACML-0320',
+    summary: 'A dynamic role that belongs to one application was asked about ' +
+      'for a sign-in to another (#1072); it is offered only on its own ' +
+      'application\'s.',
+    spec: '' },
+  { code: 'STS-XACML-0321',
+    summary: 'A dynamic role\'s eligibility policy was given as neither or ' +
+      'both of document (XACML XML) and alfa (#1072).',
+    spec: '' },
+  { code: 'STS-XACML-0322',
+    summary: 'A dynamic role would not take the reference to its new ' +
+      'eligibility policy (#1072); a new policy was taken back.',
+    spec: '' },
+  { code: 'STS-XACML-0324',
+    summary: 'The reader of a session\'s chosen dynamic roles threw while ' +
+      'roles were resolved (#1072); no dynamic role was held.',
+    spec: '' },
+  { code: 'STS-XACML-0325',
+    summary: 'A sign-in\'s role step was submitted with a role it did not ' +
+      'offer (#1072): fabricated, from another realm, application or ' +
+      'sign-in, or not eligible when the step was drawn. Nothing was chosen.',
+    spec: 'HTTP 400' },
+  { code: 'STS-XACML-0326',
+    summary: 'A sign-in\'s role step was submitted with two roles of one ' +
+      'exclusive group (#1072). Nothing was chosen.',
+    spec: 'HTTP 400' },
+  { code: 'STS-XACML-0327',
+    summary: 'A sign-in\'s role step was submitted without any of the ' +
+      'required roles it offered (#1072). Nothing was chosen.',
+    spec: 'HTTP 400' },
+  { code: 'STS-XACML-0328',
+    summary: 'A role chosen at a sign-in\'s role step was no longer eligible ' +
+      'when it was submitted (#1072); the step is drawn again.',
+    spec: 'HTTP 400' },
+  { code: 'STS-XACML-0329',
+    summary: 'A session was refused at a door that cannot draw the role ' +
+      'step (federation, a wallet, SPNEGO, a certificate) because a ' +
+      'required dynamic role was offered to the person (#1072).',
+    spec: '' },
+  { code: 'STS-XACML-0330',
+    summary: 'A sign-in held for the role step had no pending sign-in to ' +
+      'draw the step on, so it was refused (#1072).',
+    spec: '' },
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +
       'or ../common/error_codes; the container starts anyway and ' +
@@ -27358,6 +27951,15 @@ const CODES = [
       'was written (#1668).',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
+  { code: 'STS-ADMIN-0951',
+    summary: 'An operator\'s import of a legacy U2F security key named ' +
+      'nobody (#1955).',
+    spec: 'HTTP 400 (API)' },
+  { code: 'STS-ADMIN-0952',
+    summary: 'An operator\'s import of a legacy U2F security key was ' +
+      'refused; the inner code says why — the AppID, the key handle, the ' +
+      'public key, the counter, or the writer\'s own rules (#1955).',
+    spec: 'HTTP 400 (API)' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',

@@ -4686,6 +4686,74 @@ function operatorCodeRefusal(dn) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// `stsPivCardUuid` ON EVERY WRITE (#1955 P2, D8). The value maps an outside
+// PIV or CAC card to its holder (`pivCardHolders()` below), so a value that is
+// not a card UUID, or one another entry already holds, would make that
+// mapping wrong or ambiguous. Every door that writes the attribute asks this
+// before it commits: `putEntry()` (every create and replace, SCIM's and the
+// LDIF import's included), `writePersonAttribute()` (the console and
+// /admin-api's attribute editor) and the LDAP modify, which commits onto the
+// entry itself. Each value is NORMALISED in place — trimmed, a `urn:uuid:`
+// prefix taken off, lower-cased, repeats dropped — then held to RFC 9562's
+// string form (the nil UUID names no card) and refused (STS-PIV-0034), and
+// one another entry of the realm holds is refused (STS-PIV-0035): the
+// mapping refuses two holders too, but a write that makes them is the
+// mistake, and refusing it says so where it is made.
+// ---------------------------------------------------------------------------
+const CARD_UUID_FORM =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/**
+ * Normalises the stsPivCardUuid values of an attribute set in place and
+ * refuses a malformed one or one another entry holds.
+ *
+ * @param dn - the entry being written
+ * @param attributes - its attributes, lower-cased names
+ * @returns null, or `{ code, why }`
+ */
+function pivCardUuidRefusal(dn, attributes) {
+  log.debug('Entering pivCardUuidRefusal().');
+  const raw = attributes && attributes.stspivcarduuid;
+  if (!raw || !valuesOf(raw).length) {
+    log.debug('Leaving pivCardUuidRefusal(). None written.');
+    return null;
+  }
+  const out = [];
+  const values = valuesOf(raw);
+  for (let i = 0; i < values.length; i++) {
+    const one = String(values[i]).trim().replace(/^urn:uuid:/i, '')
+      .toLowerCase();
+    if (!CARD_UUID_FORM.test(one) || /^0{8}-0{4}-0{4}-0{4}-0{12}$/.test(one)) {
+      log.debug('Leaving pivCardUuidRefusal(). Malformed.');
+      return { code: 'STS-PIV-0034',
+               why: 'stsPivCardUuid holds a card UUID in RFC 9562 form ' +
+                    '(8-4-4-4-12 hexadecimal digits, optionally after ' +
+                    'urn:uuid:), and "' + String(values[i]).slice(0, 64) +
+                    '" is not one.' };
+    }
+    if (out.indexOf(one) < 0) {
+      out.push(one);
+    }
+  }
+  const self = normalizeDn(dn);
+  for (let i = 0; i < out.length; i++) {
+    const other = pivCardHolders(out[i]).filter(function (h) {
+      return normalizeDn(h.dn) !== self;
+    })[0];
+    if (other) {
+      log.debug('Leaving pivCardUuidRefusal(). Held elsewhere.');
+      return { code: 'STS-PIV-0035',
+               why: 'The card UUID ' + out[i] + ' is already in ' +
+                    'stsPivCardUuid on another entry of this realm; a card ' +
+                    'names one person.' };
+    }
+  }
+  attributes.stspivcarduuid = out;
+  log.debug('Leaving pivCardUuidRefusal(). ' + out.length + ' value(s).');
+  return null;
+}
+
 // putEntry() answers `{ ok: false }` when it writes nothing, and that
 // object is truthy. A writer that then stamps timestamps and audits a
 // create has recorded a write that did not happen (#1416, the same trap
@@ -4747,6 +4815,17 @@ function putEntry(dn, attributes, options) {
   Object.keys(attributes || {}).forEach(function (name) {
     stored.attributes[String(name).toLowerCase()] = valuesOf(attributes[name]);
   });
+  // A PIV CARD UUID, normalised and held unique (#1955 P2): before anything
+  // is written.
+  const cardRefusal = pivCardUuidRefusal(dn, stored.attributes);
+  if (cardRefusal) {
+    log.warn(errorCodes.tag(cardRefusal.code) + 'ldap: refused to store ' +
+             dn + ': ' + cardRefusal.why);
+    log.debug('Leaving putEntry(). Refused a card UUID.');
+    return coded(cardRefusal.code, { ok: false, reason: 'piv-card-uuid',
+                                     dn: String(dn), attributes: {},
+                                     errors: [cardRefusal.why] });
+  }
   stored.attributes.createtimestamp = [now];
   stored.attributes.modifytimestamp = [now];
   if (opts.origin) stored.origin = String(opts.origin);
@@ -13427,6 +13506,66 @@ function certificateHolders(sha256) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// THE PEOPLE AN OUTSIDE PIV OR CAC CARD'S UUID NAMES (#1955 P2, D8).
+//
+// `common/piv_attestation.ts`'s `cardIdentityOf()` maps a card certificate
+// from one of the realm's `piv.externalIssuers` to the person whose
+// `stsPivCardUuid` holds the card UUID its subjectAltName names, and never by
+// a name on the certificate. It asks this, through certificate enrollment's
+// slot (`pivCardHolders`), for `certificateHolders()`'s reason: that slot is
+// already the one that answers "which entry is this certificate", and a
+// second would be a second answer to it.
+//
+// FOUND AS A DID IS (`entryByDidSubject()`): a windowed process asks the
+// store's index (`stspivcarduuid` is in the codec's VALUE_INDEXED, a key the
+// service writes, so no schema moves), and the resident entries (every
+// entry, outside a window) are walked. The question is asked only for a
+// certificate from a configured outside PIV issuer that is stored on nobody,
+// so it is not on every handshake. At most three are answered: the caller
+// asks whether there is exactly one person.
+// ---------------------------------------------------------------------------
+/**
+ * The entries of the ambient realm whose stsPivCardUuid holds a card UUID,
+ * each `{ kind, id, dn }`.
+ *
+ * @param uuid - the card UUID, lower case, no `urn:uuid:` prefix
+ * @returns at most three holders, each once
+ */
+function pivCardHolders(uuid) {
+  log.debug('Entering pivCardHolders().');
+  const wanted = String(uuid || '').toLowerCase();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+    .test(wanted)) {
+    log.debug('Leaving pivCardHolders(). Not a card UUID.');
+    return [];
+  }
+  const holds = function (stored) {
+    return !!stored && (stored.attributes.stspivcarduuid || [])
+      .some(function (one) {
+        return String(one).trim().toLowerCase() === wanted;
+      });
+  };
+  const found = new Map();
+  const add = function (stored) {
+    const key = normalizeDn(stored.dn);
+    if (!found.has(key) && found.size < 3) {
+      found.set(key, certificateHolderOf(stored));
+    }
+  };
+  const asked = windowedFind('byAttribute', ['stspivcarduuid', wanted, 3],
+                             holds);
+  (asked || []).forEach(add);
+  (asked ? eachResidentEntry : eachEntryInRealm)(function (entry) {
+    if (holds(entry)) {
+      add(entry);
+    }
+  });
+  const out = Array.from(found.values());
+  log.debug('Leaving pivCardHolders(). ' + out.length + '.');
+  return out;
+}
+
 // What the stored-certificate index has done in the ambient realm, for the
 // tests: `userHandleIndexState()`'s shape.
 function certificateIndexState() {
@@ -15359,6 +15498,37 @@ if (typeof portal.setDirectory === 'function') {
            'an error; the page says which it is showing.');
 }
 
+// A PERSON OF THE AMBIENT REALM BY THEIR ADDRESS: their username, or ''. The
+// mail channel's forgot-password lookup (#63) and the Web Key Directory's
+// `l` parameter (#1955 P6) both ask it, so it is one named function.
+function personNameByMail(address) {
+  log.debug('Entering personNameByMail().');
+  const wanted = String(address || '').trim().toLowerCase();
+  let found = '';
+  if (wanted && directoryWindow) {
+    // ASKED OF THE STORE'S MAIL INDEX IN A WINDOWED PROCESS (#616): this
+    // is the portal's unauthenticated forgot-password form, and
+    // `allPersons()` paged and copied every person in the realm to
+    // answer it. `peopleByMail()` is the `mail_keys` lookup, in key
+    // order; the first is the answer, as the first in `allPersons()`'
+    // order was.
+    const hits = peopleByMail(wanted);
+    found = hits.length ? hits[0].username || '' : '';
+  } else if (wanted) {
+    allPersons().some(function (entry) {
+      const values = (entry.attributes && entry.attributes.mail) || [];
+      if (values.some(function (v) {
+        return String(v).trim().toLowerCase() === wanted;
+      })) {
+        found = usernameOfEntry(entry) || '';
+      }
+      return !!found;
+    });
+  }
+  log.debug('Leaving personNameByMail(). ' + (found ? 'Found.' : 'None.'));
+  return found;
+}
+
 // ---------------------------------------------------------------------------
 // THE MAIL CHANNEL'S SLOT (#63, 2026-09-22), for the portal's reason and in
 // the portal's shape: `common/mail.ts` is a library loaded long before this
@@ -15406,33 +15576,7 @@ if (typeof mailChannel.setDirectory === 'function') {
       return { dn: stored.dn,
                attributes: Object.assign({}, stored.attributes) };
     },
-    personByMail: function (address) {
-      log.debug('Entering personByMail().');
-      const wanted = String(address || '').trim().toLowerCase();
-      let found = '';
-      if (wanted && directoryWindow) {
-        // ASKED OF THE STORE'S MAIL INDEX IN A WINDOWED PROCESS (#616): this
-        // is the portal's unauthenticated forgot-password form, and
-        // `allPersons()` paged and copied every person in the realm to
-        // answer it. `peopleByMail()` is the `mail_keys` lookup, in key
-        // order; the first is the answer, as the first in `allPersons()`'
-        // order was.
-        const hits = peopleByMail(wanted);
-        found = hits.length ? hits[0].username || '' : '';
-      } else if (wanted) {
-        allPersons().some(function (entry) {
-          const values = (entry.attributes && entry.attributes.mail) || [];
-          if (values.some(function (v) {
-            return String(v).trim().toLowerCase() === wanted;
-          })) {
-            found = usernameOfEntry(entry) || '';
-          }
-          return !!found;
-        });
-      }
-      log.debug('Leaving personByMail(). ' + (found ? 'Found.' : 'None.'));
-      return found;
-    },
+    personByMail: personNameByMail,
     // THE ADDRESS ITSELF (#64): written by an administrator's set-mail, or
     // by a person completing the verification of a NEW address (D5 — the
     // address is not `mail` until its link is clicked). `source` is
@@ -15536,6 +15680,46 @@ if (typeof mailChannel.setDirectory === 'function') {
            'channel has no recipients: every message is refused as having ' +
            'nobody to go to.');
 }
+
+// A PERSON'S OpenPGP KEY, MAIL ENCRYPTION AND S/MIME CERTIFICATE (#1955 P6),
+// the AuthZEN slot's shape: `common/openpgp_keys.ts` reads one person, writes
+// the five attributes it owns — `stsOpenPgpKey`, `stsOpenPgpFingerprint`,
+// `stsOpenPgpKeyInfo`, `stsMailEncryption` and `userSMIMECertificate` (under
+// either spelling) — and asks who holds an address for the Web Key
+// Directory's `l` parameter. It is required by `common/mail.ts` at 8a, long
+// before this module, so it cannot require this one (rule 3e). The S/MIME
+// values are read HERE, by name, under both RFC 4522 spellings, because this
+// is the store and a certificate written by an LDAP client arrives as
+// `userSMIMECertificate;binary`.
+const OPENPGP_WRITABLE = ['stsopenpgpkey', 'stsopenpgpfingerprint',
+                          'stsopenpgpkeyinfo', 'stsmailencryption',
+                          'usersmimecertificate;binary',
+                          'usersmimecertificate'];
+const openpgpKeys = require('../common/openpgp_keys');
+openpgpKeys.setDirectory({
+  locate: function locate(username) {
+    log.debug('Entering the OpenPGP locate().');
+    const located = locateEntry(String(username || ''));
+    const stored = located.stored;
+    if (!stored || !isPersonEntry(stored) || !usernameOfEntry(stored)) {
+      log.debug('Leaving the OpenPGP locate(). Nobody.');
+      return null;
+    }
+    const smime = [].concat(stored.attributes['usersmimecertificate;binary'] ||
+                            [], stored.attributes.usersmimecertificate || [])
+      .map(String);
+    log.debug('Leaving the OpenPGP locate(). ' + stored.dn);
+    return { dn: stored.dn, username: usernameOfEntry(stored),
+             attributes: attributeSnapshot(stored), smime: smime };
+  },
+  write: function write(dn, name, values) {
+    log.debug('Entering the OpenPGP write(). ' + name);
+    const allowed = OPENPGP_WRITABLE.indexOf(String(name).toLowerCase()) >= 0;
+    log.debug('Leaving the OpenPGP write(). ' + allowed);
+    return allowed && writePersonAttribute(dn, name, values) === true;
+  },
+  personByMail: personNameByMail
+});
 
 // ---------------------------------------------------------------------------
 // THE PERSON-ASSERTION SLOT (2026-09-11), and it is the one that lets somebody
@@ -16892,6 +17076,9 @@ if (typeof certEnrollment.setDirectory === 'function') {
     // same reason this one did (a require from there to here drags every
     // `/admin/ldap/*` route forward) and add nothing but an indirection.
     certificateHolders: certificateHolders,
+    // THE PEOPLE A PIV CARD UUID NAMES (#1955 P2, D8), on this slot for
+    // `certificateHolders`' reason (see `pivCardHolders()`).
+    pivCardHolders: pivCardHolders,
     // `holders()` WITH THE VALUES, in the same walk and the same order
     // (#352, 2026-09-29): `[{ id, values }]`. The enrollment listings asked
     // `holders()` for the ids and then `read()` for each — a second lookup
@@ -17531,6 +17718,21 @@ function writePersonAttribute(dn, name, values) {
     const refused = operatorCodeRefusal(dn);
     log.debug('Leaving writePersonAttribute(). Refused an operator code.');
     return refused;
+  }
+  // A PIV CARD UUID (#1955 P2), for putEntry()'s reason: this writer does
+  // not go through it.
+  if (key === 'stspivcarduuid' && kept.length) {
+    const held = { stspivcarduuid: kept };
+    const cardRefusal = pivCardUuidRefusal(dn, held);
+    if (cardRefusal) {
+      log.warn(errorCodes.tag(cardRefusal.code) + 'ldap: refused to write ' +
+               'stsPivCardUuid on ' + dn + ': ' + cardRefusal.why);
+      log.debug('Leaving writePersonAttribute(). Refused a card UUID.');
+      return coded(cardRefusal.code, { ok: false, reason: 'piv-card-uuid',
+                                       dn: String(dn), attributes: {},
+                                       errors: [cardRefusal.why] });
+    }
+    kept.splice(0, kept.length, ...held.stspivcarduuid);
   }
   if (kept.length) {
     stored.attributes[key] = kept;
@@ -21895,6 +22097,18 @@ function ldapModifyNow(req, res, next) {
         new ldap.ProtocolError('unknown modify operation "' + operation + '"'),
         dn));
     }
+  }
+  // A PIV CARD UUID THIS MODIFY WRITES (#1955 P2), normalised in the working
+  // copy and held unique, before anything is committed: putEntry()'s check
+  // does not see a modify.
+  const cardRefusal = pivCardUuidRefusal(stored.dn, working);
+  if (cardRefusal) {
+    log.debug('Leaving the LDAP modify handler. A card UUID was refused.');
+    // error-code: none — the refusal's own code, STS-PIV-0034 or -0035
+    return next(ldapRefusal(req, cardRefusal.code, 'a modify of ' + dn +
+      ' was refused: ' + cardRefusal.why,
+      coded(cardRefusal.code, new ldap.ConstraintViolationError(
+        cardRefusal.why)), dn));
   }
   // AND A PASSWORD THIS MODIFY SETS meets the password policy against the
   // entry as it was BEFORE the modify — its current password and its history —
@@ -32291,6 +32505,7 @@ module.exports = {
   // stores, the one writer the console and /admin-api go through, and the
   // index's state for the tests.
   certificateHolders: certificateHolders,
+  pivCardHolders: pivCardHolders,
   storedCertificatesOf: storedCertificatesOf,
   changeStoredCertificate: changeStoredCertificate,
   certificateIndexState: certificateIndexState,

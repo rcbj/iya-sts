@@ -624,6 +624,25 @@ this service's thread. `GET /xacml` is guarded because it describes the other
 three, and its refusal names the group and the setting so that the page's job
 survives being refused.
 
+### Who may recover another person's escrowed PIV key (#1955 P2, D7)
+
+**A policy decision, not Admin Write** (the *authorization is XACML policy*
+rule). Recovering an escrowed piv-key-management key reads that person's
+mail, so `common/piv_enrolment.ts`'s `recover()` asks the access gate with
+resource `piv-key-escrow`, action `recover-key` and `requiredRoles`
+`['PIV_KEY_RECOVERY']`, and the built-in access-control document's first rule
+(holds a required role) decides it. PIV_KEY_RECOVERY is a built-in role held
+through the group `roles.pivKeyRecoveryGroup` names (default
+`piv-key-recovery`, nobody in it), argued in `common/roles.js` beside
+XACML_USER: it exists in every realm nobody configured, and it is not the
+console's write role. **Only a Permit recovers**: the gate answers "allowed"
+with no decision where no decider is installed or `xacml.enabled` is off, which
+is right for a surface and wrong for somebody's mail, so `recover()` asks for
+`decision === 'Permit'`. An operator narrows it (a second role, a department)
+by editing the document, never the code. The holder's own recovery on the
+portal is the account API's `person` access and a fresh sign-in, and does not
+ask this.
+
 ### Two roles, two groups, and they must not become one
 
 | Endpoints | Role | Group |
@@ -1372,6 +1391,28 @@ Three decisions on the row that each prevent a specific wrong reading:
   different fact from a proxy with no streams. Backwards compatibility both
   ways: an older PEP sends no member, and an older service's heartbeat reads
   the members it names and ignores this one.
+* **A heartbeat value the service cannot hold (fuzz run #595).** The fuzz
+  gate's pep-control-plane profile sent a stream `lastSuccessAgeMs` of
+  2^53 - 1, a safe integer and no safe AGE: its instant fell before the
+  earliest a Date holds, `signalsOf()`'s `toISOString()` threw a RangeError,
+  and the answer was express's HTML 500 in all three fuzz realms. **Within
+  `signals` and `listeners` a value is still held to its member**, the rule
+  above: `timeOf()` answers null (no time) for an age older than the epoch,
+  as for a negative one, so neither a report nor a stored value can throw.
+  **The members the ENTRY stores are refused instead**, because beside the
+  throw a `refused` of -5e22 had been stored as -5 (`parseInt()` of the
+  exponent form) and `version` went into its attribute with a control
+  character: `PepRegistry.reportProblem()` holds the counters
+  (`policyCount`, `decisions`, `allowed`, `refused`, `undischargeable`) to
+  non-negative safe integers, the text members (`syncToken`, `bias`,
+  `resource`, `version`, `notifyUrl`) to strings with no C0, DEL or C1
+  control character (or null), and `signals`, `settings` and `listeners` to
+  an object or null, before `heartbeat()` reads or writes anything, and
+  refuses with 400 `STS-XACML-0331` naming the member — `hostname`'s rule.
+  `HeartbeatRequest` in `models/pep/pep_control_plane.tsp` says the same
+  (`minimum`/`maximum`/`pattern`). The Rust PEP sends u64 counters and
+  Strings and never meets the refusal. `tests/xacml_pep_heartbeat_values.js`
+  holds both halves.
 
 ## A heartbeat writes the entry only when something durable changed (#1882)
 
@@ -2713,6 +2754,15 @@ two assertion doors for the attestation rules).
   refused by the `post-quantum` rule above, as under `narrow`; the fact is
   there for a realm's own rule to tell a key picked from a full list from
   one never offered.
+* **#1955 P7 ADDED THE `cred-protect` GROUP AND ONE RULE**, at
+  `register-passkey` only and last there: the resource fact
+  `urn:sts:xacml:passkey:cred-protect` (the level the key reported, 1 where
+  it reported none — `question()` decides that, so silence never satisfies a
+  higher level) with `...:cred-protect-reported` beside it, and the policy
+  facts `urn:sts:xacml:passkey-policy:credProtectLevel` (0 for none) and
+  `...:enforceCredProtect`. The rule refuses (0559) a reported level below the
+  asked one while enforcement holds; `passkey_rules.js` mirrors it. No
+  `use-passkey` half: the authenticator enforces the level at every assertion.
 * **Arranged as the transfer questions are**: `xacml_passkey_verdicts.js`
   serves both the PEP and the gate. A realm's own document decides where it
   carries the obligation; otherwise the built-in document decides. Where
@@ -3600,6 +3650,32 @@ is the action an operator's rule targets to refuse creation (by category, an
 unverified address, a level) while existing people still sign in.
 `STS-FED-0179` is its refusal.
 
+## The hardware token an authentication used (#1955 P1, 2026-11-20)
+
+`xacml_templates.ts`'s `HARDWARE_TOKEN_ATTRIBUTE`, sent by
+`xacml_role_pep.ts`'s `hardwareTokenAttributes()` as ENVIRONMENT attributes
+on every browser issuance the gate describes: `hardware-token-attested`
+(always, false with no token), and for a token in hand its `key`, `vendor`,
+`model`, `evidence` source, `smart-card`, `holder-matches` (the subject is
+the register's holder) and `status`. The facts are
+`common/issuance_gate.js`'s `hardwareTokenFactsOf()`: the authentication
+event's snapshot (`authn.ts`'s `hardwareTokenOf()`) brought up to date
+against the register, so a token reported lost since the sign-in reads not
+attested. **No built-in rule reads them**: "administrators sign in with an
+attested key" is a realm's own rule over these, or the authentication
+policy's `attested-hardware` mechanism, which the built-in `authn-mechanism`
+rule already enforces. They ride along and never make the policy asked.
+
+**#1955 P2 adds five, for the attested key itself**: `hardware-token-pin-policy`
+and `hardware-token-touch-policy` (a PIV slot key's, kept on the CREDENTIAL's
+evidence at enrolment, since each slot has its own), `hardware-token-firmware`,
+`hardware-token-form-factor` and `hardware-token-fips` (a boolean sent only when
+true; the token's). The gate sends them ONLY for a token still attested whose
+evidence said them, so a rule over them is inapplicable rather than matching an
+empty string, and a lost token's policies prove nothing. "Administrators sign in
+only with touch `always`" is a realm's rule over `hardware-token-touch-policy`;
+the realm settings `piv.pinPolicy` / `piv.touchPolicy` stay the ENROLMENT gate.
+
 ## A device-bound session an application requires (#740, 2026-10-25)
 
 Two environment attributes, sent only while `authn.deviceBoundSessions`
@@ -3918,3 +3994,37 @@ its editor link, `usable` with the resolve's `code` and `why`, each type's
   switch, `xacml.policy.delete` naming the orphan's application).
 
 `tests/fga_console.js` holds it.
+
+## A dynamic role's eligibility policy (#1072, 2026-11-20; rule 3dg)
+
+**rcbj's decision: XACML is the policy language and the PDP the decider.** A
+dynamic selectable role (`common/roles.js`, `common/CLAUDE.md` 3dg) is
+offered at sign-in to each person its OWN policy permits, and
+`role_eligibility.ts` is that question. It is `fga_pep.ts`'s arrangement:
+
+* **The policy is OWNED**: an entry in `ou=policies` carrying `xacmlRole`
+  (the role's name), named on the role as `roleEligibilityPolicy`, written
+  only by `setPolicy()` (XACML XML or ALFA, compiled to XML as the editor's
+  import does) and removed with the role. `xacml_store.ts`'s `owned()` —
+  application OR role — is the one test the root, the reference map, the
+  remote PEP's pull, the sync token, the route policies and the Policies tab
+  read, so a role's Permit can never become an issuance Permit. A policy that
+  merely carries the name is never adopted (STS-XACML-0315).
+* **Decided alone**, `decidePolicy()` with no PolicyIdReference map, and read
+  deny-biased: **only Permit is eligible**. Deny, NotApplicable, an
+  Indeterminate over a missing attribute, an undischargeable obligation, a
+  missing (0313, 0314), disabled (0316) or unparseable (0317) policy and a
+  fault (0318) all answer NOT eligible, each under its code.
+* **The request** is the builder's `roleEligibility()`: the person (PIP
+  resolved), `action-id` `select-role`, the role as `resource-id`, the role's
+  application, the stage (`offer`, `issue`, `test`), the sign-in's
+  application, acr and amr. An application's role is refused for another
+  application BEFORE the policy is asked (0320).
+* **Audited per offer and per test** (`roles.eligibility`), never with the
+  policy or the attributes; the `issue` stage only where it drops a role
+  (`authn/role_selection.ts`).
+* **The administrator's test** is `GET /admin-api/roles/eligibility`
+  (`answered: false` with no question, the role preview's rule) and the
+  role page's Eligibility section, composed in by `web_pages.ts`.
+
+`tests/role_eligibility.js` holds the definition and the decision.

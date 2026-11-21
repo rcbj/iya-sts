@@ -1379,6 +1379,14 @@
     "en": "cba85726ee4e8673",
     "text": "Ang mga origin — scheme, host at port, walang path — kung saan tinatanggap ang isang WebAuthn ceremony, pinaghihiwalay ng kuwit. **Ang WALANG LAMAN, ang default, ay hinahango ang iisang origin mula sa address kung saan naabot ang serbisyong ito**, na siyang palaging ginagawa nito at ipini-pin na ng global.publicBaseUrl kapag itinakda ito. Kapag itinakda, ito ang buong listahan: ang clientDataJSON na ang origin ay wala rito ay tinatanggihan anumang Host ang dala ng request. Magpangalan ng ilan kung saan ginagamit ang iisang credential mula sa mga magkakapatid na host sa ilalim ng pinagsasaluhang webauthn.rpId."
   },
+  "webauthn.u2fAppIds|label": {
+    "en": "b0b6d4158c6357e8",
+    "text": "Mga lumang U2F AppID"
+  },
+  "webauthn.u2fAppIds|description": {
+    "en": "05b1b01773d86d5d",
+    "text": "Ang mga FIDO U2F AppID — ang mga https URL kung saan nirehistro ng isang lumang U2F relying party ang mga security key nito — na ang mga kredensyal ay maaaring i-import sa mga entry ng mga tao at gamitin para mag-sign in dito, na pinaghihiwalay ng kuwit. **WALANG LAMAN, ang default, ay naka-off ang feature**: walang maaaring i-import, walang ceremony na nagdadala ng extension na appid o appidExclude (WebAuthn Level 3 sections 10.1.1 at 10.1.2), at hindi nagsa-sign in ang na-import na key. Ginagamit lamang ang isang AppID sa RP ID na kaugnay nito: ang host nito ay ang RP ID, o suffix ng isa ang isa pa. Kung saan iba ang host sa host ng origin, kinukuha ng browser ang AppID URL para sa isang TrustedFacets list na nagpapangalan sa origin na ito, na kailangang patuloy na ihain ng lumang serbisyo. Pangalawang factor lamang ang na-import na key: hindi kayang i-verify ng U2F key ang tao."
+  },
   "webauthn.algorithms|label": {
     "en": "47c0895479d03828",
     "text": "Mga iniaalok na algorithm"
@@ -1876,8 +1884,8 @@
     "text": "Provider ng key-encryption key"
   },
   "keys.kekProvider|description": {
-    "en": "b48b052bc689c8e3",
-    "text": "Kung nasaan ang key-encryption key na bumabalot sa bawat data encryption key. BUMABASA ang `file`, `aws`, `gcp`, `azure` at `vault` ng 32-byte na key papasok sa process na ito mula sa naka-mount na file o secret store; `file` ang default dahil wala itong kailangan. Ang `vault-transit` (Vault o OpenBao Transit), `aws-kms`, `gcp-kms` (Cloud KMS) at `azure-keys` (isang Key Vault o Managed HSM key; ang keys.kekVault ang vault nito) ay mga key management service: HINDI KAILANMAN umaalis sa kanila ang key, pinangangalanan ito ng keys.kekRef, at binabalot at binubuksan ng KMS ang bawat data key — isang tawag bawat data key sa pag-start, wala bawat value. Bawat provider maliban sa `file` ay lazy na nangangailangan ng opisyal nitong SDK, na sinadyang HINDI dependency ng serbisyong ito; iniuulat ang nawawala kasama ang pangalan ng package na ii-install."
+    "en": "bf4e717bed6b7e03",
+    "text": "Kung nasaan ang key-encryption key na bumabalot sa bawat data encryption key. BUMABASA ang `file`, `aws`, `gcp`, `azure` at `vault` ng 32-byte na key papasok sa process na ito mula sa naka-mount na file o secret store; `file` ang default dahil wala itong kailangan. Ang `vault-transit` (Vault o OpenBao Transit), `aws-kms`, `gcp-kms` (Cloud KMS) at `azure-keys` (isang Key Vault o Managed HSM key; ang keys.kekVault ang vault nito) ay mga key management service: HINDI KAILANMAN umaalis sa kanila ang key, pinangangalanan ito ng keys.kekRef, at binabalot at binubuksan ng KMS ang bawat data key — isang tawag bawat data key sa pag-start, wala bawat value. Ganoon din ang `pkcs11` pero nasa hardware security module ang key (YubiHSM 2, SoftHSM2 o anumang PKCS#11 module, keys.pkcs11Module), at PKCS#11 URI ang keys.kekRef. Bawat provider maliban sa `file` ay lazy na nangangailangan ng opisyal nitong SDK, na sinadyang HINDI dependency ng serbisyong ito; iniuulat ang nawawala kasama ang pangalan ng package na ii-install."
   },
   "keys.kekProvider|restartReason": {
     "en": "0956d2f97d1df86a",
@@ -1924,8 +1932,8 @@
     "text": "Reference ng key-encryption key"
   },
   "keys.kekRef|description": {
-    "en": "a5a5b6e7f2c06fdc",
-    "text": "Kung paano pinangangalanan ng mga cloud provider ang secret: isang AWS Secrets Manager name o ARN, isang GCP resource name (projects/<p>/secrets/<s>, idinadagdag ang /versions/latest kapag walang ibinigay na version), isang Azure Key Vault secret name, o isang HashiCorp Vault read path. Hindi ginagamit ng `file` provider."
+    "en": "b28c82e37153639d",
+    "text": "Kung paano pinangangalanan ng mga cloud provider ang secret: isang AWS Secrets Manager name o ARN, isang GCP resource name (projects/<p>/secrets/<s>, idinadagdag ang /versions/latest kapag walang ibinigay na version), isang Azure Key Vault secret name, o isang HashiCorp Vault read path. Para sa `pkcs11`, isang RFC 7512 PKCS#11 URI, pkcs11:token=<token label>;object=<key label>. Hindi ginagamit ng `file` provider."
   },
   "keys.kekRef|restartReason": {
     "en": "d51b3caaa6125e92",
@@ -2047,13 +2055,125 @@
     "en": "d51b3caaa6125e92",
     "text": "binabasa nang isang beses sa startup"
   },
+  "keys.pkcs11Module|label": {
+    "en": "0fb904cb6844253b",
+    "text": "PKCS#11 module"
+  },
+  "keys.pkcs11Module|description": {
+    "en": "dd4fdc39cd1aed44",
+    "text": "Ang path ng PKCS#11 module na nilo-load ng `pkcs11` provider: /usr/lib/x86_64-linux-gnu/pkcs11/yubihsm_pkcs11.so para sa YubiHSM 2 (habang tumatakbo ang yubihsm-connector at nakaturo ang YUBIHSM_PKCS11_CONF sa configuration nito), /usr/lib/softhsm/libsofthsm2.so para sa SoftHSM2. Kailangan nito ang pkcs11js package, na sinadyang hindi dependency ng serbisyong ito."
+  },
+  "keys.pkcs11Module|restartReason": {
+    "en": "34a60604acae5870",
+    "text": "isang beses nilo-load ang module, sa pag-start"
+  },
+  "keys.pkcs11Mechanism|label": {
+    "en": "f9f19afe01ab43ad",
+    "text": "Paano binabalot ng HSM ang isang data key"
+  },
+  "keys.pkcs11Mechanism|description": {
+    "en": "85ff0e656695f323",
+    "text": "Ang mechanism na ginagamit sa pagbalot ng bagong data key sa HSM. Kinukuha ng `auto` ang CKM_AES_GCM kung saan ito iniaalok ng module (SoftHSM2 at karamihan ng network HSM), saka ang CKM_AES_KEY_WRAP_PAD, saka ang sariling CKM_YUBICO_AES_CCM_WRAP ng YubiHSM 2 (ang mga wrap-key object nito). Nabubuksan pa rin ang data key na binalot bago ang pagbabago: pinangangalanan ng naka-store na anyo ang mechanism nito."
+  },
+  "keys.pkcs11Mechanism|restartReason": {
+    "en": "091df5146f3d6f79",
+    "text": "isang beses inaabot ang key-encryption key, sa pag-start"
+  },
+  "keys.pkcs11GenerateKey|label": {
+    "en": "c9dac3afbed86d44",
+    "text": "Gawin ang HSM key sa unang paggamit"
+  },
+  "keys.pkcs11GenerateKey|description": {
+    "en": "82a5d89dd1a4c872",
+    "text": "Kapag naka-on, ang key-encryption key na pinangangalanan ng PKCS#11 URI at wala sa token ay gine-generate doon: AES-256, sensitive at HINDI extractable. Ang front process lang ang nagge-generate; para sa cluster, gawin na lang ang key gamit ang sariling tool ng HSM, dahil ang dalawang node na sabay na nag-start ay gagawa ng dalawa. Kapag naka-off, ang default, pinipigilan ng nawawalang key ang pag-start."
+  },
+  "keys.pkcs11GenerateKey|restartReason": {
+    "en": "091df5146f3d6f79",
+    "text": "isang beses inaabot ang key-encryption key, sa pag-start"
+  },
+  "keys.pkcs11Sessions|label": {
+    "en": "4a2da0042402bee1",
+    "text": "Mga PKCS#11 session bawat process"
+  },
+  "keys.pkcs11Sessions|description": {
+    "en": "f5b20f8d3e577d1a",
+    "text": "Ilang session ang pinakamaraming pinananatiling bukas ng bawat process at request worker sa isang token, na bawat isa ay nagpapatakbo ng isang HSM operation sa isang pagkakataon. May 16 na session sa kabuuan ang YubiHSM 2, na pinaghahatian ng bawat process ng bawat node: panatilihing mas mababa roon ang product nito, ng mga process at ng mga node."
+  },
+  "keys.pkcs11Sessions|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "isang beses binubuksan ang token, sa pag-start"
+  },
+  "keys.pkcs11PinProvider|label": {
+    "en": "3e1d9c989bcacc3d",
+    "text": "Kung saan binabasa ang PKCS#11 PIN"
+  },
+  "keys.pkcs11PinProvider|description": {
+    "en": "1c344b0b12c35ec4",
+    "text": "Ang secret store na pinagbabasahan ng PIN ng HSM token, hindi kailanman ang value ng isang setting: isang naka-mount na file, AWS Secrets Manager, Google Cloud Secret Manager, Azure Key Vault o Vault/OpenBao, inaabot gaya ng sinasabi ng keys.kek*. Para sa YubiHSM 2, ang PIN ay ang id ng authentication key sa apat na hex digit na sinusundan ng password nito (0001password). Ang JSON object ng mga PIN ayon sa token label ay nagsisilbi sa mga token na may magkakaibang PIN. Hindi nagla-log in ang `none` sa anuman."
+  },
+  "keys.pkcs11PinProvider|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "isang beses binabasa ang PIN, kapag binuksan ang token"
+  },
+  "keys.pkcs11PinRef|label": {
+    "en": "de50e9f1904c80fc",
+    "text": "Ang lokasyon ng PKCS#11 PIN"
+  },
+  "keys.pkcs11PinRef|description": {
+    "en": "dffce1d68f8495de",
+    "text": "Kung nasaan ang PIN, sa provider na pinangangalanan ng keys.pkcs11PinProvider: isang path, isang ARN, isang resource o isang Vault read path. Wala itong fallback."
+  },
+  "keys.pkcs11PinRef|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "isang beses binabasa ang PIN, kapag binuksan ang token"
+  },
+  "keys.pkcs11PinField|label": {
+    "en": "55008836b9ff61fe",
+    "text": "Ang field na kinalalagyan ng PKCS#11 PIN"
+  },
+  "keys.pkcs11PinField|description": {
+    "en": "f333042737800292",
+    "text": "Ang member ng isang JSON secret na naglalaman ng PIN. Kapag walang laman, kinukuha ang buong value."
+  },
+  "keys.pkcs11PinField|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "isang beses binabasa ang PIN, kapag binuksan ang token"
+  },
+  "keys.signingKeyStore|label": {
+    "en": "e6e0b403d7b8a000",
+    "text": "Kung saan ginagawa ang mga signing key ng isang realm"
+  },
+  "keys.signingKeyStore|description": {
+    "en": "5cc22ee909529ecc",
+    "text": "Ang `software`, ang default, ay gumagawa ng mga signing key ng isang realm sa process na ito at pinananatili silang naka-seal sa store. Ginagawa ng `pkcs11` ang mga classical nito — ang RS256 key, ang XML key at ang mga P-256, P-384, P-521, secp256k1 at Ed25519 key na kayang gawin ng module — sa HSM na pinangangalanan ng keys.signingKeyToken, non-extractable, at doon pumipirma; ang key na hindi kayang gawin ng module, at bawat post-quantum key, ay nananatili sa software. Nalalapat ito sa key set na ginawa o ni-rotate pagkatapos ng pagbabago, nangangailangan ng keystore na nagpe-persist (product mode), at kailangan ng bawat process at node ang token. Maitatakda bawat realm."
+  },
+  "keys.signingKeyToken|label": {
+    "en": "a6e7fb05dd49b8a9",
+    "text": "Ang HSM token na pinaggagawaan ng mga signing key"
+  },
+  "keys.signingKeyToken|description": {
+    "en": "0bd2c707f6ff2e69",
+    "text": "Ang PKCS#11 URI ng token kung saan ginagawa ng realm na may keys.signingKeyStore `pkcs11` ang mga signing key nito: pkcs11:token=<token label>, na may serial= o slot-id= kapag may dalawang token na pareho ang label. Ang module, ang PIN at ang mga session ay ang mga setting na keys.pkcs11*. Kapag walang laman, walang binubuksang token."
+  },
+  "keys.signingKeyToken|restartReason": {
+    "en": "1a04369397b30563",
+    "text": "isang beses binubuksan ang token, sa pag-start, sa bawat process"
+  },
+  "keys.pkcs11SynchronousSign|label": {
+    "en": "c8e3fedf4601518d",
+    "text": "Payagan ang kasabay na pagpirma ng PKCS#11"
+  },
+  "keys.pkcs11SynchronousSign|description": {
+    "en": "1cb742f146d4c7c1",
+    "text": "Naka-off, ang default: ang isang lagda na may susi sa HSM ay ginagawa lamang sa pamamagitan ng asynchronous na `C_Sign` ng binding. Ang magkakasabay na pinto (isang JWS, isang XML na lagda, isang SAML assertion) ay tumatanggi sa isang HSM na susi (`STS-KEYS-0209`) sa halip na maghintay sa token sa event loop. Naka-on, tinatawag ng mga pintong iyon ang `C_Sign` at naghihintay ang event loop. Ang isang module na walang asynchronous na pagpirma ay makakapirma lamang habang ito ay naka-on. Hindi nababago ang decryption. Naitatakda bawat realm."
+  },
   "keys.cellKekProvider|label": {
     "en": "9103eeef061197fd",
     "text": "Saan binabasa ang key-encryption key ng cell"
   },
   "keys.cellKekProvider|description": {
-    "en": "f779ece8f10a07ec",
-    "text": "Ang provider ng key-encryption key ng CELL NA ITO, na nagse-seal sa sariling ini-store ng cell (#98). Limang provider, gaya ng `keys.kekProvider`. Sine-seal ng `none` ang cell tier sa ilalim ng service key-encryption key, na tama para sa single-cell mode at para sa isang test; ang multi-cell deployment sa product mode ay TUMATANGGING mag-start gamit ito, dahil kung gayon ang kopya ng mga row ng isang cell ay mabubuksan sa bawat iba."
+    "en": "73b7f0bab09392e8",
+    "text": "Ang provider ng key-encryption key ng CELL NA ITO, na nagse-seal sa sariling ini-store ng cell (#98). Limang provider, gaya ng `keys.kekProvider`, at `pkcs11`, ang sariling HSM ng cell. Sine-seal ng `none` ang cell tier sa ilalim ng service key-encryption key, na tama para sa single-cell mode at para sa isang test; ang multi-cell deployment sa product mode ay TUMATANGGING mag-start gamit ito, dahil kung gayon ang kopya ng mga row ng isang cell ay mabubuksan sa bawat iba."
   },
   "keys.cellKekProvider|restartReason": {
     "en": "bfe49ff259fac42d",
@@ -3138,6 +3258,54 @@
   "devices.eventsKept|description": {
     "en": "72d46974270d0c03",
     "text": "Ilang paggawa, pag-alis, pag-evict at pagbabago ng compliance ng device ang itinatago ng realm na ito para sa Monitoring → Devices. Tinatanggal ang pinakaluma kapag may bagong nire-record na lampas dito."
+  },
+  "hardwareTokens.hardwareClaims|label": {
+    "en": "8373111eef4bf812",
+    "text": "Ano ang nagbibigay ng claim na hardware key"
+  },
+  "hardwareTokens.hardwareClaims|description": {
+    "en": "e0341e4e47f3b2f8",
+    "text": "Ano ang nagpapahintulot sa PKINIT sign-in na mag-claim ng key na nakatali sa hardware (ang pkinit-hardware indicator at amr hwk). `inference`, ang default at ang gawi bago ang #1955: isang smart-card logon certificate na ang key ay hindi ginawa ng serbisyong ito, o naitalang ebidensya ng attestation. `evidence`: tanging key na sakop ng attestation ng isang hardware token. Ang certificate sign-in sa TLS ay nakakakuha ng hwk, at sc para sa key na nasa smart card, mula lamang sa ebidensya sa alinmang kaso."
+  },
+  "openpgp.wkd|label": {
+    "en": "1f05a7518c3d2275",
+    "text": "Ilathala ang mga key sa Web Key Directory"
+  },
+  "openpgp.wkd|description": {
+    "en": "7822103f89ac59b3",
+    "text": "Sagutin ang Web Key Directory (draft-koch-openpgp-webkey-service) para sa mga mail domain ng realm na ito: /.well-known/openpgpkey/<domain>/hu/<hash> (ang advanced method, sa openpgpkey.<domain>) at /.well-known/openpgpkey/hu/<hash> (ang direct method), at ang policy file ng bawat isa. Ang key lang ng taong pumayag sa portal ang sinasagot. Naka-off bilang default."
+  },
+  "openpgp.wkdDomains|label": {
+    "en": "d1c4b728593ff000",
+    "text": "Mga mail domain na sineserbisyuhan ng Web Key Directory"
+  },
+  "openpgp.wkdDomains|description": {
+    "en": "ad64f7216191123c",
+    "text": "Ang mga mail domain na sinasagot ng Web Key Directory ng realm na ito, pinaghihiwalay ng kuwit. Kapag walang laman, ang default, ito ang sariling DNS domain ng realm. Ang request na walang realm sa path nito ay sinasagot ng realm na nagseserbisyo sa domain nito, ang default realm muna."
+  },
+  "openpgp.challengeLifetimeS|label": {
+    "en": "dbf558cf0b4b8f90",
+    "text": "Tagal ng challenge sa pagrehistro (segundo)"
+  },
+  "openpgp.challengeLifetimeS|description": {
+    "en": "e9130c8e82368cc6",
+    "text": "Gaano katagal valid ang challenge na pinipirmahan ng isang tao gamit ang gpg --clearsign para magrehistro ng OpenPGP key. Isang beses lang itong ginagamit, at isa lang ang hawak ng tao sa bawat pagkakataon."
+  },
+  "openpgp.signatureSkewS|label": {
+    "en": "d927cf1f04bd9d51",
+    "text": "Clock skew ng proof signature (segundo)"
+  },
+  "openpgp.signatureSkewS|description": {
+    "en": "2772763d3d363b6d",
+    "text": "Gaano kalayo ang orasan ng pumipirmang computer mula sa orasan ng serbisyong ito: ang proof na pinirmahan nang mas maaga kaysa sa pag-issue ng challenge, o mas huli kaysa ngayon, nang lampas dito ay tinatanggihan (STS-OPENPGP-0010)."
+  },
+  "openpgp.minRsaBits|label": {
+    "en": "f3dc9f85de143630",
+    "text": "Pinakamaliit na RSA OpenPGP key"
+  },
+  "openpgp.minRsaBits|description": {
+    "en": "ad48516e31a7c45b",
+    "text": "Ang pinakamaikling RSA key, primary man o subkey, na tinatanggap ng pagrehistro ng OpenPGP. Tinatanggap ang Ed25519, Ed448, ECDSA at ECDH sa P-256, P-384 at P-521, X25519 at X448; hindi kailanman tinatanggap ang DSA, ElGamal at ang mga Brainpool curve (STS-OPENPGP-0004)."
   },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
@@ -9375,6 +9543,14 @@
     "en": "05185a4a554d5f71",
     "text": "Kapag naka-on, pinapangalanan ng bawat access token, ID Token, SAML 2.0 assertion at SAML 1.1 assertion ang mga role na hawak ng subject nito. NAKA-ON bilang default at wala pa rin itong binabago para sa karamihan ng caller, sa parehong dahilan kung bakit naka-on bilang default ang groups claim: GANAP NA HINDI ISINASAMA ang claim para sa sinumang walang hawak na NAKA-CONFIGURE na role, at hindi kailanman kasama rito ang anim na built-in na role — totoo ang EVERYBODY at ALL_AUTHENTICATED_USERS para sa halos bawat token dito, kaya ang pagdadala sa mga ito ay magdadagdag ng dalawang walang kahulugang member sa bawat token na pina-parse ng bawat kasalukuyang client at walang sasabihin sa relying party na hindi pa nito alam mula sa paghawak ng token. Umiiral ang mga ito para HINGIN, hindi para dalhin."
   },
+  "roles.dynamicSelection|label": {
+    "en": "86d2654ef3dec8fd",
+    "text": "Mag-alok ng mga dynamic na tungkulin sa pag-sign in"
+  },
+  "roles.dynamicSelection|description": {
+    "en": "68b1b4af3db5e6d8",
+    "text": "Kung maaaring pumili ng mga dynamic na mapipiling tungkulin ang taong nagsa-sign in (#1072): sa realm na may kahit isang dynamic na tungkulin, nag-aalok ang pahina ng pag-sign in ng kahong \"Pumili ng mga tungkulin para sa pag-sign in na ito\", at ipinapakita ng naka-tsek na kahon ang mga tungkuling pinapayagan ng pagiging karapat-dapat ng tao. NAKA-ON bilang default; pinapalitan ito ng appDynamicRoleSelection sa entry ng application para sa application na iyon. Kapag naka-off, walang kahon, walang iniaalok na tungkulin, walang hinihinging kailangang dynamic na tungkulin, at walang token na may dinamikong napiling tungkulin."
+  },
   "roles.claimName|label": {
     "en": "d56be861543f5305",
     "text": "Pangalan ng role claim"
@@ -11707,6 +11883,14 @@
     "en": "50195b20fe00e9fa",
     "text": "Ang abiso na pumapangalan sa kung tungkol saan ito (ang parehong kilos sa parehong account) ay ipinapadala nang isang beses sa window na ito, gaano man karaming pinto ang nag-ulat nito. Ino-off ng 0 ang pagsugpo."
   },
+  "mail.encryptionRequired|label": {
+    "en": "81e5dc8eb5332f2b",
+    "text": "Mga mensaheng dapat naka-encrypt"
+  },
+  "mail.encryptionRequired|description": {
+    "en": "895bdb616e169134",
+    "text": "Ang mga mensahe, ayon sa template id (password-reset, account-activation, sign-in-code, sign-in-link, credential-compromised at ang iba pa sa listahan ng Monitoring → Mail), na ipinapadala lang nang naka-encrypt — PGP/MIME sa OpenPGP key ng tao o S/MIME sa kanyang certificate, ayon sa pinili niya sa portal. Ang taong walang pinili sa dalawa ay hindi padadalhan nito (STS-MAIL-0240), at sinasabi iyon ng gamit na humiling nito, gaya ng sa anumang mensaheng hindi naipadala. Kapag walang laman, ang default, walang hinihingi; iginagalang ang pinili ng tao alinman ang kaso."
+  },
   "mail.selfServiceReset|label": {
     "en": "8525111d1c0be58a",
     "text": "Self-service password reset"
@@ -12650,5 +12834,93 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "Para lang sa listener ng Protocol debugger: http.http2MaxConcurrentStreams. Ang -1, ang default, ay sumusunod sa http.http2MaxConcurrentStreams; ang anumang iba ay nagpapasya para sa listener na ito lang. Ilang request ang puwedeng sabay-sabay na bukas sa isang HTTP/2 connection (SETTINGS_MAX_CONCURRENT_STREAMS); tinatanggihan ang stream na lampas dito hanggang may matapos. Ang 100, ang default, ang pinakamaliit na halagang inirerekomenda ng RFC 9113; walang limit ang sa node mismo, kaya madadala ng iisang connection ang trabaho ng libu-libo. Nililimitahan nito ang trabaho sa isang connection gaya ng paglimita ng http.maxConnections sa mga connection. Sinusunod agad ng bagong connection ang pagbabago, at pinapadalhan ng bagong halaga ang bukas na."
+  },
+  "piv.attestationAnchors|label": {
+    "en": "ebc10f6a7dcbbf58",
+    "text": "Mga PIV attestation root (PEM)"
+  },
+  "piv.attestationAnchors|description": {
+    "en": "487e76edeb4446b9",
+    "text": "Ang mga root na dapat pagkadenahan ng isang YubiKey PIV key attestation, bilang PEM bundle. Kapag walang laman, ginagamit ang dalawang inilalathala ng Yubico (Yubico PIV Root CA Serial 263751, at Yubico Attestation Root 1 para sa firmware 5.7.4 pataas), kasama sa common/pki_piv_anchors.json at naka-pin doon sa SHA-256, kasama ang mga PIV intermediate ng Yubico. Pinapalitan ng isang sertipiko rito ang mga kasamang root."
+  },
+  "piv.requireAttestation|label": {
+    "en": "4e11b0db111faccf",
+    "text": "Hingin ang PIV attestation para sa mga PIV profile"
+  },
+  "piv.requireAttestation|description": {
+    "en": "ef38975436c5ac4f",
+    "text": "Kapag naka-on, tinatanggihan ang kahilingan para sa piv-auth, piv-sign, piv-key-management o piv-card-auth na sertipiko maliban kung may dala itong YubiKey PIV attestation na nave-verify (STS-PIV-0010). Ang naka-escrow na piv-key-management key mula sa EST /serverkeygen ang eksepsiyon: ang serbisyong ito ang bumuo nito. Kapag naka-off, ang default, inilalabas ang ganitong kahilingan na walang attestation nang walang hardware evidence; ang kahilingang may dalang attestation na hindi nave-verify ay tinatanggihan alinman ang kaso."
+  },
+  "piv.pinPolicy|label": {
+    "en": "0f683a0cb1db1988",
+    "text": "Pinakamahinang PIN policy na maaaring taglayin ng na-attest na PIV key"
+  },
+  "piv.pinPolicy|description": {
+    "en": "c3f9fcec406b9806",
+    "text": "Kung ano man lang dapat ang PIN policy ng attestation. `once`: ang PIN nang isang beses bawat session (binibilang ang match-once ng isang Bio key); `always`: ang PIN bago ang bawat paggamit (binibilang ang match-always). Walang hinihinging PIN policy ang `any`, ang default. Tinatanggihan ang key na mas mahina ang attestation (STS-PIV-0011)."
+  },
+  "piv.touchPolicy|label": {
+    "en": "a88f111c7b13657f",
+    "text": "Pinakamahinang touch policy na maaaring taglayin ng na-attest na PIV key"
+  },
+  "piv.touchPolicy|description": {
+    "en": "d78f0d5df0256787",
+    "text": "Kung ano man lang dapat ang touch policy ng attestation. `cached`: isang pindot, tinatandaan nang 15 segundo; `always`: isang pindot sa bawat paggamit. Walang hinihingi ang `any`, ang default. Tinatanggihan ang key na mas mahina ang attestation (STS-PIV-0012)."
+  },
+  "piv.cardAuthSignIn|label": {
+    "en": "61b2226403ad5c61",
+    "text": "Payagang mag-sign in ang piv-card-auth na sertipiko"
+  },
+  "piv.cardAuthSignIn|description": {
+    "en": "1852da24c3fbfade",
+    "text": "Gumagana ang piv-card-auth key (slot 9e) nang walang PIN, para sa pisikal na pagpasok, kaya tinatanggihan ang sertipiko nito sa TLS sign-in at sa PKINIT (STS-PIV-0013) maliban kung naka-on ito."
+  },
+  "piv.keyEscrow|label": {
+    "en": "f2efc85c3d2bac38",
+    "text": "I-escrow ang mga piv-key-management key"
+  },
+  "piv.keyEscrow|description": {
+    "en": "cf9618144b67dff3",
+    "text": "Kapag naka-on, iniingatan ng EST /serverkeygen para sa piv-key-management profile ang nabuong private key, selyado sa ilalim ng key-encryption key, para mabawi ito ng may hawak (sa portal, pagkatapos ng bagong sign-in) o ng administrator na may role sa pagbawi ng PIV key, at ma-decrypt ang lumang mail kapag nawala ang card. Tinatanggihan kung walang hawak na key-encryption key (STS-PIV-0020). Hindi kailanman hardware evidence ang naka-escrow na key. Kapag naka-off, ang default, tinatanggihan ng /serverkeygen ang piv-key-management profile (STS-PIV-0021), kaya ang 9d key ay binubuo sa card at hindi iniingatan saanman."
+  },
+  "piv.externalIssuers|label": {
+    "en": "e96143ab9556db35",
+    "text": "Mga panlabas na PIV o CAC issuing CA na itinutugma ayon sa card UUID (PEM)"
+  },
+  "piv.externalIssuers|description": {
+    "en": "0fb91dba2cb957d3",
+    "text": "Ang mga issuing CA na ang mga PIV o CAC card certificate ay nagsa-sign in ng isang tao ayon sa FIPS 201 card UUID: ang client certificate na direktang inilabas ng isa sa mga ito, na nagsasaad ng policy sa piv.externalPolicyOids at may dalang eksaktong isang urn:uuid subjectAltName, ay itinutugma sa iisang taong ang stsPivCardUuid ay may hawak ng UUID na iyon. Hindi kailanman ayon sa pangalan nito, at walang entry na nililikha. Dapat ding nasa isang client truststore ang CA, kung hindi ay tatanggihan muna ito ng handshake. Kapag walang laman, ang default, walang itinutugma."
+  },
+  "piv.externalPolicyOids|label": {
+    "en": "930c5800dfa36905",
+    "text": "Mga PIV Authentication policy na dapat isaad ng panlabas na card"
+  },
+  "piv.externalPolicyOids|description": {
+    "en": "2398931e8d58f5c4",
+    "text": "Ang mga certificate policy na dapat isaad ng sertipiko ng panlabas na card ang isa para maitugma ayon sa card UUID nito: bilang default ang id-fpki-common-authentication (ang PIV Authentication ng Federal PKI Common Policy) at id-fpki-certpcy-pivi-hardware (PIV-I). Idagdag dito ang sariling hardware policy ng isang CAC issuer."
+  },
+  "pki.paranoidPivAttestation|label": {
+    "en": "e645d02c49d2f9bf",
+    "text": "Paranoid: isang YubiKey PIV key attestation chain"
+  },
+  "pki.paranoidPivAttestation|description": {
+    "en": "fdb7c0eb631758ea",
+    "text": "Use case na `piv-attestation` (#1955): ang attestation na sertipiko ng slot at ang f9 attestation na sertipiko ng isang PIV enrolment. Sinusuri ng paranoid ang validity window sa kasalukuyan, ang path patungo sa piv.attestationAnchors at ang revocation kung saan may pinangalanang listahan ang chain. Kapag naka-off, ang use case na ito lamang ang nagpapatakbo ng path check nang walang field check, habang hindi ginagalaw ang bawat ibang row at ang master; kapag naka-off sa product mode, nilo-log ito nang isang beses (STS-PKI-0239) at iginuguhit nang pula sa /admin/pki/trust."
+  },
+  "pki.paranoidPivCard|label": {
+    "en": "4078a93e7117d6f9",
+    "text": "Paranoid: isang panlabas na PIV o CAC card na itinutugma ayon sa card UUID"
+  },
+  "pki.paranoidPivCard|description": {
+    "en": "d4d5fb070575e1c6",
+    "text": "Use case na `piv-card` (#1955): isang client certificate mula sa issuing CA sa piv.externalIssuers, itinutugma ayon sa card UUID nito. Sinusuri ng paranoid ang keyUsage digitalSignature at ang validity window ng leaf bukod sa one-hop issuer check. Kapag naka-off, ang use case na ito lamang ang nagpapatakbo ng issuer check lamang, habang hindi ginagalaw ang bawat ibang row at ang master; kapag naka-off sa product mode, nilo-log ito nang isang beses (STS-PKI-0239) at iginuguhit nang pula sa /admin/pki/trust."
+  },
+  "roles.pivKeyRecoveryGroup|label": {
+    "en": "2f231e1e99785dc6",
+    "text": "Grupong nagbibigay ng role na PIV_KEY_RECOVERY"
+  },
+  "roles.pivKeyRecoveryGroup|description": {
+    "en": "801616eea12559a5",
+    "text": "Ang directory group na ang mga miyembro ay may hawak ng built-in na role na PIV_KEY_RECOVERY (#1955), na hinihingi ng access-control policy, bukod sa Admin Write, para mabawi ang naka-escrow na piv-key-management key ng ibang tao (piv.keyEscrow). Dine-decrypt ng key na iyon ang mail ng tao, kaya walang may hawak ng role hanggang idagdag sila ng administrator sa grupo. Kapag walang laman, walang makakabawi ng key ng ibang tao; binabawi ng may hawak ang sarili niya sa portal."
   }
 }

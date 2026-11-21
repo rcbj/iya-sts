@@ -40,6 +40,10 @@
   "nav.password.heading": "अपना पासवर्ड बदलें",
   "nav.keys.label": "पासकी",
   "nav.keys.heading": "पासकी",
+  "nav.tokens.label": "सुरक्षा कुंजियाँ",
+  "nav.tokens.heading": "आपकी सुरक्षा कुंजियाँ और स्मार्ट कार्ड",
+  "nav.openpgp.label": "OpenPGP और मेल एन्क्रिप्शन",
+  "nav.openpgp.heading": "आपकी OpenPGP कुंजी और मेल एन्क्रिप्शन",
   "nav.mfa.label": "प्रमाणक ऐप",
   "nav.mfa.heading": "आपका प्रमाणक ऐप",
   "nav.signing-key.label": "हस्ताक्षर कुंजियाँ",
@@ -546,5 +550,8 @@
   "photo.errRead": "उस फ़ाइल को छवि के रूप में पढ़ा नहीं जा सका।",
   "done.photo": "आपकी प्रोफ़ाइल फ़ोटो सहेज ली गई है।",
   "done.photoRemoved": "आपकी प्रोफ़ाइल फ़ोटो हटा दी गई है।",
-  "done.endOthers": "आप अपने अन्य सत्र /logout पर समाप्त कर सकते हैं।"
+  "done.endOthers": "आप अपने अन्य सत्र /logout पर समाप्त कर सकते हैं।",
+  "apps.reauthenticate": "फिर से साइन इन करें",
+  "apps.reauthenticateNote": "हर साइन-इन लिंक आपसे नए सिरे से साइन इन करने को कहता है, ताकि आप उस एप्लिकेशन के साथ उपयोग की जाने वाली भूमिकाएँ चुन सकें।",
+  "apps.reauthenticateApply": "लागू करें"
 }

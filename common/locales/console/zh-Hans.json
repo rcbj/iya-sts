@@ -129,6 +129,8 @@
   "nav.roles": "角色",
   "nav.applications": "应用",
   "nav.devices": "设备",
+  "nav.hardware-tokens": "硬件令牌",
+  "nav.openpgp": "OpenPGP 密钥",
   "nav.attribute-sources": "属性来源",
   "nav.secret-destinations": "机密目标",
   "nav.policies": "策略",
