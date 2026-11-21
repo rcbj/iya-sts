@@ -1884,8 +1884,8 @@
     "text": "Proveedor de la clave de cifrado de claves"
   },
   "keys.kekProvider|description": {
-    "en": "b48b052bc689c8e3",
-    "text": "Dónde está la clave de cifrado de claves que envuelve cada clave de cifrado de datos. `file`, `aws`, `gcp`, `azure` y `vault` LEEN una clave de 32 bytes en este proceso desde un archivo montado o un almacén de secretos; `file` es el valor predeterminado porque no necesita nada. `vault-transit` (Transit de Vault u OpenBao), `aws-kms`, `gcp-kms` (Cloud KMS) y `azure-keys` (una clave de Key Vault o Managed HSM; keys.kekVault es su almacén) son servicios de gestión de claves: la clave NUNCA sale de ellos, keys.kekRef la nombra, y el KMS envuelve y desenvuelve cada clave de datos — una llamada por clave de datos al arrancar, ninguna por valor. Cada proveedor salvo `file` carga de forma diferida su SDK oficial, que a propósito NO es una dependencia de este servicio; si falta uno, se informa con el nombre del paquete que hay que instalar."
+    "en": "bf4e717bed6b7e03",
+    "text": "Dónde está la clave de cifrado de claves que envuelve cada clave de cifrado de datos. `file`, `aws`, `gcp`, `azure` y `vault` LEEN una clave de 32 bytes en este proceso desde un archivo montado o un almacén de secretos; `file` es el valor predeterminado porque no necesita nada. `vault-transit` (Transit de Vault u OpenBao), `aws-kms`, `gcp-kms` (Cloud KMS) y `azure-keys` (una clave de Key Vault o Managed HSM; keys.kekVault es su almacén) son servicios de gestión de claves: la clave NUNCA sale de ellos, keys.kekRef la nombra, y el KMS envuelve y desenvuelve cada clave de datos — una llamada por clave de datos al arrancar, ninguna por valor. `pkcs11` es lo mismo con la clave en un módulo de seguridad de hardware (un YubiHSM 2, SoftHSM2 o cualquier módulo PKCS#11, keys.pkcs11Module), y keys.kekRef es una URI PKCS#11. Cada proveedor salvo `file` carga de forma diferida su SDK oficial, que a propósito NO es una dependencia de este servicio; si falta uno, se informa con el nombre del paquete que hay que instalar."
   },
   "keys.kekProvider|restartReason": {
     "en": "0956d2f97d1df86a",
@@ -1932,8 +1932,8 @@
     "text": "Referencia de la clave de cifrado de claves"
   },
   "keys.kekRef|description": {
-    "en": "a5a5b6e7f2c06fdc",
-    "text": "Con qué nombran el secreto los proveedores en la nube: un nombre o ARN de AWS Secrets Manager, un nombre de recurso de GCP (projects/<p>/secrets/<s>, con /versions/latest añadido cuando no se indica versión), un nombre de secreto de Azure Key Vault o una ruta de lectura de HashiCorp Vault. El proveedor `file` no lo usa."
+    "en": "b28c82e37153639d",
+    "text": "Con qué nombran el secreto los proveedores en la nube: un nombre o ARN de AWS Secrets Manager, un nombre de recurso de GCP (projects/<p>/secrets/<s>, con /versions/latest añadido cuando no se indica versión), un nombre de secreto de Azure Key Vault o una ruta de lectura de HashiCorp Vault. Para `pkcs11`, una URI PKCS#11 de RFC 7512, pkcs11:token=<token label>;object=<key label>. El proveedor `file` no lo usa."
   },
   "keys.kekRef|restartReason": {
     "en": "d51b3caaa6125e92",
@@ -2055,13 +2055,125 @@
     "en": "d51b3caaa6125e92",
     "text": "se lee una sola vez al arrancar"
   },
+  "keys.pkcs11Module|label": {
+    "en": "0fb904cb6844253b",
+    "text": "Módulo PKCS#11"
+  },
+  "keys.pkcs11Module|description": {
+    "en": "dd4fdc39cd1aed44",
+    "text": "La ruta del módulo PKCS#11 que carga el proveedor `pkcs11`: /usr/lib/x86_64-linux-gnu/pkcs11/yubihsm_pkcs11.so para un YubiHSM 2 (con yubihsm-connector en ejecución y YUBIHSM_PKCS11_CONF apuntando a su configuración), /usr/lib/softhsm/libsofthsm2.so para SoftHSM2. Necesita el paquete pkcs11js, que a propósito no es una dependencia de este servicio."
+  },
+  "keys.pkcs11Module|restartReason": {
+    "en": "34a60604acae5870",
+    "text": "el módulo se carga una vez, al arrancar"
+  },
+  "keys.pkcs11Mechanism|label": {
+    "en": "f9f19afe01ab43ad",
+    "text": "Cómo envuelve el HSM una clave de datos"
+  },
+  "keys.pkcs11Mechanism|description": {
+    "en": "85ff0e656695f323",
+    "text": "El mecanismo con el que se envuelve una clave de datos nueva en el HSM. `auto` toma CKM_AES_GCM donde el módulo lo ofrece (SoftHSM2 y la mayoría de los HSM de red), después CKM_AES_KEY_WRAP_PAD y después el CKM_YUBICO_AES_CCM_WRAP propio del YubiHSM 2 (sus objetos de clave de envoltura). Una clave de datos envuelta antes de un cambio se sigue desenvolviendo: la forma almacenada nombra su mecanismo."
+  },
+  "keys.pkcs11Mechanism|restartReason": {
+    "en": "091df5146f3d6f79",
+    "text": "a la clave de cifrado de claves se accede una vez, al arrancar"
+  },
+  "keys.pkcs11GenerateKey|label": {
+    "en": "c9dac3afbed86d44",
+    "text": "Crear la clave del HSM en el primer uso"
+  },
+  "keys.pkcs11GenerateKey|description": {
+    "en": "82a5d89dd1a4c872",
+    "text": "Activado, una clave de cifrado de claves que nombra la URI PKCS#11 y que el token no tiene se genera allí: AES-256, sensible y NO extraíble. Solo el proceso frontal la genera; para un clúster, cree la clave con la propia herramienta del HSM, porque dos nodos que arrancaran a la vez crearían dos. Desactivado, el valor predeterminado, una clave que falta detiene el arranque."
+  },
+  "keys.pkcs11GenerateKey|restartReason": {
+    "en": "091df5146f3d6f79",
+    "text": "a la clave de cifrado de claves se accede una vez, al arrancar"
+  },
+  "keys.pkcs11Sessions|label": {
+    "en": "4a2da0042402bee1",
+    "text": "Sesiones PKCS#11 por proceso"
+  },
+  "keys.pkcs11Sessions|description": {
+    "en": "f5b20f8d3e577d1a",
+    "text": "Cuántas sesiones mantiene abiertas en un token, como máximo, cada proceso y cada worker de solicitudes, cada una ejecutando una operación del HSM a la vez. Un YubiHSM 2 tiene 16 sesiones en total, compartidas por todos los procesos de todos los nodos: mantenga el producto de este valor, los procesos y los nodos por debajo de esa cifra."
+  },
+  "keys.pkcs11Sessions|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "el token se abre una vez, al arrancar"
+  },
+  "keys.pkcs11PinProvider|label": {
+    "en": "3e1d9c989bcacc3d",
+    "text": "De dónde se lee el PIN de PKCS#11"
+  },
+  "keys.pkcs11PinProvider|description": {
+    "en": "1c344b0b12c35ec4",
+    "text": "El almacén de secretos del que se lee el PIN del token del HSM, nunca el valor de un ajuste: un archivo montado, AWS Secrets Manager, Google Cloud Secret Manager, Azure Key Vault o Vault/OpenBao, al que se accede como indica keys.kek*. Para un YubiHSM 2 el PIN es el id de la clave de autenticación en cuatro dígitos hexadecimales seguido de su contraseña (0001password). Un objeto JSON de PIN por etiqueta de token sirve a tokens con PIN distintos. `none` no inicia sesión en nada."
+  },
+  "keys.pkcs11PinProvider|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "el PIN se lee una vez, cuando se abre el token"
+  },
+  "keys.pkcs11PinRef|label": {
+    "en": "de50e9f1904c80fc",
+    "text": "La ubicación del PIN de PKCS#11"
+  },
+  "keys.pkcs11PinRef|description": {
+    "en": "dffce1d68f8495de",
+    "text": "Dónde está el PIN, en el proveedor que nombra keys.pkcs11PinProvider: una ruta, un ARN, un recurso o una ruta de lectura de Vault. No tiene valor de respaldo."
+  },
+  "keys.pkcs11PinRef|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "el PIN se lee una vez, cuando se abre el token"
+  },
+  "keys.pkcs11PinField|label": {
+    "en": "55008836b9ff61fe",
+    "text": "El campo en que está el PIN de PKCS#11"
+  },
+  "keys.pkcs11PinField|description": {
+    "en": "f333042737800292",
+    "text": "El miembro de un secreto JSON que contiene el PIN. Vacío toma el valor entero."
+  },
+  "keys.pkcs11PinField|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "el PIN se lee una vez, cuando se abre el token"
+  },
+  "keys.signingKeyStore|label": {
+    "en": "e6e0b403d7b8a000",
+    "text": "Dónde se crean las claves de firma de un dominio"
+  },
+  "keys.signingKeyStore|description": {
+    "en": "5cc22ee909529ecc",
+    "text": "`software`, el valor predeterminado, crea las claves de firma de un dominio en este proceso y las guarda selladas en el almacén. `pkcs11` crea las clásicas — la clave RS256, la clave XML y las claves P-256, P-384, P-521, secp256k1 y Ed25519 que el módulo pueda crear — en el HSM que nombra keys.signingKeyToken, no extraíbles, y firma allí; una clave que el módulo no puede crear, y toda clave poscuántica, se queda en software. Se aplica a un conjunto de claves creado o rotado después del cambio, necesita un almacén de claves que persista (modo producto), y cada proceso y nodo necesita el token. Se puede definir por dominio."
+  },
+  "keys.signingKeyToken|label": {
+    "en": "a6e7fb05dd49b8a9",
+    "text": "El token del HSM en que se crean las claves de firma"
+  },
+  "keys.signingKeyToken|description": {
+    "en": "0bd2c707f6ff2e69",
+    "text": "La URI PKCS#11 del token en que un dominio con keys.signingKeyStore `pkcs11` crea sus claves de firma: pkcs11:token=<token label>, con serial= o slot-id= cuando dos tokens comparten etiqueta. El módulo, el PIN y las sesiones son los ajustes keys.pkcs11*. Vacío no abre ningún token."
+  },
+  "keys.signingKeyToken|restartReason": {
+    "en": "1a04369397b30563",
+    "text": "el token se abre una vez, al arrancar, en cada proceso"
+  },
+  "keys.pkcs11SynchronousSign|label": {
+    "en": "c8e3fedf4601518d",
+    "text": "Permitir la firma PKCS#11 síncrona"
+  },
+  "keys.pkcs11SynchronousSign|description": {
+    "en": "1cb742f146d4c7c1",
+    "text": "Apagado, el valor predeterminado: una firma con una clave en el HSM se hace solo mediante el `C_Sign` asíncrono del enlace. Las puertas síncronas (un JWS, una firma XML, una aserción SAML) rechazan una clave del HSM (`STS-KEYS-0209`) en lugar de esperar al token en el bucle de eventos. Encendido, esas puertas llaman a `C_Sign` y el bucle de eventos espera. Un módulo sin firma asíncrona solo puede firmar mientras esto está encendido. El descifrado no cambia. Ajustable por dominio."
+  },
   "keys.cellKekProvider|label": {
     "en": "9103eeef061197fd",
     "text": "Origen de la clave de cifrado de claves de la celda"
   },
   "keys.cellKekProvider|description": {
-    "en": "f779ece8f10a07ec",
-    "text": "El proveedor de la clave de cifrado de claves de ESTA CELDA, que sella lo que la celda guarda como propio (#98). Cinco proveedores, como en `keys.kekProvider`. `none` sella el nivel de celda con la clave de cifrado de claves del servicio, lo que es correcto para el modo de una sola celda y para una prueba; un despliegue de varias celdas en modo producto se NIEGA a arrancar con él, porque entonces una copia de las filas de una celda se abriría en todas las demás."
+    "en": "73b7f0bab09392e8",
+    "text": "El proveedor de la clave de cifrado de claves de ESTA CELDA, que sella lo que la celda guarda como propio (#98). Cinco proveedores, como en `keys.kekProvider`, y `pkcs11`, el HSM propio de la celda. `none` sella el nivel de celda con la clave de cifrado de claves del servicio, lo que es correcto para el modo de una sola celda y para una prueba; un despliegue de varias celdas en modo producto se NIEGA a arrancar con él, porque entonces una copia de las filas de una celda se abriría en todas las demás."
   },
   "keys.cellKekProvider|restartReason": {
     "en": "bfe49ff259fac42d",

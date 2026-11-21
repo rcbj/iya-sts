@@ -1884,8 +1884,8 @@
     "text": "موفّر مفتاح تشفير المفاتيح"
   },
   "keys.kekProvider|description": {
-    "en": "b48b052bc689c8e3",
-    "text": "أين يكون مفتاح تشفير المفاتيح الذي يغلّف كل مفتاح تشفير بيانات. تقرأ `file` و`aws` و`gcp` و`azure` و`vault` مفتاحًا من 32 بايتًا إلى هذه العملية من ملف مُركَّب أو مخزن أسرار؛ و`file` هو الافتراضي لأنه لا يحتاج شيئًا. أما `vault-transit` (Vault أو OpenBao Transit) و`aws-kms` و`gcp-kms` (Cloud KMS) و`azure-keys` (مفتاح Key Vault أو Managed HSM؛ وkeys.kekVault هو خزانته) فهي خدمات إدارة مفاتيح: لا يغادرها المفتاح أبدًا، ويسمّيه keys.kekRef، وتغلّف KMS كل مفتاح بيانات وتفك تغليفه — استدعاء واحد لكل مفتاح بيانات عند البدء، ولا استدعاء لكل قيمة. وكل موفّر سوى `file` يتطلب SDK الرسمي الخاص به تحميلًا كسولًا، وهو عمدًا ليس اعتمادًا لهذه الخدمة؛ ويُبلَّغ عن الغائب باسم الحزمة المطلوب تثبيتها."
+    "en": "bf4e717bed6b7e03",
+    "text": "أين يكون مفتاح تشفير المفاتيح الذي يغلّف كل مفتاح تشفير بيانات. تقرأ `file` و`aws` و`gcp` و`azure` و`vault` مفتاحًا من 32 بايتًا إلى هذه العملية من ملف مُركَّب أو مخزن أسرار؛ و`file` هو الافتراضي لأنه لا يحتاج شيئًا. أما `vault-transit` (Vault أو OpenBao Transit) و`aws-kms` و`gcp-kms` (Cloud KMS) و`azure-keys` (مفتاح Key Vault أو Managed HSM؛ وkeys.kekVault هو خزانته) فهي خدمات إدارة مفاتيح: لا يغادرها المفتاح أبدًا، ويسمّيه keys.kekRef، وتغلّف KMS كل مفتاح بيانات وتفك تغليفه — استدعاء واحد لكل مفتاح بيانات عند البدء، ولا استدعاء لكل قيمة. و`pkcs11` مثلها لكن المفتاح في وحدة أمان عتادية (YubiHSM 2 أو SoftHSM2 أو أي وحدة PKCS#11، keys.pkcs11Module)، وkeys.kekRef عنوان PKCS#11 URI. وكل موفّر سوى `file` يتطلب SDK الرسمي الخاص به تحميلًا كسولًا، وهو عمدًا ليس اعتمادًا لهذه الخدمة؛ ويُبلَّغ عن الغائب باسم الحزمة المطلوب تثبيتها."
   },
   "keys.kekProvider|restartReason": {
     "en": "0956d2f97d1df86a",
@@ -1932,8 +1932,8 @@
     "text": "مرجع مفتاح تشفير المفاتيح"
   },
   "keys.kekRef|description": {
-    "en": "a5a5b6e7f2c06fdc",
-    "text": "ما يسمّي به موفّرو السحابة السر: اسم AWS Secrets Manager أو ARN، أو اسم مورد GCP (projects/<p>/secrets/<s>، مع إضافة /versions/latest عند عدم إعطاء إصدار)، أو اسم سر Azure Key Vault، أو مسار قراءة HashiCorp Vault. ولا يستخدمه موفّر `file`."
+    "en": "b28c82e37153639d",
+    "text": "ما يسمّي به موفّرو السحابة السر: اسم AWS Secrets Manager أو ARN، أو اسم مورد GCP (projects/<p>/secrets/<s>، مع إضافة /versions/latest عند عدم إعطاء إصدار)، أو اسم سر Azure Key Vault، أو مسار قراءة HashiCorp Vault. ولـ `pkcs11`، عنوان PKCS#11 URI وفق RFC 7512، pkcs11:token=<token label>;object=<key label>. ولا يستخدمه موفّر `file`."
   },
   "keys.kekRef|restartReason": {
     "en": "d51b3caaa6125e92",
@@ -2055,13 +2055,125 @@
     "en": "d51b3caaa6125e92",
     "text": "يُقرأ مرة واحدة عند البدء"
   },
+  "keys.pkcs11Module|label": {
+    "en": "0fb904cb6844253b",
+    "text": "وحدة PKCS#11"
+  },
+  "keys.pkcs11Module|description": {
+    "en": "dd4fdc39cd1aed44",
+    "text": "مسار وحدة PKCS#11 التي يحمّلها موفّر `pkcs11`: /usr/lib/x86_64-linux-gnu/pkcs11/yubihsm_pkcs11.so لجهاز YubiHSM 2 (مع تشغيل yubihsm-connector وتوجيه YUBIHSM_PKCS11_CONF إلى إعداداته)، و/usr/lib/softhsm/libsofthsm2.so لـ SoftHSM2. وتحتاج إلى حزمة pkcs11js، وهي عمدًا ليست اعتمادًا لهذه الخدمة."
+  },
+  "keys.pkcs11Module|restartReason": {
+    "en": "34a60604acae5870",
+    "text": "تُحمَّل الوحدة مرة واحدة، عند البدء"
+  },
+  "keys.pkcs11Mechanism|label": {
+    "en": "f9f19afe01ab43ad",
+    "text": "كيف يغلّف HSM مفتاح بيانات"
+  },
+  "keys.pkcs11Mechanism|description": {
+    "en": "85ff0e656695f323",
+    "text": "الآلية التي يُغلَّف بها مفتاح بيانات جديد في HSM. يأخذ `auto` الآلية CKM_AES_GCM حيث توفّرها الوحدة (SoftHSM2 ومعظم أجهزة HSM الشبكية)، ثم CKM_AES_KEY_WRAP_PAD، ثم CKM_YUBICO_AES_CCM_WRAP الخاصة بـ YubiHSM 2 (كائنات مفاتيح التغليف لديه). ويظل مفتاح البيانات المغلَّف قبل التغيير قابلًا لفك التغليف: فالصيغة المخزَّنة تسمّي آليتها."
+  },
+  "keys.pkcs11Mechanism|restartReason": {
+    "en": "091df5146f3d6f79",
+    "text": "يُوصَل إلى مفتاح تشفير المفاتيح مرة واحدة، عند البدء"
+  },
+  "keys.pkcs11GenerateKey|label": {
+    "en": "c9dac3afbed86d44",
+    "text": "إنشاء مفتاح HSM عند أول استخدام"
+  },
+  "keys.pkcs11GenerateKey|description": {
+    "en": "82a5d89dd1a4c872",
+    "text": "عند التشغيل، يُولَّد هناك مفتاح تشفير المفاتيح الذي يسمّيه عنوان PKCS#11 URI ولا يحمله الرمز المميز: AES-256، حسّاس وغير قابل للاستخراج. ولا يولّده إلا العملية الأمامية؛ أما للعنقود فأنشئ المفتاح بأداة HSM نفسها بدلًا من ذلك، لأن عقدتين تبدآن معًا ستنشئان مفتاحين. وعند الإيقاف، وهو الافتراضي، يوقف المفتاح المفقود البدء."
+  },
+  "keys.pkcs11GenerateKey|restartReason": {
+    "en": "091df5146f3d6f79",
+    "text": "يُوصَل إلى مفتاح تشفير المفاتيح مرة واحدة، عند البدء"
+  },
+  "keys.pkcs11Sessions|label": {
+    "en": "4a2da0042402bee1",
+    "text": "جلسات PKCS#11 لكل عملية"
+  },
+  "keys.pkcs11Sessions|description": {
+    "en": "f5b20f8d3e577d1a",
+    "text": "أقصى عدد من الجلسات تبقيها كل عملية وكل عامل طلبات مفتوحة على رمز مميز، وكل جلسة تنفّذ عملية HSM واحدة في كل مرة. لدى YubiHSM 2 ما مجموعه 16 جلسة، تتشاركها كل عملية في كل عقدة: أبقِ حاصل ضرب هذه القيمة في عدد العمليات وعدد العقد دون ذلك."
+  },
+  "keys.pkcs11Sessions|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "يُفتح الرمز المميز مرة واحدة، عند البدء"
+  },
+  "keys.pkcs11PinProvider|label": {
+    "en": "3e1d9c989bcacc3d",
+    "text": "من أين يُقرأ رقم PIN الخاص بـ PKCS#11"
+  },
+  "keys.pkcs11PinProvider|description": {
+    "en": "1c344b0b12c35ec4",
+    "text": "مخزن الأسرار الذي يُقرأ منه رقم PIN لرمز HSM المميز، ولا يكون أبدًا قيمة إعداد: ملف مُركَّب، أو AWS Secrets Manager، أو Google Cloud Secret Manager، أو Azure Key Vault، أو Vault/OpenBao، يُوصَل إليه كما تقول keys.kek*. ولجهاز YubiHSM 2 يكون PIN هو معرّف مفتاح المصادقة بأربعة أرقام ست عشرية متبوعًا بكلمة مروره (0001password). ويخدم كائن JSON لأرقام PIN حسب تسمية الرمز المميز رموزًا مميزة بأرقام PIN مختلفة. ولا يسجّل `none` الدخول إلى أي شيء."
+  },
+  "keys.pkcs11PinProvider|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "يُقرأ PIN مرة واحدة، عند فتح الرمز المميز"
+  },
+  "keys.pkcs11PinRef|label": {
+    "en": "de50e9f1904c80fc",
+    "text": "موقع PIN الخاص بـ PKCS#11"
+  },
+  "keys.pkcs11PinRef|description": {
+    "en": "dffce1d68f8495de",
+    "text": "مكان PIN، في الموفّر الذي يسمّيه keys.pkcs11PinProvider: مسار، أو ARN، أو مورد، أو مسار قراءة Vault. وليس له بديل احتياطي."
+  },
+  "keys.pkcs11PinRef|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "يُقرأ PIN مرة واحدة، عند فتح الرمز المميز"
+  },
+  "keys.pkcs11PinField|label": {
+    "en": "55008836b9ff61fe",
+    "text": "الحقل الذي فيه PIN الخاص بـ PKCS#11"
+  },
+  "keys.pkcs11PinField|description": {
+    "en": "f333042737800292",
+    "text": "عضو سر JSON الذي يحمل PIN. والقيمة الفارغة تأخذ القيمة كاملة."
+  },
+  "keys.pkcs11PinField|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "يُقرأ PIN مرة واحدة، عند فتح الرمز المميز"
+  },
+  "keys.signingKeyStore|label": {
+    "en": "e6e0b403d7b8a000",
+    "text": "أين تُنشأ مفاتيح التوقيع لنطاق ثقة"
+  },
+  "keys.signingKeyStore|description": {
+    "en": "5cc22ee909529ecc",
+    "text": "ينشئ `software`، وهو الافتراضي، مفاتيح التوقيع لنطاق الثقة في هذه العملية ويبقيها مختومة في المخزن. وينشئ `pkcs11` مفاتيحه التقليدية — مفتاح RS256 ومفتاح XML ومفاتيح P-256 وP-384 وP-521 وsecp256k1 وEd25519 التي تستطيع الوحدة إنشاءها — في HSM الذي يسمّيه keys.signingKeyToken، غير قابلة للاستخراج، ويوقّع هناك؛ أما المفتاح الذي لا تستطيع الوحدة إنشاءه، وكل مفتاح ما بعد الكم، فيبقى في البرمجيات. وينطبق على مجموعة مفاتيح أُنشئت أو دُوّرت بعد التغيير، ويحتاج إلى مخزن مفاتيح دائم (وضع المنتج)، وتحتاج كل عملية وعقدة إلى الرمز المميز. قابل للضبط لكل نطاق ثقة."
+  },
+  "keys.signingKeyToken|label": {
+    "en": "a6e7fb05dd49b8a9",
+    "text": "رمز HSM المميز الذي تُنشأ عليه مفاتيح التوقيع"
+  },
+  "keys.signingKeyToken|description": {
+    "en": "0bd2c707f6ff2e69",
+    "text": "عنوان PKCS#11 URI للرمز المميز الذي ينشئ عليه نطاق ثقة ذو keys.signingKeyStore `pkcs11` مفاتيح توقيعه: pkcs11:token=<token label>، مع serial= أو slot-id= حيث يتشارك رمزان مميزان تسمية واحدة. والوحدة وPIN والجلسات هي إعدادات keys.pkcs11*. والقيمة الفارغة لا تفتح أي رمز مميز."
+  },
+  "keys.signingKeyToken|restartReason": {
+    "en": "1a04369397b30563",
+    "text": "يُفتح الرمز المميز مرة واحدة، عند البدء، في كل عملية"
+  },
+  "keys.pkcs11SynchronousSign|label": {
+    "en": "c8e3fedf4601518d",
+    "text": "السماح بالتوقيع المتزامن عبر PKCS#11"
+  },
+  "keys.pkcs11SynchronousSign|description": {
+    "en": "1cb742f146d4c7c1",
+    "text": "مطفأ، وهو الافتراضي: يُصنع التوقيع بمفتاح في وحدة HSM فقط عبر `C_Sign` غير المتزامن للربط. ترفض الأبواب المتزامنة (JWS، وتوقيع XML، وتأكيد SAML) مفتاح HSM (`STS-KEYS-0209`) بدل انتظار الرمز على حلقة الأحداث. عند التشغيل تستدعي تلك الأبواب `C_Sign` وتنتظر حلقة الأحداث. لا تستطيع وحدة بلا توقيع غير متزامن أن توقّع إلا عندما يكون هذا مشغلاً. لا يتغير فك التشفير. يُضبط لكل نطاق."
+  },
   "keys.cellKekProvider|label": {
     "en": "9103eeef061197fd",
     "text": "من أين يُقرأ مفتاح تشفير مفاتيح الخلية"
   },
   "keys.cellKekProvider|description": {
-    "en": "f779ece8f10a07ec",
-    "text": "موفّر مفتاح تشفير مفاتيح هذه الخلية، الذي يختم ما تخزّنه الخلية لنفسها (#98). خمسة موفّرين، كما `keys.kekProvider`. ويختم `none` طبقة الخلية تحت مفتاح تشفير مفاتيح الخدمة، وهو صحيح لوضع الخلية الواحدة وللاختبار؛ ويرفض نشر متعدد الخلايا في وضع المنتج أن يبدأ به، لأنه عندئذ تُفتح نسخة من صفوف خلية في كل خلية أخرى."
+    "en": "73b7f0bab09392e8",
+    "text": "موفّر مفتاح تشفير مفاتيح هذه الخلية، الذي يختم ما تخزّنه الخلية لنفسها (#98). خمسة موفّرين، كما `keys.kekProvider`، و`pkcs11`، وهو HSM الخاص بالخلية. ويختم `none` طبقة الخلية تحت مفتاح تشفير مفاتيح الخدمة، وهو صحيح لوضع الخلية الواحدة وللاختبار؛ ويرفض نشر متعدد الخلايا في وضع المنتج أن يبدأ به، لأنه عندئذ تُفتح نسخة من صفوف خلية في كل خلية أخرى."
   },
   "keys.cellKekProvider|restartReason": {
     "en": "bfe49ff259fac42d",

@@ -93,5 +93,10 @@
   "hKey": "The key",
   "hAlgorithm": "The algorithm",
   "hDataKeys": "The data encryption keys",
-  "hCounting": "The counting"
+  "hCounting": "The counting",
+  "signingTitle": "This realm's signing keys",
+  "signingStore": "Where they are made",
+  "signingInHsm": "In the HSM",
+  "signingInSoftware": "In software",
+  "signingRefused": "refused: the HSM cannot be used here (the log says why)"
 }

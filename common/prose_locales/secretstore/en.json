@@ -8,6 +8,7 @@
   "secretstore.providers.aws-kms.label": "AWS KMS (the key never leaves it)",
   "secretstore.providers.gcp-kms.label": "Google Cloud KMS (the key never leaves it)",
   "secretstore.providers.azure-keys.label": "Azure Key Vault or Managed HSM key (the key never leaves it)",
+  "secretstore.providers.pkcs11.label": "A PKCS#11 hardware security module (the key never leaves it)",
   "secretstore.source.reportWhat": "Where this service reads its primordial secrets from — the key-encryption key everything it seals is sealed under, and the database password — whether it actually read them, and what the store at the other end is doing.",
   "secretstore.source.notConfigured": "not configured",
   "secretstore.source.noPath": "(no path configured)",
@@ -70,6 +71,7 @@
   "secretstore.probe.aws-kms/kms-key": "What AWS KMS says about the key that wraps the data keys: its state and whether AWS rotates it.",
   "secretstore.probe.gcp-kms/kms-key": "What Cloud KMS says about the key that wraps the data keys: its purpose, its primary version and its rotation schedule.",
   "secretstore.probe.azure-keys/vault-key": "What the vault says about the key that wraps the data keys: its type, size, operations, version and rotation.",
+  "secretstore.probe.pkcs11/hsm-key": "What the HSM token says about the key that wraps the data keys: whether it is there, its type, and whether it may ever leave the HSM.",
   "secretstore.probe.gcp/secret": "The secret's own metadata: replication, labels, rotation and expiry.",
   "secretstore.probe.gcp/version": "The version a read would get: whether it is enabled, disabled or destroyed.",
   "secretstore.probe.azure/versions": "Every version of this secret and its properties — enabled, created, updated, expiry — and never the value."

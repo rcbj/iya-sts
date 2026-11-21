@@ -116,7 +116,8 @@
     "@googleapis/gmail": "^22.0.0",
     "mysql2": "^3.0.0",
     "tedious": "^20.0.0",
-    "oracledb": "^7.0.0"
+    "oracledb": "^7.0.0",
+    "pkcs11js": "^2.1.7"
   },
   "peerDependenciesMeta": {
     "mysql2": {
@@ -126,6 +127,9 @@
       "optional": true
     },
     "oracledb": {
+      "optional": true
+    },
+    "pkcs11js": {
       "optional": true
     },
     "@aws-sdk/client-secrets-manager": {

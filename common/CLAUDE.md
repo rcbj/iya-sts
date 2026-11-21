@@ -8030,6 +8030,95 @@ GCM is not. Its strength is still 256-bit AES; say so wherever it is offered.
 * **A derived (development) DEK is always GCM**: nothing persists there, so
   nothing would be gained.
 
+### KEYS IN A HARDWARE SECURITY MODULE: `pkcs11` (#1955 P8, 2026-11-20)
+
+**Two features on one engine, rcbj's D6 ("both").** `keys.kekProvider=pkcs11`
+is a fifth KMS-shaped provider; `keys.signingKeyStore=pkcs11` (per realm,
+off by default) makes a realm's classical signing keys in the token. The
+engine is `crypto_impl/pkcs11.js` (sessions, mechanisms, `C_Sign`), reached
+only through `crypto.js` section 19; `secrets.js` owns the provider, the PIN,
+the RFC 7512 URIs and the per-thread token cache; `helpers.js` decides where a
+realm's keys are made. `docs/v1.1.0/hsm.md` is the operator half.
+
+* **THE KEK IS A HANDLE, LIKE TRANSIT'S.** `wrap()` / `unwrap()` in the HSM,
+  stored as `$dekkms$1$pkcs11$<b64url token=…;object=…>$<tag>.<…>`. The TAG
+  names the mechanism and its own version — `g1` CKM_AES_GCM with the DEK's
+  AAD, `k1` CKM_AES_KEY_WRAP_PAD through `C_WrapKey` (SoftHSM2 offers KWP for
+  wrap only, not `C_Encrypt` — measured), `y1` the YubiHSM's
+  CKM_YUBICO_AES_CCM_WRAP (its module offers neither of the others; Yubico's
+  `util_pkcs11.c`). `k1` and `y1` carry SHA-256 of the AAD inside what they
+  wrap, the Azure RSA rule. The unwrap reads the tag, never the setting, so
+  `keys.pkcs11Mechanism` changes only new wraps. **No `rotate()`**: a PKCS#11
+  key has no versions; a new key is `keys.previousKek*`.
+* **THE CELL KEY MAY BE ONE TOO**, alone of the KMS providers
+  (`servesCellKek`): `keystore.js`'s `readCellKey()` now takes a handle and
+  refuses one naming the service key's HSM key (`STS-CELL-0012`). The four
+  cloud KMS keys still may not — nothing asked, and it was not tested.
+* **THE PIN IS A SECRET** (`PKCS11_PIN`, read through `read()`), never a
+  setting; a JSON object of PINs by token label serves the previous key on
+  another HSM. A URI's `pin-value` / `pin-source` is refused.
+* **SESSIONS ARE PER THREAD, POOLED, AND RECONNECT ONCE.** A request worker
+  is a `worker_threads` Worker and loads the binding itself; C_Initialize is
+  process-wide, so ALREADY_INITIALIZED and USER_ALREADY_LOGGED_IN are
+  expected. One operation per session (Init and the call must not
+  interleave). A device-class error drops the pool and, for a lost device,
+  finalizes and initializes again; the operation runs once more, else
+  `STS-KEYS-0201`. **A key is held as the template that finds it**, not its
+  handle: SoftHSM2 answered CKR_OBJECT_HANDLE_INVALID after its last session
+  closed (the login went with it), so the handle is found again whenever the
+  token's `generation` moved. No timer anywhere.
+* **A SIGNING KEY IN THE HSM TRAVELS WHERE A PEM TRAVELS.** Its "PEM" is a
+  reference, `pkcs11-key:v1:<b64url {token, id, kty, crv, bits}>` — what
+  `export()` answers and what `keystore.js` seals — and `privateKeyFrom()`
+  turns it back into the key object through the token this thread holds
+  (`setPkcs11KeyResolver()`, filled by `secrets.js` at load: `crypto.js` may
+  not require it back). The object answers `type`, `asymmetricKeyType` and
+  `asymmetricKeyDetails` like a KeyObject, so the key set, its generations,
+  the pool's key channel and the store needed no change, and **no schema
+  change** (1.1.1 is a patch release). Every signing door asks `isHsmKey()`
+  first: `signJws()` (jsonwebtoken's framing kept exactly — through
+  `classicalSigningInput()`, or a throwaway key of the same kind whose
+  signature is discarded), `signJwsAsync()` (`C_SignAsync`), `signXml()` (the
+  general engine with a signer, RSA included), `signQueryString()`, a
+  self-signed certificate. **Anything else fails closed** — node refuses the
+  reference, a JWK export is `STS-KEYS-0206`.
+* **AND THEY DECRYPT, BECAUSE THE CODE MODELS NO KEY SEPARATION** (the P8
+  follow-up): `ownRsaDecryptionKeys()` IS the realm's RSA signing keys (XML
+  Encryption for a SAML EncryptedID, an RFC 7522 encrypted assertion, a
+  WS-Trust request; a JWE assertion's RSA-OAEP), and `assertion_grant.js`'s
+  ECDH-ES candidates ARE its curve keys. So an RSA pair is made with
+  CKA_DECRYPT and a NIST-curve pair with CKA_DERIVE, and every private-key
+  decryption in `crypto.js` goes through `rsaPrivateDecrypt()` and
+  `ecdhSecret()` (XML key transport and agreement, JWE `unwrapCek()`);
+  `decryptJweCompactAsync()` makes the HSM's part off the loop
+  (`hsmPrecomputed`). **PKCS#1 v1.5 is never asked of an HSM key**: OpenSSL's
+  implicit rejection is what makes it safe here, and a module has none.
+  SoftHSM2 2.6 does OAEP over SHA-1 only (measured): SHA-256 is
+  `STS-KEYS-0207`. A key made by the first cut (CKA_SIGN alone) answers
+  CKR_KEY_FUNCTION_NOT_PERMITTED, which is `STS-KEYS-0208` with the rotation
+  that replaces it; its attributes are not widened from here.
+* **WHERE THE KEYS ARE MADE IS `helpers.js`'s `hsmSigning()`**: refused
+  (`STS-KEYS-0206`), never quietly software, where the keystore does not
+  persist (each start would leave objects in the token) or no token is open
+  (`keys.signingKeyToken`, opened in every process by `keystore.start()`
+  before a set is read). The RS256, XML and curve keys the module makes; a
+  curve it answers "not supported" for (`STS-KEYS-0207`, Ed448 on SoftHSM2)
+  is made in software, logged, and `hsmKeyReport()` says so — as it does of
+  every post-quantum key, which never goes to an HSM. `prepareKeySet()` and
+  a rotation's `mintStandbyKey()` generate off the loop
+  (`C_GenerateKeyPairAsync`). Signer-group, pinned and credential-signer keys
+  stay software.
+* **Measured on SoftHSM2** (2 CPUs): RS256 ~0.7–0.95 ms per signature in
+  place (0.47 ms in software), ES256 ~0.05 ms in place or 200 at once off the
+  loop, a SAML signature ~1.2 ms, an XML OAEP decryption ~0.2 ms. The
+  synchronous signing doors (access tokens, SAML) call `C_Sign` only while
+  `keys.pkcs11SynchronousSign` is on — off by default, and a door that would
+  block refuses (`STS-KEYS-0209`). XML decryption stays synchronous. On
+  SoftHSM2 an opted-in signature holds the loop about as long as software
+  did; `docs/v1.1.0/hsm.md` gives the YubiHSM's cost and the EC-key advice.
+  `tests/pkcs11_kek.js` and `tests/pkcs11_signing.js` hold both features to a
+  fake module and to SoftHSM2; no real YubiHSM 2 has been run.
+
 ### `storeReport()`: THE SAME MODULE ANSWERING A MONITORING QUESTION (2026-09-12)
 
 `describe()` says where a secret is configured to come from. **`storeReport()`

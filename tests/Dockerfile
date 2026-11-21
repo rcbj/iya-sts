@@ -350,6 +350,19 @@ RUN apt-get update \
 COPY tests/kerberos-interop/build-heimdal.sh /usr/src/build-heimdal.sh
 RUN /usr/src/build-heimdal.sh /opt/heimdal
 
+# ---------------------------------------------------------------------------
+# THE PKCS#11 BINDING (#1955 P8), for `tests/pkcs11_kek.js` and
+# `tests/pkcs11_signing.js`'s SoftHSM2 halves. `pkcs11js` is a native addon
+# (node-gyp) and the final stage below carries no compiler, so it is built
+# here, on the node the service image runs, and copied in; N-API keeps the
+# binary good on the final stage's node. It is NOT one of the tests' own
+# dependencies (tests/package.json): the service treats it as an optional
+# peer, loaded lazily, and so does the test — from /opt/pkcs11js, where the
+# service's own require cannot reach it by accident.
+# ---------------------------------------------------------------------------
+FROM node:24.22.1-bookworm AS pkcs11js
+RUN mkdir -p /opt/pkcs11js && cd /opt/pkcs11js  && npm init -y >/dev/null  && npm install --omit=dev pkcs11js@2.1.7  && npm cache clean --force
+
 FROM ubuntu:latest
 
 # replace shell with bash so we can source files (the nvm install below needs it)
@@ -680,6 +693,17 @@ RUN ln -s /opt/uma-clients/keycloak/keycloak-uma-driver \
 # The repository. The root .dockerignore decides what is in it — see the header
 # — and the guard is what a context missing the suite says instead of failing
 # eighty lines later inside node with a message about a module.
+# SOFTHSM2 AND THE BINDING (#1955 P8): a software PKCS#11 token, so the HSM
+# key-encryption key and HSM signing keys are exercised against a real module
+# as well as the fake one. A token is initialised by the test itself, in a
+# directory of its own (SOFTHSM2_CONF), so nothing here holds key material.
+COPY --from=pkcs11js /opt/pkcs11js /opt/pkcs11js
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get -y install --no-install-recommends \
+        softhsm2 \
+ && rm -rf /var/lib/apt/lists/*
+ENV STS_TEST_PKCS11JS=/opt/pkcs11js/node_modules/pkcs11js
+ENV STS_TEST_SOFTHSM_MODULE=/usr/lib/softhsm/libsofthsm2.so
 COPY . ./
 RUN if [ ! -f tests/tools/run-report.js ]; then \
       echo "tests/ is missing from the build context, so there is nothing" >&2; \

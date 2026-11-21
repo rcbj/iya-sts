@@ -4480,7 +4480,7 @@ const SETTINGS = [
     label: 'Key-encryption key provider',
     path: 'keys.kekProvider', env: 'STS_KEYS_KEK_PROVIDER', type: 'enum',
     enumValues: ['file', 'aws', 'gcp', 'azure', 'vault', 'vault-transit',
-                 'aws-kms', 'gcp-kms', 'azure-keys'],
+                 'aws-kms', 'gcp-kms', 'azure-keys', 'pkcs11'],
     dflt: 'file', runtime: false,
     restartReason: 'the key-encryption key is read once, at startup, before ' +
                    'the signing keys are decrypted',
@@ -4494,7 +4494,10 @@ const SETTINGS = [
                  'keys.kekVault is its vault) are key management ' +
                  'services: the key NEVER leaves them, keys.kekRef names it, ' +
                  'and the KMS wraps and unwraps each data key — one call per ' +
-                 'data key at start, none per value. Every provider but ' +
+                 'data key at start, none per value. `pkcs11` is the same ' +
+                 'with the key in a hardware security module (a YubiHSM 2, ' +
+                 'SoftHSM2 or any PKCS#11 module, keys.pkcs11Module), ' +
+                 'keys.kekRef a PKCS#11 URI. Every provider but ' +
                  '`file` lazily requires its official SDK, which is ' +
                  'deliberately NOT a dependency of this service; a missing ' +
                  'one is reported with the package name to install.' },
@@ -4547,8 +4550,9 @@ const SETTINGS = [
                  'Secrets Manager name or ARN, a GCP resource name ' +
                  '(projects/<p>/secrets/<s>, with /versions/latest added ' +
                  'when no version is given), an Azure Key Vault secret name, ' +
-                 'or a HashiCorp Vault read path. Unused by the `file` ' +
-                 'provider.' },
+                 'or a HashiCorp Vault read path. For `pkcs11`, an RFC 7512 ' +
+                 'PKCS#11 URI, pkcs11:token=<token label>;object=<key ' +
+                 'label>. Unused by the `file` provider.' },
 
   { key: 'keys.kekVault', group: 'Key material',
     label: 'Vault or Key Vault URL',
@@ -4698,6 +4702,147 @@ const SETTINGS = [
                  'deployment relies on.' },
 
   // -------------------------------------------------------------------------
+  // A KEY-ENCRYPTION KEY IN A HARDWARE SECURITY MODULE (#1955 P8). One HSM
+  // per deployment, as one secret store is: the module, the PIN and how a key
+  // is wrapped are shared by the three positions (keys.kekProvider,
+  // keys.cellKekProvider, keys.previousKekProvider), each naming its own key
+  // with a PKCS#11 URI in its location row — whose `module-path` may name
+  // another module for that position alone. `common/secrets.js` argues it.
+  // -------------------------------------------------------------------------
+  { key: 'keys.pkcs11Module', group: 'Key material',
+    label: 'PKCS#11 module',
+    env: 'STS_KEYS_PKCS11_MODULE', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'the module is loaded once, at startup',
+    description: 'The path of the PKCS#11 module the `pkcs11` provider ' +
+                 'loads: /usr/lib/x86_64-linux-gnu/pkcs11/yubihsm_pkcs11.so ' +
+                 'for a YubiHSM 2 (with yubihsm-connector running and ' +
+                 'YUBIHSM_PKCS11_CONF pointing at its configuration), ' +
+                 '/usr/lib/softhsm/libsofthsm2.so for SoftHSM2. It needs ' +
+                 'the pkcs11js package, which is deliberately not a ' +
+                 'dependency of this service.' },
+
+  { key: 'keys.pkcs11Mechanism', group: 'Key material',
+    label: 'How the HSM wraps a data key',
+    env: 'STS_KEYS_PKCS11_MECHANISM', type: 'enum',
+    enumValues: ['auto', 'aes-gcm', 'aes-key-wrap-pad',
+                 'yubico-aes-ccm-wrap'],
+    dflt: 'auto', runtime: false, perProcess: true,
+    restartReason: 'the key-encryption key is reached once, at startup',
+    description: 'The mechanism a new data key is wrapped with in the HSM. ' +
+                 '`auto` takes CKM_AES_GCM where the module offers it ' +
+                 '(SoftHSM2 and most network HSMs), then ' +
+                 'CKM_AES_KEY_WRAP_PAD, then the YubiHSM 2\'s own ' +
+                 'CKM_YUBICO_AES_CCM_WRAP (its wrap-key objects). A data ' +
+                 'key wrapped before a change still unwraps: the stored ' +
+                 'form names its mechanism.' },
+
+  { key: 'keys.pkcs11GenerateKey', group: 'Key material',
+    label: 'Make the HSM key on first use',
+    env: 'STS_KEYS_PKCS11_GENERATE_KEY', type: 'bool', dflt: false,
+    runtime: false, perProcess: true,
+    restartReason: 'the key-encryption key is reached once, at startup',
+    description: 'On, a key-encryption key the PKCS#11 URI names and the ' +
+                 'token does not hold is generated there: AES-256, ' +
+                 'sensitive and NOT extractable. Only the front process ' +
+                 'generates; for a cluster, make the key with the HSM\'s ' +
+                 'own tool instead, because two nodes starting at once ' +
+                 'would make two. Off, the default, a missing key stops ' +
+                 'the start.' },
+
+  { key: 'keys.pkcs11Sessions', group: 'Key material',
+    label: 'PKCS#11 sessions per process',
+    env: 'STS_KEYS_PKCS11_SESSIONS', type: 'int', dflt: 4, min: 1, max: 64,
+    runtime: false, perProcess: true,
+    restartReason: 'the token is opened once, at startup',
+    description: 'How many sessions each process and request worker keeps ' +
+                 'open on a token at most, each running one HSM operation ' +
+                 'at a time. A YubiHSM 2 has 16 sessions in all, shared by ' +
+                 'every process of every node: keep the product of this, ' +
+                 'the processes and the nodes under that.' },
+
+  { key: 'keys.pkcs11PinProvider', group: 'Key material',
+    label: 'Where the PKCS#11 PIN is read from',
+    env: 'STS_KEYS_PKCS11_PIN_PROVIDER', type: 'enum',
+    enumValues: ['none', 'file', 'aws', 'gcp', 'azure', 'vault'],
+    dflt: 'none', runtime: false, perProcess: true,
+    restartReason: 'the PIN is read once, when the token is opened',
+    description: 'The secret store the HSM token\'s PIN is read from, ' +
+                 'never a setting\'s value: a mounted file, AWS Secrets ' +
+                 'Manager, Google Cloud Secret Manager, Azure Key Vault or ' +
+                 'Vault/OpenBao, reached as keys.kek* says. For a YubiHSM ' +
+                 '2 the PIN is the authentication key\'s id in four hex ' +
+                 'digits followed by its password (0001password). A JSON ' +
+                 'object of PINs by token label serves tokens with ' +
+                 'different PINs. `none` logs in to nothing.' },
+
+  { key: 'keys.pkcs11PinRef', group: 'Key material',
+    label: 'The PKCS#11 PIN\'s location',
+    env: 'STS_KEYS_PKCS11_PIN_REF', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'the PIN is read once, when the token is opened',
+    description: 'Where the PIN is, in the provider ' +
+                 'keys.pkcs11PinProvider names: a path, an ARN, a resource ' +
+                 'or a Vault read path. It has no fallback.' },
+
+  { key: 'keys.pkcs11PinField', group: 'Key material',
+    label: 'The field the PKCS#11 PIN is in',
+    env: 'STS_KEYS_PKCS11_PIN_FIELD', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'the PIN is read once, when the token is opened',
+    description: 'The member of a JSON secret that holds the PIN. Empty ' +
+                 'takes the value whole.' },
+
+  // -------------------------------------------------------------------------
+  // A REALM'S CLASSICAL SIGNING KEYS IN THE HSM (#1955 P8, rcbj's D6:
+  // "both"). Off by default. `common/helpers.js` makes the realm's RS256,
+  // curve and XML keys in the token when its key set is made or rotated;
+  // `common/crypto.js` signs with C_Sign. Post-quantum keys stay in software.
+  // -------------------------------------------------------------------------
+  { key: 'keys.signingKeyStore', group: 'Key material',
+    label: 'Where a realm\'s signing keys are made',
+    env: 'STS_KEYS_SIGNING_KEY_STORE', type: 'enum',
+    enumValues: ['software', 'pkcs11'], dflt: 'software', runtime: true,
+    description: '`software`, the default, makes a realm\'s signing keys in ' +
+                 'this process and keeps them sealed in the store. `pkcs11` ' +
+                 'makes its classical ones — the RS256 key, the XML key and ' +
+                 'the P-256, P-384, P-521, secp256k1 and Ed25519 keys the ' +
+                 'module can make — in the HSM keys.signingKeyToken names, ' +
+                 'non-extractable, and signs there; a key the module cannot ' +
+                 'make, and every post-quantum key, stays in software. It ' +
+                 'applies to a key set made or rotated after the change, ' +
+                 'needs a keystore that persists (product mode), and every ' +
+                 'process and node needs the token. Settable per realm.' },
+
+  { key: 'keys.signingKeyToken', group: 'Key material',
+    label: 'The HSM token signing keys are made on',
+    env: 'STS_KEYS_SIGNING_KEY_TOKEN', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'the token is opened once, at startup, in every process',
+    description: 'The PKCS#11 URI of the token a realm with ' +
+                 'keys.signingKeyStore `pkcs11` makes its signing keys on: ' +
+                 'pkcs11:token=<token label>, with serial= or slot-id= where ' +
+                 'two tokens share a label. The module, the PIN and the ' +
+                 'sessions are the keys.pkcs11* settings. Empty opens no ' +
+                 'token.' },
+
+  // Off by default (#1955): a synchronous door (JWS, XML, SAML) must not
+  // hold the event loop for the token unless an operator asks. Decryption
+  // is not gated here.
+  { key: 'keys.pkcs11SynchronousSign', group: 'Key material',
+    label: 'Allow synchronous PKCS#11 signing',
+    env: 'STS_KEYS_PKCS11_SYNCHRONOUS_SIGN', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'Off, the default: a signature with a key in the HSM is ' +
+                 'made only through the binding\'s asynchronous `C_Sign`. ' +
+                 'The synchronous doors (a JWS, an XML signature, a SAML ' +
+                 'assertion) refuse an HSM key (`STS-KEYS-0209`) rather ' +
+                 'than wait for the token on the event loop. On, those ' +
+                 'doors call `C_Sign` and the event loop waits. A module ' +
+                 'with no asynchronous sign can sign only while this is ' +
+                 'on. Decryption is not changed. Settable per realm.' },
+
+  // -------------------------------------------------------------------------
   // THE CELL KEY-ENCRYPTION KEY (#98, 2026-09-28). What a cell stores of its
   // own — the people homed here and everything it mints — is sealed under a
   // key that lives only in the cell's region and is never replicated, so a
@@ -4709,12 +4854,13 @@ const SETTINGS = [
   { key: 'keys.cellKekProvider', group: 'Key material',
     label: 'Where the cell key-encryption key is read from',
     env: 'STS_CELL_KEK_PROVIDER', type: 'enum',
-    enumValues: ['none', 'file', 'aws', 'gcp', 'azure', 'vault'],
+    enumValues: ['none', 'file', 'aws', 'gcp', 'azure', 'vault', 'pkcs11'],
     dflt: 'none', runtime: false, perProcess: true,
     restartReason: 'the key is read once, before the store is restored',
     description: 'The provider of THIS CELL\'s key-encryption key, which ' +
                  'seals what the cell stores of its own (#98). Five ' +
-                 'providers, as `keys.kekProvider`. `none` seals the cell ' +
+                 'providers, as `keys.kekProvider`, and `pkcs11`, the ' +
+                 'cell\'s own HSM. `none` seals the cell ' +
                  'tier under the service key-encryption key, which is ' +
                  'correct for single-cell mode and for a test; a multi-cell ' +
                  'deployment in product mode REFUSES to start with it, ' +
@@ -4826,7 +4972,8 @@ const SETTINGS = [
     label: 'Where the previous key-encryption key is read from',
     env: 'STS_PREVIOUS_KEK_PROVIDER', type: 'enum',
     enumValues: ['none', 'file', 'aws', 'gcp', 'azure', 'vault',
-                 'vault-transit', 'aws-kms', 'gcp-kms', 'azure-keys'],
+                 'vault-transit', 'aws-kms', 'gcp-kms', 'azure-keys',
+                 'pkcs11'],
     dflt: 'none', runtime: false, perProcess: true,
     restartReason: 'the key is read once, before the store is restored',
     description: 'To rotate the key-encryption key: point keys.kek* at the ' +
