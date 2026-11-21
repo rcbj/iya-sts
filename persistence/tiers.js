@@ -414,6 +414,9 @@ const CELL_MINTED = [
   // holder's — and is attested where their keys were registered, so it is
   // kept beside their entry in this cell.
   'hardware_tokens.register',
+  // A person's OpenPGP registration challenge and their Web Key Directory
+  // publication (#1955 P6): somebody's, beside their entry in this cell.
+  'openpgp.challenges', 'openpgp.wkd',
   'gnap.approvers', 'gnap.continuations', 'gnap.grants', 'gnap.instances',
   'gnap.interactions', 'gnap.manageHandles', 'gnap.manageValues',
   'gnap.movedGrants', 'gnap_monitor.counters', 'gnap.spend', 'gnap.tokens',

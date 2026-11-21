@@ -656,12 +656,30 @@ const STANDARDS = [
               'verified over the attribute bytes as received and written ' +
               'DER-sorted; EnvelopedData with KeyTransRecipientInfo (RSA ' +
               'PKCS#1 v1.5 and OAEP) and AES-CBC content; degenerate ' +
-              'certs-only SignedData with certificates and CRLs. No ' +
-              'KeyAgreeRecipientInfo, no authenticated or compressed data, ' +
+              'certs-only SignedData with certificates and CRLs; for ' +
+              'S/MIME mail (#1955) an EnvelopedData written with an OAEP ' +
+              'SHA-256 KeyTransRecipientInfo or an ECDH ' +
+              'KeyAgreeRecipientInfo. No authenticated or compressed data, ' +
               'no countersignatures.',
     what: 'The envelope SCEP (scep/scep_cms.ts) reads and writes: a request ' +
           'signed by the requester and encrypted to the RA, and a CertRep ' +
-          'signed by the RA whose certificate is encrypted to the requester.' }
+          'signed by the RA whose certificate is encrypted to the requester. ' +
+          'Since #1955 also the S/MIME EnvelopedData mail is encrypted in, ' +
+          'which adds a KeyAgreeRecipientInfo for an EC recipient ' +
+          '(dhSinglePass-stdDH-sha256kdf, AES-256 key wrap) and an OAEP ' +
+          'SHA-256 KeyTransRecipientInfo for an RSA one.' },
+  // OpenPGP (#1955 P6): a person's key and the mail encrypted to it.
+  { key: 'openpgp', name: 'OpenPGP',
+    specs: ['RFC 9580', 'RFC 4880', 'RFC 3156',
+            'draft-koch-openpgp-webkey-service'],
+    coverage: 'partial: reading v4 and v6 transferable public keys, ' +
+              'verifying a cleartext signature, and encrypting a PGP/MIME ' +
+              'message, all through openpgp.js; the Web Key Directory\'s ' +
+              'advanced and direct lookups and policy file. No signing, no ' +
+              'decryption, no Web Key Service submission, no keyserver.',
+    what: 'A person\'s own public key, registered on a proof of possession ' +
+          'and published in the Web Key Directory if they choose; the key ' +
+          'their mail is encrypted to.' }
 ];
 
 // ---------------------------------------------------------------------------
@@ -1668,6 +1686,63 @@ class CryptoMetadata {
             { what: 'PKCE', how: 'S256' },
             { what: 'Stored report bytes',
               how: 'SHA-256, kept with the artifact and checked on read' }
+          ];
+        }
+      },
+      // OpenPGP (#1955 P6): a person's key, verified once with a proof of
+      // possession and published; mail encrypted to it, or to an S/MIME
+      // certificate. Nothing is signed: DKIM signs the outer message.
+      // `common/crypto.js` section 19 is all of it.
+      {
+        name: 'OpenPGP',
+        signs: 'Nothing. A registration is the PERSON\'S signature, and ' +
+               'an encrypted message is not signed (DKIM signs the outer ' +
+               'message, as it signs every message).',
+        verifies: 'A PROOF OF POSSESSION at registration: a cleartext ' +
+                  'signature (gpg --clearsign) over exactly the challenge ' +
+                  'this service issued the person, by a signing-capable ' +
+                  'key of the key they register, made after the challenge ' +
+                  'was issued (openpgp.signatureSkewS) and valid then; the ' +
+                  'key itself neither revoked nor expired, with a valid ' +
+                  'user id carrying the entry\'s address. RFC 9580 v6 and ' +
+                  'RFC 4880 v4 keys, read by openpgp.js. An S/MIME ' +
+                  'certificate is checked for validity, key and usage, not ' +
+                  'chained: it only chooses whom a message is encrypted to.',
+        encrypts: 'MAIL, where the person chose it or the realm requires ' +
+                  'it (mail.encryptionRequired): PGP/MIME (RFC 3156) to the ' +
+                  'key\'s encryption key, as openpgp.js chooses (SEIPD with ' +
+                  'AES for a v4 key, AEAD for a v6 one); S/MIME (RFC 8551) ' +
+                  'as a CMS EnvelopedData, AES-256-CBC content encryption, ' +
+                  'the content key under RSAES-OAEP with SHA-256 or ' +
+                  'ECDH (dhSinglePass-stdDH-sha256kdf, AES-256 key wrap).',
+        decrypts: 'Nothing.',
+        keys: 'None of its own. The person\'s public key is on their ' +
+              'entry (stsOpenPgpKey), never a secret key, which ' +
+              'registration refuses; a key on a YubiKey OpenPGP card is ' +
+              'not told apart from one in a file, so nothing is recorded ' +
+              'as hardware-bound.',
+        hashes: 'SHA-1 of the lower-cased local part, in z-base-32, as the ' +
+                'Web Key Directory names an address (a name the draft ' +
+                'fixes, never trusted for integrity). The key\'s ' +
+                'fingerprint is the RFC 9580 one (SHA-256 for v6, SHA-1 ' +
+                'for v4).',
+        envelopes: ['openpgp', 'cms'],
+        algorithms: function () {
+          log.debug("Entering algorithms().");
+          log.debug("Leaving algorithms().");
+          return [
+            { what: 'Registered key, signing',
+              how: 'Ed25519, Ed448, ECDSA P-256/P-384/P-521, RSA of ' +
+                   'openpgp.minRsaBits (3072 at least)' },
+            { what: 'Registered key, encryption',
+              how: 'X25519, X448, ECDH Curve25519 and P-256/P-384/P-521, ' +
+                   'RSA of openpgp.minRsaBits' },
+            { what: 'Refused', how: 'DSA, ElGamal, Brainpool curves' },
+            { what: 'S/MIME content', how: 'AES-256-CBC (CMS EnvelopedData)' },
+            { what: 'S/MIME key transport',
+              how: 'RSAES-OAEP SHA-256; ECDH stdDH SHA-256 KDF, AES-256 ' +
+                   'wrap' },
+            { what: 'Web Key Directory name', how: 'SHA-1, z-base-32' }
           ];
         }
       },

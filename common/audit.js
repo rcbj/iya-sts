@@ -667,6 +667,23 @@ const ACTIONS = [
            'one who held it' },
   { action: 'hardware-token.lost', category: 'directory',
     label: 'A hardware token was reported lost and its credentials retired' },
+  // A PERSON'S OpenPGP KEY AND MAIL ENCRYPTION (#1955 P6), all seven
+  // written by `common/openpgp_keys.ts`.
+  { action: 'openpgp.challenge', category: 'directory',
+    label: 'An OpenPGP key registration challenge was issued' },
+  { action: 'openpgp.key-registered', category: 'directory',
+    label: 'An OpenPGP key was registered on a proof of possession' },
+  { action: 'openpgp.key-refused', category: 'directory',
+    label: 'An OpenPGP key was not registered' },
+  { action: 'openpgp.key-removed', category: 'directory',
+    label: 'An OpenPGP key was removed' },
+  { action: 'openpgp.publication', category: 'directory',
+    label: 'An OpenPGP key was published in, or withdrawn from, the Web Key ' +
+           'Directory' },
+  { action: 'openpgp.mail-encryption', category: 'directory',
+    label: 'How mail to a person is encrypted was changed' },
+  { action: 'openpgp.smime-certificate', category: 'directory',
+    label: 'A person\'s S/MIME certificate was set or removed' },
   { action: 'device.key-add', category: 'directory',
     label: 'A key was added to a device' },
   { action: 'device.key-remove', category: 'directory',

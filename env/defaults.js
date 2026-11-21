@@ -788,9 +788,18 @@ var config = {
     browserTokenCertificateHeader: "x5u"                                   // Remembered browser token certificate header
   },
 
-  // --- Hardware tokens -------------------------------------------------
+  // --- Devices ---------------------------------------------------------
   hardwareTokens: {
     hardwareClaims: "inference"  // What earns a hardware-key claim
+  },
+
+  // --- OpenPGP ---------------------------------------------------------
+  openpgp: {
+    wkd: false,              // Publish keys in the Web Key Directory
+    wkdDomains: "",          // Mail domains the Web Key Directory serves
+    challengeLifetimeS: 600, // Registration challenge lifetime (seconds)
+    signatureSkewS: 300,     // Proof signature clock skew (seconds)
+    minRsaBits: 3072         // Smallest RSA OpenPGP key
   },
 
   // --- ACME ------------------------------------------------------------
@@ -1689,6 +1698,7 @@ var config = {
     ratePerCategory: 5,                  // Messages per recipient per category per window
     rateWindowS: 3600,                   // Rate window (seconds)
     dedupWindowS: 600,                   // Duplicate suppression window (seconds)
+    encryptionRequired: "",              // Messages that must be encrypted
     selfServiceReset: true,              // Self-service password reset
     resetRequiresVerifiedAddress: true,  // Self-service reset needs a verified address
     resetRequiresBackupCode: true,       // Self-service reset needs a recovery code

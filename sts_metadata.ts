@@ -3571,6 +3571,40 @@ const SPECS: Spec[] = [
               'Missing: simple canonicalization, l= and verification of ' +
               'mail anybody else sent — this service receives none. DKIM ' +
               'has no post-quantum algorithm registered.' },
+  // #1955 P6: OpenPGP, PGP/MIME, S/MIME and the Web Key Directory.
+  { id: 'rfc9580', name: 'OpenPGP (RFC 9580)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9580',
+    coverage: 'partial: reading a transferable public key, v6 and (RFC ' +
+              '4880) v4, verifying a cleartext signature by a signing ' +
+              'key of it, and encrypting a message to its encryption key, ' +
+              'all through openpgp.js (common/crypto.js section 19). ' +
+              'Ed25519, Ed448, ECDSA and ECDH on the NIST curves, X25519, ' +
+              'X448 and RSA of openpgp.minRsaBits are accepted; DSA, ' +
+              'ElGamal and Brainpool are refused. Missing: signing, ' +
+              'decryption, a keyring, a keyserver.' },
+  { id: 'rfc3156', name: 'MIME Security with OpenPGP (RFC 3156)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc3156',
+    coverage: 'partial: multipart/encrypted with an application/' +
+              'pgp-encrypted version part and the armored message, the ' +
+              'real headers protected inside. Missing: multipart/signed — ' +
+              'this service signs mail with DKIM, not OpenPGP.' },
+  { id: 'rfc8551', name: 'S/MIME 4.0 Message Specification (RFC 8551)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc8551',
+    coverage: 'partial: application/pkcs7-mime enveloped-data, a CMS ' +
+              'EnvelopedData with AES-256-CBC content encryption and an ' +
+              'RSAES-OAEP (SHA-256) or ECDH key agreement recipient, to the ' +
+              'person\'s userSMIMECertificate. Missing: signed-data, ' +
+              'AuthEnvelopedData (AES-GCM), decryption.' },
+  { id: 'wkd', name: 'OpenPGP Web Key Directory ' +
+                     '(draft-koch-openpgp-webkey-service)',
+    where: 'IETF (Internet-Draft)',
+    url: 'https://datatracker.ietf.org/doc/draft-koch-openpgp-webkey-service/',
+    coverage: 'partial: the advanced and the direct lookup methods (the ' +
+              'z-base-32 SHA-1 of the lower-cased local part, the l ' +
+              'parameter) and the policy file, answered for people who ' +
+              'opted in, per realm and off by default. Missing: the Web Key ' +
+              'Service (submission-address, the submission protocol); CORS ' +
+              'is this service\'s allowlist rather than the draft\'s *.' },
   { id: 'rfc8463', name: 'A New Cryptographic Signature Method for DKIM ' +
                          '(RFC 8463)',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc8463',
@@ -4811,6 +4845,32 @@ const ENDPOINTS: EndpointEntry[] = [
           'already exists. A credential naming somebody with no entry — a ' +
           'client_credentials token, a client certificate — gets 404 ' +
           'instead.' },
+  // #1955 P6: THE WEB KEY DIRECTORY, the OpenPGP card's group.
+  { path: '/.well-known/openpgpkey/:domain/hu/:hash', group: 'OpenPGP',
+    name: 'Web Key Directory key (advanced method)', specs: ['wkd'],
+    what: 'draft-koch-openpgp-webkey-service section 3.1, the advanced ' +
+          'method, asked of openpgpkey.<domain>: the binary OpenPGP public ' +
+          'key of the person whose address hashes to :hash (z-base-32 of ' +
+          'the SHA-1 of the lower-cased local part, l= the local part), ' +
+          'application/octet-stream and Cache-Control: no-store. Only a ' +
+          'person who opted in on /portal/openpgp is answered, only where ' +
+          'the realm turned openpgp.wkd on and serves :domain; anything ' +
+          'else is 404. A path with no realm segment is answered by the ' +
+          'realm that serves the domain.' },
+  { path: '/.well-known/openpgpkey/:domain/policy', group: 'OpenPGP',
+    name: 'Web Key Directory policy (advanced method)', specs: ['wkd'],
+    what: 'The advanced method\'s policy file: empty, text/plain, 200 ' +
+          'where a realm serves :domain and 404 otherwise. Its presence is ' +
+          'what tells a client the directory exists; no Web Key Service ' +
+          'is offered, so there is no submission-address.' },
+  { path: '/.well-known/openpgpkey/hu/:hash', group: 'OpenPGP',
+    name: 'Web Key Directory key (direct method)', specs: ['wkd'],
+    what: 'The direct method: as the advanced one, the domain being the ' +
+          'host the request was made to.' },
+  { path: '/.well-known/openpgpkey/policy', group: 'OpenPGP',
+    name: 'Web Key Directory policy (direct method)', specs: ['wkd'],
+    what: 'The direct method\'s policy file, for the host the request was ' +
+          'made to.' },
   { path: '/.well-known/hoba/register', group: 'SCIM',
     name: 'Register a HOBA public key',
     specs: ['rfc7486'],
@@ -5860,6 +5920,27 @@ const ENDPOINTS: EndpointEntry[] = [
           'a single-use address verification link to it; save-template and ' +
           'reset-template, with { template, lang, … }: this realm\'s wording ' +
           'of a message, checked when saved. The console\'s three forms.' },
+  // #1955 P6: Directory → OpenPGP keys.
+  { path: '/admin-api/openpgp', group: 'Management API',
+    name: 'OpenPGP keys', specs: ['openapi', 'rfc9580', 'wkd'],
+    what: 'NON-SPEC (#1955). What Directory → OpenPGP keys draws: with ' +
+          '?user=, that person\'s OpenPGP key, their outstanding ' +
+          'registration challenge, their Web Key Directory publication, ' +
+          'their S/MIME certificate and how their mail is encrypted; and ' +
+          'the realm\'s Web Key Directory switch and domains. Mirrors GET ' +
+          '/admin/openpgp.' },
+  { path: '/admin-api/openpgp/:action', group: 'Management API',
+    name: 'OpenPGP key actions',
+    specs: ['openapi', 'rfc9580', 'rfc3156', 'rfc8551', 'wkd'],
+    effect: 'issues a challenge, registers or removes an OpenPGP key, ' +
+            'publishes it, or sets a person\'s mail encryption or S/MIME ' +
+            'certificate',
+    what: 'NON-SPEC (#1955). challenge, register (publicKey, signed: the ' +
+          'person\'s challenge signed with gpg --clearsign), remove, ' +
+          'publish, withdraw, mail-encryption (choice) and smime ' +
+          '(certificate), each with { user }: what /portal/openpgp offers ' +
+          'the person, for them. A key is registered only on the ' +
+          'person\'s own proof.' },
   { path: '/admin-api/mail/outbox', group: 'Management API',
     name: 'Mail outbox', specs: ['openapi'],
     what: 'NON-SPEC (#63). What GET /admin/mail/outbox draws: every message ' +
@@ -10530,6 +10611,19 @@ const PROTOCOLS: Protocol[] = [
           '/account-api, the Account API group below: an operation per page ' +
           'and per form, the person always the token\'s subject, described ' +
           'by its own OpenAPI document.' },
+  { name: 'OpenPGP', groups: ['OpenPGP'],
+    specs: ['rfc9580', 'rfc3156', 'rfc8551', 'wkd'],
+    what: 'A person\'s OpenPGP key (#1955), registered on the portal or by ' +
+          'an administrator on a proof of possession — the person signs a ' +
+          'challenge with gpg --clearsign, on a YubiKey\'s OpenPGP card ' +
+          'the card signs — and held on their entry; published, if they ' +
+          'choose and the realm turned it on, in the Web Key Directory; ' +
+          'and the key their mail is encrypted to (PGP/MIME), or their ' +
+          'S/MIME certificate is (S/MIME), as they chose. A realm can ' +
+          'require encryption for chosen messages (mail.encryptionRequired), ' +
+          'which are then never sent in the clear. Nothing is recorded as ' +
+          'hardware-bound: the server cannot see a card. There is no ' +
+          'sign-in with OpenPGP.' },
   { name: 'Reporting', groups: ['Reporting'],
     specs: [],
     notAProtocol: true,

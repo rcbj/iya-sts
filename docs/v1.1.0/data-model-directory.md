@@ -35,7 +35,7 @@ Do not edit it by hand.
 | [Kerberos trust](#kerberos-trust) | `KerberosTrust` | ou=kerberosTrusts | 8 |
 | [OpenID Federation entry](#openid-federation-entry) | `Oidfed` | ou=oidfed | 5 |
 | [Operational attributes](#operational-attributes) | `Operational` |  | 6 |
-| [Person](#person) | `Person` | ou=users | 124 |
+| [Person](#person) | `Person` | ou=users | 128 |
 | [Attribute policy](#attribute-policy) | `PolicyAttributes` | ou=attributePolicies | 8 |
 | [Attribute policy on a person](#attribute-policy-on-a-person) | `PolicyAttributesOnPerson` | on the person | 1 |
 | [Authentication policy](#authentication-policy) | `PolicyAuthn` | ou=authnPolicies | 27 |
@@ -830,6 +830,7 @@ No SCHEMA export. One person is one entry, RDN uid.
 | `stsIdaVerification` | one | this service | `1.3.6.1.4.1.67607.1.1.567` | Secret. AND A TENTH (#127, 2026-09-23): the person's IDENTITY VERIFICATIONS for OpenID Connect for Identity Assurance — one JSON value holding each verification's trust framework, time and evidence. Evidence carries document numbers and a voucher's name, so it is withheld from every read like the credentials beside it (SECRET_ATTRIBUTES). `common/identity_assurance.ts` keeps them. |
 | `stsKrb5KeyInfo` | one | this service | `1.3.6.1.4.1.67607.1.1.568` | The public half of the person's Kerberos keys, one JSON value: the key version number, the encryption types and when they were derived. |
 | `stsKrb5Keys` | one | this service | `1.3.6.1.4.1.67607.1.1.569` | Secret. The person's Kerberos long-term keys for every encryption type, derived from their password, as one sealed value. Password-equivalent, so withheld from every read, ciphertext included. |
+| `stsMailEncryption` | one | this service | `1.3.6.1.4.1.67607.1.1.920` | How mail to the person is encrypted: none, openpgp (PGP/MIME to stsOpenPgpKey) or smime (S/MIME to userSMIMECertificate), chosen on /portal/openpgp (#1955). Absent is none. |
 | `stsMailVerified` | one | this service | `1.3.6.1.4.1.67607.1.1.578` | THE MAIL CHANNEL'S ADDRESS VERIFICATION (#63, 2026-09-22) — see readPersonFlags(): the address a person proved they receive mail at, and the pending link's hash, expiry and the address it was sent to. |
 | `stsMailVerifyAddress` | one | this service | `1.3.6.1.4.1.67607.1.1.579` | THE MAIL CHANNEL'S ADDRESS VERIFICATION (#63, 2026-09-22) — see readPersonFlags(): the address a person proved they receive mail at, and the pending link's hash, expiry and the address it was sent to. |
 | `stsMailVerifyExpires` | one | this service | `1.3.6.1.4.1.67607.1.1.580` | THE MAIL CHANNEL'S ADDRESS VERIFICATION (#63, 2026-09-22) — see readPersonFlags(): the address a person proved they receive mail at, and the pending link's hash, expiry and the address it was sent to. |
@@ -837,6 +838,9 @@ No SCHEMA export. One person is one entry, RDN uid.
 | `stsMayAct` | one | this service | `1.3.6.1.4.1.67607.1.1.582` | WHO MAY ACT FOR A PERSON (#108, 2026-09-23): "sensitive and cannot be delegated" (Kerberos's NOT_DELEGATED, on the person), and the one party they have named as their delegate, whose `sub` becomes the `may_act` claim of their access tokens. See `common/delegation_policy.ts`. |
 | `stsMfaRequired` | one | this service | `1.3.6.1.4.1.67607.1.1.583` | WHAT AN ADMINISTRATOR PUT ON A PERSON FROM THEIR /admin/users PAGE (2026-09-13) — see readPersonFlags(): a second factor required of them, and the hash of a password reset link. |
 | `stsNotDelegated` | one | this service | `1.3.6.1.4.1.67607.1.1.584` | WHO MAY ACT FOR A PERSON (#108, 2026-09-23): "sensitive and cannot be delegated" (Kerberos's NOT_DELEGATED, on the person), and the one party they have named as their delegate, whose `sub` becomes the `may_act` claim of their access tokens. See `common/delegation_policy.ts`. |
+| `stsOpenPgpFingerprint` | one | this service | `1.3.6.1.4.1.67607.1.1.921` | The fingerprint of stsOpenPgpKey, lower-case hex: 40 characters for a v4 key, 64 for a v6 one (#1955). Written with the key. |
+| `stsOpenPgpKey` | one | this service | `1.3.6.1.4.1.67607.1.1.922` | The person's OpenPGP public key, armored: one transferable public key (v4 or v6) whose user id names the entry's mail and which signed a registration challenge (#1955). Public. Written by /portal/openpgp and /admin-api/users/openpgp only. |
+| `stsOpenPgpKeyInfo` | one | this service | `1.3.6.1.4.1.67607.1.1.923` | What the portal and console draw about stsOpenPgpKey, one JSON value: its version, algorithms, the user ids that matched, when it was registered and by whom, and whether the person publishes it in the Web Key Directory (#1955). Written with the key and by the publication choice. |
 | `stsPasswordResetExpires` | one | this service | `1.3.6.1.4.1.67607.1.1.621` | When the pending password reset link stops working. |
 | `stsPasswordResetToken` | one | this service | `1.3.6.1.4.1.67607.1.1.623` | Secret. The scrypt hash of a pending password reset link an administrator or the person started. Withheld from every read. |
 | `stsProfilePhoto` | one | this service | `1.3.6.1.4.1.67607.1.1.639` | Secret. The person's profile photo record, one JSON value: which stored image is theirs, whose it was, and whether they declined a partner's copy. The image itself is not on the entry. Written only by the portal and a federated sign-in, and withheld from every read. |

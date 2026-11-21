@@ -4995,6 +4995,162 @@ op `actOnTokens`(`requestBody/content/application~1json/schema`: {
   }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
 
 
+// #1955 P6: THE PERSON'S OpenPGP KEY AND MAIL ENCRYPTION (`portal/account_openpgp.ts`).
+@hoisted model OpenPgpPortalView {
+  @js(#{`description`:"The address on the caller's entry, which a key's user id must carry."}) `mail`: string;
+  @js(#{`description`:"The registered key, or null."}) `key`: OpenPgpKeyView | null;
+  @js(#{`description`:"The outstanding registration challenge, or null."}) `challenge`: OpenPgpChallengeView | null;
+  `wkd`: OpenPgpWkdView;
+  `mailEncryption`: OpenPgpMailView
+}
+
+@endpoint("/account-api/openpgp",
+  "get",
+  #{
+    `operationId`:"getOpenPgp",
+    `tags`:#["Devices"],
+    `summary`:"Your OpenPGP key and mail encryption",
+    `description`:"Your registered OpenPGP public key, the registration challenge you were issued, whether your key is published in the Web Key Directory, your S/MIME certificate and how mail to you is encrypted.\n\nThe door of the portal's `GET /portal/openpgp`.",
+    `parameters`:#[
+
+    ],
+    `responses`:#{
+      `200`:#{
+        `description`:"The answer.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The request did not validate, or was refused: `{ ok: false, errors: [...] }`.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"No access token, or one that does not verify, has expired, was revoked, outlived its sign-on session, or came without its DPoP proof. `WWW-Authenticate` says which.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"The token is for another audience or does not carry `account:manage`, or the access policy refused the person.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`portal`:#["account:manage"]}],
+    `x-access`:"person",
+    `x-mirrors`:"GET /portal/openpgp"
+  })
+op `getOpenPgp`(`responses/200/content/application~1json/schema`: OpenPgpPortalView,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
+
+
+@js(#{`description`:"What to do."}) @hoisted union post_account_api_openpgp_b_application_json_action {
+    "challenge",
+    "register",
+    "remove",
+    "publish",
+    "withdraw",
+    "mail-encryption",
+    "smime"
+  }
+
+@endpoint("/account-api/openpgp",
+  "post",
+  #{
+    `operationId`:"actOnOpenPgp",
+    `tags`:#["Devices"],
+    `summary`:"Registers, removes or publishes your OpenPGP key, or sets your mail encryption",
+    `description`:"`challenge` issues a registration challenge (one at a time, for `openpgp.challengeLifetimeS`). `register` takes `publicKey` (one armored public key) and `signed` (the challenge signed with `gpg --clearsign`; on a YubiKey OpenPGP card the card signs): the key must be neither revoked nor expired, use an accepted algorithm, carry a valid user id with your entry's address, and have signed exactly the challenge since it was issued. `remove` removes it. `publish` and `withdraw` set whether the Web Key Directory answers it. `mail-encryption` takes `choice` (`none`, `openpgp`, `smime`). `smime` takes `certificate` (a PEM certificate naming your address; empty removes it). It asks for a recent sign-in. A refusal carries the page's `view`.\n\nThe door of the portal's `POST /portal/openpgp`.",
+    `parameters`:#[
+
+    ],
+    `responses`:#{
+      `200`:#{
+        `description`:"The answer.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The request did not validate, or was refused: `{ ok: false, errors: [...] }`.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `404`:#{
+        `description`:"There is no entry for you in this realm.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `500`:#{
+        `description`:"The act verified but could not be written, or threw.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"No access token, or one that does not verify, has expired, was revoked, outlived its sign-on session, or came without its DPoP proof. `WWW-Authenticate` says which.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"The token is for another audience or does not carry `account:manage`, or the access policy refused the person.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`portal`:#["account:manage"]}],
+    `x-access`:"person",
+    `x-mirrors`:"POST /portal/openpgp",
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`action`:"challenge"}}}}
+  })
+op `actOnOpenPgp`(`requestBody/content/application~1json/schema`: {
+    `action`: post_account_api_openpgp_b_application_json_action;
+    @js(#{`description`:"`register`: the armored OpenPGP public key.",`maxLength`:65536}) `publicKey`?: string;
+    @js(#{`description`:"`register`: the challenge signed with `gpg --clearsign`.",`maxLength`:16384}) `signed`?: string;
+    @js(#{`description`:"`mail-encryption`: `none`, `openpgp` or `smime`.",`maxLength`:16}) `choice`?: string;
+    @js(#{`description`:"`smime`: a PEM or base64 DER certificate; empty removes it.",`maxLength`:16384}) `certificate`?: string
+  },
+  `responses/200/content/application~1json/schema`: {
+    `ok`: boolean;
+    `message`: string;
+    `view`: OpenPgpPortalView
+  },
+  `responses/400/content/application~1json/schema`: {
+    `ok`: boolean;
+    `errors`: (string)[];
+    `error`?: string;
+    `view`?: OpenPgpPortalView
+  },
+  `responses/404/content/application~1json/schema`: {
+    `ok`: boolean;
+    `errors`: (string)[];
+    `error`?: string;
+    `view`?: OpenPgpPortalView
+  },
+  `responses/500/content/application~1json/schema`: {
+    `ok`: boolean;
+    `errors`: (string)[];
+    `error`?: string;
+    `view`?: OpenPgpPortalView
+  },
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
+
+
 @endpoint("/account-api/devices/challenge",
   "post",
   #{

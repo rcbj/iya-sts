@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5773** of them, in **53** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5802** of them, in **54** subsystems.
 
 ## Where a code appears
 
@@ -81,11 +81,12 @@ is an ordinary outcome.
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 174
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 142
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 55
-* [Mail (`STS-MAIL`)](#sts-mail) — 40
+* [Mail (`STS-MAIL`)](#sts-mail) — 44
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 15
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 53
 * [Hardware tokens (`STS-HWTOKEN`)](#sts-hwtoken) — 13
+* [OpenPGP keys and mail encryption (`STS-OPENPGP`)](#sts-openpgp) — 25
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 224
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 137
@@ -4475,6 +4476,10 @@ Raised from: common/mail.ts, common/mail_transports.ts, common/mail_uses.ts, com
 | `STS-MAIL-0038` | A followed verification link for a NEW address could not write it to the entry (#64, D5). | HTTP 400 page |
 | `STS-MAIL-0039` | A person asked to change their address to something that is not an address this service can send to (#64, D5). | HTTP 400 page |
 | `STS-MAIL-0180` | The notice telling a person that a GNAP grant waits for their approval on the portal could not be queued; the request still waits there (#432 phase 6). | log only |
+| `STS-MAIL-0240` | A message whose template mail.encryptionRequired names was not queued: the person has chosen no mail encryption, so nothing could encrypt it. The use's own refusal handling applies (#1955). | log only (the use refuses as for any unsent message) |
+| `STS-MAIL-0241` | A message was not queued because the encryption the person chose cannot be honoured now (no usable OpenPGP encryption key, no S/MIME certificate that can receive); it is not sent in the clear against their choice (#1955). | log only (the use refuses as for any unsent message) |
+| `STS-MAIL-0242` | An encrypted message cannot be carried by the realm's transport: Azure Communication Services takes structured content and cannot send a MIME entity this service composed (#1955). | log only |
+| `STS-MAIL-0243` | An encrypted message could not be encrypted at send time (the stored key or certificate no longer reads); it is a dead letter, never sent in the clear (#1955). | log only |
 
 ## STS-I18N
 
@@ -4953,6 +4958,40 @@ Raised from: common/hardware_tokens.ts, mgmt-api/hardware_tokens_api.ts, portal/
 | `STS-HWTOKEN-0011` | A passkey was written and the hardware token register could not record the token its attestation named; the key stands, and the token is recorded when it is next registered (#1955). | — |
 | `STS-HWTOKEN-0012` | A hardware token act named an action that is not one of the page's (#1955). | HTTP 400 (the page with the sentence) |
 | `STS-HWTOKEN-0013` | The hardware token list or the lost-key act failed with an unexpected error at /admin-api; the log line has the stack (#1955). | HTTP 500 |
+
+## STS-OPENPGP
+
+**OpenPGP keys and mail encryption.** A person's OpenPGP public key registered with a proof of possession (#1955 P6), its publication in the Web Key Directory, their S/MIME certificate, and how mail to them is encrypted.
+
+Raised from: common/openpgp_keys.ts, common/crypto.js (section 19), portal/account_openpgp.ts, mgmt-api/openpgp_api.ts.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-OPENPGP-0001` | An OpenPGP public key offered for registration did not read: it was empty, larger than the 64 KiB this service reads, more than one key, or not an OpenPGP key at all (#1955). | HTTP 400 (the page with the sentence) |
+| `STS-OPENPGP-0002` | A SECRET OpenPGP key was offered for registration; nothing was stored. The person is told to export the public key (#1955). | HTTP 400 (the page with the sentence) |
+| `STS-OPENPGP-0003` | An OpenPGP key offered for registration is revoked or has expired (#1955). | HTTP 400 (the page with the sentence) |
+| `STS-OPENPGP-0004` | An OpenPGP key, or the subkey that made its proof, uses an algorithm the allow list refuses (DSA, ElGamal, a Brainpool curve, or RSA shorter than openpgp.minRsaBits), or has no valid signing key (#1955). | HTTP 400 (the page with the sentence) |
+| `STS-OPENPGP-0005` | No valid user id of an OpenPGP key offered for registration carries the address on the person's entry (#1955). | HTTP 400 (the page with the sentence) |
+| `STS-OPENPGP-0006` | A person with no mail address asked for an OpenPGP registration challenge, or offered a key; a key is registered for the address its user id names (#1955). | HTTP 400 (the page with the sentence) |
+| `STS-OPENPGP-0007` | The proof of possession offered with an OpenPGP key is not a readable cleartext-signed message (gpg --clearsign) (#1955). | HTTP 400 (the page with the sentence) |
+| `STS-OPENPGP-0008` | The proof of possession offered with an OpenPGP key does not verify, or was made by a key that is not a signing key of it (#1955). | HTTP 400 (the page with the sentence) |
+| `STS-OPENPGP-0009` | The text an OpenPGP proof of possession signs is not the challenge this service issued the person (#1955). | HTTP 400 (the page with the sentence) |
+| `STS-OPENPGP-0010` | An OpenPGP proof of possession was signed before the challenge was issued or after now, beyond openpgp.signatureSkewS (#1955). | HTTP 400 (the page with the sentence) |
+| `STS-OPENPGP-0011` | No value of a person's userSMIMECertificate holds a certificate that can receive S/MIME now (expired, an unsupported key, a key usage or extended key usage that excludes it), so mail to them cannot be S/MIME-encrypted (#1955). | log only |
+| `STS-OPENPGP-0012` | An OpenPGP key was offered with no outstanding challenge for the person, a lapsed one, or one already spent by another request (#1955). | HTTP 400 (the page with the sentence) |
+| `STS-OPENPGP-0013` | An OpenPGP operation named a person with no entry in the realm (#1955). | HTTP 404 |
+| `STS-OPENPGP-0014` | An OpenPGP operation named an unknown action, or an unknown mail encryption choice (#1955). | HTTP 400 |
+| `STS-OPENPGP-0015` | A person with no OpenPGP key registered asked to remove or publish one (#1955). | HTTP 400 (the page with the sentence) |
+| `STS-OPENPGP-0016` | A person chose OpenPGP for their mail while no registered key of theirs has an encryption key valid now (#1955). | HTTP 400 (the page with the sentence) |
+| `STS-OPENPGP-0017` | A person chose S/MIME for their mail while their userSMIMECertificate holds no certificate that can receive (#1955). | HTTP 400 (the page with the sentence) |
+| `STS-OPENPGP-0018` | An S/MIME certificate offered for a person's entry is not a certificate, cannot receive S/MIME now, or does not name the address on the entry (#1955). | HTTP 400 (the page with the sentence) |
+| `STS-OPENPGP-0019` | An OpenPGP key, a publication choice, a mail encryption choice or an S/MIME certificate verified but could not be written to the person's entry (#1955). | HTTP 500 |
+| `STS-OPENPGP-0020` | An OpenPGP operation was asked before the directory filled its slot (ldap/ldap_server.js), so no person could be read (#1955). | HTTP 500 |
+| `STS-OPENPGP-0021` | A Web Key Directory request named a domain or a hashed local part that is not one (#1955). | HTTP 404 |
+| `STS-OPENPGP-0022` | A Web Key Directory request named a domain no realm serves: openpgp.wkd is off, or no realm's openpgp.wkdDomains (or own domain) is it (#1955). | HTTP 404 |
+| `STS-OPENPGP-0023` | A Web Key Directory lookup threw; the client is told the key could not be read (#1955). | HTTP 500 |
+| `STS-OPENPGP-0024` | A Web Key Directory request named an address with no published key: nobody holds it, the person did not opt in, the key was removed or replaced, or it expired (#1955). | HTTP 404 |
+| `STS-OPENPGP-0025` | An OpenPGP operation of the account API or the management API threw (#1955). | HTTP 500 |
 
 ## STS-SVCACCT
 

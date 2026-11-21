@@ -15359,6 +15359,37 @@ if (typeof portal.setDirectory === 'function') {
            'an error; the page says which it is showing.');
 }
 
+// A PERSON OF THE AMBIENT REALM BY THEIR ADDRESS: their username, or ''. The
+// mail channel's forgot-password lookup (#63) and the Web Key Directory's
+// `l` parameter (#1955 P6) both ask it, so it is one named function.
+function personNameByMail(address) {
+  log.debug('Entering personNameByMail().');
+  const wanted = String(address || '').trim().toLowerCase();
+  let found = '';
+  if (wanted && directoryWindow) {
+    // ASKED OF THE STORE'S MAIL INDEX IN A WINDOWED PROCESS (#616): this
+    // is the portal's unauthenticated forgot-password form, and
+    // `allPersons()` paged and copied every person in the realm to
+    // answer it. `peopleByMail()` is the `mail_keys` lookup, in key
+    // order; the first is the answer, as the first in `allPersons()`'
+    // order was.
+    const hits = peopleByMail(wanted);
+    found = hits.length ? hits[0].username || '' : '';
+  } else if (wanted) {
+    allPersons().some(function (entry) {
+      const values = (entry.attributes && entry.attributes.mail) || [];
+      if (values.some(function (v) {
+        return String(v).trim().toLowerCase() === wanted;
+      })) {
+        found = usernameOfEntry(entry) || '';
+      }
+      return !!found;
+    });
+  }
+  log.debug('Leaving personNameByMail(). ' + (found ? 'Found.' : 'None.'));
+  return found;
+}
+
 // ---------------------------------------------------------------------------
 // THE MAIL CHANNEL'S SLOT (#63, 2026-09-22), for the portal's reason and in
 // the portal's shape: `common/mail.ts` is a library loaded long before this
@@ -15406,33 +15437,7 @@ if (typeof mailChannel.setDirectory === 'function') {
       return { dn: stored.dn,
                attributes: Object.assign({}, stored.attributes) };
     },
-    personByMail: function (address) {
-      log.debug('Entering personByMail().');
-      const wanted = String(address || '').trim().toLowerCase();
-      let found = '';
-      if (wanted && directoryWindow) {
-        // ASKED OF THE STORE'S MAIL INDEX IN A WINDOWED PROCESS (#616): this
-        // is the portal's unauthenticated forgot-password form, and
-        // `allPersons()` paged and copied every person in the realm to
-        // answer it. `peopleByMail()` is the `mail_keys` lookup, in key
-        // order; the first is the answer, as the first in `allPersons()`'
-        // order was.
-        const hits = peopleByMail(wanted);
-        found = hits.length ? hits[0].username || '' : '';
-      } else if (wanted) {
-        allPersons().some(function (entry) {
-          const values = (entry.attributes && entry.attributes.mail) || [];
-          if (values.some(function (v) {
-            return String(v).trim().toLowerCase() === wanted;
-          })) {
-            found = usernameOfEntry(entry) || '';
-          }
-          return !!found;
-        });
-      }
-      log.debug('Leaving personByMail(). ' + (found ? 'Found.' : 'None.'));
-      return found;
-    },
+    personByMail: personNameByMail,
     // THE ADDRESS ITSELF (#64): written by an administrator's set-mail, or
     // by a person completing the verification of a NEW address (D5 — the
     // address is not `mail` until its link is clicked). `source` is
@@ -15536,6 +15541,46 @@ if (typeof mailChannel.setDirectory === 'function') {
            'channel has no recipients: every message is refused as having ' +
            'nobody to go to.');
 }
+
+// A PERSON'S OpenPGP KEY, MAIL ENCRYPTION AND S/MIME CERTIFICATE (#1955 P6),
+// the AuthZEN slot's shape: `common/openpgp_keys.ts` reads one person, writes
+// the five attributes it owns — `stsOpenPgpKey`, `stsOpenPgpFingerprint`,
+// `stsOpenPgpKeyInfo`, `stsMailEncryption` and `userSMIMECertificate` (under
+// either spelling) — and asks who holds an address for the Web Key
+// Directory's `l` parameter. It is required by `common/mail.ts` at 8a, long
+// before this module, so it cannot require this one (rule 3e). The S/MIME
+// values are read HERE, by name, under both RFC 4522 spellings, because this
+// is the store and a certificate written by an LDAP client arrives as
+// `userSMIMECertificate;binary`.
+const OPENPGP_WRITABLE = ['stsopenpgpkey', 'stsopenpgpfingerprint',
+                          'stsopenpgpkeyinfo', 'stsmailencryption',
+                          'usersmimecertificate;binary',
+                          'usersmimecertificate'];
+const openpgpKeys = require('../common/openpgp_keys');
+openpgpKeys.setDirectory({
+  locate: function locate(username) {
+    log.debug('Entering the OpenPGP locate().');
+    const located = locateEntry(String(username || ''));
+    const stored = located.stored;
+    if (!stored || !isPersonEntry(stored) || !usernameOfEntry(stored)) {
+      log.debug('Leaving the OpenPGP locate(). Nobody.');
+      return null;
+    }
+    const smime = [].concat(stored.attributes['usersmimecertificate;binary'] ||
+                            [], stored.attributes.usersmimecertificate || [])
+      .map(String);
+    log.debug('Leaving the OpenPGP locate(). ' + stored.dn);
+    return { dn: stored.dn, username: usernameOfEntry(stored),
+             attributes: attributeSnapshot(stored), smime: smime };
+  },
+  write: function write(dn, name, values) {
+    log.debug('Entering the OpenPGP write(). ' + name);
+    const allowed = OPENPGP_WRITABLE.indexOf(String(name).toLowerCase()) >= 0;
+    log.debug('Leaving the OpenPGP write(). ' + allowed);
+    return allowed && writePersonAttribute(dn, name, values) === true;
+  },
+  personByMail: personNameByMail
+});
 
 // ---------------------------------------------------------------------------
 // THE PERSON-ASSERTION SLOT (2026-09-11), and it is the one that lets somebody
