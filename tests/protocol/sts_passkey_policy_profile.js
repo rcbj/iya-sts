@@ -17,7 +17,7 @@
 //   A. `passkey_policy.js` P1, P7b: the built-in profile as
 //      `GET /admin-api/policies` answers it (usernameless sign-in ON, a
 //      security key asked `required`, in force in development and in
-//      product), its twenty-six rows with their types, and both enrolment
+//      product), its twenty-eight rows with their types, and both enrolment
 //      kinds of `/account-api/keys` asking for a discoverable credential;
 //   B. P2: a save naming one row is refused (STS-AUTHN-0309), a resident
 //      key outside WebAuthn's three is refused naming them, a profile name
@@ -263,9 +263,10 @@ async function builtIn() {
     })[0];
     return f ? f.type + ":" + (f.values || []).length : "absent";
   };
-  check("A2. the policy page draws twenty-six rows from its fields, " +
+  // Twenty-eight since #1955 P7's credProtect and enforceCredProtect.
+  check("A2. the policy page draws twenty-eight rows from its fields, " +
         "with their types", function () {
-    assert.strictEqual(fields.length, 26, fields.map(function (f) {
+    assert.strictEqual(fields.length, 28, fields.map(function (f) {
       return f.key;
     }).join(","));
     assert.strictEqual(typeOf("securityKeyResidentKey"), "enum:3");

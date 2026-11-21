@@ -719,6 +719,10 @@
     "en": "c179dbd3cb227763",
     "text": "Un operador renombró la llave de acceso de alguien"
   },
+  "audit.actions.admin.mfa.key.imported.label": {
+    "en": "134b88075c58eab3",
+    "text": "Un operador importó una llave de seguridad U2F para alguien"
+  },
   "audit.actions.admin.password.reset.label": {
     "en": "079b0b2fbe1a3633",
     "text": "Un operador restableció la contraseña de alguien"

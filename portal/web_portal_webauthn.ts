@@ -93,10 +93,8 @@ class PortalWebAuthn {
         excludeCredentials: exclude.map(function (id: string): Json {
           return { type: 'public-key', id: PortalWebAuthn.bytes(id) };
         }),
-        extensions: (o.credProps || o.minPinLength)
-          ? Object.assign(o.credProps ? { credProps: true } : {},
-                          o.minPinLength ? { minPinLength: true } : {})
-          : undefined,
+        // The extensions the server asks for (#1955 P7: one copy).
+        extensions: WebWebAuthn.creationExtensions(o),
         hints: o.hints && o.hints.length ? o.hints : undefined,
         attestation: o.attestation || 'direct',
         timeout: o.timeout || 60000 } }).then(PortalWebAuthn.created);
@@ -108,6 +106,8 @@ class PortalWebAuthn {
       }) : undefined,
       userVerification: o.userVerification || 'preferred',
       hints: o.hints && o.hints.length ? o.hints : undefined,
+      // The legacy U2F appid (#1955 P7), where the server asks it.
+      extensions: WebWebAuthn.requestExtensions(o),
       timeout: o.timeout || 60000 } }).then(PortalWebAuthn.asserted);
   }
 

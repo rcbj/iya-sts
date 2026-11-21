@@ -282,11 +282,17 @@ function authenticatorData(o) {
   count.writeUInt32BE(Number(o.signCount || 0), 0);
   const idLength = Buffer.alloc(2);
   idLength.writeUInt16BE(o.credentialId.length, 0);
+  // AUTHENTICATOR EXTENSION OUTPUTS (#1955 P7): a Map given as
+  // `extensions` sets the ED flag and follows the credential public key, as
+  // CTAP 2.1's credProtect and minPinLength outputs do.
+  const flags = (o.flags === undefined ? 0x45 : o.flags) |
+                (o.extensions ? 0x80 : 0);
   log.debug("Leaving authenticatorData().");
   return Buffer.concat([sha256(Buffer.from(o.rpId, 'utf8')),
-                        Buffer.from([o.flags === undefined ? 0x45 : o.flags]),
+                        Buffer.from([flags]),
                         count, o.aaguid || Buffer.alloc(16), idLength,
-                        o.credentialId, cbor(o.cose)]);
+                        o.credentialId, cbor(o.cose)]
+                         .concat(o.extensions ? [cbor(o.extensions)] : []));
 }
 
 // ----- the formats -----------------------------------------------------------
@@ -575,7 +581,8 @@ async function ceremony(o) {
                                            : opts.aaguid;
   const authData = authenticatorData({ rpId: rpId, credentialId: cred.id,
                                        cose: cred.cose, aaguid: aaguid,
-                                       flags: opts.flags });
+                                       flags: opts.flags,
+                                       extensions: opts.extensions });
   const clientDataJSON = Buffer.from(JSON.stringify({
     type: 'webauthn.create', challenge: challenge, origin: origin,
     crossOrigin: false }));

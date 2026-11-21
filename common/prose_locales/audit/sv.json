@@ -719,6 +719,10 @@
     "en": "c179dbd3cb227763",
     "text": "En operatör bytte namn på någons passkey"
   },
+  "audit.actions.admin.mfa.key.imported.label": {
+    "en": "134b88075c58eab3",
+    "text": "En operatör importerade en U2F-säkerhetsnyckel åt någon"
+  },
   "audit.actions.admin.password.reset.label": {
     "en": "079b0b2fbe1a3633",
     "text": "En operatör återställde någons lösenord"

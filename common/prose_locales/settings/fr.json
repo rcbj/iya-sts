@@ -1379,6 +1379,14 @@
     "en": "cba85726ee4e8673",
     "text": "Les origines — schéma, hôte et port, sans chemin — depuis lesquelles une cérémonie WebAuthn est acceptée, séparées par des virgules. **VIDE, la valeur par défaut, déduit l’unique origine de l’adresse par laquelle ce service a été atteint**, ce qu’il a toujours fait et que global.publicBaseUrl fixe déjà lorsqu’elle est définie. Défini, c’est la liste complète : un clientDataJSON dont l’origine n’y figure pas est refusé quel que soit le Host porté par la requête. Nommez-en plusieurs lorsqu’un même identifiant est utilisé depuis des hôtes voisins sous un webauthn.rpId partagé."
   },
+  "webauthn.u2fAppIds|label": {
+    "en": "b0b6d4158c6357e8",
+    "text": "AppID U2F anciens"
+  },
+  "webauthn.u2fAppIds|description": {
+    "en": "05b1b01773d86d5d",
+    "text": "Les AppID FIDO U2F — les URL https sous lesquelles une ancienne partie de confiance U2F a enregistré ses clés de sécurité — dont les identifiants peuvent être importés sur les entrées des personnes et utilisés pour se connecter ici, séparés par des virgules. **VIDE, la valeur par défaut, signifie la fonction désactivée** : rien ne peut être importé, aucune cérémonie ne porte l’extension appid ou appidExclude (WebAuthn Level 3 sections 10.1.1 et 10.1.2), et une clé importée ne connecte personne. Un AppID n’est utilisé qu’à un RP ID auquel il se rapporte : son hôte est le RP ID, ou l’un est un suffixe de l’autre. Là où l’hôte diffère de celui de l’origine, le navigateur récupère l’URL de l’AppID pour une liste TrustedFacets nommant cette origine, que l’ancien service doit continuer à servir. Une clé importée n’est qu’un second facteur : une clé U2F ne peut pas vérifier la personne."
+  },
   "webauthn.algorithms|label": {
     "en": "47c0895479d03828",
     "text": "Algorithmes proposés"

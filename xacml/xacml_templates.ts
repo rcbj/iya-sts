@@ -585,6 +585,8 @@ const PASSKEY_ATTRIBUTE = {
   FACTS: xacmlRequest.VOCABULARY.PASSKEY_FACTS,
   BACKUP_ELIGIBLE: xacmlRequest.VOCABULARY.PASSKEY_BACKUP_ELIGIBLE,
   MIN_PIN_LENGTH: xacmlRequest.VOCABULARY.PASSKEY_MIN_PIN_LENGTH,
+  // The credProtect level the key reported (#1955 P7), 1 for none.
+  CRED_PROTECT: xacmlRequest.VOCABULARY.PASSKEY_CRED_PROTECT,
   SERIAL: xacmlRequest.VOCABULARY.PASSKEY_SERIAL,
   SERIAL_HELD: xacmlRequest.VOCABULARY.PASSKEY_SERIAL_HELD,
   ATTESTATION_TRUSTED: xacmlRequest.VOCABULARY.PASSKEY_ATTESTATION_TRUSTED,
@@ -633,7 +635,7 @@ const PASSKEY_ATTRIBUTE = {
   // The fact groups a question may carry.
   GROUPS: ['backup-eligible', 'pin-length', 'serial', 'attestation',
            'algorithm', 'attestation-algorithm', 'profile-algorithm',
-           'enrolment', 'recovery', 'upgrade'],
+           'enrolment', 'recovery', 'upgrade', 'cred-protect'],
   // The reasons the built-in rules give, and the code each records, per
   // action. A door words its refusal by the reason.
   REASONS: {
@@ -654,6 +656,8 @@ const PASSKEY_ATTRIBUTE = {
                                use: 'STS-AUTHN-0412' },
     // #940: an algorithm the selected profile does not offer.
     'profile-algorithm': { register: 'STS-AUTHN-0432', use: '' },
+    // #1955 P7: a credProtect level below the enforced one.
+    'cred-protect': { register: 'STS-AUTHN-0559', use: '' },
     // #724: a RECOVER_ACTION question records the `use` column.
     'recovery-self-service': { register: '', use: 'STS-AUTHN-0380' },
     'recovery-enrol-first': { register: '', use: 'STS-AUTHN-0381' }
@@ -3122,6 +3126,25 @@ const TEMPLATES: TemplateRow[] = [
                         'profile'),
                not(fact(R2, PK.PROFILE_ALGORITHM_OFFERED, true))]));
       };
+      // A CREDPROTECT LEVEL BELOW THE ENFORCED ONE (#1955 P7), at
+      // register-passkey only and last there: the level the key reported
+      // (1 where it reported none, which question() decided) below the
+      // level the profile asks for, while enforceCredProtect holds. The
+      // authenticator enforces the level at every later assertion, so
+      // there is no use-passkey half.
+      const credProtectRule = function (): any {
+        log.debug("Entering credProtectRule().");
+        log.debug("Leaving credProtectRule().");
+        return pkRule(PK.REGISTER_ACTION, 'cred-protect',
+          'Refuse a passkey whose authenticator protects its credential at ' +
+          'a lower credProtect level (CTAP 2.1 section 12.1) than the ' +
+          'passkey policy asks for, while it enforces it (credProtect, ' +
+          'enforceCredProtect, #1955).',
+          and([carries('cred-protect'),
+               fact(env, pkSetting('enforceCredProtect'), true),
+               below(intBag(R2, PK.CRED_PROTECT),
+                     intBag(env, pkSetting('credProtectLevel')))]));
+      };
       const passkeyRules: any[] = decidePasskeys ? [
         backupRule(PK.REGISTER_ACTION),
         pinRule(PK.REGISTER_ACTION),
@@ -3141,6 +3164,7 @@ const TEMPLATES: TemplateRow[] = [
         postQuantumRule(PK.REGISTER_ACTION),
         attestationAlgorithmRule(PK.REGISTER_ACTION),
         profileAlgorithmRule(),
+        credProtectRule(),
         { id: options.idBase + ':rule:passkey-register-allowed',
           effect: model.EFFECT.PERMIT,
           description: 'Register every other passkey.',
