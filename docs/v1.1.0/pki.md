@@ -107,6 +107,12 @@ OpenSSH security key must include verifiable attestation to qualify for the
 longer hardware-bound lifetime. The request and response schemas are in
 `GET /admin-api/account-api`.
 
+A browserless SSH client can use the RFC 8628 device flow: its public OAuth
+client must declare `account:manage` and the device-code grant, then request
+the realm's `/account-api` as its RFC 8707 `resource`. The person reviews that
+resource on the portal before approving; the resulting token is usable only
+for the Account API.
+
 **A realm branch built before a use case existed gets that Issuing CA added**,
 under the Intermediate it already has, the next time the branch is asked for —
 on a restart in product mode, or the first time something issues from it.

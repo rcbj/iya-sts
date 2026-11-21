@@ -24,6 +24,9 @@
 //      changes nothing; the same body without it changes the language;
 //      `text/plain; x=json` and a form body are refused 415 at an operation
 //      that takes no token; `application/json; charset=utf-8` is JSON.
+//   5. A DEVICE-GRANT CLI: the person approves the requested Account API
+//      resource on the portal; its DPoP-bound token names that audience and
+//      issues an SSH certificate through the same API.
 //
 // NOT carried, and why: every page the portal bundle draws having the GET
 // that mirrors it, every page drawing in the person's language and every
@@ -91,6 +94,41 @@ function sshPublicKey() {
   ]).toString("base64");
   log.debug("Leaving sshPublicKey().");
   return "ssh-ed25519 " + blob + " account-api-test";
+}
+
+function deviceDpopKey() {
+  log.debug("Entering deviceDpopKey().");
+  const pair = crypto.generateKeyPairSync("ec", { namedCurve: "P-256" });
+  const jwk = pair.publicKey.export({ format: "jwk" });
+  const publicJwk = { kty: "EC", crv: jwk.crv, x: jwk.x, y: jwk.y };
+  const thumbprint = JSON.stringify({ crv: publicJwk.crv,
+    kty: publicJwk.kty, x: publicJwk.x, y: publicJwk.y });
+  log.debug("Leaving deviceDpopKey().");
+  return { privateKey: pair.privateKey, jwk: publicJwk,
+    jkt: crypto.createHash("sha256").update(thumbprint)
+      .digest("base64url") };
+}
+
+function deviceDpopProof(key, method, url, extra) {
+  log.debug("Entering deviceDpopProof(). " + method + " " + url);
+  const header = { typ: "dpop+jwt", alg: "ES256", jwk: key.jwk };
+  const claims = Object.assign({ jti: crypto.randomBytes(16)
+    .toString("base64url"), htm: method.toUpperCase(), htu: url,
+    iat: Math.floor(Date.now() / 1000) }, extra || {});
+  const input = Buffer.from(JSON.stringify(header)).toString("base64url") +
+    "." + Buffer.from(JSON.stringify(claims)).toString("base64url");
+  const signature = crypto.sign("sha256", Buffer.from(input, "ascii"),
+    { key: key.privateKey, dsaEncoding: "ieee-p1363" });
+  log.debug("Leaving deviceDpopProof().");
+  return input + "." + signature.toString("base64url");
+}
+
+function jwtPayload(token) {
+  log.debug("Entering jwtPayload().");
+  const payload = JSON.parse(Buffer.from(String(token).split(".")[1],
+    "base64url").toString("utf8"));
+  log.debug("Leaving jwtPayload().");
+  return payload;
 }
 
 function sleep(ms) {
@@ -469,9 +507,111 @@ async function test() {
     assert.strictEqual(unowned.status, 403, unowned.text.slice(0, 200));
     assert.ok(codeFree(unowned.text), unowned.text);
   });
+  log.info("=== 5d. a device-grant CLI uses its Account API token ===");
+  await realmSet(REALM, "oauth2.deviceAuthorization", true);
+  const deviceClient = ("aacli" + STAMP).slice(0, 30);
+  await oauthClient(rb, deviceClient, {
+    oauthGrantType: ["urn:ietf:params:oauth:grant-type:device_code"],
+    oauthAllowedScope: ["openid"]
+  });
+  await ok(rb + "/admin-api/permissions/grant-permission", {
+    client: deviceClient,
+    permission: "urn:sts:account-api:account:manage"
+  }, "granted the CLI access to the caller's own account");
+  const deviceKey = deviceDpopKey();
+  const deviceAuthorizationUrl = rb + "/oauth2/device_authorization";
+  const accountResource = rb + "/account-api";
+  const deviceForm = new URLSearchParams({ client_id: deviceClient,
+    scope: "openid", resource: "https://unknown.example/api" });
+  const unknownResource = await send(deviceAuthorizationUrl, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: deviceForm.toString() });
+  check("device authorization refuses an unregistered resource", function () {
+    assert.strictEqual(unknownResource.status, 400,
+      unknownResource.raw.slice(0, 200));
+    assert.strictEqual(unknownResource.body.error, "invalid_target");
+    assert.ok(codeFree(unknownResource.raw), unknownResource.raw);
+  });
+  const startForm = new URLSearchParams({ client_id: deviceClient,
+    scope: "openid account:manage", resource: accountResource });
+  const started = await send(deviceAuthorizationUrl, { method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded",
+      dpop: deviceDpopProof(deviceKey, "POST", deviceAuthorizationUrl) },
+    body: startForm.toString() });
+  const deviceCodes = started.body || {};
+  const shown = await m.draw("/portal/device",
+    { user_code: deviceCodes.user_code });
+  check("the portal shows the requested Account API resource before " +
+        "approval", function () {
+    assert.strictEqual(started.status, 200, started.raw.slice(0, 300));
+    assert.strictEqual(shown.status, 200,
+      JSON.stringify(shown.json).slice(0, 300));
+    assert.ok(shown.html.indexOf("id=\"device-resources\"") >= 0);
+    assert.ok(shown.html.indexOf(accountResource) >= 0);
+  });
+  const deviceApproval = await m.act("/portal/device",
+    { action: "approve", user_code: deviceCodes.user_code });
+  check("the portal approves the device authorization", function () {
+    assert.strictEqual(deviceApproval.status, 200,
+      deviceApproval.text.slice(0, 200));
+    assert.ok(deviceApproval.json && deviceApproval.json.ok);
+  });
+  const tokenUrl = rb + "/oauth2/token";
+  const widenedForm = new URLSearchParams({
+    grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+    client_id: deviceClient, device_code: deviceCodes.device_code,
+    resource: rb + "/admin-api" });
+  const widened = await send(tokenUrl, { method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded",
+      dpop: deviceDpopProof(deviceKey, "POST", tokenUrl, {
+        c_s256: crypto.createHash("sha256").update(deviceCodes.device_code,
+          "ascii").digest("base64url") }) },
+    body: widenedForm.toString() });
+  check("the token request cannot widen the approved resources", function () {
+    assert.strictEqual(widened.status, 400, widened.raw.slice(0, 200));
+    assert.strictEqual(widened.body.error, "invalid_target");
+    assert.ok(codeFree(widened.raw), widened.raw);
+  });
+  const tokenForm = new URLSearchParams({
+    grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+    client_id: deviceClient, device_code: deviceCodes.device_code });
+  const tokenAnswer = await send(tokenUrl, { method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded",
+      dpop: deviceDpopProof(deviceKey, "POST", tokenUrl, {
+        c_s256: crypto.createHash("sha256").update(deviceCodes.device_code,
+          "ascii").digest("base64url") }) },
+    body: tokenForm.toString() });
+  const deviceToken = tokenAnswer.body && tokenAnswer.body.access_token;
+  const deviceClaims = deviceToken ? jwtPayload(deviceToken) : {};
+  check("the device grant returns a DPoP-bound token for /account-api",
+        function () {
+    assert.strictEqual(tokenAnswer.status, 200,
+      tokenAnswer.raw.slice(0, 300));
+    assert.strictEqual(tokenAnswer.body.token_type, "DPoP");
+    assert.strictEqual(deviceClaims.aud, accountResource);
+    assert.strictEqual(deviceClaims.cnf.jkt, deviceKey.jkt);
+  });
+  const devicePublicKey = sshPublicKey();
+  const sshUrl = rb + "/account-api/ssh/certificates";
+  const deviceIssued = await send(sshUrl, { method: "POST",
+    headers: { "content-type": "application/json",
+      authorization: "DPoP " + deviceToken,
+      dpop: deviceDpopProof(deviceKey, "POST", sshUrl, {
+        ath: crypto.createHash("sha256").update(deviceToken)
+          .digest("base64url") }) },
+    body: JSON.stringify({ publicKey: devicePublicKey,
+      principals: [mallory] }) });
+  check("the device token can issue the caller's SSH certificate",
+        function () {
+    assert.strictEqual(deviceIssued.status, 200,
+      deviceIssued.raw.slice(0, 300));
+    assert.match(deviceIssued.body.certificate,
+      /^ssh-ed25519-cert-v01@openssh\.com /);
+  });
   const issued = await m.api("POST", "/account-api/ssh/certificates",
     { publicKey: publicKey, principals: [mallory] });
-  check("5d. the caller can obtain a certificate for their own UID",
+  check("5e. the caller can obtain a certificate for their own UID",
         function () {
     assert.strictEqual(issued.status, 200, issued.text.slice(0, 300));
     assert.match(issued.json.certificate,
@@ -489,7 +629,7 @@ async function test() {
   const foreignRevoke = await other.api("POST",
     "/account-api/ssh/certificates/revoke",
     { serialHex: issued.json.serialHex });
-  check("5e. another token subject cannot revoke the certificate",
+  check("5f. another token subject cannot revoke the certificate",
         function () {
     assert.strictEqual(foreignRevoke.status, 404,
                        foreignRevoke.text.slice(0, 200));
@@ -502,7 +642,7 @@ async function test() {
     { serialHex: issued.json.serialHex });
   const publicKrl = await portal.nobody(rb, "GET",
     "/pki/ssh-user-krl/" + REALM);
-  check("5f. the realm CA and KRL are public, uncached, and the owner can " +
+  check("5g. the realm CA and KRL are public, uncached, and the owner can " +
         "revoke their certificate", function () {
     assert.strictEqual(publicCa.status, 200, publicCa.text.slice(0, 200));
     assert.strictEqual(publicCa.headers.get("cache-control"), "no-store");

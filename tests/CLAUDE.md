@@ -5357,3 +5357,6 @@ nothing** now.
   times with `GOPROXY=https://proxy.golang.org,direct`; two of ten sampled
   builds had died on a proxy or sumdb stream error.
 
+`tests/protocol/sts_account_api.js` also covers a device-grant CLI requesting
+`/account-api`: the resource shown before approval, refusal to widen it at
+redemption, and an SSH certificate issued with the resulting DPoP-bound token.

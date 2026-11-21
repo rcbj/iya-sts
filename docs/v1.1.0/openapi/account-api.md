@@ -3716,6 +3716,8 @@ Scope: `account:manage`.
 | `record.clientId` | string |  |  |
 | `record.clientName` | string |  |  |
 | `record.expiresAt` | string or number, or null |  |  |
+| `record.resources` | list |  |  |
+| `record.resources[]` | string |  |  |
 | `record.scope` | string |  |  |
 | `record.userCode` | string |  |  |
 | `typed` | string |  |  |
@@ -3764,6 +3766,8 @@ Scope: `account:manage`.
 | `view.record.clientId` | string |  |  |
 | `view.record.clientName` | string |  |  |
 | `view.record.expiresAt` | string or number, or null |  |  |
+| `view.record.resources` | list |  |  |
+| `view.record.resources[]` | string |  |  |
 | `view.record.scope` | string |  |  |
 | `view.record.userCode` | string |  |  |
 | `view.typed` | string |  |  |
@@ -3782,6 +3786,8 @@ Scope: `account:manage`.
 | `view.record.clientId` | string |  |  |
 | `view.record.clientName` | string |  |  |
 | `view.record.expiresAt` | string or number, or null |  |  |
+| `view.record.resources` | list |  |  |
+| `view.record.resources[]` | string |  |  |
 | `view.record.scope` | string |  |  |
 | `view.record.userCode` | string |  |  |
 | `view.typed` | string |  |  |
@@ -3834,6 +3840,8 @@ Scope: `account:manage`.
 | `view.record.clientId` | string |  |  |
 | `view.record.clientName` | string |  |  |
 | `view.record.expiresAt` | string or number, or null |  |  |
+| `view.record.resources` | list |  |  |
+| `view.record.resources[]` | string |  |  |
 | `view.record.scope` | string |  |  |
 | `view.record.userCode` | string |  |  |
 | `view.typed` | string |  |  |
@@ -3872,6 +3880,8 @@ Scope: `account:manage`.
 | `view.record.clientId` | string |  |  |
 | `view.record.clientName` | string |  |  |
 | `view.record.expiresAt` | string or number, or null |  |  |
+| `view.record.resources` | list |  |  |
+| `view.record.resources[]` | string |  |  |
 | `view.record.scope` | string |  |  |
 | `view.record.userCode` | string |  |  |
 | `view.typed` | string |  |  |

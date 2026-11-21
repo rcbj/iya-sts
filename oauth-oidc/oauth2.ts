@@ -18258,6 +18258,25 @@ class OAuth2Server {
         return self.oauthError(res, 400, deviceProof.error,
                                deviceProof.description);
       }
+      const grantedResources = record.resources || [];
+      const narrowedResources = requestedResources.filter(function (one) {
+        return grantedResources.indexOf(one) >= 0;
+      });
+      if (requestedResources.length &&
+          narrowedResources.length !== requestedResources.length) {
+        const extra = requestedResources.filter(function (one) {
+          return grantedResources.indexOf(one) < 0;
+        });
+        log.debug("Leaving OAuth2Server.tokenGrant(). The Token Request " +
+                  "asked for a resource the device authorization does not " +
+                  "carry.");
+        return deviceRefuse('STS-OAUTH-0206', 'invalid_target',
+          'RFC 8707 section 2.2: a Token Request may narrow the resources ' +
+          'the device authorization asked for and may not add to them. This ' +
+          'request asks additionally for: ' + extra.join(', ') + '.');
+      }
+      const deviceResources = narrowedResources.length
+        ? narrowedResources : grantedResources;
       const person = self.provisionedPerson(record.username);
       if (!person || !(await deviceAuthorization.redeem(record))) {
         log.debug("Leaving OAuth2Server.tokenGrant(). Device code redeemed " +
@@ -18271,6 +18290,8 @@ class OAuth2Server {
         auth_time: record.approval.authTime, amr: record.approval.amr,
         acr: record.approval.acr || undefined,
         session_id: record.approval.sessionId || undefined,
+        audience: self.audienceClaim(deviceResources),
+        resources: deviceResources,
         grant: 'device_code'
       });
       log.debug("Leaving OAuth2Server.tokenGrant(). Device tokens issued.");
@@ -21051,8 +21072,8 @@ class OAuth2Server {
   // same key.
   // ---------------------------------------------------------------------------
   private async deviceAuthorizationRequest(req: Req, res: Res): Promise<Json> {
-    const { log, parseBody, validation, errorCodes, applications, dpop } =
-      this.deps;
+    const { log, parseBody, bodyValues, validation, errorCodes, applications,
+            dpop } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.deviceAuthorizationRequest().");
     res.set('Cache-Control', 'no-store');
@@ -21115,6 +21136,26 @@ class OAuth2Server {
       return refuse(scopeProblem.code, 400, 'invalid_scope',
                     scopeProblem.description);
     }
+    const parsedResources = self.parseResourceIndicators(
+      bodyValues(req, body, 'resource'));
+    if (parsedResources.error) {
+      log.debug("Leaving OAuth2Server.deviceAuthorizationRequest(). " +
+                "Resource.");
+      return refuse('STS-OAUTH-0986', 400, 'invalid_target',
+                    parsedResources.error);
+    }
+    const base = self.asBaseOf(req);
+    if (parsedResources.resources.length) {
+      const plan = self.accessTokenPlan(base, scope, clientId,
+        parsedResources.resources, null, req);
+      if (plan.refusal) {
+        log.debug("Leaving OAuth2Server.deviceAuthorizationRequest(). " +
+                  "RFC 9068 refused the audience.");
+        return refuse(errorCodes.codeOf(plan.refusal) || 'STS-OAUTH-0986',
+                      400, plan.refusal.error,
+                      plan.refusal.description);
+      }
+    }
     let dpopJkt = '';
     if (req.headers['dpop'] !== undefined) {
       const checked = dpop.verifyProof(req.headers['dpop'],
@@ -21130,8 +21171,8 @@ class OAuth2Server {
     // registration's client_name, as CIBA's page shows it.
     const registration: Json = applications.registrationOf(clientId) || {};
     const made = deviceAuthorization.create(clientId,
-      String(registration.client_name || clientId), scope, dpopJkt);
-    const base = self.asBaseOf(req);
+      String(registration.client_name || clientId), scope, dpopJkt,
+      parsedResources.resources);
     const verification = helpers.rebaseTo(base, 'portal') + '/portal/device';
     log.debug("Leaving OAuth2Server.deviceAuthorizationRequest().");
     res.status(200).type('application/json').send(JSON.stringify({
