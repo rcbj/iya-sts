@@ -88,12 +88,15 @@ class OpenPgpPage {
                                                            : 'publish', '',
         w.optedIn ? t.html('consoleOpenpgp.withdraw')
                   : t.html('consoleOpenpgp.publish')) : '');
+    const labels: Json = { none: 'consoleOpenpgp.mail.none',
+                           openpgp: 'consoleOpenpgp.mail.openpgp',
+                           smime: 'consoleOpenpgp.mail.smime' };
     const choices = ['none', 'openpgp', 'smime'].map(function (c: string) {
       return '<option value="' + c + '"' + (m.choice === c ? ' selected' : '') +
-        '>' + t.html('consoleOpenpgp.mail.' + c) + '</option>';
+        '>' + t.html(labels[c]) + '</option>';
     }).join('');
     const mail = '<p>' + t.html('consoleOpenpgp.mailNow', {
-      choice: m.choice || 'none' }) + '</p>' +
+      choice: t.text(labels[m.choice] || labels.none) }) + '</p>' +
       (m.smimeCertificate ? '<p>' + t.html('consoleOpenpgp.smimeCurrent', {
         subject: m.smimeCertificate.subject,
         serial: m.smimeCertificate.serial }) + '</p>'

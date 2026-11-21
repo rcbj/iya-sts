@@ -42,6 +42,8 @@
   "nav.keys.heading": "مفاتيح المرور",
   "nav.tokens.label": "مفاتيح الأمان",
   "nav.tokens.heading": "مفاتيح الأمان والبطاقات الذكية الخاصة بك",
+  "nav.openpgp.label": "OpenPGP وتشفير البريد",
+  "nav.openpgp.heading": "مفتاح OpenPGP الخاص بك وتشفير البريد",
   "nav.mfa.label": "تطبيق المصادقة",
   "nav.mfa.heading": "تطبيق المصادقة الخاص بك",
   "nav.signing-key.label": "مفاتيح التوقيع",

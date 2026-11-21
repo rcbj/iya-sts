@@ -13172,7 +13172,8 @@ op `getMail`(@js(#{`examples`:#["password-reset"]}) `parameters/0/schema`: "pass
       `label`?: string;
       `what`?: string;
       `optional`?: boolean;
-      `reason`?: string
+      `reason`?: string;
+      @js(#{`description`:"The Subject an ENCRYPTED message of this category goes out under (#1955), `{{service}}` filled in at send; the real subject is inside."}) `encryptedSubject`?: string
     })[];
     `selfServiceReset`?: boolean;
     `securityNotices`?: boolean;

@@ -3147,6 +3147,46 @@
     "en": "e0341e4e47f3b2f8",
     "text": "ما الذي يسمح لتسجيل دخول PKINIT بادعاء مفتاح مرتبط بالعتاد (المؤشر pkinit-hardware و amr hwk). `inference`، القيمة الافتراضية والسلوك قبل #1955: شهادة تسجيل دخول بالبطاقة الذكية لم تولّد هذه الخدمة مفتاحها، أو دليل شهادة مسجّل. `evidence`: فقط مفتاح تغطيه شهادة رمز مادي. تسجيل الدخول بالشهادة عبر TLS يحصل على hwk، و sc لمفتاح على بطاقة ذكية، من الدليل فقط في الحالتين."
   },
+  "openpgp.wkd|label": {
+    "en": "1f05a7518c3d2275",
+    "text": "نشر المفاتيح في دليل مفاتيح الويب (Web Key Directory)"
+  },
+  "openpgp.wkd|description": {
+    "en": "7822103f89ac59b3",
+    "text": "الإجابة عن دليل مفاتيح الويب (draft-koch-openpgp-webkey-service) لنطاقات البريد في هذا النطاق: /.well-known/openpgpkey/<domain>/hu/<hash> (الطريقة المتقدمة، على openpgpkey.<domain>) و/.well-known/openpgpkey/hu/<hash> (الطريقة المباشرة)، وملف السياسة لكل منهما. لا يُجاب إلا عن مفتاح الشخص الذي وافق على النشر في البوابة. متوقف افتراضيًا."
+  },
+  "openpgp.wkdDomains|label": {
+    "en": "d1c4b728593ff000",
+    "text": "نطاقات البريد التي يخدمها دليل مفاتيح الويب"
+  },
+  "openpgp.wkdDomains|description": {
+    "en": "ad64f7216191123c",
+    "text": "نطاقات البريد التي يجيب عنها دليل مفاتيح الويب في هذا النطاق، مفصولة بفواصل. القيمة الفارغة، وهي الافتراضية، تعني نطاق DNS الخاص بالنطاق نفسه. الطلب الذي لا يحمل نطاقًا في مساره يجيب عنه النطاق الذي يخدم نطاقه، والنطاق الافتراضي أولًا."
+  },
+  "openpgp.challengeLifetimeS|label": {
+    "en": "dbf558cf0b4b8f90",
+    "text": "مدة صلاحية تحدي التسجيل (بالثواني)"
+  },
+  "openpgp.challengeLifetimeS|description": {
+    "en": "e9130c8e82368cc6",
+    "text": "المدة التي يظل فيها صالحًا التحدي الذي يوقّعه الشخص باستخدام gpg --clearsign لتسجيل مفتاح OpenPGP. يُستهلك مرة واحدة، ولا يكون لدى الشخص إلا تحدٍّ واحد في كل مرة."
+  },
+  "openpgp.signatureSkewS|label": {
+    "en": "d927cf1f04bd9d51",
+    "text": "انحراف الساعة المسموح لتوقيع الإثبات (بالثواني)"
+  },
+  "openpgp.signatureSkewS|description": {
+    "en": "2772763d3d363b6d",
+    "text": "مقدار ما يجوز أن تبتعد به ساعة الحاسوب الموقِّع عن ساعة هذه الخدمة: الإثبات الموقَّع قبل إصدار التحدي، أو بعد الآن، بأكثر من هذا المقدار يُرفض (STS-OPENPGP-0010)."
+  },
+  "openpgp.minRsaBits|label": {
+    "en": "f3dc9f85de143630",
+    "text": "أصغر مفتاح RSA مقبول لـ OpenPGP"
+  },
+  "openpgp.minRsaBits|description": {
+    "en": "ad48516e31a7c45b",
+    "text": "أقصر مفتاح RSA، أساسيًا كان أو فرعيًا، يقبله تسجيل OpenPGP. تُقبل Ed25519 وEd448 وECDSA وECDH على P-256 وP-384 وP-521، وX25519 وX448؛ ولا تُقبل أبدًا DSA وElGamal ومنحنيات Brainpool (STS-OPENPGP-0004)."
+  },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
     "text": "تقارير الامتثال لكل طلب تغذية"
@@ -11714,6 +11754,14 @@
   "mail.dedupWindowS|description": {
     "en": "50195b20fe00e9fa",
     "text": "إشعار يسمّي ما هو بصدده (الفعل نفسه على الحساب نفسه) يُرسَل مرة واحدة في هذه النافذة، مهما كثرت الأبواب التي أبلغت عنه. 0 يوقف الكتم."
+  },
+  "mail.encryptionRequired|label": {
+    "en": "81e5dc8eb5332f2b",
+    "text": "الرسائل التي يجب تشفيرها"
+  },
+  "mail.encryptionRequired|description": {
+    "en": "895bdb616e169134",
+    "text": "الرسائل، بحسب معرّف القالب (password-reset، account-activation، sign-in-code، sign-in-link، credential-compromised وبقية قائمة المراقبة ← البريد)، التي لا تُرسل إلا مشفّرة — PGP/MIME إلى مفتاح OpenPGP الخاص بالشخص أو S/MIME إلى شهادته، كما اختار في البوابة. الشخص الذي لم يختر أيًا منهما لا تُرسل إليه (STS-MAIL-0240)، ويذكر الاستخدام الذي طلبها ذلك كما يفعل مع أي رسالة لم تُرسل. القيمة الفارغة، وهي الافتراضية، لا تشترط أيًا منها؛ ويُحترم ما اختاره الشخص في الحالتين."
   },
   "mail.selfServiceReset|label": {
     "en": "8525111d1c0be58a",

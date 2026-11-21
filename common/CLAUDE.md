@@ -12645,6 +12645,47 @@ this directory has to know beside it:
   no schema version or upgrade script; development does not keep it across
   a restart, as it keeps no minted store.
 
+## `openpgp_keys.ts`: A PERSON'S OpenPGP KEY, THE WEB KEY DIRECTORY, ENCRYPTED MAIL (#1955 P6, 2026-11-20)
+
+The file's header is the argument; what a maintainer needs beside it:
+
+* **The mechanism is openpgp.js (rcbj's D3), the policy is `crypto.js` section
+  19.** `crypto_impl/openpgp_engine.js` is the only requirer of `openpgp`;
+  the allow list (Ed25519/Ed448, ECDSA and ECDH on the NIST curves,
+  X25519/X448, RSA of `openpgp.minRsaBits` ≥ 3072; never DSA, ElGamal or
+  Brainpool) is a documented list there, because #1368's registry has no
+  OpenPGP surface. S/MIME is pkijs's EnvelopedData on node's Web Crypto,
+  AES-256-CBC and not GCM: RFC 5083 puts GCM in AuthEnvelopedData and pkijs
+  writes it into an EnvelopedData.
+* **Proof of possession, never a key on somebody's word.** A challenge per
+  person (keyed by entryUUID, `openpgp.challenges`, per realm, minted,
+  expiring), signed with `gpg --clearsign`; the key's valid user id must carry
+  the entry's `mail`; the nonce is spent by a cluster claim before anything is
+  written. An administrator's registration takes the PERSON'S signature too.
+* **Nothing is recorded as hardware-bound**, and no `openpgp` credential is put
+  on a token record here: the server cannot see an OpenPGP card. The
+  `openpgp` retirer IS installed (`hardware_tokens.registerRetirer()`, from
+  this module's wire step), so a later phase that records an attested card
+  key gets the lost-key removal for free.
+* **The key is on the entry** (`stsOpenPgpKey`, `-Fingerprint`, `-KeyInfo`,
+  `stsMailEncryption`; OIDs 920–923, a jump clear of P2/P4/P7's numbers) and
+  written through `setDirectory()`'s narrow writer, filled by
+  `ldap/ldap_server.js` (rule 3e: `mail.ts` reaches this module at 8a). No
+  table, so no schema change.
+* **The Web Key Directory** register (`openpgp.wkd`) is a POINTER checked
+  against the entry at every lookup; in development, where minted stores do
+  not survive a restart, the draft's `l` parameter finds the person by
+  `mail`. A request with no realm segment is answered by the realm serving
+  the domain, default first. CORS is `cors.js`'s realm union, not the draft's
+  `*` (rcbj's allowlist decision); the route sets no CORS header.
+* **Mail** (`mail.ts` header point 9): decided at the queue — the person's
+  choice and `mail.encryptionRequired` — and composed at the attempt
+  (`mail_transports.ts` `composeEncrypted()`), never sent in the clear
+  against either (STS-MAIL-0240..0243). The refusal is the uses' existing
+  handling of an unsent message, so no use grew a second path.
+* **Tests**: `tests/openpgp_keys.js` (every key and certificate made at run
+  time; S/MIME opened by `openssl cms`), `tests/protocol/sts_openpgp.js`.
+
 ## `devices.ts`: THE DEVICE REGISTER (#130, 2026-09-23; #164 and #218, 2026-09-26)
 
 A device is an entry under `ou=devices` (`ldap/CLAUDE.md`) with ONE owner —

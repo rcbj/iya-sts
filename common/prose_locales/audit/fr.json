@@ -503,6 +503,34 @@
     "en": "f7fb5461e2325e1e",
     "text": "Un jeton matériel a été déclaré perdu et ses identifiants retirés"
   },
+  "audit.actions.openpgp.challenge.label": {
+    "en": "454a22b5bcd9d6a2",
+    "text": "Un défi d'enregistrement de clé OpenPGP a été émis"
+  },
+  "audit.actions.openpgp.key-registered.label": {
+    "en": "1ed8de1f8777a015",
+    "text": "Une clé OpenPGP a été enregistrée sur preuve de possession"
+  },
+  "audit.actions.openpgp.key-refused.label": {
+    "en": "f1e7e3c6808ba33b",
+    "text": "Une clé OpenPGP n'a pas été enregistrée"
+  },
+  "audit.actions.openpgp.key-removed.label": {
+    "en": "89a284fa6508eae4",
+    "text": "Une clé OpenPGP a été supprimée"
+  },
+  "audit.actions.openpgp.publication.label": {
+    "en": "f6d12f16eca6796a",
+    "text": "Une clé OpenPGP a été publiée dans le Web Key Directory, ou en a été retirée"
+  },
+  "audit.actions.openpgp.mail-encryption.label": {
+    "en": "ba0fb7a4133d94e2",
+    "text": "La façon dont les messages adressés à une personne sont chiffrés a été modifiée"
+  },
+  "audit.actions.openpgp.smime-certificate.label": {
+    "en": "663072a33ce1e178",
+    "text": "Le certificat S/MIME d'une personne a été défini ou supprimé"
+  },
   "audit.actions.device.key-add.label": {
     "en": "6c1b2513c20532ef",
     "text": "Une clé a été ajoutée à un appareil"

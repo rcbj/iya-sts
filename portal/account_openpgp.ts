@@ -230,7 +230,10 @@ class AccountOpenPgp {
         out = t.text('portalOpenpgp.done.withdrawn');
         break;
       case 'mail-encryption':
-        out = t.text('portalOpenpgp.done.mail.' + String(done.choice));
+        out = t.text(done.choice === 'openpgp'
+          ? 'portalOpenpgp.done.mail.openpgp'
+          : (done.choice === 'smime' ? 'portalOpenpgp.done.mail.smime'
+                                     : 'portalOpenpgp.done.mail.none'));
         break;
       default:
         out = t.text(done.removed ? 'portalOpenpgp.done.smimeRemoved'

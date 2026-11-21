@@ -3155,3 +3155,16 @@ at a management address is still told where the drawing is rather than called
 an unknown name. `tests/admin_api_request_names.js` holds the rules, the
 wrapper and every `x-sts-` name; `schemathesis_kit.js`'s
 `probeStrictRequests()` holds the running service.
+
+## `/admin-api/openpgp` — DIRECTORY → OpenPGP KEYS (#1955 P6, 2026-11-20)
+
+`mgmt-api/openpgp_api.ts`, spread into the table as the hardware tokens'
+are: `GET /admin-api/openpgp?user=` (one person's key, challenge, Web Key
+Directory publication, S/MIME certificate and mail choice, plus the realm's
+WKD switch and domains) and `POST /admin-api/openpgp/<action>` with `{ user,
+… }` for the portal's seven acts (`issueOpenPgpChallenge`,
+`registerOpenPgpKey`, `removeOpenPgpKey`, `publishOpenPgpKey`,
+`withdrawOpenPgpKey`, `setMailEncryption`, `setSmimeCertificate`). **A
+registration is still the person's proof**: the administrator issues the
+challenge and pastes back what the person signed. The actor is the token's
+subject (#1579). Not a security operation: no OpenPGP key is a way in.

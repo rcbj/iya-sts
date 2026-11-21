@@ -130,6 +130,7 @@
   "nav.applications": "Applications",
   "nav.devices": "Devices",
   "nav.hardware-tokens": "Hardware tokens",
+  "nav.openpgp": "OpenPGP keys",
   "nav.attribute-sources": "Attribute sources",
   "nav.secret-destinations": "Secret destinations",
   "nav.policies": "Policies",

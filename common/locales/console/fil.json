@@ -130,6 +130,7 @@
   "nav.applications": "Mga application",
   "nav.devices": "Mga device",
   "nav.hardware-tokens": "Mga hardware token",
+  "nav.openpgp": "Mga OpenPGP key",
   "nav.attribute-sources": "Mga pinagmumulan ng attribute",
   "nav.secret-destinations": "Mga destinasyon ng secret",
   "nav.policies": "Mga policy",

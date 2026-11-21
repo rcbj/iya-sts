@@ -431,6 +431,22 @@
     "en": "bfb6c6f542c0607b",
     "text": "/Me, ang authenticated na subject"
   },
+  "endpoints.route./.well-known/openpgpkey/:domain/hu/:hash.name": {
+    "en": "b042a2652a9771c9",
+    "text": "Key ng Web Key Directory (advanced method)"
+  },
+  "endpoints.route./.well-known/openpgpkey/:domain/policy.name": {
+    "en": "f0c7c4485ab23e66",
+    "text": "Policy ng Web Key Directory (advanced method)"
+  },
+  "endpoints.route./.well-known/openpgpkey/hu/:hash.name": {
+    "en": "a8849e1ec8b477d5",
+    "text": "Key ng Web Key Directory (direct method)"
+  },
+  "endpoints.route./.well-known/openpgpkey/policy.name": {
+    "en": "d9805e391b15a7b9",
+    "text": "Policy ng Web Key Directory (direct method)"
+  },
   "endpoints.route./.well-known/hoba/register.name": {
     "en": "b95adde7badbdef3",
     "text": "Magparehistro ng HOBA public key"
@@ -894,6 +910,14 @@
   "endpoints.route./admin-api/mail/:action.name": {
     "en": "cff7055c2db49c6a",
     "text": "Mga action sa mail"
+  },
+  "endpoints.route./admin-api/openpgp.name": {
+    "en": "bb22bb5b740e327f",
+    "text": "Mga OpenPGP key"
+  },
+  "endpoints.route./admin-api/openpgp/:action.name": {
+    "en": "a1147f062fddb7e5",
+    "text": "Mga aksyon sa OpenPGP key"
   },
   "endpoints.route./admin-api/mail/outbox.name": {
     "en": "d40abea9379f4e22",

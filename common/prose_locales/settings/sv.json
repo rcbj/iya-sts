@@ -3147,6 +3147,46 @@
     "en": "e0341e4e47f3b2f8",
     "text": "Vad som låter en PKINIT-inloggning göra anspråk på en maskinvarubunden nyckel (indikatorn pkinit-hardware och amr hwk). `inference`, standardvärdet och beteendet före #1955: ett certifikat för smartkortsinloggning vars nyckel den här tjänsten inte genererade, eller registrerat attesteringsbevis. `evidence`: endast en nyckel som en maskinvarutokens attestering täcker. En certifikatinloggning över TLS får hwk, och sc för en nyckel på ett smart kort, endast utifrån bevis i båda fallen."
   },
+  "openpgp.wkd|label": {
+    "en": "1f05a7518c3d2275",
+    "text": "Publicera nycklar i Web Key Directory"
+  },
+  "openpgp.wkd|description": {
+    "en": "7822103f89ac59b3",
+    "text": "Besvara Web Key Directory (draft-koch-openpgp-webkey-service) för den här sfärens e-postdomäner: /.well-known/openpgpkey/<domain>/hu/<hash> (den avancerade metoden, på openpgpkey.<domain>) och /.well-known/openpgpkey/hu/<hash> (den direkta metoden), och respektive policyfil. Bara nyckeln för en person som har valt att delta på portalen besvaras. Avstängt som standard."
+  },
+  "openpgp.wkdDomains|label": {
+    "en": "d1c4b728593ff000",
+    "text": "E-postdomäner som Web Key Directory betjänar"
+  },
+  "openpgp.wkdDomains|description": {
+    "en": "ad64f7216191123c",
+    "text": "E-postdomänerna som den här sfärens Web Key Directory svarar för, kommaseparerade. Tomt, standardvärdet, betyder sfärens egen DNS-domän. En begäran utan sfär i sökvägen besvaras av den sfär som betjänar dess domän, standardsfären först."
+  },
+  "openpgp.challengeLifetimeS|label": {
+    "en": "dbf558cf0b4b8f90",
+    "text": "Registreringsutmaningens livslängd (sekunder)"
+  },
+  "openpgp.challengeLifetimeS|description": {
+    "en": "e9130c8e82368cc6",
+    "text": "Hur länge den utmaning som en person signerar med gpg --clearsign för att registrera en OpenPGP-nyckel är giltig. Den förbrukas en gång, och en person har en åt gången."
+  },
+  "openpgp.signatureSkewS|label": {
+    "en": "d927cf1f04bd9d51",
+    "text": "Tillåten klockavvikelse för bevissignaturen (sekunder)"
+  },
+  "openpgp.signatureSkewS|description": {
+    "en": "2772763d3d363b6d",
+    "text": "Hur mycket den signerande datorns klocka får avvika från tjänstens: ett bevis signerat tidigare än utmaningen utfärdades, eller senare än nu, med mer än så avvisas (STS-OPENPGP-0010)."
+  },
+  "openpgp.minRsaBits|label": {
+    "en": "f3dc9f85de143630",
+    "text": "Minsta RSA-nyckel för OpenPGP"
+  },
+  "openpgp.minRsaBits|description": {
+    "en": "ad48516e31a7c45b",
+    "text": "Den kortaste RSA-nyckel, primärnyckel eller undernyckel, som en OpenPGP-registrering accepterar. Ed25519, Ed448, ECDSA och ECDH på P-256, P-384 och P-521, X25519 och X448 accepteras; DSA, ElGamal och Brainpool-kurvorna accepteras aldrig (STS-OPENPGP-0004)."
+  },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
     "text": "Efterlevnadsrapporter per flödesbegäran"
@@ -11714,6 +11754,14 @@
   "mail.dedupWindowS|description": {
     "en": "50195b20fe00e9fa",
     "text": "Ett meddelande som anger vad det gäller (samma handling på samma konto) skickas en gång inom det här fönstret, hur många dörrar som än rapporterade det. 0 stänger av undertryckningen."
+  },
+  "mail.encryptionRequired|label": {
+    "en": "81e5dc8eb5332f2b",
+    "text": "Meddelanden som måste krypteras"
+  },
+  "mail.encryptionRequired|description": {
+    "en": "895bdb616e169134",
+    "text": "Meddelandena, efter mall-id (password-reset, account-activation, sign-in-code, sign-in-link, credential-compromised och resten av listan under Övervakning → E-post), som bara skickas krypterade — PGP/MIME till personens OpenPGP-nyckel eller S/MIME till personens certifikat, enligt personens val på portalen. En person som inte har valt något av dem får inget sådant meddelande (STS-MAIL-0240), och den användning som begärde det säger det, som för alla meddelanden som inte skickas. Tomt, standardvärdet, kräver inga; det en person har valt respekteras i båda fallen."
   },
   "mail.selfServiceReset|label": {
     "en": "8525111d1c0be58a",

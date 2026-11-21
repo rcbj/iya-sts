@@ -2486,3 +2486,16 @@ would need the policy widened, and nothing else wants it. The limits arrive on
 the Overview's `photo.limits` and are the server's to enforce:
 `common/CLAUDE.md` (3db).
 
+
+## `/portal/openpgp`: A PERSON'S OpenPGP KEY AND MAIL ENCRYPTION (#1955 P6, 2026-11-20)
+
+Under *How I sign in*, beside Security keys, drawn by `web_openpgp.ts` from
+`GET /account-api/openpgp` (`account_openpgp.ts`): the registered key, the
+registration (ask for a challenge, sign it with `gpg --clearsign` — the card
+signs on a YubiKey — paste key and signed text), the Web Key Directory
+opt-in, the S/MIME certificate and the mail encryption choice. Seven acts on
+`POST /account-api/openpgp` (`challenge`, `register`, `remove`, `publish`,
+`withdraw`, `mail-encryption`, `smime`), all `recentAuth`: what mail to a
+person is encrypted to decides who can read their reset links. The username
+is always the token's subject. The logic is `common/openpgp_keys.ts`
+(`common/CLAUDE.md`); the words are `portalOpenpgp`'s, every base catalog.

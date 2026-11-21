@@ -157,15 +157,17 @@ class OpenPgpPages {
   static mailCard(v: Json, t: Json): string {
     const m = v.mailEncryption || {};
     const choices = [
-      { id: 'none', usable: true },
-      { id: 'openpgp', usable: !!m.openpgpUsable },
-      { id: 'smime', usable: !!m.smimeUsable }
+      { id: 'none', usable: true, label: 'portalOpenpgp.mail.none' },
+      { id: 'openpgp', usable: !!m.openpgpUsable,
+        label: 'portalOpenpgp.mail.openpgp' },
+      { id: 'smime', usable: !!m.smimeUsable,
+        label: 'portalOpenpgp.mail.smime' }
     ];
     const radios = choices.map(function (c: Json): string {
       return '<label><input type="radio" name="choice" value="' + c.id +
         '"' + (m.choice === c.id ? ' checked' : '') +
         (c.usable || m.choice === c.id ? '' : ' disabled') + '> ' +
-        t.html('portalOpenpgp.mail.' + c.id) + '</label><br>';
+        t.html(c.label) + '</label><br>';
     }).join('');
     const cert = m.smimeCertificate;
     return '<div class="card"><h2>' + t.html('portalOpenpgp.mail.heading') +

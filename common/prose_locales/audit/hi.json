@@ -503,6 +503,34 @@
     "en": "f7fb5461e2325e1e",
     "text": "एक हार्डवेयर टोकन खोया हुआ बताया गया और उसके क्रेडेंशियल हटाए गए"
   },
+  "audit.actions.openpgp.challenge.label": {
+    "en": "454a22b5bcd9d6a2",
+    "text": "OpenPGP कुंजी पंजीकरण की एक चुनौती जारी की गई"
+  },
+  "audit.actions.openpgp.key-registered.label": {
+    "en": "1ed8de1f8777a015",
+    "text": "कब्ज़े के प्रमाण पर एक OpenPGP कुंजी पंजीकृत की गई"
+  },
+  "audit.actions.openpgp.key-refused.label": {
+    "en": "f1e7e3c6808ba33b",
+    "text": "एक OpenPGP कुंजी पंजीकृत नहीं की गई"
+  },
+  "audit.actions.openpgp.key-removed.label": {
+    "en": "89a284fa6508eae4",
+    "text": "एक OpenPGP कुंजी हटाई गई"
+  },
+  "audit.actions.openpgp.publication.label": {
+    "en": "f6d12f16eca6796a",
+    "text": "एक OpenPGP कुंजी Web Key Directory में प्रकाशित की गई, या उससे वापस ली गई"
+  },
+  "audit.actions.openpgp.mail-encryption.label": {
+    "en": "ba0fb7a4133d94e2",
+    "text": "किसी व्यक्ति को भेजी जाने वाली मेल के एन्क्रिप्शन का तरीका बदला गया"
+  },
+  "audit.actions.openpgp.smime-certificate.label": {
+    "en": "663072a33ce1e178",
+    "text": "किसी व्यक्ति का S/MIME प्रमाणपत्र सेट किया गया या हटाया गया"
+  },
   "audit.actions.device.key-add.label": {
     "en": "6c1b2513c20532ef",
     "text": "एक उपकरण में एक कुंजी जोड़ी गई"

@@ -130,6 +130,7 @@
   "nav.applications": "التطبيقات",
   "nav.devices": "الأجهزة",
   "nav.hardware-tokens": "الرموز المادية",
+  "nav.openpgp": "مفاتيح OpenPGP",
   "nav.attribute-sources": "مصادر السمات",
   "nav.secret-destinations": "وجهات الأسرار",
   "nav.policies": "السياسات",
