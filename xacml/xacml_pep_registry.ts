@@ -131,6 +131,10 @@ import pepSettings = require('./xacml_pep_settings');
 // A remote PEP's listeners (#1760): the reading of what the PEP reports.
 import pepListeners = require('./xacml_pep_listeners');
 
+// A control character, C0, DEL or C1, in a heartbeat's text member
+// (`reportProblem()`, fuzz run #595).
+const REPORT_CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
+
 // The directory functions `ldap/ldap_server.js` installs.
 interface PepDirectory {
   certificateIdentity?: (certificate: any) => {
@@ -821,8 +825,14 @@ class PepRegistry {
             !isNaN(Date.parse(stored))) {
           return new Date(Date.parse(stored)).toISOString();
         }
+        // AN AGE OLDER THAN THE EPOCH IS NO TIME (fuzz run #595). A safe
+        // integer is not a safe AGE: `lastSuccessAgeMs` 9007199254740991
+        // put the instant before the earliest a Date can hold, and
+        // `toISOString()` THREW — a RangeError past the fault boundary,
+        // express's HTML 500. Such an age is no time, as a negative one
+        // always was.
         return typeof age === 'number' && Number.isSafeInteger(age) &&
-          age >= 0 && !isNaN(base)
+          age >= 0 && !isNaN(base) && age <= base
           ? new Date(base - age).toISOString() : null;
       };
       const ident = function (value: unknown, max: number): string {
@@ -913,6 +923,81 @@ class PepRegistry {
     }
     log.debug('Leaving PepRegistry.hostnameOf(). ' + text);
     return { ok: true, hostname: text };
+  }
+
+  // -------------------------------------------------------------------------
+  // WHAT A HEARTBEAT MAY CARRY (fuzz run #595).
+  //
+  // The fuzz gate's pep-control-plane profile sent a heartbeat of counters
+  // past Number.MAX_SAFE_INTEGER (`"refused": -50380761491719199916032`),
+  // negative counts and ages, an age as a string and strings carrying
+  // control characters, in all three fuzz realms, and the service answered
+  // express's HTML 500: a stream's `lastSuccessAgeMs` of 2^53 - 1 put its
+  // instant before the earliest a Date holds and `signalsOf()`'s
+  // `toISOString()` threw. That is fixed where it threw (`timeOf()`, which
+  // answers null for such an age). This is the other half: what the PEP's
+  // ENTRY stores was taken as given — a counter of -5e22 was stored as -5
+  // (`parseInt()` of its exponent form), which is neither what the PEP said
+  // nor zero, and `version` went into its attribute with a control
+  // character in it.
+  //
+  // **SO THE MEMBERS THE ENTRY STORES ARE REFUSED, WHOLE, BEFORE ANYTHING IS
+  // READ** — `models/pep/pep_control_plane.tsp`'s `HeartbeatRequest`, which
+  // says so: a counter (`policyCount`, `decisions`, `allowed`, `refused`,
+  // `undischargeable`) is a non-negative safe integer, a text member
+  // (`syncToken`, `bias`, `resource`, `version`, `notifyUrl`) a string with
+  // no C0, DEL or C1 control character, or null, which has always cleared
+  // it, and `signals`, `settings` and `listeners` an object or null. A
+  // refusal is 400 STS-XACML-0331 naming the member and writes nothing —
+  // `hostname`'s rule (STS-XACML-0261). The PEP sends nothing else
+  // (`rust/bins/xacml-pep/src/sync.rs`: u64 counters, Strings), so a
+  // well-behaved one never meets it.
+  //
+  // **WITHIN `signals` AND `listeners` A VALUE IS STILL HELD TO ITS MEMBER,
+  // NOT REFUSED** (`signalsOf()`, `pepListeners.inUseOf()`): a count that is
+  // not a non-negative integer is 0 and an unknown member is dropped,
+  // "whatever the PEP sent", which is the design those two argue and
+  // `tests/xacml_pep_proxy.js` B4/B5 hold. Neither can throw or reach the
+  // entry as anything but the kept members.
+  // -------------------------------------------------------------------------
+  /**
+   * The first member of a heartbeat report the service cannot hold.
+   * @param report - what the PEP reports (the handler's object)
+   * @returns a sentence naming the member, or null when it may be held
+   */
+  static reportProblem(report: unknown): string | null {
+    const { log } = helpers;
+    log.debug('Entering PepRegistry.reportProblem().');
+    const said: any = report && typeof report === 'object' ? report : {};
+    const problems: string[] = [];
+    ['policyCount', 'decisions', 'allowed', 'refused',
+     'undischargeable'].forEach(function (key) {
+      const value = said[key];
+      if (value !== undefined && !(typeof value === 'number' &&
+          Number.isSafeInteger(value) && value >= 0)) {
+        problems.push('`' + key + '` is not a non-negative integer of at ' +
+                      'most ' + Number.MAX_SAFE_INTEGER + '.');
+      }
+    });
+    ['syncToken', 'bias', 'resource', 'version',
+     'notifyUrl'].forEach(function (key) {
+      const value = said[key];
+      if (value !== undefined && value !== null &&
+          !(typeof value === 'string' && !REPORT_CONTROL.test(value))) {
+        problems.push('`' + key + '` is not a string free of control ' +
+                      'characters.');
+      }
+    });
+    ['signals', 'settings', 'listeners'].forEach(function (key) {
+      const value = said[key];
+      if (value !== undefined && value !== null &&
+          !(typeof value === 'object' && !Array.isArray(value))) {
+        problems.push('`' + key + '` is not an object or null.');
+      }
+    });
+    const found = problems[0] || null;
+    log.debug('Leaving PepRegistry.reportProblem(). ' + (found || 'None.'));
+    return found;
   }
 
   private number(value: unknown): number {
@@ -1392,6 +1477,21 @@ class PepRegistry {
                     'PEP nobody could nudge.' }, 'STS-XACML-0021');
     }
     const said = report || {};
+    // A VALUE THE SERVICE CANNOT HOLD (fuzz run #595) refuses the heartbeat
+    // before anything is read or written: `reportProblem()`'s header.
+    const problem = PepRegistry.reportProblem(said);
+    if (problem) {
+      log.debug('Leaving PepRegistry.heartbeat(). A value it cannot hold.');
+      // error-code: none — the code is the mark()'s, after the reason.
+      return errorCodes.mark({ ok: false, status: 400,
+               why: 'This heartbeat carries a value the service cannot ' +
+                    'hold, and nothing of it was recorded: ' + problem +
+                    ' A counter is a non-negative integer of at most ' +
+                    '2^53 - 1, a text member a string with no control ' +
+                    'character, and signals, settings and listeners an ' +
+                    'object or null.' },
+             'STS-XACML-0331');
+    }
     // THE HOSTNAME (#1760): absent keeps, as every member here does; a bad
     // one refuses the heartbeat before anything is written.
     const host = said.hostname === undefined
@@ -1961,6 +2061,7 @@ export = {
   heartbeat: slot.forward('heartbeat'),
   signalsOf: PepRegistry.signalsOf,
   hostnameOf: PepRegistry.hostnameOf,
+  reportProblem: PepRegistry.reportProblem,
   recordNotify: slot.forward('recordNotify'),
   setEnabled: slot.forward('setEnabled'),
   setProxy: slot.forward('setProxy'),

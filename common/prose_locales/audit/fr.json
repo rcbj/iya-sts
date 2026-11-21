@@ -487,6 +487,50 @@
     "en": "0be46b8b29aaf446",
     "text": "L’attestation d’une clé de sécurité n’est plus fiable : la liste de statut d’attestation Android de Google révoque sa chaîne"
   },
+  "audit.actions.hardware-token.create.label": {
+    "en": "23939dae5f4b89dc",
+    "text": "Un jeton matériel a été enregistré à partir de son attestation"
+  },
+  "audit.actions.hardware-token.credential-add.label": {
+    "en": "79c33d3849e02f0c",
+    "text": "Un identifiant a été ajouté à un jeton matériel"
+  },
+  "audit.actions.hardware-token.holder-change.label": {
+    "en": "06fc03f7983fd5ad",
+    "text": "Un jeton matériel a été enregistré par une autre personne que son détenteur"
+  },
+  "audit.actions.hardware-token.lost.label": {
+    "en": "f7fb5461e2325e1e",
+    "text": "Un jeton matériel a été déclaré perdu et ses identifiants retirés"
+  },
+  "audit.actions.openpgp.challenge.label": {
+    "en": "454a22b5bcd9d6a2",
+    "text": "Un défi d'enregistrement de clé OpenPGP a été émis"
+  },
+  "audit.actions.openpgp.key-registered.label": {
+    "en": "1ed8de1f8777a015",
+    "text": "Une clé OpenPGP a été enregistrée sur preuve de possession"
+  },
+  "audit.actions.openpgp.key-refused.label": {
+    "en": "f1e7e3c6808ba33b",
+    "text": "Une clé OpenPGP n'a pas été enregistrée"
+  },
+  "audit.actions.openpgp.key-removed.label": {
+    "en": "89a284fa6508eae4",
+    "text": "Une clé OpenPGP a été supprimée"
+  },
+  "audit.actions.openpgp.publication.label": {
+    "en": "f6d12f16eca6796a",
+    "text": "Une clé OpenPGP a été publiée dans le Web Key Directory, ou en a été retirée"
+  },
+  "audit.actions.openpgp.mail-encryption.label": {
+    "en": "ba0fb7a4133d94e2",
+    "text": "La façon dont les messages adressés à une personne sont chiffrés a été modifiée"
+  },
+  "audit.actions.openpgp.smime-certificate.label": {
+    "en": "663072a33ce1e178",
+    "text": "Le certificat S/MIME d'une personne a été défini ou supprimé"
+  },
   "audit.actions.device.key-add.label": {
     "en": "6c1b2513c20532ef",
     "text": "Une clé a été ajoutée à un appareil"
@@ -2310,5 +2354,9 @@
   "audit.actions.xacml.pep.cluster.proxy.clear.label": {
     "en": "c2812e5d21fb6dd4",
     "text": "La configuration de proxy inverse d’une grappe de PEP distants a été supprimée"
+  },
+  "audit.actions.piv-escrow.recover.label": {
+    "en": "0cad829ec7cafc72",
+    "text": "Une clé PIV de gestion de clés séquestrée a été récupérée"
   }
 }

@@ -194,5 +194,9 @@
   "roles.console.security.what": {
     "en": "238007ebd246b860",
     "text": "Cambiar la seguridad: guardar o restablecer una política en Directorio → Políticas, asignar una política a una aplicación, un grupo o una persona, conceder o retirar este rol y actuar sobre la cuenta de una persona que lo tiene. Admin Write no puede hacer nada de esto. INCLUYE LECTURA Y NO ESCRITURA, de modo que puede tenerlo alguien que no sea administrador por lo demás."
+  },
+  "roles.builtIn.PIV_KEY_RECOVERY.what": {
+    "en": "f2c6cc9cd65c5fc0",
+    "text": "Quien recupera claves PIV de gestión de claves en custodia: cualquiera que sea miembro del grupo indicado por `roles.pivKeyRecoveryGroup` (predeterminado \"piv-key-recovery\"). Es lo que exige, junto con Admin Write, recuperar la clave piv-key-management en custodia de otra persona mediante /admin-api/hardware-tokens/recover-key o la consola, y nada más: esa clave descifra el correo del titular. El titular recupera la suya en el portal sin él."
   }
 }

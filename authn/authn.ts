@@ -6563,6 +6563,19 @@ class Authn {
     if (typeof given.attestationTrusted === 'boolean') {
       credential.attestationTrusted = given.attestationTrusted;
     }
+    // THE HARDWARE TOKEN THE CREDENTIAL IS ON (#1955 P1, design X4): a
+    // snapshot of what the register's attestation evidence said at this
+    // sign-in — the token's key, vendor, model, the evidence source and
+    // whether the key is on a smart card — so the authentication policy's
+    // `attested-hardware` mechanism (`authn_mechanisms.ts`) and the
+    // issuance policy's hardware-token attributes read what this sign-in
+    // proved. A passkey by its credential id, a certificate by its serial.
+    // Nothing for a credential no active token lists, or a register that
+    // cannot be asked.
+    const token = Authn.hardwareTokenOf(given);
+    if (token) {
+      credential.hardwareToken = token;
+    }
     // THE BROWSER FINGERPRINT (#62 P6), where the realm asked for one and
     // the sign-in form carried it — as a digest, like the User-Agent: the
     // value itself is personal data and is never kept.
@@ -6587,6 +6600,60 @@ class Authn {
       device: fp ? stsCrypto.credentialFingerprint('device:' + fp) : '',
       credential: credential
     };
+  }
+
+  // The hardware token snapshot `eventContext()` records (#1955 P1), or
+  // null. The register is reached at the moment of use: it reaches the
+  // credential store, which this file's chain loads first.
+  /**
+   * What the hardware token register's evidence says of a sign-in's
+   * credential.
+   *
+   * @param given - the credential detail a door passed
+   * @returns `{ key, vendor, model, source, smartCard }`, or null
+   */
+  static hardwareTokenOf(given: any): any {
+    helpers.log.debug("Entering Authn.hardwareTokenOf().");
+    const kind = String((given && given.kind) || '');
+    const ref = kind === 'webauthn' ? String(given.id || '')
+      : (kind === 'certificate' ? String(given.serial || '') : '');
+    if (!ref) {
+      helpers.log.debug("Leaving Authn.hardwareTokenOf(). No reference.");
+      return null;
+    }
+    let out: any = null;
+    try {
+      const tokens = require('../common/hardware_tokens');
+      const ev = tokens.evidenceFor(kind === 'webauthn' ? 'fido' : 'x509',
+                                    ref);
+      const view = ev && ev.hardware ? tokens.byKey(ev.token) : null;
+      out = view ? { key: String(view.key), vendor: String(view.vendor),
+                     model: String(view.model), source: String(ev.source),
+                     smartCard: !!ev.smartCard } : null;
+      // WHAT THE ATTESTATION SAID OF THE KEY (#1955 P2, X4), where it said
+      // it: a PIV key's PIN and touch policies, the token's firmware, form
+      // factor and FIPS mark. Absent, never empty, where it did not.
+      if (out) {
+        ['pinPolicy', 'touchPolicy', 'firmware', 'formFactor']
+          .forEach(function (name: string): void {
+            if (ev[name]) {
+              out[name] = String(ev[name]);
+            }
+          });
+        if (ev.fips === true) {
+          out.fips = true;
+        }
+      }
+    } catch (e) {
+      helpers.log.debug("Caught in Authn.hardwareTokenOf(): " +
+                        ((e && e.message) || e));
+      // No register to ask: the event records no token, so nothing is
+      // claimed for it.
+      out = null;
+    }
+    helpers.log.debug("Leaving Authn.hardwareTokenOf(). " +
+                      (out ? out.key : 'none'));
+    return out;
   }
 
   // When a session BEGAN, in milliseconds: its first authentication event.
@@ -11661,6 +11728,10 @@ class Authn {
     const forceMfa = !!opts.forceMfa || chosen.mechanism === 'password-mfa' ||
       (several && allows('password-mfa') && !allows('password') &&
        !allows('webauthn'));
+    // `attested-hardware` (#1955) forces nothing: the screen offers a
+    // passkey and, where the policy takes one, a certificate — the two
+    // credentials a hardware token holds — and no password (`offers()`),
+    // and the issuance policy holds the session to a proven token.
     let forcePasswordless = chosen.mechanism === 'webauthn' ||
       (several && allows('webauthn') && !allows('password') &&
        !allows('password-mfa'));
@@ -14473,8 +14544,10 @@ class Authn {
       ? 'the authentication policy does not take a certificate as a first ' +
         'factor'
       : (record.lockedUsername ? 'a linking sign-in rests on the password'
-      : (restricted.length ? 'the application names the mechanisms it ' +
-                             'allows'
+      // A list naming `attested-hardware` (#1955) takes a smart-card
+      // certificate: that is the one kind a list may name it by.
+      : (restricted.length && restricted.indexOf('attested-hardware') < 0
+        ? 'the application names the mechanisms it allows'
       : (record.forceKey || record.forcePasswordless
         ? 'a security key or a passkey is demanded'
       : (this.usernamelessRequired(record)
@@ -14557,13 +14630,19 @@ class Authn {
     }
     const application = String(record.application || '');
     const credential = { kind: 'certificate',
-                         id: String(holder.credentialId || '') };
+                         id: String(holder.credentialId || ''),
+                         serial: String(holder.serial || '') };
     const assessed = await this.assessSignIn(req, username, record.protocol,
       { application: application, credential: credential,
         // A key may answer as the second factor (#259).
         deviceAwaited: true });
+    // `swk`, or `hwk` (with `sc` for a smart card) where a hardware token's
+    // attestation evidence covers the certificate's key (#1955 P1): the
+    // door's answer, `GET /tls/sign-in`'s rule.
+    const certificateAmr: string[] = Array.isArray(holder.amr) &&
+      holder.amr.length ? holder.amr.map(String) : ['swk'];
     const second = this.beginSecondFactorAfterWallet(req, res, record,
-      username, { amr: ['swk'], acr: '1' }, assessed,
+      username, { amr: certificateAmr, acr: '1' }, assessed,
       { first: 'certificate' });
     if (second.refused) {
       log.debug("Leaving Authn.certificateSignIn(). Refused.");
@@ -14583,7 +14662,7 @@ class Authn {
                    risk: assessed || undefined, credential: credential,
                    method: 'a TLS client certificate on the connection' };
     pending.delete(record.id);
-    const started = this.startSession(res, username, ['swk'], '1',
+    const started = this.startSession(res, username, certificateAmr, '1',
                                       record.protocol, said);
     if (this.refusedSession(res, base, record, username, started, said)) {
       log.debug("Leaving Authn.certificateSignIn(). The session was " +
@@ -14716,7 +14795,7 @@ class Authn {
       return !restricted.length || restricted.indexOf(id) >= 0;
     };
     const screenOffered = offers('password') || offers('password-mfa') ||
-      offers('webauthn');
+      offers('webauthn') || offers('attested-hardware');
     const passwordFirst = policy.allows('password', 'primary') &&
       (offers('password') || offers('password-mfa'));
     // A PASSKEY AND NO USERNAME (#474), where `passkeyOffered()` says so and

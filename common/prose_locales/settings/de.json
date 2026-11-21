@@ -3139,6 +3139,54 @@
     "en": "72d46974270d0c03",
     "text": "Wie viele Anlagen, Entfernungen, Verdrängungen und Konformitätsänderungen von Geräten dieser Vertrauensbereich für Überwachung → Geräte behält. Das älteste wird verworfen, wenn darüber hinaus ein neues verzeichnet wird."
   },
+  "hardwareTokens.hardwareClaims|label": {
+    "en": "8373111eef4bf812",
+    "text": "Was einen Hardware-Schlüssel-Anspruch begründet"
+  },
+  "hardwareTokens.hardwareClaims|description": {
+    "en": "e0341e4e47f3b2f8",
+    "text": "Was einer PKINIT-Anmeldung erlaubt, einen hardwaregebundenen Schlüssel zu beanspruchen (der Indikator pkinit-hardware und amr hwk). `inference`, der Standard und das Verhalten vor #1955: ein Smartcard-Anmeldezertifikat, dessen Schlüssel dieser Dienst nicht erzeugt hat, oder ein erfasster Attestierungsnachweis. `evidence`: nur ein Schlüssel, den die Attestierung eines Hardware-Tokens abdeckt. Eine Zertifikatsanmeldung über TLS erhält hwk, und sc für einen Schlüssel auf einer Smartcard, in beiden Fällen nur aus einem Nachweis."
+  },
+  "openpgp.wkd|label": {
+    "en": "1f05a7518c3d2275",
+    "text": "Schlüssel im Web Key Directory veröffentlichen"
+  },
+  "openpgp.wkd|description": {
+    "en": "7822103f89ac59b3",
+    "text": "Das Web Key Directory (draft-koch-openpgp-webkey-service) für die Mail-Domains dieses Vertrauensbereichs beantworten: /.well-known/openpgpkey/<domain>/hu/<hash> (die erweiterte Methode, auf openpgpkey.<domain>) und /.well-known/openpgpkey/hu/<hash> (die direkte Methode) sowie die jeweilige Richtliniendatei. Beantwortet wird nur der Schlüssel einer Person, die im Portal zugestimmt hat. Standardmäßig aus."
+  },
+  "openpgp.wkdDomains|label": {
+    "en": "d1c4b728593ff000",
+    "text": "Vom Web Key Directory bediente Mail-Domains"
+  },
+  "openpgp.wkdDomains|description": {
+    "en": "ad64f7216191123c",
+    "text": "Die Mail-Domains, für die das Web Key Directory dieses Vertrauensbereichs antwortet, durch Kommas getrennt. Leer, der Standard, bedeutet die eigene DNS-Domain des Vertrauensbereichs. Eine Anfrage ohne Vertrauensbereich im Pfad beantwortet der Vertrauensbereich, der ihre Domain bedient, zuerst der Standard-Vertrauensbereich."
+  },
+  "openpgp.challengeLifetimeS|label": {
+    "en": "dbf558cf0b4b8f90",
+    "text": "Gültigkeitsdauer der Registrierungs-Challenge (Sekunden)"
+  },
+  "openpgp.challengeLifetimeS|description": {
+    "en": "e9130c8e82368cc6",
+    "text": "Wie lange die Challenge gültig bleibt, die eine Person mit gpg --clearsign signiert, um einen OpenPGP-Schlüssel zu registrieren. Sie wird einmal verbraucht, und eine Person hat jeweils nur eine."
+  },
+  "openpgp.signatureSkewS|label": {
+    "en": "d927cf1f04bd9d51",
+    "text": "Zulässige Uhrabweichung der Nachweissignatur (Sekunden)"
+  },
+  "openpgp.signatureSkewS|description": {
+    "en": "2772763d3d363b6d",
+    "text": "Wie weit die Uhr des signierenden Computers von der dieses Dienstes abweichen darf: Ein Nachweis, der um mehr als diesen Wert vor Ausstellung der Challenge oder nach dem jetzigen Zeitpunkt signiert wurde, wird abgelehnt (STS-OPENPGP-0010)."
+  },
+  "openpgp.minRsaBits|label": {
+    "en": "f3dc9f85de143630",
+    "text": "Kleinster RSA-OpenPGP-Schlüssel"
+  },
+  "openpgp.minRsaBits|description": {
+    "en": "ad48516e31a7c45b",
+    "text": "Der kürzeste RSA-Schlüssel, Haupt- oder Unterschlüssel, den eine OpenPGP-Registrierung akzeptiert. Ed25519, Ed448, ECDSA und ECDH auf P-256, P-384 und P-521, X25519 und X448 werden akzeptiert; DSA, ElGamal und die Brainpool-Kurven nie (STS-OPENPGP-0004)."
+  },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
     "text": "Konformitätsberichte pro Feed-Anfrage"
@@ -11715,6 +11763,14 @@
     "en": "50195b20fe00e9fa",
     "text": "Ein Hinweis, der nennt, worum es geht (dieselbe Handlung an demselben Konto), wird in diesem Fenster einmal gesendet, wie viele Türen ihn auch gemeldet haben. 0 schaltet die Unterdrückung aus."
   },
+  "mail.encryptionRequired|label": {
+    "en": "81e5dc8eb5332f2b",
+    "text": "Nachrichten, die verschlüsselt werden müssen"
+  },
+  "mail.encryptionRequired|description": {
+    "en": "895bdb616e169134",
+    "text": "Die Nachrichten, nach Vorlagen-ID (password-reset, account-activation, sign-in-code, sign-in-link, credential-compromised und der Rest der Liste unter Monitoring → Mail), die nur verschlüsselt gesendet werden — PGP/MIME an den OpenPGP-Schlüssel der Person oder S/MIME an ihr Zertifikat, wie sie es im Portal gewählt hat. Einer Person, die keines von beiden gewählt hat, wird die Nachricht nicht gesendet (STS-MAIL-0240), und die anfordernde Verwendung meldet dies wie bei jeder nicht gesendeten Nachricht. Leer, der Standard, verlangt keine; die Wahl einer Person wird in jedem Fall beachtet."
+  },
   "mail.selfServiceReset|label": {
     "en": "8525111d1c0be58a",
     "text": "Selbstbedientes Zurücksetzen des Passworts"
@@ -12658,5 +12714,93 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "Für den Protokoll-Debugger-Listener allein: http.http2MaxConcurrentStreams. -1, der Standard, folgt http.http2MaxConcurrentStreams; jeder andere Wert gilt nur für diesen Listener. Wie viele Anfragen eine HTTP/2-Verbindung zugleich offen haben darf (SETTINGS_MAX_CONCURRENT_STREAMS); ein Stream darüber hinaus wird abgelehnt, bis einer endet. 100, der Standard, ist der kleinste Wert, den RFC 9113 empfiehlt; der eigene von node ist unbegrenzt, wodurch eine Verbindung die Arbeit von Tausenden tragen könnte. Er begrenzt die Arbeit auf einer Verbindung so, wie http.maxConnections die Verbindungen begrenzt. Eine neue Verbindung folgt einer Änderung sofort, und einer offenen wird der neue Wert gesendet."
+  },
+  "piv.attestationAnchors|label": {
+    "en": "ebc10f6a7dcbbf58",
+    "text": "PIV-Attestierungswurzeln (PEM)"
+  },
+  "piv.attestationAnchors|description": {
+    "en": "487e76edeb4446b9",
+    "text": "Die Wurzeln, zu denen eine YubiKey-PIV-Schlüsselattestierung eine Kette bilden muss, als PEM-Bündel. Leer verwendet die beiden, die Yubico veröffentlicht (Yubico PIV Root CA Serial 263751 und Yubico Attestation Root 1 für Firmware 5.7.4 und neuer), ausgeliefert in common/pki_piv_anchors.json und dort per SHA-256 fixiert, zusammen mit Yubicos PIV-Zwischenzertifikaten. Ein Zertifikat hier ersetzt die ausgelieferten Wurzeln."
+  },
+  "piv.requireAttestation|label": {
+    "en": "4e11b0db111faccf",
+    "text": "Eine PIV-Attestierung für die PIV-Profile verlangen"
+  },
+  "piv.requireAttestation|description": {
+    "en": "ef38975436c5ac4f",
+    "text": "Ein: Eine Anforderung eines piv-auth-, piv-sign-, piv-key-management- oder piv-card-auth-Zertifikats wird abgelehnt, sofern sie keine YubiKey-PIV-Attestierung trägt, die sich verifizieren lässt (STS-PIV-0010). Ein hinterlegter piv-key-management-Schlüssel aus EST /serverkeygen ist die Ausnahme: Diesen Schlüssel hat dieser Dienst erzeugt. Aus, die Voreinstellung: Eine solche Anforderung ohne Attestierung wird ohne Hardware-Nachweis ausgestellt; eine Anforderung mit einer Attestierung, die sich nicht verifizieren lässt, wird in beiden Fällen abgelehnt."
+  },
+  "piv.pinPolicy|label": {
+    "en": "0f683a0cb1db1988",
+    "text": "Schwächste PIN-Richtlinie, die ein attestierter PIV-Schlüssel haben darf"
+  },
+  "piv.pinPolicy|description": {
+    "en": "c3f9fcec406b9806",
+    "text": "Was die PIN-Richtlinie der Attestierung mindestens sein muss. `once`: die PIN einmal pro Sitzung (das match-once eines Bio-Schlüssels zählt); `always`: die PIN vor jeder Verwendung (match-always zählt). `any`, die Voreinstellung, verlangt keine PIN-Richtlinie. Ein Schlüssel, dessen Attestierung schwächer ist, wird abgelehnt (STS-PIV-0011)."
+  },
+  "piv.touchPolicy|label": {
+    "en": "a88f111c7b13657f",
+    "text": "Schwächste Berührungsrichtlinie, die ein attestierter PIV-Schlüssel haben darf"
+  },
+  "piv.touchPolicy|description": {
+    "en": "d78f0d5df0256787",
+    "text": "Was die Berührungsrichtlinie der Attestierung mindestens sein muss. `cached`: eine Berührung, 15 Sekunden lang gemerkt; `always`: eine Berührung bei jeder Verwendung. `any`, die Voreinstellung, verlangt keine. Ein Schlüssel, dessen Attestierung schwächer ist, wird abgelehnt (STS-PIV-0012)."
+  },
+  "piv.cardAuthSignIn|label": {
+    "en": "61b2226403ad5c61",
+    "text": "Anmeldung mit einem piv-card-auth-Zertifikat zulassen"
+  },
+  "piv.cardAuthSignIn|description": {
+    "en": "1852da24c3fbfade",
+    "text": "Ein piv-card-auth-Schlüssel (Slot 9e) funktioniert ohne PIN, für den physischen Zutritt; daher wird sein Zertifikat bei der TLS-Anmeldung und bei PKINIT abgelehnt (STS-PIV-0013), sofern dies nicht eingeschaltet ist."
+  },
+  "piv.keyEscrow|label": {
+    "en": "f2efc85c3d2bac38",
+    "text": "piv-key-management-Schlüssel hinterlegen"
+  },
+  "piv.keyEscrow|description": {
+    "en": "cf9618144b67dff3",
+    "text": "Ein: EST /serverkeygen für das Profil piv-key-management behält den erzeugten privaten Schlüssel, versiegelt unter dem Schlüsselverschlüsselungsschlüssel, sodass der Inhaber (im Portal, nach einer erneuten Anmeldung) oder ein Administrator mit der Rolle zur PIV-Schlüsselwiederherstellung ihn wiederherstellen und nach dem Verlust einer Karte alte E-Mails entschlüsseln kann. Abgelehnt, wo kein Schlüsselverschlüsselungsschlüssel vorhanden ist (STS-PIV-0020). Ein hinterlegter Schlüssel ist nie ein Hardware-Nachweis. Aus, die Voreinstellung: /serverkeygen lehnt das Profil piv-key-management ab (STS-PIV-0021), sodass ein 9d-Schlüssel auf der Karte erzeugt und nirgendwo sonst aufbewahrt wird."
+  },
+  "piv.externalIssuers|label": {
+    "en": "e96143ab9556db35",
+    "text": "Externe ausstellende PIV- oder CAC-CAs, zugeordnet über die Karten-UUID (PEM)"
+  },
+  "piv.externalIssuers|description": {
+    "en": "0fb91dba2cb957d3",
+    "text": "Die ausstellenden CAs, deren PIV- oder CAC-Kartenzertifikate eine Person über die FIPS-201-Karten-UUID anmelden: Ein Clientzertifikat, das eine von ihnen direkt ausgestellt hat, das eine Richtlinie aus piv.externalPolicyOids zusichert und genau einen urn:uuid-subjectAltName trägt, wird der einen Person zugeordnet, deren stsPivCardUuid diese UUID enthält. Nie über seinen Namen, und es wird kein Eintrag angelegt. Die CA muss außerdem in einem Client-Truststore sein, sonst lehnt der Handshake sie zuerst ab. Leer, die Voreinstellung, ordnet nichts zu."
+  },
+  "piv.externalPolicyOids|label": {
+    "en": "930c5800dfa36905",
+    "text": "PIV-Authentication-Richtlinien, die eine externe Karte zusichern muss"
+  },
+  "piv.externalPolicyOids|description": {
+    "en": "2398931e8d58f5c4",
+    "text": "Die Zertifikatsrichtlinien, von denen das Zertifikat einer externen Karte eine zusichern muss, um über ihre Karten-UUID zugeordnet zu werden: standardmäßig id-fpki-common-authentication (die PIV Authentication der Federal PKI Common Policy) und id-fpki-certpcy-pivi-hardware (PIV-I). Fügen Sie hier die eigenen Hardware-Richtlinien eines CAC-Ausstellers hinzu."
+  },
+  "pki.paranoidPivAttestation|label": {
+    "en": "e645d02c49d2f9bf",
+    "text": "Paranoid: eine Attestierungskette eines YubiKey-PIV-Schlüssels"
+  },
+  "pki.paranoidPivAttestation|description": {
+    "en": "fdb7c0eb631758ea",
+    "text": "Anwendungsfall `piv-attestation` (#1955): das Attestierungszertifikat des Slots und das f9-Attestierungszertifikat einer PIV-Registrierung. Paranoid prüft das Gültigkeitsfenster zum jetzigen Zeitpunkt, den Pfad zu piv.attestationAnchors und den Widerruf, wo die Kette eine Liste nennt. Aus: Nur dieser Anwendungsfall führt die Pfadprüfung ohne die Feldprüfungen aus, während jede andere Zeile und der Master unberührt bleiben; aus im Produktmodus wird dies einmal protokolliert (STS-PKI-0239) und auf /admin/pki/trust rot dargestellt."
+  },
+  "pki.paranoidPivCard|label": {
+    "en": "4078a93e7117d6f9",
+    "text": "Paranoid: eine externe PIV- oder CAC-Karte, zugeordnet über die Karten-UUID"
+  },
+  "pki.paranoidPivCard|description": {
+    "en": "d4d5fb070575e1c6",
+    "text": "Anwendungsfall `piv-card` (#1955): ein Clientzertifikat von einer ausstellenden CA in piv.externalIssuers, zugeordnet über seine Karten-UUID. Paranoid prüft keyUsage digitalSignature und das Gültigkeitsfenster des Endzertifikats neben der Prüfung des Ausstellers über einen Schritt. Aus: Nur dieser Anwendungsfall führt allein die Ausstellerprüfung aus, während jede andere Zeile und der Master unberührt bleiben; aus im Produktmodus wird dies einmal protokolliert (STS-PKI-0239) und auf /admin/pki/trust rot dargestellt."
+  },
+  "roles.pivKeyRecoveryGroup|label": {
+    "en": "2f231e1e99785dc6",
+    "text": "Gruppe, die die Rolle PIV_KEY_RECOVERY verleiht"
+  },
+  "roles.pivKeyRecoveryGroup|description": {
+    "en": "801616eea12559a5",
+    "text": "Die Verzeichnisgruppe, deren Mitglieder die eingebaute Rolle PIV_KEY_RECOVERY (#1955) innehaben, die die Zugriffskontrollrichtlinie neben Admin-Schreiben verlangt, um den hinterlegten piv-key-management-Schlüssel einer anderen Person wiederherzustellen (piv.keyEscrow). Dieser Schlüssel entschlüsselt die E-Mails der Person, daher hat niemand die Rolle, bis ein Administrator ihn der Gruppe hinzufügt. Leer erlaubt niemandem, den Schlüssel einer anderen Person wiederherzustellen; der Inhaber stellt seinen eigenen im Portal wieder her."
   }
 }

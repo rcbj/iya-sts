@@ -696,8 +696,8 @@
     "text": "minimal: ang permanent-identifier identifier type lang, na dito ay pumapangalan sa sariling directory entry ng account at nagiging urn:sts: subjectAltName nito. Hindi naka-implement ang device-attest-01 challenge at ang WebAuthn attestation statement."
   },
   "stsmetadata.specs.lamps-csr-attestation.coverage": {
-    "en": "727a26e021b5f20f",
-    "text": "partial: ang id-aa-attestation attribute ng isang PKCS#10 request (hindi hihigit sa isa, eksaktong isang AttestationBundle, ang certificate at iba pang choice lang) para sa device profile sa EST at SCEP; ang tanging statement type na vine-verify ay ang tcg-attest-tpm-certify ng TCG sa syntax ng appendix A.2.3 ng revision 20, na hindi pinapalitan ng anumang mas bagong revision o dokumento ng TCG (#257). Hindi binabasa ang CRMF extension (walang CMP dito), at ang ibang statement type ay itinatala, hindi vine-verify. Freshness (section 6.2) sa pamamagitan ng draft-ietf-lamps-attestation-freshness sa EST."
+    "en": "59b1734815ece664",
+    "text": "partial: ang id-aa-attestation attribute ng isang PKCS#10 na kahilingan (hindi hihigit sa isa, eksaktong isang AttestationBundle, ang certificate at iba pang choice lamang), sa EST, SCEP at ACME. Dalawang uri ng statement ang nave-verify: ang tcg-attest-tpm-certify ng TCG sa syntax ng appendix A.2.3 ng revision 20, para sa device profile (#257), at isang YubiKey PIV attestation para sa bawat profile (#1955), sa ilalim ng 1.3.6.1.4.1.41482.3.2 na ang slot certificate ang stmt at ang f9 certificate ay nasa certs, isang uri na pinili ng serbisyong ito dahil walang itinatakda ang draft. Hindi binabasa ang CRMF extension (walang CMP dito), at ang ibang uri ng statement ay itinatala, hindi nave-verify. Freshness (section 6.2) sa pamamagitan ng draft-ietf-lamps-attestation-freshness sa EST, para sa mga TPM statement lamang: walang dalang nonce ang PIV attestation."
   },
   "stsmetadata.specs.lamps-attestation-freshness.coverage": {
     "en": "555e31da7393d476",
@@ -742,6 +742,22 @@
   "stsmetadata.specs.rfc6376.coverage": {
     "en": "95d0cca14dac35d3",
     "text": "partial: pag-sign, relaxed/relaxed, rsa-sha256 na may key na hindi bababa sa 2048 bit (RFC 8301), sa common/crypto.js, sa ipinapadala ng SMTP transport kapag may naka-configure na domain. Wala: simple canonicalization, l= at pag-verify ng mail na ipinadala ng iba — walang tinatanggap na mail ang serbisyong ito. Walang nakarehistrong post-quantum algorithm ang DKIM."
+  },
+  "stsmetadata.specs.rfc9580.coverage": {
+    "en": "086f96d364365827",
+    "text": "partial: pagbasa ng transferable public key, v6 at (RFC 4880) v4, pag-verify ng cleartext signature ng isang signing key nito, at pag-encrypt ng mensahe sa encryption key nito, lahat sa pamamagitan ng openpgp.js (common/crypto.js section 19). Tinatanggap ang Ed25519, Ed448, ECDSA at ECDH sa mga NIST curve, X25519, X448 at RSA na openpgp.minRsaBits; tinatanggihan ang DSA, ElGamal at Brainpool. Kulang: pagpirma, decryption, keyring, keyserver."
+  },
+  "stsmetadata.specs.rfc3156.coverage": {
+    "en": "aa799b14a54ace0f",
+    "text": "partial: multipart/encrypted na may application/pgp-encrypted na version part at ang armored na mensahe, ang tunay na mga header ay protektado sa loob. Kulang: multipart/signed — pinipirmahan ng serbisyong ito ang mail gamit ang DKIM, hindi OpenPGP."
+  },
+  "stsmetadata.specs.rfc8551.coverage": {
+    "en": "a07a1e013186f3d4",
+    "text": "partial: application/pkcs7-mime enveloped-data, isang CMS EnvelopedData na may AES-256-CBC na content encryption at isang RSAES-OAEP (SHA-256) o ECDH key agreement recipient, sa userSMIMECertificate ng tao. Kulang: signed-data, AuthEnvelopedData (AES-GCM), decryption."
+  },
+  "stsmetadata.specs.wkd.coverage": {
+    "en": "e1c6b9651ff1e58c",
+    "text": "partial: ang advanced at ang direct lookup method (ang z-base-32 ng SHA-1 ng local part na naka-lowercase, ang l parameter) at ang policy file, sinasagot para sa mga taong pumayag, bawat realm at naka-off bilang default. Kulang: ang Web Key Service (submission-address, ang submission protocol); ang CORS ay ang allowlist ng serbisyong ito sa halip na ang * ng draft."
   },
   "stsmetadata.specs.rfc8463.coverage": {
     "en": "d4ee4ea51927a6f7",
@@ -1206,6 +1222,22 @@
   "stsmetadata.endpoints./scim/v2/Me.what": {
     "en": "8899a7fad6b6b50c",
     "text": "Ang alias ng section 3.11 para sa subject na pinag-authenticate-an ng request. Nire-resolve ng GET, PUT, PATCH at DELETE ang credential sa isang directory entry at ipinapasa sa PAREHONG mga User handler na ginagamit ng /Users/{id}, kaya walang ikalawang read o write path na kailangang panatilihing kasabay. Dati itong sumasagot ng 501 sa bawat method dahil walang nag-a-authenticate dito, at DALAWA SA MGA 501 NA IYON ANG TAMA PA RIN at pinanatili: walang subject na maa-alias ang ANONYMOUS na caller (hindi available ang alias, na iba sa nawawalang resource), at gagawa ang POST ng subject na ayon sa kahulugan ay umiiral na. Ang credential na nagpapangalan sa taong walang entry — isang client_credentials token, isang client certificate — ay nakakakuha na lang ng 404."
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/:domain/hu/:hash.what": {
+    "en": "0955037976aef471",
+    "text": "draft-koch-openpgp-webkey-service section 3.1, ang advanced method, itinatanong sa openpgpkey.<domain>: ang binary na OpenPGP public key ng taong ang address ay nagha-hash sa :hash (z-base-32 ng SHA-1 ng local part na naka-lowercase, l= ang local part), application/octet-stream at Cache-Control: no-store. Ang taong pumayag lang sa /portal/openpgp ang sinasagot, at kung saan lang naka-on ang openpgp.wkd ng realm at sineserbisyuhan nito ang :domain; ang lahat ng iba ay 404. Ang path na walang realm segment ay sinasagot ng realm na nagseserbisyo sa domain."
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/:domain/policy.what": {
+    "en": "12d81a251721ac64",
+    "text": "Ang policy file ng advanced method: walang laman, text/plain, 200 kung may realm na nagseserbisyo sa :domain at 404 kung wala. Ang pagkakaroon nito ang nagsasabi sa client na umiiral ang directory; walang inaalok na Web Key Service, kaya walang submission-address."
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/hu/:hash.what": {
+    "en": "ea1444452ebedcb6",
+    "text": "Ang direct method: gaya ng advanced, at ang domain ay ang host kung saan ginawa ang request."
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/policy.what": {
+    "en": "701adaefad112fb7",
+    "text": "Ang policy file ng direct method, para sa host kung saan ginawa ang request."
   },
   "stsmetadata.endpoints./.well-known/hoba/register.what": {
     "en": "ea46481cdbde5a44",
@@ -1723,6 +1755,18 @@
     "en": "bcf806336009d1f4",
     "text": "nagka-queue ng test message, o nagse-save o nagre-reset ng pananalita ng isang realm"
   },
+  "stsmetadata.endpoints./admin-api/openpgp.what": {
+    "en": "5d484bf76979cdee",
+    "text": "NON-SPEC (#1955). Ang ipinapakita ng Directory → Mga OpenPGP key: kasama ang ?user=, ang OpenPGP key ng taong iyon, ang kanyang nakabinbing challenge sa pagrehistro, ang kanyang paglalathala sa Web Key Directory, ang kanyang S/MIME certificate at kung paano naka-encrypt ang kanyang mail; at ang switch at mga domain ng Web Key Directory ng realm. Kahalintulad ng GET /admin/openpgp."
+  },
+  "stsmetadata.endpoints./admin-api/openpgp/:action.what": {
+    "en": "b428c51bc9fdc3f1",
+    "text": "NON-SPEC (#1955). challenge, register (publicKey, signed: ang challenge ng tao na pinirmahan gamit ang gpg --clearsign), remove, publish, withdraw, mail-encryption (choice) at smime (certificate), bawat isa ay may { user }: ang inaalok ng /portal/openpgp sa tao, para sa kanya. Nirerehistro lang ang isang key batay sa sariling patunay ng tao."
+  },
+  "stsmetadata.endpoints./admin-api/openpgp/:action.effect": {
+    "en": "a4485fe850562aab",
+    "text": "nag-i-issue ng challenge, nagrerehistro o nag-aalis ng OpenPGP key, inilalathala ito, o itinatakda ang mail encryption o S/MIME certificate ng isang tao"
+  },
   "stsmetadata.endpoints./admin-api/mail/outbox.what": {
     "en": "01316f4579428510",
     "text": "NON-SPEC (#63). Ang iginuguhit ng GET /admin/mail/outbox: bawat mensaheng ini-queue ng realm na ito, para kanino ito at kung ano ang nangyari dito, naka-page at sinasala ayon sa estado at search — hindi kailanman body, maliban sa nahuling mensahe (development) sa pamamagitan ng ?message=. Sinasalamin ang GET /admin/mail/outbox."
@@ -2126,6 +2170,18 @@
   "stsmetadata.endpoints./admin-api/post-login-activities/:action.effect": {
     "en": "0550e836ba364102",
     "text": "nagsisimula, nagpa-pause, nagtutuloy o nagtatapos ng isang aktibidad pagkatapos mag-sign in"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens.what": {
+    "en": "fe8d3ba310ad762b",
+    "text": "NON-SPEC (#1955). Ang iginuguhit ng Directory → Mga hardware token: ang mga pisikal na security key at smart card na naitala ng realm na ito, bawat isa mula sa sarili nitong attestation, naka-page at mahahanap ayon sa serial o tao, kasama ang mga passkey at sertipiko sa bawat isa. Sinasalamin ang GET /admin/hardware-tokens."
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
+    "en": "0d649147af0cbe04",
+    "text": "NON-SPEC (#1955). lost, na may { key }: minamarkahang nawala ang token, inaalis ang bawat passkey dito, binabawi ang bawat sertipiko dito dahil sa keyCompromise, nagpapadala ng CAEP credential-change para sa bawat isa at tinatapos ang mga session na in-sign in ng mga ito. enrol-piv, na may { username, profile, csr, attestationCertificate?, attestationIssuer? }: isang PIV slot certificate na inilabas sa taong iyon sa pamamagitan ng EST Issuing CA, vine-verify ang YubiKey PIV attestation nito at itinatala ang YubiKey. recover-key, na may { username, serial }: ang naka-escrow na piv-key-management key ng taong iyon, na pinahihintulutan lamang ng access-control policy sa PIV_KEY_RECOVERY. Ang tatlong aksiyon ng console sa page na iyon."
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
+    "en": "b55c0cdd477d183e",
+    "text": "iniuulat na nawala ang isang hardware token at inaalis ang mga credential nito, naglalabas ng PIV slot certificate, o nag-aabot ng naka-escrow na key"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -3899,6 +3955,10 @@
     "en": "835d40e9ff6eaabb",
     "text": "HINDI ITO PROTOCOL, at may card ito dahil nag-uulat ang page na ito ng endpoint group na walang card na umaangkin — na siyang patakarang pumipigil sa bagong family na dumating nang walang pasabi, at sulit itong bayaran dito sa halip na gawing kondisyonal ang patakaran. ANG UNANG SURFACE SA SERBISYONG ITO NA PAG-AARI NG TAONG TUMITINGIN DITO: bawat ibang browser page dito ay para sa iba — ang sign-in screen ay isang step sa flow ng ibang protocol, ang consent screen ay nagtatanong ng isang tanong at umaalis, ang /admin ay para sa operator at gated sa dalawang role. Dito nakikita ng tao kung ano ang alam ng identity provider na ito tungkol sa kanila at binabago kung paano sila nag-a-authenticate: ang kanilang password, at ang kanilang mga security key at kung primary credential o second factor ang bawat isa. HIWALAY ITONG APPLICATION mula sa admin console at walang pinaghahatian maliban sa sign-on session sa authorization server ng serbisyong ito: bawat isa ay public OAuth client (sts-user-portal dito) na may hawak ng sarili nitong DPoP-bound na token sa memory. Ang /portal/activate ang unauthenticated na kalahati nito, kung saan ginagamit ng taong na-provision sa pamamagitan ng /admin-api o SCIM ang single-use at may takdang oras na activation link para mag-set up ng credential — naka-hash habang nakaimbak tulad ng password, naka-rate limit, ginagamit kapag natapos ang setup sa halip na kapag binuksan ang link, at hindi kailanman nagsa-sign in ng sinuman. MULA #568 ISA ITONG STATIC APPLICATION sa ibabaw ng /account-api, ang Account API group sa ibaba: isang operation bawat page at bawat form, ang tao ay laging ang subject ng token, inilalarawan ng sarili nitong OpenAPI document."
   },
+  "stsmetadata.protocols.OpenPGP.what": {
+    "en": "f2e7f0580b98e867",
+    "text": "Ang OpenPGP key ng isang tao (#1955), nakarehistro sa portal o ng isang administrator batay sa proof of possession — pinipirmahan ng tao ang isang challenge gamit ang gpg --clearsign, at sa OpenPGP card ng isang YubiKey ang card ang pumipirma — at nakatago sa kanyang entry; nakalathala sa Web Key Directory, kung pipiliin niya at naka-on ito sa realm; at ang key kung saan naka-encrypt ang kanyang mail (PGP/MIME), o ang kanyang S/MIME certificate (S/MIME), ayon sa pinili niya. Puwedeng hingin ng isang realm ang encryption para sa mga piling mensahe (mail.encryptionRequired), na hindi kailanman ipapadala nang hindi naka-encrypt. Walang itinatalang hardware-bound: hindi nakikita ng server ang card. Walang sign-in gamit ang OpenPGP."
+  },
   "stsmetadata.protocols.Reporting.what": {
     "en": "66663fd63a35a287",
     "text": "HINDI ISANG PROTOCOL. Ang reports application (#956): isang static na pahina sa /report sa ibabaw ng /report-api, ang public client na sts-report, at isang catalog ng sariling mga record ng realm na ito. Nagsa-sign in ito sa browser, may hawak na DPoP-bound na token, at hindi kailanman tumatanggap ng SQL string. Ang naka-save na definition ay pag-aari ng may-ari nito; ang share sa isang directory group ay nagbibigay ng pagpapatakbo at pagbabasa, hindi ng pag-edit."
@@ -4070,5 +4130,17 @@
   "stsmetadata.param.aParameter": {
     "en": "24ece2f78749cf6a",
     "text": "isang parameter"
+  },
+  "stsmetadata.specs.yubico-piv-attestation.coverage": {
+    "en": "244659759ede3102",
+    "text": "partial: ang attestation na sertipiko ng slot ay vine-verify sa pamamagitan ng f9 attestation na sertipiko hanggang sa mga PIV root ng Yubico (Serial 263751, at Attestation Root 1 kasama ang mga PIV intermediate nito para sa firmware 5.7.4 pataas, kasama at naka-pin) o sa sariling root ng isang realm; ang key nito ay itinutugma sa key ng kahilingan; binabasa ang mga extension ng firmware, serial, PIN at touch policy at form factor, at itinutugma ang mga policy sa policy ng realm. Hindi kailanman pinamamahalaan ang mismong card: walang pagsulat ng PIN, PUK o slot."
+  },
+  "stsmetadata.specs.fips201.coverage": {
+    "en": "322d92ba9eb36fde",
+    "text": "minimal: ang apat na key slot bilang mga certificate profile (PIV Authentication 9a, Digital Signature 9c, Key Management 9d, Card Authentication 9e, na bilang default ay walang sina-sign in), at isang panlabas na PIV o CAC card na itinutugma ayon sa card UUID sa urn:uuid subjectAltName nito kapag nagsasaad ito ng PIV Authentication policy (naka-off bilang default). Walang FASC-N, CHUID, pamamahala ng card o biometrics."
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/escrowed.what": {
+    "en": "1716521c9c5e119d",
+    "text": "NON-SPEC (#1955). Ang mga naka-escrow na piv-key-management certificate ng isang tao (piv.keyEscrow): serial, subject, validity at kung binawi ang bawat isa. Hindi kailanman isang key. Katapat ng GET /admin/hardware-tokens."
   }
 }

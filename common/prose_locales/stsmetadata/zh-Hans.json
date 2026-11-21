@@ -696,8 +696,8 @@
     "text": "minimal：只有 permanent-identifier 标识符类型，它在此处指代账户自己的目录条目，并成为其 urn:sts: subjectAltName。未实现 device-attest-01 质询和 WebAuthn 证明声明。"
   },
   "stsmetadata.specs.lamps-csr-attestation.coverage": {
-    "en": "727a26e021b5f20f",
-    "text": "partial：PKCS#10 请求的 id-aa-attestation 属性（最多一个，恰好一个 AttestationBundle，仅限证书及其他选项），用于 EST 和 SCEP 上的设备配置文件；唯一被验证的声明类型是 TCG 的 tcg-attest-tpm-certify，采用第 20 修订版附录 A.2.3 的语法，后续修订版或 TCG 文档均未取代它（#257）。不读取 CRMF 扩展（此处没有 CMP），其他声明类型只记录、不验证。新鲜度（第 6.2 节）通过 EST 上的 draft-ietf-lamps-attestation-freshness 实现。"
+    "en": "59b1734815ece664",
+    "text": "partial：PKCS#10 请求的 id-aa-attestation 属性（最多一个，恰好一个 AttestationBundle，仅限 certificate 及其他选项），通过 EST、SCEP 和 ACME 提供。验证两种声明类型：TCG 的 tcg-attest-tpm-certify（采用修订版 20 附录 A.2.3 的语法），用于设备配置文件（#257）；以及适用于每个配置文件的 YubiKey PIV 证明（#1955），位于 1.3.6.1.4.1.41482.3.2 之下，以插槽证书为 stmt、f9 证书放在 certs 中——这是本服务选定的类型，因为草案未定义任何类型。不读取 CRMF 扩展（此处没有 CMP），其他声明类型只记录、不验证。新鲜度（第 6.2 节）通过 EST 上的 draft-ietf-lamps-attestation-freshness 实现，仅适用于 TPM 声明：PIV 证明不携带 nonce。"
   },
   "stsmetadata.specs.lamps-attestation-freshness.coverage": {
     "en": "555e31da7393d476",
@@ -742,6 +742,22 @@
   "stsmetadata.specs.rfc6376.coverage": {
     "en": "95d0cca14dac35d3",
     "text": "partial：签名，relaxed/relaxed，使用至少 2048 位密钥的 rsa-sha256（RFC 8301），在 common/crypto.js 中实现，作用于配置了域时 SMTP 传输发送的内容。缺失：simple 规范化、l= 以及对他人所发邮件的验证——本服务不接收任何邮件。DKIM 尚未注册任何后量子算法。"
+  },
+  "stsmetadata.specs.rfc9580.coverage": {
+    "en": "086f96d364365827",
+    "text": "partial：读取 v6 和（RFC 4880）v4 可传输公钥，验证由其签名密钥作出的明文签名，并将消息加密至其加密密钥，均通过 openpgp.js 完成（common/crypto.js 第 19 节）。接受 Ed25519、Ed448、NIST 曲线上的 ECDSA 和 ECDH、X25519、X448 以及长度为 openpgp.minRsaBits 的 RSA；拒绝 DSA、ElGamal 和 Brainpool。缺少：签名、解密、密钥环、密钥服务器。"
+  },
+  "stsmetadata.specs.rfc3156.coverage": {
+    "en": "aa799b14a54ace0f",
+    "text": "partial：multipart/encrypted，包含 application/pgp-encrypted 版本部分和封装后的消息，真实邮件头受保护地置于其中。缺少：multipart/signed——本服务用 DKIM 而非 OpenPGP 为邮件签名。"
+  },
+  "stsmetadata.specs.rfc8551.coverage": {
+    "en": "a07a1e013186f3d4",
+    "text": "partial：application/pkcs7-mime enveloped-data，即采用 AES-256-CBC 内容加密、以 RSAES-OAEP（SHA-256）或 ECDH 密钥协商为接收者的 CMS EnvelopedData，加密至本人的 userSMIMECertificate。缺少：signed-data、AuthEnvelopedData（AES-GCM）、解密。"
+  },
+  "stsmetadata.specs.wkd.coverage": {
+    "en": "e1c6b9651ff1e58c",
+    "text": "partial：高级和直接两种查找方式（对小写化本地部分计算 SHA-1 并以 z-base-32 编码，l 参数）以及策略文件，仅为选择发布的人员响应，按领域设置且默认关闭。缺少：Web Key Service（submission-address、提交协议）；CORS 使用本服务的允许列表，而非草案中的 *。"
   },
   "stsmetadata.specs.rfc8463.coverage": {
     "en": "d4ee4ea51927a6f7",
@@ -1206,6 +1222,22 @@
   "stsmetadata.endpoints./scim/v2/Me.what": {
     "en": "8899a7fad6b6b50c",
     "text": "第 3.11 节为请求所认证的主体提供的别名。GET、PUT、PATCH 和 DELETE 将凭据解析为目录条目，并委托给 /Users/{id} 使用的同一组 User 处理程序，因此不存在需要保持同步的第二条读写路径。它过去对每种方法都应答 501，因为这里没有任何身份验证，而其中两个 501 仍然是正确的，因此予以保留：匿名调用方没有可作别名的主体（别名不可用，这与资源不存在并不相同），而 POST 将创建一个按定义已经存在的主体。指向没有条目者的凭据——client_credentials 令牌、客户端证书——则改为得到 404。"
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/:domain/hu/:hash.what": {
+    "en": "0955037976aef471",
+    "text": "draft-koch-openpgp-webkey-service 第 3.1 节，高级方式，向 openpgpkey.<domain> 请求：返回地址哈希为 :hash（小写化本地部分 SHA-1 的 z-base-32 编码，l= 为本地部分）的人员的二进制 OpenPGP 公钥，类型为 application/octet-stream，并带 Cache-Control: no-store。只为在 /portal/openpgp 上选择发布的人员响应，且仅当领域已开启 openpgp.wkd 并服务 :domain 时；其他情况均为 404。不含领域段的路径由服务该域的领域响应。"
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/:domain/policy.what": {
+    "en": "12d81a251721ac64",
+    "text": "高级方式的策略文件：内容为空，text/plain，领域服务 :domain 时返回 200，否则返回 404。它的存在即告诉客户端该目录存在；不提供 Web Key Service，因此没有 submission-address。"
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/hu/:hash.what": {
+    "en": "ea1444452ebedcb6",
+    "text": "直接方式：与高级方式相同，域为请求所发往的主机。"
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/policy.what": {
+    "en": "701adaefad112fb7",
+    "text": "直接方式的策略文件，针对请求所发往的主机。"
   },
   "stsmetadata.endpoints./.well-known/hoba/register.what": {
     "en": "ea46481cdbde5a44",
@@ -1723,6 +1755,18 @@
     "en": "bcf806336009d1f4",
     "text": "将测试邮件加入队列，或保存或重置某个领域的措辞"
   },
+  "stsmetadata.endpoints./admin-api/openpgp.what": {
+    "en": "5d484bf76979cdee",
+    "text": "NON-SPEC（#1955）。“目录 → OpenPGP 密钥”页面所显示的内容：带 ?user= 时，返回该人员的 OpenPGP 密钥、其未完成的注册质询、其 Web 密钥目录发布情况、其 S/MIME 证书以及其邮件的加密方式；以及领域的 Web 密钥目录开关和域。对应 GET /admin/openpgp。"
+  },
+  "stsmetadata.endpoints./admin-api/openpgp/:action.what": {
+    "en": "b428c51bc9fdc3f1",
+    "text": "NON-SPEC（#1955）。challenge、register（publicKey、signed：本人用 gpg --clearsign 签署的质询）、remove、publish、withdraw、mail-encryption（choice）和 smime（certificate），每项都带 { user }：即 /portal/openpgp 为本人提供的功能，由管理员代为操作。密钥只有在本人提供证明后才会注册。"
+  },
+  "stsmetadata.endpoints./admin-api/openpgp/:action.effect": {
+    "en": "a4485fe850562aab",
+    "text": "发出质询、注册或删除 OpenPGP 密钥、发布密钥，或设置某人的邮件加密方式或 S/MIME 证书"
+  },
   "stsmetadata.endpoints./admin-api/mail/outbox.what": {
     "en": "01316f4579428510",
     "text": "非规范（#63）。GET /admin/mail/outbox 所绘制的内容：本领域排队的每封邮件、收件人是谁以及其结果如何，分页并可按状态和搜索过滤——从不包含正文，但通过 ?message= 可获取被捕获邮件的正文（开发模式）。对应 GET /admin/mail/outbox。"
@@ -2126,6 +2170,18 @@
   "stsmetadata.endpoints./admin-api/post-login-activities/:action.effect": {
     "en": "0550e836ba364102",
     "text": "启动、暂停、继续或结束登录后活动"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens.what": {
+    "en": "fe8d3ba310ad762b",
+    "text": "NON-SPEC (#1955)。目录 → 硬件令牌所显示的内容：本领域记录的实体安全密钥和智能卡，每个都根据其自身证明记录，可分页并按序列号或人员搜索，并列出每个令牌上的通行密钥和证书。对应 GET /admin/hardware-tokens。"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
+    "en": "0d649147af0cbe04",
+    "text": "NON-SPEC (#1955)。lost，带 { key }：将令牌标记为丢失，删除其上的每个通行密钥，以 keyCompromise 为由吊销其上的每个证书，为每一项发送 CAEP credential-change，并结束由它们登录的会话。enrol-piv，带 { username, profile, csr, attestationCertificate?, attestationIssuer? }：通过 EST 签发 CA 为此人签发 PIV 插槽证书，验证其 YubiKey PIV 证明并记录该 YubiKey。recover-key，带 { username, serial }：此人的托管 piv-key-management 密钥，访问控制策略仅允许 PIV_KEY_RECOVERY 执行。即控制台在该页面上的三项操作。"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
+    "en": "b55c0cdd477d183e",
+    "text": "报告硬件令牌丢失并停用其凭据、签发 PIV 插槽证书，或移交托管密钥"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -3899,6 +3955,10 @@
     "en": "835d40e9ff6eaabb",
     "text": "“它不是协议”，之所以有一张卡片，是因为此页面会报告没有任何卡片认领的端点组——这条规则让新的协议族无法悄无声息地出现，在这里付出这个代价，比让规则附带条件更值得。“这是本服务中第一个属于正在查看它的那个人的界面”：此处其他所有浏览器页面都是为别人准备的——登录界面是另一个协议流程中的一步，同意界面问一个问题就离开，/admin 是给运营人员用的，并受两个角色的关卡保护。这里是一个人查看本身份提供方了解其哪些信息、并更改其认证方式的地方：其密码、其安全密钥，以及每个安全密钥是主凭据还是第二因素。它是“独立于管理控制台的应用”，除本服务授权服务器上的单点登录会话外与之不共享任何东西：两者都是公共 OAuth 客户端（此处为 sts-user-portal），各自在内存中持有自己绑定 DPoP 的令牌。/portal/activate 是其无需认证的那一半，通过 /admin-api 或 SCIM 预配的人在那里使用一次性、有时限的激活链接来设置凭据——静态存储时像密码一样哈希、有速率限制、在设置完成时而非打开链接时用掉，并且绝不会让任何人登录。“自 #568 起，它是基于 /account-api 的静态应用”（即下面的 Account API 组）：每个页面和每个表单对应一个操作，此人始终是令牌的主体，由其自己的 OpenAPI 文档描述。"
   },
+  "stsmetadata.protocols.OpenPGP.what": {
+    "en": "f2e7f0580b98e867",
+    "text": "个人的 OpenPGP 密钥（#1955），在门户上或由管理员凭持有证明注册——本人用 gpg --clearsign 签署质询，在 YubiKey 的 OpenPGP 卡上由卡签名——并保存在其条目上；若本人选择且领域已开启，则在 Web 密钥目录中发布；它也是其邮件加密所用的密钥（PGP/MIME），或按本人选择使用其 S/MIME 证书（S/MIME）。领域可以要求对选定邮件加密（mail.encryptionRequired），这些邮件从不以明文发送。不会将任何密钥记录为绑定硬件：服务器无法看到卡。不支持使用 OpenPGP 登录。"
+  },
   "stsmetadata.protocols.Reporting.what": {
     "en": "66663fd63a35a287",
     "text": "不是协议。报表应用程序（#956）：位于 /report 的静态页面，建立在 /report-api 之上，使用公共客户端 sts-report，以及本领域自身记录的目录。它在浏览器中登录，持有绑定 DPoP 的令牌，并且从不接受 SQL 字符串。已保存的定义属于其所有者；与目录组共享授予运行和读取权限，不授予编辑权限。"
@@ -4070,5 +4130,17 @@
   "stsmetadata.param.aParameter": {
     "en": "24ece2f78749cf6a",
     "text": "一个参数"
+  },
+  "stsmetadata.specs.yubico-piv-attestation.coverage": {
+    "en": "244659759ede3102",
+    "text": "partial：插槽证明证书通过 f9 证明证书验证至 Yubico 的 PIV 根证书（Serial 263751，以及适用于固件 5.7.4 及更高版本、带有其 PIV 中间证书的 Attestation Root 1，均随附并固定）或某个领域自己的根证书；其密钥与请求中的密钥比对；读取固件、序列号、PIN 和触摸策略以及外形规格扩展，并将这些策略与领域的策略比对。卡本身从不受管理：不写入 PIN、PUK 或插槽。"
+  },
+  "stsmetadata.specs.fips201.coverage": {
+    "en": "322d92ba9eb36fde",
+    "text": "minimal：四个密钥插槽作为证书配置文件（PIV Authentication 9a、Digital Signature 9c、Key Management 9d、Card Authentication 9e，后者默认不为任何人登录），以及在声明 PIV Authentication 策略时，按其 urn:uuid subjectAltName 中的卡 UUID 映射的外部 PIV 或 CAC 卡（默认关闭）。不支持 FASC-N、CHUID、卡管理或生物特征识别。"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/escrowed.what": {
+    "en": "1716521c9c5e119d",
+    "text": "NON-SPEC (#1955)。某人的托管 piv-key-management 证书（piv.keyEscrow）：序列号、主体、有效期以及每个证书是否已被吊销。绝不包含密钥。与 GET /admin/hardware-tokens 对应。"
   }
 }

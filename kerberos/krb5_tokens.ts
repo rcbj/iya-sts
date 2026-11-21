@@ -207,6 +207,10 @@ class Krb5Tokens {
     const password = flags.indexOf('pre-authent') !== -1 && !pkinit;
     const hardware = flags.indexOf('hw-authent') !== -1;
     const otp = own.indexOf('otp') !== -1;
+    // A KEY ON A SMART CARD (#1955 P1), from the KDC's own indicator, which
+    // it sets only from a hardware token's attestation evidence.
+    const smartCard = pkinit && hardware &&
+      own.indexOf('pkinit-smartcard') !== -1;
     const amr = [];
     if (password) {
       amr.push('pwd');
@@ -215,6 +219,9 @@ class Krb5Tokens {
       amr.push('hwk');
     } else if (pkinit) {
       amr.push('swk');
+    }
+    if (smartCard) {
+      amr.push('sc');
     }
     if (otp) {
       amr.push('otp');

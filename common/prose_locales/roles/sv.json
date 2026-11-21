@@ -194,5 +194,9 @@
   "roles.console.security.what": {
     "en": "238007ebd246b860",
     "text": "Ändra säkerheten: spara eller återställ en policy under Katalog → Policyer, ange en policy för ett program, en grupp eller en person, tilldela eller återkalla den här rollen och agera på kontot för en person som har den. Admin Write kan inte göra något av detta. DEN INNEFATTAR LÄSNING OCH INTE SKRIVNING, så den kan innehas av någon som annars inte är administratör."
+  },
+  "roles.builtIn.PIV_KEY_RECOVERY.what": {
+    "en": "f2c6cc9cd65c5fc0",
+    "text": "En som återställer deponerade PIV-nyckelhanteringsnycklar: den som är medlem i gruppen som anges av `roles.pivKeyRecoveryGroup` (standard \"piv-key-recovery\"). Det är vad det kräver, utöver Admin Write, att återställa en annan persons deponerade piv-key-management-nyckel via /admin-api/hardware-tokens/recover-key eller konsolen, och inget annat: den nyckeln dekrypterar innehavarens e-post. Innehavaren återställer sin egen på portalen utan den."
   }
 }

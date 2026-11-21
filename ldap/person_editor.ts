@@ -417,6 +417,7 @@ const FIELD_EXAMPLES: Record<string, string> = {
   placeofbirthregion: 'Illinois', placeofbirthlocality: 'Springfield',
   schaccountryofcitizenship: 'US', x500uniqueidentifier: '#\'0101\'B',
   description: 'Joined in 2026',
+  stspivcarduuid: '3f2b7c1e-9d4a-4e6b-8c2f-1a5d7e9b0c34',
   seealso: 'cn=staff,ou=groups,dc=example,dc=com',
   internationalisdnnumber: '+1 555 0105', telexnumber: '123456 ACME US',
   teletexterminalidentifier: 'ACME-01', x121address: '31102100000123',
@@ -678,6 +679,15 @@ class PersonEditor {
       consider(row.attribute, 'The ' + row.noun + ' this person names',
                'policy reference (#1235)', {});
     });
+    // AN OUTSIDE PIV OR CAC CARD'S UUID (#1955 P2, D8), an administrator's to
+    // record: it maps a card certificate from one of the realm's
+    // `piv.externalIssuers` to this person. On neither list above (it is
+    // this service's own, and never the portal's: a person naming a card UUID
+    // themselves would sign in as whoever carries that card). The directory
+    // normalises it and refuses a malformed or a second holder's
+    // (`ldap_server.js`'s `pivCardUuidRefusal()`, STS-PIV-0034 and -0035).
+    consider('stsPivCardUuid', 'Outside PIV or CAC card UUIDs',
+             'FIPS 201-3 card UUID (#1955)', {});
     log.debug("Leaving PersonEditor.universe(). " + editable.length +
               " editable, " + withheld.length + " withheld.");
     return { editable: editable, withheld: withheld };
@@ -1124,16 +1134,20 @@ class PersonEditor {
     // would leave this process. Audit the failure before that return, and
     // do not audit it as a success. `false` is still "not a person".
     if (written && typeof written === 'object') {
+      // The directory's own code where it gave one: STS-LDAP-0211 for the
+      // description, STS-PIV-0034 / -0035 for a card UUID (#1955 P2).
+      const refusedCode = errorCodes.codeOf(written) || 'STS-LDAP-0211';
       audit({ category: 'admin', action: 'admin.user.attribute',
               actor: String(ctx.actor || ''), target: person.dn,
-              outcome: 'failure', errorCode: 'STS-LDAP-0211',
+              outcome: 'failure', errorCode: refusedCode,
               // THE ATTRIBUTE AND THE ACT, NOT THE VALUE — see the header.
               summary: 'could not ' + mode + ' ' + row.name + ' on ' +
                        person.dn,
               detail: { attribute: row.name, mode: mode,
                         values: after.length, via: String(ctx.via || '') } });
       log.debug("Leaving PersonEditor.update(). Not written.");
-      return this.refused('STS-LDAP-0211', (written.errors || [])[0] ||
+      // error-code: none — the directory's code, read off its answer above
+      return this.refused(refusedCode, (written.errors || [])[0] ||
                           'The directory did not store the change.');
     }
     if (!written) {

@@ -1404,6 +1404,25 @@ const JOBS = [
   // paused, resumed and ended. `local: true`: this repository's console and
   // management API.
   { file: 'sts_post_login_activities.js', browser: false },
+  // DIRECTORY → HARDWARE TOKENS (#1955 P1): the console page's shell, the
+  // two operations in the document and the gate, the view's paging and
+  // filters, and the lost-key act's refusals. The register's behaviour
+  // with real tokens is tests/hardware_tokens.js, in process: nothing over
+  // HTTP can make a token, which is recorded only from attestation.
+  { file: 'sts_hardware_tokens.js', browser: false, local: true },
+  // A YUBIKEY PIV KEY ATTESTATION OVER EST (#1955 P2), in a throwaway realm:
+  // an attested request recorded as a hardware token, an attestation of
+  // another key and of another slot refused, enrol-piv on /admin-api, and
+  // escrow refused off, issued (or 503 without a key-encryption key) on,
+  // and not recovered without PIV_KEY_RECOVERY. Its Yubico-shaped chain is
+  // made at run time; the verifier's refusals in full are
+  // tests/piv_attestation.js, in process.
+  { file: 'sts_piv_attestation.js', browser: false, local: true },
+  // OpenPGP KEYS AND THE WEB KEY DIRECTORY OVER HTTP (#1955 P6): a key made
+  // here registered through /admin-api/openpgp on its proof, and the
+  // directory answering it on a domain only this job uses; the depth is
+  // tests/openpgp_keys.js, in process.
+  { file: 'sts_openpgp.js', browser: false, local: true },
   // LINKING A WEBAUTHN PLATFORM CREDENTIAL ON /portal/devices, IN A REAL
   // BROWSER (#258, 2026-10-06): Chrome's virtual authenticators enrol a
   // roaming key and a platform key on /portal/keys; the roaming one is

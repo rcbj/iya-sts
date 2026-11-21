@@ -194,5 +194,9 @@
   "roles.console.security.what": {
     "en": "238007ebd246b860",
     "text": "Baguhin ang seguridad: i-save o i-reset ang isang patakaran sa Directory → Policies, magtakda ng patakaran sa isang application, grupo o tao, ibigay o bawiin ang role na ito, at kumilos sa account ng taong may hawak nito. Wala sa mga ito ang magagawa ng Admin Write. KASAMA ANG PAGBASA AT HINDI ANG PAGSULAT, kaya maaari itong hawakan ng taong hindi naman administrator."
+  },
+  "roles.builtIn.PIV_KEY_RECOVERY.what": {
+    "en": "f2c6cc9cd65c5fc0",
+    "text": "Tagabawi ng mga naka-escrow na PIV key-management key: sinumang miyembro ng grupong pinangalanan ng `roles.pivKeyRecoveryGroup` (default \"piv-key-recovery\"). Ito ang hinihingi, bukod sa Admin Write, ng pagbawi ng naka-escrow na piv-key-management key ng ibang tao sa pamamagitan ng /admin-api/hardware-tokens/recover-key o ng console, at wala nang iba: dine-decrypt ng key na iyon ang mail ng may hawak. Binabawi ng may hawak ang sarili niya sa portal nang wala ito."
   }
 }

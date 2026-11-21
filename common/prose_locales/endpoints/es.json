@@ -431,6 +431,22 @@
     "en": "bfb6c6f542c0607b",
     "text": "/Me, el sujeto autenticado"
   },
+  "endpoints.route./.well-known/openpgpkey/:domain/hu/:hash.name": {
+    "en": "b042a2652a9771c9",
+    "text": "Clave del Web Key Directory (método avanzado)"
+  },
+  "endpoints.route./.well-known/openpgpkey/:domain/policy.name": {
+    "en": "f0c7c4485ab23e66",
+    "text": "Política del Web Key Directory (método avanzado)"
+  },
+  "endpoints.route./.well-known/openpgpkey/hu/:hash.name": {
+    "en": "a8849e1ec8b477d5",
+    "text": "Clave del Web Key Directory (método directo)"
+  },
+  "endpoints.route./.well-known/openpgpkey/policy.name": {
+    "en": "d9805e391b15a7b9",
+    "text": "Política del Web Key Directory (método directo)"
+  },
   "endpoints.route./.well-known/hoba/register.name": {
     "en": "b95adde7badbdef3",
     "text": "Registrar una clave pública HOBA"
@@ -895,6 +911,14 @@
     "en": "cff7055c2db49c6a",
     "text": "Acciones de correo"
   },
+  "endpoints.route./admin-api/openpgp.name": {
+    "en": "bb22bb5b740e327f",
+    "text": "Claves OpenPGP"
+  },
+  "endpoints.route./admin-api/openpgp/:action.name": {
+    "en": "a1147f062fddb7e5",
+    "text": "Acciones sobre claves OpenPGP"
+  },
   "endpoints.route./admin-api/mail/outbox.name": {
     "en": "d40abea9379f4e22",
     "text": "Bandeja de salida de correo"
@@ -1206,6 +1230,14 @@
   "endpoints.route./admin-api/post-login-activities/:action.name": {
     "en": "6bfc2bea96fee884",
     "text": "Iniciar, pausar, reanudar o terminar una actividad posterior al inicio de sesión"
+  },
+  "endpoints.route./admin-api/hardware-tokens.name": {
+    "en": "386404ef0cf5e649",
+    "text": "Tokens de hardware"
+  },
+  "endpoints.route./admin-api/hardware-tokens/:action.name": {
+    "en": "33209f967f070175",
+    "text": "Acciones sobre tokens de hardware"
   },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",
@@ -2566,5 +2598,9 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS (se pide un certificado de cliente, nunca se exige)"
+  },
+  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
+    "en": "f46d01f7581b5379",
+    "text": "Claves PIV en custodia"
   }
 }

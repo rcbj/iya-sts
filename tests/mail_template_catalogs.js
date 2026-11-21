@@ -151,6 +151,15 @@ async function run(t) {
       t.check(!!(file.categories && file.categories[cat.id] &&
                  file.categories[cat.id].reason),
               'A. ' + c.tag + ' has the ' + cat.id + ' reason');
+      // #1955 P6: the neutral Subject of an encrypted message, naming the
+      // service and nothing else.
+      const neutral = file.categories && file.categories[cat.id] &&
+        file.categories[cat.id].encryptedSubject;
+      t.check(typeof neutral === 'string' &&
+              /\{\{service\}\}/.test(neutral) &&
+              MailTemplates.placeholders(neutral).length === 1,
+              'A. ' + c.tag + ' has the ' + cat.id + ' encrypted subject, ' +
+              'with {{service}} and no other placeholder', neutral);
     });
   });
 

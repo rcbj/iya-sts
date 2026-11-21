@@ -332,6 +332,28 @@ class ProtocolStack {
     // #130: the device register (ou=devices), a library over the directory
     // hooks `credentials.ts` carries; Native SSO mints its devices.
     this.build('common/devices', require('./devices'), 'Devices');
+    // #1955 P1: the hardware token register, the device register's sibling
+    // (its header says why it is not one of its entries). A library (rule
+    // 3) over a store of its own; `credentials.addKey()` reaches it at the
+    // write, so it is built beside the credential store, and everything it
+    // calls back (credentials, enrolment, SSF, logout) is reached at the
+    // moment of use.
+    this.build('common/hardware_tokens', require('./hardware_tokens'),
+               'HardwareTokens');
+    // #1955 P2: YubiKey PIV key attestation, the PIV slot profiles' rules
+    // and the outside PIV card mapping. A library (rule 3) of libraries; the
+    // register and enrolment it calls back are reached at the moment of use.
+    this.build('common/piv_attestation', require('./piv_attestation'),
+               'PivAttestation');
+    this.build('common/piv_enrolment', require('./piv_enrolment'),
+               'PivEnrolment');
+    // #1955 P6: a person's OpenPGP key, its Web Key Directory publication
+    // and their mail encryption choice. Built beside the token register,
+    // whose `openpgp` retirer it installs when it is installed (so after
+    // it); `common/mail.ts` (8a-mail) reaches it lazily, and the directory
+    // fills its slot at 21. Its routes register after the directory, below.
+    this.build('common/openpgp_keys', require('./openpgp_keys'),
+               'OpenPgpKeys');
     // #164 phase 2: what a device key's attestation proves
     // (`device_attestation`), which device a request came from
     // (`device_recognition`, asked by `authn` and `oauth2` below), and a
@@ -570,6 +592,14 @@ class ProtocolStack {
                'AccountPassword');
     this.build('portal/account_keys', require('../portal/account_keys'),
                'AccountKeys');
+    // #1955 P1: /portal/tokens' operations, over the token register (built
+    // with the credential store above).
+    this.build('portal/account_tokens', require('../portal/account_tokens'),
+               'AccountTokens');
+    // #1955 P6: /portal/openpgp's operations, over `common/openpgp_keys`
+    // (built beside the token register above).
+    this.build('portal/account_openpgp', require('../portal/account_openpgp'),
+               'AccountOpenPgp');
     this.build('portal/account_mfa', require('../portal/account_mfa'),
                'AccountMfa');
     this.build('portal/account_signing_key', require('../portal/account_signing_key'),
@@ -1631,6 +1661,15 @@ class ProtocolStack {
     this.build('mgmt-api/post_login_activities_api',
                require('../mgmt-api/post_login_activities_api'),
                'PostLoginActivitiesApi');
+    // #1955 P1: the hardware token operations, spread the same way; the
+    // register (built beside the credential store) is reached lazily.
+    this.build('mgmt-api/hardware_tokens_api',
+               require('../mgmt-api/hardware_tokens_api'),
+               'HardwareTokensApi');
+    // #1955 P6: the OpenPGP operations, spread the same way; the module
+    // (built beside the token register) is reached lazily.
+    this.build('mgmt-api/openpgp_api', require('../mgmt-api/openpgp_api'),
+               'OpenPgpApi');
     // #641: the audit export operations, spread by `mgmt-api/admin_api`.
     // The register is built at 18j-vii and reached from the handlers lazily.
     this.build('mgmt-api/audit_export_api',
@@ -1811,6 +1850,11 @@ class ProtocolStack {
     // `mgmt-api/admin_api` reaches it through `scim_clients_api` lazily.
     this.build('scim/scim_client', require('../scim/scim_client'),
                'ScimClients');
+    // #1955 P6: the Web Key Directory (`/.well-known/openpgpkey/*`), after
+    // the directory (21) whose slot it reads people through. Its paths
+    // collide with nothing, so this place is for a reader: beside the other
+    // surface that publishes what a person's entry holds.
+    this.register(app, require('./openpgp_keys'), 'common/openpgp_keys');
     // SPIFFE — the sixteenth family, and the third family here (after Kerberos
     // and the directory) whose own listeners are started from `server.js`'s
     // listen() rather than at require time.

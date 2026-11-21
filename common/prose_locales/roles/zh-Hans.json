@@ -194,5 +194,9 @@
   "roles.console.security.what": {
     "en": "238007ebd246b860",
     "text": "更改安全性：在目录 → 策略中保存或重置策略，为应用程序、组或人员指定策略，授予或撤销此角色，以及对持有此角色的人员的帐户执行操作。Admin Write 无法执行其中任何操作。它包含读取而不包含写入，因此可以由本身不是管理员的人员持有。"
+  },
+  "roles.builtIn.PIV_KEY_RECOVERY.what": {
+    "en": "f2c6cc9cd65c5fc0",
+    "text": "托管 PIV 密钥管理密钥的恢复者：凡是 `roles.pivKeyRecoveryGroup` 所指定组（默认“piv-key-recovery”）的成员即是。通过 /admin-api/hardware-tokens/recover-key 或控制台恢复他人的托管 piv-key-management 密钥时，除 Admin Write 之外还需要它，此外别无他用：该密钥可以解密持有人的邮件。持有人无需此角色即可在门户上恢复自己的密钥。"
   }
 }

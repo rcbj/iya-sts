@@ -696,8 +696,8 @@
     "text": "minimal：僅 permanent-identifier 識別碼類型，在此指名帳戶自己的目錄項目，並成為其 urn:sts: subjectAltName。未實作 device-attest-01 挑戰與 WebAuthn 證明聲明。"
   },
   "stsmetadata.specs.lamps-csr-attestation.coverage": {
-    "en": "727a26e021b5f20f",
-    "text": "partial：透過 EST 與 SCEP 的裝置設定檔，PKCS#10 請求的 id-aa-attestation 屬性（至多一個，恰好一個 AttestationBundle，僅限憑證與其他選項）；唯一會驗證的聲明類型是 TCG 的 tcg-attest-tpm-certify，採用第 20 版附錄 A.2.3 的語法，此語法未被任何後續版本或 TCG 文件取代（#257）。不讀取 CRMF 擴充（此處沒有 CMP），其他聲明類型只記錄、不驗證。新鮮度（第 6.2 節）透過 EST 上的 draft-ietf-lamps-attestation-freshness 提供。"
+    "en": "59b1734815ece664",
+    "text": "partial：PKCS#10 要求的 id-aa-attestation 屬性（最多一個，恰好一個 AttestationBundle，僅限 certificate 及其他選項），透過 EST、SCEP 與 ACME 提供。驗證兩種聲明類型：TCG 的 tcg-attest-tpm-certify（採用修訂版 20 附錄 A.2.3 的語法），用於裝置設定檔（#257）；以及適用於每個設定檔的 YubiKey PIV 證明（#1955），位於 1.3.6.1.4.1.41482.3.2 之下，以插槽憑證為 stmt、f9 憑證放在 certs 中——這是本服務選定的類型，因為草案未定義任何類型。不讀取 CRMF 延伸（此處沒有 CMP），其他聲明類型只記錄、不驗證。新鮮度（第 6.2 節）透過 EST 上的 draft-ietf-lamps-attestation-freshness 實現，僅適用於 TPM 聲明：PIV 證明不攜帶 nonce。"
   },
   "stsmetadata.specs.lamps-attestation-freshness.coverage": {
     "en": "555e31da7393d476",
@@ -742,6 +742,22 @@
   "stsmetadata.specs.rfc6376.coverage": {
     "en": "95d0cca14dac35d3",
     "text": "partial：簽署，relaxed/relaxed，使用至少 2048 位元金鑰的 rsa-sha256（RFC 8301），位於 common/crypto.js，在設定了網域時套用於 SMTP 傳輸所送出的內容。未實作：simple 正規化、l= 以及驗證他人寄出的郵件——本服務不接收任何郵件。DKIM 尚未登錄任何後量子演算法。"
+  },
+  "stsmetadata.specs.rfc9580.coverage": {
+    "en": "086f96d364365827",
+    "text": "partial：讀取 v6 與（RFC 4880）v4 可傳輸公開金鑰，驗證由其簽署金鑰作出的明文簽章，並將訊息加密至其加密金鑰，皆透過 openpgp.js 完成（common/crypto.js 第 19 節）。接受 Ed25519、Ed448、NIST 曲線上的 ECDSA 與 ECDH、X25519、X448 以及長度為 openpgp.minRsaBits 的 RSA；拒絕 DSA、ElGamal 與 Brainpool。缺少：簽署、解密、金鑰環、金鑰伺服器。"
+  },
+  "stsmetadata.specs.rfc3156.coverage": {
+    "en": "aa799b14a54ace0f",
+    "text": "partial：multipart/encrypted，包含 application/pgp-encrypted 版本部分與封裝後的訊息，真正的郵件標頭受保護地置於其中。缺少：multipart/signed——本服務以 DKIM 而非 OpenPGP 簽署郵件。"
+  },
+  "stsmetadata.specs.rfc8551.coverage": {
+    "en": "a07a1e013186f3d4",
+    "text": "partial：application/pkcs7-mime enveloped-data，即採 AES-256-CBC 內容加密、以 RSAES-OAEP（SHA-256）或 ECDH 金鑰協商為收件者的 CMS EnvelopedData，加密至本人的 userSMIMECertificate。缺少：signed-data、AuthEnvelopedData（AES-GCM）、解密。"
+  },
+  "stsmetadata.specs.wkd.coverage": {
+    "en": "e1c6b9651ff1e58c",
+    "text": "partial：進階與直接兩種查詢方式（對轉為小寫的本機部分計算 SHA-1 並以 z-base-32 編碼，l 參數）以及政策檔案，僅為選擇發布者回應，依領域設定且預設關閉。缺少：Web Key Service（submission-address、提交協定）；CORS 採用本服務的允許清單，而非草案的 *。"
   },
   "stsmetadata.specs.rfc8463.coverage": {
     "en": "d4ee4ea51927a6f7",
@@ -1206,6 +1222,22 @@
   "stsmetadata.endpoints./scim/v2/Me.what": {
     "en": "8899a7fad6b6b50c",
     "text": "第 3.11 節中對請求驗證所得主體的別名。GET、PUT、PATCH 與 DELETE 會將認證資訊解析為目錄項目，並委派給 /Users/{id} 使用的「同一組」User 處理常式，因此不會有第二條需要保持同步的讀寫路徑。過去它對每個方法都回應 501，因為這裡沒有任何驗證，而其中「兩個 501 至今仍然正確」並予以保留：「匿名」呼叫端沒有可作為別名的主體（別名無法使用，這與資源不存在不同），而 POST 會建立一個依定義早已存在的主體。指名某個沒有項目者的認證資訊——client_credentials 權杖、用戶端憑證——則改為得到 404。"
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/:domain/hu/:hash.what": {
+    "en": "0955037976aef471",
+    "text": "draft-koch-openpgp-webkey-service 第 3.1 節，進階方式，向 openpgpkey.<domain> 請求：回傳地址雜湊為 :hash（轉為小寫的本機部分之 SHA-1 的 z-base-32 編碼，l= 為本機部分）者的二進位 OpenPGP 公開金鑰，類型為 application/octet-stream，並帶 Cache-Control: no-store。只回應在 /portal/openpgp 上選擇發布者，且僅限領域已開啟 openpgp.wkd 並服務 :domain 時；其他情況一律為 404。不含領域區段的路徑由服務該網域的領域回應。"
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/:domain/policy.what": {
+    "en": "12d81a251721ac64",
+    "text": "進階方式的政策檔案：內容為空，text/plain，領域服務 :domain 時回傳 200，否則回傳 404。它的存在即告知用戶端該目錄存在；不提供 Web Key Service，因此沒有 submission-address。"
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/hu/:hash.what": {
+    "en": "ea1444452ebedcb6",
+    "text": "直接方式：與進階方式相同，網域為請求所送往的主機。"
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/policy.what": {
+    "en": "701adaefad112fb7",
+    "text": "直接方式的政策檔案，針對請求所送往的主機。"
   },
   "stsmetadata.endpoints./.well-known/hoba/register.what": {
     "en": "ea46481cdbde5a44",
@@ -1723,6 +1755,18 @@
     "en": "bcf806336009d1f4",
     "text": "將測試訊息排入佇列，或儲存或重設領域的措辭"
   },
+  "stsmetadata.endpoints./admin-api/openpgp.what": {
+    "en": "5d484bf76979cdee",
+    "text": "NON-SPEC（#1955）。「目錄 → OpenPGP 金鑰」頁面所顯示的內容：帶 ?user= 時，回傳該人員的 OpenPGP 金鑰、其尚未完成的註冊挑戰、其 Web 金鑰目錄發布狀態、其 S/MIME 憑證及其郵件的加密方式；以及領域的 Web 金鑰目錄開關與網域。對應 GET /admin/openpgp。"
+  },
+  "stsmetadata.endpoints./admin-api/openpgp/:action.what": {
+    "en": "b428c51bc9fdc3f1",
+    "text": "NON-SPEC（#1955）。challenge、register（publicKey、signed：本人以 gpg --clearsign 簽署的挑戰）、remove、publish、withdraw、mail-encryption（choice）與 smime（certificate），每項皆帶 { user }：即 /portal/openpgp 為本人提供的功能，由管理員代為操作。金鑰只有在本人提出證明後才會註冊。"
+  },
+  "stsmetadata.endpoints./admin-api/openpgp/:action.effect": {
+    "en": "a4485fe850562aab",
+    "text": "發出挑戰、註冊或移除 OpenPGP 金鑰、發布金鑰，或設定某人的郵件加密方式或 S/MIME 憑證"
+  },
   "stsmetadata.endpoints./admin-api/mail/outbox.what": {
     "en": "01316f4579428510",
     "text": "非規格端點（#63）。GET /admin/mail/outbox 所繪製的內容：此領域排入佇列的每則訊息、寄給誰以及結果如何，可依狀態與搜尋分頁及篩選——絕不含本文，唯一例外是透過 ?message= 取得的已擷取訊息（開發模式）。對應 GET /admin/mail/outbox。"
@@ -2126,6 +2170,18 @@
   "stsmetadata.endpoints./admin-api/post-login-activities/:action.effect": {
     "en": "0550e836ba364102",
     "text": "啟動、暫停、繼續或結束登入後活動"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens.what": {
+    "en": "fe8d3ba310ad762b",
+    "text": "NON-SPEC (#1955)。目錄 → 硬體權杖所顯示的內容：本領域記錄的實體安全金鑰與智慧卡，每個都依其本身的證明記錄，可分頁並依序號或人員搜尋，並列出每個權杖上的密碼金鑰與憑證。對應 GET /admin/hardware-tokens。"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
+    "en": "0d649147af0cbe04",
+    "text": "NON-SPEC (#1955)。lost，帶 { key }：將權杖標記為遺失，移除其上的每個密碼金鑰，以 keyCompromise 為由撤銷其上的每張憑證，為每一項傳送 CAEP credential-change，並結束由它們登入的工作階段。enrol-piv，帶 { username, profile, csr, attestationCertificate?, attestationIssuer? }：透過 EST 簽發 CA 為此人簽發 PIV 插槽憑證，驗證其 YubiKey PIV 證明並記錄該 YubiKey。recover-key，帶 { username, serial }：此人的託管 piv-key-management 金鑰，存取控制原則僅允許 PIV_KEY_RECOVERY 執行。即主控台在該頁面上的三項動作。"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
+    "en": "b55c0cdd477d183e",
+    "text": "回報硬體權杖遺失並停用其憑證、簽發 PIV 插槽憑證，或移交託管金鑰"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -3899,6 +3955,10 @@
     "en": "835d40e9ff6eaabb",
     "text": "「不是協定」，它之所以有一張卡片，是因為此頁面會回報沒有任何卡片認領的端點群組——這條規則讓新的系列無法悄悄出現，在這裡付出代價比讓規則附帶條件更值得。「本服務中第一個屬於正在看它的那個人的介面」：此處每個其他瀏覽器頁面都是為別人準備的——登入畫面是另一個協定流程中的一個步驟，同意畫面問一個問題就離開，/admin 是給營運者的，並以兩個角色管控。這裡是一個人查看此身分識別提供者對其所知、並變更其驗證方式的地方：其密碼、其安全金鑰，以及每把金鑰是主要認證還是第二要素。它是與管理主控台「分開的應用程式」，兩者除了本服務授權伺服器上的單一登入工作階段之外不共用任何東西：各自都是公開 OAuth 用戶端（此處為 sts-user-portal），在記憶體中持有自己的 DPoP 繫結權杖。/portal/activate 是其不需驗證的那一半，透過 /admin-api 或 SCIM 佈建的人在這裡使用一次性、有時效的啟用連結來設定認證——靜態時如密碼般雜湊保存、有速率限制、在設定完成時才用掉而非開啟連結時，且絕不讓任何人登入。「自 #568 起，它是建立在 /account-api 之上的靜態應用程式」，即下方的 Account API 群組：每個頁面與每個表單各一個作業，該人永遠是權杖的主體，並由其自己的 OpenAPI 文件描述。"
   },
+  "stsmetadata.protocols.OpenPGP.what": {
+    "en": "f2e7f0580b98e867",
+    "text": "個人的 OpenPGP 金鑰（#1955），在入口網站上或由管理員憑持有證明註冊——本人以 gpg --clearsign 簽署挑戰，在 YubiKey 的 OpenPGP 卡上由卡片簽署——並存放在其項目上；若本人選擇且領域已開啟，則在 Web 金鑰目錄中發布；它也是其郵件加密所用的金鑰（PGP/MIME），或依本人選擇使用其 S/MIME 憑證（S/MIME）。領域可以要求特定郵件必須加密（mail.encryptionRequired），這些郵件絕不以明文寄送。不會將任何金鑰記錄為綁定硬體：伺服器無法看到卡片。不支援以 OpenPGP 登入。"
+  },
   "stsmetadata.protocols.Reporting.what": {
     "en": "66663fd63a35a287",
     "text": "NOT A PROTOCOL。報表應用程式（#956）：位於 /report、建構在 /report-api 之上的靜態頁面，使用公用用戶端 sts-report，以及此領域自身記錄的目錄。它在瀏覽器中登入，持有繫結 DPoP 的權杖，且從不接受 SQL 字串。已儲存的定義屬於其擁有者；與目錄群組共用授予的是執行與讀取，而不是編輯。"
@@ -4070,5 +4130,17 @@
   "stsmetadata.param.aParameter": {
     "en": "24ece2f78749cf6a",
     "text": "一個參數"
+  },
+  "stsmetadata.specs.yubico-piv-attestation.coverage": {
+    "en": "244659759ede3102",
+    "text": "partial：插槽證明憑證透過 f9 證明憑證驗證至 Yubico 的 PIV 根憑證（Serial 263751，以及適用於韌體 5.7.4 及更新版本、帶有其 PIV 中繼憑證的 Attestation Root 1，皆隨附並釘選）或某個領域自己的根憑證；其金鑰與要求中的金鑰比對；讀取韌體、序號、PIN 與觸碰原則以及外型規格延伸，並將這些原則與領域的原則比對。卡片本身從不受管理：不寫入 PIN、PUK 或插槽。"
+  },
+  "stsmetadata.specs.fips201.coverage": {
+    "en": "322d92ba9eb36fde",
+    "text": "minimal：四個金鑰插槽作為憑證設定檔（PIV Authentication 9a、Digital Signature 9c、Key Management 9d、Card Authentication 9e，後者預設不為任何人登入），以及在宣告 PIV Authentication 原則時，依其 urn:uuid subjectAltName 中的卡片 UUID 對應的外部 PIV 或 CAC 卡片（預設關閉）。不支援 FASC-N、CHUID、卡片管理或生物辨識。"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/escrowed.what": {
+    "en": "1716521c9c5e119d",
+    "text": "NON-SPEC (#1955)。某人的託管 piv-key-management 憑證（piv.keyEscrow）：序號、主體、有效期間以及每張憑證是否已被撤銷。絕不包含金鑰。與 GET /admin/hardware-tokens 對應。"
   }
 }

@@ -321,6 +321,8 @@ holds is the table above; what each module is for is that directory's
 | `common/fga_gate.ts` | `setDecider` (one RFC 9396 detail of an application that enforces fine-grained authorization; EMPTY REFUSES), filled by `xacml/fga_pep.ts` at 23c (#564 P3) | `common/CLAUDE.md`, `xacml/CLAUDE.md` |
 | `common/signer_truststore.ts` | `setDirectory` (a realm's signer truststore entries listed, written and removed), filled by `ldap/ldap_server.js` (#1360) | `common/CLAUDE.md` (3dd) |
 | `authzen/authzen_admin.ts` | `setDirectory` (an entry located, a group's members, a person's `stsAuthzenApplication` written), filled by `ldap/ldap_server.js` (#563) | `authzen/CLAUDE.md` |
+| `common/openpgp_keys.ts` | `setDirectory` (a person located with their S/MIME values, the five OpenPGP/mail-encryption attributes written, a person by `mail`), filled by `ldap/ldap_server.js` (#1955 P6) | `common/CLAUDE.md` (`openpgp_keys.ts`) |
+| `common/hardware_tokens.ts` | `registerRetirer(kind, …)` (a credential kind's lost-key retire action), filled by each later #1955 phase's module for the kind it adds; `fido` and `x509` are built in (#1955 P1) | `common/CLAUDE.md` |
 | `common/roles.js` | `setSelectionReader` (the dynamic roles a session chose and is still eligible for; EMPTY IS NOBODY'S CHOICE), filled by `authn/role_selection.ts` at 23c (#1072) | `common/CLAUDE.md` (3dg) |
 
    **`setTruststore()` is the one slot not filled by the module that owns what
@@ -1221,7 +1223,8 @@ the file the row names.
 | ~~Deactivate anybody on SCIM `active: false`~~ — reversed 2026-09-17 | `scim/CLAUDE.md`, `common/CLAUDE.md` (3at), `authn/CLAUDE.md` |
 | ~~Attest a workload or a node~~ — reversed 2026-09-21 (#40); a TCP caller still is not (#166) | `spiffe/CLAUDE.md` |
 | Revoke a SPIFFE credential — the directory records who may still be ISSUED one | `spiffe/CLAUDE.md`, `ldap/CLAUDE.md` |
-| Match a client certificate from an outside CA by its common name or subject, or create an entry for one — it is the one entry storing it in `userCertificate` (#1061) | `common/CLAUDE.md` (3ag), `tls/CLAUDE.md`, `ldap/CLAUDE.md` |
+| Match a client certificate from an outside CA by its common name or subject, or create an entry for one — it is the one entry storing it in `userCertificate` (#1061), or, for an outside PIV or CAC card from a configured `piv.externalIssuers` CA, the one person whose `stsPivCardUuid` holds its FIPS 201 card UUID (#1955 D8, rcbj 2026-11-20; off by default) | `common/CLAUDE.md` (3ag), `tls/CLAUDE.md`, `ldap/CLAUDE.md` |
+| Issue a PIV slot certificate as hardware-bound without a verified YubiKey PIV attestation, or let a `piv-card-auth` (9e) certificate sign in by default (#1955 P2) | `common/CLAUDE.md` (`piv_attestation.ts`) |
 | Let a group grant anything BY BEING A GROUP | `admin-ui/CLAUDE.md`, `common/CLAUDE.md` |
 | Let an authenticator app be a FIRST factor | `common/CLAUDE.md` |
 | ~~Issue a set of recovery codes on request~~ — reversed 2026-09-11 | `common/CLAUDE.md`, `portal/CLAUDE.md` |
@@ -1249,6 +1252,7 @@ the file the row names.
 | Encrypt an assertion it holds no certificate for — **product refuses**, development sends it in CLEAR | `saml/CLAUDE.md` |
 | Dial a service provider's metadata URL WHILE ISSUING | `saml/CLAUDE.md` |
 | Release a person's DID unless they proved it (or had this realm publish it, #1291), preferred it and consented to it themselves — to a pairwise or ephemeral client only by its opt-in, and never in a SAML assertion (#693) | `oauth-oidc/CLAUDE.md` (*The `did` claim*) |
+| Record an OpenPGP key as hardware-bound, offer a sign-in with OpenPGP, or send `Access-Control-Allow-Origin: *` from the Web Key Directory (#1955 P6) | `common/CLAUDE.md` (`openpgp_keys.ts`) |
 | Let an administrator create or change a did:web it publishes for a person, or bind a credential to a did:web it does not host (#1291) | `oid4vc/CLAUDE.md` (*A PERSON'S PUBLISHED did:web*) |
 
 ## The parent project's paths into this repository

@@ -151,7 +151,19 @@ const PROFILE_DESCRIPTIONS = {
            'mail address.',
   'timestamping': 'A time-stamping authority certificate (timeStamping).',
   'smartcard-logon': 'A smartcard logon certificate carrying the person\'s ' +
-                     'user principal name (userPrincipalName, else mail).'
+                     'user principal name (userPrincipalName, else mail).',
+  // THE PIV SLOT PROFILES (#1955 P2).
+  'piv-auth': 'A PIV Authentication certificate for YubiKey slot 9a ' +
+              '(clientAuth, id-pkinit-KPClientAuth, smart-card logon) ' +
+              'naming the person\'s Kerberos principal.',
+  'piv-sign': 'A PIV Digital Signature certificate for slot 9c ' +
+              '(digitalSignature, nonRepudiation, emailProtection).',
+  'piv-key-management': 'A PIV Key Management certificate for slot 9d ' +
+                        '(keyEncipherment, emailProtection) for the ' +
+                        'person\'s mail address.',
+  'piv-card-auth': 'A PIV Card Authentication certificate for slot 9e, ' +
+                   'which works without a PIN and does not sign in by ' +
+                   'default.'
 };
 
 // Rows per page of an account's orders list (section 7.1.2.1).
@@ -2229,6 +2241,10 @@ class Acme {
           keyAlg: csr.keyAlg,
           requested: requested,
           keySource: 'client',
+          // The request's id-aa-attestation values (#1955 P2): a YubiKey
+          // PIV statement there is verified at issuance, as over EST and
+          // SCEP (`common/piv_attestation.ts`).
+          attestations: csr.attestations,
           via: 'acme'
         });
       } catch (e) {

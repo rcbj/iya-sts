@@ -487,6 +487,50 @@
     "en": "0be46b8b29aaf446",
     "text": "Die Attestierung eines Sicherheitsschlüssels ist nicht mehr vertrauenswürdig: die Android-Attestation-Statusliste von Google widerruft seine Kette"
   },
+  "audit.actions.hardware-token.create.label": {
+    "en": "23939dae5f4b89dc",
+    "text": "Ein Hardware-Token wurde aus seiner Attestierung erfasst"
+  },
+  "audit.actions.hardware-token.credential-add.label": {
+    "en": "79c33d3849e02f0c",
+    "text": "Einem Hardware-Token wurden Anmeldedaten hinzugefügt"
+  },
+  "audit.actions.hardware-token.holder-change.label": {
+    "en": "06fc03f7983fd5ad",
+    "text": "Ein Hardware-Token wurde von einer anderen Person als seinem Inhaber registriert"
+  },
+  "audit.actions.hardware-token.lost.label": {
+    "en": "f7fb5461e2325e1e",
+    "text": "Ein Hardware-Token wurde als verloren gemeldet und seine Anmeldedaten zurückgezogen"
+  },
+  "audit.actions.openpgp.challenge.label": {
+    "en": "454a22b5bcd9d6a2",
+    "text": "Eine Challenge zur Registrierung eines OpenPGP-Schlüssels wurde ausgestellt"
+  },
+  "audit.actions.openpgp.key-registered.label": {
+    "en": "1ed8de1f8777a015",
+    "text": "Ein OpenPGP-Schlüssel wurde auf einen Besitznachweis hin registriert"
+  },
+  "audit.actions.openpgp.key-refused.label": {
+    "en": "f1e7e3c6808ba33b",
+    "text": "Ein OpenPGP-Schlüssel wurde nicht registriert"
+  },
+  "audit.actions.openpgp.key-removed.label": {
+    "en": "89a284fa6508eae4",
+    "text": "Ein OpenPGP-Schlüssel wurde entfernt"
+  },
+  "audit.actions.openpgp.publication.label": {
+    "en": "f6d12f16eca6796a",
+    "text": "Ein OpenPGP-Schlüssel wurde im Web Key Directory veröffentlicht oder daraus zurückgezogen"
+  },
+  "audit.actions.openpgp.mail-encryption.label": {
+    "en": "ba0fb7a4133d94e2",
+    "text": "Die Verschlüsselung der E-Mails an eine Person wurde geändert"
+  },
+  "audit.actions.openpgp.smime-certificate.label": {
+    "en": "663072a33ce1e178",
+    "text": "Das S/MIME-Zertifikat einer Person wurde festgelegt oder entfernt"
+  },
   "audit.actions.device.key-add.label": {
     "en": "6c1b2513c20532ef",
     "text": "Einem Gerät wurde ein Schlüssel hinzugefügt"
@@ -2310,5 +2354,9 @@
   "audit.actions.xacml.pep.cluster.proxy.clear.label": {
     "en": "c2812e5d21fb6dd4",
     "text": "Die Reverse-Proxy-Konfiguration eines Clusters entfernter PEPs wurde entfernt"
+  },
+  "audit.actions.piv-escrow.recover.label": {
+    "en": "0cad829ec7cafc72",
+    "text": "Ein hinterlegter PIV-Key-Management-Schlüssel wurde wiederhergestellt"
   }
 }

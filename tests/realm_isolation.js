@@ -733,6 +733,45 @@ function checkKerberosStores(t) {
 }
 
 // ---------------------------------------------------------------------------
+// 5c-ii. THE HARDWARE TOKEN REGISTER (#1955 P1): declared per realm, which is
+// the declaration half; `tests/hardware_tokens.js` asserts the behaviour — a
+// token recorded in one realm is unknown to another.
+// ---------------------------------------------------------------------------
+function checkHardwareTokenStore(t) {
+  log.debug("Entering checkHardwareTokenStore().");
+  t.log.info('the hardware token register');
+  require('../common/hardware_tokens');
+  const handle = realms.handleFor('hardware_tokens.register');
+  t.check(!!handle, 'hardware_tokens.register is a declared store');
+  if (handle) {
+    t.equal(handle.scope, 'realm', 'the hardware token register is ' +
+            'declared PER REALM', String(handle.scope));
+  }
+  log.debug("Leaving checkHardwareTokenStore().");
+}
+
+// ---------------------------------------------------------------------------
+// 5c-iii. THE OpenPGP STORES (#1955 P6): the registration challenges and the
+// Web Key Directory's publications, declared per realm; `tests/
+// openpgp_keys.js` asserts the behaviour — a challenge issued in one realm is
+// not one in another.
+// ---------------------------------------------------------------------------
+function checkOpenPgpStores(t) {
+  log.debug("Entering checkOpenPgpStores().");
+  t.log.info('the OpenPGP stores');
+  require('../common/openpgp_keys');
+  ['openpgp.challenges', 'openpgp.wkd'].forEach(function (name) {
+    const handle = realms.handleFor(name);
+    t.check(!!handle, name + ' is a declared store');
+    if (handle) {
+      t.equal(handle.scope, 'realm', name + ' is declared PER REALM',
+              String(handle.scope));
+    }
+  });
+  log.debug("Leaving checkOpenPgpStores().");
+}
+
+// ---------------------------------------------------------------------------
 // 5d. GNAP (2026-09-12): twelve stores in `gnap/gnap_store.ts`, the approver
 // index in `gnap/gnap_signals.ts` and the counters in `gnap/gnap_monitor.ts`.
 //
@@ -870,6 +909,8 @@ function run(t) {
   checkScimCounters(t);
   checkSignalRegisters(t);
   checkKerberosStores(t);
+  checkHardwareTokenStore(t);
+  checkOpenPgpStores(t);
   checkGnapStores(t);
   checkChildStores(t);
   checkDefaultUnchanged(t);

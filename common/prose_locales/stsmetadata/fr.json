@@ -696,8 +696,8 @@
     "text": "minimal : uniquement le type d’identifiant permanent-identifier, qui désigne ici l’entrée d’annuaire propre au compte et devient son subjectAltName urn:sts:. Le challenge device-attest-01 et la déclaration d’attestation WebAuthn ne sont pas implémentés."
   },
   "stsmetadata.specs.lamps-csr-attestation.coverage": {
-    "en": "727a26e021b5f20f",
-    "text": "partial : l’attribut id-aa-attestation d’une requête PKCS#10 (au plus un, exactement un AttestationBundle, uniquement le choix certificate et les autres choix) pour le profil device sur EST et SCEP ; le seul type de déclaration vérifié est tcg-attest-tpm-certify du TCG dans la syntaxe de l’annexe A.2.3 de la révision 20, qu’aucune révision ultérieure ni aucun document du TCG ne remplace (#257). L’extension CRMF n’est pas lue (pas de CMP ici), et les autres types de déclaration sont enregistrés, non vérifiés. La fraîcheur (section 6.2) passe par draft-ietf-lamps-attestation-freshness sur EST."
+    "en": "59b1734815ece664",
+    "text": "partial : l’attribut id-aa-attestation d’une demande PKCS#10 (un au plus, exactement un AttestationBundle, le certificat et les autres choix seulement), via EST, SCEP et ACME. Deux types de déclaration sont vérifiés : le tcg-attest-tpm-certify du TCG dans la syntaxe de l’annexe A.2.3 de la révision 20, pour le profil d’appareil (#257), et une attestation PIV de YubiKey pour chaque profil (#1955), sous 1.3.6.1.4.1.41482.3.2, avec le certificat de l’emplacement comme stmt et le certificat f9 dans certs, un type que ce service a choisi parce que le brouillon n’en définit aucun. L’extension CRMF n’est pas lue (pas de CMP ici), et les autres types de déclaration sont enregistrés, non vérifiés. La fraîcheur (section 6.2) via draft-ietf-lamps-attestation-freshness sur EST, pour les déclarations TPM seulement : une attestation PIV ne porte aucun nonce."
   },
   "stsmetadata.specs.lamps-attestation-freshness.coverage": {
     "en": "555e31da7393d476",
@@ -742,6 +742,22 @@
   "stsmetadata.specs.rfc6376.coverage": {
     "en": "95d0cca14dac35d3",
     "text": "partial : la signature, relaxed/relaxed, rsa-sha256 avec une clé d’au moins 2048 bits (RFC 8301), dans common/crypto.js, sur ce qu’envoie le transport SMTP lorsqu’un domaine est configuré. Absents : la canonicalisation simple, l= et la vérification du courrier envoyé par quiconque d’autre — ce service n’en reçoit aucun. DKIM n’a aucun algorithme post-quantique enregistré."
+  },
+  "stsmetadata.specs.rfc9580.coverage": {
+    "en": "086f96d364365827",
+    "text": "partial : lecture d'une clé publique transférable, v6 et (RFC 4880) v4, vérification d'une signature en clair par l'une de ses clés de signature et chiffrement d'un message pour sa clé de chiffrement, le tout via openpgp.js (common/crypto.js, section 19). Ed25519, Ed448, ECDSA et ECDH sur les courbes NIST, X25519, X448 et RSA d'au moins openpgp.minRsaBits sont acceptés ; DSA, ElGamal et Brainpool sont refusés. Manquent : la signature, le déchiffrement, un trousseau, un serveur de clés."
+  },
+  "stsmetadata.specs.rfc3156.coverage": {
+    "en": "aa799b14a54ace0f",
+    "text": "partial : multipart/encrypted avec une partie de version application/pgp-encrypted et le message blindé, les véritables en-têtes protégés à l'intérieur. Manque : multipart/signed — ce service signe les messages avec DKIM, pas avec OpenPGP."
+  },
+  "stsmetadata.specs.rfc8551.coverage": {
+    "en": "a07a1e013186f3d4",
+    "text": "partial : application/pkcs7-mime enveloped-data, un CMS EnvelopedData avec chiffrement du contenu en AES-256-CBC et un destinataire RSAES-OAEP (SHA-256) ou à accord de clé ECDH, pour le userSMIMECertificate de la personne. Manquent : signed-data, AuthEnvelopedData (AES-GCM), le déchiffrement."
+  },
+  "stsmetadata.specs.wkd.coverage": {
+    "en": "e1c6b9651ff1e58c",
+    "text": "partial : les méthodes de recherche avancée et directe (le SHA-1 en z-base-32 de la partie locale en minuscules, le paramètre l) et le fichier de politique, avec réponse pour les personnes ayant accepté, par domaine de confiance et désactivé par défaut. Manque : le Web Key Service (submission-address, le protocole de soumission) ; CORS suit la liste d'autorisation de ce service plutôt que le * du projet de spécification."
   },
   "stsmetadata.specs.rfc8463.coverage": {
     "en": "d4ee4ea51927a6f7",
@@ -1206,6 +1222,22 @@
   "stsmetadata.endpoints./scim/v2/Me.what": {
     "en": "8899a7fad6b6b50c",
     "text": "L’alias de la section 3.11 pour le sujet sous lequel la requête s’est authentifiée. GET, PUT, PATCH et DELETE résolvent le justificatif en une entrée d’annuaire et délèguent aux MÊMES gestionnaires User qu’utilise /Users/{id} ; il n’y a donc pas de second chemin de lecture ou d’écriture à maintenir en phase. Il répondait autrefois 501 à chaque méthode parce que rien ici n’authentifiait, et DEUX DE CES 501 RESTENT JUSTES et sont conservées : un appelant ANONYME n’a aucun sujet à désigner par l’alias (l’alias est indisponible, ce qui n’est pas la même chose qu’une ressource absente), et POST créerait un sujet qui, par définition, existe déjà. Un justificatif désignant quelqu’un sans entrée — un jeton client_credentials, un certificat client — reçoit plutôt une 404."
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/:domain/hu/:hash.what": {
+    "en": "0955037976aef471",
+    "text": "draft-koch-openpgp-webkey-service section 3.1, la méthode avancée, interrogée sur openpgpkey.<domain> : la clé publique OpenPGP binaire de la personne dont l'adresse a pour haché :hash (z-base-32 du SHA-1 de la partie locale en minuscules, l= la partie locale), en application/octet-stream avec Cache-Control: no-store. Seule une personne ayant accepté sur /portal/openpgp reçoit une réponse, et seulement là où le domaine de confiance a activé openpgp.wkd et sert :domain ; tout le reste renvoie 404. Un chemin sans segment de domaine de confiance reçoit la réponse du domaine de confiance qui sert le domaine DNS."
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/:domain/policy.what": {
+    "en": "12d81a251721ac64",
+    "text": "Le fichier de politique de la méthode avancée : vide, en text/plain, 200 là où un domaine de confiance sert :domain et 404 sinon. Sa présence indique au client que l'annuaire existe ; aucun Web Key Service n'est proposé, il n'y a donc pas de submission-address."
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/hu/:hash.what": {
+    "en": "ea1444452ebedcb6",
+    "text": "La méthode directe : comme la méthode avancée, le domaine étant l'hôte auquel la requête a été adressée."
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/policy.what": {
+    "en": "701adaefad112fb7",
+    "text": "Le fichier de politique de la méthode directe, pour l'hôte auquel la requête a été adressée."
   },
   "stsmetadata.endpoints./.well-known/hoba/register.what": {
     "en": "ea46481cdbde5a44",
@@ -1723,6 +1755,18 @@
     "en": "bcf806336009d1f4",
     "text": "met en file un message de test, ou enregistre ou réinitialise la formulation d’un domaine"
   },
+  "stsmetadata.endpoints./admin-api/openpgp.what": {
+    "en": "5d484bf76979cdee",
+    "text": "NON-SPEC (#1955). Ce que dessine Directory → OpenPGP keys : avec ?user=, la clé OpenPGP de cette personne, son défi d'enregistrement en cours, sa publication dans le Web Key Directory, son certificat S/MIME et la façon dont ses messages sont chiffrés ; ainsi que l'interrupteur et les domaines du Web Key Directory du domaine de confiance. Reflète GET /admin/openpgp."
+  },
+  "stsmetadata.endpoints./admin-api/openpgp/:action.what": {
+    "en": "b428c51bc9fdc3f1",
+    "text": "NON-SPEC (#1955). challenge, register (publicKey, signed : le défi de la personne signé avec gpg --clearsign), remove, publish, withdraw, mail-encryption (choice) et smime (certificate), chacun avec { user } : ce que /portal/openpgp propose à la personne, pour son compte. Une clé n'est enregistrée que sur la propre preuve de la personne."
+  },
+  "stsmetadata.endpoints./admin-api/openpgp/:action.effect": {
+    "en": "a4485fe850562aab",
+    "text": "émet un défi, enregistre ou supprime une clé OpenPGP, la publie, ou définit le chiffrement des messages ou le certificat S/MIME d'une personne"
+  },
   "stsmetadata.endpoints./admin-api/mail/outbox.what": {
     "en": "01316f4579428510",
     "text": "NON-SPEC (#63). Ce qu’affiche GET /admin/mail/outbox : chaque message que ce domaine a mis en file, à qui il était destiné et ce qu’il en est advenu, paginé et filtré par état et par recherche — jamais un corps, sauf celui d’un message capturé (développement) via ?message=. Reflète GET /admin/mail/outbox."
@@ -2126,6 +2170,18 @@
   "stsmetadata.endpoints./admin-api/post-login-activities/:action.effect": {
     "en": "0550e836ba364102",
     "text": "lance, met en pause, reprend ou termine une activité après connexion"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens.what": {
+    "en": "fe8d3ba310ad762b",
+    "text": "NON-SPEC (#1955). Ce que dessine Annuaire → Jetons matériels : les clés de sécurité et cartes à puce physiques que ce domaine a enregistrées, chacune à partir de sa propre attestation, paginées et recherchées par numéro de série ou par personne, avec les clés d'accès et certificats de chacune. Reflète GET /admin/hardware-tokens."
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
+    "en": "0d649147af0cbe04",
+    "text": "NON-SPEC (#1955). lost, avec { key } : le jeton est marqué perdu, chaque clé d’accès qu’il porte supprimée, chaque certificat qu’il porte révoqué pour keyCompromise, un credential-change CAEP envoyé pour chacun et les sessions qu’ils ont ouvertes fermées. enrol-piv, avec { username, profile, csr, attestationCertificate?, attestationIssuer? } : un certificat d’emplacement PIV émis pour cette personne par l’AC émettrice EST, son attestation PIV de YubiKey vérifiée et la YubiKey enregistrée. recover-key, avec { username, serial } : la clé piv-key-management séquestrée de cette personne, que la politique de contrôle d’accès ne permet qu’à PIV_KEY_RECOVERY. Les trois actions de la console sur cette page."
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
+    "en": "b55c0cdd477d183e",
+    "text": "déclare un jeton matériel perdu et retire ses identifiants, émet un certificat d’emplacement PIV ou remet une clé séquestrée"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -3899,6 +3955,10 @@
     "en": "835d40e9ff6eaabb",
     "text": "CE N’EST PAS UN PROTOCOLE, et il a une carte parce que cette page signale tout groupe de points de terminaison qu’aucune carte ne revendique — c’est la règle qui empêche une nouvelle famille d’arriver sans être annoncée, et il vaut mieux en payer le prix ici que de rendre la règle conditionnelle. LA PREMIÈRE SURFACE DE CE SERVICE QUI APPARTIENT À LA PERSONNE QUI LA REGARDE : toute autre page de navigateur ici est destinée à quelqu’un d’autre — l’écran de connexion est une étape du flux d’un autre protocole, l’écran de consentement pose une question et s’en va, /admin est destiné à un opérateur et protégé par deux rôles. C’est ici qu’une personne voit ce que ce fournisseur d’identité sait d’elle et modifie sa manière de s’authentifier : son mot de passe, ses clés de sécurité et, pour chacune, si elle est un identifiant principal ou un second facteur. C’est une APPLICATION DISTINCTE de la console d’administration, qui ne partage avec elle que la session d’authentification unique auprès du serveur d’autorisation de ce service : chacune est un client OAuth public (ici sts-user-portal) qui conserve en mémoire son propre jeton lié par DPoP. /portal/activate en est la moitié non authentifiée, où quelqu’un provisionné via /admin-api ou SCIM utilise un lien d’activation à usage unique et limité dans le temps pour configurer un identifiant — haché au repos comme un mot de passe, soumis à une limitation de débit, consommé lorsque la configuration s’achève plutôt qu’à l’ouverture du lien, et ne connectant jamais personne. DEPUIS #568, C’EST UNE APPLICATION STATIQUE au-dessus de /account-api, le groupe Account API ci-dessous : une opération par page et par formulaire, la personne étant toujours le sujet du jeton, décrite par son propre document OpenAPI."
   },
+  "stsmetadata.protocols.OpenPGP.what": {
+    "en": "f2e7f0580b98e867",
+    "text": "La clé OpenPGP d'une personne (#1955), enregistrée sur le portail ou par un administrateur sur preuve de possession — la personne signe un défi avec gpg --clearsign ; sur la carte OpenPGP d'une YubiKey, c'est la carte qui signe — et conservée dans son entrée ; publiée, si elle le souhaite et que le domaine de confiance l'a activé, dans le Web Key Directory ; et la clé pour laquelle ses messages sont chiffrés (PGP/MIME), ou son certificat S/MIME (S/MIME), selon son choix. Un domaine de confiance peut exiger le chiffrement de certains messages (mail.encryptionRequired), qui ne sont alors jamais envoyés en clair. Rien n'est enregistré comme lié au matériel : le serveur ne peut pas voir une carte. Il n'existe pas de connexion par OpenPGP."
+  },
   "stsmetadata.protocols.Reporting.what": {
     "en": "66663fd63a35a287",
     "text": "NON PROTOCOLE. L’application de rapports (#956) : une page statique sur /report au-dessus de /report-api, le client public sts-report, et un catalogue des propres enregistrements de ce domaine. Elle ouvre la session dans le navigateur, détient un jeton lié par DPoP et ne prend jamais de chaîne SQL. Une définition enregistrée appartient à son propriétaire ; un partage avec un groupe d’annuaire accorde l’exécution et la lecture, pas la modification."
@@ -4070,5 +4130,17 @@
   "stsmetadata.param.aParameter": {
     "en": "24ece2f78749cf6a",
     "text": "un paramètre"
+  },
+  "stsmetadata.specs.yubico-piv-attestation.coverage": {
+    "en": "244659759ede3102",
+    "text": "partial : le certificat d’attestation de l’emplacement est vérifié, au travers du certificat d’attestation f9, jusqu’aux racines PIV de Yubico (Serial 263751, et Attestation Root 1 avec ses intermédiaires PIV pour le micrologiciel 5.7.4 et ultérieur, livrées et épinglées) ou celles propres à un domaine ; sa clé est confrontée à celle de la demande ; les extensions de micrologiciel, de numéro de série, de politique de PIN et de toucher et de facteur de forme sont lues, et les politiques confrontées à celles du domaine. La carte elle-même n’est jamais gérée : aucune écriture de PIN, de PUK ni d’emplacement."
+  },
+  "stsmetadata.specs.fips201.coverage": {
+    "en": "322d92ba9eb36fde",
+    "text": "minimal : les quatre emplacements de clé comme profils de certificat (PIV Authentication 9a, Digital Signature 9c, Key Management 9d, Card Authentication 9e, qui ne connecte personne par défaut), et une carte PIV ou CAC externe associée par l’UUID de carte de son subjectAltName urn:uuid lorsqu’elle affirme une politique PIV Authentication (désactivé par défaut). Pas de FASC-N, de CHUID, de gestion de carte ni de biométrie."
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/escrowed.what": {
+    "en": "1716521c9c5e119d",
+    "text": "NON-SPEC (#1955). Les certificats piv-key-management séquestrés d’une personne (piv.keyEscrow) : numéro de série, sujet, validité et si chacun a été révoqué. Jamais une clé. Reflète GET /admin/hardware-tokens."
   }
 }

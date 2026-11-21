@@ -23,6 +23,14 @@
     "en": "7e9175bdd8dd3808",
     "text": "拥有自己的 entityID 和 providerID（创建领域时植入不同的值）、自己的签名密钥、请求状态、工件以及按服务提供方区分的元数据——因此其 URL 既带有领域，也带有 SP 摘要。服务提供方条目是按领域的，原因与 OAuth 客户端相同：它们是领域自己目录中的应用。"
   },
+  "realms.support.openpgp-and-the-web-key-directory.family": {
+    "en": "05e19f1c690a88a0",
+    "text": "OpenPGP 与 Web 密钥目录"
+  },
+  "realms.support.openpgp-and-the-web-key-directory.note": {
+    "en": "400ad738502f9d1f",
+    "text": "个人的 OpenPGP 密钥保存在领域自身目录中的其条目上，其注册质询属于该领域，Web 密钥目录为该领域自己的邮件域（openpgp.wkdDomains，或其 DNS 域）返回其自己人员的密钥。WKD 客户端只知道域，从不知道领域路径，因此不含领域段的请求由服务其域的领域响应，默认领域优先。"
+  },
   "realms.support.ws-trust.family": {
     "en": "3b83c15d86c7c8b4",
     "text": "WS-Trust"

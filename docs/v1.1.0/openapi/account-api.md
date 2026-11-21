@@ -1395,7 +1395,7 @@ Scope: `account:manage`.
 | `action` | empty, or one of `create-eab`, `delete-eab`, `create-challenge`, `delete-challenge`, `revoke` |  | What to do. |
 | `id` | string |  | The challenge password to delete. |
 | `kid` | string |  | The account binding key to delete. |
-| `profile` | empty, or one of `tls-server`, `tls-client`, `tls-server-client`, `digital-signature`, `key-encipherment`, `code-signing`, `email`, `timestamping`, `smartcard-logon`, `device` |  | The profile a new SCEP challenge is for. |
+| `profile` | empty, or one of `tls-server`, `tls-client`, `tls-server-client`, `digital-signature`, `key-encipherment`, `code-signing`, `email`, `timestamping`, `smartcard-logon`, `piv-auth`, `piv-sign`, `piv-key-management`, `piv-card-auth`, `device` |  | The profile a new SCEP challenge is for. |
 | `reason` | empty, or one of `unspecified`, `keyCompromise`, `affiliationChanged`, `superseded`, `cessationOfOperation` |  | The RFC 5280 reason for a revocation. |
 | `serial` | string |  | The serial of the certificate to revoke. |
 
@@ -6500,6 +6500,302 @@ Built from the operation table at the moment it is asked, for the realm it is as
 | `errors[]` | string |  |  |
 | `ok` | boolean |  |  |
 
+## GET /account-api/openpgp
+
+`getOpenPgp`
+
+**Your OpenPGP key and mail encryption**
+
+Your registered OpenPGP public key, the registration challenge you were issued, whether your key is published in the Web Key Directory, your S/MIME certificate and how mail to you is encrypted.
+
+The door of the portal's `GET /portal/openpgp`.
+
+Scope: `account:manage`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
+**200**: The answer.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `challenge` | object, or null | yes | The person's outstanding registration challenge (#1955): the text to sign with `gpg --clearsign`. |
+| `challenge.expiresAt` | string | yes | When it lapses, ISO 8601. |
+| `challenge.text` | string | yes |  |
+| `key` | object, or null | yes | The person's registered OpenPGP public key (#1955). |
+| `key.algorithm` | string | yes | The primary key's algorithm, as openpgp.js names it (`ed25519`, `eddsaLegacy ed25519Legacy`, `ecdsa nistP256`, `rsaEncryptSign 4096`). |
+| `key.armored` | string | yes | The public key, ASCII-armored. |
+| `key.created` | string | yes | When the key was made, ISO 8601. |
+| `key.encryption` | string | yes | The encryption key's algorithm; empty for a key with none valid when registered. |
+| `key.expiresAt` | string | yes | When it expires, ISO 8601; empty for never. |
+| `key.fingerprint` | string | yes | The fingerprint, lower-case hex: 40 characters for a v4 key, 64 for a v6 one. |
+| `key.registeredAt` | string | yes | When it was registered, ISO 8601. |
+| `key.registeredVia` | string | yes | Where: `portal` or `api`. |
+| `key.userIds` | list | yes | The user ids that carried the entry's address when it was registered. |
+| `key.userIds[]` | string |  |  |
+| `key.version` | integer | yes | The key version, 4 or 6. |
+| `mail` | string | yes | The address on the caller's entry, which a key's user id must carry. |
+| `mailEncryption` | object | yes | How mail to the person is encrypted (#1955). |
+| `mailEncryption.choice` | string | yes | `none`, `openpgp` or `smime`. |
+| `mailEncryption.openpgpUsable` | boolean | yes | Whether the registered OpenPGP key has an encryption key valid now. |
+| `mailEncryption.smimeCertificate` | object, or null | yes |  |
+| `mailEncryption.smimeCertificate.serial` | string | yes |  |
+| `mailEncryption.smimeCertificate.subject` | string | yes |  |
+| `mailEncryption.smimeProblem` | string | yes | Why no S/MIME certificate on the entry can receive, in English; empty otherwise. |
+| `mailEncryption.smimeUsable` | boolean | yes | Whether the person's userSMIMECertificate holds a certificate that can receive now. |
+| `wkd` | object | yes | The person's Web Key Directory publication (#1955). |
+| `wkd.domainServed` | boolean | yes | Whether the domain of the person's address is one the realm's directory serves. |
+| `wkd.enabled` | boolean | yes | Whether the realm answers the Web Key Directory (`openpgp.wkd`). |
+| `wkd.hash` | string | yes | The hashed local part of the person's address, z-base-32. |
+| `wkd.optedIn` | boolean | yes | Whether the person chose to publish their key. |
+| `wkd.published` | boolean | yes | Whether it is answered now: a key, the choice, the realm's switch and a domain the realm serves. |
+| `wkd.url` | string | yes | The advanced method's URL for the address; empty without one. |
+
+**400**: The request did not validate, or was refused: `{ ok: false, errors: [...] }`.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**401**: No access token, or one that does not verify, has expired, was revoked, outlived its sign-on session, or came without its DPoP proof. `WWW-Authenticate` says which.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**403**: The token is for another audience or does not carry `account:manage`, or the access policy refused the person.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+## POST /account-api/openpgp
+
+`actOnOpenPgp`
+
+**Registers, removes or publishes your OpenPGP key, or sets your mail encryption**
+
+`challenge` issues a registration challenge (one at a time, for `openpgp.challengeLifetimeS`). `register` takes `publicKey` (one armored public key) and `signed` (the challenge signed with `gpg --clearsign`; on a YubiKey OpenPGP card the card signs): the key must be neither revoked nor expired, use an accepted algorithm, carry a valid user id with your entry's address, and have signed exactly the challenge since it was issued. `remove` removes it. `publish` and `withdraw` set whether the Web Key Directory answers it. `mail-encryption` takes `choice` (`none`, `openpgp`, `smime`). `smime` takes `certificate` (a PEM certificate naming your address; empty removes it). It asks for a recent sign-in. A refusal carries the page's `view`.
+
+The door of the portal's `POST /portal/openpgp`.
+
+Scope: `account:manage`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `action` | one of `challenge`, `register`, `remove`, `publish`, `withdraw`, `mail-encryption`, `smime` | yes | What to do. |
+| `certificate` | string |  | `smime`: a PEM or base64 DER certificate; empty removes it. |
+| `choice` | string |  | `mail-encryption`: `none`, `openpgp` or `smime`. |
+| `publicKey` | string |  | `register`: the armored OpenPGP public key. |
+| `signed` | string |  | `register`: the challenge signed with `gpg --clearsign`. |
+
+**200**: The answer.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `message` | string | yes |  |
+| `ok` | boolean | yes |  |
+| `view` | object | yes |  |
+| `view.challenge` | object, or null | yes | The person's outstanding registration challenge (#1955): the text to sign with `gpg --clearsign`. |
+| `view.challenge.expiresAt` | string | yes | When it lapses, ISO 8601. |
+| `view.challenge.text` | string | yes |  |
+| `view.key` | object, or null | yes | The person's registered OpenPGP public key (#1955). |
+| `view.key.algorithm` | string | yes | The primary key's algorithm, as openpgp.js names it (`ed25519`, `eddsaLegacy ed25519Legacy`, `ecdsa nistP256`, `rsaEncryptSign 4096`). |
+| `view.key.armored` | string | yes | The public key, ASCII-armored. |
+| `view.key.created` | string | yes | When the key was made, ISO 8601. |
+| `view.key.encryption` | string | yes | The encryption key's algorithm; empty for a key with none valid when registered. |
+| `view.key.expiresAt` | string | yes | When it expires, ISO 8601; empty for never. |
+| `view.key.fingerprint` | string | yes | The fingerprint, lower-case hex: 40 characters for a v4 key, 64 for a v6 one. |
+| `view.key.registeredAt` | string | yes | When it was registered, ISO 8601. |
+| `view.key.registeredVia` | string | yes | Where: `portal` or `api`. |
+| `view.key.userIds` | list | yes | The user ids that carried the entry's address when it was registered. |
+| `view.key.userIds[]` | string |  |  |
+| `view.key.version` | integer | yes | The key version, 4 or 6. |
+| `view.mail` | string | yes | The address on the caller's entry, which a key's user id must carry. |
+| `view.mailEncryption` | object | yes | How mail to the person is encrypted (#1955). |
+| `view.mailEncryption.choice` | string | yes | `none`, `openpgp` or `smime`. |
+| `view.mailEncryption.openpgpUsable` | boolean | yes | Whether the registered OpenPGP key has an encryption key valid now. |
+| `view.mailEncryption.smimeCertificate` | object, or null | yes |  |
+| `view.mailEncryption.smimeCertificate.serial` | string | yes |  |
+| `view.mailEncryption.smimeCertificate.subject` | string | yes |  |
+| `view.mailEncryption.smimeProblem` | string | yes | Why no S/MIME certificate on the entry can receive, in English; empty otherwise. |
+| `view.mailEncryption.smimeUsable` | boolean | yes | Whether the person's userSMIMECertificate holds a certificate that can receive now. |
+| `view.wkd` | object | yes | The person's Web Key Directory publication (#1955). |
+| `view.wkd.domainServed` | boolean | yes | Whether the domain of the person's address is one the realm's directory serves. |
+| `view.wkd.enabled` | boolean | yes | Whether the realm answers the Web Key Directory (`openpgp.wkd`). |
+| `view.wkd.hash` | string | yes | The hashed local part of the person's address, z-base-32. |
+| `view.wkd.optedIn` | boolean | yes | Whether the person chose to publish their key. |
+| `view.wkd.published` | boolean | yes | Whether it is answered now: a key, the choice, the realm's switch and a domain the realm serves. |
+| `view.wkd.url` | string | yes | The advanced method's URL for the address; empty without one. |
+
+**400**: The request did not validate, or was refused: `{ ok: false, errors: [...] }`.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `errors` | list | yes |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean | yes |  |
+| `view` | object |  |  |
+| `view.challenge` | object, or null | yes | The person's outstanding registration challenge (#1955): the text to sign with `gpg --clearsign`. |
+| `view.challenge.expiresAt` | string | yes | When it lapses, ISO 8601. |
+| `view.challenge.text` | string | yes |  |
+| `view.key` | object, or null | yes | The person's registered OpenPGP public key (#1955). |
+| `view.key.algorithm` | string | yes | The primary key's algorithm, as openpgp.js names it (`ed25519`, `eddsaLegacy ed25519Legacy`, `ecdsa nistP256`, `rsaEncryptSign 4096`). |
+| `view.key.armored` | string | yes | The public key, ASCII-armored. |
+| `view.key.created` | string | yes | When the key was made, ISO 8601. |
+| `view.key.encryption` | string | yes | The encryption key's algorithm; empty for a key with none valid when registered. |
+| `view.key.expiresAt` | string | yes | When it expires, ISO 8601; empty for never. |
+| `view.key.fingerprint` | string | yes | The fingerprint, lower-case hex: 40 characters for a v4 key, 64 for a v6 one. |
+| `view.key.registeredAt` | string | yes | When it was registered, ISO 8601. |
+| `view.key.registeredVia` | string | yes | Where: `portal` or `api`. |
+| `view.key.userIds` | list | yes | The user ids that carried the entry's address when it was registered. |
+| `view.key.userIds[]` | string |  |  |
+| `view.key.version` | integer | yes | The key version, 4 or 6. |
+| `view.mail` | string | yes | The address on the caller's entry, which a key's user id must carry. |
+| `view.mailEncryption` | object | yes | How mail to the person is encrypted (#1955). |
+| `view.mailEncryption.choice` | string | yes | `none`, `openpgp` or `smime`. |
+| `view.mailEncryption.openpgpUsable` | boolean | yes | Whether the registered OpenPGP key has an encryption key valid now. |
+| `view.mailEncryption.smimeCertificate` | object, or null | yes |  |
+| `view.mailEncryption.smimeCertificate.serial` | string | yes |  |
+| `view.mailEncryption.smimeCertificate.subject` | string | yes |  |
+| `view.mailEncryption.smimeProblem` | string | yes | Why no S/MIME certificate on the entry can receive, in English; empty otherwise. |
+| `view.mailEncryption.smimeUsable` | boolean | yes | Whether the person's userSMIMECertificate holds a certificate that can receive now. |
+| `view.wkd` | object | yes | The person's Web Key Directory publication (#1955). |
+| `view.wkd.domainServed` | boolean | yes | Whether the domain of the person's address is one the realm's directory serves. |
+| `view.wkd.enabled` | boolean | yes | Whether the realm answers the Web Key Directory (`openpgp.wkd`). |
+| `view.wkd.hash` | string | yes | The hashed local part of the person's address, z-base-32. |
+| `view.wkd.optedIn` | boolean | yes | Whether the person chose to publish their key. |
+| `view.wkd.published` | boolean | yes | Whether it is answered now: a key, the choice, the realm's switch and a domain the realm serves. |
+| `view.wkd.url` | string | yes | The advanced method's URL for the address; empty without one. |
+
+**401**: No access token, or one that does not verify, has expired, was revoked, outlived its sign-on session, or came without its DPoP proof. `WWW-Authenticate` says which.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**403**: The token is for another audience or does not carry `account:manage`, or the access policy refused the person.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**404**: There is no entry for you in this realm.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `errors` | list | yes |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean | yes |  |
+| `view` | object |  |  |
+| `view.challenge` | object, or null | yes | The person's outstanding registration challenge (#1955): the text to sign with `gpg --clearsign`. |
+| `view.challenge.expiresAt` | string | yes | When it lapses, ISO 8601. |
+| `view.challenge.text` | string | yes |  |
+| `view.key` | object, or null | yes | The person's registered OpenPGP public key (#1955). |
+| `view.key.algorithm` | string | yes | The primary key's algorithm, as openpgp.js names it (`ed25519`, `eddsaLegacy ed25519Legacy`, `ecdsa nistP256`, `rsaEncryptSign 4096`). |
+| `view.key.armored` | string | yes | The public key, ASCII-armored. |
+| `view.key.created` | string | yes | When the key was made, ISO 8601. |
+| `view.key.encryption` | string | yes | The encryption key's algorithm; empty for a key with none valid when registered. |
+| `view.key.expiresAt` | string | yes | When it expires, ISO 8601; empty for never. |
+| `view.key.fingerprint` | string | yes | The fingerprint, lower-case hex: 40 characters for a v4 key, 64 for a v6 one. |
+| `view.key.registeredAt` | string | yes | When it was registered, ISO 8601. |
+| `view.key.registeredVia` | string | yes | Where: `portal` or `api`. |
+| `view.key.userIds` | list | yes | The user ids that carried the entry's address when it was registered. |
+| `view.key.userIds[]` | string |  |  |
+| `view.key.version` | integer | yes | The key version, 4 or 6. |
+| `view.mail` | string | yes | The address on the caller's entry, which a key's user id must carry. |
+| `view.mailEncryption` | object | yes | How mail to the person is encrypted (#1955). |
+| `view.mailEncryption.choice` | string | yes | `none`, `openpgp` or `smime`. |
+| `view.mailEncryption.openpgpUsable` | boolean | yes | Whether the registered OpenPGP key has an encryption key valid now. |
+| `view.mailEncryption.smimeCertificate` | object, or null | yes |  |
+| `view.mailEncryption.smimeCertificate.serial` | string | yes |  |
+| `view.mailEncryption.smimeCertificate.subject` | string | yes |  |
+| `view.mailEncryption.smimeProblem` | string | yes | Why no S/MIME certificate on the entry can receive, in English; empty otherwise. |
+| `view.mailEncryption.smimeUsable` | boolean | yes | Whether the person's userSMIMECertificate holds a certificate that can receive now. |
+| `view.wkd` | object | yes | The person's Web Key Directory publication (#1955). |
+| `view.wkd.domainServed` | boolean | yes | Whether the domain of the person's address is one the realm's directory serves. |
+| `view.wkd.enabled` | boolean | yes | Whether the realm answers the Web Key Directory (`openpgp.wkd`). |
+| `view.wkd.hash` | string | yes | The hashed local part of the person's address, z-base-32. |
+| `view.wkd.optedIn` | boolean | yes | Whether the person chose to publish their key. |
+| `view.wkd.published` | boolean | yes | Whether it is answered now: a key, the choice, the realm's switch and a domain the realm serves. |
+| `view.wkd.url` | string | yes | The advanced method's URL for the address; empty without one. |
+
+**500**: The act verified but could not be written, or threw.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `errors` | list | yes |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean | yes |  |
+| `view` | object |  |  |
+| `view.challenge` | object, or null | yes | The person's outstanding registration challenge (#1955): the text to sign with `gpg --clearsign`. |
+| `view.challenge.expiresAt` | string | yes | When it lapses, ISO 8601. |
+| `view.challenge.text` | string | yes |  |
+| `view.key` | object, or null | yes | The person's registered OpenPGP public key (#1955). |
+| `view.key.algorithm` | string | yes | The primary key's algorithm, as openpgp.js names it (`ed25519`, `eddsaLegacy ed25519Legacy`, `ecdsa nistP256`, `rsaEncryptSign 4096`). |
+| `view.key.armored` | string | yes | The public key, ASCII-armored. |
+| `view.key.created` | string | yes | When the key was made, ISO 8601. |
+| `view.key.encryption` | string | yes | The encryption key's algorithm; empty for a key with none valid when registered. |
+| `view.key.expiresAt` | string | yes | When it expires, ISO 8601; empty for never. |
+| `view.key.fingerprint` | string | yes | The fingerprint, lower-case hex: 40 characters for a v4 key, 64 for a v6 one. |
+| `view.key.registeredAt` | string | yes | When it was registered, ISO 8601. |
+| `view.key.registeredVia` | string | yes | Where: `portal` or `api`. |
+| `view.key.userIds` | list | yes | The user ids that carried the entry's address when it was registered. |
+| `view.key.userIds[]` | string |  |  |
+| `view.key.version` | integer | yes | The key version, 4 or 6. |
+| `view.mail` | string | yes | The address on the caller's entry, which a key's user id must carry. |
+| `view.mailEncryption` | object | yes | How mail to the person is encrypted (#1955). |
+| `view.mailEncryption.choice` | string | yes | `none`, `openpgp` or `smime`. |
+| `view.mailEncryption.openpgpUsable` | boolean | yes | Whether the registered OpenPGP key has an encryption key valid now. |
+| `view.mailEncryption.smimeCertificate` | object, or null | yes |  |
+| `view.mailEncryption.smimeCertificate.serial` | string | yes |  |
+| `view.mailEncryption.smimeCertificate.subject` | string | yes |  |
+| `view.mailEncryption.smimeProblem` | string | yes | Why no S/MIME certificate on the entry can receive, in English; empty otherwise. |
+| `view.mailEncryption.smimeUsable` | boolean | yes | Whether the person's userSMIMECertificate holds a certificate that can receive now. |
+| `view.wkd` | object | yes | The person's Web Key Directory publication (#1955). |
+| `view.wkd.domainServed` | boolean | yes | Whether the domain of the person's address is one the realm's directory serves. |
+| `view.wkd.enabled` | boolean | yes | Whether the realm answers the Web Key Directory (`openpgp.wkd`). |
+| `view.wkd.hash` | string | yes | The hashed local part of the person's address, z-base-32. |
+| `view.wkd.optedIn` | boolean | yes | Whether the person chose to publish their key. |
+| `view.wkd.published` | boolean | yes | Whether it is answered now: a key, the choice, the realm's switch and a domain the realm serves. |
+| `view.wkd.url` | string | yes | The advanced method's URL for the address; empty without one. |
+
 ## GET /account-api/overview
 
 `getOverview`
@@ -9552,6 +9848,405 @@ Scope: `account:manage`.
 | `view.tls.trusted` | boolean |  |  |
 | `view.tokenEndpoint` | string |  |  |
 | `view.username` | string |  |  |
+
+## GET /account-api/tokens
+
+`getTokens`
+
+**Your hardware tokens**
+
+Each physical security key or smart card this realm recorded you as holding, from its attestation: its vendor, serial, model and form factor, whether it is active or was reported lost, and your credentials on it.
+
+The door of the portal's `GET /portal/tokens`.
+
+Scope: `account:manage`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
+**200**: The answer.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `escrowed` | list | yes | The caller's escrowed piv-key-management certificates (#1955 P2), newest first; never a key. |
+| `escrowed[].issuedAt` | string | yes |  |
+| `escrowed[].notAfter` | string | yes |  |
+| `escrowed[].profile` | string | yes |  |
+| `escrowed[].revoked` | boolean | yes | Whether the certificate was revoked; its escrowed key is still recoverable. |
+| `escrowed[].serialHex` | string | yes | The certificate's serial, lower-case hex: what `recover-key` and `attach-key` name. |
+| `escrowed[].subject` | string | yes |  |
+| `issued` | object |  | `enrol-piv`'s answer only: the certificate issued, drawn once. |
+| `issued.attested` | boolean | yes | Whether a YubiKey PIV attestation of the key verified. |
+| `issued.certificatePem` | string | yes | The certificate, PEM: import it with ykman piv certificates import. |
+| `issued.chainPem` | list | yes | The issuing chain, PEM, nearest first. |
+| `issued.chainPem[]` | string |  |  |
+| `issued.profile` | string | yes |  |
+| `issued.serialHex` | string | yes | The issued certificate's serial, lower-case hex. |
+| `issued.token` | string | yes | The hardware token it was recorded on, `<vendor>/<serial>`, or empty. |
+| `piv` | object | yes | What the PIV enrolment form may issue here. |
+| `piv.keyEscrow` | boolean | yes | Whether piv-key-management keys may be escrowed (piv.keyEscrow). |
+| `piv.profiles` | list | yes | The PIV slot profiles this realm's EST may issue (est.allowedProfiles). |
+| `piv.profiles[]` | string |  |  |
+| `piv.requireAttestation` | boolean | yes | Whether a PIV profile needs a YubiKey PIV attestation (piv.requireAttestation). |
+| `recovered` | object |  | `recover-key`'s answer only: the escrowed key and its certificate, drawn once. |
+| `recovered.certificatePem` | string | yes |  |
+| `recovered.chainPem` | list | yes |  |
+| `recovered.chainPem[]` | string |  |  |
+| `recovered.privateKeyPem` | string | yes | The escrowed private key, PEM. Sent with Cache-Control: no-store; keep it as you would the card. |
+| `recovered.serialHex` | string | yes |  |
+| `tokens` | list | yes | Every token the caller holds or has a credential on, newest first. |
+| `tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
+| `tokens[].credentials` | list | yes | The caller's own credentials on it. |
+| `tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
+| `tokens[].credentials[].kind` | string | yes | The credential's kind: `fido` or `x509` (later `hotp`, `yubico-otp`, `ssh`, `openpgp`). |
+| `tokens[].credentials[].label` | string | yes | Its name, where it has one. |
+| `tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
+| `tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |
+| `tokens[].key` | string | yes | The token's register key, `<vendor>/<serial>`: what `actOnTokens` names. |
+| `tokens[].lostAt` | string | yes | When it was reported lost, or empty. |
+| `tokens[].model` | string | yes |  |
+| `tokens[].registeredAt` | string | yes |  |
+| `tokens[].serial` | string | yes | The serial its attestation named. |
+| `tokens[].status` | string | yes | `active` or `lost`. |
+| `tokens[].vendor` | string | yes |  |
+
+**400**: The request did not validate, or was refused: `{ ok: false, errors: [...] }`.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**401**: No access token, or one that does not verify, has expired, was revoked, outlived its sign-on session, or came without its DPoP proof. `WWW-Authenticate` says which.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**403**: The token is for another audience or does not carry `account:manage`, or the access policy refused the person.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+## POST /account-api/tokens
+
+`actOnTokens`
+
+**Reports one of your hardware tokens lost, enrols a PIV certificate, or recovers an escrowed key**
+
+`lost` marks the token lost and retires every credential of yours on it: its passkeys are removed, its certificates revoked (keyCompromise), a CAEP credential-change is sent for each, and the sign-on sessions they signed in end. `enrol-piv` issues you a PIV slot certificate (`profile`) from a certificate request (`csr`) and, optionally, its YubiKey PIV attestation: the slot's attestation certificate (`attestationCertificate`) and the f9 attestation certificate (`attestationIssuer`). `recover-key` answers your escrowed piv-key-management key for certificate `serial`. `attach-key` notes which of your tokens (`key`) the escrowed key of certificate `serial` was loaded on, so reporting the token lost revokes it. Each asks for a recent sign-in. A refusal carries the page's `view`.
+
+The door of the portal's `POST /portal/tokens`.
+
+Scope: `account:manage`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `action` | empty, or one of `lost`, or one of `enrol-piv`, or one of `recover-key`, or one of `attach-key` |  | What to do; `lost` where none is named. |
+| `attestationCertificate` | string |  | `enrol-piv`: the slot's attestation certificate, PEM (ykman piv keys attest). |
+| `attestationIssuer` | string |  | `enrol-piv`: the f9 attestation certificate, PEM (ykman piv certificates export f9), and any intermediate after it. |
+| `csr` | string |  | `enrol-piv`: the PKCS#10 certificate request, PEM. |
+| `key` | string |  | `lost` and `attach-key`: the token's key, `<vendor>/<serial>`. |
+| `profile` | string |  | `enrol-piv`: piv-auth, piv-sign, piv-key-management or piv-card-auth. |
+| `serial` | string |  | `recover-key` and `attach-key`: the escrowed certificate's serial, hex. |
+
+**200**: The answer.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `message` | string | yes |  |
+| `ok` | boolean | yes |  |
+| `view` | object | yes |  |
+| `view.escrowed` | list | yes | The caller's escrowed piv-key-management certificates (#1955 P2), newest first; never a key. |
+| `view.escrowed[].issuedAt` | string | yes |  |
+| `view.escrowed[].notAfter` | string | yes |  |
+| `view.escrowed[].profile` | string | yes |  |
+| `view.escrowed[].revoked` | boolean | yes | Whether the certificate was revoked; its escrowed key is still recoverable. |
+| `view.escrowed[].serialHex` | string | yes | The certificate's serial, lower-case hex: what `recover-key` and `attach-key` name. |
+| `view.escrowed[].subject` | string | yes |  |
+| `view.issued` | object |  | `enrol-piv`'s answer only: the certificate issued, drawn once. |
+| `view.issued.attested` | boolean | yes | Whether a YubiKey PIV attestation of the key verified. |
+| `view.issued.certificatePem` | string | yes | The certificate, PEM: import it with ykman piv certificates import. |
+| `view.issued.chainPem` | list | yes | The issuing chain, PEM, nearest first. |
+| `view.issued.chainPem[]` | string |  |  |
+| `view.issued.profile` | string | yes |  |
+| `view.issued.serialHex` | string | yes | The issued certificate's serial, lower-case hex. |
+| `view.issued.token` | string | yes | The hardware token it was recorded on, `<vendor>/<serial>`, or empty. |
+| `view.piv` | object | yes | What the PIV enrolment form may issue here. |
+| `view.piv.keyEscrow` | boolean | yes | Whether piv-key-management keys may be escrowed (piv.keyEscrow). |
+| `view.piv.profiles` | list | yes | The PIV slot profiles this realm's EST may issue (est.allowedProfiles). |
+| `view.piv.profiles[]` | string |  |  |
+| `view.piv.requireAttestation` | boolean | yes | Whether a PIV profile needs a YubiKey PIV attestation (piv.requireAttestation). |
+| `view.recovered` | object |  | `recover-key`'s answer only: the escrowed key and its certificate, drawn once. |
+| `view.recovered.certificatePem` | string | yes |  |
+| `view.recovered.chainPem` | list | yes |  |
+| `view.recovered.chainPem[]` | string |  |  |
+| `view.recovered.privateKeyPem` | string | yes | The escrowed private key, PEM. Sent with Cache-Control: no-store; keep it as you would the card. |
+| `view.recovered.serialHex` | string | yes |  |
+| `view.tokens` | list | yes | Every token the caller holds or has a credential on, newest first. |
+| `view.tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
+| `view.tokens[].credentials` | list | yes | The caller's own credentials on it. |
+| `view.tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
+| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido` or `x509` (later `hotp`, `yubico-otp`, `ssh`, `openpgp`). |
+| `view.tokens[].credentials[].label` | string | yes | Its name, where it has one. |
+| `view.tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
+| `view.tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |
+| `view.tokens[].key` | string | yes | The token's register key, `<vendor>/<serial>`: what `actOnTokens` names. |
+| `view.tokens[].lostAt` | string | yes | When it was reported lost, or empty. |
+| `view.tokens[].model` | string | yes |  |
+| `view.tokens[].registeredAt` | string | yes |  |
+| `view.tokens[].serial` | string | yes | The serial its attestation named. |
+| `view.tokens[].status` | string | yes | `active` or `lost`. |
+| `view.tokens[].vendor` | string | yes |  |
+
+**400**: The request did not validate, or was refused: `{ ok: false, errors: [...] }`.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `errors` | list | yes |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean | yes |  |
+| `view` | object |  |  |
+| `view.escrowed` | list | yes | The caller's escrowed piv-key-management certificates (#1955 P2), newest first; never a key. |
+| `view.escrowed[].issuedAt` | string | yes |  |
+| `view.escrowed[].notAfter` | string | yes |  |
+| `view.escrowed[].profile` | string | yes |  |
+| `view.escrowed[].revoked` | boolean | yes | Whether the certificate was revoked; its escrowed key is still recoverable. |
+| `view.escrowed[].serialHex` | string | yes | The certificate's serial, lower-case hex: what `recover-key` and `attach-key` name. |
+| `view.escrowed[].subject` | string | yes |  |
+| `view.issued` | object |  | `enrol-piv`'s answer only: the certificate issued, drawn once. |
+| `view.issued.attested` | boolean | yes | Whether a YubiKey PIV attestation of the key verified. |
+| `view.issued.certificatePem` | string | yes | The certificate, PEM: import it with ykman piv certificates import. |
+| `view.issued.chainPem` | list | yes | The issuing chain, PEM, nearest first. |
+| `view.issued.chainPem[]` | string |  |  |
+| `view.issued.profile` | string | yes |  |
+| `view.issued.serialHex` | string | yes | The issued certificate's serial, lower-case hex. |
+| `view.issued.token` | string | yes | The hardware token it was recorded on, `<vendor>/<serial>`, or empty. |
+| `view.piv` | object | yes | What the PIV enrolment form may issue here. |
+| `view.piv.keyEscrow` | boolean | yes | Whether piv-key-management keys may be escrowed (piv.keyEscrow). |
+| `view.piv.profiles` | list | yes | The PIV slot profiles this realm's EST may issue (est.allowedProfiles). |
+| `view.piv.profiles[]` | string |  |  |
+| `view.piv.requireAttestation` | boolean | yes | Whether a PIV profile needs a YubiKey PIV attestation (piv.requireAttestation). |
+| `view.recovered` | object |  | `recover-key`'s answer only: the escrowed key and its certificate, drawn once. |
+| `view.recovered.certificatePem` | string | yes |  |
+| `view.recovered.chainPem` | list | yes |  |
+| `view.recovered.chainPem[]` | string |  |  |
+| `view.recovered.privateKeyPem` | string | yes | The escrowed private key, PEM. Sent with Cache-Control: no-store; keep it as you would the card. |
+| `view.recovered.serialHex` | string | yes |  |
+| `view.tokens` | list | yes | Every token the caller holds or has a credential on, newest first. |
+| `view.tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
+| `view.tokens[].credentials` | list | yes | The caller's own credentials on it. |
+| `view.tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
+| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido` or `x509` (later `hotp`, `yubico-otp`, `ssh`, `openpgp`). |
+| `view.tokens[].credentials[].label` | string | yes | Its name, where it has one. |
+| `view.tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
+| `view.tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |
+| `view.tokens[].key` | string | yes | The token's register key, `<vendor>/<serial>`: what `actOnTokens` names. |
+| `view.tokens[].lostAt` | string | yes | When it was reported lost, or empty. |
+| `view.tokens[].model` | string | yes |  |
+| `view.tokens[].registeredAt` | string | yes |  |
+| `view.tokens[].serial` | string | yes | The serial its attestation named. |
+| `view.tokens[].status` | string | yes | `active` or `lost`. |
+| `view.tokens[].vendor` | string | yes |  |
+
+**401**: No access token, or one that does not verify, has expired, was revoked, outlived its sign-on session, or came without its DPoP proof. `WWW-Authenticate` says which.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**403**: The token is for another audience or does not carry `account:manage`, or the access policy refused the person.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**404**: No such token is held by you.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `errors` | list | yes |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean | yes |  |
+| `view` | object |  |  |
+| `view.escrowed` | list | yes | The caller's escrowed piv-key-management certificates (#1955 P2), newest first; never a key. |
+| `view.escrowed[].issuedAt` | string | yes |  |
+| `view.escrowed[].notAfter` | string | yes |  |
+| `view.escrowed[].profile` | string | yes |  |
+| `view.escrowed[].revoked` | boolean | yes | Whether the certificate was revoked; its escrowed key is still recoverable. |
+| `view.escrowed[].serialHex` | string | yes | The certificate's serial, lower-case hex: what `recover-key` and `attach-key` name. |
+| `view.escrowed[].subject` | string | yes |  |
+| `view.issued` | object |  | `enrol-piv`'s answer only: the certificate issued, drawn once. |
+| `view.issued.attested` | boolean | yes | Whether a YubiKey PIV attestation of the key verified. |
+| `view.issued.certificatePem` | string | yes | The certificate, PEM: import it with ykman piv certificates import. |
+| `view.issued.chainPem` | list | yes | The issuing chain, PEM, nearest first. |
+| `view.issued.chainPem[]` | string |  |  |
+| `view.issued.profile` | string | yes |  |
+| `view.issued.serialHex` | string | yes | The issued certificate's serial, lower-case hex. |
+| `view.issued.token` | string | yes | The hardware token it was recorded on, `<vendor>/<serial>`, or empty. |
+| `view.piv` | object | yes | What the PIV enrolment form may issue here. |
+| `view.piv.keyEscrow` | boolean | yes | Whether piv-key-management keys may be escrowed (piv.keyEscrow). |
+| `view.piv.profiles` | list | yes | The PIV slot profiles this realm's EST may issue (est.allowedProfiles). |
+| `view.piv.profiles[]` | string |  |  |
+| `view.piv.requireAttestation` | boolean | yes | Whether a PIV profile needs a YubiKey PIV attestation (piv.requireAttestation). |
+| `view.recovered` | object |  | `recover-key`'s answer only: the escrowed key and its certificate, drawn once. |
+| `view.recovered.certificatePem` | string | yes |  |
+| `view.recovered.chainPem` | list | yes |  |
+| `view.recovered.chainPem[]` | string |  |  |
+| `view.recovered.privateKeyPem` | string | yes | The escrowed private key, PEM. Sent with Cache-Control: no-store; keep it as you would the card. |
+| `view.recovered.serialHex` | string | yes |  |
+| `view.tokens` | list | yes | Every token the caller holds or has a credential on, newest first. |
+| `view.tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
+| `view.tokens[].credentials` | list | yes | The caller's own credentials on it. |
+| `view.tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
+| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido` or `x509` (later `hotp`, `yubico-otp`, `ssh`, `openpgp`). |
+| `view.tokens[].credentials[].label` | string | yes | Its name, where it has one. |
+| `view.tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
+| `view.tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |
+| `view.tokens[].key` | string | yes | The token's register key, `<vendor>/<serial>`: what `actOnTokens` names. |
+| `view.tokens[].lostAt` | string | yes | When it was reported lost, or empty. |
+| `view.tokens[].model` | string | yes |  |
+| `view.tokens[].registeredAt` | string | yes |  |
+| `view.tokens[].serial` | string | yes | The serial its attestation named. |
+| `view.tokens[].status` | string | yes | `active` or `lost`. |
+| `view.tokens[].vendor` | string | yes |  |
+
+**409**: The token was already reported lost, or the person already holds as many certificates as the realm allows.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `errors` | list | yes |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean | yes |  |
+| `view` | object |  |  |
+| `view.escrowed` | list | yes | The caller's escrowed piv-key-management certificates (#1955 P2), newest first; never a key. |
+| `view.escrowed[].issuedAt` | string | yes |  |
+| `view.escrowed[].notAfter` | string | yes |  |
+| `view.escrowed[].profile` | string | yes |  |
+| `view.escrowed[].revoked` | boolean | yes | Whether the certificate was revoked; its escrowed key is still recoverable. |
+| `view.escrowed[].serialHex` | string | yes | The certificate's serial, lower-case hex: what `recover-key` and `attach-key` name. |
+| `view.escrowed[].subject` | string | yes |  |
+| `view.issued` | object |  | `enrol-piv`'s answer only: the certificate issued, drawn once. |
+| `view.issued.attested` | boolean | yes | Whether a YubiKey PIV attestation of the key verified. |
+| `view.issued.certificatePem` | string | yes | The certificate, PEM: import it with ykman piv certificates import. |
+| `view.issued.chainPem` | list | yes | The issuing chain, PEM, nearest first. |
+| `view.issued.chainPem[]` | string |  |  |
+| `view.issued.profile` | string | yes |  |
+| `view.issued.serialHex` | string | yes | The issued certificate's serial, lower-case hex. |
+| `view.issued.token` | string | yes | The hardware token it was recorded on, `<vendor>/<serial>`, or empty. |
+| `view.piv` | object | yes | What the PIV enrolment form may issue here. |
+| `view.piv.keyEscrow` | boolean | yes | Whether piv-key-management keys may be escrowed (piv.keyEscrow). |
+| `view.piv.profiles` | list | yes | The PIV slot profiles this realm's EST may issue (est.allowedProfiles). |
+| `view.piv.profiles[]` | string |  |  |
+| `view.piv.requireAttestation` | boolean | yes | Whether a PIV profile needs a YubiKey PIV attestation (piv.requireAttestation). |
+| `view.recovered` | object |  | `recover-key`'s answer only: the escrowed key and its certificate, drawn once. |
+| `view.recovered.certificatePem` | string | yes |  |
+| `view.recovered.chainPem` | list | yes |  |
+| `view.recovered.chainPem[]` | string |  |  |
+| `view.recovered.privateKeyPem` | string | yes | The escrowed private key, PEM. Sent with Cache-Control: no-store; keep it as you would the card. |
+| `view.recovered.serialHex` | string | yes |  |
+| `view.tokens` | list | yes | Every token the caller holds or has a credential on, newest first. |
+| `view.tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
+| `view.tokens[].credentials` | list | yes | The caller's own credentials on it. |
+| `view.tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
+| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido` or `x509` (later `hotp`, `yubico-otp`, `ssh`, `openpgp`). |
+| `view.tokens[].credentials[].label` | string | yes | Its name, where it has one. |
+| `view.tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
+| `view.tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |
+| `view.tokens[].key` | string | yes | The token's register key, `<vendor>/<serial>`: what `actOnTokens` names. |
+| `view.tokens[].lostAt` | string | yes | When it was reported lost, or empty. |
+| `view.tokens[].model` | string | yes |  |
+| `view.tokens[].registeredAt` | string | yes |  |
+| `view.tokens[].serial` | string | yes | The serial its attestation named. |
+| `view.tokens[].status` | string | yes | `active` or `lost`. |
+| `view.tokens[].vendor` | string | yes |  |
+
+**503**: The certificate could not be issued or recorded, or an escrowed key could not be opened.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `errors` | list | yes |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean | yes |  |
+| `view` | object |  |  |
+| `view.escrowed` | list | yes | The caller's escrowed piv-key-management certificates (#1955 P2), newest first; never a key. |
+| `view.escrowed[].issuedAt` | string | yes |  |
+| `view.escrowed[].notAfter` | string | yes |  |
+| `view.escrowed[].profile` | string | yes |  |
+| `view.escrowed[].revoked` | boolean | yes | Whether the certificate was revoked; its escrowed key is still recoverable. |
+| `view.escrowed[].serialHex` | string | yes | The certificate's serial, lower-case hex: what `recover-key` and `attach-key` name. |
+| `view.escrowed[].subject` | string | yes |  |
+| `view.issued` | object |  | `enrol-piv`'s answer only: the certificate issued, drawn once. |
+| `view.issued.attested` | boolean | yes | Whether a YubiKey PIV attestation of the key verified. |
+| `view.issued.certificatePem` | string | yes | The certificate, PEM: import it with ykman piv certificates import. |
+| `view.issued.chainPem` | list | yes | The issuing chain, PEM, nearest first. |
+| `view.issued.chainPem[]` | string |  |  |
+| `view.issued.profile` | string | yes |  |
+| `view.issued.serialHex` | string | yes | The issued certificate's serial, lower-case hex. |
+| `view.issued.token` | string | yes | The hardware token it was recorded on, `<vendor>/<serial>`, or empty. |
+| `view.piv` | object | yes | What the PIV enrolment form may issue here. |
+| `view.piv.keyEscrow` | boolean | yes | Whether piv-key-management keys may be escrowed (piv.keyEscrow). |
+| `view.piv.profiles` | list | yes | The PIV slot profiles this realm's EST may issue (est.allowedProfiles). |
+| `view.piv.profiles[]` | string |  |  |
+| `view.piv.requireAttestation` | boolean | yes | Whether a PIV profile needs a YubiKey PIV attestation (piv.requireAttestation). |
+| `view.recovered` | object |  | `recover-key`'s answer only: the escrowed key and its certificate, drawn once. |
+| `view.recovered.certificatePem` | string | yes |  |
+| `view.recovered.chainPem` | list | yes |  |
+| `view.recovered.chainPem[]` | string |  |  |
+| `view.recovered.privateKeyPem` | string | yes | The escrowed private key, PEM. Sent with Cache-Control: no-store; keep it as you would the card. |
+| `view.recovered.serialHex` | string | yes |  |
+| `view.tokens` | list | yes | Every token the caller holds or has a credential on, newest first. |
+| `view.tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
+| `view.tokens[].credentials` | list | yes | The caller's own credentials on it. |
+| `view.tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
+| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido` or `x509` (later `hotp`, `yubico-otp`, `ssh`, `openpgp`). |
+| `view.tokens[].credentials[].label` | string | yes | Its name, where it has one. |
+| `view.tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
+| `view.tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |
+| `view.tokens[].key` | string | yes | The token's register key, `<vendor>/<serial>`: what `actOnTokens` names. |
+| `view.tokens[].lostAt` | string | yes | When it was reported lost, or empty. |
+| `view.tokens[].model` | string | yes |  |
+| `view.tokens[].registeredAt` | string | yes |  |
+| `view.tokens[].serial` | string | yes | The serial its attestation named. |
+| `view.tokens[].status` | string | yes | `active` or `lost`. |
+| `view.tokens[].vendor` | string | yes |  |
 
 ## GET /account-api/verify-email
 

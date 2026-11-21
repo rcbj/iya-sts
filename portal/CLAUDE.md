@@ -2065,6 +2065,31 @@ pre-authorized offer).
   default is not recorded as a choice, so a change of the setting before
   the wallet redeems still applies. `oid4vc/CLAUDE.md` has where it goes.
 
+## `/portal/tokens`: A PERSON'S SECURITY KEYS AND SMART CARDS (#1955 P1, 2026-11-20)
+
+Under *How I sign in*, beside Passkeys: the physical tokens the register
+(`common/hardware_tokens.ts`) records the person as holding, drawn by
+`web_tokens.ts` from `GET /account-api/tokens` (`account_tokens.ts`), and
+one act, **I lost this key** (`POST /account-api/tokens`, `action: lost`,
+`recentAuth`). The token key is the one identifier from the body; the act
+runs with `onlyHolder` set to the token's subject, so another person's
+token matches nothing (A01) and a credential somebody else registered on
+the same key is left for an administrator. A person whose lost key was
+their only way in is told to use an activation link or recovery codes,
+because the removal passes the last-way-in guard. The words are
+`portalTokens`'s.
+
+**#1955 P2 adds the PIV enrolment form and the escrowed keys** to the same
+page and the same door (`actOnTokens`, `recentAuth`): `enrol-piv` issues the
+CALLER a PIV slot certificate from a request and its YubiKey PIV attestation
+(`common/piv_enrolment.ts`; the target is the token's subject, never the
+body's), `recover-key` hands the caller their own escrowed 9d key, and
+`attach-key` notes which of their tokens it was loaded on. What an act made
+is on the answer's view once (`issued`, `recovered`, as the certificates
+page's `fresh`). A refusal is held to the statuses whose answers carry a
+`view` (400, 404, 409, 503): a profile the core refused (its 403) is a 400
+here, because the account API's 403 is the gate's.
+
 ## `/portal/devices`: A PERSON'S OWN DEVICES (2026-09-23, #130; #164 phase 2, 2026-09-26)
 
 The entries in `ou=devices` the person owns, the applications that used
@@ -2472,3 +2497,16 @@ would need the policy widened, and nothing else wants it. The limits arrive on
 the Overview's `photo.limits` and are the server's to enforce:
 `common/CLAUDE.md` (3db).
 
+
+## `/portal/openpgp`: A PERSON'S OpenPGP KEY AND MAIL ENCRYPTION (#1955 P6, 2026-11-20)
+
+Under *How I sign in*, beside Security keys, drawn by `web_openpgp.ts` from
+`GET /account-api/openpgp` (`account_openpgp.ts`): the registered key, the
+registration (ask for a challenge, sign it with `gpg --clearsign` — the card
+signs on a YubiKey — paste key and signed text), the Web Key Directory
+opt-in, the S/MIME certificate and the mail encryption choice. Seven acts on
+`POST /account-api/openpgp` (`challenge`, `register`, `remove`, `publish`,
+`withdraw`, `mail-encryption`, `smime`), all `recentAuth`: what mail to a
+person is encrypted to decides who can read their reset links. The username
+is always the token's subject. The logic is `common/openpgp_keys.ts`
+(`common/CLAUDE.md`); the words are `portalOpenpgp`'s, every base catalog.

@@ -41,6 +41,8 @@
   "title.deliveries": "出站投递",
   "title.device-registration": "设备注册",
   "title.devices": "设备",
+  "title.hardware-tokens": "硬件令牌",
+  "title.openpgp": "OpenPGP 密钥",
   "title.devices-monitor": "设备（监控）",
   "title.service-accounts": "服务账户",
   "title.encryption": "加密",

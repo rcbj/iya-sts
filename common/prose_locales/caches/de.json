@@ -351,6 +351,22 @@
     "en": "1d89a0731fc525e7",
     "text": "eine bereits gesehene Signatur, sodass die Anfrage abgelehnt wurde"
   },
+  "caches.store.hardware_tokens.register.title": {
+    "en": "f1c8d3f653154823",
+    "text": "Hardware-Token-Register"
+  },
+  "caches.store.hardware_tokens.register.description": {
+    "en": "5efc16810cb7f48e",
+    "text": "Eine Zeile pro physischem Hardware-Token (ein YubiKey, eine Smartcard) in diesem Bereich, nach Hersteller und Seriennummer geschlüsselt: wer es besitzt, sein Modell und die Anmeldedaten darauf. Eine Seriennummer wird nur aus einer Attestierung erfasst. Nie ein Geheimnis."
+  },
+  "caches.store.hardware_tokens.register.bound": {
+    "en": "260467c777c74957",
+    "text": "Die Zeilen, die ein Prozess hält, sind ein Cache von 5.000 pro Bereich; das Register selbst ist durch die Anmeldedaten begrenzt, die es listet (webauthn.maxKeysPerPerson für FIDO)."
+  },
+  "caches.store.hardware_tokens.register.lifetime": {
+    "en": "c18bfda6fa452b2b",
+    "text": "Bis das Token entfernt wird; ein verlorenes Token bleibt erhalten, als verloren markiert."
+  },
   "caches.store.jose.kid-thumbprint-uris.title": {
     "en": "336e569778455530",
     "text": "Schlüsselbezeichner nach RFC 9278"
@@ -1106,6 +1122,34 @@
   "caches.store.oidfed.resolutions.lifetime": {
     "en": "ce6f4a649ea6af77",
     "text": "Bis die Kette abläuft (ihr kleinstes exp, 10.4), und höchstens oidfed.resolveCacheS."
+  },
+  "caches.store.openpgp.challenges.title": {
+    "en": "c0c95c44e5f3835e",
+    "text": "OpenPGP-Registrierungs-Challenges"
+  },
+  "caches.store.openpgp.challenges.description": {
+    "en": "be9e39edb5fb9e44",
+    "text": "Eine Challenge je Person, die einen OpenPGP-Schlüssel registriert: der Text, den sie mit gpg --clearsign signiert, seine Nonce und sein Ablaufzeitpunkt. Wird einmal verbraucht, durch einen clusterweiten Claim auf die Nonce."
+  },
+  "caches.store.openpgp.challenges.bound": {
+    "en": "70f8ecd02c4392d1",
+    "text": "Eine je Person (nach entryUUID), jede für openpgp.challengeLifetimeS."
+  },
+  "caches.store.openpgp.wkd.title": {
+    "en": "dc47d455d5283de5",
+    "text": "Veröffentlichungen im Web Key Directory"
+  },
+  "caches.store.openpgp.wkd.description": {
+    "en": "f79c85531015261b",
+    "text": "Welchen OpenPGP-Schlüssel das Web Key Directory für jede gehashte Adresse liefert: den Inhaber (eine entryUUID) und den von ihm veröffentlichten Fingerabdruck. Ein Verweis: Der Schlüssel selbst wird aus dem Eintrag gelesen. Nie ein Geheimnis."
+  },
+  "caches.store.openpgp.wkd.bound": {
+    "en": "e8a7abbcc8bba7fc",
+    "text": "Die Zeilen eines Prozesses sind ein Cache von 5.000 je Vertrauensbereich; das Register hält eine Zeile je Person, die zugestimmt hat."
+  },
+  "caches.store.openpgp.wkd.lifetime": {
+    "en": "06861887c7e6c8f1",
+    "text": "Bis die Person die Veröffentlichung beendet oder den Schlüssel entfernt."
   },
   "caches.store.passwords.breach-ranges.title": {
     "en": "5746db291bee19b3",

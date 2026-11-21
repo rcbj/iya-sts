@@ -487,6 +487,50 @@
     "en": "0be46b8b29aaf446",
     "text": "لم يعد إثبات مفتاح الأمان موثوقًا: قائمة حالة إثبات Android من Google تبطل سلسلته"
   },
+  "audit.actions.hardware-token.create.label": {
+    "en": "23939dae5f4b89dc",
+    "text": "سُجّل رمز مادي من شهادته"
+  },
+  "audit.actions.hardware-token.credential-add.label": {
+    "en": "79c33d3849e02f0c",
+    "text": "أُضيفت بيانات اعتماد إلى رمز مادي"
+  },
+  "audit.actions.hardware-token.holder-change.label": {
+    "en": "06fc03f7983fd5ad",
+    "text": "سجّل رمزًا ماديًا شخص غير حامله"
+  },
+  "audit.actions.hardware-token.lost.label": {
+    "en": "f7fb5461e2325e1e",
+    "text": "أُبلغ عن فقد رمز مادي وأُبطلت بيانات اعتماده"
+  },
+  "audit.actions.openpgp.challenge.label": {
+    "en": "454a22b5bcd9d6a2",
+    "text": "صدر تحدٍّ لتسجيل مفتاح OpenPGP"
+  },
+  "audit.actions.openpgp.key-registered.label": {
+    "en": "1ed8de1f8777a015",
+    "text": "سُجّل مفتاح OpenPGP بناءً على إثبات حيازة"
+  },
+  "audit.actions.openpgp.key-refused.label": {
+    "en": "f1e7e3c6808ba33b",
+    "text": "لم يُسجَّل مفتاح OpenPGP"
+  },
+  "audit.actions.openpgp.key-removed.label": {
+    "en": "89a284fa6508eae4",
+    "text": "أُزيل مفتاح OpenPGP"
+  },
+  "audit.actions.openpgp.publication.label": {
+    "en": "f6d12f16eca6796a",
+    "text": "نُشر مفتاح OpenPGP في دليل مفاتيح الويب (Web Key Directory) أو سُحب منه"
+  },
+  "audit.actions.openpgp.mail-encryption.label": {
+    "en": "ba0fb7a4133d94e2",
+    "text": "تغيّرت طريقة تشفير البريد المرسل إلى شخص"
+  },
+  "audit.actions.openpgp.smime-certificate.label": {
+    "en": "663072a33ce1e178",
+    "text": "عُيّنت شهادة S/MIME لشخص أو أُزيلت"
+  },
   "audit.actions.device.key-add.label": {
     "en": "6c1b2513c20532ef",
     "text": "أُضيف مفتاح إلى جهاز"
@@ -2310,5 +2354,9 @@
   "audit.actions.xacml.pep.cluster.proxy.clear.label": {
     "en": "c2812e5d21fb6dd4",
     "text": "أُزيل إعداد الوكيل العكسي لعنقود PEP بعيد"
+  },
+  "audit.actions.piv-escrow.recover.label": {
+    "en": "0cad829ec7cafc72",
+    "text": "استُرد مفتاح مودَع لإدارة مفاتيح PIV"
   }
 }

@@ -1513,6 +1513,28 @@ const SECTIONS = [
                'compliance, and when it was last used. Click one to edit ' +
                'it, add or remove a key, give it to another owner or remove ' +
                'it; register one by hand at the foot of the list.' },
+      // HARDWARE TOKENS (#1955 P1): the device register's sibling, beside
+      // it and in Directory for its reason — the register is somebody's,
+      // and the page is a destination. Drawn by `web_hardware_tokens.ts`
+      // from `mgmt-api/hardware_tokens_api.ts`.
+      { path: '/admin/hardware-tokens', label: 'Hardware tokens',
+        blurb: 'Every physical security key and smart card this realm has ' +
+               'recorded, each from its own attestation (a self-declared ' +
+               'serial is never recorded): its vendor, serial and model, ' +
+               'who holds it, and the passkeys and certificates on it. ' +
+               'Report one lost to retire every credential on it at once.' },
+      // OpenPGP KEYS (#1955 P6): a person's OpenPGP key, its Web Key
+      // Directory publication, their S/MIME certificate and their mail
+      // encryption — what /portal/openpgp shows the person, for an
+      // administrator. In Directory beside the tokens: it is somebody's.
+      // Drawn by `web_openpgp.ts` from `mgmt-api/openpgp_api.ts`.
+      { path: '/admin/openpgp', label: 'OpenPGP keys',
+        blurb: 'One person\'s OpenPGP key, registered by signing a ' +
+               'challenge with it (gpg --clearsign; on a YubiKey the card ' +
+               'signs), its publication in the Web Key Directory, their ' +
+               'S/MIME certificate and how their mail is encrypted. Issue ' +
+               'a challenge for them, register what they signed, or remove ' +
+               'the key.' },
       // ATTRIBUTE SOURCES (#94): in Directory because what they write is
       // on people's directory entries, and the register is `ou=
       // attributesources` in this realm's directory.
@@ -9271,6 +9293,8 @@ const SETTING_HOMES = [
   { group: 'Sign-in appearance', pages: ['/admin/sign-in-appearance'] },
   // What a person may set, so beside the people it is about (#719).
   { group: 'Profile photos', pages: ['/admin/users'] },
+  // A person's OpenPGP key and the Web Key Directory (#1955 P6).
+  { group: 'OpenPGP', pages: ['/admin/openpgp'] },
   // On Protocols → Delegation since 2026-10-01, with the register's controls:
   // Monitoring → Delegation changes nothing.
   { group: 'Delegation', pages: ['/admin/delegation-settings'] },

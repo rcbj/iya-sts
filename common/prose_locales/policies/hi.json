@@ -564,8 +564,8 @@
     "text": "प्रोफ़ाइल किस काम की है, अगले व्यक्ति के लिए।"
   },
   "authn.SCHEMA.attributes.stsAuthnPolicyMechanism.what": {
-    "en": "66db848b0bb1c58f",
-    "text": "नामित प्रमाणीकरण नीति पर (#1148, #1237): पहला-कारक तंत्र जिसे उस साइन इन की अनुमति है जिस पर वह लागू होती है — जहाँ अनुप्रयोग (appAuthnPolicy) या व्यक्ति का कोई समूह (stsAuthnPolicy) उसे नामित करे और उसकी पूर्वता नामितों में सबसे कम हो — password, password-mfa, webauthn, spnego, wallet या federation, हर एक अलग मान। कोई न हो तो क्षेत्र जितने की अनुमति देता है, वे सभी अनुमत हैं।"
+    "en": "783db3d7da8c29c5",
+    "text": "नामित प्रमाणीकरण नीति पर (#1148, #1237): पहला-कारक तंत्र जिसे उस साइन इन की अनुमति है जिस पर वह लागू होती है — जहाँ अनुप्रयोग (appAuthnPolicy) या व्यक्ति का कोई समूह (stsAuthnPolicy) उसे नामित करे और उसकी पूर्वता नामितों में सबसे कम हो — password, password-mfa, webauthn, attested-hardware (सत्यापन से सिद्ध हार्डवेयर टोकन पर एक पासकी या प्रमाणपत्र, #1955), spnego, wallet या federation, हर एक अलग मान। कोई न हो तो क्षेत्र जितने की अनुमति देता है, वे सभी अनुमत हैं।"
   },
   "authn.SCHEMA.attributes.stsAuthnPolicySecondFactor.what": {
     "en": "7c8e4d8b4cce7c08",

@@ -487,6 +487,50 @@
     "en": "0be46b8b29aaf446",
     "text": "安全密钥的证明不再受信任：Google 的 Android 证明状态列表吊销了其证书链"
   },
+  "audit.actions.hardware-token.create.label": {
+    "en": "23939dae5f4b89dc",
+    "text": "已根据证明记录一个硬件令牌"
+  },
+  "audit.actions.hardware-token.credential-add.label": {
+    "en": "79c33d3849e02f0c",
+    "text": "已向硬件令牌添加一个凭据"
+  },
+  "audit.actions.hardware-token.holder-change.label": {
+    "en": "06fc03f7983fd5ad",
+    "text": "硬件令牌由其持有人以外的人注册"
+  },
+  "audit.actions.hardware-token.lost.label": {
+    "en": "f7fb5461e2325e1e",
+    "text": "硬件令牌已报告丢失，其凭据已停用"
+  },
+  "audit.actions.openpgp.challenge.label": {
+    "en": "454a22b5bcd9d6a2",
+    "text": "已发出 OpenPGP 密钥注册质询"
+  },
+  "audit.actions.openpgp.key-registered.label": {
+    "en": "1ed8de1f8777a015",
+    "text": "已凭持有证明注册 OpenPGP 密钥"
+  },
+  "audit.actions.openpgp.key-refused.label": {
+    "en": "f1e7e3c6808ba33b",
+    "text": "OpenPGP 密钥未被注册"
+  },
+  "audit.actions.openpgp.key-removed.label": {
+    "en": "89a284fa6508eae4",
+    "text": "已删除 OpenPGP 密钥"
+  },
+  "audit.actions.openpgp.publication.label": {
+    "en": "f6d12f16eca6796a",
+    "text": "OpenPGP 密钥已在 Web 密钥目录中发布或撤回"
+  },
+  "audit.actions.openpgp.mail-encryption.label": {
+    "en": "ba0fb7a4133d94e2",
+    "text": "发给某人的邮件的加密方式已更改"
+  },
+  "audit.actions.openpgp.smime-certificate.label": {
+    "en": "663072a33ce1e178",
+    "text": "某人的 S/MIME 证书已设置或删除"
+  },
   "audit.actions.device.key-add.label": {
     "en": "6c1b2513c20532ef",
     "text": "向设备添加了一个密钥"
@@ -2310,5 +2354,9 @@
   "audit.actions.xacml.pep.cluster.proxy.clear.label": {
     "en": "c2812e5d21fb6dd4",
     "text": "已移除远程 PEP 集群的反向代理配置"
+  },
+  "audit.actions.piv-escrow.recover.label": {
+    "en": "0cad829ec7cafc72",
+    "text": "已恢复一个托管的 PIV 密钥管理密钥"
   }
 }

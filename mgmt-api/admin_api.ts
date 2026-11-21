@@ -706,6 +706,9 @@ interface AdminApiDeps {
   loadPasskeyReportApi(): typeof import('./passkey_report_api');
   // Directory → Post-login activities' operations (#1111).
   loadPostLoginActivitiesApi(): typeof import('./post_login_activities_api');
+  loadHardwareTokensApi(): typeof import('./hardware_tokens_api');
+  // Directory → OpenPGP keys' operations (#1955 P6).
+  loadOpenPgpApi(): typeof import('./openpgp_api');
   // Monitoring → Audit export's operations (#641).
   loadAuditExportApi(): typeof import('./audit_export_api');
   // Server configuration → Sign-in appearance's operations (#717).
@@ -852,6 +855,12 @@ class AdminApi {
       },
       loadPostLoginActivitiesApi: function () {
         return require('./post_login_activities_api');
+      },
+      loadHardwareTokensApi: function () {
+        return require('./hardware_tokens_api');
+      },
+      loadOpenPgpApi: function () {
+        return require('./openpgp_api');
       },
       loadAuditExportApi: function () {
         return require('./audit_export_api');
@@ -2662,6 +2671,7 @@ class AdminApi {
             loadAttributeSourcesApi, loadSecretDestinationsApi, loadAuthzenApi,
             loadUmaApi,
             loadPasskeyReportApi, loadPostLoginActivitiesApi,
+            loadHardwareTokensApi, loadOpenPgpApi,
             loadAuditExportApi, loadBrandingApi,
             loadScimClientsApi,
             loadProviderCommandsApi, loadSsfTransmittersApi,
@@ -10566,6 +10576,13 @@ class AdminApi {
       // DIRECTORY → POST-LOGIN ACTIVITIES (#1111): the started activities
       // and their four acts (`mgmt-api/post_login_activities_api.ts`).
       ...loadPostLoginActivitiesApi().ROUTES,
+      // DIRECTORY → HARDWARE TOKENS (#1955 P1): the register and its
+      // lost-key act (`mgmt-api/hardware_tokens_api.ts`).
+      ...loadHardwareTokensApi().ROUTES,
+      // DIRECTORY → OpenPGP KEYS (#1955 P6): one person's key, publication
+      // and mail encryption, and the portal's seven acts for them
+      // (`mgmt-api/openpgp_api.ts`).
+      ...loadOpenPgpApi().ROUTES,
       // MONITORING → AUDIT EXPORT (#641): the destinations and their six
       // acts (`mgmt-api/audit_export_api.ts`).
       ...loadAuditExportApi().ROUTES,
