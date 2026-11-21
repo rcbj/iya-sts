@@ -222,8 +222,13 @@ function isUnder(value, base) {
 }
 
 /**
- * Whether a list holds a value, compared whole. A value that is not an
- * array is taken as a list of one; undefined and null as an empty list.
+ * Whether a list holds a value, compared whole. A STRING is a list written
+ * as text — one address, or several joined by spaces or commas (a SAML
+ * endpoint row `0 true <binding> <location>`, a `values.join(' ')`) — and is
+ * split there: no URL carries raw whitespace, so each piece is one address
+ * or one other token, compared whole (2026-11-20; taking the whole string as
+ * one element failed `sts_saml11`'s metadata check in run #607). Undefined
+ * and null are an empty list; anything else not an array a list of one.
  *
  * @param {*} list - the list, e.g. a token's `aud`
  * @param {*} value - the element looked for
@@ -231,7 +236,9 @@ function isUnder(value, base) {
  */
 function holds(list, value) {
   log.debug("Entering holds().");
-  const all = list === undefined || list === null ? [] : [].concat(list);
+  const all = list === undefined || list === null ? []
+    : typeof list === "string" ? list.split(/[\s,]+/).filter(Boolean)
+      : [].concat(list);
   const out = all.some(function (one) {
     return one === value;
   });

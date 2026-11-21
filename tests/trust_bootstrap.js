@@ -21,12 +21,14 @@
 //      variables that would supply an anchor, rather than not verifying.
 //   D. With the bundle held (useBundle()), the chain verifies against it
 //      and the revocation listener is never asked.
+//   F. two nodes behind a round-robin balancer: readTrust() sees both.
 //   E. anchorsFor() answers the known anchors plus the Root when those do
 //      not verify the listener, and the known anchors alone when they do.
 // ===========================================================================
 
 const fs = require('fs');
 const http = require('http');
+const net = require('net');
 const https = require('https');
 const nodeCrypto = require('crypto');
 const os = require('os');
@@ -93,6 +95,28 @@ function closedPort() {
       });
     });
   });
+}
+
+// A round-robin TCP balancer in front of `ports`, as the cluster mode's
+// `sts-lb` is: each new connection to the next port in turn.
+function balancer(ports) {
+  log.debug("Entering balancer().");
+  let next = 0;
+  const server = net.createServer(function (client) {
+    const port = ports[next % ports.length];
+    next += 1;
+    const upstream = net.connect(port, '127.0.0.1');
+    client.pipe(upstream);
+    upstream.pipe(client);
+    const drop = function () {
+      client.destroy();
+      upstream.destroy();
+    };
+    client.on('error', drop);
+    upstream.on('error', drop);
+  });
+  log.debug("Leaving balancer().");
+  return listening(server);
 }
 
 // What a promise settled with: { value } or { error }.
@@ -209,6 +233,25 @@ async function run(t) {
             'E3. without a Root to add, the known anchors still refuse the ' +
             'listener: never an answer that reads as "do not verify"',
             String(stillRefused.error && stillRefused.error.code));
+
+    // ---- F ------------------------------------------------------------
+    // Two nodes under one Root behind a round-robin balancer, nothing held
+    // (run #607: a refused first connection then a verified second one put
+    // every fetch on the same node, and the pin list held one key of two).
+    serviceTrust.useBundle('');
+    const leafB = await testCa.listenerCertificate(root, '127.0.0.1');
+    const nodeB = await mainPort(leafB, leafB.cert + root.certPem);
+    servers.push(nodeB);
+    const lb = await balancer([main.address().port, nodeB.address().port]);
+    servers.push(lb);
+    const both = await settled(trust.readTrust(
+      'https://127.0.0.1:' + lb.address().port, 2,
+      { pkiPort: pki.address().port }));
+    t.check(!!both.value && both.value.leaves === 2 &&
+            both.value.pin.split(',').length === 2,
+            'F1. behind a round-robin balancer, readTrust() sees both ' +
+            'nodes\' keys with no anchor held',
+            JSON.stringify(both.value ? both.value.pin : String(both.error)));
   } finally {
     servers.forEach(function (server) {
       server.close();

@@ -1341,7 +1341,15 @@ async function test() {
       assert.ok(fields.exp && Number(fields.exp.numberValue) ===
                 Number(jwt.payload.exp), JSON.stringify(fields.exp));
       assert.ok(fields.aud, "aud is in the claims");
-      assert.ok(urls.holds(fields.aud, AUDIENCE),
+      // A google.protobuf.Value: one audience is a `stringValue`, several a
+      // `listValue` of them. Each read out and compared whole.
+      const audValue = fields.aud || {};
+      const audiences = audValue.listValue
+        ? (audValue.listValue.values || []).map(function (v) {
+          return v && v.stringValue;
+        })
+        : [audValue.stringValue];
+      assert.ok(urls.holds(audiences, AUDIENCE),
                 JSON.stringify(fields.aud));
     });
     const refusals = [

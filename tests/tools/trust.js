@@ -398,11 +398,18 @@ async function readTrust(url, nodes, options) {
     log.debug("Leaving readTrust(). One node.");
     return { pem: pem, pin: spkiPin(pem), leaves: 1 };
   }
+  // THE ANCHORS FIRST, ONCE (run #607). A fetch the known anchors do not
+  // verify is TWO connections — the refused one and the one against the
+  // Root — and a round-robin balancer then hands every second connection to
+  // the same node, so eight fetches saw one key and a browser met the
+  // other node's interstitial. With the Root among the anchors from the
+  // start, each fetch is one connection, as it was.
+  const anchors = await anchorsFor(url, options);
   const byPin = new Map();
   for (let attempt = 0; attempt < want * 4 && byPin.size < want;
        attempt += 1) {
     const pem = await fetchCertificate(url, 10000,
-      Object.assign({}, options || {}, { fresh: true }));
+      Object.assign({}, options || {}, { fresh: true, ca: anchors }));
     byPin.set(spkiPin(pem), pem);
   }
   const pins = Array.from(byPin.keys()).sort();
