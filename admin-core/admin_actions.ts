@@ -10048,7 +10048,18 @@ class AdminActions {
     // can refill them in the reader's language.
     const fill = serverProse.fill;
     const MESSAGES = policyKinds.MESSAGES;
-    const profileName = String(body.profile || module.DEFAULT_PROFILE).trim();
+    const submitted: Record<string, any> = Object.assign({}, body);
+    const creatingNamedProfile = submitted.newProfile === true ||
+      String(submitted.newProfile || '') === '1';
+    if (found.verb === 'save' && creatingNamedProfile &&
+        !String(submitted.profile || '').trim()) {
+      log.debug("Leaving AdminActions.policiesAction(). New profile has no " +
+                "name.");
+      return this.refused('STS-ADMIN-0549', {
+        ok: false, errors: ['Give the new ' + noun + ' a name.'] });
+    }
+    const profileName = String(submitted.profile ||
+                                module.DEFAULT_PROFILE).trim();
     // The profile the act is about (#535: a named passkey profile too).
     const before = module.read(profileName || module.DEFAULT_PROFILE);
     const valuesOf = function (profile) {
@@ -10091,7 +10102,7 @@ class AdminActions {
       // `form` is no member of the body: it is this function telling the
       // policy module's `save()` which door the values came through, and the
       // copy is what carries it (#1579).
-      const given: Record<string, any> = Object.assign({}, body);
+      const given: Record<string, any> = Object.assign({}, submitted);
       if (ctx.via === 'console') {
         given.form = 'console';
       }

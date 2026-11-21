@@ -49,6 +49,11 @@ const CreateForms = require('../admin-core/create_forms');
 const destinations = require('../common/secret_destinations');
 const attributeSources = require('../attribute-sources/attribute_sources');
 const passwordPolicy = require('../common/password_policy');
+const WebAnswers = require('../admin-ui/web_answers');
+const PoliciesPage = require('../admin-ui/web_policies');
+const ConsoleRuntime = require('../admin-ui/web_runtime');
+const SecretDestinationsPage =
+  require('../admin-ui/web_secret_destinations');
 
 const log = require('bunyan').createLogger({ name: 'create_forms',
   level: process.env.LOG_LEVEL || 'info' });
@@ -172,6 +177,7 @@ async function requiredHolds(t, table) {
 
 async function requiredWhen(t) {
   log.debug("Entering requiredWhen().");
+  const kit = require('../admin-ui/web_kit');
   const rows = CreateForms.fieldsOf('secretDestinations');
   const when = function (name) {
     const row = rows.filter(function (one) {
@@ -194,6 +200,59 @@ async function requiredWhen(t) {
   t.check(noRegion.ok === false && noCredential.ok === false,
           'B2. aws refuses a destination without its region, and without ' +
           'its credential');
+  const conditional = SecretDestinationsPage.newBody({
+    providers: ['aws', 'gcp', 'azure', 'vault'],
+    payloads: ['password'], fileAllowed: true,
+    createFields: rows
+  }, kit.context());
+  const regionStart = conditional.indexOf('id="fgc-new-region"');
+  const regionEnd = conditional.indexOf('</div>', regionStart);
+  const regionCell = conditional.slice(regionStart, regionEnd);
+  t.check(regionCell.indexOf('data-required-when-field="provider"') >= 0 &&
+          regionCell.indexOf('data-required-when-values="aws"') >= 0 &&
+          regionCell.indexOf('fg-required') < 0,
+          'B3. conditional fields carry their rule without an always-on ' +
+          'required mark');
+  const provider = {
+    value: 'aws',
+    addEventListener: function (name, handler) {
+      this.changed = handler;
+    }
+  };
+  const classes = {};
+  const regionInput = { type: 'text', required: false };
+  const endpointInput = { type: 'text', required: false };
+  const requiredCell = function (values, input) {
+    return {
+      getAttribute: function (name) {
+        return name === 'data-required-when-field' ? 'provider' : values;
+      },
+      classList: {
+        add: function (name) { classes[values + name] = true; },
+        remove: function (name) { delete classes[values + name]; }
+      },
+      querySelectorAll: function () { return [input]; }
+    };
+  };
+  const cells = [requiredCell('aws', regionInput),
+                 requiredCell('azure vault', endpointInput)];
+  const form = {
+    elements: { namedItem: function () { return provider; } },
+    querySelectorAll: function () { return cells; }
+  };
+  const runtime = new ConsoleRuntime({
+    location: { pathname: '/admin' },
+    document: { querySelectorAll: function () { return [form]; } }
+  });
+  runtime.wireConditionalRequirements();
+  const awsOutlined = classes['awsfg-required'] && regionInput.required &&
+    !classes['azure vaultfg-required'] && !endpointInput.required;
+  provider.value = 'vault';
+  provider.changed();
+  t.check(awsOutlined && !classes['awsfg-required'] && !regionInput.required &&
+          classes['azure vaultfg-required'] && endpointInput.required,
+          'B4. the browser marks only fields required for the selected ' +
+          'provider');
   log.debug("Leaving requiredWhen().");
 }
 
@@ -248,6 +307,40 @@ async function namedPolicy(t) {
   t.check(!!refused && refused.ok === false,
           'D4. and is refused without a required one',
           JSON.stringify(refused));
+  const unnamed = await Promise.resolve(adminActions.policiesAction({
+    action: 'save-password-policy', newProfile: '1', profile: '   '
+  }, CTX));
+  t.check(!!unnamed && unnamed.ok === false,
+          'D5. a named policy create without a name is refused');
+  const authnFields = {
+    newProfile: '1', name: 'typed-authn', description: 'typed description',
+    precedence: '17', mechanisms: ['', 'password'],
+    secondFactors: ['', 'totp']
+  };
+  const authnRefusal = WebAnswers.redraw(
+    '/admin/policies', 'save-named-authn-policy', authnFields,
+    { ok: false, errors: ['The policy was refused.'] }, {});
+  const authnHtml = PoliciesPage.newPolicyBody(require('../admin-ui/web_kit')
+    .context(), {
+      policies: {
+        kinds: [{ id: 'authn', label: 'Authentication',
+                  governs: 'authentication' }],
+        authn: { named: [], vocabulary: {
+          mechanisms: ['password'], secondFactors: ['totp'] } }
+      },
+      kind: 'authn',
+      state: authnRefusal.json.state
+    });
+  t.check(authnRefusal.json.state.policyDrafts['authn-new'].name ===
+            'typed-authn' &&
+          /value="typed-authn"/.test(authnHtml) &&
+          /value="typed description"/.test(authnHtml) &&
+          /name="precedence"[^>]*value="17"/.test(authnHtml) &&
+          /name="mechanisms" value="password"[^>]* checked/.test(authnHtml) &&
+          /name="secondFactors" value="totp"[^>]* checked/.test(authnHtml) &&
+          /The policy was refused\./.test(authnHtml),
+          'D6. a refused authentication-policy create keeps its fields and ' +
+          'shows the refusal');
   log.debug("Leaving namedPolicy().");
 }
 
@@ -270,6 +363,13 @@ function drawn(t) {
     return cell(name) && cell(name).indexOf('fg-required') < 0 &&
            !/ required[ >]/.test(cell(name));
   }), 'E2. its optional fields are drawn and not marked');
+  const box = { name: 'enabled', label: 'Enabled', type: 'checkbox',
+                required: true, checkedValue: 'yes', boxLabel: 'Enabled' };
+  const boxHtml = kit.createFields([box], {}, kit.context().t);
+  t.check(boxHtml.indexOf('fg-required') < 0 &&
+          !/ required(?:[ >]|=)/.test(boxHtml) &&
+          kit.requiredNote([box], kit.context().t).indexOf('Enabled') < 0,
+          'E3. an unchecked box is never marked required');
   log.debug("Leaving drawn().");
 }
 

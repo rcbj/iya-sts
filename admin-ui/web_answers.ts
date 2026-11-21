@@ -1086,8 +1086,9 @@ class WebAnswers {
     // applications, #609; #1235 took the search away.)
     if (page === POLICIES_PAGE && !ok &&
         WebAnswers.one(fields, 'newProfile') === '1') {
-      const kindId = String(action || '').replace(/^save-/, '')
-        .replace(/-policy$/, '');
+      const kindId = action === 'save-named-authn-policy' ? 'authn'
+        : String(action || '').replace(/^save-/, '')
+          .replace(/-policy$/, '');
       const key = kindId + '-new';
       const out = WebAnswers.copy(json);
       const before = out.state || {};

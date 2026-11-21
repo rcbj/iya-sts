@@ -2474,6 +2474,8 @@ class WebKit {
     const held = values || {};
     return '<div class="fg">' + rows.map(function (row) {
       const id = 'new-' + String(row.name).replace(/[^A-Za-z0-9_-]/g, '-');
+      const required = !!row.required &&
+        row.type !== 'checkbox' && row.type !== 'checks';
       // What a refused create posted, else the field's own starting value
       // (`value`, the create's default where it has one to show).
       const raw = held[row.name] !== undefined ? held[row.name] : row.value;
@@ -2487,7 +2489,7 @@ class WebKit {
       }).join('') +
         (row.placeholder
           ? ' placeholder="' + WebKit.esc(row.placeholder) + '"' : '') +
-        (row.required ? ' required aria-required="true"' : '');
+        (required ? ' required aria-required="true"' : '');
       let control;
       if (row.type === 'checkbox' || row.type === 'checks') {
         // ONE BOX, or A BOX PER CHOICE: what a form posts for a ticked box,
@@ -2526,22 +2528,30 @@ class WebKit {
       }
       // A box list's name heads the cell; a label names one control.
       const grouped = row.type === 'checkbox' || row.type === 'checks';
+      const when = row.type === 'checkbox' || row.type === 'checks'
+        ? null : row.requiredWhen;
+      const whenAttrs = when
+        ? ' data-required-when-field="' +
+          WebKit.esc(String(when.field)) +
+          '" data-required-when-values="' +
+          WebKit.esc((when.values || []).join(' ')) + '"'
+        : '';
       return '<div id="fgc-' + WebKit.esc(id) + '" class="fg-cell' +
-        (row.required ? ' fg-required' : '') + '">' +
+        (required ? ' fg-required' : '') + '"' + whenAttrs + '>' +
         (grouped
           ? '<span class="fg-name" id="' + WebKit.esc(id) + '-name">' +
             row.label + '</span>'
           : '<label class="fg-name" for="' + WebKit.esc(id) + '">' +
             row.label + '</label>') +
         '<span class="fg-for">' + (row.hint || '') +
-        (row.required ? t.html('consoleKit.grid.required') : '') +
+        (required ? t.html('consoleKit.grid.required') : '') +
         // REQUIRED ONLY FOR SOME CHOICES (a secret destination's region is
-        // AWS's): said in words, and not outlined, because the outline means
-        // the create refuses without it whatever else is chosen.
-        (!row.required && row.requiredWhen
+        // AWS's): said in words, and outlined only while that choice is
+        // selected.
+        (!required && when
           ? t.html('consoleKit.create.requiredWhen',
-                   { field: String(row.requiredWhen.field),
-                     values: (row.requiredWhen.values || []).join(', ') })
+                   { field: String(when.field),
+                     values: (when.values || []).join(', ') })
           : '') +
         '</span>' + control + '</div>';
     }).join('') + '</div>';
@@ -2556,7 +2566,8 @@ class WebKit {
    */
   static requiredNote(rows, t = webMessages.WebTranslator.fallback()) {
     const named = rows.filter(function (row) {
-      return row.required;
+      return row.required && row.type !== 'checkbox' &&
+        row.type !== 'checks';
     }).map(function (row) {
       // A parameter is text, escaped by the translator: the label's words.
       return WebKit.unescapeText(WebKit.plainTextOf(row.label));

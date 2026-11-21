@@ -71,7 +71,7 @@ class PoliciesPage {
       if (kind.id === 'password') {
         html = PoliciesPage.passwordPolicySection(view, t, view.state);
       } else if (kind.id === 'authn') {
-        html = PoliciesPage.authnPolicySection(view, t);
+        html = PoliciesPage.authnPolicySection(view, t, view.state);
       } else if (kind.id === 'attributes') {
         html = PoliciesPage.attributePolicySection(view, t, view.state);
       } else {
@@ -408,7 +408,7 @@ class PoliciesPage {
    * @param t - the page's translator (#539)
    * @returns the section as HTML
    */
-  static authnPolicySection(view, t) {
+  static authnPolicySection(view, t, state?) {
     const kind = view.kinds.filter(function (k) {
       return k.id === 'authn';
     })[0];
@@ -435,7 +435,7 @@ class PoliciesPage {
     // (the realm's own policy, its forms and what it accepts now), Named
     // policies (each one an application may name, #1148) and New policy.
     // The schema is reference for all three, so it stays under them.
-    const named = PoliciesPage.namedAuthnPoliciesSection(ap, t);
+    const named = PoliciesPage.namedAuthnPoliciesSection(ap, t, state);
     const byDefault =
       PoliciesPage.policyProblems(profile, t) +
 
@@ -507,10 +507,27 @@ class PoliciesPage {
    * @param t - the page's translator (#539)
    * @returns `{ list, add }`, each as HTML
    */
-  static namedAuthnPoliciesSection(ap, t) {
+  static namedAuthnPoliciesSection(ap, t, state?) {
     const vocabulary = ap.vocabulary || { mechanisms: [], secondFactors: [] };
     const named = ap.named || [];
     const references = ap.references || {};
+    const draft = (((state && state.policyDrafts) || {})['authn-new']) || null;
+    const refused = (((state && state.policySaveErrors) || {})['authn-new']) ||
+      [];
+    const draftValue = function (key, fallback) {
+      if (!draft || draft[key] === undefined) {
+        return fallback;
+      }
+      const value = draft[key];
+      return Array.isArray(value) ? String(value[0] || '') : String(value);
+    };
+    const draftValues = function (key) {
+      if (!draft || draft[key] === undefined) {
+        return [];
+      }
+      const value = draft[key];
+      return (Array.isArray(value) ? value : [value]).map(String);
+    };
     // What names a policy (#1237): `{ applications, groups, people }`, or
     // a list of applications from a view before groups could name one.
     const holdersOf = function (policy) {
@@ -559,29 +576,34 @@ class PoliciesPage {
         (policy
           ? '<input type="hidden" name="name" value="' +
             kit.esc(policy.name) + '">'
-          : PoliciesPage.nameCell(prefix + 'name', 'name',
-              t.html('consolePolicies.authnNamed.name'), '',
-              'passkeys-only', 62, t)) +
+          : '<input type="hidden" name="newProfile" value="1">' +
+            PoliciesPage.nameCell(prefix + 'name', 'name',
+              t.html('consolePolicies.authnNamed.name'),
+              draftValue('name', ''), 'passkeys-only', 62, t)) +
         '<div class="formrow"><label for="' + prefix + 'description">' +
         t.html('consolePolicies.form.description') + '</label> ' +
         '<input type="text" id="' + prefix + 'description" ' +
         'name="description" size="60" maxlength="1024" value="' +
-        kit.esc(policy ? policy.description : '') + '"></div>' +
+        kit.esc(policy ? policy.description
+                       : draftValue('description', '')) + '"></div>' +
         '<div class="formrow"><label for="' + prefix + 'precedence">' +
         t.html('consolePolicies.named.precedence') + '</label> ' +
         '<input type="number" id="' + prefix + 'precedence" ' +
         'name="precedence" min="1" max="1000" value="' +
-        kit.esc(String((policy && policy.precedence) || 100)) + '"> ' +
+        kit.esc(policy ? String(policy.precedence || 100)
+                       : draftValue('precedence', '100')) + '"> ' +
         '<span class="sub">' + t.html('consolePolicies.named.lowestApplies') +
         '</span></div>' +
         '<div class="formrow"><span>' +
         t.html('consolePolicies.authnNamed.first') + '</span> ' +
         boxes('mechanisms', vocabulary.mechanisms,
-              policy ? policy.mechanisms : [], prefix) + '</div>' +
+              policy ? policy.mechanisms : draftValues('mechanisms'),
+              prefix) + '</div>' +
         '<div class="formrow"><span>' +
         t.html('consolePolicies.authnNamed.second') + '</span> ' +
         boxes('secondFactors', vocabulary.secondFactors,
-              policy ? policy.secondFactors : [], prefix) + '</div>' +
+              policy ? policy.secondFactors : draftValues('secondFactors'),
+              prefix) + '</div>' +
         '<div class="formrow"><button>' +
         t.html('consolePolicies.authnNamed.save') + '</button></div></form>';
     };
@@ -626,6 +648,11 @@ class PoliciesPage {
         '</table>',
       add: '<h3 id="authn-new">' +
         t.html('consolePolicies.authnNamed.newHeading') + '</h3>' +
+        (refused.length
+          ? kit.warn(refused.map(function (one) {
+            return kit.esc(one);
+          }).join(' '), 'That was refused')
+          : '') +
         form(null)
     };
   }
@@ -1611,7 +1638,7 @@ class PoliciesPage {
     const state = json.state || {};
     let form;
     if (kind.id === 'authn') {
-      form = PoliciesPage.namedAuthnPoliciesSection(member, t).add;
+      form = PoliciesPage.namedAuthnPoliciesSection(member, t, state).add;
     } else if (kind.id === 'attributes') {
       form = PoliciesPage.attributePolicySection(marked, t, state, true);
     } else {
