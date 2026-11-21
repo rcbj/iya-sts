@@ -111,6 +111,14 @@
     "en": "0f52a102d4c01229",
     "text": "AUTHENTIFICATION INTÉGRÉE. La personne est envoyée vers /authn/spnego, qui répond 401 avec WWW-Authenticate: Negotiate et la connecte sur la base du ticket de service que son client renvoie (RFC 4559 sur RFC 4178 sur RFC 4121). Rien n’est saisi et aucun écran n’est affiché. Comme une clé de sécurité ou un portefeuille, il repose sur un identifiant que ce service vérifie dans tous les modes — le mot de passe de l’écran de connexion n’est vérifié qu’en mode produit — et ce que la session revendique ensuite est lu à partir des propres indicateurs du TICKET : amr [\"pwd\"] pour pre-authent, [\"hwk\"] pour hw-authent, les deux pour les deux, et RIEN du tout pour un ticket qui ne revendique ni l’un ni l’autre. Un client qui ne peut pas obtenir de ticket arrive sur une page qui renvoie vers l’écran de connexion, car un simple 401 Negotiate est une impasse dans tout navigateur qui n’est pas configuré pour cet hôte."
   },
+  "fed.mechanisms.attested-hardware.label": {
+    "en": "a133b83617b8359b",
+    "text": "Clé matérielle attestée"
+  },
+  "fed.mechanisms.attested-hardware.what": {
+    "en": "2fc5a571514106a4",
+    "text": "Une clé d'accès ou un certificat de carte à puce sur un jeton matériel que ce domaine a enregistré à partir de sa propre attestation (common/hardware_tokens.ts) : une clé de sécurité à attestation d'entreprise, ou une carte PIV. L'écran de connexion propose une clé d'accès et, là où la politique d'authentification en accepte un, un certificat, sans mot de passe. Dans une liste autorisée, seul un tel identifiant la satisfait : une application dont la politique d'authentification ne nomme que attested-hardware n'est atteinte qu'avec une clé matérielle prouvée."
+  },
   "fed.mechanisms.wallet.label": {
     "en": "a6a3e498bac9d4f6",
     "text": "Portefeuille (OpenID4VP)"
@@ -488,8 +496,8 @@
     "text": "LE POINTEUR, et tout ce que ce côté stocke sur le partenaire : l’identifiant de son entrée dans ou=applications. Son entityID, son assertion consumer service, ses URI de redirection et son certificat se trouvent LÀ-BAS, où chaque module de protocole les lit déjà. En copier un seul ici reproduirait l’échec des deux magasins que ce dépôt est organisé pour éviter."
   },
   "fed.schema.attributes.fedAuthnMechanism.what": {
-    "en": "10e91a734e1d74b3",
-    "text": "COMMENT CE SERVICE AUTHENTIFIE LA PERSONNE lorsque ce partenaire le lui demande : password, password-mfa, webauthn, spnego — un ticket Kerberos que le navigateur détient déjà, sans aucun écran — wallet — une attestation que ce domaine a émise, présentée depuis le portefeuille de la personne — ou federation, qui l’envoie vers une autre relation et fait de ce service un PONT d’identité entre deux protocoles. VIDE SIGNIFIE QUE CETTE RELATION NE DIT RIEN, ce qui n’est pas la même chose que password : on se rabat sur appFederationRelationship de l’entrée d’application puis sur l’écran de connexion, ce que faisait exactement chaque relation avant l’existence de cet attribut."
+    "en": "cbb25dba52aecc9f",
+    "text": "COMMENT CE SERVICE AUTHENTIFIE LA PERSONNE lorsque ce partenaire le lui demande : password, password-mfa, webauthn, attested-hardware — une clé d'accès sur un jeton matériel prouvé par attestation — spnego — un ticket Kerberos que le navigateur détient déjà, sans aucun écran — wallet — une attestation que ce domaine a émise, présentée depuis le portefeuille de la personne — ou federation, qui l’envoie vers une autre relation et fait de ce service un PONT d’identité entre deux protocoles. VIDE SIGNIFIE QUE CETTE RELATION NE DIT RIEN, ce qui n’est pas la même chose que password : on se rabat sur appFederationRelationship de l’entrée d’application puis sur l’écran de connexion, ce que faisait exactement chaque relation avant l’existence de cet attribut."
   },
   "fed.schema.attributes.fedAuthnRelationship.what": {
     "en": "e67f3ec502c8b6b8",

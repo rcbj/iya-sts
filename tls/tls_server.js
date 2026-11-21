@@ -5495,6 +5495,14 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
   const cert = peer.cert;
   const subject = peer.subject;
   const username = peer.username;
+  // A PIV CARD AUTHENTICATION CERTIFICATE (#1955 P2) works without a PIN
+  // and signs nobody in unless the realm says (`piv.cardAuthSignIn`).
+  const cardAuth = cardAuthRefusalOf(cert);
+  if (cardAuth) {
+    errorCodes.mark(res, 'STS-PIV-0013');
+    log.debug('Leaving startCertificateSessionIn(). A card-auth key.');
+    return { started: false, why: cardAuth };
+  }
   // A PERSON AT A BROWSER OWES THE SECOND FACTOR THE SCREEN WOULD ASK FOR
   // (#1516), so product mode starts no one-factor
   // session here for somebody who needs one; the sign-in screen's certificate
@@ -5514,8 +5522,12 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
   // added.
   const held = several ? certificateAccountHeld(req, username) : null;
   let session = null;
+  // WHAT THE CERTIFICATE'S KEY EARNS (#1955 P1): `swk` as always, `hwk`
+  // where a hardware token's attestation covers the key, with `sc` where
+  // it says the key is on a smart card. Never inferred here.
+  const amr = certificateAmrOf(cert);
   try {
-    session = authn.startSession(res, username, ['swk'], '1',
+    session = authn.startSession(res, username, amr, '1',
                                  'a client certificate on the ' + mode +
                                  '-client-certificate listener',
                                  // Which certificate, as a thumbprint the
@@ -5529,9 +5541,13 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
                                    protocol: 'TLS',
                                    method: 'client certificate (GET ' +
                                            '/tls/sign-in)',
+                                   // And its serial, which the hardware
+                                   // token register files it by (#1955).
                                    credential: {
                                      kind: 'certificate',
-                                     id: cert.fingerprint256 || '' } });
+                                     id: cert.fingerprint256 || '',
+                                     serial: String(cert.serialNumber ||
+                                                    '') } });
   } catch (e) {
     // Bookkeeping must never break a connection that has already been
     // accepted — the same rule recordClientCertificate() states.
@@ -5595,6 +5611,40 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
     answer.account = held ? 'reauthenticated' : 'added';
   }
   return answer;
+}
+
+// Why a client certificate may not sign in for the PIV profile it was
+// enrolled under (#1955 P2: piv-card-auth, without `piv.cardAuthSignIn`),
+// or '' when it may. `common/piv_attestation.ts` argues it.
+function cardAuthRefusalOf(cert) {
+  log.debug('Entering cardAuthRefusalOf().');
+  let refusal = null;
+  try {
+    refusal = require('../common/piv_attestation').signInRefusal(
+      String((cert && cert.serialNumber) || ''));
+  } catch (e) {
+    log.debug('Caught in cardAuthRefusalOf(): ' + ((e && e.message) || e));
+    refusal = null;
+  }
+  log.debug('Leaving cardAuthRefusalOf().');
+  return refusal ? String(refusal.why || '') : '';
+}
+
+// The RFC 8176 amr a client certificate's sign-in earns (#1955 P1): what
+// the hardware token register's evidence says of its key, `swk` when it
+// says nothing or cannot be asked. `common/hardware_tokens.ts` argues it.
+function certificateAmrOf(cert) {
+  log.debug('Entering certificateAmrOf().');
+  let amr = ['swk'];
+  try {
+    amr = require('../common/hardware_tokens').certificateAmr(
+      String((cert && cert.serialNumber) || ''));
+  } catch (e) {
+    log.debug('Caught in certificateAmrOf(): ' + ((e && e.message) || e));
+    amr = ['swk'];
+  }
+  log.debug('Leaving certificateAmrOf(). ' + amr.join(','));
+  return amr;
 }
 
 // THE CERTIFICATE ON THE CONNECTION AND WHOM IT NAMES (#1051: moved out of
@@ -5840,6 +5890,15 @@ function screenCertificateHolder(req) {
       log.debug('Leaving screenCertificateHolder(). ' + peer.why);
       return none;
     }
+    // A PIV CARD AUTHENTICATION CERTIFICATE (#1955 P2): see
+    // `startCertificateSessionIn()`.
+    const cardAuth = cardAuthRefusalOf(peer.cert);
+    if (cardAuth) {
+      log.info('tls: the sign-in screen refused a PIV card authentication ' +
+               'certificate: ' + cardAuth);
+      log.debug('Leaving screenCertificateHolder(). A card-auth key.');
+      return { ok: false, code: 'STS-PIV-0013', why: cardAuth };
+    }
     const revocationSaid = revocation && revocation.checked
       ? 'its revocation was consulted (' + revocation.policy + '): ' +
         revocation.why
@@ -5849,6 +5908,11 @@ function screenCertificateHolder(req) {
       ok: true,
       username: peer.username,
       credentialId: String(peer.cert.fingerprint256 || ''),
+      // Its serial, which the hardware token register files it by (#1955).
+      serial: String(peer.cert.serialNumber || ''),
+      // What the certificate's key earns (#1955 P1), for the screen's
+      // session: `GET /tls/sign-in`'s answer, from the same evidence.
+      amr: certificateAmrOf(peer.cert),
       revocationSaid: revocationSaid,
       // THE IDENTITY VERIFICATION (#127) `GET /tls/sign-in` records once
       // its session has started, recorded by the screen at the same point.

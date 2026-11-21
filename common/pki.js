@@ -15142,6 +15142,108 @@ function describeDeviceAnchors() {
   return out;
 }
 
+// ----- YubiKey PIV key attestation anchors (#1955 P2) ------------------------
+//
+// A PIV key attestation (`common/piv_attestation.ts`) is a certificate for a
+// slot's key, signed by the key's factory "f9" attestation certificate, which
+// chains to a Yubico PIV root: "Yubico PIV Root CA Serial 263751" for firmware
+// before 5.7.4, and "Yubico Attestation Root 1" through the PIV intermediates
+// for 5.7.4 and later. Both roots and the PIV intermediates are SHIPPED, in
+// `pki_piv_anchors.json`, generated from Yubico's publications and PINNED by
+// the SHA-256 of each DER exactly as `pki_device_anchors.json` is (above): a
+// row that does not match its pin is not used, logged under STS-PIV-0001.
+// Shipped, not empty, for the device anchors' reason: the default must work
+// for the one vendor whose attestation format this verifies, and a realm's
+// `piv.attestationAnchors`, when it holds any certificate, REPLACES the roots
+// (a test configures its own generated root; an operator may drop one).
+//
+// The intermediates are NOT anchors: they are offered to the path builder
+// beside the ones a request carried, because `ykman piv keys attest` and
+// `ykman piv certificates export f9` export only the two certificates on the
+// key, and a 5.7.4 key's f9 certificate is two intermediates below its root.
+// A configured anchor set replaces the roots and keeps these, which chain to
+// nothing but Yubico's own root and so cannot widen a configured set.
+let pivAnchors = null;
+const PIV_ANCHOR_KINDS = ['yubicoPivAttestation', 'yubicoPivIntermediate'];
+
+function pivAnchorTable() {
+  log.debug("Entering pivAnchorTable().");
+  if (!pivAnchors) {
+    const raw = require('./pki_piv_anchors.json');
+    const table = {};
+    PIV_ANCHOR_KINDS.forEach(function (kind) {
+      table[kind] = (raw[kind] || []).filter(function (row) {
+        const one = certificateBundle(row.pem).certificates[0] || null;
+        const digest = one ? stsCrypto.digest('sha256', one.der, 'hex') : '';
+        if (!one || digest !== String(row.sha256 || '').toLowerCase()) {
+          log.error(errorCodes.tag('STS-PIV-0001') + 'pki: the shipped ' +
+                    kind + ' certificate "' + String(row.subject || '') +
+                    '" does not match its pinned SHA-256 and is not used.');
+          return false;
+        }
+        return true;
+      }).map(function (row) {
+        return String(row.pem);
+      });
+    });
+    pivAnchors = table;
+  }
+  log.debug("Leaving pivAnchorTable().");
+  return pivAnchors;
+}
+
+/**
+ * Answers the anchors a YubiKey PIV key attestation must chain to, the
+ * shipped intermediates offered to the path builder, and where the anchors
+ * came from.
+ *
+ * @param configuredPem - the realm's `piv.attestationAnchors`, a PEM bundle
+ * @returns `{ anchors, intermediates, source }`, `source` being
+ *   'configured', 'shipped' or 'none'; each certificate as
+ *   `certificateBundle()` answers it
+ */
+function pivAttestationAnchors(configuredPem) {
+  log.debug("Entering pivAttestationAnchors().");
+  const table = pivAnchorTable();
+  const intermediates = certificateBundle(
+    table.yubicoPivIntermediate.join('\n')).certificates;
+  const configured = certificateBundle(configuredPem).certificates;
+  if (configured.length) {
+    log.debug("Leaving pivAttestationAnchors(). Configured.");
+    return { anchors: configured, intermediates: intermediates,
+             source: 'configured' };
+  }
+  const shipped = certificateBundle(
+    table.yubicoPivAttestation.join('\n')).certificates;
+  log.debug("Leaving pivAttestationAnchors(). " + shipped.length +
+            " shipped.");
+  return { anchors: shipped, intermediates: intermediates,
+           source: shipped.length ? 'shipped' : 'none' };
+}
+
+/**
+ * Describes the shipped PIV attestation certificates: subject, expiry and
+ * pin of each, per kind. Never a certificate's text.
+ *
+ * @returns the description, per kind
+ */
+function describePivAnchors() {
+  log.debug("Entering describePivAnchors().");
+  const raw = require('./pki_piv_anchors.json');
+  const usable = pivAnchorTable();
+  const out = {};
+  PIV_ANCHOR_KINDS.forEach(function (kind) {
+    out[kind] = (raw[kind] || []).map(function (row) {
+      return { subject: String(row.subject || ''),
+               notAfter: String(row.notAfter || ''),
+               sha256: String(row.sha256 || ''),
+               used: usable[kind].indexOf(String(row.pem)) >= 0 };
+    });
+  });
+  log.debug("Leaving describePivAnchors().");
+  return out;
+}
+
 // ----- The FIDO Metadata Service's BLOB (#62 P5, 2026-09-22) ----------------
 //
 // FIDO MDS3 (FIDO Metadata Service v3.0, section 3.1.8) publishes one signed
@@ -15713,6 +15815,8 @@ module.exports = {
   azureImdsRoots: azureImdsRoots,
   deviceAttestationAnchors: deviceAttestationAnchors,
   describeDeviceAnchors: describeDeviceAnchors,
+  pivAttestationAnchors: pivAttestationAnchors,
+  describePivAnchors: describePivAnchors,
   TIERS: TIERS,
   TIER_IDS: TIER_IDS,
   // A GETTER, so a reader of `pki.MAX_OBJECTS` sees `pki.maxStoredObjects`.

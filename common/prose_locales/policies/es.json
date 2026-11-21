@@ -564,8 +564,8 @@
     "text": "Para qué sirve el perfil, para la próxima persona que lo lea."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicyMechanism.what": {
-    "en": "66db848b0bb1c58f",
-    "text": "En una política de autenticación CON NOMBRE (#1148, #1237): un mecanismo de primer factor que permite un inicio de sesión al que se aplica — cuando la aplicación (appAuthnPolicy) o uno de los grupos de la persona (stsAuthnPolicy) la indica y su precedencia es la menor de las indicadas —: password, password-mfa, webauthn, spnego, wallet o federation, un valor cada uno. Si no hay ninguno, se permiten todos los que permite el dominio."
+    "en": "783db3d7da8c29c5",
+    "text": "En una política de autenticación CON NOMBRE (#1148, #1237): un mecanismo de primer factor que permite un inicio de sesión al que se aplica — cuando la aplicación (appAuthnPolicy) o uno de los grupos de la persona (stsAuthnPolicy) la indica y su precedencia es la menor de las indicadas —: password, password-mfa, webauthn, attested-hardware (una llave de acceso o un certificado en un token de hardware probado por atestación, #1955), spnego, wallet o federation, un valor cada uno. Si no hay ninguno, se permiten todos los que permite el dominio."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicySecondFactor.what": {
     "en": "7c8e4d8b4cce7c08",
@@ -1247,6 +1247,22 @@
     "en": "5098a9645fefe2ff",
     "text": "DESACTIVADO DE FORMA PREDETERMINADA. Activado, una emisión hacia una aplicación que cubre este perfil espera hasta que la sesión de inicio de sesión esté vinculada a la clave del navegador, y se rechaza cuando el navegador omitió ese registro o la espera transcurrió sin una vinculación. Una sesión a la que nunca se le ofreció el registro no es rechazada por esta fila. Se rechaza mientras authn.deviceBoundSessions está desactivado."
   },
+  "passkey.FIELDS.credProtect.label": {
+    "en": "9a492f70e0e2aedd",
+    "text": "Protección de la credencial que un registro pide a una llave de seguridad"
+  },
+  "passkey.FIELDS.credProtect.what": {
+    "en": "64640106a92f3111",
+    "text": "`none` POR DEFECTO: un registro no pide protección de la credencial, y sus opciones son las de siempre. En otro caso, un registro pide al autenticador (CTAP 2.1 sección 12.1, la extensión credProtect) que proteja la nueva credencial en ese nivel: `userVerificationOptional` (nivel 1, lo que tiene una credencial sin la extensión), `userVerificationOptionalWithCredentialIDList` (nivel 2: la llave no revela ni usa la credencial sin verificación del usuario salvo que la parte de confianza la nombre en allowCredentials, de modo que nadie que tenga la llave puede encontrar en ella una credencial detectable) o `userVerificationRequired` (nivel 3: la llave usa la credencial solo tras un PIN o un dato biométrico). El nivel que informa la llave se registra en la llave de acceso. La mayoría de las llaves de acceso de plataforma y sincronizadas no informan nada. Si se omite al guardar, se conserva el valor predeterminado integrado."
+  },
+  "passkey.FIELDS.enforceCredProtect.label": {
+    "en": "5cc78bfe52150545",
+    "text": "Rechazar una llave que no aplique esa protección"
+  },
+  "passkey.FIELDS.enforceCredProtect.what": {
+    "en": "52a07dbeabc876c9",
+    "text": "DESACTIVADO POR DEFECTO. Activado, se pide al navegador que haga cumplir la fila anterior (enforceCredentialProtectionPolicy), y se rechaza un registro cuyo autenticador informe un nivel inferior al que pide la fila anterior; una llave que no informa nada está en el nivel 1. Necesita que la fila anterior tenga un nivel distinto de none. Si se omite al guardar, se conserva el valor predeterminado integrado."
+  },
   "passkey.SCHEMA.objectClasses.stsPasskeyPolicy.what": {
     "en": "44bab556bd6240cc",
     "text": "La clase de este servicio para una política de llaves de acceso: cómo se comportan las llaves de acceso en este dominio. La entrada lleva el nombre del PERFIL (`cn=default`)."
@@ -1354,6 +1370,14 @@
   "passkey.SCHEMA.attributes.stsPasskeyDeviceBoundRequired.what": {
     "en": "5098a9645fefe2ff",
     "text": "DESACTIVADO DE FORMA PREDETERMINADA. Activado, una emisión hacia una aplicación que cubre este perfil espera hasta que la sesión de inicio de sesión esté vinculada a la clave del navegador, y se rechaza cuando el navegador omitió ese registro o la espera transcurrió sin una vinculación. Una sesión a la que nunca se le ofreció el registro no es rechazada por esta fila. Se rechaza mientras authn.deviceBoundSessions está desactivado."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyCredProtect.what": {
+    "en": "64640106a92f3111",
+    "text": "`none` POR DEFECTO: un registro no pide protección de la credencial, y sus opciones son las de siempre. En otro caso, un registro pide al autenticador (CTAP 2.1 sección 12.1, la extensión credProtect) que proteja la nueva credencial en ese nivel: `userVerificationOptional` (nivel 1, lo que tiene una credencial sin la extensión), `userVerificationOptionalWithCredentialIDList` (nivel 2: la llave no revela ni usa la credencial sin verificación del usuario salvo que la parte de confianza la nombre en allowCredentials, de modo que nadie que tenga la llave puede encontrar en ella una credencial detectable) o `userVerificationRequired` (nivel 3: la llave usa la credencial solo tras un PIN o un dato biométrico). El nivel que informa la llave se registra en la llave de acceso. La mayoría de las llaves de acceso de plataforma y sincronizadas no informan nada. Si se omite al guardar, se conserva el valor predeterminado integrado."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyEnforceCredProtect.what": {
+    "en": "52a07dbeabc876c9",
+    "text": "DESACTIVADO POR DEFECTO. Activado, se pide al navegador que haga cumplir la fila anterior (enforceCredentialProtectionPolicy), y se rechaza un registro cuyo autenticador informe un nivel inferior al que pide la fila anterior; una llave que no informa nada está en el nivel 1. Necesita que la fila anterior tenga un nivel distinto de none. Si se omite al guardar, se conserva el valor predeterminado integrado."
   },
   "passkey.SCHEMA.attributes.stsPasskeyPrecedence.what": {
     "en": "cd02467de702ad24",

@@ -32,6 +32,8 @@ import OwnedPages = require('./web_owned');
 import SharedPages = require('./web_shared');
 import PasswordPages = require('./web_password');
 import KeysPages = require('./web_keys');
+import TokensPages = require('./web_tokens');
+import OpenPgpPages = require('./web_openpgp');
 import MfaPages = require('./web_mfa');
 import SigningKeyPages = require('./web_signing_key');
 import CertificatesPages = require('./web_certificates');
@@ -67,6 +69,8 @@ const PAGES: PortalPage[] = [].concat(
   SharedPages.PAGES,
   PasswordPages.PAGES,
   KeysPages.PAGES,
+  TokensPages.PAGES,
+  OpenPgpPages.PAGES,
   MfaPages.PAGES,
   SigningKeyPages.PAGES,
   CertificatesPages.PAGES,

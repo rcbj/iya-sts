@@ -1117,8 +1117,12 @@ class Krb5PersonKeys {
     const indicators = Array.isArray(d.indicators) ? d.indicators.map(String)
                                                    : [];
     const otp = indicators.indexOf('otp') >= 0;
-    const amr = d.pkinit ? (d.hardware ? ['hwk'] : ['swk'])
-                         : (otp ? ['pwd', 'otp'] : ['pwd']);
+    // `sc` beside `hwk` where the evidence said the key is on a smart card
+    // (#1955 P1, the KDC's `pkinit-smartcard` indicator).
+    const amr = d.pkinit ? (d.hardware
+      ? (indicators.indexOf('pkinit-smartcard') >= 0 ? ['hwk', 'sc']
+                                                      : ['hwk'])
+      : ['swk']) : (otp ? ['pwd', 'otp'] : ['pwd']);
     const acr = otp ? 'mfa' : '1';
     let assessment: Json = null;
     let engine: Json = null;

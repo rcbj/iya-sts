@@ -431,6 +431,22 @@
     "en": "bfb6c6f542c0607b",
     "text": "/Me, das authentifizierte Subjekt"
   },
+  "endpoints.route./.well-known/openpgpkey/:domain/hu/:hash.name": {
+    "en": "b042a2652a9771c9",
+    "text": "Web-Key-Directory-Schlüssel (erweiterte Methode)"
+  },
+  "endpoints.route./.well-known/openpgpkey/:domain/policy.name": {
+    "en": "f0c7c4485ab23e66",
+    "text": "Web-Key-Directory-Richtlinie (erweiterte Methode)"
+  },
+  "endpoints.route./.well-known/openpgpkey/hu/:hash.name": {
+    "en": "a8849e1ec8b477d5",
+    "text": "Web-Key-Directory-Schlüssel (direkte Methode)"
+  },
+  "endpoints.route./.well-known/openpgpkey/policy.name": {
+    "en": "d9805e391b15a7b9",
+    "text": "Web-Key-Directory-Richtlinie (direkte Methode)"
+  },
   "endpoints.route./.well-known/hoba/register.name": {
     "en": "b95adde7badbdef3",
     "text": "Einen öffentlichen HOBA-Schlüssel registrieren"
@@ -895,6 +911,14 @@
     "en": "cff7055c2db49c6a",
     "text": "E-Mail-Aktionen"
   },
+  "endpoints.route./admin-api/openpgp.name": {
+    "en": "bb22bb5b740e327f",
+    "text": "OpenPGP-Schlüssel"
+  },
+  "endpoints.route./admin-api/openpgp/:action.name": {
+    "en": "a1147f062fddb7e5",
+    "text": "Aktionen für OpenPGP-Schlüssel"
+  },
   "endpoints.route./admin-api/mail/outbox.name": {
     "en": "d40abea9379f4e22",
     "text": "E-Mail-Postausgang"
@@ -1207,6 +1231,14 @@
     "en": "6bfc2bea96fee884",
     "text": "Eine Aktivität nach der Anmeldung starten, anhalten, fortsetzen oder beenden"
   },
+  "endpoints.route./admin-api/hardware-tokens.name": {
+    "en": "386404ef0cf5e649",
+    "text": "Hardware-Token"
+  },
+  "endpoints.route./admin-api/hardware-tokens/:action.name": {
+    "en": "33209f967f070175",
+    "text": "Aktionen für Hardware-Token"
+  },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",
     "text": "Ausgehende SCIM-Clients"
@@ -1218,6 +1250,10 @@
   "endpoints.route./admin-api/roles/preview.name": {
     "en": "c2e62734c4466542",
     "text": "Würde dies ausgestellt?"
+  },
+  "endpoints.route./admin-api/roles/eligibility.name": {
+    "en": "7bf17441c33aaafb",
+    "text": "Ist diese Person für diese dynamische Rolle berechtigt?"
   },
   "endpoints.route./admin-api/roles/:action.name": {
     "en": "1baadaaa0e1df852",
@@ -1847,6 +1883,10 @@
     "en": "69876d051e66729c",
     "text": "Schritt der Aktivität nach der Anmeldung"
   },
+  "endpoints.route./authn/roles.name": {
+    "en": "d10487ebcbc8b238",
+    "text": "Schritt für dynamische Rollen"
+  },
   "endpoints.route./authn/totp.name": {
     "en": "a89de574ee2c21ab",
     "text": "Schritt des zweiten Faktors per Einmalcode"
@@ -2002,6 +2042,10 @@
   "endpoints.route./authn-api/mfa/:id/post-login/skip.name": {
     "en": "3d081a5b28f53bd6",
     "text": "Eine Aktivität nach der Anmeldung aufschieben"
+  },
+  "endpoints.route./authn-api/mfa/:id/roles.name": {
+    "en": "77d2211c8b1e2d93",
+    "text": "Die dynamischen Rollen dieser Anmeldung wählen"
   },
   "endpoints.route./authn-api/mfa/:id/email/send.name": {
     "en": "f974b23b7838f712",
@@ -2554,5 +2598,9 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS (ein Clientzertifikat wird erbeten, nie verlangt)"
+  },
+  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
+    "en": "f46d01f7581b5379",
+    "text": "Hinterlegte PIV-Schlüssel"
   }
 }

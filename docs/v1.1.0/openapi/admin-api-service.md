@@ -2359,6 +2359,7 @@ Scope: `admin:read`.
 | `buildProblem.at` | string |  |  |
 | `buildProblem.why` | string |  |  |
 | `categories` | list |  |  |
+| `categories[].encryptedSubject` | string |  | The Subject an ENCRYPTED message of this category goes out under (#1955), `{{service}}` filled in at send; the real subject is inside. |
 | `categories[].id` | string |  |  |
 | `categories[].label` | string |  |  |
 | `categories[].optional` | boolean |  |  |

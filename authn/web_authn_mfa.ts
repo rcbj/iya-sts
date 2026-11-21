@@ -457,6 +457,46 @@ class WebAuthnMfa {
   }
 
   /**
+   * `/authn/roles` (#1072): the dynamic roles this sign-in may choose, each
+   * a checkbox with the label and description its role gives; Continue
+   * sends the ticked ones. What a role is for is the administrator's
+   * description; the page never names a policy or why a role is offered.
+   *
+   * @param v - the view
+   * @param ctx - the context
+   * @returns the body
+   */
+  static roles(v: Json, ctx: Json): string {
+    const t = ctx.t;
+    const r = v.roles || {};
+    const esc = WebAuthnLogin.esc;
+    const offered: Json[] = r.offered || [];
+    const boxes = offered.map(function (one: Json, at: number): string {
+      return '<label class="chk"><input type="checkbox" name="roles" ' +
+        'id="role-' + at + '" value="' + esc(one.name) + '"> ' +
+        esc(one.label) +
+        (one.required ? ' <strong>' + t.html('authn.roles.requiredTag') +
+                        '</strong>' : '') +
+        (one.description ? ' <span class="sub">' + esc(one.description) +
+                           '</span>' : '') +
+        (one.exclusiveGroup ? ' <span class="sub">' +
+          t.html('authn.roles.exclusive') + '</span>' : '') + '</label>';
+    }).join('');
+    return '<h1>' + t.html('authn.roles.heading') + '</h1>' +
+      '<p class="sub">' + t.html('authn.roles.sub',
+                                 { name: String(v.username || '') }) +
+      '</p>' + WebAuthnMfa.error(ctx) +
+      (r.required ? '<p><strong>' + t.html('authn.roles.required') +
+                    '</strong></p>' : '') +
+      '<form method="post" action="/authn/roles">' + boxes +
+      '<div class="row"><button type="submit" id="roles-choose" ' +
+      'name="action" value="choose">' + t.html('authn.roles.continue') +
+      '</button></div></form>' +
+      WebAuthnMfa.startOver(t) + '<div class="meta">' +
+      t.html('authn.mfaSetup.meta') + '</div>';
+  }
+
+  /**
    * `/authn/post-login` (#1096): what the realm asks after signing in —
    * today, a post-quantum passkey (no role since #1135) — with Register,
    * and Skip where the allotted time has not passed.

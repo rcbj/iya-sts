@@ -440,6 +440,35 @@ class Credentials {
            value >= 0 && value <= 255 ? value : null;
   }
 
+  /**
+   * The credProtect level a registration's authenticator reported (#1955
+   * P7), CTAP 2.1 section 12.1's `credProtect` extension output, or null
+   * where it reported none.
+   *
+   * @param verdict - `authn/webauthn.js`'s registration verdict
+   * @returns 1, 2 or 3, or null
+   */
+  static reportedCredProtect(verdict: any): number | null {
+    helpers.log.debug("Entering Credentials.reportedCredProtect().");
+    helpers.log.debug("Leaving Credentials.reportedCredProtect().");
+    return passkeyPolicy.reportedCredProtect(verdict && verdict.extensions);
+  }
+
+  /**
+   * The U2F AppID a stored key was imported under (#1955 P7), or `''` for a
+   * key registered through WebAuthn, which is every other key.
+   *
+   * @param key - a stored key
+   * @returns the AppID, or `''`
+   */
+  static appIdOf(key: any): string {
+    helpers.log.debug("Entering Credentials.appIdOf().");
+    // The one reading, `webauthn_policy.ts`'s.
+    const out = webauthnPolicy.keyAppId(key);
+    helpers.log.debug("Leaving Credentials.appIdOf().");
+    return out;
+  }
+
   // An AAGUID as the UUID string CAEP and the FIDO metadata service write
   // (`01020304-0506-...`), from the 32 hex digits `authn/webauthn.js` parses
   // out of the attested credential data. All zeros — an authenticator that
@@ -3797,6 +3826,13 @@ class Credentials {
     if (typeof given.backupEligible === 'boolean') {
       facts.backupEligible = given.backupEligible;
     }
+    // THE CREDPROTECT LEVEL THE KEY REPORTED (#1955 P7), asked only of a
+    // ceremony that ran — a door that ran none (an import) is held to no
+    // level it was never asked for. `undefined` is "not asked"; null is
+    // "asked, reported nothing".
+    if (given.credProtect !== undefined) {
+      facts.credProtect = given.credProtect;
+    }
     // AN UPGRADE (#939): the classical passkey it upgrades, looked up NOW
     // among this person's keys — the entry as it is at the write, not as
     // it was at the proof — and its algorithm sent to the policy beside
@@ -3846,8 +3882,10 @@ class Credentials {
               ? 'attestation-algorithm'
               // #940: an algorithm the person's profile does not offer.
               : (synced.reason === 'profile-algorithm' ? 'profile-algorithm'
-                : (/^serial-/.test(synced.reason) ? 'device-serial'
-                                                  : 'passkey-policy')))));
+                // #1955 P7: a credProtect level below the enforced one.
+                : (synced.reason === 'cred-protect' ? 'cred-protect'
+                  : (/^serial-/.test(synced.reason) ? 'device-serial'
+                                                    : 'passkey-policy'))))));
       log.info('credentials: a passkey was NOT enrolled for ' + name +
                ' (' + synced.code + ', ' + reason + '): ' + synced.why);
       log.debug("Leaving Credentials.addKey(). Refused by the passkey " +
@@ -3957,6 +3995,20 @@ class Credentials {
       // every later sign-in to while it enforces a PIN length.
       minPinLength: typeof credential.minPinLength === 'number'
         ? credential.minPinLength : null,
+      // THE CREDPROTECT LEVEL THE KEY REPORTED (#1955 P7), CTAP 2.1 section
+      // 12.1: 1, 2 or 3; absent where it reported none or no ceremony ran,
+      // so a row is written as it was before unless a key reported one.
+      credProtect: passkeyPolicy.reportedCredProtect(
+        { credProtect: credential.credProtect }) || undefined,
+      // THE LEGACY U2F APPID IT WAS IMPORTED UNDER (#1955 P7), and who
+      // imported it and when — absent for every key registered here. An
+      // assertion by it is checked against SHA-256 of this AppID only where
+      // the client used the appid extension (`authn/webauthn.js`).
+      appid: typeof credential.appid === 'string' && credential.appid
+        ? String(credential.appid) : undefined,
+      importedBy: credential.appid && credential.importedBy
+        ? Credentials.enrolledByOf(credential.importedBy) || undefined
+        : undefined,
       // THE USER HANDLE IT WAS CREATED UNDER (#474): what its authenticator
       // hands back, and what `userHandleRefusal()` holds an assertion to.
       // Only a handle this service mints; a key written without one (before
@@ -4050,6 +4102,22 @@ class Credentials {
                                    'in this realm\'s directory.'] });
     }
     log.info('credentials: a passkey was enrolled for ' + name + '.');
+    // THE HARDWARE TOKEN IT IS ON (#1955 P1): a key whose trusted
+    // enterprise attestation named a device serial is a credential on a
+    // physical token, and the token register records it HERE, at the one
+    // writer, so no enrolment door can miss it. Required at the moment of
+    // use (it reaches this file lazily the other way); a failure there
+    // never undoes the key.
+    try {
+      require('./hardware_tokens').noteFidoKey(name, record, {
+        actor: enrolledBy ? enrolledBy.username : name,
+        via: enrolledBy ? 'admin' : 'webauthn' });
+    } catch (e) {
+      log.error(errorCodes.tag('STS-HWTOKEN-0011') +
+                'credentials: the passkey of ' + name + ' was written and ' +
+                'the hardware token it is on could not be recorded: ' +
+                ((e && e.message) || e));
+    }
     // A ROW THIS ONE MAY HAVE REPLACED ON ITS AUTHENTICATOR (#1101). Not
     // for an upgrade, whose write already replaced or marked the old row.
     if (!upgrading) {
@@ -5037,9 +5105,11 @@ class Credentials {
    *
    * @param username - the person
    * @param credentialId - the key's credential id
+   * @param opts - `lost`: the key was reported lost (#1955), so the
+   *   last-way-in guard does not keep it
    * @returns `{ ok: true, remaining }`, or a refusal
    */
-  removeKey(username, credentialId) {
+  removeKey(username, credentialId, opts?) {
     const { log } = this.deps;
     const directory = this.directory;
     const coded = this.coded.bind(this);
@@ -5091,7 +5161,11 @@ class Credentials {
         kept.some((one) => {
           return !one.possiblyReplacedBy;
         });
-    if (removed && keyIsWayIn &&
+    // A LOST KEY (#1955) IS NOT KEPT AS A WAY IN: its holder no longer has
+    // it and whoever found it does. The person is left to an activation
+    // link or the realm's recovery, which the lost-key act's answer says.
+    const lost = !!(opts && opts.lost);
+    if (removed && keyIsWayIn && !lost &&
         !this.hasPassword(name) && !stillHasKey) {
       log.debug("Leaving Credentials.removeKey().");
       return coded('STS-AUTHN-0070',
@@ -5111,6 +5185,20 @@ class Credentials {
                                    e.message] });
     }
     log.info('credentials: a passkey was removed for ' + name + '.');
+    // The hardware token that listed it (#1955) drops it, unless the
+    // lost-key act is removing it — that act keeps it on the record as
+    // retired. Lazily, and never undoing the removal.
+    if (!lost) {
+      try {
+        require('./hardware_tokens').forgetCredential('fido',
+                                                      String(credentialId));
+      } catch (e) {
+        log.debug('Caught in Credentials.removeKey(): ' +
+                  ((e && e.message) || e));
+        // The token page lists a removed passkey until the token is next
+        // written; the key itself is gone either way.
+      }
+    }
     log.debug("Leaving Credentials.removeKey().");
     return { ok: true, remaining: kept.length };
   }
@@ -5189,6 +5277,132 @@ class Credentials {
   // and written to the audit, and nothing a person means by a nickname needs
   // one.
   // ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // A LEGACY FIDO U2F CREDENTIAL, IMPORTED BY VALUE (#1955 P7, rcbj's reversal
+  // of the issue's D5).
+  //
+  // A U2F relying party kept, per registered key, the KEY HANDLE (the
+  // credential id), the P-256 PUBLIC KEY as an uncompressed point (65 bytes,
+  // 0x04 ‖ x ‖ y; FIDO U2F Raw Message Formats section 4.3), the COUNTER and
+  // the APPID it was registered under. Those four, and the person, are the
+  // import; nothing is verified about where they came from, because there is
+  // no ceremony to verify — an administrator vouches for them, the console
+  // says so, and the act is audited. What IS checked:
+  //
+  //   * the AppID is one `webauthn.u2fAppIds` lists (STS-AUTHN-0561): the
+  //     switch is the setting, EMPTY by default, so nothing is importable
+  //     until an operator names the legacy relying party;
+  //   * the key handle is base64 or base64url of 1 to 255 bytes, U2F's own
+  //     bound (a one-byte length, section 4.3) (STS-AUTHN-0562);
+  //   * the public key is an uncompressed P-256 point `common/crypto.js`
+  //     accepts as one (STS-AUTHN-0563);
+  //   * the counter is a whole number from 0 to 2^32 - 1, the U2F counter's
+  //     range (STS-AUTHN-0564), so the next assertion is held to it.
+  //
+  // THEN `addKey()`, THE ONE WRITER, like every other door: the duplicate
+  // check, the cap, the lane, and the issuance policy's registration
+  // question — the algorithm (ES256, which a profile's registration list
+  // may exclude) and the attestation algorithms (none recorded, which a set
+  // attestationAlgorithms list refuses). The key is recorded with its
+  // `appid`, `importedBy`, no attestation, not discoverable and not
+  // backup-eligible (a U2F key holds its credential), and `userVerified`
+  // false: U2F has no user verification, which is why such a key answers
+  // only a second-factor step (`authn.ts`).
+  // ---------------------------------------------------------------------------
+  /**
+   * Imports a legacy U2F credential onto a person's entry (#1955 P7).
+   *
+   * @param username - the person
+   * @param given - `{ keyHandle, publicKey, appId, counter, label }`; the
+   *   key handle and the public key base64 or base64url
+   * @param opts - `importedBy`: `{ username, sub, at }`, the administrator
+   * @returns `addKey()`'s answer, or a refusal
+   */
+  importU2fKey(username, given, opts?) {
+    const { log, webauthnPolicy, errorCodes } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.importU2fKey().");
+    const name = String(username || '').trim();
+    const body = given || {};
+    const appid = String(body.appId || body.appid || '').trim();
+    if (webauthnPolicy.legacyAppIds().indexOf(appid) < 0) {
+      log.debug("Leaving Credentials.importU2fKey(). AppID not permitted.");
+      return coded('STS-AUTHN-0561', { ok: false, reason: 'appid',
+        errors: [webauthnPolicy.legacyAppIds().length
+          ? 'The AppID "' + appid.slice(0, 200) + '" is not one this ' +
+            'realm\'s webauthn.u2fAppIds lists, so a credential registered ' +
+            'under it cannot be imported.'
+          : 'This realm permits no legacy U2F AppID (webauthn.u2fAppIds ' +
+            'is empty), so no U2F credential can be imported.'] });
+    }
+    const bytesOf = function (value: unknown): Buffer | null {
+      log.debug("Entering importU2fKey() bytesOf().");
+      const text = String(value == null ? '' : value).trim();
+      log.debug("Leaving importU2fKey() bytesOf().");
+      return /^[A-Za-z0-9+/_-]+={0,2}$/.test(text)
+        ? Buffer.from(text, 'base64') : null;
+    };
+    const handle = bytesOf(body.keyHandle);
+    if (!handle || handle.length < 1 || handle.length > 255) {
+      log.debug("Leaving Credentials.importU2fKey(). Bad key handle.");
+      return coded('STS-AUTHN-0562', { ok: false, reason: 'key-handle',
+        errors: ['The key handle is not base64 or base64url of 1 to 255 ' +
+                 'bytes, which is what a U2F key handle is.'] });
+    }
+    const point = bytesOf(body.publicKey);
+    let jwk: Record<string, string> | null = null;
+    if (point && point.length === 65 && point[0] === 0x04) {
+      jwk = { kty: 'EC', crv: 'P-256',
+              x: point.subarray(1, 33).toString('base64url'),
+              y: point.subarray(33, 65).toString('base64url') };
+      try {
+        crypto.publicKeyFromJwk(jwk);
+      } catch (e) {
+        // NOT A POINT ON THE CURVE: refused below, by name.
+        log.debug("Caught in Credentials.importU2fKey(): " +
+                  ((e && e.message) || e));
+        jwk = null;
+      }
+    }
+    if (!jwk) {
+      log.debug("Leaving Credentials.importU2fKey(). Bad public key.");
+      return coded('STS-AUTHN-0563', { ok: false, reason: 'public-key',
+        errors: ['The public key is not an uncompressed P-256 point (65 ' +
+                 'bytes starting 0x04, base64 or base64url), which is ' +
+                 'what a U2F registration recorded.'] });
+    }
+    const rawCounter = body.counter === undefined || body.counter === null ||
+      String(body.counter).trim() === '' ? '0' : String(body.counter).trim();
+    const counter = /^[0-9]{1,10}$/.test(rawCounter) ? Number(rawCounter)
+                                                    : -1;
+    if (counter < 0 || counter > 4294967295) {
+      log.debug("Leaving Credentials.importU2fKey(). Bad counter.");
+      return coded('STS-AUTHN-0564', { ok: false, reason: 'counter',
+        errors: ['The counter is not a whole number from 0 to 4294967295, ' +
+                 'the range of a U2F signature counter.'] });
+    }
+    jwk.alg = 'ES256';
+    const out = this.addKey(name, {
+      credentialId: handle.toString('base64url'),
+      publicKeyJwk: jwk, signCount: counter,
+      label: String(body.label || '').trim().slice(0, 60),
+      attachment: 'cross-platform', aaguid: null,
+      algorithm: 'ES256', coseAlg: -7, attestation: null,
+      backupEligible: false, backupState: false, transports: [],
+      discoverable: false, userVerified: false,
+      appid: appid,
+      importedBy: (opts && opts.importedBy) || { username: 'operator',
+                                                  at: Date.now() }
+    });
+    if (out && out.ok === false) {
+      log.debug("Leaving Credentials.importU2fKey(). The writer refused: " +
+                (errorCodes.codeOf(out) || 'no code'));
+      return out;
+    }
+    log.debug("Leaving Credentials.importU2fKey(). Imported.");
+    return out;
+  }
+
   /**
    * Renames one of a person's passkeys; an empty name restores the default.
    *
@@ -10144,6 +10358,8 @@ class Credentials {
       discoverable: Credentials.discoverableOf(credential),
       // CTAP 2.1's minPinLength, as the key reported it (#529).
       minPinLength: Credentials.reportedMinPinLength(verdict),
+      // And its credProtect level (#1955 P7), null for none reported.
+      credProtect: Credentials.reportedCredProtect(verdict),
       // The handle the page created it under (#474), and its lane (#643),
       // both off the pending record.
       userHandle: held.userHandle,
@@ -10562,6 +10778,18 @@ class Credentials {
         'different passkey from the one you are upgrading. Nothing was ' +
         'changed; start again and use the passkey you chose.'));
     }
+    // A LEGACY U2F KEY'S PROOF (#1955 P7): the one set of expectations
+    // every assertion door uses — the AppID's hash only with `appid: true`,
+    // no UV flag of a key that cannot give one, and a refusal once its
+    // AppID is no longer permitted. The person is signed in already, so it
+    // is not a passwordless use.
+    const legacy = webauthnPolicy.assertionExpectations(key,
+      String(options.rpId || ''), assertion, false);
+    if (legacy.refusal) {
+      log.debug("Leaving Credentials.proveKeyUpgrade(). A U2F key refused.");
+      return Promise.resolve(dropped(legacy.refusal.code,
+                                     legacy.refusal.why));
+    }
     let verdict;
     try {
       verdict = webauthnVerifier.verifyAssertion({
@@ -10572,9 +10800,11 @@ class Credentials {
         expectedChallenge: held.challenge,
         expectedOrigin: String(options.origin || ''),
         expectedRpId: String(options.rpId || ''),
-        requireUserVerification: webauthnPolicy.requireUserVerification(),
+        requireUserVerification: legacy.requireUserVerification,
         previousSignCount: key.signCount,
-        allowInsecure: webauthnPolicy.insecureAlgorithmsAllowed()
+        allowInsecure: webauthnPolicy.insecureAlgorithmsAllowed(),
+        expectedAppId: legacy.expectedAppId,
+        appidUsed: legacy.appidUsed
       });
     } catch (e) {
       log.debug("Caught in Credentials.proveKeyUpgrade(): " +
@@ -11882,7 +12112,15 @@ class Credentials {
     // The keys themselves (#911), not mechanismsFor(): that is nine store
     // reads and a TOTP unseal for a yes/no asked on every second-factor
     // step and recovery door. Any key, since a key has no role (#1135).
-    const out = this.keysOf(String(username || '').trim()).length > 0;
+    const name = String(username || '').trim();
+    // OR WHOSE PASSKEY WAS REPORTED LOST (#1955 P1) and not yet replaced:
+    // the lost-key act removed the keys, and a recovery after it must be no
+    // weaker than the passkey it replaces, so the person is still covered
+    // while the `lost-key` recovery is pending. Read only when no key is
+    // held, so an ordinary person costs nothing more.
+    const held = this.keysOf(name).length > 0;
+    const pending = held ? null : this.recoveryPending(name);
+    const out = held || !!(pending && pending.door === 'lost-key');
     log.debug("Leaving Credentials.holdsPasskey(). " + out);
     return out;
   }
@@ -11935,7 +12173,14 @@ class Credentials {
       return false;
     }
     const name = String(username || '').trim();
-    const value = door ? String(door) + ' ' + new Date().toISOString() : '';
+    // A LOST KEY'S RECOVERY IS KEPT (#1955 P1) when a later door writes
+    // its own: the loss is what keeps the person covered (`holdsPasskey()`),
+    // and a reset link spent after it must not uncover them. Only clearing
+    // — a passkey signing them in — ends it.
+    const current = door ? this.recoveryPending(name) : null;
+    const kept = current && current.door === 'lost-key' ? 'lost-key' : '';
+    const value = door ? String(kept || door) + ' ' +
+                         new Date().toISOString() : '';
     let written = false;
     try {
       written = !!directory.writeRecoveryPending(name, value);
@@ -12944,6 +13189,10 @@ export = {
   LANES: Credentials.LANES,
   userHandleRefusal: slot.forward('userHandleRefusal'),
   addKey: slot.forward('addKey'),
+  // #1955 P7: a legacy U2F credential imported by value.
+  importU2fKey: slot.forward('importU2fKey'),
+  appIdOf: Credentials.appIdOf,
+  reportedCredProtect: Credentials.reportedCredProtect,
   removeKey: slot.forward('removeKey'),
   renameKey: slot.forward('renameKey'),
   // THE TWO-STEP ENROLMENT (2026-09-10), which is what lets somebody hold a

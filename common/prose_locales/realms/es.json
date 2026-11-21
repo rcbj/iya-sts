@@ -23,6 +23,14 @@
     "en": "7e9175bdd8dd3808",
     "text": "Su propio entityID y providerID (sembrados distintos al crear el dominio), su propia clave de firma, estado de solicitudes, artefactos y metadatos por proveedor de servicios — cuya URL por tanto lleva el dominio además del resumen del SP. Las ENTRADAS DE PROVEEDORES DE SERVICIOS son por dominio, por la misma razón que los clientes OAuth: son aplicaciones en el propio directorio del dominio."
   },
+  "realms.support.openpgp-and-the-web-key-directory.family": {
+    "en": "05e19f1c690a88a0",
+    "text": "OpenPGP y el Web Key Directory"
+  },
+  "realms.support.openpgp-and-the-web-key-directory.note": {
+    "en": "400ad738502f9d1f",
+    "text": "La clave OpenPGP de una persona está en su entrada del directorio propio del dominio de confianza, su desafío de registro pertenece al dominio de confianza y el Web Key Directory responde para los dominios de correo propios del dominio de confianza (openpgp.wkdDomains, o su dominio DNS) con las claves de sus propias personas. Un cliente WKD conoce un dominio DNS y nunca una ruta de dominio de confianza, así que una solicitud sin segmento de dominio de confianza la responde el dominio de confianza que sirve su dominio DNS, primero el predeterminado."
+  },
   "realms.support.ws-trust.family": {
     "en": "3b83c15d86c7c8b4",
     "text": "WS-Trust"

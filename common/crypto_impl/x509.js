@@ -653,7 +653,10 @@ var EKU_OIDS = {
   documentSigning: '1.3.6.1.5.5.7.3.36',
   msEncryptingFileSystem: '1.3.6.1.4.1.311.10.3.4',
   kdcAuthentication: '1.3.6.1.5.2.3.5',
-  pkinitClientAuth: '1.3.6.1.5.2.3.4'
+  pkinitClientAuth: '1.3.6.1.5.2.3.4',
+  // FIPS 201-3 / SP 800-73's id-PIV-cardAuth: the Card Authentication
+  // certificate's purpose (#1955 P2's piv-card-auth profile).
+  pivCardAuth: '2.16.840.1.101.3.6.8'
 };
 
 var EKU_BY_OID = (function buildEkuByOid() {
@@ -1214,6 +1217,40 @@ var PROFILES = {
     keyUsage: ['digitalSignature', 'keyEncipherment'],
     extKeyUsage: ['clientAuth', 'msSmartcardLogon']
   },
+  // THE FOUR PIV SLOT PROFILES (#1955 P2), after SP 800-73-4's slots and
+  // FIPS 201-3's certificate contents: what each slot's key is for, so the
+  // certificate a YubiKey slot holds says so.
+  'piv-auth': {
+    label: 'PIV Authentication (slot 9a)',
+    cn: 'PivAuthentication',
+    years: 2,
+    keyUsage: ['digitalSignature'],
+    extKeyUsage: ['clientAuth', 'pkinitClientAuth', 'msSmartcardLogon']
+  },
+  'piv-sign': {
+    label: 'PIV Digital Signature (slot 9c)',
+    cn: 'PivSignature',
+    years: 3,
+    keyUsage: ['digitalSignature', 'nonRepudiation'],
+    extKeyUsage: ['emailProtection']
+  },
+  // keyAgreement beside keyEncipherment: a 9d key is RSA (key transport) or
+  // EC (key agreement, RFC 5480 section 3), and the profile does not know
+  // which until the key arrives.
+  'piv-key-management': {
+    label: 'PIV Key Management (slot 9d)',
+    cn: 'PivKeyManagement',
+    years: 3,
+    keyUsage: ['keyEncipherment', 'keyAgreement'],
+    extKeyUsage: ['emailProtection']
+  },
+  'piv-card-auth': {
+    label: 'PIV Card Authentication (slot 9e)',
+    cn: 'PivCardAuthentication',
+    years: 2,
+    keyUsage: ['digitalSignature'],
+    extKeyUsage: ['pivCardAuth']
+  },
   'kdc': {
     label: 'Kerberos KDC (PKINIT)',
     cn: 'kdc',
@@ -1227,7 +1264,8 @@ var PROFILE_ORDER = ['root-ca', 'intermediate-ca', 'issuing-ca', 'tls-server',
                      'tls-client', 'tls-server-client', 'digital-signature',
                      'key-encipherment', 'code-signing', 'email',
                      'ocsp-responder', 'timestamping', 'smartcard-logon',
-                     'kdc'];
+                     'piv-auth', 'piv-sign', 'piv-key-management',
+                     'piv-card-auth', 'kdc'];
 
 function profileIds() {
   log.debug("Entering profileIds().");

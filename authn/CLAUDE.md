@@ -3195,6 +3195,23 @@ header; what a maintainer of THIS directory needs is where it sits:
   JWK now carries `alg`**, so an assertion is checked with the credential's own
   hash and padding; a key stored before has none and is read by key type — which
   fixed ES384 and ES512 keys, checked with SHA-256 until then.
+* **A LEGACY U2F APPID (#1955 P7).** `verifyAssertion()` takes
+  `expectedAppId` and `appidUsed`, and holds the rpIdHash to SHA-256 of the
+  AppID (check `rpIdHash is SHA-256 of the AppID (the appid extension)`, the
+  same `STS-AUTHN-0031`) ONLY when both are given and `appidUsed` is true —
+  the client's `appid` extension output, carried by `WebWebAuthn.asserted()`'s
+  `clientExtensionResults`. A caller passes `expectedAppId` only for a key
+  imported under that AppID and still permitted; so a key registered here is
+  held to the RP ID whatever the client claims. The passkey step
+  (`webauthnFacts()`) offers such a key at a
+  second-factor step only, with `appid` in the options and `userVerification`
+  `preferred` where the realm asks `required`; the verification of that one
+  key does not require UV, every other key's does, and an imported key at a
+  passwordless step, or under an AppID no longer permitted, is refused
+  (`STS-AUTHN-0565`). The step, the upgrade proof and every other assertion
+  door take both halves from `webauthn_policy.ts`'s `assertionOptions()` and
+  `assertionExpectations()`; `common/CLAUDE.md` lists the doors. The usernameless sign-in never meets one: a U2F key
+  holds no user handle. `common/CLAUDE.md` has the import and the setting.
 * **EVERY ALGORITHM, REQUESTED BY DEFAULT (2026-10-01, rcbj).** The verifier
   also checks RFC 9864's fully specified ESP256/384/512 (-9/-51/-52) and
   Ed25519/Ed448 (-19/-53), whose curve is checked against the key, and RFC
@@ -3758,6 +3775,25 @@ somebody who does not exist) had always answered 500. It falls back to the
 
 ## AFTER AN ACCOUNT RECOVERY, A PASSKEY FIRST (#724, 2026-10-19)
 
+**A SECURITY KEY REPORTED LOST IS A RECOVERY OWED (#1955 P1).** The lost-key
+act (`common/hardware_tokens.ts`) notes a `lost-key` recovery
+(`passkey_policy.ts`'s RECOVERY_DOORS, not self-service) for a person whose
+every passkey was on the token, BEFORE it removes them; `holdsPasskey()`
+counts such a person as covered while it is pending, and
+`setRecoveryPending()` keeps `lost-key` when a later door writes its own.
+So the next session a passkey did not answer is held as any recovery's is —
+under `not-weaker`, the set-up step below — and a passkey signing them in
+clears it. Under `any` nothing is written.
+
+**THE CREDENTIAL'S HARDWARE TOKEN IS ON THE EVENT (#1955 P1)**:
+`eventContext()` records `context.credential.hardwareToken` (key, vendor,
+model, evidence source, smart card) from the register at the sign-in — a
+passkey by its credential id, a certificate by the serial the two
+certificate doors now pass — and `common/authn_mechanisms.ts` reads it as
+the `attested-hardware` mechanism. A list naming `attested-hardware` draws a
+screen with a passkey and, where the realm takes one, the certificate door,
+and no password field; nothing is forced.
+
 The design is `common/CLAUDE.md` 3cq; what this module does with it:
 
 * **`startSessionHere()` asks the recovery question** right after the passkey
@@ -4158,3 +4194,39 @@ one click from skipped.
   process; `tests/post_login_started.js` holds #1126's selection.
 
 **An app password at a password-only door needs no second factor, deliberately (rcbj, 2026-11-09).** Those doors cannot ask for one. `mode.requiresSecondFactorOfEveryone()` (#1490) refuses a person's own password there and leaves the app password working; do not extend the requirement to it.
+
+## THE ROLE STEP (#1072, 2026-11-20; rule 3dg)
+
+A dynamic selectable role is chosen HERE, after every factor and before a
+post-login activity, on the post-login hold's pattern (`startSessionHere()`):
+
+* **The screen's box** "Choose roles for this sign-in" is drawn where
+  `roleBoxOffered()`: the application's `roles.dynamicSelection` (with
+  `appDynamicRoleSelection` overriding it) is on and the realm defines a
+  dynamic role. It says nothing about the person. Ticked, it rides as
+  `choose_roles` beside `remember_browser` and lands on the pending record
+  (`record.chooseRoles`).
+* **Held** when `roleOfferFor()` finds a role the person is eligible for and
+  the door is the screen's (`postLoginHold`); `refusedSession()` then draws
+  the step (`/authn/roles`, factor `roles`) where the box was ticked or a
+  `required` role is offered (rcbj's decision 3), and otherwise starts the
+  session at once with no role (`finishRoles(…, [])`). A door that cannot
+  draw it is refused for a required role (STS-XACML-0329) and otherwise
+  starts with none.
+* **The step holds the OFFER** — the server's own list — and `rolesAct()`
+  checks the ticked names against it and the policies again
+  (`role_selection.ts`'s `validateChoice()`: 0325–0328). `mfaStepFor()`
+  answers a role step only to its own act, as a post-login step: a code
+  posted to its id would start the held session without the choice.
+* **The choice is on the session** — `selectedRoles`, `{ role, application,
+  at }` — stamped by `startSessionHere()`'s record, carried through a
+  post-login step's `held`, and on a re-authentication REPLACED for that
+  application only (`reauthenticateSession()`), which is what the portal's
+  "Sign in again" relies on. Nothing is written to the directory.
+
+`role_selection.ts` is the other half: `selectedFor()`, the reader
+`roles.js`'s selection slot calls at every issuance, re-asking each chosen
+role's policy (`roles.selection.dropped` where it no longer permits) and
+answering nothing for an ended, expired or somebody else's session — which
+is also what an `offline_access` refresh token outliving its session gets.
+`tests/role_selection.js` holds both halves.

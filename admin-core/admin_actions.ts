@@ -379,6 +379,8 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        'clear-totp', 'clear-key', 'clear-backup-codes',
                        // A passkey's name (#470, rcbj's decision D).
                        'rename-key',
+                       // A legacy U2F credential imported (#1955 P7).
+                       'import-u2f-key',
                        // The emailed second factor, and the address
                        // (#64, 2026-09-23).
                        'clear-email-factor', 'set-mail',
@@ -769,7 +771,8 @@ const ROLE_ACTIONS = ['create-role', 'delete-role', 'add-member',
                       'remove-member', 'describe-role', 'add-permission',
                       'remove-permission', 'add-conferring-client',
                       'remove-conferring-client', 'add-owner',
-                      'remove-owner'];
+                      'remove-owner', 'set-membership-mode',
+                      'set-selection', 'set-eligibility-policy'];
 
 // The three kinds of thing that can hold a role, in one table because four
 // places have to agree about them — the two member actions, the console's
@@ -4547,11 +4550,19 @@ class AdminActions {
         audit('admin.passkey.upgrade-started', 'success', {
           stage: 'begin', mode: begun.mode, lane: begun.lane,
           previousAlgorithm: begun.previousAlgorithm });
+        // THE ONE BUILDER OF AN ASSERTION'S OPTIONS (#1955 P7): its user
+        // verification, and the `appid` extension where the key upgraded is
+        // a permitted legacy U2F key — the two members this answer carries.
+        const proofOptions = webauthnPolicy.assertionOptions(rpId,
+          credentials.keysOf(who).filter(function (one) {
+            return String(one.credentialId) === String(begun.credentialId);
+          }));
         return { ok: true, upgradeId: begun.upgradeId,
           ceremony: { challenge: begun.challenge, rpId: rpId,
             allow: begun.credentialId,
-            options: { userVerification:
-              webauthnPolicy.settings().userVerification } } };
+            options: Object.assign({ userVerification:
+              proofOptions.userVerification },
+              proofOptions.appid ? { appid: proofOptions.appid } : {}) } };
       }
       let posted: any = null;
       try {
@@ -5296,6 +5307,53 @@ class AdminActions {
         ? { ok: true, message: 'The passkey of ' + who + ' is now called "' +
             result.label + '".', label: result.label }
         : this.refusedBy('STS-ADMIN-0850', result);
+    }
+
+    // A LEGACY FIDO U2F CREDENTIAL IMPORTED ONTO A PERSON (#1955 P7, rcbj's
+    // reversal of the issue's D5). THROUGH `credentials.importU2fKey()`,
+    // which checks the four values and writes through `addKey()`, the one
+    // writer — so the duplicate check, the cap and the registration rules of
+    // the person's passkey policy hold. Off until `webauthn.u2fAppIds` names
+    // the AppID (STS-AUTHN-0561). The importer is the caller, recorded on the
+    // key; audited, and no ceremony ran, so nothing about the key is
+    // attested — the console says so.
+    if (action === 'import-u2f-key') {
+      const who = String(body.user || body.username || '').trim();
+      if (!who) {
+        log.debug("Leaving AdminActions.usersAction(). No person named.");
+        return this.refused('STS-ADMIN-0951', { ok: false, errors: ['Name ' +
+          'the person the U2F security key is imported for, in `user`.'] });
+      }
+      const admin: any = (context && (context as any).admin) || {};
+      const result = credentials.importU2fKey(who, {
+        keyHandle: body.keyHandle, publicKey: body.publicKey,
+        appId: body.appId, counter: body.counter, label: body.label
+      }, { importedBy: { username: String(admin.username || ctx.actor ||
+                                          'operator'),
+                         sub: String(admin.sub || ''), at: Date.now() } });
+      auditLog.record({
+        category: 'authentication', action: 'admin.mfa.key.imported',
+        actor: ctx.actor, target: who,
+        outcome: result.ok ? 'success' : 'failure',
+        summary: (result.ok ? 'imported' : 'could not import') +
+                 ' a U2F security key for ' + who,
+        detail: { username: who, via: ctx.via,
+                  appId: String(body.appId || '').slice(0, 200),
+                  credentialId: result.ok
+                    ? String(result.credentialId || '') : undefined,
+                  errors: result.ok ? undefined : (result.errors || []) }
+      });
+      log.debug("Leaving AdminActions.usersAction(). import-u2f-key " +
+                (result.ok ? "ok." : "refused."));
+      return result.ok
+        ? { ok: true, message: 'A U2F security key registered under ' +
+            String(body.appId || '') + ' is imported for ' + who + '. It ' +
+            'answers a second-factor step only.' }
+        // THE ERRORS AND THE CODE ONLY: the writer's `reason` is a member
+        // this operation's answer does not carry.
+        : this.refusedBy('STS-ADMIN-0952', this.deps.errorCodes.mark(
+            { ok: false, errors: (result.errors || []).slice() },
+            this.deps.errorCodes.codeOf(result) || 'STS-ADMIN-0952'));
     }
 
     // ---------------------------------------------------------------------
@@ -9394,10 +9452,22 @@ class AdminActions {
                                      'member to it rather than creating it ' +
                                           'again.'] });
       }
+      // A DYNAMIC ROLE MAY BE MADE AS ONE (#1072): it has no members to add
+      // first, so nothing is gained by making it static and switching it.
       const result = roles.write(fullName, { description: description,
                                              application: forApplication,
                                              displayName: displayName || '',
-                                             memberTypes: memberTypes || [] });
+                                             memberTypes: memberTypes || [],
+                                             membershipMode:
+                                               body.membershipMode ===
+                                                 undefined ? 'static'
+                                                 : String(body.membershipMode),
+                                             selection: body.selection ===
+                                               undefined ? 'optional'
+                                               : String(body.selection),
+                                             exclusiveGroup:
+                                               String(body.exclusiveGroup ||
+                                                      '') });
       if (result.ok) {
         auditLog.audit({ action: 'roles.create', actor: actor,
                       target: fullName, protocol: 'XACML', channel: 'http',
@@ -9425,11 +9495,19 @@ class AdminActions {
         return applications.requiredRolesOf(row.identifier)
           .some(function (one) { return one === name; });
       }).map(function (row) { return row.identifier; });
+      // A DYNAMIC ROLE'S OWN ELIGIBILITY POLICY GOES WITH IT (#1072),
+      // read before the role is: the reference is on the role's entry.
+      const ownedPolicy = String((roles.read(name) || {}).eligibilityPolicy ||
+                                 '');
       const result = roles.remove(name);
       if (!result.ok) {
         log.debug("Leaving AdminActions.rolesAction(). delete-role refused.");
         return this.refused(this.innerCode(result) || 'STS-ADMIN-0542',
                             { ok: false, errors: [result.why] });
+      }
+      if (ownedPolicy) {
+        require('../xacml/role_eligibility').removePolicy(name, ownedPolicy,
+                                                         { actor: actor });
       }
       auditLog.audit({ action: 'roles.delete', actor: actor, target: name,
                     protocol: 'XACML', channel: 'http',
@@ -9821,6 +9899,106 @@ class AdminActions {
       log.debug("Leaving AdminActions.rolesAction(). " + action + ": " +
                 (result.changed ? "changed." : "already so."));
       return result;
+    }
+
+    // -------------------------------------------------------------------------
+    // HOW A ROLE IS HELD, AND HOW A DYNAMIC ONE IS CHOSEN (#1072). Each is
+    // the whole record written back with the one member changed, as every
+    // act here is; `roles.write()` refuses a dynamic role with members, a
+    // console or native role made dynamic, and an unknown value. Neither
+    // adds or removes a member, a group or a permission (the ticket's "must
+    // not unexpectedly alter existing assignments").
+    // -------------------------------------------------------------------------
+    if (action === 'set-membership-mode' || action === 'set-selection') {
+      const row = roles.read(name);
+      if (!row) {
+        log.debug("Leaving AdminActions.rolesAction(). No such role.");
+        return this.refused(roles.isBuiltIn(name) ? 'STS-ADMIN-0546'
+                                                  : 'STS-ADMIN-0543',
+          { ok: false, errors: [roles.isBuiltIn(name)
+            ? '"' + name + '" is a BUILT-IN role, computed from the context ' +
+              'of each decision; it cannot be offered at sign-in.'
+            : 'There is no role called "' + name + '". Create it first.'] });
+      }
+      const changes: Record<string, any> = {};
+      if (action === 'set-membership-mode') {
+        changes.membershipMode = String(body.mode || '');
+      } else {
+        if (!roles.isDynamic(row)) {
+          log.debug("Leaving AdminActions.rolesAction(). A static role.");
+          return this.refused('STS-XACML-0309', { ok: false, errors: ['"' +
+            name + '" is a static role, held by its members; only a ' +
+            'dynamic selectable role is chosen at sign-in. Make it dynamic ' +
+            'first (set-membership-mode).'] });
+        }
+        if (body.selection !== undefined) {
+          changes.selection = String(body.selection);
+        }
+        if (body.exclusiveGroup !== undefined) {
+          changes.exclusiveGroup = String(body.exclusiveGroup);
+        }
+      }
+      const result = roles.write(name, Object.assign({
+        description: row.description, users: row.users, groups: row.groups,
+        applications: row.applications, permissions: row.permissions,
+        application: row.application, displayName: row.displayName,
+        memberTypes: row.memberTypes
+      }, changes));
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.rolesAction(). " + action +
+                  " refused.");
+        return this.refused(this.innerCode(result) || 'STS-ADMIN-0542',
+                            { ok: false, errors: [result.why] });
+      }
+      const after = roles.read(name) || row;
+      auditLog.audit({
+        action: action === 'set-membership-mode' ? 'roles.set-mode'
+                                                 : 'roles.set-selection',
+        actor: actor, target: name, protocol: 'XACML', channel: 'http',
+        detail: action === 'set-membership-mode'
+          ? 'the role "' + name + '" is now ' + after.membershipMode +
+            ' (was ' + row.membershipMode + ')'
+          : 'the dynamic role "' + name + '" is now ' + after.selection +
+            (after.exclusiveGroup ? ', exclusive in "' +
+              after.exclusiveGroup + '"' : '') });
+      log.debug("Leaving AdminActions.rolesAction(). " + action + " ok.");
+      return { ok: true, role: name, membershipMode: after.membershipMode,
+               selection: after.selection,
+               exclusiveGroup: after.exclusiveGroup,
+               message: action === 'set-membership-mode'
+                 ? '"' + name + '" is now ' + (roles.isDynamic(after)
+                   ? 'a dynamic selectable role, offered at sign-in to ' +
+                     'whoever its eligibility policy permits.'
+                   : 'a static role, held by its members.')
+                 : '"' + name + '" is ' + after.selection + ' at sign-in' +
+                   (after.exclusiveGroup ? ', and at most one role of "' +
+                     after.exclusiveGroup + '" may be chosen.' : '.') };
+    }
+
+    // -------------------------------------------------------------------------
+    // A DYNAMIC ROLE'S ELIGIBILITY POLICY (#1072): written from XACML XML or
+    // ALFA by `xacml/role_eligibility.ts`, which owns the lifecycle and every
+    // refusal. Required here, lazily: the XACML family is built at 23c.
+    // -------------------------------------------------------------------------
+    if (action === 'set-eligibility-policy') {
+      const result = require('../xacml/role_eligibility').setPolicy(name, {
+        document: body.document === undefined ? undefined
+          : String(body.document),
+        alfa: body.alfa === undefined ? undefined : String(body.alfa)
+      }, { actor: actor });
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.rolesAction(). " +
+                  "set-eligibility-policy refused.");
+        return this.refused(this.innerCode(result) || 'STS-ADMIN-0542',
+                            { ok: false, errors: [result.why] });
+      }
+      log.debug("Leaving AdminActions.rolesAction(). " +
+                "set-eligibility-policy ok.");
+      return { ok: true, role: name, policy: result.policy,
+               created: !!result.created,
+               message: (result.created ? 'Created "' : 'Rewrote "') +
+                 result.policy + '", the eligibility policy of "' + name +
+                 '". Only a Permit from it makes a person eligible.' };
     }
 
     log.debug("Leaving AdminActions.rolesAction(). Unknown action.");

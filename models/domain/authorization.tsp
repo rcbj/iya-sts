@@ -53,6 +53,18 @@ model Role {
 
   @fromAttr(#{attr: "stsOwnerProtected"})
   `stsOwnerProtected`?: boolean;
+
+  @fromAttr(#{attr: "roleMembershipMode"})
+  `roleMembershipMode`?: string;
+
+  @fromAttr(#{attr: "roleEligibilityPolicy"})
+  `roleEligibilityPolicy`?: string;
+
+  @fromAttr(#{attr: "roleSelection"})
+  `roleSelection`?: string;
+
+  @fromAttr(#{attr: "roleSelectionExclusive"})
+  `roleSelectionExclusive`?: string;
 }
 
 @domain(#{
@@ -96,4 +108,7 @@ model XacmlPolicy {
 
   @fromAttr(#{attr: "xacmlPepRoute"})
   `pepRoute`?: string;
+
+  @fromAttr(#{attr: "xacmlRole"})
+  `role`?: string;
 }

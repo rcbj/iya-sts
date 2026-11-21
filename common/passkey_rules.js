@@ -53,6 +53,8 @@ const REASONS = {
                              use: 'STS-AUTHN-0412' },
   // #940: an algorithm the selected profile does not offer.
   'profile-algorithm': { register: 'STS-AUTHN-0432', use: '' },
+  // #1955 P7: a credProtect level below the enforced one.
+  'cred-protect': { register: 'STS-AUTHN-0559', use: '' },
   // #724: `recover-account` records the `use` column.
   'recovery-self-service': { register: '', use: 'STS-AUTHN-0380' },
   'recovery-enrol-first': { register: '', use: 'STS-AUTHN-0381' }
@@ -209,6 +211,15 @@ function strictReading(question) {
       policy.registrationAlgorithmsFrom === 'profile' &&
       q.profileAlgorithmOffered !== true) {
     reason = 'profile-algorithm';
+  }
+  // A CREDPROTECT LEVEL BELOW THE ENFORCED ONE (#1955 P7), last at
+  // registration: the level question() sent (1 where the key reported
+  // none) against the level the profile asks for, while it is enforced.
+  if (!reason && register && carries('cred-protect') &&
+      policy.enforceCredProtect === true && whole(q.credProtect) &&
+      whole(policy.credProtectLevel) &&
+      q.credProtect < policy.credProtectLevel) {
+    reason = 'cred-protect';
   }
   const out = reason
     ? { verdict: 'refuse', code: codeFor(reason, q.action), reason: reason }

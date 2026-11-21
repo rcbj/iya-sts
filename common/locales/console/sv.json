@@ -129,6 +129,8 @@
   "nav.roles": "Roller",
   "nav.applications": "Applikationer",
   "nav.devices": "Enheter",
+  "nav.hardware-tokens": "Maskinvarutoken",
+  "nav.openpgp": "OpenPGP-nycklar",
   "nav.attribute-sources": "Attributkällor",
   "nav.secret-destinations": "Hemlighetsmål",
   "nav.policies": "Policyer",

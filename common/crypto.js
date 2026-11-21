@@ -12493,6 +12493,171 @@ function csrAttestationBundle(der) {
   return { attestations: attestations, certs: certs, otherCerts: otherCerts };
 }
 
+// ----- YubiKey PIV key attestation (#1955 P2) -------------------------------
+//
+// `ykman piv keys attest` (YKPIV's ATTEST instruction) answers a certificate
+// for a slot's key, signed by the key's factory "f9" attestation key, and
+// `common/piv_attestation.ts` verifies it. What it reads off that certificate
+// is Yubico's extensions under 1.3.6.1.4.1.41482.3, decoded here as every
+// other vendor's extension is (section 10 above). Yubico's PIV attestation
+// page (developers.yubico.com/PIV/Introduction/PIV_attestation.html) and its
+// OID page (.../Yubico_Attestation_OID.html) define them:
+//
+//   .3.3  firmware: "encoded as 3 bytes, like: 040300 for 4.3.0" — raw
+//         octets (major, minor, patch), not DER-wrapped;
+//   .3.7  serial: "encoded as an integer" — the DER of an INTEGER on every
+//         key we know of; the page does not say DER, so a value that is
+//         not one is read as a raw big-endian integer of 1 to 8 octets;
+//   .3.8  two octets: the PIN policy, then the touch policy. PIN: 01 never,
+//         02 once per session, 03 always; YubiKit's PinPolicy adds 04
+//         match-once and 05 match-always for the Bio series, read here and
+//         drawn as such. Touch: 01 never, 02 always, 03 cached (15 s);
+//   .3.9  one octet: the form factor, 01 USB-A keychain, 02 USB-A nano,
+//         03 USB-C keychain, 04 USB-C nano, 05 USB-C and Lightning (YubiKit
+//         adds 06 USB-A Bio and 07 USB-C Bio); the page gives 81-85 for FIPS
+//         keys, read as the 0x80 bit, and YubiKit's 0x40 is CSPN;
+//   .3.10 and .3.11: present only on the factory f9 certificate, of a FIPS
+//         and of a CSPN certified key; PRESENCE is their whole meaning.
+//
+// A value that cannot be read is answered as '' rather than guessed, and the
+// caller's policy then sees "not stated", which refuses wherever the policy
+// asks for that fact.
+/** The statement type this service reads a YubiKey PIV attestation under. */
+const YUBICO_PIV_STATEMENT = '1.3.6.1.4.1.41482.3.2';
+/** Yubico's PIV attestation extension OIDs, by what they carry. */
+const YUBICO_PIV_EXTENSIONS = Object.freeze({
+  firmware: '1.3.6.1.4.1.41482.3.3',
+  serial: '1.3.6.1.4.1.41482.3.7',
+  policy: '1.3.6.1.4.1.41482.3.8',
+  formFactor: '1.3.6.1.4.1.41482.3.9',
+  fips: '1.3.6.1.4.1.41482.3.10',
+  cspn: '1.3.6.1.4.1.41482.3.11'
+});
+const YUBICO_PIN_POLICIES = { 1: 'never', 2: 'once', 3: 'always',
+                              4: 'match-once', 5: 'match-always' };
+const YUBICO_TOUCH_POLICIES = { 1: 'never', 2: 'always', 3: 'cached' };
+const YUBICO_FORM_FACTORS = {
+  1: { name: 'USB-A Keychain', shape: 'usb-a' },
+  2: { name: 'USB-A Nano', shape: 'usb-a' },
+  3: { name: 'USB-C Keychain', shape: 'usb-c' },
+  4: { name: 'USB-C Nano', shape: 'usb-c' },
+  5: { name: 'USB-C and Lightning', shape: 'lightning' },
+  6: { name: 'USB-A Bio', shape: 'usb-a' },
+  7: { name: 'USB-C Bio', shape: 'usb-c' }
+};
+
+// The serial's integer, from a DER INTEGER or from raw octets.
+function yubicoSerialOf(bytes) {
+  log.debug("Entering yubicoSerialOf().");
+  let raw = Buffer.from(bytes || []);
+  if (raw.length >= 3 && raw[0] === 0x02 && raw[1] === raw.length - 2) {
+    raw = raw.subarray(2);
+  }
+  if (!raw.length || raw.length > 8) {
+    log.debug("Leaving yubicoSerialOf(). Unreadable.");
+    return '';
+  }
+  let n = BigInt(0);
+  for (const octet of raw) {
+    n = (n << BigInt(8)) | BigInt(octet);
+  }
+  log.debug("Leaving yubicoSerialOf().");
+  return n.toString(10);
+}
+
+/**
+ * Reads Yubico's PIV attestation extensions off an attestation
+ * certificate's extensions, as `pki.attestationCertificateFacts()` answers
+ * them.
+ *
+ * @param extensions - `{ oid: { critical, value } }`
+ * @returns `{ firmware, serial, pinPolicy, touchPolicy, formFactor,
+ *   formFactorName, shape, fips, cspn }`, each '' (or false) where the
+ *   certificate does not state it readably
+ */
+function yubicoPivAttestationFacts(extensions) {
+  log.debug("Entering yubicoPivAttestationFacts().");
+  const ext = extensions || {};
+  const valueOf = function (oid) {
+    return ext[oid] && ext[oid].value ? Buffer.from(ext[oid].value) : null;
+  };
+  const out = { firmware: '', serial: '', pinPolicy: '', touchPolicy: '',
+                formFactor: 0, formFactorName: '', shape: '', fips: false,
+                cspn: false };
+  let fw = valueOf(YUBICO_PIV_EXTENSIONS.firmware);
+  if (fw && fw.length === 5 && fw[0] === 0x04 && fw[1] === 3) {
+    fw = fw.subarray(2);
+  }
+  if (fw && fw.length === 3) {
+    out.firmware = fw[0] + '.' + fw[1] + '.' + fw[2];
+  }
+  const serial = valueOf(YUBICO_PIV_EXTENSIONS.serial);
+  out.serial = serial ? yubicoSerialOf(serial) : '';
+  const policy = valueOf(YUBICO_PIV_EXTENSIONS.policy);
+  if (policy && policy.length === 2) {
+    out.pinPolicy = YUBICO_PIN_POLICIES[policy[0]] || '';
+    out.touchPolicy = YUBICO_TOUCH_POLICIES[policy[1]] || '';
+  }
+  const shape = valueOf(YUBICO_PIV_EXTENSIONS.formFactor);
+  if (shape && shape.length === 1) {
+    const known = YUBICO_FORM_FACTORS[shape[0] & 0x0f];
+    out.formFactor = shape[0];
+    out.formFactorName = known ? known.name : '';
+    out.shape = known ? known.shape : 'other';
+    out.fips = (shape[0] & 0x80) !== 0;
+    out.cspn = (shape[0] & 0x40) !== 0;
+  }
+  if (valueOf(YUBICO_PIV_EXTENSIONS.fips)) {
+    out.fips = true;
+  }
+  if (valueOf(YUBICO_PIV_EXTENSIONS.cspn)) {
+    out.cspn = true;
+  }
+  log.debug("Leaving yubicoPivAttestationFacts(). serial " +
+            (out.serial ? 'read' : 'absent') + ".");
+  return out;
+}
+
+// A certificate's certificatePolicies (RFC 5280 section 4.2.1.4): the
+// policy identifiers, in order, or [] when it carries none. Read for the
+// FIPS 201 PIV Authentication policy an outside PIV or CAC card's
+// certificate asserts (#1955 P2, D8).
+/**
+ * Lists a certificate's certificatePolicies identifiers.
+ *
+ * @param cert - PEM text, DER bytes or a parsed certificate
+ * @returns the policy OIDs, dotted
+ */
+function certificatePolicyOids(cert) {
+  log.debug("Entering certificatePolicyOids().");
+  const out = [];
+  try {
+    const parsed = parseCertificate(cert);
+    const pkijs = require('pkijs');
+    const pk = pkijs.Certificate.fromBER(new Uint8Array(parsed.raw));
+    (pk.extensions || []).forEach(function (ext) {
+      if (ext.extnID !== '2.5.29.32') {
+        return;
+      }
+      const node = berOf(Buffer.from(ext.extnValue.valueBlock.valueHexView));
+      ((node && node.valueBlock && node.valueBlock.value) || [])
+        .forEach(function (info) {
+          const first = info && info.valueBlock && info.valueBlock.value &&
+            info.valueBlock.value[0];
+          if (first instanceof asn1js.ObjectIdentifier) {
+            out.push(first.valueBlock.toString());
+          }
+        });
+    });
+  } catch (e) {
+    log.debug("Caught in certificatePolicyOids(): " +
+              ((e && e.message) || e));
+    // Unreadable policies assert nothing; the caller refuses on absence.
+  }
+  log.debug("Leaving certificatePolicyOids(). " + out.length);
+  return out;
+}
+
 // A TPM2B's contents when `bytes` is exactly one TPM2B (a big-endian size
 // then that many bytes), else `bytes` unchanged. Revision 20's appendix said
 // the attester sends "TPM2B_ATTEST in binary format" and "TPM2B_PUBLIC"
@@ -18761,6 +18926,411 @@ function hsmRefOf(text) {
   }
 }
 
+// ===========================================================================
+// SECTION 19 — OpenPGP AND S/MIME, FOR A PERSON'S KEYS AND ENCRYPTED MAIL
+// (#1955 P6, 2026-11-20).
+//
+// **THE MECHANISM IS openpgp.js, WRAPPED** (rcbj's decision D3 on #1955):
+// `crypto_impl/openpgp_engine.js` reads, describes and verifies RFC 9580
+// (v6) and RFC 4880 (v4) keys and encrypts to them, and this section is the
+// policy — which algorithms a key may use, what a proof of possession must
+// say and how fresh it must be, and which recipient certificate an S/MIME
+// envelope may be made to. Nothing outside this file requires either the
+// engine or `openpgp` (`tests/crypto_centralised.js`), so this is where the
+// algorithm rule is, once.
+//
+// **THE ALGORITHM RULE IS A DOCUMENTED ALLOW LIST, NOT THE SIGNATURE
+// POLICY.** #1368's registry and a realm's per-surface sign/accept lists
+// have no OpenPGP surface: an OpenPGP key's algorithm is not one of the JWS,
+// COSE, XML, X.509, CMS, Data Integrity or HTTP Signature identifiers they
+// are lists of, and nothing here signs with it. What a key may use:
+//
+//   signing     Ed25519 and Ed448 (v6 `ed25519`/`ed448`, v4 `eddsaLegacy`
+//               on `ed25519Legacy`), ECDSA on P-256, P-384 and P-521, RSA of
+//               at least `minRsaBits` (the caller's setting, 3072 at least)
+//   encryption  X25519 and X448 (v6), ECDH on Curve25519 (v4) and on P-256,
+//               P-384 and P-521, RSA of at least `minRsaBits`
+//
+// DSA and ElGamal are refused outright (RFC 9580 section 9.1 deprecates
+// both), and so are the Brainpool curves, which no OpenPGP card this
+// service is meant for ships keys on and which nothing here needs.
+//
+// **S/MIME IS pkijs'S EnvelopedData, ON NODE'S WEB CRYPTO** — the engine
+// `installPkijsWebCrypto()` hands pkijs for CRLs. AES-256-CBC content
+// encryption (RFC 8551 section 2.7, RFC 3565), the key under RSAES-OAEP with
+// SHA-256 (RFC 8017, RFC 4055) for an RSA certificate and under
+// dhSinglePass-stdDH-sha256kdf with AES-256 key wrap (RFC 5753) for an EC
+// one. **Not AES-GCM**: RFC 5083 puts an authenticated cipher in
+// AuthEnvelopedData, and pkijs writes GCM into an EnvelopedData, which a
+// conforming reader may refuse; CBC in EnvelopedData is what every mail
+// client reads, and a message here carries nothing a reader would trust
+// for being unforgeable (DKIM signs the outer message).
+// ===========================================================================
+
+/** @type {typeof import('./crypto_impl/openpgp_engine.js')} */
+const openpgpEngine = LazyModule.of('common/crypto_impl/openpgp_engine.js',
+  function () {
+    return require('./crypto_impl/openpgp_engine.js');
+  }, log);
+
+/** The OpenPGP signing algorithms a key may use (the header). */
+const OPENPGP_SIGNING_ALGORITHMS = Object.freeze([
+  'ed25519', 'ed448', 'eddsaLegacy/ed25519Legacy', 'ecdsa/nistP256',
+  'ecdsa/nistP384', 'ecdsa/nistP521', 'rsaSign', 'rsaEncryptSign']);
+
+/** The OpenPGP encryption algorithms a key may use (the header). */
+const OPENPGP_ENCRYPTION_ALGORITHMS = Object.freeze([
+  'x25519', 'x448', 'ecdh/curve25519Legacy', 'ecdh/nistP256',
+  'ecdh/nistP384', 'ecdh/nistP521', 'rsaEncrypt', 'rsaEncryptSign']);
+
+/** The smallest RSA key the allow list ever accepts, whatever is asked. */
+const OPENPGP_MIN_RSA_BITS = 3072;
+
+// The largest armored key and signed message this section reads: a key with
+// every third-party certification a keyserver ever attached can be large,
+// and a challenge is a few lines.
+const OPENPGP_MAX_KEY_BYTES = 65536;
+const OPENPGP_MAX_SIGNED_BYTES = 16384;
+
+/**
+ * Says what is wrong with one OpenPGP key's algorithm for a use, or ''.
+ *
+ * @param alg - `{ algorithm, curve, bits }` as the engine describes it
+ * @param use - `sign` or `encrypt`
+ * @param minRsaBits - the realm's minimum RSA size
+ * @returns '' when allowed, else the reason
+ */
+function openpgpAlgorithmProblem(alg, use, minRsaBits) {
+  log.debug("Entering openpgpAlgorithmProblem(). " + use);
+  const a = alg || { algorithm: '', curve: '', bits: 0 };
+  const list = use === 'sign' ? OPENPGP_SIGNING_ALGORITHMS
+    : OPENPGP_ENCRYPTION_ALGORITHMS;
+  const name = String(a.algorithm || '');
+  const named = a.curve ? name + '/' + a.curve : name;
+  const floor = Math.max(OPENPGP_MIN_RSA_BITS, Number(minRsaBits) || 0);
+  let out = '';
+  if (list.indexOf(named) < 0 && list.indexOf(name) < 0) {
+    out = (named || 'an unknown algorithm') + ' is not an OpenPGP ' +
+      (use === 'sign' ? 'signing' : 'encryption') + ' algorithm this ' +
+      'service accepts (' + list.join(', ') + ')';
+  } else if (/^rsa/.test(name) && Number(a.bits || 0) < floor) {
+    out = 'an RSA key of ' + Number(a.bits || 0) + ' bits is shorter than ' +
+      'the ' + floor + ' this realm requires';
+  }
+  log.debug("Leaving openpgpAlgorithmProblem(). " + (out ? 'Refused.'
+                                                       : 'Allowed.'));
+  return out;
+}
+
+/**
+ * A refusal of this section, carrying its code.
+ *
+ * @param code - the error code
+ * @param why - the sentence
+ * @param extra - members to add
+ * @returns `{ ok: false, error, ... }`, marked with the code
+ */
+function openpgpRefusal(code, why, extra) {
+  log.debug("Entering openpgpRefusal(). " + code);
+  log.debug("Leaving openpgpRefusal().");
+  return errorCodes.mark(Object.assign({ ok: false, error: why }, extra || {}),
+                         code);
+}
+
+/**
+ * Reads a person's OpenPGP public key and holds it to the allow list as of
+ * an instant: one public key (never a secret one), not revoked, not expired,
+ * a signing key and — when it has one — an encryption key the list accepts.
+ *
+ * @param input - the armored key, or its binary packets
+ * @param options - `{ at: Date, minRsaBits }`
+ * @returns `{ ok: true, key, description, armored, binary }`, or a coded
+ *   refusal (STS-OPENPGP-0001 to -0006)
+ */
+async function openpgpReadKey(input, options) {
+  log.debug("Entering openpgpReadKey().");
+  const opts = options || {};
+  const at = opts.at instanceof Date ? opts.at : new Date();
+  const size = typeof input === 'string' ? Buffer.byteLength(input)
+    : Buffer.from(input || []).length;
+  if (!size || size > OPENPGP_MAX_KEY_BYTES) {
+    log.debug("Leaving openpgpReadKey(). Size " + size + ".");
+    return openpgpRefusal('STS-OPENPGP-0001', size
+      ? 'the key is ' + size + ' bytes, more than the ' +
+        OPENPGP_MAX_KEY_BYTES + ' this service reads'
+      : 'no key was given');
+  }
+  const read = await openpgpEngine.readPublicKey(input);
+  if (!read.ok) {
+    log.debug("Leaving openpgpReadKey(). " + read.reason);
+    return read.reason === 'secret'
+      ? openpgpRefusal('STS-OPENPGP-0002', 'that is a SECRET key; paste ' +
+          'the public key (gpg --armor --export), never the secret one')
+      : openpgpRefusal('STS-OPENPGP-0001', read.reason === 'several'
+          ? 'the block holds more than one key; export exactly one'
+          : 'the block is not an OpenPGP public key: ' + read.why);
+  }
+  const d = await openpgpEngine.describeKey(read.key, at);
+  if (d.revoked) {
+    log.debug("Leaving openpgpReadKey(). Revoked.");
+    return openpgpRefusal('STS-OPENPGP-0003', 'the key ' + d.fingerprint +
+                          ' is revoked', { description: d });
+  }
+  if (d.expired) {
+    log.debug("Leaving openpgpReadKey(). Expired.");
+    return openpgpRefusal('STS-OPENPGP-0003', 'the key ' + d.fingerprint +
+                          ' expired at ' + d.expiresAt, { description: d });
+  }
+  const primary = openpgpAlgorithmProblem(d.primary, 'sign', opts.minRsaBits);
+  const signing = d.signing
+    ? openpgpAlgorithmProblem(d.signing, 'sign', opts.minRsaBits)
+    : 'the key has no valid signing key, so it cannot prove possession';
+  const encryption = d.encryption
+    ? openpgpAlgorithmProblem(d.encryption, 'encrypt', opts.minRsaBits) : '';
+  const problem = primary || signing || encryption;
+  if (problem) {
+    log.debug("Leaving openpgpReadKey(). Weak or unusable.");
+    return openpgpRefusal('STS-OPENPGP-0004', problem, { description: d });
+  }
+  log.debug("Leaving openpgpReadKey(). " + d.fingerprint);
+  return { ok: true, key: read.key, description: d,
+           armored: openpgpEngine.armor(read.key),
+           binary: openpgpEngine.binaryOf(read.key) };
+}
+
+/**
+ * Normalises a challenge's text as a cleartext signature carries it: line
+ * ends as LF, trailing white space on each line and at the end removed
+ * (RFC 9580 section 7.1 strips it before signing).
+ *
+ * @param text - the text
+ * @returns the normalised text
+ */
+function openpgpNormaliseText(text) {
+  log.debug("Entering openpgpNormaliseText().");
+  log.debug("Leaving openpgpNormaliseText().");
+  return String(text || '').replace(/\r\n?/g, '\n').split('\n')
+    .map(function (line) {
+      return line.replace(/[ \t]+$/, '');
+    }).join('\n').replace(/\n+$/, '');
+}
+
+/**
+ * Verifies a proof of possession: a cleartext signature (`gpg --clearsign`)
+ * over exactly the challenge's text, by a signing key of the registered key,
+ * made no earlier than the challenge was issued (less the skew) and no
+ * later than now (plus the skew).
+ *
+ * @param signedText - the armored cleartext message
+ * @param key - the key `openpgpReadKey()` answered
+ * @param options - `{ expectedText, issuedAt (ms), at: Date, skewS }`
+ * @returns `{ ok: true, signer, created }`, or a coded refusal
+ *   (STS-OPENPGP-0007 to -0010)
+ */
+async function openpgpVerifyChallenge(signedText, key, options) {
+  log.debug("Entering openpgpVerifyChallenge().");
+  const opts = options || {};
+  const at = opts.at instanceof Date ? opts.at : new Date();
+  const skewMs = Math.max(0, Number(opts.skewS) || 0) * 1000;
+  const text = String(signedText || '');
+  if (!text || Buffer.byteLength(text) > OPENPGP_MAX_SIGNED_BYTES ||
+      text.indexOf('-----BEGIN PGP SIGNED MESSAGE-----') < 0) {
+    log.debug("Leaving openpgpVerifyChallenge(). Not a cleartext message.");
+    return openpgpRefusal('STS-OPENPGP-0007', 'that is not a cleartext ' +
+      'signed message: sign the challenge with gpg --clearsign and paste ' +
+      'everything from -----BEGIN PGP SIGNED MESSAGE----- to the end');
+  }
+  const verified = await openpgpEngine.verifyCleartext(text, key, at);
+  if (!verified.ok) {
+    log.debug("Leaving openpgpVerifyChallenge(). " + verified.reason);
+    return verified.reason === 'unreadable' || verified.reason === 'unsigned'
+      ? openpgpRefusal('STS-OPENPGP-0007', 'the signed message could not ' +
+                       'be read: ' + verified.why)
+      : openpgpRefusal('STS-OPENPGP-0008', verified.reason === 'other-key'
+          ? 'the challenge was ' + verified.why
+          : 'the signature does not verify: ' + verified.why);
+  }
+  const expected = openpgpNormaliseText(opts.expectedText);
+  if (!expected || openpgpNormaliseText(verified.text) !== expected) {
+    log.debug("Leaving openpgpVerifyChallenge(). Other text.");
+    return openpgpRefusal('STS-OPENPGP-0009', 'the signed text is not the ' +
+      'challenge this service issued: sign the challenge exactly as shown');
+  }
+  const created = Date.parse(verified.created || '');
+  const issued = Number(opts.issuedAt) || 0;
+  if (!(created > 0) || created < issued - skewMs ||
+      created > at.getTime() + skewMs) {
+    log.debug("Leaving openpgpVerifyChallenge(). Not fresh.");
+    return openpgpRefusal('STS-OPENPGP-0010', 'the signature was made at ' +
+      (verified.created || 'no stated time') + ', outside the challenge\'s ' +
+      'lifetime (check the clock of the computer that signed it)');
+  }
+  const problem = openpgpAlgorithmProblem(verified.signer, 'sign',
+                                          opts.minRsaBits);
+  if (problem) {
+    log.debug("Leaving openpgpVerifyChallenge(). The signer is weak.");
+    return openpgpRefusal('STS-OPENPGP-0004', problem);
+  }
+  log.debug("Leaving openpgpVerifyChallenge(). Verified.");
+  return { ok: true, signer: verified.signer, created: verified.created };
+}
+
+/**
+ * Encrypts bytes to a stored OpenPGP key's encryption key, armored (RFC
+ * 3156's encrypted part). Throws when the key no longer reads or has no
+ * encryption key valid now; the caller records its own code.
+ *
+ * @param bytes - the content
+ * @param armoredKey - the stored key
+ * @param at - the instant the key is judged at (a Date)
+ * @returns the armored OpenPGP message
+ */
+async function openpgpEncrypt(bytes, armoredKey, at) {
+  log.debug("Entering openpgpEncrypt().");
+  const read = await openpgpEngine.readPublicKey(String(armoredKey || ''));
+  if (!read.ok) {
+    log.debug("Leaving openpgpEncrypt(). Unreadable.");
+    // error-code: none — the caller tags the failure with its own code
+    throw new Error('the stored OpenPGP key does not read: ' + read.why);
+  }
+  const out = await openpgpEngine.encryptTo(Buffer.from(bytes || []),
+                                            read.key, at);
+  log.debug("Leaving openpgpEncrypt().");
+  return out;
+}
+
+/**
+ * The binary transferable public key a stored armored key is: what the Web
+ * Key Directory answers.
+ *
+ * @param armoredKey - the stored key
+ * @returns the bytes, or null when it does not read
+ */
+async function openpgpBinaryKey(armoredKey) {
+  log.debug("Entering openpgpBinaryKey().");
+  const read = await openpgpEngine.readPublicKey(String(armoredKey || ''));
+  log.debug("Leaving openpgpBinaryKey(). " + (read.ok ? 'Read.' : 'No.'));
+  return read.ok ? openpgpEngine.binaryOf(read.key) : null;
+}
+
+/**
+ * The version of openpgp.js the engine runs on.
+ *
+ * @returns the version
+ */
+function openpgpLibraryVersion() {
+  log.debug("Entering openpgpLibraryVersion().");
+  log.debug("Leaving openpgpLibraryVersion().");
+  return openpgpEngine.libraryVersion();
+}
+
+// z-base-32 (Zooko's human-oriented base-32, the alphabet the Web Key
+// Directory's hashed local part is written in).
+const ZBASE32 = 'ybndrfg8ejkmcpqxot1uwisza345h769';
+
+/**
+ * Encodes bytes as z-base-32, most significant bit first, unpadded.
+ *
+ * @param bytes - the bytes
+ * @returns the text
+ */
+function zBase32(bytes) {
+  log.debug("Entering zBase32().");
+  const data = Buffer.from(bytes || []);
+  let out = '';
+  let buffer = 0;
+  let bits = 0;
+  for (let i = 0; i < data.length; i++) {
+    buffer = (buffer << 8) | data[i];
+    bits += 8;
+    while (bits >= 5) {
+      out += ZBASE32[(buffer >>> (bits - 5)) & 31];
+      bits -= 5;
+    }
+  }
+  if (bits > 0) {
+    out += ZBASE32[(buffer << (5 - bits)) & 31];
+  }
+  log.debug("Leaving zBase32().");
+  return out;
+}
+
+// THE WEB KEY DIRECTORY'S HASHED LOCAL PART (draft-koch-openpgp-webkey-
+// service section 3.1): the local part mapped to lower case, its SHA-1, in
+// z-base-32 — 32 characters. SHA-1 is the draft's, fixed and compared as a
+// NAME rather than trusted for anything (the key it finds is the key the
+// person registered), so `digest()`'s list, which refuses SHA-1 to anything
+// new, is not widened — `kerberosTokenKeyIdentifier()`'s arrangement. The
+// draft maps only ASCII A-Z; anything else is left as given.
+/**
+ * The Web Key Directory's hashed local part of an address.
+ *
+ * @param localPart - the part before the `@`
+ * @returns the 32-character z-base-32 hash
+ */
+function wkdHash(localPart) {
+  log.debug("Entering wkdHash().");
+  const lowered = String(localPart || '').replace(/[A-Z]/g, function (c) {
+    return c.toLowerCase();
+  });
+  const out = zBase32(nodeCrypto.createHash('sha1')
+    .update(Buffer.from(lowered, 'utf8')).digest());
+  log.debug("Leaving wkdHash().");
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// S/MIME (RFC 8551): the recipient certificate, and the envelope.
+// ---------------------------------------------------------------------------
+const SMIME_EMAIL_PROTECTION = '1.3.6.1.5.5.7.3.4';
+const SMIME_ANY_EKU = '2.5.29.37.0';
+const SMIME_MIN_RSA_BITS = 2048;
+const SMIME_CURVES = { '1.2.840.10045.3.1.7': 'P-256',
+                       '1.3.132.0.34': 'P-384', '1.3.132.0.35': 'P-521' };
+
+/**
+ * The certificates a `userSMIMECertificate` value holds: RFC 2798 section
+ * 2.8 makes it a PKCS#7 SignedData carrying the certificates, and a DER
+ * certificate on its own is what many directories hold instead.
+ *
+ * @param value - the attribute's value (a Buffer or the base64 of one)
+ * @returns pkijs certificates, possibly none
+ */
+function smimeCertificatesOf(value) {
+  log.debug("Entering smimeCertificatesOf().");
+  const pkijs = require('pkijs');
+  const der = Buffer.isBuffer(value) ? value
+    : Buffer.from(String(value || '').replace(/-----[^-]+-----|\s/g, ''),
+                  'base64');
+  const parsed = asn1js.fromBER(new Uint8Array(der).buffer);
+  if (parsed.offset === -1) {
+    log.debug("Leaving smimeCertificatesOf(). Not BER.");
+    return [];
+  }
+  try {
+    const certificate = new pkijs.Certificate({ schema: parsed.result });
+    log.debug("Leaving smimeCertificatesOf(). A certificate.");
+    return [certificate];
+  } catch (e) {
+    log.debug("Caught in smimeCertificatesOf(): " + ((e && e.message) || e));
+    // Not a certificate on its own: a SignedData carrying some.
+  }
+  try {
+    const info = new pkijs.ContentInfo({ schema: parsed.result });
+    const signed = new pkijs.SignedData({ schema: info.content });
+    const out = (signed.certificates || []).filter(function (one) {
+      return one instanceof pkijs.Certificate;
+    });
+    log.debug("Leaving smimeCertificatesOf(). " + out.length + " in a " +
+              "SignedData.");
+    return out;
+  } catch (e) {
+    log.debug("Caught in smimeCertificatesOf(): " + ((e && e.message) || e));
+    log.debug("Leaving smimeCertificatesOf(). Neither.");
+    return [];
+  }
+}
+
 /**
  * Answers whether a key is a signing key in the HSM: its key object, or its
  * reference.
@@ -19165,6 +19735,189 @@ function pkcs11Capabilities(token) {
 }
 
 /**
+ * Says what is wrong with a certificate as an S/MIME recipient's, or ''.
+ *
+ * @param certificate - a pkijs certificate
+ * @param at - the instant (a Date)
+ * @returns '' or the reason
+ */
+function smimeRecipientProblem(certificate, at) {
+  log.debug("Entering smimeRecipientProblem().");
+  const c = certificate;
+  const now = at.getTime();
+  if (c.notBefore.value.getTime() > now || c.notAfter.value.getTime() < now) {
+    log.debug("Leaving smimeRecipientProblem(). Not valid now.");
+    return 'the certificate is valid from ' +
+      c.notBefore.value.toISOString() + ' to ' +
+      c.notAfter.value.toISOString();
+  }
+  const alg = c.subjectPublicKeyInfo.algorithm;
+  const oid = String(alg.algorithmId);
+  let kind = '';
+  if (oid === '1.2.840.113549.1.1.1') {
+    kind = 'rsa';
+    let bits = 0;
+    try {
+      const rsa = c.subjectPublicKeyInfo.parsedKey;
+      const n = Buffer.from(rsa.modulus.valueBlock.valueHexView);
+      bits = (n[0] === 0 ? n.length - 1 : n.length) * 8;
+    } catch (e) {
+      log.debug("Caught in smimeRecipientProblem(): " +
+                ((e && e.message) || e));
+      bits = 0;
+    }
+    if (bits < SMIME_MIN_RSA_BITS) {
+      log.debug("Leaving smimeRecipientProblem(). Short RSA.");
+      return 'an RSA key of ' + bits + ' bits is shorter than ' +
+        SMIME_MIN_RSA_BITS;
+    }
+  } else if (oid === '1.2.840.10045.2.1') {
+    kind = 'ec';
+    const curve = alg.algorithmParams
+      ? String(alg.algorithmParams.valueBlock.toString()) : '';
+    if (!SMIME_CURVES[curve]) {
+      log.debug("Leaving smimeRecipientProblem(). Curve.");
+      return 'the EC curve ' + (curve || '(none)') + ' is not P-256, ' +
+        'P-384 or P-521';
+    }
+  } else {
+    log.debug("Leaving smimeRecipientProblem(). Key kind.");
+    return 'a ' + oid + ' key cannot receive S/MIME here (RSA or EC only)';
+  }
+  const extensions = c.extensions || [];
+  const usage = extensions.filter(function (x) {
+    return x.extnID === '2.5.29.15';
+  })[0];
+  if (usage && usage.parsedValue) {
+    // The KeyUsage BIT STRING: bit 2 keyEncipherment, bit 4 keyAgreement.
+    const view = new Uint8Array(usage.parsedValue.valueBlock.valueHexView);
+    const first = view.length ? view[0] : 0;
+    const needed = kind === 'rsa' ? 0x20 : 0x08;
+    if (!(first & needed)) {
+      log.debug("Leaving smimeRecipientProblem(). Key usage.");
+      return 'its key usage does not allow ' + (kind === 'rsa'
+        ? 'keyEncipherment' : 'keyAgreement');
+    }
+  }
+  const eku = extensions.filter(function (x) {
+    return x.extnID === '2.5.29.37';
+  })[0];
+  if (eku && eku.parsedValue && eku.parsedValue.keyPurposes) {
+    const purposes = eku.parsedValue.keyPurposes.map(String);
+    if (purposes.indexOf(SMIME_EMAIL_PROTECTION) < 0 &&
+        purposes.indexOf(SMIME_ANY_EKU) < 0) {
+      log.debug("Leaving smimeRecipientProblem(). EKU.");
+      return 'its extended key usage does not include emailProtection';
+    }
+  }
+  log.debug("Leaving smimeRecipientProblem(). Usable.");
+  return '';
+}
+
+/**
+ * The addresses a certificate names: its subjectAltName rfc822Names and its
+ * subject's emailAddress (RFC 8550 section 3).
+ *
+ * @param certificate - a pkijs certificate
+ * @returns the addresses, as written
+ */
+function smimeAddressesOf(certificate) {
+  log.debug("Entering smimeAddressesOf().");
+  const out = [];
+  (certificate.extensions || []).forEach(function (x) {
+    if (x.extnID === '2.5.29.17' && x.parsedValue &&
+        x.parsedValue.altNames) {
+      x.parsedValue.altNames.forEach(function (name) {
+        if (name.type === 1 && name.value) {
+          out.push(String(name.value));
+        }
+      });
+    }
+  });
+  certificate.subject.typesAndValues.forEach(function (tv) {
+    if (tv.type === '1.2.840.113549.1.9.1') {
+      out.push(String(tv.value.valueBlock.value || ''));
+    }
+  });
+  log.debug("Leaving smimeAddressesOf(). " + out.length);
+  return out.filter(Boolean);
+}
+
+/**
+ * Chooses the certificate an S/MIME message to a person is encrypted to,
+ * from the values of their `userSMIMECertificate`: the first, in order,
+ * that is valid now and fit to receive.
+ *
+ * @param values - the attribute's values (Buffers or base64)
+ * @param at - the instant (a Date)
+ * @returns `{ ok: true, der, emails, subject, serial }`, or a coded
+ *   refusal (STS-OPENPGP-0011)
+ */
+function smimeRecipientCertificate(values, at) {
+  log.debug("Entering smimeRecipientCertificate().");
+  const when = at instanceof Date ? at : new Date();
+  const reasons = [];
+  const list = [].concat(values || []);
+  for (let i = 0; i < list.length; i++) {
+    const certificates = smimeCertificatesOf(list[i]);
+    if (!certificates.length) {
+      reasons.push('a value is neither a certificate nor a PKCS#7 ' +
+                   'SignedData carrying one');
+    }
+    for (const c of certificates) {
+      const problem = smimeRecipientProblem(c, when);
+      if (!problem) {
+        log.debug("Leaving smimeRecipientCertificate(). Chosen.");
+        return { ok: true,
+                 der: Buffer.from(c.toSchema().toBER(false)),
+                 emails: smimeAddressesOf(c),
+                 serial: Buffer.from(c.serialNumber.valueBlock.valueHexView)
+                   .toString('hex'),
+                 subject: c.subject.typesAndValues.map(function (tv) {
+                   return String(tv.value.valueBlock.value || '');
+                 }).join(', ') };
+      }
+      reasons.push(problem);
+    }
+  }
+  log.debug("Leaving smimeRecipientCertificate(). None usable.");
+  return openpgpRefusal('STS-OPENPGP-0011', list.length
+    ? 'no S/MIME certificate on the entry can receive: ' + reasons.join('; ')
+    : 'the entry has no userSMIMECertificate');
+}
+
+/**
+ * Encrypts a MIME entity to an S/MIME recipient certificate: a CMS
+ * ContentInfo holding an EnvelopedData (the header), DER.
+ *
+ * @param mimeBytes - the inner MIME entity, headers and body
+ * @param certificateDer - the recipient's certificate
+ *   (`smimeRecipientCertificate()`'s `der`)
+ * @returns a promise of the DER
+ */
+async function smimeEnvelope(mimeBytes, certificateDer) {
+  log.debug("Entering smimeEnvelope().");
+  const pkijs = require('pkijs');
+  installPkijsWebCrypto(pkijs);
+  const certificate = pkijs.Certificate.fromBER(
+    new Uint8Array(Buffer.from(certificateDer)));
+  const enveloped = new pkijs.EnvelopedData();
+  enveloped.addRecipientByCertificate(certificate, {
+    oaepHashAlgorithm: 'SHA-256', kdfAlgorithm: 'SHA-256',
+    kekEncryptionLength: 256 });
+  // `any`: pkijs declares the content algorithm as Web Crypto's bare
+  // `Algorithm`, and reads `length` off it all the same.
+  await enveloped.encrypt(/** @type {any} */ ({ name: 'AES-CBC',
+                                               length: 256 }),
+                          new Uint8Array(Buffer.from(mimeBytes)).buffer);
+  const info = new pkijs.ContentInfo({
+    contentType: '1.2.840.113549.1.7.3', content: enveloped.toSchema() });
+  const out = Buffer.from(info.toSchema().toBER(false));
+  log.debug("Leaving smimeEnvelope(). " + out.length + " bytes.");
+  return out;
+}
+
+/**
  * The one place this service signs, verifies, encrypts and decrypts.
  *
  * XML Signature and Encryption, JWS and JWE, keys and certificates, password
@@ -19176,6 +19929,21 @@ function pkcs11Capabilities(token) {
  * @namespace
  */
 module.exports = {
+  // --- section 19: OpenPGP and S/MIME (#1955 P6) ---
+  OPENPGP_SIGNING_ALGORITHMS: OPENPGP_SIGNING_ALGORITHMS,
+  OPENPGP_ENCRYPTION_ALGORITHMS: OPENPGP_ENCRYPTION_ALGORITHMS,
+  OPENPGP_MIN_RSA_BITS: OPENPGP_MIN_RSA_BITS,
+  openpgpAlgorithmProblem: openpgpAlgorithmProblem,
+  openpgpReadKey: openpgpReadKey,
+  openpgpNormaliseText: openpgpNormaliseText,
+  openpgpVerifyChallenge: openpgpVerifyChallenge,
+  openpgpEncrypt: openpgpEncrypt,
+  openpgpBinaryKey: openpgpBinaryKey,
+  openpgpLibraryVersion: openpgpLibraryVersion,
+  zBase32: zBase32,
+  wkdHash: wkdHash,
+  smimeRecipientCertificate: smimeRecipientCertificate,
+  smimeEnvelope: smimeEnvelope,
   // --- section 19: keys in a hardware security module (#1955) ---
   openPkcs11Token: openPkcs11Token,
   forgetPkcs11Libraries: forgetPkcs11Libraries,
@@ -19610,6 +20378,10 @@ module.exports = {
   ID_AA_ATTESTATION: ID_AA_ATTESTATION,
   TCG_ATTEST_TPM_CERTIFY: TCG_ATTEST_TPM_CERTIFY,
   csrAttestationBundle: csrAttestationBundle,
+  YUBICO_PIV_STATEMENT: YUBICO_PIV_STATEMENT,
+  YUBICO_PIV_EXTENSIONS: YUBICO_PIV_EXTENSIONS,
+  yubicoPivAttestationFacts: yubicoPivAttestationFacts,
+  certificatePolicyOids: certificatePolicyOids,
   tpm2bContents: tpm2bContents,
   tcgTpmCertifyStatement: tcgTpmCertifyStatement,
   // --- the algorithm URIs, so that there is one spelling of each in the

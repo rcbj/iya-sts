@@ -1379,6 +1379,14 @@
     "en": "cba85726ee4e8673",
     "text": "Los orígenes — esquema, host y puerto, sin ruta — desde los que se acepta una ceremonia WebAuthn, separados por comas. **VACÍO, el valor predeterminado, deriva el único origen de la dirección por la que se llegó a este servicio**, que es lo que siempre ha hecho y que global.publicBaseUrl ya fija cuando está definido. Definido, es la lista completa: un clientDataJSON cuyo origen no está en ella se rechaza sea cual sea el Host que llevaba la solicitud. Nombre varios cuando una credencial se usa desde hosts hermanos bajo un webauthn.rpId compartido."
   },
+  "webauthn.u2fAppIds|label": {
+    "en": "b0b6d4158c6357e8",
+    "text": "AppID U2F heredados"
+  },
+  "webauthn.u2fAppIds|description": {
+    "en": "05b1b01773d86d5d",
+    "text": "Los AppID de FIDO U2F — las URL https con las que una parte de confianza U2F heredada registró sus llaves de seguridad — cuyas credenciales pueden importarse en las entradas de las personas y usarse para iniciar sesión aquí, separados por comas. **VACÍO, el valor predeterminado, es la función desactivada**: no se puede importar nada, ninguna ceremonia lleva la extensión appid o appidExclude (WebAuthn Level 3 secciones 10.1.1 y 10.1.2), y una llave importada no inicia sesión. Un AppID solo se usa en un RP ID con el que se relaciona: su host es el RP ID, o uno es sufijo del otro. Donde el host difiere del del origen, el navegador obtiene la URL del AppID en busca de una lista TrustedFacets que nombre este origen, que el servicio heredado debe seguir sirviendo. Una llave importada es solo un segundo factor: una llave U2F no puede verificar a la persona."
+  },
   "webauthn.algorithms|label": {
     "en": "47c0895479d03828",
     "text": "Algoritmos ofrecidos"
@@ -3250,6 +3258,54 @@
   "devices.eventsKept|description": {
     "en": "72d46974270d0c03",
     "text": "Cuántas creaciones, eliminaciones, desalojos y cambios de cumplimiento de dispositivos conserva este dominio para Monitoreo → Dispositivos. Al registrar uno nuevo por encima del límite se descarta el más antiguo."
+  },
+  "hardwareTokens.hardwareClaims|label": {
+    "en": "8373111eef4bf812",
+    "text": "Qué da derecho a declarar una clave de hardware"
+  },
+  "hardwareTokens.hardwareClaims|description": {
+    "en": "e0341e4e47f3b2f8",
+    "text": "Qué permite que un inicio de sesión PKINIT declare una clave vinculada al hardware (el indicador pkinit-hardware y amr hwk). `inference`, el valor predeterminado y el comportamiento anterior a #1955: un certificado de inicio de sesión con tarjeta inteligente cuya clave no generó este servicio, o una prueba de atestación registrada. `evidence`: solo una clave que cubre la atestación de un token de hardware. Un inicio de sesión con certificado sobre TLS obtiene hwk, y sc para una clave en una tarjeta inteligente, solo a partir de pruebas, en ambos casos."
+  },
+  "openpgp.wkd|label": {
+    "en": "1f05a7518c3d2275",
+    "text": "Publicar claves en el Web Key Directory"
+  },
+  "openpgp.wkd|description": {
+    "en": "7822103f89ac59b3",
+    "text": "Responder al Web Key Directory (draft-koch-openpgp-webkey-service) para los dominios de correo de este dominio de confianza: /.well-known/openpgpkey/<domain>/hu/<hash> (el método avanzado, en openpgpkey.<domain>) y /.well-known/openpgpkey/hu/<hash> (el método directo), además del archivo de política de cada uno. Solo se devuelve la clave de una persona que lo aceptó en el portal. Desactivado de forma predeterminada."
+  },
+  "openpgp.wkdDomains|label": {
+    "en": "d1c4b728593ff000",
+    "text": "Dominios de correo que sirve el Web Key Directory"
+  },
+  "openpgp.wkdDomains|description": {
+    "en": "ad64f7216191123c",
+    "text": "Los dominios de correo para los que responde el Web Key Directory de este dominio de confianza, separados por comas. Vacío, el valor predeterminado, significa el propio dominio DNS del dominio de confianza. Una solicitud sin dominio de confianza en su ruta la responde el dominio de confianza que sirve su dominio DNS, primero el predeterminado."
+  },
+  "openpgp.challengeLifetimeS|label": {
+    "en": "dbf558cf0b4b8f90",
+    "text": "Vigencia del desafío de registro (segundos)"
+  },
+  "openpgp.challengeLifetimeS|description": {
+    "en": "e9130c8e82368cc6",
+    "text": "Cuánto tiempo sigue siendo válido el desafío que una persona firma con gpg --clearsign para registrar una clave OpenPGP. Se consume una sola vez, y una persona tiene uno cada vez."
+  },
+  "openpgp.signatureSkewS|label": {
+    "en": "d927cf1f04bd9d51",
+    "text": "Desfase de reloj admitido en la firma de prueba (segundos)"
+  },
+  "openpgp.signatureSkewS|description": {
+    "en": "2772763d3d363b6d",
+    "text": "Cuánto puede diferir el reloj del equipo que firma del de este servicio: se rechaza una prueba firmada antes de la emisión del desafío, o después del momento actual, por más de este valor (STS-OPENPGP-0010)."
+  },
+  "openpgp.minRsaBits|label": {
+    "en": "f3dc9f85de143630",
+    "text": "Clave OpenPGP RSA más pequeña"
+  },
+  "openpgp.minRsaBits|description": {
+    "en": "ad48516e31a7c45b",
+    "text": "La clave RSA más corta, principal o subclave, que acepta un registro OpenPGP. Se aceptan Ed25519, Ed448, ECDSA y ECDH sobre P-256, P-384 y P-521, X25519 y X448; DSA, ElGamal y las curvas Brainpool nunca (STS-OPENPGP-0004)."
   },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
@@ -9487,6 +9543,14 @@
     "en": "05185a4a554d5f71",
     "text": "Si está activado, todo token de acceso, ID Token, aserción SAML 2.0 y aserción SAML 1.1 nombra los roles que tiene su sujeto. ACTIVADO por defecto y aun así no cambia nada para la mayoría de los llamantes, por la misma razón por la que el claim de grupos está activado por defecto: el claim se OMITE POR COMPLETO para quien no tiene ningún rol CONFIGURADO, y los seis roles integrados nunca están en él — EVERYBODY y ALL_AUTHENTICATED_USERS son ciertos para casi todos los tokens aquí, así que incluirlos añadiría dos miembros sin sentido a cada token que analiza cada cliente existente y no diría a una parte que confía nada que no supiera por tener el token. Existen para EXIGIRSE, no para incluirse."
   },
+  "roles.dynamicSelection|label": {
+    "en": "86d2654ef3dec8fd",
+    "text": "Ofrecer roles dinámicos al iniciar sesión"
+  },
+  "roles.dynamicSelection|description": {
+    "en": "68b1b4af3db5e6d8",
+    "text": "Si una persona que inicia sesión puede elegir roles dinámicos seleccionables (#1072): en un dominio que define al menos un rol dinámico, la página de inicio de sesión ofrece la casilla «Elegir roles para este inicio de sesión», y al marcarla se muestran los roles que la elegibilidad de la persona permite. ACTIVADO de forma predeterminada; appDynamicRoleSelection en la entrada de una aplicación lo reemplaza para esa aplicación. Desactivado, no se muestra la casilla, no se ofrece ningún rol, no se pide ningún rol dinámico obligatorio y ningún token lleva un rol seleccionado dinámicamente."
+  },
   "roles.claimName|label": {
     "en": "d56be861543f5305",
     "text": "Nombre del claim de roles"
@@ -11819,6 +11883,14 @@
     "en": "50195b20fe00e9fa",
     "text": "Un aviso que nombra aquello de lo que trata (el mismo acto sobre la misma cuenta) se envía una vez en esta ventana, por muchas puertas que lo hayan notificado. 0 desactiva la supresión."
   },
+  "mail.encryptionRequired|label": {
+    "en": "81e5dc8eb5332f2b",
+    "text": "Mensajes que deben cifrarse"
+  },
+  "mail.encryptionRequired|description": {
+    "en": "895bdb616e169134",
+    "text": "Los mensajes, por ID de plantilla (password-reset, account-activation, sign-in-code, sign-in-link, credential-compromised y el resto de la lista de Monitoring → Mail), que solo se envían cifrados — PGP/MIME para la clave OpenPGP de la persona o S/MIME para su certificado, según lo que eligió en el portal. A una persona que no eligió ninguno no se le envía (STS-MAIL-0240), y el uso que lo solicitó lo indica como con cualquier mensaje no enviado. Vacío, el valor predeterminado, no exige ninguno; lo que haya elegido una persona se respeta en cualquier caso."
+  },
   "mail.selfServiceReset|label": {
     "en": "8525111d1c0be58a",
     "text": "Restablecimiento de contraseña de autoservicio"
@@ -12762,5 +12834,93 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "Solo para la escucha del depurador de protocolos: http.http2MaxConcurrentStreams. -1, el predeterminado, sigue a http.http2MaxConcurrentStreams; cualquier otro valor decide solo para esta escucha. Cuántas solicitudes puede tener abiertas a la vez una conexión HTTP/2 (SETTINGS_MAX_CONCURRENT_STREAMS); un flujo por encima se rechaza hasta que termine otro. 100, el predeterminado, es el valor más pequeño que recomienda RFC 9113; el propio de node no tiene límite, lo que permitiría a una sola conexión llevar el trabajo de miles. Limita el trabajo de una conexión como http.maxConnections limita las conexiones. Una conexión nueva sigue un cambio de inmediato, y a una abierta se le envía el nuevo valor."
+  },
+  "piv.attestationAnchors|label": {
+    "en": "ebc10f6a7dcbbf58",
+    "text": "Raíces de atestación PIV (PEM)"
+  },
+  "piv.attestationAnchors|description": {
+    "en": "487e76edeb4446b9",
+    "text": "Las raíces a las que debe encadenarse una atestación de clave PIV de YubiKey, como un paquete PEM. Vacío usa las dos que publica Yubico (Yubico PIV Root CA Serial 263751, y Yubico Attestation Root 1 para el firmware 5.7.4 y posteriores), incluidas en common/pki_piv_anchors.json y fijadas allí por SHA-256, junto con los intermedios PIV de Yubico. Un certificado aquí sustituye a las raíces incluidas."
+  },
+  "piv.requireAttestation|label": {
+    "en": "4e11b0db111faccf",
+    "text": "Exigir una atestación PIV para los perfiles PIV"
+  },
+  "piv.requireAttestation|description": {
+    "en": "ef38975436c5ac4f",
+    "text": "Activado, una solicitud de certificado piv-auth, piv-sign, piv-key-management o piv-card-auth se rechaza salvo que lleve una atestación PIV de YubiKey que se verifique (STS-PIV-0010). Una clave piv-key-management en custodia procedente de EST /serverkeygen es la excepción: la generó este servicio. Desactivado, el valor predeterminado, una solicitud así sin atestación se emite sin prueba de hardware; una solicitud que lleva una que no se verifica se rechaza en ambos casos."
+  },
+  "piv.pinPolicy|label": {
+    "en": "0f683a0cb1db1988",
+    "text": "Política de PIN más débil que puede tener una clave PIV atestada"
+  },
+  "piv.pinPolicy|description": {
+    "en": "c3f9fcec406b9806",
+    "text": "Lo que la política de PIN de la atestación debe ser como mínimo. `once`: el PIN una vez por sesión (cuenta el match-once de una llave Bio); `always`: el PIN antes de cada uso (cuenta match-always). `any`, el valor predeterminado, no exige ninguna política de PIN. Una clave cuya atestación sea más débil se rechaza (STS-PIV-0011)."
+  },
+  "piv.touchPolicy|label": {
+    "en": "a88f111c7b13657f",
+    "text": "Política de toque más débil que puede tener una clave PIV atestada"
+  },
+  "piv.touchPolicy|description": {
+    "en": "d78f0d5df0256787",
+    "text": "Lo que la política de toque de la atestación debe ser como mínimo. `cached`: un toque, recordado durante 15 segundos; `always`: un toque en cada uso. `any`, el valor predeterminado, no exige ninguna. Una clave cuya atestación sea más débil se rechaza (STS-PIV-0012)."
+  },
+  "piv.cardAuthSignIn|label": {
+    "en": "61b2226403ad5c61",
+    "text": "Permitir iniciar sesión con un certificado piv-card-auth"
+  },
+  "piv.cardAuthSignIn|description": {
+    "en": "1852da24c3fbfade",
+    "text": "Una clave piv-card-auth (ranura 9e) funciona sin PIN, para el acceso físico, por lo que su certificado se rechaza en el inicio de sesión TLS y en PKINIT (STS-PIV-0013) salvo que esto esté activado."
+  },
+  "piv.keyEscrow|label": {
+    "en": "f2efc85c3d2bac38",
+    "text": "Guardar en custodia las claves piv-key-management"
+  },
+  "piv.keyEscrow|description": {
+    "en": "cf9618144b67dff3",
+    "text": "Activado, EST /serverkeygen para el perfil piv-key-management conserva la clave privada generada, sellada con la clave de cifrado de claves, para que su titular (en el portal, tras un nuevo inicio de sesión) o un administrador con el rol de recuperación de claves PIV pueda recuperarla y descifrar correo antiguo tras perder una tarjeta. Se rechaza donde no se tiene ninguna clave de cifrado de claves (STS-PIV-0020). Una clave en custodia nunca es prueba de hardware. Desactivado, el valor predeterminado, /serverkeygen rechaza el perfil piv-key-management (STS-PIV-0021), de modo que una clave 9d se genera en la tarjeta y no se guarda en ningún otro sitio."
+  },
+  "piv.externalIssuers|label": {
+    "en": "e96143ab9556db35",
+    "text": "CA emisoras PIV o CAC externas asociadas por UUID de tarjeta (PEM)"
+  },
+  "piv.externalIssuers|description": {
+    "en": "0fb91dba2cb957d3",
+    "text": "Las CA emisoras cuyos certificados de tarjeta PIV o CAC inician la sesión de una persona por el UUID de tarjeta FIPS 201: un certificado de cliente emitido directamente por una de ellas, que declare una política de piv.externalPolicyOids y lleve exactamente un subjectAltName urn:uuid, se asocia a la única persona cuyo stsPivCardUuid contiene ese UUID. Nunca por su nombre, y no se crea ninguna entrada. La CA también debe estar en un almacén de confianza de clientes; si no, el protocolo de enlace la rechaza antes. Vacío, el valor predeterminado, no asocia nada."
+  },
+  "piv.externalPolicyOids|label": {
+    "en": "930c5800dfa36905",
+    "text": "Políticas PIV Authentication que debe declarar una tarjeta externa"
+  },
+  "piv.externalPolicyOids|description": {
+    "en": "2398931e8d58f5c4",
+    "text": "Las políticas de certificado de las que el certificado de una tarjeta externa debe declarar una para asociarse por su UUID de tarjeta: de forma predeterminada id-fpki-common-authentication (la PIV Authentication de la Federal PKI Common Policy) e id-fpki-certpcy-pivi-hardware (PIV-I). Añada aquí las políticas de hardware propias de un emisor de CAC."
+  },
+  "pki.paranoidPivAttestation|label": {
+    "en": "e645d02c49d2f9bf",
+    "text": "Paranoico: una cadena de atestación de clave PIV de YubiKey"
+  },
+  "pki.paranoidPivAttestation|description": {
+    "en": "fdb7c0eb631758ea",
+    "text": "Caso de uso `piv-attestation` (#1955): el certificado de atestación de la ranura y el certificado de atestación f9 de un registro PIV. El modo paranoico comprueba la ventana de validez en el momento actual, la ruta hasta piv.attestationAnchors y la revocación cuando la cadena indica una lista. Desactivado, solo este caso de uso hace la comprobación de ruta sin las comprobaciones de campos, mientras que las demás filas y el maestro no cambian; desactivado en modo producto, se registra una vez (STS-PKI-0239) y se muestra en rojo en /admin/pki/trust."
+  },
+  "pki.paranoidPivCard|label": {
+    "en": "4078a93e7117d6f9",
+    "text": "Paranoico: una tarjeta PIV o CAC externa asociada por UUID de tarjeta"
+  },
+  "pki.paranoidPivCard|description": {
+    "en": "d4d5fb070575e1c6",
+    "text": "Caso de uso `piv-card` (#1955): un certificado de cliente de una CA emisora de piv.externalIssuers, asociado por su UUID de tarjeta. El modo paranoico comprueba keyUsage digitalSignature y la ventana de validez del certificado final además de la comprobación del emisor de un salto. Desactivado, solo este caso de uso hace únicamente la comprobación del emisor, mientras que las demás filas y el maestro no cambian; desactivado en modo producto, se registra una vez (STS-PKI-0239) y se muestra en rojo en /admin/pki/trust."
+  },
+  "roles.pivKeyRecoveryGroup|label": {
+    "en": "2f231e1e99785dc6",
+    "text": "Grupo que concede el rol PIV_KEY_RECOVERY"
+  },
+  "roles.pivKeyRecoveryGroup|description": {
+    "en": "801616eea12559a5",
+    "text": "El grupo del directorio cuyos miembros tienen el rol integrado PIV_KEY_RECOVERY (#1955), que la política de control de acceso exige, junto con Admin Write, para recuperar la clave piv-key-management en custodia de otra persona (piv.keyEscrow). Esa clave descifra el correo de la persona, por lo que nadie tiene el rol hasta que un administrador lo añade al grupo. Vacío no permite a nadie recuperar la clave de otra persona; el titular recupera la suya en el portal."
   }
 }

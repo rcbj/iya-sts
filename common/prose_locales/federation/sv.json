@@ -111,6 +111,14 @@
     "en": "0f52a102d4c01229",
     "text": "INTEGRERAD AUTENTISERING. Personen skickas till /authn/spnego, som svarar 401 med WWW-Authenticate: Negotiate och loggar in dem på den tjänstebiljett som deras klient skickar tillbaka (RFC 4559 över RFC 4178 över RFC 4121). Ingenting skrivs in och ingen skärm ritas. Liksom en säkerhetsnyckel eller en plånbok vilar den på en autentiseringsuppgift som den här tjänsten verifierar i varje läge — inloggningsskärmens lösenord verifieras bara i produktläge — och det som sessionen sedan gör anspråk på läses från BILJETTENS egna flaggor: amr [\"pwd\"] för pre-authent, [\"hwk\"] för hw-authent, båda för båda, och INGENTING alls för en biljett som inte gör anspråk på någon av dem. En klient som inte kan få en biljett möts av en sida med en länk till inloggningsskärmen, eftersom en ensam 401 Negotiate är en återvändsgränd i varje webbläsare som inte är konfigurerad för den här värden."
   },
+  "fed.mechanisms.attested-hardware.label": {
+    "en": "a133b83617b8359b",
+    "text": "Attesterad maskinvarunyckel"
+  },
+  "fed.mechanisms.attested-hardware.what": {
+    "en": "2fc5a571514106a4",
+    "text": "En nyckel eller ett smartkortscertifikat på en maskinvarutoken som den här sfären registrerat utifrån dess egen attestering (common/hardware_tokens.ts): en säkerhetsnyckel med företagsattestering, eller ett PIV-kort. Inloggningsskärmen erbjuder en nyckel och, där autentiseringspolicyn tar emot ett, ett certifikat, och inget lösenord. I en tillåten lista uppfylls den bara av en sådan inloggningsuppgift, så en applikation vars autentiseringspolicy bara anger attested-hardware nås endast med en bevisad maskinvarunyckel."
+  },
   "fed.mechanisms.wallet.label": {
     "en": "a6a3e498bac9d4f6",
     "text": "Plånbok (OpenID4VP)"
@@ -488,8 +496,8 @@
     "text": "PEKAREN, och allt som den här sidan lagrar om partnern: identifieraren för dess post i ou=applications. Dess entityID, dess assertion consumer service, dess omdirigerings-URI:er och dess certifikat finns DÄR, där varje protokollmodul redan läser dem. Att kopiera någon av dem hit vore det tvålagersfel som det här förrådet är ordnat för att undvika."
   },
   "fed.schema.attributes.fedAuthnMechanism.what": {
-    "en": "10e91a734e1d74b3",
-    "text": "HUR DEN HÄR TJÄNSTEN AUTENTISERAR PERSONEN när den här partnern ber den om det: password, password-mfa, webauthn, spnego — en Kerberos-biljett som webbläsaren redan har, utan någon skärm alls — wallet — ett intyg som den här sfären utfärdat, presenterat från personens plånbok — eller federation, som skickar dem vidare till en annan relation och är det som gör den här tjänsten till en identitetsBRYGGA mellan två protokoll. TOMT BETYDER ATT DEN HÄR RELATIONEN INTE SÄGER NÅGOT, vilket inte är detsamma som password: det faller igenom till appFederationRelationship på applikationsposten och sedan till inloggningsskärmen, vilket är precis vad varje relation gjorde innan det här attributet fanns."
+    "en": "cbb25dba52aecc9f",
+    "text": "HUR DEN HÄR TJÄNSTEN AUTENTISERAR PERSONEN när den här partnern ber den om det: password, password-mfa, webauthn, attested-hardware — en nyckel på en maskinvarutoken bevisad genom attestering — spnego — en Kerberos-biljett som webbläsaren redan har, utan någon skärm alls — wallet — ett intyg som den här sfären utfärdat, presenterat från personens plånbok — eller federation, som skickar dem vidare till en annan relation och är det som gör den här tjänsten till en identitetsBRYGGA mellan två protokoll. TOMT BETYDER ATT DEN HÄR RELATIONEN INTE SÄGER NÅGOT, vilket inte är detsamma som password: det faller igenom till appFederationRelationship på applikationsposten och sedan till inloggningsskärmen, vilket är precis vad varje relation gjorde innan det här attributet fanns."
   },
   "fed.schema.attributes.fedAuthnRelationship.what": {
     "en": "e67f3ec502c8b6b8",

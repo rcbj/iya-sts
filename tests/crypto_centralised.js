@@ -133,9 +133,10 @@ const NODE_CRYPTO = [
 // are the zcap and Ed25519 ones; the BBS suite is common/crypto_impl's
 // (bbs2023.js), which is not walked.
 // jsonwebtoken and node-forge, which only common/crypto.js and the engines
-// under it may hold (#1368). Empty, and so it stays.
+// under it may hold (#1368). Empty, and so it stays. openpgp.js too (#1955
+// P6, rcbj's D3): only `common/crypto_impl/openpgp_engine.js` requires it.
 const JOSE_LIBRARIES = [
-  /(?:require)\s*\(\s*['"](?:jsonwebtoken|node-forge)['"]\s*\)/
+  /(?:require)\s*\(\s*['"](?:jsonwebtoken|node-forge|openpgp(?:\/[^'"]*)?)['"]\s*\)/
 ];
 const LIBRARY_PENDING = {};
 

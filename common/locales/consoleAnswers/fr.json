@@ -122,5 +122,11 @@
   "pepCredential.urn": "Nom",
   "pepCredential.env": "Démarrez le PEP avec cet environnement. La clé privée n’a jamais quitté la machine qui a fait la demande ; ce service n’en a aucune à donner.",
   "pepCredential.chain": "Le certificat et sa chaîne jusqu’à la racine du service. Public : le PEP n’en a pas besoin pour s’authentifier, et il figure dans la liste des clés de l’entrée.",
-  "pepCredential.download": "Télécharger le certificat"
+  "pepCredential.download": "Télécharger le certificat",
+  "once.pivCertificate": "Certificat PIV",
+  "once.pivKey": "Clé PIV séquestrée",
+  "piv.keyWarn": "Il s'agit de la clé privée de déchiffrement de la personne. Elle n'est affichée qu'une fois, et sa récupération figure dans le journal d'audit. Remettez-la comme vous remettriez la carte.",
+  "piv.privateKey": "Clé privée",
+  "piv.certificate": "Certificat",
+  "piv.import": "Écrivez-le dans l'emplacement de la YubiKey avec : ykman piv certificates import SLOT cert.pem"
 }

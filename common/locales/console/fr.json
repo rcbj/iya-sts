@@ -129,6 +129,8 @@
   "nav.roles": "Rôles",
   "nav.applications": "Applications",
   "nav.devices": "Appareils",
+  "nav.hardware-tokens": "Jetons matériels",
+  "nav.openpgp": "Clés OpenPGP",
   "nav.attribute-sources": "Sources d’attributs",
   "nav.secret-destinations": "Destinations de secrets",
   "nav.policies": "Politiques",

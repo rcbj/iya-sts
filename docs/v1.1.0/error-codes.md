@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5769** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5875** of them, in **55** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 48
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 437
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 445
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 760
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 83
@@ -81,17 +81,20 @@ is an ordinary outcome.
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 174
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 142
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 55
-* [Mail (`STS-MAIL`)](#sts-mail) — 40
+* [Mail (`STS-MAIL`)](#sts-mail) — 44
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 15
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 53
+* [Hardware tokens (`STS-HWTOKEN`)](#sts-hwtoken) — 13
+* [PIV key attestation (`STS-PIV`)](#sts-piv) — 26
+* [OpenPGP keys and mail encryption (`STS-OPENPGP`)](#sts-openpgp) — 25
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 224
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 252
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 137
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 99
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 299
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 301
 * [Management API (`STS-API`)](#sts-api) — 97
 * [User portal (`STS-PORTAL`)](#sts-portal) — 122
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 23
@@ -1407,7 +1410,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0028` | WebAuthn verification failed: clientDataJSON's type is not the ceremony's (webauthn.create / webauthn.get). | HTTP 200 page naming the failed check |
 | `STS-AUTHN-0029` | WebAuthn verification failed: the challenge in clientDataJSON is not the one this service issued for the step. | HTTP 200 page naming the failed check |
 | `STS-AUTHN-0030` | WebAuthn verification failed: the origin in clientDataJSON is not this service's origin or on webauthn.allowedOrigins. | HTTP 200 page naming the failed check |
-| `STS-AUTHN-0031` | WebAuthn verification failed: the RP ID hash in the authenticator data is not SHA-256 of the expected RP ID. | HTTP 200 page naming the failed check |
+| `STS-AUTHN-0031` | WebAuthn verification failed: the RP ID hash in the authenticator data is not SHA-256 of the expected RP ID — or, for a legacy U2F key whose client used the appid extension, of the AppID it was imported under (#1955). | HTTP 200 page naming the failed check |
 | `STS-AUTHN-0032` | WebAuthn verification failed: the authenticator data does not have the user-present (UP) flag set. | HTTP 200 page naming the failed check |
 | `STS-AUTHN-0033` | WebAuthn verification failed: webauthn.userVerification is required and the authenticator did not set the user-verified (UV) flag. | HTTP 200 page naming the failed check |
 | `STS-AUTHN-0034` | WebAuthn registration failed: the authenticator data carries no attested credential data (AT flag clear). | HTTP 200 page naming the failed check |
@@ -1814,6 +1817,14 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0556` | An administrator's passkey enrolment was begun or finished for a person named with a control character, a NUL or half of a surrogate pair. No directory name holds one, the pending record is keyed by the two names joined with a newline, and PostgreSQL cannot store a NUL, so it was refused before the pending record was touched (STS-STORE-0063). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-AUTHN-0557` | An authenticator app enrolment was begun for a name holding a control character or a NUL. No directory name holds one, and the pending enrolment is keyed by the name, which PostgreSQL cannot store with a NUL in it (STS-STORE-0063), so it was refused before the pending record was touched. | action result with the reason |
 | `STS-AUTHN-0558` | The account-set expiry job could not read the sessions a batch of browsers' account sets lists, asynchronously (#780). The batch decides nothing: no session is moved to remembered and no set is deleted on it, and the next run starts again at that batch. | none: a scheduler job; logged, never sent |
+| `STS-AUTHN-0559` | A passkey was not registered: the passkey policy asks a security key for CTAP 2.1 credential protection and enforces it (credProtect, enforceCredProtect, #1955), and the authenticator reported a lower credProtect level, or none, which is level 1. The issuance policy's cred-protect rule. Asked where every key is written. | HTTP 200 page naming the refusal; /admin-api and /account-api HTTP 400 with {ok:false, errors} |
+| `STS-AUTHN-0560` | A passkey policy save was refused: enforceCredProtect was on while credProtect was none, so there was no level to enforce (#1955). Nothing was written. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-AUTHN-0561` | A legacy U2F security key was not imported: its AppID is not one webauthn.u2fAppIds lists, or that setting is empty, which is the feature off (#1955). Nothing was written. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-AUTHN-0562` | A legacy U2F security key was not imported: its key handle is not base64 or base64url of 1 to 255 bytes (#1955). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-AUTHN-0563` | A legacy U2F security key was not imported: its public key is not an uncompressed P-256 point (65 bytes starting 0x04, on the curve) (#1955). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-AUTHN-0564` | A legacy U2F security key was not imported: its counter is not a whole number from 0 to 4294967295 (#1955). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-AUTHN-0565` | A sign-in step was answered by a legacy U2F security key that may not answer it: the step is passwordless (a U2F key cannot verify the person), or webauthn.u2fAppIds no longer permits its AppID at this RP ID (#1955). | HTTP 200 page naming the refusal |
+| `STS-AUTHN-0566` | A write of webauthn.u2fAppIds was refused: an entry is not a U2F AppID — an absolute https URL with a host, no user name or password and no fragment, at most 2048 characters (#1955). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 
 ## STS-OAUTH
 
@@ -4483,6 +4494,10 @@ Raised from: common/mail.ts, common/mail_transports.ts, common/mail_uses.ts, com
 | `STS-MAIL-0038` | A followed verification link for a NEW address could not write it to the entry (#64, D5). | HTTP 400 page |
 | `STS-MAIL-0039` | A person asked to change their address to something that is not an address this service can send to (#64, D5). | HTTP 400 page |
 | `STS-MAIL-0180` | The notice telling a person that a GNAP grant waits for their approval on the portal could not be queued; the request still waits there (#432 phase 6). | log only |
+| `STS-MAIL-0240` | A message whose template mail.encryptionRequired names was not queued: the person has chosen no mail encryption, so nothing could encrypt it. The use's own refusal handling applies (#1955). | log only (the use refuses as for any unsent message) |
+| `STS-MAIL-0241` | A message was not queued because the encryption the person chose cannot be honoured now (no usable OpenPGP encryption key, no S/MIME certificate that can receive); it is not sent in the clear against their choice (#1955). | log only (the use refuses as for any unsent message) |
+| `STS-MAIL-0242` | An encrypted message cannot be carried by the realm's transport: Azure Communication Services takes structured content and cannot send a MIME entity this service composed (#1955). | log only |
+| `STS-MAIL-0243` | An encrypted message could not be encrypted at send time (the stored key or certificate no longer reads); it is a dead letter, never sent in the clear (#1955). | log only |
 
 ## STS-I18N
 
@@ -4940,6 +4955,97 @@ Raised from: common/devices.ts, admin-ui/devices_admin.ts.
 | `STS-DEVICE-0052` | The Android attestation recheck's backfill could not write a device whose stsDeviceAndroidKey marker is missing or wrong; that device's keys are rechecked only once a later write of it derives the marker (#615). | — |
 | `STS-DEVICE-0053` | A device of a deleted person could not be removed from the register, so a person made again under the name owns it. Remove it on the Devices page. | — |
 
+## STS-HWTOKEN
+
+**Hardware tokens.** The hardware token register (#1955): one record per physical token (a YubiKey, a smart card) keyed by vendor and serial, the serial taken only from attestation, the credentials on it, and the lost-key act that retires every one of them.
+
+Raised from: common/hardware_tokens.ts, mgmt-api/hardware_tokens_api.ts, portal/account_tokens.ts.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-HWTOKEN-0001` | A hardware token's serial was offered with an evidence source that is not attestation (the FIDO enterprise attestation, a PIV key attestation or a vendor import); nothing was recorded (#1955). | — |
+| `STS-HWTOKEN-0002` | An attestation named no vendor and serial the hardware token register can key a token by; nothing was recorded (#1955). | — |
+| `STS-HWTOKEN-0003` | A credential of an unknown kind, or with an empty reference, was offered to the hardware token register (#1955). | — |
+| `STS-HWTOKEN-0004` | A hardware token's credential named a person with no directory entry to hold it (#1955). | — |
+| `STS-HWTOKEN-0005` | The lost-key act named a hardware token that is not in the realm's register, or (at the portal) not held by the caller (#1955). | HTTP 404 (the page with the sentence) |
+| `STS-HWTOKEN-0006` | The lost-key act named a hardware token already reported lost (#1955). | HTTP 409 (the page with the sentence) |
+| `STS-HWTOKEN-0007` | A credential on a hardware token reported lost could not be retired: its kind's retire action refused or threw. The token is marked lost; the credential named on the audit row is still live and must be removed by hand (#1955). | — |
+| `STS-HWTOKEN-0008` | A retire action for a hardware token credential kind was refused at installation: it named an unknown kind, no label or no retire function (#1955, rule 3e). | — |
+| `STS-HWTOKEN-0009` | A credential on a hardware token reported lost is of a kind no retire action is installed for, so it was not retired and is still live (#1955). | — |
+| `STS-HWTOKEN-0010` | At the portal's lost-key act a credential on the token was registered by another person, so it was left for an administrator to retire (#1955). | — |
+| `STS-HWTOKEN-0011` | A passkey was written and the hardware token register could not record the token its attestation named; the key stands, and the token is recorded when it is next registered (#1955). | — |
+| `STS-HWTOKEN-0012` | A hardware token act named an action that is not one of the page's (#1955). | HTTP 400 (the page with the sentence) |
+| `STS-HWTOKEN-0013` | The hardware token list or the lost-key act failed with an unexpected error at /admin-api; the log line has the stack (#1955). | HTTP 500 |
+
+## STS-PIV
+
+**PIV key attestation.** YubiKey PIV key attestation at certificate enrolment (#1955 P2): the request's attestation read and verified against the realm's PIV attestation anchors and its PIN and touch policy, the four PIV slot profiles, the escrow of piv-key-management keys, and the mapping of an outside PIV or CAC card by its card UUID.
+
+Raised from: common/piv_attestation.ts, common/cert_enrollment.ts, common/piv_enrolment.ts, portal/account_tokens.ts, mgmt-api/hardware_tokens_api.ts.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-PIV-0001` | A shipped PIV attestation certificate (common/pki_piv_anchors.json) did not match its pinned SHA-256 and is not used (#1955). | — |
+| `STS-PIV-0002` | Refused under paranoid PKI mode for piv-attestation: a YubiKey PIV key attestation chain; nothing established what the use case needs, or the use case itself refused (a self-signed leaf, an anchor out of reach). | the use case's refusal (#1360, #1955) |
+| `STS-PIV-0003` | Refused under paranoid PKI mode for piv-card: an outside PIV or CAC card's certificate mapped by its card UUID; the leaf's keyUsage or validity failed, or the use case itself refused. | the use case's refusal (#1360, #1955) |
+| `STS-PIV-0004` | A PIV attestation could not be read: the request's id-aa-attestation attribute is no AttestationBundle, the form's two certificates are not one slot certificate and an f9 certificate, or a server-generated key carried one (#1955). | HTTP 400; EST, SCEP and ACME refuse the request |
+| `STS-PIV-0005` | A PIV attestation certifies a different public key from the certificate request's (#1955). | HTTP 400 |
+| `STS-PIV-0006` | A PIV attestation does not chain to a PIV attestation anchor of the realm (piv.attestationAnchors, Yubico's roots by default), or the realm has none (#1955). | HTTP 400 |
+| `STS-PIV-0007` | A PIV attestation names no serial number (Yubico extension 1.3.6.1.4.1.41482.3.7), so no hardware token can be recorded from it (#1955). | HTTP 400 |
+| `STS-PIV-0008` | A PIV attestation is of another slot than the PIV profile asked is for (9a piv-auth, 9c piv-sign, 9d piv-key-management, 9e piv-card-auth) (#1955). | HTTP 400 |
+| `STS-PIV-0009` | The PIV enrolment form was sent without a certificate request, without a PIV profile, or for a person the caller may not enrol (#1955). | HTTP 400 (the page with the sentence) |
+| `STS-PIV-0010` | A PIV profile was asked without a PIV attestation in a realm that requires one (piv.requireAttestation) (#1955). | HTTP 400 |
+| `STS-PIV-0011` | An attested PIV key's PIN policy is weaker than the realm requires (piv.pinPolicy) (#1955). | HTTP 400 |
+| `STS-PIV-0012` | An attested PIV key's touch policy is weaker than the realm requires (piv.touchPolicy) (#1955). | HTTP 400 |
+| `STS-PIV-0013` | A piv-card-auth (slot 9e) certificate was refused at a sign-in, because that key works without a PIN (piv.cardAuthSignIn) (#1955). | the TLS sign-in and PKINIT refusals |
+| `STS-PIV-0014` | A certificate was issued from a verified PIV attestation and the hardware token register could not record its token; the certificate stands and earns no hardware claim (#1955). | — |
+| `STS-PIV-0016` | A PIV enrolment or key-recovery act failed with an unexpected error; the log line has the stack (#1955). | HTTP 500 |
+| `STS-PIV-0020` | A piv-key-management key was to be escrowed and no key-encryption key is held to seal it, so it was neither generated nor kept (#1955, D7). | HTTP 503 |
+| `STS-PIV-0021` | EST /serverkeygen was asked for a piv-key-management key in a realm that does not escrow them (piv.keyEscrow): a server-generated 9d key exists only to be escrowed (#1955, D7). | HTTP 501 |
+| `STS-PIV-0022` | An escrowed key was asked for and no escrowed piv-key-management key is held for that certificate on that person (#1955, D7). | HTTP 404 |
+| `STS-PIV-0023` | An administrator's recovery of an escrowed key was refused by the access-control policy: the caller does not hold PIV_KEY_RECOVERY (roles.pivKeyRecoveryGroup), or no policy decider is installed (#1955, D7). | HTTP 403 |
+| `STS-PIV-0024` | An escrowed key could not be opened (its data encryption key is not held, or the sealed value is damaged) (#1955, D7). | HTTP 503 |
+| `STS-PIV-0025` | An escrowed certificate could not be attached to a hardware token: the token is not the caller's, is lost, or the certificate is not an escrowed one of theirs (#1955, D7). | HTTP 404 |
+| `STS-PIV-0030` | An outside PIV or CAC card's certificate, from an issuer in piv.externalIssuers, was not mapped: it asserts none of piv.externalPolicyOids, or does not carry exactly one urn:uuid subjectAltName (#1955, D8). | the outside-certificate refusal (STS-TLS-0054, STS-AUTHN-0468) |
+| `STS-PIV-0031` | An outside PIV or CAC card's certificate names a card UUID that is in stsPivCardUuid on no person of the realm (#1955, D8). | the outside-certificate refusal (STS-TLS-0054, STS-AUTHN-0468) |
+| `STS-PIV-0032` | An outside PIV or CAC card's card UUID is in stsPivCardUuid on more than one person, so it names nobody (#1955, D8). | the outside-certificate refusal (STS-TLS-0055, STS-AUTHN-0469) |
+| `STS-PIV-0034` | A value written to stsPivCardUuid is not a card UUID in RFC 9562 form (or is the nil UUID); nothing was written (#1955, D8). | HTTP 400 (the directory write); LDAP constraintViolation |
+| `STS-PIV-0035` | A card UUID written to stsPivCardUuid is already held by another entry of the realm, which would make the card name two people; nothing was written (#1955, D8). | HTTP 400 (the directory write); LDAP constraintViolation |
+
+## STS-OPENPGP
+
+**OpenPGP keys and mail encryption.** A person's OpenPGP public key registered with a proof of possession (#1955 P6), its publication in the Web Key Directory, their S/MIME certificate, and how mail to them is encrypted.
+
+Raised from: common/openpgp_keys.ts, common/crypto.js (section 19), portal/account_openpgp.ts, mgmt-api/openpgp_api.ts.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-OPENPGP-0001` | An OpenPGP public key offered for registration did not read: it was empty, larger than the 64 KiB this service reads, more than one key, or not an OpenPGP key at all (#1955). | HTTP 400 (the page with the sentence) |
+| `STS-OPENPGP-0002` | A SECRET OpenPGP key was offered for registration; nothing was stored. The person is told to export the public key (#1955). | HTTP 400 (the page with the sentence) |
+| `STS-OPENPGP-0003` | An OpenPGP key offered for registration is revoked or has expired (#1955). | HTTP 400 (the page with the sentence) |
+| `STS-OPENPGP-0004` | An OpenPGP key, or the subkey that made its proof, uses an algorithm the allow list refuses (DSA, ElGamal, a Brainpool curve, or RSA shorter than openpgp.minRsaBits), or has no valid signing key (#1955). | HTTP 400 (the page with the sentence) |
+| `STS-OPENPGP-0005` | No valid user id of an OpenPGP key offered for registration carries the address on the person's entry (#1955). | HTTP 400 (the page with the sentence) |
+| `STS-OPENPGP-0006` | A person with no mail address asked for an OpenPGP registration challenge, or offered a key; a key is registered for the address its user id names (#1955). | HTTP 400 (the page with the sentence) |
+| `STS-OPENPGP-0007` | The proof of possession offered with an OpenPGP key is not a readable cleartext-signed message (gpg --clearsign) (#1955). | HTTP 400 (the page with the sentence) |
+| `STS-OPENPGP-0008` | The proof of possession offered with an OpenPGP key does not verify, or was made by a key that is not a signing key of it (#1955). | HTTP 400 (the page with the sentence) |
+| `STS-OPENPGP-0009` | The text an OpenPGP proof of possession signs is not the challenge this service issued the person (#1955). | HTTP 400 (the page with the sentence) |
+| `STS-OPENPGP-0010` | An OpenPGP proof of possession was signed before the challenge was issued or after now, beyond openpgp.signatureSkewS (#1955). | HTTP 400 (the page with the sentence) |
+| `STS-OPENPGP-0011` | No value of a person's userSMIMECertificate holds a certificate that can receive S/MIME now (expired, an unsupported key, a key usage or extended key usage that excludes it), so mail to them cannot be S/MIME-encrypted (#1955). | log only |
+| `STS-OPENPGP-0012` | An OpenPGP key was offered with no outstanding challenge for the person, a lapsed one, or one already spent by another request (#1955). | HTTP 400 (the page with the sentence) |
+| `STS-OPENPGP-0013` | An OpenPGP operation named a person with no entry in the realm (#1955). | HTTP 404 |
+| `STS-OPENPGP-0014` | An OpenPGP operation named an unknown action, or an unknown mail encryption choice (#1955). | HTTP 400 |
+| `STS-OPENPGP-0015` | A person with no OpenPGP key registered asked to remove or publish one (#1955). | HTTP 400 (the page with the sentence) |
+| `STS-OPENPGP-0016` | A person chose OpenPGP for their mail while no registered key of theirs has an encryption key valid now (#1955). | HTTP 400 (the page with the sentence) |
+| `STS-OPENPGP-0017` | A person chose S/MIME for their mail while their userSMIMECertificate holds no certificate that can receive (#1955). | HTTP 400 (the page with the sentence) |
+| `STS-OPENPGP-0018` | An S/MIME certificate offered for a person's entry is not a certificate, cannot receive S/MIME now, or does not name the address on the entry (#1955). | HTTP 400 (the page with the sentence) |
+| `STS-OPENPGP-0019` | An OpenPGP key, a publication choice, a mail encryption choice or an S/MIME certificate verified but could not be written to the person's entry (#1955). | HTTP 500 |
+| `STS-OPENPGP-0020` | An OpenPGP operation was asked before the directory filled its slot (ldap/ldap_server.js), so no person could be read (#1955). | HTTP 500 |
+| `STS-OPENPGP-0021` | A Web Key Directory request named a domain or a hashed local part that is not one (#1955). | HTTP 404 |
+| `STS-OPENPGP-0022` | A Web Key Directory request named a domain no realm serves: openpgp.wkd is off, or no realm's openpgp.wkdDomains (or own domain) is it (#1955). | HTTP 404 |
+| `STS-OPENPGP-0023` | A Web Key Directory lookup threw; the client is told the key could not be read (#1955). | HTTP 500 |
+| `STS-OPENPGP-0024` | A Web Key Directory request named an address with no published key: nobody holds it, the person did not opt in, the key was removed or replaced, or it expired (#1955). | HTTP 404 |
+| `STS-OPENPGP-0025` | An OpenPGP operation of the account API or the management API threw (#1955). | HTTP 500 |
+
 ## STS-SVCACCT
 
 **Service accounts.** Service accounts (#221): person entries carrying stsServiceAccount, the service-account policy that governs them (the third kind on Directory → Policies), the doors that policy closes, and the rotation that pushes a new password to a secrets manager before committing it.
@@ -5225,6 +5331,34 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0300` | A reverse-proxy route's `path` is /.iya-pep or under /.iya-pep/, the prefix the proxy reserves for its own callback and sign-out (#1830): an updated PEP refuses the whole configuration. | HTTP 400 on /admin-api; configured: false at the pull |
 | `STS-XACML-0301` | issue-pep-credential named a service account that does not hold REMOTE_PEPS (it is not in the group roles.remotePepGroup names), so the key would authenticate an entry no PEP door admits (#1827, phase 3). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-XACML-0302` | issue-pep-credential certified and registered the new key, and revokePrevious could not revoke one of the entry's other RFC 7523 keys; the new key works, and the old one still does too (#1827, phase 3). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-XACML-0331` | A remote PEP's heartbeat was refused: a member its entry stores carries a value the service cannot hold (fuzz run #595) — a counter that is not a non-negative integer of at most 2^53 - 1, a text member that is not a string or carries a control character, or signals, settings or listeners that are not an object or null. Nothing of it is recorded; the refusal names the member. | none — 400 invalid_request on POST /xacml/pep/heartbeat |
+| `STS-XACML-0303` | A role was written with a membership mode other than static or dynamic-selectable (#1072). | — |
+| `STS-XACML-0304` | A dynamic selectable role was written with a member or a conferring client (#1072): such a role is held by nobody and offered at sign-in, so the write was refused, whether it made a role with members dynamic or added a member to a dynamic role. | — |
+| `STS-XACML-0305` | A console or native role was to be made dynamic selectable (#1072); their holders are fixed, so the write was refused. | — |
+| `STS-XACML-0306` | A dynamic role's selection was neither optional nor required (#1072). | — |
+| `STS-XACML-0307` | A dynamic role's exclusive group was not a name of up to 64 letters, digits and . _ : - (#1072). | — |
+| `STS-XACML-0308` | A role only applications may hold was to be made dynamic selectable (#1072); a dynamic role is chosen by a person at sign-in. | — |
+| `STS-XACML-0309` | The selection of a static role was to be set (#1072); only a dynamic selectable role is chosen at sign-in. | — |
+| `STS-XACML-0310` | A dynamic role's eligibility policy (xacmlRole, #1072) was to be made the root of the repository; it is decided alone, for one role, so the write was refused. | — |
+| `STS-XACML-0311` | A dynamic role's eligibility was asked about, or its policy set, for a role this realm does not hold (#1072); nobody is eligible. | — |
+| `STS-XACML-0312` | A static role was asked about as a dynamic one, or given an eligibility policy (#1072); only a dynamic selectable role is offered. | — |
+| `STS-XACML-0313` | A dynamic role has no eligibility policy (#1072), so nobody is eligible for it. | — |
+| `STS-XACML-0314` | A dynamic role names an eligibility policy that is not in ou=policies (#1072); nobody is eligible for it. | — |
+| `STS-XACML-0315` | A dynamic role names a policy that is not its own: it carries another role's xacmlRole, or none (#1072). It is never adopted, and nobody is eligible. | — |
+| `STS-XACML-0316` | A dynamic role's eligibility policy is disabled (#1072); nobody is eligible. | — |
+| `STS-XACML-0317` | A dynamic role's eligibility policy does not parse (#1072); nobody is eligible. | — |
+| `STS-XACML-0318` | A dynamic role's eligibility could not be decided: the PDP met a processing or syntax error, or the decision threw (#1072). The person is not eligible. | — |
+| `STS-XACML-0319` | A person is not eligible for a dynamic role: its policy did not answer Permit, or no person was named (#1072). | — |
+| `STS-XACML-0320` | A dynamic role that belongs to one application was asked about for a sign-in to another (#1072); it is offered only on its own application's. | — |
+| `STS-XACML-0321` | A dynamic role's eligibility policy was given as neither or both of document (XACML XML) and alfa (#1072). | — |
+| `STS-XACML-0322` | A dynamic role would not take the reference to its new eligibility policy (#1072); a new policy was taken back. | — |
+| `STS-XACML-0324` | The reader of a session's chosen dynamic roles threw while roles were resolved (#1072); no dynamic role was held. | — |
+| `STS-XACML-0325` | A sign-in's role step was submitted with a role it did not offer (#1072): fabricated, from another realm, application or sign-in, or not eligible when the step was drawn. Nothing was chosen. | HTTP 400 |
+| `STS-XACML-0326` | A sign-in's role step was submitted with two roles of one exclusive group (#1072). Nothing was chosen. | HTTP 400 |
+| `STS-XACML-0327` | A sign-in's role step was submitted without any of the required roles it offered (#1072). Nothing was chosen. | HTTP 400 |
+| `STS-XACML-0328` | A role chosen at a sign-in's role step was no longer eligible when it was submitted (#1072); the step is drawn again. | HTTP 400 |
+| `STS-XACML-0329` | A session was refused at a door that cannot draw the role step (federation, a wallet, SPNEGO, a certificate) because a required dynamic role was offered to the person (#1072). | — |
+| `STS-XACML-0330` | A sign-in held for the role step had no pending sign-in to draw the step on, so it was refused (#1072). | — |
 
 ## STS-XPEP
 
@@ -5912,6 +6046,8 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0948` | An uploaded WS-Trust decryption key pair was refused for its key type: XML Encryption here unwraps a content key with RSA of at least 2048 bits or EC on P-256, P-384 or P-521 and nothing else. Nothing was written (#1668). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-ADMIN-0949` | An uploaded WS-Trust decryption certificate was refused because its keyUsage leaves out keyEncipherment (an RSA key) or keyAgreement (an EC key), or its validity has ended. Nothing was written (#1668). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-ADMIN-0950` | An application's WS-Trust decryption key pair was asked to be issued, uploaded or removed and the realm's registry holds no such application, or a remove found no key pair on it, or an uploaded certificate is already another application's. Nothing was written (#1668). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0951` | An operator's import of a legacy U2F security key named nobody (#1955). | HTTP 400 (API) |
+| `STS-ADMIN-0952` | An operator's import of a legacy U2F security key was refused; the inner code says why — the AppID, the key handle, the public key, the counter, or the writer's own rules (#1955). | HTTP 400 (API) |
 
 ## STS-API
 

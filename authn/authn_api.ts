@@ -128,12 +128,14 @@ const CREDENTIAL_BODY = ModelZod.body('authn', 'finishPasskeyStep');
 
 const SEND_BODY = ModelZod.body('authn', 'sendEmailedFactor');
 
+const ROLES_BODY = ModelZod.body('authn', 'chooseRoles');
+
 const OPEN_BODY = ModelZod.body('authn', 'spendEmailedLink');
 
 // The pages a step's view is asked for (`?page=`), and the passkey chosen.
 const MFA_PAGES = ['totp', 'webauthn', 'backup-code', 'password', 'setup',
                    'email-code', 'email-link', 'email-link-open',
-                   'post-login'];
+                   'post-login', 'roles'];
 
 const MFA_QUERY = ModelZod.query('authn', 'getStep');
 
@@ -336,6 +338,11 @@ const SCREEN_OPERATIONS = [
     operationId: 'skipPostLoginActivity', access: 'mfa',
     action: 'skip',
     handler: 'mfaAct', body: EMPTY_BODY, refusedCode: 'STS-AUTHN-0474' },
+  // --- the role step (#1072) -----------------------------------------------
+  { method: 'POST', path: API + '/mfa/:id/roles',
+    operationId: 'chooseRoles', access: 'mfa',
+    action: 'choose',
+    handler: 'mfaAct', body: ROLES_BODY },
   { method: 'POST', path: API + '/mfa/:id/email/send',
     operationId: 'sendEmailedFactor', access: 'mfa',
     action: 'send',
@@ -855,6 +862,8 @@ class AuthnApi {
       use_webauthn: AuthnApi.flagOf(body.use_webauthn),
       webauthn_only: AuthnApi.flagOf(body.webauthn_only),
       remember_browser: AuthnApi.flagOf(body.remember_browser),
+      // "Choose roles for this sign-in" (#1072), beside it.
+      choose_roles: AuthnApi.flagOf(body.choose_roles),
       device_fp: body.device_fp,
       passkey_credential: body.credential };
     await authn.screenAct(req, res, record, fields);
@@ -1103,6 +1112,7 @@ class AuthnApi {
     const factor = String((step && step.factor) || '');
     const out = factor === 'enrol' || factor === 'enrol-totp' ? 'setup'
       : factor === 'post-login' ? 'post-login'
+      : factor === 'roles' ? 'roles'
       : (['totp', 'webauthn', 'password', 'email-code', 'email-link']
           .indexOf(factor) >= 0 ? factor : 'totp');
     log.debug("Leaving AuthnApi.pageOf(). " + out);
@@ -1195,6 +1205,13 @@ class AuthnApi {
       case 'skipPostLoginActivity':
         authn.postLoginAct(req,
           res as IyaApi.AuthnAnswering<'skipPostLoginActivity'>, id, 'skip');
+        break;
+      case 'chooseRoles':
+        // THE ROLE STEP (#1072): the names ticked, held to the step's own
+        // offer there.
+        authn.rolesAct(req, res as IyaApi.AuthnAnswering<'chooseRoles'>, id,
+                       Array.isArray(body.roles) ? body.roles.map(String)
+                                                 : []);
         break;
       case 'sendEmailedFactor':
         await ef.sendAct(req,

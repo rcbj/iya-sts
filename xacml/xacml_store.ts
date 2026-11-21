@@ -131,6 +131,8 @@ interface PolicyRow {
   // The reverse-proxy route the policy was generated for (#1760), as
   // `<pep>/<route>`, or null for a policy somebody wrote.
   pepRoute: string | null;
+  // The dynamic role whose eligibility policy this is (#1072), or null.
+  role: string | null;
 }
 
 // What `write()` is told besides the document.
@@ -143,6 +145,8 @@ interface WriteOptions {
   orphanedAt?: string | null;
   // #1760. Absent means "keep what the entry already says", as above.
   pepRoute?: string | null;
+  // #1072. Absent means "keep what the entry already says", as above.
+  role?: string | null;
 }
 
 // What `write()` answers.
@@ -399,6 +403,24 @@ class XacmlStore {
     deps.log.debug("Leaving XacmlStore.constructor().");
   }
 
+  // -------------------------------------------------------------------------
+  // AN OWNED POLICY (#564, #1072): one an application owns as its
+  // fine-grained policy (`xacmlApplication`), or a dynamic role owns as its
+  // eligibility policy (`xacmlRole`). Either is decided ALONE by the module
+  // that owns it, so it is never the root, never in the PolicyIdReference
+  // map and never sent to a remote PEP. One test, so the next kind of owner
+  // is added in one place rather than at every filter.
+  // -------------------------------------------------------------------------
+  /**
+   * Whether a policy row is owned by an application or a role.
+   * @param row - the row, as `all()` answers it
+   * @returns true for an owned policy
+   */
+  static owned(row: { application?: string | null;
+                      role?: string | null } | null): boolean {
+    return !!row && (!!row.application || !!row.role);
+  }
+
   // The deps the composition root builds this class from: the real modules,
   // and the SHA-256 this module has always keyed its parse cache by.
   /**
@@ -614,7 +636,8 @@ class XacmlStore {
         document: policy.document || '',
         application: policy.application || null,
         orphanedAt: policy.orphanedAt || null,
-        pepRoute: policy.pepRoute || null
+        pepRoute: policy.pepRoute || null,
+        role: policy.role || null
       };
     });
     log.debug('Leaving XacmlStore.all(). ' + rows.length + ' policy(ies).');
@@ -737,7 +760,7 @@ class XacmlStore {
     const { log } = this.deps;
     log.debug('Entering XacmlStore.root().');
     const enabled = this.all().filter(function (row) {
-      return row.enabled && !row.application && !row.pepRoute;
+      return row.enabled && !XacmlStore.owned(row) && !row.pepRoute;
     });
     const roots = enabled.filter(function (row) {
       return row.isRoot;
@@ -789,7 +812,7 @@ class XacmlStore {
     log.debug('Entering XacmlStore.repository().');
     const map = {};
     this.all().forEach(function (row) {
-      if (!row.enabled || !row.id || row.application) {
+      if (!row.enabled || !row.id || XacmlStore.owned(row)) {
         return;
       }
       try {
@@ -888,6 +911,18 @@ class XacmlStore {
     const pepRoute = settings.pepRoute !== undefined
       ? (settings.pepRoute ? String(settings.pepRoute) : null)
       : (before ? before.pepRoute : null);
+    const role = settings.role !== undefined
+      ? (settings.role ? String(settings.role) : null)
+      : (before ? before.role : null);
+    if (settings.isRoot && role) {
+      log.debug('Leaving XacmlStore.write(). A role\'s policy as the root.');
+      return errorCodes.mark({ ok: false,
+               why: 'Policy "' + name + '" belongs to the role "' + role +
+                    '" (xacmlRole) and decides who may be offered that ' +
+                    'dynamic role at sign-in. It cannot be the root of ' +
+                    'this repository; make an ordinary policy the root ' +
+                    'instead.' }, 'STS-XACML-0310');
+    }
     if (settings.isRoot && pepRoute) {
       log.debug('Leaving XacmlStore.write(). A route\'s policy as the root.');
       return errorCodes.mark({ ok: false,
@@ -945,6 +980,9 @@ class XacmlStore {
     }
     if (pepRoute) {
       attributes.xacmlPepRoute = pepRoute;
+    }
+    if (role) {
+      attributes.xacmlRole = role;
     }
     const written = directory.writePolicy(name, attributes);
     if (written) {
@@ -1073,6 +1111,7 @@ export = {
   read: slot.forward('read'),
   fgaPolicies: slot.forward('fgaPolicies'),
   fgaPolicyFor: slot.forward('fgaPolicyFor'),
+  owned: XacmlStore.owned,
   root: slot.forward('root'),
   repository: slot.forward('repository'),
   write: slot.forward('write'),

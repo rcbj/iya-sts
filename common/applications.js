@@ -1721,7 +1721,9 @@ const BOOLEAN_ATTRIBUTES = [
   // ASVS 5.0.0 7.6.2: whether single sign-on asks first.
   'saml2SsoConsent', 'saml11SsoConsent', 'wsfedSsoConsent',
   // UMA 2.0 (#1168): whether the resource server may own resources itself.
-  'umaOwnsResources'
+  'umaOwnsResources',
+  // #1072: whether dynamic selectable roles are offered on its sign-ins.
+  'appDynamicRoleSelection'
 ];
 
 /**

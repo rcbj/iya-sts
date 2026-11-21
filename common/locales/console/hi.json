@@ -129,6 +129,8 @@
   "nav.roles": "भूमिकाएँ",
   "nav.applications": "अनुप्रयोग",
   "nav.devices": "उपकरण",
+  "nav.hardware-tokens": "हार्डवेयर टोकन",
+  "nav.openpgp": "OpenPGP कुंजियाँ",
   "nav.attribute-sources": "विशेषता स्रोत",
   "nav.secret-destinations": "सीक्रेट गंतव्य",
   "nav.policies": "नीतियाँ",

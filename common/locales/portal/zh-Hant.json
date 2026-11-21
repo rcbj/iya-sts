@@ -40,6 +40,10 @@
   "nav.password.heading": "變更您的密碼",
   "nav.keys.label": "密碼金鑰",
   "nav.keys.heading": "密碼金鑰",
+  "nav.tokens.label": "安全金鑰",
+  "nav.tokens.heading": "您的安全金鑰與智慧卡",
+  "nav.openpgp.label": "OpenPGP 與郵件加密",
+  "nav.openpgp.heading": "您的 OpenPGP 金鑰與郵件加密",
   "nav.mfa.label": "驗證器應用程式",
   "nav.mfa.heading": "您的驗證器應用程式",
   "nav.signing-key.label": "簽章金鑰",
@@ -546,5 +550,8 @@
   "photo.errRead": "無法將該檔案作為圖片讀取。",
   "done.photo": "已儲存您的個人資料相片。",
   "done.photoRemoved": "已移除您的個人資料相片。",
-  "done.endOthers": "您可以在 /logout 結束其他工作階段。"
+  "done.endOthers": "您可以在 /logout 結束其他工作階段。",
+  "apps.reauthenticate": "重新登入",
+  "apps.reauthenticateNote": "每個登入連結都會要求您重新登入，以便您選擇要在該應用程式中使用的角色。",
+  "apps.reauthenticateApply": "套用"
 }

@@ -585,6 +585,8 @@ const PASSKEY_ATTRIBUTE = {
   FACTS: xacmlRequest.VOCABULARY.PASSKEY_FACTS,
   BACKUP_ELIGIBLE: xacmlRequest.VOCABULARY.PASSKEY_BACKUP_ELIGIBLE,
   MIN_PIN_LENGTH: xacmlRequest.VOCABULARY.PASSKEY_MIN_PIN_LENGTH,
+  // The credProtect level the key reported (#1955 P7), 1 for none.
+  CRED_PROTECT: xacmlRequest.VOCABULARY.PASSKEY_CRED_PROTECT,
   SERIAL: xacmlRequest.VOCABULARY.PASSKEY_SERIAL,
   SERIAL_HELD: xacmlRequest.VOCABULARY.PASSKEY_SERIAL_HELD,
   ATTESTATION_TRUSTED: xacmlRequest.VOCABULARY.PASSKEY_ATTESTATION_TRUSTED,
@@ -633,7 +635,7 @@ const PASSKEY_ATTRIBUTE = {
   // The fact groups a question may carry.
   GROUPS: ['backup-eligible', 'pin-length', 'serial', 'attestation',
            'algorithm', 'attestation-algorithm', 'profile-algorithm',
-           'enrolment', 'recovery', 'upgrade'],
+           'enrolment', 'recovery', 'upgrade', 'cred-protect'],
   // The reasons the built-in rules give, and the code each records, per
   // action. A door words its refusal by the reason.
   REASONS: {
@@ -654,6 +656,8 @@ const PASSKEY_ATTRIBUTE = {
                                use: 'STS-AUTHN-0412' },
     // #940: an algorithm the selected profile does not offer.
     'profile-algorithm': { register: 'STS-AUTHN-0432', use: '' },
+    // #1955 P7: a credProtect level below the enforced one.
+    'cred-protect': { register: 'STS-AUTHN-0559', use: '' },
     // #724: a RECOVER_ACTION question records the `use` column.
     'recovery-self-service': { register: '', use: 'STS-AUTHN-0380' },
     'recovery-enrol-first': { register: '', use: 'STS-AUTHN-0381' }
@@ -880,6 +884,58 @@ const DEVICE_ATTRIBUTE = {
   // rule refused (`compromised` or `not-compliant`).
   OBLIGATION: 'urn:sts:xacml:obligation:device',
   REFUSAL: 'urn:sts:xacml:device-refusal'
+};
+
+// ---------------------------------------------------------------------------
+// THE HARDWARE TOKEN THE SIGN-IN'S CREDENTIAL IS ON (#1955 P1, design X4),
+// sent as environment attributes by `xacml_role_pep.ts` on every browser
+// issuance the gate describes — `common/issuance_gate.js`'s
+// `hardwareTokenFactsOf()`, from the authentication event's snapshot
+// (`authn.ts`'s `hardwareTokenOf()`) brought up to date against the
+// register (`common/hardware_tokens.ts`). With no token only ATTESTED is
+// sent (false), so a rule can require one and a rule about one is
+// inapplicable otherwise. No built-in rule reads them: "administrators sign
+// in with an attested key" is an operator's rule, written against these
+// (or the authentication policy's `attested-hardware` mechanism, which the
+// built-in `authn-mechanism` rule enforces).
+// ---------------------------------------------------------------------------
+/**
+ * The attribute identifiers describing the hardware token an issuance's
+ * authentication used (#1955), sent as environment attributes.
+ */
+const HARDWARE_TOKEN_ATTRIBUTE = {
+  // A BOOLEAN: the credential that answered is on a hardware token the
+  // register recorded from attestation, and the token is still in use (a
+  // token reported lost since is false).
+  ATTESTED: 'urn:sts:xacml:hardware-token-attested',
+  // The register's key for it, `<vendor>/<serial>`.
+  KEY: 'urn:sts:xacml:hardware-token-key',
+  // Its vendor slug (`yubico`) and its model (`YubiKey 5 NFC`), as the
+  // attestation named them.
+  VENDOR: 'urn:sts:xacml:hardware-token-vendor',
+  MODEL: 'urn:sts:xacml:hardware-token-model',
+  // Where its serial came from: `fido-enterprise-attestation`,
+  // `piv-attestation` or `vendor-import`.
+  EVIDENCE: 'urn:sts:xacml:hardware-token-evidence',
+  // A BOOLEAN: the evidence says the credential's key is on a smart card.
+  SMART_CARD: 'urn:sts:xacml:hardware-token-smart-card',
+  // A BOOLEAN: the register records the SUBJECT as the token's holder.
+  HOLDER_MATCHES: 'urn:sts:xacml:hardware-token-holder-matches',
+  // `active` or `lost`.
+  STATUS: 'urn:sts:xacml:hardware-token-status',
+  // WHAT A PIV ATTESTATION SAID OF THE KEY (#1955 P2, design X4), sent only
+  // for an attested token whose evidence said it: the slot key's PIN policy
+  // (`never`, `once`, `always`, `match-once`, `match-always`) and touch
+  // policy (`never`, `cached`, `always`), and the token's firmware
+  // (`5.4.3`), form factor (`usb-a`, `usb-c`, `lightning`, ...) and, a
+  // BOOLEAN sent only when true, its FIPS certification. "An administrator
+  // signs in only with touch always" is a rule over TOUCH_POLICY. The realm's
+  // `piv.pinPolicy` and `piv.touchPolicy` stay the ENROLMENT gate.
+  PIN_POLICY: 'urn:sts:xacml:hardware-token-pin-policy',
+  TOUCH_POLICY: 'urn:sts:xacml:hardware-token-touch-policy',
+  FIRMWARE: 'urn:sts:xacml:hardware-token-firmware',
+  FORM_FACTOR: 'urn:sts:xacml:hardware-token-form-factor',
+  FIPS: 'urn:sts:xacml:hardware-token-fips'
 };
 
 // ---------------------------------------------------------------------------
@@ -3070,6 +3126,25 @@ const TEMPLATES: TemplateRow[] = [
                         'profile'),
                not(fact(R2, PK.PROFILE_ALGORITHM_OFFERED, true))]));
       };
+      // A CREDPROTECT LEVEL BELOW THE ENFORCED ONE (#1955 P7), at
+      // register-passkey only and last there: the level the key reported
+      // (1 where it reported none, which question() decided) below the
+      // level the profile asks for, while enforceCredProtect holds. The
+      // authenticator enforces the level at every later assertion, so
+      // there is no use-passkey half.
+      const credProtectRule = function (): any {
+        log.debug("Entering credProtectRule().");
+        log.debug("Leaving credProtectRule().");
+        return pkRule(PK.REGISTER_ACTION, 'cred-protect',
+          'Refuse a passkey whose authenticator protects its credential at ' +
+          'a lower credProtect level (CTAP 2.1 section 12.1) than the ' +
+          'passkey policy asks for, while it enforces it (credProtect, ' +
+          'enforceCredProtect, #1955).',
+          and([carries('cred-protect'),
+               fact(env, pkSetting('enforceCredProtect'), true),
+               below(intBag(R2, PK.CRED_PROTECT),
+                     intBag(env, pkSetting('credProtectLevel')))]));
+      };
       const passkeyRules: any[] = decidePasskeys ? [
         backupRule(PK.REGISTER_ACTION),
         pinRule(PK.REGISTER_ACTION),
@@ -3089,6 +3164,7 @@ const TEMPLATES: TemplateRow[] = [
         postQuantumRule(PK.REGISTER_ACTION),
         attestationAlgorithmRule(PK.REGISTER_ACTION),
         profileAlgorithmRule(),
+        credProtectRule(),
         { id: options.idBase + ':rule:passkey-register-allowed',
           effect: model.EFFECT.PERMIT,
           description: 'Register every other passkey.',
@@ -5572,6 +5648,7 @@ class XacmlTemplates {
    * The device attribute identifiers.
    */
   static readonly DEVICE_ATTRIBUTE = DEVICE_ATTRIBUTE;
+  static readonly HARDWARE_TOKEN_ATTRIBUTE = HARDWARE_TOKEN_ATTRIBUTE;
   static readonly PROTOCOL_ATTRIBUTE = PROTOCOL_ATTRIBUTE;
   /**
    * The transfer questions' action-ids and attribute identifiers (#98).
@@ -5754,6 +5831,7 @@ export = {
   RISK_ATTRIBUTE: XacmlTemplates.RISK_ATTRIBUTE,
   AUTHN_ATTRIBUTE: XacmlTemplates.AUTHN_ATTRIBUTE,
   DEVICE_ATTRIBUTE: XacmlTemplates.DEVICE_ATTRIBUTE,
+  HARDWARE_TOKEN_ATTRIBUTE: XacmlTemplates.HARDWARE_TOKEN_ATTRIBUTE,
   PROTOCOL_ATTRIBUTE: XacmlTemplates.PROTOCOL_ATTRIBUTE,
   TRANSFER_ATTRIBUTE: XacmlTemplates.TRANSFER_ATTRIBUTE,
   PASSKEY_ATTRIBUTE: XacmlTemplates.PASSKEY_ATTRIBUTE,

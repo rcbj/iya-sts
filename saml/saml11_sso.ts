@@ -1458,6 +1458,8 @@ class Saml11Sso {
     const authnInstant = new Date((authn.sessionView(session).authTime || 0) *
                                   1000).toISOString();
     const assertion = buildSaml11Assertion({
+      // The sign-on session (#1072): its chosen dynamic roles.
+      sessionId: session.id,
       subject: user.username,
       audience: ctx.rpId,
       lifetimeMin: lifetimeMin,
@@ -2177,7 +2179,13 @@ class Saml11Sso {
     const eapDemand = PhishingResistance.signInFor(askedUris);
     const eapUnmet = !!session && !PhishingResistance.eapDemandMet(
       session, askedUris);
-    if (!session) {
+    // A LINK THAT ASKS FOR A FRESH SIGN-IN (#1072): `forceAuthn=true`, which
+    // the portal's "Sign in again" adds so a person may choose dynamic
+    // roles for this relying party. Only on the link itself: the return
+    // carries the held `fid`, and goes on with the new sign-in.
+    const forced = !held && String((req.query || {}).forceAuthn || '')
+      .toLowerCase() === 'true';
+    if (!session || forced) {
       // Hold the parameters and go to authn.js's screen. The return address is
       // a GET on this endpoint carrying the held id, so coming back runs this
       // function again from the top with a session in place.

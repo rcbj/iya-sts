@@ -128,6 +128,11 @@ const STEP_ACTS: Json = {
     ignore: { op: 'skip', body: function (): Json {
       return {};
     } } },
+  // THE ROLE STEP (#1072): Continue, with the roles ticked.
+  '/authn/roles': {
+    choose: { op: 'roles', body: function (f: Json): Json {
+      return { roles: [].concat(f.roles || []).map(String) };
+    } } },
   // THE POST-LOGIN ACTIVITY (#1096): Register, and Skip.
   '/authn/post-login': {
     register: { op: 'post-login/register', body: function (): Json {
@@ -689,6 +694,8 @@ class AuthnSurface extends WebSurface {
     }
     const fp = this.fingerprint();
     const remember = fields.remember_browser ? '1' : undefined;
+    // "Choose roles for this sign-in" (#1072), sent beside it.
+    const roles = fields.choose_roles ? '1' : undefined;
     let body: Json = {};
     // THE FORCED PASSWORD CHANGE IS ASKED BY ITS PATH, FIRST: its form posts
     // no `action`, so `pressed` defaults to `login`, and asked after the
@@ -702,14 +709,17 @@ class AuthnSurface extends WebSurface {
       body = { username: fields.username, password: fields.password,
                use_webauthn: fields.use_webauthn ? '1' : undefined,
                webauthn_only: fields.webauthn_only ? '1' : undefined,
-               remember_browser: remember, device_fp: fp || undefined };
+               remember_browser: remember, choose_roles: roles,
+               device_fp: fp || undefined };
     } else if (action === 'anonymous' || action === 'certificate') {
       // The certificate (#1051) is the connection's: nothing is typed.
-      body = { remember_browser: remember, device_fp: fp || undefined };
+      body = { remember_browser: remember, choose_roles: roles,
+               device_fp: fp || undefined };
     } else if (action === 'email') {
       body = { username: fields.username,
                kind: pressed === 'email-link' ? 'link' : 'code',
-               remember_browser: remember, device_fp: fp || undefined };
+               remember_browser: remember, choose_roles: roles,
+               device_fp: fp || undefined };
     }
     const answer = await this.send(String(op.path)
       .replace('{id}', encodeURIComponent(this.idHere())), body);
@@ -1136,11 +1146,9 @@ class AuthnSurface extends WebSurface {
       excludeCredentials: (c.exclude || []).map(function (id: string): Json {
         return { type: 'public-key', id: WebWebAuthn.bytes(id) };
       }),
-      // credProps, and CTAP 2.1's minPinLength where the passkey policy
-      // asks for it (#529).
-      extensions: (o.credProps || o.minPinLength) ? Object.assign({},
-        o.credProps ? { credProps: true } : {},
-        o.minPinLength ? { minPinLength: true } : {}) : undefined,
+      // credProps, CTAP 2.1's minPinLength (#529) and credProtect, and the
+      // U2F appidExclude (#1955 P7), where the server asks for them.
+      extensions: WebWebAuthn.creationExtensions(o),
       hints: o.hints && o.hints.length ? o.hints : undefined,
       attestation: o.attestation || 'direct',
       timeout: o.timeout || 60000 };
@@ -1163,6 +1171,9 @@ class AuthnSurface extends WebSurface {
              }) : undefined,
              userVerification: o.userVerification || 'preferred',
              hints: o.hints && o.hints.length ? o.hints : undefined,
+             // The legacy U2F appid (#1955 P7), where the step names a key
+             // imported under it.
+             extensions: WebWebAuthn.requestExtensions(o),
              timeout: o.timeout || 60000 };
   }
 
@@ -1232,10 +1243,13 @@ class AuthnSurface extends WebSurface {
   async sendPasskey(credential: Json): Promise<void> {
     const remember = this.env.document.getElementById &&
       this.env.document.getElementById('remember_browser');
+    const roles = this.env.document.getElementById &&
+      this.env.document.getElementById('choose_roles');
     const answer = await this.send('/authn-api/pending/' +
       encodeURIComponent(this.idHere()) + '/passkey', {
         credential: JSON.stringify(credential),
         remember_browser: remember && remember.checked ? '1' : undefined,
+        choose_roles: roles && roles.checked ? '1' : undefined,
         device_fp: this.fingerprint() || undefined });
     await this.next(answer);
   }

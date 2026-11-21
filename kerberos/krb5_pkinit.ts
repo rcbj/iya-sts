@@ -152,6 +152,12 @@ interface Krb5PkinitDeps {
   tlsClientCertificates: () => Json;
   revocationStatus: () => Json;
   nodeName: () => string;
+  // What the hardware token register says of a certificate's key, and
+  // whether the realm still lets the inference stand (#1955): reached at
+  // the moment of use, and nothing (with the inference standing) when it
+  // cannot be asked.
+  hardwareEvidence: (serialHex: string) => {
+    hardware: boolean; smartCard: boolean; inferenceAllowed: boolean };
 }
 
 // The KDC's key and certificate in this process, per trust realm.
@@ -179,6 +185,11 @@ const FALLBACK_IDENTITY_CAS = ['tls-client', 'acme', 'est', 'scep'];
 const PKINIT_INDICATOR = 'pkinit';
 /** The indicator beside it for a certificate marked hardware-bound. */
 const HARDWARE_INDICATOR = 'pkinit-hardware';
+// THE KEY IS ON A SMART CARD (#1955 P1): set beside `pkinit-hardware` only
+// where a hardware token's attestation evidence says so, never inferred.
+// `Krb5Tokens.factorsFor()` turns it into RFC 8176 `sc`. An RFC 8129
+// indicator is a string the KDC chooses, as `pkinit-hardware` is.
+const SMARTCARD_INDICATOR = 'pkinit-smartcard';
 
 // RFC 8062's anonymous principal and realm.
 const ANONYMOUS_REALM = 'WELLKNOWN:ANONYMOUS';
@@ -206,6 +217,7 @@ class Krb5Pkinit {
   static readonly PKINIT_INDICATOR = PKINIT_INDICATOR;
   /** The indicator for a certificate marked hardware-bound. */
   static readonly HARDWARE_INDICATOR = HARDWARE_INDICATOR;
+  static readonly SMARTCARD_INDICATOR = SMARTCARD_INDICATOR;
   /** The claim scope a signed AuthPack is spent under. */
   static readonly REPLAY_SCOPE = REPLAY_SCOPE;
 
@@ -254,6 +266,20 @@ class Krb5Pkinit {
       },
       revocationStatus: function () {
         return require('../common/revocation_status');
+      },
+      hardwareEvidence: function (serialHex: string) {
+        try {
+          const tokens = require('../common/hardware_tokens');
+          const ev = tokens.evidenceFor('x509', serialHex);
+          return { hardware: !!ev.hardware, smartCard: !!ev.smartCard,
+                   inferenceAllowed: tokens.inferenceAllowed() };
+        } catch (e) {
+          helpers.log.debug('Caught in hardwareEvidence(): ' +
+                            ((e && e.message) || e));
+          // No register to ask: no evidence, and the inference as before.
+          return { hardware: false, smartCard: false,
+                   inferenceAllowed: true };
+        }
       },
       nodeName: function () {
         try {
@@ -742,10 +768,20 @@ class Krb5Pkinit {
       log.debug('Leaving Krb5Pkinit.checkCertificate(). Not bound.');
       return bound;
     }
+    // HARDWARE-BOUND (header), since #1955 from EVIDENCE too: a key an
+    // active hardware token's attestation covers is hardware whatever its
+    // EKU, and the smart-card evidence earns `sc` beside it. The inference
+    // stands only while `hardwareTokens.hardwareClaims` is `inference`, the
+    // default, so an existing realm's tickets say what they said.
+    const evidence = this.deps.hardwareEvidence(
+      this.deps.pki.certificateSerialHex(leaf));
+    const inferred = facts.ekus.indexOf(SMARTCARD_LOGON_EKU) >= 0 &&
+                     bound.keySource !== 'server' &&
+                     evidence.inferenceAllowed;
     log.debug('Leaving Krb5Pkinit.checkCertificate(). ' + bound.how);
     return { ok: true, leaf: leaf, chain: chainDers, how: bound.how,
-             hardware: facts.ekus.indexOf(SMARTCARD_LOGON_EKU) >= 0 &&
-                       bound.keySource !== 'server',
+             hardware: inferred || evidence.hardware,
+             smartCard: evidence.hardware && evidence.smartCard,
              notAfter: facts.notAfter, authority: first.authority,
              path: path.chain };
   }
@@ -1152,7 +1188,8 @@ class Krb5Pkinit {
     }
     const indicators = opts.anonymous ? []
       : [PKINIT_INDICATOR].concat(certificate.hardware
-                                    ? [HARDWARE_INDICATOR] : []);
+                                    ? [HARDWARE_INDICATOR] : [])
+          .concat(certificate.smartCard ? [SMARTCARD_INDICATOR] : []);
     // AD-INITIAL-VERIFIED-CAS (section 3.2.3): the CAs the path went
     // through, the leaf left out. Never in an anonymous ticket (RFC 8062
     // section 4.1).

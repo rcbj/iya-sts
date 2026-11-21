@@ -884,12 +884,14 @@ const SET_SIGNING_ALGORITHMS = algorithmRegistry.asymmetricJoseNames();
 const RISC_SUBJECT_FORMATS = ['account', 'email', 'iss_sub', 'opaque',
                               'phone_number', 'did', 'uri', 'aliases'];
 
-// common/cert_enrollment.ts's PROFILE_IDS — the nine leaf profiles an
-// enrollment protocol may issue, shared by ACME, EST and SCEP.
+// common/cert_enrollment.ts's PROFILE_IDS — the thirteen leaf profiles an
+// enrollment protocol may issue, shared by ACME, EST and SCEP: the nine, and
+// the four PIV slot profiles of #1955 P2, which no default list holds.
 const ENROLLMENT_PROFILES = ['tls-server', 'tls-client', 'tls-server-client',
                              'digital-signature', 'key-encipherment',
                              'code-signing', 'email', 'timestamping',
-                             'smartcard-logon'];
+                             'smartcard-logon', 'piv-auth', 'piv-sign',
+                             'piv-key-management', 'piv-card-auth'];
 
 // EST and SCEP also issue `device` (#164): cert_enrollment.ts's
 // DEVICE_PROFILE, for the families in its DEVICE_PROFILE_FAMILIES. ACME does
@@ -3373,6 +3375,29 @@ const SETTINGS = [
                  'origin is not on it is refused whatever Host the request ' +
                  'carried. Name several where one credential is used from ' +
                  'sibling hosts under a shared webauthn.rpId.' },
+
+  // Added 2026-11-20 (#1955 P7, rcbj's reversal of the issue's D5): the
+  // legacy FIDO U2F AppIDs whose imported credentials may still sign in.
+  // EMPTY, THE DEFAULT, IS THE FEATURE OFF. `authn/webauthn_policy.ts`'s
+  // write rule refuses an entry that is not an https AppID (STS-AUTHN-0566).
+  { key: 'webauthn.u2fAppIds', group: 'WebAuthn',
+    label: 'Legacy U2F AppIDs', path: 'webauthn.u2fAppIds',
+    env: 'STS_WEBAUTHN_U2F_APP_IDS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'The FIDO U2F AppIDs — the https URLs a legacy U2F ' +
+                 'relying party registered its security keys under — whose ' +
+                 'credentials may be imported onto people\'s entries and ' +
+                 'used to sign in here, comma-separated. **EMPTY, the ' +
+                 'default, is the feature off**: nothing can be imported, ' +
+                 'no ceremony carries the appid or appidExclude extension ' +
+                 '(WebAuthn Level 3 sections 10.1.1 and 10.1.2), and an ' +
+                 'imported key does not sign in. An AppID is used only at ' +
+                 'an RP ID it relates to: its host is the RP ID, or one is ' +
+                 'a suffix of the other. Where the host differs from the ' +
+                 'origin\'s, the browser fetches the AppID URL for a ' +
+                 'TrustedFacets list naming this origin, which the legacy ' +
+                 'service must keep serving. An imported key is a second ' +
+                 'factor only: a U2F key cannot verify the person.' },
 
   { key: 'webauthn.algorithms', group: 'WebAuthn',
     label: 'Algorithms offered', path: 'webauthn.algorithms',
@@ -7290,6 +7315,159 @@ const SETTINGS = [
                  'Devices. The oldest is dropped when a new one is ' +
                  'recorded past it.' },
 
+  // #1955 P1: WHAT A HARDWARE CLAIM STANDS ON. `common/hardware_tokens.ts`
+  // argues it; the default is the behaviour before #1955.
+  { key: 'hardwareTokens.hardwareClaims', group: 'Devices',
+    label: 'What earns a hardware-key claim',
+    env: 'STS_HARDWARE_TOKENS_HARDWARE_CLAIMS', type: 'enum',
+    enumValues: ['inference', 'evidence'], dflt: 'inference',
+    runtime: true,
+    description: 'What lets a PKINIT sign-in claim a hardware-bound key ' +
+                 '(the pkinit-hardware indicator and amr hwk). ' +
+                 '`inference`, the default and the behaviour before ' +
+                 '#1955: a smart-card logon certificate whose key this ' +
+                 'service did not generate, or recorded attestation ' +
+                 'evidence. `evidence`: only a key a hardware token\'s ' +
+                 'attestation covers. A certificate sign-in over TLS ' +
+                 'earns hwk, and sc for a key on a smart card, only from ' +
+                 'evidence in either case.' },
+
+  // #1955 P2: YUBIKEY PIV KEY ATTESTATION, THE SLOT PROFILES' RULES, 9d KEY
+  // ESCROW (D7) AND THE OUTSIDE PIV / CAC MAPPING (D8). Every one is off or
+  // empty by default, so a realm behaves as it did before #1955 until an
+  // operator sets one. `common/piv_attestation.ts` argues them.
+  { key: 'piv.attestationAnchors', group: 'Devices',
+    label: 'PIV attestation roots (PEM)',
+    env: 'STS_PIV_ATTESTATION_ANCHORS', type: 'string', dflt: '',
+    runtime: true,
+    description: 'The roots a YubiKey PIV key attestation must chain to, ' +
+                 'as a PEM bundle. Empty uses the two Yubico publishes ' +
+                 '(Yubico PIV Root CA Serial 263751, and Yubico Attestation ' +
+                 'Root 1 for firmware 5.7.4 and later), shipped in ' +
+                 'common/pki_piv_anchors.json and pinned there by SHA-256, ' +
+                 'with Yubico\'s PIV intermediates. A certificate here ' +
+                 'replaces the shipped roots.' },
+  { key: 'piv.requireAttestation', group: 'Devices',
+    label: 'Require a PIV attestation for the PIV profiles',
+    env: 'STS_PIV_REQUIRE_ATTESTATION', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'On, a request for a piv-auth, piv-sign, ' +
+                 'piv-key-management or piv-card-auth certificate is ' +
+                 'refused unless it carries a YubiKey PIV attestation that ' +
+                 'verifies (STS-PIV-0010). An escrowed piv-key-management ' +
+                 'key from EST /serverkeygen is the exception: this service ' +
+                 'generated it. Off, the default, such a request without ' +
+                 'one is issued with no hardware evidence; a request that ' +
+                 'carries one that does not verify is refused either way.' },
+  { key: 'piv.pinPolicy', group: 'Devices',
+    label: 'Weakest PIN policy an attested PIV key may have',
+    env: 'STS_PIV_PIN_POLICY', type: 'enum',
+    enumValues: ['any', 'once', 'always'], dflt: 'any', runtime: true,
+    description: 'What the attestation\'s PIN policy must be at least. ' +
+                 '`once`: the PIN once per session (a Bio key\'s ' +
+                 'match-once counts); `always`: the PIN before every use ' +
+                 '(match-always counts). `any`, the default, holds no ' +
+                 'PIN policy. A key whose attestation is weaker is refused ' +
+                 '(STS-PIV-0011).' },
+  { key: 'piv.touchPolicy', group: 'Devices',
+    label: 'Weakest touch policy an attested PIV key may have',
+    env: 'STS_PIV_TOUCH_POLICY', type: 'enum',
+    enumValues: ['any', 'cached', 'always'], dflt: 'any', runtime: true,
+    description: 'What the attestation\'s touch policy must be at least. ' +
+                 '`cached`: a touch, remembered for 15 seconds; `always`: ' +
+                 'a touch for every use. `any`, the default, holds none. A ' +
+                 'key whose attestation is weaker is refused (STS-PIV-0012).' },
+  { key: 'piv.cardAuthSignIn', group: 'Devices',
+    label: 'Let a piv-card-auth certificate sign in',
+    env: 'STS_PIV_CARD_AUTH_SIGN_IN', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'A piv-card-auth (slot 9e) key works without a PIN, for ' +
+                 'physical access, so its certificate is refused at the ' +
+                 'TLS sign-in and at PKINIT (STS-PIV-0013) unless this is ' +
+                 'on.' },
+  { key: 'piv.keyEscrow', group: 'Devices',
+    label: 'Escrow piv-key-management keys',
+    env: 'STS_PIV_KEY_ESCROW', type: 'bool', dflt: false, runtime: true,
+    description: 'On, EST /serverkeygen for the piv-key-management profile ' +
+                 'keeps the generated private key, sealed under the ' +
+                 'key-encryption key, so the holder (on the portal, after ' +
+                 'a fresh sign-in) or an administrator holding the PIV key ' +
+                 'recovery role can recover it and decrypt old mail after a ' +
+                 'card is lost. Refused where no key-encryption key is ' +
+                 'held (STS-PIV-0020). An escrowed key is never hardware ' +
+                 'evidence. Off, the default, /serverkeygen refuses the ' +
+                 'piv-key-management profile (STS-PIV-0021), so a 9d key ' +
+                 'is generated on the card and kept nowhere else.' },
+  { key: 'piv.externalIssuers', group: 'Devices',
+    label: 'Outside PIV or CAC issuing CAs mapped by card UUID (PEM)',
+    env: 'STS_PIV_EXTERNAL_ISSUERS', type: 'string', dflt: '',
+    runtime: true,
+    description: 'The issuing CAs whose PIV or CAC card certificates sign a ' +
+                 'person in by the FIPS 201 card UUID: a client certificate ' +
+                 'one of these issued directly, asserting a policy in ' +
+                 'piv.externalPolicyOids and carrying exactly one urn:uuid ' +
+                 'subjectAltName, maps to the one person whose ' +
+                 'stsPivCardUuid holds that UUID. Never by its name, and ' +
+                 'no entry is created. The CA must also be in a client ' +
+                 'truststore, or the handshake refuses it first. Empty, the ' +
+                 'default, maps nothing.' },
+  { key: 'piv.externalPolicyOids', group: 'Devices',
+    label: 'PIV Authentication policies an outside card must assert',
+    env: 'STS_PIV_EXTERNAL_POLICY_OIDS', type: 'csv',
+    dflt: '2.16.840.1.101.3.2.1.3.13,2.16.840.1.101.3.2.1.3.18',
+    runtime: true,
+    description: 'The certificate policies, one of which an outside card\'s ' +
+                 'certificate must assert to be mapped by its card UUID: ' +
+                 'by default id-fpki-common-authentication (the Federal ' +
+                 'PKI Common Policy\'s PIV Authentication) and ' +
+                 'id-fpki-certpcy-pivi-hardware (PIV-I). Add a CAC ' +
+                 'issuer\'s own hardware policies here.' },
+  // #1955 P6: A PERSON'S OpenPGP KEY AND THE WEB KEY DIRECTORY.
+  // `common/openpgp_keys.ts` argues all five; the directory is OFF by
+  // default, and nothing a realm already does changes.
+  { key: 'openpgp.wkd', group: 'OpenPGP',
+    label: 'Publish keys in the Web Key Directory',
+    env: 'STS_OPENPGP_WKD', type: 'bool', dflt: false, runtime: true,
+    description: 'Answer the Web Key Directory (draft-koch-openpgp-webkey-' +
+                 'service) for this realm\'s mail domains: /.well-known/' +
+                 'openpgpkey/<domain>/hu/<hash> (the advanced method, on ' +
+                 'openpgpkey.<domain>) and /.well-known/openpgpkey/hu/' +
+                 '<hash> (the direct method), and each one\'s policy file. ' +
+                 'Only the key of a person who opted in on the portal is ' +
+                 'answered. Off by default.' },
+  { key: 'openpgp.wkdDomains', group: 'OpenPGP',
+    label: 'Mail domains the Web Key Directory serves',
+    env: 'STS_OPENPGP_WKD_DOMAINS', type: 'csv', dflt: '', runtime: true,
+    description: 'The mail domains this realm\'s Web Key Directory ' +
+                 'answers for, comma-separated. Empty, the default, is the ' +
+                 'realm\'s own DNS domain. A request with no realm in its ' +
+                 'path is answered by the realm that serves its domain, the ' +
+                 'default realm first.' },
+  { key: 'openpgp.challengeLifetimeS', group: 'OpenPGP',
+    label: 'Registration challenge lifetime (seconds)',
+    env: 'STS_OPENPGP_CHALLENGE_LIFETIME_S', type: 'int', dflt: 600,
+    min: 60, max: 3600, runtime: true,
+    description: 'How long the challenge a person signs with gpg ' +
+                 '--clearsign to register an OpenPGP key stays good. It is ' +
+                 'spent once, and a person has one at a time.' },
+  { key: 'openpgp.signatureSkewS', group: 'OpenPGP',
+    label: 'Proof signature clock skew (seconds)',
+    env: 'STS_OPENPGP_SIGNATURE_SKEW_S', type: 'int', dflt: 300, min: 0,
+    max: 3600, runtime: true,
+    description: 'How far the signing computer\'s clock may be from this ' +
+                 'service\'s: a proof signed earlier than the challenge ' +
+                 'was issued, or later than now, by more than this is ' +
+                 'refused (STS-OPENPGP-0010).' },
+  { key: 'openpgp.minRsaBits', group: 'OpenPGP',
+    label: 'Smallest RSA OpenPGP key',
+    env: 'STS_OPENPGP_MIN_RSA_BITS', type: 'int', dflt: 3072, min: 3072,
+    max: 16384, runtime: true,
+    description: 'The shortest RSA key, primary or subkey, an OpenPGP ' +
+                 'registration accepts. Ed25519, Ed448, ECDSA and ECDH on ' +
+                 'P-256, P-384 and P-521, X25519 and X448 are accepted; ' +
+                 'DSA, ElGamal and the Brainpool curves never are ' +
+                 '(STS-OPENPGP-0004).' },
+
   // #164 PHASE 3 (2026-09-26): the MDM / posture feed.
   // `admin-ui/devices_admin.ts`'s `mdmFeed()` argues it.
   { key: 'devices.complianceFeedMaxReports', group: 'Devices',
@@ -8813,6 +8991,31 @@ const SETTINGS = [
                  'other row and the master are untouched; off in product ' +
                  'mode it is logged once (STS-PKI-0239) and drawn red on ' +
                  '/admin/pki/trust.' },
+  { key: 'pki.paranoidPivAttestation', group: 'PKI',
+    label: 'Paranoid: a YubiKey PIV key attestation chain',
+    env: 'STS_PKI_PARANOID_PIV_ATTESTATION', type: 'bool',
+    dflt: true, runtime: true,
+    description: 'Use case `piv-attestation` (#1955): the slot attestation ' +
+                 'certificate and the f9 attestation certificate of a PIV ' +
+                 'enrolment. Paranoid asks the validity window at now, the ' +
+                 'path to piv.attestationAnchors and revocation where the ' +
+                 'chain names a list. Off, this use case alone runs the ' +
+                 'path check without the field checks, while every other ' +
+                 'row and the master are untouched; off in product mode it ' +
+                 'is logged once (STS-PKI-0239) and drawn red on ' +
+                 '/admin/pki/trust.' },
+  { key: 'pki.paranoidPivCard', group: 'PKI',
+    label: 'Paranoid: an outside PIV or CAC card mapped by card UUID',
+    env: 'STS_PKI_PARANOID_PIV_CARD', type: 'bool',
+    dflt: true, runtime: true,
+    description: 'Use case `piv-card` (#1955): a client certificate from ' +
+                 'an issuing CA in piv.externalIssuers, mapped by its card ' +
+                 'UUID. Paranoid asks keyUsage digitalSignature and the ' +
+                 'validity window of the leaf beside the one-hop issuer ' +
+                 'check. Off, this use case alone runs the issuer check ' +
+                 'only, while every other row and the master are ' +
+                 'untouched; off in product mode it is logged once ' +
+                 '(STS-PKI-0239) and drawn red on /admin/pki/trust.' },
   { key: 'pki.paranoidEnrollmentCredential', group: 'PKI',
     label: 'Paranoid: a certificate presented to enroll or renew',
     env: 'STS_PKI_PARANOID_ENROLLMENT_CREDENTIAL', type: 'bool',
@@ -9036,7 +9239,8 @@ const SETTINGS = [
     env: 'STS_ACME_DEFAULT_PROFILE', type: 'enum',
     enumValues: ['tls-server', 'tls-client', 'tls-server-client',
                  'digital-signature', 'key-encipherment', 'code-signing',
-                 'email', 'timestamping', 'smartcard-logon'],
+                 'email', 'timestamping', 'smartcard-logon', 'piv-auth',
+                 'piv-sign', 'piv-key-management', 'piv-card-auth'],
     dflt: 'tls-client', runtime: true,
     description: 'Most ACME clients never name a profile. An order naming ' +
                  'none whose identifiers are all dns or ip is issued ' +
@@ -9132,7 +9336,8 @@ const SETTINGS = [
     env: 'STS_EST_DEFAULT_PROFILE', type: 'enum',
     enumValues: ['tls-server', 'tls-client', 'tls-server-client',
                  'digital-signature', 'key-encipherment', 'code-signing',
-                 'email', 'timestamping', 'smartcard-logon'],
+                 'email', 'timestamping', 'smartcard-logon', 'piv-auth',
+                 'piv-sign', 'piv-key-management', 'piv-card-auth'],
     dflt: 'tls-client', runtime: true,
     description: 'What /.well-known/est/simpleenroll issues, with no label.' },
   { key: 'est.certificateLifetimeDays', group: 'EST',
@@ -9218,7 +9423,8 @@ const SETTINGS = [
     env: 'STS_SCEP_DEFAULT_PROFILE', type: 'enum',
     enumValues: ['tls-server', 'tls-client', 'tls-server-client',
                  'digital-signature', 'key-encipherment', 'code-signing',
-                 'email', 'timestamping', 'smartcard-logon'],
+                 'email', 'timestamping', 'smartcard-logon', 'piv-auth',
+                 'piv-sign', 'piv-key-management', 'piv-card-auth'],
     dflt: 'tls-client', runtime: true,
     description: 'The profile preselected when a challenge password is made.' },
   { key: 'scep.certificateLifetimeDays', group: 'SCEP',
@@ -17914,6 +18120,24 @@ const SETTINGS = [
                  'from holding the token. They exist to be REQUIRED, not to ' +
                  'be carried.' },
 
+  // DYNAMIC SELECTABLE ROLES (#1072, rcbj's decision 2): the sign-in page's
+  // "Choose roles for this sign-in" box, offered in a realm that defines a
+  // dynamic role, unless this or the application's appDynamicRoleSelection
+  // turns it off.
+  { key: 'roles.dynamicSelection', group: 'Roles',
+    label: 'Offer dynamic roles at sign-in',
+    env: 'STS_ROLES_DYNAMIC_SELECTION', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Whether a person signing in may choose dynamic selectable ' +
+                 'roles (#1072): the sign-in page offers a "Choose roles for ' +
+                 'this sign-in" box in a realm that defines at least one ' +
+                 'dynamic role, and a ticked box shows the roles the ' +
+                 'person\'s eligibility permits. ON by default; ' +
+                 'appDynamicRoleSelection on an application\'s entry ' +
+                 'overrides it for that application. Off, no box is drawn, ' +
+                 'no role is offered, a required dynamic role is not asked ' +
+                 'for, and a token carries no dynamically selected role.' },
+
   { key: 'roles.claimName', group: 'Roles', label: 'Role claim name',
     env: 'STS_ROLES_CLAIM_NAME', type: 'string', dflt: 'roles', runtime: true,
     description: 'What the claim is called, and ALSO what is looked for on ' +
@@ -18033,6 +18257,18 @@ const SETTINGS = [
                  'to every caller; that is the way to take the XACML surface ' +
                  'away without turning xacml.enabled off and losing the ' +
                  'embedded issuance and access PEPs with it.' },
+  { key: 'roles.pivKeyRecoveryGroup', group: 'Roles',
+    label: 'Group granting the PIV_KEY_RECOVERY role',
+    env: 'STS_ROLES_PIV_KEY_RECOVERY_GROUP', type: 'string',
+    dflt: 'piv-key-recovery', runtime: true,
+    description: 'The directory group whose members hold the built-in ' +
+                 'PIV_KEY_RECOVERY role (#1955), which the access-control ' +
+                 'policy requires, beside Admin Write, to recover another ' +
+                 'person\'s escrowed piv-key-management key (piv.keyEscrow). ' +
+                 'That key decrypts the person\'s mail, so nobody holds the ' +
+                 'role until an administrator adds them to the group. Empty ' +
+                 'lets nobody recover another person\'s key; the holder ' +
+                 'recovers their own on the portal.' },
   { key: 'roles.authzenPepGroup', group: 'Roles',
     label: 'Group granting the AUTHZEN_PEPS role',
     env: 'STS_ROLES_AUTHZEN_PEP_GROUP', type: 'string',
@@ -21235,6 +21471,23 @@ const SETTINGS = [
     description: 'A notice that names what it is about (the same act on the ' +
                  'same account) is sent once in this window, however many ' +
                  'doors reported it. 0 turns suppression off.' },
+
+  // #1955 P6: SECURITY MAIL THAT MUST BE ENCRYPTED. `common/mail.ts`
+  // argues the refusal.
+  { key: 'mail.encryptionRequired', group: 'Mail',
+    label: 'Messages that must be encrypted',
+    env: 'STS_MAIL_ENCRYPTION_REQUIRED', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'The messages, by template id (password-reset, ' +
+                 'account-activation, sign-in-code, sign-in-link, ' +
+                 'credential-compromised and the rest of Monitoring → ' +
+                 'Mail\'s list), that are sent only encrypted — PGP/MIME to ' +
+                 'the person\'s OpenPGP key or S/MIME to their certificate, ' +
+                 'as they chose on the portal. A person who chose neither ' +
+                 'is not sent one (STS-MAIL-0240), and the use that asked ' +
+                 'says so as it does for any message not sent. Empty, the ' +
+                 'default, requires none; whatever a person chose is ' +
+                 'honoured either way.' },
 
   { key: 'mail.selfServiceReset', group: 'Mail',
     label: 'Self-service password reset',
