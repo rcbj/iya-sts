@@ -3376,6 +3376,29 @@ const SETTINGS = [
                  'carried. Name several where one credential is used from ' +
                  'sibling hosts under a shared webauthn.rpId.' },
 
+  // Added 2026-11-20 (#1955 P7, rcbj's reversal of the issue's D5): the
+  // legacy FIDO U2F AppIDs whose imported credentials may still sign in.
+  // EMPTY, THE DEFAULT, IS THE FEATURE OFF. `authn/webauthn_policy.ts`'s
+  // write rule refuses an entry that is not an https AppID (STS-AUTHN-0566).
+  { key: 'webauthn.u2fAppIds', group: 'WebAuthn',
+    label: 'Legacy U2F AppIDs', path: 'webauthn.u2fAppIds',
+    env: 'STS_WEBAUTHN_U2F_APP_IDS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'The FIDO U2F AppIDs — the https URLs a legacy U2F ' +
+                 'relying party registered its security keys under — whose ' +
+                 'credentials may be imported onto people\'s entries and ' +
+                 'used to sign in here, comma-separated. **EMPTY, the ' +
+                 'default, is the feature off**: nothing can be imported, ' +
+                 'no ceremony carries the appid or appidExclude extension ' +
+                 '(WebAuthn Level 3 sections 10.1.1 and 10.1.2), and an ' +
+                 'imported key does not sign in. An AppID is used only at ' +
+                 'an RP ID it relates to: its host is the RP ID, or one is ' +
+                 'a suffix of the other. Where the host differs from the ' +
+                 'origin\'s, the browser fetches the AppID URL for a ' +
+                 'TrustedFacets list naming this origin, which the legacy ' +
+                 'service must keep serving. An imported key is a second ' +
+                 'factor only: a U2F key cannot verify the person.' },
+
   { key: 'webauthn.algorithms', group: 'WebAuthn',
     label: 'Algorithms offered', path: 'webauthn.algorithms',
     env: 'STS_WEBAUTHN_ALGORITHMS', type: 'csv',

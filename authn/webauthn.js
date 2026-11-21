@@ -603,7 +603,9 @@ function verifyRegistration(input) {
  * @param input - `authenticatorData`, `clientDataJSON` and `signature`
  * (base64url), `publicKeyJwk`, `expectedChallenge`, `expectedOrigin`,
  * `expectedRpId`, and optionally `requireUserVerification`,
- * `previousSignCount` and `allowInsecure` (accept RS1)
+ * `previousSignCount`, `allowInsecure` (accept RS1), and `expectedAppId`
+ * with `appidUsed` (#1955 P7: the rpIdHash is SHA-256 of the AppID only
+ * when both are given and `appidUsed` is true)
  * @returns `ok`, every check with its result, whether the signature is
  * valid, the signature counter, the flags, and the algorithm checked with
  * (`coseAlg`, `algorithm`)
@@ -624,10 +626,29 @@ function verifyAssertion(input) {
         'got ' + cd.json.challenge);
   c.add('origin matches', cd.json.origin === input.expectedOrigin,
         'got ' + cd.json.origin + ', expected ' + input.expectedOrigin);
-  c.add('rpIdHash is SHA-256 of the RP ID',
-        authData.rpIdHash.equals(sha256(Buffer.from(input.expectedRpId,
-                                                    'utf8'))),
-        'rpId=' + input.expectedRpId);
+  // THE RP ID HASH, OR A LEGACY U2F APPID'S (#1955 P7). WebAuthn Level 3
+  // section 10.1.1: a client that used the `appid` extension reports
+  // `appid: true` in its extension outputs, and the authenticator data's
+  // rpIdHash is then SHA-256 of the AppID, not of the RP ID. ONLY THEN: the
+  // AppID is hashed only where the caller names one (`expectedAppId`, the
+  // AppID the credential was imported under, and only where the realm still
+  // permits it) AND the client said it used it (`appidUsed`). A credential
+  // registered here never has an AppID, so a client claiming `appid: true`
+  // for it is still held to the RP ID; an imported credential whose client
+  // did not say so is held to the RP ID too, which its U2F signature cannot
+  // satisfy.
+  const appIdHashed = !!input.expectedAppId && input.appidUsed === true;
+  if (appIdHashed) {
+    c.add('rpIdHash is SHA-256 of the AppID (the appid extension)',
+          authData.rpIdHash.equals(sha256(Buffer.from(input.expectedAppId,
+                                                      'utf8'))),
+          'appid=' + input.expectedAppId);
+  } else {
+    c.add('rpIdHash is SHA-256 of the RP ID',
+          authData.rpIdHash.equals(sha256(Buffer.from(input.expectedRpId,
+                                                      'utf8'))),
+          'rpId=' + input.expectedRpId);
+  }
   c.add('user presence', authData.flags.up, 'UP=' + authData.flags.up);
   if (input.requireUserVerification) {
     // Its own check, never folded into the signature: a UV-clear assertion is
@@ -687,6 +708,8 @@ function verifyAssertion(input) {
     // The algorithm the signature was checked with: COSE identifier and name.
     coseAlg: coseAlg,
     algorithm: COSE_ALGS[String(coseAlg)] || null,
+    // Whether the rpIdHash was checked against a U2F AppID (#1955 P7).
+    appIdHashed: appIdHashed,
   };
   log.debug('Leaving verifyAssertion(). ok=' + result.ok);
   return result;

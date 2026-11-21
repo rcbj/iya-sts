@@ -2583,7 +2583,9 @@ class ConsoleRuntime extends SpaClient {
         allowCredentials: [{ type: 'public-key',
           id: WebWebAuthn.bytes(proof.allow) }],
         userVerification: (proof.options && proof.options.userVerification) ||
-                          'preferred' } });
+                          'preferred',
+        // The legacy U2F appid (#1955 P7), where the server asks it.
+        extensions: WebWebAuthn.requestExtensions(proof.options) } });
       if (!asserted) { throw new Error('The passkey did not answer.'); }
       const proved = await this.apiJson('POST',
         '/admin-api/users/prove-passkey-upgrade', {
@@ -2606,12 +2608,9 @@ class ConsoleRuntime extends SpaClient {
       options.excludeCredentials = (registration.exclude || []).map(
         function (id) { return { type: 'public-key',
           id: WebWebAuthn.bytes(id) }; });
-      options.extensions = (options.credProps || options.minPinLength)
-        ? Object.assign(options.credProps ? { credProps: true } : {},
-                        options.minPinLength ? { minPinLength: true } : {})
-        : undefined;
-      delete options.credProps;
-      delete options.minPinLength;
+      // The extensions the server asks for (#1955 P7: one copy).
+      options.extensions = WebWebAuthn.creationExtensions(options);
+      WebWebAuthn.dropFlatExtensions(options);
       const made = await this.env.navigator.credentials.create({
         publicKey: options });
       if (!made) { throw new Error('The authenticator refused registration.'); }
@@ -2683,12 +2682,9 @@ class ConsoleRuntime extends SpaClient {
       publicKey.excludeCredentials = (ceremony.exclude || []).map(function (id) {
         return { type: 'public-key', id: WebWebAuthn.bytes(id) };
       });
-      publicKey.extensions = (publicKey.credProps || publicKey.minPinLength)
-        ? Object.assign(publicKey.credProps ? { credProps: true } : {},
-                        publicKey.minPinLength ? { minPinLength: true } : {})
-        : undefined;
-      delete publicKey.credProps;
-      delete publicKey.minPinLength;
+      // The extensions the server asks for (#1955 P7: one copy).
+      publicKey.extensions = WebWebAuthn.creationExtensions(publicKey);
+      WebWebAuthn.dropFlatExtensions(publicKey);
       const made = await this.env.navigator.credentials.create({
         publicKey: publicKey });
       if (!made) {

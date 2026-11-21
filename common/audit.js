@@ -857,6 +857,9 @@ const ACTIONS = [
     label: 'An operator removed somebody\'s security key' },
   { action: 'admin.mfa.key.renamed', category: 'admin',
     label: 'An operator renamed somebody\'s passkey' },
+  // #1955 P7: a legacy U2F credential imported by value.
+  { action: 'admin.mfa.key.imported', category: 'admin',
+    label: 'An operator imported a U2F security key for somebody' },
   // THE PASSWORD AND SECOND-FACTOR CONTROLS ON A PERSON'S PAGE (2026-09-13),
   // each one ACT with who performed it. The sessions a reset's sign-out ends
   // write their own `session.end` rows, so these do not count them again.

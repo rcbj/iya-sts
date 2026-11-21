@@ -1379,6 +1379,14 @@
     "en": "cba85726ee4e8673",
     "text": "Die Origins — Schema, Host und Port, kein Pfad —, von denen eine WebAuthn-Zeremonie angenommen wird, durch Kommas getrennt. **LEER, der Standard, leitet den einen Origin aus der Adresse ab, unter der dieser Dienst erreicht wurde**, was er schon immer getan hat und was global.publicBaseUrl bereits festlegt, wenn es gesetzt ist. Gesetzt ist es die ganze Liste: ein clientDataJSON, dessen Origin nicht darauf steht, wird abgelehnt, gleich welchen Host die Anfrage trug. Nennen Sie mehrere, wo dieselben Anmeldedaten von benachbarten Hosts unter einer gemeinsamen webauthn.rpId benutzt werden."
   },
+  "webauthn.u2fAppIds|label": {
+    "en": "b0b6d4158c6357e8",
+    "text": "Alte U2F-AppIDs"
+  },
+  "webauthn.u2fAppIds|description": {
+    "en": "05b1b01773d86d5d",
+    "text": "Die FIDO-U2F-AppIDs — die https-URLs, unter denen eine alte U2F-Relying-Party ihre Sicherheitsschlüssel registriert hat —, deren Anmeldedaten auf die Einträge von Personen importiert und hier zur Anmeldung verwendet werden dürfen, durch Kommas getrennt. **LEER, der Standard, heißt: die Funktion ist aus**: Nichts kann importiert werden, keine Zeremonie trägt die Erweiterung appid oder appidExclude (WebAuthn Level 3 Abschnitte 10.1.1 und 10.1.2), und ein importierter Schlüssel meldet niemanden an. Eine AppID wird nur bei einer RP-ID verwendet, zu der sie gehört: Ihr Host ist die RP-ID, oder das eine ist ein Suffix des anderen. Wo der Host von dem des Ursprungs abweicht, ruft der Browser die AppID-URL nach einer TrustedFacets-Liste ab, die diesen Ursprung nennt; der alte Dienst muss sie weiter bereitstellen. Ein importierter Schlüssel ist nur ein zweiter Faktor: Ein U2F-Schlüssel kann die Person nicht überprüfen."
+  },
   "webauthn.algorithms|label": {
     "en": "47c0895479d03828",
     "text": "Angebotene Algorithmen"

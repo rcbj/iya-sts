@@ -3971,6 +3971,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `options` | object |  |  |
 | `options.algorithms` | list |  |  |
 | `options.algorithms[]` | number, or null |  |  |
+| `options.appid` | string |  |  |
+| `options.appidExclude` | string |  |  |
 | `options.attestation` | string |  |  |
 | `options.authenticatorSelection` | object |  |  |
 | `options.authenticatorSelection.authenticatorAttachment` | string |  |  |
@@ -3978,6 +3980,9 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `options.authenticatorSelection.residentKey` | string |  |  |
 | `options.authenticatorSelection.userVerification` | string |  |  |
 | `options.credProps` | boolean |  |  |
+| `options.credProtect` | object |  |  |
+| `options.credProtect.credentialProtectionPolicy` | string |  |  |
+| `options.credProtect.enforceCredentialProtectionPolicy` | boolean |  |  |
 | `options.hints` | list |  |  |
 | `options.hints[]` | string |  |  |
 | `options.minPinLength` | boolean |  |  |
@@ -4017,6 +4022,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `options` | object |  |  |
 | `options.algorithms` | list |  |  |
 | `options.algorithms[]` | number, or null |  |  |
+| `options.appid` | string |  |  |
+| `options.appidExclude` | string |  |  |
 | `options.attestation` | string |  |  |
 | `options.authenticatorSelection` | object |  |  |
 | `options.authenticatorSelection.authenticatorAttachment` | string |  |  |
@@ -4024,6 +4031,9 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `options.authenticatorSelection.residentKey` | string |  |  |
 | `options.authenticatorSelection.userVerification` | string |  |  |
 | `options.credProps` | boolean |  |  |
+| `options.credProtect` | object |  |  |
+| `options.credProtect.credentialProtectionPolicy` | string |  |  |
+| `options.credProtect.enforceCredentialProtectionPolicy` | boolean |  |  |
 | `options.hints` | list |  |  |
 | `options.hints[]` | string |  |  |
 | `options.minPinLength` | boolean |  |  |
@@ -4063,6 +4073,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `options` | object |  |  |
 | `options.algorithms` | list |  |  |
 | `options.algorithms[]` | number, or null |  |  |
+| `options.appid` | string |  |  |
+| `options.appidExclude` | string |  |  |
 | `options.attestation` | string |  |  |
 | `options.authenticatorSelection` | object |  |  |
 | `options.authenticatorSelection.authenticatorAttachment` | string |  |  |
@@ -4070,6 +4082,9 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `options.authenticatorSelection.residentKey` | string |  |  |
 | `options.authenticatorSelection.userVerification` | string |  |  |
 | `options.credProps` | boolean |  |  |
+| `options.credProtect` | object |  |  |
+| `options.credProtect.credentialProtectionPolicy` | string |  |  |
+| `options.credProtect.enforceCredentialProtectionPolicy` | boolean |  |  |
 | `options.hints` | list |  |  |
 | `options.hints[]` | string |  |  |
 | `options.minPinLength` | boolean |  |  |
@@ -4109,6 +4124,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `options` | object |  |  |
 | `options.algorithms` | list |  |  |
 | `options.algorithms[]` | number, or null |  |  |
+| `options.appid` | string |  |  |
+| `options.appidExclude` | string |  |  |
 | `options.attestation` | string |  |  |
 | `options.authenticatorSelection` | object |  |  |
 | `options.authenticatorSelection.authenticatorAttachment` | string |  |  |
@@ -4116,6 +4133,9 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `options.authenticatorSelection.residentKey` | string |  |  |
 | `options.authenticatorSelection.userVerification` | string |  |  |
 | `options.credProps` | boolean |  |  |
+| `options.credProtect` | object |  |  |
+| `options.credProtect.credentialProtectionPolicy` | string |  |  |
+| `options.credProtect.enforceCredentialProtectionPolicy` | boolean |  |  |
 | `options.hints` | list |  |  |
 | `options.hints[]` | string |  |  |
 | `options.minPinLength` | boolean |  |  |
@@ -4155,6 +4175,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `options` | object |  |  |
 | `options.algorithms` | list |  |  |
 | `options.algorithms[]` | number, or null |  |  |
+| `options.appid` | string |  |  |
+| `options.appidExclude` | string |  |  |
 | `options.attestation` | string |  |  |
 | `options.authenticatorSelection` | object |  |  |
 | `options.authenticatorSelection.authenticatorAttachment` | string |  |  |
@@ -4162,6 +4184,9 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `options.authenticatorSelection.residentKey` | string |  |  |
 | `options.authenticatorSelection.userVerification` | string |  |  |
 | `options.credProps` | boolean |  |  |
+| `options.credProtect` | object |  |  |
+| `options.credProtect.credentialProtectionPolicy` | string |  |  |
+| `options.credProtect.enforceCredentialProtectionPolicy` | boolean |  |  |
 | `options.hints` | list |  |  |
 | `options.hints[]` | string |  |  |
 | `options.minPinLength` | boolean |  |  |
@@ -6250,6 +6275,7 @@ An empty object.
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 | `options` | object |  |  |
+| `options.appid` | string |  |  |
 | `options.hints` | list |  |  |
 | `options.hints[]` | string |  |  |
 | `options.rpId` | string |  |  |
@@ -6269,6 +6295,7 @@ An empty object.
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 | `options` | object |  |  |
+| `options.appid` | string |  |  |
 | `options.hints` | list |  |  |
 | `options.hints[]` | string |  |  |
 | `options.rpId` | string |  |  |
@@ -6288,6 +6315,7 @@ An empty object.
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 | `options` | object |  |  |
+| `options.appid` | string |  |  |
 | `options.hints` | list |  |  |
 | `options.hints[]` | string |  |  |
 | `options.rpId` | string |  |  |
@@ -6307,6 +6335,7 @@ An empty object.
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 | `options` | object |  |  |
+| `options.appid` | string |  |  |
 | `options.hints` | list |  |  |
 | `options.hints[]` | string |  |  |
 | `options.rpId` | string |  |  |
@@ -6326,6 +6355,7 @@ An empty object.
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 | `options` | object |  |  |
+| `options.appid` | string |  |  |
 | `options.hints` | list |  |  |
 | `options.hints[]` | string |  |  |
 | `options.rpId` | string |  |  |

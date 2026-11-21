@@ -1146,11 +1146,9 @@ class AuthnSurface extends WebSurface {
       excludeCredentials: (c.exclude || []).map(function (id: string): Json {
         return { type: 'public-key', id: WebWebAuthn.bytes(id) };
       }),
-      // credProps, and CTAP 2.1's minPinLength where the passkey policy
-      // asks for it (#529).
-      extensions: (o.credProps || o.minPinLength) ? Object.assign({},
-        o.credProps ? { credProps: true } : {},
-        o.minPinLength ? { minPinLength: true } : {}) : undefined,
+      // credProps, CTAP 2.1's minPinLength (#529) and credProtect, and the
+      // U2F appidExclude (#1955 P7), where the server asks for them.
+      extensions: WebWebAuthn.creationExtensions(o),
       hints: o.hints && o.hints.length ? o.hints : undefined,
       attestation: o.attestation || 'direct',
       timeout: o.timeout || 60000 };
@@ -1173,6 +1171,9 @@ class AuthnSurface extends WebSurface {
              }) : undefined,
              userVerification: o.userVerification || 'preferred',
              hints: o.hints && o.hints.length ? o.hints : undefined,
+             // The legacy U2F appid (#1955 P7), where the step names a key
+             // imported under it.
+             extensions: WebWebAuthn.requestExtensions(o),
              timeout: o.timeout || 60000 };
   }
 

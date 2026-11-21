@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5856** of them, in **55** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5866** of them, in **55** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 48
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 437
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 445
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 760
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 83
@@ -94,7 +94,7 @@ is an ordinary outcome.
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 99
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 299
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 301
 * [Management API (`STS-API`)](#sts-api) — 97
 * [User portal (`STS-PORTAL`)](#sts-portal) — 122
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 23
@@ -1401,7 +1401,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0028` | WebAuthn verification failed: clientDataJSON's type is not the ceremony's (webauthn.create / webauthn.get). | HTTP 200 page naming the failed check |
 | `STS-AUTHN-0029` | WebAuthn verification failed: the challenge in clientDataJSON is not the one this service issued for the step. | HTTP 200 page naming the failed check |
 | `STS-AUTHN-0030` | WebAuthn verification failed: the origin in clientDataJSON is not this service's origin or on webauthn.allowedOrigins. | HTTP 200 page naming the failed check |
-| `STS-AUTHN-0031` | WebAuthn verification failed: the RP ID hash in the authenticator data is not SHA-256 of the expected RP ID. | HTTP 200 page naming the failed check |
+| `STS-AUTHN-0031` | WebAuthn verification failed: the RP ID hash in the authenticator data is not SHA-256 of the expected RP ID — or, for a legacy U2F key whose client used the appid extension, of the AppID it was imported under (#1955). | HTTP 200 page naming the failed check |
 | `STS-AUTHN-0032` | WebAuthn verification failed: the authenticator data does not have the user-present (UP) flag set. | HTTP 200 page naming the failed check |
 | `STS-AUTHN-0033` | WebAuthn verification failed: webauthn.userVerification is required and the authenticator did not set the user-verified (UV) flag. | HTTP 200 page naming the failed check |
 | `STS-AUTHN-0034` | WebAuthn registration failed: the authenticator data carries no attested credential data (AT flag clear). | HTTP 200 page naming the failed check |
@@ -1808,6 +1808,14 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0556` | An administrator's passkey enrolment was begun or finished for a person named with a control character, a NUL or half of a surrogate pair. No directory name holds one, the pending record is keyed by the two names joined with a newline, and PostgreSQL cannot store a NUL, so it was refused before the pending record was touched (STS-STORE-0063). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-AUTHN-0557` | An authenticator app enrolment was begun for a name holding a control character or a NUL. No directory name holds one, and the pending enrolment is keyed by the name, which PostgreSQL cannot store with a NUL in it (STS-STORE-0063), so it was refused before the pending record was touched. | action result with the reason |
 | `STS-AUTHN-0558` | The account-set expiry job could not read the sessions a batch of browsers' account sets lists, asynchronously (#780). The batch decides nothing: no session is moved to remembered and no set is deleted on it, and the next run starts again at that batch. | none: a scheduler job; logged, never sent |
+| `STS-AUTHN-0559` | A passkey was not registered: the passkey policy asks a security key for CTAP 2.1 credential protection and enforces it (credProtect, enforceCredProtect, #1955), and the authenticator reported a lower credProtect level, or none, which is level 1. The issuance policy's cred-protect rule. Asked where every key is written. | HTTP 200 page naming the refusal; /admin-api and /account-api HTTP 400 with {ok:false, errors} |
+| `STS-AUTHN-0560` | A passkey policy save was refused: enforceCredProtect was on while credProtect was none, so there was no level to enforce (#1955). Nothing was written. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-AUTHN-0561` | A legacy U2F security key was not imported: its AppID is not one webauthn.u2fAppIds lists, or that setting is empty, which is the feature off (#1955). Nothing was written. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-AUTHN-0562` | A legacy U2F security key was not imported: its key handle is not base64 or base64url of 1 to 255 bytes (#1955). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-AUTHN-0563` | A legacy U2F security key was not imported: its public key is not an uncompressed P-256 point (65 bytes starting 0x04, on the curve) (#1955). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-AUTHN-0564` | A legacy U2F security key was not imported: its counter is not a whole number from 0 to 4294967295 (#1955). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-AUTHN-0565` | A sign-in step was answered by a legacy U2F security key that may not answer it: the step is passwordless (a U2F key cannot verify the person), or webauthn.u2fAppIds no longer permits its AppID at this RP ID (#1955). | HTTP 200 page naming the refusal |
+| `STS-AUTHN-0566` | A write of webauthn.u2fAppIds was refused: an entry is not a U2F AppID — an absolute https URL with a host, no user name or password and no fragment, at most 2048 characters (#1955). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 
 ## STS-OAUTH
 
@@ -6029,6 +6037,8 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0948` | An uploaded WS-Trust decryption key pair was refused for its key type: XML Encryption here unwraps a content key with RSA of at least 2048 bits or EC on P-256, P-384 or P-521 and nothing else. Nothing was written (#1668). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-ADMIN-0949` | An uploaded WS-Trust decryption certificate was refused because its keyUsage leaves out keyEncipherment (an RSA key) or keyAgreement (an EC key), or its validity has ended. Nothing was written (#1668). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-ADMIN-0950` | An application's WS-Trust decryption key pair was asked to be issued, uploaded or removed and the realm's registry holds no such application, or a remove found no key pair on it, or an uploaded certificate is already another application's. Nothing was written (#1668). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0951` | An operator's import of a legacy U2F security key named nobody (#1955). | HTTP 400 (API) |
+| `STS-ADMIN-0952` | An operator's import of a legacy U2F security key was refused; the inner code says why — the AppID, the key handle, the public key, the counter, or the writer's own rules (#1955). | HTTP 400 (API) |
 
 ## STS-API
 

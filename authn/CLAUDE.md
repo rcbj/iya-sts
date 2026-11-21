@@ -3195,6 +3195,23 @@ header; what a maintainer of THIS directory needs is where it sits:
   JWK now carries `alg`**, so an assertion is checked with the credential's own
   hash and padding; a key stored before has none and is read by key type — which
   fixed ES384 and ES512 keys, checked with SHA-256 until then.
+* **A LEGACY U2F APPID (#1955 P7).** `verifyAssertion()` takes
+  `expectedAppId` and `appidUsed`, and holds the rpIdHash to SHA-256 of the
+  AppID (check `rpIdHash is SHA-256 of the AppID (the appid extension)`, the
+  same `STS-AUTHN-0031`) ONLY when both are given and `appidUsed` is true —
+  the client's `appid` extension output, carried by `WebWebAuthn.asserted()`'s
+  `clientExtensionResults`. A caller passes `expectedAppId` only for a key
+  imported under that AppID and still permitted; so a key registered here is
+  held to the RP ID whatever the client claims. The passkey step
+  (`webauthnFacts()`) offers such a key at a
+  second-factor step only, with `appid` in the options and `userVerification`
+  `preferred` where the realm asks `required`; the verification of that one
+  key does not require UV, every other key's does, and an imported key at a
+  passwordless step, or under an AppID no longer permitted, is refused
+  (`STS-AUTHN-0565`). The step, the upgrade proof and every other assertion
+  door take both halves from `webauthn_policy.ts`'s `assertionOptions()` and
+  `assertionExpectations()`; `common/CLAUDE.md` lists the doors. The usernameless sign-in never meets one: a U2F key
+  holds no user handle. `common/CLAUDE.md` has the import and the setting.
 * **EVERY ALGORITHM, REQUESTED BY DEFAULT (2026-10-01, rcbj).** The verifier
   also checks RFC 9864's fully specified ESP256/384/512 (-9/-51/-52) and
   Ed25519/Ed448 (-19/-53), whose curve is checked against the key, and RFC

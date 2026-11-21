@@ -557,6 +557,12 @@ model PasskeyPolicy {
   @fromAttr(#{attr: "stsPasskeyDeviceBoundRequired"})
   `deviceBoundRequired`?: string;
 
+  @fromAttr(#{attr: "stsPasskeyCredProtect"})
+  `credProtect`?: string;
+
+  @fromAttr(#{attr: "stsPasskeyEnforceCredProtect"})
+  `enforceCredProtect`?: string;
+
   @fromAttr(#{attr: "stsPasskeyPrecedence"})
   `precedence`?: integer;
 

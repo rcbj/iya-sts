@@ -2754,6 +2754,15 @@ two assertion doors for the attestation rules).
   refused by the `post-quantum` rule above, as under `narrow`; the fact is
   there for a realm's own rule to tell a key picked from a full list from
   one never offered.
+* **#1955 P7 ADDED THE `cred-protect` GROUP AND ONE RULE**, at
+  `register-passkey` only and last there: the resource fact
+  `urn:sts:xacml:passkey:cred-protect` (the level the key reported, 1 where
+  it reported none — `question()` decides that, so silence never satisfies a
+  higher level) with `...:cred-protect-reported` beside it, and the policy
+  facts `urn:sts:xacml:passkey-policy:credProtectLevel` (0 for none) and
+  `...:enforceCredProtect`. The rule refuses (0559) a reported level below the
+  asked one while enforcement holds; `passkey_rules.js` mirrors it. No
+  `use-passkey` half: the authenticator enforces the level at every assertion.
 * **Arranged as the transfer questions are**: `xacml_passkey_verdicts.js`
   serves both the PEP and the gate. A realm's own document decides where it
   carries the obligation; otherwise the built-in document decides. Where

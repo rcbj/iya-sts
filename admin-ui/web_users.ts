@@ -2046,6 +2046,17 @@ class UsersPage {
             t.html('consoleUsers.mfaSection.serial',
                    { serial: one.deviceSerial }) +
             '</div>' : '') +
+        // A LEGACY U2F KEY (#1955 P7): imported, not registered here, and
+        // so a second factor only; and the credProtect level a key
+        // reported at registration.
+        (one.appid
+          ? '<div class="note">' +
+            t.html('consoleUsers.mfaSection.importedU2f',
+                   { appid: one.appid }) + '</div>' : '') +
+        (one.credProtect
+          ? '<div class="note">' +
+            t.html('consoleUsers.mfaSection.credProtectLevel',
+                   { level: String(one.credProtect) }) + '</div>' : '') +
         // A LATER REGISTRATION MAY HAVE REPLACED IT ON ITS AUTHENTICATOR
         // (#1101): Clear key, below, removes the row.
         (one.possiblyReplaced
@@ -2146,6 +2157,39 @@ class UsersPage {
         '">' + t.html('consoleUsers.mfaSection.enrol') +
         '</button><p class="note">' +
         t.html('consoleUsers.mfaSection.enrolTitle') + '</p></form>' : '';
+    // A LEGACY U2F CREDENTIAL IMPORTED BY VALUE (#1955 P7), drawn only where
+    // the realm permits an AppID (`webauthn.u2fAppIds`, empty by default):
+    // the four values a U2F relying party kept, and the AppID chosen from
+    // the permitted ones. `POST /admin-api/users/import-u2f-key` is the door.
+    const legacyAppIds: string[] = ((mech.policy || {}).legacyAppIds || [])
+      .map(String);
+    const u2fImport = state.write && keyLive.enabled && legacyAppIds.length
+      ? '<details><summary>' +
+        t.html('consoleUsers.mfaSection.importU2f') + '</summary>' +
+        '<form method="post" action="/admin/users">' +
+        '<input type="hidden" name="action" value="import-u2f-key">' +
+        '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
+        carryBack +
+        '<p><label>' + t.html('consoleUsers.mfaSection.importU2fAppId') +
+        ' <select name="appId">' + legacyAppIds.map(function (one) {
+          return '<option value="' + kit.esc(one) + '">' + kit.esc(one) +
+                 '</option>';
+        }).join('') + '</select></label></p>' +
+        '<p><label>' + t.html('consoleUsers.mfaSection.importU2fKeyHandle') +
+        ' <input type="text" name="keyHandle" required ' +
+        'autocomplete="off"></label></p>' +
+        '<p><label>' + t.html('consoleUsers.mfaSection.importU2fPublicKey') +
+        ' <input type="text" name="publicKey" required ' +
+        'autocomplete="off"></label></p>' +
+        '<p><label>' + t.html('consoleUsers.mfaSection.importU2fCounter') +
+        ' <input type="text" name="counter" inputmode="numeric" ' +
+        'value="0"></label></p>' +
+        '<p><label>' + t.html('consoleUsers.mfaSection.importU2fLabel') +
+        ' <input type="text" name="label" maxlength="60"></label></p>' +
+        '<button>' + t.html('consoleUsers.mfaSection.importU2fButton') +
+        '</button>' +
+        kit.note(t.html('consoleUsers.mfaSection.importU2fNote')) +
+        '</form></details>' : '';
     const keysBlock = '<h3>' + t.html('consoleUsers.mfaSection.keysHeading') +
       '</h3>' +
       (allKeys.length
@@ -2181,7 +2225,8 @@ class UsersPage {
         mfa: keyLive.mfaAllowed ? 'yes' : 'no',
         max: String(keyLive.maxKeysPerPerson) }) +
       '<a href="/admin/webauthn">WebAuthn</a>' +
-      t.html('consoleUsers.mfaSection.realmAllowsAfter')) + adminEnrol;
+      t.html('consoleUsers.mfaSection.realmAllowsAfter')) + adminEnrol +
+      u2fImport;
 
     // --- the recovery codes
     // --------------------------------------------------- **THE COUNTS AND

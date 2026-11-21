@@ -221,10 +221,14 @@ class PortalDevices {
     let ceremony: Json = null;
     if (linking) {
       const rpId = authn.rpIdOf(base);
+      const linkId = String((linking.detail || {}).credentialId || '');
       ceremony = { challenge: String(linking.challenge), rpId: rpId,
-                   user: who,
-                   allow: String((linking.detail || {}).credentialId || ''),
-                   options: webauthnPolicy.requestOptions(rpId) };
+                   user: who, allow: linkId,
+                   // The one builder of an assertion's options (#1955 P7).
+                   options: webauthnPolicy.assertionOptions(rpId,
+                     enrolled.filter(function (k: Json): boolean {
+                       return String(k.credentialId) === linkId;
+                     })) };
     }
     log.debug("Leaving PortalDevices.view().");
     return {

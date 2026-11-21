@@ -1247,6 +1247,22 @@
     "en": "5098a9645fefe2ff",
     "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, une émission vers une application que couvre ce profil attend que la session d’authentification soit liée à la clé du navigateur, et elle est refusée lorsque le navigateur a ignoré cet enregistrement ou que l’attente s’est écoulée sans liaison. Une session à laquelle l’enregistrement n’a jamais été proposé n’est pas refusée par cette ligne. Refusée tant que authn.deviceBoundSessions est désactivé."
   },
+  "passkey.FIELDS.credProtect.label": {
+    "en": "9a492f70e0e2aedd",
+    "text": "Protection des identifiants qu’un enregistrement demande à une clé de sécurité"
+  },
+  "passkey.FIELDS.credProtect.what": {
+    "en": "64640106a92f3111",
+    "text": "`none` PAR DÉFAUT : un enregistrement ne demande aucune protection des identifiants, et ses options sont ce qu’elles ont toujours été. Sinon, un enregistrement demande à l’authentificateur (CTAP 2.1 section 12.1, l’extension credProtect) de protéger le nouvel identifiant à ce niveau : `userVerificationOptional` (niveau 1, ce qu’a un identifiant sans l’extension), `userVerificationOptionalWithCredentialIDList` (niveau 2 : la clé ne révèle ni n’utilise l’identifiant sans vérification de l’utilisateur, à moins que la partie de confiance ne le nomme dans allowCredentials, de sorte que personne détenant la clé ne peut y trouver un identifiant découvrable) ou `userVerificationRequired` (niveau 3 : la clé n’utilise l’identifiant qu’après un code PIN ou une donnée biométrique). Le niveau que signale la clé est enregistré sur la clé d’accès. La plupart des clés d’accès de plateforme et synchronisées ne signalent rien. Omis lors d’un enregistrement, la valeur par défaut intégrée est conservée."
+  },
+  "passkey.FIELDS.enforceCredProtect.label": {
+    "en": "5cc78bfe52150545",
+    "text": "Refuser une clé qui n’applique pas cette protection"
+  },
+  "passkey.FIELDS.enforceCredProtect.what": {
+    "en": "52a07dbeabc876c9",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, le navigateur est prié d’imposer la ligne ci-dessus (enforceCredentialProtectionPolicy), et un enregistrement dont l’authentificateur signale un niveau inférieur à celui que demande la ligne ci-dessus est refusé ; une clé qui ne signale rien est au niveau 1. Nécessite que la ligne ci-dessus soit réglée sur un niveau autre que none. Omis lors d’un enregistrement, la valeur par défaut intégrée est conservée."
+  },
   "passkey.SCHEMA.objectClasses.stsPasskeyPolicy.what": {
     "en": "44bab556bd6240cc",
     "text": "La classe de ce service pour une politique des clés d’accès : le comportement des clés d’accès dans ce domaine. L’entrée est nommée par le PROFIL (`cn=default`)."
@@ -1354,6 +1370,14 @@
   "passkey.SCHEMA.attributes.stsPasskeyDeviceBoundRequired.what": {
     "en": "5098a9645fefe2ff",
     "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, une émission vers une application que couvre ce profil attend que la session d’authentification soit liée à la clé du navigateur, et elle est refusée lorsque le navigateur a ignoré cet enregistrement ou que l’attente s’est écoulée sans liaison. Une session à laquelle l’enregistrement n’a jamais été proposé n’est pas refusée par cette ligne. Refusée tant que authn.deviceBoundSessions est désactivé."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyCredProtect.what": {
+    "en": "64640106a92f3111",
+    "text": "`none` PAR DÉFAUT : un enregistrement ne demande aucune protection des identifiants, et ses options sont ce qu’elles ont toujours été. Sinon, un enregistrement demande à l’authentificateur (CTAP 2.1 section 12.1, l’extension credProtect) de protéger le nouvel identifiant à ce niveau : `userVerificationOptional` (niveau 1, ce qu’a un identifiant sans l’extension), `userVerificationOptionalWithCredentialIDList` (niveau 2 : la clé ne révèle ni n’utilise l’identifiant sans vérification de l’utilisateur, à moins que la partie de confiance ne le nomme dans allowCredentials, de sorte que personne détenant la clé ne peut y trouver un identifiant découvrable) ou `userVerificationRequired` (niveau 3 : la clé n’utilise l’identifiant qu’après un code PIN ou une donnée biométrique). Le niveau que signale la clé est enregistré sur la clé d’accès. La plupart des clés d’accès de plateforme et synchronisées ne signalent rien. Omis lors d’un enregistrement, la valeur par défaut intégrée est conservée."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyEnforceCredProtect.what": {
+    "en": "52a07dbeabc876c9",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, le navigateur est prié d’imposer la ligne ci-dessus (enforceCredentialProtectionPolicy), et un enregistrement dont l’authentificateur signale un niveau inférieur à celui que demande la ligne ci-dessus est refusé ; une clé qui ne signale rien est au niveau 1. Nécessite que la ligne ci-dessus soit réglée sur un niveau autre que none. Omis lors d’un enregistrement, la valeur par défaut intégrée est conservée."
   },
   "passkey.SCHEMA.attributes.stsPasskeyPrecedence.what": {
     "en": "cd02467de702ad24",

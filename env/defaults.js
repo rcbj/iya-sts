@@ -544,6 +544,7 @@ var config = {
     rpName: "IYA STS",                                             // Relying party name
     rpId: "",                                                      // RP ID override
     allowedOrigins: "",                                            // Allowed origins
+    u2fAppIds: "",                                                 // Legacy U2F AppIDs
     algorithms: "ML-DSA-87,ML-DSA-65,ML-DSA-44,EdDSA,ES256,RS256", // Algorithms offered
     insecureAlgorithms: false,                                     // Use insecure algorithms (development only)
     pqcOnly: false,                                                // Request post-quantum algorithms only
