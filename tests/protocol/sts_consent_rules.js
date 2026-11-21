@@ -34,6 +34,9 @@
 // OWNED HERE (local: true): this repository's own sign-in surface.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
@@ -242,7 +245,7 @@ async function signIn(b, location, who) {
 function codeOf(r, state) {
   log.debug("Entering codeOf().");
   const at = String(r.location || "");
-  if (at.indexOf(REDIRECT) !== 0) {
+  if (!urls.isAt(at, REDIRECT)) {
     log.debug("Leaving codeOf(). Not the client.");
     return "";
   }

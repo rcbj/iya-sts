@@ -647,12 +647,24 @@ logs are the only evidence there is.
 
 **THE SERVICE THESE JOBS DRIVE IS TLS, AND THAT COST THE SUITE EXACTLY ONE
 MODULE (2026-08-30).** `tools/trust.js` fetches the mock's certificate once the
-service answers — with verification off, necessarily, since the key is
-regenerated on every start and nothing that ran before it can have an anchor —
-and `run-report.js` hands every protocol job `NODE_EXTRA_CA_CERTS` and
+service answers and `run-report.js` hands every protocol job `NODE_EXTRA_CA_CERTS` and
 `STS_SPKI_PIN`. The second needed no new code at all: `vendored/browser_flags.js`
 has read that variable for months, because the parent project's stacks have been
 https for months.
+
+**THAT FETCH IS VERIFIED TOO SINCE 2026-11-20**, which it was not: the key is
+regenerated on every start, so nothing that ran before the service can hold
+an anchor, and the fetch was `curl -k`. Now it verifies against the system
+roots and any bundle already held (which covers an AWS target, whose
+certificate is public), and failing that reads the Root over the plain-HTTP
+revocation listener's `/pki/ca/service/root.cer` (`PKI_HTTP_PORT`, 8082;
+`server.js` binds it before the main port, and the cluster balancer forwards
+it) and fetches `/tls/server-certificate` VERIFIED against it, chain and host
+name. **The Root read over plain HTTP is trust on first use, exactly as the
+unverified handshake was** — what is gained is that the chain every job is
+handed has been checked against the Root the service publishes and against
+the host name, and that nothing in the suite dials TLS unverified.
+`tests/trust_bootstrap.js` holds it.
 
 **The PEM is written into the run's own report directory**, so the certificate a
 run trusted sits beside that run's logs — when a job fails on a certificate the
@@ -693,12 +705,61 @@ Three things about `refreshTrust()` are decisions rather than mechanics:
 
 **The service-side half of the same day is in `tls/CLAUDE.md`**: a request
 worker was certifying a certificate it does not serve, and the front process was
-not re-issuing the one it does. Everything that PROBES rather than
-tests — `run-report.js`'s own wait,
-`tools/service.js`'s readiness loop, both compose healthchecks — asks with
-`rejectUnauthorized: false`, because the question there is whether the port
-answers and not whether it is trusted. **The JOBS get a real anchor**, which is
-what keeps an assertion about a certificate meaningful.
+not re-issuing the one it does. What PROBES rather than tests —
+`run-report.js`'s own wait, `tools/service.js`'s readiness loop — verifies
+as well since 2026-11-20 (the system roots plus the held bundle; the child's
+Root once its revocation listener answers), and counts a handshake THIS
+client refused as "the port answered", sending nothing over it: the question
+is still whether the port answers. **The container's own healthcheck
+verifies too** (`common/healthcheck_probe.js`, every compose file and the
+ECS task definition): the Root read off its loopback revocation listener,
+the chain and the name checked, a refused certificate unhealthy — except
+that the two compose files pulling the PUBLISHED image fall back to the old
+unverified check on an image that has no probe (1.1.0); the root `CLAUDE.md`
+carries that. The AWS runner's wait loops (`deploy/aws/runner/*.sh`) dial
+through `tools/trust.js`'s `anchorsFor()`.
+
+**AND A JOB THAT DIALS THE SERVICE ITSELF VERIFIES THROUGH
+`tools/service_trust.js` (2026-11-20)**, never with `rejectUnauthorized:
+false`. `fetch()` reads `NODE_EXTRA_CA_CERTS` on its own; a raw
+`tls.connect()`, `https.request()` or `http2.connect()` — the ones that need
+an ALPN list, a TLS version, a client certificate or the socket — passes
+`ca: serviceTrust.trustedCa()` (the default roots plus the bundle), so chain
+AND host name are checked. About 140 of them had verification off until
+2026-11-20 (37 CodeQL counted, the rest dismissed or never flagged); one is
+left, argued in its comment: the peer's GNAP resource server
+(`peer/peer.js`), whose clients' certificates are self-signed by design
+(RFC 9635 binds a token to a key, not an issuer) and checked in its handler.
+A job's database connection verifies too: postgres against `sts-db-ca`
+(`STS_TEST_PERSISTENCE_DB_CA`), MariaDB against the certificate the
+`mariadb-tls` one-shot publishes without its key in `sts-mariadb-ca`
+(`STS_TEST_ATTRIBUTE_MYSQL_CA`), and a hand run's `STS_TEST_POSTGRES_URL` /
+`STS_TEST_MARIADB_URL` against `STS_TEST_POSTGRES_CA` /
+`STS_TEST_MARIADB_CA` or the default store.
+
+**A URL IS COMPARED PARSED, NEVER AS A SUBSTRING (2026-11-20).**
+`protocol/url_match.js` is the one reading: `namesAddress()` /
+`namesOrigin()` for a text that should name an address, `isAt()` and
+`isUnder()` for a `Location` or a link, `holds()` for a list such as `aud`,
+and `sameOrigin()` / `hostOf()`. `x.indexOf("https://rp.example/cb")` is true
+of `https://rp.example/cb.evil.test/`, and about 500 checks asked it. What
+stays a substring on purpose: a scheme prefix, a claim that NO URL or host
+appears at all, and identifiers that are not http(s) URLs (URNs, algorithm
+URIs). A `node -e` child requires `url_match.js` itself. The rest of the module: `roots()` and
+`serviceRoot(base)` are the service Root, which anchors the listener's chain
+and every signing key's and client certificate's, so a job's OWN server that
+asks the service for a certificate (the FAPI partner in
+`protocol/oidc_partner_kit.js`) verifies it against that; `isUntrusted(e)`
+lets a job whose claim is a REFUSED handshake fail on a stale anchor instead
+of passing on it (`sts_listener_tls_policy.js`); `refresh(base)` follows a
+rotation inside one job; and `useBundle(path)` is how the RUNNER's own calls
+(a realm removed, a cluster restart) verify, since node never read a bundle
+for the runner's process. **No bundle on an https target is an error, never
+an unverified fall back.** An in-process test's own listener verifies against
+its own CA (`protocol/outbound_test_ca.js`) or the process's
+`trustAnchorPems()`, and one built as the main port takes
+`tlsServer.clientAuthOptions('optional')`, the function `server.js` builds the
+main port with.
 
 **THE STACK'S OWN DECISIONS ARE ARGUED WHERE THEY LIVE**, not here. The
 host-run stack's — why it was its own compose project on a free host port
@@ -1333,6 +1394,9 @@ Three rules that are not optional here:
 | `tls_resumed_chain.js` | **A RESUMED TLS SESSION STILL HAS A CHAIN TO WALK** (2026-09-21). Node hands a server a resumed session's LEAF alone — no `issuerCertificate` — while `socket.authorized` stays true, so `common/revocation_status.js` found the leaf's issuer "neither held here nor in the chain that was presented" and product mode's hard-fail refused a certificate that had verified; the remote XACML PEP resumes on every reconnect, so in `single-node` it never registered and the XACML jobs failed the same way in `cluster`. On a real TLS 1.2 listener with a client that resumes: the control (the resumed session really has no chain), `fromSocket()` handing it the chain its full handshake showed and the walk then reaching the anchor, an UNVERIFIED leaf remembered for nobody, and — as source — `request_pool.js`'s `peerOf()` reading the chain through `fromSocket()` rather than a walk of its own. Two mutants (no hand-back; remembering unverified chains), both caught |
 | `main_port_pooling.js` | **THE MAIN PORT'S SESSIONS RESUME ON ANY NODE, AND THE CHAIN FOLLOWS THEM** (#406, 2026-10-02). The four settings and their defaults; two listeners with the main port's posture over one `SessionTickets` store: a session from A does not resume on B with no shared key and does with one, and B hands the resumed leaf the chain A verified; a session resumed on B BEFORE its chain arrived waits for it (`awaitResumedChain()`) and carries it once it lands; one that never arrives stops at `tls.resumedChainWaitMs`, and 0 does not wait; and as source, the main listener built from its own policy (`policyFor('main')`, which carries its session lifetime), its pooling registered (`registerHttpListener()`), its shared key, and the wait mounted above the request pool. The over-HTTP half is `tests/protocol/sts_main_port_pooling.js` |
 | `truststore_admin.js` | **THE CLIENT-CERTIFICATE TRUSTSTORE'S GATED DOORS** (2026-09-12) — `/admin/tls/trust` and `/admin-api/tls/trust/{add,remove}`, the runtime door product mode did not have. Five claims: the primitives against the real `tls/tls_server.js` in THIS process (a strict add refused WHOLE on one unreadable block, a duplicate counted and not added, a remove under either fingerprint spelling, a fingerprint not held removing nothing), with every anchor it adds removed in a `finally` and the truststore asserted identical afterwards, because the array is process-wide; `admin.setTruststore()` refusing a partial object; the actions and the view through that slot, the house refusal sentence, paging and the audit row; the front-process pin in `NEVER_DISPATCHED`, realm prefix and query string included and `/admin/tls` and `/admin-api/tlsx` excluded; and product mode's 403 naming the new doors. **Claims 2, 3 and 5 run in a CHILD PROCESS**, because requiring `admin-ui/admin.ts` registers the whole console on the shared app in `run.js`'s one process. Ten mutants, all caught, **two only on the second round**: a remove that never called `applyAnchors()` survived a check on `clientTruststoreOptions().ca`, which rebuilds from the array on every call — replaced by a REAL HANDSHAKE on a registered listener — and a refusal that lost the console path from its sentence survived a search of the whole JSON body, which carries that path in a member of its own |
+| `healthcheck_probe.js` | **THE CONTAINER'S HEALTHCHECK VERIFIES THE CERTIFICATE** (2026-11-20), `common/healthcheck_probe.js` spawned as a container runs it, against a loopback revocation listener serving a Root and a main port under a leaf of it: healthy when the chain reaches that Root under the name checked; unhealthy under a stranger's CA (saying the certificate), under another name, with no revocation listener and no other anchor (saying no Root was read); `STS_HEALTHCHECK_CA_FILE` an anchor of its own; the name the first of `STS_TLS_HOSTNAMES`, trimmed, `STS_HEALTHCHECK_NAME` over it; a 503 and a closed port unhealthy; `STS_HTTPS=false` plain http; as source, every compose healthcheck and the ECS task definition run it, an unverified check surviving only after the test for the file. One mutant (verification off in the probe): four red |
+| `trust_bootstrap.js` | **HOW A RUN LEARNS THE SERVICE'S CHAIN WITHOUT DIALLING IT UNVERIFIED** (2026-11-20), `tools/trust.js` over real handshakes: with no anchor held, the Root read off a plain-HTTP revocation listener and the chain fetched verified against it; a listener publishing another Root is no anchor; no revocation listener fails naming it and the two variables; with the bundle held the revocation listener is never asked; `anchorsFor()` |
+| `service_trust.js` | **THE TRUSTSTORE A JOB VERIFIES THE SERVICE AGAINST** (2026-11-20), `tools/service_trust.js` over real handshakes on loopback listeners under a CA of its own: a listener under the bundle's Root answered, a stranger's refused and `isUntrusted()`, the right chain under the wrong name refused; no bundle an error naming both variables, an empty one an error naming it; `useBundle()` over `NODE_EXTRA_CA_CERTS` over `STS_TRUST_BUNDLE`, and the file re-read at every call; `roots()` the self-signed certificate only, `trustedCa()` the default roots plus the bundle; `refresh()` following a rotation over a verified connection and refusing a server the held chain does not cover; `serviceRoot()` reading the DER Root; `isUntrusted()` against the server's own alerts. One mutant (verification off in `tlsOptions()`): six red |
 | `trust_anchor_cleanup.js` | **A JOB'S TRUST ANCHORS ARE RECORDED BEFORE THEY ARE POSTED, AND REMOVED WITH "NOT HELD" AS DONE (#1307)** — `tests/tools/pep-credential.js`'s cleanup against a FAKE `send` installed through `useSender()`, so every answer a service could give is reachable: `trustRecorded()` has the anchor in the job's list when the add goes out and keeps it after the add times out, records once, and `recordAnchor()` throws on no list; `removeAnchor()` names the SHA-256 fingerprint at the gated door, takes the REAL `tls/tls_server.js` "holds no anchor" sentence in a 400 as done for an UNCONFIRMED anchor, retries it for a CONFIRMED one (five tries, then a failure saying so; a node catching up on the third try is done), and takes any other 400, a 403, a timeout or a non-certificate as a failure; `forgetAnchors()` one remove per anchor in order, a failure not stopping the rest; `settleAnchors()`'s four outcomes and a rejecting sender, a failing job keeping its own error; `trustRecorded()` and `confirmAnchor()` confirming; `useSender(null)` restoring the real `send()`. Eight mutants, all caught |
 | `pki_hierarchy.js` | **ONE ROOT FOR THE SERVICE, AN INTERMEDIATE PER SCOPE, AN ISSUING CA PER USE CASE** (2026-09-11), and four claims no running service can be asked. **THE BOUNDARY MOVED DOWN A TIER**: until that date every realm had a Root of its own, so "does this chain to our Root" WAS the realm boundary — one Root makes that test true of every certificate this service has ever issued, so it silently stopped being one, and what replaced it is that the path must pass through THIS realm's own Intermediate. Over HTTP the two are indistinguishable: both refuse the foreign certificate and only one of them refuses it for a reason that survives the next realm being created. **THE STARTUP ORDER** — the hierarchy must exist before a key is certified and before anything binds, and the only way to assert an ordering is to run it. **WHAT IS NOT A LEAF AND WHY** — this section is empty of families now: **the eleven post-quantum keys were the last, until 2026-09-13**, when they came UNDER the realm's JOSE Issuing CA and `tests/pq_key_certification.js` took the positive claim; **the SPIFFE authority was the second until 2026-09-11**, when it came UNDER the Root. What this file keeps of that section is the narrower claim that no SVID is in the certificate register, because `issueUnder()` records nothing, and `tests/spiffe_pki.js` asserts the chain that replaced the absence. **THE FOUR EDITING ACTS ARE FOUR DIFFERENT THINGS** — a renewal must leave every key verifying and a reissue must not, which is one assertion apart and a world apart. Eight mutants, all caught; **one survived the first round and the fixture was the bug**, which is this directory's standing lesson: the key-set section used a realm id nobody had created, so `stsKeysFor.of()` handed it the DEFAULT realm's keys and certificates were being written into a row those keys never read |
 | `pqc_support.js` | **THE POST-QUANTUM ICON ON `/admin/pki` AND `/admin/keys`** (2026-09-13): the classifier and the mark. **Every algorithm in every spelling** — each of `pq_jose.PQ_ALGS`, and each of the vendored registry's signature and KEM ids as its id, its lower-case key-material spelling and its OID, plus node's key types — comes out with the right kind (`pq`, `composite`, `kem`), and twenty-five classical spellings come out unmarked; a table, because a page shows only the keys it holds. **A certificate is classified by its KEY, not its signature**: an ML-DSA key under an RSA Issuing CA is marked, an EC key under an ML-DSA issuer is not, and an EC key whose certificate carries an alternative ML-DSA-65 key is a `hybrid` — the last two are certificates this service does not issue by itself, so they are built here. **The mark, in a child process** (the renderer requires the console): nothing for a classical key, one labelled image per kind with the sentence as `title` and `aria-label`, the hybrid dashed, no script or image request, a label escaped, and a legend drawn with the renderer itself. Three mutants — classify by the signature, ignore the alternative key, the hybrid drawn like the rest — all caught |

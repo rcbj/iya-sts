@@ -496,8 +496,15 @@ function driverFor(url, engine) {
   log.debug("Entering driverFor(). " + engine);
   const postgres = require('../persistence/persistence_postgres');
   log.debug("Leaving driverFor().");
+  // VERIFIED, chain and host name, against the CA file the engine's
+  // variable names (STS_TEST_POSTGRES_CA, STS_TEST_MARIADB_CA) or, with
+  // none, node's default store and NODE_EXTRA_CA_CERTS — as the admin
+  // connection below is.
+  const caFile = process.env[engine === 'mariadb' ? 'STS_TEST_MARIADB_CA'
+    : 'STS_TEST_POSTGRES_CA'] || '';
   return postgres.create({
-    url: url, engine: engine, verifyTls: false,
+    url: url, engine: engine, verifyTls: true,
+    tlsCa: caFile ? require('fs').readFileSync(caFile, 'utf8') : '',
     sqlDialect: engine === 'postgres' ? 'portable' : undefined,
     log: require('bunyan').createLogger({ name: 'minted_portable_driver',
       level: process.env.LOG_LEVEL || 'warn' })
@@ -904,8 +911,19 @@ async function againstPostgres(t) {
   t.log.info('=== B. the driver, portable, against a real PostgreSQL ===');
   const knexStore = require('../persistence/knex_store');
   const schema = 'minted_portable_' + process.pid;
+  // VERIFIED, through the driver's own reading of a connection string
+  // (`dialOptions()`): the chain and the host name, against the CA file
+  // STS_TEST_POSTGRES_CA names (`tests/bulk_import.js`'s variable) or, with
+  // none, node's default store and NODE_EXTRA_CA_CERTS. `sslmode=verify-ca`
+  // in the URL leaves the host name out, as libpq's does.
+  const caFile = process.env.STS_TEST_POSTGRES_CA || '';
+  const dial = require('../persistence/persistence_postgres').dialOptions(
+    url, true, caFile ? fs.readFileSync(caFile, 'utf8') : '');
+  if (dial.refused) {
+    throw new Error('STS_TEST_POSTGRES_URL is not dialled: ' + dial.refused);
+  }
   const admin = knexStore.openConnection({
-    connectionString: url, ssl: { rejectUnauthorized: false } });
+    connectionString: dial.connectionString, ssl: dial.ssl });
   await admin.connect();
   await admin.query('CREATE SCHEMA ' + schema);
   const scoped = url + (url.indexOf('?') >= 0 ? '&' : '?') +

@@ -51,9 +51,13 @@
 // OWNED HERE (local: true): this repository's own HTTP spine.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const https = require("https");
 const names = require("./random_username.js");
+const serviceTrust = require("../tools/service_trust.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -122,7 +126,7 @@ function rawRequest(url, method, headers, body) {
   log.debug("Leaving rawRequest().");
   return new Promise(function (resolve, reject) {
     const req = https.request(url, { method: method, headers: headers,
-                                     rejectUnauthorized: false },
+                                     ca: serviceTrust.trustedCa() },
                               function (res) {
       let raw = "";
       res.on("data", function (c) {
@@ -310,7 +314,7 @@ async function sectionWrites() {
   const afterAdd = await corsOf(id);
   check("an add is accepted and stored normalised", function () {
     assert.strictEqual(added.status, 200, added.raw.slice(0, 300));
-    assert.ok(afterAdd.indexOf("http://localhost:5173") >= 0 &&
+    assert.ok(urls.holds(afterAdd, "http://localhost:5173") &&
               afterAdd.indexOf("HTTP://LocalHost:5173/") < 0,
               JSON.stringify(afterAdd));
   });

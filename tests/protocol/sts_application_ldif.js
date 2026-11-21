@@ -58,6 +58,7 @@ const crypto = require("crypto");
 const ldapjs = require("ldapjs");
 const names = require("./random_username.js");
 const tokens = require("../tools/admin-api-token.js");
+const serviceTrust = require("../tools/service_trust.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -443,7 +444,7 @@ async function test() {
     const tls = require("tls");
     const u = new URL(base);
     const socket = tls.connect({ host: u.hostname, port: Number(u.port || 443),
-      servername: u.hostname, rejectUnauthorized: false }, function () {
+      servername: u.hostname, ca: serviceTrust.trustedCa() }, function () {
       const der = socket.getPeerCertificate().raw;
       socket.end();
       resolve("-----BEGIN CERTIFICATE-----\n" +

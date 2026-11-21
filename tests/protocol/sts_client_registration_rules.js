@@ -43,6 +43,9 @@
 // STS_TEST_REMOVE_REALMS=1.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const names = require("./random_username.js");
@@ -566,7 +569,7 @@ async function statements() {
   check("S7. the publisher's view reports its declared issuer, its usable " +
         "key and the issued statement verifying now; a client's view " +
         "reports how a statement let it in", function () {
-          assert.ok((section.declaredIssuers || []).indexOf(ISS) >= 0,
+          assert.ok(urls.holds(section.declaredIssuers, ISS),
                     pubView.raw.slice(0, 600));
           assert.strictEqual(section.usableKeys, 1, JSON.stringify(section));
           assert.ok(section.issued && section.issued.verifies === true,

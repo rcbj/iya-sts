@@ -60,6 +60,7 @@ const assert = require("assert");
 const https = require("https");
 const K = require("./oauth_wire_kit.js").kit("sts_authzen_token_exchange");
 const credentials = require("../tools/pep-credential.js");
+const serviceTrust = require("../tools/service_trust.js");
 
 const log = K.log;
 const check = K.check;
@@ -123,7 +124,7 @@ function pep(method, path, payload) {
     const request = https.request({
       host: target.hostname, port: target.port || 443,
       path: target.pathname + target.search, method: method,
-      rejectUnauthorized: false, cert: caller.certPem, key: caller.keyPem,
+      ca: serviceTrust.trustedCa(), cert: caller.certPem, key: caller.keyPem,
       headers: data ? { "Content-Type": "application/json",
         "Content-Length": Buffer.byteLength(data) } : {}
     }, function (response) {

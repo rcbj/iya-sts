@@ -51,6 +51,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const childProcess = require('child_process');
 const https = require('https');
 const nodeCrypto = require('crypto');
@@ -298,9 +301,8 @@ async function childBody() {
   CA_PEM.value = serverCa.certPem;
   const listener = https.createServer(Object.assign({
     cert: serverLeaf.cert, key: serverLeaf.key,
-    ca: tls.clientTruststoreOptions().ca,
-    requestCert: true, rejectUnauthorized: false
-  }, tls.protocolOptions()), app);
+    ca: tls.clientTruststoreOptions().ca
+  }, tls.clientAuthOptions('optional'), tls.protocolOptions()), app);
   tls.trustClientCertificatesOn(listener,
     'the authzen_access_request listener', function () {
       log.debug("Entering the listener's certificateOf().");
@@ -354,7 +356,7 @@ async function childBody() {
     claims = null;
   }
   t.check(!!claims && claims.iss === own &&
-          [].concat(claims.aud).indexOf(ar.endpoint) >= 0 &&
+          urls.holds(claims.aud, ar.endpoint) &&
           claims.resource && claims.resource.id === 'doc-1' &&
           claims.denial_expires_at === ar.expires_at,
           'R2. the binding_token is the realm\'s JWS over the denied tuple, ' +

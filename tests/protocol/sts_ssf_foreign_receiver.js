@@ -36,7 +36,7 @@ const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
 const fs = require("fs");
 const path = require("path");
-const tls = require("tls");
+const serviceTrust = require("../tools/service_trust.js");
 const testCa = require("./outbound_test_ca.js");
 const ssfRoles = require("./ssf_roles.js");
 
@@ -317,25 +317,11 @@ async function trustThisService(product) {
   log.debug("Entering trustThisService().");
   const where = testCa.caLocation();
   if (where) {
-    const target = new URL(root);
-    const rootPem = await new Promise(function (resolve, reject) {
-      const socket = tls.connect({ host: target.hostname,
-        port: Number(target.port || 443), servername: target.hostname,
-        rejectUnauthorized: false }, function () {
-          let cert = socket.getPeerCertificate(true);
-          while (cert && cert.issuerCertificate &&
-                 cert.issuerCertificate !== cert &&
-                 cert.issuerCertificate.fingerprint256 !==
-                   cert.fingerprint256) {
-            cert = cert.issuerCertificate;
-          }
-          socket.end();
-          resolve("-----BEGIN CERTIFICATE-----\n" +
-            cert.raw.toString("base64").match(/.{1,64}/g).join("\n") +
-            "\n-----END CERTIFICATE-----\n");
-        });
-      socket.on("error", reject);
-    });
+    // The Root from `/pki/ca/service/root.cer`, fetched VERIFIED against
+    // the chain the runner handed this job (tools/service_trust.js) —
+    // the same certificate the handshake's chain ends in, which this
+    // read off a handshake it did not verify until 2026-11-20.
+    const rootPem = await serviceTrust.serviceRoot(root);
     const name = "ssf-foreign-root-" + TAG + ".crt";
     fs.mkdirSync(where.dir, { recursive: true });
     fs.writeFileSync(path.join(where.dir, name), rootPem, { mode: 0o644 });

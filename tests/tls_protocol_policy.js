@@ -97,14 +97,20 @@ function issuedBy(dir, name, keyArgs, ca) {
            cert: fs.readFileSync(cert, 'utf8') + ca.cert };
 }
 
+// The certificate both servers below present — self-signed for
+// 127.0.0.1 — which every client verifies them against; set in section B.
+const SERVER_ANCHOR = { pem: '' };
+
 // A handshake from a node client with the options given; resolves with
-// what happened rather than rejecting.
+// what happened rather than rejecting. VERIFIED against SERVER_ANCHOR: the
+// policy under test is the listener's, and a refusal must be the policy's —
+// a client that accepted any server would pass a refusal it had caused.
 function handshake(port, options) {
   log.debug("Entering handshake().");
   log.debug("Leaving handshake().");
   return new Promise(function (resolve) {
     const socket = tls.connect(Object.assign({ host: '127.0.0.1', port: port,
-      rejectUnauthorized: false }, options), function () {
+      ca: [SERVER_ANCHOR.pem] }, options), function () {
       resolve({ ok: true, protocol: socket.getProtocol(), socket: socket });
     });
     socket.on('error', function (e) {
@@ -142,7 +148,9 @@ async function run(t) {
             'carries all of it');
 
     t.log.info('=== B. real handshakes against that policy ===');
-    const rsa = selfSigned(scratch, 'server', ['-newkey', 'rsa:2048']);
+    const rsa = selfSigned(scratch, 'server', ['-newkey', 'rsa:2048',
+      '-addext', 'subjectAltName=IP:127.0.0.1']);
+    SERVER_ANCHOR.pem = rsa.cert;
     // TLS 1.2 ON for this listener: every listener is TLS 1.3 only by
     // default since #429, and the renegotiation refusal below is a TLS 1.2
     // property. The rest of the policy is the default's.
@@ -210,12 +218,16 @@ async function run(t) {
       'ec_paramgen_curve:P-256']);
     // The server in a child: the handshake lets any curve through (OpenSSL's
     // default signature list), and the only thing between the certificate
-    // and getPeerCertificate() is the guard.
+    // and getPeerCertificate() is the guard. It asks for a client
+    // certificate as the main port does, `clientAuthOptions('optional')` —
+    // asked for and not verified at the handshake, so the guard is the one
+    // thing that can stop a self-signed client certificate here.
     const program = "const tls=require('tls'),fs=require('fs');" +
       "const g=require('./tls/tls_server');" +
-      "const s=tls.createServer({key:fs.readFileSync(process.argv[1])," +
-      "cert:fs.readFileSync(process.argv[2]),requestCert:true," +
-      "rejectUnauthorized:false},function(c){" +
+      "const s=tls.createServer(Object.assign(" +
+      "{key:fs.readFileSync(process.argv[1])," +
+      "cert:fs.readFileSync(process.argv[2])}," +
+      "g.clientAuthOptions('optional')),function(c){" +
       "const p=c.getPeerCertificate(true);" +
       "console.log('READ '+(p&&p.subject?p.subject.CN:'none')+' '+" +
       "(p&&p.issuerCertificate&&p.issuerCertificate.subject?" +

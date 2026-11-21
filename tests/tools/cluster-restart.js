@@ -39,6 +39,7 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const http = require('http');
+const serviceTrust = require('./service_trust');
 
 const log = require('bunyan').createLogger({ name: 'cluster-restart',
   level: process.env.LOG_LEVEL || 'info' });
@@ -74,9 +75,20 @@ function getJson(url, token) {
   return new Promise(function (resolve) {
     const u = new URL(url);
     const mod = u.protocol === 'http:' ? http : https;
+    // Verified against the chain the runner fetched (useBundle() in
+    // run-report.js): this carries the run's management-API token.
+    let ca;
+    try {
+      ca = u.protocol === 'http:' ? undefined : serviceTrust.trustedCa();
+    } catch (e) {
+      log.debug('Caught in getJson(): ' + ((e && e.message) || e));
+      log.debug('Leaving getJson(). No truststore.');
+      resolve({ status: 0, json: null });
+      return;
+    }
     const req = mod.request({
       hostname: u.hostname, port: u.port, path: u.pathname + u.search,
-      method: 'GET', agent: false, rejectUnauthorized: false,
+      method: 'GET', agent: false, ca: ca,
       timeout: 30000,
       headers: { authorization: 'Bearer ' + token }
     }, function (res) {

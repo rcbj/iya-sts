@@ -34,6 +34,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const nodeCrypto = require('crypto');
 const kit = require('./tools/saml_signing_kit');
 
@@ -63,7 +66,29 @@ function hiddenField(html, name) {
   const m = new RegExp('name="' + name + '" value="([^"]*)"').exec(
     String(html || ''));
   log.debug("Leaving hiddenField().");
-  return m ? m[1].replace(/&amp;/g, '&').replace(/&quot;/g, '"') : '';
+  return m ? decodeEntities(m[1]) : '';
+}
+
+// A field's value as the browser reads it: every character reference
+// decoded in ONE pass, so `&amp;quot;` is the text `&quot;` and never a
+// quote. Decoding `&amp;` in one replace and `&quot;` in another decoded
+// whichever came second twice.
+function decodeEntities(text) {
+  log.debug("Entering decodeEntities().");
+  const NAMED = { amp: "&", quot: '"', apos: "'", lt: "<", gt: ">" };
+  const out = String(text).replace(/&(#x[0-9a-f]+|#[0-9]+|[a-z]+);/gi,
+    function (whole, name) {
+      if (name[0] === "#") {
+        const code = name[1] === "x" || name[1] === "X"
+          ? parseInt(name.slice(2), 16) : parseInt(name.slice(1), 10);
+        return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code)
+                                            : whole;
+      }
+      const named = NAMED[name.toLowerCase()];
+      return named === undefined ? whole : named;
+    });
+  log.debug("Leaving decodeEntities().");
+  return out;
 }
 
 async function run(t) {
@@ -126,7 +151,7 @@ async function run(t) {
       (/[?&]SAMLart=([^&]+)/.exec(art.location || '') || [])[1] || '');
     const raw = Buffer.from(sAMLart, 'base64');
     t.check(art.statusCode === 303 &&
-            String(art.location).indexOf(artifact) === 0 &&
+            urls.isAt(art.location, artifact) &&
             /[?&]TARGET=/.test(art.location) && raw.length === 42 &&
             raw.readUInt16BE(0) === 1,
             label + ': the shire registered on artifact-01 is answered on ' +
@@ -216,7 +241,7 @@ async function run(t) {
         'profile', JSON.stringify(endpoints));
     const acs = [].concat(applications.get(rp).fields
       .samlAssertionConsumerService || []).map(String);
-    t.check(acs.indexOf(unbound) >= 0 && acs.indexOf(artifact) >= 0,
+    t.check(urls.holds(acs, unbound) && urls.holds(acs, artifact),
             'A3. the consumer registered by hand is kept beside the ' +
             'document\'s', JSON.stringify(acs));
     t.check(String(applications.get(rp).fields.samlSpMetadata || '') ===

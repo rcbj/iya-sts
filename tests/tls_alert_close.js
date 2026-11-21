@@ -55,7 +55,7 @@ const tls = require('tls');
 
 const AlertClose = require('../tls/alert_close');
 const ParserRefusal = require('../common/parser_refusal');
-const pepCredential = require('./tools/pep-credential');
+const testCa = require('./protocol/outbound_test_ca');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -122,7 +122,8 @@ function listener(pki, alertOptions) {
   log.debug("Leaving listener().");
   return new Promise(function (resolve) {
     server.listen(0, '127.0.0.1', function () {
-      resolve({ server: server, port: server.address().port, seen: seen });
+      resolve({ server: server, port: server.address().port, seen: seen,
+                anchorPem: pki.anchorPem });
     });
   });
 }
@@ -164,7 +165,7 @@ function probe(where, options) {
     const raw = net.connect(where.port, '127.0.0.1', function () {
       result.port = raw.localPort;
       const client = tls.connect({
-        socket: raw, rejectUnauthorized: false,
+        socket: raw, ca: [where.anchorPem], host: '127.0.0.1',
         minVersion: options.version, maxVersion: options.version,
         ALPNProtocols: options.alpn ? [options.alpn] : undefined
       }, function () {
@@ -217,9 +218,10 @@ function clientHello() {
       });
     });
     catcher.listen(0, '127.0.0.1', function () {
+      // The catcher answers nothing, so no certificate is ever seen; the
+      // client verifies as every client here does all the same.
       const c = tls.connect({ port: catcher.address().port,
-                              host: '127.0.0.1', maxVersion: 'TLSv1.2',
-                              rejectUnauthorized: false });
+                              host: '127.0.0.1', maxVersion: 'TLSv1.2' });
       c.on('error', function (e) {
         log.debug("Caught in clientHello(): " + ((e && e.message) || e));
       });
@@ -376,8 +378,12 @@ function held(r) {
 
 async function run(t) {
   log.debug("Entering run().");
-  const pki = await pepCredential.mint({ subject: 'CN=127.0.0.1,O=tests',
-                                         crlBase: false });
+  // A listener certificate for 127.0.0.1 under a CA of the test's own,
+  // which every client below verifies the listener against: nothing here
+  // is about the certificate, and nothing here dials unverified.
+  const ca = await testCa.makeCa();
+  const leaf = await testCa.listenerCertificate(ca, '127.0.0.1');
+  const pki = { keyPem: leaf.key, certPem: leaf.cert, anchorPem: ca.certPem };
 
   // 1. The control.
   const plain = await listener(pki, null);
@@ -468,7 +474,7 @@ async function run(t) {
             JSON.stringify(cuts));
     const body = await new Promise(function (resolve, reject) {
       https.get({ host: '127.0.0.1', port: quiet.port, path: '/',
-                  rejectUnauthorized: false, agent: false }, function (res) {
+                  ca: [quiet.anchorPem], agent: false }, function (res) {
         let text = '';
         res.on('data', function (d) {
           text += d;

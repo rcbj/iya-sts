@@ -38,6 +38,9 @@
 // management API.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
@@ -201,7 +204,7 @@ async function authorizeError(clientId, params) {
     const links = page.match(/href="([^"]+)"/g) || [];
     for (let i = 0; i < links.length && !location; i++) {
       const href = links[i].slice(6, -1).replace(/&amp;/g, "&");
-      if (href.indexOf(REDIRECT) === 0) {
+      if (urls.isAt(href, REDIRECT)) {
         location = href;
       }
     }
@@ -326,7 +329,7 @@ async function test() {
         function () {
     [noAction, createWithId, unknown, otherClients, publicClient]
       .forEach(function (r) {
-        assert.ok(r.location.indexOf(REDIRECT) === 0, r.location);
+        assert.ok(urls.isAt(r.location, REDIRECT), r.location);
       });
     assert.strictEqual(noAction.error, "invalid_request");
     assert.strictEqual(createWithId.error, "invalid_request");

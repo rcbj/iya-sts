@@ -66,6 +66,9 @@ const SCRIPT_BEFORE_561 =
 function childMain() {
   /* eslint-disable no-console */
   const ROOT_DIR = process.env.MAP_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT_DIR + '/tests/protocol/url_match.js');
   const OUT = process.env.MAP_OUT;
   const BEFORE = process.env.MAP_SCRIPT_SHA;
   const http = require('http');
@@ -200,7 +203,7 @@ function childMain() {
           continue;
         }
         if (r.status >= 300 && r.status < 400 && to) {
-          if (to.indexOf('http') === 0 && to.indexOf(ORIGIN) !== 0) {
+          if (to.indexOf('http') === 0 && !urls.isUnder(to, ORIGIN)) {
             break;
           }
           r = await get(jar, to);
@@ -420,7 +423,7 @@ function childMain() {
     const paramsOf = function (res) {
       const loc = String((res && res.headers && res.headers.location) || '');
       const at = loc.indexOf('?');
-      return loc.indexOf(REDIRECT) === 0 && at > 0
+      return urls.isAt(loc, REDIRECT) && at > 0
         ? new URLSearchParams(loc.slice(at + 1)) : new URLSearchParams();
     };
     f = await drive(jar, authorize({ login_hint: ALICE }), '');

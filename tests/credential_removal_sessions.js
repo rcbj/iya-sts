@@ -60,6 +60,9 @@ const ROOT = path.join(__dirname, '..');
 
 function childMain() {
   const ROOT = process.env.CRS_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT + '/tests/protocol/url_match.js');
   const OUT = process.env.CRS_OUT;
   const http = require('http');
   const nodeCrypto = require('crypto');
@@ -288,7 +291,7 @@ function childMain() {
       return { verifier: verifier, start: start };
     };
     const codeIn = function (location) {
-      return location && String(location).indexOf(REDIRECT) === 0
+      return location && urls.isAt(location, REDIRECT)
         ? new URL(String(location)).searchParams.get('code') : null;
     };
     const redeem = async function (b, code, verifier) {

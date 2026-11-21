@@ -62,6 +62,9 @@
 // and section 7 run everywhere.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
@@ -539,8 +542,9 @@ async function sections() {
   const resetLink = linkIn(got.message);
   check("3. the known account's verified address was sent a reset link",
         function () {
-    assert.ok(resetLink.indexOf(base + "/realm/" + REALM +
-                                "/portal/reset-password?") === 0, resetLink);
+    assert.ok(urls.isAt(resetLink, base + "/realm/" + REALM +
+                        "/portal/reset-password") &&
+              new URL(resetLink).search !== "", resetLink);
   });
   const linkUser = linkParam(resetLink, "user");
   const linkToken = linkParam(resetLink, "token");

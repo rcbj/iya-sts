@@ -162,6 +162,17 @@ function values(v) {
   return [].concat(v === undefined || v === null ? [] : v).map(String);
 }
 
+// Whether a list holds a value, compared whole: an origin is one element
+// of `appCorsOrigin`, never a part of one.
+function holds(list, value) {
+  log.debug("Entering holds().");
+  const found = list.some(function (one) {
+    return one === value;
+  });
+  log.debug("Leaving holds(). " + found);
+  return found;
+}
+
 function refusedWith(r, pattern) {
   log.debug("Entering refusedWith().");
   const text = ((r.body && r.body.errors) || []).join(" ");
@@ -294,17 +305,18 @@ async function cors(newForm) {
     "removed an origin");
   const after = values((await detail(ID)).fields.appCorsOrigin);
   check("4a. the Add box adds one origin, normalised", function () {
-    assert.ok(after.indexOf("https://third.corsfield.example") >= 0,
+    // `after` is the list of origins: each is compared whole.
+    assert.ok(holds(after, "https://third.corsfield.example"),
               JSON.stringify(after));
   });
   check("4b. and refuses a wildcard, which is not an origin", function () {
     assert.ok(refusedWith(wild, /appCorsOrigin/), wild.raw.slice(0, 300));
-    assert.ok(after.indexOf("https://*.corsfield.example") < 0);
+    assert.ok(!holds(after, "https://*.corsfield.example"));
   });
   check("4c. a row's Remove takes that one origin off and leaves the " +
         "others", function () {
-    assert.ok(after.indexOf("http://localhost:5173") < 0 &&
-              after.indexOf("https://app.corsfield.example") >= 0,
+    assert.ok(!holds(after, "http://localhost:5173") &&
+              holds(after, "https://app.corsfield.example"),
               JSON.stringify(after));
   });
 

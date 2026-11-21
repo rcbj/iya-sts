@@ -56,6 +56,9 @@
 // Deleted rather than set, for the reason config_realm_layer.js gives.
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const config = require('../common/config');
 // For the derivation a SECOND process of this service would make — see the
 // token assertions in section B.
@@ -138,17 +141,17 @@ function run(t) {
           'has its own agreement, its own queue and its own credential');
 
   const caepOn = events.CAEP_EVENT_URIS.every(function (uri) {
-    return consoleStream.events_delivered.indexOf(uri) >= 0;
+    return urls.holds(consoleStream.events_delivered, uri);
   });
   const riscOn = events.RISC_EVENT_URIS.every(function (uri) {
-    return consoleStream.events_delivered.indexOf(uri) >= 0;
+    return urls.holds(consoleStream.events_delivered, uri);
   });
   t.check(caepOn, 'every CAEP event type is delivered on it — all ' +
           events.CAEP_EVENT_URIS.length);
   t.check(riscOn, 'and every RISC event type — all ' +
           events.RISC_EVENT_URIS.length);
   const ssfOn = events.SSF_EVENTS.every(function (row) {
-    return consoleStream.events_delivered.indexOf(row.uri) >= 0;
+    return urls.holds(consoleStream.events_delivered, row.uri);
   });
   t.check(ssfOn,
           'AND SSF\'s OWN TWO, which is not scope that crept in: a ' +

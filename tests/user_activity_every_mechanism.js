@@ -50,6 +50,9 @@ const ROOT = path.join(__dirname, '..');
 function childMain() {
   /* eslint-disable no-console */
   const ROOT_DIR = process.env.UAM_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT_DIR + '/tests/protocol/url_match.js');
   const OUT = process.env.UAM_OUT;
   const https = require('https');
   const zlib = require('zlib');
@@ -106,7 +109,11 @@ function childMain() {
     const listener = https.createServer(Object.assign({
       cert: serverLeaf.cert, key: serverLeaf.key,
       ca: tls.clientTruststoreOptions().ca,
-      requestCert: true, rejectUnauthorized: false
+      // The main port's own posture, from the function server.js builds it
+      // with: a certificate asked for and not required at the handshake,
+      // and verified against the truststore by trustClientCertificatesOn()
+      // (tls/tls_server.js argues why the handshake cannot do it).
+      ...tls.clientAuthOptions('optional')
     }, tls.protocolOptions()), app);
     tls.trustClientCertificatesOn(listener, 'the user activity listener',
       function () {
@@ -189,7 +196,7 @@ function childMain() {
           continue;
         }
         if (r.status >= 300 && r.status < 400 && to) {
-          if (to.indexOf('http') === 0 && to.indexOf(ORIGIN) !== 0) {
+          if (to.indexOf('http') === 0 && !urls.isUnder(to, ORIGIN)) {
             break;
           }
           r = await call({ jar: jar, path: to, cert: cert, key: key });

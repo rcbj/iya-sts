@@ -39,6 +39,9 @@
 
 "use strict";
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const kitFactory = require("./saml_peer_kit.js");
@@ -164,7 +167,7 @@ function walkIn(w, b, url, opts) {
   return kit.walk(b, url, Object.assign({
     username: w.person, password: PASSWORD,
     stopAt: function (u) {
-      return u.indexOf(PEER + "/peer/env.php") === 0;
+      return urls.isAt(u, PEER + "/peer/env.php");
     } }, opts || {}));
 }
 
@@ -360,7 +363,7 @@ async function serviceHasSession(w, b) {
   log.debug("Entering serviceHasSession().");
   const walked = await kit.walk(b, loginUrl(w, "sp"), {
     stopAt: function (u) {
-      return u.indexOf(PEER + "/peer/env.php") === 0;
+      return urls.isAt(u, PEER + "/peer/env.php");
     } });
   // THE SIGN-IN SCREEN IS ITS SHELL SINCE #571: a static page whose script
   // is /authn/signin.js, and where the walk stops when it has no name.

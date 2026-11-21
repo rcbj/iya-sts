@@ -72,6 +72,17 @@ var base = String(process.env.OID4VCI_ISSUER_URL ||
                   stsUrl.replace(/\/sts\/?$/, "")).replace(/\/+$/, "");
 const DB_URL = String(process.env.STS_TEST_ATTRIBUTE_DB_URL || "");
 const MYSQL_URL = String(process.env.STS_TEST_ATTRIBUTE_MYSQL_URL || "");
+// THE STACK'S POSTGRES CERTIFICATE, which its generate-tls.sh shares in
+// `sts-db-ca` and the runner container mounts for sts_persistence_postgres.js
+// (a file, or a directory of `.crt`/`.pem` files): the anchor this job's own
+// PostgreSQL connections verify against, chain and host name. Without it the
+// PostgreSQL half is skipped, saying why, never dialled unverified.
+const PG_CA = String(process.env.STS_TEST_PERSISTENCE_DB_CA || "");
+// THE STACK'S MARIADB CERTIFICATE (2026-11-20), which the `mariadb-tls`
+// one-shot copies, without its key, into `sts-mariadb-ca` for the runner:
+// the anchor this job's own MariaDB connections verify against, chain and
+// host name. Without it the MariaDB half is skipped, saying why.
+const MY_CA = String(process.env.STS_TEST_ATTRIBUTE_MYSQL_CA || "");
 const STAMP = names.runStamp();
 const SAFE = STAMP.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 20);
 const REALM = ("attrsrc-" + SAFE).slice(0, 31);
@@ -284,6 +295,25 @@ function sqlText(value) {
   return "'" + String(value) + "'";
 }
 
+// The PEM of PG_CA: the file, or every `.crt`/`.pem` in the directory
+// (sts_persistence_postgres.js's caPem()).
+function pgCaPem() {
+  log.debug("Entering pgCaPem().");
+  const stat = fs.statSync(PG_CA);
+  const files = stat.isDirectory()
+    ? fs.readdirSync(PG_CA).filter(function (name) {
+      return /\.(crt|pem)$/.test(name);
+    }).map(function (name) {
+      return path.join(PG_CA, name);
+    })
+    : [PG_CA];
+  const pem = files.map(function (file) {
+    return fs.readFileSync(file, "utf8");
+  }).join("\n");
+  log.debug("Leaving pgCaPem(). " + files.length + " file(s).");
+  return pem;
+}
+
 function pgClient(urlText, database) {
   log.debug("Entering pgClient(). " + (database || "(the URL's)"));
   const knexStore = require("../../persistence/knex_store");
@@ -291,12 +321,13 @@ function pgClient(urlText, database) {
   if (database) {
     url.pathname = "/" + database;
   }
-  // Encrypted, and deliberately NOT verified: this is the job setting up,
-  // and the certificate it reads off this handshake is the one the SERVICE
-  // is then made to verify against.
+  // Encrypted AND VERIFIED (2026-11-20; unverified until then) against the
+  // certificate the stack's postgres shares (PG_CA): the job is setting up,
+  // and the certificate it then reads off this handshake — the one the
+  // SERVICE is made to verify against — is one this client verified first.
   log.debug("Leaving pgClient().");
   return knexStore.openConnection({ connectionString: url.toString(),
-                                    ssl: { rejectUnauthorized: false } });
+    ssl: { ca: pgCaPem(), servername: url.hostname } });
 }
 
 async function mysqlAdmin(spec, database) {
@@ -323,7 +354,11 @@ async function mysqlAdmin(spec, database) {
     user: decodeURIComponent(url.username),
     password: decodeURIComponent(url.password),
     database: named || undefined,
-    ssl: { rejectUnauthorized: false }
+    // Encrypted AND VERIFIED (2026-11-20; unverified until then) against
+    // the certificate the `mariadb-tls` one-shot published (MY_CA), chain
+    // and host name. The certificate read off this handshake is then the
+    // one the SERVICE is made to verify against (4.).
+    ssl: { ca: fs.readFileSync(MY_CA, "utf8"), servername: url.hostname }
   });
   log.debug("Leaving mysqlAdmin().");
   return conn;
@@ -645,13 +680,23 @@ async function runSource(spec) {
 function dialectsOf(shared) {
   log.debug("Entering dialectsOf().");
   const specs = [];
-  if (DB_URL) {
+  if (DB_URL && !PG_CA) {
+    log.info("PostgreSQL half skipped: STS_TEST_PERSISTENCE_DB_CA does not " +
+             "name the stack's postgres certificate, and this job never " +
+             "dials it unverified.");
+  }
+  if (DB_URL && PG_CA) {
     specs.push({ dialect: "postgres", label: "PostgreSQL", sourceId: "hr",
       state: "pg", url: DB_URL, port: 5432, database: PG_DATABASE,
       reader: PG_READER, readerPassword: PG_PASSWORD,
       passwordFile: path.join(shared.dir, "attrsrc-" + SAFE + ".pw") });
   }
-  if (MYSQL_URL) {
+  if (MYSQL_URL && !MY_CA) {
+    log.info("MariaDB half skipped: STS_TEST_ATTRIBUTE_MYSQL_CA does not " +
+             "name the stack's MariaDB certificate, and this job never " +
+             "dials it unverified.");
+  }
+  if (MYSQL_URL && MY_CA) {
     specs.push({ dialect: "mysql", label: "MariaDB", sourceId: "hr-mysql",
       state: "my", url: MYSQL_URL, port: 3306, database: MY_DATABASE,
       reader: MY_READER, readerPassword: MY_PASSWORD,

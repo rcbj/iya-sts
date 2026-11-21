@@ -48,6 +48,7 @@ const childProcess = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const serviceTrust = require('./tools/service_trust');
 
 // This file's own logger, for the Entering/Leaving lines and the handled
 // exceptions the code style asks for. Its level is LOG_LEVEL, which is also
@@ -510,15 +511,23 @@ async function theProtocolPolicyIsApplied(t) {
                            LDAPS_PORT: '0', STS_HOST: '127.0.0.1' },
     'const ldap = require(R + "/ldap/ldap_server.js");const ready = await ' +
     'ldap.listen().whenReady;const port = ready.ldapsPort;' +
-    'const tls = require("tls");function ' +
+    'const tls = require("tls");const anchors = require(R + ' +
+    '"/tls/tls_server.js").trustAnchorPems();function ' +
     'attempt(max) { return new Promise(function (ok) {  const s = ' +
     'tls.connect({ host: "127.0.0.1", port: port, maxVersion: ' +
-    'max,    rejectUnauthorized: false }, function () { const v = ' +
+    'max,    ca: anchors }, function () { const v = ' +
     's.getProtocol(); s.destroy(); ok(v); });  s.on("error", function (e) { ' +
     'ok("refused: " + e.code); }); }); }return { port: port, twelve: await ' +
     'attempt("TLSv1.2"), thirteen: await attempt("TLSv1.3") };');
   const f = floor.report || {};
-  t.check(/^refused/.test(String(f.twelve)) && f.thirteen === 'TLSv1.3',
+  // The client VERIFIES the listener (the anchors the child gives a
+  // loopback caller, tls_server.js's trustAnchorPems()), so the 1.3 client
+  // served is a verified handshake, and a 1.2 refusal that was THIS client
+  // refusing the certificate is not the floor refusing the version.
+  const twelveCode = String(f.twelve || '').replace(/^refused: /, '');
+  t.check(/^refused/.test(String(f.twelve)) &&
+          !serviceTrust.isUntrusted({ code: twelveCode }) &&
+          f.thirteen === 'TLSv1.3',
           'with tls.minVersion TLSv1.3 a TLS 1.2 client is REFUSED on LDAPS ' +
           'and a 1.3 client is served — the setting reaches the handshake, ' +
           'not only a report. It was asserted on 8443 until that listener ' +

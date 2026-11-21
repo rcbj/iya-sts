@@ -59,6 +59,9 @@
 // OWNED HERE (local: true): the issuance policy is this repository's own.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const K = require("./oauth_wire_kit.js").kit("sts_scope_rules_policy");
 const log = K.log;
@@ -150,7 +153,7 @@ async function authorize(id, b, params, username) {
     r = await K.signIn(id, b, r, username, PASSWORD);
   }
   for (let hops = 0; hops < 8 && (r.status === 302 || r.status === 303) &&
-       (/^\//.test(r.location) || r.location.indexOf(K.base) === 0);
+       (/^\//.test(r.location) || urls.isUnder(r.location, K.base));
        hops++) {
     last = r.location;
     r = await b.go(r.location);

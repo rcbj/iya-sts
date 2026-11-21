@@ -55,13 +55,16 @@ const log = require('bunyan').createLogger({ name: 'listener_path_rules',
 
 const CHILD = 'STS_LISTENER_PATH_RULES_CHILD';
 
-// One TLS connection, and what the listener's socket came to say.
-function connect(port, client, session) {
+// One TLS connection, and what the listener's socket came to say. The
+// SERVER is verified against `anchor`, the root its certificate is under
+// (DNS:localhost, the name sent): what every case asks is what the
+// listener made of the CLIENT's certificate.
+function connect(port, client, anchor, session) {
   log.debug("Entering connect().");
   log.debug("Leaving connect().");
   return new Promise(function (resolve, reject) {
     const socket = tls.connect({ host: '127.0.0.1', port: port,
-      cert: client.pem, key: client.key, rejectUnauthorized: false,
+      cert: client.pem, key: client.key, ca: [anchor],
       session: session, maxVersion: 'TLSv1.2', servername: 'localhost' });
     let saved = null;
     socket.once('session', function (s) {
@@ -102,10 +105,14 @@ async function child() {
                                    eku: ['clientAuth'],
                                    crls: [crls.base + '/l.crl'] });
   crls.routes['/l.crl'] = await kit.crlOf(root, [revoked.serialHex]);
-  const server = tls.createServer({
+  // THE MAIN PORT'S CLIENT-AUTHENTICATION POSTURE (server.js builds it with
+  // the same call): a certificate asked for and never required, so a client
+  // node does not authorize still reaches the hold, whose verdict on it is
+  // what every case below reads.
+  const server = tls.createServer(Object.assign({
     key: serverCert.key, cert: serverCert.pem + root.pem, ca: [root.pem],
-    requestCert: true, rejectUnauthorized: false, maxVersion: 'TLSv1.2'
-  }, function (socket) {
+    maxVersion: 'TLSv1.2'
+  }, tlsServer.clientAuthOptions('optional')), function (socket) {
     socket.once('data', function () {
       socket.write(JSON.stringify({
         authorized: socket.authorized,
@@ -122,7 +129,7 @@ async function child() {
   const ask = function (client, session) {
     log.debug("Entering ask().");
     log.debug("Leaving ask().");
-    return connect(port, client, session);
+    return connect(port, client, root.pem, session);
   };
 
   // A. NOT IN FORCE.
@@ -166,10 +173,10 @@ async function child() {
   // G. THE MAIN PORT'S SHAPE (the product run's sts_main_port_pooling): the
   // observer, then a request's wait and its chain, as the middleware and the
   // sign-in ask them, under hard-fail with an issuer the service does not hold.
-  const answering = tls.createServer({
+  const answering = tls.createServer(Object.assign({
     key: serverCert.key, cert: serverCert.pem + root.pem, ca: [root.pem],
-    requestCert: true, rejectUnauthorized: false, maxVersion: 'TLSv1.2'
-  }, function (socket) {
+    maxVersion: 'TLSv1.2'
+  }, tlsServer.clientAuthOptions('optional')), function (socket) {
     socket.once('data', function () {
       const revocation = require('../common/revocation_status');
       revocation.awaitResumedChain(socket).then(function () {
@@ -192,7 +199,7 @@ async function child() {
   const askMain = function (client, session) {
     log.debug("Entering askMain().");
     log.debug("Leaving askMain().");
-    return connect(answering.address().port, client, session);
+    return connect(answering.address().port, client, root.pem, session);
   };
   const revocationG = require('../common/revocation_status');
   const rawOf = function (one) {
@@ -308,11 +315,10 @@ async function child() {
     issuer: crossAnchor, eku: ['clientAuth'], crls: [crls.base + '/hr.crl'] });
   crls.routes['/hr.crl'] = await kit.crlOf(crossAnchor,
                                            [revokedCross.serialHex]);
-  const crossListener = tls.createServer({
+  const crossListener = tls.createServer(Object.assign({
     key: serverCert.key, cert: serverCert.pem + root.pem,
-    ca: [crossAnchor.pem], requestCert: true, rejectUnauthorized: false,
-    maxVersion: 'TLSv1.2'
-  }, function (socket) {
+    ca: [crossAnchor.pem], maxVersion: 'TLSv1.2'
+  }, tlsServer.clientAuthOptions('optional')), function (socket) {
     socket.once('data', function () {
       const revocation = require('../common/revocation_status');
       revocation.verdictFor(revocation.fromSocket(socket)).then(function (v) {
@@ -334,9 +340,10 @@ async function child() {
   };
   const anchored = tlsServer.truststore.add(crossAnchor.pem, {});
   results.hAdded = !!anchored;
-  results.hGood = (await connect(crossPort, presenting(crossClient))).answer;
-  results.hRevoked = (await connect(crossPort,
-                                    presenting(revokedCross))).answer;
+  results.hGood = (await connect(crossPort, presenting(crossClient),
+                                 root.pem)).answer;
+  results.hRevoked = (await connect(crossPort, presenting(revokedCross),
+                                    root.pem)).answer;
   answering.close();
   crossListener.close();
   config.setOverride('pki.revocationCheck', 'soft-fail');

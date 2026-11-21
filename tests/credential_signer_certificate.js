@@ -60,6 +60,9 @@ const log = require('bunyan').createLogger({
 function childMain() {
   /* eslint-disable no-console */
   const ROOT = process.env.WSI_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT + '/tests/protocol/url_match.js');
   const OUT = process.env.WSI_OUT;
   const walletKit = require(ROOT + '/tests/wallet_kit');
 
@@ -204,7 +207,7 @@ function childMain() {
            'A3. its subjectAltName is URIs only — no DNS name — one for ' +
            'every name tls.hostnames and tls.ips assert, on the main port, ' +
            'and the did:web of each', JSON.stringify(sans));
-      note(uris.indexOf(claims.iss) < 0,
+      note(!urls.holds(uris, claims.iss),
            'A4. the request reached the stack on an ephemeral port nobody ' +
            'configured, so its iss is NOT named — the credential is still ' +
            'signed (STS-PKI-0283 is logged), and a Host header never ' +
@@ -319,7 +322,7 @@ function childMain() {
       note(pinnedLeaf &&
            JSON.stringify(urisOf(pinnedLeaf)) ===
              JSON.stringify([w.base, didOf(w.base)].sort()) &&
-           urisOf(pinnedLeaf).indexOf(pinnedIss) >= 0,
+           urls.holds(urisOf(pinnedLeaf), pinnedIss),
            'B1. with global.publicBaseUrl pinned, the certificate names ' +
            'exactly that issuer and its did:web, and iss is one of them',
            pinnedLeaf && JSON.stringify(urisOf(pinnedLeaf)) + ' iss=' +
@@ -389,7 +392,7 @@ function childMain() {
         }
         note(h.alg === alg && one && overItself &&
              (one.keyUsage || []).join(',') === DOC_SIGNING &&
-             urisOf(one).indexOf(w.base) >= 0 &&
+             urls.holds(urisOf(one), w.base) &&
              !sansOf(one).some(function (s) { return /^DNS:/.test(s); }),
              'D1[' + alg + ']. a credential signed with ' + alg + ' carries ' +
              'a certificate OVER THAT KEY (never a partner\'s), with ' +

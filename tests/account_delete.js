@@ -51,6 +51,9 @@ const ROOT = path.join(__dirname, '..');
 function childMain() {
   /* eslint-disable no-console */
   const ROOT = process.env.ADEL_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT + '/tests/protocol/url_match.js');
   const OUT = process.env.ADEL_OUT;
   const http = require('http');
   const crypto = require('crypto');
@@ -188,7 +191,7 @@ function childMain() {
         r = await b.go('GET', String(sent.location || ''));
       }
       const loc = String(r.headers.location || '');
-      const code = r.status === 302 && loc.indexOf(REDIRECT) === 0
+      const code = r.status === 302 && urls.isAt(loc, REDIRECT)
         ? new URL(loc).searchParams.get('code') : null;
       if (code) {
         // Redeemed, so the session has a relying party with a back-channel
@@ -205,7 +208,7 @@ function childMain() {
     const honoured = async function (b) {
       const r = await authorize(b);
       return r.status === 302 &&
-        String(r.headers.location || '').indexOf(REDIRECT) === 0;
+        urls.isAt(String(r.headers.location || ''), REDIRECT);
     };
 
     const scimHeaders = { authorization: 'Basic ' +

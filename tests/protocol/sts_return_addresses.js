@@ -46,6 +46,9 @@
 // OWNED HERE (local: true): this repository's own management API.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const names = require("./random_username.js");
 
@@ -262,7 +265,7 @@ async function test() {
         "the entry", function () {
     assert.ok(learnt.status < 400, learnt.status + " " +
               textOf(learnt.raw).slice(0, 200));
-    assert.ok(acsOf(seen).indexOf(LEARNT) >= 0, JSON.stringify(acsOf(seen)));
+    assert.ok(urls.holds(acsOf(seen), LEARNT), JSON.stringify(acsOf(seen)));
   });
   check("A. AND MARKS IT observed — held, and still trusted in development",
         function () {
@@ -348,7 +351,7 @@ async function test() {
   const confirmed = await entry(RP);
   check("C. the MARK is gone and the ADDRESS stays", function () {
     assert.strictEqual(observedOf(confirmed, LEARNT), null);
-    assert.ok(acsOf(confirmed).indexOf(LEARNT) >= 0);
+    assert.ok(urls.holds(acsOf(confirmed), LEARNT));
   });
   await mode("product");
   const believed = await sight(RP, LEARNT);
@@ -373,7 +376,7 @@ async function test() {
   const discarded = await entry(RP);
   check("D. BOTH the mark and the address are gone", function () {
     assert.strictEqual(observedOf(discarded, SECOND), null);
-    assert.ok(acsOf(discarded).indexOf(SECOND) < 0);
+    assert.ok(!urls.holds(acsOf(discarded), SECOND));
   });
   await mode("product");
   const gone = await sight(RP, SECOND);
@@ -392,7 +395,7 @@ async function test() {
   const added = await entry(RP);
   check("E. an explicit add is a registration and carries no mark",
         function () {
-    assert.ok(acsOf(added).indexOf(ADDED) >= 0);
+    assert.ok(urls.holds(acsOf(added), ADDED));
     assert.strictEqual(observedOf(added, ADDED), null);
     assert.ok(observedOf(added, FOURTH), "the control sighting was not " +
               "marked");
@@ -401,7 +404,7 @@ async function test() {
     attribute: ACS, value: FOURTH }, "removed the sighted address");
   const removed = await entry(RP);
   check("E. a remove takes the mark with the value", function () {
-    assert.ok(acsOf(removed).indexOf(FOURTH) < 0);
+    assert.ok(!urls.holds(acsOf(removed), FOURTH));
     assert.strictEqual(observedOf(removed, FOURTH), null);
   });
 

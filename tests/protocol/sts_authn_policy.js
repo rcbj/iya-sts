@@ -57,6 +57,9 @@
 // OWNED HERE (local: true): this repository's own policies and sign-in.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const nodeCrypto = require("crypto");
@@ -449,7 +452,7 @@ async function passwordSignIn(who) {
                                        realmBase(REALM) + "/").toString());
   }
   const out = { next: sent.answer.next, errors: sent.answer.errors || [],
-    code: !!landed && landed.location.indexOf(REDIRECT) === 0 &&
+    code: !!landed && urls.isAt(landed.location, REDIRECT) &&
           /[?&]code=/.test(landed.location),
     shown: sent.status + " " + sent.answer.next + " " +
            JSON.stringify(sent.answer.errors || []) + " " +

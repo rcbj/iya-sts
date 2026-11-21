@@ -75,6 +75,9 @@
 // OWNED HERE (local: true): this repository's sign-in service.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const names = require("./random_username.js");
@@ -387,7 +390,7 @@ async function honoured(jar, hint, headers) {
     extra.login_hint = hint;
   }
   const r = await follow(jar, authorizeUrl(extra), headers);
-  const at = r.location && r.location.indexOf(REDIRECT) === 0
+  const at = r.location && urls.isAt(r.location, REDIRECT)
     ? new URL(r.location).searchParams : null;
   log.debug("Leaving honoured().");
   return { code: at ? at.get("code") || "" : "",

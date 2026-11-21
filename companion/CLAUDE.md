@@ -77,7 +77,14 @@ from the request (`helpers.baseUrlOf()`), and the wallet has to reach them.
 **TLS.** Verified against `COMPANION_STS_CA_FILE` when it is given. A
 development stack makes its service Root when it starts, so no image can hold
 the anchor: `COMPANION_STS_TLS_INSECURE=true` turns the check off, as the
-remote PEP's `PEP_TLS_INSECURE` does, and the start logs a warning. The test
+remote PEP's `PEP_TLS_INSECURE` does, and the start logs a warning.
+**`/pep-app` never follows that switch (2026-11-20, CodeQL):** what it dials
+for a realm's metadata and JWKS is always verified, against
+`COMPANION_STS_CA_FILE` or else the `caPem` its `_setup` was handed (the
+job sends this run's anchor), and only at the exact origin of
+`COMPANION_STS_URL` or `COMPANION_STS_PUBLIC_URL` — a URL at any other
+origin, the token's own `iss` included, is refused before a socket opens
+(`pep_app_identity.js`'s header). The test
 peer has no such switch because a job that proves TLS must not dial
 anything; a person clicking through a demonstration on a laptop is the other
 case.
