@@ -128,5 +128,5 @@
   "piv.keyWarn": "هذا هو مفتاح فك التشفير الخاص بالشخص. يُعرض مرة واحدة، واسترداده مسجّل في سجل التدقيق. سلّمه كما تسلّم البطاقة.",
   "piv.privateKey": "المفتاح الخاص",
   "piv.certificate": "الشهادة",
-  "piv.import": "اكتبها في فتحة YubiKey باستخدام: ykman piv certificates import <slot> cert.pem"
+  "piv.import": "اكتبها في فتحة YubiKey باستخدام: ykman piv certificates import SLOT cert.pem"
 }

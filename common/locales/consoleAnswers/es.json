@@ -128,5 +128,5 @@
   "piv.keyWarn": "Esta es la clave privada de descifrado de la persona. Se muestra una sola vez, y su recuperación consta en el registro de auditoría. Entréguela como entregaría la tarjeta.",
   "piv.privateKey": "Clave privada",
   "piv.certificate": "Certificado",
-  "piv.import": "Escríbalo en la ranura de la YubiKey con: ykman piv certificates import <slot> cert.pem"
+  "piv.import": "Escríbalo en la ranura de la YubiKey con: ykman piv certificates import SLOT cert.pem"
 }

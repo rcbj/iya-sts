@@ -128,5 +128,5 @@
   "piv.keyWarn": "Dies ist der private Entschlüsselungsschlüssel der Person. Er wird einmal angezeigt, und seine Wiederherstellung steht im Audit-Protokoll. Übergeben Sie ihn so, wie Sie die Karte übergeben würden.",
   "piv.privateKey": "Privater Schlüssel",
   "piv.certificate": "Zertifikat",
-  "piv.import": "Schreiben Sie es in den YubiKey-Slot mit: ykman piv certificates import <slot> cert.pem"
+  "piv.import": "Schreiben Sie es in den YubiKey-Slot mit: ykman piv certificates import SLOT cert.pem"
 }

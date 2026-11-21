@@ -128,5 +128,5 @@
   "piv.keyWarn": "這是此人的私密解密金鑰。它只顯示一次，其復原會記入稽核日誌。請像移交卡片一樣移交它。",
   "piv.privateKey": "私密金鑰",
   "piv.certificate": "憑證",
-  "piv.import": "使用下列命令將其寫入 YubiKey 插槽：ykman piv certificates import <slot> cert.pem"
+  "piv.import": "使用下列命令將其寫入 YubiKey 插槽：ykman piv certificates import SLOT cert.pem"
 }

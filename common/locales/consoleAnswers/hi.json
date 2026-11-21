@@ -128,5 +128,5 @@
   "piv.keyWarn": "यह व्यक्ति की निजी डिक्रिप्शन कुंजी है। यह एक बार दिखाई जाती है, और इसकी पुनर्प्राप्ति ऑडिट लॉग में दर्ज है। इसे वैसे ही सौंपें जैसे आप कार्ड सौंपते।",
   "piv.privateKey": "निजी कुंजी",
   "piv.certificate": "प्रमाणपत्र",
-  "piv.import": "इस आदेश से इसे YubiKey स्लॉट में लिखें: ykman piv certificates import <slot> cert.pem"
+  "piv.import": "इस आदेश से इसे YubiKey स्लॉट में लिखें: ykman piv certificates import SLOT cert.pem"
 }

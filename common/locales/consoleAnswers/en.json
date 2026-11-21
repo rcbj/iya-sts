@@ -128,5 +128,5 @@
   "piv.keyWarn": "This is the person's private decryption key. It is shown once, and its recovery is on the audit log. Hand it over as you would the card.",
   "piv.privateKey": "Private key",
   "piv.certificate": "Certificate",
-  "piv.import": "Write it to the YubiKey slot with: ykman piv certificates import <slot> cert.pem"
+  "piv.import": "Write it to the YubiKey slot with: ykman piv certificates import SLOT cert.pem"
 }

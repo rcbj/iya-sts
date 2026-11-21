@@ -408,6 +408,7 @@
   "crypto.families.est.algorithms.1.what": "Server-generated key algorithms",
   "crypto.families.est.algorithms.2.what": "Private key container",
   "crypto.families.est.algorithms.3.what": "Certificate container",
+  "crypto.families.est.algorithms.4.what": "PIV attestation signatures verified",
   "crypto.families.scep.signs": "Every certificate it issues, with this realm's SCEP Issuing CA key through common/pki.js's issueEnrolled(); and every CertRep, with the RA key — CMS SignedData over DER-sorted signed attributes, sha256WithRSAEncryption (SHA-384/512 when the request used them).",
   "crypto.families.scep.verifies": "The requester's SignedData signature over its signed attributes and the messageDigest of the content (SHA-256, SHA-384, SHA-512; RSA or ECDSA signers are verified, and an ECDSA one is then refused because no reply can be encrypted to it); the PKCS#10 proof of possession; for RenewalReq, GetCert and GetCRL the signer certificate's path to this realm's Intermediate with revocation consulted; and the challenge password, as a constant-time SHA-256 comparison.",
   "crypto.families.scep.encrypts": "A SUCCESS CertRep's certs-only content, to the requester's signer certificate: RSAES-PKCS1-v1_5 key transport and the AES-CBC key size the request used.",
@@ -475,6 +476,5 @@
   "crypto.codes.atRest": "A scrypt HASH of each code, through crypto.hashSecret() — the same function and the same stored form as userPassword — so this service can check a code and can never show one again, its owner included. A set written by a build before 2026-09-11 holds the codes themselves and is still accepted, code by code, until its owner generates a new one.",
   "crypto.codes.comparisonOfAHash": "crypto.verifySecret() in constant time against each stored hash in turn, on libuv's thread pool where the door is asynchronous.",
   "crypto.param.codes.comparison": "crypto.constantTimeEquals(), after upper-casing and dropping the spaces and dashes this service itself prints.",
-  "crypto.param.totp.encoding": "RFC 4648 base32, unpadded, as the otpauth Key Uri Format expects.",
-  "crypto.families.est.algorithms.4.what": "PIV attestation signatures verified"
+  "crypto.param.totp.encoding": "RFC 4648 base32, unpadded, as the otpauth Key Uri Format expects."
 }
