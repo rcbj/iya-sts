@@ -183,5 +183,7 @@
   "eligibility.yes": "{user} पात्र है ({decision})।",
   "eligibility.no": "{user} पात्र नहीं है ({decision})।",
   "eligibility.missing": "गायब एट्रिब्यूट: {attribute}",
-  "eligibility.applicable": "लागू हुई नीतियाँ:"
+  "eligibility.applicable": "लागू हुई नीतियाँ:",
+  "newRole.button": "नई भूमिका",
+  "newRole.noStore": "इस प्रक्रिया के पास भूमिका संग्रहीत करने के लिए कोई डायरेक्टरी नहीं है।"
 }

@@ -2312,6 +2312,17 @@ model XacmlPepListenerTuningFields {
 
 @component model `WithIdFromTo2` is Record<`WithKindCountIdentifiers`>;
 
+@js(#{
+    `description`:"One field of a directory object's create (#1132): the name the create takes it under and whether the create refuses without it. A field is required exactly when the create refuses an empty or absent value; every other field is optional."
+  }) @component model `CreateFormField` {
+    `name`: string;
+    `required`: boolean;
+    @js(#{`description`:"A field required for some choices only: the create refuses without it when `field` holds one of `values`, and is otherwise indifferent. `required` is false for such a field."}) `requiredWhen`?: {
+      `field`: string;
+      `values`: (string)[]
+    }
+  }
+
 // #1955 P6: A PERSON'S OpenPGP KEY, ITS WEB KEY DIRECTORY PUBLICATION AND THEIR
 // MAIL ENCRYPTION (`common/openpgp_keys.ts`'s `view()`), shared by
 // `/account-api/openpgp` and `/admin-api/openpgp`.

@@ -183,5 +183,7 @@
   "eligibility.yes": "{user} مؤهل ({decision}).",
   "eligibility.no": "{user} غير مؤهل ({decision}).",
   "eligibility.missing": "سمة مفقودة: {attribute}",
-  "eligibility.applicable": "السياسات التي طُبقت:"
+  "eligibility.applicable": "السياسات التي طُبقت:",
+  "newRole.button": "دور جديد",
+  "newRole.noStore": "لا توجد لهذه العملية دليل لتخزين دور فيه."
 }

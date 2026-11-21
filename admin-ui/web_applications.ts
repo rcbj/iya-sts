@@ -465,25 +465,27 @@ class ApplicationsPage {
       // drawing them here as well would post each name twice.
       // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each
       // section is one frame, the field grid's included.
+      // THE IDENTIFIER IS CALLED OUT AS EVERY REQUIRED FIELD IS (#1132):
+      // the create refuses without it, so it is outlined, starred and says
+      // "required", the directory create forms' cell (`kit.createFields()`);
+      // the name is optional. Which is which is the answer's
+      // (`createFields`), as on every other create page.
+      const calledRows = kit.createRows(json.createFields, {
+        identifier: { label: t.html('consoleApplications.a1.identifier'),
+                      hint: t.html('consoleApplications.a1.identifierTip'),
+                      placeholder:
+                        t.text('consoleApplications.a1.egIdentifierLong') },
+        name: { label: t.html('consoleApplications.a1.name'),
+                hint: t.html('consoleApplications.a1.nameTip'),
+                placeholder: t.text('consoleApplications.a1.egMyWebAppName') }
+      });
       const calledSection = kit.frame(
-        '<h2>' + t.html('consoleApplications.a1.calledHeading') +
-        '</h2><div class="formrow"><label ' +
-        'for="identifier">' + t.html('consoleApplications.a1.identifier') +
-        '</label><input type="text" ' +
-          'id="identifier" ' +
-        'name="identifier" size="42" required placeholder="' +
-        kit.esc(t.text('consoleApplications.a1.egIdentifierLong')) + '"' +
-        kit.tip(t.html('consoleApplications.a1.identifierTip')) +
-        ' value="' + kit.esc(drafted('identifier')) + '"></div>' +
+        '<h2>' + t.html('consoleApplications.a1.calledHeading') + '</h2>' +
+        kit.requiredNote(calledRows, t) +
+        kit.createFields(calledRows, { identifier: drafted('identifier'),
+                                       name: drafted('name') }, t) +
         kit.note(t.html('consoleApplications.a1.theKey')) +
         kit.note(t.html('consoleApplications.a1.primaryName')) +
-        '<div class="formrow"><label for="newname">' +
-        t.html('consoleApplications.a1.name') + '</label><input ' +
-        'type="text" id="newname" name="name" size="24" ' +
-        'placeholder="' +
-        kit.esc(t.text('consoleApplications.a1.egMyWebAppName')) + '"' +
-        kit.tip(t.html('consoleApplications.a1.nameTip')) +
-        ' value="' + kit.esc(drafted('name')) + '"></div>' +
         kit.note(t.html('consoleApplications.a1.nameIs')) +
         kit.note(t.html('consoleApplications.a1.noKind')));
       // The families ticked: the ones a refused create had ticked, or OAuth 2.0

@@ -1991,6 +1991,30 @@
     "en": "ee45e233f511ee47",
     "text": "NON-SPEC. DER GESCHLOSSENE ATTRIBUTKATALOG, DEN EIN ANLEGEN ENTGEGENNIMMT, als JSON: jedes Attribut, das einer Person in diesem Verzeichnis gegeben werden darf, und jedes nennt den Claim, den es in einem ausgestellten Token oder Credential erreicht, und das Dokument, aus dem sein Name stammt — was zählt, weil dieses Verzeichnis KEIN SCHEMA hat und keines davon irgendwo ablehnen würde — plus der Container ou=users, in dem eine neue Person landet (DER DIESES VERTRAUENSBEREICHS, weil das Verzeichnis je Vertrauensbereich besteht), und die vier Wege, auf denen ihnen ein Zugang gegeben werden kann. uid steht nicht auf der Liste, weil es DER Benutzername ist, und userPassword steht nicht darauf, weil ein Passwort über die Option für Anmeldedaten geht, damit es gehasht und nicht aufgeschrieben wird. ES LEGT NIEMANDEN AN: das Anlegen ist POST /admin-api/users/create, und dies ist die Liste, gegen die dieser Aufruf prüft — ein Attributname, der nicht darauf steht, wird abgelehnt, und das gesamte Anlegen schlägt fehl, sodass einem Aufrufer, der dies zuerst liest, hinterher nicht gesagt werden kann, die Hälfte des Gesendeten sei ignoriert worden. Spiegelt GET /admin/users/new."
   },
+  "stsmetadata.endpoints./admin-api/groups/new.what": {
+    "en": "4ed04fc8ef1be664",
+    "text": "NICHT SPEZIFIZIERT. Womit eine Gruppe angelegt werden kann, als JSON: jedes Feld des Anlegens und ob das Anlegen ohne es abgelehnt wird — der cn ist erforderlich, Beschreibung, Adresse und Mitglieder nicht — dazu der Container ou=groups, in dem eine neue Gruppe landen würde, der DIESES REALMS. ES LEGT NICHTS AN: Das Anlegen ist POST /admin-api/groups/create. Entspricht GET /admin/groups/new."
+  },
+  "stsmetadata.endpoints./admin-api/roles/new.what": {
+    "en": "3bf6af72cb520499",
+    "text": "NICHT SPEZIFIZIERT. Womit eine Rolle angelegt werden kann, als JSON: jedes Feld des Anlegens und ob das Anlegen ohne es abgelehnt wird — der Name ist erforderlich, der Rest nicht — dazu der Container, in dem Rollen gespeichert werden, und die Anwendungen, für die eine Rolle sein kann. ES LEGT NICHTS AN: Das Anlegen ist POST /admin-api/roles/create-role. Entspricht GET /admin/roles/new."
+  },
+  "stsmetadata.endpoints./admin-api/devices/new.what": {
+    "en": "97ebfb0c1410c335",
+    "text": "NICHT SPEZIFIZIERT. Womit ein Gerät registriert werden kann, als JSON: jedes Feld des Anlegens und ob das Anlegen ohne es abgelehnt wird — der Eigentümer ist erforderlich, der Rest nicht — dazu die geschlossenen Mengen, aus denen seine Auswahlen stammen. ES REGISTRIERT NICHTS: Das Anlegen ist POST /admin-api/devices/create. Entspricht GET /admin/devices/new."
+  },
+  "stsmetadata.endpoints./admin-api/attribute-sources/new.what": {
+    "en": "a0e98374461ed268",
+    "text": "NICHT SPEZIFIZIERT. Womit eine Attributquelle hinzugefügt werden kann, als JSON: jedes Feld des Anlegens und ob das Anlegen ohne es abgelehnt wird — ID, Host, Datenbank, Benutzer, Tabelle, ihre Schlüsselspalte und mindestens eine Spaltenzuordnung sind erforderlich, der Rest hat Standardwerte — dazu die geschlossenen Mengen, aus denen seine Auswahlen stammen. ES FÜGT NICHTS HINZU: Das Anlegen ist POST /admin-api/attribute-sources/add-source. Entspricht GET /admin/attribute-sources/new."
+  },
+  "stsmetadata.endpoints./admin-api/secret-destinations/new.what": {
+    "en": "efff1aa20f1b29a1",
+    "text": "NICHT SPEZIFIZIERT. Womit ein Ziel für Geheimnisse hinzugefügt werden kann, als JSON: jedes Feld des Anlegens und ob das Anlegen ohne es abgelehnt wird — Bezeichner und Anbieter immer, manche nur bei manchen Anbietern (requiredWhen): die Schreibberechtigung bei allen außer file, die Region bei aws, der Endpunkt bei azure und vault, das Verzeichnis bei file. ES FÜGT NICHTS HINZU: Das Anlegen ist POST /admin-api/secret-destinations/add-destination. Entspricht GET /admin/secret-destinations/new."
+  },
+  "stsmetadata.endpoints./admin-api/policies/new.what": {
+    "en": "2c58d79f3a71506e",
+    "text": "NICHT SPEZIFIZIERT. Die Arten, aus denen eine benannte Richtlinie gemacht werden kann, und für die angefragte Art jedes Feld ihres Speicherns und ob das Speichern ohne es abgelehnt wird — immer der Name, weil ein Speichern ohne Namen die Standardrichtlinie ändert, und jedes Feld, dessen Wert nicht erhalten bleibt, wenn es fehlt. ES SPEICHERT NICHTS: Eine benannte Richtlinie ist der Speichervorgang der Art unter einem Namen, den der Realm noch nicht hat. Entspricht GET /admin/policies/new."
+  },
   "stsmetadata.endpoints./admin-api/applications/new.what": {
     "en": "25bf3526e817e678",
     "text": "NON-SPEC. DIE ZWEI GESCHLOSSENEN VOKABULARE, DIE EIN ANLEGEN ENTGEGENNIMMT, als JSON: die acht Arten und die vierzehn Protokollfamilien, für die eine Anwendung DEKLARIERT werden darf, jede mit ihrer Bedeutung, plus der Container ou=applications, in dem ein neuer Eintrag landet — DER DIESES VERTRAUENSBEREICHS, weil das Verzeichnis je Vertrauensbereich besteht —, wie viele er aufnehmen wird, und die Attribute, die ein Anlegen nicht entgegennehmen kann, set/add/remove aber schon. ES LEGT NICHTS AN: das Anlegen ist POST /admin-api/applications/create, und dies ist die Liste, gegen die dieser Aufruf prüft, veröffentlicht, damit ein Aufrufer vom Dienst erfährt, was er senden darf, und nicht aus einer Kopie in einem Dokument. Eine Familie zu deklarieren gewährt nichts und verweigert nichts — kein Endpunkt liest appAllowedProtocol. Spiegelt GET /admin/applications/new."

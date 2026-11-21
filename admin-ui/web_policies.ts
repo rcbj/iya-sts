@@ -71,7 +71,7 @@ class PoliciesPage {
       if (kind.id === 'password') {
         html = PoliciesPage.passwordPolicySection(view, t, view.state);
       } else if (kind.id === 'authn') {
-        html = PoliciesPage.authnPolicySection(view, t);
+        html = PoliciesPage.authnPolicySection(view, t, view.state);
       } else if (kind.id === 'attributes') {
         html = PoliciesPage.attributePolicySection(view, t, view.state);
       } else {
@@ -408,7 +408,7 @@ class PoliciesPage {
    * @param t - the page's translator (#539)
    * @returns the section as HTML
    */
-  static authnPolicySection(view, t) {
+  static authnPolicySection(view, t, state?) {
     const kind = view.kinds.filter(function (k) {
       return k.id === 'authn';
     })[0];
@@ -435,7 +435,7 @@ class PoliciesPage {
     // (the realm's own policy, its forms and what it accepts now), Named
     // policies (each one an application may name, #1148) and New policy.
     // The schema is reference for all three, so it stays under them.
-    const named = PoliciesPage.namedAuthnPoliciesSection(ap, t);
+    const named = PoliciesPage.namedAuthnPoliciesSection(ap, t, state);
     const byDefault =
       PoliciesPage.policyProblems(profile, t) +
 
@@ -474,7 +474,9 @@ class PoliciesPage {
         html: kit.frame(named.list) },
       { id: 'authn-sub-new',
         label: t.text('consolePolicies.sub.new'),
-        html: kit.frame(named.add) }
+        html: kit.frame('<h3 id="authn-new">' +
+          t.html('consolePolicies.authnNamed.newHeading') + '</h3>' +
+          PoliciesPage.newPolicyLink('authn', t)) }
     ]) +
       kit.frame('<h3 id="authn-schema">' + t.html('consolePolicies.schema') +
       '</h3>' +
@@ -505,10 +507,27 @@ class PoliciesPage {
    * @param t - the page's translator (#539)
    * @returns `{ list, add }`, each as HTML
    */
-  static namedAuthnPoliciesSection(ap, t) {
+  static namedAuthnPoliciesSection(ap, t, state?) {
     const vocabulary = ap.vocabulary || { mechanisms: [], secondFactors: [] };
     const named = ap.named || [];
     const references = ap.references || {};
+    const draft = (((state && state.policyDrafts) || {})['authn-new']) || null;
+    const refused = (((state && state.policySaveErrors) || {})['authn-new']) ||
+      [];
+    const draftValue = function (key, fallback) {
+      if (!draft || draft[key] === undefined) {
+        return fallback;
+      }
+      const value = draft[key];
+      return Array.isArray(value) ? String(value[0] || '') : String(value);
+    };
+    const draftValues = function (key) {
+      if (!draft || draft[key] === undefined) {
+        return [];
+      }
+      const value = draft[key];
+      return (Array.isArray(value) ? value : [value]).map(String);
+    };
     // What names a policy (#1237): `{ applications, groups, people }`, or
     // a list of applications from a view before groups could name one.
     const holdersOf = function (policy) {
@@ -557,31 +576,34 @@ class PoliciesPage {
         (policy
           ? '<input type="hidden" name="name" value="' +
             kit.esc(policy.name) + '">'
-          : '<div class="formrow"><label for="' + prefix + 'name">' +
-            t.html('consolePolicies.authnNamed.name') + '</label> ' +
-            '<input type="text" id="' + prefix + 'name" name="name" ' +
-            'required pattern="[a-z0-9][a-z0-9-]{0,62}" ' +
-            'placeholder="passkeys-only"></div>') +
+          : '<input type="hidden" name="newProfile" value="1">' +
+            PoliciesPage.nameCell(prefix + 'name', 'name',
+              t.html('consolePolicies.authnNamed.name'),
+              draftValue('name', ''), 'passkeys-only', 62, t)) +
         '<div class="formrow"><label for="' + prefix + 'description">' +
         t.html('consolePolicies.form.description') + '</label> ' +
         '<input type="text" id="' + prefix + 'description" ' +
         'name="description" size="60" maxlength="1024" value="' +
-        kit.esc(policy ? policy.description : '') + '"></div>' +
+        kit.esc(policy ? policy.description
+                       : draftValue('description', '')) + '"></div>' +
         '<div class="formrow"><label for="' + prefix + 'precedence">' +
         t.html('consolePolicies.named.precedence') + '</label> ' +
         '<input type="number" id="' + prefix + 'precedence" ' +
         'name="precedence" min="1" max="1000" value="' +
-        kit.esc(String((policy && policy.precedence) || 100)) + '"> ' +
+        kit.esc(policy ? String(policy.precedence || 100)
+                       : draftValue('precedence', '100')) + '"> ' +
         '<span class="sub">' + t.html('consolePolicies.named.lowestApplies') +
         '</span></div>' +
         '<div class="formrow"><span>' +
         t.html('consolePolicies.authnNamed.first') + '</span> ' +
         boxes('mechanisms', vocabulary.mechanisms,
-              policy ? policy.mechanisms : [], prefix) + '</div>' +
+              policy ? policy.mechanisms : draftValues('mechanisms'),
+              prefix) + '</div>' +
         '<div class="formrow"><span>' +
         t.html('consolePolicies.authnNamed.second') + '</span> ' +
         boxes('secondFactors', vocabulary.secondFactors,
-              policy ? policy.secondFactors : [], prefix) + '</div>' +
+              policy ? policy.secondFactors : draftValues('secondFactors'),
+              prefix) + '</div>' +
         '<div class="formrow"><button>' +
         t.html('consolePolicies.authnNamed.save') + '</button></div></form>';
     };
@@ -626,6 +648,11 @@ class PoliciesPage {
         '</table>',
       add: '<h3 id="authn-new">' +
         t.html('consolePolicies.authnNamed.newHeading') + '</h3>' +
+        (refused.length
+          ? kit.warn(refused.map(function (one) {
+            return kit.esc(one);
+          }).join(' '), 'That was refused')
+          : '') +
         form(null)
     };
   }
@@ -660,7 +687,7 @@ class PoliciesPage {
    * @param t - the page's translator (#539)
    * @returns the section as HTML
    */
-  static attributePolicySection(view, t, state?) {
+  static attributePolicySection(view, t, state?, onlyAdd?) {
     const kind = view.kinds.filter(function (k) {
       return k.id === 'attributes';
     })[0];
@@ -926,10 +953,9 @@ class PoliciesPage {
       '<form method="post" action="/admin/policies">' +
       '<input type="hidden" name="action" value="' + kit.esc(saveAction) +
       '"><input type="hidden" name="newProfile" value="1">' +
-      '<p><label for="ap-new-profile">' + t.html('consolePolicies.named.name') +
-      '</label> <input type="text" id="ap-new-profile" name="profile" ' +
-      'pattern="[a-z0-9][a-z0-9-]{0,63}" required value="' +
-      kit.esc(firstOf('profile')) + '" placeholder="contractors"></p>' +
+      PoliciesPage.nameCell('ap-new-profile', 'profile',
+        t.html('consolePolicies.named.name'), firstOf('profile'),
+        'contractors', 63, t) +
       precedenceRow('ap-new-precedence', firstOf('precedence') || 100) +
       requiredTable(draft ? listOf(posted('requiredAttributes'))
                           : listOf(profile.requiredAttributes),
@@ -937,6 +963,10 @@ class PoliciesPage {
       descriptionRow('ap-new-description', firstOf('description')) +
       '<p><button>' + t.html('consolePolicies.named.add') +
       '</button></p></form>';
+    // NEW POLICY'S OWN PAGE (#1132) draws this form and nothing else.
+    if (onlyAdd) {
+      return addForm;
+    }
     // FOUR SUB-TABS (#1241), the passkey policy's three and the realm's
     // custom attributes, which every profile may require and none owns.
     return '<h2 id="attributes">' + kit.esc(kind.label) + '</h2>' +
@@ -976,7 +1006,7 @@ class PoliciesPage {
           label: t.text('consolePolicies.sub.new'),
           html: kit.frame('<h3>' +
             t.html('consolePolicies.named.addHeading') +
-            '</h3>' + addForm) },
+            '</h3>' + PoliciesPage.newPolicyLink('attributes', t)) },
         { id: 'attributes-sub-custom',
           label: t.text('consolePolicies.attributes.customHeading'),
           html: kit.frame('<h3 id="attributes-custom">' +
@@ -1043,7 +1073,7 @@ class PoliciesPage {
         { id: kind.id + '-sub-new',
           label: t.text('consolePolicies.sub.new'),
           html: kit.frame('<h3>' + t.html('consolePolicies.named.addHeading') +
-            '</h3>' + named.add) }
+            '</h3>' + PoliciesPage.newPolicyLink(kind.id, t)) }
       ].concat(member.clients ? [
         // THE LEARNED CLIENTS (#1112), the realm's register, beside the
         // profiles whose `clientRules` row is the configured half.
@@ -1283,12 +1313,9 @@ class PoliciesPage {
           ? '<input type="hidden" name="newProfile" value="1">'
           : '') +
         (adding
-          ? '<p><label for="' + kit.esc(prefix) + 'name">' +
-            t.html('consolePolicies.named.name') + '</label> ' +
-            '<input type="text" id="' + kit.esc(prefix) + 'name" ' +
-            'name="profile" pattern="[a-z0-9][a-z0-9-]{0,63}" required ' +
-            'value="' + kit.esc(named.name || '') + '" ' +
-            'placeholder="administrators"></p>'
+          ? PoliciesPage.nameCell(prefix + 'name', 'profile',
+              t.html('consolePolicies.named.name'), named.name || '',
+              'administrators', 63, t)
           : '<input type="hidden" name="profile" value="' +
             kit.esc(named.name) + '">') +
         PoliciesPage.fieldHeader(t) +
@@ -1435,7 +1462,7 @@ class PoliciesPage {
             label: t.text('consolePolicies.sub.new'),
             html: kit.frame('<h3>' +
               t.html('consolePolicies.named.addHeading') +
-              '</h3>' + named.add) }
+              '</h3>' + PoliciesPage.newPolicyLink('password', t)) }
         ]);
       })()
       : defaultPart;
@@ -1549,6 +1576,92 @@ class PoliciesPage {
 
   // The header row of a profile's field table, shared by the default
   // profile's form and a named profile's (#539: one set of messages).
+  // THE WAY FROM A KIND'S NEW POLICY TAB TO ITS CREATE PAGE (#1132), as
+  // the Users list's is to New user: the one create form is there, its
+  // required fields called out the way New user's are.
+  static newPolicyLink(kindId, t) {
+    return kit.createLink('/admin/policies/new?kind=' +
+      encodeURIComponent(String(kindId)),
+      t.html('consolePolicies.newPolicy.button'));
+  }
+
+  // A NEW POLICY'S NAME (#1132), the one field every kind's create refuses
+  // without — a save with no name edits the DEFAULT policy — drawn as a
+  // required field is everywhere else: outlined, starred, "required".
+  static nameCell(id, name, label, value, example, max, t) {
+    return '<div id="fgc-' + kit.esc(id) + '" class="fg-cell fg-required ' +
+      'fg-solo"><label class="fg-name" for="' + kit.esc(id) + '">' + label +
+      '</label><span class="fg-for">' + t.html('consoleKit.grid.required') +
+      '</span><input type="text" id="' + kit.esc(id) + '" name="' +
+      kit.esc(name) + '" pattern="[a-z0-9][a-z0-9-]{0,' + max + '}" ' +
+      'required aria-required="true" value="' + kit.esc(value) +
+      '" placeholder="' + kit.esc(example) + '"></div>';
+  }
+
+  /**
+   * Draws Directory → Policies → New policy (#1132) from the answer of
+   * `GET /admin-api/policies/new` and, as `policies`, the policies view:
+   * with `kind`, that kind's create form, its required fields called out
+   * as New user's are; without one, the kinds to choose from.
+   *
+   * @param ctx - the render context (`WebKit.context()`)
+   * @param json - the answer, with `policies`, and `state` after a refused
+   *   create
+   * @returns the body as HTML
+   */
+  static newPolicyBody(ctx, json) {
+    const t = ctx.t;
+    const view = json.policies || {};
+    const kind = (view.kinds || []).filter(function (one) {
+      return one.id === json.kind;
+    })[0];
+    if (!kind) {
+      return kit.frame(kit.note(t.html('consolePolicies.newPolicy.choose')) +
+        '<ul>' + (json.kinds || []).map(function (one) {
+          return '<li><a href="/admin/policies/new?kind=' +
+            kit.esc(encodeURIComponent(String(one.id))) + '">' +
+            kit.esc(one.label) + '</a></li>';
+        }).join('') + '</ul>');
+    }
+    // WHICH FIELDS ARE REQUIRED is the answer's: each of the kind's fields
+    // the save refuses without is marked, where its row is drawn.
+    const required = {};
+    (json.createFields || []).forEach(function (one) {
+      required[one.name] = !!one.required;
+    });
+    const member = Object.assign({}, view[kind.id] || {});
+    member.fields = (member.fields || []).map(function (field) {
+      return Object.assign({}, field, { required: !!required[field.key] });
+    });
+    const marked = Object.assign({}, view);
+    marked[kind.id] = member;
+    const state = json.state || {};
+    let form;
+    if (kind.id === 'authn') {
+      form = PoliciesPage.namedAuthnPoliciesSection(member, t, state).add;
+    } else if (kind.id === 'attributes') {
+      form = PoliciesPage.attributePolicySection(marked, t, state, true);
+    } else {
+      form = PoliciesPage.namedProfileParts(kind, member, t, state).add;
+    }
+    const names = (json.createFields || []).filter(function (one) {
+      return one.required && (member.fields || []).every(function (field) {
+        return field.key !== one.name || field.type !== 'bool';
+      });
+    }).map(function (one) {
+      const field = (member.fields || []).filter(function (row) {
+        return row.key === one.name;
+      })[0];
+      return { required: true,
+               label: field ? kit.esc(field.label)
+                 : t.html('consolePolicies.named.name') };
+    });
+    return '<h2>' + kit.esc(kind.label) + '</h2>' +
+      kit.note(t.html('consolePolicies.generic.governs') +
+        kit.esc(kind.governs)) +
+      kit.frame(kit.requiredNote(names, t) + form);
+  }
+
   static fieldHeader(t) {
     return '<table><tr><th>' + t.html('consolePolicies.field.rule') +
       '</th><th>' + t.html('consolePolicies.field.value') + '</th><th>' +
@@ -1693,9 +1806,17 @@ class PoliciesPage {
         '" step="1" required value="' + kit.esc(field.value) + '"' + off +
         hint + '> <span class="sub">' + kit.esc(field.unit) + '</span>';
     }
-    return '<tr><td><label for="' + kit.esc(id) + '"' + hint + '>' +
+    // A FIELD A NEW POLICY'S SAVE REFUSES WITHOUT (#1132), on New policy's
+    // page: the row outlined, the name starred and "required" said, as a
+    // field grid cell is. A box has no empty state — unticked is "no" — so
+    // a boolean is never marked.
+    const marked = !!field.required && field.type !== 'bool';
+    return '<tr' + (marked ? ' class="fg-required-row"' : '') +
+      '><td><label for="' + kit.esc(id) + '"' + hint + '>' +
       kit.esc(field.label) +
-      '</label></td><td>' + control + '</td>' +
+      '</label>' + (marked ? '<span class="fg-for">' +
+        t.html('consoleKit.grid.required') + '</span>' : '') +
+      '</td><td>' + control + '</td>' +
       '<td><code>' + kit.esc(field.attribute) + '</code></td>' +
       '<td>' + kit.esc(field.type === 'bool'
         ? (field.default ? t.text('consolePolicies.yes')

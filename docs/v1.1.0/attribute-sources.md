@@ -29,6 +29,19 @@ Sources are configured per realm on **Directory → Attribute sources**
 | **Read** | When a person is read (see below). |
 | **On failure** | `keep` (the default): the values already on the entry stand and the sign-in goes ahead. `refuse`: the sign-in is refused. |
 
+### Adding a source — `/admin/attribute-sources/new`
+
+The **Add** tab on *Directory → Attribute sources* takes you to the form.
+**The id, host, database, user, table, key column and at least one column
+mapping are required**: each is outlined in red and marked *required*, as on
+`/admin/users/new`, and the note above the form names them. Every other field
+is optional and starts at the default the service applies when it is left
+out: PostgreSQL, the dialect's port, no password, the key attribute `uid`,
+read at sign-in, an hour between scheduled reads, a two-second timeout,
+`keep` on failure. A refused add keeps every box as you typed it, with the
+reason at the top of the window. `GET /admin-api/attribute-sources/new`
+answers the same fields, each with `required`.
+
 Choose a database user that can read only that table or view. The service
 only ever sends one statement, `SELECT <columns> FROM <table> WHERE
 <key column> = ?`. It builds the statement itself and passes the person's key

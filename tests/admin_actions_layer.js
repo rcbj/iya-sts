@@ -532,6 +532,10 @@ function checkNothingRequiresItEarly(t) {
                    // list — required LAZILY in the request; the module is
                    // built with the other API modules, after the console.
                    'mgmt-api/secret_destinations_api.ts',
+                   // Hardware tokens' API (#1955), for `adminViews`' paging;
+                   // built with the other API modules at 19, after the
+                   // console, so the import is a cache hit.
+                   'mgmt-api/hardware_tokens_api.ts',
                    // The partners' Shared Signals operation (#313's sweep,
                    // 2026-10-12), for `adminViews`' paging only — required
                    // LAZILY in the request, after the console is built.

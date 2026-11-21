@@ -585,7 +585,7 @@ Scope: `admin:read`.
 
 `kind` `x509` (a PEM certificate; its thumbprint is SHA-256 over the SubjectPublicKeyInfo), `jwk` (a PUBLIC JWK; RFC 7638, which is DPoP's jkt) or `webauthn` (the credential id of a security key the device's owner enrolled), in `value`. Recorded as proven by nobody and self-asserted. Refused for private material or an unreadable key (STS-DEVICE-0004), a key another device holds (STS-DEVICE-0005), or a device at devices.maxKeysPerDevice (STS-DEVICE-0006).
 
-**Mirrors** `POST /admin/devices` on the admin console.
+**Mirrors** `POST /admin/devices and POST /admin/devices/new` on the admin console.
 
 Scope: `admin:write`.
 
@@ -845,7 +845,7 @@ Scope: `admin:write`.
 
 A device entry under `ou=devices` owned by `owner` — a username, or with `ownerKind` `application` an application's identifier — with an optional `label`, `platform`, `model`, `os`, the `applications` that use it, and its first keys, either `keys` (each `kind` and `value`: a PEM certificate, a public JWK or a security key's credential id the owner enrolled) or one as `keyKind` and `key`. Every key is recorded as proven by nobody and self-asserted. Refused for an owner the directory does not hold (STS-DEVICE-0001), an owner at its bound (STS-DEVICE-0002, STS-DEVICE-0003 — nothing is removed to make room), a key that is private, unreadable (STS-DEVICE-0004) or another device's (STS-DEVICE-0005).
 
-**Mirrors** `POST /admin/devices` on the admin console.
+**Mirrors** `POST /admin/devices and POST /admin/devices/new` on the admin console.
 
 Scope: `admin:write`.
 
@@ -865,9 +865,9 @@ Scope: `admin:write`.
 | `keyKind` | one of `x509`, `jwk`, `webauthn` |  |  |
 | `keyLabel` | string |  |  |
 | `keys` | list |  |  |
-| `keys[].kind` | one of `x509`, `jwk`, `webauthn` |  |  |
+| `keys[].kind` | one of `x509`, `jwk`, `webauthn` |  | Required in each key: a key with no kind is refused (STS-DEVICE-0004). |
 | `keys[].label` | string |  |  |
-| `keys[].value` | any JSON |  | PEM, JWK (object or JSON) or credential id. |
+| `keys[].value` | any JSON |  | PEM, JWK (object or JSON) or credential id. Required in each key: a key with nothing readable is refused (STS-DEVICE-0004). |
 | `label` | string |  |  |
 | `model` | string |  |  |
 | `os` | string |  |  |
@@ -1188,6 +1188,44 @@ Scope: `admin:read`.
 | `timeline.totals.evicted` | number |  |  |
 | `timeline.totals.removed` | number |  |  |
 
+## GET /admin-api/devices/new
+
+`getNewDeviceForm`
+
+**What a device may be registered with, and which of it is required**
+
+The create's fields in `createFields`, each with `required` — `owner` is the one the create refuses without (STS-DEVICE-0001); the rest are optional, and a first key is recorded only when both `keyKind` and `key` are given — plus the closed sets the form's choices come from: `ownerKinds`, `platforms` and the `keyKinds` a first key may be. **It registers nothing**: the create is `POST /admin-api/devices/create`.
+
+**Mirrors** `GET /admin/devices/new` on the admin console.
+
+Scope: `admin:read`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**200**: The fields, which are required, and the choices.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `createFields` | list |  |  |
+| `createFields[]` | object |  | One field of a directory object's create (#1132): the name the create takes it under and whether the create refuses without it. A field is required exactly when the create refuses an empty or absent value; every other field is optional. |
+| `createFields[].name` | string | yes |  |
+| `createFields[].required` | boolean | yes |  |
+| `createFields[].requiredWhen` | object |  | A field required for some choices only: the create refuses without it when `field` holds one of `values`, and is otherwise indifferent. `required` is false for such a field. |
+| `createFields[].requiredWhen.field` | string | yes |  |
+| `createFields[].requiredWhen.values` | list | yes |  |
+| `createFields[].requiredWhen.values[]` | string |  |  |
+| `keyKinds` | list |  |  |
+| `keyKinds[]` | string |  |  |
+| `ownerKinds` | list |  |  |
+| `ownerKinds[]` | string |  |  |
+| `platforms` | list |  |  |
+| `platforms[]` | string |  |  |
+
 ## POST /admin-api/devices/remove
 
 `removeDevice`
@@ -1196,7 +1234,7 @@ Scope: `admin:read`.
 
 Deletes the device entry, its keys and any Native SSO secret with it. Refused for an unknown device (STS-DEVICE-0007).
 
-**Mirrors** `POST /admin/devices` on the admin console.
+**Mirrors** `POST /admin/devices and POST /admin/devices/new` on the admin console.
 
 Scope: `admin:write`.
 
@@ -1453,7 +1491,7 @@ Scope: `admin:write`.
 
 `key` is the key's id or its thumbprint. Refused for an unknown device (STS-DEVICE-0007) or a key it does not hold (STS-DEVICE-0008).
 
-**Mirrors** `POST /admin/devices` on the admin console.
+**Mirrors** `POST /admin/devices and POST /admin/devices/new` on the admin console.
 
 Scope: `admin:write`.
 
@@ -1711,7 +1749,7 @@ Scope: `admin:write`.
 
 `status` is `compliant`, `not-compliant` or `unknown` (withdrawing a vouch), with an optional `reason`. Recorded with source `admin`. When what a receiver can be told moved — CAEP knows compliant and not-compliant, and unknown is sent as not-compliant — a CAEP device-compliance-change goes out, its subject the device and its owner. An MDM feed reports through POST /admin-api/device-compliance instead, under its own scope. Refused for an unknown device (STS-DEVICE-0007) or status (STS-DEVICE-0011).
 
-**Mirrors** `POST /admin/devices` on the admin console.
+**Mirrors** `POST /admin/devices and POST /admin/devices/new` on the admin console.
 
 Scope: `admin:write`.
 
@@ -1970,7 +2008,7 @@ Scope: `admin:write`.
 
 `status` `compromised`: every sign-on session one of its keys authenticated is ended, its Native SSO secret revoked, every certificate this service's EST or SCEP Issuing CA issued it revoked for keyCompromise, its risk level raised to HIGH (CAEP risk-level-change, principal DEVICE), and for a person's device RISC credential-compromise is sent naming the person and the device (and the deprecated sessions-revoked, where risc.autoEmitTypes names it). `active` restores it and puts back the risk level the compromise raised; nothing revoked comes back. Answers `sessionsEnded` and `certificatesRevoked`.
 
-**Mirrors** `POST /admin/devices` on the admin console.
+**Mirrors** `POST /admin/devices and POST /admin/devices/new` on the admin console.
 
 Scope: `admin:write`.
 
@@ -2229,7 +2267,7 @@ Scope: `admin:write`.
 
 Any of `label`, `platform`, `model`, `os`, `applications` (the whole list) and a new `owner` (with `ownerKind`). A new owner is held to its own bound and takes the device WITHOUT its Native SSO secret, which was bound to the old owner's session; its keys go with it. Refused for an unknown device (STS-DEVICE-0007).
 
-**Mirrors** `POST /admin/devices` on the admin console.
+**Mirrors** `POST /admin/devices and POST /admin/devices/new` on the admin console.
 
 Scope: `admin:write`.
 

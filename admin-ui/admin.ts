@@ -4536,7 +4536,16 @@ class AdminConsole {
       '.fg-cell.fg-required{border-color:#e8b4b0;border-left:4px solid ' +
       '#b00020;background:#fffafa}' +
       '.fg-required .fg-name::after{content:" *";color:#b00020}' +
+      // The same in a policy's table of fields (#1132), and a required
+      // cell drawn on its own above such a table.
+      '.fg-required-row>td:first-child{border-left:4px solid #b00020;' +
+      'background:#fffafa}' +
+      '.fg-required-row>td:first-child label::after{content:" *";' +
+      'color:#b00020}' +
+      '.fg-cell.fg-solo{max-width:28rem;margin:.4em 0 .8em}' +
+      // A directory create form's email and password boxes (#1132) too.
       '.fg-cell input[type=text],.fg-cell input[type=number],' +
+      '.fg-cell input[type=email],.fg-cell input[type=password],' +
       '.fg-cell select,.fg-cell textarea{width:100%;box-sizing:border-box;' +
       'min-height:0}' +
       '.fg-item{display:flex;gap:.3em;align-items:center;margin:.2em 0}' +

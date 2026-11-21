@@ -6546,6 +6546,59 @@ const ENDPOINTS: EndpointEntry[] = [
           'create fails, so a caller that reads this first cannot be told ' +
           'afterwards that half of what it sent was ignored. Mirrors GET ' +
           '/admin/users/new.' },
+  { path: '/admin-api/groups/new', group: 'Management API',
+    name: 'New group form', specs: ['rfc4511', 'rfc4519'],
+    what: 'NON-SPEC. What a group may be created with, as JSON: each field ' +
+          'of the create and whether the create refuses without it — the ' +
+          'cn is required, the description, the address and the members ' +
+          'are not — plus the ou=groups container a new group would land ' +
+          'in, THIS REALM\'S. IT CREATES NOTHING: the create is POST ' +
+          '/admin-api/groups/create. Mirrors GET /admin/groups/new.' },
+  { path: '/admin-api/roles/new', group: 'Management API',
+    name: 'New role form', specs: ['rfc4511'],
+    what: 'NON-SPEC. What a role may be created with, as JSON: each field ' +
+          'of the create and whether the create refuses without it — the ' +
+          'name is required, the rest are not — plus the container roles ' +
+          'are stored in and the applications a role may be for. IT ' +
+          'CREATES NOTHING: the create is POST ' +
+          '/admin-api/roles/create-role. Mirrors GET /admin/roles/new.' },
+  { path: '/admin-api/devices/new', group: 'Management API',
+    name: 'New device form', specs: ['rfc4511'],
+    what: 'NON-SPEC. What a device may be registered with, as JSON: each ' +
+          'field of the create and whether the create refuses without it ' +
+          '— the owner is required, the rest are not — plus the closed ' +
+          'sets its choices come from. IT REGISTERS NOTHING: the create ' +
+          'is POST /admin-api/devices/create. Mirrors GET ' +
+          '/admin/devices/new.' },
+  { path: '/admin-api/attribute-sources/new', group: 'Management API',
+    name: 'New attribute source form', specs: ['rfc4511'],
+    what: 'NON-SPEC. What an attribute source may be added with, as JSON: ' +
+          'each field of the create and whether the create refuses without ' +
+          'it — the id, the host, the database, the user, the table, its ' +
+          'key column and at least one column mapping are required, the ' +
+          'rest have defaults — plus the closed sets its choices come ' +
+          'from. IT ADDS NOTHING: the create is POST ' +
+          '/admin-api/attribute-sources/add-source. Mirrors GET ' +
+          '/admin/attribute-sources/new.' },
+  { path: '/admin-api/secret-destinations/new', group: 'Management API',
+    name: 'New secret destination form', specs: ['rfc4511'],
+    what: 'NON-SPEC. What a secret push destination may be added with, as ' +
+          'JSON: each field of the create and whether the create refuses ' +
+          'without it — the identifier and the provider always, and some ' +
+          'only for some providers (requiredWhen): the write credential ' +
+          'for all but file, the region for aws, the endpoint for azure ' +
+          'and vault, the directory for file. IT ADDS NOTHING: the create ' +
+          'is POST /admin-api/secret-destinations/add-destination. Mirrors ' +
+          'GET /admin/secret-destinations/new.' },
+  { path: '/admin-api/policies/new', group: 'Management API',
+    name: 'New policy form', specs: ['rfc4511'],
+    what: 'NON-SPEC. The kinds a named policy may be made of and, for the ' +
+          'kind asked, each field of its save and whether the save ' +
+          'refuses without it — the name always, because a save with no ' +
+          'name changes the default policy, and each field whose value is ' +
+          'not kept when it is left out. IT SAVES NOTHING: a named policy ' +
+          'is the kind\'s save act under a name the realm does not hold ' +
+          'yet. Mirrors GET /admin/policies/new.' },
   { path: '/admin-api/applications/new', group: 'Management API',
     name: 'New application form', specs: ['rfc4511', 'rfc7591'],
     what: 'NON-SPEC. THE TWO CLOSED VOCABULARIES A CREATE TAKES, as JSON: ' +

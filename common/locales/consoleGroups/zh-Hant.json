@@ -129,5 +129,10 @@
   "ownerProtection.save": "儲存",
   "ownerProtection.closedAnyway": "無論核取方塊如何，它都對擁有者關閉：",
   "ownerProtection.isMarked": "管理員已將其對擁有者關閉。",
-  "ownerProtection.notMarked": "沒有管理員將其對擁有者關閉。"
+  "ownerProtection.notMarked": "沒有管理員將其對擁有者關閉。",
+  "newGroup.button": "新增群組",
+  "newGroup.linkNote": "新增群組的表單，必填欄位以紅色框出。",
+  "newGroup.noDirectory": "此程序沒有可建立群組的目錄。",
+  "newGroup.groupHint": "群組的名稱，也是其 RDN",
+  "newGroup.membersHint": "每行一個或以逗號分隔：使用者名稱或任意 DN"
 }

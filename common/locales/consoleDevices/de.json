@@ -187,5 +187,8 @@
   "monitorHtml.thRegistered": "Registriert",
   "monitorHtml.thRemoved": "Entfernt",
   "monitorHtml.thEvicted": "Verdrängt",
-  "monitorHtml.thCompliance": "Konformität: {source}"
+  "monitorHtml.thCompliance": "Konformität: {source}",
+  "newDevice.button": "Gerät registrieren",
+  "newDevice.key": "Erster Schlüssel",
+  "newDevice.keyHint": "nur zusammen mit seiner Art gespeichert"
 }

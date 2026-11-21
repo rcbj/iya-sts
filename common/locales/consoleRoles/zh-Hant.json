@@ -183,5 +183,7 @@
   "eligibility.yes": "{user} 具備資格（{decision}）。",
   "eligibility.no": "{user} 不具備資格（{decision}）。",
   "eligibility.missing": "缺少屬性：{attribute}",
-  "eligibility.applicable": "適用的政策："
+  "eligibility.applicable": "適用的政策：",
+  "newRole.button": "新增角色",
+  "newRole.noStore": "此程序沒有可儲存角色的目錄。"
 }

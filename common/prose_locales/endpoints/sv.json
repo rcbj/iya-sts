@@ -1075,6 +1075,30 @@
     "en": "911ac7f1d87d5691",
     "text": "Formulär för ny användare"
   },
+  "endpoints.route./admin-api/groups/new.name": {
+    "en": "e7e8f8038d460304",
+    "text": "Formulär för ny grupp"
+  },
+  "endpoints.route./admin-api/roles/new.name": {
+    "en": "2693340ee18861ff",
+    "text": "Formulär för ny roll"
+  },
+  "endpoints.route./admin-api/devices/new.name": {
+    "en": "8922b80eac839903",
+    "text": "Formulär för ny enhet"
+  },
+  "endpoints.route./admin-api/attribute-sources/new.name": {
+    "en": "24f2d80ebcf05f5e",
+    "text": "Formulär för ny attributkälla"
+  },
+  "endpoints.route./admin-api/secret-destinations/new.name": {
+    "en": "a6b78c1984266387",
+    "text": "Formulär för nytt hemlighetsmål"
+  },
+  "endpoints.route./admin-api/policies/new.name": {
+    "en": "09d937d4dfadbac0",
+    "text": "Formulär för ny policy"
+  },
   "endpoints.route./admin-api/applications/new.name": {
     "en": "46a0fea8394de3a4",
     "text": "Formulär för ny applikation"

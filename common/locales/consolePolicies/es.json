@@ -230,5 +230,7 @@
   "transfer.view.trustedHeading": "Otros dominios en los que confía este dominio",
   "transfer.view.noneTrusted": "Este dominio no confía en las exportaciones de políticas de ningún otro dominio.",
   "transfer.view.kind": "Tipo",
-  "transfer.view.addedBy": "Añadido por"
+  "transfer.view.addedBy": "Añadido por",
+  "newPolicy.button": "Nueva política",
+  "newPolicy.choose": "Elija el tipo de política que va a crear."
 }

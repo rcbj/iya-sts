@@ -1991,6 +1991,30 @@
     "en": "ee45e233f511ee47",
     "text": "NO ESTÁNDAR. EL CATÁLOGO CERRADO DE ATRIBUTOS QUE ADMITE UNA CREACIÓN, como JSON: cada atributo que se puede dar a una persona de este directorio, cada uno nombrando la notificación a la que llega en un token o credencial emitidos y el documento del que procede su nombre (lo cual importa porque este directorio NO TIENE ESQUEMA y no rechazaría ninguno en ningún lugar), más el contenedor ou=users en el que quedaría una persona nueva (EL DE ESTE DOMINIO, porque el directorio es por dominio) y las cuatro formas de darle acceso. uid no está en la lista porque ES el nombre de usuario, y userPassword tampoco porque una contraseña pasa por la opción de credencial para que se guarde con hash y no tal cual. NO CREA A NADIE: la creación es POST /admin-api/users/create, y esta es la lista contra la que valida esa llamada; un nombre de atributo que no está en ella se rechaza y toda la creación falla, así que a un llamador que lee esto primero no se le puede decir después que la mitad de lo que envió se ignoró. Refleja GET /admin/users/new."
   },
+  "stsmetadata.endpoints./admin-api/groups/new.what": {
+    "en": "4ed04fc8ef1be664",
+    "text": "FUERA DE ESPECIFICACIÓN. Con qué puede crearse un grupo, en JSON: cada campo de la creación y si la creación se rechaza sin él — el cn es obligatorio; la descripción, la dirección y los miembros no — además del contenedor ou=groups donde caería un grupo nuevo, el DE ESTE REINO. NO CREA NADA: la creación es POST /admin-api/groups/create. Refleja GET /admin/groups/new."
+  },
+  "stsmetadata.endpoints./admin-api/roles/new.what": {
+    "en": "3bf6af72cb520499",
+    "text": "FUERA DE ESPECIFICACIÓN. Con qué puede crearse un rol, en JSON: cada campo de la creación y si la creación se rechaza sin él — el nombre es obligatorio, el resto no — además del contenedor donde se guardan los roles y las aplicaciones para las que puede ser un rol. NO CREA NADA: la creación es POST /admin-api/roles/create-role. Refleja GET /admin/roles/new."
+  },
+  "stsmetadata.endpoints./admin-api/devices/new.what": {
+    "en": "97ebfb0c1410c335",
+    "text": "FUERA DE ESPECIFICACIÓN. Con qué puede registrarse un dispositivo, en JSON: cada campo de la creación y si la creación se rechaza sin él — el propietario es obligatorio, el resto no — además de los conjuntos cerrados de los que salen sus opciones. NO REGISTRA NADA: la creación es POST /admin-api/devices/create. Refleja GET /admin/devices/new."
+  },
+  "stsmetadata.endpoints./admin-api/attribute-sources/new.what": {
+    "en": "a0e98374461ed268",
+    "text": "FUERA DE ESPECIFICACIÓN. Con qué puede añadirse un origen de atributos, en JSON: cada campo de la creación y si la creación se rechaza sin él — el id, el host, la base de datos, el usuario, la tabla, su columna clave y al menos una asignación de columna son obligatorios; el resto tiene valores predeterminados — además de los conjuntos cerrados de los que salen sus opciones. NO AÑADE NADA: la creación es POST /admin-api/attribute-sources/add-source. Refleja GET /admin/attribute-sources/new."
+  },
+  "stsmetadata.endpoints./admin-api/secret-destinations/new.what": {
+    "en": "efff1aa20f1b29a1",
+    "text": "FUERA DE ESPECIFICACIÓN. Con qué puede añadirse un destino de secretos, en JSON: cada campo de la creación y si la creación se rechaza sin él — el identificador y el proveedor siempre, y algunos solo para algunos proveedores (requiredWhen): la credencial de escritura para todos salvo file, la región para aws, el endpoint para azure y vault, el directorio para file. NO AÑADE NADA: la creación es POST /admin-api/secret-destinations/add-destination. Refleja GET /admin/secret-destinations/new."
+  },
+  "stsmetadata.endpoints./admin-api/policies/new.what": {
+    "en": "2c58d79f3a71506e",
+    "text": "FUERA DE ESPECIFICACIÓN. Los tipos de los que puede hacerse una política con nombre y, para el tipo pedido, cada campo de su guardado y si el guardado se rechaza sin él — siempre el nombre, porque un guardado sin nombre cambia la política predeterminada, y cada campo cuyo valor no se conserva si se omite. NO GUARDA NADA: una política con nombre es el guardado del tipo con un nombre que el reino aún no tiene. Refleja GET /admin/policies/new."
+  },
   "stsmetadata.endpoints./admin-api/applications/new.what": {
     "en": "25bf3526e817e678",
     "text": "NO ESTÁNDAR. LOS DOS VOCABULARIOS CERRADOS QUE ADMITE UNA CREACIÓN, como JSON: los ocho tipos y las catorce familias de protocolos para las que se puede DECLARAR una aplicación, cada uno con lo que significa, más el contenedor ou=applications en el que quedaría una entrada nueva (EL DE ESTE DOMINIO, porque el directorio es por dominio), cuántas contendrá y los atributos que una creación no admite pero set/add/remove sí. NO CREA NADA: la creación es POST /admin-api/applications/create, y esta es la lista contra la que valida esa llamada, publicada para que un llamador aprenda qué puede enviar a partir del servicio y no de una copia en un documento. Declarar una familia no concede ni rechaza nada: ningún endpoint lee appAllowedProtocol. Refleja GET /admin/applications/new."

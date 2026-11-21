@@ -71,5 +71,7 @@
   "jobOn": "en",
   "scheduler": "Planificador",
   "jobOnEnd": ".",
-  "settings": "Configuración"
+  "settings": "Configuración",
+  "newSource.button": "Añadir un origen",
+  "newSource.yes": "sí"
 }

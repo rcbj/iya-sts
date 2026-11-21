@@ -183,5 +183,7 @@
   "eligibility.yes": "Karapat-dapat si {user} ({decision}).",
   "eligibility.no": "Hindi karapat-dapat si {user} ({decision}).",
   "eligibility.missing": "Nawawalang attribute: {attribute}",
-  "eligibility.applicable": "Mga patakarang naglapat:"
+  "eligibility.applicable": "Mga patakarang naglapat:",
+  "newRole.button": "Bagong role",
+  "newRole.noStore": "Walang directory ang prosesong ito na mapag-iimbakan ng role."
 }

@@ -271,6 +271,14 @@ Scope: `admin:console`.
 |---|---|---|---|
 | `applicationCount` | integer |  |  |
 | `container` | string, or null |  |  |
+| `createFields` | list |  |  |
+| `createFields[]` | object |  | One field of a directory object's create (#1132): the name the create takes it under and whether the create refuses without it. A field is required exactly when the create refuses an empty or absent value; every other field is optional. |
+| `createFields[].name` | string | yes |  |
+| `createFields[].required` | boolean | yes |  |
+| `createFields[].requiredWhen` | object |  | A field required for some choices only: the create refuses without it when `field` holds one of `values`, and is otherwise indifferent. `required` is false for such a field. |
+| `createFields[].requiredWhen.field` | string | yes |  |
+| `createFields[].requiredWhen.values` | list | yes |  |
+| `createFields[].requiredWhen.values[]` | string |  |  |
 | `declarations` | list |  |  |
 | `declarations[].attribute` | string |  |  |
 | `declarations[].editable` | string or boolean, or null |  |  |

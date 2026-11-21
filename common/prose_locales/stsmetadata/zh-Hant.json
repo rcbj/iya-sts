@@ -1991,6 +1991,30 @@
     "en": "ee45e233f511ee47",
     "text": "非規格端點。建立操作所接受的封閉屬性目錄，以 JSON 提供：此目錄中的人可被賦予的每個屬性，各自指名其在簽發的權杖或憑證中對應的宣告，以及其名稱的出處文件——這很重要，因為此目錄「沒有結構描述」，在任何地方都不會拒絕其中任何一個——加上新人員會放入的 ou=users 容器（「此領域的」容器，因為目錄是依領域區分的），以及可賦予他們進入方式的四種途徑。uid 不在清單上，因為它「就是」使用者名稱；userPassword 也不在，因為密碼要經由認證資訊選項處理，才會被雜湊而不是直接寫下。它不會建立任何人：建立是 POST /admin-api/users/create，而這是該呼叫據以驗證的清單——不在清單上的屬性名稱會被拒絕，整個建立都會失敗，因此先讀取此清單的呼叫端不會在事後才被告知它送出的內容有一半被忽略了。對應 GET /admin/users/new。"
   },
+  "stsmetadata.endpoints./admin-api/groups/new.what": {
+    "en": "4ed04fc8ef1be664",
+    "text": "非規範。以 JSON 說明建立群組可以使用什麼：建立的每個欄位，以及缺少它時建立是否會被拒絕——cn 為必填，描述、地址和成員不是——以及新群組將落入的 ou=groups 容器，即本領域的容器。它不建立任何內容：建立是 POST /admin-api/groups/create。對應 GET /admin/groups/new。"
+  },
+  "stsmetadata.endpoints./admin-api/roles/new.what": {
+    "en": "3bf6af72cb520499",
+    "text": "非規範。以 JSON 說明建立角色可以使用什麼：建立的每個欄位，以及缺少它時建立是否會被拒絕——名稱為必填，其餘不是——以及儲存角色的容器和角色可以適用的應用程式。它不建立任何內容：建立是 POST /admin-api/roles/create-role。對應 GET /admin/roles/new。"
+  },
+  "stsmetadata.endpoints./admin-api/devices/new.what": {
+    "en": "97ebfb0c1410c335",
+    "text": "非規範。以 JSON 說明註冊裝置可以使用什麼：建立的每個欄位，以及缺少它時建立是否會被拒絕——擁有者為必填，其餘不是——以及其選項所來自的封閉集合。它不註冊任何內容：建立是 POST /admin-api/devices/create。對應 GET /admin/devices/new。"
+  },
+  "stsmetadata.endpoints./admin-api/attribute-sources/new.what": {
+    "en": "a0e98374461ed268",
+    "text": "非規範。以 JSON 說明新增屬性來源可以使用什麼：建立的每個欄位，以及缺少它時建立是否會被拒絕——id、主機、資料庫、使用者、資料表、其鍵欄以及至少一個欄位對應為必填，其餘有預設值——以及其選項所來自的封閉集合。它不新增任何內容：建立是 POST /admin-api/attribute-sources/add-source。對應 GET /admin/attribute-sources/new。"
+  },
+  "stsmetadata.endpoints./admin-api/secret-destinations/new.what": {
+    "en": "efff1aa20f1b29a1",
+    "text": "非規範。以 JSON 說明新增密鑰推送目標可以使用什麼：建立的每個欄位，以及缺少它時建立是否會被拒絕——識別碼和提供者一律必填，有些僅對某些提供者必填（requiredWhen）：除 file 外均需寫入憑證，aws 需區域，azure 和 vault 需端點，file 需目錄。它不新增任何內容：建立是 POST /admin-api/secret-destinations/add-destination。對應 GET /admin/secret-destinations/new。"
+  },
+  "stsmetadata.endpoints./admin-api/policies/new.what": {
+    "en": "2c58d79f3a71506e",
+    "text": "非規範。可以建立具名原則的類型，以及對於所請求的類型，其儲存的每個欄位以及缺少它時儲存是否會被拒絕——名稱一律必填，因為沒有名稱的儲存會變更預設原則；以及省略時不會保留其值的每個欄位。它不儲存任何內容：具名原則是該類型在本領域尚未使用的名稱下的儲存操作。對應 GET /admin/policies/new。"
+  },
   "stsmetadata.endpoints./admin-api/applications/new.what": {
     "en": "25bf3526e817e678",
     "text": "非規格端點。建立操作所接受的兩個封閉詞彙，以 JSON 提供：應用程式可被「宣告」的八種類型與十四個協定系列，各附其意義，加上新項目會放入的 ou=applications 容器——「此領域的」容器，因為目錄是依領域區分的——它將容納多少項目，以及建立時不能接受、但 set/add/remove 可以接受的屬性。它不會建立任何東西：建立是 POST /admin-api/applications/create，而這是該呼叫據以驗證的清單，發布出來讓呼叫端從服務本身得知可以送出什麼，而不是從文件中的複本得知。宣告一個系列不會授予或拒絕任何東西——沒有任何端點會讀取 appAllowedProtocol。對應 GET /admin/applications/new。"

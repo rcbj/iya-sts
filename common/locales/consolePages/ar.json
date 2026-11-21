@@ -149,5 +149,11 @@
   "title.worker-pools": "مجمّعات العمال",
   "title.broadcast": "إعلان البث",
   "title.sign-in-appearance": "مظهر تسجيل الدخول",
-  "title.post-login-activities": "أنشطة ما بعد تسجيل الدخول"
+  "title.post-login-activities": "أنشطة ما بعد تسجيل الدخول",
+  "title.groups-new": "مجموعة جديدة",
+  "title.roles-new": "دور جديد",
+  "title.devices-new": "تسجيل جهاز",
+  "title.attribute-sources-new": "إضافة مصدر سمات",
+  "title.secret-destinations-new": "إضافة وجهة أسرار",
+  "title.policies-new": "سياسة جديدة"
 }

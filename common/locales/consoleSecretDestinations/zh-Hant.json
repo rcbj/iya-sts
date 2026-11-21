@@ -40,5 +40,6 @@
   "body.testPush": "<strong>測試推送</strong>會把一個金絲雀值（一個無人使用的隨機密碼）寫入專供測試的機密；服務帳戶輪換所用的機密會被拒絕。",
   "body.add": "新增目的地",
   "body.identifier": "識別碼",
-  "body.addButton": "新增"
+  "body.addButton": "新增",
+  "newDestination.button": "新增目標"
 }

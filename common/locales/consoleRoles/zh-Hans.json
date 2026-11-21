@@ -183,5 +183,7 @@
   "eligibility.yes": "{user} 具备资格（{decision}）。",
   "eligibility.no": "{user} 不具备资格（{decision}）。",
   "eligibility.missing": "缺少属性：{attribute}",
-  "eligibility.applicable": "适用的策略："
+  "eligibility.applicable": "适用的策略：",
+  "newRole.button": "新建角色",
+  "newRole.noStore": "此进程没有可存储角色的目录。"
 }

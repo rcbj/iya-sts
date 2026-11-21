@@ -5331,7 +5331,6 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0300` | A reverse-proxy route's `path` is /.iya-pep or under /.iya-pep/, the prefix the proxy reserves for its own callback and sign-out (#1830): an updated PEP refuses the whole configuration. | HTTP 400 on /admin-api; configured: false at the pull |
 | `STS-XACML-0301` | issue-pep-credential named a service account that does not hold REMOTE_PEPS (it is not in the group roles.remotePepGroup names), so the key would authenticate an entry no PEP door admits (#1827, phase 3). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-XACML-0302` | issue-pep-credential certified and registered the new key, and revokePrevious could not revoke one of the entry's other RFC 7523 keys; the new key works, and the old one still does too (#1827, phase 3). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
-| `STS-XACML-0331` | A remote PEP's heartbeat was refused: a member its entry stores carries a value the service cannot hold (fuzz run #595) — a counter that is not a non-negative integer of at most 2^53 - 1, a text member that is not a string or carries a control character, or signals, settings or listeners that are not an object or null. Nothing of it is recorded; the refusal names the member. | none — 400 invalid_request on POST /xacml/pep/heartbeat |
 | `STS-XACML-0303` | A role was written with a membership mode other than static or dynamic-selectable (#1072). | — |
 | `STS-XACML-0304` | A dynamic selectable role was written with a member or a conferring client (#1072): such a role is held by nobody and offered at sign-in, so the write was refused, whether it made a role with members dynamic or added a member to a dynamic role. | — |
 | `STS-XACML-0305` | A console or native role was to be made dynamic selectable (#1072); their holders are fixed, so the write was refused. | — |
@@ -5359,6 +5358,7 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0328` | A role chosen at a sign-in's role step was no longer eligible when it was submitted (#1072); the step is drawn again. | HTTP 400 |
 | `STS-XACML-0329` | A session was refused at a door that cannot draw the role step (federation, a wallet, SPNEGO, a certificate) because a required dynamic role was offered to the person (#1072). | — |
 | `STS-XACML-0330` | A sign-in held for the role step had no pending sign-in to draw the step on, so it was refused (#1072). | — |
+| `STS-XACML-0331` | A remote PEP's heartbeat was refused: a member its entry stores carries a value the service cannot hold (fuzz run #595) — a counter that is not a non-negative integer of at most 2^53 - 1, a text member that is not a string or carries a control character, or signals, settings or listeners that are not an object or null. Nothing of it is recorded; the refusal names the member. | none — 400 invalid_request on POST /xacml/pep/heartbeat |
 
 ## STS-XPEP
 
