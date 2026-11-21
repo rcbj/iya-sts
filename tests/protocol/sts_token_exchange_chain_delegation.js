@@ -112,6 +112,9 @@
 // OWNED HERE (local: true): the chain is this repository's own scenario.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const kit = require("./token_exchange_chain_kit.js");
@@ -392,8 +395,9 @@ async function test() {
                          JSON.stringify(introspection));
       assert.strictEqual(introspection.username, cast.user,
                          JSON.stringify(introspection));
-      assert.ok(kit.audienceList(introspection)
-        .indexOf(one.provider.audience) >= 0, JSON.stringify(introspection));
+      assert.ok(urls.holds(kit.audienceList(introspection),
+                           one.provider.audience),
+                JSON.stringify(introspection));
       kit.assertCommonScope(introspection, "the introspection of " +
                             one.provider.identifier + "'s token");
       const scopes = kit.scopesOf(introspection);

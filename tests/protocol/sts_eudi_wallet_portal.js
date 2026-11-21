@@ -76,6 +76,9 @@
 
 "use strict";
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const childProcess = require("child_process");
 const fs = require("fs");
@@ -669,7 +672,8 @@ async function walletSignIn(driver, wallet, id) {
   const web = await hrefOf(driver, "#wallet-web");
   check("the wait page hands the request to this realm's web wallet (" +
         id + ")", function () {
-    assert.ok(web.indexOf(wallet.url + WALLET_REQUEST_PATH + "?") === 0,
+    assert.ok(urls.isAt(web, wallet.url + WALLET_REQUEST_PATH) &&
+              new URL(web).search !== "",
               web);
   });
   await driver.get(web);
@@ -749,7 +753,8 @@ async function addCredential(driver, wallet, state) {
   const web = await hrefOf(driver, "#open_in_web_wallet");
   check("the offer is handed to this realm's web wallet, with a " +
         "Transaction Code", function () {
-    assert.ok(web.indexOf(wallet.url + WALLET_OFFER_PATH + "?") === 0, web);
+    assert.ok(urls.isAt(web, wallet.url + WALLET_OFFER_PATH) &&
+              new URL(web).search !== "", web);
     assert.ok(/^\d{4,12}$/.test(txCode), txCode);
   });
   await driver.get(web);
@@ -831,7 +836,7 @@ async function addCredential(driver, wallet, state) {
         function () {
     copies.forEach(function (c) {
       assert.ok(Number.isInteger(c.idx) && c.idx >= 0, JSON.stringify(c));
-      assert.ok(c.uri.indexOf(base + "/") === 0, c.uri);
+      assert.ok(urls.isUnder(c.uri, base + "/"), c.uri);
       assert.strictEqual(c.uri, copies[0].uri);
     });
     const distinct = new Set(copies.map(function (c) {

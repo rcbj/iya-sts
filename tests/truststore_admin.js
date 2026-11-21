@@ -84,6 +84,10 @@ const log = require('bunyan').createLogger({ name: 'truststore_admin',
 const ROOT = path.join(__dirname, '..');
 const CHILD_FLAG = 'STS_TRUSTSTORE_ADMIN_CHILD';
 
+// The CA the child's listener presents a certificate under, which every
+// handshake below verifies the listener against; set when it is built.
+const LISTENER_CA = { pem: '' };
+
 // A bundle OpenSSL will not read, shaped exactly like one it would: the regex
 // that finds PEM blocks accepts it, which is the case the strict check exists
 // for.
@@ -115,6 +119,8 @@ async function mintAnchors() {
 // mutant deleting the apply survived it. So: a listener registered the way
 // `server.js` registers the main port, asked-for-never-required like that port,
 // reporting `socket.authorized` back to a client presenting a real chain.
+// The client verifies the LISTENER (LISTENER_CA): the verdict under test is
+// the server's on the client, and nothing here dials unverified.
 function listenerVerifies(server, client) {
   log.debug("Entering listenerVerifies().");
   log.debug("Leaving listenerVerifies().");
@@ -122,7 +128,7 @@ function listenerVerifies(server, client) {
     const https = require('https');
     const req = https.request({
       host: '127.0.0.1', port: server.address().port, path: '/', method: 'GET',
-      cert: client.cert, key: client.key, rejectUnauthorized: false,
+      cert: client.cert, key: client.key, ca: [LISTENER_CA.pem],
       agent: false
     }, function (res) {
       let text = '';
@@ -277,16 +283,32 @@ async function childBody() {
   report.installedAfterFull = view().installed;
   report.countBefore = view().total;
 
-  // A LISTENER OF THIS PROCESS'S OWN, registered like the main port.
+  // A LISTENER OF THIS PROCESS'S OWN, registered like the main port:
+  // `clientAuthOptions('optional')`, the function `server.js` builds it
+  // with. It presents a certificate under a CA of this child's own — handed
+  // to `trustClientCertificatesOn()` too, so every truststore change below
+  // re-applies it rather than the service's uncertified one (no
+  // `pki.start()` ran here).
   const https = require('https');
+  const testCa = require('./protocol/outbound_test_ca');
+  const listenerCa = await testCa.makeCa();
+  const listenerLeaf = await testCa.listenerCertificate(listenerCa,
+                                                        '127.0.0.1');
+  LISTENER_CA.pem = listenerCa.certPem;
   const listener = https.createServer(
-    Object.assign({ requestCert: true, rejectUnauthorized: false },
-                  tls.clientTruststoreOptions()),
+    Object.assign(tls.clientAuthOptions('optional'),
+                  tls.clientTruststoreOptions(),
+                  { key: listenerLeaf.key, cert: listenerLeaf.cert }),
     function (req, res) {
       res.end(req.socket.authorized ? 'verified' : 'unverified');
     });
   await new Promise(function (ok) { listener.listen(0, '127.0.0.1', ok); });
-  tls.trustClientCertificatesOn(listener, 'the truststore_admin test listener');
+  tls.trustClientCertificatesOn(listener, 'the truststore_admin test listener',
+    function () {
+      log.debug("Entering the listener's certificateOf().");
+      log.debug("Leaving the listener's certificateOf().");
+      return { key: listenerLeaf.key, cert: listenerLeaf.cert };
+    });
   report.handshakeBefore = await listenerVerifies(listener, anchors.clientA);
 
   report.unknown = adminActions.truststoreAction({ action: 'clear' }, {});

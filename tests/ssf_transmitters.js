@@ -69,6 +69,9 @@ const ROOT = path.join(__dirname, '..');
 
 function childMain() {
   const ROOT = process.env.FT_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT + '/tests/protocol/url_match.js');
   const OUT = process.env.FT_OUT;
   const fs = require('fs');
   const crypto = require('crypto');
@@ -660,7 +663,7 @@ function childMain() {
       return r.url === CF + '/stream' && r.method === 'POST';
     })[0] || { body: {} };
     note(cfMade.ok && cfFound.ok && cfCreated.ok &&
-         jwksForgotten.indexOf(CF + '/jwks') >= 0 &&
+         urls.holds(jwksForgotten, CF + '/jwks') &&
          /scope=ssf\.read\+ssf\.manage/.test(cfTokenCall.raw) &&
          created.body.delivery.endpoint_url ===
            'https://rx.test/realm/r/federation/signals/conf' &&

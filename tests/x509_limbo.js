@@ -50,8 +50,9 @@
 //   crl       `revocation_status.crlInHandVerdict()` — the CRL reader every
 //             foreign revocation answer comes from, on the path `anchors`
 //             built. The seventeen `crl::` cases.
-//   inbound   OpenSSL, as node's TLS runs it on the main port: `requestCert`,
-//             `rejectUnauthorized: false`, the truststore as `ca`, and
+//   inbound   OpenSSL, as node's TLS runs it on the main port: a client
+//             certificate asked for and not required
+//             (`clientAuthOptions('optional')`), the truststore as `ca`, and
 //             `socket.authorized` — what certificate sign-in, RFC 8705, the
 //             XACML gate and the portal read. The CLIENT cases that carry
 //             the leaf's key (a handshake needs it).
@@ -844,7 +845,11 @@ function handshake(serverOptions, clientOptions, judge, onServerSocket) {
   });
 }
 
-// A server identity for the inbound driver, made at run time.
+// A server identity for the inbound driver, made at run time: self-signed,
+// for the address the listener is on, so the driver's client can VERIFY it
+// (its own certificate as the one anchor, and 127.0.0.1 by its
+// subjectAltName). Which certificate the listener presents is not the
+// question the inbound driver asks.
 let inboundIdentity = null;
 
 function inboundServerIdentity() {
@@ -852,7 +857,14 @@ function inboundServerIdentity() {
   if (!inboundIdentity) {
     const stsCrypto = require('../common/crypto');
     const made = stsCrypto.selfSignedRsaCertificate({
-      commonName: 'x509-limbo inbound listener' });
+      commonName: 'x509-limbo inbound listener',
+      extensions: [
+        { name: 'basicConstraints', cA: false, critical: true },
+        { name: 'keyUsage', digitalSignature: true, keyEncipherment: true,
+          critical: true },
+        { name: 'extKeyUsage', serverAuth: true },
+        { name: 'subjectAltName', altNames: [{ type: 7, ip: '127.0.0.1' }] }
+      ] });
     inboundIdentity = { key: made.privateKeyPem, cert: made.certPem };
   }
   log.debug("Leaving inboundServerIdentity().");
@@ -867,15 +879,19 @@ async function driveInbound(t) {
   }
   const tlsServer = require('../tls/tls_server');
   const identity = inboundServerIdentity();
-  // The main port's own posture (`server.js`): asked for, never required,
-  // the truststore as the only anchors, and `socket.authorized` read after.
+  // The main port's own posture (`server.js`, `clientAuthOptions(
+  // 'optional')`): asked for, never required, the truststore as the only
+  // anchors, and `socket.authorized` read after — the SERVER's verdict on
+  // the case's chain is the whole question here. The client presenting it
+  // verifies the listener all the same; a refusal of it would be the
+  // listener's alert, never `authorized`, and show as a failed case.
   const v = await handshake(Object.assign({
     key: identity.key, cert: identity.cert,
-    ca: t.trusted_certs, requestCert: true, rejectUnauthorized: false
+    ca: t.trusted_certs, ...tlsServer.clientAuthOptions('optional')
   }, tlsServer.protocolOptions()), {
     key: t.peer_certificate_key,
     cert: [t.peer_certificate].concat(t.untrusted_intermediates).join('\n'),
-    rejectUnauthorized: false
+    ca: [identity.cert]
   }, 'server', function (socket) {
     // What `observeConnectionsOn()` does on the main port before any request
     // is read: the chain OpenSSL verified, held to the path rules (#201).

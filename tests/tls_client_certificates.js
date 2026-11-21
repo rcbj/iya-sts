@@ -47,8 +47,10 @@
 //
 // THE CHILD BUILDS ITS OWN HTTPS LISTENER over `common/app`, the way
 // `tests/rfc8705_mtls.js` section 3 does, because this module has no listener
-// of its own any more: `requestCert: true, rejectUnauthorized: false` over
-// `clientTruststoreOptions()`, which is the main port's posture in `server.js`.
+// of its own any more: `clientAuthOptions('optional')` over
+// `clientTruststoreOptions()`, which is the main port's posture in `server.js`
+// — a client certificate asked for and verified by the service after the
+// handshake, the listener's own certificate verified by every client.
 //
 // ALL OF IT RUNS IN ONE CHILD PROCESS, for `tests/revocation_status.js`'s
 // reason: the certificate authority, the realm and the revocation register are
@@ -74,8 +76,13 @@ const https = require('https');
 const nodeCrypto = require('crypto');
 const os = require('os');
 const path = require('path');
+// The run-time CA section D's listener presents a certificate under.
+const testCa = require('./protocol/outbound_test_ca');
 
 const ROOT = path.join(__dirname, '..');
+// That CA's certificate, which every ask below verifies the listener
+// against; set when the listener is built.
+const LISTENER_CA = { value: '' };
 const CHILD_FLAG = 'STS_TLS_CLIENT_CERT_CHILD';
 const REALM = 'tlsclient-a';
 const PERSON = 'tlsalice';
@@ -107,7 +114,7 @@ function ask(port, cert, key) {
   return new Promise(function (resolve) {
     const req = https.request({ host: '127.0.0.1', port: port,
       path: '/tls/sign-in', method: 'GET', cert: cert, key: key,
-      rejectUnauthorized: false, agent: false }, function (res) {
+      ca: [LISTENER_CA.value], agent: false }, function (res) {
       let text = '';
       res.on('data', function (c) { text += c; });
       res.on('end', function () {
@@ -167,7 +174,7 @@ function askH2(port, cert, key) {
   log.debug("Leaving askH2().");
   return new Promise(function (resolve) {
     const session = http2.connect('https://127.0.0.1:' + port,
-      { cert: cert, key: key, rejectUnauthorized: false });
+      { cert: cert, key: key, ca: [LISTENER_CA.value] });
     session.on('error', function (e) {
       resolve({ status: 0, body: { error: e.message } });
     });
@@ -545,16 +552,30 @@ async function childBody() {
   // truststore and the same protocol policy `server.js` uses — and, since
   // #407, the same kind of server, HTTP/2 beside HTTP/1.1, so every claim
   // below is made over each: `getPeerCertificate()` on an HTTP/2 request is
-  // node's proxy to the session's socket.
-  const serverCert = tls.serverCertificate();
+  // node's proxy to the session's socket. `clientAuthOptions('optional')`
+  // is the function `server.js` builds that posture with.
+  //
+  // The listener presents a certificate under a CA of this test's own —
+  // handed to `trustClientCertificatesOn()` too, so a truststore change
+  // re-applies it — and both clients verify it against that CA: the
+  // server's certificate is not the subject, and nothing here dials
+  // unverified.
+  const listenerCa = await testCa.makeCa();
+  const listenerLeaf = await testCa.listenerCertificate(listenerCa,
+                                                        '127.0.0.1');
+  LISTENER_CA.value = listenerCa.certPem;
   const listener = http2.createSecureServer(Object.assign({
     allowHTTP1: true,
-    cert: serverCert.certPem, key: serverCert.privateKeyPem,
+    cert: listenerLeaf.cert, key: listenerLeaf.key,
     ca: tls.clientTruststoreOptions().ca,
-    requestCert: true, rejectUnauthorized: false
+    ...tls.clientAuthOptions('optional')
   }, tls.protocolOptions()), expressApp);
   tls.trustClientCertificatesOn(listener,
-                                'the tls_client_certificates test listener');
+    'the tls_client_certificates test listener', function () {
+      log.debug("Entering the listener's certificateOf().");
+      log.debug("Leaving the listener's certificateOf().");
+      return { key: listenerLeaf.key, cert: listenerLeaf.cert };
+    });
   await new Promise(function (ok) {
     listener.listen(0, '127.0.0.1', ok);
   });

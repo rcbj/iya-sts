@@ -61,6 +61,9 @@ const BASE2 = 'https://pep-2.example.test:9543';
 const LOGICAL = 'https://orders.example.test';
 const SECRET = 'pcl-web-secret-0123456789abcdef0123456789';
 
+// The logical address named in a policy, parsed rather than searched for
+// as text (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const log = require('bunyan').createLogger({ name: 'xacml_pep_clusters',
   level: process.env.LOG_LEVEL || 'info' });
 
@@ -328,8 +331,8 @@ async function childBody() {
         clusters.effectiveRow(peps.read('pep-2')), 'pep-2').token;
       t.check(edit.ok && after1 !== before1 && after2 !== before2 &&
               store.read('pepc-orders-status') &&
-              store.read('pepc-orders-status').document.indexOf(
-                LOGICAL) < 0,
+              !urls.namesOrigin(
+                store.read('pepc-orders-status').document, LOGICAL),
               'D1. one cluster edit moves every member\'s token, and its ' +
               'generated policy is the cluster\'s', JSON.stringify(edit));
       const names = nudged.length ? nudged[nudged.length - 1].names : [];

@@ -35,6 +35,9 @@
 // The STS mock is located from WSTRUST_STS_URL, as the other STS-backed tests
 // are; OAUTH_METADATA_URL overrides the metadata URL outright.
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
@@ -336,7 +339,7 @@ async function signInAndAuthorize(meta, params, options) {
         "the authentication service, got HTTP " + r.status + ".");
   const first = r.headers.get("location");
   if (first.indexOf("/authn/") !== 0 &&
-      first.indexOf(meta.issuer + "/authn/") !== 0) {
+      !urls.isUnder(first, meta.issuer + "/authn/")) {
     // THE SESSION STOOD, WHICH IS NOT THE SAME AS THE RESPONSE BEING READY.
     // A person whose session skipped the sign-in screen can still be asked for
     // consent — that question is about the SCOPE and the CLIENT, not about who
@@ -525,7 +528,7 @@ async function testLoginScreen(meta, verify) {
     "login_hint should pre-fill the username field.");
   const rows = JSON.stringify(view.details || []);
   assert.ok(rows.indexOf(CLIENT_ID) !== -1 &&
-            rows.indexOf(REDIRECT_URI) !== -1,
+            urls.namesAddress(rows, REDIRECT_URI),
     "the sign-in screen should say which client and redirect_uri it is " +
     "signing in for — the service knows nothing about OAuth, so those rows " +
         "are what the authorization endpoint passed it.");
@@ -539,12 +542,12 @@ async function testLoginScreen(meta, verify) {
   const signedInParams = fresh();
   const authz = await authorize(meta, signedInParams, { username: username });
   assert.ok(authz.viaAuthorize &&
-            authz.viaAuthorize.indexOf(meta.authorization_endpoint) === 0,
+            urls.isAt(authz.viaAuthorize, meta.authorization_endpoint),
     "submitting the login form should redirect back to the authorization " +
         "endpoint. Got: " + authz.viaAuthorize);
   assert.ok(authz.viaAuthorize.indexOf("prompt") < 0,
     "the redirect back must drop prompt, or the login screen would loop.");
-  assert.ok(authz.location.indexOf(REDIRECT_URI) === 0,
+  assert.ok(urls.isAt(authz.location, REDIRECT_URI),
     "the authorization response should go to the client's redirect_uri. Got: " +
         authz.location);
   const code = authz.params.get("code");

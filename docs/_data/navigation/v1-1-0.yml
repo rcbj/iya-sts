@@ -36,6 +36,7 @@
     - { title: Data classification, url: /data-classification.html }
     - { title: Logging inventory, url: /logging-inventory.html }
     - { title: Key management, url: /key-management.html }
+    - { title: Keys in a hardware security module, url: /hsm.html }
     - { title: Field-level access, url: /field-access.html }
     - { title: Communication inventory, url: /communications.html }
     - { title: File uploads, url: /file-uploads.html }

@@ -48,10 +48,14 @@
 
 "use strict";
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const kitFactory = require("./saml_peer_kit.js");
 const tls = require("tls");
+const serviceTrust = require("../tools/service_trust.js");
 
 const kit = kitFactory.create("sts_saml_interop_shibboleth");
 const log = kit.log;
@@ -192,9 +196,10 @@ async function presentedCertificate() {
     const socket = tls.connect({
       host: u.hostname, port: Number(u.port) || 443,
       servername: /^[\d.]+$/.test(u.hostname) ? undefined : u.hostname,
-      // Reading the certificate, not trusting it: the question is WHICH
-      // certificate arrives, and the answer is compared with the metadata.
-      rejectUnauthorized: false
+      // The question is WHICH certificate arrives, and the answer is
+      // compared with the metadata; the handshake is verified all the same
+      // (tools/service_trust.js), so the one read is one this client took.
+      ca: serviceTrust.trustedCa()
     }, function () {
       const cert = socket.getPeerCertificate();
       socket.end();
@@ -258,7 +263,7 @@ async function serviceHasSession(w, b) {
   log.debug("Entering serviceHasSession().");
   const walked = await kit.walk(b, login({ entityID: w.idp2 }), {
     stopAt: function (url) {
-      return url.indexOf(PEER + "/peer/env") === 0;
+      return urls.isAt(url, PEER + "/peer/env");
     } });
   // THE SIGN-IN SCREEN IS ITS SHELL SINCE #571: a static page whose script
   // is /authn/signin.js, and where the walk stops when it has no name.
@@ -273,7 +278,7 @@ async function signIn(w, b, loginUrl) {
   const walked = await kit.walk(b, loginUrl, {
     username: w.person, password: PASSWORD,
     stopAt: function (url) {
-      return url.indexOf(PEER + "/peer/env") === 0;
+      return urls.isAt(url, PEER + "/peer/env");
     } });
   log.debug("Leaving signIn().");
   return walked;
@@ -575,7 +580,7 @@ async function singleLogout(w) {
     const walked = await kit.walk(b, PEER + "/Shibboleth.sso/Logout?return=" +
                                   encodeURIComponent(PEER + "/done"), {
       stopAt: function (url) {
-        return url.indexOf(PEER + "/done") === 0;
+        return urls.isAt(url, PEER + "/done");
       } });
     const after = await sessionAt(b);
     const stillSignedIn = await serviceHasSession(w, b);

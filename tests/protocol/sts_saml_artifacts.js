@@ -687,9 +687,29 @@ function formField(text, name) {
   const m = new RegExp('name="' + name + '" value="([^"]*)"')
     .exec(String(text || ""));
   log.debug("Leaving formField().");
-  return m ? m[1].replace(/&#x2B;|&#43;/g, "+").replace(/&#x3D;|&#61;/g, "=")
-    .replace(/&#x2F;|&#47;/g, "/").replace(/&amp;/g, "&")
-    .replace(/&quot;/g, '"').replace(/&#x20;|&#32;/g, " ") : "";
+  return m ? decodeEntities(m[1]) : "";
+}
+
+// A field's value as the browser reads it: every character reference
+// decoded in ONE pass, so `&amp;quot;` is the text `&quot;` and never a
+// quote. Decoding `&amp;` in one replace and `&quot;` in another decoded
+// whichever came second twice.
+function decodeEntities(text) {
+  log.debug("Entering decodeEntities().");
+  const NAMED = { amp: "&", quot: '"', apos: "'", lt: "<", gt: ">" };
+  const out = String(text).replace(/&(#x[0-9a-f]+|#[0-9]+|[a-z]+);/gi,
+    function (whole, name) {
+      if (name[0] === "#") {
+        const code = name[1] === "x" || name[1] === "X"
+          ? parseInt(name.slice(2), 16) : parseInt(name.slice(1), 10);
+        return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code)
+                                            : whole;
+      }
+      const named = NAMED[name.toLowerCase()];
+      return named === undefined ? whole : named;
+    });
+  log.debug("Leaving decodeEntities().");
+  return out;
 }
 
 function verifiesWithAny(octets, sigAlg, signature, certs) {

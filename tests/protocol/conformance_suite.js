@@ -190,11 +190,14 @@ async function clientCertificate(api, clientId) {
 }
 
 // ---------------------------------------------------------------------------
-// THE SUITE'S API, VERIFIED (#187). The FAPI driver could not anchor the
-// certificate the suite's image shipped; conformance-tls now mints one for
-// the suite's own name, so these calls verify it. A run without that file
-// (a suite started by hand from its own compose file) falls back to the FAPI
-// driver's unverified agent and says so.
+// THE SUITE'S API, VERIFIED (#187), AND NEVER ANYTHING ELSE (2026-11-20).
+// conformance-tls mints the suite's listener certificate for the suite's own
+// name into the shared directory, so a launched suite is verified against
+// that file. A run without the file verifies against the system's roots: the
+// hosted suite's case, below, and for a suite started by hand from its own
+// compose file a refused handshake naming its self-signed certificate —
+// whose remedy is CONFORMANCE_SUITE_CA_FILE set to that certificate, never
+// an agent that verifies nothing (which this was until CodeQL counted it).
 // ---------------------------------------------------------------------------
 let suiteCa = null;
 try {
@@ -205,7 +208,8 @@ try {
             ((e && e.message) || e));
   if (!process.env.CONFORMANCE_SUITE_TOKEN) {
     log.warn("The conformance suite's certificate is not in the shared " +
-             "directory, so its API is called without verifying it.");
+             "directory, so its API is verified against the system's " +
+             "roots; a local suite needs CONFORMANCE_SUITE_CA_FILE.");
   }
   suiteCa = null;
 }
@@ -215,13 +219,11 @@ try {
 // IN (`CONFORMANCE_SUITE_TOKEN`, which tests/tools/oidf_certification.js
 // sets from its --token-file); nothing in this repository holds one. With a
 // token and no local certificate the calls verify against the system's
-// roots: the unverified fallback is for a suite started by hand, never for
-// one on the internet.
+// roots, as every call without the local certificate does.
 const SUITE_TOKEN = String(process.env.CONFORMANCE_SUITE_TOKEN || "").trim();
 const SUITE_AGENT = new https.Agent(suiteCa
   ? { ca: suiteCa, keepAlive: true }
-  : SUITE_TOKEN ? { keepAlive: true }
-                : { rejectUnauthorized: false, keepAlive: true });
+  : { keepAlive: true });
 
 // `contentType`, when given, sends `body` as it is under that type (an image
 // uploaded as a data: URL is text/plain); otherwise a body is JSON.

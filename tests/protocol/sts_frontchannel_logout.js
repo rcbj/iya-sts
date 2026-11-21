@@ -34,6 +34,9 @@
 // OWNED HERE (local: true): this repository's own authorization server.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
@@ -208,7 +211,7 @@ function atClient(r, redirect) {
   log.debug("Entering atClient().");
   const target = redirect || REDIRECT;
   if (!(r.status === 302 || r.status === 303) ||
-      String(r.location).indexOf(target) !== 0) {
+      !urls.isAt(r.location, target)) {
     log.debug("Leaving atClient(). Not at the client.");
     return null;
   }
@@ -296,7 +299,7 @@ async function signedInThroughNamedServer(client) {
     r = await b.go("GET", posted.location);
   }
   assert.ok((r.status === 302 || r.status === 303) &&
-            r.location.indexOf(REDIRECT) === 0 &&
+            urls.isAt(r.location, REDIRECT) &&
             new URL(r.location).searchParams.get("code"),
     "a code from the named authorization server: " + r.status + " " +
     r.location + " " + String(r.text).slice(0, 300));

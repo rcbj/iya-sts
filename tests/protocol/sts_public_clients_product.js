@@ -43,6 +43,9 @@
 // OWNED HERE (local: true): this repository's own authorization server.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
@@ -285,7 +288,7 @@ async function follow(realm, b, first, who, password) {
       break;
     }
     const where = absolute(r.location);
-    if (where.indexOf(base) !== 0) {
+    if (!urls.isUnder(where, base)) {
       break;
     }
     if (/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(where) && who) {
@@ -347,7 +350,7 @@ async function codeFlow(clientId, who, extra) {
   const done = await follow(REALM, b, first, who, PASSWORD);
   let code = null;
   if ((done.status === 302 || done.status === 303) &&
-      String(done.location).indexOf(REDIRECT) === 0) {
+      urls.isAt(done.location, REDIRECT)) {
     code = new URL(done.location).searchParams.get("code");
   }
   log.debug("Leaving codeFlow().");

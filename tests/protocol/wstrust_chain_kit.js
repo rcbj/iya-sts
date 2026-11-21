@@ -144,6 +144,9 @@
 // OWNED HERE (a LOCAL helper, tests/vendored/MANIFEST.js).
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const crypto = require("crypto");
 const registry = require("./sts_applications.js");
@@ -1408,7 +1411,7 @@ function validateJwtAtTarget(token, keys, audience, issuer, skewMs) {
   assert.strictEqual(parsed.header.typ, "at+jwt");
   assert.strictEqual(parsed.claims.iss, issuer, "iss " + parsed.claims.iss +
                      " is not the issuer GET /sts names, " + issuer);
-  assert.ok([].concat(parsed.claims.aud).indexOf(audience) >= 0,
+  assert.ok(urls.holds(parsed.claims.aud, audience),
             "the target's identifier is not in aud: " +
             JSON.stringify(parsed.claims.aud));
   const now = Date.now();

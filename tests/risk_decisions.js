@@ -79,6 +79,9 @@ const ROOT = path.join(__dirname, '..');
 function childMain() {
   /* eslint-disable no-console */
   const ROOT = process.env.RD_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT + '/tests/protocol/url_match.js');
   const OUT = process.env.RD_OUT;
   const http = require('http');
   const findings = [];
@@ -689,7 +692,7 @@ function childMain() {
     const follow = async function (b, first) {
       let at = first;
       for (let i = 0; i < 4 && at.status >= 300 && at.status < 400 &&
-           String(at.headers.location || '').indexOf(REDIRECT) !== 0; i++) {
+           !urls.isAt(String(at.headers.location || ''), REDIRECT); i++) {
         at = await b.go('GET', String(at.headers.location));
       }
       return at;
@@ -733,7 +736,7 @@ function childMain() {
     const carolSessions = authn.sessionsOf('rd-carol');
     const carolSession = carolSessions.length
       ? authn.sessionById(carolSessions[0].id || carolSessions[0]) : null;
-    note(String(landed.headers.location || '').indexOf(REDIRECT) === 0 &&
+    note(urls.isAt(String(landed.headers.location || ''), REDIRECT) &&
          carolSession && carolSession.acr === 'mfa' &&
          carolSession.risk && carolSession.risk.level === 'MEDIUM',
          'F4. and signed in with two factors, the session carrying the ' +
@@ -748,7 +751,7 @@ function childMain() {
                             assessmentId: 'rd-g1' };
       const denied = await authorize(carol);
       const deniedAt = String(denied.headers.location || '');
-      note(deniedAt.indexOf(REDIRECT) === 0 &&
+      note(urls.isAt(deniedAt, REDIRECT) &&
            /error=access_denied/.test(deniedAt) &&
            !/HIGH|tor/i.test(decodeURIComponent(deniedAt)),
            'G1. a session at HIGH is issued no code, and the client is told ' +
@@ -789,7 +792,7 @@ function childMain() {
     const erin = browser(port, CHROME);
     const erinLanded = await follow(erin, await signIn(erin, 'rd-erin'));
     const erinAssessed = await assessmentOf('rd-erin');
-    note(String(erinLanded.headers.location || '').indexOf(REDIRECT) === 0 &&
+    note(urls.isAt(String(erinLanded.headers.location || ''), REDIRECT) &&
          erinAssessed && erinAssessed.level === 'HIGH' &&
          erinAssessed.decision === 'observe:refuse',
          'H2. in development the same sign-in is observed — recorded as a ' +
@@ -996,7 +999,7 @@ function childMain() {
     const fayAssessed = await assessmentOf('rd-fay');
     const fayModel = fayAssessed && (fayAssessed.signals || [])
       .filter(function (one) { return one.signal === 'model'; })[0];
-    note(String(fayLanded.headers.location || '').indexOf(REDIRECT) === 0 &&
+    note(urls.isAt(String(fayLanded.headers.location || ''), REDIRECT) &&
          fayAssessed && fayAssessed.level === 'UNSCORED' &&
          fayModel && (fayModel.listsSetAside || []).sort().join(',') ===
            'operator-deny,tor-exit',

@@ -385,9 +385,8 @@ async function childBody() {
   CA_PEM.value = serverCa.certPem;
   const listener = https.createServer(Object.assign({
     cert: serverLeaf.cert, key: serverLeaf.key,
-    ca: tls.clientTruststoreOptions().ca,
-    requestCert: true, rejectUnauthorized: false
-  }, tls.protocolOptions()), app);
+    ca: tls.clientTruststoreOptions().ca
+  }, tls.clientAuthOptions('optional'), tls.protocolOptions()), app);
   tls.trustClientCertificatesOn(listener,
     'the authzen_evaluation listener', function () {
       log.debug("Entering the listener's certificateOf().");

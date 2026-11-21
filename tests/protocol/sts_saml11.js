@@ -130,6 +130,9 @@
 // typed. A test that asserted otherwise would be asserting a bug.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require('./url_match.js');
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require('./authn_signin');
 const assert = require('assert');
@@ -687,7 +690,7 @@ async function theTestPeerRelyingParty(target) {
   check('the shire registered on artifact-01 redirects to the peer\'s ' +
         'artifact consumer',
         res.status === 303 && !!artifactAcs &&
-        location.indexOf(artifactAcs + '?') === 0 &&
+        urls.isAt(location, artifactAcs) &&
         /[?&]SAMLart=/.test(location), 'status ' + res.status + ' ' + location);
   res = await request('GET', location);
   seen = await peerSaw(peer11, 'saml11', since);
@@ -722,7 +725,8 @@ async function theSaml2SessionIsShared(who) {
   const start = res.headers.location || '';
   check('the peer starts SP-initiated SAML 2.0 with a redirect to this ' +
         'identity provider', res.status === 302 &&
-        start.indexOf(BASE + '/saml2/sso?') === 0, 'status ' + res.status +
+        urls.isAt(start, BASE + '/saml2/sso') &&
+        new URL(start).search !== '', 'status ' + res.status +
         ' ' + start.slice(0, 160));
   res = await request('GET', start);
   for (let hops = 0; (res.status === 302 || res.status === 303) && hops < 8;
@@ -1074,7 +1078,7 @@ async function main() {
   const createdMetadataAcsValue = registry.valuesOf(
     createdMetadata.attributes.samlAcsEndpoint).join(' ');
   check('creating a SAML 1.1 application consumes its metadata field',
-        createdMetadataAcsValue.indexOf(createdMetadataAcs) >= 0 &&
+        urls.holds(createdMetadataAcsValue, createdMetadataAcs) &&
         registry.valuesOf(createdMetadata.attributes.samlSigningCertificate)
           .indexOf(rpSigning.certB64) >= 0,
         createdMetadataAcsValue);
@@ -1087,7 +1091,7 @@ async function main() {
         JSON.stringify(metadataUpload.errors || metadataUpload.message));
   check('its ACS and signing certificate are registered',
         metadataUpload.assertionConsumerServices &&
-        metadataUpload.assertionConsumerServices.indexOf(metadataAcs) >= 0 &&
+        urls.holds(metadataUpload.assertionConsumerServices, metadataAcs) &&
         metadataUpload.signingCertificates === 1,
         JSON.stringify(metadataUpload));
 
@@ -1144,7 +1148,7 @@ async function main() {
   const postUpload = JSON.parse(res.body);
   check('SAML 1.1 metadata naming a browser-post endpoint is consumed',
         res.status === 200 && postUpload.ok &&
-        (postUpload.assertionConsumerServices || []).indexOf(postAcs) >= 0,
+        urls.holds(postUpload.assertionConsumerServices, postAcs),
         'status ' + res.status + ' ' + JSON.stringify(postUpload));
   const postTarget = 'https://rp-' + runStamp() +
                      '.saml11.example.test/landing?x=1&y=2';
@@ -1692,7 +1696,7 @@ async function main() {
   check('the relying party was registered on sight', !!mine);
   if (mine) {
     check('its assertion consumer was recorded',
-          (mine.assertionConsumerServices || []).indexOf(acs) >= 0,
+          urls.holds(mine.assertionConsumerServices, acs),
           JSON.stringify(mine.assertionConsumerServices));
     check('BOTH browser profiles it used were recorded',
           (mine.profiles || []).length === 2, JSON.stringify(mine.profiles));

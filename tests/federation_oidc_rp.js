@@ -111,6 +111,9 @@ const ROOT = path.join(__dirname, '..');
  */
 function childMain() {
   const ROOT_DIR = process.env.FRP_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT_DIR + '/tests/protocol/url_match.js');
   const OUT = process.env.FRP_OUT;
   const http = require('http');
   const fs = require('fs');
@@ -362,12 +365,24 @@ function childMain() {
     const tlsHost = '127.0.0.1:' + tlsPartner.address().port;
     // AND OVER MUTUAL TLS (#931): the same partner asking for a client
     // certificate, as a FAPI 1.0 Advanced authorization server's token and
-    // UserInfo endpoints do. It verifies nothing about the chain itself:
-    // what it records is which certificate came, which is the claim.
+    // UserInfo endpoints do, and VERIFYING it as one does (RFC 8705
+    // section 2): the relationship's certificate is issued under this
+    // process's service Root and presented with its chain, so that Root is
+    // the partner's whole truststore. It is set by `trustServiceRoot()`
+    // just before the first mutual-TLS case, once the Root the certificate
+    // is issued under exists; until then the partner trusts nobody.
     const mtlsPartner = require('https').createServer(
-      { key: tlsPair.privatePem, cert: tlsCert.pem, requestCert: true,
-        rejectUnauthorized: false },
+      { key: tlsPair.privatePem, cert: tlsCert.pem, requestCert: true },
       partner.listeners('request')[0]);
+    const trustServiceRoot = function () {
+      const root = require(ROOT_DIR + '/common/pki').serviceRoot();
+      if (!root || !root.certificatePem) {
+        throw new Error('the service holds no Root for the mutual-TLS ' +
+                        'partner to trust');
+      }
+      mtlsPartner.setSecureContext({ key: tlsPair.privatePem,
+        cert: tlsCert.pem, ca: [root.certificatePem] });
+    };
     await new Promise(function (r) {
       mtlsPartner.listen(0, '127.0.0.1', r);
     });
@@ -679,7 +694,7 @@ function childMain() {
     op.scenario = { issuer: opBase, base: opBase };
     let started = await begin(DISCO, {});
     note(started.status === 302 &&
-         started.location.indexOf(opBase + 'disco-authorize?') === 0 &&
+         urls.isAt(started.location, opBase + 'disco-authorize') &&
          op.calls.some(function (c) {
            return c.path === '/op/.well-known/openid-configuration';
          }),
@@ -953,8 +968,8 @@ function childMain() {
     const registeredBefore = op.registrations;
     r = await call('GET', String(view.continueHref || ''));
     note(r.status === 302 &&
-         String(r.headers.location).indexOf(opBase + 'disco-authorize') ===
-           0 && op.registrations === registeredBefore + 1 &&
+         urls.isAt(r.headers.location, opBase + 'disco-authorize') &&
+         op.registrations === registeredBefore + 1 &&
          federation.get(DYN).fedRegisteredIssuer === opBase + 'tenant7',
          '8d. continuing signs in at that issuer, registering there first',
          r.status + ' ' + r.headers.location);
@@ -1025,7 +1040,7 @@ function childMain() {
       target_link_uri: 'https://elsewhere.example/steal' });
     const sent = new URL(String(r.headers.location || 'http://x/'));
     note(r.status === 302 &&
-         String(r.headers.location).indexOf(opBase + 'authorize?') === 0 &&
+         urls.isAt(r.headers.location, opBase + 'authorize') &&
          sent.searchParams.get('login_hint') === 'frp@example.org',
          '5c. the partner\'s own issuer starts the sign-in, its login_hint ' +
          'passed on and a foreign target dropped', r.status + ' ' +
@@ -1417,8 +1432,8 @@ function childMain() {
                                             username: 'ada' });
     note(linkReady && linkRecord.fedProvider === 'generic-oidc' &&
          opened.ok === true &&
-         String(opened.location || '').indexOf(opBase + 'authorize?') ===
-           0 && op.calls.length === callsAtLink,
+         urls.isAt(opened.location, opBase + 'authorize') &&
+         op.calls.length === callsAtLink,
          '10n. a consumer relationship can be connected, and that door ' +
          'dials nothing',
          JSON.stringify({ ok: opened.ok, location: opened.location,
@@ -1796,6 +1811,7 @@ function childMain() {
     };
     const MTLS = make('frp-fapi1-mtls-' + stamp, { fedFapi: '1-advanced',
       fedTokenUrl: mtlsBase + 'token', fedUserinfoUrl: mtlsBase + 'userinfo' });
+    trustServiceRoot();
     op.boundAnswered = 0;
     got = await mtlsSignIn(MTLS);
     const mtlsView = fedClientCert.viewOf(federation.get(MTLS)) || {};

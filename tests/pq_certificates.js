@@ -83,13 +83,19 @@ function listen(pairs) {
 
 // One handshake, resolved with what the client saw rather than rejected: a
 // FAILED handshake is a result here as often as a successful one is.
-function handshake(port, options) {
+//
+// **VERIFIED against `ca`, the certificates the listener carries (2026-11-20)**
+// — each is self-signed, so each is its own anchor. Until then the client
+// accepted anything, and section B proved only that OpenSSL would USE the
+// ML-DSA key; now the handshake also has OpenSSL's chain verification accept
+// the certificate this encoder wrote — its self-signature, its names and its
+// extensions — which is what any real client asks of it.
+function handshake(port, ca, options) {
   log.debug("Entering handshake().");
   log.debug("Leaving handshake().");
   return new Promise(function (resolve) {
     const socket = tls.connect(Object.assign({
-      host: '127.0.0.1', port: port, servername: 'localhost',
-      rejectUnauthorized: false
+      host: '127.0.0.1', port: port, servername: 'localhost', ca: ca
     }, options || {}), function () {
       let keyType = null;
       try {
@@ -104,6 +110,8 @@ function handshake(port, options) {
       resolve({ ok: true, keyType: keyType, protocol: socket.getProtocol() });
     });
     socket.on('error', function (error) {
+      log.debug("Caught in handshake(): " + ((error && error.message) ||
+                                             error));
       resolve({ ok: false, error: error.message });
     });
   });
@@ -211,8 +219,9 @@ module.exports = {
     // -----------------------------------------------------------------------
     const single = await listen([built]);
     try {
-      const report = await handshake(single.port);
-      t.check(report.ok, 'the handshake completed', report.error || '');
+      const report = await handshake(single.port, [built.certPem]);
+      t.check(report.ok, 'the handshake completed, the client verifying ' +
+              'the ML-DSA certificate', report.error || '');
       t.check(report.keyType === 'ml-dsa-65',
               'and the certificate the client received is the ML-DSA one',
               String(report.keyType));
@@ -224,7 +233,7 @@ module.exports = {
       // whose only certificate is ML-DSA. Without this, the check above would
       // pass just as well against a server that had quietly fallen back to
       // something else.
-      const classicalOnly = await handshake(single.port, {
+      const classicalOnly = await handshake(single.port, [built.certPem], {
         sigalgs: 'ecdsa_secp256r1_sha256:rsa_pss_rsae_sha256'
       });
       t.check(!classicalOnly.ok,
@@ -252,14 +261,15 @@ module.exports = {
       ]
     });
     const both = await listen([rsa, built]);
+    const bothCa = [rsa.certPem, built.certPem];
     try {
-      const classical = await handshake(both.port, {
+      const classical = await handshake(both.port, bothCa, {
         sigalgs: 'rsa_pss_rsae_sha256:rsa_pkcs1_sha256'
       });
       t.check(classical.ok && classical.keyType === 'rsa',
               'a client offering only RSA signature algorithms gets the RSA ' +
               'certificate', classical.error || String(classical.keyType));
-      const postQuantum = await handshake(both.port, {
+      const postQuantum = await handshake(both.port, bothCa, {
         sigalgs: 'mldsa44:mldsa65:mldsa87'
       });
       t.check(postQuantum.ok && postQuantum.keyType === 'ml-dsa-65',

@@ -87,10 +87,11 @@ function connect(port, ca, session, maxVersion) {
   return new Promise(function (resolve, reject) {
     let got = null;
     let reused = false;
-    // Not verified: which certificate a node presents is not under test,
-    // and resumption is decided before verification either way.
+    // VERIFIED against both nodes' certificates (`ca` holds A's and B's,
+    // each self-signed for `localhost`): which one a node presents is not
+    // under test, but a ticket resumed across nodes still has to land on a
+    // listener this client trusts, as a real client's would.
     const c = tls.connect({ host: '127.0.0.1', port: port, ca: ca,
-                            rejectUnauthorized: false,
                             servername: 'localhost',
                             session: session || undefined,
                             maxVersion: maxVersion, minVersion: maxVersion },
@@ -118,8 +119,24 @@ function connect(port, ca, session, maxVersion) {
 async function run(t) {
   const mod = require('../tls/session_tickets');
   const stsCrypto = require('../common/crypto');
-  const certA = stsCrypto.selfSignedRsaCertificate({ commonName: 'localhost' });
-  const certB = stsCrypto.selfSignedRsaCertificate({ commonName: 'localhost' });
+  // Each self-signed for `localhost` by its subjectAltName, and NAMED APART:
+  // two self-signed certificates with one subject are, to OpenSSL's path
+  // builder, two candidate issuers for each other, and it picked the wrong
+  // one ("self-signed certificate") once the client verified.
+  const nodeCertificate = function (name) {
+    log.debug("Entering nodeCertificate(). " + name);
+    log.debug("Leaving nodeCertificate().");
+    return stsCrypto.selfSignedRsaCertificate({ commonName: name,
+      extensions: [
+        { name: 'basicConstraints', cA: false, critical: true },
+        { name: 'keyUsage', digitalSignature: true, keyEncipherment: true,
+          critical: true },
+        { name: 'extKeyUsage', serverAuth: true },
+        { name: 'subjectAltName', altNames: [{ type: 2, value: 'localhost' }] }
+      ] });
+  };
+  const certA = nodeCertificate('session_tickets node A');
+  const certB = nodeCertificate('session_tickets node B');
   const ca = [certA.certPem, certB.certPem];
   const shared = new Map();
   const state = { intervalS: 3600, activeActive: true, scheduler: null };

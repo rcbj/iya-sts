@@ -143,6 +143,7 @@ whether the KEK's bytes ever enter this process:
 |---|---|---|
 | `file`, `aws`, `gcp`, `azure`, `vault` | **Read into the process**: 32 bytes from a mounted file or a secret store (AWS Secrets Manager, GCP Secret Manager, an Azure Key Vault secret, Vault KV) | The KEK is read once, the stored data keys are unwrapped locally, and the KEK stays in memory to wrap new ones |
 | `vault-transit`, `aws-kms`, `gcp-kms`, `azure-keys` | **A key in a key management service** that never leaves it | The service holds only a handle. Each stored data key is sent to the KMS once to be unwrapped, and each new one to be wrapped |
+| `pkcs11` | **An AES-256 key in a hardware security module** (a YubiHSM 2, SoftHSM2 or any PKCS#11 module) that cannot be extracted | As for a key management service, with each wrap and unwrap a PKCS#11 call. See [Keys in a hardware security module](hsm.md) |
 
 **In product mode `file` stops the service** unless `secrets.allowLocalSecrets`
 is on, because a key in a file sits on the host beside what it protects. The same

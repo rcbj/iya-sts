@@ -46,12 +46,18 @@ const log = require('bunyan').createLogger({ name: 'tls_resumed_chain',
   level: process.env.LOG_LEVEL || 'info' });
 
 const pepCredential = require('./tools/pep-credential');
+const testCa = require('./protocol/outbound_test_ca');
 const revocation = require('../common/revocation_status');
 
 // One listener, three connections from one client session: the first is a
 // full handshake, the next two resume it. TLS 1.2 because its session-id and
 // ticket resumption is immediate; a TLS 1.3 ticket arrives after the
 // handshake and a short-lived client may never use it.
+//
+// The client VERIFIES the listener (`clientOptions.ca`, the CA its
+// certificate is under): what is under test is the SERVER's view of the
+// client's chain, and a client that resumes a session with a server it
+// never verified is not one a real PEP is.
 function connectThrice(server, clientOptions) {
   log.debug("Entering connectThrice().");
   const seen = [];
@@ -64,7 +70,7 @@ function connectThrice(server, clientOptions) {
       }
       const client = tls.connect(Object.assign({
         port: server.address().port, host: '127.0.0.1',
-        rejectUnauthorized: false, maxVersion: 'TLSv1.2', session: session
+        maxVersion: 'TLSv1.2', session: session
       }, clientOptions));
       client.on('session', function (s) {
         session = s;
@@ -100,20 +106,26 @@ async function run(t) {
   log.debug("Entering run().");
   revocation.resetCache();
   const client = await pepCredential.mint({ subject: 'CN=resumer,O=tests' });
-  const server = await pepCredential.mint({ subject: 'CN=127.0.0.1,O=tests' });
   const stranger = await pepCredential.mint({ subject: 'CN=stranger,O=tests' });
+  // The listener's own certificate, for 127.0.0.1 under a CA of this test's,
+  // which every client verifies it against.
+  const serverCa = await testCa.makeCa();
+  const server = await testCa.listenerCertificate(serverCa, '127.0.0.1');
 
-  const listener = tls.createServer({
-    key: server.keyPem, cert: server.certPem,
-    requestCert: true, rejectUnauthorized: false,
+  // THE MAIN PORT'S POSTURE (`clientAuthOptions('optional')`, the function
+  // `server.js` builds it with): a client certificate asked for and NOT
+  // required at the handshake, so the stranger's below completes one and
+  // resumes it unverified — which is case 3.
+  const listener = tls.createServer(Object.assign({
+    key: server.key, cert: server.cert,
     ca: [client.anchorPem]
-  });
+  }, require('../tls/tls_server').clientAuthOptions('optional')));
   await new Promise(function (resolve) {
     listener.listen(0, '127.0.0.1', resolve);
   });
   try {
     const seen = await connectThrice(listener, {
-      key: client.keyPem, cert: client.certPem
+      key: client.keyPem, cert: client.certPem, ca: [serverCa.certPem]
     });
 
     // 1. THE CONTROL.
@@ -155,7 +167,7 @@ async function run(t) {
     // 3. AN UNVERIFIED LEAF LENDS NOTHING.
     revocation.resetCache();
     const strangers = await connectThrice(listener, {
-      key: stranger.keyPem, cert: stranger.certPem
+      key: stranger.keyPem, cert: stranger.certPem, ca: [serverCa.certPem]
     });
     t.check(strangers[1].reused && strangers[1].authorized === false,
             'a leaf under an authority this listener does not trust resumes ' +

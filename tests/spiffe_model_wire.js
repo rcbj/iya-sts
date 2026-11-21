@@ -977,7 +977,9 @@ function normalise(record) {
     ['pid', /\bpid:? ?\d+\b/g],
     ['version', /\b\d+\.\d+\.\d+\.\d{14}\b/g],
     ['digest', /\b[0-9a-f]{16,}\b/g],
-    ['token-sha256', /token-sha256:[0-9a-f<>a-z]+/g],
+    // The hex digest, or the `<digest>` an earlier pattern left of it:
+    // digits, lower-case letters and the angle brackets (a-f is in a-z).
+    ['token-sha256', /token-sha256:[0-9a-z<>]+/g],
     ['random', /(?<![A-Za-z0-9_-])(?=[A-Za-z0-9_-]*[A-Z])(?=[A-Za-z0-9_-]*[0-9])[A-Za-z0-9_-]{24,}/g]
   ];
   const text = JSON.stringify(scrub(record, ''), null, 1);

@@ -74,6 +74,9 @@
 // OWNED HERE (local: true).
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const navigation = require("./navigation.js");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
@@ -496,7 +499,7 @@ async function atClient(r, verifier) {
   log.debug("Entering atClient().");
   const out = { error: "", code: "", claims: null, idToken: "",
                 screen: r.screen, picker: r.picker, sessionState: "" };
-  if (!r.location || r.location.indexOf(REDIRECT) !== 0) {
+  if (!r.location || !urls.isAt(r.location, REDIRECT)) {
     log.debug("Leaving atClient(). Not at the client.");
     return out;
   }
@@ -708,7 +711,10 @@ async function iframeScript() {
   log.debug("Entering iframeScript().");
   const page = await call("GET", realmBase() + "/oauth2/check_session",
                           undefined, { accept: "text/html" });
-  const m = /<script>([\s\S]*?)<\/script>/.exec(String(page.text || ""));
+  // Any case, any attributes, and the end tag as HTML ends it
+  // (`</script >` too), so a page written otherwise is still read.
+  const m = /<script\b[^>]*>([\s\S]*?)<\/script\s*>/i
+    .exec(String(page.text || ""));
   log.debug("Leaving iframeScript(). " + page.status);
   return { status: page.status, text: m ? m[1] : "" };
 }
@@ -1006,7 +1012,7 @@ async function partSet() {
   const replay = await follow(b, resumed);
   check("C3. the ticket is spent once: the same address again chooses " +
         "nobody (the picker)", function () {
-    assert.ok(replay.picker && !replay.location.startsWith(REDIRECT),
+    assert.ok(replay.picker && !urls.isAt(replay.location, REDIRECT),
               replay.status + " " + replay.location);
   });
   const other = browser();

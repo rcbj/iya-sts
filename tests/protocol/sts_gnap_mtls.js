@@ -53,6 +53,7 @@ const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 const gnap = require("./gnap_client.js");
+const serviceTrust = require("../tools/service_trust.js");
 const facts = require("./service_facts.js");
 const credentials = require("../tools/pep-credential.js");
 // The foreign CA this job posts. Removed when it finishes, pass or fail
@@ -194,8 +195,10 @@ async function grant(client, tls) {
   const r = await gnap.rawRequest("POST", GRANT,
     { "Content-Type": "application/json",
       "Content-Length": String(body.length) }, body,
-    tls ? { cert: tls.cert, key: tls.key, rejectUnauthorized: false }
-        : { rejectUnauthorized: false });
+    // The SERVER is verified whichever certificate the client presents
+    // (tools/service_trust.js): the claims here are about the client's.
+    tls ? { cert: tls.cert, key: tls.key, ca: serviceTrust.trustedCa() }
+        : { ca: serviceTrust.trustedCa() });
   log.debug("Leaving grant().");
   return r;
 }

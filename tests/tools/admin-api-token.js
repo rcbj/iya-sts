@@ -33,6 +33,7 @@
 
 const https = require('https');
 const http = require('http');
+const trust = require('./trust.js');
 
 // This file's own logger, for the Entering/Leaving lines and the handled
 // exceptions the code style asks for. Its level is LOG_LEVEL, which is also
@@ -40,8 +41,15 @@ const http = require('http');
 const log = require('bunyan').createLogger({ name: 'admin-api-token',
   level: process.env.LOG_LEVEL || 'info' });
 
-function request(url, options, body) {
+async function request(url, options, body) {
   log.debug("Entering request().");
+  // VERIFIED (2026-11-20). The certificate is regenerated on every start and
+  // the anchor is the run's own: the runner's bundle once it holds one
+  // (tools/service_trust.js, which every caller in a run has), and before
+  // that — a launcher minting the run's first token, in the service image
+  // with nothing to trust — the service Root its revocation listener
+  // publishes. tools/trust.js's anchorsFor() argues both.
+  const ca = await trust.anchorsFor(url);
   log.debug("Leaving request().");
   return new Promise(function (resolve, reject) {
     const u = new URL(url);
@@ -49,10 +57,7 @@ function request(url, options, body) {
     const opts = Object.assign({
       hostname: u.hostname, port: u.port,
       path: u.pathname + u.search, method: 'GET',
-      // The certificate is regenerated on every start and the anchor is the
-      // run's own; `tools/trust.js` hands the JOBS a real anchor, and this
-      // runs before that is established.
-      rejectUnauthorized: false
+      ca: ca
     }, options || {});
     const r = mod.request(opts, function (res) {
       let text = '';

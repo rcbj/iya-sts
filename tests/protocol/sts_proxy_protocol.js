@@ -69,6 +69,7 @@ const crypto = require("crypto");
 const net = require("net");
 const tls = require("tls");
 const credentials = require("../tools/pep-credential.js");
+const serviceTrust = require("../tools/service_trust.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -239,7 +240,7 @@ function overHeader(prefix, request, tlsOptions) {
         raw.write(prefix);
       }
       const s = tls.connect(Object.assign({ socket: raw,
-        servername: TARGET.hostname, rejectUnauthorized: false,
+        servername: TARGET.hostname, ca: serviceTrust.trustedCa(),
         ALPNProtocols: ["http/1.1"] }, tlsOptions || {}), function () {
         const r = request || {};
         const headers = Object.assign({ Host: TARGET.host,

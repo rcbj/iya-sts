@@ -68,6 +68,9 @@ const https = require('https');
 const os = require('os');
 const path = require('path');
 const nodeCrypto = require('crypto');
+// The run-time CA the listeners below present a certificate under, which
+// every client here verifies them against.
+const testCa = require('./protocol/outbound_test_ca');
 
 // This file's own logger, for the Entering/Leaving lines and the handled
 // exceptions the code style asks for. Its level is LOG_LEVEL, which is also
@@ -3576,7 +3579,7 @@ function handshake(port, client) {
   return new Promise(function (resolve) {
     const req = https.request({ host: '127.0.0.1', port: port, path: '/',
       method: 'GET', cert: client.cert, key: client.key,
-      rejectUnauthorized: false, agent: false }, function (res) {
+      ca: client.ca, agent: false }, function (res) {
       let text = '';
       res.on('data', function (c) { text += c; });
       res.on('end', function () {
@@ -3607,11 +3610,23 @@ async function theMainPort(t, minted) {
   const mtls = require('../oauth-oidc/mtls');
   const requestPool = require('../common/request_pool');
   const tls = require('../tls/tls_server');
-  const server = https.createServer({
-    cert: tls.serverCertificate().certPem,
-    key: tls.serverCertificate().privateKeyPem,
-    ca: [minted.root.pem], requestCert: true, rejectUnauthorized: false
-  }, function (req, res) {
+  // THE MAIN PORT'S POSTURE: a client certificate asked for and not
+  // required at the handshake (`clientAuthOptions('optional')`, the
+  // function `server.js` builds the port with), so the revoked one reaches
+  // the handler and every verdict below is the SERVICE's, after OpenSSL —
+  // which is the subject of this section. The listener presents a
+  // certificate under a CA of this test's own, and both clients verify it
+  // against that CA: nothing here is about the server's certificate, and
+  // nothing here dials unverified either. (No `pki.start()` ran in this
+  // process, so the service's own listener certificate is not certified
+  // under a Root a client could be given.)
+  const listenerCa = await testCa.makeCa();
+  const listenerLeaf = await testCa.listenerCertificate(listenerCa,
+                                                        '127.0.0.1');
+  const server = https.createServer(Object.assign({
+    cert: listenerLeaf.cert, key: listenerLeaf.key,
+    ca: [minted.root.pem]
+  }, tls.clientAuthOptions('optional')), function (req, res) {
     status.annotateRequest(req).then(function () {
       const verified = mtls.peerVerified(req);
       // WHAT A WORKER IS HANDED, decoded the way `request_worker.ts`'s
@@ -3682,14 +3697,16 @@ async function theMainPort(t, minted) {
   try {
     const good = await handshake(port,
                                  { cert: minted.good.pem + minted.issuing.pem,
-                                         key: minted.good.key });
+                                   key: minted.good.key,
+                                   ca: [listenerCa.certPem] });
     t.check(good.body.verified === true && good.body.status === 'good',
             'a good foreign client certificate VERIFIES through ' +
             'mtls.peerVerified(), with the annotation app.js ' +
             'makes', JSON.stringify(good.body));
     const bad = await handshake(port,
                                 { cert: minted.revoked.pem + minted.issuing.pem,
-                                        key: minted.revoked.key });
+                                  key: minted.revoked.key,
+                                  ca: [listenerCa.certPem] });
     t.check(bad.body.verified === false && bad.body.error === 'CERT_REVOKED',
             'a REVOKED one is NOT VERIFIED — which is how the remote XACML ' +
             'PEP and the XACML user chains refuse it without a new question',
@@ -3727,11 +3744,11 @@ async function theMainPort(t, minted) {
 // 6 AND 7. GET /tls/sign-in AGAINST A REVOKED CERTIFICATE, IN A CHILD.
 //
 // It was the 8443 and 9443 listeners until 2026-09-16 (see the header). The
-// child now builds the listener ITSELF — `requestCert: true,
-// rejectUnauthorized: false` over `common/app`, which is the main port's
-// posture in `server.js` — because this module binds nothing any more. It is
-// still a child process: it adds a trust anchor, revokes a certificate and
-// leaves both in module state.
+// child now builds the listener ITSELF — `clientAuthOptions('optional')`
+// over `common/app`, which is the main port's posture in `server.js` —
+// because this module binds nothing any more. It is still a child process:
+// it adds a trust anchor, revokes a certificate and leaves both in module
+// state.
 // ===========================================================================
 async function childBody() {
   log.debug("Entering childBody().");
@@ -3770,14 +3787,27 @@ async function childBody() {
   // never required, so nothing is refused by the handshake and every refusal
   // below is one this service made after OpenSSL was satisfied — which is the
   // whole subject of these two sections.
-  const serverCert = tls.serverCertificate();
+  //
+  // The listener presents a certificate under a CA of this child's own —
+  // handed to `trustClientCertificatesOn()` too, so a truststore change
+  // re-applies it rather than the service's uncertified one (no
+  // `pki.start()` ran here) — and every request verifies it against that
+  // CA: the server's certificate is not the subject, and nothing here dials
+  // unverified.
+  const listenerCa = await testCa.makeCa();
+  const listenerLeaf = await testCa.listenerCertificate(listenerCa,
+                                                        '127.0.0.1');
   const listener = https.createServer(Object.assign({
-    cert: serverCert.certPem, key: serverCert.privateKeyPem,
+    cert: listenerLeaf.cert, key: listenerLeaf.key,
     ca: tls.clientTruststoreOptions().ca,
-    requestCert: true, rejectUnauthorized: false
+    ...tls.clientAuthOptions('optional')
   }, tls.protocolOptions()), app);
   tls.trustClientCertificatesOn(listener, 'the revocation_status test ' +
-                                          'listener');
+                                          'listener', function () {
+    log.debug("Entering the listener's certificateOf().");
+    log.debug("Leaving the listener's certificateOf().");
+    return { key: listenerLeaf.key, cert: listenerLeaf.cert };
+  });
   await new Promise(function (ok) {
     listener.listen(0, '127.0.0.1', ok);
   });
@@ -3789,7 +3819,7 @@ async function childBody() {
       const req = https.request({ host: '127.0.0.1', port: port,
         path: '/tls/sign-in',
         method: 'GET', cert: leaf.pem + issuing.pem, key: leaf.key,
-        rejectUnauthorized: false, agent: false }, function (res) {
+        ca: [listenerCa.certPem], agent: false }, function (res) {
         let text = '';
         res.on('data', function (c) { text += c; });
         res.on('end', function () {

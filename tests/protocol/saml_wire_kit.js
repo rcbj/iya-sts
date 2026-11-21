@@ -31,6 +31,9 @@
 // OWNED HERE (MANIFEST.js's LOCAL_HELPERS).
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const zlib = require("zlib");
@@ -263,7 +266,7 @@ function samlKit(K) {
         continue;
       }
       if ((r.status === 302 || r.status === 303) && loc &&
-          (/^\//.test(loc) || loc.indexOf(K.base) === 0)) {
+          (/^\//.test(loc) || urls.isUnder(loc, K.base))) {
         r = await b.go(loc);
         continue;
       }

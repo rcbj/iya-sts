@@ -470,7 +470,8 @@ async function run(t) {
   // -------------------------------------------------------------------------
   t.log.info('=== E. escaping ===');
   // -------------------------------------------------------------------------
-  const raw = /<script|<img|<svg onload|<b>|<i>|onerror=alert\(1\)>|"><svg/;
+  // Case-insensitive: `<SCRIPT` is as much markup as `<script`.
+  const raw = /<script|<img|<svg onload|<b>|<i>|onerror=alert\(1\)>|"><svg/i;
   [['E1. the wide drawing', svg], ['E2. the stacked drawing', stacked.svg],
    ['E3. the text alternative', text], ['E4. the panel', panel]]
     .forEach(function (one) {

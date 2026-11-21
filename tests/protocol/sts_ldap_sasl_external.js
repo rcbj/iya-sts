@@ -72,6 +72,7 @@ const ldapFilters = require("@ldapjs/filter");
 const { Parser } = require("ldapjs/lib/messages");
 const names = require("./random_username.js");
 const portal = require("./portal_signin.js");
+const serviceTrust = require("../tools/service_trust.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -304,9 +305,10 @@ function ldaps(credential) {
   log.debug("Entering ldaps().");
   const socket = tls.connect(Object.assign({
     host: HOST, port: LDAPS_PORT, servername: HOST,
-    // The listener's own certificate is not what any check here is about,
-    // and sts_ldaps.js verifies it.
-    rejectUnauthorized: false
+    // The listener's own certificate is not what any check here is about
+    // (sts_ldaps.js is), but it is verified all the same: a SASL EXTERNAL
+    // bind over a connection that trusted anybody would prove nothing.
+    ca: serviceTrust.trustedCa()
   }, credential ? { cert: credential.cert, key: credential.key } : {}));
   log.debug("Leaving ldaps().");
   return new Promise(function (resolve) {
@@ -487,7 +489,7 @@ function ldapModifyBinary(dn, type, value) {
   const client = ldapjs.createClient({
     url: "ldaps://" + HOST + ":" + LDAPS_PORT, reconnect: false,
     timeout: 20000, connectTimeout: 15000,
-    tlsOptions: { rejectUnauthorized: false, servername: HOST } });
+    tlsOptions: { ca: serviceTrust.trustedCa(), servername: HOST } });
   client.on("error", function (e) {
     // The modify's callback reports it.
     log.debug("The LDAP client emitted an error: " + e.message);

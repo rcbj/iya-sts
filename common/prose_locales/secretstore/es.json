@@ -35,6 +35,10 @@
     "en": "20bde19870bf41f3",
     "text": "Clave de Azure Key Vault o Managed HSM (la clave nunca sale de él)"
   },
+  "secretstore.providers.pkcs11.label": {
+    "en": "b69f31334968d051",
+    "text": "Un módulo de seguridad de hardware PKCS#11 (la clave nunca sale de él)"
+  },
   "secretstore.source.reportWhat": {
     "en": "22bc75be21c4a09a",
     "text": "De dónde lee este servicio sus secretos primordiales — la clave de cifrado de claves con la que se sella todo lo que sella, y la contraseña de la base de datos — si realmente los leyó, y qué está haciendo el almacén del otro extremo."
@@ -282,6 +286,10 @@
   "secretstore.probe.azure-keys/vault-key": {
     "en": "4c46af2b365b08fe",
     "text": "Lo que dice el vault sobre la clave que envuelve las claves de datos: su tipo, tamaño, operaciones, versión y rotación."
+  },
+  "secretstore.probe.pkcs11/hsm-key": {
+    "en": "31b1bb76fbe8c7ce",
+    "text": "Lo que el token del HSM dice de la clave que envuelve las claves de datos: si está, su tipo y si puede salir alguna vez del HSM."
   },
   "secretstore.probe.gcp/secret": {
     "en": "f7750717cdd5bfbc",

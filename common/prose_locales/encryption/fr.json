@@ -243,6 +243,10 @@
     "en": "612d0883b63631fd",
     "text": "ET LA CLÉ NE DOIT PAS RÉSIDER SUR LE DISQUE QU’ELLE PROTÈGE. Un fichier de clé sur le même volume non chiffré que le magasin remet les deux moitiés à quiconque emporte le volume ; c’est acceptable pour une pile de développement et c’est pourquoi le fournisseur `file` est la valeur par défaut, mais ce n’est pas un déploiement. keys.kekProvider sélectionne plutôt un magasin de secrets."
   },
+  "encryption.notes.signingKeys": {
+    "en": "d0eeec647d97c442",
+    "text": "OÙ CE DOMAINE SIGNE (#1955). Avec keys.signingKeyStore pkcs11, les clés de signature classiques indiquées comme dans le HSM ont été créées dans le jeton que nomme keys.signingKeyToken et n’en sortent jamais : chaque signature est un appel PKCS#11. Les clés post-quantiques sont toujours créées en logiciel, car aucun module PKCS#11 ici ne propose ML-DSA ni SLH-DSA, de même que toute courbe que le module ne crée pas. Le paramètre s’applique aux jeux de clés créés ou renouvelés après son changement. Une signature synchrone n’est faite que tant que keys.pkcs11SynchronousSign est activé ; sinon cette porte refuse (STS-KEYS-0209) et les portes asynchrones signent encore."
+  },
   "encryption.notes.accountingNote": {
     "en": "4e3af979f8ed8bd7",
     "text": "Compté à l’UNIQUE entonnoir par lequel passent les deux opérations — `encryptWithDek()` et `decryptWithDek()` de `crypto.js`, les enveloppements et désenveloppements des clés de chiffrement des données elles-mêmes figurant sous `data-keys` — plutôt qu’aux points d’appel, car un total assemblé à partir des points d’appel est faux dès que quelqu’un en ajoute un autre, et l’est SILENCIEUSEMENT. La ventilation ci-dessous se fait par un LIBELLÉ que transmet chaque point d’appel ; un appelant qui n’en transmet aucun est tout de même compté, sous `(unlabelled)`. CES CHIFFRES VALENT POUR TOUT LE PROCESSUS ET NON PAR DOMAINE — une clé de chiffrement de clé appartient au processus ; ventiler le décompte par domaine reviendrait donc à compter le domaine dans lequel se trouvait une requête — et ils sont en mémoire : un redémarrage est la façon d’en obtenir un vide."

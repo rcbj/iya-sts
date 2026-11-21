@@ -82,11 +82,19 @@ function childMain() {
     const tlsClient = require(ROOT_DIR + '/common/tls_client_certificates');
 
     await pki.ensureScope('');
+    // BUILT AS THE MAIN PORT IS (`server.js`): the listener certificate
+    // with its chain and the Root, and a client certificate asked for and
+    // not required at the handshake — the service verifies one after it
+    // (`trustClientCertificatesOn()`), which is what SCIM's certificate
+    // scheme reads. Every request below verifies the LISTENER against the
+    // anchor a loopback caller of this process pins (`trustAnchorPems()`).
     const serverCert = tlsServer.serverCertificate();
+    const anchors = tlsServer.trustAnchorPems();
     const server = https.createServer(Object.assign({
-      cert: serverCert.certPem, key: serverCert.privateKeyPem,
+      cert: tlsServer.presentedBundlePem(serverCert),
+      key: serverCert.privateKeyPem,
       ca: tlsServer.clientTruststoreOptions().ca,
-      requestCert: true, rejectUnauthorized: false
+      ...tlsServer.clientAuthOptions('optional')
     }, tlsServer.protocolOptions()), app);
     tlsServer.trustClientCertificatesOn(server,
                                         'the SCIM certificate test listener');
@@ -106,7 +114,7 @@ function childMain() {
           path: urlPath, method: method, headers: headers,
           cert: o.tls ? o.tls.cert : undefined,
           key: o.tls ? o.tls.key : undefined,
-          rejectUnauthorized: false, agent: false }, function (res) {
+          ca: anchors, agent: false }, function (res) {
           let text = '';
           res.on('data', function (c) { text += c; });
           res.on('end', function () {

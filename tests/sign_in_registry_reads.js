@@ -29,6 +29,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const ldapServer = require('../ldap/ldap_server');
 const applications = require('../common/applications');
 const cacheRegistry = require('../common/cache_registry');
@@ -98,7 +101,7 @@ function loadIsKept(t) {
   const first = applications.clientConfigOf(CLIENT);
   first.redirect_uris.push('https://changed.example/cb');
   const second = applications.clientConfigOf(CLIENT);
-  t.check(second.redirect_uris.indexOf('https://changed.example/cb') < 0,
+  t.check(!urls.holds(second.redirect_uris, 'https://changed.example/cb'),
           'A6. each caller gets an answer of its own: changing one does ' +
           'not change the next');
   log.debug("Leaving loadIsKept().");

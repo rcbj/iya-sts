@@ -68,6 +68,9 @@
 // OWNED HERE (local: true). Its realms are removed only on a private probe.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const path = require("path");
 const nodeCrypto = require("crypto");
@@ -469,15 +472,14 @@ async function consumption(credA, credB) {
     assert.strictEqual(e.length, 2, JSON.stringify(e));
     assert.ok(e.indexOf("1 true " + B_REDIRECT + " " + base + "/acs1") >= 0);
     for (const u of [base + "/acs0", base + "/acs1"]) {
-      assert.ok([].concat(f.samlAssertionConsumerService || []).indexOf(u) >=
-                0, u);
+      assert.ok(urls.holds(f.samlAssertionConsumerService, u), u);
     }
   });
   K.check("G4. the SingleLogoutService with its ResponseLocation, the " +
           "NameID formats, AuthnRequestsSigned, WantAssertionsSigned, " +
           "cacheDuration, unsigned", function () {
-    assert.ok([].concat(f.samlSloEndpoint || []).indexOf(B_REDIRECT + " " +
-      base + "/slo " + base + "/slo-response") >= 0,
+    assert.ok(urls.holds(f.samlSloEndpoint, B_REDIRECT + " " +
+      base + "/slo " + base + "/slo-response"),
     JSON.stringify(f.samlSloEndpoint));
     assert.strictEqual([].concat(f.samlSpNameIdFormat || []).join(" "),
                        F_EMAIL + " " + F_PERSISTENT);

@@ -118,6 +118,15 @@ services:
       sts2:
         condition: service_healthy
 
+  # THE COMPANION'S PUBLIC ADDRESS OF THE SERVICE (2026-11-20, run #607): the
+  # balancer, as every node's STS_PUBLIC_BASE_URL is. `/pep-app` dials only
+  # the origins COMPANION_STS_URL and COMPANION_STS_PUBLIC_URL name
+  # (companion/pep_app_identity.js), and in this mode the PEP's PDP URL —
+  # what sts_xacml_remote_pep hands it — is `sts-lb`'s.
+  companion:
+    environment:
+      - COMPANION_STS_PUBLIC_URL=${STS_PUBLIC_BASE_URL:-https://sts-lb:8081}
+
   xacml-pep:
     environment:
       - PEP_PDP_URL=https://sts-lb:8081/realm/${XACML_PEP_REALM:-pep-e2e}

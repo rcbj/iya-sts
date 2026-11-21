@@ -146,6 +146,9 @@
 // OWNED HERE (local: true): no counterpart exists in the parent project.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const fs = require("fs");
@@ -1338,7 +1341,15 @@ async function test() {
       assert.ok(fields.exp && Number(fields.exp.numberValue) ===
                 Number(jwt.payload.exp), JSON.stringify(fields.exp));
       assert.ok(fields.aud, "aud is in the claims");
-      assert.ok(JSON.stringify(fields.aud).indexOf(AUDIENCE) >= 0,
+      // A google.protobuf.Value: one audience is a `stringValue`, several a
+      // `listValue` of them. Each read out and compared whole.
+      const audValue = fields.aud || {};
+      const audiences = audValue.listValue
+        ? (audValue.listValue.values || []).map(function (v) {
+          return v && v.stringValue;
+        })
+        : [audValue.stringValue];
+      assert.ok(urls.holds(audiences, AUDIENCE),
                 JSON.stringify(fields.aud));
     });
     const refusals = [

@@ -3901,6 +3901,61 @@ const CODES = [
       'were dropped once the store no longer listed it (#1938), and the ' +
       'cached key set built from them could not be.',
     spec: '' },
+  { code: 'STS-KEYS-0201',
+    summary: 'A PKCS#11 operation failed on the hardware security module: ' +
+      'no session could be opened, or a wrap, unwrap, signature or search ' +
+      'was refused, including after one reconnect (a connector restart or a ' +
+      'lost device is met by the next operation, never by a timer). A data ' +
+      'key that does not unwrap at start stops the start; a signature is ' +
+      'refused (#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0202',
+    summary: 'The PKCS#11 module could not be used: keys.pkcs11Module is ' +
+      'empty, the module would not load or initialize, or no single token ' +
+      'matches the URI\'s token label, serial and slot (#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0203',
+    summary: 'The key a PKCS#11 URI names is not usable: it is not on the ' +
+      'token (and keys.pkcs11GenerateKey is off, or this is a request ' +
+      'worker), more than one object matches, or it is extractable or not ' +
+      'AES-256 (#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0204',
+    summary: 'The PKCS#11 token offers no mechanism this service wraps a ' +
+      'data key with for this key (CKM_AES_GCM, CKM_AES_KEY_WRAP_PAD, ' +
+      'CKM_YUBICO_AES_CCM_WRAP), or not the one keys.pkcs11Mechanism ' +
+      'names (#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0205',
+    summary: 'The PKCS#11 location or PIN is wrong: the location is not an ' +
+      'RFC 7512 URI naming an object, it carries a PIN (pin-value, ' +
+      'pin-source), the PIN secret could not be read or holds none for the ' +
+      'token, or the token refused it (#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0206',
+    summary: 'A realm whose signing keys are in the HSM was asked for ' +
+      'something only a key in this process can do — the private key ' +
+      'itself, a decryption, or an algorithm the HSM does not sign — and ' +
+      'refused it rather than making a software key (#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0207',
+    summary: 'A signing key could not be made in, or read back from, the ' +
+      'hardware security module: the module offers no key-pair generation ' +
+      'for that algorithm or curve, or answered no public key (#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0208',
+    summary: 'A realm key in the HSM was asked to decrypt (RSA-OAEP) or to ' +
+      'agree (ECDH) and the module refused it: the key was made without ' +
+      'CKA_DECRYPT or CKA_DERIVE, by a build before the HSM keys could ' +
+      'decrypt. Rotating the realm\'s signing keys makes keys that can ' +
+      '(#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0209',
+    summary: 'A signature with a key in the HSM was asked of a synchronous ' +
+      'door, or of a module with no asynchronous C_Sign, while ' +
+      'keys.pkcs11SynchronousSign is off. The event loop is not held for ' +
+      'the token; turn the setting on to sign that way (#1955).',
+    spec: '' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +

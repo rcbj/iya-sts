@@ -35,6 +35,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const nodeCrypto = require('crypto');
 const config = require('../common/config');
 const realms = require('../common/realms');
@@ -249,7 +252,7 @@ async function body(t) {
   t.check(suspended.ok && !twice.ok && twice.errors &&
           noStatement.ok === false && noStatement.code === 'STS-OIDFED-0057' &&
           noStatement.error === 'not_found' &&
-          listed.list.indexOf(rpId) < 0,
+          !urls.holds(listed.list, rpId),
           '2b. suspended: no statement (not_found), not listed, and not ' +
           'suspended twice', JSON.stringify(noStatement));
   const reinstated = await oidfed.act({ action: 'reinstate-subordinate',
@@ -372,7 +375,7 @@ async function body(t) {
   }) && JSON.stringify(all) === JSON.stringify(sorted) &&
           ids.every(function (id) {
             return all.indexOf(id) >= 0;
-          }) && all.indexOf(leafId) >= 0 && all.indexOf(rpId) < 0 &&
+          }) && urls.holds(all, leafId) && !urls.holds(all, rpId) &&
           pages[0].body.immediate_subordinate_entities.every(function (e) {
             return Object.keys(e).join() === 'id';
           }),

@@ -36,6 +36,9 @@
 // OWNED HERE (local: true): the response is this repository's own.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const crypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -195,7 +198,7 @@ async function exchanges() {
     assert.ok(!r.json.id_token, "no id_token: " + r.text.slice(0, 400));
     const claims = claimsOf(r.json.access_token);
     assert.ok(!("scope" in claims), JSON.stringify(claims));
-    assert.ok([].concat(claims.aud).indexOf(API_URL) >= 0,
+    assert.ok(urls.holds(claims.aud, API_URL),
               JSON.stringify(claims.aud));
   });
 

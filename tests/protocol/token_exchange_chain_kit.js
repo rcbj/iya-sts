@@ -86,6 +86,9 @@
 // are apart.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
@@ -454,7 +457,7 @@ async function provisionCast(base, cast, semantics) {
     const scopes = registry.valuesOf(entry.fields &&
                                      entry.fields.oauthAllowedScope);
     if (tier.audience) {
-      assert.ok(audiences.indexOf(tier.audience) >= 0, tier.identifier +
+      assert.ok(urls.holds(audiences, tier.audience), tier.identifier +
         " should register " + tier.audience + " and holds " +
         JSON.stringify(audiences));
     } else {
@@ -1067,7 +1070,7 @@ function assertAct(cast, act, expect) {
     expect.target + ", whose registered audience " + expect.audience +
     " the exchange asked for. Naming the URI is the registry lookup " +
     "(applications.forAudience()) not happening.");
-  assert.ok(String(act.target.what || "").indexOf(expect.audience) >= 0,
+  assert.ok(urls.namesAddress(String(act.target.what || ""), expect.audience),
     "the act's target does not say which audience resolved: \"" +
     act.target.what + "\"");
   // WHAT ALLOWED IT. Every part of the policy is provisioned, so the policy

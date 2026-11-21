@@ -17,6 +17,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const crypto = require('crypto');
 const realms = require('../common/realms');
 const cp = require('../oauth-oidc/claims_providers');
@@ -283,7 +286,7 @@ async function body(t) {
           JSON.stringify({ u: unknownIssuer.notes, b: badKey.notes,
                            s: strangeEndpoint.notes }));
   const dialled = calls.filter(function (c) {
-    return c.url.indexOf(STRANGER) === 0;
+    return urls.isUnder(c.url, STRANGER);
   }).length;
   t.equal(dialled, 0, '4b. nothing a foreign token names is dialled');
 

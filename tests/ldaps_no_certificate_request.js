@@ -138,9 +138,13 @@ async function run(t) {
   const tls = require('tls');
   const made = require('../common/crypto').selfSignedRsaCertificate({
     commonName: 'localhost' });
-  const asking = tls.createServer({ key: made.privateKeyPem,
-                                    cert: made.certPem, requestCert: true,
-                                    rejectUnauthorized: false },
+  // The main port's posture, by the call server.js builds it with: a
+  // certificate asked for and never required, so OpenSSL's client, which
+  // presents none, finishes the handshake the control reads.
+  const tlsServer = require('../tls/tls_server');
+  const asking = tls.createServer(Object.assign({ key: made.privateKeyPem,
+                                                  cert: made.certPem },
+                                  tlsServer.clientAuthOptions('optional')),
                                   function (socket) { socket.end(); });
   await new Promise(function (r) { asking.listen(0, '127.0.0.1', r); });
   try {

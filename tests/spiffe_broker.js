@@ -65,6 +65,9 @@ const ROOT = path.join(__dirname, '..');
 // from the Entering/Leaving lines; its findings are written to BK_OUT.
 function childMain() {
   const ROOT = process.env.BK_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT + '/tests/protocol/url_match.js');
   const OUT = process.env.BK_OUT;
   const REALM = 'spiffe-broker';
   const POD = '0f0e0d0c-0b0a-4908-8706-050403020100';
@@ -605,7 +608,7 @@ function childMain() {
             svids[0].spiffe_id === spiffeIdLib.make(td, '/by-pid') &&
             svids[0].hint === 'internal' &&
             claims.sub === svids[0].spiffe_id &&
-            [].concat(claims.aud).indexOf('https://api.test') >= 0,
+            urls.holds(claims.aud, 'https://api.test'),
             'a PROCESS reference is attested by the unix attestor and ' +
             'answered with its entry\'s JWT-SVID — the admin entry left out, ' +
             'the duplicate hint dropped', { err: a.err, svids: svids });

@@ -98,10 +98,14 @@
 
 "use strict";
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const zlib = require("zlib");
+const serviceTrust = require("../tools/service_trust.js");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const krb5 = require("./krb5_drive.js");
@@ -309,7 +313,7 @@ async function follow(cookies, url, options) {
     const loc = r.headers.get("location");
     if (!loc) break;
     const next = new URL(loc, r.url).toString();
-    if (next.indexOf(base) !== 0) {
+    if (!urls.isUnder(next, base)) {
       log.debug("Leaving follow().");
       return { r: r, landed: next };
     }
@@ -800,10 +804,11 @@ async function x509(username) {
       const req = https.request({
         host: host, port: port, path: "/tls/sign-in", method: "GET",
         cert: pki.certPem, key: pki.keyPem,
-        // The SERVER's certificate is not verified here: what is under test
-        // is the CLIENT certificate. (This said the server's was self-signed;
-        // it is certified under the service Root now, `tls/CLAUDE.md`.)
-        rejectUnauthorized: false,
+        // What is under test is the CLIENT certificate, and the SERVER's is
+        // verified as well, chain and name, against the service's chain
+        // (tools/service_trust.js): it is certified under the service Root,
+        // `tls/CLAUDE.md`, and nothing here needs it unverified.
+        ca: serviceTrust.trustedCa(),
         // A full handshake every time: a session resumed from a try made
         // before the anchor arrived keeps that handshake's "not verified"
         // (`sts_console_bootstrap_product.js`, 2026-10-07).

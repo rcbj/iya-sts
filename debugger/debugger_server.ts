@@ -268,6 +268,42 @@ class DebuggerServer {
    *
    * @param instance - the installed instance
    */
+  /**
+   * A `Location` the API child answered, moved onto the debugger's own
+   * base when it names the child's ORIGIN — compared parsed, scheme, host
+   * and port (2026-11-20). It was a text prefix until then, which also
+   * rewrote `http://127.0.0.1:40001/x` for a child at
+   * `http://127.0.0.1:4000`, and `http://child.example.evil/` for one at
+   * `http://child.example`. A relative Location, one that does not parse
+   * or one naming anybody else goes through unchanged.
+   *
+   * @param value - the header's value
+   * @param childOrigin - the child's configured address (`uiUrl`)
+   * @param base - the debugger's own base, scheme and host
+   * @returns the value to send
+   */
+  static rewrittenLocation(value: any, childOrigin: string,
+                           base: string): any {
+    log.debug('Entering DebuggerServer.rewrittenLocation().');
+    let at: URL | null = null;
+    let child: URL | null = null;
+    try {
+      at = new URL(String(value));
+      child = childOrigin ? new URL(childOrigin) : null;
+    } catch (e) {
+      log.debug('Caught in DebuggerServer.rewrittenLocation(): ' +
+                ((e && (e as Error).message) || e));
+      at = null;
+    }
+    if (!at || !child || at.origin !== child.origin) {
+      log.debug('Leaving DebuggerServer.rewrittenLocation(). Unchanged.');
+      return value;
+    }
+    log.debug('Leaving DebuggerServer.rewrittenLocation(). Rewritten.');
+    return String(base).replace(/\/+$/, '') + at.pathname + at.search +
+      at.hash;
+  }
+
   static wire(instance: DebuggerServer): void {
     helpers.log.debug("Entering DebuggerServer.wire().");
     instance.registerRoutes(app);
@@ -751,9 +787,8 @@ class DebuggerServer {
           return;
         }
         let value = answer.headers[name];
-        if (lower === 'location' && childOrigin &&
-            String(value).indexOf(childOrigin) === 0) {
-          value = base + String(value).slice(childOrigin.length);
+        if (lower === 'location') {
+          value = DebuggerServer.rewrittenLocation(value, childOrigin, base);
         }
         out[name] = value;
       });

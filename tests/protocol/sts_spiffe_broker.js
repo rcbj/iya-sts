@@ -64,6 +64,9 @@
 // OWNED HERE (local: true): no counterpart exists in the parent project.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const https = require("https");
 const net = require("net");
@@ -439,7 +442,7 @@ async function oneRealm(o) {
   if (reportedHost && reportedHost !== "0.0.0.0" && reportedHost !== "::") {
     candidates.push(reportedHost);
   }
-  if (candidates.indexOf(url.hostname) < 0) {
+  if (!urls.holds(candidates, url.hostname)) {
     candidates.push(url.hostname);
   }
   let target = "";
