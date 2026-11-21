@@ -2017,7 +2017,36 @@ class UsersPage {
           kit.note(t.html('consoleUsers.mfaSection.clearTotpNote'))
         : (mech.totp
             ? kit.note(t.html('consoleUsers.mfaSection.clearingNeedsWrite'))
-            : ''));
+            : '')) +
+      // THE ONE-TIME CODE TOKEN (#1955 P4): how it was provisioned, when it
+      // was last used, and Clear, under the same evidence rule as the app.
+      (mech.hotp
+        ? '<h3>' + t.html('consoleUsers.mfaSection.hotpHeading') + '</h3>' +
+          '<table class="kv"><tr><th>' +
+          t.html('consoleUsers.mfaSection.hotpSource') + '</th><td>' +
+          (mech.hotpDetail && mech.hotpDetail.source === 'pskc-import'
+            ? t.html('consoleUsers.mfaSection.hotpImported', {
+                serial: String(mech.hotpDetail.serial || ''),
+                vendor: String(mech.hotpDetail.vendor || '') })
+            : t.html('consoleUsers.mfaSection.hotpEnrolled')) +
+          (mech.hotpUsable ? '' : ' <strong>' +
+            t.html('consoleUsers.mfaSection.hotpUnusable') + '</strong>') +
+          '</td></tr><tr><th>' +
+          t.html('consoleUsers.mfaSection.lastCode') + '</th><td>' +
+          kit.esc(mech.hotpDetail && mech.hotpDetail.lastUsedAt
+            ? kit.whenText(mech.hotpDetail.lastUsedAt)
+            : t.text('consoleUsers.body.never')) + '</td></tr></table>' +
+          (state.write
+            ? '<form method="post" action="/admin/users">' +
+              '<input type="hidden" name="action" value="clear-hotp">' +
+              UsersPage.evidenceField(t) +
+              '<input type="hidden" name="user" value="' + kit.esc(key) +
+              '">' + carryBack +
+              '<div class="formrow"><button class="danger">' +
+              t.html('consoleUsers.mfaSection.clearHotp') +
+              '</button></div></form>'
+            : kit.note(t.html('consoleUsers.mfaSection.clearingNeedsWrite')))
+        : '');
 
     // --- passkeys
     // --------------------------------------------------------

@@ -1388,24 +1388,24 @@
     "text": "Walang lumalabas sa serbisyong ito. Ang isang HOTP value AY isang pinutol na HMAC — RFC 4226 section 5.3 — kaya kumukuwenta ang family na ito ng keyed MAC at saka ikinukumpara ito, kaya nasa common/crypto.js ang primitive katabi ng bawat iba pang signature dito sa halip na sa module na nagpapasya ng policy."
   },
   "crypto.families.one-time-passwords-totp.verifies": {
-    "en": "071552dc11014cdd",
-    "text": "Isang ipinakitang code, sa pamamagitan ng pagkuwenta ng HMAC para sa bawat time step sa skew window at paghahambing nang constant-time. Kinukuwenta ang BAWAT step kahit may tugma na, nang sadya: ang maagang pagbalik ay magpapaasa sa oras na ginugol sa KUNG ALING step ang tumugma, na mas mahusay na oracle kaysa sa paghahambing ng digit na pinag-aabalahang gawing constant-time."
+    "en": "302891e951b96222",
+    "text": "Isang ipinakitang code, sa pamamagitan ng pagkalkula ng HMAC para sa bawat time step sa skew window at paghahambing sa constant time. Kinakalkula ang BAWAT step kahit may tumugma na, sadya: ang maagang pagbalik ay gagawing nakadepende ang tagal sa KUNG ALING step ang tumugma, na mas mahusay na oracle kaysa sa paghahambing ng digit na sinadyang gawing constant-time. Isang HOTP code (RFC 4226, #1955) sa parehong paraan sa look-ahead window mula sa counter nito, na pagkatapos ay isinusulong sa pamamagitan ng compare-and-set sa store. Ang ValueMAC ng isang PSKC seed file (RFC 6030 section 6.1.1: HMAC-SHA1 o isang SHA-2 MAC sa ciphertext) bago i-decrypt ang secret nito."
   },
   "crypto.families.one-time-passwords-totp.encrypts": {
     "en": "c18d0d11279cb6c0",
     "text": "Ang shared secret at rest, sa PRODUCT mode — AES-256-GCM sa ilalim ng parehong key-encryption key na nagpoprotekta sa mga signing key, sa pamamagitan ng common/keystore.js. Sa DEVELOPMENT mode, naka-store ito bilang base32, dahil ginagawa bawat run ang key-encryption key doon at ang pag-seal ay mangangahulugan ng authenticator na tahimik na titigil gumana sa susunod na restart."
   },
   "crypto.families.one-time-passwords-totp.decrypts": {
-    "en": "d2cefc498eff5443",
-    "text": "Ang parehong secret, para mag-verify ng code. **ITO ANG NAG-IISANG CREDENTIAL SA SERBISYONG ITO NA MABABASA PABALIK** — ang password ay isang scrypt hash at maihahambing lang, at ang pag-verify ng one-time code ay nangangahulugang KUWENTAHIN ito. Hindi iyon kahinaan ng RFC 6238; iyon ang ibig sabihin ng \"shared secret\", at eksakto iyon ang dahilan kung bakit SECOND factor ang mekanismong ito rito at hindi kailanman magagawang first factor."
+    "en": "f197370676038df3",
+    "text": "Ang PSKC seed file ng isang vendor (RFC 6030): AES-CBC o AES Key Wrap sa ilalim ng pre-shared key na ibinigay kasama ng upload, o sa ilalim ng key na hinango ng PBKDF2 mula sa password nito, at walang alinman ang itinatabi. Ang parehong secret, para i-verify ang isang code. **ITO ANG NAG-IISANG CREDENTIAL SA SERBISYONG ITO NA MABABASA PABALIK** — ang password ay isang scrypt hash at maihahambing lamang, at ang pag-verify ng one-time code ay nangangahulugang KALKULAHIN ito. Hindi iyon kahinaan ng RFC 6238; iyon ang ibig sabihin ng \"shared secret\", at iyon mismo ang dahilan kung bakit IKALAWANG factor ang mekanismong ito rito at hindi kailanman magagawang una."
   },
   "crypto.families.one-time-passwords-totp.hashes": {
     "en": "decb0b31d14255e5",
     "text": "SHA-1, SHA-256 o SHA-512, sa loob ng HMAC at wala nang iba."
   },
   "crypto.families.one-time-passwords-totp.whatItDoesNot": {
-    "en": "512b47bf629fcfe5",
-    "text": "Hindi nito kailanman sinasabi kaninuman kung ano ang kasalukuyang code, at hindi kailanman nag-e-enrol ng sinuman sa sign-in screen — ang enrolment ay nangangahulugang ipakita ang isang secret, kaya nangyayari ito kung saan naka-authenticate na ang tao o may hawak siyang activation link. Walang counter-based na HOTP bilang authentication mechanism, at walang resynchronisation protocol: ang skew window lang ang inaalok para sa orasang lumilihis."
+    "en": "f38dd0b2f7ce307b",
+    "text": "Hindi nito kailanman sinasabi sa sinuman kung ano ang kasalukuyang code, at hindi ito kailanman nag-e-enroll ng sinuman sa sign-in screen — ang pag-enroll ay nangangahulugang pagpapakita ng secret, kaya nangyayari ito kung saan authenticated na ang tao o may hawak na activation link. Ang lumilihis na TOTP clock ay binibigyan ng skew window at wala nang iba. Ang counter-based (HOTP) na token ay nire-resynchronize mula sa dalawang magkasunod na code, hindi kailanman mula sa isa. Hindi nito kailanman itinatabi ang key o password ng seed file, at hindi kailanman nagbubukas ng file na naka-encrypt sa isang sertipiko."
   },
   "crypto.families.one-time-passwords-totp.algorithms.0.what": {
     "en": "0c410835b8ade404",

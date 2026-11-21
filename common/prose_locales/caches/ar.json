@@ -219,22 +219,6 @@
     "en": "080afaefbe52c342",
     "text": "إلى أن تدفعه أحداث أحدث عددها devices.eventsKept إلى الخارج."
   },
-  "caches.store.hardware_tokens.register.title": {
-    "en": "f1c8d3f653154823",
-    "text": "سجل الرموز المادية"
-  },
-  "caches.store.hardware_tokens.register.description": {
-    "en": "5efc16810cb7f48e",
-    "text": "صف لكل رمز مادي (مفتاح YubiKey أو بطاقة ذكية) في هذا النطاق، مفهرس بالمورّد والرقم التسلسلي: من يحمله، وطرازه، وبيانات الاعتماد عليه. لا يُسجَّل الرقم التسلسلي إلا من شهادة. لا يحتوي سرًّا أبدًا."
-  },
-  "caches.store.hardware_tokens.register.bound": {
-    "en": "260467c777c74957",
-    "text": "الصفوف التي تحتفظ بها العملية ذاكرة تخزين مؤقت من 5000 لكل نطاق؛ والسجل نفسه محدود ببيانات الاعتماد التي يسردها (webauthn.maxKeysPerPerson لـ FIDO)."
-  },
-  "caches.store.hardware_tokens.register.lifetime": {
-    "en": "c18bfda6fa452b2b",
-    "text": "حتى إزالة الرمز؛ يُحتفظ بالرمز المفقود مع علامة المفقود."
-  },
   "caches.store.dpop.nonces.title": {
     "en": "a131d3dea3731f75",
     "text": "قيم nonce في DPoP"
@@ -366,6 +350,22 @@
   "caches.store.gnap.signatures.hitMeaning": {
     "en": "1d89a0731fc525e7",
     "text": "توقيع رُئي بالفعل، لذا رُفض الطلب"
+  },
+  "caches.store.hardware_tokens.register.title": {
+    "en": "f1c8d3f653154823",
+    "text": "سجل الرموز المادية"
+  },
+  "caches.store.hardware_tokens.register.description": {
+    "en": "5efc16810cb7f48e",
+    "text": "صف لكل رمز مادي (مفتاح YubiKey أو بطاقة ذكية) في هذا النطاق، مفهرس بالمورّد والرقم التسلسلي: من يحمله، وطرازه، وبيانات الاعتماد عليه. لا يُسجَّل الرقم التسلسلي إلا من شهادة. لا يحتوي سرًّا أبدًا."
+  },
+  "caches.store.hardware_tokens.register.bound": {
+    "en": "260467c777c74957",
+    "text": "الصفوف التي تحتفظ بها العملية ذاكرة تخزين مؤقت من 5000 لكل نطاق؛ والسجل نفسه محدود ببيانات الاعتماد التي يسردها (webauthn.maxKeysPerPerson لـ FIDO)."
+  },
+  "caches.store.hardware_tokens.register.lifetime": {
+    "en": "c18bfda6fa452b2b",
+    "text": "حتى إزالة الرمز؛ يُحتفظ بالرمز المفقود مع علامة المفقود."
   },
   "caches.store.jose.kid-thumbprint-uris.title": {
     "en": "336e569778455530",
@@ -718,6 +718,22 @@
   "caches.store.mail.outbox.hitMeaning": {
     "en": "cdfb417042891812",
     "text": "رسالة كُبتت لأنها مكررة لرسالة أُدخلت في الطابور بالفعل للفعل نفسه ضمن mail.dedupWindowS"
+  },
+  "caches.store.oath_tokens.inventory.title": {
+    "en": "52f9d22caf2dc03d",
+    "text": "مخزون رموز OATH"
+  },
+  "caches.store.oath_tokens.inventory.description": {
+    "en": "7e1f6a1cdbd27667",
+    "text": "صف واحد لكل مفتاح HOTP أو TOTP استورده مسؤول من ملف بذور PSKC لمورّد (RFC 6030)، مفهرس بالمورّد والرقم التسلسلي ومعرّف المفتاح: غير مُسنَد (سرّه مختوم)، أو مُسنَد إلى شخص (أُسقط السرّ، وهو الآن على إدخاله)، أو مُوقَف."
+  },
+  "caches.store.oath_tokens.inventory.bound": {
+    "en": "cbe61377f99c025d",
+    "text": "الصفوف التي تحتفظ بها العملية ذاكرة تخزين مؤقت من 5,000 لكل نطاق؛ والمخزون محدود بما يستورده المسؤولون، بحد أقصى 2,000 مفتاح لكل ملف."
+  },
+  "caches.store.oath_tokens.inventory.lifetime": {
+    "en": "4f13467dac65d62f",
+    "text": "حتى يُزال الرمز غير المُسنَد؛ أما الرمز المُسنَد أو المُوقَف فيُحتفظ به."
   },
   "caches.store.oauth2.access-token-status.title": {
     "en": "510d919c0bffd0a8",

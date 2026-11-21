@@ -1211,9 +1211,13 @@
     "en": "386404ef0cf5e649",
     "text": "Maskinvarutokens"
   },
+  "endpoints.route./admin-api/hardware-tokens/oath.name": {
+    "en": "009f323198517782",
+    "text": "Importerade OATH-tokens"
+  },
   "endpoints.route./admin-api/hardware-tokens/:action.name": {
-    "en": "d2326b0fb8b09689",
-    "text": "Anmäl en maskinvarutoken som förlorad"
+    "en": "c3b6dea748114783",
+    "text": "Anmäl en maskinvarutoken som förlorad, eller importera och tilldela OATH-tokens"
   },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",

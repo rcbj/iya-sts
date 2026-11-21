@@ -528,8 +528,12 @@
     "text": "partial, die Serverseite genau einer auf den Origin begrenzten Sitzung je Anmeldung: Secure-Session-Registration, das ES256 und RS256 anbietet, der Nachweis dbsc+jwt bei der Registrierung (sein jwk, typ, alg und jti geprüft und die Signatur verifiziert) und beim Refresh (mit dem gebundenen Schlüssel geprüft), die JSON-Sitzungsanweisungen mit einem gebundenen Cookie, der Austausch von 403 und Secure-Session-Challenge sowie Sec-Secure-Session-Id. Jede Challenge wird für den Cluster einmal verbraucht. Es fehlt: föderierte Sitzungen (provider_key, das Well-Known-Dokument), auf die Site begrenzte Sitzungen und Scope-Regeln, der Parameter authorization und das Lesen von Secure-Session-Skipped. Standardmäßig aus (authn.deviceBoundSessions)."
   },
   "stsmetadata.specs.rfc4226.coverage": {
-    "en": "ffd9d22cf4ecfd57",
-    "text": "full für das, was RFC 6238 davon braucht: die dynamische Trunkierung aus Abschnitt 5.3 über HMAC-SHA-1, SHA-256 oder SHA-512, sechs bis acht Ziffern, mit dem Zähler als Wert von acht Byte big-endian. Geprüft gegen die eigenen Testvektoren in Appendix D der Spezifikation (tests/totp.js), und das ist der Grund, es selbst zu implementieren statt eine Bibliothek zu nehmen: jeden der vier Schritte dieser Trunkierung hat schon jemand falsch gemacht, und ein veröffentlichter Vektor ist die einzige Prüfung, die das erkennt. NICHT abgedeckt: zählerbasiertes HOTP als Authentifizierungsmechanismus — hier hält nichts einen Zähler, der bei der Verwendung fortschreitet, weil der einzige Aufrufer die zeitbasierte Konstruktion unten ist."
+    "en": "5ab7b9d048e74e7e",
+    "text": "full, auf der Prüferseite, NUR ALS ZWEITER FAKTOR (#1955 P4): die dynamische Kürzung aus Abschnitt 5.3 über HMAC-SHA-1, SHA-256 oder SHA-512, sechs bis acht Ziffern, der Zähler ein acht Byte langer Big-Endian-Wert, geprüft gegen die eigenen Testvektoren aus Anhang D (tests/totp.js, tests/hotp.js); ein Zähler je Anmeldeinformation mit der Vorausschau aus Abschnitt 7.4 (hotp.window, standardmäßig 10, 0 zulässig) und Neusynchronisierung aus zwei aufeinanderfolgenden Codes (hotp.resyncWindow); die Ablehnung von Wiederholungen aus Abschnitt 7.2, wobei der Zähler per Compare-and-Set im Speicher weitergesetzt wird, sodass zwei Knoten oder Worker nie denselben Code annehmen; die Drosselung aus Abschnitt 7.3 über das Code-Budget der Anmeldung. Ein YubiKey-OTP-Slot wird aus dem otpauth://hotp-Code oder dem ykman-Befehl des Portals programmiert; das Token eines Herstellers wird importiert (RFC 6030). Es bringt amr otp ein und hwk nur für ein importiertes Token. NICHT abgedeckt: das Verzögerungsverfahren aus Abschnitt 7.3 als solches (stattdessen lehnt das Budget ab) und OCRA (RFC 6287)."
+  },
+  "stsmetadata.specs.rfc6030.coverage": {
+    "en": "35ef81e9394eb5f5",
+    "text": "partial, als EMPFÄNGER (#1955 P4): ein KeyContainer der Version 1.0 mit HOTP- und TOTP-Schlüsseln, Manufacturer, SerialNo und Model aus DeviceInfo, das ResponseFormat (6 bis 8 Dezimalziffern), ein einfacher Counter, Time (nur 0) und TimeInterval; Klartext (im Produktmodus abgelehnt, außer mit pskc.allowPlaintextImport), ein vorab geteilter Schlüssel (Abschnitt 6.1: AES-128/192/256-CBC und KW-AES) und eine Passphrase (Abschnitt 6.2: PBKDF2), wobei der ValueMAC aus Abschnitt 6.1.1 zuerst geprüft wird (HMAC-SHA1 und die SHA-2-MACs). Geprüft gegen die eigenen Figures 2 bis 7 des RFC (tests/pskc.js). NICHT abgedeckt: Verschlüsselung an ein Zertifikat (6.3), ein MAC-Schlüssel per Referenz, Triple DES und Camellia, ein verschlüsselter Zähler oder eine verschlüsselte Zeit, PIN-Schlüssel und -Richtlinien (übersprungen), Signaturen auf dem Container (Abschnitt 7) und das Erzeugen eines solchen."
   },
   "stsmetadata.specs.bcp47.coverage": {
     "en": "d682d3dd451a019d",
@@ -2131,13 +2135,17 @@
     "en": "fe8d3ba310ad762b",
     "text": "NON-SPEC (#1955). Was Verzeichnis → Hardware-Token zeigt: die physischen Sicherheitsschlüssel und Smartcards, die dieser Bereich erfasst hat, jedes aus seiner eigenen Attestierung, seitenweise und nach Seriennummer oder Person durchsuchbar, mit den Passkeys und Zertifikaten auf jedem. Spiegelt GET /admin/hardware-tokens."
   },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/oath.what": {
+    "en": "f149352fa2ac36d0",
+    "text": "NON-SPEC (#1955 P4). Die HOTP- und TOTP-Token, die Administratoren aus PSKC-Seed-Dateien von Herstellern importiert haben, nicht zugewiesen, zugewiesen oder außer Betrieb, seitenweise und nach Seriennummer oder Person durchsuchbar. Nie ein Geheimnis. Entspricht GET /admin/hardware-tokens (seinem OATH-Tab)."
+  },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-    "en": "1303a5c415b09d44",
-    "text": "NON-SPEC (#1955). lost, mit { key }: das Token wird als verloren markiert, jeder Passkey darauf entfernt, jedes Zertifikat darauf wegen keyCompromise widerrufen, für jedes eine CAEP-Änderung der Anmeldedaten gesendet und die damit angemeldeten Sitzungen beendet. Die einzige Aktion der Konsole auf dieser Seite."
+    "en": "4309735f35f4550e",
+    "text": "NON-SPEC (#1955). lost, mit { key }: das Token wird als verloren markiert, jeder Passkey darauf entfernt, jedes Zertifikat darauf wegen keyCompromise widerrufen, jedes importierte OATH-Geheimnis vom Eintrag seines Inhabers genommen, für jedes eine CAEP-Änderung der Anmeldedaten gesendet und die damit angemeldeten Sitzungen beendet. Seit P4 import-pskc, mit { pskc, preSharedKey or password }: die HOTP- und TOTP-Schlüssel einer Seed-Datei nach RFC 6030 werden nicht zugewiesen unter ihrer Seriennummer geführt, der MAC zuerst geprüft und der Schlüssel nie gespeichert; assign-oath, mit { key, username }; und remove-oath, mit { key }, für ein nicht zugewiesenes Token."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
-    "en": "7b39ad029e0234ed",
-    "text": "meldet ein Hardware-Token als verloren und zieht seine Anmeldedaten zurück"
+    "en": "dabee6463ad7ee17",
+    "text": "meldet ein Hardware-Token als verloren und zieht seine Anmeldedaten zurück, oder importiert, weist zu oder entfernt OATH-Token"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -4024,8 +4032,8 @@
     "text": "Ein zweiter Faktor auf dem Anmeldungsbildschirm, zu dem jedes Protokoll hier eine Person schickt: Registrierungs- und Assertion-Zeremonien gegen einen echten Sicherheitsschlüssel, wobei die Attestierung und die Authenticator Data geprüft und nicht bloß geparst werden."
   },
   "stsmetadata.protocols.One-time passwords (TOTP).what": {
-    "en": "20b73dffc821e4a2",
-    "text": "Der andere zweite Faktor auf dem Anmeldungsbildschirm, zu dem jedes Protokoll hier eine Person schickt, und neben einem Kerberos-Ticket das einzige Anmeldedatum, das dieser Dienst wirklich PRÜFT: der Code wird aus dem gemeinsamen Geheimnis und der Uhr berechnet und verglichen, in beiden Modi, wobei die Accept-once-Regel von RFC 6238 section 5.2 durchgesetzt wird. Die Registrierung ist ein QR-Code, den dieser Server gezeichnet hat, unter /portal/mfa oder während ein Aktivierungslink eingelöst wird; die eigene Zeile der Person unter /admin/users ist der Ort, an dem ein Betreiber einen löscht, und /admin/totp ist der Ort, an dem der Mechanismus konfiguriert wird."
+    "en": "54893544268bf168",
+    "text": "Der andere zweite Faktor auf dem Anmeldebildschirm, an den jedes Protokoll hier eine Person schickt, und neben einem Kerberos-Ticket die einzige Anmeldeinformation, die dieser Dienst wirklich PRÜFT: Der Code wird aus dem gemeinsamen Geheimnis und der Uhr berechnet und verglichen, in beiden Modi, wobei die Regel aus RFC 6238 Abschnitt 5.2, dass ein Code nur einmal angenommen wird, durchgesetzt wird. Die Einrichtung ist ein QR-Code, den dieser Server gezeichnet hat, unter /portal/mfa oder während ein Aktivierungslink eingelöst wird; in der eigenen Zeile der Person auf /admin/users löscht ein Betreiber ihn, und unter /admin/totp wird der Mechanismus konfiguriert. Seit #1955 P4 auch sein zählerbasiertes Gegenstück: ein HOTP-Token nach RFC 4226 (ein YubiKey-OTP-Slot, eingerichtet unter /portal/mfa, oder das Token eines Herstellers, importiert aus seiner Seed-Datei nach RFC 6030 unter Verzeichnis → Hardware-Token und nach Seriennummer zugewiesen oder beansprucht), dessen Zähler per Compare-and-Set weitergesetzt wird, angenommen an jeder Stelle, die einen Code entgegennimmt."
   },
   "stsmetadata.protocols.Recovery codes.what": {
     "en": "b7c9347c7ac4a2b7",

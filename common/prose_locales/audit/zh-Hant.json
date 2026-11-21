@@ -231,6 +231,30 @@
     "en": "228f7d738861aa3c",
     "text": "驗證器應用程式變更因 CSRF 權杖錯誤而被拒絕"
   },
+  "audit.actions.portal.hotp.started.label": {
+    "en": "62c42316ca23b77d",
+    "text": "向某人顯示了新的一次性驗證碼權杖密鑰"
+  },
+  "audit.actions.portal.hotp.enrolled.label": {
+    "en": "075083e107878395",
+    "text": "某人在自己的帳戶上設定了一次性驗證碼權杖"
+  },
+  "audit.actions.portal.hotp.refused.label": {
+    "en": "5b5a058daa2dcab7",
+    "text": "一次性驗證碼權杖的設定未獲確認"
+  },
+  "audit.actions.portal.hotp.removed.label": {
+    "en": "133822944d90f1bf",
+    "text": "某人從自己的帳戶移除了一次性驗證碼權杖"
+  },
+  "audit.actions.portal.hotp.resynced.label": {
+    "en": "912cd583f7760c65",
+    "text": "某人重新同步了自己的一次性驗證碼權杖"
+  },
+  "audit.actions.portal.hotp.resync-refused.label": {
+    "en": "01c45765b9c3cd87",
+    "text": "一次性驗證碼權杖未能重新同步"
+  },
   "audit.actions.portal.activate.mfa.started.label": {
     "en": "df561a24375c8165",
     "text": "在使用啟用連結期間顯示了驗證器應用程式秘密"
@@ -503,6 +527,22 @@
     "en": "f7fb5461e2325e1e",
     "text": "硬體權杖已回報遺失，其憑證已停用"
   },
+  "audit.actions.oath-token.import.label": {
+    "en": "4da380e22dff30ec",
+    "text": "供應商的 PSKC 種子檔案已匯入或遭拒"
+  },
+  "audit.actions.oath-token.assign.label": {
+    "en": "19b678e9bbc10747",
+    "text": "匯入的 OATH 權杖已指派給某人，或由某人認領"
+  },
+  "audit.actions.oath-token.claim.label": {
+    "en": "5c54ac8752e21682",
+    "text": "某人對匯入的 OATH 權杖的認領遭拒"
+  },
+  "audit.actions.oath-token.remove.label": {
+    "en": "92d69a1a2d848892",
+    "text": "未指派的 OATH 權杖已從清冊移除"
+  },
   "audit.actions.device.key-add.label": {
     "en": "6c1b2513c20532ef",
     "text": "金鑰被新增到裝置"
@@ -682,6 +722,10 @@
   "audit.actions.admin.mfa.totp.cleared.label": {
     "en": "478c7ee15248637f",
     "text": "營運者清除了某人的驗證器應用程式"
+  },
+  "audit.actions.admin.mfa.hotp.cleared.label": {
+    "en": "027dab5576016e61",
+    "text": "操作員清除了某人的一次性驗證碼權杖"
   },
   "audit.actions.admin.mfa.key.cleared.label": {
     "en": "d62700d9f7751e8b",

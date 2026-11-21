@@ -2761,7 +2761,12 @@ class CryptoMetadata {
                   'EVERY step is computed even after a match, deliberately: ' +
                   'returning early would make the time taken depend on WHICH ' +
                   'step matched, which is a better oracle than the digit ' +
-                  'comparison this bothers to make constant-time.',
+                  'comparison this bothers to make constant-time. An HOTP ' +
+                  'code (RFC 4226, #1955) the same way over the look-ahead ' +
+                  'window from its counter, which is then advanced by ' +
+                  'compare-and-set in the store. A PSKC seed file\'s ' +
+                  'ValueMAC (RFC 6030 section 6.1.1: HMAC-SHA1 or a SHA-2 ' +
+                  'MAC over the ciphertext) before its secret is decrypted.',
         encrypts: 'The shared secret at rest, in PRODUCT mode — AES-256-GCM ' +
                   'under the same key-encryption key that protects the ' +
                   'signing keys, through common/keystore.js. In DEVELOPMENT ' +
@@ -2769,7 +2774,11 @@ class CryptoMetadata {
                   'key there is generated per run and sealing would mean an ' +
                   'authenticator that silently stopped working at the next ' +
                   'restart.',
-        decrypts: 'The same secret, to verify a code. **THIS IS THE ONE ' +
+        decrypts: 'A vendor\'s PSKC seed file (RFC 6030): AES-CBC or AES Key ' +
+                  'Wrap under the pre-shared key given with the upload, or ' +
+                  'under a key PBKDF2 derives from its password, neither ' +
+                  'kept. ' +
+                  'The same secret, to verify a code. **THIS IS THE ONE ' +
                   'CREDENTIAL IN THIS SERVICE THAT CAN BE READ BACK** — a ' +
                   'password is a scrypt hash and can only be compared ' +
                   'against, and verifying a one-time code means COMPUTING ' +
@@ -2782,10 +2791,12 @@ class CryptoMetadata {
                        'it never enrols anybody at a sign-in screen — ' +
                        'enrolment means being shown a secret, so it happens ' +
                        'where the person is already authenticated or holds ' +
-                       'an activation link. There is no counter-based HOTP ' +
-                       'as an authentication mechanism, and no ' +
-                       'resynchronisation protocol: the skew window is the ' +
-                       'whole of what is offered for a drifting clock.',
+                       'an activation link. A drifting TOTP clock is ' +
+                       'offered the skew window and nothing else. A ' +
+                       'counter-based (HOTP) token is resynchronised from ' +
+                       'two consecutive codes, never from one. It never ' +
+                       'keeps a seed file\'s key or password, and never ' +
+                       'opens a file encrypted to a certificate.',
         envelopes: [],
         algorithms: function () {
           log.debug("Entering algorithms().");

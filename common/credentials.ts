@@ -2193,7 +2193,12 @@ class Credentials {
     // realm lets a key be one: a key has no role, and every key may answer
     // the second step.
     const key = this.keyUses(this.keysOf(name).length).mfa > 0;
-    const totp = !!this.totpOf(name);
+    // `totp` HERE MEANS "A ONE-TIME CODE THE DOOR CAN ASK FOR" (#1955 P4):
+    // the authenticator app's or an HOTP token's, which the KDC's OTP
+    // pre-authentication and `verifyTotpAsync()` accept alike. `hotp` says
+    // which, for a door that words its prompt.
+    const hotp = !!this.hotpStatusOf(name);
+    const totp = !!this.totpOf(name) || hotp;
     const requirement = this.mfaRequirementFor(name);
     const holds = key || totp;
     // AN EXEMPT SERVICE ACCOUNT (#221) is asked for nothing at a door that
@@ -2201,7 +2206,8 @@ class Credentials {
     // second-factor rules, and a factor it happens to hold does not put it
     // back in. Its `amr` is still `pwd` alone.
     const exempt = !!requirement.exemptServiceAccount;
-    const answer = { person: true, totp: totp, key: key, holds: holds,
+    const answer = { person: true, totp: totp, hotp: hotp, key: key,
+                     holds: holds,
                      required: !!requirement.required,
                      byUser: !!requirement.byUser,
                      exemptServiceAccount: exempt,
@@ -5552,12 +5558,17 @@ class Credentials {
   // `kekEpoch()` (a test's stub) is asked every time, which is the old cost
   // and never a wrong answer. `remembered` says whether the verdict was
   // already known, so a caller reports a finding once.
-  private sealedSecretVerdict(ciphertext) {
+  private sealedSecretVerdict(ciphertext, purpose?) {
     const { log, keystore } = this.deps;
     log.debug('Entering Credentials.sealedSecretVerdict().');
     const epoch = typeof keystore.kekEpoch === 'function'
       ? keystore.kekEpoch() : -1;
-    const key = String(ciphertext);
+    // The purpose the text was sealed under (`totp-secret`, or `hotp-secret`
+    // since #1955 P4), which is part of what it opens under, so part of the
+    // remembered key.
+    const sealedFor = String(purpose || 'totp-secret');
+    const key = (sealedFor === 'totp-secret' ? '' : sealedFor + '\n') +
+                String(ciphertext);
     const held = epoch >= 0 ? totpVerdicts.get(key) : undefined;
     if (held && held.epoch === epoch) {
       totpVerdictCount.hit();
@@ -5565,7 +5576,7 @@ class Credentials {
       return { opens: held.opens, remembered: true };
     }
     totpVerdictCount.miss();
-    const opens = !!keystore.open(ciphertext, 'totp-secret');
+    const opens = !!keystore.open(ciphertext, sealedFor);
     if (epoch >= 0) {
       if (!held) {
         cacheRegistry.makeRoom(totpVerdicts, TOTP_VERDICTS_MAX,
@@ -5941,7 +5952,11 @@ class Credentials {
     }
     log.debug('Leaving Credentials.totpFinish(). Accepted at step ' +
               verdict.counter + '.');
-    return { ok: true, counter: verdict.counter, drift: verdict.drift };
+    // The kind and the hardware evidence (#1955 P4): a code from a
+    // vendor-provisioned TOTP token an administrator imported may earn
+    // `hwk` (X3); an app's never does.
+    return { ok: true, counter: verdict.counter, drift: verdict.drift,
+             kind: 'totp', hardware: this.oathHardware('totp', record) };
   }
 
   // THE SYNCHRONOUS DOOR, KEPT FOR ITS CALLERS AND NOT CLUSTER-SAFE. It spends
@@ -6011,34 +6026,36 @@ class Credentials {
    * Verifies a one-time code and spends its step across the cluster: a step
    * at or below the highest any node accepted is refused.
    *
-   * A store that cannot be asked refuses (`STS-AUTHN-0182`).
+   * A store that cannot be asked refuses (`STS-AUTHN-0182`). The
+   * authenticator app's half of `verifyTotpAsync()` (#1955 P4).
    * @param username - the person
    * @param code - the code
    * @param opts - handed to the TOTP verifier
    * @returns a promise of `{ ok: true, … }`, or a refusal (`replay`, `store`)
    */
-  verifyTotpAsync(username, code, opts?) {
+  verifyAppCodeAsync(username, code, opts?) {
     const { log, realms, errorCodes, counters } = this.deps;
     const { TOTP_STEP_SCOPE } = Credentials;
     const coded = this.coded.bind(this);
-    log.debug("Entering Credentials.verifyTotpAsync().");
+    log.debug("Entering Credentials.verifyAppCodeAsync().");
     const name = String(username || '').trim();
     const realmId = realms.currentId();
     let ready;
     try {
       ready = this.totpPrepare(name, code, opts || {});
     } catch (e) {
-      log.debug("Caught in Credentials.verifyTotpAsync(): " +
+      log.debug("Caught in Credentials.verifyAppCodeAsync(): " +
                 ((e && e.message) || e));
-      log.debug("Leaving Credentials.verifyTotpAsync(). It threw.");
+      log.debug("Leaving Credentials.verifyAppCodeAsync(). It threw.");
       return Promise.reject(e);
     }
     if (ready.done) {
-      log.debug('Leaving Credentials.verifyTotpAsync(). Refused before the ' +
-                'store.');
+      log.debug('Leaving Credentials.verifyAppCodeAsync(). Refused before ' +
+                'the store.');
       return Promise.resolve(ready.done);
     }
-    log.debug("Leaving Credentials.verifyTotpAsync(). Advancing the step.");
+    log.debug("Leaving Credentials.verifyAppCodeAsync(). Advancing the " +
+              "step.");
     return counters.advance({
       scope: TOTP_STEP_SCOPE,
       key: name + '\n' + String(ready.record.enrolledAt || 0),
@@ -6067,6 +6084,710 @@ class Credentials {
         detail: 'That code could not be checked just now. Try the next one ' +
                 'in a moment.' });
     });
+  }
+
+  // ===========================================================================
+  // COUNTER-BASED CODES (RFC 4226), BESIDE THE AUTHENTICATOR APP (#1955 P4).
+  //
+  // A person may hold ONE HOTP credential (`stsHotpCredential`, single-valued
+  // for `stsTotpCredential`'s reason: a code names nothing, so two secrets of
+  // one kind would be tried against each other and the replay guard would not
+  // know which counter was spent) — a YubiKey's OTP slot programmed from the
+  // portal, or a vendor's pre-provisioned token an administrator imported
+  // (`common/oath_tokens.ts`). It may sit BESIDE an authenticator app: the
+  // two are different devices with different moving factors, and a person
+  // who carries a phone and a key is entitled to either.
+  //
+  // **EVERY DOOR THAT TAKES "A ONE-TIME CODE" TAKES EITHER, BY KIND.**
+  // `verifyTotpAsync()` is that door — the sign-in step, step-up and recent
+  // sign-in through it, Kerberos FAST OTP (#173) — and it dispatches: the
+  // authenticator app first where the person holds one, and the HOTP
+  // credential when the app's code did not match (or was the wrong length,
+  // which is how a six-digit app and an eight-digit token tell apart). A
+  // person holding both therefore has two secrets a guess is tried against;
+  // that is the cost of holding two devices, bounded by the same
+  // `mfa-code` budget at every door (RFC 4226 section 7.3), and it is the
+  // person's choice. A REPLAY of the app's code is answered as a replay and
+  // the token is NOT then tried: "already used" is the true answer and
+  // trying the second secret would only widen the guess.
+  //
+  // **THE COUNTER IS SPENT BY COMPARE-AND-SET IN THE STORE (design X5)**:
+  // `cluster_counters.advance()` under `authn.hotp-counter`, keyed by the
+  // CREDENTIAL'S id (an enrolment's random id, or `pskc:<token>` for an
+  // imported token, so a token handed from one person to another cannot
+  // replay a code the first person spent). The stored value is the NEXT
+  // counter the token is expected to show, so it is never 0 after an
+  // acceptance — `advance()` treats 0-to-0 as "a counter that is always
+  // zero" (a WebAuthn rule), which must never apply to a code. Exactly one
+  // of two concurrent verifications of one code gets the row; the other is
+  // refused as a replay. The entry's own `counter` is the look-ahead's base
+  // and is written after, so a page that draws "last used" is right — and
+  // an entry behind the store (another node accepted, the change log has not
+  // arrived) only makes the window start lower, never accepts a spent code.
+  // ===========================================================================
+  /** The attribute that holds a person's HOTP credential. */
+  static readonly HOTP_ATTRIBUTE = 'stsHotpCredential';
+
+  /** The counter scope an HOTP credential's next counter is advanced under. */
+  static readonly HOTP_COUNTER_SCOPE = 'authn.hotp-counter';
+
+  // The pending HOTP enrolment shares `pendingTotp`'s store under its own key
+  // (a NUL cannot be in a name, so the prefix cannot collide with a person's).
+  private pendingHotpKeyOf(username) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.pendingHotpKeyOf().");
+    log.debug("Leaving Credentials.pendingHotpKeyOf().");
+    return 'hotp\u0000' + this.pendingKeyOf(username);
+  }
+
+  private hotpLib() {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.hotpLib().");
+    // `common/hotp.ts` requires `totp.ts` and the authentication policy,
+    // both already in hand; it is reached here rather than taken through the
+    // constructor so a test's stub deps need not name it.
+    const lib = (this.deps as any).hotp || require('./hotp');
+    log.debug("Leaving Credentials.hotpLib().");
+    return lib;
+  }
+
+  // The raw value, read through the directory hook; '' for none or no hook.
+  private readHotpValue(name) {
+    const { log, errorCodes } = this.deps;
+    const directory = this.directory;
+    log.debug("Entering Credentials.readHotpValue().");
+    if (!directory || typeof directory.readHotp !== 'function') {
+      log.debug("Leaving Credentials.readHotpValue(). No store.");
+      return '';
+    }
+    try {
+      const raw = directory.readHotp(name) || '';
+      log.debug("Leaving Credentials.readHotpValue().");
+      return raw;
+    } catch (e) {
+      log.error(errorCodes.tag('STS-OATH-0011') + 'credentials: reading the ' +
+                'HOTP credential of ' + name + ' threw: ' +
+                ((e && e.message) || e));
+      log.debug("Leaving Credentials.readHotpValue(). It threw.");
+      return '';
+    }
+  }
+
+  /**
+   * Reads a person's HOTP credential, its secret opened. An unreadable one is
+   * `{ unusable: true, why }` and never absent, for `totpOf()`'s reason.
+   *
+   * @param username - the person
+   * @returns the record, `{ unusable, why }`, or null
+   */
+  hotpOf(username) {
+    const { log, keystore } = this.deps;
+    log.debug("Entering Credentials.hotpOf().");
+    const name = String(username || '').trim();
+    const raw = this.readHotpValue(name);
+    if (!raw) {
+      log.debug("Leaving Credentials.hotpOf(). None.");
+      return null;
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (e) {
+      log.warn('credentials: the stsHotpCredential value on ' + name +
+               ' is not JSON this service wrote; it is reported unusable: ' +
+               ((e && e.message) || e));
+      log.debug("Leaving Credentials.hotpOf(). Not JSON.");
+      return { unusable: true, why: 'the stored value is not readable' };
+    }
+    if (parsed && parsed.sealed) {
+      const opened = keystore.open(parsed.secret, 'hotp-secret');
+      if (!opened) {
+        log.warn('credentials: the HOTP secret of ' + name + ' will not ' +
+                 'open under this process\'s key-encryption key; reported ' +
+                 'UNUSABLE rather than absent.');
+        log.debug("Leaving Credentials.hotpOf(). Will not open.");
+        return { unusable: true, why: 'the stored secret is sealed under a ' +
+                                      'different key-encryption key' };
+      }
+      parsed.secret = opened;
+    }
+    log.debug("Leaving Credentials.hotpOf().");
+    return parsed;
+  }
+
+  // The record WITHOUT its secret, for every report (`totpStatusFromValue()`'s
+  // reason): whether the sealed text opens is asked once per text and key
+  // set (`sealedSecretVerdict()`).
+  private hotpStatusOf(username) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.hotpStatusOf().");
+    const name = String(username || '').trim();
+    const raw = this.readHotpValue(name);
+    if (!raw) {
+      log.debug("Leaving Credentials.hotpStatusOf(). None.");
+      return null;
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (e) {
+      log.debug("Caught in Credentials.hotpStatusOf(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving Credentials.hotpStatusOf(). Not JSON.");
+      return { unusable: true, why: 'the stored value is not readable' };
+    }
+    const out = Object.assign({}, parsed);
+    if (parsed && parsed.sealed &&
+        !this.sealedSecretVerdict(parsed.secret, 'hotp-secret').opens) {
+      log.debug("Leaving Credentials.hotpStatusOf(). Unusable.");
+      return { unusable: true, why: 'the stored secret is sealed under a ' +
+                                    'different key-encryption key' };
+    }
+    delete out.secret;
+    log.debug("Leaving Credentials.hotpStatusOf().");
+    return out;
+  }
+
+  /**
+   * Says whether a person holds an HOTP credential.
+   *
+   * @param username - the person
+   * @returns true when they hold one (readable or not)
+   */
+  hasHotp(username) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.hasHotp().");
+    log.debug("Leaving Credentials.hasHotp().");
+    return !!this.hotpStatusOf(username);
+  }
+
+  // Sealed where the key outlives the process (`writeTotpRecord()`'s rule,
+  // and its reason); under the cell's key where there is one (#98).
+  private writeHotpRecord(username, record) {
+    const { log, keystore, errorCodes } = this.deps;
+    const directory = this.directory;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.writeHotpRecord().");
+    const name = String(username || '').trim();
+    if (!directory || typeof directory.writeHotp !== 'function') {
+      log.debug("Leaving Credentials.writeHotpRecord(). No store.");
+      return coded('STS-OATH-0012', { ok: false, errors: ['No credential ' +
+        'store is installed, so a one-time code token cannot be kept.'] });
+    }
+    const out = Object.assign({}, record);
+    if (keystore.persists()) {
+      const sealedSecret = keystore.seal(out.secret, 'hotp-secret', 'cell');
+      if (!sealedSecret) {
+        log.error(errorCodes.tag('STS-OATH-0010') + 'credentials: the HOTP ' +
+                  'secret of ' + name + ' could not be sealed, so it was ' +
+                  'NOT written.');
+        log.debug("Leaving Credentials.writeHotpRecord(). Not sealed.");
+        return coded('STS-OATH-0010', { ok: false, errors: ['The shared ' +
+          'secret could not be encrypted, so it was not stored.'] });
+      }
+      out.secret = sealedSecret;
+      out.sealed = true;
+    } else {
+      out.sealed = false;
+    }
+    let written = false;
+    try {
+      written = directory.writeHotp(name, JSON.stringify(out));
+    } catch (e) {
+      log.error(errorCodes.tag('STS-OATH-0011') + 'credentials: writing the ' +
+                'HOTP credential of ' + name + ' threw: ' +
+                ((e && e.message) || e));
+      log.debug("Leaving Credentials.writeHotpRecord(). It threw.");
+      return coded('STS-OATH-0011', { ok: false, errors: ['The credential ' +
+        'store refused the write.'] });
+    }
+    if (!written) {
+      log.debug("Leaving Credentials.writeHotpRecord(). No entry.");
+      return coded('STS-AUTHN-0061', { ok: false, errors: ['There is nobody ' +
+        'called "' + name + '" in this realm\'s directory.'] });
+    }
+    log.debug("Leaving Credentials.writeHotpRecord(). Written.");
+    return { ok: true };
+  }
+
+  // -------------------------------------------------------------------------
+  // ENROLMENT, IN TWO STEPS AND THE FIRST WRITES NOTHING (TOTP's shape and
+  // its reason). The pending record starts the counter at 0, which is where
+  // a YubiKey slot programmed with `ykman otp hotp` and an app scanning
+  // `counter=0` both start; the confirmation searches the look-ahead from
+  // there, so a key pressed once or twice while being set up still confirms.
+  // -------------------------------------------------------------------------
+  /**
+   * Mints an HOTP secret to show, holding it pending; nothing is written.
+   *
+   * @param username - the person
+   * @param opts - `base`, the base URL the issuer name is drawn from
+   * @returns `{ ok: true, secret, grouped, digits, counter, uri, ykman,
+   *   expiresAt }`, or a refusal
+   */
+  beginHotpEnrolment(username, opts?) {
+    const { log, mode, totp } = this.deps;
+    const directory = this.directory;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.beginHotpEnrolment().");
+    const name = String(username || '').trim();
+    const hotp = this.hotpLib();
+    if (!directory || typeof directory.writeHotp !== 'function') {
+      log.debug("Leaving Credentials.beginHotpEnrolment(). No store.");
+      return coded('STS-OATH-0012', { ok: false, errors: ['No credential ' +
+        'store is installed, so a one-time code token cannot be enrolled.'] });
+    }
+    if (!hotp.offered()) {
+      log.debug("Leaving Credentials.beginHotpEnrolment(). Off.");
+      return coded('STS-OATH-0008', { ok: false, errors: ['One-time code ' +
+        'tokens (HOTP) are turned off on this service (the authentication ' +
+        'policy).'] });
+    }
+    if (!name || /[\u0000-\u001f\u007f]/.test(name)) {
+      log.debug("Leaving Credentials.beginHotpEnrolment(). No name.");
+      return coded('STS-OATH-0013', { ok: false, errors: ['There is no ' +
+        'person to enrol a token for.'] });
+    }
+    if (!mode.autoCreates() && !this.entryExists(name)) {
+      log.debug("Leaving Credentials.beginHotpEnrolment(). No entry.");
+      return coded('STS-OATH-0014', { ok: false, errors: ['There is nobody ' +
+        'called "' + name + '" in this realm\'s directory. In product mode ' +
+        'every referenced object must exist first.'] });
+    }
+    const live = hotp.settings();
+    const secret = totp.generateSecret();
+    const ttl = totp.settings().enrolmentTtlMs;
+    this.sweepPendingTotp();
+    pendingTotp.set(this.pendingHotpKeyOf(name), {
+      kind: 'hotp', secret: secret, algorithm: 'SHA1', digits: live.digits,
+      counter: 0, expires: Date.now() + ttl
+    });
+    const issuer = totp.issuerFor((opts || {}).base);
+    log.info('credentials: an HOTP enrolment was started for ' + name +
+             '. Nothing is stored until a code confirms it.');
+    log.debug("Leaving Credentials.beginHotpEnrolment(). Minted.");
+    return {
+      ok: true, username: name, secret: secret, issuer: issuer,
+      grouped: totp.grouped(secret), algorithm: 'SHA1',
+      digits: live.digits, counter: 0,
+      uri: hotp.otpauthUri({ issuer: issuer, account: name, secret: secret,
+                             digits: live.digits, counter: 0 }),
+      // What programs a YubiKey's second OTP slot with this secret: the
+      // portal shows it beside the QR code (`ykman otp hotp --help`).
+      ykman: 'ykman otp hotp ' + (live.digits === 8 ? '--digits 8 ' : '') +
+             '2 ' + secret,
+      expiresAt: Date.now() + ttl
+    };
+  }
+
+  /**
+   * The HOTP enrolment waiting for a code, if any.
+   *
+   * @param username - the person
+   * @returns the pending enrolment, or null
+   */
+  pendingHotpFor(username) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.pendingHotpFor().");
+    this.sweepPendingTotp();
+    const held = pendingTotp.get(this.pendingHotpKeyOf(username));
+    log.debug("Leaving Credentials.pendingHotpFor().");
+    return held || null;
+  }
+
+  /**
+   * Forgets a pending HOTP enrolment.
+   *
+   * @param username - the person
+   */
+  abandonHotpEnrolment(username) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.abandonHotpEnrolment().");
+    const key = this.pendingHotpKeyOf(username);
+    if (pendingTotp.has(key)) {
+      pendingTotp.delete(key);
+    }
+    log.debug("Leaving Credentials.abandonHotpEnrolment().");
+  }
+
+  // The credential's id, which is the cluster counter's key: random for an
+  // enrolment, `pskc:<token>` for an imported token (section header).
+  private hotpCounterKey(record) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.hotpCounterKey().");
+    log.debug("Leaving Credentials.hotpCounterKey().");
+    return String((record && record.id) || '');
+  }
+
+  /**
+   * Stores a pending HOTP enrolment once a code proves the token holds it,
+   * with the accepted counter spent in the store (X5).
+   *
+   * @param username - the person
+   * @param code - the code the token shows
+   * @returns a promise of `{ ok: true, username, … }`, or a refusal
+   */
+  async confirmHotpEnrolment(username, code) {
+    const { log, crypto, counters, realms, errorCodes } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.confirmHotpEnrolment().");
+    const name = String(username || '').trim();
+    const held = this.pendingHotpFor(name);
+    if (!held) {
+      log.debug("Leaving Credentials.confirmHotpEnrolment(). Nothing.");
+      return coded('STS-OATH-0009', { ok: false, reason: 'expired',
+        errors: ['That enrolment has expired. Start again.'] });
+    }
+    const verdict = this.hotpLib().verify(held, code);
+    if (!verdict.ok) {
+      log.debug("Leaving Credentials.confirmHotpEnrolment(). Refused.");
+      return coded(errorCodes.codeOf(verdict) || 'STS-OATH-0003',
+                   { ok: false, reason: verdict.reason,
+                     errors: [verdict.detail] });
+    }
+    const record = {
+      id: 'hotp-' + crypto.randomBytes(16).toString('base64url'),
+      secret: held.secret, algorithm: held.algorithm || 'SHA1',
+      digits: held.digits, counter: verdict.next,
+      enrolledAt: Date.now(), lastUsedAt: Date.now(),
+      source: 'enrolled', label: 'one-time code token'
+    };
+    // The confirmation's counter is SPENT in the store before the record is
+    // kept, so the code used to confirm cannot also sign anybody in.
+    const answer = await counters.advance({
+      scope: Credentials.HOTP_COUNTER_SCOPE, key: this.hotpCounterKey(record),
+      value: verdict.next, realm: realms.currentId() });
+    if (!answer.ok) {
+      log.debug("Leaving Credentials.confirmHotpEnrolment(). Not spent.");
+      return coded('STS-OATH-0006', { ok: false, reason: 'store',
+        errors: ['That code could not be checked just now. Try the next ' +
+                 'one in a moment.'] });
+    }
+    const written = this.writeHotpRecord(name, record);
+    if (!written.ok) {
+      log.debug("Leaving Credentials.confirmHotpEnrolment(). Not written.");
+      return written;
+    }
+    this.abandonHotpEnrolment(name);
+    log.info('credentials: ' + name + ' enrolled a one-time code token ' +
+             '(HOTP) as a second factor.');
+    log.debug("Leaving Credentials.confirmHotpEnrolment(). Enrolled.");
+    return { ok: true, username: name, kind: 'hotp',
+             recoveryAdvised: this.deps.backupCodes.offered() &&
+                              !this.backupCodesOf(name) };
+  }
+
+  // -------------------------------------------------------------------------
+  // AN IMPORTED TOKEN, ASSIGNED (`common/oath_tokens.ts`). The vendor's
+  // secret, digits, algorithm and counter become the person's credential, of
+  // the token's kind: an HOTP token is their `stsHotpCredential`, a TOTP token
+  // their authenticator (REPLACING an app, as enrolling again always has —
+  // one secret per kind). The record names its token, which is how the
+  // sign-in knows the credential is hardware the vendor provisioned (X3) and
+  // how the lost-key retirer knows it is still this token's.
+  // -------------------------------------------------------------------------
+  /**
+   * Installs an imported OATH token as a person's credential of its kind.
+   *
+   * @param username - the person
+   * @param token - `{ key, kind, secret (base32), algorithm, digits,
+   *   counter?, period?, vendor, serial, model }`
+   * @returns a promise of `{ ok: true }`, or a refusal
+   */
+  async installImportedOath(username, token) {
+    const { log, counters, realms } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.installImportedOath().");
+    const name = String(username || '').trim();
+    const t = token || {};
+    const common = { source: 'pskc-import', token: String(t.key || ''),
+                     vendor: String(t.vendor || ''),
+                     serial: String(t.serial || ''),
+                     model: String(t.model || ''),
+                     secret: String(t.secret || ''),
+                     algorithm: String(t.algorithm || 'SHA1'),
+                     digits: Number(t.digits || 6),
+                     enrolledAt: Date.now(), lastUsedAt: 0,
+                     label: 'hardware token ' + String(t.serial || '') };
+    if (t.kind === 'totp') {
+      const written = this.writeTotpRecord(name, Object.assign(common, {
+        period: Number(t.period || 30),
+        // A claim's code is spent (`oath_tokens.claim()`).
+        lastCounter: Math.max(0, Math.floor(Number(t.lastCounter) || 0)) }));
+      log.debug("Leaving Credentials.installImportedOath(). TOTP.");
+      return written;
+    }
+    const record = Object.assign(common, {
+      id: 'pskc:' + String(t.key || ''),
+      counter: Math.max(0, Math.floor(Number(t.counter) || 0)) });
+    // The stored value is the NEXT counter, so a token starting at counter C
+    // has spent everything below C: recorded when C is above 0 (an advance
+    // to 0 would mean nothing, see the section header). A token whose
+    // counter the store already holds HIGHER (assigned before, its codes
+    // spent) starts from the store's: a code spent under one holder is not
+    // good under the next.
+    if (record.counter > 0) {
+      const answer = await counters.advance({
+        scope: Credentials.HOTP_COUNTER_SCOPE, key: record.id,
+        value: record.counter, realm: realms.currentId() });
+      if (!answer.ok && answer.reason === 'store') {
+        log.debug("Leaving Credentials.installImportedOath(). Store.");
+        return coded('STS-OATH-0006', { ok: false, errors: ['The token\'s ' +
+          'counter could not be recorded just now. Try again.'] });
+      }
+      if (!answer.ok) {
+        record.counter = Math.max(record.counter,
+                                  Number(answer.highest || 0));
+      }
+    }
+    const written = this.writeHotpRecord(name, record);
+    log.debug("Leaving Credentials.installImportedOath(). HOTP.");
+    return written;
+  }
+
+  /**
+   * Removes a person's HOTP credential; like the authenticator app it can
+   * never be the only way in, so it cannot lock anybody out.
+   *
+   * @param username - the person
+   * @param opts - `onlyToken`: remove it only if it is that imported token's
+   * @returns `{ ok: true, username }`, or a refusal
+   */
+  removeHotp(username, opts?) {
+    const { log } = this.deps;
+    const directory = this.directory;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.removeHotp().");
+    const name = String(username || '').trim();
+    this.abandonHotpEnrolment(name);
+    const held = this.hotpStatusOf(name);
+    if (!held || !directory || typeof directory.writeHotp !== 'function') {
+      log.debug("Leaving Credentials.removeHotp(). None.");
+      return coded('STS-OATH-0007', { ok: false, errors: ['No one-time code ' +
+        'token is enrolled for ' + name + '.'] });
+    }
+    if (opts && opts.onlyToken && held.token !== String(opts.onlyToken)) {
+      log.debug("Leaving Credentials.removeHotp(). Another token's.");
+      return coded('STS-OATH-0007', { ok: false, errors: ['The one-time ' +
+        'code credential of ' + name + ' is not that token\'s.'] });
+    }
+    try {
+      directory.writeHotp(name, null);
+    } catch (e) {
+      log.debug("Caught in Credentials.removeHotp(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving Credentials.removeHotp(). It threw.");
+      return coded('STS-OATH-0011', { ok: false, errors: ['The credential ' +
+        'store refused the write.'] });
+    }
+    log.info('credentials: the HOTP credential of ' + name + ' was removed.');
+    log.debug("Leaving Credentials.removeHotp(). Removed.");
+    return { ok: true, username: name };
+  }
+
+  // Everything decided against the entry, before the store: totpPrepare()'s
+  // shape.
+  private hotpPrepare(name, code, options) {
+    const { log, errorCodes } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.hotpPrepare().");
+    const record = this.hotpOf(name);
+    if (!record) {
+      log.debug("Leaving Credentials.hotpPrepare(). None.");
+      return { done: coded('STS-OATH-0007', { ok: false, reason: 'none',
+        detail: 'No one-time code token is enrolled for ' + name + '.' }) };
+    }
+    if (record.unusable) {
+      log.error(errorCodes.tag('STS-OATH-0002') + 'credentials: ' + name +
+                ' holds an HOTP credential this process cannot read (' +
+                record.why + '); refused rather than let through on one ' +
+                'factor.');
+      log.debug("Leaving Credentials.hotpPrepare(). Unusable.");
+      return { done: coded('STS-OATH-0002', { ok: false, reason: 'unusable',
+        detail: 'Your one-time code token cannot be read by this service, ' +
+                'so it cannot be checked. An administrator has to clear it.' })
+      };
+    }
+    const verdict = this.hotpLib().verify(record, code, options);
+    if (!verdict.ok) {
+      log.debug("Leaving Credentials.hotpPrepare(). Refused.");
+      return { done: coded(errorCodes.codeOf(verdict) || 'STS-OATH-0003',
+        { ok: false, reason: verdict.reason, detail: verdict.detail }) };
+    }
+    log.debug("Leaving Credentials.hotpPrepare().");
+    return { record: record, verdict: verdict };
+  }
+
+  // Whether an imported token's credential is evidence of hardware (X3): it
+  // names its token, and the register holds that token active with
+  // `pskc-import` evidence. A QR-enrolled secret never is.
+  private oathHardware(kind, record) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.oathHardware().");
+    if (!record || record.source !== 'pskc-import' || !record.token) {
+      log.debug("Leaving Credentials.oathHardware(). Not imported.");
+      return false;
+    }
+    let hardware = false;
+    try {
+      hardware = !!require('./hardware_tokens')
+        .evidenceFor(kind, String(record.token)).hardware;
+    } catch (e) {
+      log.debug("Caught in Credentials.oathHardware(): " +
+                ((e && e.message) || e));
+      // No register in this process: no evidence, so no claim.
+      hardware = false;
+    }
+    log.debug("Leaving Credentials.oathHardware(). " + hardware);
+    return hardware;
+  }
+
+  // Spends a verified counter (X5) and writes the entry: one place, for the
+  // sign-in and the resynchronisation alike.
+  private async hotpSpend(name, record, verdict, why) {
+    const { log, counters, realms, errorCodes } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.hotpSpend().");
+    const answer = await counters.advance({
+      scope: Credentials.HOTP_COUNTER_SCOPE, key: this.hotpCounterKey(record),
+      value: verdict.next, realm: realms.currentId() });
+    if (!answer.ok && answer.reason === 'behind') {
+      log.warn('credentials: an HOTP code for ' + name + ' matched counter ' +
+               verdict.counter + ' and was REFUSED: counter ' +
+               (Number(answer.highest || 0) - 1) + ' or later has already ' +
+               'been accepted, by another node or a request racing this one.');
+      this.noteTotpReplay(name);
+      log.debug("Leaving Credentials.hotpSpend(). Replay.");
+      return coded('STS-OATH-0005', { ok: false, reason: 'replay',
+        detail: 'That code has already been used. Press your token again ' +
+                'for a new one.' });
+    }
+    if (!answer.ok) {
+      log.error(errorCodes.tag('STS-OATH-0006') + 'credentials: an HOTP ' +
+                'code for ' + name + ' matched and could not be proved ' +
+                'unspent (' + (answer.why || answer.reason) + '), so it was ' +
+                'refused.');
+      log.debug("Leaving Credentials.hotpSpend(). Store.");
+      return coded('STS-OATH-0006', { ok: false, reason: 'store',
+        detail: 'That code could not be checked just now. Try the next one ' +
+                'in a moment.' });
+    }
+    const next = Object.assign({}, record, { counter: verdict.next,
+                                             lastUsedAt: Date.now() });
+    const written = this.writeHotpRecord(name, next);
+    if (!written.ok) {
+      // NOT a refusal (`totpFinish()`'s reason): the counter is spent in
+      // the store, which is the defence; the entry is only behind.
+      log.error(errorCodes.tag('STS-OATH-0011') + 'credentials: the HOTP ' +
+                'counter of ' + name + ' was spent in the store and could ' +
+                'not be written to the entry (' + why + ').');
+    }
+    log.debug("Leaving Credentials.hotpSpend(). Spent.");
+    return { ok: true, kind: 'hotp', counter: verdict.counter,
+             drift: verdict.ahead,
+             hardware: this.oathHardware('hotp', record) };
+  }
+
+  /**
+   * Verifies an HOTP code by look-ahead and spends its counter across the
+   * cluster (X5): one of two concurrent verifications of a code wins.
+   *
+   * @param username - the person
+   * @param code - the code
+   * @param opts - `window`, overriding `hotp.window`
+   * @returns a promise of `{ ok: true, kind: 'hotp', counter, drift,
+   *   hardware }`, or a refusal (`none`, `shape`, `mismatch`, `replay`,
+   *   `store`, `unusable`)
+   */
+  async verifyHotpAsync(username, code, opts?) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.verifyHotpAsync().");
+    const name = String(username || '').trim();
+    const ready = this.hotpPrepare(name, code, opts || {});
+    if (ready.done) {
+      log.debug("Leaving Credentials.verifyHotpAsync(). Refused.");
+      return ready.done;
+    }
+    const out = await this.hotpSpend(name, ready.record, ready.verdict,
+                                     'a sign-in');
+    log.debug("Leaving Credentials.verifyHotpAsync().");
+    return out;
+  }
+
+  /**
+   * Resynchronises a person's HOTP token from two consecutive codes over
+   * the resync window (RFC 4226 section 7.4), spending both.
+   *
+   * @param username - the person
+   * @param first - the first code
+   * @param second - the next code the token showed
+   * @returns a promise of `{ ok: true, counter, drift }`, or a refusal
+   */
+  async resyncHotpAsync(username, first, second) {
+    const { log, errorCodes } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.resyncHotpAsync().");
+    const name = String(username || '').trim();
+    const record = this.hotpOf(name);
+    if (!record || record.unusable) {
+      log.debug("Leaving Credentials.resyncHotpAsync(). None.");
+      return coded(record ? 'STS-OATH-0002' : 'STS-OATH-0007',
+        { ok: false, reason: record ? 'unusable' : 'none',
+          detail: record ? 'Your one-time code token cannot be read by ' +
+                           'this service.'
+                         : 'No one-time code token is enrolled for ' + name +
+                           '.' });
+    }
+    const verdict = this.hotpLib().resync(record, first, second);
+    if (!verdict.ok) {
+      log.debug("Leaving Credentials.resyncHotpAsync(). Refused.");
+      return coded(errorCodes.codeOf(verdict) || 'STS-OATH-0004',
+        { ok: false, reason: verdict.reason, detail: verdict.detail });
+    }
+    const out = await this.hotpSpend(name, record, verdict, 'a resync');
+    if (out.ok) {
+      log.info('credentials: the HOTP token of ' + name + ' was ' +
+               'resynchronised ' + verdict.ahead + ' press(es) ahead.');
+    }
+    log.debug("Leaving Credentials.resyncHotpAsync().");
+    return out;
+  }
+
+  /**
+   * Verifies "a one-time code" at every door that takes one: the
+   * authenticator app's (RFC 6238) or the HOTP token's (RFC 4226), by what
+   * the person holds (section header). Each is spent across the cluster.
+   *
+   * @param username - the person
+   * @param code - the code
+   * @param opts - handed to the verifier
+   * @returns a promise of `{ ok: true, kind, counter, drift, hardware }`,
+   *   or a refusal
+   */
+  async verifyTotpAsync(username, code, opts?) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.verifyTotpAsync().");
+    const name = String(username || '').trim();
+    const token = this.hotpStatusOf(name);
+    if (!token) {
+      log.debug("Leaving Credentials.verifyTotpAsync(). The app's.");
+      return this.verifyAppCodeAsync(name, code, opts);
+    }
+    if (!this.totpStatusOf(name)) {
+      log.debug("Leaving Credentials.verifyTotpAsync(). The token's.");
+      return this.verifyHotpAsync(name, code, opts);
+    }
+    const app = await this.verifyAppCodeAsync(name, code, opts);
+    if (app.ok || (app.reason !== 'mismatch' && app.reason !== 'shape')) {
+      log.debug("Leaving Credentials.verifyTotpAsync(). The app answered.");
+      return app;
+    }
+    const hotp = await this.verifyHotpAsync(name, code, opts);
+    // The token's refusal only where it says more than "not this one".
+    const out = hotp.ok || (hotp.reason !== 'mismatch' &&
+                            hotp.reason !== 'shape') ? hotp : app;
+    log.debug("Leaving Credentials.verifyTotpAsync(). Both asked.");
+    return out;
   }
 
   // ---------------------------------------------------------------------------
@@ -7162,6 +7883,10 @@ class Credentials {
     const mfaKeys = uses.mfa;
     const authenticator = this.totpStatusFromValue(values.totp || '', name);
     const totpEnrolled = !!authenticator;
+    // #1955 P4: an HOTP token, off the same entry's values; a code step
+    // asks for either (`mechanismsFor()`'s `oneTimeCode`).
+    const hotpEnrolled = !!values.hotp;
+    const oneTimeCode = totpEnrolled || hotpEnrolled;
     let mailHeld = '';
     if (mailFactor && values.mail &&
         typeof mailFactor.heldOfAttributes === 'function') {
@@ -7187,10 +7912,11 @@ class Credentials {
         mfaKeys: mfaKeys,
         totp: totpEnrolled,
         totpUsable: totpEnrolled && !authenticator.unusable,
+        hotp: hotpEnrolled,
         // `mechanismsFor()`'s two lines, read against the same three facts.
-        mfaRequired: mfaKeys > 0 || totpEnrolled || !!mailHeld,
+        mfaRequired: mfaKeys > 0 || oneTimeCode || !!mailHeld,
         secondFactor: mfaKeys > 0 ? 'webauthn' :
-                      (totpEnrolled ? 'totp' :
+                      (oneTimeCode ? 'totp' :
                        (mailHeld ? 'email-' + mailHeld : '')),
         usable: password || primaryKeys > 0
       },
@@ -9437,6 +10163,11 @@ class Credentials {
     // it still means this person configured two factors, and reporting it as
     // absent would sign them in with one. `verifyTotp()` refuses it by name.
     const totpEnrolled = !!authenticator;
+    // THE HOTP TOKEN (#1955 P4), reported the same three ways, and beside it
+    // `oneTimeCode`: what the sign-in's code step asks for is either.
+    const token = this.hotpStatusOf(name);
+    const hotpEnrolled = !!token;
+    const oneTimeCode = totpEnrolled || hotpEnrolled;
     // THE EMAILED SECOND FACTOR (#64), HELD only while it is usable: opted
     // in, allowed by the realm's authentication policy, mail working and the
     // address verified (`common/mail_factor.ts` argues why). Asked lazily —
@@ -9471,6 +10202,18 @@ class Credentials {
             unusable: !!authenticator.unusable,
             why: authenticator.why || '' }
         : null,
+      hotp: hotpEnrolled,
+      hotpUsable: hotpEnrolled && !token.unusable,
+      hotpDetail: hotpEnrolled
+        ? { enrolledAt: token.enrolledAt || 0,
+            lastUsedAt: token.lastUsedAt || 0,
+            digits: token.digits || 0, counter: token.counter || 0,
+            sealed: !!token.sealed, unusable: !!token.unusable,
+            why: token.why || '', source: token.source || 'enrolled',
+            token: token.token || '', serial: token.serial || '',
+            vendor: token.vendor || '', model: token.model || '' }
+        : null,
+      oneTimeCode: oneTimeCode,
       // Can they get in at all? UNCHANGED, and see the header: a second factor
       // has never been a way in on its own and an authenticator app is not one
       // either.
@@ -9499,7 +10242,7 @@ class Credentials {
       // so the sign-in screen demands it as well — which is what makes the flag
       // mean anything. **The recovery codes are deliberately not on this line**
       // — see the field above.
-      mfaRequired: uses.mfa > 0 || totpEnrolled || !!mailFactor.held,
+      mfaRequired: uses.mfa > 0 || oneTimeCode || !!mailFactor.held,
       // The emailed factor (#64): `held` is `code`, `link` or '', and the
       // rest says why it is not held where it is opted into.
       mailFactor: mailFactor,
@@ -9511,8 +10254,9 @@ class Credentials {
       // The emailed factor comes LAST (#64): it is the weakest of the three
       // (NIST SP 800-63B-4 section 3.1.3.1), so a person holding another is
       // asked for that, and offered the email as a way round it.
+      // `totp` is the one-time code step, whichever kind answers it.
       secondFactor: uses.mfa > 0 ? 'webauthn' :
-                    (totpEnrolled ? 'totp' :
+                    (oneTimeCode ? 'totp' :
                      (mailFactor.held ? 'email-' + mailFactor.held : '')),
       // Has this person finished setting themselves up? What product mode asks
       // before it will let an activation link be spent, and what the sign-in
@@ -9546,7 +10290,7 @@ class Credentials {
       // (#786): the census does not report this flag.
       recoveryAdvised: skipRecovery ? false :
                        (backupCodes.offered() &&
-                        ((uses.mfa > 0 && password) || totpEnrolled) &&
+                        ((uses.mfa > 0 && password) || oneTimeCode) &&
                         !this.backupCodesOf(name)),
       // IS A SECOND FACTOR REQUIRED OF THEM (2026-09-13), whether or not they
       // hold one — by an administrator on their entry, or by the realm. It is
@@ -12909,6 +13653,8 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   // --- the authenticator app (RFC 6238) ---
   TOTP_ATTRIBUTE: Credentials.TOTP_ATTRIBUTE,
+  HOTP_ATTRIBUTE: Credentials.HOTP_ATTRIBUTE,
+  HOTP_COUNTER_SCOPE: Credentials.HOTP_COUNTER_SCOPE,
   totpOf: slot.forward('totpOf'),
   // THE RECOVERY CODES (2026-09-10). `revealBackupCodes()` used to be the one
   // export here that handed back a live credential; since 2026-09-11 the set
@@ -13101,6 +13847,18 @@ export = {
   // SEVERAL NODES AGAINST ONE STORE (2026-09-14, #46) — each is argued above
   // its definition.
   verifyTotpAsync: slot.forward('verifyTotpAsync'),
+  // #1955 P4: the HOTP credential, beside the authenticator app's.
+  verifyAppCodeAsync: slot.forward('verifyAppCodeAsync'),
+  hotpOf: slot.forward('hotpOf'),
+  hasHotp: slot.forward('hasHotp'),
+  beginHotpEnrolment: slot.forward('beginHotpEnrolment'),
+  pendingHotpFor: slot.forward('pendingHotpFor'),
+  abandonHotpEnrolment: slot.forward('abandonHotpEnrolment'),
+  confirmHotpEnrolment: slot.forward('confirmHotpEnrolment'),
+  installImportedOath: slot.forward('installImportedOath'),
+  removeHotp: slot.forward('removeHotp'),
+  verifyHotpAsync: slot.forward('verifyHotpAsync'),
+  resyncHotpAsync: slot.forward('resyncHotpAsync'),
   spendAssertion: slot.forward('spendAssertion'),
   reconcileBackupCodes: slot.forward('reconcileBackupCodes'),
   spendActivation: slot.forward('spendActivation'),

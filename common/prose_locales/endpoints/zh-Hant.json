@@ -1211,9 +1211,13 @@
     "en": "386404ef0cf5e649",
     "text": "硬體權杖"
   },
+  "endpoints.route./admin-api/hardware-tokens/oath.name": {
+    "en": "009f323198517782",
+    "text": "匯入的 OATH 權杖"
+  },
   "endpoints.route./admin-api/hardware-tokens/:action.name": {
-    "en": "d2326b0fb8b09689",
-    "text": "回報硬體權杖遺失"
+    "en": "c3b6dea748114783",
+    "text": "回報硬體權杖遺失，或匯入並指派 OATH 權杖"
   },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",

@@ -17,5 +17,12 @@
   "done.notAll": "{n} ang hindi maalis: hilingin sa iyong administrator na alisin ang mga ito.",
   "done.sessionsEnded": "{n} session na binuksan nito ang isinara.",
   "done.recovery": "Sa susunod mong pag-sign in nang walang passkey, hihilingin sa iyong magrehistro ng bago bago mo magamit ang anumang application.",
-  "done.noWayIn": "Ito lamang ang paraan mo para mag-sign in: humingi ng activation link sa iyong administrator, o gamitin ang iyong mga recovery code."
+  "done.noWayIn": "Ito lamang ang paraan mo para mag-sign in: humingi ng activation link sa iyong administrator, o gamitin ang iyong mga recovery code.",
+  "kind.oath": "Mga one-time code",
+  "claim.heading": "I-claim ang token na ibinigay sa iyo",
+  "claim.intro": "Kung binigyan ka ng iyong organisasyon ng one-time code token, i-type ang serial na nakalimbag dito at isang code na ipinapakita nito ngayon. Ito ang magiging ikalawang factor mo.",
+  "claim.serial": "Serial",
+  "claim.code": "Isang code na ipinapakita nito ngayon",
+  "claim.button": "I-claim ito",
+  "done.claimed": "Iyo na ang token {serial}. Hihingan ka ng isa sa mga code nito sa susunod mong pag-sign in."
 }

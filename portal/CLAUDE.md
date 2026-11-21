@@ -2079,6 +2079,24 @@ their only way in is told to use an activation link or recovery codes,
 because the removal passes the last-way-in guard. The words are
 `portalTokens`'s.
 
+**SINCE #1955 P4 THE PAGE ALSO CLAIMS AN IMPORTED ONE-TIME CODE TOKEN**:
+`action: claim` on the same operation, with the serial printed on the token
+and a code it shows now (`common/oath_tokens.ts`'s `claim()`). The username
+is the token's subject's, the serial and the code the only things from the
+body; it spends the `mfa-code` budget (STS-OATH-0050 when that is out), a
+wrong serial and a wrong code are one refusal (STS-OATH-0043), and the code
+is spent. CAEP credential-change `create` is sent.
+
+**`/portal/mfa` HAS AN HOTP CARD BESIDE THE APP'S (#1955 P4)**: `hotp-start`,
+`hotp-confirm`, `hotp-resync` (two consecutive codes, `code` and `code2`)
+and `hotp-remove` on `changeMfa`, `account_mfa.ts`'s `hotpAct()`. The view's
+`hotp` card carries the pending enrolment's QR code (an `otpauth://hotp`
+URI with its counter, drawn as TOTP's is) and the `ykman otp hotp` command
+that programs a YubiKey's second OTP slot. Confirm and resync spend the
+`mfa-code` budget; remove ends the sessions its codes signed in (#722,
+`{ kind: 'hotp' }`). CAEP's credential type is this service's
+`urn:iya:sts:credential-type:hotp-token`: a token is not an `app`.
+
 ## `/portal/devices`: A PERSON'S OWN DEVICES (2026-09-23, #130; #164 phase 2, 2026-09-26)
 
 The entries in `ou=devices` the person owns, the applications that used

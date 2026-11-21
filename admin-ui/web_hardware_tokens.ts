@@ -16,8 +16,19 @@
 //
 // IN DIRECTORY because its store is somebody's and it is a destination
 // (`admin-ui/CLAUDE.md`, the filing rule): the device register's sibling,
-// beside it. One tab, the list, framed as every Directory tab is; the lead
-// is the Metadata.
+// beside it. Two tabs, framed as every Directory tab is; the lead is the
+// Metadata:
+//
+//   * `tokens`, the register's list (P1);
+//   * `oath` (#1955 P4), the imported OATH token inventory, composed from
+//     `GET /admin-api/hardware-tokens/oath` under its own query names
+//     (`oq`, `ostatus`, `opage`, so its pager moves its list and not the
+//     register's), with the import form (a PSKC seed file pasted or loaded
+//     from disk into the textarea in the browser, and its pre-shared key or
+//     password, which the browser sends once and nothing keeps), an Assign
+//     form on each unassigned token and Remove on each that is not
+//     assigned. Each posts to `/admin/hardware-tokens` and so reaches `POST
+//     /admin-api/hardware-tokens/{import-pskc,assign-oath,remove-oath}`.
 //
 // A static utility class, on `web_kit.ts`'s terms: it holds no state, logs
 // nothing, and is bundled for a browser.
@@ -125,7 +136,130 @@ class HardwareTokensPage {
       WebKit.frame(filters + (v.capped
         ? WebKit.note(t.html('consoleHardwareTokens.capped')) : '') +
         nav.head + table + nav.foot +
-        WebKit.note(t.html('consoleHardwareTokens.lostWhat')));
+        WebKit.note(t.html('consoleHardwareTokens.lostWhat'))) +
+      '<h2 data-tab="oath">' + t.html('consoleHardwareTokens.oath.heading') +
+      '</h2>' + self.oathTab(v, c);
+  }
+
+  /**
+   * The OATH tab (#1955 P4): the inventory, its filters and the forms.
+   *
+   * @param v - the page's view, the inventory composed as `oath`
+   * @param c - the render context
+   * @returns the tab's HTML
+   */
+  static oathTab(v: Json, c: Json): string {
+    const t = c.t;
+    const esc = WebKit.esc;
+    const o = v.oath || { tokens: [], paging: { pages: 1 } };
+    const params: Json = {};
+    if (v.q) {
+      params.q = v.q;
+    }
+    if (v.status) {
+      params.status = v.status;
+    }
+    if (o.q) {
+      params.oq = o.q;
+    }
+    if (o.status) {
+      params.ostatus = o.status;
+    }
+    // THE TAB'S OWN PAGE PARAMETER, so its pager moves this list only.
+    const nav = WebKit.pageNavPair(PAGE, params,
+      Object.assign({}, o.paging || { pages: 1 }, { param: 'opage' }), t);
+    const statusName = function (s: string): string {
+      return s === 'unassigned'
+        ? t.html('consoleHardwareTokens.oath.status.unassigned')
+        : (s === 'assigned'
+          ? t.html('consoleHardwareTokens.oath.status.assigned')
+          : (s === 'retired'
+            ? t.html('consoleHardwareTokens.oath.status.retired')
+            : t.html('consoleHardwareTokens.any')));
+    };
+    const filters = '<form method="get" action="' + PAGE + '">' +
+      '<div class="formrow"><label for="oath-q">' +
+      t.html('consoleHardwareTokens.search') + '</label>' +
+      '<input type="text" id="oath-q" name="oq" size="24" maxlength="256" ' +
+      'value="' + esc(o.q || '') + '"><label for="oath-status">' +
+      t.html('consoleHardwareTokens.status') + '</label>' +
+      '<select id="oath-status" name="ostatus">' +
+      ['', 'unassigned', 'assigned', 'retired'].map(function (s: string) {
+        return '<option value="' + s + '"' + (s === (o.status || '')
+          ? ' selected' : '') + '>' + statusName(s) + '</option>';
+      }).join('') + '</select><button type="submit">' +
+      t.html('consoleHardwareTokens.filter') + '</button></div></form>';
+    const tokens: Json[] = o.tokens || [];
+    const rows = tokens.map(function (r: Json): string {
+      const assign = r.status === 'unassigned' && c.write
+        ? '<form method="post" action="' + PAGE + '" class="inline">' +
+          '<input type="hidden" name="action" value="assign-oath">' +
+          '<input type="hidden" name="key" value="' + esc(r.key) + '">' +
+          '<input type="text" name="username" size="16" maxlength="256" ' +
+          'required aria-label="' +
+          esc(t.text('consoleHardwareTokens.oath.assignTo')) +
+          '" placeholder="' +
+          esc(t.text('consoleHardwareTokens.oath.assignTo')) + '">' +
+          '<button type="submit">' +
+          t.html('consoleHardwareTokens.oath.assign') + '</button></form>'
+        : '';
+      const remove = r.status !== 'assigned' && c.write
+        ? ' <form method="post" action="' + PAGE + '" class="inline">' +
+          '<input type="hidden" name="action" value="remove-oath">' +
+          '<input type="hidden" name="key" value="' + esc(r.key) + '">' +
+          '<button class="danger" type="submit">' +
+          t.html('consoleHardwareTokens.oath.remove') + '</button></form>'
+        : '';
+      return '<tr><td>' + esc(r.model || r.vendor) + '<br><small><code>' +
+        esc(r.key) + '</code></small></td><td><code>' + esc(r.kind) +
+        '</code> ' + esc(String(r.digits)) + ' ' +
+        t.html('consoleHardwareTokens.oath.digits') +
+        (r.kind === 'totp' ? ', ' + esc(String(r.period)) + ' s' : '') +
+        '</td><td>' + statusName(r.status) +
+        (r.holder ? '<br>' + esc(r.holder) : '') + '</td><td>' +
+        esc(r.importedAt) + '<br><small>' + esc(r.importedBy) + ', ' +
+        esc(r.protection) + '</small></td><td>' + assign + remove +
+        '</td></tr>';
+    }).join('');
+    const table = tokens.length
+      ? '<table class="grid"><thead><tr><th>' +
+        t.html('consoleHardwareTokens.thToken') + '</th><th>' +
+        t.html('consoleHardwareTokens.oath.thKind') + '</th><th>' +
+        t.html('consoleHardwareTokens.thStatus') + '</th><th>' +
+        t.html('consoleHardwareTokens.oath.thImported') + '</th><th></th>' +
+        '</tr></thead><tbody>' + rows + '</tbody></table>'
+      : WebKit.note(t.html('consoleHardwareTokens.oath.none'));
+    const importForm = !c.write ? '' : WebKit.frame(
+      '<h3>' + t.html('consoleHardwareTokens.oath.importHeading') + '</h3>' +
+      WebKit.note(t.html('consoleHardwareTokens.oath.importLead')) +
+      '<form method="post" action="' + PAGE + '">' +
+      '<input type="hidden" name="action" value="import-pskc">' +
+      '<div class="formrow"><label for="oath-pskc">' +
+      t.html('consoleHardwareTokens.oath.file') + '</label>' +
+      '<textarea id="oath-pskc" name="pskc" rows="8" cols="64" required ' +
+      'placeholder="&lt;KeyContainer Version=&quot;1.0&quot; ...&gt;">' +
+      '</textarea></div><div class="formrow">' +
+      '<button type="button" class="secondary" ' +
+      'data-load-file="oath-pskc-file">' +
+      t.html('consoleHardwareTokens.oath.load') + '</button>' +
+      '<input type="file" id="oath-pskc-file" hidden ' +
+      'accept=".pskc,.xml,application/pskc+xml,text/xml" ' +
+      'data-load-into="oath-pskc"></div>' +
+      '<div class="formrow"><label for="oath-psk">' +
+      t.html('consoleHardwareTokens.oath.preSharedKey') + '</label>' +
+      '<input type="password" id="oath-psk" name="preSharedKey" size="40" ' +
+      'maxlength="128" autocomplete="off"></div>' +
+      '<div class="formrow"><label for="oath-password">' +
+      t.html('consoleHardwareTokens.oath.password') + '</label>' +
+      '<input type="password" id="oath-password" name="password" ' +
+      'size="32" maxlength="1024" autocomplete="off"></div>' +
+      '<div class="formrow"><button type="submit">' +
+      t.html('consoleHardwareTokens.oath.import') + '</button></div>' +
+      '</form>');
+    return WebKit.frame(filters + (o.capped
+      ? WebKit.note(t.html('consoleHardwareTokens.capped')) : '') +
+      nav.head + table + nav.foot +
+      WebKit.note(t.html('consoleHardwareTokens.oath.what'))) + importForm;
   }
 }
 

@@ -1211,9 +1211,13 @@
     "en": "386404ef0cf5e649",
     "text": "Jetons matériels"
   },
+  "endpoints.route./admin-api/hardware-tokens/oath.name": {
+    "en": "009f323198517782",
+    "text": "Jetons OATH importés"
+  },
   "endpoints.route./admin-api/hardware-tokens/:action.name": {
-    "en": "d2326b0fb8b09689",
-    "text": "Déclarer un jeton matériel perdu"
+    "en": "c3b6dea748114783",
+    "text": "Déclarer un jeton matériel perdu, ou importer et attribuer des jetons OATH"
   },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",

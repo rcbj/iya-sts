@@ -315,6 +315,14 @@
     "en": "ea01b0588ad42047",
     "text": "Ein Einmalcode nach RFC 6238. Niemals ein erster Faktor: dieser Dienst besitzt dasselbe gemeinsame Geheimnis wie die App. Hier aus, darf niemand einen EINRICHTEN; eine Person, die bereits einen besitzt, wird weiterhin danach gefragt, weil ein Ausschalter, der jedes eingerichtete Konto auf ein Passwort allein herabstufen würde, etwas anderes täte, als er sagt (diese Zeile hat totp.enabled ersetzt und behält dessen Vertrag)."
   },
+  "authn.FIELDS.hotpSecondFactor.label": {
+    "en": "8884fbb478be14f1",
+    "text": "Einmalcode-Token (HOTP) — als zweiter Faktor"
+  },
+  "authn.FIELDS.hotpSecondFactor.what": {
+    "en": "608274a83bf567cd",
+    "text": "Ein Einmalcode nach RFC 4226 von einem zählerbasierten Token (#1955): der OTP-Slot eines YubiKey oder das Token eines Herstellers, das ein Administrator aus einer PSKC-Seed-Datei importiert hat. Nie ein erster Faktor. Ist dies hier aus, darf niemand eines EINRICHTEN oder beanspruchen; wer bereits eines hat, wird weiterhin danach gefragt, wie der Inhaber einer Authenticator-App."
+  },
   "authn.FIELDS.recoveryCodeSecondFactor.label": {
     "en": "ee9982b48a9c6a90",
     "text": "Wiederherstellungscode — als zweiter Faktor"
@@ -495,6 +503,10 @@
     "en": "ea01b0588ad42047",
     "text": "Ein Einmalcode nach RFC 6238. Niemals ein erster Faktor: dieser Dienst besitzt dasselbe gemeinsame Geheimnis wie die App. Hier aus, darf niemand einen EINRICHTEN; eine Person, die bereits einen besitzt, wird weiterhin danach gefragt, weil ein Ausschalter, der jedes eingerichtete Konto auf ein Passwort allein herabstufen würde, etwas anderes täte, als er sagt (diese Zeile hat totp.enabled ersetzt und behält dessen Vertrag)."
   },
+  "authn.SCHEMA.attributes.stsAuthnHotpSecondFactor.what": {
+    "en": "608274a83bf567cd",
+    "text": "Ein Einmalcode nach RFC 4226 von einem zählerbasierten Token (#1955): der OTP-Slot eines YubiKey oder das Token eines Herstellers, das ein Administrator aus einer PSKC-Seed-Datei importiert hat. Nie ein erster Faktor. Ist dies hier aus, darf niemand eines EINRICHTEN oder beanspruchen; wer bereits eines hat, wird weiterhin danach gefragt, wie der Inhaber einer Authenticator-App."
+  },
   "authn.SCHEMA.attributes.stsAuthnRecoveryCodeSecondFactor.what": {
     "en": "e93ab2adc3e581bd",
     "text": "Ein einmalig verwendbarer Code aus einem Satz, den die Person erzeugt hat. Hier aus, darf kein neuer Satz erzeugt werden; ein bereits vorhandener Satz funktioniert weiter (diese Zeile hat backupCodes.enabled ersetzt und behält dessen Vertrag)."
@@ -568,8 +580,8 @@
     "text": "Bei einer BENANNTEN Authentifizierungsrichtlinie (#1148, #1237): ein Mechanismus des ersten Faktors, den eine Anmeldung zulässt, auf die sie zutrifft — dort, wo die Anwendung (appAuthnPolicy) oder eine der Gruppen der Person (stsAuthnPolicy) sie benennt und ihr Vorrang der niedrigste benannte ist — password, password-mfa, webauthn, attested-hardware (ein Passkey oder Zertifikat auf einem durch Attestierung nachgewiesenen Hardware-Token, #1955), spnego, wallet oder federation, je ein Wert. Fehlt jeder Wert, ist jeder erlaubt, den der Bereich erlaubt."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicySecondFactor.what": {
-    "en": "7c8e4d8b4cce7c08",
-    "text": "Bei einer BENANNTEN Authentifizierungsrichtlinie (#1148, #1237): ein zweiter Faktor, den eine Anmeldung zulässt, auf die sie zutrifft — dort, wo die Anwendung (appAuthnPolicy) oder eine der Gruppen der Person (stsAuthnPolicy) sie benennt und ihr Vorrang der niedrigste benannte ist — password, securityKey, totp, recoveryCode, emailCode, emailLink oder wallet, je ein Wert. Fehlt jeder Wert, bleibt die Authentifizierungsrichtlinie des Bereichs, wie sie ist."
+    "en": "e0ae8297bb01119f",
+    "text": "Auf einer BENANNTEN Authentifizierungsrichtlinie (#1148, #1237): ein zweiter Faktor, den eine Anmeldung, für die sie gilt, zulässt — wo die Anwendung (appAuthnPolicy) oder eine der Gruppen der Person (stsAuthnPolicy) sie nennt und ihre Rangfolge die niedrigste genannte ist — password, securityKey, totp, hotp, recoveryCode, emailCode, emailLink oder wallet, je ein Wert. Keiner lässt die Authentifizierungsrichtlinie des Bereichs unverändert."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicyPrecedence.what": {
     "en": "afff5dad656a9845",
@@ -614,6 +626,14 @@
   "authn.MECHANISMS.totp.what": {
     "en": "ea01b0588ad42047",
     "text": "Ein Einmalcode nach RFC 6238. Niemals ein erster Faktor: dieser Dienst besitzt dasselbe gemeinsame Geheimnis wie die App. Hier aus, darf niemand einen EINRICHTEN; eine Person, die bereits einen besitzt, wird weiterhin danach gefragt, weil ein Ausschalter, der jedes eingerichtete Konto auf ein Passwort allein herabstufen würde, etwas anderes täte, als er sagt (diese Zeile hat totp.enabled ersetzt und behält dessen Vertrag)."
+  },
+  "authn.MECHANISMS.hotp.label": {
+    "en": "f0e2ca73efb6f1c5",
+    "text": "Einmalcode-Token (HOTP)"
+  },
+  "authn.MECHANISMS.hotp.what": {
+    "en": "608274a83bf567cd",
+    "text": "Ein Einmalcode nach RFC 4226 von einem zählerbasierten Token (#1955): der OTP-Slot eines YubiKey oder das Token eines Herstellers, das ein Administrator aus einer PSKC-Seed-Datei importiert hat. Nie ein erster Faktor. Ist dies hier aus, darf niemand eines EINRICHTEN oder beanspruchen; wer bereits eines hat, wird weiterhin danach gefragt, wie der Inhaber einer Authenticator-App."
   },
   "authn.MECHANISMS.recoveryCode.label": {
     "en": "5bda8302b5ecf4d3",

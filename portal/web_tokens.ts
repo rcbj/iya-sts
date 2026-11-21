@@ -11,7 +11,10 @@
 // each physical security key or smart card the register recorded from its
 // attestation — with the credentials of theirs on it, and an "I lost this
 // key" button on each active one, which posts `lost` to `POST
-// /portal/tokens` (the account API's `actOnTokens`).
+// /portal/tokens` (the account API's `actOnTokens`). Since #1955 P4 a
+// second card: CLAIM a one-time code token an administrator imported, by
+// the serial printed on it and a code it shows now (`claim`, the same
+// operation).
 //
 // A `web_` MODULE: it requires other `web_` modules only and logs nothing.
 // ---------------------------------------------------------------------------
@@ -38,7 +41,9 @@ class TokensPages {
     const list: Json[] = one.credentials || [];
     return list.length ? list.map(function (c: Json): string {
       return kit.esc(c.kind === 'fido' ? t.text('portalTokens.kind.fido')
-        : (c.kind === 'x509' ? t.text('portalTokens.kind.x509') : c.kind)) +
+        : (c.kind === 'x509' ? t.text('portalTokens.kind.x509')
+          : (c.kind === 'hotp' || c.kind === 'totp'
+            ? t.text('portalTokens.kind.oath') : c.kind))) +
         (c.label ? ' — ' + kit.esc(c.label) : '') +
         (c.retired ? ' (' + t.html('portalTokens.retired') + ')' : '');
     }).join('<br>') : '—';
@@ -79,7 +84,32 @@ class TokensPages {
           rows.join('') + '</table>' +
           '<p class="note">' + t.html('portalTokens.lost.what') + '</p>'
         : '<p id="tokens-none">' + t.html('portalTokens.none') + '</p>') +
-      '</div>';
+      '</div>' + TokensPages.claimCard(t);
+  }
+
+  /**
+   * The claim card (#1955 P4): a serial and a current code.
+   *
+   * @param t - the translator
+   * @returns the HTML
+   */
+  static claimCard(t: Json): string {
+    return '<div class="card" id="claim"><h2>' +
+      t.html('portalTokens.claim.heading') + '</h2><p class="sub">' +
+      t.html('portalTokens.claim.intro') + '</p>' +
+      '<form method="post" action="' + PATH + '">' +
+      '<input type="hidden" name="action" value="claim">' +
+      '<div class="row"><label for="claim-serial">' +
+      t.html('portalTokens.claim.serial') + '</label>' +
+      '<input type="text" id="claim-serial" name="serial" required ' +
+      'maxlength="64" autocomplete="off" spellcheck="false"></div>' +
+      '<div class="row"><label for="claim-code">' +
+      t.html('portalTokens.claim.code') + '</label>' +
+      '<input type="text" id="claim-code" name="code" required ' +
+      'inputmode="numeric" pattern="[0-9 ]{6,10}" maxlength="10" ' +
+      'autocomplete="one-time-code"></div>' +
+      '<button type="submit">' + t.html('portalTokens.claim.button') +
+      '</button></form></div>';
   }
 
   /**

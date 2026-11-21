@@ -3248,10 +3248,10 @@ op `getMfa`(`responses/200/content/application~1json/schema`: WithUsernameVerifi
   
 
 @js(#{
-    `description`:"The step: `start` an authenticator app, `confirm` it with a code, `remove` it; `generate-codes`, `confirm-codes` or `discard-codes` a set of recovery codes; `email-factor-on` or `email-factor-off`."
+    `description`:"The step: `start` an authenticator app, `confirm` it with a code, `remove` it; `hotp-start`, `hotp-confirm`, `hotp-resync` (two consecutive codes) or `hotp-remove` a one-time code token (RFC 4226); `generate-codes`, `confirm-codes` or `discard-codes` a set of recovery codes; `email-factor-on` or `email-factor-off`."
   }) @hoisted union post_account_api_mfa_b_application_json_action_h255 {
     EmptyText,
-    "start" | "confirm" | "remove" | "generate-codes" | "confirm-codes" | "discard-codes" | "email-factor-on" | "email-factor-off"
+    "start" | "confirm" | "remove" | "hotp-start" | "hotp-confirm" | "hotp-resync" | "hotp-remove" | "generate-codes" | "confirm-codes" | "discard-codes" | "email-factor-on" | "email-factor-off"
   }
 
   
@@ -3266,7 +3266,7 @@ op `getMfa`(`responses/200/content/application~1json/schema`: WithUsernameVerifi
     `operationId`:"changeMfa",
     `tags`:#["Authenticator app"],
     `summary`:"Sets up, confirms or removes your second factors",
-    `description`:"`start` mints a secret and holds it (ask the view for the QR code); `confirm` checks a code from the app (rate limited) and enrols it; `remove` takes it off, and ends every session its codes signed in (`sessionsEnded`, #722). `generate-codes` answers a set of recovery codes ONCE, in `view.fresh`, and stores nothing; `confirm-codes` stores their hashes; `discard-codes` throws the pending set away. `email-factor-on` (with `kind`) and `email-factor-off` opt in and out of the emailed second factor. A refusal carries the page's `view`.\n\nThe door of the portal's `POST /portal/mfa`.",
+    `description`:"`start` mints a secret and holds it (ask the view for the QR code); `confirm` checks a code from the app (rate limited) and enrols it; `remove` takes it off, and ends every session its codes signed in (`sessionsEnded`, #722). `hotp-start`, `hotp-confirm` and `hotp-remove` do the same for a counter-based one-time code token (RFC 4226, #1955) — the view's `hotp.setup` carries its otpauth://hotp QR code and the `ykman` command that programs a YubiKey's OTP slot — and `hotp-resync` brings back a token pressed too often from two consecutive codes (`code`, `code2`; rate limited). `generate-codes` answers a set of recovery codes ONCE, in `view.fresh`, and stores nothing; `confirm-codes` stores their hashes; `discard-codes` throws the pending set away. `email-factor-on` (with `kind`) and `email-factor-off` opt in and out of the emailed second factor. A refusal carries the page's `view`.\n\nThe door of the portal's `POST /portal/mfa`.",
     `parameters`:#[
 
     ],
@@ -3304,7 +3304,8 @@ op `getMfa`(`responses/200/content/application~1json/schema`: WithUsernameVerifi
 op `changeMfa`(`requestBody/content/application~1json/schema`: {
     `action`?: post_account_api_mfa_b_application_json_action_h255;
     `kind`?: post_account_api_mfa_b_application_json_kind_h257;
-    @js(#{`description`:"For `confirm`: the code the app shows.",`maxLength`:32}) `code`?: string;
+    @js(#{`description`:"For `confirm` and `hotp-confirm`: the code the app or token shows; for `hotp-resync`, the first of two consecutive codes.",`maxLength`:32}) `code`?: string;
+    @js(#{`description`:"For `hotp-resync`: the code the token showed next.",`maxLength`:32}) `code2`?: string;
     @js(#{
       `description`:"For `confirm-codes` and `discard-codes`: the pending set's handle, from `generate-codes`'s answer.",
       `maxLength`:128
@@ -4833,7 +4834,7 @@ op `actOnDevices`(`requestBody/content/application~1json/schema`: {
 
 // #1955 P1: THE PERSON'S HARDWARE TOKENS (`portal/account_tokens.ts`).
 @hoisted model HardwareTokenPortalCredential {
-  @js(#{`description`:"The credential's kind: `fido` or `x509` (later `hotp`, `yubico-otp`, `ssh`, `openpgp`)."}) `kind`: string;
+  @js(#{`description`:"The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token; later `yubico-otp`, `ssh`, `openpgp`)."}) `kind`: string;
   @js(#{`description`:"Its name, where it has one."}) `label`: string;
   @js(#{`description`:"When it was recorded on the token, ISO 8601."}) `addedAt`: string;
   @js(#{`description`:"Whether the lost-key act retired it."}) `retired`: boolean
@@ -4907,9 +4908,9 @@ op `getTokens`(`responses/200/content/application~1json/schema`: HardwareTokensP
   }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
 
 
-@js(#{`description`:"What to do; `lost` where none is named."}) @hoisted union post_account_api_tokens_b_application_json_action {
+@js(#{`description`:"What to do; `lost` where none is named. `claim` (#1955 P4) takes an imported one-time code token by its serial and a code it shows now."}) @hoisted union post_account_api_tokens_b_application_json_action {
     EmptyText,
-    "lost"
+    "lost" | "claim"
   }
 
 @endpoint("/account-api/tokens",
@@ -4917,8 +4918,8 @@ op `getTokens`(`responses/200/content/application~1json/schema`: HardwareTokensP
   #{
     `operationId`:"actOnTokens",
     `tags`:#["Devices"],
-    `summary`:"Reports one of your hardware tokens lost",
-    `description`:"`lost` marks the token lost and retires every credential of yours on it: its passkeys are removed, its certificates revoked (keyCompromise), a CAEP credential-change is sent for each, and the sign-on sessions they signed in end. It asks for a recent sign-in. A refusal carries the page's `view`.\n\nThe door of the portal's `POST /portal/tokens`.",
+    `summary`:"Reports one of your hardware tokens lost, or claims one",
+    `description`:"`claim` (#1955 P4) takes a one-time code token an administrator imported from its vendor's PSKC file: give the `serial` printed on it and a `code` it shows now (rate limited, one refusal for a wrong serial and a wrong code alike), and it becomes your second factor with that code spent. `lost` marks the token lost and retires every credential of yours on it: its passkeys are removed, its certificates revoked (keyCompromise), a CAEP credential-change is sent for each, and the sign-on sessions they signed in end. It asks for a recent sign-in. A refusal carries the page's `view`.\n\nThe door of the portal's `POST /portal/tokens`.",
     `parameters`:#[
 
     ],
@@ -4959,7 +4960,9 @@ op `getTokens`(`responses/200/content/application~1json/schema`: HardwareTokensP
   })
 op `actOnTokens`(`requestBody/content/application~1json/schema`: {
     `action`?: post_account_api_tokens_b_application_json_action;
-    @js(#{`description`:"`lost`: the token's key, `<vendor>/<serial>`.",`maxLength`:200}) `key`?: string
+    @js(#{`description`:"`lost`: the token's key, `<vendor>/<serial>`.",`maxLength`:200}) `key`?: string;
+    @js(#{`description`:"`claim`: the serial printed on the token.",`maxLength`:64}) `serial`?: string;
+    @js(#{`description`:"`claim`: a code the token shows now.",`maxLength`:32}) `code`?: string
   },
   `responses/200/content/application~1json/schema`: {
     `ok`: boolean;

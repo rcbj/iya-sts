@@ -751,6 +751,24 @@ function checkHardwareTokenStore(t) {
 }
 
 // ---------------------------------------------------------------------------
+// 5c-iii. THE OATH TOKEN INVENTORY (#1955 P4): declared per realm;
+// `tests/oath_tokens.js` asserts that a token imported in one realm cannot
+// be assigned or claimed in another.
+// ---------------------------------------------------------------------------
+function checkOathTokenStore(t) {
+  log.debug("Entering checkOathTokenStore().");
+  t.log.info('the OATH token inventory');
+  require('../common/oath_tokens');
+  const handle = realms.handleFor('oath_tokens.inventory');
+  t.check(!!handle, 'oath_tokens.inventory is a declared store');
+  if (handle) {
+    t.equal(handle.scope, 'realm', 'the OATH token inventory is declared ' +
+            'PER REALM', String(handle.scope));
+  }
+  log.debug("Leaving checkOathTokenStore().");
+}
+
+// ---------------------------------------------------------------------------
 // 5d. GNAP (2026-09-12): twelve stores in `gnap/gnap_store.ts`, the approver
 // index in `gnap/gnap_signals.ts` and the counters in `gnap/gnap_monitor.ts`.
 //
@@ -889,6 +907,7 @@ function run(t) {
   checkSignalRegisters(t);
   checkKerberosStores(t);
   checkHardwareTokenStore(t);
+  checkOathTokenStore(t);
   checkGnapStores(t);
   checkChildStores(t);
   checkDefaultUnchanged(t);

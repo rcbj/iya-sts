@@ -530,6 +530,13 @@ var config = {
     enrolmentTtlMinutes: 10  // Unconfirmed enrolment lifetime (minutes)
   },
 
+  // --- TOTP MFA --------------------------------------------------------
+  hotp: {
+    digits: 6,         // HOTP code length (digits)
+    window: 10,        // HOTP look-ahead (codes)
+    resyncWindow: 100  // HOTP resynchronisation window (codes)
+  },
+
   // --- Backup codes ----------------------------------------------------
   backupCodes: {
     count: 10,        // Codes in a set
@@ -788,9 +795,14 @@ var config = {
     browserTokenCertificateHeader: "x5u"                                   // Remembered browser token certificate header
   },
 
-  // --- Hardware tokens -------------------------------------------------
+  // --- Devices ---------------------------------------------------------
   hardwareTokens: {
     hardwareClaims: "inference"  // What earns a hardware-key claim
+  },
+
+  // --- Devices ---------------------------------------------------------
+  pskc: {
+    allowPlaintextImport: false  // Accept plaintext PSKC seed files in product mode
   },
 
   // --- ACME ------------------------------------------------------------

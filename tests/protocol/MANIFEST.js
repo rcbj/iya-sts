@@ -1402,6 +1402,12 @@ const JOBS = [
   // with real tokens is tests/hardware_tokens.js, in process: nothing over
   // HTTP can make a token, which is recorded only from attestation.
   { file: 'sts_hardware_tokens.js', browser: false, local: true },
+  // IMPORTED OATH TOKENS OVER HTTP (#1955 P4): a PSKC seed file made in the
+  // run imported under its pre-shared key (the wrong key refused), listed,
+  // assigned to a person, refused twice, retired by the lost-key act and
+  // removed; no answer carries the secret, the key or an error code. What a
+  // code does at a sign-in is tests/hotp.js and tests/oath_tokens.js.
+  { file: 'sts_oath_tokens.js', browser: false, local: true },
   // LINKING A WEBAUTHN PLATFORM CREDENTIAL ON /portal/devices, IN A REAL
   // BROWSER (#258, 2026-10-06): Chrome's virtual authenticators enrol a
   // roaming key and a platform key on /portal/keys; the roaming one is

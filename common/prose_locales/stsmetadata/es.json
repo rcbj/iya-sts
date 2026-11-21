@@ -528,8 +528,12 @@
     "text": "partial, el lado del servidor de una sesión limitada al origen por cada inicio de sesión único: Secure-Session-Registration ofreciendo ES256 y RS256, la prueba dbsc+jwt en el registro (su jwk, typ, alg y jti comprobados y la firma verificada) y en la renovación (verificada con la clave vinculada), las instrucciones de sesión JSON con una sola cookie vinculada, el intercambio 403 y Secure-Session-Challenge, y Sec-Secure-Session-Id. Cada desafío se consume una sola vez para el clúster. Falta: las sesiones federadas (provider_key, el documento well-known), las sesiones limitadas al sitio y las reglas de alcance, el parámetro authorization y la lectura de Secure-Session-Skipped. Desactivado por defecto (authn.deviceBoundSessions)."
   },
   "stsmetadata.specs.rfc4226.coverage": {
-    "en": "ffd9d22cf4ecfd57",
-    "text": "full para lo que RFC 6238 necesita de él: el truncamiento dinámico de la sección 5.3 sobre HMAC-SHA-1, SHA-256 o SHA-512, de seis a ocho dígitos, con el contador como valor big-endian de ocho bytes. Verificado con los propios vectores de prueba del Apéndice D de la especificación (tests/totp.js), que es el motivo de implementarlo en lugar de tomar una biblioteca: cada uno de los cuatro pasos de ese truncamiento lo ha hecho mal alguien, y un vector publicado es la única comprobación que lo detecta. NO cubierto: HOTP basado en contador como mecanismo de autenticación — nada aquí mantiene un contador que avance con el uso, porque el único llamante es la construcción basada en tiempo de abajo."
+    "en": "5ab7b9d048e74e7e",
+    "text": "full, del lado del verificador, SOLO COMO SEGUNDO FACTOR (#1955 P4): el truncamiento dinámico de la sección 5.3 sobre HMAC-SHA-1, SHA-256 o SHA-512, de seis a ocho dígitos, el contador un valor big-endian de ocho bytes, comprobado contra los propios vectores de prueba del apéndice D (tests/totp.js, tests/hotp.js); un contador por credencial con la anticipación de la sección 7.4 (hotp.window, 10 de forma predeterminada, 0 válido) y la resincronización a partir de dos códigos consecutivos (hotp.resyncWindow); el rechazo de reproducción de la sección 7.2, con el contador avanzado mediante compare-and-set en el almacén para que dos nodos o workers nunca acepten un mismo código; la limitación de la sección 7.3 mediante el presupuesto de códigos del inicio de sesión. Una ranura OTP de YubiKey se programa desde el código otpauth://hotp o el comando ykman del portal; el token de un proveedor se importa (RFC 6030). Obtiene amr otp, y hwk solo para un token importado. NO cubierto: el esquema de retardo de la sección 7.3 como tal (el presupuesto rechaza en su lugar), y OCRA (RFC 6287)."
+  },
+  "stsmetadata.specs.rfc6030.coverage": {
+    "en": "35ef81e9394eb5f5",
+    "text": "partial, como RECEPTOR (#1955 P4): un KeyContainer de versión 1.0 con claves HOTP y TOTP, Manufacturer, SerialNo y Model de DeviceInfo, el ResponseFormat (de 6 a 8 dígitos decimales), un Counter simple, Time (solo 0) y TimeInterval; texto sin cifrar (rechazado en modo producto salvo con pskc.allowPlaintextImport), una clave precompartida (sección 6.1: AES-128/192/256-CBC y KW-AES) y una frase de contraseña (sección 6.2: PBKDF2), comprobando primero el ValueMAC de la sección 6.1.1 (HMAC-SHA1 y los MAC SHA-2). Comprobado contra las propias Figures 2 a 7 del RFC (tests/pskc.js). NO cubierto: el cifrado para un certificado (6.3), una clave MAC por referencia, Triple DES y Camellia, un contador o una hora cifrados, las claves y políticas de PIN (omitidas), las firmas sobre el contenedor (sección 7) y la generación de uno."
   },
   "stsmetadata.specs.bcp47.coverage": {
     "en": "d682d3dd451a019d",
@@ -2131,13 +2135,17 @@
     "en": "fe8d3ba310ad762b",
     "text": "NON-SPEC (#1955). Lo que dibuja Directorio → Tokens de hardware: las llaves de seguridad y tarjetas inteligentes físicas que este dominio registró, cada una a partir de su propia atestación, paginadas y buscadas por número de serie o persona, con las llaves de acceso y certificados de cada una. Refleja GET /admin/hardware-tokens."
   },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/oath.what": {
+    "en": "f149352fa2ac36d0",
+    "text": "NON-SPEC (#1955 P4). Los tokens HOTP y TOTP que los administradores importaron de los archivos de semillas PSKC de los proveedores, sin asignar, asignados o retirados, paginados y buscables por número de serie o persona. Nunca un secreto. Refleja GET /admin/hardware-tokens (su pestaña OATH)."
+  },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-    "en": "1303a5c415b09d44",
-    "text": "NON-SPEC (#1955). lost, con { key }: el token se marca como perdido, se elimina cada llave de acceso que contiene, se revoca cada certificado por keyCompromise, se envía un cambio de credencial CAEP por cada uno y se cierran las sesiones que iniciaron. La única acción de la consola en esa página."
+    "en": "4309735f35f4550e",
+    "text": "NON-SPEC (#1955). lost, con { key }: el token se marca como perdido, se elimina cada llave de acceso que contiene, se revoca cada certificado por keyCompromise, se quita cada secreto OATH importado de la entrada de su titular, se envía un cambio de credencial CAEP por cada uno y se cierran las sesiones que iniciaron. Desde P4, import-pskc, con { pskc, preSharedKey or password }: las claves HOTP y TOTP de un archivo de semillas RFC 6030 se guardan sin asignar por número de serie, comprobando primero el MAC y sin guardar nunca la clave; assign-oath, con { key, username }; y remove-oath, con { key }, para un token sin asignar."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
-    "en": "7b39ad029e0234ed",
-    "text": "notifica la pérdida de un token de hardware y retira sus credenciales"
+    "en": "dabee6463ad7ee17",
+    "text": "notifica la pérdida de un token de hardware y retira sus credenciales, o importa, asigna o quita tokens OATH"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -4024,8 +4032,8 @@
     "text": "Un segundo factor en la pantalla de inicio de sesión a la que todo protocolo de aquí envía a una persona: ceremonias de registro y de afirmación contra una llave de seguridad real, con la atestación y los datos del autenticador comprobados y no solo analizados."
   },
   "stsmetadata.protocols.One-time passwords (TOTP).what": {
-    "en": "20b73dffc821e4a2",
-    "text": "El otro segundo factor en la pantalla de inicio de sesión a la que todo protocolo de aquí envía a una persona, y la única credencial, además de un ticket Kerberos, que este servicio COMPRUEBA de verdad: el código se calcula a partir del secreto compartido y el reloj y se compara, en ambos modos, aplicando la regla de aceptar una sola vez de la sección 5.2 de RFC 6238. El registro es un código QR que dibujó este servidor, en /portal/mfa o mientras se gasta un enlace de activación; la fila propia de la persona en /admin/users es donde un operador borra uno, y /admin/totp es donde se configura el mecanismo."
+    "en": "54893544268bf168",
+    "text": "El otro segundo factor de la pantalla de inicio de sesión a la que cada protocolo de aquí envía a una persona, y la única credencial, además de un ticket Kerberos, que este servicio COMPRUEBA de verdad: el código se calcula a partir del secreto compartido y el reloj y se compara, en ambos modos, aplicando la regla de aceptación única de RFC 6238 sección 5.2. La inscripción es un código QR que este servidor dibujó, en /portal/mfa o mientras se usa un enlace de activación; la fila propia de la persona en /admin/users es donde un operador lo borra, y /admin/totp es donde se configura el mecanismo. Desde #1955 P4 también su equivalente basado en contador: un token HOTP RFC 4226 (una ranura OTP de YubiKey, inscrita en /portal/mfa, o el token de un proveedor importado de su archivo de semillas RFC 6030 en Directorio → Tokens de hardware y asignado o reclamado por número de serie), con su contador avanzado mediante compare-and-set, aceptado en cada punto que admite un código."
   },
   "stsmetadata.protocols.Recovery codes.what": {
     "en": "b7c9347c7ac4a2b7",

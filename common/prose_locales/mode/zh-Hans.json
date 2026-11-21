@@ -419,66 +419,6 @@
     "en": "7bb2840e2f96210a",
     "text": "读取该列表时不含 23（记录一次日志，STS-CORE-0106），指定它的写入会被拒绝（STS-CORE-0103）。不会为 krbtgt、服务或个人派生、存储 RC4 密钥或将其放入 keytab；永远不会使用该加密类型的密钥或票据；只提供该类型的 AS-REQ 或 TGS-REQ 会以 KDC_ERR_ETYPE_NOSUPP 被拒绝（STS-KRB-0156）；TGS-REQ、AP-REQ 或 FAST armor 中的 RC4 会话密钥或子密钥会被拒绝（STS-KRB-0157、0158、0159）。剩下的是 AES。"
   },
-  "mode.requirements.unscoped-people.what": {
-    "en": "313033517d6bf954",
-    "text": "访问 SCIM 和 Shared Signals 需要角色"
-  },
-  "mode.requirements.unscoped-people.development": {
-    "en": "0be4a760d6eebbf0",
-    "text": "任何已通过身份验证的人员都可读写，无论使用哪种方案。"
-  },
-  "mode.requirements.unscoped-people.product": {
-    "en": "b88ebd1ed2325b97",
-    "text": "不携带作用域的方案需要 Admin Read 才能读取、Admin Write 才能写入，除非开启 security.allowUnscopedPeople。OAuth 作用域和应用程序证书照常工作。"
-  },
-  "mode.requirements.named-file-roots.what": {
-    "en": "947df8a88522b407",
-    "text": "指定的文件必须位于允许的目录中"
-  },
-  "mode.requirements.named-file-roots.development": {
-    "en": "249a8365ea4fdbfc",
-    "text": "管理员指定的文件按其给出的路径读取。"
-  },
-  "mode.requirements.named-file-roots.product": {
-    "en": "027759d02863b752",
-    "text": "仅当文件的真实路径位于 security.fileRoots 列出的目录内时才读取，且答复不说明路径失败的原因。"
-  },
-  "mode.requirements.jwe-cbc.what": {
-    "en": "a9e47c5b53e70f9e",
-    "text": "JWE 内容加密仅使用 AES-GCM"
-  },
-  "mode.requirements.jwe-cbc.development": {
-    "en": "cca6834a267241c9",
-    "text": "提供并接受 A128CBC-HS256、A192CBC-HS384 和 A256CBC-HS512，默认值为 A128CBC-HS256。"
-  },
-  "mode.requirements.jwe-cbc.product": {
-    "en": "b8bdc8b82bb08a9e",
-    "text": "仅提供或接受 AES-GCM，客户端未指定 enc 时也使用它，除非开启 crypto.allowCbcJwe。"
-  },
-  "mode.requirements.legacy-hashes.what": {
-    "en": "06838227a6e37c56",
-    "text": "不使用被禁止的哈希函数"
-  },
-  "mode.requirements.legacy-hashes.development": {
-    "en": "5019d7e87d32f630",
-    "text": "可使用基于 SHA-1 的 OAEP、SHA-1 PKINIT 密钥派生和 S4U2Self 的 HMAC-MD5 校验和。"
-  },
-  "mode.requirements.legacy-hashes.product": {
-    "en": "eb55e63c70e4152c",
-    "text": "除非开启 crypto.allowLegacyHashes，否则它们处于关闭状态。为兼容身份验证器应用，TOTP 默认仍为 HMAC-SHA-1；PKINIT 保留 RFC 4556 定义的 SHA-1 paChecksum。"
-  },
-  "mode.requirements.no-default-admin-name.what": {
-    "en": "be402fb23aecd2d4",
-    "text": "没有账户使用默认管理员名称"
-  },
-  "mode.requirements.no-default-admin-name.development": {
-    "en": "ca263c05dbdb69a5",
-    "text": "引导管理员为 admin，所有测试和演练都以此登录。"
-  },
-  "mode.requirements.no-default-admin-name.product": {
-    "en": "35dface5441235f5",
-    "text": "名为 admin、root、sa 或 administrator 或没有名称的引导管理员会获得一个不可预测的生成名称，并在首次启动时与其密码一起显示，除非开启 admin.allowDefaultUsername。"
-  },
   "mode.requirements.main-port-https.what": {
     "en": "6469fbe1118f7dc7",
     "text": "主端口使用 HTTPS"
@@ -526,6 +466,210 @@
   "mode.requirements.declared-grants.product": {
     "en": "636b38aec05ad6d5",
     "text": "未声明授权类型的客户端只能使用 authorization_code 和 refresh_token，除非开启 oauth2.allowUndeclaredGrants（STS-OAUTH-0598）。"
+  },
+  "mode.requirements.no-default-admin-name.what": {
+    "en": "be402fb23aecd2d4",
+    "text": "没有账户使用默认管理员名称"
+  },
+  "mode.requirements.no-default-admin-name.development": {
+    "en": "ca263c05dbdb69a5",
+    "text": "引导管理员为 admin，所有测试和演练都以此登录。"
+  },
+  "mode.requirements.no-default-admin-name.product": {
+    "en": "35dface5441235f5",
+    "text": "名为 admin、root、sa 或 administrator 或没有名称的引导管理员会获得一个不可预测的生成名称，并在首次启动时与其密码一起显示，除非开启 admin.allowDefaultUsername。"
+  },
+  "mode.requirements.legacy-hashes.what": {
+    "en": "06838227a6e37c56",
+    "text": "不使用被禁止的哈希函数"
+  },
+  "mode.requirements.legacy-hashes.development": {
+    "en": "5019d7e87d32f630",
+    "text": "可使用基于 SHA-1 的 OAEP、SHA-1 PKINIT 密钥派生和 S4U2Self 的 HMAC-MD5 校验和。"
+  },
+  "mode.requirements.legacy-hashes.product": {
+    "en": "eb55e63c70e4152c",
+    "text": "除非开启 crypto.allowLegacyHashes，否则它们处于关闭状态。为兼容身份验证器应用，TOTP 默认仍为 HMAC-SHA-1；PKINIT 保留 RFC 4556 定义的 SHA-1 paChecksum。"
+  },
+  "mode.requirements.named-file-roots.what": {
+    "en": "947df8a88522b407",
+    "text": "指定的文件必须位于允许的目录中"
+  },
+  "mode.requirements.named-file-roots.development": {
+    "en": "249a8365ea4fdbfc",
+    "text": "管理员指定的文件按其给出的路径读取。"
+  },
+  "mode.requirements.named-file-roots.product": {
+    "en": "027759d02863b752",
+    "text": "仅当文件的真实路径位于 security.fileRoots 列出的目录内时才读取，且答复不说明路径失败的原因。"
+  },
+  "mode.requirements.second-factor-everyone.what": {
+    "en": "0fd5536cd700c440",
+    "text": "要求所有人使用第二因素"
+  },
+  "mode.requirements.second-factor-everyone.development": {
+    "en": "8816e275bdf92a96",
+    "text": "由身份验证策略决定，默认仅要求持有第二因素的人员提供。"
+  },
+  "mode.requirements.second-factor-everyone.product": {
+    "en": "1eb106bd8b0a4050",
+    "text": "无论策略如何，所有人都需要第二因素，除非开启 authn.allowOptionalSecondFactor。"
+  },
+  "mode.requirements.factor-clear-evidence.what": {
+    "en": "d4453639b3500b23",
+    "text": "清除第二因素需要说明身份证明"
+  },
+  "mode.requirements.factor-clear-evidence.development": {
+    "en": "9c5d644b822f24b9",
+    "text": "管理员只需指定用户即可清除因素。"
+  },
+  "mode.requirements.factor-clear-evidence.product": {
+    "en": "e473fffee1f00eaa",
+    "text": "管理员必须说明如何验证了此人的身份。该说明会记录在审计日志中。"
+  },
+  "mode.requirements.strict-protocol-input.what": {
+    "en": "4c536228d39a5730",
+    "text": "严格解读协议输入"
+  },
+  "mode.requirements.strict-protocol-input.development": {
+    "en": "da9c69e7fe603705",
+    "text": "重复的令牌参数取最后一个值，合作方的注销令牌无需显式类型，开启 global.trustProxy 且无列表时相信任何人转发的地址，内部错误文本会返回给调用方。"
+  },
+  "mode.requirements.strict-protocol-input.product": {
+    "en": "85fca28b66faee87",
+    "text": "重复的令牌参数被拒绝，合作方的注销令牌必须为 logout+jwt 类型（除非开启 federation.allowUntypedLogoutToken），转发地址需要 global.trustedProxies，内部错误文本只保留在日志中。"
+  },
+  "mode.requirements.no-known-secrets.what": {
+    "en": "f3805d37f47556e7",
+    "text": "日志和数据库中没有众所周知的密钥"
+  },
+  "mode.requirements.no-known-secrets.development": {
+    "en": "bd225788d94d084d",
+    "text": "调试级别下，日志包含完整的请求和响应，数据库可以使用演示密码。"
+  },
+  "mode.requirements.no-known-secrets.product": {
+    "en": "9dc455e8deb093a6",
+    "text": "请求日志在任何级别都不包含凭据和正文；已签名的令牌或断言只按其大小和摘要记录；默认的数据库密码会使服务停止，除非开启 persistence.allowDefaultDatabasePassword。"
+  },
+  "mode.requirements.plaintext-seed-files.what": {
+    "en": "7dfdb35537e3d442",
+    "text": "供应商的令牌种子文件必须加密"
+  },
+  "mode.requirements.plaintext-seed-files.development": {
+    "en": "406c007742c28ced",
+    "text": "令牌密钥为明文的 PSKC 种子文件会像加密文件一样导入。"
+  },
+  "mode.requirements.plaintext-seed-files.product": {
+    "en": "e3eb9f2bcabf5eaa",
+    "text": "令牌密钥为明文的 PSKC 种子文件会被拒绝，除非开启了 pskc.allowPlaintextImport；加密文件使用随上传提供的密钥或密码打开，该密钥或密码从不存储。"
+  },
+  "mode.requirements.sso-consent.what": {
+    "en": "2b06d195aa0a395d",
+    "text": "单点登录在让用户登录某个应用前先询问"
+  },
+  "mode.requirements.sso-consent.development": {
+    "en": "e519a44984791111",
+    "text": "SAML 2.0、SAML 1.1 和 WS-Federation 直接用用户的会话让其登录，不作询问。"
+  },
+  "mode.requirements.sso-consent.product": {
+    "en": "0a4ee080bb81a76f",
+    "text": "在 SAML 2.0、SAML 1.1 或 WS-Federation 让用户登录某个应用前，每个应用询问一次，并保存回答。saml2.ssoConsent、saml11.ssoConsent 和 wsfed.ssoConsent 可按协议关闭此功能，应用自身的值优先于它们。"
+  },
+  "mode.requirements.secrets-from-store.what": {
+    "en": "51a0285e7263826e",
+    "text": "后端密钥来自密钥存储"
+  },
+  "mode.requirements.secrets-from-store.development": {
+    "en": "14c3b25b8289b3fa",
+    "text": "密钥加密密钥可以是文件，数据库密码可以在文件中或连接字符串中。"
+  },
+  "mode.requirements.secrets-from-store.product": {
+    "en": "8a3820f8013ed174",
+    "text": "密钥加密密钥来自密钥存储或密钥管理服务，数据库密码来自密钥存储。文件或连接字符串中的密码会使服务停止，除非开启 secrets.allowLocalSecrets。先前的密钥加密密钥仍可以是文件，以便部署能够迁移出去。"
+  },
+  "mode.requirements.audit-destination.what": {
+    "en": "93abf5e422347728",
+    "text": "审计日志应发送到此服务之外"
+  },
+  "mode.requirements.audit-destination.development": {
+    "en": "9e4a085d4195578e",
+    "text": "不提示审计导出。"
+  },
+  "mode.requirements.audit-destination.product": {
+    "en": "e082de544e11ddcb",
+    "text": "请添加审计导出目标，使日志副本在此服务遭入侵时不受影响。在添加之前，服务会为该信任域记录警告。"
+  },
+  "mode.requirements.malware-scan-tls.what": {
+    "en": "926957ee32cf2309",
+    "text": "文件以加密方式到达恶意软件扫描器"
+  },
+  "mode.requirements.malware-scan-tls.development": {
+    "en": "6d81d272e763db8d",
+    "text": "可以使用 icap:// 或 icaps:// 地址。"
+  },
+  "mode.requirements.malware-scan-tls.product": {
+    "en": "dbcd39f827b0a349",
+    "text": "仅使用 icaps:// 地址，除非开启 malwareScan.allowCleartext。"
+  },
+  "mode.requirements.session-key-defaults.what": {
+    "en": "2f8e8efd319d1e4f",
+    "text": "会话和 RSA 密钥采用更严格的默认值"
+  },
+  "mode.requirements.session-key-defaults.development": {
+    "en": "274bb878f654b30c",
+    "text": "会话没有空闲超时，新 RSA 密钥为 2048 位。"
+  },
+  "mode.requirements.session-key-defaults.product": {
+    "en": "acb90dc0f26a16ec",
+    "text": "会话空闲 30 分钟后结束，新 RSA 密钥为 3072 位，除非设置另有规定。"
+  },
+  "mode.requirements.bootstrap-password-file.what": {
+    "en": "e57fcd5b373e9128",
+    "text": "引导密码不写入日志"
+  },
+  "mode.requirements.bootstrap-password-file.development": {
+    "en": "2181a0af41a41ab3",
+    "text": "生成的密码写入服务日志。"
+  },
+  "mode.requirements.bootstrap-password-file.product": {
+    "en": "e12d4ddc2b4d4724",
+    "text": "写入仅此服务可读的文件，日志说明位置，除非开启 admin.logBootstrapPassword。"
+  },
+  "mode.requirements.pkce-every-client.what": {
+    "en": "7e2c6f1869e39287",
+    "text": "每个客户端都必须使用 PKCE"
+  },
+  "mode.requirements.pkce-every-client.development": {
+    "en": "66e8ff75c554aad0",
+    "text": "未发送 code_challenge 的机密客户端仅被记录。"
+  },
+  "mode.requirements.pkce-every-client.product": {
+    "en": "2c34add4c2d2718f",
+    "text": "除非开启 oauth2.allowConfidentialWithoutPkce，否则拒绝。"
+  },
+  "mode.requirements.jwe-cbc.what": {
+    "en": "a9e47c5b53e70f9e",
+    "text": "JWE 内容加密仅使用 AES-GCM"
+  },
+  "mode.requirements.jwe-cbc.development": {
+    "en": "cca6834a267241c9",
+    "text": "提供并接受 A128CBC-HS256、A192CBC-HS384 和 A256CBC-HS512，默认值为 A128CBC-HS256。"
+  },
+  "mode.requirements.jwe-cbc.product": {
+    "en": "b8bdc8b82bb08a9e",
+    "text": "仅提供或接受 AES-GCM，客户端未指定 enc 时也使用它，除非开启 crypto.allowCbcJwe。"
+  },
+  "mode.requirements.unscoped-people.what": {
+    "en": "313033517d6bf954",
+    "text": "访问 SCIM 和 Shared Signals 需要角色"
+  },
+  "mode.requirements.unscoped-people.development": {
+    "en": "0be4a760d6eebbf0",
+    "text": "任何已通过身份验证的人员都可读写，无论使用哪种方案。"
+  },
+  "mode.requirements.unscoped-people.product": {
+    "en": "b88ebd1ed2325b97",
+    "text": "不携带作用域的方案需要 Admin Read 才能读取、Admin Write 才能写入，除非开启 security.allowUnscopedPeople。OAuth 作用域和应用程序证书照常工作。"
   },
   "mode.requirements.prefixed-cookies.what": {
     "en": "d3919ebba2136f69",
@@ -1211,6 +1355,18 @@
     "en": "335681287a816601",
     "text": "此类声明会被拒绝（STS-DEVICE-0050）：在针对同一密钥的新请求中重放截获的证明，并不能说明密钥是此刻在 TPM 中生成和持有的。因此，带有 TPM 证明的设备证书只能通过 EST、在 /nonce 之后签发（draft-ietf-lamps-attestation-freshness section 5.1）。"
   },
+  "mode.requirements.pep-proxy-origin.what": {
+    "en": "697bb262238f557f",
+    "text": "浏览器通过 https 访问远程 PEP 的反向代理"
+  },
+  "mode.requirements.pep-proxy-origin.development": {
+    "en": "27973f632a8e4726",
+    "text": "代理配置可以使用纯 http 的 publicBaseUrl，因此单台机器上的堆栈无需为代理准备监听证书。"
+  },
+  "mode.requirements.pep-proxy-origin.product": {
+    "en": "3c64430130525f3e",
+    "text": "不是 https 的 publicBaseUrl 会被拒绝（STS-XACML-0188）：会话机制的登录在那里返回授权码，且其会话 Cookie 带有 Secure。"
+  },
   "mode.notYet.certificate-revocation.what": {
     "en": "90de04e6940f9577",
     "text": "对出示的证书（参见上面的要求）以及已注册的证书在其用于验证某些内容时，都会查询吊销状态——登记簿、OCSP 响应方（包括委托响应方自身的状态）以及外部证书所指明的 CRL，通过 http、https 和 ldaps，合并增量 CRL，按颁发者读取间接 CRL，在本服务未持有其签名者时从列表的 caIssuers 地址获取。剩下的是限制而非待办工作：没有证书而注册的裸密钥（不带 x5c 的 JWK）不指明颁发者也不指明列表，因此只有将其从条目中移除才能阻止它用于验证；只有在 pki.revocationLdap 允许时才会拨号纯 ldap:；相对于其 CRL 颁发者命名的分发点，只有在设置了 pki.revocationLdapDirectory 且每个 RDN 都是单值时才会使用；LDAPS 636 不请求客户端证书，因此那里不查询任何内容。"
@@ -1274,149 +1430,5 @@
   "mode.why.default": {
     "en": "108a941d7ea44a81",
     "text": "该设置仅适用于开发模式。"
-  },
-  "mode.requirements.second-factor-everyone.what": {
-    "en": "0fd5536cd700c440",
-    "text": "要求所有人使用第二因素"
-  },
-  "mode.requirements.second-factor-everyone.development": {
-    "en": "8816e275bdf92a96",
-    "text": "由身份验证策略决定，默认仅要求持有第二因素的人员提供。"
-  },
-  "mode.requirements.second-factor-everyone.product": {
-    "en": "1eb106bd8b0a4050",
-    "text": "无论策略如何，所有人都需要第二因素，除非开启 authn.allowOptionalSecondFactor。"
-  },
-  "mode.requirements.session-key-defaults.what": {
-    "en": "2f8e8efd319d1e4f",
-    "text": "会话和 RSA 密钥采用更严格的默认值"
-  },
-  "mode.requirements.session-key-defaults.development": {
-    "en": "274bb878f654b30c",
-    "text": "会话没有空闲超时，新 RSA 密钥为 2048 位。"
-  },
-  "mode.requirements.session-key-defaults.product": {
-    "en": "acb90dc0f26a16ec",
-    "text": "会话空闲 30 分钟后结束，新 RSA 密钥为 3072 位，除非设置另有规定。"
-  },
-  "mode.requirements.bootstrap-password-file.what": {
-    "en": "e57fcd5b373e9128",
-    "text": "引导密码不写入日志"
-  },
-  "mode.requirements.bootstrap-password-file.development": {
-    "en": "2181a0af41a41ab3",
-    "text": "生成的密码写入服务日志。"
-  },
-  "mode.requirements.bootstrap-password-file.product": {
-    "en": "e12d4ddc2b4d4724",
-    "text": "写入仅此服务可读的文件，日志说明位置，除非开启 admin.logBootstrapPassword。"
-  },
-  "mode.requirements.pkce-every-client.what": {
-    "en": "7e2c6f1869e39287",
-    "text": "每个客户端都必须使用 PKCE"
-  },
-  "mode.requirements.pkce-every-client.development": {
-    "en": "66e8ff75c554aad0",
-    "text": "未发送 code_challenge 的机密客户端仅被记录。"
-  },
-  "mode.requirements.pkce-every-client.product": {
-    "en": "2c34add4c2d2718f",
-    "text": "除非开启 oauth2.allowConfidentialWithoutPkce，否则拒绝。"
-  },
-  "mode.requirements.malware-scan-tls.what": {
-    "en": "926957ee32cf2309",
-    "text": "文件以加密方式到达恶意软件扫描器"
-  },
-  "mode.requirements.malware-scan-tls.development": {
-    "en": "6d81d272e763db8d",
-    "text": "可以使用 icap:// 或 icaps:// 地址。"
-  },
-  "mode.requirements.malware-scan-tls.product": {
-    "en": "dbcd39f827b0a349",
-    "text": "仅使用 icaps:// 地址，除非开启 malwareScan.allowCleartext。"
-  },
-  "mode.requirements.factor-clear-evidence.what": {
-    "en": "d4453639b3500b23",
-    "text": "清除第二因素需要说明身份证明"
-  },
-  "mode.requirements.factor-clear-evidence.development": {
-    "en": "9c5d644b822f24b9",
-    "text": "管理员只需指定用户即可清除因素。"
-  },
-  "mode.requirements.factor-clear-evidence.product": {
-    "en": "e473fffee1f00eaa",
-    "text": "管理员必须说明如何验证了此人的身份。该说明会记录在审计日志中。"
-  },
-  "mode.requirements.strict-protocol-input.what": {
-    "en": "4c536228d39a5730",
-    "text": "严格解读协议输入"
-  },
-  "mode.requirements.strict-protocol-input.development": {
-    "en": "da9c69e7fe603705",
-    "text": "重复的令牌参数取最后一个值，合作方的注销令牌无需显式类型，开启 global.trustProxy 且无列表时相信任何人转发的地址，内部错误文本会返回给调用方。"
-  },
-  "mode.requirements.strict-protocol-input.product": {
-    "en": "85fca28b66faee87",
-    "text": "重复的令牌参数被拒绝，合作方的注销令牌必须为 logout+jwt 类型（除非开启 federation.allowUntypedLogoutToken），转发地址需要 global.trustedProxies，内部错误文本只保留在日志中。"
-  },
-  "mode.requirements.no-known-secrets.what": {
-    "en": "f3805d37f47556e7",
-    "text": "日志和数据库中没有众所周知的密钥"
-  },
-  "mode.requirements.no-known-secrets.development": {
-    "en": "bd225788d94d084d",
-    "text": "调试级别下，日志包含完整的请求和响应，数据库可以使用演示密码。"
-  },
-  "mode.requirements.no-known-secrets.product": {
-    "en": "9dc455e8deb093a6",
-    "text": "请求日志在任何级别都不包含凭据和正文；已签名的令牌或断言只按其大小和摘要记录；默认的数据库密码会使服务停止，除非开启 persistence.allowDefaultDatabasePassword。"
-  },
-  "mode.requirements.secrets-from-store.what": {
-    "en": "51a0285e7263826e",
-    "text": "后端密钥来自密钥存储"
-  },
-  "mode.requirements.secrets-from-store.development": {
-    "en": "14c3b25b8289b3fa",
-    "text": "密钥加密密钥可以是文件，数据库密码可以在文件中或连接字符串中。"
-  },
-  "mode.requirements.secrets-from-store.product": {
-    "en": "8a3820f8013ed174",
-    "text": "密钥加密密钥来自密钥存储或密钥管理服务，数据库密码来自密钥存储。文件或连接字符串中的密码会使服务停止，除非开启 secrets.allowLocalSecrets。先前的密钥加密密钥仍可以是文件，以便部署能够迁移出去。"
-  },
-  "mode.requirements.audit-destination.what": {
-    "en": "93abf5e422347728",
-    "text": "审计日志应发送到此服务之外"
-  },
-  "mode.requirements.audit-destination.development": {
-    "en": "9e4a085d4195578e",
-    "text": "不提示审计导出。"
-  },
-  "mode.requirements.audit-destination.product": {
-    "en": "e082de544e11ddcb",
-    "text": "请添加审计导出目标，使日志副本在此服务遭入侵时不受影响。在添加之前，服务会为该信任域记录警告。"
-  },
-  "mode.requirements.sso-consent.what": {
-    "en": "2b06d195aa0a395d",
-    "text": "单点登录在让用户登录某个应用前先询问"
-  },
-  "mode.requirements.sso-consent.development": {
-    "en": "e519a44984791111",
-    "text": "SAML 2.0、SAML 1.1 和 WS-Federation 直接用用户的会话让其登录，不作询问。"
-  },
-  "mode.requirements.sso-consent.product": {
-    "en": "0a4ee080bb81a76f",
-    "text": "在 SAML 2.0、SAML 1.1 或 WS-Federation 让用户登录某个应用前，每个应用询问一次，并保存回答。saml2.ssoConsent、saml11.ssoConsent 和 wsfed.ssoConsent 可按协议关闭此功能，应用自身的值优先于它们。"
-  },
-  "mode.requirements.pep-proxy-origin.what": {
-    "en": "697bb262238f557f",
-    "text": "浏览器通过 https 访问远程 PEP 的反向代理"
-  },
-  "mode.requirements.pep-proxy-origin.development": {
-    "en": "27973f632a8e4726",
-    "text": "代理配置可以使用纯 http 的 publicBaseUrl，因此单台机器上的堆栈无需为代理准备监听证书。"
-  },
-  "mode.requirements.pep-proxy-origin.product": {
-    "en": "3c64430130525f3e",
-    "text": "不是 https 的 publicBaseUrl 会被拒绝（STS-XACML-0188）：会话机制的登录在那里返回授权码，且其会话 Cookie 带有 Secure。"
   }
 }

@@ -1388,24 +1388,24 @@
     "text": "Nada que salga de este servicio. Un valor HOTP ES un HMAC truncado — RFC 4226 sección 5.3 — así que esta familia calcula un MAC con clave y luego lo compara, y por eso la primitiva vive en common/crypto.js junto a todas las demás firmas de aquí y no en el módulo que decide la política."
   },
   "crypto.families.one-time-passwords-totp.verifies": {
-    "en": "071552dc11014cdd",
-    "text": "Un código presentado, calculando el HMAC para cada paso de tiempo de la ventana de desfase y comparando en tiempo constante. Se calcula CADA paso incluso después de una coincidencia, de forma deliberada: retornar antes haría que el tiempo empleado dependiera de CUÁL paso coincidió, lo que es un oráculo mejor que la comparación de dígitos que aquí se molesta en hacer en tiempo constante."
+    "en": "302891e951b96222",
+    "text": "Un código presentado, calculando el HMAC de cada paso de tiempo de la ventana de desfase y comparando en tiempo constante. Se calcula CADA paso incluso después de una coincidencia, a propósito: terminar antes haría que el tiempo dependiera de QUÉ paso coincidió, lo que sería un oráculo mejor que la comparación de dígitos que aquí se hace en tiempo constante. Un código HOTP (RFC 4226, #1955) del mismo modo sobre la ventana de anticipación desde su contador, que después avanza mediante compare-and-set en el almacén. El ValueMAC de un archivo de semillas PSKC (RFC 6030 sección 6.1.1: HMAC-SHA1 o un MAC SHA-2 sobre el texto cifrado) antes de descifrar su secreto."
   },
   "crypto.families.one-time-passwords-totp.encrypts": {
     "en": "c18d0d11279cb6c0",
     "text": "El secreto compartido en reposo, en modo PRODUCTO — AES-256-GCM bajo la misma clave de cifrado de claves que protege las claves de firma, mediante common/keystore.js. En modo DESARROLLO se almacena como base32, porque allí la clave de cifrado de claves se genera en cada ejecución y sellarlo significaría un autenticador que dejaría de funcionar en silencio en el siguiente reinicio."
   },
   "crypto.families.one-time-passwords-totp.decrypts": {
-    "en": "d2cefc498eff5443",
-    "text": "El mismo secreto, para verificar un código. **ESTA ES LA ÚNICA CREDENCIAL DE ESTE SERVICIO QUE PUEDE VOLVER A LEERSE** — una contraseña es un hash scrypt y solo puede compararse, y verificar un código de un solo uso significa CALCULARLO. No es una debilidad de RFC 6238; es lo que significa \"secreto compartido\", y es exactamente por qué este mecanismo es aquí un SEGUNDO factor y nunca puede convertirse en un primero."
+    "en": "f197370676038df3",
+    "text": "El archivo de semillas PSKC de un proveedor (RFC 6030): AES-CBC o AES Key Wrap con la clave precompartida indicada en la subida, o con una clave que PBKDF2 deriva de su contraseña; ninguna de las dos se conserva. El mismo secreto, para verificar un código. **ESTA ES LA ÚNICA CREDENCIAL DE ESTE SERVICIO QUE SE PUEDE VOLVER A LEER**: una contraseña es un hash scrypt y solo se puede comparar, y verificar un código de un solo uso significa CALCULARLO. No es una debilidad de RFC 6238; es lo que significa «secreto compartido», y es exactamente por eso que este mecanismo es aquí un SEGUNDO factor y nunca puede convertirse en el primero."
   },
   "crypto.families.one-time-passwords-totp.hashes": {
     "en": "decb0b31d14255e5",
     "text": "SHA-1, SHA-256 o SHA-512, dentro del HMAC y en ningún otro lugar."
   },
   "crypto.families.one-time-passwords-totp.whatItDoesNot": {
-    "en": "512b47bf629fcfe5",
-    "text": "Nunca le dice a nadie cuál es el código actual, y nunca inscribe a nadie en una pantalla de inicio de sesión — inscribirse significa que se le muestre a uno un secreto, así que ocurre donde la persona ya está autenticada o tiene un enlace de activación. No hay HOTP basado en contador como mecanismo de autenticación, ni protocolo de resincronización: la ventana de desfase es todo lo que se ofrece para un reloj que deriva."
+    "en": "f38dd0b2f7ce307b",
+    "text": "Nunca dice a nadie cuál es el código actual, y nunca inscribe a nadie en una pantalla de inicio de sesión: inscribirse significa ver un secreto, así que ocurre donde la persona ya está autenticada o tiene un enlace de activación. A un reloj TOTP desfasado se le ofrece la ventana de desfase y nada más. Un token basado en contador (HOTP) se resincroniza a partir de dos códigos consecutivos, nunca de uno. Nunca conserva la clave ni la contraseña de un archivo de semillas, y nunca abre un archivo cifrado para un certificado."
   },
   "crypto.families.one-time-passwords-totp.algorithms.0.what": {
     "en": "0c410835b8ade404",

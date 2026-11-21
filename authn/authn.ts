@@ -4769,6 +4769,13 @@ class Authn {
       return 'a wallet (a verifiable presentation, proof of possession of ' +
              'the holder key)';
     }
+    // A CODE FROM AN IMPORTED HARDWARE TOKEN (#1955 P4) is `otp` with `hwk`
+    // beside it: a one-time code, not a security key's ceremony.
+    if (key && code && password) {
+      log.debug("Leaving Authn.methodPhraseFor().");
+      return 'sign-in screen (password and a one-time code from a hardware ' +
+             'token)';
+    }
     if (key && password) {
       log.debug("Leaving Authn.methodPhraseFor().");
       return 'sign-in screen (password and a security key)';
@@ -12920,7 +12927,8 @@ class Authn {
     // have and which would prove nothing about the partner's sign-in.
     // Holding neither is a refusal, never an enrolment.
     if (firstIsFederation && riskFactor &&
-        !(enrolled.totp || enrolled.mfaKeys + enrolled.primaryKeys > 0)) {
+        !(enrolled.oneTimeCode ||
+          enrolled.mfaKeys + enrolled.primaryKeys > 0)) {
       this.settleRisk(risk, { decision: 'step-up', errorCode: 'STS-RISK-0018',
                               policy: '' });
       log.debug("Leaving Authn.beginSecondFactorAfterWallet(). After a " +
@@ -13040,7 +13048,7 @@ class Authn {
       challenge: stsCrypto.randomBytes(32).toString('base64url'),
       factor: factor,
       alternate: riskFactor === 'security-key' ? ''
-        : ((factor === 'webauthn' && enrolled.totp) ? 'totp'
+        : ((factor === 'webauthn' && enrolled.oneTimeCode) ? 'totp'
           : ((factor === 'totp' && enrolled.mfaKeys > 0) ? 'webauthn' : '')),
       backup: riskFactor !== 'security-key' && enrolled.backupCodes
         ? enrolled.backupCodes.remaining > 0 : false,
@@ -13211,7 +13219,8 @@ class Authn {
         log.debug("Leaving Authn.stepProblem(). A key was demanded.");
         return { problem: demanded };
       }
-      if (!credentials.mechanismsFor(step.username).totp) {
+      // Either kind of one-time code answers this step (#1955 P4).
+      if (!credentials.mechanismsFor(step.username).oneTimeCode) {
         log.info('authn: a one-time code screen was asked for "' +
                  step.username + '", who has no authenticator enrolled. ' +
                  'Refused.');
@@ -13338,8 +13347,14 @@ class Authn {
     if (page === 'totp') {
       // What the AUTHENTICATOR was told, off the person's own enrolment, so
       // the field asks for the right number of digits.
-      const detail = credentials.mechanismsFor(step.username).totpDetail;
-      view.totp = { digits: (detail && detail.digits) || 6,
+      const held = credentials.mechanismsFor(step.username);
+      const detail = held.totpDetail;
+      // An HOTP token's digits where it is the only kind held; where both
+      // are, the field takes the longer of the two (#1955 P4).
+      const token = held.hotpDetail;
+      const digits = Math.max((detail && detail.digits) || 0,
+                              (token && token.digits) || 0) || 6;
+      view.totp = { digits: digits,
                     period: (detail && detail.period) || 30 };
     } else if (page === 'password') {
       view.amr = this.firstAmrOf(step).concat(['pwd']);
@@ -15612,7 +15627,7 @@ class Authn {
     const holdsKey = enrolled.mfaKeys > 0;
     if (riskFactor && ((riskFactor === 'security-key' && !holdsKey) ||
                        (riskFactor !== 'security-key' && !holdsKey &&
-                        !enrolled.totp))) {
+                        !enrolled.oneTimeCode))) {
       log.info('authn: the issuance policy asks "' + username + '" for a ' +
                riskFactor + ' on risk, and they hold none; refused.');
       this.settleRisk(risk, { decision: riskDecision,
@@ -15876,7 +15891,7 @@ class Authn {
         // person does not have.
         // Under a demand for a key there is no other mechanism to offer.
         alternate: record.forceKey || riskFactor === 'security-key' ? ''
-          : (factor === 'webauthn' && enrolled.totp) ? 'totp'
+          : (factor === 'webauthn' && enrolled.oneTimeCode) ? 'totp'
           : ((factor === 'totp' && enrolled.mfaKeys > 0) ? 'webauthn' : ''),
         // THE EMAILED FACTOR AS A WAY ROUND THE ONE ASKED FOR (#64): `code`
         // or `link` where the person holds it and it is not already the
@@ -16164,7 +16179,9 @@ class Authn {
     if (enrolled && enrolled.mfaKeys > 0 &&
         allowed.indexOf('securityKey') >= 0) {
       out = 'webauthn';
-    } else if (enrolled && enrolled.totp && allowed.indexOf('totp') >= 0) {
+    } else if (enrolled && enrolled.oneTimeCode &&
+               ((enrolled.totp && allowed.indexOf('totp') >= 0) ||
+                (enrolled.hotp && allowed.indexOf('hotp') >= 0))) {
       out = 'totp';
     } else if (mail === 'code' && allowed.indexOf('emailCode') >= 0 &&
                authnPolicy.active('emailCode', 'second-factor')) {
@@ -17936,7 +17953,9 @@ class Authn {
     websecurity.succeededShared('mfa-code', req, step.username);
     pendingMfa.delete(mfaId);
 
-    logArtifact('RFC 6238 one-time code', 'as verified by this server',
+    const hotp = verdict.kind === 'hotp';
+    logArtifact(hotp ? 'RFC 4226 one-time code' : 'RFC 6238 one-time code',
+                'as verified by this server',
                 { username: step.username, step: verdict.counter,
                   drift: verdict.drift });
 
@@ -17952,7 +17971,15 @@ class Authn {
     // for a wallet presentation (firstAmrOf()).
     // is never a first factor (see common/totp.ts), so `pwd` is always in the
     // list.
-    const amr = this.firstAmrOf(step).concat(['otp']);
+    //
+    // `hwk` BESIDE `otp` ONLY WITH EVIDENCE (#1955 P4, design X3): a code
+    // from a token an administrator imported from its vendor's PSKC file,
+    // still active in the hardware token register, whose secret never
+    // existed outside the token and the vendor's file. An app's secret, or a
+    // token's programmed from the portal's QR code, never earns it. Never
+    // `phr`: a typed code is phishable whatever produced it.
+    const amr = this.firstAmrOf(step).concat(
+      verdict.hardware ? ['otp', 'hwk'] : ['otp']);
     // A PROOF BEFORE AN ENROLMENT (#475): no session yet; the set-up
     // screen, offering what the application allows.
     if (step.thenEnrol) {
@@ -17963,7 +17990,9 @@ class Authn {
     const said = { postLoginHold: true,
                    request: req, risk: step.risk,
                    application: String(step.authn.application || ''),
-                   credential: { kind: 'totp' } };
+                   // The kind that answered (#1955 P4): `hotp` is its own
+                   // mechanism to an application's named policy.
+                   credential: { kind: hotp ? 'hotp' : 'totp' } };
     const started = this.startSession(res, step.username, amr, 'mfa',
                                       step.authn.protocol, said);
     if (this.refusedSession(res, base, step.authn, step.username, started,

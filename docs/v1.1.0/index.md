@@ -139,6 +139,7 @@ protocol's section of the sidebar:
 [Risk scoring](risk-scoring.md) ·
 [Devices](devices.md) ·
 [Hardware tokens](hardware-tokens.md) ·
+[One-time code tokens](one-time-code-tokens.md) ·
 [Mail](mail.md) ·
 [Reports](reporting.md) ·
 [Attribute sources](attribute-sources.md) ·

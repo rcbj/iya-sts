@@ -528,8 +528,12 @@
     "text": "partial, le côté serveur d’une session limitée à l’origine par authentification unique : Secure-Session-Registration proposant ES256 et RS256, la preuve dbsc+jwt à l’enregistrement (son jwk, son typ, son alg et son jti vérifiés et la signature contrôlée) et au renouvellement (vérifiée avec la clé liée), les instructions de session JSON avec un seul cookie lié, l’échange 403 et Secure-Session-Challenge, et Sec-Secure-Session-Id. Chaque défi n’est consommé qu’une fois pour le cluster. Manquent : les sessions fédérées (provider_key, le document well-known), les sessions limitées au site et les règles de portée, le paramètre authorization, et la lecture de Secure-Session-Skipped. Désactivé par défaut (authn.deviceBoundSessions)."
   },
   "stsmetadata.specs.rfc4226.coverage": {
-    "en": "ffd9d22cf4ecfd57",
-    "text": "full pour ce dont RFC 6238 a besoin : la troncature dynamique de la section 5.3 sur HMAC-SHA-1, SHA-256 ou SHA-512, de six à huit chiffres, le compteur étant une valeur de huit octets gros-boutiste. Vérifié contre les vecteurs de test de l’annexe D de la spécification elle-même (tests/totp.js), ce qui est la raison de l’implémenter plutôt que de recourir à une bibliothèque : chacune des quatre étapes de cette troncature a été mal faite par quelqu’un, et un vecteur publié est le seul contrôle qui le détecte. NON couvert : HOTP basé sur un compteur comme mécanisme d’authentification — rien ici ne détient de compteur qui avance à l’usage, car le seul appelant est la construction basée sur le temps ci-dessous."
+    "en": "5ab7b9d048e74e7e",
+    "text": "full, côté vérificateur, en tant que DEUXIÈME FACTEUR UNIQUEMENT (#1955 P4) : la troncature dynamique de la section 5.3 sur HMAC-SHA-1, SHA-256 ou SHA-512, six à huit chiffres, le compteur une valeur big-endian de huit octets, vérifiée avec les vecteurs de test de l’annexe D elle-même (tests/totp.js, tests/hotp.js) ; un compteur par identifiant avec l’anticipation de la section 7.4 (hotp.window, 10 par défaut, 0 autorisé) et la resynchronisation à partir de deux codes consécutifs (hotp.resyncWindow) ; le refus de rejeu de la section 7.2, le compteur avancé par compare-and-set dans le stockage pour que deux nœuds ou workers n’acceptent jamais un même code ; la limitation de la section 7.3 par le budget de codes de la connexion. Un emplacement OTP de YubiKey est programmé depuis le code otpauth://hotp ou la commande ykman du portail ; le jeton d’un fournisseur est importé (RFC 6030). Il vaut amr otp, et hwk seulement pour un jeton importé. NON couvert : le mécanisme de délai de la section 7.3 en tant que tel (le budget refuse à la place), et OCRA (RFC 6287)."
+  },
+  "stsmetadata.specs.rfc6030.coverage": {
+    "en": "35ef81e9394eb5f5",
+    "text": "partial, en tant que DESTINATAIRE (#1955 P4) : un KeyContainer de version 1.0 avec des clés HOTP et TOTP, Manufacturer, SerialNo et Model de DeviceInfo, le ResponseFormat (6 à 8 chiffres décimaux), un Counter simple, Time (0 uniquement) et TimeInterval ; en clair (refusé en mode produit sauf avec pskc.allowPlaintextImport), une clé prépartagée (section 6.1 : AES-128/192/256-CBC et KW-AES) et une phrase secrète (section 6.2 : PBKDF2), le ValueMAC de la section 6.1.1 étant vérifié d’abord (HMAC-SHA1 et les MAC SHA-2). Vérifié avec les Figures 2 à 7 du RFC lui-même (tests/pskc.js). NON couvert : le chiffrement pour un certificat (6.3), une clé MAC par référence, Triple DES et Camellia, un compteur ou une heure chiffrés, les clés et politiques de PIN (ignorées), les signatures sur le conteneur (section 7), et la production d’un tel fichier."
   },
   "stsmetadata.specs.bcp47.coverage": {
     "en": "d682d3dd451a019d",
@@ -2131,13 +2135,17 @@
     "en": "fe8d3ba310ad762b",
     "text": "NON-SPEC (#1955). Ce que dessine Annuaire → Jetons matériels : les clés de sécurité et cartes à puce physiques que ce domaine a enregistrées, chacune à partir de sa propre attestation, paginées et recherchées par numéro de série ou par personne, avec les clés d'accès et certificats de chacune. Reflète GET /admin/hardware-tokens."
   },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/oath.what": {
+    "en": "f149352fa2ac36d0",
+    "text": "NON-SPEC (#1955 P4). Les jetons HOTP et TOTP que les administrateurs ont importés depuis les fichiers de semences PSKC des fournisseurs, non attribués, attribués ou retirés, paginés et recherchés par numéro de série ou personne. Jamais un secret. Reflète GET /admin/hardware-tokens (son onglet OATH)."
+  },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-    "en": "1303a5c415b09d44",
-    "text": "NON-SPEC (#1955). lost, avec { key } : le jeton est marqué perdu, chaque clé d'accès qu'il porte est supprimée, chaque certificat qu'il porte est révoqué pour keyCompromise, un changement d'identifiant CAEP est envoyé pour chacun et les sessions qu'ils ont ouvertes sont fermées. La seule action de la console sur cette page."
+    "en": "4309735f35f4550e",
+    "text": "NON-SPEC (#1955). lost, avec { key } : le jeton est marqué perdu, chaque clé d’accès qu’il porte est supprimée, chaque certificat qu’il porte est révoqué pour keyCompromise, chaque secret OATH importé est retiré de l’entrée de son détenteur, un changement d’identifiant CAEP est envoyé pour chacun et les sessions qu’ils ont ouvertes sont fermées. Depuis P4, import-pskc, avec { pskc, preSharedKey or password } : les clés HOTP et TOTP d’un fichier de semences RFC 6030 sont conservées non attribuées par numéro de série, le MAC vérifié d’abord et la clé jamais conservée ; assign-oath, avec { key, username } ; et remove-oath, avec { key }, pour un jeton non attribué."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
-    "en": "7b39ad029e0234ed",
-    "text": "déclare un jeton matériel perdu et retire ses identifiants"
+    "en": "dabee6463ad7ee17",
+    "text": "déclare un jeton matériel perdu et retire ses identifiants, ou importe, attribue ou supprime des jetons OATH"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -4024,8 +4032,8 @@
     "text": "Un second facteur sur l’écran de connexion vers lequel chaque protocole ici envoie une personne : des cérémonies d’enregistrement et d’assertion avec une véritable clé de sécurité, l’attestation et les données de l’authentificateur étant vérifiées et pas seulement analysées."
   },
   "stsmetadata.protocols.One-time passwords (TOTP).what": {
-    "en": "20b73dffc821e4a2",
-    "text": "L’autre second facteur sur l’écran de connexion vers lequel chaque protocole ici envoie une personne, et le seul identifiant, à part un ticket Kerberos, que ce service VÉRIFIE réellement : le code est calculé à partir du secret partagé et de l’horloge puis comparé, dans les deux modes, avec application de la règle d’acceptation unique de la section 5.2 de la RFC 6238. L’enrôlement passe par un code QR dessiné par ce serveur, sur /portal/mfa ou lors de l’utilisation d’un lien d’activation ; la ligne de la personne sur /admin/users est l’endroit où un opérateur en efface un, et /admin/totp celui où le mécanisme se configure."
+    "en": "54893544268bf168",
+    "text": "L’autre deuxième facteur de l’écran de connexion vers lequel chaque protocole d’ici envoie une personne, et le seul identifiant, avec un ticket Kerberos, que ce service VÉRIFIE vraiment : le code est calculé à partir du secret partagé et de l’horloge puis comparé, dans les deux modes, avec la règle d’acceptation unique de RFC 6238 section 5.2 appliquée. L’enrôlement est un code QR que ce serveur a dessiné, sur /portal/mfa ou pendant l’utilisation d’un lien d’activation ; la ligne de la personne sur /admin/users est l’endroit où un opérateur l’efface, et /admin/totp celui où le mécanisme est configuré. Depuis #1955 P4, aussi son pendant à compteur : un jeton HOTP RFC 4226 (un emplacement OTP de YubiKey, enrôlé sur /portal/mfa, ou le jeton d’un fournisseur importé depuis son fichier de semences RFC 6030 dans Annuaire → Jetons matériels et attribué ou réclamé par numéro de série), son compteur avancé par compare-and-set, accepté à chaque point d’entrée qui prend un code."
   },
   "stsmetadata.protocols.Recovery codes.what": {
     "en": "b7c9347c7ac4a2b7",

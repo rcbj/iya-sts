@@ -40,6 +40,8 @@ interface HardwareTokensApiDeps {
   adminViews: typeof adminViews;
   // The register, lazily: it is only asked inside a handler.
   loadTokens(): Json;
+  // #1955 P4: the imported OATH token inventory, the same way.
+  loadOath(): Json;
 }
 
 const BASE = '/admin-api';
@@ -73,6 +75,9 @@ class HardwareTokensApi {
       errorCodes: errorCodes, adminViews: adminViews,
       loadTokens: function (): Json {
         return require('../common/hardware_tokens');
+      },
+      loadOath: function (): Json {
+        return require('../common/oath_tokens');
       }
     };
   }
@@ -144,6 +149,126 @@ class HardwareTokensApi {
   }
 
   /**
+   * The OATH token inventory, one page.
+   *
+   * @param query - `q`, `status`, `page`, `per`
+   * @returns `{ tokens, paging, capped, q, status }`
+   */
+  async oathView(query: Json): Promise<Json> {
+    const { log, adminViews: views } = this.deps;
+    log.debug("Entering HardwareTokensApi.oathView().");
+    const q = String((query && query.q) || '').slice(0, 256);
+    const status = String((query && query.status) || '');
+    const oath = this.deps.loadOath();
+    const per = Math.max(1, Math.min(300,
+      parseInt(String((query && query.per) || ''), 10) || 50));
+    const asked = Math.max(1, parseInt(String((query && query.page) || ''),
+                                       10) || 1);
+    let page: Json = await oath.list({ q: q, status: status,
+      offset: (asked - 1) * per, limit: per });
+    const paging = views.pagingOf({ page: asked, per: per }, page.total,
+                                  { noun: 'tokens' });
+    if (paging.offset !== (asked - 1) * per) {
+      page = await oath.list({ q: q, status: status,
+                               offset: paging.offset, limit: per });
+    }
+    log.debug("Leaving HardwareTokensApi.oathView().");
+    return { tokens: page.tokens,
+             paging: { page: paging.page, pages: paging.pages,
+                       perPage: paging.perPage, firstRow: paging.firstRow,
+                       lastRow: paging.lastRow, total: paging.total,
+                       param: paging.param, noun: paging.noun },
+             capped: !!page.capped, q: q, status: status };
+  }
+
+  /** The OATH inventory's acts on `/hardware-tokens/:action` (#1955 P4). */
+  static readonly OATH_ACTIONS = ['import-pskc', 'assign-oath',
+                                  'remove-oath'];
+
+  // -------------------------------------------------------------------------
+  // THE OATH ACTS (#1955 P4). `import-pskc` takes the seed file's XML text
+  // and its pre-shared key or password, which reach `pskc.open()` and
+  // nothing else — no audit row, no log line, no answer names them.
+  // `assign-oath` gives an unassigned token to a named person;
+  // `remove-oath` removes one imported by mistake.
+  // -------------------------------------------------------------------------
+  /**
+   * Carries out one OATH inventory act and answers it.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param action - one of OATH_ACTIONS
+   * @param body - the parsed body
+   * @param actor - the token's subject
+   */
+  oathAction(req: Json, res: Json, action: string, body: Json,
+             actor: string): void {
+    const { log, errorCodes: codes } = this.deps;
+    log.debug("Entering HardwareTokensApi.oathAction(). " + action);
+    const self = this;
+    const oath = this.deps.loadOath();
+    Promise.resolve().then(function (): Json {
+      if (action === 'import-pskc') {
+        return oath.importPskc({ pskc: String(body.pskc || ''),
+                                 preSharedKey: body.preSharedKey,
+                                 password: body.password,
+                                 actor: actor, via: 'api' });
+      }
+      if (action === 'assign-oath') {
+        return oath.assign({ key: String(body.key || ''),
+                             username: String(body.username || ''),
+                             actor: actor, via: 'api' });
+      }
+      return oath.remove({ key: String(body.key || ''), actor: actor,
+                           via: 'api' });
+    }).then(function (result: Json): void {
+      if (!result.ok) {
+        // error-code: none — the act's own code, read off the result
+        const code = codes.codeOf(result) || 'STS-OATH-0040';
+        codes.mark(res, code);
+        self.sendJson(res, code === 'STS-OATH-0040' ? 404
+          : (code === 'STS-OATH-0041' || code === 'STS-OATH-0049' ? 409
+                                                                   : 400),
+          { ok: false, errors: result.errors ||
+                               [String(result.error || '')] });
+        log.debug("Leaving HardwareTokensApi.oathAction(). Refused.");
+        return;
+      }
+      if (action === 'import-pskc') {
+        // NO ERROR CODE IN THE ANSWER (the root CLAUDE.md's rule): a key
+        // skipped says why in English; its code is on the audit row.
+        self.sendJson(res, 200, { ok: true,
+          message: result.imported.length + ' token(s) imported, ' +
+                   result.skipped.length + ' skipped.',
+          protection: String(result.protection || ''),
+          imported: result.imported,
+          skipped: (result.skipped || []).map(function (r: Json): Json {
+            return { index: Number(r.index || 0),
+                     serial: String(r.serial || ''),
+                     keyId: String(r.keyId || ''),
+                     why: String(r.why || '') };
+          }) });
+      } else if (action === 'assign-oath') {
+        self.sendJson(res, 200, { ok: true,
+          message: 'Token ' + result.token.key + ' is assigned to ' +
+                   result.token.holder + '.', token: result.token });
+      } else {
+        self.sendJson(res, 200, { ok: true,
+          message: 'Token ' + result.key + ' is removed from the ' +
+                   'inventory.', key: String(result.key) });
+      }
+      log.debug("Leaving HardwareTokensApi.oathAction(). Done.");
+    }, function (e: any): void {
+      log.error(codes.tag('STS-OATH-0045') + 'an OATH token act (' + action +
+                ') failed: ' + ((e && e.message) || e));
+      codes.mark(res, 'STS-OATH-0045');
+      self.sendJson(res, 500, { ok: false, errors: [
+        'The OATH token inventory could not be changed.'] });
+      log.debug("Leaving HardwareTokensApi.oathAction(). Threw.");
+    });
+  }
+
+  /**
    * The retired rows of a lost-key act, each without its error code.
    *
    * @param rows - the act's rows
@@ -209,6 +334,49 @@ class HardwareTokensApi {
           });
         } },
 
+      // #1955 P4: THE IMPORTED OATH TOKEN INVENTORY, Directory → Hardware
+      // tokens' second tab. Never a secret, never a seed file's key.
+      { method: 'GET', path: BASE + '/hardware-tokens/oath',
+        tag: 'Directory', operationId: 'getOathTokens',
+        mirrors: 'GET /admin/hardware-tokens',
+        parameters: [
+          { name: 'q', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 256,
+                      examples: ['987654321'] },
+            description: 'A serial, matched exactly, or a username for ' +
+                         'the tokens assigned to that person; empty for ' +
+                         'every token.' },
+          { name: 'status', in: 'query', required: false,
+            schema: { type: 'string',
+                      enum: ['', 'unassigned', 'assigned', 'retired'] },
+            description: '`unassigned`, `assigned` or `retired`; empty ' +
+                         'for all three.' },
+          { name: 'page', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1, examples: [1] },
+            description: 'Which page; a page past the end answers the ' +
+                         'last one.' },
+          { name: 'per', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1, maximum: 300,
+                      examples: [50] },
+            description: 'Rows per page, 50 by default and at most 300.' }
+        ],
+        handler: function (req, res): void {
+          log.debug("Entering the management API OATH tokens endpoint.");
+          self.oathView(req.query || {}).then(function (view: Json): void {
+            self.sendJson(res, 200, view);
+            log.debug("Leaving the management API OATH tokens endpoint.");
+          }, function (e: any): void {
+            log.error(codes.tag('STS-OATH-0045') + 'the OATH token ' +
+                      'inventory could not be listed: ' +
+                      ((e && e.message) || e));
+            codes.mark(res, 'STS-OATH-0045');
+            self.sendJson(res, 500, { ok: false, errors: [
+              'The OATH token inventory could not be read.'] });
+            log.debug("Leaving the management API OATH tokens endpoint. " +
+                      "Threw.");
+          });
+        } },
+
       ApiRows.actions({ method: 'POST',
         route: BASE + '/hardware-tokens/:action',
         tag: 'Directory', mirrors: 'POST /admin/hardware-tokens',
@@ -220,11 +388,18 @@ class HardwareTokensApi {
           // the body's (#1579).
           const caller = res.locals && res.locals.apiCaller;
           const actor = String((caller && caller.name) || '');
+          if (HardwareTokensApi.OATH_ACTIONS.indexOf(action) >= 0) {
+            self.oathAction(req, res, action, body, actor);
+            log.debug("Leaving the management API hardware tokens " +
+                      "action. An OATH act.");
+            return;
+          }
           if (action !== 'lost') {
             codes.mark(res, 'STS-HWTOKEN-0012');
             self.sendJson(res, 400, { ok: false, errors: [
-              'Unknown action "' + action.slice(0, 64) + '". The one ' +
-              'action is: lost.'] });
+              'Unknown action "' + action.slice(0, 64) + '". The ' +
+              'actions are: lost, ' + HardwareTokensApi.OATH_ACTIONS
+                .join(', ') + '.'] });
             log.debug("Leaving the management API hardware tokens " +
                       "action. Unknown.");
             return;
@@ -274,7 +449,11 @@ class HardwareTokensApi {
           });
         },
         actions: [
-          { action: 'lost', operationId: 'reportHardwareTokenLost' }
+          { action: 'lost', operationId: 'reportHardwareTokenLost' },
+          // #1955 P4: the imported OATH token inventory.
+          { action: 'import-pskc', operationId: 'importPskcSeedFile' },
+          { action: 'assign-oath', operationId: 'assignOathToken' },
+          { action: 'remove-oath', operationId: 'removeOathToken' }
         ] })
     ];
     log.debug("Leaving HardwareTokensApi.buildRoutes().");

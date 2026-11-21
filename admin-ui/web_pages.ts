@@ -342,8 +342,8 @@ const PROTOCOL_TABS: Record<string, string[]> = {
                    'preview', 'settings'],
   '/admin/applications': ['applications', 'add', 'settings'],
   '/admin/devices': ['devices', 'register'],
-  // #1955 P1: the register's one list.
-  '/admin/hardware-tokens': ['tokens'],
+  // #1955 P1: the register's list; P4: the imported OATH tokens.
+  '/admin/hardware-tokens': ['tokens', 'oath'],
   '/admin/attribute-sources': ['sources', 'add', 'person', 'settings'],
   '/admin/secret-destinations': ['destinations', 'add'],
   // #1111, #1123: the started activities and their controls; the report
@@ -859,6 +859,13 @@ const PAGES: WebPage[] = [
   // realm recorded from attestation, and the lost-key act.
   { path: '/admin/hardware-tokens', title: 'Hardware tokens',
     operation: '/admin-api/hardware-tokens',
+    // #1955 P4: the OATH tab, always asked, under names of its own so its
+    // filter and pager move its list and not the register's.
+    compose: { oath: '/admin-api/hardware-tokens/oath' },
+    composeWhen: { oath: ['oq', 'ostatus', 'opage', 'per'] },
+    composeParams: { oath: { oq: 'q', ostatus: 'status', opage: 'page',
+                             per: 'per' } },
+    composeAlways: ['oath'],
     render: HardwareTokensPage.render },
   { path: '/admin/pki/trust', title: 'PKI trust',
     operation: '/admin-api/pki/trust', render: PkiTrustPage.render },

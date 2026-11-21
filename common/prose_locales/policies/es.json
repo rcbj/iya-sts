@@ -315,6 +315,14 @@
     "en": "ea01b0588ad42047",
     "text": "Un código de un solo uso de RFC 6238. Nunca es un primer factor: este servicio guarda el mismo secreto compartido que la app. Desactivado aquí, nadie puede REGISTRAR uno; a quien ya tenga uno se le sigue pidiendo, porque un interruptor de desactivación que rebajara cada cuenta registrada a solo una contraseña haría algo distinto de lo que dice (esta fila reemplazó a totp.enabled y mantiene su contrato)."
   },
+  "authn.FIELDS.hotpSecondFactor.label": {
+    "en": "8884fbb478be14f1",
+    "text": "Token de códigos de un solo uso (HOTP): como segundo factor"
+  },
+  "authn.FIELDS.hotpSecondFactor.what": {
+    "en": "608274a83bf567cd",
+    "text": "Un código de un solo uso RFC 4226 de un token basado en contador (#1955): la ranura OTP de una YubiKey, o el token de un proveedor que un administrador importó de un archivo de semillas PSKC. Nunca es un primer factor. Si está desactivado aquí, nadie puede INSCRIBIR ni reclamar uno; a quien ya tiene uno se le sigue pidiendo, como al titular de una aplicación de autenticación."
+  },
   "authn.FIELDS.recoveryCodeSecondFactor.label": {
     "en": "ee9982b48a9c6a90",
     "text": "Código de recuperación — como segundo factor"
@@ -495,6 +503,10 @@
     "en": "ea01b0588ad42047",
     "text": "Un código de un solo uso de RFC 6238. Nunca es un primer factor: este servicio guarda el mismo secreto compartido que la app. Desactivado aquí, nadie puede REGISTRAR uno; a quien ya tenga uno se le sigue pidiendo, porque un interruptor de desactivación que rebajara cada cuenta registrada a solo una contraseña haría algo distinto de lo que dice (esta fila reemplazó a totp.enabled y mantiene su contrato)."
   },
+  "authn.SCHEMA.attributes.stsAuthnHotpSecondFactor.what": {
+    "en": "608274a83bf567cd",
+    "text": "Un código de un solo uso RFC 4226 de un token basado en contador (#1955): la ranura OTP de una YubiKey, o el token de un proveedor que un administrador importó de un archivo de semillas PSKC. Nunca es un primer factor. Si está desactivado aquí, nadie puede INSCRIBIR ni reclamar uno; a quien ya tiene uno se le sigue pidiendo, como al titular de una aplicación de autenticación."
+  },
   "authn.SCHEMA.attributes.stsAuthnRecoveryCodeSecondFactor.what": {
     "en": "e93ab2adc3e581bd",
     "text": "Un código de un solo uso de un juego que la persona generó. Desactivado aquí, no se puede generar un juego nuevo; un juego que ya se tiene sigue funcionando (esta fila reemplazó a backupCodes.enabled y mantiene su contrato)."
@@ -568,8 +580,8 @@
     "text": "En una política de autenticación CON NOMBRE (#1148, #1237): un mecanismo de primer factor que permite un inicio de sesión al que se aplica — cuando la aplicación (appAuthnPolicy) o uno de los grupos de la persona (stsAuthnPolicy) la indica y su precedencia es la menor de las indicadas —: password, password-mfa, webauthn, attested-hardware (una llave de acceso o un certificado en un token de hardware probado por atestación, #1955), spnego, wallet o federation, un valor cada uno. Si no hay ninguno, se permiten todos los que permite el dominio."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicySecondFactor.what": {
-    "en": "7c8e4d8b4cce7c08",
-    "text": "En una política de autenticación CON NOMBRE (#1148, #1237): un segundo factor que permite un inicio de sesión al que se aplica — cuando la aplicación (appAuthnPolicy) o uno de los grupos de la persona (stsAuthnPolicy) la indica y su precedencia es la menor de las indicadas —: password, securityKey, totp, recoveryCode, emailCode, emailLink o wallet, un valor cada uno. Si no hay ninguno, la política de autenticación del dominio queda como está."
+    "en": "e0ae8297bb01119f",
+    "text": "En una política de autenticación CON NOMBRE (#1148, #1237): un segundo factor que permite un inicio de sesión al que se aplica — donde la aplicación (appAuthnPolicy) o uno de los grupos de la persona (stsAuthnPolicy) la nombra y su precedencia es la más baja nombrada — password, securityKey, totp, hotp, recoveryCode, emailCode, emailLink o wallet, un valor cada uno. Sin ninguno, la política de autenticación del dominio queda como está."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicyPrecedence.what": {
     "en": "afff5dad656a9845",
@@ -614,6 +626,14 @@
   "authn.MECHANISMS.totp.what": {
     "en": "ea01b0588ad42047",
     "text": "Un código de un solo uso de RFC 6238. Nunca es un primer factor: este servicio guarda el mismo secreto compartido que la app. Desactivado aquí, nadie puede REGISTRAR uno; a quien ya tenga uno se le sigue pidiendo, porque un interruptor de desactivación que rebajara cada cuenta registrada a solo una contraseña haría algo distinto de lo que dice (esta fila reemplazó a totp.enabled y mantiene su contrato)."
+  },
+  "authn.MECHANISMS.hotp.label": {
+    "en": "f0e2ca73efb6f1c5",
+    "text": "Token de códigos de un solo uso (HOTP)"
+  },
+  "authn.MECHANISMS.hotp.what": {
+    "en": "608274a83bf567cd",
+    "text": "Un código de un solo uso RFC 4226 de un token basado en contador (#1955): la ranura OTP de una YubiKey, o el token de un proveedor que un administrador importó de un archivo de semillas PSKC. Nunca es un primer factor. Si está desactivado aquí, nadie puede INSCRIBIR ni reclamar uno; a quien ya tiene uno se le sigue pidiendo, como al titular de una aplicación de autenticación."
   },
   "authn.MECHANISMS.recoveryCode.label": {
     "en": "5bda8302b5ecf4d3",

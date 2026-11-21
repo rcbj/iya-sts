@@ -12702,6 +12702,10 @@ const CREDENTIAL_ATTRIBUTE_DOORS = {
   stswebauthnpqcuserhandle: 'the first post-quantum passkey registered at ' +
     '/portal/keys or the sign-in screen, which mints it',
   ststotpcredential: '/portal/mfa, or /admin/users (clear)',
+  // #1955 P4: an HOTP token's secret and counter, written only by its
+  // enrolment, an imported token's assignment and the verifier.
+  stshotpcredential: '/portal/mfa, /portal/tokens (claim), or ' +
+    '/admin/hardware-tokens (assign)',
   stsbackupcodes: '/portal/mfa, or /admin/users (clear)',
   stsapppassword: '/portal/app-passwords, or /admin/users',
   hobapublickey: 'the SCIM HOBA registration (/scim/v2 with Hobareg)',
@@ -13599,6 +13603,41 @@ function writeTotp(key, value) {
   touchDirectory();
   log.debug('Leaving writeTotp(). ' +
             (value ? 'Written to ' : 'Removed from ') + stored.dn + '.');
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// A PERSON'S HOTP CREDENTIAL (#1955 P4): single-valued and ASSIGNED, for
+// `writeTotp()`'s reason above (a code names nothing, so a second secret of
+// the kind would be a guess tried twice). Sealed by `credentials.ts` in
+// product mode, never here; `null` deletes. Not created for a name with no
+// entry, for the same reason.
+// ---------------------------------------------------------------------------
+function readHotp(key) {
+  log.debug('Entering readHotp(). key=' + key);
+  const stored = locateEntry(String(key || '')).stored;
+  const value = stored ? (stored.attributes.stshotpcredential || [])[0] : '';
+  log.debug('Leaving readHotp(). ' + (value ? 'Enrolled.' : 'None.'));
+  return value ? String(value) : '';
+}
+
+function writeHotp(key, value) {
+  log.debug('Entering writeHotp(). key=' + key);
+  const stored = locateEntry(String(key || '')).stored;
+  if (!stored) {
+    log.warn(errorCodes.tag('STS-LDAP-0040') +
+             'ldap: "' + key + '" has no entry in this realm, so no HOTP ' +
+             'credential was recorded.');
+    log.debug('Leaving writeHotp(). No entry.');
+    return false;
+  }
+  if (value === null || value === undefined || value === '') {
+    delete stored.attributes.stshotpcredential;
+  } else {
+    stored.attributes.stshotpcredential = [String(value)];
+  }
+  touchDirectory();
+  log.debug('Leaving writeHotp(). ' + stored.dn + '.');
   return true;
 }
 
@@ -15022,6 +15061,9 @@ if (typeof credentials.setDirectory === 'function') {
     // knows nothing about them still gets a working password sign-in.
     readTotp: readTotp,
     writeTotp: writeTotp,
+    // #1955 P4: the HOTP credential, beside the authenticator app's.
+    readHotp: readHotp,
+    writeHotp: writeHotp,
     // The recovery codes (2026-09-10). Checked WHERE THEY ARE USED for the
     // reason the pair above is: an older `common/credentials.ts` that knows
     // nothing about them still gets a working password sign-in, and
@@ -16321,6 +16363,10 @@ function censusOfEntry(stored) {
     webauthn: (a.stswebauthncredential || []).slice(0),
     totp: (a.ststotpcredential || [])[0]
       ? String(a.ststotpcredential[0]) : '',
+    // #1955 P4: read off an entry already in hand; no holder question asks
+    // it (that would be an index expression, so a schema version).
+    hotp: (a.stshotpcredential || [])[0]
+      ? String(a.stshotpcredential[0]) : '',
     // The mail channel's `personEntry()` reads only an entry with a name
     // (`usernameOfEntry()`), so the census hands the four over on the same
     // condition — otherwise an entry that channel refuses would be counted

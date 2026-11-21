@@ -219,22 +219,6 @@
     "en": "080afaefbe52c342",
     "text": "直到 devices.eventsKept 個較新的事件將其擠出。"
   },
-  "caches.store.hardware_tokens.register.title": {
-    "en": "f1c8d3f653154823",
-    "text": "硬體權杖登錄冊"
-  },
-  "caches.store.hardware_tokens.register.description": {
-    "en": "5efc16810cb7f48e",
-    "text": "本領域中每個實體硬體權杖（YubiKey、智慧卡）一列，依廠商與序號索引：誰持有、型號及其上的憑證。序號只依證明記錄。從不包含機密。"
-  },
-  "caches.store.hardware_tokens.register.bound": {
-    "en": "260467c777c74957",
-    "text": "處理程序持有的列是每個領域 5,000 筆的快取；登錄冊本身受其列出的憑證限制（FIDO 為 webauthn.maxKeysPerPerson）。"
-  },
-  "caches.store.hardware_tokens.register.lifetime": {
-    "en": "c18bfda6fa452b2b",
-    "text": "直到權杖被移除；遺失的權杖會保留，並標示為遺失。"
-  },
   "caches.store.dpop.nonces.title": {
     "en": "a131d3dea3731f75",
     "text": "DPoP nonce"
@@ -366,6 +350,22 @@
   "caches.store.gnap.signatures.hitMeaning": {
     "en": "1d89a0731fc525e7",
     "text": "已看過的簽章，因此請求被拒絕"
+  },
+  "caches.store.hardware_tokens.register.title": {
+    "en": "f1c8d3f653154823",
+    "text": "硬體權杖登錄冊"
+  },
+  "caches.store.hardware_tokens.register.description": {
+    "en": "5efc16810cb7f48e",
+    "text": "本領域中每個實體硬體權杖（YubiKey、智慧卡）一列，依廠商與序號索引：誰持有、型號及其上的憑證。序號只依證明記錄。從不包含機密。"
+  },
+  "caches.store.hardware_tokens.register.bound": {
+    "en": "260467c777c74957",
+    "text": "處理程序持有的列是每個領域 5,000 筆的快取；登錄冊本身受其列出的憑證限制（FIDO 為 webauthn.maxKeysPerPerson）。"
+  },
+  "caches.store.hardware_tokens.register.lifetime": {
+    "en": "c18bfda6fa452b2b",
+    "text": "直到權杖被移除；遺失的權杖會保留，並標示為遺失。"
   },
   "caches.store.jose.kid-thumbprint-uris.title": {
     "en": "336e569778455530",
@@ -718,6 +718,22 @@
   "caches.store.mail.outbox.hitMeaning": {
     "en": "cdfb417042891812",
     "text": "在 mail.dedupWindowS 內因與同一動作已排入佇列的郵件重複而被抑制的郵件"
+  },
+  "caches.store.oath_tokens.inventory.title": {
+    "en": "52f9d22caf2dc03d",
+    "text": "OATH 權杖清冊"
+  },
+  "caches.store.oath_tokens.inventory.description": {
+    "en": "7e1f6a1cdbd27667",
+    "text": "管理員從供應商的 PSKC 種子檔案（RFC 6030）匯入的每把 HOTP 或 TOTP 金鑰各佔一列，依供應商、序號與金鑰 id 索引：未指派（其密鑰已密封）、已指派給某人（密鑰已移除，現位於其項目上）或已停用。"
+  },
+  "caches.store.oath_tokens.inventory.bound": {
+    "en": "cbe61377f99c025d",
+    "text": "程序持有的資料列是每個領域 5,000 筆的快取；清冊的大小受管理員匯入量限制，每個檔案最多 2,000 把金鑰。"
+  },
+  "caches.store.oath_tokens.inventory.lifetime": {
+    "en": "4f13467dac65d62f",
+    "text": "直到未指派的權杖被移除；已指派或已停用的權杖會保留。"
   },
   "caches.store.oauth2.access-token-status.title": {
     "en": "510d919c0bffd0a8",

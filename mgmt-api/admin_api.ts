@@ -736,7 +736,7 @@ type RouteApp = typeof app;
 // everything they hold.
 const REAUTHENTICATED_ACTIONS = ['set-password', 'reset-password',
   'issue-password-reset', 'clear-totp', 'clear-key', 'clear-backup-codes',
-  'clear-email-factor', 'disable-mfa', 'disable-primary-keys', 'set-mail',
+  'clear-email-factor', 'clear-hotp', 'disable-mfa', 'disable-primary-keys', 'set-mail',
   'create-app-password', 'revoke-app-password', 'export-ldif',
   'import-ldif', 'delete'];
 
@@ -5097,6 +5097,9 @@ class AdminApi {
           // itself a credential.
           // -----------------------------------------------------------------
           { action: 'clear-totp', operationId: 'clearUserAuthenticatorApp' },
+          // #1955 P4: a one-time code token, the same act for the other
+          // kind of code.
+          { action: 'clear-hotp', operationId: 'clearUserHotpToken' },
 
           // -----------------------------------------------------------------
           // THE THIRD REMOVAL (2026-09-10), AND IT IS ALSO THE ONLY ISSUING
@@ -5974,7 +5977,9 @@ class AdminApi {
 
           { action: 'clear-key', operationId: 'clearSecurityKey' },
 
-          { action: 'clear-email-factor', operationId: 'clearEmailFactor' }
+          { action: 'clear-email-factor', operationId: 'clearEmailFactor' },
+
+          { action: 'clear-hotp', operationId: 'clearHotpToken' }
         ] }),
 
       // ONE CREDENTIAL'S LINEAGE (#446): the console page had no

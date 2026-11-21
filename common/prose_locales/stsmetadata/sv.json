@@ -528,8 +528,12 @@
     "text": "partial, serversidan av en ursprungsavgränsad session per inloggning: Secure-Session-Registration som erbjuder ES256 och RS256, dbsc+jwt-beviset vid registrering (dess jwk, typ, alg och jti kontrollerade och signaturen verifierad) och vid förnyelse (verifierat med den bundna nyckeln), JSON-sessionsinstruktionerna med en enda bunden cookie, utbytet med 403 och Secure-Session-Challenge, samt Sec-Secure-Session-Id. Varje utmaning förbrukas en gång för hela klustret. Saknas: federerade sessioner (provider_key, well-known-dokumentet), platsavgränsade sessioner och omfångsregler, parametern authorization, samt läsning av Secure-Session-Skipped. Av som standard (authn.deviceBoundSessions)."
   },
   "stsmetadata.specs.rfc4226.coverage": {
-    "en": "ffd9d22cf4ecfd57",
-    "text": "full för det som RFC 6238 behöver av den: avsnitt 5.3:s dynamiska trunkering över HMAC-SHA-1, SHA-256 eller SHA-512, sex till åtta siffror, med räknaren som ett åttabyte stort big-endian-värde. Kontrollerad mot specifikationens egna testvektorer i bilaga D (tests/totp.js), vilket är poängen med att implementera den i stället för att ta ett bibliotek: de fyra stegen i den trunkeringen har vart och ett gjorts fel av någon, och en publicerad vektor är den enda kontroll som fångar det. INTE täckt: räknarbaserad HOTP som autentiseringsmekanism — ingenting här håller en räknare som ökar vid användning, eftersom den enda anroparen är den tidsbaserade konstruktionen nedan."
+    "en": "5ab7b9d048e74e7e",
+    "text": "full, verifierarsidan, ENDAST SOM ANDRA FAKTOR (#1955 P4): den dynamiska trunkeringen i avsnitt 5.3 över HMAC-SHA-1, SHA-256 eller SHA-512, sex till åtta siffror, räknaren ett åtta byte stort big-endian-värde, verifierad mot bilaga D:s egna testvektorer (tests/totp.js, tests/hotp.js); en räknare per inloggningsuppgift med framförhållningen i avsnitt 7.4 (hotp.window, 10 som standard, 0 tillåtet) och omsynkronisering från två på varandra följande koder (hotp.resyncWindow); avsnitt 7.2:s avvisning av återuppspelning, där räknaren flyttas fram med compare-and-set i lagret så att två noder eller workers aldrig godtar samma kod; avsnitt 7.3:s strypning genom inloggningens kodbudget. En YubiKey-OTP-plats programmeras från portalens otpauth://hotp-kod eller ykman-kommando; en leverantörs token importeras (RFC 6030). Den ger amr otp, och hwk bara för en importerad token. INTE täckt: avsnitt 7.3:s fördröjningsschema som sådant (budgeten avvisar i stället) och OCRA (RFC 6287)."
+  },
+  "stsmetadata.specs.rfc6030.coverage": {
+    "en": "35ef81e9394eb5f5",
+    "text": "partial, som MOTTAGARE (#1955 P4): en KeyContainer av version 1.0 med HOTP- och TOTP-nycklar, DeviceInfos Manufacturer, SerialNo och Model, ResponseFormat (6 till 8 decimala siffror), en enkel Counter, Time (endast 0) och TimeInterval; klartext (avvisas i produktläget om inte pskc.allowPlaintextImport), en förutdelad nyckel (avsnitt 6.1: AES-128/192/256-CBC och KW-AES) och en lösenfras (avsnitt 6.2: PBKDF2), där ValueMAC enligt avsnitt 6.1.1 kontrolleras först (HMAC-SHA1 och SHA-2-MAC:arna). Verifierad mot RFC:ns egna Figures 2 till 7 (tests/pskc.js). INTE täckt: kryptering till ett certifikat (6.3), en MAC-nyckel via referens, Triple DES och Camellia, en krypterad räknare eller tid, PIN-nycklar och -policyer (hoppas över), signaturer på containern (avsnitt 7) och att skapa en sådan fil."
   },
   "stsmetadata.specs.bcp47.coverage": {
     "en": "d682d3dd451a019d",
@@ -2131,13 +2135,17 @@
     "en": "fe8d3ba310ad762b",
     "text": "NON-SPEC (#1955). Det som Katalog → Maskinvarutokens visar: de fysiska säkerhetsnycklar och smarta kort som den här sfären registrerat, var och en utifrån sin egen attestering, sidindelade och sökbara på serienummer eller person, med nycklarna och certifikaten på var och en. Speglar GET /admin/hardware-tokens."
   },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/oath.what": {
+    "en": "f149352fa2ac36d0",
+    "text": "NON-SPEC (#1955 P4). De HOTP- och TOTP-tokens som administratörer importerat från leverantörers PSKC-fröfiler, ej tilldelade, tilldelade eller avvecklade, sidindelade och sökbara på serienummer eller person. Aldrig en hemlighet. Speglar GET /admin/hardware-tokens (dess OATH-flik)."
+  },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-    "en": "1303a5c415b09d44",
-    "text": "NON-SPEC (#1955). lost, med { key }: token markeras som förlorad, varje nyckel på den tas bort, varje certifikat på den återkallas för keyCompromise, en CAEP-ändring av inloggningsuppgift skickas för var och en och de sessioner de loggade in avslutas. Konsolens enda åtgärd på den sidan."
+    "en": "4309735f35f4550e",
+    "text": "NON-SPEC (#1955). lost, med { key }: token markeras som förlorad, varje nyckel på den tas bort, varje certifikat på den återkallas för keyCompromise, varje importerad OATH-hemlighet tas bort från innehavarens post, en CAEP-ändring av inloggningsuppgift skickas för var och en och de sessioner de loggade in avslutas. Sedan P4 import-pskc, med { pskc, preSharedKey or password }: en RFC 6030-fröfils HOTP- och TOTP-nycklar förvaras ej tilldelade under serienummer, MAC kontrolleras först och nyckeln sparas aldrig; assign-oath, med { key, username }; och remove-oath, med { key }, för en ej tilldelad token."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
-    "en": "7b39ad029e0234ed",
-    "text": "anmäler en maskinvarutoken som förlorad och återkallar dess inloggningsuppgifter"
+    "en": "dabee6463ad7ee17",
+    "text": "anmäler en maskinvarutoken som förlorad och återkallar dess inloggningsuppgifter, eller importerar, tilldelar eller tar bort OATH-tokens"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -4024,8 +4032,8 @@
     "text": "En andra faktor på den inloggningsskärm som varje protokoll här skickar en person till: registrerings- och intygsceremonier mot en verklig säkerhetsnyckel, där intyget och autentiserardata kontrolleras snarare än bara tolkas."
   },
   "stsmetadata.protocols.One-time passwords (TOTP).what": {
-    "en": "20b73dffc821e4a2",
-    "text": "Den andra andra faktorn på den inloggningsskärm som varje protokoll här skickar en person till, och den enda autentiseringsuppgiften förutom en Kerberos-biljett som den här tjänsten verkligen KONTROLLERAR: koden beräknas från den delade hemligheten och klockan och jämförs, i båda lägena, med regeln om godkännande en gång i RFC 6238 avsnitt 5.2 upprätthållen. Registrering sker med en QR-kod som den här servern ritat, på /portal/mfa eller medan en aktiveringslänk förbrukas; personens egen rad på /admin/users är där en operatör rensar en, och /admin/totp är där mekanismen konfigureras."
+    "en": "54893544268bf168",
+    "text": "Den andra andra faktorn på inloggningsskärmen som varje protokoll här skickar en person till, och den enda inloggningsuppgiften utöver en Kerberos-biljett som tjänsten verkligen KONTROLLERAR: koden beräknas från den delade hemligheten och klockan och jämförs, i båda lägena, med regeln i RFC 6238 avsnitt 5.2 om att en kod godtas en gång upprätthållen. Registreringen är en QR-kod som den här servern ritade, på /portal/mfa eller medan en aktiveringslänk används; personens egen rad på /admin/users är där en operatör rensar den, och /admin/totp är där mekanismen konfigureras. Sedan #1955 P4 även dess räknarbaserade motsvarighet: en HOTP-token enligt RFC 4226 (en YubiKey-OTP-plats, registrerad på /portal/mfa, eller en leverantörs token importerad från dess RFC 6030-fröfil under Katalog → Maskinvarutokens och tilldelad eller tagen i anspråk via serienummer), med räknaren framflyttad med compare-and-set, godtagen vid varje ingång som tar emot en kod."
   },
   "stsmetadata.protocols.Recovery codes.what": {
     "en": "b7c9347c7ac4a2b7",

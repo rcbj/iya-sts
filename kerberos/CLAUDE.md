@@ -1951,7 +1951,10 @@ each section; the decisions a reader needs here:
 * **THE CODE IS THE SIGN-IN SCREEN'S.** `credentials.verifyTotpAsync()`, its
   entry counter and the cluster counter `authn.totp-step`: one code cannot be
   spent at `/authn/totp` and at the KDC. The order is nonce, PIN, code, so a
-  wrong password never spends a step.
+  wrong password never spends a step. **Since #1955 P4 that door takes an
+  HOTP token's code too** (its counter `authn.hotp-counter`, compare-and-set):
+  `secondFactorDemand().totp` means a code of either kind, so the KDC offers
+  OTP to a person holding only a token, and nothing here learned the kind.
 * **RFC 6560's ASN.1 IS IMPLICIT TAGS** and RFC 6113's, 7751's and 8129's are
   explicit. The codec was written explicit first, the suite's own client agreed,
   and MIT's `kinit` refused the challenge ("ASN.1 structure is missing a required

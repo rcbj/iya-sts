@@ -992,5 +992,11 @@
   "mfaSection.pubDeactivate": "Desactivar",
   "mfaSection.pubDeactivateTip": "Desactiva este DID para siempre: su dirección responde 410 Gone, su historial sigue siendo resoluble y deja de iniciar la sesión de la persona y de entregarse en el claim did.",
   "mfaSection.pubNeedsWrite": "Desactivar uno requiere <strong>Admin Write</strong>.",
-  "keySource.issuedFromCsr": "Certificada aquí a partir de su propia solicitud &mdash; la CA emisora de este dominio certificó una clave que generaron. Ellos tienen la clave privada; este servicio nunca la tuvo."
+  "keySource.issuedFromCsr": "Certificada aquí a partir de su propia solicitud &mdash; la CA emisora de este dominio certificó una clave que generaron. Ellos tienen la clave privada; este servicio nunca la tuvo.",
+  "mfaSection.hotpHeading": "Token de códigos de un solo uso (HOTP)",
+  "mfaSection.hotpSource": "Aprovisionado",
+  "mfaSection.hotpImported": "Importado del archivo de semillas del proveedor: {vendor}, número de serie {serial}",
+  "mfaSection.hotpEnrolled": "Inscrito por la persona (código QR o ykman)",
+  "mfaSection.hotpUnusable": "Su secreto no se puede leer aquí, así que sus códigos se rechazan.",
+  "mfaSection.clearHotp": "Borrar el token de códigos de un solo uso"
 }

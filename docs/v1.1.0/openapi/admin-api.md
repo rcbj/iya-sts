@@ -39,7 +39,7 @@ Every answer is checked against the model shown here before it is sent, and no a
 | [Custom claims](admin-api-custom-claims.html) | 9 | What to add to every access token and ID Token issued from now on. The assertions are next door, under Custom SAML attributes. |
 | [Delegation](admin-api-delegation.html) | 17 |  |
 | [Devices](admin-api-devices.html) | 11 |  |
-| [Directory](admin-api-directory.html) | 19 |  |
+| [Directory](admin-api-directory.html) | 23 |  |
 | [EST](admin-api-est.html) | 6 |  |
 | [Federation](admin-api-federation.html) | 24 |  |
 | [GNAP](admin-api-gnap.html) | 4 | The Grant Negotiation and Authorization Protocol (RFC 9635) and its resource server connections (RFC 9767): the authorization server of this realm, what the applications using it have done, and the two things an operator does to its state by hand. |
@@ -48,7 +48,7 @@ Every answer is checked against the model shown here before it is sent, and no a
 | [LDAP](admin-api-ldap.html) | 10 |  |
 | [Metrics](admin-api-metrics.html) | 1 | What this service has done since it started. |
 | [Monitoring](admin-api-monitoring.html) | 13 |  |
-| [Multi-factor authentication](admin-api-multi-factor-authentication.html) | 4 |  |
+| [Multi-factor authentication](admin-api-multi-factor-authentication.html) | 5 |  |
 | [OAuth 2.0 / OIDC](admin-api-oauth-2-0-oidc.html) | 14 |  |
 | [OpenID Federation](admin-api-openid-federation.html) | 19 |  |
 | [OpenID4VCI](admin-api-openid4vci.html) | 3 |  |
@@ -78,7 +78,7 @@ Every answer is checked against the model shown here before it is sent, and no a
 | [Trust realms](admin-api-trust-realms.html) | 6 |  |
 | [UMA](admin-api-uma.html) | 11 |  |
 | [UserInfo claims](admin-api-userinfo-claims.html) | 9 |  |
-| [Users](admin-api-users.html) | 67 | Who it has authenticated, and what each of them holds. |
+| [Users](admin-api-users.html) | 68 | Who it has authenticated, and what each of them holds. |
 | [Verifier request](admin-api-verifier-request.html) | 8 | What this realm's OID4VP Verifier asks a wallet for. |
 | [WS-Federation](admin-api-ws-federation.html) | 1 |  |
 | [WS-Trust](admin-api-ws-trust.html) | 1 |  |

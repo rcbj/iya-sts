@@ -161,6 +161,8 @@ model Person {
   stsProfilePhoto?: DirectoryJson;
   @attr(#{kind: "single", what: "The person's RFC 6238 authenticator secret, one JSON value. Sealed under the key-encryption key in product mode, and withheld from every read.", sensitive: true})
   stsTotpCredential?: DirectoryJson;
+  @attr(#{kind: "single", what: "The person's RFC 4226 HOTP credential (#1955), one JSON value: the shared secret, the digits, the next counter the token is expected to show, and for a vendor-provisioned token an administrator imported (PSKC) the token it is. Sealed under the key-encryption key in product mode, and withheld from every read.", sensitive: true})
+  stsHotpCredential?: DirectoryJson;
   @attr(#{kind: "single", what: "The person's app passwords, one JSON value holding each one's name, the doors it is scoped to, its scrypt hash and its last use. Withheld from every read.", sensitive: true})
   stsAppPassword?: DirectoryJson;
   @attr(#{kind: "single", what: "The scrypt hash of a pending password reset link an administrator or the person started. Withheld from every read.", sensitive: true})

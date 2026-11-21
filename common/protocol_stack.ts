@@ -276,6 +276,9 @@ class ProtocolStack {
     // protocols that lean on it.
     require('../authn/authn');
     this.build('common/totp', require('./totp'), 'Totp');
+    // #1955 P4: counter-based codes (RFC 4226), `totp`'s sibling: a library
+    // over `totp`'s base32 and the authentication policy's `hotp` row.
+    this.build('common/hotp', require('./hotp'), 'Hotp');
     this.build('common/backup_codes', require('./backup_codes'), 'BackupCodes');
     // #101: app passwords, which `credentials.ts` keeps on the entry.
     this.build('common/app_passwords', require('./app_passwords'),
@@ -340,6 +343,11 @@ class ProtocolStack {
     // moment of use.
     this.build('common/hardware_tokens', require('./hardware_tokens'),
                'HardwareTokens');
+    // #1955 P4: a PSKC seed file's reader, and the OATH token inventory it
+    // fills. Two libraries (rule 3); the inventory installs the register's
+    // `hotp` and `totp` retirers when it is installed, so after it.
+    this.build('common/pskc', require('./pskc'), 'Pskc');
+    this.build('common/oath_tokens', require('./oath_tokens'), 'OathTokens');
     // #164 phase 2: what a device key's attestation proves
     // (`device_attestation`), which device a request came from
     // (`device_recognition`, asked by `authn` and `oauth2` below), and a

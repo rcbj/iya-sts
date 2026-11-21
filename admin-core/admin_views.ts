@@ -15926,6 +15926,10 @@ class AdminViews {
       totp: mech.totp,
       totpUsable: mech.totpUsable,
       totpDetail: mech.totpDetail,
+      // #1955 P4: the one-time code token, three facts as the app's are.
+      hotp: !!mech.hotp,
+      hotpUsable: !!mech.hotpUsable,
+      hotpDetail: mech.hotpDetail || null,
       // THE RECOVERY CODES AS A STATUS AND NEVER AS CODES — see the block
       // above. `credentials.backupCodeStatus()` is what fills it and it
       // carries none, so there is no shape of this reply in which a caller

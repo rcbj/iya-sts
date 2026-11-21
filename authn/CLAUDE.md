@@ -2077,6 +2077,18 @@ is about to draw** — a link is markup, and a hand-made GET of
 whose account is configured for an authenticator app. That is the bypass above,
 arriving through a different door.
 
+### The code step takes either kind of one-time code (#1955 P4)
+
+The step id is still `totp` and the screen still asks for "a one-time
+code", but it is offered to anybody holding an authenticator app OR an
+HOTP token (`mechanismsFor().oneTimeCode`), the field takes the longer of
+the two lengths, and `credentials.verifyTotpAsync()` decides which answered.
+`finishTotp()` records the KIND on the event (`credential.kind` `totp` or
+`hotp`, which an application's named second-factor list holds separately,
+`common/mfa_mechanisms.ts`), and adds `hwk` beside `otp` only where the
+verdict says the code came from an imported token still active in the
+hardware token register (design X3). Never `phr`.
+
 ### The code is checked for real, and this screen is the second SPNEGO
 
 `common/totp.ts`'s header carries the argument at length and it is the one

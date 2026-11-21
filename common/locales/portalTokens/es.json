@@ -17,5 +17,12 @@
   "done.notAll": "{n} no se pudieron retirar: pida a su administrador que las elimine.",
   "done.sessionsEnded": "Se cerraron {n} sesiones iniciadas con ella.",
   "done.recovery": "Su próximo inicio de sesión sin llave de acceso le pedirá que registre una nueva antes de poder usar cualquier aplicación.",
-  "done.noWayIn": "Era su única forma de iniciar sesión: pida a su administrador un enlace de activación o use sus códigos de recuperación."
+  "done.noWayIn": "Era su única forma de iniciar sesión: pida a su administrador un enlace de activación o use sus códigos de recuperación.",
+  "kind.oath": "Códigos de un solo uso",
+  "claim.heading": "Reclamar un token que le entregaron",
+  "claim.intro": "Si su organización le entregó un token de códigos de un solo uso, escriba el número de serie impreso en él y un código que muestre ahora. Se convierte en su segundo factor.",
+  "claim.serial": "Número de serie",
+  "claim.code": "Un código que muestre ahora",
+  "claim.button": "Reclamarlo",
+  "done.claimed": "El token {serial} es suyo. Se le pedirá uno de sus códigos la próxima vez que inicie sesión."
 }

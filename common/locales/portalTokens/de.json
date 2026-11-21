@@ -17,5 +17,12 @@
   "done.notAll": "{n} konnten nicht zurückgezogen werden: Bitten Sie Ihren Administrator, sie zu entfernen.",
   "done.sessionsEnded": "{n} damit angemeldete Sitzungen wurden beendet.",
   "done.recovery": "Bei Ihrer nächsten Anmeldung ohne Passkey werden Sie gebeten, einen neuen zu registrieren, bevor Sie eine Anwendung verwenden können.",
-  "done.noWayIn": "Das war Ihre einzige Möglichkeit, sich anzumelden: Bitten Sie Ihren Administrator um einen Aktivierungslink, oder verwenden Sie Ihre Wiederherstellungscodes."
+  "done.noWayIn": "Das war Ihre einzige Möglichkeit, sich anzumelden: Bitten Sie Ihren Administrator um einen Aktivierungslink, oder verwenden Sie Ihre Wiederherstellungscodes.",
+  "kind.oath": "Einmalcodes",
+  "claim.heading": "Ein Ihnen ausgehändigtes Token beanspruchen",
+  "claim.intro": "Wenn Ihre Organisation Ihnen ein Einmalcode-Token ausgehändigt hat, geben Sie die darauf aufgedruckte Seriennummer und einen Code ein, den es jetzt anzeigt. Es wird Ihr zweiter Faktor.",
+  "claim.serial": "Seriennummer",
+  "claim.code": "Ein Code, den es jetzt anzeigt",
+  "claim.button": "Beanspruchen",
+  "done.claimed": "Token {serial} gehört Ihnen. Bei Ihrer nächsten Anmeldung werden Sie nach einem seiner Codes gefragt."
 }

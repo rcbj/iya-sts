@@ -992,5 +992,11 @@
   "mfaSection.pubDeactivate": "停用",
   "mfaSection.pubDeactivateTip": "永久停用此 DID：其位址回應 410 Gone，其歷史仍可解析，並且不再用於當事人登入，也不再於 did 宣告中發布。",
   "mfaSection.pubNeedsWrite": "停用需要 <strong>Admin Write</strong>。",
-  "keySource.issuedFromCsr": "根據其自己的請求在此認證 &mdash; 本領域的簽發 CA 認證了其自行產生的金鑰。私密金鑰由其持有；本服務從未持有。"
+  "keySource.issuedFromCsr": "根據其自己的請求在此認證 &mdash; 本領域的簽發 CA 認證了其自行產生的金鑰。私密金鑰由其持有；本服務從未持有。",
+  "mfaSection.hotpHeading": "一次性驗證碼權杖（HOTP）",
+  "mfaSection.hotpSource": "來源",
+  "mfaSection.hotpImported": "從供應商的種子檔案匯入：{vendor}，序號 {serial}",
+  "mfaSection.hotpEnrolled": "由本人註冊（QR 碼或 ykman）",
+  "mfaSection.hotpUnusable": "此處無法讀取其密鑰，因此其驗證碼會被拒絕。",
+  "mfaSection.clearHotp": "清除一次性驗證碼權杖"
 }

@@ -1211,9 +1211,13 @@
     "en": "386404ef0cf5e649",
     "text": "硬件令牌"
   },
+  "endpoints.route./admin-api/hardware-tokens/oath.name": {
+    "en": "009f323198517782",
+    "text": "导入的 OATH 令牌"
+  },
   "endpoints.route./admin-api/hardware-tokens/:action.name": {
-    "en": "d2326b0fb8b09689",
-    "text": "报告硬件令牌丢失"
+    "en": "c3b6dea748114783",
+    "text": "报告硬件令牌丢失，或导入并分配 OATH 令牌"
   },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",

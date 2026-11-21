@@ -1315,6 +1315,30 @@
     "en": "f034b2f597ec08a5",
     "text": "Combien de temps un secret AFFICHÉ mais pas encore confirmé par un code reste disponible. Il est conservé à part — en mémoire, ou scellé dans le stockage lorsque plusieurs processus en partagent un — et n’est jamais écrit dans l’annuaire tant qu’un code ne prouve pas que l’application le possède réellement : un secret non confirmé sur l’entrée de quelqu’un serait un second facteur qu’il ne peut pas produire, c’est-à-dire un verrouillage plutôt qu’un contrôle. Dix minutes suffisent pour trouver un téléphone et sont assez courtes pour qu’un enrôlement abandonné ne s’attarde pas."
   },
+  "hotp.digits|label": {
+    "en": "e878ad21c60b7f59",
+    "text": "Longueur du code HOTP (chiffres)"
+  },
+  "hotp.digits|description": {
+    "en": "a62b054d7e8d650e",
+    "text": "Combien de chiffres produit un NOUVEL enrôlement de jeton à compteur (RFC 4226) : un emplacement OTP de YubiKey programmé depuis le portail accepte 6 ou 8. Un jeton importé depuis le fichier PSKC de son fournisseur garde la longueur que le fichier indique."
+  },
+  "hotp.window|label": {
+    "en": "0b307d73f8b8efcb",
+    "text": "Anticipation HOTP (codes)"
+  },
+  "hotp.window|description": {
+    "en": "b12c6aec525f377e",
+    "text": "L’anticipation de RFC 4226 section 7.4 : combien de pressions d’un jeton à compteur qui n’ont jamais atteint ce service sont tolérées. Un code au compteur enregistré ou jusqu’à ce nombre au-delà est accepté, et le compteur passe au-delà ; un code antérieur ne l’est jamais. Zéro n’accepte que le code suivant. En direct, pour chaque enrôlement."
+  },
+  "hotp.resyncWindow|label": {
+    "en": "15000f3de3322f0d",
+    "text": "Fenêtre de resynchronisation HOTP (codes)"
+  },
+  "hotp.resyncWindow|description": {
+    "en": "4bc7180cc29f1f53",
+    "text": "Jusqu’où deux codes CONSÉCUTIFS sont recherchés quand une personne resynchronise un jeton sorti de la fenêtre d’anticipation (RFC 4226 section 7.4). Deux codes à la suite sont bien plus difficiles à deviner qu’un seul, ce qui rend la recherche plus large sûre. En direct."
+  },
   "backupCodes.count|label": {
     "en": "91b6e4a086244cce",
     "text": "Codes par jeu"
@@ -3146,6 +3170,14 @@
   "hardwareTokens.hardwareClaims|description": {
     "en": "e0341e4e47f3b2f8",
     "text": "Ce qui permet à une connexion PKINIT de revendiquer une clé liée au matériel (l'indicateur pkinit-hardware et amr hwk). `inference`, la valeur par défaut et le comportement d'avant #1955 : un certificat d'ouverture de session par carte à puce dont ce service n'a pas généré la clé, ou une preuve d'attestation enregistrée. `evidence` : seulement une clé couverte par l'attestation d'un jeton matériel. Une connexion par certificat sur TLS n'obtient hwk, et sc pour une clé sur une carte à puce, qu'à partir d'une preuve, dans les deux cas."
+  },
+  "pskc.allowPlaintextImport|label": {
+    "en": "a098f07c2a04a83b",
+    "text": "Accepter les fichiers de semences PSKC en clair en mode produit"
+  },
+  "pskc.allowPlaintextImport|description": {
+    "en": "7efe34e872e4772e",
+    "text": "Si un administrateur peut importer, en mode produit, un fichier de semences PSKC (RFC 6030) dont les secrets de jetons NE sont PAS chiffrés. Désactivé par défaut : un tel fichier a été une liste de deuxièmes facteurs fonctionnels sur chaque disque et chaque boîte aux lettres qu’il a traversés, et un fournisseur peut le chiffrer sous une clé prépartagée ou un mot de passe (sections 6.1 et 6.2). Le mode développement en accepte un dans tous les cas."
   },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",

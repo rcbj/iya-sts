@@ -74,6 +74,8 @@
  */
 const SINGLE = ['userpassword', 'pwdhistory', 'pwdchangedtime',
                 'ststotpcredential', 'stsbackupcodes', 'stsactivationtoken',
+                // #1955 P4: a person's HOTP credential, one JSON value.
+                'stshotpcredential',
                 'stsactivationexpires', 'appregistrationjson',
                 'stsapppassword', 'stsidaverification',
                 'stsselfissuedsubject', 'stspublisheddid',

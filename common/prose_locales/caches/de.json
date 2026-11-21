@@ -219,22 +219,6 @@
     "en": "080afaefbe52c342",
     "text": "Bis devices.eventsKept neuere Ereignisse es verdrängen."
   },
-  "caches.store.hardware_tokens.register.title": {
-    "en": "f1c8d3f653154823",
-    "text": "Hardware-Token-Register"
-  },
-  "caches.store.hardware_tokens.register.description": {
-    "en": "5efc16810cb7f48e",
-    "text": "Eine Zeile pro physischem Hardware-Token (ein YubiKey, eine Smartcard) in diesem Bereich, nach Hersteller und Seriennummer geschlüsselt: wer es besitzt, sein Modell und die Anmeldedaten darauf. Eine Seriennummer wird nur aus einer Attestierung erfasst. Nie ein Geheimnis."
-  },
-  "caches.store.hardware_tokens.register.bound": {
-    "en": "260467c777c74957",
-    "text": "Die Zeilen, die ein Prozess hält, sind ein Cache von 5.000 pro Bereich; das Register selbst ist durch die Anmeldedaten begrenzt, die es listet (webauthn.maxKeysPerPerson für FIDO)."
-  },
-  "caches.store.hardware_tokens.register.lifetime": {
-    "en": "c18bfda6fa452b2b",
-    "text": "Bis das Token entfernt wird; ein verlorenes Token bleibt erhalten, als verloren markiert."
-  },
   "caches.store.dpop.nonces.title": {
     "en": "a131d3dea3731f75",
     "text": "DPoP-Nonces"
@@ -366,6 +350,22 @@
   "caches.store.gnap.signatures.hitMeaning": {
     "en": "1d89a0731fc525e7",
     "text": "eine bereits gesehene Signatur, sodass die Anfrage abgelehnt wurde"
+  },
+  "caches.store.hardware_tokens.register.title": {
+    "en": "f1c8d3f653154823",
+    "text": "Hardware-Token-Register"
+  },
+  "caches.store.hardware_tokens.register.description": {
+    "en": "5efc16810cb7f48e",
+    "text": "Eine Zeile pro physischem Hardware-Token (ein YubiKey, eine Smartcard) in diesem Bereich, nach Hersteller und Seriennummer geschlüsselt: wer es besitzt, sein Modell und die Anmeldedaten darauf. Eine Seriennummer wird nur aus einer Attestierung erfasst. Nie ein Geheimnis."
+  },
+  "caches.store.hardware_tokens.register.bound": {
+    "en": "260467c777c74957",
+    "text": "Die Zeilen, die ein Prozess hält, sind ein Cache von 5.000 pro Bereich; das Register selbst ist durch die Anmeldedaten begrenzt, die es listet (webauthn.maxKeysPerPerson für FIDO)."
+  },
+  "caches.store.hardware_tokens.register.lifetime": {
+    "en": "c18bfda6fa452b2b",
+    "text": "Bis das Token entfernt wird; ein verlorenes Token bleibt erhalten, als verloren markiert."
   },
   "caches.store.jose.kid-thumbprint-uris.title": {
     "en": "336e569778455530",
@@ -718,6 +718,22 @@
   "caches.store.mail.outbox.hitMeaning": {
     "en": "cdfb417042891812",
     "text": "eine Nachricht, unterdrückt als Duplikat einer bereits für dieselbe Aktion innerhalb von mail.dedupWindowS eingereihten"
+  },
+  "caches.store.oath_tokens.inventory.title": {
+    "en": "52f9d22caf2dc03d",
+    "text": "OATH-Token-Bestand"
+  },
+  "caches.store.oath_tokens.inventory.description": {
+    "en": "7e1f6a1cdbd27667",
+    "text": "Eine Zeile je HOTP- oder TOTP-Schlüssel, den ein Administrator aus der PSKC-Seed-Datei eines Herstellers (RFC 6030) importiert hat, geschlüsselt nach Hersteller, Seriennummer und Schlüssel-ID: nicht zugewiesen (sein Geheimnis versiegelt), einer Person zugewiesen (das Geheimnis entfernt, jetzt auf ihrem Eintrag) oder außer Betrieb."
+  },
+  "caches.store.oath_tokens.inventory.bound": {
+    "en": "cbe61377f99c025d",
+    "text": "Die Zeilen, die ein Prozess hält, sind ein Cache von 5.000 je Bereich; der Bestand ist durch das begrenzt, was Administratoren importieren, höchstens 2.000 Schlüssel je Datei."
+  },
+  "caches.store.oath_tokens.inventory.lifetime": {
+    "en": "4f13467dac65d62f",
+    "text": "Bis ein nicht zugewiesenes Token entfernt wird; ein zugewiesenes oder außer Betrieb genommenes Token bleibt erhalten."
   },
   "caches.store.oauth2.access-token-status.title": {
     "en": "510d919c0bffd0a8",

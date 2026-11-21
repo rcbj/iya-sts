@@ -17,5 +17,12 @@
   "done.notAll": "{n} could not be retired: ask your administrator to remove them.",
   "done.sessionsEnded": "{n} sign-on sessions it signed in were ended.",
   "done.recovery": "Your next sign-in without a passkey will ask you to register a new one before you can use any application.",
-  "done.noWayIn": "It was your only way to sign in: ask your administrator for an activation link, or use your recovery codes."
+  "done.noWayIn": "It was your only way to sign in: ask your administrator for an activation link, or use your recovery codes.",
+  "kind.oath": "One-time codes",
+  "claim.heading": "Claim a token you were given",
+  "claim.intro": "If your organisation handed you a one-time code token, type the serial printed on it and a code it shows now. It becomes your second factor.",
+  "claim.serial": "Serial",
+  "claim.code": "A code it shows now",
+  "claim.button": "Claim it",
+  "done.claimed": "Token {serial} is yours. You will be asked for one of its codes the next time you sign in."
 }

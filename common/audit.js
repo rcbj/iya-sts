@@ -433,6 +433,20 @@ const ACTIONS = [
     label: 'Somebody removed the authenticator app from their own account' },
   { action: 'portal.mfa.csrf', category: 'authentication',
     label: 'An authenticator-app change was refused for a bad CSRF token' },
+  // A ONE-TIME CODE TOKEN (#1955 P4), the same acts for an HOTP token, and
+  // its resynchronisation from two consecutive codes.
+  { action: 'portal.hotp.started', category: 'authentication',
+    label: 'Somebody was shown a new one-time code token secret' },
+  { action: 'portal.hotp.enrolled', category: 'authentication',
+    label: 'Somebody set up a one-time code token on their own account' },
+  { action: 'portal.hotp.refused', category: 'authentication',
+    label: 'A one-time code token setup was not confirmed' },
+  { action: 'portal.hotp.removed', category: 'authentication',
+    label: 'Somebody removed the one-time code token from their own account' },
+  { action: 'portal.hotp.resynced', category: 'authentication',
+    label: 'Somebody resynchronised their one-time code token' },
+  { action: 'portal.hotp.resync-refused', category: 'authentication',
+    label: 'A one-time code token was not resynchronised' },
   // The same two acts inside an ACTIVATION, which is a different situation and
   // therefore a different row: nobody is signed in, and what authorises it is a
   // single-use link rather than a session. A reader filtering for "who set up a
@@ -667,6 +681,17 @@ const ACTIONS = [
            'one who held it' },
   { action: 'hardware-token.lost', category: 'directory',
     label: 'A hardware token was reported lost and its credentials retired' },
+  // THE OATH TOKEN INVENTORY (#1955 P4): a PSKC seed file imported (or
+  // refused), a token assigned or claimed, a claim refused, and an
+  // unassigned token removed. `common/oath_tokens.ts` writes all four.
+  { action: 'oath-token.import', category: 'directory',
+    label: 'A vendor\'s PSKC seed file was imported, or refused' },
+  { action: 'oath-token.assign', category: 'directory',
+    label: 'An imported OATH token was assigned to, or claimed by, a person' },
+  { action: 'oath-token.claim', category: 'directory',
+    label: 'A person\'s claim of an imported OATH token was refused' },
+  { action: 'oath-token.remove', category: 'directory',
+    label: 'An unassigned OATH token was removed from the inventory' },
   { action: 'device.key-add', category: 'directory',
     label: 'A key was added to a device' },
   { action: 'device.key-remove', category: 'directory',
@@ -831,6 +856,8 @@ const ACTIONS = [
     label: 'A person\'s sign-in names were changed by an administrator' },
   { action: 'admin.mfa.totp.cleared', category: 'admin',
     label: 'An operator cleared somebody\'s authenticator app' },
+  { action: 'admin.mfa.hotp.cleared', category: 'admin',
+    label: 'An operator cleared somebody\'s one-time code token' },
   { action: 'admin.mfa.key.cleared', category: 'admin',
     label: 'An operator removed somebody\'s security key' },
   { action: 'admin.mfa.key.renamed', category: 'admin',

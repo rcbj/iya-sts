@@ -219,22 +219,6 @@
     "en": "080afaefbe52c342",
     "text": "Jusqu’à ce que devices.eventsKept événements plus récents le poussent dehors."
   },
-  "caches.store.hardware_tokens.register.title": {
-    "en": "f1c8d3f653154823",
-    "text": "Registre des jetons matériels"
-  },
-  "caches.store.hardware_tokens.register.description": {
-    "en": "5efc16810cb7f48e",
-    "text": "Une ligne par jeton matériel physique (une YubiKey, une carte à puce) dans ce domaine, indexée par fabricant et numéro de série : qui le détient, son modèle et les identifiants qu'il porte. Un numéro de série n'est enregistré qu'à partir d'une attestation. Jamais un secret."
-  },
-  "caches.store.hardware_tokens.register.bound": {
-    "en": "260467c777c74957",
-    "text": "Les lignes qu'un processus détient sont un cache de 5 000 par domaine ; le registre lui-même est borné par les identifiants qu'il liste (webauthn.maxKeysPerPerson pour FIDO)."
-  },
-  "caches.store.hardware_tokens.register.lifetime": {
-    "en": "c18bfda6fa452b2b",
-    "text": "Jusqu'à la suppression du jeton ; un jeton perdu est conservé, marqué comme perdu."
-  },
   "caches.store.dpop.nonces.title": {
     "en": "a131d3dea3731f75",
     "text": "Nonces DPoP"
@@ -366,6 +350,22 @@
   "caches.store.gnap.signatures.hitMeaning": {
     "en": "1d89a0731fc525e7",
     "text": "une signature déjà vue, si bien que la requête a été refusée"
+  },
+  "caches.store.hardware_tokens.register.title": {
+    "en": "f1c8d3f653154823",
+    "text": "Registre des jetons matériels"
+  },
+  "caches.store.hardware_tokens.register.description": {
+    "en": "5efc16810cb7f48e",
+    "text": "Une ligne par jeton matériel physique (une YubiKey, une carte à puce) dans ce domaine, indexée par fabricant et numéro de série : qui le détient, son modèle et les identifiants qu'il porte. Un numéro de série n'est enregistré qu'à partir d'une attestation. Jamais un secret."
+  },
+  "caches.store.hardware_tokens.register.bound": {
+    "en": "260467c777c74957",
+    "text": "Les lignes qu'un processus détient sont un cache de 5 000 par domaine ; le registre lui-même est borné par les identifiants qu'il liste (webauthn.maxKeysPerPerson pour FIDO)."
+  },
+  "caches.store.hardware_tokens.register.lifetime": {
+    "en": "c18bfda6fa452b2b",
+    "text": "Jusqu'à la suppression du jeton ; un jeton perdu est conservé, marqué comme perdu."
   },
   "caches.store.jose.kid-thumbprint-uris.title": {
     "en": "336e569778455530",
@@ -718,6 +718,22 @@
   "caches.store.mail.outbox.hitMeaning": {
     "en": "cdfb417042891812",
     "text": "un message supprimé comme doublon d’un message déjà mis en file pour le même acte dans mail.dedupWindowS"
+  },
+  "caches.store.oath_tokens.inventory.title": {
+    "en": "52f9d22caf2dc03d",
+    "text": "Inventaire des jetons OATH"
+  },
+  "caches.store.oath_tokens.inventory.description": {
+    "en": "7e1f6a1cdbd27667",
+    "text": "Une ligne par clé HOTP ou TOTP qu’un administrateur a importée depuis le fichier de semences PSKC d’un fournisseur (RFC 6030), indexée par fournisseur, numéro de série et identifiant de clé : non attribuée (son secret scellé), attribuée à une personne (le secret retiré, désormais sur son entrée) ou retirée."
+  },
+  "caches.store.oath_tokens.inventory.bound": {
+    "en": "cbe61377f99c025d",
+    "text": "Les lignes qu’un processus détient forment un cache de 5 000 par domaine ; l’inventaire est borné par ce que les administrateurs importent, au plus 2 000 clés par fichier."
+  },
+  "caches.store.oath_tokens.inventory.lifetime": {
+    "en": "4f13467dac65d62f",
+    "text": "Jusqu’à ce qu’un jeton non attribué soit supprimé ; un jeton attribué ou retiré est conservé."
   },
   "caches.store.oauth2.access-token-status.title": {
     "en": "510d919c0bffd0a8",

@@ -1211,9 +1211,13 @@
     "en": "386404ef0cf5e649",
     "text": "الرموز المادية"
   },
+  "endpoints.route./admin-api/hardware-tokens/oath.name": {
+    "en": "009f323198517782",
+    "text": "رموز OATH المستوردة"
+  },
   "endpoints.route./admin-api/hardware-tokens/:action.name": {
-    "en": "d2326b0fb8b09689",
-    "text": "الإبلاغ عن فقد رمز مادي"
+    "en": "c3b6dea748114783",
+    "text": "الإبلاغ عن فقد رمز مادي، أو استيراد رموز OATH وإسنادها"
   },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",

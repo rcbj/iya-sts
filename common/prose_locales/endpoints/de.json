@@ -1211,9 +1211,13 @@
     "en": "386404ef0cf5e649",
     "text": "Hardware-Token"
   },
+  "endpoints.route./admin-api/hardware-tokens/oath.name": {
+    "en": "009f323198517782",
+    "text": "Importierte OATH-Token"
+  },
   "endpoints.route./admin-api/hardware-tokens/:action.name": {
-    "en": "d2326b0fb8b09689",
-    "text": "Ein Hardware-Token als verloren melden"
+    "en": "c3b6dea748114783",
+    "text": "Ein Hardware-Token als verloren melden oder OATH-Token importieren und zuweisen"
   },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",

@@ -338,6 +338,83 @@ class MfaPages {
                        '</p>' : '') + '</div>';
   }
 
+  // -------------------------------------------------------------------------
+  // THE ONE-TIME CODE TOKEN (#1955 P4): enrolled (how it was provisioned,
+  // Resynchronise with two consecutive codes, Remove), or offered (Set one
+  // up, then the QR code, the ykman command and a code to confirm it).
+  // -------------------------------------------------------------------------
+  /**
+   * The one-time code token's card.
+   *
+   * @param view - the page's view
+   * @param t - the translator
+   * @returns the card's HTML, or '' where it is neither held nor offered
+   */
+  static hotpCard(view: Json, t: Json): string {
+    const hotp = view.hotp || {};
+    if (!hotp.enrolled && !hotp.offered) {
+      return '';
+    }
+    const d = hotp.detail || {};
+    const setup = hotp.setup;
+    const digits = String((setup && setup.digits) || d.digits ||
+                          hotp.digits || 6);
+    const codeInput = function (name: string, id: string): string {
+      return '<input type="text" id="' + id + '" name="' + name + '" ' +
+        'inputmode="numeric" autocomplete="one-time-code" required ' +
+        'pattern="[0-9 ]{' + digits + ',' + (Number(digits) + 2) + '}" ' +
+        'maxlength="' + (Number(digits) + 2) + '" placeholder="' +
+        '0'.repeat(Number(digits)) + '">';
+    };
+    let body = '';
+    if (hotp.enrolled) {
+      body = '<p class="sub">' + (d.source === 'pskc-import'
+        ? t.html('portal.hotp.imported', { serial: String(d.serial || ''),
+                                          vendor: String(d.vendor || '') })
+        : t.html('portal.hotp.enrolled')) +
+        (d.lastUsedAt ? ' ' + t.html('portal.hotp.lastUsed',
+                                      { day: MfaPages.day(d.lastUsedAt) })
+                      : '') + '</p>' +
+        (hotp.usable ? '' : '<p class="note">' +
+          t.html('portal.hotp.unusable') + '</p>') +
+        '<h3>' + t.html('portal.hotp.resyncHeading') + '</h3>' +
+        '<p class="note">' + t.html('portal.hotp.resyncWhat',
+          { window: String(hotp.window), resync: String(hotp.resyncWindow) }) +
+        '</p>' +
+        MfaPages.form('hotp-resync', '<div class="row"><label for="hotp-c1">' +
+          t.html('portal.hotp.firstCode') + '</label>' +
+          codeInput('code', 'hotp-c1') + '</div><div class="row">' +
+          '<label for="hotp-c2">' + t.html('portal.hotp.secondCode') +
+          '</label>' + codeInput('code2', 'hotp-c2') + '</div>' +
+          '<button type="submit" class="secondary">' +
+          t.html('portal.hotp.resync') + '</button>') +
+        MfaPages.form('hotp-remove', '<button type="submit" class="danger">' +
+          t.html('portal.hotp.remove') + '</button>');
+    } else if (setup) {
+      body = (setup.qr
+        ? '<p><img src="' + kit.esc(setup.qr) + '" width="240" ' +
+          'height="240" alt="' + kit.esc(t.text('portal.hotp.qrAlt')) +
+          '"></p>' : '') +
+        '<p class="note">' + t.html('portal.hotp.yubikey') + '</p>' +
+        '<pre><code>' + kit.esc(setup.ykman) + '</code></pre>' +
+        '<table><tr><th>' + t.html('portal.totp.secret') + '</th><td><code>' +
+        kit.esc(setup.grouped) + '</code></td></tr><tr><th>' +
+        t.html('portal.hotp.digits') + '</th><td>' + kit.esc(digits) +
+        '</td></tr></table>' +
+        MfaPages.form('hotp-confirm', '<div class="row"><label ' +
+          'for="hotp-code">' + t.html('portal.hotp.codeLabel',
+                                      { digits: digits }) + '</label>' +
+          codeInput('code', 'hotp-code') + '</div><button type="submit">' +
+          t.html('portal.hotp.confirm') + '</button>');
+    } else {
+      body = '<p class="sub">' + t.html('portal.hotp.offer') + '</p>' +
+        MfaPages.form('hotp-start', '<button type="submit" ' +
+          'class="secondary">' + t.html('portal.hotp.start') + '</button>');
+    }
+    return '<div class="card" id="hotp"><h2>' +
+      t.html('portal.hotp.heading') + '</h2>' + body + '</div>';
+  }
+
   /**
    * What an authenticator app is, and what it is not.
    *
@@ -368,7 +445,8 @@ class MfaPages {
   static render(view: Json, ctx: Json): string {
     const t = ctx.t;
     return MfaPages.enrolledCard(view, t) + MfaPages.setupCard(view, t) +
-      MfaPages.startCard(view, t) + MfaPages.emailFactorCard(view, t) +
+      MfaPages.startCard(view, t) + MfaPages.hotpCard(view, t) +
+      MfaPages.emailFactorCard(view, t) +
       MfaPages.codesCard(view, t) + MfaPages.aboutCard(view, t);
   }
 

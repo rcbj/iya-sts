@@ -1388,24 +1388,24 @@
     "text": "Nichts, was diesen Dienst verlässt. Ein HOTP-Wert IST ein gekürzter HMAC — RFC 4226 Abschnitt 5.3 —, sodass diese Familie einen MAC mit Schlüssel berechnet und ihn dann vergleicht; deshalb liegt das Primitiv in common/crypto.js neben jeder anderen Signatur hier und nicht in dem Modul, das über die Richtlinie entscheidet."
   },
   "crypto.families.one-time-passwords-totp.verifies": {
-    "en": "071552dc11014cdd",
-    "text": "Einen vorgelegten Code, indem der HMAC für jeden Zeitschritt im Skew-Fenster berechnet und in konstanter Zeit verglichen wird. JEDER Schritt wird auch nach einem Treffer berechnet, absichtlich: Ein früher Rücksprung würde die benötigte Zeit davon abhängig machen, WELCHER Schritt getroffen hat, und das wäre ein besseres Orakel als der Ziffernvergleich, für den sich dieser Dienst die Mühe einer konstanten Zeit macht."
+    "en": "302891e951b96222",
+    "text": "Einen vorgelegten Code, indem für jeden Zeitschritt im Abweichungsfenster der HMAC berechnet und in konstanter Zeit verglichen wird. JEDER Schritt wird auch nach einem Treffer berechnet, absichtlich: ein frühes Zurückkehren würde die benötigte Zeit davon abhängig machen, WELCHER Schritt passte, und das wäre ein besseres Orakel als der Ziffernvergleich, der hier eigens in konstanter Zeit erfolgt. Einen HOTP-Code (RFC 4226, #1955) auf dieselbe Weise über das Vorausschaufenster ab seinem Zähler, der dann per Compare-and-Set im Speicher weitergesetzt wird. Den ValueMAC einer PSKC-Seed-Datei (RFC 6030 Abschnitt 6.1.1: HMAC-SHA1 oder ein SHA-2-MAC über den Geheimtext), bevor ihr Geheimnis entschlüsselt wird."
   },
   "crypto.families.one-time-passwords-totp.encrypts": {
     "en": "c18d0d11279cb6c0",
     "text": "Das gemeinsame Geheimnis im Ruhezustand, im PRODUKTMODUS — AES-256-GCM unter demselben Schlüsselverschlüsselungsschlüssel, der die Signierschlüssel schützt, durch common/keystore.js. Im ENTWICKLUNGSMODUS wird es als base32 gespeichert, weil der Schlüsselverschlüsselungsschlüssel dort je Lauf erzeugt wird und ein Versiegeln einen Authenticator bedeuten würde, der beim nächsten Neustart lautlos aufhörte zu funktionieren."
   },
   "crypto.families.one-time-passwords-totp.decrypts": {
-    "en": "d2cefc498eff5443",
-    "text": "Dasselbe Geheimnis, um einen Code zu prüfen. **DIES SIND DIE EINEN ANMELDEDATEN IN DIESEM DIENST, DIE SICH ZURÜCKLESEN LASSEN** — ein Passwort ist ein scrypt-Hash und lässt sich nur dagegen vergleichen, und einen Einmalcode zu prüfen heißt, ihn zu BERECHNEN. Das ist keine Schwäche von RFC 6238; es ist die Bedeutung von „gemeinsames Geheimnis“, und genau deshalb ist dieser Mechanismus hier ein ZWEITER Faktor und kann niemals ein erster werden."
+    "en": "f197370676038df3",
+    "text": "Die PSKC-Seed-Datei eines Herstellers (RFC 6030): AES-CBC oder AES Key Wrap unter dem mit dem Upload angegebenen vorab geteilten Schlüssel oder unter einem Schlüssel, den PBKDF2 aus ihrem Passwort ableitet; keines von beiden wird aufbewahrt. Dasselbe Geheimnis, um einen Code zu prüfen. **DIES IST DIE EINZIGE ANMELDEINFORMATION IN DIESEM DIENST, DIE SICH ZURÜCKLESEN LÄSST** — ein Passwort ist ein scrypt-Hash und kann nur verglichen werden, und einen Einmalcode zu prüfen heißt, ihn zu BERECHNEN. Das ist keine Schwäche von RFC 6238; es ist, was „gemeinsames Geheimnis“ bedeutet, und genau deshalb ist dieser Mechanismus hier ein ZWEITER Faktor und kann nie zu einem ersten gemacht werden."
   },
   "crypto.families.one-time-passwords-totp.hashes": {
     "en": "decb0b31d14255e5",
     "text": "SHA-1, SHA-256 oder SHA-512, innerhalb des HMAC und sonst nirgends."
   },
   "crypto.families.one-time-passwords-totp.whatItDoesNot": {
-    "en": "512b47bf629fcfe5",
-    "text": "Es nennt niemandem den aktuellen Code und richtet niemanden an einem Anmeldungsbildschirm ein — die Einrichtung bedeutet, dass ein Geheimnis gezeigt wird, also geschieht sie dort, wo die Person bereits authentifiziert ist oder einen Aktivierungslink besitzt. Es gibt kein zählerbasiertes HOTP als Authentifizierungsmechanismus und kein Resynchronisationsprotokoll: Das Skew-Fenster ist alles, was für eine driftende Uhr angeboten wird."
+    "en": "f38dd0b2f7ce307b",
+    "text": "Er verrät niemandem, wie der aktuelle Code lautet, und er richtet nie jemanden auf einem Anmeldebildschirm ein — Einrichten bedeutet, ein Geheimnis angezeigt zu bekommen, also geschieht es dort, wo die Person bereits authentifiziert ist oder einen Aktivierungslink hat. Einer driftenden TOTP-Uhr wird das Abweichungsfenster angeboten und sonst nichts. Ein zählerbasiertes (HOTP-)Token wird aus zwei aufeinanderfolgenden Codes neu synchronisiert, nie aus einem. Er bewahrt nie den Schlüssel oder das Passwort einer Seed-Datei auf und öffnet nie eine an ein Zertifikat verschlüsselte Datei."
   },
   "crypto.families.one-time-passwords-totp.algorithms.0.what": {
     "en": "0c410835b8ade404",

@@ -17,5 +17,12 @@
   "done.notAll": "{n} kunde inte återkallas: be din administratör att ta bort dem.",
   "done.sessionsEnded": "{n} sessioner som den loggade in avslutades.",
   "done.recovery": "Nästa gång du loggar in utan nyckel ombeds du registrera en ny innan du kan använda någon applikation.",
-  "done.noWayIn": "Det var ditt enda sätt att logga in: be din administratör om en aktiveringslänk, eller använd dina återställningskoder."
+  "done.noWayIn": "Det var ditt enda sätt att logga in: be din administratör om en aktiveringslänk, eller använd dina återställningskoder.",
+  "kind.oath": "Engångskoder",
+  "claim.heading": "Gör anspråk på en token du har fått",
+  "claim.intro": "Om din organisation har gett dig en engångskodstoken skriver du serienumret som är tryckt på den och en kod den visar nu. Den blir din andra faktor.",
+  "claim.serial": "Serienummer",
+  "claim.code": "En kod den visar nu",
+  "claim.button": "Gör anspråk",
+  "done.claimed": "Token {serial} är din. Du ombeds ange en av dess koder nästa gång du loggar in."
 }

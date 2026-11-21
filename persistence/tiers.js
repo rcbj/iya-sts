@@ -414,6 +414,11 @@ const CELL_MINTED = [
   // holder's — and is attested where their keys were registered, so it is
   // kept beside their entry in this cell.
   'hardware_tokens.register',
+  // The OATH token inventory (#1955 P4): an imported token becomes
+  // somebody's, its secret on their entry in this cell, so the row that
+  // described it (and, until it is assigned, held that secret sealed) stays
+  // beside the entry.
+  'oath_tokens.inventory',
   'gnap.approvers', 'gnap.continuations', 'gnap.grants', 'gnap.instances',
   'gnap.interactions', 'gnap.manageHandles', 'gnap.manageValues',
   'gnap.movedGrants', 'gnap_monitor.counters', 'gnap.spend', 'gnap.tokens',

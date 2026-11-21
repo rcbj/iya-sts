@@ -377,6 +377,8 @@ const USER_FIELD_PREFIX = 'field.';
  */
 const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        'clear-totp', 'clear-key', 'clear-backup-codes',
+                       // A one-time code token (#1955 P4).
+                       'clear-hotp',
                        // A passkey's name (#470, rcbj's decision D).
                        'rename-key',
                        // The emailed second factor, and the address
@@ -741,7 +743,9 @@ const SAML11_RP_KIND = saml11.RP_KIND;
 /**
  * The actions the MFA resource answers, all of them handed to `usersAction()`.
  */
-const MFA_ACTIONS = ['clear-totp', 'clear-key', 'clear-email-factor'];
+const MFA_ACTIONS = ['clear-totp', 'clear-key', 'clear-email-factor',
+                     // #1955 P4: a one-time code token.
+                     'clear-hotp'];
 
 // The shortest statement of how a person's identity was verified (#1504).
 const MIN_EVIDENCE_LENGTH = 8;
@@ -4925,6 +4929,62 @@ class AdminActions {
           'cleared.' + this.sessionsEndedSentence(ended);
       }
       log.debug("Leaving AdminActions.usersAction(). clear-totp " +
+                (result.ok ? "ok." : "refused."));
+      return this.refusedBy('STS-ADMIN-0520', result);
+    }
+
+    // ---------------------------------------------------------------------
+    // A ONE-TIME CODE TOKEN (HOTP, #1955 P4): `clear-totp`'s act for the
+    // other kind of code, under the same evidence rule and with the same
+    // session ending. A token imported from a vendor's file and lost with
+    // its YubiKey is better reported lost (Directory → Hardware tokens),
+    // which retires every credential on it; this clears the one.
+    // ---------------------------------------------------------------------
+    if (action === 'clear-hotp') {
+      const who = String(body.user || body.username || '').trim();
+      if (!who) {
+        log.debug("Leaving AdminActions.usersAction(). No person named.");
+        return this.refused('STS-ADMIN-0518', { ok: false,
+          errors: ['Name the person whose one-time code token is being ' +
+                   'cleared.'] });
+      }
+      const unproved = this.evidenceRefusal(body);
+      if (unproved) {
+        log.debug("Leaving AdminActions.usersAction(). No evidence.");
+        return unproved;
+      }
+      const result = credentials.removeHotp(who);
+      const ended = result.ok
+        ? this.endFactorSessions(who, { kind: 'hotp' }, ctx,
+                                 'the one-time code token')
+        : null;
+      auditLog.record({
+        category: 'authentication', action: 'admin.mfa.hotp.cleared',
+        actor: ctx.actor, target: who,
+        outcome: result.ok ? 'success' : 'failure',
+        summary: (result.ok ? 'cleared' : 'could not clear') +
+                 ' the one-time code token of ' + who,
+        detail: { username: who, via: ctx.via,
+                  evidence: this.evidenceOf(body),
+                  sessionsEnded: ended ? ended.sessionsEnded : undefined,
+                  errors: result.ok ? undefined : (result.errors || []) }
+      });
+      if (result.ok) {
+        accountSignals.credentialChanged({ username: who,
+          credentialType: accountSignals.HOTP_CREDENTIAL_TYPE,
+          changeType: 'delete', via: ctx.via,
+          reasonAdmin: 'An administrator cleared the one-time code token ' +
+                       'of ' + who + '.',
+          reasonUser: 'Your one-time code token was removed from your ' +
+                      'account.' });
+        log.info('admin: the one-time code token of "' + who + '" was ' +
+                 'cleared by ' + (ctx.actor || 'an unnamed caller') + ' (' +
+                 ctx.via + ').');
+        result.sessionsEnded = ended ? ended.sessionsEnded : 0;
+        result.message = 'The one-time code token of ' + who + ' is ' +
+          'cleared.' + (ended ? this.sessionsEndedSentence(ended) : '');
+      }
+      log.debug("Leaving AdminActions.usersAction(). clear-hotp " +
                 (result.ok ? "ok." : "refused."));
       return this.refusedBy('STS-ADMIN-0520', result);
     }
