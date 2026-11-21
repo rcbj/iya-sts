@@ -98,7 +98,7 @@ namespace IyaSts.Api.Common;
 
 @js(#{ `additionalProperties`:false, `properties`:#{ `id`:#{`type`:"string"}, `approvedAt`:#{`type`:#["string","number","null"]}, `approvedUntil`:#{`type`:#["string","number","null"]}, `approver`:#{`type`:#["string","null"]}, `revoked`:#{`type`:"boolean"} }, `$types`:#["object","null"] }) @hoisted model NullableObject27 {}
 
-@js(#{ `additionalProperties`:false, `properties`:#{ `userCode`:#{`type`:"string"}, `clientId`:#{`type`:"string"}, `clientName`:#{`type`:"string"}, `scope`:#{`type`:"string"}, `expiresAt`:#{`type`:#["string","number","null"]} }, `$types`:#["object","null"] }) @hoisted model NullableObject28 {}
+@js(#{ `additionalProperties`:false, `properties`:#{ `userCode`:#{`type`:"string"}, `clientId`:#{`type`:"string"}, `clientName`:#{`type`:"string"}, `scope`:#{`type`:"string"}, `resources`:#{`type`:"array",`items`:#{`type`:"string"}}, `expiresAt`:#{`type`:#["string","number","null"]} }, `$types`:#["object","null"] }) @hoisted model NullableObject28 {}
 
 @js(#{ `additionalProperties`:false, `properties`:#{ `linkedAt`:#{`type`:#["string","number","null"]}, `stale`:#{`type`:"boolean"} }, `$types`:#["object","null"] }) @hoisted model NullableObject29 {}
 

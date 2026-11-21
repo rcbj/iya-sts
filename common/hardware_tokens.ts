@@ -143,7 +143,7 @@ const CREDENTIAL_KINDS = ['fido', 'x509', 'hotp', 'yubico-otp', 'ssh',
  * Nothing else records a serial.
  */
 const EVIDENCE_SOURCES = ['fido-enterprise-attestation', 'piv-attestation',
-                          'vendor-import'];
+                          'vendor-import', 'ssh-security-key-attestation'];
 
 /** A token's status: `active` or `lost`. */
 const STATUSES = ['active', 'lost'];

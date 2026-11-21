@@ -124,6 +124,7 @@ interface AccessQuestion {
     application: string; eligible: boolean; door: string;
     approverIdentity: string[];
   } | null;
+  sshPrincipal?: string;
 }
 
 // What a decision answers.
@@ -406,6 +407,13 @@ class XacmlAccessPep {
                   (owned.attributes || []).map(String))
         .action(ATTRIBUTE.ADMIN_ACTION, [String(owned.action || '')])
         .subject(ATTRIBUTE.OWNER_SUBJECT, [String(owned.person || '')]);
+    }
+    // THE SSH CA'S PRINCIPAL-SPECIFIC DECISION (#1955 P3): the caller asks
+    // once per UID or group CN, so a policy can permit some names and refuse
+    // others without treating the whole certificate as one decision.
+    if (asked.sshPrincipal) {
+      req.resource(ATTRIBUTE.SSH_PRINCIPAL,
+                   [String(asked.sshPrincipal)]);
     }
     // THE REPORT RULE'S QUESTION (#1030): the row's kind and the groups it
     // is shared with, and the person for the PIP's owner identity. The

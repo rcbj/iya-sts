@@ -3716,6 +3716,8 @@ Scope: `account:manage`.
 | `record.clientId` | string |  |  |
 | `record.clientName` | string |  |  |
 | `record.expiresAt` | string or number, or null |  |  |
+| `record.resources` | list |  |  |
+| `record.resources[]` | string |  |  |
 | `record.scope` | string |  |  |
 | `record.userCode` | string |  |  |
 | `typed` | string |  |  |
@@ -3764,6 +3766,8 @@ Scope: `account:manage`.
 | `view.record.clientId` | string |  |  |
 | `view.record.clientName` | string |  |  |
 | `view.record.expiresAt` | string or number, or null |  |  |
+| `view.record.resources` | list |  |  |
+| `view.record.resources[]` | string |  |  |
 | `view.record.scope` | string |  |  |
 | `view.record.userCode` | string |  |  |
 | `view.typed` | string |  |  |
@@ -3782,6 +3786,8 @@ Scope: `account:manage`.
 | `view.record.clientId` | string |  |  |
 | `view.record.clientName` | string |  |  |
 | `view.record.expiresAt` | string or number, or null |  |  |
+| `view.record.resources` | list |  |  |
+| `view.record.resources[]` | string |  |  |
 | `view.record.scope` | string |  |  |
 | `view.record.userCode` | string |  |  |
 | `view.typed` | string |  |  |
@@ -3834,6 +3840,8 @@ Scope: `account:manage`.
 | `view.record.clientId` | string |  |  |
 | `view.record.clientName` | string |  |  |
 | `view.record.expiresAt` | string or number, or null |  |  |
+| `view.record.resources` | list |  |  |
+| `view.record.resources[]` | string |  |  |
 | `view.record.scope` | string |  |  |
 | `view.record.userCode` | string |  |  |
 | `view.typed` | string |  |  |
@@ -3872,6 +3880,8 @@ Scope: `account:manage`.
 | `view.record.clientId` | string |  |  |
 | `view.record.clientName` | string |  |  |
 | `view.record.expiresAt` | string or number, or null |  |  |
+| `view.record.resources` | list |  |  |
+| `view.record.resources[]` | string |  |  |
 | `view.record.scope` | string |  |  |
 | `view.record.userCode` | string |  |  |
 | `view.typed` | string |  |  |
@@ -9892,6 +9902,174 @@ Scope: `account:manage`.
 | `view.tls.trusted` | boolean |  |  |
 | `view.tokenEndpoint` | string |  |  |
 | `view.username` | string |  |  |
+
+## POST /account-api/ssh/certificates
+
+`issueSshCertificate`
+
+**Issues an SSH user certificate**
+
+Certifies one authorized public key for principals belonging to the caller, with a separate authorization decision for every principal. Security-key evidence is verified before it can produce a hardware-bound certificate. The caller may revoke only certificates issued to their own token subject.
+
+Scope: `account:manage`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `attestation` | string |  | Base64 OpenSSH security-key attestation evidence, required for `sk-*` keys. |
+| `lifetimeS` | integer |  | Certificate lifetime in seconds. Defaults to 300; maximum 300 for ordinary keys and 3600 with verified hardware evidence. |
+| `principals` | list | yes | The requested principals. Each must be the caller's username or one of their group common names. |
+| `principals[]` | string |  |  |
+| `publicKey` | string | yes | One OpenSSH public key line; certificate keys and authorized-key options are not accepted. |
+
+**200**: The OpenSSH user certificate, in authorized-key format.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `certificate` | string | yes |  |
+| `hardwareBound` | boolean | yes |  |
+| `ok` | boolean | yes |  |
+| `serialHex` | string | yes |  |
+| `validAfter` | integer | yes |  |
+| `validBefore` | integer | yes |  |
+
+**400**: The request did not validate or the key could not be issued.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**401**: No valid DPoP-bound account access token.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**403**: A requested principal or hardware evidence was refused.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**429**: The caller exceeded the certificate issuance rate limit.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**503**: The SSH user CA is not available.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+## POST /account-api/ssh/certificates/revoke
+
+`revokeSshCertificate`
+
+**Revokes an SSH user certificate**
+
+Revokes a certificate issued to the caller's token subject and updates the realm's OpenSSH KRL. A certificate belonging to another subject is not disclosed.
+
+Scope: `account:manage`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `serialHex` | string | yes | The serial from a certificate previously issued to this caller, in hexadecimal. |
+
+**200**: The certificate was revoked.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `ok` | boolean | yes |  |
+| `revoked` | boolean | yes |  |
+
+**400**: The serial is invalid.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**401**: No valid DPoP-bound account access token.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**403**: The revocation was refused.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**404**: No certificate with this serial belongs to the caller.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**503**: The SSH user CA is not available.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
 
 ## GET /account-api/tokens
 

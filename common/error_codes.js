@@ -5427,6 +5427,37 @@ const CODES = [
       'GET /oid4vci/mdoc-iaca answers 500.',
     spec: 'the credential endpoint fails as it fails any signing error; ' +
       'the public certificate answers 500' },
+  { code: 'STS-PKI-0289',
+    summary: 'A request to issue an SSH user certificate (#1955 P3) had an ' +
+      'unsupported key, invalid principals, or a lifetime outside the ' +
+      'allowed range.',
+    spec: 'The account API refuses the request' },
+  { code: 'STS-PKI-0290',
+    summary: 'The SSH user CA could not be created or used, a user ' +
+      'certificate could not be signed or recorded, or its KRL could not ' +
+      'be built (#1955 P3).',
+    spec: 'The account API or SSH KRL endpoint fails' },
+  { code: 'STS-PKI-0291',
+    summary: 'A requested SSH certificate revocation (#1955 P3) named a ' +
+      'malformed serial or one this realm did not issue.',
+    spec: 'The account API refuses the request' },
+  { code: 'STS-PKI-0292',
+    summary: 'A public SSH user CA or KRL request (#1955 P3) named a scope ' +
+      'that does not have a realm SSH user CA.',
+    spec: 'The public PKI endpoint refuses the request' },
+  { code: 'STS-PKI-0293',
+    summary: 'A person requested an SSH user certificate (#1955 P3) while ' +
+      'pki.personSelfService is off.',
+    spec: 'The account API refuses the request' },
+  { code: 'STS-PKI-0294',
+    summary: 'An SSH user certificate request (#1955 P3) had no UID, named ' +
+      'a principal the access policy refused, or its hardware evidence ' +
+      'could not be verified or recorded.',
+    spec: 'The account API refuses the request' },
+  { code: 'STS-PKI-0295',
+    summary: 'A person requested SSH user certificates (#1955 P3) too often ' +
+      'and the shared rate limiter refused it.',
+    spec: 'The account API refuses the request with HTTP 429' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },

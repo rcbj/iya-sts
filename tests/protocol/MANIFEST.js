@@ -2339,8 +2339,8 @@ const JOBS = [
   { file: 'sts_account_disable.js', browser: false, local: true,
     optIn: '444',
     testPeer: true },
-  // D12 (#444): /account-api's table, its gate's three codes and its body
-  // rules (account_api).
+  // D12 (#444): /account-api's table and body rules; SSH certificate
+  // issuance, ownership, revocation and RFC 8628 device-grant CLI use.
   { file: 'sts_account_api.js', browser: false, local: true,
     optIn: '444' },
   // D12 (#444): an application's allowed sign-in mechanisms and second

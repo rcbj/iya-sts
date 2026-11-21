@@ -198,11 +198,12 @@ class DeviceAuthorization {
    * @param clientName - its name, shown on the approval page
    * @param scope - the scope requested
    * @param dpopJkt - the DPoP key thumbprint the request was bound to, or ''
+   * @param resources - the authorized RFC 8707 resource indicators
    * @returns the new record, with `deviceCode` and `userCode` beside it for
    *   the response — the stored record holds only their digests (#614)
    */
   create(clientId: string, clientName: string, scope: string,
-         dpopJkt: string): Json {
+         dpopJkt: string, resources?: string[]): Json {
     const { log, config, now } = this.deps;
     log.debug("Entering DeviceAuthorization.create(). " + clientId);
     let userCode = this.newUserCode();
@@ -220,6 +221,8 @@ class DeviceAuthorization {
       deviceKey: DeviceAuthorization.keyOf(deviceCode),
       userCodeKey: DeviceAuthorization.keyOf(userCode), clientId: clientId,
       clientName: clientName || clientId, scope: scope,
+      resources: resources && resources.length ? resources.slice(0)
+                                              : undefined,
       dpopJkt: dpopJkt || '', state: 'pending', createdAt: now(),
       expiresAt: now() + lifetime * 1000,
       interval: Number(config.value('oauth2.deviceCodeIntervalS')),
