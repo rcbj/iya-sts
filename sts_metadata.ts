@@ -3464,19 +3464,47 @@ const SPECS: Spec[] = [
               'the WebAuthn attestation statement are not implemented.' },
   // ===== EST specs (est/) =====
   { id: 'lamps-csr-attestation', name: 'Use of Remote Attestation with ' +
-      'Certification Signing Requests (draft-ietf-lamps-csr-attestation-29)',
+      'Certification Signing Requests (draft-ietf-lamps-csr-attestation-33)',
     where: 'IETF (draft)',
     url: 'https://datatracker.ietf.org/doc/draft-ietf-lamps-csr-attestation/',
     coverage: 'partial: the id-aa-attestation attribute of a PKCS#10 ' +
               'request (at most one, exactly one AttestationBundle, the ' +
-              'certificate and other choices only) for the device profile ' +
-              'over EST and SCEP; the one statement type verified is the ' +
-              'TCG\'s tcg-attest-tpm-certify in revision 20\'s appendix ' +
-              'A.2.3 syntax, which no later revision or TCG document ' +
-              'replaces (#257). The CRMF extension is not read (no CMP ' +
-              'here), and other statement types are recorded, not ' +
-              'verified. Freshness (section 6.2) through ' +
-              'draft-ietf-lamps-attestation-freshness over EST.' },
+              'certificate and other choices only), over EST, SCEP and ' +
+              'ACME. Two statement types are verified: the TCG\'s ' +
+              'tcg-attest-tpm-certify in revision 20\'s appendix A.2.3 ' +
+              'syntax, for the device profile (#257), and a YubiKey PIV ' +
+              'attestation for every profile (#1955), under ' +
+              '1.3.6.1.4.1.41482.3.2 with the slot certificate as stmt ' +
+              'and the f9 certificate in certs, a type this service ' +
+              'chose because the draft defines none. The CRMF extension ' +
+              'is not read (no CMP here), and other statement types are ' +
+              'recorded, not verified. Freshness (section 6.2) through ' +
+              'draft-ietf-lamps-attestation-freshness over EST, for TPM ' +
+              'statements only: a PIV attestation carries no nonce.' },
+  // ===== YubiKey PIV and FIPS 201 (#1955 P2, common/piv_attestation.ts) =====
+  { id: 'yubico-piv-attestation', name: 'YubiKey PIV Attestation (Yubico)',
+    where: 'Yubico',
+    url: 'https://developers.yubico.com/PIV/Introduction/' +
+         'PIV_attestation.html',
+    coverage: 'partial: the slot attestation certificate is verified ' +
+              'through the f9 attestation certificate to Yubico\'s PIV ' +
+              'roots (Serial 263751, and Attestation Root 1 with its PIV ' +
+              'intermediates for firmware 5.7.4 and later, shipped and ' +
+              'pinned) or a realm\'s own; its key held to the request\'s; ' +
+              'the firmware, serial, PIN and touch policy and form factor ' +
+              'extensions read, the policies held to the realm\'s. The ' +
+              'card itself is never managed: no PIN, PUK or slot write.' },
+  { id: 'fips201', name: 'Personal Identity Verification (PIV) of Federal ' +
+      'Employees and Contractors (FIPS 201-3) and SP 800-73-4',
+    where: 'NIST',
+    url: 'https://csrc.nist.gov/pubs/fips/201-3/final',
+    coverage: 'minimal: the four key slots as certificate profiles (PIV ' +
+              'Authentication 9a, Digital Signature 9c, Key Management ' +
+              '9d, Card Authentication 9e, which signs nobody in by ' +
+              'default), and an outside PIV or CAC card mapped by the card ' +
+              'UUID in its urn:uuid subjectAltName when it asserts a PIV ' +
+              'Authentication policy (off by default). No FASC-N, CHUID, ' +
+              'card management or biometrics.' },
   { id: 'lamps-attestation-freshness', name: 'Requesting a Freshness Nonce ' +
       'for Attestation Evidence in Certificate Signing Requests ' +
       '(draft-ietf-lamps-attestation-freshness-08)',
@@ -4845,7 +4873,7 @@ const ENDPOINTS: EndpointEntry[] = [
   // reason to know it is here is the certificate — one anchor covers both.
   { path: '/tls/sign-in', group: 'TLS', name: 'Sign in with a client ' +
       'certificate',
-    specs: ['rfc8446', 'rfc5280'],
+    specs: ['rfc8446', 'rfc5280', 'fips201'],
     what: 'A VERIFIED CLIENT CERTIFICATE BECOMES A SESSION (2026-09-05), on ' +
           'this port since 2026-09-16 — it was a side effect of reaching ' +
           'either deleted TLS listener, which meant loading a diagnostic ' +
@@ -6892,13 +6920,27 @@ const ENDPOINTS: EndpointEntry[] = [
           'person, with the passkeys and certificates on each. Mirrors GET ' +
           '/admin/hardware-tokens.' },
   { path: '/admin-api/hardware-tokens/:action', group: 'Management API',
-    name: 'Report a hardware token lost', specs: ['openapi'],
-    effect: 'reports a hardware token lost and retires its credentials',
+    name: 'Hardware token acts',
+    specs: ['openapi', 'yubico-piv-attestation', 'lamps-csr-attestation'],
+    effect: 'reports a hardware token lost and retires its credentials, ' +
+            'issues a PIV slot certificate, or hands over an escrowed key',
     what: 'NON-SPEC (#1955). lost, with { key }: the token is marked lost, ' +
           'each passkey on it removed, each certificate on it revoked for ' +
           'keyCompromise, a CAEP credential-change sent for each and the ' +
-          'sessions they signed in ended. The console\'s one act on that ' +
-          'page.' },
+          'sessions they signed in ended. enrol-piv, with { username, ' +
+          'profile, csr, attestationCertificate?, attestationIssuer? }: a ' +
+          'PIV slot certificate issued to that person over the EST Issuing ' +
+          'CA, its YubiKey PIV attestation verified and the YubiKey ' +
+          'recorded. recover-key, with { username, serial }: that person\'s ' +
+          'escrowed piv-key-management key, which the access-control ' +
+          'policy permits only to PIV_KEY_RECOVERY. The console\'s three ' +
+          'acts on that page.' },
+  { path: '/admin-api/hardware-tokens/escrowed', group: 'Management API',
+    name: 'Escrowed PIV keys', specs: ['openapi'],
+    what: 'NON-SPEC (#1955). A person\'s escrowed piv-key-management ' +
+          'certificates (piv.keyEscrow): serial, subject, validity and ' +
+          'whether each was revoked. Never a key. Mirrors GET ' +
+          '/admin/hardware-tokens.' },
   { path: '/admin-api/scim/clients', group: 'Management API',
     name: 'Outbound SCIM clients', specs: ['openapi', 'rfc7644'],
     what: 'NON-SPEC (#552). What Protocols → SCIM → Clients draws: the ' +
@@ -10774,7 +10816,7 @@ const PROTOCOLS: Protocol[] = [
   // ===== ACME card (acme/) =====
   { name: 'ACME', groups: ['ACME'],
     specs: ['rfc8555', 'rfc9773', 'rfc8738', 'rfc8823', 'acme-profiles',
-            'acme-device-attest'],
+            'acme-device-attest', 'lamps-csr-attestation'],
     what: 'An ACME server per trust realm at /enroll/acme: an account bound ' +
           'for life to one person or application by an External Account ' +
           'Binding key, orders for dns, ip, email and permanent-identifier ' +
@@ -10785,7 +10827,8 @@ const PROTOCOLS: Protocol[] = [
   // ===== EST card (est/) =====
   { name: 'EST', groups: ['EST'],
     specs: ['rfc7030', 'rfc8951', 'rfc5967', 'lamps-csr-attestation',
-            'lamps-attestation-freshness'],
+            'lamps-attestation-freshness', 'yubico-piv-attestation',
+            'fips201'],
     what: 'Enrollment over Secure Transport: a device or a person holding a ' +
           'password, a client secret or a certificate this realm issued sends ' +
           'a base64 PKCS#10 request and is handed a certificate from the ' +
@@ -10796,7 +10839,7 @@ const PROTOCOLS: Protocol[] = [
           'Full CMC and tls-unique channel binding are not implemented.' },
   // ===== SCEP card (scep/) =====
   { name: 'SCEP', groups: ['SCEP'],
-    specs: ['rfc8894', 'rfc5280', 'rfc6960'],
+    specs: ['rfc8894', 'rfc5280', 'rfc6960', 'lamps-csr-attestation'],
     what: 'The Simple Certificate Enrolment Protocol: a device holding a ' +
           'single-use challenge password issued for one person or ' +
           'application and one profile sends a signed, encrypted PKCS#10 ' +

@@ -2298,5 +2298,9 @@
   "audit.actions.xacml.pep.cluster.proxy.clear.label": {
     "en": "c2812e5d21fb6dd4",
     "text": "أُزيل إعداد الوكيل العكسي لعنقود PEP بعيد"
+  },
+  "audit.actions.piv-escrow.recover.label": {
+    "en": "0cad829ec7cafc72",
+    "text": "استُرد مفتاح مودَع لإدارة مفاتيح PIV"
   }
 }

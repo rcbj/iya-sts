@@ -343,7 +343,7 @@ const PROTOCOL_TABS: Record<string, string[]> = {
   '/admin/applications': ['applications', 'add', 'settings'],
   '/admin/devices': ['devices', 'register'],
   // #1955 P1: the register's one list.
-  '/admin/hardware-tokens': ['tokens'],
+  '/admin/hardware-tokens': ['tokens', 'enrol', 'escrow'],
   '/admin/attribute-sources': ['sources', 'add', 'person', 'settings'],
   '/admin/secret-destinations': ['destinations', 'add'],
   // #1111, #1123: the started activities and their controls; the report

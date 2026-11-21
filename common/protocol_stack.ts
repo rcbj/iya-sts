@@ -340,6 +340,13 @@ class ProtocolStack {
     // moment of use.
     this.build('common/hardware_tokens', require('./hardware_tokens'),
                'HardwareTokens');
+    // #1955 P2: YubiKey PIV key attestation, the PIV slot profiles' rules
+    // and the outside PIV card mapping. A library (rule 3) of libraries; the
+    // register and enrolment it calls back are reached at the moment of use.
+    this.build('common/piv_attestation', require('./piv_attestation'),
+               'PivAttestation');
+    this.build('common/piv_enrolment', require('./piv_enrolment'),
+               'PivEnrolment');
     // #164 phase 2: what a device key's attestation proves
     // (`device_attestation`), which device a request came from
     // (`device_recognition`, asked by `authn` and `oauth2` below), and a

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5774** of them, in **53** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5800** of them, in **54** subsystems.
 
 ## Where a code appears
 
@@ -86,6 +86,7 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 53
 * [Hardware tokens (`STS-HWTOKEN`)](#sts-hwtoken) — 13
+* [PIV key attestation (`STS-PIV`)](#sts-piv) — 26
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 225
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 137
@@ -4953,6 +4954,41 @@ Raised from: common/hardware_tokens.ts, mgmt-api/hardware_tokens_api.ts, portal/
 | `STS-HWTOKEN-0011` | A passkey was written and the hardware token register could not record the token its attestation named; the key stands, and the token is recorded when it is next registered (#1955). | — |
 | `STS-HWTOKEN-0012` | A hardware token act named an action that is not one of the page's (#1955). | HTTP 400 (the page with the sentence) |
 | `STS-HWTOKEN-0013` | The hardware token list or the lost-key act failed with an unexpected error at /admin-api; the log line has the stack (#1955). | HTTP 500 |
+
+## STS-PIV
+
+**PIV key attestation.** YubiKey PIV key attestation at certificate enrolment (#1955 P2): the request's attestation read and verified against the realm's PIV attestation anchors and its PIN and touch policy, the four PIV slot profiles, the escrow of piv-key-management keys, and the mapping of an outside PIV or CAC card by its card UUID.
+
+Raised from: common/piv_attestation.ts, common/cert_enrollment.ts, common/piv_enrolment.ts, portal/account_tokens.ts, mgmt-api/hardware_tokens_api.ts.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-PIV-0001` | A shipped PIV attestation certificate (common/pki_piv_anchors.json) did not match its pinned SHA-256 and is not used (#1955). | — |
+| `STS-PIV-0002` | Refused under paranoid PKI mode for piv-attestation: a YubiKey PIV key attestation chain; nothing established what the use case needs, or the use case itself refused (a self-signed leaf, an anchor out of reach). | the use case's refusal (#1360, #1955) |
+| `STS-PIV-0003` | Refused under paranoid PKI mode for piv-card: an outside PIV or CAC card's certificate mapped by its card UUID; the leaf's keyUsage or validity failed, or the use case itself refused. | the use case's refusal (#1360, #1955) |
+| `STS-PIV-0004` | A PIV attestation could not be read: the request's id-aa-attestation attribute is no AttestationBundle, the form's two certificates are not one slot certificate and an f9 certificate, or a server-generated key carried one (#1955). | HTTP 400; EST, SCEP and ACME refuse the request |
+| `STS-PIV-0005` | A PIV attestation certifies a different public key from the certificate request's (#1955). | HTTP 400 |
+| `STS-PIV-0006` | A PIV attestation does not chain to a PIV attestation anchor of the realm (piv.attestationAnchors, Yubico's roots by default), or the realm has none (#1955). | HTTP 400 |
+| `STS-PIV-0007` | A PIV attestation names no serial number (Yubico extension 1.3.6.1.4.1.41482.3.7), so no hardware token can be recorded from it (#1955). | HTTP 400 |
+| `STS-PIV-0008` | A PIV attestation is of another slot than the PIV profile asked is for (9a piv-auth, 9c piv-sign, 9d piv-key-management, 9e piv-card-auth) (#1955). | HTTP 400 |
+| `STS-PIV-0009` | The PIV enrolment form was sent without a certificate request, without a PIV profile, or for a person the caller may not enrol (#1955). | HTTP 400 (the page with the sentence) |
+| `STS-PIV-0010` | A PIV profile was asked without a PIV attestation in a realm that requires one (piv.requireAttestation) (#1955). | HTTP 400 |
+| `STS-PIV-0011` | An attested PIV key's PIN policy is weaker than the realm requires (piv.pinPolicy) (#1955). | HTTP 400 |
+| `STS-PIV-0012` | An attested PIV key's touch policy is weaker than the realm requires (piv.touchPolicy) (#1955). | HTTP 400 |
+| `STS-PIV-0013` | A piv-card-auth (slot 9e) certificate was refused at a sign-in, because that key works without a PIN (piv.cardAuthSignIn) (#1955). | the TLS sign-in and PKINIT refusals |
+| `STS-PIV-0014` | A certificate was issued from a verified PIV attestation and the hardware token register could not record its token; the certificate stands and earns no hardware claim (#1955). | — |
+| `STS-PIV-0016` | A PIV enrolment or key-recovery act failed with an unexpected error; the log line has the stack (#1955). | HTTP 500 |
+| `STS-PIV-0020` | A piv-key-management key was to be escrowed and no key-encryption key is held to seal it, so it was neither generated nor kept (#1955, D7). | HTTP 503 |
+| `STS-PIV-0021` | EST /serverkeygen was asked for a piv-key-management key in a realm that does not escrow them (piv.keyEscrow): a server-generated 9d key exists only to be escrowed (#1955, D7). | HTTP 501 |
+| `STS-PIV-0022` | An escrowed key was asked for and no escrowed piv-key-management key is held for that certificate on that person (#1955, D7). | HTTP 404 |
+| `STS-PIV-0023` | An administrator's recovery of an escrowed key was refused by the access-control policy: the caller does not hold PIV_KEY_RECOVERY (roles.pivKeyRecoveryGroup), or no policy decider is installed (#1955, D7). | HTTP 403 |
+| `STS-PIV-0024` | An escrowed key could not be opened (its data encryption key is not held, or the sealed value is damaged) (#1955, D7). | HTTP 503 |
+| `STS-PIV-0025` | An escrowed certificate could not be attached to a hardware token: the token is not the caller's, is lost, or the certificate is not an escrowed one of theirs (#1955, D7). | HTTP 404 |
+| `STS-PIV-0030` | An outside PIV or CAC card's certificate, from an issuer in piv.externalIssuers, was not mapped: it asserts none of piv.externalPolicyOids, or does not carry exactly one urn:uuid subjectAltName (#1955, D8). | the outside-certificate refusal (STS-TLS-0054, STS-AUTHN-0468) |
+| `STS-PIV-0031` | An outside PIV or CAC card's certificate names a card UUID that is in stsPivCardUuid on no person of the realm (#1955, D8). | the outside-certificate refusal (STS-TLS-0054, STS-AUTHN-0468) |
+| `STS-PIV-0032` | An outside PIV or CAC card's card UUID is in stsPivCardUuid on more than one person, so it names nobody (#1955, D8). | the outside-certificate refusal (STS-TLS-0055, STS-AUTHN-0469) |
+| `STS-PIV-0034` | A value written to stsPivCardUuid is not a card UUID in RFC 9562 form (or is the nil UUID); nothing was written (#1955, D8). | HTTP 400 (the directory write); LDAP constraintViolation |
+| `STS-PIV-0035` | A card UUID written to stsPivCardUuid is already held by another entry of the realm, which would make the card name two people; nothing was written (#1955, D8). | HTTP 400 (the directory write); LDAP constraintViolation |
 
 ## STS-SVCACCT
 

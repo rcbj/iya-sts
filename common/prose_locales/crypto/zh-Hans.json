@@ -1596,12 +1596,12 @@
     "text": "它发出的每一张证书，使用本领域的 EST 签发 CA 密钥，通过 common/pki.js 的 issueEnrolled() 签名——这里所有其他证书也出自同一个编码器。它返回的仅含证书的 CMS 消息是退化形式：带证书而无签名者的 SignedData，因此它们自身不带签名，其可信度来自其中的证书。"
   },
   "crypto.families.est.verifies": {
-    "en": "d40d37c4bd83de49",
-    "text": "PKCS#10 持有证明——请求用其自身公钥做出的签名，包括传统算法和后量子算法，在 common/cert_enrollment.ts 中验证——以及在证书身份验证时，客户端证书到本领域中间 CA 和服务根 CA 的路径，并查询吊销状态。/serverkeygen 模板不验证：其密钥会被替换。"
+    "en": "6b27c8877d509c46",
+    "text": "PKCS#10 持有证明——请求以其自身公钥所作的签名，经典与后量子均可，位于 common/cert_enrollment.ts——以及在证书身份验证时，客户端证书到本领域 Intermediate 和服务 Root 的路径，并查询吊销状态。/serverkeygen 模板不验证：其密钥会被替换。请求中的 YubiKey PIV 密钥证明（#1955，此处以及通过 ACME 和 SCEP）：f9 证书对插槽证书所作的 ECDSA 或 RSA 签名，以及 f9 证书到领域 PIV 证明信任锚的路径，均经由验证入口完成。"
   },
   "crypto.families.est.encrypts": {
-    "en": "2f48e10a9ad6494d",
-    "text": "服务器生成的密钥对的私钥，凡在密钥加密密钥比进程存活更久之处，都以 AES-256-GCM 在其下封存到条目上。它不会针对客户端加密（RFC 7030 section 4.4.1.2）：提出该要求的请求会被拒绝，密钥仅在 TLS 内传输。"
+    "en": "a18df4311029b728",
+    "text": "服务器生成的密钥对的私钥，在该密钥会比进程存活更久的情况下，以 AES-256-GCM 在密钥加密密钥下密封保存于条目上；托管的 piv-key-management 密钥（#1955）在每种模式下都如此，否则根本不生成。它“不会”为客户端加密（RFC 7030 第 4.4.1.2 节）：要求这样做的请求会被拒绝，密钥只在 TLS 内传输。"
   },
   "crypto.families.est.decrypts": {
     "en": "8d5c676935439726",
@@ -1906,5 +1906,9 @@
   "crypto.param.totp.encoding": {
     "en": "d9613131364834bc",
     "text": "RFC 4648 base32，无填充，符合 otpauth Key Uri Format 的要求。"
+  },
+  "crypto.families.est.algorithms.4.what": {
+    "en": "4dd4db2fd60c28f7",
+    "text": "已验证的 PIV 证明签名"
   }
 }

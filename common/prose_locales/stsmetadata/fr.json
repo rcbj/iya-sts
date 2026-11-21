@@ -696,8 +696,8 @@
     "text": "minimal : uniquement le type d’identifiant permanent-identifier, qui désigne ici l’entrée d’annuaire propre au compte et devient son subjectAltName urn:sts:. Le challenge device-attest-01 et la déclaration d’attestation WebAuthn ne sont pas implémentés."
   },
   "stsmetadata.specs.lamps-csr-attestation.coverage": {
-    "en": "727a26e021b5f20f",
-    "text": "partial : l’attribut id-aa-attestation d’une requête PKCS#10 (au plus un, exactement un AttestationBundle, uniquement le choix certificate et les autres choix) pour le profil device sur EST et SCEP ; le seul type de déclaration vérifié est tcg-attest-tpm-certify du TCG dans la syntaxe de l’annexe A.2.3 de la révision 20, qu’aucune révision ultérieure ni aucun document du TCG ne remplace (#257). L’extension CRMF n’est pas lue (pas de CMP ici), et les autres types de déclaration sont enregistrés, non vérifiés. La fraîcheur (section 6.2) passe par draft-ietf-lamps-attestation-freshness sur EST."
+    "en": "59b1734815ece664",
+    "text": "partial : l’attribut id-aa-attestation d’une demande PKCS#10 (un au plus, exactement un AttestationBundle, le certificat et les autres choix seulement), via EST, SCEP et ACME. Deux types de déclaration sont vérifiés : le tcg-attest-tpm-certify du TCG dans la syntaxe de l’annexe A.2.3 de la révision 20, pour le profil d’appareil (#257), et une attestation PIV de YubiKey pour chaque profil (#1955), sous 1.3.6.1.4.1.41482.3.2, avec le certificat de l’emplacement comme stmt et le certificat f9 dans certs, un type que ce service a choisi parce que le brouillon n’en définit aucun. L’extension CRMF n’est pas lue (pas de CMP ici), et les autres types de déclaration sont enregistrés, non vérifiés. La fraîcheur (section 6.2) via draft-ietf-lamps-attestation-freshness sur EST, pour les déclarations TPM seulement : une attestation PIV ne porte aucun nonce."
   },
   "stsmetadata.specs.lamps-attestation-freshness.coverage": {
     "en": "555e31da7393d476",
@@ -2132,12 +2132,12 @@
     "text": "NON-SPEC (#1955). Ce que dessine Annuaire → Jetons matériels : les clés de sécurité et cartes à puce physiques que ce domaine a enregistrées, chacune à partir de sa propre attestation, paginées et recherchées par numéro de série ou par personne, avec les clés d'accès et certificats de chacune. Reflète GET /admin/hardware-tokens."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-    "en": "1303a5c415b09d44",
-    "text": "NON-SPEC (#1955). lost, avec { key } : le jeton est marqué perdu, chaque clé d'accès qu'il porte est supprimée, chaque certificat qu'il porte est révoqué pour keyCompromise, un changement d'identifiant CAEP est envoyé pour chacun et les sessions qu'ils ont ouvertes sont fermées. La seule action de la console sur cette page."
+    "en": "0d649147af0cbe04",
+    "text": "NON-SPEC (#1955). lost, avec { key } : le jeton est marqué perdu, chaque clé d’accès qu’il porte supprimée, chaque certificat qu’il porte révoqué pour keyCompromise, un credential-change CAEP envoyé pour chacun et les sessions qu’ils ont ouvertes fermées. enrol-piv, avec { username, profile, csr, attestationCertificate?, attestationIssuer? } : un certificat d’emplacement PIV émis pour cette personne par l’AC émettrice EST, son attestation PIV de YubiKey vérifiée et la YubiKey enregistrée. recover-key, avec { username, serial } : la clé piv-key-management séquestrée de cette personne, que la politique de contrôle d’accès ne permet qu’à PIV_KEY_RECOVERY. Les trois actions de la console sur cette page."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
-    "en": "7b39ad029e0234ed",
-    "text": "déclare un jeton matériel perdu et retire ses identifiants"
+    "en": "b55c0cdd477d183e",
+    "text": "déclare un jeton matériel perdu et retire ses identifiants, émet un certificat d’emplacement PIV ou remet une clé séquestrée"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -4066,5 +4066,17 @@
   "stsmetadata.param.aParameter": {
     "en": "24ece2f78749cf6a",
     "text": "un paramètre"
+  },
+  "stsmetadata.specs.yubico-piv-attestation.coverage": {
+    "en": "244659759ede3102",
+    "text": "partial : le certificat d’attestation de l’emplacement est vérifié, au travers du certificat d’attestation f9, jusqu’aux racines PIV de Yubico (Serial 263751, et Attestation Root 1 avec ses intermédiaires PIV pour le micrologiciel 5.7.4 et ultérieur, livrées et épinglées) ou celles propres à un domaine ; sa clé est confrontée à celle de la demande ; les extensions de micrologiciel, de numéro de série, de politique de PIN et de toucher et de facteur de forme sont lues, et les politiques confrontées à celles du domaine. La carte elle-même n’est jamais gérée : aucune écriture de PIN, de PUK ni d’emplacement."
+  },
+  "stsmetadata.specs.fips201.coverage": {
+    "en": "322d92ba9eb36fde",
+    "text": "minimal : les quatre emplacements de clé comme profils de certificat (PIV Authentication 9a, Digital Signature 9c, Key Management 9d, Card Authentication 9e, qui ne connecte personne par défaut), et une carte PIV ou CAC externe associée par l’UUID de carte de son subjectAltName urn:uuid lorsqu’elle affirme une politique PIV Authentication (désactivé par défaut). Pas de FASC-N, de CHUID, de gestion de carte ni de biométrie."
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/escrowed.what": {
+    "en": "1716521c9c5e119d",
+    "text": "NON-SPEC (#1955). Les certificats piv-key-management séquestrés d’une personne (piv.keyEscrow) : numéro de série, sujet, validité et si chacun a été révoqué. Jamais une clé. Reflète GET /admin/hardware-tokens."
   }
 }

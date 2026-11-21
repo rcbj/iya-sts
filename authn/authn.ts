@@ -6625,6 +6625,20 @@ class Authn {
       out = view ? { key: String(view.key), vendor: String(view.vendor),
                      model: String(view.model), source: String(ev.source),
                      smartCard: !!ev.smartCard } : null;
+      // WHAT THE ATTESTATION SAID OF THE KEY (#1955 P2, X4), where it said
+      // it: a PIV key's PIN and touch policies, the token's firmware, form
+      // factor and FIPS mark. Absent, never empty, where it did not.
+      if (out) {
+        ['pinPolicy', 'touchPolicy', 'firmware', 'formFactor']
+          .forEach(function (name: string): void {
+            if (ev[name]) {
+              out[name] = String(ev[name]);
+            }
+          });
+        if (ev.fips === true) {
+          out.fips = true;
+        }
+      }
     } catch (e) {
       helpers.log.debug("Caught in Authn.hardwareTokenOf(): " +
                         ((e && e.message) || e));

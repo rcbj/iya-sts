@@ -1800,6 +1800,30 @@ function storedIdentityOf(leafBytes, realmId) {
            }).join(', ') + '), so it names nobody; store it on exactly one' });
   }
   const one = list[0];
+  // AN OUTSIDE PIV OR CAC CARD (#1955 P2, D8): a certificate stored on no
+  // entry may still be a card one of the realm's `piv.externalIssuers`
+  // issued, which names its person by the FIPS 201 card UUID in its
+  // subjectAltName and nothing else. `piv_attestation.cardIdentityOf()`
+  // answers null when that mapping does not apply, and the refusal below
+  // stands; otherwise its answer, accepted or refused, is this one's.
+  if (!one) {
+    let card = null;
+    try {
+      const ask = function () {
+        return require('./piv_attestation').cardIdentityOf(leafBytes,
+                                                            realmIdNow);
+      };
+      card = realm ? realms.run(realm, ask) : ask();
+    } catch (e) {
+      log.debug("Caught in storedIdentityOf(): " + ((e && e.message) || e));
+      card = null;
+    }
+    if (card) {
+      log.debug("Leaving storedIdentityOf(). A PIV card, " +
+                (card.accepted ? 'mapped.' : 'not mapped.'));
+      return Object.assign(base, card);
+    }
+  }
   if (!one || (one.kind !== 'person' && one.kind !== 'application')) {
     log.debug("Leaving storedIdentityOf(). Not stored on an identity.");
     return Object.assign(base, { error: 'NOT_STORED',

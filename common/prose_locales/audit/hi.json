@@ -2298,5 +2298,9 @@
   "audit.actions.xacml.pep.cluster.proxy.clear.label": {
     "en": "c2812e5d21fb6dd4",
     "text": "एक दूरस्थ PEP क्लस्टर का रिवर्स-प्रॉक्सी कॉन्फ़िगरेशन हटाया गया"
+  },
+  "audit.actions.piv-escrow.recover.label": {
+    "en": "0cad829ec7cafc72",
+    "text": "एक एस्क्रो की गई PIV कुंजी-प्रबंधन कुंजी पुनर्प्राप्त की गई"
   }
 }

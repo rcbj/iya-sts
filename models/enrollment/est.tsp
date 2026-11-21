@@ -150,6 +150,15 @@ model EstCsrAttrsNames {
   @term(#{ values: #["otherName:1.3.6.1.4.1.311.20.2.3"],
            cite: "MS-WCCE section 2.2.2.7.7.4 (the user principal name)" })
   `smartcard-logon`: string;
+
+  // THE PIV SLOT PROFILES (#1955 P2): the S/MIME two ask the mail address,
+  // as `email` does. piv-auth's names are the entry's (its principal and
+  // userPrincipalName), so it asks the request for none.
+  @term(#{ values: #["rfc822Name"], cite: "RFC 8550 section 3" })
+  `piv-sign`: string;
+
+  @term(#{ values: #["rfc822Name"], cite: "RFC 8550 section 3" })
+  `piv-key-management`: string;
 }
 
 /** No EST operation takes a query string. */

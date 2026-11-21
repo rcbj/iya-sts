@@ -884,12 +884,14 @@ const SET_SIGNING_ALGORITHMS = algorithmRegistry.asymmetricJoseNames();
 const RISC_SUBJECT_FORMATS = ['account', 'email', 'iss_sub', 'opaque',
                               'phone_number', 'did', 'uri', 'aliases'];
 
-// common/cert_enrollment.ts's PROFILE_IDS — the nine leaf profiles an
-// enrollment protocol may issue, shared by ACME, EST and SCEP.
+// common/cert_enrollment.ts's PROFILE_IDS — the thirteen leaf profiles an
+// enrollment protocol may issue, shared by ACME, EST and SCEP: the nine, and
+// the four PIV slot profiles of #1955 P2, which no default list holds.
 const ENROLLMENT_PROFILES = ['tls-server', 'tls-client', 'tls-server-client',
                              'digital-signature', 'key-encipherment',
                              'code-signing', 'email', 'timestamping',
-                             'smartcard-logon'];
+                             'smartcard-logon', 'piv-auth', 'piv-sign',
+                             'piv-key-management', 'piv-card-auth'];
 
 // EST and SCEP also issue `device` (#164): cert_enrollment.ts's
 // DEVICE_PROFILE, for the families in its DEVICE_PROFILE_FAMILIES. ACME does
@@ -7160,6 +7162,97 @@ const SETTINGS = [
                  'earns hwk, and sc for a key on a smart card, only from ' +
                  'evidence in either case.' },
 
+  // #1955 P2: YUBIKEY PIV KEY ATTESTATION, THE SLOT PROFILES' RULES, 9d KEY
+  // ESCROW (D7) AND THE OUTSIDE PIV / CAC MAPPING (D8). Every one is off or
+  // empty by default, so a realm behaves as it did before #1955 until an
+  // operator sets one. `common/piv_attestation.ts` argues them.
+  { key: 'piv.attestationAnchors', group: 'Devices',
+    label: 'PIV attestation roots (PEM)',
+    env: 'STS_PIV_ATTESTATION_ANCHORS', type: 'string', dflt: '',
+    runtime: true,
+    description: 'The roots a YubiKey PIV key attestation must chain to, ' +
+                 'as a PEM bundle. Empty uses the two Yubico publishes ' +
+                 '(Yubico PIV Root CA Serial 263751, and Yubico Attestation ' +
+                 'Root 1 for firmware 5.7.4 and later), shipped in ' +
+                 'common/pki_piv_anchors.json and pinned there by SHA-256, ' +
+                 'with Yubico\'s PIV intermediates. A certificate here ' +
+                 'replaces the shipped roots.' },
+  { key: 'piv.requireAttestation', group: 'Devices',
+    label: 'Require a PIV attestation for the PIV profiles',
+    env: 'STS_PIV_REQUIRE_ATTESTATION', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'On, a request for a piv-auth, piv-sign, ' +
+                 'piv-key-management or piv-card-auth certificate is ' +
+                 'refused unless it carries a YubiKey PIV attestation that ' +
+                 'verifies (STS-PIV-0010). An escrowed piv-key-management ' +
+                 'key from EST /serverkeygen is the exception: this service ' +
+                 'generated it. Off, the default, such a request without ' +
+                 'one is issued with no hardware evidence; a request that ' +
+                 'carries one that does not verify is refused either way.' },
+  { key: 'piv.pinPolicy', group: 'Devices',
+    label: 'Weakest PIN policy an attested PIV key may have',
+    env: 'STS_PIV_PIN_POLICY', type: 'enum',
+    enumValues: ['any', 'once', 'always'], dflt: 'any', runtime: true,
+    description: 'What the attestation\'s PIN policy must be at least. ' +
+                 '`once`: the PIN once per session (a Bio key\'s ' +
+                 'match-once counts); `always`: the PIN before every use ' +
+                 '(match-always counts). `any`, the default, holds no ' +
+                 'PIN policy. A key whose attestation is weaker is refused ' +
+                 '(STS-PIV-0011).' },
+  { key: 'piv.touchPolicy', group: 'Devices',
+    label: 'Weakest touch policy an attested PIV key may have',
+    env: 'STS_PIV_TOUCH_POLICY', type: 'enum',
+    enumValues: ['any', 'cached', 'always'], dflt: 'any', runtime: true,
+    description: 'What the attestation\'s touch policy must be at least. ' +
+                 '`cached`: a touch, remembered for 15 seconds; `always`: ' +
+                 'a touch for every use. `any`, the default, holds none. A ' +
+                 'key whose attestation is weaker is refused (STS-PIV-0012).' },
+  { key: 'piv.cardAuthSignIn', group: 'Devices',
+    label: 'Let a piv-card-auth certificate sign in',
+    env: 'STS_PIV_CARD_AUTH_SIGN_IN', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'A piv-card-auth (slot 9e) key works without a PIN, for ' +
+                 'physical access, so its certificate is refused at the ' +
+                 'TLS sign-in and at PKINIT (STS-PIV-0013) unless this is ' +
+                 'on.' },
+  { key: 'piv.keyEscrow', group: 'Devices',
+    label: 'Escrow piv-key-management keys',
+    env: 'STS_PIV_KEY_ESCROW', type: 'bool', dflt: false, runtime: true,
+    description: 'On, EST /serverkeygen for the piv-key-management profile ' +
+                 'keeps the generated private key, sealed under the ' +
+                 'key-encryption key, so the holder (on the portal, after ' +
+                 'a fresh sign-in) or an administrator holding the PIV key ' +
+                 'recovery role can recover it and decrypt old mail after a ' +
+                 'card is lost. Refused where no key-encryption key is ' +
+                 'held (STS-PIV-0020). An escrowed key is never hardware ' +
+                 'evidence. Off, the default, /serverkeygen refuses the ' +
+                 'piv-key-management profile (STS-PIV-0021), so a 9d key ' +
+                 'is generated on the card and kept nowhere else.' },
+  { key: 'piv.externalIssuers', group: 'Devices',
+    label: 'Outside PIV or CAC issuing CAs mapped by card UUID (PEM)',
+    env: 'STS_PIV_EXTERNAL_ISSUERS', type: 'string', dflt: '',
+    runtime: true,
+    description: 'The issuing CAs whose PIV or CAC card certificates sign a ' +
+                 'person in by the FIPS 201 card UUID: a client certificate ' +
+                 'one of these issued directly, asserting a policy in ' +
+                 'piv.externalPolicyOids and carrying exactly one urn:uuid ' +
+                 'subjectAltName, maps to the one person whose ' +
+                 'stsPivCardUuid holds that UUID. Never by its name, and ' +
+                 'no entry is created. The CA must also be in a client ' +
+                 'truststore, or the handshake refuses it first. Empty, the ' +
+                 'default, maps nothing.' },
+  { key: 'piv.externalPolicyOids', group: 'Devices',
+    label: 'PIV Authentication policies an outside card must assert',
+    env: 'STS_PIV_EXTERNAL_POLICY_OIDS', type: 'csv',
+    dflt: '2.16.840.1.101.3.2.1.3.13,2.16.840.1.101.3.2.1.3.18',
+    runtime: true,
+    description: 'The certificate policies, one of which an outside card\'s ' +
+                 'certificate must assert to be mapped by its card UUID: ' +
+                 'by default id-fpki-common-authentication (the Federal ' +
+                 'PKI Common Policy\'s PIV Authentication) and ' +
+                 'id-fpki-certpcy-pivi-hardware (PIV-I). Add a CAC ' +
+                 'issuer\'s own hardware policies here.' },
+
   // #164 PHASE 3 (2026-09-26): the MDM / posture feed.
   // `admin-ui/devices_admin.ts`'s `mdmFeed()` argues it.
   { key: 'devices.complianceFeedMaxReports', group: 'Devices',
@@ -8683,6 +8776,31 @@ const SETTINGS = [
                  'other row and the master are untouched; off in product ' +
                  'mode it is logged once (STS-PKI-0239) and drawn red on ' +
                  '/admin/pki/trust.' },
+  { key: 'pki.paranoidPivAttestation', group: 'PKI',
+    label: 'Paranoid: a YubiKey PIV key attestation chain',
+    env: 'STS_PKI_PARANOID_PIV_ATTESTATION', type: 'bool',
+    dflt: true, runtime: true,
+    description: 'Use case `piv-attestation` (#1955): the slot attestation ' +
+                 'certificate and the f9 attestation certificate of a PIV ' +
+                 'enrolment. Paranoid asks the validity window at now, the ' +
+                 'path to piv.attestationAnchors and revocation where the ' +
+                 'chain names a list. Off, this use case alone runs the ' +
+                 'path check without the field checks, while every other ' +
+                 'row and the master are untouched; off in product mode it ' +
+                 'is logged once (STS-PKI-0239) and drawn red on ' +
+                 '/admin/pki/trust.' },
+  { key: 'pki.paranoidPivCard', group: 'PKI',
+    label: 'Paranoid: an outside PIV or CAC card mapped by card UUID',
+    env: 'STS_PKI_PARANOID_PIV_CARD', type: 'bool',
+    dflt: true, runtime: true,
+    description: 'Use case `piv-card` (#1955): a client certificate from ' +
+                 'an issuing CA in piv.externalIssuers, mapped by its card ' +
+                 'UUID. Paranoid asks keyUsage digitalSignature and the ' +
+                 'validity window of the leaf beside the one-hop issuer ' +
+                 'check. Off, this use case alone runs the issuer check ' +
+                 'only, while every other row and the master are ' +
+                 'untouched; off in product mode it is logged once ' +
+                 '(STS-PKI-0239) and drawn red on /admin/pki/trust.' },
   { key: 'pki.paranoidEnrollmentCredential', group: 'PKI',
     label: 'Paranoid: a certificate presented to enroll or renew',
     env: 'STS_PKI_PARANOID_ENROLLMENT_CREDENTIAL', type: 'bool',
@@ -8906,7 +9024,8 @@ const SETTINGS = [
     env: 'STS_ACME_DEFAULT_PROFILE', type: 'enum',
     enumValues: ['tls-server', 'tls-client', 'tls-server-client',
                  'digital-signature', 'key-encipherment', 'code-signing',
-                 'email', 'timestamping', 'smartcard-logon'],
+                 'email', 'timestamping', 'smartcard-logon', 'piv-auth',
+                 'piv-sign', 'piv-key-management', 'piv-card-auth'],
     dflt: 'tls-client', runtime: true,
     description: 'Most ACME clients never name a profile. An order naming ' +
                  'none whose identifiers are all dns or ip is issued ' +
@@ -9002,7 +9121,8 @@ const SETTINGS = [
     env: 'STS_EST_DEFAULT_PROFILE', type: 'enum',
     enumValues: ['tls-server', 'tls-client', 'tls-server-client',
                  'digital-signature', 'key-encipherment', 'code-signing',
-                 'email', 'timestamping', 'smartcard-logon'],
+                 'email', 'timestamping', 'smartcard-logon', 'piv-auth',
+                 'piv-sign', 'piv-key-management', 'piv-card-auth'],
     dflt: 'tls-client', runtime: true,
     description: 'What /.well-known/est/simpleenroll issues, with no label.' },
   { key: 'est.certificateLifetimeDays', group: 'EST',
@@ -9088,7 +9208,8 @@ const SETTINGS = [
     env: 'STS_SCEP_DEFAULT_PROFILE', type: 'enum',
     enumValues: ['tls-server', 'tls-client', 'tls-server-client',
                  'digital-signature', 'key-encipherment', 'code-signing',
-                 'email', 'timestamping', 'smartcard-logon'],
+                 'email', 'timestamping', 'smartcard-logon', 'piv-auth',
+                 'piv-sign', 'piv-key-management', 'piv-card-auth'],
     dflt: 'tls-client', runtime: true,
     description: 'The profile preselected when a challenge password is made.' },
   { key: 'scep.certificateLifetimeDays', group: 'SCEP',
@@ -17903,6 +18024,18 @@ const SETTINGS = [
                  'to every caller; that is the way to take the XACML surface ' +
                  'away without turning xacml.enabled off and losing the ' +
                  'embedded issuance and access PEPs with it.' },
+  { key: 'roles.pivKeyRecoveryGroup', group: 'Roles',
+    label: 'Group granting the PIV_KEY_RECOVERY role',
+    env: 'STS_ROLES_PIV_KEY_RECOVERY_GROUP', type: 'string',
+    dflt: 'piv-key-recovery', runtime: true,
+    description: 'The directory group whose members hold the built-in ' +
+                 'PIV_KEY_RECOVERY role (#1955), which the access-control ' +
+                 'policy requires, beside Admin Write, to recover another ' +
+                 'person\'s escrowed piv-key-management key (piv.keyEscrow). ' +
+                 'That key decrypts the person\'s mail, so nobody holds the ' +
+                 'role until an administrator adds them to the group. Empty ' +
+                 'lets nobody recover another person\'s key; the holder ' +
+                 'recovers their own on the portal.' },
   { key: 'roles.authzenPepGroup', group: 'Roles',
     label: 'Group granting the AUTHZEN_PEPS role',
     env: 'STS_ROLES_AUTHZEN_PEP_GROUP', type: 'string',

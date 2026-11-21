@@ -624,6 +624,25 @@ this service's thread. `GET /xacml` is guarded because it describes the other
 three, and its refusal names the group and the setting so that the page's job
 survives being refused.
 
+### Who may recover another person's escrowed PIV key (#1955 P2, D7)
+
+**A policy decision, not Admin Write** (the *authorization is XACML policy*
+rule). Recovering an escrowed piv-key-management key reads that person's
+mail, so `common/piv_enrolment.ts`'s `recover()` asks the access gate with
+resource `piv-key-escrow`, action `recover-key` and `requiredRoles`
+`['PIV_KEY_RECOVERY']`, and the built-in access-control document's first rule
+(holds a required role) decides it. PIV_KEY_RECOVERY is a built-in role held
+through the group `roles.pivKeyRecoveryGroup` names (default
+`piv-key-recovery`, nobody in it), argued in `common/roles.js` beside
+XACML_USER: it exists in every realm nobody configured, and it is not the
+console's write role. **Only a Permit recovers**: the gate answers "allowed"
+with no decision where no decider is installed or `xacml.enabled` is off, which
+is right for a surface and wrong for somebody's mail, so `recover()` asks for
+`decision === 'Permit'`. An operator narrows it (a second role, a department)
+by editing the document, never the code. The holder's own recovery on the
+portal is the account API's `person` access and a fresh sign-in, and does not
+ask this.
+
 ### Two roles, two groups, and they must not become one
 
 | Endpoints | Role | Group |
@@ -3637,6 +3656,16 @@ attested. **No built-in rule reads them**: "administrators sign in with an
 attested key" is a realm's own rule over these, or the authentication
 policy's `attested-hardware` mechanism, which the built-in `authn-mechanism`
 rule already enforces. They ride along and never make the policy asked.
+
+**#1955 P2 adds five, for the attested key itself**: `hardware-token-pin-policy`
+and `hardware-token-touch-policy` (a PIV slot key's, kept on the CREDENTIAL's
+evidence at enrolment, since each slot has its own), `hardware-token-firmware`,
+`hardware-token-form-factor` and `hardware-token-fips` (a boolean sent only when
+true; the token's). The gate sends them ONLY for a token still attested whose
+evidence said them, so a rule over them is inapplicable rather than matching an
+empty string, and a lost token's policies prove nothing. "Administrators sign in
+only with touch `always`" is a realm's rule over `hardware-token-touch-policy`;
+the realm settings `piv.pinPolicy` / `piv.touchPolicy` stay the ENROLMENT gate.
 
 ## A device-bound session an application requires (#740, 2026-10-25)
 

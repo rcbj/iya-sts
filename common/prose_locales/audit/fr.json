@@ -2298,5 +2298,9 @@
   "audit.actions.xacml.pep.cluster.proxy.clear.label": {
     "en": "c2812e5d21fb6dd4",
     "text": "La configuration de proxy inverse d’une grappe de PEP distants a été supprimée"
+  },
+  "audit.actions.piv-escrow.recover.label": {
+    "en": "0cad829ec7cafc72",
+    "text": "Une clé PIV de gestion de clés séquestrée a été récupérée"
   }
 }
