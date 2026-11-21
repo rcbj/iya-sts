@@ -865,9 +865,9 @@ Scope: `admin:write`.
 | `keyKind` | one of `x509`, `jwk`, `webauthn` |  |  |
 | `keyLabel` | string |  |  |
 | `keys` | list |  |  |
-| `keys[].kind` | one of `x509`, `jwk`, `webauthn` | yes | Required in each key: a key with no kind is refused (STS-DEVICE-0004). |
+| `keys[].kind` | one of `x509`, `jwk`, `webauthn` |  | Required in each key: a key with no kind is refused (STS-DEVICE-0004). |
 | `keys[].label` | string |  |  |
-| `keys[].value` | any JSON | yes | PEM, JWK (object or JSON) or credential id. Required in each key: a key with nothing readable is refused (STS-DEVICE-0004). |
+| `keys[].value` | any JSON |  | PEM, JWK (object or JSON) or credential id. Required in each key: a key with nothing readable is refused (STS-DEVICE-0004). |
 | `label` | string |  |  |
 | `model` | string |  |  |
 | `os` | string |  |  |

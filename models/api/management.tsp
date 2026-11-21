@@ -13865,9 +13865,12 @@ op `createDevice`(@js(#{
     @js(#{
       `description`:"Client ids or application identifiers: an array, or one string, comma separated."
     }) `applications`?: unknown;
+    // kind and value stay optional here. The create already refuses a
+    // key without either (STS-DEVICE-0004). Marking them required is
+    // request-property-became-required, which the OpenAPI gate rejects.
     `keys`?: ({
-      @js(#{`description`:"Required in each key: a key with no kind is refused (STS-DEVICE-0004)."}) `kind`: "x509" | "jwk" | "webauthn";
-      @js(#{`description`:"PEM, JWK (object or JSON) or credential id. Required in each key: a key with nothing readable is refused (STS-DEVICE-0004)."}) `value`: unknown;
+      @js(#{`description`:"Required in each key: a key with no kind is refused (STS-DEVICE-0004)."}) `kind`?: "x509" | "jwk" | "webauthn";
+      @js(#{`description`:"PEM, JWK (object or JSON) or credential id. Required in each key: a key with nothing readable is refused (STS-DEVICE-0004)."}) `value`?: unknown;
       `label`?: string
     })[];
     `keyKind`?: "x509" | "jwk" | "webauthn";
