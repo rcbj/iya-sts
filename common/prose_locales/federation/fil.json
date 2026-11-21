@@ -111,6 +111,14 @@
     "en": "0f52a102d4c01229",
     "text": "INTEGRATED AUTHENTICATION. Ipinapadala ang tao sa /authn/spnego, na sumasagot ng 401 na may WWW-Authenticate: Negotiate at sina-sign in siya batay sa service ticket na ibinabalik ng client niya (RFC 4559 sa ibabaw ng RFC 4178 sa ibabaw ng RFC 4121). Walang itinitipa at walang screen na iginuguhit. Gaya ng security key o wallet, nakasandig ito sa credential na vine-verify ng serbisyong ito sa bawat mode — sa product mode lang vine-verify ang password ng sign-in screen — at ang inaangkin ng session pagkatapos ay binabasa mula sa sariling mga flag ng TICKET: amr [\"pwd\"] para sa pre-authent, [\"hwk\"] para sa hw-authent, pareho para sa pareho, at WALANG ANUMAN para sa ticket na wala sa dalawa ang inaangkin. Ang client na hindi makakuha ng ticket ay nakakasalubong ng pahinang may link papunta sa sign-in screen, dahil dead end ang hubad na 401 Negotiate sa bawat browser na hindi naka-configure para sa host na ito."
   },
+  "fed.mechanisms.attested-hardware.label": {
+    "en": "a133b83617b8359b",
+    "text": "Na-attest na hardware key"
+  },
+  "fed.mechanisms.attested-hardware.what": {
+    "en": "2fc5a571514106a4",
+    "text": "Isang passkey o smart-card certificate sa isang hardware token na naitala ng realm na ito mula sa sarili nitong attestation (common/hardware_tokens.ts): isang security key na may enterprise attestation, o isang PIV card. Nag-aalok ang sign-in screen ng passkey at, kung tumatanggap ang authentication policy, ng sertipiko, at walang password. Sa isang allowed list, tanging ganoong credential ang tumutugon dito, kaya ang application na ang authentication policy ay nagpapangalan lamang ng attested-hardware ay naaabot lamang gamit ang napatunayang hardware key."
+  },
   "fed.mechanisms.wallet.label": {
     "en": "a6a3e498bac9d4f6",
     "text": "Wallet (OpenID4VP)"
@@ -488,8 +496,8 @@
     "text": "ANG POINTER, at ang kabuuan ng itinatago ng side na ito tungkol sa partner: ang identifier ng entry nito sa ou=applications. Ang entityID nito, ang assertion consumer service nito, ang mga redirect URI nito at ang certificate nito ay nakatira ROON, kung saan binabasa na sila ng bawat protocol module. Ang pagkopya ng alinman sa kanila dito ay ang pagkabigo ng dalawang store na iniiwasan ng pagkakaayos ng repository na ito."
   },
   "fed.schema.attributes.fedAuthnMechanism.what": {
-    "en": "10e91a734e1d74b3",
-    "text": "PAANO INA-AUTHENTICATE NG SERBISYONG ITO ANG TAO kapag hiniling ito ng partner na ito: password, password-mfa, webauthn, spnego — isang Kerberos ticket na hawak na ng browser, nang walang anumang screen — wallet — isang credential na na-issue ng realm na ito, ipinakita mula sa wallet ng tao — o federation, na nagpapasa sa kanila sa ibang relationship at siyang gumagawa sa serbisyong ito bilang identity BRIDGE sa pagitan ng dalawang protocol. ANG WALANG LAMAN AY NANGANGAHULUGANG WALANG SINASABI ANG RELATIONSHIP NA ITO, na hindi katulad ng password: bumabagsak ito sa appFederationRelationship sa application entry at saka sa sign-in screen, na eksaktong ginawa ng bawat relationship bago umiral ang attribute na ito."
+    "en": "cbb25dba52aecc9f",
+    "text": "PAANO INA-AUTHENTICATE NG SERBISYONG ITO ANG TAO kapag hiniling ito ng partner na ito: password, password-mfa, webauthn, attested-hardware — isang passkey sa hardware token na napatunayan ng attestation — spnego — isang Kerberos ticket na hawak na ng browser, nang walang anumang screen — wallet — isang credential na na-issue ng realm na ito, ipinakita mula sa wallet ng tao — o federation, na nagpapasa sa kanila sa ibang relationship at siyang gumagawa sa serbisyong ito bilang identity BRIDGE sa pagitan ng dalawang protocol. ANG WALANG LAMAN AY NANGANGAHULUGANG WALANG SINASABI ANG RELATIONSHIP NA ITO, na hindi katulad ng password: bumabagsak ito sa appFederationRelationship sa application entry at saka sa sign-in screen, na eksaktong ginawa ng bawat relationship bago umiral ang attribute na ito."
   },
   "fed.schema.attributes.fedAuthnRelationship.what": {
     "en": "e67f3ec502c8b6b8",

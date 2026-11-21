@@ -219,6 +219,22 @@
     "en": "080afaefbe52c342",
     "text": "إلى أن تدفعه أحداث أحدث عددها devices.eventsKept إلى الخارج."
   },
+  "caches.store.hardware_tokens.register.title": {
+    "en": "f1c8d3f653154823",
+    "text": "سجل الرموز المادية"
+  },
+  "caches.store.hardware_tokens.register.description": {
+    "en": "5efc16810cb7f48e",
+    "text": "صف لكل رمز مادي (مفتاح YubiKey أو بطاقة ذكية) في هذا النطاق، مفهرس بالمورّد والرقم التسلسلي: من يحمله، وطرازه، وبيانات الاعتماد عليه. لا يُسجَّل الرقم التسلسلي إلا من شهادة. لا يحتوي سرًّا أبدًا."
+  },
+  "caches.store.hardware_tokens.register.bound": {
+    "en": "260467c777c74957",
+    "text": "الصفوف التي تحتفظ بها العملية ذاكرة تخزين مؤقت من 5000 لكل نطاق؛ والسجل نفسه محدود ببيانات الاعتماد التي يسردها (webauthn.maxKeysPerPerson لـ FIDO)."
+  },
+  "caches.store.hardware_tokens.register.lifetime": {
+    "en": "c18bfda6fa452b2b",
+    "text": "حتى إزالة الرمز؛ يُحتفظ بالرمز المفقود مع علامة المفقود."
+  },
   "caches.store.dpop.nonces.title": {
     "en": "a131d3dea3731f75",
     "text": "قيم nonce في DPoP"

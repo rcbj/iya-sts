@@ -111,6 +111,14 @@
     "en": "0f52a102d4c01229",
     "text": "INTEGRIERTE AUTHENTIFIZIERUNG. Die Person wird an /authn/spnego gesendet, das mit 401 und WWW-Authenticate: Negotiate antwortet und sie anhand des Service-Tickets anmeldet, das ihr Client zurücksendet (RFC 4559 über RFC 4178 über RFC 4121). Nichts wird eingetippt und kein Bildschirm gezeichnet. Wie ein Sicherheitsschlüssel oder eine Wallet beruht sie auf Anmeldedaten, die dieser Dienst in jedem Modus prüft — das Passwort des Anmeldebildschirms wird nur im Produktmodus geprüft — und was die Sitzung danach behauptet, wird aus den eigenen Flags des TICKETS gelesen: amr [\"pwd\"] bei pre-authent, [\"hwk\"] bei hw-authent, beides bei beidem und ÜBERHAUPT NICHTS bei einem Ticket, das keines von beiden behauptet. Ein Client, der kein Ticket erhält, trifft auf eine Seite, von der der Anmeldebildschirm verlinkt ist, weil ein bloßes 401 Negotiate in jedem Browser, der nicht für diesen Host konfiguriert ist, eine Sackgasse ist."
   },
+  "fed.mechanisms.attested-hardware.label": {
+    "en": "a133b83617b8359b",
+    "text": "Attestierter Hardware-Schlüssel"
+  },
+  "fed.mechanisms.attested-hardware.what": {
+    "en": "2fc5a571514106a4",
+    "text": "Ein Passkey oder ein Smartcard-Zertifikat auf einem Hardware-Token, das dieser Bereich aus seiner eigenen Attestierung erfasst hat (common/hardware_tokens.ts): ein Sicherheitsschlüssel mit Unternehmensattestierung oder eine PIV-Karte. Der Anmeldebildschirm bietet einen Passkey und, wo die Authentifizierungsrichtlinie eines annimmt, ein Zertifikat an, aber kein Passwort. In einer erlaubten Liste erfüllt nur ein solcher Nachweis ihn, sodass eine Anwendung, deren Authentifizierungsrichtlinie nur attested-hardware nennt, nur mit einem nachgewiesenen Hardware-Schlüssel erreicht wird."
+  },
   "fed.mechanisms.wallet.label": {
     "en": "a6a3e498bac9d4f6",
     "text": "Wallet (OpenID4VP)"
@@ -488,8 +496,8 @@
     "text": "DER ZEIGER und alles, was diese Seite über den Partner speichert: die Kennung seines Eintrags in ou=applications. Seine entityID, sein Assertion Consumer Service, seine Redirect-URIs und sein Zertifikat liegen DORT, wo jedes Protokollmodul sie bereits liest. Irgendetwas davon hierher zu kopieren, wäre der Zwei-Speicher-Fehler, den dieses Repository zu vermeiden angelegt ist."
   },
   "fed.schema.attributes.fedAuthnMechanism.what": {
-    "en": "10e91a734e1d74b3",
-    "text": "WIE DIESER DIENST DIE PERSON AUTHENTIFIZIERT, wenn dieser Partner ihn darum bittet: password, password-mfa, webauthn, spnego — ein Kerberos-Ticket, das der Browser bereits hält, ganz ohne Bildschirm —, wallet — ein Credential, das dieser Vertrauensbereich ausgestellt hat und aus der Wallet der Person vorgelegt wird — oder federation, das sie zu einer anderen Beziehung weiterleitet und diesen Dienst zu einer Identitäts-BRÜCKE zwischen zwei Protokollen macht. LEER BEDEUTET, DASS DIESE BEZIEHUNG NICHTS SAGT, und das ist nicht dasselbe wie password: Es fällt durch auf appFederationRelationship am Anwendungseintrag und dann auf den Anmeldebildschirm, genau das, was jede Beziehung tat, bevor es dieses Attribut gab."
+    "en": "cbb25dba52aecc9f",
+    "text": "WIE DIESER DIENST DIE PERSON AUTHENTIFIZIERT, wenn dieser Partner ihn darum bittet: password, password-mfa, webauthn, attested-hardware — ein Passkey auf einem durch Attestierung nachgewiesenen Hardware-Token — spnego — ein Kerberos-Ticket, das der Browser bereits hält, ganz ohne Bildschirm —, wallet — ein Credential, das dieser Vertrauensbereich ausgestellt hat und aus der Wallet der Person vorgelegt wird — oder federation, das sie zu einer anderen Beziehung weiterleitet und diesen Dienst zu einer Identitäts-BRÜCKE zwischen zwei Protokollen macht. LEER BEDEUTET, DASS DIESE BEZIEHUNG NICHTS SAGT, und das ist nicht dasselbe wie password: Es fällt durch auf appFederationRelationship am Anwendungseintrag und dann auf den Anmeldebildschirm, genau das, was jede Beziehung tat, bevor es dieses Attribut gab."
   },
   "fed.schema.attributes.fedAuthnRelationship.what": {
     "en": "e67f3ec502c8b6b8",

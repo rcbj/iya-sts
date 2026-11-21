@@ -1207,6 +1207,14 @@
     "en": "6bfc2bea96fee884",
     "text": "Eine Aktivität nach der Anmeldung starten, anhalten, fortsetzen oder beenden"
   },
+  "endpoints.route./admin-api/hardware-tokens.name": {
+    "en": "386404ef0cf5e649",
+    "text": "Hardware-Token"
+  },
+  "endpoints.route./admin-api/hardware-tokens/:action.name": {
+    "en": "d2326b0fb8b09689",
+    "text": "Ein Hardware-Token als verloren melden"
+  },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",
     "text": "Ausgehende SCIM-Clients"

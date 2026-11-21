@@ -762,7 +762,14 @@ const RECOVERY_DOORS: Readonly<Record<string, { selfService: boolean }>> =
     'activation': { selfService: false },
     'recovery-code': { selfService: true },
     'email-code': { selfService: true },
-    'email-link': { selfService: true }
+    'email-link': { selfService: true },
+    // A SECURITY KEY REPORTED LOST (#1955 P1): not a door that restores
+    // access but the loss that leaves a recovery owed — written by the
+    // lost-key act (`hardware_tokens.ts`) while the person still holds the
+    // passkeys it removes, so the next sign-in a passkey did not answer is
+    // held to this policy as any recovery's is. Not self-service: the doors
+    // the person then uses are judged as their own.
+    'lost-key': { selfService: false }
   });
 /**
  * The credential kinds a sign-in names that are themselves a recovery door

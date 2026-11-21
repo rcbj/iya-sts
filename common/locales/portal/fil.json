@@ -40,6 +40,8 @@
   "nav.password.heading": "Palitan ang iyong password",
   "nav.keys.label": "Mga passkey",
   "nav.keys.heading": "Mga passkey",
+  "nav.tokens.label": "Mga security key",
+  "nav.tokens.heading": "Ang iyong mga security key at smart card",
   "nav.mfa.label": "Authenticator app",
   "nav.mfa.heading": "Ang iyong authenticator app",
   "nav.signing-key.label": "Mga signing key",

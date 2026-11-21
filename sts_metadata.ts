@@ -6884,6 +6884,21 @@ const ENDPOINTS: EndpointEntry[] = [
           'address on their entry, with one link to the sign-in page and no ' +
           'credential in it. pause, resume and end, with { id }. The ' +
           'console\'s four acts on that page.' },
+  { path: '/admin-api/hardware-tokens', group: 'Management API',
+    name: 'Hardware tokens', specs: ['openapi'],
+    what: 'NON-SPEC (#1955). What Directory → Hardware tokens draws: the ' +
+          'physical security keys and smart cards this realm recorded, ' +
+          'each from its own attestation, paged and searched by serial or ' +
+          'person, with the passkeys and certificates on each. Mirrors GET ' +
+          '/admin/hardware-tokens.' },
+  { path: '/admin-api/hardware-tokens/:action', group: 'Management API',
+    name: 'Report a hardware token lost', specs: ['openapi'],
+    effect: 'reports a hardware token lost and retires its credentials',
+    what: 'NON-SPEC (#1955). lost, with { key }: the token is marked lost, ' +
+          'each passkey on it removed, each certificate on it revoked for ' +
+          'keyCompromise, a CAEP credential-change sent for each and the ' +
+          'sessions they signed in ended. The console\'s one act on that ' +
+          'page.' },
   { path: '/admin-api/scim/clients', group: 'Management API',
     name: 'Outbound SCIM clients', specs: ['openapi', 'rfc7644'],
     what: 'NON-SPEC (#552). What Protocols → SCIM → Clients draws: the ' +

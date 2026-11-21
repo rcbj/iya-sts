@@ -321,6 +321,7 @@ holds is the table above; what each module is for is that directory's
 | `common/fga_gate.ts` | `setDecider` (one RFC 9396 detail of an application that enforces fine-grained authorization; EMPTY REFUSES), filled by `xacml/fga_pep.ts` at 23c (#564 P3) | `common/CLAUDE.md`, `xacml/CLAUDE.md` |
 | `common/signer_truststore.ts` | `setDirectory` (a realm's signer truststore entries listed, written and removed), filled by `ldap/ldap_server.js` (#1360) | `common/CLAUDE.md` (3dd) |
 | `authzen/authzen_admin.ts` | `setDirectory` (an entry located, a group's members, a person's `stsAuthzenApplication` written), filled by `ldap/ldap_server.js` (#563) | `authzen/CLAUDE.md` |
+| `common/hardware_tokens.ts` | `registerRetirer(kind, …)` (a credential kind's lost-key retire action), filled by each later #1955 phase's module for the kind it adds; `fido` and `x509` are built in (#1955 P1) | `common/CLAUDE.md` |
 
    **`setTruststore()` is the one slot not filled by the module that owns what
    it carries** — `common/protocol_stack.ts` fills it, because the owner is first

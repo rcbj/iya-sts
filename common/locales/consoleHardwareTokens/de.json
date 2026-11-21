@@ -1,0 +1,22 @@
+{
+  "whatThisIs": "Worum es geht",
+  "lead": "Jeder physische Sicherheitsschlüssel und jede Smartcard, die dieser Bereich erfasst hat. Ein Token wird nur aus seiner eigenen Attestierung erfasst: heute ein mit Unternehmensattestierung registrierter Sicherheitsschlüssel, dessen Zertifikat seine Seriennummer nennt. Eine von jemandem eingegebene Seriennummer wird nie erfasst. Jedes Token listet die Passkeys und Zertifikate darauf und wer sie registriert hat.",
+  "search": "Seriennummer oder Person",
+  "status": "Status",
+  "any": "Alle",
+  "active": "In Gebrauch",
+  "lost": "Verloren",
+  "filter": "Filtern",
+  "capped": "Diese Liste enthält die tausend neuesten Token. Suchen Sie nach Seriennummer oder Person für alle anderen.",
+  "none": "In diesem Bereich ist kein Hardware-Token erfasst.",
+  "thToken": "Token",
+  "thHolder": "Inhaber",
+  "thEvidence": "Erfasst aus",
+  "thCredentials": "Anmeldedaten darauf",
+  "thStatus": "Status",
+  "smartCard": "auf einer Smartcard",
+  "retired": "zurückgezogen",
+  "lostOn": "Verloren {at} (gemeldet von {by})",
+  "reportLost": "Als verloren melden",
+  "lostWhat": "Ein als verloren gemeldetes Token wird sofort als verloren markiert; dann wird jeder Passkey darauf entfernt, jedes Zertifikat darauf wegen Schlüsselkompromittierung widerrufen, für jedes eine CAEP-Änderung der Anmeldedaten gesendet und die damit angemeldeten Sitzungen beendet. Anmeldedaten, die nicht zurückgezogen werden konnten, stehen in der Antwort und im Audit-Protokoll und sind weiterhin gültig."
+}

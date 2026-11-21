@@ -138,6 +138,7 @@ protocol's section of the sidebar:
 [Signing out](signing-out.md) ·
 [Risk scoring](risk-scoring.md) ·
 [Devices](devices.md) ·
+[Hardware tokens](hardware-tokens.md) ·
 [Mail](mail.md) ·
 [Reports](reporting.md) ·
 [Attribute sources](attribute-sources.md) ·

@@ -1,0 +1,21 @@
+{
+  "heading": "Ihre Sicherheitsschlüssel und Smartcards",
+  "intro": "Jeder physische Schlüssel und jede Karte, die dieser Dienst als in Ihrem Besitz erfasst hat. Ein Schlüssel wird nur erfasst, wenn seine eigene Attestierung seine Seriennummer nennt; ein ohne die Unternehmensattestierung Ihrer Organisation registrierter Schlüssel erscheint daher nicht hier, sein Passkey steht auf der Seite Passkeys.",
+  "none": "Für Sie ist kein Sicherheitsschlüssel und keine Smartcard erfasst.",
+  "col.model": "Schlüssel",
+  "col.serial": "Seriennummer",
+  "col.credentials": "Ihre Anmeldedaten darauf",
+  "col.status": "Status",
+  "kind.fido": "Passkey",
+  "kind.x509": "Zertifikat",
+  "retired": "zurückgezogen",
+  "status.active": "In Gebrauch",
+  "status.lost": "Als verloren gemeldet {at}",
+  "lost.button": "Ich habe diesen Schlüssel verloren",
+  "lost.what": "Wenn Sie einen Schlüssel als verloren melden, werden seine Passkeys sofort entfernt, seine Zertifikate widerrufen und die damit angemeldeten Sitzungen beendet. Wenn Sie ihn wiederfinden, registrieren Sie ihn erneut.",
+  "done.lost": "Der Schlüssel ist als verloren gemeldet, und {n} Ihrer Anmeldedaten darauf wurden zurückgezogen.",
+  "done.notAll": "{n} konnten nicht zurückgezogen werden: Bitten Sie Ihren Administrator, sie zu entfernen.",
+  "done.sessionsEnded": "{n} damit angemeldete Sitzungen wurden beendet.",
+  "done.recovery": "Bei Ihrer nächsten Anmeldung ohne Passkey werden Sie gebeten, einen neuen zu registrieren, bevor Sie eine Anwendung verwenden können.",
+  "done.noWayIn": "Das war Ihre einzige Möglichkeit, sich anzumelden: Bitten Sie Ihren Administrator um einen Aktivierungslink, oder verwenden Sie Ihre Wiederherstellungscodes."
+}

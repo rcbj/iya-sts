@@ -219,6 +219,22 @@
     "en": "080afaefbe52c342",
     "text": "直到 devices.eventsKept 个更新的事件将其挤出。"
   },
+  "caches.store.hardware_tokens.register.title": {
+    "en": "f1c8d3f653154823",
+    "text": "硬件令牌登记册"
+  },
+  "caches.store.hardware_tokens.register.description": {
+    "en": "5efc16810cb7f48e",
+    "text": "本领域中每个实体硬件令牌（YubiKey、智能卡）一行，按厂商和序列号索引：谁持有它、它的型号和其上的凭据。序列号只根据证明记录。从不包含机密。"
+  },
+  "caches.store.hardware_tokens.register.bound": {
+    "en": "260467c777c74957",
+    "text": "进程持有的行是每个领域 5,000 条的缓存；登记册本身受其列出的凭据限制（FIDO 为 webauthn.maxKeysPerPerson）。"
+  },
+  "caches.store.hardware_tokens.register.lifetime": {
+    "en": "c18bfda6fa452b2b",
+    "text": "直到令牌被删除；丢失的令牌会保留，并标记为丢失。"
+  },
   "caches.store.dpop.nonces.title": {
     "en": "a131d3dea3731f75",
     "text": "DPoP nonce"

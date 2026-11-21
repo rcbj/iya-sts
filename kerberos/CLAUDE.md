@@ -2036,7 +2036,13 @@ decisions a reader needs here:
     hw-authent) only for a smart-card logon certificate whose key this
     service did not generate (`keySource` on the enrolled record). Read by
     `spnego_authn.ts` as `swk` and `hwk`, NEVER `pwd`; one factor, so `acr
-    "1"`.
+    "1"`. **Since #1955 P1 recorded evidence earns it too**: a certificate an
+    active hardware token's attestation covers (`common/hardware_tokens.ts`,
+    `evidenceFor()`) is hardware whatever its EKU, and evidence that the key
+    is on a smart card adds the KDC's own indicator `pkinit-smartcard`, which
+    `Krb5Tokens.factorsFor()` and `decideSignIn()` turn into `sc`. The
+    inference above stands only while `hardwareTokens.hardwareClaims` is
+    `inference`, the default; `evidence` drops it (what P2 switches PIV to).
 * **REACHED THROUGH THE KEY SOURCE, BESIDE FAST** (`setKeySource({ ...,
   fast, pkinit })`, `principals.pkinitProvider()`), for #173's reason:
   `krb5_kdc.js`, `krb5_principals.js` and `krb5_service.js` gained no

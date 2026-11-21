@@ -3139,6 +3139,14 @@
     "en": "72d46974270d0c03",
     "text": "Wie viele Anlagen, Entfernungen, Verdrängungen und Konformitätsänderungen von Geräten dieser Vertrauensbereich für Überwachung → Geräte behält. Das älteste wird verworfen, wenn darüber hinaus ein neues verzeichnet wird."
   },
+  "hardwareTokens.hardwareClaims|label": {
+    "en": "8373111eef4bf812",
+    "text": "Was einen Hardware-Schlüssel-Anspruch begründet"
+  },
+  "hardwareTokens.hardwareClaims|description": {
+    "en": "e0341e4e47f3b2f8",
+    "text": "Was einer PKINIT-Anmeldung erlaubt, einen hardwaregebundenen Schlüssel zu beanspruchen (der Indikator pkinit-hardware und amr hwk). `inference`, der Standard und das Verhalten vor #1955: ein Smartcard-Anmeldezertifikat, dessen Schlüssel dieser Dienst nicht erzeugt hat, oder ein erfasster Attestierungsnachweis. `evidence`: nur ein Schlüssel, den die Attestierung eines Hardware-Tokens abdeckt. Eine Zertifikatsanmeldung über TLS erhält hwk, und sc für einen Schlüssel auf einer Smartcard, in beiden Fällen nur aus einem Nachweis."
+  },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
     "text": "Konformitätsberichte pro Feed-Anfrage"

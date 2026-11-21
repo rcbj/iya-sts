@@ -75,7 +75,7 @@ const SECURITY_GROUP_SETTING = 'admin.securityGroup';
 // `classify()`. A caller may skip reading a body for any other page.
 const PATHS = Object.freeze(['/admin/policies', '/admin/config',
   '/admin/rbac', '/admin/roles', '/admin/groups', '/admin/applications',
-  '/admin/users', '/admin/mfa', '/admin/pki']);
+  '/admin/users', '/admin/mfa', '/admin/pki', '/admin/hardware-tokens']);
 
 // The role's names at the doors that spell it: the roster's id and the
 // register's entry.
@@ -362,6 +362,13 @@ class SecurityOperations {
         answer = SecurityOperations.holderChange(
           String(body.user || body.username || ''), hooks);
         break;
+      // A HARDWARE TOKEN REPORTED LOST (#1955) clears its holder's
+      // factors, so it is a holder change as `/admin/mfa`'s are. The holder
+      // is the register's, never the body's.
+      case '/admin/hardware-tokens':
+        answer = SecurityOperations.holderChange(
+          SecurityOperations.tokenHolder(String(body.key || '')), hooks);
+        break;
       case '/admin/pki':
         answer = String(body.target || '').trim() === 'person'
           ? SecurityOperations.holderChange(String(body.identifier || ''),
@@ -555,6 +562,23 @@ class SecurityOperations {
       ? { kind: 'reference', detail: 'it changes the policy ' +
           (who || 'the new person') + ' names in ' + changed.join(', ') }
       : null;
+  }
+
+  // Who holds a hardware token, by name, from the register, reached at the
+  // moment of use (it is a library that requires nothing of this file).
+  private static tokenHolder(key: string): string {
+    log.debug("Entering SecurityOperations.tokenHolder().");
+    let name = '';
+    try {
+      const token = require('./hardware_tokens').byKey(key);
+      name = token ? String(token.holder || '') : '';
+    } catch (e) {
+      log.debug("Caught in SecurityOperations.tokenHolder(): " +
+                ((e && e.message) || e));
+      name = '';
+    }
+    log.debug("Leaving SecurityOperations.tokenHolder().");
+    return name;
   }
 
   private static holderChange(who: string, hooks: SecurityHooks):

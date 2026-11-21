@@ -784,6 +784,8 @@
   "devices.maxKeysPerDevice|description": "How many keys (a certificate, a JWK or DPoP key, a linked WebAuthn credential) one device holds. Each is a way the device is recognised; the Native SSO secret is not counted. A key past it is refused (STS-DEVICE-0006).",
   "devices.eventsKept|label": "Device events kept for monitoring",
   "devices.eventsKept|description": "How many device creations, removals, evictions and compliance changes this realm keeps for Monitoring → Devices. The oldest is dropped when a new one is recorded past it.",
+  "hardwareTokens.hardwareClaims|label": "What earns a hardware-key claim",
+  "hardwareTokens.hardwareClaims|description": "What lets a PKINIT sign-in claim a hardware-bound key (the pkinit-hardware indicator and amr hwk). `inference`, the default and the behaviour before #1955: a smart-card logon certificate whose key this service did not generate, or recorded attestation evidence. `evidence`: only a key a hardware token's attestation covers. A certificate sign-in over TLS earns hwk, and sc for a key on a smart card, only from evidence in either case.",
   "devices.complianceFeedMaxReports|label": "Compliance reports per feed request",
   "devices.complianceFeedMaxReports|description": "The most device reports one POST /admin-api/device-compliance (the MDM or posture feed, under the device:compliance scope) may carry. A larger batch is refused whole (STS-DEVICE-0034) rather than applied in part, so a feed knows to split it.",
   "devices.challengeTtlSeconds|label": "Enrolment challenge lifetime (seconds)",

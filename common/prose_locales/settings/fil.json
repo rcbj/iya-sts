@@ -3139,6 +3139,14 @@
     "en": "72d46974270d0c03",
     "text": "Ilang paggawa, pag-alis, pag-evict at pagbabago ng compliance ng device ang itinatago ng realm na ito para sa Monitoring → Devices. Tinatanggal ang pinakaluma kapag may bagong nire-record na lampas dito."
   },
+  "hardwareTokens.hardwareClaims|label": {
+    "en": "8373111eef4bf812",
+    "text": "Ano ang nagbibigay ng claim na hardware key"
+  },
+  "hardwareTokens.hardwareClaims|description": {
+    "en": "e0341e4e47f3b2f8",
+    "text": "Ano ang nagpapahintulot sa PKINIT sign-in na mag-claim ng key na nakatali sa hardware (ang pkinit-hardware indicator at amr hwk). `inference`, ang default at ang gawi bago ang #1955: isang smart-card logon certificate na ang key ay hindi ginawa ng serbisyong ito, o naitalang ebidensya ng attestation. `evidence`: tanging key na sakop ng attestation ng isang hardware token. Ang certificate sign-in sa TLS ay nakakakuha ng hwk, at sc para sa key na nasa smart card, mula lamang sa ebidensya sa alinmang kaso."
+  },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
     "text": "Mga compliance report bawat feed request"

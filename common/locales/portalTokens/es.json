@@ -1,0 +1,21 @@
+{
+  "heading": "Sus llaves de seguridad y tarjetas inteligentes",
+  "intro": "Cada llave o tarjeta física que este servicio ha registrado a su nombre. Una llave solo se registra cuando su propia atestación indica su número de serie, así que una llave registrada sin la atestación empresarial de su organización no aparece aquí; su llave de acceso está en la página Llaves de acceso.",
+  "none": "No hay ninguna llave de seguridad ni tarjeta inteligente registrada a su nombre.",
+  "col.model": "Llave",
+  "col.serial": "Número de serie",
+  "col.credentials": "Sus credenciales en ella",
+  "col.status": "Estado",
+  "kind.fido": "Llave de acceso",
+  "kind.x509": "Certificado",
+  "retired": "retirada",
+  "status.active": "En uso",
+  "status.lost": "Notificada como perdida {at}",
+  "lost.button": "He perdido esta llave",
+  "lost.what": "Notificar una llave como perdida elimina al instante sus llaves de acceso, revoca sus certificados y cierra las sesiones que iniciaron. Si la encuentra, vuelva a registrarla.",
+  "done.lost": "La llave se ha notificado como perdida y se han retirado {n} de sus credenciales en ella.",
+  "done.notAll": "{n} no se pudieron retirar: pida a su administrador que las elimine.",
+  "done.sessionsEnded": "Se cerraron {n} sesiones iniciadas con ella.",
+  "done.recovery": "Su próximo inicio de sesión sin llave de acceso le pedirá que registre una nueva antes de poder usar cualquier aplicación.",
+  "done.noWayIn": "Era su única forma de iniciar sesión: pida a su administrador un enlace de activación o use sus códigos de recuperación."
+}

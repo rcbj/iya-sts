@@ -487,6 +487,22 @@
     "en": "0be46b8b29aaf446",
     "text": "安全金鑰的證明不再受信任：Google 的 Android 證明狀態清單撤銷了其鏈結"
   },
+  "audit.actions.hardware-token.create.label": {
+    "en": "23939dae5f4b89dc",
+    "text": "已依證明記錄一個硬體權杖"
+  },
+  "audit.actions.hardware-token.credential-add.label": {
+    "en": "79c33d3849e02f0c",
+    "text": "已在硬體權杖上新增一個憑證"
+  },
+  "audit.actions.hardware-token.holder-change.label": {
+    "en": "06fc03f7983fd5ad",
+    "text": "硬體權杖由其持有人以外的人註冊"
+  },
+  "audit.actions.hardware-token.lost.label": {
+    "en": "f7fb5461e2325e1e",
+    "text": "硬體權杖已回報遺失，其憑證已停用"
+  },
   "audit.actions.device.key-add.label": {
     "en": "6c1b2513c20532ef",
     "text": "金鑰被新增到裝置"

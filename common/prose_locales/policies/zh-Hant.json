@@ -564,8 +564,8 @@
     "text": "此設定檔的用途，供下一位接手的人參考。"
   },
   "authn.SCHEMA.attributes.stsAuthnPolicyMechanism.what": {
-    "en": "66db848b0bb1c58f",
-    "text": "用於具名驗證原則（#1148、#1237）：其所適用之登入允許的一種第一因素機制——在應用程式（appAuthnPolicy）或此人的某個群組（stsAuthnPolicy）指定了它，且其優先順序是所指定者中最低時適用——password、password-mfa、webauthn、spnego、wallet 或 federation，每個值一項。一項都沒有時，允許本領域允許的全部機制。"
+    "en": "783db3d7da8c29c5",
+    "text": "用於具名驗證原則（#1148、#1237）：其所適用之登入允許的一種第一因素機制——在應用程式（appAuthnPolicy）或此人的某個群組（stsAuthnPolicy）指定了它，且其優先順序是所指定者中最低時適用——password、password-mfa、webauthn、attested-hardware（經證明的硬體權杖上的密碼金鑰或憑證，#1955）、spnego、wallet 或 federation，每個值一項。一項都沒有時，允許本領域允許的全部機制。"
   },
   "authn.SCHEMA.attributes.stsAuthnPolicySecondFactor.what": {
     "en": "7c8e4d8b4cce7c08",

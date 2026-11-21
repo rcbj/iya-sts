@@ -3139,6 +3139,14 @@
     "en": "72d46974270d0c03",
     "text": "Hur många skapanden, borttagningar, utträngningar och efterlevnadsändringar av enheter som den här sfären sparar för Övervakning → Enheter. Den äldsta tas bort när en ny registreras utöver gränsen."
   },
+  "hardwareTokens.hardwareClaims|label": {
+    "en": "8373111eef4bf812",
+    "text": "Vad som ger anspråk på maskinvarunyckel"
+  },
+  "hardwareTokens.hardwareClaims|description": {
+    "en": "e0341e4e47f3b2f8",
+    "text": "Vad som låter en PKINIT-inloggning göra anspråk på en maskinvarubunden nyckel (indikatorn pkinit-hardware och amr hwk). `inference`, standardvärdet och beteendet före #1955: ett certifikat för smartkortsinloggning vars nyckel den här tjänsten inte genererade, eller registrerat attesteringsbevis. `evidence`: endast en nyckel som en maskinvarutokens attestering täcker. En certifikatinloggning över TLS får hwk, och sc för en nyckel på ett smart kort, endast utifrån bevis i båda fallen."
+  },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
     "text": "Efterlevnadsrapporter per flödesbegäran"

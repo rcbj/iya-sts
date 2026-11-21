@@ -453,6 +453,12 @@ const NAV = [
       // every kind, security keys included; the path is unchanged.
       { path: BASE + '/keys', label: 'Passkeys',
         heading: 'Passkeys' },
+      // SECURITY KEYS AND SMART CARDS (#1955 P1): the physical tokens the
+      // passkeys and certificates above are ON, beside them, with the one
+      // act a token has of its own — reporting it lost. Drawn by
+      // `web_tokens.ts` from `account_tokens.ts`.
+      { path: BASE + '/tokens', label: 'Security keys',
+        heading: 'Your security keys and smart cards' },
       // THE AUTHENTICATOR APP (2026-09-10). Its own page beside the keys
       // rather than a card on that one, for the reason this column exists at
       // all: the enrolment is a QR code, a transcribable secret, a code field
