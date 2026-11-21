@@ -459,7 +459,11 @@ async function checkIssuance(t) {
   core.addHostName(entry, 'server.example.com', 'test');
   const root = pki.trustAnchorsFor(realms.currentId())[0];
   const issuedSerials = [];
-  for (const profile of core.PROFILE_IDS) {
+  // The four PIV slot profiles (#1955 P2) are in no family's default list,
+  // so they are issued in `tests/piv_attestation.js`, which lists them.
+  for (const profile of core.PROFILE_IDS.filter(function (one) {
+    return one.indexOf('piv-') !== 0;
+  })) {
     const family = core.FAMILIES[issuedSerials.length % 3];
     const requested = (profile === 'tls-server' ||
                        profile === 'tls-server-client')

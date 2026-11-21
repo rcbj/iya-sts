@@ -631,8 +631,12 @@ class PivAttestation {
       log.debug("Leaving PivAttestation.cardIdentityOf(). Not configured.");
       return null;
     }
-    const issued = trust.direct('piv-card', Buffer.from(leafBytes), issuers,
-                                { realmId: realmId, now: this.deps.now() });
+    // The DER of each: `verifyIssuedDirectly()` reads a Buffer, not a
+    // bundle's entry.
+    const issued = trust.direct('piv-card', Buffer.from(leafBytes),
+      issuers.map(function (one: Json): Buffer {
+        return one.der;
+      }), { realmId: realmId, now: this.deps.now() });
     if (!issued.ok) {
       log.debug("Leaving PivAttestation.cardIdentityOf(). Not a listed " +
                 "issuer's: " + String(issued.reason || ''));
