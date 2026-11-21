@@ -731,34 +731,49 @@
           },
           "syncToken": {
             "type": "string",
+            "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]*$",
             "description": "The policy set held, empty if none."
           },
           "policyCount": {
-            "type": "integer"
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
           },
           "decisions": {
-            "type": "integer"
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
           },
           "allowed": {
-            "type": "integer"
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
           },
           "refused": {
-            "type": "integer"
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
           },
           "undischargeable": {
-            "type": "integer"
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
           },
           "bias": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]*$"
           },
           "resource": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]*$"
           },
           "version": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]*$"
           },
           "notifyUrl": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]*$"
           },
           "hostname": {
             "anyOf": [
@@ -803,7 +818,7 @@
           }
         },
         "additionalProperties": false,
-        "description": "Absent keeps what the service holds; null clears signals, settings and listeners; a value replaces it. The counters are set, not added."
+        "description": "Absent keeps what the service holds; null clears signals, settings and listeners; a value replaces it. The counters are set, not added. A member the PEP's entry stores that carries a value the service cannot hold refuses the whole heartbeat, 400 STS-XACML-0331 naming the member, and nothing of it is recorded: a counter that is not a non-negative integer of at most 2^53 - 1, a text member that is not a string (or null) or carries a control character, or signals, settings or listeners that are not an object or null. Within signals and listeners a value is held to its member instead: a count that is not a non-negative integer is 0, and an age that is not one, or is older than the epoch, is no time."
       },
       "HeartbeatAnswer": {
         "type": "object",
@@ -2653,7 +2668,7 @@
             }
           },
           "400": {
-            "description": "No name (STS-XACML-0020) or a bad hostname (0261). Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",
+            "description": "No name (STS-XACML-0020), a bad hostname (0261) or a value the service cannot hold (0303; see HeartbeatRequest). Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",
             "content": {
               "application/json": {
                 "schema": {

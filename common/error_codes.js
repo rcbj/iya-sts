@@ -24334,6 +24334,15 @@ const CODES = [
       '(#1827, phase 3).',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
+  { code: 'STS-XACML-0331',
+    summary: 'A remote PEP\'s heartbeat was refused: a member its entry ' +
+      'stores carries a value the service cannot hold (fuzz run #595) — ' +
+      'a counter that is not a non-negative integer of at most 2^53 - 1, ' +
+      'a text member that is not a string or carries a control ' +
+      'character, or signals, settings or listeners that are not an ' +
+      'object or null. Nothing of it is recorded; the refusal names the ' +
+      'member.',
+    spec: 'none — 400 invalid_request on POST /xacml/pep/heartbeat' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +
