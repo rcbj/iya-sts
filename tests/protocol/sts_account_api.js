@@ -75,6 +75,24 @@ function check(what, fn) {
   log.debug("Leaving check().");
 }
 
+function sshPublicKey() {
+  log.debug("Entering sshPublicKey().");
+  const pair = crypto.generateKeyPairSync("ed25519");
+  const algorithm = Buffer.from("ssh-ed25519");
+  const publicBytes = pair.publicKey.export({
+    format: "der", type: "spki"
+  }).subarray(-32);
+  const algorithmLength = Buffer.alloc(4);
+  const keyLength = Buffer.alloc(4);
+  algorithmLength.writeUInt32BE(algorithm.length);
+  keyLength.writeUInt32BE(publicBytes.length);
+  const blob = Buffer.concat([
+    algorithmLength, algorithm, keyLength, publicBytes
+  ]).toString("base64");
+  log.debug("Leaving sshPublicKey().");
+  return "ssh-ed25519 " + blob + " account-api-test";
+}
+
 function sleep(ms) {
   log.debug("Entering sleep().");
   log.debug("Leaving sleep().");
@@ -287,7 +305,7 @@ async function main() {
 const portal = require("./portal_signin.js");
 
 const REALM = "aapi-" + STAMP;
-const PW = "Aapi-" + STAMP + "-Correct.Horse.Battery.42";
+const PW = "Q7v#2mL9@xB4sZ";
 
 async function test() {
   log.debug("Entering test().");
@@ -295,7 +313,8 @@ async function test() {
   await realmSet(REALM, "risk.assessSignIns", false);
   const mallory = ("aam" + STAMP).slice(0, 30);
   await ok(rb + "/admin-api/users/create", { username: mallory,
-    invent: false, attributes: { cn: "Aapi " + mallory, sn: mallory },
+    invent: false, attributes: { cn: "Aapi " + mallory, sn: mallory,
+      givenName: "Aapi", mail: mallory + "@example.test" },
     credential: "password", password: PW }, "created " + mallory);
   const m = await portal.signInToThePortal(rb, mallory, log,
                                            { password: PW });
@@ -423,6 +442,74 @@ async function test() {
   check("4e. application/json with a parameter is accepted as JSON",
         function () {
     assert.notStrictEqual(exact.status, 415, exact.raw.slice(0, 200));
+  });
+
+  log.info("=== 5. SSH user certificates ===");
+  const publicKey = sshPublicKey();
+  const noToken = await portal.nobody(rb, "POST",
+    "/account-api/ssh/certificates",
+    { publicKey: publicKey, principals: [mallory] });
+  check("5a. certificate issuance still requires the Account API token",
+        function () {
+    assert.strictEqual(noToken.status, 401, noToken.text.slice(0, 200));
+  });
+  await realmSet(REALM, "pki.personSelfService", false);
+  const disabled = await m.api("POST", "/account-api/ssh/certificates",
+    { publicKey: publicKey, principals: [mallory] });
+  check("5b. pki.personSelfService refuses SSH certificate issuance",
+        function () {
+    assert.strictEqual(disabled.status, 403, disabled.text.slice(0, 200));
+    assert.ok(codeFree(disabled.text), disabled.text);
+  });
+  await realmSet(REALM, "pki.personSelfService", true);
+  const unowned = await m.api("POST", "/account-api/ssh/certificates",
+    { publicKey: publicKey, principals: ["not-" + mallory] });
+  check("5c. a person cannot request an unrelated SSH principal",
+        function () {
+    assert.strictEqual(unowned.status, 403, unowned.text.slice(0, 200));
+    assert.ok(codeFree(unowned.text), unowned.text);
+  });
+  const issued = await m.api("POST", "/account-api/ssh/certificates",
+    { publicKey: publicKey, principals: [mallory] });
+  check("5d. the caller can obtain a certificate for their own UID",
+        function () {
+    assert.strictEqual(issued.status, 200, issued.text.slice(0, 300));
+    assert.match(issued.json.certificate,
+      /^ssh-ed25519-cert-v01@openssh\.com /);
+    assert.match(issued.json.serialHex, /^[0-9a-f]+$/);
+    assert.strictEqual(issued.json.hardwareBound, false);
+  });
+  const otherName = ("aao" + STAMP).slice(0, 30);
+  await ok(rb + "/admin-api/users/create", { username: otherName,
+    invent: false, attributes: { cn: "Aapi " + otherName, sn: otherName,
+      givenName: "Aapi", mail: otherName + "@example.test" },
+    credential: "password", password: PW }, "created " + otherName);
+  const other = await portal.signInToThePortal(rb, otherName, log,
+                                               { password: PW });
+  const foreignRevoke = await other.api("POST",
+    "/account-api/ssh/certificates/revoke",
+    { serialHex: issued.json.serialHex });
+  check("5e. another token subject cannot revoke the certificate",
+        function () {
+    assert.strictEqual(foreignRevoke.status, 404,
+                       foreignRevoke.text.slice(0, 200));
+    assert.ok(codeFree(foreignRevoke.text), foreignRevoke.text);
+  });
+  const publicCa = await portal.nobody(rb, "GET",
+    "/pki/ssh-user-ca/" + REALM);
+  const revoked = await m.api("POST",
+    "/account-api/ssh/certificates/revoke",
+    { serialHex: issued.json.serialHex });
+  const publicKrl = await portal.nobody(rb, "GET",
+    "/pki/ssh-user-krl/" + REALM);
+  check("5f. the realm CA and KRL are public, uncached, and the owner can " +
+        "revoke their certificate", function () {
+    assert.strictEqual(publicCa.status, 200, publicCa.text.slice(0, 200));
+    assert.strictEqual(publicCa.headers.get("cache-control"), "no-store");
+    assert.strictEqual(revoked.status, 200, revoked.text.slice(0, 200));
+    assert.strictEqual(revoked.json.revoked, true);
+    assert.strictEqual(publicKrl.status, 200, publicKrl.text.slice(0, 200));
+    assert.strictEqual(publicKrl.headers.get("cache-control"), "no-store");
   });
   log.debug("Leaving test().");
 }

@@ -213,7 +213,10 @@ const RESOURCE = {
   // administrator recovers somebody's escrowed decryption key, with
   // PIV_KEY_RECOVERY in `requiredRoles`: the first rule decides it, so who
   // may read another person's mail is policy and not Admin Write.
-  PIV_KEY_ESCROW: 'piv-key-escrow'
+  PIV_KEY_ESCROW: 'piv-key-escrow',
+  // THE SSH USER CA (#1955 P3): every requested principal is asked
+  // independently through ISSUE_SSH_PRINCIPAL.
+  SSH_USER_CA: 'ssh-user-ca'
 };
 
 // THE ACTIONS. Deliberately coarse — `read` and `write` are what the console's
@@ -243,7 +246,10 @@ const ACTION = {
   APPROVE_ACCESS_REQUEST: 'approve-access-request',
   // RECOVERING AN ESCROWED KEY (#1955 P2): neither a read of a page nor a
   // change to one — it hands a person's decryption key to someone else.
-  RECOVER_KEY: 'recover-key'
+  RECOVER_KEY: 'recover-key',
+  // ISSUING AN SSH CERTIFICATE FOR ONE PRINCIPAL (#1955 P3): every
+  // principal is a separate access decision.
+  ISSUE_SSH_PRINCIPAL: 'issue-ssh-principal'
 };
 
 // The person a decision is about — the SECURITY CONTEXT's, never the
@@ -282,6 +288,8 @@ interface AccessRequest {
   ownedObject?: OwnedObject | null;
   reportObject?: ReportObject | null;
   accessRequestObject?: AccessRequestObject | null;
+  // The one SSH certificate principal being considered (#1955 P3).
+  sshPrincipal?: string;
   context?: Record<string, unknown>;
   [key: string]: unknown;
 }

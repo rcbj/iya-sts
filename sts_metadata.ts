@@ -4562,6 +4562,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'true of every certificate authority and is the reason a client ' +
           'author would point their stack here. Ungated, because everything ' +
           'in it is already inside every certificate this service hands out.' },
+  { path: '/pki/ssh-user-ca/:scope', group: 'PKI',
+    name: 'The realm OpenSSH user CA public key', specs: [],
+    what: 'NON-SPEC (#1955 P3): the realm-scoped OpenSSH user CA key, ' +
+          'published as an authorized-key line for SSH servers to trust. ' +
+          'Ungated and `no-store`; the corresponding CA private key never ' +
+          'leaves this service.' },
+  { path: '/pki/ssh-user-krl/:scope', group: 'PKI',
+    name: 'The realm OpenSSH user key revocation list', specs: [],
+    what: 'NON-SPEC (#1955 P3): the realm-scoped OpenSSH KRL, updated when ' +
+          'a caller revokes a certificate or reports a hardware token lost. ' +
+          'Ungated and `no-store`; SSH servers must be configured to consult ' +
+          'it because this service cannot make a relying party do so.' },
   { path: '/admin-api/xacml', group: 'XACML',
     name: 'The XACML console page over JSON', specs: ['xacml30'],
     what: 'What GET /admin/xacml draws, as data. Ungated, like the rest of ' +

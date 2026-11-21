@@ -85,6 +85,28 @@ surface without touching the rest:
 | **Policy export signing** | realm | The certificate a policy export from Directory → Policies is signed under (#1713): a fresh key per export, `digitalSignature` only, with this whole chain in the export's `x5c`. Another realm that imports the export trusts this Issuing CA, not the Root it shares with every realm. See [Export and import](policies.md#export-and-import). |
 | **Remote PEP listeners** | realm | The HTTPS listener certificate of a remote XACML PEP **registered in this realm** — `serverAuth`, naming the PEP and the hosts its clients dial, issued from `/admin/xacml/peps` or `POST /admin-api/xacml/issue-pep-certificate`. The private key is handed over once and not kept. Realm-scoped because a PEP enforces one realm's policy. See [Remote PEP](remote-pep.md#an-https-listener-certified-by-the-realm-it-registered-to). |
 
+### OpenSSH user certificates
+
+Each realm also has an OpenSSH user CA. It is separate from the X.509
+hierarchy above: its public key is
+`GET /pki/ssh-user-ca/{scope}`, and its OpenSSH KRL is
+`GET /pki/ssh-user-krl/{scope}`. Use `default` for the default realm or the
+realm's id for another realm. Both endpoints are public and `no-store`.
+
+Configure SSH servers to trust the returned public key with
+`TrustedUserCAKeys`, and to read the KRL with `RevokedKeys`. The KRL must be
+refreshed by the operator's deployment; the service cannot make an SSH server
+consult it. Certificate revocation and lost-token reports rebuild the KRL,
+and a scheduler refreshes it periodically.
+
+The Account API issues a short-lived certificate for a caller's own UID or
+group common names, after a separate access-policy decision for every
+principal. Issuance requires recent authentication and is governed by
+`pki.personSelfService` and the existing PKI self-service rate limits. An
+OpenSSH security key must include verifiable attestation to qualify for the
+longer hardware-bound lifetime. The request and response schemas are in
+`GET /admin-api/account-api`.
+
 **A realm branch built before a use case existed gets that Issuing CA added**,
 under the Intermediate it already has, the next time the branch is asked for —
 on a restart in product mode, or the first time something issues from it.

@@ -1227,6 +1227,75 @@ Scope: `admin:write`.
 Answers the escrowed private key of `username`'s piv-key-management certificate `serial` (piv.keyEscrow), so mail encrypted to it can be decrypted after the card is lost. Admin Write is not enough: the access-control policy decides it (resource `piv-key-escrow`, action `recover-key`), and the built-in policy permits a caller holding PIV_KEY_RECOVERY, a member of the group roles.pivKeyRecoveryGroup names. Audited (`piv-escrow.recover`) and told to the person over CAEP. Sent with Cache-Control: no-store.
 
 **Mirrors** `POST /admin/hardware-tokens` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `serial` | string | yes | The escrowed certificate's serial, hex. |
+| `username` | string | yes | The person whose key it is. |
+
+**200**: The escrowed key and its certificate.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `certificatePem` | string | yes |  |
+| `chainPem` | list | yes |  |
+| `chainPem[]` | string |  |  |
+| `message` | string | yes |  |
+| `ok` | boolean | yes |  |
+| `privateKeyPem` | string | yes | The escrowed private key, PEM. |
+| `serialHex` | string | yes |  |
+
+**400**: The request was refused.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**403**: The access-control policy did not permit the recovery.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**404**: No escrowed key is held for that certificate of that person.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**503**: The escrowed key could not be opened.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
 ## GET /admin-api/openpgp
 
 `getOpenPgpKeys`
@@ -1314,22 +1383,6 @@ Scope: `admin:write`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `serial` | string | yes | The escrowed certificate's serial, hex. |
-| `username` | string | yes | The person whose key it is. |
-
-**200**: The escrowed key and its certificate.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `certificatePem` | string | yes |  |
-| `chainPem` | list | yes |  |
-| `chainPem[]` | string |  |  |
-| `message` | string | yes |  |
-| `ok` | boolean | yes |  |
-| `privateKeyPem` | string | yes | The escrowed private key, PEM. |
-| `serialHex` | string | yes |  |
-
-**400**: The request was refused.
 | `user` | string | yes | The person, by username. |
 
 **200**: Done: the sentence, and the person as they now are.
@@ -1392,7 +1445,6 @@ Scope: `admin:write`.
 | `errors[]` | string |  |  |
 | `ok` | boolean |  |  |
 
-**403**: The access-control policy did not permit the recovery.
 **404**: No such person in this realm.
 
 | Member | Type | Required | What it is |
@@ -1403,7 +1455,6 @@ Scope: `admin:write`.
 | `errors[]` | string |  |  |
 | `ok` | boolean |  |  |
 
-**404**: No escrowed key is held for that certificate of that person.
 **500**: The act verified but could not be written, or threw.
 
 | Member | Type | Required | What it is |
@@ -1414,7 +1465,6 @@ Scope: `admin:write`.
 | `errors[]` | string |  |  |
 | `ok` | boolean |  |  |
 
-**503**: The escrowed key could not be opened.
 ## POST /admin-api/openpgp/mail-encryption
 
 `setMailEncryption`

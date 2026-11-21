@@ -563,8 +563,70 @@ async function run(t) {
           'and the report no longer opens with NONE, which is the claim that ' +
           'reversed');
 
+  await sshUserCertificatePrimitives(t);
   await theIssuedKeyIsSealedAtRest(t);
   log.debug("Leaving run().");
+}
+
+// THE SSH USER CA IS A DIFFERENT CERTIFICATE FORMAT, NOT AN X.509 LEAF.
+// Round-trip each signing family through the parser and verifier so its wire
+// encoding, particularly ECDSA's mpints and RSA's RFC 8332 name, is checked.
+async function sshUserCertificatePrimitives(t) {
+  log.debug("Entering sshUserCertificatePrimitives().");
+  t.log.info('=== OpenSSH user certificates and revocation lists ===');
+
+  const subject = await stsCrypto.generateKeyPairAsync('ed25519', {});
+  const subjectKey = pki.sshPublicKeyOf(subject.publicKey);
+  const now = BigInt(Math.floor(Date.now() / 1000));
+  const algorithms = ['ssh-ed25519', 'ecdsa-sha2-nistp256',
+                      'rsa-sha2-512'];
+  for (let i = 0; i < algorithms.length; i++) {
+    const algorithm = algorithms[i];
+    const ca = await pki.generateSshCaKey(algorithm);
+    const certificate = pki.buildSshCertificate({
+      subjectBlob: subjectKey.blob,
+      serial: BigInt(i + 1),
+      keyId: 'pki-test-user',
+      principals: ['alice'],
+      validAfter: now - BigInt(1),
+      validBefore: now + BigInt(60),
+      criticalOptions: {},
+      extensions: ['permit-pty'],
+      caAlgorithm: algorithm,
+      caPrivateKey: ca.privatePem,
+      caPublicBlob: ca.publicBlob
+    });
+    const parsed = pki.parseSshPublicKey(certificate.blob);
+    t.equal(parsed.kind, pki.SSH_USER_CERT,
+            algorithm + ' writes an SSH user certificate');
+    t.equal(parsed.principals.join(','), 'alice',
+            algorithm + ' carries the principal');
+    t.equal(parsed.extensions['permit-pty'], '',
+            algorithm + ' carries the requested extension');
+    t.check(pki.verifySshSignature(parsed.signatureKey, parsed.signed,
+                                   parsed.signature),
+            algorithm + ' signs the exact certificate bytes');
+    t.check(pki.sshKeyMatches(parsed, subject.publicKey),
+            algorithm + ' preserves the subject public key');
+
+    if (i === 0) {
+      const krl = pki.buildSshKrl({
+        version: BigInt(1),
+        generatedAt: now,
+        comment: 'pki test',
+        authorities: [{ caBlob: ca.publicBlob,
+                        serials: [BigInt(1), BigInt(3)] }],
+        keySha256: []
+      });
+      const decoded = pki.parseSshKrl(krl);
+      t.equal(decoded.authorities.length, 1,
+              'the KRL names its certificate authority');
+      t.equal(decoded.authorities[0].serials.map(String).join(','),
+              '1,3', 'the KRL carries revoked certificate serials');
+      t.equal(decoded.comment, 'pki test', 'the KRL carries its comment');
+    }
+  }
+  log.debug("Leaving sshUserCertificatePrimitives().");
 }
 
 // ===========================================================================

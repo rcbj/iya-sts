@@ -198,6 +198,16 @@ function samePepRequests(t) {
                    templates.ISSUANCE_ATTRIBUTE.OWNER).length === 0,
           'D2. the access PEP still sends no owner rather than an owner ' +
           'called \'\'', JSON.stringify(access));
+  const sshPrincipal = accessPep.buildRequest({
+    resource: 'ssh-user-ca', action: 'issue-ssh-principal',
+    subject: { name: 'alice', authenticated: true },
+    sshPrincipal: 'developers'
+  }, [], []);
+  t.check(valuesOf(sshPrincipal, model.CATEGORY.RESOURCE,
+                   templates.ISSUANCE_ATTRIBUTE.SSH_PRINCIPAL).join() ===
+            'developers',
+          'D2a. an SSH certificate principal is a resource fact',
+          JSON.stringify(sshPrincipal));
   const riskPep = require('../xacml/xacml_risk_pep');
   const risk = riskPep.buildRequest({ username: 'alice', level: 'high',
                                       signals: ['tor'] }, 'notify');

@@ -10803,13 +10803,16 @@ async function verifyRawSignature(scheme, key, data, signature) {
 // THE SIGNING HALF OF THE PRIMITIVE ABOVE (#194-#196, 2026-09-26), for the
 // Data Integrity cryptosuites that sign bytes rather than a JWS: the RDFC
 // suites, and ecdsa-sd-2023's base and per-statement signatures. Same
-// `scheme` (families 'ecdsa' and 'eddsa' only — nothing here signs raw bytes
-// with RSA, and a post-quantum signature goes through `pq_jose`);
-// `privateKey` is a node KeyObject or a private JWK. Throws for a key of the
-// wrong kind, because a signer handed the wrong key is a bug, not an input.
+// `scheme` (families 'ecdsa' and 'eddsa', and since #1955 P3 'rsa-pkcs1'
+// over SHA-256 or SHA-512 only — the SSH user certificate authority's
+// rsa-sha2-256 and rsa-sha2-512, RFC 8332; SHA-1, OpenSSH's `ssh-rsa`
+// signature, is never made here); a post-quantum signature goes through
+// `pq_jose`. `privateKey` is a node KeyObject or a private JWK. Throws for a
+// key of the wrong kind, because a signer handed the wrong key is a bug, not
+// an input.
 /**
- * Signs raw bytes with ECDSA or EdDSA, for the Data Integrity
- * cryptosuites.
+ * Signs raw bytes with ECDSA, EdDSA or RSA PKCS#1 v1.5 (SHA-256 or
+ * SHA-512), for the Data Integrity cryptosuites and the SSH user CA.
  *
  * @param scheme - as for `verifyRawSignature()`
  * @param privateKey - a KeyObject or a private JWK
@@ -10841,6 +10844,14 @@ function signRawSignature(scheme, privateKey, data) {
   if (s.family === 'eddsa' && (type === 'ed25519' || type === 'ed448')) {
     const out = nodeCrypto.sign(null, message, key);
     log.debug("Leaving signRawSignature(). EdDSA.");
+    return out;
+  }
+  // RFC 8332 (#1955 P3): rsa-sha2-256 and rsa-sha2-512 and nothing weaker.
+  if (s.family === 'rsa-pkcs1' && type === 'rsa' &&
+      (s.hash === 'sha256' || s.hash === 'sha512')) {
+    const out = nodeCrypto.sign(s.hash, message, { key: key,
+      padding: nodeCrypto.constants.RSA_PKCS1_PADDING });
+    log.debug("Leaving signRawSignature(). RSA PKCS#1 v1.5.");
     return out;
   }
   log.debug("Leaving signRawSignature(). Refused.");
