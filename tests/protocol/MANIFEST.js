@@ -1402,6 +1402,14 @@ const JOBS = [
   // with real tokens is tests/hardware_tokens.js, in process: nothing over
   // HTTP can make a token, which is recorded only from attestation.
   { file: 'sts_hardware_tokens.js', browser: false, local: true },
+  // A YUBIKEY PIV KEY ATTESTATION OVER EST (#1955 P2), in a throwaway realm:
+  // an attested request recorded as a hardware token, an attestation of
+  // another key and of another slot refused, enrol-piv on /admin-api, and
+  // escrow refused off, issued (or 503 without a key-encryption key) on,
+  // and not recovered without PIV_KEY_RECOVERY. Its Yubico-shaped chain is
+  // made at run time; the verifier's refusals in full are
+  // tests/piv_attestation.js, in process.
+  { file: 'sts_piv_attestation.js', browser: false, local: true },
   // LINKING A WEBAUTHN PLATFORM CREDENTIAL ON /portal/devices, IN A REAL
   // BROWSER (#258, 2026-10-06): Chrome's virtual authenticators enrol a
   // roaming key and a platform key on /portal/keys; the roaming one is

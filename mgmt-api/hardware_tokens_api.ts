@@ -154,12 +154,36 @@ class HardwareTokensApi {
     }
     log.debug("Leaving HardwareTokensApi.view(). " + page.tokens.length);
     // The pager's members, the offset left out (the page says which rows).
-    return { tokens: page.tokens,
+    // #1955 P2: the enrolment form's rules, and the escrowed certificates
+    // of the person a search names (none for a serial or nobody).
+    return { piv: this.pivRules(),
+             escrowed: q ? this.deps.loadPivEnrolment().escrowedOf(q) : [],
+             tokens: page.tokens,
              paging: { page: paging.page, pages: paging.pages,
                        perPage: paging.perPage, firstRow: paging.firstRow,
                        lastRow: paging.lastRow, total: paging.total,
                        param: paging.param, noun: paging.noun },
              capped: !!page.capped, q: q, status: status };
+  }
+
+  // What the enrolment form may issue here: the PIV profiles EST's list
+  // holds, and the two switches.
+  private pivRules(): Json {
+    const { log } = this.deps;
+    log.debug("Entering HardwareTokensApi.pivRules().");
+    const cfg = require('../common/config');
+    const raw = cfg.value('est.allowedProfiles');
+    const allowed = (Array.isArray(raw) ? raw : String(raw || '').split(','))
+      .map(function (one: unknown): string {
+        return String(one).trim();
+      });
+    log.debug("Leaving HardwareTokensApi.pivRules().");
+    return { profiles: ['piv-auth', 'piv-sign', 'piv-key-management',
+                        'piv-card-auth'].filter(function (one) {
+               return allowed.indexOf(one) >= 0;
+             }),
+             requireAttestation: cfg.value('piv.requireAttestation') === true,
+             keyEscrow: cfg.value('piv.keyEscrow') === true };
   }
 
   /**

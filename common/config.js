@@ -7225,7 +7225,9 @@ const SETTINGS = [
                  'recovery role can recover it and decrypt old mail after a ' +
                  'card is lost. Refused where no key-encryption key is ' +
                  'held (STS-PIV-0020). An escrowed key is never hardware ' +
-                 'evidence. Off, the default, the key is not kept.' },
+                 'evidence. Off, the default, /serverkeygen refuses the ' +
+                 'piv-key-management profile (STS-PIV-0021), so a 9d key ' +
+                 'is generated on the card and kept nowhere else.' },
   { key: 'piv.externalIssuers', group: 'Devices',
     label: 'Outside PIV or CAC issuing CAs mapped by card UUID (PEM)',
     env: 'STS_PIV_EXTERNAL_ISSUERS', type: 'string', dflt: '',

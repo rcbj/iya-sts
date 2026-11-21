@@ -45987,6 +45987,8 @@ op `getHardwareTokens`(@js(#{`maxLength`:256,`examples`:#["12345678"]}) `paramet
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
   @js(#{`minimum`:1,`maximum`:300,`examples`:#[50]}) `parameters/3/schema`: integer,
   `responses/200/content/application~1json/schema`: {
+    @js(#{`description`:"What the PIV enrolment form may issue here (#1955 P2)."}) `piv`: PivAdminRules;
+    @js(#{`description`:"The escrowed piv-key-management certificates of the person `q` names; empty for a serial, nobody, or no search."}) `escrowed`: (PivEscrowedAdminRow)[];
     `tokens`: (HardwareTokenAdminRow)[];
     `paging`: WithPagePagesPerPageEtc8;
     `capped`: boolean;
@@ -46046,6 +46048,12 @@ op `reportHardwareTokenLost`(@js(#{`examples`:#[#{`key`:"yubico/12345678"}]}) `r
 
 // #1955 P2: THE PIV ENROLMENT FORM AND ESCROWED KEYS (`mgmt-api/hardware_tokens_api.ts`,
 // `common/piv_enrolment.ts`).
+@hoisted model PivAdminRules {
+  @js(#{`description`:"The PIV slot profiles this realm's EST may issue (est.allowedProfiles)."}) `profiles`: (string)[];
+  @js(#{`description`:"Whether a PIV profile needs a YubiKey PIV attestation (piv.requireAttestation)."}) `requireAttestation`: boolean;
+  @js(#{`description`:"Whether piv-key-management keys may be escrowed (piv.keyEscrow)."}) `keyEscrow`: boolean
+}
+
 @hoisted model PivEscrowedAdminRow {
   @js(#{`description`:"The certificate's serial, lower-case hex: what `recoverEscrowedPivKey` names."}) `serialHex`: string;
   `profile`: string;

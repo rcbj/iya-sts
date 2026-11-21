@@ -4624,6 +4624,21 @@ and how a presented one finds it:
   `sts_certificate_holder_rename` 2b.
 
 
+
+**`stsPivCardUuid` (#1955 P2, D8, rcbj 2026-11-20)** is the second thing an
+outside certificate may be found by: an outside PIV or CAC card's FIPS 201
+card UUID, lower case, no `urn:uuid:` prefix, one value per card (multi).
+`pivCardHolders(uuid)` answers who holds one, on the same certificate
+enrollment slot as `certificateHolders` and for the same reason. It is found
+the way a DID is (`entryByDidSubject()`): the store's `byAttribute` index in a
+windowed process (`stspivcarduuid` is in the codec's `VALUE_INDEXED`, a key
+the service writes, so no schema moves; an entry written before carries no key
+until it is next written, and recording the UUID is that write), and the
+resident entries walked. It is asked only for a certificate from a configured
+outside PIV issuer that no entry stores, so not on every handshake. The value
+is compared lower-cased; the windowed index compares as written, so a UUID is
+recorded in lower case, as the attribute's description says. OID 790 under
+the register's attribute arc. `common/CLAUDE.md` 3ag argues the mapping.
 ## A GROUP OR A PERSON NAMES ITS POLICY (#1235, 2026-10-30; `common/CLAUDE.md` 3cx)
 
 rcbj on #1234: what a named policy covers names it, and the policy lists
