@@ -84,4 +84,32 @@ model Role {
     what: "TRUE: the role's owners may not administer it through /admin-api (#607), whatever they own — an administrator's mark, read by the access-control policy's owner rule as urn:sts:xacml:object-protected. Absent is FALSE."
   })
   stsOwnerProtected?: DirectoryBoolean;
+  // -------------------------------------------------------------------
+  // DYNAMIC SELECTABLE ROLES (#1072). A role that nobody HOLDS: a person
+  // the role's own XACML policy permits is OFFERED it at sign-in, and holds
+  // it for that sign-in only if they tick it. Nothing here names a member;
+  // a dynamic role has none (rcbj's decision 1).
+  // -------------------------------------------------------------------
+  @attr(#{
+    kind: "single",
+    what: "How the role is held (#1072). `static`, and absent, is membership as it always was: the users, groups and applications listed. `dynamic-selectable` is a role with no members, OFFERED at sign-in to each person its eligibility policy permits, and held for that sign-in's application only when they choose it. The mode cannot change while the role has members."
+  })
+  roleMembershipMode?: string;
+  @attr(#{
+    kind: "single",
+    from: "this registry, when the role's eligibility policy is first set",
+    what: "The entry name in ou=policies of the XACML policy this dynamic role owns (#1072), decided alone by the PDP for each person at sign-in and again at every issuance. Only Permit makes the person eligible; Deny, NotApplicable, Indeterminate, a missing attribute and a missing policy do not."
+  })
+  @link(#{to: "xacmlPolicy", cardinality: "single", owns: true, what: "The eligibility policy entry in ou=policies that it owns."})
+  roleEligibilityPolicy?: string;
+  @attr(#{
+    kind: "single",
+    what: "Whether choosing the dynamic role is `optional`, and absent, or `required` (#1072). A required role a person is eligible for shows the role step even when the sign-in page's box is unticked, and at least one required role must be chosen; a sign-in with no browser is refused for it."
+  })
+  roleSelection?: string;
+  @attr(#{
+    kind: "single",
+    what: "A name shared by dynamic roles that may not be chosen together (#1072): of the roles carrying the same value, a sign-in may choose at most one. Absent, the role may be chosen alongside any other."
+  })
+  roleSelectionExclusive?: string;
 }

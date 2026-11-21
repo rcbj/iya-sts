@@ -122,8 +122,17 @@
     "html": "<div>{{content}}</div><hr><p><small>{{service}} ({{realm}}). Vous recevez ce message car il s’agit {{reason}}.</small></p>"
   },
   "categories": {
-    "security": { "reason": "d’un avis de sécurité concernant votre compte, qui ne peut pas être désactivé" },
-    "account": { "reason": "d’une demande faite par vous ou par un administrateur" },
-    "notification": { "reason": "d’une notification, que vous pouvez désactiver sur votre portail" }
+    "security": {
+      "reason": "d’un avis de sécurité concernant votre compte, qui ne peut pas être désactivé",
+      "encryptedSubject": "Un avis de sécurité de {{service}}"
+    },
+    "account": {
+      "reason": "d’une demande faite par vous ou par un administrateur",
+      "encryptedSubject": "Un message de {{service}}"
+    },
+    "notification": {
+      "reason": "d’une notification, que vous pouvez désactiver sur votre portail",
+      "encryptedSubject": "Une notification de {{service}}"
+    }
   }
 }

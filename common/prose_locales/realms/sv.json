@@ -23,6 +23,14 @@
     "en": "7e9175bdd8dd3808",
     "text": "Egna entityID och providerID (sådda distinkta när sfären skapas), egen signeringsnyckel, eget begärandetillstånd, egna artefakter och egen metadata per tjänsteleverantör — vars URL därför bär sfären såväl som SP-sammandraget. POSTERNA FÖR TJÄNSTELEVERANTÖRER är per sfär, av samma skäl som OAuth-klienterna: de är applikationer i sfärens egen katalog."
   },
+  "realms.support.openpgp-and-the-web-key-directory.family": {
+    "en": "05e19f1c690a88a0",
+    "text": "OpenPGP och Web Key Directory"
+  },
+  "realms.support.openpgp-and-the-web-key-directory.note": {
+    "en": "400ad738502f9d1f",
+    "text": "En persons OpenPGP-nyckel finns på personens post i sfärens egen katalog, registreringsutmaningen är sfärens, och Web Key Directory svarar för sfärens egna e-postdomäner (openpgp.wkdDomains, eller dess DNS-domän) med nycklar för sfärens egna personer. En WKD-klient känner till en domän men aldrig en sfärsökväg, så en begäran utan sfärsegment besvaras av den sfär som betjänar dess domän, standardsfären först."
+  },
   "realms.support.ws-trust.family": {
     "en": "3b83c15d86c7c8b4",
     "text": "WS-Trust"

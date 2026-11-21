@@ -431,6 +431,22 @@
     "en": "bfb6c6f542c0607b",
     "text": "/Me, ang authenticated na subject"
   },
+  "endpoints.route./.well-known/openpgpkey/:domain/hu/:hash.name": {
+    "en": "b042a2652a9771c9",
+    "text": "Key ng Web Key Directory (advanced method)"
+  },
+  "endpoints.route./.well-known/openpgpkey/:domain/policy.name": {
+    "en": "f0c7c4485ab23e66",
+    "text": "Policy ng Web Key Directory (advanced method)"
+  },
+  "endpoints.route./.well-known/openpgpkey/hu/:hash.name": {
+    "en": "a8849e1ec8b477d5",
+    "text": "Key ng Web Key Directory (direct method)"
+  },
+  "endpoints.route./.well-known/openpgpkey/policy.name": {
+    "en": "d9805e391b15a7b9",
+    "text": "Policy ng Web Key Directory (direct method)"
+  },
   "endpoints.route./.well-known/hoba/register.name": {
     "en": "b95adde7badbdef3",
     "text": "Magparehistro ng HOBA public key"
@@ -895,6 +911,14 @@
     "en": "cff7055c2db49c6a",
     "text": "Mga action sa mail"
   },
+  "endpoints.route./admin-api/openpgp.name": {
+    "en": "bb22bb5b740e327f",
+    "text": "Mga OpenPGP key"
+  },
+  "endpoints.route./admin-api/openpgp/:action.name": {
+    "en": "a1147f062fddb7e5",
+    "text": "Mga aksyon sa OpenPGP key"
+  },
   "endpoints.route./admin-api/mail/outbox.name": {
     "en": "d40abea9379f4e22",
     "text": "Mail outbox"
@@ -1236,8 +1260,8 @@
     "text": "Mga hardware token"
   },
   "endpoints.route./admin-api/hardware-tokens/:action.name": {
-    "en": "d2326b0fb8b09689",
-    "text": "Iulat na nawala ang isang hardware token"
+    "en": "33209f967f070175",
+    "text": "Mga aksiyon sa hardware token"
   },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",
@@ -1250,6 +1274,10 @@
   "endpoints.route./admin-api/roles/preview.name": {
     "en": "c2e62734c4466542",
     "text": "Ii-issue kaya ito?"
+  },
+  "endpoints.route./admin-api/roles/eligibility.name": {
+    "en": "7bf17441c33aaafb",
+    "text": "Karapat-dapat ba ang taong ito sa dynamic na tungkuling ito?"
   },
   "endpoints.route./admin-api/roles/:action.name": {
     "en": "1baadaaa0e1df852",
@@ -1879,6 +1907,10 @@
     "en": "69876d051e66729c",
     "text": "Post-login activity step"
   },
+  "endpoints.route./authn/roles.name": {
+    "en": "d10487ebcbc8b238",
+    "text": "Hakbang ng dynamic na tungkulin"
+  },
   "endpoints.route./authn/totp.name": {
     "en": "a89de574ee2c21ab",
     "text": "Hakbang ng one-time code bilang second factor"
@@ -2034,6 +2066,10 @@
   "endpoints.route./authn-api/mfa/:id/post-login/skip.name": {
     "en": "3d081a5b28f53bd6",
     "text": "Ipagpaliban ang isang post-login activity"
+  },
+  "endpoints.route./authn-api/mfa/:id/roles.name": {
+    "en": "77d2211c8b1e2d93",
+    "text": "Piliin ang mga dynamic na tungkulin ng pag-sign in na ito"
   },
   "endpoints.route./authn-api/mfa/:id/email/send.name": {
     "en": "f974b23b7838f712",
@@ -2586,5 +2622,9 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS (hinihingi ang client certificate, hindi kailanman kinakailangan)"
+  },
+  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
+    "en": "f46d01f7581b5379",
+    "text": "Mga naka-escrow na PIV key"
   }
 }

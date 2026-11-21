@@ -2554,7 +2554,7 @@ class XacmlSurface {
     const withheld = [];
     const policies = store.all().filter(function (row) {
       if (internal.indexOf(String(row.name).toLowerCase()) >= 0 ||
-          row.application) {
+          store.owned(row)) {
         withheld.push(row.name);
         return false;
       }

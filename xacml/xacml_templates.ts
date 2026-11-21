@@ -918,7 +918,20 @@ const HARDWARE_TOKEN_ATTRIBUTE = {
   // A BOOLEAN: the register records the SUBJECT as the token's holder.
   HOLDER_MATCHES: 'urn:sts:xacml:hardware-token-holder-matches',
   // `active` or `lost`.
-  STATUS: 'urn:sts:xacml:hardware-token-status'
+  STATUS: 'urn:sts:xacml:hardware-token-status',
+  // WHAT A PIV ATTESTATION SAID OF THE KEY (#1955 P2, design X4), sent only
+  // for an attested token whose evidence said it: the slot key's PIN policy
+  // (`never`, `once`, `always`, `match-once`, `match-always`) and touch
+  // policy (`never`, `cached`, `always`), and the token's firmware
+  // (`5.4.3`), form factor (`usb-a`, `usb-c`, `lightning`, ...) and, a
+  // BOOLEAN sent only when true, its FIPS certification. "An administrator
+  // signs in only with touch always" is a rule over TOUCH_POLICY. The realm's
+  // `piv.pinPolicy` and `piv.touchPolicy` stay the ENROLMENT gate.
+  PIN_POLICY: 'urn:sts:xacml:hardware-token-pin-policy',
+  TOUCH_POLICY: 'urn:sts:xacml:hardware-token-touch-policy',
+  FIRMWARE: 'urn:sts:xacml:hardware-token-firmware',
+  FORM_FACTOR: 'urn:sts:xacml:hardware-token-form-factor',
+  FIPS: 'urn:sts:xacml:hardware-token-fips'
 };
 
 // ---------------------------------------------------------------------------

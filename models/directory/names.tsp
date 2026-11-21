@@ -304,6 +304,21 @@ namespace IyaSts.Directory;
   // about, derived on every write of the keys (`deriveAndroidMarker()`) so
   // that the recheck reads its holders rather than everybody.
   "stsAndroidAttestedCredential",
+  // AN OUTSIDE PIV OR CAC CARD'S FIPS 201 CARD UUID (#1955 P2, D8): the
+  // value a card certificate from one of a realm's `piv.externalIssuers`
+  // names in its `urn:uuid:` subjectAltName, which maps it to this person
+  // (`common/piv_attestation.ts`, `ldap_server.js`'s `pivCardHolders()`).
+  // Not a secret: the card says it to every reader.
+  "stsPivCardUuid",
+  // A PERSON'S OpenPGP PUBLIC KEY (#1955 P6): the armored key they proved
+  // they hold by signing a challenge, its fingerprint, and what the page
+  // draws about it (version, algorithms, the matching user ids, whether it
+  // is published in the Web Key Directory). Public by design; never a
+  // secret key, which registration refuses. `common/openpgp_keys.ts`.
+  "stsOpenPgpKey", "stsOpenPgpFingerprint", "stsOpenPgpKeyInfo",
+  // HOW MAIL TO THE PERSON IS ENCRYPTED (#1955 P6): `none`, `openpgp` or
+  // `smime`, chosen on the portal. `common/openpgp_keys.ts`.
+  "stsMailEncryption",
   // THE WEBAUTHN USER HANDLE (#474): 64 random bytes, base64url, one per
   // person, that every passkey they register is created under and that a
   // discoverable credential hands back to say whose it is. Not a secret —

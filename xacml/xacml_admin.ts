@@ -540,12 +540,14 @@ class XacmlAdmin {
                      combiningAlgId: row.combiningAlgId,
                      description: row.description,
                      application: row.application || null,
+                     // #1072: the dynamic role whose eligibility it decides.
+                     role: row.role || null,
                      orphanedAt: row.orphanedAt || null,
                      // #1760: the route it was generated for, and whether
                      // a reverse-proxy route may choose it — enabled and
                      // one a remote PEP is sent.
                      pepRoute: row.pepRoute || null,
-                     routable: row.enabled && !row.application &&
+                     routable: row.enabled && !store.owned(row) &&
                        withheld.indexOf(String(row.name).toLowerCase()) < 0,
                      problems: [] };
       try {

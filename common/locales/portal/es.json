@@ -42,6 +42,8 @@
   "nav.keys.heading": "Llaves de acceso",
   "nav.tokens.label": "Llaves de seguridad",
   "nav.tokens.heading": "Sus llaves de seguridad y tarjetas inteligentes",
+  "nav.openpgp.label": "OpenPGP y cifrado del correo",
+  "nav.openpgp.heading": "Su clave OpenPGP y el cifrado del correo",
   "nav.mfa.label": "Aplicación de autenticación",
   "nav.mfa.heading": "Su aplicación de autenticación",
   "nav.signing-key.label": "Claves de firma",
@@ -548,5 +550,8 @@
   "photo.errRead": "Ese archivo no se pudo leer como imagen.",
   "done.photo": "Su foto de perfil se guardó.",
   "done.photoRemoved": "Su foto de perfil se quitó.",
-  "done.endOthers": "Puede finalizar sus otras sesiones en /logout."
+  "done.endOthers": "Puede finalizar sus otras sesiones en /logout.",
+  "apps.reauthenticate": "Volver a iniciar sesión",
+  "apps.reauthenticateNote": "Cada enlace de inicio de sesión le pide que vuelva a iniciar sesión, para que pueda elegir los roles que usará con esa aplicación.",
+  "apps.reauthenticateApply": "Aplicar"
 }

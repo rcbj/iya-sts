@@ -1851,6 +1851,10 @@
     "en": "498689e2da216b2e",
     "text": "TRUE cuando este servidor de recursos UMA 2.0 puede registrar recursos de los que ES PROPIETARIO ÉL MISMO, mediante un token de la API de protección obtenido con client_credentials. Ausente o FALSE, el valor predeterminado, significa que un PAT debe ser de una persona (el flujo de código) y que esa persona es propietaria de lo que registra."
   },
+  "applications.schema.attributes.appDynamicRoleSelection.what": {
+    "en": "b508dc418113551c",
+    "text": "TRUE o FALSE: si se ofrecen roles dinámicos seleccionables en los inicios de sesión en esta aplicación (#1072), en lugar de roles.dynamicSelection. FALSE no muestra la casilla «Elegir roles para este inicio de sesión», no ofrece ningún rol, y un token para esta aplicación no lleva ningún rol seleccionado dinámicamente."
+  },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",
     "text": "cn, y los estándar owner y description."
@@ -2002,6 +2006,10 @@
   "xacmlPolicies.schema.attributes.xacmlPepRoute.what": {
     "en": "4e1dc3fa8c6c3e3c",
     "text": "El PEP remoto y la ruta, como el nombre del PEP, una barra y el id de la ruta, para los que se GENERÓ esta política mediante la elección de autorización de la ruta (simple o pública) en los formularios de rutas del proxy inverso o mediante la acción generate-pep-route-policy (#1760). Una política así se reescribe cuando se guarda la ruta, se renombra con la ruta y se quita con ella; nunca es la raíz. Puede editarse en el editor de políticas, y el siguiente guardado de la elección simple o pública de la ruta la vuelve a escribir: elige una política existente en la ruta para conservar una escrita a mano."
+  },
+  "xacmlPolicies.schema.attributes.xacmlRole.what": {
+    "en": "665602e5460193b1",
+    "text": "El rol (por su nombre en ou=roles) que POSEE esta política como su política de elegibilidad (#1072): el PDP la decide sola, para una persona, para indicar si se le puede ofrecer ese rol dinámico seleccionable al iniciar sesión. Una política así nunca es la raíz, nunca se alcanza mediante un PolicyIdReference desde la raíz y nunca se envía a un PEP remoto."
   },
   "xacmlPeps.schema.objectClasses.xacmlPep.what": {
     "en": "2b063c0577e29981",

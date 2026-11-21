@@ -219,22 +219,6 @@
     "en": "080afaefbe52c342",
     "text": "直到 devices.eventsKept 个更新的事件将其挤出。"
   },
-  "caches.store.hardware_tokens.register.title": {
-    "en": "f1c8d3f653154823",
-    "text": "硬件令牌登记册"
-  },
-  "caches.store.hardware_tokens.register.description": {
-    "en": "5efc16810cb7f48e",
-    "text": "本领域中每个实体硬件令牌（YubiKey、智能卡）一行，按厂商和序列号索引：谁持有它、它的型号和其上的凭据。序列号只根据证明记录。从不包含机密。"
-  },
-  "caches.store.hardware_tokens.register.bound": {
-    "en": "260467c777c74957",
-    "text": "进程持有的行是每个领域 5,000 条的缓存；登记册本身受其列出的凭据限制（FIDO 为 webauthn.maxKeysPerPerson）。"
-  },
-  "caches.store.hardware_tokens.register.lifetime": {
-    "en": "c18bfda6fa452b2b",
-    "text": "直到令牌被删除；丢失的令牌会保留，并标记为丢失。"
-  },
   "caches.store.dpop.nonces.title": {
     "en": "a131d3dea3731f75",
     "text": "DPoP nonce"
@@ -366,6 +350,22 @@
   "caches.store.gnap.signatures.hitMeaning": {
     "en": "1d89a0731fc525e7",
     "text": "一个已见过的签名，因此请求被拒绝"
+  },
+  "caches.store.hardware_tokens.register.title": {
+    "en": "f1c8d3f653154823",
+    "text": "硬件令牌登记册"
+  },
+  "caches.store.hardware_tokens.register.description": {
+    "en": "5efc16810cb7f48e",
+    "text": "本领域中每个实体硬件令牌（YubiKey、智能卡）一行，按厂商和序列号索引：谁持有它、它的型号和其上的凭据。序列号只根据证明记录。从不包含机密。"
+  },
+  "caches.store.hardware_tokens.register.bound": {
+    "en": "260467c777c74957",
+    "text": "进程持有的行是每个领域 5,000 条的缓存；登记册本身受其列出的凭据限制（FIDO 为 webauthn.maxKeysPerPerson）。"
+  },
+  "caches.store.hardware_tokens.register.lifetime": {
+    "en": "c18bfda6fa452b2b",
+    "text": "直到令牌被删除；丢失的令牌会保留，并标记为丢失。"
   },
   "caches.store.jose.kid-thumbprint-uris.title": {
     "en": "336e569778455530",
@@ -1122,6 +1122,34 @@
   "caches.store.oidfed.resolutions.lifetime": {
     "en": "ce6f4a649ea6af77",
     "text": "直到该链过期（其最小的 exp，10.4），且最多 oidfed.resolveCacheS。"
+  },
+  "caches.store.openpgp.challenges.title": {
+    "en": "c0c95c44e5f3835e",
+    "text": "OpenPGP 注册质询"
+  },
+  "caches.store.openpgp.challenges.description": {
+    "en": "be9e39edb5fb9e44",
+    "text": "每个正在注册 OpenPGP 密钥的人一个质询：其用 gpg --clearsign 签署的文本、其随机数（nonce）以及失效时间。只能使用一次，通过对该随机数的集群声明来实现。"
+  },
+  "caches.store.openpgp.challenges.bound": {
+    "en": "70f8ecd02c4392d1",
+    "text": "每人一个（以 entryUUID 为键），每个的有效期为 openpgp.challengeLifetimeS。"
+  },
+  "caches.store.openpgp.wkd.title": {
+    "en": "dc47d455d5283de5",
+    "text": "Web 密钥目录发布"
+  },
+  "caches.store.openpgp.wkd.description": {
+    "en": "f79c85531015261b",
+    "text": "Web 密钥目录对每个哈希地址返回哪一个 OpenPGP 密钥：持有者（一个 entryUUID）及其发布的指纹。这只是一个指针：密钥本身从条目中读取。从不是机密。"
+  },
+  "caches.store.openpgp.wkd.bound": {
+    "en": "e8a7abbcc8bba7fc",
+    "text": "进程持有的行是每个领域 5,000 条的缓存；登记表中每位已选择发布的人员一行。"
+  },
+  "caches.store.openpgp.wkd.lifetime": {
+    "en": "06861887c7e6c8f1",
+    "text": "直到此人停止发布或删除密钥。"
   },
   "caches.store.passwords.breach-ranges.title": {
     "en": "5746db291bee19b3",

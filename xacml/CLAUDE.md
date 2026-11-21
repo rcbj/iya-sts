@@ -624,6 +624,25 @@ this service's thread. `GET /xacml` is guarded because it describes the other
 three, and its refusal names the group and the setting so that the page's job
 survives being refused.
 
+### Who may recover another person's escrowed PIV key (#1955 P2, D7)
+
+**A policy decision, not Admin Write** (the *authorization is XACML policy*
+rule). Recovering an escrowed piv-key-management key reads that person's
+mail, so `common/piv_enrolment.ts`'s `recover()` asks the access gate with
+resource `piv-key-escrow`, action `recover-key` and `requiredRoles`
+`['PIV_KEY_RECOVERY']`, and the built-in access-control document's first rule
+(holds a required role) decides it. PIV_KEY_RECOVERY is a built-in role held
+through the group `roles.pivKeyRecoveryGroup` names (default
+`piv-key-recovery`, nobody in it), argued in `common/roles.js` beside
+XACML_USER: it exists in every realm nobody configured, and it is not the
+console's write role. **Only a Permit recovers**: the gate answers "allowed"
+with no decision where no decider is installed or `xacml.enabled` is off, which
+is right for a surface and wrong for somebody's mail, so `recover()` asks for
+`decision === 'Permit'`. An operator narrows it (a second role, a department)
+by editing the document, never the code. The holder's own recovery on the
+portal is the account API's `person` access and a fresh sign-in, and does not
+ask this.
+
 ### Two roles, two groups, and they must not become one
 
 | Endpoints | Role | Group |
@@ -3638,6 +3657,16 @@ attested key" is a realm's own rule over these, or the authentication
 policy's `attested-hardware` mechanism, which the built-in `authn-mechanism`
 rule already enforces. They ride along and never make the policy asked.
 
+**#1955 P2 adds five, for the attested key itself**: `hardware-token-pin-policy`
+and `hardware-token-touch-policy` (a PIV slot key's, kept on the CREDENTIAL's
+evidence at enrolment, since each slot has its own), `hardware-token-firmware`,
+`hardware-token-form-factor` and `hardware-token-fips` (a boolean sent only when
+true; the token's). The gate sends them ONLY for a token still attested whose
+evidence said them, so a rule over them is inapplicable rather than matching an
+empty string, and a lost token's policies prove nothing. "Administrators sign in
+only with touch `always`" is a realm's rule over `hardware-token-touch-policy`;
+the realm settings `piv.pinPolicy` / `piv.touchPolicy` stay the ENROLMENT gate.
+
 ## A device-bound session an application requires (#740, 2026-10-25)
 
 Two environment attributes, sent only while `authn.deviceBoundSessions`
@@ -3956,3 +3985,37 @@ its editor link, `usable` with the resolve's `code` and `why`, each type's
   switch, `xacml.policy.delete` naming the orphan's application).
 
 `tests/fga_console.js` holds it.
+
+## A dynamic role's eligibility policy (#1072, 2026-11-20; rule 3dg)
+
+**rcbj's decision: XACML is the policy language and the PDP the decider.** A
+dynamic selectable role (`common/roles.js`, `common/CLAUDE.md` 3dg) is
+offered at sign-in to each person its OWN policy permits, and
+`role_eligibility.ts` is that question. It is `fga_pep.ts`'s arrangement:
+
+* **The policy is OWNED**: an entry in `ou=policies` carrying `xacmlRole`
+  (the role's name), named on the role as `roleEligibilityPolicy`, written
+  only by `setPolicy()` (XACML XML or ALFA, compiled to XML as the editor's
+  import does) and removed with the role. `xacml_store.ts`'s `owned()` —
+  application OR role — is the one test the root, the reference map, the
+  remote PEP's pull, the sync token, the route policies and the Policies tab
+  read, so a role's Permit can never become an issuance Permit. A policy that
+  merely carries the name is never adopted (STS-XACML-0315).
+* **Decided alone**, `decidePolicy()` with no PolicyIdReference map, and read
+  deny-biased: **only Permit is eligible**. Deny, NotApplicable, an
+  Indeterminate over a missing attribute, an undischargeable obligation, a
+  missing (0313, 0314), disabled (0316) or unparseable (0317) policy and a
+  fault (0318) all answer NOT eligible, each under its code.
+* **The request** is the builder's `roleEligibility()`: the person (PIP
+  resolved), `action-id` `select-role`, the role as `resource-id`, the role's
+  application, the stage (`offer`, `issue`, `test`), the sign-in's
+  application, acr and amr. An application's role is refused for another
+  application BEFORE the policy is asked (0320).
+* **Audited per offer and per test** (`roles.eligibility`), never with the
+  policy or the attributes; the `issue` stage only where it drops a role
+  (`authn/role_selection.ts`).
+* **The administrator's test** is `GET /admin-api/roles/eligibility`
+  (`answered: false` with no question, the role preview's rule) and the
+  role page's Eligibility section, composed in by `web_pages.ts`.
+
+`tests/role_eligibility.js` holds the definition and the decision.

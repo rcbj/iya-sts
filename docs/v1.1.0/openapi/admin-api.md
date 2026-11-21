@@ -39,7 +39,7 @@ Every answer is checked against the model shown here before it is sent, and no a
 | [Custom claims](admin-api-custom-claims.html) | 9 | What to add to every access token and ID Token issued from now on. The assertions are next door, under Custom SAML attributes. |
 | [Delegation](admin-api-delegation.html) | 17 |  |
 | [Devices](admin-api-devices.html) | 12 |  |
-| [Directory](admin-api-directory.html) | 21 |  |
+| [Directory](admin-api-directory.html) | 32 |  |
 | [EST](admin-api-est.html) | 6 |  |
 | [Federation](admin-api-federation.html) | 24 |  |
 | [GNAP](admin-api-gnap.html) | 4 | The Grant Negotiation and Authorization Protocol (RFC 9635) and its resource server connections (RFC 9767): the authorization server of this realm, what the applications using it have done, and the two things an operator does to its state by hand. |
@@ -60,7 +60,7 @@ Every answer is checked against the model shown here before it is sent, and no a
 | [RISC](admin-api-risc.html) | 5 |  |
 | [Recovery codes](admin-api-recovery-codes.html) | 1 |  |
 | [Risk](admin-api-risk.html) | 10 |  |
-| [Roles](admin-api-roles.html) | 14 | Who holds a role, and what requires one. A role is a name a person, a GROUP or an APPLICATION can be mapped into, and holding one is what an ISSUANCE is decided on — which is the whole difference from Groups above, where a group grants nothing. The decision is made by the XACML PDP against a policy, never by an `if` in an issuance site, so a refusal is a document somebody can read. It is not Admin roles either: those are two directory groups that grant the /admin console and nothing else. |
+| [Roles](admin-api-roles.html) | 18 | Who holds a role, and what requires one. A role is a name a person, a GROUP or an APPLICATION can be mapped into, and holding one is what an ISSUANCE is decided on — which is the whole difference from Groups above, where a group grants nothing. The decision is made by the XACML PDP against a policy, never by an `if` in an issuance site, so a refusal is a document somebody can read. It is not Admin roles either: those are two directory groups that grant the /admin console and nothing else. |
 | [SAML 1.1](admin-api-saml-1-1.html) | 2 |  |
 | [SAML 2.0](admin-api-saml-2-0.html) | 13 |  |
 | [SAML assertions](admin-api-saml-assertions.html) | 3 |  |

@@ -219,22 +219,6 @@
     "en": "080afaefbe52c342",
     "text": "Jusqu’à ce que devices.eventsKept événements plus récents le poussent dehors."
   },
-  "caches.store.hardware_tokens.register.title": {
-    "en": "f1c8d3f653154823",
-    "text": "Registre des jetons matériels"
-  },
-  "caches.store.hardware_tokens.register.description": {
-    "en": "5efc16810cb7f48e",
-    "text": "Une ligne par jeton matériel physique (une YubiKey, une carte à puce) dans ce domaine, indexée par fabricant et numéro de série : qui le détient, son modèle et les identifiants qu'il porte. Un numéro de série n'est enregistré qu'à partir d'une attestation. Jamais un secret."
-  },
-  "caches.store.hardware_tokens.register.bound": {
-    "en": "260467c777c74957",
-    "text": "Les lignes qu'un processus détient sont un cache de 5 000 par domaine ; le registre lui-même est borné par les identifiants qu'il liste (webauthn.maxKeysPerPerson pour FIDO)."
-  },
-  "caches.store.hardware_tokens.register.lifetime": {
-    "en": "c18bfda6fa452b2b",
-    "text": "Jusqu'à la suppression du jeton ; un jeton perdu est conservé, marqué comme perdu."
-  },
   "caches.store.dpop.nonces.title": {
     "en": "a131d3dea3731f75",
     "text": "Nonces DPoP"
@@ -366,6 +350,22 @@
   "caches.store.gnap.signatures.hitMeaning": {
     "en": "1d89a0731fc525e7",
     "text": "une signature déjà vue, si bien que la requête a été refusée"
+  },
+  "caches.store.hardware_tokens.register.title": {
+    "en": "f1c8d3f653154823",
+    "text": "Registre des jetons matériels"
+  },
+  "caches.store.hardware_tokens.register.description": {
+    "en": "5efc16810cb7f48e",
+    "text": "Une ligne par jeton matériel physique (une YubiKey, une carte à puce) dans ce domaine, indexée par fabricant et numéro de série : qui le détient, son modèle et les identifiants qu'il porte. Un numéro de série n'est enregistré qu'à partir d'une attestation. Jamais un secret."
+  },
+  "caches.store.hardware_tokens.register.bound": {
+    "en": "260467c777c74957",
+    "text": "Les lignes qu'un processus détient sont un cache de 5 000 par domaine ; le registre lui-même est borné par les identifiants qu'il liste (webauthn.maxKeysPerPerson pour FIDO)."
+  },
+  "caches.store.hardware_tokens.register.lifetime": {
+    "en": "c18bfda6fa452b2b",
+    "text": "Jusqu'à la suppression du jeton ; un jeton perdu est conservé, marqué comme perdu."
   },
   "caches.store.jose.kid-thumbprint-uris.title": {
     "en": "336e569778455530",
@@ -1122,6 +1122,34 @@
   "caches.store.oidfed.resolutions.lifetime": {
     "en": "ce6f4a649ea6af77",
     "text": "Jusqu’à l’expiration de la chaîne (son plus petit exp, 10.4), et au plus oidfed.resolveCacheS."
+  },
+  "caches.store.openpgp.challenges.title": {
+    "en": "c0c95c44e5f3835e",
+    "text": "Défis d'enregistrement OpenPGP"
+  },
+  "caches.store.openpgp.challenges.description": {
+    "en": "be9e39edb5fb9e44",
+    "text": "Un défi par personne qui enregistre une clé OpenPGP : le texte qu'elle signe avec gpg --clearsign, son nonce et son échéance. Consommé une seule fois, par une revendication du nonce à l'échelle du cluster."
+  },
+  "caches.store.openpgp.challenges.bound": {
+    "en": "70f8ecd02c4392d1",
+    "text": "Un par personne (indexé par entryUUID), chacun valable openpgp.challengeLifetimeS."
+  },
+  "caches.store.openpgp.wkd.title": {
+    "en": "dc47d455d5283de5",
+    "text": "Publications du Web Key Directory"
+  },
+  "caches.store.openpgp.wkd.description": {
+    "en": "f79c85531015261b",
+    "text": "La clé OpenPGP que le Web Key Directory renvoie pour chaque adresse hachée : le titulaire (un entryUUID) et l'empreinte qu'il a publiée. Un pointeur : la clé elle-même est lue dans l'entrée. Jamais un secret."
+  },
+  "caches.store.openpgp.wkd.bound": {
+    "en": "e8a7abbcc8bba7fc",
+    "text": "Les lignes détenues par un processus forment un cache de 5 000 par domaine de confiance ; le registre contient une ligne par personne ayant accepté la publication."
+  },
+  "caches.store.openpgp.wkd.lifetime": {
+    "en": "06861887c7e6c8f1",
+    "text": "Jusqu'à ce que la personne cesse de publier ou supprime la clé."
   },
   "caches.store.passwords.breach-ranges.title": {
     "en": "5746db291bee19b3",

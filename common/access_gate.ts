@@ -207,7 +207,13 @@ const RESOURCE = {
   // their own request); the built-in document's fourth rule decides it,
   // over the facts in `accessRequestObject`, so self-approval and
   // separation of duties are policy (rcbj's decision 2 on #1180).
-  AUTHZEN_ACCESS_REQUEST: 'authzen-access-request'
+  AUTHZEN_ACCESS_REQUEST: 'authzen-access-request',
+  // AN ESCROWED PIV KEY-MANAGEMENT KEY (#1955 P2, D7), the eleventh
+  // resource, asked by `common/piv_enrolment.ts`'s `recover()` before an
+  // administrator recovers somebody's escrowed decryption key, with
+  // PIV_KEY_RECOVERY in `requiredRoles`: the first rule decides it, so who
+  // may read another person's mail is policy and not Admin Write.
+  PIV_KEY_ESCROW: 'piv-key-escrow'
 };
 
 // THE ACTIONS. Deliberately coarse — `read` and `write` are what the console's
@@ -234,7 +240,10 @@ const ACTION = {
   // DECIDING AN AUTHZEN ACCESS REQUEST (#1180): approving it, denying it,
   // or revoking its approval, one question for all three — who may decide
   // a request is who may decide it either way.
-  APPROVE_ACCESS_REQUEST: 'approve-access-request'
+  APPROVE_ACCESS_REQUEST: 'approve-access-request',
+  // RECOVERING AN ESCROWED KEY (#1955 P2): neither a read of a page nor a
+  // change to one — it hands a person's decryption key to someone else.
+  RECOVER_KEY: 'recover-key'
 };
 
 // The person a decision is about — the SECURITY CONTEXT's, never the

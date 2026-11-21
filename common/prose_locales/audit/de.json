@@ -503,6 +503,34 @@
     "en": "f7fb5461e2325e1e",
     "text": "Ein Hardware-Token wurde als verloren gemeldet und seine Anmeldedaten zurückgezogen"
   },
+  "audit.actions.openpgp.challenge.label": {
+    "en": "454a22b5bcd9d6a2",
+    "text": "Eine Challenge zur Registrierung eines OpenPGP-Schlüssels wurde ausgestellt"
+  },
+  "audit.actions.openpgp.key-registered.label": {
+    "en": "1ed8de1f8777a015",
+    "text": "Ein OpenPGP-Schlüssel wurde auf einen Besitznachweis hin registriert"
+  },
+  "audit.actions.openpgp.key-refused.label": {
+    "en": "f1e7e3c6808ba33b",
+    "text": "Ein OpenPGP-Schlüssel wurde nicht registriert"
+  },
+  "audit.actions.openpgp.key-removed.label": {
+    "en": "89a284fa6508eae4",
+    "text": "Ein OpenPGP-Schlüssel wurde entfernt"
+  },
+  "audit.actions.openpgp.publication.label": {
+    "en": "f6d12f16eca6796a",
+    "text": "Ein OpenPGP-Schlüssel wurde im Web Key Directory veröffentlicht oder daraus zurückgezogen"
+  },
+  "audit.actions.openpgp.mail-encryption.label": {
+    "en": "ba0fb7a4133d94e2",
+    "text": "Die Verschlüsselung der E-Mails an eine Person wurde geändert"
+  },
+  "audit.actions.openpgp.smime-certificate.label": {
+    "en": "663072a33ce1e178",
+    "text": "Das S/MIME-Zertifikat einer Person wurde festgelegt oder entfernt"
+  },
   "audit.actions.device.key-add.label": {
     "en": "6c1b2513c20532ef",
     "text": "Einem Gerät wurde ein Schlüssel hinzugefügt"
@@ -1795,6 +1823,34 @@
     "en": "896007dff32a6824",
     "text": "Beschreibung, Anzeigename oder Mitgliedstypen einer Rolle wurden gesetzt"
   },
+  "audit.actions.roles.set-mode.label": {
+    "en": "b1e0f3b6e5738f21",
+    "text": "Eine Rolle wurde statisch oder dynamisch auswählbar gemacht"
+  },
+  "audit.actions.roles.set-selection.label": {
+    "en": "0fbfbe0d177c5543",
+    "text": "Es wurde festgelegt, wie eine dynamische Rolle bei der Anmeldung gewählt wird"
+  },
+  "audit.actions.roles.eligibility.label": {
+    "en": "28d96273b40dea3f",
+    "text": "Über die Berechtigung einer Person für eine dynamische Rolle wurde entschieden"
+  },
+  "audit.actions.roles.selection.offered.label": {
+    "en": "dd135469babd9bdc",
+    "text": "Bei einer Anmeldung wurden dynamische Rollen angeboten"
+  },
+  "audit.actions.roles.selection.chosen.label": {
+    "en": "2daaeb4ea81b1012",
+    "text": "Bei einer Anmeldung wurden dynamische Rollen gewählt"
+  },
+  "audit.actions.roles.selection.refused.label": {
+    "en": "cbed03565474afc0",
+    "text": "Die Wahl dynamischer Rollen einer Anmeldung wurde abgelehnt"
+  },
+  "audit.actions.roles.selection.dropped.label": {
+    "en": "042b7f95a92cd6d2",
+    "text": "Eine gewählte dynamische Rolle wurde in einem Token weggelassen"
+  },
   "audit.actions.node-health.collect-garbage.label": {
     "en": "cb2531d8ee2f27ce",
     "text": "Eine vollständige Garbage Collection wurde in einem Prozess oder Worker-Thread eines Knotens ausgeführt"
@@ -2298,5 +2354,9 @@
   "audit.actions.xacml.pep.cluster.proxy.clear.label": {
     "en": "c2812e5d21fb6dd4",
     "text": "Die Reverse-Proxy-Konfiguration eines Clusters entfernter PEPs wurde entfernt"
+  },
+  "audit.actions.piv-escrow.recover.label": {
+    "en": "0cad829ec7cafc72",
+    "text": "Ein hinterlegter PIV-Key-Management-Schlüssel wurde wiederhergestellt"
   }
 }

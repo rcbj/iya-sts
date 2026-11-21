@@ -736,6 +736,21 @@ function hardwareTokenFactsOf(asked) {
     holderMatches: !!now && !!person && String(now.holder || '') === person,
     status: now ? String(now.status || 'active') : 'unknown'
   };
+  // WHAT THE ATTESTATION SAID OF THE KEY (#1955 P2, X4), from the sign-in's
+  // snapshot, and ONLY for a token still attested: a lost token's policies
+  // prove nothing about the key now. Absent where the evidence said none,
+  // so a rule about them is inapplicable rather than matching ''.
+  if (out.attested) {
+    ['pinPolicy', 'touchPolicy', 'firmware', 'formFactor']
+      .forEach(function (name) {
+        if (token[name]) {
+          out[name] = String(token[name]);
+        }
+      });
+    if (token.fips === true) {
+      out.fips = true;
+    }
+  }
   log.debug('Leaving hardwareTokenFactsOf(). ' + out.key + ' ' +
             (out.attested ? 'attested' : 'not attested'));
   return out;

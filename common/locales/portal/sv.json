@@ -42,6 +42,8 @@
   "nav.keys.heading": "Nycklar",
   "nav.tokens.label": "Säkerhetsnycklar",
   "nav.tokens.heading": "Dina säkerhetsnycklar och smarta kort",
+  "nav.openpgp.label": "OpenPGP och e-postkryptering",
+  "nav.openpgp.heading": "Din OpenPGP-nyckel och e-postkryptering",
   "nav.mfa.label": "Autentiseringsapp",
   "nav.mfa.heading": "Din autentiseringsapp",
   "nav.signing-key.label": "Signeringsnycklar",
@@ -548,5 +550,8 @@
   "photo.errRead": "Filen kunde inte läsas som en bild.",
   "done.photo": "Ditt profilfoto har sparats.",
   "done.photoRemoved": "Ditt profilfoto har tagits bort.",
-  "done.endOthers": "Du kan avsluta dina andra sessioner på /logout."
+  "done.endOthers": "Du kan avsluta dina andra sessioner på /logout.",
+  "apps.reauthenticate": "Logga in igen",
+  "apps.reauthenticateNote": "Varje inloggningslänk ber dig logga in på nytt, så att du kan välja vilka roller du vill använda i programmet.",
+  "apps.reauthenticateApply": "Tillämpa"
 }

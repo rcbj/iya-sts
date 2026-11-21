@@ -42,6 +42,8 @@
   "nav.keys.heading": "مفاتيح المرور",
   "nav.tokens.label": "مفاتيح الأمان",
   "nav.tokens.heading": "مفاتيح الأمان والبطاقات الذكية الخاصة بك",
+  "nav.openpgp.label": "OpenPGP وتشفير البريد",
+  "nav.openpgp.heading": "مفتاح OpenPGP الخاص بك وتشفير البريد",
   "nav.mfa.label": "تطبيق المصادقة",
   "nav.mfa.heading": "تطبيق المصادقة الخاص بك",
   "nav.signing-key.label": "مفاتيح التوقيع",
@@ -548,5 +550,8 @@
   "photo.errRead": "تعذّرت قراءة ذلك الملف كصورة.",
   "done.photo": "حُفظت صورة ملفك الشخصي.",
   "done.photoRemoved": "أُزيلت صورة ملفك الشخصي.",
-  "done.endOthers": "يمكنك إنهاء جلساتك الأخرى في /logout."
+  "done.endOthers": "يمكنك إنهاء جلساتك الأخرى في /logout.",
+  "apps.reauthenticate": "تسجيل الدخول مرة أخرى",
+  "apps.reauthenticateNote": "يطلب منك كل رابط لتسجيل الدخول أن تسجل الدخول من جديد، حتى تتمكن من اختيار الأدوار التي ستستخدمها مع ذلك التطبيق.",
+  "apps.reauthenticateApply": "تطبيق"
 }

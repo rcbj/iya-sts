@@ -301,7 +301,8 @@ interface LivenessStore {
 interface PolicyRepository {
   root(): { name: string } | null;
   all(): Array<{ name: string; document: string; enabled: boolean;
-                 application?: string | null }>;
+                 application?: string | null;
+                 role?: string | null }>;
 }
 
 interface PepRegistryDeps {
@@ -721,7 +722,8 @@ class PepRegistry {
     // were it counted here every client registered in the realm would make
     // every remote PEP re-pull a repository whose sent bytes had not moved.
     const parts = store.all().filter(function (row) {
-      return row.enabled && !row.application;
+      // Owned by an application or a role (#1072): `XacmlStore.owned()`.
+      return row.enabled && !row.application && !row.role;
     }).map(function (row) {
       return row.name + ' ' + row.document;
     }).sort();

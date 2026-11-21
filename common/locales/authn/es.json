@@ -201,5 +201,13 @@
   "postLogin.failedHelp": "Si tu dispositivo o navegador no puede crear una clave de acceso ML-DSA, regístrala en una llave de seguridad aparte compatible con ML-DSA, o pídeselo a un administrador: donde tu política de claves de acceso permite que un administrador registre una por ti, puede hacerlo, y puede actualizar tu clave de acceso desde la consola.",
   "postLogin.failedSkip": "También puedes omitir este paso por ahora.",
   "client.policy": "Política de privacidad",
-  "client.tos": "Condiciones del servicio"
+  "client.tos": "Condiciones del servicio",
+  "login.chooseRoles": "Elegir roles para este inicio de sesión",
+  "login.chooseRolesNote": "Después de iniciar sesión, elija los roles que usará con esta aplicación.",
+  "roles.heading": "Elija sus roles",
+  "roles.sub": "Sesión iniciada como {name}. Marque los roles que usará en este inicio de sesión.",
+  "roles.required": "Debe elegir al menos un rol marcado como obligatorio.",
+  "roles.requiredTag": "obligatorio",
+  "roles.exclusive": "(no se puede combinar con roles del mismo tipo)",
+  "roles.continue": "Continuar"
 }

@@ -33,12 +33,24 @@
 // holds no recovery (`any`) and nothing else signs them in, they are told
 // to ask for an activation link or use their recovery codes, because the
 // removal passes the last-way-in guard (`credentials.removeKey()`'s `lost`).
+//
+// **#1955 P2 ADDS THREE ACTS, ON THE SAME DOOR AND THE SAME FRESH SIGN-IN**
+// (`common/piv_enrolment.ts` argues them): `enrol-piv`, the PIV enrolment
+// form (a certificate request, the slot's attestation certificate and the
+// f9 certificate) issuing a PIV slot certificate to the CALLER and nobody
+// else; `recover-key`, the caller's own escrowed piv-key-management key
+// (D7), the one answer of this API that carries a private key, sent
+// `no-store` like every other; and `attach-key`, noting which of the
+// caller's tokens an escrowed key was loaded on. The view gains the caller's
+// escrowed certificates and the realm's PIV rules.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import hardwareTokens = require('../common/hardware_tokens');
 import credentials = require('../common/credentials');
+import pivEnrolment = require('../common/piv_enrolment');
+import config = require('../common/config');
 import ModelZod = require('../common/model_zod');
 
 type Json = any;
@@ -53,7 +65,14 @@ interface AccountTokensDeps {
   log: typeof helpers.log;
   hardwareTokens: typeof hardwareTokens;
   credentials: typeof credentials;
+  pivEnrolment: typeof pivEnrolment;
+  config: typeof config;
 }
+
+// The acts, in the order the unknown-action sentence names them.
+const ACTIONS = ['lost', 'enrol-piv', 'recover-key', 'attach-key'];
+const PIV_PROFILES = ['piv-auth', 'piv-sign', 'piv-key-management',
+                      'piv-card-auth'];
 
 /**
  * `/portal/tokens`' account API operations: the person's hardware tokens.
@@ -78,7 +97,8 @@ class AccountTokens {
     helpers.log.debug("Entering AccountTokens.defaultDeps().");
     helpers.log.debug("Leaving AccountTokens.defaultDeps().");
     return { log: helpers.log, hardwareTokens: hardwareTokens,
-             credentials: credentials };
+             credentials: credentials, pivEnrolment: pivEnrolment,
+             config: config };
   }
 
   // What the page draws: every token the caller holds or has a credential
@@ -94,9 +114,47 @@ class AccountTokens {
     log.debug("Entering AccountTokens.view().");
     const tokens: Json[] = await this.deps.hardwareTokens
       .tokensOf(caller.username);
-    const out = { tokens: tokens.map(AccountTokens.row) };
+    const out = { tokens: tokens.map(AccountTokens.row),
+                  escrowed: this.deps.pivEnrolment.escrowedOf(
+                    caller.username),
+                  piv: this.pivRules() };
     log.debug("Leaving AccountTokens.view(). " + out.tokens.length);
     return out;
+  }
+
+  // What the enrolment form tells the person before they paste anything:
+  // which PIV profiles this realm's EST issues, and the two switches.
+  private pivRules(): Json {
+    const { log, config: cfg } = this.deps;
+    log.debug("Entering AccountTokens.pivRules().");
+    let allowed: string[] = [];
+    try {
+      const raw = cfg.value('est.allowedProfiles');
+      allowed = (Array.isArray(raw) ? raw : String(raw || '').split(','))
+        .map(function (one: unknown): string {
+          return String(one).trim();
+        });
+    } catch (e) {
+      log.debug("Caught in AccountTokens.pivRules(): " +
+                ((e && e.message) || e));
+      allowed = [];
+    }
+    log.debug("Leaving AccountTokens.pivRules().");
+    return { profiles: PIV_PROFILES.filter(function (one) {
+               return allowed.indexOf(one) >= 0;
+             }),
+             requireAttestation: cfg.value('piv.requireAttestation') === true,
+             keyEscrow: cfg.value('piv.keyEscrow') === true };
+  }
+
+  // A refusal's status, held to the statuses whose answers the model gives
+  // a `view`: a profile or name the core refused for this person (its 403)
+  // is a 400 here, since the account API's 403 is the gate's.
+  private static statusOf(answer: Json): number {
+    helpers.log.debug("Entering AccountTokens.statusOf().");
+    const status = Number((answer && answer.status) || 400);
+    helpers.log.debug("Leaving AccountTokens.statusOf().");
+    return [400, 404, 409, 503].indexOf(status) >= 0 ? status : 400;
   }
 
   /**
@@ -139,12 +197,16 @@ class AccountTokens {
     const username = caller.username;
     const t = ctx.translatorFor(username);
     const action = String((body && body.action) || 'lost');
-    if (action !== 'lost') {
+    if (ACTIONS.indexOf(action) < 0) {
       log.debug("Leaving AccountTokens.act(). Unknown action.");
       return ctx.refuse(res, 400, 'STS-HWTOKEN-0012',
-                        'Unknown action "' + action + '". The one action ' +
-                        'is: lost.',
+                        'Unknown action "' + action + '". The actions ' +
+                        'are: ' + ACTIONS.join(', ') + '.',
                         { view: await this.view(caller) });
+    }
+    if (action !== 'lost') {
+      log.debug("Leaving AccountTokens.act(). A PIV act.");
+      return this.pivAct(ctx, res, caller, action, body || {});
     }
     const done: Json = await this.deps.hardwareTokens.markLost({
       key: String((body && body.key) || ''), actor: username,
@@ -183,6 +245,76 @@ class AccountTokens {
     // sentence, and the page as it now is.
     return ctx.json(res, 200, { ok: true, message: message,
                                 view: await this.view(caller) });
+  }
+
+  // THE THREE PIV ACTS (header). Each is the caller's own: the target is
+  // the subject of the token, never a body member.
+  private async pivAct(ctx: AccountContext, res: Json, caller: AccountCaller,
+                       action: string, body: Json): Promise<unknown> {
+    const { log } = this.deps;
+    log.debug("Entering AccountTokens.pivAct(). " + action);
+    const username = caller.username;
+    const t = ctx.translatorFor(username);
+    let done: Json = null;
+    try {
+      if (action === 'enrol-piv') {
+        done = await this.deps.pivEnrolment.enrol({
+          username: username, actor: username, admin: false,
+          profile: String(body.profile || ''), csr: String(body.csr || ''),
+          slotPem: String(body.attestationCertificate || ''),
+          attestationPem: String(body.attestationIssuer || ''),
+          via: 'portal:piv' });
+      } else if (action === 'recover-key') {
+        done = this.deps.pivEnrolment.recover({
+          username: username, actor: username, door: 'portal',
+          serialHex: String(body.serial || '') });
+      } else {
+        done = this.deps.pivEnrolment.attach({
+          username: username, actor: username,
+          serialHex: String(body.serial || ''), key: String(body.key || '') });
+      }
+    } catch (e) {
+      log.error(ctx.errorCodes.tag('STS-PIV-0016') + 'account_tokens: the ' +
+                action + ' act failed: ' + ((e && e.stack) || e));
+      log.debug("Leaving AccountTokens.pivAct(). Threw.");
+      return ctx.refuse(res, 503, 'STS-PIV-0016', 'The ' + action +
+                        ' act could not be completed.',
+                        { view: await this.view(caller) });
+    }
+    if (!done || !done.ok) {
+      log.debug("Leaving AccountTokens.pivAct(). Refused.");
+      return ctx.refuse(res, AccountTokens.statusOf(done),
+                        ctx.errorCodes.codeOf(done) || 'STS-PIV-0016',
+                        ((done && done.errors) || ['refused'])[0],
+                        { view: await this.view(caller) });
+    }
+    // What the act made is drawn ONCE, on the view it answers (the
+    // certificate page's `fresh`): `issued` for an enrolment, `recovered`
+    // for an escrowed key.
+    const answer: Json = { ok: true, message: '', view: null };
+    const once: Json = {};
+    if (action === 'enrol-piv') {
+      answer.message = t.text(done.attested ? 'portalTokens.done.enrolled'
+                                            : 'portalTokens.done.enrolledPlain',
+                              { serial: done.serialHex });
+      once.issued = { serialHex: done.serialHex, profile: done.profile,
+                        certificatePem: done.certificatePem,
+                        chainPem: done.chainPem, attested: !!done.attested,
+                        token: String(done.token || '') };
+    } else if (action === 'recover-key') {
+      answer.message = t.text('portalTokens.done.recovered',
+                              { serial: done.record.serialHex });
+      once.recovered = { serialHex: done.record.serialHex,
+                           privateKeyPem: done.privateKeyPem,
+                           certificatePem: done.certificatePem,
+                           chainPem: done.chainPem };
+    } else {
+      answer.message = t.text('portalTokens.done.attached',
+                              { key: String(done.token.key) });
+    }
+    answer.view = Object.assign(await this.view(caller), once);
+    log.debug("Leaving AccountTokens.pivAct(). Done.");
+    return ctx.json(res, 200, answer);
   }
 
   /**

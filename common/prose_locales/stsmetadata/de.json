@@ -696,8 +696,8 @@
     "text": "minimal: nur der Identifier-Typ permanent-identifier, der hier den eigenen Verzeichniseintrag des Kontos benennt und zu dessen subjectAltName urn:sts: wird. Die Challenge device-attest-01 und das WebAuthn-Attestation-Statement sind nicht implementiert."
   },
   "stsmetadata.specs.lamps-csr-attestation.coverage": {
-    "en": "727a26e021b5f20f",
-    "text": "partial: das Attribut id-aa-attestation einer PKCS#10-Anfrage (höchstens eines, genau ein AttestationBundle, nur die Wahlmöglichkeiten certificate und other) für das Geräteprofil über EST und SCEP; der eine geprüfte Statement-Typ ist tcg-attest-tpm-certify der TCG in der Syntax von Anhang A.2.3 der Revision 20, den keine spätere Revision und kein TCG-Dokument ersetzt (#257). Die CRMF-Erweiterung wird nicht gelesen (kein CMP hier), und andere Statement-Typen werden aufgezeichnet, nicht geprüft. Freshness (Abschnitt 6.2) über draft-ietf-lamps-attestation-freshness über EST."
+    "en": "59b1734815ece664",
+    "text": "partial: das Attribut id-aa-attestation einer PKCS#10-Anforderung (höchstens eines, genau ein AttestationBundle, nur das Zertifikat und andere Auswahlen), über EST, SCEP und ACME. Zwei Statement-Typen werden verifiziert: tcg-attest-tpm-certify der TCG in der Syntax von Anhang A.2.3 der Revision 20, für das Geräteprofil (#257), und eine YubiKey-PIV-Attestierung für jedes Profil (#1955), unter 1.3.6.1.4.1.41482.3.2 mit dem Slot-Zertifikat als stmt und dem f9-Zertifikat in certs – ein Typ, den dieser Dienst gewählt hat, weil der Entwurf keinen definiert. Die CRMF-Erweiterung wird nicht gelesen (hier kein CMP), und andere Statement-Typen werden erfasst, nicht verifiziert. Aktualität (Abschnitt 6.2) über draft-ietf-lamps-attestation-freshness über EST, nur für TPM-Statements: Eine PIV-Attestierung trägt keine Nonce."
   },
   "stsmetadata.specs.lamps-attestation-freshness.coverage": {
     "en": "555e31da7393d476",
@@ -742,6 +742,22 @@
   "stsmetadata.specs.rfc6376.coverage": {
     "en": "95d0cca14dac35d3",
     "text": "partial: Signierung, relaxed/relaxed, rsa-sha256 mit einem Schlüssel von mindestens 2048 Bit (RFC 8301), in common/crypto.js, auf dem, was der SMTP-Transport sendet, wenn eine Domain konfiguriert ist. Fehlend: die Kanonisierung simple, l= und die Prüfung von Mail, die jemand anderes gesendet hat — dieser Dienst empfängt keine. Für DKIM ist kein Post-Quantum-Algorithmus registriert."
+  },
+  "stsmetadata.specs.rfc9580.coverage": {
+    "en": "086f96d364365827",
+    "text": "partial: Lesen eines übertragbaren öffentlichen Schlüssels, v6 und (RFC 4880) v4, Prüfen einer Klartextsignatur durch einen seiner Signierschlüssel und Verschlüsseln einer Nachricht an seinen Verschlüsselungsschlüssel, alles über openpgp.js (common/crypto.js Abschnitt 19). Ed25519, Ed448, ECDSA und ECDH auf den NIST-Kurven, X25519, X448 und RSA mit openpgp.minRsaBits werden akzeptiert; DSA, ElGamal und Brainpool werden abgelehnt. Es fehlen: Signieren, Entschlüsseln, ein Schlüsselbund, ein Keyserver."
+  },
+  "stsmetadata.specs.rfc3156.coverage": {
+    "en": "aa799b14a54ace0f",
+    "text": "partial: multipart/encrypted mit einem Versionsteil application/pgp-encrypted und der ASCII-armored Nachricht, die echten Header im Inneren geschützt. Es fehlt: multipart/signed — dieser Dienst signiert E-Mails mit DKIM, nicht mit OpenPGP."
+  },
+  "stsmetadata.specs.rfc8551.coverage": {
+    "en": "a07a1e013186f3d4",
+    "text": "partial: application/pkcs7-mime enveloped-data, ein CMS EnvelopedData mit AES-256-CBC-Inhaltsverschlüsselung und einem Empfänger mit RSAES-OAEP (SHA-256) oder ECDH-Schlüsselvereinbarung, an das userSMIMECertificate der Person. Es fehlen: signed-data, AuthEnvelopedData (AES-GCM), Entschlüsselung."
+  },
+  "stsmetadata.specs.wkd.coverage": {
+    "en": "e1c6b9651ff1e58c",
+    "text": "partial: die erweiterte und die direkte Abfragemethode (das SHA-1 in z-base-32 des kleingeschriebenen lokalen Teils, der Parameter l) und die Richtliniendatei, beantwortet für Personen, die zugestimmt haben, je Vertrauensbereich und standardmäßig aus. Es fehlt: der Web Key Service (submission-address, das Übermittlungsprotokoll); CORS folgt der Zulassungsliste dieses Dienstes statt dem * des Entwurfs."
   },
   "stsmetadata.specs.rfc8463.coverage": {
     "en": "d4ee4ea51927a6f7",
@@ -1206,6 +1222,22 @@
   "stsmetadata.endpoints./scim/v2/Me.what": {
     "en": "8899a7fad6b6b50c",
     "text": "Der Alias aus Abschnitt 3.11 für das Subjekt, als das sich die Anfrage authentifiziert hat. GET, PUT, PATCH und DELETE lösen die Anmeldedaten in einen Verzeichniseintrag auf und geben an DIESELBEN Handler für User ab, die /Users/{id} verwendet, sodass es keinen zweiten Lese- oder Schreibpfad gibt, den man im Gleichschritt halten müsste. Früher antwortete er auf jede Methode mit 501, weil sich hier nichts authentifizierte, und ZWEI DIESER 501 BLEIBEN ZU RECHT und werden behalten: ein ANONYMER Aufrufer hat kein Subjekt, für das der Alias stehen könnte (der Alias ist nicht verfügbar, und das ist nicht dasselbe, wie dass die Ressource fehlt), und POST würde ein Subjekt anlegen, das per Definition bereits existiert. Anmeldedaten, die jemanden ohne Eintrag benennen — ein Token client_credentials, ein Client-Zertifikat —, erhalten stattdessen 404."
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/:domain/hu/:hash.what": {
+    "en": "0955037976aef471",
+    "text": "draft-koch-openpgp-webkey-service Abschnitt 3.1, die erweiterte Methode, abgefragt bei openpgpkey.<domain>: der binäre öffentliche OpenPGP-Schlüssel der Person, deren Adresse den Hash :hash ergibt (z-base-32 des SHA-1 des kleingeschriebenen lokalen Teils, l= der lokale Teil), application/octet-stream und Cache-Control: no-store. Beantwortet wird nur eine Person, die unter /portal/openpgp zugestimmt hat, und nur dort, wo der Vertrauensbereich openpgp.wkd eingeschaltet hat und :domain bedient; alles andere ist 404. Einen Pfad ohne Vertrauensbereichssegment beantwortet der Vertrauensbereich, der die Domain bedient."
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/:domain/policy.what": {
+    "en": "12d81a251721ac64",
+    "text": "Die Richtliniendatei der erweiterten Methode: leer, text/plain, 200, wo ein Vertrauensbereich :domain bedient, sonst 404. Ihr Vorhandensein zeigt einem Client, dass das Verzeichnis existiert; es wird kein Web Key Service angeboten, daher gibt es keine submission-address."
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/hu/:hash.what": {
+    "en": "ea1444452ebedcb6",
+    "text": "Die direkte Methode: wie die erweiterte, wobei die Domain der Host ist, an den die Anfrage gerichtet wurde."
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/policy.what": {
+    "en": "701adaefad112fb7",
+    "text": "Die Richtliniendatei der direkten Methode, für den Host, an den die Anfrage gerichtet wurde."
   },
   "stsmetadata.endpoints./.well-known/hoba/register.what": {
     "en": "ea46481cdbde5a44",
@@ -1723,6 +1755,18 @@
     "en": "bcf806336009d1f4",
     "text": "reiht eine Testnachricht ein oder speichert den Wortlaut eines Vertrauensbereichs oder setzt ihn zurück"
   },
+  "stsmetadata.endpoints./admin-api/openpgp.what": {
+    "en": "5d484bf76979cdee",
+    "text": "NON-SPEC (#1955). Was Directory → OpenPGP keys darstellt: mit ?user= den OpenPGP-Schlüssel dieser Person, ihre offene Registrierungs-Challenge, ihre Veröffentlichung im Web Key Directory, ihr S/MIME-Zertifikat und die Verschlüsselung ihrer E-Mails; dazu den Web-Key-Directory-Schalter und die Domains des Vertrauensbereichs. Spiegelt GET /admin/openpgp."
+  },
+  "stsmetadata.endpoints./admin-api/openpgp/:action.what": {
+    "en": "b428c51bc9fdc3f1",
+    "text": "NON-SPEC (#1955). challenge, register (publicKey, signed: die mit gpg --clearsign signierte Challenge der Person), remove, publish, withdraw, mail-encryption (choice) und smime (certificate), jeweils mit { user }: was /portal/openpgp der Person anbietet, für sie. Ein Schlüssel wird nur auf den eigenen Nachweis der Person hin registriert."
+  },
+  "stsmetadata.endpoints./admin-api/openpgp/:action.effect": {
+    "en": "a4485fe850562aab",
+    "text": "stellt eine Challenge aus, registriert oder entfernt einen OpenPGP-Schlüssel, veröffentlicht ihn oder legt die E-Mail-Verschlüsselung oder das S/MIME-Zertifikat einer Person fest"
+  },
   "stsmetadata.endpoints./admin-api/mail/outbox.what": {
     "en": "01316f4579428510",
     "text": "KEINE SPEZIFIKATION (#63). Was GET /admin/mail/outbox zeichnet: jede Nachricht, die dieser Vertrauensbereich eingereiht hat, für wen sie war und was aus ihr wurde, seitenweise und gefiltert nach Zustand und Suche — nie ein Body, außer dem einer festgehaltenen Nachricht (Entwicklung) über ?message=. Spiegelt GET /admin/mail/outbox."
@@ -2156,12 +2200,12 @@
     "text": "NON-SPEC (#1955). Was Verzeichnis → Hardware-Token zeigt: die physischen Sicherheitsschlüssel und Smartcards, die dieser Bereich erfasst hat, jedes aus seiner eigenen Attestierung, seitenweise und nach Seriennummer oder Person durchsuchbar, mit den Passkeys und Zertifikaten auf jedem. Spiegelt GET /admin/hardware-tokens."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-    "en": "1303a5c415b09d44",
-    "text": "NON-SPEC (#1955). lost, mit { key }: das Token wird als verloren markiert, jeder Passkey darauf entfernt, jedes Zertifikat darauf wegen keyCompromise widerrufen, für jedes eine CAEP-Änderung der Anmeldedaten gesendet und die damit angemeldeten Sitzungen beendet. Die einzige Aktion der Konsole auf dieser Seite."
+    "en": "0d649147af0cbe04",
+    "text": "NON-SPEC (#1955). lost, mit { key }: Das Token wird als verloren markiert, jeder Passkey darauf entfernt, jedes Zertifikat darauf wegen keyCompromise widerrufen, für jedes ein CAEP credential-change gesendet und die damit angemeldeten Sitzungen beendet. enrol-piv, mit { username, profile, csr, attestationCertificate?, attestationIssuer? }: ein PIV-Slot-Zertifikat, das dieser Person über die EST-Ausstellungs-CA ausgestellt wird, wobei ihre YubiKey-PIV-Attestierung verifiziert und der YubiKey erfasst wird. recover-key, mit { username, serial }: der hinterlegte piv-key-management-Schlüssel dieser Person, den die Zugriffskontrollrichtlinie nur PIV_KEY_RECOVERY erlaubt. Die drei Aktionen der Konsole auf dieser Seite."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
-    "en": "7b39ad029e0234ed",
-    "text": "meldet ein Hardware-Token als verloren und zieht seine Anmeldedaten zurück"
+    "en": "b55c0cdd477d183e",
+    "text": "meldet ein Hardware-Token als verloren und zieht seine Anmeldedaten zurück, stellt ein PIV-Slot-Zertifikat aus oder übergibt einen hinterlegten Schlüssel"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -2178,6 +2222,10 @@
   "stsmetadata.endpoints./admin-api/roles/preview.what": {
     "en": "efc872210c98747b",
     "text": "NON-SPEC. Eine Ausstellungsentscheidung, getroffen und verworfen: nichts wird ausgestellt und nichts wird aufgezeichnet. Sie geht durch DENSELBEN Aufruf, den die neun Ausstellungsstellen machen — issuance_gate.check(), der eingebettete PEP und der PDP gegen die Richtlinie, die xacml.issuancePolicy nennt —, sodass eine Vorschau, die mit der Durchsetzung nur zufällig übereinstimmte, unmöglich ist, und nur darum gibt es sie. Sie ist NICHT POST /xacml/pdp, das dieselbe Engine nach der ROOT des Repository fragt: jenes Dokument beantwortet Fragen über die Grenze von jemand ANDEREM, und dieses beantwortet eine Frage über diesen Dienst. `application` und `subject` sind beide erforderlich, weil eine Ausstellung, die mit keinem von beiden benannt ist, per Definition erlaubt ist und nicht durch eine Richtlinie. `kind` wird zur action-id von XACML, sodass eine Richtlinie ein Zugriffstoken erlauben und ein Refresh-Token ablehnen darf. `available: false` bedeutet, dass die Engine hier nicht geladen ist. Spiegelt den Probelauf auf /admin/roles."
+  },
+  "stsmetadata.endpoints./admin-api/roles/eligibility.what": {
+    "en": "8d1e213c972caef4",
+    "text": "NICHT SPEZIFIZIERT (#1072). Die eigene XACML-Berechtigungsrichtlinie einer dynamisch auswählbaren Rolle, vom PDP für eine Person so entschieden, wie eine Anmeldung an `application` sie fragen würde, ohne Anmeldung: berechtigt oder nicht, der Code, wenn nicht, Entscheidung und Status (ein fehlendes Attribut nennt sich dort). Nur Permit berechtigt. Geschrieben wird nur die Auditzeile roles.eligibility; Richtlinie und Attribute der Person werden nie gezeigt. `role` und `user` sind beide nötig; fehlt eines, lautet die Antwort `answered: false`. Entspricht dem Test auf der /admin/roles-Seite einer dynamischen Rolle."
   },
   "stsmetadata.endpoints./admin-api/roles/:action.what": {
     "en": "824b769ad7e2e401",
@@ -3063,6 +3111,14 @@
     "en": "9547cda6898c37a6",
     "text": "verlangt nach einer Anmeldung einen Post-Quantum-Passkey und richtet dann die Anmeldesitzung ein, die es gehalten hat"
   },
+  "stsmetadata.endpoints./authn/roles.what": {
+    "en": "88814e89f81f8d86",
+    "text": "DYNAMISCH AUSWÄHLBARE ROLLEN (#1072). Nach allen Faktoren wird eine Anmeldung an einer Anwendung, deren Bereich eine dynamische Rolle definiert (sofern roles.dynamicSelection oder appDynamicRoleSelection der Anwendung es nicht abschalten), ANGEHALTEN, während für die Person die XACML-Berechtigungsrichtlinie jeder dynamischen Rolle entschieden wird; nur Permit bietet eine Rolle an. Hat die Person „Rollen für diese Anmeldung wählen“ angekreuzt oder wird eine erforderliche Rolle angeboten, listet diese Seite die Wahlmöglichkeiten; Weiter (/authn-api/mfa/{id}/roles) prüft die Wahl gegen das Angebot des Schritts und erneut gegen die Richtlinien und startet die Sitzung mit der Wahl im Sitzungsdatensatz, nie im Verzeichnis. Ein Token für diese Anwendung trägt dann die gewählten Rollen, jede bei jeder Ausstellung erneut gegen ihre Richtlinie geprüft. Benötigt eine von der angehaltenen Anmeldung erzeugte ?mfa=-Kennung; ohne sie lautet die Antwort 400."
+  },
+  "stsmetadata.endpoints./authn/roles.effect": {
+    "en": "fc2116e31d3ead37",
+    "text": "fragt, welche dynamisch auswählbaren Rollen für diese Anmeldung verwendet werden sollen, und startet dann die angehaltene Sitzung mit dieser Wahl"
+  },
   "stsmetadata.endpoints./authn/totp.what": {
     "en": "b62d7bad9442ea5c",
     "text": "DER ZWEITE ZWEITE FAKTOR (2026-09-10). Ein Passwortschritt, der für jemanden mit einer registrierten Authenticator-App gelungen ist, landet hier, und dieser Endpunkt fragt nach den sechs Ziffern, die die App anzeigt. Bei Erfolg zeichnet die Sitzung amr [\"pwd\",\"otp\"] auf — den Wert aus RFC 8176, dessen Registry-Eintrag RFC 4226 und RFC 6238 nennt — und acr \"mfa\", der eine Fall, in dem dieser Dienst ehrlich von zwei Faktoren sprechen kann. **DER CODE WIRD IN BEIDEN MODI WIRKLICH GEPRÜFT**, anders als das Passwort davor: Ein Prüfer für Einmalpasswörter, der beliebige sechs Ziffern akzeptierte, wäre nicht permissiv, er wäre defekt, und es ist das SPNEGO-Argument, zum zweiten Mal gelesen. In der Rate begrenzt nach Identität UND nach Adresse, weil sechs Ziffern eine Million Werte sind und dies der kleinste Suchraum im Dienst ist. DAS GET IST DER *stattdessen einen Code verwenden*-LINK vom Bildschirm des Sicherheitsschlüssels und erzeugt nichts — es zeichnet die Seite für einen Schritt, der bereits existiert, und lehnt einen für jemanden ab, der keine Registrierung besitzt. **ES REGISTRIERT NIEMANDEN**, und das ist der ganze Unterschied zu /authn/webauthn daneben: Registrieren heißt, ein gemeinsames Geheimnis gezeigt zu bekommen, daher geschieht es unter /portal/mfa oder während ein Aktivierungslink verbraucht wird, und niemals auf einem Anmeldebildschirm. Eine Seite der Anmeldeoberfläche seit #572: Der Code geht an /authn-api/mfa/{id}/totp."
@@ -3242,6 +3298,10 @@
   "stsmetadata.endpoints./authn-api/mfa/:id/post-login/skip.what": {
     "en": "b1be682232332278",
     "text": "NICHT-SPEZ (#1096). Für die snoozeDays des Profils; abgelehnt, sobald die zugeteilte Zeit verstrichen ist. Die gehaltene Sitzung startet."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/roles.what": {
+    "en": "26fc9f7a66659a20",
+    "text": "NICHT SPEZIFIZIERT (#1072). Die Wahl im Rollenschritt, geprüft gegen das Angebot des Schritts und die Berechtigungsrichtlinie jeder Rolle; die angehaltene Sitzung startet damit."
   },
   "stsmetadata.endpoints./authn-api/mfa/:id/email/send.what": {
     "en": "7b9faf3a24fd710d",
@@ -3919,6 +3979,10 @@
     "en": "835d40e9ff6eaabb",
     "text": "KEIN PROTOKOLL, und es hat eine Karte, weil diese Seite eine Endpunktgruppe meldet, die keine Karte beansprucht — das ist die Regel, die eine neue Familie davon abhält, unangekündigt anzukommen, und es lohnt sich, den Preis hier zu zahlen, statt die Regel bedingt zu machen. DIE ERSTE OBERFLÄCHE IN DIESEM DIENST, DIE DER PERSON GEHÖRT, DIE SIE BETRACHTET: jede andere Browserseite hier ist für jemand anderen — der Anmeldungsbildschirm ist ein Schritt im Ablauf eines anderen Protokolls, der Einwilligungsbildschirm stellt eine Frage und geht, /admin ist für einen Betreiber und durch zwei Rollen geschützt. Hier sieht eine Person, was dieser Identity Provider über sie weiß, und ändert, wie sie sich authentifiziert: ihr Passwort sowie ihre Sicherheitsschlüssel und ob jeder ein primäres Anmeldedatum oder ein zweiter Faktor ist. Es ist eine GETRENNTE ANWENDUNG von der Admin-Konsole und teilt mit ihr nichts außer der Anmeldungssitzung am Authorization Server dieses Dienstes: jeder ist ein öffentlicher OAuth-Client (hier sts-user-portal), der sein eigenes DPoP-gebundenes Token im Speicher hält. /portal/activate ist seine unauthentifizierte Hälfte, wo jemand, der über /admin-api oder SCIM bereitgestellt wurde, einen einmaligen, zeitlich begrenzten Aktivierungslink einlöst, um Anmeldedaten einzurichten — im Ruhezustand wie ein Passwort gehasht, ratenbegrenzt, eingelöst, wenn die Einrichtung endet, und nicht, wenn der Link geöffnet wird, und es meldet niemals jemanden an. SEIT #568 IST ES EINE STATISCHE ANWENDUNG über /account-api, der Account-API-Gruppe unten: eine Operation je Seite und je Formular, die Person immer das Subject des Tokens, beschrieben durch ihr eigenes OpenAPI-Dokument."
   },
+  "stsmetadata.protocols.OpenPGP.what": {
+    "en": "f2e7f0580b98e867",
+    "text": "Der OpenPGP-Schlüssel einer Person (#1955), im Portal oder von einem Administrator auf einen Besitznachweis hin registriert — die Person signiert eine Challenge mit gpg --clearsign; auf der OpenPGP-Karte eines YubiKey signiert die Karte — und in ihrem Eintrag gehalten; veröffentlicht im Web Key Directory, wenn sie es wünscht und der Vertrauensbereich es eingeschaltet hat; und der Schlüssel, an den ihre E-Mails verschlüsselt werden (PGP/MIME), oder ihr S/MIME-Zertifikat (S/MIME), wie sie es gewählt hat. Ein Vertrauensbereich kann für ausgewählte Nachrichten Verschlüsselung verlangen (mail.encryptionRequired); diese werden dann nie im Klartext gesendet. Nichts wird als hardwaregebunden festgehalten: Der Server kann keine Karte sehen. Eine Anmeldung mit OpenPGP gibt es nicht."
+  },
   "stsmetadata.protocols.Reporting.what": {
     "en": "66663fd63a35a287",
     "text": "KEIN PROTOKOLL. Die Berichtsanwendung (#956): eine statische Seite unter /report über /report-api, der öffentliche Client sts-report und ein Katalog der eigenen Datensätze dieses Vertrauensbereichs. Sie meldet sich im Browser an, hält ein DPoP-gebundenes Token und nimmt nie eine SQL-Zeichenfolge entgegen. Eine gespeicherte Definition gehört ihrem Eigentümer; eine Freigabe an eine Verzeichnisgruppe gewährt Ausführen und Lesen, nicht Bearbeiten."
@@ -4090,5 +4154,17 @@
   "stsmetadata.param.aParameter": {
     "en": "24ece2f78749cf6a",
     "text": "ein Parameter"
+  },
+  "stsmetadata.specs.yubico-piv-attestation.coverage": {
+    "en": "244659759ede3102",
+    "text": "partial: Das Attestierungszertifikat des Slots wird über das f9-Attestierungszertifikat zu Yubicos PIV-Wurzeln (Serial 263751 sowie Attestation Root 1 mit ihren PIV-Zwischenzertifikaten für Firmware 5.7.4 und neuer, ausgeliefert und fixiert) oder zu den eigenen eines Bereichs verifiziert; sein Schlüssel wird mit dem der Anforderung abgeglichen; die Erweiterungen für Firmware, Seriennummer, PIN- und Berührungsrichtlinie sowie Formfaktor werden gelesen, und die Richtlinien werden mit denen des Bereichs abgeglichen. Die Karte selbst wird nie verwaltet: kein Schreiben von PIN, PUK oder Slots."
+  },
+  "stsmetadata.specs.fips201.coverage": {
+    "en": "322d92ba9eb36fde",
+    "text": "minimal: die vier Schlüssel-Slots als Zertifikatsprofile (PIV Authentication 9a, Digital Signature 9c, Key Management 9d, Card Authentication 9e, das standardmäßig niemanden anmeldet) und eine externe PIV- oder CAC-Karte, zugeordnet über die Karten-UUID in ihrem urn:uuid-subjectAltName, wenn sie eine PIV-Authentication-Richtlinie zusichert (standardmäßig aus). Kein FASC-N, CHUID, keine Kartenverwaltung und keine Biometrie."
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/escrowed.what": {
+    "en": "1716521c9c5e119d",
+    "text": "NON-SPEC (#1955). Die hinterlegten piv-key-management-Zertifikate einer Person (piv.keyEscrow): Seriennummer, Antragsteller, Gültigkeit und ob jedes widerrufen wurde. Nie ein Schlüssel. Entspricht GET /admin/hardware-tokens."
   }
 }

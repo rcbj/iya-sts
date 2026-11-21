@@ -165,6 +165,7 @@ directory:
 | Apache-2.0 | @biscuit-auth/biscuit-wasm, @grpc/grpc-js, @grpc/proto-loader |
 | BSD-3-Clause OR GPL-2.0 | node-forge, used under BSD-3-Clause |
 | Unlicense | isbot |
+| LGPL-3.0-or-later | openpgp (openpgp.js, #1955), used unmodified as a separate npm module that can be replaced in `node_modules/` |
 
 ## Runtime dependencies in the remote PEP image
 

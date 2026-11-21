@@ -77,6 +77,7 @@ import NodeHealthPage = require('./web_node_health');
 import PasskeyReportPage = require('./web_passkey_report');
 import PostLoginActivitiesPage = require('./web_post_login_activities');
 import HardwareTokensPage = require('./web_hardware_tokens');
+import OpenPgpPage = require('./web_openpgp');
 import PkiPage = require('./web_pki');
 import ProtocolSettingsPage = require('./web_protocol_settings');
 import PoliciesPage = require('./web_policies');
@@ -343,7 +344,9 @@ const PROTOCOL_TABS: Record<string, string[]> = {
   '/admin/applications': ['applications', 'add', 'settings'],
   '/admin/devices': ['devices', 'register'],
   // #1955 P1: the register's one list.
-  '/admin/hardware-tokens': ['tokens'],
+  '/admin/hardware-tokens': ['tokens', 'enrol', 'escrow'],
+  // #1955 P6: the person, the registration, the directory.
+  '/admin/openpgp': ['person', 'register', 'directory'],
   '/admin/attribute-sources': ['sources', 'add', 'person', 'settings'],
   '/admin/secret-destinations': ['destinations', 'add'],
   // #1111, #1123: the started activities and their controls; the report
@@ -889,6 +892,10 @@ const PAGES: WebPage[] = [
   { path: '/admin/hardware-tokens', title: 'Hardware tokens',
     operation: '/admin-api/hardware-tokens',
     render: HardwareTokensPage.render },
+  // #1955 P6: Directory → OpenPGP keys, one person's OpenPGP key, its Web
+  // Key Directory publication and their mail encryption.
+  { path: '/admin/openpgp', title: 'OpenPGP keys',
+    operation: '/admin-api/openpgp', render: OpenPgpPage.render },
   { path: '/admin/pki/trust', title: 'PKI trust',
     operation: '/admin-api/pki/trust', render: PkiTrustPage.render },
   { path: '/admin/pki', title: 'PKI', operation: '/admin-api/pki',
@@ -952,8 +959,17 @@ const PAGES: WebPage[] = [
     } },
   { path: '/admin/roles', title: 'Roles',
     operation: '/admin-api/roles',
-    compose: { preview: '/admin-api/roles/preview' },
-    composeWhen: { preview: ['application', 'subject', 'subjectKind', 'kind'] },
+    compose: { preview: '/admin-api/roles/preview',
+               // A DYNAMIC ROLE'S ELIGIBILITY, TESTED (#1072), on its page:
+               // asked only by the test form, under names of its own so the
+               // drill-down's `role` never sets it off.
+               eligibility: '/admin-api/roles/eligibility' },
+    composeWhen: { preview: ['application', 'subject', 'subjectKind', 'kind'],
+                   eligibility: ['eligibilityRole', 'eligibilityUser',
+                                 'eligibilityApplication'] },
+    composeParams: { eligibility: { eligibilityRole: 'role',
+                                    eligibilityUser: 'user',
+                                    eligibilityApplication: 'application' } },
     // ONE ROLE'S PAGE (#604): the same operation, asked with `role`.
     drill: {
       param: 'role',

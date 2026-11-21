@@ -70,6 +70,9 @@ interface OutMessage {
   messageId: string;
   date: Date;
   lang: string;
+  // #1955 P6: `{ kind: 'openpgp', armoredKey }` or `{ kind: 'smime',
+  // certificate (base64 DER) }`, with `outerSubject`; absent is cleartext.
+  encryption?: Json;
 }
 
 // What a transport answers: the provider's id for the message, when it gave
@@ -94,6 +97,10 @@ interface TransportDeps {
   secrets: typeof secrets;
   readFile: (path: string) => string;
   dkimSign: typeof crypto.dkimSign;
+  // #1955 P6: the two encryptions, `common/crypto.js`'s. Optional, so a
+  // test's deps built before them still compose a cleartext message.
+  openpgpEncrypt?: typeof crypto.openpgpEncrypt;
+  smimeEnvelope?: typeof crypto.smimeEnvelope;
 }
 
 // A failure with its code and whether it is worth another attempt.
@@ -207,7 +214,9 @@ class MailTransports {
         require('./outbound_tls').assertNamedFile(path);
         return fs.readFileSync(path, 'utf8');
       },
-      dkimSign: crypto.dkimSign
+      dkimSign: crypto.dkimSign,
+      openpgpEncrypt: crypto.openpgpEncrypt,
+      smimeEnvelope: crypto.smimeEnvelope
     };
   }
 
@@ -243,6 +252,13 @@ class MailTransports {
   async compose(message: OutMessage): Promise<Buffer> {
     const { log, load } = this.deps;
     log.debug("Entering MailTransports.compose().");
+    if (message.encryption && message.encryption.kind &&
+        message.encryption.kind !== 'none') {
+      const encrypted = await this.composeEncrypted(message);
+      log.debug("Leaving MailTransports.compose(). Encrypted, " +
+                encrypted.length + " bytes.");
+      return encrypted;
+    }
     const MailComposer = load('nodemailer/lib/mail-composer');
     const composer = new MailComposer({
       from: message.fromName
@@ -262,6 +278,129 @@ class MailTransports {
     });
     const raw: Buffer = await composer.compile().build();
     log.debug("Leaving MailTransports.compose(). " + raw.length + " bytes.");
+    return raw;
+  }
+
+  // -------------------------------------------------------------------------
+  // AN ENCRYPTED MESSAGE (#1955 P6, `common/mail.ts` header point 9).
+  //
+  // THE INNER ENTITY is what the cleartext message would have been — its
+  // text and HTML parts as multipart/alternative — carrying the REAL Subject,
+  // From, To, Date and Message-ID as protected headers (`protected-headers=
+  // "v1"`, RFC 9788's legacy display form readers already understand), so a
+  // reader that decrypts shows the real subject.
+  //
+  // THE OUTER MESSAGE carries the neutral subject and nothing of the body:
+  //
+  //   * PGP/MIME (RFC 3156 section 4): multipart/encrypted; protocol=
+  //     "application/pgp-encrypted", a first part `Version: 1` and a second
+  //     application/octet-stream part holding the ASCII-armored OpenPGP
+  //     message, both 7bit.
+  //   * S/MIME (RFC 8551 section 3.3): application/pkcs7-mime;
+  //     smime-type=enveloped-data, base64 of the CMS EnvelopedData.
+  //
+  // Both built with nodemailer's MimeNode, file and URL access disabled as
+  // the composer above is. A failure to encrypt is final (STS-MAIL-0243):
+  // another attempt would read the same key, and the message is never sent
+  // in the clear instead.
+  // -------------------------------------------------------------------------
+  /**
+   * Composes an encrypted message: PGP/MIME or S/MIME around the cleartext
+   * message's parts, the real headers protected inside.
+   *
+   * @param message - the message, with `encryption`
+   * @returns the raw bytes
+   * @throws a final send failure (STS-MAIL-0243) when it cannot encrypt
+   */
+  async composeEncrypted(message: OutMessage): Promise<Buffer> {
+    const { log, load } = this.deps;
+    log.debug("Entering MailTransports.composeEncrypted(). " +
+              message.encryption.kind);
+    const MimeNode = load('nodemailer/lib/mime-node');
+    const options = { disableFileAccess: true, disableUrlAccess: true };
+    const build = function (node: Json): Promise<Buffer> {
+      return new Promise(function (resolve, reject): void {
+        node.build(function (e: Json, out: Buffer): void {
+          if (e) {
+            reject(e);
+            return;
+          }
+          resolve(out);
+        });
+      });
+    };
+    const from = message.fromName
+      ? { name: message.fromName, address: message.from } : message.from;
+    const inner = new MimeNode('multipart/alternative', options);
+    inner.setHeader('Content-Type',
+                    'multipart/alternative; protected-headers="v1"');
+    inner.setHeader({ From: from, To: message.to, Subject: message.subject,
+                      Date: message.date, 'Message-ID': message.messageId });
+    inner.createChild('text/plain; charset=utf-8').setContent(message.text);
+    inner.createChild('text/html; charset=utf-8').setContent(message.html);
+    let body: Buffer;
+    try {
+      body = await build(inner);
+    } catch (e) {
+      log.debug("Caught in MailTransports.composeEncrypted(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving MailTransports.composeEncrypted(). Inner.");
+      throw sendError('the message could not be composed for encryption: ' +
+                      ((e && e.message) || e), 'STS-MAIL-0243', false);
+    }
+    const headers = {
+      From: from, To: message.to,
+      Subject: String(message.encryption.outerSubject || '...'),
+      Date: message.date, 'Message-ID': message.messageId,
+      'Auto-Submitted': 'auto-generated',
+      'Content-Language': message.lang || 'en'
+    };
+    let outer: Json;
+    try {
+      if (message.encryption.kind === 'openpgp') {
+        const encrypt = this.deps.openpgpEncrypt || crypto.openpgpEncrypt;
+        const armored = await encrypt(body,
+          String(message.encryption.armoredKey || ''), message.date);
+        outer = new MimeNode('multipart/encrypted', options);
+        outer.setHeader('Content-Type', 'multipart/encrypted; ' +
+                        'protocol="application/pgp-encrypted"');
+        outer.setHeader(headers);
+        outer.createChild('application/pgp-encrypted')
+          .setHeader('Content-Description', 'PGP/MIME version identification')
+          .setHeader('Content-Transfer-Encoding', '7bit')
+          .setContent('Version: 1\r\n');
+        outer.createChild('application/octet-stream; name="encrypted.asc"')
+          .setHeader('Content-Description', 'OpenPGP encrypted message')
+          .setHeader('Content-Disposition', 'inline; filename="encrypted.asc"')
+          .setHeader('Content-Transfer-Encoding', '7bit')
+          .setContent(armored.replace(/\r?\n/g, '\r\n'));
+      } else if (message.encryption.kind === 'smime') {
+        const envelope = this.deps.smimeEnvelope || crypto.smimeEnvelope;
+        const der = await envelope(body, Buffer.from(String(
+          message.encryption.certificate || ''), 'base64'));
+        outer = new MimeNode('application/pkcs7-mime; ' +
+          'smime-type=enveloped-data; name="smime.p7m"', options);
+        outer.setHeader(headers);
+        outer.setHeader('Content-Disposition',
+                        'attachment; filename="smime.p7m"');
+        outer.setHeader('Content-Transfer-Encoding', 'base64');
+        outer.setContent(der);
+      } else {
+        // error-code: none — rethrown below as STS-MAIL-0243
+        throw new Error('unknown encryption "' +
+                        String(message.encryption.kind) + '"');
+      }
+    } catch (e) {
+      log.debug("Caught in MailTransports.composeEncrypted(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving MailTransports.composeEncrypted(). Not encrypted.");
+      throw sendError('the message could not be encrypted to its ' +
+                      'recipient: ' + ((e && e.message) || e),
+                      'STS-MAIL-0243', false);
+    }
+    const raw = await build(outer);
+    log.debug("Leaving MailTransports.composeEncrypted(). " + raw.length +
+              " bytes.");
     return raw;
   }
 
@@ -663,6 +802,14 @@ class MailTransports {
     return {
       name: 'acs',
       send: async function (message: OutMessage): Promise<SentResult> {
+        if (message.encryption && message.encryption.kind &&
+            message.encryption.kind !== 'none') {
+          // #1955 P6: ACS takes structured content, never a MIME entity
+          // composed here, so an encrypted message is final here rather
+          // than sent in the clear (`mail.ts` refuses it at the queue too).
+          throw sendError('the acs transport cannot carry an encrypted ' +
+                          'message', 'STS-MAIL-0242', false);
+        }
         let result: Json = null;
         try {
           const poller = await client.beginSend({

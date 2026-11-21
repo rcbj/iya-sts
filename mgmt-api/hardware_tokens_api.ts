@@ -20,6 +20,16 @@
 //     retired by its kind's retirer (`common/hardware_tokens.ts`). A
 //     credential that could not be retired is on the answer.
 //
+//   * `POST /admin-api/hardware-tokens/enrol-piv` (#1955 P2) — issues a PIV
+//     slot certificate to the person `username` names, from a certificate
+//     request and, optionally, its YubiKey PIV attestation: the console's
+//     enrolment form, for a machine (`common/piv_enrolment.ts`).
+//   * `GET /admin-api/hardware-tokens/escrowed` and `POST
+//     /admin-api/hardware-tokens/recover-key` (#1955 P2, D7) — a person's
+//     escrowed piv-key-management certificates, and the recovery of one's
+//     key, which the access-control policy decides on PIV_KEY_RECOVERY
+//     beside Admin Write, and audits.
+//
 // **THE ACTOR IS THE TOKEN'S SUBJECT, NEVER THE BODY'S**, as every act of
 // this API is (#1579). Nothing here records a serial: a token reaches the
 // register only from attestation.
@@ -40,7 +50,13 @@ interface HardwareTokensApiDeps {
   adminViews: typeof adminViews;
   // The register, lazily: it is only asked inside a handler.
   loadTokens(): Json;
+  // The PIV enrolment form and escrow (#1955 P2), lazily, for the same
+  // reason.
+  loadPivEnrolment(): Json;
 }
+
+// The acts, in the order the unknown-action sentence names them.
+const ACTIONS = ['lost', 'enrol-piv', 'recover-key'];
 
 const BASE = '/admin-api';
 
@@ -73,6 +89,9 @@ class HardwareTokensApi {
       errorCodes: errorCodes, adminViews: adminViews,
       loadTokens: function (): Json {
         return require('../common/hardware_tokens');
+      },
+      loadPivEnrolment: function (): Json {
+        return require('../common/piv_enrolment');
       }
     };
   }
@@ -135,12 +154,36 @@ class HardwareTokensApi {
     }
     log.debug("Leaving HardwareTokensApi.view(). " + page.tokens.length);
     // The pager's members, the offset left out (the page says which rows).
-    return { tokens: page.tokens,
+    // #1955 P2: the enrolment form's rules, and the escrowed certificates
+    // of the person a search names (none for a serial or nobody).
+    return { piv: this.pivRules(),
+             escrowed: q ? this.deps.loadPivEnrolment().escrowedOf(q) : [],
+             tokens: page.tokens,
              paging: { page: paging.page, pages: paging.pages,
                        perPage: paging.perPage, firstRow: paging.firstRow,
                        lastRow: paging.lastRow, total: paging.total,
                        param: paging.param, noun: paging.noun },
              capped: !!page.capped, q: q, status: status };
+  }
+
+  // What the enrolment form may issue here: the PIV profiles EST's list
+  // holds, and the two switches.
+  private pivRules(): Json {
+    const { log } = this.deps;
+    log.debug("Entering HardwareTokensApi.pivRules().");
+    const cfg = require('../common/config');
+    const raw = cfg.value('est.allowedProfiles');
+    const allowed = (Array.isArray(raw) ? raw : String(raw || '').split(','))
+      .map(function (one: unknown): string {
+        return String(one).trim();
+      });
+    log.debug("Leaving HardwareTokensApi.pivRules().");
+    return { profiles: ['piv-auth', 'piv-sign', 'piv-key-management',
+                        'piv-card-auth'].filter(function (one) {
+               return allowed.indexOf(one) >= 0;
+             }),
+             requireAttestation: cfg.value('piv.requireAttestation') === true,
+             keyEscrow: cfg.value('piv.keyEscrow') === true };
   }
 
   /**
@@ -157,6 +200,82 @@ class HardwareTokensApi {
                label: String(r.label || ''), ok: !!r.ok,
                why: String(r.why || ''),
                sessionsEnded: Number(r.sessionsEnded || 0) };
+    });
+  }
+
+  // A refusal's status, held to the ones the model gives these acts.
+  static statusOf(answer: Json, allowed: number[]): number {
+    helpers.log.debug("Entering HardwareTokensApi.statusOf().");
+    const status = Number((answer && answer.status) || 400);
+    helpers.log.debug("Leaving HardwareTokensApi.statusOf().");
+    return allowed.indexOf(status) >= 0 ? status : 400;
+  }
+
+  // THE TWO PIV ACTS (header): `enrol-piv` for the person `username`
+  // names, and `recover-key`, which the access-control policy decides.
+  /**
+   * Answers `enrol-piv` or `recover-key`.
+   *
+   * @param res - the response
+   * @param action - the act
+   * @param actor - the token's subject
+   * @param body - the request body
+   * @param roles - the roles the caller's token carries
+   */
+  pivAct(res: Json, action: string, actor: string, body: Json,
+         roles: string[]): void {
+    const { log, errorCodes: codes } = this.deps;
+    const self = this;
+    log.debug("Entering HardwareTokensApi.pivAct(). " + action);
+    const piv = this.deps.loadPivEnrolment();
+    const username = String(body.username || '').slice(0, 256);
+    Promise.resolve().then(function (): Json {
+      return action === 'enrol-piv'
+        ? piv.enrol({ username: username, actor: actor, admin: true,
+                      profile: String(body.profile || ''),
+                      csr: String(body.csr || ''),
+                      slotPem: String(body.attestationCertificate || ''),
+                      attestationPem: String(body.attestationIssuer || ''),
+                      via: 'api:piv' })
+        : piv.recover({ username: username, actor: actor, door: 'admin-api',
+                        serialHex: String(body.serial || ''),
+                        roles: roles });
+    }).then(function (done: Json): void {
+      if (!done || !done.ok) {
+        // error-code: none — the act's own code, read off the result
+        codes.mark(res, codes.codeOf(done) || 'STS-PIV-0016');
+        self.sendJson(res, HardwareTokensApi.statusOf(done,
+          action === 'enrol-piv' ? [400, 404, 409, 503]
+                                 : [403, 404, 503]),
+          { ok: false, errors: (done && done.errors) || ['refused'] });
+        log.debug("Leaving HardwareTokensApi.pivAct(). Refused.");
+        return;
+      }
+      if (action === 'enrol-piv') {
+        self.sendJson(res, 200, { ok: true,
+          message: 'Certificate ' + done.serialHex + ' (' + done.profile +
+            ') was issued to ' + username + (done.attested
+              ? ' from a verified PIV attestation, on token ' + done.token
+              : ', with no attestation') + '.',
+          serialHex: done.serialHex, profile: done.profile,
+          certificatePem: done.certificatePem, chainPem: done.chainPem,
+          attested: !!done.attested, token: String(done.token || '') });
+      } else {
+        self.sendJson(res, 200, { ok: true,
+          message: 'The escrowed key of certificate ' +
+            done.record.serialHex + ' of ' + username + ' was recovered.',
+          serialHex: done.record.serialHex,
+          privateKeyPem: done.privateKeyPem,
+          certificatePem: done.certificatePem, chainPem: done.chainPem });
+      }
+      log.debug("Leaving HardwareTokensApi.pivAct(). Done.");
+    }, function (e: any): void {
+      log.error(codes.tag('STS-PIV-0016') + 'the ' + action + ' act ' +
+                'failed: ' + ((e && e.stack) || e));
+      codes.mark(res, 'STS-PIV-0016');
+      self.sendJson(res, 500, { ok: false, errors: [
+        'The ' + action + ' act could not be completed.'] });
+      log.debug("Leaving HardwareTokensApi.pivAct(). Threw.");
     });
   }
 
@@ -220,13 +339,21 @@ class HardwareTokensApi {
           // the body's (#1579).
           const caller = res.locals && res.locals.apiCaller;
           const actor = String((caller && caller.name) || '');
-          if (action !== 'lost') {
+          if (ACTIONS.indexOf(action) < 0) {
             codes.mark(res, 'STS-HWTOKEN-0012');
             self.sendJson(res, 400, { ok: false, errors: [
-              'Unknown action "' + action.slice(0, 64) + '". The one ' +
-              'action is: lost.'] });
+              'Unknown action "' + action.slice(0, 64) + '". The actions ' +
+              'are: ' + ACTIONS.join(', ') + '.'] });
             log.debug("Leaving the management API hardware tokens " +
                       "action. Unknown.");
+            return;
+          }
+          if (action !== 'lost') {
+            self.pivAct(res, action, actor, body,
+                        (caller && Array.isArray(caller.roles))
+                          ? caller.roles : []);
+            log.debug("Leaving the management API hardware tokens " +
+                      "action. A PIV act.");
             return;
           }
           Promise.resolve().then(function (): Json {
@@ -274,8 +401,42 @@ class HardwareTokensApi {
           });
         },
         actions: [
-          { action: 'lost', operationId: 'reportHardwareTokenLost' }
-        ] })
+          { action: 'lost', operationId: 'reportHardwareTokenLost' },
+          { action: 'enrol-piv', operationId: 'enrolPivCertificate' },
+          { action: 'recover-key', operationId: 'recoverEscrowedPivKey' }
+        ] }),
+
+      // A PERSON'S ESCROWED KEY-MANAGEMENT CERTIFICATES (#1955 P2, D7):
+      // which there are, never a key.
+      { method: 'GET', path: BASE + '/hardware-tokens/escrowed',
+        tag: 'Directory', operationId: 'getEscrowedPivKeys',
+        mirrors: 'GET /admin/hardware-tokens',
+        parameters: [
+          { name: 'username', in: 'query', required: true,
+            schema: { type: 'string', maxLength: 256,
+                      examples: ['alice'] },
+            description: 'The person whose escrowed certificates to list.' }
+        ],
+        handler: function (req, res): void {
+          log.debug("Entering the management API escrowed keys endpoint.");
+          const username = String((req.query && req.query.username) || '')
+            .slice(0, 256);
+          let rows: Json[] = [];
+          try {
+            rows = self.deps.loadPivEnrolment().escrowedOf(username);
+          } catch (e) {
+            log.error(codes.tag('STS-PIV-0016') + 'escrowed keys could not ' +
+                      'be listed: ' + ((e && e.message) || e));
+            codes.mark(res, 'STS-PIV-0016');
+            self.sendJson(res, 500, { ok: false, errors: [
+              'The escrowed keys could not be read.'] });
+            log.debug("Leaving the management API escrowed keys endpoint. " +
+                      "Threw.");
+            return;
+          }
+          self.sendJson(res, 200, { username: username, escrowed: rows });
+          log.debug("Leaving the management API escrowed keys endpoint.");
+        } }
     ];
     log.debug("Leaving HardwareTokensApi.buildRoutes().");
     return ROUTES;

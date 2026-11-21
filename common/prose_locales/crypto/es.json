@@ -448,12 +448,20 @@
     "text": "Un token de clave pública que un titular puede atenuar SIN CONEXIÓN, como un macaroon, pero verificable por cualquiera que tenga la clave pública raíz. Su lógica de autorización es Datalog transportado dentro del token, así que el verificador SIEMPRE se ejecuta con límites de tiempo y de iteraciones."
   },
   "crypto.standards.cms.coverage": {
-    "en": "abe1a25e47d96baf",
-    "text": "partial: SignedData con un firmante y atributos firmados, verificados sobre los bytes de los atributos tal como se recibieron y escritos ordenados en DER; EnvelopedData con KeyTransRecipientInfo (RSA PKCS#1 v1.5 y OAEP) y contenido AES-CBC; SignedData degenerado solo de certificados con certificados y CRL. Sin KeyAgreeRecipientInfo, sin datos autenticados ni comprimidos, sin contrafirmas."
+    "en": "d33248e25a15b5a7",
+    "text": "partial: SignedData con un firmante y atributos firmados, verificados sobre los bytes de los atributos tal como se recibieron y escritos ordenados según DER; EnvelopedData con KeyTransRecipientInfo (RSA PKCS#1 v1.5 y OAEP) y contenido AES-CBC; SignedData degenerado solo con certificados y CRL; para el correo S/MIME (#1955), un EnvelopedData escrito con un KeyTransRecipientInfo OAEP SHA-256 o un KeyAgreeRecipientInfo ECDH. Sin datos autenticados ni comprimidos, sin contrafirmas."
   },
   "crypto.standards.cms.what": {
-    "en": "0f35f026a507dc11",
-    "text": "El sobre que SCEP (scep/scep_cms.ts) lee y escribe: una solicitud firmada por el solicitante y cifrada para la RA, y un CertRep firmado por la RA cuyo certificado se cifra para el solicitante."
+    "en": "e09c8508abab483b",
+    "text": "El sobre que SCEP (scep/scep_cms.ts) lee y escribe: una solicitud firmada por el solicitante y cifrada para la RA, y un CertRep firmado por la RA cuyo certificado se cifra para el solicitante. Desde #1955 también el EnvelopedData S/MIME en el que se cifra el correo, que añade un KeyAgreeRecipientInfo para un destinatario EC (dhSinglePass-stdDH-sha256kdf, envoltura de clave AES-256) y un KeyTransRecipientInfo OAEP SHA-256 para uno RSA."
+  },
+  "crypto.standards.openpgp.coverage": {
+    "en": "5d4c9889762ddbd2",
+    "text": "partial: lectura de claves públicas transferibles v4 y v6, verificación de una firma en texto claro y cifrado de un mensaje PGP/MIME, todo mediante openpgp.js; las búsquedas avanzada y directa del Web Key Directory y su archivo de política. Sin firma, sin descifrado, sin envío al Web Key Service, sin servidor de claves."
+  },
+  "crypto.standards.openpgp.what": {
+    "en": "039de4dd3b49b9ab",
+    "text": "La clave pública propia de una persona, registrada con prueba de posesión y publicada en el Web Key Directory si así lo elige; la clave para la que se cifra su correo."
   },
   "crypto.families.pki.signs": {
     "en": "fdcf723f4622f28f",
@@ -678,6 +686,78 @@
   "crypto.families.reporting.algorithms.3.how": {
     "en": "9d40176053fec31b",
     "text": "SHA-256, conservado con el artefacto y comprobado al leer"
+  },
+  "crypto.families.openpgp.signs": {
+    "en": "0f38445050f33bd1",
+    "text": "Nada. Un registro lleva la firma de la PERSONA, y un mensaje cifrado no se firma (DKIM firma el mensaje exterior, como firma todos los mensajes)."
+  },
+  "crypto.families.openpgp.verifies": {
+    "en": "c3dbfb38087cb3de",
+    "text": "Una PRUEBA DE POSESIÓN en el registro: una firma en texto claro (gpg --clearsign) sobre exactamente el desafío que este servicio emitió para la persona, hecha por una clave con capacidad de firma de la clave que registra, posterior a la emisión del desafío (openpgp.signatureSkewS) y válida en ese momento; la clave en sí ni revocada ni caducada, con un ID de usuario válido que contenga la dirección de la entrada. Claves RFC 9580 v6 y RFC 4880 v4, leídas por openpgp.js. De un certificado S/MIME se comprueban la validez, la clave y el uso, no la cadena: solo determina para quién se cifra un mensaje."
+  },
+  "crypto.families.openpgp.encrypts": {
+    "en": "1a05c1b540cd5082",
+    "text": "El CORREO, cuando la persona lo eligió o el dominio de confianza lo exige (mail.encryptionRequired): PGP/MIME (RFC 3156) para la clave de cifrado de la clave, según elija openpgp.js (SEIPD con AES para una clave v4, AEAD para una v6); S/MIME (RFC 8551) como CMS EnvelopedData, cifrado del contenido AES-256-CBC, la clave de contenido protegida con RSAES-OAEP con SHA-256 o con ECDH (dhSinglePass-stdDH-sha256kdf, envoltura de clave AES-256)."
+  },
+  "crypto.families.openpgp.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Nada."
+  },
+  "crypto.families.openpgp.hashes": {
+    "en": "c51e067261932787",
+    "text": "SHA-1 de la parte local en minúsculas, en z-base-32, tal como el Web Key Directory nombra una dirección (un nombre que fija el borrador, nunca utilizado para garantizar la integridad). La huella digital de la clave es la de la RFC 9580 (SHA-256 para v6, SHA-1 para v4)."
+  },
+  "crypto.families.openpgp.keys": {
+    "en": "201cc09e750d0c79",
+    "text": "Ninguna propia. La clave pública de la persona está en su entrada (stsOpenPgpKey), nunca una clave secreta, que el registro rechaza; una clave en una tarjeta OpenPGP de YubiKey no se distingue de una en un archivo, así que nada se registra como vinculado al hardware."
+  },
+  "crypto.families.openpgp.algorithms.0.what": {
+    "en": "b7a04c64879be952",
+    "text": "Clave registrada, firma"
+  },
+  "crypto.families.openpgp.algorithms.0.how": {
+    "en": "91736ec1cb35b5f2",
+    "text": "Ed25519, Ed448, ECDSA P-256/P-384/P-521, RSA de openpgp.minRsaBits (3072 como mínimo)"
+  },
+  "crypto.families.openpgp.algorithms.1.what": {
+    "en": "9f7b65405a49bedd",
+    "text": "Clave registrada, cifrado"
+  },
+  "crypto.families.openpgp.algorithms.1.how": {
+    "en": "e28f57b2d61b83be",
+    "text": "X25519, X448, ECDH Curve25519 y P-256/P-384/P-521, RSA de openpgp.minRsaBits"
+  },
+  "crypto.families.openpgp.algorithms.2.what": {
+    "en": "66b873543aebf01b",
+    "text": "Rechazados"
+  },
+  "crypto.families.openpgp.algorithms.2.how": {
+    "en": "18369a474bec2b97",
+    "text": "DSA, ElGamal, curvas Brainpool"
+  },
+  "crypto.families.openpgp.algorithms.3.what": {
+    "en": "429d783fabc235c9",
+    "text": "Contenido S/MIME"
+  },
+  "crypto.families.openpgp.algorithms.3.how": {
+    "en": "8c2686ee3dd3948f",
+    "text": "AES-256-CBC (CMS EnvelopedData)"
+  },
+  "crypto.families.openpgp.algorithms.4.what": {
+    "en": "cc09e2a5306928f5",
+    "text": "Transporte de clave S/MIME"
+  },
+  "crypto.families.openpgp.algorithms.4.how": {
+    "en": "acf5bad1301fd2cc",
+    "text": "RSAES-OAEP SHA-256; ECDH stdDH KDF SHA-256, envoltura AES-256"
+  },
+  "crypto.families.openpgp.algorithms.5.what": {
+    "en": "727e1a6e39e36a93",
+    "text": "Nombre en el Web Key Directory"
+  },
+  "crypto.families.openpgp.algorithms.5.how": {
+    "en": "a2b773a0ce72bc44",
+    "text": "SHA-1, z-base-32"
   },
   "crypto.families.gnap.signs": {
     "en": "ad4b982edb070f2c",
@@ -1596,12 +1676,12 @@
     "text": "Cada certificado que entrega, con la clave de la CA emisora EST de este dominio, mediante issueEnrolled() de common/pki.js — el mismo codificador del que sale cualquier otro certificado aquí. Los mensajes CMS de solo certificados que devuelve son DEGENERADOS: un SignedData con certificados y sin firmante, así que no llevan firma propia y se confía en ellos por los certificados que contienen."
   },
   "crypto.families.est.verifies": {
-    "en": "d40d37c4bd83de49",
-    "text": "La prueba de posesión PKCS#10 — la firma de la solicitud con su propia clave pública, clásica y poscuántica, en common/cert_enrollment.ts — y, para la autenticación por certificado, la ruta del certificado de cliente hasta la Intermediate de este dominio y la Root del servicio, consultando la revocación. Una plantilla de /serverkeygen no se verifica: su clave se reemplaza."
+    "en": "6b27c8877d509c46",
+    "text": "La prueba de posesión PKCS#10 —la firma de la solicitud con su propia clave pública, clásica y poscuántica, en common/cert_enrollment.ts— y, para la autenticación por certificado, la ruta del certificado de cliente hasta el Intermediate de este dominio y la Root del servicio, con la revocación consultada. Una plantilla de /serverkeygen no se verifica: su clave se sustituye. Una atestación de clave PIV de YubiKey en la solicitud (#1955, aquí y también mediante ACME y SCEP): la firma ECDSA o RSA del certificado de la ranura por el certificado f9, y la ruta del certificado f9 hasta los anclajes de atestación PIV del dominio, a través de la puerta de validación."
   },
   "crypto.families.est.encrypts": {
-    "en": "2f48e10a9ad6494d",
-    "text": "La clave privada de un par de claves generado por el servidor, sellada con AES-256-GCM bajo la clave de cifrado de claves en la entrada, siempre que esa clave sobreviva al proceso. NO se cifra para el cliente (RFC 7030 sección 4.4.1.2): una solicitud que lo pida se rechaza, y la clave viaja solo dentro de TLS."
+    "en": "a18df4311029b728",
+    "text": "La clave privada de un par de claves generado por el servidor, sellada con AES-256-GCM con la clave de cifrado de claves en la entrada, siempre que esa clave sobreviva al proceso; una clave piv-key-management en custodia (#1955) en todos los modos, o no se genera en absoluto. NO se cifra para el cliente (RFC 7030 sección 4.4.1.2): una solicitud que lo pide se rechaza, y la clave viaja solo dentro de TLS."
   },
   "crypto.families.est.decrypts": {
     "en": "8d5c676935439726",
@@ -1906,5 +1986,9 @@
   "crypto.param.totp.encoding": {
     "en": "d9613131364834bc",
     "text": "base32 de RFC 4648, sin relleno, como espera el formato otpauth Key Uri Format."
+  },
+  "crypto.families.est.algorithms.4.what": {
+    "en": "4dd4db2fd60c28f7",
+    "text": "Firmas de atestación PIV verificadas"
   }
 }

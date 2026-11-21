@@ -23,6 +23,14 @@
     "en": "7e9175bdd8dd3808",
     "text": "Eine eigene entityID und eine eigene providerID (beim Anlegen des Bereichs verschieden vorbelegt), ein eigener Signierschlüssel, eigener Anfragezustand, eigene Artefakte und eigene Metadaten je Dienstanbieter — deren URL daher den Bereich ebenso trägt wie den Digest des SP. Die DIENSTANBIETER-EINTRÄGE sind pro Bereich, aus demselben Grund wie die OAuth-Clients: Sie sind Anwendungen im eigenen Verzeichnis des Bereichs."
   },
+  "realms.support.openpgp-and-the-web-key-directory.family": {
+    "en": "05e19f1c690a88a0",
+    "text": "OpenPGP und das Web Key Directory"
+  },
+  "realms.support.openpgp-and-the-web-key-directory.note": {
+    "en": "400ad738502f9d1f",
+    "text": "Der OpenPGP-Schlüssel einer Person liegt in ihrem Eintrag im eigenen Verzeichnis des Vertrauensbereichs, ihre Registrierungs-Challenge gehört dem Vertrauensbereich, und das Web Key Directory antwortet für die eigenen Mail-Domains des Vertrauensbereichs (openpgp.wkdDomains oder seine DNS-Domain) mit den Schlüsseln seiner eigenen Personen. Ein WKD-Client kennt eine Domain und nie einen Vertrauensbereichspfad; eine Anfrage ohne Vertrauensbereichssegment beantwortet daher der Vertrauensbereich, der ihre Domain bedient, zuerst der Standard-Vertrauensbereich."
+  },
   "realms.support.ws-trust.family": {
     "en": "3b83c15d86c7c8b4",
     "text": "WS-Trust"

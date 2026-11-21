@@ -42,6 +42,7 @@
   "title.device-registration": "Registro de dispositivos",
   "title.devices": "Dispositivos",
   "title.hardware-tokens": "Tokens de hardware",
+  "title.openpgp": "Claves OpenPGP",
   "title.devices-monitor": "Dispositivos (supervisión)",
   "title.service-accounts": "Cuentas de servicio",
   "title.encryption": "Cifrado",
