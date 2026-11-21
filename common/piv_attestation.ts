@@ -181,6 +181,7 @@ class PivAttestation {
     const { log, errorCodes: codes } = this.deps;
     log.debug("Entering PivAttestation.refuse(). " + code);
     log.debug("Leaving PivAttestation.refuse().");
+    // error-code: none — the caller's code, passed in as `code`
     return codes.mark({ ok: false, status: 400, error: why, errors: [why],
                         why: why }, code);
   }

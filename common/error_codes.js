@@ -22938,10 +22938,6 @@ const CODES = [
       'the hardware token register could not record its token; the ' +
       'certificate stands and earns no hardware claim (#1955).',
     spec: '' },
-  { code: 'STS-PIV-0015',
-    summary: 'A PIV enrolment or key-recovery act named an action that is ' +
-      'not one of the page\'s (#1955).',
-    spec: 'HTTP 400 (the page with the sentence)' },
   { code: 'STS-PIV-0016',
     summary: 'A PIV enrolment or key-recovery act failed with an ' +
       'unexpected error; the log line has the stack (#1955).',
@@ -22992,11 +22988,6 @@ const CODES = [
     summary: 'An outside PIV or CAC card\'s card UUID is in stsPivCardUuid ' +
       'on more than one person, so it names nobody (#1955, D8).',
     spec: 'the outside-certificate refusal (STS-TLS-0055, STS-AUTHN-0469)' },
-  { code: 'STS-PIV-0033',
-    summary: 'A value written to stsPivCardUuid is not a card UUID in ' +
-      'lower case (#1955, D8).',
-    spec: 'HTTP 400' },
-  // ===== SVCACCT ===========================================================
   { code: 'STS-SVCACCT-0001',
     summary: 'A service-account policy profile was named with something ' +
       'that is neither `default` nor a name of lower-case letters, digits ' +

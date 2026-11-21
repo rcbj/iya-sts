@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5799** of them, in **54** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5797** of them, in **54** subsystems.
 
 ## Where a code appears
 
@@ -86,7 +86,7 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 53
 * [Hardware tokens (`STS-HWTOKEN`)](#sts-hwtoken) — 13
-* [PIV key attestation (`STS-PIV`)](#sts-piv) — 26
+* [PIV key attestation (`STS-PIV`)](#sts-piv) — 24
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 224
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 137
@@ -4977,7 +4977,6 @@ Raised from: common/piv_attestation.ts, common/cert_enrollment.ts, common/piv_en
 | `STS-PIV-0012` | An attested PIV key's touch policy is weaker than the realm requires (piv.touchPolicy) (#1955). | HTTP 400 |
 | `STS-PIV-0013` | A piv-card-auth (slot 9e) certificate was refused at a sign-in, because that key works without a PIN (piv.cardAuthSignIn) (#1955). | the TLS sign-in and PKINIT refusals |
 | `STS-PIV-0014` | A certificate was issued from a verified PIV attestation and the hardware token register could not record its token; the certificate stands and earns no hardware claim (#1955). | — |
-| `STS-PIV-0015` | A PIV enrolment or key-recovery act named an action that is not one of the page's (#1955). | HTTP 400 (the page with the sentence) |
 | `STS-PIV-0016` | A PIV enrolment or key-recovery act failed with an unexpected error; the log line has the stack (#1955). | HTTP 500 |
 | `STS-PIV-0020` | A piv-key-management key was to be escrowed and no key-encryption key is held to seal it, so it was neither generated nor kept (#1955, D7). | HTTP 503 |
 | `STS-PIV-0021` | EST /serverkeygen was asked for a piv-key-management key in a realm that does not escrow them (piv.keyEscrow): a server-generated 9d key exists only to be escrowed (#1955, D7). | HTTP 501 |
@@ -4988,7 +4987,6 @@ Raised from: common/piv_attestation.ts, common/cert_enrollment.ts, common/piv_en
 | `STS-PIV-0030` | An outside PIV or CAC card's certificate, from an issuer in piv.externalIssuers, was not mapped: it asserts none of piv.externalPolicyOids, or does not carry exactly one urn:uuid subjectAltName (#1955, D8). | the outside-certificate refusal (STS-TLS-0054, STS-AUTHN-0468) |
 | `STS-PIV-0031` | An outside PIV or CAC card's certificate names a card UUID that is in stsPivCardUuid on no person of the realm (#1955, D8). | the outside-certificate refusal (STS-TLS-0054, STS-AUTHN-0468) |
 | `STS-PIV-0032` | An outside PIV or CAC card's card UUID is in stsPivCardUuid on more than one person, so it names nobody (#1955, D8). | the outside-certificate refusal (STS-TLS-0055, STS-AUTHN-0469) |
-| `STS-PIV-0033` | A value written to stsPivCardUuid is not a card UUID in lower case (#1955, D8). | HTTP 400 |
 
 ## STS-SVCACCT
 

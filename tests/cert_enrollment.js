@@ -186,7 +186,14 @@ function checkProfiles(t) {
     });
   t.equal(codeOf(core.checkProfile('acme', 'no-such-profile')),
           'STS-ENROLL-0001', 'an unknown profile is refused as unknown');
+  // The four PIV slot profiles (#1955 P2) are known to every family and in
+  // no default list: a realm issues them only once an operator adds them.
   core.PROFILE_IDS.forEach(function (id) {
+    if (id.indexOf('piv-') === 0) {
+      t.equal(codeOf(core.checkProfile('scep', id)), 'STS-ENROLL-0003',
+              '"' + id + '" is not issued until a realm lists it');
+      return;
+    }
     t.check(core.checkProfile('scep', id).ok,
             '"' + id + '" is issued by default');
   });

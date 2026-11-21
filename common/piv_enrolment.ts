@@ -127,6 +127,7 @@ class PivEnrolment {
     const { log, errorCodes: codes } = this.deps;
     log.debug("Entering PivEnrolment.refuse(). " + code);
     log.debug("Leaving PivEnrolment.refuse().");
+    // error-code: none — the caller's code, passed in as `code`
     return codes.mark({ ok: false, status: status, error: why,
                         errors: [why], why: why }, code);
   }

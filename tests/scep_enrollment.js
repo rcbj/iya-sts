@@ -498,7 +498,8 @@ async function checkConsole(t) {
           JSON.stringify(view).indexOf(made.challenge) < 0 &&
           JSON.stringify(view).indexOf('PRIVATE KEY') < 0,
           'the view lists it with no secret and no private key');
-  t.check(view.profiles.length === 10 && view.refusedProfiles.length === 5 &&
+  // Thirteen since #1955 P2's four PIV slot profiles, and the device's.
+  t.check(view.profiles.length === 14 && view.refusedProfiles.length === 5 &&
           view.endpoints.getCaCert === 'https://x.test/enroll/scep' +
           '?operation=GetCACert', 'nine profiles and the device profile, five ' +
           'refused, absolute URLs');
