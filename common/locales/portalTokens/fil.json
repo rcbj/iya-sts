@@ -16,5 +16,6 @@
   "done.lost": "Naiulat nang nawala ang key, at {n} sa iyong mga credential dito ang inalis.",
   "done.notAll": "{n} ang hindi maalis: hilingin sa iyong administrator na alisin ang mga ito.",
   "done.sessionsEnded": "{n} session na binuksan nito ang isinara.",
+  "done.recovery": "Sa susunod mong pag-sign in nang walang passkey, hihilingin sa iyong magrehistro ng bago bago mo magamit ang anumang application.",
   "done.noWayIn": "Ito lamang ang paraan mo para mag-sign in: humingi ng activation link sa iyong administrator, o gamitin ang iyong mga recovery code."
 }

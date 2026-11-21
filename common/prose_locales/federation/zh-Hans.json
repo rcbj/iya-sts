@@ -111,6 +111,14 @@
     "en": "0f52a102d4c01229",
     "text": "“集成身份验证”。此人被发送到 /authn/spnego，它以 401 和 WWW-Authenticate: Negotiate 应答，并根据其客户端发回的服务票据让其登录（RFC 4559 基于 RFC 4178 基于 RFC 4121）。无需输入任何内容，也不绘制任何界面。与安全密钥或钱包一样，它依赖于本服务在所有模式下都会验证的凭据——登录界面的密码只在产品模式下验证——会话随后声明的内容读自“票据”自身的标志：pre-authent 为 amr [\"pwd\"]，hw-authent 为 [\"hwk\"]，两者都有则两者都记录，两者都不声明的票据则“什么也不记录”。无法获取票据的客户端会看到一个链接到登录界面的页面，因为在任何未针对此主机进行配置的浏览器中，单纯的 401 Negotiate 都是死胡同。"
   },
+  "fed.mechanisms.attested-hardware.label": {
+    "en": "a133b83617b8359b",
+    "text": "经证明的硬件密钥"
+  },
+  "fed.mechanisms.attested-hardware.what": {
+    "en": "2fc5a571514106a4",
+    "text": "本领域根据其自身证明记录的硬件令牌上的通行密钥或智能卡证书（common/hardware_tokens.ts）：经企业证明的安全密钥，或 PIV 卡。登录界面提供通行密钥，并在认证策略接受时提供证书，不提供密码。在允许列表中只有这样的凭据才满足它，因此认证策略只列出 attested-hardware 的应用只能用经证明的硬件密钥访问。"
+  },
   "fed.mechanisms.wallet.label": {
     "en": "a6a3e498bac9d4f6",
     "text": "钱包（OpenID4VP）"
@@ -488,8 +496,8 @@
     "text": "指针，也是这一侧关于伙伴所存储的全部内容：其在 ou=applications 中的条目的标识符。其 entityID、断言使用者服务、重定向 URI 和证书都存放在那里，每个协议模块本来就从那里读取。把其中任何一项复制到这里，就会造成本仓库刻意避免的双存储故障。"
   },
   "fed.schema.attributes.fedAuthnMechanism.what": {
-    "en": "10e91a734e1d74b3",
-    "text": "当该伙伴请求时，本服务如何对此人进行身份验证：password、password-mfa、webauthn、spnego——浏览器已持有的 Kerberos 票据，完全不显示界面——wallet——本领域签发、从此人钱包出示的凭据——或 federation，它将此人转发到另一个关系，正是这使本服务成为两种协议之间的身份桥接。留空表示此关系不作表态，这与 password 不同：它会回退到应用条目上的 appFederationRelationship，然后回退到登录界面，这正是此属性存在之前每个关系的行为。"
+    "en": "cbb25dba52aecc9f",
+    "text": "当该伙伴请求时，本服务如何对此人进行身份验证：password、password-mfa、webauthn、attested-hardware——经证明的硬件令牌上的通行密钥——spnego——浏览器已持有的 Kerberos 票据，完全不显示界面——wallet——本领域签发、从此人钱包出示的凭据——或 federation，它将此人转发到另一个关系，正是这使本服务成为两种协议之间的身份桥接。留空表示此关系不作表态，这与 password 不同：它会回退到应用条目上的 appFederationRelationship，然后回退到登录界面，这正是此属性存在之前每个关系的行为。"
   },
   "fed.schema.attributes.fedAuthnRelationship.what": {
     "en": "e67f3ec502c8b6b8",

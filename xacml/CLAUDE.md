@@ -3619,6 +3619,22 @@ is the action an operator's rule targets to refuse creation (by category, an
 unverified address, a level) while existing people still sign in.
 `STS-FED-0179` is its refusal.
 
+## The hardware token an authentication used (#1955 P1, 2026-11-20)
+
+`xacml_templates.ts`'s `HARDWARE_TOKEN_ATTRIBUTE`, sent by
+`xacml_role_pep.ts`'s `hardwareTokenAttributes()` as ENVIRONMENT attributes
+on every browser issuance the gate describes: `hardware-token-attested`
+(always, false with no token), and for a token in hand its `key`, `vendor`,
+`model`, `evidence` source, `smart-card`, `holder-matches` (the subject is
+the register's holder) and `status`. The facts are
+`common/issuance_gate.js`'s `hardwareTokenFactsOf()`: the authentication
+event's snapshot (`authn.ts`'s `hardwareTokenOf()`) brought up to date
+against the register, so a token reported lost since the sign-in reads not
+attested. **No built-in rule reads them**: "administrators sign in with an
+attested key" is a realm's own rule over these, or the authentication
+policy's `attested-hardware` mechanism, which the built-in `authn-mechanism`
+rule already enforces. They ride along and never make the policy asked.
+
 ## A device-bound session an application requires (#740, 2026-10-25)
 
 Two environment attributes, sent only while `authn.deviceBoundSessions`

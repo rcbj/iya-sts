@@ -12653,6 +12653,12 @@ this directory has to know beside it:
   kind with no retirer is reported as not retired (STS-HWTOKEN-0009), never
   skipped. A FIDO credential is REMOVED rather than disabled, because no
   sign-in door reads a disabled mark.
+* **X4**: the authentication event records the credential's token
+  (`authn.ts`'s `hardwareTokenOf()`), which is the authentication policy's
+  `attested-hardware` mechanism (`authn_mechanisms.ts`) and the issuance
+  policy's hardware-token attributes (`issuance_gate.js`'s
+  `hardwareTokenFactsOf()`, `xacml/CLAUDE.md`). The lost-key act notes a
+  `lost-key` recovery (3cq) for a person it leaves with no passkey.
 * **X3**: `evidenceFor()` and `certificateAmr()` answer what recorded
   evidence says of a credential's key; PKINIT keeps its old inference while
   `hardwareTokens.hardwareClaims` is `inference` (the default).
@@ -15617,6 +15623,11 @@ not refused, and the default stays.
   passkey registered at the step sends `credential-change` (create) where it
   is written, so the portal's Security activity shows both.
 * Codes `STS-AUTHN-0380` to `0383`. `tests/recovery_assurance.js` holds it.
+* **A LOST SECURITY KEY (#1955 P1)** is the eighth source of a pending
+  recovery, `lost-key`: the lost-key act writes it before it removes the
+  person's last passkeys, `holdsPasskey()` keeps such a person covered while
+  it is pending, and a later door's write keeps it. `authn/CLAUDE.md` and
+  `tests/hardware_tokens.js` 7a–7d.
 
 ## 3cs. `passkey_report.ts`: WHO HOLDS WHICH PASSKEY ALGORITHM, KEPT RATHER THAN COUNTED (#942, 2026-10-23)
 

@@ -11918,7 +11918,15 @@ class Credentials {
     // The keys themselves (#911), not mechanismsFor(): that is nine store
     // reads and a TOTP unseal for a yes/no asked on every second-factor
     // step and recovery door. Any key, since a key has no role (#1135).
-    const out = this.keysOf(String(username || '').trim()).length > 0;
+    const name = String(username || '').trim();
+    // OR WHOSE PASSKEY WAS REPORTED LOST (#1955 P1) and not yet replaced:
+    // the lost-key act removed the keys, and a recovery after it must be no
+    // weaker than the passkey it replaces, so the person is still covered
+    // while the `lost-key` recovery is pending. Read only when no key is
+    // held, so an ordinary person costs nothing more.
+    const held = this.keysOf(name).length > 0;
+    const pending = held ? null : this.recoveryPending(name);
+    const out = held || !!(pending && pending.door === 'lost-key');
     log.debug("Leaving Credentials.holdsPasskey(). " + out);
     return out;
   }
@@ -11971,7 +11979,14 @@ class Credentials {
       return false;
     }
     const name = String(username || '').trim();
-    const value = door ? String(door) + ' ' + new Date().toISOString() : '';
+    // A LOST KEY'S RECOVERY IS KEPT (#1955 P1) when a later door writes
+    // its own: the loss is what keeps the person covered (`holdsPasskey()`),
+    // and a reset link spent after it must not uncover them. Only clearing
+    // — a passkey signing them in — ends it.
+    const current = door ? this.recoveryPending(name) : null;
+    const kept = current && current.door === 'lost-key' ? 'lost-key' : '';
+    const value = door ? String(kept || door) + ' ' +
+                         new Date().toISOString() : '';
     let written = false;
     try {
       written = !!directory.writeRecoveryPending(name, value);

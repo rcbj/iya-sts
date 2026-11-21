@@ -54,6 +54,12 @@ namespace IyaSts.Directory;
       // screen, and like `spnego` it can be switched off service-wide —
       // `oid4vp.signIn` — which authn.ts's declaredMechanismFor() reports
       // rather than sending somebody to a door that is shut.
+      // THE SEVENTH (#1955 P1, design X4): not a door of its own but a
+      // credential PROVEN to be hardware — a passkey or a certificate on a
+      // token the hardware token register recorded from attestation. The
+      // screen offers the two credentials a token holds; in an allowed list
+      // it is satisfied only by such a credential.
+      #{id: "attested-hardware", label: "Attested hardware key", what: "A passkey or a smart-card certificate on a hardware token this realm recorded from its own attestation (common/hardware_tokens.ts): an enterprise-attested security key, or a PIV card. The sign-in screen offers a passkey and, where the authentication policy takes one, a certificate, and no password. In an allowed list it is satisfied only by such a credential, so an application whose authentication policy names only attested-hardware is reached with a proven hardware key and nothing else."},
       #{id: "wallet", label: "Wallet (OpenID4VP)", what: "The person is sent to /authn/wallet, which asks their wallet — through the Digital Credentials API, or on this device by link — for a credential this realm issued them, and signs them in as the directory entry it was issued for once a fresh holder proof verifies. amr [\"pop\"] and acr \"1\" for one factor; a caller that demanded two is asked for a second factor afterwards (or has one already, where the credential's key attestation says so), so this mechanism does not lose to forceMfa the way spnego does."}
     ]
   },
@@ -824,7 +830,7 @@ model FederationRelationship {
     role: "identity-provider",
     from: "this register",
     allowedFrom: #["mechanisms"],
-    what: "HOW THIS SERVICE AUTHENTICATES THE PERSON when this partner asks it to: password, password-mfa, webauthn, spnego — a Kerberos ticket the browser already holds, with no screen at all — wallet — a credential this realm issued, presented from the person's wallet — or federation, which sends them on to another relationship and is what makes this service an identity BRIDGE between two protocols. EMPTY MEANS THIS RELATIONSHIP SAYS NOTHING, which is not the same as password: it falls through to appFederationRelationship on the application entry and then to the sign-in screen, which is exactly what every relationship did before this attribute existed."
+    what: "HOW THIS SERVICE AUTHENTICATES THE PERSON when this partner asks it to: password, password-mfa, webauthn, attested-hardware — a passkey on a hardware token proven by attestation — spnego — a Kerberos ticket the browser already holds, with no screen at all — wallet — a credential this realm issued, presented from the person's wallet — or federation, which sends them on to another relationship and is what makes this service an identity BRIDGE between two protocols. EMPTY MEANS THIS RELATIONSHIP SAYS NOTHING, which is not the same as password: it falls through to appFederationRelationship on the application entry and then to the sign-in screen, which is exactly what every relationship did before this attribute existed."
   })
   fedAuthnMechanism?: string;
   @attr(#{

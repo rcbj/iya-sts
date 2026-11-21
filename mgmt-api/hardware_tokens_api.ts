@@ -376,7 +376,11 @@ class HardwareTokensApi {
               message: 'Hardware token ' + result.token.key + ' is ' +
                 'reported lost: ' + result.retired.length + ' ' +
                 'credential(s) retired, ' + result.notRetired.length +
-                ' not.',
+                ' not.' + ((result.recoveryNoted || []).length
+                  ? ' A recovery is now pending for ' +
+                    result.recoveryNoted.join(', ') + ': their next ' +
+                    'sign-in a passkey does not answer is held to the ' +
+                    'passkey policy\'s recoveryAssurance.' : ''),
               token: result.token,
               // NO ERROR CODE IN THE ANSWER (the root CLAUDE.md's rule): a
               // credential not retired says why in English; its code is on

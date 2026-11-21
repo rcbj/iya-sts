@@ -883,6 +883,45 @@ const DEVICE_ATTRIBUTE = {
 };
 
 // ---------------------------------------------------------------------------
+// THE HARDWARE TOKEN THE SIGN-IN'S CREDENTIAL IS ON (#1955 P1, design X4),
+// sent as environment attributes by `xacml_role_pep.ts` on every browser
+// issuance the gate describes — `common/issuance_gate.js`'s
+// `hardwareTokenFactsOf()`, from the authentication event's snapshot
+// (`authn.ts`'s `hardwareTokenOf()`) brought up to date against the
+// register (`common/hardware_tokens.ts`). With no token only ATTESTED is
+// sent (false), so a rule can require one and a rule about one is
+// inapplicable otherwise. No built-in rule reads them: "administrators sign
+// in with an attested key" is an operator's rule, written against these
+// (or the authentication policy's `attested-hardware` mechanism, which the
+// built-in `authn-mechanism` rule enforces).
+// ---------------------------------------------------------------------------
+/**
+ * The attribute identifiers describing the hardware token an issuance's
+ * authentication used (#1955), sent as environment attributes.
+ */
+const HARDWARE_TOKEN_ATTRIBUTE = {
+  // A BOOLEAN: the credential that answered is on a hardware token the
+  // register recorded from attestation, and the token is still in use (a
+  // token reported lost since is false).
+  ATTESTED: 'urn:sts:xacml:hardware-token-attested',
+  // The register's key for it, `<vendor>/<serial>`.
+  KEY: 'urn:sts:xacml:hardware-token-key',
+  // Its vendor slug (`yubico`) and its model (`YubiKey 5 NFC`), as the
+  // attestation named them.
+  VENDOR: 'urn:sts:xacml:hardware-token-vendor',
+  MODEL: 'urn:sts:xacml:hardware-token-model',
+  // Where its serial came from: `fido-enterprise-attestation`,
+  // `piv-attestation` or `vendor-import`.
+  EVIDENCE: 'urn:sts:xacml:hardware-token-evidence',
+  // A BOOLEAN: the evidence says the credential's key is on a smart card.
+  SMART_CARD: 'urn:sts:xacml:hardware-token-smart-card',
+  // A BOOLEAN: the register records the SUBJECT as the token's holder.
+  HOLDER_MATCHES: 'urn:sts:xacml:hardware-token-holder-matches',
+  // `active` or `lost`.
+  STATUS: 'urn:sts:xacml:hardware-token-status'
+};
+
+// ---------------------------------------------------------------------------
 // THE PROTOCOL FAMILIES (2026-10-01): an application is declared for some
 // protocol families (`appAllowedProtocol`), and an issuance belongs to some.
 // `xacml_role_pep.ts` sends both — the declaration as a RESOURCE attribute,
@@ -5572,6 +5611,7 @@ class XacmlTemplates {
    * The device attribute identifiers.
    */
   static readonly DEVICE_ATTRIBUTE = DEVICE_ATTRIBUTE;
+  static readonly HARDWARE_TOKEN_ATTRIBUTE = HARDWARE_TOKEN_ATTRIBUTE;
   static readonly PROTOCOL_ATTRIBUTE = PROTOCOL_ATTRIBUTE;
   /**
    * The transfer questions' action-ids and attribute identifiers (#98).
@@ -5754,6 +5794,7 @@ export = {
   RISK_ATTRIBUTE: XacmlTemplates.RISK_ATTRIBUTE,
   AUTHN_ATTRIBUTE: XacmlTemplates.AUTHN_ATTRIBUTE,
   DEVICE_ATTRIBUTE: XacmlTemplates.DEVICE_ATTRIBUTE,
+  HARDWARE_TOKEN_ATTRIBUTE: XacmlTemplates.HARDWARE_TOKEN_ATTRIBUTE,
   PROTOCOL_ATTRIBUTE: XacmlTemplates.PROTOCOL_ATTRIBUTE,
   TRANSFER_ATTRIBUTE: XacmlTemplates.TRANSFER_ATTRIBUTE,
   PASSKEY_ATTRIBUTE: XacmlTemplates.PASSKEY_ATTRIBUTE,

@@ -16,5 +16,6 @@
   "done.lost": "Der Schlüssel ist als verloren gemeldet, und {n} Ihrer Anmeldedaten darauf wurden zurückgezogen.",
   "done.notAll": "{n} konnten nicht zurückgezogen werden: Bitten Sie Ihren Administrator, sie zu entfernen.",
   "done.sessionsEnded": "{n} damit angemeldete Sitzungen wurden beendet.",
+  "done.recovery": "Bei Ihrer nächsten Anmeldung ohne Passkey werden Sie gebeten, einen neuen zu registrieren, bevor Sie eine Anwendung verwenden können.",
   "done.noWayIn": "Das war Ihre einzige Möglichkeit, sich anzumelden: Bitten Sie Ihren Administrator um einen Aktivierungslink, oder verwenden Sie Ihre Wiederherstellungscodes."
 }
