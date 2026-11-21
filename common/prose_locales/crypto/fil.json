@@ -1596,12 +1596,12 @@
     "text": "Bawat certificate na ibinibigay nito, gamit ang EST Issuing CA key ng realm na ito, sa pamamagitan ng issueEnrolled() ng common/pki.js — ang parehong encoder na pinagmumulan ng bawat ibang certificate dito. DEGENERATE ang mga certs-only CMS message na ibinabalik nito: SignedData na may mga certificate at walang signer, kaya wala silang sariling signature at pinagkakatiwalaan dahil sa mga certificate sa loob nila."
   },
   "crypto.families.est.verifies": {
-    "en": "d40d37c4bd83de49",
-    "text": "Ang PKCS#10 proof of possession — ang signature ng request gamit ang sarili nitong public key, classical at post-quantum, sa common/cert_enrollment.ts — at, para sa certificate authentication, ang path ng client certificate patungo sa Intermediate ng realm na ito at sa service Root, na kinokonsulta ang revocation. Hindi vine-verify ang /serverkeygen template: pinapalitan ang key nito."
+    "en": "6b27c8877d509c46",
+    "text": "Ang PKCS#10 proof of possession — ang pirma ng kahilingan gamit ang sarili nitong public key, classical at post-quantum, sa common/cert_enrollment.ts — at, para sa certificate authentication, ang path ng client certificate patungo sa Intermediate ng realm na ito at sa Root ng serbisyo na may sinangguning revocation. Hindi vine-verify ang /serverkeygen template: pinapalitan ang key nito. Isang YubiKey PIV key attestation sa kahilingan (#1955, dito at sa ACME at SCEP): ang ECDSA o RSA na pirma ng slot certificate ng f9 certificate, at ang path ng f9 certificate patungo sa mga PIV attestation anchor ng realm, sa pamamagitan ng validation door."
   },
   "crypto.families.est.encrypts": {
-    "en": "2f48e10a9ad6494d",
-    "text": "Ang private key ng server-generated na key pair, na na-seal gamit ang AES-256-GCM sa ilalim ng key-encryption key sa entry, saanman mas tumatagal ang key na iyon kaysa sa process. HINDI ito naka-encrypt para sa client (RFC 7030 section 4.4.1.2): tinatanggihan ang request na humihingi niyon, at sa loob lang ng TLS naglalakbay ang key."
+    "en": "a18df4311029b728",
+    "text": "Ang private key ng isang key pair na binuo ng server, selyado gamit ang AES-256-GCM sa ilalim ng key-encryption key sa entry, saanman tumatagal ang key na iyon nang lampas sa proseso; isang naka-escrow na piv-key-management key (#1955) sa bawat mode, o hindi ito binubuo kailanman. HINDI ito ine-encrypt para sa client (RFC 7030 section 4.4.1.2): tinatanggihan ang kahilingang humihingi nito, at sa loob lamang ng TLS naglalakbay ang key."
   },
   "crypto.families.est.decrypts": {
     "en": "8d5c676935439726",
@@ -1906,5 +1906,9 @@
   "crypto.param.totp.encoding": {
     "en": "d9613131364834bc",
     "text": "RFC 4648 base32, walang padding, gaya ng inaasahan ng otpauth Key Uri Format."
+  },
+  "crypto.families.est.algorithms.4.what": {
+    "en": "4dd4db2fd60c28f7",
+    "text": "Mga PIV attestation signature na vine-verify"
   }
 }

@@ -122,5 +122,11 @@
   "pepCredential.urn": "Namen",
   "pepCredential.env": "Starten Sie den PEP mit dieser Umgebung. Der private Schlüssel hat die Maschine, die die Anfrage erstellt hat, nie verlassen; dieser Dienst hat keinen, den er ausgeben könnte.",
   "pepCredential.chain": "Das Zertifikat und seine Kette bis zur Root des Dienstes. Öffentlich: Der PEP braucht es nicht, um sich zu authentifizieren, und es steht auf der Schlüsselliste des Eintrag&rsquo;s.",
-  "pepCredential.download": "Zertifikat herunterladen"
+  "pepCredential.download": "Zertifikat herunterladen",
+  "once.pivCertificate": "PIV-Zertifikat",
+  "once.pivKey": "Hinterlegter PIV-Schlüssel",
+  "piv.keyWarn": "Dies ist der private Entschlüsselungsschlüssel der Person. Er wird einmal angezeigt, und seine Wiederherstellung steht im Audit-Protokoll. Übergeben Sie ihn so, wie Sie die Karte übergeben würden.",
+  "piv.privateKey": "Privater Schlüssel",
+  "piv.certificate": "Zertifikat",
+  "piv.import": "Schreiben Sie es in den YubiKey-Slot mit: ykman piv certificates import <slot> cert.pem"
 }

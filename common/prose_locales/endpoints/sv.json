@@ -1212,8 +1212,8 @@
     "text": "Maskinvarutokens"
   },
   "endpoints.route./admin-api/hardware-tokens/:action.name": {
-    "en": "d2326b0fb8b09689",
-    "text": "Anmäl en maskinvarutoken som förlorad"
+    "en": "33209f967f070175",
+    "text": "Åtgärder för maskinvarutokens"
   },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",
@@ -2562,5 +2562,9 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS (ett klientcertifikat begärs, krävs aldrig)"
+  },
+  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
+    "en": "f46d01f7581b5379",
+    "text": "Deponerade PIV-nycklar"
   }
 }

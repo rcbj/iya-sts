@@ -573,5 +573,6 @@
   "audit.actions.xacml.pep.cluster.settings.set.label": "A remote PEP cluster's managed settings were set",
   "audit.actions.xacml.pep.cluster.settings.clear.label": "A remote PEP cluster's managed settings were cleared",
   "audit.actions.xacml.pep.cluster.proxy.set.label": "A remote PEP cluster's reverse-proxy configuration was set",
-  "audit.actions.xacml.pep.cluster.proxy.clear.label": "A remote PEP cluster's reverse-proxy configuration was removed"
+  "audit.actions.xacml.pep.cluster.proxy.clear.label": "A remote PEP cluster's reverse-proxy configuration was removed",
+  "audit.actions.piv-escrow.recover.label": "An escrowed PIV key-management key was recovered"
 }

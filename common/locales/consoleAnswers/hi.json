@@ -122,5 +122,11 @@
   "pepCredential.urn": "नाम",
   "pepCredential.env": "PEP को इस परिवेश से शुरू करें। निजी कुंजी उस मशीन से कभी नहीं गई जिसने अनुरोध बनाया; इस सेवा के पास देने के लिए कोई नहीं है।",
   "pepCredential.chain": "प्रमाणपत्र और सेवा Root तक उसकी श्रृंखला। सार्वजनिक: PEP को प्रमाणित करने के लिए इसकी आवश्यकता नहीं, और यह प्रविष्टि&rsquo;s कुंजी सूची पर है।",
-  "pepCredential.download": "प्रमाणपत्र डाउनलोड करें"
+  "pepCredential.download": "प्रमाणपत्र डाउनलोड करें",
+  "once.pivCertificate": "PIV प्रमाणपत्र",
+  "once.pivKey": "एस्क्रो की गई PIV कुंजी",
+  "piv.keyWarn": "यह व्यक्ति की निजी डिक्रिप्शन कुंजी है। यह एक बार दिखाई जाती है, और इसकी पुनर्प्राप्ति ऑडिट लॉग में दर्ज है। इसे वैसे ही सौंपें जैसे आप कार्ड सौंपते।",
+  "piv.privateKey": "निजी कुंजी",
+  "piv.certificate": "प्रमाणपत्र",
+  "piv.import": "इस आदेश से इसे YubiKey स्लॉट में लिखें: ykman piv certificates import <slot> cert.pem"
 }

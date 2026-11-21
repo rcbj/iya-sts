@@ -302,7 +302,7 @@
   "endpoints.route./admin-api/post-login-activities.name": "Started post-login activities",
   "endpoints.route./admin-api/post-login-activities/:action.name": "Start, pause, resume or end a post-login activity",
   "endpoints.route./admin-api/hardware-tokens.name": "Hardware tokens",
-  "endpoints.route./admin-api/hardware-tokens/:action.name": "Report a hardware token lost",
+  "endpoints.route./admin-api/hardware-tokens/:action.name": "Hardware token acts",
   "endpoints.route./admin-api/scim/clients.name": "Outbound SCIM clients",
   "endpoints.route./admin-api/scim/clients/:action.name": "Change the outbound SCIM clients",
   "endpoints.route./admin-api/roles/preview.name": "Would this be issued?",
@@ -639,5 +639,6 @@
   "endpoints.socket.kdc": "Key Distribution Center",
   "endpoints.socket.kdcRealm": "Key Distribution Center (realm {{realm}})",
   "endpoints.socket.mainPort": "Client certificates on the main port",
-  "endpoints.socket.mainPortTransport": "TLS (a client certificate asked for, never required)"
+  "endpoints.socket.mainPortTransport": "TLS (a client certificate asked for, never required)",
+  "endpoints.route./admin-api/hardware-tokens/escrowed.name": "Escrowed PIV keys"
 }

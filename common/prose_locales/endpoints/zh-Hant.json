@@ -1212,8 +1212,8 @@
     "text": "硬體權杖"
   },
   "endpoints.route./admin-api/hardware-tokens/:action.name": {
-    "en": "d2326b0fb8b09689",
-    "text": "回報硬體權杖遺失"
+    "en": "33209f967f070175",
+    "text": "硬體權杖動作"
   },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",
@@ -2562,5 +2562,9 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS（會索取用戶端憑證，但從不強制要求）"
+  },
+  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
+    "en": "f46d01f7581b5379",
+    "text": "託管的 PIV 金鑰"
   }
 }

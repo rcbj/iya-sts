@@ -2298,5 +2298,9 @@
   "audit.actions.xacml.pep.cluster.proxy.clear.label": {
     "en": "c2812e5d21fb6dd4",
     "text": "Konfigurationen för omvänd proxy för ett kluster av fjärr-PEP:er togs bort"
+  },
+  "audit.actions.piv-escrow.recover.label": {
+    "en": "0cad829ec7cafc72",
+    "text": "En deponerad PIV-nyckelhanteringsnyckel återställdes"
   }
 }

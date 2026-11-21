@@ -398,8 +398,8 @@
   "crypto.families.acme.algorithms.2.what": "Revocation reasons accepted from a subscriber",
   "crypto.families.acme.algorithms.3.what": "Certificate container",
   "crypto.families.est.signs": "Every certificate it hands out, with this realm's EST Issuing CA key, through common/pki.js's issueEnrolled() — the same encoder every other certificate here comes from. The certs-only CMS messages it returns are DEGENERATE: a SignedData with certificates and no signer, so they carry no signature of their own and are trusted for the certificates inside them.",
-  "crypto.families.est.verifies": "The PKCS#10 proof of possession — the request's signature with its own public key, classical and post-quantum, in common/cert_enrollment.ts — and, for certificate authentication, the client certificate's path to this realm's Intermediate and the service Root with revocation consulted. A /serverkeygen template is not verified: its key is replaced.",
-  "crypto.families.est.encrypts": "The private key of a server-generated key pair, sealed with AES-256-GCM under the key-encryption key onto the entry, wherever that key outlives the process. It is NOT encrypted to the client (RFC 7030 section 4.4.1.2): a request asking for that is refused, and the key travels inside TLS only.",
+  "crypto.families.est.verifies": "The PKCS#10 proof of possession — the request's signature with its own public key, classical and post-quantum, in common/cert_enrollment.ts — and, for certificate authentication, the client certificate's path to this realm's Intermediate and the service Root with revocation consulted. A /serverkeygen template is not verified: its key is replaced. A YubiKey PIV key attestation in the request (#1955, here and over ACME and SCEP): the slot certificate's ECDSA or RSA signature by the f9 certificate, and the f9 certificate's path to the realm's PIV attestation anchors, through the validation door.",
+  "crypto.families.est.encrypts": "The private key of a server-generated key pair, sealed with AES-256-GCM under the key-encryption key onto the entry, wherever that key outlives the process; an escrowed piv-key-management key (#1955) in every mode, or not generated at all. It is NOT encrypted to the client (RFC 7030 section 4.4.1.2): a request asking for that is refused, and the key travels inside TLS only.",
   "crypto.families.est.decrypts": "Nothing on the wire.",
   "crypto.families.est.hashes": "SHA-256 for each certificate's thumbprint on the entry record.",
   "crypto.families.est.keys": "One EST Issuing CA key per trust realm, under the realm Intermediate; the client's own key for everything it enrolls; and for /serverkeygen a key pair generated here in the template's algorithm (ML-KEM included, for key-encipherment), returned once.",
@@ -475,5 +475,6 @@
   "crypto.codes.atRest": "A scrypt HASH of each code, through crypto.hashSecret() — the same function and the same stored form as userPassword — so this service can check a code and can never show one again, its owner included. A set written by a build before 2026-09-11 holds the codes themselves and is still accepted, code by code, until its owner generates a new one.",
   "crypto.codes.comparisonOfAHash": "crypto.verifySecret() in constant time against each stored hash in turn, on libuv's thread pool where the door is asynchronous.",
   "crypto.param.codes.comparison": "crypto.constantTimeEquals(), after upper-casing and dropping the spaces and dashes this service itself prints.",
-  "crypto.param.totp.encoding": "RFC 4648 base32, unpadded, as the otpauth Key Uri Format expects."
+  "crypto.param.totp.encoding": "RFC 4648 base32, unpadded, as the otpauth Key Uri Format expects.",
+  "crypto.families.est.algorithms.4.what": "PIV attestation signatures verified"
 }

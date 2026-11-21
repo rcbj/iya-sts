@@ -2298,5 +2298,9 @@
   "audit.actions.xacml.pep.cluster.proxy.clear.label": {
     "en": "c2812e5d21fb6dd4",
     "text": "已移除遠端 PEP 叢集的反向代理設定"
+  },
+  "audit.actions.piv-escrow.recover.label": {
+    "en": "0cad829ec7cafc72",
+    "text": "已復原一把託管的 PIV 金鑰管理金鑰"
   }
 }

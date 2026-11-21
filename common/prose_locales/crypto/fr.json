@@ -1596,12 +1596,12 @@
     "text": "Chaque certificat qu’il délivre, avec la clé de l’Issuing CA EST de ce domaine, via issueEnrolled() de common/pki.js — le même encodeur dont proviennent tous les autres certificats ici. Les messages CMS certs-only qu’il renvoie sont DÉGÉNÉRÉS : un SignedData avec des certificats et sans signataire, de sorte qu’ils ne portent aucune signature propre et sont approuvés pour les certificats qu’ils contiennent."
   },
   "crypto.families.est.verifies": {
-    "en": "d40d37c4bd83de49",
-    "text": "La preuve de possession PKCS#10 — la signature de la requête avec sa propre clé publique, classique et post-quantique, dans common/cert_enrollment.ts — et, pour l’authentification par certificat, le chemin du certificat client jusqu’à l’Intermediate de ce domaine et à la Root du service, la révocation étant consultée. Un modèle /serverkeygen n’est pas vérifié : sa clé est remplacée."
+    "en": "6b27c8877d509c46",
+    "text": "La preuve de possession PKCS#10 — la signature de la demande par sa propre clé publique, classique et post-quantique, dans common/cert_enrollment.ts — et, pour l’authentification par certificat, le chemin du certificat client jusqu’à l’Intermediate de ce domaine et la Root du service, avec consultation de la révocation. Un modèle /serverkeygen n’est pas vérifié : sa clé est remplacée. Une attestation de clé PIV de YubiKey dans la demande (#1955, ici ainsi que via ACME et SCEP) : la signature ECDSA ou RSA du certificat de l’emplacement par le certificat f9, et le chemin du certificat f9 jusqu’aux ancres d’attestation PIV du domaine, par la porte de validation."
   },
   "crypto.families.est.encrypts": {
-    "en": "2f48e10a9ad6494d",
-    "text": "La clé privée d’une paire de clés générée par le serveur, scellée en AES-256-GCM sous la clé de chiffrement de clé sur l’entrée, partout où cette clé survit au processus. Elle n’est PAS chiffrée pour le client (RFC 7030 section 4.4.1.2) : une requête qui le demande est refusée, et la clé ne circule qu’à l’intérieur de TLS."
+    "en": "a18df4311029b728",
+    "text": "La clé privée d’une paire de clés générée par le serveur, scellée en AES-256-GCM sous la clé de chiffrement de clés sur l’entrée, partout où cette clé survit au processus ; une clé piv-key-management séquestrée (#1955) dans tous les modes, ou bien elle n’est pas générée du tout. Elle n’est PAS chiffrée pour le client (RFC 7030 section 4.4.1.2) : une demande qui le réclame est refusée, et la clé ne circule qu’à l’intérieur de TLS."
   },
   "crypto.families.est.decrypts": {
     "en": "8d5c676935439726",
@@ -1906,5 +1906,9 @@
   "crypto.param.totp.encoding": {
     "en": "d9613131364834bc",
     "text": "base32 RFC 4648, sans remplissage, comme l’attend le format otpauth Key Uri."
+  },
+  "crypto.families.est.algorithms.4.what": {
+    "en": "4dd4db2fd60c28f7",
+    "text": "Signatures d’attestation PIV vérifiées"
   }
 }

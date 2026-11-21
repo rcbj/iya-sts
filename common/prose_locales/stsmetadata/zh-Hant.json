@@ -696,8 +696,8 @@
     "text": "minimal：僅 permanent-identifier 識別碼類型，在此指名帳戶自己的目錄項目，並成為其 urn:sts: subjectAltName。未實作 device-attest-01 挑戰與 WebAuthn 證明聲明。"
   },
   "stsmetadata.specs.lamps-csr-attestation.coverage": {
-    "en": "727a26e021b5f20f",
-    "text": "partial：透過 EST 與 SCEP 的裝置設定檔，PKCS#10 請求的 id-aa-attestation 屬性（至多一個，恰好一個 AttestationBundle，僅限憑證與其他選項）；唯一會驗證的聲明類型是 TCG 的 tcg-attest-tpm-certify，採用第 20 版附錄 A.2.3 的語法，此語法未被任何後續版本或 TCG 文件取代（#257）。不讀取 CRMF 擴充（此處沒有 CMP），其他聲明類型只記錄、不驗證。新鮮度（第 6.2 節）透過 EST 上的 draft-ietf-lamps-attestation-freshness 提供。"
+    "en": "59b1734815ece664",
+    "text": "partial：PKCS#10 要求的 id-aa-attestation 屬性（最多一個，恰好一個 AttestationBundle，僅限 certificate 及其他選項），透過 EST、SCEP 與 ACME 提供。驗證兩種聲明類型：TCG 的 tcg-attest-tpm-certify（採用修訂版 20 附錄 A.2.3 的語法），用於裝置設定檔（#257）；以及適用於每個設定檔的 YubiKey PIV 證明（#1955），位於 1.3.6.1.4.1.41482.3.2 之下，以插槽憑證為 stmt、f9 憑證放在 certs 中——這是本服務選定的類型，因為草案未定義任何類型。不讀取 CRMF 延伸（此處沒有 CMP），其他聲明類型只記錄、不驗證。新鮮度（第 6.2 節）透過 EST 上的 draft-ietf-lamps-attestation-freshness 實現，僅適用於 TPM 聲明：PIV 證明不攜帶 nonce。"
   },
   "stsmetadata.specs.lamps-attestation-freshness.coverage": {
     "en": "555e31da7393d476",
@@ -2132,12 +2132,12 @@
     "text": "NON-SPEC (#1955)。目錄 → 硬體權杖所顯示的內容：本領域記錄的實體安全金鑰與智慧卡，每個都依其本身的證明記錄，可分頁並依序號或人員搜尋，並列出每個權杖上的密碼金鑰與憑證。對應 GET /admin/hardware-tokens。"
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-    "en": "1303a5c415b09d44",
-    "text": "NON-SPEC (#1955)。lost，參數 { key }：權杖標示為遺失，移除其上的每個密碼金鑰，以 keyCompromise 撤銷其上的每張憑證，為每一項傳送 CAEP 憑證變更，並結束由它們登入的工作階段。主控台在該頁面上的唯一操作。"
+    "en": "0d649147af0cbe04",
+    "text": "NON-SPEC (#1955)。lost，帶 { key }：將權杖標記為遺失，移除其上的每個密碼金鑰，以 keyCompromise 為由撤銷其上的每張憑證，為每一項傳送 CAEP credential-change，並結束由它們登入的工作階段。enrol-piv，帶 { username, profile, csr, attestationCertificate?, attestationIssuer? }：透過 EST 簽發 CA 為此人簽發 PIV 插槽憑證，驗證其 YubiKey PIV 證明並記錄該 YubiKey。recover-key，帶 { username, serial }：此人的託管 piv-key-management 金鑰，存取控制原則僅允許 PIV_KEY_RECOVERY 執行。即主控台在該頁面上的三項動作。"
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
-    "en": "7b39ad029e0234ed",
-    "text": "回報硬體權杖遺失並停用其憑證"
+    "en": "b55c0cdd477d183e",
+    "text": "回報硬體權杖遺失並停用其憑證、簽發 PIV 插槽憑證，或移交託管金鑰"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -4066,5 +4066,17 @@
   "stsmetadata.param.aParameter": {
     "en": "24ece2f78749cf6a",
     "text": "一個參數"
+  },
+  "stsmetadata.specs.yubico-piv-attestation.coverage": {
+    "en": "244659759ede3102",
+    "text": "partial：插槽證明憑證透過 f9 證明憑證驗證至 Yubico 的 PIV 根憑證（Serial 263751，以及適用於韌體 5.7.4 及更新版本、帶有其 PIV 中繼憑證的 Attestation Root 1，皆隨附並釘選）或某個領域自己的根憑證；其金鑰與要求中的金鑰比對；讀取韌體、序號、PIN 與觸碰原則以及外型規格延伸，並將這些原則與領域的原則比對。卡片本身從不受管理：不寫入 PIN、PUK 或插槽。"
+  },
+  "stsmetadata.specs.fips201.coverage": {
+    "en": "322d92ba9eb36fde",
+    "text": "minimal：四個金鑰插槽作為憑證設定檔（PIV Authentication 9a、Digital Signature 9c、Key Management 9d、Card Authentication 9e，後者預設不為任何人登入），以及在宣告 PIV Authentication 原則時，依其 urn:uuid subjectAltName 中的卡片 UUID 對應的外部 PIV 或 CAC 卡片（預設關閉）。不支援 FASC-N、CHUID、卡片管理或生物辨識。"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/escrowed.what": {
+    "en": "1716521c9c5e119d",
+    "text": "NON-SPEC (#1955)。某人的託管 piv-key-management 憑證（piv.keyEscrow）：序號、主體、有效期間以及每張憑證是否已被撤銷。絕不包含金鑰。與 GET /admin/hardware-tokens 對應。"
   }
 }
