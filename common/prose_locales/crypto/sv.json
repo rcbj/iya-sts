@@ -1676,12 +1676,12 @@
     "text": "Varje certifikat den lämnar ut, med den här sfärens nyckel för EST Issuing CA, genom common/pki.js issueEnrolled() — samma kodare som alla andra certifikat här kommer från. De certs-only-CMS-meddelanden den returnerar är DEGENERERADE: en SignedData med certifikat och ingen signerare, så de bär ingen egen signatur och litas på för certifikaten de innehåller."
   },
   "crypto.families.est.verifies": {
-    "en": "d40d37c4bd83de49",
-    "text": "PKCS#10-innehavsbeviset — begärans signatur med dess egen publika nyckel, klassisk och postkvant, i common/cert_enrollment.ts — och, för certifikatautentisering, klientcertifikatets kedja till den här sfärens Intermediate och tjänstens Root med återkallelse kontrollerad. En /serverkeygen-mall verifieras inte: dess nyckel ersätts."
+    "en": "6b27c8877d509c46",
+    "text": "PKCS#10-beviset på innehav – begärans signatur med dess egen publika nyckel, klassisk och postkvant, i common/cert_enrollment.ts – och, för certifikatautentisering, klientcertifikatets sökväg till den här sfärens Intermediate och tjänstens Root, med återkallelse kontrollerad. En /serverkeygen-mall verifieras inte: dess nyckel ersätts. En YubiKey-PIV-nyckelattestering i begäran (#1955, här och över ACME och SCEP): platscertifikatets ECDSA- eller RSA-signatur av f9-certifikatet, och f9-certifikatets sökväg till sfärens PIV-attesteringsankare, genom valideringsdörren."
   },
   "crypto.families.est.encrypts": {
-    "en": "2f48e10a9ad6494d",
-    "text": "Den privata nyckeln i ett servergenererat nyckelpar, förseglad med AES-256-GCM under nyckelkrypteringsnyckeln på posten, varhelst den nyckeln överlever processen. Den krypteras INTE till klienten (RFC 7030 avsnitt 4.4.1.2): en begäran som ber om det avvisas, och nyckeln färdas endast inuti TLS."
+    "en": "a18df4311029b728",
+    "text": "Den privata nyckeln i ett servergenererat nyckelpar, förseglad med AES-256-GCM under nyckelkrypteringsnyckeln på posten, varhelst den nyckeln överlever processen; en deponerad piv-key-management-nyckel (#1955) i alla lägen, eller så genereras den inte alls. Den krypteras INTE till klienten (RFC 7030 avsnitt 4.4.1.2): en begäran som ber om det avvisas, och nyckeln färdas bara inuti TLS."
   },
   "crypto.families.est.decrypts": {
     "en": "8d5c676935439726",
@@ -1986,5 +1986,9 @@
   "crypto.param.totp.encoding": {
     "en": "d9613131364834bc",
     "text": "RFC 4648 base32, utan utfyllnad, som otpauth Key Uri Format förväntar sig."
+  },
+  "crypto.families.est.algorithms.4.what": {
+    "en": "4dd4db2fd60c28f7",
+    "text": "Verifierade PIV-attesteringssignaturer"
   }
 }

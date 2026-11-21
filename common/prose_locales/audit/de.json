@@ -2326,5 +2326,9 @@
   "audit.actions.xacml.pep.cluster.proxy.clear.label": {
     "en": "c2812e5d21fb6dd4",
     "text": "Die Reverse-Proxy-Konfiguration eines Clusters entfernter PEPs wurde entfernt"
+  },
+  "audit.actions.piv-escrow.recover.label": {
+    "en": "0cad829ec7cafc72",
+    "text": "Ein hinterlegter PIV-Key-Management-Schlüssel wurde wiederhergestellt"
   }
 }

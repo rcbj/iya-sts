@@ -39,6 +39,7 @@ Every answer is checked against the model shown here before it is sent, and no a
 | [Custom claims](admin-api-custom-claims.html) | 9 | What to add to every access token and ID Token issued from now on. The assertions are next door, under Custom SAML attributes. |
 | [Delegation](admin-api-delegation.html) | 17 |  |
 | [Devices](admin-api-devices.html) | 11 |  |
+| [Directory](admin-api-directory.html) | 22 |  |
 | [Directory](admin-api-directory.html) | 27 |  |
 | [EST](admin-api-est.html) | 6 |  |
 | [Federation](admin-api-federation.html) | 24 |  |

@@ -360,6 +360,37 @@ const PURPOSES: Purpose[] = [
     leaf: leaf(SIGNS, [EKU.pkinitClientAuth, EKU.msSmartCardLogon], true),
     selfSigned: 'refuse', validity: 'now', revocation: 'required',
     exemptions: [], baseline: 'caller-path', code: 'STS-PKI-0254', phase: 5 },
+  // #1955 P2. The leaf is the slot's attestation certificate, which certifies
+  // the attested key and signs nothing — a 9d key-management key cannot —
+  // so no keyUsage is asked of it; the f9 certificate above it is a CA.
+  { id: 'piv-attestation', setting: 'pki.paranoidPivAttestation',
+    title: 'A YubiKey PIV key attestation chain',
+    covers: 'The slot attestation certificate and the f9 attestation ' +
+      'certificate a PIV enrolment carries, in a request\'s id-aa-attestation ' +
+      'attribute or on the enrolment form.',
+    adds: 'The validity window at now; the path to the realm\'s PIV ' +
+      'attestation anchors (Yubico\'s roots by default) through the shipped ' +
+      'intermediates; revocation where the chain names a list.',
+    sites: ['common/piv_attestation.ts verify'],
+    anchors: ['caller'],
+    leaf: leaf([]),
+    selfSigned: 'refuse', validity: 'now', revocation: 'required',
+    exemptions: [], baseline: 'caller-path', code: 'STS-PIV-0002',
+    phase: 5 },
+  // #1955 P2, D8: an outside PIV or CAC card's certificate, held to the
+  // issuing CAs a realm listed for mapping by its FIPS 201 card UUID.
+  { id: 'piv-card', setting: 'pki.paranoidPivCard',
+    title: 'An outside PIV or CAC card\'s certificate mapped by its card UUID',
+    covers: 'A client certificate from an issuing CA in piv.externalIssuers, ' +
+      'mapped to the person whose stsPivCardUuid is its urn:uuid ' +
+      'subjectAltName.',
+    adds: 'keyUsage digitalSignature on the leaf and the validity window, ' +
+      'beside the handshake\'s own checks.',
+    sites: ['common/piv_attestation.ts cardIdentityOf'],
+    anchors: ['caller'],
+    leaf: leaf(SIGNS),
+    selfSigned: 'refuse', validity: 'now', revocation: 'required',
+    exemptions: [], baseline: 'direct', code: 'STS-PIV-0003', phase: 5 },
   { id: 'enrollment-credential', setting: 'pki.paranoidEnrollmentCredential',
     title: 'A certificate presented to enroll or renew',
     covers: 'The client certificate an EST request presents, and the signer ' +

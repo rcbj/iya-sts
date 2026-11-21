@@ -3132,10 +3132,17 @@ class CryptoMetadata {
                   'certificate authentication, the client certificate\'s ' +
                   'path to this realm\'s Intermediate and the service Root ' +
                   'with revocation consulted. A /serverkeygen template is ' +
-                  'not verified: its key is replaced.',
+                  'not verified: its key is replaced. A YubiKey PIV key ' +
+                  'attestation in the request (#1955, here and over ACME ' +
+                  'and SCEP): the slot certificate\'s ECDSA or RSA ' +
+                  'signature by the f9 certificate, and the f9 ' +
+                  'certificate\'s path to the realm\'s PIV attestation ' +
+                  'anchors, through the validation door.',
         encrypts: 'The private key of a server-generated key pair, sealed ' +
                   'with AES-256-GCM under the key-encryption key onto the ' +
-                  'entry, wherever that key outlives the process. It is NOT ' +
+                  'entry, wherever that key outlives the process; an ' +
+                  'escrowed piv-key-management key (#1955) in every mode, ' +
+                  'or not generated at all. It is NOT ' +
                   'encrypted to the client (RFC 7030 section 4.4.1.2): a ' +
                   'request asking for that is refused, and the key travels ' +
                   'inside TLS only.',
@@ -3164,7 +3171,11 @@ class CryptoMetadata {
              })],
             ['Server-generated key algorithms', keys.keyAlgIds()],
             ['Private key container', ['PKCS#8 (RFC 5958), base64']],
-            ['Certificate container', ['CMS SignedData, certs-only (RFC 5652)']]
+            ['Certificate container', ['CMS SignedData, certs-only (RFC 5652)']],
+            // #1955 P2: what a YubiKey signs its PIV attestations with, per
+            // Yubico's PIV attestation page (the f9 key's own algorithm).
+            ['PIV attestation signatures verified',
+             ['ECDSA with SHA-256', 'RSASSA-PKCS1-v1_5 with SHA-256']]
           ];
         } },
       // ===== SCEP family (scep/) ===== SCEP (RFC 8894, 2026-09-13). Every

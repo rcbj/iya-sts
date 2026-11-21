@@ -1221,7 +1221,8 @@ the file the row names.
 | ~~Deactivate anybody on SCIM `active: false`~~ — reversed 2026-09-17 | `scim/CLAUDE.md`, `common/CLAUDE.md` (3at), `authn/CLAUDE.md` |
 | ~~Attest a workload or a node~~ — reversed 2026-09-21 (#40); a TCP caller still is not (#166) | `spiffe/CLAUDE.md` |
 | Revoke a SPIFFE credential — the directory records who may still be ISSUED one | `spiffe/CLAUDE.md`, `ldap/CLAUDE.md` |
-| Match a client certificate from an outside CA by its common name or subject, or create an entry for one — it is the one entry storing it in `userCertificate` (#1061) | `common/CLAUDE.md` (3ag), `tls/CLAUDE.md`, `ldap/CLAUDE.md` |
+| Match a client certificate from an outside CA by its common name or subject, or create an entry for one — it is the one entry storing it in `userCertificate` (#1061), or, for an outside PIV or CAC card from a configured `piv.externalIssuers` CA, the one person whose `stsPivCardUuid` holds its FIPS 201 card UUID (#1955 D8, rcbj 2026-11-20; off by default) | `common/CLAUDE.md` (3ag), `tls/CLAUDE.md`, `ldap/CLAUDE.md` |
+| Issue a PIV slot certificate as hardware-bound without a verified YubiKey PIV attestation, or let a `piv-card-auth` (9e) certificate sign in by default (#1955 P2) | `common/CLAUDE.md` (`piv_attestation.ts`) |
 | Let a group grant anything BY BEING A GROUP | `admin-ui/CLAUDE.md`, `common/CLAUDE.md` |
 | Let an authenticator app be a FIRST factor | `common/CLAUDE.md` |
 | ~~Issue a set of recovery codes on request~~ — reversed 2026-09-11 | `common/CLAUDE.md`, `portal/CLAUDE.md` |

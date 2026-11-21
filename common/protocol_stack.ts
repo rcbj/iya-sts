@@ -340,6 +340,13 @@ class ProtocolStack {
     // moment of use.
     this.build('common/hardware_tokens', require('./hardware_tokens'),
                'HardwareTokens');
+    // #1955 P2: YubiKey PIV key attestation, the PIV slot profiles' rules
+    // and the outside PIV card mapping. A library (rule 3) of libraries; the
+    // register and enrolment it calls back are reached at the moment of use.
+    this.build('common/piv_attestation', require('./piv_attestation'),
+               'PivAttestation');
+    this.build('common/piv_enrolment', require('./piv_enrolment'),
+               'PivEnrolment');
     // #1955 P6: a person's OpenPGP key, its Web Key Directory publication
     // and their mail encryption choice. Built beside the token register,
     // whose `openpgp` retirer it installs when it is installed (so after

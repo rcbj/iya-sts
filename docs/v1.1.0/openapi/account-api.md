@@ -1392,7 +1392,7 @@ Scope: `account:manage`.
 | `action` | empty, or one of `create-eab`, `delete-eab`, `create-challenge`, `delete-challenge`, `revoke` |  | What to do. |
 | `id` | string |  | The challenge password to delete. |
 | `kid` | string |  | The account binding key to delete. |
-| `profile` | empty, or one of `tls-server`, `tls-client`, `tls-server-client`, `digital-signature`, `key-encipherment`, `code-signing`, `email`, `timestamping`, `smartcard-logon`, `device` |  | The profile a new SCEP challenge is for. |
+| `profile` | empty, or one of `tls-server`, `tls-client`, `tls-server-client`, `digital-signature`, `key-encipherment`, `code-signing`, `email`, `timestamping`, `smartcard-logon`, `piv-auth`, `piv-sign`, `piv-key-management`, `piv-card-auth`, `device` |  | The profile a new SCEP challenge is for. |
 | `reason` | empty, or one of `unspecified`, `keyCompromise`, `affiliationChanged`, `superseded`, `cessationOfOperation` |  | The RFC 5280 reason for a revocation. |
 | `serial` | string |  | The serial of the certificate to revoke. |
 
@@ -9869,6 +9869,32 @@ Scope: `account:manage`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
+| `escrowed` | list | yes | The caller's escrowed piv-key-management certificates (#1955 P2), newest first; never a key. |
+| `escrowed[].issuedAt` | string | yes |  |
+| `escrowed[].notAfter` | string | yes |  |
+| `escrowed[].profile` | string | yes |  |
+| `escrowed[].revoked` | boolean | yes | Whether the certificate was revoked; its escrowed key is still recoverable. |
+| `escrowed[].serialHex` | string | yes | The certificate's serial, lower-case hex: what `recover-key` and `attach-key` name. |
+| `escrowed[].subject` | string | yes |  |
+| `issued` | object |  | `enrol-piv`'s answer only: the certificate issued, drawn once. |
+| `issued.attested` | boolean | yes | Whether a YubiKey PIV attestation of the key verified. |
+| `issued.certificatePem` | string | yes | The certificate, PEM: import it with ykman piv certificates import. |
+| `issued.chainPem` | list | yes | The issuing chain, PEM, nearest first. |
+| `issued.chainPem[]` | string |  |  |
+| `issued.profile` | string | yes |  |
+| `issued.serialHex` | string | yes | The issued certificate's serial, lower-case hex. |
+| `issued.token` | string | yes | The hardware token it was recorded on, `<vendor>/<serial>`, or empty. |
+| `piv` | object | yes | What the PIV enrolment form may issue here. |
+| `piv.keyEscrow` | boolean | yes | Whether piv-key-management keys may be escrowed (piv.keyEscrow). |
+| `piv.profiles` | list | yes | The PIV slot profiles this realm's EST may issue (est.allowedProfiles). |
+| `piv.profiles[]` | string |  |  |
+| `piv.requireAttestation` | boolean | yes | Whether a PIV profile needs a YubiKey PIV attestation (piv.requireAttestation). |
+| `recovered` | object |  | `recover-key`'s answer only: the escrowed key and its certificate, drawn once. |
+| `recovered.certificatePem` | string | yes |  |
+| `recovered.chainPem` | list | yes |  |
+| `recovered.chainPem[]` | string |  |  |
+| `recovered.privateKeyPem` | string | yes | The escrowed private key, PEM. Sent with Cache-Control: no-store; keep it as you would the card. |
+| `recovered.serialHex` | string | yes |  |
 | `tokens` | list | yes | Every token the caller holds or has a credential on, newest first. |
 | `tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
 | `tokens[].credentials` | list | yes | The caller's own credentials on it. |
@@ -9919,9 +9945,9 @@ Scope: `account:manage`.
 
 `actOnTokens`
 
-**Reports one of your hardware tokens lost**
+**Reports one of your hardware tokens lost, enrols a PIV certificate, or recovers an escrowed key**
 
-`lost` marks the token lost and retires every credential of yours on it: its passkeys are removed, its certificates revoked (keyCompromise), a CAEP credential-change is sent for each, and the sign-on sessions they signed in end. It asks for a recent sign-in. A refusal carries the page's `view`.
+`lost` marks the token lost and retires every credential of yours on it: its passkeys are removed, its certificates revoked (keyCompromise), a CAEP credential-change is sent for each, and the sign-on sessions they signed in end. `enrol-piv` issues you a PIV slot certificate (`profile`) from a certificate request (`csr`) and, optionally, its YubiKey PIV attestation: the slot's attestation certificate (`attestationCertificate`) and the f9 attestation certificate (`attestationIssuer`). `recover-key` answers your escrowed piv-key-management key for certificate `serial`. `attach-key` notes which of your tokens (`key`) the escrowed key of certificate `serial` was loaded on, so reporting the token lost revokes it. Each asks for a recent sign-in. A refusal carries the page's `view`.
 
 The door of the portal's `POST /portal/tokens`.
 
@@ -9938,8 +9964,13 @@ Scope: `account:manage`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `action` | empty, or one of `lost` |  | What to do; `lost` where none is named. |
-| `key` | string |  | `lost`: the token's key, `<vendor>/<serial>`. |
+| `action` | empty, or one of `lost`, or one of `enrol-piv`, or one of `recover-key`, or one of `attach-key` |  | What to do; `lost` where none is named. |
+| `attestationCertificate` | string |  | `enrol-piv`: the slot's attestation certificate, PEM (ykman piv keys attest). |
+| `attestationIssuer` | string |  | `enrol-piv`: the f9 attestation certificate, PEM (ykman piv certificates export f9), and any intermediate after it. |
+| `csr` | string |  | `enrol-piv`: the PKCS#10 certificate request, PEM. |
+| `key` | string |  | `lost` and `attach-key`: the token's key, `<vendor>/<serial>`. |
+| `profile` | string |  | `enrol-piv`: piv-auth, piv-sign, piv-key-management or piv-card-auth. |
+| `serial` | string |  | `recover-key` and `attach-key`: the escrowed certificate's serial, hex. |
 
 **200**: The answer.
 
@@ -9948,6 +9979,32 @@ Scope: `account:manage`.
 | `message` | string | yes |  |
 | `ok` | boolean | yes |  |
 | `view` | object | yes |  |
+| `view.escrowed` | list | yes | The caller's escrowed piv-key-management certificates (#1955 P2), newest first; never a key. |
+| `view.escrowed[].issuedAt` | string | yes |  |
+| `view.escrowed[].notAfter` | string | yes |  |
+| `view.escrowed[].profile` | string | yes |  |
+| `view.escrowed[].revoked` | boolean | yes | Whether the certificate was revoked; its escrowed key is still recoverable. |
+| `view.escrowed[].serialHex` | string | yes | The certificate's serial, lower-case hex: what `recover-key` and `attach-key` name. |
+| `view.escrowed[].subject` | string | yes |  |
+| `view.issued` | object |  | `enrol-piv`'s answer only: the certificate issued, drawn once. |
+| `view.issued.attested` | boolean | yes | Whether a YubiKey PIV attestation of the key verified. |
+| `view.issued.certificatePem` | string | yes | The certificate, PEM: import it with ykman piv certificates import. |
+| `view.issued.chainPem` | list | yes | The issuing chain, PEM, nearest first. |
+| `view.issued.chainPem[]` | string |  |  |
+| `view.issued.profile` | string | yes |  |
+| `view.issued.serialHex` | string | yes | The issued certificate's serial, lower-case hex. |
+| `view.issued.token` | string | yes | The hardware token it was recorded on, `<vendor>/<serial>`, or empty. |
+| `view.piv` | object | yes | What the PIV enrolment form may issue here. |
+| `view.piv.keyEscrow` | boolean | yes | Whether piv-key-management keys may be escrowed (piv.keyEscrow). |
+| `view.piv.profiles` | list | yes | The PIV slot profiles this realm's EST may issue (est.allowedProfiles). |
+| `view.piv.profiles[]` | string |  |  |
+| `view.piv.requireAttestation` | boolean | yes | Whether a PIV profile needs a YubiKey PIV attestation (piv.requireAttestation). |
+| `view.recovered` | object |  | `recover-key`'s answer only: the escrowed key and its certificate, drawn once. |
+| `view.recovered.certificatePem` | string | yes |  |
+| `view.recovered.chainPem` | list | yes |  |
+| `view.recovered.chainPem[]` | string |  |  |
+| `view.recovered.privateKeyPem` | string | yes | The escrowed private key, PEM. Sent with Cache-Control: no-store; keep it as you would the card. |
+| `view.recovered.serialHex` | string | yes |  |
 | `view.tokens` | list | yes | Every token the caller holds or has a credential on, newest first. |
 | `view.tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
 | `view.tokens[].credentials` | list | yes | The caller's own credentials on it. |
@@ -9973,6 +10030,32 @@ Scope: `account:manage`.
 | `errors[]` | string |  |  |
 | `ok` | boolean | yes |  |
 | `view` | object |  |  |
+| `view.escrowed` | list | yes | The caller's escrowed piv-key-management certificates (#1955 P2), newest first; never a key. |
+| `view.escrowed[].issuedAt` | string | yes |  |
+| `view.escrowed[].notAfter` | string | yes |  |
+| `view.escrowed[].profile` | string | yes |  |
+| `view.escrowed[].revoked` | boolean | yes | Whether the certificate was revoked; its escrowed key is still recoverable. |
+| `view.escrowed[].serialHex` | string | yes | The certificate's serial, lower-case hex: what `recover-key` and `attach-key` name. |
+| `view.escrowed[].subject` | string | yes |  |
+| `view.issued` | object |  | `enrol-piv`'s answer only: the certificate issued, drawn once. |
+| `view.issued.attested` | boolean | yes | Whether a YubiKey PIV attestation of the key verified. |
+| `view.issued.certificatePem` | string | yes | The certificate, PEM: import it with ykman piv certificates import. |
+| `view.issued.chainPem` | list | yes | The issuing chain, PEM, nearest first. |
+| `view.issued.chainPem[]` | string |  |  |
+| `view.issued.profile` | string | yes |  |
+| `view.issued.serialHex` | string | yes | The issued certificate's serial, lower-case hex. |
+| `view.issued.token` | string | yes | The hardware token it was recorded on, `<vendor>/<serial>`, or empty. |
+| `view.piv` | object | yes | What the PIV enrolment form may issue here. |
+| `view.piv.keyEscrow` | boolean | yes | Whether piv-key-management keys may be escrowed (piv.keyEscrow). |
+| `view.piv.profiles` | list | yes | The PIV slot profiles this realm's EST may issue (est.allowedProfiles). |
+| `view.piv.profiles[]` | string |  |  |
+| `view.piv.requireAttestation` | boolean | yes | Whether a PIV profile needs a YubiKey PIV attestation (piv.requireAttestation). |
+| `view.recovered` | object |  | `recover-key`'s answer only: the escrowed key and its certificate, drawn once. |
+| `view.recovered.certificatePem` | string | yes |  |
+| `view.recovered.chainPem` | list | yes |  |
+| `view.recovered.chainPem[]` | string |  |  |
+| `view.recovered.privateKeyPem` | string | yes | The escrowed private key, PEM. Sent with Cache-Control: no-store; keep it as you would the card. |
+| `view.recovered.serialHex` | string | yes |  |
 | `view.tokens` | list | yes | Every token the caller holds or has a credential on, newest first. |
 | `view.tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
 | `view.tokens[].credentials` | list | yes | The caller's own credentials on it. |
@@ -10018,6 +10101,32 @@ Scope: `account:manage`.
 | `errors[]` | string |  |  |
 | `ok` | boolean | yes |  |
 | `view` | object |  |  |
+| `view.escrowed` | list | yes | The caller's escrowed piv-key-management certificates (#1955 P2), newest first; never a key. |
+| `view.escrowed[].issuedAt` | string | yes |  |
+| `view.escrowed[].notAfter` | string | yes |  |
+| `view.escrowed[].profile` | string | yes |  |
+| `view.escrowed[].revoked` | boolean | yes | Whether the certificate was revoked; its escrowed key is still recoverable. |
+| `view.escrowed[].serialHex` | string | yes | The certificate's serial, lower-case hex: what `recover-key` and `attach-key` name. |
+| `view.escrowed[].subject` | string | yes |  |
+| `view.issued` | object |  | `enrol-piv`'s answer only: the certificate issued, drawn once. |
+| `view.issued.attested` | boolean | yes | Whether a YubiKey PIV attestation of the key verified. |
+| `view.issued.certificatePem` | string | yes | The certificate, PEM: import it with ykman piv certificates import. |
+| `view.issued.chainPem` | list | yes | The issuing chain, PEM, nearest first. |
+| `view.issued.chainPem[]` | string |  |  |
+| `view.issued.profile` | string | yes |  |
+| `view.issued.serialHex` | string | yes | The issued certificate's serial, lower-case hex. |
+| `view.issued.token` | string | yes | The hardware token it was recorded on, `<vendor>/<serial>`, or empty. |
+| `view.piv` | object | yes | What the PIV enrolment form may issue here. |
+| `view.piv.keyEscrow` | boolean | yes | Whether piv-key-management keys may be escrowed (piv.keyEscrow). |
+| `view.piv.profiles` | list | yes | The PIV slot profiles this realm's EST may issue (est.allowedProfiles). |
+| `view.piv.profiles[]` | string |  |  |
+| `view.piv.requireAttestation` | boolean | yes | Whether a PIV profile needs a YubiKey PIV attestation (piv.requireAttestation). |
+| `view.recovered` | object |  | `recover-key`'s answer only: the escrowed key and its certificate, drawn once. |
+| `view.recovered.certificatePem` | string | yes |  |
+| `view.recovered.chainPem` | list | yes |  |
+| `view.recovered.chainPem[]` | string |  |  |
+| `view.recovered.privateKeyPem` | string | yes | The escrowed private key, PEM. Sent with Cache-Control: no-store; keep it as you would the card. |
+| `view.recovered.serialHex` | string | yes |  |
 | `view.tokens` | list | yes | Every token the caller holds or has a credential on, newest first. |
 | `view.tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
 | `view.tokens[].credentials` | list | yes | The caller's own credentials on it. |
@@ -10034,7 +10143,7 @@ Scope: `account:manage`.
 | `view.tokens[].status` | string | yes | `active` or `lost`. |
 | `view.tokens[].vendor` | string | yes |  |
 
-**409**: The token was already reported lost.
+**409**: The token was already reported lost, or the person already holds as many certificates as the realm allows.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
@@ -10043,6 +10152,83 @@ Scope: `account:manage`.
 | `errors[]` | string |  |  |
 | `ok` | boolean | yes |  |
 | `view` | object |  |  |
+| `view.escrowed` | list | yes | The caller's escrowed piv-key-management certificates (#1955 P2), newest first; never a key. |
+| `view.escrowed[].issuedAt` | string | yes |  |
+| `view.escrowed[].notAfter` | string | yes |  |
+| `view.escrowed[].profile` | string | yes |  |
+| `view.escrowed[].revoked` | boolean | yes | Whether the certificate was revoked; its escrowed key is still recoverable. |
+| `view.escrowed[].serialHex` | string | yes | The certificate's serial, lower-case hex: what `recover-key` and `attach-key` name. |
+| `view.escrowed[].subject` | string | yes |  |
+| `view.issued` | object |  | `enrol-piv`'s answer only: the certificate issued, drawn once. |
+| `view.issued.attested` | boolean | yes | Whether a YubiKey PIV attestation of the key verified. |
+| `view.issued.certificatePem` | string | yes | The certificate, PEM: import it with ykman piv certificates import. |
+| `view.issued.chainPem` | list | yes | The issuing chain, PEM, nearest first. |
+| `view.issued.chainPem[]` | string |  |  |
+| `view.issued.profile` | string | yes |  |
+| `view.issued.serialHex` | string | yes | The issued certificate's serial, lower-case hex. |
+| `view.issued.token` | string | yes | The hardware token it was recorded on, `<vendor>/<serial>`, or empty. |
+| `view.piv` | object | yes | What the PIV enrolment form may issue here. |
+| `view.piv.keyEscrow` | boolean | yes | Whether piv-key-management keys may be escrowed (piv.keyEscrow). |
+| `view.piv.profiles` | list | yes | The PIV slot profiles this realm's EST may issue (est.allowedProfiles). |
+| `view.piv.profiles[]` | string |  |  |
+| `view.piv.requireAttestation` | boolean | yes | Whether a PIV profile needs a YubiKey PIV attestation (piv.requireAttestation). |
+| `view.recovered` | object |  | `recover-key`'s answer only: the escrowed key and its certificate, drawn once. |
+| `view.recovered.certificatePem` | string | yes |  |
+| `view.recovered.chainPem` | list | yes |  |
+| `view.recovered.chainPem[]` | string |  |  |
+| `view.recovered.privateKeyPem` | string | yes | The escrowed private key, PEM. Sent with Cache-Control: no-store; keep it as you would the card. |
+| `view.recovered.serialHex` | string | yes |  |
+| `view.tokens` | list | yes | Every token the caller holds or has a credential on, newest first. |
+| `view.tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
+| `view.tokens[].credentials` | list | yes | The caller's own credentials on it. |
+| `view.tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
+| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido` or `x509` (later `hotp`, `yubico-otp`, `ssh`, `openpgp`). |
+| `view.tokens[].credentials[].label` | string | yes | Its name, where it has one. |
+| `view.tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
+| `view.tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |
+| `view.tokens[].key` | string | yes | The token's register key, `<vendor>/<serial>`: what `actOnTokens` names. |
+| `view.tokens[].lostAt` | string | yes | When it was reported lost, or empty. |
+| `view.tokens[].model` | string | yes |  |
+| `view.tokens[].registeredAt` | string | yes |  |
+| `view.tokens[].serial` | string | yes | The serial its attestation named. |
+| `view.tokens[].status` | string | yes | `active` or `lost`. |
+| `view.tokens[].vendor` | string | yes |  |
+
+**503**: The certificate could not be issued or recorded, or an escrowed key could not be opened.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `errors` | list | yes |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean | yes |  |
+| `view` | object |  |  |
+| `view.escrowed` | list | yes | The caller's escrowed piv-key-management certificates (#1955 P2), newest first; never a key. |
+| `view.escrowed[].issuedAt` | string | yes |  |
+| `view.escrowed[].notAfter` | string | yes |  |
+| `view.escrowed[].profile` | string | yes |  |
+| `view.escrowed[].revoked` | boolean | yes | Whether the certificate was revoked; its escrowed key is still recoverable. |
+| `view.escrowed[].serialHex` | string | yes | The certificate's serial, lower-case hex: what `recover-key` and `attach-key` name. |
+| `view.escrowed[].subject` | string | yes |  |
+| `view.issued` | object |  | `enrol-piv`'s answer only: the certificate issued, drawn once. |
+| `view.issued.attested` | boolean | yes | Whether a YubiKey PIV attestation of the key verified. |
+| `view.issued.certificatePem` | string | yes | The certificate, PEM: import it with ykman piv certificates import. |
+| `view.issued.chainPem` | list | yes | The issuing chain, PEM, nearest first. |
+| `view.issued.chainPem[]` | string |  |  |
+| `view.issued.profile` | string | yes |  |
+| `view.issued.serialHex` | string | yes | The issued certificate's serial, lower-case hex. |
+| `view.issued.token` | string | yes | The hardware token it was recorded on, `<vendor>/<serial>`, or empty. |
+| `view.piv` | object | yes | What the PIV enrolment form may issue here. |
+| `view.piv.keyEscrow` | boolean | yes | Whether piv-key-management keys may be escrowed (piv.keyEscrow). |
+| `view.piv.profiles` | list | yes | The PIV slot profiles this realm's EST may issue (est.allowedProfiles). |
+| `view.piv.profiles[]` | string |  |  |
+| `view.piv.requireAttestation` | boolean | yes | Whether a PIV profile needs a YubiKey PIV attestation (piv.requireAttestation). |
+| `view.recovered` | object |  | `recover-key`'s answer only: the escrowed key and its certificate, drawn once. |
+| `view.recovered.certificatePem` | string | yes |  |
+| `view.recovered.chainPem` | list | yes |  |
+| `view.recovered.chainPem[]` | string |  |  |
+| `view.recovered.privateKeyPem` | string | yes | The escrowed private key, PEM. Sent with Cache-Control: no-store; keep it as you would the card. |
+| `view.recovered.serialHex` | string | yes |  |
 | `view.tokens` | list | yes | Every token the caller holds or has a credential on, newest first. |
 | `view.tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
 | `view.tokens[].credentials` | list | yes | The caller's own credentials on it. |

@@ -344,7 +344,7 @@ const PROTOCOL_TABS: Record<string, string[]> = {
   '/admin/applications': ['applications', 'add', 'settings'],
   '/admin/devices': ['devices', 'register'],
   // #1955 P1: the register's one list.
-  '/admin/hardware-tokens': ['tokens'],
+  '/admin/hardware-tokens': ['tokens', 'enrol', 'escrow'],
   // #1955 P6: the person, the registration, the directory.
   '/admin/openpgp': ['person', 'register', 'directory'],
   '/admin/attribute-sources': ['sources', 'add', 'person', 'settings'],

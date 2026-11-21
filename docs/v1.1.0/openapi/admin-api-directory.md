@@ -952,6 +952,13 @@ Scope: `admin:read`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `capped` | boolean | yes |  |
+| `escrowed` | list | yes | The escrowed piv-key-management certificates of the person `q` names; empty for a serial, nobody, or no search. |
+| `escrowed[].issuedAt` | string | yes |  |
+| `escrowed[].notAfter` | string | yes |  |
+| `escrowed[].profile` | string | yes |  |
+| `escrowed[].revoked` | boolean | yes | Whether the certificate was revoked; its escrowed key is still recoverable. |
+| `escrowed[].serialHex` | string | yes | The certificate's serial, lower-case hex: what `recoverEscrowedPivKey` names. |
+| `escrowed[].subject` | string | yes |  |
 | `paging` | object | yes |  |
 | `paging.firstRow` | integer |  |  |
 | `paging.lastRow` | integer |  |  |
@@ -961,6 +968,11 @@ Scope: `admin:read`.
 | `paging.param` | string |  |  |
 | `paging.perPage` | integer |  |  |
 | `paging.total` | integer |  |  |
+| `piv` | object | yes | What the PIV enrolment form may issue here (#1955 P2). |
+| `piv.keyEscrow` | boolean | yes | Whether piv-key-management keys may be escrowed (piv.keyEscrow). |
+| `piv.profiles` | list | yes | The PIV slot profiles this realm's EST may issue (est.allowedProfiles). |
+| `piv.profiles[]` | string |  |  |
+| `piv.requireAttestation` | boolean | yes | Whether a PIV profile needs a YubiKey PIV attestation (piv.requireAttestation). |
 | `q` | string | yes |  |
 | `status` | string | yes |  |
 | `tokens` | list | yes |  |
@@ -988,6 +1000,122 @@ Scope: `admin:read`.
 | `tokens[].status` | string | yes | `active` or `lost`. |
 | `tokens[].updatedAt` | string | yes |  |
 | `tokens[].vendor` | string | yes |  |
+
+## POST /admin-api/hardware-tokens/enrol-piv
+
+`enrolPivCertificate`
+
+**Issue a PIV slot certificate to a person (#1955)**
+
+The console's PIV enrolment form, for a machine: issues `username` a certificate under one of the four PIV slot profiles (`piv-auth` 9a, `piv-sign` 9c, `piv-key-management` 9d, `piv-card-auth` 9e) from a PKCS#10 request (`csr`, PEM) over the EST Issuing CA, held to `est.allowedProfiles`. With the key's YubiKey PIV attestation — the slot's attestation certificate (`attestationCertificate`) and the f9 attestation certificate (`attestationIssuer`), PEM — the attestation is verified against the realm's PIV attestation anchors and its PIN and touch policy, the YubiKey is recorded among the realm's hardware tokens, and the certificate earns hwk and sc at sign-in. An attestation that does not verify is refused. `piv.requireAttestation` refuses a request without one.
+
+**Mirrors** `POST /admin/hardware-tokens` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `attestationCertificate` | string |  | The slot's attestation certificate, PEM (ykman piv keys attest). |
+| `attestationIssuer` | string |  | The f9 attestation certificate, PEM (ykman piv certificates export f9), and any intermediate after it. |
+| `csr` | string | yes | The PKCS#10 certificate request, PEM. |
+| `profile` | string | yes | piv-auth, piv-sign, piv-key-management or piv-card-auth. |
+| `username` | string | yes | The person the certificate is for. |
+
+**200**: The certificate issued.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `attested` | boolean | yes | Whether a YubiKey PIV attestation of the key verified. |
+| `certificatePem` | string | yes |  |
+| `chainPem` | list | yes |  |
+| `chainPem[]` | string |  |  |
+| `message` | string | yes |  |
+| `ok` | boolean | yes |  |
+| `profile` | string | yes |  |
+| `serialHex` | string | yes | The issued certificate's serial, lower-case hex. |
+| `token` | string | yes | The hardware token the certificate was recorded on, or empty. |
+
+**400**: The request, the profile or the attestation was refused; `errors` says why and nothing was issued.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**404**: No such person in this realm.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**409**: The person already holds as many enrolled certificates as the realm allows.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**503**: The certificate could not be issued or recorded.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+## GET /admin-api/hardware-tokens/escrowed
+
+`getEscrowedPivKeys`
+
+**A person's escrowed PIV key-management certificates (#1955)**
+
+The piv-key-management certificates of `username` whose keys this service generated and keeps in escrow (piv.keyEscrow): serial, subject, validity and whether each was revoked. Never a key; recovering one is `recoverEscrowedPivKey`.
+
+**Mirrors** `GET /admin/hardware-tokens` on the admin console.
+
+Scope: `admin:read`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `username` | query | string | yes | The person whose escrowed certificates to list. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**200**: The escrowed certificates.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `escrowed` | list | yes |  |
+| `escrowed[].issuedAt` | string | yes |  |
+| `escrowed[].notAfter` | string | yes |  |
+| `escrowed[].profile` | string | yes |  |
+| `escrowed[].revoked` | boolean | yes | Whether the certificate was revoked; its escrowed key is still recoverable. |
+| `escrowed[].serialHex` | string | yes | The certificate's serial, lower-case hex: what `recoverEscrowedPivKey` names. |
+| `escrowed[].subject` | string | yes |  |
+| `username` | string | yes |  |
 
 ## POST /admin-api/hardware-tokens/lost
 
@@ -1090,6 +1218,15 @@ Scope: `admin:write`.
 | `errors[]` | string |  |  |
 | `ok` | boolean |  |  |
 
+## POST /admin-api/hardware-tokens/recover-key
+
+`recoverEscrowedPivKey`
+
+**Recover a person's escrowed PIV key-management key (#1955)**
+
+Answers the escrowed private key of `username`'s piv-key-management certificate `serial` (piv.keyEscrow), so mail encrypted to it can be decrypted after the card is lost. Admin Write is not enough: the access-control policy decides it (resource `piv-key-escrow`, action `recover-key`), and the built-in policy permits a caller holding PIV_KEY_RECOVERY, a member of the group roles.pivKeyRecoveryGroup names. Audited (`piv-escrow.recover`) and told to the person over CAEP. Sent with Cache-Control: no-store.
+
+**Mirrors** `POST /admin/hardware-tokens` on the admin console.
 ## GET /admin-api/openpgp
 
 `getOpenPgpKeys`
@@ -1177,6 +1314,22 @@ Scope: `admin:write`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
+| `serial` | string | yes | The escrowed certificate's serial, hex. |
+| `username` | string | yes | The person whose key it is. |
+
+**200**: The escrowed key and its certificate.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `certificatePem` | string | yes |  |
+| `chainPem` | list | yes |  |
+| `chainPem[]` | string |  |  |
+| `message` | string | yes |  |
+| `ok` | boolean | yes |  |
+| `privateKeyPem` | string | yes | The escrowed private key, PEM. |
+| `serialHex` | string | yes |  |
+
+**400**: The request was refused.
 | `user` | string | yes | The person, by username. |
 
 **200**: Done: the sentence, and the person as they now are.
@@ -1239,6 +1392,7 @@ Scope: `admin:write`.
 | `errors[]` | string |  |  |
 | `ok` | boolean |  |  |
 
+**403**: The access-control policy did not permit the recovery.
 **404**: No such person in this realm.
 
 | Member | Type | Required | What it is |
@@ -1249,6 +1403,7 @@ Scope: `admin:write`.
 | `errors[]` | string |  |  |
 | `ok` | boolean |  |  |
 
+**404**: No escrowed key is held for that certificate of that person.
 **500**: The act verified but could not be written, or threw.
 
 | Member | Type | Required | What it is |
@@ -1259,6 +1414,7 @@ Scope: `admin:write`.
 | `errors[]` | string |  |  |
 | `ok` | boolean |  |  |
 
+**503**: The escrowed key could not be opened.
 ## POST /admin-api/openpgp/mail-encryption
 
 `setMailEncryption`

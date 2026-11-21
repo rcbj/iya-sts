@@ -239,6 +239,7 @@ declare namespace IyaDomain {
     publishedDid?: string[];
     cibaUserCode?: string;
     androidAttestedCredential?: string[];
+    pivCardUuid?: string[];
     webauthnUserHandle?: string;
     webauthnPqcUserHandle?: string;
     mailVerifyToken?: string;

@@ -178,5 +178,9 @@
   "roles.console.security.what": {
     "en": "238007ebd246b860",
     "text": "Ändern Sie die Sicherheit: Speichern oder setzen Sie eine Richtlinie unter Verzeichnis → Richtlinien zurück, nennen Sie eine Richtlinie auf einer Anwendung, einer Gruppe oder einer Person, vergeben oder entziehen Sie diese Rolle, und handeln Sie am Konto einer Person, die sie innehat. Admin-Schreiben kann nichts davon. ES SCHLIESST LESEN EIN UND NICHT SCHREIBEN, sodass sie jemand innehaben kann, der sonst kein Administrator ist."
+  },
+  "roles.builtIn.PIV_KEY_RECOVERY.what": {
+    "en": "f2c6cc9cd65c5fc0",
+    "text": "Wiederhersteller hinterlegter PIV-Key-Management-Schlüssel: wer Mitglied der durch `roles.pivKeyRecoveryGroup` benannten Gruppe ist (Voreinstellung „piv-key-recovery“). Sie ist das, was die Wiederherstellung des hinterlegten piv-key-management-Schlüssels einer anderen Person über /admin-api/hardware-tokens/recover-key oder die Konsole neben Admin-Schreiben verlangt, und sonst nichts: Dieser Schlüssel entschlüsselt die E-Mails des Inhabers. Der Inhaber stellt seinen eigenen im Portal ohne sie wieder her."
   }
 }

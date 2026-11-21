@@ -2967,6 +2967,20 @@ as a holder change (`admin:security`), the holder read from the register,
 never the body. 404 for no such token (STS-HWTOKEN-0005), 409 for one
 already lost (0006), 400 for an unknown action (0012).
 
+**#1955 P2 adds two acts and one read** (`common/piv_enrolment.ts` argues
+them): `enrol-piv` (`{ username, profile, csr, attestationCertificate?,
+attestationIssuer? }`, a PIV slot certificate for that person over the EST
+Issuing CA, refusals at the core's statuses held to 400/404/409/503),
+`recover-key` (`{ username, serial }`, the escrowed key, 403 STS-PIV-0023
+unless the access-control policy PERMITS it for PIV_KEY_RECOVERY, which is
+asked beside the API's own Admin Write — never instead of it), and `GET
+/admin-api/hardware-tokens/escrowed?username=` (a person's escrowed
+certificates, never a key). The page's view gains `piv` (the profiles EST
+may issue and the two switches) and `escrowed` (the person `q` names), which
+the console's Enrol PIV and Escrowed keys tabs draw. A recovered key is the
+one answer of this resource that carries a private key; `sendJson()` sends
+`no-store` on every answer.
+
 ## `/admin-api/post-login-activities` — DIRECTORY → POST-LOGIN ACTIVITIES (#1111, 2026-10-28; #1123)
 
 `mgmt-api/post_login_activities_api.ts`, spread into the table as the

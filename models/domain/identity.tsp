@@ -242,6 +242,10 @@ model Credential {
   @fromAttr(#{attr: "stsAndroidAttestedCredential"})
   `androidAttestedCredential`?: string[];
 
+  // #1955 P2, D8: an outside PIV or CAC card's FIPS 201 card UUIDs.
+  @fromAttr(#{attr: "stsPivCardUuid"})
+  `pivCardUuid`?: string[];
+
   @fromAttr(#{attr: "stsWebauthnUserHandle"})
   `webauthnUserHandle`?: string;
 

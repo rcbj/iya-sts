@@ -686,8 +686,9 @@ async function childMain() {
   await inRealm(A, function () {
     view = estConsole.estView(viewReq);
   });
-  note(view.profiles.length === 10 && view.refusedProfiles.length === 5,
-       'the view lists the nine profiles, the device profile (#164) and ' +
+  note(view.profiles.length === 14 && view.refusedProfiles.length === 5,
+       'the view lists the thirteen profiles (the nine and #1955\'s four ' +
+       'PIV slot profiles), the device profile (#164) and ' +
        'the five refused',
        view.profiles.length + '/' + view.refusedProfiles.length);
   note(JSON.stringify(view.endpoints.map(function (e) {

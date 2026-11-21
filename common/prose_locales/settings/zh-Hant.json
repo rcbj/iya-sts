@@ -12706,5 +12706,93 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "僅適用於協定偵錯工具監聽器：http.http2MaxConcurrentStreams。預設值 -1 依循 http.http2MaxConcurrentStreams；其他任何值只對此監聽器生效。一條 HTTP/2 連線可同時開啟的請求數（SETTINGS_MAX_CONCURRENT_STREAMS）；超出的串流會被拒絕，直到有串流結束。預設值 100 是 RFC 9113 建議的最小值；node 自己的值沒有上限，這會讓一條連線承載成千上萬條連線的工作量。它限制一條連線上的工作量，正如 http.maxConnections 限制連線數。新連線會立即依循變更，已開啟的連線會收到新值。"
+  },
+  "piv.attestationAnchors|label": {
+    "en": "ebc10f6a7dcbbf58",
+    "text": "PIV 證明根憑證（PEM）"
+  },
+  "piv.attestationAnchors|description": {
+    "en": "487e76edeb4446b9",
+    "text": "YubiKey PIV 金鑰證明必須鏈結到的根憑證，以 PEM 套件形式提供。空白時使用 Yubico 發布的兩個根憑證（Yubico PIV Root CA Serial 263751，以及適用於韌體 5.7.4 及更新版本的 Yubico Attestation Root 1），它們隨附於 common/pki_piv_anchors.json 並在其中以 SHA-256 釘選，同時附帶 Yubico 的 PIV 中繼憑證。此處填入的憑證會取代隨附的根憑證。"
+  },
+  "piv.requireAttestation|label": {
+    "en": "4e11b0db111faccf",
+    "text": "要求 PIV 設定檔提供 PIV 證明"
+  },
+  "piv.requireAttestation|description": {
+    "en": "ef38975436c5ac4f",
+    "text": "開啟時，piv-auth、piv-sign、piv-key-management 或 piv-card-auth 憑證的要求若未攜帶可驗證的 YubiKey PIV 證明即會被拒絕（STS-PIV-0010）。來自 EST /serverkeygen 的託管 piv-key-management 金鑰是例外：它由本服務產生。關閉（預設值）時，此類未帶證明的要求會在沒有硬體證據的情況下簽發；攜帶無法驗證之證明的要求在兩種情況下都會被拒絕。"
+  },
+  "piv.pinPolicy|label": {
+    "en": "0f683a0cb1db1988",
+    "text": "經證明的 PIV 金鑰可具有的最弱 PIN 原則"
+  },
+  "piv.pinPolicy|description": {
+    "en": "c3f9fcec406b9806",
+    "text": "證明中的 PIN 原則至少必須達到的程度。`once`：每個工作階段輸入一次 PIN（Bio 金鑰的 match-once 也算）；`always`：每次使用前都輸入 PIN（match-always 也算）。`any`（預設值）不要求任何 PIN 原則。證明較弱的金鑰會被拒絕（STS-PIV-0011）。"
+  },
+  "piv.touchPolicy|label": {
+    "en": "a88f111c7b13657f",
+    "text": "經證明的 PIV 金鑰可具有的最弱觸碰原則"
+  },
+  "piv.touchPolicy|description": {
+    "en": "d78f0d5df0256787",
+    "text": "證明中的觸碰原則至少必須達到的程度。`cached`：一次觸碰，記住 15 秒；`always`：每次使用都需觸碰。`any`（預設值）不作要求。證明較弱的金鑰會被拒絕（STS-PIV-0012）。"
+  },
+  "piv.cardAuthSignIn|label": {
+    "en": "61b2226403ad5c61",
+    "text": "允許 piv-card-auth 憑證登入"
+  },
+  "piv.cardAuthSignIn|description": {
+    "en": "1852da24c3fbfade",
+    "text": "piv-card-auth（插槽 9e）金鑰無需 PIN 即可使用，用於實體門禁，因此除非開啟此項，否則其憑證在 TLS 登入與 PKINIT 時會被拒絕（STS-PIV-0013）。"
+  },
+  "piv.keyEscrow|label": {
+    "en": "f2efc85c3d2bac38",
+    "text": "託管 piv-key-management 金鑰"
+  },
+  "piv.keyEscrow|description": {
+    "en": "cf9618144b67dff3",
+    "text": "開啟時，針對 piv-key-management 設定檔的 EST /serverkeygen 會保留所產生的私密金鑰，並以金鑰加密金鑰密封，讓持有人（在入口網站上，重新登入後）或擁有 PIV 金鑰復原角色的管理員在卡片遺失後復原它並解密舊郵件。若未持有金鑰加密金鑰則拒絕（STS-PIV-0020）。託管金鑰絕不是硬體證據。關閉（預設值）時，/serverkeygen 會拒絕 piv-key-management 設定檔（STS-PIV-0021），因此 9d 金鑰在卡片上產生，且不保存在其他任何地方。"
+  },
+  "piv.externalIssuers|label": {
+    "en": "e96143ab9556db35",
+    "text": "依卡片 UUID 對應的外部 PIV 或 CAC 簽發 CA（PEM）"
+  },
+  "piv.externalIssuers|description": {
+    "en": "0fb91dba2cb957d3",
+    "text": "其 PIV 或 CAC 卡片憑證可依 FIPS 201 卡片 UUID 為某人登入的簽發 CA：由其中一個 CA 直接簽發、宣告 piv.externalPolicyOids 中某項原則、且恰好攜帶一個 urn:uuid subjectAltName 的用戶端憑證，會對應到其 stsPivCardUuid 保存該 UUID 的唯一一個人。絕不依其名稱對應，也不會建立任何項目。該 CA 也必須位於某個用戶端信任存放區中，否則交握會先拒絕它。空白（預設值）時不對應任何內容。"
+  },
+  "piv.externalPolicyOids|label": {
+    "en": "930c5800dfa36905",
+    "text": "外部卡片必須宣告的 PIV Authentication 原則"
+  },
+  "piv.externalPolicyOids|description": {
+    "en": "2398931e8d58f5c4",
+    "text": "外部卡片的憑證必須宣告其中之一才能依其卡片 UUID 對應的憑證原則：預設為 id-fpki-common-authentication（Federal PKI Common Policy 的 PIV Authentication）與 id-fpki-certpcy-pivi-hardware（PIV-I）。請在此加入 CAC 簽發者自己的硬體原則。"
+  },
+  "pki.paranoidPivAttestation|label": {
+    "en": "e645d02c49d2f9bf",
+    "text": "偏執：YubiKey PIV 金鑰證明鏈"
+  },
+  "pki.paranoidPivAttestation|description": {
+    "en": "fdb7c0eb631758ea",
+    "text": "使用情境 `piv-attestation`（#1955）：PIV 註冊的插槽證明憑證與 f9 證明憑證。偏執模式檢查目前時刻的有效期間、到 piv.attestationAnchors 的路徑，以及在憑證鏈指明清單時的撤銷狀態。關閉時，只有此使用情境僅執行路徑檢查而不執行欄位檢查，其他每一列與主開關皆不受影響；在產品模式下關閉時，會記錄一次日誌（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示。"
+  },
+  "pki.paranoidPivCard|label": {
+    "en": "4078a93e7117d6f9",
+    "text": "偏執：依卡片 UUID 對應的外部 PIV 或 CAC 卡片"
+  },
+  "pki.paranoidPivCard|description": {
+    "en": "d4d5fb070575e1c6",
+    "text": "使用情境 `piv-card`（#1955）：來自 piv.externalIssuers 中簽發 CA、依其卡片 UUID 對應的用戶端憑證。偏執模式在一跳簽發者檢查之外，還檢查 keyUsage digitalSignature 與葉憑證的有效期間。關閉時，只有此使用情境僅執行簽發者檢查，其他每一列與主開關皆不受影響；在產品模式下關閉時，會記錄一次日誌（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示。"
+  },
+  "roles.pivKeyRecoveryGroup|label": {
+    "en": "2f231e1e99785dc6",
+    "text": "授予 PIV_KEY_RECOVERY 角色的群組"
+  },
+  "roles.pivKeyRecoveryGroup|description": {
+    "en": "801616eea12559a5",
+    "text": "其成員持有內建 PIV_KEY_RECOVERY 角色（#1955）的目錄群組；存取控制原則要求在 Admin Write 之外還具備該角色，才能復原他人的託管 piv-key-management 金鑰（piv.keyEscrow）。該金鑰可以解密此人的郵件，因此在管理員將人員加入該群組之前，沒有人持有該角色。空白時，任何人都不能復原他人的金鑰；持有人可在入口網站上復原自己的金鑰。"
   }
 }

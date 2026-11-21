@@ -885,6 +885,25 @@ class XacmlRolePep {
       if (fact.source) {
         req.environment(HARDWARE_TOKEN.EVIDENCE, [String(fact.source)]);
       }
+      // The attestation's facts (#1955 P2, X4): the gate sends them only
+      // for an attested token whose evidence said them.
+      if (fact.pinPolicy) {
+        req.environment(HARDWARE_TOKEN.PIN_POLICY, [String(fact.pinPolicy)]);
+      }
+      if (fact.touchPolicy) {
+        req.environment(HARDWARE_TOKEN.TOUCH_POLICY,
+                        [String(fact.touchPolicy)]);
+      }
+      if (fact.firmware) {
+        req.environment(HARDWARE_TOKEN.FIRMWARE, [String(fact.firmware)]);
+      }
+      if (fact.formFactor) {
+        req.environment(HARDWARE_TOKEN.FORM_FACTOR,
+                        [String(fact.formFactor)]);
+      }
+      if (fact.fips === true) {
+        req.environment(HARDWARE_TOKEN.FIPS, [true], model.TYPE.BOOLEAN);
+      }
     }
     log.debug("Leaving XacmlRolePep.hardwareTokenAttributes(). " +
               (fact.key ? String(fact.key) : 'No token.'));

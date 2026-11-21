@@ -1236,8 +1236,8 @@
     "text": "हार्डवेयर टोकन"
   },
   "endpoints.route./admin-api/hardware-tokens/:action.name": {
-    "en": "d2326b0fb8b09689",
-    "text": "किसी हार्डवेयर टोकन को खोया हुआ बताएँ"
+    "en": "33209f967f070175",
+    "text": "हार्डवेयर टोकन क्रियाएँ"
   },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",
@@ -2586,5 +2586,9 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS (क्लाइंट प्रमाणपत्र माँगा जाता है, कभी आवश्यक नहीं)"
+  },
+  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
+    "en": "f46d01f7581b5379",
+    "text": "एस्क्रो की गई PIV कुंजियाँ"
   }
 }

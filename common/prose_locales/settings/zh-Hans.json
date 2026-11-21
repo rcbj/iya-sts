@@ -12706,5 +12706,93 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "仅针对协议调试器监听器：http.http2MaxConcurrentStreams。-1（默认值）时遵循 http.http2MaxConcurrentStreams；其他任何值只对此监听器作出决定。一个 HTTP/2 连接可同时打开的请求数（SETTINGS_MAX_CONCURRENT_STREAMS）；超出的流会被拒绝，直到有流结束。默认值 100 是 RFC 9113 建议的最小值；node 自身的值没有上限，这会让一个连接承载成千上万个连接的工作量。它限制一个连接上的工作量，正如 http.maxConnections 限制连接数。新连接会立即遵循更改，已打开的连接会收到新值。"
+  },
+  "piv.attestationAnchors|label": {
+    "en": "ebc10f6a7dcbbf58",
+    "text": "PIV 证明根证书（PEM）"
+  },
+  "piv.attestationAnchors|description": {
+    "en": "487e76edeb4446b9",
+    "text": "YubiKey PIV 密钥证明必须链接到的根证书，以 PEM 包形式提供。为空时使用 Yubico 发布的两个根证书（Yubico PIV Root CA Serial 263751，以及适用于固件 5.7.4 及更高版本的 Yubico Attestation Root 1），它们随附于 common/pki_piv_anchors.json 并在其中以 SHA-256 固定，同时附带 Yubico 的 PIV 中间证书。此处填写的证书会替换随附的根证书。"
+  },
+  "piv.requireAttestation|label": {
+    "en": "4e11b0db111faccf",
+    "text": "要求 PIV 配置文件提供 PIV 证明"
+  },
+  "piv.requireAttestation|description": {
+    "en": "ef38975436c5ac4f",
+    "text": "开启时，piv-auth、piv-sign、piv-key-management 或 piv-card-auth 证书的请求若未携带可验证的 YubiKey PIV 证明则会被拒绝（STS-PIV-0010）。来自 EST /serverkeygen 的托管 piv-key-management 密钥是例外：它由本服务生成。关闭（默认值）时，此类未带证明的请求会在没有硬件证据的情况下签发；携带无法验证之证明的请求在两种情况下都会被拒绝。"
+  },
+  "piv.pinPolicy|label": {
+    "en": "0f683a0cb1db1988",
+    "text": "经证明的 PIV 密钥可具有的最弱 PIN 策略"
+  },
+  "piv.pinPolicy|description": {
+    "en": "c3f9fcec406b9806",
+    "text": "证明中的 PIN 策略至少必须达到的程度。`once`：每个会话输入一次 PIN（Bio 密钥的 match-once 也算）；`always`：每次使用前都输入 PIN（match-always 也算）。`any`（默认值）不要求任何 PIN 策略。证明更弱的密钥会被拒绝（STS-PIV-0011）。"
+  },
+  "piv.touchPolicy|label": {
+    "en": "a88f111c7b13657f",
+    "text": "经证明的 PIV 密钥可具有的最弱触摸策略"
+  },
+  "piv.touchPolicy|description": {
+    "en": "d78f0d5df0256787",
+    "text": "证明中的触摸策略至少必须达到的程度。`cached`：一次触摸，记住 15 秒；`always`：每次使用都需触摸。`any`（默认值）不作要求。证明更弱的密钥会被拒绝（STS-PIV-0012）。"
+  },
+  "piv.cardAuthSignIn|label": {
+    "en": "61b2226403ad5c61",
+    "text": "允许 piv-card-auth 证书登录"
+  },
+  "piv.cardAuthSignIn|description": {
+    "en": "1852da24c3fbfade",
+    "text": "piv-card-auth（插槽 9e）密钥无需 PIN 即可使用，用于物理门禁，因此除非开启此项，否则其证书在 TLS 登录和 PKINIT 时会被拒绝（STS-PIV-0013）。"
+  },
+  "piv.keyEscrow|label": {
+    "en": "f2efc85c3d2bac38",
+    "text": "托管 piv-key-management 密钥"
+  },
+  "piv.keyEscrow|description": {
+    "en": "cf9618144b67dff3",
+    "text": "开启时，针对 piv-key-management 配置文件的 EST /serverkeygen 会保留所生成的私钥，并以密钥加密密钥密封，以便持有人（在门户上，重新登录后）或拥有 PIV 密钥恢复角色的管理员在卡丢失后恢复它并解密旧邮件。若未持有密钥加密密钥则拒绝（STS-PIV-0020）。托管密钥绝不是硬件证据。关闭（默认值）时，/serverkeygen 会拒绝 piv-key-management 配置文件（STS-PIV-0021），因此 9d 密钥在卡上生成，且不保存在任何其他地方。"
+  },
+  "piv.externalIssuers|label": {
+    "en": "e96143ab9556db35",
+    "text": "按卡 UUID 映射的外部 PIV 或 CAC 签发 CA（PEM）"
+  },
+  "piv.externalIssuers|description": {
+    "en": "0fb91dba2cb957d3",
+    "text": "其 PIV 或 CAC 卡证书可按 FIPS 201 卡 UUID 为某人登录的签发 CA：由其中一个 CA 直接签发、声明 piv.externalPolicyOids 中某项策略、且恰好携带一个 urn:uuid subjectAltName 的客户端证书，会映射到其 stsPivCardUuid 保存该 UUID 的唯一一个人。绝不按其名称映射，也不会创建任何条目。该 CA 还必须位于某个客户端信任库中，否则握手会先拒绝它。为空（默认值）时不映射任何内容。"
+  },
+  "piv.externalPolicyOids|label": {
+    "en": "930c5800dfa36905",
+    "text": "外部卡必须声明的 PIV Authentication 策略"
+  },
+  "piv.externalPolicyOids|description": {
+    "en": "2398931e8d58f5c4",
+    "text": "外部卡的证书必须声明其中之一才能按其卡 UUID 映射的证书策略：默认为 id-fpki-common-authentication（Federal PKI Common Policy 的 PIV Authentication）和 id-fpki-certpcy-pivi-hardware（PIV-I）。请在此添加 CAC 签发者自己的硬件策略。"
+  },
+  "pki.paranoidPivAttestation|label": {
+    "en": "e645d02c49d2f9bf",
+    "text": "偏执：YubiKey PIV 密钥证明链"
+  },
+  "pki.paranoidPivAttestation|description": {
+    "en": "fdb7c0eb631758ea",
+    "text": "用例 `piv-attestation`（#1955）：PIV 注册的插槽证明证书和 f9 证明证书。偏执模式检查当前时刻的有效期、到 piv.attestationAnchors 的路径，以及在证书链指明列表时的吊销状态。关闭时，仅此用例只执行路径检查而不执行字段检查，其他每一行和总开关均不受影响；在产品模式下关闭时，会记录一次日志（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidPivCard|label": {
+    "en": "4078a93e7117d6f9",
+    "text": "偏执：按卡 UUID 映射的外部 PIV 或 CAC 卡"
+  },
+  "pki.paranoidPivCard|description": {
+    "en": "d4d5fb070575e1c6",
+    "text": "用例 `piv-card`（#1955）：来自 piv.externalIssuers 中签发 CA、按其卡 UUID 映射的客户端证书。偏执模式在一跳签发者检查之外，还检查 keyUsage digitalSignature 和叶证书的有效期。关闭时，仅此用例只执行签发者检查，其他每一行和总开关均不受影响；在产品模式下关闭时，会记录一次日志（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "roles.pivKeyRecoveryGroup|label": {
+    "en": "2f231e1e99785dc6",
+    "text": "授予 PIV_KEY_RECOVERY 角色的组"
+  },
+  "roles.pivKeyRecoveryGroup|description": {
+    "en": "801616eea12559a5",
+    "text": "其成员持有内置 PIV_KEY_RECOVERY 角色（#1955）的目录组；访问控制策略要求在 Admin Write 之外还具备该角色，才能恢复他人的托管 piv-key-management 密钥（piv.keyEscrow）。该密钥可以解密此人的邮件，因此在管理员将人员加入该组之前，没有人持有该角色。为空时，任何人都不能恢复他人的密钥；持有人可在门户上恢复自己的密钥。"
   }
 }

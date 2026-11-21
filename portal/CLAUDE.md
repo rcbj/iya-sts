@@ -2079,6 +2079,17 @@ their only way in is told to use an activation link or recovery codes,
 because the removal passes the last-way-in guard. The words are
 `portalTokens`'s.
 
+**#1955 P2 adds the PIV enrolment form and the escrowed keys** to the same
+page and the same door (`actOnTokens`, `recentAuth`): `enrol-piv` issues the
+CALLER a PIV slot certificate from a request and its YubiKey PIV attestation
+(`common/piv_enrolment.ts`; the target is the token's subject, never the
+body's), `recover-key` hands the caller their own escrowed 9d key, and
+`attach-key` notes which of their tokens it was loaded on. What an act made
+is on the answer's view once (`issued`, `recovered`, as the certificates
+page's `fresh`). A refusal is held to the statuses whose answers carry a
+`view` (400, 404, 409, 503): a profile the core refused (its 403) is a 400
+here, because the account API's 403 is the gate's.
+
 ## `/portal/devices`: A PERSON'S OWN DEVICES (2026-09-23, #130; #164 phase 2, 2026-09-26)
 
 The entries in `ou=devices` the person owns, the applications that used

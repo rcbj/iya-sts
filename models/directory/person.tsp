@@ -135,6 +135,8 @@ model Person {
   userPrincipalName?: string;
   @attr(#{kind: "multi", what: "The person's registered WebAuthn public keys, one JSON value per passkey or security key. Public by design. Written by registration on /portal and the sign-in steps."})
   stsWebauthnCredential?: (DirectoryJson)[];
+  @attr(#{kind: "multi", what: "The FIPS 201 card UUIDs of the person's outside PIV or CAC cards, one lower-case UUID per card (no urn:uuid: prefix). A card certificate from one of the realm's piv.externalIssuers that names one of these in its urn:uuid subjectAltName signs this person in (#1955). Written by an administrator; a reissued card has a new UUID."})
+  stsPivCardUuid?: (string)[];
   @attr(#{kind: "single", what: "The public half of the person's Kerberos keys, one JSON value: the key version number, the encryption types and when they were derived."})
   stsKrb5KeyInfo?: DirectoryJson;
   @attr(#{kind: "multi", what: "The person's RFC 7486 HOBA client public keys, one value per key as `<kid> <base64 DER>`, registered at /.well-known/hoba/register. Public."})

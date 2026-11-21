@@ -1676,12 +1676,12 @@
     "text": "Cada certificado que entrega, con la clave de la CA emisora EST de este dominio, mediante issueEnrolled() de common/pki.js — el mismo codificador del que sale cualquier otro certificado aquí. Los mensajes CMS de solo certificados que devuelve son DEGENERADOS: un SignedData con certificados y sin firmante, así que no llevan firma propia y se confía en ellos por los certificados que contienen."
   },
   "crypto.families.est.verifies": {
-    "en": "d40d37c4bd83de49",
-    "text": "La prueba de posesión PKCS#10 — la firma de la solicitud con su propia clave pública, clásica y poscuántica, en common/cert_enrollment.ts — y, para la autenticación por certificado, la ruta del certificado de cliente hasta la Intermediate de este dominio y la Root del servicio, consultando la revocación. Una plantilla de /serverkeygen no se verifica: su clave se reemplaza."
+    "en": "6b27c8877d509c46",
+    "text": "La prueba de posesión PKCS#10 —la firma de la solicitud con su propia clave pública, clásica y poscuántica, en common/cert_enrollment.ts— y, para la autenticación por certificado, la ruta del certificado de cliente hasta el Intermediate de este dominio y la Root del servicio, con la revocación consultada. Una plantilla de /serverkeygen no se verifica: su clave se sustituye. Una atestación de clave PIV de YubiKey en la solicitud (#1955, aquí y también mediante ACME y SCEP): la firma ECDSA o RSA del certificado de la ranura por el certificado f9, y la ruta del certificado f9 hasta los anclajes de atestación PIV del dominio, a través de la puerta de validación."
   },
   "crypto.families.est.encrypts": {
-    "en": "2f48e10a9ad6494d",
-    "text": "La clave privada de un par de claves generado por el servidor, sellada con AES-256-GCM bajo la clave de cifrado de claves en la entrada, siempre que esa clave sobreviva al proceso. NO se cifra para el cliente (RFC 7030 sección 4.4.1.2): una solicitud que lo pida se rechaza, y la clave viaja solo dentro de TLS."
+    "en": "a18df4311029b728",
+    "text": "La clave privada de un par de claves generado por el servidor, sellada con AES-256-GCM con la clave de cifrado de claves en la entrada, siempre que esa clave sobreviva al proceso; una clave piv-key-management en custodia (#1955) en todos los modos, o no se genera en absoluto. NO se cifra para el cliente (RFC 7030 sección 4.4.1.2): una solicitud que lo pide se rechaza, y la clave viaja solo dentro de TLS."
   },
   "crypto.families.est.decrypts": {
     "en": "8d5c676935439726",
@@ -1986,5 +1986,9 @@
   "crypto.param.totp.encoding": {
     "en": "d9613131364834bc",
     "text": "base32 de RFC 4648, sin relleno, como espera el formato otpauth Key Uri Format."
+  },
+  "crypto.families.est.algorithms.4.what": {
+    "en": "4dd4db2fd60c28f7",
+    "text": "Firmas de atestación PIV verificadas"
   }
 }

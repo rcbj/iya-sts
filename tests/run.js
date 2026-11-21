@@ -100,10 +100,11 @@ const log = bunyan.createLogger({ name: 'run',
 // `webauthn_attestation_kit.js` (#105) is the software authenticator that
 // attests in all eight formats for `webauthn_attestation.js`.
 // `sync_query_kit.js` (#349) is the stand-in database the directory bridge's
-// thread loads for `sync_query.js`.
+// thread loads for `sync_query.js`. `piv_attestation_kit.js` (#1955 P2) is
+// the software YubiKey that attests its PIV keys for `piv_attestation.js`.
 const NOT_A_TEST = ['run.js', 'harness.js', 'wallet_kit.js',
                     'scheduler_kit.js', 'webauthn_attestation_kit.js',
-                    'sync_query_kit.js'];
+                    'sync_query_kit.js', 'piv_attestation_kit.js'];
 
 // `patterns` is the `--only` filter: a file is kept when its name contains any
 // one of them. Empty means every file, which is what `npm test` asks for.

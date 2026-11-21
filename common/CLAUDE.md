@@ -11939,6 +11939,25 @@ stored again. What carries it:
   identifier the registry does not hold, and the CAEP event under the
   application's own subject.
 
+**AND, SINCE #1955 P2 (D8, rcbj's decision of 2026-11-20), AN OUTSIDE PIV OR
+CAC CARD IS THE ONE PERSON HOLDING ITS CARD UUID.** #1061's rule had one
+mapping, and rcbj asked for a second for government cards, which nobody
+stores byte for byte: a card is reissued, and an agency's directory holds the
+card UUID, not the certificate. It is NOT a name match, which is what #1061
+forbade: `storedIdentityOf()` asks `piv_attestation.ts`'s `cardIdentityOf()`
+only when no entry stores the leaf, and that maps it only when one of the
+realm's `piv.externalIssuers` issued it DIRECTLY (the door's `piv-card` use
+case), it asserts one of `piv.externalPolicyOids` (FIPS 201-3's PIV
+Authentication policy by default), and it carries exactly ONE `urn:uuid:`
+subjectAltName (FIPS 201-3 section 4.2.1's card UUID), which exactly ONE
+person's `stsPivCardUuid` holds. Never the CN or subject (an issuing CA we do
+not run could write anybody's), no entry created, two holders or two UUIDs
+refused with #1061's `NOT_STORED` / `STORED_TWICE`, so every door's refusal
+and code stand. Off unless `piv.externalIssuers` holds a certificate; the
+issuer must still be in a client truststore for the handshake to admit the
+leaf at all. The directory half is `pivCardHolders()` on the same slot as
+`certificateHolders` (`ldap/CLAUDE.md`).
+
 **THE REALM IS THE ISSUING CA'S.** A socket has no path to carry a realm, so
 `identityOf()` answers the realm of the authority that signed the leaf, and
 `GET /tls/sign-in` starts the session and records the
@@ -12614,8 +12633,11 @@ this directory has to know beside it:
 
 * **A serial is recorded only from attestation**: `recordAttested()` is the
   one writer and takes an evidence source from a closed list
-  (`fido-enterprise-attestation`, and `piv-attestation` and
-  `vendor-import` for P2 and P4). No door takes a serial from a body.
+  (`fido-enterprise-attestation`, `piv-attestation` since P2, and
+  `vendor-import` for P4). No door takes a serial from a body.
+  `attachCredential()` (P2, D7) adds a credential to a token that is
+  ALREADY in the register and held by the caller, with `hardware: false`
+  evidence; it records no serial.
 * **It is NOT the device register, and the header says why**: a roaming key
   identifies no device (`device_enrolment.ts`, STS-DEVICE-0022), and filing
   one there would make every sign-in with it "from a registered device" for
@@ -12645,6 +12667,55 @@ this directory has to know beside it:
   no schema version or upgrade script; development does not keep it across
   a restart, as it keeps no minted store.
 
+## `piv_attestation.ts` and `piv_enrolment.ts`: YUBIKEY PIV KEY ATTESTATION (#1955 P2, 2026-11-20)
+
+The two headers are the argument. What a maintainer of this directory has to
+know beside them:
+
+* **Two carriers, one verifier.** The request's id-aa-attestation attribute
+  (read by `parseCsr()` for every family, so EST, SCEP and ACME get it alike)
+  and the enrolment form's two PEM certificates both become a statement that
+  `verify()` holds to the request's key, the realm's PIV anchors (through the
+  door, use case `piv-attestation`), a serial, the profile's slot and
+  `piv.pinPolicy` / `piv.touchPolicy`. **The statement type
+  1.3.6.1.4.1.41482.3.2 is this service's choice**: draft-ietf-lamps-csr-
+  attestation-33 registers no statement type, and says so (section 4.2).
+* **`issue()` asks `evidenceForRequest()` once**, after the names and before
+  the authority signs. A statement that does not verify REFUSES the request;
+  none is `facts: null`, refused only under `piv.requireAttestation` for a PIV
+  profile. A verified one makes the row `keySource: 'attested-hardware'` with
+  `attestation`, and `recordToken()` records the YubiKey (`recordAttested()`,
+  source `piv-attestation`, smart card), which is all P1's `evidenceFor()`
+  needs for `hwk`/`sc` at the TLS doors and `pkinit-hardware` /
+  `pkinit-smartcard` at PKINIT.
+* **The anchors are SHIPPED** (`pki_piv_anchors.json`, pinned, STS-PIV-0001 on
+  a mismatch), as the device anchors are and for their reason: one vendor
+  whose format this verifies, whose roots everybody needs. The PIV
+  intermediates are offered to the path builder, never as anchors.
+* **The four PIV profiles are in no default `allowedProfiles`**: a realm
+  issues none until an operator lists one, so existing realms are unchanged.
+  `piv-card-auth` signs nobody in unless `piv.cardAuthSignIn`
+  (`signInRefusal()`, asked by the two TLS sign-in doors; PKINIT refuses it by
+  its EKU anyway).
+* **Escrow (D7)** is the existing server-key record with `escrowed: true`,
+  sealed by `sealEscrow()` under its own data-key class in EVERY mode — never
+  `sealText()`, which keeps a key in plain where nothing persists — and
+  refused before anything is generated where no key-encryption key is held.
+  An administrator's recovery asks the access gate (resource
+  `piv-key-escrow`, PIV_KEY_RECOVERY) and needs a POLICY PERMIT: the gate's
+  "allowed" with no decision (no decider, XACML off) recovers nothing.
+  `attach()` puts an escrowed certificate on a token with `hardware: false`
+  evidence (`hardware_tokens.attachCredential()`), so the lost-key act revokes
+  it; `revokeEnrolled()` never touches the sealed key, so the escrow outlives
+  the card.
+* **No store and no schema**: the token is P1's register, the attestation
+  rides on the certificate row, the escrowed key on the entry's existing
+  `privateKey` values, and `stsPivCardUuid` is an attribute.
+* **WHAT HAS NO TEST HERE**: a real YubiKey's output (the kit builds
+  Yubico-shaped chains from Yubico's text); the Bio series' match policies
+  and the CSPN flag beyond decoding; the 5.7.4 chain through the shipped
+  intermediates (they load and match their pins; nothing signed by them is
+  available without a key).
 ## `openpgp_keys.ts`: A PERSON'S OpenPGP KEY, THE WEB KEY DIRECTORY, ENCRYPTED MAIL (#1955 P6, 2026-11-20)
 
 The file's header is the argument; what a maintainer needs beside it:

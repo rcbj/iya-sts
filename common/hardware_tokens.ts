@@ -236,7 +236,10 @@ interface TokenCredential {
   family?: string;
   label?: string;
   addedAt: string;
-  evidence: { source: string; hardware: boolean; smartCard: boolean };
+  evidence: { source: string; hardware: boolean; smartCard: boolean;
+              // A PIV slot's key's policies, from its attestation (#1955 P2):
+              // per credential, since each slot has its own.
+              pinPolicy?: string; touchPolicy?: string };
   retired?: { at: string; ok: boolean; code?: string; why?: string };
 }
 
@@ -519,6 +522,18 @@ class HardwareTokens {
       evidence: { source: String(ev.source), hardware: true,
                   smartCard: kind === 'x509' && smartCard }
     };
+    // WHAT A PIV ATTESTATION SAID OF THE KEY (#1955 P2, design X4): kept on
+    // the credential for the issuance policy's attributes.
+    if (ev.pinPolicy) {
+      entry.evidence.pinPolicy = HardwareTokens.text(ev.pinPolicy);
+    }
+    if (ev.touchPolicy) {
+      entry.evidence.touchPolicy = HardwareTokens.text(ev.touchPolicy);
+    }
+    // And of the token: a FIPS-certified key, said by its f9 certificate.
+    if (s.fips === true) {
+      base.fips = true;
+    }
     if (cred.family) {
       entry.family = HardwareTokens.text(cred.family);
     }
@@ -555,6 +570,67 @@ class HardwareTokens {
     log.debug("Leaving HardwareTokens.recordAttested(). " +
               (created ? 'Created.' : 'Updated.'));
     return { ok: true, token: this.view(key, base), created: created };
+  }
+
+  // -------------------------------------------------------------------------
+  // A CREDENTIAL ON A TOKEN THAT IS NOT EVIDENCE (#1955 P2, D7): an escrowed
+  // piv-key-management certificate whose key this service generated and the
+  // holder loaded onto one of their tokens. It RECORDS NO SERIAL — the token
+  // is already in the register, from its own attestation — and its evidence
+  // says `hardware: false`, so `evidenceFor()` earns it nothing; it is here
+  // only so that the lost-key act retires it with the rest of the card. The
+  // token must be active and the holder's.
+  // -------------------------------------------------------------------------
+  /**
+   * Adds a non-evidence credential to an active token its holder names.
+   *
+   * @param spec - `key`, `username`, `credential: { kind, ref, family?,
+   *   label? }`, `actor`
+   * @returns `{ ok, token }`, or a refusal
+   */
+  attachCredential(spec: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering HardwareTokens.attachCredential().");
+    const s = spec || {};
+    const key = String(s.key || '');
+    const holder = this.holderOf(String(s.username || ''));
+    const held: Json = register.get(key) || null;
+    if (!held || !holder || held.status !== 'active' ||
+        held.holder !== holder) {
+      log.debug("Leaving HardwareTokens.attachCredential(). Not theirs.");
+      return this.refuse('STS-PIV-0025', 'No active hardware token "' +
+        HardwareTokens.text(key) + '" is held by you.');
+    }
+    const cred = s.credential || {};
+    const kind = String(cred.kind || '');
+    const ref = HardwareTokens.refOf(kind, cred.ref);
+    if (CREDENTIAL_KINDS.indexOf(kind) < 0 || !ref) {
+      log.debug("Leaving HardwareTokens.attachCredential(). Credential.");
+      return this.refuse('STS-HWTOKEN-0003', 'Unknown credential kind "' +
+        HardwareTokens.text(kind) + '" or an empty reference.');
+    }
+    const next = JSON.parse(JSON.stringify(held));
+    const entry: TokenCredential = {
+      kind: kind, ref: ref, holder: holder, addedAt: this.nowIso(),
+      evidence: { source: 'escrow', hardware: false, smartCard: false }
+    };
+    if (cred.family) {
+      entry.family = HardwareTokens.text(cred.family);
+    }
+    if (cred.label) {
+      entry.label = HardwareTokens.text(cred.label);
+    }
+    next.credentials = (next.credentials || []).filter(function (c: Json) {
+      return !(c.kind === kind && c.ref === ref);
+    }).concat([entry]).slice(-MAX_CREDENTIALS);
+    next.updatedAt = this.nowIso();
+    register.set(key, next);
+    this.recordAudit('hardware-token.credential-add',
+      String(s.actor || s.username || ''), String(s.username || ''),
+      'An escrowed credential was noted on hardware token ' + key + ' (' +
+      kind + ', not evidence)', { key: key, kind: kind, source: 'escrow' });
+    log.debug("Leaving HardwareTokens.attachCredential(). Attached.");
+    return { ok: true, token: this.view(key, next) };
   }
 
   // -------------------------------------------------------------------------
@@ -816,7 +892,8 @@ class HardwareTokens {
     const { log } = this.deps;
     log.debug("Entering HardwareTokens.evidenceFor(). " + kind);
     const none = { hardware: false, smartCard: false, token: '',
-                   source: '' };
+                   source: '', pinPolicy: '', touchPolicy: '', firmware: '',
+                   formFactor: '', fips: false };
     const wanted = HardwareTokens.refOf(kind, ref);
     if (!wanted) {
       log.debug("Leaving HardwareTokens.evidenceFor(). No reference.");
@@ -838,10 +915,18 @@ class HardwareTokens {
     const c = (found.record.credentials || []).filter(function (one: Json) {
       return one.kind === kind && String(one.ref) === wanted;
     })[0];
+    // The attestation's facts (#1955 P2, X4) beside the evidence: the
+    // credential's policies and the token's firmware, form factor and FIPS
+    // mark, each '' (false) where the evidence did not say.
     const out = c && c.evidence ? {
       hardware: c.evidence.hardware === true,
       smartCard: c.evidence.smartCard === true,
-      token: found.key, source: String(c.evidence.source || '') } : none;
+      token: found.key, source: String(c.evidence.source || ''),
+      pinPolicy: String(c.evidence.pinPolicy || ''),
+      touchPolicy: String(c.evidence.touchPolicy || ''),
+      firmware: String(found.record.firmware || ''),
+      formFactor: String(found.record.formFactor || ''),
+      fips: found.record.fips === true } : none;
     log.debug("Leaving HardwareTokens.evidenceFor(). " +
               (out.hardware ? 'Hardware.' : 'None.'));
     return out;
@@ -1290,6 +1375,7 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   recordAttested: slot.forward('recordAttested'),
   noteFidoKey: slot.forward('noteFidoKey'),
+  attachCredential: slot.forward('attachCredential'),
   forgetCredential: slot.forward('forgetCredential'),
   byKey: slot.forward('byKey'),
   tokensOf: slot.forward('tokensOf'),

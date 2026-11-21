@@ -12706,5 +12706,93 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "لمستمع مصحّح البروتوكول وحده: http.http2MaxConcurrentStreams. القيمة -1، وهي الافتراضية، تتبع http.http2MaxConcurrentStreams؛ وأي قيمة أخرى تقرر لهذا المستمع فقط. عدد الطلبات التي يجوز لاتصال HTTP/2 واحد أن يُبقيها مفتوحة في آن واحد (SETTINGS_MAX_CONCURRENT_STREAMS)؛ ويُرفض أي تدفّق يتجاوز ذلك حتى ينتهي أحدها. القيمة 100، وهي الافتراضية، هي أصغر قيمة يوصي بها RFC 9113؛ أما قيمة node نفسها فغير محدودة، مما يسمح لاتصال واحد بحمل عمل الآلاف. يحدّ العمل على اتصال كما يحدّ http.maxConnections الاتصالات. يتبع الاتصال الجديد التغيير فورًا، ويُرسَل إلى الاتصال المفتوح القيمة الجديدة."
+  },
+  "piv.attestationAnchors|label": {
+    "en": "ebc10f6a7dcbbf58",
+    "text": "جذور إثبات PIV ‏(PEM)"
+  },
+  "piv.attestationAnchors|description": {
+    "en": "487e76edeb4446b9",
+    "text": "الجذور التي يجب أن تتسلسل إليها شهادة إثبات مفتاح PIV في YubiKey، على هيئة حزمة PEM. القيمة الفارغة تستخدم الجذرين اللذين تنشرهما Yubico ‏(Yubico PIV Root CA Serial 263751، وYubico Attestation Root 1 للبرنامج الثابت 5.7.4 وما بعده)، المرفقين في common/pki_piv_anchors.json والمثبّتين هناك ببصمة SHA-256، مع شهادات PIV الوسيطة من Yubico. أي شهادة هنا تحل محل الجذور المرفقة."
+  },
+  "piv.requireAttestation|label": {
+    "en": "4e11b0db111faccf",
+    "text": "اشتراط إثبات PIV لملفات تعريف PIV"
+  },
+  "piv.requireAttestation|description": {
+    "en": "ef38975436c5ac4f",
+    "text": "عند التشغيل، يُرفض طلب شهادة piv-auth أو piv-sign أو piv-key-management أو piv-card-auth ما لم يحمل إثبات PIV من YubiKey يمكن التحقق منه (STS-PIV-0010). المفتاح المودَع من نوع piv-key-management الصادر عن EST /serverkeygen هو الاستثناء: فقد أنشأته هذه الخدمة. عند الإيقاف، وهو الافتراضي، يُصدَر مثل هذا الطلب دون إثبات بلا دليل عتادي؛ أما الطلب الذي يحمل إثباتًا لا يمكن التحقق منه فيُرفض في الحالتين."
+  },
+  "piv.pinPolicy|label": {
+    "en": "0f683a0cb1db1988",
+    "text": "أضعف سياسة PIN يجوز أن تكون لمفتاح PIV مُثبَت"
+  },
+  "piv.pinPolicy|description": {
+    "en": "c3f9fcec406b9806",
+    "text": "ما يجب أن تكون عليه سياسة PIN في الإثبات على الأقل. `once`: رمز PIN مرة واحدة في كل جلسة (يُحتسب match-once لمفتاح Bio)؛ `always`: رمز PIN قبل كل استخدام (يُحتسب match-always). القيمة `any`، وهي الافتراضية، لا تشترط أي سياسة PIN. يُرفض المفتاح الذي يكون إثباته أضعف (STS-PIV-0011)."
+  },
+  "piv.touchPolicy|label": {
+    "en": "a88f111c7b13657f",
+    "text": "أضعف سياسة لمس يجوز أن تكون لمفتاح PIV مُثبَت"
+  },
+  "piv.touchPolicy|description": {
+    "en": "d78f0d5df0256787",
+    "text": "ما يجب أن تكون عليه سياسة اللمس في الإثبات على الأقل. `cached`: لمسة تُتذكَّر لمدة 15 ثانية؛ `always`: لمسة لكل استخدام. القيمة `any`، وهي الافتراضية، لا تشترط شيئًا. يُرفض المفتاح الذي يكون إثباته أضعف (STS-PIV-0012)."
+  },
+  "piv.cardAuthSignIn|label": {
+    "en": "61b2226403ad5c61",
+    "text": "السماح لشهادة piv-card-auth بتسجيل الدخول"
+  },
+  "piv.cardAuthSignIn|description": {
+    "en": "1852da24c3fbfade",
+    "text": "يعمل مفتاح piv-card-auth ‏(الفتحة 9e) دون رمز PIN، للدخول المادي، لذا تُرفض شهادته عند تسجيل الدخول عبر TLS وعند PKINIT ‏(STS-PIV-0013) ما لم يكن هذا الإعداد مشغّلًا."
+  },
+  "piv.keyEscrow|label": {
+    "en": "f2efc85c3d2bac38",
+    "text": "إيداع مفاتيح piv-key-management"
+  },
+  "piv.keyEscrow|description": {
+    "en": "cf9618144b67dff3",
+    "text": "عند التشغيل، يحتفظ EST /serverkeygen لملف التعريف piv-key-management بالمفتاح الخاص الذي أنشأه، مختومًا تحت مفتاح تشفير المفاتيح، كي يتمكن حامله (على البوابة، بعد تسجيل دخول جديد) أو مسؤول يحمل دور استرداد مفاتيح PIV من استرداده وفك تشفير البريد القديم بعد فقدان بطاقة. يُرفض حيث لا يوجد مفتاح تشفير مفاتيح (STS-PIV-0020). المفتاح المودَع ليس دليلًا عتاديًا أبدًا. عند الإيقاف، وهو الافتراضي، يرفض /serverkeygen ملف التعريف piv-key-management ‏(STS-PIV-0021)، فيُنشأ مفتاح 9d على البطاقة ولا يُحتفظ به في أي مكان آخر."
+  },
+  "piv.externalIssuers|label": {
+    "en": "e96143ab9556db35",
+    "text": "جهات إصدار PIV أو CAC خارجية تُطابَق بمعرّف UUID للبطاقة (PEM)"
+  },
+  "piv.externalIssuers|description": {
+    "en": "0fb91dba2cb957d3",
+    "text": "جهات الإصدار التي تُدخِل شهاداتُ بطاقات PIV أو CAC الصادرة عنها شخصًا بمعرّف UUID للبطاقة وفق FIPS 201: شهادة العميل التي أصدرتها إحداها مباشرة، وتؤكد سياسة من piv.externalPolicyOids، وتحمل subjectAltName واحدًا بالضبط من نوع urn:uuid، تُطابَق مع الشخص الوحيد الذي يحمل stsPivCardUuid لديه ذلك المعرّف. لا تُطابَق باسمها أبدًا، ولا يُنشأ أي إدخال. يجب أن تكون جهة الإصدار أيضًا في مخزن ثقة للعملاء، وإلا رفضتها المصافحة أولًا. القيمة الفارغة، وهي الافتراضية، لا تطابق شيئًا."
+  },
+  "piv.externalPolicyOids|label": {
+    "en": "930c5800dfa36905",
+    "text": "سياسات PIV Authentication التي يجب أن تؤكدها البطاقة الخارجية"
+  },
+  "piv.externalPolicyOids|description": {
+    "en": "2398931e8d58f5c4",
+    "text": "سياسات الشهادات التي يجب أن تؤكد شهادة البطاقة الخارجية إحداها كي تُطابَق بمعرّف UUID للبطاقة: افتراضيًا id-fpki-common-authentication ‏(PIV Authentication في Federal PKI Common Policy) وid-fpki-certpcy-pivi-hardware ‏(PIV-I). أضف هنا سياسات العتاد الخاصة بجهة إصدار CAC."
+  },
+  "pki.paranoidPivAttestation|label": {
+    "en": "e645d02c49d2f9bf",
+    "text": "المتشدد: سلسلة إثبات مفتاح PIV في YubiKey"
+  },
+  "pki.paranoidPivAttestation|description": {
+    "en": "fdb7c0eb631758ea",
+    "text": "حالة الاستخدام `piv-attestation` ‏(#1955): شهادة إثبات الفتحة وشهادة إثبات f9 في تسجيل PIV. يفحص الوضع المتشدد نافذة الصلاحية في اللحظة الحالية، والمسار إلى piv.attestationAnchors، والإلغاء حيث تسمّي السلسلة قائمة. عند الإيقاف، تُجري حالة الاستخدام هذه وحدها فحص المسار دون فحوص الحقول، بينما يبقى كل صف آخر والإعداد الرئيس دون تغيير؛ وعند إيقافه في وضع المنتج يُسجَّل ذلك مرة واحدة (STS-PKI-0239) ويُعرض باللون الأحمر على /admin/pki/trust."
+  },
+  "pki.paranoidPivCard|label": {
+    "en": "4078a93e7117d6f9",
+    "text": "المتشدد: بطاقة PIV أو CAC خارجية تُطابَق بمعرّف UUID للبطاقة"
+  },
+  "pki.paranoidPivCard|description": {
+    "en": "d4d5fb070575e1c6",
+    "text": "حالة الاستخدام `piv-card` ‏(#1955): شهادة عميل من جهة إصدار في piv.externalIssuers، تُطابَق بمعرّف UUID لبطاقتها. يفحص الوضع المتشدد keyUsage digitalSignature ونافذة صلاحية الشهادة الطرفية إلى جانب فحص جهة الإصدار بقفزة واحدة. عند الإيقاف، تُجري حالة الاستخدام هذه وحدها فحص جهة الإصدار فقط، بينما يبقى كل صف آخر والإعداد الرئيس دون تغيير؛ وعند إيقافه في وضع المنتج يُسجَّل ذلك مرة واحدة (STS-PKI-0239) ويُعرض باللون الأحمر على /admin/pki/trust."
+  },
+  "roles.pivKeyRecoveryGroup|label": {
+    "en": "2f231e1e99785dc6",
+    "text": "المجموعة التي تمنح الدور PIV_KEY_RECOVERY"
+  },
+  "roles.pivKeyRecoveryGroup|description": {
+    "en": "801616eea12559a5",
+    "text": "مجموعة الدليل التي يحمل أعضاؤها الدور المدمج PIV_KEY_RECOVERY ‏(#1955)، الذي تشترطه سياسة التحكم في الوصول، إلى جانب كتابة المسؤول، لاسترداد مفتاح piv-key-management المودَع لشخص آخر (piv.keyEscrow). يفك ذلك المفتاح تشفير بريد الشخص، لذا لا يحمل أحد هذا الدور حتى يضيفه مسؤول إلى المجموعة. القيمة الفارغة لا تسمح لأحد باسترداد مفتاح شخص آخر؛ ويسترد الحامل مفتاحه على البوابة."
   }
 }

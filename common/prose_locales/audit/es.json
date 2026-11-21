@@ -2326,5 +2326,9 @@
   "audit.actions.xacml.pep.cluster.proxy.clear.label": {
     "en": "c2812e5d21fb6dd4",
     "text": "Se quitó la configuración de proxy inverso de un clúster de PEP remotos"
+  },
+  "audit.actions.piv-escrow.recover.label": {
+    "en": "0cad829ec7cafc72",
+    "text": "Se recuperó una clave PIV de gestión de claves en custodia"
   }
 }

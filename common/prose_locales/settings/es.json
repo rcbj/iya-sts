@@ -12706,5 +12706,93 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "Solo para la escucha del depurador de protocolos: http.http2MaxConcurrentStreams. -1, el predeterminado, sigue a http.http2MaxConcurrentStreams; cualquier otro valor decide solo para esta escucha. Cuántas solicitudes puede tener abiertas a la vez una conexión HTTP/2 (SETTINGS_MAX_CONCURRENT_STREAMS); un flujo por encima se rechaza hasta que termine otro. 100, el predeterminado, es el valor más pequeño que recomienda RFC 9113; el propio de node no tiene límite, lo que permitiría a una sola conexión llevar el trabajo de miles. Limita el trabajo de una conexión como http.maxConnections limita las conexiones. Una conexión nueva sigue un cambio de inmediato, y a una abierta se le envía el nuevo valor."
+  },
+  "piv.attestationAnchors|label": {
+    "en": "ebc10f6a7dcbbf58",
+    "text": "Raíces de atestación PIV (PEM)"
+  },
+  "piv.attestationAnchors|description": {
+    "en": "487e76edeb4446b9",
+    "text": "Las raíces a las que debe encadenarse una atestación de clave PIV de YubiKey, como un paquete PEM. Vacío usa las dos que publica Yubico (Yubico PIV Root CA Serial 263751, y Yubico Attestation Root 1 para el firmware 5.7.4 y posteriores), incluidas en common/pki_piv_anchors.json y fijadas allí por SHA-256, junto con los intermedios PIV de Yubico. Un certificado aquí sustituye a las raíces incluidas."
+  },
+  "piv.requireAttestation|label": {
+    "en": "4e11b0db111faccf",
+    "text": "Exigir una atestación PIV para los perfiles PIV"
+  },
+  "piv.requireAttestation|description": {
+    "en": "ef38975436c5ac4f",
+    "text": "Activado, una solicitud de certificado piv-auth, piv-sign, piv-key-management o piv-card-auth se rechaza salvo que lleve una atestación PIV de YubiKey que se verifique (STS-PIV-0010). Una clave piv-key-management en custodia procedente de EST /serverkeygen es la excepción: la generó este servicio. Desactivado, el valor predeterminado, una solicitud así sin atestación se emite sin prueba de hardware; una solicitud que lleva una que no se verifica se rechaza en ambos casos."
+  },
+  "piv.pinPolicy|label": {
+    "en": "0f683a0cb1db1988",
+    "text": "Política de PIN más débil que puede tener una clave PIV atestada"
+  },
+  "piv.pinPolicy|description": {
+    "en": "c3f9fcec406b9806",
+    "text": "Lo que la política de PIN de la atestación debe ser como mínimo. `once`: el PIN una vez por sesión (cuenta el match-once de una llave Bio); `always`: el PIN antes de cada uso (cuenta match-always). `any`, el valor predeterminado, no exige ninguna política de PIN. Una clave cuya atestación sea más débil se rechaza (STS-PIV-0011)."
+  },
+  "piv.touchPolicy|label": {
+    "en": "a88f111c7b13657f",
+    "text": "Política de toque más débil que puede tener una clave PIV atestada"
+  },
+  "piv.touchPolicy|description": {
+    "en": "d78f0d5df0256787",
+    "text": "Lo que la política de toque de la atestación debe ser como mínimo. `cached`: un toque, recordado durante 15 segundos; `always`: un toque en cada uso. `any`, el valor predeterminado, no exige ninguna. Una clave cuya atestación sea más débil se rechaza (STS-PIV-0012)."
+  },
+  "piv.cardAuthSignIn|label": {
+    "en": "61b2226403ad5c61",
+    "text": "Permitir iniciar sesión con un certificado piv-card-auth"
+  },
+  "piv.cardAuthSignIn|description": {
+    "en": "1852da24c3fbfade",
+    "text": "Una clave piv-card-auth (ranura 9e) funciona sin PIN, para el acceso físico, por lo que su certificado se rechaza en el inicio de sesión TLS y en PKINIT (STS-PIV-0013) salvo que esto esté activado."
+  },
+  "piv.keyEscrow|label": {
+    "en": "f2efc85c3d2bac38",
+    "text": "Guardar en custodia las claves piv-key-management"
+  },
+  "piv.keyEscrow|description": {
+    "en": "cf9618144b67dff3",
+    "text": "Activado, EST /serverkeygen para el perfil piv-key-management conserva la clave privada generada, sellada con la clave de cifrado de claves, para que su titular (en el portal, tras un nuevo inicio de sesión) o un administrador con el rol de recuperación de claves PIV pueda recuperarla y descifrar correo antiguo tras perder una tarjeta. Se rechaza donde no se tiene ninguna clave de cifrado de claves (STS-PIV-0020). Una clave en custodia nunca es prueba de hardware. Desactivado, el valor predeterminado, /serverkeygen rechaza el perfil piv-key-management (STS-PIV-0021), de modo que una clave 9d se genera en la tarjeta y no se guarda en ningún otro sitio."
+  },
+  "piv.externalIssuers|label": {
+    "en": "e96143ab9556db35",
+    "text": "CA emisoras PIV o CAC externas asociadas por UUID de tarjeta (PEM)"
+  },
+  "piv.externalIssuers|description": {
+    "en": "0fb91dba2cb957d3",
+    "text": "Las CA emisoras cuyos certificados de tarjeta PIV o CAC inician la sesión de una persona por el UUID de tarjeta FIPS 201: un certificado de cliente emitido directamente por una de ellas, que declare una política de piv.externalPolicyOids y lleve exactamente un subjectAltName urn:uuid, se asocia a la única persona cuyo stsPivCardUuid contiene ese UUID. Nunca por su nombre, y no se crea ninguna entrada. La CA también debe estar en un almacén de confianza de clientes; si no, el protocolo de enlace la rechaza antes. Vacío, el valor predeterminado, no asocia nada."
+  },
+  "piv.externalPolicyOids|label": {
+    "en": "930c5800dfa36905",
+    "text": "Políticas PIV Authentication que debe declarar una tarjeta externa"
+  },
+  "piv.externalPolicyOids|description": {
+    "en": "2398931e8d58f5c4",
+    "text": "Las políticas de certificado de las que el certificado de una tarjeta externa debe declarar una para asociarse por su UUID de tarjeta: de forma predeterminada id-fpki-common-authentication (la PIV Authentication de la Federal PKI Common Policy) e id-fpki-certpcy-pivi-hardware (PIV-I). Añada aquí las políticas de hardware propias de un emisor de CAC."
+  },
+  "pki.paranoidPivAttestation|label": {
+    "en": "e645d02c49d2f9bf",
+    "text": "Paranoico: una cadena de atestación de clave PIV de YubiKey"
+  },
+  "pki.paranoidPivAttestation|description": {
+    "en": "fdb7c0eb631758ea",
+    "text": "Caso de uso `piv-attestation` (#1955): el certificado de atestación de la ranura y el certificado de atestación f9 de un registro PIV. El modo paranoico comprueba la ventana de validez en el momento actual, la ruta hasta piv.attestationAnchors y la revocación cuando la cadena indica una lista. Desactivado, solo este caso de uso hace la comprobación de ruta sin las comprobaciones de campos, mientras que las demás filas y el maestro no cambian; desactivado en modo producto, se registra una vez (STS-PKI-0239) y se muestra en rojo en /admin/pki/trust."
+  },
+  "pki.paranoidPivCard|label": {
+    "en": "4078a93e7117d6f9",
+    "text": "Paranoico: una tarjeta PIV o CAC externa asociada por UUID de tarjeta"
+  },
+  "pki.paranoidPivCard|description": {
+    "en": "d4d5fb070575e1c6",
+    "text": "Caso de uso `piv-card` (#1955): un certificado de cliente de una CA emisora de piv.externalIssuers, asociado por su UUID de tarjeta. El modo paranoico comprueba keyUsage digitalSignature y la ventana de validez del certificado final además de la comprobación del emisor de un salto. Desactivado, solo este caso de uso hace únicamente la comprobación del emisor, mientras que las demás filas y el maestro no cambian; desactivado en modo producto, se registra una vez (STS-PKI-0239) y se muestra en rojo en /admin/pki/trust."
+  },
+  "roles.pivKeyRecoveryGroup|label": {
+    "en": "2f231e1e99785dc6",
+    "text": "Grupo que concede el rol PIV_KEY_RECOVERY"
+  },
+  "roles.pivKeyRecoveryGroup|description": {
+    "en": "801616eea12559a5",
+    "text": "El grupo del directorio cuyos miembros tienen el rol integrado PIV_KEY_RECOVERY (#1955), que la política de control de acceso exige, junto con Admin Write, para recuperar la clave piv-key-management en custodia de otra persona (piv.keyEscrow). Esa clave descifra el correo de la persona, por lo que nadie tiene el rol hasta que un administrador lo añade al grupo. Vacío no permite a nadie recuperar la clave de otra persona; el titular recupera la suya en el portal."
   }
 }

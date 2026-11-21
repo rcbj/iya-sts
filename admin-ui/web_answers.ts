@@ -1458,6 +1458,17 @@ class WebAnswers {
                active: '/admin/realms',
                html: WebAnswers.realmCreated(answer, env, t) };
     }
+    // A PIV SLOT CERTIFICATE ISSUED FROM THE ENROLMENT FORM, or an
+    // ESCROWED KEY RECOVERED (#1955 P2): drawn once, in place, as every
+    // credential this console hands over is.
+    if (page === '/admin/hardware-tokens' &&
+        (action === 'enrol-piv' || action === 'recover-key')) {
+      const title = t.text(action === 'enrol-piv'
+        ? 'consoleAnswers.once.pivCertificate'
+        : 'consoleAnswers.once.pivKey');
+      return { title: title, active: page,
+               html: WebAnswers.pivAnswer(answer, action, back, t) };
+    }
     if (answer.hmacKey) {
       return { title: t.text('consoleAnswers.once.eabKey'),
                active: '/admin/cert-issuance',
@@ -1857,6 +1868,28 @@ class WebAnswers {
    * @param t - optional; the translator, the default when left out
    * @returns the HTML
    */
+  static pivAnswer(result: Json, action: string, back: string,
+                   t?: Json): string {
+    t = t || kit.context().t;
+    const area = function (name: string, value: unknown): string {
+      return '<textarea readonly rows="10" name="' + name + '">' +
+        kit.esc(value) + '</textarea>';
+    };
+    const body = action === 'recover-key'
+      ? kit.warn(t.html('consoleAnswers.piv.keyWarn')) +
+        kit.frame('<h2>' + t.html('consoleAnswers.piv.privateKey') +
+                  '</h2>' + area('private-key', result.privateKeyPem)) +
+        kit.frame('<h2>' + t.html('consoleAnswers.piv.certificate') +
+                  '</h2>' + area('certificate', result.certificatePem))
+      : '<p>' + kit.esc(result.message || '') + '</p>' +
+        kit.frame('<h2>' + t.html('consoleAnswers.piv.certificate') +
+                  '</h2>' + area('certificate', result.certificatePem) +
+                  '<p class="note">' + t.html('consoleAnswers.piv.import') +
+                  '</p>');
+    return body + '<p class="links"><a href="' + kit.esc(back) + '">' +
+      t.html('consoleAnswers.back') + '</a></p>';
+  }
+
   static eabKey(result: Json, back: string, t?: Json): string {
     t = t || kit.context().t;
     const code = function (value) {

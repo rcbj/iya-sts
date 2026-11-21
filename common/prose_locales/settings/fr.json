@@ -12706,5 +12706,93 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "Pour l’écouteur du débogueur de protocoles uniquement : http.http2MaxConcurrentStreams. -1, la valeur par défaut, suit http.http2MaxConcurrentStreams ; toute autre valeur ne s’applique qu’à cet écouteur. Combien de requêtes une connexion HTTP/2 peut avoir ouvertes simultanément (SETTINGS_MAX_CONCURRENT_STREAMS) ; un flux au-delà est refusé jusqu’à ce qu’un autre se termine. 100, la valeur par défaut, est la plus petite valeur que recommande la RFC 9113 ; celle de node est illimitée, ce qui permettrait à une seule connexion de porter le travail de milliers. Elle borne le travail d’une connexion comme http.maxConnections borne les connexions. Une nouvelle connexion suit un changement immédiatement, et la nouvelle valeur est envoyée à une connexion ouverte."
+  },
+  "piv.attestationAnchors|label": {
+    "en": "ebc10f6a7dcbbf58",
+    "text": "Racines d’attestation PIV (PEM)"
+  },
+  "piv.attestationAnchors|description": {
+    "en": "487e76edeb4446b9",
+    "text": "Les racines auxquelles une attestation de clé PIV de YubiKey doit se chaîner, sous forme de lot PEM. Vide, utilise les deux que publie Yubico (Yubico PIV Root CA Serial 263751, et Yubico Attestation Root 1 pour le micrologiciel 5.7.4 et ultérieur), livrées dans common/pki_piv_anchors.json et épinglées là par SHA-256, avec les intermédiaires PIV de Yubico. Un certificat indiqué ici remplace les racines livrées."
+  },
+  "piv.requireAttestation|label": {
+    "en": "4e11b0db111faccf",
+    "text": "Exiger une attestation PIV pour les profils PIV"
+  },
+  "piv.requireAttestation|description": {
+    "en": "ef38975436c5ac4f",
+    "text": "Activé, une demande de certificat piv-auth, piv-sign, piv-key-management ou piv-card-auth est refusée si elle ne porte pas une attestation PIV de YubiKey qui se vérifie (STS-PIV-0010). Une clé piv-key-management séquestrée issue d’EST /serverkeygen fait exception : c’est ce service qui l’a générée. Désactivé, la valeur par défaut, une telle demande sans attestation est émise sans preuve matérielle ; une demande qui en porte une qui ne se vérifie pas est refusée dans les deux cas."
+  },
+  "piv.pinPolicy|label": {
+    "en": "0f683a0cb1db1988",
+    "text": "Politique de PIN la plus faible qu’une clé PIV attestée peut avoir"
+  },
+  "piv.pinPolicy|description": {
+    "en": "c3f9fcec406b9806",
+    "text": "Ce que la politique de PIN de l’attestation doit être au minimum. `once` : le PIN une fois par session (le match-once d’une clé Bio compte) ; `always` : le PIN avant chaque utilisation (match-always compte). `any`, la valeur par défaut, n’impose aucune politique de PIN. Une clé dont l’attestation est plus faible est refusée (STS-PIV-0011)."
+  },
+  "piv.touchPolicy|label": {
+    "en": "a88f111c7b13657f",
+    "text": "Politique de toucher la plus faible qu’une clé PIV attestée peut avoir"
+  },
+  "piv.touchPolicy|description": {
+    "en": "d78f0d5df0256787",
+    "text": "Ce que la politique de toucher de l’attestation doit être au minimum. `cached` : un toucher, mémorisé pendant 15 secondes ; `always` : un toucher à chaque utilisation. `any`, la valeur par défaut, n’en impose aucune. Une clé dont l’attestation est plus faible est refusée (STS-PIV-0012)."
+  },
+  "piv.cardAuthSignIn|label": {
+    "en": "61b2226403ad5c61",
+    "text": "Permettre à un certificat piv-card-auth de se connecter"
+  },
+  "piv.cardAuthSignIn|description": {
+    "en": "1852da24c3fbfade",
+    "text": "Une clé piv-card-auth (emplacement 9e) fonctionne sans PIN, pour l’accès physique ; son certificat est donc refusé à la connexion TLS et à PKINIT (STS-PIV-0013), sauf si ce réglage est activé."
+  },
+  "piv.keyEscrow|label": {
+    "en": "f2efc85c3d2bac38",
+    "text": "Séquestrer les clés piv-key-management"
+  },
+  "piv.keyEscrow|description": {
+    "en": "cf9618144b67dff3",
+    "text": "Activé, EST /serverkeygen pour le profil piv-key-management conserve la clé privée générée, scellée sous la clé de chiffrement de clés, afin que son détenteur (sur le portail, après une nouvelle connexion) ou un administrateur détenant le rôle de récupération des clés PIV puisse la récupérer et déchiffrer d’anciens courriels après la perte d’une carte. Refusé là où aucune clé de chiffrement de clés n’est détenue (STS-PIV-0020). Une clé séquestrée n’est jamais une preuve matérielle. Désactivé, la valeur par défaut, /serverkeygen refuse le profil piv-key-management (STS-PIV-0021), de sorte qu’une clé 9d est générée sur la carte et conservée nulle part ailleurs."
+  },
+  "piv.externalIssuers|label": {
+    "en": "e96143ab9556db35",
+    "text": "AC émettrices PIV ou CAC externes, associées par UUID de carte (PEM)"
+  },
+  "piv.externalIssuers|description": {
+    "en": "0fb91dba2cb957d3",
+    "text": "Les AC émettrices dont les certificats de carte PIV ou CAC connectent une personne par l’UUID de carte FIPS 201 : un certificat client émis directement par l’une d’elles, affirmant une politique de piv.externalPolicyOids et portant exactement un subjectAltName urn:uuid, est associé à la seule personne dont stsPivCardUuid contient cet UUID. Jamais par son nom, et aucune entrée n’est créée. L’AC doit aussi figurer dans un magasin de confiance client, sinon la négociation la refuse d’abord. Vide, la valeur par défaut, n’associe rien."
+  },
+  "piv.externalPolicyOids|label": {
+    "en": "930c5800dfa36905",
+    "text": "Politiques PIV Authentication qu’une carte externe doit affirmer"
+  },
+  "piv.externalPolicyOids|description": {
+    "en": "2398931e8d58f5c4",
+    "text": "Les politiques de certificat dont le certificat d’une carte externe doit affirmer l’une pour être associé par son UUID de carte : par défaut id-fpki-common-authentication (la PIV Authentication de la Federal PKI Common Policy) et id-fpki-certpcy-pivi-hardware (PIV-I). Ajoutez ici les politiques matérielles propres à un émetteur de CAC."
+  },
+  "pki.paranoidPivAttestation|label": {
+    "en": "e645d02c49d2f9bf",
+    "text": "Paranoïaque : une chaîne d’attestation de clé PIV de YubiKey"
+  },
+  "pki.paranoidPivAttestation|description": {
+    "en": "fdb7c0eb631758ea",
+    "text": "Cas d’usage `piv-attestation` (#1955) : le certificat d’attestation de l’emplacement et le certificat d’attestation f9 d’un enregistrement PIV. Le mode paranoïaque vérifie la fenêtre de validité à l’instant présent, le chemin vers piv.attestationAnchors et la révocation lorsque la chaîne désigne une liste. Désactivé, ce seul cas d’usage effectue la vérification du chemin sans les vérifications des champs, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivé en mode produit, c’est journalisé une fois (STS-PKI-0239) et affiché en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidPivCard|label": {
+    "en": "4078a93e7117d6f9",
+    "text": "Paranoïaque : une carte PIV ou CAC externe associée par UUID de carte"
+  },
+  "pki.paranoidPivCard|description": {
+    "en": "d4d5fb070575e1c6",
+    "text": "Cas d’usage `piv-card` (#1955) : un certificat client d’une AC émettrice de piv.externalIssuers, associé par son UUID de carte. Le mode paranoïaque vérifie keyUsage digitalSignature et la fenêtre de validité du certificat final en plus de la vérification de l’émetteur à un saut. Désactivé, ce seul cas d’usage n’effectue que la vérification de l’émetteur, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivé en mode produit, c’est journalisé une fois (STS-PKI-0239) et affiché en rouge sur /admin/pki/trust."
+  },
+  "roles.pivKeyRecoveryGroup|label": {
+    "en": "2f231e1e99785dc6",
+    "text": "Groupe accordant le rôle PIV_KEY_RECOVERY"
+  },
+  "roles.pivKeyRecoveryGroup|description": {
+    "en": "801616eea12559a5",
+    "text": "Le groupe de l’annuaire dont les membres détiennent le rôle intégré PIV_KEY_RECOVERY (#1955), que la politique de contrôle d’accès exige, en plus d’Admin Write, pour récupérer la clé piv-key-management séquestrée d’une autre personne (piv.keyEscrow). Cette clé déchiffre le courrier de la personne : personne ne détient donc le rôle tant qu’un administrateur ne l’a pas ajouté au groupe. Vide, ne permet à personne de récupérer la clé d’une autre personne ; le détenteur récupère la sienne sur le portail."
   }
 }

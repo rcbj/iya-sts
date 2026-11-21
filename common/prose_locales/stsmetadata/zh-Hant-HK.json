@@ -387,10 +387,6 @@
     "en": "c6914ceb37d9389d",
     "text": "partial：email 識別碼類型與 email 設定檔。不執行 email-reply-00 挑戰（不會寄送任何內容至該地址）；地址為該人自己的 mail 屬性時即獲授權。"
   },
-  "stsmetadata.specs.lamps-csr-attestation.coverage": {
-    "en": "727a26e021b5f20f",
-    "text": "partial：透過 EST 與 SCEP 的裝置設定檔，PKCS#10 請求的 id-aa-attestation 屬性（至多一個，恰好一個 AttestationBundle，僅限證書與其他選項）；唯一會驗證的聲明類型是 TCG 的 tcg-attest-tpm-certify，採用第 20 版附錄 A.2.3 的語法，此語法未被任何後續版本或 TCG 文件取代（#257）。不讀取 CRMF 擴充（此處沒有 CMP），其他聲明類型只記錄、不驗證。新鮮度（第 6.2 節）透過 EST 上的 draft-ietf-lamps-attestation-freshness 提供。"
-  },
   "stsmetadata.specs.rfc7030.coverage": {
     "en": "bc9984adc698cc63",
     "text": "partial：/cacerts、/simpleenroll、/simplereenroll、/serverkeygen 與 /csrattrs，位於無標籤路徑以及每個證書設定檔的標籤之下，以 HTTP Basic 或此領域簽發的 TLS 客戶端證書驗證。未實作：Full CMC（第 4.3 節，回應 501）、tls-unique 通道繫結（第 3.5 節；TLS 1.3 沒有 tls-unique）、加密的伺服器產生私密金鑰（第 4.4.1.2 節，以 501 拒絕）以及 202 Retry-After 延遲（第 4.2.3 節）。"

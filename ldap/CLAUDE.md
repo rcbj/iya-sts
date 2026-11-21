@@ -4624,6 +4624,28 @@ and how a presented one finds it:
   `sts_certificate_holder_rename` 2b.
 
 
+
+**`stsPivCardUuid` (#1955 P2, D8, rcbj 2026-11-20)** is the second thing an
+outside certificate may be found by: an outside PIV or CAC card's FIPS 201
+card UUID, lower case, no `urn:uuid:` prefix, one value per card (multi).
+`pivCardHolders(uuid)` answers who holds one, on the same certificate
+enrollment slot as `certificateHolders` and for the same reason. It is found
+the way a DID is (`entryByDidSubject()`): the store's `byAttribute` index in a
+windowed process (`stspivcarduuid` is in the codec's `VALUE_INDEXED`, a key
+the service writes, so no schema moves; an entry written before carries no key
+until it is next written, and recording the UUID is that write), and the
+resident entries walked. It is asked only for a certificate from a configured
+outside PIV issuer that no entry stores, so not on every handshake. The value
+is compared lower-cased, and EVERY WRITE NORMALISES AND CHECKS IT
+(`pivCardUuidRefusal()`): `putEntry()` (creates, replaces, SCIM, the import),
+`writePersonAttribute()` (the console's editor, where `ldap/person_editor.ts`
+offers it to administrators and never to the portal) and the LDAP modify,
+which commits onto the entry itself. A `urn:uuid:` prefix comes off, the value
+is lower-cased, and one that is not RFC 9562's form, the nil UUID
+(STS-PIV-0034) or one another entry holds (STS-PIV-0035) is refused before
+anything is written, so the windowed index, which compares as written, always
+holds the lower-case form. OID 790 under
+the register's attribute arc. `common/CLAUDE.md` 3ag argues the mapping.
 ## A GROUP OR A PERSON NAMES ITS POLICY (#1235, 2026-10-30; `common/CLAUDE.md` 3cx)
 
 rcbj on #1234: what a named policy covers names it, and the policy lists

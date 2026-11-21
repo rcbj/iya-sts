@@ -1676,12 +1676,12 @@
     "text": "Jedes Zertifikat, das es aushändigt, mit dem Schlüssel der EST-Issuing-CA dieses Vertrauensbereichs, durch issueEnrolled() von common/pki.js — derselbe Kodierer, aus dem hier jedes andere Zertifikat stammt. Die certs-only-CMS-Nachrichten, die es zurückgibt, sind DEGENERIERT: ein SignedData mit Zertifikaten und ohne Signierer, sodass sie keine eigene Signatur tragen und denen im Hinblick auf die darin liegenden Zertifikate vertraut wird."
   },
   "crypto.families.est.verifies": {
-    "en": "d40d37c4bd83de49",
-    "text": "Den Besitznachweis nach PKCS#10 — die Signatur der Anfrage mit ihrem eigenen öffentlichen Schlüssel, klassisch und mit Post-Quanten-Verfahren, in common/cert_enrollment.ts — und bei der Authentifizierung mit einem Zertifikat den Pfad des Client-Zertifikats zur Intermediate dieses Vertrauensbereichs und zur Root des Dienstes, unter Hinzuziehung des Widerrufs. Eine Vorlage unter /serverkeygen wird nicht geprüft: Ihr Schlüssel wird ersetzt."
+    "en": "6b27c8877d509c46",
+    "text": "Der PKCS#10-Besitznachweis – die Signatur der Anforderung mit ihrem eigenen öffentlichen Schlüssel, klassisch und Post-Quanten, in common/cert_enrollment.ts – und bei der Zertifikatsauthentifizierung der Pfad des Clientzertifikats zum Intermediate dieses Bereichs und zum Root des Dienstes, mit Widerrufsprüfung. Eine /serverkeygen-Vorlage wird nicht verifiziert: Ihr Schlüssel wird ersetzt. Eine YubiKey-PIV-Schlüsselattestierung in der Anforderung (#1955, hier sowie über ACME und SCEP): die ECDSA- oder RSA-Signatur des Slot-Zertifikats durch das f9-Zertifikat und der Pfad des f9-Zertifikats zu den PIV-Attestierungsankern des Bereichs, über die Validierungstür."
   },
   "crypto.families.est.encrypts": {
-    "en": "2f48e10a9ad6494d",
-    "text": "Den privaten Schlüssel eines vom Server erzeugten Schlüsselpaars, mit AES-256-GCM unter dem Schlüsselverschlüsselungsschlüssel auf den Eintrag versiegelt, überall dort, wo dieser Schlüssel den Prozess überdauert. Er wird NICHT an den Client verschlüsselt (RFC 7030 Abschnitt 4.4.1.2): Eine Anfrage, die das verlangt, wird abgelehnt, und der Schlüssel reist nur innerhalb von TLS."
+    "en": "a18df4311029b728",
+    "text": "Der private Schlüssel eines vom Server erzeugten Schlüsselpaars, mit AES-256-GCM unter dem Schlüsselverschlüsselungsschlüssel versiegelt auf dem Eintrag, wo immer dieser Schlüssel den Prozess überdauert; ein hinterlegter piv-key-management-Schlüssel (#1955) in jedem Modus, oder er wird gar nicht erzeugt. Er wird NICHT für den Client verschlüsselt (RFC 7030 Abschnitt 4.4.1.2): Eine Anforderung, die das verlangt, wird abgelehnt, und der Schlüssel reist nur innerhalb von TLS."
   },
   "crypto.families.est.decrypts": {
     "en": "8d5c676935439726",
@@ -1986,5 +1986,9 @@
   "crypto.param.totp.encoding": {
     "en": "d9613131364834bc",
     "text": "RFC 4648 base32, ohne Padding, wie es das otpauth Key Uri Format erwartet."
+  },
+  "crypto.families.est.algorithms.4.what": {
+    "en": "4dd4db2fd60c28f7",
+    "text": "Verifizierte PIV-Attestierungssignaturen"
   }
 }
