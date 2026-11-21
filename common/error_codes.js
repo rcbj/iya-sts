@@ -391,6 +391,13 @@ const SUBSYSTEMS = [
           'the four PIV slot profiles, the escrow of piv-key-management ' +
           'keys, and the mapping of an outside PIV or CAC card by its card ' +
           'UUID.' },
+  { id: 'OPENPGP', label: 'OpenPGP keys and mail encryption',
+    where: 'common/openpgp_keys.ts, common/crypto.js (section 19), ' +
+           'portal/account_openpgp.ts, mgmt-api/openpgp_api.ts',
+    what: 'A person\'s OpenPGP public key registered with a proof of ' +
+          'possession (#1955 P6), its publication in the Web Key ' +
+          'Directory, their S/MIME certificate, and how mail to them is ' +
+          'encrypted.' },
   { id: 'SVCACCT', label: 'Service accounts',
     where: 'common/service_accounts.ts, common/service_account_policy.ts, ' +
            'common/service_account_rotation.ts, common/credentials.ts, ' +
@@ -20611,6 +20618,29 @@ const CODES = [
       'approval on the portal could not be queued; the request still waits ' +
       'there (#432 phase 6).',
     spec: 'log only' },
+  { code: 'STS-MAIL-0240',
+    summary: 'A message whose template mail.encryptionRequired names was ' +
+      'not queued: the person has chosen no mail encryption, so ' +
+      'nothing could encrypt it. The use\'s own refusal handling ' +
+      'applies (#1955).',
+    spec: 'log only (the use refuses as for any unsent message)' },
+  { code: 'STS-MAIL-0241',
+    summary: 'A message was not queued because the encryption the person ' +
+      'chose cannot be honoured now (no usable OpenPGP encryption ' +
+      'key, no S/MIME certificate that can receive); it is not ' +
+      'sent in the clear against their choice (#1955).',
+    spec: 'log only (the use refuses as for any unsent message)' },
+  { code: 'STS-MAIL-0242',
+    summary: 'An encrypted message cannot be carried by the realm\'s ' +
+      'transport: Azure Communication Services takes structured ' +
+      'content and cannot send a MIME entity this service composed ' +
+      '(#1955).',
+    spec: 'log only' },
+  { code: 'STS-MAIL-0243',
+    summary: 'An encrypted message could not be encrypted at send time ' +
+      '(the stored key or certificate no longer reads); it is a ' +
+      'dead letter, never sent in the clear (#1955).',
+    spec: 'log only' },
   // ===== I18N ==============================================================
   { code: 'STS-I18N-0001',
     summary: 'A catalog file under common/locales or a built-in mail ' +
@@ -22867,6 +22897,126 @@ const CODES = [
       'an unexpected error at /admin-api; the log line has the stack ' +
       '(#1955).',
     spec: 'HTTP 500' },
+  // ===== OPENPGP ===========================================================
+  { code: 'STS-OPENPGP-0001',
+    summary: 'An OpenPGP public key offered for registration did not ' +
+      'read: it was empty, larger than the 64 KiB this service ' +
+      'reads, more than one key, or not an OpenPGP key at all ' +
+      '(#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0002',
+    summary: 'A SECRET OpenPGP key was offered for registration; nothing ' +
+      'was stored. The person is told to export the public key ' +
+      '(#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0003',
+    summary: 'An OpenPGP key offered for registration is revoked or has ' +
+      'expired (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0004',
+    summary: 'An OpenPGP key, or the subkey that made its proof, uses an ' +
+      'algorithm the allow list refuses (DSA, ElGamal, a Brainpool ' +
+      'curve, or RSA shorter than openpgp.minRsaBits), or has no ' +
+      'valid signing key (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0005',
+    summary: 'No valid user id of an OpenPGP key offered for registration ' +
+      'carries the address on the person\'s entry (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0006',
+    summary: 'A person with no mail address asked for an OpenPGP ' +
+      'registration challenge, or offered a key; a key is ' +
+      'registered for the address its user id names (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0007',
+    summary: 'The proof of possession offered with an OpenPGP key is not ' +
+      'a readable cleartext-signed message (gpg --clearsign) ' +
+      '(#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0008',
+    summary: 'The proof of possession offered with an OpenPGP key does ' +
+      'not verify, or was made by a key that is not a signing key ' +
+      'of it (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0009',
+    summary: 'The text an OpenPGP proof of possession signs is not the ' +
+      'challenge this service issued the person (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0010',
+    summary: 'An OpenPGP proof of possession was signed before the ' +
+      'challenge was issued or after now, beyond ' +
+      'openpgp.signatureSkewS (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0011',
+    summary: 'No value of a person\'s userSMIMECertificate holds a ' +
+      'certificate that can receive S/MIME now (expired, an ' +
+      'unsupported key, a key usage or extended key usage that ' +
+      'excludes it), so mail to them cannot be S/MIME-encrypted ' +
+      '(#1955).',
+    spec: 'log only' },
+  { code: 'STS-OPENPGP-0012',
+    summary: 'An OpenPGP key was offered with no outstanding challenge ' +
+      'for the person, a lapsed one, or one already spent by ' +
+      'another request (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0013',
+    summary: 'An OpenPGP operation named a person with no entry in the ' +
+      'realm (#1955).',
+    spec: 'HTTP 404' },
+  { code: 'STS-OPENPGP-0014',
+    summary: 'An OpenPGP operation named an unknown action, or an unknown ' +
+      'mail encryption choice (#1955).',
+    spec: 'HTTP 400' },
+  { code: 'STS-OPENPGP-0015',
+    summary: 'A person with no OpenPGP key registered asked to remove or ' +
+      'publish one (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0016',
+    summary: 'A person chose OpenPGP for their mail while no registered ' +
+      'key of theirs has an encryption key valid now (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0017',
+    summary: 'A person chose S/MIME for their mail while their ' +
+      'userSMIMECertificate holds no certificate that can receive ' +
+      '(#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0018',
+    summary: 'An S/MIME certificate offered for a person\'s entry is not ' +
+      'a certificate, cannot receive S/MIME now, or does not name ' +
+      'the address on the entry (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0019',
+    summary: 'An OpenPGP key, a publication choice, a mail encryption ' +
+      'choice or an S/MIME certificate verified but could not be ' +
+      'written to the person\'s entry (#1955).',
+    spec: 'HTTP 500' },
+  { code: 'STS-OPENPGP-0020',
+    summary: 'An OpenPGP operation was asked before the directory filled ' +
+      'its slot (ldap/ldap_server.js), so no person could be read ' +
+      '(#1955).',
+    spec: 'HTTP 500' },
+  { code: 'STS-OPENPGP-0021',
+    summary: 'A Web Key Directory request named a domain or a hashed ' +
+      'local part that is not one (#1955).',
+    spec: 'HTTP 404' },
+  { code: 'STS-OPENPGP-0022',
+    summary: 'A Web Key Directory request named a domain no realm serves: ' +
+      'openpgp.wkd is off, or no realm\'s openpgp.wkdDomains (or ' +
+      'own domain) is it (#1955).',
+    spec: 'HTTP 404' },
+  { code: 'STS-OPENPGP-0023',
+    summary: 'A Web Key Directory lookup threw; the client is told the ' +
+      'key could not be read (#1955).',
+    spec: 'HTTP 500' },
+  { code: 'STS-OPENPGP-0024',
+    summary: 'A Web Key Directory request named an address with no ' +
+      'published key: nobody holds it, the person did not opt in, ' +
+      'the key was removed or replaced, or it expired (#1955).',
+    spec: 'HTTP 404' },
+  { code: 'STS-OPENPGP-0025',
+    summary: 'An OpenPGP operation of the account API or the management ' +
+      'API threw (#1955).',
+    spec: 'HTTP 500' },
   // ===== PIV ===============================================================
   { code: 'STS-PIV-0001',
     summary: 'A shipped PIV attestation certificate ' +
@@ -22998,6 +23148,7 @@ const CODES = [
       'another entry of the realm, which would make the card name two ' +
       'people; nothing was written (#1955, D8).',
     spec: 'HTTP 400 (the directory write); LDAP constraintViolation' },
+  // ===== SVCACCT ===========================================================
   { code: 'STS-SVCACCT-0001',
     summary: 'A service-account policy profile was named with something ' +
       'that is neither `default` nor a name of lower-case letters, digits ' +

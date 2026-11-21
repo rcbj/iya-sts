@@ -4702,3 +4702,18 @@ only through `writeProfilePhoto()`, which sets `pictureUrl` in the same act so a
 claim never names a photo the record does not. `noteAccountChange()` removes the
 row when the entry is deleted. `common/CLAUDE.md` (3db) argues the rest.
 
+
+## `stsOpenPgpKey` AND `userSMIMECertificate`: WHAT MAIL IS ENCRYPTED TO (#1955 P6, 2026-11-20)
+
+`common/openpgp_keys.ts`'s slot (`openpgpKeys.setDirectory()`, beside the
+mail channel's): `locate` hands one person's entry and the values of
+`userSMIMECertificate` under BOTH RFC 4522 spellings (an LDAP client writes
+`;binary`), read here by name because this is the store; `write` replaces in
+place (`writePersonAttribute()`) only `stsOpenPgpKey`,
+`stsOpenPgpFingerprint`, `stsOpenPgpKeyInfo`, `stsMailEncryption` and
+`userSMIMECertificate`, so the account observer is told as for any edit;
+`personByMail` is `personNameByMail()`, the forgot-password lookup made a
+named function so the Web Key Directory's `l` parameter asks the same index.
+In a whole-directory process that lookup walks the people, as the
+forgot-password one always has; it is reached only when the publication
+register misses and `l` hashes to the asked name.

@@ -195,6 +195,17 @@ model Credential {
   @fromAttr(#{attr: "stsKrb5KeyInfo"})
   `krb5KeyInfo`?: string;
 
+  // #1955 P6: the person's OpenPGP public key, its fingerprint and what is
+  // drawn about it.
+  @fromAttr(#{attr: "stsOpenPgpKey"})
+  `openPgpKey`?: string;
+
+  @fromAttr(#{attr: "stsOpenPgpFingerprint"})
+  `openPgpFingerprint`?: string;
+
+  @fromAttr(#{attr: "stsOpenPgpKeyInfo"})
+  `openPgpKeyInfo`?: string;
+
   @fromAttr(#{attr: "hobaPublicKey"})
   `hobaPublicKey`?: string[];
 
@@ -609,6 +620,10 @@ model PersonRecord {
 
   @fromAttr(#{attr: "stsMailVerified"})
   `mailVerified`?: string;
+
+  // #1955 P6: how mail to the person is encrypted.
+  @fromAttr(#{attr: "stsMailEncryption"})
+  `mailEncryption`?: string;
 
   @fromAttr(#{attr: "stsAudSub"})
   `audSub`?: string[];

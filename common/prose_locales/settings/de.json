@@ -3147,6 +3147,46 @@
     "en": "e0341e4e47f3b2f8",
     "text": "Was einer PKINIT-Anmeldung erlaubt, einen hardwaregebundenen Schlüssel zu beanspruchen (der Indikator pkinit-hardware und amr hwk). `inference`, der Standard und das Verhalten vor #1955: ein Smartcard-Anmeldezertifikat, dessen Schlüssel dieser Dienst nicht erzeugt hat, oder ein erfasster Attestierungsnachweis. `evidence`: nur ein Schlüssel, den die Attestierung eines Hardware-Tokens abdeckt. Eine Zertifikatsanmeldung über TLS erhält hwk, und sc für einen Schlüssel auf einer Smartcard, in beiden Fällen nur aus einem Nachweis."
   },
+  "openpgp.wkd|label": {
+    "en": "1f05a7518c3d2275",
+    "text": "Schlüssel im Web Key Directory veröffentlichen"
+  },
+  "openpgp.wkd|description": {
+    "en": "7822103f89ac59b3",
+    "text": "Das Web Key Directory (draft-koch-openpgp-webkey-service) für die Mail-Domains dieses Vertrauensbereichs beantworten: /.well-known/openpgpkey/<domain>/hu/<hash> (die erweiterte Methode, auf openpgpkey.<domain>) und /.well-known/openpgpkey/hu/<hash> (die direkte Methode) sowie die jeweilige Richtliniendatei. Beantwortet wird nur der Schlüssel einer Person, die im Portal zugestimmt hat. Standardmäßig aus."
+  },
+  "openpgp.wkdDomains|label": {
+    "en": "d1c4b728593ff000",
+    "text": "Vom Web Key Directory bediente Mail-Domains"
+  },
+  "openpgp.wkdDomains|description": {
+    "en": "ad64f7216191123c",
+    "text": "Die Mail-Domains, für die das Web Key Directory dieses Vertrauensbereichs antwortet, durch Kommas getrennt. Leer, der Standard, bedeutet die eigene DNS-Domain des Vertrauensbereichs. Eine Anfrage ohne Vertrauensbereich im Pfad beantwortet der Vertrauensbereich, der ihre Domain bedient, zuerst der Standard-Vertrauensbereich."
+  },
+  "openpgp.challengeLifetimeS|label": {
+    "en": "dbf558cf0b4b8f90",
+    "text": "Gültigkeitsdauer der Registrierungs-Challenge (Sekunden)"
+  },
+  "openpgp.challengeLifetimeS|description": {
+    "en": "e9130c8e82368cc6",
+    "text": "Wie lange die Challenge gültig bleibt, die eine Person mit gpg --clearsign signiert, um einen OpenPGP-Schlüssel zu registrieren. Sie wird einmal verbraucht, und eine Person hat jeweils nur eine."
+  },
+  "openpgp.signatureSkewS|label": {
+    "en": "d927cf1f04bd9d51",
+    "text": "Zulässige Uhrabweichung der Nachweissignatur (Sekunden)"
+  },
+  "openpgp.signatureSkewS|description": {
+    "en": "2772763d3d363b6d",
+    "text": "Wie weit die Uhr des signierenden Computers von der dieses Dienstes abweichen darf: Ein Nachweis, der um mehr als diesen Wert vor Ausstellung der Challenge oder nach dem jetzigen Zeitpunkt signiert wurde, wird abgelehnt (STS-OPENPGP-0010)."
+  },
+  "openpgp.minRsaBits|label": {
+    "en": "f3dc9f85de143630",
+    "text": "Kleinster RSA-OpenPGP-Schlüssel"
+  },
+  "openpgp.minRsaBits|description": {
+    "en": "ad48516e31a7c45b",
+    "text": "Der kürzeste RSA-Schlüssel, Haupt- oder Unterschlüssel, den eine OpenPGP-Registrierung akzeptiert. Ed25519, Ed448, ECDSA und ECDH auf P-256, P-384 und P-521, X25519 und X448 werden akzeptiert; DSA, ElGamal und die Brainpool-Kurven nie (STS-OPENPGP-0004)."
+  },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
     "text": "Konformitätsberichte pro Feed-Anfrage"
@@ -11714,6 +11754,14 @@
   "mail.dedupWindowS|description": {
     "en": "50195b20fe00e9fa",
     "text": "Ein Hinweis, der nennt, worum es geht (dieselbe Handlung an demselben Konto), wird in diesem Fenster einmal gesendet, wie viele Türen ihn auch gemeldet haben. 0 schaltet die Unterdrückung aus."
+  },
+  "mail.encryptionRequired|label": {
+    "en": "81e5dc8eb5332f2b",
+    "text": "Nachrichten, die verschlüsselt werden müssen"
+  },
+  "mail.encryptionRequired|description": {
+    "en": "895bdb616e169134",
+    "text": "Die Nachrichten, nach Vorlagen-ID (password-reset, account-activation, sign-in-code, sign-in-link, credential-compromised und der Rest der Liste unter Monitoring → Mail), die nur verschlüsselt gesendet werden — PGP/MIME an den OpenPGP-Schlüssel der Person oder S/MIME an ihr Zertifikat, wie sie es im Portal gewählt hat. Einer Person, die keines von beiden gewählt hat, wird die Nachricht nicht gesendet (STS-MAIL-0240), und die anfordernde Verwendung meldet dies wie bei jeder nicht gesendeten Nachricht. Leer, der Standard, verlangt keine; die Wahl einer Person wird in jedem Fall beachtet."
   },
   "mail.selfServiceReset|label": {
     "en": "8525111d1c0be58a",

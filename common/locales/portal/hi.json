@@ -42,6 +42,8 @@
   "nav.keys.heading": "पासकी",
   "nav.tokens.label": "सुरक्षा कुंजियाँ",
   "nav.tokens.heading": "आपकी सुरक्षा कुंजियाँ और स्मार्ट कार्ड",
+  "nav.openpgp.label": "OpenPGP और मेल एन्क्रिप्शन",
+  "nav.openpgp.heading": "आपकी OpenPGP कुंजी और मेल एन्क्रिप्शन",
   "nav.mfa.label": "प्रमाणक ऐप",
   "nav.mfa.heading": "आपका प्रमाणक ऐप",
   "nav.signing-key.label": "हस्ताक्षर कुंजियाँ",

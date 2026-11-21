@@ -1227,6 +1227,79 @@ Scope: `admin:write`.
 Answers the escrowed private key of `username`'s piv-key-management certificate `serial` (piv.keyEscrow), so mail encrypted to it can be decrypted after the card is lost. Admin Write is not enough: the access-control policy decides it (resource `piv-key-escrow`, action `recover-key`), and the built-in policy permits a caller holding PIV_KEY_RECOVERY, a member of the group roles.pivKeyRecoveryGroup names. Audited (`piv-escrow.recover`) and told to the person over CAEP. Sent with Cache-Control: no-store.
 
 **Mirrors** `POST /admin/hardware-tokens` on the admin console.
+## GET /admin-api/openpgp
+
+`getOpenPgpKeys`
+
+**One person's OpenPGP key and mail encryption (#1955)**
+
+Everything Directory → OpenPGP keys draws: with `user`, that person's registered OpenPGP key, their outstanding registration challenge, their Web Key Directory publication, their S/MIME certificate and how mail to them is encrypted; and the realm's Web Key Directory switch and domains.
+
+**Mirrors** `GET /admin/openpgp` on the admin console.
+
+Scope: `admin:read`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `user` | query | string |  | The person whose OpenPGP key, publication and mail encryption to draw; empty for the realm's Web Key Directory alone. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**200**: The view.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `found` | boolean | yes | Whether `user` names a person of this realm. |
+| `person` | object, or null | yes |  |
+| `person.challenge` | object, or null | yes | The person's outstanding registration challenge (#1955): the text to sign with `gpg --clearsign`. |
+| `person.challenge.expiresAt` | string | yes | When it lapses, ISO 8601. |
+| `person.challenge.text` | string | yes |  |
+| `person.key` | object, or null | yes | The person's registered OpenPGP public key (#1955). |
+| `person.key.algorithm` | string | yes | The primary key's algorithm, as openpgp.js names it (`ed25519`, `eddsaLegacy ed25519Legacy`, `ecdsa nistP256`, `rsaEncryptSign 4096`). |
+| `person.key.armored` | string | yes | The public key, ASCII-armored. |
+| `person.key.created` | string | yes | When the key was made, ISO 8601. |
+| `person.key.encryption` | string | yes | The encryption key's algorithm; empty for a key with none valid when registered. |
+| `person.key.expiresAt` | string | yes | When it expires, ISO 8601; empty for never. |
+| `person.key.fingerprint` | string | yes | The fingerprint, lower-case hex: 40 characters for a v4 key, 64 for a v6 one. |
+| `person.key.registeredAt` | string | yes | When it was registered, ISO 8601. |
+| `person.key.registeredVia` | string | yes | Where: `portal` or `api`. |
+| `person.key.userIds` | list | yes | The user ids that carried the entry's address when it was registered. |
+| `person.key.userIds[]` | string |  |  |
+| `person.key.version` | integer | yes | The key version, 4 or 6. |
+| `person.mail` | string | yes | The address on the person's entry. |
+| `person.mailEncryption` | object | yes | How mail to the person is encrypted (#1955). |
+| `person.mailEncryption.choice` | string | yes | `none`, `openpgp` or `smime`. |
+| `person.mailEncryption.openpgpUsable` | boolean | yes | Whether the registered OpenPGP key has an encryption key valid now. |
+| `person.mailEncryption.smimeCertificate` | object, or null | yes |  |
+| `person.mailEncryption.smimeCertificate.serial` | string | yes |  |
+| `person.mailEncryption.smimeCertificate.subject` | string | yes |  |
+| `person.mailEncryption.smimeProblem` | string | yes | Why no S/MIME certificate on the entry can receive, in English; empty otherwise. |
+| `person.mailEncryption.smimeUsable` | boolean | yes | Whether the person's userSMIMECertificate holds a certificate that can receive now. |
+| `person.username` | string | yes |  |
+| `person.wkd` | object | yes | The person's Web Key Directory publication (#1955). |
+| `person.wkd.domainServed` | boolean | yes | Whether the domain of the person's address is one the realm's directory serves. |
+| `person.wkd.enabled` | boolean | yes | Whether the realm answers the Web Key Directory (`openpgp.wkd`). |
+| `person.wkd.hash` | string | yes | The hashed local part of the person's address, z-base-32. |
+| `person.wkd.optedIn` | boolean | yes | Whether the person chose to publish their key. |
+| `person.wkd.published` | boolean | yes | Whether it is answered now: a key, the choice, the realm's switch and a domain the realm serves. |
+| `person.wkd.url` | string | yes | The advanced method's URL for the address; empty without one. |
+| `user` | string | yes | The person asked about; empty for none. |
+| `wkd` | object | yes | The realm's Web Key Directory: its switch and the domains it serves. |
+| `wkd.domains` | list | yes |  |
+| `wkd.domains[]` | string |  |  |
+| `wkd.enabled` | boolean | yes |  |
+
+## POST /admin-api/openpgp/challenge
+
+`issueOpenPgpChallenge`
+
+**Issue a person an OpenPGP registration challenge (#1955)**
+
+A challenge for `user` to sign with `gpg --clearsign` (on a YubiKey OpenPGP card the card signs), replacing any earlier one, good for `openpgp.challengeLifetimeS`. Hand it to the person; their signature is what `registerOpenPgpKey` takes. Refused for a person with no mail address (STS-OPENPGP-0006).
+
+**Mirrors** `POST /admin/openpgp` on the admin console.
 
 Scope: `admin:write`.
 
@@ -1257,6 +1330,59 @@ Scope: `admin:write`.
 | `serialHex` | string | yes |  |
 
 **400**: The request was refused.
+| `user` | string | yes | The person, by username. |
+
+**200**: Done: the sentence, and the person as they now are.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `challenge` | object, or null | yes | The person's outstanding registration challenge (#1955): the text to sign with `gpg --clearsign`. |
+| `challenge.expiresAt` | string | yes | When it lapses, ISO 8601. |
+| `challenge.text` | string | yes |  |
+| `message` | string | yes |  |
+| `ok` | boolean | yes |  |
+| `view` | object | yes |  |
+| `view.found` | boolean | yes | Whether `user` names a person of this realm. |
+| `view.person` | object, or null | yes |  |
+| `view.person.challenge` | object, or null | yes | The person's outstanding registration challenge (#1955): the text to sign with `gpg --clearsign`. |
+| `view.person.challenge.expiresAt` | string | yes | When it lapses, ISO 8601. |
+| `view.person.challenge.text` | string | yes |  |
+| `view.person.key` | object, or null | yes | The person's registered OpenPGP public key (#1955). |
+| `view.person.key.algorithm` | string | yes | The primary key's algorithm, as openpgp.js names it (`ed25519`, `eddsaLegacy ed25519Legacy`, `ecdsa nistP256`, `rsaEncryptSign 4096`). |
+| `view.person.key.armored` | string | yes | The public key, ASCII-armored. |
+| `view.person.key.created` | string | yes | When the key was made, ISO 8601. |
+| `view.person.key.encryption` | string | yes | The encryption key's algorithm; empty for a key with none valid when registered. |
+| `view.person.key.expiresAt` | string | yes | When it expires, ISO 8601; empty for never. |
+| `view.person.key.fingerprint` | string | yes | The fingerprint, lower-case hex: 40 characters for a v4 key, 64 for a v6 one. |
+| `view.person.key.registeredAt` | string | yes | When it was registered, ISO 8601. |
+| `view.person.key.registeredVia` | string | yes | Where: `portal` or `api`. |
+| `view.person.key.userIds` | list | yes | The user ids that carried the entry's address when it was registered. |
+| `view.person.key.userIds[]` | string |  |  |
+| `view.person.key.version` | integer | yes | The key version, 4 or 6. |
+| `view.person.mail` | string | yes | The address on the person's entry. |
+| `view.person.mailEncryption` | object | yes | How mail to the person is encrypted (#1955). |
+| `view.person.mailEncryption.choice` | string | yes | `none`, `openpgp` or `smime`. |
+| `view.person.mailEncryption.openpgpUsable` | boolean | yes | Whether the registered OpenPGP key has an encryption key valid now. |
+| `view.person.mailEncryption.smimeCertificate` | object, or null | yes |  |
+| `view.person.mailEncryption.smimeCertificate.serial` | string | yes |  |
+| `view.person.mailEncryption.smimeCertificate.subject` | string | yes |  |
+| `view.person.mailEncryption.smimeProblem` | string | yes | Why no S/MIME certificate on the entry can receive, in English; empty otherwise. |
+| `view.person.mailEncryption.smimeUsable` | boolean | yes | Whether the person's userSMIMECertificate holds a certificate that can receive now. |
+| `view.person.username` | string | yes |  |
+| `view.person.wkd` | object | yes | The person's Web Key Directory publication (#1955). |
+| `view.person.wkd.domainServed` | boolean | yes | Whether the domain of the person's address is one the realm's directory serves. |
+| `view.person.wkd.enabled` | boolean | yes | Whether the realm answers the Web Key Directory (`openpgp.wkd`). |
+| `view.person.wkd.hash` | string | yes | The hashed local part of the person's address, z-base-32. |
+| `view.person.wkd.optedIn` | boolean | yes | Whether the person chose to publish their key. |
+| `view.person.wkd.published` | boolean | yes | Whether it is answered now: a key, the choice, the realm's switch and a domain the realm serves. |
+| `view.person.wkd.url` | string | yes | The advanced method's URL for the address; empty without one. |
+| `view.user` | string | yes | The person asked about; empty for none. |
+| `view.wkd` | object | yes | The realm's Web Key Directory: its switch and the domains it serves. |
+| `view.wkd.domains` | list | yes |  |
+| `view.wkd.domains[]` | string |  |  |
+| `view.wkd.enabled` | boolean | yes |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
@@ -1267,6 +1393,7 @@ Scope: `admin:write`.
 | `ok` | boolean |  |  |
 
 **403**: The access-control policy did not permit the recovery.
+**404**: No such person in this realm.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
@@ -1277,6 +1404,7 @@ Scope: `admin:write`.
 | `ok` | boolean |  |  |
 
 **404**: No escrowed key is held for that certificate of that person.
+**500**: The act verified but could not be written, or threw.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
@@ -1287,6 +1415,631 @@ Scope: `admin:write`.
 | `ok` | boolean |  |  |
 
 **503**: The escrowed key could not be opened.
+## POST /admin-api/openpgp/mail-encryption
+
+`setMailEncryption`
+
+**Set how mail to a person is encrypted (#1955)**
+
+`choice`: `none`, `openpgp` (their key must have an encryption key valid now) or `smime` (their userSMIMECertificate must hold a certificate that can receive).
+
+**Mirrors** `POST /admin/openpgp` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `choice` | string | yes | `none`, `openpgp` or `smime`. |
+| `user` | string | yes | The person, by username. |
+
+**200**: Done: the sentence, and the person as they now are.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `challenge` | object, or null | yes | The person's outstanding registration challenge (#1955): the text to sign with `gpg --clearsign`. |
+| `challenge.expiresAt` | string | yes | When it lapses, ISO 8601. |
+| `challenge.text` | string | yes |  |
+| `message` | string | yes |  |
+| `ok` | boolean | yes |  |
+| `view` | object | yes |  |
+| `view.found` | boolean | yes | Whether `user` names a person of this realm. |
+| `view.person` | object, or null | yes |  |
+| `view.person.challenge` | object, or null | yes | The person's outstanding registration challenge (#1955): the text to sign with `gpg --clearsign`. |
+| `view.person.challenge.expiresAt` | string | yes | When it lapses, ISO 8601. |
+| `view.person.challenge.text` | string | yes |  |
+| `view.person.key` | object, or null | yes | The person's registered OpenPGP public key (#1955). |
+| `view.person.key.algorithm` | string | yes | The primary key's algorithm, as openpgp.js names it (`ed25519`, `eddsaLegacy ed25519Legacy`, `ecdsa nistP256`, `rsaEncryptSign 4096`). |
+| `view.person.key.armored` | string | yes | The public key, ASCII-armored. |
+| `view.person.key.created` | string | yes | When the key was made, ISO 8601. |
+| `view.person.key.encryption` | string | yes | The encryption key's algorithm; empty for a key with none valid when registered. |
+| `view.person.key.expiresAt` | string | yes | When it expires, ISO 8601; empty for never. |
+| `view.person.key.fingerprint` | string | yes | The fingerprint, lower-case hex: 40 characters for a v4 key, 64 for a v6 one. |
+| `view.person.key.registeredAt` | string | yes | When it was registered, ISO 8601. |
+| `view.person.key.registeredVia` | string | yes | Where: `portal` or `api`. |
+| `view.person.key.userIds` | list | yes | The user ids that carried the entry's address when it was registered. |
+| `view.person.key.userIds[]` | string |  |  |
+| `view.person.key.version` | integer | yes | The key version, 4 or 6. |
+| `view.person.mail` | string | yes | The address on the person's entry. |
+| `view.person.mailEncryption` | object | yes | How mail to the person is encrypted (#1955). |
+| `view.person.mailEncryption.choice` | string | yes | `none`, `openpgp` or `smime`. |
+| `view.person.mailEncryption.openpgpUsable` | boolean | yes | Whether the registered OpenPGP key has an encryption key valid now. |
+| `view.person.mailEncryption.smimeCertificate` | object, or null | yes |  |
+| `view.person.mailEncryption.smimeCertificate.serial` | string | yes |  |
+| `view.person.mailEncryption.smimeCertificate.subject` | string | yes |  |
+| `view.person.mailEncryption.smimeProblem` | string | yes | Why no S/MIME certificate on the entry can receive, in English; empty otherwise. |
+| `view.person.mailEncryption.smimeUsable` | boolean | yes | Whether the person's userSMIMECertificate holds a certificate that can receive now. |
+| `view.person.username` | string | yes |  |
+| `view.person.wkd` | object | yes | The person's Web Key Directory publication (#1955). |
+| `view.person.wkd.domainServed` | boolean | yes | Whether the domain of the person's address is one the realm's directory serves. |
+| `view.person.wkd.enabled` | boolean | yes | Whether the realm answers the Web Key Directory (`openpgp.wkd`). |
+| `view.person.wkd.hash` | string | yes | The hashed local part of the person's address, z-base-32. |
+| `view.person.wkd.optedIn` | boolean | yes | Whether the person chose to publish their key. |
+| `view.person.wkd.published` | boolean | yes | Whether it is answered now: a key, the choice, the realm's switch and a domain the realm serves. |
+| `view.person.wkd.url` | string | yes | The advanced method's URL for the address; empty without one. |
+| `view.user` | string | yes | The person asked about; empty for none. |
+| `view.wkd` | object | yes | The realm's Web Key Directory: its switch and the domains it serves. |
+| `view.wkd.domains` | list | yes |  |
+| `view.wkd.domains[]` | string |  |  |
+| `view.wkd.enabled` | boolean | yes |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**404**: No such person in this realm.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**500**: The act verified but could not be written, or threw.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+## POST /admin-api/openpgp/publish
+
+`publishOpenPgpKey`
+
+**Publish a person's OpenPGP key in the Web Key Directory (#1955)**
+
+The person's choice, made for them: the Web Key Directory answers their key for their address, where the realm turned it on (`openpgp.wkd`) and serves the address's domain.
+
+**Mirrors** `POST /admin/openpgp` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `user` | string | yes | The person, by username. |
+
+**200**: Done: the sentence, and the person as they now are.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `challenge` | object, or null | yes | The person's outstanding registration challenge (#1955): the text to sign with `gpg --clearsign`. |
+| `challenge.expiresAt` | string | yes | When it lapses, ISO 8601. |
+| `challenge.text` | string | yes |  |
+| `message` | string | yes |  |
+| `ok` | boolean | yes |  |
+| `view` | object | yes |  |
+| `view.found` | boolean | yes | Whether `user` names a person of this realm. |
+| `view.person` | object, or null | yes |  |
+| `view.person.challenge` | object, or null | yes | The person's outstanding registration challenge (#1955): the text to sign with `gpg --clearsign`. |
+| `view.person.challenge.expiresAt` | string | yes | When it lapses, ISO 8601. |
+| `view.person.challenge.text` | string | yes |  |
+| `view.person.key` | object, or null | yes | The person's registered OpenPGP public key (#1955). |
+| `view.person.key.algorithm` | string | yes | The primary key's algorithm, as openpgp.js names it (`ed25519`, `eddsaLegacy ed25519Legacy`, `ecdsa nistP256`, `rsaEncryptSign 4096`). |
+| `view.person.key.armored` | string | yes | The public key, ASCII-armored. |
+| `view.person.key.created` | string | yes | When the key was made, ISO 8601. |
+| `view.person.key.encryption` | string | yes | The encryption key's algorithm; empty for a key with none valid when registered. |
+| `view.person.key.expiresAt` | string | yes | When it expires, ISO 8601; empty for never. |
+| `view.person.key.fingerprint` | string | yes | The fingerprint, lower-case hex: 40 characters for a v4 key, 64 for a v6 one. |
+| `view.person.key.registeredAt` | string | yes | When it was registered, ISO 8601. |
+| `view.person.key.registeredVia` | string | yes | Where: `portal` or `api`. |
+| `view.person.key.userIds` | list | yes | The user ids that carried the entry's address when it was registered. |
+| `view.person.key.userIds[]` | string |  |  |
+| `view.person.key.version` | integer | yes | The key version, 4 or 6. |
+| `view.person.mail` | string | yes | The address on the person's entry. |
+| `view.person.mailEncryption` | object | yes | How mail to the person is encrypted (#1955). |
+| `view.person.mailEncryption.choice` | string | yes | `none`, `openpgp` or `smime`. |
+| `view.person.mailEncryption.openpgpUsable` | boolean | yes | Whether the registered OpenPGP key has an encryption key valid now. |
+| `view.person.mailEncryption.smimeCertificate` | object, or null | yes |  |
+| `view.person.mailEncryption.smimeCertificate.serial` | string | yes |  |
+| `view.person.mailEncryption.smimeCertificate.subject` | string | yes |  |
+| `view.person.mailEncryption.smimeProblem` | string | yes | Why no S/MIME certificate on the entry can receive, in English; empty otherwise. |
+| `view.person.mailEncryption.smimeUsable` | boolean | yes | Whether the person's userSMIMECertificate holds a certificate that can receive now. |
+| `view.person.username` | string | yes |  |
+| `view.person.wkd` | object | yes | The person's Web Key Directory publication (#1955). |
+| `view.person.wkd.domainServed` | boolean | yes | Whether the domain of the person's address is one the realm's directory serves. |
+| `view.person.wkd.enabled` | boolean | yes | Whether the realm answers the Web Key Directory (`openpgp.wkd`). |
+| `view.person.wkd.hash` | string | yes | The hashed local part of the person's address, z-base-32. |
+| `view.person.wkd.optedIn` | boolean | yes | Whether the person chose to publish their key. |
+| `view.person.wkd.published` | boolean | yes | Whether it is answered now: a key, the choice, the realm's switch and a domain the realm serves. |
+| `view.person.wkd.url` | string | yes | The advanced method's URL for the address; empty without one. |
+| `view.user` | string | yes | The person asked about; empty for none. |
+| `view.wkd` | object | yes | The realm's Web Key Directory: its switch and the domains it serves. |
+| `view.wkd.domains` | list | yes |  |
+| `view.wkd.domains[]` | string |  |  |
+| `view.wkd.enabled` | boolean | yes |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**404**: No such person in this realm.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**500**: The act verified but could not be written, or threw.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+## POST /admin-api/openpgp/register
+
+`registerOpenPgpKey`
+
+**Register a person's OpenPGP key on their proof (#1955)**
+
+`publicKey` (one armored public key) and `signed` (the person's outstanding challenge signed with `gpg --clearsign`): the key must be neither revoked nor expired, use an accepted algorithm (Ed25519, Ed448, ECDSA and ECDH on P-256 to P-521, X25519, X448, RSA of `openpgp.minRsaBits`), carry a valid user id with the entry's address, and have signed exactly the challenge since it was issued. It replaces any key the person had.
+
+**Mirrors** `POST /admin/openpgp` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `publicKey` | string | yes | The armored OpenPGP public key. |
+| `signed` | string | yes | The person's challenge, signed with gpg --clearsign. |
+| `user` | string | yes | The person, by username. |
+
+**200**: Done: the sentence, and the person as they now are.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `challenge` | object, or null | yes | The person's outstanding registration challenge (#1955): the text to sign with `gpg --clearsign`. |
+| `challenge.expiresAt` | string | yes | When it lapses, ISO 8601. |
+| `challenge.text` | string | yes |  |
+| `message` | string | yes |  |
+| `ok` | boolean | yes |  |
+| `view` | object | yes |  |
+| `view.found` | boolean | yes | Whether `user` names a person of this realm. |
+| `view.person` | object, or null | yes |  |
+| `view.person.challenge` | object, or null | yes | The person's outstanding registration challenge (#1955): the text to sign with `gpg --clearsign`. |
+| `view.person.challenge.expiresAt` | string | yes | When it lapses, ISO 8601. |
+| `view.person.challenge.text` | string | yes |  |
+| `view.person.key` | object, or null | yes | The person's registered OpenPGP public key (#1955). |
+| `view.person.key.algorithm` | string | yes | The primary key's algorithm, as openpgp.js names it (`ed25519`, `eddsaLegacy ed25519Legacy`, `ecdsa nistP256`, `rsaEncryptSign 4096`). |
+| `view.person.key.armored` | string | yes | The public key, ASCII-armored. |
+| `view.person.key.created` | string | yes | When the key was made, ISO 8601. |
+| `view.person.key.encryption` | string | yes | The encryption key's algorithm; empty for a key with none valid when registered. |
+| `view.person.key.expiresAt` | string | yes | When it expires, ISO 8601; empty for never. |
+| `view.person.key.fingerprint` | string | yes | The fingerprint, lower-case hex: 40 characters for a v4 key, 64 for a v6 one. |
+| `view.person.key.registeredAt` | string | yes | When it was registered, ISO 8601. |
+| `view.person.key.registeredVia` | string | yes | Where: `portal` or `api`. |
+| `view.person.key.userIds` | list | yes | The user ids that carried the entry's address when it was registered. |
+| `view.person.key.userIds[]` | string |  |  |
+| `view.person.key.version` | integer | yes | The key version, 4 or 6. |
+| `view.person.mail` | string | yes | The address on the person's entry. |
+| `view.person.mailEncryption` | object | yes | How mail to the person is encrypted (#1955). |
+| `view.person.mailEncryption.choice` | string | yes | `none`, `openpgp` or `smime`. |
+| `view.person.mailEncryption.openpgpUsable` | boolean | yes | Whether the registered OpenPGP key has an encryption key valid now. |
+| `view.person.mailEncryption.smimeCertificate` | object, or null | yes |  |
+| `view.person.mailEncryption.smimeCertificate.serial` | string | yes |  |
+| `view.person.mailEncryption.smimeCertificate.subject` | string | yes |  |
+| `view.person.mailEncryption.smimeProblem` | string | yes | Why no S/MIME certificate on the entry can receive, in English; empty otherwise. |
+| `view.person.mailEncryption.smimeUsable` | boolean | yes | Whether the person's userSMIMECertificate holds a certificate that can receive now. |
+| `view.person.username` | string | yes |  |
+| `view.person.wkd` | object | yes | The person's Web Key Directory publication (#1955). |
+| `view.person.wkd.domainServed` | boolean | yes | Whether the domain of the person's address is one the realm's directory serves. |
+| `view.person.wkd.enabled` | boolean | yes | Whether the realm answers the Web Key Directory (`openpgp.wkd`). |
+| `view.person.wkd.hash` | string | yes | The hashed local part of the person's address, z-base-32. |
+| `view.person.wkd.optedIn` | boolean | yes | Whether the person chose to publish their key. |
+| `view.person.wkd.published` | boolean | yes | Whether it is answered now: a key, the choice, the realm's switch and a domain the realm serves. |
+| `view.person.wkd.url` | string | yes | The advanced method's URL for the address; empty without one. |
+| `view.user` | string | yes | The person asked about; empty for none. |
+| `view.wkd` | object | yes | The realm's Web Key Directory: its switch and the domains it serves. |
+| `view.wkd.domains` | list | yes |  |
+| `view.wkd.domains[]` | string |  |  |
+| `view.wkd.enabled` | boolean | yes |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**404**: No such person in this realm.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**500**: The act verified but could not be written, or threw.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+## POST /admin-api/openpgp/remove
+
+`removeOpenPgpKey`
+
+**Remove a person's OpenPGP key (#1955)**
+
+Removes the key from `user`'s entry, and so from the Web Key Directory; a mail choice of `openpgp` becomes `none`.
+
+**Mirrors** `POST /admin/openpgp` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `user` | string | yes | The person, by username. |
+
+**200**: Done: the sentence, and the person as they now are.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `challenge` | object, or null | yes | The person's outstanding registration challenge (#1955): the text to sign with `gpg --clearsign`. |
+| `challenge.expiresAt` | string | yes | When it lapses, ISO 8601. |
+| `challenge.text` | string | yes |  |
+| `message` | string | yes |  |
+| `ok` | boolean | yes |  |
+| `view` | object | yes |  |
+| `view.found` | boolean | yes | Whether `user` names a person of this realm. |
+| `view.person` | object, or null | yes |  |
+| `view.person.challenge` | object, or null | yes | The person's outstanding registration challenge (#1955): the text to sign with `gpg --clearsign`. |
+| `view.person.challenge.expiresAt` | string | yes | When it lapses, ISO 8601. |
+| `view.person.challenge.text` | string | yes |  |
+| `view.person.key` | object, or null | yes | The person's registered OpenPGP public key (#1955). |
+| `view.person.key.algorithm` | string | yes | The primary key's algorithm, as openpgp.js names it (`ed25519`, `eddsaLegacy ed25519Legacy`, `ecdsa nistP256`, `rsaEncryptSign 4096`). |
+| `view.person.key.armored` | string | yes | The public key, ASCII-armored. |
+| `view.person.key.created` | string | yes | When the key was made, ISO 8601. |
+| `view.person.key.encryption` | string | yes | The encryption key's algorithm; empty for a key with none valid when registered. |
+| `view.person.key.expiresAt` | string | yes | When it expires, ISO 8601; empty for never. |
+| `view.person.key.fingerprint` | string | yes | The fingerprint, lower-case hex: 40 characters for a v4 key, 64 for a v6 one. |
+| `view.person.key.registeredAt` | string | yes | When it was registered, ISO 8601. |
+| `view.person.key.registeredVia` | string | yes | Where: `portal` or `api`. |
+| `view.person.key.userIds` | list | yes | The user ids that carried the entry's address when it was registered. |
+| `view.person.key.userIds[]` | string |  |  |
+| `view.person.key.version` | integer | yes | The key version, 4 or 6. |
+| `view.person.mail` | string | yes | The address on the person's entry. |
+| `view.person.mailEncryption` | object | yes | How mail to the person is encrypted (#1955). |
+| `view.person.mailEncryption.choice` | string | yes | `none`, `openpgp` or `smime`. |
+| `view.person.mailEncryption.openpgpUsable` | boolean | yes | Whether the registered OpenPGP key has an encryption key valid now. |
+| `view.person.mailEncryption.smimeCertificate` | object, or null | yes |  |
+| `view.person.mailEncryption.smimeCertificate.serial` | string | yes |  |
+| `view.person.mailEncryption.smimeCertificate.subject` | string | yes |  |
+| `view.person.mailEncryption.smimeProblem` | string | yes | Why no S/MIME certificate on the entry can receive, in English; empty otherwise. |
+| `view.person.mailEncryption.smimeUsable` | boolean | yes | Whether the person's userSMIMECertificate holds a certificate that can receive now. |
+| `view.person.username` | string | yes |  |
+| `view.person.wkd` | object | yes | The person's Web Key Directory publication (#1955). |
+| `view.person.wkd.domainServed` | boolean | yes | Whether the domain of the person's address is one the realm's directory serves. |
+| `view.person.wkd.enabled` | boolean | yes | Whether the realm answers the Web Key Directory (`openpgp.wkd`). |
+| `view.person.wkd.hash` | string | yes | The hashed local part of the person's address, z-base-32. |
+| `view.person.wkd.optedIn` | boolean | yes | Whether the person chose to publish their key. |
+| `view.person.wkd.published` | boolean | yes | Whether it is answered now: a key, the choice, the realm's switch and a domain the realm serves. |
+| `view.person.wkd.url` | string | yes | The advanced method's URL for the address; empty without one. |
+| `view.user` | string | yes | The person asked about; empty for none. |
+| `view.wkd` | object | yes | The realm's Web Key Directory: its switch and the domains it serves. |
+| `view.wkd.domains` | list | yes |  |
+| `view.wkd.domains[]` | string |  |  |
+| `view.wkd.enabled` | boolean | yes |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**404**: No such person in this realm.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**500**: The act verified but could not be written, or threw.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+## POST /admin-api/openpgp/smime
+
+`setSmimeCertificate`
+
+**Set a person's S/MIME certificate (#1955)**
+
+`certificate`: one PEM or base64 DER certificate that can receive S/MIME now and names the entry's address; empty removes it (and a mail choice of `smime` becomes `none`).
+
+**Mirrors** `POST /admin/openpgp` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `certificate` | string | yes | The certificate; empty removes it. |
+| `user` | string | yes | The person, by username. |
+
+**200**: Done: the sentence, and the person as they now are.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `challenge` | object, or null | yes | The person's outstanding registration challenge (#1955): the text to sign with `gpg --clearsign`. |
+| `challenge.expiresAt` | string | yes | When it lapses, ISO 8601. |
+| `challenge.text` | string | yes |  |
+| `message` | string | yes |  |
+| `ok` | boolean | yes |  |
+| `view` | object | yes |  |
+| `view.found` | boolean | yes | Whether `user` names a person of this realm. |
+| `view.person` | object, or null | yes |  |
+| `view.person.challenge` | object, or null | yes | The person's outstanding registration challenge (#1955): the text to sign with `gpg --clearsign`. |
+| `view.person.challenge.expiresAt` | string | yes | When it lapses, ISO 8601. |
+| `view.person.challenge.text` | string | yes |  |
+| `view.person.key` | object, or null | yes | The person's registered OpenPGP public key (#1955). |
+| `view.person.key.algorithm` | string | yes | The primary key's algorithm, as openpgp.js names it (`ed25519`, `eddsaLegacy ed25519Legacy`, `ecdsa nistP256`, `rsaEncryptSign 4096`). |
+| `view.person.key.armored` | string | yes | The public key, ASCII-armored. |
+| `view.person.key.created` | string | yes | When the key was made, ISO 8601. |
+| `view.person.key.encryption` | string | yes | The encryption key's algorithm; empty for a key with none valid when registered. |
+| `view.person.key.expiresAt` | string | yes | When it expires, ISO 8601; empty for never. |
+| `view.person.key.fingerprint` | string | yes | The fingerprint, lower-case hex: 40 characters for a v4 key, 64 for a v6 one. |
+| `view.person.key.registeredAt` | string | yes | When it was registered, ISO 8601. |
+| `view.person.key.registeredVia` | string | yes | Where: `portal` or `api`. |
+| `view.person.key.userIds` | list | yes | The user ids that carried the entry's address when it was registered. |
+| `view.person.key.userIds[]` | string |  |  |
+| `view.person.key.version` | integer | yes | The key version, 4 or 6. |
+| `view.person.mail` | string | yes | The address on the person's entry. |
+| `view.person.mailEncryption` | object | yes | How mail to the person is encrypted (#1955). |
+| `view.person.mailEncryption.choice` | string | yes | `none`, `openpgp` or `smime`. |
+| `view.person.mailEncryption.openpgpUsable` | boolean | yes | Whether the registered OpenPGP key has an encryption key valid now. |
+| `view.person.mailEncryption.smimeCertificate` | object, or null | yes |  |
+| `view.person.mailEncryption.smimeCertificate.serial` | string | yes |  |
+| `view.person.mailEncryption.smimeCertificate.subject` | string | yes |  |
+| `view.person.mailEncryption.smimeProblem` | string | yes | Why no S/MIME certificate on the entry can receive, in English; empty otherwise. |
+| `view.person.mailEncryption.smimeUsable` | boolean | yes | Whether the person's userSMIMECertificate holds a certificate that can receive now. |
+| `view.person.username` | string | yes |  |
+| `view.person.wkd` | object | yes | The person's Web Key Directory publication (#1955). |
+| `view.person.wkd.domainServed` | boolean | yes | Whether the domain of the person's address is one the realm's directory serves. |
+| `view.person.wkd.enabled` | boolean | yes | Whether the realm answers the Web Key Directory (`openpgp.wkd`). |
+| `view.person.wkd.hash` | string | yes | The hashed local part of the person's address, z-base-32. |
+| `view.person.wkd.optedIn` | boolean | yes | Whether the person chose to publish their key. |
+| `view.person.wkd.published` | boolean | yes | Whether it is answered now: a key, the choice, the realm's switch and a domain the realm serves. |
+| `view.person.wkd.url` | string | yes | The advanced method's URL for the address; empty without one. |
+| `view.user` | string | yes | The person asked about; empty for none. |
+| `view.wkd` | object | yes | The realm's Web Key Directory: its switch and the domains it serves. |
+| `view.wkd.domains` | list | yes |  |
+| `view.wkd.domains[]` | string |  |  |
+| `view.wkd.enabled` | boolean | yes |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**404**: No such person in this realm.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**500**: The act verified but could not be written, or threw.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+## POST /admin-api/openpgp/withdraw
+
+`withdrawOpenPgpKey`
+
+**Stop publishing a person's OpenPGP key (#1955)**
+
+The Web Key Directory answers nothing for the person's address.
+
+**Mirrors** `POST /admin/openpgp` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `user` | string | yes | The person, by username. |
+
+**200**: Done: the sentence, and the person as they now are.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `challenge` | object, or null | yes | The person's outstanding registration challenge (#1955): the text to sign with `gpg --clearsign`. |
+| `challenge.expiresAt` | string | yes | When it lapses, ISO 8601. |
+| `challenge.text` | string | yes |  |
+| `message` | string | yes |  |
+| `ok` | boolean | yes |  |
+| `view` | object | yes |  |
+| `view.found` | boolean | yes | Whether `user` names a person of this realm. |
+| `view.person` | object, or null | yes |  |
+| `view.person.challenge` | object, or null | yes | The person's outstanding registration challenge (#1955): the text to sign with `gpg --clearsign`. |
+| `view.person.challenge.expiresAt` | string | yes | When it lapses, ISO 8601. |
+| `view.person.challenge.text` | string | yes |  |
+| `view.person.key` | object, or null | yes | The person's registered OpenPGP public key (#1955). |
+| `view.person.key.algorithm` | string | yes | The primary key's algorithm, as openpgp.js names it (`ed25519`, `eddsaLegacy ed25519Legacy`, `ecdsa nistP256`, `rsaEncryptSign 4096`). |
+| `view.person.key.armored` | string | yes | The public key, ASCII-armored. |
+| `view.person.key.created` | string | yes | When the key was made, ISO 8601. |
+| `view.person.key.encryption` | string | yes | The encryption key's algorithm; empty for a key with none valid when registered. |
+| `view.person.key.expiresAt` | string | yes | When it expires, ISO 8601; empty for never. |
+| `view.person.key.fingerprint` | string | yes | The fingerprint, lower-case hex: 40 characters for a v4 key, 64 for a v6 one. |
+| `view.person.key.registeredAt` | string | yes | When it was registered, ISO 8601. |
+| `view.person.key.registeredVia` | string | yes | Where: `portal` or `api`. |
+| `view.person.key.userIds` | list | yes | The user ids that carried the entry's address when it was registered. |
+| `view.person.key.userIds[]` | string |  |  |
+| `view.person.key.version` | integer | yes | The key version, 4 or 6. |
+| `view.person.mail` | string | yes | The address on the person's entry. |
+| `view.person.mailEncryption` | object | yes | How mail to the person is encrypted (#1955). |
+| `view.person.mailEncryption.choice` | string | yes | `none`, `openpgp` or `smime`. |
+| `view.person.mailEncryption.openpgpUsable` | boolean | yes | Whether the registered OpenPGP key has an encryption key valid now. |
+| `view.person.mailEncryption.smimeCertificate` | object, or null | yes |  |
+| `view.person.mailEncryption.smimeCertificate.serial` | string | yes |  |
+| `view.person.mailEncryption.smimeCertificate.subject` | string | yes |  |
+| `view.person.mailEncryption.smimeProblem` | string | yes | Why no S/MIME certificate on the entry can receive, in English; empty otherwise. |
+| `view.person.mailEncryption.smimeUsable` | boolean | yes | Whether the person's userSMIMECertificate holds a certificate that can receive now. |
+| `view.person.username` | string | yes |  |
+| `view.person.wkd` | object | yes | The person's Web Key Directory publication (#1955). |
+| `view.person.wkd.domainServed` | boolean | yes | Whether the domain of the person's address is one the realm's directory serves. |
+| `view.person.wkd.enabled` | boolean | yes | Whether the realm answers the Web Key Directory (`openpgp.wkd`). |
+| `view.person.wkd.hash` | string | yes | The hashed local part of the person's address, z-base-32. |
+| `view.person.wkd.optedIn` | boolean | yes | Whether the person chose to publish their key. |
+| `view.person.wkd.published` | boolean | yes | Whether it is answered now: a key, the choice, the realm's switch and a domain the realm serves. |
+| `view.person.wkd.url` | string | yes | The advanced method's URL for the address; empty without one. |
+| `view.user` | string | yes | The person asked about; empty for none. |
+| `view.wkd` | object | yes | The realm's Web Key Directory: its switch and the domains it serves. |
+| `view.wkd.domains` | list | yes |  |
+| `view.wkd.domains[]` | string |  |  |
+| `view.wkd.enabled` | boolean | yes |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**404**: No such person in this realm.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**500**: The act verified but could not be written, or threw.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|

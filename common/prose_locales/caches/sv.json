@@ -219,22 +219,6 @@
     "en": "080afaefbe52c342",
     "text": "Tills devices.eventsKept nyare händelser tränger ut den."
   },
-  "caches.store.hardware_tokens.register.title": {
-    "en": "f1c8d3f653154823",
-    "text": "Register över maskinvarutokens"
-  },
-  "caches.store.hardware_tokens.register.description": {
-    "en": "5efc16810cb7f48e",
-    "text": "En rad per fysisk maskinvarutoken (en YubiKey, ett smart kort) i den här sfären, nycklad på tillverkare och serienummer: vem som innehar den, dess modell och inloggningsuppgifterna på den. Ett serienummer registreras bara utifrån attestering. Aldrig en hemlighet."
-  },
-  "caches.store.hardware_tokens.register.bound": {
-    "en": "260467c777c74957",
-    "text": "Raderna en process håller är en cache på 5 000 per sfär; registret självt begränsas av de inloggningsuppgifter det listar (webauthn.maxKeysPerPerson för FIDO)."
-  },
-  "caches.store.hardware_tokens.register.lifetime": {
-    "en": "c18bfda6fa452b2b",
-    "text": "Tills token tas bort; en förlorad token behålls, markerad som förlorad."
-  },
   "caches.store.dpop.nonces.title": {
     "en": "a131d3dea3731f75",
     "text": "DPoP-nonces"
@@ -366,6 +350,22 @@
   "caches.store.gnap.signatures.hitMeaning": {
     "en": "1d89a0731fc525e7",
     "text": "en signatur som redan setts, så begäran nekades"
+  },
+  "caches.store.hardware_tokens.register.title": {
+    "en": "f1c8d3f653154823",
+    "text": "Register över maskinvarutokens"
+  },
+  "caches.store.hardware_tokens.register.description": {
+    "en": "5efc16810cb7f48e",
+    "text": "En rad per fysisk maskinvarutoken (en YubiKey, ett smart kort) i den här sfären, nycklad på tillverkare och serienummer: vem som innehar den, dess modell och inloggningsuppgifterna på den. Ett serienummer registreras bara utifrån attestering. Aldrig en hemlighet."
+  },
+  "caches.store.hardware_tokens.register.bound": {
+    "en": "260467c777c74957",
+    "text": "Raderna en process håller är en cache på 5 000 per sfär; registret självt begränsas av de inloggningsuppgifter det listar (webauthn.maxKeysPerPerson för FIDO)."
+  },
+  "caches.store.hardware_tokens.register.lifetime": {
+    "en": "c18bfda6fa452b2b",
+    "text": "Tills token tas bort; en förlorad token behålls, markerad som förlorad."
   },
   "caches.store.jose.kid-thumbprint-uris.title": {
     "en": "336e569778455530",
@@ -1122,6 +1122,34 @@
   "caches.store.oidfed.resolutions.lifetime": {
     "en": "ce6f4a649ea6af77",
     "text": "Tills kedjan går ut (dess minsta exp, 10.4), och högst oidfed.resolveCacheS."
+  },
+  "caches.store.openpgp.challenges.title": {
+    "en": "c0c95c44e5f3835e",
+    "text": "Utmaningar för OpenPGP-registrering"
+  },
+  "caches.store.openpgp.challenges.description": {
+    "en": "be9e39edb5fb9e44",
+    "text": "En utmaning per person som registrerar en OpenPGP-nyckel: texten personen signerar med gpg --clearsign, dess nonce och när den upphör. Förbrukas en gång, genom ett klusteranspråk på nonce-värdet."
+  },
+  "caches.store.openpgp.challenges.bound": {
+    "en": "70f8ecd02c4392d1",
+    "text": "En per person (nycklad på entryUUID), var och en giltig i openpgp.challengeLifetimeS."
+  },
+  "caches.store.openpgp.wkd.title": {
+    "en": "dc47d455d5283de5",
+    "text": "Publiceringar i Web Key Directory"
+  },
+  "caches.store.openpgp.wkd.description": {
+    "en": "f79c85531015261b",
+    "text": "Vilken OpenPGP-nyckel Web Key Directory svarar med för varje hashad adress: innehavaren (ett entryUUID) och fingeravtrycket som personen publicerade. En pekare: själva nyckeln läses från posten. Aldrig en hemlighet."
+  },
+  "caches.store.openpgp.wkd.bound": {
+    "en": "e8a7abbcc8bba7fc",
+    "text": "Raderna en process håller är en cache på 5 000 per sfär; registret håller en rad per person som har valt att delta."
+  },
+  "caches.store.openpgp.wkd.lifetime": {
+    "en": "06861887c7e6c8f1",
+    "text": "Tills personen slutar publicera eller tar bort nyckeln."
   },
   "caches.store.passwords.breach-ranges.title": {
     "en": "5746db291bee19b3",

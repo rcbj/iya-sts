@@ -42,6 +42,8 @@
   "nav.keys.heading": "Mga passkey",
   "nav.tokens.label": "Mga security key",
   "nav.tokens.heading": "Ang iyong mga security key at smart card",
+  "nav.openpgp.label": "OpenPGP at encryption ng mail",
+  "nav.openpgp.heading": "Ang iyong OpenPGP key at encryption ng mail",
   "nav.mfa.label": "Authenticator app",
   "nav.mfa.heading": "Ang iyong authenticator app",
   "nav.signing-key.label": "Mga signing key",

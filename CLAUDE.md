@@ -321,6 +321,7 @@ holds is the table above; what each module is for is that directory's
 | `common/fga_gate.ts` | `setDecider` (one RFC 9396 detail of an application that enforces fine-grained authorization; EMPTY REFUSES), filled by `xacml/fga_pep.ts` at 23c (#564 P3) | `common/CLAUDE.md`, `xacml/CLAUDE.md` |
 | `common/signer_truststore.ts` | `setDirectory` (a realm's signer truststore entries listed, written and removed), filled by `ldap/ldap_server.js` (#1360) | `common/CLAUDE.md` (3dd) |
 | `authzen/authzen_admin.ts` | `setDirectory` (an entry located, a group's members, a person's `stsAuthzenApplication` written), filled by `ldap/ldap_server.js` (#563) | `authzen/CLAUDE.md` |
+| `common/openpgp_keys.ts` | `setDirectory` (a person located with their S/MIME values, the five OpenPGP/mail-encryption attributes written, a person by `mail`), filled by `ldap/ldap_server.js` (#1955 P6) | `common/CLAUDE.md` (`openpgp_keys.ts`) |
 | `common/hardware_tokens.ts` | `registerRetirer(kind, …)` (a credential kind's lost-key retire action), filled by each later #1955 phase's module for the kind it adds; `fido` and `x509` are built in (#1955 P1) | `common/CLAUDE.md` |
 
    **`setTruststore()` is the one slot not filled by the module that owns what
@@ -1249,6 +1250,7 @@ the file the row names.
 | Encrypt an assertion it holds no certificate for — **product refuses**, development sends it in CLEAR | `saml/CLAUDE.md` |
 | Dial a service provider's metadata URL WHILE ISSUING | `saml/CLAUDE.md` |
 | Release a person's DID unless they proved it (or had this realm publish it, #1291), preferred it and consented to it themselves — to a pairwise or ephemeral client only by its opt-in, and never in a SAML assertion (#693) | `oauth-oidc/CLAUDE.md` (*The `did` claim*) |
+| Record an OpenPGP key as hardware-bound, offer a sign-in with OpenPGP, or send `Access-Control-Allow-Origin: *` from the Web Key Directory (#1955 P6) | `common/CLAUDE.md` (`openpgp_keys.ts`) |
 | Let an administrator create or change a did:web it publishes for a person, or bind a credential to a did:web it does not host (#1291) | `oid4vc/CLAUDE.md` (*A PERSON'S PUBLISHED did:web*) |
 
 ## The parent project's paths into this repository

@@ -743,6 +743,22 @@
     "en": "95d0cca14dac35d3",
     "text": "partial: signering, relaxed/relaxed, rsa-sha256 med en nyckel på minst 2048 bitar (RFC 8301), i common/crypto.js, på det som SMTP-transporten skickar när en domän är konfigurerad. Saknas: simple-kanonisering, l= och verifiering av e-post som någon annan skickat — den här tjänsten tar inte emot någon. DKIM har ingen postkvantalgoritm registrerad."
   },
+  "stsmetadata.specs.rfc9580.coverage": {
+    "en": "086f96d364365827",
+    "text": "partial: läsning av en överförbar publik nyckel, v6 och (RFC 4880) v4, verifiering av en klartextsignatur gjord av en av dess signeringsnycklar och kryptering av ett meddelande till dess krypteringsnyckel, allt genom openpgp.js (common/crypto.js avsnitt 19). Ed25519, Ed448, ECDSA och ECDH på NIST-kurvorna, X25519, X448 och RSA med openpgp.minRsaBits accepteras; DSA, ElGamal och Brainpool avvisas. Saknas: signering, dekryptering, nyckelring, nyckelserver."
+  },
+  "stsmetadata.specs.rfc3156.coverage": {
+    "en": "aa799b14a54ace0f",
+    "text": "partial: multipart/encrypted med en versionsdel application/pgp-encrypted och det armerade meddelandet, med de verkliga rubrikerna skyddade inuti. Saknas: multipart/signed — tjänsten signerar e-post med DKIM, inte OpenPGP."
+  },
+  "stsmetadata.specs.rfc8551.coverage": {
+    "en": "a07a1e013186f3d4",
+    "text": "partial: application/pkcs7-mime enveloped-data, en CMS EnvelopedData med AES-256-CBC för innehållskryptering och en mottagare med RSAES-OAEP (SHA-256) eller ECDH-nyckelöverenskommelse, till personens userSMIMECertificate. Saknas: signed-data, AuthEnvelopedData (AES-GCM), dekryptering."
+  },
+  "stsmetadata.specs.wkd.coverage": {
+    "en": "e1c6b9651ff1e58c",
+    "text": "partial: den avancerade och den direkta uppslagsmetoden (z-base-32 av SHA-1 av den lokala delen i gemener, parametern l) och policyfilen, besvarade för personer som har valt att delta, per sfär och avstängt som standard. Saknas: Web Key Service (submission-address, inlämningsprotokollet); CORS följer tjänstens tillåtelselista snarare än utkastets *."
+  },
   "stsmetadata.specs.rfc8463.coverage": {
     "en": "d4ee4ea51927a6f7",
     "text": "full för signering: ed25519-sha256, Ed25519 över SHA-256 av de kanoniserade huvuddata."
@@ -1206,6 +1222,22 @@
   "stsmetadata.endpoints./scim/v2/Me.what": {
     "en": "8899a7fad6b6b50c",
     "text": "Alias enligt avsnitt 3.11 för det subjekt som begäran autentiserades som. GET, PUT, PATCH och DELETE löser upp inloggningsuppgiften till en katalogpost och delegerar till SAMMA User-hanterare som /Users/{id} använder, så det finns ingen andra läs- eller skrivväg att hålla i takt. Den brukade svara 501 på varje metod eftersom ingenting här autentiserade, och TVÅ AV DE 501:ORNA ÄR FORTFARANDE RÄTT och behålls: en ANONYM anropare har inget subjekt att skapa alias för (aliaset är otillgängligt, vilket inte är samma sak som att resursen saknas), och POST skulle skapa ett subjekt som per definition redan finns. En inloggningsuppgift som namnger någon utan post — en client_credentials-token, ett klientcertifikat — får 404 i stället."
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/:domain/hu/:hash.what": {
+    "en": "0955037976aef471",
+    "text": "draft-koch-openpgp-webkey-service avsnitt 3.1, den avancerade metoden, ställd till openpgpkey.<domain>: den binära publika OpenPGP-nyckeln för den person vars adress hashas till :hash (z-base-32 av SHA-1 av den lokala delen i gemener, l= den lokala delen), application/octet-stream och Cache-Control: no-store. Bara en person som har valt att delta på /portal/openpgp besvaras, och bara där sfären har slagit på openpgp.wkd och betjänar :domain; allt annat ger 404. En sökväg utan sfärsegment besvaras av den sfär som betjänar domänen."
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/:domain/policy.what": {
+    "en": "12d81a251721ac64",
+    "text": "Den avancerade metodens policyfil: tom, text/plain, 200 där en sfär betjänar :domain och annars 404. Dess förekomst är det som talar om för en klient att katalogen finns; ingen Web Key Service erbjuds, så det finns ingen submission-address."
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/hu/:hash.what": {
+    "en": "ea1444452ebedcb6",
+    "text": "Den direkta metoden: som den avancerade, där domänen är värden som begäran gjordes till."
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/policy.what": {
+    "en": "701adaefad112fb7",
+    "text": "Den direkta metodens policyfil, för värden som begäran gjordes till."
   },
   "stsmetadata.endpoints./.well-known/hoba/register.what": {
     "en": "ea46481cdbde5a44",
@@ -1722,6 +1754,18 @@
   "stsmetadata.endpoints./admin-api/mail/:action.effect": {
     "en": "bcf806336009d1f4",
     "text": "köar ett testmeddelande, eller sparar eller återställer en sfärs formulering"
+  },
+  "stsmetadata.endpoints./admin-api/openpgp.what": {
+    "en": "5d484bf76979cdee",
+    "text": "NON-SPEC (#1955). Det som Katalog → OpenPGP-nycklar visar: med ?user=, personens OpenPGP-nyckel, personens utestående registreringsutmaning, publiceringen i Web Key Directory, S/MIME-certifikatet och hur personens e-post krypteras; samt sfärens brytare och domäner för Web Key Directory. Speglar GET /admin/openpgp."
+  },
+  "stsmetadata.endpoints./admin-api/openpgp/:action.what": {
+    "en": "b428c51bc9fdc3f1",
+    "text": "NON-SPEC (#1955). challenge, register (publicKey, signed: personens utmaning signerad med gpg --clearsign), remove, publish, withdraw, mail-encryption (choice) och smime (certificate), var och en med { user }: det som /portal/openpgp erbjuder personen, för personens räkning. En nyckel registreras bara på personens eget bevis."
+  },
+  "stsmetadata.endpoints./admin-api/openpgp/:action.effect": {
+    "en": "a4485fe850562aab",
+    "text": "utfärdar en utmaning, registrerar eller tar bort en OpenPGP-nyckel, publicerar den, eller anger en persons e-postkryptering eller S/MIME-certifikat"
   },
   "stsmetadata.endpoints./admin-api/mail/outbox.what": {
     "en": "01316f4579428510",
@@ -3894,6 +3938,10 @@
   "stsmetadata.protocols.User portal.what": {
     "en": "835d40e9ff6eaabb",
     "text": "INTE ETT PROTOKOLL, och den har ett kort eftersom den här sidan rapporterar en slutpunktsgrupp som inget kort gör anspråk på — vilket är regeln som hindrar en ny familj från att dyka upp oanmäld, och det är värt att betala för det här snarare än att göra regeln villkorlig. DEN FÖRSTA YTAN I DEN HÄR TJÄNSTEN SOM TILLHÖR PERSONEN SOM TITTAR PÅ DEN: varje annan webbläsarsida här är till för någon annan — inloggningsskärmen är ett steg i ett annat protokolls flöde, samtyckesskärmen ställer en fråga och försvinner, /admin är till för en operatör och är grindad på två roller. Det är här en person ser vad den här identitetsleverantören vet om dem och ändrar hur de autentiserar sig: sitt lösenord, och sina säkerhetsnycklar och om var och en är en primär autentiseringsuppgift eller en andra faktor. Det är en SEPARAT APPLIKATION från administratörskonsolen och delar ingenting med den utom inloggningssessionen hos den här tjänstens auktoriseringsserver: var och en är en publik OAuth-klient (sts-user-portal här) som håller sin egen DPoP-bundna token i minnet. /portal/activate är dess oautentiserade halva, där någon som provisionerats via /admin-api eller SCIM förbrukar en tidsbegränsad aktiveringslänk för engångsbruk för att skapa en autentiseringsuppgift — hashad i vila som ett lösenord, hastighetsbegränsad, förbrukad när inställningen slutförs snarare än när länken öppnas, och loggar aldrig in någon. SEDAN #568 ÄR DET EN STATISK APPLIKATION ovanpå /account-api, gruppen Account API nedan: en operation per sida och per formulär, personen alltid tokenets subjekt, beskriven av sitt eget OpenAPI-dokument."
+  },
+  "stsmetadata.protocols.OpenPGP.what": {
+    "en": "f2e7f0580b98e867",
+    "text": "En persons OpenPGP-nyckel (#1955), registrerad på portalen eller av en administratör på ett innehavsbevis — personen signerar en utmaning med gpg --clearsign, och på en YubiKeys OpenPGP-kort signerar kortet — och lagrad på personens post; publicerad i Web Key Directory om personen vill och sfären har slagit på det; och nyckeln som personens e-post krypteras till (PGP/MIME), eller personens S/MIME-certifikat (S/MIME), enligt personens val. En sfär kan kräva kryptering för utvalda meddelanden (mail.encryptionRequired), som då aldrig skickas okrypterade. Ingenting registreras som hårdvarubundet: servern kan inte se ett kort. Det finns ingen inloggning med OpenPGP."
   },
   "stsmetadata.protocols.Reporting.what": {
     "en": "66663fd63a35a287",

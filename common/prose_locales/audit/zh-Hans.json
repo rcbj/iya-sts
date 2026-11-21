@@ -503,6 +503,34 @@
     "en": "f7fb5461e2325e1e",
     "text": "硬件令牌已报告丢失，其凭据已停用"
   },
+  "audit.actions.openpgp.challenge.label": {
+    "en": "454a22b5bcd9d6a2",
+    "text": "已发出 OpenPGP 密钥注册质询"
+  },
+  "audit.actions.openpgp.key-registered.label": {
+    "en": "1ed8de1f8777a015",
+    "text": "已凭持有证明注册 OpenPGP 密钥"
+  },
+  "audit.actions.openpgp.key-refused.label": {
+    "en": "f1e7e3c6808ba33b",
+    "text": "OpenPGP 密钥未被注册"
+  },
+  "audit.actions.openpgp.key-removed.label": {
+    "en": "89a284fa6508eae4",
+    "text": "已删除 OpenPGP 密钥"
+  },
+  "audit.actions.openpgp.publication.label": {
+    "en": "f6d12f16eca6796a",
+    "text": "OpenPGP 密钥已在 Web 密钥目录中发布或撤回"
+  },
+  "audit.actions.openpgp.mail-encryption.label": {
+    "en": "ba0fb7a4133d94e2",
+    "text": "发给某人的邮件的加密方式已更改"
+  },
+  "audit.actions.openpgp.smime-certificate.label": {
+    "en": "663072a33ce1e178",
+    "text": "某人的 S/MIME 证书已设置或删除"
+  },
   "audit.actions.device.key-add.label": {
     "en": "6c1b2513c20532ef",
     "text": "向设备添加了一个密钥"

@@ -3147,6 +3147,46 @@
     "en": "e0341e4e47f3b2f8",
     "text": "什么能让 PKINIT 登录声明硬件绑定的密钥（pkinit-hardware 指示符和 amr hwk）。`inference`：默认值，也是 #1955 之前的行为——本服务未生成其密钥的智能卡登录证书，或已记录的证明证据。`evidence`：仅限硬件令牌的证明所覆盖的密钥。通过 TLS 的证书登录只有在有证据时才获得 hwk，以及智能卡上密钥的 sc，两种情况都是如此。"
   },
+  "openpgp.wkd|label": {
+    "en": "1f05a7518c3d2275",
+    "text": "在 Web 密钥目录中发布密钥"
+  },
+  "openpgp.wkd|description": {
+    "en": "7822103f89ac59b3",
+    "text": "为此领域的邮件域响应 Web 密钥目录（draft-koch-openpgp-webkey-service）：/.well-known/openpgpkey/<domain>/hu/<hash>（高级方式，位于 openpgpkey.<domain>）和 /.well-known/openpgpkey/hu/<hash>（直接方式），以及各自的策略文件。只返回在门户上选择发布的人员的密钥。默认关闭。"
+  },
+  "openpgp.wkdDomains|label": {
+    "en": "d1c4b728593ff000",
+    "text": "Web 密钥目录服务的邮件域"
+  },
+  "openpgp.wkdDomains|description": {
+    "en": "ad64f7216191123c",
+    "text": "此领域的 Web 密钥目录所响应的邮件域，以逗号分隔。留空（默认）表示领域自身的 DNS 域。路径中不含领域的请求，由服务其域的领域响应，默认领域优先。"
+  },
+  "openpgp.challengeLifetimeS|label": {
+    "en": "dbf558cf0b4b8f90",
+    "text": "注册质询有效期（秒）"
+  },
+  "openpgp.challengeLifetimeS|description": {
+    "en": "e9130c8e82368cc6",
+    "text": "个人为注册 OpenPGP 密钥而用 gpg --clearsign 签署的质询的有效时长。质询只能使用一次，每人同一时间只有一个。"
+  },
+  "openpgp.signatureSkewS|label": {
+    "en": "d927cf1f04bd9d51",
+    "text": "证明签名时钟偏差（秒）"
+  },
+  "openpgp.signatureSkewS|description": {
+    "en": "2772763d3d363b6d",
+    "text": "签名计算机的时钟与本服务时钟允许相差多少：证明签名时间早于质询发出时间或晚于当前时间，且超出此值的，将被拒绝（STS-OPENPGP-0010）。"
+  },
+  "openpgp.minRsaBits|label": {
+    "en": "f3dc9f85de143630",
+    "text": "最小 RSA OpenPGP 密钥"
+  },
+  "openpgp.minRsaBits|description": {
+    "en": "ad48516e31a7c45b",
+    "text": "OpenPGP 注册所接受的最短 RSA 密钥（主密钥或子密钥）。接受 Ed25519、Ed448、P-256、P-384 和 P-521 上的 ECDSA 和 ECDH、X25519 和 X448；DSA、ElGamal 和 Brainpool 曲线一律不接受（STS-OPENPGP-0004）。"
+  },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
     "text": "每个合规源请求的报告数"
@@ -11714,6 +11754,14 @@
   "mail.dedupWindowS|description": {
     "en": "50195b20fe00e9fa",
     "text": "指明其所涉事项的通知（同一账户上的同一操作）在此窗口内只发送一次，无论有多少个入口报告了它。0 关闭抑制。"
+  },
+  "mail.encryptionRequired|label": {
+    "en": "81e5dc8eb5332f2b",
+    "text": "必须加密的邮件"
+  },
+  "mail.encryptionRequired|description": {
+    "en": "895bdb616e169134",
+    "text": "按模板 ID 指定的邮件（password-reset、account-activation、sign-in-code、sign-in-link、credential-compromised 以及“监控 → 邮件”列表中的其他模板），这些邮件只以加密方式发送——按本人在门户上的选择，以 PGP/MIME 加密至其 OpenPGP 密钥或以 S/MIME 加密至其证书。两者都未选择的人不会收到该邮件（STS-MAIL-0240），发起该邮件的用途会像对待任何未发送邮件一样说明这一点。留空（默认）表示不要求加密；无论哪种情况，都会遵循个人的选择。"
   },
   "mail.selfServiceReset|label": {
     "en": "8525111d1c0be58a",

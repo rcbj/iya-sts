@@ -459,6 +459,13 @@ const NAV = [
       // `web_tokens.ts` from `account_tokens.ts`.
       { path: BASE + '/tokens', label: 'Security keys',
         heading: 'Your security keys and smart cards' },
+      // OpenPGP AND MAIL ENCRYPTION (#1955 P6): the person's OpenPGP key,
+      // registered by signing a challenge (on a YubiKey's OpenPGP card the
+      // card signs), its Web Key Directory publication, their S/MIME
+      // certificate and how their mail is encrypted. Drawn by
+      // `web_openpgp.ts` from `account_openpgp.ts`.
+      { path: BASE + '/openpgp', label: 'OpenPGP and mail encryption',
+        heading: 'Your OpenPGP key and mail encryption' },
       // THE AUTHENTICATOR APP (2026-09-10). Its own page beside the keys
       // rather than a card on that one, for the reason this column exists at
       // all: the enrolment is a QR code, a transcribable secret, a code field

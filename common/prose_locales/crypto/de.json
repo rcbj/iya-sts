@@ -448,12 +448,20 @@
     "text": "Ein Token mit öffentlichem Schlüssel, das ein Inhaber OFFLINE abschwächen kann, wie ein Macaroon, das aber jeder prüfen kann, der den öffentlichen Wurzelschlüssel hält. Seine Autorisierungslogik ist Datalog, das im Token mitgeführt wird, daher läuft der Prüfer IMMER mit Grenzen für Zeit und Iterationen."
   },
   "crypto.standards.cms.coverage": {
-    "en": "abe1a25e47d96baf",
-    "text": "partial: SignedData mit einem Signierer und signierten Attributen, geprüft über die Attributbytes, wie sie empfangen wurden, und beim Schreiben DER-sortiert; EnvelopedData mit KeyTransRecipientInfo (RSA PKCS#1 v1.5 und OAEP) und Inhalt AES-CBC; entartetes certs-only-SignedData mit Zertifikaten und CRLs. Kein KeyAgreeRecipientInfo, keine authentisierten oder komprimierten Daten, keine Gegensignaturen."
+    "en": "d33248e25a15b5a7",
+    "text": "partial: SignedData mit einem Unterzeichner und signierten Attributen, geprüft über die Attributbytes wie empfangen und DER-sortiert geschrieben; EnvelopedData mit KeyTransRecipientInfo (RSA PKCS#1 v1.5 und OAEP) und AES-CBC-Inhalt; degeneriertes SignedData nur mit Zertifikaten und CRLs; für S/MIME-E-Mails (#1955) ein EnvelopedData, geschrieben mit einem OAEP-SHA-256-KeyTransRecipientInfo oder einem ECDH-KeyAgreeRecipientInfo. Keine authentifizierten oder komprimierten Daten, keine Gegensignaturen."
   },
   "crypto.standards.cms.what": {
-    "en": "0f35f026a507dc11",
-    "text": "Der Umschlag, den SCEP (scep/scep_cms.ts) liest und schreibt: eine vom Anfragenden signierte und an die RA verschlüsselte Anfrage und ein von der RA signiertes CertRep, dessen Zertifikat an den Anfragenden verschlüsselt ist."
+    "en": "e09c8508abab483b",
+    "text": "Der Umschlag, den SCEP (scep/scep_cms.ts) liest und schreibt: eine vom Antragsteller signierte und an die RA verschlüsselte Anfrage sowie ein von der RA signiertes CertRep, dessen Zertifikat an den Antragsteller verschlüsselt ist. Seit #1955 auch das S/MIME-EnvelopedData, in dem E-Mails verschlüsselt werden; es fügt ein KeyAgreeRecipientInfo für einen EC-Empfänger (dhSinglePass-stdDH-sha256kdf, AES-256-Key-Wrap) und ein OAEP-SHA-256-KeyTransRecipientInfo für einen RSA-Empfänger hinzu."
+  },
+  "crypto.standards.openpgp.coverage": {
+    "en": "5d4c9889762ddbd2",
+    "text": "partial: Lesen übertragbarer öffentlicher Schlüssel v4 und v6, Prüfen einer Klartextsignatur und Verschlüsseln einer PGP/MIME-Nachricht, alles über openpgp.js; die erweiterte und die direkte Abfrage des Web Key Directory und seine Richtliniendatei. Kein Signieren, kein Entschlüsseln, keine Übermittlung an einen Web Key Service, kein Keyserver."
+  },
+  "crypto.standards.openpgp.what": {
+    "en": "039de4dd3b49b9ab",
+    "text": "Der eigene öffentliche Schlüssel einer Person, auf einen Besitznachweis hin registriert und, wenn sie es wünscht, im Web Key Directory veröffentlicht; der Schlüssel, an den ihre E-Mails verschlüsselt werden."
   },
   "crypto.families.pki.signs": {
     "en": "fdcf723f4622f28f",
@@ -678,6 +686,78 @@
   "crypto.families.reporting.algorithms.3.how": {
     "en": "9d40176053fec31b",
     "text": "SHA-256, beim Artefakt behalten und beim Lesen geprüft"
+  },
+  "crypto.families.openpgp.signs": {
+    "en": "0f38445050f33bd1",
+    "text": "Nichts. Eine Registrierung trägt die Signatur der PERSON, und eine verschlüsselte Nachricht wird nicht signiert (DKIM signiert die äußere Nachricht, wie es jede Nachricht signiert)."
+  },
+  "crypto.families.openpgp.verifies": {
+    "en": "c3dbfb38087cb3de",
+    "text": "Einen BESITZNACHWEIS bei der Registrierung: eine Klartextsignatur (gpg --clearsign) über genau die Challenge, die dieser Dienst der Person ausgestellt hat, durch einen signierfähigen Schlüssel des zu registrierenden Schlüssels, erstellt nach Ausstellung der Challenge (openpgp.signatureSkewS) und zu diesem Zeitpunkt gültig; der Schlüssel selbst weder widerrufen noch abgelaufen, mit einer gültigen Benutzer-ID, die die Adresse des Eintrags enthält. Schlüssel nach RFC 9580 v6 und RFC 4880 v4, gelesen von openpgp.js. Ein S/MIME-Zertifikat wird auf Gültigkeit, Schlüssel und Verwendungszweck geprüft, nicht auf seine Kette: Es bestimmt nur, an wen eine Nachricht verschlüsselt wird."
+  },
+  "crypto.families.openpgp.encrypts": {
+    "en": "1a05c1b540cd5082",
+    "text": "E-MAILS, wenn die Person es gewählt hat oder der Vertrauensbereich es verlangt (mail.encryptionRequired): PGP/MIME (RFC 3156) an den Verschlüsselungsschlüssel des Schlüssels, wie openpgp.js ihn wählt (SEIPD mit AES bei einem v4-Schlüssel, AEAD bei einem v6-Schlüssel); S/MIME (RFC 8551) als CMS EnvelopedData, Inhaltsverschlüsselung AES-256-CBC, der Inhaltsschlüssel unter RSAES-OAEP mit SHA-256 oder ECDH (dhSinglePass-stdDH-sha256kdf, AES-256-Key-Wrap)."
+  },
+  "crypto.families.openpgp.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Nichts."
+  },
+  "crypto.families.openpgp.hashes": {
+    "en": "c51e067261932787",
+    "text": "SHA-1 des kleingeschriebenen lokalen Teils, in z-base-32, so wie das Web Key Directory eine Adresse benennt (ein vom Entwurf festgelegter Name, nie zur Integritätssicherung herangezogen). Der Fingerabdruck des Schlüssels ist der nach RFC 9580 (SHA-256 für v6, SHA-1 für v4)."
+  },
+  "crypto.families.openpgp.keys": {
+    "en": "201cc09e750d0c79",
+    "text": "Keine eigenen. Der öffentliche Schlüssel der Person liegt in ihrem Eintrag (stsOpenPgpKey), nie ein geheimer Schlüssel, den die Registrierung ablehnt; ein Schlüssel auf der OpenPGP-Karte eines YubiKey ist von einem Schlüssel in einer Datei nicht zu unterscheiden, daher wird nichts als hardwaregebunden festgehalten."
+  },
+  "crypto.families.openpgp.algorithms.0.what": {
+    "en": "b7a04c64879be952",
+    "text": "Registrierter Schlüssel, Signieren"
+  },
+  "crypto.families.openpgp.algorithms.0.how": {
+    "en": "91736ec1cb35b5f2",
+    "text": "Ed25519, Ed448, ECDSA P-256/P-384/P-521, RSA mit openpgp.minRsaBits (mindestens 3072)"
+  },
+  "crypto.families.openpgp.algorithms.1.what": {
+    "en": "9f7b65405a49bedd",
+    "text": "Registrierter Schlüssel, Verschlüsseln"
+  },
+  "crypto.families.openpgp.algorithms.1.how": {
+    "en": "e28f57b2d61b83be",
+    "text": "X25519, X448, ECDH Curve25519 und P-256/P-384/P-521, RSA mit openpgp.minRsaBits"
+  },
+  "crypto.families.openpgp.algorithms.2.what": {
+    "en": "66b873543aebf01b",
+    "text": "Abgelehnt"
+  },
+  "crypto.families.openpgp.algorithms.2.how": {
+    "en": "18369a474bec2b97",
+    "text": "DSA, ElGamal, Brainpool-Kurven"
+  },
+  "crypto.families.openpgp.algorithms.3.what": {
+    "en": "429d783fabc235c9",
+    "text": "S/MIME-Inhalt"
+  },
+  "crypto.families.openpgp.algorithms.3.how": {
+    "en": "8c2686ee3dd3948f",
+    "text": "AES-256-CBC (CMS EnvelopedData)"
+  },
+  "crypto.families.openpgp.algorithms.4.what": {
+    "en": "cc09e2a5306928f5",
+    "text": "S/MIME-Schlüsseltransport"
+  },
+  "crypto.families.openpgp.algorithms.4.how": {
+    "en": "acf5bad1301fd2cc",
+    "text": "RSAES-OAEP SHA-256; ECDH stdDH SHA-256-KDF, AES-256-Wrap"
+  },
+  "crypto.families.openpgp.algorithms.5.what": {
+    "en": "727e1a6e39e36a93",
+    "text": "Name im Web Key Directory"
+  },
+  "crypto.families.openpgp.algorithms.5.how": {
+    "en": "a2b773a0ce72bc44",
+    "text": "SHA-1, z-base-32"
   },
   "crypto.families.gnap.signs": {
     "en": "ad4b982edb070f2c",

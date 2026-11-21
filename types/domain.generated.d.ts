@@ -224,6 +224,9 @@ declare namespace IyaDomain {
     lockedSince?: string;
     userCertificate?: string[];
     krb5KeyInfo?: string;
+    openPgpKey?: string;
+    openPgpFingerprint?: string;
+    openPgpKeyInfo?: string;
     hobaPublicKey?: string[];
     activationExpires?: string;
     passwordResetExpires?: string;
@@ -752,6 +755,7 @@ declare namespace IyaDomain {
     authzenApplication?: string[];
     authzenCallbackUri?: string[];
     mailVerified?: string;
+    mailEncryption?: string;
     audSub?: string[];
   }
 

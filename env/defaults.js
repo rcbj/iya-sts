@@ -795,7 +795,7 @@ var config = {
     hardwareClaims: "inference"  // What earns a hardware-key claim
   },
 
-  // --- Devices ---------------------------------------------------------
+  // --- PIV -------------------------------------------------------------
   piv: {
     attestationAnchors: "",                                                    // PIV attestation roots (PEM)
     requireAttestation: false,                                                 // Require a PIV attestation for the PIV profiles
@@ -805,6 +805,15 @@ var config = {
     keyEscrow: false,                                                          // Escrow piv-key-management keys
     externalIssuers: "",                                                       // Outside PIV or CAC issuing CAs mapped by card UUID (PEM)
     externalPolicyOids: "2.16.840.1.101.3.2.1.3.13,2.16.840.1.101.3.2.1.3.18"  // PIV Authentication policies an outside card must assert
+  },
+
+  // --- OpenPGP ---------------------------------------------------------
+  openpgp: {
+    wkd: false,              // Publish keys in the Web Key Directory
+    wkdDomains: "",          // Mail domains the Web Key Directory serves
+    challengeLifetimeS: 600, // Registration challenge lifetime (seconds)
+    signatureSkewS: 300,     // Proof signature clock skew (seconds)
+    minRsaBits: 3072         // Smallest RSA OpenPGP key
   },
 
   // --- ACME ------------------------------------------------------------
@@ -1704,6 +1713,7 @@ var config = {
     ratePerCategory: 5,                  // Messages per recipient per category per window
     rateWindowS: 3600,                   // Rate window (seconds)
     dedupWindowS: 600,                   // Duplicate suppression window (seconds)
+    encryptionRequired: "",              // Messages that must be encrypted
     selfServiceReset: true,              // Self-service password reset
     resetRequiresVerifiedAddress: true,  // Self-service reset needs a verified address
     resetRequiresBackupCode: true,       // Self-service reset needs a recovery code

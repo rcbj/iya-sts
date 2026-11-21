@@ -3147,6 +3147,46 @@
     "en": "e0341e4e47f3b2f8",
     "text": "Qué permite que un inicio de sesión PKINIT declare una clave vinculada al hardware (el indicador pkinit-hardware y amr hwk). `inference`, el valor predeterminado y el comportamiento anterior a #1955: un certificado de inicio de sesión con tarjeta inteligente cuya clave no generó este servicio, o una prueba de atestación registrada. `evidence`: solo una clave que cubre la atestación de un token de hardware. Un inicio de sesión con certificado sobre TLS obtiene hwk, y sc para una clave en una tarjeta inteligente, solo a partir de pruebas, en ambos casos."
   },
+  "openpgp.wkd|label": {
+    "en": "1f05a7518c3d2275",
+    "text": "Publicar claves en el Web Key Directory"
+  },
+  "openpgp.wkd|description": {
+    "en": "7822103f89ac59b3",
+    "text": "Responder al Web Key Directory (draft-koch-openpgp-webkey-service) para los dominios de correo de este dominio de confianza: /.well-known/openpgpkey/<domain>/hu/<hash> (el método avanzado, en openpgpkey.<domain>) y /.well-known/openpgpkey/hu/<hash> (el método directo), además del archivo de política de cada uno. Solo se devuelve la clave de una persona que lo aceptó en el portal. Desactivado de forma predeterminada."
+  },
+  "openpgp.wkdDomains|label": {
+    "en": "d1c4b728593ff000",
+    "text": "Dominios de correo que sirve el Web Key Directory"
+  },
+  "openpgp.wkdDomains|description": {
+    "en": "ad64f7216191123c",
+    "text": "Los dominios de correo para los que responde el Web Key Directory de este dominio de confianza, separados por comas. Vacío, el valor predeterminado, significa el propio dominio DNS del dominio de confianza. Una solicitud sin dominio de confianza en su ruta la responde el dominio de confianza que sirve su dominio DNS, primero el predeterminado."
+  },
+  "openpgp.challengeLifetimeS|label": {
+    "en": "dbf558cf0b4b8f90",
+    "text": "Vigencia del desafío de registro (segundos)"
+  },
+  "openpgp.challengeLifetimeS|description": {
+    "en": "e9130c8e82368cc6",
+    "text": "Cuánto tiempo sigue siendo válido el desafío que una persona firma con gpg --clearsign para registrar una clave OpenPGP. Se consume una sola vez, y una persona tiene uno cada vez."
+  },
+  "openpgp.signatureSkewS|label": {
+    "en": "d927cf1f04bd9d51",
+    "text": "Desfase de reloj admitido en la firma de prueba (segundos)"
+  },
+  "openpgp.signatureSkewS|description": {
+    "en": "2772763d3d363b6d",
+    "text": "Cuánto puede diferir el reloj del equipo que firma del de este servicio: se rechaza una prueba firmada antes de la emisión del desafío, o después del momento actual, por más de este valor (STS-OPENPGP-0010)."
+  },
+  "openpgp.minRsaBits|label": {
+    "en": "f3dc9f85de143630",
+    "text": "Clave OpenPGP RSA más pequeña"
+  },
+  "openpgp.minRsaBits|description": {
+    "en": "ad48516e31a7c45b",
+    "text": "La clave RSA más corta, principal o subclave, que acepta un registro OpenPGP. Se aceptan Ed25519, Ed448, ECDSA y ECDH sobre P-256, P-384 y P-521, X25519 y X448; DSA, ElGamal y las curvas Brainpool nunca (STS-OPENPGP-0004)."
+  },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
     "text": "Informes de cumplimiento por solicitud del feed"
@@ -11714,6 +11754,14 @@
   "mail.dedupWindowS|description": {
     "en": "50195b20fe00e9fa",
     "text": "Un aviso que nombra aquello de lo que trata (el mismo acto sobre la misma cuenta) se envía una vez en esta ventana, por muchas puertas que lo hayan notificado. 0 desactiva la supresión."
+  },
+  "mail.encryptionRequired|label": {
+    "en": "81e5dc8eb5332f2b",
+    "text": "Mensajes que deben cifrarse"
+  },
+  "mail.encryptionRequired|description": {
+    "en": "895bdb616e169134",
+    "text": "Los mensajes, por ID de plantilla (password-reset, account-activation, sign-in-code, sign-in-link, credential-compromised y el resto de la lista de Monitoring → Mail), que solo se envían cifrados — PGP/MIME para la clave OpenPGP de la persona o S/MIME para su certificado, según lo que eligió en el portal. A una persona que no eligió ninguno no se le envía (STS-MAIL-0240), y el uso que lo solicitó lo indica como con cualquier mensaje no enviado. Vacío, el valor predeterminado, no exige ninguno; lo que haya elegido una persona se respeta en cualquier caso."
   },
   "mail.selfServiceReset|label": {
     "en": "8525111d1c0be58a",

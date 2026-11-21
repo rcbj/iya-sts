@@ -743,6 +743,22 @@
     "en": "95d0cca14dac35d3",
     "text": "partial: firma, relaxed/relaxed, rsa-sha256 con una clave de al menos 2048 bits (RFC 8301), en common/crypto.js, sobre lo que envía el transporte SMTP cuando hay un dominio configurado. Ausentes: la canonicalización simple, l= y la verificación del correo que envía cualquier otro; este servicio no recibe ninguno. DKIM no tiene ningún algoritmo poscuántico registrado."
   },
+  "stsmetadata.specs.rfc9580.coverage": {
+    "en": "086f96d364365827",
+    "text": "partial: lectura de una clave pública transferible, v6 y (RFC 4880) v4, verificación de una firma en texto claro por una de sus claves de firma y cifrado de un mensaje para su clave de cifrado, todo mediante openpgp.js (common/crypto.js, sección 19). Se aceptan Ed25519, Ed448, ECDSA y ECDH sobre las curvas NIST, X25519, X448 y RSA de openpgp.minRsaBits; se rechazan DSA, ElGamal y Brainpool. Falta: firma, descifrado, un llavero, un servidor de claves."
+  },
+  "stsmetadata.specs.rfc3156.coverage": {
+    "en": "aa799b14a54ace0f",
+    "text": "partial: multipart/encrypted con una parte de versión application/pgp-encrypted y el mensaje blindado, con las cabeceras reales protegidas dentro. Falta: multipart/signed — este servicio firma el correo con DKIM, no con OpenPGP."
+  },
+  "stsmetadata.specs.rfc8551.coverage": {
+    "en": "a07a1e013186f3d4",
+    "text": "partial: application/pkcs7-mime enveloped-data, un CMS EnvelopedData con cifrado del contenido AES-256-CBC y un destinatario RSAES-OAEP (SHA-256) o de acuerdo de claves ECDH, para el userSMIMECertificate de la persona. Falta: signed-data, AuthEnvelopedData (AES-GCM), descifrado."
+  },
+  "stsmetadata.specs.wkd.coverage": {
+    "en": "e1c6b9651ff1e58c",
+    "text": "partial: los métodos de búsqueda avanzado y directo (el SHA-1 en z-base-32 de la parte local en minúsculas, el parámetro l) y el archivo de política, respondidos para las personas que lo aceptaron, por dominio de confianza y desactivados de forma predeterminada. Falta: el Web Key Service (submission-address, el protocolo de envío); CORS sigue la lista de permitidos de este servicio en lugar del * del borrador."
+  },
   "stsmetadata.specs.rfc8463.coverage": {
     "en": "d4ee4ea51927a6f7",
     "text": "full para la firma: ed25519-sha256, Ed25519 sobre el SHA-256 de los datos de encabezado canonicalizados."
@@ -1206,6 +1222,22 @@
   "stsmetadata.endpoints./scim/v2/Me.what": {
     "en": "8899a7fad6b6b50c",
     "text": "El alias de la sección 3.11 para el sujeto con el que se autenticó la solicitud. GET, PUT, PATCH y DELETE resuelven la credencial a una entrada de directorio y delegan en los MISMOS manejadores de User que usa /Users/{id}, así que no hay una segunda ruta de lectura o escritura que mantener sincronizada. Antes respondía 501 en todos los métodos porque aquí nada autenticaba, y DOS DE ESOS 501 SIGUEN SIENDO CORRECTOS y se conservan: un llamador ANÓNIMO no tiene sujeto al que dar alias (el alias no está disponible, que no es lo mismo que que falte el recurso), y POST crearía un sujeto que por definición ya existe. Una credencial que nombra a alguien sin entrada (un token client_credentials, un certificado de cliente) recibe en cambio un 404."
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/:domain/hu/:hash.what": {
+    "en": "0955037976aef471",
+    "text": "draft-koch-openpgp-webkey-service sección 3.1, el método avanzado, consultado en openpgpkey.<domain>: la clave pública OpenPGP binaria de la persona cuya dirección da el hash :hash (z-base-32 del SHA-1 de la parte local en minúsculas, l= la parte local), application/octet-stream y Cache-Control: no-store. Solo se responde por una persona que lo aceptó en /portal/openpgp, y solo donde el dominio de confianza activó openpgp.wkd y sirve :domain; cualquier otra cosa es 404. Una ruta sin segmento de dominio de confianza la responde el dominio de confianza que sirve el dominio DNS."
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/:domain/policy.what": {
+    "en": "12d81a251721ac64",
+    "text": "El archivo de política del método avanzado: vacío, text/plain, 200 donde un dominio de confianza sirve :domain y 404 en caso contrario. Su presencia es lo que indica a un cliente que el directorio existe; no se ofrece ningún Web Key Service, así que no hay submission-address."
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/hu/:hash.what": {
+    "en": "ea1444452ebedcb6",
+    "text": "El método directo: como el avanzado, siendo el dominio el host al que se hizo la solicitud."
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/policy.what": {
+    "en": "701adaefad112fb7",
+    "text": "El archivo de política del método directo, para el host al que se hizo la solicitud."
   },
   "stsmetadata.endpoints./.well-known/hoba/register.what": {
     "en": "ea46481cdbde5a44",
@@ -1722,6 +1754,18 @@
   "stsmetadata.endpoints./admin-api/mail/:action.effect": {
     "en": "bcf806336009d1f4",
     "text": "encola un mensaje de prueba, o guarda o restablece el texto de un dominio"
+  },
+  "stsmetadata.endpoints./admin-api/openpgp.what": {
+    "en": "5d484bf76979cdee",
+    "text": "NON-SPEC (#1955). Lo que muestra Directory → OpenPGP keys: con ?user=, la clave OpenPGP de esa persona, su desafío de registro pendiente, su publicación en el Web Key Directory, su certificado S/MIME y cómo se cifra su correo; y el interruptor y los dominios del Web Key Directory del dominio de confianza. Refleja GET /admin/openpgp."
+  },
+  "stsmetadata.endpoints./admin-api/openpgp/:action.what": {
+    "en": "b428c51bc9fdc3f1",
+    "text": "NON-SPEC (#1955). challenge, register (publicKey, signed: el desafío de la persona firmado con gpg --clearsign), remove, publish, withdraw, mail-encryption (choice) y smime (certificate), cada uno con { user }: lo que /portal/openpgp ofrece a la persona, en su nombre. Una clave solo se registra con la prueba de la propia persona."
+  },
+  "stsmetadata.endpoints./admin-api/openpgp/:action.effect": {
+    "en": "a4485fe850562aab",
+    "text": "emite un desafío, registra o elimina una clave OpenPGP, la publica, o establece el cifrado del correo o el certificado S/MIME de una persona"
   },
   "stsmetadata.endpoints./admin-api/mail/outbox.what": {
     "en": "01316f4579428510",
@@ -3894,6 +3938,10 @@
   "stsmetadata.protocols.User portal.what": {
     "en": "835d40e9ff6eaabb",
     "text": "NO ES UN PROTOCOLO, y tiene una tarjeta porque esta página informa de cualquier grupo de endpoints que ninguna tarjeta reclame, que es la regla que impide que una familia nueva llegue sin anunciarse, y merece la pena pagarla aquí en lugar de hacer la regla condicional. LA PRIMERA SUPERFICIE DE ESTE SERVICIO QUE PERTENECE A LA PERSONA QUE LA MIRA: todas las demás páginas de navegador de aquí son para otra persona: la pantalla de inicio de sesión es un paso en el flujo de otro protocolo, la pantalla de consentimiento hace una pregunta y se va, /admin es para un operador y está protegida por dos roles. Aquí es donde una persona ve lo que este proveedor de identidad sabe de ella y cambia cómo se autentica: su contraseña, sus llaves de seguridad y si cada una es una credencial principal o un segundo factor. Es una APLICACIÓN SEPARADA de la consola de administración y no comparte con ella nada más que la sesión de inicio de sesión en el servidor de autorización de este servicio: cada una es un cliente OAuth público (aquí sts-user-portal) que guarda en memoria su propio token vinculado a DPoP. /portal/activate es su mitad sin autenticación, donde alguien aprovisionado mediante /admin-api o SCIM gasta un enlace de activación de un solo uso y tiempo limitado para configurar una credencial: guardado con hash como una contraseña, con límite de frecuencia, gastado cuando termina la configuración y no cuando se abre el enlace, y sin iniciar nunca la sesión de nadie. DESDE #568 ES UNA APLICACIÓN ESTÁTICA sobre /account-api, el grupo Account API de más abajo: una operación por página y por formulario, siendo la persona siempre el sujeto del token, descrita por su propio documento OpenAPI."
+  },
+  "stsmetadata.protocols.OpenPGP.what": {
+    "en": "f2e7f0580b98e867",
+    "text": "La clave OpenPGP de una persona (#1955), registrada en el portal o por un administrador con prueba de posesión — la persona firma un desafío con gpg --clearsign; en la tarjeta OpenPGP de una YubiKey firma la tarjeta — y guardada en su entrada; publicada en el Web Key Directory si ella lo elige y el dominio de confianza lo activó; y la clave para la que se cifra su correo (PGP/MIME), o su certificado S/MIME (S/MIME), según lo que eligió. Un dominio de confianza puede exigir cifrado para mensajes elegidos (mail.encryptionRequired), que entonces nunca se envían en claro. Nada se registra como vinculado al hardware: el servidor no puede ver una tarjeta. No existe el inicio de sesión con OpenPGP."
   },
   "stsmetadata.protocols.Reporting.what": {
     "en": "66663fd63a35a287",

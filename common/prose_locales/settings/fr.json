@@ -3147,6 +3147,46 @@
     "en": "e0341e4e47f3b2f8",
     "text": "Ce qui permet à une connexion PKINIT de revendiquer une clé liée au matériel (l'indicateur pkinit-hardware et amr hwk). `inference`, la valeur par défaut et le comportement d'avant #1955 : un certificat d'ouverture de session par carte à puce dont ce service n'a pas généré la clé, ou une preuve d'attestation enregistrée. `evidence` : seulement une clé couverte par l'attestation d'un jeton matériel. Une connexion par certificat sur TLS n'obtient hwk, et sc pour une clé sur une carte à puce, qu'à partir d'une preuve, dans les deux cas."
   },
+  "openpgp.wkd|label": {
+    "en": "1f05a7518c3d2275",
+    "text": "Publier les clés dans le Web Key Directory"
+  },
+  "openpgp.wkd|description": {
+    "en": "7822103f89ac59b3",
+    "text": "Répondre au Web Key Directory (draft-koch-openpgp-webkey-service) pour les domaines de messagerie de ce domaine de confiance : /.well-known/openpgpkey/<domain>/hu/<hash> (la méthode avancée, sur openpgpkey.<domain>) et /.well-known/openpgpkey/hu/<hash> (la méthode directe), ainsi que le fichier de politique de chacune. Seule la clé d'une personne ayant accepté la publication sur le portail est renvoyée. Désactivé par défaut."
+  },
+  "openpgp.wkdDomains|label": {
+    "en": "d1c4b728593ff000",
+    "text": "Domaines de messagerie servis par le Web Key Directory"
+  },
+  "openpgp.wkdDomains|description": {
+    "en": "ad64f7216191123c",
+    "text": "Les domaines de messagerie pour lesquels le Web Key Directory de ce domaine de confiance répond, séparés par des virgules. Vide, la valeur par défaut, désigne le propre domaine DNS du domaine de confiance. Une requête dont le chemin ne comporte aucun domaine de confiance reçoit la réponse du domaine de confiance qui sert son domaine DNS, le domaine par défaut en premier."
+  },
+  "openpgp.challengeLifetimeS|label": {
+    "en": "dbf558cf0b4b8f90",
+    "text": "Durée de validité du défi d'enregistrement (secondes)"
+  },
+  "openpgp.challengeLifetimeS|description": {
+    "en": "e9130c8e82368cc6",
+    "text": "Durée pendant laquelle reste valable le défi qu'une personne signe avec gpg --clearsign pour enregistrer une clé OpenPGP. Il n'est consommé qu'une fois, et une personne n'en a qu'un à la fois."
+  },
+  "openpgp.signatureSkewS|label": {
+    "en": "d927cf1f04bd9d51",
+    "text": "Décalage d'horloge admis pour la signature de preuve (secondes)"
+  },
+  "openpgp.signatureSkewS|description": {
+    "en": "2772763d3d363b6d",
+    "text": "L'écart admis entre l'horloge de l'ordinateur signataire et celle de ce service : une preuve signée avant l'émission du défi, ou après l'instant présent, de plus que cette valeur est refusée (STS-OPENPGP-0010)."
+  },
+  "openpgp.minRsaBits|label": {
+    "en": "f3dc9f85de143630",
+    "text": "Plus petite clé OpenPGP RSA"
+  },
+  "openpgp.minRsaBits|description": {
+    "en": "ad48516e31a7c45b",
+    "text": "La clé RSA la plus courte, principale ou sous-clé, qu'un enregistrement OpenPGP accepte. Ed25519, Ed448, ECDSA et ECDH sur P-256, P-384 et P-521, X25519 et X448 sont acceptés ; DSA, ElGamal et les courbes Brainpool ne le sont jamais (STS-OPENPGP-0004)."
+  },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
     "text": "Rapports de conformité par requête de flux"
@@ -11714,6 +11754,14 @@
   "mail.dedupWindowS|description": {
     "en": "50195b20fe00e9fa",
     "text": "Un avis qui nomme son objet (le même acte sur le même compte) est envoyé une seule fois dans cette fenêtre, quel que soit le nombre de portes qui l’ont signalé. 0 désactive la suppression."
+  },
+  "mail.encryptionRequired|label": {
+    "en": "81e5dc8eb5332f2b",
+    "text": "Messages devant être chiffrés"
+  },
+  "mail.encryptionRequired|description": {
+    "en": "895bdb616e169134",
+    "text": "Les messages, par identifiant de modèle (password-reset, account-activation, sign-in-code, sign-in-link, credential-compromised et le reste de la liste de Monitoring → Mail), qui ne sont envoyés que chiffrés — en PGP/MIME pour la clé OpenPGP de la personne ou en S/MIME pour son certificat, selon son choix sur le portail. Une personne qui n'a choisi ni l'un ni l'autre ne reçoit pas le message (STS-MAIL-0240), et l'usage qui l'a demandé le signale comme pour tout message non envoyé. Vide, la valeur par défaut, n'en exige aucun ; le choix d'une personne est respecté dans tous les cas."
   },
   "mail.selfServiceReset|label": {
     "en": "8525111d1c0be58a",

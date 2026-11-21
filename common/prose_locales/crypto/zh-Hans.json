@@ -448,12 +448,20 @@
     "text": "一种公钥令牌，持有者可以像 macaroon 一样离线收窄它，但任何持有根公钥的人都能验证它。其授权逻辑是令牌内携带的 Datalog，因此验证方总是在时间和迭代次数的限制下运行。"
   },
   "crypto.standards.cms.coverage": {
-    "en": "abe1a25e47d96baf",
-    "text": "partial：带一个签名者和已签名属性的 SignedData，按接收到的属性字节验证，按 DER 排序写入；带 KeyTransRecipientInfo（RSA PKCS#1 v1.5 和 OAEP）和 AES-CBC 内容的 EnvelopedData；带证书和 CRL 的退化型仅证书 SignedData。没有 KeyAgreeRecipientInfo，没有认证数据或压缩数据，没有副署签名。"
+    "en": "d33248e25a15b5a7",
+    "text": "partial：带一个签名者和签名属性的 SignedData，按收到的属性字节验证，写入时按 DER 排序；带 KeyTransRecipientInfo（RSA PKCS#1 v1.5 和 OAEP）及 AES-CBC 内容的 EnvelopedData；包含证书和 CRL 的退化型仅证书 SignedData；用于 S/MIME 邮件（#1955）时，以 OAEP SHA-256 KeyTransRecipientInfo 或 ECDH KeyAgreeRecipientInfo 写入的 EnvelopedData。不支持认证数据或压缩数据，不支持副署签名。"
   },
   "crypto.standards.cms.what": {
-    "en": "0f35f026a507dc11",
-    "text": "SCEP（scep/scep_cms.ts）读写的封装：由请求方签名并加密给 RA 的请求，以及由 RA 签名、其中证书加密给请求方的 CertRep。"
+    "en": "e09c8508abab483b",
+    "text": "SCEP（scep/scep_cms.ts）读写的封装：由请求者签名并加密给 RA 的请求，以及由 RA 签名、其中证书加密给请求者的 CertRep。自 #1955 起，也用于加密邮件的 S/MIME EnvelopedData，为 EC 接收者增加 KeyAgreeRecipientInfo（dhSinglePass-stdDH-sha256kdf，AES-256 密钥封装），为 RSA 接收者增加 OAEP SHA-256 KeyTransRecipientInfo。"
+  },
+  "crypto.standards.openpgp.coverage": {
+    "en": "5d4c9889762ddbd2",
+    "text": "partial：读取 v4 和 v6 可传输公钥、验证明文签名、加密 PGP/MIME 邮件，均通过 openpgp.js 完成；Web 密钥目录（Web Key Directory）的高级与直接查找方式及策略文件。不支持签名、解密、Web Key Service 提交和密钥服务器。"
+  },
+  "crypto.standards.openpgp.what": {
+    "en": "039de4dd3b49b9ab",
+    "text": "个人自己的公钥，凭持有证明注册，并可按本人选择在 Web 密钥目录中发布；也是其邮件加密所用的密钥。"
   },
   "crypto.families.pki.signs": {
     "en": "fdcf723f4622f28f",
@@ -678,6 +686,78 @@
   "crypto.families.reporting.algorithms.3.how": {
     "en": "9d40176053fec31b",
     "text": "SHA-256，与制品一起保存，并在读取时检查"
+  },
+  "crypto.families.openpgp.signs": {
+    "en": "0f38445050f33bd1",
+    "text": "无。注册时的签名是本人的签名，加密邮件不签名（DKIM 对外层邮件签名，与对每封邮件的处理相同）。"
+  },
+  "crypto.families.openpgp.verifies": {
+    "en": "c3dbfb38087cb3de",
+    "text": "注册时的持有证明：一个明文签名（gpg --clearsign），签署的内容正是本服务向此人发出的质询，由所注册密钥中具备签名能力的密钥在质询发出后（openpgp.signatureSkewS）作出，且当时有效；密钥本身既未吊销也未过期，并带有包含该条目地址的有效用户 ID。支持 RFC 9580 v6 和 RFC 4880 v4 密钥，由 openpgp.js 读取。S/MIME 证书只检查有效性、密钥和用途，不检查证书链：它只用于选择邮件的加密对象。"
+  },
+  "crypto.families.openpgp.encrypts": {
+    "en": "1a05c1b540cd5082",
+    "text": "邮件，在本人选择或领域要求时（mail.encryptionRequired）：PGP/MIME（RFC 3156）加密至该密钥的加密密钥，由 openpgp.js 选择方式（v4 密钥用 SEIPD 加 AES，v6 密钥用 AEAD）；S/MIME（RFC 8551）作为 CMS EnvelopedData，内容加密使用 AES-256-CBC，内容密钥以 RSAES-OAEP（SHA-256）或 ECDH（dhSinglePass-stdDH-sha256kdf，AES-256 密钥封装）保护。"
+  },
+  "crypto.families.openpgp.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "无。"
+  },
+  "crypto.families.openpgp.hashes": {
+    "en": "c51e067261932787",
+    "text": "对小写化的本地部分计算 SHA-1，并以 z-base-32 编码，这是 Web 密钥目录为地址命名的方式（由草案规定的名称，从不用于保证完整性）。密钥指纹采用 RFC 9580 的定义（v6 为 SHA-256，v4 为 SHA-1）。"
+  },
+  "crypto.families.openpgp.keys": {
+    "en": "201cc09e750d0c79",
+    "text": "自身没有密钥。本人的公钥保存在其条目上（stsOpenPgpKey），从不保存私钥，注册时会拒绝私钥；YubiKey OpenPGP 卡上的密钥与文件中的密钥无法区分，因此不会将任何密钥记录为绑定硬件。"
+  },
+  "crypto.families.openpgp.algorithms.0.what": {
+    "en": "b7a04c64879be952",
+    "text": "已注册密钥，签名"
+  },
+  "crypto.families.openpgp.algorithms.0.how": {
+    "en": "91736ec1cb35b5f2",
+    "text": "Ed25519、Ed448、ECDSA P-256/P-384/P-521、长度为 openpgp.minRsaBits（至少 3072）的 RSA"
+  },
+  "crypto.families.openpgp.algorithms.1.what": {
+    "en": "9f7b65405a49bedd",
+    "text": "已注册密钥，加密"
+  },
+  "crypto.families.openpgp.algorithms.1.how": {
+    "en": "e28f57b2d61b83be",
+    "text": "X25519、X448、ECDH Curve25519 及 P-256/P-384/P-521、长度为 openpgp.minRsaBits 的 RSA"
+  },
+  "crypto.families.openpgp.algorithms.2.what": {
+    "en": "66b873543aebf01b",
+    "text": "拒绝"
+  },
+  "crypto.families.openpgp.algorithms.2.how": {
+    "en": "18369a474bec2b97",
+    "text": "DSA、ElGamal、Brainpool 曲线"
+  },
+  "crypto.families.openpgp.algorithms.3.what": {
+    "en": "429d783fabc235c9",
+    "text": "S/MIME 内容"
+  },
+  "crypto.families.openpgp.algorithms.3.how": {
+    "en": "8c2686ee3dd3948f",
+    "text": "AES-256-CBC（CMS EnvelopedData）"
+  },
+  "crypto.families.openpgp.algorithms.4.what": {
+    "en": "cc09e2a5306928f5",
+    "text": "S/MIME 密钥传输"
+  },
+  "crypto.families.openpgp.algorithms.4.how": {
+    "en": "acf5bad1301fd2cc",
+    "text": "RSAES-OAEP SHA-256；ECDH stdDH SHA-256 KDF，AES-256 封装"
+  },
+  "crypto.families.openpgp.algorithms.5.what": {
+    "en": "727e1a6e39e36a93",
+    "text": "Web 密钥目录名称"
+  },
+  "crypto.families.openpgp.algorithms.5.how": {
+    "en": "a2b773a0ce72bc44",
+    "text": "SHA-1，z-base-32"
   },
   "crypto.families.gnap.signs": {
     "en": "ad4b982edb070f2c",

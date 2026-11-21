@@ -40,6 +40,7 @@ Every answer is checked against the model shown here before it is sent, and no a
 | [Delegation](admin-api-delegation.html) | 17 |  |
 | [Devices](admin-api-devices.html) | 11 |  |
 | [Directory](admin-api-directory.html) | 22 |  |
+| [Directory](admin-api-directory.html) | 27 |  |
 | [EST](admin-api-est.html) | 6 |  |
 | [Federation](admin-api-federation.html) | 24 |  |
 | [GNAP](admin-api-gnap.html) | 4 | The Grant Negotiation and Authorization Protocol (RFC 9635) and its resource server connections (RFC 9767): the authorization server of this realm, what the applications using it have done, and the two things an operator does to its state by hand. |

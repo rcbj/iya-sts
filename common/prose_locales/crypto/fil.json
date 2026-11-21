@@ -448,12 +448,20 @@
     "text": "Isang public-key token na kayang i-attenuate ng holder nang OFFLINE, gaya ng macaroon, pero mave-verify ng sinumang may hawak ng root public key. Ang authorization logic nito ay Datalog na dala sa loob ng token, kaya LAGING tumatakbo ang verifier nang may limit sa oras at iteration."
   },
   "crypto.standards.cms.coverage": {
-    "en": "abe1a25e47d96baf",
-    "text": "partial: SignedData na may isang signer at signed attributes, vine-verify sa mga attribute byte gaya ng natanggap at isinusulat nang DER-sorted; EnvelopedData na may KeyTransRecipientInfo (RSA PKCS#1 v1.5 at OAEP) at AES-CBC na nilalaman; degenerate na certs-only SignedData na may mga certificate at CRL. Walang KeyAgreeRecipientInfo, walang authenticated o compressed data, walang countersignature."
+    "en": "d33248e25a15b5a7",
+    "text": "partial: SignedData na may isang signer at signed attributes, vine-verify sa attribute bytes gaya ng pagkatanggap at isinusulat nang DER-sorted; EnvelopedData na may KeyTransRecipientInfo (RSA PKCS#1 v1.5 at OAEP) at AES-CBC na nilalaman; degenerate certs-only SignedData na may mga certificate at CRL; para sa S/MIME mail (#1955) isang EnvelopedData na isinulat gamit ang OAEP SHA-256 KeyTransRecipientInfo o ECDH KeyAgreeRecipientInfo. Walang authenticated o compressed data, walang countersignature."
   },
   "crypto.standards.cms.what": {
-    "en": "0f35f026a507dc11",
-    "text": "Ang sobreng binabasa at isinusulat ng SCEP (scep/scep_cms.ts): isang request na pinirmahan ng requester at naka-encrypt para sa RA, at isang CertRep na pinirmahan ng RA na ang certificate ay naka-encrypt para sa requester."
+    "en": "e09c8508abab483b",
+    "text": "Ang envelope na binabasa at isinusulat ng SCEP (scep/scep_cms.ts): isang request na pinirmahan ng requester at naka-encrypt sa RA, at isang CertRep na pinirmahan ng RA na ang certificate ay naka-encrypt sa requester. Mula #1955, pati ang S/MIME EnvelopedData kung saan naka-encrypt ang mail, na nagdaragdag ng KeyAgreeRecipientInfo para sa EC recipient (dhSinglePass-stdDH-sha256kdf, AES-256 key wrap) at OAEP SHA-256 KeyTransRecipientInfo para sa RSA recipient."
+  },
+  "crypto.standards.openpgp.coverage": {
+    "en": "5d4c9889762ddbd2",
+    "text": "partial: pagbasa ng v4 at v6 na transferable public key, pag-verify ng cleartext signature, at pag-encrypt ng PGP/MIME na mensahe, lahat sa pamamagitan ng openpgp.js; ang advanced at direct lookup at ang policy file ng Web Key Directory. Walang pagpirma, walang decryption, walang pagsusumite sa Web Key Service, walang keyserver."
+  },
+  "crypto.standards.openpgp.what": {
+    "en": "039de4dd3b49b9ab",
+    "text": "Ang sariling public key ng isang tao, nakarehistro batay sa proof of possession at nakalathala sa Web Key Directory kung pipiliin niya; ang key kung saan naka-encrypt ang kanyang mail."
   },
   "crypto.families.pki.signs": {
     "en": "fdcf723f4622f28f",
@@ -678,6 +686,78 @@
   "crypto.families.reporting.algorithms.3.how": {
     "en": "9d40176053fec31b",
     "text": "SHA-256, itinatago kasama ng artifact at sinusuri sa pagbasa"
+  },
+  "crypto.families.openpgp.signs": {
+    "en": "0f38445050f33bd1",
+    "text": "Wala. Ang pagrehistro ay pirma ng TAO, at hindi pinipirmahan ang naka-encrypt na mensahe (pinipirmahan ng DKIM ang panlabas na mensahe, gaya ng pagpirma nito sa bawat mensahe)."
+  },
+  "crypto.families.openpgp.verifies": {
+    "en": "c3dbfb38087cb3de",
+    "text": "Isang PROOF OF POSSESSION sa pagrehistro: isang cleartext signature (gpg --clearsign) sa eksaktong challenge na in-issue ng serbisyong ito sa tao, gawa ng key na kayang pumirma sa loob ng key na nirerehistro, ginawa pagkatapos ma-issue ang challenge (openpgp.signatureSkewS) at valid noon; ang key mismo ay hindi revoked at hindi expired, na may valid na user id na naglalaman ng address ng entry. Mga key na RFC 9580 v6 at RFC 4880 v4, binabasa ng openpgp.js. Ang S/MIME certificate ay sinusuri para sa validity, key at usage, pero hindi chinechain: pumipili lang ito kung kanino naka-encrypt ang isang mensahe."
+  },
+  "crypto.families.openpgp.encrypts": {
+    "en": "1a05c1b540cd5082",
+    "text": "MAIL, kung saan pinili ito ng tao o hinihingi ito ng realm (mail.encryptionRequired): PGP/MIME (RFC 3156) sa encryption key ng key, ayon sa pinipili ng openpgp.js (SEIPD na may AES para sa v4 key, AEAD para sa v6); S/MIME (RFC 8551) bilang CMS EnvelopedData, AES-256-CBC na content encryption, ang content key sa ilalim ng RSAES-OAEP na may SHA-256 o ECDH (dhSinglePass-stdDH-sha256kdf, AES-256 key wrap)."
+  },
+  "crypto.families.openpgp.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Wala."
+  },
+  "crypto.families.openpgp.hashes": {
+    "en": "c51e067261932787",
+    "text": "SHA-1 ng local part na naka-lowercase, sa z-base-32, gaya ng pagpapangalan ng Web Key Directory sa isang address (isang pangalang itinakda ng draft, hindi kailanman pinagkakatiwalaan para sa integrity). Ang fingerprint ng key ay ang ayon sa RFC 9580 (SHA-256 para sa v6, SHA-1 para sa v4)."
+  },
+  "crypto.families.openpgp.keys": {
+    "en": "201cc09e750d0c79",
+    "text": "Walang sarili. Ang public key ng tao ay nasa kanyang entry (stsOpenPgpKey), hindi kailanman secret key, na tinatanggihan ng pagrehistro; ang key sa YubiKey OpenPGP card ay hindi naiiba sa key na nasa file, kaya walang itinatalang hardware-bound."
+  },
+  "crypto.families.openpgp.algorithms.0.what": {
+    "en": "b7a04c64879be952",
+    "text": "Nakarehistrong key, pagpirma"
+  },
+  "crypto.families.openpgp.algorithms.0.how": {
+    "en": "91736ec1cb35b5f2",
+    "text": "Ed25519, Ed448, ECDSA P-256/P-384/P-521, RSA na openpgp.minRsaBits (hindi bababa sa 3072)"
+  },
+  "crypto.families.openpgp.algorithms.1.what": {
+    "en": "9f7b65405a49bedd",
+    "text": "Nakarehistrong key, encryption"
+  },
+  "crypto.families.openpgp.algorithms.1.how": {
+    "en": "e28f57b2d61b83be",
+    "text": "X25519, X448, ECDH Curve25519 at P-256/P-384/P-521, RSA na openpgp.minRsaBits"
+  },
+  "crypto.families.openpgp.algorithms.2.what": {
+    "en": "66b873543aebf01b",
+    "text": "Tinatanggihan"
+  },
+  "crypto.families.openpgp.algorithms.2.how": {
+    "en": "18369a474bec2b97",
+    "text": "DSA, ElGamal, mga Brainpool curve"
+  },
+  "crypto.families.openpgp.algorithms.3.what": {
+    "en": "429d783fabc235c9",
+    "text": "Nilalaman ng S/MIME"
+  },
+  "crypto.families.openpgp.algorithms.3.how": {
+    "en": "8c2686ee3dd3948f",
+    "text": "AES-256-CBC (CMS EnvelopedData)"
+  },
+  "crypto.families.openpgp.algorithms.4.what": {
+    "en": "cc09e2a5306928f5",
+    "text": "Key transport ng S/MIME"
+  },
+  "crypto.families.openpgp.algorithms.4.how": {
+    "en": "acf5bad1301fd2cc",
+    "text": "RSAES-OAEP SHA-256; ECDH stdDH SHA-256 KDF, AES-256 wrap"
+  },
+  "crypto.families.openpgp.algorithms.5.what": {
+    "en": "727e1a6e39e36a93",
+    "text": "Pangalan sa Web Key Directory"
+  },
+  "crypto.families.openpgp.algorithms.5.how": {
+    "en": "a2b773a0ce72bc44",
+    "text": "SHA-1, z-base-32"
   },
   "crypto.families.gnap.signs": {
     "en": "ad4b982edb070f2c",

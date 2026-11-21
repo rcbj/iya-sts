@@ -448,12 +448,20 @@
     "text": "رمز بمفتاح عام يمكن لحائزه تضييقه دون اتصال، مثل macaroon، لكن يمكن لأي من يحتفظ بالمفتاح العام الجذر التحقق منه. منطق التفويض فيه Datalog يُحمل داخل الرمز، فيعمل المتحقّق دائمًا بحدود للزمن والتكرار."
   },
   "crypto.standards.cms.coverage": {
-    "en": "abe1a25e47d96baf",
-    "text": "partial: SignedData بموقّع واحد وسمات موقَّعة، يُتحقق منها على بايتات السمات كما استُقبلت وتُكتب مرتبة DER؛ وEnvelopedData مع KeyTransRecipientInfo (RSA PKCS#1 v1.5 وOAEP) ومحتوى AES-CBC؛ وSignedData منحط للشهادات فقط مع شهادات وقوائم CRL. لا KeyAgreeRecipientInfo، ولا بيانات مصادَق عليها أو مضغوطة، ولا توقيعات مضادة."
+    "en": "d33248e25a15b5a7",
+    "text": "partial: SignedData بموقّع واحد وسمات موقَّعة، يُتحقق منها على بايتات السمات كما وردت وتُكتب مرتّبة وفق DER؛ وEnvelopedData مع KeyTransRecipientInfo (RSA PKCS#1 v1.5 وOAEP) ومحتوى AES-CBC؛ وSignedData متدهورة تحمل الشهادات وقوائم CRL فقط؛ ولبريد S/MIME (#1955) EnvelopedData تُكتب مع KeyTransRecipientInfo بـ OAEP SHA-256 أو KeyAgreeRecipientInfo بـ ECDH. لا بيانات مصادَق عليها أو مضغوطة، ولا توقيعات مضادة."
   },
   "crypto.standards.cms.what": {
-    "en": "0f35f026a507dc11",
-    "text": "الغلاف الذي يقرأه SCEP ويكتبه (scep/scep_cms.ts): طلب يوقّعه الطالب ويُشفَّر إلى RA، وCertRep يوقّعه RA وشهادته مشفّرة إلى الطالب."
+    "en": "e09c8508abab483b",
+    "text": "الغلاف الذي يقرؤه SCEP (scep/scep_cms.ts) ويكتبه: طلب يوقّعه مقدّم الطلب ويُشفَّر إلى RA، وCertRep توقّعه RA وتكون شهادته مشفّرة إلى مقدّم الطلب. ومنذ #1955 أيضًا EnvelopedData الخاصة بـ S/MIME التي يُشفَّر فيها البريد، مما يضيف KeyAgreeRecipientInfo لمستلم EC (dhSinglePass-stdDH-sha256kdf، تغليف مفتاح AES-256) وKeyTransRecipientInfo بـ OAEP SHA-256 لمستلم RSA."
+  },
+  "crypto.standards.openpgp.coverage": {
+    "en": "5d4c9889762ddbd2",
+    "text": "partial: قراءة المفاتيح العامة القابلة للنقل من الإصدارين v4 وv6، والتحقق من توقيع نص صريح، وتشفير رسالة PGP/MIME، كل ذلك عبر openpgp.js؛ وعمليات البحث المتقدمة والمباشرة في دليل مفاتيح الويب (Web Key Directory) وملف السياسة. لا توقيع، ولا فك تشفير، ولا إرسال عبر Web Key Service، ولا خادم مفاتيح."
+  },
+  "crypto.standards.openpgp.what": {
+    "en": "039de4dd3b49b9ab",
+    "text": "المفتاح العام الخاص بالشخص نفسه، مسجّل بناءً على إثبات حيازة ومنشور في دليل مفاتيح الويب (Web Key Directory) إن اختار ذلك؛ وهو المفتاح الذي يُشفَّر له بريده."
   },
   "crypto.families.pki.signs": {
     "en": "fdcf723f4622f28f",
@@ -678,6 +686,78 @@
   "crypto.families.reporting.algorithms.3.how": {
     "en": "9d40176053fec31b",
     "text": "SHA-256، يُحفظ مع الأثر ويُفحص عند القراءة"
+  },
+  "crypto.families.openpgp.signs": {
+    "en": "0f38445050f33bd1",
+    "text": "لا شيء. التسجيل هو توقيع الشخص نفسه، والرسالة المشفّرة لا تُوقَّع (يوقّع DKIM الرسالة الخارجية، كما يوقّع كل رسالة)."
+  },
+  "crypto.families.openpgp.verifies": {
+    "en": "c3dbfb38087cb3de",
+    "text": "إثبات حيازة عند التسجيل: توقيع نص صريح (gpg --clearsign) على التحدي نفسه تمامًا الذي أصدرته هذه الخدمة للشخص، بمفتاح قادر على التوقيع ضمن المفتاح الذي يسجّله، أُنشئ بعد إصدار التحدي (openpgp.signatureSkewS) وكان صالحًا حينها؛ والمفتاح نفسه غير مُبطَل وغير منتهي الصلاحية، وله معرّف مستخدم صالح يحمل عنوان الإدخال. مفاتيح RFC 9580 v6 وRFC 4880 v4، تقرؤها openpgp.js. تُفحص شهادة S/MIME من حيث الصلاحية والمفتاح والاستخدام، دون التحقق من سلسلتها: فهي تحدد فقط لمن تُشفَّر الرسالة."
+  },
+  "crypto.families.openpgp.encrypts": {
+    "en": "1a05c1b540cd5082",
+    "text": "البريد، حيث اختار الشخص ذلك أو يشترطه النطاق (mail.encryptionRequired): PGP/MIME (RFC 3156) إلى مفتاح التشفير في المفتاح، كما تختار openpgp.js (SEIPD مع AES لمفتاح v4، وAEAD لمفتاح v6)؛ وS/MIME (RFC 8551) على هيئة CMS EnvelopedData، بتشفير المحتوى AES-256-CBC، ومفتاح المحتوى تحت RSAES-OAEP مع SHA-256 أو ECDH (dhSinglePass-stdDH-sha256kdf، تغليف مفتاح AES-256)."
+  },
+  "crypto.families.openpgp.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "لا شيء."
+  },
+  "crypto.families.openpgp.hashes": {
+    "en": "c51e067261932787",
+    "text": "SHA-1 للجزء المحلي بأحرف صغيرة، بترميز z-base-32، كما يسمّي دليل مفاتيح الويب (Web Key Directory) العنوان (اسم تحدده المسودة، ولا يُعتمد عليه أبدًا للسلامة). بصمة المفتاح هي بصمة RFC 9580 (SHA-256 للإصدار v6، وSHA-1 للإصدار v4)."
+  },
+  "crypto.families.openpgp.keys": {
+    "en": "201cc09e750d0c79",
+    "text": "لا مفاتيح خاصة بها. المفتاح العام للشخص موجود في إدخاله (stsOpenPgpKey)، ولا يكون أبدًا مفتاحًا سريًا، إذ يرفضه التسجيل؛ ولا يُميَّز المفتاح الموجود على بطاقة YubiKey OpenPGP عن المفتاح الموجود في ملف، لذا لا يُسجَّل شيء على أنه مرتبط بالعتاد."
+  },
+  "crypto.families.openpgp.algorithms.0.what": {
+    "en": "b7a04c64879be952",
+    "text": "المفتاح المسجّل، التوقيع"
+  },
+  "crypto.families.openpgp.algorithms.0.how": {
+    "en": "91736ec1cb35b5f2",
+    "text": "Ed25519، Ed448، ECDSA P-256/P-384/P-521، RSA بطول openpgp.minRsaBits (3072 على الأقل)"
+  },
+  "crypto.families.openpgp.algorithms.1.what": {
+    "en": "9f7b65405a49bedd",
+    "text": "المفتاح المسجّل، التشفير"
+  },
+  "crypto.families.openpgp.algorithms.1.how": {
+    "en": "e28f57b2d61b83be",
+    "text": "X25519، X448، ECDH Curve25519 وP-256/P-384/P-521، RSA بطول openpgp.minRsaBits"
+  },
+  "crypto.families.openpgp.algorithms.2.what": {
+    "en": "66b873543aebf01b",
+    "text": "مرفوض"
+  },
+  "crypto.families.openpgp.algorithms.2.how": {
+    "en": "18369a474bec2b97",
+    "text": "DSA، ElGamal، منحنيات Brainpool"
+  },
+  "crypto.families.openpgp.algorithms.3.what": {
+    "en": "429d783fabc235c9",
+    "text": "محتوى S/MIME"
+  },
+  "crypto.families.openpgp.algorithms.3.how": {
+    "en": "8c2686ee3dd3948f",
+    "text": "AES-256-CBC (CMS EnvelopedData)"
+  },
+  "crypto.families.openpgp.algorithms.4.what": {
+    "en": "cc09e2a5306928f5",
+    "text": "نقل مفتاح S/MIME"
+  },
+  "crypto.families.openpgp.algorithms.4.how": {
+    "en": "acf5bad1301fd2cc",
+    "text": "RSAES-OAEP SHA-256؛ ECDH stdDH SHA-256 KDF، تغليف AES-256"
+  },
+  "crypto.families.openpgp.algorithms.5.what": {
+    "en": "727e1a6e39e36a93",
+    "text": "الاسم في دليل مفاتيح الويب (Web Key Directory)"
+  },
+  "crypto.families.openpgp.algorithms.5.how": {
+    "en": "a2b773a0ce72bc44",
+    "text": "SHA-1، z-base-32"
   },
   "crypto.families.gnap.signs": {
     "en": "ad4b982edb070f2c",

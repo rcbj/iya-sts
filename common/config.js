@@ -7252,6 +7252,51 @@ const SETTINGS = [
                  'PKI Common Policy\'s PIV Authentication) and ' +
                  'id-fpki-certpcy-pivi-hardware (PIV-I). Add a CAC ' +
                  'issuer\'s own hardware policies here.' },
+  // #1955 P6: A PERSON'S OpenPGP KEY AND THE WEB KEY DIRECTORY.
+  // `common/openpgp_keys.ts` argues all five; the directory is OFF by
+  // default, and nothing a realm already does changes.
+  { key: 'openpgp.wkd', group: 'OpenPGP',
+    label: 'Publish keys in the Web Key Directory',
+    env: 'STS_OPENPGP_WKD', type: 'bool', dflt: false, runtime: true,
+    description: 'Answer the Web Key Directory (draft-koch-openpgp-webkey-' +
+                 'service) for this realm\'s mail domains: /.well-known/' +
+                 'openpgpkey/<domain>/hu/<hash> (the advanced method, on ' +
+                 'openpgpkey.<domain>) and /.well-known/openpgpkey/hu/' +
+                 '<hash> (the direct method), and each one\'s policy file. ' +
+                 'Only the key of a person who opted in on the portal is ' +
+                 'answered. Off by default.' },
+  { key: 'openpgp.wkdDomains', group: 'OpenPGP',
+    label: 'Mail domains the Web Key Directory serves',
+    env: 'STS_OPENPGP_WKD_DOMAINS', type: 'csv', dflt: '', runtime: true,
+    description: 'The mail domains this realm\'s Web Key Directory ' +
+                 'answers for, comma-separated. Empty, the default, is the ' +
+                 'realm\'s own DNS domain. A request with no realm in its ' +
+                 'path is answered by the realm that serves its domain, the ' +
+                 'default realm first.' },
+  { key: 'openpgp.challengeLifetimeS', group: 'OpenPGP',
+    label: 'Registration challenge lifetime (seconds)',
+    env: 'STS_OPENPGP_CHALLENGE_LIFETIME_S', type: 'int', dflt: 600,
+    min: 60, max: 3600, runtime: true,
+    description: 'How long the challenge a person signs with gpg ' +
+                 '--clearsign to register an OpenPGP key stays good. It is ' +
+                 'spent once, and a person has one at a time.' },
+  { key: 'openpgp.signatureSkewS', group: 'OpenPGP',
+    label: 'Proof signature clock skew (seconds)',
+    env: 'STS_OPENPGP_SIGNATURE_SKEW_S', type: 'int', dflt: 300, min: 0,
+    max: 3600, runtime: true,
+    description: 'How far the signing computer\'s clock may be from this ' +
+                 'service\'s: a proof signed earlier than the challenge ' +
+                 'was issued, or later than now, by more than this is ' +
+                 'refused (STS-OPENPGP-0010).' },
+  { key: 'openpgp.minRsaBits', group: 'OpenPGP',
+    label: 'Smallest RSA OpenPGP key',
+    env: 'STS_OPENPGP_MIN_RSA_BITS', type: 'int', dflt: 3072, min: 3072,
+    max: 16384, runtime: true,
+    description: 'The shortest RSA key, primary or subkey, an OpenPGP ' +
+                 'registration accepts. Ed25519, Ed448, ECDSA and ECDH on ' +
+                 'P-256, P-384 and P-521, X25519 and X448 are accepted; ' +
+                 'DSA, ElGamal and the Brainpool curves never are ' +
+                 '(STS-OPENPGP-0004).' },
 
   // #164 PHASE 3 (2026-09-26): the MDM / posture feed.
   // `admin-ui/devices_admin.ts`'s `mdmFeed()` argues it.
@@ -21238,6 +21283,23 @@ const SETTINGS = [
     description: 'A notice that names what it is about (the same act on the ' +
                  'same account) is sent once in this window, however many ' +
                  'doors reported it. 0 turns suppression off.' },
+
+  // #1955 P6: SECURITY MAIL THAT MUST BE ENCRYPTED. `common/mail.ts`
+  // argues the refusal.
+  { key: 'mail.encryptionRequired', group: 'Mail',
+    label: 'Messages that must be encrypted',
+    env: 'STS_MAIL_ENCRYPTION_REQUIRED', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'The messages, by template id (password-reset, ' +
+                 'account-activation, sign-in-code, sign-in-link, ' +
+                 'credential-compromised and the rest of Monitoring → ' +
+                 'Mail\'s list), that are sent only encrypted — PGP/MIME to ' +
+                 'the person\'s OpenPGP key or S/MIME to their certificate, ' +
+                 'as they chose on the portal. A person who chose neither ' +
+                 'is not sent one (STS-MAIL-0240), and the use that asked ' +
+                 'says so as it does for any message not sent. Empty, the ' +
+                 'default, requires none; whatever a person chose is ' +
+                 'honoured either way.' },
 
   { key: 'mail.selfServiceReset', group: 'Mail',
     label: 'Self-service password reset',

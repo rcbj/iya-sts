@@ -2311,3 +2311,41 @@ model XacmlPepListenerTuningFields {
 @component model `WithOkMessageErrors63` is (`WithKindCountIdentifiers`)[];
 
 @component model `WithIdFromTo2` is Record<`WithKindCountIdentifiers`>;
+
+// #1955 P6: A PERSON'S OpenPGP KEY, ITS WEB KEY DIRECTORY PUBLICATION AND THEIR
+// MAIL ENCRYPTION (`common/openpgp_keys.ts`'s `view()`), shared by
+// `/account-api/openpgp` and `/admin-api/openpgp`.
+@js(#{`description`:"The person's registered OpenPGP public key (#1955)."}) @hoisted model OpenPgpKeyView {
+  @js(#{`description`:"The fingerprint, lower-case hex: 40 characters for a v4 key, 64 for a v6 one."}) `fingerprint`: string;
+  @js(#{`description`:"The key version, 4 or 6."}) `version`: integer;
+  @js(#{`description`:"The primary key's algorithm, as openpgp.js names it (`ed25519`, `eddsaLegacy ed25519Legacy`, `ecdsa nistP256`, `rsaEncryptSign 4096`)."}) `algorithm`: string;
+  @js(#{`description`:"The encryption key's algorithm; empty for a key with none valid when registered."}) `encryption`: string;
+  @js(#{`description`:"The user ids that carried the entry's address when it was registered."}) `userIds`: (string)[];
+  @js(#{`description`:"When the key was made, ISO 8601."}) `created`: string;
+  @js(#{`description`:"When it expires, ISO 8601; empty for never."}) `expiresAt`: string;
+  @js(#{`description`:"When it was registered, ISO 8601."}) `registeredAt`: string;
+  @js(#{`description`:"Where: `portal` or `api`."}) `registeredVia`: string;
+  @js(#{`description`:"The public key, ASCII-armored."}) `armored`: string
+}
+
+@js(#{`description`:"The person's outstanding registration challenge (#1955): the text to sign with `gpg --clearsign`."}) @hoisted model OpenPgpChallengeView {
+  `text`: string;
+  @js(#{`description`:"When it lapses, ISO 8601."}) `expiresAt`: string
+}
+
+@js(#{`description`:"The person's Web Key Directory publication (#1955)."}) @hoisted model OpenPgpWkdView {
+  @js(#{`description`:"Whether the realm answers the Web Key Directory (`openpgp.wkd`)."}) `enabled`: boolean;
+  @js(#{`description`:"Whether the person chose to publish their key."}) `optedIn`: boolean;
+  @js(#{`description`:"Whether it is answered now: a key, the choice, the realm's switch and a domain the realm serves."}) `published`: boolean;
+  @js(#{`description`:"Whether the domain of the person's address is one the realm's directory serves."}) `domainServed`: boolean;
+  @js(#{`description`:"The hashed local part of the person's address, z-base-32."}) `hash`: string;
+  @js(#{`description`:"The advanced method's URL for the address; empty without one."}) `url`: string
+}
+
+@js(#{`description`:"How mail to the person is encrypted (#1955)."}) @hoisted model OpenPgpMailView {
+  @js(#{`description`:"`none`, `openpgp` or `smime`."}) `choice`: string;
+  @js(#{`description`:"Whether the registered OpenPGP key has an encryption key valid now."}) `openpgpUsable`: boolean;
+  @js(#{`description`:"Whether the person's userSMIMECertificate holds a certificate that can receive now."}) `smimeUsable`: boolean;
+  @js(#{`description`:"That certificate's subject and serial, or null."}) `smimeCertificate`: { `subject`: string; `serial`: string } | null;
+  @js(#{`description`:"Why no S/MIME certificate on the entry can receive, in English; empty otherwise."}) `smimeProblem`: string
+}

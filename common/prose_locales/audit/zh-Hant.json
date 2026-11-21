@@ -503,6 +503,34 @@
     "en": "f7fb5461e2325e1e",
     "text": "硬體權杖已回報遺失，其憑證已停用"
   },
+  "audit.actions.openpgp.challenge.label": {
+    "en": "454a22b5bcd9d6a2",
+    "text": "已發出 OpenPGP 金鑰註冊挑戰"
+  },
+  "audit.actions.openpgp.key-registered.label": {
+    "en": "1ed8de1f8777a015",
+    "text": "已憑持有證明註冊 OpenPGP 金鑰"
+  },
+  "audit.actions.openpgp.key-refused.label": {
+    "en": "f1e7e3c6808ba33b",
+    "text": "OpenPGP 金鑰未獲註冊"
+  },
+  "audit.actions.openpgp.key-removed.label": {
+    "en": "89a284fa6508eae4",
+    "text": "已移除 OpenPGP 金鑰"
+  },
+  "audit.actions.openpgp.publication.label": {
+    "en": "f6d12f16eca6796a",
+    "text": "OpenPGP 金鑰已在 Web 金鑰目錄中發布或撤回"
+  },
+  "audit.actions.openpgp.mail-encryption.label": {
+    "en": "ba0fb7a4133d94e2",
+    "text": "寄給某人的郵件的加密方式已變更"
+  },
+  "audit.actions.openpgp.smime-certificate.label": {
+    "en": "663072a33ce1e178",
+    "text": "某人的 S/MIME 憑證已設定或移除"
+  },
   "audit.actions.device.key-add.label": {
     "en": "6c1b2513c20532ef",
     "text": "金鑰被新增到裝置"

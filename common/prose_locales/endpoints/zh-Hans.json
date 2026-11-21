@@ -431,6 +431,22 @@
     "en": "bfb6c6f542c0607b",
     "text": "/Me，已通过身份验证的主体"
   },
+  "endpoints.route./.well-known/openpgpkey/:domain/hu/:hash.name": {
+    "en": "b042a2652a9771c9",
+    "text": "Web 密钥目录密钥（高级方式）"
+  },
+  "endpoints.route./.well-known/openpgpkey/:domain/policy.name": {
+    "en": "f0c7c4485ab23e66",
+    "text": "Web 密钥目录策略（高级方式）"
+  },
+  "endpoints.route./.well-known/openpgpkey/hu/:hash.name": {
+    "en": "a8849e1ec8b477d5",
+    "text": "Web 密钥目录密钥（直接方式）"
+  },
+  "endpoints.route./.well-known/openpgpkey/policy.name": {
+    "en": "d9805e391b15a7b9",
+    "text": "Web 密钥目录策略（直接方式）"
+  },
   "endpoints.route./.well-known/hoba/register.name": {
     "en": "b95adde7badbdef3",
     "text": "注册 HOBA 公钥"
@@ -894,6 +910,14 @@
   "endpoints.route./admin-api/mail/:action.name": {
     "en": "cff7055c2db49c6a",
     "text": "邮件操作"
+  },
+  "endpoints.route./admin-api/openpgp.name": {
+    "en": "bb22bb5b740e327f",
+    "text": "OpenPGP 密钥"
+  },
+  "endpoints.route./admin-api/openpgp/:action.name": {
+    "en": "a1147f062fddb7e5",
+    "text": "OpenPGP 密钥操作"
   },
   "endpoints.route./admin-api/mail/outbox.name": {
     "en": "d40abea9379f4e22",
