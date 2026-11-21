@@ -62,7 +62,7 @@ const OVERRIDDEN = ['piv.attestationAnchors', 'piv.pinPolicy',
                     'piv.cardAuthSignIn', 'piv.keyEscrow',
                     'piv.externalIssuers', 'piv.externalPolicyOids',
                     'est.allowedProfiles', 'est.serverKeyGeneration',
-                    'roles.pivKeyRecoveryGroup'];
+                    'roles.pivKeyRecoveryGroup', 'xacml.enforceAccess'];
 const PIV_AUTH_POLICY = '2.16.840.1.101.3.2.1.3.13';
 
 function code(answer) {
@@ -278,6 +278,51 @@ async function checkIssuance(t, dev) {
   }
   t.check(piv.signInRefusal(serialHex) === null,
           '4j. a piv-auth certificate signs in');
+  // X4: what the attestation said, recorded and handed to policy.
+  const ev = tokens.evidenceFor('x509', serialHex);
+  t.check(ev.pinPolicy === 'once' && ev.touchPolicy === 'always' &&
+          ev.firmware === '5.4.3' && ev.formFactor === 'usb-c' &&
+          ev.fips === false,
+          '4k. the credential keeps the attested PIN and touch policy, the ' +
+          'token its firmware and form factor', JSON.stringify(ev));
+  const Authn = require('../authn/authn').Authn;
+  const snap = Authn.hardwareTokenOf({ kind: 'certificate',
+                                       serial: serialHex });
+  const gate = require('../common/issuance_gate');
+  const event = { authenticated: true, amr: ['hwk', 'sc'], acr: '1',
+                  authority: { kind: 'local' },
+                  context: { credential: { kind: 'certificate',
+                                           hardwareToken: snap } } };
+  const gated = gate.hardwareTokenFactsOf({ kind: gate.ISSUANCE.SESSION,
+    authenticationEvent: event,
+    subject: { kind: 'user', name: ALICE, authenticated: true } });
+  t.check(snap && snap.touchPolicy === 'always' && gated.attested &&
+          gated.pinPolicy === 'once' && gated.touchPolicy === 'always' &&
+          gated.firmware === '5.4.3' && gated.formFactor === 'usb-c' &&
+          gated.fips === undefined,
+          '4l. the sign-in\'s snapshot and the gate\'s facts carry them, ' +
+          'and FIPS only when true', JSON.stringify([snap, gated]));
+  const H = require('../xacml/xacml_templates').HARDWARE_TOKEN_ATTRIBUTE;
+  const rolePep = require('../xacml/xacml_role_pep');
+  const text = JSON.stringify(rolePep.buildRequest({
+    application: 'piv-app', kind: 'start-session',
+    subject: { kind: 'user', name: ALICE, authenticated: true },
+    hardwareToken: gated }, ['EVERYBODY'], [], ['EVERYBODY']));
+  const fido = JSON.stringify(rolePep.buildRequest({
+    application: 'piv-app', kind: 'start-session',
+    subject: { kind: 'user', name: ALICE, authenticated: true },
+    hardwareToken: { attested: true, key: 'yubico/1', status: 'active' } },
+    ['EVERYBODY'], [], ['EVERYBODY']));
+  t.check([H.PIN_POLICY, H.TOUCH_POLICY, H.FIRMWARE, H.FORM_FACTOR]
+    .every(function (urn) {
+      return text.indexOf(urn) >= 0;
+    }) && text.indexOf(H.FIPS) < 0 &&
+          [H.PIN_POLICY, H.TOUCH_POLICY].every(function (urn) {
+            return fido.indexOf(urn) < 0;
+          }),
+          '4m. the PEP sends the PIN and touch policy, firmware and form ' +
+          'factor of an attested PIV key, and none where the evidence said ' +
+          'none');
   log.debug("Leaving checkIssuance().");
   return made;
 }
@@ -374,6 +419,26 @@ async function checkEscrow(t, made) {
                           groups: [] }).indexOf('PIV_KEY_RECOVERY') < 0,
           '5h-v. PIV_KEY_RECOVERY is held through roles.pivKeyRecoveryGroup ' +
           'and only through it');
+  // THE REAL BUILT-IN POLICY: the access PEP armed in this process, as
+  // `xacml/xacml.ts` arms it at 23c (`tests/access_policy.js` does the
+  // same), and BOB put in the group roles.pivKeyRecoveryGroup names.
+  require('../xacml/xacml_access_pep');
+  config.setOverride('xacml.enforceAccess', 'true');
+  t.equal(code(pivEnrolment.recover({ username: ALICE, actor: BOB,
+                                      door: 'admin-api',
+                                      serialHex: serialHex })),
+          'STS-PIV-0023', '5h-vi. the built-in policy refuses an ' +
+          'administrator outside the group');
+  ldap.createGroup('piv-key-recovery', {});
+  const joined = ldap.addGroupMember('piv-key-recovery', BOB);
+  const real = pivEnrolment.recover({ username: ALICE, actor: BOB,
+                                      door: 'admin-api',
+                                      serialHex: serialHex });
+  t.check(real.ok && /PRIVATE KEY/.test(real.privateKeyPem),
+          '5h-vii. and permits one holding PIV_KEY_RECOVERY through the ' +
+          'group: the escrowed key is recovered', JSON.stringify(
+            [joined && joined.ok, real.errors]));
+  config.clearOverride('xacml.enforceAccess');
   // Attached to the YubiKey of section 4, then the YubiKey is lost.
   const key = 'yubico/' + made.serial;
   const attached = pivEnrolment.attach({ username: ALICE, actor: ALICE,
@@ -440,6 +505,50 @@ async function checkOutsideCard(t) {
   log.debug("Leaving checkOutsideCard().");
 }
 
+// 7. stsPivCardUuid ON EVERY WRITE: normalised, held to RFC 9562 and unique
+// in the realm, through the console's editor (writePersonAttribute()) and a
+// whole-entry write (putEntry(), which SCIM and the import use).
+function checkCardUuidWrites(t) {
+  log.debug("Entering checkCardUuidWrites().");
+  t.log.info('=== 7. stsPivCardUuid writes ===');
+  const editor = require('../ldap/person_editor');
+  const uuid = nodeCrypto.randomUUID();
+  const one = 'piv-erin-' + RUN;
+  const two = 'piv-frank-' + RUN;
+  ldap.createUser(one, { invent: false, attributes: {} });
+  ldap.createUser(two, { invent: false, attributes: {} });
+  const set = editor.update(one, { attribute: 'stsPivCardUuid', mode: 'set',
+    value: 'URN:UUID:' + uuid.toUpperCase() }, { actor: 'test', via: 'test' });
+  const stored = ldap.existingUserEntry(one);
+  const held = ((stored && (stored.stored || stored).attributes) || {})
+    .stspivcarduuid || [];
+  t.check(set.ok && held.length === 1 && held[0] === uuid,
+          '7a. the editor stores a card UUID normalised: prefix off, lower ' +
+          'case', JSON.stringify([set.errors, held]));
+  t.equal(code(editor.update(two, { attribute: 'stsPivCardUuid',
+    mode: 'set', value: uuid }, { actor: 'test', via: 'test' })),
+          'STS-PIV-0035', '7b. a second person given the same card UUID is ' +
+          'refused');
+  t.equal(code(editor.update(two, { attribute: 'stsPivCardUuid',
+    mode: 'set', value: 'not-a-uuid' }, { actor: 'test', via: 'test' })),
+          'STS-PIV-0034', '7c. a value that is no UUID is refused');
+  t.equal(code(editor.update(two, { attribute: 'stsPivCardUuid',
+    mode: 'set', value: '00000000-0000-0000-0000-000000000000' },
+    { actor: 'test', via: 'test' })), 'STS-PIV-0034',
+          '7d. the nil UUID names no card');
+  const twoEntry = ldap.existingUserEntry(two);
+  const dn = (twoEntry.stored || twoEntry).dn;
+  const attrs = Object.assign({}, (twoEntry.stored || twoEntry).attributes,
+                              { stspivcarduuid: [uuid] });
+  t.equal(code(ldap.writePerson(dn, attrs)), 'STS-PIV-0035',
+          '7e. a whole-entry write (SCIM, the import) holding it is refused ' +
+          'too');
+  t.check(editor.update(one, { attribute: 'stsPivCardUuid', mode: 'set',
+    value: uuid }, { actor: 'test', via: 'test' }).ok,
+          '7f. the holder writing their own value again is no conflict');
+  log.debug("Leaving checkCardUuidWrites().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   try {
@@ -464,6 +573,7 @@ async function run(t) {
       await checkEscrow(t, made);
     }
     await checkOutsideCard(t);
+    checkCardUuidWrites(t);
   } finally {
     OVERRIDDEN.forEach(function (k) {
       config.clearOverride(k);

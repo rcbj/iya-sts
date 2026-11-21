@@ -3635,6 +3635,16 @@ attested key" is a realm's own rule over these, or the authentication
 policy's `attested-hardware` mechanism, which the built-in `authn-mechanism`
 rule already enforces. They ride along and never make the policy asked.
 
+**#1955 P2 adds five, for the attested key itself**: `hardware-token-pin-policy`
+and `hardware-token-touch-policy` (a PIV slot key's, kept on the CREDENTIAL's
+evidence at enrolment, since each slot has its own), `hardware-token-firmware`,
+`hardware-token-form-factor` and `hardware-token-fips` (a boolean sent only when
+true; the token's). The gate sends them ONLY for a token still attested whose
+evidence said them, so a rule over them is inapplicable rather than matching an
+empty string, and a lost token's policies prove nothing. "Administrators sign in
+only with touch `always`" is a realm's rule over `hardware-token-touch-policy`;
+the realm settings `piv.pinPolicy` / `piv.touchPolicy` stay the ENROLMENT gate.
+
 ## A device-bound session an application requires (#740, 2026-10-25)
 
 Two environment attributes, sent only while `authn.deviceBoundSessions`

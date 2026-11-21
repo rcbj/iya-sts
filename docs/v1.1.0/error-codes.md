@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5797** of them, in **54** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5799** of them, in **54** subsystems.
 
 ## Where a code appears
 
@@ -86,7 +86,7 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 53
 * [Hardware tokens (`STS-HWTOKEN`)](#sts-hwtoken) — 13
-* [PIV key attestation (`STS-PIV`)](#sts-piv) — 24
+* [PIV key attestation (`STS-PIV`)](#sts-piv) — 26
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 224
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 137
@@ -4987,6 +4987,8 @@ Raised from: common/piv_attestation.ts, common/cert_enrollment.ts, common/piv_en
 | `STS-PIV-0030` | An outside PIV or CAC card's certificate, from an issuer in piv.externalIssuers, was not mapped: it asserts none of piv.externalPolicyOids, or does not carry exactly one urn:uuid subjectAltName (#1955, D8). | the outside-certificate refusal (STS-TLS-0054, STS-AUTHN-0468) |
 | `STS-PIV-0031` | An outside PIV or CAC card's certificate names a card UUID that is in stsPivCardUuid on no person of the realm (#1955, D8). | the outside-certificate refusal (STS-TLS-0054, STS-AUTHN-0468) |
 | `STS-PIV-0032` | An outside PIV or CAC card's card UUID is in stsPivCardUuid on more than one person, so it names nobody (#1955, D8). | the outside-certificate refusal (STS-TLS-0055, STS-AUTHN-0469) |
+| `STS-PIV-0034` | A value written to stsPivCardUuid is not a card UUID in RFC 9562 form (or is the nil UUID); nothing was written (#1955, D8). | HTTP 400 (the directory write); LDAP constraintViolation |
+| `STS-PIV-0035` | A card UUID written to stsPivCardUuid is already held by another entry of the realm, which would make the card name two people; nothing was written (#1955, D8). | HTTP 400 (the directory write); LDAP constraintViolation |
 
 ## STS-SVCACCT
 

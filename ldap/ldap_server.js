@@ -4686,6 +4686,74 @@ function operatorCodeRefusal(dn) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// `stsPivCardUuid` ON EVERY WRITE (#1955 P2, D8). The value maps an outside
+// PIV or CAC card to its holder (`pivCardHolders()` below), so a value that is
+// not a card UUID, or one another entry already holds, would make that
+// mapping wrong or ambiguous. Every door that writes the attribute asks this
+// before it commits: `putEntry()` (every create and replace, SCIM's and the
+// LDIF import's included), `writePersonAttribute()` (the console and
+// /admin-api's attribute editor) and the LDAP modify, which commits onto the
+// entry itself. Each value is NORMALISED in place — trimmed, a `urn:uuid:`
+// prefix taken off, lower-cased, repeats dropped — then held to RFC 9562's
+// string form (the nil UUID names no card) and refused (STS-PIV-0034), and
+// one another entry of the realm holds is refused (STS-PIV-0035): the
+// mapping refuses two holders too, but a write that makes them is the
+// mistake, and refusing it says so where it is made.
+// ---------------------------------------------------------------------------
+const CARD_UUID_FORM =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/**
+ * Normalises the stsPivCardUuid values of an attribute set in place and
+ * refuses a malformed one or one another entry holds.
+ *
+ * @param dn - the entry being written
+ * @param attributes - its attributes, lower-cased names
+ * @returns null, or `{ code, why }`
+ */
+function pivCardUuidRefusal(dn, attributes) {
+  log.debug('Entering pivCardUuidRefusal().');
+  const raw = attributes && attributes.stspivcarduuid;
+  if (!raw || !valuesOf(raw).length) {
+    log.debug('Leaving pivCardUuidRefusal(). None written.');
+    return null;
+  }
+  const out = [];
+  const values = valuesOf(raw);
+  for (let i = 0; i < values.length; i++) {
+    const one = String(values[i]).trim().replace(/^urn:uuid:/i, '')
+      .toLowerCase();
+    if (!CARD_UUID_FORM.test(one) || /^0{8}-0{4}-0{4}-0{4}-0{12}$/.test(one)) {
+      log.debug('Leaving pivCardUuidRefusal(). Malformed.');
+      return { code: 'STS-PIV-0034',
+               why: 'stsPivCardUuid holds a card UUID in RFC 9562 form ' +
+                    '(8-4-4-4-12 hexadecimal digits, optionally after ' +
+                    'urn:uuid:), and "' + String(values[i]).slice(0, 64) +
+                    '" is not one.' };
+    }
+    if (out.indexOf(one) < 0) {
+      out.push(one);
+    }
+  }
+  const self = normalizeDn(dn);
+  for (let i = 0; i < out.length; i++) {
+    const other = pivCardHolders(out[i]).filter(function (h) {
+      return normalizeDn(h.dn) !== self;
+    })[0];
+    if (other) {
+      log.debug('Leaving pivCardUuidRefusal(). Held elsewhere.');
+      return { code: 'STS-PIV-0035',
+               why: 'The card UUID ' + out[i] + ' is already in ' +
+                    'stsPivCardUuid on another entry of this realm; a card ' +
+                    'names one person.' };
+    }
+  }
+  attributes.stspivcarduuid = out;
+  log.debug('Leaving pivCardUuidRefusal(). ' + out.length + ' value(s).');
+  return null;
+}
+
 // putEntry() answers `{ ok: false }` when it writes nothing, and that
 // object is truthy. A writer that then stamps timestamps and audits a
 // create has recorded a write that did not happen (#1416, the same trap
@@ -4747,6 +4815,17 @@ function putEntry(dn, attributes, options) {
   Object.keys(attributes || {}).forEach(function (name) {
     stored.attributes[String(name).toLowerCase()] = valuesOf(attributes[name]);
   });
+  // A PIV CARD UUID, normalised and held unique (#1955 P2): before anything
+  // is written.
+  const cardRefusal = pivCardUuidRefusal(dn, stored.attributes);
+  if (cardRefusal) {
+    log.warn(errorCodes.tag(cardRefusal.code) + 'ldap: refused to store ' +
+             dn + ': ' + cardRefusal.why);
+    log.debug('Leaving putEntry(). Refused a card UUID.');
+    return coded(cardRefusal.code, { ok: false, reason: 'piv-card-uuid',
+                                     dn: String(dn), attributes: {},
+                                     errors: [cardRefusal.why] });
+  }
   stored.attributes.createtimestamp = [now];
   stored.attributes.modifytimestamp = [now];
   if (opts.origin) stored.origin = String(opts.origin);
@@ -17595,6 +17674,21 @@ function writePersonAttribute(dn, name, values) {
     log.debug('Leaving writePersonAttribute(). Refused an operator code.');
     return refused;
   }
+  // A PIV CARD UUID (#1955 P2), for putEntry()'s reason: this writer does
+  // not go through it.
+  if (key === 'stspivcarduuid' && kept.length) {
+    const held = { stspivcarduuid: kept };
+    const cardRefusal = pivCardUuidRefusal(dn, held);
+    if (cardRefusal) {
+      log.warn(errorCodes.tag(cardRefusal.code) + 'ldap: refused to write ' +
+               'stsPivCardUuid on ' + dn + ': ' + cardRefusal.why);
+      log.debug('Leaving writePersonAttribute(). Refused a card UUID.');
+      return coded(cardRefusal.code, { ok: false, reason: 'piv-card-uuid',
+                                       dn: String(dn), attributes: {},
+                                       errors: [cardRefusal.why] });
+    }
+    kept.splice(0, kept.length, ...held.stspivcarduuid);
+  }
   if (kept.length) {
     stored.attributes[key] = kept;
   } else {
@@ -21958,6 +22052,18 @@ function ldapModifyNow(req, res, next) {
         new ldap.ProtocolError('unknown modify operation "' + operation + '"'),
         dn));
     }
+  }
+  // A PIV CARD UUID THIS MODIFY WRITES (#1955 P2), normalised in the working
+  // copy and held unique, before anything is committed: putEntry()'s check
+  // does not see a modify.
+  const cardRefusal = pivCardUuidRefusal(stored.dn, working);
+  if (cardRefusal) {
+    log.debug('Leaving the LDAP modify handler. A card UUID was refused.');
+    // error-code: none — the refusal's own code, STS-PIV-0034 or -0035
+    return next(ldapRefusal(req, cardRefusal.code, 'a modify of ' + dn +
+      ' was refused: ' + cardRefusal.why,
+      coded(cardRefusal.code, new ldap.ConstraintViolationError(
+        cardRefusal.why)), dn));
   }
   // AND A PASSWORD THIS MODIFY SETS meets the password policy against the
   // entry as it was BEFORE the modify — its current password and its history —

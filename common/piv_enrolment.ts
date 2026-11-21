@@ -267,10 +267,15 @@ class PivEnrolment {
           resource: gate.RESOURCE.PIV_KEY_ESCROW,
           action: gate.ACTION.RECOVER_KEY,
           requiredRoles: ['PIV_KEY_RECOVERY'],
+          // The actor's GROUPS, looked up here: the access PEP resolves a
+          // built-in group role only from the groups it is handed.
           subject: { name: actor, authenticated: true,
                      roles: Array.isArray(s.roles) ? s.roles : [],
-                     sessionId: null },
-          owner: username,
+                     groups: this.groupsOf(actor), sessionId: null },
+          // NO `owner`: the built-in document gives a resource that names
+          // one to its owner alone, and the owner here is the person whose
+          // key it is, never the administrator asking. The holder rides in
+          // the context, for a realm's own rule.
           context: { door: 'admin-api', holder: username }
         });
         // A PERMIT FROM A POLICY, and nothing less: the gate also answers
@@ -347,6 +352,23 @@ class PivEnrolment {
                     label: 'piv-key-management (slot 9d, escrowed)' },
       actor: String(s.actor || username) });
     log.debug("Leaving PivEnrolment.attach(). ok=" + !!(out && out.ok));
+    return out;
+  }
+
+  // A person's groups for the policy (`common/roles.js`, reached lazily),
+  // [] where they cannot be read: no group, no recovery role.
+  private groupsOf(username: string): string[] {
+    const { log } = this.deps;
+    log.debug("Entering PivEnrolment.groupsOf().");
+    let out: string[] = [];
+    try {
+      out = (require('./roles').groupsOf(username) || []).map(String);
+    } catch (e) {
+      log.debug("Caught in PivEnrolment.groupsOf(): " +
+                ((e && e.message) || e));
+      out = [];
+    }
+    log.debug("Leaving PivEnrolment.groupsOf(). " + out.length);
     return out;
   }
 

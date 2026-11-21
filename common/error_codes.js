@@ -22988,6 +22988,16 @@ const CODES = [
     summary: 'An outside PIV or CAC card\'s card UUID is in stsPivCardUuid ' +
       'on more than one person, so it names nobody (#1955, D8).',
     spec: 'the outside-certificate refusal (STS-TLS-0055, STS-AUTHN-0469)' },
+  { code: 'STS-PIV-0034',
+    summary: 'A value written to stsPivCardUuid is not a card UUID in ' +
+      'RFC 9562 form (or is the nil UUID); nothing was written (#1955, ' +
+      'D8).',
+    spec: 'HTTP 400 (the directory write); LDAP constraintViolation' },
+  { code: 'STS-PIV-0035',
+    summary: 'A card UUID written to stsPivCardUuid is already held by ' +
+      'another entry of the realm, which would make the card name two ' +
+      'people; nothing was written (#1955, D8).',
+    spec: 'HTTP 400 (the directory write); LDAP constraintViolation' },
   { code: 'STS-SVCACCT-0001',
     summary: 'A service-account policy profile was named with something ' +
       'that is neither `default` nor a name of lower-case letters, digits ' +

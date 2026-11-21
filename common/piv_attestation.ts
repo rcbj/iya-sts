@@ -539,13 +539,15 @@ class PivAttestation {
         model: 'YubiKey' + (f.formFactor ? ' (' + f.formFactor + ')' : '') +
           (f.fips ? ' FIPS' : ''),
         firmware: String(f.firmware || ''),
-        formFactor: String(f.shape || 'other'),
+        formFactor: String(f.shape || 'other'), fips: f.fips === true,
         credential: { kind: 'x509', ref: String(s.serialHex || ''),
                       family: String(s.family || ''),
                       label: String(s.profile || '') +
                         (f.slot ? ' (slot ' + f.slot + ')' : '') },
         evidence: { source: 'piv-attestation', smartCard: true,
                     format: 'yubico-piv',
+                    pinPolicy: String(f.pinPolicy || ''),
+                    touchPolicy: String(f.touchPolicy || ''),
                     detail: 'slot ' + (f.slot || '?') + ', PIN ' +
                       (f.pinPolicy || '?') + ', touch ' +
                       (f.touchPolicy || '?') },

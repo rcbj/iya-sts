@@ -236,7 +236,10 @@ interface TokenCredential {
   family?: string;
   label?: string;
   addedAt: string;
-  evidence: { source: string; hardware: boolean; smartCard: boolean };
+  evidence: { source: string; hardware: boolean; smartCard: boolean;
+              // A PIV slot's key's policies, from its attestation (#1955 P2):
+              // per credential, since each slot has its own.
+              pinPolicy?: string; touchPolicy?: string };
   retired?: { at: string; ok: boolean; code?: string; why?: string };
 }
 
@@ -519,6 +522,18 @@ class HardwareTokens {
       evidence: { source: String(ev.source), hardware: true,
                   smartCard: kind === 'x509' && smartCard }
     };
+    // WHAT A PIV ATTESTATION SAID OF THE KEY (#1955 P2, design X4): kept on
+    // the credential for the issuance policy's attributes.
+    if (ev.pinPolicy) {
+      entry.evidence.pinPolicy = HardwareTokens.text(ev.pinPolicy);
+    }
+    if (ev.touchPolicy) {
+      entry.evidence.touchPolicy = HardwareTokens.text(ev.touchPolicy);
+    }
+    // And of the token: a FIPS-certified key, said by its f9 certificate.
+    if (s.fips === true) {
+      base.fips = true;
+    }
     if (cred.family) {
       entry.family = HardwareTokens.text(cred.family);
     }
@@ -877,7 +892,8 @@ class HardwareTokens {
     const { log } = this.deps;
     log.debug("Entering HardwareTokens.evidenceFor(). " + kind);
     const none = { hardware: false, smartCard: false, token: '',
-                   source: '' };
+                   source: '', pinPolicy: '', touchPolicy: '', firmware: '',
+                   formFactor: '', fips: false };
     const wanted = HardwareTokens.refOf(kind, ref);
     if (!wanted) {
       log.debug("Leaving HardwareTokens.evidenceFor(). No reference.");
@@ -899,10 +915,18 @@ class HardwareTokens {
     const c = (found.record.credentials || []).filter(function (one: Json) {
       return one.kind === kind && String(one.ref) === wanted;
     })[0];
+    // The attestation's facts (#1955 P2, X4) beside the evidence: the
+    // credential's policies and the token's firmware, form factor and FIPS
+    // mark, each '' (false) where the evidence did not say.
     const out = c && c.evidence ? {
       hardware: c.evidence.hardware === true,
       smartCard: c.evidence.smartCard === true,
-      token: found.key, source: String(c.evidence.source || '') } : none;
+      token: found.key, source: String(c.evidence.source || ''),
+      pinPolicy: String(c.evidence.pinPolicy || ''),
+      touchPolicy: String(c.evidence.touchPolicy || ''),
+      firmware: String(found.record.firmware || ''),
+      formFactor: String(found.record.formFactor || ''),
+      fips: found.record.fips === true } : none;
     log.debug("Leaving HardwareTokens.evidenceFor(). " +
               (out.hardware ? 'Hardware.' : 'None.'));
     return out;

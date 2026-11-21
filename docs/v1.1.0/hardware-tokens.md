@@ -142,6 +142,18 @@ holds it. Policy can use that fact in two ways:
 | `urn:sts:xacml:hardware-token-smart-card` | boolean: the evidence says the key is on a smart card |
 | `urn:sts:xacml:hardware-token-holder-matches` | boolean: the subject is the token's recorded holder |
 | `urn:sts:xacml:hardware-token-status` | `active` or `lost` |
+| `urn:sts:xacml:hardware-token-pin-policy` | a PIV key's attested PIN policy: `never`, `once`, `always`, `match-once` or `match-always` |
+| `urn:sts:xacml:hardware-token-touch-policy` | a PIV key's attested touch policy: `never`, `cached` or `always` |
+| `urn:sts:xacml:hardware-token-firmware` | the token's firmware, e.g. `5.4.3` |
+| `urn:sts:xacml:hardware-token-form-factor` | e.g. `usb-a`, `usb-c`, `lightning` |
+| `urn:sts:xacml:hardware-token-fips` | boolean, sent only when true: the key is FIPS certified |
+
+The last five are sent only for a token still attested whose attestation
+said them, so a rule about them does not apply to any other sign-in. A rule
+over `hardware-token-touch-policy` can, for example, let administrators sign
+in only with a key whose touch policy is `always`. The settings
+`piv.pinPolicy` and `piv.touchPolicy` still decide which keys may be
+enrolled at all.
 
 A token reported lost after the sign-in reads `attested` false from then on.
 
@@ -277,8 +289,13 @@ certificate is then mapped to a person when all of these hold:
   `id-fpki-common-authentication`, the Federal PKI Common Policy's PIV
   Authentication, and `id-fpki-certpcy-pivi-hardware`, PIV-I);
 - its subjectAltName carries exactly one `urn:uuid:` URI, the card UUID;
-- exactly one person's entry holds that UUID in `stsPivCardUuid` (lower case,
-  without the `urn:uuid:` prefix).
+- exactly one person's entry holds that UUID in `stsPivCardUuid`.
+
+An administrator records the UUID on the person's page (Directory → Users,
+*Outside PIV or CAC card UUIDs*), or by LDAP, SCIM or an import. Every write
+normalises it (a `urn:uuid:` prefix is removed and the value lower-cased) and
+refuses one that is not an RFC 9562 UUID, the nil UUID, or one another entry
+already holds. A person cannot set it on the portal.
 
 The certificate's name is never used: an issuing CA this service does not run
 could write anybody's. No entry is created. A UUID on two entries maps
