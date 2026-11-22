@@ -35,6 +35,7 @@ const nodeCrypto = require('crypto');
 const crypto = require('../common/crypto');
 const config = require('../common/config');
 const yubiotp = require('../common/yubiotp');
+const authnPolicy = require('../common/authn_policy');
 const yubiStore = require('../common/yubiotp_store');
 const credentials = require('../common/credentials');
 const errorCodes = require('../common/error_codes');
@@ -240,10 +241,52 @@ async function checkYkval(t, secret) {
   log.debug("Leaving checkYkval().");
 }
 
+// The policy's `yubico-otp` row (#1955 P5): off stops enrolment even when
+// `yubiotp.offered` is on, and a save that leaves the row out keeps it.
+function checkPolicy(t) {
+  log.debug("Entering checkPolicy().");
+  t.log.info('=== 5. the authentication policy\'s yubico-otp row ===');
+  const before = authnPolicy.read('default');
+  const values = {};
+  Object.keys(before).forEach(function (key) {
+    if (/Primary$|SecondFactor$|^require|^email|^remembered/.test(key)) {
+      values[key] = before[key];
+    }
+  });
+  config.setOverride('yubiotp.offered', true);
+  try {
+    const off = authnPolicy.save('default', Object.assign({}, values,
+                                 { yubicoOtpSecondFactor: false }));
+    t.check(off.ok &&
+            authnPolicy.read('default').yubicoOtpSecondFactor === false &&
+            !yubiotp.offered(),
+            'the row turns YubiKey OTP enrolment off even when ' +
+            'yubiotp.offered is on',
+            JSON.stringify(off.errors || []));
+    const older = Object.assign({}, values);
+    delete older.yubicoOtpSecondFactor;
+    const kept = authnPolicy.save('default', older);
+    t.check(kept.ok &&
+            authnPolicy.read('default').yubicoOtpSecondFactor === false,
+            'A SAVE THAT LEAVES IT OUT KEEPS IT AS IT WAS, rather than ' +
+            'being refused or turning it back on',
+            JSON.stringify(kept.errors || []));
+  } finally {
+    authnPolicy.reset('default');
+    config.clearOverride('yubiotp.offered');
+  }
+  t.check(authnPolicy.read('default').yubicoOtpSecondFactor === true &&
+          !yubiotp.offered(),
+          'reset, the policy allows it and yubiotp.offered still gates ' +
+          'enrolment');
+  log.debug("Leaving checkPolicy().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   counters.reset();
   try {
+    checkPolicy(t);
     checkVectors(t);
     checkOpen(t);
     const enrolled = await checkPerson(t);
@@ -251,6 +294,7 @@ async function run(t) {
   } finally {
     config.clearOverride('yubiotp.offered');
     config.clearOverride('yubiotp.ykval');
+    authnPolicy.reset('default');
     counters.reset();
   }
   log.debug("Leaving run().");
@@ -260,7 +304,8 @@ module.exports = {
   name: 'yubiotp',
   describe: 'issue #1955 P5: Yubico OTP checked locally — the published ' +
             'AES block and HMAC, a public identity, a zero counter, ' +
-            'enrolment through the one-time code door, and YK-VAL 2.0 ' +
-            'off, OK, replayed and unsigned',
+            'enrolment through the one-time code door, the authentication ' +
+            'policy\'s yubico-otp row, and YK-VAL 2.0 off, OK, replayed ' +
+            'and unsigned',
   run: run
 };

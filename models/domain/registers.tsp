@@ -387,6 +387,9 @@ model AuthenticationPolicy {
   @fromAttr(#{attr: "stsAuthnHotpSecondFactor"})
   `hotpSecondFactor`?: boolean;
 
+  @fromAttr(#{attr: "stsAuthnYubicoOtpSecondFactor"})
+  `yubicoOtpSecondFactor`?: boolean;
+
   @fromAttr(#{attr: "stsAuthnRecoveryCodeSecondFactor"})
   `recoveryCodeSecondFactor`?: boolean;
 

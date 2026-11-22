@@ -323,6 +323,14 @@
     "en": "608274a83bf567cd",
     "text": "來自以計數器為基礎之權杖的 RFC 4226 一次性驗證碼（#1955）：YubiKey 的 OTP 插槽，或管理員從 PSKC 種子檔案匯入的供應商權杖。絕不作為第一因素。此處關閉時，任何人都不能註冊或認領；已持有者仍會被要求提供，就像驗證器應用程式的持有者一樣。"
   },
+  "authn.FIELDS.yubicoOtpSecondFactor.label": {
+    "en": "cba1439d0faf9aaf",
+    "text": "YubiKey OTP — 作為第二因素"
+  },
+  "authn.FIELDS.yubicoOtpSecondFactor.what": {
+    "en": "f8f7a6ee5bbb46a8",
+    "text": "YubiKey OTP（Yubico 公布的 modhex 一次性密碼，#1955）。絕不是第一因素：本服務持有 AES 金鑰。此處關閉時，即使 yubiotp.offered 為開，也不得登錄、指派或認領；已持有者仍會被要求提供。"
+  },
   "authn.FIELDS.recoveryCodeSecondFactor.label": {
     "en": "ee9982b48a9c6a90",
     "text": "復原碼——作為第二因素"
@@ -507,6 +515,10 @@
     "en": "608274a83bf567cd",
     "text": "來自以計數器為基礎之權杖的 RFC 4226 一次性驗證碼（#1955）：YubiKey 的 OTP 插槽，或管理員從 PSKC 種子檔案匯入的供應商權杖。絕不作為第一因素。此處關閉時，任何人都不能註冊或認領；已持有者仍會被要求提供，就像驗證器應用程式的持有者一樣。"
   },
+  "authn.SCHEMA.attributes.stsAuthnYubicoOtpSecondFactor.what": {
+    "en": "f8f7a6ee5bbb46a8",
+    "text": "YubiKey OTP（Yubico 公布的 modhex 一次性密碼，#1955）。絕不是第一因素：本服務持有 AES 金鑰。此處關閉時，即使 yubiotp.offered 為開，也不得登錄、指派或認領；已持有者仍會被要求提供。"
+  },
   "authn.SCHEMA.attributes.stsAuthnRecoveryCodeSecondFactor.what": {
     "en": "e93ab2adc3e581bd",
     "text": "取自該人所產生之一組代碼的單次使用代碼。在此關閉時，不能產生新的一組；已持有的一組仍可使用（此列取代了 backupCodes.enabled，並沿用其約定）。"
@@ -580,8 +592,8 @@
     "text": "用於具名驗證原則（#1148、#1237）：其所適用之登入允許的一種第一因素機制——在應用程式（appAuthnPolicy）或此人的某個群組（stsAuthnPolicy）指定了它，且其優先順序是所指定者中最低時適用——password、password-mfa、webauthn、attested-hardware（經證明的硬體權杖上的密碼金鑰或憑證，#1955）、spnego、wallet 或 federation，每個值一項。一項都沒有時，允許本領域允許的全部機制。"
   },
   "authn.SCHEMA.attributes.stsAuthnPolicySecondFactor.what": {
-    "en": "e0ae8297bb01119f",
-    "text": "在一個具名驗證原則上（#1148，#1237）：該原則所適用的登入允許的第二因素——即應用程式（appAuthnPolicy）或此人所屬的某個群組（stsAuthnPolicy）指定了該原則，且其優先順序為所指定者中最低——password、securityKey、totp、hotp、recoveryCode、emailCode、emailLink 或 wallet，每個值一項。不設任何值則維持領域的驗證原則不變。"
+    "en": "9302ca05693fd970",
+    "text": "在一個具名驗證原則上（#1148，#1237）：該原則所適用的登入允許的第二因素——即應用程式（appAuthnPolicy）或此人所屬的某個群組（stsAuthnPolicy）指定了該原則，且其優先順序為所指定者中最低——password、securityKey、totp、hotp、yubico-otp、recoveryCode、emailCode、emailLink 或 wallet，每個值一項。不設任何值則維持領域的驗證原則不變。"
   },
   "authn.SCHEMA.attributes.stsAuthnPolicyPrecedence.what": {
     "en": "afff5dad656a9845",
@@ -634,6 +646,14 @@
   "authn.MECHANISMS.hotp.what": {
     "en": "608274a83bf567cd",
     "text": "來自以計數器為基礎之權杖的 RFC 4226 一次性驗證碼（#1955）：YubiKey 的 OTP 插槽，或管理員從 PSKC 種子檔案匯入的供應商權杖。絕不作為第一因素。此處關閉時，任何人都不能註冊或認領；已持有者仍會被要求提供，就像驗證器應用程式的持有者一樣。"
+  },
+  "authn.MECHANISMS.yubico-otp.label": {
+    "en": "01f8772904333b7b",
+    "text": "YubiKey OTP"
+  },
+  "authn.MECHANISMS.yubico-otp.what": {
+    "en": "f8f7a6ee5bbb46a8",
+    "text": "YubiKey OTP（Yubico 公布的 modhex 一次性密碼，#1955）。絕不是第一因素：本服務持有 AES 金鑰。此處關閉時，即使 yubiotp.offered 為開，也不得登錄、指派或認領；已持有者仍會被要求提供。"
   },
   "authn.MECHANISMS.recoveryCode.label": {
     "en": "5bda8302b5ecf4d3",

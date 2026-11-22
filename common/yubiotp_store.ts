@@ -457,7 +457,7 @@ class YubiOtpStore {
       log.debug("Leaving YubiOtpStore.assign(). Off.");
       return this.refuse('STS-YUBIOTP-0007',
         'YubiKey OTP enrolment is turned off on this service ' +
-        '(yubiotp.offered).');
+        '(yubiotp.offered, or the authentication policy).');
     }
     const row = inventory.get(serial) || null;
     if (!row) {

@@ -968,7 +968,7 @@ Scope: `admin:read`.
 | `tokens[].credentials` | list | yes |  |
 | `tokens[].credentials[].addedAt` | string | yes |  |
 | `tokens[].credentials[].holder` | string | yes | Who registered it, by username. |
-| `tokens[].credentials[].kind` | string | yes | `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token; later `yubico-otp`, `ssh`, `openpgp`). |
+| `tokens[].credentials[].kind` | string | yes | `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token), and since P5 `yubico-otp` (later `ssh`, `openpgp`). |
 | `tokens[].credentials[].label` | string | yes |  |
 | `tokens[].credentials[].ref` | string | yes | The credential id, the certificate's serial in lower-case hex, or an imported OATH token's inventory key. |
 | `tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
@@ -1307,7 +1307,7 @@ Scope: `admin:write`.
 | `token.credentials` | list | yes |  |
 | `token.credentials[].addedAt` | string | yes |  |
 | `token.credentials[].holder` | string | yes | Who registered it, by username. |
-| `token.credentials[].kind` | string | yes | `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token; later `yubico-otp`, `ssh`, `openpgp`). |
+| `token.credentials[].kind` | string | yes | `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token), and since P5 `yubico-otp` (later `ssh`, `openpgp`). |
 | `token.credentials[].label` | string | yes |  |
 | `token.credentials[].ref` | string | yes | The credential id, the certificate's serial in lower-case hex, or an imported OATH token's inventory key. |
 | `token.credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |

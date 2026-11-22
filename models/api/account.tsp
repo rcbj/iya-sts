@@ -4835,7 +4835,7 @@ op `actOnDevices`(`requestBody/content/application~1json/schema`: {
 
 // #1955 P1: THE PERSON'S HARDWARE TOKENS (`portal/account_tokens.ts`).
 @hoisted model HardwareTokenPortalCredential {
-  @js(#{`description`:"The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token; later `yubico-otp`, `ssh`, `openpgp`)."}) `kind`: string;
+  @js(#{`description`:"The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token), and since P5 `yubico-otp` (later `ssh`, `openpgp`)."}) `kind`: string;
   @js(#{`description`:"Its name, where it has one."}) `label`: string;
   @js(#{`description`:"When it was recorded on the token, ISO 8601."}) `addedAt`: string;
   @js(#{`description`:"Whether the lost-key act retired it."}) `retired`: boolean

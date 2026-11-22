@@ -9234,6 +9234,7 @@ namespace IyaSts.Api.Management {
     `securityKeySecondFactor`?: StringOrNumericOrBooleanEtc8;
     `totpSecondFactor`?: StringOrNumericOrBooleanEtc8;
     `hotpSecondFactor`?: StringOrNumericOrBooleanEtc8;
+    `yubicoOtpSecondFactor`?: StringOrNumericOrBooleanEtc8;
     `recoveryCodeSecondFactor`?: StringOrNumericOrBooleanEtc8;
     `emailCodePrimary`?: StringOrNumericOrBooleanEtc8;
     `emailCodeSecondFactor`?: StringOrNumericOrBooleanEtc8;
@@ -38532,6 +38533,11 @@ op `resetPasswordPolicy`(@js(#{`examples`:#[#{`profile`:"default"}]}) `requestBo
   }) @hoisted union post_admin_api_policies_save_authn_policy_b_application_json_hotpSecondFactor_p4 {boolean, string}
 
 @js(#{
+    `description`:"A YubiKey OTP (Yubico's published modhex one-time password, #1955). Never a first factor: this service holds the AES key. Off here, nobody may ENROL, assign or claim one, even when yubiotp.offered is on; a person who already holds one is still asked for it. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true; a save that leaves it out keeps the profile's current value, so a client written before it is not refused and changes nothing.",
+    `$comb`:"oneOf"
+  }) @hoisted union post_admin_api_policies_save_authn_policy_b_application_json_yubicoOtpSecondFactor_p5 {boolean, string}
+
+@js(#{
     `description`:"A single-use code from a set the person generated. Off here, no new set may be generated; a set already held still works (this row replaced backupCodes.enabled, and keeps its contract). (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true.",
     `$comb`:"oneOf"
   }) @hoisted union post_admin_api_policies_save_authn_policy_b_application_json_recoveryCodeSecondFactor_h2983 {boolean, string}
@@ -38647,6 +38653,7 @@ op `saveAuthnPolicy`(@js(#{
         `securityKeySecondFactor`:true,
         `totpSecondFactor`:true,
         `hotpSecondFactor`:true,
+        `yubicoOtpSecondFactor`:true,
         `recoveryCodeSecondFactor`:true,
         `emailCodePrimary`:false,
         `emailCodeSecondFactor`:false,
@@ -38680,6 +38687,7 @@ op `saveAuthnPolicy`(@js(#{
     `securityKeySecondFactor`: post_admin_api_policies_save_authn_policy_b_application_json_securityKeySecondFactor_h2981;
     `totpSecondFactor`: post_admin_api_policies_save_authn_policy_b_application_json_totpSecondFactor_h2982;
     `hotpSecondFactor`?: post_admin_api_policies_save_authn_policy_b_application_json_hotpSecondFactor_p4;
+    `yubicoOtpSecondFactor`?: post_admin_api_policies_save_authn_policy_b_application_json_yubicoOtpSecondFactor_p5;
     `recoveryCodeSecondFactor`: post_admin_api_policies_save_authn_policy_b_application_json_recoveryCodeSecondFactor_h2983;
     `emailCodePrimary`: BooleanOrString4;
     `emailCodeSecondFactor`: BooleanOrString4;
@@ -46048,7 +46056,7 @@ op `recountPasskeyReport`(@js(#{`examples`:#[#{}]}) `requestBody/content/applica
 
 // #1955 P1: DIRECTORY → HARDWARE TOKENS (`mgmt-api/hardware_tokens_api.ts`).
 @hoisted model HardwareTokenAdminCredential {
-  @js(#{`description`:"`fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token; later `yubico-otp`, `ssh`, `openpgp`)."}) `kind`: string;
+  @js(#{`description`:"`fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token), and since P5 `yubico-otp` (later `ssh`, `openpgp`)."}) `kind`: string;
   @js(#{`description`:"The credential id, the certificate's serial in lower-case hex, or an imported OATH token's inventory key."}) `ref`: string;
   `label`: string;
   @js(#{`description`:"Who registered it, by username."}) `holder`: string;

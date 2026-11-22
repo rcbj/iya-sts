@@ -7048,7 +7048,8 @@ class Credentials {
     if (!lib.offered()) {
       log.debug("Leaving Credentials.beginYubiEnrolment(). Off.");
       return coded('STS-YUBIOTP-0007', { ok: false, errors: ['YubiKey OTP ' +
-        'enrolment is turned off on this service.'] });
+        'enrolment is turned off (yubiotp.offered, or the authentication ' +
+        'policy).'] });
     }
     if (!name || /[\u0000-\u001f\u007f]/.test(name)) {
       log.debug("Leaving Credentials.beginYubiEnrolment(). No name.");

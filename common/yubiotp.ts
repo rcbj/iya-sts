@@ -32,7 +32,8 @@
 // bytes say, and that is the replay.
 //
 // A LIBRARY (rule 3): it registers no route. It requires `config`, `crypto`,
-// `helpers`, `error_codes` and `mode`, none of which requires it back.
+// `helpers`, `error_codes`, `mode` and `authn_policy`, none of which
+// requires it back.
 // ===========================================================================
 
 import helpers = require('./helpers');
@@ -40,6 +41,7 @@ import config = require('./config');
 import crypto = require('./crypto');
 import errorCodes = require('./error_codes');
 import mode = require('./mode');
+import authnPolicy = require('./authn_policy');
 import InstanceSlot = require('./instance_slot');
 
 type Json = any;
@@ -68,6 +70,7 @@ interface YubiDeps {
     tag(code: string): string;
   };
   mode: { refusesPlaintextYubiCsv(): boolean };
+  authnPolicy: { allows(mechanism: string, role: string): boolean };
 }
 
 /** One decrypted OTP block, once its CRC and private identity have matched. */
@@ -127,7 +130,7 @@ class YubiOtp {
     helpers.log.debug("Leaving YubiOtp.defaultDeps().");
     return {
       log: helpers.log, config: config, crypto: crypto,
-      errorCodes: errorCodes, mode: mode
+      errorCodes: errorCodes, mode: mode, authnPolicy: authnPolicy
     };
   }
 
@@ -140,15 +143,19 @@ class YubiOtp {
 
   /**
    * Whether enrolment, assignment and a claim are offered. A credential
-   * already held is still verified when this is false.
+   * already held is still verified when this is false. Both
+   * `yubiotp.offered` and the authentication policy's `yubico-otp` row
+   * have to allow it.
    *
-   * @returns true when `yubiotp.offered` is on
+   * @returns true when both allow it
    */
   offered(): boolean {
     const { log, config: cfg } = this.deps;
     log.debug("Entering YubiOtp.offered().");
+    const out = cfg.value('yubiotp.offered') === true &&
+      this.deps.authnPolicy.allows('yubico-otp', 'second-factor');
     log.debug("Leaving YubiOtp.offered().");
-    return cfg.value('yubiotp.offered') === true;
+    return out;
   }
 
   /**

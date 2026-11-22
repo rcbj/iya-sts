@@ -5014,7 +5014,7 @@ Raised from: common/yubiotp.ts, common/yubiotp_store.ts, common/credentials.ts, 
 | `STS-YUBIOTP-0004` | A YubiKey OTP's use and session counters were not strictly above the last accepted pair, so it was a replay (#1955 P5). | — |
 | `STS-YUBIOTP-0005` | A YubiKey OTP matched and its counter could not be spent in the store, so it was refused (#1955 P5). | — |
 | `STS-YUBIOTP-0006` | A YubiKey OTP was checked for a person who holds none (#1955 P5). | — |
-| `STS-YUBIOTP-0007` | Enrolling, assigning or claiming a YubiKey OTP was refused because yubiotp.offered is off. A credential already held is still checked (#1955 P5). | — |
+| `STS-YUBIOTP-0007` | Enrolling, assigning or claiming a YubiKey OTP was refused because yubiotp.offered is off or the authentication policy disallows yubico-otp. A credential already held is still checked (#1955 P5). | — |
 | `STS-YUBIOTP-0008` | A YubiKey OTP enrolment had expired before it was confirmed (#1955 P5). | — |
 | `STS-YUBIOTP-0009` | A YubiKey OTP secret or a YK-VAL client key could not be sealed under the key-encryption key, so it was not kept (#1955 P5). | — |
 | `STS-YUBIOTP-0010` | A YubiKey OTP credential could not be written to the directory (#1955 P5). | — |

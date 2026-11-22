@@ -9719,7 +9719,7 @@ Scope: `account:manage`.
 | `tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
 | `tokens[].credentials` | list | yes | The caller's own credentials on it. |
 | `tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
-| `tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token; later `yubico-otp`, `ssh`, `openpgp`). |
+| `tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token), and since P5 `yubico-otp` (later `ssh`, `openpgp`). |
 | `tokens[].credentials[].label` | string | yes | Its name, where it has one. |
 | `tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
 | `tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |
@@ -9800,7 +9800,7 @@ Scope: `account:manage`.
 | `view.tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
 | `view.tokens[].credentials` | list | yes | The caller's own credentials on it. |
 | `view.tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
-| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token; later `yubico-otp`, `ssh`, `openpgp`). |
+| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token), and since P5 `yubico-otp` (later `ssh`, `openpgp`). |
 | `view.tokens[].credentials[].label` | string | yes | Its name, where it has one. |
 | `view.tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
 | `view.tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |
@@ -9825,7 +9825,7 @@ Scope: `account:manage`.
 | `view.tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
 | `view.tokens[].credentials` | list | yes | The caller's own credentials on it. |
 | `view.tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
-| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token; later `yubico-otp`, `ssh`, `openpgp`). |
+| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token), and since P5 `yubico-otp` (later `ssh`, `openpgp`). |
 | `view.tokens[].credentials[].label` | string | yes | Its name, where it has one. |
 | `view.tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
 | `view.tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |
@@ -9870,7 +9870,7 @@ Scope: `account:manage`.
 | `view.tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
 | `view.tokens[].credentials` | list | yes | The caller's own credentials on it. |
 | `view.tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
-| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token; later `yubico-otp`, `ssh`, `openpgp`). |
+| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token), and since P5 `yubico-otp` (later `ssh`, `openpgp`). |
 | `view.tokens[].credentials[].label` | string | yes | Its name, where it has one. |
 | `view.tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
 | `view.tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |
@@ -9895,7 +9895,7 @@ Scope: `account:manage`.
 | `view.tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
 | `view.tokens[].credentials` | list | yes | The caller's own credentials on it. |
 | `view.tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
-| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token; later `yubico-otp`, `ssh`, `openpgp`). |
+| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token), and since P5 `yubico-otp` (later `ssh`, `openpgp`). |
 | `view.tokens[].credentials[].label` | string | yes | Its name, where it has one. |
 | `view.tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
 | `view.tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |

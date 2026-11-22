@@ -23066,8 +23066,9 @@ const CODES = [
     spec: '' },
   { code: 'STS-YUBIOTP-0007',
     summary: 'Enrolling, assigning or claiming a YubiKey OTP was refused ' +
-      'because yubiotp.offered is off. A credential already held is ' +
-      'still checked (#1955 P5).',
+      'because yubiotp.offered is off or the authentication policy ' +
+      'disallows yubico-otp. A credential already held is still ' +
+      'checked (#1955 P5).',
     spec: '' },
   { code: 'STS-YUBIOTP-0008',
     summary: 'A YubiKey OTP enrolment had expired before it was ' +

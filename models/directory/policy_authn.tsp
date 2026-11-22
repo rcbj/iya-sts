@@ -43,6 +43,9 @@ namespace IyaSts.Directory;
     // keeps the built-in one, so an API client written before it is not
     // refused (backwards compatibility).
     #{id: "hotp", label: "One-time code token (HOTP)", primary: null, secondFactor: true, optional: true},
+    // #1955 P5: Yubico's published modhex OTP. `optional`, as `hotp` is: a
+    // save that names no value keeps the built-in one.
+    #{id: "yubico-otp", label: "YubiKey OTP", primary: null, secondFactor: true, optional: true},
     #{id: "recoveryCode", label: "Recovery code", primary: null, secondFactor: true},
     #{id: "emailCode", label: "Emailed six-digit code", primary: false, secondFactor: false, email: true},
     #{id: "emailLink", label: "Emailed sign-in link", primary: false, secondFactor: false, email: true},
@@ -106,6 +109,11 @@ model PolicyAuthn {
     what: "An RFC 4226 one-time code from a counter-based token (#1955): a YubiKey's OTP slot, or a vendor's token an administrator imported from a PSKC seed file. Never a first factor. Off here, nobody may ENROL or claim one; a person who already holds one is still asked for it, as an authenticator app's holder is."
   })
   stsAuthnHotpSecondFactor?: DirectoryBoolean;
+  @attr(#{
+    kind: "single",
+    what: "A YubiKey OTP (Yubico's published modhex one-time password, #1955). Never a first factor: this service holds the AES key. Off here, nobody may ENROL, assign or claim one, even when yubiotp.offered is on; a person who already holds one is still asked for it."
+  })
+  stsAuthnYubicoOtpSecondFactor?: DirectoryBoolean;
   @attr(#{
     kind: "single",
     what: "A single-use code from a set the person generated. Off here, no new set may be generated; a set already held still works (this row replaced backupCodes.enabled, and keeps its contract)."
@@ -208,7 +216,7 @@ model PolicyAuthn {
   stsAuthnPolicyMechanism?: (string)[];
   @attr(#{
     kind: "multi",
-    what: "On a NAMED authentication policy (#1148, #1237): a second factor a sign-in it applies to allows — where the application (appAuthnPolicy) or one of the person's groups (stsAuthnPolicy) names it and its precedence is the lowest named — password, securityKey, totp, hotp, recoveryCode, emailCode, emailLink or wallet, one value each. None leaves the realm's authentication policy as it is."
+    what: "On a NAMED authentication policy (#1148, #1237): a second factor a sign-in it applies to allows — where the application (appAuthnPolicy) or one of the person's groups (stsAuthnPolicy) names it and its precedence is the lowest named — password, securityKey, totp, hotp, yubico-otp, recoveryCode, emailCode, emailLink or wallet, one value each. None leaves the realm's authentication policy as it is."
   })
   stsAuthnPolicySecondFactor?: (string)[];
   @attr(#{

@@ -12736,6 +12736,12 @@ what a maintainer of this directory has to know beside them:
   on the cell tier. While `yubiotp.ykval` is off the route answers
   `OPERATION_NOT_ALLOWED` and signs nothing. On, the client id and the
   HMAC-SHA1 are checked in every mode.
+* **Enrolment is `yubiotp.offered` and the authentication policy's
+  `yubico-otp` row**, both (`YubiOtp.offered()`). The row is `optional`
+  and true by default, the same arrangement as HOTP's: a save that does
+  not name it keeps the current value. Verification of a credential
+  already held is not gated. The session records credential kind
+  `yubiotp`; `mfa_mechanisms.ts` maps that to the policy id `yubico-otp`.
 * **Not indexed for the users page's tiles**, for the HOTP reason above.
   Do not add `stsyubiotpcredential` to `ASKED_ATTRIBUTES`.
 

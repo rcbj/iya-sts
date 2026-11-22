@@ -143,9 +143,11 @@ function saves(t) {
       .problems.length === 1,
             'B4. an emailed code valid for more than ten minutes is refused');
     const noWayIn = {};
-    authnPolicy.MECHANISMS.forEach(function (m) {
-      if (m.primary !== null) {
-        noWayIn[m.id + 'Primary'] = false;
+    // The field key is not the mechanism id plus a suffix: `yubico-otp`
+    // (#1955 P5) is `yubicoOtpSecondFactor`. FIELDS already holds the key.
+    authnPolicy.FIELDS.forEach(function (field) {
+      if (field.role === 'primary') {
+        noWayIn[field.key] = false;
       }
     });
     const refused = authnPolicy.save('default', withDefaults(noWayIn));
@@ -155,9 +157,9 @@ function saves(t) {
             'realm\'s administrators included, could sign in',
             JSON.stringify(refused.errors));
     const noSecond = {};
-    authnPolicy.MECHANISMS.forEach(function (m) {
-      if (m.secondFactor !== null) {
-        noSecond[m.id + 'SecondFactor'] = false;
+    authnPolicy.FIELDS.forEach(function (field) {
+      if (field.role === 'second-factor') {
+        noSecond[field.key] = false;
       }
     });
     noSecond.requireSecondFactor = 'always';

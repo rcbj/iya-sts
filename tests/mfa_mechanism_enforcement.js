@@ -92,6 +92,8 @@ function childMain() {
     const cases = [
       [onPassword, [], 'a password alone'],
       [onApp, ['totp'], 'a password and an authenticator app'],
+      [local(['pwd', 'otp'], 'mfa', 'yubiotp'), ['yubico-otp'],
+       'a password and a YubiKey OTP'],
       [onKey, ['securityKey'], 'a password and a security key'],
       [local(['hwk'], '1', 'webauthn'), [],
        'a passkey alone, which is a first factor'],

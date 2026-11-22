@@ -362,6 +362,8 @@ Scope: `admin:read`.
 | `authn.profile.walletPrimary[]` | string, or number, or boolean, or null |  |  |
 | `authn.profile.walletSecondFactor` | list, or string, or number, or boolean, or null |  |  |
 | `authn.profile.walletSecondFactor[]` | string, or number, or boolean, or null |  |  |
+| `authn.profile.yubicoOtpSecondFactor` | list, or string, or number, or boolean, or null |  |  |
+| `authn.profile.yubicoOtpSecondFactor[]` | string, or number, or boolean, or null |  |  |
 | `authn.references` | map |  |  |
 | `authn.references.{key}` | string |  |  |
 | `authn.rules` | list |  |  |
@@ -1630,6 +1632,8 @@ Scope: `admin:write`.
 | `profile.walletPrimary[]` | string, or number, or boolean, or null |  |  |
 | `profile.walletSecondFactor` | list, or string, or number, or boolean, or null |  |  |
 | `profile.walletSecondFactor[]` | string, or number, or boolean, or null |  |  |
+| `profile.yubicoOtpSecondFactor` | list, or string, or number, or boolean, or null |  |  |
+| `profile.yubicoOtpSecondFactor[]` | string, or number, or boolean, or null |  |  |
 | `removed` | boolean |  |  |
 | `rules` | list |  |  |
 | `rules[]` | string |  |  |
@@ -1705,6 +1709,8 @@ Scope: `admin:write`.
 | `profile.walletPrimary[]` | string, or number, or boolean, or null |  |  |
 | `profile.walletSecondFactor` | list, or string, or number, or boolean, or null |  |  |
 | `profile.walletSecondFactor[]` | string, or number, or boolean, or null |  |  |
+| `profile.yubicoOtpSecondFactor` | list, or string, or number, or boolean, or null |  |  |
+| `profile.yubicoOtpSecondFactor[]` | string, or number, or boolean, or null |  |  |
 | `removed` | boolean |  |  |
 | `rules` | list |  |  |
 | `rules[]` | string |  |  |
@@ -2504,6 +2510,7 @@ Scope: `admin:write`.
 | `totpSecondFactor` | boolean, or string | yes | An RFC 6238 one-time code. Never a first factor: this service holds the same shared secret the app does. Off here, nobody may ENROL one; a person who already holds one is still asked for it, because an off switch that downgraded every enrolled account to a password alone would do something other than it says (this row replaced totp.enabled, and keeps its contract). (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true. |
 | `walletPrimary` | boolean, or string | yes | /authn/wallet with a credential this realm issued, or a SIOPv2 self-issued ID Token from an enrolled key. As a SECOND factor, the wallet presented after a password. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true. |
 | `walletSecondFactor` | boolean, or string | yes | /authn/wallet with a credential this realm issued, or a SIOPv2 self-issued ID Token from an enrolled key. As a SECOND factor, the wallet presented after a password. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true. |
+| `yubicoOtpSecondFactor` | boolean, or string |  | A YubiKey OTP (Yubico's published modhex one-time password, #1955). Never a first factor: this service holds the AES key. Off here, nobody may ENROL, assign or claim one, even when yubiotp.offered is on; a person who already holds one is still asked for it. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true; a save that leaves it out keeps the profile's current value, so a client written before it is not refused and changes nothing. |
 
 **200**: The profile now in force and the rules as sentences.
 
@@ -2576,6 +2583,8 @@ Scope: `admin:write`.
 | `profile.walletPrimary[]` | string, or number, or boolean, or null |  |  |
 | `profile.walletSecondFactor` | list, or string, or number, or boolean, or null |  |  |
 | `profile.walletSecondFactor[]` | string, or number, or boolean, or null |  |  |
+| `profile.yubicoOtpSecondFactor` | list, or string, or number, or boolean, or null |  |  |
+| `profile.yubicoOtpSecondFactor[]` | string, or number, or boolean, or null |  |  |
 | `removed` | boolean |  |  |
 | `rules` | list |  |  |
 | `rules[]` | string |  |  |
@@ -2651,6 +2660,8 @@ Scope: `admin:write`.
 | `profile.walletPrimary[]` | string, or number, or boolean, or null |  |  |
 | `profile.walletSecondFactor` | list, or string, or number, or boolean, or null |  |  |
 | `profile.walletSecondFactor[]` | string, or number, or boolean, or null |  |  |
+| `profile.yubicoOtpSecondFactor` | list, or string, or number, or boolean, or null |  |  |
+| `profile.yubicoOtpSecondFactor[]` | string, or number, or boolean, or null |  |  |
 | `removed` | boolean |  |  |
 | `rules` | list |  |  |
 | `rules[]` | string |  |  |

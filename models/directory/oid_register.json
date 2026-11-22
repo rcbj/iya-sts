@@ -541,6 +541,7 @@
   "stsAuthnTotpSecondFactor": 530,
   "stsAuthnWalletPrimary": 531,
   "stsAuthnWalletSecondFactor": 532,
+  "stsAuthnYubicoOtpSecondFactor": 804,
   "stsAuthzenApplication": 746,
   "stsAuthzenCallbackUri": 747,
   "stsBackupCodes": 533,
