@@ -1503,6 +1503,50 @@
     "en": "e08e19def21e22b2",
     "text": "即時設定"
   },
+  "crypto.families.yubico-otp.signs": {
+    "en": "c340996ced9d9758",
+    "text": "離開本服務的內容沒有，除了 YK-VAL 用戶端在 /wsapi/2.0/verify 上核對的 HMAC-SHA1。OTP 本身是一個 16 位元組區塊的 AES-128-ECB，解密後再比較，因此該原語位於 common/crypto.js。"
+  },
+  "crypto.families.yubico-otp.verifies": {
+    "en": "f7cf070e5067a77f",
+    "text": "出示的 OTP：公開身分選定憑證，區塊在其 AES-128 金鑰下解密，CRC-16 餘數為 0xf0b8，且私有身分相符。使用計數器與工作階段使用計數器作為一個值，必須嚴格高於上次接受的值。不檢查時間戳。當 yubiotp.ykval 開啟時，在每種模式下核對 YK-VAL 要求的 HMAC-SHA1。"
+  },
+  "crypto.families.yubico-otp.encrypts": {
+    "en": "3802bf3b62081ea2",
+    "text": "靜態的 AES 金鑰與私有身分，作為一個密封的 JSON 值，在產品模式下置於金鑰加密金鑰之下。開發模式下金鑰加密金鑰每次執行產生，因此該值以明文儲存並標明這一點。"
+  },
+  "crypto.families.yubico-otp.decrypts": {
+    "en": "560652ba098dd545",
+    "text": "該密封值，用於核對 OTP。伺服器持有 AES 金鑰，因此登入為 amr otp，從不為 hwk。"
+  },
+  "crypto.families.yubico-otp.hashes": {
+    "en": "761a28a6805e3023",
+    "text": "無。CRC 為 CRC-16，多項式 0x8408。YK-VAL 簽章為 HMAC-SHA1。"
+  },
+  "crypto.families.yubico-otp.whatItDoesNot": {
+    "en": "a977ea47369edb7c",
+    "text": "它從不呼叫 YubiCloud。它從不檢查時間戳。在 yubiotp.offered 關閉時它從不註冊槽位，在 yubiotp.ykval 關閉時它從不回應 YK-VAL。它從不記錄程式設計行或用戶端的 HMAC 金鑰。"
+  },
+  "crypto.families.yubico-otp.algorithms.0.what": {
+    "en": "6c0e6acd35694622",
+    "text": "OTP"
+  },
+  "crypto.families.yubico-otp.algorithms.1.what": {
+    "en": "ac57b0e667bf3ec1",
+    "text": "字母表"
+  },
+  "crypto.families.yubico-otp.algorithms.2.what": {
+    "en": "ee4fcdc3401859da",
+    "text": "CRC"
+  },
+  "crypto.families.yubico-otp.algorithms.3.what": {
+    "en": "c8dae6371b33b8d6",
+    "text": "重放"
+  },
+  "crypto.families.yubico-otp.algorithms.4.what": {
+    "en": "7ff6cc8a39bc9224",
+    "text": "YubiCloud"
+  },
   "crypto.families.recovery-codes.signs": {
     "en": "e07d5c09c87dcaf1",
     "text": "無。此機制中任何地方都沒有 MAC 或簽章——復原碼是一個隨機字串，對照其儲存的雜湊檢查，這就是與上方 TOTP 列的全部差異，在 TOTP 中「代碼」是截斷的 HMAC。"

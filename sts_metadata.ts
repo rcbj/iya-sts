@@ -2814,6 +2814,29 @@ const SPECS: Spec[] = [
               'earns amr otp, and hwk only for an imported token. NOT ' +
               'covered: section 7.3\'s delay scheme as such (the budget ' +
               'refuses instead), and OCRA (RFC 6287).' },
+  { id: 'yubico-otp', name: 'Yubico OTP',
+    where: 'Yubico',
+    url: 'https://developers.yubico.com/OTP/OTPs_Explained.html',
+    coverage: 'partial, verifier side (#1955 P5): the published OTP, a ' +
+              'modhex public identity followed by one AES-128-ECB block ' +
+              'with no padding, CRC-16 residual 0xf0b8, and the use and ' +
+              'session counters advanced by compare-and-set so one OTP is ' +
+              'accepted once. The timestamp is not checked. Enrolment is ' +
+              'off by default (yubiotp.offered). amr otp, never hwk, ' +
+              'because this service holds the AES key. NOT covered: ' +
+              'YubiCloud, and any check of the timestamp.' },
+  { id: 'yk-val', name: 'YubiKey Validation Protocol 2.0',
+    where: 'Yubico',
+    url: 'https://developers.yubico.com/yubikey-val/Validation_Protocol_V2.0.html',
+    coverage: 'partial, as a validation server (#1955 P5): GET and POST ' +
+              '/wsapi/2.0/verify with id, otp, nonce and h, HMAC-SHA1 over ' +
+              'the sorted parameters, and the statuses OK, BAD_OTP, ' +
+              'BAD_SIGNATURE, MISSING_PARAMETER, NO_SUCH_CLIENT, ' +
+              'OPERATION_NOT_ALLOWED, BACKEND_ERROR, REPLAYED_OTP and ' +
+              'REPLAYED_REQUEST. Off by default (yubiotp.ykval). On, the ' +
+              'client id and the HMAC are checked in every mode. The ' +
+              'answer\'s sl is 100. NOT covered: the YubiCloud client, and ' +
+              'a sync percentage other than 100.' },
   { id: 'rfc6030', name: 'RFC 6030 — Portable Symmetric Key Container ' +
                          '(PSKC)',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc6030',
@@ -9355,6 +9378,17 @@ const ENDPOINTS: EndpointEntry[] = [
           'the amr and acr of the sign-in. Needs an ?mfa= id minted by the ' +
           'held sign-in, so following it bare answers 400.'
   },
+  { path: '/wsapi/2.0/verify', group: 'Yubico OTP',
+    name: 'YK-VAL 2.0 verify',
+    specs: ['yk-val', 'yubico-otp'],
+    effect: 'checks a YubiKey OTP for a client that signed the request, ' +
+            'or answers OPERATION_NOT_ALLOWED while yubiotp.ykval is off',
+    what: 'YUBICO\'S VALIDATION PROTOCOL 2.0 (#1955 P5). GET or POST of ' +
+          'id, otp, nonce and h. Off by default: the route answers ' +
+          'OPERATION_NOT_ALLOWED and signs nothing. On, the client id and ' +
+          'the HMAC-SHA1 are checked in every mode, including development; ' +
+          'a nonce is remembered for five minutes; a matching OTP is ' +
+          'spent. Cache-Control: no-store. Nothing is sent to YubiCloud.' },
   { path: '/authn/roles', group: 'Authentication',
     name: 'Dynamic role step',
     specs: ['xacml30', 'oidc'],
@@ -11157,6 +11191,15 @@ const PROTOCOLS: Protocol[] = [
           'Directory → Hardware tokens and assigned or claimed by serial), ' +
           'its counter advanced by compare-and-set, accepted at every door ' +
           'that takes a code.' },
+  { name: 'Yubico OTP', groups: ['Yubico OTP'],
+    specs: ['yubico-otp', 'yk-val'],
+    what: 'A YubiKey OTP slot checked on this service (#1955 P5). The ' +
+          'AES-128 key stays here, so a sign-in is amr otp and never hwk. ' +
+          'Enrolment, assignment and a claim are off until ' +
+          'yubiotp.offered; a credential already held is still checked at ' +
+          'the one-time-code step. GET and POST /wsapi/2.0/verify are ' +
+          'YK-VAL 2.0 and stay OPERATION_NOT_ALLOWED until yubiotp.ykval. ' +
+          'No request is sent to YubiCloud.' },
   { name: 'Recovery codes', groups: ['Authentication'],
     specs: ['nist-800-63b'],
     // **IT CARRIED `notAProtocol` UNTIL #283 (2026-10-07)**, on the claim that

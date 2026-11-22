@@ -255,6 +255,30 @@
     "en": "01c45765b9c3cd87",
     "text": "एक वन-टाइम कोड टोकन फिर से सिंक नहीं हुआ"
   },
+  "audit.actions.portal.yubiotp.started.label": {
+    "en": "b206def4fb8ccc3d",
+    "text": "किसी को YubiKey OTP की प्रोग्रामिंग पंक्ति दिखाई गई"
+  },
+  "audit.actions.portal.yubiotp.enrolled.label": {
+    "en": "00886a6cb1cc407b",
+    "text": "किसी ने अपने खाते पर YubiKey OTP सेट किया"
+  },
+  "audit.actions.portal.yubiotp.refused.label": {
+    "en": "bd0fa598eb880f3a",
+    "text": "YubiKey OTP के सेटअप की पुष्टि नहीं हुई"
+  },
+  "audit.actions.portal.yubiotp.removed.label": {
+    "en": "57e0e2f87367e090",
+    "text": "किसी ने अपने खाते से YubiKey OTP हटाया"
+  },
+  "audit.actions.portal.yubiotp.claimed.label": {
+    "en": "452306461ebd5b17",
+    "text": "किसी ने आयातित YubiKey OTP का दावा किया"
+  },
+  "audit.actions.portal.yubiotp.claim-refused.label": {
+    "en": "2f50c910534b974e",
+    "text": "एक YubiKey OTP का दावा नहीं हुआ"
+  },
   "audit.actions.portal.activate.mfa.started.label": {
     "en": "df561a24375c8165",
     "text": "एक सक्रियण लिंक खर्च किए जाते समय एक प्रमाणक-ऐप सीक्रेट दिखाया गया"
@@ -543,6 +567,30 @@
     "en": "92d69a1a2d848892",
     "text": "असाइन न किया गया OATH टोकन सूची से हटाया गया"
   },
+"audit.actions.yubiotp.import.label": {
+    "en": "6f92401fa557c5e6",
+    "text": "YubiKey OTP की CSV आयात की गई, या अस्वीकार की गई"
+  },
+"audit.actions.yubiotp.assign.label": {
+    "en": "c4f793ef7a16734a",
+    "text": "आयातित YubiKey OTP किसी व्यक्ति को असाइन किया गया"
+  },
+"audit.actions.yubiotp.claim.label": {
+    "en": "08d55e823350bd4a",
+    "text": "किसी व्यक्ति ने आयातित YubiKey OTP का दावा किया, या दावा अस्वीकार हुआ"
+  },
+"audit.actions.yubiotp.remove.label": {
+    "en": "a4a9aedd10cc2813",
+    "text": "असाइन न किया गया YubiKey OTP सूची से हटाया गया"
+  },
+"audit.actions.yubiotp.client-add.label": {
+    "en": "40676cb783f36097",
+    "text": "एक YK-VAL क्लाइंट बनाया गया"
+  },
+"audit.actions.yubiotp.client-remove.label": {
+    "en": "92433c797106d523",
+    "text": "एक YK-VAL क्लाइंट हटाया गया"
+  },
 "audit.actions.openpgp.challenge.label": {
     "en": "454a22b5bcd9d6a2",
     "text": "OpenPGP कुंजी पंजीकरण की एक चुनौती जारी की गई"
@@ -754,6 +802,10 @@
   "audit.actions.admin.mfa.hotp.cleared.label": {
     "en": "027dab5576016e61",
     "text": "किसी ऑपरेटर ने किसी का वन-टाइम कोड टोकन साफ़ किया"
+  },
+  "audit.actions.admin.mfa.yubiotp.cleared.label": {
+    "en": "f075ff8b6c725197",
+    "text": "एक ऑपरेटर ने किसी का YubiKey OTP हटाया"
   },
   "audit.actions.admin.mfa.key.cleared.label": {
     "en": "d62700d9f7751e8b",

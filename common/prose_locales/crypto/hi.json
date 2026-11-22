@@ -1503,6 +1503,50 @@
     "en": "e08e19def21e22b2",
     "text": "वर्तमान सेटिंग"
   },
+  "crypto.families.yubico-otp.signs": {
+    "en": "c340996ced9d9758",
+    "text": "इस सेवा से कुछ नहीं निकलता, सिवाय उस HMAC-SHA1 के जिसे एक YK-VAL क्लाइंट /wsapi/2.0/verify पर जाँचता है। OTP स्वयं 16-बाइट ब्लॉक का AES-128-ECB है, डिक्रिप्ट होने के बाद तुलना होती है, इसलिए प्रिमिटिव common/crypto.js में रहता है।"
+  },
+  "crypto.families.yubico-otp.verifies": {
+    "en": "f7cf070e5067a77f",
+    "text": "प्रस्तुत OTP: सार्वजनिक पहचान क्रेडेंशियल चुनती है, ब्लॉक अपनी AES-128 कुंजी के अंतर्गत डिक्रिप्ट होता है, CRC-16 अवशेष 0xf0b8 है, और निजी पहचान मेल खाती है। उपयोग काउंटर और सत्र-उपयोग काउंटर, एक मान के रूप में, अंतिम स्वीकृत मान से सख्ती से ऊपर होने चाहिए। टाइमस्टैम्प जाँचा नहीं जाता। yubiotp.ykval चालू होने पर हर मोड में YK-VAL अनुरोध का HMAC-SHA1।"
+  },
+  "crypto.families.yubico-otp.encrypts": {
+    "en": "3802bf3b62081ea2",
+    "text": "विश्राम में AES कुंजी और निजी पहचान, एक सील JSON मान के रूप में, कुंजी-एन्क्रिप्शन कुंजी के अंतर्गत, उत्पाद मोड में। विकास मोड में कुंजी-एन्क्रिप्शन कुंजी हर चलन पर बनती है, इसलिए मान सादे पाठ में संग्रहीत होता है और ऐसा कहता है।"
+  },
+  "crypto.families.yubico-otp.decrypts": {
+    "en": "560652ba098dd545",
+    "text": "वह सील मान, OTP जाँचने के लिए। सर्वर AES कुंजी रखता है, इसलिए साइन-इन amr otp है और कभी hwk नहीं।"
+  },
+  "crypto.families.yubico-otp.hashes": {
+    "en": "761a28a6805e3023",
+    "text": "कुछ नहीं। CRC, CRC-16 है, बहुपद 0x8408। YK-VAL हस्ताक्षर HMAC-SHA1 है।"
+  },
+  "crypto.families.yubico-otp.whatItDoesNot": {
+    "en": "a977ea47369edb7c",
+    "text": "यह कभी YubiCloud को नहीं बुलाता। यह कभी टाइमस्टैम्प नहीं जाँचता। yubiotp.offered बंद होने पर यह कभी स्लॉट नामांकित नहीं करता, और yubiotp.ykval बंद होने पर यह कभी YK-VAL का उत्तर नहीं देता। यह कभी प्रोग्रामिंग पंक्ति या क्लाइंट की HMAC कुंजी लॉग नहीं करता।"
+  },
+  "crypto.families.yubico-otp.algorithms.0.what": {
+    "en": "6c0e6acd35694622",
+    "text": "OTP"
+  },
+  "crypto.families.yubico-otp.algorithms.1.what": {
+    "en": "ac57b0e667bf3ec1",
+    "text": "वर्णमाला"
+  },
+  "crypto.families.yubico-otp.algorithms.2.what": {
+    "en": "ee4fcdc3401859da",
+    "text": "CRC"
+  },
+  "crypto.families.yubico-otp.algorithms.3.what": {
+    "en": "c8dae6371b33b8d6",
+    "text": "पुनरावृत्ति"
+  },
+  "crypto.families.yubico-otp.algorithms.4.what": {
+    "en": "7ff6cc8a39bc9224",
+    "text": "YubiCloud"
+  },
   "crypto.families.recovery-codes.signs": {
     "en": "e07d5c09c87dcaf1",
     "text": "कुछ नहीं। इस तंत्र में कहीं कोई MAC नहीं और कोई हस्ताक्षर नहीं — पुनर्प्राप्ति कोड एक यादृच्छिक स्ट्रिंग है जिसे उसके संग्रहीत हैश के विरुद्ध जाँचा जाता है, ऊपर की TOTP पंक्ति से पूरा अंतर यही है जहाँ \"कोड\" एक काटा हुआ HMAC है।"

@@ -75,7 +75,8 @@ const CREDENTIAL_ATTRIBUTES = ['userpassword', 'stswebauthncredential',
   'stsactivationexpires', 'stspasswordresettoken', 'stspasswordresetexpires',
   'stsmailverifytoken', 'stsmailverifyexpires', 'stsassertionprivatekey',
   'stssamlassertionprivatekey', 'stsenrolledprivatekey', 'stsacmeeabkey',
-  'stsscepchallenge', 'stsapppassword', 'stshotpcredential'];
+  'stsscepchallenge', 'stsapppassword', 'stshotpcredential',
+  'stsyubiotpcredential'];
 
 // realm id -> uuid -> the projection held here.
 const projections = realms.map({

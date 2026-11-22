@@ -415,6 +415,73 @@ class MfaPages {
       t.html('portal.hotp.heading') + '</h2>' + body + '</div>';
   }
 
+  // -------------------------------------------------------------------------
+  // THE YUBIKEY OTP (#1955 P5): enrolled (public identity, Remove), a
+  // pending programming line, or offered (Set one up, and claim a serial
+  // an administrator imported). The programming line is the secret; the
+  // page shows it and nothing logs it.
+  // -------------------------------------------------------------------------
+  /**
+   * The YubiKey OTP's card.
+   *
+   * @param view - the page's view
+   * @param t - the translator
+   * @returns the card's HTML, or '' where it is neither held nor offered
+   */
+  static yubiCard(view: Json, t: Json): string {
+    const card = view.yubiotp || {};
+    if (!card.enrolled && !card.offered) {
+      return '';
+    }
+    const d = card.detail || {};
+    const setup = card.setup;
+    const otpInput = '<input type="text" id="yubi-code" name="code" ' +
+      'autocomplete="one-time-code" required maxlength="64" ' +
+      'spellcheck="false">';
+    let body = '';
+    if (card.enrolled) {
+      body = '<p class="sub">' + (d.source === 'csv-import'
+        ? t.html('portal.yubiotp.imported', { serial: String(d.serial || '') })
+        : t.html('portal.yubiotp.enrolled')) +
+        (d.lastUsedAt ? ' ' + t.html('portal.yubiotp.lastUsed',
+                                      { day: MfaPages.day(d.lastUsedAt) })
+                      : '') + '</p>' +
+        (d.publicId ? '<p><code>' + kit.esc(String(d.publicId)) +
+                      '</code></p>' : '') +
+        (card.usable ? '' : '<p class="note">' +
+          t.html('portal.yubiotp.unusable') + '</p>') +
+        MfaPages.form('yubiotp-remove', '<button type="submit" ' +
+          'class="danger">' + t.html('portal.yubiotp.remove') + '</button>');
+    } else if (setup) {
+      body = '<p class="note">' + t.html('portal.yubiotp.yubikey') + '</p>' +
+        '<p><span class="note">' + t.html('portal.yubiotp.publicId') +
+        '</span> <code>' + kit.esc(String(setup.publicId || '')) +
+        '</code></p>' +
+        '<pre><code>' + kit.esc(String(setup.ykman || '')) + '</code></pre>' +
+        MfaPages.form('yubiotp-confirm', '<div class="row"><label ' +
+          'for="yubi-code">' + t.html('portal.yubiotp.codeLabel') +
+          '</label>' + otpInput + '</div><button type="submit">' +
+          t.html('portal.yubiotp.confirm') + '</button>');
+    } else {
+      body = '<p class="sub">' + t.html('portal.yubiotp.offer') + '</p>' +
+        MfaPages.form('yubiotp-start', '<button type="submit" ' +
+          'class="secondary">' + t.html('portal.yubiotp.start') +
+          '</button>') +
+        '<h3>' + t.html('portal.yubiotp.claimHeading') + '</h3>' +
+        MfaPages.form('yubiotp-claim', '<div class="row"><label ' +
+          'for="yubi-serial">' + t.html('portal.yubiotp.claimSerial') +
+          '</label><input type="text" id="yubi-serial" name="serial" ' +
+          'required maxlength="64" spellcheck="false"></div>' +
+          '<div class="row"><label for="yubi-claim">' +
+          t.html('portal.yubiotp.codeLabel') + '</label>' +
+          otpInput.replace('id="yubi-code"', 'id="yubi-claim"') +
+          '</div><button type="submit" class="secondary">' +
+          t.html('portal.yubiotp.claim') + '</button>');
+    }
+    return '<div class="card" id="yubiotp"><h2>' +
+      t.html('portal.yubiotp.heading') + '</h2>' + body + '</div>';
+  }
+
   /**
    * What an authenticator app is, and what it is not.
    *
@@ -446,6 +513,7 @@ class MfaPages {
     const t = ctx.t;
     return MfaPages.enrolledCard(view, t) + MfaPages.setupCard(view, t) +
       MfaPages.startCard(view, t) + MfaPages.hotpCard(view, t) +
+      MfaPages.yubiCard(view, t) +
       MfaPages.emailFactorCard(view, t) +
       MfaPages.codesCard(view, t) + MfaPages.aboutCard(view, t);
   }

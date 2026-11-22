@@ -535,6 +535,14 @@
     "en": "5ab7b9d048e74e7e",
     "text": "full, من جهة المتحقّق، بوصفه عاملًا ثانيًا فقط (#1955 P4): الاقتطاع الديناميكي في القسم 5.3 فوق HMAC-SHA-1 أو SHA-256 أو SHA-512، من ستة إلى ثمانية أرقام، والعدّاد قيمة big-endian من ثمانية بايتات، مُختبَر مقابل متجهات الاختبار في الملحق D نفسه (tests/totp.js، tests/hotp.js)؛ عدّاد لكل بيانات اعتماد مع التطلّع وفق القسم 7.4 (hotp.window، 10 افتراضيًا، و0 مسموح) وإعادة المزامنة من رمزين متتاليين (hotp.resyncWindow)؛ ورفض إعادة الاستخدام وفق القسم 7.2، مع تقديم العدّاد بعملية compare-and-set في المخزن كي لا تقبل عقدتان أو عاملان الرمز نفسه أبدًا؛ والحدّ من المحاولات وفق القسم 7.3 عبر ميزانية الرموز في تسجيل الدخول. تُبرمج خانة OTP في YubiKey من رمز otpauth://hotp في البوابة أو من أمر ykman؛ ويُستورد رمز المورّد (RFC 6030). يكسب amr otp، وhwk فقط للرمز المستورد. غير مشمول: مخطط التأخير في القسم 7.3 بحد ذاته (ترفض الميزانية بدلًا منه)، وOCRA (RFC 6287)."
   },
+  "stsmetadata.specs.yubico-otp.coverage": {
+    "en": "57c44d60416042fb",
+    "text": "partial، جانب المتحقّق (#1955 P5): OTP المنشور، هوية عامة بـ modhex تليها كتلة AES-128-ECB بلا حشو، باقي CRC-16 هو 0xf0b8، وعدّادا الاستخدام والجلسة يتقدمان بـ compare-and-set حتى يُقبل OTP مرة واحدة. لا يُفحص الطابع الزمني. التسجيل معطّل افتراضيًا (yubiotp.offered). amr otp، وليس hwk أبدًا، لأن هذه الخدمة تحتفظ بمفتاح AES. غير مغطى: YubiCloud، وأي فحص للطابع الزمني."
+  },
+  "stsmetadata.specs.yk-val.coverage": {
+    "en": "0adaef8d27031f8f",
+    "text": "partial، كخادم تحقق (#1955 P5): GET وPOST /wsapi/2.0/verify مع id وotp وnonce وh، وHMAC-SHA1 على المعاملات المرتبة، والحالات OK وBAD_OTP وBAD_SIGNATURE وMISSING_PARAMETER وNO_SUCH_CLIENT وOPERATION_NOT_ALLOWED وBACKEND_ERROR وREPLAYED_OTP وREPLAYED_REQUEST. معطّل افتراضيًا (yubiotp.ykval). وعند التفعيل يُفحص معرّف العميل وHMAC في كل وضع. تحمل الإجابة sl=100. غير مغطى: عميل YubiCloud، ونسبة مزامنة غير 100."
+  },
   "stsmetadata.specs.rfc6030.coverage": {
     "en": "35ef81e9394eb5f5",
     "text": "partial, بوصفه مستقبِلًا (#1955 P4): KeyContainer من الإصدار 1.0 بمفاتيح HOTP وTOTP، وManufacturer وSerialNo وModel من DeviceInfo، وResponseFormat (من 6 إلى 8 أرقام عشرية)، وCounter عادي، وTime (0 فقط) وTimeInterval؛ النص الصريح (مرفوض في وضع المنتج ما لم يكن pskc.allowPlaintextImport)، ومفتاح مشترك مسبقًا (القسم 6.1: AES-128/192/256-CBC وKW-AES) وعبارة مرور (القسم 6.2: PBKDF2)، مع التحقق أولًا من ValueMAC وفق القسم 6.1.1 (HMAC-SHA1 وMACs من SHA-2). مُختبَر مقابل Figures 2 إلى 7 من RFC نفسه (tests/pskc.js). غير مشمول: التشفير لشهادة (6.3)، ومفتاح MAC بالإحالة، وTriple DES وCamellia، والعدّاد أو الوقت المشفّر، ومفاتيح PIN وسياساته (تُتخطّى)، والتوقيعات على الحاوية (القسم 7)، وإنتاج ملف كهذا."
@@ -3123,11 +3131,19 @@
     "en": "9547cda6898c37a6",
     "text": "يطلب مفتاح مرور ما بعد الكمّ بعد تسجيل الدخول، ثم يقيم جلسة تسجيل الدخول التي احتجزها"
   },
-  "stsmetadata.endpoints./authn/roles.what": {
+"stsmetadata.endpoints./wsapi/2.0/verify.what": {
+    "en": "ff0550a4318594c6",
+    "text": "بروتوكول التحقق 2.0 من YUBICO (#1955 P5). GET أو POST لـ id وotp وnonce وh. معطّل افتراضيًا: يجيب المسار OPERATION_NOT_ALLOWED ولا يوقّع شيئًا. وعند التفعيل يُفحص معرّف العميل وHMAC-SHA1 في كل وضع، بما فيه التطوير؛ ويُحفظ nonce خمس دقائق؛ ويُستهلك OTP المطابق. Cache-Control: no-store. لا يُرسل شيء إلى YubiCloud."
+  },
+"stsmetadata.endpoints./wsapi/2.0/verify.effect": {
+    "en": "bb2bc4011c8240ac",
+    "text": "يفحص OTP لـ YubiKey لعميل وقّع الطلب، أو يجيب OPERATION_NOT_ALLOWED ما دام yubiotp.ykval معطّلًا"
+  },
+"stsmetadata.endpoints./authn/roles.what": {
     "en": "88814e89f81f8d86",
     "text": "الأدوار القابلة للاختيار ديناميكيًا (#1072). بعد كل العوامل، يُعلَّق تسجيل الدخول إلى تطبيق يعرّف نطاقه دورًا ديناميكيًا (ما لم يوقفه roles.dynamicSelection أو appDynamicRoleSelection الخاص بالتطبيق) بينما تُقرَّر للشخص سياسة أهلية XACML الخاصة بكل دور ديناميكي؛ ولا يعرض الدورَ إلا Permit. إذا حدد الشخص «اختيار الأدوار لتسجيل الدخول هذا» أو عُرض دور مطلوب، تسرد هذه الصفحة ما يمكن اختياره؛ ويتحقق «متابعة» (/authn-api/mfa/{id}/roles) من الاختيار مقابل عرض الخطوة ومقابل السياسات مرة أخرى، ثم يبدأ الجلسة مع تسجيل الاختيار في سجل الجلسة، لا في الدليل أبدًا. يحمل رمز ذلك التطبيق بعد ذلك الأدوار المختارة، ويُعاد سؤال سياسة كل منها عند كل إصدار. يتطلب معرّف ?mfa= أنشأه تسجيل الدخول المعلَّق؛ ومن دونه يكون الرد 400."
   },
-  "stsmetadata.endpoints./authn/roles.effect": {
+"stsmetadata.endpoints./authn/roles.effect": {
     "en": "fc2116e31d3ead37",
     "text": "يسأل عن الأدوار القابلة للاختيار ديناميكيًا التي ستُستخدم في تسجيل الدخول هذا، ثم يبدأ الجلسة المعلَّقة بهذا الاختيار"
   },
@@ -4126,6 +4142,10 @@
   "stsmetadata.protocols.One-time passwords (TOTP).what": {
     "en": "54893544268bf168",
     "text": "العامل الثاني الآخر على شاشة تسجيل الدخول التي يرسل إليها كل بروتوكول هنا الشخص، وبيانات الاعتماد الوحيدة إلى جانب تذكرة Kerberos التي تتحقق منها هذه الخدمة فعلًا: يُحسب الرمز من السرّ المشترك والساعة ويُقارن، في كلا الوضعين، مع فرض قاعدة القبول لمرة واحدة في RFC 6238 القسم 5.2. التسجيل رمز QR رسمه هذا الخادم، في /portal/mfa أو أثناء استخدام رابط تفعيل؛ وصفّ الشخص نفسه في /admin/users هو حيث يمسحه المشغّل، و/admin/totp حيث تُضبط الآلية. ومنذ #1955 P4 أيضًا نظيرها المعتمد على العدّاد: رمز HOTP وفق RFC 4226 (خانة OTP في YubiKey، مسجّلة في /portal/mfa، أو رمز مورّد مستورد من ملف بذوره وفق RFC 6030 في الدليل → الرموز المادية ومُسنَد أو مُطالَب به بالرقم التسلسلي)، يُقدَّم عدّاده بعملية compare-and-set، ويُقبل عند كل باب يقبل رمزًا."
+  },
+  "stsmetadata.protocols.Yubico OTP.what": {
+    "en": "462bb8049dda11d0",
+    "text": "فتحة OTP لـ YubiKey تُفحص على هذه الخدمة (#1955 P5). يبقى مفتاح AES-128 هنا، لذا يكون تسجيل الدخول amr otp وليس hwk أبدًا. يبقى التسجيل والإسناد والمطالبة معطّلة حتى yubiotp.offered؛ وتظل بيانات الاعتماد المحتفَظ بها مفحوصة في خطوة الرمز لمرة واحدة. إن GET وPOST /wsapi/2.0/verify هما YK-VAL 2.0 ويظلان OPERATION_NOT_ALLOWED حتى yubiotp.ykval. لا يُرسل أي طلب إلى YubiCloud."
   },
   "stsmetadata.protocols.Recovery codes.what": {
     "en": "b7c9347c7ac4a2b7",

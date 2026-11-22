@@ -323,6 +323,14 @@
     "en": "608274a83bf567cd",
     "text": "Un code à usage unique RFC 4226 provenant d’un jeton à compteur (#1955) : l’emplacement OTP d’une YubiKey, ou le jeton d’un fournisseur qu’un administrateur a importé depuis un fichier de semences PSKC. Jamais un premier facteur. Désactivé ici, personne ne peut en ENRÔLER ni en réclamer un ; une personne qui en détient déjà un se le voit toujours demander, comme le détenteur d’une application d’authentification."
   },
+  "authn.FIELDS.yubicoOtpSecondFactor.label": {
+    "en": "cba1439d0faf9aaf",
+    "text": "OTP YubiKey — comme deuxième facteur"
+  },
+  "authn.FIELDS.yubicoOtpSecondFactor.what": {
+    "en": "f8f7a6ee5bbb46a8",
+    "text": "Un OTP YubiKey (mot de passe à usage unique modhex publié par Yubico, #1955). Jamais un premier facteur : ce service détient la clé AES. Ici désactivé, personne ne peut ENRÔLER, attribuer ou revendiquer un, même lorsque yubiotp.offered est activé ; une personne qui en détient déjà un est toujours invitée à le donner."
+  },
   "authn.FIELDS.recoveryCodeSecondFactor.label": {
     "en": "ee9982b48a9c6a90",
     "text": "Code de récupération — comme second facteur"
@@ -507,6 +515,10 @@
     "en": "608274a83bf567cd",
     "text": "Un code à usage unique RFC 4226 provenant d’un jeton à compteur (#1955) : l’emplacement OTP d’une YubiKey, ou le jeton d’un fournisseur qu’un administrateur a importé depuis un fichier de semences PSKC. Jamais un premier facteur. Désactivé ici, personne ne peut en ENRÔLER ni en réclamer un ; une personne qui en détient déjà un se le voit toujours demander, comme le détenteur d’une application d’authentification."
   },
+  "authn.SCHEMA.attributes.stsAuthnYubicoOtpSecondFactor.what": {
+    "en": "f8f7a6ee5bbb46a8",
+    "text": "Un OTP YubiKey (mot de passe à usage unique modhex publié par Yubico, #1955). Jamais un premier facteur : ce service détient la clé AES. Ici désactivé, personne ne peut ENRÔLER, attribuer ou revendiquer un, même lorsque yubiotp.offered est activé ; une personne qui en détient déjà un est toujours invitée à le donner."
+  },
   "authn.SCHEMA.attributes.stsAuthnRecoveryCodeSecondFactor.what": {
     "en": "e93ab2adc3e581bd",
     "text": "Un code à usage unique tiré d’un jeu que la personne a généré. Désactivé ici, aucun nouveau jeu ne peut être généré ; un jeu déjà détenu fonctionne toujours (cette ligne a remplacé backupCodes.enabled, et en conserve le contrat)."
@@ -580,8 +592,8 @@
     "text": "Sur une politique d’authentification NOMMÉE (#1148, #1237) : un mécanisme de premier facteur qu’autorise une connexion à laquelle elle s’applique — lorsque l’application (appAuthnPolicy) ou l’un des groupes de la personne (stsAuthnPolicy) la nomme et que sa priorité est la plus faible de celles nommées — password, password-mfa, webauthn, attested-hardware (une clé d'accès ou un certificat sur un jeton matériel prouvé par attestation, #1955), spnego, wallet ou federation, une valeur chacun. Si aucun n’est indiqué, tous ceux qu’autorise le domaine le sont."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicySecondFactor.what": {
-    "en": "e0ae8297bb01119f",
-    "text": "Sur une politique d’authentification NOMMÉE (#1148, #1237) : un deuxième facteur qu’autorise une connexion à laquelle elle s’applique — là où l’application (appAuthnPolicy) ou l’un des groupes de la personne (stsAuthnPolicy) la nomme et où sa priorité est la plus basse nommée — password, securityKey, totp, hotp, recoveryCode, emailCode, emailLink ou wallet, une valeur chacun. Sans valeur, la politique d’authentification du domaine reste inchangée."
+    "en": "9302ca05693fd970",
+    "text": "Sur une politique d’authentification NOMMÉE (#1148, #1237) : un deuxième facteur qu’autorise une connexion à laquelle elle s’applique — là où l’application (appAuthnPolicy) ou l’un des groupes de la personne (stsAuthnPolicy) la nomme et où sa priorité est la plus basse nommée — password, securityKey, totp, hotp, yubico-otp, recoveryCode, emailCode, emailLink ou wallet, une valeur chacun. Sans valeur, la politique d’authentification du domaine reste inchangée."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicyPrecedence.what": {
     "en": "afff5dad656a9845",
@@ -634,6 +646,14 @@
   "authn.MECHANISMS.hotp.what": {
     "en": "608274a83bf567cd",
     "text": "Un code à usage unique RFC 4226 provenant d’un jeton à compteur (#1955) : l’emplacement OTP d’une YubiKey, ou le jeton d’un fournisseur qu’un administrateur a importé depuis un fichier de semences PSKC. Jamais un premier facteur. Désactivé ici, personne ne peut en ENRÔLER ni en réclamer un ; une personne qui en détient déjà un se le voit toujours demander, comme le détenteur d’une application d’authentification."
+  },
+  "authn.MECHANISMS.yubico-otp.label": {
+    "en": "01f8772904333b7b",
+    "text": "OTP YubiKey"
+  },
+  "authn.MECHANISMS.yubico-otp.what": {
+    "en": "f8f7a6ee5bbb46a8",
+    "text": "Un OTP YubiKey (mot de passe à usage unique modhex publié par Yubico, #1955). Jamais un premier facteur : ce service détient la clé AES. Ici désactivé, personne ne peut ENRÔLER, attribuer ou revendiquer un, même lorsque yubiotp.offered est activé ; une personne qui en détient déjà un est toujours invitée à le donner."
   },
   "authn.MECHANISMS.recoveryCode.label": {
     "en": "5bda8302b5ecf4d3",

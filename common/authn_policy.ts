@@ -260,10 +260,16 @@ MECHANISMS.forEach(function (m) {
 });
 
 // `emailCode` + `primary` -> `emailCodePrimary`, and the attribute beside it.
+// A hyphenated mechanism id (`yubico-otp`, #1955 P5) becomes a legal field
+// key (`yubicoOtpSecondFactor`). An id with no hyphen is unchanged, so
+// every mechanism already stored keeps its attribute.
 function fieldKeyOf(mechanism: string, role: Role): string {
   log.debug("Entering fieldKeyOf().");
+  const id = mechanism.replace(/-([a-z])/g, function (_match, letter) {
+    return String(letter).toUpperCase();
+  });
   log.debug("Leaving fieldKeyOf().");
-  return mechanism + (role === 'primary' ? 'Primary' : 'SecondFactor');
+  return id + (role === 'primary' ? 'Primary' : 'SecondFactor');
 }
 
 function attributeOf(key: string): string {
@@ -1443,8 +1449,9 @@ class AuthnPolicy {
         raw = 'false';
       }
       // A mechanism added since API clients were written (#1955 P4's
-      // `hotp`): a save that does not name it keeps its built-in value
-      // rather than being refused, so an older client still saves.
+      // `hotp`, P5's `yubico-otp`): a save that does not name it keeps
+      // its built-in value rather than being refused, so an older client
+      // still saves.
       if (raw === undefined && field.optional) {
         raw = String(field.dflt);
       }
@@ -1507,11 +1514,11 @@ class AuthnPolicy {
       return errorCodes.mark({ ok: false, errors: [refused] },
                              'STS-AUTHN-0242');
     }
-    // A MECHANISM ADDED SINCE CLIENTS WERE WRITTEN (#1955 P4's `hotp`): a
-    // save that does not name it keeps the profile's CURRENT value, so a
-    // client written before it re-saves a profile without turning it back
-    // on or off (backwards compatibility). `validate()` alone would take the
-    // built-in default.
+    // A MECHANISM ADDED SINCE CLIENTS WERE WRITTEN (#1955 P4's `hotp`,
+    // P5's `yubico-otp`): a save that does not name it keeps the profile's
+    // CURRENT value, so a client written before it re-saves a profile
+    // without turning it back on or off (backwards compatibility).
+    // `validate()` alone would take the built-in default.
     const current = this.read(String(name || DEFAULT_PROFILE));
     const filled: Record<string, any> = Object.assign({}, given || {});
     FIELDS.forEach(function (field) {

@@ -1008,5 +1008,12 @@
   "mfaSection.hotpImported": "Imported from the vendor's seed file: {vendor} serial {serial}",
   "mfaSection.hotpEnrolled": "Enrolled by the person (QR code or ykman)",
   "mfaSection.hotpUnusable": "Its secret cannot be read here, so its codes are refused.",
-  "mfaSection.clearHotp": "Clear the one-time code token"
+  "mfaSection.clearHotp": "Clear the one-time code token",
+  "mfaSection.yubiHeading": "YubiKey OTP",
+  "mfaSection.yubiSource": "Provisioned",
+  "mfaSection.yubiImported": "Imported from a CSV: serial {serial}",
+  "mfaSection.yubiEnrolled": "Enrolled by the person (ykman)",
+  "mfaSection.yubiUnusable": "Its secret cannot be read here, so its passwords are refused.",
+  "mfaSection.yubiPublicId": "Public identity",
+  "mfaSection.clearYubi": "Clear the YubiKey OTP"
 }

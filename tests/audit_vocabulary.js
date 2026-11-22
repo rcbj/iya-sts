@@ -141,6 +141,8 @@ const BUILT = {
     via: { call: 'this.recordAudit', arg: 0 } },
   'common/oath_tokens.ts|action': {
     via: { call: 'this.recordAudit', arg: 0 } },
+  'common/yubiotp_store.ts|action': {
+    via: { call: 'this.recordAudit', arg: 0 } },
   // recordHttp(): httpActionFor()'s five answers.
   'common/audit.js|action': {
     values: ['api.change', 'api.read', 'admin.change', 'admin.view',

@@ -671,6 +671,14 @@
     "en": "167f79e724fe8b34",
     "text": "移除每个超过其有效期的 User-Managed Access 许可票据、持久化声明令牌、RPT 记录和待处理的所有者批准（#1168）。读取时会自行应用截止时间，因此这只是清理，绝不是作出决定的环节。"
   },
+  "sched.jobs.yubiotp.nonce-sweep.title": {
+    "en": "dce74787b5ae6954",
+    "text": "Yubico OTP nonce 清扫"
+  },
+  "sched.jobs.yubiotp.nonce-sweep.describe": {
+    "en": "21922132f2f9b5f8",
+    "text": "丢弃超过五分钟的 YK-VAL nonce，以及超过一万条时最旧的那些，使 nonce 映射不再增长。"
+  },
   "sched.sentence.onDemand": {
     "en": "92e0ecb68dc6ec36",
     "text": "仅按需"

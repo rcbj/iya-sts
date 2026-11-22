@@ -535,6 +535,14 @@
     "en": "5ab7b9d048e74e7e",
     "text": "full, sa panig ng verifier, bilang SECOND FACTOR LAMANG (#1955 P4): ang dynamic truncation ng section 5.3 sa HMAC-SHA-1, SHA-256 o SHA-512, anim hanggang walong digit, ang counter ay isang walong-byte na big-endian value, sinubok laban sa sariling mga test vector ng Appendix D (tests/totp.js, tests/hotp.js); isang counter bawat credential na may look-ahead ng section 7.4 (hotp.window, 10 bilang default, legal ang 0) at resynchronisation mula sa dalawang magkasunod na code (hotp.resyncWindow); ang replay refusal ng section 7.2, na isinusulong ang counter sa pamamagitan ng compare-and-set sa store para hindi kailanman tumanggap ng iisang code ang dalawang node o worker; ang throttling ng section 7.3 sa pamamagitan ng code budget ng sign-in. Pino-program ang YubiKey OTP slot mula sa otpauth://hotp code o ykman command ng portal; ini-import ang token ng vendor (RFC 6030). Nakakamit nito ang amr otp, at hwk para lamang sa na-import na token. HINDI sakop: ang delay scheme ng section 7.3 bilang ganoon (tumatanggi na lang ang budget), at OCRA (RFC 6287)."
   },
+  "stsmetadata.specs.yubico-otp.coverage": {
+    "en": "57c44d60416042fb",
+    "text": "partial, panig ng verifier (#1955 P5): ang nailathalang OTP, isang modhex public identity na sinusundan ng isang AES-128-ECB block na walang padding, CRC-16 residual 0xf0b8, at ang use at session counter na inusad sa pamamagitan ng compare-and-set para isang beses lang tanggapin ang isang OTP. Hindi sinusuri ang timestamp. Naka-off ang enrolment bilang default (yubiotp.offered). amr otp, hindi kailanman hwk, dahil hawak ng serbisyong ito ang AES key. HINDI sakop: YubiCloud, at anumang pagsusuri ng timestamp."
+  },
+  "stsmetadata.specs.yk-val.coverage": {
+    "en": "0adaef8d27031f8f",
+    "text": "partial, bilang validation server (#1955 P5): GET at POST /wsapi/2.0/verify na may id, otp, nonce at h, HMAC-SHA1 sa mga pinagsunod-sunod na parameter, at ang mga status na OK, BAD_OTP, BAD_SIGNATURE, MISSING_PARAMETER, NO_SUCH_CLIENT, OPERATION_NOT_ALLOWED, BACKEND_ERROR, REPLAYED_OTP at REPLAYED_REQUEST. Naka-off bilang default (yubiotp.ykval). Kapag naka-on, sinusuri ang client id at ang HMAC sa bawat mode. Ang sagot ay may sl=100. HINDI sakop: ang YubiCloud client, at isang sync percentage maliban sa 100."
+  },
   "stsmetadata.specs.rfc6030.coverage": {
     "en": "35ef81e9394eb5f5",
     "text": "partial, bilang RECEIVER (#1955 P4): isang KeyContainer na bersyon 1.0 na may mga HOTP at TOTP key, ang Manufacturer, SerialNo at Model ng DeviceInfo, ang ResponseFormat (6 hanggang 8 decimal digit), isang plain na Counter, Time (0 lamang) at TimeInterval; plaintext (tinatanggihan sa product mode maliban kung may pskc.allowPlaintextImport), isang pre-shared key (section 6.1: AES-128/192/256-CBC at KW-AES) at isang passphrase (section 6.2: PBKDF2), na unang sinusuri ang ValueMAC ng section 6.1.1 (HMAC-SHA1 at ang mga SHA-2 MAC). Sinubok laban sa sariling Figures 2 hanggang 7 ng RFC (tests/pskc.js). HINDI sakop: encryption sa isang sertipiko (6.3), MAC key sa pamamagitan ng reference, Triple DES at Camellia, naka-encrypt na counter o time, mga PIN key at policy (nilalaktawan), mga signature sa container (section 7), at paggawa ng isa."
@@ -3123,11 +3131,19 @@
     "en": "9547cda6898c37a6",
     "text": "humihingi ng post-quantum na passkey pagkatapos ng sign-in, saka itinatatag ang sign-on session na pinigil nito"
   },
-  "stsmetadata.endpoints./authn/roles.what": {
+"stsmetadata.endpoints./wsapi/2.0/verify.what": {
+    "en": "ff0550a4318594c6",
+    "text": "VALIDATION PROTOCOL 2.0 NG YUBICO (#1955 P5). GET o POST ng id, otp, nonce at h. Naka-off bilang default: sumasagot ang route ng OPERATION_NOT_ALLOWED at walang nilalagda. Kapag naka-on, sinusuri ang client id at ang HMAC-SHA1 sa bawat mode, kasama ang development; naaalala ang nonce nang limang minuto; ginagastos ang tumugmang OTP. Cache-Control: no-store. Walang ipinapadala sa YubiCloud."
+  },
+"stsmetadata.endpoints./wsapi/2.0/verify.effect": {
+    "en": "bb2bc4011c8240ac",
+    "text": "sinusuri ang isang YubiKey OTP para sa client na lumagda sa request, o sumasagot ng OPERATION_NOT_ALLOWED habang naka-off ang yubiotp.ykval"
+  },
+"stsmetadata.endpoints./authn/roles.what": {
     "en": "88814e89f81f8d86",
     "text": "MGA DYNAMIC NA MAPIPILING TUNGKULIN (#1072). Pagkatapos ng lahat ng factor, ang pag-sign in sa application na ang realm ay may dynamic na tungkulin (maliban kung pinapatay ito ng roles.dynamicSelection o ng appDynamicRoleSelection ng application) ay PINAPAHINTO habang pinagpapasyahan para sa tao ang patakarang XACML ng bawat dynamic na tungkulin; Permit lang ang nag-aalok ng tungkulin. Kapag tinsek ng tao ang \"Pumili ng mga tungkulin para sa pag-sign in na ito\", o may iniaalok na kailangang tungkulin, inililista ng pahinang ito ang mapipili; ang Magpatuloy (/authn-api/mfa/{id}/roles) ay sinusuri ang pinili laban sa alok ng hakbang at muli sa mga patakaran, at sinisimulan ang session na nakatala ang pinili sa session record, hindi kailanman sa directory. Dadalhin ng token para sa application na iyon ang mga piniling tungkulin, bawat isa ay muling sinusuri sa patakaran nito sa bawat pag-isyu. Kailangan ng ?mfa= id mula sa pinahintong pag-sign in; kapag wala, 400 ang sagot."
   },
-  "stsmetadata.endpoints./authn/roles.effect": {
+"stsmetadata.endpoints./authn/roles.effect": {
     "en": "fc2116e31d3ead37",
     "text": "nagtatanong kung aling mga dynamic na mapipiling tungkulin ang gagamitin sa pag-sign in na ito, saka sinisimulan ang pinahintong session kasama ang pinili"
   },
@@ -4126,6 +4142,10 @@
   "stsmetadata.protocols.One-time passwords (TOTP).what": {
     "en": "54893544268bf168",
     "text": "Ang isa pang ikalawang factor sa sign-in screen na pinagpapadalhan ng bawat protocol dito sa isang tao, at ang tanging credential bukod sa Kerberos ticket na tunay na SINUSURI ng serbisyong ito: kinakalkula ang code mula sa shared secret at sa orasan at inihahambing, sa parehong mode, na ipinapatupad ang accept-once rule ng RFC 6238 section 5.2. Ang enrolment ay isang QR code na iginuhit ng server na ito, sa /portal/mfa o habang ginagamit ang activation link; ang sariling row ng tao sa /admin/users ang lugar kung saan ito ini-clear ng operator, at ang /admin/totp ang lugar kung saan kino-configure ang mekanismo. Mula #1955 P4, pati ang counter-based na kapatid nito: isang RFC 4226 HOTP token (isang YubiKey OTP slot, ini-enroll sa /portal/mfa, o token ng vendor na in-import mula sa RFC 6030 seed file nito sa Directory → Mga hardware token at in-assign o kinlaim ayon sa serial), na isinusulong ang counter sa pamamagitan ng compare-and-set, at tinatanggap sa bawat pinto na tumatanggap ng code."
+  },
+  "stsmetadata.protocols.Yubico OTP.what": {
+    "en": "462bb8049dda11d0",
+    "text": "Isang YubiKey OTP slot na sinusuri sa serbisyong ito (#1955 P5). Nanatili rito ang AES-128 key, kaya ang pag-sign in ay amr otp at hindi kailanman hwk. Naka-off ang enrolment, assignment at claim hanggang yubiotp.offered; ang credential na hawak na ay sinusuri pa rin sa hakbang ng one-time code. Ang GET at POST /wsapi/2.0/verify ay YK-VAL 2.0 at nananatiling OPERATION_NOT_ALLOWED hanggang yubiotp.ykval. Walang request na ipinapadala sa YubiCloud."
   },
   "stsmetadata.protocols.Recovery codes.what": {
     "en": "b7c9347c7ac4a2b7",

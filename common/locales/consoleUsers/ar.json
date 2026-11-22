@@ -1008,5 +1008,12 @@
   "mfaSection.hotpImported": "مستورد من ملف بذور المورّد: {vendor}، الرقم التسلسلي {serial}",
   "mfaSection.hotpEnrolled": "سجّله الشخص (رمز QR أو ykman)",
   "mfaSection.hotpUnusable": "لا يمكن قراءة سرّه هنا، لذا تُرفض رموزه.",
-  "mfaSection.clearHotp": "مسح رمز الرموز لمرة واحدة"
+  "mfaSection.clearHotp": "مسح رمز الرموز لمرة واحدة",
+  "mfaSection.yubiHeading": "YubiKey OTP",
+  "mfaSection.yubiSource": "كيفية التزويد",
+  "mfaSection.yubiImported": "مستورد من CSV: الرقم التسلسلي {serial}",
+  "mfaSection.yubiEnrolled": "سجّله الشخص (ykman)",
+  "mfaSection.yubiUnusable": "لا يمكن قراءة سره هنا، لذا تُرفض كلمات مروره.",
+  "mfaSection.yubiPublicId": "الهوية العامة",
+  "mfaSection.clearYubi": "مسح YubiKey OTP"
 }

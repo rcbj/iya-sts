@@ -1339,6 +1339,22 @@
     "en": "4bc7180cc29f1f53",
     "text": "Wie weit voraus nach zwei AUFEINANDERFOLGENDEN Codes gesucht wird, wenn eine Person ein Token neu synchronisiert, das aus der Vorausschau gefallen ist (RFC 4226 Abschnitt 7.4). Zwei Codes hintereinander sind weit schwerer zu erraten als einer, und das macht die größere Suche sicher. Sofort wirksam."
   },
+  "yubiotp.offered|label": {
+    "en": "9f41692d832fec07",
+    "text": "YubiKey-OTP-Registrierung anbieten"
+  },
+  "yubiotp.offered|description": {
+    "en": "5a0403877f662a53",
+    "text": "Ob eine Person einen YubiKey-OTP-Slot registrieren darf und ob ein Administrator einen zuweisen oder eine Person einen beanspruchen darf. Standardmäßig aus. Ein bereits gehaltenes Geheimnis wird am Schritt für den Einmalcode weiterhin geprüft. Der AES-Schlüssel bleibt auf diesem Dienst, daher ist die Anmeldung amr otp und niemals hwk."
+  },
+  "yubiotp.ykval|label": {
+    "en": "f309f289c5ecddcd",
+    "text": "Den YK-VAL-2.0-Prüfendpunkt beantworten"
+  },
+  "yubiotp.ykval|description": {
+    "en": "eba10509dc6d104d",
+    "text": "Ob GET und POST /wsapi/2.0/verify ein YubiKey-OTP für einen Client prüfen, der die Anfrage signiert hat (YK-VAL 2.0). Standardmäßig aus, und die Route antwortet dann OPERATION_NOT_ALLOWED. An werden die Client-Kennung und der HMAC-SHA1 in jedem Modus geprüft, einschließlich der Entwicklung. Es wird keine Anfrage an YubiCloud gesendet."
+  },
   "backupCodes.count|label": {
     "en": "91b6e4a086244cce",
     "text": "Codes in einem Satz"
@@ -3298,6 +3314,14 @@
 "pskc.allowPlaintextImport|description": {
     "en": "7efe34e872e4772e",
     "text": "Ob ein Administrator im Produktmodus eine PSKC-Seed-Datei (RFC 6030) importieren darf, deren Token-Geheimnisse NICHT verschlüsselt sind. Standardmäßig aus: eine solche Datei war auf jeder Festplatte und in jedem Postfach, das sie durchlaufen hat, eine Liste funktionierender zweiter Faktoren, und ein Hersteller kann sie unter einem vorab geteilten Schlüssel oder einem Passwort verschlüsseln (Abschnitte 6.1 und 6.2). Der Entwicklungsmodus nimmt eine solche Datei in jedem Fall an."
+  },
+"yubiotp.allowPlaintextImport|label": {
+    "en": "b1c1ac235f98cc47",
+    "text": "YubiKey-OTP-CSV-Dateien im Klartext im Produktmodus annehmen"
+  },
+"yubiotp.allowPlaintextImport|description": {
+    "en": "f409449d46d5831a",
+    "text": "Ob ein Administrator im Produktmodus eine CSV mit YubiKey-OTP-Geheimnissen (Seriennummer, öffentliche Identität, private Identität, AES-Schlüssel) importieren darf. Standardmäßig aus: die Datei ist eine Liste funktionierender zweiter Faktoren. Der Entwicklungsmodus nimmt eine solche Datei in jedem Fall an. Die Geheimnisse werden versiegelt, wenn die Datei angenommen wird, und die Datei wird nicht behalten."
   },
 "openpgp.wkd|label": {
     "en": "1f05a7518c3d2275",

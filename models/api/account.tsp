@@ -3258,10 +3258,10 @@ op `getMfa`(`responses/200/content/application~1json/schema`: WithUsernameVerifi
   
 
 @js(#{
-    `description`:"The step: `start` an authenticator app, `confirm` it with a code, `remove` it; `hotp-start`, `hotp-confirm`, `hotp-resync` (two consecutive codes) or `hotp-remove` a one-time code token (RFC 4226); `generate-codes`, `confirm-codes` or `discard-codes` a set of recovery codes; `email-factor-on` or `email-factor-off`."
+    `description`:"The step: `start` an authenticator app, `confirm` it with a code, `remove` it; `hotp-start`, `hotp-confirm`, `hotp-resync` (two consecutive codes) or `hotp-remove` a one-time code token (RFC 4226); `yubiotp-start`, `yubiotp-confirm` or `yubiotp-remove` a YubiKey OTP, or `yubiotp-claim` one an administrator imported (`serial` and `code`); `generate-codes`, `confirm-codes` or `discard-codes` a set of recovery codes; `email-factor-on` or `email-factor-off`."
   }) @hoisted union post_account_api_mfa_b_application_json_action_h255 {
     EmptyText,
-    "start" | "confirm" | "remove" | "hotp-start" | "hotp-confirm" | "hotp-resync" | "hotp-remove" | "generate-codes" | "confirm-codes" | "discard-codes" | "email-factor-on" | "email-factor-off"
+    "start" | "confirm" | "remove" | "hotp-start" | "hotp-confirm" | "hotp-resync" | "hotp-remove" | "yubiotp-start" | "yubiotp-confirm" | "yubiotp-remove" | "yubiotp-claim" | "generate-codes" | "confirm-codes" | "discard-codes" | "email-factor-on" | "email-factor-off"
   }
 
   
@@ -3276,7 +3276,7 @@ op `getMfa`(`responses/200/content/application~1json/schema`: WithUsernameVerifi
     `operationId`:"changeMfa",
     `tags`:#["Authenticator app"],
     `summary`:"Sets up, confirms or removes your second factors",
-    `description`:"`start` mints a secret and holds it (ask the view for the QR code); `confirm` checks a code from the app (rate limited) and enrols it; `remove` takes it off, and ends every session its codes signed in (`sessionsEnded`, #722). `hotp-start`, `hotp-confirm` and `hotp-remove` do the same for a counter-based one-time code token (RFC 4226, #1955) — the view's `hotp.setup` carries its otpauth://hotp QR code and the `ykman` command that programs a YubiKey's OTP slot — and `hotp-resync` brings back a token pressed too often from two consecutive codes (`code`, `code2`; rate limited). `generate-codes` answers a set of recovery codes ONCE, in `view.fresh`, and stores nothing; `confirm-codes` stores their hashes; `discard-codes` throws the pending set away. `email-factor-on` (with `kind`) and `email-factor-off` opt in and out of the emailed second factor. A refusal carries the page's `view`.\n\nThe door of the portal's `POST /portal/mfa`.",
+    `description`:"`start` mints a secret and holds it (ask the view for the QR code); `confirm` checks a code from the app (rate limited) and enrols it; `remove` takes it off, and ends every session its codes signed in (`sessionsEnded`, #722). `hotp-start`, `hotp-confirm` and `hotp-remove` do the same for a counter-based one-time code token (RFC 4226, #1955) — the view's `hotp.setup` carries its otpauth://hotp QR code and the `ykman` command that programs a YubiKey's OTP slot — and `hotp-resync` brings back a token pressed too often from two consecutive codes (`code`, `code2`; rate limited). `yubiotp-start` and `yubiotp-confirm` do the same for a YubiKey OTP slot (Yubico's published OTP, #1955 P5): the view's `yubiotp.setup` carries the `ykman` command, shown once and not logged, and `code` is the OTP the key types (up to 48 modhex characters). `yubiotp-claim` takes `serial` and `code` for a token an administrator imported. `yubiotp-remove` takes it off. `generate-codes` answers a set of recovery codes ONCE, in `view.fresh`, and stores nothing; `confirm-codes` stores their hashes; `discard-codes` throws the pending set away. `email-factor-on` (with `kind`) and `email-factor-off` opt in and out of the emailed second factor. A refusal carries the page's `view`.\n\nThe door of the portal's `POST /portal/mfa`.",
     `parameters`:#[
 
     ],
@@ -3314,8 +3314,9 @@ op `getMfa`(`responses/200/content/application~1json/schema`: WithUsernameVerifi
 op `changeMfa`(`requestBody/content/application~1json/schema`: {
     `action`?: post_account_api_mfa_b_application_json_action_h255;
     `kind`?: post_account_api_mfa_b_application_json_kind_h257;
-    @js(#{`description`:"For `confirm` and `hotp-confirm`: the code the app or token shows; for `hotp-resync`, the first of two consecutive codes.",`maxLength`:32}) `code`?: string;
+    @js(#{`description`:"For `confirm` and `hotp-confirm`: the code the app or token shows; for `hotp-resync`, the first of two consecutive codes; for `yubiotp-confirm` and `yubiotp-claim`, the OTP the YubiKey types (32 to 48 modhex characters).",`maxLength`:64}) `code`?: string;
     @js(#{`description`:"For `hotp-resync`: the code the token showed next.",`maxLength`:32}) `code2`?: string;
+    @js(#{`description`:"For `yubiotp-claim`: the serial of a YubiKey OTP an administrator imported.",`maxLength`:64}) `serial`?: string;
     @js(#{
       `description`:"For `confirm-codes` and `discard-codes`: the pending set's handle, from `generate-codes`'s answer.",
       `maxLength`:128
@@ -4844,7 +4845,7 @@ op `actOnDevices`(`requestBody/content/application~1json/schema`: {
 
 // #1955 P1: THE PERSON'S HARDWARE TOKENS (`portal/account_tokens.ts`).
 @hoisted model HardwareTokenPortalCredential {
-  @js(#{`description`:"The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token; later `yubico-otp`, `ssh`, `openpgp`)."}) `kind`: string;
+  @js(#{`description`:"The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token), and since P5 `yubico-otp` (later `ssh`, `openpgp`)."}) `kind`: string;
   @js(#{`description`:"Its name, where it has one."}) `label`: string;
   @js(#{`description`:"When it was recorded on the token, ISO 8601."}) `addedAt`: string;
   @js(#{`description`:"Whether the lost-key act retired it."}) `retired`: boolean

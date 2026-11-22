@@ -1008,5 +1008,12 @@
   "mfaSection.hotpImported": "Importé depuis le fichier de semences du fournisseur : {vendor}, numéro de série {serial}",
   "mfaSection.hotpEnrolled": "Enrôlé par la personne (code QR ou ykman)",
   "mfaSection.hotpUnusable": "Son secret ne peut pas être lu ici : ses codes sont donc refusés.",
-  "mfaSection.clearHotp": "Effacer le jeton de codes à usage unique"
+  "mfaSection.clearHotp": "Effacer le jeton de codes à usage unique",
+  "mfaSection.yubiHeading": "YubiKey OTP",
+  "mfaSection.yubiSource": "Provisionné",
+  "mfaSection.yubiImported": "Importé depuis un CSV : numéro de série {serial}",
+  "mfaSection.yubiEnrolled": "Enrôlé par la personne (ykman)",
+  "mfaSection.yubiUnusable": "Son secret ne peut pas être lu ici, donc ses mots de passe sont refusés.",
+  "mfaSection.yubiPublicId": "Identité publique",
+  "mfaSection.clearYubi": "Effacer le YubiKey OTP"
 }

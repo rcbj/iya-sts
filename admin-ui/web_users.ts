@@ -2047,6 +2047,38 @@ class UsersPage {
               t.html('consoleUsers.mfaSection.clearHotp') +
               '</button></div></form>'
             : kit.note(t.html('consoleUsers.mfaSection.clearingNeedsWrite')))
+        : '') +
+      // A YUBIKEY OTP (#1955 P5): the public identity and how it was
+      // provisioned. The AES key is never on this page. Clear is the same
+      // evidence rule as the one-time code token.
+      (mech.yubi
+        ? '<h3>' + t.html('consoleUsers.mfaSection.yubiHeading') + '</h3>' +
+          '<table class="kv"><tr><th>' +
+          t.html('consoleUsers.mfaSection.yubiSource') + '</th><td>' +
+          (mech.yubiDetail && mech.yubiDetail.source === 'csv-import'
+            ? t.html('consoleUsers.mfaSection.yubiImported', {
+                serial: String(mech.yubiDetail.serial || '') })
+            : t.html('consoleUsers.mfaSection.yubiEnrolled')) +
+          (mech.yubiUsable ? '' : ' <strong>' +
+            t.html('consoleUsers.mfaSection.yubiUnusable') + '</strong>') +
+          '</td></tr><tr><th>' +
+          t.html('consoleUsers.mfaSection.yubiPublicId') + '</th><td>' +
+          kit.esc((mech.yubiDetail && mech.yubiDetail.publicId) || '—') +
+          '</td></tr><tr><th>' +
+          t.html('consoleUsers.mfaSection.lastCode') + '</th><td>' +
+          kit.esc(mech.yubiDetail && mech.yubiDetail.lastUsedAt
+            ? kit.whenText(mech.yubiDetail.lastUsedAt)
+            : t.text('consoleUsers.body.never')) + '</td></tr></table>' +
+          (state.write
+            ? '<form method="post" action="/admin/users">' +
+              '<input type="hidden" name="action" value="clear-yubi">' +
+              UsersPage.evidenceField(t) +
+              '<input type="hidden" name="user" value="' + kit.esc(key) +
+              '">' + carryBack +
+              '<div class="formrow"><button class="danger">' +
+              t.html('consoleUsers.mfaSection.clearYubi') +
+              '</button></div></form>'
+            : kit.note(t.html('consoleUsers.mfaSection.clearingNeedsWrite')))
         : '');
 
     // --- passkeys

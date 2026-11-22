@@ -323,6 +323,14 @@
     "en": "608274a83bf567cd",
     "text": "Un código de un solo uso RFC 4226 de un token basado en contador (#1955): la ranura OTP de una YubiKey, o el token de un proveedor que un administrador importó de un archivo de semillas PSKC. Nunca es un primer factor. Si está desactivado aquí, nadie puede INSCRIBIR ni reclamar uno; a quien ya tiene uno se le sigue pidiendo, como al titular de una aplicación de autenticación."
   },
+  "authn.FIELDS.yubicoOtpSecondFactor.label": {
+    "en": "cba1439d0faf9aaf",
+    "text": "OTP de YubiKey — como segundo factor"
+  },
+  "authn.FIELDS.yubicoOtpSecondFactor.what": {
+    "en": "f8f7a6ee5bbb46a8",
+    "text": "Una OTP de YubiKey (la contraseña de un solo uso en modhex publicada por Yubico, #1955). Nunca un primer factor: este servicio guarda la clave AES. Desactivada aquí, nadie puede INSCRIBIR, asignar o reclamar una, aunque yubiotp.offered esté activado; a quien ya tiene una se le sigue pidiendo."
+  },
   "authn.FIELDS.recoveryCodeSecondFactor.label": {
     "en": "ee9982b48a9c6a90",
     "text": "Código de recuperación — como segundo factor"
@@ -507,6 +515,10 @@
     "en": "608274a83bf567cd",
     "text": "Un código de un solo uso RFC 4226 de un token basado en contador (#1955): la ranura OTP de una YubiKey, o el token de un proveedor que un administrador importó de un archivo de semillas PSKC. Nunca es un primer factor. Si está desactivado aquí, nadie puede INSCRIBIR ni reclamar uno; a quien ya tiene uno se le sigue pidiendo, como al titular de una aplicación de autenticación."
   },
+  "authn.SCHEMA.attributes.stsAuthnYubicoOtpSecondFactor.what": {
+    "en": "f8f7a6ee5bbb46a8",
+    "text": "Una OTP de YubiKey (la contraseña de un solo uso en modhex publicada por Yubico, #1955). Nunca un primer factor: este servicio guarda la clave AES. Desactivada aquí, nadie puede INSCRIBIR, asignar o reclamar una, aunque yubiotp.offered esté activado; a quien ya tiene una se le sigue pidiendo."
+  },
   "authn.SCHEMA.attributes.stsAuthnRecoveryCodeSecondFactor.what": {
     "en": "e93ab2adc3e581bd",
     "text": "Un código de un solo uso de un juego que la persona generó. Desactivado aquí, no se puede generar un juego nuevo; un juego que ya se tiene sigue funcionando (esta fila reemplazó a backupCodes.enabled y mantiene su contrato)."
@@ -580,8 +592,8 @@
     "text": "En una política de autenticación CON NOMBRE (#1148, #1237): un mecanismo de primer factor que permite un inicio de sesión al que se aplica — cuando la aplicación (appAuthnPolicy) o uno de los grupos de la persona (stsAuthnPolicy) la indica y su precedencia es la menor de las indicadas —: password, password-mfa, webauthn, attested-hardware (una llave de acceso o un certificado en un token de hardware probado por atestación, #1955), spnego, wallet o federation, un valor cada uno. Si no hay ninguno, se permiten todos los que permite el dominio."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicySecondFactor.what": {
-    "en": "e0ae8297bb01119f",
-    "text": "En una política de autenticación CON NOMBRE (#1148, #1237): un segundo factor que permite un inicio de sesión al que se aplica — donde la aplicación (appAuthnPolicy) o uno de los grupos de la persona (stsAuthnPolicy) la nombra y su precedencia es la más baja nombrada — password, securityKey, totp, hotp, recoveryCode, emailCode, emailLink o wallet, un valor cada uno. Sin ninguno, la política de autenticación del dominio queda como está."
+    "en": "9302ca05693fd970",
+    "text": "En una política de autenticación CON NOMBRE (#1148, #1237): un segundo factor que permite un inicio de sesión al que se aplica — donde la aplicación (appAuthnPolicy) o uno de los grupos de la persona (stsAuthnPolicy) la nombra y su precedencia es la más baja nombrada — password, securityKey, totp, hotp, yubico-otp, recoveryCode, emailCode, emailLink o wallet, un valor cada uno. Sin ninguno, la política de autenticación del dominio queda como está."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicyPrecedence.what": {
     "en": "afff5dad656a9845",
@@ -634,6 +646,14 @@
   "authn.MECHANISMS.hotp.what": {
     "en": "608274a83bf567cd",
     "text": "Un código de un solo uso RFC 4226 de un token basado en contador (#1955): la ranura OTP de una YubiKey, o el token de un proveedor que un administrador importó de un archivo de semillas PSKC. Nunca es un primer factor. Si está desactivado aquí, nadie puede INSCRIBIR ni reclamar uno; a quien ya tiene uno se le sigue pidiendo, como al titular de una aplicación de autenticación."
+  },
+  "authn.MECHANISMS.yubico-otp.label": {
+    "en": "01f8772904333b7b",
+    "text": "OTP de YubiKey"
+  },
+  "authn.MECHANISMS.yubico-otp.what": {
+    "en": "f8f7a6ee5bbb46a8",
+    "text": "Una OTP de YubiKey (la contraseña de un solo uso en modhex publicada por Yubico, #1955). Nunca un primer factor: este servicio guarda la clave AES. Desactivada aquí, nadie puede INSCRIBIR, asignar o reclamar una, aunque yubiotp.offered esté activado; a quien ya tiene una se le sigue pidiendo."
   },
   "authn.MECHANISMS.recoveryCode.label": {
     "en": "5bda8302b5ecf4d3",

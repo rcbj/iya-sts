@@ -1503,6 +1503,50 @@
     "en": "e08e19def21e22b2",
     "text": "الإعدادات الحية"
   },
+  "crypto.families.yubico-otp.signs": {
+    "en": "c340996ced9d9758",
+    "text": "لا شيء يغادر هذه الخدمة، إلا HMAC-SHA1 الذي يتحقق منه عميل YK-VAL على /wsapi/2.0/verify. إن OTP نفسه هو AES-128-ECB لكتلة من 16 بايتًا، يُقارن بعد فك تشفيره، ولهذا تعيش البدائية في common/crypto.js."
+  },
+  "crypto.families.yubico-otp.verifies": {
+    "en": "f7cf070e5067a77f",
+    "text": "OTP مقدَّم: تختار الهوية العامة بيانات الاعتماد، وتُفك الكتلة تحت مفتاح AES-128 الخاص بها، وباقي CRC-16 هو 0xf0b8، وتطابق الهوية الخاصة. يجب أن يكون عدّاد الاستخدام وعدّاد استخدام الجلسة، كقيمة واحدة، أعلى بصرامة من آخر قيمة قُبلت. لا يُفحص الطابع الزمني. يُفحص HMAC-SHA1 لطلب YK-VAL، في كل وضع، عندما يكون yubiotp.ykval مفعّلًا."
+  },
+  "crypto.families.yubico-otp.encrypts": {
+    "en": "3802bf3b62081ea2",
+    "text": "مفتاح AES والهوية الخاصة في حالة السكون، كقيمة JSON مختومة واحدة، تحت مفتاح تشفير المفاتيح، في وضع المنتج. في وضع التطوير يُولَّد مفتاح تشفير المفاتيح لكل تشغيل، فتُخزَّن القيمة بنص صريح وتقول ذلك."
+  },
+  "crypto.families.yubico-otp.decrypts": {
+    "en": "560652ba098dd545",
+    "text": "تلك القيمة المختومة، لفحص OTP. يحتفظ الخادم بمفتاح AES، لذا يكون تسجيل الدخول amr otp وليس hwk أبدًا."
+  },
+  "crypto.families.yubico-otp.hashes": {
+    "en": "761a28a6805e3023",
+    "text": "لا شيء. إن CRC هو CRC-16، كثير الحدود 0x8408. توقيع YK-VAL هو HMAC-SHA1."
+  },
+  "crypto.families.yubico-otp.whatItDoesNot": {
+    "en": "a977ea47369edb7c",
+    "text": "لا يستدعي YubiCloud أبدًا. لا يفحص الطابع الزمني أبدًا. لا يسجّل فتحة أبدًا ما دام yubiotp.offered معطّلًا، ولا يجيب YK-VAL أبدًا ما دام yubiotp.ykval معطّلًا. لا يسجّل أبدًا سطر البرمجة ولا مفتاح HMAC لعميل."
+  },
+  "crypto.families.yubico-otp.algorithms.0.what": {
+    "en": "6c0e6acd35694622",
+    "text": "OTP"
+  },
+  "crypto.families.yubico-otp.algorithms.1.what": {
+    "en": "ac57b0e667bf3ec1",
+    "text": "الأبجدية"
+  },
+  "crypto.families.yubico-otp.algorithms.2.what": {
+    "en": "ee4fcdc3401859da",
+    "text": "CRC"
+  },
+  "crypto.families.yubico-otp.algorithms.3.what": {
+    "en": "c8dae6371b33b8d6",
+    "text": "إعادة الإرسال"
+  },
+  "crypto.families.yubico-otp.algorithms.4.what": {
+    "en": "7ff6cc8a39bc9224",
+    "text": "YubiCloud"
+  },
   "crypto.families.recovery-codes.signs": {
     "en": "e07d5c09c87dcaf1",
     "text": "لا شيء. لا MAC ولا توقيع في أي موضع من هذه الآلية — رمز الاسترداد سلسلة عشوائية تُفحص مقابل تجزئة مخزَّنة لواحد منها، وذلك كل الفرق عن صف TOTP أعلاه حيث «الرمز» HMAC مبتور."

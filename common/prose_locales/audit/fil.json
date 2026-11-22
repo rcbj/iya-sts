@@ -255,6 +255,30 @@
     "en": "01c45765b9c3cd87",
     "text": "Hindi na-resynchronize ang isang one-time code token"
   },
+  "audit.actions.portal.yubiotp.started.label": {
+    "en": "b206def4fb8ccc3d",
+    "text": "May pinakitaan ng programming line ng YubiKey OTP"
+  },
+  "audit.actions.portal.yubiotp.enrolled.label": {
+    "en": "00886a6cb1cc407b",
+    "text": "May nag-set up ng YubiKey OTP sa sarili niyang account"
+  },
+  "audit.actions.portal.yubiotp.refused.label": {
+    "en": "bd0fa598eb880f3a",
+    "text": "Hindi nakumpirma ang pag-set up ng isang YubiKey OTP"
+  },
+  "audit.actions.portal.yubiotp.removed.label": {
+    "en": "57e0e2f87367e090",
+    "text": "May nag-alis ng YubiKey OTP sa sarili niyang account"
+  },
+  "audit.actions.portal.yubiotp.claimed.label": {
+    "en": "452306461ebd5b17",
+    "text": "May nag-claim ng na-import na YubiKey OTP"
+  },
+  "audit.actions.portal.yubiotp.claim-refused.label": {
+    "en": "2f50c910534b974e",
+    "text": "Hindi na-claim ang isang YubiKey OTP"
+  },
   "audit.actions.portal.activate.mfa.started.label": {
     "en": "df561a24375c8165",
     "text": "May authenticator-app secret na ipinakita habang ginagamit ang isang activation link"
@@ -543,6 +567,30 @@
     "en": "92d69a1a2d848892",
     "text": "Inalis sa inventory ang isang hindi naka-assign na OATH token"
   },
+"audit.actions.yubiotp.import.label": {
+    "en": "6f92401fa557c5e6",
+    "text": "Na-import ang isang YubiKey OTP CSV, o tinanggihan"
+  },
+"audit.actions.yubiotp.assign.label": {
+    "en": "c4f793ef7a16734a",
+    "text": "Na-assign ang isang imported YubiKey OTP sa isang tao"
+  },
+"audit.actions.yubiotp.claim.label": {
+    "en": "08d55e823350bd4a",
+    "text": "May taong nag-claim ng imported YubiKey OTP, o tinanggihan ang claim"
+  },
+"audit.actions.yubiotp.remove.label": {
+    "en": "a4a9aedd10cc2813",
+    "text": "Inalis sa inventory ang isang hindi naka-assign na YubiKey OTP"
+  },
+"audit.actions.yubiotp.client-add.label": {
+    "en": "40676cb783f36097",
+    "text": "Nilikha ang isang YK-VAL client"
+  },
+"audit.actions.yubiotp.client-remove.label": {
+    "en": "92433c797106d523",
+    "text": "Inalis ang isang YK-VAL client"
+  },
 "audit.actions.openpgp.challenge.label": {
     "en": "454a22b5bcd9d6a2",
     "text": "May na-issue na challenge para sa pagrehistro ng OpenPGP key"
@@ -754,6 +802,10 @@
   "audit.actions.admin.mfa.hotp.cleared.label": {
     "en": "027dab5576016e61",
     "text": "Ni-clear ng isang operator ang one-time code token ng isang tao"
+  },
+  "audit.actions.admin.mfa.yubiotp.cleared.label": {
+    "en": "f075ff8b6c725197",
+    "text": "Inalis ng isang operator ang YubiKey OTP ng isang tao"
   },
   "audit.actions.admin.mfa.key.cleared.label": {
     "en": "d62700d9f7751e8b",

@@ -535,6 +535,14 @@
     "en": "5ab7b9d048e74e7e",
     "text": "full, del lado del verificador, SOLO COMO SEGUNDO FACTOR (#1955 P4): el truncamiento dinámico de la sección 5.3 sobre HMAC-SHA-1, SHA-256 o SHA-512, de seis a ocho dígitos, el contador un valor big-endian de ocho bytes, comprobado contra los propios vectores de prueba del apéndice D (tests/totp.js, tests/hotp.js); un contador por credencial con la anticipación de la sección 7.4 (hotp.window, 10 de forma predeterminada, 0 válido) y la resincronización a partir de dos códigos consecutivos (hotp.resyncWindow); el rechazo de reproducción de la sección 7.2, con el contador avanzado mediante compare-and-set en el almacén para que dos nodos o workers nunca acepten un mismo código; la limitación de la sección 7.3 mediante el presupuesto de códigos del inicio de sesión. Una ranura OTP de YubiKey se programa desde el código otpauth://hotp o el comando ykman del portal; el token de un proveedor se importa (RFC 6030). Obtiene amr otp, y hwk solo para un token importado. NO cubierto: el esquema de retardo de la sección 7.3 como tal (el presupuesto rechaza en su lugar), y OCRA (RFC 6287)."
   },
+  "stsmetadata.specs.yubico-otp.coverage": {
+    "en": "57c44d60416042fb",
+    "text": "partial, lado verificador (#1955 P5): el OTP publicado, una identidad pública modhex seguida de un bloque AES-128-ECB sin relleno, residuo CRC-16 0xf0b8, y los contadores de uso y de sesión avanzados por compare-and-set para que un OTP se acepte una sola vez. No se comprueba la marca de tiempo. La inscripción está desactivada de forma predeterminada (yubiotp.offered). amr otp, nunca hwk, porque este servicio conserva la clave AES. NO cubierto: YubiCloud, y cualquier comprobación de la marca de tiempo."
+  },
+  "stsmetadata.specs.yk-val.coverage": {
+    "en": "0adaef8d27031f8f",
+    "text": "partial, como servidor de validación (#1955 P5): GET y POST /wsapi/2.0/verify con id, otp, nonce y h, HMAC-SHA1 sobre los parámetros ordenados, y los estados OK, BAD_OTP, BAD_SIGNATURE, MISSING_PARAMETER, NO_SUCH_CLIENT, OPERATION_NOT_ALLOWED, BACKEND_ERROR, REPLAYED_OTP y REPLAYED_REQUEST. Desactivado de forma predeterminada (yubiotp.ykval). Activado, el id del cliente y el HMAC se comprueban en todos los modos. La respuesta lleva sl=100. NO cubierto: el cliente YubiCloud, y un porcentaje de sincronización distinto de 100."
+  },
   "stsmetadata.specs.rfc6030.coverage": {
     "en": "35ef81e9394eb5f5",
     "text": "partial, como RECEPTOR (#1955 P4): un KeyContainer de versión 1.0 con claves HOTP y TOTP, Manufacturer, SerialNo y Model de DeviceInfo, el ResponseFormat (de 6 a 8 dígitos decimales), un Counter simple, Time (solo 0) y TimeInterval; texto sin cifrar (rechazado en modo producto salvo con pskc.allowPlaintextImport), una clave precompartida (sección 6.1: AES-128/192/256-CBC y KW-AES) y una frase de contraseña (sección 6.2: PBKDF2), comprobando primero el ValueMAC de la sección 6.1.1 (HMAC-SHA1 y los MAC SHA-2). Comprobado contra las propias Figures 2 a 7 del RFC (tests/pskc.js). NO cubierto: el cifrado para un certificado (6.3), una clave MAC por referencia, Triple DES y Camellia, un contador o una hora cifrados, las claves y políticas de PIN (omitidas), las firmas sobre el contenedor (sección 7) y la generación de uno."
@@ -3123,11 +3131,19 @@
     "en": "9547cda6898c37a6",
     "text": "pide una llave de acceso poscuántica después de un inicio de sesión y luego establece la sesión de inicio de sesión que retenía"
   },
-  "stsmetadata.endpoints./authn/roles.what": {
+"stsmetadata.endpoints./wsapi/2.0/verify.what": {
+    "en": "ff0550a4318594c6",
+    "text": "PROTOCOLO DE VALIDACIÓN 2.0 DE YUBICO (#1955 P5). GET o POST de id, otp, nonce y h. Desactivado de forma predeterminada: la ruta responde OPERATION_NOT_ALLOWED y no firma nada. Activado, el id del cliente y el HMAC-SHA1 se comprueban en todos los modos, incluido el de desarrollo; un nonce se recuerda cinco minutos; un OTP coincidente se gasta. Cache-Control: no-store. No se envía nada a YubiCloud."
+  },
+"stsmetadata.endpoints./wsapi/2.0/verify.effect": {
+    "en": "bb2bc4011c8240ac",
+    "text": "comprueba un OTP YubiKey para un cliente que firmó la solicitud, o responde OPERATION_NOT_ALLOWED mientras yubiotp.ykval está desactivado"
+  },
+"stsmetadata.endpoints./authn/roles.what": {
     "en": "88814e89f81f8d86",
     "text": "ROLES DINÁMICOS SELECCIONABLES (#1072). Tras todos los factores, un inicio de sesión en una aplicación cuyo dominio define un rol dinámico (salvo que roles.dynamicSelection o appDynamicRoleSelection de la aplicación lo desactiven) queda RETENIDO mientras se decide para la persona la política de elegibilidad XACML de cada rol dinámico; solo Permit ofrece un rol. Si la persona marcó «Elegir roles para este inicio de sesión» o se ofrece un rol obligatorio, esta página enumera lo que puede elegirse; Continuar (/authn-api/mfa/{id}/roles) contrasta la elección con la oferta del paso y de nuevo con las políticas, y inicia la sesión con ella en el registro de sesión, nunca en el directorio. Un token para esa aplicación lleva entonces los roles elegidos, cada uno consultado de nuevo con su política en cada emisión. Necesita un identificador ?mfa= emitido por el inicio de sesión retenido; seguido sin él responde 400."
   },
-  "stsmetadata.endpoints./authn/roles.effect": {
+"stsmetadata.endpoints./authn/roles.effect": {
     "en": "fc2116e31d3ead37",
     "text": "pregunta qué roles dinámicos seleccionables usar en este inicio de sesión y luego establece la sesión retenida con esa elección"
   },
@@ -4126,6 +4142,10 @@
   "stsmetadata.protocols.One-time passwords (TOTP).what": {
     "en": "54893544268bf168",
     "text": "El otro segundo factor de la pantalla de inicio de sesión a la que cada protocolo de aquí envía a una persona, y la única credencial, además de un ticket Kerberos, que este servicio COMPRUEBA de verdad: el código se calcula a partir del secreto compartido y el reloj y se compara, en ambos modos, aplicando la regla de aceptación única de RFC 6238 sección 5.2. La inscripción es un código QR que este servidor dibujó, en /portal/mfa o mientras se usa un enlace de activación; la fila propia de la persona en /admin/users es donde un operador lo borra, y /admin/totp es donde se configura el mecanismo. Desde #1955 P4 también su equivalente basado en contador: un token HOTP RFC 4226 (una ranura OTP de YubiKey, inscrita en /portal/mfa, o el token de un proveedor importado de su archivo de semillas RFC 6030 en Directorio → Tokens de hardware y asignado o reclamado por número de serie), con su contador avanzado mediante compare-and-set, aceptado en cada punto que admite un código."
+  },
+  "stsmetadata.protocols.Yubico OTP.what": {
+    "en": "462bb8049dda11d0",
+    "text": "Una ranura de OTP YubiKey comprobada en este servicio (#1955 P5). La clave AES-128 permanece aquí, así que un inicio de sesión es amr otp y nunca hwk. La inscripción, la asignación y una reclamación permanecen desactivadas hasta yubiotp.offered; una credencial ya en posesión se sigue comprobando en el paso del código de un solo uso. GET y POST /wsapi/2.0/verify son YK-VAL 2.0 y siguen en OPERATION_NOT_ALLOWED hasta yubiotp.ykval. No se envía ninguna solicitud a YubiCloud."
   },
   "stsmetadata.protocols.Recovery codes.what": {
     "en": "b7c9347c7ac4a2b7",

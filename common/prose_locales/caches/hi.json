@@ -1683,6 +1683,22 @@
     "en": "484401484f6f539d",
     "text": "एक टिकट उसके डाइजेस्ट से मिला"
   },
+  "caches.store.yubiotp.inventory.title": {
+    "en": "f2915b8ab9e4a37c",
+    "text": "Yubico OTP सूची"
+  },
+  "caches.store.yubiotp.inventory.description": {
+    "en": "c58db5407fb1dcbe",
+    "text": "हर उस YubiKey OTP के लिए एक पंक्ति जिसे किसी व्यवस्थापक ने CSV से आयात किया, सीरियल नंबर से कुंजीबद्ध: असाइन नहीं (उसकी AES कुंजी सील), किसी व्यक्ति को असाइन (सीक्रेट हटाया गया, अब उसकी प्रविष्टि पर) या सेवानिवृत्त।"
+  },
+  "caches.store.yubiotp.inventory.bound": {
+    "en": "9f558f556a019acc",
+    "text": "किसी प्रक्रिया द्वारा रखी गई पंक्तियाँ प्रति रीयल्म 5,000 का कैश हैं।"
+  },
+  "caches.store.yubiotp.inventory.lifetime": {
+    "en": "4f13467dac65d62f",
+    "text": "जब तक असाइन न किया गया टोकन हटाया न जाए; असाइन या सेवानिवृत्त टोकन रखा जाता है।"
+  },
   "caches.lru.default.description": {
     "en": "777e71be96460478",
     "text": "सबसे-कम-हाल-में-उपयोग क्रम में एक परिबद्ध कैश।"

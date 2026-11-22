@@ -535,6 +535,14 @@
     "en": "5ab7b9d048e74e7e",
     "text": "full：验证方一侧，仅作为第二因素（#1955 P4）：第 5.3 节基于 HMAC-SHA-1、SHA-256 或 SHA-512 的动态截断，六到八位数字，计数器为八字节大端值，已对照附录 D 自身的测试向量验证（tests/totp.js、tests/hotp.js）；每个凭据一个计数器，带第 7.4 节的前瞻（hotp.window，默认 10，0 合法）以及通过两个连续验证码重新同步（hotp.resyncWindow）；第 7.2 节的重放拒绝，计数器在存储中以 compare-and-set 推进，因此两个节点或 worker 绝不会接受同一个验证码；通过登录的验证码预算实现第 7.3 节的限流。YubiKey OTP 插槽通过门户的 otpauth://hotp 码或 ykman 命令编程；供应商的令牌通过导入（RFC 6030）。它获得 amr otp，仅导入的令牌获得 hwk。未涵盖：第 7.3 节的延迟方案本身（改由预算拒绝），以及 OCRA（RFC 6287）。"
   },
+  "stsmetadata.specs.yubico-otp.coverage": {
+    "en": "57c44d60416042fb",
+    "text": "partial，验证方（#1955 P5）：已发布的 OTP，一段 modhex 公开身份后接一个无填充的 AES-128-ECB 块，CRC-16 余数 0xf0b8，使用计数器与会话计数器通过 compare-and-set 推进，使一个 OTP 只被接受一次。不检查时间戳。登记默认关闭（yubiotp.offered）。amr otp，从不为 hwk，因为本服务持有 AES 密钥。未覆盖：YubiCloud，以及对时间戳的任何检查。"
+  },
+  "stsmetadata.specs.yk-val.coverage": {
+    "en": "0adaef8d27031f8f",
+    "text": "partial，作为验证服务器（#1955 P5）：带有 id、otp、nonce 和 h 的 GET 与 POST /wsapi/2.0/verify，对排序后的参数做 HMAC-SHA1，以及状态 OK、BAD_OTP、BAD_SIGNATURE、MISSING_PARAMETER、NO_SUCH_CLIENT、OPERATION_NOT_ALLOWED、BACKEND_ERROR、REPLAYED_OTP 和 REPLAYED_REQUEST。默认关闭（yubiotp.ykval）。开启后，在每种模式下核验客户端 id 与 HMAC。应答携带 sl=100。未覆盖：YubiCloud 客户端，以及不是 100 的同步百分比。"
+  },
   "stsmetadata.specs.rfc6030.coverage": {
     "en": "35ef81e9394eb5f5",
     "text": "partial：作为接收方（#1955 P4）：版本 1.0 的 KeyContainer，包含 HOTP 和 TOTP 密钥，DeviceInfo 的 Manufacturer、SerialNo 和 Model，ResponseFormat（6 到 8 位十进制数字），普通 Counter、Time（仅 0）和 TimeInterval；明文（产品模式下拒绝，除非启用 pskc.allowPlaintextImport）、预共享密钥（第 6.1 节：AES-128/192/256-CBC 和 KW-AES）和口令（第 6.2 节：PBKDF2），并先校验第 6.1.1 节的 ValueMAC（HMAC-SHA1 和 SHA-2 MAC）。已对照 RFC 自身的 Figures 2 到 7 验证（tests/pskc.js）。未涵盖：为证书加密（6.3）、按引用提供的 MAC 密钥、Triple DES 和 Camellia、加密的计数器或时间、PIN 密钥和策略（跳过）、容器上的签名（第 7 节），以及生成此类文件。"
@@ -3123,11 +3131,19 @@
     "en": "9547cda6898c37a6",
     "text": "在登录后要求一个后量子通行密钥，然后建立其暂扣的单点登录会话"
   },
-  "stsmetadata.endpoints./authn/roles.what": {
+"stsmetadata.endpoints./wsapi/2.0/verify.what": {
+    "en": "ff0550a4318594c6",
+    "text": "YUBICO 验证协议 2.0（#1955 P5）。id、otp、nonce 和 h 的 GET 或 POST。默认关闭：路由应答 OPERATION_NOT_ALLOWED 且不签名。开启后，在包括开发模式在内的每种模式下核验客户端 id 与 HMAC-SHA1；nonce 保留五分钟；匹配的 OTP 被消耗。Cache-Control: no-store。不向 YubiCloud 发送任何内容。"
+  },
+"stsmetadata.endpoints./wsapi/2.0/verify.effect": {
+    "en": "bb2bc4011c8240ac",
+    "text": "为签署了请求的客户端核验 YubiKey OTP，或在 yubiotp.ykval 关闭时应答 OPERATION_NOT_ALLOWED"
+  },
+"stsmetadata.endpoints./authn/roles.what": {
     "en": "88814e89f81f8d86",
     "text": "可动态选择的角色（#1072）。完成所有认证因素后，对于其领域定义了动态角色的应用程序（除非 roles.dynamicSelection 或应用程序的 appDynamicRoleSelection 将其关闭），登录会被暂停，同时为此人判定每个动态角色自身的 XACML 资格策略；只有 Permit 才会提供角色。如果此人勾选了“为此次登录选择角色”，或者提供了必选角色，此页面会列出可选的角色；“继续”（/authn-api/mfa/{id}/roles）会将选择与该步骤的提供内容以及策略再次核对，然后启动会话，并将选择记录在会话记录中，绝不写入目录。之后该应用程序的令牌会携带所选角色，每次签发时都会再次按其策略判定。需要由被暂停的登录生成的 ?mfa= 标识；直接访问会返回 400。"
   },
-  "stsmetadata.endpoints./authn/roles.effect": {
+"stsmetadata.endpoints./authn/roles.effect": {
     "en": "fc2116e31d3ead37",
     "text": "询问此次登录要使用哪些可动态选择的角色，然后以该选择启动被暂停的会话"
   },
@@ -4126,6 +4142,10 @@
   "stsmetadata.protocols.One-time passwords (TOTP).what": {
     "en": "54893544268bf168",
     "text": "此处每个协议都会把用户送往的登录界面上的另一种第二因素，也是除 Kerberos 票据外本服务唯一真正检查的凭据：验证码由共享密钥和时钟计算并比较，两种模式下都执行 RFC 6238 第 5.2 节的一次性接受规则。注册是本服务器绘制的二维码，在 /portal/mfa 或使用激活链接时完成；操作员在 /admin/users 上此人自己的那一行中清除它，/admin/totp 则是配置该机制的地方。自 #1955 P4 起还包括其基于计数器的同类：RFC 4226 HOTP 令牌（YubiKey OTP 插槽，在 /portal/mfa 注册；或供应商的令牌，在 目录 → 硬件令牌 从其 RFC 6030 种子文件导入，并按序列号分配或认领），其计数器以 compare-and-set 推进，在每个接受验证码的入口都被接受。"
+  },
+  "stsmetadata.protocols.Yubico OTP.what": {
+    "en": "462bb8049dda11d0",
+    "text": "在本服务上核验的 YubiKey OTP 槽位（#1955 P5）。AES-128 密钥留在这里，因此登录为 amr otp，从不为 hwk。在 yubiotp.offered 开启之前，登记、分配和认领保持关闭；已持有的凭据仍会在一次性验证码步骤被核验。GET 与 POST /wsapi/2.0/verify 是 YK-VAL 2.0，在 yubiotp.ykval 开启之前保持 OPERATION_NOT_ALLOWED。不向 YubiCloud 发送任何请求。"
   },
   "stsmetadata.protocols.Recovery codes.what": {
     "en": "b7c9347c7ac4a2b7",

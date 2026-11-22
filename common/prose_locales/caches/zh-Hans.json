@@ -1683,6 +1683,22 @@
     "en": "484401484f6f539d",
     "text": "按摘要找到了一个票据"
   },
+  "caches.store.yubiotp.inventory.title": {
+    "en": "f2915b8ab9e4a37c",
+    "text": "Yubico OTP 清单"
+  },
+  "caches.store.yubiotp.inventory.description": {
+    "en": "c58db5407fb1dcbe",
+    "text": "管理员从 CSV 导入的每个 YubiKey OTP 各占一行，按序列号索引：未分配（其 AES 密钥已密封）、已分配给某人（密钥已删除，现位于其条目上）或已停用。"
+  },
+  "caches.store.yubiotp.inventory.bound": {
+    "en": "9f558f556a019acc",
+    "text": "进程持有的行是每个领域 5,000 条的缓存。"
+  },
+  "caches.store.yubiotp.inventory.lifetime": {
+    "en": "4f13467dac65d62f",
+    "text": "直到未分配的令牌被移除；已分配或已停用的令牌会被保留。"
+  },
   "caches.lru.default.description": {
     "en": "777e71be96460478",
     "text": "按最近最少使用顺序排列的有界缓存。"

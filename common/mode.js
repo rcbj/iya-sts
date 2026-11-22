@@ -665,6 +665,17 @@ function refusesPlaintextSeedFiles() {
 }
 
 /**
+ * @returns true when a YubiKey CSV carrying its AES keys in plaintext is
+ *   refused (#1955 P5), unless yubiotp.allowPlaintextImport is on
+ */
+function refusesPlaintextYubiCsv() {
+  log.debug("Entering refusesPlaintextYubiCsv().");
+  log.debug("Leaving refusesPlaintextYubiCsv().");
+  return isProduct() &&
+    config.value('yubiotp.allowPlaintextImport') !== true;
+}
+
+/**
  * @returns true when the key-encryption keys and the database passwords must
  *   come from a secret store or a key management service, not from a file on
  *   the host or the connection string (ASVS 5.0.0 13.3.1)
@@ -3377,6 +3388,15 @@ const REQUIREMENTS = [
              'one is opened with the key or password given with the upload, ' +
              'which is never stored.',
     where: 'common/pskc.ts, common/oath_tokens.ts' },
+  // #1955 P5: `refusesPlaintextYubiCsv()`.
+  { id: 'plaintext-yubiotp-csv',
+    what: 'A YubiKey OTP seed file must not be a list of AES keys',
+    development: 'A CSV of serial, public id, private id and AES key is ' +
+                 'imported like any other inventory file.',
+    product: 'That CSV is refused unless yubiotp.allowPlaintextImport is ' +
+             'on. The keys are sealed once the file is accepted, and the ' +
+             'file itself is not kept.',
+    where: 'common/yubiotp.ts, common/yubiotp_store.ts' },
   // ASVS 5.0.0 13.3.1.
   // ASVS 5.0.0 7.6.2.
   { id: 'sso-consent',
@@ -5022,6 +5042,7 @@ module.exports = {
   refusesPlainSyslog: refusesPlainSyslog,
   refusesDefaultDatabasePassword: refusesDefaultDatabasePassword,
   refusesPlaintextSeedFiles: refusesPlaintextSeedFiles,
+  refusesPlaintextYubiCsv: refusesPlaintextYubiCsv,
   requiresSecretStore: requiresSecretStore,
   redactsRequestLog: redactsRequestLog,
   requiresTypedLogoutToken: requiresTypedLogoutToken,

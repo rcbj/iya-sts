@@ -1008,5 +1008,12 @@
   "mfaSection.hotpImported": "Na-import mula sa seed file ng vendor: {vendor} serial {serial}",
   "mfaSection.hotpEnrolled": "Ini-enroll ng tao (QR code o ykman)",
   "mfaSection.hotpUnusable": "Hindi mabasa rito ang secret nito, kaya tinatanggihan ang mga code nito.",
-  "mfaSection.clearHotp": "I-clear ang one-time code token"
+  "mfaSection.clearHotp": "I-clear ang one-time code token",
+  "mfaSection.yubiHeading": "YubiKey OTP",
+  "mfaSection.yubiSource": "Kung paano ito na-provision",
+  "mfaSection.yubiImported": "Inangkat mula sa CSV: serial {serial}",
+  "mfaSection.yubiEnrolled": "Inirehistro ng tao (ykman)",
+  "mfaSection.yubiUnusable": "Hindi mabasa rito ang sikreto, kaya tinatanggihan ang mga password nito.",
+  "mfaSection.yubiPublicId": "Pampublikong pagkakakilanlan",
+  "mfaSection.clearYubi": "I-clear ang YubiKey OTP"
 }

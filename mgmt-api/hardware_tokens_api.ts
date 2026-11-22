@@ -52,6 +52,8 @@ interface HardwareTokensApiDeps {
   loadTokens(): Json;
   // #1955 P4: the imported OATH token inventory, the same way.
   loadOath(): Json;
+  // #1955 P5: the YubiKey OTP inventory and the YK-VAL clients.
+  loadYubi(): Json;
   // The PIV enrolment form and escrow (#1955 P2), lazily, for the same
   // reason.
   loadPivEnrolment(): Json;
@@ -94,6 +96,9 @@ class HardwareTokensApi {
       },
       loadOath: function (): Json {
         return require('../common/oath_tokens');
+      },
+      loadYubi: function (): Json {
+        return require('../common/yubiotp_store');
       },
       loadPivEnrolment: function (): Json {
         return require('../common/piv_enrolment');
@@ -228,6 +233,11 @@ class HardwareTokensApi {
   static readonly OATH_ACTIONS = ['import-pskc', 'assign-oath',
                                   'remove-oath'];
 
+  /** The YubiKey OTP acts on the same route (#1955 P5). */
+  static readonly YUBI_ACTIONS = ['import-yubiotp', 'assign-yubiotp',
+                                  'remove-yubiotp', 'ykval-client-add',
+                                  'ykval-client-remove'];
+
   // -------------------------------------------------------------------------
   // THE OATH ACTS (#1955 P4). `import-pskc` takes the seed file's XML text
   // and its pre-shared key or password, which reach `pskc.open()` and
@@ -308,6 +318,99 @@ class HardwareTokensApi {
       self.sendJson(res, 500, { ok: false, errors: [
         'The OATH token inventory could not be changed.'] });
       log.debug("Leaving HardwareTokensApi.oathAction(). Threw.");
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // THE YUBIKEY OTP ACTS (#1955 P5). The CSV and the OTP reach the store
+  // and nothing else: no log line names them. A YK-VAL client's HMAC key
+  // is answered once, on create, and is not logged.
+  // -------------------------------------------------------------------------
+  /**
+   * Carries out one YubiKey OTP act and answers it.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param action - one of YUBI_ACTIONS
+   * @param body - the parsed body
+   * @param actor - the token's subject
+   */
+  yubiAction(req: Json, res: Json, action: string, body: Json,
+             actor: string): void {
+    const { log, errorCodes: codes } = this.deps;
+    log.debug("Entering HardwareTokensApi.yubiAction(). " + action);
+    const self = this;
+    const yubi = this.deps.loadYubi();
+    Promise.resolve().then(function (): Json {
+      if (action === 'import-yubiotp') {
+        return yubi.importCsv({ csv: String(body.csv || ''),
+                                actor: actor, via: 'api' });
+      }
+      if (action === 'assign-yubiotp') {
+        return yubi.assign({ serial: String(body.serial || ''),
+                             username: String(body.username || ''),
+                             otp: String(body.otp || ''),
+                             actor: actor, via: 'api' });
+      }
+      if (action === 'remove-yubiotp') {
+        return yubi.remove({ serial: String(body.serial || ''),
+                             actor: actor, via: 'api' });
+      }
+      if (action === 'ykval-client-add') {
+        return yubi.addClient({ id: String(body.id || ''), actor: actor });
+      }
+      return yubi.removeClient({ id: String(body.id || ''), actor: actor });
+    }).then(function (result: Json): void {
+      if (!result || !result.ok) {
+        // error-code: none — the act's own code, read off the result
+        const code = codes.codeOf(result) || 'STS-YUBIOTP-0027';
+        const missing = code === 'STS-YUBIOTP-0023' ||
+                        code === 'STS-YUBIOTP-0015';
+        const conflict = code === 'STS-YUBIOTP-0022';
+        codes.mark(res, code);
+        self.sendJson(res, missing ? 404 : (conflict ? 409 : 400),
+          { ok: false, errors: (result && result.errors) ||
+                               [String((result && result.error) || '')] });
+        log.debug("Leaving HardwareTokensApi.yubiAction(). Refused.");
+        return;
+      }
+      if (action === 'import-yubiotp') {
+        self.sendJson(res, 200, { ok: true,
+          message: result.imported.length + ' YubiKey OTP row(s) ' +
+                   'imported, ' + result.skipped.length + ' skipped.',
+          imported: result.imported,
+          skipped: (result.skipped || []).map(function (r: Json): Json {
+            return { serial: String(r.serial || ''),
+                     why: String(r.why || '') };
+          }) });
+      } else if (action === 'assign-yubiotp') {
+        self.sendJson(res, 200, { ok: true,
+          message: 'YubiKey OTP ' + result.token.serial +
+                   ' is assigned to ' + result.token.holder + '.',
+          token: result.token });
+      } else if (action === 'remove-yubiotp') {
+        self.sendJson(res, 200, { ok: true,
+          message: 'YubiKey OTP ' + result.serial +
+                   ' is removed from the inventory.',
+          serial: String(result.serial) });
+      } else if (action === 'ykval-client-add') {
+        self.sendJson(res, 200, { ok: true,
+          message: 'YK-VAL client ' + result.id +
+                   ' is created. Its key is shown once.',
+          id: String(result.id), key: String(result.key) });
+      } else {
+        self.sendJson(res, 200, { ok: true,
+          message: 'YK-VAL client ' + result.id + ' is removed.',
+          id: String(result.id) });
+      }
+      log.debug("Leaving HardwareTokensApi.yubiAction(). Done.");
+    }, function (e: any): void {
+      log.error(codes.tag('STS-YUBIOTP-0027') + 'a YubiKey OTP act (' +
+                action + ') failed: ' + ((e && e.message) || e));
+      codes.mark(res, 'STS-YUBIOTP-0027');
+      self.sendJson(res, 500, { ok: false, errors: [
+        'The YubiKey OTP inventory could not be changed.'] });
+      log.debug("Leaving HardwareTokensApi.yubiAction(). Threw.");
     });
   }
 
@@ -513,11 +616,18 @@ class HardwareTokensApi {
                       "action. An OATH act.");
             return;
           }
+          if (HardwareTokensApi.YUBI_ACTIONS.indexOf(action) >= 0) {
+            self.yubiAction(req, res, action, body, actor);
+            log.debug("Leaving the management API hardware tokens " +
+                      "action. A YubiKey OTP act.");
+            return;
+          }
           if (ACTIONS.indexOf(action) < 0) {
             codes.mark(res, 'STS-HWTOKEN-0012');
             self.sendJson(res, 400, { ok: false, errors: [
               'Unknown action "' + action.slice(0, 64) + '". The actions ' +
               'are: ' + ACTIONS.concat(HardwareTokensApi.OATH_ACTIONS)
+                .concat(HardwareTokensApi.YUBI_ACTIONS)
                 .join(', ') + '.'] });
             log.debug("Leaving the management API hardware tokens " +
                       "action. Unknown.");
@@ -581,6 +691,12 @@ class HardwareTokensApi {
           { action: 'import-pskc', operationId: 'importPskcSeedFile' },
           { action: 'assign-oath', operationId: 'assignOathToken' },
           { action: 'remove-oath', operationId: 'removeOathToken' },
+          { action: 'import-yubiotp', operationId: 'importYubiOtpCsv' },
+          { action: 'assign-yubiotp', operationId: 'assignYubiOtp' },
+          { action: 'remove-yubiotp', operationId: 'removeYubiOtp' },
+          { action: 'ykval-client-add', operationId: 'addYkvalClient' },
+          { action: 'ykval-client-remove',
+            operationId: 'removeYkvalClient' },
           { action: 'enrol-piv', operationId: 'enrolPivCertificate' },
           { action: 'recover-key', operationId: 'recoverEscrowedPivKey' }
         ] }),

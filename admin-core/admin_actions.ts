@@ -379,6 +379,8 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        'clear-totp', 'clear-key', 'clear-backup-codes',
                        // A one-time code token (#1955 P4).
                        'clear-hotp',
+                       // A YubiKey OTP (#1955 P5).
+                       'clear-yubi',
                        // A passkey's name (#470, rcbj's decision D).
                        'rename-key',
                        // A legacy U2F credential imported (#1955 P7).
@@ -747,7 +749,9 @@ const SAML11_RP_KIND = saml11.RP_KIND;
  */
 const MFA_ACTIONS = ['clear-totp', 'clear-key', 'clear-email-factor',
                      // #1955 P4: a one-time code token.
-                     'clear-hotp'];
+                     'clear-hotp',
+                     // #1955 P5: a YubiKey OTP.
+                     'clear-yubi'];
 
 // The shortest statement of how a person's identity was verified (#1504).
 const MIN_EVIDENCE_LENGTH = 8;
@@ -4998,6 +5002,63 @@ class AdminActions {
       log.debug("Leaving AdminActions.usersAction(). clear-hotp " +
                 (result.ok ? "ok." : "refused."));
       return this.refusedBy('STS-ADMIN-0520', result);
+    }
+
+    // ---------------------------------------------------------------------
+    // A YUBIKEY OTP (#1955 P5): the same act as clear-hotp. The AES key is
+    // held here, so clearing takes it off the entry and retires the public
+    // identity. A token lost with the key is better reported lost
+    // (Directory → Hardware tokens), which retires every credential on it.
+    // ---------------------------------------------------------------------
+    if (action === 'clear-yubi') {
+      const who = String(body.user || body.username || '').trim();
+      if (!who) {
+        log.debug("Leaving AdminActions.usersAction(). No person named.");
+        return this.refused('STS-ADMIN-0518', { ok: false,
+          errors: ['Name the person whose YubiKey OTP is being cleared.'] });
+      }
+      const unproved = this.evidenceRefusal(body);
+      if (unproved) {
+        log.debug("Leaving AdminActions.usersAction(). No evidence.");
+        return unproved;
+      }
+      if (!credentials.yubiStatusOf(who)) {
+        log.debug("Leaving AdminActions.usersAction(). No YubiKey OTP.");
+        return this.refused('STS-YUBIOTP-0030', { ok: false,
+          errors: ['No YubiKey OTP is enrolled for ' + who + '.'] });
+      }
+      const result = credentials.removeYubiOtp(who);
+      const ended = result.ok
+        ? this.endFactorSessions(who, { kind: 'yubiotp' }, ctx,
+                                 'the YubiKey OTP')
+        : null;
+      auditLog.record({
+        category: 'authentication', action: 'admin.mfa.yubiotp.cleared',
+        actor: ctx.actor, target: who,
+        outcome: result.ok ? 'success' : 'failure',
+        summary: (result.ok ? 'cleared' : 'could not clear') +
+                 ' the YubiKey OTP of ' + who,
+        detail: { username: who, via: ctx.via,
+                  evidence: this.evidenceOf(body),
+                  sessionsEnded: ended ? ended.sessionsEnded : undefined,
+                  errors: result.ok ? undefined : (result.errors || []) }
+      });
+      if (result.ok) {
+        accountSignals.credentialChanged({ username: who,
+          credentialType: accountSignals.YUBIOTP_CREDENTIAL_TYPE,
+          changeType: 'delete', via: ctx.via,
+          reasonAdmin: 'An administrator cleared the YubiKey OTP of ' +
+                       who + '.',
+          reasonUser: 'Your YubiKey OTP was removed from your account.' });
+        log.info('admin: the YubiKey OTP of "' + who + '" was cleared by ' +
+                 (ctx.actor || 'an unnamed caller') + ' (' + ctx.via + ').');
+        result.sessionsEnded = ended ? ended.sessionsEnded : 0;
+        result.message = 'The YubiKey OTP of ' + who + ' is cleared.' +
+          (ended ? this.sessionsEndedSentence(ended) : '');
+      }
+      log.debug("Leaving AdminActions.usersAction(). clear-yubi " +
+                (result.ok ? "ok." : "refused."));
+      return this.refusedBy('STS-YUBIOTP-0010', result);
     }
 
     // ---------------------------------------------------------------------

@@ -671,6 +671,14 @@
     "en": "167f79e724fe8b34",
     "text": "Inaalis ang bawat User-Managed Access permission ticket, persisted claims token, RPT record at nakabinbing owner approval na lampas na sa buhay nito (#1168). Ang read mismo ang nag-a-apply ng deadline, kaya ito ang paglilinis, hindi kailanman ang nagpapasya."
   },
+  "sched.jobs.yubiotp.nonce-sweep.title": {
+    "en": "dce74787b5ae6954",
+    "text": "Pagwawalis ng nonce ng Yubico OTP"
+  },
+  "sched.jobs.yubiotp.nonce-sweep.describe": {
+    "en": "21922132f2f9b5f8",
+    "text": "Inaalis ang mga YK-VAL nonce na mas matanda sa limang minuto, at ang mga pinakamatanda lampas sa sampung libo, para hindi lumaki ang nonce map."
+  },
   "sched.sentence.onDemand": {
     "en": "92e0ecb68dc6ec36",
     "text": "kapag hiniling lang"

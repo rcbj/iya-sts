@@ -789,6 +789,26 @@ function checkOpenPgpStores(t) {
 }
 
 // ---------------------------------------------------------------------------
+// 5c-iv. THE YUBIKEY OTP STORES (#1955 P5): the inventory, the public-id
+// index, the YK-VAL clients and the nonce map, each declared per realm.
+// ---------------------------------------------------------------------------
+function checkYubiOtpStores(t) {
+  log.debug("Entering checkYubiOtpStores().");
+  t.log.info('the YubiKey OTP stores');
+  require('../common/yubiotp_store');
+  ['yubiotp.inventory', 'yubiotp.publicIds', 'yubiotp.ykvalClients',
+   'yubiotp.nonces'].forEach(function (name) {
+    const handle = realms.handleFor(name);
+    t.check(!!handle, name + ' is a declared store');
+    if (handle) {
+      t.equal(handle.scope, 'realm', name + ' is declared PER REALM',
+              String(handle.scope));
+    }
+  });
+  log.debug("Leaving checkYubiOtpStores().");
+}
+
+// ---------------------------------------------------------------------------
 // 5d. GNAP (2026-09-12): twelve stores in `gnap/gnap_store.ts`, the approver
 // index in `gnap/gnap_signals.ts` and the counters in `gnap/gnap_monitor.ts`.
 //
@@ -928,6 +948,7 @@ function run(t) {
   checkKerberosStores(t);
   checkHardwareTokenStore(t);
   checkOathTokenStore(t);
+  checkYubiOtpStores(t);
   checkOpenPgpStores(t);
   checkGnapStores(t);
   checkChildStores(t);

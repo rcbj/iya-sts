@@ -2530,6 +2530,16 @@ in the authentication policy leaves existing enrolments in place are under
 [The TOTP settings](#the-totp-settings-and-the-two-that-behave-differently-from-the-rest)
 above.
 
+### YubiKey OTP
+
+A YubiKey OTP slot checked on this service. [YubiKey OTP](yubiotp.md) is the guide. Enrolment is off by default. There is no console page of its own: `yubiotp.offered` and `yubiotp.ykval` are in this group, and the import switch is under Devices.
+
+| Appconfig key | Environment variable | Default | Change while running? | What it does |
+|---|---|---|---|---|
+| `yubiotp.offered` | `STS_YUBIOTP_OFFERED` | `false` | yes | Whether a person may enrol a YubiKey OTP slot, and whether an administrator may assign one or a person may claim one. Off by default. A credential already held is still checked at the one-time-code step. The AES key stays on this service, so the sign-in is `amr` `otp` and never `hwk`. |
+| `yubiotp.ykval` | `STS_YUBIOTP_YKVAL` | `false` | yes | Whether `GET` and `POST /wsapi/2.0/verify` check a YubiKey OTP for a client that signed the request (YK-VAL 2.0). Off by default, and the route then answers `OPERATION_NOT_ALLOWED`. On, the client id and the HMAC-SHA1 are checked in every mode, including development. No request is sent to YubiCloud. |
+| `yubiotp.allowPlaintextImport` | `STS_YUBIOTP_ALLOW_PLAINTEXT_IMPORT` | `false` | yes | Whether an administrator may import a CSV of YubiKey OTP secrets in product mode. Off by default. Development mode accepts one regardless. The secrets are sealed when the file is accepted, and the file is not kept. The setting's group in the console is Devices. |
+
 ### Backup codes
 
 Recovery codes — the way back in when the second factor is not to hand. Drawn

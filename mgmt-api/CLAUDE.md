@@ -2980,6 +2980,9 @@ retired (0041) and for removing an assigned one (0049), 400 otherwise with
 the act's own code. `clear-hotp` is on `/admin-api/users` and
 `/admin-api/mfa` beside `clear-totp`, the same evidence rule, a recent
 sign-in (`REAUTHENTICATED_ACTIONS`), and its sessions ended.
+`clear-yubi` (#1955 P5) is on those same two routes: it takes the AES key
+off the entry, retires the public identity, and ends the sessions that
+OTP signed in. A person who holds none is STS-YUBIOTP-0030.
 
 **#1955 P2 adds two acts and one read** (`common/piv_enrolment.ts` argues
 them): `enrol-piv` (`{ username, profile, csr, attestationCertificate?,

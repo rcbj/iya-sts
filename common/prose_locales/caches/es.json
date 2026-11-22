@@ -1683,6 +1683,22 @@
     "en": "484401484f6f539d",
     "text": "se encontró un ticket por su resumen"
   },
+  "caches.store.yubiotp.inventory.title": {
+    "en": "f2915b8ab9e4a37c",
+    "text": "Inventario de OTP Yubico"
+  },
+  "caches.store.yubiotp.inventory.description": {
+    "en": "c58db5407fb1dcbe",
+    "text": "Una fila por cada OTP YubiKey que un administrador importó desde un CSV, indexada por número de serie: sin asignar (su clave AES sellada), asignada a una persona (el secreto eliminado, ahora en su entrada) o retirada."
+  },
+  "caches.store.yubiotp.inventory.bound": {
+    "en": "9f558f556a019acc",
+    "text": "Las filas que guarda un proceso son una caché de 5.000 por dominio."
+  },
+  "caches.store.yubiotp.inventory.lifetime": {
+    "en": "4f13467dac65d62f",
+    "text": "Hasta que se quita un token sin asignar; un token asignado o retirado se conserva."
+  },
   "caches.lru.default.description": {
     "en": "777e71be96460478",
     "text": "Una caché acotada en orden de uso menos reciente."

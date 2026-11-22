@@ -447,6 +447,19 @@ const ACTIONS = [
     label: 'Somebody resynchronised their one-time code token' },
   { action: 'portal.hotp.resync-refused', category: 'authentication',
     label: 'A one-time code token was not resynchronised' },
+  // A YUBIKEY OTP (#1955 P5). The programming line is never on the row.
+  { action: 'portal.yubiotp.started', category: 'authentication',
+    label: 'Somebody was shown a YubiKey OTP programming line' },
+  { action: 'portal.yubiotp.enrolled', category: 'authentication',
+    label: 'Somebody set up a YubiKey OTP on their own account' },
+  { action: 'portal.yubiotp.refused', category: 'authentication',
+    label: 'A YubiKey OTP setup was not confirmed' },
+  { action: 'portal.yubiotp.removed', category: 'authentication',
+    label: 'Somebody removed the YubiKey OTP from their own account' },
+  { action: 'portal.yubiotp.claimed', category: 'authentication',
+    label: 'Somebody claimed an imported YubiKey OTP' },
+  { action: 'portal.yubiotp.claim-refused', category: 'authentication',
+    label: 'A YubiKey OTP was not claimed' },
   // The same two acts inside an ACTIVATION, which is a different situation and
   // therefore a different row: nobody is signed in, and what authorises it is a
   // single-use link rather than a session. A reader filtering for "who set up a
@@ -692,6 +705,21 @@ const ACTIONS = [
     label: 'A person\'s claim of an imported OATH token was refused' },
   { action: 'oath-token.remove', category: 'directory',
     label: 'An unassigned OATH token was removed from the inventory' },
+  // THE YUBIKEY OTP INVENTORY (#1955 P5). `common/yubiotp_store.ts` writes
+  // each of these.
+  { action: 'yubiotp.import', category: 'directory',
+    label: 'A YubiKey OTP CSV was imported, or refused' },
+  { action: 'yubiotp.assign', category: 'directory',
+    label: 'An imported YubiKey OTP was assigned to a person' },
+  { action: 'yubiotp.claim', category: 'directory',
+    label: 'A person claimed an imported YubiKey OTP, or the claim was ' +
+           'refused' },
+  { action: 'yubiotp.remove', category: 'directory',
+    label: 'An unassigned YubiKey OTP was removed from the inventory' },
+  { action: 'yubiotp.client-add', category: 'directory',
+    label: 'A YK-VAL client was created' },
+  { action: 'yubiotp.client-remove', category: 'directory',
+    label: 'A YK-VAL client was removed' },
   // AN ESCROWED PIV KEY RECOVERED (#1955 P2, D7), by its holder or by an
   // administrator the access-control policy let; a refusal is the same row
   // with its code. `common/piv_enrolment.ts` writes it.
@@ -880,6 +908,8 @@ const ACTIONS = [
     label: 'An operator cleared somebody\'s authenticator app' },
   { action: 'admin.mfa.hotp.cleared', category: 'admin',
     label: 'An operator cleared somebody\'s one-time code token' },
+  { action: 'admin.mfa.yubiotp.cleared', category: 'admin',
+    label: 'An operator cleared somebody\'s YubiKey OTP' },
   { action: 'admin.mfa.key.cleared', category: 'admin',
     label: 'An operator removed somebody\'s security key' },
   { action: 'admin.mfa.key.renamed', category: 'admin',

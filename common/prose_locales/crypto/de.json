@@ -1503,6 +1503,50 @@
     "en": "e08e19def21e22b2",
     "text": "Aktuelle Einstellungen"
   },
+  "crypto.families.yubico-otp.signs": {
+    "en": "c340996ced9d9758",
+    "text": "Nichts, was diesen Dienst verlässt, außer dem HMAC-SHA1, den ein YK-VAL-Client auf /wsapi/2.0/verify prüft. Das OTP selbst ist AES-128-ECB eines 16-Byte-Blocks, verglichen nachdem er entschlüsselt wurde, und deshalb lebt die Primitive in common/crypto.js."
+  },
+  "crypto.families.yubico-otp.verifies": {
+    "en": "f7cf070e5067a77f",
+    "text": "Ein vorgelegtes OTP: die öffentliche Identität wählt das Geheimnis, der Block entschlüsselt sich unter seinem AES-128-Schlüssel, der CRC-16-Rest ist 0xf0b8, und die private Identität stimmt überein. Der Nutzungszähler und der Sitzungsnutzungszähler müssen als ein Wert streng über dem zuletzt angenommenen liegen. Der Zeitstempel wird nicht geprüft. Der HMAC-SHA1 einer YK-VAL-Anfrage, in jedem Modus, wenn yubiotp.ykval an ist."
+  },
+  "crypto.families.yubico-otp.encrypts": {
+    "en": "3802bf3b62081ea2",
+    "text": "Der AES-Schlüssel und die private Identität im Ruhezustand, als ein versiegelter JSON-Wert, unter dem Schlüsselverschlüsselungsschlüssel, im Produktmodus. Im Entwicklungsmodus wird der Schlüsselverschlüsselungsschlüssel je Lauf erzeugt, sodass der Wert im Klartext gespeichert wird und das sagt."
+  },
+  "crypto.families.yubico-otp.decrypts": {
+    "en": "560652ba098dd545",
+    "text": "Diesen versiegelten Wert, um ein OTP zu prüfen. Der Server hält den AES-Schlüssel, daher ist die Anmeldung amr otp und niemals hwk."
+  },
+  "crypto.families.yubico-otp.hashes": {
+    "en": "761a28a6805e3023",
+    "text": "Nichts. Der CRC ist CRC-16, Polynom 0x8408. Eine YK-VAL-Signatur ist HMAC-SHA1."
+  },
+  "crypto.families.yubico-otp.whatItDoesNot": {
+    "en": "a977ea47369edb7c",
+    "text": "Es ruft niemals YubiCloud auf. Es prüft niemals den Zeitstempel. Es registriert niemals einen Slot, solange yubiotp.offered aus ist, und es beantwortet YK-VAL niemals, solange yubiotp.ykval aus ist. Es schreibt niemals die Programmierzeile oder den HMAC-Schlüssel eines Clients ins Protokoll."
+  },
+  "crypto.families.yubico-otp.algorithms.0.what": {
+    "en": "6c0e6acd35694622",
+    "text": "OTP"
+  },
+  "crypto.families.yubico-otp.algorithms.1.what": {
+    "en": "ac57b0e667bf3ec1",
+    "text": "Alphabet"
+  },
+  "crypto.families.yubico-otp.algorithms.2.what": {
+    "en": "ee4fcdc3401859da",
+    "text": "CRC"
+  },
+  "crypto.families.yubico-otp.algorithms.3.what": {
+    "en": "c8dae6371b33b8d6",
+    "text": "Wiederholung"
+  },
+  "crypto.families.yubico-otp.algorithms.4.what": {
+    "en": "7ff6cc8a39bc9224",
+    "text": "YubiCloud"
+  },
   "crypto.families.recovery-codes.signs": {
     "en": "e07d5c09c87dcaf1",
     "text": "Nichts. In diesem Mechanismus gibt es nirgends einen MAC und keine Signatur — ein Wiederherstellungscode ist eine Zufallszeichenfolge, die gegen einen gespeicherten Hash eines solchen geprüft wird, und das ist der ganze Unterschied zur TOTP-Zeile oben, wo der „Code“ ein gekürzter HMAC ist."

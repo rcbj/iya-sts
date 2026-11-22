@@ -671,6 +671,14 @@
     "en": "167f79e724fe8b34",
     "text": "Tar bort varje behörighetsbiljett, beständig anspråkstoken, RPT-post och väntande ägargodkännande för User-Managed Access som passerat sin livstid (#1168). En läsning tillämpar tidsgränsen själv, så detta är städningen, aldrig det som avgör."
   },
+  "sched.jobs.yubiotp.nonce-sweep.title": {
+    "en": "dce74787b5ae6954",
+    "text": "Rensning av Yubico-OTP-nonces"
+  },
+  "sched.jobs.yubiotp.nonce-sweep.describe": {
+    "en": "21922132f2f9b5f8",
+    "text": "Tar bort YK-VAL-nonces som är äldre än fem minuter, och de äldsta över tiotusen, så att nonce-kartan inte växer."
+  },
   "sched.sentence.onDemand": {
     "en": "92e0ecb68dc6ec36",
     "text": "endast på begäran"

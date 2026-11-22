@@ -1911,7 +1911,11 @@
     "en": "69876d051e66729c",
     "text": "登录后活动步骤"
   },
-  "endpoints.route./authn/roles.name": {
+"endpoints.route./wsapi/2.0/verify.name": {
+    "en": "0734c12f6e3eb870",
+    "text": "YK-VAL 2.0 验证"
+  },
+"endpoints.route./authn/roles.name": {
     "en": "d10487ebcbc8b238",
     "text": "动态角色步骤"
   },

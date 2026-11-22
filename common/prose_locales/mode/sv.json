@@ -563,6 +563,18 @@
     "en": "e3eb9f2bcabf5eaa",
     "text": "En PSKC-fröfil vars tokenhemligheter är i klartext avvisas om inte pskc.allowPlaintextImport är på; en krypterad öppnas med den nyckel eller det lösenord som angavs vid uppladdningen, och som aldrig sparas."
   },
+  "mode.requirements.plaintext-yubiotp-csv.what": {
+    "en": "c349a97e52695bea",
+    "text": "En fröfil för YubiKey-OTP får inte vara en lista över AES-nycklar"
+  },
+  "mode.requirements.plaintext-yubiotp-csv.development": {
+    "en": "c1af70a4452cb90f",
+    "text": "En CSV med serienummer, publik identitet, privat identitet och AES-nyckel importeras som vilken annan inventariefil som helst."
+  },
+  "mode.requirements.plaintext-yubiotp-csv.product": {
+    "en": "3f75df0847c0e777",
+    "text": "Den CSV:n avvisas om inte yubiotp.allowPlaintextImport är på. Nycklarna förseglas när filen har godtagits, och själva filen behålls inte."
+  },
   "mode.requirements.sso-consent.what": {
     "en": "2b06d195aa0a395d",
     "text": "Enkel inloggning frågar innan den loggar in en person i ett program"

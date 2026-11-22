@@ -15,8 +15,8 @@
 // AUTHENTICATION POLICY the entry names (`appAuthnPolicy`) — the
 // authentication policy's second-factor mechanisms
 // (`common/authn_policy.ts`'s MECHANISMS, the ones that can take that role):
-// password, securityKey, totp, hotp, recoveryCode, emailCode, emailLink,
-// wallet.
+// password, securityKey, totp, hotp, yubico-otp, recoveryCode, emailCode,
+// emailLink, wallet.
 // `securityKey` names EVERY passkey the person holds alike since #1135
 // (until then, a key enrolled in the `mfa` role): a key has no role, and
 // this list, over the realm's policy, decides whether any key may answer
@@ -55,8 +55,8 @@
 //     `pop` in the `amr`). A passkey on its own is a FIRST factor (#474) and
 //     gives none. Any key may be either since #1135; the event says which
 //     it was.
-//   * `totp` → totp; `hotp` → hotp (#1955 P4); `backup-code` →
-//     recoveryCode.
+//   * `totp` → totp; `hotp` → hotp (#1955 P4); `yubiotp` → yubico-otp
+//     (#1955 P5); `backup-code` → recoveryCode.
 //   * `email-code` / `email-link` → emailCode / emailLink.
 //   * `password` → password (after a wallet); `wallet` → wallet (after a
 //     password).
@@ -96,8 +96,8 @@ if (logLevelProblem) {
 // The second-factor mechanisms, in the authentication policy's ids and its
 // order. `tests/mfa_mechanism_enforcement.js` holds this list to the
 // policy's MECHANISMS, so the two cannot drift.
-const IDS = ['password', 'securityKey', 'totp', 'hotp', 'recoveryCode',
-             'emailCode', 'emailLink', 'wallet'];
+const IDS = ['password', 'securityKey', 'totp', 'hotp', 'yubico-otp',
+             'recoveryCode', 'emailCode', 'emailLink', 'wallet'];
 
 // The credential kind a finisher names → the mechanism. `webauthn` is
 // decided in ofEvent(), because a passkey alone is a first factor.
@@ -105,6 +105,8 @@ const BY_CREDENTIAL: Record<string, string> = {
   'totp': 'totp',
   // #1955 P4: a counter-based token's code answers the same step.
   'hotp': 'hotp',
+  // The session records kind `yubiotp`; the policy's id is `yubico-otp`.
+  'yubiotp': 'yubico-otp',
   'backup-code': 'recoveryCode',
   'email-code': 'emailCode',
   'email-link': 'emailLink',
@@ -245,12 +247,14 @@ class MfaMechanisms {
    */
   static allowsStepFactor(allowed: string[], factor: unknown): boolean {
     log.debug('Entering MfaMechanisms.allowsStepFactor().');
-    // THE CODE STEP IS ONE STEP FOR TWO KINDS (#1955 P4): an authenticator
-    // app's code and an HOTP token's are both typed into it, so it may be
-    // asked for where either is listed. The kind that answered is the
-    // event's (`ofEvent()`), and the issuance policy holds THAT to the list.
+    // THE CODE STEP IS ONE STEP FOR THREE KINDS (#1955 P4, P5): an
+    // authenticator app's code, an HOTP token's and a YubiKey OTP are all
+    // typed into it, so it may be asked for where any of them is listed.
+    // The kind that answered is the event's (`ofEvent()`), and the
+    // issuance policy holds THAT to the list.
     const code = String(factor || '') === 'totp' &&
-      (allowed.indexOf('totp') >= 0 || allowed.indexOf('hotp') >= 0);
+      (allowed.indexOf('totp') >= 0 || allowed.indexOf('hotp') >= 0 ||
+       allowed.indexOf('yubico-otp') >= 0);
     const out = !allowed.length || code ||
       allowed.indexOf(MfaMechanisms.ofStepFactor(factor)) >= 0;
     log.debug('Leaving MfaMechanisms.allowsStepFactor(). ' + out);

@@ -1339,6 +1339,22 @@
     "en": "4bc7180cc29f1f53",
     "text": "当某人重新同步一个已超出前瞻范围的令牌时，向前搜索两个连续验证码的范围（RFC 4226 第 7.4 节）。连续两个验证码远比一个难猜，这正是更大范围搜索安全的原因。实时生效。"
   },
+  "yubiotp.offered|label": {
+    "en": "9f41692d832fec07",
+    "text": "提供 YubiKey OTP 登记"
+  },
+  "yubiotp.offered|description": {
+    "en": "5a0403877f662a53",
+    "text": "人员是否可以登记 YubiKey OTP 槽位，以及管理员是否可以分配一个或人员是否可以认领一个。默认关闭。已持有的凭据仍会在一次性验证码步骤被核验。AES 密钥留在本服务上，因此登录为 amr otp，从不为 hwk。"
+  },
+  "yubiotp.ykval|label": {
+    "en": "f309f289c5ecddcd",
+    "text": "应答 YK-VAL 2.0 验证端点"
+  },
+  "yubiotp.ykval|description": {
+    "en": "eba10509dc6d104d",
+    "text": "GET 与 POST /wsapi/2.0/verify 是否为签署了请求的客户端核验 YubiKey OTP（YK-VAL 2.0）。默认关闭，此时路由应答 OPERATION_NOT_ALLOWED。开启后，在包括开发模式在内的每种模式下都核验客户端 id 与 HMAC-SHA1。不向 YubiCloud 发送任何请求。"
+  },
   "backupCodes.count|label": {
     "en": "91b6e4a086244cce",
     "text": "每组验证码数"
@@ -3298,6 +3314,14 @@
 "pskc.allowPlaintextImport|description": {
     "en": "7efe34e872e4772e",
     "text": "在产品模式下，管理员是否可以导入令牌密钥未加密的 PSKC 种子文件（RFC 6030）。默认关闭：这样的文件在其经过的每个磁盘和邮箱中都是一份可用第二因素的清单，而供应商可以用预共享密钥或密码对其加密（第 6.1 和 6.2 节）。开发模式无论如何都会接受。"
+  },
+"yubiotp.allowPlaintextImport|label": {
+    "en": "b1c1ac235f98cc47",
+    "text": "在产品模式下接受明文 YubiKey OTP CSV 文件"
+  },
+"yubiotp.allowPlaintextImport|description": {
+    "en": "f409449d46d5831a",
+    "text": "管理员在产品模式下是否可以导入 YubiKey OTP 密钥的 CSV（序列号、公开身份、私有身份、AES 密钥）。默认关闭：该文件是一份可用第二因素的清单。开发模式无论如何都会接受。文件被接受时密钥即被密封，文件不予保留。"
   },
 "openpgp.wkd|label": {
     "en": "1f05a7518c3d2275",

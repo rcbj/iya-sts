@@ -228,6 +228,7 @@ import webauthnPolicy = require('../authn/webauthn_policy');
 // route, so requiring it here cannot move one, and it is already loaded by
 // `common/credentials.ts` long before this line.
 import totp = require('../common/totp');
+import yubiotp = require('../common/yubiotp');
 // Device Bound Session Credentials (#725): the algorithms it offers.
 import deviceBound = require('../authn/device_bound_sessions');
 import backupCodes = require('../common/backup_codes');
@@ -2894,6 +2895,52 @@ class CryptoMetadata {
               digits: String(report.digits), period: String(report.period),
               window: String(report.window)
             })]]
+          ];
+        } },
+
+      // ---------------------------------------------------------------------
+      // YUBICO OTP (#1955 P5). A second one-time password, AES-128-ECB of
+      // one block rather than a truncated HMAC. The card name matches
+      // sts_metadata.ts. The facts are read from common/yubiotp.ts.
+      // ---------------------------------------------------------------------
+      { name: 'Yubico OTP',
+        signs: 'Nothing that leaves this service, except the HMAC-SHA1 a ' +
+               'YK-VAL client checks on /wsapi/2.0/verify. The OTP itself ' +
+               'is AES-128-ECB of one 16-byte block, compared after it is ' +
+               'decrypted, which is why the primitive lives in ' +
+               'common/crypto.js.',
+        verifies: 'A presented OTP: the public identity selects the ' +
+                  'credential, the block decrypts under its AES-128 key, ' +
+                  'the CRC-16 residual is 0xf0b8, and the private identity ' +
+                  'matches. The use counter and the session-use counter, ' +
+                  'as one value, must be strictly above the last accepted ' +
+                  'one. The timestamp is not checked. A YK-VAL request\'s ' +
+                  'HMAC-SHA1, in every mode, when yubiotp.ykval is on.',
+        encrypts: 'The AES key and the private identity at rest, as one ' +
+                  'sealed JSON value, under the key-encryption key, in ' +
+                  'product mode. In development mode the key-encryption ' +
+                  'key is generated per run, so the value is stored in ' +
+                  'the clear and says so.',
+        decrypts: 'That sealed value, to check an OTP. The server holds ' +
+                  'the AES key, so the sign-in is amr otp and never hwk.',
+        hashes: 'Nothing. The CRC is CRC-16, polynomial 0x8408. A YK-VAL ' +
+                'signature is HMAC-SHA1.',
+        whatItDoesNot: 'It never calls YubiCloud. It never checks the ' +
+                       'timestamp. It never enrols a slot while ' +
+                       'yubiotp.offered is off, and it never answers ' +
+                       'YK-VAL while yubiotp.ykval is off. It never logs ' +
+                       'the programming line or a client\'s HMAC key.',
+        envelopes: [],
+        algorithms: function () {
+          log.debug("Entering algorithms().");
+          const report = yubiotp.report();
+          log.debug("Leaving algorithms().");
+          return [
+            ['OTP', [String(report.algorithm || '')]],
+            ['Alphabet', [String(report.alphabet || '')]],
+            ['CRC', [String(report.crc || '')]],
+            ['Replay', [String(report.replay || '')]],
+            ['YubiCloud', [String(report.cloud || '')]]
           ];
         } },
 

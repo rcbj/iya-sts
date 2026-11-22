@@ -127,8 +127,9 @@ model MechanismRow {
   secondFactor: boolean | null;
   email?: boolean;
   /**
-   * A mechanism added after API clients were written (#1955's `hotp`): a
-   * policy save that names no value keeps its built-in one, not refused.
+   * A mechanism added after API clients were written (#1955's `hotp` and
+   * `yubico-otp`): a policy save that names no value keeps its built-in
+   * one, not refused.
    */
   optional?: boolean;
 }

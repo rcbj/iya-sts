@@ -1683,6 +1683,22 @@
     "en": "484401484f6f539d",
     "text": "وُجدت تذكرة بتجزئتها"
   },
+  "caches.store.yubiotp.inventory.title": {
+    "en": "f2915b8ab9e4a37c",
+    "text": "مخزون OTP من Yubico"
+  },
+  "caches.store.yubiotp.inventory.description": {
+    "en": "c58db5407fb1dcbe",
+    "text": "صف واحد لكل OTP من YubiKey استورده مسؤول من ملف CSV، مفهرس بالرقم التسلسلي: غير مُسنَد (مفتاح AES مختوم)، أو مُسنَد إلى شخص (أُسقط السرّ، وهو الآن على إدخاله)، أو مُوقَف."
+  },
+  "caches.store.yubiotp.inventory.bound": {
+    "en": "9f558f556a019acc",
+    "text": "الصفوف التي تحتفظ بها العملية ذاكرة تخزين مؤقت من 5,000 لكل نطاق."
+  },
+  "caches.store.yubiotp.inventory.lifetime": {
+    "en": "4f13467dac65d62f",
+    "text": "حتى يُزال الرمز غير المُسنَد؛ أما الرمز المُسنَد أو المُوقَف فيُحتفظ به."
+  },
   "caches.lru.default.description": {
     "en": "777e71be96460478",
     "text": "ذاكرة تخزين مؤقت محدودة بترتيب الأقل استخدامًا مؤخرًا."

@@ -563,6 +563,18 @@
     "en": "e3eb9f2bcabf5eaa",
     "text": "يُرفض ملف بذور PSKC الذي أسرار رموزه نص صريح ما لم يكن pskc.allowPlaintextImport مفعّلًا؛ ويُفتح الملف المشفّر بالمفتاح أو كلمة المرور المعطاة مع الرفع، والتي لا تُخزَّن أبدًا."
   },
+  "mode.requirements.plaintext-yubiotp-csv.what": {
+    "en": "c349a97e52695bea",
+    "text": "يجب ألا يكون ملف بذور OTP لـ YubiKey قائمة بمفاتيح AES"
+  },
+  "mode.requirements.plaintext-yubiotp-csv.development": {
+    "en": "c1af70a4452cb90f",
+    "text": "يُستورد ملف CSV من الرقم التسلسلي والهوية العامة والهوية الخاصة ومفتاح AES مثل أي ملف مخزون آخر."
+  },
+  "mode.requirements.plaintext-yubiotp-csv.product": {
+    "en": "3f75df0847c0e777",
+    "text": "يُرفض ملف CSV ذلك ما لم يكن yubiotp.allowPlaintextImport مفعّلًا. تُختم المفاتيح فور قبول الملف، ولا يُحتفظ بالملف نفسه."
+  },
   "mode.requirements.sso-consent.what": {
     "en": "2b06d195aa0a395d",
     "text": "يسأل تسجيل الدخول الموحَّد قبل أن يسجّل دخول شخص إلى تطبيق"

@@ -1339,6 +1339,22 @@
     "en": "4bc7180cc29f1f53",
     "text": "Hasta dónde se buscan dos códigos CONSECUTIVOS cuando una persona resincroniza un token que se salió de la anticipación (RFC 4226 sección 7.4). Dos códigos seguidos son mucho más difíciles de adivinar que uno, y eso es lo que hace segura la búsqueda más amplia. En vivo."
   },
+  "yubiotp.offered|label": {
+    "en": "9f41692d832fec07",
+    "text": "Ofrecer la inscripción de un OTP YubiKey"
+  },
+  "yubiotp.offered|description": {
+    "en": "5a0403877f662a53",
+    "text": "Si una persona puede inscribir una ranura de OTP YubiKey, y si un administrador puede asignar una o una persona reclamar una. Desactivado de forma predeterminada. Una credencial ya en posesión se sigue comprobando en el paso del código de un solo uso. La clave AES permanece en este servicio, así que el inicio de sesión es amr otp y nunca hwk."
+  },
+  "yubiotp.ykval|label": {
+    "en": "f309f289c5ecddcd",
+    "text": "Responder al endpoint de verificación YK-VAL 2.0"
+  },
+  "yubiotp.ykval|description": {
+    "en": "eba10509dc6d104d",
+    "text": "Si GET y POST /wsapi/2.0/verify comprueban un OTP YubiKey para un cliente que firmó la solicitud (YK-VAL 2.0). Desactivado de forma predeterminada, y la ruta responde entonces OPERATION_NOT_ALLOWED. Activado, el id del cliente y el HMAC-SHA1 se comprueban en todos los modos, incluido el de desarrollo. No se envía ninguna solicitud a YubiCloud."
+  },
   "backupCodes.count|label": {
     "en": "91b6e4a086244cce",
     "text": "Códigos por juego"
@@ -3298,6 +3314,14 @@
 "pskc.allowPlaintextImport|description": {
     "en": "7efe34e872e4772e",
     "text": "Si un administrador puede importar, en modo producto, un archivo de semillas PSKC (RFC 6030) cuyos secretos de token NO están cifrados. Desactivado de forma predeterminada: un archivo así ha sido una lista de segundos factores válidos en cada disco y buzón por el que pasó, y un proveedor puede cifrarlo con una clave precompartida o una contraseña (secciones 6.1 y 6.2). El modo desarrollo lo acepta en cualquier caso."
+  },
+"yubiotp.allowPlaintextImport|label": {
+    "en": "b1c1ac235f98cc47",
+    "text": "Aceptar archivos CSV de OTP YubiKey en claro en modo producto"
+  },
+"yubiotp.allowPlaintextImport|description": {
+    "en": "f409449d46d5831a",
+    "text": "Si un administrador puede importar, en modo producto, un CSV de secretos de OTP YubiKey (número de serie, identidad pública, identidad privada, clave AES). Desactivado de forma predeterminada: el archivo es una lista de segundos factores válidos. El modo desarrollo acepta uno en cualquier caso. Los secretos se sellan cuando se acepta el archivo, y el archivo no se conserva."
   },
 "openpgp.wkd|label": {
     "en": "1f05a7518c3d2275",

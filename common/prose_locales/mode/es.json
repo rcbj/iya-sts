@@ -563,6 +563,18 @@
     "en": "e3eb9f2bcabf5eaa",
     "text": "Un archivo de semillas PSKC cuyos secretos de token están en texto sin cifrar se rechaza salvo que pskc.allowPlaintextImport esté activado; uno cifrado se abre con la clave o la contraseña indicada en la subida, que nunca se guarda."
   },
+  "mode.requirements.plaintext-yubiotp-csv.what": {
+    "en": "c349a97e52695bea",
+    "text": "Un archivo de semillas de OTP YubiKey no debe ser una lista de claves AES"
+  },
+  "mode.requirements.plaintext-yubiotp-csv.development": {
+    "en": "c1af70a4452cb90f",
+    "text": "Un CSV de número de serie, identidad pública, identidad privada y clave AES se importa como cualquier otro archivo de inventario."
+  },
+  "mode.requirements.plaintext-yubiotp-csv.product": {
+    "en": "3f75df0847c0e777",
+    "text": "Ese CSV se rechaza salvo que yubiotp.allowPlaintextImport esté activado. Las claves se sellan una vez aceptado el archivo, y el archivo mismo no se conserva."
+  },
   "mode.requirements.sso-consent.what": {
     "en": "2b06d195aa0a395d",
     "text": "El inicio de sesión único pregunta antes de iniciar la sesión de una persona en una aplicación"

@@ -6257,6 +6257,19 @@ Scope: `account:manage`.
 | `totp.usable` | boolean |  |  |
 | `username` | string |  |  |
 | `verifiesCredentials` | boolean |  |  |
+| `yubiotp` | object |  |  |
+| `yubiotp.detail` | object |  |  |
+| `yubiotp.detail.enrolledAt` | number |  |  |
+| `yubiotp.detail.lastUsedAt` | number |  |  |
+| `yubiotp.detail.publicId` | string |  |  |
+| `yubiotp.detail.serial` | string |  |  |
+| `yubiotp.detail.source` | string |  | `enrolled` or `csv-import`. |
+| `yubiotp.enrolled` | boolean |  | Whether you hold a YubiKey OTP. |
+| `yubiotp.offered` | boolean |  | Whether new enrolments, assignments and claims are offered (yubiotp.offered). |
+| `yubiotp.setup` | object |  | The enrolment in progress, or null. |
+| `yubiotp.setup.publicId` | string |  |  |
+| `yubiotp.setup.ykman` | string |  | The command that programs a YubiKey's first OTP slot. Shown once, and not logged. |
+| `yubiotp.usable` | boolean |  | Whether this service can check its passwords. |
 
 **400**: The request did not validate, or was refused: `{ ok: false, errors: [...] }`.
 
@@ -6294,7 +6307,7 @@ Scope: `account:manage`.
 
 **Sets up, confirms or removes your second factors**
 
-`start` mints a secret and holds it (ask the view for the QR code); `confirm` checks a code from the app (rate limited) and enrols it; `remove` takes it off, and ends every session its codes signed in (`sessionsEnded`, #722). `hotp-start`, `hotp-confirm` and `hotp-remove` do the same for a counter-based one-time code token (RFC 4226, #1955) — the view's `hotp.setup` carries its otpauth://hotp QR code and the `ykman` command that programs a YubiKey's OTP slot — and `hotp-resync` brings back a token pressed too often from two consecutive codes (`code`, `code2`; rate limited). `generate-codes` answers a set of recovery codes ONCE, in `view.fresh`, and stores nothing; `confirm-codes` stores their hashes; `discard-codes` throws the pending set away. `email-factor-on` (with `kind`) and `email-factor-off` opt in and out of the emailed second factor. A refusal carries the page's `view`.
+`start` mints a secret and holds it (ask the view for the QR code); `confirm` checks a code from the app (rate limited) and enrols it; `remove` takes it off, and ends every session its codes signed in (`sessionsEnded`, #722). `hotp-start`, `hotp-confirm` and `hotp-remove` do the same for a counter-based one-time code token (RFC 4226, #1955) — the view's `hotp.setup` carries its otpauth://hotp QR code and the `ykman` command that programs a YubiKey's OTP slot — and `hotp-resync` brings back a token pressed too often from two consecutive codes (`code`, `code2`; rate limited). `yubiotp-start` and `yubiotp-confirm` do the same for a YubiKey OTP slot (Yubico's published OTP, #1955 P5): the view's `yubiotp.setup` carries the `ykman` command, shown once and not logged, and `code` is the OTP the key types (up to 48 modhex characters). `yubiotp-claim` takes `serial` and `code` for a token an administrator imported. `yubiotp-remove` takes it off. `generate-codes` answers a set of recovery codes ONCE, in `view.fresh`, and stores nothing; `confirm-codes` stores their hashes; `discard-codes` throws the pending set away. `email-factor-on` (with `kind`) and `email-factor-off` opt in and out of the emailed second factor. A refusal carries the page's `view`.
 
 The door of the portal's `POST /portal/mfa`.
 
@@ -6311,11 +6324,12 @@ Scope: `account:manage`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `action` | empty, or one of `start`, `confirm`, `remove`, `hotp-start`, `hotp-confirm`, `hotp-resync`, `hotp-remove`, `generate-codes`, `confirm-codes`, `discard-codes`, `email-factor-on`, `email-factor-off` |  | The step: `start` an authenticator app, `confirm` it with a code, `remove` it; `hotp-start`, `hotp-confirm`, `hotp-resync` (two consecutive codes) or `hotp-remove` a one-time code token (RFC 4226); `generate-codes`, `confirm-codes` or `discard-codes` a set of recovery codes; `email-factor-on` or `email-factor-off`. |
-| `code` | string |  | For `confirm` and `hotp-confirm`: the code the app or token shows; for `hotp-resync`, the first of two consecutive codes. |
+| `action` | empty, or one of `start`, `confirm`, `remove`, `hotp-start`, `hotp-confirm`, `hotp-resync`, `hotp-remove`, `yubiotp-start`, `yubiotp-confirm`, `yubiotp-remove`, `yubiotp-claim`, `generate-codes`, `confirm-codes`, `discard-codes`, `email-factor-on`, `email-factor-off` |  | The step: `start` an authenticator app, `confirm` it with a code, `remove` it; `hotp-start`, `hotp-confirm`, `hotp-resync` (two consecutive codes) or `hotp-remove` a one-time code token (RFC 4226); `yubiotp-start`, `yubiotp-confirm` or `yubiotp-remove` a YubiKey OTP, or `yubiotp-claim` one an administrator imported (`serial` and `code`); `generate-codes`, `confirm-codes` or `discard-codes` a set of recovery codes; `email-factor-on` or `email-factor-off`. |
+| `code` | string |  | For `confirm` and `hotp-confirm`: the code the app or token shows; for `hotp-resync`, the first of two consecutive codes; for `yubiotp-confirm` and `yubiotp-claim`, the OTP the YubiKey types (32 to 48 modhex characters). |
 | `code2` | string |  | For `hotp-resync`: the code the token showed next. |
 | `handle` | string |  | For `confirm-codes` and `discard-codes`: the pending set's handle, from `generate-codes`'s answer. |
 | `kind` | empty, or one of `code`, `link` |  | For `email-factor-on`: a mailed `code` or a sign-in `link`. |
+| `serial` | string |  | For `yubiotp-claim`: the serial of a YubiKey OTP an administrator imported. |
 
 **200**: The answer.
 
@@ -6407,6 +6421,19 @@ Scope: `account:manage`.
 | `view.totp.usable` | boolean |  |  |
 | `view.username` | string |  |  |
 | `view.verifiesCredentials` | boolean |  |  |
+| `view.yubiotp` | object |  |  |
+| `view.yubiotp.detail` | object |  |  |
+| `view.yubiotp.detail.enrolledAt` | number |  |  |
+| `view.yubiotp.detail.lastUsedAt` | number |  |  |
+| `view.yubiotp.detail.publicId` | string |  |  |
+| `view.yubiotp.detail.serial` | string |  |  |
+| `view.yubiotp.detail.source` | string |  | `enrolled` or `csv-import`. |
+| `view.yubiotp.enrolled` | boolean |  | Whether you hold a YubiKey OTP. |
+| `view.yubiotp.offered` | boolean |  | Whether new enrolments, assignments and claims are offered (yubiotp.offered). |
+| `view.yubiotp.setup` | object |  | The enrolment in progress, or null. |
+| `view.yubiotp.setup.publicId` | string |  |  |
+| `view.yubiotp.setup.ykman` | string |  | The command that programs a YubiKey's first OTP slot. Shown once, and not logged. |
+| `view.yubiotp.usable` | boolean |  | Whether this service can check its passwords. |
 
 **400**: The request did not validate, or was refused: `{ ok: false, errors: [...] }`.
 
@@ -6494,6 +6521,19 @@ Scope: `account:manage`.
 | `view.totp.usable` | boolean |  |  |
 | `view.username` | string |  |  |
 | `view.verifiesCredentials` | boolean |  |  |
+| `view.yubiotp` | object |  |  |
+| `view.yubiotp.detail` | object |  |  |
+| `view.yubiotp.detail.enrolledAt` | number |  |  |
+| `view.yubiotp.detail.lastUsedAt` | number |  |  |
+| `view.yubiotp.detail.publicId` | string |  |  |
+| `view.yubiotp.detail.serial` | string |  |  |
+| `view.yubiotp.detail.source` | string |  | `enrolled` or `csv-import`. |
+| `view.yubiotp.enrolled` | boolean |  | Whether you hold a YubiKey OTP. |
+| `view.yubiotp.offered` | boolean |  | Whether new enrolments, assignments and claims are offered (yubiotp.offered). |
+| `view.yubiotp.setup` | object |  | The enrolment in progress, or null. |
+| `view.yubiotp.setup.publicId` | string |  |  |
+| `view.yubiotp.setup.ykman` | string |  | The command that programs a YubiKey's first OTP slot. Shown once, and not logged. |
+| `view.yubiotp.usable` | boolean |  | Whether this service can check its passwords. |
 
 **401**: No access token, or one that does not verify, has expired, was revoked, outlived its sign-on session, or came without its DPoP proof. `WWW-Authenticate` says which.
 
@@ -6601,6 +6641,19 @@ Scope: `account:manage`.
 | `view.totp.usable` | boolean |  |  |
 | `view.username` | string |  |  |
 | `view.verifiesCredentials` | boolean |  |  |
+| `view.yubiotp` | object |  |  |
+| `view.yubiotp.detail` | object |  |  |
+| `view.yubiotp.detail.enrolledAt` | number |  |  |
+| `view.yubiotp.detail.lastUsedAt` | number |  |  |
+| `view.yubiotp.detail.publicId` | string |  |  |
+| `view.yubiotp.detail.serial` | string |  |  |
+| `view.yubiotp.detail.source` | string |  | `enrolled` or `csv-import`. |
+| `view.yubiotp.enrolled` | boolean |  | Whether you hold a YubiKey OTP. |
+| `view.yubiotp.offered` | boolean |  | Whether new enrolments, assignments and claims are offered (yubiotp.offered). |
+| `view.yubiotp.setup` | object |  | The enrolment in progress, or null. |
+| `view.yubiotp.setup.publicId` | string |  |  |
+| `view.yubiotp.setup.ykman` | string |  | The command that programs a YubiKey's first OTP slot. Shown once, and not logged. |
+| `view.yubiotp.usable` | boolean |  | Whether this service can check its passwords. |
 
 ## GET /account-api/openapi.json
 
@@ -10213,7 +10266,7 @@ Scope: `account:manage`.
 | `tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
 | `tokens[].credentials` | list | yes | The caller's own credentials on it. |
 | `tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
-| `tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token; later `yubico-otp`, `ssh`, `openpgp`). |
+| `tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token), and since P5 `yubico-otp` (later `ssh`, `openpgp`). |
 | `tokens[].credentials[].label` | string | yes | Its name, where it has one. |
 | `tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
 | `tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |
@@ -10324,7 +10377,7 @@ Scope: `account:manage`.
 | `view.tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
 | `view.tokens[].credentials` | list | yes | The caller's own credentials on it. |
 | `view.tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
-| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token; later `yubico-otp`, `ssh`, `openpgp`). |
+| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token), and since P5 `yubico-otp` (later `ssh`, `openpgp`). |
 | `view.tokens[].credentials[].label` | string | yes | Its name, where it has one. |
 | `view.tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
 | `view.tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |
@@ -10375,7 +10428,7 @@ Scope: `account:manage`.
 | `view.tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
 | `view.tokens[].credentials` | list | yes | The caller's own credentials on it. |
 | `view.tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
-| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token; later `yubico-otp`, `ssh`, `openpgp`). |
+| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token), and since P5 `yubico-otp` (later `ssh`, `openpgp`). |
 | `view.tokens[].credentials[].label` | string | yes | Its name, where it has one. |
 | `view.tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
 | `view.tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |
@@ -10446,7 +10499,7 @@ Scope: `account:manage`.
 | `view.tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
 | `view.tokens[].credentials` | list | yes | The caller's own credentials on it. |
 | `view.tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
-| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token; later `yubico-otp`, `ssh`, `openpgp`). |
+| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token), and since P5 `yubico-otp` (later `ssh`, `openpgp`). |
 | `view.tokens[].credentials[].label` | string | yes | Its name, where it has one. |
 | `view.tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
 | `view.tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |
@@ -10497,7 +10550,7 @@ Scope: `account:manage`.
 | `view.tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
 | `view.tokens[].credentials` | list | yes | The caller's own credentials on it. |
 | `view.tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
-| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token; later `yubico-otp`, `ssh`, `openpgp`). |
+| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token), and since P5 `yubico-otp` (later `ssh`, `openpgp`). |
 | `view.tokens[].credentials[].label` | string | yes | Its name, where it has one. |
 | `view.tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
 | `view.tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |
@@ -10548,7 +10601,7 @@ Scope: `account:manage`.
 | `view.tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
 | `view.tokens[].credentials` | list | yes | The caller's own credentials on it. |
 | `view.tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
-| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token; later `yubico-otp`, `ssh`, `openpgp`). |
+| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token), and since P5 `yubico-otp` (later `ssh`, `openpgp`). |
 | `view.tokens[].credentials[].label` | string | yes | Its name, where it has one. |
 | `view.tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
 | `view.tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |

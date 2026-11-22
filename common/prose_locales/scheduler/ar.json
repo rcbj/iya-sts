@@ -671,6 +671,14 @@
     "en": "167f79e724fe8b34",
     "text": "يزيل كل تذكرة إذن User-Managed Access، ورمز مطالبات محفوظ، وسجل RPT، وموافقة مالك معلّقة تجاوزت عمرها (#1168). تطبق القراءة المهلة بنفسها، فهذا هو التنظيف، وليس ما يقرر."
   },
+  "sched.jobs.yubiotp.nonce-sweep.title": {
+    "en": "dce74787b5ae6954",
+    "text": "كنس أرقام nonce لـ OTP من Yubico"
+  },
+  "sched.jobs.yubiotp.nonce-sweep.describe": {
+    "en": "21922132f2f9b5f8",
+    "text": "يُسقط أرقام nonce لـ YK-VAL الأقدم من خمس دقائق، والأقدم بعد عشرة آلاف، حتى لا تنمو خريطة nonce."
+  },
   "sched.sentence.onDemand": {
     "en": "92e0ecb68dc6ec36",
     "text": "عند الطلب فقط"

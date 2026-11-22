@@ -255,6 +255,30 @@
     "en": "01c45765b9c3cd87",
     "text": "No se resincronizó un token de códigos de un solo uso"
   },
+  "audit.actions.portal.yubiotp.started.label": {
+    "en": "b206def4fb8ccc3d",
+    "text": "Se mostró a alguien una línea de programación de un OTP YubiKey"
+  },
+  "audit.actions.portal.yubiotp.enrolled.label": {
+    "en": "00886a6cb1cc407b",
+    "text": "Alguien configuró un OTP YubiKey en su propia cuenta"
+  },
+  "audit.actions.portal.yubiotp.refused.label": {
+    "en": "bd0fa598eb880f3a",
+    "text": "No se confirmó la configuración de un OTP YubiKey"
+  },
+  "audit.actions.portal.yubiotp.removed.label": {
+    "en": "57e0e2f87367e090",
+    "text": "Alguien quitó el OTP YubiKey de su propia cuenta"
+  },
+  "audit.actions.portal.yubiotp.claimed.label": {
+    "en": "452306461ebd5b17",
+    "text": "Alguien reclamó un OTP YubiKey importado"
+  },
+  "audit.actions.portal.yubiotp.claim-refused.label": {
+    "en": "2f50c910534b974e",
+    "text": "No se reclamó un OTP YubiKey"
+  },
   "audit.actions.portal.activate.mfa.started.label": {
     "en": "df561a24375c8165",
     "text": "Se mostró el secreto de una aplicación de autenticación mientras se usaba un enlace de activación"
@@ -543,6 +567,30 @@
     "en": "92d69a1a2d848892",
     "text": "Se quitó del inventario un token OATH sin asignar"
   },
+"audit.actions.yubiotp.import.label": {
+    "en": "6f92401fa557c5e6",
+    "text": "Se importó un CSV de OTP YubiKey, o se rechazó"
+  },
+"audit.actions.yubiotp.assign.label": {
+    "en": "c4f793ef7a16734a",
+    "text": "Se asignó un OTP YubiKey importado a una persona"
+  },
+"audit.actions.yubiotp.claim.label": {
+    "en": "08d55e823350bd4a",
+    "text": "Una persona reclamó un OTP YubiKey importado, o se rechazó la reclamación"
+  },
+"audit.actions.yubiotp.remove.label": {
+    "en": "a4a9aedd10cc2813",
+    "text": "Se quitó del inventario un OTP YubiKey sin asignar"
+  },
+"audit.actions.yubiotp.client-add.label": {
+    "en": "40676cb783f36097",
+    "text": "Se creó un cliente YK-VAL"
+  },
+"audit.actions.yubiotp.client-remove.label": {
+    "en": "92433c797106d523",
+    "text": "Se quitó un cliente YK-VAL"
+  },
 "audit.actions.openpgp.challenge.label": {
     "en": "454a22b5bcd9d6a2",
     "text": "Se emitió un desafío de registro de clave OpenPGP"
@@ -754,6 +802,10 @@
   "audit.actions.admin.mfa.hotp.cleared.label": {
     "en": "027dab5576016e61",
     "text": "Un operador borró el token de códigos de un solo uso de alguien"
+  },
+  "audit.actions.admin.mfa.yubiotp.cleared.label": {
+    "en": "f075ff8b6c725197",
+    "text": "Un operador borró el YubiKey OTP de alguien"
   },
   "audit.actions.admin.mfa.key.cleared.label": {
     "en": "d62700d9f7751e8b",

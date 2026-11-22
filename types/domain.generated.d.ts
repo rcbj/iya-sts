@@ -161,6 +161,7 @@ declare namespace IyaDomain {
     securityKeySecondFactor?: boolean;
     totpSecondFactor?: boolean;
     hotpSecondFactor?: boolean;
+    yubicoOtpSecondFactor?: boolean;
     recoveryCodeSecondFactor?: boolean;
     emailCodePrimary?: boolean;
     emailCodeSecondFactor?: boolean;
@@ -219,6 +220,7 @@ declare namespace IyaDomain {
     passwordHash?: string;
     authenticatorApp?: string;
     hotpToken?: string;
+    yubiOtp?: string;
     passkeys?: string[];
     recoveryCodes?: string;
     appPasswords?: string;

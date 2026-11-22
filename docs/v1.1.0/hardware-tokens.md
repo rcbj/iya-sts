@@ -52,6 +52,7 @@ with evidence `piv-attestation`.
 | `fido-enterprise-attestation` | A passkey registration whose trusted enterprise attestation names a serial |
 | `piv-attestation` | A certificate issued from a verified YubiKey PIV key attestation |
 | `pskc-import` | The serial a vendor's PSKC seed file names, recorded when that token is assigned or claimed |
+| `yubiotp-import` | The serial an administrator's YubiKey OTP CSV names, recorded when that token is assigned or claimed |
 | `ssh-security-key-attestation` | The serial an OpenSSH security key's attestation names when an SSH user certificate is issued for that key |
 | `vendor-import` | An administrator's import of a vendor's token file (a later release) |
 
@@ -151,7 +152,7 @@ holds it. Policy can use that fact in two ways:
 | `urn:sts:xacml:hardware-token-key` | `<vendor>/<serial>` |
 | `urn:sts:xacml:hardware-token-vendor` | e.g. `yubico` |
 | `urn:sts:xacml:hardware-token-model` | e.g. `YubiKey 5 NFC` |
-| `urn:sts:xacml:hardware-token-evidence` | `fido-enterprise-attestation`, `piv-attestation`, `vendor-import`, `pskc-import` or `ssh-security-key-attestation` |
+| `urn:sts:xacml:hardware-token-evidence` | `fido-enterprise-attestation`, `piv-attestation`, `vendor-import`, `pskc-import`, `yubiotp-import` or `ssh-security-key-attestation` |
 | `urn:sts:xacml:hardware-token-smart-card` | boolean: the evidence says the key is on a smart card |
 | `urn:sts:xacml:hardware-token-holder-matches` | boolean: the subject is the token's recorded holder |
 | `urn:sts:xacml:hardware-token-status` | `active` or `lost` |

@@ -1683,6 +1683,22 @@
     "en": "484401484f6f539d",
     "text": "en biljett hittades via sitt kontrollvärde"
   },
+  "caches.store.yubiotp.inventory.title": {
+    "en": "f2915b8ab9e4a37c",
+    "text": "Yubico-OTP-inventarie"
+  },
+  "caches.store.yubiotp.inventory.description": {
+    "en": "c58db5407fb1dcbe",
+    "text": "En rad per YubiKey-OTP som en administratör importerade från en CSV, med serienummer som nyckel: ej tilldelad (AES-nyckeln förseglad), tilldelad en person (hemligheten borttagen, nu på personens post) eller avvecklad."
+  },
+  "caches.store.yubiotp.inventory.bound": {
+    "en": "9f558f556a019acc",
+    "text": "Raderna en process har är en cache på 5 000 per sfär."
+  },
+  "caches.store.yubiotp.inventory.lifetime": {
+    "en": "4f13467dac65d62f",
+    "text": "Tills en ej tilldelad token tas bort; en tilldelad eller avvecklad token behålls."
+  },
   "caches.lru.default.description": {
     "en": "777e71be96460478",
     "text": "Ett begränsat cacheminne i ordningen minst nyligen använd."

@@ -16057,6 +16057,11 @@ class AdminViews {
       hotp: !!mech.hotp,
       hotpUsable: !!mech.hotpUsable,
       hotpDetail: mech.hotpDetail || null,
+      // #1955 P5: a YubiKey OTP, three facts as the token's are. Never
+      // the AES key.
+      yubi: !!mech.yubi,
+      yubiUsable: !!mech.yubiUsable,
+      yubiDetail: mech.yubiDetail || null,
       // THE RECOVERY CODES AS A STATUS AND NEVER AS CODES — see the block
       // above. `credentials.backupCodeStatus()` is what fills it and it
       // carries none, so there is no shape of this reply in which a caller

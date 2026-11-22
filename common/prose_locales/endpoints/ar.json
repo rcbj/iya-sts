@@ -1911,7 +1911,11 @@
     "en": "69876d051e66729c",
     "text": "خطوة نشاط ما بعد تسجيل الدخول"
   },
-  "endpoints.route./authn/roles.name": {
+"endpoints.route./wsapi/2.0/verify.name": {
+    "en": "0734c12f6e3eb870",
+    "text": "تحقق YK-VAL 2.0"
+  },
+"endpoints.route./authn/roles.name": {
     "en": "d10487ebcbc8b238",
     "text": "خطوة الأدوار الديناميكية"
   },

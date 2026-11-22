@@ -1683,6 +1683,22 @@
     "en": "484401484f6f539d",
     "text": "may natagpuang ticket sa pamamagitan ng digest nito"
   },
+  "caches.store.yubiotp.inventory.title": {
+    "en": "f2915b8ab9e4a37c",
+    "text": "Inventory ng Yubico OTP"
+  },
+  "caches.store.yubiotp.inventory.description": {
+    "en": "c58db5407fb1dcbe",
+    "text": "Isang row bawat YubiKey OTP na in-import ng administrator mula sa isang CSV, naka-key ayon sa serial: hindi naka-assign (naka-seal ang AES key nito), naka-assign sa isang tao (inalis ang secret, nasa entry na niya ngayon) o retirado."
+  },
+  "caches.store.yubiotp.inventory.bound": {
+    "en": "9f558f556a019acc",
+    "text": "Ang mga row na hawak ng isang process ay cache ng 5,000 bawat realm."
+  },
+  "caches.store.yubiotp.inventory.lifetime": {
+    "en": "4f13467dac65d62f",
+    "text": "Hanggang alisin ang isang hindi naka-assign na token; itinatabi ang naka-assign o retiradong token."
+  },
   "caches.lru.default.description": {
     "en": "777e71be96460478",
     "text": "Isang may-hangganang cache na naka-ayos ayon sa least-recently-used."

@@ -323,6 +323,14 @@
     "en": "608274a83bf567cd",
     "text": "Isang RFC 4226 one-time code mula sa counter-based na token (#1955): ang OTP slot ng isang YubiKey, o token ng vendor na in-import ng administrator mula sa PSKC seed file. Hindi kailanman unang factor. Kapag naka-off dito, walang maaaring mag-ENROLL o mag-claim nito; ang taong may hawak na nito ay hinihingan pa rin nito, gaya ng may hawak ng authenticator app."
   },
+  "authn.FIELDS.yubicoOtpSecondFactor.label": {
+    "en": "cba1439d0faf9aaf",
+    "text": "YubiKey OTP — bilang ikalawang factor"
+  },
+  "authn.FIELDS.yubicoOtpSecondFactor.what": {
+    "en": "f8f7a6ee5bbb46a8",
+    "text": "Isang YubiKey OTP (ang inilathalang modhex na one-time password ng Yubico, #1955). Hindi kailanman unang factor: hawak ng serbisyong ito ang AES key. Kapag naka-off dito, walang maaaring MAG-ENROL, magtalaga o mag-claim ng isa, kahit naka-on ang yubiotp.offered; ang taong mayroon na nito ay tatanungin pa rin."
+  },
   "authn.FIELDS.recoveryCodeSecondFactor.label": {
     "en": "ee9982b48a9c6a90",
     "text": "Recovery code — bilang pangalawang factor"
@@ -507,6 +515,10 @@
     "en": "608274a83bf567cd",
     "text": "Isang RFC 4226 one-time code mula sa counter-based na token (#1955): ang OTP slot ng isang YubiKey, o token ng vendor na in-import ng administrator mula sa PSKC seed file. Hindi kailanman unang factor. Kapag naka-off dito, walang maaaring mag-ENROLL o mag-claim nito; ang taong may hawak na nito ay hinihingan pa rin nito, gaya ng may hawak ng authenticator app."
   },
+  "authn.SCHEMA.attributes.stsAuthnYubicoOtpSecondFactor.what": {
+    "en": "f8f7a6ee5bbb46a8",
+    "text": "Isang YubiKey OTP (ang inilathalang modhex na one-time password ng Yubico, #1955). Hindi kailanman unang factor: hawak ng serbisyong ito ang AES key. Kapag naka-off dito, walang maaaring MAG-ENROL, magtalaga o mag-claim ng isa, kahit naka-on ang yubiotp.offered; ang taong mayroon na nito ay tatanungin pa rin."
+  },
   "authn.SCHEMA.attributes.stsAuthnRecoveryCodeSecondFactor.what": {
     "en": "e93ab2adc3e581bd",
     "text": "Isang single-use na code mula sa set na ginawa ng tao. Kapag naka-off dito, walang bagong set na puwedeng gawin; gumagana pa rin ang set na hawak na (pinalitan ng row na ito ang backupCodes.enabled, at pinapanatili ang kontrata nito)."
@@ -580,8 +592,8 @@
     "text": "Sa isang NAMED authentication policy (#1148, #1237): isang first-factor mechanism na pinapayagan ng sign-in na sakop nito — kapag pinangalanan ito ng application (appAuthnPolicy) o ng isa sa mga group ng tao (stsAuthnPolicy) at ang precedence nito ang pinakamababa sa mga pinangalanan — password, password-mfa, webauthn, attested-hardware (isang passkey o sertipiko sa hardware token na napatunayan ng attestation, #1955), spnego, wallet o federation, isang value bawat isa. Kapag wala, pinapayagan ang lahat ng pinapayagan ng realm."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicySecondFactor.what": {
-    "en": "e0ae8297bb01119f",
-    "text": "Sa isang NAKAPANGALANG authentication policy (#1148, #1237): isang ikalawang factor na pinapayagan ng sign-in na sakop nito — kung saan pinapangalanan ito ng application (appAuthnPolicy) o ng isa sa mga group ng tao (stsAuthnPolicy) at ang precedence nito ang pinakamababang pinangalanan — password, securityKey, totp, hotp, recoveryCode, emailCode, emailLink o wallet, tig-isang value. Kapag wala, nananatili ang authentication policy ng realm."
+    "en": "9302ca05693fd970",
+    "text": "Sa isang NAKAPANGALANG authentication policy (#1148, #1237): isang ikalawang factor na pinapayagan ng sign-in na sakop nito — kung saan pinapangalanan ito ng application (appAuthnPolicy) o ng isa sa mga group ng tao (stsAuthnPolicy) at ang precedence nito ang pinakamababang pinangalanan — password, securityKey, totp, hotp, yubico-otp, recoveryCode, emailCode, emailLink o wallet, tig-isang value. Kapag wala, nananatili ang authentication policy ng realm."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicyPrecedence.what": {
     "en": "afff5dad656a9845",
@@ -634,6 +646,14 @@
   "authn.MECHANISMS.hotp.what": {
     "en": "608274a83bf567cd",
     "text": "Isang RFC 4226 one-time code mula sa counter-based na token (#1955): ang OTP slot ng isang YubiKey, o token ng vendor na in-import ng administrator mula sa PSKC seed file. Hindi kailanman unang factor. Kapag naka-off dito, walang maaaring mag-ENROLL o mag-claim nito; ang taong may hawak na nito ay hinihingan pa rin nito, gaya ng may hawak ng authenticator app."
+  },
+  "authn.MECHANISMS.yubico-otp.label": {
+    "en": "01f8772904333b7b",
+    "text": "YubiKey OTP"
+  },
+  "authn.MECHANISMS.yubico-otp.what": {
+    "en": "f8f7a6ee5bbb46a8",
+    "text": "Isang YubiKey OTP (ang inilathalang modhex na one-time password ng Yubico, #1955). Hindi kailanman unang factor: hawak ng serbisyong ito ang AES key. Kapag naka-off dito, walang maaaring MAG-ENROL, magtalaga o mag-claim ng isa, kahit naka-on ang yubiotp.offered; ang taong mayroon na nito ay tatanungin pa rin."
   },
   "authn.MECHANISMS.recoveryCode.label": {
     "en": "5bda8302b5ecf4d3",

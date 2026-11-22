@@ -1416,6 +1416,11 @@ const JOBS = [
   // removed; no answer carries the secret, the key or an error code. What a
   // code does at a sign-in is tests/hotp.js and tests/oath_tokens.js.
   { file: 'sts_oath_tokens.js', browser: false, local: true },
+  // YUBIKEY OTP AND YK-VAL 2.0 OVER HTTP (#1955 P5): a CSV and a client
+  // made in the run, the verify endpoint's statuses and HMAC, and the
+  // three settings put back on the realm this job created. The policy
+  // row is tests/yubiotp.js, in process.
+  { file: 'sts_yubiotp.js', browser: false, local: true },
   // A YUBIKEY PIV KEY ATTESTATION OVER EST (#1955 P2), in a throwaway realm:
   // an attested request recorded as a hardware token, an attestation of
   // another key and of another slot refused, enrol-piv on /admin-api, and

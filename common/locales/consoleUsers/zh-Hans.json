@@ -1008,5 +1008,12 @@
   "mfaSection.hotpImported": "从供应商的种子文件导入：{vendor}，序列号 {serial}",
   "mfaSection.hotpEnrolled": "由本人注册（二维码或 ykman）",
   "mfaSection.hotpUnusable": "此处无法读取其密钥，因此其验证码会被拒绝。",
-  "mfaSection.clearHotp": "清除一次性验证码令牌"
+  "mfaSection.clearHotp": "清除一次性验证码令牌",
+  "mfaSection.yubiHeading": "YubiKey OTP",
+  "mfaSection.yubiSource": "配置方式",
+  "mfaSection.yubiImported": "从 CSV 导入：序列号 {serial}",
+  "mfaSection.yubiEnrolled": "由本人注册（ykman）",
+  "mfaSection.yubiUnusable": "此处无法读取其密钥，因此拒绝其一次性密码。",
+  "mfaSection.yubiPublicId": "公共标识",
+  "mfaSection.clearYubi": "清除 YubiKey OTP"
 }
