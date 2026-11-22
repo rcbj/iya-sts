@@ -2798,17 +2798,39 @@ const SPECS: Spec[] = [
   { id: 'rfc4226', name: 'RFC 4226 — HOTP: An HMAC-Based One-Time Password ' +
                          'Algorithm',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc4226',
-    coverage: 'full for what RFC 6238 needs of it: section 5.3\'s dynamic ' +
-              'truncation over HMAC-SHA-1, SHA-256 or SHA-512, six to eight ' +
-              'digits, with the counter as an eight-byte big-endian value. ' +
-              'Asserted against the specification\'s own Appendix D test ' +
-              'vectors (tests/totp.js), which is the point of implementing ' +
-              'it rather than taking a library: the four steps of that ' +
-              'truncation have each been got wrong by somebody, and a ' +
-              'published vector is the only check that catches it. NOT ' +
-              'covered: counter-based HOTP as an authentication mechanism — ' +
-              'nothing here holds a counter that advances on use, because ' +
-              'the only caller is the time-based construction below.' },
+    coverage: 'full, verifier side, as a SECOND FACTOR ONLY (#1955 P4): ' +
+              'section 5.3\'s dynamic truncation over HMAC-SHA-1, SHA-256 ' +
+              'or SHA-512, six to eight digits, the counter an eight-byte ' +
+              'big-endian value, asserted against Appendix D\'s own test ' +
+              'vectors (tests/totp.js, tests/hotp.js); a counter per ' +
+              'credential with section 7.4\'s look-ahead (hotp.window, 10 ' +
+              'by default, 0 legal) and resynchronisation from two ' +
+              'consecutive codes (hotp.resyncWindow); section 7.2\'s replay ' +
+              'refusal, the counter advanced by compare-and-set in the store ' +
+              'so two nodes or workers never accept one code; section 7.3\'s ' +
+              'throttling through the sign-in\'s code budget. A YubiKey OTP ' +
+              'slot is programmed from the portal\'s otpauth://hotp code or ' +
+              'ykman command; a vendor\'s token is imported (RFC 6030). It ' +
+              'earns amr otp, and hwk only for an imported token. NOT ' +
+              'covered: section 7.3\'s delay scheme as such (the budget ' +
+              'refuses instead), and OCRA (RFC 6287).' },
+  { id: 'rfc6030', name: 'RFC 6030 — Portable Symmetric Key Container ' +
+                         '(PSKC)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc6030',
+    coverage: 'partial, as a RECEIVER (#1955 P4): a KeyContainer of version ' +
+              '1.0 with HOTP and TOTP keys, DeviceInfo\'s Manufacturer, ' +
+              'SerialNo and Model, the ResponseFormat (6 to 8 decimal ' +
+              'digits), a plain Counter, Time (0 only) and TimeInterval; ' +
+              'plaintext (refused in product mode unless ' +
+              'pskc.allowPlaintextImport), a pre-shared key (section 6.1: ' +
+              'AES-128/192/256-CBC and KW-AES) and a passphrase (section ' +
+              '6.2: PBKDF2), with section 6.1.1\'s ValueMAC checked first ' +
+              '(HMAC-SHA1 and the SHA-2 MACs). Asserted against the RFC\'s ' +
+              'own Figures 2 to 7 (tests/pskc.js). NOT covered: encryption ' +
+              'to a certificate (6.3), a MAC key by reference, Triple DES ' +
+              'and Camellia, an encrypted counter or time, PIN keys and ' +
+              'policies (skipped), signatures on the container (section 7), ' +
+              'and producing one.' },
   // #539 (2026-10-09): the language a page is drawn in. Two RFCs that make
   // up BCP 47, one row, because nothing here uses either without the other.
   { id: 'bcp47', name: 'BCP 47 — RFC 5646 Tags for Identifying Languages ' +
@@ -4562,6 +4584,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'true of every certificate authority and is the reason a client ' +
           'author would point their stack here. Ungated, because everything ' +
           'in it is already inside every certificate this service hands out.' },
+  { path: '/pki/ssh-user-ca/:scope', group: 'PKI',
+    name: 'The realm OpenSSH user CA public key', specs: [],
+    what: 'NON-SPEC (#1955 P3): the realm-scoped OpenSSH user CA key, ' +
+          'published as an authorized-key line for SSH servers to trust. ' +
+          'Ungated and `no-store`; the corresponding CA private key never ' +
+          'leaves this service.' },
+  { path: '/pki/ssh-user-krl/:scope', group: 'PKI',
+    name: 'The realm OpenSSH user key revocation list', specs: [],
+    what: 'NON-SPEC (#1955 P3): the realm-scoped OpenSSH KRL, updated when ' +
+          'a caller revokes a certificate or reports a hardware token lost. ' +
+          'Ungated and `no-store`; SSH servers must be configured to consult ' +
+          'it because this service cannot make a relying party do so.' },
   { path: '/admin-api/xacml', group: 'XACML',
     name: 'The XACML console page over JSON', specs: ['xacml30'],
     what: 'What GET /admin/xacml draws, as data. Ungated, like the rest of ' +
@@ -7088,9 +7122,16 @@ const ENDPOINTS: EndpointEntry[] = [
           'each from its own attestation, paged and searched by serial or ' +
           'person, with the passkeys and certificates on each. Mirrors GET ' +
           '/admin/hardware-tokens.' },
+  { path: '/admin-api/hardware-tokens/oath', group: 'Management API',
+    name: 'Imported OATH tokens', specs: ['openapi', 'rfc6030'],
+    what: 'NON-SPEC (#1955 P4). The HOTP and TOTP tokens administrators ' +
+          'imported from vendors\' PSKC seed files, unassigned, assigned ' +
+          'or retired, paged and searched by serial or person. Never a ' +
+          'secret. Mirrors GET /admin/hardware-tokens (its OATH tab).' },
   { path: '/admin-api/hardware-tokens/:action', group: 'Management API',
     name: 'Hardware token acts',
-    specs: ['openapi', 'yubico-piv-attestation', 'lamps-csr-attestation'],
+    specs: ['openapi', 'rfc6030', 'yubico-piv-attestation',
+          'lamps-csr-attestation'],
     effect: 'reports a hardware token lost and retires its credentials, ' +
             'issues a PIV slot certificate, or hands over an escrowed key',
     what: 'NON-SPEC (#1955). lost, with { key }: the token is marked lost, ' +
@@ -11101,7 +11142,7 @@ const PROTOCOLS: Protocol[] = [
           'security key, with the attestation and the authenticator data ' +
           'checked rather than merely parsed.' },
   { name: 'One-time passwords (TOTP)', groups: ['Authentication'],
-    specs: ['rfc6238', 'rfc4226'],
+    specs: ['rfc6238', 'rfc4226', 'rfc6030'],
     what: 'The other second factor on the sign-in screen every protocol here ' +
           'sends a person to, and the only credential besides a Kerberos ' +
           'ticket this service really CHECKS: the code is computed from the ' +
@@ -11110,7 +11151,12 @@ const PROTOCOLS: Protocol[] = [
           'code this server drew, at /portal/mfa or while an activation link ' +
           'is spent; the person\'s own row on /admin/users is where an ' +
           'operator clears one, and /admin/totp is where the mechanism is ' +
-          'configured.' },
+          'configured. Since #1955 P4 its counter-based sibling as well: an ' +
+          'RFC 4226 HOTP token (a YubiKey OTP slot, enrolled on /portal/mfa, ' +
+          'or a vendor\'s token imported from its RFC 6030 seed file on ' +
+          'Directory → Hardware tokens and assigned or claimed by serial), ' +
+          'its counter advanced by compare-and-set, accepted at every door ' +
+          'that takes a code.' },
   { name: 'Recovery codes', groups: ['Authentication'],
     specs: ['nist-800-63b'],
     // **IT CARRIED `notAProtocol` UNTIL #283 (2026-10-07)**, on the claim that

@@ -17,7 +17,12 @@
 //     stored has seen either a replay or a CLONED authenticator (WebAuthn
 //     Level 3 section 6.1.1) and must say so;
 //   * the last RFC 6238 TIME STEP a person spent. Section 5.2: once a step has
-//     been accepted, it and every step before it are spent.
+//     been accepted, it and every step before it are spent;
+//   * since #1955 P4, an RFC 4226 HOTP token's NEXT counter
+//     (`authn.hotp-counter`, `common/credentials.ts`): a code at or below the
+//     stored value is spent (section 7.2). The value stored is the counter
+//     AFTER the one accepted, so it is never 0 and the zero rule below never
+//     applies to a code.
 //
 // Both lived on the person's directory entry, and on one node that was
 // enough: the check and the write are one synchronous run of the event loop.

@@ -751,6 +751,23 @@ function checkHardwareTokenStore(t) {
 }
 
 // ---------------------------------------------------------------------------
+// 5c-iii. THE OATH TOKEN INVENTORY (#1955 P4): declared per realm;
+// `tests/oath_tokens.js` asserts that a token imported in one realm cannot
+// be assigned or claimed in another.
+// ---------------------------------------------------------------------------
+function checkOathTokenStore(t) {
+  log.debug("Entering checkOathTokenStore().");
+  t.log.info('the OATH token inventory');
+  require('../common/oath_tokens');
+  const handle = realms.handleFor('oath_tokens.inventory');
+  t.check(!!handle, 'oath_tokens.inventory is a declared store');
+  if (handle) {
+    t.equal(handle.scope, 'realm', 'the OATH token inventory is declared ' +
+            'PER REALM', String(handle.scope));
+  }
+  log.debug("Leaving checkOathTokenStore().");
+}
+
 // 5c-iii. THE OpenPGP STORES (#1955 P6): the registration challenges and the
 // Web Key Directory's publications, declared per realm; `tests/
 // openpgp_keys.js` asserts the behaviour — a challenge issued in one realm is
@@ -910,6 +927,7 @@ function run(t) {
   checkSignalRegisters(t);
   checkKerberosStores(t);
   checkHardwareTokenStore(t);
+  checkOathTokenStore(t);
   checkOpenPgpStores(t);
   checkGnapStores(t);
   checkChildStores(t);

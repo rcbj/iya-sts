@@ -419,66 +419,6 @@
     "en": "7bb2840e2f96210a",
     "text": "Binabasa ang listahan nang WALA ang 23 (nilo-log nang isang beses, STS-CORE-0106) at tinatanggihan ang pagsulat na nagpapangalan nito (STS-CORE-0103). Walang RC4 key na hinahango, iniimbak o inilalagay sa keytab para sa krbtgt, isang serbisyo o isang tao; hindi kailanman ginagamit ang key o ticket ng enctype na iyon; ang AS-REQ o TGS-REQ na walang ibang iniaalok ay tinatanggihan nang KDC_ERR_ETYPE_NOSUPP (STS-KRB-0156); tinatanggihan ang RC4 session key o subkey sa TGS-REQ, AP-REQ o FAST armor (STS-KRB-0157, 0158, 0159). AES ang natitira."
   },
-  "mode.requirements.unscoped-people.what": {
-    "en": "313033517d6bf954",
-    "text": "Kailangan ng tungkulin ang tao sa SCIM at Shared Signals"
-  },
-  "mode.requirements.unscoped-people.development": {
-    "en": "0be4a760d6eebbf0",
-    "text": "Maaaring magbasa at magsulat ang sinumang na-authenticate, anumang scheme ang gamit."
-  },
-  "mode.requirements.unscoped-people.product": {
-    "en": "b88ebd1ed2325b97",
-    "text": "Kailangan ng scheme na walang scope ang Admin Read para magbasa at Admin Write para magsulat, maliban kung naka-on ang security.allowUnscopedPeople. Gumagana pa rin ang mga OAuth scope at ang certificate ng application."
-  },
-  "mode.requirements.named-file-roots.what": {
-    "en": "947df8a88522b407",
-    "text": "Dapat nasa pinapayagang direktoryo ang pinangalanang file"
-  },
-  "mode.requirements.named-file-roots.development": {
-    "en": "249a8365ea4fdbfc",
-    "text": "Binabasa ang file na pinangalanan ng administrator kung saan man nito sabihin."
-  },
-  "mode.requirements.named-file-roots.product": {
-    "en": "027759d02863b752",
-    "text": "Binabasa lang ang file kung ang tunay nitong path ay nasa loob ng direktoryong nakalista sa security.fileRoots, at hindi sinasabi ng sagot kung bakit nabigo ang path."
-  },
-  "mode.requirements.jwe-cbc.what": {
-    "en": "a9e47c5b53e70f9e",
-    "text": "AES-GCM lang ang JWE content encryption"
-  },
-  "mode.requirements.jwe-cbc.development": {
-    "en": "cca6834a267241c9",
-    "text": "Iniaalok at tinatanggap ang A128CBC-HS256, A192CBC-HS384 at A256CBC-HS512, at A128CBC-HS256 ang default."
-  },
-  "mode.requirements.jwe-cbc.product": {
-    "en": "b8bdc8b82bb08a9e",
-    "text": "AES-GCM lang ang iniaalok o tinatanggap, at ito ang ginagamit kapag walang enc na pinangalanan ang client, maliban kung naka-on ang crypto.allowCbcJwe."
-  },
-  "mode.requirements.legacy-hashes.what": {
-    "en": "06838227a6e37c56",
-    "text": "Hindi ginagamit ang mga ipinagbabawal na hash"
-  },
-  "mode.requirements.legacy-hashes.development": {
-    "en": "5019d7e87d32f630",
-    "text": "Available ang OAEP sa SHA-1, ang SHA-1 PKINIT key derivation at ang HMAC-MD5 checksum ng S4U2Self."
-  },
-  "mode.requirements.legacy-hashes.product": {
-    "en": "eb55e63c70e4152c",
-    "text": "Naka-off ang mga ito maliban kung naka-on ang crypto.allowLegacyHashes. HMAC-SHA-1 pa rin ang default ng TOTP, para sa compatibility ng authenticator app, at pinananatili ng PKINIT ang SHA-1 paChecksum na itinakda ng RFC 4556."
-  },
-  "mode.requirements.no-default-admin-name.what": {
-    "en": "be402fb23aecd2d4",
-    "text": "Walang account na may default na pangalan ng administrator"
-  },
-  "mode.requirements.no-default-admin-name.development": {
-    "en": "ca263c05dbdb69a5",
-    "text": "Ang bootstrap administrator ay admin, na ginagamit ng bawat test at walkthrough sa pag-sign in."
-  },
-  "mode.requirements.no-default-admin-name.product": {
-    "en": "35dface5441235f5",
-    "text": "Ang bootstrap administrator na pinangalanang admin, root, sa o administrator, o walang pangalan, ay binibigyan ng hindi mahulaang nabuong pangalan, na ipinapakita kasama ng password nito sa unang pagsisimula, maliban kung naka-on ang admin.allowDefaultUsername."
-  },
   "mode.requirements.main-port-https.what": {
     "en": "6469fbe1118f7dc7",
     "text": "HTTPS ang pangunahing port"
@@ -526,6 +466,210 @@
   "mode.requirements.declared-grants.product": {
     "en": "636b38aec05ad6d5",
     "text": "authorization_code at refresh_token lang ang magagamit ng client na walang idineklarang grant type, maliban kung naka-on ang oauth2.allowUndeclaredGrants (STS-OAUTH-0598)."
+  },
+  "mode.requirements.no-default-admin-name.what": {
+    "en": "be402fb23aecd2d4",
+    "text": "Walang account na may default na pangalan ng administrator"
+  },
+  "mode.requirements.no-default-admin-name.development": {
+    "en": "ca263c05dbdb69a5",
+    "text": "Ang bootstrap administrator ay admin, na ginagamit ng bawat test at walkthrough sa pag-sign in."
+  },
+  "mode.requirements.no-default-admin-name.product": {
+    "en": "35dface5441235f5",
+    "text": "Ang bootstrap administrator na pinangalanang admin, root, sa o administrator, o walang pangalan, ay binibigyan ng hindi mahulaang nabuong pangalan, na ipinapakita kasama ng password nito sa unang pagsisimula, maliban kung naka-on ang admin.allowDefaultUsername."
+  },
+  "mode.requirements.legacy-hashes.what": {
+    "en": "06838227a6e37c56",
+    "text": "Hindi ginagamit ang mga ipinagbabawal na hash"
+  },
+  "mode.requirements.legacy-hashes.development": {
+    "en": "5019d7e87d32f630",
+    "text": "Available ang OAEP sa SHA-1, ang SHA-1 PKINIT key derivation at ang HMAC-MD5 checksum ng S4U2Self."
+  },
+  "mode.requirements.legacy-hashes.product": {
+    "en": "eb55e63c70e4152c",
+    "text": "Naka-off ang mga ito maliban kung naka-on ang crypto.allowLegacyHashes. HMAC-SHA-1 pa rin ang default ng TOTP, para sa compatibility ng authenticator app, at pinananatili ng PKINIT ang SHA-1 paChecksum na itinakda ng RFC 4556."
+  },
+  "mode.requirements.named-file-roots.what": {
+    "en": "947df8a88522b407",
+    "text": "Dapat nasa pinapayagang direktoryo ang pinangalanang file"
+  },
+  "mode.requirements.named-file-roots.development": {
+    "en": "249a8365ea4fdbfc",
+    "text": "Binabasa ang file na pinangalanan ng administrator kung saan man nito sabihin."
+  },
+  "mode.requirements.named-file-roots.product": {
+    "en": "027759d02863b752",
+    "text": "Binabasa lang ang file kung ang tunay nitong path ay nasa loob ng direktoryong nakalista sa security.fileRoots, at hindi sinasabi ng sagot kung bakit nabigo ang path."
+  },
+  "mode.requirements.second-factor-everyone.what": {
+    "en": "0fd5536cd700c440",
+    "text": "Kailangan ng second factor ang lahat"
+  },
+  "mode.requirements.second-factor-everyone.development": {
+    "en": "8816e275bdf92a96",
+    "text": "Ang authentication policy ang magpapasya, at bilang default, ang may second factor lang ang hihingan nito."
+  },
+  "mode.requirements.second-factor-everyone.product": {
+    "en": "1eb106bd8b0a4050",
+    "text": "Kailangan ng lahat ng second factor, anuman ang policy, maliban kung naka-on ang authn.allowOptionalSecondFactor."
+  },
+  "mode.requirements.factor-clear-evidence.what": {
+    "en": "d4453639b3500b23",
+    "text": "Kailangan ng nakasaad na patunay ng pagkakakilanlan para i-clear ang second factor"
+  },
+  "mode.requirements.factor-clear-evidence.development": {
+    "en": "9c5d644b822f24b9",
+    "text": "Maaaring i-clear ng administrator ang factor sa pamamagitan ng pagpapangalan sa tao."
+  },
+  "mode.requirements.factor-clear-evidence.product": {
+    "en": "e473fffee1f00eaa",
+    "text": "Dapat sabihin ng administrator kung paano na-verify ang pagkakakilanlan ng tao. Itinatala ang pahayag sa audit log."
+  },
+  "mode.requirements.strict-protocol-input.what": {
+    "en": "4c536228d39a5730",
+    "text": "Mahigpit ang pagbasa sa protocol input"
+  },
+  "mode.requirements.strict-protocol-input.development": {
+    "en": "da9c69e7fe603705",
+    "text": "Kinukuha ng paulit-ulit na token parameter ang huling value, hindi kailangan ng tahasang type ang Logout Token ng partner, pinaniniwalaan ang mga forwarded address mula sa kahit sino kapag naka-on ang global.trustProxy nang walang listahan, at umaabot sa tumawag ang text ng internal error."
+  },
+  "mode.requirements.strict-protocol-input.product": {
+    "en": "85fca28b66faee87",
+    "text": "Tinatanggihan ang paulit-ulit na token parameter, dapat logout+jwt ang type ng Logout Token ng partner maliban kung naka-on ang federation.allowUntypedLogoutToken, kailangan ng global.trustedProxies ang mga forwarded address, at nananatili sa log ang text ng internal error."
+  },
+  "mode.requirements.no-known-secrets.what": {
+    "en": "f3805d37f47556e7",
+    "text": "Walang kilalang lihim sa mga log at database"
+  },
+  "mode.requirements.no-known-secrets.development": {
+    "en": "bd225788d94d084d",
+    "text": "Sa debug level, buong request at response ang nasa log, at maaaring gumamit ng demo password ang database."
+  },
+  "mode.requirements.no-known-secrets.product": {
+    "en": "9dc455e8deb093a6",
+    "text": "Inaalis ng mga request log ang mga credential at body sa bawat level, ang isang naka-sign na token o assertion ay nilo-log lang ayon sa laki at digest nito, at pinahihinto ng isang default na password ng database ang serbisyo maliban kung naka-on ang persistence.allowDefaultDatabasePassword."
+  },
+  "mode.requirements.plaintext-seed-files.what": {
+    "en": "7dfdb35537e3d442",
+    "text": "Dapat naka-encrypt ang token seed file ng isang vendor"
+  },
+  "mode.requirements.plaintext-seed-files.development": {
+    "en": "406c007742c28ced",
+    "text": "Ang PSKC seed file na nasa plaintext ang mga token secret ay ini-import na parang naka-encrypt."
+  },
+  "mode.requirements.plaintext-seed-files.product": {
+    "en": "e3eb9f2bcabf5eaa",
+    "text": "Ang PSKC seed file na nasa plaintext ang mga token secret ay tinatanggihan maliban kung naka-on ang pskc.allowPlaintextImport; ang naka-encrypt ay binubuksan gamit ang key o password na ibinigay kasama ng upload, na hindi kailanman iniimbak."
+  },
+  "mode.requirements.sso-consent.what": {
+    "en": "2b06d195aa0a395d",
+    "text": "Nagtatanong ang single sign-on bago nito i-sign in ang isang tao sa isang application"
+  },
+  "mode.requirements.sso-consent.development": {
+    "en": "e519a44984791111",
+    "text": "Sina-sign in ng SAML 2.0, SAML 1.1 at WS-Federation ang isang tao mula sa kanyang session nang hindi nagtatanong."
+  },
+  "mode.requirements.sso-consent.product": {
+    "en": "0a4ee080bb81a76f",
+    "text": "Tinatanong ang isang tao nang minsan bawat application bago siya i-sign in dito ng SAML 2.0, SAML 1.1 o WS-Federation, at iniingatan ang sagot. Pinapatay ito ng saml2.ssoConsent, saml11.ssoConsent at wsfed.ssoConsent bawat protocol, at nangingibabaw sa kanila ang sariling value ng isang application."
+  },
+  "mode.requirements.secrets-from-store.what": {
+    "en": "51a0285e7263826e",
+    "text": "Nanggagaling sa isang secret store ang mga backend secret"
+  },
+  "mode.requirements.secrets-from-store.development": {
+    "en": "14c3b25b8289b3fa",
+    "text": "Maaaring file ang key-encryption key, at maaaring nasa isang file o sa connection string ang password ng database."
+  },
+  "mode.requirements.secrets-from-store.product": {
+    "en": "8a3820f8013ed174",
+    "text": "Nanggagaling ang mga key-encryption key sa isang secret store o isang key management service, at ang password ng database sa isang secret store. Pinahihinto ng isang file o ng password sa connection string ang serbisyo maliban kung naka-on ang secrets.allowLocalSecrets. Maaari pa ring file ang naunang key-encryption key, para makaalis dito ang isang deployment."
+  },
+  "mode.requirements.audit-destination.what": {
+    "en": "93abf5e422347728",
+    "text": "Dapat lumabas sa service na ito ang audit log"
+  },
+  "mode.requirements.audit-destination.development": {
+    "en": "9e4a085d4195578e",
+    "text": "Walang sinasabi tungkol sa audit export."
+  },
+  "mode.requirements.audit-destination.product": {
+    "en": "e082de544e11ddcb",
+    "text": "Magdagdag ng audit export destination, para hindi maabot ang kopya ng log kung makompromiso ang service. Hangga’t wala pa, nagtatala ang service ng babala para sa realm na iyon."
+  },
+  "mode.requirements.malware-scan-tls.what": {
+    "en": "926957ee32cf2309",
+    "text": "Naka-encrypt ang mga file patungo sa malware scanner"
+  },
+  "mode.requirements.malware-scan-tls.development": {
+    "en": "6d81d272e763db8d",
+    "text": "Maaaring gamitin ang icap:// o icaps:// na address."
+  },
+  "mode.requirements.malware-scan-tls.product": {
+    "en": "dbcd39f827b0a349",
+    "text": "icaps:// na address lamang ang ginagamit, maliban kung naka-on ang malwareScan.allowCleartext."
+  },
+  "mode.requirements.session-key-defaults.what": {
+    "en": "2f8e8efd319d1e4f",
+    "text": "Mas mahigpit ang mga default ng session at RSA key"
+  },
+  "mode.requirements.session-key-defaults.development": {
+    "en": "274bb878f654b30c",
+    "text": "Walang idle timeout ang session, at 2048 bits ang mga bagong RSA key."
+  },
+  "mode.requirements.session-key-defaults.product": {
+    "en": "acb90dc0f26a16ec",
+    "text": "Natatapos ang session pagkatapos ng 30 minutong walang gamit at 3072 bits ang mga bagong RSA key, maliban kung iba ang sinasabi ng setting."
+  },
+  "mode.requirements.bootstrap-password-file.what": {
+    "en": "e57fcd5b373e9128",
+    "text": "Hindi napupunta sa log ang bootstrap password"
+  },
+  "mode.requirements.bootstrap-password-file.development": {
+    "en": "2181a0af41a41ab3",
+    "text": "Isinusulat sa service log ang nabuong password."
+  },
+  "mode.requirements.bootstrap-password-file.product": {
+    "en": "e12d4ddc2b4d4724",
+    "text": "Isinusulat ito sa file na ang serbisyong ito lang ang makakabasa, at sinasabi ng log kung saan, maliban kung naka-on ang admin.logBootstrapPassword."
+  },
+  "mode.requirements.pkce-every-client.what": {
+    "en": "7e2c6f1869e39287",
+    "text": "Dapat gumamit ng PKCE ang bawat client"
+  },
+  "mode.requirements.pkce-every-client.development": {
+    "en": "66e8ff75c554aad0",
+    "text": "Inilo-log lang ang confidential client na walang ipinadalang code_challenge."
+  },
+  "mode.requirements.pkce-every-client.product": {
+    "en": "2c34add4c2d2718f",
+    "text": "Tinatanggihan ito maliban kung naka-on ang oauth2.allowConfidentialWithoutPkce."
+  },
+  "mode.requirements.jwe-cbc.what": {
+    "en": "a9e47c5b53e70f9e",
+    "text": "AES-GCM lang ang JWE content encryption"
+  },
+  "mode.requirements.jwe-cbc.development": {
+    "en": "cca6834a267241c9",
+    "text": "Iniaalok at tinatanggap ang A128CBC-HS256, A192CBC-HS384 at A256CBC-HS512, at A128CBC-HS256 ang default."
+  },
+  "mode.requirements.jwe-cbc.product": {
+    "en": "b8bdc8b82bb08a9e",
+    "text": "AES-GCM lang ang iniaalok o tinatanggap, at ito ang ginagamit kapag walang enc na pinangalanan ang client, maliban kung naka-on ang crypto.allowCbcJwe."
+  },
+  "mode.requirements.unscoped-people.what": {
+    "en": "313033517d6bf954",
+    "text": "Kailangan ng tungkulin ang tao sa SCIM at Shared Signals"
+  },
+  "mode.requirements.unscoped-people.development": {
+    "en": "0be4a760d6eebbf0",
+    "text": "Maaaring magbasa at magsulat ang sinumang na-authenticate, anumang scheme ang gamit."
+  },
+  "mode.requirements.unscoped-people.product": {
+    "en": "b88ebd1ed2325b97",
+    "text": "Kailangan ng scheme na walang scope ang Admin Read para magbasa at Admin Write para magsulat, maliban kung naka-on ang security.allowUnscopedPeople. Gumagana pa rin ang mga OAuth scope at ang certificate ng application."
   },
   "mode.requirements.prefixed-cookies.what": {
     "en": "d3919ebba2136f69",
@@ -1211,6 +1355,18 @@
     "en": "335681287a816601",
     "text": "Tinatanggihan ang ganoong statement (STS-DEVICE-0050): ang nakuhang attestation na ni-replay sa bagong request para sa parehong key ay hindi key na ginawa at hawak sa TPM ngayon. Kaya in-iissue lang sa EST ang device certificate na may TPM attestation, pagkatapos ng /nonce (draft-ietf-lamps-attestation-freshness section 5.1)."
   },
+  "mode.requirements.pep-proxy-origin.what": {
+    "en": "697bb262238f557f",
+    "text": "Naaabot ng browser ang reverse proxy ng isang remote PEP sa pamamagitan ng https"
+  },
+  "mode.requirements.pep-proxy-origin.development": {
+    "en": "27973f632a8e4726",
+    "text": "Maaaring magpangalan ang isang proxy configuration ng plain-http na publicBaseUrl, kaya hindi kailangan ng stack sa isang makina ang listener certificate para sa proxy."
+  },
+  "mode.requirements.pep-proxy-origin.product": {
+    "en": "3c64430130525f3e",
+    "text": "Tinatanggihan ang publicBaseUrl na hindi https (STS-XACML-0188): nagbabalik doon ang sign-in ng session mechanism ng authorization code at Secure ang session cookie nito."
+  },
   "mode.notYet.certificate-revocation.what": {
     "en": "90de04e6940f9577",
     "text": "KINOKONSULTA ang revocation para sa ipinapakitang certificate (tingnan ang requirement sa itaas) at para sa NAKA-REGISTER na certificate kapag may vine-verify ito — ang register, ang OCSP responder (kasama ang sariling status ng delegated responder) at ang CRL na pinangangalanan ng foreign certificate, sa http, https at ldaps, pinagsasama ang mga delta CRL, binabasa ang mga indirect CRL bawat issuer at kinukuha ang signer nito mula sa caIssuers address ng list kung saan walang humahawak nito rito. Ang natitira ay mga limitasyon sa halip na trabaho: ang BARE key na naka-register nang walang certificate (JWK na walang x5c) ay walang pinangangalanang issuer at list, kaya ang pag-alis lang nito sa entry ang pumipigil sa pag-verify nito; dina-dial lang ang plain ldap: kapag pinapayagan ito ng pki.revocationLdap; ginagamit lang ang distribution point na pinangalanan nang relative sa CRL issuer nito kapag nakatakda ang pki.revocationLdapDirectory at single-valued ang bawat RDN; at walang hinihinging client certificate ang LDAPS 636, kaya walang kinokonsulta roon."
@@ -1274,149 +1430,5 @@
   "mode.why.default": {
     "en": "108a941d7ea44a81",
     "text": "para sa development mode lang ang setting."
-  },
-  "mode.requirements.second-factor-everyone.what": {
-    "en": "0fd5536cd700c440",
-    "text": "Kailangan ng second factor ang lahat"
-  },
-  "mode.requirements.second-factor-everyone.development": {
-    "en": "8816e275bdf92a96",
-    "text": "Ang authentication policy ang magpapasya, at bilang default, ang may second factor lang ang hihingan nito."
-  },
-  "mode.requirements.second-factor-everyone.product": {
-    "en": "1eb106bd8b0a4050",
-    "text": "Kailangan ng lahat ng second factor, anuman ang policy, maliban kung naka-on ang authn.allowOptionalSecondFactor."
-  },
-  "mode.requirements.session-key-defaults.what": {
-    "en": "2f8e8efd319d1e4f",
-    "text": "Mas mahigpit ang mga default ng session at RSA key"
-  },
-  "mode.requirements.session-key-defaults.development": {
-    "en": "274bb878f654b30c",
-    "text": "Walang idle timeout ang session, at 2048 bits ang mga bagong RSA key."
-  },
-  "mode.requirements.session-key-defaults.product": {
-    "en": "acb90dc0f26a16ec",
-    "text": "Natatapos ang session pagkatapos ng 30 minutong walang gamit at 3072 bits ang mga bagong RSA key, maliban kung iba ang sinasabi ng setting."
-  },
-  "mode.requirements.bootstrap-password-file.what": {
-    "en": "e57fcd5b373e9128",
-    "text": "Hindi napupunta sa log ang bootstrap password"
-  },
-  "mode.requirements.bootstrap-password-file.development": {
-    "en": "2181a0af41a41ab3",
-    "text": "Isinusulat sa service log ang nabuong password."
-  },
-  "mode.requirements.bootstrap-password-file.product": {
-    "en": "aa423786d143e231",
-    "text": "Isinusulat ito sa file na ang serbisyong ito lang ang makakabasa, at sinasabi ng log kung saan, maliban kung naka-on ang admin.logBootstrapPassword. Ang susunod na pagsisimula ay nagbubura ng file na iyon kapag may humahawak na ng kredensyal."
-  },
-  "mode.requirements.pkce-every-client.what": {
-    "en": "7e2c6f1869e39287",
-    "text": "Dapat gumamit ng PKCE ang bawat client"
-  },
-  "mode.requirements.pkce-every-client.development": {
-    "en": "66e8ff75c554aad0",
-    "text": "Inilo-log lang ang confidential client na walang ipinadalang code_challenge."
-  },
-  "mode.requirements.pkce-every-client.product": {
-    "en": "2c34add4c2d2718f",
-    "text": "Tinatanggihan ito maliban kung naka-on ang oauth2.allowConfidentialWithoutPkce."
-  },
-  "mode.requirements.malware-scan-tls.what": {
-    "en": "926957ee32cf2309",
-    "text": "Naka-encrypt ang mga file patungo sa malware scanner"
-  },
-  "mode.requirements.malware-scan-tls.development": {
-    "en": "6d81d272e763db8d",
-    "text": "Maaaring gamitin ang icap:// o icaps:// na address."
-  },
-  "mode.requirements.malware-scan-tls.product": {
-    "en": "dbcd39f827b0a349",
-    "text": "icaps:// na address lamang ang ginagamit, maliban kung naka-on ang malwareScan.allowCleartext."
-  },
-  "mode.requirements.factor-clear-evidence.what": {
-    "en": "d4453639b3500b23",
-    "text": "Kailangan ng nakasaad na patunay ng pagkakakilanlan para i-clear ang second factor"
-  },
-  "mode.requirements.factor-clear-evidence.development": {
-    "en": "9c5d644b822f24b9",
-    "text": "Maaaring i-clear ng administrator ang factor sa pamamagitan ng pagpapangalan sa tao."
-  },
-  "mode.requirements.factor-clear-evidence.product": {
-    "en": "e473fffee1f00eaa",
-    "text": "Dapat sabihin ng administrator kung paano na-verify ang pagkakakilanlan ng tao. Itinatala ang pahayag sa audit log."
-  },
-  "mode.requirements.strict-protocol-input.what": {
-    "en": "4c536228d39a5730",
-    "text": "Mahigpit ang pagbasa sa protocol input"
-  },
-  "mode.requirements.strict-protocol-input.development": {
-    "en": "da9c69e7fe603705",
-    "text": "Kinukuha ng paulit-ulit na token parameter ang huling value, hindi kailangan ng tahasang type ang Logout Token ng partner, pinaniniwalaan ang mga forwarded address mula sa kahit sino kapag naka-on ang global.trustProxy nang walang listahan, at umaabot sa tumawag ang text ng internal error."
-  },
-  "mode.requirements.strict-protocol-input.product": {
-    "en": "85fca28b66faee87",
-    "text": "Tinatanggihan ang paulit-ulit na token parameter, dapat logout+jwt ang type ng Logout Token ng partner maliban kung naka-on ang federation.allowUntypedLogoutToken, kailangan ng global.trustedProxies ang mga forwarded address, at nananatili sa log ang text ng internal error."
-  },
-  "mode.requirements.no-known-secrets.what": {
-    "en": "f3805d37f47556e7",
-    "text": "Walang kilalang lihim sa mga log at database"
-  },
-  "mode.requirements.no-known-secrets.development": {
-    "en": "bd225788d94d084d",
-    "text": "Sa debug level, buong request at response ang nasa log, at maaaring gumamit ng demo password ang database."
-  },
-  "mode.requirements.no-known-secrets.product": {
-    "en": "9dc455e8deb093a6",
-    "text": "Inaalis ng mga request log ang mga credential at body sa bawat level, ang isang naka-sign na token o assertion ay nilo-log lang ayon sa laki at digest nito, at pinahihinto ng isang default na password ng database ang serbisyo maliban kung naka-on ang persistence.allowDefaultDatabasePassword."
-  },
-  "mode.requirements.secrets-from-store.what": {
-    "en": "51a0285e7263826e",
-    "text": "Nanggagaling sa isang secret store ang mga backend secret"
-  },
-  "mode.requirements.secrets-from-store.development": {
-    "en": "14c3b25b8289b3fa",
-    "text": "Maaaring file ang key-encryption key, at maaaring nasa isang file o sa connection string ang password ng database."
-  },
-  "mode.requirements.secrets-from-store.product": {
-    "en": "8a3820f8013ed174",
-    "text": "Nanggagaling ang mga key-encryption key sa isang secret store o isang key management service, at ang password ng database sa isang secret store. Pinahihinto ng isang file o ng password sa connection string ang serbisyo maliban kung naka-on ang secrets.allowLocalSecrets. Maaari pa ring file ang naunang key-encryption key, para makaalis dito ang isang deployment."
-  },
-  "mode.requirements.audit-destination.what": {
-    "en": "93abf5e422347728",
-    "text": "Dapat lumabas sa service na ito ang audit log"
-  },
-  "mode.requirements.audit-destination.development": {
-    "en": "9e4a085d4195578e",
-    "text": "Walang sinasabi tungkol sa audit export."
-  },
-  "mode.requirements.audit-destination.product": {
-    "en": "e082de544e11ddcb",
-    "text": "Magdagdag ng audit export destination, para hindi maabot ang kopya ng log kung makompromiso ang service. Hangga’t wala pa, nagtatala ang service ng babala para sa realm na iyon."
-  },
-  "mode.requirements.sso-consent.what": {
-    "en": "2b06d195aa0a395d",
-    "text": "Nagtatanong ang single sign-on bago nito i-sign in ang isang tao sa isang application"
-  },
-  "mode.requirements.sso-consent.development": {
-    "en": "e519a44984791111",
-    "text": "Sina-sign in ng SAML 2.0, SAML 1.1 at WS-Federation ang isang tao mula sa kanyang session nang hindi nagtatanong."
-  },
-  "mode.requirements.sso-consent.product": {
-    "en": "0a4ee080bb81a76f",
-    "text": "Tinatanong ang isang tao nang minsan bawat application bago siya i-sign in dito ng SAML 2.0, SAML 1.1 o WS-Federation, at iniingatan ang sagot. Pinapatay ito ng saml2.ssoConsent, saml11.ssoConsent at wsfed.ssoConsent bawat protocol, at nangingibabaw sa kanila ang sariling value ng isang application."
-  },
-  "mode.requirements.pep-proxy-origin.what": {
-    "en": "697bb262238f557f",
-    "text": "Naaabot ng browser ang reverse proxy ng isang remote PEP sa pamamagitan ng https"
-  },
-  "mode.requirements.pep-proxy-origin.development": {
-    "en": "27973f632a8e4726",
-    "text": "Maaaring magpangalan ang isang proxy configuration ng plain-http na publicBaseUrl, kaya hindi kailangan ng stack sa isang makina ang listener certificate para sa proxy."
-  },
-  "mode.requirements.pep-proxy-origin.product": {
-    "en": "3c64430130525f3e",
-    "text": "Tinatanggihan ang publicBaseUrl na hindi https (STS-XACML-0188): nagbabalik doon ang sign-in ng session mechanism ng authorization code at Secure ang session cookie nito."
   }
 }

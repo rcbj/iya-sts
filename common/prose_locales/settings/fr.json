@@ -1315,6 +1315,30 @@
     "en": "f034b2f597ec08a5",
     "text": "Combien de temps un secret AFFICHÉ mais pas encore confirmé par un code reste disponible. Il est conservé à part — en mémoire, ou scellé dans le stockage lorsque plusieurs processus en partagent un — et n’est jamais écrit dans l’annuaire tant qu’un code ne prouve pas que l’application le possède réellement : un secret non confirmé sur l’entrée de quelqu’un serait un second facteur qu’il ne peut pas produire, c’est-à-dire un verrouillage plutôt qu’un contrôle. Dix minutes suffisent pour trouver un téléphone et sont assez courtes pour qu’un enrôlement abandonné ne s’attarde pas."
   },
+  "hotp.digits|label": {
+    "en": "e878ad21c60b7f59",
+    "text": "Longueur du code HOTP (chiffres)"
+  },
+  "hotp.digits|description": {
+    "en": "a62b054d7e8d650e",
+    "text": "Combien de chiffres produit un NOUVEL enrôlement de jeton à compteur (RFC 4226) : un emplacement OTP de YubiKey programmé depuis le portail accepte 6 ou 8. Un jeton importé depuis le fichier PSKC de son fournisseur garde la longueur que le fichier indique."
+  },
+  "hotp.window|label": {
+    "en": "0b307d73f8b8efcb",
+    "text": "Anticipation HOTP (codes)"
+  },
+  "hotp.window|description": {
+    "en": "b12c6aec525f377e",
+    "text": "L’anticipation de RFC 4226 section 7.4 : combien de pressions d’un jeton à compteur qui n’ont jamais atteint ce service sont tolérées. Un code au compteur enregistré ou jusqu’à ce nombre au-delà est accepté, et le compteur passe au-delà ; un code antérieur ne l’est jamais. Zéro n’accepte que le code suivant. En direct, pour chaque enrôlement."
+  },
+  "hotp.resyncWindow|label": {
+    "en": "15000f3de3322f0d",
+    "text": "Fenêtre de resynchronisation HOTP (codes)"
+  },
+  "hotp.resyncWindow|description": {
+    "en": "4bc7180cc29f1f53",
+    "text": "Jusqu’où deux codes CONSÉCUTIFS sont recherchés quand une personne resynchronise un jeton sorti de la fenêtre d’anticipation (RFC 4226 section 7.4). Deux codes à la suite sont bien plus difficiles à deviner qu’un seul, ce qui rend la recherche plus large sûre. En direct."
+  },
   "backupCodes.count|label": {
     "en": "91b6e4a086244cce",
     "text": "Codes par jeu"
@@ -3267,43 +3291,51 @@
     "en": "e0341e4e47f3b2f8",
     "text": "Ce qui permet à une connexion PKINIT de revendiquer une clé liée au matériel (l'indicateur pkinit-hardware et amr hwk). `inference`, la valeur par défaut et le comportement d'avant #1955 : un certificat d'ouverture de session par carte à puce dont ce service n'a pas généré la clé, ou une preuve d'attestation enregistrée. `evidence` : seulement une clé couverte par l'attestation d'un jeton matériel. Une connexion par certificat sur TLS n'obtient hwk, et sc pour une clé sur une carte à puce, qu'à partir d'une preuve, dans les deux cas."
   },
-  "openpgp.wkd|label": {
+"pskc.allowPlaintextImport|label": {
+    "en": "a098f07c2a04a83b",
+    "text": "Accepter les fichiers de semences PSKC en clair en mode produit"
+  },
+"pskc.allowPlaintextImport|description": {
+    "en": "7efe34e872e4772e",
+    "text": "Si un administrateur peut importer, en mode produit, un fichier de semences PSKC (RFC 6030) dont les secrets de jetons NE sont PAS chiffrés. Désactivé par défaut : un tel fichier a été une liste de deuxièmes facteurs fonctionnels sur chaque disque et chaque boîte aux lettres qu’il a traversés, et un fournisseur peut le chiffrer sous une clé prépartagée ou un mot de passe (sections 6.1 et 6.2). Le mode développement en accepte un dans tous les cas."
+  },
+"openpgp.wkd|label": {
     "en": "1f05a7518c3d2275",
     "text": "Publier les clés dans le Web Key Directory"
   },
-  "openpgp.wkd|description": {
+"openpgp.wkd|description": {
     "en": "7822103f89ac59b3",
     "text": "Répondre au Web Key Directory (draft-koch-openpgp-webkey-service) pour les domaines de messagerie de ce domaine de confiance : /.well-known/openpgpkey/<domain>/hu/<hash> (la méthode avancée, sur openpgpkey.<domain>) et /.well-known/openpgpkey/hu/<hash> (la méthode directe), ainsi que le fichier de politique de chacune. Seule la clé d'une personne ayant accepté la publication sur le portail est renvoyée. Désactivé par défaut."
   },
-  "openpgp.wkdDomains|label": {
+"openpgp.wkdDomains|label": {
     "en": "d1c4b728593ff000",
     "text": "Domaines de messagerie servis par le Web Key Directory"
   },
-  "openpgp.wkdDomains|description": {
+"openpgp.wkdDomains|description": {
     "en": "ad64f7216191123c",
     "text": "Les domaines de messagerie pour lesquels le Web Key Directory de ce domaine de confiance répond, séparés par des virgules. Vide, la valeur par défaut, désigne le propre domaine DNS du domaine de confiance. Une requête dont le chemin ne comporte aucun domaine de confiance reçoit la réponse du domaine de confiance qui sert son domaine DNS, le domaine par défaut en premier."
   },
-  "openpgp.challengeLifetimeS|label": {
+"openpgp.challengeLifetimeS|label": {
     "en": "dbf558cf0b4b8f90",
     "text": "Durée de validité du défi d'enregistrement (secondes)"
   },
-  "openpgp.challengeLifetimeS|description": {
+"openpgp.challengeLifetimeS|description": {
     "en": "e9130c8e82368cc6",
     "text": "Durée pendant laquelle reste valable le défi qu'une personne signe avec gpg --clearsign pour enregistrer une clé OpenPGP. Il n'est consommé qu'une fois, et une personne n'en a qu'un à la fois."
   },
-  "openpgp.signatureSkewS|label": {
+"openpgp.signatureSkewS|label": {
     "en": "d927cf1f04bd9d51",
     "text": "Décalage d'horloge admis pour la signature de preuve (secondes)"
   },
-  "openpgp.signatureSkewS|description": {
+"openpgp.signatureSkewS|description": {
     "en": "2772763d3d363b6d",
     "text": "L'écart admis entre l'horloge de l'ordinateur signataire et celle de ce service : une preuve signée avant l'émission du défi, ou après l'instant présent, de plus que cette valeur est refusée (STS-OPENPGP-0010)."
   },
-  "openpgp.minRsaBits|label": {
+"openpgp.minRsaBits|label": {
     "en": "f3dc9f85de143630",
     "text": "Plus petite clé OpenPGP RSA"
   },
-  "openpgp.minRsaBits|description": {
+"openpgp.minRsaBits|description": {
     "en": "ad48516e31a7c45b",
     "text": "La clé RSA la plus courte, principale ou sous-clé, qu'un enregistrement OpenPGP accepte. Ed25519, Ed448, ECDSA et ECDH sur P-256, P-384 et P-521, X25519 et X448 sont acceptés ; DSA, ElGamal et les courbes Brainpool ne le sont jamais (STS-OPENPGP-0004)."
   },

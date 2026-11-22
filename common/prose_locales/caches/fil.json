@@ -719,6 +719,22 @@
     "en": "cdfb417042891812",
     "text": "isang mensaheng pinigil bilang duplicate ng isang naka-queue na para sa parehong aksyon sa loob ng mail.dedupWindowS"
   },
+  "caches.store.oath_tokens.inventory.title": {
+    "en": "52f9d22caf2dc03d",
+    "text": "Inventory ng OATH token"
+  },
+  "caches.store.oath_tokens.inventory.description": {
+    "en": "7e1f6a1cdbd27667",
+    "text": "Isang row bawat HOTP o TOTP key na in-import ng administrator mula sa PSKC seed file ng vendor (RFC 6030), naka-key ayon sa vendor, serial at key id: hindi naka-assign (naka-seal ang secret nito), naka-assign sa isang tao (inalis ang secret, nasa entry na niya ngayon) o retirado."
+  },
+  "caches.store.oath_tokens.inventory.bound": {
+    "en": "cbe61377f99c025d",
+    "text": "Ang mga row na hawak ng isang process ay cache ng 5,000 bawat realm; ang inventory ay nalilimitahan ng ini-import ng mga administrator, hanggang 2,000 key bawat file."
+  },
+  "caches.store.oath_tokens.inventory.lifetime": {
+    "en": "4f13467dac65d62f",
+    "text": "Hanggang alisin ang isang hindi naka-assign na token; itinatabi ang naka-assign o retiradong token."
+  },
   "caches.store.oauth2.access-token-status.title": {
     "en": "510d919c0bffd0a8",
     "text": "Mga status entry ng access token"

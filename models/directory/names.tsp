@@ -299,6 +299,9 @@ namespace IyaSts.Directory;
   // `common/credentials.ts` argues all of it.
   "stsWebauthnCredential", "stsActivationToken", "stsActivationExpires",
   "stsTotpCredential",
+  // THE HOTP CREDENTIAL (#1955 P4): a shared secret like the authenticator
+  // app's, and sealed the same way, for the same reason.
+  "stsHotpCredential",
   // THE ANDROID MARKER (#615): the credential ids of the keys above whose
   // trusted `android-key` attestation the recheck asks Google's status list
   // about, derived on every write of the keys (`deriveAndroidMarker()`) so

@@ -1259,9 +1259,13 @@
     "en": "386404ef0cf5e649",
     "text": "硬件令牌"
   },
+  "endpoints.route./admin-api/hardware-tokens/oath.name": {
+    "en": "009f323198517782",
+    "text": "导入的 OATH 令牌"
+  },
   "endpoints.route./admin-api/hardware-tokens/:action.name": {
-    "en": "33209f967f070175",
-    "text": "硬件令牌操作"
+"en": "33209f967f070175",
+"text": "硬件令牌操作"
   },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",

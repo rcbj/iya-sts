@@ -3258,10 +3258,10 @@ op `getMfa`(`responses/200/content/application~1json/schema`: WithUsernameVerifi
   
 
 @js(#{
-    `description`:"The step: `start` an authenticator app, `confirm` it with a code, `remove` it; `generate-codes`, `confirm-codes` or `discard-codes` a set of recovery codes; `email-factor-on` or `email-factor-off`."
+    `description`:"The step: `start` an authenticator app, `confirm` it with a code, `remove` it; `hotp-start`, `hotp-confirm`, `hotp-resync` (two consecutive codes) or `hotp-remove` a one-time code token (RFC 4226); `generate-codes`, `confirm-codes` or `discard-codes` a set of recovery codes; `email-factor-on` or `email-factor-off`."
   }) @hoisted union post_account_api_mfa_b_application_json_action_h255 {
     EmptyText,
-    "start" | "confirm" | "remove" | "generate-codes" | "confirm-codes" | "discard-codes" | "email-factor-on" | "email-factor-off"
+    "start" | "confirm" | "remove" | "hotp-start" | "hotp-confirm" | "hotp-resync" | "hotp-remove" | "generate-codes" | "confirm-codes" | "discard-codes" | "email-factor-on" | "email-factor-off"
   }
 
   
@@ -3276,7 +3276,7 @@ op `getMfa`(`responses/200/content/application~1json/schema`: WithUsernameVerifi
     `operationId`:"changeMfa",
     `tags`:#["Authenticator app"],
     `summary`:"Sets up, confirms or removes your second factors",
-    `description`:"`start` mints a secret and holds it (ask the view for the QR code); `confirm` checks a code from the app (rate limited) and enrols it; `remove` takes it off, and ends every session its codes signed in (`sessionsEnded`, #722). `generate-codes` answers a set of recovery codes ONCE, in `view.fresh`, and stores nothing; `confirm-codes` stores their hashes; `discard-codes` throws the pending set away. `email-factor-on` (with `kind`) and `email-factor-off` opt in and out of the emailed second factor. A refusal carries the page's `view`.\n\nThe door of the portal's `POST /portal/mfa`.",
+    `description`:"`start` mints a secret and holds it (ask the view for the QR code); `confirm` checks a code from the app (rate limited) and enrols it; `remove` takes it off, and ends every session its codes signed in (`sessionsEnded`, #722). `hotp-start`, `hotp-confirm` and `hotp-remove` do the same for a counter-based one-time code token (RFC 4226, #1955) — the view's `hotp.setup` carries its otpauth://hotp QR code and the `ykman` command that programs a YubiKey's OTP slot — and `hotp-resync` brings back a token pressed too often from two consecutive codes (`code`, `code2`; rate limited). `generate-codes` answers a set of recovery codes ONCE, in `view.fresh`, and stores nothing; `confirm-codes` stores their hashes; `discard-codes` throws the pending set away. `email-factor-on` (with `kind`) and `email-factor-off` opt in and out of the emailed second factor. A refusal carries the page's `view`.\n\nThe door of the portal's `POST /portal/mfa`.",
     `parameters`:#[
 
     ],
@@ -3314,7 +3314,8 @@ op `getMfa`(`responses/200/content/application~1json/schema`: WithUsernameVerifi
 op `changeMfa`(`requestBody/content/application~1json/schema`: {
     `action`?: post_account_api_mfa_b_application_json_action_h255;
     `kind`?: post_account_api_mfa_b_application_json_kind_h257;
-    @js(#{`description`:"For `confirm`: the code the app shows.",`maxLength`:32}) `code`?: string;
+    @js(#{`description`:"For `confirm` and `hotp-confirm`: the code the app or token shows; for `hotp-resync`, the first of two consecutive codes.",`maxLength`:32}) `code`?: string;
+    @js(#{`description`:"For `hotp-resync`: the code the token showed next.",`maxLength`:32}) `code2`?: string;
     @js(#{
       `description`:"For `confirm-codes` and `discard-codes`: the pending set's handle, from `generate-codes`'s answer.",
       `maxLength`:128
@@ -4843,7 +4844,7 @@ op `actOnDevices`(`requestBody/content/application~1json/schema`: {
 
 // #1955 P1: THE PERSON'S HARDWARE TOKENS (`portal/account_tokens.ts`).
 @hoisted model HardwareTokenPortalCredential {
-  @js(#{`description`:"The credential's kind: `fido` or `x509` (later `hotp`, `yubico-otp`, `ssh`, `openpgp`)."}) `kind`: string;
+  @js(#{`description`:"The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token; later `yubico-otp`, `ssh`, `openpgp`)."}) `kind`: string;
   @js(#{`description`:"Its name, where it has one."}) `label`: string;
   @js(#{`description`:"When it was recorded on the token, ISO 8601."}) `addedAt`: string;
   @js(#{`description`:"Whether the lost-key act retired it."}) `retired`: boolean
@@ -4954,9 +4955,10 @@ op `getTokens`(`responses/200/content/application~1json/schema`: HardwareTokensP
   }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
 
 
-@js(#{`description`:"What to do; `lost` where none is named."}) @hoisted union post_account_api_tokens_b_application_json_action {
+@js(#{`description`:"What to do; `lost` where none is named. `claim` (#1955 P4) takes an imported one-time code token by its serial and a code it shows now."}) @hoisted union post_account_api_tokens_b_application_json_action {
     EmptyText,
     "lost",
+    "claim",
     "enrol-piv",
     "recover-key",
     "attach-key"
@@ -4967,8 +4969,8 @@ op `getTokens`(`responses/200/content/application~1json/schema`: HardwareTokensP
   #{
     `operationId`:"actOnTokens",
     `tags`:#["Devices"],
-    `summary`:"Reports one of your hardware tokens lost, enrols a PIV certificate, or recovers an escrowed key",
-    `description`:"`lost` marks the token lost and retires every credential of yours on it: its passkeys are removed, its certificates revoked (keyCompromise), a CAEP credential-change is sent for each, and the sign-on sessions they signed in end. `enrol-piv` issues you a PIV slot certificate (`profile`) from a certificate request (`csr`) and, optionally, its YubiKey PIV attestation: the slot's attestation certificate (`attestationCertificate`) and the f9 attestation certificate (`attestationIssuer`). `recover-key` answers your escrowed piv-key-management key for certificate `serial`. `attach-key` notes which of your tokens (`key`) the escrowed key of certificate `serial` was loaded on, so reporting the token lost revokes it. Each asks for a recent sign-in. A refusal carries the page's `view`.\n\nThe door of the portal's `POST /portal/tokens`.",
+`summary`:"Reports one of your hardware tokens lost, claims an imported token, enrols a PIV certificate, or recovers an escrowed key",
+    `description`:"`claim` (#1955 P4) takes a one-time code token an administrator imported from its vendor's PSKC file: give the `serial` printed on it and a `code` it shows now (rate limited, one refusal for a wrong serial and a wrong code alike), and it becomes your second factor with that code spent. `lost` marks the token lost and retires every credential of yours on it: its passkeys are removed, its certificates revoked (keyCompromise), a CAEP credential-change is sent for each, and the sign-on sessions they signed in end. `enrol-piv` issues you a PIV slot certificate (`profile`) from a certificate request (`csr`) and, optionally, its YubiKey PIV attestation: the slot's attestation certificate (`attestationCertificate`) and the f9 attestation certificate (`attestationIssuer`). `recover-key` answers your escrowed piv-key-management key for certificate `serial`. `attach-key` notes which of your tokens (`key`) the escrowed key of certificate `serial` was loaded on, so reporting the token lost revokes it. Each asks for a recent sign-in. A refusal carries the page's `view`.\n\nThe door of the portal's `POST /portal/tokens`.",
     `parameters`:#[
 
     ],
@@ -5014,11 +5016,12 @@ op `getTokens`(`responses/200/content/application~1json/schema`: HardwareTokensP
 op `actOnTokens`(`requestBody/content/application~1json/schema`: {
     `action`?: post_account_api_tokens_b_application_json_action;
     @js(#{`description`:"`lost` and `attach-key`: the token's key, `<vendor>/<serial>`.",`maxLength`:200}) `key`?: string;
+    @js(#{`description`:"`claim`: the serial printed on the token. `recover-key` and `attach-key`: the escrowed certificate's serial, hex.",`maxLength`:64}) `serial`?: string;
+    @js(#{`description`:"`claim`: a code the token shows now.",`maxLength`:32}) `code`?: string;
     @js(#{`description`:"`enrol-piv`: piv-auth, piv-sign, piv-key-management or piv-card-auth.",`maxLength`:64}) `profile`?: string;
     @js(#{`description`:"`enrol-piv`: the PKCS#10 certificate request, PEM.",`maxLength`:32768}) `csr`?: string;
     @js(#{`description`:"`enrol-piv`: the slot's attestation certificate, PEM (ykman piv keys attest).",`maxLength`:32768}) `attestationCertificate`?: string;
-    @js(#{`description`:"`enrol-piv`: the f9 attestation certificate, PEM (ykman piv certificates export f9), and any intermediate after it.",`maxLength`:32768}) `attestationIssuer`?: string;
-    @js(#{`description`:"`recover-key` and `attach-key`: the escrowed certificate's serial, hex.",`maxLength`:64}) `serial`?: string
+    @js(#{`description`:"`enrol-piv`: the f9 attestation certificate, PEM (ykman piv certificates export f9), and any intermediate after it.",`maxLength`:32768}) `attestationIssuer`?: string
   },
   `responses/200/content/application~1json/schema`: {
     `ok`: boolean;
@@ -5059,6 +5062,142 @@ op `actOnTokens`(`requestBody/content/application~1json/schema`: {
     `description`:"A refusal or a failure, in English. No error code is ever in it."
   }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
 
+// #1955 P3: SSH user certificates are Account API operations, not a portal
+// page. The caller's token subject owns every issued serial.
+@hoisted model SshUserCertificateAnswer {
+  `ok`: boolean;
+  `certificate`: string;
+  `serialHex`: string;
+  `validAfter`: integer;
+  `validBefore`: integer;
+  `hardwareBound`: boolean
+}
+
+@endpoint("/account-api/ssh/certificates",
+  "post",
+  #{
+    `operationId`:"issueSshCertificate",
+    `tags`:#[ "SSH" ],
+    `summary`:"Issues an SSH user certificate",
+    `description`:"Certifies one authorized public key for principals belonging to the caller, with a separate authorization decision for every principal. Security-key evidence is verified before it can produce a hardware-bound certificate. The caller may revoke only certificates issued to their own token subject.",
+    `parameters`:#[ ],
+    `responses`:#{
+      `200`:#{
+        `description`:"The OpenSSH user certificate, in authorized-key format.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The request did not validate or the key could not be issued.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"No valid DPoP-bound account access token.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"A requested principal or hardware evidence was refused.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `429`:#{
+        `description`:"The caller exceeded the certificate issuance rate limit.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `503`:#{
+        `description`:"The SSH user CA is not available.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`portal`:#["account:manage"]}],
+    `x-access`:"person",
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`publicKey`:"ssh-ed25519 invalid",`principals`:#["alice"]}}}}
+  })
+op `issueSshCertificate`(
+  `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"One OpenSSH public key line; certificate keys and authorized-key options are not accepted.",`maxLength`:8192}) `publicKey`: string;
+    @js(#{`description`:"The requested principals. Each must be the caller's username or one of their group common names.",`maxItems`:32}) `principals`: string[];
+    @js(#{`description`:"Certificate lifetime in seconds. Defaults to 300; maximum 300 for ordinary keys and 3600 with verified hardware evidence.",`minimum`:60,`maximum`:3600}) `lifetimeS`?: integer;
+    @js(#{`description`:"Base64 OpenSSH security-key attestation evidence, required for `sk-*` keys.",`maxLength`:87384}) `attestation`?: string
+  },
+  `responses/200/content/application~1json/schema`: SshUserCertificateAnswer,
+  @js(#{`description`:"A refusal or a failure, in English. No error code is ever in it."})
+    `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{`description`:"A refusal or a failure, in English. No error code is ever in it."})
+    `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{`description`:"A refusal or a failure, in English. No error code is ever in it."})
+    `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{`description`:"A refusal or a failure, in English. No error code is ever in it."})
+    `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{`description`:"A refusal or a failure, in English. No error code is ever in it."})
+    `responses/503/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{`description`:"A refusal or a failure, in English. No error code is ever in it."})
+    `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
+
+@endpoint("/account-api/ssh/certificates/revoke",
+  "post",
+  #{
+    `operationId`:"revokeSshCertificate",
+    `tags`:#[ "SSH" ],
+    `summary`:"Revokes an SSH user certificate",
+    `description`:"Revokes a certificate issued to the caller's token subject and updates the realm's OpenSSH KRL. A certificate belonging to another subject is not disclosed.",
+    `parameters`:#[ ],
+    `responses`:#{
+      `200`:#{
+        `description`:"The certificate was revoked.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The serial is invalid.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"No valid DPoP-bound account access token.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"The revocation was refused.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `404`:#{
+        `description`:"No certificate with this serial belongs to the caller.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `503`:#{
+        `description`:"The SSH user CA is not available.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`portal`:#["account:manage"]}],
+    `x-access`:"person",
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`serialHex`:"ffffffffffffffff"}}}}
+  })
+op `revokeSshCertificate`(
+  `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The serial from a certificate previously issued to this caller, in hexadecimal.",`maxLength`:16}) `serialHex`: string
+  },
+  `responses/200/content/application~1json/schema`: {
+    `ok`: boolean;
+    `revoked`: boolean
+  },
+  @js(#{`description`:"A refusal or a failure, in English. No error code is ever in it."})
+    `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{`description`:"A refusal or a failure, in English. No error code is ever in it."})
+    `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{`description`:"A refusal or a failure, in English. No error code is ever in it."})
+    `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{`description`:"A refusal or a failure, in English. No error code is ever in it."})
+    `responses/404/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{`description`:"A refusal or a failure, in English. No error code is ever in it."})
+    `responses/503/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{`description`:"A refusal or a failure, in English. No error code is ever in it."})
+    `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
 
 // #1955 P6: THE PERSON'S OpenPGP KEY AND MAIL ENCRYPTION (`portal/account_openpgp.ts`).
 @hoisted model OpenPgpPortalView {

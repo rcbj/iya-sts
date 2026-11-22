@@ -530,6 +530,13 @@ var config = {
     enrolmentTtlMinutes: 10  // Unconfirmed enrolment lifetime (minutes)
   },
 
+  // --- TOTP MFA --------------------------------------------------------
+  hotp: {
+    digits: 6,         // HOTP code length (digits)
+    window: 10,        // HOTP look-ahead (codes)
+    resyncWindow: 100  // HOTP resynchronisation window (codes)
+  },
+
   // --- Backup codes ----------------------------------------------------
   backupCodes: {
     count: 10,        // Codes in a set
@@ -807,6 +814,10 @@ var config = {
   },
 
   // --- Devices ---------------------------------------------------------
+  pskc: {
+    allowPlaintextImport: false  // Accept plaintext PSKC seed files in product mode
+  },
+
   piv: {
     attestationAnchors: "",                                                    // PIV attestation roots (PEM)
     requireAttestation: false,                                                 // Require a PIV attestation for the PIV profiles

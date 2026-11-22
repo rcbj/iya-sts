@@ -553,6 +553,21 @@ Scope: `admin:read`.
 | `(shape 2).factors.backupCodes.used` | number |  |  |
 | `(shape 2).factors.backupCodes.why` | string |  |  |
 | `(shape 2).factors.disabled` | boolean |  |  |
+| `(shape 2).factors.hotp` | boolean |  |  |
+| `(shape 2).factors.hotpDetail` | object |  |  |
+| `(shape 2).factors.hotpDetail.counter` | number |  |  |
+| `(shape 2).factors.hotpDetail.digits` | number |  |  |
+| `(shape 2).factors.hotpDetail.enrolledAt` | number |  |  |
+| `(shape 2).factors.hotpDetail.lastUsedAt` | number |  |  |
+| `(shape 2).factors.hotpDetail.model` | string |  |  |
+| `(shape 2).factors.hotpDetail.sealed` | boolean |  |  |
+| `(shape 2).factors.hotpDetail.serial` | string |  |  |
+| `(shape 2).factors.hotpDetail.source` | string |  |  |
+| `(shape 2).factors.hotpDetail.token` | string |  |  |
+| `(shape 2).factors.hotpDetail.unusable` | boolean |  |  |
+| `(shape 2).factors.hotpDetail.vendor` | string |  |  |
+| `(shape 2).factors.hotpDetail.why` | string |  |  |
+| `(shape 2).factors.hotpUsable` | boolean |  |  |
 | `(shape 2).factors.keys` | list |  |  |
 | `(shape 2).factors.keys[].aaguid` | string, or null |  |  |
 | `(shape 2).factors.keys[].algorithm` | object |  |  |
@@ -1077,6 +1092,21 @@ Scope: `admin:read`.
 | `(shape 2).page.mfa.mech.backupCodes.used` | number |  |  |
 | `(shape 2).page.mfa.mech.backupCodes.why` | string |  |  |
 | `(shape 2).page.mfa.mech.disabled` | boolean |  |  |
+| `(shape 2).page.mfa.mech.hotp` | boolean |  |  |
+| `(shape 2).page.mfa.mech.hotpDetail` | object |  |  |
+| `(shape 2).page.mfa.mech.hotpDetail.counter` | number |  | The next counter the token is expected to show. |
+| `(shape 2).page.mfa.mech.hotpDetail.digits` | number |  |  |
+| `(shape 2).page.mfa.mech.hotpDetail.enrolledAt` | number |  |  |
+| `(shape 2).page.mfa.mech.hotpDetail.lastUsedAt` | number |  |  |
+| `(shape 2).page.mfa.mech.hotpDetail.model` | string |  |  |
+| `(shape 2).page.mfa.mech.hotpDetail.sealed` | boolean |  |  |
+| `(shape 2).page.mfa.mech.hotpDetail.serial` | string |  |  |
+| `(shape 2).page.mfa.mech.hotpDetail.source` | string |  | `enrolled` or `pskc-import`. |
+| `(shape 2).page.mfa.mech.hotpDetail.token` | string |  | An imported token's inventory key, or empty. |
+| `(shape 2).page.mfa.mech.hotpDetail.unusable` | boolean |  |  |
+| `(shape 2).page.mfa.mech.hotpDetail.vendor` | string |  |  |
+| `(shape 2).page.mfa.mech.hotpDetail.why` | string |  |  |
+| `(shape 2).page.mfa.mech.hotpUsable` | boolean |  |  |
 | `(shape 2).page.mfa.mech.keys` | list |  |  |
 | `(shape 2).page.mfa.mech.keys[].aaguid` | string, or null |  |  |
 | `(shape 2).page.mfa.mech.keys[].algorithm` | object, or string, or null |  |  |
@@ -1203,6 +1233,7 @@ Scope: `admin:read`.
 | `(shape 2).page.mfa.mech.mfaRequirement.exemptServiceAccount` | boolean |  |  |
 | `(shape 2).page.mfa.mech.mfaRequirement.offered` | boolean |  |  |
 | `(shape 2).page.mfa.mech.mfaRequirement.required` | boolean |  |  |
+| `(shape 2).page.mfa.mech.oneTimeCode` | boolean |  |  |
 | `(shape 2).page.mfa.mech.password` | boolean |  |  |
 | `(shape 2).page.mfa.mech.passwordResetLink` | object |  |  |
 | `(shape 2).page.mfa.mech.passwordResetLink.expired` | boolean |  |  |
@@ -2479,6 +2510,65 @@ Scope: `admin:write`.
 | `ok` | boolean | yes |  |
 | `removed` | boolean |  |  |
 | `sessionsEnded` | number |  |  |
+
+## POST /admin-api/users/clear-hotp
+
+`clearUserHotpToken`
+
+**Clear somebody's one-time code token (HOTP) (#1955)**
+
+The way back for somebody who lost the token their HOTP credential is on (a YubiKey's OTP slot, or a token imported from its vendor's PSKC file): the shared secret is on it and this service cannot reach it. It cannot lock anybody out — a one-time code is never a primary credential here — and the sessions its codes signed in end (`sessionsEnded`, #722). An imported token lost with a YubiKey is better reported lost on Directory → Hardware tokens, which retires every credential on it at once. Clearing one nobody holds answers 400.
+
+**Mirrors** `POST /admin/users` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `evidence` | string |  | How the person's identity was verified, in at least 8 characters. Product mode requires it, and it is recorded in the audit log. |
+| `user` | string | yes | The person, as /admin-api/users names them. |
+| `username` | string |  | Accepted for `user`. |
+
+**200**: Whose token was cleared, and the sessions its codes signed in, which were ended.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `problems` | list |  |  |
+| `problems[]` | map, or string |  |  |
+| `problems[].{key}` | string, or number, or boolean, or null |  |  |
+| `reason` | string |  |  |
+| `remaining` | number |  |  |
+| `sessionsEnded` | number |  |  |
+| `username` | string |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `problems` | list |  |  |
+| `problems[]` | map, or string |  |  |
+| `problems[].{key}` | string, or number, or boolean, or null |  |  |
+| `reason` | string |  |  |
+| `remaining` | number |  |  |
+| `sessionsEnded` | number |  |  |
+| `username` | string |  |  |
 
 ## POST /admin-api/users/clear-key
 

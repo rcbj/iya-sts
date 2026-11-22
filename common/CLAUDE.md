@@ -8199,11 +8199,31 @@ reason.
 for the process, and an Issuing CA under each for every use case: `jose`,
 `xml`, `assertions`, `spiffe`, and (since 2026-09-13) `pep-tls`, `acme`, `est`,
 `scep` and `tls-client` under a realm, `tls` under the process. (This sentence put `spiffe` under the
-process for two days after the paragraph below moved it.) **Every key pair this
+process for two days after the paragraph below moved it.) **Every X.509 key pair this
 service generates is a leaf of it**, so an
 operator installs one anchor and it covers the main port, LDAPS 636, the
 debugger listener and every token, assertion and signed document this service
 issues.
+
+### OpenSSH user certificates are a separate CA (#1955 P3)
+
+The realm's OpenSSH user CA is not an X.509 tier and is not signed by the
+service Root. It has its own Ed25519 key in the realm's sealed PKI row, and
+`pki_merge.js` merges the CA first-writer-wins and its issued serials by union.
+`ssh_user_ca.ts` issues only for a caller's UID or group CN, asks XACML once
+per requested principal, and records the token subject as owner of each
+serial. The Account API's issue operation requires recent authentication,
+honours `pki.personSelfService` and the existing per-person/address rate
+limits; revocation checks that same token subject and updates the KRL.
+
+The CA key and KRL are public, `no-store` documents at
+`/pki/ssh-user-ca/{scope}` and `/pki/ssh-user-krl/{scope}`. A relying SSH
+server must configure the first as a trusted user CA and the second as its
+revocation list; publishing either cannot make a server consult it. A lost
+hardware token retires every SSH certificate associated with its key
+fingerprint through the hardware-token retirer. Security-key evidence is
+verified against the authenticator data and configured attestation anchors;
+a stored PIV-attested certificate earns the same hardware-bound lifetime.
 
 **WHAT REVERSED IS THE SENTENCE BELOW, and what replaced it is not a weaker
 claim.** *IT IS PER REALM* used to be argued here as: a CA shared across realms
@@ -12754,8 +12774,9 @@ this directory has to know beside it:
 
 * **A serial is recorded only from attestation**: `recordAttested()` is the
   one writer and takes an evidence source from a closed list
-  (`fido-enterprise-attestation`, `piv-attestation` since P2, and
-  `vendor-import` for P4). No door takes a serial from a body.
+  (`fido-enterprise-attestation`, `piv-attestation` since P2, `vendor-import`,
+  `pskc-import` since P4, and `ssh-security-key-attestation` since P3). No
+  door takes a serial from a body.
   `attachCredential()` (P2, D7) adds a credential to a token that is
   ALREADY in the register and held by the caller, with `hardware: false`
   evidence; it records no serial.
@@ -12787,6 +12808,65 @@ this directory has to know beside it:
   index by holder (`h:`) and by credential (`c:<kind>:<ref>`). No table, so
   no schema version or upgrade script; development does not keep it across
   a restart, as it keeps no minted store.
+* **P4 added two kinds and one evidence source** (below): `hotp` and
+  `totp` credentials (an imported OATH token's, `ref` its inventory key)
+  and `pskc-import`, each retired by `oath_tokens.ts`'s retirers.
+
+## `hotp.ts`, `pskc.ts`, `oath_tokens.ts`: ONE-TIME CODE TOKENS (#1955 P4, 2026-11-20)
+
+RFC 4226 HOTP as a second factor beside TOTP, and vendor-provisioned tokens
+imported from RFC 6030 PSKC seed files. Each file's header is the argument;
+what a maintainer of this directory has to know beside them:
+
+* **`hotp.ts` is arithmetic and policy, with no store**, `totp.ts`'s split:
+  the look-ahead (`hotp.window`, 10, zero legal), two-code resync over
+  `hotp.resyncWindow`, every counter in the window computed even after a
+  match. `credentials.ts` keeps the credential (`stsHotpCredential`, one per
+  person, beside one authenticator app) and spends it.
+* **THE COUNTER IS SPENT BY COMPARE-AND-SET (design X5)**:
+  `cluster_counters.advance()` under `authn.hotp-counter`, keyed by the
+  credential's id (random for an enrolment, `pskc:<token>` for an import,
+  so a token handed on cannot replay its first holder's codes). The stored
+  value is the NEXT counter, never 0 after an acceptance, because
+  `advance()`'s 0-to-0 rule (a WebAuthn counter that is always zero) must
+  never apply to a code. No schema change: `sts_cluster_counters` exists.
+  `tests/hotp.js` 5 is the two-node race.
+* **`verifyTotpAsync()` IS "A ONE-TIME CODE" AT EVERY DOOR**, and dispatches
+  by kind: the app first, the token when the app's code did not match or
+  was the wrong length, never after a replay. The sign-in's code step, its
+  step-up and recent sign-in, and Kerberos FAST OTP all go through it, so
+  none had to learn the kind. The verdict says `kind` and `hardware`.
+  `mechanismsFor()` reports `hotp*` beside `totp*` and `oneTimeCode` (what
+  the code step asks for); `secondFactorDemand().totp` means "a code the
+  door can ask for", either kind.
+* **`hwk` ONLY WITH EVIDENCE (X3)**: an imported token's credential names
+  its token, and `credentials.oathHardware()` asks the register's
+  `evidenceFor()` at each sign-in; a QR-enrolled secret never earns it. An
+  OATH event carries no `hardwareToken` snapshot, so it never satisfies the
+  first-factor `attested-hardware` mechanism.
+* **`pskc.ts` parses with `xml_parser.js`** (no DTD, no entity) and checks
+  the MAC before it decrypts; the three primitives are `crypto.js`'s
+  `pskcDecrypt()`, `pskcMacVerifies()` and `pskcDeriveKeyAsync()` (PBKDF2
+  on libuv's pool, the iteration count bounded). The key or password given
+  with the upload is an argument and nothing else. Plaintext is refused in
+  product mode (`mode.refusesPlaintextSeedFiles()`, `pskc.
+  allowPlaintextImport`).
+* **`oath_tokens.ts` is the inventory**: `oath_tokens.inventory`, per realm,
+  cell tier, on demand, indexed by serial, holder and status; an unassigned
+  row's secret sealed again (`oath-token-secret`). Assignment (by an
+  administrator) and a claim (serial plus a current code, which is spent)
+  install the credential, record `pskc-import` in the register and drop the
+  row's secret. It registers the `hotp` and `totp` retirers when installed
+  (`wire`, rule 3e's hook); a retired token is never assigned again.
+* **The authentication policy's `hotp` row is `optional`**: a save that
+  does not name it keeps the profile's current value (`authn_policy.ts`'s
+  `save()`), so an API client written before it is not refused.
+* **Not indexed for the users page's tiles**: `credentialTallies()` counts
+  holders through `directory_queries.js`'s `ASKED_ATTRIBUTES`, and adding
+  `stshotpcredential` there is a new index expression, so a schema version.
+  A person's own rows and pages read it off the entry; the realm-wide tile
+  of second-factor holders does not count a person whose only one is an
+  HOTP token. That is owed to the next minor release.
 
 ## `piv_attestation.ts` and `piv_enrolment.ts`: YUBIKEY PIV KEY ATTESTATION (#1955 P2, 2026-11-20)
 

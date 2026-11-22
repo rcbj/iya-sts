@@ -279,6 +279,9 @@ const ISSUANCE_ATTRIBUTE = {
   // (`set`, `add`, `remove`, `update-fields`), by name. Empty for every
   // other action.
   OBJECT_ATTRIBUTE: 'urn:sts:xacml:object-attribute',
+  // On the RESOURCE: the single SSH user-certificate principal whose
+  // issuance is being decided (#1955 P3).
+  SSH_PRINCIPAL: 'urn:sts:xacml:ssh-principal',
   // On the ACTION: what is done to the object — `read`, or the management
   // API action's own name (`add-member`, `remove-owner`, ...).
   ADMIN_ACTION: 'urn:sts:xacml:admin-action',

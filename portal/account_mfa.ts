@@ -77,6 +77,8 @@ interface AccountMfaDeps {
   accountSignals(): Json;
   mailFactor(): Json;
   authnPolicy(): Json;
+  // #1955 P4: counter-based codes, reached when the card is drawn.
+  hotp(): Json;
 }
 
 /**
@@ -113,6 +115,11 @@ class AccountMfa {
         helpers.log.debug("Entering mailFactor().");
         helpers.log.debug("Leaving mailFactor().");
         return require('../common/mail_factor');
+      },
+      hotp: function hotp(): Json {
+        helpers.log.debug("Entering hotp().");
+        helpers.log.debug("Leaving hotp().");
+        return require('../common/hotp');
       },
       authnPolicy: function authnPolicy(): Json {
         helpers.log.debug("Entering authnPolicy().");
@@ -165,6 +172,202 @@ class AccountMfa {
     return { grouped: totp.grouped(held.secret), issuer: issuer, qr: qr,
              algorithm: held.algorithm, digits: held.digits,
              period: held.period };
+  }
+
+  // -------------------------------------------------------------------------
+  // THE ONE-TIME CODE TOKEN (HOTP) CARD (#1955 P4): enrolled or not, how it
+  // was provisioned, and the enrolment in progress with its QR code (an
+  // otpauth://hotp URI, drawn as TOTP's is) and the `ykman` command that
+  // programs a YubiKey's second OTP slot with the same secret.
+  // -------------------------------------------------------------------------
+  /**
+   * The HOTP card.
+   *
+   * @param ctx - the account API's helpers
+   * @param username - the signed-in person
+   * @param mechanisms - `credentials.mechanismsFor()`'s answer
+   * @param base - this realm's base URL
+   * @returns the card
+   */
+  async hotpCardOf(ctx: AccountContext, username: string, mechanisms: Json,
+                   base: string): Promise<Json> {
+    const { log, credentials, totp } = this.deps;
+    log.debug("Entering AccountMfa.hotpCardOf().");
+    const hotp = this.deps.hotp();
+    const live: Json = hotp.settings() || {};
+    const detail: Json = mechanisms.hotpDetail || null;
+    const held: Json = credentials.pendingHotpFor(username);
+    let setup: Json = null;
+    if (held) {
+      const issuer = totp.issuerFor(base);
+      let qr = '';
+      try {
+        qr = await totp.qrSvgDataUri(hotp.otpauthUri({
+          issuer: issuer, account: username, secret: held.secret,
+          digits: held.digits, counter: held.counter }));
+      } catch (e) {
+        // NOT fatal, for TOTP's reason: the typed secret and the ykman
+        // command are the whole credential.
+        log.error(ctx.errorCodes.tag('STS-PORTAL-0016') + 'portal: the ' +
+                  'HOTP QR code could not be drawn (' +
+                  ((e && e.message) || e) + ').');
+        qr = '';
+      }
+      setup = { grouped: totp.grouped(held.secret), issuer: issuer, qr: qr,
+                digits: Number(held.digits || 6),
+                counter: Number(held.counter || 0),
+                ykman: 'ykman otp hotp ' + (Number(held.digits) === 8
+                  ? '--digits 8 ' : '') + '2 ' + held.secret };
+    }
+    log.debug("Leaving AccountMfa.hotpCardOf().");
+    return {
+      enrolled: !!mechanisms.hotp, usable: !!mechanisms.hotpUsable,
+      detail: mechanisms.hotp && detail
+        ? { enrolledAt: detail.enrolledAt || 0,
+            lastUsedAt: detail.lastUsedAt || 0,
+            digits: Number(detail.digits || 6),
+            source: String(detail.source || 'enrolled'),
+            serial: String(detail.serial || ''),
+            vendor: String(detail.vendor || ''),
+            model: String(detail.model || '') } : null,
+      offered: !!hotp.offered(), digits: Number(live.digits || 6),
+      window: Number(live.window), resyncWindow: Number(live.resyncWindow),
+      setup: setup
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // THE HOTP ACTS (#1955 P4): start, confirm, resync, remove. A confirmation
+  // and a resynchronisation take codes, so they spend the `mfa-code` budget
+  // the sign-in's code step spends (RFC 4226 section 7.3).
+  // -------------------------------------------------------------------------
+  /**
+   * Carries out one of the HOTP card's four acts.
+   *
+   * @param ctx - the account API's helpers
+   * @param req - the request
+   * @param res - the response
+   * @param caller - the signed-in person
+   * @param body - the checked body
+   * @param refuse - the page's refusal, which redraws the view
+   * @returns the answer sent
+   */
+  async hotpAct(ctx: AccountContext, req: Json,
+                res: AccountAnswering<'changeMfa'>, caller: AccountCaller,
+                body: Json,
+                refuse: (status: number, code: string,
+                         why: string) => Promise<unknown>): Promise<unknown> {
+    const { log, credentials } = this.deps;
+    const { audit, websecurity } = ctx;
+    log.debug("Entering AccountMfa.hotpAct().");
+    const username = caller.username;
+    const action = String(body.action || '');
+    const t = ctx.translatorFor(username);
+    const signals = this.deps.accountSignals();
+    const codeOf = function (result: Json, fallback: string): string {
+      return ctx.errorCodes.codeOf(result) || fallback;
+    };
+    if (action === 'hotp-start') {
+      const begun: Json = credentials.beginHotpEnrolment(username,
+        { base: ctx.baseUrlOf(req) });
+      if (!begun.ok) {
+        log.debug("Leaving AccountMfa.hotpAct(). Not started.");
+        return refuse(400, codeOf(begun, 'STS-OATH-0008'),
+                      (begun.errors || ['It could not be started.'])[0]);
+      }
+      audit.record({ category: 'authentication',
+        action: 'portal.hotp.started', actor: username, outcome: 'success',
+        summary: username + ' started setting up a one-time code token',
+        detail: { address: websecurity.addressOf(req) } });
+      log.debug("Leaving AccountMfa.hotpAct(). Started.");
+      return ctx.json(res, 200, { ok: true });
+    }
+    if (action === 'hotp-remove') {
+      const removed: Json = credentials.removeHotp(username);
+      if (!removed.ok) {
+        log.debug("Leaving AccountMfa.hotpAct(). Not removed.");
+        return refuse(400, codeOf(removed, 'STS-OATH-0007'),
+                      (removed.errors || ['It could not be removed.'])[0]);
+      }
+      const ended: Json = ctx.endFactorSessions(username, { kind: 'hotp' },
+                                                'the one-time code token');
+      audit.record({ category: 'authentication',
+        action: 'portal.hotp.removed', actor: username, outcome: 'success',
+        summary: username + ' removed their one-time code token',
+        detail: { address: websecurity.addressOf(req),
+                  sessionsEnded: ended.sessionsEnded } });
+      signals.credentialChanged({ username: username,
+        credentialType: signals.HOTP_CREDENTIAL_TYPE, changeType: 'delete',
+        initiatingEntity: 'user', via: 'portal',
+        reasonAdmin: username + ' removed their one-time code token.',
+        reasonUser: 'You removed your one-time code token.' });
+      const said = t.text('portal.done.hotpRemoved') + ' ' +
+                   t.text('portal.done.endOthers');
+      log.debug("Leaving AccountMfa.hotpAct(). Removed.");
+      return ctx.json(res, 200, { ok: true,
+        message: ended.sentence ? said + ' ' + ended.sentence : said,
+        sessionsEnded: ended.sessionsEnded });
+    }
+    // The two that take codes, behind the code budget.
+    const allowed = await websecurity.attemptShared('mfa-code', req,
+                                                    username);
+    if (!allowed.ok) {
+      log.debug("Leaving AccountMfa.hotpAct(). Rate limited.");
+      return refuse(429, codeOf(allowed, 'STS-PORTAL-0018'), allowed.detail);
+    }
+    const done: Json = action === 'hotp-confirm'
+      ? await credentials.confirmHotpEnrolment(username,
+                                               String(body.code || ''))
+      : await credentials.resyncHotpAsync(username, String(body.code || ''),
+                                          String(body.code2 || ''));
+    if (!done.ok) {
+      audit.record({ category: 'authentication',
+        action: action === 'hotp-confirm' ? 'portal.hotp.refused'
+                                          : 'portal.hotp.resync-refused',
+        errorCode: codeOf(done, 'STS-OATH-0003'), actor: username,
+        outcome: 'failure',
+        summary: action === 'hotp-confirm'
+          ? 'a one-time code token setup was not confirmed'
+          : 'a one-time code token was not resynchronised',
+        detail: { reason: done.reason || '',
+                  address: websecurity.addressOf(req) } });
+      log.debug("Leaving AccountMfa.hotpAct(). Refused.");
+      return refuse(400, codeOf(done, 'STS-OATH-0003'),
+                    (done.errors || [done.detail ||
+                                     'That code is not right.'])[0]);
+    }
+    try {
+      await websecurity.succeededShared('mfa-code', req, username);
+    } catch (e) {
+      // The act stands; only the failure count was not cleared.
+      log.warn(ctx.errorCodes.tag('STS-PORTAL-0637') + 'portal: ' +
+               username + '\'s token act succeeded and its failure count ' +
+               'could not be cleared: ' + ((e && e.message) || e));
+    }
+    if (action === 'hotp-resync') {
+      audit.record({ category: 'authentication',
+        action: 'portal.hotp.resynced', actor: username, outcome: 'success',
+        summary: username + ' resynchronised their one-time code token',
+        detail: { address: websecurity.addressOf(req),
+                  ahead: Number(done.drift || 0) } });
+      log.debug("Leaving AccountMfa.hotpAct(). Resynchronised.");
+      return ctx.json(res, 200, {
+        ok: true, message: t.text('portal.done.hotpResynced') });
+    }
+    audit.record({ category: 'authentication',
+      action: 'portal.hotp.enrolled', actor: username, outcome: 'success',
+      summary: username + ' set up a one-time code token as a second factor',
+      detail: { address: websecurity.addressOf(req) } });
+    signals.credentialChanged({ username: username,
+      credentialType: signals.HOTP_CREDENTIAL_TYPE, changeType: 'create',
+      initiatingEntity: 'user', via: 'portal',
+      reasonAdmin: username + ' set up a one-time code token.',
+      reasonUser: 'You set up a one-time code token.' });
+    log.debug("Leaving AccountMfa.hotpAct(). Enrolled.");
+    return ctx.json(res, 200, { ok: true,
+      message: (done.recoveryAdvised ? t.text('portal.done.hotpSetUpNoCodes')
+                                     : t.text('portal.done.hotpSetUp')) +
+               ' ' + t.text('portal.done.endOthers') });
   }
 
   // THE EMAILED SECOND FACTOR (#64), rcbj's D8: a person OPTS IN. Null when
@@ -239,6 +442,8 @@ class AccountMfa {
         offered: !!totp.offered(),
         digits: live.digits, period: live.period
       },
+      // #1955 P4: the one-time code token beside the app.
+      hotp: await this.hotpCardOf(ctx, username, mechanisms, base),
       doors: { applies: !!doors.applies,
                refused: (doors.refused || []).slice(0) },
       setup: await this.pendingEnrolmentFor(ctx, username, base),
@@ -300,6 +505,10 @@ class AccountMfa {
       return ctx.refuse(res, status, code, why,
                         { view: await self.view(ctx, caller, base, fresh) });
     };
+
+    if (/^hotp-/.test(action)) {
+      return this.hotpAct(ctx, req, res, caller, body, refuse);
+    }
 
     if (action === 'remove') {
       const removed: Json = credentials.removeTotp(username);

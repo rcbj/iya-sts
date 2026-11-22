@@ -130,20 +130,28 @@ type Json = any;
 
 /**
  * The kinds of credential a token record lists. `fido` and `x509` are
- * recorded since #1955 P1; `hotp` (P4), `yubico-otp` (P5), `ssh` (P3) and
+ * recorded since #1955 P1; `hotp` and `totp` since P4 (an OATH token an
+ * administrator imported from its vendor's PSKC file, `common/oath_tokens.ts`,
+ * which registers both retirers); `yubico-otp` (P5), `ssh` (P3) and
  * `openpgp` (P6) are reserved for the phases that add them, each with its
  * own retirer (`registerRetirer()`).
  */
-const CREDENTIAL_KINDS = ['fido', 'x509', 'hotp', 'yubico-otp', 'ssh',
-                          'openpgp'];
+const CREDENTIAL_KINDS = ['fido', 'x509', 'hotp', 'totp', 'yubico-otp',
+                          'ssh', 'openpgp'];
 
 /**
  * Where a serial may come from: the FIDO enterprise attestation (#532), a
- * PIV key attestation (P2) and an administrator's vendor import (P4).
+ * PIV key attestation (P2), an administrator's vendor import, since P4
+ * `pskc-import` (an OATH token's serial from the DeviceInfo of its vendor's
+ * RFC 6030 seed file, recorded when the token is assigned or claimed), and
+ * since P3 `ssh-security-key-attestation` (the serial an OpenSSH security
+ * key's attestation names when an SSH user certificate is issued for it).
+ * A secret enrolled from a QR code names no serial and is never recorded.
  * Nothing else records a serial.
  */
 const EVIDENCE_SOURCES = ['fido-enterprise-attestation', 'piv-attestation',
-                          'vendor-import'];
+                          'vendor-import', 'pskc-import',
+                          'ssh-security-key-attestation'];
 
 /** A token's status: `active` or `lost`. */
 const STATUSES = ['active', 'lost'];

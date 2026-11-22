@@ -343,8 +343,9 @@ const PROTOCOL_TABS: Record<string, string[]> = {
                    'preview', 'settings'],
   '/admin/applications': ['applications', 'add', 'settings'],
   '/admin/devices': ['devices', 'register'],
-  // #1955 P1: the register's one list.
-  '/admin/hardware-tokens': ['tokens', 'enrol', 'escrow'],
+  // #1955 P1: the register's list; P4: imported OATH tokens;
+  // P2: PIV enrolment and escrowed keys.
+  '/admin/hardware-tokens': ['tokens', 'oath', 'enrol', 'escrow'],
   // #1955 P6: the person, the registration, the directory.
   '/admin/openpgp': ['person', 'register', 'directory'],
   '/admin/attribute-sources': ['sources', 'add', 'person', 'settings'],
@@ -891,6 +892,13 @@ const PAGES: WebPage[] = [
   // realm recorded from attestation, and the lost-key act.
   { path: '/admin/hardware-tokens', title: 'Hardware tokens',
     operation: '/admin-api/hardware-tokens',
+    // #1955 P4: the OATH tab, always asked, under names of its own so its
+    // filter and pager move its list and not the register's.
+    compose: { oath: '/admin-api/hardware-tokens/oath' },
+    composeWhen: { oath: ['oq', 'ostatus', 'opage', 'per'] },
+    composeParams: { oath: { oq: 'q', ostatus: 'status', opage: 'page',
+                             per: 'per' } },
+    composeAlways: ['oath'],
     render: HardwareTokensPage.render },
   // #1955 P6: Directory → OpenPGP keys, one person's OpenPGP key, its Web
   // Key Directory publication and their mail encryption.

@@ -1002,5 +1002,11 @@
   "mfaSection.pubDeactivate": "I-deactivate",
   "mfaSection.pubDeactivateTip": "Ide-deactivate nito ang DID na ito magpakailanman: sasagot ang address nito ng 410 Gone, mare-resolve pa rin ang kasaysayan nito, at hindi na nito maisasa-sign in ang tao o mailalabas sa did claim.",
   "mfaSection.pubNeedsWrite": "Kailangan ng <strong>Admin Write</strong> para mag-deactivate ng isa.",
-  "keySource.issuedFromCsr": "Sine-certify dito mula sa sarili nilang request &mdash; sine-certify ng Issuing CA ng realm na ito ang key na sila mismo ang gumawa. Sila ang may hawak ng private key; hindi ito kailanman napasakamay ng serbisyong ito."
+  "keySource.issuedFromCsr": "Sine-certify dito mula sa sarili nilang request &mdash; sine-certify ng Issuing CA ng realm na ito ang key na sila mismo ang gumawa. Sila ang may hawak ng private key; hindi ito kailanman napasakamay ng serbisyong ito.",
+  "mfaSection.hotpHeading": "Token para sa one-time code (HOTP)",
+  "mfaSection.hotpSource": "Na-provision",
+  "mfaSection.hotpImported": "Na-import mula sa seed file ng vendor: {vendor} serial {serial}",
+  "mfaSection.hotpEnrolled": "Ini-enroll ng tao (QR code o ykman)",
+  "mfaSection.hotpUnusable": "Hindi mabasa rito ang secret nito, kaya tinatanggihan ang mga code nito.",
+  "mfaSection.clearHotp": "I-clear ang one-time code token"
 }

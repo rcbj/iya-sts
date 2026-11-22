@@ -2,6 +2,7 @@
   "request.heading": "¿Es este su dispositivo?",
   "request.asks": "{client} solicita iniciar sesión por usted en un dispositivo que muestra el código {code}.",
   "request.access": "Acceso: <code>{scope}</code>. Caduca el {when}.",
+  "request.resources": "Recursos solicitados: <code>{resources}</code>.",
   "request.noScope": "(ninguno indicado)",
   "request.warning": "<strong>Apruebe solo un dispositivo que tenga delante</strong> y en el que usted mismo haya empezado a iniciar sesión. Quien le haya enviado este código le está pidiendo que inicie sesión como usted en SU dispositivo.",
   "request.as": "Está aprobando como <strong>{name}</strong>: el dispositivo iniciará sesión con esta cuenta. Para aprobar con otra de las cuentas con sesión iniciada en este navegador, cambie primero de cuenta.",

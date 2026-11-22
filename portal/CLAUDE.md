@@ -1052,7 +1052,8 @@ authorization request and the sign-out's address are the bytes they were.
   they authorize, and with two accounts signed in "you" is no longer
   obvious. So, with more than one live account in the browser's list, the
   request names the account it will be approved as (`device-as`,
-  `portalDevice.request.as`); otherwise the page is the one it was. A
+  `portalDevice.request.as`); the page also shows every requested RFC 8707
+  resource before approval. A
   `verification_uri_complete` opened in a new tab has no account of its own
   and signs in as any tab does: the picker where nothing chooses.
 * **THE LIST IS FETCHED ONLY WHERE THE SHELL SAYS SO** (`data-sts-accounts`,
@@ -2078,6 +2079,24 @@ the same key is left for an administrator. A person whose lost key was
 their only way in is told to use an activation link or recovery codes,
 because the removal passes the last-way-in guard. The words are
 `portalTokens`'s.
+
+**SINCE #1955 P4 THE PAGE ALSO CLAIMS AN IMPORTED ONE-TIME CODE TOKEN**:
+`action: claim` on the same operation, with the serial printed on the token
+and a code it shows now (`common/oath_tokens.ts`'s `claim()`). The username
+is the token's subject's, the serial and the code the only things from the
+body; it spends the `mfa-code` budget (STS-OATH-0050 when that is out), a
+wrong serial and a wrong code are one refusal (STS-OATH-0043), and the code
+is spent. CAEP credential-change `create` is sent.
+
+**`/portal/mfa` HAS AN HOTP CARD BESIDE THE APP'S (#1955 P4)**: `hotp-start`,
+`hotp-confirm`, `hotp-resync` (two consecutive codes, `code` and `code2`)
+and `hotp-remove` on `changeMfa`, `account_mfa.ts`'s `hotpAct()`. The view's
+`hotp` card carries the pending enrolment's QR code (an `otpauth://hotp`
+URI with its counter, drawn as TOTP's is) and the `ykman otp hotp` command
+that programs a YubiKey's second OTP slot. Confirm and resync spend the
+`mfa-code` budget; remove ends the sessions its codes signed in (#722,
+`{ kind: 'hotp' }`). CAEP's credential type is this service's
+`urn:iya:sts:credential-type:hotp-token`: a token is not an `app`.
 
 **#1955 P2 adds the PIV enrolment form and the escrowed keys** to the same
 page and the same door (`actOnTokens`, `recentAuth`): `enrol-piv` issues the

@@ -381,6 +381,16 @@ const SUBSYSTEMS = [
           'token (a YubiKey, a smart card) keyed by vendor and serial, ' +
           'the serial taken only from attestation, the credentials on it, ' +
           'and the lost-key act that retires every one of them.' },
+  { id: 'OATH', label: 'OATH one-time code tokens',
+    where: 'common/hotp.ts, common/credentials.ts, common/pskc.ts, ' +
+           'common/oath_tokens.ts, mgmt-api/hardware_tokens_api.ts, ' +
+           'portal/account_tokens.ts',
+    what: 'Counter-based one-time codes (RFC 4226, #1955 P4): the ' +
+          'look-ahead, resynchronisation and the counter spent by ' +
+          'compare-and-set in the store; and vendor-provisioned tokens ' +
+          'imported from a PSKC seed file (RFC 6030), kept unassigned by ' +
+          'serial until an administrator assigns one or its holder claims ' +
+          'it.' },
   { id: 'PIV', label: 'PIV key attestation',
     where: 'common/piv_attestation.ts, common/cert_enrollment.ts, ' +
            'common/piv_enrolment.ts, portal/account_tokens.ts, ' +
@@ -5427,6 +5437,37 @@ const CODES = [
       'GET /oid4vci/mdoc-iaca answers 500.',
     spec: 'the credential endpoint fails as it fails any signing error; ' +
       'the public certificate answers 500' },
+  { code: 'STS-PKI-0289',
+    summary: 'A request to issue an SSH user certificate (#1955 P3) had an ' +
+      'unsupported key, invalid principals, or a lifetime outside the ' +
+      'allowed range.',
+    spec: 'The account API refuses the request' },
+  { code: 'STS-PKI-0290',
+    summary: 'The SSH user CA could not be created or used, a user ' +
+      'certificate could not be signed or recorded, or its KRL could not ' +
+      'be built (#1955 P3).',
+    spec: 'The account API or SSH KRL endpoint fails' },
+  { code: 'STS-PKI-0291',
+    summary: 'A requested SSH certificate revocation (#1955 P3) named a ' +
+      'malformed serial or one this realm did not issue.',
+    spec: 'The account API refuses the request' },
+  { code: 'STS-PKI-0292',
+    summary: 'A public SSH user CA or KRL request (#1955 P3) named a scope ' +
+      'that does not have a realm SSH user CA.',
+    spec: 'The public PKI endpoint refuses the request' },
+  { code: 'STS-PKI-0293',
+    summary: 'A person requested an SSH user certificate (#1955 P3) while ' +
+      'pki.personSelfService is off.',
+    spec: 'The account API refuses the request' },
+  { code: 'STS-PKI-0294',
+    summary: 'An SSH user certificate request (#1955 P3) had no UID, named ' +
+      'a principal the access policy refused, or its hardware evidence ' +
+      'could not be verified or recorded.',
+    spec: 'The account API refuses the request' },
+  { code: 'STS-PKI-0295',
+    summary: 'A person requested SSH user certificates (#1955 P3) too often ' +
+      'and the shared rate limiter refused it.',
+    spec: 'The account API refuses the request with HTTP 429' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
@@ -23007,6 +23048,171 @@ const CODES = [
       'an unexpected error at /admin-api; the log line has the stack ' +
       '(#1955).',
     spec: 'HTTP 500' },
+  // ===== OATH ==============================================================
+  { code: 'STS-OATH-0001',
+    summary: 'An HOTP code (or a pair given to resynchronise) was not ' +
+      'the token\'s number of digits; it was refused (#1955).',
+    spec: 'RFC 4226 section 5.3' },
+  { code: 'STS-OATH-0002',
+    summary: 'A person\'s HOTP credential could not be read (not JSON ' +
+      'this service wrote, or a secret sealed under another ' +
+      'key-encryption key); its code was refused rather than the ' +
+      'person let through on one factor (#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0003',
+    summary: 'An HOTP code matched no counter in the look-ahead window; ' +
+      'it was refused (#1955).',
+    spec: 'RFC 4226 section 7.4' },
+  { code: 'STS-OATH-0004',
+    summary: 'Two codes given to resynchronise an HOTP token were not ' +
+      'consecutive codes of it within the resync window; nothing ' +
+      'was changed (#1955).',
+    spec: 'RFC 4226 section 7.4' },
+  { code: 'STS-OATH-0005',
+    summary: 'An HOTP code matched a counter that had already been ' +
+      'accepted, by another node, another worker or a request ' +
+      'racing this one; it was refused as a replay (#1955).',
+    spec: 'RFC 4226 section 7.2' },
+  { code: 'STS-OATH-0006',
+    summary: 'An HOTP code matched and could not be proved unspent, ' +
+      'because the store could not be asked to advance its ' +
+      'counter; it was refused (#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0007',
+    summary: 'An HOTP code, a resynchronisation or a removal was asked ' +
+      'of somebody who holds no HOTP credential (or not the token ' +
+      'named) (#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0008',
+    summary: 'An HOTP enrolment or a token claim was refused because the ' +
+      'authentication policy has one-time code tokens (hotp) off ' +
+      '(#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0009',
+    summary: 'An HOTP enrolment was confirmed after it had expired, or ' +
+      'none was pending (#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0010',
+    summary: 'An HOTP secret could not be sealed under the ' +
+      'key-encryption key, so it was not written (#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0011',
+    summary: 'The credential store threw or refused while an HOTP ' +
+      'credential was read or written (#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0012',
+    summary: 'No credential store is installed, so an HOTP credential ' +
+      'could not be enrolled or kept (#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0013',
+    summary: 'An HOTP enrolment was asked for no name, or for a name ' +
+      'holding a control character, which no person has (#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0014',
+    summary: 'In product mode an HOTP enrolment was refused for a name ' +
+      'with no directory entry (#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0020',
+    summary: 'A PSKC seed file was not XML this service will parse (not ' +
+      'well formed, a document type or entity declaration, or too ' +
+      'large); nothing was imported (#1955).',
+    spec: 'RFC 6030' },
+  { code: 'STS-OATH-0021',
+    summary: 'A PSKC seed file\'s document element was not a version 1.0 ' +
+      'KeyContainer in the urn:ietf:params:xml:ns:keyprov:pskc ' +
+      'namespace; nothing was imported (#1955).',
+    spec: 'RFC 6030 section 4' },
+  { code: 'STS-OATH-0022',
+    summary: 'A key in a PSKC seed file names an algorithm that is not ' +
+      'HOTP or TOTP, or a response format that is not 6 to 8 ' +
+      'decimal digits, or a TOTP time origin other than 0; that ' +
+      'key was skipped (#1955).',
+    spec: 'RFC 6030 section 4.3.4' },
+  { code: 'STS-OATH-0023',
+    summary: 'A PSKC seed file names an encryption, MAC or ' +
+      'key-derivation algorithm this service does not open (or an ' +
+      'encryption key by a certificate, section 6.3); nothing was ' +
+      'imported (#1955).',
+    spec: 'RFC 6030 section 6' },
+  { code: 'STS-OATH-0024',
+    summary: 'A PSKC seed file carries its secrets in plaintext and ' +
+      'product mode refuses that unless pskc.allowPlaintextImport ' +
+      'is on; nothing was imported (#1955).',
+    spec: 'RFC 6030 section 6' },
+  { code: 'STS-OATH-0025',
+    summary: 'A PSKC seed file is encrypted and the import supplied no ' +
+      'pre-shared key (or no password, for a passphrase-based ' +
+      'file), or a key of the wrong length; nothing was imported ' +
+      '(#1955).',
+    spec: 'RFC 6030 section 6.1' },
+  { code: 'STS-OATH-0026',
+    summary: 'A PSKC seed file\'s MAC did not verify: the key or ' +
+      'password is wrong, or the file was altered; nothing was ' +
+      'imported (#1955).',
+    spec: 'RFC 6030 section 6.1.1' },
+  { code: 'STS-OATH-0027',
+    summary: 'A PSKC encrypted value did not decrypt (a key that is ' +
+      'wrong, or a value that is not an IV and whole blocks), or ' +
+      'carries no ValueMAC where its cipher has no integrity of ' +
+      'its own; nothing was imported (#1955).',
+    spec: 'RFC 6030 section 6.1' },
+  { code: 'STS-OATH-0028',
+    summary: 'A key package in a PSKC seed file names no device serial ' +
+      '(DeviceInfo/SerialNo), which is what a token is kept and ' +
+      'claimed by; that key was skipped (#1955).',
+    spec: 'RFC 6030 section 4.3.1' },
+  { code: 'STS-OATH-0029',
+    summary: 'A PSKC seed file holds more key packages than one import ' +
+      'takes, or none; nothing was imported (#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0030',
+    summary: 'A key in a PSKC seed file is already in this realm\'s ' +
+      'token inventory (the same vendor, serial and key id); it ' +
+      'was skipped (#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0040',
+    summary: 'No token in this realm\'s OATH inventory has that key ' +
+      '(#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0041',
+    summary: 'An OATH token was assigned or claimed that is already ' +
+      'assigned to somebody (#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0042',
+    summary: 'An OATH token was assigned to a name with no directory ' +
+      'entry in this realm (#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0043',
+    summary: 'A person\'s claim of an imported OATH token named a serial ' +
+      'no unassigned token has, or a code none of that serial\'s ' +
+      'tokens produced; nothing was assigned (#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0044',
+    summary: 'An imported OATH token was assigned or claimed while the ' +
+      'authentication policy has its kind (totp or hotp) off ' +
+      '(#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0045',
+    summary: 'The OATH token inventory could not be read or written ' +
+      '(#1955).',
+    spec: 'HTTP 500' },
+  { code: 'STS-OATH-0046',
+    summary: 'An imported token\'s secret could not be sealed under the ' +
+      'key-encryption key, so the token was not kept (#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0047',
+    summary: 'A lost hardware token\'s OATH credential could not be ' +
+      'retired (#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0049',
+    summary: 'An imported OATH token that is assigned was asked to be ' +
+      'removed; it is retired by reporting the token lost instead ' +
+      '(#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0050',
+    summary: 'An Account API act on a one-time code token was refused: ' +
+      'unknown, or too many attempts in the code budget (#1955).',
+    spec: 'HTTP 400' },
   // ===== PIV ===============================================================
   { code: 'STS-PIV-0001',
     summary: 'A shipped PIV attestation certificate ' +
