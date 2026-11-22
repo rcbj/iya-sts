@@ -563,6 +563,18 @@
     "en": "e3eb9f2bcabf5eaa",
     "text": "權杖密鑰為明文的 PSKC 種子檔案會被拒絕，除非開啟了 pskc.allowPlaintextImport；加密檔案則以隨上傳提供的金鑰或密碼開啟，該金鑰或密碼絕不儲存。"
   },
+  "mode.requirements.plaintext-yubiotp-csv.what": {
+    "en": "c349a97e52695bea",
+    "text": "YubiKey OTP 種子檔案不得是 AES 金鑰的清單"
+  },
+  "mode.requirements.plaintext-yubiotp-csv.development": {
+    "en": "c1af70a4452cb90f",
+    "text": "包含序號、公開身分、私有身分和 AES 金鑰的 CSV 與任何其他清冊檔案一樣被匯入。"
+  },
+  "mode.requirements.plaintext-yubiotp-csv.product": {
+    "en": "3f75df0847c0e777",
+    "text": "除非 yubiotp.allowPlaintextImport 開啟，否則拒絕該 CSV。檔案被接受後金鑰即被密封，檔案本身不予保留。"
+  },
   "mode.requirements.sso-consent.what": {
     "en": "2b06d195aa0a395d",
     "text": "單一登入在讓使用者登入某個應用程式前先詢問"

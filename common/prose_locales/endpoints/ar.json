@@ -1859,6 +1859,10 @@
     "en": "69876d051e66729c",
     "text": "خطوة نشاط ما بعد تسجيل الدخول"
   },
+  "endpoints.route./wsapi/2.0/verify.name": {
+    "en": "0734c12f6e3eb870",
+    "text": "تحقق YK-VAL 2.0"
+  },
   "endpoints.route./authn/totp.name": {
     "en": "a89de574ee2c21ab",
     "text": "خطوة العامل الثاني بالرمز لمرة واحدة"

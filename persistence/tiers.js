@@ -359,7 +359,15 @@ const GLOBAL_MINTED = {
   // worth of load. A row is a client id, a failure count, two times and the
   // probe's row id — nobody's data — and it is written only on a failure and
   // on the recovery.
-  'scimClient.pause': 'the outbound SCIM clients\' shared backoff pause'
+  'scimClient.pause': 'the outbound SCIM clients\' shared backoff pause',
+  // YK-VAL clients (#1955 P5): an operator's client id and a sealed HMAC
+  // key. Every cell answers /wsapi/2.0/verify, so the clients are one list.
+  // A row names no person.
+  'yubiotp.ykvalClients': 'the YK-VAL clients a realm accepts',
+  // A YK-VAL nonce is chosen by the client and is valid at every cell that
+  // answers the endpoint. A replay set per cell would accept it once per
+  // cell. A row is a client id and a nonce — the OTP is not stored.
+  'yubiotp.nonces': 'YK-VAL nonces already accepted'
 };
 
 // Cell-tier: minted here, or somebody's. Listed rather than defaulted — see
@@ -419,6 +427,11 @@ const CELL_MINTED = [
   // described it (and, until it is assigned, held that secret sealed) stays
   // beside the entry.
   'oath_tokens.inventory',
+  // A YubiKey OTP inventory and the public-id index (#1955 P5): an
+  // unassigned token's secret, and once assigned the person it names.
+  // Somebody's, beside their entry in this cell. The YK-VAL clients and
+  // the nonce replay set are global, above.
+  'yubiotp.inventory', 'yubiotp.publicIds',
   'gnap.approvers', 'gnap.continuations', 'gnap.grants', 'gnap.instances',
   'gnap.interactions', 'gnap.manageHandles', 'gnap.manageValues',
   'gnap.movedGrants', 'gnap_monitor.counters', 'gnap.spend', 'gnap.tokens',
@@ -540,6 +553,9 @@ const GLOBAL_JOBS = [
   // a job of its own every cell's leader purged the one global sts_minted.
   // The cell's half, persistence.minted-expiry-purge, runs in every cell.
   'persistence.minted-expiry-purge-global',
+  // The YK-VAL nonce map is global (a client-chosen replay key). One cell
+  // sweeps it; every cell would each drop the same rows.
+  'yubiotp.nonce-sweep',
   // And the global tier's tombstone sweep, for the same reason (#1313);
   // the cell's half, persistence.tombstone-purge, runs in every cell.
   'persistence.tombstone-purge-global'

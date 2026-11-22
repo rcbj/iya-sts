@@ -537,6 +537,13 @@ var config = {
     resyncWindow: 100  // HOTP resynchronisation window (codes)
   },
 
+  // --- TOTP MFA --------------------------------------------------------
+  yubiotp: {
+    offered: false,              // Offer YubiKey OTP enrolment
+    ykval: false,                // Answer the YK-VAL 2.0 verify endpoint
+    allowPlaintextImport: false  // Accept plaintext YubiKey OTP CSV files in product mode
+  },
+
   // --- Backup codes ----------------------------------------------------
   backupCodes: {
     count: 10,        // Codes in a set

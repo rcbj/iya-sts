@@ -1339,6 +1339,22 @@
     "en": "4bc7180cc29f1f53",
     "text": "Gaano kalayo hinahanap ang dalawang MAGKASUNOD na code kapag nire-resynchronize ng isang tao ang token na lumabas sa look-ahead (RFC 4226 section 7.4). Mas mahirap hulaan ang dalawang magkasunod na code kaysa sa isa, kaya ligtas ang mas malaking paghahanap. LIVE."
   },
+  "yubiotp.offered|label": {
+    "en": "9f41692d832fec07",
+    "text": "Mag-alok ng enrolment ng YubiKey OTP"
+  },
+  "yubiotp.offered|description": {
+    "en": "5a0403877f662a53",
+    "text": "Kung maaaring mag-enrol ang isang tao ng YubiKey OTP slot, at kung maaaring mag-assign ang administrator ng isa o mag-claim ang isang tao ng isa. Naka-off bilang default. Ang credential na hawak na ay sinusuri pa rin sa hakbang ng one-time code. Nanatili ang AES key sa serbisyong ito, kaya ang pag-sign in ay amr otp at hindi kailanman hwk."
+  },
+  "yubiotp.ykval|label": {
+    "en": "f309f289c5ecddcd",
+    "text": "Sagutin ang YK-VAL 2.0 verify endpoint"
+  },
+  "yubiotp.ykval|description": {
+    "en": "eba10509dc6d104d",
+    "text": "Kung sinusuri ng GET at POST /wsapi/2.0/verify ang isang YubiKey OTP para sa client na lumagda sa request (YK-VAL 2.0). Naka-off bilang default, at sumasagot ang route ng OPERATION_NOT_ALLOWED. Kapag naka-on, sinusuri ang client id at ang HMAC-SHA1 sa bawat mode, kasama ang development. Walang request na ipinapadala sa YubiCloud."
+  },
   "backupCodes.count|label": {
     "en": "91b6e4a086244cce",
     "text": "Mga code sa isang set"
@@ -3178,6 +3194,14 @@
   "pskc.allowPlaintextImport|description": {
     "en": "7efe34e872e4772e",
     "text": "Kung maaaring mag-import ang isang administrator ng PSKC seed file (RFC 6030) na HINDI naka-encrypt ang mga token secret, sa product mode. Naka-off bilang default: ang ganitong file ay naging listahan ng gumaganang mga ikalawang factor sa bawat disk at mailbox na dinaanan nito, at kaya itong i-encrypt ng vendor sa ilalim ng pre-shared key o password (mga section 6.1 at 6.2). Tumatanggap nito ang development mode anuman ang mangyari."
+  },
+  "yubiotp.allowPlaintextImport|label": {
+    "en": "b1c1ac235f98cc47",
+    "text": "Tanggapin ang mga plaintext YubiKey OTP CSV file sa product mode"
+  },
+  "yubiotp.allowPlaintextImport|description": {
+    "en": "f409449d46d5831a",
+    "text": "Kung maaaring mag-import ang isang administrator, sa product mode, ng CSV ng mga YubiKey OTP secret (serial, public id, private id, AES key). Naka-off bilang default: ang file ay listahan ng gumaganang mga ikalawang factor. Tumatanggap ang development mode ng isa anuman ang mangyari. Sini-seal ang mga secret kapag tinanggap ang file, at hindi itinatabi ang file."
   },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",

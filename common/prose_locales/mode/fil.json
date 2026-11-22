@@ -563,6 +563,18 @@
     "en": "e3eb9f2bcabf5eaa",
     "text": "Ang PSKC seed file na nasa plaintext ang mga token secret ay tinatanggihan maliban kung naka-on ang pskc.allowPlaintextImport; ang naka-encrypt ay binubuksan gamit ang key o password na ibinigay kasama ng upload, na hindi kailanman iniimbak."
   },
+  "mode.requirements.plaintext-yubiotp-csv.what": {
+    "en": "c349a97e52695bea",
+    "text": "Ang seed file ng YubiKey OTP ay hindi dapat listahan ng mga AES key"
+  },
+  "mode.requirements.plaintext-yubiotp-csv.development": {
+    "en": "c1af70a4452cb90f",
+    "text": "Ang CSV ng serial, public id, private id at AES key ay ini-import tulad ng anumang ibang inventory file."
+  },
+  "mode.requirements.plaintext-yubiotp-csv.product": {
+    "en": "3f75df0847c0e777",
+    "text": "Tinatanggihan ang CSV na iyon maliban kung naka-on ang yubiotp.allowPlaintextImport. Sini-seal ang mga key kapag tinanggap na ang file, at hindi itinatabi ang file mismo."
+  },
   "mode.requirements.sso-consent.what": {
     "en": "2b06d195aa0a395d",
     "text": "Nagtatanong ang single sign-on bago nito i-sign in ang isang tao sa isang application"

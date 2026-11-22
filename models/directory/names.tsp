@@ -302,6 +302,10 @@ namespace IyaSts.Directory;
   // THE HOTP CREDENTIAL (#1955 P4): a shared secret like the authenticator
   // app's, and sealed the same way, for the same reason.
   "stsHotpCredential",
+  // THE YUBIKEY OTP CREDENTIAL (#1955 P5): a shared secret like the HOTP
+  // credential, sealed the same way. The public identity stays in the clear
+  // so a bind can see which suffix is the OTP.
+  "stsYubiOtpCredential",
   // THE ANDROID MARKER (#615): the credential ids of the keys above whose
   // trusted `android-key` attestation the recheck asks Google's status list
   // about, derived on every write of the keys (`deriveAndroidMarker()`) so

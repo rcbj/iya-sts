@@ -998,5 +998,12 @@
   "mfaSection.hotpImported": "विक्रेता की सीड फ़ाइल से आयात किया गया: {vendor}, सीरियल नंबर {serial}",
   "mfaSection.hotpEnrolled": "व्यक्ति द्वारा नामांकित (QR कोड या ykman)",
   "mfaSection.hotpUnusable": "इसका सीक्रेट यहाँ पढ़ा नहीं जा सकता, इसलिए इसके कोड अस्वीकार किए जाते हैं।",
-  "mfaSection.clearHotp": "वन-टाइम कोड टोकन साफ़ करें"
+  "mfaSection.clearHotp": "वन-टाइम कोड टोकन साफ़ करें",
+  "mfaSection.yubiHeading": "YubiKey OTP",
+  "mfaSection.yubiSource": "प्रावधान",
+  "mfaSection.yubiImported": "CSV से आयातित: क्रमांक {serial}",
+  "mfaSection.yubiEnrolled": "व्यक्ति द्वारा नामांकित (ykman)",
+  "mfaSection.yubiUnusable": "इसका रहस्य यहाँ नहीं पढ़ा जा सकता, इसलिए इसके पासवर्ड अस्वीकार किए जाते हैं।",
+  "mfaSection.yubiPublicId": "सार्वजनिक पहचान",
+  "mfaSection.clearYubi": "YubiKey OTP साफ़ करें"
 }

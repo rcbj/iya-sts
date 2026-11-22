@@ -998,5 +998,12 @@
   "mfaSection.hotpImported": "從供應商的種子檔案匯入：{vendor}，序號 {serial}",
   "mfaSection.hotpEnrolled": "由本人註冊（QR 碼或 ykman）",
   "mfaSection.hotpUnusable": "此處無法讀取其密鑰，因此其驗證碼會被拒絕。",
-  "mfaSection.clearHotp": "清除一次性驗證碼權杖"
+  "mfaSection.clearHotp": "清除一次性驗證碼權杖",
+  "mfaSection.yubiHeading": "YubiKey OTP",
+  "mfaSection.yubiSource": "配置方式",
+  "mfaSection.yubiImported": "從 CSV 匯入：序號 {serial}",
+  "mfaSection.yubiEnrolled": "由本人註冊（ykman）",
+  "mfaSection.yubiUnusable": "此處無法讀取其金鑰，因此拒絕其一次性密碼。",
+  "mfaSection.yubiPublicId": "公共識別",
+  "mfaSection.clearYubi": "清除 YubiKey OTP"
 }

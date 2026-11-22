@@ -1859,6 +1859,10 @@
     "en": "69876d051e66729c",
     "text": "登录后活动步骤"
   },
+  "endpoints.route./wsapi/2.0/verify.name": {
+    "en": "0734c12f6e3eb870",
+    "text": "YK-VAL 2.0 验证"
+  },
   "endpoints.route./authn/totp.name": {
     "en": "a89de574ee2c21ab",
     "text": "一次性代码第二因素步骤"

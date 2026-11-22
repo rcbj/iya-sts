@@ -35,7 +35,7 @@ Do not edit it by hand.
 | [Kerberos trust](#kerberos-trust) | `KerberosTrust` | ou=kerberosTrusts | 8 |
 | [OpenID Federation entry](#openid-federation-entry) | `Oidfed` | ou=oidfed | 5 |
 | [Operational attributes](#operational-attributes) | `Operational` |  | 6 |
-| [Person](#person) | `Person` | ou=users | 125 |
+| [Person](#person) | `Person` | ou=users | 126 |
 | [Attribute policy](#attribute-policy) | `PolicyAttributes` | ou=attributePolicies | 8 |
 | [Attribute policy on a person](#attribute-policy-on-a-person) | `PolicyAttributesOnPerson` | on the person | 1 |
 | [Authentication policy](#authentication-policy) | `PolicyAuthn` | ou=authnPolicies | 28 |
@@ -856,6 +856,7 @@ No SCHEMA export. One person is one entry, RDN uid.
 | `stsWebauthnCredential` | several | this service | `1.3.6.1.4.1.67607.1.1.693` | The person's registered WebAuthn public keys, one JSON value per passkey or security key. Public by design. Written by registration on /portal and the sign-in steps. |
 | `stsWebauthnPqcUserHandle` | one | this service | `1.3.6.1.4.1.67607.1.1.694` | AND A SECOND ONE FOR THE POST-QUANTUM LANE (#643): the handle every ML-DSA passkey of the post-quantum lane is created under, so it does not replace the classical one on an authenticator that holds both. Minted only beside the first (`writeWebauthnUserHandle()` refuses otherwise). |
 | `stsWebauthnUserHandle` | one | this service | `1.3.6.1.4.1.67607.1.1.695` | THE WEBAUTHN USER HANDLE (#474): 64 random bytes, base64url, one per person, that every passkey they register is created under and that a discoverable credential hands back to say whose it is. Not a secret — an authenticator stores it in the clear — and not the username, which it was until #474. `common/credentials.ts` argues it. |
+| `stsYubiOtpCredential` | one | this service | `1.3.6.1.4.1.67607.1.1.803` | Secret. The person's YubiKey OTP credential (#1955 P5), one JSON value: the public identity in the clear, and the AES key and private identity sealed together. The server holds the key, so a sign-in is amr otp and never hwk. Withheld from every read. |
 | `telephoneNumber` | several | RFC | `2.5.4.20` | The person's telephone numbers, released as the phone_number claim and mapped by SCIM. |
 | `timeZone` | one | this service | `1.3.6.1.4.1.67607.1.1.696` | The person's time zone, an IANA zone name such as Europe/Stockholm, released as the zoneinfo claim. This service's own name; one value. |
 | `title` | several | RFC | `2.5.4.12` | The person's job title, released as the job_title claim and mapped by SCIM. |

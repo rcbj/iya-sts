@@ -12704,6 +12704,41 @@ what a maintainer of this directory has to know beside them:
   of second-factor holders does not count a person whose only one is an
   HOTP token. That is owed to the next minor release.
 
+## `yubiotp.ts`, `yubiotp_store.ts`: YUBICO OTP (#1955 P5, 2026-11-22)
+
+Yubico's published OTP, checked locally, and YK-VAL 2.0 at
+`GET` and `POST /wsapi/2.0/verify`. Each file's header is the argument;
+what a maintainer of this directory has to know beside them:
+
+* **The AES key stays here**, so a sign-in is `amr` `otp` and never `hwk`.
+  `finishTotp` forces `hardware` false for kind `yubiotp`. No request is
+  sent to YubiCloud. The timestamp inside the block is not checked.
+* **One credential per person**, `stsYubiOtpCredential`, sealed as
+  `{k, p}` under purpose `yubiotp-secret`. The public identity stays
+  outside the seal and is indexed in `yubiotp.publicIds` (cell) only once
+  the credential is installed. An unassigned inventory row is not indexed.
+* **The counter is `use * 256 + session`**, spent by
+  `cluster_counters.advance()` under `authn.yubiotp-counter`. The stored
+  value is the accepted composite, not one past it. Composite 0 is refused
+  before `advance()`, because that store treats 0-to-0 as success and
+  writes nothing. A replay is strictly not greater.
+* **`verifyTotpAsync()` dispatches a modhex OTP of 32 to 48 characters to
+  the YubiKey when one is held**, and does not also try it as an
+  authenticator code. A person who holds only this credential still has
+  `oneTimeCode`, so the code step is offered. An LDAP simple bind splits
+  `password || otp` only when the suffix is that person's public identity
+  plus 32 modhex characters, checks the password first, and spends the OTP
+  only after the password succeeds.
+* **YK-VAL clients and nonces are global minted state**
+  (`yubiotp.ykvalClients`, `yubiotp.nonces`). The nonce sweep is
+  `yubiotp.nonce-sweep` in `GLOBAL_JOBS`. A client-chosen nonce has to be
+  one set for every cell. The inventory and the public-identity index stay
+  on the cell tier. While `yubiotp.ykval` is off the route answers
+  `OPERATION_NOT_ALLOWED` and signs nothing. On, the client id and the
+  HMAC-SHA1 are checked in every mode.
+* **Not indexed for the users page's tiles**, for the HOTP reason above.
+  Do not add `stsyubiotpcredential` to `ASKED_ATTRIBUTES`.
+
 ## `devices.ts`: THE DEVICE REGISTER (#130, 2026-09-23; #164 and #218, 2026-09-26)
 
 A device is an entry under `ou=devices` (`ldap/CLAUDE.md`) with ONE owner —

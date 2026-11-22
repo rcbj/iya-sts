@@ -391,6 +391,12 @@ const SUBSYSTEMS = [
           'imported from a PSKC seed file (RFC 6030), kept unassigned by ' +
           'serial until an administrator assigns one or its holder claims ' +
           'it.' },
+  { id: 'YUBIOTP', label: 'Yubico OTP',
+    where: 'common/yubiotp.ts, common/yubiotp_store.ts, ' +
+           'common/credentials.ts, authn/ykval.ts, ldap/ldap_server.js',
+    what: 'Yubico OTP (#1955 P5): a YubiKey OTP slot checked locally ' +
+          'with AES-128, an inventory of unassigned tokens, and the ' +
+          'YK-VAL 2.0 endpoint. No call is made to YubiCloud.' },
   { id: 'SVCACCT', label: 'Service accounts',
     where: 'common/service_accounts.ts, common/service_account_policy.ts, ' +
            'common/service_account_rotation.ts, common/credentials.ts, ' +
@@ -23032,6 +23038,132 @@ const CODES = [
     summary: 'An Account API act on a one-time code token was refused: ' +
       'unknown, or too many attempts in the code budget (#1955).',
     spec: 'HTTP 400' },
+  // ===== YUBIOTP ===========================================================
+  { code: 'STS-YUBIOTP-0001',
+    summary: 'A YubiKey OTP was not 32 to 48 even modhex characters, or ' +
+      'it named no public identity (#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0002',
+    summary: 'A person holds a YubiKey OTP credential this process ' +
+      'cannot read, so it was refused rather than ignored (#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0003',
+    summary: 'A YubiKey OTP did not decrypt, failed its CRC, or carried ' +
+      'another public or private identity than the one enrolled ' +
+      '(#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0004',
+    summary: 'A YubiKey OTP\'s use and session counters were not strictly ' +
+      'above the last accepted pair, so it was a replay (#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0005',
+    summary: 'A YubiKey OTP matched and its counter could not be spent ' +
+      'in the store, so it was refused (#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0006',
+    summary: 'A YubiKey OTP was checked for a person who holds none ' +
+      '(#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0007',
+    summary: 'Enrolling, assigning or claiming a YubiKey OTP was refused ' +
+      'because yubiotp.offered is off. A credential already held is ' +
+      'still checked (#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0008',
+    summary: 'A YubiKey OTP enrolment had expired before it was ' +
+      'confirmed (#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0009',
+    summary: 'A YubiKey OTP secret or a YK-VAL client key could not be ' +
+      'sealed under the key-encryption key, so it was not kept ' +
+      '(#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0010',
+    summary: 'A YubiKey OTP credential could not be written to the ' +
+      'directory (#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0011',
+    summary: 'No credential store is installed, so a YubiKey OTP ' +
+      'credential cannot be kept (#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0012',
+    summary: 'YK-VAL was asked while yubiotp.ykval is off, so the ' +
+      'endpoint answered OPERATION_NOT_ALLOWED (#1955 P5).',
+    spec: 'YK-VAL 2.0' },
+  { code: 'STS-YUBIOTP-0013',
+    summary: 'A YK-VAL verify request omitted id, otp, nonce or h ' +
+      '(#1955 P5).',
+    spec: 'YK-VAL 2.0' },
+  { code: 'STS-YUBIOTP-0014',
+    summary: 'A YK-VAL verify request\'s HMAC-SHA1 did not match the ' +
+      'client key (#1955 P5).',
+    spec: 'YK-VAL 2.0' },
+  { code: 'STS-YUBIOTP-0015',
+    summary: 'A YK-VAL verify request named a client id this realm has ' +
+      'not been given (#1955 P5).',
+    spec: 'YK-VAL 2.0' },
+  { code: 'STS-YUBIOTP-0016',
+    summary: 'A YK-VAL nonce was reused inside five minutes ' +
+      '(#1955 P5).',
+    spec: 'YK-VAL 2.0' },
+  { code: 'STS-YUBIOTP-0017',
+    summary: 'A YK-VAL verify request\'s OTP did not match an enrolled ' +
+      'public identity (#1955 P5).',
+    spec: 'YK-VAL 2.0' },
+  { code: 'STS-YUBIOTP-0018',
+    summary: 'A YK-VAL verify request replayed an OTP whose counters ' +
+      'were already spent (#1955 P5).',
+    spec: 'YK-VAL 2.0' },
+  { code: 'STS-YUBIOTP-0019',
+    summary: 'A plaintext YubiKey CSV was refused in product mode ' +
+      'unless yubiotp.allowPlaintextImport is on (#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0020',
+    summary: 'A YubiKey CSV could not be read as serial, public id, ' +
+      'private id and AES key (#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0021',
+    summary: 'An inventoried YubiKey OTP\'s secret could not be opened ' +
+      '(#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0022',
+    summary: 'An assigned YubiKey OTP was asked to be removed; it is ' +
+      'retired by reporting the token lost (#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0023',
+    summary: 'No YubiKey OTP with that serial is in this realm\'s ' +
+      'inventory (#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0024',
+    summary: 'A person\'s claim of a YubiKey OTP named a serial no ' +
+      'unassigned token has, or an OTP that token did not produce ' +
+      '(#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0025',
+    summary: 'A YubiKey OTP carried a zero use counter and a zero ' +
+      'session counter, which this service does not accept ' +
+      '(#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0026',
+    summary: 'A YubiKey public identity is already enrolled for ' +
+      'somebody else (#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0027',
+    summary: 'YK-VAL or an LDAP bind could not finish checking a ' +
+      'YubiKey OTP (#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0028',
+    summary: 'A lost hardware token\'s YubiKey OTP credential could not ' +
+      'be retired (#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0029',
+    summary: 'A YK-VAL client id was not 1 to 16 digits, or that client ' +
+      'already exists (#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0030',
+    summary: 'An operator asked to clear a YubiKey OTP for a person who ' +
+      'holds none (#1955 P5).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
   // ===== SVCACCT ===========================================================
   { code: 'STS-SVCACCT-0001',
     summary: 'A service-account policy profile was named with something ' +

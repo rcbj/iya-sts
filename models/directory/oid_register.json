@@ -578,6 +578,7 @@
   "stsEnrolledPrivateKey": 565,
   "stsEntryUuidAlias": 566,
   "stsHotpCredential": 801,
+  "stsYubiOtpCredential": 803,
   "stsIdaVerification": 567,
   "stsKrb5KeyInfo": 568,
   "stsKrb5Keys": 569,

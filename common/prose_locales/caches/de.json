@@ -1655,6 +1655,22 @@
     "en": "484401484f6f539d",
     "text": "ein Ticket wurde über seinen Digest gefunden"
   },
+  "caches.store.yubiotp.inventory.title": {
+    "en": "f2915b8ab9e4a37c",
+    "text": "Yubico-OTP-Bestand"
+  },
+  "caches.store.yubiotp.inventory.description": {
+    "en": "c58db5407fb1dcbe",
+    "text": "Eine Zeile je YubiKey-OTP, das ein Administrator aus einer CSV importiert hat, geschlüsselt nach Seriennummer: nicht zugewiesen (sein AES-Schlüssel versiegelt), einer Person zugewiesen (das Geheimnis entfernt, jetzt auf ihrem Eintrag) oder außer Betrieb."
+  },
+  "caches.store.yubiotp.inventory.bound": {
+    "en": "9f558f556a019acc",
+    "text": "Die Zeilen, die ein Prozess hält, sind ein Cache von 5.000 je Bereich."
+  },
+  "caches.store.yubiotp.inventory.lifetime": {
+    "en": "4f13467dac65d62f",
+    "text": "Bis ein nicht zugewiesenes Token entfernt wird; ein zugewiesenes oder außer Betrieb genommenes Token bleibt erhalten."
+  },
   "caches.lru.default.description": {
     "en": "777e71be96460478",
     "text": "Ein begrenzter Cache in der Reihenfolge der längsten Nichtverwendung."

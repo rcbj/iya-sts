@@ -464,6 +464,7 @@
   "endpoints.route./authn/password-change.name": "Forced password change step",
   "endpoints.route./authn/mfa-setup.name": "Required second factor set-up step",
   "endpoints.route./authn/post-login.name": "Post-login activity step",
+  "endpoints.route./wsapi/2.0/verify.name": "YK-VAL 2.0 verify",
   "endpoints.route./authn/totp.name": "One-time code second-factor step",
   "endpoints.route./authn/signin.js.name": "The sign-in screen's script",
   "endpoints.route./authn-api.name": "The sign-in API index",

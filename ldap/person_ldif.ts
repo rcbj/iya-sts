@@ -114,6 +114,9 @@ const CREDENTIALS: Record<string, CredentialRow> = {
   // #1955 P4: the HOTP credential, carried and written as the app's is.
   stshotpcredential: { name: 'stsHotpCredential', kind: 'hotp',
                        single: true },
+  // #1955 P5: the YubiKey OTP credential, carried as the HOTP one is.
+  stsyubiotpcredential: { name: 'stsYubiOtpCredential', kind: 'yubiotp',
+                          single: true },
   stswebauthncredential: { name: 'stsWebauthnCredential', kind: 'passkey',
                            single: false },
   stswebauthnuserhandle: { name: 'stsWebauthnUserHandle', kind: 'passkey',

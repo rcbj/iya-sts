@@ -671,6 +671,14 @@
     "en": "167f79e724fe8b34",
     "text": "Entfernt jedes User-Managed Access Permission Ticket, jedes persistierte Claims-Token, jeden RPT-Datensatz und jede ausstehende Genehmigung des Eigentümers nach Ablauf der jeweiligen Lebensdauer (#1168). Ein Lesezugriff wendet die Frist selbst an; dies ist also die Bereinigung, nie das, was entscheidet."
   },
+  "sched.jobs.yubiotp.nonce-sweep.title": {
+    "en": "dce74787b5ae6954",
+    "text": "Bereinigung der Yubico-OTP-Nonces"
+  },
+  "sched.jobs.yubiotp.nonce-sweep.describe": {
+    "en": "21922132f2f9b5f8",
+    "text": "Entfernt YK-VAL-Nonces, die älter als fünf Minuten sind, und die ältesten über zehntausend, damit die Nonce-Abbildung nicht wächst."
+  },
   "sched.sentence.onDemand": {
     "en": "92e0ecb68dc6ec36",
     "text": "nur auf Anforderung"

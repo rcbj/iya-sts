@@ -563,6 +563,18 @@
     "en": "e3eb9f2bcabf5eaa",
     "text": "Eine PSKC-Seed-Datei, deren Token-Geheimnisse im Klartext vorliegen, wird abgelehnt, sofern pskc.allowPlaintextImport nicht eingeschaltet ist; eine verschlüsselte wird mit dem beim Upload angegebenen Schlüssel oder Passwort geöffnet, das nie gespeichert wird."
   },
+  "mode.requirements.plaintext-yubiotp-csv.what": {
+    "en": "c349a97e52695bea",
+    "text": "Eine YubiKey-OTP-Seed-Datei darf keine Liste von AES-Schlüsseln sein"
+  },
+  "mode.requirements.plaintext-yubiotp-csv.development": {
+    "en": "c1af70a4452cb90f",
+    "text": "Eine CSV aus Seriennummer, öffentlicher Identität, privater Identität und AES-Schlüssel wird wie jede andere Bestandsdatei importiert."
+  },
+  "mode.requirements.plaintext-yubiotp-csv.product": {
+    "en": "3f75df0847c0e777",
+    "text": "Diese CSV wird abgelehnt, sofern yubiotp.allowPlaintextImport nicht an ist. Die Schlüssel werden versiegelt, sobald die Datei angenommen wurde, und die Datei selbst wird nicht behalten."
+  },
   "mode.requirements.sso-consent.what": {
     "en": "2b06d195aa0a395d",
     "text": "Single Sign-on fragt, bevor es eine Person bei einer Anwendung anmeldet"

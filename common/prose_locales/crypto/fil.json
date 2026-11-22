@@ -1423,6 +1423,50 @@
     "en": "e08e19def21e22b2",
     "text": "Mga live setting"
   },
+  "crypto.families.yubico-otp.signs": {
+    "en": "c340996ced9d9758",
+    "text": "Walang lumalabas sa serbisyong ito, maliban sa HMAC-SHA1 na sinusuri ng isang YK-VAL client sa /wsapi/2.0/verify. Ang OTP mismo ay AES-128-ECB ng isang 16-byte block, ikinukumpara pagkatapos itong i-decrypt, kaya nasa common/crypto.js ang primitive."
+  },
+  "crypto.families.yubico-otp.verifies": {
+    "en": "f7cf070e5067a77f",
+    "text": "Isang iniharap na OTP: pinipili ng public identity ang credential, dina-decrypt ang block sa ilalim ng AES-128 key nito, ang CRC-16 residual ay 0xf0b8, at tumutugma ang private identity. Ang use counter at ang session-use counter, bilang isang value, ay dapat na mahigpit na mas mataas kaysa sa huling tinanggap. Hindi sinusuri ang timestamp. Ang HMAC-SHA1 ng isang YK-VAL request, sa bawat mode, kapag naka-on ang yubiotp.ykval."
+  },
+  "crypto.families.yubico-otp.encrypts": {
+    "en": "3802bf3b62081ea2",
+    "text": "Ang AES key at ang private identity sa pagpapahinga, bilang isang sealed JSON value, sa ilalim ng key-encryption key, sa product mode. Sa development mode ang key-encryption key ay ginagawa bawat pagtakbo, kaya naka-store ang value nang malinaw at sinasabi iyon."
+  },
+  "crypto.families.yubico-otp.decrypts": {
+    "en": "560652ba098dd545",
+    "text": "Ang sealed value na iyon, para suriin ang isang OTP. Hawak ng server ang AES key, kaya ang pag-sign in ay amr otp at hindi kailanman hwk."
+  },
+  "crypto.families.yubico-otp.hashes": {
+    "en": "761a28a6805e3023",
+    "text": "Wala. Ang CRC ay CRC-16, polynomial 0x8408. Ang lagda ng YK-VAL ay HMAC-SHA1."
+  },
+  "crypto.families.yubico-otp.whatItDoesNot": {
+    "en": "a977ea47369edb7c",
+    "text": "Hindi ito kailanman tumatawag sa YubiCloud. Hindi nito kailanman sinusuri ang timestamp. Hindi ito kailanman nag-e-enrol ng slot habang naka-off ang yubiotp.offered, at hindi nito kailanman sinasagot ang YK-VAL habang naka-off ang yubiotp.ykval. Hindi nito kailanman nilo-log ang programming line o ang HMAC key ng isang client."
+  },
+  "crypto.families.yubico-otp.algorithms.0.what": {
+    "en": "6c0e6acd35694622",
+    "text": "OTP"
+  },
+  "crypto.families.yubico-otp.algorithms.1.what": {
+    "en": "ac57b0e667bf3ec1",
+    "text": "Alpabeto"
+  },
+  "crypto.families.yubico-otp.algorithms.2.what": {
+    "en": "ee4fcdc3401859da",
+    "text": "CRC"
+  },
+  "crypto.families.yubico-otp.algorithms.3.what": {
+    "en": "c8dae6371b33b8d6",
+    "text": "Pag-uulit"
+  },
+  "crypto.families.yubico-otp.algorithms.4.what": {
+    "en": "7ff6cc8a39bc9224",
+    "text": "YubiCloud"
+  },
   "crypto.families.recovery-codes.signs": {
     "en": "e07d5c09c87dcaf1",
     "text": "Wala. Walang MAC at walang signature saanman sa mekanismong ito — ang recovery code ay isang random na string na sinusuri laban sa naka-store na hash nito, na siyang buong pagkakaiba sa TOTP row sa itaas kung saan ang \"code\" ay isang pinutol na HMAC."

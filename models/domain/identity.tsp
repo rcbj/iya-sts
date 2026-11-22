@@ -174,6 +174,9 @@ model Credential {
   @fromAttr(#{attr: "stsHotpCredential", secret: true})
   hotpToken?: string;
 
+  @fromAttr(#{attr: "stsYubiOtpCredential", secret: true})
+  yubiOtp?: string;
+
   @fromAttr(#{attr: "stsWebauthnCredential"})
   passkeys?: string[];
 

@@ -531,6 +531,14 @@
     "en": "5ab7b9d048e74e7e",
     "text": "full, सत्यापनकर्ता पक्ष, केवल द्वितीय कारक के रूप में (#1955 P4): HMAC-SHA-1, SHA-256 या SHA-512 पर अनुभाग 5.3 का डायनामिक ट्रंकेशन, छह से आठ अंक, काउंटर आठ-बाइट big-endian मान, परिशिष्ट D के अपने परीक्षण वेक्टरों के विरुद्ध परखा गया (tests/totp.js, tests/hotp.js); हर क्रेडेंशियल के लिए एक काउंटर, अनुभाग 7.4 के लुक-अहेड (hotp.window, डिफ़ॉल्ट 10, 0 मान्य) और लगातार दो कोड से पुनः सिंक (hotp.resyncWindow) के साथ; अनुभाग 7.2 का रीप्ले अस्वीकरण, काउंटर स्टोर में compare-and-set से आगे बढ़ाया जाता है ताकि दो नोड या वर्कर कभी एक ही कोड स्वीकार न करें; साइन-इन के कोड बजट के ज़रिए अनुभाग 7.3 का थ्रॉटलिंग। YubiKey OTP स्लॉट पोर्टल के otpauth://hotp कोड या ykman कमांड से प्रोग्राम होता है; विक्रेता का टोकन आयात होता है (RFC 6030)। यह amr otp अर्जित करता है, और hwk केवल आयात किए गए टोकन के लिए। शामिल नहीं: अनुभाग 7.3 की विलंब योजना अपने रूप में (इसके बजाय बजट अस्वीकार करता है), और OCRA (RFC 6287)।"
   },
+  "stsmetadata.specs.yubico-otp.coverage": {
+    "en": "57c44d60416042fb",
+    "text": "partial, सत्यापन पक्ष (#1955 P5): प्रकाशित OTP, modhex सार्वजनिक पहचान के बाद बिना पैडिंग का एक AES-128-ECB ब्लॉक, CRC-16 अवशेष 0xf0b8, और उपयोग तथा सत्र काउंटर compare-and-set से आगे बढ़े ताकि एक OTP एक बार स्वीकार हो। टाइमस्टैम्प जाँचा नहीं जाता। नामांकन डिफ़ॉल्ट रूप से बंद है (yubiotp.offered)। amr otp, कभी hwk नहीं, क्योंकि यह सेवा AES कुंजी रखती है। कवर नहीं: YubiCloud, और टाइमस्टैम्प की कोई भी जाँच।"
+  },
+  "stsmetadata.specs.yk-val.coverage": {
+    "en": "0adaef8d27031f8f",
+    "text": "partial, सत्यापन सर्वर के रूप में (#1955 P5): id, otp, nonce और h के साथ GET और POST /wsapi/2.0/verify, क्रमबद्ध पैरामीटरों पर HMAC-SHA1, और स्थितियाँ OK, BAD_OTP, BAD_SIGNATURE, MISSING_PARAMETER, NO_SUCH_CLIENT, OPERATION_NOT_ALLOWED, BACKEND_ERROR, REPLAYED_OTP और REPLAYED_REQUEST। डिफ़ॉल्ट रूप से बंद (yubiotp.ykval)। चालू होने पर क्लाइंट id और HMAC हर मोड में जाँचे जाते हैं। उत्तर sl=100 रखता है। कवर नहीं: YubiCloud क्लाइंट, और 100 के अलावा कोई सिंक प्रतिशत।"
+  },
   "stsmetadata.specs.rfc6030.coverage": {
     "en": "35ef81e9394eb5f5",
     "text": "partial, प्राप्तकर्ता के रूप में (#1955 P4): HOTP और TOTP कुंजियों वाला संस्करण 1.0 का KeyContainer, DeviceInfo के Manufacturer, SerialNo और Model, ResponseFormat (6 से 8 दशमलव अंक), सादा Counter, Time (केवल 0) और TimeInterval; सादा पाठ (उत्पाद मोड में अस्वीकृत, जब तक pskc.allowPlaintextImport न हो), पूर्व-साझा कुंजी (अनुभाग 6.1: AES-128/192/256-CBC और KW-AES) और पासफ़्रेज़ (अनुभाग 6.2: PBKDF2), जिनमें अनुभाग 6.1.1 का ValueMAC पहले जाँचा जाता है (HMAC-SHA1 और SHA-2 MAC)। RFC के अपने Figures 2 से 7 के विरुद्ध परखा गया (tests/pskc.js)। शामिल नहीं: किसी प्रमाणपत्र के लिए एन्क्रिप्शन (6.3), संदर्भ द्वारा MAC कुंजी, Triple DES और Camellia, एन्क्रिप्ट किया गया काउंटर या समय, PIN कुंजियाँ और नीतियाँ (छोड़ दी जाती हैं), कंटेनर पर हस्ताक्षर (अनुभाग 7), और ऐसी फ़ाइल बनाना।"
@@ -2140,8 +2148,8 @@
     "text": "NON-SPEC (#1955 P4). वे HOTP और TOTP टोकन जिन्हें व्यवस्थापकों ने विक्रेताओं की PSKC सीड फ़ाइलों से आयात किया, असाइन नहीं, असाइन या सेवानिवृत्त, पृष्ठों में और सीरियल नंबर या व्यक्ति से खोजे जा सकने वाले। कभी कोई सीक्रेट नहीं। GET /admin/hardware-tokens (उसके OATH टैब) का प्रतिबिंब।"
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-    "en": "4309735f35f4550e",
-    "text": "NON-SPEC (#1955). lost, { key } के साथ: टोकन खोया हुआ चिह्नित होता है, उस पर हर पासकी हटाई जाती है, हर प्रमाणपत्र keyCompromise के लिए रद्द किया जाता है, हर आयात किया गया OATH सीक्रेट उसके धारक की प्रविष्टि से हटाया जाता है, हर एक के लिए CAEP क्रेडेंशियल-परिवर्तन भेजा जाता है और उनसे शुरू हुए सत्र समाप्त किए जाते हैं। P4 से import-pskc, { pskc, preSharedKey or password } के साथ: RFC 6030 सीड फ़ाइल की HOTP और TOTP कुंजियाँ सीरियल नंबर से असाइन किए बिना रखी जाती हैं, MAC पहले जाँचा जाता है और कुंजी कभी संग्रहीत नहीं होती; assign-oath, { key, username } के साथ; और remove-oath, { key } के साथ, असाइन न किए गए टोकन के लिए।"
+    "en": "107e4ff48ad53fb3",
+    "text": "NON-SPEC (#1955). lost, { key } के साथ: टोकन खोया हुआ चिह्नित होता है, उस पर हर पासकी हटाई जाती है, हर प्रमाणपत्र keyCompromise के लिए रद्द किया जाता है, हर आयात किया गया OATH सीक्रेट उसके धारक की प्रविष्टि से हटाया जाता है, हर एक के लिए CAEP क्रेडेंशियल-परिवर्तन भेजा जाता है और उनसे शुरू हुए सत्र समाप्त किए जाते हैं। P4 से import-pskc, { pskc, preSharedKey or password } के साथ: RFC 6030 सीड फ़ाइल की HOTP और TOTP कुंजियाँ सीरियल नंबर से असाइन किए बिना रखी जाती हैं, MAC पहले जाँचा जाता है और कुंजी कभी संग्रहीत नहीं होती; assign-oath, { key, username } के साथ; और remove-oath, { key } के साथ, असाइन न किए गए टोकन के लिए। P5 से import-yubiotp, { csv } के साथ; assign-yubiotp, { serial, username, otp } के साथ; remove-yubiotp, { serial } के साथ; ykval-client-add, { id } के साथ, जिसकी HMAC कुंजी एक बार उत्तर में दी जाती है; और ykval-client-remove, { id } के साथ।"
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
     "en": "dabee6463ad7ee17",
@@ -3046,6 +3054,14 @@
   "stsmetadata.endpoints./authn/post-login.effect": {
     "en": "9547cda6898c37a6",
     "text": "साइन-इन के बाद एक पोस्ट-क्वांटम पासकी माँगता है, फिर उस साइन-ऑन सत्र को स्थापित करता है जिसे उसने रोके रखा था"
+  },
+  "stsmetadata.endpoints./wsapi/2.0/verify.what": {
+    "en": "ff0550a4318594c6",
+    "text": "YUBICO का सत्यापन प्रोटोकॉल 2.0 (#1955 P5)। id, otp, nonce और h का GET या POST। डिफ़ॉल्ट रूप से बंद: मार्ग OPERATION_NOT_ALLOWED उत्तर देता है और कुछ हस्ताक्षरित नहीं करता। चालू होने पर क्लाइंट id और HMAC-SHA1 हर मोड में जाँचे जाते हैं, विकास सहित; nonce पाँच मिनट याद रहता है; मेल खाता OTP खर्च होता है। Cache-Control: no-store। YubiCloud को कुछ नहीं भेजा जाता।"
+  },
+  "stsmetadata.endpoints./wsapi/2.0/verify.effect": {
+    "en": "bb2bc4011c8240ac",
+    "text": "उस क्लाइंट के लिए YubiKey OTP जाँचता है जिसने अनुरोध पर हस्ताक्षर किया, या yubiotp.ykval बंद होने पर OPERATION_NOT_ALLOWED उत्तर देता है"
   },
   "stsmetadata.endpoints./authn/totp.what": {
     "en": "b62d7bad9442ea5c",
@@ -4034,6 +4050,10 @@
   "stsmetadata.protocols.One-time passwords (TOTP).what": {
     "en": "54893544268bf168",
     "text": "उस साइन-इन स्क्रीन का दूसरा द्वितीय कारक जिस पर यहाँ का हर प्रोटोकॉल व्यक्ति को भेजता है, और Kerberos टिकट के अलावा एकमात्र क्रेडेंशियल जिसे यह सेवा वास्तव में जाँचती है: कोड साझा सीक्रेट और घड़ी से गणना करके तुलना किया जाता है, दोनों मोड में, RFC 6238 अनुभाग 5.2 का एक-बार-स्वीकार नियम लागू करते हुए। नामांकन इस सर्वर द्वारा बनाया गया QR कोड है, /portal/mfa पर या सक्रियण लिंक उपयोग होते समय; /admin/users पर व्यक्ति की अपनी पंक्ति वह जगह है जहाँ ऑपरेटर इसे साफ़ करता है, और /admin/totp वह जगह है जहाँ तंत्र कॉन्फ़िगर होता है। #1955 P4 से इसका काउंटर-आधारित सहोदर भी: RFC 4226 HOTP टोकन (YubiKey OTP स्लॉट, /portal/mfa पर नामांकित, या विक्रेता का टोकन जो डायरेक्टरी → हार्डवेयर टोकन पर उसकी RFC 6030 सीड फ़ाइल से आयात होकर सीरियल नंबर से असाइन या क्लेम किया गया), जिसका काउंटर compare-and-set से आगे बढ़ता है, और जो कोड लेने वाले हर द्वार पर स्वीकार होता है।"
+  },
+  "stsmetadata.protocols.Yubico OTP.what": {
+    "en": "462bb8049dda11d0",
+    "text": "इस सेवा पर जाँचा गया YubiKey OTP स्लॉट (#1955 P5)। AES-128 कुंजी यहीं रहती है, इसलिए साइन-इन amr otp है और कभी hwk नहीं। नामांकन, असाइनमेंट और दावा yubiotp.offered तक बंद रहते हैं; पहले से रखी क्रेडेंशियल एकबारगी कोड चरण पर अभी भी जाँची जाती है। GET और POST /wsapi/2.0/verify YK-VAL 2.0 हैं और yubiotp.ykval तक OPERATION_NOT_ALLOWED रहते हैं। YubiCloud को कोई अनुरोध नहीं भेजा जाता।"
   },
   "stsmetadata.protocols.Recovery codes.what": {
     "en": "b7c9347c7ac4a2b7",

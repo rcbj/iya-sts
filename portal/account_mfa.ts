@@ -79,6 +79,9 @@ interface AccountMfaDeps {
   authnPolicy(): Json;
   // #1955 P4: counter-based codes, reached when the card is drawn.
   hotp(): Json;
+  // #1955 P5: the library (whether enrolment is offered) and the inventory.
+  yubi(): Json;
+  yubiStore(): Json;
 }
 
 /**
@@ -120,6 +123,16 @@ class AccountMfa {
         helpers.log.debug("Entering hotp().");
         helpers.log.debug("Leaving hotp().");
         return require('../common/hotp');
+      },
+      yubi: function yubi(): Json {
+        helpers.log.debug("Entering yubi().");
+        helpers.log.debug("Leaving yubi().");
+        return require('../common/yubiotp');
+      },
+      yubiStore: function yubiStore(): Json {
+        helpers.log.debug("Entering yubiStore().");
+        helpers.log.debug("Leaving yubiStore().");
+        return require('../common/yubiotp_store');
       },
       authnPolicy: function authnPolicy(): Json {
         helpers.log.debug("Entering authnPolicy().");
@@ -370,6 +383,177 @@ class AccountMfa {
                ' ' + t.text('portal.done.endOthers') });
   }
 
+  // -------------------------------------------------------------------------
+  // THE YUBIKEY OTP (#1955 P5). The programming line lives on the pending
+  // enrolment and is drawn by the view. It is not logged, and `start`
+  // answers `{ ok }` so a reload cannot mint a second one.
+  // -------------------------------------------------------------------------
+  /**
+   * The YubiKey OTP card.
+   *
+   * @param username - the signed-in person
+   * @param mechanisms - `credentials.mechanismsFor()`'s answer
+   * @returns the card
+   */
+  yubiCardOf(username: string, mechanisms: Json): Json {
+    const { log, credentials } = this.deps;
+    log.debug("Entering AccountMfa.yubiCardOf().");
+    const yubi = this.deps.yubi();
+    const detail: Json = mechanisms.yubiDetail || null;
+    const held: Json = credentials.pendingYubiFor(username);
+    const setup: Json = held
+      ? { publicId: String(held.publicId || ''),
+          ykman: String(held.ykman || '') }
+      : null;
+    log.debug("Leaving AccountMfa.yubiCardOf().");
+    return {
+      enrolled: !!mechanisms.yubi, usable: !!mechanisms.yubiUsable,
+      detail: mechanisms.yubi && detail
+        ? { enrolledAt: detail.enrolledAt || 0,
+            lastUsedAt: detail.lastUsedAt || 0,
+            publicId: String(detail.publicId || ''),
+            source: String(detail.source || 'enrolled'),
+            serial: String(detail.serial || '') } : null,
+      offered: !!yubi.offered(),
+      setup: setup
+    };
+  }
+
+  /**
+   * Carries out one of the YubiKey OTP card's acts.
+   *
+   * @param ctx - the account API's helpers
+   * @param req - the request
+   * @param res - the response
+   * @param caller - the signed-in person
+   * @param body - the checked body
+   * @param refuse - the page's refusal, which redraws the view
+   * @returns the answer sent
+   */
+  async yubiAct(ctx: AccountContext, req: Json,
+                res: AccountAnswering<'changeMfa'>, caller: AccountCaller,
+                body: Json,
+                refuse: (status: number, code: string,
+                         why: string) => Promise<unknown>): Promise<unknown> {
+    const { log, credentials } = this.deps;
+    const { audit, websecurity } = ctx;
+    log.debug("Entering AccountMfa.yubiAct().");
+    const username = caller.username;
+    const action = String(body.action || '');
+    const t = ctx.translatorFor(username);
+    const signals = this.deps.accountSignals();
+    const codeOf = function (result: Json, fallback: string): string {
+      return ctx.errorCodes.codeOf(result) || fallback;
+    };
+    if (action === 'yubiotp-start') {
+      const begun: Json = credentials.beginYubiEnrolment(username);
+      if (!begun.ok) {
+        log.debug("Leaving AccountMfa.yubiAct(). Not started.");
+        return refuse(400, codeOf(begun, 'STS-YUBIOTP-0007'),
+                      (begun.errors || ['It could not be started.'])[0]);
+      }
+      audit.record({ category: 'authentication',
+        action: 'portal.yubiotp.started', actor: username,
+        outcome: 'success',
+        summary: username + ' started setting up a YubiKey OTP',
+        detail: { address: websecurity.addressOf(req) } });
+      log.debug("Leaving AccountMfa.yubiAct(). Started.");
+      return ctx.json(res, 200, { ok: true });
+    }
+    if (action === 'yubiotp-remove') {
+      const removed: Json = credentials.removeYubiOtp(username);
+      if (!removed.ok) {
+        log.debug("Leaving AccountMfa.yubiAct(). Not removed.");
+        return refuse(400, codeOf(removed, 'STS-YUBIOTP-0006'),
+                      (removed.errors || ['It could not be removed.'])[0]);
+      }
+      if (removed.publicId) {
+        this.deps.yubiStore().dropPublicId(removed.publicId, removed.id);
+      }
+      const ended: Json = ctx.endFactorSessions(username,
+        { kind: 'yubiotp' }, 'the YubiKey OTP');
+      audit.record({ category: 'authentication',
+        action: 'portal.yubiotp.removed', actor: username,
+        outcome: 'success',
+        summary: username + ' removed their YubiKey OTP',
+        detail: { address: websecurity.addressOf(req),
+                  sessionsEnded: ended.sessionsEnded } });
+      signals.credentialChanged({ username: username,
+        credentialType: signals.YUBIOTP_CREDENTIAL_TYPE,
+        changeType: 'delete', initiatingEntity: 'user', via: 'portal',
+        reasonAdmin: username + ' removed their YubiKey OTP.',
+        reasonUser: 'You removed your YubiKey OTP.' });
+      const said = t.text('portal.done.yubiotpRemoved') + ' ' +
+                   t.text('portal.done.endOthers');
+      log.debug("Leaving AccountMfa.yubiAct(). Removed.");
+      return ctx.json(res, 200, { ok: true,
+        message: ended.sentence ? said + ' ' + ended.sentence : said,
+        sessionsEnded: ended.sessionsEnded });
+    }
+    const allowed = await websecurity.attemptShared('mfa-code', req,
+                                                    username);
+    if (!allowed.ok) {
+      log.debug("Leaving AccountMfa.yubiAct(). Rate limited.");
+      return refuse(429, codeOf(allowed, 'STS-PORTAL-0018'), allowed.detail);
+    }
+    const done: Json = action === 'yubiotp-claim'
+      ? await this.deps.yubiStore().claim({
+          username: username, serial: String(body.serial || ''),
+          otp: String(body.code || '') })
+      : await credentials.confirmYubiEnrolment(username,
+                                               String(body.code || ''));
+    if (!done.ok) {
+      audit.record({ category: 'authentication',
+        action: action === 'yubiotp-claim' ? 'portal.yubiotp.claim-refused'
+                                           : 'portal.yubiotp.refused',
+        errorCode: codeOf(done, 'STS-YUBIOTP-0003'), actor: username,
+        outcome: 'failure',
+        summary: action === 'yubiotp-claim'
+          ? 'a YubiKey OTP was not claimed'
+          : 'a YubiKey OTP setup was not confirmed',
+        detail: { address: websecurity.addressOf(req) } });
+      log.debug("Leaving AccountMfa.yubiAct(). Refused.");
+      return refuse(400, codeOf(done, 'STS-YUBIOTP-0003'),
+                    (done.errors || [done.detail || done.error ||
+                                     'That OTP was refused.'])[0]);
+    }
+    try {
+      await websecurity.succeededShared('mfa-code', req, username);
+    } catch (e) {
+      log.warn(ctx.errorCodes.tag('STS-PORTAL-0637') + 'portal: ' +
+               username + '\'s YubiKey OTP act succeeded and its failure ' +
+               'count could not be cleared: ' + ((e && e.message) || e));
+    }
+    if (action === 'yubiotp-claim') {
+      audit.record({ category: 'authentication',
+        action: 'portal.yubiotp.claimed', actor: username,
+        outcome: 'success',
+        summary: username + ' claimed a YubiKey OTP',
+        detail: { address: websecurity.addressOf(req) } });
+      signals.credentialChanged({ username: username,
+        credentialType: signals.YUBIOTP_CREDENTIAL_TYPE,
+        changeType: 'create', initiatingEntity: 'user', via: 'portal',
+        reasonAdmin: username + ' claimed a YubiKey OTP.',
+        reasonUser: 'You claimed a YubiKey OTP.' });
+      log.debug("Leaving AccountMfa.yubiAct(). Claimed.");
+      return ctx.json(res, 200, { ok: true,
+        message: t.text('portal.done.yubiotpClaimed') });
+    }
+    audit.record({ category: 'authentication',
+      action: 'portal.yubiotp.enrolled', actor: username, outcome: 'success',
+      summary: username + ' set up a YubiKey OTP as a second factor',
+      detail: { address: websecurity.addressOf(req) } });
+    signals.credentialChanged({ username: username,
+      credentialType: signals.YUBIOTP_CREDENTIAL_TYPE, changeType: 'create',
+      initiatingEntity: 'user', via: 'portal',
+      reasonAdmin: username + ' set up a YubiKey OTP.',
+      reasonUser: 'You set up a YubiKey OTP.' });
+    log.debug("Leaving AccountMfa.yubiAct(). Enrolled.");
+    return ctx.json(res, 200, { ok: true,
+      message: t.text('portal.done.yubiotpSetUp') + ' ' +
+               t.text('portal.done.endOthers') });
+  }
+
   // THE EMAILED SECOND FACTOR (#64), rcbj's D8: a person OPTS IN. Null when
   // the realm offers neither kind and the person has not opted in — the card
   // is then not drawn. `mail_factor`'s own words (the masked address, the
@@ -444,6 +628,7 @@ class AccountMfa {
       },
       // #1955 P4: the one-time code token beside the app.
       hotp: await this.hotpCardOf(ctx, username, mechanisms, base),
+      yubiotp: this.yubiCardOf(username, mechanisms),
       doors: { applies: !!doors.applies,
                refused: (doors.refused || []).slice(0) },
       setup: await this.pendingEnrolmentFor(ctx, username, base),
@@ -508,6 +693,9 @@ class AccountMfa {
 
     if (/^hotp-/.test(action)) {
       return this.hotpAct(ctx, req, res, caller, body, refuse);
+    }
+    if (/^yubiotp-/.test(action)) {
+      return this.yubiAct(ctx, req, res, caller, body, refuse);
     }
 
     if (action === 'remove') {

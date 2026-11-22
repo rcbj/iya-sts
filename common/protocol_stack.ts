@@ -279,6 +279,10 @@ class ProtocolStack {
     // #1955 P4: counter-based codes (RFC 4226), `totp`'s sibling: a library
     // over `totp`'s base32 and the authentication policy's `hotp` row.
     this.build('common/hotp', require('./hotp'), 'Hotp');
+    // #1955 P5: YubiKey OTP, a library over crypto.js. The inventory and
+    // the YK-VAL route are registered later, once the hardware-token
+    // register and the scheduler exist.
+    this.build('common/yubiotp', require('./yubiotp'), 'YubiOtp');
     this.build('common/backup_codes', require('./backup_codes'), 'BackupCodes');
     // #101: app passwords, which `credentials.ts` keeps on the entry.
     this.build('common/app_passwords', require('./app_passwords'),
@@ -348,6 +352,10 @@ class ProtocolStack {
     // `hotp` and `totp` retirers when it is installed, so after it.
     this.build('common/pskc', require('./pskc'), 'Pskc');
     this.build('common/oath_tokens', require('./oath_tokens'), 'OathTokens');
+    // #1955 P5: the YubiKey OTP inventory. After the hardware-token
+    // register, whose retirer it installs, and after yubiotp above.
+    this.build('common/yubiotp_store', require('./yubiotp_store'),
+               'YubiOtpStore');
     // #164 phase 2: what a device key's attestation proves
     // (`device_attestation`), which device a request came from
     // (`device_recognition`, asked by `authn` and `oauth2` below), and a
@@ -388,6 +396,10 @@ class ProtocolStack {
     this.build('common/websecurity', require('./websecurity'), 'WebSecurity');
     this.build('authn/authn', require('../authn/authn'), 'Authn');
     this.register(app, require('../authn/authn'), 'authn/authn');
+    // #1955 P5: YK-VAL 2.0, beside the sign-in. The path collides with
+    // nothing. The route answers OPERATION_NOT_ALLOWED until yubiotp.ykval
+    // is on.
+    this.register(app, require('../authn/ykval'), 'authn/ykval');
     // THE SIGN-IN SCREEN'S API (#571): `/authn-api`, at authn's place. The
     // screen is a static surface whose shells `authn` registers above; the
     // views and acts are that module's, reached through its exports, and
@@ -1339,6 +1351,9 @@ class ProtocolStack {
     // same for its three sweeps at its own load; these two are called from
     // here because requiring them from there could close a load cycle.
     const jobScheduler = require('../cluster/scheduler');
+    // #1955 P5: the YK-VAL nonce sweep. The store is built above and does
+    // not require the scheduler; this is where the scheduler is in hand.
+    require('./yubiotp_store').installScheduler(jobScheduler);
     require('./admin_stats').ensureTokenPurgeJob(jobScheduler);
     require('../persistence/persistence_minted')
       .ensureTombstoneJob(jobScheduler);

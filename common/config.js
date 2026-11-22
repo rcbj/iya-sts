@@ -3199,6 +3199,30 @@ const SETTINGS = [
                  'row are far harder to guess than one, which is what ' +
                  'makes the larger search safe. Live.' },
 
+  // #1955 P5: YUBICO OTP, checked locally (`common/yubiotp.ts`). Off by
+  // default: a credential already held is still verified, and enrolment,
+  // assignment and a claim wait for the switch. The YK-VAL endpoint is a
+  // second switch, also off.
+  { key: 'yubiotp.offered', group: 'TOTP MFA',
+    label: 'Offer YubiKey OTP enrolment', path: 'yubiotp.offered',
+    env: 'STS_YUBIOTP_OFFERED', type: 'bool', dflt: false, runtime: true,
+    description: 'Whether a person may enrol a YubiKey OTP slot, and ' +
+                 'whether an administrator may assign one or a person ' +
+                 'claim one. Off by default. A credential already held is ' +
+                 'still checked at the one-time-code step. The AES key ' +
+                 'stays on this service, so the sign-in is amr otp and ' +
+                 'never hwk.' },
+
+  { key: 'yubiotp.ykval', group: 'TOTP MFA',
+    label: 'Answer the YK-VAL 2.0 verify endpoint', path: 'yubiotp.ykval',
+    env: 'STS_YUBIOTP_YKVAL', type: 'bool', dflt: false, runtime: true,
+    description: 'Whether GET and POST /wsapi/2.0/verify check a YubiKey ' +
+                 'OTP for a client that signed the request (YK-VAL 2.0). ' +
+                 'Off by default, and the route then answers ' +
+                 'OPERATION_NOT_ALLOWED. On, the client id and the ' +
+                 'HMAC-SHA1 are checked in every mode, including ' +
+                 'development. No request is sent to YubiCloud.' },
+
   // ---------------------------------------------------------------------
   // RECOVERY CODES (2026-09-10). THE THIRD SECOND FACTOR, AND THE ONLY
   // MECHANISM IN THIS SERVICE THAT NO SPECIFICATION DEFINES.
@@ -7206,6 +7230,20 @@ const SETTINGS = [
                  'it passed through, and a vendor can encrypt it under a ' +
                  'pre-shared key or a password (sections 6.1 and 6.2). ' +
                  'Development mode accepts one regardless.' },
+
+  // #1955 P5: a CSV of YubiKey OTP secrets in the clear.
+  // `common/mode.js`'s `refusesPlaintextYubiCsv()` reads it.
+  { key: 'yubiotp.allowPlaintextImport', group: 'Devices',
+    label: 'Accept plaintext YubiKey OTP CSV files in product mode',
+    path: 'yubiotp.allowPlaintextImport',
+    env: 'STS_YUBIOTP_ALLOW_PLAINTEXT_IMPORT', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Whether an administrator may import a CSV of YubiKey ' +
+                 'OTP secrets (serial, public id, private id, AES key) ' +
+                 'in product mode. Off by default: the file is a list of ' +
+                 'working second factors. Development mode accepts one ' +
+                 'regardless. The secrets are sealed when the file is ' +
+                 'accepted, and the file is not kept.' },
 
   // #164 PHASE 3 (2026-09-26): the MDM / posture feed.
   // `admin-ui/devices_admin.ts`'s `mdmFeed()` argues it.

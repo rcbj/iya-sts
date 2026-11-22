@@ -1257,6 +1257,7 @@ row's body runs on a request worker except those marked **front**:
 | `report.retention.here` | per-process, realm, quiet; every 60 s — `report.retention` on that same holder (#956) | `report/jobs.ts`, `report/CLAUDE.md` |
 | `report.schedule.here` | per-process, realm, quiet; every 60 s — `report.schedule` on that same holder (#956) | `report/jobs.ts`, `report/CLAUDE.md` |
 | `audit.export` | per-process, realm, quiet; `auditExport.intervalS` — each process delivers its own audit ring to the enabled destinations, cursors `merge: 'own'`, at-least-once (#641) | `common/audit_export.ts`, `common/CLAUDE.md` 3da |
+| `yubiotp.nonce-sweep` | cluster, realm, **a global job** (`GLOBAL_JOBS`, so one cell sweeps the shared map); every minute — drops YK-VAL nonces older than five minutes, and the oldest past ten thousand. The nonce is a client-chosen replay key on the global tier; a sweep in every cell would delete the same rows (#1955 P5) | `common/yubiotp_store.ts` |
 
 **The timers still outside it** are listed, each with the reason it stays, in
 `tests/no_periodic_timers.js`, which fails on a new one and on an entry whose

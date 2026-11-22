@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5808** of them, in **54** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5838** of them, in **55** subsystems.
 
 ## Where a code appears
 
@@ -87,6 +87,7 @@ is an ordinary outcome.
 * [Device register (`STS-DEVICE`)](#sts-device) — 53
 * [Hardware tokens (`STS-HWTOKEN`)](#sts-hwtoken) — 13
 * [OATH one-time code tokens (`STS-OATH`)](#sts-oath) — 35
+* [Yubico OTP (`STS-YUBIOTP`)](#sts-yubiotp) — 30
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 224
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 137
@@ -4998,6 +4999,45 @@ Raised from: common/hotp.ts, common/credentials.ts, common/pskc.ts, common/oath_
 | `STS-OATH-0047` | A lost hardware token's OATH credential could not be retired (#1955). | — |
 | `STS-OATH-0049` | An imported OATH token that is assigned was asked to be removed; it is retired by reporting the token lost instead (#1955). | — |
 | `STS-OATH-0050` | An Account API act on a one-time code token was refused: unknown, or too many attempts in the code budget (#1955). | HTTP 400 |
+
+## STS-YUBIOTP
+
+**Yubico OTP.** Yubico OTP (#1955 P5): a YubiKey OTP slot checked locally with AES-128, an inventory of unassigned tokens, and the YK-VAL 2.0 endpoint. No call is made to YubiCloud.
+
+Raised from: common/yubiotp.ts, common/yubiotp_store.ts, common/credentials.ts, authn/ykval.ts, ldap/ldap_server.js.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-YUBIOTP-0001` | A YubiKey OTP was not 32 to 48 even modhex characters, or it named no public identity (#1955 P5). | — |
+| `STS-YUBIOTP-0002` | A person holds a YubiKey OTP credential this process cannot read, so it was refused rather than ignored (#1955 P5). | — |
+| `STS-YUBIOTP-0003` | A YubiKey OTP did not decrypt, failed its CRC, or carried another public or private identity than the one enrolled (#1955 P5). | — |
+| `STS-YUBIOTP-0004` | A YubiKey OTP's use and session counters were not strictly above the last accepted pair, so it was a replay (#1955 P5). | — |
+| `STS-YUBIOTP-0005` | A YubiKey OTP matched and its counter could not be spent in the store, so it was refused (#1955 P5). | — |
+| `STS-YUBIOTP-0006` | A YubiKey OTP was checked for a person who holds none (#1955 P5). | — |
+| `STS-YUBIOTP-0007` | Enrolling, assigning or claiming a YubiKey OTP was refused because yubiotp.offered is off. A credential already held is still checked (#1955 P5). | — |
+| `STS-YUBIOTP-0008` | A YubiKey OTP enrolment had expired before it was confirmed (#1955 P5). | — |
+| `STS-YUBIOTP-0009` | A YubiKey OTP secret or a YK-VAL client key could not be sealed under the key-encryption key, so it was not kept (#1955 P5). | — |
+| `STS-YUBIOTP-0010` | A YubiKey OTP credential could not be written to the directory (#1955 P5). | — |
+| `STS-YUBIOTP-0011` | No credential store is installed, so a YubiKey OTP credential cannot be kept (#1955 P5). | — |
+| `STS-YUBIOTP-0012` | YK-VAL was asked while yubiotp.ykval is off, so the endpoint answered OPERATION_NOT_ALLOWED (#1955 P5). | YK-VAL 2.0 |
+| `STS-YUBIOTP-0013` | A YK-VAL verify request omitted id, otp, nonce or h (#1955 P5). | YK-VAL 2.0 |
+| `STS-YUBIOTP-0014` | A YK-VAL verify request's HMAC-SHA1 did not match the client key (#1955 P5). | YK-VAL 2.0 |
+| `STS-YUBIOTP-0015` | A YK-VAL verify request named a client id this realm has not been given (#1955 P5). | YK-VAL 2.0 |
+| `STS-YUBIOTP-0016` | A YK-VAL nonce was reused inside five minutes (#1955 P5). | YK-VAL 2.0 |
+| `STS-YUBIOTP-0017` | A YK-VAL verify request's OTP did not match an enrolled public identity (#1955 P5). | YK-VAL 2.0 |
+| `STS-YUBIOTP-0018` | A YK-VAL verify request replayed an OTP whose counters were already spent (#1955 P5). | YK-VAL 2.0 |
+| `STS-YUBIOTP-0019` | A plaintext YubiKey CSV was refused in product mode unless yubiotp.allowPlaintextImport is on (#1955 P5). | — |
+| `STS-YUBIOTP-0020` | A YubiKey CSV could not be read as serial, public id, private id and AES key (#1955 P5). | — |
+| `STS-YUBIOTP-0021` | An inventoried YubiKey OTP's secret could not be opened (#1955 P5). | — |
+| `STS-YUBIOTP-0022` | An assigned YubiKey OTP was asked to be removed; it is retired by reporting the token lost (#1955 P5). | — |
+| `STS-YUBIOTP-0023` | No YubiKey OTP with that serial is in this realm's inventory (#1955 P5). | — |
+| `STS-YUBIOTP-0024` | A person's claim of a YubiKey OTP named a serial no unassigned token has, or an OTP that token did not produce (#1955 P5). | — |
+| `STS-YUBIOTP-0025` | A YubiKey OTP carried a zero use counter and a zero session counter, which this service does not accept (#1955 P5). | — |
+| `STS-YUBIOTP-0026` | A YubiKey public identity is already enrolled for somebody else (#1955 P5). | — |
+| `STS-YUBIOTP-0027` | YK-VAL or an LDAP bind could not finish checking a YubiKey OTP (#1955 P5). | — |
+| `STS-YUBIOTP-0028` | A lost hardware token's YubiKey OTP credential could not be retired (#1955 P5). | — |
+| `STS-YUBIOTP-0029` | A YK-VAL client id was not 1 to 16 digits, or that client already exists (#1955 P5). | — |
+| `STS-YUBIOTP-0030` | An operator asked to clear a YubiKey OTP for a person who holds none (#1955 P5). | HTTP 400 (API) or a 303 with error= |
 
 ## STS-SVCACCT
 

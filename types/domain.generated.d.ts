@@ -218,6 +218,7 @@ declare namespace IyaDomain {
     passwordHash?: string;
     authenticatorApp?: string;
     hotpToken?: string;
+    yubiOtp?: string;
     passkeys?: string[];
     recoveryCodes?: string;
     appPasswords?: string;

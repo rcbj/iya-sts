@@ -12706,6 +12706,8 @@ const CREDENTIAL_ATTRIBUTE_DOORS = {
   // enrolment, an imported token's assignment and the verifier.
   stshotpcredential: '/portal/mfa, /portal/tokens (claim), or ' +
     '/admin/hardware-tokens (assign)',
+  // #1955 P5: a YubiKey OTP's public identity and sealed AES key.
+  stsyubiotpcredential: '/portal/mfa, or /admin/hardware-tokens (assign)',
   stsbackupcodes: '/portal/mfa, or /admin/users (clear)',
   stsapppassword: '/portal/app-passwords, or /admin/users',
   hobapublickey: 'the SCIM HOBA registration (/scim/v2 with Hobareg)',
@@ -13638,6 +13640,40 @@ function writeHotp(key, value) {
   }
   touchDirectory();
   log.debug('Leaving writeHotp(). ' + stored.dn + '.');
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// A PERSON'S YUBIKEY OTP CREDENTIAL (#1955 P5): single-valued, for
+// writeHotp()'s reason. The public identity is in the clear inside the JSON;
+// the AES key is sealed by credentials.ts. null deletes.
+// ---------------------------------------------------------------------------
+function readYubi(key) {
+  log.debug('Entering readYubi(). key=' + key);
+  const stored = locateEntry(String(key || '')).stored;
+  const value = stored
+    ? (stored.attributes.stsyubiotpcredential || [])[0] : '';
+  log.debug('Leaving readYubi(). ' + (value ? 'Enrolled.' : 'None.'));
+  return value ? String(value) : '';
+}
+
+function writeYubi(key, value) {
+  log.debug('Entering writeYubi(). key=' + key);
+  const stored = locateEntry(String(key || '')).stored;
+  if (!stored) {
+    log.warn(errorCodes.tag('STS-LDAP-0040') +
+             'ldap: "' + key + '" has no entry in this realm, so no ' +
+             'YubiKey OTP credential was recorded.');
+    log.debug('Leaving writeYubi(). No entry.');
+    return false;
+  }
+  if (value === null || value === undefined || value === '') {
+    delete stored.attributes.stsyubiotpcredential;
+  } else {
+    stored.attributes.stsyubiotpcredential = [String(value)];
+  }
+  touchDirectory();
+  log.debug('Leaving writeYubi(). ' + stored.dn + '.');
   return true;
 }
 
@@ -15064,6 +15100,9 @@ if (typeof credentials.setDirectory === 'function') {
     // #1955 P4: the HOTP credential, beside the authenticator app's.
     readHotp: readHotp,
     writeHotp: writeHotp,
+    // #1955 P5: the YubiKey OTP credential, beside the HOTP one.
+    readYubi: readYubi,
+    writeYubi: writeYubi,
     // The recovery codes (2026-09-10). Checked WHERE THEY ARE USED for the
     // reason the pair above is: an older `common/credentials.ts` that knows
     // nothing about them still gets a working password sign-in, and
@@ -16367,6 +16406,9 @@ function censusOfEntry(stored) {
     // it (that would be an index expression, so a schema version).
     hotp: (a.stshotpcredential || [])[0]
       ? String(a.stshotpcredential[0]) : '',
+    // #1955 P5: read off the entry already in hand. Not an index expression.
+    yubi: (a.stsyubiotpcredential || [])[0]
+      ? String(a.stsyubiotpcredential[0]) : '',
     // The mail channel's `personEntry()` reads only an entry with a name
     // (`usernameOfEntry()`), so the census hands the four over on the same
     // condition — otherwise an entry that channel refuses would be counted
@@ -20673,6 +20715,12 @@ server.bind('', function (req, res, next) {
   // right password was refused while the session was held here, and a home
   // that could not be asked read as a wrong password rather than
   // STS-CELL-0147.
+  // #1955 P5: a credential that ends in this person's YubiKey public
+  // identity is a password plus that OTP. The password is checked first.
+  // A matched public identity is never tried again as the whole password.
+  const yubiParts = dn
+    ? credentials.yubiPasswordSplit(dn, credentials_value) : null;
+  const passwordForBind = yubiParts ? yubiParts.password : credentials_value;
   const localEntry = dn ? getEntry(dn) : null;
   const projected = !!localEntry && String(localEntry.origin || '')
     .indexOf('projection') === 0;
@@ -20687,7 +20735,7 @@ server.bind('', function (req, res, next) {
       return answerOnce(err);
     };
     log.debug("Leaving finishBind(). Asking the person's home cell.");
-    return verifyInHomeCell(dn, credentials_value).then(settleBind,
+    return verifyInHomeCell(dn, passwordForBind).then(afterPassword,
       function (e) {
         log.error(errorCodes.tag('STS-CELL-0147') + 'ldap: a bind as ' + dn +
                   ' could not be verified in its home cell: ' +
@@ -20710,16 +20758,45 @@ server.bind('', function (req, res, next) {
     // `door: 'ldap'` (#101): a password-only door, so in product a person
     // with a second factor is refused their password here and an app password
     // scoped to `ldap` is accepted instead (`common/credentials.ts`).
+    // A matched YubiKey suffix is the exception: the password half is told
+    // the second factor is asked next, and the OTP is required after it.
+    const verifyOpts = { via: 'an LDAP simple bind', door: 'ldap' };
+    if (yubiParts) {
+      verifyOpts.secondFactor = 'asked-next';
+    }
     log.debug("Leaving finishBind(). Settling a local verdict.");
-    return settleBind(credentials.verify(dn, credentials_value,
-                                         { via: 'an LDAP simple bind',
-                                           door: 'ldap' }));
+    return afterPassword(credentials.verify(dn, passwordForBind, verifyOpts));
   }
   log.debug("Leaving finishBind(). Accepted.");
   return bindAccepted();
 
   // THE VERDICT, WHEREVER IT WAS REACHED — here, or in the person's home
   // cell. Everything below is what followed the verification before #98.
+  // A matched YubiKey OTP is checked after the password, and the handler
+  // is marked asynchronous before this returns that promise.
+  function afterPassword(checked) {
+    log.debug("Entering afterPassword().");
+    if (!yubiParts || !checked || !checked.ok) {
+      log.debug("Leaving afterPassword(). The password's answer.");
+      return settleBind(checked);
+    }
+    req.stsAsyncOperation = true;
+    log.debug("Leaving afterPassword(). Checking the YubiKey OTP.");
+    return credentials.verifyYubiOtpAsync(dn, yubiParts.otp).then(
+      function (otp) {
+        return settleBind(otp && otp.ok ? checked : otp);
+      },
+      function (e) {
+        log.error(errorCodes.tag('STS-YUBIOTP-0027') +
+                  'ldap: a bind as ' + dn + ' could not check its YubiKey ' +
+                  'OTP: ' + ((e && e.message) || e));
+        return settleBind(errorCodes.mark({
+          ok: false, reason: 'store',
+          detail: 'the one-time password could not be checked'
+        }, 'STS-YUBIOTP-0027'));
+      });
+  }
+
   function settleBind(checked) {
     log.debug("Entering settleBind().");
     // FAIL-CLOSED (#98 D6): a home cell that cannot be asked is not a wrong

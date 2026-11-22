@@ -531,6 +531,14 @@
     "en": "5ab7b9d048e74e7e",
     "text": "full, auf der Prüferseite, NUR ALS ZWEITER FAKTOR (#1955 P4): die dynamische Kürzung aus Abschnitt 5.3 über HMAC-SHA-1, SHA-256 oder SHA-512, sechs bis acht Ziffern, der Zähler ein acht Byte langer Big-Endian-Wert, geprüft gegen die eigenen Testvektoren aus Anhang D (tests/totp.js, tests/hotp.js); ein Zähler je Anmeldeinformation mit der Vorausschau aus Abschnitt 7.4 (hotp.window, standardmäßig 10, 0 zulässig) und Neusynchronisierung aus zwei aufeinanderfolgenden Codes (hotp.resyncWindow); die Ablehnung von Wiederholungen aus Abschnitt 7.2, wobei der Zähler per Compare-and-Set im Speicher weitergesetzt wird, sodass zwei Knoten oder Worker nie denselben Code annehmen; die Drosselung aus Abschnitt 7.3 über das Code-Budget der Anmeldung. Ein YubiKey-OTP-Slot wird aus dem otpauth://hotp-Code oder dem ykman-Befehl des Portals programmiert; das Token eines Herstellers wird importiert (RFC 6030). Es bringt amr otp ein und hwk nur für ein importiertes Token. NICHT abgedeckt: das Verzögerungsverfahren aus Abschnitt 7.3 als solches (stattdessen lehnt das Budget ab) und OCRA (RFC 6287)."
   },
+  "stsmetadata.specs.yubico-otp.coverage": {
+    "en": "57c44d60416042fb",
+    "text": "partial, Prüferseite (#1955 P5): das veröffentlichte OTP, eine öffentliche Identität in modhex gefolgt von einem AES-128-ECB-Block ohne Füllung, CRC-16-Rest 0xf0b8, und Nutzungs- sowie Sitzungszähler per compare-and-set erhöht, sodass ein OTP einmal angenommen wird. Der Zeitstempel wird nicht geprüft. Die Registrierung ist standardmäßig aus (yubiotp.offered). amr otp, niemals hwk, weil dieser Dienst den AES-Schlüssel hält. NICHT abgedeckt: YubiCloud und jede Prüfung des Zeitstempels."
+  },
+  "stsmetadata.specs.yk-val.coverage": {
+    "en": "0adaef8d27031f8f",
+    "text": "partial, als Validierungsserver (#1955 P5): GET und POST /wsapi/2.0/verify mit id, otp, nonce und h, HMAC-SHA1 über die sortierten Parameter, und die Status OK, BAD_OTP, BAD_SIGNATURE, MISSING_PARAMETER, NO_SUCH_CLIENT, OPERATION_NOT_ALLOWED, BACKEND_ERROR, REPLAYED_OTP und REPLAYED_REQUEST. Standardmäßig aus (yubiotp.ykval). An werden die Client-Kennung und der HMAC in jedem Modus geprüft. Die Antwort trägt sl=100. NICHT abgedeckt: der YubiCloud-Client und ein Synchronisationsprozentsatz ungleich 100."
+  },
   "stsmetadata.specs.rfc6030.coverage": {
     "en": "35ef81e9394eb5f5",
     "text": "partial, als EMPFÄNGER (#1955 P4): ein KeyContainer der Version 1.0 mit HOTP- und TOTP-Schlüsseln, Manufacturer, SerialNo und Model aus DeviceInfo, das ResponseFormat (6 bis 8 Dezimalziffern), ein einfacher Counter, Time (nur 0) und TimeInterval; Klartext (im Produktmodus abgelehnt, außer mit pskc.allowPlaintextImport), ein vorab geteilter Schlüssel (Abschnitt 6.1: AES-128/192/256-CBC und KW-AES) und eine Passphrase (Abschnitt 6.2: PBKDF2), wobei der ValueMAC aus Abschnitt 6.1.1 zuerst geprüft wird (HMAC-SHA1 und die SHA-2-MACs). Geprüft gegen die eigenen Figures 2 bis 7 des RFC (tests/pskc.js). NICHT abgedeckt: Verschlüsselung an ein Zertifikat (6.3), ein MAC-Schlüssel per Referenz, Triple DES und Camellia, ein verschlüsselter Zähler oder eine verschlüsselte Zeit, PIN-Schlüssel und -Richtlinien (übersprungen), Signaturen auf dem Container (Abschnitt 7) und das Erzeugen eines solchen."
@@ -2140,8 +2148,8 @@
     "text": "NON-SPEC (#1955 P4). Die HOTP- und TOTP-Token, die Administratoren aus PSKC-Seed-Dateien von Herstellern importiert haben, nicht zugewiesen, zugewiesen oder außer Betrieb, seitenweise und nach Seriennummer oder Person durchsuchbar. Nie ein Geheimnis. Entspricht GET /admin/hardware-tokens (seinem OATH-Tab)."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-    "en": "4309735f35f4550e",
-    "text": "NON-SPEC (#1955). lost, mit { key }: das Token wird als verloren markiert, jeder Passkey darauf entfernt, jedes Zertifikat darauf wegen keyCompromise widerrufen, jedes importierte OATH-Geheimnis vom Eintrag seines Inhabers genommen, für jedes eine CAEP-Änderung der Anmeldedaten gesendet und die damit angemeldeten Sitzungen beendet. Seit P4 import-pskc, mit { pskc, preSharedKey or password }: die HOTP- und TOTP-Schlüssel einer Seed-Datei nach RFC 6030 werden nicht zugewiesen unter ihrer Seriennummer geführt, der MAC zuerst geprüft und der Schlüssel nie gespeichert; assign-oath, mit { key, username }; und remove-oath, mit { key }, für ein nicht zugewiesenes Token."
+    "en": "107e4ff48ad53fb3",
+    "text": "NON-SPEC (#1955). lost, mit { key }: das Token wird als verloren markiert, jeder Passkey darauf entfernt, jedes Zertifikat darauf wegen keyCompromise widerrufen, jedes importierte OATH-Geheimnis vom Eintrag seines Inhabers genommen, für jedes eine CAEP-Änderung der Anmeldedaten gesendet und die damit angemeldeten Sitzungen beendet. Seit P4 import-pskc, mit { pskc, preSharedKey or password }: die HOTP- und TOTP-Schlüssel einer Seed-Datei nach RFC 6030 werden nicht zugewiesen unter ihrer Seriennummer geführt, der MAC zuerst geprüft und der Schlüssel nie gespeichert; assign-oath, mit { key, username }; und remove-oath, mit { key }, für ein nicht zugewiesenes Token. Seit P5 import-yubiotp, mit { csv }; assign-yubiotp, mit { serial, username, otp }; remove-yubiotp, mit { serial }; ykval-client-add, mit { id }, dessen HMAC-Schlüssel einmal beantwortet wird; und ykval-client-remove, mit { id }."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
     "en": "dabee6463ad7ee17",
@@ -3046,6 +3054,14 @@
   "stsmetadata.endpoints./authn/post-login.effect": {
     "en": "9547cda6898c37a6",
     "text": "verlangt nach einer Anmeldung einen Post-Quantum-Passkey und richtet dann die Anmeldesitzung ein, die es gehalten hat"
+  },
+  "stsmetadata.endpoints./wsapi/2.0/verify.what": {
+    "en": "ff0550a4318594c6",
+    "text": "YUBICOS VALIDIERUNGSPROTOKOLL 2.0 (#1955 P5). GET oder POST von id, otp, nonce und h. Standardmäßig aus: die Route antwortet OPERATION_NOT_ALLOWED und signiert nichts. An werden die Client-Kennung und der HMAC-SHA1 in jedem Modus geprüft, einschließlich der Entwicklung; eine Nonce wird fünf Minuten behalten; ein passendes OTP wird verbraucht. Cache-Control: no-store. Nichts wird an YubiCloud gesendet."
+  },
+  "stsmetadata.endpoints./wsapi/2.0/verify.effect": {
+    "en": "bb2bc4011c8240ac",
+    "text": "prüft ein YubiKey-OTP für einen Client, der die Anfrage signiert hat, oder antwortet OPERATION_NOT_ALLOWED, solange yubiotp.ykval aus ist"
   },
   "stsmetadata.endpoints./authn/totp.what": {
     "en": "b62d7bad9442ea5c",
@@ -4034,6 +4050,10 @@
   "stsmetadata.protocols.One-time passwords (TOTP).what": {
     "en": "54893544268bf168",
     "text": "Der andere zweite Faktor auf dem Anmeldebildschirm, an den jedes Protokoll hier eine Person schickt, und neben einem Kerberos-Ticket die einzige Anmeldeinformation, die dieser Dienst wirklich PRÜFT: Der Code wird aus dem gemeinsamen Geheimnis und der Uhr berechnet und verglichen, in beiden Modi, wobei die Regel aus RFC 6238 Abschnitt 5.2, dass ein Code nur einmal angenommen wird, durchgesetzt wird. Die Einrichtung ist ein QR-Code, den dieser Server gezeichnet hat, unter /portal/mfa oder während ein Aktivierungslink eingelöst wird; in der eigenen Zeile der Person auf /admin/users löscht ein Betreiber ihn, und unter /admin/totp wird der Mechanismus konfiguriert. Seit #1955 P4 auch sein zählerbasiertes Gegenstück: ein HOTP-Token nach RFC 4226 (ein YubiKey-OTP-Slot, eingerichtet unter /portal/mfa, oder das Token eines Herstellers, importiert aus seiner Seed-Datei nach RFC 6030 unter Verzeichnis → Hardware-Token und nach Seriennummer zugewiesen oder beansprucht), dessen Zähler per Compare-and-Set weitergesetzt wird, angenommen an jeder Stelle, die einen Code entgegennimmt."
+  },
+  "stsmetadata.protocols.Yubico OTP.what": {
+    "en": "462bb8049dda11d0",
+    "text": "Ein YubiKey-OTP-Slot, der auf diesem Dienst geprüft wird (#1955 P5). Der AES-128-Schlüssel bleibt hier, daher ist eine Anmeldung amr otp und niemals hwk. Registrierung, Zuweisung und ein Anspruch bleiben aus, bis yubiotp.offered an ist; ein bereits gehaltenes Geheimnis wird am Schritt für den Einmalcode weiterhin geprüft. GET und POST /wsapi/2.0/verify sind YK-VAL 2.0 und bleiben OPERATION_NOT_ALLOWED, bis yubiotp.ykval an ist. Es wird keine Anfrage an YubiCloud gesendet."
   },
   "stsmetadata.protocols.Recovery codes.what": {
     "en": "b7c9347c7ac4a2b7",

@@ -998,5 +998,12 @@
   "mfaSection.hotpImported": "Importerad från leverantörens fröfil: {vendor}, serienummer {serial}",
   "mfaSection.hotpEnrolled": "Registrerad av personen (QR-kod eller ykman)",
   "mfaSection.hotpUnusable": "Dess hemlighet kan inte läsas här, så dess koder avvisas.",
-  "mfaSection.clearHotp": "Rensa engångskodstoken"
+  "mfaSection.clearHotp": "Rensa engångskodstoken",
+  "mfaSection.yubiHeading": "YubiKey OTP",
+  "mfaSection.yubiSource": "Tillhandahållet",
+  "mfaSection.yubiImported": "Importerat från en CSV: serienummer {serial}",
+  "mfaSection.yubiEnrolled": "Registrerat av personen (ykman)",
+  "mfaSection.yubiUnusable": "Hemligheten kan inte läsas här, så lösenorden nekas.",
+  "mfaSection.yubiPublicId": "Offentlig identitet",
+  "mfaSection.clearYubi": "Rensa YubiKey OTP"
 }

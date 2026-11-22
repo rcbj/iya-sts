@@ -1655,6 +1655,22 @@
     "en": "484401484f6f539d",
     "text": "依摘要找到了一個票證"
   },
+  "caches.store.yubiotp.inventory.title": {
+    "en": "f2915b8ab9e4a37c",
+    "text": "Yubico OTP 清冊"
+  },
+  "caches.store.yubiotp.inventory.description": {
+    "en": "c58db5407fb1dcbe",
+    "text": "管理員從 CSV 匯入的每個 YubiKey OTP 各佔一列，依序號索引：未指派（其 AES 金鑰已密封）、已指派給某人（密鑰已移除，現位於其項目上）或已停用。"
+  },
+  "caches.store.yubiotp.inventory.bound": {
+    "en": "9f558f556a019acc",
+    "text": "程序持有的資料列是每個領域 5,000 筆的快取。"
+  },
+  "caches.store.yubiotp.inventory.lifetime": {
+    "en": "4f13467dac65d62f",
+    "text": "直到未指派的權杖被移除；已指派或已停用的權杖會保留。"
+  },
   "caches.lru.default.description": {
     "en": "777e71be96460478",
     "text": "依最近最少使用順序排列的有上限快取。"

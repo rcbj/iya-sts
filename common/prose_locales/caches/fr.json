@@ -1655,6 +1655,22 @@
     "en": "484401484f6f539d",
     "text": "un ticket a été trouvé par son condensé"
   },
+  "caches.store.yubiotp.inventory.title": {
+    "en": "f2915b8ab9e4a37c",
+    "text": "Inventaire des OTP Yubico"
+  },
+  "caches.store.yubiotp.inventory.description": {
+    "en": "c58db5407fb1dcbe",
+    "text": "Une ligne par OTP YubiKey qu’un administrateur a importé depuis un CSV, indexée par numéro de série : non attribuée (sa clé AES scellée), attribuée à une personne (le secret retiré, désormais sur son entrée) ou retirée."
+  },
+  "caches.store.yubiotp.inventory.bound": {
+    "en": "9f558f556a019acc",
+    "text": "Les lignes qu’un processus détient forment un cache de 5 000 par domaine."
+  },
+  "caches.store.yubiotp.inventory.lifetime": {
+    "en": "4f13467dac65d62f",
+    "text": "Jusqu’à ce qu’un jeton non attribué soit supprimé ; un jeton attribué ou retiré est conservé."
+  },
   "caches.lru.default.description": {
     "en": "777e71be96460478",
     "text": "Un cache borné dans l’ordre du moins récemment utilisé."

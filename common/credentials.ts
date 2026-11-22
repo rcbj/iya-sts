@@ -2198,7 +2198,11 @@ class Credentials {
     // pre-authentication and `verifyTotpAsync()` accept alike. `hotp` says
     // which, for a door that words its prompt.
     const hotp = !!this.hotpStatusOf(name);
-    const totp = !!this.totpOf(name) || hotp;
+    // A YubiKey OTP is a code the door can ask for, the same way an HOTP
+    // token is. It is not added to the `none` object above: that object is
+    // compared as a whole by callers that have no person.
+    const yubi = !!this.yubiStatusOf(name);
+    const totp = !!this.totpOf(name) || hotp || yubi;
     const requirement = this.mfaRequirementFor(name);
     const holds = key || totp;
     // AN EXEMPT SERVICE ACCOUNT (#221) is asked for nothing at a door that
@@ -2206,7 +2210,8 @@ class Credentials {
     // second-factor rules, and a factor it happens to hold does not put it
     // back in. Its `amr` is still `pwd` alone.
     const exempt = !!requirement.exemptServiceAccount;
-    const answer = { person: true, totp: totp, hotp: hotp, key: key,
+    const answer = { person: true, totp: totp, hotp: hotp, yubi: yubi,
+                     key: key,
                      holds: holds,
                      required: !!requirement.required,
                      byUser: !!requirement.byUser,
@@ -6766,8 +6771,24 @@ class Credentials {
    */
   async verifyTotpAsync(username, code, opts?) {
     const { log } = this.deps;
+    const coded = this.coded.bind(this);
     log.debug("Entering Credentials.verifyTotpAsync().");
     const name = String(username || '').trim();
+    // A YubiKey OTP is 32–48 modhex characters. When one is held and the
+    // code has that shape, it is the only verifier: a 44-character string
+    // is not an app code. A person who holds only that credential and types
+    // anything else is told the shape, not that they have no authenticator.
+    const yubiHeld = this.yubiStatusOf(name);
+    if (yubiHeld && this.yubiLib().looksLike(code)) {
+      log.debug("Leaving Credentials.verifyTotpAsync(). The YubiKey's.");
+      return this.verifyYubiOtpAsync(name, code);
+    }
+    if (yubiHeld && !this.totpStatusOf(name) && !this.hotpStatusOf(name)) {
+      log.debug("Leaving Credentials.verifyTotpAsync(). YubiKey shape.");
+      return coded('STS-YUBIOTP-0001', { ok: false, reason: 'shape',
+        detail: 'That is not a YubiKey OTP. Touch the key and enter the ' +
+                'whole string it types.' });
+    }
     const token = this.hotpStatusOf(name);
     if (!token) {
       log.debug("Leaving Credentials.verifyTotpAsync(). The app's.");
@@ -6788,6 +6809,574 @@ class Credentials {
                             hotp.reason !== 'shape') ? hotp : app;
     log.debug("Leaving Credentials.verifyTotpAsync(). Both asked.");
     return out;
+  }
+
+  // ===========================================================================
+  // YUBICO OTP (#1955 P5), BESIDE THE AUTHENTICATOR APP AND THE HOTP TOKEN.
+  //
+  // One credential per person (`stsYubiOtpCredential`). The public identity
+  // stays in the clear so an LDAP bind can see which suffix is the OTP. The
+  // AES key and the private identity are one sealed JSON value. The server
+  // holds that key, so a successful check is `amr` `otp` and never `hwk`,
+  // and `verifyYubiOtpAsync()` reports `hardware: false` even when the
+  // hardware-token register has a row (that row exists so a lost CSV token
+  // can be retired).
+  //
+  // The replay value is `use * 256 + session`, spent by compare-and-set
+  // under `authn.yubiotp-counter` BEFORE the entry is written. The stored
+  // value is the composite just accepted, so the next one must be strictly
+  // greater. Zero is refused before the store is asked: `advance()` treats
+  // 0-to-0 as "a counter that is always zero".
+  // ===========================================================================
+  /** The attribute that holds a person's YubiKey OTP credential. */
+  static readonly YUBI_ATTRIBUTE = 'stsYubiOtpCredential';
+
+  /** The counter scope a YubiKey OTP's composite is advanced under. */
+  static readonly YUBI_COUNTER_SCOPE = 'authn.yubiotp-counter';
+
+  private pendingYubiKeyOf(username) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.pendingYubiKeyOf().");
+    log.debug("Leaving Credentials.pendingYubiKeyOf().");
+    return 'yubi\u0000' + this.pendingKeyOf(username);
+  }
+
+  private yubiLib() {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.yubiLib().");
+    const lib = (this.deps as any).yubiotp || require('./yubiotp');
+    log.debug("Leaving Credentials.yubiLib().");
+    return lib;
+  }
+
+  private yubiStore() {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.yubiStore().");
+    const store = (this.deps as any).yubiotpStore ||
+                  require('./yubiotp_store');
+    log.debug("Leaving Credentials.yubiStore().");
+    return store;
+  }
+
+  private readYubiValue(name) {
+    const { log, errorCodes } = this.deps;
+    const directory = this.directory;
+    log.debug("Entering Credentials.readYubiValue().");
+    if (!directory || typeof directory.readYubi !== 'function') {
+      log.debug("Leaving Credentials.readYubiValue(). No store.");
+      return '';
+    }
+    try {
+      const raw = directory.readYubi(name) || '';
+      log.debug("Leaving Credentials.readYubiValue().");
+      return raw;
+    } catch (e) {
+      log.error(errorCodes.tag('STS-YUBIOTP-0010') + 'credentials: reading ' +
+                'the YubiKey OTP credential of ' + name + ' threw: ' +
+                ((e && e.message) || e));
+      log.debug("Leaving Credentials.readYubiValue(). It threw.");
+      return '';
+    }
+  }
+
+  private parseYubiRecord(raw, name) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.parseYubiRecord().");
+    if (!raw) {
+      log.debug("Leaving Credentials.parseYubiRecord(). None.");
+      return null;
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      log.debug("Leaving Credentials.parseYubiRecord().");
+      return parsed;
+    } catch (e) {
+      log.debug("Caught in Credentials.parseYubiRecord(): " +
+                ((e && e.message) || e));
+      log.warn('credentials: the stsYubiOtpCredential value on ' + name +
+               ' is not JSON.');
+      log.debug("Leaving Credentials.parseYubiRecord(). Not JSON.");
+      return { unusable: true, why: 'the stored value is not readable' };
+    }
+  }
+
+  // The record WITHOUT its AES key, for a page. Whether a sealed secret
+  // opens is asked once per text (`sealedSecretVerdict()`).
+  yubiStatusOf(username) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.yubiStatusOf().");
+    const name = String(username || '').trim();
+    const parsed = this.parseYubiRecord(this.readYubiValue(name), name);
+    if (!parsed) {
+      log.debug("Leaving Credentials.yubiStatusOf(). None.");
+      return null;
+    }
+    if (parsed.unusable) {
+      log.debug("Leaving Credentials.yubiStatusOf(). Unusable.");
+      return parsed;
+    }
+    if (parsed.sealed &&
+        !this.sealedSecretVerdict(parsed.secret, 'yubiotp-secret').opens) {
+      log.debug("Leaving Credentials.yubiStatusOf(). Will not open.");
+      return { unusable: true, publicId: parsed.publicId || '',
+               id: parsed.id || '',
+               why: 'the stored secret is sealed under a different ' +
+                    'key-encryption key' };
+    }
+    const out = Object.assign({}, parsed);
+    delete out.secret;
+    log.debug("Leaving Credentials.yubiStatusOf().");
+    return out;
+  }
+
+  // The record WITH the AES key and private identity opened, for a check.
+  private yubiOf(username) {
+    const { log, keystore } = this.deps;
+    log.debug("Entering Credentials.yubiOf().");
+    const name = String(username || '').trim();
+    const parsed = this.parseYubiRecord(this.readYubiValue(name), name);
+    if (!parsed) {
+      log.debug("Leaving Credentials.yubiOf(). None.");
+      return null;
+    }
+    if (parsed.unusable) {
+      log.debug("Leaving Credentials.yubiOf(). Unusable.");
+      return parsed;
+    }
+    let text = String(parsed.secret || '');
+    if (parsed.sealed) {
+      const opened = keystore.open(text, 'yubiotp-secret');
+      if (!opened) {
+        log.warn('credentials: the YubiKey OTP secret of ' + name +
+                 ' will not open under this process\'s key-encryption key.');
+        log.debug("Leaving Credentials.yubiOf(). Will not open.");
+        return { unusable: true, publicId: parsed.publicId || '',
+                 id: parsed.id || '',
+                 why: 'the stored secret is sealed under a different ' +
+                      'key-encryption key' };
+      }
+      text = opened;
+    }
+    let inner: any = null;
+    try {
+      inner = JSON.parse(text);
+    } catch (e) {
+      log.debug("Caught in Credentials.yubiOf(): " +
+                ((e && e.message) || e));
+      inner = null;
+    }
+    if (!inner || !inner.k || !inner.p) {
+      log.debug("Leaving Credentials.yubiOf(). No key.");
+      return { unusable: true, publicId: parsed.publicId || '',
+               why: 'the stored value is not readable' };
+    }
+    log.debug("Leaving Credentials.yubiOf().");
+    return Object.assign({}, parsed, { k: inner.k, p: inner.p });
+  }
+
+  private writeYubiRecord(username, record) {
+    const { log, keystore, errorCodes } = this.deps;
+    const directory = this.directory;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.writeYubiRecord().");
+    const name = String(username || '').trim();
+    if (!directory || typeof directory.writeYubi !== 'function') {
+      log.debug("Leaving Credentials.writeYubiRecord(). No store.");
+      return coded('STS-YUBIOTP-0011', { ok: false, errors: ['No credential ' +
+        'store is installed, so a YubiKey OTP cannot be kept.'] });
+    }
+    const out = Object.assign({}, record);
+    delete out.k;
+    delete out.p;
+    const clear = JSON.stringify({ k: record.k, p: record.p });
+    if (keystore.persists()) {
+      const sealedSecret = keystore.seal(clear, 'yubiotp-secret', 'cell');
+      if (!sealedSecret) {
+        log.error(errorCodes.tag('STS-YUBIOTP-0009') + 'credentials: the ' +
+                  'YubiKey OTP secret of ' + name + ' could not be sealed, ' +
+                  'so it was NOT written.');
+        log.debug("Leaving Credentials.writeYubiRecord(). Not sealed.");
+        return coded('STS-YUBIOTP-0009', { ok: false, errors: ['The ' +
+          'YubiKey secret could not be encrypted, so it was not stored.'] });
+      }
+      out.secret = sealedSecret;
+      out.sealed = true;
+    } else {
+      out.secret = clear;
+      out.sealed = false;
+    }
+    let written = false;
+    try {
+      written = directory.writeYubi(name, JSON.stringify(out));
+    } catch (e) {
+      log.error(errorCodes.tag('STS-YUBIOTP-0010') + 'credentials: writing ' +
+                'the YubiKey OTP credential of ' + name + ' threw: ' +
+                ((e && e.message) || e));
+      log.debug("Leaving Credentials.writeYubiRecord(). It threw.");
+      return coded('STS-YUBIOTP-0010', { ok: false, errors: ['The ' +
+        'credential store refused the write.'] });
+    }
+    if (!written) {
+      log.debug("Leaving Credentials.writeYubiRecord(). No entry.");
+      return coded('STS-YUBIOTP-0010', { ok: false, errors: ['There is ' +
+        'nobody called "' + name + '" in this realm\'s directory.'] });
+    }
+    log.debug("Leaving Credentials.writeYubiRecord(). Written.");
+    return { ok: true };
+  }
+
+  /**
+   * Mints a YubiKey OTP slot to program, holding it pending. Nothing is
+   * written to the directory. The programming line is returned once and
+   * is not logged.
+   *
+   * @param username - the person
+   * @returns `{ ok: true, publicId, ykman, expiresAt }`, or a refusal
+   */
+  beginYubiEnrolment(username) {
+    const { log, mode, totp } = this.deps;
+    const directory = this.directory;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.beginYubiEnrolment().");
+    const name = String(username || '').trim();
+    const lib = this.yubiLib();
+    if (!directory || typeof directory.writeYubi !== 'function') {
+      log.debug("Leaving Credentials.beginYubiEnrolment(). No store.");
+      return coded('STS-YUBIOTP-0011', { ok: false, errors: ['No credential ' +
+        'store is installed, so a YubiKey OTP cannot be enrolled.'] });
+    }
+    if (!lib.offered()) {
+      log.debug("Leaving Credentials.beginYubiEnrolment(). Off.");
+      return coded('STS-YUBIOTP-0007', { ok: false, errors: ['YubiKey OTP ' +
+        'enrolment is turned off on this service.'] });
+    }
+    if (!name || /[\u0000-\u001f\u007f]/.test(name)) {
+      log.debug("Leaving Credentials.beginYubiEnrolment(). No name.");
+      return coded('STS-YUBIOTP-0006', { ok: false, errors: ['There is no ' +
+        'person to enrol a YubiKey OTP for.'] });
+    }
+    if (!mode.autoCreates() && !this.entryExists(name)) {
+      log.debug("Leaving Credentials.beginYubiEnrolment(). No entry.");
+      return coded('STS-YUBIOTP-0006', { ok: false, errors: ['There is ' +
+        'nobody called "' + name + '" in this realm\'s directory.'] });
+    }
+    const minted = lib.generate();
+    const ttl = totp.settings().enrolmentTtlMs;
+    this.sweepPendingTotp();
+    pendingTotp.set(this.pendingYubiKeyOf(name), {
+      kind: 'yubi', k: minted.k, p: minted.p, publicId: minted.publicId,
+      ykman: minted.ykman, expires: Date.now() + ttl
+    });
+    log.info('credentials: a YubiKey OTP enrolment was started for ' +
+             name + '. Nothing is stored until an OTP confirms it.');
+    log.debug("Leaving Credentials.beginYubiEnrolment(). Minted.");
+    return { ok: true, username: name, publicId: minted.publicId,
+             ykman: minted.ykman, expiresAt: Date.now() + ttl };
+  }
+
+  /**
+   * The YubiKey OTP enrolment waiting for an OTP, if any.
+   *
+   * @param username - the person
+   * @returns the pending enrolment, or null
+   */
+  pendingYubiFor(username) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.pendingYubiFor().");
+    this.sweepPendingTotp();
+    const held = pendingTotp.get(this.pendingYubiKeyOf(username));
+    log.debug("Leaving Credentials.pendingYubiFor().");
+    return held || null;
+  }
+
+  /**
+   * Forgets a pending YubiKey OTP enrolment.
+   *
+   * @param username - the person
+   */
+  abandonYubiEnrolment(username) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.abandonYubiEnrolment().");
+    const key = this.pendingYubiKeyOf(username);
+    if (pendingTotp.has(key)) {
+      pendingTotp.delete(key);
+    }
+    log.debug("Leaving Credentials.abandonYubiEnrolment().");
+  }
+
+  // Spends `composite` under the credential's id. A store fault is 0005;
+  // a value that is not strictly above the last one is a replay (0004).
+  private async yubiAdvance(name, key, composite) {
+    const { log, counters, realms, errorCodes } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.yubiAdvance().");
+    const answer = await counters.advance({
+      scope: Credentials.YUBI_COUNTER_SCOPE, key: key,
+      value: composite, realm: realms.currentId() });
+    if (!answer.ok && answer.reason === 'behind') {
+      log.warn('credentials: a YubiKey OTP for ' + name + ' was REFUSED: ' +
+               'composite ' + composite + ' is not above ' +
+               Number(answer.highest || 0) + '.');
+      log.debug("Leaving Credentials.yubiAdvance(). Replay.");
+      return coded('STS-YUBIOTP-0004', { ok: false, reason: 'replay',
+        detail: 'That one-time password has already been used. Touch the ' +
+                'key again.' });
+    }
+    if (!answer.ok) {
+      log.error(errorCodes.tag('STS-YUBIOTP-0005') + 'credentials: a ' +
+                'YubiKey OTP for ' + name + ' matched and could not be ' +
+                'proved unspent (' + (answer.why || answer.reason) + ').');
+      log.debug("Leaving Credentials.yubiAdvance(). Store.");
+      return coded('STS-YUBIOTP-0005', { ok: false, reason: 'store',
+        detail: 'That one-time password could not be checked just now. ' +
+                'Touch the key again in a moment.' });
+    }
+    log.debug("Leaving Credentials.yubiAdvance(). Spent.");
+    return { ok: true };
+  }
+
+  /**
+   * Stores a pending enrolment once an OTP proves the key holds it.
+   * The counters are spent before the record is written.
+   *
+   * @param username - the person
+   * @param otp - the OTP the key typed
+   * @returns a promise of `{ ok: true }`, or a refusal
+   */
+  async confirmYubiEnrolment(username, otp) {
+    const { log, crypto, errorCodes } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.confirmYubiEnrolment().");
+    const name = String(username || '').trim();
+    const held = this.pendingYubiFor(name);
+    if (!held) {
+      log.debug("Leaving Credentials.confirmYubiEnrolment(). Nothing.");
+      return coded('STS-YUBIOTP-0008', { ok: false, reason: 'expired',
+        errors: ['That enrolment has expired. Start again.'] });
+    }
+    const opened = this.yubiLib().open(
+      { k: held.k, p: held.p, publicId: held.publicId }, otp);
+    if (!opened.ok) {
+      log.debug("Leaving Credentials.confirmYubiEnrolment(). Refused.");
+      return coded(errorCodes.codeOf(opened) || 'STS-YUBIOTP-0003',
+        { ok: false, reason: opened.reason,
+          errors: [opened.detail || opened.error || 'That OTP was refused.'] });
+    }
+    const id = 'yubi-' + crypto.randomBytes(16).toString('base64url');
+    const spent = await this.yubiAdvance(name, id, opened.fields.composite);
+    if (!spent.ok) {
+      log.debug("Leaving Credentials.confirmYubiEnrolment(). Not spent.");
+      return spent;
+    }
+    const indexed = this.yubiStore().indexPublicId(held.publicId, {
+      username: name, credentialId: id, serial: '' });
+    if (!indexed.ok) {
+      log.debug("Leaving Credentials.confirmYubiEnrolment(). Public id.");
+      return indexed;
+    }
+    const prior = this.yubiStatusOf(name);
+    const written = this.writeYubiRecord(name, {
+      id: id, publicId: held.publicId, k: held.k, p: held.p,
+      use: opened.fields.use, session: opened.fields.session,
+      composite: opened.fields.composite,
+      enrolledAt: Date.now(), lastUsedAt: Date.now(),
+      source: 'enrolled', serial: '', token: '' });
+    if (!written.ok) {
+      this.yubiStore().dropPublicId(held.publicId, id);
+      log.debug("Leaving Credentials.confirmYubiEnrolment(). Not written.");
+      return written;
+    }
+    if (prior && prior.publicId && prior.publicId !== held.publicId) {
+      this.yubiStore().dropPublicId(prior.publicId, prior.id || '');
+    }
+    this.abandonYubiEnrolment(name);
+    log.info('credentials: ' + name + ' enrolled a YubiKey OTP as a ' +
+             'second factor.');
+    log.debug("Leaving Credentials.confirmYubiEnrolment(). Enrolled.");
+    return { ok: true, username: name, kind: 'yubiotp', id: id,
+             publicId: held.publicId };
+  }
+
+  /**
+   * Installs an inventoried YubiKey OTP as the person's credential. The
+   * caller has already checked the OTP. The public identity is indexed
+   * and the composite is spent before the entry is written.
+   *
+   * @param username - the person
+   * @param spec - `{ serial, publicId, k, p, composite, use, session }`
+   * @returns a promise of `{ ok: true, id }`, or a refusal
+   */
+  async installImportedYubi(username, spec) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.installImportedYubi().");
+    const name = String(username || '').trim();
+    const s = spec || {};
+    const serial = String(s.serial || '');
+    const id = 'yubi:' + serial;
+    const spent = await this.yubiAdvance(name, id, Number(s.composite));
+    if (!spent.ok) {
+      log.debug("Leaving Credentials.installImportedYubi(). Not spent.");
+      return spent;
+    }
+    const indexed = this.yubiStore().indexPublicId(String(s.publicId || ''), {
+      username: name, credentialId: id, serial: serial });
+    if (!indexed.ok) {
+      log.debug("Leaving Credentials.installImportedYubi(). Public id.");
+      return indexed;
+    }
+    const prior = this.yubiStatusOf(name);
+    const written = this.writeYubiRecord(name, {
+      id: id, publicId: String(s.publicId || ''), k: s.k, p: s.p,
+      use: Number(s.use || 0), session: Number(s.session || 0),
+      composite: Number(s.composite || 0),
+      enrolledAt: Date.now(), lastUsedAt: Date.now(),
+      source: 'csv-import', serial: serial, token: id });
+    if (!written.ok) {
+      this.yubiStore().dropPublicId(String(s.publicId || ''), id);
+      log.debug("Leaving Credentials.installImportedYubi(). Not written.");
+      return written;
+    }
+    if (prior && prior.publicId && prior.publicId !== String(s.publicId)) {
+      this.yubiStore().dropPublicId(prior.publicId, prior.id || '');
+    }
+    log.debug("Leaving Credentials.installImportedYubi(). Installed.");
+    return { ok: true, id: id, username: name };
+  }
+
+  /**
+   * Removes a person's YubiKey OTP credential and its public-id index.
+   *
+   * @param username - the person
+   * @param opts - `onlySerial`: remove it only when it is that serial's
+   * @returns `{ ok: true, publicId?, id? }`, or a refusal
+   */
+  removeYubiOtp(username, opts?) {
+    const { log, errorCodes } = this.deps;
+    const directory = this.directory;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.removeYubiOtp().");
+    const name = String(username || '').trim();
+    this.abandonYubiEnrolment(name);
+    const held = this.yubiStatusOf(name);
+    if (!held) {
+      log.debug("Leaving Credentials.removeYubiOtp(). None.");
+      return { ok: true, username: name };
+    }
+    if (opts && opts.onlySerial &&
+        String(held.serial || '') !== String(opts.onlySerial)) {
+      log.debug("Leaving Credentials.removeYubiOtp(). Another token's.");
+      return { ok: true, username: name };
+    }
+    if (!directory || typeof directory.writeYubi !== 'function') {
+      log.debug("Leaving Credentials.removeYubiOtp(). No store.");
+      return coded('STS-YUBIOTP-0011', { ok: false, errors: ['No credential ' +
+        'store is installed.'] });
+    }
+    try {
+      directory.writeYubi(name, null);
+    } catch (e) {
+      log.error(errorCodes.tag('STS-YUBIOTP-0010') + 'credentials: removing ' +
+                'the YubiKey OTP credential of ' + name + ' threw: ' +
+                ((e && e.message) || e));
+      log.debug("Leaving Credentials.removeYubiOtp(). It threw.");
+      return coded('STS-YUBIOTP-0010', { ok: false, errors: ['The ' +
+        'credential store refused the write.'] });
+    }
+    if (held.publicId) {
+      this.yubiStore().dropPublicId(held.publicId, held.id || '');
+    }
+    log.info('credentials: the YubiKey OTP credential of ' + name +
+             ' was removed.');
+    log.debug("Leaving Credentials.removeYubiOtp(). Removed.");
+    return { ok: true, username: name, publicId: held.publicId || '',
+             id: held.id || '' };
+  }
+
+  /**
+   * Verifies a YubiKey OTP and spends its counters. `hardware` is always
+   * false: this service holds the AES key.
+   *
+   * @param username - the person
+   * @param otp - the OTP
+   * @returns a promise of `{ ok: true, kind: 'yubiotp', hardware: false }`,
+   *   or a refusal
+   */
+  async verifyYubiOtpAsync(username, otp) {
+    const { log, errorCodes } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.verifyYubiOtpAsync().");
+    const name = String(username || '').trim();
+    const record = this.yubiOf(name);
+    if (!record) {
+      log.debug("Leaving Credentials.verifyYubiOtpAsync(). None.");
+      return coded('STS-YUBIOTP-0006', { ok: false, reason: 'none',
+        detail: 'No YubiKey OTP is enrolled for ' + name + '.' });
+    }
+    if (record.unusable) {
+      log.error(errorCodes.tag('STS-YUBIOTP-0002') + 'credentials: ' + name +
+                ' holds a YubiKey OTP this process cannot read (' +
+                record.why + ').');
+      log.debug("Leaving Credentials.verifyYubiOtpAsync(). Unusable.");
+      return coded('STS-YUBIOTP-0002', { ok: false, reason: 'unusable',
+        detail: 'Your YubiKey OTP cannot be read by this service, so it ' +
+                'cannot be checked. An administrator has to clear it.' });
+    }
+    const opened = this.yubiLib().open(
+      { k: record.k, p: record.p, publicId: record.publicId }, otp);
+    if (!opened.ok) {
+      log.debug("Leaving Credentials.verifyYubiOtpAsync(). Refused.");
+      return coded(errorCodes.codeOf(opened) || 'STS-YUBIOTP-0003',
+        { ok: false, reason: opened.reason, detail: opened.detail });
+    }
+    const spent = await this.yubiAdvance(name, record.id,
+                                         opened.fields.composite);
+    if (!spent.ok) {
+      log.debug("Leaving Credentials.verifyYubiOtpAsync(). Not spent.");
+      return spent;
+    }
+    const written = this.writeYubiRecord(name, Object.assign({}, record, {
+      use: opened.fields.use, session: opened.fields.session,
+      composite: opened.fields.composite, lastUsedAt: Date.now() }));
+    if (!written.ok) {
+      log.error(errorCodes.tag('STS-YUBIOTP-0010') + 'credentials: the ' +
+                'YubiKey OTP counter of ' + name + ' was spent in the ' +
+                'store and could not be written to the entry.');
+    }
+    log.debug("Leaving Credentials.verifyYubiOtpAsync(). Accepted.");
+    return { ok: true, kind: 'yubiotp', hardware: false,
+             use: opened.fields.use, session: opened.fields.session,
+             composite: opened.fields.composite };
+  }
+
+  /**
+   * Splits an LDAP simple-bind password into the password and a trailing
+   * YubiKey OTP when the person holds one whose public identity is that
+   * suffix. Anything else is left whole, so a password is not spent as
+   * an OTP and an OTP is not accepted as a password.
+   *
+   * @param username - the person, or any key the directory locates
+   * @param password - the bind credential
+   * @returns `{ password, otp }`, or null
+   */
+  yubiPasswordSplit(username, password) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.yubiPasswordSplit().");
+    const status = this.yubiStatusOf(username);
+    const publicId = String((status && status.publicId) || '').toLowerCase();
+    const text = String(password == null ? '' : password);
+    const otpLen = publicId.length + 32;
+    if (!publicId || otpLen < 32 || otpLen > 48 || (otpLen % 2) !== 0 ||
+        text.length <= otpLen) {
+      log.debug("Leaving Credentials.yubiPasswordSplit(). No.");
+      return null;
+    }
+    const otp = text.slice(text.length - otpLen).toLowerCase();
+    if (!otp.startsWith(publicId) || !this.yubiLib().looksLike(otp)) {
+      log.debug("Leaving Credentials.yubiPasswordSplit(). No match.");
+      return null;
+    }
+    log.debug("Leaving Credentials.yubiPasswordSplit(). Split.");
+    return { password: text.slice(0, text.length - otpLen), otp: otp };
   }
 
   // ---------------------------------------------------------------------------
@@ -7886,7 +8475,8 @@ class Credentials {
     // #1955 P4: an HOTP token, off the same entry's values; a code step
     // asks for either (`mechanismsFor()`'s `oneTimeCode`).
     const hotpEnrolled = !!values.hotp;
-    const oneTimeCode = totpEnrolled || hotpEnrolled;
+    const yubiEnrolled = !!values.yubi;
+    const oneTimeCode = totpEnrolled || hotpEnrolled || yubiEnrolled;
     let mailHeld = '';
     if (mailFactor && values.mail &&
         typeof mailFactor.heldOfAttributes === 'function') {
@@ -7913,6 +8503,7 @@ class Credentials {
         totp: totpEnrolled,
         totpUsable: totpEnrolled && !authenticator.unusable,
         hotp: hotpEnrolled,
+        yubi: yubiEnrolled,
         // `mechanismsFor()`'s two lines, read against the same three facts.
         mfaRequired: mfaKeys > 0 || oneTimeCode || !!mailHeld,
         secondFactor: mfaKeys > 0 ? 'webauthn' :
@@ -10167,7 +10758,9 @@ class Credentials {
     // `oneTimeCode`: what the sign-in's code step asks for is either.
     const token = this.hotpStatusOf(name);
     const hotpEnrolled = !!token;
-    const oneTimeCode = totpEnrolled || hotpEnrolled;
+    const yubi = this.yubiStatusOf(name);
+    const yubiEnrolled = !!yubi;
+    const oneTimeCode = totpEnrolled || hotpEnrolled || yubiEnrolled;
     // THE EMAILED SECOND FACTOR (#64), HELD only while it is usable: opted
     // in, allowed by the realm's authentication policy, mail working and the
     // address verified (`common/mail_factor.ts` argues why). Asked lazily —
@@ -10212,6 +10805,17 @@ class Credentials {
             why: token.why || '', source: token.source || 'enrolled',
             token: token.token || '', serial: token.serial || '',
             vendor: token.vendor || '', model: token.model || '' }
+        : null,
+      yubi: yubiEnrolled,
+      yubiUsable: yubiEnrolled && !yubi.unusable,
+      yubiDetail: yubiEnrolled
+        ? { enrolledAt: yubi.enrolledAt || 0,
+            lastUsedAt: yubi.lastUsedAt || 0,
+            publicId: yubi.publicId || '',
+            source: yubi.source || 'enrolled',
+            serial: yubi.serial || '',
+            sealed: !!yubi.sealed, unusable: !!yubi.unusable,
+            why: yubi.why || '' }
         : null,
       oneTimeCode: oneTimeCode,
       // Can they get in at all? UNCHANGED, and see the header: a second factor
@@ -13525,7 +14129,8 @@ class Credentials {
     const mfa = keys;
     const hadTotp = !!this.totpOf(name);
     const hadCodes = !!this.backupCodesOf(name);
-    if (!mfa.length && !hadTotp && !hadCodes) {
+    const hadYubi = !!this.yubiStatusOf(name);
+    if (!mfa.length && !hadTotp && !hadCodes && !hadYubi) {
       log.debug("Leaving Credentials.removeSecondFactors(). None held.");
       return coded('STS-AUTHN-0162', { ok: false, errors: [name + ' holds no ' +
           'second factor — no authenticator app, no passkey ' +
@@ -13540,7 +14145,7 @@ class Credentials {
           'Reset their password (or issue a reset link) first, then ' +
           'disable their second factors.'] });
     }
-    const done = { totp: false, keys: [], backupCodes: false };
+    const done = { totp: false, keys: [], backupCodes: false, yubi: false };
     try {
       if (mfa.length) {
         directory.replaceWebauthn(name, []);
@@ -13553,6 +14158,14 @@ class Credentials {
       if (hadCodes) {
         directory.writeBackupCodes(name, null);
         done.backupCodes = true;
+      }
+      if (hadYubi) {
+        const dropped = this.removeYubiOtp(name);
+        if (dropped && dropped.ok === false) {
+          throw new Error((dropped.errors && dropped.errors[0]) ||
+                          'the YubiKey OTP credential could not be removed');
+        }
+        done.yubi = true;
       }
     } catch (e) {
       // WHAT WENT BEFORE THE THROW IS GONE AND IS REPORTED AS GONE, so a caller
@@ -13655,6 +14268,8 @@ export = {
   TOTP_ATTRIBUTE: Credentials.TOTP_ATTRIBUTE,
   HOTP_ATTRIBUTE: Credentials.HOTP_ATTRIBUTE,
   HOTP_COUNTER_SCOPE: Credentials.HOTP_COUNTER_SCOPE,
+  YUBI_ATTRIBUTE: Credentials.YUBI_ATTRIBUTE,
+  YUBI_COUNTER_SCOPE: Credentials.YUBI_COUNTER_SCOPE,
   totpOf: slot.forward('totpOf'),
   // THE RECOVERY CODES (2026-09-10). `revealBackupCodes()` used to be the one
   // export here that handed back a live credential; since 2026-09-11 the set
@@ -13859,6 +14474,16 @@ export = {
   removeHotp: slot.forward('removeHotp'),
   verifyHotpAsync: slot.forward('verifyHotpAsync'),
   resyncHotpAsync: slot.forward('resyncHotpAsync'),
+  // #1955 P5: the YubiKey OTP credential.
+  yubiStatusOf: slot.forward('yubiStatusOf'),
+  beginYubiEnrolment: slot.forward('beginYubiEnrolment'),
+  pendingYubiFor: slot.forward('pendingYubiFor'),
+  abandonYubiEnrolment: slot.forward('abandonYubiEnrolment'),
+  confirmYubiEnrolment: slot.forward('confirmYubiEnrolment'),
+  installImportedYubi: slot.forward('installImportedYubi'),
+  removeYubiOtp: slot.forward('removeYubiOtp'),
+  verifyYubiOtpAsync: slot.forward('verifyYubiOtpAsync'),
+  yubiPasswordSplit: slot.forward('yubiPasswordSplit'),
   spendAssertion: slot.forward('spendAssertion'),
   reconcileBackupCodes: slot.forward('reconcileBackupCodes'),
   spendActivation: slot.forward('spendActivation'),

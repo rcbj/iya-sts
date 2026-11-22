@@ -255,6 +255,30 @@
     "en": "01c45765b9c3cd87",
     "text": "En engångskodstoken synkroniserades inte om"
   },
+  "audit.actions.portal.yubiotp.started.label": {
+    "en": "b206def4fb8ccc3d",
+    "text": "Någon visades en programmeringsrad för en YubiKey-OTP"
+  },
+  "audit.actions.portal.yubiotp.enrolled.label": {
+    "en": "00886a6cb1cc407b",
+    "text": "Någon konfigurerade en YubiKey-OTP på sitt eget konto"
+  },
+  "audit.actions.portal.yubiotp.refused.label": {
+    "en": "bd0fa598eb880f3a",
+    "text": "En konfiguration av en YubiKey-OTP bekräftades inte"
+  },
+  "audit.actions.portal.yubiotp.removed.label": {
+    "en": "57e0e2f87367e090",
+    "text": "Någon tog bort YubiKey-OTP:n från sitt eget konto"
+  },
+  "audit.actions.portal.yubiotp.claimed.label": {
+    "en": "452306461ebd5b17",
+    "text": "Någon tog en importerad YubiKey-OTP i anspråk"
+  },
+  "audit.actions.portal.yubiotp.claim-refused.label": {
+    "en": "2f50c910534b974e",
+    "text": "En YubiKey-OTP togs inte i anspråk"
+  },
   "audit.actions.portal.activate.mfa.started.label": {
     "en": "df561a24375c8165",
     "text": "En hemlighet för en autentiseringsapp visades medan en aktiveringslänk användes"
@@ -543,6 +567,30 @@
     "en": "92d69a1a2d848892",
     "text": "En ej tilldelad OATH-token togs bort från inventariet"
   },
+  "audit.actions.yubiotp.import.label": {
+    "en": "6f92401fa557c5e6",
+    "text": "En CSV med YubiKey-OTP importerades, eller avvisades"
+  },
+  "audit.actions.yubiotp.assign.label": {
+    "en": "c4f793ef7a16734a",
+    "text": "En importerad YubiKey-OTP tilldelades en person"
+  },
+  "audit.actions.yubiotp.claim.label": {
+    "en": "08d55e823350bd4a",
+    "text": "En person tog en importerad YubiKey-OTP i anspråk, eller anspråket avvisades"
+  },
+  "audit.actions.yubiotp.remove.label": {
+    "en": "a4a9aedd10cc2813",
+    "text": "En ej tilldelad YubiKey-OTP togs bort från inventariet"
+  },
+  "audit.actions.yubiotp.client-add.label": {
+    "en": "40676cb783f36097",
+    "text": "En YK-VAL-klient skapades"
+  },
+  "audit.actions.yubiotp.client-remove.label": {
+    "en": "92433c797106d523",
+    "text": "En YK-VAL-klient togs bort"
+  },
   "audit.actions.device.key-add.label": {
     "en": "6c1b2513c20532ef",
     "text": "En nyckel lades till på en enhet"
@@ -726,6 +774,10 @@
   "audit.actions.admin.mfa.hotp.cleared.label": {
     "en": "027dab5576016e61",
     "text": "En operatör rensade någons engångskodstoken"
+  },
+  "audit.actions.admin.mfa.yubiotp.cleared.label": {
+    "en": "f075ff8b6c725197",
+    "text": "En operatör rensade någons YubiKey OTP"
   },
   "audit.actions.admin.mfa.key.cleared.label": {
     "en": "d62700d9f7751e8b",

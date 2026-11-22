@@ -531,6 +531,14 @@
     "en": "5ab7b9d048e74e7e",
     "text": "full, verifierarsidan, ENDAST SOM ANDRA FAKTOR (#1955 P4): den dynamiska trunkeringen i avsnitt 5.3 över HMAC-SHA-1, SHA-256 eller SHA-512, sex till åtta siffror, räknaren ett åtta byte stort big-endian-värde, verifierad mot bilaga D:s egna testvektorer (tests/totp.js, tests/hotp.js); en räknare per inloggningsuppgift med framförhållningen i avsnitt 7.4 (hotp.window, 10 som standard, 0 tillåtet) och omsynkronisering från två på varandra följande koder (hotp.resyncWindow); avsnitt 7.2:s avvisning av återuppspelning, där räknaren flyttas fram med compare-and-set i lagret så att två noder eller workers aldrig godtar samma kod; avsnitt 7.3:s strypning genom inloggningens kodbudget. En YubiKey-OTP-plats programmeras från portalens otpauth://hotp-kod eller ykman-kommando; en leverantörs token importeras (RFC 6030). Den ger amr otp, och hwk bara för en importerad token. INTE täckt: avsnitt 7.3:s fördröjningsschema som sådant (budgeten avvisar i stället) och OCRA (RFC 6287)."
   },
+  "stsmetadata.specs.yubico-otp.coverage": {
+    "en": "57c44d60416042fb",
+    "text": "partial, verifierarsidan (#1955 P5): den publicerade OTP:n, en publik identitet i modhex följd av ett AES-128-ECB-block utan utfyllnad, CRC-16-rest 0xf0b8, och användnings- och sessionsräknarna framflyttade med compare-and-set så att en OTP godtas en gång. Tidsstämpeln kontrolleras inte. Registrering är av som standard (yubiotp.offered). amr otp, aldrig hwk, eftersom den här tjänsten håller AES-nyckeln. INTE täckt: YubiCloud, och varje kontroll av tidsstämpeln."
+  },
+  "stsmetadata.specs.yk-val.coverage": {
+    "en": "0adaef8d27031f8f",
+    "text": "partial, som valideringsserver (#1955 P5): GET och POST /wsapi/2.0/verify med id, otp, nonce och h, HMAC-SHA1 över de sorterade parametrarna, och statusarna OK, BAD_OTP, BAD_SIGNATURE, MISSING_PARAMETER, NO_SUCH_CLIENT, OPERATION_NOT_ALLOWED, BACKEND_ERROR, REPLAYED_OTP och REPLAYED_REQUEST. Av som standard (yubiotp.ykval). På kontrolleras klient-id och HMAC i varje läge. Svaret bär sl=100. INTE täckt: YubiCloud-klienten, och en synkroniseringsprocent annan än 100."
+  },
   "stsmetadata.specs.rfc6030.coverage": {
     "en": "35ef81e9394eb5f5",
     "text": "partial, som MOTTAGARE (#1955 P4): en KeyContainer av version 1.0 med HOTP- och TOTP-nycklar, DeviceInfos Manufacturer, SerialNo och Model, ResponseFormat (6 till 8 decimala siffror), en enkel Counter, Time (endast 0) och TimeInterval; klartext (avvisas i produktläget om inte pskc.allowPlaintextImport), en förutdelad nyckel (avsnitt 6.1: AES-128/192/256-CBC och KW-AES) och en lösenfras (avsnitt 6.2: PBKDF2), där ValueMAC enligt avsnitt 6.1.1 kontrolleras först (HMAC-SHA1 och SHA-2-MAC:arna). Verifierad mot RFC:ns egna Figures 2 till 7 (tests/pskc.js). INTE täckt: kryptering till ett certifikat (6.3), en MAC-nyckel via referens, Triple DES och Camellia, en krypterad räknare eller tid, PIN-nycklar och -policyer (hoppas över), signaturer på containern (avsnitt 7) och att skapa en sådan fil."
@@ -2140,8 +2148,8 @@
     "text": "NON-SPEC (#1955 P4). De HOTP- och TOTP-tokens som administratörer importerat från leverantörers PSKC-fröfiler, ej tilldelade, tilldelade eller avvecklade, sidindelade och sökbara på serienummer eller person. Aldrig en hemlighet. Speglar GET /admin/hardware-tokens (dess OATH-flik)."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-    "en": "4309735f35f4550e",
-    "text": "NON-SPEC (#1955). lost, med { key }: token markeras som förlorad, varje nyckel på den tas bort, varje certifikat på den återkallas för keyCompromise, varje importerad OATH-hemlighet tas bort från innehavarens post, en CAEP-ändring av inloggningsuppgift skickas för var och en och de sessioner de loggade in avslutas. Sedan P4 import-pskc, med { pskc, preSharedKey or password }: en RFC 6030-fröfils HOTP- och TOTP-nycklar förvaras ej tilldelade under serienummer, MAC kontrolleras först och nyckeln sparas aldrig; assign-oath, med { key, username }; och remove-oath, med { key }, för en ej tilldelad token."
+    "en": "107e4ff48ad53fb3",
+    "text": "NON-SPEC (#1955). lost, med { key }: token markeras som förlorad, varje nyckel på den tas bort, varje certifikat på den återkallas för keyCompromise, varje importerad OATH-hemlighet tas bort från innehavarens post, en CAEP-ändring av inloggningsuppgift skickas för var och en och de sessioner de loggade in avslutas. Sedan P4 import-pskc, med { pskc, preSharedKey or password }: en RFC 6030-fröfils HOTP- och TOTP-nycklar förvaras ej tilldelade under serienummer, MAC kontrolleras först och nyckeln sparas aldrig; assign-oath, med { key, username }; och remove-oath, med { key }, för en ej tilldelad token. Sedan P5 import-yubiotp, med { csv }; assign-yubiotp, med { serial, username, otp }; remove-yubiotp, med { serial }; ykval-client-add, med { id }, vars HMAC-nyckel besvaras en gång; och ykval-client-remove, med { id }."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
     "en": "dabee6463ad7ee17",
@@ -3046,6 +3054,14 @@
   "stsmetadata.endpoints./authn/post-login.effect": {
     "en": "9547cda6898c37a6",
     "text": "ber om en postkvantnyckel efter en inloggning och etablerar sedan inloggningssessionen som den höll kvar"
+  },
+  "stsmetadata.endpoints./wsapi/2.0/verify.what": {
+    "en": "ff0550a4318594c6",
+    "text": "YUBICOS VALIDERINGSPROTOKOLL 2.0 (#1955 P5). GET eller POST av id, otp, nonce och h. Av som standard: vägen svarar OPERATION_NOT_ALLOWED och signerar inget. På kontrolleras klient-id och HMAC-SHA1 i varje läge, inklusive utveckling; en nonce sparas i fem minuter; en matchande OTP förbrukas. Cache-Control: no-store. Inget skickas till YubiCloud."
+  },
+  "stsmetadata.endpoints./wsapi/2.0/verify.effect": {
+    "en": "bb2bc4011c8240ac",
+    "text": "kontrollerar en YubiKey-OTP för en klient som signerade begäran, eller svarar OPERATION_NOT_ALLOWED medan yubiotp.ykval är av"
   },
   "stsmetadata.endpoints./authn/totp.what": {
     "en": "b62d7bad9442ea5c",
@@ -4034,6 +4050,10 @@
   "stsmetadata.protocols.One-time passwords (TOTP).what": {
     "en": "54893544268bf168",
     "text": "Den andra andra faktorn på inloggningsskärmen som varje protokoll här skickar en person till, och den enda inloggningsuppgiften utöver en Kerberos-biljett som tjänsten verkligen KONTROLLERAR: koden beräknas från den delade hemligheten och klockan och jämförs, i båda lägena, med regeln i RFC 6238 avsnitt 5.2 om att en kod godtas en gång upprätthållen. Registreringen är en QR-kod som den här servern ritade, på /portal/mfa eller medan en aktiveringslänk används; personens egen rad på /admin/users är där en operatör rensar den, och /admin/totp är där mekanismen konfigureras. Sedan #1955 P4 även dess räknarbaserade motsvarighet: en HOTP-token enligt RFC 4226 (en YubiKey-OTP-plats, registrerad på /portal/mfa, eller en leverantörs token importerad från dess RFC 6030-fröfil under Katalog → Maskinvarutokens och tilldelad eller tagen i anspråk via serienummer), med räknaren framflyttad med compare-and-set, godtagen vid varje ingång som tar emot en kod."
+  },
+  "stsmetadata.protocols.Yubico OTP.what": {
+    "en": "462bb8049dda11d0",
+    "text": "En YubiKey-OTP-plats som kontrolleras på den här tjänsten (#1955 P5). AES-128-nyckeln stannar här, så en inloggning är amr otp och aldrig hwk. Registrering, tilldelning och ett anspråk är av tills yubiotp.offered; en uppgift som redan innehas kontrolleras fortfarande vid steget för engångskoden. GET och POST /wsapi/2.0/verify är YK-VAL 2.0 och förblir OPERATION_NOT_ALLOWED tills yubiotp.ykval. Ingen begäran skickas till YubiCloud."
   },
   "stsmetadata.protocols.Recovery codes.what": {
     "en": "b7c9347c7ac4a2b7",

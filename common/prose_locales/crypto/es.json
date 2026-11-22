@@ -1423,6 +1423,50 @@
     "en": "e08e19def21e22b2",
     "text": "Ajustes activos"
   },
+  "crypto.families.yubico-otp.signs": {
+    "en": "c340996ced9d9758",
+    "text": "Nada que salga de este servicio, excepto el HMAC-SHA1 que un cliente YK-VAL comprueba en /wsapi/2.0/verify. El OTP en sí es AES-128-ECB de un bloque de 16 bytes, comparado después de descifrarlo, y por eso la primitiva vive en common/crypto.js."
+  },
+  "crypto.families.yubico-otp.verifies": {
+    "en": "f7cf070e5067a77f",
+    "text": "Un OTP presentado: la identidad pública selecciona la credencial, el bloque se descifra con su clave AES-128, el residuo CRC-16 es 0xf0b8 y la identidad privada coincide. El contador de uso y el contador de uso de sesión, como un solo valor, deben estar estrictamente por encima del último aceptado. No se comprueba la marca de tiempo. El HMAC-SHA1 de una solicitud YK-VAL, en todos los modos, cuando yubiotp.ykval está activado."
+  },
+  "crypto.families.yubico-otp.encrypts": {
+    "en": "3802bf3b62081ea2",
+    "text": "La clave AES y la identidad privada en reposo, como un solo valor JSON sellado, bajo la clave de cifrado de claves, en modo producto. En modo desarrollo la clave de cifrado de claves se genera en cada ejecución, así que el valor se guarda en claro y lo dice."
+  },
+  "crypto.families.yubico-otp.decrypts": {
+    "en": "560652ba098dd545",
+    "text": "Ese valor sellado, para comprobar un OTP. El servidor conserva la clave AES, así que el inicio de sesión es amr otp y nunca hwk."
+  },
+  "crypto.families.yubico-otp.hashes": {
+    "en": "761a28a6805e3023",
+    "text": "Nada. El CRC es CRC-16, polinomio 0x8408. Una firma YK-VAL es HMAC-SHA1."
+  },
+  "crypto.families.yubico-otp.whatItDoesNot": {
+    "en": "a977ea47369edb7c",
+    "text": "Nunca llama a YubiCloud. Nunca comprueba la marca de tiempo. Nunca inscribe una ranura mientras yubiotp.offered está desactivado, y nunca responde a YK-VAL mientras yubiotp.ykval está desactivado. Nunca registra la línea de programación ni la clave HMAC de un cliente."
+  },
+  "crypto.families.yubico-otp.algorithms.0.what": {
+    "en": "6c0e6acd35694622",
+    "text": "OTP"
+  },
+  "crypto.families.yubico-otp.algorithms.1.what": {
+    "en": "ac57b0e667bf3ec1",
+    "text": "Alfabeto"
+  },
+  "crypto.families.yubico-otp.algorithms.2.what": {
+    "en": "ee4fcdc3401859da",
+    "text": "CRC"
+  },
+  "crypto.families.yubico-otp.algorithms.3.what": {
+    "en": "c8dae6371b33b8d6",
+    "text": "Repetición"
+  },
+  "crypto.families.yubico-otp.algorithms.4.what": {
+    "en": "7ff6cc8a39bc9224",
+    "text": "YubiCloud"
+  },
   "crypto.families.recovery-codes.signs": {
     "en": "e07d5c09c87dcaf1",
     "text": "Nada. No hay ningún MAC ni ninguna firma en ninguna parte de este mecanismo — un código de recuperación es una cadena aleatoria comprobada contra un hash almacenado de ella, que es toda la diferencia con la fila TOTP de arriba, donde el \"código\" es un HMAC truncado."

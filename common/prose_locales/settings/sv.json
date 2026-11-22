@@ -1339,6 +1339,22 @@
     "en": "4bc7180cc29f1f53",
     "text": "Hur långt fram två PÅ VARANDRA FÖLJANDE koder söks när en person synkroniserar om en token som hamnat utanför framförhållningen (RFC 4226 avsnitt 7.4). Två koder i rad är mycket svårare att gissa än en, och det är det som gör den större sökningen säker. Gäller direkt."
   },
+  "yubiotp.offered|label": {
+    "en": "9f41692d832fec07",
+    "text": "Erbjud registrering av YubiKey-OTP"
+  },
+  "yubiotp.offered|description": {
+    "en": "5a0403877f662a53",
+    "text": "Om en person får registrera en YubiKey-OTP-plats, och om en administratör får tilldela en eller en person göra anspråk på en. Av som standard. En uppgift som redan innehas kontrolleras fortfarande vid steget för engångskoden. AES-nyckeln stannar på den här tjänsten, så inloggningen är amr otp och aldrig hwk."
+  },
+  "yubiotp.ykval|label": {
+    "en": "f309f289c5ecddcd",
+    "text": "Svara på YK-VAL 2.0-verifieringsslutpunkten"
+  },
+  "yubiotp.ykval|description": {
+    "en": "eba10509dc6d104d",
+    "text": "Om GET och POST /wsapi/2.0/verify kontrollerar en YubiKey-OTP för en klient som signerade begäran (YK-VAL 2.0). Av som standard, och vägen svarar då OPERATION_NOT_ALLOWED. På kontrolleras klient-id och HMAC-SHA1 i varje läge, inklusive utveckling. Ingen begäran skickas till YubiCloud."
+  },
   "backupCodes.count|label": {
     "en": "91b6e4a086244cce",
     "text": "Koder i en uppsättning"
@@ -3178,6 +3194,14 @@
   "pskc.allowPlaintextImport|description": {
     "en": "7efe34e872e4772e",
     "text": "Om en administratör i produktläget får importera en PSKC-fröfil (RFC 6030) vars tokenhemligheter INTE är krypterade. Av som standard: en sådan fil har varit en lista över fungerande andra faktorer på varje disk och i varje brevlåda den har passerat, och en leverantör kan kryptera den under en förutdelad nyckel eller ett lösenord (avsnitt 6.1 och 6.2). Utvecklingsläget godtar en oavsett."
+  },
+  "yubiotp.allowPlaintextImport|label": {
+    "en": "b1c1ac235f98cc47",
+    "text": "Godta CSV-filer med YubiKey-OTP i klartext i produktläget"
+  },
+  "yubiotp.allowPlaintextImport|description": {
+    "en": "f409449d46d5831a",
+    "text": "Om en administratör i produktläget får importera en CSV med YubiKey-OTP-hemligheter (serienummer, publik identitet, privat identitet, AES-nyckel). Av som standard: filen är en lista över fungerande andra faktorer. Utvecklingsläget godtar en oavsett. Hemligheterna förseglas när filen godtas, och filen behålls inte."
   },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",

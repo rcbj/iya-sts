@@ -671,6 +671,14 @@
     "en": "167f79e724fe8b34",
     "text": "प्रत्येक User-Managed Access अनुमति टिकट, स्थायी क्लेम टोकन, RPT अभिलेख और लंबित स्वामी अनुमोदन को उसके जीवन के बाद हटाता है (#1168)। पढ़ना स्वयं समय-सीमा लागू करता है, इसलिए यह सफ़ाई है, निर्णय कभी नहीं।"
   },
+  "sched.jobs.yubiotp.nonce-sweep.title": {
+    "en": "dce74787b5ae6954",
+    "text": "Yubico OTP nonce सफ़ाई"
+  },
+  "sched.jobs.yubiotp.nonce-sweep.describe": {
+    "en": "21922132f2f9b5f8",
+    "text": "पाँच मिनट से पुराने YK-VAL nonce, और दस हज़ार से आगे सबसे पुराने, हटाता है, ताकि nonce मानचित्र न बढ़े।"
+  },
   "sched.sentence.onDemand": {
     "en": "92e0ecb68dc6ec36",
     "text": "केवल माँग पर"

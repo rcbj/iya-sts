@@ -563,6 +563,18 @@
     "en": "e3eb9f2bcabf5eaa",
     "text": "令牌密钥为明文的 PSKC 种子文件会被拒绝，除非开启了 pskc.allowPlaintextImport；加密文件使用随上传提供的密钥或密码打开，该密钥或密码从不存储。"
   },
+  "mode.requirements.plaintext-yubiotp-csv.what": {
+    "en": "c349a97e52695bea",
+    "text": "YubiKey OTP 种子文件不得是 AES 密钥的清单"
+  },
+  "mode.requirements.plaintext-yubiotp-csv.development": {
+    "en": "c1af70a4452cb90f",
+    "text": "包含序列号、公开身份、私有身份和 AES 密钥的 CSV 与任何其他清单文件一样被导入。"
+  },
+  "mode.requirements.plaintext-yubiotp-csv.product": {
+    "en": "3f75df0847c0e777",
+    "text": "除非 yubiotp.allowPlaintextImport 开启，否则拒绝该 CSV。文件被接受后密钥即被密封，文件本身不予保留。"
+  },
   "mode.requirements.sso-consent.what": {
     "en": "2b06d195aa0a395d",
     "text": "单点登录在让用户登录某个应用前先询问"

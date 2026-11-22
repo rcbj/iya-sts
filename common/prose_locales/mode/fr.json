@@ -563,6 +563,18 @@
     "en": "e3eb9f2bcabf5eaa",
     "text": "Un fichier de semences PSKC dont les secrets de jetons sont en clair est refusé sauf si pskc.allowPlaintextImport est activé ; un fichier chiffré est ouvert avec la clé ou le mot de passe fourni avec le téléversement, qui n’est jamais conservé."
   },
+  "mode.requirements.plaintext-yubiotp-csv.what": {
+    "en": "c349a97e52695bea",
+    "text": "Un fichier de semences d’OTP YubiKey ne doit pas être une liste de clés AES"
+  },
+  "mode.requirements.plaintext-yubiotp-csv.development": {
+    "en": "c1af70a4452cb90f",
+    "text": "Un CSV de numéro de série, d’identité publique, d’identité privée et de clé AES est importé comme n’importe quel autre fichier d’inventaire."
+  },
+  "mode.requirements.plaintext-yubiotp-csv.product": {
+    "en": "3f75df0847c0e777",
+    "text": "Ce CSV est refusé sauf si yubiotp.allowPlaintextImport est activé. Les clés sont scellées une fois le fichier accepté, et le fichier lui-même n’est pas conservé."
+  },
   "mode.requirements.sso-consent.what": {
     "en": "2b06d195aa0a395d",
     "text": "L’authentification unique demande avant de connecter une personne à une application"

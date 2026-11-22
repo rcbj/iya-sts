@@ -164,6 +164,7 @@ surfaces below are the exceptions, each argued where it lives.
 | `/report-api` | this realm's `report:use` or `report:admin` token (DPoP-bound from `sts-report`), its subject holding REPORT_USE or REPORT_ADMIN now, and the access-control policy per definition and job (#1030) | `report/CLAUDE.md` |
 | `/admin-api` | an access token audienced to it, with the scope the operation needs | `mgmt-api/CLAUDE.md` |
 | `/oauth2/introspect` | client authentication | `oauth-oidc/CLAUDE.md` (3ai) |
+| `/wsapi/2.0/verify` | when `yubiotp.ykval` is on, a YK-VAL client id and HMAC-SHA1, checked in every mode including development; while it is off the route answers `OPERATION_NOT_ALLOWED` | `common/CLAUDE.md` (`yubiotp.ts`) |
 | the debugger listener | a token only console administrators are issued; cannot be turned off | `debugger/CLAUDE.md` |
 
 **The first three are turnstiles, and none of them can be turned off**; what

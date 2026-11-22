@@ -1423,6 +1423,50 @@
     "en": "e08e19def21e22b2",
     "text": "Aktiva inställningar"
   },
+  "crypto.families.yubico-otp.signs": {
+    "en": "c340996ced9d9758",
+    "text": "Inget som lämnar den här tjänsten, utom den HMAC-SHA1 som en YK-VAL-klient kontrollerar på /wsapi/2.0/verify. Själva OTP:n är AES-128-ECB av ett 16-byteblock, jämfört efter att det dekrypterats, och därför bor primitiven i common/crypto.js."
+  },
+  "crypto.families.yubico-otp.verifies": {
+    "en": "f7cf070e5067a77f",
+    "text": "En uppvisad OTP: den publika identiteten väljer uppgiften, blocket dekrypteras under sin AES-128-nyckel, CRC-16-resten är 0xf0b8 och den privata identiteten stämmer. Användningsräknaren och sessionsanvändningsräknaren, som ett värde, måste ligga strikt över den senast godtagna. Tidsstämpeln kontrolleras inte. HMAC-SHA1 för en YK-VAL-begäran, i varje läge, när yubiotp.ykval är på."
+  },
+  "crypto.families.yubico-otp.encrypts": {
+    "en": "3802bf3b62081ea2",
+    "text": "AES-nyckeln och den privata identiteten i vila, som ett förseglat JSON-värde, under nyckelkrypteringsnyckeln, i produktläget. I utvecklingsläget skapas nyckelkrypteringsnyckeln per körning, så värdet lagras i klartext och säger det."
+  },
+  "crypto.families.yubico-otp.decrypts": {
+    "en": "560652ba098dd545",
+    "text": "Det förseglade värdet, för att kontrollera en OTP. Servern håller AES-nyckeln, så inloggningen är amr otp och aldrig hwk."
+  },
+  "crypto.families.yubico-otp.hashes": {
+    "en": "761a28a6805e3023",
+    "text": "Inget. CRC:n är CRC-16, polynom 0x8408. En YK-VAL-signatur är HMAC-SHA1."
+  },
+  "crypto.families.yubico-otp.whatItDoesNot": {
+    "en": "a977ea47369edb7c",
+    "text": "Den anropar aldrig YubiCloud. Den kontrollerar aldrig tidsstämpeln. Den registrerar aldrig en plats medan yubiotp.offered är av, och den svarar aldrig på YK-VAL medan yubiotp.ykval är av. Den loggar aldrig programmeringsraden eller en klients HMAC-nyckel."
+  },
+  "crypto.families.yubico-otp.algorithms.0.what": {
+    "en": "6c0e6acd35694622",
+    "text": "OTP"
+  },
+  "crypto.families.yubico-otp.algorithms.1.what": {
+    "en": "ac57b0e667bf3ec1",
+    "text": "Alfabet"
+  },
+  "crypto.families.yubico-otp.algorithms.2.what": {
+    "en": "ee4fcdc3401859da",
+    "text": "CRC"
+  },
+  "crypto.families.yubico-otp.algorithms.3.what": {
+    "en": "c8dae6371b33b8d6",
+    "text": "Återspelning"
+  },
+  "crypto.families.yubico-otp.algorithms.4.what": {
+    "en": "7ff6cc8a39bc9224",
+    "text": "YubiCloud"
+  },
   "crypto.families.recovery-codes.signs": {
     "en": "e07d5c09c87dcaf1",
     "text": "Ingenting. Det finns ingen MAC och ingen signatur någonstans i den här mekanismen — en återställningskod är en slumpmässig sträng som kontrolleras mot en lagrad hash av en sådan, vilket är hela skillnaden från TOTP-raden ovan där \"koden\" är en trunkerad HMAC."

@@ -16541,6 +16541,36 @@ op `clearUserHotpToken`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/con
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
+@endpoint("/admin-api/users/clear-yubi",
+  "post",
+  #{
+    `operationId`:"clearUserYubiOtp",
+    `summary`:"Clear somebody's YubiKey OTP (#1955)",
+    `description`:"The way back for somebody who lost the YubiKey their OTP credential is on. The AES key is held here, so clearing removes it from the entry and retires the public identity. It cannot lock anybody out — a YubiKey OTP is never a primary credential here — and the sessions its passwords signed in end (`sessionsEnded`, #722). A token lost with the key is better reported lost on Directory → Hardware tokens, which retires every credential on it at once. Clearing one nobody holds answers 400.\n\n**Mirrors** `POST /admin/users` on the admin console.",
+    `tags`:#["Users"],
+    `responses`:#{
+      `200`:#{
+        `description`:"Whose credential was cleared, and the sessions its passwords signed in, which were ended.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `clearUserYubiOtp`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/content/application~1json/schema`: WithDescriptionEvidenceDescriptionEtc62,
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors20`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors20`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
 @endpoint("/admin-api/users/clear-backup-codes",
   "post",
   #{
@@ -20392,6 +20422,36 @@ op `clearAuthenticatorApp`(@js(#{`examples`:#[#{`username`:"alice"}]}) `requestB
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `clearHotpToken`(@js(#{`examples`:#[#{`username`:"alice"}]}) `requestBody/content/application~1json/schema`: WithDescriptionEvidenceDescriptionEtc6,
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors20`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors20`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
+@endpoint("/admin-api/mfa/clear-yubi",
+  "post",
+  #{
+    `operationId`:"clearYubiOtp",
+    `summary`:"Clear somebody's YubiKey OTP (#1955)",
+    `description`:"The way back for somebody who lost the YubiKey their OTP credential is on. The AES key is held here, so clearing removes it from the entry and retires the public identity. It cannot lock anybody out — a YubiKey OTP is never a primary credential here — and the sessions its passwords signed in end (`sessionsEnded`, #722). A token lost with the key is better reported lost on Directory → Hardware tokens, which retires every credential on it at once. Clearing one nobody holds answers 400.\n\n**Mirrors** `POST /admin/users` on the admin console.",
+    `tags`:#["Multi-factor authentication"],
+    `responses`:#{
+      `200`:#{
+        `description`:"Whose credential was cleared, and the sessions its passwords signed in, which were ended.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `clearYubiOtp`(@js(#{`examples`:#[#{`username`:"alice"}]}) `requestBody/content/application~1json/schema`: WithDescriptionEvidenceDescriptionEtc6,
   `responses/200/content/application~1json/schema`: `WithOkMessageErrors20`,
   `responses/400/content/application~1json/schema`: `WithOkMessageErrors20`,
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
@@ -46312,6 +46372,210 @@ op `removeOathToken`(@js(#{`examples`:#[#{`key`:"manufacturer/987654321/12345678
   `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   `responses/404/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   `responses/409/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+
+@endpoint("/admin-api/hardware-tokens/import-yubiotp",
+  "post",
+  #{
+    `operationId`:"importYubiOtpCsv",
+    `summary`:"Import a YubiKey OTP CSV (#1955)",
+    `description`:"Reads a CSV of serial, modhex public id, hexadecimal private id and hexadecimal AES key, and keeps each row as an UNASSIGNED YubiKey OTP. A file in the clear is refused in product mode unless yubiotp.allowPlaintextImport is on. The secrets are sealed when the file is accepted, and the file is not kept. A row that cannot be imported is in `skipped` with the reason.\n\n**Mirrors** `POST /admin/hardware-tokens` on the admin console.",
+    `tags`:#["Directory"],
+    `responses`:#{
+      `200`:#{
+        `description`:"What was imported and what was skipped.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The file was refused whole; `errors` says why and nothing was imported.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `importYubiOtpCsv`(@js(#{`examples`:#[#{`csv`:"serial,public_id,private_id,key"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The CSV text. Columns are serial, modhex public id, hexadecimal private id and hexadecimal AES key.",`maxLength`:4194304}) `csv`: string
+  },
+  `responses/200/content/application~1json/schema`: {
+    `ok`: boolean;
+    `message`: string;
+    `imported`: { `serial`: string; `publicId`: string }[];
+    `skipped`: { `serial`: string; `why`: string }[]
+  },
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+
+@endpoint("/admin-api/hardware-tokens/assign-yubiotp",
+  "post",
+  #{
+    `operationId`:"assignYubiOtp",
+    `summary`:"Assign an imported YubiKey OTP to a person (#1955)",
+    `description`:"Gives an unassigned YubiKey OTP to a named person. `otp` is one password the key types, and it is spent, so the same touch cannot also sign in. The AES key stays on this service, so later sign-ins are amr `otp` and never `hwk`. The hardware token register records evidence `yubiotp-import`. 404 for no such serial, 409 for one already assigned, 400 when yubiotp.offered is off or the OTP does not match.\n\n**Mirrors** `POST /admin/hardware-tokens` on the admin console.",
+    `tags`:#["Directory"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The token is assigned.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `404`:#{
+        `description`:"No such serial in this realm's inventory.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `409`:#{
+        `description`:"The token is already assigned.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `assignYubiOtp`(@js(#{`examples`:#[#{`serial`:"12345678",`username`:"alice",`otp`:"cccccc"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The token's serial.",`maxLength`:64}) `serial`: string;
+    @js(#{`description`:"The person it is given to.",`maxLength`:256}) `username`: string;
+    @js(#{`description`:"One OTP the key types, which is spent.",`maxLength`:64}) `otp`: string
+  },
+  `responses/200/content/application~1json/schema`: {
+    `ok`: boolean;
+    `message`: string;
+    `token`: { `serial`: string; `publicId`: string; `holder`: string; `status`: string }
+  },
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/404/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/409/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+
+@endpoint("/admin-api/hardware-tokens/remove-yubiotp",
+  "post",
+  #{
+    `operationId`:"removeYubiOtp",
+    `summary`:"Remove an unassigned YubiKey OTP from the inventory (#1955)",
+    `description`:"Removes a YubiKey OTP imported by mistake. An assigned one is refused (409): report the hardware token lost, which also takes the secret off its holder's entry. 404 for no such serial.\n\n**Mirrors** `POST /admin/hardware-tokens` on the admin console.",
+    `tags`:#["Directory"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The token is removed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `404`:#{
+        `description`:"No such serial in this realm's inventory.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `409`:#{
+        `description`:"The token is assigned.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `removeYubiOtp`(@js(#{`examples`:#[#{`serial`:"12345678"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The token's serial.",`maxLength`:64}) `serial`: string
+  },
+  `responses/200/content/application~1json/schema`: {
+    `ok`: boolean;
+    `message`: string;
+    `serial`: string
+  },
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/404/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/409/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+
+@endpoint("/admin-api/hardware-tokens/ykval-client-add",
+  "post",
+  #{
+    `operationId`:"addYkvalClient",
+    `summary`:"Create a YK-VAL client (#1955)",
+    `description`:"Creates a client that may call GET and POST /wsapi/2.0/verify. `id` is 1 to 16 digits. The HMAC-SHA1 key is in `key` and is shown once; it is not logged. The endpoint itself stays off until yubiotp.ykval is on.\n\n**Mirrors** `POST /admin/hardware-tokens` on the admin console.",
+    `tags`:#["Directory"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The client is created and its key is shown once.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The id was refused; `errors` says why.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `addYkvalClient`(@js(#{`examples`:#[#{`id`:"1"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The client id, 1 to 16 digits.",`maxLength`:16}) `id`: string
+  },
+  `responses/200/content/application~1json/schema`: {
+    `ok`: boolean;
+    `message`: string;
+    `id`: string;
+    @js(#{`description`:"The HMAC-SHA1 key, base64, shown once."}) `key`: string
+  },
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+
+@endpoint("/admin-api/hardware-tokens/ykval-client-remove",
+  "post",
+  #{
+    `operationId`:"removeYkvalClient",
+    `summary`:"Remove a YK-VAL client (#1955)",
+    `description`:"Removes a YK-VAL client. 404 for no such id.\n\n**Mirrors** `POST /admin/hardware-tokens` on the admin console.",
+    `tags`:#["Directory"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The client is removed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `404`:#{
+        `description`:"No such client.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `removeYkvalClient`(@js(#{`examples`:#[#{`id`:"1"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The client id.",`maxLength`:16}) `id`: string
+  },
+  `responses/200/content/application~1json/schema`: {
+    `ok`: boolean;
+    `message`: string;
+    `id`: string
+  },
+  `responses/404/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
 
 

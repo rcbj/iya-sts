@@ -8917,6 +8917,243 @@ function hotpCode(key, counter, opts) {
 }
 
 // ---------------------------------------------------------------------------
+// YUBICO OTP (#1955 P5, design S4 and D4).
+//
+// A YubiKey's OTP slot types a string in Yubico's modhex alphabet
+// (`cbdefghijklnrtuv`, one nibble each). The last 32 characters are
+// AES-128-ECB ciphertext of one 16-byte block, with no padding; everything
+// before them is the public identity. The block is the private identity (6),
+// the use counter (uint16 little-endian), the timestamp's low 16 bits, the
+// timestamp's high 8 bits, the session-use counter, 2 random bytes and a
+// CRC-16 (polynomial 0x8408, initialised to 0xffff) whose residual over the
+// whole block is 0xf0b8.
+//
+// **THIS FUNCTION DECRYPTS AND CHECKS THAT CRC. NOTHING ELSE.** Whether the
+// public identity is this person's, whether the counter has been seen, and
+// whether the mechanism is offered are `common/yubiotp.ts` and
+// `common/credentials.ts`. There is no call to YubiCloud: the key never
+// leaves this process, and a validation server is a relationship this
+// service was not configured to have.
+// ---------------------------------------------------------------------------
+
+/** Yubico's modhex alphabet, one character per nibble. */
+const YUBIOTP_MODHEX = 'cbdefghijklnrtuv';
+
+/**
+ * Decodes a modhex string into bytes.
+ *
+ * @param text - the modhex text
+ * @returns the bytes, or null when it is not even modhex
+ */
+function yubiotpModhexDecode(text) {
+  log.debug("Entering yubiotpModhexDecode().");
+  const s = String(text == null ? '' : text);
+  if (!s.length || (s.length % 2) !== 0) {
+    log.debug("Leaving yubiotpModhexDecode(). Not even.");
+    return null;
+  }
+  const out = Buffer.alloc(s.length / 2);
+  for (let i = 0; i < s.length; i += 2) {
+    const hi = YUBIOTP_MODHEX.indexOf(s.charAt(i));
+    const lo = YUBIOTP_MODHEX.indexOf(s.charAt(i + 1));
+    if (hi < 0 || lo < 0) {
+      log.debug("Leaving yubiotpModhexDecode(). Not modhex.");
+      return null;
+    }
+    out[i / 2] = (hi << 4) | lo;
+  }
+  log.debug("Leaving yubiotpModhexDecode(). " + out.length + " byte(s).");
+  return out;
+}
+
+/**
+ * Encodes bytes as modhex.
+ *
+ * @param bytes - the bytes
+ * @returns the modhex text
+ */
+function yubiotpModhexEncode(bytes) {
+  log.debug("Entering yubiotpModhexEncode().");
+  const buf = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes || []);
+  let out = '';
+  for (let i = 0; i < buf.length; i++) {
+    out += YUBIOTP_MODHEX.charAt((buf[i] >> 4) & 0x0f);
+    out += YUBIOTP_MODHEX.charAt(buf[i] & 0x0f);
+  }
+  log.debug("Leaving yubiotpModhexEncode(). " + out.length +
+            " character(s).");
+  return out;
+}
+
+/**
+ * CRC-16 of a YubiKey OTP block: polynomial 0x8408, initialised to 0xffff.
+ *
+ * @param bytes - the bytes
+ * @returns the residual
+ */
+function yubiotpCrc16(bytes) {
+  log.debug("Entering yubiotpCrc16().");
+  const buf = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes || []);
+  let crc = 0xffff;
+  for (let i = 0; i < buf.length; i++) {
+    crc ^= buf[i];
+    for (let b = 0; b < 8; b++) {
+      const lsb = crc & 1;
+      crc >>>= 1;
+      if (lsb) {
+        crc ^= 0x8408;
+      }
+    }
+  }
+  log.debug("Leaving yubiotpCrc16().");
+  return crc & 0xffff;
+}
+
+// A 16-byte AES key, from a buffer or from hex. Null otherwise. No log of
+// the key.
+function yubiotpKey(key) {
+  log.debug("Entering yubiotpKey().");
+  let buf = null;
+  if (Buffer.isBuffer(key)) {
+    buf = key;
+  } else {
+    const hex = String(key || '').replace(/\s+/g, '');
+    if (/^[0-9a-fA-F]{32}$/.test(hex)) {
+      buf = Buffer.from(hex, 'hex');
+    }
+  }
+  log.debug("Leaving yubiotpKey(). " + (buf && buf.length === 16 ? '16.'
+                                                                 : 'No.'));
+  return buf && buf.length === 16 ? buf : null;
+}
+
+// One AES-128-ECB block, no padding. ECB takes no IV.
+function yubiotpAes(key, block, encrypt) {
+  log.debug("Entering yubiotpAes().");
+  const cipher = encrypt
+    ? nodeCrypto.createCipheriv('aes-128-ecb', key, null)
+    : nodeCrypto.createDecipheriv('aes-128-ecb', key, null);
+  cipher.setAutoPadding(false);
+  const out = Buffer.concat([cipher.update(block), cipher.final()]);
+  log.debug("Leaving yubiotpAes().");
+  return out;
+}
+
+// The 16-byte plaintext's fields. The CRC residual of a genuine block is
+// 0xf0b8; this does not refuse, so a caller can say which check failed.
+function yubiotpFields(plain) {
+  log.debug("Entering yubiotpFields().");
+  if (!plain || plain.length !== 16) {
+    log.debug("Leaving yubiotpFields(). Not a block.");
+    return null;
+  }
+  const fields = {
+    privateId: plain.subarray(0, 6).toString('hex'),
+    use: plain.readUInt16LE(6),
+    timestampLow: plain.readUInt16LE(8),
+    timestampHigh: plain[10],
+    session: plain[11],
+    random: plain.readUInt16LE(12),
+    crc: plain.readUInt16LE(14),
+    crcOk: yubiotpCrc16(plain) === 0xf0b8
+  };
+  log.debug("Leaving yubiotpFields(). crcOk=" + fields.crcOk + ".");
+  return fields;
+}
+
+/**
+ * Decrypts one YubiKey OTP block.
+ *
+ * @param key - the AES-128 key, 16 bytes or 32 hex characters
+ * @param ciphertext - 16 bytes, 32 hex characters, or 32 modhex characters
+ * @returns `{ ok: true, fields }` or `{ ok: false, reason }`
+ */
+function yubiotpDecrypt(key, ciphertext) {
+  log.debug("Entering yubiotpDecrypt().");
+  const aes = yubiotpKey(key);
+  let block = null;
+  if (Buffer.isBuffer(ciphertext) && ciphertext.length === 16) {
+    block = ciphertext;
+  } else if (typeof ciphertext === 'string' &&
+             /^[0-9a-fA-F]{32}$/.test(ciphertext)) {
+    block = Buffer.from(ciphertext, 'hex');
+  } else {
+    block = yubiotpModhexDecode(ciphertext);
+  }
+  if (!aes || !block || block.length !== 16) {
+    log.debug("Leaving yubiotpDecrypt(). Unusable.");
+    return { ok: false, reason: 'shape' };
+  }
+  let plain;
+  try {
+    plain = yubiotpAes(aes, block, false);
+  } catch (e) {
+    log.debug("Caught in yubiotpDecrypt(): " + ((e && e.message) || e));
+    log.debug("Leaving yubiotpDecrypt(). It threw.");
+    return { ok: false, reason: 'unusable' };
+  }
+  const fields = yubiotpFields(plain);
+  log.debug("Leaving yubiotpDecrypt().");
+  return fields ? { ok: true, fields: fields }
+                : { ok: false, reason: 'unusable' };
+}
+
+/**
+ * Encrypts one 16-byte YubiKey OTP block.
+ *
+ * @param key - the AES-128 key
+ * @param plain - 16 bytes, or 32 hex characters
+ * @returns the ciphertext, or null
+ */
+function yubiotpEncrypt(key, plain) {
+  log.debug("Entering yubiotpEncrypt().");
+  const aes = yubiotpKey(key);
+  let block = null;
+  if (Buffer.isBuffer(plain) && plain.length === 16) {
+    block = plain;
+  } else if (typeof plain === 'string' && /^[0-9a-fA-F]{32}$/.test(plain)) {
+    block = Buffer.from(plain, 'hex');
+  }
+  if (!aes || !block) {
+    log.debug("Leaving yubiotpEncrypt(). Unusable.");
+    return null;
+  }
+  let out = null;
+  try {
+    out = yubiotpAes(aes, block, true);
+  } catch (e) {
+    log.debug("Caught in yubiotpEncrypt(): " + ((e && e.message) || e));
+    log.debug("Leaving yubiotpEncrypt(). It threw.");
+    return null;
+  }
+  log.debug("Leaving yubiotpEncrypt().");
+  return out;
+}
+
+/**
+ * HMAC-SHA1 as YK-VAL 2.0 signs a parameter list, base64 with padding.
+ *
+ * @param secret - the client key, base64
+ * @param message - the sorted parameter string
+ * @returns the signature
+ */
+function yubiotpHmacSha1(secret, message) {
+  log.debug("Entering yubiotpHmacSha1().");
+  let key;
+  try {
+    key = Buffer.from(String(secret || ''), 'base64');
+  } catch (e) {
+    log.debug("Caught in yubiotpHmacSha1(): " + ((e && e.message) || e));
+    key = Buffer.alloc(0);
+  }
+  const digest = nodeCrypto.createHmac('sha1', key)
+    .update(String(message == null ? '' : message), 'utf8')
+    .digest('base64');
+  log.debug("Leaving yubiotpHmacSha1().");
+  return digest;
+}
+
+// ---------------------------------------------------------------------------
 // PSKC (RFC 6030) — THE CRYPTOGRAPHY OF A VENDOR'S SEED FILE (#1955 P4).
 //
 // A hardware OATH token's vendor ships its secrets in a Portable Symmetric
@@ -19059,6 +19296,15 @@ module.exports = {
   HOTP_ALGS: HOTP_ALGS,
   hotpSpec: hotpSpec,
   hotpCode: hotpCode,
+  // #1955 P5: a YubiKey OTP block. Replay and the public identity are
+  // common/yubiotp.ts.
+  YUBIOTP_MODHEX: YUBIOTP_MODHEX,
+  yubiotpModhexDecode: yubiotpModhexDecode,
+  yubiotpModhexEncode: yubiotpModhexEncode,
+  yubiotpCrc16: yubiotpCrc16,
+  yubiotpDecrypt: yubiotpDecrypt,
+  yubiotpEncrypt: yubiotpEncrypt,
+  yubiotpHmacSha1: yubiotpHmacSha1,
   // #1955 P4: a PSKC seed file's decryption, MAC and PBKDF2.
   pskcAlgorithm: pskcAlgorithm,
   pskcDecrypt: pskcDecrypt,

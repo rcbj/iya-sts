@@ -255,6 +255,30 @@
     "en": "01c45765b9c3cd87",
     "text": "لم تُعَد مزامنة رمز للرموز لمرة واحدة"
   },
+  "audit.actions.portal.yubiotp.started.label": {
+    "en": "b206def4fb8ccc3d",
+    "text": "عُرض على شخص ما سطر برمجة OTP لـ YubiKey"
+  },
+  "audit.actions.portal.yubiotp.enrolled.label": {
+    "en": "00886a6cb1cc407b",
+    "text": "أعدّ شخص ما OTP لـ YubiKey على حسابه"
+  },
+  "audit.actions.portal.yubiotp.refused.label": {
+    "en": "bd0fa598eb880f3a",
+    "text": "لم يُؤكَّد إعداد OTP لـ YubiKey"
+  },
+  "audit.actions.portal.yubiotp.removed.label": {
+    "en": "57e0e2f87367e090",
+    "text": "أزال شخص ما OTP لـ YubiKey من حسابه"
+  },
+  "audit.actions.portal.yubiotp.claimed.label": {
+    "en": "452306461ebd5b17",
+    "text": "طالب شخص ما بـ OTP مستورد لـ YubiKey"
+  },
+  "audit.actions.portal.yubiotp.claim-refused.label": {
+    "en": "2f50c910534b974e",
+    "text": "لم يُطالَب بـ OTP لـ YubiKey"
+  },
   "audit.actions.portal.activate.mfa.started.label": {
     "en": "df561a24375c8165",
     "text": "عُرض سر تطبيق مصادقة أثناء استهلاك رابط تفعيل"
@@ -543,6 +567,30 @@
     "en": "92d69a1a2d848892",
     "text": "أُزيل رمز OATH غير مُسنَد من المخزون"
   },
+  "audit.actions.yubiotp.import.label": {
+    "en": "6f92401fa557c5e6",
+    "text": "استُورد ملف CSV لـ OTP الخاص بـ YubiKey، أو رُفض"
+  },
+  "audit.actions.yubiotp.assign.label": {
+    "en": "c4f793ef7a16734a",
+    "text": "أُسند OTP مستورد لـ YubiKey إلى شخص"
+  },
+  "audit.actions.yubiotp.claim.label": {
+    "en": "08d55e823350bd4a",
+    "text": "طالب شخص بـ OTP مستورد لـ YubiKey، أو رُفضت المطالبة"
+  },
+  "audit.actions.yubiotp.remove.label": {
+    "en": "a4a9aedd10cc2813",
+    "text": "أُزيل OTP غير مُسنَد لـ YubiKey من المخزون"
+  },
+  "audit.actions.yubiotp.client-add.label": {
+    "en": "40676cb783f36097",
+    "text": "أُنشئ عميل YK-VAL"
+  },
+  "audit.actions.yubiotp.client-remove.label": {
+    "en": "92433c797106d523",
+    "text": "أُزيل عميل YK-VAL"
+  },
   "audit.actions.device.key-add.label": {
     "en": "6c1b2513c20532ef",
     "text": "أُضيف مفتاح إلى جهاز"
@@ -726,6 +774,10 @@
   "audit.actions.admin.mfa.hotp.cleared.label": {
     "en": "027dab5576016e61",
     "text": "مسح مشغّل رمز الرموز لمرة واحدة لشخص ما"
+  },
+  "audit.actions.admin.mfa.yubiotp.cleared.label": {
+    "en": "f075ff8b6c725197",
+    "text": "أزال مشغّل YubiKey OTP الخاص بشخص"
   },
   "audit.actions.admin.mfa.key.cleared.label": {
     "en": "d62700d9f7751e8b",

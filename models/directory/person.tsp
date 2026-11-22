@@ -163,6 +163,8 @@ model Person {
   stsTotpCredential?: DirectoryJson;
   @attr(#{kind: "single", what: "The person's RFC 4226 HOTP credential (#1955), one JSON value: the shared secret, the digits, the next counter the token is expected to show, and for a vendor-provisioned token an administrator imported (PSKC) the token it is. Sealed under the key-encryption key in product mode, and withheld from every read.", sensitive: true})
   stsHotpCredential?: DirectoryJson;
+  @attr(#{kind: "single", what: "The person's YubiKey OTP credential (#1955 P5), one JSON value: the public identity in the clear, and the AES key and private identity sealed together. The server holds the key, so a sign-in is amr otp and never hwk. Withheld from every read.", sensitive: true})
+  stsYubiOtpCredential?: DirectoryJson;
   @attr(#{kind: "single", what: "The person's app passwords, one JSON value holding each one's name, the doors it is scoped to, its scrypt hash and its last use. Withheld from every read.", sensitive: true})
   stsAppPassword?: DirectoryJson;
   @attr(#{kind: "single", what: "The scrypt hash of a pending password reset link an administrator or the person started. Withheld from every read.", sensitive: true})

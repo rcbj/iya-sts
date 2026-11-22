@@ -998,5 +998,12 @@
   "mfaSection.hotpImported": "Aus der Seed-Datei des Herstellers importiert: {vendor}, Seriennummer {serial}",
   "mfaSection.hotpEnrolled": "Von der Person eingerichtet (QR-Code oder ykman)",
   "mfaSection.hotpUnusable": "Sein Geheimnis kann hier nicht gelesen werden, daher werden seine Codes abgelehnt.",
-  "mfaSection.clearHotp": "Einmalcode-Token löschen"
+  "mfaSection.clearHotp": "Einmalcode-Token löschen",
+  "mfaSection.yubiHeading": "YubiKey OTP",
+  "mfaSection.yubiSource": "Bereitgestellt",
+  "mfaSection.yubiImported": "Aus einer CSV importiert: Seriennummer {serial}",
+  "mfaSection.yubiEnrolled": "Von der Person eingerichtet (ykman)",
+  "mfaSection.yubiUnusable": "Das Geheimnis kann hier nicht gelesen werden, daher werden die Kennwörter abgelehnt.",
+  "mfaSection.yubiPublicId": "Öffentliche Identität",
+  "mfaSection.clearYubi": "YubiKey OTP löschen"
 }

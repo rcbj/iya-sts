@@ -17954,8 +17954,10 @@ class Authn {
     pendingMfa.delete(mfaId);
 
     const hotp = verdict.kind === 'hotp';
-    logArtifact(hotp ? 'RFC 4226 one-time code' : 'RFC 6238 one-time code',
-                'as verified by this server',
+    const yubi = verdict.kind === 'yubiotp';
+    const label = yubi ? 'YubiKey OTP'
+      : (hotp ? 'RFC 4226 one-time code' : 'RFC 6238 one-time code');
+    logArtifact(label, 'as verified by this server',
                 { username: step.username, step: verdict.counter,
                   drift: verdict.drift });
 
@@ -17978,8 +17980,11 @@ class Authn {
     // existed outside the token and the vendor's file. An app's secret, or a
     // token's programmed from the portal's QR code, never earns it. Never
     // `phr`: a typed code is phishable whatever produced it.
+    // A YubiKey OTP never earns hwk: this service holds the AES key
+    // (#1955 P5). The verifier also reports hardware false.
+    const hardware = yubi ? false : !!verdict.hardware;
     const amr = this.firstAmrOf(step).concat(
-      verdict.hardware ? ['otp', 'hwk'] : ['otp']);
+      hardware ? ['otp', 'hwk'] : ['otp']);
     // A PROOF BEFORE AN ENROLMENT (#475): no session yet; the set-up
     // screen, offering what the application allows.
     if (step.thenEnrol) {
@@ -17992,7 +17997,8 @@ class Authn {
                    application: String(step.authn.application || ''),
                    // The kind that answered (#1955 P4): `hotp` is its own
                    // mechanism to an application's named policy.
-                   credential: { kind: hotp ? 'hotp' : 'totp' } };
+                   credential: { kind: hotp ? 'hotp'
+                     : (yubi ? 'yubiotp' : 'totp') } };
     const started = this.startSession(res, step.username, amr, 'mfa',
                                       step.authn.protocol, said);
     if (this.refusedSession(res, base, step.authn, step.username, started,

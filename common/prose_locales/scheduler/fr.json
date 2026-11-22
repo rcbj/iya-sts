@@ -671,6 +671,14 @@
     "en": "167f79e724fe8b34",
     "text": "Supprime chaque ticket de permission, jeton de claims persisté, enregistrement de RPT et approbation de propriétaire en attente de User-Managed Access ayant dépassé sa durée de vie (#1168). Une lecture applique elle-même l’échéance : ceci est donc le nettoyage, jamais ce qui décide."
   },
+  "sched.jobs.yubiotp.nonce-sweep.title": {
+    "en": "dce74787b5ae6954",
+    "text": "Balayage des nonces d’OTP Yubico"
+  },
+  "sched.jobs.yubiotp.nonce-sweep.describe": {
+    "en": "21922132f2f9b5f8",
+    "text": "Écarte les nonces YK-VAL de plus de cinq minutes, et les plus anciens au-delà de dix mille, afin que la carte des nonces ne grandisse pas."
+  },
   "sched.sentence.onDemand": {
     "en": "92e0ecb68dc6ec36",
     "text": "à la demande uniquement"

@@ -531,6 +531,14 @@
     "en": "5ab7b9d048e74e7e",
     "text": "full, côté vérificateur, en tant que DEUXIÈME FACTEUR UNIQUEMENT (#1955 P4) : la troncature dynamique de la section 5.3 sur HMAC-SHA-1, SHA-256 ou SHA-512, six à huit chiffres, le compteur une valeur big-endian de huit octets, vérifiée avec les vecteurs de test de l’annexe D elle-même (tests/totp.js, tests/hotp.js) ; un compteur par identifiant avec l’anticipation de la section 7.4 (hotp.window, 10 par défaut, 0 autorisé) et la resynchronisation à partir de deux codes consécutifs (hotp.resyncWindow) ; le refus de rejeu de la section 7.2, le compteur avancé par compare-and-set dans le stockage pour que deux nœuds ou workers n’acceptent jamais un même code ; la limitation de la section 7.3 par le budget de codes de la connexion. Un emplacement OTP de YubiKey est programmé depuis le code otpauth://hotp ou la commande ykman du portail ; le jeton d’un fournisseur est importé (RFC 6030). Il vaut amr otp, et hwk seulement pour un jeton importé. NON couvert : le mécanisme de délai de la section 7.3 en tant que tel (le budget refuse à la place), et OCRA (RFC 6287)."
   },
+  "stsmetadata.specs.yubico-otp.coverage": {
+    "en": "57c44d60416042fb",
+    "text": "partial, côté vérificateur (#1955 P5) : l’OTP publié, une identité publique modhex suivie d’un bloc AES-128-ECB sans remplissage, résidu CRC-16 0xf0b8, et les compteurs d’usage et de session avancés par compare-and-set afin qu’un OTP soit accepté une seule fois. L’horodatage n’est pas vérifié. L’enrôlement est désactivé par défaut (yubiotp.offered). amr otp, jamais hwk, parce que ce service détient la clé AES. NON couvert : YubiCloud, et toute vérification de l’horodatage."
+  },
+  "stsmetadata.specs.yk-val.coverage": {
+    "en": "0adaef8d27031f8f",
+    "text": "partial, comme serveur de validation (#1955 P5) : GET et POST /wsapi/2.0/verify avec id, otp, nonce et h, HMAC-SHA1 sur les paramètres triés, et les statuts OK, BAD_OTP, BAD_SIGNATURE, MISSING_PARAMETER, NO_SUCH_CLIENT, OPERATION_NOT_ALLOWED, BACKEND_ERROR, REPLAYED_OTP et REPLAYED_REQUEST. Désactivé par défaut (yubiotp.ykval). Activé, l’identifiant du client et le HMAC sont vérifiés dans tous les modes. La réponse porte sl=100. NON couvert : le client YubiCloud, et un pourcentage de synchronisation autre que 100."
+  },
   "stsmetadata.specs.rfc6030.coverage": {
     "en": "35ef81e9394eb5f5",
     "text": "partial, en tant que DESTINATAIRE (#1955 P4) : un KeyContainer de version 1.0 avec des clés HOTP et TOTP, Manufacturer, SerialNo et Model de DeviceInfo, le ResponseFormat (6 à 8 chiffres décimaux), un Counter simple, Time (0 uniquement) et TimeInterval ; en clair (refusé en mode produit sauf avec pskc.allowPlaintextImport), une clé prépartagée (section 6.1 : AES-128/192/256-CBC et KW-AES) et une phrase secrète (section 6.2 : PBKDF2), le ValueMAC de la section 6.1.1 étant vérifié d’abord (HMAC-SHA1 et les MAC SHA-2). Vérifié avec les Figures 2 à 7 du RFC lui-même (tests/pskc.js). NON couvert : le chiffrement pour un certificat (6.3), une clé MAC par référence, Triple DES et Camellia, un compteur ou une heure chiffrés, les clés et politiques de PIN (ignorées), les signatures sur le conteneur (section 7), et la production d’un tel fichier."
@@ -2140,8 +2148,8 @@
     "text": "NON-SPEC (#1955 P4). Les jetons HOTP et TOTP que les administrateurs ont importés depuis les fichiers de semences PSKC des fournisseurs, non attribués, attribués ou retirés, paginés et recherchés par numéro de série ou personne. Jamais un secret. Reflète GET /admin/hardware-tokens (son onglet OATH)."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-    "en": "4309735f35f4550e",
-    "text": "NON-SPEC (#1955). lost, avec { key } : le jeton est marqué perdu, chaque clé d’accès qu’il porte est supprimée, chaque certificat qu’il porte est révoqué pour keyCompromise, chaque secret OATH importé est retiré de l’entrée de son détenteur, un changement d’identifiant CAEP est envoyé pour chacun et les sessions qu’ils ont ouvertes sont fermées. Depuis P4, import-pskc, avec { pskc, preSharedKey or password } : les clés HOTP et TOTP d’un fichier de semences RFC 6030 sont conservées non attribuées par numéro de série, le MAC vérifié d’abord et la clé jamais conservée ; assign-oath, avec { key, username } ; et remove-oath, avec { key }, pour un jeton non attribué."
+    "en": "107e4ff48ad53fb3",
+    "text": "NON-SPEC (#1955). lost, avec { key } : le jeton est marqué perdu, chaque clé d’accès qu’il porte est supprimée, chaque certificat qu’il porte est révoqué pour keyCompromise, chaque secret OATH importé est retiré de l’entrée de son détenteur, un changement d’identifiant CAEP est envoyé pour chacun et les sessions qu’ils ont ouvertes sont fermées. Depuis P4, import-pskc, avec { pskc, preSharedKey or password } : les clés HOTP et TOTP d’un fichier de semences RFC 6030 sont conservées non attribuées par numéro de série, le MAC vérifié d’abord et la clé jamais conservée ; assign-oath, avec { key, username } ; et remove-oath, avec { key }, pour un jeton non attribué. Depuis P5, import-yubiotp, avec { csv } ; assign-yubiotp, avec { serial, username, otp } ; remove-yubiotp, avec { serial } ; ykval-client-add, avec { id }, dont la clé HMAC n’est répondue qu’une fois ; et ykval-client-remove, avec { id }."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
     "en": "dabee6463ad7ee17",
@@ -3046,6 +3054,14 @@
   "stsmetadata.endpoints./authn/post-login.effect": {
     "en": "9547cda6898c37a6",
     "text": "demande une clé d’accès post-quantique après une connexion, puis établit la session de connexion qu’elle retenait"
+  },
+  "stsmetadata.endpoints./wsapi/2.0/verify.what": {
+    "en": "ff0550a4318594c6",
+    "text": "PROTOCOLE DE VALIDATION 2.0 DE YUBICO (#1955 P5). GET ou POST de id, otp, nonce et h. Désactivé par défaut : la route répond OPERATION_NOT_ALLOWED et ne signe rien. Activé, l’identifiant du client et le HMAC-SHA1 sont vérifiés dans tous les modes, y compris le développement ; un nonce est retenu cinq minutes ; un OTP correspondant est consommé. Cache-Control: no-store. Rien n’est envoyé à YubiCloud."
+  },
+  "stsmetadata.endpoints./wsapi/2.0/verify.effect": {
+    "en": "bb2bc4011c8240ac",
+    "text": "vérifie un OTP YubiKey pour un client qui a signé la requête, ou répond OPERATION_NOT_ALLOWED tant que yubiotp.ykval est désactivé"
   },
   "stsmetadata.endpoints./authn/totp.what": {
     "en": "b62d7bad9442ea5c",
@@ -4034,6 +4050,10 @@
   "stsmetadata.protocols.One-time passwords (TOTP).what": {
     "en": "54893544268bf168",
     "text": "L’autre deuxième facteur de l’écran de connexion vers lequel chaque protocole d’ici envoie une personne, et le seul identifiant, avec un ticket Kerberos, que ce service VÉRIFIE vraiment : le code est calculé à partir du secret partagé et de l’horloge puis comparé, dans les deux modes, avec la règle d’acceptation unique de RFC 6238 section 5.2 appliquée. L’enrôlement est un code QR que ce serveur a dessiné, sur /portal/mfa ou pendant l’utilisation d’un lien d’activation ; la ligne de la personne sur /admin/users est l’endroit où un opérateur l’efface, et /admin/totp celui où le mécanisme est configuré. Depuis #1955 P4, aussi son pendant à compteur : un jeton HOTP RFC 4226 (un emplacement OTP de YubiKey, enrôlé sur /portal/mfa, ou le jeton d’un fournisseur importé depuis son fichier de semences RFC 6030 dans Annuaire → Jetons matériels et attribué ou réclamé par numéro de série), son compteur avancé par compare-and-set, accepté à chaque point d’entrée qui prend un code."
+  },
+  "stsmetadata.protocols.Yubico OTP.what": {
+    "en": "462bb8049dda11d0",
+    "text": "Un emplacement OTP YubiKey vérifié sur ce service (#1955 P5). La clé AES-128 reste ici, donc une connexion est amr otp et jamais hwk. L’enrôlement, l’attribution et une revendication restent désactivés jusqu’à yubiotp.offered ; un identifiant déjà détenu est encore vérifié à l’étape du code à usage unique. GET et POST /wsapi/2.0/verify sont YK-VAL 2.0 et restent OPERATION_NOT_ALLOWED jusqu’à yubiotp.ykval. Aucune requête n’est envoyée à YubiCloud."
   },
   "stsmetadata.protocols.Recovery codes.what": {
     "en": "b7c9347c7ac4a2b7",

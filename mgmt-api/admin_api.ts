@@ -736,7 +736,8 @@ type RouteApp = typeof app;
 // everything they hold.
 const REAUTHENTICATED_ACTIONS = ['set-password', 'reset-password',
   'issue-password-reset', 'clear-totp', 'clear-key', 'clear-backup-codes',
-  'clear-email-factor', 'clear-hotp', 'disable-mfa', 'disable-primary-keys', 'set-mail',
+  'clear-email-factor', 'clear-hotp', 'clear-yubi', 'disable-mfa',
+  'disable-primary-keys', 'set-mail',
   'create-app-password', 'revoke-app-password', 'export-ldif',
   'import-ldif', 'delete'];
 
@@ -5100,6 +5101,8 @@ class AdminApi {
           // #1955 P4: a one-time code token, the same act for the other
           // kind of code.
           { action: 'clear-hotp', operationId: 'clearUserHotpToken' },
+          // #1955 P5: a YubiKey OTP, the same act for that credential.
+          { action: 'clear-yubi', operationId: 'clearUserYubiOtp' },
 
           // -----------------------------------------------------------------
           // THE THIRD REMOVAL (2026-09-10), AND IT IS ALSO THE ONLY ISSUING
@@ -5979,7 +5982,9 @@ class AdminApi {
 
           { action: 'clear-email-factor', operationId: 'clearEmailFactor' },
 
-          { action: 'clear-hotp', operationId: 'clearHotpToken' }
+          { action: 'clear-hotp', operationId: 'clearHotpToken' },
+
+          { action: 'clear-yubi', operationId: 'clearYubiOtp' }
         ] }),
 
       // ONE CREDENTIAL'S LINEAGE (#446): the console page had no

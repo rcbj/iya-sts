@@ -255,6 +255,30 @@
     "en": "01c45765b9c3cd87",
     "text": "Ein Einmalcode-Token wurde nicht neu synchronisiert"
   },
+  "audit.actions.portal.yubiotp.started.label": {
+    "en": "b206def4fb8ccc3d",
+    "text": "Jemandem wurde eine Programmierzeile für ein YubiKey-OTP angezeigt"
+  },
+  "audit.actions.portal.yubiotp.enrolled.label": {
+    "en": "00886a6cb1cc407b",
+    "text": "Jemand hat für das eigene Konto ein YubiKey-OTP eingerichtet"
+  },
+  "audit.actions.portal.yubiotp.refused.label": {
+    "en": "bd0fa598eb880f3a",
+    "text": "Die Einrichtung eines YubiKey-OTP wurde nicht bestätigt"
+  },
+  "audit.actions.portal.yubiotp.removed.label": {
+    "en": "57e0e2f87367e090",
+    "text": "Jemand hat das YubiKey-OTP vom eigenen Konto entfernt"
+  },
+  "audit.actions.portal.yubiotp.claimed.label": {
+    "en": "452306461ebd5b17",
+    "text": "Jemand hat ein importiertes YubiKey-OTP beansprucht"
+  },
+  "audit.actions.portal.yubiotp.claim-refused.label": {
+    "en": "2f50c910534b974e",
+    "text": "Ein YubiKey-OTP wurde nicht beansprucht"
+  },
   "audit.actions.portal.activate.mfa.started.label": {
     "en": "df561a24375c8165",
     "text": "Ein Geheimnis einer Authenticator-App wurde angezeigt, während ein Aktivierungslink eingelöst wurde"
@@ -543,6 +567,30 @@
     "en": "92d69a1a2d848892",
     "text": "Ein nicht zugewiesenes OATH-Token wurde aus dem Bestand entfernt"
   },
+  "audit.actions.yubiotp.import.label": {
+    "en": "6f92401fa557c5e6",
+    "text": "Eine YubiKey-OTP-CSV wurde importiert oder abgelehnt"
+  },
+  "audit.actions.yubiotp.assign.label": {
+    "en": "c4f793ef7a16734a",
+    "text": "Ein importiertes YubiKey-OTP wurde einer Person zugewiesen"
+  },
+  "audit.actions.yubiotp.claim.label": {
+    "en": "08d55e823350bd4a",
+    "text": "Eine Person hat ein importiertes YubiKey-OTP beansprucht, oder der Anspruch wurde abgelehnt"
+  },
+  "audit.actions.yubiotp.remove.label": {
+    "en": "a4a9aedd10cc2813",
+    "text": "Ein nicht zugewiesenes YubiKey-OTP wurde aus dem Bestand entfernt"
+  },
+  "audit.actions.yubiotp.client-add.label": {
+    "en": "40676cb783f36097",
+    "text": "Ein YK-VAL-Client wurde erstellt"
+  },
+  "audit.actions.yubiotp.client-remove.label": {
+    "en": "92433c797106d523",
+    "text": "Ein YK-VAL-Client wurde entfernt"
+  },
   "audit.actions.device.key-add.label": {
     "en": "6c1b2513c20532ef",
     "text": "Einem Gerät wurde ein Schlüssel hinzugefügt"
@@ -726,6 +774,10 @@
   "audit.actions.admin.mfa.hotp.cleared.label": {
     "en": "027dab5576016e61",
     "text": "Ein Betreiber hat das Einmalcode-Token einer Person gelöscht"
+  },
+  "audit.actions.admin.mfa.yubiotp.cleared.label": {
+    "en": "f075ff8b6c725197",
+    "text": "Ein Operator hat das YubiKey OTP einer Person gelöscht"
   },
   "audit.actions.admin.mfa.key.cleared.label": {
     "en": "d62700d9f7751e8b",

@@ -255,6 +255,30 @@
     "en": "01c45765b9c3cd87",
     "text": "一次性验证码令牌未能重新同步"
   },
+  "audit.actions.portal.yubiotp.started.label": {
+    "en": "b206def4fb8ccc3d",
+    "text": "向某人显示了 YubiKey OTP 编程行"
+  },
+  "audit.actions.portal.yubiotp.enrolled.label": {
+    "en": "00886a6cb1cc407b",
+    "text": "某人在自己的账户上设置了 YubiKey OTP"
+  },
+  "audit.actions.portal.yubiotp.refused.label": {
+    "en": "bd0fa598eb880f3a",
+    "text": "YubiKey OTP 的设置未得到确认"
+  },
+  "audit.actions.portal.yubiotp.removed.label": {
+    "en": "57e0e2f87367e090",
+    "text": "某人从自己的账户中移除了 YubiKey OTP"
+  },
+  "audit.actions.portal.yubiotp.claimed.label": {
+    "en": "452306461ebd5b17",
+    "text": "某人认领了导入的 YubiKey OTP"
+  },
+  "audit.actions.portal.yubiotp.claim-refused.label": {
+    "en": "2f50c910534b974e",
+    "text": "YubiKey OTP 未被认领"
+  },
   "audit.actions.portal.activate.mfa.started.label": {
     "en": "df561a24375c8165",
     "text": "在使用激活链接期间显示了身份验证器应用密钥"
@@ -543,6 +567,30 @@
     "en": "92d69a1a2d848892",
     "text": "未分配的 OATH 令牌已从清单中移除"
   },
+  "audit.actions.yubiotp.import.label": {
+    "en": "6f92401fa557c5e6",
+    "text": "导入或拒绝了 YubiKey OTP CSV"
+  },
+  "audit.actions.yubiotp.assign.label": {
+    "en": "c4f793ef7a16734a",
+    "text": "导入的 YubiKey OTP 已分配给某人"
+  },
+  "audit.actions.yubiotp.claim.label": {
+    "en": "08d55e823350bd4a",
+    "text": "某人认领了导入的 YubiKey OTP，或认领被拒绝"
+  },
+  "audit.actions.yubiotp.remove.label": {
+    "en": "a4a9aedd10cc2813",
+    "text": "未分配的 YubiKey OTP 已从清单中移除"
+  },
+  "audit.actions.yubiotp.client-add.label": {
+    "en": "40676cb783f36097",
+    "text": "已创建 YK-VAL 客户端"
+  },
+  "audit.actions.yubiotp.client-remove.label": {
+    "en": "92433c797106d523",
+    "text": "已移除 YK-VAL 客户端"
+  },
   "audit.actions.device.key-add.label": {
     "en": "6c1b2513c20532ef",
     "text": "向设备添加了一个密钥"
@@ -726,6 +774,10 @@
   "audit.actions.admin.mfa.hotp.cleared.label": {
     "en": "027dab5576016e61",
     "text": "操作员清除了某人的一次性验证码令牌"
+  },
+  "audit.actions.admin.mfa.yubiotp.cleared.label": {
+    "en": "f075ff8b6c725197",
+    "text": "操作员清除了某人的 YubiKey OTP"
   },
   "audit.actions.admin.mfa.key.cleared.label": {
     "en": "d62700d9f7751e8b",

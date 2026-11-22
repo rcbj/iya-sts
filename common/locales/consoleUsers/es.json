@@ -998,5 +998,12 @@
   "mfaSection.hotpImported": "Importado del archivo de semillas del proveedor: {vendor}, número de serie {serial}",
   "mfaSection.hotpEnrolled": "Inscrito por la persona (código QR o ykman)",
   "mfaSection.hotpUnusable": "Su secreto no se puede leer aquí, así que sus códigos se rechazan.",
-  "mfaSection.clearHotp": "Borrar el token de códigos de un solo uso"
+  "mfaSection.clearHotp": "Borrar el token de códigos de un solo uso",
+  "mfaSection.yubiHeading": "YubiKey OTP",
+  "mfaSection.yubiSource": "Aprovisionado",
+  "mfaSection.yubiImported": "Importado desde un CSV: número de serie {serial}",
+  "mfaSection.yubiEnrolled": "Registrado por la persona (ykman)",
+  "mfaSection.yubiUnusable": "Su secreto no se puede leer aquí, así que sus contraseñas se rechazan.",
+  "mfaSection.yubiPublicId": "Identidad pública",
+  "mfaSection.clearYubi": "Borrar el YubiKey OTP"
 }

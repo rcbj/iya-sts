@@ -1071,6 +1071,75 @@ Scope: `admin:write`.
 | `errors[]` | string |  |  |
 | `ok` | boolean |  |  |
 
+## POST /admin-api/hardware-tokens/assign-yubiotp
+
+`assignYubiOtp`
+
+**Assign an imported YubiKey OTP to a person (#1955)**
+
+Gives an unassigned YubiKey OTP to a named person. `otp` is one password the key types, and it is spent, so the same touch cannot also sign in. The AES key stays on this service, so later sign-ins are amr `otp` and never `hwk`. The hardware token register records evidence `yubiotp-import`. 404 for no such serial, 409 for one already assigned, 400 when yubiotp.offered is off or the OTP does not match.
+
+**Mirrors** `POST /admin/hardware-tokens` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `otp` | string | yes | One OTP the key types, which is spent. |
+| `serial` | string | yes | The token's serial. |
+| `username` | string | yes | The person it is given to. |
+
+**200**: The token is assigned.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `message` | string | yes |  |
+| `ok` | boolean | yes |  |
+| `token` | object | yes |  |
+| `token.holder` | string | yes |  |
+| `token.publicId` | string | yes |  |
+| `token.serial` | string | yes |  |
+| `token.status` | string | yes |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**404**: No such serial in this realm's inventory.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**409**: The token is already assigned.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
 ## POST /admin-api/hardware-tokens/import-pskc
 
 `importPskcSeedFile`
@@ -1129,6 +1198,54 @@ Scope: `admin:write`.
 | `skipped[].keyId` | string | yes |  |
 | `skipped[].serial` | string | yes |  |
 | `skipped[].why` | string | yes | Why it was not imported, in English. |
+
+**400**: The file was refused whole; `errors` says why and nothing was imported.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+## POST /admin-api/hardware-tokens/import-yubiotp
+
+`importYubiOtpCsv`
+
+**Import a YubiKey OTP CSV (#1955)**
+
+Reads a CSV of serial, modhex public id, hexadecimal private id and hexadecimal AES key, and keeps each row as an UNASSIGNED YubiKey OTP. A file in the clear is refused in product mode unless yubiotp.allowPlaintextImport is on. The secrets are sealed when the file is accepted, and the file is not kept. A row that cannot be imported is in `skipped` with the reason.
+
+**Mirrors** `POST /admin/hardware-tokens` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `csv` | string | yes | The CSV text. Columns are serial, modhex public id, hexadecimal private id and hexadecimal AES key. |
+
+**200**: What was imported and what was skipped.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `imported` | list | yes |  |
+| `imported[].publicId` | string | yes |  |
+| `imported[].serial` | string | yes |  |
+| `message` | string | yes |  |
+| `ok` | boolean | yes |  |
+| `skipped` | list | yes |  |
+| `skipped[].serial` | string | yes |  |
+| `skipped[].why` | string | yes |  |
 
 **400**: The file was refused whole; `errors` says why and nothing was imported.
 
@@ -1354,6 +1471,156 @@ Scope: `admin:write`.
 | `ok` | boolean |  |  |
 
 **409**: The token is assigned.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+## POST /admin-api/hardware-tokens/remove-yubiotp
+
+`removeYubiOtp`
+
+**Remove an unassigned YubiKey OTP from the inventory (#1955)**
+
+Removes a YubiKey OTP imported by mistake. An assigned one is refused (409): report the hardware token lost, which also takes the secret off its holder's entry. 404 for no such serial.
+
+**Mirrors** `POST /admin/hardware-tokens` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `serial` | string | yes | The token's serial. |
+
+**200**: The token is removed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `message` | string | yes |  |
+| `ok` | boolean | yes |  |
+| `serial` | string | yes |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**404**: No such serial in this realm's inventory.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**409**: The token is assigned.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+## POST /admin-api/hardware-tokens/ykval-client-add
+
+`addYkvalClient`
+
+**Create a YK-VAL client (#1955)**
+
+Creates a client that may call GET and POST /wsapi/2.0/verify. `id` is 1 to 16 digits. The HMAC-SHA1 key is in `key` and is shown once; it is not logged. The endpoint itself stays off until yubiotp.ykval is on.
+
+**Mirrors** `POST /admin/hardware-tokens` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `id` | string | yes | The client id, 1 to 16 digits. |
+
+**200**: The client is created and its key is shown once.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `id` | string | yes |  |
+| `key` | string | yes | The HMAC-SHA1 key, base64, shown once. |
+| `message` | string | yes |  |
+| `ok` | boolean | yes |  |
+
+**400**: The id was refused; `errors` says why.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+## POST /admin-api/hardware-tokens/ykval-client-remove
+
+`removeYkvalClient`
+
+**Remove a YK-VAL client (#1955)**
+
+Removes a YK-VAL client. 404 for no such id.
+
+**Mirrors** `POST /admin/hardware-tokens` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `id` | string | yes | The client id. |
+
+**200**: The client is removed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `id` | string | yes |  |
+| `message` | string | yes |  |
+| `ok` | boolean | yes |  |
+
+**404**: No such client.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
