@@ -352,6 +352,9 @@ model IntrospectionRequest {
 model DeviceAuthorizationRequest {
   @param(#{ kind: "scope", empty: true, cite: "RFC 8628 section 3.1" })
   scope?: string;
+
+  @param(#{ kind: "uri", cite: "RFC 8707 section 2" })
+  resource?: string[];
 }
 
 /**

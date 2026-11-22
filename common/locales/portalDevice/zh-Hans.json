@@ -2,6 +2,7 @@
   "request.heading": "这是您的设备吗？",
   "request.asks": "{client} 请求在显示代码 {code} 的设备上为您登录。",
   "request.access": "访问权限：<code>{scope}</code>。过期时间：{when}。",
+  "request.resources": "请求的资源：<code>{resources}</code>。",
   "request.noScope": "（未指定）",
   "request.warning": "<strong>只批准就在您面前</strong>、由您本人发起登录的设备。如果有人把这个代码发给您，他是在请您以您的身份登录他的设备。",
   "request.as": "您正在以 <strong>{name}</strong> 的身份批准：设备将以此账户登录。若要以此浏览器中已登录的其他账户批准，请先切换账户。",

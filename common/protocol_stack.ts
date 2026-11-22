@@ -343,6 +343,10 @@ class ProtocolStack {
     // moment of use.
     this.build('common/hardware_tokens', require('./hardware_tokens'),
                'HardwareTokens');
+    // #1955 P3: the per-realm SSH user CA's policy and hardware-token
+    // retirer. Its periodic KRL job is installed with the other scheduler
+    // jobs, after the scheduler itself is available below.
+    this.build('common/ssh_user_ca', require('./ssh_user_ca'), 'SshUserCa');
     // #1955 P2: YubiKey PIV key attestation, the PIV slot profiles' rules
     // and the outside PIV card mapping. A library (rule 3) of libraries; the
     // register and enrolment it calls back are reached at the moment of use.
@@ -605,6 +609,10 @@ class ProtocolStack {
     // with the credential store above).
     this.build('portal/account_tokens', require('../portal/account_tokens'),
                'AccountTokens');
+    // #1955 P3: SSH user certificates are managed through the Account API,
+    // not through a portal page.
+    this.build('account-api/ssh_user_ca',
+               require('../account-api/ssh_user_ca'), 'AccountSshUserCa');
     // #1955 P6: /portal/openpgp's operations, over `common/openpgp_keys`
     // (built beside the token register above).
     this.build('portal/account_openpgp', require('../portal/account_openpgp'),
@@ -1358,6 +1366,7 @@ class ProtocolStack {
     // same for its three sweeps at its own load; these two are called from
     // here because requiring them from there could close a load cycle.
     const jobScheduler = require('../cluster/scheduler');
+    require('./ssh_user_ca').installScheduler(jobScheduler);
     require('./admin_stats').ensureTokenPurgeJob(jobScheduler);
     require('../persistence/persistence_minted')
       .ensureTombstoneJob(jobScheduler);

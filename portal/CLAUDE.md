@@ -1052,7 +1052,8 @@ authorization request and the sign-out's address are the bytes they were.
   they authorize, and with two accounts signed in "you" is no longer
   obvious. So, with more than one live account in the browser's list, the
   request names the account it will be approved as (`device-as`,
-  `portalDevice.request.as`); otherwise the page is the one it was. A
+  `portalDevice.request.as`); the page also shows every requested RFC 8707
+  resource before approval. A
   `verification_uri_complete` opened in a new tab has no account of its own
   and signs in as any tab does: the picker where nothing chooses.
 * **THE LIST IS FETCHED ONLY WHERE THE SHELL SAYS SO** (`data-sts-accounts`,

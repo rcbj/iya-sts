@@ -46486,7 +46486,7 @@ op `recountPasskeyReport`(@js(#{`examples`:#[#{}]}) `requestBody/content/applica
   `formFactor`: string;
   @js(#{`description`:"Who holds it, by username; empty for an entry since deleted."}) `holder`: string;
   `attested`: boolean;
-  @js(#{`description`:"Where its serial came from: `fido-enterprise-attestation`, `piv-attestation`, `vendor-import`, `pskc-import`."}) `evidenceSources`: (string)[];
+  @js(#{`description`:"Where its serial came from: `fido-enterprise-attestation`, `piv-attestation`, `vendor-import`, `pskc-import`, `ssh-security-key-attestation`."}) `evidenceSources`: (string)[];
   @js(#{`description`:"`active` or `lost`."}) `status`: string;
   `lostAt`: string;
   `lostBy`: string;

@@ -5181,11 +5181,14 @@ presented.
   any node. The `oauth2.device-code-sweep` job removes what has expired.
 * **The endpoint** (`deviceAuthorizationRequest()`) authenticates the client
   through `authenticateEndpointCaller()`, as PAR and CIBA do, requires the
-  grant to be registered and asks the scope policy. An optional DPoP proof
-  binds the device code to its key.
+  grant to be registered and asks the scope policy. It accepts RFC 8707
+  `resource` indicators, validates their audiences before minting the code,
+  and carries the authorized resources through approval to the access token.
+  An optional DPoP proof binds the device code to its key.
 * **The portal page's two protections are RFC 8628 section 5's.** A code
-  only ever brings the request up — the client, the scopes and a sentence
-  about phishing — and approving is a second POST (section 5.4). A session
+  only ever brings the request up — the client, scopes, resource indicators
+  and a sentence about phishing — and approving is a second POST (section
+  5.4). A session
   that types five codes that match nothing is refused for ten minutes
   (section 5.1). The count is per process and capped at the insert.
 * **Key Binding** is in `oauth2.ts`, in every mode:

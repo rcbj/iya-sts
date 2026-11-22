@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5916** of them, in **56** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5923** of them, in **56** subsystems.
 
 ## Where a code appears
 
@@ -58,7 +58,7 @@ is an ordinary outcome.
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 24
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 198
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 275
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 282
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 57
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
@@ -1127,6 +1127,13 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0286` | A realm's credential-signing key could not be certified (#1880): no issuer identifier or key to name, or the JOSE Issuing CA refused. It still signs; its credentials carry no x5c until it is certified. | none: the credential is issued without x5c |
 | `STS-PKI-0287` | A realm's live credential-signing certificate was revoked for a reason that distrusts its key (keyCompromise, cACompromise, aACompromise, privilegeWithdrawn, certificateHold, unspecified or an unknown reason), so credentials are signed by a new key of the family from now on and the old key is neither published nor accepted while that revocation stands (#1880). | none: the credential is issued under the new key |
 | `STS-PKI-0288` | This realm's mdoc Issuing Authority CA or document signer could not be minted or restored (#1862): no credential issuer URI, a country code that is not ISO 3166-1 alpha-2, or the certificates could not be issued. An mdoc is not issued, and GET /oid4vci/mdoc-iaca answers 500. | the credential endpoint fails as it fails any signing error; the public certificate answers 500 |
+| `STS-PKI-0289` | A request to issue an SSH user certificate (#1955 P3) had an unsupported key, invalid principals, or a lifetime outside the allowed range. | The account API refuses the request |
+| `STS-PKI-0290` | The SSH user CA could not be created or used, a user certificate could not be signed or recorded, or its KRL could not be built (#1955 P3). | The account API or SSH KRL endpoint fails |
+| `STS-PKI-0291` | A requested SSH certificate revocation (#1955 P3) named a malformed serial or one this realm did not issue. | The account API refuses the request |
+| `STS-PKI-0292` | A public SSH user CA or KRL request (#1955 P3) named a scope that does not have a realm SSH user CA. | The public PKI endpoint refuses the request |
+| `STS-PKI-0293` | A person requested an SSH user certificate (#1955 P3) while pki.personSelfService is off. | The account API refuses the request |
+| `STS-PKI-0294` | An SSH user certificate request (#1955 P3) had no UID, named a principal the access policy refused, or its hardware evidence could not be verified or recorded. | The account API refuses the request |
+| `STS-PKI-0295` | A person requested SSH user certificates (#1955 P3) too often and the shared rate limiter refused it. | The account API refuses the request with HTTP 429 |
 
 ## STS-ENROLL
 

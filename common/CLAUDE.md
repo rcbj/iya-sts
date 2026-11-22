@@ -8199,11 +8199,31 @@ reason.
 for the process, and an Issuing CA under each for every use case: `jose`,
 `xml`, `assertions`, `spiffe`, and (since 2026-09-13) `pep-tls`, `acme`, `est`,
 `scep` and `tls-client` under a realm, `tls` under the process. (This sentence put `spiffe` under the
-process for two days after the paragraph below moved it.) **Every key pair this
+process for two days after the paragraph below moved it.) **Every X.509 key pair this
 service generates is a leaf of it**, so an
 operator installs one anchor and it covers the main port, LDAPS 636, the
 debugger listener and every token, assertion and signed document this service
 issues.
+
+### OpenSSH user certificates are a separate CA (#1955 P3)
+
+The realm's OpenSSH user CA is not an X.509 tier and is not signed by the
+service Root. It has its own Ed25519 key in the realm's sealed PKI row, and
+`pki_merge.js` merges the CA first-writer-wins and its issued serials by union.
+`ssh_user_ca.ts` issues only for a caller's UID or group CN, asks XACML once
+per requested principal, and records the token subject as owner of each
+serial. The Account API's issue operation requires recent authentication,
+honours `pki.personSelfService` and the existing per-person/address rate
+limits; revocation checks that same token subject and updates the KRL.
+
+The CA key and KRL are public, `no-store` documents at
+`/pki/ssh-user-ca/{scope}` and `/pki/ssh-user-krl/{scope}`. A relying SSH
+server must configure the first as a trusted user CA and the second as its
+revocation list; publishing either cannot make a server consult it. A lost
+hardware token retires every SSH certificate associated with its key
+fingerprint through the hardware-token retirer. Security-key evidence is
+verified against the authenticator data and configured attestation anchors;
+a stored PIV-attested certificate earns the same hardware-bound lifetime.
 
 **WHAT REVERSED IS THE SENTENCE BELOW, and what replaced it is not a weaker
 claim.** *IT IS PER REALM* used to be argued here as: a CA shared across realms
@@ -12755,7 +12775,8 @@ this directory has to know beside it:
 * **A serial is recorded only from attestation**: `recordAttested()` is the
   one writer and takes an evidence source from a closed list
   (`fido-enterprise-attestation`, `piv-attestation` since P2, `vendor-import`,
-  and `pskc-import` since P4). No door takes a serial from a body.
+  `pskc-import` since P4, and `ssh-security-key-attestation` since P3). No
+  door takes a serial from a body.
   `attachCredential()` (P2, D7) adds a credential to a token that is
   ALREADY in the register and held by the caller, with `hardware: false`
   evidence; it records no serial.

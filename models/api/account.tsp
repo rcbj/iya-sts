@@ -5062,6 +5062,142 @@ op `actOnTokens`(`requestBody/content/application~1json/schema`: {
     `description`:"A refusal or a failure, in English. No error code is ever in it."
   }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
 
+// #1955 P3: SSH user certificates are Account API operations, not a portal
+// page. The caller's token subject owns every issued serial.
+@hoisted model SshUserCertificateAnswer {
+  `ok`: boolean;
+  `certificate`: string;
+  `serialHex`: string;
+  `validAfter`: integer;
+  `validBefore`: integer;
+  `hardwareBound`: boolean
+}
+
+@endpoint("/account-api/ssh/certificates",
+  "post",
+  #{
+    `operationId`:"issueSshCertificate",
+    `tags`:#[ "SSH" ],
+    `summary`:"Issues an SSH user certificate",
+    `description`:"Certifies one authorized public key for principals belonging to the caller, with a separate authorization decision for every principal. Security-key evidence is verified before it can produce a hardware-bound certificate. The caller may revoke only certificates issued to their own token subject.",
+    `parameters`:#[ ],
+    `responses`:#{
+      `200`:#{
+        `description`:"The OpenSSH user certificate, in authorized-key format.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The request did not validate or the key could not be issued.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"No valid DPoP-bound account access token.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"A requested principal or hardware evidence was refused.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `429`:#{
+        `description`:"The caller exceeded the certificate issuance rate limit.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `503`:#{
+        `description`:"The SSH user CA is not available.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`portal`:#["account:manage"]}],
+    `x-access`:"person",
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`publicKey`:"ssh-ed25519 invalid",`principals`:#["alice"]}}}}
+  })
+op `issueSshCertificate`(
+  `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"One OpenSSH public key line; certificate keys and authorized-key options are not accepted.",`maxLength`:8192}) `publicKey`: string;
+    @js(#{`description`:"The requested principals. Each must be the caller's username or one of their group common names.",`maxItems`:32}) `principals`: string[];
+    @js(#{`description`:"Certificate lifetime in seconds. Defaults to 300; maximum 300 for ordinary keys and 3600 with verified hardware evidence.",`minimum`:60,`maximum`:3600}) `lifetimeS`?: integer;
+    @js(#{`description`:"Base64 OpenSSH security-key attestation evidence, required for `sk-*` keys.",`maxLength`:87384}) `attestation`?: string
+  },
+  `responses/200/content/application~1json/schema`: SshUserCertificateAnswer,
+  @js(#{`description`:"A refusal or a failure, in English. No error code is ever in it."})
+    `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{`description`:"A refusal or a failure, in English. No error code is ever in it."})
+    `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{`description`:"A refusal or a failure, in English. No error code is ever in it."})
+    `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{`description`:"A refusal or a failure, in English. No error code is ever in it."})
+    `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{`description`:"A refusal or a failure, in English. No error code is ever in it."})
+    `responses/503/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{`description`:"A refusal or a failure, in English. No error code is ever in it."})
+    `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
+
+@endpoint("/account-api/ssh/certificates/revoke",
+  "post",
+  #{
+    `operationId`:"revokeSshCertificate",
+    `tags`:#[ "SSH" ],
+    `summary`:"Revokes an SSH user certificate",
+    `description`:"Revokes a certificate issued to the caller's token subject and updates the realm's OpenSSH KRL. A certificate belonging to another subject is not disclosed.",
+    `parameters`:#[ ],
+    `responses`:#{
+      `200`:#{
+        `description`:"The certificate was revoked.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The serial is invalid.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"No valid DPoP-bound account access token.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"The revocation was refused.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `404`:#{
+        `description`:"No certificate with this serial belongs to the caller.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `503`:#{
+        `description`:"The SSH user CA is not available.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`portal`:#["account:manage"]}],
+    `x-access`:"person",
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`serialHex`:"ffffffffffffffff"}}}}
+  })
+op `revokeSshCertificate`(
+  `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The serial from a certificate previously issued to this caller, in hexadecimal.",`maxLength`:16}) `serialHex`: string
+  },
+  `responses/200/content/application~1json/schema`: {
+    `ok`: boolean;
+    `revoked`: boolean
+  },
+  @js(#{`description`:"A refusal or a failure, in English. No error code is ever in it."})
+    `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{`description`:"A refusal or a failure, in English. No error code is ever in it."})
+    `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{`description`:"A refusal or a failure, in English. No error code is ever in it."})
+    `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{`description`:"A refusal or a failure, in English. No error code is ever in it."})
+    `responses/404/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{`description`:"A refusal or a failure, in English. No error code is ever in it."})
+    `responses/503/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{`description`:"A refusal or a failure, in English. No error code is ever in it."})
+    `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
 
 // #1955 P6: THE PERSON'S OpenPGP KEY AND MAIL ENCRYPTION (`portal/account_openpgp.ts`).
 @hoisted model OpenPgpPortalView {

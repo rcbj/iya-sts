@@ -141,14 +141,17 @@ const CREDENTIAL_KINDS = ['fido', 'x509', 'hotp', 'totp', 'yubico-otp',
 
 /**
  * Where a serial may come from: the FIDO enterprise attestation (#532), a
- * PIV key attestation (P2), an administrator's vendor import, and since P4
- * `pskc-import`: an OATH token's serial from the DeviceInfo of its vendor's
- * RFC 6030 seed file, recorded when the token is assigned or claimed. A
- * secret enrolled from a QR code names no serial and is never recorded.
+ * PIV key attestation (P2), an administrator's vendor import, since P4
+ * `pskc-import` (an OATH token's serial from the DeviceInfo of its vendor's
+ * RFC 6030 seed file, recorded when the token is assigned or claimed), and
+ * since P3 `ssh-security-key-attestation` (the serial an OpenSSH security
+ * key's attestation names when an SSH user certificate is issued for it).
+ * A secret enrolled from a QR code names no serial and is never recorded.
  * Nothing else records a serial.
  */
 const EVIDENCE_SOURCES = ['fido-enterprise-attestation', 'piv-attestation',
-                          'vendor-import', 'pskc-import'];
+                          'vendor-import', 'pskc-import',
+                          'ssh-security-key-attestation'];
 
 /** A token's status: `active` or `lost`. */
 const STATUSES = ['active', 'lost'];

@@ -1027,7 +1027,7 @@ Scope: `admin:read`.
 | `tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
 | `tokens[].credentials[].smartCard` | boolean | yes | Whether the evidence says its key is on a smart card. |
 | `tokens[].credentials[].source` | string | yes | The evidence source it was recorded from. |
-| `tokens[].evidenceSources` | list | yes | Where its serial came from: `fido-enterprise-attestation`, `piv-attestation`, `vendor-import`, `pskc-import`. |
+| `tokens[].evidenceSources` | list | yes | Where its serial came from: `fido-enterprise-attestation`, `piv-attestation`, `vendor-import`, `pskc-import`, `ssh-security-key-attestation`. |
 | `tokens[].evidenceSources[]` | string |  |  |
 | `tokens[].firmware` | string | yes |  |
 | `tokens[].formFactor` | string | yes |  |
@@ -1365,7 +1365,7 @@ Scope: `admin:write`.
 | `token.credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
 | `token.credentials[].smartCard` | boolean | yes | Whether the evidence says its key is on a smart card. |
 | `token.credentials[].source` | string | yes | The evidence source it was recorded from. |
-| `token.evidenceSources` | list | yes | Where its serial came from: `fido-enterprise-attestation`, `piv-attestation`, `vendor-import`, `pskc-import`. |
+| `token.evidenceSources` | list | yes | Where its serial came from: `fido-enterprise-attestation`, `piv-attestation`, `vendor-import`, `pskc-import`, `ssh-security-key-attestation`. |
 | `token.evidenceSources[]` | string |  |  |
 | `token.firmware` | string | yes |  |
 | `token.formFactor` | string | yes |  |
