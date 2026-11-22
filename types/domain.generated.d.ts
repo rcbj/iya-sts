@@ -80,6 +80,7 @@ declare namespace IyaDomain {
     fgaPolicy?: string;
     fgaEnforced?: string;
     umaOwnsResources?: string;
+    appDynamicRoleSelection?: string;
     verifiableCredentialPartner?: VerifiableCredentialPartner;
     wsTrustRelyingParty?: WsTrustRelyingParty;
     kerberosService?: KerberosService;
@@ -228,6 +229,9 @@ declare namespace IyaDomain {
     lockedSince?: string;
     userCertificate?: string[];
     krb5KeyInfo?: string;
+    openPgpKey?: string;
+    openPgpFingerprint?: string;
+    openPgpKeyInfo?: string;
     hobaPublicKey?: string[];
     activationExpires?: string;
     passwordResetExpires?: string;
@@ -240,6 +244,7 @@ declare namespace IyaDomain {
     publishedDid?: string[];
     cibaUserCode?: string;
     androidAttestedCredential?: string[];
+    pivCardUuid?: string[];
     webauthnUserHandle?: string;
     webauthnPqcUserHandle?: string;
     mailVerifyToken?: string;
@@ -682,6 +687,8 @@ declare namespace IyaDomain {
     attestationAlgorithms?: string;
     adminEnrolment?: string;
     deviceBoundRequired?: string;
+    credProtect?: string;
+    enforceCredProtect?: string;
     precedence?: number;
     description?: string[];
     stsRecoveryPending?: string;
@@ -755,6 +762,7 @@ declare namespace IyaDomain {
     authzenApplication?: string[];
     authzenCallbackUri?: string[];
     mailVerified?: string;
+    mailEncryption?: string;
     audSub?: string[];
   }
 
@@ -792,6 +800,10 @@ declare namespace IyaDomain {
     roleAllowedMemberType?: string[];
     owner?: string[];
     stsOwnerProtected?: boolean;
+    roleMembershipMode?: string;
+    roleEligibilityPolicy?: string;
+    roleSelection?: string;
+    roleSelectionExclusive?: string;
   }
 
   /**
@@ -1210,6 +1222,7 @@ declare namespace IyaDomain {
     application?: string;
     orphanedAt?: string;
     pepRoute?: string;
+    role?: string;
   }
 
   interface Concepts {

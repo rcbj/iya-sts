@@ -38,6 +38,7 @@
 const assert = require("assert");
 const tls = require("tls");
 const K = require("./oauth_wire_kit.js").kit("sts_pki_process_scope");
+const serviceTrust = require("../tools/service_trust.js");
 const log = K.log;
 
 const FLOOR = 3;
@@ -60,7 +61,7 @@ function presentedRoot() {
   const url = new URL(K.base);
   return new Promise(function (resolve, reject) {
     const socket = tls.connect({ host: url.hostname, port: Number(url.port),
-      servername: url.hostname, rejectUnauthorized: false }, function () {
+      servername: url.hostname, ca: serviceTrust.trustedCa() }, function () {
       let one = socket.getPeerCertificate(true);
       const seen = {};
       let last = null;

@@ -26,6 +26,9 @@
 // ===========================================================================
 'use strict';
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const path = require('path');
 const childProcess = require('child_process');
 
@@ -105,39 +108,40 @@ function child() {
     };
     const own = signIn('cella.idp.example');
     note(own.started && own.started.ok !== false &&
-         own.res.location.indexOf('https://cella.idp.example/oauth2/' +
-                                  'authorize?') === 0 &&
-         own.res.location.indexOf(encodeURIComponent(
-           'https://cella.idp.example/admin/callback')) > 0,
+         urls.isAt(own.res.location,
+                   'https://cella.idp.example/oauth2/authorize') &&
+         // The callback is the request's redirect_uri, read as a parameter.
+         new URL(own.res.location).searchParams.get('redirect_uri') ===
+           'https://cella.idp.example/admin/callback',
          'C1. the console reached at this cell\'s own address signs in ' +
          'there: its authorization request and its callback are on that host',
          own.res.location.slice(0, 200) + ' ' +
          JSON.stringify(own.started).slice(0, 200));
-    note(uris().indexOf('https://cella.idp.example/admin/callback') >= 0,
+    note(urls.holds(uris(), 'https://cella.idp.example/admin/callback'),
          'C2. and the callback is REGISTERED on the console\'s client — a ' +
          'configured address, believed in product mode', uris().join(' '));
     const peer = signIn('cellb.idp.example');
-    note(peer.res.location.indexOf('https://cellb.idp.example/oauth2/' +
-                                   'authorize?') === 0 &&
-         uris().indexOf('https://cellb.idp.example/admin/callback') >= 0,
+    note(urls.isAt(peer.res.location,
+                   'https://cellb.idp.example/oauth2/authorize') &&
+         urls.holds(uris(), 'https://cellb.idp.example/admin/callback'),
          'C3. so is another cell\'s console address, which a relayed ' +
          'request arrives at', peer.res.location.slice(0, 120));
     const shared = signIn('idp.example');
-    note(shared.res.location.indexOf('https://idp.example/oauth2/' +
-                                     'authorize?') === 0,
+    note(urls.isAt(shared.res.location,
+                   'https://idp.example/oauth2/authorize'),
          'C4. the shared public name signs in on the shared name, as before',
          shared.res.location.slice(0, 120));
     const before = uris().length;
     const evil = signIn('evil.example');
     note((evil.res.location === '' ||
-          evil.res.location.indexOf('https://idp.example/') === 0) &&
+          urls.isUnder(evil.res.location, 'https://idp.example/')) &&
          uris().length === before &&
          uris().join(' ').indexOf('evil.example') < 0,
          'C5. a Host that is no configured console address gets the public ' +
          'name, and plants nothing', evil.res.location.slice(0, 120));
     const portal = signIn('cella.idp.example', 'portal');
-    note(portal.res.location.indexOf('https://idp.example/oauth2/' +
-                                     'authorize?') === 0,
+    note(urls.isAt(portal.res.location,
+                   'https://idp.example/oauth2/authorize'),
          'C6. only the CONSOLE signs in at a cell\'s address; the portal ' +
          'keeps the shared name', portal.res.location.slice(0, 120));
     // C7-C9 — what rcbj met at the cac1 console on 2026-09-30.

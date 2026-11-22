@@ -93,5 +93,8 @@
   "mail.link": "البريد",
   "mail.noneAfter": ")، لذا يُعرض {what} عليك لتمريره.",
   "mail.box": "أرسل {what} بالبريد إلى العنوان في إدخاله، ولا تعرضه لي",
-  "grid.required": " &middot; مطلوب"
+  "grid.required": " &middot; مطلوب",
+  "create.requiredFields": "مطلوب: {list}. كل منها محاط بإطار أحمر ومُعلَّم بـ *؛ وجميع الحقول الأخرى اختيارية.",
+  "create.nothingRequired": "لا شيء مطلوب في هذا النموذج.",
+  "create.requiredWhen": " &middot; مطلوب عندما يكون {field} هو {values}"
 }

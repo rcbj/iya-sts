@@ -71,5 +71,7 @@
   "jobOn": "sa",
   "scheduler": "Scheduler",
   "jobOnEnd": ".",
-  "settings": "Mga setting"
+  "settings": "Mga setting",
+  "newSource.button": "Magdagdag ng source",
+  "newSource.yes": "oo"
 }

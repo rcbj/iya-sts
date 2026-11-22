@@ -45,12 +45,18 @@ printf '%s' "${TASK_IP}" > "${OUT}/task-ip" 2>/dev/null || true
 chmod 0644 "${OUT}/task-ip" 2>/dev/null || true
 
 deadline=$(( $(date +%s) + ${STS_SUITE_WAIT_SECS:-900} ))
+# VERIFIED (2026-11-20): tests/tools/trust.js's anchorsFor() answers the
+# system roots, or with them the Root the service publishes on its
+# revocation listener when those do not verify it; the wait is for a
+# service that answers over a chain that verifies, chain and name.
 until node -e '
-  require("https").get(process.argv[1] + "/healthcheck",
-    { rejectUnauthorized: false, timeout: 5000 },
-    function (r) { process.exit(r.statusCode === 200 ? 0 : 1); })
-    .on("error", function () { process.exit(1); })
-    .on("timeout", function () { process.exit(1); });' "${URL}";
+  const url = process.argv[1];
+  require("./tests/tools/trust").anchorsFor(url).then(function (ca) {
+    require("https").get(url + "/healthcheck", { ca: ca, timeout: 5000 },
+      function (r) { process.exit(r.statusCode === 200 ? 0 : 1); })
+      .on("error", function () { process.exit(1); })
+      .on("timeout", function () { process.exit(1); });
+  }, function () { process.exit(1); });' "${URL}";
 do
   if [ "$(date +%s)" -ge "${deadline}" ];
   then

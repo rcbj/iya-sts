@@ -304,6 +304,8 @@ const MFA_SETUP_PATH = '/authn/mfa-setup';
  * The path where a sign-in asks for a post-login activity.
  */
 const POST_LOGIN_PATH = '/authn/post-login';
+// The role step (#1072): the dynamic roles a sign-in may choose.
+const ROLES_PATH = '/authn/roles';
 // ---------------------------------------------------------------------------
 // THE SIGN-IN SCREEN AS A STATIC SURFACE (#571, 2026-10-12).
 //
@@ -824,6 +826,8 @@ const ARRIVAL_PATHS = [
   '/authn/mfa-setup',
   // AND THE POST-LOGIN ACTIVITY'S (#1096), for the same reason.
   '/authn/post-login',
+  // AND THE ROLE STEP'S (#1072), for the same reason.
+  '/authn/roles',
   '/authn/webauthn',
   '/authn/totp',
   '/authn/backup-code',
@@ -1179,7 +1183,8 @@ const STEP_PAGES: Record<string, string> = {
   'backup-code': BACKUP_CODE_PATH,
   password: PASSWORD_FACTOR_PATH,
   setup: MFA_SETUP_PATH,
-  'post-login': POST_LOGIN_PATH
+  'post-login': POST_LOGIN_PATH,
+  roles: ROLES_PATH
 };
 
 const MFA_STEP_QUERY = vz.object({
@@ -6632,6 +6637,20 @@ class Authn {
       out = view ? { key: String(view.key), vendor: String(view.vendor),
                      model: String(view.model), source: String(ev.source),
                      smartCard: !!ev.smartCard } : null;
+      // WHAT THE ATTESTATION SAID OF THE KEY (#1955 P2, X4), where it said
+      // it: a PIV key's PIN and touch policies, the token's firmware, form
+      // factor and FIPS mark. Absent, never empty, where it did not.
+      if (out) {
+        ['pinPolicy', 'touchPolicy', 'firmware', 'formFactor']
+          .forEach(function (name: string): void {
+            if (ev[name]) {
+              out[name] = String(ev[name]);
+            }
+          });
+        if (ev.fips === true) {
+          out.fips = true;
+        }
+      }
     } catch (e) {
       helpers.log.debug("Caught in Authn.hardwareTokenOf(): " +
                         ((e && e.message) || e));
@@ -6831,6 +6850,23 @@ class Authn {
     session.authTime = event.at;
     session.via = event.via;
     session.lastSeenAt = Date.now();
+    // A ROLE CHOICE MADE ON THIS SIGN-IN (#1072) REPLACES the session's for
+    // its application, and only for it: the portal's "Sign in again" is how
+    // a person chooses for a second application without losing the first's
+    // choice. A sign-in whose role step did not run changes nothing here;
+    // what it still carries is asked of each policy at every issuance.
+    if (extra.rolesDone === true && extra.application) {
+      const forApp = String(extra.application);
+      session.selectedRoles = (Array.isArray(session.selectedRoles)
+        ? session.selectedRoles : []).filter(function (one: any) {
+        return one && String(one.application || '') !== forApp;
+      }).concat((Array.isArray(extra.selectedRoles) ? extra.selectedRoles
+                                                     : [])
+        .map(function (one: any) {
+          return { role: String(one.role), application: forApp,
+                   at: Number(one.at) || 0 };
+        }));
+    }
     this.markPresentationHeld(session, true);
     this.bindPartnerSession(session, extra);
     const cookieValue = this.mintSessionHandle(session);
@@ -8675,6 +8711,66 @@ class Authn {
     }
 
     // -------------------------------------------------------------------------
+    // THE DYNAMIC ROLES THIS SIGN-IN MAY CHOOSE (#1072), asked once every
+    // rule above has said yes and before a post-login activity, which is
+    // asked on the session the role step then starts. HELD like a
+    // post-login activity, for its reason: a session started first would be
+    // one the person could take to the application without choosing, and a
+    // REQUIRED role (rcbj's decision 3) would be one click from skipped.
+    //
+    // The door that can draw the step — the screen's own, `postLoginHold` —
+    // gets `extra.roleSelection`, and `refusedSession()` decides with the
+    // pending sign-in in hand: the step where the person ticked the box or a
+    // role is required, and the session at once, with no role, otherwise.
+    // A DOOR THAT CANNOT DRAW IT is refused where a role is required
+    // (STS-XACML-0329) and otherwise starts with no dynamic role (rcbj's
+    // decision 5): it never assumes a choice.
+    //
+    // Never for a keyed caller, an unauthenticated session, a call with no
+    // request or application, or the session the step itself starts
+    // (`rolesDone`).
+    // -------------------------------------------------------------------------
+    const roleOffer = extra.authenticated === false || extra.key ||
+      extra.rolesDone === true || !extra.request || !username ||
+      !extra.application
+      ? null
+      : this.roleOfferFor(String(username), String(extra.application),
+                          amr, String(acr || ''));
+    if (roleOffer && extra.postLoginHold === true) {
+      extra.roleSelection = { offer: roleOffer, amr: (amr || []).slice(),
+                              acr: String(acr || ''), via: String(via || '') };
+      extra.refusedWith = 'STS-XACML-0330';
+      extra.refusedWhy = 'You have to choose your roles after signing in. ' +
+        'Start the request again from the application that sent you here.';
+      log.info('authn: the session for "' + username + '" is HELD at the ' +
+               (via || 'sign-in') + ' door: ' + roleOffer.offered.length +
+               ' dynamic role(s) may be chosen' +
+               (roleOffer.required ? ', one required' : '') + '.');
+      log.debug("Leaving Authn.startSessionHere(). Held for the role step.");
+      return null;
+    }
+    if (roleOffer && roleOffer.required) {
+      log.info(errorCodes.tag('STS-XACML-0329') + 'authn: a session for "' +
+               username + '" was REFUSED at the ' + (via || 'sign-in') +
+               ' door: a required dynamic role cannot be chosen there.');
+      audit.audit({
+        action: 'roles.selection.refused', actor: String(username),
+        errorCode: 'STS-XACML-0329', outcome: 'failure',
+        protocol: via || 'OAuth 2.0 / OIDC', channel: 'http', target: '',
+        summary: 'a session for ' + username + ' was refused at the ' +
+                 (via || 'sign-in') + ' door: a required dynamic role ' +
+                 'cannot be chosen there',
+        detail: { application: String(extra.application || '') } });
+      extra.refusedWith = 'STS-XACML-0329';
+      extra.refusedWhy = 'This application needs you to choose a role when ' +
+        'you sign in, which cannot be done this way. Sign in at this ' +
+        'service\'s sign-in screen.';
+      log.debug("Leaving Authn.startSessionHere(). A required dynamic role " +
+                "this door cannot ask for.");
+      return null;
+    }
+
+    // -------------------------------------------------------------------------
     // A POST-LOGIN ACTIVITY (#1096), asked LAST of the questions that may
     // refuse, so a sign-in held for one is a sign-in that would otherwise
     // have started: every rule above has already said yes.
@@ -9069,7 +9165,18 @@ class Authn {
       // the issuance policy reads — level, score, signals, the assessment's
       // id — so every token issued on this session is decided on it. Null
       // where the door assessed nothing. P4's re-scoring replaces it.
-      risk: risk
+      risk: risk,
+      // THE DYNAMIC ROLES THIS SIGN-IN CHOSE (#1072): `{ role, application,
+      // at }` rows, each for the application the sign-in was for, read at
+      // every issuance by `authn/role_selection.ts` and asked of each role's
+      // policy again there. The ONLY place a choice is kept: nothing is
+      // written to the directory, so it ends with the session.
+      selectedRoles: Array.isArray(extra.selectedRoles)
+        ? extra.selectedRoles.map(function (one: any) {
+          return { role: String(one.role),
+                   application: String(one.application || ''),
+                   at: Number(one.at) || 0 };
+        }) : []
     };
     this.bindPartnerSession(session, extra);
     // Room before the handle, so a refused row is not stored and has no
@@ -11974,7 +12081,11 @@ class Authn {
         acr: String(hold.acr || ''), via: String(hold.via || ''),
         application: String(said.application || ''),
         credential: said.credential || null, gated: said.gated === true,
-        method: said.method ? String(said.method) : '' },
+        method: said.method ? String(said.method) : '',
+        // The role step's choice (#1072), made before this step was asked.
+        rolesDone: said.rolesDone === true,
+        selectedRoles: Array.isArray(said.selectedRoles)
+          ? said.selectedRoles : [] },
       risk: said.risk, riskDecision: said.riskDecision,
       expires: Date.now() + this.mfaStepTtlMs()
     });
@@ -12015,7 +12126,11 @@ class Authn {
                         gated: held.gated === true,
                         application: String(held.application || ''),
                         credential: held.credential || { kind: 'password' },
-                        risk: step.risk, riskDecision: step.riskDecision };
+                        risk: step.risk, riskDecision: step.riskDecision,
+                        // The role step's choice (#1072), kept.
+                        rolesDone: held.rolesDone === true,
+                        selectedRoles: Array.isArray(held.selectedRoles)
+                          ? held.selectedRoles : [] };
     if (held.method) {
       said.method = String(held.method);
     }
@@ -12029,6 +12144,241 @@ class Authn {
     }
     this.returnToCaller(res, step.authn, null, null);
     log.debug("Leaving Authn.finishPostLogin(). Signed in.");
+  }
+
+  // ---------------------------------------------------------------------------
+  // DYNAMIC SELECTABLE ROLES (#1072). Whether the realm and the application
+  // offer them, what this person may be offered, the step that asks, and the
+  // session it held, started with the choice on it.
+  // ---------------------------------------------------------------------------
+  // `roles.dynamicSelection`, with the application's `appDynamicRoleSelection`
+  // overriding it (rcbj's decision 2). Hot path: asked by the sign-in screen
+  // and every held sign-in, so no Entering/Leaving pair would drown the log.
+  private roleSelectionOn(application: string): boolean {
+    const { applications, config } = this.deps;
+    try {
+      return !!application &&
+        applications.settingFor(String(application),
+                                'roles.dynamicSelection', config) === true;
+    } catch (e) {
+      this.deps.log.debug("Caught in Authn.roleSelectionOn(): " +
+                          ((e && e.message) || e));
+      return false;
+    }
+  }
+
+  /**
+   * Whether the sign-in screen draws "Choose roles for this sign-in" for an
+   * application: the feature on for it, and a dynamic role in the realm.
+   * Says nothing about any person (the ticket's 11.2).
+   *
+   * @param application - the application the sign-in is for
+   * @returns true to draw the box
+   */
+  roleBoxOffered(application: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering Authn.roleBoxOffered().");
+    const on = this.roleSelectionOn(String(application || '')) &&
+      require('../common/roles').dynamicRoles().length > 0;
+    log.debug("Leaving Authn.roleBoxOffered(). " + on);
+    return on;
+  }
+
+  // What this person may be offered at a sign-in to `application`, now:
+  // `{ offered, required }`, or null when nothing is.
+  private roleOfferFor(username: string, application: string, amr: any,
+                       acr: string): any {
+    const { log } = this.deps;
+    log.debug("Entering Authn.roleOfferFor().");
+    if (!this.roleSelectionOn(application) ||
+        !require('../common/roles').dynamicRoles().length) {
+      log.debug("Leaving Authn.roleOfferFor(). Not offered here.");
+      return null;
+    }
+    const offered = require('../xacml/role_eligibility').offer({
+      username: username, application: application,
+      amr: Array.isArray(amr) ? amr.map(String) : [], acr: acr });
+    if (!offered.length) {
+      log.debug("Leaving Authn.roleOfferFor(). Nothing eligible.");
+      return null;
+    }
+    const required = offered.some(function (one: any) {
+      return one.selection === 'required';
+    });
+    log.debug("Leaving Authn.roleOfferFor(). " + offered.length +
+              " role(s).");
+    return { offered: offered, required: required };
+  }
+
+  // What the session the role step held is started with: the door's amr,
+  // acr and credential, as postLoginStep() keeps them.
+  private roleHeldOf(said: any): any {
+    const { log } = this.deps;
+    log.debug("Entering Authn.roleHeldOf().");
+    const hold = said.roleSelection || {};
+    log.debug("Leaving Authn.roleHeldOf().");
+    return {
+      amr: Array.isArray(hold.amr) ? hold.amr : [],
+      acr: String(hold.acr || ''), via: String(hold.via || ''),
+      application: String(said.application || ''),
+      credential: said.credential || null, gated: said.gated === true,
+      method: said.method ? String(said.method) : '' };
+  }
+
+  // THE ROLE STEP, OR THE SESSION AT ONCE: the step where the person ticked
+  // "Choose roles for this sign-in" or a role offered is required (rcbj's
+  // decision 3); otherwise nothing is drawn and the held session starts
+  // with no dynamic role. The step holds the OFFER — the server's own
+  // record of what this sign-in may choose (the ticket's 6.4).
+  private roleStep(res: any, base: string, record: any, username: string,
+                   said: any): boolean {
+    const { log, randomId, stsCrypto, audit } = this.deps;
+    log.debug("Entering Authn.roleStep().");
+    const hold = said.roleSelection || {};
+    const offer = hold.offer;
+    if (!offer || !Array.isArray(offer.offered)) {
+      log.debug("Leaving Authn.roleStep(). Nothing held.");
+      return false;
+    }
+    const held = this.roleHeldOf(said);
+    if (!record.chooseRoles && !offer.required) {
+      this.finishRoles(said.request, res, base,
+                       { username: username, authn: record, held: held,
+                         risk: said.risk, riskDecision: said.riskDecision },
+                       []);
+      log.debug("Leaving Authn.roleStep(). Not asked for: no role.");
+      return true;
+    }
+    const stepId = randomId(24);
+    pendingMfa.set(stepId, {
+      authn: record, username: username,
+      challenge: stsCrypto.randomBytes(32).toString('base64url'),
+      factor: 'roles', alternate: '', backup: false,
+      passwordless: false, proved: true,
+      roles: { offered: offer.offered.map(function (one: any) {
+        return { name: String(one.name),
+                 localName: String(one.localName || one.name),
+                 displayName: String(one.displayName || ''),
+                 description: String(one.description || ''),
+                 selection: one.selection === 'required' ? 'required'
+                                                         : 'optional',
+                 exclusiveGroup: String(one.exclusiveGroup || '') };
+      }), required: offer.required === true },
+      held: held,
+      risk: said.risk, riskDecision: said.riskDecision,
+      expires: Date.now() + this.mfaStepTtlMs()
+    });
+    audit.audit({
+      action: 'roles.selection.offered', outcome: 'success',
+      actor: username, target: username, channel: 'http',
+      protocol: record && record.protocol,
+      summary: username + ' was offered ' + offer.offered.length +
+               ' dynamic role(s) at sign-in' +
+               (offer.required ? ', one required' : ''),
+      detail: { application: String(held.application || ''),
+                offered: offer.offered.map(function (one: any) {
+                  return String(one.name);
+                }) } });
+    this.stepAnswer(res, 'mfa', 'roles', stepId, ROLES_PATH, 'mfa');
+    log.debug("Leaving Authn.roleStep(). To the step.");
+    return true;
+  }
+
+  // THE SESSION THE ROLE STEP HELD, STARTED with the choice stamped on it
+  // (`selectedRoles`) and marked `rolesDone` so it is not held again. Still
+  // `postLoginHold`: a post-login activity due is asked on it next.
+  private finishRoles(req: any, res: any, base: string, step: any,
+                      rows: any[]): void {
+    const { log } = this.deps;
+    log.debug("Entering Authn.finishRoles(). " + rows.length + " role(s).");
+    const held = step.held || {};
+    const said: any = { request: req, rolesDone: true, postLoginHold: true,
+                        selectedRoles: rows, gated: held.gated === true,
+                        application: String(held.application || ''),
+                        credential: held.credential || { kind: 'password' },
+                        risk: step.risk, riskDecision: step.riskDecision };
+    if (held.method) {
+      said.method = String(held.method);
+    }
+    const started = this.startSession(res, step.username,
+      Array.isArray(held.amr) ? held.amr : [], String(held.acr || '1'),
+      String(held.via || (step.authn && step.authn.protocol) || ''), said);
+    if (this.refusedSession(res, base, step.authn, step.username, started,
+                            said)) {
+      log.debug("Leaving Authn.finishRoles(). Refused or held again.");
+      return;
+    }
+    this.returnToCaller(res, step.authn, null, null);
+    log.debug("Leaving Authn.finishRoles(). Signed in.");
+  }
+
+  /**
+   * `POST /authn-api/mfa/{id}/roles`: the role step's choice. Held against
+   * the step's own offer and the policy now (`authn/role_selection.ts`);
+   * a refusal draws the step again with why, and a role no longer eligible
+   * draws it with the offer asked again.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param stepId - the step's id
+   * @param chosen - the role names ticked
+   * @returns nothing; the answer is sent
+   */
+  rolesAct(req: any, res: IyaApi.AuthnAnswering<'chooseRoles'>,
+           stepId: string, chosen: string[]): void {
+    const { log, baseUrlOf, audit, errorCodes } = this.deps;
+    log.debug("Entering Authn.rolesAct().");
+    const base = baseUrlOf(req);
+    const found = this.stepProblem('roles', stepId);
+    if (found.problem) {
+      errorCodes.mark(res, found.problem.code);
+      this.stepRefused(res, found.problem.why);
+      log.debug("Leaving Authn.rolesAct(). No step.");
+      return;
+    }
+    const step = found.step;
+    const held = step.held || {};
+    const checked = require('./role_selection').validateChoice({
+      username: String(step.username),
+      application: String(held.application || ''),
+      offered: step.roles.offered, chosen: Array.isArray(chosen) ? chosen : [],
+      acr: String(held.acr || ''),
+      amr: Array.isArray(held.amr) ? held.amr : [] });
+    if (!checked.ok) {
+      audit.audit({
+        action: 'roles.selection.refused', outcome: 'failure',
+        actor: step.username, target: step.username, channel: 'http',
+        errorCode: checked.code,
+        protocol: step.authn && step.authn.protocol,
+        summary: step.username + '\'s choice of dynamic roles was refused',
+        detail: { application: String(held.application || ''),
+                  chosen: (chosen || []).map(String).slice(0, 20) } });
+      if (checked.code === 'STS-XACML-0328') {
+        // ASKED AGAIN, so the page draws what may be chosen now.
+        const again = this.roleOfferFor(String(step.username),
+          String(held.application || ''), held.amr, String(held.acr || ''));
+        step.roles.offered = again ? again.offered : [];
+        step.roles.required = !!(again && again.required);
+        pendingMfa.set(String(stepId), step);
+      }
+      errorCodes.mark(res, String(checked.code));
+      this.stepRefused(res, String(checked.why));
+      log.debug("Leaving Authn.rolesAct(). Refused: " + checked.code);
+      return;
+    }
+    pendingMfa.delete(String(stepId));
+    audit.audit({
+      action: 'roles.selection.chosen', outcome: 'success',
+      actor: step.username, target: step.username, channel: 'http',
+      protocol: step.authn && step.authn.protocol,
+      summary: step.username + ' chose ' + checked.rows.length +
+               ' dynamic role(s) at sign-in',
+      detail: { application: String(held.application || ''),
+                chosen: checked.rows.map(function (one: any) {
+                  return one.role;
+                }) } });
+    this.finishRoles(req, res, base, step, checked.rows);
+    log.debug("Leaving Authn.rolesAct(). Chosen.");
   }
 
   // ---------------------------------------------------------------------------
@@ -12179,6 +12529,13 @@ class Authn {
         this.recoveryEnrolment(res, record, username, said)) {
       log.debug("Leaving Authn.refusedSession(). To the recovery " +
                 "enrolment.");
+      return true;
+    }
+    // A SESSION HELD FOR THE ROLE STEP (#1072): its step, or at once the
+    // session with no dynamic role, in place of the refusal.
+    if (said.roleSelection && record &&
+        this.roleStep(res, base, record, username, said)) {
+      log.debug("Leaving Authn.refusedSession(). To the role step.");
       return true;
     }
     // A SESSION HELD FOR A POST-LOGIN ACTIVITY (#1096): its step, in place
@@ -12684,6 +13041,14 @@ class Authn {
     // one. It is answered only to its own page (`post-login`), to the
     // passkey page once Register has made it that ceremony, and to the acts
     // that end any step (`any`: Start over, the API's page lookup).
+    // A ROLE STEP (#1072) likewise: the person is authenticated, and only
+    // the role step's own act ends it — a code posted to its id would start
+    // the held session without the choice (a required role skipped).
+    if (step.roles && accepts !== 'any' && accepts !== 'roles') {
+      log.debug("Leaving Authn.mfaStepFor(). A role step, not answered to " +
+                (accepts || 'this act') + ".");
+      return null;
+    }
     if (step.postLogin && accepts !== 'any' && accepts !== 'post-login' &&
         !(accepts === 'webauthn' && step.factor === 'webauthn')) {
       log.debug("Leaving Authn.mfaStepFor(). A post-login step, not " +
@@ -13188,6 +13553,16 @@ class Authn {
       return { step: setup };
     }
     const step = this.mfaStepFor(mfaId, page);
+    if (page === 'roles') {
+      if (!step || step.factor !== 'roles' || !step.roles) {
+        log.debug("Leaving Authn.stepProblem(). No role step.");
+        return { problem: { code: 'STS-AUTHN-0019',
+          why: 'This step after signing in has expired or does not ' +
+               'exist.' + restart } };
+      }
+      log.debug("Leaving Authn.stepProblem(). The role step.");
+      return { step: step };
+    }
     if (page === 'post-login') {
       if (!step || step.factor !== 'post-login' || !step.postLogin) {
         log.debug("Leaving Authn.stepProblem(). No post-login step.");
@@ -13381,6 +13756,21 @@ class Authn {
       view.webauthn = facts;
     } else if (page === 'setup') {
       view.setup = this.mfaSetupFacts(base, step);
+    } else if (page === 'roles') {
+      // WHAT MAY BE CHOSEN (#1072): the step's own offer — each role's
+      // name, the label people read, its description and how it is chosen;
+      // never its policy, and never a role that was not offered.
+      const r = step.roles || {};
+      view.roles = {
+        required: r.required === true,
+        offered: (r.offered || []).map(function (one: any) {
+          return { name: String(one.name),
+                   label: String(one.displayName || one.localName ||
+                                 one.name),
+                   description: String(one.description || ''),
+                   required: one.selection === 'required',
+                   exclusiveGroup: String(one.exclusiveGroup || '') };
+        }) };
     } else if (page === 'post-login') {
       // WHAT IS ASKED (#1096), as facts: the activity, why, and
       // whether Skip is offered and for how long.
@@ -14462,6 +14852,12 @@ class Authn {
                  via: String(record.mechanismVia || '') },
       // "REMEMBER THIS BROWSER" (#265), where the realm offers it.
       remember: !!this.deps.browserDevices().enabled() && !locked,
+      // THE ROLE BOX (#1072, rcbj's decision 2): drawn on every sign-in to
+      // an application where the realm defines a dynamic role and neither
+      // `roles.dynamicSelection` nor the application turns it off. It says
+      // nothing about this person: whether they are eligible for anything
+      // is asked only once they have signed in.
+      chooseRoles: !locked && this.roleBoxOffered(record.application),
       // THE THIRD BUTTON, "Continue without signing in" (2026-09-05), only
       // while `authn.unauthenticatedSessions` is on.
       anonymous: !!config.value('authn.unauthenticatedSessions') &&
@@ -16589,7 +16985,20 @@ class Authn {
     // ceremony's options read it.
     this.deps.passkeyPolicy.select(username,
                                    step.authn && step.authn.application);
-    const held = credentials.keysOf(username);
+    // Read ONCE: rpIdOf() logs when it refuses a configured value.
+    const rpId = this.rpIdOf(base);
+    // A LEGACY U2F KEY (#1955 P7) IS OFFERED ONLY WHERE IT CAN ANSWER: a
+    // second-factor step, while the realm still permits its AppID at this
+    // RP ID (`webauthn.u2fAppIds`). It cannot verify the person, so a
+    // passwordless step never names it; with its AppID no longer permitted
+    // it could not be asserted at all. Left out, it decides nothing here —
+    // a person holding only such keys is offered a registration, as a
+    // person holding none is.
+    const held = credentials.keysOf(username).filter(function (one) {
+      const appid = credentials.appIdOf(one);
+      return !appid || (!passwordless &&
+                        webauthnPolicy.legacyAppIdPermitted(appid, rpId));
+    });
     // ONLY THE POST-QUANTUM KEYS WHILE THE PROFILE REQUIRES ONE AT SIGN-IN
     // (#718, rcbj's decision 3), by the question's own reading of each
     // key's algorithm (`postQuantumRefusal()`), so `allowCredentials` never
@@ -16704,8 +17113,6 @@ class Authn {
                         credentials.newUserHandle();
       pendingMfa.set(mfaId, step);
     }
-    // Read ONCE: rpIdOf() logs when it refuses a configured value.
-    const rpId = this.rpIdOf(base);
     const options = webauthnPolicy.settings();
     // THE CLASSICAL RETRY (#944), where a registration is drawn: whether
     // the ceremony asks for ML-DSA at all (`asksPostQuantum`, so the page
@@ -16834,7 +17241,9 @@ class Authn {
           : mode === 'create'
           ? webauthnPolicy.creationOptions(rpId, undefined, stepLane,
                                            !!step.classicalOnly)
-          : webauthnPolicy.requestOptions(rpId),
+          // THE ONE BUILDER OF AN ASSERTION'S OPTIONS (#1955 P7): `appid`
+          // where a key it names is a permitted legacy U2F key.
+          : webauthnPolicy.assertionOptions(rpId, allowed),
         // The retry's facts (#944), for the script — and any caller of the
         // API that runs the ceremony itself.
         fallback: fallback } };
@@ -16899,7 +17308,9 @@ class Authn {
         user: user,
         allow: proof ? [String(pending.credentialId || '')] : [],
         exclude: proof ? [] : (held.exclude || []).map(String),
-        options: proof ? webauthnPolicy.requestOptions(rpId)
+        // The proof names one key, through the one builder (#1955 P7).
+        options: proof ? webauthnPolicy.assertionOptions(rpId,
+                                                         key ? [key] : [])
           : webauthnPolicy.upgradeCreationOptions(rpId, held.kind),
         fallback: fallback } };
     log.debug("Leaving Authn.upgradeStepFacts(). " + mode);
@@ -18353,6 +18764,9 @@ class Authn {
     // record so that whichever step finishes the sign-in — this one or a
     // second factor's — registers the browser (refusedSession()).
     record.rememberBrowser = String(body.remember_browser || '') === '1';
+    // AND "CHOOSE ROLES FOR THIS SIGN-IN" (#1072), carried the same way, so
+    // whichever step finishes the sign-in knows to draw the role step.
+    record.chooseRoles = String(body.choose_roles || '') === '1';
     // THE CERTIFICATE ON THE CONNECTION (#1051): the certificate names the
     // account, so no username is read. See certificateSignIn().
     if (String(body.action || '') === 'certificate') {
@@ -19834,6 +20248,9 @@ class Authn {
               // CTAP 2.1's minPinLength, as the key reported it (#529).
               minPinLength: credentials.Credentials.reportedMinPinLength(
                 verdict),
+              // And its credProtect level (#1955 P7), null for none.
+              credProtect: credentials.Credentials.reportedCredProtect(
+                verdict),
               // The handle the page created it under (#474), and the lane
               // the step was armed in (#643).
               userHandle: step.userHandle || undefined,
@@ -19899,6 +20316,17 @@ class Authn {
           throw errorCodes.mark(new Error(handled.why),
                                 errorCodes.codeOf(handled));
         }
+        // A LEGACY U2F KEY (#1955 P7) answers only a second-factor step, and
+        // only while the realm permits its AppID at this RP ID — what the
+        // options offered; `allowCredentials` is a hint, and this is the
+        // enforcement. The one set of expectations every assertion door
+        // uses (`assertionExpectations()`).
+        const legacy = webauthnPolicy.assertionExpectations(known,
+          expectedRpId, credential, !!step.passwordless);
+        if (legacy.refusal) {
+          throw errorCodes.mark(new Error(legacy.refusal.why),
+                                legacy.refusal.code);
+        }
         verdict = webauthnVerifier.verifyAssertion({
           authenticatorData: credential.response.authenticatorData,
           clientDataJSON: credential.response.clientDataJSON,
@@ -19911,11 +20339,17 @@ class Authn {
           // reason. Both halves of the ceremony or neither: a service that
           // demanded user verification to enrol and not to sign in would be
           // demanding it exactly once, at the moment it matters least.
-          requireUserVerification: webauthnPolicy.requireUserVerification(),
+          // NOT OF A LEGACY U2F KEY (#1955 P7), which has no user
+          // verification to give; it answers a second-factor step only.
+          requireUserVerification: legacy.requireUserVerification,
           previousSignCount: known.signCount,
           // RS1 only where `webauthn.insecureAlgorithms` allows it
           // (2026-10-01).
-          allowInsecure: webauthnPolicy.insecureAlgorithmsAllowed()
+          allowInsecure: webauthnPolicy.insecureAlgorithmsAllowed(),
+          // ITS APPID (#1955 P7): the rpIdHash is SHA-256 of it only where
+          // the client reports it used the appid extension.
+          expectedAppId: legacy.expectedAppId,
+          appidUsed: legacy.appidUsed
         });
         // A CLONE, BY THE ENTRY'S COUNTER (#231): everything else verified
         // and the counter did not go up. Refused below like any failed
@@ -20636,6 +21070,7 @@ export = {
   LOGIN_PATH: LOGIN_PATH,
   MFA_SETUP_PATH: MFA_SETUP_PATH,
   POST_LOGIN_PATH: POST_LOGIN_PATH,
+  ROLES_PATH: ROLES_PATH,
   // WHICH ENROLLED KEY AN ASSERTION IS CHECKED AGAINST, exported for
   // `tests/webauthn_policy.js` and for no caller. The state that makes it
   // worth asserting — one person, two keys — cannot be built through any door
@@ -20889,6 +21324,10 @@ export = {
   SELECT_IDP_PATH: SELECT_IDP_PATH,
   PASSWORD_CHANGE_PATH: PASSWORD_CHANGE_PATH,
   screenView: slot.forward('screenView'),
+  // Dynamic selectable roles (#1072): the role step's act, and whether the
+  // sign-in screen draws its box.
+  rolesAct: slot.forward('rolesAct'),
+  roleBoxOffered: slot.forward('roleBoxOffered'),
   screenProblem: slot.forward('screenProblem'),
   screenAct: slot.forward('screenAct'),
   // Whether a sign-in must be a passkey with no username (#608).

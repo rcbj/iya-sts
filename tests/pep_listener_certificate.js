@@ -64,13 +64,20 @@ const log = require('bunyan').createLogger({ name: 'pep_listener_certificate',
 // `servername`, and sending a GET for `/healthcheck`. Answers what the client
 // saw: whether it was authorized, why not, the serial it was served, and the
 // HTTP status line.
+//
+// **VERIFIED (2026-11-20).** The client used to accept any chain and read
+// `socket.authorized` and `checkServerIdentity()` afterwards. It now
+// refuses a chain that does not reach `anchorPem` and a name the
+// certificate does not carry, as any client of a PEP does, so a refusal is
+// the handshake's own error: `authorized` false with the error's code, and
+// `identity` 'mismatch' when that code is the name check's.
 function handshake(port, anchorPem, servername) {
   log.debug("Entering handshake().");
   log.debug("Leaving handshake().");
   return new Promise(function (resolve) {
     const socket = tls.connect({ host: '127.0.0.1', port: port,
-                                 servername: servername, ca: [anchorPem],
-                                 rejectUnauthorized: false }, function () {
+                                 servername: servername, ca: [anchorPem] },
+                               function () {
       const peer = socket.getPeerCertificate(true);
       const issuer = peer && peer.issuerCertificate
         ? peer.issuerCertificate : null;
@@ -98,7 +105,11 @@ function handshake(port, anchorPem, servername) {
       });
     });
     socket.on('error', function (e) {
-      resolve({ authorized: false, error: e.message, serialHex: '' });
+      log.debug("Caught in handshake(): " + ((e && e.message) || e));
+      const code = String((e && e.code) || (e && e.message) || e);
+      resolve({ authorized: false, error: code, serialHex: '',
+                identity: code === 'ERR_TLS_CERT_ALTNAME_INVALID'
+                  ? 'mismatch' : '' });
     });
   });
 }
@@ -225,7 +236,8 @@ async function inProcess(t) {
     const wrong = await handshake(port, first.issued.anchorPem,
                                   'somebody-else.test');
     t.equal(wrong.identity, 'mismatch',
-            'a name the certificate does not carry does not match');
+            'a name the certificate does not carry does not match, and ' +
+            'the verifying client refuses the handshake for it');
     // The same handshake trusting the realm's INTERMEDIATE alone must not
     // verify: the chain is meant to end at the Root, and a pair that only
     // verified against the Intermediate would be a chain that stops short.

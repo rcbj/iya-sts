@@ -234,8 +234,14 @@ class LaunchLinks {
    * @param target - where to land afterwards, or ''
    * @returns the URL
    */
+  //
+  // `fresh` (#1072): the link asks for a fresh sign-in — the portal's "Sign
+  // in again", so a person may choose dynamic roles for this application —
+  // in each protocol's own word: `forceAuthn=true` for the two SAML
+  // endpoints (an AuthnRequest's ForceAuthn), `wfresh=0` for WS-Federation
+  // (section 13.2.1). OpenID Connect's is `thirdPartyLoginUrl()`'s.
   static endpointUrl(base: string, view: Json, protocol: string,
-                     target: string): string {
+                     target: string, fresh?: boolean): string {
     helpers.log.debug("Entering LaunchLinks.endpointUrl(). " + protocol);
     const fields = (view && view.fields) || {};
     const identifier = String((view && view.identifier) || '');
@@ -254,20 +260,23 @@ class LaunchLinks {
         .entityIds) || identifier;
       url = helpers.rebaseTo(base, 'saml2') + '/saml2/unsolicited/' +
         encodeURIComponent(sp) +
-        (there ? '?target=' + encodeURIComponent(there) : '');
+        (there ? '?target=' + encodeURIComponent(there) : '') +
+        (fresh ? (there ? '&' : '?') + 'forceAuthn=true' : '');
     } else if (protocol === 'saml11') {
       const rp = first(Classes.SamlServiceProvider.fromEntry(fields)
         .entityIds) || identifier;
       url = helpers.rebaseTo(base, 'saml11') + '/saml11/sso/' +
         encodeURIComponent(rp) +
         '?providerId=' + encodeURIComponent(rp) +
-        (there ? '&TARGET=' + encodeURIComponent(there) : '');
+        (there ? '&TARGET=' + encodeURIComponent(there) : '') +
+        (fresh ? '&forceAuthn=true' : '');
     } else if (protocol === 'wsfed') {
       const realm = first(Classes.WsFederationRelyingParty.fromEntry(fields)
         .realms) || identifier;
       url = helpers.rebaseTo(base, 'ws-federation') + '/wsfed/initiate/' +
         encodeURIComponent(realm) +
-        (there ? '?wctx=' + encodeURIComponent(there) : '');
+        (there ? '?wctx=' + encodeURIComponent(there) : '') +
+        (fresh ? (there ? '&' : '?') + 'wfresh=0' : '');
     }
     helpers.log.debug("Leaving LaunchLinks.endpointUrl().");
     return url;
@@ -383,6 +392,13 @@ class LaunchLinks {
     }
     if (/^https:\/\//i.test(String(given.target || ''))) {
       url.searchParams.set('target_link_uri', String(given.target));
+    }
+    // `prompt=login` (#1072, rcbj's decision 4): the portal's "Sign in
+    // again", passed for the client to forward on its authorization
+    // request. OpenID Connect Core section 4 defines no such parameter
+    // here, so a client that does not forward it simply signs in as usual.
+    if (given.prompt === 'login') {
+      url.searchParams.set('prompt', 'login');
     }
     helpers.log.debug("Leaving LaunchLinks.thirdPartyLoginUrl().");
     return url.toString();

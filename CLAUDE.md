@@ -227,11 +227,18 @@ home:
   why each is a variable (`STS_IMAGE`, `*_CONTAINER_NAME`,
   `STS_NETWORK_SUBNET`). `tests/stack_network.js` holds the subnet default
   outside every launcher's range.
-* **The `sts` healthcheck picks its scheme** from `STS_HTTPS`, or from
-  `STS_OAUTH2_RFC9700` / `STS_OAUTH2_OAUTH21` when that is unset, and does not
-  verify the certificate. A probe speaking the wrong scheme marks a working
-  container `unhealthy`. It uses `node -e` rather than curl so that it needs
-  only the runtime, and it fails on a non-200, not just on a closed port.
+* **The `sts` healthcheck is `common/healthcheck_probe.js`** (2026-11-20),
+  which picks its scheme from `STS_HTTPS`, or from `STS_OAUTH2_RFC9700` /
+  `STS_OAUTH2_OAUTH21` when that is unset, and over TLS VERIFIES the
+  certificate against the Root the service publishes on its loopback
+  revocation listener (8082), chain and name; its header argues the anchors.
+  A probe speaking the wrong scheme marks a working container `unhealthy`. It
+  is node rather than curl so that it needs only the runtime, and it fails on
+  a non-200, not just on a closed port. **This file and
+  `docker-compose-quick.yml` pull the published image by default, and 1.1.0
+  has no probe**, so they run it when the image has it and the old
+  unverified one-liner only when it does not; drop the fall back once no
+  supported image lacks the file.
 * **The `sts` build context is the repository root with the default
   Dockerfile** (`COPY . ./`, `.dockerignore` deciding what goes in).
   **`image:` defaults to the PUBLISHED name, `iyasec/iya-sts`** (and
@@ -322,7 +329,10 @@ holds is the table above; what each module is for is that directory's
 | `common/fga_gate.ts` | `setDecider` (one RFC 9396 detail of an application that enforces fine-grained authorization; EMPTY REFUSES), filled by `xacml/fga_pep.ts` at 23c (#564 P3) | `common/CLAUDE.md`, `xacml/CLAUDE.md` |
 | `common/signer_truststore.ts` | `setDirectory` (a realm's signer truststore entries listed, written and removed), filled by `ldap/ldap_server.js` (#1360) | `common/CLAUDE.md` (3dd) |
 | `authzen/authzen_admin.ts` | `setDirectory` (an entry located, a group's members, a person's `stsAuthzenApplication` written), filled by `ldap/ldap_server.js` (#563) | `authzen/CLAUDE.md` |
+| `common/openpgp_keys.ts` | `setDirectory` (a person located with their S/MIME values, the five OpenPGP/mail-encryption attributes written, a person by `mail`), filled by `ldap/ldap_server.js` (#1955 P6) | `common/CLAUDE.md` (`openpgp_keys.ts`) |
 | `common/hardware_tokens.ts` | `registerRetirer(kind, …)` (a credential kind's lost-key retire action), filled by each later #1955 phase's module for the kind it adds; `fido` and `x509` are built in (#1955 P1) | `common/CLAUDE.md` |
+| `common/roles.js` | `setSelectionReader` (the dynamic roles a session chose and is still eligible for; EMPTY IS NOBODY'S CHOICE), filled by `authn/role_selection.ts` at 23c (#1072) | `common/CLAUDE.md` (3dg) |
+| `common/crypto.js` | `setPkcs11KeyResolver` (an HSM signing key's reference found on a token this thread holds), filled by `common/secrets.js` at load, which requires `crypto.js` and so cannot be required back (#1955 P8) | `common/CLAUDE.md` (*Keys in a hardware security module*) |
 
    **`setTruststore()` is the one slot not filled by the module that owns what
    it carries** — `common/protocol_stack.ts` fills it, because the owner is first
@@ -571,7 +581,7 @@ preference; this table says what the constraint is and the named file says why.
 | 23b-ii-b | `common/service_account_rotation` | Beside the two rotations above (#221 P4), for a reader: a library, scheduler jobs, no route, everything reached lazily. | `common/CLAUDE.md` (3cd) |
 | 23b-iii | `kerberos/krb5_krbtgt_rotation` | After `ldap/ldap_server` (21), whose directory slot the krbtgt key is written through (#169). A library: scheduler jobs, no route. | `kerberos/CLAUDE.md` |
 | 23b-iii-b | `persistence/granting_index_backfill` | After `ldap/ldap_server` (21), whose entries it keys, for a reader (#1311): a library, one scheduler job, no route; the store, the scheduler and the keystore reached lazily. | `persistence/CLAUDE.md` |
-| 23c | `xacml/xacml` | After `admin-ui/admin`, whose slots this family fills; one require, two `register()` calls — `xacml_admin`, then `xacml`. **This REQUIRE arms every issuance site** (a load-time effect): before it, `issuance_gate.js` answers "allowed". `xacml/fga_policies` is built here too, filling `applications.setFgaLifecycle()` (#564), and then `xacml/fga_pep`, filling `common/fga_gate.ts`'s decider: before it an enforcing application's every detail is refused (#564 P3). | `xacml/CLAUDE.md` |
+| 23c | `xacml/xacml` | After `admin-ui/admin`, whose slots this family fills; one require, two `register()` calls — `xacml_admin`, then `xacml`. **This REQUIRE arms every issuance site** (a load-time effect): before it, `issuance_gate.js` answers "allowed". `xacml/fga_policies` is built here too, filling `applications.setFgaLifecycle()` (#564), and then `xacml/fga_pep`, filling `common/fga_gate.ts`'s decider: before it an enforcing application's every detail is refused (#564 P3). Then `xacml/role_eligibility` and `authn/role_selection`, whose wire step fills `roles.setSelectionReader()`: before it no token carries a dynamic role (#1072). | `xacml/CLAUDE.md`, `authn/CLAUDE.md` |
 | 23c-ii | `authzen/authzen_access_request`, then `authzen/authzen` | The library first (#1180), whose install registers its scheduler job; then the surface after `xacml/xacml` (23c), whose surface's `decide()`, `enforce()` and `callerIdentity()` it calls lazily; requires no route module. `/access/v1/*` collides with nothing. | `authzen/CLAUDE.md` |
 | 23d | `gnap/gnap` | After `admin-ui/admin` and `ssf/ssf`; one require for the family, and three `register()` calls — `gnap`, `gnap_interact`, `gnap_admin`. | `gnap/CLAUDE.md` |
 | 23e–g | `acme/acme`, `est/est`, `scep/scep` | After `admin-ui/admin` (18), whose shell each `_admin.ts` draws with, and after `ldap/ldap_server` (21), whose slot `common/cert_enrollment.ts` reads entries through. Each one require, then two `register()` calls (the family, then its `_admin`). No constraint between the three. | `acme/CLAUDE.md`, `est/CLAUDE.md`, `scep/CLAUDE.md` |
@@ -704,6 +714,7 @@ in every file, including the ones in the source comments. This is the index.
 | 3dc | `response_models.ts`, `response_model_kit.ts` (#1353): every answer of a published API held to a closed model, always | `common/CLAUDE.md` |
 | 3dd | `certificate_trust.ts`, `signer_truststore.ts`, `crypto.js` section 18 (#1360): one validation door, paranoid PKI mode | `common/CLAUDE.md`, `tls/CLAUDE.md` |
 | 3de | `crypto_impl/algorithm_registry.js`, `signature_policy.ts` (#1368): every signature algorithm once, and which a realm signs with and accepts, per surface | `common/CLAUDE.md`, `common/crypto_impl/CLAUDE.md` |
+| 3dg | `roles.js` modes, `xacml/role_eligibility.ts`, `authn/role_selection.ts` (#1072): dynamic selectable roles, each role's own XACML eligibility policy, the role step at sign-in, the choice on the session | `common/CLAUDE.md`, `xacml/CLAUDE.md`, `authn/CLAUDE.md` |
 | 3db | `profile_photo.ts` (#719): a person's photo, kept off the entry, set on the portal or copied from a partner | `common/CLAUDE.md`, `federation/CLAUDE.md`, `ldap/CLAUDE.md`, `portal/CLAUDE.md` |
 | 3k | SPIFFE's six modules | `spiffe/CLAUDE.md` |
 | 4 | `wsfed.ts` after `authn.js` | `ws-federation/CLAUDE.md` |
@@ -1199,7 +1210,7 @@ the file the row names.
 | Poll a partner about a person while the session lasts; ~~consume a federated sign-out~~ reversed 2026-09-23 (#167); ~~decrypt a partner's encrypted assertion~~ reversed 2026-09-23 (#168) | `federation/CLAUDE.md` |
 | ~~Keep a partner's refresh token, register itself at a partner, find one by WebFinger or send it request objects~~ — reversed 2026-11-03 (#930) behind `fedRefreshTokens`, `fedRegister`, `fedWebFinger` and `fedRequestObject`, each off by default | `federation/CLAUDE.md`, *THE OPENID CONNECT RELYING PARTY PLANS* |
 | Act as a CIBA client (#931); ~~authenticate to a partner with a client certificate~~ — reversed 2026-11-13 (#931, rcbj's decision) for FAPI 1.0 Advanced (`fedFapi` 1-advanced) only: mutual TLS, `tls_client_auth` and certificate-bound tokens | `federation/CLAUDE.md`, *THIS SERVICE AS A FAPI CLIENT* |
-| Dial a URL a CALLER supplied to fetch something FROM (`wreqptr`) — twenty-six argued exceptions | `federation/CLAUDE.md`, *The URLs this service dials that a caller's kind of URL could name* |
+| Dial a URL a CALLER supplied to fetch something FROM (`wreqptr`) — twenty-seven argued exceptions | `federation/CLAUDE.md`, *The URLs this service dials that a caller's kind of URL could name* |
 | ~~Ask anybody's permission before it issues something~~ — reversed 2026-09-01 (`/oauth2/consent`) | `common/CLAUDE.md`, `oauth-oidc/CLAUDE.md` |
 | Let a page on another origin read an answer, unless it is this service's own or listed in `appCorsOrigin` | `common/CLAUDE.md` (`cors.js`) |
 | Check an end user's password, **in development mode** | `authn/CLAUDE.md`, `kerberos/CLAUDE.md`, `common/CLAUDE.md` |
@@ -1221,7 +1232,8 @@ the file the row names.
 | ~~Deactivate anybody on SCIM `active: false`~~ — reversed 2026-09-17 | `scim/CLAUDE.md`, `common/CLAUDE.md` (3at), `authn/CLAUDE.md` |
 | ~~Attest a workload or a node~~ — reversed 2026-09-21 (#40); a TCP caller still is not (#166) | `spiffe/CLAUDE.md` |
 | Revoke a SPIFFE credential — the directory records who may still be ISSUED one | `spiffe/CLAUDE.md`, `ldap/CLAUDE.md` |
-| Match a client certificate from an outside CA by its common name or subject, or create an entry for one — it is the one entry storing it in `userCertificate` (#1061) | `common/CLAUDE.md` (3ag), `tls/CLAUDE.md`, `ldap/CLAUDE.md` |
+| Match a client certificate from an outside CA by its common name or subject, or create an entry for one — it is the one entry storing it in `userCertificate` (#1061), or, for an outside PIV or CAC card from a configured `piv.externalIssuers` CA, the one person whose `stsPivCardUuid` holds its FIPS 201 card UUID (#1955 D8, rcbj 2026-11-20; off by default) | `common/CLAUDE.md` (3ag), `tls/CLAUDE.md`, `ldap/CLAUDE.md` |
+| Issue a PIV slot certificate as hardware-bound without a verified YubiKey PIV attestation, or let a `piv-card-auth` (9e) certificate sign in by default (#1955 P2) | `common/CLAUDE.md` (`piv_attestation.ts`) |
 | Let a group grant anything BY BEING A GROUP | `admin-ui/CLAUDE.md`, `common/CLAUDE.md` |
 | Let an authenticator app be a FIRST factor | `common/CLAUDE.md` |
 | ~~Issue a set of recovery codes on request~~ — reversed 2026-09-11 | `common/CLAUDE.md`, `portal/CLAUDE.md` |
@@ -1249,6 +1261,7 @@ the file the row names.
 | Encrypt an assertion it holds no certificate for — **product refuses**, development sends it in CLEAR | `saml/CLAUDE.md` |
 | Dial a service provider's metadata URL WHILE ISSUING | `saml/CLAUDE.md` |
 | Release a person's DID unless they proved it (or had this realm publish it, #1291), preferred it and consented to it themselves — to a pairwise or ephemeral client only by its opt-in, and never in a SAML assertion (#693) | `oauth-oidc/CLAUDE.md` (*The `did` claim*) |
+| Record an OpenPGP key as hardware-bound, offer a sign-in with OpenPGP, or send `Access-Control-Allow-Origin: *` from the Web Key Directory (#1955 P6) | `common/CLAUDE.md` (`openpgp_keys.ts`) |
 | Let an administrator create or change a did:web it publishes for a person, or bind a credential to a did:web it does not host (#1291) | `oid4vc/CLAUDE.md` (*A PERSON'S PUBLISHED did:web*) |
 
 ## The parent project's paths into this repository

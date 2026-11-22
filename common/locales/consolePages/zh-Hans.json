@@ -42,6 +42,7 @@
   "title.device-registration": "设备注册",
   "title.devices": "设备",
   "title.hardware-tokens": "硬件令牌",
+  "title.openpgp": "OpenPGP 密钥",
   "title.devices-monitor": "设备（监控）",
   "title.service-accounts": "服务账户",
   "title.encryption": "加密",
@@ -148,5 +149,11 @@
   "title.worker-pools": "工作线程池",
   "title.broadcast": "广播公告",
   "title.sign-in-appearance": "登录外观",
-  "title.post-login-activities": "登录后活动"
+  "title.post-login-activities": "登录后活动",
+  "title.groups-new": "新建组",
+  "title.roles-new": "新建角色",
+  "title.devices-new": "注册设备",
+  "title.attribute-sources-new": "添加属性来源",
+  "title.secret-destinations-new": "添加密钥推送目标",
+  "title.policies-new": "新建策略"
 }

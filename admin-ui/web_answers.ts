@@ -74,6 +74,14 @@ const GROUP_OWNERS_PAGE = '/admin/groups/owners';
 // A ROLE'S OWNERS TAB (#604), the group's arrangement on a role.
 const ROLE_OWNERS_PAGE = '/admin/roles/owners';
 
+// A DIRECTORY OBJECT'S CREATE PAGE (#1132) posts to itself, so a refused
+// create comes back to the page with every box as it was typed and the
+// reasons floating over the form (`WebKit.createForm()`), and a create that
+// succeeds lands on what it made (`landing()`).
+const CREATE_PAGES = ['/admin/groups/new', '/admin/roles/new',
+                      '/admin/devices/new', '/admin/attribute-sources/new',
+                      '/admin/secret-destinations/new'];
+
 // AN APPLICATION'S OWNERS TAB (#604), the same arrangement.
 const APPLICATION_OWNERS_PAGE = '/admin/applications/owners';
 
@@ -1022,6 +1030,12 @@ class WebAnswers {
       out.state = Object.assign({}, before, { serviceAccount: draft });
       return { json: out, banner: '' };
     }
+    if (CREATE_PAGES.indexOf(page) >= 0 && !ok) {
+      const out = WebAnswers.copy(json);
+      out.state = { draft: fields, error: errors.length ? errors
+        : ['Refused.'] };
+      return { json: out, banner: '' };
+    }
     if (page === '/admin/applications/edit' && !ok) {
       const out = WebAnswers.copy(json);
       out.state = { draft: fields, error: errors };
@@ -1072,8 +1086,9 @@ class WebAnswers {
     // applications, #609; #1235 took the search away.)
     if (page === POLICIES_PAGE && !ok &&
         WebAnswers.one(fields, 'newProfile') === '1') {
-      const kindId = String(action || '').replace(/^save-/, '')
-        .replace(/-policy$/, '');
+      const kindId = action === 'save-named-authn-policy' ? 'authn'
+        : String(action || '').replace(/^save-/, '')
+          .replace(/-policy$/, '');
       const key = kindId + '-new';
       const out = WebAnswers.copy(json);
       const before = out.state || {};
@@ -1267,6 +1282,43 @@ class WebAnswers {
       const query = at.searchParams.toString();
       return '/admin/users' + (query ? '?' + query : '');
     }
+    // A ROLE MADE ON NEW ROLE (#1132) lands on its page, under the name it
+    // was registered by: `<role>@<application>` for an application's own.
+    if (page === '/admin/roles/new' && action === 'create-role' &&
+        fields && fields.role) {
+      const forApplication = WebAnswers.one(fields, 'application').trim();
+      const name = WebAnswers.one(fields, 'role').trim() +
+        (forApplication ? '@' + forApplication : '');
+      return '/admin/roles?' + new URLSearchParams({ role: name }).toString();
+    }
+    // A POLICY MADE ON NEW POLICY (#1132) lands on its kind's named
+    // policies; its form posts to the policies page's own path.
+    if (page === POLICIES_PAGE && at.pathname === '/admin/policies/new' &&
+        (WebAnswers.one(fields || {}, 'newProfile') === '1' ||
+         action === 'save-named-authn-policy')) {
+      const kindId = action === 'save-named-authn-policy' ? 'authn'
+        : String(action || '').replace(/^save-/, '').replace(/-policy$/, '');
+      return '/admin/policies#' + kindId + '-sub-named';
+    }
+    // A DESTINATION ADDED ON ITS CREATE PAGE (#1132) lands on the register.
+    if (page === '/admin/secret-destinations/new' &&
+        action === 'add-destination') {
+      return '/admin/secret-destinations#destinations';
+    }
+    // A SOURCE ADDED ON ITS CREATE PAGE (#1132) lands on the register.
+    if (page === '/admin/attribute-sources/new' && action === 'add-source') {
+      return '/admin/attribute-sources#sources';
+    }
+    // A DEVICE REGISTERED ON ITS CREATE PAGE (#1132) lands on the device.
+    if (page === '/admin/devices/new' && action === 'create' &&
+        answer.device && answer.device.id) {
+      return '/admin/devices?' + new URLSearchParams({
+        device: String(answer.device.id) }).toString();
+    }
+    if (page === '/admin/groups/new' && action === 'create' && answer.dn) {
+      return '/admin/groups?' + new URLSearchParams({
+        group: String(answer.dn) }).toString();
+    }
     if (page === '/admin/groups' && answer.dn &&
         (action === 'create' || action === 'add-member')) {
       at.searchParams.set('group', String(answer.dn));
@@ -1457,6 +1509,17 @@ class WebAnswers {
       return { title: t.text('consoleAnswers.once.realmCreated'),
                active: '/admin/realms',
                html: WebAnswers.realmCreated(answer, env, t) };
+    }
+    // A PIV SLOT CERTIFICATE ISSUED FROM THE ENROLMENT FORM, or an
+    // ESCROWED KEY RECOVERED (#1955 P2): drawn once, in place, as every
+    // credential this console hands over is.
+    if (page === '/admin/hardware-tokens' &&
+        (action === 'enrol-piv' || action === 'recover-key')) {
+      const title = t.text(action === 'enrol-piv'
+        ? 'consoleAnswers.once.pivCertificate'
+        : 'consoleAnswers.once.pivKey');
+      return { title: title, active: page,
+               html: WebAnswers.pivAnswer(answer, action, back, t) };
     }
     if (answer.hmacKey) {
       return { title: t.text('consoleAnswers.once.eabKey'),
@@ -1857,6 +1920,28 @@ class WebAnswers {
    * @param t - optional; the translator, the default when left out
    * @returns the HTML
    */
+  static pivAnswer(result: Json, action: string, back: string,
+                   t?: Json): string {
+    t = t || kit.context().t;
+    const area = function (name: string, value: unknown): string {
+      return '<textarea readonly rows="10" name="' + name + '">' +
+        kit.esc(value) + '</textarea>';
+    };
+    const body = action === 'recover-key'
+      ? kit.warn(t.html('consoleAnswers.piv.keyWarn')) +
+        kit.frame('<h2>' + t.html('consoleAnswers.piv.privateKey') +
+                  '</h2>' + area('private-key', result.privateKeyPem)) +
+        kit.frame('<h2>' + t.html('consoleAnswers.piv.certificate') +
+                  '</h2>' + area('certificate', result.certificatePem))
+      : '<p>' + kit.esc(result.message || '') + '</p>' +
+        kit.frame('<h2>' + t.html('consoleAnswers.piv.certificate') +
+                  '</h2>' + area('certificate', result.certificatePem) +
+                  '<p class="note">' + t.html('consoleAnswers.piv.import') +
+                  '</p>');
+    return body + '<p class="links"><a href="' + kit.esc(back) + '">' +
+      t.html('consoleAnswers.back') + '</a></p>';
+  }
+
   static eabKey(result: Json, back: string, t?: Json): string {
     t = t || kit.context().t;
     const code = function (value) {

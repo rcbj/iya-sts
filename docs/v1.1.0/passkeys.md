@@ -542,6 +542,97 @@ key register only for the person whose entry lists its serial number
 See *Binding security keys to the people they were issued to* under
 [the passkey policy](authentication.md#the-passkey-policy).
 
+### Credential protection on a security key (credProtect)
+
+A security key that supports CTAP 2.1 can protect a credential so that it is
+not used, or not even revealed, without the key's PIN or fingerprint. The
+passkey policy asks for this at registration with two rows. Both are optional
+on a save and off by default, so nothing changes until you set them.
+
+| Row | Values | What it does |
+|---|---|---|
+| `credProtect` | `none` (default), `userVerificationOptional`, `userVerificationOptionalWithCredentialIDList`, `userVerificationRequired` | The level a registration asks the key for. Level 2 (`…WithCredentialIDList`) stops anybody holding the key from finding the credential without the PIN unless this service names it. Level 3 (`userVerificationRequired`) means the key never uses the credential without the PIN or fingerprint. |
+| `enforceCredProtect` | off (default), on | On, the browser is asked to enforce the level, and a key that reports a lower level is refused (`STS-AUTHN-0559`). A key that reports nothing counts as level 1. It needs `credProtect` set: on with `none` is refused (`STS-AUTHN-0560`). |
+
+The level a key reports is recorded on the passkey, and the person's page on
+the console shows it (**Credential protection: level 3**). Platform and synced
+passkeys usually report nothing, so enforce only where people use security
+keys: a profile named by the applications or groups that need it (see
+[Different rules for different applications or groups](#different-rules-for-different-applications-or-groups)).
+For the same reason, pair it with the `securityKeyHints` row, whose default
+(`security-key`) already tells the browser to offer a security key.
+
+**Console.** Directory → Policies → **Passkey policy**: **Credential
+protection a registration asks a security key for**, and **Refuse a key that
+does not apply that protection**.
+
+**API.**
+```bash
+api policies/save-passkey-policy '{ … every other row …,
+  "credProtect":"userVerificationRequired","enforceCredProtect":true}'
+```
+
+The check is made at registration only. The key enforces the level itself at
+every later sign-in, and a credential's level never changes.
+
+### Moving security keys from a U2F service (the appid extension)
+
+A service that used FIDO U2F before WebAuthn registered its security keys
+under an **AppID**, an https URL, and a U2F key signs for that AppID rather
+than for an RP ID. You can bring those keys here so people keep using them,
+without registering them again. It is **off by default** and has three parts.
+
+**1. Name the AppID.** Set **`webauthn.u2fAppIds`** (Protocols → WebAuthn, or
+`api config/set`) to the AppID the old service used, for example
+`https://u2f.example.com/app-id.json`. Several are separated by commas. Each
+must be an https URL (`STS-AUTHN-0566`). An AppID is used only at an RP ID it
+relates to: its host is the RP ID, or one of the two ends with `.` and the
+other. Where the AppID's host is not this service's host, the browser fetches
+the AppID URL for a list of trusted facets that names this service's origin,
+so the old service (or whoever serves that URL) must keep serving it.
+
+**2. Import each key.** For each key, the old service kept four values: the
+key handle, the public key (an uncompressed P-256 point, 65 bytes starting
+`0x04`), the signature counter and the AppID. Import them onto the person:
+
+- **Console.** The person's page on **Directory → Users**, **Passkeys**,
+  **Import a U2F security key**. The form is drawn only while
+  `webauthn.u2fAppIds` lists an AppID.
+- **API.**
+  ```bash
+  api users/import-u2f-key '{"user":"alice",
+    "appId":"https://u2f.example.com/app-id.json",
+    "keyHandle":"<base64url key handle>",
+    "publicKey":"<base64url 65-byte point>","counter":42,
+    "label":"Old office key"}'
+  ```
+
+Nothing is verified about where the values came from: you vouch for them, and
+each import is audited (`admin.mfa.key.imported`). A wrong AppID, key handle,
+public key or counter is refused (`STS-AUTHN-0561` to `STS-AUTHN-0564`). The
+person's passkey policy still applies, as it does to every new passkey, and a
+key handle already held is refused as a duplicate.
+
+**3. People sign in as before.** An imported key is a **second factor only**,
+because a U2F key cannot check a PIN or fingerprint. After the password, the
+passkey step names the imported key and asks the browser for the `appid`
+extension. The browser signs with the AppID, and this service accepts the
+AppID's hash only when the browser says it used the extension. Where the
+realm requires user verification, that step asks for it as *preferred*, so the
+browser offers the U2F key; every other key in the same step is still held to
+user verification. An imported key is never offered for a passwordless
+sign-in, and is refused there (`STS-AUTHN-0565`). The same holds wherever a
+passkey is asked for again: a step-up or recent sign-in for the portal, the
+account API, consent or GNAP, upgrading the key to a post-quantum passkey
+(from the console or as a post-login activity), and linking a device.
+
+While an AppID is listed, every registration also asks the browser for
+`appidExclude`, so a person cannot register the same key a second time over
+WebAuthn.
+
+To stop it, empty `webauthn.u2fAppIds`. Imported keys then stop signing in,
+and stay listed until removed with **Clear key**.
+
 ### Other passkey policy rows
 
 The passkey policy has more rows than the recipes above use. Each is
@@ -561,6 +652,7 @@ described under [the passkey policy](authentication.md#the-passkey-policy):
 | `clientRules` | Empty by default. The browsers and systems whose registrations offer no ML-DSA. See [Clients that cannot make an ML-DSA passkey](#clients-that-cannot-make-an-ml-dsa-passkey). |
 | `adminEnrolment` | Off by default. On, an administrator may enrol a passkey for a person this profile applies to. See [An administrator enrols a passkey](#an-administrator-enrols-a-passkey). |
 | `deviceBoundRequired` | Off by default. On, an issuance to an application this profile covers waits for a device-bound session. See [Sessions](sessions.md#binding-the-cookie-to-the-browser-device-bound-session-credentials). |
+| `credProtect`, `enforceCredProtect` | `none` and off by default. The CTAP 2.1 credential protection a registration asks a security key for, and whether a lower level is refused. See [Credential protection on a security key](#credential-protection-on-a-security-key-credprotect). |
 
 ### Different rules for different applications or groups
 
@@ -1952,6 +2044,7 @@ description of each is in [Configuration → WebAuthn](configuration.md#webauthn
 | `webauthn.rpName` | `STS_WEBAUTHN_RP_NAME` | `IYA STS` |
 | `webauthn.rpId` | `STS_WEBAUTHN_RP_ID` | empty (the host) |
 | `webauthn.allowedOrigins` | `STS_WEBAUTHN_ALLOWED_ORIGINS` | empty (derived from the address) |
+| `webauthn.u2fAppIds` | `STS_WEBAUTHN_U2F_APP_IDS` | empty (off) |
 | `webauthn.algorithms` | `STS_WEBAUTHN_ALGORITHMS` | `ML-DSA-87`, `ML-DSA-65`, `ML-DSA-44`, `EdDSA`, `ES256`, `RS256`, in that order (#1166); every other algorithm may be ticked — `ES384` is off by default because certain browsers on Windows are incompatible with it
 | `webauthn.insecureAlgorithms` | `STS_WEBAUTHN_INSECURE_ALGORITHMS` | `false` |
 | `webauthn.pqcOnly` | `STS_WEBAUTHN_PQC_ONLY` | `false` |

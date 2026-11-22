@@ -1287,6 +1287,22 @@
     "en": "5098a9645fefe2ff",
     "text": "默认关闭。开启后，向此配置文件所覆盖的应用颁发时，会等到登录会话绑定到浏览器的密钥；若浏览器跳过该注册，或等待结束仍未绑定，则拒绝颁发。从未被提供注册的会话不会被此行拒绝。在 authn.deviceBoundSessions 关闭时拒绝。"
   },
+  "passkey.FIELDS.credProtect.label": {
+    "en": "9a492f70e0e2aedd",
+    "text": "注册时向安全密钥要求的凭据保护"
+  },
+  "passkey.FIELDS.credProtect.what": {
+    "en": "64640106a92f3111",
+    "text": "默认为 `none`：注册不要求任何凭据保护，其选项与以往相同。否则，注册会请求身份验证器（CTAP 2.1 第 12.1 节，credProtect 扩展）以该级别保护新凭据：`userVerificationOptional`（级别 1，没有该扩展时凭据所具有的级别）、`userVerificationOptionalWithCredentialIDList`（级别 2：除非依赖方在 allowCredentials 中列出该凭据，否则密钥在未经用户验证时既不透露也不使用它，因此持有密钥的人无法在其上找到可发现的凭据）或 `userVerificationRequired`（级别 3：密钥只有在 PIN 或生物识别之后才使用该凭据）。密钥报告的级别会记录在通行密钥上。大多数平台通行密钥和同步通行密钥不报告任何内容。保存时省略此项，则保留内置默认值。"
+  },
+  "passkey.FIELDS.enforceCredProtect.label": {
+    "en": "5cc78bfe52150545",
+    "text": "拒绝未应用该保护的密钥"
+  },
+  "passkey.FIELDS.enforceCredProtect.what": {
+    "en": "52a07dbeabc876c9",
+    "text": "默认关闭。开启后，会请求浏览器强制执行上一行（enforceCredentialProtectionPolicy），身份验证器报告的级别低于上一行所要求级别的注册会被拒绝；不报告任何内容的密钥处于级别 1。需要将上一行设为 none 以外的级别。保存时省略此项，则保留内置默认值。"
+  },
   "passkey.SCHEMA.objectClasses.stsPasskeyPolicy.what": {
     "en": "44bab556bd6240cc",
     "text": "本服务用于通行密钥策略的类：通行密钥在此领域中的行为方式。该条目以配置文件命名（`cn=default`）。"
@@ -1394,6 +1410,14 @@
   "passkey.SCHEMA.attributes.stsPasskeyDeviceBoundRequired.what": {
     "en": "5098a9645fefe2ff",
     "text": "默认关闭。开启后，向此配置文件所覆盖的应用颁发时，会等到登录会话绑定到浏览器的密钥；若浏览器跳过该注册，或等待结束仍未绑定，则拒绝颁发。从未被提供注册的会话不会被此行拒绝。在 authn.deviceBoundSessions 关闭时拒绝。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyCredProtect.what": {
+    "en": "64640106a92f3111",
+    "text": "默认为 `none`：注册不要求任何凭据保护，其选项与以往相同。否则，注册会请求身份验证器（CTAP 2.1 第 12.1 节，credProtect 扩展）以该级别保护新凭据：`userVerificationOptional`（级别 1，没有该扩展时凭据所具有的级别）、`userVerificationOptionalWithCredentialIDList`（级别 2：除非依赖方在 allowCredentials 中列出该凭据，否则密钥在未经用户验证时既不透露也不使用它，因此持有密钥的人无法在其上找到可发现的凭据）或 `userVerificationRequired`（级别 3：密钥只有在 PIN 或生物识别之后才使用该凭据）。密钥报告的级别会记录在通行密钥上。大多数平台通行密钥和同步通行密钥不报告任何内容。保存时省略此项，则保留内置默认值。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyEnforceCredProtect.what": {
+    "en": "52a07dbeabc876c9",
+    "text": "默认关闭。开启后，会请求浏览器强制执行上一行（enforceCredentialProtectionPolicy），身份验证器报告的级别低于上一行所要求级别的注册会被拒绝；不报告任何内容的密钥处于级别 1。需要将上一行设为 none 以外的级别。保存时省略此项，则保留内置默认值。"
   },
   "passkey.SCHEMA.attributes.stsPasskeyPrecedence.what": {
     "en": "cd02467de702ad24",

@@ -48,6 +48,9 @@
 // OWNED HERE (local: true): this repository's own authorization server.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
@@ -283,7 +286,7 @@ async function tokensFor(client, scope, who, extra) {
     const signed = await signIn(b, r.location, who);
     r = await b.go("GET", signed.location);
   }
-  const code = r.location && r.location.indexOf(REDIRECT) === 0
+  const code = r.location && urls.isAt(r.location, REDIRECT)
     ? new URL(r.location).searchParams.get("code") : "";
   assert.ok(code, "a code for " + client + " (" + scope + "): " + r.status +
             " " + r.location + " " + String(r.text).slice(0, 300));
@@ -392,7 +395,7 @@ async function errorFor(claims) {
     response_type: "code", client_id: CLIENT, redirect_uri: REDIRECT,
     scope: "openid", state: "st", nonce: "n",
     claims: JSON.stringify(claims) }));
-  const at = r.location.indexOf(REDIRECT) === 0
+  const at = urls.isAt(r.location, REDIRECT)
     ? new URL(r.location).searchParams : new URLSearchParams();
   log.debug("Leaving errorFor().");
   return at.get("error") || (at.get("code") ? "" : "none: " + r.status +

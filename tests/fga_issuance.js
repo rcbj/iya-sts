@@ -269,6 +269,9 @@ function thePep(t) {
 function childMain() {
   /* eslint-disable no-console */
   const ROOT = process.env.FGAI_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT + '/tests/protocol/url_match.js');
   const OUT = process.env.FGAI_OUT;
   const http = require('http');
   const crypto = require('crypto');
@@ -443,7 +446,7 @@ function childMain() {
       for (let hop = 0; hop < 12; hop++) {
         const where = String(r.headers.location || '');
         if ((r.status !== 302 && r.status !== 303) ||
-            where.indexOf(REDIRECT) === 0) {
+            urls.isAt(where, REDIRECT)) {
           break;
         }
         if (/\/authn\/login/.test(where)) {
@@ -591,7 +594,7 @@ function childMain() {
     r = await authorize({ prompt: 'none',
       authorization_details: JSON.stringify([doc(['delete'])]) }, true);
     const noneAt = String(r.headers.location || '');
-    note(noneAt.indexOf(REDIRECT) === 0 && /error=access_denied/.test(noneAt),
+    note(urls.isAt(noneAt, REDIRECT) && /error=access_denied/.test(noneAt),
          '3l. with prompt=none too — access_denied, not consent_required',
          noneAt);
     r = await par({ authorization_details: JSON.stringify([doc(['delete'])]) });

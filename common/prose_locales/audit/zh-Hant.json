@@ -551,45 +551,73 @@
     "en": "f7fb5461e2325e1e",
     "text": "硬體權杖已回報遺失，其憑證已停用"
   },
-  "audit.actions.oath-token.import.label": {
+"audit.actions.oath-token.import.label": {
     "en": "4da380e22dff30ec",
     "text": "供應商的 PSKC 種子檔案已匯入或遭拒"
   },
-  "audit.actions.oath-token.assign.label": {
+"audit.actions.oath-token.assign.label": {
     "en": "19b678e9bbc10747",
     "text": "匯入的 OATH 權杖已指派給某人，或由某人認領"
   },
-  "audit.actions.oath-token.claim.label": {
+"audit.actions.oath-token.claim.label": {
     "en": "5c54ac8752e21682",
     "text": "某人對匯入的 OATH 權杖的認領遭拒"
   },
-  "audit.actions.oath-token.remove.label": {
+"audit.actions.oath-token.remove.label": {
     "en": "92d69a1a2d848892",
     "text": "未指派的 OATH 權杖已從清冊移除"
   },
-  "audit.actions.yubiotp.import.label": {
+"audit.actions.yubiotp.import.label": {
     "en": "6f92401fa557c5e6",
     "text": "匯入或拒絕了 YubiKey OTP CSV"
   },
-  "audit.actions.yubiotp.assign.label": {
+"audit.actions.yubiotp.assign.label": {
     "en": "c4f793ef7a16734a",
     "text": "匯入的 YubiKey OTP 已指派給某人"
   },
-  "audit.actions.yubiotp.claim.label": {
+"audit.actions.yubiotp.claim.label": {
     "en": "08d55e823350bd4a",
     "text": "某人認領了匯入的 YubiKey OTP，或認領被拒絕"
   },
-  "audit.actions.yubiotp.remove.label": {
+"audit.actions.yubiotp.remove.label": {
     "en": "a4a9aedd10cc2813",
     "text": "未指派的 YubiKey OTP 已從清冊中移除"
   },
-  "audit.actions.yubiotp.client-add.label": {
+"audit.actions.yubiotp.client-add.label": {
     "en": "40676cb783f36097",
     "text": "已建立 YK-VAL 用戶端"
   },
-  "audit.actions.yubiotp.client-remove.label": {
+"audit.actions.yubiotp.client-remove.label": {
     "en": "92433c797106d523",
     "text": "已移除 YK-VAL 用戶端"
+  },
+"audit.actions.openpgp.challenge.label": {
+    "en": "454a22b5bcd9d6a2",
+    "text": "已發出 OpenPGP 金鑰註冊挑戰"
+  },
+"audit.actions.openpgp.key-registered.label": {
+    "en": "1ed8de1f8777a015",
+    "text": "已憑持有證明註冊 OpenPGP 金鑰"
+  },
+"audit.actions.openpgp.key-refused.label": {
+    "en": "f1e7e3c6808ba33b",
+    "text": "OpenPGP 金鑰未獲註冊"
+  },
+"audit.actions.openpgp.key-removed.label": {
+    "en": "89a284fa6508eae4",
+    "text": "已移除 OpenPGP 金鑰"
+  },
+"audit.actions.openpgp.publication.label": {
+    "en": "f6d12f16eca6796a",
+    "text": "OpenPGP 金鑰已在 Web 金鑰目錄中發布或撤回"
+  },
+"audit.actions.openpgp.mail-encryption.label": {
+    "en": "ba0fb7a4133d94e2",
+    "text": "寄給某人的郵件的加密方式已變更"
+  },
+"audit.actions.openpgp.smime-certificate.label": {
+    "en": "663072a33ce1e178",
+    "text": "某人的 S/MIME 憑證已設定或移除"
   },
   "audit.actions.device.key-add.label": {
     "en": "6c1b2513c20532ef",
@@ -786,6 +814,10 @@
   "audit.actions.admin.mfa.key.renamed.label": {
     "en": "c179dbd3cb227763",
     "text": "營運者重新命名了某人的密碼金鑰"
+  },
+  "audit.actions.admin.mfa.key.imported.label": {
+    "en": "134b88075c58eab3",
+    "text": "操作員為某人匯入了 U2F 安全金鑰"
   },
   "audit.actions.admin.password.reset.label": {
     "en": "079b0b2fbe1a3633",
@@ -1891,6 +1923,34 @@
     "en": "896007dff32a6824",
     "text": "設定了角色的描述、顯示名稱或成員類型"
   },
+  "audit.actions.roles.set-mode.label": {
+    "en": "b1e0f3b6e5738f21",
+    "text": "某個角色被設為靜態或可動態選擇"
+  },
+  "audit.actions.roles.set-selection.label": {
+    "en": "0fbfbe0d177c5543",
+    "text": "設定了登入時如何選擇某個動態角色"
+  },
+  "audit.actions.roles.eligibility.label": {
+    "en": "28d96273b40dea3f",
+    "text": "已判定某人對某個動態角色的資格"
+  },
+  "audit.actions.roles.selection.offered.label": {
+    "en": "dd135469babd9bdc",
+    "text": "登入時提供了動態角色"
+  },
+  "audit.actions.roles.selection.chosen.label": {
+    "en": "2daaeb4ea81b1012",
+    "text": "登入時選擇了動態角色"
+  },
+  "audit.actions.roles.selection.refused.label": {
+    "en": "cbed03565474afc0",
+    "text": "某次登入對動態角色的選擇被拒絕"
+  },
+  "audit.actions.roles.selection.dropped.label": {
+    "en": "042b7f95a92cd6d2",
+    "text": "某個已選擇的動態角色未被放入權杖"
+  },
   "audit.actions.node-health.collect-garbage.label": {
     "en": "cb2531d8ee2f27ce",
     "text": "在某個節點的處理程序或工作執行緒中執行了一次完整垃圾回收"
@@ -2394,5 +2454,9 @@
   "audit.actions.xacml.pep.cluster.proxy.clear.label": {
     "en": "c2812e5d21fb6dd4",
     "text": "已移除遠端 PEP 叢集的反向代理設定"
+  },
+  "audit.actions.piv-escrow.recover.label": {
+    "en": "0cad829ec7cafc72",
+    "text": "已復原一把託管的 PIV 金鑰管理金鑰"
   }
 }

@@ -520,8 +520,12 @@
     "text": "full, sa bawat mode (#143, binuo sa #139): response_mode query.jwt, fragment.jwt, form_post.jwt at jwt (query para sa code, fragment kung hindi); ang mga response parameter na may iss, aud at exp (oauth2.jarmResponseLifetimeS) na naka-sign gamit ang authorization_signed_response_alg ng client (RS256, o PS256 sa ilalim ng FAPI 1.0 Advanced) at naka-encrypt kung nagrehistro ito ng authorization_encrypted_response_alg; sinasagot ang mga error sa parehong paraan; tinatanggihan ang query.jwt na may token na walang encryption (2.3.1); ang mga metadata at registration member ng section 3 at 4."
   },
   "stsmetadata.specs.webauthn.coverage": {
-    "en": "84ea7cdfbe803962",
-    "text": "partial, sa panig ng relying party: vine-verify ang registration (section 7.1) at assertion (section 7.2) — challenge, origin, RP ID hash, mga user presence at verification flag, BE/BS, ang alg ng credential laban sa pubKeyCredParams, ang 1023-byte na credential id, ang signature counter, at ang signature sa authenticatorData || SHA-256(clientDataJSON), para sa mga key na ES256/384/512, RS256/384/512, PS256/384/512, EdDSA at ML-DSA-44/65/87 (RFC 9964). Mula #105, vine-verify ang ATTESTATION STATEMENT sa lahat ng walong format ng section 8 (packed, tpm, android-key, android-safetynet, fido-u2f, none, apple, compound) sa ilalim ng webauthn.attestationPolicy — ang by-mode ay verify-if-present sa product at off sa development — ang chain nito laban sa mga naka-configure na anchor at sa mga root ng FIDO Metadata Service, kinokonsulta ang revocation nito, at tinatanggihan ang model na iniuulat ng MDS na compromised. Mula #643, maaaring sabay na hawakan ang isang classical na passkey at isang post-quantum (ML-DSA) na passkey (webauthn.pqcAlongsideClassical): bawat lane ay may sariling user handle (section 5.4.3), listahan ng algorithm at excludeCredentials, at ipinapadala ang Signal API (section 5.1.10) nang isang beses bawat lane. Kulang: walang RP ID allow-list ang enterprise attestation (section 5.4.7), at hindi pinoproseso ang mga authentication extension. Isinulat nang hiwalay sa sariling decoder ng debugger para masuri ang dalawa laban sa isa't isa (tests/webauthn_cross_impl.js)."
+    "en": "e293d58d8fdd5cd1",
+    "text": "partial, sa panig ng relying party: vine-verify ang registration (section 7.1) at assertion (section 7.2) — challenge, origin, RP ID hash, mga user presence at verification flag, BE/BS, ang alg ng credential laban sa pubKeyCredParams, ang 1023-byte na credential id, ang signature counter, at ang signature sa authenticatorData || SHA-256(clientDataJSON), para sa mga key na ES256/384/512, RS256/384/512, PS256/384/512, EdDSA at ML-DSA-44/65/87 (RFC 9964). Mula #105, vine-verify ang ATTESTATION STATEMENT sa lahat ng walong format ng section 8 (packed, tpm, android-key, android-safetynet, fido-u2f, none, apple, compound) sa ilalim ng webauthn.attestationPolicy — ang by-mode ay verify-if-present sa product at off sa development — ang chain nito laban sa mga naka-configure na anchor at sa mga root ng FIDO Metadata Service, kinokonsulta ang revocation nito, at tinatanggihan ang model na iniuulat ng MDS na compromised. Mula #643, maaaring sabay na hawakan ang isang classical na passkey at isang post-quantum (ML-DSA) na passkey (webauthn.pqcAlongsideClassical): bawat lane ay may sariling user handle (section 5.4.3), listahan ng algorithm at excludeCredentials, at ipinapadala ang Signal API (section 5.1.10) nang isang beses bawat lane. Hinihingi lamang ang enterprise attestation (section 5.4.7) para sa mga RP ID na nakalista sa webauthn.attestationEnterpriseRpIds. Ipinapadala ang member na hints (section 5.4.8) ayon sa sinasabi ng passkey policy. Mga extension (section 10): hinihingi ang credProps (10.1.3) at itinatala ang rk nito; hinihingi ang credProtect at minPinLength ng CTAP 2.1 ayon sa sinasabi ng passkey policy at binabasa ang mga output nila mula sa authenticator data (tingnan ang CTAP 2.1); ang appid (10.1.1) at appidExclude (10.1.2) ay para sa mga lumang FIDO U2F na kredensyal na in-import ng isang administrator sa entry ng isang tao, naka-off hanggang pangalanan ng webauthn.u2fAppIds ang AppID nila: hinahawakan ang rpIdHash ng isang assertion sa SHA-256 ng AppID lamang kapag nagbalik ang client ng appid true, sumasagot lamang ang ganitong key sa hakbang ng pangalawang factor, at humihingi ang pagrehistro ng appidExclude para hindi mairehistro nang dalawang beses ang parehong key. Kulang: hindi hinihingi o pinoproseso ang iba pang rehistradong extension (largeBlob, prf at ang iba pa), at ginagamit lamang ang isang AppID sa RP ID na kapareho nito ng host o na suffix nito — hindi kinukuha o inihahain dito ang TrustedFacets list ng FIDO AppID and Facet Specification. Isinulat nang hiwalay sa sariling decoder ng debugger para masuri ang dalawa laban sa isa't isa (tests/webauthn_cross_impl.js)."
+  },
+  "stsmetadata.specs.ctap21.coverage": {
+    "en": "4cc6ee6c2a81e46e",
+    "text": "minimal: ang kalahati ng relying party sa dalawang extension, dahil hindi client o authenticator ang serbisyong ito: credProtect (section 12.1) — humihingi ng antas ang credProtect ng passkey policy bilang credentialProtectionPolicy, nagpapadala ang enforceCredProtect ng enforceCredentialProtectionPolicy at tinatanggihan ang pagrehistro na ang authenticator data ay nag-uulat ng mas mababang antas (ang walang ulat ay antas 1), at itinatala ang antas sa passkey; at minPinLength (section 12.4), hinihingi habang nagpapatupad ang passkey policy ng haba ng PIN at hinahawakan sa minimum nito sa pagrehistro at sa pag-sign in. Wala nang iba pa sa CTAP: ang authenticator API, ang mga PIN protocol, ang malalaking blob at ang pamamahala ng kredensyal ay sa platform."
   },
   "stsmetadata.specs.dbsc.coverage": {
     "en": "5eac46b3be2eaa5f",
@@ -708,8 +712,8 @@
     "text": "minimal: ang permanent-identifier identifier type lang, na dito ay pumapangalan sa sariling directory entry ng account at nagiging urn:sts: subjectAltName nito. Hindi naka-implement ang device-attest-01 challenge at ang WebAuthn attestation statement."
   },
   "stsmetadata.specs.lamps-csr-attestation.coverage": {
-    "en": "727a26e021b5f20f",
-    "text": "partial: ang id-aa-attestation attribute ng isang PKCS#10 request (hindi hihigit sa isa, eksaktong isang AttestationBundle, ang certificate at iba pang choice lang) para sa device profile sa EST at SCEP; ang tanging statement type na vine-verify ay ang tcg-attest-tpm-certify ng TCG sa syntax ng appendix A.2.3 ng revision 20, na hindi pinapalitan ng anumang mas bagong revision o dokumento ng TCG (#257). Hindi binabasa ang CRMF extension (walang CMP dito), at ang ibang statement type ay itinatala, hindi vine-verify. Freshness (section 6.2) sa pamamagitan ng draft-ietf-lamps-attestation-freshness sa EST."
+    "en": "59b1734815ece664",
+    "text": "partial: ang id-aa-attestation attribute ng isang PKCS#10 na kahilingan (hindi hihigit sa isa, eksaktong isang AttestationBundle, ang certificate at iba pang choice lamang), sa EST, SCEP at ACME. Dalawang uri ng statement ang nave-verify: ang tcg-attest-tpm-certify ng TCG sa syntax ng appendix A.2.3 ng revision 20, para sa device profile (#257), at isang YubiKey PIV attestation para sa bawat profile (#1955), sa ilalim ng 1.3.6.1.4.1.41482.3.2 na ang slot certificate ang stmt at ang f9 certificate ay nasa certs, isang uri na pinili ng serbisyong ito dahil walang itinatakda ang draft. Hindi binabasa ang CRMF extension (walang CMP dito), at ang ibang uri ng statement ay itinatala, hindi nave-verify. Freshness (section 6.2) sa pamamagitan ng draft-ietf-lamps-attestation-freshness sa EST, para sa mga TPM statement lamang: walang dalang nonce ang PIV attestation."
   },
   "stsmetadata.specs.lamps-attestation-freshness.coverage": {
     "en": "555e31da7393d476",
@@ -754,6 +758,22 @@
   "stsmetadata.specs.rfc6376.coverage": {
     "en": "95d0cca14dac35d3",
     "text": "partial: pag-sign, relaxed/relaxed, rsa-sha256 na may key na hindi bababa sa 2048 bit (RFC 8301), sa common/crypto.js, sa ipinapadala ng SMTP transport kapag may naka-configure na domain. Wala: simple canonicalization, l= at pag-verify ng mail na ipinadala ng iba — walang tinatanggap na mail ang serbisyong ito. Walang nakarehistrong post-quantum algorithm ang DKIM."
+  },
+  "stsmetadata.specs.rfc9580.coverage": {
+    "en": "086f96d364365827",
+    "text": "partial: pagbasa ng transferable public key, v6 at (RFC 4880) v4, pag-verify ng cleartext signature ng isang signing key nito, at pag-encrypt ng mensahe sa encryption key nito, lahat sa pamamagitan ng openpgp.js (common/crypto.js section 19). Tinatanggap ang Ed25519, Ed448, ECDSA at ECDH sa mga NIST curve, X25519, X448 at RSA na openpgp.minRsaBits; tinatanggihan ang DSA, ElGamal at Brainpool. Kulang: pagpirma, decryption, keyring, keyserver."
+  },
+  "stsmetadata.specs.rfc3156.coverage": {
+    "en": "aa799b14a54ace0f",
+    "text": "partial: multipart/encrypted na may application/pgp-encrypted na version part at ang armored na mensahe, ang tunay na mga header ay protektado sa loob. Kulang: multipart/signed — pinipirmahan ng serbisyong ito ang mail gamit ang DKIM, hindi OpenPGP."
+  },
+  "stsmetadata.specs.rfc8551.coverage": {
+    "en": "a07a1e013186f3d4",
+    "text": "partial: application/pkcs7-mime enveloped-data, isang CMS EnvelopedData na may AES-256-CBC na content encryption at isang RSAES-OAEP (SHA-256) o ECDH key agreement recipient, sa userSMIMECertificate ng tao. Kulang: signed-data, AuthEnvelopedData (AES-GCM), decryption."
+  },
+  "stsmetadata.specs.wkd.coverage": {
+    "en": "e1c6b9651ff1e58c",
+    "text": "partial: ang advanced at ang direct lookup method (ang z-base-32 ng SHA-1 ng local part na naka-lowercase, ang l parameter) at ang policy file, sinasagot para sa mga taong pumayag, bawat realm at naka-off bilang default. Kulang: ang Web Key Service (submission-address, ang submission protocol); ang CORS ay ang allowlist ng serbisyong ito sa halip na ang * ng draft."
   },
   "stsmetadata.specs.rfc8463.coverage": {
     "en": "d4ee4ea51927a6f7",
@@ -1218,6 +1238,22 @@
   "stsmetadata.endpoints./scim/v2/Me.what": {
     "en": "8899a7fad6b6b50c",
     "text": "Ang alias ng section 3.11 para sa subject na pinag-authenticate-an ng request. Nire-resolve ng GET, PUT, PATCH at DELETE ang credential sa isang directory entry at ipinapasa sa PAREHONG mga User handler na ginagamit ng /Users/{id}, kaya walang ikalawang read o write path na kailangang panatilihing kasabay. Dati itong sumasagot ng 501 sa bawat method dahil walang nag-a-authenticate dito, at DALAWA SA MGA 501 NA IYON ANG TAMA PA RIN at pinanatili: walang subject na maa-alias ang ANONYMOUS na caller (hindi available ang alias, na iba sa nawawalang resource), at gagawa ang POST ng subject na ayon sa kahulugan ay umiiral na. Ang credential na nagpapangalan sa taong walang entry — isang client_credentials token, isang client certificate — ay nakakakuha na lang ng 404."
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/:domain/hu/:hash.what": {
+    "en": "0955037976aef471",
+    "text": "draft-koch-openpgp-webkey-service section 3.1, ang advanced method, itinatanong sa openpgpkey.<domain>: ang binary na OpenPGP public key ng taong ang address ay nagha-hash sa :hash (z-base-32 ng SHA-1 ng local part na naka-lowercase, l= ang local part), application/octet-stream at Cache-Control: no-store. Ang taong pumayag lang sa /portal/openpgp ang sinasagot, at kung saan lang naka-on ang openpgp.wkd ng realm at sineserbisyuhan nito ang :domain; ang lahat ng iba ay 404. Ang path na walang realm segment ay sinasagot ng realm na nagseserbisyo sa domain."
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/:domain/policy.what": {
+    "en": "12d81a251721ac64",
+    "text": "Ang policy file ng advanced method: walang laman, text/plain, 200 kung may realm na nagseserbisyo sa :domain at 404 kung wala. Ang pagkakaroon nito ang nagsasabi sa client na umiiral ang directory; walang inaalok na Web Key Service, kaya walang submission-address."
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/hu/:hash.what": {
+    "en": "ea1444452ebedcb6",
+    "text": "Ang direct method: gaya ng advanced, at ang domain ay ang host kung saan ginawa ang request."
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/policy.what": {
+    "en": "701adaefad112fb7",
+    "text": "Ang policy file ng direct method, para sa host kung saan ginawa ang request."
   },
   "stsmetadata.endpoints./.well-known/hoba/register.what": {
     "en": "ea46481cdbde5a44",
@@ -1735,6 +1771,18 @@
     "en": "bcf806336009d1f4",
     "text": "nagka-queue ng test message, o nagse-save o nagre-reset ng pananalita ng isang realm"
   },
+  "stsmetadata.endpoints./admin-api/openpgp.what": {
+    "en": "5d484bf76979cdee",
+    "text": "NON-SPEC (#1955). Ang ipinapakita ng Directory → Mga OpenPGP key: kasama ang ?user=, ang OpenPGP key ng taong iyon, ang kanyang nakabinbing challenge sa pagrehistro, ang kanyang paglalathala sa Web Key Directory, ang kanyang S/MIME certificate at kung paano naka-encrypt ang kanyang mail; at ang switch at mga domain ng Web Key Directory ng realm. Kahalintulad ng GET /admin/openpgp."
+  },
+  "stsmetadata.endpoints./admin-api/openpgp/:action.what": {
+    "en": "b428c51bc9fdc3f1",
+    "text": "NON-SPEC (#1955). challenge, register (publicKey, signed: ang challenge ng tao na pinirmahan gamit ang gpg --clearsign), remove, publish, withdraw, mail-encryption (choice) at smime (certificate), bawat isa ay may { user }: ang inaalok ng /portal/openpgp sa tao, para sa kanya. Nirerehistro lang ang isang key batay sa sariling patunay ng tao."
+  },
+  "stsmetadata.endpoints./admin-api/openpgp/:action.effect": {
+    "en": "a4485fe850562aab",
+    "text": "nag-i-issue ng challenge, nagrerehistro o nag-aalis ng OpenPGP key, inilalathala ito, o itinatakda ang mail encryption o S/MIME certificate ng isang tao"
+  },
   "stsmetadata.endpoints./admin-api/mail/outbox.what": {
     "en": "01316f4579428510",
     "text": "NON-SPEC (#63). Ang iginuguhit ng GET /admin/mail/outbox: bawat mensaheng ini-queue ng realm na ito, para kanino ito at kung ano ang nangyari dito, naka-page at sinasala ayon sa estado at search — hindi kailanman body, maliban sa nahuling mensahe (development) sa pamamagitan ng ?message=. Sinasalamin ang GET /admin/mail/outbox."
@@ -1955,6 +2003,30 @@
     "en": "ee45e233f511ee47",
     "text": "NON-SPEC. ANG SARADONG ATTRIBUTE CATALOGUE NA TINATANGGAP NG CREATE, bilang JSON: bawat attribute na puwedeng ibigay sa isang tao sa directory na ito, bawat isa ay nagpapangalan sa claim na naaabot nito sa in-issue na token o credential at sa dokumentong pinagmulan ng pangalan nito — na mahalaga dahil WALANG SCHEMA ang directory na ito at walang tatanggihan sa mga iyon saanman — at ang ou=users container na kalalagyan ng bagong tao (SA REALM NA ITO, dahil per realm ang directory) at ang apat na paraan para mabigyan siya ng daan papasok. Wala sa listahan ang uid dahil ito ANG username, at wala ang userPassword dahil dumadaan ang password sa credential option para ma-hash ito sa halip na isulat. WALA ITONG GINAGAWANG TAO: ang create ay POST /admin-api/users/create, at ito ang listahang pinagva-validate-an ng tawag na iyon — tinatanggihan ang pangalan ng attribute na wala rito at nabibigo ang buong create, kaya ang caller na unang bumasa nito ay hindi masasabihan pagkatapos na binalewala ang kalahati ng ipinadala nito. Sinasalamin ang GET /admin/users/new."
   },
+  "stsmetadata.endpoints./admin-api/groups/new.what": {
+    "en": "4ed04fc8ef1be664",
+    "text": "HINDI SPEC. Kung ano ang maaaring ipanglikha ng grupo, bilang JSON: bawat field ng paglikha at kung tatanggihan ito kapag wala — kailangan ang cn, hindi ang paglalarawan, ang address at ang mga miyembro — pati ang container na ou=groups kung saan mapupunta ang bagong grupo, ang sa REALM NA ITO. WALA ITONG NILILIKHA: ang paglikha ay POST /admin-api/groups/create. Katumbas ng GET /admin/groups/new."
+  },
+  "stsmetadata.endpoints./admin-api/roles/new.what": {
+    "en": "3bf6af72cb520499",
+    "text": "HINDI SPEC. Kung ano ang maaaring ipanglikha ng role, bilang JSON: bawat field ng paglikha at kung tatanggihan ito kapag wala — kailangan ang pangalan, hindi ang iba — pati ang container kung saan iniimbak ang mga role at ang mga application na maaaring para sa isang role. WALA ITONG NILILIKHA: ang paglikha ay POST /admin-api/roles/create-role. Katumbas ng GET /admin/roles/new."
+  },
+  "stsmetadata.endpoints./admin-api/devices/new.what": {
+    "en": "97ebfb0c1410c335",
+    "text": "HINDI SPEC. Kung ano ang maaaring ipangrehistro ng device, bilang JSON: bawat field ng paglikha at kung tatanggihan ito kapag wala — kailangan ang may-ari, hindi ang iba — pati ang mga saradong set na pinagmumulan ng mga pagpipilian nito. WALA ITONG NIREREHISTRO: ang paglikha ay POST /admin-api/devices/create. Katumbas ng GET /admin/devices/new."
+  },
+  "stsmetadata.endpoints./admin-api/attribute-sources/new.what": {
+    "en": "a0e98374461ed268",
+    "text": "HINDI SPEC. Kung ano ang maaaring ipangdagdag ng attribute source, bilang JSON: bawat field ng paglikha at kung tatanggihan ito kapag wala — kailangan ang id, ang host, ang database, ang user, ang table, ang key column nito at kahit isang column mapping, may mga default ang iba — pati ang mga saradong set na pinagmumulan ng mga pagpipilian nito. WALA ITONG IDINARAGDAG: ang paglikha ay POST /admin-api/attribute-sources/add-source. Katumbas ng GET /admin/attribute-sources/new."
+  },
+  "stsmetadata.endpoints./admin-api/secret-destinations/new.what": {
+    "en": "efff1aa20f1b29a1",
+    "text": "HINDI SPEC. Kung ano ang maaaring ipangdagdag ng secret destination, bilang JSON: bawat field ng paglikha at kung tatanggihan ito kapag wala — ang identifier at ang provider palagi, at ilan para sa ilang provider lamang (requiredWhen): ang write credential para sa lahat maliban sa file, ang region para sa aws, ang endpoint para sa azure at vault, ang directory para sa file. WALA ITONG IDINARAGDAG: ang paglikha ay POST /admin-api/secret-destinations/add-destination. Katumbas ng GET /admin/secret-destinations/new."
+  },
+  "stsmetadata.endpoints./admin-api/policies/new.what": {
+    "en": "2c58d79f3a71506e",
+    "text": "HINDI SPEC. Ang mga uri na maaaring gawing pinangalanang patakaran at, para sa hinihinging uri, bawat field ng pag-save nito at kung tatanggihan ang pag-save kapag wala ito — palagi ang pangalan, dahil binabago ng pag-save na walang pangalan ang default na patakaran, at bawat field na hindi pinananatili ang halaga kapag inalis. WALA ITONG SINI-SAVE: ang pinangalanang patakaran ay ang pag-save ng uri sa ilalim ng pangalang wala pa sa realm. Katumbas ng GET /admin/policies/new."
+  },
   "stsmetadata.endpoints./admin-api/applications/new.what": {
     "en": "25bf3526e817e678",
     "text": "NON-SPEC. ANG DALAWANG SARADONG BOKABULARYONG TINATANGGAP NG CREATE, bilang JSON: ang walong uri at ang labing-apat na protocol family na puwedeng IDEKLARA para sa isang application, bawat isa kasama ang ibig sabihin nito, at ang ou=applications container na kalalagyan ng bagong entry — SA REALM NA ITO, dahil per realm ang directory — kung ilan ang mahahawakan nito, at ang mga attribute na hindi tinatanggap ng create pero tinatanggap ng set/add/remove. WALA ITONG GINAGAWA: ang create ay POST /admin-api/applications/create, at ito ang listahang pinagva-validate-an ng tawag na iyon, inilathala para malaman ng caller kung ano ang puwede nitong ipadala mula sa serbisyo at hindi mula sa isang kopya sa dokumento. Walang ibinibigay o tinatanggihan ang pagdedeklara ng family — walang endpoint na bumabasa ng appAllowedProtocol. Sinasalamin ang GET /admin/applications/new."
@@ -2148,12 +2220,12 @@
     "text": "NON-SPEC (#1955 P4). Ang mga HOTP at TOTP token na in-import ng mga administrator mula sa mga PSKC seed file ng mga vendor, hindi naka-assign, naka-assign o retirado, naka-page at hinahanap ayon sa serial o tao. Hindi kailanman secret. Kapareho ng GET /admin/hardware-tokens (ang OATH tab nito)."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-    "en": "107e4ff48ad53fb3",
-    "text": "NON-SPEC (#1955). lost, na may { key }: minamarkahang nawala ang token, inaalis ang bawat passkey dito, binabawi ang bawat sertipiko dito para sa keyCompromise, inaalis ang bawat na-import na OATH secret sa entry ng may hawak nito, nagpapadala ng CAEP credential-change para sa bawat isa at isinasara ang mga session na binuksan ng mga ito. Mula P4, import-pskc, na may { pskc, preSharedKey or password }: ang mga HOTP at TOTP key ng isang RFC 6030 seed file ay itinatabing hindi naka-assign ayon sa serial, unang sinusuri ang MAC at hindi kailanman iniimbak ang key; assign-oath, na may { key, username }; at remove-oath, na may { key }, para sa hindi naka-assign na token. Mula P5, import-yubiotp, na may { csv }; assign-yubiotp, na may { serial, username, otp }; remove-yubiotp, na may { serial }; ykval-client-add, na may { id }, na ang HMAC key ay sinasagot nang isang beses lang; at ykval-client-remove, na may { id }."
+"en": "0d649147af0cbe04",
+"text": "NON-SPEC (#1955). lost, na may { key }: minamarkahang nawala ang token, inaalis ang bawat passkey dito, binabawi ang bawat sertipiko dito dahil sa keyCompromise, nagpapadala ng CAEP credential-change para sa bawat isa at tinatapos ang mga session na in-sign in ng mga ito. enrol-piv, na may { username, profile, csr, attestationCertificate?, attestationIssuer? }: isang PIV slot certificate na inilabas sa taong iyon sa pamamagitan ng EST Issuing CA, vine-verify ang YubiKey PIV attestation nito at itinatala ang YubiKey. recover-key, na may { username, serial }: ang naka-escrow na piv-key-management key ng taong iyon, na pinahihintulutan lamang ng access-control policy sa PIV_KEY_RECOVERY. Ang tatlong aksiyon ng console sa page na iyon."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
-    "en": "dabee6463ad7ee17",
-    "text": "iniuulat na nawala ang isang hardware token at inaalis ang mga credential nito, o nag-i-import, nag-a-assign o nag-aalis ng mga OATH token"
+    "en": "b55c0cdd477d183e",
+"text": "iniuulat na nawala ang isang hardware token at inaalis ang mga credential nito, naglalabas ng PIV slot certificate, o nag-aabot ng naka-escrow na key"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -2170,6 +2242,10 @@
   "stsmetadata.endpoints./admin-api/roles/preview.what": {
     "en": "efc872210c98747b",
     "text": "NON-SPEC. Isang issuance decision, ginawa at itinapon: walang ini-issue at walang itinatala. Dumadaan ito sa PAREHONG tawag na ginagawa ng siyam na issuance site — issuance_gate.check(), ang embedded PEP at ang PDP laban sa policy na pinangangalanan ng xacml.issuancePolicy — kaya imposible ang preview na sumang-ayon sa enforcement nang nagkataon lang, na siyang nag-iisang dahilan kung bakit ito umiiral. HINDI ito ang POST /xacml/pdp, na nagtatanong sa parehong engine tungkol sa ROOT ng repository: sumasagot ang dokumentong iyon ng mga tanong tungkol sa boundary ng IBA at sumasagot ito ng tanong tungkol sa serbisyong ito. Parehong kailangan ang `application` at `subject`, dahil ang issuance na walang pinangalanan sa dalawa ay pinapayagan ayon sa kahulugan at hindi ayon sa policy. Nagiging XACML action-id ang `kind`, kaya puwedeng payagan ng policy ang access token at tanggihan ang refresh token. Ang `available: false` ay nangangahulugang hindi naka-load dito ang engine. Sinasalamin ang dry run sa /admin/roles."
+  },
+  "stsmetadata.endpoints./admin-api/roles/eligibility.what": {
+    "en": "8d1e213c972caef4",
+    "text": "HINDI SPEC (#1072). Ang sariling patakarang XACML sa pagiging karapat-dapat ng isang dynamic na tungkulin, pinagpasyahan ng PDP para sa isang tao gaya ng itatanong ng pag-sign in sa `application`, nang walang pag-sign in: karapat-dapat o hindi, ang code kapag hindi, ang desisyon at status (nakapangalan doon ang nawawalang attribute). Permit lang ang nagpapakarapat-dapat. Walang isinusulat maliban sa audit row na roles.eligibility at hindi kailanman ipinapakita ang patakaran o ang mga attribute ng tao. Kailangan ang `role` at `user`; kapag kulang, ang sagot ay `answered: false`. Katulad ng pagsubok sa pahinang /admin/roles ng isang dynamic na tungkulin."
   },
   "stsmetadata.endpoints./admin-api/roles/:action.what": {
     "en": "824b769ad7e2e401",
@@ -3055,13 +3131,21 @@
     "en": "9547cda6898c37a6",
     "text": "humihingi ng post-quantum na passkey pagkatapos ng sign-in, saka itinatatag ang sign-on session na pinigil nito"
   },
-  "stsmetadata.endpoints./wsapi/2.0/verify.what": {
+"stsmetadata.endpoints./wsapi/2.0/verify.what": {
     "en": "ff0550a4318594c6",
     "text": "VALIDATION PROTOCOL 2.0 NG YUBICO (#1955 P5). GET o POST ng id, otp, nonce at h. Naka-off bilang default: sumasagot ang route ng OPERATION_NOT_ALLOWED at walang nilalagda. Kapag naka-on, sinusuri ang client id at ang HMAC-SHA1 sa bawat mode, kasama ang development; naaalala ang nonce nang limang minuto; ginagastos ang tumugmang OTP. Cache-Control: no-store. Walang ipinapadala sa YubiCloud."
   },
-  "stsmetadata.endpoints./wsapi/2.0/verify.effect": {
+"stsmetadata.endpoints./wsapi/2.0/verify.effect": {
     "en": "bb2bc4011c8240ac",
     "text": "sinusuri ang isang YubiKey OTP para sa client na lumagda sa request, o sumasagot ng OPERATION_NOT_ALLOWED habang naka-off ang yubiotp.ykval"
+  },
+"stsmetadata.endpoints./authn/roles.what": {
+    "en": "88814e89f81f8d86",
+    "text": "MGA DYNAMIC NA MAPIPILING TUNGKULIN (#1072). Pagkatapos ng lahat ng factor, ang pag-sign in sa application na ang realm ay may dynamic na tungkulin (maliban kung pinapatay ito ng roles.dynamicSelection o ng appDynamicRoleSelection ng application) ay PINAPAHINTO habang pinagpapasyahan para sa tao ang patakarang XACML ng bawat dynamic na tungkulin; Permit lang ang nag-aalok ng tungkulin. Kapag tinsek ng tao ang \"Pumili ng mga tungkulin para sa pag-sign in na ito\", o may iniaalok na kailangang tungkulin, inililista ng pahinang ito ang mapipili; ang Magpatuloy (/authn-api/mfa/{id}/roles) ay sinusuri ang pinili laban sa alok ng hakbang at muli sa mga patakaran, at sinisimulan ang session na nakatala ang pinili sa session record, hindi kailanman sa directory. Dadalhin ng token para sa application na iyon ang mga piniling tungkulin, bawat isa ay muling sinusuri sa patakaran nito sa bawat pag-isyu. Kailangan ng ?mfa= id mula sa pinahintong pag-sign in; kapag wala, 400 ang sagot."
+  },
+"stsmetadata.endpoints./authn/roles.effect": {
+    "en": "fc2116e31d3ead37",
+    "text": "nagtatanong kung aling mga dynamic na mapipiling tungkulin ang gagamitin sa pag-sign in na ito, saka sinisimulan ang pinahintong session kasama ang pinili"
   },
   "stsmetadata.endpoints./authn/totp.what": {
     "en": "b62d7bad9442ea5c",
@@ -3242,6 +3326,10 @@
   "stsmetadata.endpoints./authn-api/mfa/:id/post-login/skip.what": {
     "en": "b1be682232332278",
     "text": "NON-SPEC (#1096). Nang snoozeDays ng profile; tinatanggihan kapag lumipas na ang itinakdang panahon. Sinisimulan ang pinigil na session."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/roles.what": {
+    "en": "26fc9f7a66659a20",
+    "text": "HINDI SPEC (#1072). Ang pinili sa hakbang ng tungkulin, sinuri laban sa alok ng hakbang at sa patakaran ng bawat tungkulin; nagsisimula ang pinahintong session kasama ito."
   },
   "stsmetadata.endpoints./authn-api/mfa/:id/email/send.what": {
     "en": "7b9faf3a24fd710d",
@@ -3919,6 +4007,10 @@
     "en": "835d40e9ff6eaabb",
     "text": "HINDI ITO PROTOCOL, at may card ito dahil nag-uulat ang page na ito ng endpoint group na walang card na umaangkin — na siyang patakarang pumipigil sa bagong family na dumating nang walang pasabi, at sulit itong bayaran dito sa halip na gawing kondisyonal ang patakaran. ANG UNANG SURFACE SA SERBISYONG ITO NA PAG-AARI NG TAONG TUMITINGIN DITO: bawat ibang browser page dito ay para sa iba — ang sign-in screen ay isang step sa flow ng ibang protocol, ang consent screen ay nagtatanong ng isang tanong at umaalis, ang /admin ay para sa operator at gated sa dalawang role. Dito nakikita ng tao kung ano ang alam ng identity provider na ito tungkol sa kanila at binabago kung paano sila nag-a-authenticate: ang kanilang password, at ang kanilang mga security key at kung primary credential o second factor ang bawat isa. HIWALAY ITONG APPLICATION mula sa admin console at walang pinaghahatian maliban sa sign-on session sa authorization server ng serbisyong ito: bawat isa ay public OAuth client (sts-user-portal dito) na may hawak ng sarili nitong DPoP-bound na token sa memory. Ang /portal/activate ang unauthenticated na kalahati nito, kung saan ginagamit ng taong na-provision sa pamamagitan ng /admin-api o SCIM ang single-use at may takdang oras na activation link para mag-set up ng credential — naka-hash habang nakaimbak tulad ng password, naka-rate limit, ginagamit kapag natapos ang setup sa halip na kapag binuksan ang link, at hindi kailanman nagsa-sign in ng sinuman. MULA #568 ISA ITONG STATIC APPLICATION sa ibabaw ng /account-api, ang Account API group sa ibaba: isang operation bawat page at bawat form, ang tao ay laging ang subject ng token, inilalarawan ng sarili nitong OpenAPI document."
   },
+  "stsmetadata.protocols.OpenPGP.what": {
+    "en": "f2e7f0580b98e867",
+    "text": "Ang OpenPGP key ng isang tao (#1955), nakarehistro sa portal o ng isang administrator batay sa proof of possession — pinipirmahan ng tao ang isang challenge gamit ang gpg --clearsign, at sa OpenPGP card ng isang YubiKey ang card ang pumipirma — at nakatago sa kanyang entry; nakalathala sa Web Key Directory, kung pipiliin niya at naka-on ito sa realm; at ang key kung saan naka-encrypt ang kanyang mail (PGP/MIME), o ang kanyang S/MIME certificate (S/MIME), ayon sa pinili niya. Puwedeng hingin ng isang realm ang encryption para sa mga piling mensahe (mail.encryptionRequired), na hindi kailanman ipapadala nang hindi naka-encrypt. Walang itinatalang hardware-bound: hindi nakikita ng server ang card. Walang sign-in gamit ang OpenPGP."
+  },
   "stsmetadata.protocols.Reporting.what": {
     "en": "66663fd63a35a287",
     "text": "HINDI ISANG PROTOCOL. Ang reports application (#956): isang static na pahina sa /report sa ibabaw ng /report-api, ang public client na sts-report, at isang catalog ng sariling mga record ng realm na ito. Nagsa-sign in ito sa browser, may hawak na DPoP-bound na token, at hindi kailanman tumatanggap ng SQL string. Ang naka-save na definition ay pag-aari ng may-ari nito; ang share sa isang directory group ay nagbibigay ng pagpapatakbo at pagbabasa, hindi ng pag-edit."
@@ -4094,5 +4186,17 @@
   "stsmetadata.param.aParameter": {
     "en": "24ece2f78749cf6a",
     "text": "isang parameter"
+  },
+  "stsmetadata.specs.yubico-piv-attestation.coverage": {
+    "en": "244659759ede3102",
+    "text": "partial: ang attestation na sertipiko ng slot ay vine-verify sa pamamagitan ng f9 attestation na sertipiko hanggang sa mga PIV root ng Yubico (Serial 263751, at Attestation Root 1 kasama ang mga PIV intermediate nito para sa firmware 5.7.4 pataas, kasama at naka-pin) o sa sariling root ng isang realm; ang key nito ay itinutugma sa key ng kahilingan; binabasa ang mga extension ng firmware, serial, PIN at touch policy at form factor, at itinutugma ang mga policy sa policy ng realm. Hindi kailanman pinamamahalaan ang mismong card: walang pagsulat ng PIN, PUK o slot."
+  },
+  "stsmetadata.specs.fips201.coverage": {
+    "en": "322d92ba9eb36fde",
+    "text": "minimal: ang apat na key slot bilang mga certificate profile (PIV Authentication 9a, Digital Signature 9c, Key Management 9d, Card Authentication 9e, na bilang default ay walang sina-sign in), at isang panlabas na PIV o CAC card na itinutugma ayon sa card UUID sa urn:uuid subjectAltName nito kapag nagsasaad ito ng PIV Authentication policy (naka-off bilang default). Walang FASC-N, CHUID, pamamahala ng card o biometrics."
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/escrowed.what": {
+    "en": "1716521c9c5e119d",
+    "text": "NON-SPEC (#1955). Ang mga naka-escrow na piv-key-management certificate ng isang tao (piv.keyEscrow): serial, subject, validity at kung binawi ang bawat isa. Hindi kailanman isang key. Katapat ng GET /admin/hardware-tokens."
   }
 }

@@ -680,9 +680,11 @@ function scrub(value, name) {
   // A form a page posts (form_post, JARM's form_post.jwt): each credential
   // it carries is a placeholder by its name.
   if (typeof value === 'string' && value.indexOf('<form') >= 0) {
+    // Each member escaped whole, the backslash included, then joined.
     value = value.replace(new RegExp('(name="(' +
-      VOLATILE_MEMBERS.join('|').replace(/#/g, '\\#') +
-      ')" value=")[^"]*"', 'g'), '$1<$2>"');
+      VOLATILE_MEMBERS.map(function (one) {
+        return one.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      }).join('|') + ')" value=")[^"]*"', 'g'), '$1<$2>"');
   }
   if (typeof value === 'string' && /^(https?:\/\/|\/)[^ ]*[?#]/.test(value)) {
     const mark = value.search(/[?#]/);

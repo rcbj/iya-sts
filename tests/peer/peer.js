@@ -447,6 +447,18 @@ function start(options) {
     }
   }
   const plain = http.createServer(handler(state));
+  // THE CLIENT CERTIFICATE IS ASKED FOR AND NEVER REQUIRED, AND IS CHECKED
+  // BY THE ROLE THAT READS IT (2026-11-20, said for CodeQL's count): the one
+  // reader is the GNAP resource server's mutual-TLS proof (RFC 9635 section
+  // 7.3.2), which binds a token to a KEY, not to an issuer — the jobs'
+  // certificates are self-signed — and peer_gnap.js's mtlsProblem() compares
+  // the certificate the handshake proved possession of with the token's.
+  // A connection with no certificate, or another one, must reach that
+  // handler and be answered 401 (sts_gnap_rs.js asserts both), so the
+  // handshake cannot refuse it. This is the service's own `optional` posture
+  // (tls/tls_server.js clientAuthOptions()), which this image cannot load.
+  // What the peer PRESENTS is a server certificate under its own CA, and
+  // every job dialling it verifies that.
   const secure = https.createServer({ key: listener.key,
                                       cert: listener.cert,
                                       requestCert: true,

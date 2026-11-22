@@ -551,45 +551,73 @@
     "en": "f7fb5461e2325e1e",
     "text": "En maskinvarutoken anmäldes förlorad och dess inloggningsuppgifter återkallades"
   },
-  "audit.actions.oath-token.import.label": {
+"audit.actions.oath-token.import.label": {
     "en": "4da380e22dff30ec",
     "text": "En leverantörs PSKC-fröfil importerades, eller avvisades"
   },
-  "audit.actions.oath-token.assign.label": {
+"audit.actions.oath-token.assign.label": {
     "en": "19b678e9bbc10747",
     "text": "En importerad OATH-token tilldelades en person, eller en person gjorde anspråk på den"
   },
-  "audit.actions.oath-token.claim.label": {
+"audit.actions.oath-token.claim.label": {
     "en": "5c54ac8752e21682",
     "text": "En persons anspråk på en importerad OATH-token avvisades"
   },
-  "audit.actions.oath-token.remove.label": {
+"audit.actions.oath-token.remove.label": {
     "en": "92d69a1a2d848892",
     "text": "En ej tilldelad OATH-token togs bort från inventariet"
   },
-  "audit.actions.yubiotp.import.label": {
+"audit.actions.yubiotp.import.label": {
     "en": "6f92401fa557c5e6",
     "text": "En CSV med YubiKey-OTP importerades, eller avvisades"
   },
-  "audit.actions.yubiotp.assign.label": {
+"audit.actions.yubiotp.assign.label": {
     "en": "c4f793ef7a16734a",
     "text": "En importerad YubiKey-OTP tilldelades en person"
   },
-  "audit.actions.yubiotp.claim.label": {
+"audit.actions.yubiotp.claim.label": {
     "en": "08d55e823350bd4a",
     "text": "En person tog en importerad YubiKey-OTP i anspråk, eller anspråket avvisades"
   },
-  "audit.actions.yubiotp.remove.label": {
+"audit.actions.yubiotp.remove.label": {
     "en": "a4a9aedd10cc2813",
     "text": "En ej tilldelad YubiKey-OTP togs bort från inventariet"
   },
-  "audit.actions.yubiotp.client-add.label": {
+"audit.actions.yubiotp.client-add.label": {
     "en": "40676cb783f36097",
     "text": "En YK-VAL-klient skapades"
   },
-  "audit.actions.yubiotp.client-remove.label": {
+"audit.actions.yubiotp.client-remove.label": {
     "en": "92433c797106d523",
     "text": "En YK-VAL-klient togs bort"
+  },
+"audit.actions.openpgp.challenge.label": {
+    "en": "454a22b5bcd9d6a2",
+    "text": "En utmaning för registrering av OpenPGP-nyckel utfärdades"
+  },
+"audit.actions.openpgp.key-registered.label": {
+    "en": "1ed8de1f8777a015",
+    "text": "En OpenPGP-nyckel registrerades på ett innehavsbevis"
+  },
+"audit.actions.openpgp.key-refused.label": {
+    "en": "f1e7e3c6808ba33b",
+    "text": "En OpenPGP-nyckel registrerades inte"
+  },
+"audit.actions.openpgp.key-removed.label": {
+    "en": "89a284fa6508eae4",
+    "text": "En OpenPGP-nyckel togs bort"
+  },
+"audit.actions.openpgp.publication.label": {
+    "en": "f6d12f16eca6796a",
+    "text": "En OpenPGP-nyckel publicerades i, eller drogs tillbaka från, Web Key Directory"
+  },
+"audit.actions.openpgp.mail-encryption.label": {
+    "en": "ba0fb7a4133d94e2",
+    "text": "Hur e-post till en person krypteras ändrades"
+  },
+"audit.actions.openpgp.smime-certificate.label": {
+    "en": "663072a33ce1e178",
+    "text": "En persons S/MIME-certifikat angavs eller togs bort"
   },
   "audit.actions.device.key-add.label": {
     "en": "6c1b2513c20532ef",
@@ -786,6 +814,10 @@
   "audit.actions.admin.mfa.key.renamed.label": {
     "en": "c179dbd3cb227763",
     "text": "En operatör bytte namn på någons passkey"
+  },
+  "audit.actions.admin.mfa.key.imported.label": {
+    "en": "134b88075c58eab3",
+    "text": "En operatör importerade en U2F-säkerhetsnyckel åt någon"
   },
   "audit.actions.admin.password.reset.label": {
     "en": "079b0b2fbe1a3633",
@@ -1891,6 +1923,34 @@
     "en": "896007dff32a6824",
     "text": "En rolls beskrivning, visningsnamn eller medlemstyper sattes"
   },
+  "audit.actions.roles.set-mode.label": {
+    "en": "b1e0f3b6e5738f21",
+    "text": "En roll gjordes statisk eller dynamiskt valbar"
+  },
+  "audit.actions.roles.set-selection.label": {
+    "en": "0fbfbe0d177c5543",
+    "text": "Det angavs hur en dynamisk roll väljs vid inloggning"
+  },
+  "audit.actions.roles.eligibility.label": {
+    "en": "28d96273b40dea3f",
+    "text": "En persons behörighet till en dynamisk roll avgjordes"
+  },
+  "audit.actions.roles.selection.offered.label": {
+    "en": "dd135469babd9bdc",
+    "text": "Dynamiska roller erbjöds vid en inloggning"
+  },
+  "audit.actions.roles.selection.chosen.label": {
+    "en": "2daaeb4ea81b1012",
+    "text": "Dynamiska roller valdes vid en inloggning"
+  },
+  "audit.actions.roles.selection.refused.label": {
+    "en": "cbed03565474afc0",
+    "text": "En inloggnings val av dynamiska roller nekades"
+  },
+  "audit.actions.roles.selection.dropped.label": {
+    "en": "042b7f95a92cd6d2",
+    "text": "En vald dynamisk roll utelämnades från en token"
+  },
   "audit.actions.node-health.collect-garbage.label": {
     "en": "cb2531d8ee2f27ce",
     "text": "En fullständig skräpinsamling kördes i en process eller arbetstråd på en nod"
@@ -2394,5 +2454,9 @@
   "audit.actions.xacml.pep.cluster.proxy.clear.label": {
     "en": "c2812e5d21fb6dd4",
     "text": "Konfigurationen för omvänd proxy för ett kluster av fjärr-PEP:er togs bort"
+  },
+  "audit.actions.piv-escrow.recover.label": {
+    "en": "0cad829ec7cafc72",
+    "text": "En deponerad PIV-nyckelhanteringsnyckel återställdes"
   }
 }

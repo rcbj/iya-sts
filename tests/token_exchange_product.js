@@ -75,6 +75,9 @@ const ROOT = path.join(__dirname, '..');
 // rule (root CLAUDE.md, *Code style*).
 function childMain() {
   const ROOT = process.env.TXP_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT + '/tests/protocol/url_match.js');
   const OUT = process.env.TXP_OUT;
   const http = require('http');
   const crypto = require('crypto');
@@ -284,7 +287,7 @@ function childMain() {
       note(r.status === 200 && claims.act &&
            claims.act.sub === clientSubIn(m, 'txp-front') &&
            claims.act.iss === claims.iss && !!claims.iss &&
-           [].concat(claims.aud).indexOf(BACK) >= 0 && row &&
+           urls.holds(claims.aud, BACK) && row &&
            /issuance policy allowed delegation/.test(row.authorizedBy) &&
            row.intermediary &&
            row.intermediary.presented === clientSubIn(m, 'txp-front'),

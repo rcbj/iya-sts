@@ -40,6 +40,9 @@
 delete process.env.CONFIG_FILE;
 
 require('../common/i18n');
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const realms = require('../common/realms');
 const errorCodes = require('../common/error_codes');
 const credentials = require('../common/credentials');
@@ -253,7 +256,7 @@ function thePage(t) {
           html.indexOf('/admin/users?user=ann') >= 0 &&
           html.indexOf('/admin/applications?application=app1') >= 0 &&
           html.indexOf('App one') >= 0 &&
-          html.indexOf('https://api.example/read') >= 0,
+          urls.namesAddress(html, 'https://api.example/read'),
           'D2. the role\'s facts, members, permissions and requiring ' +
           'applications are drawn');
   t.check((html.match(/name="action" value="remove-owner"/g) || []).length ===

@@ -68,6 +68,9 @@
 // OWNED HERE (local: true). Its realm is removed only on a private probe.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const K = require("./oauth_wire_kit.js").kit("sts_saml_sso_rules");
 const S = require("./saml_wire_kit.js").samlKit(K);
@@ -564,7 +567,7 @@ async function metadataWritten() {
             "Browser/Artifact: a 303 carrying TARGET and a 42-byte type " +
             "0x0001 SAMLart", function () {
       assert.strictEqual(art.status, 303, K.shown(art));
-      assert.strictEqual(String(art.location).indexOf(artifact), 0);
+      assert.ok(urls.isAt(art.location, artifact), String(art.location));
       assert.ok(/[?&]TARGET=/.test(art.location));
       assert.strictEqual(raw.length, 42);
       assert.strictEqual(raw.readUInt16BE(0), 1);

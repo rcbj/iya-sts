@@ -44,6 +44,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const fs = require('fs');
 const path = require('path');
 
@@ -173,21 +176,21 @@ function run(t) {
     applications.seen({ identifier: spId, kind: 'saml2-service-provider',
                         counts: false,
                         fields: { samlAssertionConsumerService: LEARNT } });
-    t.check(acsValues().indexOf(LEARNT) >= 0,
+    t.check(urls.holds(acsValues(), LEARNT),
             'development still writes the ACS URL a request named',
             acsValues());
-    t.check(marksOf().indexOf(ACS + ' ' + LEARNT) >= 0,
+    t.check(urls.holds(marksOf(), ACS + ' ' + LEARNT),
             'AND MARKS IT as observed on appReturnAddressObserved', marksOf());
 
     applications.seen({ identifier: spId, kind: 'saml2-service-provider',
                         counts: false,
                         fields: { samlAssertionConsumerService: REGISTERED } });
-    t.check(marksOf().indexOf(ACS + ' ' + REGISTERED) < 0,
+    t.check(!urls.holds(marksOf(), ACS + ' ' + REGISTERED),
             'a sighting that repeats a REGISTERED address does not demote it',
             marksOf());
 
     const dev = applications.returnAddressesOf(entry(), ACS);
-    t.check(dev.registered.indexOf(LEARNT) >= 0 && dev.unconfirmed.length === 0,
+    t.check(urls.holds(dev.registered, LEARNT) && dev.unconfirmed.length === 0,
             'development believes every address, marked or not — its ' +
             'behaviour is unchanged',
             JSON.stringify(dev));
@@ -210,11 +213,11 @@ function run(t) {
   // -------------------------------------------------------------------------
   withMode(config, 'product', function () {
     const known = applications.returnAddressesOf(entry(), ACS);
-    t.check(known.registered.indexOf(LEARNT) < 0 &&
-            known.unconfirmed.indexOf(LEARNT) >= 0,
+    t.check(!urls.holds(known.registered, LEARNT) &&
+            urls.holds(known.unconfirmed, LEARNT),
             'returnAddressesOf() withholds the marked address in product',
             JSON.stringify(known));
-    t.check(known.registered.indexOf(REGISTERED) >= 0,
+    t.check(urls.holds(known.registered, REGISTERED),
             'while the registered address is believed', JSON.stringify(known));
     const refused = resolveFor(LEARNT);
     t.equal(refused.ok, false, 'a request naming the observed address is ' +
@@ -293,8 +296,8 @@ function run(t) {
                                                         value: LEARNT });
   t.check(confirmed.ok, 'confirm-address succeeds on a marked address',
           JSON.stringify(confirmed.errors));
-  t.check(marksOf().indexOf(ACS + ' ' + LEARNT) < 0 &&
-          acsValues().indexOf(LEARNT) >= 0,
+  t.check(!urls.holds(marksOf(), ACS + ' ' + LEARNT) &&
+          urls.holds(acsValues(), LEARNT),
           'the MARK is gone and the ADDRESS stays', JSON.stringify(
               [marksOf(), acsValues()]));
   withMode(config, 'product', function () {
@@ -312,15 +315,15 @@ function run(t) {
                         counts: false,
                         fields: { samlAssertionConsumerService: SECOND } });
   });
-  t.check(marksOf().indexOf(ACS + ' ' + SECOND) >= 0, 'a second sighting is ' +
-                                                      'marked', marksOf());
+  t.check(urls.holds(marksOf(), ACS + ' ' + SECOND),
+          'a second sighting is marked', marksOf());
   const discarded = applications.discardReturnAddress(spId,
                                                       { attribute: ACS,
                                                         value: SECOND });
   t.check(discarded.ok, 'discard-address succeeds',
           JSON.stringify(discarded.errors));
-  t.check(marksOf().indexOf(ACS + ' ' + SECOND) < 0 &&
-          acsValues().indexOf(SECOND) < 0,
+  t.check(!urls.holds(marksOf(), ACS + ' ' + SECOND) &&
+          !urls.holds(acsValues(), SECOND),
           'BOTH the mark and the address are gone', JSON.stringify(
               [marksOf(), acsValues()]));
   withMode(config, 'product', function () {
@@ -333,7 +336,7 @@ function run(t) {
   t.check(!applications.discardReturnAddress(spId,
                                              { attribute: ACS,
                                                value: REGISTERED }).ok &&
-          acsValues().indexOf(REGISTERED) >= 0,
+          urls.holds(acsValues(), REGISTERED),
           'discard will not remove a REGISTERED address — `remove` is that door', acsValues());
 
   // -------------------------------------------------------------------------
@@ -354,15 +357,15 @@ function run(t) {
           'an explicit `add` of an address already there as observed is a ' +
           'CHANGE',
           JSON.stringify(added));
-  t.check(marksOf().indexOf(ACS + ' ' + THIRD) < 0 &&
-          acsValues().indexOf(THIRD) >= 0,
+  t.check(!urls.holds(marksOf(), ACS + ' ' + THIRD) &&
+          urls.holds(acsValues(), THIRD),
           'and it CONFIRMS the address', JSON.stringify(
               [marksOf(), acsValues()]));
   applications.updateApplication(spId,
                                  { attribute: ACS, mode: 'remove',
                                    value: FOURTH });
-  t.check(marksOf().indexOf(ACS + ' ' + FOURTH) < 0 &&
-          acsValues().indexOf(FOURTH) < 0,
+  t.check(!urls.holds(marksOf(), ACS + ' ' + FOURTH) &&
+          !urls.holds(acsValues(), FOURTH),
           'a `remove` takes the mark with the value, so no mark names a ' +
           'missing address',
           JSON.stringify([marksOf(), acsValues()]));
@@ -371,7 +374,7 @@ function run(t) {
     applications.updateApplication(spId,
       { attribute: ACS, mode: 'add', value: 'https://flagged.rap.test/acs',
         observed: true });
-    t.check(marksOf().indexOf(ACS + ' https://flagged.rap.test/acs') < 0,
+    t.check(!urls.holds(marksOf(), ACS + ' https://flagged.rap.test/acs'),
             'in product an `observed` flag can mark NOTHING — product learns ' +
             'no address',
             JSON.stringify([before, marksOf()]));
@@ -411,9 +414,8 @@ function run(t) {
   const learntCb = 'https://' + host + '/admin/callback';
   const cleanup = function () {
     log.debug("Entering cleanup().");
-    if ([].concat((applications.get(CLIENT) ||
-                   { fields: {} }).fields.oauthRedirectUri || [])
-          .indexOf(learntCb) >= 0) {
+    if (urls.holds((applications.get(CLIENT) ||
+                    { fields: {} }).fields.oauthRedirectUri, learntCb)) {
       applications.updateApplication(CLIENT,
                                      { attribute: 'oauthRedirectUri',
                                                mode: 'remove',
@@ -434,8 +436,8 @@ function run(t) {
             'and the LEARNT callback is marked observed on the entry');
     withMode(config, 'product', function () {
       const cfg = applications.clientConfigOf(CLIENT);
-      t.check(cfg.redirect_uris.indexOf(learntCb) < 0 &&
-              cfg.unconfirmed_redirect_uris.indexOf(learntCb) >= 0,
+      t.check(!urls.holds(cfg.redirect_uris, learntCb) &&
+              urls.holds(cfg.unconfirmed_redirect_uris, learntCb),
               'clientConfigOf() withholds it in product, so RFC 9700 mode ' +
               'does not believe it either',
               JSON.stringify(cfg.unconfirmed_redirect_uris));

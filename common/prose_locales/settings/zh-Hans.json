@@ -232,8 +232,8 @@
     "text": "记录生成的引导密码"
   },
   "admin.logBootstrapPassword|description": {
-    "en": "577ec7c125546cdb",
-    "text": "仅限产品模式。默认关闭时，为首位管理员生成的密码写入 persistence.dataDir 中仅此服务可读的 bootstrap-admin-password 文件，日志说明位置。开启时写入服务日志。警告：开启后不满足 ASVS 5.0.0 要求 16.2.5，因为凭据进入了日志。"
+    "en": "856dddf1ed8c2407",
+    "text": "仅限产品模式。默认关闭时，为首位管理员生成的密码写入 persistence.dataDir 中仅此服务可读的 bootstrap-admin-password 文件，日志说明位置。开启时写入服务日志。警告：开启后不满足 ASVS 5.0.0 要求 16.2.5，因为凭据进入了日志。 之后的启动会删除该文件，一旦已有人持有凭据。"
   },
   "oauth2.allowConfidentialWithoutPkce|label": {
     "en": "c33a0a31a1d623b1",
@@ -424,8 +424,8 @@
     "text": "在产品模式下允许默认管理员名称"
   },
   "admin.allowDefaultUsername|description": {
-    "en": "53da4f7ba4ff5dcc",
-    "text": "仅限产品模式。默认关闭时，名为 admin、root、sa 或 administrator 或没有名称的引导管理员会获得一个不可预测的生成名称，并在首次启动时与其密码一起写入 persistence.dataDir 中的 bootstrap-admin-password 文件（参见 admin.logBootstrapPassword）。开启时按配置的名称使用。警告：ASVS 5.0.0 要求 6.3.2 禁止默认账户名称，因此除测试环境外请保持关闭。"
+    "en": "7375f4bf636f5366",
+    "text": "仅限产品模式。默认关闭时，名为 admin、root、sa 或 administrator 或没有名称的引导管理员会获得一个不可预测的生成名称，并在首次启动时与其密码一起写入 persistence.dataDir 中的 bootstrap-admin-password 文件（参见 admin.logBootstrapPassword）。开启时按配置的名称使用。警告：ASVS 5.0.0 要求 6.3.2 禁止默认账户名称，因此除测试环境外请保持关闭。 之后的启动会删除该文件，一旦已有人持有凭据。"
   },
   "admin.allowDefaultUsername|restartReason": {
     "en": "0191948468332113",
@@ -436,8 +436,8 @@
     "text": "引导管理员账户"
   },
   "admin.bootstrapUsername|description": {
-    "en": "9b6fe650632ee79d",
-    "text": "引导管理员的用户名（2026-09-13），存在于默认领域中，并自 2026-09-14 起存在于每个信任领域中，在那里它只管理该领域：若不存在则在启动时创建，同时是两个控制台角色的成员，首次登录时被强制修改密码，且不可删除或重命名。在它首次登录 /admin 之前，每个已登录的人都可以使用控制台（admin.openWhenEmpty）。在开发模式下，与其他所有人一样，任何密码都能使其登录。在产品模式下，当本服务启动且领域中没有任何人持有凭据时，它也是获得生成密码的账户；该名称和密码只写入一次，写入 persistence.dataDir 中的 bootstrap-admin-password 文件，该文件仅本服务可读（日志会说明其位置，只有在开启 admin.logBootstrapPassword 时日志本身才会包含它们），并且是进入全新产品部署的唯一途径。若已有人持有凭据，生成的密码绝不会被写入，因此它不会覆盖任何密码。强制修改只适用于此步骤创建的账户——同名的现有账户保留其密码，只是被授予两个角色。"
+    "en": "8b69eb9d4cb0b130",
+    "text": "引导管理员的用户名（2026-09-13），存在于默认领域中，并自 2026-09-14 起存在于每个信任领域中，在那里它只管理该领域：若不存在则在启动时创建，同时是两个控制台角色的成员，首次登录时被强制修改密码，且不可删除或重命名。在它首次登录 /admin 之前，每个已登录的人都可以使用控制台（admin.openWhenEmpty）。在开发模式下，与其他所有人一样，任何密码都能使其登录。在产品模式下，当本服务启动且领域中没有任何人持有凭据时，它也是获得生成密码的账户；该名称和密码只写入一次，写入 persistence.dataDir 中的 bootstrap-admin-password 文件，该文件仅本服务可读（日志会说明其位置，只有在开启 admin.logBootstrapPassword 时日志本身才会包含它们），并且是进入全新产品部署的唯一途径。若已有人持有凭据，生成的密码绝不会被写入，因此它不会覆盖任何密码。强制修改只适用于此步骤创建的账户——同名的现有账户保留其密码，只是被授予两个角色。 之后的启动会删除该文件，一旦已有人持有凭据。"
   },
   "admin.bootstrapUsername|restartReason": {
     "en": "0191948468332113",
@@ -1419,6 +1419,14 @@
     "en": "cba85726ee4e8673",
     "text": "接受 WebAuthn 仪式的源——协议方案、主机和端口，不带路径——以逗号分隔。**留空（默认）则从访问本服务所用的地址推导出唯一的源**，这是一贯的行为，设置了 global.publicBaseUrl 时它已经固定了该源。设置后，它就是完整的列表：源不在列表中的 clientDataJSON 会被拒绝，无论请求携带的是什么 Host。当一个凭据在共享 webauthn.rpId 的兄弟主机上使用时，请列出多个源。"
   },
+  "webauthn.u2fAppIds|label": {
+    "en": "b0b6d4158c6357e8",
+    "text": "旧版 U2F AppID"
+  },
+  "webauthn.u2fAppIds|description": {
+    "en": "05b1b01773d86d5d",
+    "text": "FIDO U2F AppID——旧版 U2F 依赖方注册其安全密钥时使用的 https URL——其凭据可以导入到人员条目上并在此用于登录，以逗号分隔。**为空（默认值）即该功能关闭**：不能导入任何内容，任何仪式都不携带 appid 或 appidExclude 扩展（WebAuthn Level 3 第 10.1.1 和 10.1.2 节），导入的密钥也无法登录。AppID 只在与其相关的 RP ID 上使用：其主机就是该 RP ID，或其中一个是另一个的后缀。当主机与源的主机不同时，浏览器会获取 AppID URL，以查找列出此源的 TrustedFacets 列表，旧服务必须继续提供该列表。导入的密钥只能作为第二因素：U2F 密钥无法验证使用者本人。"
+  },
   "webauthn.algorithms|label": {
     "en": "47c0895479d03828",
     "text": "提供的算法"
@@ -1916,8 +1924,8 @@
     "text": "密钥加密密钥提供方"
   },
   "keys.kekProvider|description": {
-    "en": "b48b052bc689c8e3",
-    "text": "包装每个数据加密密钥的密钥加密密钥所在之处。`file`、`aws`、`gcp`、`azure` 和 `vault` 从挂载的文件或密钥存储中将一个 32 字节的密钥读入本进程；`file` 是默认值，因为它不需要任何依赖。`vault-transit`（Vault 或 OpenBao Transit）、`aws-kms`、`gcp-kms`（Cloud KMS）和 `azure-keys`（Key Vault 或 Managed HSM 密钥；keys.kekVault 是其保管库）是密钥管理服务：密钥从不离开它们，keys.kekRef 指明它，由 KMS 包装和解包每个数据密钥——启动时每个数据密钥一次调用，每个值不再调用。除 `file` 外，每个提供方都会延迟加载其官方 SDK，而该 SDK 有意不作为本服务的依赖项；缺失时会报告需要安装的包名。"
+    "en": "bf4e717bed6b7e03",
+    "text": "包装每个数据加密密钥的密钥加密密钥所在之处。`file`、`aws`、`gcp`、`azure` 和 `vault` 从挂载的文件或密钥存储中将一个 32 字节的密钥读入本进程；`file` 是默认值，因为它不需要任何依赖。`vault-transit`（Vault 或 OpenBao Transit）、`aws-kms`、`gcp-kms`（Cloud KMS）和 `azure-keys`（Key Vault 或 Managed HSM 密钥；keys.kekVault 是其保管库）是密钥管理服务：密钥从不离开它们，keys.kekRef 指明它，由 KMS 包装和解包每个数据密钥——启动时每个数据密钥一次调用，每个值不再调用。`pkcs11` 与之相同，只是密钥位于硬件安全模块中（YubiHSM 2、SoftHSM2 或任何 PKCS#11 模块，见 keys.pkcs11Module），keys.kekRef 为 PKCS#11 URI。除 `file` 外，每个提供方都会延迟加载其官方 SDK，而该 SDK 有意不作为本服务的依赖项；缺失时会报告需要安装的包名。"
   },
   "keys.kekProvider|restartReason": {
     "en": "0956d2f97d1df86a",
@@ -1964,8 +1972,8 @@
     "text": "密钥加密密钥引用"
   },
   "keys.kekRef|description": {
-    "en": "a5a5b6e7f2c06fdc",
-    "text": "云提供方用来指称该秘密的名称：AWS Secrets Manager 名称或 ARN、GCP 资源名称（projects/<p>/secrets/<s>，未指定版本时附加 /versions/latest）、Azure Key Vault 秘密名称，或 HashiCorp Vault 读取路径。`file` 提供方不使用此项。"
+    "en": "b28c82e37153639d",
+    "text": "云提供方用来指称该秘密的名称：AWS Secrets Manager 名称或 ARN、GCP 资源名称（projects/<p>/secrets/<s>，未指定版本时附加 /versions/latest）、Azure Key Vault 秘密名称，或 HashiCorp Vault 读取路径。对于 `pkcs11`，为 RFC 7512 PKCS#11 URI，pkcs11:token=<token label>;object=<key label>。`file` 提供方不使用此项。"
   },
   "keys.kekRef|restartReason": {
     "en": "d51b3caaa6125e92",
@@ -2087,13 +2095,125 @@
     "en": "d51b3caaa6125e92",
     "text": "启动时读取一次"
   },
+  "keys.pkcs11Module|label": {
+    "en": "0fb904cb6844253b",
+    "text": "PKCS#11 模块"
+  },
+  "keys.pkcs11Module|description": {
+    "en": "dd4fdc39cd1aed44",
+    "text": "`pkcs11` 提供方加载的 PKCS#11 模块的路径：YubiHSM 2 为 /usr/lib/x86_64-linux-gnu/pkcs11/yubihsm_pkcs11.so（需运行 yubihsm-connector，并让 YUBIHSM_PKCS11_CONF 指向其配置），SoftHSM2 为 /usr/lib/softhsm/libsofthsm2.so。它需要 pkcs11js 包，该包有意不作为本服务的依赖项。"
+  },
+  "keys.pkcs11Module|restartReason": {
+    "en": "34a60604acae5870",
+    "text": "模块只在启动时加载一次"
+  },
+  "keys.pkcs11Mechanism|label": {
+    "en": "f9f19afe01ab43ad",
+    "text": "HSM 如何包装数据密钥"
+  },
+  "keys.pkcs11Mechanism|description": {
+    "en": "85ff0e656695f323",
+    "text": "在 HSM 中包装新数据密钥所用的机制。`auto` 在模块提供时采用 CKM_AES_GCM（SoftHSM2 和大多数网络 HSM），其次是 CKM_AES_KEY_WRAP_PAD，再次是 YubiHSM 2 自己的 CKM_YUBICO_AES_CCM_WRAP（其包装密钥对象）。更改之前包装的数据密钥仍可解包：存储的形式记录了其机制。"
+  },
+  "keys.pkcs11Mechanism|restartReason": {
+    "en": "091df5146f3d6f79",
+    "text": "密钥加密密钥只在启动时访问一次"
+  },
+  "keys.pkcs11GenerateKey|label": {
+    "en": "c9dac3afbed86d44",
+    "text": "首次使用时创建 HSM 密钥"
+  },
+  "keys.pkcs11GenerateKey|description": {
+    "en": "82a5d89dd1a4c872",
+    "text": "开启时，PKCS#11 URI 指明而令牌中没有的密钥加密密钥会在令牌中生成：AES-256、敏感且不可导出。只有前端进程会生成；对于集群，请改用 HSM 自带的工具创建密钥，因为两个同时启动的节点会创建两个。关闭（默认）时，缺少密钥会阻止启动。"
+  },
+  "keys.pkcs11GenerateKey|restartReason": {
+    "en": "091df5146f3d6f79",
+    "text": "密钥加密密钥只在启动时访问一次"
+  },
+  "keys.pkcs11Sessions|label": {
+    "en": "4a2da0042402bee1",
+    "text": "每个进程的 PKCS#11 会话数"
+  },
+  "keys.pkcs11Sessions|description": {
+    "en": "f5b20f8d3e577d1a",
+    "text": "每个进程和请求工作进程在一个令牌上最多保持打开的会话数，每个会话一次执行一个 HSM 操作。YubiHSM 2 总共有 16 个会话，由每个节点的每个进程共享：请让此值、进程数与节点数的乘积低于该数。"
+  },
+  "keys.pkcs11Sessions|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "令牌只在启动时打开一次"
+  },
+  "keys.pkcs11PinProvider|label": {
+    "en": "3e1d9c989bcacc3d",
+    "text": "PKCS#11 PIN 的读取来源"
+  },
+  "keys.pkcs11PinProvider|description": {
+    "en": "1c344b0b12c35ec4",
+    "text": "读取 HSM 令牌 PIN 的机密存储，绝不是某个设置的值：挂载的文件、AWS Secrets Manager、Google Cloud Secret Manager、Azure Key Vault 或 Vault/OpenBao，按 keys.kek* 的说明访问。对于 YubiHSM 2，PIN 是认证密钥的 id（四位十六进制数字）后接其密码（0001password）。按令牌标签列出 PIN 的 JSON 对象可用于 PIN 各不相同的令牌。`none` 不登录任何令牌。"
+  },
+  "keys.pkcs11PinProvider|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "PIN 在打开令牌时读取一次"
+  },
+  "keys.pkcs11PinRef|label": {
+    "en": "de50e9f1904c80fc",
+    "text": "PKCS#11 PIN 的位置"
+  },
+  "keys.pkcs11PinRef|description": {
+    "en": "dffce1d68f8495de",
+    "text": "PIN 在 keys.pkcs11PinProvider 所指提供方中的位置：路径、ARN、资源或 Vault 读取路径。它没有后备值。"
+  },
+  "keys.pkcs11PinRef|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "PIN 在打开令牌时读取一次"
+  },
+  "keys.pkcs11PinField|label": {
+    "en": "55008836b9ff61fe",
+    "text": "PKCS#11 PIN 所在的字段"
+  },
+  "keys.pkcs11PinField|description": {
+    "en": "f333042737800292",
+    "text": "JSON 机密中保存 PIN 的成员。为空则取整个值。"
+  },
+  "keys.pkcs11PinField|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "PIN 在打开令牌时读取一次"
+  },
+  "keys.signingKeyStore|label": {
+    "en": "e6e0b403d7b8a000",
+    "text": "领域签名密钥的创建位置"
+  },
+  "keys.signingKeyStore|description": {
+    "en": "5cc22ee909529ecc",
+    "text": "`software`（默认）在本进程中创建领域的签名密钥，并将其密封保存在存储中。`pkcs11` 在 keys.signingKeyToken 所指的 HSM 中创建其经典密钥——RS256 密钥、XML 密钥，以及模块能创建的 P-256、P-384、P-521、secp256k1 和 Ed25519 密钥——不可导出，并在其中签名；模块无法创建的密钥以及所有后量子密钥都保留在软件中。它适用于更改后创建或轮换的密钥集，需要可持久化的密钥库（产品模式），并且每个进程和节点都需要该令牌。可按领域设置。"
+  },
+  "keys.signingKeyToken|label": {
+    "en": "a6e7fb05dd49b8a9",
+    "text": "创建签名密钥的 HSM 令牌"
+  },
+  "keys.signingKeyToken|description": {
+    "en": "0bd2c707f6ff2e69",
+    "text": "keys.signingKeyStore 为 `pkcs11` 的领域在其上创建签名密钥的令牌的 PKCS#11 URI：pkcs11:token=<token label>，两个令牌共用同一标签时加上 serial= 或 slot-id=。模块、PIN 和会话由 keys.pkcs11* 设置指定。为空则不打开任何令牌。"
+  },
+  "keys.signingKeyToken|restartReason": {
+    "en": "1a04369397b30563",
+    "text": "令牌在启动时于每个进程中打开一次"
+  },
+  "keys.pkcs11SynchronousSign|label": {
+    "en": "c8e3fedf4601518d",
+    "text": "允许同步 PKCS#11 签名"
+  },
+  "keys.pkcs11SynchronousSign|description": {
+    "en": "1cb742f146d4c7c1",
+    "text": "关闭为默认：用 HSM 中的密钥签名只通过绑定的异步 `C_Sign`。同步路径（JWS、XML 签名、SAML 断言）拒绝 HSM 密钥（`STS-KEYS-0209`），而不在事件循环上等待令牌。开启后这些路径调用 `C_Sign`，事件循环会等待。没有异步签名的模块只有在此项开启时才能签名。解密不变。可按领域设置。"
+  },
   "keys.cellKekProvider|label": {
     "en": "9103eeef061197fd",
     "text": "单元密钥加密密钥的读取来源"
   },
   "keys.cellKekProvider|description": {
-    "en": "f779ece8f10a07ec",
-    "text": "本单元密钥加密密钥的提供方，它密封该单元自己存储的内容（#98）。五种提供方，与 `keys.kekProvider` 相同。`none` 用服务密钥加密密钥密封单元层，这对单单元模式和测试是正确的；多单元部署在产品模式下使用它会拒绝启动，因为那样一个单元的行的副本在其他每个单元中都能打开。"
+    "en": "73b7f0bab09392e8",
+    "text": "本单元密钥加密密钥的提供方，它密封该单元自己存储的内容（#98）。五种提供方，与 `keys.kekProvider` 相同，另有 `pkcs11`，即该单元自己的 HSM。`none` 用服务密钥加密密钥密封单元层，这对单单元模式和测试是正确的；多单元部署在产品模式下使用它会拒绝启动，因为那样一个单元的行的副本在其他每个单元中都能打开。"
   },
   "keys.cellKekProvider|restartReason": {
     "en": "bfe49ff259fac42d",
@@ -3187,21 +3307,61 @@
     "en": "e0341e4e47f3b2f8",
     "text": "什么能让 PKINIT 登录声明硬件绑定的密钥（pkinit-hardware 指示符和 amr hwk）。`inference`：默认值，也是 #1955 之前的行为——本服务未生成其密钥的智能卡登录证书，或已记录的证明证据。`evidence`：仅限硬件令牌的证明所覆盖的密钥。通过 TLS 的证书登录只有在有证据时才获得 hwk，以及智能卡上密钥的 sc，两种情况都是如此。"
   },
-  "pskc.allowPlaintextImport|label": {
+"pskc.allowPlaintextImport|label": {
     "en": "a098f07c2a04a83b",
     "text": "在产品模式下接受明文 PSKC 种子文件"
   },
-  "pskc.allowPlaintextImport|description": {
+"pskc.allowPlaintextImport|description": {
     "en": "7efe34e872e4772e",
     "text": "在产品模式下，管理员是否可以导入令牌密钥未加密的 PSKC 种子文件（RFC 6030）。默认关闭：这样的文件在其经过的每个磁盘和邮箱中都是一份可用第二因素的清单，而供应商可以用预共享密钥或密码对其加密（第 6.1 和 6.2 节）。开发模式无论如何都会接受。"
   },
-  "yubiotp.allowPlaintextImport|label": {
+"yubiotp.allowPlaintextImport|label": {
     "en": "b1c1ac235f98cc47",
     "text": "在产品模式下接受明文 YubiKey OTP CSV 文件"
   },
-  "yubiotp.allowPlaintextImport|description": {
+"yubiotp.allowPlaintextImport|description": {
     "en": "f409449d46d5831a",
     "text": "管理员在产品模式下是否可以导入 YubiKey OTP 密钥的 CSV（序列号、公开身份、私有身份、AES 密钥）。默认关闭：该文件是一份可用第二因素的清单。开发模式无论如何都会接受。文件被接受时密钥即被密封，文件不予保留。"
+  },
+"openpgp.wkd|label": {
+    "en": "1f05a7518c3d2275",
+    "text": "在 Web 密钥目录中发布密钥"
+  },
+"openpgp.wkd|description": {
+    "en": "7822103f89ac59b3",
+    "text": "为此领域的邮件域响应 Web 密钥目录（draft-koch-openpgp-webkey-service）：/.well-known/openpgpkey/<domain>/hu/<hash>（高级方式，位于 openpgpkey.<domain>）和 /.well-known/openpgpkey/hu/<hash>（直接方式），以及各自的策略文件。只返回在门户上选择发布的人员的密钥。默认关闭。"
+  },
+"openpgp.wkdDomains|label": {
+    "en": "d1c4b728593ff000",
+    "text": "Web 密钥目录服务的邮件域"
+  },
+"openpgp.wkdDomains|description": {
+    "en": "ad64f7216191123c",
+    "text": "此领域的 Web 密钥目录所响应的邮件域，以逗号分隔。留空（默认）表示领域自身的 DNS 域。路径中不含领域的请求，由服务其域的领域响应，默认领域优先。"
+  },
+"openpgp.challengeLifetimeS|label": {
+    "en": "dbf558cf0b4b8f90",
+    "text": "注册质询有效期（秒）"
+  },
+"openpgp.challengeLifetimeS|description": {
+    "en": "e9130c8e82368cc6",
+    "text": "个人为注册 OpenPGP 密钥而用 gpg --clearsign 签署的质询的有效时长。质询只能使用一次，每人同一时间只有一个。"
+  },
+"openpgp.signatureSkewS|label": {
+    "en": "d927cf1f04bd9d51",
+    "text": "证明签名时钟偏差（秒）"
+  },
+"openpgp.signatureSkewS|description": {
+    "en": "2772763d3d363b6d",
+    "text": "签名计算机的时钟与本服务时钟允许相差多少：证明签名时间早于质询发出时间或晚于当前时间，且超出此值的，将被拒绝（STS-OPENPGP-0010）。"
+  },
+"openpgp.minRsaBits|label": {
+    "en": "f3dc9f85de143630",
+    "text": "最小 RSA OpenPGP 密钥"
+  },
+"openpgp.minRsaBits|description": {
+    "en": "ad48516e31a7c45b",
+    "text": "OpenPGP 注册所接受的最短 RSA 密钥（主密钥或子密钥）。接受 Ed25519、Ed448、P-256、P-384 和 P-521 上的 ECDSA 和 ECDH、X25519 和 X448；DSA、ElGamal 和 Brainpool 曲线一律不接受（STS-OPENPGP-0004）。"
   },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
@@ -8227,6 +8387,54 @@
     "en": "6b3f5e73f6fcafaf",
     "text": "一个领域最多可同时持有的待处理访问请求数；超过后，提交会被以 503 拒绝，直到其中一些被决定或过期。"
   },
+  "authzen.externalPdp|label": {
+    "en": "8a0af08389fe6cda",
+    "text": "在令牌交换之前询问外部 PDP。"
+  },
+  "authzen.externalPdp|description": {
+    "en": "378c7dcd21a960c7",
+    "text": "OAuth 2.0 令牌交换的 AuthZEN 绑定，方向 B：本授权服务器在为 RFC 8693 交换签发 OAuth 访问令牌之前，询问 authzen.externalPdpUrl 所指定的外部 PDP。本地签发策略仍然首先决定，它所强制的拒绝不会被送出。PDP 只能收窄范围和访问令牌的生存期。关闭为默认，此时不会拨号。Kerberos 令牌不在该绑定之内，不会被发送。没有应答，或遭到拒绝，就没有令牌。"
+  },
+  "authzen.externalPdpUrl|label": {
+    "en": "4702ceb3700a0831",
+    "text": "外部 AuthZEN PDP 地址。"
+  },
+  "authzen.externalPdpUrl|description": {
+    "en": "2d486c955985f5ac",
+    "text": "外部 PDP 的 POST /access/v1/evaluations 的绝对 https 地址。由管理员配置，请求不能指定它。它不含 userinfo、query 或 fragment。在 authzen.externalPdp 打开时若为空，则拒绝该交换。即使 federation.outboundAllowHttp 打开，也拒绝明文 http，因为请求携带令牌声明和客户端证书。"
+  },
+  "authzen.externalPdpTimeoutMs|label": {
+    "en": "c40081858bffe671",
+    "text": "外部 PDP 超时（毫秒）。"
+  },
+  "authzen.externalPdpTimeoutMs|description": {
+    "en": "1c73c2acfe98c703",
+    "text": "等待外部 PDP 的时间，以毫秒计。超时则拒绝该交换。不会改发本地决定。"
+  },
+  "authzen.externalPdpClientCertFile|label": {
+    "en": "2da8c5ed72d965bb",
+    "text": "用于外部 PDP 的客户端证书。"
+  },
+  "authzen.externalPdpClientCertFile|description": {
+    "en": "cae054b4776151a0",
+    "text": "本授权服务器向外部 PDP 出示的 PEM 文件。双向 TLS 是唯一模式，PDP 将该证书接纳为 AUTHZEN_PEPS 调用方。在产品模式下，该文件必须位于 security.fileRoots 所列目录之内。相对路径是本进程的当前目录。在 authzen.externalPdp 打开时若为空或不可读，则拒绝该交换。"
+  },
+  "authzen.externalPdpClientKeyFile|label": {
+    "en": "8c2c725a67e09874",
+    "text": "用于外部 PDP 的客户端密钥。"
+  },
+  "authzen.externalPdpClientKeyFile|description": {
+    "en": "6509f61b7122be79",
+    "text": "客户端证书私钥的 PEM 文件。拨号 PDP 时读取该文件。密钥字节不是配置值，因此 GET /admin-api/config 返回路径而不是密钥。在产品模式下，该文件必须位于 security.fileRoots 所列目录之内。相对路径是本进程的当前目录。在 authzen.externalPdp 打开时若为空或不可读，则拒绝该交换。"
+  },
+  "authzen.externalPdpCaFile|label": {
+    "en": "6abdfbc262d71c16",
+    "text": "用于外部 PDP 的 CA 文件。"
+  },
+  "authzen.externalPdpCaFile|description": {
+    "en": "d8328616a3f62cfa",
+    "text": "可选的 PEM 文件，其中的 CA 证书用来代替默认根证书以验证外部 PDP。为空则使用那些根证书。已命名但不可读的文件，或产品模式在 security.fileRoots 下不会读取的文件，会拒绝该交换。相对路径是本进程的当前目录。"
+  },
   "uma.enabled|label": {
     "en": "2a3767bd4bc83294",
     "text": "启用 User-Managed Access"
@@ -9438,6 +9646,14 @@
   "roles.claim|description": {
     "en": "05185a4a554d5f71",
     "text": "开启时，每个访问令牌、ID 令牌、SAML 2.0 断言和 SAML 1.1 断言都会列出其主体所拥有的角色。默认开启，但对大多数调用方而言仍不会改变任何东西，理由与组声明默认开启相同：对于不拥有任何已配置角色的人，该声明会被完全省略，而且六个内置角色永远不会出现在其中——EVERYBODY 和 ALL_AUTHENTICATED_USERS 对这里几乎每个令牌都成立，携带它们会给每个现有客户端解析的每个令牌增加两个毫无意义的成员，而且告诉依赖方的内容不会超出它持有令牌这一事实本身。它们的存在是为了被要求，而不是被携带。"
+  },
+  "roles.dynamicSelection|label": {
+    "en": "86d2654ef3dec8fd",
+    "text": "登录时提供动态角色"
+  },
+  "roles.dynamicSelection|description": {
+    "en": "68b1b4af3db5e6d8",
+    "text": "登录的人是否可以选择可动态选择的角色（#1072）：在至少定义了一个动态角色的领域中，登录页会提供“为此次登录选择角色”复选框，勾选后会显示此人的资格允许的角色。默认开启；应用程序条目上的 appDynamicRoleSelection 会为该应用程序覆盖此设置。关闭时，不显示复选框，不提供任何角色，不要求任何必选动态角色，也没有令牌携带动态选择的角色。"
   },
   "roles.claimName|label": {
     "en": "d56be861543f5305",
@@ -11771,6 +11987,14 @@
     "en": "50195b20fe00e9fa",
     "text": "指明其所涉事项的通知（同一账户上的同一操作）在此窗口内只发送一次，无论有多少个入口报告了它。0 关闭抑制。"
   },
+  "mail.encryptionRequired|label": {
+    "en": "81e5dc8eb5332f2b",
+    "text": "必须加密的邮件"
+  },
+  "mail.encryptionRequired|description": {
+    "en": "895bdb616e169134",
+    "text": "按模板 ID 指定的邮件（password-reset、account-activation、sign-in-code、sign-in-link、credential-compromised 以及“监控 → 邮件”列表中的其他模板），这些邮件只以加密方式发送——按本人在门户上的选择，以 PGP/MIME 加密至其 OpenPGP 密钥或以 S/MIME 加密至其证书。两者都未选择的人不会收到该邮件（STS-MAIL-0240），发起该邮件的用途会像对待任何未发送邮件一样说明这一点。留空（默认）表示不要求加密；无论哪种情况，都会遵循个人的选择。"
+  },
   "mail.selfServiceReset|label": {
     "en": "8525111d1c0be58a",
     "text": "自助密码重置"
@@ -12714,5 +12938,93 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "仅针对协议调试器监听器：http.http2MaxConcurrentStreams。-1（默认值）时遵循 http.http2MaxConcurrentStreams；其他任何值只对此监听器作出决定。一个 HTTP/2 连接可同时打开的请求数（SETTINGS_MAX_CONCURRENT_STREAMS）；超出的流会被拒绝，直到有流结束。默认值 100 是 RFC 9113 建议的最小值；node 自身的值没有上限，这会让一个连接承载成千上万个连接的工作量。它限制一个连接上的工作量，正如 http.maxConnections 限制连接数。新连接会立即遵循更改，已打开的连接会收到新值。"
+  },
+  "piv.attestationAnchors|label": {
+    "en": "ebc10f6a7dcbbf58",
+    "text": "PIV 证明根证书（PEM）"
+  },
+  "piv.attestationAnchors|description": {
+    "en": "487e76edeb4446b9",
+    "text": "YubiKey PIV 密钥证明必须链接到的根证书，以 PEM 包形式提供。为空时使用 Yubico 发布的两个根证书（Yubico PIV Root CA Serial 263751，以及适用于固件 5.7.4 及更高版本的 Yubico Attestation Root 1），它们随附于 common/pki_piv_anchors.json 并在其中以 SHA-256 固定，同时附带 Yubico 的 PIV 中间证书。此处填写的证书会替换随附的根证书。"
+  },
+  "piv.requireAttestation|label": {
+    "en": "4e11b0db111faccf",
+    "text": "要求 PIV 配置文件提供 PIV 证明"
+  },
+  "piv.requireAttestation|description": {
+    "en": "ef38975436c5ac4f",
+    "text": "开启时，piv-auth、piv-sign、piv-key-management 或 piv-card-auth 证书的请求若未携带可验证的 YubiKey PIV 证明则会被拒绝（STS-PIV-0010）。来自 EST /serverkeygen 的托管 piv-key-management 密钥是例外：它由本服务生成。关闭（默认值）时，此类未带证明的请求会在没有硬件证据的情况下签发；携带无法验证之证明的请求在两种情况下都会被拒绝。"
+  },
+  "piv.pinPolicy|label": {
+    "en": "0f683a0cb1db1988",
+    "text": "经证明的 PIV 密钥可具有的最弱 PIN 策略"
+  },
+  "piv.pinPolicy|description": {
+    "en": "c3f9fcec406b9806",
+    "text": "证明中的 PIN 策略至少必须达到的程度。`once`：每个会话输入一次 PIN（Bio 密钥的 match-once 也算）；`always`：每次使用前都输入 PIN（match-always 也算）。`any`（默认值）不要求任何 PIN 策略。证明更弱的密钥会被拒绝（STS-PIV-0011）。"
+  },
+  "piv.touchPolicy|label": {
+    "en": "a88f111c7b13657f",
+    "text": "经证明的 PIV 密钥可具有的最弱触摸策略"
+  },
+  "piv.touchPolicy|description": {
+    "en": "d78f0d5df0256787",
+    "text": "证明中的触摸策略至少必须达到的程度。`cached`：一次触摸，记住 15 秒；`always`：每次使用都需触摸。`any`（默认值）不作要求。证明更弱的密钥会被拒绝（STS-PIV-0012）。"
+  },
+  "piv.cardAuthSignIn|label": {
+    "en": "61b2226403ad5c61",
+    "text": "允许 piv-card-auth 证书登录"
+  },
+  "piv.cardAuthSignIn|description": {
+    "en": "1852da24c3fbfade",
+    "text": "piv-card-auth（插槽 9e）密钥无需 PIN 即可使用，用于物理门禁，因此除非开启此项，否则其证书在 TLS 登录和 PKINIT 时会被拒绝（STS-PIV-0013）。"
+  },
+  "piv.keyEscrow|label": {
+    "en": "f2efc85c3d2bac38",
+    "text": "托管 piv-key-management 密钥"
+  },
+  "piv.keyEscrow|description": {
+    "en": "cf9618144b67dff3",
+    "text": "开启时，针对 piv-key-management 配置文件的 EST /serverkeygen 会保留所生成的私钥，并以密钥加密密钥密封，以便持有人（在门户上，重新登录后）或拥有 PIV 密钥恢复角色的管理员在卡丢失后恢复它并解密旧邮件。若未持有密钥加密密钥则拒绝（STS-PIV-0020）。托管密钥绝不是硬件证据。关闭（默认值）时，/serverkeygen 会拒绝 piv-key-management 配置文件（STS-PIV-0021），因此 9d 密钥在卡上生成，且不保存在任何其他地方。"
+  },
+  "piv.externalIssuers|label": {
+    "en": "e96143ab9556db35",
+    "text": "按卡 UUID 映射的外部 PIV 或 CAC 签发 CA（PEM）"
+  },
+  "piv.externalIssuers|description": {
+    "en": "0fb91dba2cb957d3",
+    "text": "其 PIV 或 CAC 卡证书可按 FIPS 201 卡 UUID 为某人登录的签发 CA：由其中一个 CA 直接签发、声明 piv.externalPolicyOids 中某项策略、且恰好携带一个 urn:uuid subjectAltName 的客户端证书，会映射到其 stsPivCardUuid 保存该 UUID 的唯一一个人。绝不按其名称映射，也不会创建任何条目。该 CA 还必须位于某个客户端信任库中，否则握手会先拒绝它。为空（默认值）时不映射任何内容。"
+  },
+  "piv.externalPolicyOids|label": {
+    "en": "930c5800dfa36905",
+    "text": "外部卡必须声明的 PIV Authentication 策略"
+  },
+  "piv.externalPolicyOids|description": {
+    "en": "2398931e8d58f5c4",
+    "text": "外部卡的证书必须声明其中之一才能按其卡 UUID 映射的证书策略：默认为 id-fpki-common-authentication（Federal PKI Common Policy 的 PIV Authentication）和 id-fpki-certpcy-pivi-hardware（PIV-I）。请在此添加 CAC 签发者自己的硬件策略。"
+  },
+  "pki.paranoidPivAttestation|label": {
+    "en": "e645d02c49d2f9bf",
+    "text": "偏执：YubiKey PIV 密钥证明链"
+  },
+  "pki.paranoidPivAttestation|description": {
+    "en": "fdb7c0eb631758ea",
+    "text": "用例 `piv-attestation`（#1955）：PIV 注册的插槽证明证书和 f9 证明证书。偏执模式检查当前时刻的有效期、到 piv.attestationAnchors 的路径，以及在证书链指明列表时的吊销状态。关闭时，仅此用例只执行路径检查而不执行字段检查，其他每一行和总开关均不受影响；在产品模式下关闭时，会记录一次日志（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidPivCard|label": {
+    "en": "4078a93e7117d6f9",
+    "text": "偏执：按卡 UUID 映射的外部 PIV 或 CAC 卡"
+  },
+  "pki.paranoidPivCard|description": {
+    "en": "d4d5fb070575e1c6",
+    "text": "用例 `piv-card`（#1955）：来自 piv.externalIssuers 中签发 CA、按其卡 UUID 映射的客户端证书。偏执模式在一跳签发者检查之外，还检查 keyUsage digitalSignature 和叶证书的有效期。关闭时，仅此用例只执行签发者检查，其他每一行和总开关均不受影响；在产品模式下关闭时，会记录一次日志（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "roles.pivKeyRecoveryGroup|label": {
+    "en": "2f231e1e99785dc6",
+    "text": "授予 PIV_KEY_RECOVERY 角色的组"
+  },
+  "roles.pivKeyRecoveryGroup|description": {
+    "en": "801616eea12559a5",
+    "text": "其成员持有内置 PIV_KEY_RECOVERY 角色（#1955）的目录组；访问控制策略要求在 Admin Write 之外还具备该角色，才能恢复他人的托管 piv-key-management 密钥（piv.keyEscrow）。该密钥可以解密此人的邮件，因此在管理员将人员加入该组之前，没有人持有该角色。为空时，任何人都不能恢复他人的密钥；持有人可在门户上恢复自己的密钥。"
   }
 }

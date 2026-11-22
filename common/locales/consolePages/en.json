@@ -42,6 +42,7 @@
   "title.device-registration": "Device registration",
   "title.devices": "Devices",
   "title.hardware-tokens": "Hardware tokens",
+  "title.openpgp": "OpenPGP keys",
   "title.devices-monitor": "Devices (monitoring)",
   "title.service-accounts": "Service accounts",
   "title.encryption": "Encryption",
@@ -148,5 +149,11 @@
   "title.worker-pools": "Worker pools",
   "title.broadcast": "Broadcast Announcement",
   "title.sign-in-appearance": "Sign-in appearance",
-  "title.post-login-activities": "Post-login activities"
+  "title.post-login-activities": "Post-login activities",
+  "title.groups-new": "New group",
+  "title.roles-new": "New role",
+  "title.devices-new": "Register a device",
+  "title.attribute-sources-new": "Add an attribute source",
+  "title.secret-destinations-new": "Add a secret destination",
+  "title.policies-new": "New policy"
 }

@@ -45,6 +45,9 @@
 // OWNED HERE (local: true).
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
@@ -255,10 +258,10 @@ async function idTokenFlow(realm) {
             JSON.stringify(r.answer.json));
   for (let hops = 0; hops < 6 &&
        (r.status === 302 || r.status === 303) &&
-       String(r.location).indexOf(REDIRECT) !== 0; hops++) {
+       !urls.isAt(r.location, REDIRECT); hops++) {
     r = await b.go("GET", r.location);
   }
-  assert.ok(String(r.location).indexOf(REDIRECT) === 0,
+  assert.ok(urls.isAt(r.location, REDIRECT),
             "the flow should end at the client with a code; it answered " +
             r.status + " " + r.location + " " + r.text.slice(0, 300));
   const code = new URL(r.location).searchParams.get("code");

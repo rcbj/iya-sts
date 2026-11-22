@@ -54,6 +54,7 @@ const names = require("./random_username.js");
 const kit = require("./enroll_clients_kit.js");
 const fuzzer = require("./tlsfuzzer_kit.js");
 const tls = require("tls");
+const serviceTrust = require("../tools/service_trust.js");
 const expectation = require("./expectation.js");
 
 var appconfig;
@@ -230,16 +231,23 @@ async function test() {
 // it), or thirty seconds.
 async function twelveIsOn(where) {
   log.debug("Entering twelveIsOn().");
+  // VERIFIED (tools/service_trust.js; both listeners present the shared
+  // certificate): a handshake THIS client refused is the anchor gone stale,
+  // not TLS 1.2 still off, so it ends the wait at once.
   const once = function (port) {
-    return new Promise(function (resolve) {
+    return new Promise(function (resolve, reject) {
       const socket = tls.connect({ host: where.host, port: port,
-        servername: where.host, rejectUnauthorized: false,
+        servername: where.host, ca: serviceTrust.trustedCa(),
         maxVersion: "TLSv1.2" }, function () {
         socket.destroy();
         resolve(true);
       });
       socket.on("error", function (e) {
         log.debug("Caught in twelveIsOn(): " + ((e && e.message) || e));
+        if (serviceTrust.isUntrusted(e)) {
+          reject(e);
+          return;
+        }
         resolve(false);
       });
     });

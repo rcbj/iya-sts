@@ -71,5 +71,7 @@
   "jobOn": "job on",
   "scheduler": "Scheduler",
   "jobOnEnd": ".",
-  "settings": "Settings"
+  "settings": "Settings",
+  "newSource.button": "Add a source",
+  "newSource.yes": "yes"
 }

@@ -448,12 +448,20 @@
     "text": "En token med publik nyckel som en innehavare kan försvaga OFFLINE, likt en macaroon, men som kan verifieras av vem som helst som håller den publika rotnyckeln. Dess auktoriseringslogik är Datalog som bärs inuti token, så verifieraren körs ALLTID med tids- och iterationsgränser."
   },
   "crypto.standards.cms.coverage": {
-    "en": "abe1a25e47d96baf",
-    "text": "partial: SignedData med en signerare och signerade attribut, verifierad över attributbytes så som de togs emot och skriven DER-sorterad; EnvelopedData med KeyTransRecipientInfo (RSA PKCS#1 v1.5 och OAEP) och AES-CBC-innehåll; degenererad SignedData med enbart certifikat, med certifikat och CRL:er. Ingen KeyAgreeRecipientInfo, inga autentiserade eller komprimerade data, inga kontrasignaturer."
+    "en": "d33248e25a15b5a7",
+    "text": "partial: SignedData med en signerare och signerade attribut, verifierad över attributbytena så som de togs emot och skrivna DER-sorterade; EnvelopedData med KeyTransRecipientInfo (RSA PKCS#1 v1.5 och OAEP) och AES-CBC-innehåll; degenererad SignedData med enbart certifikat och CRL:er; för S/MIME-e-post (#1955) en EnvelopedData skriven med en OAEP SHA-256 KeyTransRecipientInfo eller en ECDH KeyAgreeRecipientInfo. Inga autentiserade eller komprimerade data, inga kontrasignaturer."
   },
   "crypto.standards.cms.what": {
-    "en": "0f35f026a507dc11",
-    "text": "Kuvertet som SCEP (scep/scep_cms.ts) läser och skriver: en begäran signerad av begäraren och krypterad till RA, och en CertRep signerad av RA vars certifikat är krypterat till begäraren."
+    "en": "e09c8508abab483b",
+    "text": "Kuvertet som SCEP (scep/scep_cms.ts) läser och skriver: en begäran signerad av den begärande och krypterad till RA, och ett CertRep signerat av RA vars certifikat är krypterat till den begärande. Sedan #1955 även S/MIME EnvelopedData som e-post krypteras i, vilket lägger till en KeyAgreeRecipientInfo för en EC-mottagare (dhSinglePass-stdDH-sha256kdf, AES-256 key wrap) och en OAEP SHA-256 KeyTransRecipientInfo för en RSA-mottagare."
+  },
+  "crypto.standards.openpgp.coverage": {
+    "en": "5d4c9889762ddbd2",
+    "text": "partial: läsning av överförbara publika nycklar v4 och v6, verifiering av en klartextsignatur och kryptering av ett PGP/MIME-meddelande, allt genom openpgp.js; Web Key Directorys avancerade och direkta uppslag och policyfil. Ingen signering, ingen dekryptering, ingen inlämning via Web Key Service, ingen nyckelserver."
+  },
+  "crypto.standards.openpgp.what": {
+    "en": "039de4dd3b49b9ab",
+    "text": "En persons egen publika nyckel, registrerad på ett innehavsbevis och publicerad i Web Key Directory om personen vill; nyckeln som personens e-post krypteras till."
   },
   "crypto.families.pki.signs": {
     "en": "fdcf723f4622f28f",
@@ -678,6 +686,78 @@
   "crypto.families.reporting.algorithms.3.how": {
     "en": "9d40176053fec31b",
     "text": "SHA-256, förvarad med artefakten och kontrollerad vid läsning"
+  },
+  "crypto.families.openpgp.signs": {
+    "en": "0f38445050f33bd1",
+    "text": "Ingenting. En registrering är PERSONENS signatur, och ett krypterat meddelande signeras inte (DKIM signerar det yttre meddelandet, som det signerar varje meddelande)."
+  },
+  "crypto.families.openpgp.verifies": {
+    "en": "c3dbfb38087cb3de",
+    "text": "Ett INNEHAVSBEVIS vid registrering: en klartextsignatur (gpg --clearsign) över exakt den utmaning tjänsten utfärdade till personen, gjord av en signeringskapabel nyckel i den nyckel som registreras, skapad efter att utmaningen utfärdades (openpgp.signatureSkewS) och giltig då; själva nyckeln varken återkallad eller utgången, med ett giltigt användar-ID som innehåller postens adress. Nycklar enligt RFC 9580 v6 och RFC 4880 v4, lästa av openpgp.js. Ett S/MIME-certifikat kontrolleras för giltighet, nyckel och användning, men kedjan valideras inte: det väljer bara vem ett meddelande krypteras till."
+  },
+  "crypto.families.openpgp.encrypts": {
+    "en": "1a05c1b540cd5082",
+    "text": "E-POST, där personen har valt det eller sfären kräver det (mail.encryptionRequired): PGP/MIME (RFC 3156) till nyckelns krypteringsnyckel, som openpgp.js väljer (SEIPD med AES för en v4-nyckel, AEAD för en v6-nyckel); S/MIME (RFC 8551) som en CMS EnvelopedData, AES-256-CBC för innehållskryptering, innehållsnyckeln under RSAES-OAEP med SHA-256 eller ECDH (dhSinglePass-stdDH-sha256kdf, AES-256 key wrap)."
+  },
+  "crypto.families.openpgp.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Ingenting."
+  },
+  "crypto.families.openpgp.hashes": {
+    "en": "c51e067261932787",
+    "text": "SHA-1 av den lokala delen i gemener, i z-base-32, så som Web Key Directory namnger en adress (ett namn som utkastet fastställer, aldrig betrott för integritet). Nyckelns fingeravtryck är det enligt RFC 9580 (SHA-256 för v6, SHA-1 för v4)."
+  },
+  "crypto.families.openpgp.keys": {
+    "en": "201cc09e750d0c79",
+    "text": "Inga egna. Personens publika nyckel finns på personens post (stsOpenPgpKey), aldrig en hemlig nyckel, vilket registreringen avvisar; en nyckel på ett YubiKey OpenPGP-kort skiljs inte från en i en fil, så ingenting registreras som hårdvarubundet."
+  },
+  "crypto.families.openpgp.algorithms.0.what": {
+    "en": "b7a04c64879be952",
+    "text": "Registrerad nyckel, signering"
+  },
+  "crypto.families.openpgp.algorithms.0.how": {
+    "en": "91736ec1cb35b5f2",
+    "text": "Ed25519, Ed448, ECDSA P-256/P-384/P-521, RSA med openpgp.minRsaBits (minst 3072)"
+  },
+  "crypto.families.openpgp.algorithms.1.what": {
+    "en": "9f7b65405a49bedd",
+    "text": "Registrerad nyckel, kryptering"
+  },
+  "crypto.families.openpgp.algorithms.1.how": {
+    "en": "e28f57b2d61b83be",
+    "text": "X25519, X448, ECDH Curve25519 och P-256/P-384/P-521, RSA med openpgp.minRsaBits"
+  },
+  "crypto.families.openpgp.algorithms.2.what": {
+    "en": "66b873543aebf01b",
+    "text": "Avvisas"
+  },
+  "crypto.families.openpgp.algorithms.2.how": {
+    "en": "18369a474bec2b97",
+    "text": "DSA, ElGamal, Brainpool-kurvor"
+  },
+  "crypto.families.openpgp.algorithms.3.what": {
+    "en": "429d783fabc235c9",
+    "text": "S/MIME-innehåll"
+  },
+  "crypto.families.openpgp.algorithms.3.how": {
+    "en": "8c2686ee3dd3948f",
+    "text": "AES-256-CBC (CMS EnvelopedData)"
+  },
+  "crypto.families.openpgp.algorithms.4.what": {
+    "en": "cc09e2a5306928f5",
+    "text": "S/MIME-nyckeltransport"
+  },
+  "crypto.families.openpgp.algorithms.4.how": {
+    "en": "acf5bad1301fd2cc",
+    "text": "RSAES-OAEP SHA-256; ECDH stdDH SHA-256 KDF, AES-256 wrap"
+  },
+  "crypto.families.openpgp.algorithms.5.what": {
+    "en": "727e1a6e39e36a93",
+    "text": "Namn i Web Key Directory"
+  },
+  "crypto.families.openpgp.algorithms.5.how": {
+    "en": "a2b773a0ce72bc44",
+    "text": "SHA-1, z-base-32"
   },
   "crypto.families.gnap.signs": {
     "en": "ad4b982edb070f2c",
@@ -1640,12 +1720,12 @@
     "text": "Varje certifikat den lämnar ut, med den här sfärens nyckel för EST Issuing CA, genom common/pki.js issueEnrolled() — samma kodare som alla andra certifikat här kommer från. De certs-only-CMS-meddelanden den returnerar är DEGENERERADE: en SignedData med certifikat och ingen signerare, så de bär ingen egen signatur och litas på för certifikaten de innehåller."
   },
   "crypto.families.est.verifies": {
-    "en": "d40d37c4bd83de49",
-    "text": "PKCS#10-innehavsbeviset — begärans signatur med dess egen publika nyckel, klassisk och postkvant, i common/cert_enrollment.ts — och, för certifikatautentisering, klientcertifikatets kedja till den här sfärens Intermediate och tjänstens Root med återkallelse kontrollerad. En /serverkeygen-mall verifieras inte: dess nyckel ersätts."
+    "en": "6b27c8877d509c46",
+    "text": "PKCS#10-beviset på innehav – begärans signatur med dess egen publika nyckel, klassisk och postkvant, i common/cert_enrollment.ts – och, för certifikatautentisering, klientcertifikatets sökväg till den här sfärens Intermediate och tjänstens Root, med återkallelse kontrollerad. En /serverkeygen-mall verifieras inte: dess nyckel ersätts. En YubiKey-PIV-nyckelattestering i begäran (#1955, här och över ACME och SCEP): platscertifikatets ECDSA- eller RSA-signatur av f9-certifikatet, och f9-certifikatets sökväg till sfärens PIV-attesteringsankare, genom valideringsdörren."
   },
   "crypto.families.est.encrypts": {
-    "en": "2f48e10a9ad6494d",
-    "text": "Den privata nyckeln i ett servergenererat nyckelpar, förseglad med AES-256-GCM under nyckelkrypteringsnyckeln på posten, varhelst den nyckeln överlever processen. Den krypteras INTE till klienten (RFC 7030 avsnitt 4.4.1.2): en begäran som ber om det avvisas, och nyckeln färdas endast inuti TLS."
+    "en": "a18df4311029b728",
+    "text": "Den privata nyckeln i ett servergenererat nyckelpar, förseglad med AES-256-GCM under nyckelkrypteringsnyckeln på posten, varhelst den nyckeln överlever processen; en deponerad piv-key-management-nyckel (#1955) i alla lägen, eller så genereras den inte alls. Den krypteras INTE till klienten (RFC 7030 avsnitt 4.4.1.2): en begäran som ber om det avvisas, och nyckeln färdas bara inuti TLS."
   },
   "crypto.families.est.decrypts": {
     "en": "8d5c676935439726",
@@ -1950,5 +2030,9 @@
   "crypto.param.totp.encoding": {
     "en": "d9613131364834bc",
     "text": "RFC 4648 base32, utan utfyllnad, som otpauth Key Uri Format förväntar sig."
+  },
+  "crypto.families.est.algorithms.4.what": {
+    "en": "4dd4db2fd60c28f7",
+    "text": "Verifierade PIV-attesteringssignaturer"
   }
 }

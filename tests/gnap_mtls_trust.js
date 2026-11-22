@@ -137,12 +137,17 @@ function childMain() {
     const tlsClient = require(ROOT_DIR + '/common/tls_client_certificates');
 
     await pki.ensureScope('');
+    // BUILT AS THE MAIN PORT IS (server.js): the listener certificate with
+    // its chain, the client truststore, and a certificate asked for and
+    // never required — the self-signed key a pinned grant presents has to
+    // reach the grant endpoint, which judges it.
     const serverCert = tlsServer.serverCertificate();
     const server = https.createServer(Object.assign({
-      cert: serverCert.certPem, key: serverCert.privateKeyPem,
-      ca: tlsServer.clientTruststoreOptions().ca,
-      requestCert: true, rejectUnauthorized: false
-    }, tlsServer.protocolOptions()), app);
+      cert: tlsServer.presentedBundlePem(serverCert),
+      key: serverCert.privateKeyPem,
+      ca: tlsServer.clientTruststoreOptions().ca
+    }, tlsServer.clientAuthOptions('optional'),
+    tlsServer.protocolOptions()), app);
     tlsServer.trustClientCertificatesOn(server, 'the GNAP mTLS test listener');
     await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
     const port = server.address().port;
@@ -168,7 +173,12 @@ function childMain() {
           path: urlPath, method: method, headers: headers,
           cert: o.tls ? o.tls.cert : undefined,
           key: o.tls ? o.tls.key : undefined,
-          rejectUnauthorized: false, agent: false }, function (res) {
+          // The listener is VERIFIED against the anchors this process gives
+          // a loopback caller (trustAnchorPems()). The test's own client,
+          // not a dialer of the service's, so paranoid mode's outbound
+          // gate, in force once 2d turns product on, is not its business.
+          ca: tlsServer.trustAnchorPems(), stsOutboundGate: false,
+          agent: false }, function (res) {
           let text = '';
           res.on('data', function (c) { text += c; });
           res.on('end', function () {

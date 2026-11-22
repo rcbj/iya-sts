@@ -93,5 +93,8 @@
   "mail.link": "E-post",
   "mail.noneAfter": "), så {what} visas för dig att vidarebefordra.",
   "mail.box": "skicka {what} med e-post till adressen på deras post, och visa det inte för mig",
-  "grid.required": " &middot; krävs"
+  "grid.required": " &middot; krävs",
+  "create.requiredFields": "Krävs: {list}. Vart och ett är rödmarkerat och har *; alla andra fält är valfria.",
+  "create.nothingRequired": "Inget i det här formuläret krävs.",
+  "create.requiredWhen": " &middot; krävs när {field} är {values}"
 }

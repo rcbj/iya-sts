@@ -720,6 +720,28 @@ const ACTIONS = [
     label: 'A YK-VAL client was created' },
   { action: 'yubiotp.client-remove', category: 'directory',
     label: 'A YK-VAL client was removed' },
+  // AN ESCROWED PIV KEY RECOVERED (#1955 P2, D7), by its holder or by an
+  // administrator the access-control policy let; a refusal is the same row
+  // with its code. `common/piv_enrolment.ts` writes it.
+  { action: 'piv-escrow.recover', category: 'directory',
+    label: 'An escrowed PIV key-management key was recovered' },
+  // A PERSON'S OpenPGP KEY AND MAIL ENCRYPTION (#1955 P6), all seven
+  // written by `common/openpgp_keys.ts`.
+  { action: 'openpgp.challenge', category: 'directory',
+    label: 'An OpenPGP key registration challenge was issued' },
+  { action: 'openpgp.key-registered', category: 'directory',
+    label: 'An OpenPGP key was registered on a proof of possession' },
+  { action: 'openpgp.key-refused', category: 'directory',
+    label: 'An OpenPGP key was not registered' },
+  { action: 'openpgp.key-removed', category: 'directory',
+    label: 'An OpenPGP key was removed' },
+  { action: 'openpgp.publication', category: 'directory',
+    label: 'An OpenPGP key was published in, or withdrawn from, the Web Key ' +
+           'Directory' },
+  { action: 'openpgp.mail-encryption', category: 'directory',
+    label: 'How mail to a person is encrypted was changed' },
+  { action: 'openpgp.smime-certificate', category: 'directory',
+    label: 'A person\'s S/MIME certificate was set or removed' },
   { action: 'device.key-add', category: 'directory',
     label: 'A key was added to a device' },
   { action: 'device.key-remove', category: 'directory',
@@ -892,6 +914,9 @@ const ACTIONS = [
     label: 'An operator removed somebody\'s security key' },
   { action: 'admin.mfa.key.renamed', category: 'admin',
     label: 'An operator renamed somebody\'s passkey' },
+  // #1955 P7: a legacy U2F credential imported by value.
+  { action: 'admin.mfa.key.imported', category: 'admin',
+    label: 'An operator imported a U2F security key for somebody' },
   // THE PASSWORD AND SECOND-FACTOR CONTROLS ON A PERSON'S PAGE (2026-09-13),
   // each one ACT with who performed it. The sessions a reset's sign-out ends
   // write their own `session.end` rows, so these do not count them again.
@@ -1732,6 +1757,23 @@ const ACTIONS = [
     label: 'A role was deleted' },
   { action: 'roles.describe', category: 'admin',
     label: 'A role\'s description, display name or member types were set' },
+  // DYNAMIC SELECTABLE ROLES (#1072): how a role is held, how a dynamic one
+  // is chosen, and each eligibility decision (an offer at sign-in, an
+  // administrator's test).
+  { action: 'roles.set-mode', category: 'admin',
+    label: 'A role was made static or dynamic selectable' },
+  { action: 'roles.set-selection', category: 'admin',
+    label: 'How a dynamic role is chosen at sign-in was set' },
+  { action: 'roles.eligibility', category: 'authorization',
+    label: 'A person\'s eligibility for a dynamic role was decided' },
+  { action: 'roles.selection.offered', category: 'authentication',
+    label: 'Dynamic roles were offered at a sign-in' },
+  { action: 'roles.selection.chosen', category: 'authentication',
+    label: 'Dynamic roles were chosen at a sign-in' },
+  { action: 'roles.selection.refused', category: 'authentication',
+    label: 'A sign-in\'s choice of dynamic roles was refused' },
+  { action: 'roles.selection.dropped', category: 'authorization',
+    label: 'A chosen dynamic role was left off a token' },
   // MONITORING → NODE HEALTH'S COLLECT BUTTONS (#611): one row per press,
   // however many isolates it reached. `admin-ui/node_health_admin.ts`.
   { action: 'node-health.collect-garbage', category: 'admin',

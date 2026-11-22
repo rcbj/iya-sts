@@ -76,6 +76,9 @@
 // OWNED HERE (local: true).
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -483,7 +486,7 @@ async function sectionC(product) {
     assert.strictEqual(inventory.status, 200, inventory.text.slice(0, 300));
     assert.ok(rows.some(function (row) {
       return row.label === RP_OPEN &&
-        String(row.detail || "").indexOf(REPLY_OPEN) >= 0;
+        urls.namesAddress(String(row.detail || ""), REPLY_OPEN);
     }), JSON.stringify(family || held || inventory.text).slice(0, 600));
   });
   log.debug("Leaving sectionC().");

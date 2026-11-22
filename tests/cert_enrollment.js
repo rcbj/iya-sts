@@ -186,7 +186,14 @@ function checkProfiles(t) {
     });
   t.equal(codeOf(core.checkProfile('acme', 'no-such-profile')),
           'STS-ENROLL-0001', 'an unknown profile is refused as unknown');
+  // The four PIV slot profiles (#1955 P2) are known to every family and in
+  // no default list: a realm issues them only once an operator adds them.
   core.PROFILE_IDS.forEach(function (id) {
+    if (id.indexOf('piv-') === 0) {
+      t.equal(codeOf(core.checkProfile('scep', id)), 'STS-ENROLL-0003',
+              '"' + id + '" is not issued until a realm lists it');
+      return;
+    }
     t.check(core.checkProfile('scep', id).ok,
             '"' + id + '" is issued by default');
   });
@@ -459,7 +466,11 @@ async function checkIssuance(t) {
   core.addHostName(entry, 'server.example.com', 'test');
   const root = pki.trustAnchorsFor(realms.currentId())[0];
   const issuedSerials = [];
-  for (const profile of core.PROFILE_IDS) {
+  // The four PIV slot profiles (#1955 P2) are in no family's default list,
+  // so they are issued in `tests/piv_attestation.js`, which lists them.
+  for (const profile of core.PROFILE_IDS.filter(function (one) {
+    return one.indexOf('piv-') !== 0;
+  })) {
     const family = core.FAMILIES[issuedSerials.length % 3];
     const requested = (profile === 'tls-server' ||
                        profile === 'tls-server-client')

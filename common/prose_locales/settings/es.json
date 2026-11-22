@@ -232,8 +232,8 @@
     "text": "Registrar la contraseña de arranque generada"
   },
   "admin.logBootstrapPassword|description": {
-    "en": "577ec7c125546cdb",
-    "text": "Solo en modo producto. Desactivado, el valor predeterminado, la contraseña generada para el primer administrador se escribe en el archivo bootstrap-admin-password de persistence.dataDir, legible solo por este servicio, y el registro indica dónde. Activado, se escribe en el registro del servicio. ADVERTENCIA: activado, no se cumple el requisito 16.2.5 de ASVS 5.0.0, porque una credencial llega al registro."
+    "en": "856dddf1ed8c2407",
+    "text": "Solo en modo producto. Desactivado, el valor predeterminado, la contraseña generada para el primer administrador se escribe en el archivo bootstrap-admin-password de persistence.dataDir, legible solo por este servicio, y el registro indica dónde. Activado, se escribe en el registro del servicio. ADVERTENCIA: activado, no se cumple el requisito 16.2.5 de ASVS 5.0.0, porque una credencial llega al registro. Un arranque posterior elimina ese archivo, una vez que alguien ya tiene una credencial."
   },
   "oauth2.allowConfidentialWithoutPkce|label": {
     "en": "c33a0a31a1d623b1",
@@ -424,8 +424,8 @@
     "text": "Permitir un nombre de administrador predeterminado en producción"
   },
   "admin.allowDefaultUsername|description": {
-    "en": "53da4f7ba4ff5dcc",
-    "text": "Solo en modo producto. Desactivado, el valor predeterminado, un administrador de arranque llamado admin, root, sa o administrator, o sin nombre, recibe un nombre generado impredecible, escrito con su contraseña en el archivo bootstrap-admin-password de persistence.dataDir en el primer inicio (véase admin.logBootstrapPassword). Activado, se usa el nombre configurado tal cual. ADVERTENCIA: el requisito 6.3.2 de ASVS 5.0.0 prohíbe un nombre de cuenta predeterminado, así que déjelo desactivado fuera de un entorno de pruebas."
+    "en": "7375f4bf636f5366",
+    "text": "Solo en modo producto. Desactivado, el valor predeterminado, un administrador de arranque llamado admin, root, sa o administrator, o sin nombre, recibe un nombre generado impredecible, escrito con su contraseña en el archivo bootstrap-admin-password de persistence.dataDir en el primer inicio (véase admin.logBootstrapPassword). Activado, se usa el nombre configurado tal cual. ADVERTENCIA: el requisito 6.3.2 de ASVS 5.0.0 prohíbe un nombre de cuenta predeterminado, así que déjelo desactivado fuera de un entorno de pruebas. Un arranque posterior elimina ese archivo, una vez que alguien ya tiene una credencial."
   },
   "admin.allowDefaultUsername|restartReason": {
     "en": "0191948468332113",
@@ -436,8 +436,8 @@
     "text": "Cuenta del administrador inicial"
   },
   "admin.bootstrapUsername|description": {
-    "en": "9b6fe650632ee79d",
-    "text": "El nombre de usuario del administrador inicial (2026-09-13), en el dominio PREDETERMINADO y, desde el 2026-09-14, en cada dominio de confianza, donde administra solo ese dominio: se crea al arrancar si no existe, es miembro de ambos roles de consola, se le obliga a cambiar su contraseña en su primer inicio de sesión y no se puede eliminar ni renombrar. Hasta que inicie sesión por primera vez en /admin, cualquier persona que haya iniciado sesión puede usar la consola (admin.openWhenEmpty). En desarrollo cualquier contraseña le permite iniciar sesión, como a todos. EN MODO PRODUCTO es también quien recibe una contraseña generada cuando arranca este servicio y NADIE en el dominio tiene una credencial; el nombre y esa contraseña se escriben una sola vez en el archivo bootstrap-admin-password de persistence.dataDir, legible solo por este servicio (el registro indica dónde, y solo los incluye él mismo con admin.logBootstrapPassword activado), y son la única forma de entrar en un despliegue nuevo en modo producto. La contraseña generada nunca se escribe donde alguien ya tiene una credencial, así que no puede sobrescribir una contraseña. El cambio obligatorio solo se aplica a una cuenta que este paso CREÓ — una cuenta existente con este nombre conserva su contraseña y solo recibe los dos roles."
+    "en": "8b69eb9d4cb0b130",
+    "text": "El nombre de usuario del administrador inicial (2026-09-13), en el dominio PREDETERMINADO y, desde el 2026-09-14, en cada dominio de confianza, donde administra solo ese dominio: se crea al arrancar si no existe, es miembro de ambos roles de consola, se le obliga a cambiar su contraseña en su primer inicio de sesión y no se puede eliminar ni renombrar. Hasta que inicie sesión por primera vez en /admin, cualquier persona que haya iniciado sesión puede usar la consola (admin.openWhenEmpty). En desarrollo cualquier contraseña le permite iniciar sesión, como a todos. EN MODO PRODUCTO es también quien recibe una contraseña generada cuando arranca este servicio y NADIE en el dominio tiene una credencial; el nombre y esa contraseña se escriben una sola vez en el archivo bootstrap-admin-password de persistence.dataDir, legible solo por este servicio (el registro indica dónde, y solo los incluye él mismo con admin.logBootstrapPassword activado), y son la única forma de entrar en un despliegue nuevo en modo producto. La contraseña generada nunca se escribe donde alguien ya tiene una credencial, así que no puede sobrescribir una contraseña. El cambio obligatorio solo se aplica a una cuenta que este paso CREÓ — una cuenta existente con este nombre conserva su contraseña y solo recibe los dos roles. Un arranque posterior elimina ese archivo, una vez que alguien ya tiene una credencial."
   },
   "admin.bootstrapUsername|restartReason": {
     "en": "0191948468332113",
@@ -1419,6 +1419,14 @@
     "en": "cba85726ee4e8673",
     "text": "Los orígenes — esquema, host y puerto, sin ruta — desde los que se acepta una ceremonia WebAuthn, separados por comas. **VACÍO, el valor predeterminado, deriva el único origen de la dirección por la que se llegó a este servicio**, que es lo que siempre ha hecho y que global.publicBaseUrl ya fija cuando está definido. Definido, es la lista completa: un clientDataJSON cuyo origen no está en ella se rechaza sea cual sea el Host que llevaba la solicitud. Nombre varios cuando una credencial se usa desde hosts hermanos bajo un webauthn.rpId compartido."
   },
+  "webauthn.u2fAppIds|label": {
+    "en": "b0b6d4158c6357e8",
+    "text": "AppID U2F heredados"
+  },
+  "webauthn.u2fAppIds|description": {
+    "en": "05b1b01773d86d5d",
+    "text": "Los AppID de FIDO U2F — las URL https con las que una parte de confianza U2F heredada registró sus llaves de seguridad — cuyas credenciales pueden importarse en las entradas de las personas y usarse para iniciar sesión aquí, separados por comas. **VACÍO, el valor predeterminado, es la función desactivada**: no se puede importar nada, ninguna ceremonia lleva la extensión appid o appidExclude (WebAuthn Level 3 secciones 10.1.1 y 10.1.2), y una llave importada no inicia sesión. Un AppID solo se usa en un RP ID con el que se relaciona: su host es el RP ID, o uno es sufijo del otro. Donde el host difiere del del origen, el navegador obtiene la URL del AppID en busca de una lista TrustedFacets que nombre este origen, que el servicio heredado debe seguir sirviendo. Una llave importada es solo un segundo factor: una llave U2F no puede verificar a la persona."
+  },
   "webauthn.algorithms|label": {
     "en": "47c0895479d03828",
     "text": "Algoritmos ofrecidos"
@@ -1916,8 +1924,8 @@
     "text": "Proveedor de la clave de cifrado de claves"
   },
   "keys.kekProvider|description": {
-    "en": "b48b052bc689c8e3",
-    "text": "Dónde está la clave de cifrado de claves que envuelve cada clave de cifrado de datos. `file`, `aws`, `gcp`, `azure` y `vault` LEEN una clave de 32 bytes en este proceso desde un archivo montado o un almacén de secretos; `file` es el valor predeterminado porque no necesita nada. `vault-transit` (Transit de Vault u OpenBao), `aws-kms`, `gcp-kms` (Cloud KMS) y `azure-keys` (una clave de Key Vault o Managed HSM; keys.kekVault es su almacén) son servicios de gestión de claves: la clave NUNCA sale de ellos, keys.kekRef la nombra, y el KMS envuelve y desenvuelve cada clave de datos — una llamada por clave de datos al arrancar, ninguna por valor. Cada proveedor salvo `file` carga de forma diferida su SDK oficial, que a propósito NO es una dependencia de este servicio; si falta uno, se informa con el nombre del paquete que hay que instalar."
+    "en": "bf4e717bed6b7e03",
+    "text": "Dónde está la clave de cifrado de claves que envuelve cada clave de cifrado de datos. `file`, `aws`, `gcp`, `azure` y `vault` LEEN una clave de 32 bytes en este proceso desde un archivo montado o un almacén de secretos; `file` es el valor predeterminado porque no necesita nada. `vault-transit` (Transit de Vault u OpenBao), `aws-kms`, `gcp-kms` (Cloud KMS) y `azure-keys` (una clave de Key Vault o Managed HSM; keys.kekVault es su almacén) son servicios de gestión de claves: la clave NUNCA sale de ellos, keys.kekRef la nombra, y el KMS envuelve y desenvuelve cada clave de datos — una llamada por clave de datos al arrancar, ninguna por valor. `pkcs11` es lo mismo con la clave en un módulo de seguridad de hardware (un YubiHSM 2, SoftHSM2 o cualquier módulo PKCS#11, keys.pkcs11Module), y keys.kekRef es una URI PKCS#11. Cada proveedor salvo `file` carga de forma diferida su SDK oficial, que a propósito NO es una dependencia de este servicio; si falta uno, se informa con el nombre del paquete que hay que instalar."
   },
   "keys.kekProvider|restartReason": {
     "en": "0956d2f97d1df86a",
@@ -1964,8 +1972,8 @@
     "text": "Referencia de la clave de cifrado de claves"
   },
   "keys.kekRef|description": {
-    "en": "a5a5b6e7f2c06fdc",
-    "text": "Con qué nombran el secreto los proveedores en la nube: un nombre o ARN de AWS Secrets Manager, un nombre de recurso de GCP (projects/<p>/secrets/<s>, con /versions/latest añadido cuando no se indica versión), un nombre de secreto de Azure Key Vault o una ruta de lectura de HashiCorp Vault. El proveedor `file` no lo usa."
+    "en": "b28c82e37153639d",
+    "text": "Con qué nombran el secreto los proveedores en la nube: un nombre o ARN de AWS Secrets Manager, un nombre de recurso de GCP (projects/<p>/secrets/<s>, con /versions/latest añadido cuando no se indica versión), un nombre de secreto de Azure Key Vault o una ruta de lectura de HashiCorp Vault. Para `pkcs11`, una URI PKCS#11 de RFC 7512, pkcs11:token=<token label>;object=<key label>. El proveedor `file` no lo usa."
   },
   "keys.kekRef|restartReason": {
     "en": "d51b3caaa6125e92",
@@ -2087,13 +2095,125 @@
     "en": "d51b3caaa6125e92",
     "text": "se lee una sola vez al arrancar"
   },
+  "keys.pkcs11Module|label": {
+    "en": "0fb904cb6844253b",
+    "text": "Módulo PKCS#11"
+  },
+  "keys.pkcs11Module|description": {
+    "en": "dd4fdc39cd1aed44",
+    "text": "La ruta del módulo PKCS#11 que carga el proveedor `pkcs11`: /usr/lib/x86_64-linux-gnu/pkcs11/yubihsm_pkcs11.so para un YubiHSM 2 (con yubihsm-connector en ejecución y YUBIHSM_PKCS11_CONF apuntando a su configuración), /usr/lib/softhsm/libsofthsm2.so para SoftHSM2. Necesita el paquete pkcs11js, que a propósito no es una dependencia de este servicio."
+  },
+  "keys.pkcs11Module|restartReason": {
+    "en": "34a60604acae5870",
+    "text": "el módulo se carga una vez, al arrancar"
+  },
+  "keys.pkcs11Mechanism|label": {
+    "en": "f9f19afe01ab43ad",
+    "text": "Cómo envuelve el HSM una clave de datos"
+  },
+  "keys.pkcs11Mechanism|description": {
+    "en": "85ff0e656695f323",
+    "text": "El mecanismo con el que se envuelve una clave de datos nueva en el HSM. `auto` toma CKM_AES_GCM donde el módulo lo ofrece (SoftHSM2 y la mayoría de los HSM de red), después CKM_AES_KEY_WRAP_PAD y después el CKM_YUBICO_AES_CCM_WRAP propio del YubiHSM 2 (sus objetos de clave de envoltura). Una clave de datos envuelta antes de un cambio se sigue desenvolviendo: la forma almacenada nombra su mecanismo."
+  },
+  "keys.pkcs11Mechanism|restartReason": {
+    "en": "091df5146f3d6f79",
+    "text": "a la clave de cifrado de claves se accede una vez, al arrancar"
+  },
+  "keys.pkcs11GenerateKey|label": {
+    "en": "c9dac3afbed86d44",
+    "text": "Crear la clave del HSM en el primer uso"
+  },
+  "keys.pkcs11GenerateKey|description": {
+    "en": "82a5d89dd1a4c872",
+    "text": "Activado, una clave de cifrado de claves que nombra la URI PKCS#11 y que el token no tiene se genera allí: AES-256, sensible y NO extraíble. Solo el proceso frontal la genera; para un clúster, cree la clave con la propia herramienta del HSM, porque dos nodos que arrancaran a la vez crearían dos. Desactivado, el valor predeterminado, una clave que falta detiene el arranque."
+  },
+  "keys.pkcs11GenerateKey|restartReason": {
+    "en": "091df5146f3d6f79",
+    "text": "a la clave de cifrado de claves se accede una vez, al arrancar"
+  },
+  "keys.pkcs11Sessions|label": {
+    "en": "4a2da0042402bee1",
+    "text": "Sesiones PKCS#11 por proceso"
+  },
+  "keys.pkcs11Sessions|description": {
+    "en": "f5b20f8d3e577d1a",
+    "text": "Cuántas sesiones mantiene abiertas en un token, como máximo, cada proceso y cada worker de solicitudes, cada una ejecutando una operación del HSM a la vez. Un YubiHSM 2 tiene 16 sesiones en total, compartidas por todos los procesos de todos los nodos: mantenga el producto de este valor, los procesos y los nodos por debajo de esa cifra."
+  },
+  "keys.pkcs11Sessions|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "el token se abre una vez, al arrancar"
+  },
+  "keys.pkcs11PinProvider|label": {
+    "en": "3e1d9c989bcacc3d",
+    "text": "De dónde se lee el PIN de PKCS#11"
+  },
+  "keys.pkcs11PinProvider|description": {
+    "en": "1c344b0b12c35ec4",
+    "text": "El almacén de secretos del que se lee el PIN del token del HSM, nunca el valor de un ajuste: un archivo montado, AWS Secrets Manager, Google Cloud Secret Manager, Azure Key Vault o Vault/OpenBao, al que se accede como indica keys.kek*. Para un YubiHSM 2 el PIN es el id de la clave de autenticación en cuatro dígitos hexadecimales seguido de su contraseña (0001password). Un objeto JSON de PIN por etiqueta de token sirve a tokens con PIN distintos. `none` no inicia sesión en nada."
+  },
+  "keys.pkcs11PinProvider|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "el PIN se lee una vez, cuando se abre el token"
+  },
+  "keys.pkcs11PinRef|label": {
+    "en": "de50e9f1904c80fc",
+    "text": "La ubicación del PIN de PKCS#11"
+  },
+  "keys.pkcs11PinRef|description": {
+    "en": "dffce1d68f8495de",
+    "text": "Dónde está el PIN, en el proveedor que nombra keys.pkcs11PinProvider: una ruta, un ARN, un recurso o una ruta de lectura de Vault. No tiene valor de respaldo."
+  },
+  "keys.pkcs11PinRef|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "el PIN se lee una vez, cuando se abre el token"
+  },
+  "keys.pkcs11PinField|label": {
+    "en": "55008836b9ff61fe",
+    "text": "El campo en que está el PIN de PKCS#11"
+  },
+  "keys.pkcs11PinField|description": {
+    "en": "f333042737800292",
+    "text": "El miembro de un secreto JSON que contiene el PIN. Vacío toma el valor entero."
+  },
+  "keys.pkcs11PinField|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "el PIN se lee una vez, cuando se abre el token"
+  },
+  "keys.signingKeyStore|label": {
+    "en": "e6e0b403d7b8a000",
+    "text": "Dónde se crean las claves de firma de un dominio"
+  },
+  "keys.signingKeyStore|description": {
+    "en": "5cc22ee909529ecc",
+    "text": "`software`, el valor predeterminado, crea las claves de firma de un dominio en este proceso y las guarda selladas en el almacén. `pkcs11` crea las clásicas — la clave RS256, la clave XML y las claves P-256, P-384, P-521, secp256k1 y Ed25519 que el módulo pueda crear — en el HSM que nombra keys.signingKeyToken, no extraíbles, y firma allí; una clave que el módulo no puede crear, y toda clave poscuántica, se queda en software. Se aplica a un conjunto de claves creado o rotado después del cambio, necesita un almacén de claves que persista (modo producto), y cada proceso y nodo necesita el token. Se puede definir por dominio."
+  },
+  "keys.signingKeyToken|label": {
+    "en": "a6e7fb05dd49b8a9",
+    "text": "El token del HSM en que se crean las claves de firma"
+  },
+  "keys.signingKeyToken|description": {
+    "en": "0bd2c707f6ff2e69",
+    "text": "La URI PKCS#11 del token en que un dominio con keys.signingKeyStore `pkcs11` crea sus claves de firma: pkcs11:token=<token label>, con serial= o slot-id= cuando dos tokens comparten etiqueta. El módulo, el PIN y las sesiones son los ajustes keys.pkcs11*. Vacío no abre ningún token."
+  },
+  "keys.signingKeyToken|restartReason": {
+    "en": "1a04369397b30563",
+    "text": "el token se abre una vez, al arrancar, en cada proceso"
+  },
+  "keys.pkcs11SynchronousSign|label": {
+    "en": "c8e3fedf4601518d",
+    "text": "Permitir la firma PKCS#11 síncrona"
+  },
+  "keys.pkcs11SynchronousSign|description": {
+    "en": "1cb742f146d4c7c1",
+    "text": "Apagado, el valor predeterminado: una firma con una clave en el HSM se hace solo mediante el `C_Sign` asíncrono del enlace. Las puertas síncronas (un JWS, una firma XML, una aserción SAML) rechazan una clave del HSM (`STS-KEYS-0209`) en lugar de esperar al token en el bucle de eventos. Encendido, esas puertas llaman a `C_Sign` y el bucle de eventos espera. Un módulo sin firma asíncrona solo puede firmar mientras esto está encendido. El descifrado no cambia. Ajustable por dominio."
+  },
   "keys.cellKekProvider|label": {
     "en": "9103eeef061197fd",
     "text": "Origen de la clave de cifrado de claves de la celda"
   },
   "keys.cellKekProvider|description": {
-    "en": "f779ece8f10a07ec",
-    "text": "El proveedor de la clave de cifrado de claves de ESTA CELDA, que sella lo que la celda guarda como propio (#98). Cinco proveedores, como en `keys.kekProvider`. `none` sella el nivel de celda con la clave de cifrado de claves del servicio, lo que es correcto para el modo de una sola celda y para una prueba; un despliegue de varias celdas en modo producto se NIEGA a arrancar con él, porque entonces una copia de las filas de una celda se abriría en todas las demás."
+    "en": "73b7f0bab09392e8",
+    "text": "El proveedor de la clave de cifrado de claves de ESTA CELDA, que sella lo que la celda guarda como propio (#98). Cinco proveedores, como en `keys.kekProvider`, y `pkcs11`, el HSM propio de la celda. `none` sella el nivel de celda con la clave de cifrado de claves del servicio, lo que es correcto para el modo de una sola celda y para una prueba; un despliegue de varias celdas en modo producto se NIEGA a arrancar con él, porque entonces una copia de las filas de una celda se abriría en todas las demás."
   },
   "keys.cellKekProvider|restartReason": {
     "en": "bfe49ff259fac42d",
@@ -3187,21 +3307,61 @@
     "en": "e0341e4e47f3b2f8",
     "text": "Qué permite que un inicio de sesión PKINIT declare una clave vinculada al hardware (el indicador pkinit-hardware y amr hwk). `inference`, el valor predeterminado y el comportamiento anterior a #1955: un certificado de inicio de sesión con tarjeta inteligente cuya clave no generó este servicio, o una prueba de atestación registrada. `evidence`: solo una clave que cubre la atestación de un token de hardware. Un inicio de sesión con certificado sobre TLS obtiene hwk, y sc para una clave en una tarjeta inteligente, solo a partir de pruebas, en ambos casos."
   },
-  "pskc.allowPlaintextImport|label": {
+"pskc.allowPlaintextImport|label": {
     "en": "a098f07c2a04a83b",
     "text": "Aceptar archivos de semillas PSKC sin cifrar en modo producto"
   },
-  "pskc.allowPlaintextImport|description": {
+"pskc.allowPlaintextImport|description": {
     "en": "7efe34e872e4772e",
     "text": "Si un administrador puede importar, en modo producto, un archivo de semillas PSKC (RFC 6030) cuyos secretos de token NO están cifrados. Desactivado de forma predeterminada: un archivo así ha sido una lista de segundos factores válidos en cada disco y buzón por el que pasó, y un proveedor puede cifrarlo con una clave precompartida o una contraseña (secciones 6.1 y 6.2). El modo desarrollo lo acepta en cualquier caso."
   },
-  "yubiotp.allowPlaintextImport|label": {
+"yubiotp.allowPlaintextImport|label": {
     "en": "b1c1ac235f98cc47",
     "text": "Aceptar archivos CSV de OTP YubiKey en claro en modo producto"
   },
-  "yubiotp.allowPlaintextImport|description": {
+"yubiotp.allowPlaintextImport|description": {
     "en": "f409449d46d5831a",
     "text": "Si un administrador puede importar, en modo producto, un CSV de secretos de OTP YubiKey (número de serie, identidad pública, identidad privada, clave AES). Desactivado de forma predeterminada: el archivo es una lista de segundos factores válidos. El modo desarrollo acepta uno en cualquier caso. Los secretos se sellan cuando se acepta el archivo, y el archivo no se conserva."
+  },
+"openpgp.wkd|label": {
+    "en": "1f05a7518c3d2275",
+    "text": "Publicar claves en el Web Key Directory"
+  },
+"openpgp.wkd|description": {
+    "en": "7822103f89ac59b3",
+    "text": "Responder al Web Key Directory (draft-koch-openpgp-webkey-service) para los dominios de correo de este dominio de confianza: /.well-known/openpgpkey/<domain>/hu/<hash> (el método avanzado, en openpgpkey.<domain>) y /.well-known/openpgpkey/hu/<hash> (el método directo), además del archivo de política de cada uno. Solo se devuelve la clave de una persona que lo aceptó en el portal. Desactivado de forma predeterminada."
+  },
+"openpgp.wkdDomains|label": {
+    "en": "d1c4b728593ff000",
+    "text": "Dominios de correo que sirve el Web Key Directory"
+  },
+"openpgp.wkdDomains|description": {
+    "en": "ad64f7216191123c",
+    "text": "Los dominios de correo para los que responde el Web Key Directory de este dominio de confianza, separados por comas. Vacío, el valor predeterminado, significa el propio dominio DNS del dominio de confianza. Una solicitud sin dominio de confianza en su ruta la responde el dominio de confianza que sirve su dominio DNS, primero el predeterminado."
+  },
+"openpgp.challengeLifetimeS|label": {
+    "en": "dbf558cf0b4b8f90",
+    "text": "Vigencia del desafío de registro (segundos)"
+  },
+"openpgp.challengeLifetimeS|description": {
+    "en": "e9130c8e82368cc6",
+    "text": "Cuánto tiempo sigue siendo válido el desafío que una persona firma con gpg --clearsign para registrar una clave OpenPGP. Se consume una sola vez, y una persona tiene uno cada vez."
+  },
+"openpgp.signatureSkewS|label": {
+    "en": "d927cf1f04bd9d51",
+    "text": "Desfase de reloj admitido en la firma de prueba (segundos)"
+  },
+"openpgp.signatureSkewS|description": {
+    "en": "2772763d3d363b6d",
+    "text": "Cuánto puede diferir el reloj del equipo que firma del de este servicio: se rechaza una prueba firmada antes de la emisión del desafío, o después del momento actual, por más de este valor (STS-OPENPGP-0010)."
+  },
+"openpgp.minRsaBits|label": {
+    "en": "f3dc9f85de143630",
+    "text": "Clave OpenPGP RSA más pequeña"
+  },
+"openpgp.minRsaBits|description": {
+    "en": "ad48516e31a7c45b",
+    "text": "La clave RSA más corta, principal o subclave, que acepta un registro OpenPGP. Se aceptan Ed25519, Ed448, ECDSA y ECDH sobre P-256, P-384 y P-521, X25519 y X448; DSA, ElGamal y las curvas Brainpool nunca (STS-OPENPGP-0004)."
   },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
@@ -8227,6 +8387,54 @@
     "en": "6b3f5e73f6fcafaf",
     "text": "El máximo de solicitudes de acceso que un dominio retiene pendientes; superado, un envío se rechaza con 503 hasta que algunas se decidan o venzan."
   },
+  "authzen.externalPdp|label": {
+    "en": "8a0af08389fe6cda",
+    "text": "Consultar un PDP externo antes de un intercambio de tokens."
+  },
+  "authzen.externalPdp|description": {
+    "en": "378c7dcd21a960c7",
+    "text": "El enlace AuthZEN para el intercambio de tokens de OAuth 2.0, dirección B: antes de que este servidor de autorización emita un token de acceso de OAuth para un intercambio RFC 8693, consulta el PDP externo nombrado por authzen.externalPdpUrl. La política de emisión local decide primero, y un rechazo que ella aplique no se envía. El PDP solo puede reducir el alcance y la vida del token de acceso. Desactivado, el valor predeterminado, no se llama a nada. Un token de Kerberos queda fuera del enlace y no se envía. Sin respuesta, o un rechazo, no hay token."
+  },
+  "authzen.externalPdpUrl|label": {
+    "en": "4702ceb3700a0831",
+    "text": "Dirección del PDP AuthZEN externo."
+  },
+  "authzen.externalPdpUrl|description": {
+    "en": "2d486c955985f5ac",
+    "text": "La dirección https absoluta del POST /access/v1/evaluations del PDP externo. Un administrador la configura, y una solicitud no puede nombrarla. No lleva userinfo, query ni fragment. Vacía mientras authzen.externalPdp está activado, rechaza el intercambio. El http en claro se rechaza incluso cuando federation.outboundAllowHttp está activado, porque la solicitud lleva reivindicaciones del token y un certificado de cliente."
+  },
+  "authzen.externalPdpTimeoutMs|label": {
+    "en": "c40081858bffe671",
+    "text": "Tiempo de espera del PDP externo (milisegundos)."
+  },
+  "authzen.externalPdpTimeoutMs|description": {
+    "en": "1c73c2acfe98c703",
+    "text": "Cuánto esperar al PDP externo, en milisegundos. Un tiempo agotado rechaza el intercambio. La decisión local no se emite en su lugar."
+  },
+  "authzen.externalPdpClientCertFile|label": {
+    "en": "2da8c5ed72d965bb",
+    "text": "Certificado de cliente para el PDP externo."
+  },
+  "authzen.externalPdpClientCertFile|description": {
+    "en": "cae054b4776151a0",
+    "text": "El archivo PEM que este servidor de autorización presenta al PDP externo. TLS mutuo es el único modo, y el PDP admite el certificado como un llamante AUTHZEN_PEPS. En producto, el archivo debe estar dentro de un directorio que security.fileRoots enumera. Una ruta relativa es el directorio actual de este proceso. Vacío o ilegible mientras authzen.externalPdp está activado, rechaza el intercambio."
+  },
+  "authzen.externalPdpClientKeyFile|label": {
+    "en": "8c2c725a67e09874",
+    "text": "Clave de cliente para el PDP externo."
+  },
+  "authzen.externalPdpClientKeyFile|description": {
+    "en": "6509f61b7122be79",
+    "text": "El archivo PEM de la clave privada del certificado de cliente. El archivo se lee cuando se llama al PDP. Los bytes de la clave no son un valor de configuración, así que GET /admin-api/config devuelve la ruta y no la clave. En producto, el archivo debe estar dentro de un directorio que security.fileRoots enumera. Una ruta relativa es el directorio actual de este proceso. Vacío o ilegible mientras authzen.externalPdp está activado, rechaza el intercambio."
+  },
+  "authzen.externalPdpCaFile|label": {
+    "en": "6abdfbc262d71c16",
+    "text": "Archivo de AC para el PDP externo."
+  },
+  "authzen.externalPdpCaFile|description": {
+    "en": "d8328616a3f62cfa",
+    "text": "Un archivo PEM opcional de certificados de AC usado en lugar de las raíces predeterminadas para verificar el PDP externo. Vacío, se usan esas raíces. Un archivo nombrado e ilegible, o que el modo producto no leerá bajo security.fileRoots, rechaza el intercambio. Una ruta relativa es el directorio actual de este proceso."
+  },
   "uma.enabled|label": {
     "en": "2a3767bd4bc83294",
     "text": "User-Managed Access activado"
@@ -9438,6 +9646,14 @@
   "roles.claim|description": {
     "en": "05185a4a554d5f71",
     "text": "Si está activado, todo token de acceso, ID Token, aserción SAML 2.0 y aserción SAML 1.1 nombra los roles que tiene su sujeto. ACTIVADO por defecto y aun así no cambia nada para la mayoría de los llamantes, por la misma razón por la que el claim de grupos está activado por defecto: el claim se OMITE POR COMPLETO para quien no tiene ningún rol CONFIGURADO, y los seis roles integrados nunca están en él — EVERYBODY y ALL_AUTHENTICATED_USERS son ciertos para casi todos los tokens aquí, así que incluirlos añadiría dos miembros sin sentido a cada token que analiza cada cliente existente y no diría a una parte que confía nada que no supiera por tener el token. Existen para EXIGIRSE, no para incluirse."
+  },
+  "roles.dynamicSelection|label": {
+    "en": "86d2654ef3dec8fd",
+    "text": "Ofrecer roles dinámicos al iniciar sesión"
+  },
+  "roles.dynamicSelection|description": {
+    "en": "68b1b4af3db5e6d8",
+    "text": "Si una persona que inicia sesión puede elegir roles dinámicos seleccionables (#1072): en un dominio que define al menos un rol dinámico, la página de inicio de sesión ofrece la casilla «Elegir roles para este inicio de sesión», y al marcarla se muestran los roles que la elegibilidad de la persona permite. ACTIVADO de forma predeterminada; appDynamicRoleSelection en la entrada de una aplicación lo reemplaza para esa aplicación. Desactivado, no se muestra la casilla, no se ofrece ningún rol, no se pide ningún rol dinámico obligatorio y ningún token lleva un rol seleccionado dinámicamente."
   },
   "roles.claimName|label": {
     "en": "d56be861543f5305",
@@ -11771,6 +11987,14 @@
     "en": "50195b20fe00e9fa",
     "text": "Un aviso que nombra aquello de lo que trata (el mismo acto sobre la misma cuenta) se envía una vez en esta ventana, por muchas puertas que lo hayan notificado. 0 desactiva la supresión."
   },
+  "mail.encryptionRequired|label": {
+    "en": "81e5dc8eb5332f2b",
+    "text": "Mensajes que deben cifrarse"
+  },
+  "mail.encryptionRequired|description": {
+    "en": "895bdb616e169134",
+    "text": "Los mensajes, por ID de plantilla (password-reset, account-activation, sign-in-code, sign-in-link, credential-compromised y el resto de la lista de Monitoring → Mail), que solo se envían cifrados — PGP/MIME para la clave OpenPGP de la persona o S/MIME para su certificado, según lo que eligió en el portal. A una persona que no eligió ninguno no se le envía (STS-MAIL-0240), y el uso que lo solicitó lo indica como con cualquier mensaje no enviado. Vacío, el valor predeterminado, no exige ninguno; lo que haya elegido una persona se respeta en cualquier caso."
+  },
   "mail.selfServiceReset|label": {
     "en": "8525111d1c0be58a",
     "text": "Restablecimiento de contraseña de autoservicio"
@@ -12714,5 +12938,93 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "Solo para la escucha del depurador de protocolos: http.http2MaxConcurrentStreams. -1, el predeterminado, sigue a http.http2MaxConcurrentStreams; cualquier otro valor decide solo para esta escucha. Cuántas solicitudes puede tener abiertas a la vez una conexión HTTP/2 (SETTINGS_MAX_CONCURRENT_STREAMS); un flujo por encima se rechaza hasta que termine otro. 100, el predeterminado, es el valor más pequeño que recomienda RFC 9113; el propio de node no tiene límite, lo que permitiría a una sola conexión llevar el trabajo de miles. Limita el trabajo de una conexión como http.maxConnections limita las conexiones. Una conexión nueva sigue un cambio de inmediato, y a una abierta se le envía el nuevo valor."
+  },
+  "piv.attestationAnchors|label": {
+    "en": "ebc10f6a7dcbbf58",
+    "text": "Raíces de atestación PIV (PEM)"
+  },
+  "piv.attestationAnchors|description": {
+    "en": "487e76edeb4446b9",
+    "text": "Las raíces a las que debe encadenarse una atestación de clave PIV de YubiKey, como un paquete PEM. Vacío usa las dos que publica Yubico (Yubico PIV Root CA Serial 263751, y Yubico Attestation Root 1 para el firmware 5.7.4 y posteriores), incluidas en common/pki_piv_anchors.json y fijadas allí por SHA-256, junto con los intermedios PIV de Yubico. Un certificado aquí sustituye a las raíces incluidas."
+  },
+  "piv.requireAttestation|label": {
+    "en": "4e11b0db111faccf",
+    "text": "Exigir una atestación PIV para los perfiles PIV"
+  },
+  "piv.requireAttestation|description": {
+    "en": "ef38975436c5ac4f",
+    "text": "Activado, una solicitud de certificado piv-auth, piv-sign, piv-key-management o piv-card-auth se rechaza salvo que lleve una atestación PIV de YubiKey que se verifique (STS-PIV-0010). Una clave piv-key-management en custodia procedente de EST /serverkeygen es la excepción: la generó este servicio. Desactivado, el valor predeterminado, una solicitud así sin atestación se emite sin prueba de hardware; una solicitud que lleva una que no se verifica se rechaza en ambos casos."
+  },
+  "piv.pinPolicy|label": {
+    "en": "0f683a0cb1db1988",
+    "text": "Política de PIN más débil que puede tener una clave PIV atestada"
+  },
+  "piv.pinPolicy|description": {
+    "en": "c3f9fcec406b9806",
+    "text": "Lo que la política de PIN de la atestación debe ser como mínimo. `once`: el PIN una vez por sesión (cuenta el match-once de una llave Bio); `always`: el PIN antes de cada uso (cuenta match-always). `any`, el valor predeterminado, no exige ninguna política de PIN. Una clave cuya atestación sea más débil se rechaza (STS-PIV-0011)."
+  },
+  "piv.touchPolicy|label": {
+    "en": "a88f111c7b13657f",
+    "text": "Política de toque más débil que puede tener una clave PIV atestada"
+  },
+  "piv.touchPolicy|description": {
+    "en": "d78f0d5df0256787",
+    "text": "Lo que la política de toque de la atestación debe ser como mínimo. `cached`: un toque, recordado durante 15 segundos; `always`: un toque en cada uso. `any`, el valor predeterminado, no exige ninguna. Una clave cuya atestación sea más débil se rechaza (STS-PIV-0012)."
+  },
+  "piv.cardAuthSignIn|label": {
+    "en": "61b2226403ad5c61",
+    "text": "Permitir iniciar sesión con un certificado piv-card-auth"
+  },
+  "piv.cardAuthSignIn|description": {
+    "en": "1852da24c3fbfade",
+    "text": "Una clave piv-card-auth (ranura 9e) funciona sin PIN, para el acceso físico, por lo que su certificado se rechaza en el inicio de sesión TLS y en PKINIT (STS-PIV-0013) salvo que esto esté activado."
+  },
+  "piv.keyEscrow|label": {
+    "en": "f2efc85c3d2bac38",
+    "text": "Guardar en custodia las claves piv-key-management"
+  },
+  "piv.keyEscrow|description": {
+    "en": "cf9618144b67dff3",
+    "text": "Activado, EST /serverkeygen para el perfil piv-key-management conserva la clave privada generada, sellada con la clave de cifrado de claves, para que su titular (en el portal, tras un nuevo inicio de sesión) o un administrador con el rol de recuperación de claves PIV pueda recuperarla y descifrar correo antiguo tras perder una tarjeta. Se rechaza donde no se tiene ninguna clave de cifrado de claves (STS-PIV-0020). Una clave en custodia nunca es prueba de hardware. Desactivado, el valor predeterminado, /serverkeygen rechaza el perfil piv-key-management (STS-PIV-0021), de modo que una clave 9d se genera en la tarjeta y no se guarda en ningún otro sitio."
+  },
+  "piv.externalIssuers|label": {
+    "en": "e96143ab9556db35",
+    "text": "CA emisoras PIV o CAC externas asociadas por UUID de tarjeta (PEM)"
+  },
+  "piv.externalIssuers|description": {
+    "en": "0fb91dba2cb957d3",
+    "text": "Las CA emisoras cuyos certificados de tarjeta PIV o CAC inician la sesión de una persona por el UUID de tarjeta FIPS 201: un certificado de cliente emitido directamente por una de ellas, que declare una política de piv.externalPolicyOids y lleve exactamente un subjectAltName urn:uuid, se asocia a la única persona cuyo stsPivCardUuid contiene ese UUID. Nunca por su nombre, y no se crea ninguna entrada. La CA también debe estar en un almacén de confianza de clientes; si no, el protocolo de enlace la rechaza antes. Vacío, el valor predeterminado, no asocia nada."
+  },
+  "piv.externalPolicyOids|label": {
+    "en": "930c5800dfa36905",
+    "text": "Políticas PIV Authentication que debe declarar una tarjeta externa"
+  },
+  "piv.externalPolicyOids|description": {
+    "en": "2398931e8d58f5c4",
+    "text": "Las políticas de certificado de las que el certificado de una tarjeta externa debe declarar una para asociarse por su UUID de tarjeta: de forma predeterminada id-fpki-common-authentication (la PIV Authentication de la Federal PKI Common Policy) e id-fpki-certpcy-pivi-hardware (PIV-I). Añada aquí las políticas de hardware propias de un emisor de CAC."
+  },
+  "pki.paranoidPivAttestation|label": {
+    "en": "e645d02c49d2f9bf",
+    "text": "Paranoico: una cadena de atestación de clave PIV de YubiKey"
+  },
+  "pki.paranoidPivAttestation|description": {
+    "en": "fdb7c0eb631758ea",
+    "text": "Caso de uso `piv-attestation` (#1955): el certificado de atestación de la ranura y el certificado de atestación f9 de un registro PIV. El modo paranoico comprueba la ventana de validez en el momento actual, la ruta hasta piv.attestationAnchors y la revocación cuando la cadena indica una lista. Desactivado, solo este caso de uso hace la comprobación de ruta sin las comprobaciones de campos, mientras que las demás filas y el maestro no cambian; desactivado en modo producto, se registra una vez (STS-PKI-0239) y se muestra en rojo en /admin/pki/trust."
+  },
+  "pki.paranoidPivCard|label": {
+    "en": "4078a93e7117d6f9",
+    "text": "Paranoico: una tarjeta PIV o CAC externa asociada por UUID de tarjeta"
+  },
+  "pki.paranoidPivCard|description": {
+    "en": "d4d5fb070575e1c6",
+    "text": "Caso de uso `piv-card` (#1955): un certificado de cliente de una CA emisora de piv.externalIssuers, asociado por su UUID de tarjeta. El modo paranoico comprueba keyUsage digitalSignature y la ventana de validez del certificado final además de la comprobación del emisor de un salto. Desactivado, solo este caso de uso hace únicamente la comprobación del emisor, mientras que las demás filas y el maestro no cambian; desactivado en modo producto, se registra una vez (STS-PKI-0239) y se muestra en rojo en /admin/pki/trust."
+  },
+  "roles.pivKeyRecoveryGroup|label": {
+    "en": "2f231e1e99785dc6",
+    "text": "Grupo que concede el rol PIV_KEY_RECOVERY"
+  },
+  "roles.pivKeyRecoveryGroup|description": {
+    "en": "801616eea12559a5",
+    "text": "El grupo del directorio cuyos miembros tienen el rol integrado PIV_KEY_RECOVERY (#1955), que la política de control de acceso exige, junto con Admin Write, para recuperar la clave piv-key-management en custodia de otra persona (piv.keyEscrow). Esa clave descifra el correo de la persona, por lo que nadie tiene el rol hasta que un administrador lo añade al grupo. Vacío no permite a nadie recuperar la clave de otra persona; el titular recupera la suya en el portal."
   }
 }

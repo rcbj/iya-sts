@@ -196,6 +196,8 @@ class PortalDevice {
                          clientId: String(record.clientId || ''),
                          clientName: String(record.clientName || ''),
                          scope: String(record.scope || ''),
+                         resources: Array.isArray(record.resources)
+                           ? record.resources.slice(0) : [],
                          expiresAt: record.expiresAt } : null
     };
   }

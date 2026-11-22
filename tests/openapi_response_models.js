@@ -25,6 +25,9 @@
 // to every model of them, because a member added there reached a stack first.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -666,7 +669,7 @@ async function codeFlow(port, client, who) {
       continue;
     }
     if (r.status >= 300 && r.status < 400 && to &&
-        to.indexOf(client.redirect) !== 0) {
+        !urls.isAt(to, client.redirect)) {
       r = await loopback(port, jar, 'GET', to);
       continue;
     }
@@ -674,7 +677,7 @@ async function codeFlow(port, client, who) {
   }
   const to = String((r.headers && r.headers.location) || '');
   const at = to.indexOf('?');
-  const code = to.indexOf(client.redirect) === 0 && at > 0
+  const code = urls.isAt(to, client.redirect) && at > 0
     ? new URLSearchParams(to.slice(at + 1)).get('code') : '';
   if (!code) {
     log.debug("Leaving codeFlow(). No code.");

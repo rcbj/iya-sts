@@ -33,6 +33,9 @@ const log = require('bunyan').createLogger({ name: 'ssf_subject_issuer',
 
 function child() {
   const ROOT = process.env.SSI_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT + '/tests/protocol/url_match.js');
   const OUT = process.env.SSI_OUT;
   const findings = [];
   const note = function (ok, what, detail) {
@@ -124,7 +127,7 @@ function child() {
         // it stopped the wait before the person's own had been queued
         // (the full run, cluster and memory mode).
         const types = sets.filter(function (c) {
-          return issuersIn(c.sub_id).indexOf('https://partner.example') < 0;
+          return !urls.holds(issuersIn(c.sub_id), 'https://partner.example');
         }).map(function (c) {
           return Object.keys(c.events || {})[0];
         });
@@ -139,7 +142,7 @@ function child() {
       wanted.forEach(function (uri) {
         const mine = sets.filter(function (c) {
           return (c.events || {})[uri] &&
-            issuersIn(c.sub_id).indexOf('https://partner.example') < 0;
+            !urls.holds(issuersIn(c.sub_id), 'https://partner.example');
         });
         const name = uri.split('/').pop();
         note(mine.length > 0, label + ': a ' + name + ' about the person ' +
@@ -156,7 +159,7 @@ function child() {
       });
       if (partnerExpected) {
         const partner = sets.filter(function (c) {
-          return issuersIn(c.sub_id).indexOf('https://partner.example') >= 0;
+          return urls.holds(issuersIn(c.sub_id), 'https://partner.example');
         });
         note(partner.length === 1, label + ': a partner\'s subject keeps ' +
              'its partner\'s issuer — the control', partner.length);

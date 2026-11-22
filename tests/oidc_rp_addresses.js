@@ -44,6 +44,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const config = require('../common/config');
 const applications = require('../common/applications');
 // The registry's store is the directory, and requiring this is what fills the
@@ -167,7 +170,8 @@ function run(t) {
       t.check(!res.ended && !res.location,
               'and NO browser was sent anywhere — the refusal comes before ' +
               'the redirect, not after it');
-      t.check(redirectUris().indexOf('https://evil.example/admin/callback') < 0,
+      t.check(!urls.holds(redirectUris(),
+                          'https://evil.example/admin/callback'),
               'and — the assertion the file is for — nothing was written ' +
               'onto the console\'s client ' +
               'entry', JSON.stringify(redirectUris()));
@@ -191,11 +195,15 @@ function run(t) {
                                          { returnTo: '/admin' });
       t.check(started.ok, 'development mode with a pinned base starts the flow',
               started.why);
-      t.check(res.location.indexOf('https://idp.example.test/oauth2/authorize?') === 0,
+      t.check(urls.isAt(res.location,
+                        'https://idp.example.test/oauth2/authorize'),
               'the browser is sent to the PINNED base whatever Host arrived',
               res.location.slice(0, 80));
-      t.check(res.location.indexOf(encodeURIComponent(
-                'https://idp.example.test/admin/callback')) > 0 &&
+      // The callback is the request's redirect_uri, read as a parameter.
+      t.check(urls.isAt(res.location,
+                        'https://idp.example.test/oauth2/authorize') &&
+              new URL(res.location).searchParams.get('redirect_uri') ===
+                'https://idp.example.test/admin/callback' &&
               res.location.indexOf('evil.example') < 0,
               'with the pinned callback as redirect_uri and no trace of the ' +
               'invented Host');
@@ -210,7 +218,8 @@ function run(t) {
                 .credentialDigest(flowState)) >= 0,
               'and the flow is held under its state\'s digest, never the ' +
               'state (#614)', flowRows.slice(0, 200));
-      t.check(redirectUris().indexOf('https://idp.example.test/admin/callback') < 0,
+      t.check(!urls.holds(redirectUris(),
+                          'https://idp.example.test/admin/callback'),
               'and the pinned callback was NOT written onto the entry — a ' +
               'pinned address is configuration, and learning is for an ' +
               'address nobody configured', JSON.stringify(redirectUris()));
@@ -236,7 +245,7 @@ function run(t) {
     t.check(started.ok && res.statusCode === 303,
             'development mode with nothing pinned starts the flow as it ' +
             'always did', started.why);
-    t.check(redirectUris().indexOf(learnt) >= 0,
+    t.check(urls.holds(redirectUris(), learnt),
             'and the entry LEARNT the address — the container and proxy ' +
             'convenience this behaviour exists for is unchanged in development',
             JSON.stringify(redirectUris()));
@@ -248,7 +257,7 @@ function run(t) {
                                        fakeRes(),
                                        'admin', { returnTo: '/admin' });
       t.check(again.ok, 'at the cap the flow still starts');
-      t.check(redirectUris().indexOf(capped) < 0,
+      t.check(!urls.holds(redirectUris(), capped),
               'but nothing more is written — an entry reached under many ' +
               'names, or asked with many invented Hosts, cannot grow without ' +
               'bound even in development', JSON.stringify(redirectUris()));

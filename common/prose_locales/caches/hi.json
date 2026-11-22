@@ -1139,6 +1139,34 @@
     "en": "ce6f4a649ea6af77",
     "text": "जब तक शृंखला समाप्त न हो (उसका न्यूनतम exp, 10.4), और अधिकतम oidfed.resolveCacheS।"
   },
+  "caches.store.openpgp.challenges.title": {
+    "en": "c0c95c44e5f3835e",
+    "text": "OpenPGP पंजीकरण चुनौतियाँ"
+  },
+  "caches.store.openpgp.challenges.description": {
+    "en": "be9e39edb5fb9e44",
+    "text": "OpenPGP कुंजी पंजीकृत कर रहे प्रत्येक व्यक्ति के लिए एक चुनौती: वह पाठ जिस पर वे gpg --clearsign से हस्ताक्षर करते हैं, उसका nonce और उसकी समाप्ति का समय। nonce पर क्लस्टर दावे के ज़रिए, केवल एक बार उपयोग होती है।"
+  },
+  "caches.store.openpgp.challenges.bound": {
+    "en": "70f8ecd02c4392d1",
+    "text": "प्रति व्यक्ति एक (entryUUID द्वारा कुंजीबद्ध), प्रत्येक openpgp.challengeLifetimeS के लिए।"
+  },
+  "caches.store.openpgp.wkd.title": {
+    "en": "dc47d455d5283de5",
+    "text": "Web Key Directory प्रकाशन"
+  },
+  "caches.store.openpgp.wkd.description": {
+    "en": "f79c85531015261b",
+    "text": "Web Key Directory प्रत्येक हैश किए गए पते के लिए कौन-सी OpenPGP कुंजी लौटाती है: धारक (एक entryUUID) और उनके द्वारा प्रकाशित फ़िंगरप्रिंट। यह एक संकेतक है: कुंजी स्वयं प्रविष्टि से पढ़ी जाती है। कभी भी गोपनीय नहीं।"
+  },
+  "caches.store.openpgp.wkd.bound": {
+    "en": "e8a7abbcc8bba7fc",
+    "text": "किसी प्रक्रिया की पंक्तियाँ प्रति realm 5,000 का कैश हैं; रजिस्टर में चुनने वाले प्रत्येक व्यक्ति की एक पंक्ति होती है।"
+  },
+  "caches.store.openpgp.wkd.lifetime": {
+    "en": "06861887c7e6c8f1",
+    "text": "जब तक व्यक्ति प्रकाशन बंद न करे या कुंजी न हटाए।"
+  },
   "caches.store.passwords.breach-ranges.title": {
     "en": "5746db291bee19b3",
     "text": "भंग पासवर्ड रेंज"

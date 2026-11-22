@@ -373,6 +373,9 @@ function issuancePolicy(t) {
 // rule (root CLAUDE.md, *Code style*).
 function childMain() {
   const ROOT = process.env.EAP_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT + '/tests/protocol/url_match.js');
   const OUT = process.env.EAP_OUT;
   const http = require('http');
   const nodeCrypto = require('crypto');
@@ -543,7 +546,7 @@ function childMain() {
     const atRedirect = function (r) {
       const loc = String((r && r.headers && r.headers.location) || '');
       return (r.status === 302 || r.status === 303) &&
-        loc.indexOf(REDIRECT) === 0 ? new URL(loc).searchParams : null;
+        urls.isAt(loc, REDIRECT) ? new URL(loc).searchParams : null;
     };
     const redeem = async function (b, client, params) {
       const r = await b.go('POST', '/oauth2/token', { noCookies: true,

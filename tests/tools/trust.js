@@ -23,8 +23,8 @@
 //                         process start, so it can only be handed to a CHILD —
 //                         which is what these jobs are. It cannot be set for
 //                         the runner's own process from inside it, which is why
-//                         this module's callers probe with
-//                         `rejectUnauthorized: false` instead.
+//                         the runner names the file to tools/service_trust.js
+//                         (`useBundle()`) for its own calls instead.
 //   STS_SPKI_PIN          the browser jobs. tests/protocol/browser_flags.js
 //                         already reads exactly this variable and turns it into
 //                         Chrome's --ignore-certificate-errors-spki-list. That
@@ -67,8 +67,11 @@
 
 const crypto = require('crypto');
 const fs = require('fs');
+const http = require('http');
 const https = require('https');
 const path = require('path');
+const tls = require('tls');
+const serviceTrust = require('./service_trust.js');
 
 // This file's own logger, for the Entering/Leaving lines and the handled
 // exceptions the code style asks for. Its level is LOG_LEVEL, which is also
@@ -89,37 +92,114 @@ function isTls(url) {
 }
 
 // ---------------------------------------------------------------------------
-// FETCH IT, WITH VERIFICATION OFF, AND THAT IS NOT A WEAKENING OF ANYTHING.
+// FETCH IT, VERIFIED, AGAINST THE ROOT THE SERVICE PUBLISHES (2026-11-20).
 //
-// This is the bootstrap fetch: the question being asked is "what key is this
-// service using", and there is by construction no anchor to ask it against —
-// the answer IS the anchor. It is the same `curl -k` the /tls page tells a
-// person to make, and with `global.https` on there is no plain listener left in
-// the process to make it against instead.
+// This is the bootstrap fetch: the question being asked is "what chain is
+// this service using", and in development mode nothing that existed before
+// the service holds an anchor for it. Until today it was answered with
+// verification OFF — the `curl -k` the /tls page tells a person to make.
+// It is answered with verification ON now, in two steps:
 //
-// `https.get` rather than the global fetch(): fetch's dispatcher does not take
-// a per-request `rejectUnauthorized`, so tolerating one certificate would mean
-// building an undici Agent, and this module must load in the container image
-// too, where the runner has no dependency on undici's public API.
+//   1. against the system's roots and the bundle this process already holds
+//      (tools/service_trust.js, when there is one): an AWS target's
+//      publicly-trusted certificate, and a refresh after nothing rotated,
+//      verify here and nothing else is asked;
+//   2. when THIS client refused that chain, against the service Root from
+//      the plain-HTTP revocation listener's `/pki/ca/service/root.cer` —
+//      the `caIssuers` address every certificate the service issues names
+//      (pki/pki_service.ts), on `PKI_HTTP_PORT` (8082 by default; the
+//      cluster mode's balancer forwards it; a runner-started service hands
+//      its own port in `options.pkiPort`). The listener binds before the
+//      main port (server.js), so it is answering whenever this is asked.
+//
+// WHAT THAT CHANGES, SAID PLAINLY. The Root over plain HTTP is no better
+// authenticated than an unverified handshake was: in development mode it is
+// made at start, and learning it is trust on first use either way. What is
+// new is that the chain the runner writes for every job is CHECKED — it must
+// lead to the Root the service publishes and name the host the jobs dial —
+// so a listener presenting the wrong chain, or a chain for another name,
+// fails here, naming this file, instead of failing every job one at a time.
+// And no connection in this suite dials the service unverified any more.
+//
+// `https.get` rather than the global fetch(): fetch's dispatcher takes no
+// per-request `ca`, and this module must load in the container image too,
+// where the runner has no dependency on undici's public API.
 // ---------------------------------------------------------------------------
-function fetchCertificate(url, timeoutMs, options) {
-  log.debug("Entering fetchCertificate().");
-  log.debug("Leaving fetchCertificate().");
+
+// The service Root, as PEM, from the plain-HTTP revocation listener on the
+// host `url` names.
+function rootOverHttp(url, timeoutMs, options) {
+  log.debug("Entering rootOverHttp().");
+  const target = new URL(url);
+  const port = Number((options && options.pkiPort) ||
+                      process.env.PKI_HTTP_PORT || 8082);
+  const where = 'http://' + target.hostname + ':' + port +
+                '/pki/ca/service/root.cer';
+  log.debug("Leaving rootOverHttp(). " + where);
   return new Promise(function (resolve, reject) {
-    let target;
-    try {
-      target = new URL(CERTIFICATE_PATH, url);
-    } catch (e) {
-      log.debug("Caught in a callback in fetchCertificate(): " +
+    const req = http.get(where, { timeout: timeoutMs || 10000 },
+      function (res) {
+        const chunks = [];
+        res.on('data', function (chunk) {
+          chunks.push(chunk);
+        });
+        res.on('end', function () {
+          if (res.statusCode !== 200) {
+            reject(new Error(where + ' answered ' + res.statusCode));
+            return;
+          }
+          try {
+            resolve(new crypto.X509Certificate(Buffer.concat(chunks))
+              .toString());
+          } catch (e) {
+            log.debug("Caught in a callback in rootOverHttp(): " +
+                      ((e && e.message) || e));
+            reject(new Error(where + ' answered 200 with something that ' +
+                             'is not a certificate (' + e.message + ')'));
+          }
+        });
+      });
+    req.on('error', function (e) {
+      log.debug("Caught in a callback in rootOverHttp(): " +
                 ((e && e.message) || e));
-      reject(new Error('not a URL: ' + url));
-      return;
+      reject(new Error(where + ': ' + ((e && e.message) || e)));
+    });
+    req.on('timeout', function () {
+      req.destroy(new Error('timed out'));
+    });
+  });
+}
+
+// The anchors step 1 verifies against: the system's roots, `options.ca`
+// and the bundle this process holds, when it holds one.
+function knownAnchors(options) {
+  log.debug("Entering knownAnchors().");
+  let held = [];
+  if (serviceTrust.bundlePath()) {
+    try {
+      held = serviceTrust.ca();
+    } catch (e) {
+      // A bundle named and unreadable (a run's first fetch, before the file
+      // exists) is no anchor; step 2 is what this fetch then rests on.
+      log.debug("Caught in knownAnchors(): " + ((e && e.message) || e));
+      held = [];
     }
+  }
+  const extra = options && options.ca ? [].concat(options.ca) : [];
+  log.debug("Leaving knownAnchors(). " + held.length + " held.");
+  return tls.rootCertificates.concat(held, extra);
+}
+
+// One verified GET of the certificate document against `ca`.
+function getCertificateDocument(target, timeoutMs, options, ca) {
+  log.debug("Entering getCertificateDocument().");
+  log.debug("Leaving getCertificateDocument().");
+  return new Promise(function (resolve, reject) {
     const req = https.get({
       host: target.hostname,
       port: target.port || 443,
       path: target.pathname,
-      rejectUnauthorized: false,
+      ca: ca,
       timeout: timeoutMs || 10000,
       // A NEW CONNECTION when asked (the `cluster` mode, below); otherwise the
       // default agent, exactly as before.
@@ -155,6 +235,118 @@ function fetchCertificate(url, timeoutMs, options) {
       reject(new Error('timed out fetching ' + CERTIFICATE_PATH));
     });
   });
+}
+
+// Whether a handshake with `url` verifies against `ca`: true, false when
+// THIS client refused the chain, and true for any other failure, which the
+// caller's own request will meet and report in its own words.
+function handshakeVerifies(url, ca, timeoutMs) {
+  log.debug("Entering handshakeVerifies().");
+  const target = new URL(url);
+  const options = { host: target.hostname,
+                    port: Number(target.port || 443), ca: ca,
+                    timeout: timeoutMs || 10000 };
+  if (!/^[0-9.]+$/.test(target.hostname) &&
+      target.hostname.indexOf(':') < 0) {
+    options.servername = target.hostname;
+  }
+  log.debug("Leaving handshakeVerifies().");
+  return new Promise(function (resolve) {
+    const socket = tls.connect(options, function () {
+      socket.end();
+      resolve(true);
+    });
+    socket.on('error', function (e) {
+      log.debug("Caught in a callback in handshakeVerifies(): " +
+                ((e && e.message) || e));
+      resolve(!serviceTrust.isUntrusted(e));
+    });
+    socket.on('timeout', function () {
+      socket.destroy();
+      resolve(true);
+    });
+  });
+}
+
+// THE TRUSTSTORE FOR A TOOL THAT DIALS THE SERVICE BEFORE, OR WITHOUT, THE
+// RUN'S BUNDLE — tools/admin-api-token.js and tools/scheduler-takeover.js,
+// which the launchers run in the service image with nothing to trust yet:
+// the known anchors, and the service Root from the revocation listener
+// (above) when those do not verify the listener. Never an empty answer that
+// would read as "do not verify": a Root that cannot be read leaves the
+// known anchors, and the caller's request then fails verification saying
+// so. A plain-http URL gets the known anchors, which it ignores.
+async function anchorsFor(url, options) {
+  log.debug("Entering anchorsFor().");
+  const known = knownAnchors(options);
+  if (!isTls(url) || await handshakeVerifies(url, known)) {
+    log.debug("Leaving anchorsFor(). Known anchors.");
+    return known;
+  }
+  try {
+    const root = await rootOverHttp(url, 10000, options);
+    log.debug("Leaving anchorsFor(). With the service Root.");
+    return known.concat([root]);
+  } catch (e) {
+    log.debug("Caught in anchorsFor(): " + ((e && e.message) || e));
+    log.warn('trust: ' + url + ' presents a chain no known root verifies, ' +
+             'and the service Root could not be read (' + e.message + ').');
+    log.debug("Leaving anchorsFor(). Known anchors only.");
+    return known;
+  }
+}
+
+async function fetchCertificate(url, timeoutMs, options) {
+  log.debug("Entering fetchCertificate().");
+  let target;
+  try {
+    target = new URL(CERTIFICATE_PATH, url);
+  } catch (e) {
+    log.debug("Caught in fetchCertificate(): " + ((e && e.message) || e));
+    log.debug("Leaving fetchCertificate(). Not a URL.");
+    throw new Error('not a URL: ' + url);
+  }
+  const known = knownAnchors(options);
+  try {
+    const body = await getCertificateDocument(target, timeoutMs, options,
+                                              known);
+    log.debug("Leaving fetchCertificate(). Verified against known roots.");
+    return body;
+  } catch (e) {
+    log.debug("Caught in fetchCertificate(): " + ((e && e.message) || e));
+    if (!serviceTrust.isUntrusted(e)) {
+      log.debug("Leaving fetchCertificate(). " + e.message);
+      throw e;
+    }
+  }
+  let root;
+  try {
+    root = await rootOverHttp(url, timeoutMs, options);
+  } catch (e) {
+    log.debug("Caught in fetchCertificate(): " + ((e && e.message) || e));
+    log.debug("Leaving fetchCertificate(). No Root.");
+    throw new Error(url + ' presents a chain no known root verifies, and ' +
+                    'the service Root could not be read from its ' +
+                    'revocation listener (' + e.message + '). Set ' +
+                    'PKI_HTTP_PORT to that listener\'s port, or ' +
+                    'STS_TRUST_BUNDLE to the PEM ' + CERTIFICATE_PATH +
+                    ' serves.');
+  }
+  try {
+    const body = await getCertificateDocument(target, timeoutMs, options,
+                                              known.concat([root]));
+    log.debug("Leaving fetchCertificate(). Verified against the Root.");
+    return body;
+  } catch (e) {
+    log.debug("Caught in fetchCertificate(): " + ((e && e.message) || e));
+    log.debug("Leaving fetchCertificate(). " + e.message);
+    if (serviceTrust.isUntrusted(e)) {
+      throw new Error(url + ' presents a chain that does not verify ' +
+                      'against the service Root its revocation listener ' +
+                      'publishes (' + e.code + ': ' + e.message + ')');
+    }
+    throw e;
+  }
 }
 
 // The base64 SHA-256 of the DER SubjectPublicKeyInfo — which is what Chrome's
@@ -197,18 +389,27 @@ function spkiPin(pem) {
 // different order. Bounded at four attempts a node; fewer leaves than nodes is
 // said out loud and the ones seen are used.
 // ---------------------------------------------------------------------------
-async function readTrust(url, nodes) {
+// `options` is fetchCertificate()'s (`pkiPort` for a runner-started service).
+async function readTrust(url, nodes, options) {
   log.debug("Entering readTrust().");
   const want = Number(nodes || process.env.STS_TEST_CLUSTER_NODES || 1);
   if (!(want > 1)) {
-    const pem = await fetchCertificate(url);
+    const pem = await fetchCertificate(url, 10000, options);
     log.debug("Leaving readTrust(). One node.");
     return { pem: pem, pin: spkiPin(pem), leaves: 1 };
   }
+  // THE ANCHORS FIRST, ONCE (run #607). A fetch the known anchors do not
+  // verify is TWO connections — the refused one and the one against the
+  // Root — and a round-robin balancer then hands every second connection to
+  // the same node, so eight fetches saw one key and a browser met the
+  // other node's interstitial. With the Root among the anchors from the
+  // start, each fetch is one connection, as it was.
+  const anchors = await anchorsFor(url, options);
   const byPin = new Map();
   for (let attempt = 0; attempt < want * 4 && byPin.size < want;
        attempt += 1) {
-    const pem = await fetchCertificate(url, 10000, { fresh: true });
+    const pem = await fetchCertificate(url, 10000,
+      Object.assign({}, options || {}, { fresh: true, ca: anchors }));
     byPin.set(spkiPin(pem), pem);
   }
   const pins = Array.from(byPin.keys()).sort();
@@ -243,13 +444,15 @@ async function readTrust(url, nodes) {
 // when a job fails on a certificate, the question is always which certificate,
 // and a file in /tmp that the next run overwrites cannot answer it.
 // ---------------------------------------------------------------------------
-async function trustTheService(url, dir, log) {
+// `options` is fetchCertificate()'s: `pkiPort`, the revocation listener's
+// port, when the runner started the service on a port block of its own.
+async function trustTheService(url, dir, log, options) {
   log.debug('Entering trustTheService().');
   if (!isTls(url)) {
     log.debug('Leaving trustTheService(). Not TLS; nothing to trust.');
     return { url: url, tls: false, variables: {} };
   }
-  const read = await readTrust(url);
+  const read = await readTrust(url, 0, options);
   const pem = read.pem;
   const pin = read.pin;
   fs.mkdirSync(dir, { recursive: true });
@@ -274,6 +477,8 @@ module.exports = {
   isTls: isTls,
   spkiPin: spkiPin,
   fetchCertificate: fetchCertificate,
+  rootOverHttp: rootOverHttp,
+  anchorsFor: anchorsFor,
   readTrust: readTrust,
   trustTheService: trustTheService,
   CERTIFICATE_PATH: CERTIFICATE_PATH

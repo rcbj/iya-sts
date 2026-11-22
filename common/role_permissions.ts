@@ -140,6 +140,10 @@ interface Subject {
   kind?: string;
   name?: string;
   authenticated?: boolean;
+  // #1072: the sign-on session whose chosen dynamic roles are held, and
+  // the applications whose choice applies (`roles.js`).
+  sessionId?: string;
+  selectionApplications?: string[];
 }
 
 // What `heldRoles()` answers.
@@ -409,7 +413,12 @@ class RolePermissions {
       const everything = roles.rolesOf({ kind: kind, name: name,
                                          authenticated: who.authenticated !==
                                                         false,
-                                         ids: true });
+                                         ids: true,
+                                         // #1072: the session's choice.
+                                         sessionId: who.sessionId || '',
+                                         selectionApplications:
+                                           who.selectionApplications ||
+                                           undefined });
       const builtIn = everything.filter(function (one) {
         return roles.isBuiltIn(one);
       });
@@ -861,7 +870,24 @@ class RolePermissions {
       return unchanged;
     }
     const ctx = context || {};
-    const held = this.heldRoles(who);
+    // THE SESSION'S CHOSEN DYNAMIC ROLES (#1072), for the client the token
+    // is issued to: `context.sessionId`, where the issuance has a session.
+    let clientApp = '';
+    if (ctx.sessionId && ctx.clientId) {
+      try {
+        const found = this.deps.applications.forClientId(String(ctx.clientId));
+        clientApp = found && found.identifier ? String(found.identifier) : '';
+      } catch (e) {
+        log.debug("Caught in RolePermissions.narrowScope(): " +
+                  ((e && e.message) || e));
+        clientApp = '';
+      }
+    }
+    const held = this.heldRoles(ctx.sessionId
+      ? Object.assign({}, who, { sessionId: String(ctx.sessionId),
+                                 selectionApplications: clientApp
+                                   ? [clientApp] : [] })
+      : who);
     // AND WHAT THE CLIENT CONFERS ON THEM (#454): a person signing in
     // through a client holds the roles that client confers, on this token,
     // beside their own — the console's client conferring ADMIN_CONSOLE is

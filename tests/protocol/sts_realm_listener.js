@@ -51,6 +51,9 @@
 // standing, as every realm a job makes is.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const https = require("https");
 
@@ -344,7 +347,8 @@ async function main() {
     assert.strictEqual(onMain.status, 404, onMain.status + " " +
                        onMain.text.slice(0, 200));
     assert.ok(/not served on this listener/.test(onMain.text) &&
-              onMain.text.indexOf(OWN_BASE) >= 0, onMain.text.slice(0, 300));
+              urls.namesOrigin(onMain.text, OWN_BASE),
+              onMain.text.slice(0, 300));
   });
   const onOwn = await request("GET", OWN_BASE + scimPath);
   check("SCIM is answered on the realm's listener", function () {

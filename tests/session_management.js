@@ -274,6 +274,9 @@ async function library(t) {
 function childMain() {
   /* eslint-disable no-console */
   const ROOT = process.env.SM_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT + '/tests/protocol/url_match.js');
   const OUT = process.env.SM_OUT;
   const http = require('http');
   const crypto = require('crypto');
@@ -375,7 +378,7 @@ function childMain() {
     const paramsOf = function (r) {
       const loc = String((r && r.headers && r.headers.location) || '');
       const at = loc.indexOf('?');
-      return loc.indexOf(REDIRECT) === 0 && at > 0
+      return urls.isAt(loc, REDIRECT) && at > 0
         ? new URLSearchParams(loc.slice(at + 1)) : new URLSearchParams();
     };
     const signIn = async function (username) {
@@ -437,7 +440,7 @@ function childMain() {
       return found.length === 1 ? found[0].slice(name.length + 1) : null;
     };
     const ancestors = directive('frame-ancestors') || '';
-    note(r.status === 200 && ancestors.split(' ').indexOf(RP) >= 0 &&
+    note(r.status === 200 && urls.holds(ancestors.split(' '), RP) &&
            ancestors.indexOf('*') < 0 && ancestors.indexOf("'none'") < 0 &&
            directive('base-uri') === "'none'" &&
            directive('default-src') === "'none'" &&

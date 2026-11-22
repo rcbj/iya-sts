@@ -77,6 +77,7 @@ import NodeHealthPage = require('./web_node_health');
 import PasskeyReportPage = require('./web_passkey_report');
 import PostLoginActivitiesPage = require('./web_post_login_activities');
 import HardwareTokensPage = require('./web_hardware_tokens');
+import OpenPgpPage = require('./web_openpgp');
 import PkiPage = require('./web_pki');
 import ProtocolSettingsPage = require('./web_protocol_settings');
 import PoliciesPage = require('./web_policies');
@@ -342,8 +343,11 @@ const PROTOCOL_TABS: Record<string, string[]> = {
                    'preview', 'settings'],
   '/admin/applications': ['applications', 'add', 'settings'],
   '/admin/devices': ['devices', 'register'],
-  // #1955 P1: the register's list; P4: the imported OATH tokens.
-  '/admin/hardware-tokens': ['tokens', 'oath'],
+  // #1955 P1: the register's list; P4: imported OATH tokens;
+  // P2: PIV enrolment and escrowed keys.
+  '/admin/hardware-tokens': ['tokens', 'oath', 'enrol', 'escrow'],
+  // #1955 P6: the person, the registration, the directory.
+  '/admin/openpgp': ['person', 'register', 'directory'],
   '/admin/attribute-sources': ['sources', 'add', 'person', 'settings'],
   '/admin/secret-destinations': ['destinations', 'add'],
   // #1111, #1123: the started activities and their controls; the report
@@ -483,6 +487,13 @@ const PAGES: WebPage[] = [
   { path: '/admin/attribute-sources', title: 'Attribute sources',
     operation: '/admin-api/attribute-sources',
     render: AttributeSourcesPage.render },
+  // DIRECTORY → ATTRIBUTE SOURCES → ADD A SOURCE (#1132), reached from the
+  // list's Add tab.
+  { path: '/admin/attribute-sources/new', title: 'Add an attribute source',
+    operation: '/admin-api/attribute-sources/new',
+    render: function (view: Json, ctx?: Json): string {
+      return AttributeSourcesPage.newBody(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/authorization-servers', title: 'Authorization servers',
     operation: '/admin-api/authorization-servers',
     drill: {
@@ -680,6 +691,13 @@ const PAGES: WebPage[] = [
     } },
   { path: '/admin/devices', title: 'Devices',
     operation: '/admin-api/devices', render: DevicesPage.render },
+  // DIRECTORY → DEVICES → REGISTER A DEVICE (#1132), reached from the
+  // list's Register tab.
+  { path: '/admin/devices/new', title: 'Register a device',
+    operation: '/admin-api/devices/new',
+    render: function (view: Json, ctx?: Json): string {
+      return DevicesPage.newBody(view, ctx || WebKit.context());
+    } },
   { path: '/admin/devices/monitor', title: 'Devices (monitoring)',
     operation: '/admin-api/devices/monitor',
     render: function (view: Json, ctx?: Json): string {
@@ -748,6 +766,21 @@ const PAGES: WebPage[] = [
     },
     render: function (view: Json, ctx?: Json): string {
       return GroupsPage.body(ctx || WebKit.context(), view);
+    } },
+  // DIRECTORY → GROUPS → NEW GROUP (#1132): the one create form, reached
+  // from the list's Create tab, as New user is from Users.
+  { path: '/admin/groups/new', title: 'New group',
+    operation: '/admin-api/groups/new',
+    render: function (view: Json, ctx?: Json): string {
+      return GroupsPage.newGroupBody(ctx || WebKit.context(), view);
+    } },
+  // DIRECTORY → POLICIES → NEW POLICY (#1132): one kind's create form,
+  // reached from that kind's New policy tab, drawn from the policies view.
+  { path: '/admin/policies/new', title: 'New policy',
+    operation: '/admin-api/policies/new',
+    compose: { policies: '/admin-api/policies' },
+    render: function (view: Json, ctx?: Json): string {
+      return PoliciesPage.newPolicyBody(ctx || WebKit.context(), view);
     } },
   { path: '/admin/keys', title: 'Key pairs', operation: '/admin-api/keys',
     render: function (view: Json, ctx?: Json): string {
@@ -867,6 +900,10 @@ const PAGES: WebPage[] = [
                              per: 'per' } },
     composeAlways: ['oath'],
     render: HardwareTokensPage.render },
+  // #1955 P6: Directory → OpenPGP keys, one person's OpenPGP key, its Web
+  // Key Directory publication and their mail encryption.
+  { path: '/admin/openpgp', title: 'OpenPGP keys',
+    operation: '/admin-api/openpgp', render: OpenPgpPage.render },
   { path: '/admin/pki/trust', title: 'PKI trust',
     operation: '/admin-api/pki/trust', render: PkiTrustPage.render },
   { path: '/admin/pki', title: 'PKI', operation: '/admin-api/pki',
@@ -921,10 +958,26 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return RiskPage.metricsHtml(view, ctx);
     } },
+  // DIRECTORY → ROLES → NEW ROLE (#1132), reached from the list's Create
+  // tab.
+  { path: '/admin/roles/new', title: 'New role',
+    operation: '/admin-api/roles/new',
+    render: function (view: Json, ctx?: Json): string {
+      return RolesPage.newRoleBody(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/roles', title: 'Roles',
     operation: '/admin-api/roles',
-    compose: { preview: '/admin-api/roles/preview' },
-    composeWhen: { preview: ['application', 'subject', 'subjectKind', 'kind'] },
+    compose: { preview: '/admin-api/roles/preview',
+               // A DYNAMIC ROLE'S ELIGIBILITY, TESTED (#1072), on its page:
+               // asked only by the test form, under names of its own so the
+               // drill-down's `role` never sets it off.
+               eligibility: '/admin-api/roles/eligibility' },
+    composeWhen: { preview: ['application', 'subject', 'subjectKind', 'kind'],
+                   eligibility: ['eligibilityRole', 'eligibilityUser',
+                                 'eligibilityApplication'] },
+    composeParams: { eligibility: { eligibilityRole: 'role',
+                                    eligibilityUser: 'user',
+                                    eligibilityApplication: 'application' } },
     // ONE ROLE'S PAGE (#604): the same operation, asked with `role`.
     drill: {
       param: 'role',
@@ -978,6 +1031,13 @@ const PAGES: WebPage[] = [
   { path: '/admin/secret-destinations', title: 'Secret destinations',
     operation: '/admin-api/secret-destinations',
     render: SecretDestinationsPage.render },
+  // DIRECTORY → SECRET DESTINATIONS → ADD A DESTINATION (#1132), reached
+  // from the list's Add tab.
+  { path: '/admin/secret-destinations/new', title: 'Add a secret destination',
+    operation: '/admin-api/secret-destinations/new',
+    render: function (view: Json, ctx?: Json): string {
+      return SecretDestinationsPage.newBody(view, ctx || WebKit.context());
+    } },
   { path: '/admin/oidfed', title: 'OpenID Federation',
     operation: '/admin-api/oidfed', render: OidfedPage.render },
   { path: '/admin/scim', title: 'SCIM',

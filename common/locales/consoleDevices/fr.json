@@ -187,5 +187,8 @@
   "monitorHtml.thRegistered": "Enregistrés",
   "monitorHtml.thRemoved": "Supprimés",
   "monitorHtml.thEvicted": "Évincés",
-  "monitorHtml.thCompliance": "Conformité : {source}"
+  "monitorHtml.thCompliance": "Conformité : {source}",
+  "newDevice.button": "Enregistrer un appareil",
+  "newDevice.key": "Première clé",
+  "newDevice.keyHint": "enregistrée seulement avec son type"
 }

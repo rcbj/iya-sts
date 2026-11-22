@@ -83,6 +83,7 @@ const { log, parseBody } = helpers;
 const SCEP_PATH = /^(?:\/[^/]+){0,2}\/enroll\/scep(?:\/|$)/;
 import config = require('../common/config');
 import pki = require('../common/pki');
+import realms = require('../common/realms');
 import revocation = require('../common/pki_revocation');
 // Which JOSE certificate an `x5u` names, and its chain. A library.
 import certificateHeader = require('../common/jose_certificate_header');
@@ -105,6 +106,7 @@ interface PkiServiceDeps {
   log: typeof log;
   config: typeof config;
   pki: typeof pki;
+  realms: typeof realms;
   revocation: typeof revocation;
   certificateHeader: typeof certificateHeader;
   errorCodes: typeof errorCodes;
@@ -149,6 +151,7 @@ class PkiService {
       log: log,
       config: config,
       pki: pki,
+      realms: realms,
       revocation: revocation,
       certificateHeader: certificateHeader,
       errorCodes: errorCodes,
@@ -224,6 +227,93 @@ class PkiService {
     res.status(status).type('text/plain').set('Cache-Control', 'no-store')
        .send(sentence + '\n');
     log.debug("Leaving PkiService.refuse().");
+  }
+
+  /**
+   * Answers a realm's OpenSSH user CA public key.
+   *
+   * @param res - the express response
+   * @param scopeSegment - the scope as the path spells it
+   */
+  async sshUserCaFor(res, scopeSegment) {
+    const { log, pki, realms, errorCodes, revocation } = this.deps;
+    log.debug("Entering PkiService.sshUserCaFor(). scope=" + scopeSegment);
+    const scope = revocation.scopeFromSegment(scopeSegment);
+    if (scope === pki.SERVICE_SCOPE || scope === pki.PROCESS_SCOPE ||
+        !realms.get(scope)) {
+      errorCodes.mark(res, 'STS-PKI-0292');
+      this.refuse(res, 404, 'There is no realm SSH user CA in the "' +
+                  scopeSegment + '" scope.');
+      log.debug("Leaving PkiService.sshUserCaFor(). Not a realm.");
+      return;
+    }
+    try {
+      const answer = await pki.sshUserCaPublicKeyAsync(scope);
+      if (!answer || !answer.ok) {
+        errorCodes.mark(res, 'STS-PKI-0290');
+        this.refuse(res, 503,
+                    'The SSH user CA public key could not be answered.');
+        log.debug("Leaving PkiService.sshUserCaFor(). Unavailable.");
+        return;
+      }
+      const body = answer.publicLine + '\n';
+      res.status(200).type('text/plain')
+         .set('Cache-Control', 'no-store')
+         .set('Content-Length', String(Buffer.byteLength(body)))
+         .send(body);
+      log.debug("Leaving PkiService.sshUserCaFor().");
+    } catch (e) {
+      log.error(errorCodes.tag('STS-PKI-0290') + 'pki_service: the SSH ' +
+                'user CA public key could not be answered: ' +
+                ((e && e.message) || e));
+      errorCodes.mark(res, 'STS-PKI-0290');
+      this.refuse(res, 503,
+                  'The SSH user CA public key could not be answered.');
+      log.debug("Leaving PkiService.sshUserCaFor(). Failed.");
+    }
+  }
+
+  /**
+   * Answers a realm's OpenSSH key revocation list.
+   *
+   * @param res - the express response
+   * @param scopeSegment - the scope as the path spells it
+   */
+  async sshUserKrlFor(res, scopeSegment) {
+    const { log, pki, realms, errorCodes, revocation } = this.deps;
+    log.debug("Entering PkiService.sshUserKrlFor(). scope=" + scopeSegment);
+    const scope = revocation.scopeFromSegment(scopeSegment);
+    if (scope === pki.SERVICE_SCOPE || scope === pki.PROCESS_SCOPE ||
+        !realms.get(scope)) {
+      errorCodes.mark(res, 'STS-PKI-0292');
+      this.refuse(res, 404, 'There is no realm SSH user KRL in the "' +
+                  scopeSegment + '" scope.');
+      log.debug("Leaving PkiService.sshUserKrlFor(). Not a realm.");
+      return;
+    }
+    try {
+      const authority = await pki.sshUserCaPublicKeyAsync(scope);
+      const answer = authority && authority.ok
+        ? await pki.buildSshUserKrlAsync(scope) : authority;
+      if (!answer || !answer.ok || !answer.bytes) {
+        errorCodes.mark(res, 'STS-PKI-0290');
+        this.refuse(res, 503, 'The SSH user KRL could not be answered.');
+        log.debug("Leaving PkiService.sshUserKrlFor(). Unavailable.");
+        return;
+      }
+      res.status(200).type('application/octet-stream')
+         .set('Cache-Control', 'no-store')
+         .set('Content-Length', String(answer.bytes.length))
+         .send(answer.bytes);
+      log.debug("Leaving PkiService.sshUserKrlFor().");
+    } catch (e) {
+      log.error(errorCodes.tag('STS-PKI-0290') + 'pki_service: the SSH ' +
+                'user KRL could not be answered: ' +
+                ((e && e.message) || e));
+      errorCodes.mark(res, 'STS-PKI-0290');
+      this.refuse(res, 503, 'The SSH user KRL could not be answered.');
+      log.debug("Leaving PkiService.sshUserKrlFor(). Failed.");
+    }
   }
 
   /**
@@ -816,6 +906,12 @@ class PkiService {
          .send(JSON.stringify(out, null, 2));
       log.debug('Leaving the revocation index. ' + out.authorities.length +
                 ' authority(ies).');
+    });
+    app.get('/pki/ssh-user-ca/:scope', function (req, res) {
+      self.sshUserCaFor(res, String(req.params.scope));
+    });
+    app.get('/pki/ssh-user-krl/:scope', function (req, res) {
+      self.sshUserKrlFor(res, String(req.params.scope));
     });
     log.debug("Leaving PkiService.registerRoutes().");
   }

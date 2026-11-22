@@ -130,6 +130,7 @@
   "nav.applications": "應用程式",
   "nav.devices": "裝置",
   "nav.hardware-tokens": "硬體權杖",
+  "nav.openpgp": "OpenPGP 金鑰",
   "nav.attribute-sources": "屬性來源",
   "nav.secret-destinations": "秘密目的地",
   "nav.policies": "原則",

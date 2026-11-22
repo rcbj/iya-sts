@@ -46,6 +46,7 @@ const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 const gnap = require("./gnap_client.js");
+const serviceTrust = require("../tools/service_trust.js");
 const ssfRoles = require("./ssf_roles.js");
 
 var appconfig;
@@ -135,7 +136,7 @@ async function ssf(method, path, body, tls, token) {
     headers.Authorization = "Bearer " + token;
   }
   const r = await gnap.rawRequest(method, realmBase + path, headers, bytes,
-    Object.assign({ rejectUnauthorized: false },
+    Object.assign({ ca: serviceTrust.trustedCa() },
                   tls ? { cert: tls.cert, key: tls.key } : {}));
   log.debug("Leaving ssf(). " + r.status);
   return r;

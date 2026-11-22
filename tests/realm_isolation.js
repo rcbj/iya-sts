@@ -768,6 +768,26 @@ function checkOathTokenStore(t) {
   log.debug("Leaving checkOathTokenStore().");
 }
 
+// 5c-iii. THE OpenPGP STORES (#1955 P6): the registration challenges and the
+// Web Key Directory's publications, declared per realm; `tests/
+// openpgp_keys.js` asserts the behaviour — a challenge issued in one realm is
+// not one in another.
+// ---------------------------------------------------------------------------
+function checkOpenPgpStores(t) {
+  log.debug("Entering checkOpenPgpStores().");
+  t.log.info('the OpenPGP stores');
+  require('../common/openpgp_keys');
+  ['openpgp.challenges', 'openpgp.wkd'].forEach(function (name) {
+    const handle = realms.handleFor(name);
+    t.check(!!handle, name + ' is a declared store');
+    if (handle) {
+      t.equal(handle.scope, 'realm', name + ' is declared PER REALM',
+              String(handle.scope));
+    }
+  });
+  log.debug("Leaving checkOpenPgpStores().");
+}
+
 // ---------------------------------------------------------------------------
 // 5c-iv. THE YUBIKEY OTP STORES (#1955 P5): the inventory, the public-id
 // index, the YK-VAL clients and the nonce map, each declared per realm.
@@ -929,6 +949,7 @@ function run(t) {
   checkHardwareTokenStore(t);
   checkOathTokenStore(t);
   checkYubiOtpStores(t);
+  checkOpenPgpStores(t);
   checkGnapStores(t);
   checkChildStores(t);
   checkDefaultUnchanged(t);

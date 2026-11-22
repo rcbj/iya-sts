@@ -31,6 +31,9 @@
 // API.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
@@ -247,7 +250,7 @@ async function follow(who, first) {
       continue;
     }
     if (!(r.status === 302 || r.status === 303) ||
-        r.location.indexOf(root + "/") !== 0) {
+        !urls.isUnder(r.location, root + "/")) {
       break;
     }
     r = await hop(who, "GET", r.location);

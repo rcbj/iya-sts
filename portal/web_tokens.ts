@@ -16,6 +16,12 @@
 // the serial printed on it and a code it shows now (`claim`, the same
 // operation).
 //
+// #1955 P2 adds two cards: the PIV enrolment form (the slot profile, the
+// certificate request and the two attestation certificates, `enrol-piv`),
+// with the certificate it issued drawn once; and the person's escrowed
+// piv-key-management keys, each with "Recover key" (`recover-key`, the key
+// drawn once) and "It is on this key" (`attach-key`).
+//
 // A `web_` MODULE: it requires other `web_` modules only and logs nothing.
 // ---------------------------------------------------------------------------
 
@@ -47,6 +53,119 @@ class TokensPages {
         (c.label ? ' — ' + kit.esc(c.label) : '') +
         (c.retired ? ' (' + t.html('portalTokens.retired') + ')' : '');
     }).join('<br>') : '—';
+  }
+
+  // The slot each PIV profile is for, for the import command.
+  static readonly SLOTS: Record<string, string> = {
+    'piv-auth': '9a', 'piv-sign': '9c', 'piv-key-management': '9d',
+    'piv-card-auth': '9e'
+  };
+
+  /**
+   * The PIV enrolment card, and what it issued once.
+   *
+   * @param view - the page's view
+   * @param t - the translator
+   * @returns the HTML
+   */
+  static enrolCard(view: Json, t: Json): string {
+    const rules = view.piv || { profiles: [] };
+    const issued = view.issued;
+    const slot = issued ? (TokensPages.SLOTS[issued.profile] || '9a') : '';
+    const done = issued
+      ? '<div class="card" id="piv-issued"><h2>' +
+        t.html('portalTokens.piv.issuedHeading') + '</h2><p>' +
+        t.html('portalTokens.piv.issuedWhat', { slot: slot }) +
+        '</p><textarea readonly rows="10" name="certificate">' +
+        kit.esc(issued.certificatePem) + '</textarea></div>'
+      : '';
+    if (!(rules.profiles || []).length) {
+      return done + '<div class="card"><h2>' +
+        t.html('portalTokens.piv.heading') + '</h2><p id="piv-none">' +
+        t.html('portalTokens.piv.noProfiles') + '</p></div>';
+    }
+    const options = rules.profiles.map(function (one: string): string {
+      return '<option value="' + kit.esc(one) + '">' + kit.esc(one) + ' (' +
+        kit.esc(TokensPages.SLOTS[one] || '') + ')</option>';
+    }).join('');
+    return done + '<div class="card"><h2>' +
+      t.html('portalTokens.piv.heading') + '</h2><p class="sub">' +
+      t.html('portalTokens.piv.intro') + '</p><pre>' +
+      t.html('portalTokens.piv.commands') + '</pre>' +
+      '<form method="post" action="' + PATH + '" id="piv-enrol">' +
+      '<input type="hidden" name="action" value="enrol-piv">' +
+      '<label for="piv-profile">' + t.html('portalTokens.piv.profile') +
+      '</label><select id="piv-profile" name="profile">' + options +
+      '</select><label for="piv-csr">' + t.html('portalTokens.piv.csr') +
+      '</label><textarea id="piv-csr" name="csr" rows="6"></textarea>' +
+      '<label for="piv-attest">' + t.html('portalTokens.piv.attestation') +
+      '</label><textarea id="piv-attest" name="attestationCertificate" ' +
+      'rows="6"></textarea><label for="piv-f9">' +
+      t.html('portalTokens.piv.issuer') + '</label><textarea id="piv-f9" ' +
+      'name="attestationIssuer" rows="6"></textarea><p class="note">' +
+      t.html(rules.requireAttestation ? 'portalTokens.piv.required'
+                                      : 'portalTokens.piv.optional') +
+      '</p><button type="submit">' + t.html('portalTokens.piv.button') +
+      '</button></form></div>';
+  }
+
+  /**
+   * The escrowed keys card, and a recovered key once.
+   *
+   * @param view - the page's view
+   * @param t - the translator
+   * @returns the HTML, or '' where the realm escrows nothing and the
+   *   person has nothing escrowed
+   */
+  static escrowCard(view: Json, t: Json): string {
+    const rows: Json[] = view.escrowed || [];
+    const recovered = view.recovered;
+    if (!rows.length && !recovered && !(view.piv && view.piv.keyEscrow)) {
+      return '';
+    }
+    const tokens: Json[] = (view.tokens || []).filter(function (one: Json) {
+      return one.status !== 'lost';
+    });
+    const choose = tokens.map(function (one: Json): string {
+      return '<option value="' + kit.esc(one.key) + '">' +
+        kit.esc((one.model || one.vendor) + ' ' + one.serial) + '</option>';
+    }).join('');
+    const body = rows.map(function (one: Json): string {
+      return '<tr><td>' + kit.esc(one.serialHex) + '</td><td>' +
+        kit.esc(one.subject) + '</td><td>' +
+        (one.notAfter ? t.date(one.notAfter) : '') +
+        (one.revoked ? ' (' + t.html('portalTokens.escrow.revoked') + ')'
+                     : '') + '</td><td>' +
+        '<form method="post" action="' + PATH + '">' +
+        '<input type="hidden" name="action" value="recover-key">' +
+        '<input type="hidden" name="serial" value="' +
+        kit.esc(one.serialHex) + '"><button type="submit">' +
+        t.html('portalTokens.escrow.recover') + '</button></form>' +
+        (choose && !one.revoked
+          ? '<form method="post" action="' + PATH + '">' +
+            '<input type="hidden" name="action" value="attach-key">' +
+            '<input type="hidden" name="serial" value="' +
+            kit.esc(one.serialHex) + '"><select name="key" aria-label="' +
+            t.html('portalTokens.escrow.attach') + '">' + choose +
+            '</select><button type="submit">' +
+            t.html('portalTokens.escrow.attach') + '</button></form>' : '') +
+        '</td></tr>';
+    }).join('');
+    return (recovered
+      ? '<div class="card" id="piv-recovered"><h2>' +
+        t.html('portalTokens.escrow.recoveredHeading') + '</h2><p>' +
+        t.html('portalTokens.escrow.recoveredWhat') +
+        '</p><textarea readonly rows="10" name="private-key">' +
+        kit.esc(recovered.privateKeyPem) + '</textarea></div>' : '') +
+      '<div class="card"><h2>' + t.html('portalTokens.escrow.heading') +
+      '</h2><p class="sub">' + t.html('portalTokens.escrow.intro') + '</p>' +
+      (rows.length
+        ? '<table><tr><th>' + t.html('portalTokens.col.serial') + '</th><th>' +
+          t.html('portalTokens.escrow.subject') + '</th><th>' +
+          t.html('portalTokens.escrow.expires') + '</th><th></th></tr>' +
+          body + '</table>'
+        : '<p id="escrow-none">' + t.html('portalTokens.escrow.none') +
+          '</p>') + '</div>';
   }
 
   /**
@@ -84,7 +203,9 @@ class TokensPages {
           rows.join('') + '</table>' +
           '<p class="note">' + t.html('portalTokens.lost.what') + '</p>'
         : '<p id="tokens-none">' + t.html('portalTokens.none') + '</p>') +
-      '</div>' + TokensPages.claimCard(t);
+      '</div>' + TokensPages.claimCard(t) +
+      TokensPages.enrolCard(view, t) +
+      TokensPages.escrowCard(view, t);
   }
 
   /**

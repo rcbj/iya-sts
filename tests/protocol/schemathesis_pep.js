@@ -63,6 +63,7 @@ const bunyan = require("bunyan");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
+const serviceTrust = require("../tools/service_trust.js");
 const log = bunyan.createLogger({ name: "schemathesis_pep",
   level: process.env.LOG_LEVEL || "info" });
 
@@ -645,8 +646,13 @@ async function pepGetJson(url, options) {
     const target = new URL(url);
     const answer = await new Promise(function (resolve, reject) {
       const lib = target.protocol === "https:" ? https : http;
+      // An https PEP presents the certificate the realm issued it
+      // (`issue-pep-certificate`, below), under the service Root, so it
+      // verifies against the service's chain like the service does.
+      const verify = target.protocol === "https:"
+        ? { ca: serviceTrust.trustedCa() } : {};
       const req = lib.request(target, Object.assign({ method: "GET",
-        rejectUnauthorized: false, timeout: 15000, agent: false },
+        timeout: 15000, agent: false }, verify,
         options || {}), function (res) {
           let body = "";
           res.setEncoding("utf8");

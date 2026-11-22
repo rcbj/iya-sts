@@ -432,6 +432,9 @@ const CELL_MINTED = [
   // Somebody's, beside their entry in this cell. The YK-VAL clients and
   // the nonce replay set are global, above.
   'yubiotp.inventory', 'yubiotp.publicIds',
+  // A person's OpenPGP registration challenge and their Web Key Directory
+  // publication (#1955 P6): somebody's, beside their entry in this cell.
+  'openpgp.challenges', 'openpgp.wkd',
   'gnap.approvers', 'gnap.continuations', 'gnap.grants', 'gnap.instances',
   'gnap.interactions', 'gnap.manageHandles', 'gnap.manageValues',
   'gnap.movedGrants', 'gnap_monitor.counters', 'gnap.spend', 'gnap.tokens',

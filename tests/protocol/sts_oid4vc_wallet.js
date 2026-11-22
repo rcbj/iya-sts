@@ -73,6 +73,9 @@
 
 "use strict";
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const childProcess = require("child_process");
 const crypto = require("crypto");
@@ -569,7 +572,7 @@ async function signIn(wallet, siop, approve, subject) {
   }
   const out = await throughTheWallet(wallet, who, query, approve, subject);
   let at = out.collected.status === 303 ? out.collected.location : "";
-  for (let n = 0; n < 6 && at && at.indexOf(root) === 0 &&
+  for (let n = 0; n < 6 && at && urls.isUnder(at, root) &&
                   !consentScreen.isConsentScreen(at); n += 1) {
     at = (await hop(who, "GET", at)).location;
   }
@@ -578,7 +581,7 @@ async function signIn(wallet, siop, approve, subject) {
       base: base, location: at, cookie: who.header() });
     at = settled.location || at;
   }
-  const code = at && at.indexOf(REDIRECT_URI) === 0
+  const code = at && urls.isAt(at, REDIRECT_URI)
     ? new URL(at).searchParams.get("code") : null;
   const tokens = code ? await hop(null, "POST", base + "/oauth2/token", {
     form: { grant_type: "authorization_code", code: code,
@@ -709,7 +712,7 @@ async function acceptOffer(wallet, state) {
     copies.forEach(function (c) {
       assert.strictEqual(c.typ, "dc+sd-jwt", JSON.stringify(c));
       assert.ok(Number.isInteger(c.idx) && c.idx >= 0, JSON.stringify(c));
-      assert.ok(c.uri.indexOf(base + "/") === 0, c.uri);
+      assert.ok(urls.isUnder(c.uri, base + "/"), c.uri);
       assert.strictEqual(c.uri, copies[0].uri);
     });
     assert.strictEqual(new Set(copies.map(function (c) {

@@ -165,6 +165,15 @@ const PROVIDERS: Array<() => Json> = [
   function () {
     return require('../portal/account_tokens');
   },
+  // #1955 P3: SSH user certificates are API operations, not a portal page.
+  function () {
+    return require('./ssh_user_ca');
+  },
+  // #1955 P6: /portal/openpgp, the person's OpenPGP key, its Web Key
+  // Directory publication and their mail encryption, beside the tokens.
+  function () {
+    return require('../portal/account_openpgp');
+  },
   function () {
     return require('../portal/portal_ciba');
   },

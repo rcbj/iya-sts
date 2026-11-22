@@ -42,6 +42,7 @@
   "title.device-registration": "डिवाइस पंजीकरण",
   "title.devices": "डिवाइस",
   "title.hardware-tokens": "हार्डवेयर टोकन",
+  "title.openpgp": "OpenPGP कुंजियाँ",
   "title.devices-monitor": "डिवाइस (निगरानी)",
   "title.service-accounts": "सेवा खाते",
   "title.encryption": "एन्क्रिप्शन",
@@ -148,5 +149,11 @@
   "title.worker-pools": "वर्कर पूल",
   "title.broadcast": "प्रसारण घोषणा",
   "title.sign-in-appearance": "साइन-इन दिखावट",
-  "title.post-login-activities": "साइन-इन के बाद की गतिविधियाँ"
+  "title.post-login-activities": "साइन-इन के बाद की गतिविधियाँ",
+  "title.groups-new": "नया समूह",
+  "title.roles-new": "नई भूमिका",
+  "title.devices-new": "डिवाइस पंजीकृत करें",
+  "title.attribute-sources-new": "एट्रिब्यूट स्रोत जोड़ें",
+  "title.secret-destinations-new": "सीक्रेट गंतव्य जोड़ें",
+  "title.policies-new": "नई नीति"
 }

@@ -93,5 +93,10 @@
   "hKey": "Nyckeln",
   "hAlgorithm": "Algoritmen",
   "hDataKeys": "Datakrypteringsnycklarna",
-  "hCounting": "Räkningen"
+  "hCounting": "Räkningen",
+  "signingTitle": "Den här realmens signeringsnycklar",
+  "signingStore": "Var de skapas",
+  "signingInHsm": "I HSM:en",
+  "signingInSoftware": "I programvara",
+  "signingRefused": "nekat: HSM:en kan inte användas här (loggen säger varför)"
 }

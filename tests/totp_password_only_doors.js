@@ -58,6 +58,9 @@ function childMain() {
     findings.push({ ok: !!ok, what: what,
                     detail: detail === undefined ? '' : String(detail) });
   }
+  // The anchor every request verifies the listener against, set once the
+  // listener exists (below).
+  let anchors = null;
   function send(port, method, urlPath, headers, body) {
     return new Promise(function (resolve, reject) {
       const text = body === undefined ? '' : body;
@@ -67,7 +70,7 @@ function childMain() {
       }
       const req = https.request({ host: '127.0.0.1', port: port,
                                   path: urlPath, method: method,
-                                  headers: all, rejectUnauthorized: false,
+                                  headers: all, ca: anchors,
                                   agent: false }, function (res) {
         let raw = '';
         res.on('data', function (d) { raw += d; });
@@ -100,9 +103,16 @@ function childMain() {
     await require(ROOT_DIR + '/common/service_state').start();
     await require(ROOT_DIR + '/common/pki').ensureScope('');
     const tls = require(ROOT_DIR + '/tls/tls_server');
+    // The listener certificate presented as the main port presents it (the
+    // leaf, its chain and the Root), and verified by every request below
+    // against the anchor a loopback caller of this process pins
+    // (`trustAnchorPems()`): nothing here is about the certificate, and
+    // nothing here dials unverified either.
     const serverCert = tls.serverCertificate();
+    anchors = tls.trustAnchorPems();
     const server = https.createServer(Object.assign({
-      cert: serverCert.certPem, key: serverCert.privateKeyPem
+      cert: tls.presentedBundlePem(serverCert),
+      key: serverCert.privateKeyPem
     }, tls.protocolOptions()), app);
     await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
     const port = server.address().port;

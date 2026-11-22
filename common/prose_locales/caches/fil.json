@@ -1139,6 +1139,34 @@
     "en": "ce6f4a649ea6af77",
     "text": "Hanggang mag-expire ang chain (ang pinakamaliit nitong exp, 10.4), at hindi hihigit sa oidfed.resolveCacheS."
   },
+  "caches.store.openpgp.challenges.title": {
+    "en": "c0c95c44e5f3835e",
+    "text": "Mga challenge sa pagrehistro ng OpenPGP"
+  },
+  "caches.store.openpgp.challenges.description": {
+    "en": "be9e39edb5fb9e44",
+    "text": "Isang challenge bawat taong nagrerehistro ng OpenPGP key: ang text na pinipirmahan niya gamit ang gpg --clearsign, ang nonce nito at kung kailan ito mag-e-expire. Isang beses lang ginagamit, sa pamamagitan ng cluster claim sa nonce."
+  },
+  "caches.store.openpgp.challenges.bound": {
+    "en": "70f8ecd02c4392d1",
+    "text": "Isa bawat tao (naka-key sa entryUUID), bawat isa ay para sa openpgp.challengeLifetimeS."
+  },
+  "caches.store.openpgp.wkd.title": {
+    "en": "dc47d455d5283de5",
+    "text": "Mga paglalathala sa Web Key Directory"
+  },
+  "caches.store.openpgp.wkd.description": {
+    "en": "f79c85531015261b",
+    "text": "Kung aling OpenPGP key ang isinasagot ng Web Key Directory para sa bawat hashed address: ang may hawak (isang entryUUID) at ang fingerprint na inilathala niya. Isang pointer: ang key mismo ay binabasa mula sa entry. Hindi kailanman secret."
+  },
+  "caches.store.openpgp.wkd.bound": {
+    "en": "e8a7abbcc8bba7fc",
+    "text": "Ang mga row na hawak ng isang process ay cache na 5,000 bawat realm; ang register ay may isang row bawat taong pumayag."
+  },
+  "caches.store.openpgp.wkd.lifetime": {
+    "en": "06861887c7e6c8f1",
+    "text": "Hanggang itigil ng tao ang paglalathala o alisin ang key."
+  },
   "caches.store.passwords.breach-ranges.title": {
     "en": "5746db291bee19b3",
     "text": "Mga range ng na-breach na password"

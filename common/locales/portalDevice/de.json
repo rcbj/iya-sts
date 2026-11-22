@@ -2,6 +2,7 @@
   "request.heading": "Ist das Ihr Gerät?",
   "request.asks": "{client} bittet darum, Sie auf einem Gerät anzumelden, das den Code {code} anzeigt.",
   "request.access": "Zugriff: <code>{scope}</code>. Läuft ab {when}.",
+  "request.resources": "Angeforderte Ressourcen: <code>{resources}</code>.",
   "request.noScope": "(keins genannt)",
   "request.warning": "<strong>Genehmigen Sie nur ein Gerät vor Ihnen</strong>, bei dem Sie die Anmeldung selbst begonnen haben. Wer Ihnen diesen Code geschickt hat, bittet Sie, IHN als Sie anzumelden.",
   "request.as": "Sie genehmigen als <strong>{name}</strong>: Das Gerät wird als dieses Konto angemeldet. Um als ein anderes der in diesem Browser angemeldeten Konten zu genehmigen, wechseln Sie zuerst das Konto.",

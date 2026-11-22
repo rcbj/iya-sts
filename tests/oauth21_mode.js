@@ -23,6 +23,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const crypto = require('crypto');
 const { EventEmitter } = require('events');
 
@@ -409,7 +412,7 @@ function redirects(t) {
     t.check(!withheld.ok && withheld.errorCode === 'STS-OAUTH-0272' &&
             /only redirect URIs this service observed/
               .test(withheld.description) &&
-            withheld.description.indexOf(LISTED) < 0,
+            !urls.namesAddress(withheld.description, LISTED),
             'and one holding only unconfirmed addresses is told so, without ' +
             'naming them (#1331)', withheld);
   });

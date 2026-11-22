@@ -71,6 +71,9 @@ const ROOT = path.join(__dirname, '..');
 function childMain() {
   /* eslint-disable no-console */
   const ROOT = process.env.WSI_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT + '/tests/protocol/url_match.js');
   const OUT = process.env.WSI_OUT;
   const http = require('http');
   const nodeCrypto = require('crypto');
@@ -1204,7 +1207,7 @@ function childMain() {
          /Token Status List index \d+ is INVALID — why: a global sign-out/
            .test(globalSaid) &&
          ISO.test(globalSaid) &&
-         globalSaid.indexOf(base + '/portal/wallet') > 0,
+         urls.namesAddress(globalSaid, base + '/portal/wallet'),
          '8e-ii. the wallet is told why (a global sign-out), when, and where ' +
          'a new credential is issued (#653)', globalSaid);
     const globalPage = afterGlobal.page.json || {};
@@ -1251,7 +1254,7 @@ function childMain() {
       .error_description || '');
     note(/revoked in this service's issued register \(the admin console\) at /
            .test(revokedSaid) &&
-         revokedSaid.indexOf(base + '/portal/wallet') > 0 &&
+         urls.namesAddress(revokedSaid, base + '/portal/wallet') &&
          ((afterRevoke.page.json || {}).view || {}).reissue ===
            '/portal/wallet',
          '8g-ii. the wallet and the page say an administrator revoked it, ' +

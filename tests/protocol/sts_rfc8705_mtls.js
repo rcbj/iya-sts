@@ -77,6 +77,9 @@
 // OWNED HERE (local: true): this repository's own authorization server.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const childProcess = require("child_process");
 const fs = require("fs");
 const https = require("https");
@@ -326,7 +329,7 @@ async function follow(realm, b, first, who, password) {
       break;
     }
     const where = absolute(r.location);
-    if (where.indexOf(base) !== 0) {
+    if (!urls.isUnder(where, base)) {
       break;
     }
     if (/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(where) && who) {
@@ -971,9 +974,11 @@ async function endpoints(M) {
   check("j2. and written to the entry the token endpoint reads",
         function () {
     const fields = (creds.body && creds.body.fields) || {};
+    // An element of the attribute EQUAL to the DNS name, not a search.
     assert.ok([].concat(fields.oauthTlsClientAuthSanDns || [])
-      .indexOf("ext.example.com") >= 0, JSON.stringify(fields)
-      .slice(0, 300));
+      .some(function (one) {
+        return one === "ext.example.com";
+      }), JSON.stringify(fields).slice(0, 300));
   });
   r = await token({ grant_type: "client_credentials", client_id: regId },
                   M.ext);
@@ -1124,7 +1129,7 @@ async function implicitResponses() {
   check("m10. an implicit response carrying an /admin-api token for a " +
         "tls_client_auth client is refused invalid_request, STS-OAUTH-0490",
         function () {
-    assert.ok(String(landed.location).indexOf(CB) === 0, landed.status +
+    assert.ok(urls.isAt(landed.location, CB), landed.status +
               " " + String(landed.location).slice(0, 300));
     assert.ok(/error=invalid_request/.test(landed.location), landed.location);
     assert.ok(!/access_token=/.test(landed.location));

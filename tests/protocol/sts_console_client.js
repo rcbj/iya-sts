@@ -56,6 +56,7 @@ const crypto = require("crypto");
 const https = require("https");
 const zlib = require("zlib");
 const names = require("./random_username.js");
+const serviceTrust = require("../tools/service_trust.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -181,7 +182,7 @@ function rawGet(url, acceptEncoding, headers) {
     if (acceptEncoding !== null) {
       all["accept-encoding"] = acceptEncoding;
     }
-    const req = https.get(url, { headers: all, rejectUnauthorized: false },
+    const req = https.get(url, { headers: all, ca: serviceTrust.trustedCa() },
                           function (res) {
       const chunks = [];
       res.on("data", function (c) {

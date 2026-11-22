@@ -64,6 +64,9 @@
 // OWNED HERE (local: true).
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const K = require("./oauth_wire_kit.js").kit("sts_rfc9101_request_objects");
@@ -174,7 +177,7 @@ async function flow(first) {
   let final = held;
   for (let hops = 0; hops < 8 && (final.status === 302 ||
        final.status === 303) && (/^\//.test(final.location) ||
-       String(final.location).indexOf(K.base) === 0); hops++) {
+       urls.isUnder(final.location, K.base)); hops++) {
     final = await b.go(final.location);
   }
   log.debug("Leaving flow().");

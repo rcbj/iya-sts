@@ -644,8 +644,8 @@
     "text": "Das erzeugte Passwort wird in das Dienstprotokoll geschrieben."
   },
   "mode.requirements.bootstrap-password-file.product": {
-    "en": "e12d4ddc2b4d4724",
-    "text": "Es wird in eine Datei geschrieben, die nur dieser Dienst lesen kann, und das Protokoll nennt den Ort, sofern admin.logBootstrapPassword nicht on ist."
+    "en": "aa423786d143e231",
+    "text": "Es wird in eine Datei geschrieben, die nur dieser Dienst lesen kann, und das Protokoll nennt den Ort, sofern admin.logBootstrapPassword nicht on ist. Ein späterer Start löscht diese Datei, sobald bereits jemand Zugangsdaten besitzt."
   },
   "mode.requirements.pkce-every-client.what": {
     "en": "7e2c6f1869e39287",

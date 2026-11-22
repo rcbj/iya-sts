@@ -29,6 +29,9 @@
 // OWNED HERE (local: true): this repository's own transmitter.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
@@ -214,7 +217,7 @@ function atClient(r, redirect) {
   log.debug("Entering atClient().");
   const target = redirect || REDIRECT;
   if (!(r.status === 302 || r.status === 303) ||
-      String(r.location).indexOf(target) !== 0) {
+      !urls.isAt(r.location, target)) {
     log.debug("Leaving atClient(). Not at the client.");
     return null;
   }
@@ -382,8 +385,8 @@ async function test() {
         "session-established", function () {
     assert.strictEqual(created.status, 201, created.raw.slice(0, 400));
     const delivered = created.body.events_delivered || [];
-    assert.ok(delivered.indexOf(CAEP + "token-claims-change") >= 0 &&
-              delivered.indexOf(CAEP + "credential-change") >= 0,
+    assert.ok(urls.holds(delivered, CAEP + "token-claims-change") &&
+              urls.holds(delivered, CAEP + "credential-change"),
               JSON.stringify(delivered));
   });
   const streamId = created.body.stream_id;

@@ -187,5 +187,8 @@
   "monitorHtml.thRegistered": "पंजीकृत",
   "monitorHtml.thRemoved": "हटाए गए",
   "monitorHtml.thEvicted": "निकाले गए",
-  "monitorHtml.thCompliance": "अनुपालन: {source}"
+  "monitorHtml.thCompliance": "अनुपालन: {source}",
+  "newDevice.button": "डिवाइस पंजीकृत करें",
+  "newDevice.key": "पहली कुंजी",
+  "newDevice.keyHint": "केवल इसके प्रकार के साथ दर्ज होती है"
 }

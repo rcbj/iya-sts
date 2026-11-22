@@ -76,7 +76,7 @@
 // on the audit row saying what product would have answered. Product refuses.
 //
 // Direction B — this authorization server consulting an external PDP — is
-// not built (decision 1).
+// `authzen_external_pdp.ts` (#1200). This file stays direction A only.
 // ===========================================================================
 
 import helpers = require('../common/helpers');

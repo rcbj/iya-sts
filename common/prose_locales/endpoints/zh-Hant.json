@@ -431,6 +431,22 @@
     "en": "bfb6c6f542c0607b",
     "text": "/Me，已驗證的主體"
   },
+  "endpoints.route./.well-known/openpgpkey/:domain/hu/:hash.name": {
+    "en": "b042a2652a9771c9",
+    "text": "Web 金鑰目錄金鑰（進階方式）"
+  },
+  "endpoints.route./.well-known/openpgpkey/:domain/policy.name": {
+    "en": "f0c7c4485ab23e66",
+    "text": "Web 金鑰目錄政策（進階方式）"
+  },
+  "endpoints.route./.well-known/openpgpkey/hu/:hash.name": {
+    "en": "a8849e1ec8b477d5",
+    "text": "Web 金鑰目錄金鑰（直接方式）"
+  },
+  "endpoints.route./.well-known/openpgpkey/policy.name": {
+    "en": "d9805e391b15a7b9",
+    "text": "Web 金鑰目錄政策（直接方式）"
+  },
   "endpoints.route./.well-known/hoba/register.name": {
     "en": "b95adde7badbdef3",
     "text": "註冊 HOBA 公開金鑰"
@@ -895,6 +911,14 @@
     "en": "cff7055c2db49c6a",
     "text": "郵件動作"
   },
+  "endpoints.route./admin-api/openpgp.name": {
+    "en": "bb22bb5b740e327f",
+    "text": "OpenPGP 金鑰"
+  },
+  "endpoints.route./admin-api/openpgp/:action.name": {
+    "en": "a1147f062fddb7e5",
+    "text": "OpenPGP 金鑰操作"
+  },
   "endpoints.route./admin-api/mail/outbox.name": {
     "en": "d40abea9379f4e22",
     "text": "郵件寄件匣"
@@ -1050,6 +1074,30 @@
   "endpoints.route./admin-api/users/new.name": {
     "en": "911ac7f1d87d5691",
     "text": "新使用者表單"
+  },
+  "endpoints.route./admin-api/groups/new.name": {
+    "en": "e7e8f8038d460304",
+    "text": "新增群組表單"
+  },
+  "endpoints.route./admin-api/roles/new.name": {
+    "en": "2693340ee18861ff",
+    "text": "新增角色表單"
+  },
+  "endpoints.route./admin-api/devices/new.name": {
+    "en": "8922b80eac839903",
+    "text": "新增裝置表單"
+  },
+  "endpoints.route./admin-api/attribute-sources/new.name": {
+    "en": "24f2d80ebcf05f5e",
+    "text": "新增屬性來源表單"
+  },
+  "endpoints.route./admin-api/secret-destinations/new.name": {
+    "en": "a6b78c1984266387",
+    "text": "新增密鑰推送目標表單"
+  },
+  "endpoints.route./admin-api/policies/new.name": {
+    "en": "09d937d4dfadbac0",
+    "text": "新增原則表單"
   },
   "endpoints.route./admin-api/applications/new.name": {
     "en": "46a0fea8394de3a4",
@@ -1216,8 +1264,8 @@
     "text": "匯入的 OATH 權杖"
   },
   "endpoints.route./admin-api/hardware-tokens/:action.name": {
-    "en": "c3b6dea748114783",
-    "text": "回報硬體權杖遺失，或匯入並指派 OATH 權杖"
+"en": "33209f967f070175",
+"text": "硬體權杖動作"
   },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",
@@ -1230,6 +1278,10 @@
   "endpoints.route./admin-api/roles/preview.name": {
     "en": "c2e62734c4466542",
     "text": "這會被簽發嗎？"
+  },
+  "endpoints.route./admin-api/roles/eligibility.name": {
+    "en": "7bf17441c33aaafb",
+    "text": "此人是否具備此動態角色的資格？"
   },
   "endpoints.route./admin-api/roles/:action.name": {
     "en": "1baadaaa0e1df852",
@@ -1859,9 +1911,13 @@
     "en": "69876d051e66729c",
     "text": "登入後活動步驟"
   },
-  "endpoints.route./wsapi/2.0/verify.name": {
+"endpoints.route./wsapi/2.0/verify.name": {
     "en": "0734c12f6e3eb870",
     "text": "YK-VAL 2.0 驗證"
+  },
+"endpoints.route./authn/roles.name": {
+    "en": "d10487ebcbc8b238",
+    "text": "動態角色步驟"
   },
   "endpoints.route./authn/totp.name": {
     "en": "a89de574ee2c21ab",
@@ -2018,6 +2074,10 @@
   "endpoints.route./authn-api/mfa/:id/post-login/skip.name": {
     "en": "3d081a5b28f53bd6",
     "text": "延後一項登入後活動"
+  },
+  "endpoints.route./authn-api/mfa/:id/roles.name": {
+    "en": "77d2211c8b1e2d93",
+    "text": "選擇此次登入的動態角色"
   },
   "endpoints.route./authn-api/mfa/:id/email/send.name": {
     "en": "f974b23b7838f712",
@@ -2570,5 +2630,9 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS（會索取用戶端憑證，但從不強制要求）"
+  },
+  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
+    "en": "f46d01f7581b5379",
+    "text": "託管的 PIV 金鑰"
   }
 }

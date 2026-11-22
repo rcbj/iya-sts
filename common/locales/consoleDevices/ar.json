@@ -187,5 +187,8 @@
   "monitorHtml.thRegistered": "مُسجَّلة",
   "monitorHtml.thRemoved": "مُزالة",
   "monitorHtml.thEvicted": "مُخرَجة",
-  "monitorHtml.thCompliance": "الامتثال: {source}"
+  "monitorHtml.thCompliance": "الامتثال: {source}",
+  "newDevice.button": "تسجيل جهاز",
+  "newDevice.key": "المفتاح الأول",
+  "newDevice.keyHint": "يُسجَّل فقط مع نوعه"
 }

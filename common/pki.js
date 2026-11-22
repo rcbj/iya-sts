@@ -2748,11 +2748,14 @@ function saveRow(realmId, row) {
   // narrowed to the two new cases, because that is the question and the last
   // three answers to it were each right when they were written.
   const rooted = (row && row.root) ? 1 : 0;
+  const sshAuthority = row && row.sshUserCa ? 1 : 0;
+  const sshIssued = row && row.sshIssued && row.sshIssued.length ? 1 : 0;
   const lists = (row && row.revoked &&
                  Object.keys(row.revoked).some(function (caId) {
                    return (row.revoked[caId] || []).length;
                  })) ? 1 : 0;
-  if (!tiers.length && !objects.length && !branch && !rooted && !lists) {
+  if (!tiers.length && !objects.length && !branch && !rooted &&
+      !sshAuthority && !sshIssued && !lists) {
     keystore.attachPki(id, null);
     log.debug('Leaving saveRow(). Nothing left; the row was removed.');
     return;
@@ -13566,8 +13569,12 @@ function report(realmId) {
 // PROTOCOL.certkeys: ssh-rsa, ecdsa-sha2-nistp256/384/521, ssh-ed25519 and
 // their -cert-v01 versions, an authorized_keys line, SHA-256 fingerprints,
 // and `checkSshHostCertificate()`, which is `x/crypto/ssh`'s
-// `CertChecker.CheckHostKey()`. The security-key (`sk-`) types and DSA are
-// refused; OpenSSH defines no post-quantum signature.
+// `CertChecker.CheckHostKey()`. DSA is refused; OpenSSH defines no
+// post-quantum signature. Since #1955 P3 the two security-key (`sk-`) types
+// PARSE — the SSH user CA certifies them — and still verify no signature.
+// The same section ISSUES user certificates (`buildSshCertificate()`), builds
+// a key revocation list (PROTOCOL.krl, `buildSshKrl()`) and reads a security
+// key's enrolment attestation (PROTOCOL.u2f, `parseSshSkAttestation()`).
 // ===========================================================================
 
 // One certificate from DER: `{ der, pem, x509, sha1 }`, `sha1` being SPIRE's
@@ -14711,10 +14718,49 @@ function sshKeyFields(type, reader) {
     return { key: stsCrypto.publicKeyFromJwk(
       { kty: 'OKP', crv: 'Ed25519', x: b64u(pk) }), curve: '' };
   }
+  // THE TWO SECURITY-KEY TYPES (#1955 P3, PROTOCOL.u2f): the key a FIDO
+  // authenticator holds, and the APPLICATION it was made for (the RP ID the
+  // authenticator hashed, `ssh:` by default). Read so the SSH user CA can
+  // certify them; `verifySshSignature()` still verifies no signature BY one,
+  // since a security key's signature carries flags and a counter no caller
+  // here reads, so a host key or an authority of these types is refused
+  // exactly as before.
+  if (type === 'sk-ecdsa-sha2-nistp256@openssh.com') {
+    const curve = reader.text();
+    const q = reader.string();
+    const application = reader.text();
+    const spec = SSH_CURVES.nistp256;
+    if (curve !== 'nistp256' || q[0] !== 4 || q.length !== 1 + 2 * spec.bytes) {
+      log.debug("Leaving sshKeyFields(). A bad security-key point.");
+      // error-code: none — see sshReader()
+      throw new Error('the security-key ECDSA key is not an uncompressed ' +
+                      'nistp256 point');
+    }
+    log.debug("Leaving sshKeyFields(). A security-key ECDSA key.");
+    return { curve: 'nistp256', sk: true, application: application,
+             key: stsCrypto.publicKeyFromJwk(
+               { kty: 'EC', crv: spec.crv,
+                 x: b64u(q.subarray(1, 1 + spec.bytes)),
+                 y: b64u(q.subarray(1 + spec.bytes)) }) };
+  }
+  if (type === 'sk-ssh-ed25519@openssh.com') {
+    const pk = reader.string();
+    const application = reader.text();
+    if (pk.length !== 32) {
+      log.debug("Leaving sshKeyFields(). A bad security-key Ed25519 key.");
+      // error-code: none — see sshReader()
+      throw new Error('an Ed25519 key is 32 bytes');
+    }
+    log.debug("Leaving sshKeyFields(). A security-key Ed25519 key.");
+    return { key: stsCrypto.publicKeyFromJwk(
+      { kty: 'OKP', crv: 'Ed25519', x: b64u(pk) }), curve: '', sk: true,
+             application: application };
+  }
   log.debug("Leaving sshKeyFields(). Unsupported.");
   // error-code: none — see sshReader()
   throw new Error('the SSH key type ' + type + ' is not supported (ssh-rsa, ' +
-                  'ecdsa-sha2-nistp256/384/521 and ssh-ed25519 are)');
+                  'ecdsa-sha2-nistp256/384/521, ssh-ed25519 and the two ' +
+                  'security-key types are)');
 }
 
 // A packed list of name-value pairs (critical options, extensions).
@@ -14758,7 +14804,8 @@ function parseSshPublicKey(blob) {
       throw new Error('trailing bytes after the SSH public key');
     }
     log.debug("Leaving parseSshPublicKey(). A key.");
-    return { type: type, key: fields.key, curve: fields.curve, blob: bytes };
+    return { type: type, key: fields.key, curve: fields.curve, blob: bytes,
+             sk: !!fields.sk, application: fields.application || '' };
   }
   const keyType = type.slice(0, -SSH_CERT_SUFFIX.length);
   const nonce = reader.string();
@@ -14795,6 +14842,7 @@ function parseSshPublicKey(blob) {
   log.debug("Leaving parseSshPublicKey(). A certificate.");
   return {
     type: keyType, certType: type, key: fields.key, curve: fields.curve,
+    sk: !!fields.sk, application: fields.application || '',
     blob: bytes, nonce: nonce, serial: serial, kind: kind, keyId: keyId,
     principals: principals, validAfter: validAfter, validBefore: validBefore,
     criticalOptions: criticalOptions, extensions: extensions,
@@ -14972,6 +15020,768 @@ async function checkSshHostCertificate(cert, principal, authorities,
   return '';
 }
 
+// ----- OpenSSH: ISSUING (#1955 P3) ------------------------------------------
+//
+// THE SSH USER CERTIFICATE AUTHORITY'S PRIMITIVES. `ssh/ssh_ca.ts` holds the
+// realm's authority and decides what a certificate says; this section only
+// WRITES the wire formats — PROTOCOL.certkeys' -cert-v01 certificate,
+// PROTOCOL.krl's key revocation list — and reads a security key's enrolment
+// attestation (PROTOCOL.u2f). Every signature is `crypto.js`'s
+// (`signRawSignature()`), and the authority signs with ssh-ed25519,
+// ecdsa-sha2-nistp256/384/521 or RFC 8332's rsa-sha2-256 and rsa-sha2-512,
+// NEVER `ssh-rsa` (SHA-1), which OpenSSH itself has refused by default since
+// 8.8.
+// ---------------------------------------------------------------------------
+
+const SSH_USER_CA_USE_CASE = 'ssh-user-ca';
+const SSH_USER_CA_LIFETIME_MAX_S = 3600;
+
+/**
+ * Ensures this realm has one SSH user CA, coordinated through the PKI row.
+ *
+ * @param scopeId - the realm
+ * @returns `{ ok, ca }`, or a marked refusal
+ */
+async function sshUserCaForAsync(scopeId) {
+  log.debug("Entering sshUserCaForAsync().");
+  const id = realmIdOf(scopeId);
+  const existing = function () {
+    const row = rawRowFor(id);
+    return row && row.sshUserCa
+      ? { ok: true, ca: row.sshUserCa } : null;
+  };
+  try {
+    const answer = await oneBuildInTheCluster(id, 'sshUserCa', existing,
+      async function () {
+        const key = await generateSshCaKey('ssh-ed25519');
+        const row = Object.assign({}, rawRowFor(id) || {}, {
+          sshUserCa: {
+            algorithm: key.algorithm,
+            privateKeyPem: key.privatePem,
+            publicBlobB64: key.publicBlob.toString('base64'),
+            publicLine: key.publicLine,
+            fingerprint: key.fingerprint,
+            createdAt: new Date().toISOString()
+          }
+        });
+        saveRow(id, row);
+        return { ok: true, ca: row.sshUserCa };
+      }, { claim: SSH_USER_CA_USE_CASE + ':' + id,
+           label: 'the realm\'s SSH user CA' });
+    log.debug("Leaving sshUserCaForAsync(). " +
+              (answer && answer.ok ? 'Ready.' : 'Refused.'));
+    return answer;
+  } catch (e) {
+    log.error(errorCodes.tag('STS-PKI-0290') + 'pki: the "' +
+              (id || 'default') + '" realm\'s SSH user CA could not be ' +
+              'made: ' + ((e && e.message) || e));
+    log.debug("Leaving sshUserCaForAsync(). Failed.");
+    return errorCodes.mark({ ok: false, errors: [
+      'The realm\'s SSH user certificate authority could not be made.'
+    ] }, 'STS-PKI-0290');
+  }
+}
+
+/**
+ * Answers the realm's OpenSSH `TrustedUserCAKeys` line.
+ *
+ * @param scopeId - the realm
+ * @returns `{ ok, publicLine, fingerprint }`, or a marked refusal
+ */
+async function sshUserCaPublicKeyAsync(scopeId) {
+  log.debug("Entering sshUserCaPublicKeyAsync().");
+  const answer = await sshUserCaForAsync(scopeId);
+  if (!answer || !answer.ok || !answer.ca) {
+    log.debug("Leaving sshUserCaPublicKeyAsync(). Refused.");
+    return answer;
+  }
+  log.debug("Leaving sshUserCaPublicKeyAsync().");
+  return { ok: true, publicLine: answer.ca.publicLine,
+           fingerprint: answer.ca.fingerprint };
+}
+
+/**
+ * Issues and records a short-lived SSH user certificate.
+ *
+ * @param scopeId - the realm
+ * @param spec - `{ subjectBlob, principals, ownerSubject, lifetimeS,
+ *   hardwareBound }`
+ * @returns `{ ok, line, serialHex, validAfter, validBefore }`, or a refusal
+ */
+async function issueSshUserCertificateAsync(scopeId, spec) {
+  log.debug("Entering issueSshUserCertificateAsync().");
+  const id = realmIdOf(scopeId);
+  const s = spec || {};
+  let subject;
+  try {
+    subject = parseSshPublicKey(s.subjectBlob);
+  } catch (e) {
+    log.debug("Caught in issueSshUserCertificateAsync(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving issueSshUserCertificateAsync(). Invalid key.");
+    return errorCodes.mark({ ok: false, errors: [
+      'The SSH public key is not a supported OpenSSH public key.'
+    ] }, 'STS-PKI-0289');
+  }
+  const principals = Array.isArray(s.principals) ? s.principals : [];
+  const validPrincipals = principals.length > 0 &&
+    principals.length <= 64 &&
+    principals.every(function (principal) {
+      return typeof principal === 'string' && principal.length > 0 &&
+        principal.length <= 256 && !/[\u0000-\u001f\u007f]/.test(principal);
+    }) && new Set(principals).size === principals.length;
+  if (!subject || subject.certType || !validPrincipals) {
+    log.debug("Leaving issueSshUserCertificateAsync(). Invalid request.");
+    return errorCodes.mark({ ok: false, errors: [
+      'A public key and at least one permitted principal are required.'
+    ] }, 'STS-PKI-0289');
+  }
+  const seconds = Number(s.lifetimeS);
+  if (!Number.isInteger(seconds) || seconds < 60 ||
+      seconds > SSH_USER_CA_LIFETIME_MAX_S) {
+    log.debug("Leaving issueSshUserCertificateAsync(). Lifetime.");
+    return errorCodes.mark({ ok: false, errors: [
+      'The SSH certificate lifetime is outside the allowed range.'
+    ] }, 'STS-PKI-0289');
+  }
+  const caAnswer = await sshUserCaForAsync(id);
+  if (!caAnswer || !caAnswer.ok || !caAnswer.ca) {
+    log.debug("Leaving issueSshUserCertificateAsync(). No CA.");
+    return caAnswer;
+  }
+  const now = Math.floor(Date.now() / 1000);
+  let serial = BigInt('0x' + stsCrypto.randomBytes(8).toString('hex')) &
+               BigInt('0x7fffffffffffffff');
+  if (serial === BigInt(0)) {
+    serial = BigInt(1);
+  }
+  const serialHex = serial.toString(16);
+  const validAfter = now - 30;
+  const validBefore = now + seconds;
+  try {
+    const certificate = buildSshCertificate({
+      subjectBlob: subject.blob, serial: serial,
+      keyId: 'sts:' + serialHex, principals: principals,
+      validAfter: validAfter, validBefore: validBefore,
+      criticalOptions: {}, extensions: [],
+      caAlgorithm: caAnswer.ca.algorithm,
+      caPrivateKey: caAnswer.ca.privateKeyPem,
+      caPublicBlob: Buffer.from(caAnswer.ca.publicBlobB64, 'base64')
+    });
+    const row = rawRowFor(id) || {};
+    const issued = (row.sshIssued || []).filter(function (one) {
+      return !one.notAfter || new Date(one.notAfter).getTime() > Date.now();
+    });
+    issued.push({
+      serialHex: serialHex, keyType: subject.type,
+      keyFingerprint: sshFingerprint(subject),
+    ownerSubject: String(s.ownerSubject || ''),
+    issuedAt: new Date(now * 1000).toISOString(),
+      notAfter: new Date(validBefore * 1000).toISOString(),
+      hardwareBound: s.hardwareBound === true
+    });
+    saveRow(id, Object.assign({}, row, { sshIssued: issued }));
+    const outcome = await keystore.pkiSettled(id);
+    if (keystore.persists() && (!outcome || !outcome.ok)) {
+      log.error(errorCodes.tag('STS-PKI-0290') + 'pki: an SSH user ' +
+                'certificate was signed but its serial could not be ' +
+                'recorded in the key store.');
+      log.debug("Leaving issueSshUserCertificateAsync(). Store failed.");
+      return errorCodes.mark({ ok: false, errors: [
+        'The SSH user certificate could not be recorded.'
+      ] }, 'STS-PKI-0290');
+    }
+    log.debug("Leaving issueSshUserCertificateAsync(). Issued.");
+    return { ok: true, line: certificate.line, serialHex: serialHex,
+             validAfter: validAfter, validBefore: validBefore };
+  } catch (e) {
+    log.error(errorCodes.tag('STS-PKI-0290') + 'pki: an SSH user ' +
+              'certificate could not be signed or recorded: ' +
+              ((e && e.message) || e));
+    log.debug("Leaving issueSshUserCertificateAsync(). Failed.");
+    return errorCodes.mark({ ok: false, errors: [
+      'The SSH user certificate could not be issued.'
+    ] }, 'STS-PKI-0290');
+  }
+}
+
+/**
+ * Revokes an issued SSH certificate and refreshes the KRL cache.
+ *
+ * @param scopeId - the realm
+ * @param serialHex - the certificate serial as hexadecimal
+ * @param ownerSubject - when given, the serial must belong to this subject
+ * @returns `{ ok }`, or a marked refusal
+ */
+async function revokeSshUserCertificateAsync(scopeId, serialHex,
+                                             ownerSubject) {
+  log.debug("Entering revokeSshUserCertificateAsync().");
+  const id = realmIdOf(scopeId);
+  const serial = String(serialHex || '').toLowerCase().replace(/^0+/, '');
+  if (!/^[0-9a-f]{1,16}$/.test(serial)) {
+    log.debug("Leaving revokeSshUserCertificateAsync(). Invalid serial.");
+    return errorCodes.mark({ ok: false, errors: [
+      'The SSH certificate serial is not valid.'
+    ] }, 'STS-PKI-0291');
+  }
+  const row = rawRowFor(id) || {};
+  const issued = row.sshIssued || [];
+  const index = issued.findIndex(function (one) {
+    return pkiMerge.normalSerial(one.serialHex) === serial &&
+      (ownerSubject === undefined ||
+       one.ownerSubject === String(ownerSubject));
+  });
+  if (index < 0) {
+    log.debug("Leaving revokeSshUserCertificateAsync(). Unknown serial.");
+    return errorCodes.mark({ ok: false, errors: [
+      'The SSH certificate serial was not issued by this realm.'
+    ] }, 'STS-PKI-0291');
+  }
+  const next = Object.assign({}, row);
+  next.sshIssued = issued.slice();
+  if (!next.sshIssued[index].revokedAt) {
+    next.sshIssued[index] = Object.assign({}, next.sshIssued[index], {
+      revokedAt: new Date().toISOString()
+    });
+  }
+  saveRow(id, next);
+  const outcome = await keystore.pkiSettled(id);
+  if (keystore.persists() && (!outcome || !outcome.ok)) {
+    log.error(errorCodes.tag('STS-PKI-0290') + 'pki: an SSH user ' +
+              'certificate was marked revoked but the key store did not ' +
+              'settle the change.');
+    log.debug("Leaving revokeSshUserCertificateAsync(). Store failed.");
+    return errorCodes.mark({ ok: false, errors: [
+      'The SSH certificate revocation could not be recorded.'
+    ] }, 'STS-PKI-0290');
+  }
+  const krl = await buildSshUserKrlAsync(id);
+  if (!krl || !krl.ok) {
+    log.debug("Leaving revokeSshUserCertificateAsync(). KRL failed.");
+    return krl;
+  }
+  log.debug("Leaving revokeSshUserCertificateAsync(). Revoked.");
+  return { ok: true };
+}
+
+/**
+ * Revokes every live SSH certificate backed by one lost hardware credential.
+ *
+ * @param scopeId - the realm
+ * @param fingerprint - `sshFingerprint()` of the public key
+ * @returns `{ ok, revoked }`, or a marked failure
+ */
+async function revokeSshUserKeyAsync(scopeId, fingerprint) {
+  log.debug("Entering revokeSshUserKeyAsync().");
+  const id = realmIdOf(scopeId);
+  const wanted = String(fingerprint || '');
+  const row = rawRowFor(id) || {};
+  const now = new Date();
+  const issued = (row.sshIssued || []).slice();
+  let revoked = 0;
+  for (let i = 0; i < issued.length; i++) {
+    const expires = new Date(issued[i].notAfter).getTime();
+    if (issued[i].keyFingerprint !== wanted || issued[i].revokedAt ||
+        (Number.isFinite(expires) && expires <= now.getTime())) {
+      continue;
+    }
+    issued[i] = Object.assign({}, issued[i], {
+      revokedAt: now.toISOString()
+    });
+    revoked += 1;
+  }
+  if (!revoked) {
+    log.debug("Leaving revokeSshUserKeyAsync(). Nothing live.");
+    return { ok: true, revoked: 0 };
+  }
+  saveRow(id, Object.assign({}, row, { sshIssued: issued }));
+  const outcome = await keystore.pkiSettled(id);
+  if (keystore.persists() && (!outcome || !outcome.ok)) {
+    log.error(errorCodes.tag('STS-PKI-0290') + 'pki: SSH certificates for ' +
+              'a lost hardware key were marked revoked but the key store ' +
+              'did not settle the change.');
+    log.debug("Leaving revokeSshUserKeyAsync(). Store failed.");
+    return errorCodes.mark({ ok: false, errors: [
+      'The SSH certificate revocation could not be recorded.'
+    ] }, 'STS-PKI-0290');
+  }
+  const krl = await buildSshUserKrlAsync(id);
+  if (!krl || !krl.ok) {
+    log.debug("Leaving revokeSshUserKeyAsync(). KRL failed.");
+    return krl;
+  }
+  log.debug("Leaving revokeSshUserKeyAsync(). " + revoked + '.');
+  return { ok: true, revoked: revoked };
+}
+
+/**
+ * Builds a current OpenSSH KRL, refreshing the persisted cache when needed.
+ *
+ * @param scopeId - the realm
+ * @returns `{ ok, bytes }`, or null before a CA exists
+ */
+async function buildSshUserKrlAsync(scopeId) {
+  log.debug("Entering buildSshUserKrlAsync().");
+  const id = realmIdOf(scopeId);
+  await keystore.refreshPki(id);
+  const row = rawRowFor(id) || {};
+  const ca = row.sshUserCa;
+  if (!ca) {
+    log.debug("Leaving buildSshUserKrlAsync(). No CA.");
+    return null;
+  }
+  const now = Math.floor(Date.now() / 1000);
+  const serials = (row.sshIssued || []).filter(function (one) {
+    const expires = new Date(one.notAfter).getTime();
+    return !!one.revokedAt &&
+      (!one.notAfter || !Number.isFinite(expires) || expires > now * 1000);
+  }).map(function (one) {
+    return pkiMerge.normalSerial(one.serialHex);
+  }).sort();
+  const digest = stsCrypto.digest('sha256',
+    ca.fingerprint + ':' + serials.join(','), 'hex');
+  if (row.sshKrl && row.sshKrl.digest === digest &&
+      row.sshKrl.bytesB64) {
+    log.debug("Leaving buildSshUserKrlAsync(). Cached.");
+    return { ok: true, bytes: Buffer.from(row.sshKrl.bytesB64, 'base64') };
+  }
+  try {
+    const previous = Number((row.sshKrl || {}).version) || 0;
+    const version = Math.max(now, previous + 1);
+    const bytes = buildSshKrl({
+      version: BigInt(version), generatedAt: BigInt(now),
+      comment: 'Iya STS SSH user CA',
+      authorities: [{
+        caBlob: Buffer.from(ca.publicBlobB64, 'base64'),
+        serials: serials.map(function (one) {
+          return BigInt('0x' + one);
+        })
+      }],
+      keySha256: []
+    });
+    saveRow(id, Object.assign({}, row, { sshKrl: {
+      digest: digest, bytesB64: bytes.toString('base64'),
+      version: version, generatedAt: now
+    } }));
+    const outcome = await keystore.pkiSettled(id);
+    if (keystore.persists() && (!outcome || !outcome.ok)) {
+      log.error(errorCodes.tag('STS-PKI-0290') + 'pki: the SSH user KRL ' +
+                'was built but its cache could not be persisted.');
+      log.debug("Leaving buildSshUserKrlAsync(). Store failed.");
+      return errorCodes.mark({ ok: false, errors: [
+        'The SSH user key revocation list could not be recorded.'
+      ] }, 'STS-PKI-0290');
+    }
+    log.debug("Leaving buildSshUserKrlAsync(). Built.");
+    return { ok: true, bytes: bytes };
+  } catch (e) {
+    log.error(errorCodes.tag('STS-PKI-0290') + 'pki: the SSH user KRL ' +
+              'could not be built: ' + ((e && e.message) || e));
+    log.debug("Leaving buildSshUserKrlAsync(). Failed.");
+    return errorCodes.mark({ ok: false, errors: [
+      'The SSH user key revocation list could not be built.'
+    ] }, 'STS-PKI-0290');
+  }
+}
+
+/** SSH_CERT_TYPE_USER (PROTOCOL.certkeys). */
+const SSH_USER_CERT = 1;
+
+/**
+ * The signature algorithms the SSH user CA may sign with, each with the key
+ * it needs and how it signs.
+ */
+const SSH_CA_ALGORITHMS = {
+  'ssh-ed25519': { kind: 'ed25519', keyType: 'ssh-ed25519',
+                   scheme: { family: 'eddsa' } },
+  'ecdsa-sha2-nistp256': { kind: 'ec', curve: 'prime256v1',
+                           keyType: 'ecdsa-sha2-nistp256', bytes: 32,
+                           scheme: { family: 'ecdsa', hash: 'sha256',
+                                     encoding: 'p1363' } },
+  'ecdsa-sha2-nistp384': { kind: 'ec', curve: 'secp384r1',
+                           keyType: 'ecdsa-sha2-nistp384', bytes: 48,
+                           scheme: { family: 'ecdsa', hash: 'sha384',
+                                     encoding: 'p1363' } },
+  'ecdsa-sha2-nistp521': { kind: 'ec', curve: 'secp521r1',
+                           keyType: 'ecdsa-sha2-nistp521', bytes: 66,
+                           scheme: { family: 'ecdsa', hash: 'sha512',
+                                     encoding: 'p1363' } },
+  'rsa-sha2-256': { kind: 'rsa', keyType: 'ssh-rsa', bits: 3072,
+                    scheme: { family: 'rsa-pkcs1', hash: 'sha256' } },
+  'rsa-sha2-512': { kind: 'rsa', keyType: 'ssh-rsa', bits: 3072,
+                    scheme: { family: 'rsa-pkcs1', hash: 'sha512' } }
+};
+
+// RFC 4251's types, written. A HOT PATH for a certificate's every field: no
+// Entering/Leaving pair, as `sshReader()`'s methods have none.
+function sshUint32(n) {
+  const out = Buffer.alloc(4);
+  out.writeUInt32BE(Number(n) >>> 0, 0);
+  return out;
+}
+
+// A HOT PATH (as sshUint32()): no Entering/Leaving pair.
+function sshUint64(n) {
+  const out = Buffer.alloc(8);
+  out.writeBigUInt64BE(BigInt(n), 0);
+  return out;
+}
+
+// A HOT PATH (as sshUint32()): no Entering/Leaving pair.
+function sshString(bytes) {
+  const b = Buffer.isBuffer(bytes) ? bytes : Buffer.from(String(bytes), 'utf8');
+  return Buffer.concat([sshUint32(b.length), b]);
+}
+
+// An mpint from a big-endian magnitude: no leading zeros, and a zero byte
+// in front where the high bit would read as negative. A HOT PATH (as
+// sshUint32()): no Entering/Leaving pair.
+function sshMpint(magnitude) {
+  let b = Buffer.from(magnitude || []);
+  while (b.length && b[0] === 0) b = b.subarray(1);
+  if (b.length && (b[0] & 0x80)) b = Buffer.concat([Buffer.from([0]), b]);
+  return sshString(b);
+}
+
+/**
+ * The SSH public key blob of a node public key (or private key): ssh-ed25519,
+ * ecdsa-sha2-nistp256/384/521 or ssh-rsa.
+ *
+ * @param key - a KeyObject or a PEM
+ * @returns `{ type, blob, line }`, `line` the `type base64` form
+ * @throws Error for any other kind of key
+ */
+function sshPublicKeyOf(key) {
+  log.debug("Entering sshPublicKeyOf().");
+  const pub = stsCrypto.publicKeyOf(key);
+  const jwk = pub.export({ format: 'jwk' });
+  let type = '';
+  let body = null;
+  if (jwk.kty === 'OKP' && jwk.crv === 'Ed25519') {
+    type = 'ssh-ed25519';
+    body = sshString(Buffer.from(jwk.x, 'base64url'));
+  } else if (jwk.kty === 'EC') {
+    const curve = { 'P-256': 'nistp256', 'P-384': 'nistp384',
+                    'P-521': 'nistp521' }[jwk.crv];
+    if (!curve) {
+      log.debug("Leaving sshPublicKeyOf(). An unsupported curve.");
+      // error-code: none — a programming error; the CA makes its own keys
+      throw new Error('the curve ' + jwk.crv + ' has no SSH key type');
+    }
+    type = 'ecdsa-sha2-' + curve;
+    body = Buffer.concat([sshString(curve), sshString(Buffer.concat([
+      Buffer.from([4]), Buffer.from(jwk.x, 'base64url'),
+      Buffer.from(jwk.y, 'base64url')]))]);
+  } else if (jwk.kty === 'RSA') {
+    type = 'ssh-rsa';
+    body = Buffer.concat([sshMpint(Buffer.from(jwk.e, 'base64url')),
+                          sshMpint(Buffer.from(jwk.n, 'base64url'))]);
+  } else {
+    log.debug("Leaving sshPublicKeyOf(). Unsupported.");
+    // error-code: none — a programming error; the CA makes its own keys
+    throw new Error('a ' + jwk.kty + ' key has no SSH key type here');
+  }
+  const blob = Buffer.concat([sshString(type), body]);
+  log.debug("Leaving sshPublicKeyOf(). " + type);
+  return { type: type, blob: blob, line: type + ' ' + blob.toString('base64') };
+}
+
+/**
+ * Makes a new key for the SSH user CA, on libuv's thread pool.
+ *
+ * @param algorithm - one of SSH_CA_ALGORITHMS
+ * @returns a promise of `{ algorithm, privatePem, publicBlob, publicLine,
+ *   fingerprint }`
+ * @throws Error for an algorithm not on the list
+ */
+async function generateSshCaKey(algorithm) {
+  log.debug("Entering generateSshCaKey(). " + algorithm);
+  const spec = SSH_CA_ALGORITHMS[algorithm];
+  if (!spec) {
+    log.debug("Leaving generateSshCaKey(). Unknown algorithm.");
+    // error-code: none — the caller refused it under its own code
+    throw new Error('the SSH CA algorithm ' + algorithm + ' is not one of ' +
+                    Object.keys(SSH_CA_ALGORITHMS).join(', '));
+  }
+  const options = spec.kind === 'ec' ? { namedCurve: spec.curve }
+    : (spec.kind === 'rsa' ? { modulusLength: spec.bits } : {});
+  const pair = await stsCrypto.generateKeyPairAsync(spec.kind, options);
+  const pub = sshPublicKeyOf(pair.publicKey);
+  log.debug("Leaving generateSshCaKey().");
+  return { algorithm: algorithm,
+           privatePem: String(pair.privateKey.export({ type: 'pkcs8',
+                                                       format: 'pem' })),
+           publicBlob: pub.blob, publicLine: pub.line,
+           fingerprint: sshFingerprint({ blob: pub.blob }) };
+}
+
+/**
+ * An SSH signature (`string format, string blob`) over data, made by the CA.
+ *
+ * @param algorithm - one of SSH_CA_ALGORITHMS
+ * @param privateKey - the CA's private key (a KeyObject or a PEM)
+ * @param data - the bytes signed
+ * @returns the signature structure's bytes
+ */
+function sshSign(algorithm, privateKey, data) {
+  log.debug("Entering sshSign(). " + algorithm);
+  const spec = SSH_CA_ALGORITHMS[algorithm];
+  if (!spec) {
+    log.debug("Leaving sshSign(). Unknown algorithm.");
+    // error-code: none — a programming error; the CA checked its algorithm
+    throw new Error('the SSH CA algorithm ' + algorithm + ' is unknown');
+  }
+  const key = stsCrypto.privateKeyFrom(privateKey);
+  const raw = stsCrypto.signRawSignature(spec.scheme, key, data);
+  let blob = raw;
+  if (spec.kind === 'ec') {
+    blob = Buffer.concat([sshMpint(raw.subarray(0, spec.bytes)),
+                          sshMpint(raw.subarray(spec.bytes))]);
+  }
+  log.debug("Leaving sshSign().");
+  return Buffer.concat([sshString(algorithm), sshString(blob)]);
+}
+
+// A packed option list (PROTOCOL.certkeys): names in lexical order, each
+// followed by its data, itself a string holding a string where the option
+// has a value, and an empty string where it has none.
+function sshOptionList(options) {
+  log.debug("Entering sshOptionList().");
+  const names = Object.keys(options || {}).sort();
+  const out = Buffer.concat(names.map(function (name) {
+    const value = options[name];
+    return Buffer.concat([sshString(name), sshString(
+      value === '' || value === null || value === undefined
+        ? Buffer.alloc(0) : sshString(String(value)))]);
+  }));
+  log.debug("Leaving sshOptionList(). " + names.length);
+  return out;
+}
+
+/**
+ * Writes and signs an OpenSSH user certificate (PROTOCOL.certkeys,
+ * -cert-v01@openssh.com) for a public key.
+ *
+ * @param spec - `{ subjectBlob, serial (BigInt), keyId, principals,
+ *   validAfter, validBefore (seconds), criticalOptions ({ name: value }),
+ *   extensions ([names]), caAlgorithm, caPrivateKey, caPublicBlob }`
+ * @returns `{ blob, certType, line }`
+ */
+function buildSshCertificate(spec) {
+  log.debug("Entering buildSshCertificate().");
+  const subject = sshReader(spec.subjectBlob);
+  const keyType = subject.text();
+  const keyFields = subject.rest();
+  const certType = keyType.replace(/@openssh\.com$/, '') + SSH_CERT_SUFFIX;
+  const extensions = {};
+  (spec.extensions || []).forEach(function (name) {
+    extensions[String(name)] = '';
+  });
+  const signed = Buffer.concat([
+    sshString(certType),
+    sshString(stsCrypto.randomBytes(32)),
+    keyFields,
+    sshUint64(spec.serial),
+    sshUint32(SSH_USER_CERT),
+    sshString(String(spec.keyId || '')),
+    sshString(Buffer.concat((spec.principals || []).map(function (p) {
+      return sshString(String(p));
+    }))),
+    sshUint64(spec.validAfter),
+    sshUint64(spec.validBefore),
+    sshString(sshOptionList(spec.criticalOptions)),
+    sshString(sshOptionList(extensions)),
+    sshString(Buffer.alloc(0)),
+    sshString(Buffer.from(spec.caPublicBlob))
+  ]);
+  const signature = sshSign(spec.caAlgorithm, spec.caPrivateKey, signed);
+  const blob = Buffer.concat([signed, sshString(signature)]);
+  log.debug("Leaving buildSshCertificate(). " + certType);
+  return { blob: blob, certType: certType,
+           line: certType + ' ' + blob.toString('base64') };
+}
+
+// PROTOCOL.krl's constants.
+const KRL_MAGIC = BigInt('0x5353484b524c0a00');
+const KRL_FORMAT_VERSION = 1;
+const KRL_SECTION_CERTIFICATES = 1;
+const KRL_SECTION_FINGERPRINT_SHA256 = 5;
+const KRL_SECTION_CERT_SERIAL_LIST = 0x20;
+
+/**
+ * Writes an OpenSSH key revocation list (PROTOCOL.krl): for each authority,
+ * its revoked certificate serials, and the SHA-256 fingerprints of keys
+ * revoked outright (every certificate for such a key is refused by sshd,
+ * whatever its serial). Unsigned: OpenSSH reads a KRL's signature section
+ * and verifies nothing by it, and sshd trusts the file it is pointed at.
+ *
+ * @param spec - `{ version, generatedAt (seconds), comment, authorities:
+ *   [{ caBlob, serials: [BigInt] }], keySha256: [Buffer] }`
+ * @returns the KRL's bytes
+ */
+function buildSshKrl(spec) {
+  log.debug("Entering buildSshKrl().");
+  const parts = [sshUint64(KRL_MAGIC), sshUint32(KRL_FORMAT_VERSION),
+                 sshUint64(spec.version || 0), sshUint64(spec.generatedAt || 0),
+                 sshUint64(0), sshString(Buffer.alloc(0)),
+                 sshString(String(spec.comment || ''))];
+  (spec.authorities || []).forEach(function (one) {
+    const serials = (one.serials || []).map(function (n) {
+      return BigInt(n);
+    }).filter(function (n) {
+      return n > BigInt(0);
+    }).sort(function (a, b) {
+      return a < b ? -1 : (a > b ? 1 : 0);
+    });
+    if (!serials.length) {
+      return;
+    }
+    const sub = Buffer.concat([Buffer.from([KRL_SECTION_CERT_SERIAL_LIST]),
+      sshString(Buffer.concat(serials.map(sshUint64)))]);
+    parts.push(Buffer.from([KRL_SECTION_CERTIFICATES]), sshString(
+      Buffer.concat([sshString(Buffer.from(one.caBlob)),
+                     sshString(Buffer.alloc(0)), sub])));
+  });
+  const fps = (spec.keySha256 || []).map(function (b) {
+    return Buffer.from(b);
+  }).filter(function (b) {
+    return b.length === 32;
+  }).sort(Buffer.compare);
+  if (fps.length) {
+    parts.push(Buffer.from([KRL_SECTION_FINGERPRINT_SHA256]),
+               sshString(Buffer.concat(fps.map(sshString))));
+  }
+  log.debug("Leaving buildSshKrl().");
+  return Buffer.concat(parts);
+}
+
+/**
+ * Reads an OpenSSH key revocation list: the sections `buildSshKrl()` writes,
+ * and the others counted and skipped.
+ *
+ * @param bytes - the KRL
+ * @returns `{ version, generatedAt, comment, authorities: [{ caBlob,
+ *   serials }], keySha256, skipped }`
+ * @throws Error on anything that is not a KRL
+ */
+function parseSshKrl(bytes) {
+  log.debug("Entering parseSshKrl().");
+  const r = sshReader(bytes);
+  if (r.uint64() !== KRL_MAGIC || r.uint32() !== KRL_FORMAT_VERSION) {
+    log.debug("Leaving parseSshKrl(). Not a KRL.");
+    // error-code: none — see sshReader()
+    throw new Error('not an OpenSSH KRL (format 1)');
+  }
+  const out = { version: r.uint64(), generatedAt: r.uint64(), flags: r.uint64(),
+                comment: '', authorities: [], keySha256: [], skipped: 0 };
+  r.string();
+  out.comment = r.text();
+  while (!r.done()) {
+    const type = r.take(1)[0];
+    const data = sshReader(r.string());
+    if (type === KRL_SECTION_CERTIFICATES) {
+      const one = { caBlob: Buffer.from(data.string()), serials: [] };
+      data.string();
+      while (!data.done()) {
+        const sub = data.take(1)[0];
+        const body = sshReader(data.string());
+        if (sub === KRL_SECTION_CERT_SERIAL_LIST) {
+          while (!body.done()) one.serials.push(body.uint64());
+        } else {
+          out.skipped++;
+        }
+      }
+      out.authorities.push(one);
+    } else if (type === KRL_SECTION_FINGERPRINT_SHA256) {
+      while (!data.done()) out.keySha256.push(Buffer.from(data.string()));
+    } else {
+      out.skipped++;
+    }
+  }
+  log.debug("Leaving parseSshKrl().");
+  return out;
+}
+
+/**
+ * Reads a security key's enrolment attestation as `ssh-keygen -O
+ * write-attestation` writes it (PROTOCOL.u2f, `ssh-sk-attest-v01`): the
+ * attestation certificate, the enrolment signature and the authenticator
+ * data. The older `ssh-sk-attest-v00`, written before OpenSSH 8.4, carries
+ * no authenticator data and cannot be verified, so it is refused.
+ *
+ * @param bytes - the file's bytes
+ * @returns `{ version, certificate, signature, authData }`, `authData` the
+ *   raw authenticator data (unwrapped from its CBOR byte string)
+ * @throws Error on anything else
+ */
+function parseSshSkAttestation(bytes) {
+  log.debug("Entering parseSshSkAttestation().");
+  const r = sshReader(bytes);
+  const version = r.text();
+  if (version !== 'ssh-sk-attest-v01') {
+    log.debug("Leaving parseSshSkAttestation(). " + version.slice(0, 32));
+    // error-code: none — see sshReader()
+    throw new Error(version === 'ssh-sk-attest-v00'
+      ? 'an ssh-sk-attest-v00 attestation (OpenSSH before 8.4) carries no ' +
+        'authenticator data, so it cannot be verified'
+      : 'not an ssh-sk-attest-v01 attestation');
+  }
+  const certificate = Buffer.from(r.string());
+  const signature = Buffer.from(r.string());
+  let authData = Buffer.from(r.string());
+  r.uint32();
+  r.string();
+  if (!r.done()) {
+    log.debug("Leaving parseSshSkAttestation(). Trailing bytes.");
+    // error-code: none — see sshReader()
+    throw new Error('trailing bytes after the attestation');
+  }
+  // libfido2's `fido_cred_authdata_ptr()` is the CBOR encoding: a byte
+  // string (major type 2) around the raw authenticator data.
+  if (authData.length && (authData[0] >> 5) === 2) {
+    const info = authData[0] & 0x1f;
+    const head = info < 24 ? 1 : (info === 24 ? 2 : (info === 25 ? 3
+      : (info === 26 ? 5 : 0)));
+    const length = info < 24 ? info : (info === 24 ? authData[1]
+      : (info === 25 ? authData.readUInt16BE(1)
+        : (info === 26 ? authData.readUInt32BE(1) : -1)));
+    if (!head || head + length !== authData.length) {
+      log.debug("Leaving parseSshSkAttestation(). A bad CBOR wrapper.");
+      // error-code: none — see sshReader()
+      throw new Error('the authenticator data is not one CBOR byte string');
+    }
+    authData = authData.subarray(head);
+  }
+  log.debug("Leaving parseSshSkAttestation().");
+  return { version: version, certificate: certificate, signature: signature,
+           authData: authData };
+}
+
+/**
+ * Whether an SSH key and a node public key (a certificate's) are the same
+ * key, compared as SubjectPublicKeyInfo.
+ *
+ * @param sshKey - a parsed SSH key (`parseSshPublicKey()`)
+ * @param publicKey - a KeyObject, a PEM or a certificate's key
+ * @returns true when they are one key
+ */
+function sshKeyMatches(sshKey, publicKey) {
+  log.debug("Entering sshKeyMatches().");
+  let same = false;
+  try {
+    const a = stsCrypto.publicKeyOf(sshKey.key)
+      .export({ type: 'spki', format: 'der' });
+    const b = stsCrypto.publicKeyOf(publicKey)
+      .export({ type: 'spki', format: 'der' });
+    same = Buffer.compare(Buffer.from(a), Buffer.from(b)) === 0;
+  } catch (e) {
+    log.debug("Caught in sshKeyMatches(): " + ((e && e.message) || e));
+    same = false;
+  }
+  log.debug("Leaving sshKeyMatches(). " + same);
+  return same;
+}
+
 // ----- The clouds' published signing certificates (#40 phase three) ---------
 //
 // `pki_cloud_anchors.json` is GENERATED from SPIRE's own embedded tables (its
@@ -15139,6 +15949,108 @@ function describeDeviceAnchors() {
     });
   });
   log.debug("Leaving describeDeviceAnchors().");
+  return out;
+}
+
+// ----- YubiKey PIV key attestation anchors (#1955 P2) ------------------------
+//
+// A PIV key attestation (`common/piv_attestation.ts`) is a certificate for a
+// slot's key, signed by the key's factory "f9" attestation certificate, which
+// chains to a Yubico PIV root: "Yubico PIV Root CA Serial 263751" for firmware
+// before 5.7.4, and "Yubico Attestation Root 1" through the PIV intermediates
+// for 5.7.4 and later. Both roots and the PIV intermediates are SHIPPED, in
+// `pki_piv_anchors.json`, generated from Yubico's publications and PINNED by
+// the SHA-256 of each DER exactly as `pki_device_anchors.json` is (above): a
+// row that does not match its pin is not used, logged under STS-PIV-0001.
+// Shipped, not empty, for the device anchors' reason: the default must work
+// for the one vendor whose attestation format this verifies, and a realm's
+// `piv.attestationAnchors`, when it holds any certificate, REPLACES the roots
+// (a test configures its own generated root; an operator may drop one).
+//
+// The intermediates are NOT anchors: they are offered to the path builder
+// beside the ones a request carried, because `ykman piv keys attest` and
+// `ykman piv certificates export f9` export only the two certificates on the
+// key, and a 5.7.4 key's f9 certificate is two intermediates below its root.
+// A configured anchor set replaces the roots and keeps these, which chain to
+// nothing but Yubico's own root and so cannot widen a configured set.
+let pivAnchors = null;
+const PIV_ANCHOR_KINDS = ['yubicoPivAttestation', 'yubicoPivIntermediate'];
+
+function pivAnchorTable() {
+  log.debug("Entering pivAnchorTable().");
+  if (!pivAnchors) {
+    const raw = require('./pki_piv_anchors.json');
+    const table = {};
+    PIV_ANCHOR_KINDS.forEach(function (kind) {
+      table[kind] = (raw[kind] || []).filter(function (row) {
+        const one = certificateBundle(row.pem).certificates[0] || null;
+        const digest = one ? stsCrypto.digest('sha256', one.der, 'hex') : '';
+        if (!one || digest !== String(row.sha256 || '').toLowerCase()) {
+          log.error(errorCodes.tag('STS-PIV-0001') + 'pki: the shipped ' +
+                    kind + ' certificate "' + String(row.subject || '') +
+                    '" does not match its pinned SHA-256 and is not used.');
+          return false;
+        }
+        return true;
+      }).map(function (row) {
+        return String(row.pem);
+      });
+    });
+    pivAnchors = table;
+  }
+  log.debug("Leaving pivAnchorTable().");
+  return pivAnchors;
+}
+
+/**
+ * Answers the anchors a YubiKey PIV key attestation must chain to, the
+ * shipped intermediates offered to the path builder, and where the anchors
+ * came from.
+ *
+ * @param configuredPem - the realm's `piv.attestationAnchors`, a PEM bundle
+ * @returns `{ anchors, intermediates, source }`, `source` being
+ *   'configured', 'shipped' or 'none'; each certificate as
+ *   `certificateBundle()` answers it
+ */
+function pivAttestationAnchors(configuredPem) {
+  log.debug("Entering pivAttestationAnchors().");
+  const table = pivAnchorTable();
+  const intermediates = certificateBundle(
+    table.yubicoPivIntermediate.join('\n')).certificates;
+  const configured = certificateBundle(configuredPem).certificates;
+  if (configured.length) {
+    log.debug("Leaving pivAttestationAnchors(). Configured.");
+    return { anchors: configured, intermediates: intermediates,
+             source: 'configured' };
+  }
+  const shipped = certificateBundle(
+    table.yubicoPivAttestation.join('\n')).certificates;
+  log.debug("Leaving pivAttestationAnchors(). " + shipped.length +
+            " shipped.");
+  return { anchors: shipped, intermediates: intermediates,
+           source: shipped.length ? 'shipped' : 'none' };
+}
+
+/**
+ * Describes the shipped PIV attestation certificates: subject, expiry and
+ * pin of each, per kind. Never a certificate's text.
+ *
+ * @returns the description, per kind
+ */
+function describePivAnchors() {
+  log.debug("Entering describePivAnchors().");
+  const raw = require('./pki_piv_anchors.json');
+  const usable = pivAnchorTable();
+  const out = {};
+  PIV_ANCHOR_KINDS.forEach(function (kind) {
+    out[kind] = (raw[kind] || []).map(function (row) {
+      return { subject: String(row.subject || ''),
+               notAfter: String(row.notAfter || ''),
+               sha256: String(row.sha256 || ''),
+               used: usable[kind].indexOf(String(row.pem)) >= 0 };
+    });
+  });
+  log.debug("Leaving describePivAnchors().");
   return out;
 }
 
@@ -15709,10 +16621,27 @@ module.exports = {
   sshFingerprint: sshFingerprint,
   verifySshSignature: verifySshSignature,
   checkSshHostCertificate: checkSshHostCertificate,
+  // --- the SSH user CA's wire formats (#1955 P3) ---
+  SSH_USER_CERT: SSH_USER_CERT,
+  SSH_CA_ALGORITHMS: SSH_CA_ALGORITHMS,
+  sshPublicKeyOf: sshPublicKeyOf,
+  generateSshCaKey: generateSshCaKey,
+  buildSshCertificate: buildSshCertificate,
+  buildSshKrl: buildSshKrl,
+  parseSshKrl: parseSshKrl,
+  parseSshSkAttestation: parseSshSkAttestation,
+  sshKeyMatches: sshKeyMatches,
+  sshUserCaPublicKeyAsync: sshUserCaPublicKeyAsync,
+  issueSshUserCertificateAsync: issueSshUserCertificateAsync,
+  revokeSshUserCertificateAsync: revokeSshUserCertificateAsync,
+  revokeSshUserKeyAsync: revokeSshUserKeyAsync,
+  buildSshUserKrlAsync: buildSshUserKrlAsync,
   awsIidCertificate: awsIidCertificate,
   azureImdsRoots: azureImdsRoots,
   deviceAttestationAnchors: deviceAttestationAnchors,
   describeDeviceAnchors: describeDeviceAnchors,
+  pivAttestationAnchors: pivAttestationAnchors,
+  describePivAnchors: describePivAnchors,
   TIERS: TIERS,
   TIER_IDS: TIER_IDS,
   // A GETTER, so a reader of `pki.MAX_OBJECTS` sees `pki.maxStoredObjects`.

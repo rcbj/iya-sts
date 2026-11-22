@@ -1139,6 +1139,34 @@
     "en": "ce6f4a649ea6af77",
     "text": "直到憑證鏈過期（其最小的 exp，10.4），且最多 oidfed.resolveCacheS。"
   },
+  "caches.store.openpgp.challenges.title": {
+    "en": "c0c95c44e5f3835e",
+    "text": "OpenPGP 註冊挑戰"
+  },
+  "caches.store.openpgp.challenges.description": {
+    "en": "be9e39edb5fb9e44",
+    "text": "每位正在註冊 OpenPGP 金鑰的人一個挑戰：其以 gpg --clearsign 簽署的文字、其隨機數（nonce）以及失效時間。只能使用一次，透過對該隨機數的叢集宣告來達成。"
+  },
+  "caches.store.openpgp.challenges.bound": {
+    "en": "70f8ecd02c4392d1",
+    "text": "每人一個（以 entryUUID 為鍵），每個的有效期為 openpgp.challengeLifetimeS。"
+  },
+  "caches.store.openpgp.wkd.title": {
+    "en": "dc47d455d5283de5",
+    "text": "Web 金鑰目錄發布"
+  },
+  "caches.store.openpgp.wkd.description": {
+    "en": "f79c85531015261b",
+    "text": "Web 金鑰目錄針對每個雜湊地址回應哪一把 OpenPGP 金鑰：持有者（一個 entryUUID）及其發布的指紋。這只是一個指標：金鑰本身從項目中讀取。絕非機密。"
+  },
+  "caches.store.openpgp.wkd.bound": {
+    "en": "e8a7abbcc8bba7fc",
+    "text": "處理程序持有的資料列是每個領域 5,000 筆的快取；登記冊中每位已選擇發布者一列。"
+  },
+  "caches.store.openpgp.wkd.lifetime": {
+    "en": "06861887c7e6c8f1",
+    "text": "直到此人停止發布或移除金鑰為止。"
+  },
   "caches.store.passwords.breach-ranges.title": {
     "en": "5746db291bee19b3",
     "text": "外洩密碼範圍"

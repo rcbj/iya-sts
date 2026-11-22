@@ -64,8 +64,8 @@
     "text": "CORS 視為此部署「自身」的來源——通訊協定、主機與連接埠，不含路徑——以逗號分隔，另外加上本服務接聽的地址、global.publicBaseUrl 與內嵌偵錯工具。列於此處的來源可讀取本服務提供給瀏覽器的每個回應，無論請求指名哪個客戶端。「空白」（預設）不新增任何來源：其他每個來源只有在應用程式於 appCorsOrigin 中列出時才被允許。不是來源的值會被忽略並記錄，絕不會被放寬。"
   },
   "admin.bootstrapUsername|description": {
-    "en": "9b6fe650632ee79d",
-    "text": "初始管理員的用戶名稱（2026-09-13），存在於「預設」領域，並自 2026-09-14 起存在於每個信任領域，在該處只管理該領域：不存在時於啟動時建立，同時是兩種主控台角色的成員，首次登入時被強制變更密碼，且無法刪除或重新命名。在它首次登入 /admin 之前，每位已登入者都可使用主控台（admin.openWhenEmpty）。在開發模式中，如同所有人一樣，任何密碼都能讓它登入。在產品模式中，當本服務啟動而領域中「沒有任何人」持有認證時，它也是取得產生密碼的帳戶；名稱與該密碼只寫入一次，寫入 persistence.dataDir 中的 bootstrap-admin-password 檔案，該檔案僅本服務可讀取（記錄會說明其位置，只有在 admin.logBootstrapPassword 開啟時記錄本身才會包含它們），是進入全新產品部署的唯一途徑。在已有人持有認證時絕不寫入產生的密碼，因此它無法覆寫密碼。強制變更只適用於此步驟「建立」的帳戶——同名的既有帳戶保留其密碼，只會被賦予兩種角色。"
+    "en": "8b69eb9d4cb0b130",
+    "text": "初始管理員的用戶名稱（2026-09-13），存在於「預設」領域，並自 2026-09-14 起存在於每個信任領域，在該處只管理該領域：不存在時於啟動時建立，同時是兩種主控台角色的成員，首次登入時被強制變更密碼，且無法刪除或重新命名。在它首次登入 /admin 之前，每位已登入者都可使用主控台（admin.openWhenEmpty）。在開發模式中，如同所有人一樣，任何密碼都能讓它登入。在產品模式中，當本服務啟動而領域中「沒有任何人」持有認證時，它也是取得產生密碼的帳戶；名稱與該密碼只寫入一次，寫入 persistence.dataDir 中的 bootstrap-admin-password 檔案，該檔案僅本服務可讀取（記錄會說明其位置，只有在 admin.logBootstrapPassword 開啟時記錄本身才會包含它們），是進入全新產品部署的唯一途徑。在已有人持有認證時絕不寫入產生的密碼，因此它無法覆寫密碼。強制變更只適用於此步驟「建立」的帳戶——同名的既有帳戶保留其密碼，只會被賦予兩種角色。 之後的啟動會刪除該檔案，一旦已有人持有認證。"
   },
   "gnap.accessTokenFormat|description": {
     "en": "4c24e750f8d05ea3",
@@ -344,8 +344,8 @@
     "text": "此領域簽署之每個 JWT 的 `kid` 標頭以何種方式指名其金鑰。`internal`——預設值——是本服務自己的名稱（`sts-…`），一個驗證者只能查詢的不透明字串。`jwk-thumbprint-uri` 是 RFC 9278 的 JWK Thumbprint URI，`urn:ietf:params:oauth:jwk-thumbprint:sha-256:<RFC 7638 thumbprint>`，任何持有公開金鑰的人都能計算。它指名的是「金鑰」，而不是其證書——那是 `x5c`/`x5u`。開啟期間，領域的 JWKS 會以兩種名稱各列出每把簽章金鑰一次，讓開啟前簽署的權杖仍能找到其金鑰；再次關閉會移除第二組項目，開啟期間簽署的權杖在到期前所指名的金鑰便不在任何 JWKS 中。本服務自行驗證的權杖，兩種名稱皆接受。HMAC 簽署的權杖無論如何都不帶 kid。可依領域設定。"
   },
   "keys.kekProvider|description": {
-    "en": "b48b052bc689c8e3",
-    "text": "包裝每把數據加密金鑰之金鑰加密金鑰的所在位置。`file`、`aws`、`gcp`、`azure` 與 `vault` 會從掛載的檔案或秘密存放區將一把 32 位元組的金鑰「讀入」此程序；`file` 是預設值，因為它不需要任何東西。`vault-transit`（Vault 或 OpenBao Transit）、`aws-kms`、`gcp-kms`（Cloud KMS）與 `azure-keys`（Key Vault 或 Managed HSM 金鑰；keys.kekVault 為其保存庫）是金鑰管理服務：金鑰「絕不」離開它們，keys.kekRef 指名它，由 KMS 包裝與解包每把數據金鑰——啟動時每把數據金鑰呼叫一次，每個值則不需呼叫。除 `file` 外的每個提供者都會延遲載入其官方 SDK，而這些 SDK 刻意「不」是本服務的相依套件；缺少時會回報需安裝的套件名稱。"
+    "en": "bf4e717bed6b7e03",
+    "text": "包裝每把數據加密金鑰之金鑰加密金鑰的所在位置。`file`、`aws`、`gcp`、`azure` 與 `vault` 會從掛載的檔案或秘密存放區將一把 32 位元組的金鑰「讀入」此程序；`file` 是預設值，因為它不需要任何東西。`vault-transit`（Vault 或 OpenBao Transit）、`aws-kms`、`gcp-kms`（Cloud KMS）與 `azure-keys`（Key Vault 或 Managed HSM 金鑰；keys.kekVault 為其保存庫）是金鑰管理服務：金鑰「絕不」離開它們，keys.kekRef 指名它，由 KMS 包裝與解包每把數據金鑰——啟動時每把數據金鑰呼叫一次，每個值則不需呼叫。`pkcs11` 與之相同，只是金鑰位於硬件安全模組中（YubiHSM 2、SoftHSM2 或任何 PKCS#11 模組，見 keys.pkcs11Module），keys.kekRef 為 PKCS#11 URI。除 `file` 外的每個提供者都會延遲載入其官方 SDK，而這些 SDK 刻意「不」是本服務的相依套件；缺少時會回報需安裝的套件名稱。"
   },
   "keys.vaultClientCert|label": {
     "en": "93de1cc419ba5406",
@@ -388,8 +388,8 @@
     "text": "Secrets Manager 與 AWS KMS 的 AWS 區域。空白時使用 SDK 自己的解析方式（AWS_REGION、共用設定檔、實例元數據服務），叢集內的部署就是依賴這種方式。"
   },
   "keys.cellKekProvider|description": {
-    "en": "f779ece8f10a07ec",
-    "text": "「此 Cell」的金鑰加密金鑰的提供者，用來密封該 Cell 自己儲存的內容（#98）。五種提供者，與 `keys.kekProvider` 相同。`none` 以服務金鑰加密金鑰密封 Cell 層，這在單一 Cell 模式及測試中是正確的；產品模式下的多 Cell 部署會因此「拒絕」啟動，因為如此一來，一個 Cell 之數據列的副本能在其他每個 Cell 中被開啟。"
+    "en": "73b7f0bab09392e8",
+    "text": "「此 Cell」的金鑰加密金鑰的提供者，用來密封該 Cell 自己儲存的內容（#98）。五種提供者，與 `keys.kekProvider` 相同，另有 `pkcs11`，即該 Cell 自己的 HSM。`none` 以服務金鑰加密金鑰密封 Cell 層，這在單一 Cell 模式及測試中是正確的；產品模式下的多 Cell 部署會因此「拒絕」啟動，因為如此一來，一個 Cell 之數據列的副本能在其他每個 Cell 中被開啟。"
   },
   "keys.dataKeyRotationDays|label": {
     "en": "bed6e06cfadb4d9a",

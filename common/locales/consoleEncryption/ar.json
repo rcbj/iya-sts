@@ -93,5 +93,10 @@
   "hKey": "المفتاح",
   "hAlgorithm": "الخوارزمية",
   "hDataKeys": "مفاتيح تشفير البيانات",
-  "hCounting": "العد"
+  "hCounting": "العد",
+  "signingTitle": "مفاتيح التوقيع لهذا النطاق",
+  "signingStore": "أين تُنشأ",
+  "signingInHsm": "في وحدة HSM",
+  "signingInSoftware": "في البرمجيات",
+  "signingRefused": "مرفوض: لا يمكن استخدام وحدة HSM هنا (يوضح السجل السبب)"
 }

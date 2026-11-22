@@ -1139,6 +1139,34 @@
     "en": "ce6f4a649ea6af77",
     "text": "Bis die Kette abläuft (ihr kleinstes exp, 10.4), und höchstens oidfed.resolveCacheS."
   },
+  "caches.store.openpgp.challenges.title": {
+    "en": "c0c95c44e5f3835e",
+    "text": "OpenPGP-Registrierungs-Challenges"
+  },
+  "caches.store.openpgp.challenges.description": {
+    "en": "be9e39edb5fb9e44",
+    "text": "Eine Challenge je Person, die einen OpenPGP-Schlüssel registriert: der Text, den sie mit gpg --clearsign signiert, seine Nonce und sein Ablaufzeitpunkt. Wird einmal verbraucht, durch einen clusterweiten Claim auf die Nonce."
+  },
+  "caches.store.openpgp.challenges.bound": {
+    "en": "70f8ecd02c4392d1",
+    "text": "Eine je Person (nach entryUUID), jede für openpgp.challengeLifetimeS."
+  },
+  "caches.store.openpgp.wkd.title": {
+    "en": "dc47d455d5283de5",
+    "text": "Veröffentlichungen im Web Key Directory"
+  },
+  "caches.store.openpgp.wkd.description": {
+    "en": "f79c85531015261b",
+    "text": "Welchen OpenPGP-Schlüssel das Web Key Directory für jede gehashte Adresse liefert: den Inhaber (eine entryUUID) und den von ihm veröffentlichten Fingerabdruck. Ein Verweis: Der Schlüssel selbst wird aus dem Eintrag gelesen. Nie ein Geheimnis."
+  },
+  "caches.store.openpgp.wkd.bound": {
+    "en": "e8a7abbcc8bba7fc",
+    "text": "Die Zeilen eines Prozesses sind ein Cache von 5.000 je Vertrauensbereich; das Register hält eine Zeile je Person, die zugestimmt hat."
+  },
+  "caches.store.openpgp.wkd.lifetime": {
+    "en": "06861887c7e6c8f1",
+    "text": "Bis die Person die Veröffentlichung beendet oder den Schlüssel entfernt."
+  },
   "caches.store.passwords.breach-ranges.title": {
     "en": "5746db291bee19b3",
     "text": "Bereiche kompromittierter Passwörter"

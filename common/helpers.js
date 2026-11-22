@@ -1149,12 +1149,206 @@ const RSA_SIGNING_UNITS = {
   xml: { commonName: 'ws-trust-sts-xml', serialPrefix: '04' }
 };
 
+// ---------------------------------------------------------------------------
+// A REALM'S SIGNING KEYS IN THE HSM (#1955 P8, rcbj's D6: "both"), where its
+// `keys.signingKeyStore` is `pkcs11`: the RS256 key, the XML key and the
+// curve keys the module can make are made IN THE TOKEN, non-extractable, by
+// the same recipes as ever — the key set's shape does not change, its
+// private keys are HSM key objects (`crypto.js` section 19) whose "PEM" is a
+// reference, so the set is sealed, shared with the request workers, restored
+// and rotated exactly as a software set is. What the module cannot make
+// (Ed448 on most, anything on a module with no EC) and every post-quantum
+// key are made in software, as before, and `hsmKeyReport()` says which.
+//
+// IT IS REFUSED, NEVER QUIETLY SOFTWARE, where it cannot hold: a keystore
+// that does not persist (development mode — every start would leave a new
+// set of objects in the token) or no token open in this process
+// (keys.signingKeyToken), STS-KEYS-0206. An operator who asked for keys in
+// the HSM did not ask for keys in this process.
+// ---------------------------------------------------------------------------
+/**
+ * The signing keys' token where the AMBIENT realm keeps its signing keys in
+ * the HSM, or null where it keeps them in software.
+ *
+ * @returns `{ token, uri }`, or null
+ * @throws STS-KEYS-0206 where the realm asks for the HSM and it cannot be had
+ */
+function hsmSigning() {
+  log.debug("Entering hsmSigning().");
+  if (String(config.value('keys.signingKeyStore') || 'software') !==
+      'pkcs11') {
+    log.debug("Leaving hsmSigning(). Software.");
+    return null;
+  }
+  if (!keystore.persists()) {
+    throw errorCodes.mark(new Error('the "' + realms.currentId() + '" ' +
+      'realm keeps its signing keys in the HSM (keys.signingKeyStore ' +
+      'pkcs11) and the keystore does not persist, so every start would ' +
+      'leave a new set of keys in the token. It needs product mode (or ' +
+      'keys.source persisted).'), 'STS-KEYS-0206');
+  }
+  const held = require('./secrets').heldSigningToken();
+  if (!held) {
+    throw errorCodes.mark(new Error('the "' + realms.currentId() + '" ' +
+      'realm keeps its signing keys in the HSM (keys.signingKeyStore ' +
+      'pkcs11) and this process holds no signing token: set ' +
+      'keys.signingKeyToken, and restart.'), 'STS-KEYS-0206');
+  }
+  log.debug("Leaving hsmSigning(). " + held.uri);
+  return held;
+}
+
+// The same, for a realm named rather than ambient.
+function hsmSigningFor(realmId) {
+  log.debug("Entering hsmSigningFor(). " + realmId);
+  log.debug("Leaving hsmSigningFor().");
+  return realms.run(realmForKeys(realmId), hsmSigning);
+}
+
+// The CKA_LABEL a key is made under: the realm and what it is, so an operator
+// listing the token (yubihsm-shell, pkcs11-tool) can tell the keys apart.
+function hsmLabel(what) {
+  log.debug("Entering hsmLabel().");
+  log.debug("Leaving hsmLabel().");
+  return ('sts-' + realms.currentId() + '-' + what).slice(0, 64);
+}
+
+// The engine's description of a curve recipe, or null for one no HSM key is
+// made for.
+function hsmCurveSpec(spec) {
+  log.debug("Entering hsmCurveSpec().");
+  const named = { prime256v1: 'P-256', secp384r1: 'P-384',
+                  secp521r1: 'P-521', secp256k1: 'secp256k1' };
+  let out = null;
+  if (spec.gen[0] === 'ec' && named[spec.gen[1].namedCurve]) {
+    out = { kty: 'EC', crv: named[spec.gen[1].namedCurve] };
+  } else if (spec.gen[0] === 'ed25519') {
+    out = { kty: 'OKP', crv: 'Ed25519' };
+  } else if (spec.gen[0] === 'ed448') {
+    out = { kty: 'OKP', crv: 'Ed448' };
+  }
+  log.debug("Leaving hsmCurveSpec().");
+  return out;
+}
+
+// A curve key pair: in the HSM where the realm asks and the module can, in
+// software otherwise. Synchronous (`makeStsKeys()`'s door).
+// A CURVE THE MODULE OFFERS THE MECHANISM FOR AND STILL DOES NOT MAKE
+// (Ed448 on SoftHSM2; a curve a YubiHSM's firmware lacks) is STS-KEYS-0207,
+// and that one key is made in software — logged, and `hsmKeyReport()` lists
+// it there. Anything else the HSM answers (it is away, the PIN is refused)
+// is not a reason to make a key here, and is thrown.
+function curveInSoftware(spec, e) {
+  log.debug("Entering curveInSoftware(). " + spec.alg);
+  if (errorCodes.codeOf(e) !== 'STS-KEYS-0207') {
+    throw e;
+  }
+  log.warn(errorCodes.tag('STS-KEYS-0207') + 'helpers: the HSM does not ' +
+           'make a ' + (spec.curve || spec.alg) + ' key (' +
+           ((e && e.message) || e) + '); the "' + realms.currentId() +
+           '" realm\'s ' + (spec.curve || spec.alg) + ' key is made in ' +
+           'software.');
+  log.debug("Leaving curveInSoftware().");
+}
+
+function curvePairFor(spec, hsm) {
+  log.debug("Entering curvePairFor(). " + spec.alg);
+  const hsmSpec = hsm ? hsmCurveSpec(spec) : null;
+  if (hsmSpec && hsm.token.canGenerate(hsmSpec)) {
+    try {
+      const pair = stsCrypto.generatePkcs11KeyPair(hsm.token, hsm.uri,
+        hsmSpec, hsmLabel((spec.curve || spec.alg).toLowerCase()));
+      log.debug("Leaving curvePairFor(). In the HSM.");
+      return pair;
+    } catch (e) {
+      log.debug("Caught in curvePairFor(): " + ((e && e.message) || e));
+      curveInSoftware(spec, e);
+    }
+  }
+  log.debug("Leaving curvePairFor(). Software.");
+  return stsCrypto.generateKeyPairSync(spec.gen[0], spec.gen[1]);
+}
+
+// The same off the event loop: the HSM's async generation, or libuv's.
+function curvePairForAsync(spec, hsm) {
+  log.debug("Entering curvePairForAsync(). " + spec.alg);
+  const hsmSpec = hsm ? hsmCurveSpec(spec) : null;
+  if (hsmSpec && hsm.token.canGenerate(hsmSpec)) {
+    const realm = realms.current();
+    log.debug("Leaving curvePairForAsync(). In the HSM.");
+    return stsCrypto.generatePkcs11KeyPairAsync(hsm.token, hsm.uri, hsmSpec,
+      hsmLabel((spec.curve || spec.alg).toLowerCase()))
+      .catch(function (e) {
+        log.debug("Caught in curvePairForAsync(): " + ((e && e.message) ||
+                                                      e));
+        return realms.run(realm, function () {
+          curveInSoftware(spec, e);
+          return stsCrypto.generateKeyPairAsync(spec.gen[0], spec.gen[1]);
+        });
+      });
+  }
+  log.debug("Leaving curvePairForAsync(). Software.");
+  return stsCrypto.generateKeyPairAsync(spec.gen[0], spec.gen[1]);
+}
+
+// An RSA signing key's reference, made in the HSM off the event loop.
+async function hsmRsaKeyAsync(hsm, useCaseId) {
+  log.debug("Entering hsmRsaKeyAsync(). " + useCaseId);
+  const pair = await stsCrypto.generatePkcs11KeyPairAsync(hsm.token, hsm.uri,
+    { kty: 'RSA', bits: require('./mode').defaultRsaBits() },
+    hsmLabel('rsa-' + useCaseId));
+  log.debug("Leaving hsmRsaKeyAsync().");
+  return pair.privateKey.ref;
+}
+
+/**
+ * Says which of the ambient realm's signing keys are in the HSM and which in
+ * software — for `/admin-api` and the console, which say so per realm.
+ *
+ * @returns `{ store, token, inHsm: [alg…], inSoftware: [alg…] }`
+ */
+function hsmKeyReport() {
+  log.debug("Entering hsmKeyReport().");
+  const keys = stsKeysFor();
+  const inHsm = [];
+  const inSoftware = [];
+  const place = function (name, key) {
+    (stsCrypto.isHsmKey(key) ? inHsm : inSoftware).push(name);
+  };
+  place('RS256', keys.privateKeyPem);
+  place('XML', keys.xmlKey && keys.xmlKey.privateKeyPem);
+  (keys.extraKeys || []).forEach(function (one) {
+    place(one.publicJwk && one.publicJwk.crv && one.alg === 'EdDSA'
+      ? 'EdDSA (' + one.publicJwk.crv + ')' : one.alg, one.privateKey);
+  });
+  (keys.pqKeys || []).forEach(function (one) {
+    inSoftware.push(one.alg);
+  });
+  const held = require('./secrets').heldSigningToken();
+  log.debug("Leaving hsmKeyReport().");
+  return { store: String(config.value('keys.signingKeyStore') || 'software'),
+           token: held ? held.uri : '', inHsm: inHsm,
+           inSoftware: inSoftware };
+}
+
 function makeRsaSigningKey(useCaseId, privateKeyPem) {
   log.debug("Entering makeRsaSigningKey(). use=" + useCaseId);
   const unit = RSA_SIGNING_UNITS[useCaseId] || RSA_SIGNING_UNITS.jose;
+  // IN THE HSM where the realm asks and no key was handed in (#1955 P8): a
+  // key handed in is one `prepareKeySet()` or a rotation already made — in
+  // the HSM where it asked, as a reference.
+  let keyPem = privateKeyPem;
+  if (!keyPem) {
+    const hsm = hsmSigning();
+    if (hsm) {
+      keyPem = stsCrypto.generatePkcs11KeyPair(hsm.token, hsm.uri,
+        { kty: 'RSA', bits: require('./mode').defaultRsaBits() },
+        hsmLabel('rsa-' + useCaseId)).privateKey.ref;
+    }
+  }
   const made = stsCrypto.selfSignedRsaCertificate({
     bits: require('./mode').defaultRsaBits(),
-    rsaPrivateKeyPem: privateKeyPem,
+    rsaPrivateKeyPem: keyPem,
     commonName: unit.commonName,
     serialPrefix: unit.serialPrefix,
     years: 5
@@ -1266,8 +1460,12 @@ function makeStsKeys(made) {
   // Each gets a `kid` of its own derived from its own public key, so the
   // reasoning about kid collisions above holds per key rather than per service.
   // -------------------------------------------------------------------------
-  const extraKeys = CURVE_KEY_SPECS.map(function (spec) {
-    const pair = stsCrypto.generateKeyPairSync(spec.gen[0], spec.gen[1]);
+  // In the HSM where the realm asks (#1955 P8): pairs `prepareKeySet()` made
+  // there off the event loop, or made here.
+  const hsm = hsmSigning();
+  const extraKeys = CURVE_KEY_SPECS.map(function (spec, i) {
+    const pair = (pre.curvePairs && pre.curvePairs[i]) ||
+                 curvePairFor(spec, hsm);
     return curveKeyFrom(spec, pair);
   });
 
@@ -3029,6 +3227,21 @@ function prepareKeySet(realmId, options) {
   const started = Date.now();
   // The sizes are read IN THE REALM, synchronously, before anything is
   // awaited — `makeStsKeys()` reads the same three settings the same way.
+  // THE HSM, where the realm keeps its signing keys there (#1955 P8): its
+  // RS256 key, XML key and curve keys are made in the token, off the event
+  // loop, instead of the two software RSA pairs. Asked in the realm; a
+  // refusal is the same warning a failed generation gives, and the read
+  // that follows refuses again with its code.
+  let hsm = null;
+  try {
+    hsm = realms.run(realm, hsmSigning);
+  } catch (e) {
+    log.debug("Caught in prepareKeySet(): " + ((e && e.message) || e));
+    log.warn(errorCodes.tag(errorCodes.codeOf(e) || 'STS-KEYS-0206') +
+             'helpers: ' + ((e && e.message) || e));
+    log.debug("Leaving prepareKeySet(). The HSM was refused.");
+    return Promise.resolve(false);
+  }
   const bits = realms.run(realm, function () {
     return {
       signing: require('./mode').defaultRsaBits(),
@@ -3037,21 +3250,44 @@ function prepareKeySet(realmId, options) {
       requestObject: rsaBitsFor('oauth2.requestObjectEncryptionKeyBits')
     };
   });
+  const inRealm = function (fn) {
+    return realms.run(realm, fn);
+  };
   const work = Promise.all([
-    generateRsaPairAsync(bits.signing, true),
+    hsm ? inRealm(function () {
+      return hsmRsaKeyAsync(hsm, 'jose');
+    }).then(function (ref) {
+      return { privateKey: ref };
+    }) : generateRsaPairAsync(bits.signing, true),
     generateRsaPairAsync(bits.vci),
     generateRsaPairAsync(bits.refresh),
     generateRsaPairAsync(bits.requestObject),
     // The XML signing key (#42, D2), a fifth pair.
-    generateRsaPairAsync(bits.signing, true)
+    hsm ? inRealm(function () {
+      return hsmRsaKeyAsync(hsm, 'xml');
+    }).then(function (ref) {
+      return { privateKey: ref };
+    }) : generateRsaPairAsync(bits.signing, true),
+    // And the curve keys, in the HSM only: in software they are a few
+    // milliseconds on the loop, as they always were.
+    hsm ? Promise.all(CURVE_KEY_SPECS.map(function (spec) {
+      return inRealm(function () {
+        const hsmSpec = hsmCurveSpec(spec);
+        return hsmSpec && hsm.token.canGenerate(hsmSpec)
+          ? curvePairForAsync(spec, hsm) : null;
+      });
+    })) : Promise.resolve(null)
   ]).then(function (pairs) {
     // Somebody may have made or adopted the set while the threads worked; the
     // factory's order decides, and a prepared set it does not use is dropped.
+    // (A prepared HSM key that is dropped stays in the token, unreferenced:
+    // listed by its sts-<realm>- label for an operator to delete.)
     if (keySetNeedsMaking(id)) {
       preparedSets.set(realm.id, { signingPem: pairs[0].privateKey,
                                    vci: pairs[1], refresh: pairs[2],
                                    requestObject: pairs[3],
-                                   xmlPem: pairs[4].privateKey });
+                                   xmlPem: pairs[4].privateKey,
+                                   curvePairs: pairs[5] });
       stsKeysFor.of(id);
       preparedSets.delete(realm.id);
     }
@@ -6131,16 +6367,27 @@ function generateCurvePairAsync(spec) {
   return stsCrypto.generateKeyPairAsync(spec.gen[0], spec.gen[1]);
 }
 
-async function mintStandbyKey(unitRow, role) {
+async function mintStandbyKey(unitRow, role, realmId) {
   log.debug("Entering mintStandbyKey(). unit=" + unitRow.unit);
+  // A ROTATION IN THE HSM (#1955 P8): the next key of a realm that keeps its
+  // keys there is made there, by the recipes the current one was.
+  const hsm = hsmSigningFor(realmId === undefined ? realms.currentId()
+                                                  : realmId);
+  const inRealm = function (fn) {
+    return realms.run(realmForKeys(realmId === undefined ?
+      realms.currentId() : realmId), fn);
+  };
   const base = { unit: unitRow.unit, role: role || 'next', alg: unitRow.alg,
                  crv: unitRow.crv || '', kind: unitRow.kind,
                  useCase: unitRow.useCase, slot: unitRow.slot,
                  createdAt: Date.now(), retiredAt: 0, retiredUntil: 0,
                  reason: '' };
   if (unitRow.kind === 'rsa') {
-    const pair = await generateRsaPairAsync(
-      require('./mode').defaultRsaBits(), true);
+    const pair = hsm
+      ? { privateKey: await inRealm(function () {
+          return hsmRsaKeyAsync(hsm, unitRow.useCase);
+        }) }
+      : await generateRsaPairAsync(require('./mode').defaultRsaBits(), true);
     const made = makeRsaSigningKey(unitRow.useCase, pair.privateKey);
     const kid = kidOf(made.certB64);
     log.debug("Leaving mintStandbyKey(). RSA " + kid);
@@ -6159,7 +6406,11 @@ async function mintStandbyKey(unitRow, role) {
       log.debug("Leaving mintStandbyKey(). No curve spec.");
       throw new Error('no curve key recipe for ' + unitRow.unit);
     }
-    const entry = curveKeyFrom(spec, await generateCurvePairAsync(spec));
+    const entry = curveKeyFrom(spec, hsm
+      ? await inRealm(function () {
+          return curvePairForAsync(spec, hsm);
+        })
+      : await generateCurvePairAsync(spec));
     log.debug("Leaving mintStandbyKey(). Curve " + entry.publicJwk.kid);
     return Object.assign(base, { kid: entry.publicJwk.kid,
                                  privateKey: entry.privateKey,
@@ -6437,7 +6688,7 @@ async function ensureNextGenerations(realmId, options) {
   }
   const made = [];
   for (let i = 0; i < lacking.length; i++) {
-    made.push(await mintStandbyKey(lacking[i], 'next'));
+    made.push(await mintStandbyKey(lacking[i], 'next', id));
   }
   const current = stsKeysFor.of(id);
   const copy = plainCopyOf(current);
@@ -9697,6 +9948,8 @@ module.exports = {
   allVerificationKeysAsync: allVerificationKeysAsync,
   xmlKeyFor: xmlKeyFor,
   ensureNextGenerations: ensureNextGenerations,
+  // A realm's signing keys in the HSM (#1955 P8): which are, and which not.
+  hsmKeyReport: hsmKeyReport,
   promoteGenerations: promoteGenerations,
   retireExpiredGenerations: retireExpiredGenerations,
   keySetIfMade: keySetIfMade,

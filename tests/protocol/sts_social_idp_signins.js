@@ -40,6 +40,9 @@
 // OWNED HERE (local: true). Its realms are removed only on a private probe.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const http = require("http");
 const path = require("path");
@@ -91,16 +94,16 @@ async function signIn(rel) {
   for (let hop = 0; hop < 16; hop += 1) {
     if (r.status >= 300 && r.status < 400 && r.location) {
       at = new URL(r.location, at).toString();
-      const remote = at.indexOf(K.base) !== 0;
+      const remote = !urls.isUnder(at, K.base);
       r = remote ? await K.send(toLoop(at)) : await b.go(at);
       continue;
     }
-    const remoteNow = at.indexOf(K.base) !== 0;
+    const remoteNow = !urls.isUnder(at, K.base);
     if (remoteNow && r.text.indexOf("<form method=\"post\" action=") >= 0) {
       const form = postedForm(r.text);
       if (form) {
         at = new URL(form.action, at).toString();
-        const remote = at.indexOf(K.base) !== 0;
+        const remote = !urls.isUnder(at, K.base);
         r = remote ? await K.send(toLoop(at), { form: form.fields })
                    : await b.go(at, { form: form.fields });
         continue;

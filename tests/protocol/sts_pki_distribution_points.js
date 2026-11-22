@@ -122,6 +122,7 @@
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const tls = require("tls");
+const serviceTrust = require("../tools/service_trust.js");
 const { Command, Option } = require("commander");
 const ldapjs = require("ldapjs");
 const { usernameFor } = require("./random_username.js");
@@ -553,15 +554,18 @@ function jsonCertificates(value, out) {
 function presentedChain(url) {
   log.debug("Entering presentedChain().");
   const target = new URL(url);
-  return new Promise(function (resolve) {
+  return new Promise(function (resolve, reject) {
     if (target.protocol !== "https:") {
       log.debug("Leaving presentedChain(). Not TLS.");
       resolve([]);
       return;
     }
+    // VERIFIED (tools/service_trust.js): the chain read is the one this
+    // client accepted, and a handshake it refused is an error, not an
+    // empty chain.
     const socket = tls.connect({
       host: target.hostname, port: Number(target.port || 443),
-      servername: target.hostname, rejectUnauthorized: false
+      servername: target.hostname, ca: serviceTrust.trustedCa()
     }, function () {
       const chain = [];
       let cert = socket.getPeerCertificate(true);
@@ -577,6 +581,10 @@ function presentedChain(url) {
     });
     socket.on("error", function (e) {
       log.warn("the handshake with " + url + " failed: " + e.message);
+      if (serviceTrust.isUntrusted(e)) {
+        reject(e);
+        return;
+      }
       resolve([]);
     });
   });

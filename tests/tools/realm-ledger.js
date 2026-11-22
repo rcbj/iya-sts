@@ -45,6 +45,7 @@
 const fs = require('fs');
 const http = require('http');
 const https = require('https');
+const serviceTrust = require('./service_trust');
 
 // This file's own logger, for the Entering/Leaving lines and the handled
 // exceptions the code style asks for.
@@ -258,7 +259,11 @@ function post(url, token, body, timeoutMs) {
     const data = JSON.stringify(body);
     const req = mod.request({
       hostname: u.hostname, port: u.port, path: u.pathname + u.search,
-      method: 'POST', rejectUnauthorized: false, timeout: timeoutMs,
+      // Verified against the chain the runner fetched (useBundle() in
+      // run-report.js): this carries a management-API token. A missing
+      // truststore throws here, and removeRecorded() records the failure.
+      method: 'POST', timeout: timeoutMs,
+      ca: u.protocol === 'http:' ? undefined : serviceTrust.trustedCa(),
       headers: { 'content-type': 'application/json',
                  'content-length': Buffer.byteLength(data),
                  authorization: 'Bearer ' + token }

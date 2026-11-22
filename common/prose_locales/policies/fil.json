@@ -1287,6 +1287,22 @@
     "en": "5098a9645fefe2ff",
     "text": "NAKAPATAY BILANG DEFAULT. Kapag naka-on, ang pag-isyu sa isang application na sakop ng profile na ito ay naghihintay hanggang ang sign-on session ay ma-bind sa key ng browser, at tinatanggihan kapag nilaktawan ng browser ang pagrehistro na iyon o lumipas ang paghihintay nang walang binding. Ang session na hindi kailanman inalok ng pagrehistro ay hindi tinatanggihan ng hilera na ito. Tinatanggihan habang naka-off ang authn.deviceBoundSessions."
   },
+  "passkey.FIELDS.credProtect.label": {
+    "en": "9a492f70e0e2aedd",
+    "text": "Proteksyon ng kredensyal na hinihingi ng isang pagrehistro sa isang security key"
+  },
+  "passkey.FIELDS.credProtect.what": {
+    "en": "64640106a92f3111",
+    "text": "`none` BILANG DEFAULT: walang hinihinging proteksyon ng kredensyal ang isang pagrehistro, at ang mga opsyon nito ay gaya ng dati. Kung hindi, hinihiling ng pagrehistro sa authenticator (CTAP 2.1 section 12.1, ang extension na credProtect) na protektahan ang bagong kredensyal sa antas na iyon: `userVerificationOptional` (antas 1, ang mayroon ang kredensyal kapag walang extension), `userVerificationOptionalWithCredentialIDList` (antas 2: hindi ibinubunyag o ginagamit ng key ang kredensyal nang walang user verification maliban kung pinangalanan ito ng relying party sa allowCredentials, kaya walang sinumang may hawak ng key ang makakahanap ng discoverable na kredensyal dito) o `userVerificationRequired` (antas 3: ginagamit lamang ng key ang kredensyal matapos ang PIN o biometric). Itinatala sa passkey ang antas na iniuulat ng key. Karamihan sa mga platform at naka-sync na passkey ay walang iniuulat. Kapag inalis sa isang pag-save, pinananatili ang built-in na default."
+  },
+  "passkey.FIELDS.enforceCredProtect.label": {
+    "en": "5cc78bfe52150545",
+    "text": "Tanggihan ang key na hindi naglalapat ng proteksyong iyon"
+  },
+  "passkey.FIELDS.enforceCredProtect.what": {
+    "en": "52a07dbeabc876c9",
+    "text": "NAKA-OFF BILANG DEFAULT. Kapag naka-on, hinihiling sa browser na ipatupad ang hilera sa itaas (enforceCredentialProtectionPolicy), at tinatanggihan ang pagrehistro na ang authenticator ay nag-uulat ng mas mababang antas kaysa sa hinihingi ng hilera sa itaas; ang key na walang iniuulat ay nasa antas 1. Kailangang nakatakda ang hilera sa itaas sa antas na hindi none. Kapag inalis sa isang pag-save, pinananatili ang built-in na default."
+  },
   "passkey.SCHEMA.objectClasses.stsPasskeyPolicy.what": {
     "en": "44bab556bd6240cc",
     "text": "Ang class ng serbisyong ito para sa passkey policy: kung paano kumikilos ang mga passkey sa realm na ito. Ang entry ay pinangangalanan ayon sa PROFILE (`cn=default`)."
@@ -1394,6 +1410,14 @@
   "passkey.SCHEMA.attributes.stsPasskeyDeviceBoundRequired.what": {
     "en": "5098a9645fefe2ff",
     "text": "NAKAPATAY BILANG DEFAULT. Kapag naka-on, ang pag-isyu sa isang application na sakop ng profile na ito ay naghihintay hanggang ang sign-on session ay ma-bind sa key ng browser, at tinatanggihan kapag nilaktawan ng browser ang pagrehistro na iyon o lumipas ang paghihintay nang walang binding. Ang session na hindi kailanman inalok ng pagrehistro ay hindi tinatanggihan ng hilera na ito. Tinatanggihan habang naka-off ang authn.deviceBoundSessions."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyCredProtect.what": {
+    "en": "64640106a92f3111",
+    "text": "`none` BILANG DEFAULT: walang hinihinging proteksyon ng kredensyal ang isang pagrehistro, at ang mga opsyon nito ay gaya ng dati. Kung hindi, hinihiling ng pagrehistro sa authenticator (CTAP 2.1 section 12.1, ang extension na credProtect) na protektahan ang bagong kredensyal sa antas na iyon: `userVerificationOptional` (antas 1, ang mayroon ang kredensyal kapag walang extension), `userVerificationOptionalWithCredentialIDList` (antas 2: hindi ibinubunyag o ginagamit ng key ang kredensyal nang walang user verification maliban kung pinangalanan ito ng relying party sa allowCredentials, kaya walang sinumang may hawak ng key ang makakahanap ng discoverable na kredensyal dito) o `userVerificationRequired` (antas 3: ginagamit lamang ng key ang kredensyal matapos ang PIN o biometric). Itinatala sa passkey ang antas na iniuulat ng key. Karamihan sa mga platform at naka-sync na passkey ay walang iniuulat. Kapag inalis sa isang pag-save, pinananatili ang built-in na default."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyEnforceCredProtect.what": {
+    "en": "52a07dbeabc876c9",
+    "text": "NAKA-OFF BILANG DEFAULT. Kapag naka-on, hinihiling sa browser na ipatupad ang hilera sa itaas (enforceCredentialProtectionPolicy), at tinatanggihan ang pagrehistro na ang authenticator ay nag-uulat ng mas mababang antas kaysa sa hinihingi ng hilera sa itaas; ang key na walang iniuulat ay nasa antas 1. Kailangang nakatakda ang hilera sa itaas sa antas na hindi none. Kapag inalis sa isang pag-save, pinananatili ang built-in na default."
   },
   "passkey.SCHEMA.attributes.stsPasskeyPrecedence.what": {
     "en": "cd02467de702ad24",

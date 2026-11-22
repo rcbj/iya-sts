@@ -46,11 +46,15 @@
 // OWNED HERE (local: true): this repository's own authorization server.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const tls = require("tls");
+const serviceTrust = require("../tools/service_trust.js");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const portalSignin = require("./portal_signin.js");
@@ -226,7 +230,7 @@ function pkce() {
 function atClient(r) {
   log.debug("Entering atClient().");
   if (!(r.status === 302 || r.status === 303) ||
-      String(r.location).indexOf(REDIRECT) !== 0) {
+      !urls.isAt(r.location, REDIRECT)) {
     log.debug("Leaving atClient(). Not at the client.");
     return null;
   }
@@ -257,7 +261,7 @@ async function follow(b, first, who, onConsent) {
       break;
     }
     const where = absolute(r.location);
-    if (where.indexOf(base) !== 0) {
+    if (!urls.isUnder(where, base)) {
       break;
     }
     if (/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(where) && who) {
@@ -312,7 +316,7 @@ function assertion(clientId, key, aud) {
 function paramsAt(r) {
   log.debug("Entering paramsAt().");
   if (!(r.status === 302 || r.status === 303) ||
-      String(r.location).indexOf(REDIRECT) !== 0) {
+      !urls.isAt(r.location, REDIRECT)) {
     log.debug("Leaving paramsAt(). Not at the client.");
     return null;
   }
@@ -370,14 +374,17 @@ function halfHash(value) {
 }
 
 // A TLS handshake with the main port, as `options` asks. Resolves with the
-// protocol and cipher, or the error.
+// protocol and cipher, or the error. VERIFIED against the service's chain
+// (tools/service_trust.js), and it REJECTS when this client refused the
+// server's certificate: a check here that a suite is refused must not pass
+// on a stale anchor refusing the handshake instead.
 function handshake(options) {
   log.debug("Entering handshake().");
   const url = new URL(base);
-  return new Promise(function (resolve) {
+  return new Promise(function (resolve, reject) {
     const socket = tls.connect(Object.assign({
       host: url.hostname, port: Number(url.port || 443),
-      servername: url.hostname, rejectUnauthorized: false
+      servername: url.hostname, ca: serviceTrust.trustedCa()
     }, options), function () {
       const answer = { ok: true, protocol: socket.getProtocol(),
                        cipher: socket.getCipher().name };
@@ -387,6 +394,12 @@ function handshake(options) {
     });
     socket.on("error", function (e) {
       log.debug("Leaving handshake(). " + e.message);
+      if (serviceTrust.isUntrusted(e)) {
+        reject(new Error("the server's certificate did not verify " +
+          "against the service's chain (" + e.code + ": " + e.message +
+          "); that is the anchor, not a refusal"));
+        return;
+      }
       resolve({ ok: false, error: e.message });
     });
   });

@@ -2739,11 +2739,46 @@ const SPECS: Spec[] = [
               '(webauthn.pqcAlongsideClassical): each lane has its own user ' +
               'handle (section 5.4.3), algorithm list and ' +
               'excludeCredentials, and the Signal API (section 5.1.10) is ' +
-              'sent once per lane. Missing: enterprise attestation ' +
-              '(section 5.4.7) has no RP ID allow-list, and the ' +
-              'authentication extensions are not processed. Written ' +
+              'sent once per lane. Enterprise attestation (section 5.4.7) ' +
+              'is asked only for the RP IDs ' +
+              'webauthn.attestationEnterpriseRpIds lists. The hints member ' +
+              '(section 5.4.8) is sent as the passkey policy says. ' +
+              'Extensions (section 10): credProps (10.1.3) is asked and its ' +
+              'rk recorded; CTAP 2.1\'s credProtect and minPinLength are ' +
+              'asked as the passkey policy says and their outputs read from ' +
+              'the authenticator data (see CTAP 2.1); appid (10.1.1) and ' +
+              'appidExclude (10.1.2) serve legacy FIDO U2F credentials an ' +
+              'administrator imported onto a person\'s entry, off until ' +
+              'webauthn.u2fAppIds names their AppID: an assertion\'s ' +
+              'rpIdHash is held to SHA-256 of the AppID only when the client ' +
+              'returned appid true, such a key answers a second-factor step ' +
+              'only, and a registration asks appidExclude so the same key ' +
+              'is not registered twice. Missing: the other registered ' +
+              'extensions (largeBlob, prf and the rest) are neither asked ' +
+              'for nor processed, and an AppID is used only at an RP ID ' +
+              'whose host it shares or is a suffix of — the FIDO AppID and ' +
+              'Facet Specification\'s TrustedFacets list is not fetched or ' +
+              'served here. Written ' +
               'independently of the debugger\'s own decoder so the two can ' +
               'be checked against each other (tests/webauthn_cross_impl.js).' },
+  // #1955 P7: the two CTAP 2.1 extensions a registration asks for.
+  { id: 'ctap21', name: 'Client to Authenticator Protocol (CTAP) 2.1',
+    where: 'FIDO Alliance',
+    url: 'https://fidoalliance.org/specs/fido-v2.1-ps-20210615/' +
+         'fido-client-to-authenticator-protocol-v2.1-ps-20210615.html',
+    coverage: 'minimal, the relying party\'s half of two extensions, since ' +
+              'this service is neither a client nor an authenticator: ' +
+              'credProtect (section 12.1) — the passkey policy\'s ' +
+              'credProtect asks for a level as credentialProtectionPolicy, ' +
+              'enforceCredProtect sends ' +
+              'enforceCredentialProtectionPolicy and ' +
+              'refuses a registration whose authenticator data reports a ' +
+              'lower level (none reported is level 1), and the level is ' +
+              'recorded on the passkey; and minPinLength (section 12.4), ' +
+              'asked while the passkey policy enforces a PIN length and held ' +
+              'to its minimum at registration and at sign-in. Nothing else ' +
+              'of CTAP: the authenticator API, the PIN protocols, large ' +
+              'blobs and credential management are the platform\'s.' },
   // #725: the sign-on session bound to a key the browser holds.
   { id: 'dbsc', name: 'Device Bound Session Credentials',
     where: 'W3C WebAppSec (Editor\'s Draft)',
@@ -3509,19 +3544,47 @@ const SPECS: Spec[] = [
               'the WebAuthn attestation statement are not implemented.' },
   // ===== EST specs (est/) =====
   { id: 'lamps-csr-attestation', name: 'Use of Remote Attestation with ' +
-      'Certification Signing Requests (draft-ietf-lamps-csr-attestation-29)',
+      'Certification Signing Requests (draft-ietf-lamps-csr-attestation-33)',
     where: 'IETF (draft)',
     url: 'https://datatracker.ietf.org/doc/draft-ietf-lamps-csr-attestation/',
     coverage: 'partial: the id-aa-attestation attribute of a PKCS#10 ' +
               'request (at most one, exactly one AttestationBundle, the ' +
-              'certificate and other choices only) for the device profile ' +
-              'over EST and SCEP; the one statement type verified is the ' +
-              'TCG\'s tcg-attest-tpm-certify in revision 20\'s appendix ' +
-              'A.2.3 syntax, which no later revision or TCG document ' +
-              'replaces (#257). The CRMF extension is not read (no CMP ' +
-              'here), and other statement types are recorded, not ' +
-              'verified. Freshness (section 6.2) through ' +
-              'draft-ietf-lamps-attestation-freshness over EST.' },
+              'certificate and other choices only), over EST, SCEP and ' +
+              'ACME. Two statement types are verified: the TCG\'s ' +
+              'tcg-attest-tpm-certify in revision 20\'s appendix A.2.3 ' +
+              'syntax, for the device profile (#257), and a YubiKey PIV ' +
+              'attestation for every profile (#1955), under ' +
+              '1.3.6.1.4.1.41482.3.2 with the slot certificate as stmt ' +
+              'and the f9 certificate in certs, a type this service ' +
+              'chose because the draft defines none. The CRMF extension ' +
+              'is not read (no CMP here), and other statement types are ' +
+              'recorded, not verified. Freshness (section 6.2) through ' +
+              'draft-ietf-lamps-attestation-freshness over EST, for TPM ' +
+              'statements only: a PIV attestation carries no nonce.' },
+  // ===== YubiKey PIV and FIPS 201 (#1955 P2, common/piv_attestation.ts) =====
+  { id: 'yubico-piv-attestation', name: 'YubiKey PIV Attestation (Yubico)',
+    where: 'Yubico',
+    url: 'https://developers.yubico.com/PIV/Introduction/' +
+         'PIV_attestation.html',
+    coverage: 'partial: the slot attestation certificate is verified ' +
+              'through the f9 attestation certificate to Yubico\'s PIV ' +
+              'roots (Serial 263751, and Attestation Root 1 with its PIV ' +
+              'intermediates for firmware 5.7.4 and later, shipped and ' +
+              'pinned) or a realm\'s own; its key held to the request\'s; ' +
+              'the firmware, serial, PIN and touch policy and form factor ' +
+              'extensions read, the policies held to the realm\'s. The ' +
+              'card itself is never managed: no PIN, PUK or slot write.' },
+  { id: 'fips201', name: 'Personal Identity Verification (PIV) of Federal ' +
+      'Employees and Contractors (FIPS 201-3) and SP 800-73-4',
+    where: 'NIST',
+    url: 'https://csrc.nist.gov/pubs/fips/201-3/final',
+    coverage: 'minimal: the four key slots as certificate profiles (PIV ' +
+              'Authentication 9a, Digital Signature 9c, Key Management ' +
+              '9d, Card Authentication 9e, which signs nobody in by ' +
+              'default), and an outside PIV or CAC card mapped by the card ' +
+              'UUID in its urn:uuid subjectAltName when it asserts a PIV ' +
+              'Authentication policy (off by default). No FASC-N, CHUID, ' +
+              'card management or biometrics.' },
   { id: 'lamps-attestation-freshness', name: 'Requesting a Freshness Nonce ' +
       'for Attestation Evidence in Certificate Signing Requests ' +
       '(draft-ietf-lamps-attestation-freshness-08)',
@@ -3616,6 +3679,40 @@ const SPECS: Spec[] = [
               'Missing: simple canonicalization, l= and verification of ' +
               'mail anybody else sent — this service receives none. DKIM ' +
               'has no post-quantum algorithm registered.' },
+  // #1955 P6: OpenPGP, PGP/MIME, S/MIME and the Web Key Directory.
+  { id: 'rfc9580', name: 'OpenPGP (RFC 9580)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9580',
+    coverage: 'partial: reading a transferable public key, v6 and (RFC ' +
+              '4880) v4, verifying a cleartext signature by a signing ' +
+              'key of it, and encrypting a message to its encryption key, ' +
+              'all through openpgp.js (common/crypto.js section 19). ' +
+              'Ed25519, Ed448, ECDSA and ECDH on the NIST curves, X25519, ' +
+              'X448 and RSA of openpgp.minRsaBits are accepted; DSA, ' +
+              'ElGamal and Brainpool are refused. Missing: signing, ' +
+              'decryption, a keyring, a keyserver.' },
+  { id: 'rfc3156', name: 'MIME Security with OpenPGP (RFC 3156)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc3156',
+    coverage: 'partial: multipart/encrypted with an application/' +
+              'pgp-encrypted version part and the armored message, the ' +
+              'real headers protected inside. Missing: multipart/signed — ' +
+              'this service signs mail with DKIM, not OpenPGP.' },
+  { id: 'rfc8551', name: 'S/MIME 4.0 Message Specification (RFC 8551)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc8551',
+    coverage: 'partial: application/pkcs7-mime enveloped-data, a CMS ' +
+              'EnvelopedData with AES-256-CBC content encryption and an ' +
+              'RSAES-OAEP (SHA-256) or ECDH key agreement recipient, to the ' +
+              'person\'s userSMIMECertificate. Missing: signed-data, ' +
+              'AuthEnvelopedData (AES-GCM), decryption.' },
+  { id: 'wkd', name: 'OpenPGP Web Key Directory ' +
+                     '(draft-koch-openpgp-webkey-service)',
+    where: 'IETF (Internet-Draft)',
+    url: 'https://datatracker.ietf.org/doc/draft-koch-openpgp-webkey-service/',
+    coverage: 'partial: the advanced and the direct lookup methods (the ' +
+              'z-base-32 SHA-1 of the lower-cased local part, the l ' +
+              'parameter) and the policy file, answered for people who ' +
+              'opted in, per realm and off by default. Missing: the Web Key ' +
+              'Service (submission-address, the submission protocol); CORS ' +
+              'is this service\'s allowlist rather than the draft\'s *.' },
   { id: 'rfc8463', name: 'A New Cryptographic Signature Method for DKIM ' +
                          '(RFC 8463)',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc8463',
@@ -4510,6 +4607,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'true of every certificate authority and is the reason a client ' +
           'author would point their stack here. Ungated, because everything ' +
           'in it is already inside every certificate this service hands out.' },
+  { path: '/pki/ssh-user-ca/:scope', group: 'PKI',
+    name: 'The realm OpenSSH user CA public key', specs: [],
+    what: 'NON-SPEC (#1955 P3): the realm-scoped OpenSSH user CA key, ' +
+          'published as an authorized-key line for SSH servers to trust. ' +
+          'Ungated and `no-store`; the corresponding CA private key never ' +
+          'leaves this service.' },
+  { path: '/pki/ssh-user-krl/:scope', group: 'PKI',
+    name: 'The realm OpenSSH user key revocation list', specs: [],
+    what: 'NON-SPEC (#1955 P3): the realm-scoped OpenSSH KRL, updated when ' +
+          'a caller revokes a certificate or reports a hardware token lost. ' +
+          'Ungated and `no-store`; SSH servers must be configured to consult ' +
+          'it because this service cannot make a relying party do so.' },
   { path: '/admin-api/xacml', group: 'XACML',
     name: 'The XACML console page over JSON', specs: ['xacml30'],
     what: 'What GET /admin/xacml draws, as data. Ungated, like the rest of ' +
@@ -4856,6 +4965,32 @@ const ENDPOINTS: EndpointEntry[] = [
           'already exists. A credential naming somebody with no entry — a ' +
           'client_credentials token, a client certificate — gets 404 ' +
           'instead.' },
+  // #1955 P6: THE WEB KEY DIRECTORY, the OpenPGP card's group.
+  { path: '/.well-known/openpgpkey/:domain/hu/:hash', group: 'OpenPGP',
+    name: 'Web Key Directory key (advanced method)', specs: ['wkd'],
+    what: 'draft-koch-openpgp-webkey-service section 3.1, the advanced ' +
+          'method, asked of openpgpkey.<domain>: the binary OpenPGP public ' +
+          'key of the person whose address hashes to :hash (z-base-32 of ' +
+          'the SHA-1 of the lower-cased local part, l= the local part), ' +
+          'application/octet-stream and Cache-Control: no-store. Only a ' +
+          'person who opted in on /portal/openpgp is answered, only where ' +
+          'the realm turned openpgp.wkd on and serves :domain; anything ' +
+          'else is 404. A path with no realm segment is answered by the ' +
+          'realm that serves the domain.' },
+  { path: '/.well-known/openpgpkey/:domain/policy', group: 'OpenPGP',
+    name: 'Web Key Directory policy (advanced method)', specs: ['wkd'],
+    what: 'The advanced method\'s policy file: empty, text/plain, 200 ' +
+          'where a realm serves :domain and 404 otherwise. Its presence is ' +
+          'what tells a client the directory exists; no Web Key Service ' +
+          'is offered, so there is no submission-address.' },
+  { path: '/.well-known/openpgpkey/hu/:hash', group: 'OpenPGP',
+    name: 'Web Key Directory key (direct method)', specs: ['wkd'],
+    what: 'The direct method: as the advanced one, the domain being the ' +
+          'host the request was made to.' },
+  { path: '/.well-known/openpgpkey/policy', group: 'OpenPGP',
+    name: 'Web Key Directory policy (direct method)', specs: ['wkd'],
+    what: 'The direct method\'s policy file, for the host the request was ' +
+          'made to.' },
   { path: '/.well-known/hoba/register', group: 'SCIM',
     name: 'Register a HOBA public key',
     specs: ['rfc7486'],
@@ -4890,7 +5025,7 @@ const ENDPOINTS: EndpointEntry[] = [
   // reason to know it is here is the certificate — one anchor covers both.
   { path: '/tls/sign-in', group: 'TLS', name: 'Sign in with a client ' +
       'certificate',
-    specs: ['rfc8446', 'rfc5280'],
+    specs: ['rfc8446', 'rfc5280', 'fips201'],
     what: 'A VERIFIED CLIENT CERTIFICATE BECOMES A SESSION (2026-09-05), on ' +
           'this port since 2026-09-16 — it was a side effect of reaching ' +
           'either deleted TLS listener, which meant loading a diagnostic ' +
@@ -5905,6 +6040,27 @@ const ENDPOINTS: EndpointEntry[] = [
           'a single-use address verification link to it; save-template and ' +
           'reset-template, with { template, lang, … }: this realm\'s wording ' +
           'of a message, checked when saved. The console\'s three forms.' },
+  // #1955 P6: Directory → OpenPGP keys.
+  { path: '/admin-api/openpgp', group: 'Management API',
+    name: 'OpenPGP keys', specs: ['openapi', 'rfc9580', 'wkd'],
+    what: 'NON-SPEC (#1955). What Directory → OpenPGP keys draws: with ' +
+          '?user=, that person\'s OpenPGP key, their outstanding ' +
+          'registration challenge, their Web Key Directory publication, ' +
+          'their S/MIME certificate and how their mail is encrypted; and ' +
+          'the realm\'s Web Key Directory switch and domains. Mirrors GET ' +
+          '/admin/openpgp.' },
+  { path: '/admin-api/openpgp/:action', group: 'Management API',
+    name: 'OpenPGP key actions',
+    specs: ['openapi', 'rfc9580', 'rfc3156', 'rfc8551', 'wkd'],
+    effect: 'issues a challenge, registers or removes an OpenPGP key, ' +
+            'publishes it, or sets a person\'s mail encryption or S/MIME ' +
+            'certificate',
+    what: 'NON-SPEC (#1955). challenge, register (publicKey, signed: the ' +
+          'person\'s challenge signed with gpg --clearsign), remove, ' +
+          'publish, withdraw, mail-encryption (choice) and smime ' +
+          '(certificate), each with { user }: what /portal/openpgp offers ' +
+          'the person, for them. A key is registered only on the ' +
+          'person\'s own proof.' },
   { path: '/admin-api/mail/outbox', group: 'Management API',
     name: 'Mail outbox', specs: ['openapi'],
     what: 'NON-SPEC (#63). What GET /admin/mail/outbox draws: every message ' +
@@ -6447,6 +6603,59 @@ const ENDPOINTS: EndpointEntry[] = [
           'create fails, so a caller that reads this first cannot be told ' +
           'afterwards that half of what it sent was ignored. Mirrors GET ' +
           '/admin/users/new.' },
+  { path: '/admin-api/groups/new', group: 'Management API',
+    name: 'New group form', specs: ['rfc4511', 'rfc4519'],
+    what: 'NON-SPEC. What a group may be created with, as JSON: each field ' +
+          'of the create and whether the create refuses without it — the ' +
+          'cn is required, the description, the address and the members ' +
+          'are not — plus the ou=groups container a new group would land ' +
+          'in, THIS REALM\'S. IT CREATES NOTHING: the create is POST ' +
+          '/admin-api/groups/create. Mirrors GET /admin/groups/new.' },
+  { path: '/admin-api/roles/new', group: 'Management API',
+    name: 'New role form', specs: ['rfc4511'],
+    what: 'NON-SPEC. What a role may be created with, as JSON: each field ' +
+          'of the create and whether the create refuses without it — the ' +
+          'name is required, the rest are not — plus the container roles ' +
+          'are stored in and the applications a role may be for. IT ' +
+          'CREATES NOTHING: the create is POST ' +
+          '/admin-api/roles/create-role. Mirrors GET /admin/roles/new.' },
+  { path: '/admin-api/devices/new', group: 'Management API',
+    name: 'New device form', specs: ['rfc4511'],
+    what: 'NON-SPEC. What a device may be registered with, as JSON: each ' +
+          'field of the create and whether the create refuses without it ' +
+          '— the owner is required, the rest are not — plus the closed ' +
+          'sets its choices come from. IT REGISTERS NOTHING: the create ' +
+          'is POST /admin-api/devices/create. Mirrors GET ' +
+          '/admin/devices/new.' },
+  { path: '/admin-api/attribute-sources/new', group: 'Management API',
+    name: 'New attribute source form', specs: ['rfc4511'],
+    what: 'NON-SPEC. What an attribute source may be added with, as JSON: ' +
+          'each field of the create and whether the create refuses without ' +
+          'it — the id, the host, the database, the user, the table, its ' +
+          'key column and at least one column mapping are required, the ' +
+          'rest have defaults — plus the closed sets its choices come ' +
+          'from. IT ADDS NOTHING: the create is POST ' +
+          '/admin-api/attribute-sources/add-source. Mirrors GET ' +
+          '/admin/attribute-sources/new.' },
+  { path: '/admin-api/secret-destinations/new', group: 'Management API',
+    name: 'New secret destination form', specs: ['rfc4511'],
+    what: 'NON-SPEC. What a secret push destination may be added with, as ' +
+          'JSON: each field of the create and whether the create refuses ' +
+          'without it — the identifier and the provider always, and some ' +
+          'only for some providers (requiredWhen): the write credential ' +
+          'for all but file, the region for aws, the endpoint for azure ' +
+          'and vault, the directory for file. IT ADDS NOTHING: the create ' +
+          'is POST /admin-api/secret-destinations/add-destination. Mirrors ' +
+          'GET /admin/secret-destinations/new.' },
+  { path: '/admin-api/policies/new', group: 'Management API',
+    name: 'New policy form', specs: ['rfc4511'],
+    what: 'NON-SPEC. The kinds a named policy may be made of and, for the ' +
+          'kind asked, each field of its save and whether the save ' +
+          'refuses without it — the name always, because a save with no ' +
+          'name changes the default policy, and each field whose value is ' +
+          'not kept when it is left out. IT SAVES NOTHING: a named policy ' +
+          'is the kind\'s save act under a name the realm does not hold ' +
+          'yet. Mirrors GET /admin/policies/new.' },
   { path: '/admin-api/applications/new', group: 'Management API',
     name: 'New application form', specs: ['rfc4511', 'rfc7591'],
     what: 'NON-SPEC. THE TWO CLOSED VOCABULARIES A CREATE TAKES, as JSON: ' +
@@ -6943,23 +7152,28 @@ const ENDPOINTS: EndpointEntry[] = [
           'or retired, paged and searched by serial or person. Never a ' +
           'secret. Mirrors GET /admin/hardware-tokens (its OATH tab).' },
   { path: '/admin-api/hardware-tokens/:action', group: 'Management API',
-    name: 'Report a hardware token lost, or import and assign OATH tokens',
-    specs: ['openapi', 'rfc6030'],
-    effect: 'reports a hardware token lost and retires its credentials, or ' +
-            'imports, assigns or removes OATH tokens',
+    name: 'Hardware token acts',
+    specs: ['openapi', 'rfc6030', 'yubico-piv-attestation',
+          'lamps-csr-attestation'],
+    effect: 'reports a hardware token lost and retires its credentials, ' +
+            'issues a PIV slot certificate, or hands over an escrowed key',
     what: 'NON-SPEC (#1955). lost, with { key }: the token is marked lost, ' +
           'each passkey on it removed, each certificate on it revoked for ' +
-          'keyCompromise, each imported OATH secret taken off its holder\'s ' +
-          'entry, a CAEP credential-change sent for each and the sessions ' +
-          'they signed in ended. Since P4 import-pskc, with { pskc, ' +
-          'preSharedKey or password }: an RFC 6030 seed file\'s HOTP and ' +
-          'TOTP keys kept unassigned by serial, the MAC checked first and ' +
-          'the key never stored; assign-oath, with { key, username }; and ' +
-          'remove-oath, with { key }, for an unassigned token. Since P5 ' +
-          'import-yubiotp, with { csv }; assign-yubiotp, with { serial, ' +
-          'username, otp }; remove-yubiotp, with { serial }; ' +
-          'ykval-client-add, with { id }, whose HMAC key is answered once; ' +
-          'and ykval-client-remove, with { id }.' },
+          'keyCompromise, a CAEP credential-change sent for each and the ' +
+          'sessions they signed in ended. enrol-piv, with { username, ' +
+          'profile, csr, attestationCertificate?, attestationIssuer? }: a ' +
+          'PIV slot certificate issued to that person over the EST Issuing ' +
+          'CA, its YubiKey PIV attestation verified and the YubiKey ' +
+          'recorded. recover-key, with { username, serial }: that person\'s ' +
+          'escrowed piv-key-management key, which the access-control ' +
+          'policy permits only to PIV_KEY_RECOVERY. The console\'s three ' +
+          'acts on that page.' },
+  { path: '/admin-api/hardware-tokens/escrowed', group: 'Management API',
+    name: 'Escrowed PIV keys', specs: ['openapi'],
+    what: 'NON-SPEC (#1955). A person\'s escrowed piv-key-management ' +
+          'certificates (piv.keyEscrow): serial, subject, validity and ' +
+          'whether each was revoked. Never a key. Mirrors GET ' +
+          '/admin/hardware-tokens.' },
   { path: '/admin-api/scim/clients', group: 'Management API',
     name: 'Outbound SCIM clients', specs: ['openapi', 'rfc7644'],
     what: 'NON-SPEC (#552). What Protocols → SCIM → Clients draws: the ' +
@@ -7008,6 +7222,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'becomes the XACML action-id, so a policy may permit an access ' +
           'token and refuse a refresh token. `available: false` means the ' +
           'engine is not loaded here. Mirrors the dry run on /admin/roles.' },
+  { path: '/admin-api/roles/eligibility', group: 'Management API',
+    name: 'Is this person eligible for this dynamic role?',
+    specs: ['openapi', 'xacml30'],
+    what: 'NON-SPEC (#1072). One dynamic selectable role\'s own XACML ' +
+          'eligibility policy decided by the PDP for one person, as a ' +
+          'sign-in to `application` would ask it, without a sign-in: ' +
+          'eligible or not, the code when not, the decision and status (a ' +
+          'missing attribute names itself there). Only Permit is eligible. ' +
+          'It writes nothing but the roles.eligibility audit row and never ' +
+          'shows the policy or the person\'s attributes. `role` and `user` ' +
+          'are both needed; with either missing it answers `answered: ' +
+          'false`. Mirrors the test on a dynamic role\'s /admin/roles page.' },
   { path: '/admin-api/roles/:action', group: 'Management API',
     name: 'Make and change roles',
     specs: ['openapi', 'xacml30'],
@@ -9163,6 +9389,26 @@ const ENDPOINTS: EndpointEntry[] = [
           'the HMAC-SHA1 are checked in every mode, including development; ' +
           'a nonce is remembered for five minutes; a matching OTP is ' +
           'spent. Cache-Control: no-store. Nothing is sent to YubiCloud.' },
+  { path: '/authn/roles', group: 'Authentication',
+    name: 'Dynamic role step',
+    specs: ['xacml30', 'oidc'],
+    effect: 'asks which dynamic selectable roles to use for this sign-in, ' +
+            'then establishes the sign-on session it held with the choice',
+    what: 'DYNAMIC SELECTABLE ROLES (#1072). After every factor, a sign-in ' +
+          'to an application whose realm defines a dynamic role (and where ' +
+          'roles.dynamicSelection or the application\'s ' +
+          'appDynamicRoleSelection does not turn it off) is HELD while each ' +
+          'dynamic role\'s own XACML eligibility policy is decided for the ' +
+          'person — only Permit offers a role. Where the person ticked ' +
+          '"Choose roles for this sign-in" on the sign-in screen, or a ' +
+          'required role is offered, this page lists what may be chosen; ' +
+          'Continue (/authn-api/mfa/{id}/roles) holds the choice to the ' +
+          'step\'s own offer and to the policies again, and starts the ' +
+          'session with it on the session record — never in the directory. ' +
+          'A token for that application then carries the chosen roles, ' +
+          'each asked of its policy again at every issuance. Needs an ?mfa= ' +
+          'id minted by the held sign-in, so following it bare answers 400.'
+  },
   { path: '/authn/totp', group: 'Authentication',
     name: 'One-time code second-factor step',
     specs: ['rfc6238', 'rfc4226', 'oidc'],
@@ -9390,6 +9636,11 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Put a post-login activity off', specs: [],
     what: 'NON-SPEC (#1096). For the profile\'s snoozeDays; refused once ' +
           'the allotted time has passed. The held session starts.' },
+  { path: '/authn-api/mfa/:id/roles', group: 'Authentication',
+    name: 'Choose the dynamic roles for this sign-in', specs: [],
+    what: 'NON-SPEC (#1072). The role step\'s choice, held to the step\'s ' +
+          'own offer and each role\'s eligibility policy now; the held ' +
+          'session starts with it.' },
   { path: '/authn-api/mfa/:id/email/send', group: 'Authentication',
     name: 'Mail a sign-in code or link', specs: [],
     what: 'NON-SPEC (#573). To the verified address only; a resend ' +
@@ -10602,6 +10853,19 @@ const PROTOCOLS: Protocol[] = [
           '/account-api, the Account API group below: an operation per page ' +
           'and per form, the person always the token\'s subject, described ' +
           'by its own OpenAPI document.' },
+  { name: 'OpenPGP', groups: ['OpenPGP'],
+    specs: ['rfc9580', 'rfc3156', 'rfc8551', 'wkd'],
+    what: 'A person\'s OpenPGP key (#1955), registered on the portal or by ' +
+          'an administrator on a proof of possession — the person signs a ' +
+          'challenge with gpg --clearsign, on a YubiKey\'s OpenPGP card ' +
+          'the card signs — and held on their entry; published, if they ' +
+          'choose and the realm turned it on, in the Web Key Directory; ' +
+          'and the key their mail is encrypted to (PGP/MIME), or their ' +
+          'S/MIME certificate is (S/MIME), as they chose. A realm can ' +
+          'require encryption for chosen messages (mail.encryptionRequired), ' +
+          'which are then never sent in the clear. Nothing is recorded as ' +
+          'hardware-bound: the server cannot see a card. There is no ' +
+          'sign-in with OpenPGP.' },
   { name: 'Reporting', groups: ['Reporting'],
     specs: [],
     notAProtocol: true,
@@ -10846,7 +11110,7 @@ const PROTOCOLS: Protocol[] = [
   // ===== ACME card (acme/) =====
   { name: 'ACME', groups: ['ACME'],
     specs: ['rfc8555', 'rfc9773', 'rfc8738', 'rfc8823', 'acme-profiles',
-            'acme-device-attest'],
+            'acme-device-attest', 'lamps-csr-attestation'],
     what: 'An ACME server per trust realm at /enroll/acme: an account bound ' +
           'for life to one person or application by an External Account ' +
           'Binding key, orders for dns, ip, email and permanent-identifier ' +
@@ -10857,7 +11121,8 @@ const PROTOCOLS: Protocol[] = [
   // ===== EST card (est/) =====
   { name: 'EST', groups: ['EST'],
     specs: ['rfc7030', 'rfc8951', 'rfc5967', 'lamps-csr-attestation',
-            'lamps-attestation-freshness'],
+            'lamps-attestation-freshness', 'yubico-piv-attestation',
+            'fips201'],
     what: 'Enrollment over Secure Transport: a device or a person holding a ' +
           'password, a client secret or a certificate this realm issued sends ' +
           'a base64 PKCS#10 request and is handed a certificate from the ' +
@@ -10868,7 +11133,7 @@ const PROTOCOLS: Protocol[] = [
           'Full CMC and tls-unique channel binding are not implemented.' },
   // ===== SCEP card (scep/) =====
   { name: 'SCEP', groups: ['SCEP'],
-    specs: ['rfc8894', 'rfc5280', 'rfc6960'],
+    specs: ['rfc8894', 'rfc5280', 'rfc6960', 'lamps-csr-attestation'],
     what: 'The Simple Certificate Enrolment Protocol: a device holding a ' +
           'single-use challenge password issued for one person or ' +
           'application and one profile sends a signed, encrypted PKCS#10 ' +
@@ -10904,7 +11169,8 @@ const PROTOCOLS: Protocol[] = [
              'were deleted and a client certificate is presented to the main ' +
              'port, which every row here is on. LDAPS 636 shares the ' +
              'certificate and is under LDAP.' },
-  { name: 'WebAuthn / CTAP', groups: ['Authentication'], specs: ['webauthn'],
+  { name: 'WebAuthn / CTAP', groups: ['Authentication'],
+    specs: ['webauthn', 'ctap21'],
     what: 'A second factor on the sign-in screen every protocol here sends a ' +
           'person to: registration and assertion ceremonies against a real ' +
           'security key, with the attestation and the authenticator data ' +

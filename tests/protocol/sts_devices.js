@@ -114,6 +114,9 @@
 // OWNED HERE (local: true): this repository's register and management API.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
@@ -1416,7 +1419,7 @@ async function test() {
   const sentBack = /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(hopped.location);
   const back = sentBack ? await signInAt(rp, hopped.location) : "";
   hopped = back ? await rp.go("GET", back) : hopped;
-  const answered = hopped.location.indexOf(REDIRECT) === 0
+  const answered = urls.isAt(hopped.location, REDIRECT)
     ? new URL(hopped.location).searchParams : null;
   check("a session with no compliant device is sent to sign in again, and " +
         "then refused unmet_authentication_requirements", function () {

@@ -5286,6 +5286,16 @@ function realmSupport() {
             'realm as well as the SP digest. The SERVICE PROVIDER ENTRIES ' +
             'are per realm, for the reason the OAuth clients are: they are ' +
             'applications in the realm\'s own directory.' },
+    { family: 'OpenPGP and the Web Key Directory', state: 'full',
+      by: 'path',
+      cards: ['OpenPGP'],
+      note: 'A person\'s OpenPGP key is on their entry in the realm\'s own ' +
+            'directory, its registration challenge is the realm\'s, and ' +
+            'the Web Key Directory answers for the realm\'s own mail ' +
+            'domains (openpgp.wkdDomains, or its DNS domain) with keys of ' +
+            'its own people. A WKD client knows a domain and never a realm ' +
+            'path, so a request with no realm segment is answered by the ' +
+            'realm that serves its domain, the default realm first.' },
     { family: 'WS-Trust', state: 'full', by: 'path',
       cards: ['WS-Trust'],
       note: 'Its own token issuer and signing key.' },

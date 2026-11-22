@@ -505,17 +505,29 @@ async function partG(t) {
   const postgres = require('../persistence/persistence_postgres');
   const dbName = 'report_staging_' + process.pid;
   // The driver never dials in the clear (#273), so the database named must
-  // speak TLS; its certificate is not verified here (`verifyTls: false`),
-  // as a throwaway server's self-signed one could not be.
-  const tls = { rejectUnauthorized: false };
-  const admin = knexStore.openConnection({ connectionString: url,
-    ssl: tls });
+  // speak TLS — and it is VERIFIED, the chain and the host name, by the
+  // driver's own reading of a connection string (`dialOptions()`), against
+  // the CA file STS_TEST_POSTGRES_CA names (`tests/bulk_import.js`'s
+  // variable) or, with none, node's default store and NODE_EXTRA_CA_CERTS.
+  // A throwaway server's self-signed certificate is named there;
+  // `sslmode=verify-ca` in the URL leaves the host name out, as libpq's
+  // does.
+  const caFile = process.env.STS_TEST_POSTGRES_CA || '';
+  const tlsCa = caFile ? fs.readFileSync(caFile, 'utf8') : '';
+  const dial = postgres.dialOptions(url, true, tlsCa);
+  if (dial.refused) {
+    throw new Error('STS_TEST_POSTGRES_URL is not dialled: ' + dial.refused);
+  }
+  const admin = knexStore.openConnection({
+    connectionString: dial.connectionString, ssl: dial.ssl });
   await admin.connect();
   const dbUrl = url.replace(/\/[^/?]*(\?|$)/, '/' + dbName + '$1');
+  const dbDial = postgres.dialOptions(dbUrl, true, tlsCa);
   let driver = null;
   try {
     await admin.query('CREATE DATABASE ' + dbName);
-    driver = postgres.create({ url: dbUrl, log: log, verifyTls: false });
+    driver = postgres.create({ url: dbUrl, log: log, verifyTls: true,
+                               tlsCa: tlsCa });
     await driver.open();
     stores.setDriver(driver, 'postgres');
     const capped = Limits.fixed({ asyncMaxBytes: 8 * PIECE });
@@ -526,8 +538,8 @@ async function partG(t) {
     await stores.putArtifactFile('job-pg', done.file, done.sha256,
       'text/csv');
     await done.file.remove();
-    const db = knexStore.openConnection({ connectionString: dbUrl,
-      ssl: tls });
+    const db = knexStore.openConnection({
+      connectionString: dbDial.connectionString, ssl: dbDial.ssl });
     await db.connect();
     try {
       const counted = await db.query('SELECT count(*)::int AS n, ' +

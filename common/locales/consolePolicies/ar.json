@@ -230,5 +230,7 @@
   "transfer.view.trustedHeading": "نطاقات الثقة الأخرى التي يثق بها نطاق الثقة هذا",
   "transfer.view.noneTrusted": "لا يثق نطاق الثقة هذا بتصديرات سياسات أي نطاق ثقة آخر.",
   "transfer.view.kind": "النوع",
-  "transfer.view.addedBy": "أضافه"
+  "transfer.view.addedBy": "أضافه",
+  "newPolicy.button": "سياسة جديدة",
+  "newPolicy.choose": "اختر نوع السياسة المراد إنشاؤها."
 }

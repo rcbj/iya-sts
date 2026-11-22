@@ -1429,6 +1429,7 @@ class ConsoleRuntime extends SpaClient {
     this.wireOrderedChoices();
     this.wireCheckAll();
     this.wireChoicePanels();
+    this.wireConditionalRequirements();
     this.loadPageScripts();
     this.revealActiveNav();
   }
@@ -2583,7 +2584,9 @@ class ConsoleRuntime extends SpaClient {
         allowCredentials: [{ type: 'public-key',
           id: WebWebAuthn.bytes(proof.allow) }],
         userVerification: (proof.options && proof.options.userVerification) ||
-                          'preferred' } });
+                          'preferred',
+        // The legacy U2F appid (#1955 P7), where the server asks it.
+        extensions: WebWebAuthn.requestExtensions(proof.options) } });
       if (!asserted) { throw new Error('The passkey did not answer.'); }
       const proved = await this.apiJson('POST',
         '/admin-api/users/prove-passkey-upgrade', {
@@ -2606,12 +2609,9 @@ class ConsoleRuntime extends SpaClient {
       options.excludeCredentials = (registration.exclude || []).map(
         function (id) { return { type: 'public-key',
           id: WebWebAuthn.bytes(id) }; });
-      options.extensions = (options.credProps || options.minPinLength)
-        ? Object.assign(options.credProps ? { credProps: true } : {},
-                        options.minPinLength ? { minPinLength: true } : {})
-        : undefined;
-      delete options.credProps;
-      delete options.minPinLength;
+      // The extensions the server asks for (#1955 P7: one copy).
+      options.extensions = WebWebAuthn.creationExtensions(options);
+      WebWebAuthn.dropFlatExtensions(options);
       const made = await this.env.navigator.credentials.create({
         publicKey: options });
       if (!made) { throw new Error('The authenticator refused registration.'); }
@@ -2683,12 +2683,9 @@ class ConsoleRuntime extends SpaClient {
       publicKey.excludeCredentials = (ceremony.exclude || []).map(function (id) {
         return { type: 'public-key', id: WebWebAuthn.bytes(id) };
       });
-      publicKey.extensions = (publicKey.credProps || publicKey.minPinLength)
-        ? Object.assign(publicKey.credProps ? { credProps: true } : {},
-                        publicKey.minPinLength ? { minPinLength: true } : {})
-        : undefined;
-      delete publicKey.credProps;
-      delete publicKey.minPinLength;
+      // The extensions the server asks for (#1955 P7: one copy).
+      publicKey.extensions = WebWebAuthn.creationExtensions(publicKey);
+      WebWebAuthn.dropFlatExtensions(publicKey);
       const made = await this.env.navigator.credentials.create({
         publicKey: publicKey });
       if (!made) {
@@ -3447,6 +3444,64 @@ class ConsoleRuntime extends SpaClient {
         ConsoleRuntime.realmLinks(
         WebShell.accountItems(this.accounts, this.subject, this.t),
         this.prefix));
+    }
+  }
+
+  /**
+   * Outlines and enforces fields required only for a selected choice.
+   *
+   * @returns nothing
+   */
+  wireConditionalRequirements(): void {
+    const doc = this.env.document;
+    const forms = doc && doc.querySelectorAll
+      ? doc.querySelectorAll('form') : [];
+    for (let i = 0; i < forms.length; i++) {
+      const form = forms[i];
+      const cells = form.querySelectorAll(
+        '[data-required-when-field]');
+      if (!cells.length) {
+        continue;
+      }
+      const controllers: Json[] = [];
+      const refresh = function (): void {
+        for (let j = 0; j < cells.length; j++) {
+          const cell = cells[j];
+          const name = String(cell.getAttribute(
+            'data-required-when-field') || '');
+          const controller = form.elements.namedItem(name);
+          const value = controller ? String(controller.value || '') : '';
+          const values = String(cell.getAttribute(
+            'data-required-when-values') || '').split(/\s+/);
+          const controls = cell.querySelectorAll('input,select,textarea');
+          const checkboxesOnly = controls.length > 0 &&
+            Array.prototype.every.call(controls, function (control) {
+              return String(control.type || '').toLowerCase() === 'checkbox';
+            });
+          const required = values.indexOf(value) >= 0 && !checkboxesOnly;
+          if (required) {
+            cell.classList.add('fg-required');
+          } else {
+            cell.classList.remove('fg-required');
+          }
+          for (let k = 0; k < controls.length; k++) {
+            if (String(controls[k].type || '').toLowerCase() !==
+                'checkbox') {
+              controls[k].required = required;
+            }
+          }
+        }
+      };
+      for (let j = 0; j < cells.length; j++) {
+        const name = String(cells[j].getAttribute(
+          'data-required-when-field') || '');
+        const controller = form.elements.namedItem(name);
+        if (controller && controllers.indexOf(controller) < 0) {
+          controllers.push(controller);
+          controller.addEventListener('change', refresh);
+        }
+      }
+      refresh();
     }
   }
 

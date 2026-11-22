@@ -42,6 +42,7 @@
   "title.device-registration": "裝置註冊",
   "title.devices": "裝置",
   "title.hardware-tokens": "硬體權杖",
+  "title.openpgp": "OpenPGP 金鑰",
   "title.devices-monitor": "裝置（監控）",
   "title.service-accounts": "服務帳戶",
   "title.encryption": "加密",
@@ -148,5 +149,11 @@
   "title.worker-pools": "工作者集區",
   "title.broadcast": "廣播公告",
   "title.sign-in-appearance": "登入外觀",
-  "title.post-login-activities": "登入後活動"
+  "title.post-login-activities": "登入後活動",
+  "title.groups-new": "新增群組",
+  "title.roles-new": "新增角色",
+  "title.devices-new": "註冊裝置",
+  "title.attribute-sources-new": "新增屬性來源",
+  "title.secret-destinations-new": "新增密鑰推送目標",
+  "title.policies-new": "新增原則"
 }

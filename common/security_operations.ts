@@ -365,9 +365,13 @@ class SecurityOperations {
       // A HARDWARE TOKEN REPORTED LOST (#1955) clears its holder's
       // factors, so it is a holder change as `/admin/mfa`'s are. The holder
       // is the register's, never the body's.
+      // A PIV certificate enrolled for, or an escrowed key recovered of, a
+      // person (#1955 P2) is a holder change too, as `/admin/pki`'s person
+      // target is: the person the body names.
       case '/admin/hardware-tokens':
-        answer = SecurityOperations.holderChange(
-          SecurityOperations.tokenHolder(String(body.key || '')), hooks);
+        answer = SecurityOperations.holderChange(body.key
+          ? SecurityOperations.tokenHolder(String(body.key || ''))
+          : String(body.username || ''), hooks);
         break;
       case '/admin/pki':
         answer = String(body.target || '').trim() === 'person'

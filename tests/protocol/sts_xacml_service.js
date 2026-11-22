@@ -47,6 +47,7 @@ const assert = require("assert");
 const https = require("https");
 const K = require("./oauth_wire_kit.js").kit("sts_xacml_service");
 const credentials = require("../tools/pep-credential.js");
+const serviceTrust = require("../tools/service_trust.js");
 
 const log = K.log;
 const check = K.check;
@@ -145,7 +146,7 @@ function pdp(payload) {
       : JSON.stringify(payload);
     const request = https.request({
       host: target.hostname, port: target.port || 443,
-      path: target.pathname, method: "POST", rejectUnauthorized: false,
+      path: target.pathname, method: "POST", ca: serviceTrust.trustedCa(),
       cert: user.certPem, key: user.keyPem,
       headers: { "Content-Type": "application/json",
                  "Content-Length": Buffer.byteLength(data) }

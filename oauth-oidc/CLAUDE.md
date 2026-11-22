@@ -3243,6 +3243,13 @@ application, always, and the actor named in the `actor_token` is the identity,
 which only a delegation has. An impersonation therefore draws a chain whose
 middle is an application and nobody, which is exactly what happened.
 
+When `authzen.externalPdp` is on, the non-Kerberos branch asks the external
+AuthZEN PDP after that local decision and the local scope narrowing, and
+before `issue()` (`authzen/authzen_external_pdp.ts`, #1200). The PDP may
+only narrow the scope and the access-token lifetime. A Kerberos
+`requested_token_type` is outside the binding and is not sent.
+`authzen/CLAUDE.md` argues it.
+
 **THE TARGET IS RESOLVED THROUGH THE APPLICATIONS REGISTRY, and it is the one
 place in this service that reads `oauthAudience`.** An `audience` names a
 RESOURCE — `https://esb1.example.com` — and that registry is keyed by the
@@ -5174,11 +5181,14 @@ presented.
   any node. The `oauth2.device-code-sweep` job removes what has expired.
 * **The endpoint** (`deviceAuthorizationRequest()`) authenticates the client
   through `authenticateEndpointCaller()`, as PAR and CIBA do, requires the
-  grant to be registered and asks the scope policy. An optional DPoP proof
-  binds the device code to its key.
+  grant to be registered and asks the scope policy. It accepts RFC 8707
+  `resource` indicators, validates their audiences before minting the code,
+  and carries the authorized resources through approval to the access token.
+  An optional DPoP proof binds the device code to its key.
 * **The portal page's two protections are RFC 8628 section 5's.** A code
-  only ever brings the request up — the client, the scopes and a sentence
-  about phishing — and approving is a second POST (section 5.4). A session
+  only ever brings the request up — the client, scopes, resource indicators
+  and a sentence about phishing — and approving is a second POST (section
+  5.4). A session
   that types five codes that match nothing is refused for ten minutes
   (section 5.1). The count is per process and capped at the insert.
 * **Key Binding** is in `oauth2.ts`, in every mode:

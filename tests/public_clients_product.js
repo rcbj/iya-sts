@@ -58,6 +58,9 @@ const ROOT = path.join(__dirname, '..');
 function childMain() {
   /* eslint-disable no-console */
   const ROOT = process.env.PCP_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT + '/tests/protocol/url_match.js');
   const OUT = process.env.PCP_OUT;
   const http = require('http');
   const crypto = require('crypto');
@@ -194,7 +197,7 @@ function childMain() {
     };
     const codeOf = function (r) {
       const loc = String((r && r.headers && r.headers.location) || '');
-      if (!r || r.status !== 302 || loc.indexOf(REDIRECT) !== 0) {
+      if (!r || r.status !== 302 || !urls.isAt(loc, REDIRECT)) {
         return null;
       }
       return new URL(loc).searchParams.get('code');

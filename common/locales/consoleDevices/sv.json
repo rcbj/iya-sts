@@ -187,5 +187,8 @@
   "monitorHtml.thRegistered": "Registrerade",
   "monitorHtml.thRemoved": "Borttagna",
   "monitorHtml.thEvicted": "Utträngda",
-  "monitorHtml.thCompliance": "Efterlevnad: {source}"
+  "monitorHtml.thCompliance": "Efterlevnad: {source}",
+  "newDevice.button": "Registrera en enhet",
+  "newDevice.key": "Första nyckel",
+  "newDevice.keyHint": "sparas bara tillsammans med sin typ"
 }

@@ -1287,6 +1287,22 @@
     "en": "5098a9645fefe2ff",
     "text": "AV SOM STANDARD. På väntar en utfärdning till en tillämpning som den här profilen täcker tills inloggningssessionen är bunden till webbläsarens nyckel, och nekas när webbläsaren hoppade över den registreringen eller väntan löpte ut utan en bindning. En session som aldrig erbjöds registrering nekas inte av den här raden. Nekas medan authn.deviceBoundSessions är av."
   },
+  "passkey.FIELDS.credProtect.label": {
+    "en": "9a492f70e0e2aedd",
+    "text": "Skydd av autentiseringsuppgiften som en registrering begär av en säkerhetsnyckel"
+  },
+  "passkey.FIELDS.credProtect.what": {
+    "en": "64640106a92f3111",
+    "text": "`none` SOM STANDARD: en registrering begär inget skydd av autentiseringsuppgiften, och dess alternativ är vad de alltid har varit. Annars ber en registrering autentiseraren (CTAP 2.1 avsnitt 12.1, tillägget credProtect) att skydda den nya autentiseringsuppgiften på den nivån: `userVerificationOptional` (nivå 1, vad en autentiseringsuppgift har utan tillägget), `userVerificationOptionalWithCredentialIDList` (nivå 2: nyckeln varken avslöjar eller använder autentiseringsuppgiften utan användarverifiering om inte förlitande part nämner den i allowCredentials, så ingen som håller nyckeln kan hitta en upptäckbar autentiseringsuppgift på den) eller `userVerificationRequired` (nivå 3: nyckeln använder autentiseringsuppgiften bara efter en PIN-kod eller biometri). Nivån nyckeln rapporterar registreras på nyckeln. De flesta plattforms- och synkroniserade passkeys rapporterar ingenting. Utelämnad vid en sparning behålls den inbyggda standarden."
+  },
+  "passkey.FIELDS.enforceCredProtect.label": {
+    "en": "5cc78bfe52150545",
+    "text": "Avvisa en nyckel som inte tillämpar det skyddet"
+  },
+  "passkey.FIELDS.enforceCredProtect.what": {
+    "en": "52a07dbeabc876c9",
+    "text": "AV SOM STANDARD. På ombeds webbläsaren att genomdriva raden ovan (enforceCredentialProtectionPolicy), och en registrering vars autentiserare rapporterar en lägre nivå än raden ovan begär avvisas; en nyckel som inte rapporterar något är på nivå 1. Kräver att raden ovan är satt till en annan nivå än none. Utelämnad vid en sparning behålls den inbyggda standarden."
+  },
   "passkey.SCHEMA.objectClasses.stsPasskeyPolicy.what": {
     "en": "44bab556bd6240cc",
     "text": "Den här tjänstens klass för en nyckelpolicy: hur nycklar beter sig i den här sfären. Posten namnges efter PROFILEN (`cn=default`)."
@@ -1394,6 +1410,14 @@
   "passkey.SCHEMA.attributes.stsPasskeyDeviceBoundRequired.what": {
     "en": "5098a9645fefe2ff",
     "text": "AV SOM STANDARD. På väntar en utfärdning till en tillämpning som den här profilen täcker tills inloggningssessionen är bunden till webbläsarens nyckel, och nekas när webbläsaren hoppade över den registreringen eller väntan löpte ut utan en bindning. En session som aldrig erbjöds registrering nekas inte av den här raden. Nekas medan authn.deviceBoundSessions är av."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyCredProtect.what": {
+    "en": "64640106a92f3111",
+    "text": "`none` SOM STANDARD: en registrering begär inget skydd av autentiseringsuppgiften, och dess alternativ är vad de alltid har varit. Annars ber en registrering autentiseraren (CTAP 2.1 avsnitt 12.1, tillägget credProtect) att skydda den nya autentiseringsuppgiften på den nivån: `userVerificationOptional` (nivå 1, vad en autentiseringsuppgift har utan tillägget), `userVerificationOptionalWithCredentialIDList` (nivå 2: nyckeln varken avslöjar eller använder autentiseringsuppgiften utan användarverifiering om inte förlitande part nämner den i allowCredentials, så ingen som håller nyckeln kan hitta en upptäckbar autentiseringsuppgift på den) eller `userVerificationRequired` (nivå 3: nyckeln använder autentiseringsuppgiften bara efter en PIN-kod eller biometri). Nivån nyckeln rapporterar registreras på nyckeln. De flesta plattforms- och synkroniserade passkeys rapporterar ingenting. Utelämnad vid en sparning behålls den inbyggda standarden."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyEnforceCredProtect.what": {
+    "en": "52a07dbeabc876c9",
+    "text": "AV SOM STANDARD. På ombeds webbläsaren att genomdriva raden ovan (enforceCredentialProtectionPolicy), och en registrering vars autentiserare rapporterar en lägre nivå än raden ovan begär avvisas; en nyckel som inte rapporterar något är på nivå 1. Kräver att raden ovan är satt till en annan nivå än none. Utelämnad vid en sparning behålls den inbyggda standarden."
   },
   "passkey.SCHEMA.attributes.stsPasskeyPrecedence.what": {
     "en": "cd02467de702ad24",

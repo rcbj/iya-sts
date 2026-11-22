@@ -174,8 +174,11 @@ class Companion {
     const social = new SocialIdps({ publicUrl: settings.publicUrl });
     this.social = social;
     // #1760: the remote PEP's upstream application, dispatched by prefix.
+    // It dials only the service's two configured origins, and never with
+    // verification off: `insecure` is the demonstrations' switch, not its.
     this.pepApp = new pepApp.PepApp({ caFile: settings.caFile,
-                                      insecure: settings.insecure });
+                                      origins: [settings.stsUrl,
+                                                settings.stsPublicUrl] });
     // THE DEMONSTRATIONS. oid4vc stays first: /healthz's demos[0] is it.
     this.demos = [oid4vc, kerberos, social, this.pepApp];
     const router = {
@@ -261,8 +264,12 @@ class Companion {
                   pepApp.rawPathOf(req.url) + " failed: " +
                   ((e && e.stack) || e));
         if (!res.headersSent) {
+          // Fixed: the error and its stack are in the line above, and an
+          // answer carries nothing an exception said (CodeQL
+          // js/stack-trace-exposure).
           util.sendJson(res, 500, { app: "pep-app",
-                                    error: String((e && e.message) || e) });
+                                    error: "the application failed; the " +
+                                           "companion's log says why" });
         }
       }
       log.debug("Leaving Companion.handle(). pep-app.");

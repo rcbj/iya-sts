@@ -43,12 +43,18 @@
 
 const https = require('https');
 const http = require('http');
+const trust = require('./trust.js');
 
 const log = require('bunyan').createLogger({ name: 'scheduler-takeover',
   level: process.env.LOG_LEVEL || 'info' });
 
-function request(url, options, body) {
+async function request(url, options, body) {
   log.debug('Entering request().');
+  // VERIFIED (2026-11-20): the launcher runs this in the service image with
+  // no bundle, so the anchor is the service Root the balancer's revocation
+  // port publishes, which every node's leaf chains to (tools/trust.js's
+  // anchorsFor(), as tools/admin-api-token.js has it).
+  const ca = await trust.anchorsFor(url);
   log.debug('Leaving request().');
   return new Promise(function (resolve, reject) {
     const u = new URL(url);
@@ -59,9 +65,7 @@ function request(url, options, body) {
       // A new connection per request, so the balancer really picks a node
       // each time — the same reason tools/fresh-connections.js exists.
       agent: false,
-      // The run's own anchor is not this tool's to hold; nothing it reads is
-      // a secret, and the token it sends is already the run's.
-      rejectUnauthorized: false
+      ca: ca
     }, options || {});
     opts.headers = Object.assign({
       authorization: 'Bearer ' + (process.env.STS_ADMIN_API_TOKEN || '')

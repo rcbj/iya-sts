@@ -291,8 +291,11 @@ services:
       - STS_BAO_TLS_IPS=127.0.0.1
     volumes:
       - sts-mariadb-tls:/mariadb-tls
+      # THE CERTIFICATE ALONE, for the runner (2026-11-20): the key stays
+      # in `sts-mariadb-tls`, as `sts-db-ca` keeps postgres's key out.
+      - sts-mariadb-ca:/mariadb-ca
       - ./openbao/generate-tls.js:/usr/src/sts/openbao/generate-tls.js:ro
-    command: ["node", "openbao/generate-tls.js"]
+    command: ["sh", "-c", "node openbao/generate-tls.js && cp /mariadb-tls/tls/server.crt /mariadb-ca/server.crt && chmod 644 /mariadb-ca/server.crt"]
 
   mariadb:
     container_name: ${STS_TEST_MARIADB_CONTAINER_NAME:-sts-mariadb-docker-tests}
@@ -890,12 +893,12 @@ services:
     tmpfs:
       - /run/sts-startup:mode=0700,uid=10001,gid=10001
     healthcheck:
-      # The scheme follows the mode in this service — oauth2.rfc9700 derives
-      # global.https — so the probe decides which module to use the same way
-      # config.js does rather than assuming http. `rejectUnauthorized: false`
-      # because the certificate is regenerated on every start and nothing can
-      # have an anchor for it: liveness is this check's question, not trust.
-      test: ["CMD-SHELL", "node -e \"var tls=process.env.STS_HTTPS==='true'||(process.env.STS_HTTPS===undefined&&(process.env.STS_OAUTH2_RFC9700==='true'||process.env.STS_OAUTH2_OAUTH21==='true'));var m=tls?require('https'):require('http');m.get({host:'localhost',port:8081,path:'/healthcheck',rejectUnauthorized:false},function(r){process.exit(r.statusCode===200?0:1)}).on('error',function(){process.exit(1)})\""]
+      # common/healthcheck_probe.js (2026-11-20): the scheme decided as
+      # config.js derives global.https, and over TLS the certificate VERIFIED
+      # against the Root the service publishes on its loopback revocation
+      # listener (8082), chain and name — a listener presenting a chain that
+      # does not reach it is unhealthy. Its header argues the anchors.
+      test: ["CMD", "node", "/usr/src/sts/common/healthcheck_probe.js"]
       interval: 5s
       timeout: 5s
       retries: 24
@@ -1689,6 +1692,9 @@ services:
       # half instead of dialling the default. The stack sets it in every
       # mode, memory included.
       - STS_TEST_ATTRIBUTE_MYSQL_URL=${STS_TEST_ATTRIBUTE_MYSQL_URL-mysql://root:sts@mariadb:3306/sts}
+      # And the certificate that server presents, which the job's own
+      # connection is verified against (`sts-mariadb-ca`, mounted below).
+      - STS_TEST_ATTRIBUTE_MYSQL_CA=${STS_TEST_ATTRIBUTE_MYSQL_CA-/run/secrets/mariadb-ca/server.crt}
       # THE DATABASE THE PERSISTENCE JOB RESTARTS THE SERVICE AGAINST
       # (moved from the parent project, 2026-10-23): the stack's postgres as
       # its superuser, in which `tests/protocol/sts_persistence_postgres.js`
@@ -1815,6 +1821,9 @@ services:
       # THE DATABASES' CERTIFICATES, read-only, as `sts` mounts them: what
       # STS_TEST_PERSISTENCE_DB_CA names.
       - sts-db-ca:/run/secrets/database-ca:ro
+      # MariaDB's certificate without its key: what
+      # STS_TEST_ATTRIBUTE_MYSQL_CA names.
+      - sts-mariadb-ca:/run/secrets/mariadb-ca:ro
     depends_on:
       # The mail catcher (#63): STARTED, for xacml-pep's reason below — a
       # catcher that will not come up fails sts_mail.js and nothing else.
@@ -1876,6 +1885,8 @@ volumes:
   # MariaDB's listener key and certificate (#356). Not mounted into `sts`:
   # the job reads the certificate off the handshake.
   sts-mariadb-tls:
+  # MariaDB's certificate alone, for the runner (2026-11-20).
+  sts-mariadb-ca:
 
 # One bridge, and nothing published on it. `docker compose` gives the network a
 # name from the project, so two projects cannot share one.

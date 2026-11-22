@@ -40,5 +40,6 @@
   "body.testPush": "En <strong>test-push</strong> skriver en kanariefågel — ett slumpmässigt lösenord som ingen använder — till en hemlighet som hålls för test; hemligheten som ett tjänstekonto roterar till nekas.",
   "body.add": "Lägg till ett mål",
   "body.identifier": "Identifierare",
-  "body.addButton": "Lägg till"
+  "body.addButton": "Lägg till",
+  "newDestination.button": "Lägg till ett mål"
 }

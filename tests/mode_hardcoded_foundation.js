@@ -3,6 +3,9 @@
 
 'use strict';
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 // This file's own logger, for the Entering/Leaving lines and the handled
 // exceptions the code style asks for. Its level is LOG_LEVEL, which is also
 // what the harness's assertion logger reads.
@@ -167,7 +170,7 @@ function run(t) {
     applications.seen({ identifier: devId, kind: 'saml2-service-provider',
       counts: false,
       fields: { samlAssertionConsumerService: 'https://dev.test/acs' } });
-    t.check(acsOf(devId).indexOf('https://dev.test/acs') >= 0,
+    t.check(urls.holds(acsOf(devId), 'https://dev.test/acs'),
             'development still records the ACS URL a request named',
             acsOf(devId));
 
@@ -185,9 +188,9 @@ function run(t) {
       counts: false,
       fields: { samlAssertionConsumerService: 'https://evil.test/acs' } });
     const held = acsOf(prodId);
-    t.check(held.indexOf('https://evil.test/acs') < 0,
+    t.check(!urls.holds(held, 'https://evil.test/acs'),
             'product mode does NOT let a sighting add an ACS URL', held);
-    t.check(held.indexOf('https://registered.test/acs') >= 0,
+    t.check(urls.holds(held, 'https://registered.test/acs'),
             'and the registered one is still there', held);
   } finally {
     config.clearOverride('global.mode');

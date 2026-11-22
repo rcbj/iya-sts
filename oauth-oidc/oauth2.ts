@@ -3832,13 +3832,18 @@ class OAuth2Server {
   // `admin_stats.js`'s claim layers resolve the client as an APPLICATION —
   // its roles through `roleMemberApplication` — rather than looking up a
   // person named after its client_id, which found nobody's roles.
+  //
+  // `sessionId` (#1072): the sign-on session the token rests on, whose
+  // chosen dynamic roles the roles claim may carry (`roles.js`'s selection
+  // reader). A direct grant has none, and gets none.
   private customClaimContext(base: Json, payload: Json, user: Json,
-                             grant?: string): Json {
+                             grant?: string, sessionId?: string): Json {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.customClaimContext().");
     const aboutClient = grant === 'client_credentials';
     log.debug("Leaving OAuth2Server.customClaimContext().");
     return {
+      session_id: aboutClient ? '' : String(sessionId || ''),
       username: aboutClient ? ''
         : ((user && user.username) || payload.username || ''),
       sub: payload.sub || '',
@@ -4230,7 +4235,8 @@ class OAuth2Server {
                                                      : opts.scope;
     const clientClaims = stats.jwtClaims('access_token',
                                          self.customClaimContext(
-                                           base, payload, user, opts.grant));
+                                           base, payload, user, opts.grant,
+                                           opts.session_id));
     const resourceLayer = opts.grant === 'client_credentials' ? null
       : self.resourceServerClaims(payload.aud, user, granted);
     const combined = resourceLayer
@@ -5146,7 +5152,10 @@ class OAuth2Server {
     const payloadWithCustom = Object.assign(
       scopeClaims.gate(stats.jwtClaims('id_token',
                                        self.customClaimContext(base, payload,
-                                                               user)),
+                                                               user,
+                                                               opts.grant,
+                                                               opts.session_id
+                                                               )),
                        opts.scope, 'ID Token'),
       payload);
     // ---------------------------------------------------------------------
@@ -5581,7 +5590,10 @@ class OAuth2Server {
     if (rolePermissions.asksFor(opts.scope, self.issuanceSubjectOf(opts))) {
       const narrowed = rolePermissions.narrowScope(opts.scope,
         self.issuanceSubjectOf(opts),
-        { clientId: opts.client_id, grant: opts.grant });
+        { clientId: opts.client_id, grant: opts.grant,
+          // #1072: the session's chosen dynamic roles count, for this
+          // client; a direct grant has no session and none.
+          sessionId: opts.session_id || '' });
       if (narrowed.emptied) {
         log.debug("Leaving OAuth2Server.tokenSet(). Nothing but gated " +
                   "permissions the subject may not hold was asked for.");
@@ -9380,7 +9392,8 @@ class OAuth2Server {
           sessionId ? self.deps.authn.sessionById(String(sessionId)) : null)
       });
       const narrowed = rolePermissions.narrowScope(scope, person,
-        { clientId: query.client_id, grant: 'authorization_code' });
+        { clientId: query.client_id, grant: 'authorization_code',
+          sessionId: sessionId ? String(sessionId) : '' });
       if (narrowed.emptied) {
         log.debug("Leaving OAuth2Server.issueAuthorizationResponse(). " +
                   "Nothing but gated permissions the person may not hold " +
@@ -14090,7 +14103,9 @@ class OAuth2Server {
     // UserInfo accepts is for this service's own resource server, which keeps
     // the OpenID Connect scopes on its scope claim (RFC 9068's plan).
     const configured = scopeClaims.gate(
-      stats.jwtClaims('userinfo', self.customClaimContext(base, claims, user)),
+      stats.jwtClaims('userinfo', self.customClaimContext(
+        base, claims, user, undefined,
+        String(claims.sid || stats.sessionIdOfJti(claims.jti) || ''))),
       claims.scope, 'UserInfo response');
     Object.assign(body, configured);
     if (Object.keys(configured).length) {
@@ -18243,6 +18258,25 @@ class OAuth2Server {
         return self.oauthError(res, 400, deviceProof.error,
                                deviceProof.description);
       }
+      const grantedResources = record.resources || [];
+      const narrowedResources = requestedResources.filter(function (one) {
+        return grantedResources.indexOf(one) >= 0;
+      });
+      if (requestedResources.length &&
+          narrowedResources.length !== requestedResources.length) {
+        const extra = requestedResources.filter(function (one) {
+          return grantedResources.indexOf(one) < 0;
+        });
+        log.debug("Leaving OAuth2Server.tokenGrant(). The Token Request " +
+                  "asked for a resource the device authorization does not " +
+                  "carry.");
+        return deviceRefuse('STS-OAUTH-0206', 'invalid_target',
+          'RFC 8707 section 2.2: a Token Request may narrow the resources ' +
+          'the device authorization asked for and may not add to them. This ' +
+          'request asks additionally for: ' + extra.join(', ') + '.');
+      }
+      const deviceResources = narrowedResources.length
+        ? narrowedResources : grantedResources;
       const person = self.provisionedPerson(record.username);
       if (!person || !(await deviceAuthorization.redeem(record))) {
         log.debug("Leaving OAuth2Server.tokenGrant(). Device code redeemed " +
@@ -18256,6 +18290,8 @@ class OAuth2Server {
         auth_time: record.approval.authTime, amr: record.approval.amr,
         acr: record.approval.acr || undefined,
         session_id: record.approval.sessionId || undefined,
+        audience: self.audienceClaim(deviceResources),
+        resources: deviceResources,
         grant: 'device_code'
       });
       log.debug("Leaving OAuth2Server.tokenGrant(). Device tokens issued.");
@@ -19256,6 +19292,8 @@ class OAuth2Server {
       // the Kerberos Token Profile's six URIs is answered with that token in
       // `access_token` (RFC 8693 section 2.2.1), not an access token: see
       // kerberosExchangeToken(). No refresh token and no ID Token ride along.
+      // The external AuthZEN PDP is not asked (#1200): the binding's tuples
+      // name a registered OAuth token type, and a Kerberos token is not one.
       const kerberosAsked = krb5Tokens.isType(
         String(body.requested_token_type || ''));
       let kerberosMinted: Json = null;
@@ -19274,6 +19312,98 @@ class OAuth2Server {
         kerberosMinted = minted.token;
         exchanged = minted.response;
       } else {
+        // THE EXTERNAL AUTHZEN PDP (#1200), after the local policy has
+        // allowed the exchange and after the local scope narrowing. It may
+        // only narrow further. A Kerberos token never reaches this branch.
+        let issuedScope = exchangeScope !== null ? exchangeScope
+          : String(subject.scope || '');
+        let lifetimeCapS: number | null = null;
+        if (config.value('authzen.externalPdp') === true) {
+          const externalPdp = require('../authzen/authzen_external_pdp');
+          const subjectIsClient = /^urn:sts:client:/.test(subjectSub) ||
+            (!subject.username &&
+             (subjectSub === String(client.client_id || '') ||
+              subjectSub === String(subject.client_id || '')));
+          const exchangeSubject = {
+            type: subjectIsClient ? 'client' : 'user',
+            id: subjectName
+          };
+          const exchangeParty = {
+            type: actorClientId ? 'client' : 'user',
+            id: actorName
+          };
+          const sameParty = exchangeParty.type === exchangeSubject.type &&
+            exchangeParty.id === exchangeSubject.id;
+          const asked = await externalPdp.consult({
+            subject: exchangeSubject,
+            party: sameParty ? null : exchangeParty,
+            audiences: issuedAudiences.map(String),
+            scopes: String(issuedScope || '').split(/\s+/)
+              .filter(function (one: string) {
+                return !!one;
+              }),
+            clientId: String(client.client_id || ''),
+            subjectTokenType: subjectType,
+            actorTokenType: body.actor_token ? actorType : '',
+            subjectClaims: subject,
+            act: subject && subject.act,
+            mayAct: mayAct
+          });
+          if (!asked.ok) {
+            if (asked.code === 'STS-AUTHZEN-0125') {
+              delegation.record({
+                protocol: 'OAuth 2.0',
+                type: exchangeType,
+                outcome: 'refused',
+                initial: {
+                  presented: subject.username || subject.sub || '',
+                  what: 'the subject of the token presented'
+                },
+                intermediary: {
+                  presented: registerActor,
+                  application: client.client_id,
+                  what: actorClaims
+                    ? 'the actor named in the actor_token, exchanging ' +
+                      'through client ' + client.client_id
+                    : 'the client performing the exchange'
+                },
+                target: {
+                  application: firstTarget.application || firstTarget.asked,
+                  what: firstTarget.asked
+                    ? 'the audience or resource asked for, "' +
+                      firstTarget.asked + '"'
+                    : 'unstated — neither audience nor resource was sent'
+                },
+                authorizedBy: delegationPolicy.rowText(decision),
+                reason: String(asked.description || ''),
+                consumed: [OAuth2Server.consumedInput(
+                  'subject_token',
+                  subjectAssertion || (subjectKerberos
+                    ? { format: 'kerberos',
+                        shape: subjectKerberos.shape }
+                    : null),
+                  String(subject.jti || ''),
+                  subjectVerified)],
+                produced: [],
+                sessionId: ''
+              });
+            }
+            errorCodes.mark(res, String(asked.code || 'STS-AUTHZEN-0124'));
+            log.debug("Leaving OAuth2Server.tokenGrant(). The external " +
+                      "AuthZEN PDP refused the exchange.");
+            // error-code: none — asked.code was marked above
+            return self.oauthError(res, Number(asked.status) || 503,
+                                   String(asked.error ||
+                                          'temporarily_unavailable'),
+                                   String(asked.description || ''));
+          }
+          if (typeof asked.scope === 'string') {
+            issuedScope = asked.scope;
+          }
+          if (typeof asked.lifetimeCapS === 'number') {
+            lifetimeCapS = asked.lifetimeCapS;
+          }
+        }
         exchanged = await issue({
           jkt: dpopJkt,
           sub: subject.sub || 'urn:sts:exchanged',
@@ -19295,8 +19425,7 @@ class OAuth2Server {
           // (idTokenFollowsIssuedScope). A requested scope the policy narrowed
           // (#549) is the list that survived — empty included, so a dropped
           // permission never brings the subject's own scope back in its place.
-          scope: exchangeScope !== null ? exchangeScope
-            : String(subject.scope || ''),
+          scope: issuedScope,
           idTokenFollowsIssuedScope: true,
           audience: self.audienceClaim(issuedAudiences), act: act,
           // RFC 9396 on an exchange: the details asked for, as for a direct
@@ -19327,6 +19456,9 @@ class OAuth2Server {
           // `aud` on the token being minted is the union of both and the two
           // must not come to describe different resource servers.
           resources: wantsRefresh ? issuedAudiences : undefined,
+          // The PDP's token_lifetime, when it named one. null does not cap:
+          // Number(null) is 0, and the cap only shortens a positive life.
+          lifetimeCapS: lifetimeCapS,
           grant: 'token exchange'
         });
         // RFC 8693 section 2.2.1: `issued_token_type` describes THE TOKEN IN
@@ -21036,8 +21168,8 @@ class OAuth2Server {
   // same key.
   // ---------------------------------------------------------------------------
   private async deviceAuthorizationRequest(req: Req, res: Res): Promise<Json> {
-    const { log, parseBody, validation, errorCodes, applications, dpop } =
-      this.deps;
+    const { log, parseBody, bodyValues, validation, errorCodes, applications,
+            dpop } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.deviceAuthorizationRequest().");
     res.set('Cache-Control', 'no-store');
@@ -21100,6 +21232,26 @@ class OAuth2Server {
       return refuse(scopeProblem.code, 400, 'invalid_scope',
                     scopeProblem.description);
     }
+    const parsedResources = self.parseResourceIndicators(
+      bodyValues(req, body, 'resource'));
+    if (parsedResources.error) {
+      log.debug("Leaving OAuth2Server.deviceAuthorizationRequest(). " +
+                "Resource.");
+      return refuse('STS-OAUTH-0986', 400, 'invalid_target',
+                    parsedResources.error);
+    }
+    const base = self.asBaseOf(req);
+    if (parsedResources.resources.length) {
+      const plan = self.accessTokenPlan(base, scope, clientId,
+        parsedResources.resources, null, req);
+      if (plan.refusal) {
+        log.debug("Leaving OAuth2Server.deviceAuthorizationRequest(). " +
+                  "RFC 9068 refused the audience.");
+        return refuse(errorCodes.codeOf(plan.refusal) || 'STS-OAUTH-0986',
+                      400, plan.refusal.error,
+                      plan.refusal.description);
+      }
+    }
     let dpopJkt = '';
     if (req.headers['dpop'] !== undefined) {
       const checked = dpop.verifyProof(req.headers['dpop'],
@@ -21115,8 +21267,8 @@ class OAuth2Server {
     // registration's client_name, as CIBA's page shows it.
     const registration: Json = applications.registrationOf(clientId) || {};
     const made = deviceAuthorization.create(clientId,
-      String(registration.client_name || clientId), scope, dpopJkt);
-    const base = self.asBaseOf(req);
+      String(registration.client_name || clientId), scope, dpopJkt,
+      parsedResources.resources);
     const verification = helpers.rebaseTo(base, 'portal') + '/portal/device';
     log.debug("Leaving OAuth2Server.deviceAuthorizationRequest().");
     res.status(200).type('application/json').send(JSON.stringify({

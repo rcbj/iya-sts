@@ -54,6 +54,9 @@
 // OWNED HERE (local: true).
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const navigation = require("./navigation.js");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
@@ -381,7 +384,7 @@ async function atClient(r, verifier) {
   log.debug("Entering atClient().");
   const out = { error: "", code: "", claims: null, idToken: "",
                 screen: r.screen, picker: r.picker };
-  if (!r.location || r.location.indexOf(REDIRECT) !== 0) {
+  if (!r.location || !urls.isAt(r.location, REDIRECT)) {
     log.debug("Leaving atClient(). Not at the client.");
     return out;
   }

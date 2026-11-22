@@ -32,6 +32,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const crypto = require('crypto');
 const http = require('http');
 
@@ -128,8 +131,8 @@ function registerWrites(t, suffix) {
     attribute: 'appCorsOrigin', mode: 'add', value: 'HTTP://LocalHost:5173/' });
   t.check(added.ok && added.changed, 'an add is accepted', added);
   const held = [].concat((applications.get(id).fields || {}).appCorsOrigin);
-  t.check(held.indexOf('http://localhost:5173') >= 0 &&
-          held.indexOf('HTTP://LocalHost:5173/') < 0,
+  t.check(urls.holds(held, 'http://localhost:5173') &&
+          !urls.holds(held, 'HTTP://LocalHost:5173/'),
           'and stored normalised', held);
   const again = applications.updateApplication(id, {
     attribute: 'appCorsOrigin', mode: 'add', value: 'http://localhost:5173' });
@@ -140,8 +143,8 @@ function registerWrites(t, suffix) {
     attribute: 'appCorsOrigin', mode: 'remove',
     value: 'HTTP://LOCALHOST:5173' });
   t.check(removed.ok && removed.changed &&
-          [].concat((applications.get(id).fields || {}).appCorsOrigin)
-            .indexOf('http://localhost:5173') < 0,
+          !urls.holds((applications.get(id).fields || {}).appCorsOrigin,
+                      'http://localhost:5173'),
           'a remove finds the value by its normalised spelling', removed);
   applications.deleteApplication(id);
   log.debug("Leaving registerWrites().");

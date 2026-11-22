@@ -42,6 +42,9 @@ const ROOT = path.join(__dirname, '..');
 
 function childMain() {
   const ROOT = process.env.PC_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT + '/tests/protocol/url_match.js');
   const OUT = process.env.PC_OUT;
   const findings = [];
   function note(ok, what, detail) {
@@ -182,7 +185,7 @@ function childMain() {
            !/name="attributes" value="mail" checked/.test(html) &&
            html.indexOf('set-permission-claims') >= 0 &&
            html.indexOf('clear-permission-claims') >= 0 &&
-           html.indexOf(HR + 'hr.read') >= 0,
+           urls.namesAddress(html, HR + 'hr.read'),
            'E2. the markup: the mapped box ticked, Save and Clear',
            html.slice(0, 400));
       const readOnly = page.applicationScopeClaimsSection(ctxOf({}, false),

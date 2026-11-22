@@ -187,5 +187,8 @@
   "monitorHtml.thRegistered": "Registrados",
   "monitorHtml.thRemoved": "Quitados",
   "monitorHtml.thEvicted": "Desalojados",
-  "monitorHtml.thCompliance": "Cumplimiento: {source}"
+  "monitorHtml.thCompliance": "Cumplimiento: {source}",
+  "newDevice.button": "Registrar un dispositivo",
+  "newDevice.key": "Primera clave",
+  "newDevice.keyHint": "se registra solo con su tipo"
 }

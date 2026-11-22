@@ -58,6 +58,9 @@
 // OWNED HERE (local: true): this repository's own authorization server.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const authnSignin = require("./authn_signin");
 const K = require("./oauth_wire_kit.js").kit(
@@ -113,7 +116,7 @@ async function drive(b, query, decision, prefix) {
       break;
     }
     const where = absolute(r.location);
-    if (where.indexOf(REDIRECT) === 0) {
+    if (urls.isAt(where, REDIRECT)) {
       break;
     }
     if (/\/authn\/login/.test(where)) {
@@ -133,7 +136,7 @@ async function drive(b, query, decision, prefix) {
     r = await b.go(where);
   }
   const location = String(r.location || "");
-  const params = location.indexOf(REDIRECT) === 0
+  const params = urls.isAt(location, REDIRECT)
     ? K.answerAt({ status: 302, location: location }, REDIRECT)
     : new URLSearchParams();
   log.debug("Leaving drive().");
@@ -531,7 +534,7 @@ async function directGrants(b) {
     for (let hop = 0; hop < 8 && (resp.status === 302 ||
          resp.status === 303); hop++) {
       const where = absolute(resp.location);
-      if (where.indexOf(REDIRECT) === 0) {
+      if (urls.isAt(where, REDIRECT)) {
         break;
       }
       if (authnSignin.isConsent(where)) {

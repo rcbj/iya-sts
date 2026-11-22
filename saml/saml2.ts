@@ -400,9 +400,16 @@ class Saml2Assertions {
     // caller resolved it — WS-Trust names the AppliesTo's application, which
     // the audience string alone does not reach (see wstrust.ts). Absent, the
     // audience is looked up as it always was.
+    // `session_id` (#1072): the sign-on session, whose chosen dynamic roles
+    // the roles attribute may carry. A browser profile's SessionIndex is
+    // the session's id (`saml2_sso.ts`, `wsfed.ts`); a WS-Trust Issue has
+    // none, and carries none.
     const custom = stats.samlAttributes('saml2',
                                         Object.assign({ subject: subject,
-                                                        audience: audience },
+                                                        audience: audience,
+                                                        session_id:
+                                                          opts.sessionIndex ||
+                                                          '' },
                                           opts.application
                                             ? { application: opts.application }
                                             : {}));

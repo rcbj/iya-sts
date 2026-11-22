@@ -4032,12 +4032,21 @@ class Saml2Sso {
     const relayState = String(params.target || params.RelayState || '');
 
     const session = sessionOf(req);
-    if (!session) {
-      const query = this.rawQueryOf(req);
+    // A LINK THAT ASKS FOR A FRESH SIGN-IN (#1072): `forceAuthn=true`, the
+    // link's spelling of an AuthnRequest's ForceAuthn, which the portal's
+    // "Sign in again" adds so a person may choose dynamic roles for this
+    // service provider. STRIPPED from the return address, so the return
+    // lands here with the new sign-in and goes on rather than forcing again.
+    const forced = String(params.forceAuthn || '').toLowerCase() === 'true';
+    if (!session || forced) {
+      const kept = new URLSearchParams(this.rawQueryOf(req));
+      kept.delete('forceAuthn');
+      const query = kept.toString();
       const where2 = beginAuthentication({
         returnTo: req.path + (query ? '?' + query : ''),
         application: spEntityId,
         protocol: 'SAML 2.0',
+        accountChoice: forced ? 'never' : '',
         details: [
           { label: 'Service provider', value: spEntityId,
             note: 'named by the link — an identity-provider-initiated ' +

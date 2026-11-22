@@ -51,6 +51,22 @@
     "en": "dcc4499eac844938",
     "text": "TRUE : les propriétaires du rôle ne peuvent pas l’administrer via /admin-api (#607), quoi qu’ils possèdent — une marque de l’administrateur, que la règle des propriétaires de la politique access-control lit comme urn:sts:xacml:object-protected. Absent vaut FALSE."
   },
+  "roles.schema.attributes.roleMembershipMode.what": {
+    "en": "723a14578f3a1d6e",
+    "text": "La manière dont le rôle est détenu (#1072). `static`, et l’absence de valeur, est l’appartenance habituelle : les utilisateurs, groupes et applications listés. `dynamic-selectable` est un rôle sans membres, PROPOSÉ à la connexion à chaque personne que sa politique d’éligibilité autorise, et détenu pour l’application de cette connexion seulement si elle le choisit. Le mode ne peut pas changer tant que le rôle a des membres."
+  },
+  "roles.schema.attributes.roleEligibilityPolicy.what": {
+    "en": "7a735d2e83fa9333",
+    "text": "Le nom d’entrée dans ou=policies de la politique XACML que possède ce rôle dynamique (#1072), décidée seule par le PDP pour chaque personne à la connexion puis à chaque émission. Seul Permit rend la personne éligible ; Deny, NotApplicable, Indeterminate, un attribut manquant et une politique absente ne le font pas."
+  },
+  "roles.schema.attributes.roleSelection.what": {
+    "en": "2b5c2729294972e1",
+    "text": "Si le choix du rôle dynamique est `optional`, ou absent, ou `required` (#1072). Un rôle obligatoire pour lequel une personne est éligible affiche l’étape des rôles même si la case de la page de connexion n’est pas cochée, et au moins un rôle obligatoire doit être choisi ; une connexion sans navigateur est refusée pour lui."
+  },
+  "roles.schema.attributes.roleSelectionExclusive.what": {
+    "en": "2c0357c376a85536",
+    "text": "Un nom partagé par des rôles dynamiques qui ne peuvent pas être choisis ensemble (#1072) : parmi les rôles portant la même valeur, une connexion peut en choisir au plus un. Absent, le rôle peut être choisi avec n’importe quel autre."
+  },
   "roles.builtIn.EVERYBODY.what": {
     "en": "40f390becf1977a2",
     "text": "N’importe qui, authentifié ou non, personne ou application. C’EST L’EXIGENCE PAR DÉFAUT : une application qui ne nomme aucun rôle requis exige celui-ci, tout le monde le détient et rien n’est refusé — exactement comme ce service se comportait avant l’existence des rôles."
@@ -178,5 +194,9 @@
   "roles.console.security.what": {
     "en": "238007ebd246b860",
     "text": "Modifier la sécurité : enregistrer ou réinitialiser une politique dans Annuaire → Politiques, désigner une politique sur une application, un groupe ou une personne, attribuer ou retirer ce rôle, et agir sur le compte d'une personne qui le détient. Admin Write ne peut faire aucune de ces actions. IL INCLUT LA LECTURE ET NON L'ÉCRITURE, de sorte qu'il peut être détenu par quelqu'un qui n'est pas administrateur par ailleurs."
+  },
+  "roles.builtIn.PIV_KEY_RECOVERY.what": {
+    "en": "f2c6cc9cd65c5fc0",
+    "text": "Un récupérateur de clés PIV de gestion de clés séquestrées : quiconque est membre du groupe nommé par `roles.pivKeyRecoveryGroup` (par défaut « piv-key-recovery »). C’est ce qu’exige, en plus d’Admin Write, la récupération de la clé piv-key-management séquestrée d’une autre personne par /admin-api/hardware-tokens/recover-key ou par la console, et rien d’autre : cette clé déchiffre le courrier du détenteur. Le détenteur récupère la sienne sur le portail sans ce rôle."
   }
 }

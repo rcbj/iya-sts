@@ -44,6 +44,7 @@ const https = require("https");
 const nodeCrypto = require("crypto");
 const K = require("./oauth_wire_kit.js").kit("sts_fga_grant_codes");
 const credentials = require("../tools/pep-credential.js");
+const serviceTrust = require("../tools/service_trust.js");
 
 const log = K.log;
 const check = K.check;
@@ -117,7 +118,7 @@ function pep(path, payload) {
     const data = JSON.stringify(payload);
     const request = https.request({
       host: target.hostname, port: target.port || 443,
-      path: target.pathname, method: "POST", rejectUnauthorized: false,
+      path: target.pathname, method: "POST", ca: serviceTrust.trustedCa(),
       cert: holder.certPem, key: holder.keyPem,
       headers: { "Content-Type": "application/json",
                  "Content-Length": Buffer.byteLength(data) }

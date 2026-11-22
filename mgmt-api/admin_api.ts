@@ -707,6 +707,8 @@ interface AdminApiDeps {
   // Directory → Post-login activities' operations (#1111).
   loadPostLoginActivitiesApi(): typeof import('./post_login_activities_api');
   loadHardwareTokensApi(): typeof import('./hardware_tokens_api');
+  // Directory → OpenPGP keys' operations (#1955 P6).
+  loadOpenPgpApi(): typeof import('./openpgp_api');
   // Monitoring → Audit export's operations (#641).
   loadAuditExportApi(): typeof import('./audit_export_api');
   // Server configuration → Sign-in appearance's operations (#717).
@@ -857,6 +859,9 @@ class AdminApi {
       },
       loadHardwareTokensApi: function () {
         return require('./hardware_tokens_api');
+      },
+      loadOpenPgpApi: function () {
+        return require('./openpgp_api');
       },
       loadAuditExportApi: function () {
         return require('./audit_export_api');
@@ -1976,6 +1981,15 @@ class AdminApi {
               'optional major-version range, `;` between rules — whose ' +
               'registrations offer the list less ML-DSA, where a classical ' +
               'passkey is allowed. ' +
+              '`credProtect` (`none`, #1955; optional) asks a ' +
+              'registration\'s authenticator for CTAP 2.1 credential ' +
+              'protection at `userVerificationOptional`, ' +
+              '`userVerificationOptionalWithCredentialIDList` or ' +
+              '`userVerificationRequired`, and records the level the ' +
+              'key reports; `enforceCredProtect` (off; optional) asks ' +
+              'the browser to enforce it and refuses a key reporting a ' +
+              'lower level (STS-AUTHN-0559), and is refused on while ' +
+              '`credProtect` is `none` (STS-AUTHN-0560). ' +
               'Refused: `classical-only` with `postQuantumRequired` not ' +
               '`off` or with `attestationAlgorithms` set (STS-AUTHN-0430), ' +
               'and `pq-only` or `pq-first` where the list offered names no ' +
@@ -1996,7 +2010,8 @@ class AdminApi {
                    postQuantumAllowCredentials: 'realm',
                    registrationAlgorithms: 'realm',
                    registrationMode: 'realm', lanes: 'realm',
-                   clientRules: '' }
+                   clientRules: '', credProtect: 'none',
+                   enforceCredProtect: false }
       },
       // #539: the fifth kind, with named profiles an application or a
       // group names (#1238).
@@ -2667,7 +2682,7 @@ class AdminApi {
             loadAttributeSourcesApi, loadSecretDestinationsApi, loadAuthzenApi,
             loadUmaApi,
             loadPasskeyReportApi, loadPostLoginActivitiesApi,
-            loadHardwareTokensApi,
+            loadHardwareTokensApi, loadOpenPgpApi,
             loadAuditExportApi, loadBrandingApi,
             loadScimClientsApi,
             loadProviderCommandsApi, loadSsfTransmittersApi,
@@ -3737,6 +3752,17 @@ class AdminApi {
       // nobody and self-asserted whichever door it came through; neither
       // surface forwards a proof or an attestation from a body.
       // ---------------------------------------------------------------------
+      // DIRECTORY → DEVICES → REGISTER A DEVICE (#1132): the create page's
+      // own view, rule 7's operation for it.
+      { method: 'GET', path: BASE + '/devices/new', tag: 'Devices',
+        operationId: 'getNewDeviceForm',
+        mirrors: 'GET /admin/devices/new',
+        handler: function (req, res) {
+          log.debug("Entering the management API new-device endpoint.");
+          self.sendJson(res, 200, devicesAdmin.newView());
+          log.debug("Leaving the management API new-device endpoint.");
+        } },
+
       { method: 'GET', path: BASE + '/devices', tag: 'Devices',
         operationId: 'getDevices',
         mirrors: 'GET /admin/devices',
@@ -3792,7 +3818,9 @@ class AdminApi {
 
       ApiRows.actions({ method: 'POST',
         route: BASE + '/devices/:action', tag: 'Devices',
-        mirrors: 'POST /admin/devices',
+        // Directory → Devices → Register a device posts its create to its
+        // own path (#1132), so a refusal redraws that page.
+        mirrors: 'POST /admin/devices and POST /admin/devices/new',
         handler: function (req, res) {
           log.debug("Entering the management API devices action.");
           const result = devicesAdmin.action(
@@ -5280,6 +5308,10 @@ class AdminApi {
           // `/portal/rename-key` calls.
           { action: 'rename-key', operationId: 'renameUserPasskey' },
 
+          // #1955 P7: a legacy FIDO U2F credential imported by value, the
+          // console's *Import a U2F security key* on a person's page.
+          { action: 'import-u2f-key', operationId: 'importUserU2fKey' },
+
           // #945: AN ADMINISTRATOR ENROLS A PASSKEY ON A PERSON'S BEHALF,
           // the console's *Enrol a passkey for this person* on their page.
           // Two acts, the person's own enrolment's two steps; the ceremony
@@ -5478,6 +5510,18 @@ class AdminApi {
           log.debug("Leaving the management API groups endpoint.");
         } },
 
+      // DIRECTORY → GROUPS → NEW GROUP (#1132): the create page's own view,
+      // rule 7's operation for it — which fields the create takes and which
+      // it refuses without (`admin-core/create_forms.ts`).
+      { method: 'GET', path: BASE + '/groups/new', tag: 'Groups',
+        operationId: 'getNewGroupForm',
+        mirrors: 'GET /admin/groups/new',
+        handler: function (req, res) {
+          log.debug("Entering the management API new-group endpoint.");
+          self.sendJson(res, 200, adminViews.newGroupJson());
+          log.debug("Leaving the management API new-group endpoint.");
+        } },
+
       // -----------------------------------------------------------------------
       // AND THE TWO WRITES (2026-09-06), WHICH CLOSED A HOLE RATHER THAN ADDING
       // A FEATURE.
@@ -5508,7 +5552,10 @@ class AdminApi {
         // to /admin/groups/owners, so its Find and Add are told apart from the
         // page's other forms; its Add and Remove reach `add-owner` and
         // `remove-owner` here.
-        mirrors: 'POST /admin/groups and POST /admin/groups/owners',
+        // AND A THIRD SINCE #1132: Directory → Groups → New group posts its
+        // create to its own path, so a refusal redraws that page.
+        mirrors: 'POST /admin/groups, POST /admin/groups/new and ' +
+                 'POST /admin/groups/owners',
         handler: function (req, res) {
           log.debug("Entering the management API groups action endpoint.");
           const body = parseBody(req);
@@ -9822,6 +9869,17 @@ class AdminApi {
       // caller that got a decision by adding two parameters to a listing would
       // have no way to discover it.
       // -----------------------------------------------------------------------
+      // DIRECTORY → ROLES → NEW ROLE (#1132): the create page's own view,
+      // rule 7's operation for it (`admin-core/create_forms.ts`).
+      { method: 'GET', path: BASE + '/roles/new', tag: 'Roles',
+        operationId: 'getNewRoleForm',
+        mirrors: 'GET /admin/roles/new',
+        handler: function (req, res) {
+          log.debug("Entering the management API new-role endpoint.");
+          self.sendJson(res, 200, adminViews.newRoleJson());
+          log.debug("Leaving the management API new-role endpoint.");
+        } },
+
       { method: 'GET', path: BASE + '/roles', tag: 'Roles',
         operationId: 'getRoles',
         mirrors: 'GET /admin/roles',
@@ -9922,13 +9980,71 @@ class AdminApi {
           log.debug("Leaving the management API role preview endpoint.");
         } },
 
+      // A DYNAMIC ROLE'S ELIGIBILITY, TESTED (#1072; the ticket's 5.3):
+      // one role's own policy against one person, decided by the PDP as a
+      // sign-in would ask it. A READ beside the preview: nothing is written
+      // but the audit row every eligibility decision leaves.
+      { method: 'GET', path: BASE + '/roles/eligibility', tag: 'Roles',
+        operationId: 'testRoleEligibility',
+        mirrors: 'GET /admin/roles',
+        parameters: [
+          { name: 'role', in: 'query', required: false,
+            schema: { type: 'string', examples: ['oncall-operator'] },
+            description: 'The dynamic selectable role.' },
+          { name: 'user', in: 'query', required: false,
+            schema: { type: 'string', examples: ['alice'] },
+            description: 'The person, by username.' },
+          { name: 'application', in: 'query', required: false,
+            schema: { type: 'string', examples: ['payroll'] },
+            description: 'The application a sign-in would be for. A role ' +
+                         'that belongs to an application is offered only ' +
+                         'on a sign-in to it.' },
+          { name: 'acr', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The authentication context class the sign-in ' +
+                         'would have met, as `urn:sts:xacml:acr`.' },
+          { name: 'amr', in: 'query', required: false,
+            schema: { type: 'string', examples: ['pwd otp'] },
+            description: 'The sign-in\'s authentication methods (RFC 8176), ' +
+                         'separated by spaces, as `urn:sts:xacml:amr`.' }
+        ],
+        handler: function (req, res) {
+          log.debug("Entering the management API role eligibility endpoint.");
+          const q = req.query || {};
+          const role = String(q.role || '').trim();
+          const user = String(q.user || '').trim();
+          // NOTHING ASKED IS `answered: false`, NOT A 400 — the preview's
+          // rule beside it, and for its reason: the role page's test is a
+          // GET form, and a read with no question in it has nothing to
+          // refuse.
+          if (!role || !user) {
+            self.sendJson(res, 200, { ok: true, answered: false,
+              why: '`role` and `user` are both needed: eligibility is one ' +
+                   'person\'s for one role.' });
+            log.debug("Leaving the management API role eligibility " +
+                      "endpoint. Not asked.");
+            return;
+          }
+          const answer = require('../xacml/role_eligibility').test(role, user, {
+            application: String(q.application || '').trim(),
+            acr: String(q.acr || '').trim(),
+            amr: String(q.amr || '').split(/\s+/).filter(Boolean),
+            actor: self.callerNameOf(res) });
+          self.sendJson(res, 200, Object.assign({ ok: true, answered: true },
+                                                answer));
+          log.debug("Leaving the management API role eligibility endpoint.");
+        } },
+
       ApiRows.actions({ method: 'POST',
         route: BASE + '/roles/:action', tag: 'Roles',
         // A SECOND CONSOLE PATH SINCE #604: the role page's Owners tab posts
         // to /admin/roles/owners, so its Find and Add are told apart from
         // the page's other forms; its Add and Remove reach `add-owner` and
         // `remove-owner` here.
-        mirrors: 'POST /admin/roles and POST /admin/roles/owners',
+        // Directory → Roles → New role posts its create to its own path
+        // (#1132), so a refusal redraws that page.
+        mirrors: 'POST /admin/roles, POST /admin/roles/new and ' +
+                 'POST /admin/roles/owners',
         handler: function (req, res) {
           log.debug("Entering the management API roles action endpoint.");
           const body = parseBody(req);
@@ -9964,7 +10080,15 @@ class AdminApi {
           // A ROLE'S OWNERS (#604): what the role page's Owners tab saves the
           // moment Add or Remove is pressed.
           { action: 'add-owner', operationId: 'addRoleOwner' },
-          { action: 'remove-owner', operationId: 'removeRoleOwner' }
+          { action: 'remove-owner', operationId: 'removeRoleOwner' },
+
+          // DYNAMIC SELECTABLE ROLES (#1072): how a role is held, and how a
+          // dynamic one is chosen at sign-in.
+          { action: 'set-membership-mode',
+            operationId: 'setRoleMembershipMode' },
+          { action: 'set-selection', operationId: 'setRoleSelection' },
+          { action: 'set-eligibility-policy',
+            operationId: 'setRoleEligibilityPolicy' }
         ] }),
 
       // -----------------------------------------------------------------------
@@ -10050,6 +10174,26 @@ class AdminApi {
       // it; the module parses both spellings and refuses anything else by
       // name.
       // -----------------------------------------------------------------------
+      // DIRECTORY → POLICIES → NEW POLICY (#1132): the create page's own
+      // view, rule 7's operation for it — the kinds, and the asked kind's
+      // fields with which of them a save refuses without.
+      { method: 'GET', path: BASE + '/policies/new', tag: 'Policies',
+        operationId: 'getNewPolicyForm',
+        mirrors: 'GET /admin/policies/new',
+        parameters: [
+          { name: 'kind', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 64,
+                      examples: ['passkey'] },
+            description: 'The kind of policy to make, one of `kinds`. ' +
+                         'Without one, or with one no kind is, ' +
+                         '`createFields` is empty and `kind` null.' }
+        ],
+        handler: function (req, res) {
+          log.debug("Entering the management API new-policy endpoint.");
+          self.sendJson(res, 200, adminViews.newPolicyJson(req.query));
+          log.debug("Leaving the management API new-policy endpoint.");
+        } },
+
       { method: 'GET', path: BASE + '/policies', tag: 'Policies',
         operationId: 'getPolicies',
         mirrors: 'GET /admin/policies',
@@ -10521,6 +10665,10 @@ class AdminApi {
       // DIRECTORY → HARDWARE TOKENS (#1955 P1): the register and its
       // lost-key act (`mgmt-api/hardware_tokens_api.ts`).
       ...loadHardwareTokensApi().ROUTES,
+      // DIRECTORY → OpenPGP KEYS (#1955 P6): one person's key, publication
+      // and mail encryption, and the portal's seven acts for them
+      // (`mgmt-api/openpgp_api.ts`).
+      ...loadOpenPgpApi().ROUTES,
       // MONITORING → AUDIT EXPORT (#641): the destinations and their six
       // acts (`mgmt-api/audit_export_api.ts`).
       ...loadAuditExportApi().ROUTES,

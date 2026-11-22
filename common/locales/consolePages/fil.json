@@ -42,6 +42,7 @@
   "title.device-registration": "Pag-register ng device",
   "title.devices": "Mga device",
   "title.hardware-tokens": "Mga hardware token",
+  "title.openpgp": "Mga OpenPGP key",
   "title.devices-monitor": "Mga device (monitoring)",
   "title.service-accounts": "Mga service account",
   "title.encryption": "Encryption",
@@ -148,5 +149,11 @@
   "title.worker-pools": "Mga worker pool",
   "title.broadcast": "Mag-broadcast ng Anunsyo",
   "title.sign-in-appearance": "Itsura ng pag-sign in",
-  "title.post-login-activities": "Mga aktibidad pagkatapos mag-sign in"
+  "title.post-login-activities": "Mga aktibidad pagkatapos mag-sign in",
+  "title.groups-new": "Bagong grupo",
+  "title.roles-new": "Bagong role",
+  "title.devices-new": "Magrehistro ng device",
+  "title.attribute-sources-new": "Magdagdag ng attribute source",
+  "title.secret-destinations-new": "Magdagdag ng secret destination",
+  "title.policies-new": "Bagong patakaran"
 }

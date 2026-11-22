@@ -260,7 +260,12 @@ async function partC() {
   childProcess.execFileSync('openssl', ['req', '-x509', '-newkey', 'ec',
     '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes', '-keyout',
     path.join(dir, 'k.pem'), '-out', path.join(dir, 'c.pem'), '-days', '1',
-    '-subj', '/CN=localhost'], { stdio: 'ignore' });
+    '-subj', '/CN=localhost', '-addext', 'subjectAltName=DNS:localhost'],
+  { stdio: 'ignore' });
+  // Every client below VERIFIES the listener against that self-signed
+  // certificate, by the name `localhost` it carries: the certificate is not
+  // under test, and nothing here dials unverified.
+  const anchor = fs.readFileSync(path.join(dir, 'c.pem'));
   const seen = [];
   const server = https.createServer({
     key: fs.readFileSync(path.join(dir, 'k.pem')),
@@ -277,7 +282,7 @@ async function partC() {
   const ask = function () {
     return new Promise(function (resolve) {
       https.get({ host: '127.0.0.1', port: port, servername: 'localhost',
-                  rejectUnauthorized: false, agent: false,
+                  ca: [anchor], agent: false,
                   ALPNProtocols: ['http/1.1'] }, function (res) {
         let text = '';
         res.on('data', function (c) {
@@ -300,7 +305,7 @@ async function partC() {
   const askResuming = function () {
     return new Promise(function (resolve) {
       https.get({ host: '127.0.0.1', port: port, servername: 'localhost',
-                  rejectUnauthorized: false, agent: agent,
+                  ca: [anchor], agent: agent,
                   ALPNProtocols: ['http/1.1'] }, function (res) {
         res.resume();
         res.on('end', function () {

@@ -23,6 +23,14 @@
     "en": "7e9175bdd8dd3808",
     "text": "इसका अपना entityID और providerID (क्षेत्र बनते समय भिन्न रूप से बीजारोपित), अपनी हस्ताक्षर कुंजी, अनुरोध स्थिति, आर्टिफ़ैक्ट और प्रति-सेवा-प्रदाता मेटाडेटा — जिसका URL इसलिए क्षेत्र के साथ SP डाइजेस्ट भी रखता है। सेवा प्रदाता प्रविष्टियाँ प्रति क्षेत्र हैं, उसी कारण से जिस कारण OAuth क्लाइंट हैं: वे क्षेत्र की अपनी निर्देशिका में अनुप्रयोग हैं।"
   },
+  "realms.support.openpgp-and-the-web-key-directory.family": {
+    "en": "05e19f1c690a88a0",
+    "text": "OpenPGP और Web Key Directory"
+  },
+  "realms.support.openpgp-and-the-web-key-directory.note": {
+    "en": "400ad738502f9d1f",
+    "text": "किसी व्यक्ति की OpenPGP कुंजी realm की अपनी निर्देशिका में उनकी प्रविष्टि पर होती है, उसकी पंजीकरण चुनौती realm की होती है, और Web Key Directory realm की अपनी मेल डोमेन (openpgp.wkdDomains, या उसकी DNS डोमेन) के लिए उसके अपने लोगों की कुंजियों से उत्तर देती है। WKD क्लाइंट को डोमेन पता होती है, realm पथ कभी नहीं, इसलिए बिना realm खंड वाले अनुरोध का उत्तर वह realm देता है जो उसकी डोमेन की सेवा करता है, पहले डिफ़ॉल्ट realm।"
+  },
   "realms.support.ws-trust.family": {
     "en": "3b83c15d86c7c8b4",
     "text": "WS-Trust"

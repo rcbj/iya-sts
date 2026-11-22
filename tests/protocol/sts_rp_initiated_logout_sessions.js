@@ -74,6 +74,9 @@ const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
 const authnSignin = require("./authn_signin");
 const navigation = require("./navigation.js");
+// An address named in a page or an answer, parsed rather than searched
+// for as text (`url_match.js`).
+const urls = require("./url_match.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -242,7 +245,7 @@ async function signIn() {
   r = await authnSignin.signInWithJar(RB, r.location,
     { action: "login", username: PERSON, password: PASSWORD }, S.jar);
   for (let hops = 0; hops < 6 && (r.status === 302 || r.status === 303) &&
-       String(r.location).indexOf(REDIRECT) !== 0; hops += 1) {
+       !urls.isAt(r.location, REDIRECT); hops += 1) {
     r = await call("GET", /^https?:/.test(r.location) ? r.location
       : ORIGIN + r.location, {}, S.jar);
   }
@@ -424,7 +427,7 @@ async function confirmSection() {
                                              "https://evil.example/x"));
     assert.ok(leads(w.text));
     assert.strictEqual(whyOf(w.text), "");
-    assert.ok(w.text.indexOf(BACK) < 0);
+    assert.ok(!urls.namesAddress(w.text, BACK));
   });
   const asked = hiddenOf((await logout({ client_id: "rl-rp",
     post_logout_redirect_uri: BACK, state: "st-b" })).text);
@@ -478,7 +481,7 @@ async function confirmSection() {
   check("b5. the page's own form signs out and returns to the registered " +
         "address WITH state", function () {
     assert.strictEqual(d.status, 302, d.text.slice(0, 200));
-    assert.ok(d.location.indexOf(BACK) === 0, d.location);
+    assert.ok(urls.isAt(d.location, BACK), d.location);
     assert.ok(/[?&]state=st-b(&|$)/.test(d.location));
     assert.ok(!live);
   });
@@ -495,7 +498,7 @@ async function hintSection() {
   check("c1. a verified hint for this session signs out at once, with state",
         function () {
     assert.strictEqual(r.status, 302, r.text.slice(0, 200));
-    assert.ok(r.location.indexOf(BACK) === 0);
+    assert.ok(urls.isAt(r.location, BACK));
     assert.ok(/state=st-c/.test(r.location));
     assert.ok(!live);
   });
@@ -602,7 +605,7 @@ async function returnSection() {
       .test(r.text));
     assert.ok(/<h1>Sign-out request partly refused<\/h1>/.test(r.text));
     assert.ok(/<title>Sign-out request partly refused<\/title>/.test(r.text));
-    assert.ok(r.text.indexOf(BACK) < 0);
+    assert.ok(!urls.namesAddress(r.text, BACK));
   });
   idToken = await signIn();
   r = await logout({ id_token_hint: idToken,
@@ -627,7 +630,7 @@ async function returnSection() {
     assert.ok(boxOf(r.text).indexOf(BOX_FR) > 0, boxOf(r.text));
     assert.ok(boxOf(r.text).indexOf("<code>https://evil.example/x</code>") >
               0);
-    assert.ok(r.text.indexOf(BACK) < 0);
+    assert.ok(!urls.namesAddress(r.text, BACK));
     assert.ok(/<h1>Demande de déconnexion refusée en partie<\/h1>/.test(
       r.text));
   });
@@ -725,7 +728,7 @@ async function authorizeSection() {
     assert.ok(!plain.location);
     assert.strictEqual(plain.json.error, "invalid_request");
     assert.ok(described.indexOf(SENTENCE) >= 0, described);
-    assert.ok(described.indexOf(REDIRECT) < 0);
+    assert.ok(!urls.namesAddress(described, REDIRECT));
     assert.ok(!/the 1 |\(s\)|ou=|oauthRedirectUri|none of/.test(described));
   });
   check("e2. and a browser is shown that refusal on the error page, with " +
@@ -738,7 +741,7 @@ async function authorizeSection() {
     assert.ok(page.text.indexOf("invalid_request") >= 0);
     assert.ok(page.text.replace(/&#39;|&#x27;|&apos;/g, "'")
       .indexOf(SENTENCE) >= 0);
-    assert.ok(page.text.indexOf(REDIRECT) < 0);
+    assert.ok(!urls.namesAddress(page.text, REDIRECT));
   });
   const NONE = "This authorization request has no redirect_uri, and one is " +
     "required: without it there is nowhere to send the response.";
@@ -899,7 +902,7 @@ async function reasonSection() {
   f = await screenAfter({ max_age: "3600" });
   check("f4. a max_age the session meets: answered at once", function () {
     assert.ok(!f.view);
-    assert.ok(/[?&]code=/.test(f.at) && f.at.indexOf(REDIRECT) === 0, f.at);
+    assert.ok(/[?&]code=/.test(f.at) && urls.isAt(f.at, REDIRECT), f.at);
   });
   await new Promise(function (done) {
     setTimeout(done, 2100);

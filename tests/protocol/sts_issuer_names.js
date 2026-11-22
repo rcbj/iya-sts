@@ -39,6 +39,9 @@
 // OWNED HERE (local: true): this repository's own identity provider.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
@@ -345,7 +348,7 @@ async function wsfedSignIn(realmPath, wtrealm) {
     r = await b.go("GET", signed.location);
   }
   for (let i = 0; i < 6 && (r.status === 302 || r.status === 303) &&
-       r.location.indexOf(REPLY_URL) !== 0; i += 1) {
+       !urls.isAt(r.location, REPLY_URL); i += 1) {
     if (authnSignin.isConsent(r.location)) {
       // Product asks the person first; they allow.
       const answered = await authnSignin.consentWithJar(

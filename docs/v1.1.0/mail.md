@@ -324,6 +324,14 @@ next sign-in.
 marked a credential compromised, every member of the realm's Admin Write roster
 who has an address is told as well (`mail.notifyAdministrators`).
 
+## Encrypted mail
+
+A person can choose to have their mail encrypted with PGP/MIME to their
+OpenPGP key or with S/MIME to their certificate, and a realm can require it
+for chosen messages (`mail.encryptionRequired`). An encrypted message goes out
+under a neutral subject. See [OpenPGP keys and encrypted
+mail](openpgp.md).
+
 ## Where to look
 
 | | |
