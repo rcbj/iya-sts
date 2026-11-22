@@ -183,5 +183,7 @@
   "eligibility.yes": "{user} är behörig ({decision}).",
   "eligibility.no": "{user} är inte behörig ({decision}).",
   "eligibility.missing": "Saknat attribut: {attribute}",
-  "eligibility.applicable": "Policyer som tillämpades:"
+  "eligibility.applicable": "Policyer som tillämpades:",
+  "newRole.button": "Ny roll",
+  "newRole.noStore": "Den här processen har ingen katalog att lagra en roll i."
 }

@@ -183,5 +183,7 @@
   "eligibility.yes": "{user} is eligible ({decision}).",
   "eligibility.no": "{user} is not eligible ({decision}).",
   "eligibility.missing": "Missing attribute: {attribute}",
-  "eligibility.applicable": "Policies that applied:"
+  "eligibility.applicable": "Policies that applied:",
+  "newRole.button": "New role",
+  "newRole.noStore": "This process has no directory to store a role in."
 }

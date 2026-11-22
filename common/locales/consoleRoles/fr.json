@@ -183,5 +183,7 @@
   "eligibility.yes": "{user} est éligible ({decision}).",
   "eligibility.no": "{user} n’est pas éligible ({decision}).",
   "eligibility.missing": "Attribut manquant : {attribute}",
-  "eligibility.applicable": "Politiques appliquées :"
+  "eligibility.applicable": "Politiques appliquées :",
+  "newRole.button": "Nouveau rôle",
+  "newRole.noStore": "Ce processus n’a pas d’annuaire où enregistrer un rôle."
 }

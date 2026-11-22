@@ -71,5 +71,7 @@
   "jobOn": "sur",
   "scheduler": "Planificateur",
   "jobOnEnd": ".",
-  "settings": "Paramètres"
+  "settings": "Paramètres",
+  "newSource.button": "Ajouter une source",
+  "newSource.yes": "oui"
 }

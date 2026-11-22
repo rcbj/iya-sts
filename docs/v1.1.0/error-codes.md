@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5882** of them, in **55** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5888** of them, in **55** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 48
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 445
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 446
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 760
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 83
@@ -91,7 +91,7 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 252
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 137
-* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 99
+* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 104
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 301
@@ -1832,6 +1832,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0564` | A legacy U2F security key was not imported: its counter is not a whole number from 0 to 4294967295 (#1955). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-AUTHN-0565` | A sign-in step was answered by a legacy U2F security key that may not answer it: the step is passwordless (a U2F key cannot verify the person), or webauthn.u2fAppIds no longer permits its AppID at this RP ID (#1955). | HTTP 200 page naming the refusal |
 | `STS-AUTHN-0566` | A write of webauthn.u2fAppIds was refused: an entry is not a U2F AppID — an absolute https URL with a host, no user name or password and no fragment, at most 2048 characters (#1955). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-AUTHN-0567` | The bootstrap password file could not be removed on a start that found a credential already held. The plaintext is left on disk. | Log line; the service still starts, and the file is left |
 
 ## STS-OAUTH
 
@@ -5338,7 +5339,6 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0300` | A reverse-proxy route's `path` is /.iya-pep or under /.iya-pep/, the prefix the proxy reserves for its own callback and sign-out (#1830): an updated PEP refuses the whole configuration. | HTTP 400 on /admin-api; configured: false at the pull |
 | `STS-XACML-0301` | issue-pep-credential named a service account that does not hold REMOTE_PEPS (it is not in the group roles.remotePepGroup names), so the key would authenticate an entry no PEP door admits (#1827, phase 3). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-XACML-0302` | issue-pep-credential certified and registered the new key, and revokePrevious could not revoke one of the entry's other RFC 7523 keys; the new key works, and the old one still does too (#1827, phase 3). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
-| `STS-XACML-0331` | A remote PEP's heartbeat was refused: a member its entry stores carries a value the service cannot hold (fuzz run #595) — a counter that is not a non-negative integer of at most 2^53 - 1, a text member that is not a string or carries a control character, or signals, settings or listeners that are not an object or null. Nothing of it is recorded; the refusal names the member. | none — 400 invalid_request on POST /xacml/pep/heartbeat |
 | `STS-XACML-0303` | A role was written with a membership mode other than static or dynamic-selectable (#1072). | — |
 | `STS-XACML-0304` | A dynamic selectable role was written with a member or a conferring client (#1072): such a role is held by nobody and offered at sign-in, so the write was refused, whether it made a role with members dynamic or added a member to a dynamic role. | — |
 | `STS-XACML-0305` | A console or native role was to be made dynamic selectable (#1072); their holders are fixed, so the write was refused. | — |
@@ -5366,6 +5366,7 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0328` | A role chosen at a sign-in's role step was no longer eligible when it was submitted (#1072); the step is drawn again. | HTTP 400 |
 | `STS-XACML-0329` | A session was refused at a door that cannot draw the role step (federation, a wallet, SPNEGO, a certificate) because a required dynamic role was offered to the person (#1072). | — |
 | `STS-XACML-0330` | A sign-in held for the role step had no pending sign-in to draw the step on, so it was refused (#1072). | — |
+| `STS-XACML-0331` | A remote PEP's heartbeat was refused: a member its entry stores carries a value the service cannot hold (fuzz run #595) — a counter that is not a non-negative integer of at most 2^53 - 1, a text member that is not a string or carries a control character, or signals, settings or listeners that are not an object or null. Nothing of it is recorded; the refusal names the member. | none — 400 invalid_request on POST /xacml/pep/heartbeat |
 
 ## STS-XPEP
 
@@ -5620,6 +5621,11 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0120` | A remote PEP's access token at /access/v1 names no entry under this realm's ou=users, or one that does not hold REMOTE_PEPS: the token of the client every PEP shares admits only a remote PEP (#1827). | HTTP 401 (no entry) or 403 (not a remote PEP) |
 | `STS-AUTHZEN-0121` | A remote PEP's access token arrived at /access/v1 while xacml.pepAuthentication is certificate, which accepts a remote PEP only by its client certificate (#1827). | HTTP 401, WWW-Authenticate: DPoP error="invalid_token" |
 | `STS-AUTHZEN-0122` | An AuthZEN access request submission did not carry Content-Type: application/json, which AuthZEN 1.0 section 10.1 requires; refused before its body was read (#936). | HTTP 415 Unsupported Media Type (RFC 9110 section 15.5.16), application/problem+json (RFC 9457) |
+| `STS-AUTHZEN-0123` | An RFC 8693 token exchange was not issued because authzen.externalPdpUrl is empty, will not parse, is not absolute https, or carries a userinfo, query or fragment. The external AuthZEN PDP was not dialled (#1200). | HTTP 503 temporarily_unavailable (the client is not told the code or the address) |
+| `STS-AUTHZEN-0124` | An RFC 8693 token exchange was not issued because the external AuthZEN PDP gave no answer: federation.outbound is off, the PDP was unreachable or timed out, the dial threw, or the PDP answered a non-2xx. The local decision is not issued in its place (#1200). | HTTP 503 temporarily_unavailable |
+| `STS-AUTHZEN-0125` | An RFC 8693 token exchange was not issued because the external AuthZEN PDP refused a subject or requesting-party gate. Which gate is not told to the client (#1200). | HTTP 400 invalid_request |
+| `STS-AUTHZEN-0126` | An RFC 8693 token exchange was not issued because the external AuthZEN PDP answered 2xx with a body that is not the batch's decision: not JSON, a missing or differently sized evaluations array, an item that is not an object, a decision that is not a boolean, or an item carrying context.error (#1200). | HTTP 503 temporarily_unavailable |
+| `STS-AUTHZEN-0127` | An RFC 8693 token exchange was not issued because the client certificate or key for the external AuthZEN PDP is empty, unreadable, outside security.fileRoots, or not a PEM, or a named CA file is. The PDP was not dialled (#1200). | HTTP 503 temporarily_unavailable |
 
 ## STS-FGA
 

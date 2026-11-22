@@ -17,6 +17,7 @@ import ApiRows = require('../common/api_rows');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
+import CreateForms = require('../admin-core/create_forms');
 
 type Req = any;
 type Res = any;
@@ -207,9 +208,35 @@ class AttributeSourcesApi {
                     "endpoint.");
         } },
 
+      // DIRECTORY → ATTRIBUTE SOURCES → ADD A SOURCE (#1132): the create
+      // page's own view, rule 7's operation for it — the create's fields,
+      // which it refuses without (`admin-core/create_forms.ts`), and the
+      // closed sets its choices come from. No source is listed: that is
+      // the list page's.
+      { method: 'GET', path: BASE + '/attribute-sources/new',
+        tag: 'Directory', operationId: 'getNewAttributeSourceForm',
+        mirrors: 'GET /admin/attribute-sources/new',
+        handler: function (req, res): void {
+          log.debug("Entering the management API new attribute source " +
+                    "endpoint.");
+          const view = loadSources().view();
+          self.sendJson(res, 200, {
+            dialects: view.dialects, modes: view.modes,
+            onFailure: view.onFailure,
+            passwordProviders: view.passwordProviders,
+            hostPatterns: view.hostPatterns,
+            createFields: CreateForms.fieldsOf('attributeSources') });
+          log.debug("Leaving the management API new attribute source " +
+                    "endpoint.");
+        } },
+
       ApiRows.actions({ method: 'POST',
         route: BASE + '/attribute-sources/:action',
-        tag: 'Directory', mirrors: 'POST /admin/attribute-sources',
+        // Add a source posts its create to its own path (#1132), so a
+        // refusal redraws that page.
+        tag: 'Directory',
+        mirrors: 'POST /admin/attribute-sources and ' +
+                 'POST /admin/attribute-sources/new',
         handler: function (req, res): void {
           log.debug("Entering the management API attribute sources action.");
           const body = Object.assign({}, parseBody(req),

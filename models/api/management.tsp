@@ -2682,6 +2682,7 @@ namespace IyaSts.Api.Management {
     `fields`?: (WithAttributeLabelSchemaEtc5)[];
     `fieldGroups`?: (WithIdLabelWhatEtc4)[];
     `gridFields`?: (WithAttributeLabelGroupEtc8)[];
+    `createFields`?: (`CreateFormField`)[];
     `requiredAttributes`?: (string)[];
     `requiredEnforced`?: boolean;
     `credentials`?: (WithIdLabelWhat)[];
@@ -2697,12 +2698,71 @@ namespace IyaSts.Api.Management {
     `inventRefused`?: string
   }
 
+@js(#{
+    `description`:"What Directory → Groups → New group draws (#1132): the create's fields, which of them are required, and the container a group lands in."
+  }) @component model `NewGroupForm` {
+    `directory`?: boolean;
+    `canWrite`?: boolean;
+    `groupsDn`?: NullableString;
+    `realm`?: WithIdName;
+    `createFields`?: (`CreateFormField`)[]
+  }
+
+@js(#{
+    `description`:"What Directory → Roles → New role draws (#1132): the create's fields, which of them are required, the store's container and the applications a role may be for."
+  }) @component model `NewRoleForm` {
+    `canWrite`?: boolean;
+    `container`?: string;
+    `realm`?: WithIdName;
+    `applicationChoices`?: ({ `identifier`?: string; `name`?: string })[];
+    `createFields`?: (`CreateFormField`)[]
+  }
+
+@js(#{
+    `description`:"What Directory → Devices → Register a device draws (#1132): the create's fields, which of them are required, and the choices its selects offer."
+  }) @component model `NewDeviceForm` {
+    `ownerKinds`?: (string)[];
+    `platforms`?: (string)[];
+    `keyKinds`?: (string)[];
+    `createFields`?: (`CreateFormField`)[]
+  }
+
+@js(#{
+    `description`:"What Directory → Attribute sources → Add a source draws (#1132): the create's fields, which of them are required, and the choices its selects offer."
+  }) @component model `NewAttributeSourceForm` {
+    `dialects`?: (string)[];
+    `modes`?: (string)[];
+    `onFailure`?: (string)[];
+    `passwordProviders`?: (string)[];
+    `hostPatterns`?: string;
+    `createFields`?: (`CreateFormField`)[]
+  }
+
+@js(#{
+    `description`:"What Directory → Secret destinations → Add a destination draws (#1132): the create's fields, which of them are required, and the choices its selects offer."
+  }) @component model `NewSecretDestinationForm` {
+    `providers`?: (string)[];
+    `payloads`?: (string)[];
+    `credentialShapes`?: Record<string>;
+    `fileAllowed`?: boolean;
+    `createFields`?: (`CreateFormField`)[]
+  }
+
+@js(#{
+    `description`:"What Directory → Policies → New policy draws (#1132): the kinds a named policy may be made of, and the asked kind's create fields with which of them are required."
+  }) @component model `NewPolicyForm` {
+    `kinds`?: ({ `id`?: string; `label`?: string })[];
+    `kind`?: NullableString;
+    `createFields`?: (`CreateFormField`)[]
+  }
+
 @component model `NewApplicationForm` {
     `directory`?: boolean;
     `container`?: NullableString;
     `max`?: NullableNumber;
     `applicationCount`?: integer;
     `realm`?: WithIdName;
+    `createFields`?: (`CreateFormField`)[];
     `kinds`?: (WithKindLabelWhat)[];
     `protocols`?: (WithIdLabelKindEtc11)[];
     `declarations`?: (WithAttributeRoleKindEtc8)[];
@@ -13754,12 +13814,35 @@ op `getDevices`(`parameters/0/schema`: string,
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
+@endpoint("/admin-api/devices/new",
+  "get",
+  #{
+    `operationId`:"getNewDeviceForm",
+    `summary`:"What a device may be registered with, and which of it is required",
+    `description`:"The create's fields in `createFields`, each with `required` — `owner` is the one the create refuses without (STS-DEVICE-0001); the rest are optional, and a first key is recorded only when both `keyKind` and `key` are given — plus the closed sets the form's choices come from: `ownerKinds`, `platforms` and the `keyKinds` a first key may be. **It registers nothing**: the create is `POST /admin-api/devices/create`.\n\n**Mirrors** `GET /admin/devices/new` on the admin console.",
+    `tags`:#["Devices"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The fields, which are required, and the choices.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+  })
+op `getNewDeviceForm`(`responses/200/content/application~1json/schema`: `NewDeviceForm`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
 @endpoint("/admin-api/devices/create",
   "post",
   #{
     `operationId`:"createDevice",
     `summary`:"Register a device, owned by a person or an application",
-    `description`:"A device entry under `ou=devices` owned by `owner` — a username, or with `ownerKind` `application` an application's identifier — with an optional `label`, `platform`, `model`, `os`, the `applications` that use it, and its first keys, either `keys` (each `kind` and `value`: a PEM certificate, a public JWK or a security key's credential id the owner enrolled) or one as `keyKind` and `key`. Every key is recorded as proven by nobody and self-asserted. Refused for an owner the directory does not hold (STS-DEVICE-0001), an owner at its bound (STS-DEVICE-0002, STS-DEVICE-0003 — nothing is removed to make room), a key that is private, unreadable (STS-DEVICE-0004) or another device's (STS-DEVICE-0005).\n\n**Mirrors** `POST /admin/devices` on the admin console.",
+    `description`:"A device entry under `ou=devices` owned by `owner` — a username, or with `ownerKind` `application` an application's identifier — with an optional `label`, `platform`, `model`, `os`, the `applications` that use it, and its first keys, either `keys` (each `kind` and `value`: a PEM certificate, a public JWK or a security key's credential id the owner enrolled) or one as `keyKind` and `key`. Every key is recorded as proven by nobody and self-asserted. Refused for an owner the directory does not hold (STS-DEVICE-0001), an owner at its bound (STS-DEVICE-0002, STS-DEVICE-0003 — nothing is removed to make room), a key that is private, unreadable (STS-DEVICE-0004) or another device's (STS-DEVICE-0005).\n\n**Mirrors** `POST /admin/devices and POST /admin/devices/new` on the admin console.",
     `tags`:#["Devices"],
     `responses`:#{
       `200`:#{
@@ -13799,9 +13882,12 @@ op `createDevice`(@js(#{
     @js(#{
       `description`:"Client ids or application identifiers: an array, or one string, comma separated."
     }) `applications`?: unknown;
+    // kind and value stay optional here. The create already refuses a
+    // key without either (STS-DEVICE-0004). Marking them required is
+    // request-property-became-required, which the OpenAPI gate rejects.
     `keys`?: ({
-      `kind`?: "x509" | "jwk" | "webauthn";
-      @js(#{`description`:"PEM, JWK (object or JSON) or credential id."}) `value`?: unknown;
+      @js(#{`description`:"Required in each key: a key with no kind is refused (STS-DEVICE-0004)."}) `kind`?: "x509" | "jwk" | "webauthn";
+      @js(#{`description`:"PEM, JWK (object or JSON) or credential id. Required in each key: a key with nothing readable is refused (STS-DEVICE-0004)."}) `value`?: unknown;
       `label`?: string
     })[];
     `keyKind`?: "x509" | "jwk" | "webauthn";
@@ -13818,7 +13904,7 @@ op `createDevice`(@js(#{
   #{
     `operationId`:"updateDevice",
     `summary`:"Change a device's label, owner or description",
-    `description`:"Any of `label`, `platform`, `model`, `os`, `applications` (the whole list) and a new `owner` (with `ownerKind`). A new owner is held to its own bound and takes the device WITHOUT its Native SSO secret, which was bound to the old owner's session; its keys go with it. Refused for an unknown device (STS-DEVICE-0007).\n\n**Mirrors** `POST /admin/devices` on the admin console.",
+    `description`:"Any of `label`, `platform`, `model`, `os`, `applications` (the whole list) and a new `owner` (with `ownerKind`). A new owner is held to its own bound and takes the device WITHOUT its Native SSO secret, which was bound to the old owner's session; its keys go with it. Refused for an unknown device (STS-DEVICE-0007).\n\n**Mirrors** `POST /admin/devices and POST /admin/devices/new` on the admin console.",
     `tags`:#["Devices"],
     `responses`:#{
       `200`:#{
@@ -13857,7 +13943,7 @@ op `updateDevice`(@js(#{`examples`:#[#{`id`:"no-such-device",`label`:"Kitchen ta
   #{
     `operationId`:"removeDevice",
     `summary`:"Remove a device",
-    `description`:"Deletes the device entry, its keys and any Native SSO secret with it. Refused for an unknown device (STS-DEVICE-0007).\n\n**Mirrors** `POST /admin/devices` on the admin console.",
+    `description`:"Deletes the device entry, its keys and any Native SSO secret with it. Refused for an unknown device (STS-DEVICE-0007).\n\n**Mirrors** `POST /admin/devices and POST /admin/devices/new` on the admin console.",
     `tags`:#["Devices"],
     `responses`:#{
       `200`:#{
@@ -13887,7 +13973,7 @@ op `removeDevice`(@js(#{`examples`:#[#{`id`:"no-such-device"}]}) `requestBody/co
   #{
     `operationId`:"addDeviceKey",
     `summary`:"Add a key a device is recognised by",
-    `description`:"`kind` `x509` (a PEM certificate; its thumbprint is SHA-256 over the SubjectPublicKeyInfo), `jwk` (a PUBLIC JWK; RFC 7638, which is DPoP's jkt) or `webauthn` (the credential id of a security key the device's owner enrolled), in `value`. Recorded as proven by nobody and self-asserted. Refused for private material or an unreadable key (STS-DEVICE-0004), a key another device holds (STS-DEVICE-0005), or a device at devices.maxKeysPerDevice (STS-DEVICE-0006).\n\n**Mirrors** `POST /admin/devices` on the admin console.",
+    `description`:"`kind` `x509` (a PEM certificate; its thumbprint is SHA-256 over the SubjectPublicKeyInfo), `jwk` (a PUBLIC JWK; RFC 7638, which is DPoP's jkt) or `webauthn` (the credential id of a security key the device's owner enrolled), in `value`. Recorded as proven by nobody and self-asserted. Refused for private material or an unreadable key (STS-DEVICE-0004), a key another device holds (STS-DEVICE-0005), or a device at devices.maxKeysPerDevice (STS-DEVICE-0006).\n\n**Mirrors** `POST /admin/devices and POST /admin/devices/new` on the admin console.",
     `tags`:#["Devices"],
     `responses`:#{
       `200`:#{
@@ -13935,7 +14021,7 @@ op `addDeviceKey`(@js(#{
   #{
     `operationId`:"removeDeviceKey",
     `summary`:"Remove one of a device's keys",
-    `description`:"`key` is the key's id or its thumbprint. Refused for an unknown device (STS-DEVICE-0007) or a key it does not hold (STS-DEVICE-0008).\n\n**Mirrors** `POST /admin/devices` on the admin console.",
+    `description`:"`key` is the key's id or its thumbprint. Refused for an unknown device (STS-DEVICE-0007) or a key it does not hold (STS-DEVICE-0008).\n\n**Mirrors** `POST /admin/devices and POST /admin/devices/new` on the admin console.",
     `tags`:#["Devices"],
     `responses`:#{
       `200`:#{
@@ -13968,7 +14054,7 @@ op `removeDeviceKey`(@js(#{`examples`:#[#{`id`:"no-such-device",`key`:"k-none"}]
   #{
     `operationId`:"setDeviceCompliance",
     `summary`:"Set a device's compliance, as an administrator",
-    `description`:"`status` is `compliant`, `not-compliant` or `unknown` (withdrawing a vouch), with an optional `reason`. Recorded with source `admin`. When what a receiver can be told moved — CAEP knows compliant and not-compliant, and unknown is sent as not-compliant — a CAEP device-compliance-change goes out, its subject the device and its owner. An MDM feed reports through POST /admin-api/device-compliance instead, under its own scope. Refused for an unknown device (STS-DEVICE-0007) or status (STS-DEVICE-0011).\n\n**Mirrors** `POST /admin/devices` on the admin console.",
+    `description`:"`status` is `compliant`, `not-compliant` or `unknown` (withdrawing a vouch), with an optional `reason`. Recorded with source `admin`. When what a receiver can be told moved — CAEP knows compliant and not-compliant, and unknown is sent as not-compliant — a CAEP device-compliance-change goes out, its subject the device and its owner. An MDM feed reports through POST /admin-api/device-compliance instead, under its own scope. Refused for an unknown device (STS-DEVICE-0007) or status (STS-DEVICE-0011).\n\n**Mirrors** `POST /admin/devices and POST /admin/devices/new` on the admin console.",
     `tags`:#["Devices"],
     `responses`:#{
       `200`:#{
@@ -14010,7 +14096,7 @@ op `setDeviceCompliance`(@js(#{
   #{
     `operationId`:"setDeviceStatus",
     `summary`:"Mark a device compromised, or restore it",
-    `description`:"`status` `compromised`: every sign-on session one of its keys authenticated is ended, its Native SSO secret revoked, every certificate this service's EST or SCEP Issuing CA issued it revoked for keyCompromise, its risk level raised to HIGH (CAEP risk-level-change, principal DEVICE), and for a person's device RISC credential-compromise is sent naming the person and the device (and the deprecated sessions-revoked, where risc.autoEmitTypes names it). `active` restores it and puts back the risk level the compromise raised; nothing revoked comes back. Answers `sessionsEnded` and `certificatesRevoked`.\n\n**Mirrors** `POST /admin/devices` on the admin console.",
+    `description`:"`status` `compromised`: every sign-on session one of its keys authenticated is ended, its Native SSO secret revoked, every certificate this service's EST or SCEP Issuing CA issued it revoked for keyCompromise, its risk level raised to HIGH (CAEP risk-level-change, principal DEVICE), and for a person's device RISC credential-compromise is sent naming the person and the device (and the deprecated sessions-revoked, where risc.autoEmitTypes names it). `active` restores it and puts back the risk level the compromise raised; nothing revoked comes back. Answers `sessionsEnded` and `certificatesRevoked`.\n\n**Mirrors** `POST /admin/devices and POST /admin/devices/new` on the admin console.",
     `tags`:#["Devices"],
     `responses`:#{
       `200`:#{
@@ -19280,7 +19366,7 @@ op `getGroups`(`parameters/0/schema`: string,
   #{
     `operationId`:"createGroup",
     `summary`:"Put a group in the directory",
-    `description`:"An entry under `ou=groups`, as a `groupOfNames` — so it is counted as a group by BOTH of the rules /admin/groups applies, its placement and its object class, and stays one if a client moves it.\n\n**The name becomes the `cn` AND the RDN**, so it is refused if it carries a character RFC 4514 section 2.4 reserves in a DN (one of `, = + < > # ; \" \\`) — the same rule a username is refused by, and refused rather than escaped for the same reason: an `ldapadd` can still create such an entry with the escaping written out. A DN sent here is refused too, because what it would create is a group whose name is another group's DN.\n\n**A member that names nothing is WRITTEN, not refused.** This directory does no referential integrity in either direction — deleting a person leaves their DN in every group that listed them — so a create that refused a dangling member would make the state /admin/groups exists to report impossible to produce from this door. They come back in `dangling`.\n\n**An empty group is allowed and RFC 4519 says it should not be** (`member` is MUST on `groupOfNames`). SCIM already creates one; a management API stricter than SCIM about the same store would be two doors disagreeing about what this directory holds.\n\n**IT GRANTS NOTHING.** No endpoint here decides anything on a group. The two that do are `admin.readGroup` and `admin.writeGroup`, and they are granted at POST /admin-api/rbac rather than by creating a group with the right name — though creating one with the right name and adding somebody to it does the same thing, because those two ARE ordinary groups in this directory.\n\n**Mirrors** `POST /admin/groups and POST /admin/groups/owners` on the admin console.",
+    `description`:"An entry under `ou=groups`, as a `groupOfNames` — so it is counted as a group by BOTH of the rules /admin/groups applies, its placement and its object class, and stays one if a client moves it.\n\n**The name becomes the `cn` AND the RDN**, so it is refused if it carries a character RFC 4514 section 2.4 reserves in a DN (one of `, = + < > # ; \" \\`) — the same rule a username is refused by, and refused rather than escaped for the same reason: an `ldapadd` can still create such an entry with the escaping written out. A DN sent here is refused too, because what it would create is a group whose name is another group's DN.\n\n**A member that names nothing is WRITTEN, not refused.** This directory does no referential integrity in either direction — deleting a person leaves their DN in every group that listed them — so a create that refused a dangling member would make the state /admin/groups exists to report impossible to produce from this door. They come back in `dangling`.\n\n**An empty group is allowed and RFC 4519 says it should not be** (`member` is MUST on `groupOfNames`). SCIM already creates one; a management API stricter than SCIM about the same store would be two doors disagreeing about what this directory holds.\n\n**IT GRANTS NOTHING.** No endpoint here decides anything on a group. The two that do are `admin.readGroup` and `admin.writeGroup`, and they are granted at POST /admin-api/rbac rather than by creating a group with the right name — though creating one with the right name and adding somebody to it does the same thing, because those two ARE ordinary groups in this directory.\n\n**Mirrors** `POST /admin/groups, POST /admin/groups/new and POST /admin/groups/owners` on the admin console.",
     `tags`:#["Groups"],
     `responses`:#{
       `200`:#{
@@ -19325,12 +19411,35 @@ op `createGroup`(@js(#{
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
+@endpoint("/admin-api/groups/new",
+  "get",
+  #{
+    `operationId`:"getNewGroupForm",
+    `summary`:"What a group may be created with, and which of it is required",
+    `description`:"The create's fields in `createFields`, each with `required` — `group` (the `cn`) is the one the create refuses without; `note`, `mail` and `members` are optional — plus the container a group lands in, `groupsDn`, which is THIS REALM'S. **It creates nothing**: the create is `POST /admin-api/groups/create`. A process with no directory answers `directory: false`.\n\n**Mirrors** `GET /admin/groups/new` on the admin console.",
+    `tags`:#["Groups"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The fields, which are required, the container and the realm.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+  })
+op `getNewGroupForm`(`responses/200/content/application~1json/schema`: `NewGroupForm`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
 @endpoint("/admin-api/groups/add-member",
   "post",
   #{
     `operationId`:"addGroupMember",
     `summary`:"Put somebody in a group that already exists",
-    `description`:"One membership value onto one group. `group` is its `cn` or its whole DN; `member` is a user name or any DN.\n\n**IT IS IDEMPOTENT.** Adding somebody already listed answers `ok: true` with `changed: false` rather than an error, so a script that adds on every run does not fail on its second one. Membership is asked across `member`, `uniqueMember` and `memberUid` together, which is how /admin/groups and the groups claim ask it — an add that could not see a `memberUid` would write a second value for one membership.\n\n**It writes onto `member`** whatever else the entry carries, rather than extending whichever convention the group already uses: this service's groups claim, the console and RFC 4519 all read `member` first, and guessing which of three attributes was meant would be this operation deciding something the caller did not say.\n\n**It does not create the group as a side effect.** A typo in the name would then be a new group rather than an error. And it writes nothing onto the PERSON: `memberOf` is maintained by nothing here — it is not even a standard attribute — and a value written there is one no other door in this service can take away.\n\n**Removing one is not here.** It is an `ldapmodify` or a SCIM `PATCH`, and POST /admin-api/rbac for the two groups that grant the console.\n\n**Mirrors** `POST /admin/groups and POST /admin/groups/owners` on the admin console.",
+    `description`:"One membership value onto one group. `group` is its `cn` or its whole DN; `member` is a user name or any DN.\n\n**IT IS IDEMPOTENT.** Adding somebody already listed answers `ok: true` with `changed: false` rather than an error, so a script that adds on every run does not fail on its second one. Membership is asked across `member`, `uniqueMember` and `memberUid` together, which is how /admin/groups and the groups claim ask it — an add that could not see a `memberUid` would write a second value for one membership.\n\n**It writes onto `member`** whatever else the entry carries, rather than extending whichever convention the group already uses: this service's groups claim, the console and RFC 4519 all read `member` first, and guessing which of three attributes was meant would be this operation deciding something the caller did not say.\n\n**It does not create the group as a side effect.** A typo in the name would then be a new group rather than an error. And it writes nothing onto the PERSON: `memberOf` is maintained by nothing here — it is not even a standard attribute — and a value written there is one no other door in this service can take away.\n\n**Removing one is not here.** It is an `ldapmodify` or a SCIM `PATCH`, and POST /admin-api/rbac for the two groups that grant the console.\n\n**Mirrors** `POST /admin/groups, POST /admin/groups/new and POST /admin/groups/owners` on the admin console.",
     `tags`:#["Groups"],
     `responses`:#{
       `200`:#{
@@ -19365,7 +19474,7 @@ op `addGroupMember`(@js(#{`examples`:#[#{`group`:"developers",`member`:"alice"}]
   #{
     `operationId`:"setGroupMail",
     `summary`:"Set or clear a group's email address",
-    `description`:"Writes one `mail` value onto the group's own entry, or removes it when `mail` is empty. It is where a report definition shared with the group sends its result notices (the reports application, #989); a shared group with no address is written up as STS-REPORT-0037 when a notice is due. `group` is its `cn` or its whole DN. **Idempotent**: the same address again, or clearing one that is already absent, answers `ok: true` with `changed: false`. A value that is not an address (one local part, one `@`, a domain with a dot, no whitespace) is refused.\n\n**Mirrors** `POST /admin/groups and POST /admin/groups/owners` on the admin console.",
+    `description`:"Writes one `mail` value onto the group's own entry, or removes it when `mail` is empty. It is where a report definition shared with the group sends its result notices (the reports application, #989); a shared group with no address is written up as STS-REPORT-0037 when a notice is due. `group` is its `cn` or its whole DN. **Idempotent**: the same address again, or clearing one that is already absent, answers `ok: true` with `changed: false`. A value that is not an address (one local part, one `@`, a domain with a dot, no whitespace) is refused.\n\n**Mirrors** `POST /admin/groups, POST /admin/groups/new and POST /admin/groups/owners` on the admin console.",
     `tags`:#["Groups"],
     `responses`:#{
       `200`:#{
@@ -19398,7 +19507,7 @@ op `setGroupMail`(@js(#{`examples`:#[#{`group`:"developers",`mail`:"developers@e
   #{
     `operationId`:"setGroupPolicy",
     `summary`:"Set or clear the named policy a group names of one kind",
-    `description`:"Writes one value of `attribute` — the attribute by which a group names its policy of a kind, `stsPasskeyPolicy` for the passkey policy — onto the group's own entry, or removes it when `policy` is empty. `policy` is `default` or a named policy of that kind this realm holds (STS-LDAP-0195 otherwise); an attribute no kind declares is refused (STS-LDAP-0194). The policy a group names competes for each of its members on precedence with the policy the application names, the policy the person names and the policies their other groups name: the lowest applies, ties by name, else `default`. A named policy a group still names cannot be deleted. `GET /admin-api/groups?group=` lists the attributes and their choices as `policyReferences`. **Idempotent**: the value the group already names answers `changed: false`.\n\n**Mirrors** `POST /admin/groups and POST /admin/groups/owners` on the admin console.",
+    `description`:"Writes one value of `attribute` — the attribute by which a group names its policy of a kind, `stsPasskeyPolicy` for the passkey policy — onto the group's own entry, or removes it when `policy` is empty. `policy` is `default` or a named policy of that kind this realm holds (STS-LDAP-0195 otherwise); an attribute no kind declares is refused (STS-LDAP-0194). The policy a group names competes for each of its members on precedence with the policy the application names, the policy the person names and the policies their other groups name: the lowest applies, ties by name, else `default`. A named policy a group still names cannot be deleted. `GET /admin-api/groups?group=` lists the attributes and their choices as `policyReferences`. **Idempotent**: the value the group already names answers `changed: false`.\n\n**Mirrors** `POST /admin/groups, POST /admin/groups/new and POST /admin/groups/owners` on the admin console.",
     `tags`:#["Groups"],
     `responses`:#{
       `200`:#{
@@ -19444,7 +19553,7 @@ op `setGroupPolicy`(@js(#{
   #{
     `operationId`:"addGroupOwner",
     `summary`:"Add one owner to a group",
-    `description`:"Adds a person or a group of this realm to the group's `owner` values (RFC 4519 section 2.23) and writes at once, keeping the other owners. `owner` is a username, a DN or a `urn:uuid:` subject for a person, a `cn` or DN for a group.\n\n**Unlike a member, an owner must name somebody**: one that names no person and no group here is refused. A group may not own itself, and names at most 25 owners. An owner already listed is `ok` with `changed: false`.\n\n**AN OWNER GRANTS NOTHING**: nothing in this service reads `owner` to decide anything.\n\n**Mirrors** `POST /admin/groups and POST /admin/groups/owners` on the admin console.",
+    `description`:"Adds a person or a group of this realm to the group's `owner` values (RFC 4519 section 2.23) and writes at once, keeping the other owners. `owner` is a username, a DN or a `urn:uuid:` subject for a person, a `cn` or DN for a group.\n\n**Unlike a member, an owner must name somebody**: one that names no person and no group here is refused. A group may not own itself, and names at most 25 owners. An owner already listed is `ok` with `changed: false`.\n\n**AN OWNER GRANTS NOTHING**: nothing in this service reads `owner` to decide anything.\n\n**Mirrors** `POST /admin/groups, POST /admin/groups/new and POST /admin/groups/owners` on the admin console.",
     `tags`:#["Groups"],
     `responses`:#{
       `200`:#{
@@ -19477,7 +19586,7 @@ op `addGroupOwner`(@js(#{`examples`:#[#{`group`:"developers",`owner`:"alice"}]})
   #{
     `operationId`:"removeGroupOwner",
     `summary`:"Take one owner off a group",
-    `description`:"Takes one `owner` value off the group and writes at once (#603). `owner` is the DN the group lists; one it does not list is refused. The last owner may go: a group needs none.\n\n**Mirrors** `POST /admin/groups and POST /admin/groups/owners` on the admin console.",
+    `description`:"Takes one `owner` value off the group and writes at once (#603). `owner` is the DN the group lists; one it does not list is refused. The last owner may go: a group needs none.\n\n**Mirrors** `POST /admin/groups, POST /admin/groups/new and POST /admin/groups/owners` on the admin console.",
     `tags`:#["Groups"],
     `responses`:#{
       `200`:#{
@@ -37518,12 +37627,35 @@ op `previewRoleIssuance`(`parameters/0/schema`: string,
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
+@endpoint("/admin-api/roles/new",
+  "get",
+  #{
+    `operationId`:"getNewRoleForm",
+    `summary`:"What a role may be created with, and which of it is required",
+    `description`:"The create's fields in `createFields`, each with `required` — `role`, the name, is the one the create refuses without; `description`, `application`, `displayName` and `memberTypes` are optional — plus the container roles are stored in (empty when this process has no directory to store one in, when `canWrite` is false too) and the applications a role may be for. **It creates nothing**: the create is `POST /admin-api/roles/create-role`.\n\n**Mirrors** `GET /admin/roles/new` on the admin console.",
+    `tags`:#["Roles"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The fields, which are required, the container and the application choices.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+  })
+op `getNewRoleForm`(`responses/200/content/application~1json/schema`: `NewRoleForm`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
 @endpoint("/admin-api/roles/create-role",
   "post",
   #{
     `operationId`:"createRole",
     `summary`:"Make a role",
-    `description`:"Writes one entry under `ou=roles` with no members. Adding members is `add-member`; the two are separate because a role is worth creating before anybody holds it — an application can be narrowed to it first, and the register will then say so.\n\nThe name becomes an LDAP RDN and a value in a token claim, so it is up to 64 characters of letters, digits, and `. _ : @ -` or a space. **It may not be one of the six built-in roles**: those are computed and answered first, so a stored role of the same name could never be reached.\n\n**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.",
+    `description`:"Writes one entry under `ou=roles` with no members. Adding members is `add-member`; the two are separate because a role is worth creating before anybody holds it — an application can be narrowed to it first, and the register will then say so.\n\nThe name becomes an LDAP RDN and a value in a token claim, so it is up to 64 characters of letters, digits, and `. _ : @ -` or a space. **It may not be one of the six built-in roles**: those are computed and answered first, so a stored role of the same name could never be reached.\n\n**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.",
     `tags`:#["Roles"],
     `responses`:#{
       `200`:#{
@@ -37585,7 +37717,7 @@ op `createRole`(@js(#{
   #{
     `operationId`:"deleteRole",
     `summary`:"Remove a role",
-    `description`:"Deletes the entry. **Applications that still REQUIRE it are named in the reply and the delete still happens**, which is deliberate: refusing would mean a role could not be removed until every application naming it had been edited, and those entries are usually the thing somebody is in the middle of changing. Each of them now requires a role NOBODY holds and is therefore issued nothing at all — so the consequence is said at the moment it is created rather than discovered later as a service that stopped working.\n\nNothing already ISSUED is touched. A token minted while somebody held the role is still valid and still carries it in the roles claim.\n\n**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.",
+    `description`:"Deletes the entry. **Applications that still REQUIRE it are named in the reply and the delete still happens**, which is deliberate: refusing would mean a role could not be removed until every application naming it had been edited, and those entries are usually the thing somebody is in the middle of changing. Each of them now requires a role NOBODY holds and is therefore issued nothing at all — so the consequence is said at the moment it is created rather than discovered later as a service that stopped working.\n\nNothing already ISSUED is touched. A token minted while somebody held the role is still valid and still carries it in the roles claim.\n\n**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.",
     `tags`:#["Roles"],
     `responses`:#{
       `200`:#{
@@ -37615,7 +37747,7 @@ op `deleteRole`(@js(#{`examples`:#[#{`role`:"staff"}]}) `requestBody/content/app
   #{
     `operationId`:"describeRole",
     `summary`:"Change what a role says it is for, and who may hold it",
-    `description`:"Replaces the `description` — and, where given, the `displayName` and `memberTypes` (#93) — and leaves the membership exactly as it was. It is an action of its own rather than a field on `create-role` because creating an existing role is refused: roles are edited in place.\n\n**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.",
+    `description`:"Replaces the `description` — and, where given, the `displayName` and `memberTypes` (#93) — and leaves the membership exactly as it was. It is an action of its own rather than a field on `create-role` because creating an existing role is refused: roles are edited in place.\n\n**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.",
     `tags`:#["Roles"],
     `responses`:#{
       `200`:#{
@@ -37656,7 +37788,7 @@ op `describeRole`(@js(#{
   #{
     `operationId`:"addRoleMember",
     `summary`:"Give somebody a role",
-    `description`:"Adds one value to the role entry. **Which of the three lists it goes in is `kind`, and the three are looked up in three different places**, so naming the wrong one succeeds and writes something that will never match:\n\n* `user` — a username. The person need not exist: this service creates a directory entry for any name on first sight, so a role can be granted before its holder has ever signed in.\n* `group` — a group in `ou=groups`. Every member holds the role, **resolved at DECISION TIME** rather than expanded on write, so an `ldapmodify` adding somebody to the group changes the very next token.\n* `application` — an application that holds the role AS ITSELF, which is what a `client_credentials` grant is decided on.\n\nIt is NOT the same relation as `appRequiredRole` on an application entry, which is what that application DEMANDS of others. An application appears in both and means opposite things in each.\n\nA BUILT-IN role is refused by name: those six are computed and have no membership to edit.\n\n**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.",
+    `description`:"Adds one value to the role entry. **Which of the three lists it goes in is `kind`, and the three are looked up in three different places**, so naming the wrong one succeeds and writes something that will never match:\n\n* `user` — a username. The person need not exist: this service creates a directory entry for any name on first sight, so a role can be granted before its holder has ever signed in.\n* `group` — a group in `ou=groups`. Every member holds the role, **resolved at DECISION TIME** rather than expanded on write, so an `ldapmodify` adding somebody to the group changes the very next token.\n* `application` — an application that holds the role AS ITSELF, which is what a `client_credentials` grant is decided on.\n\nIt is NOT the same relation as `appRequiredRole` on an application entry, which is what that application DEMANDS of others. An application appears in both and means opposite things in each.\n\nA BUILT-IN role is refused by name: those six are computed and have no membership to edit.\n\n**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.",
     `tags`:#["Roles"],
     `responses`:#{
       `200`:#{
@@ -37692,7 +37824,7 @@ op `addRoleMember`(@js(#{`examples`:#[#{`role`:"staff",`kind`:"user",`member`:"a
   #{
     `operationId`:"removeRoleMember",
     `summary`:"Take a role away",
-    `description`:"Removes one value from the role entry. Matched case-insensitively, for the reason the register gives: a username here arrives from a login form, a SAML subject, a Kerberos principal and a `client_id`, and this service has always treated those as one identity however they were typed.\n\n**Nothing already ISSUED is touched**, exactly as revoking a delegated permission does not re-judge a grant already made. The next issuance is decided without the role; a token minted a minute ago still carries it.\n\n**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.",
+    `description`:"Removes one value from the role entry. Matched case-insensitively, for the reason the register gives: a username here arrives from a login form, a SAML subject, a Kerberos principal and a `client_id`, and this service has always treated those as one identity however they were typed.\n\n**Nothing already ISSUED is touched**, exactly as revoking a delegated permission does not re-judge a grant already made. The next issuance is decided without the role; a token minted a minute ago still carries it.\n\n**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.",
     `tags`:#["Roles"],
     `responses`:#{
       `200`:#{
@@ -37726,7 +37858,7 @@ op `removeRoleMember`(@js(#{`examples`:#[#{`role`:"staff",`kind`:"user",`member`
   #{
     `operationId`:"addRolePermission",
     `summary`:"Let a role authorize a permission",
-    `description`:"Adds one value to the role's `rolePermission` (#303). **A scope is a request and a role is what authorizes it**: a permission its resource application GATES (`oauthRoleGatedPermission`) is issued only to a subject — a person, or an application on `client_credentials` — holding a role that names it, and left off the token otherwise.\n\n`permission` is the full identifier a client asks for: the resource's `oauthPermissionBaseUri` followed by the name. It must be DEFINED by an application in this realm first. `gated: false` in the reply means the resource does not gate it yet, so the role changes nothing until it does.\n\n**The native permissions `admin:read` and `admin:write` are refused**: they are authorized by the console roles ADMIN_READ and ADMIN_WRITE alone, whose permissions are fixed. Put an application in one of those with `add-member`.\n\n**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.",
+    `description`:"Adds one value to the role's `rolePermission` (#303). **A scope is a request and a role is what authorizes it**: a permission its resource application GATES (`oauthRoleGatedPermission`) is issued only to a subject — a person, or an application on `client_credentials` — holding a role that names it, and left off the token otherwise.\n\n`permission` is the full identifier a client asks for: the resource's `oauthPermissionBaseUri` followed by the name. It must be DEFINED by an application in this realm first. `gated: false` in the reply means the resource does not gate it yet, so the role changes nothing until it does.\n\n**The native permissions `admin:read` and `admin:write` are refused**: they are authorized by the console roles ADMIN_READ and ADMIN_WRITE alone, whose permissions are fixed. Put an application in one of those with `add-member`.\n\n**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.",
     `tags`:#["Roles"],
     `responses`:#{
       `200`:#{
@@ -37761,7 +37893,7 @@ op `addRolePermission`(@js(#{
   #{
     `operationId`:"removeRolePermission",
     `summary`:"Stop a role authorizing a permission",
-    `description`:"Removes one value from the role's `rolePermission` (#303). The next issuance is decided without it; a token already issued keeps what it carries, except at `/admin-api`, whose gate asks the roles again on every call.\n\n**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.",
+    `description`:"Removes one value from the role's `rolePermission` (#303). The next issuance is decided without it; a token already issued keeps what it carries, except at `/admin-api`, whose gate asks the roles again on every call.\n\n**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.",
     `tags`:#["Roles"],
     `responses`:#{
       `200`:#{
@@ -37796,7 +37928,7 @@ op `removeRolePermission`(@js(#{
   #{
     `operationId`:"addRoleConferringClient",
     `summary`:"Let a client confer a role on everybody signing in through it",
-    `description`:"Adds one value to the role's `roleConferredBy` (#454): every PERSON who signs in through that client holds the role on the access token the client is issued, beside the roles they hold themselves, and on no other token. It is how the console's client, `sts-admin-console`, gives everybody who signs in to the console ADMIN_CONSOLE. The client must be registered in this realm. A role only applications may hold, and the two console roles, cannot be conferred.\n\n**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.",
+    `description`:"Adds one value to the role's `roleConferredBy` (#454): every PERSON who signs in through that client holds the role on the access token the client is issued, beside the roles they hold themselves, and on no other token. It is how the console's client, `sts-admin-console`, gives everybody who signs in to the console ADMIN_CONSOLE. The client must be registered in this realm. A role only applications may hold, and the two console roles, cannot be conferred.\n\n**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.",
     `tags`:#["Roles"],
     `responses`:#{
       `200`:#{
@@ -37829,7 +37961,7 @@ op `addRoleConferringClient`(@js(#{`examples`:#[#{`role`:"ADMIN_CONSOLE",`client
   #{
     `operationId`:"removeRoleConferringClient",
     `summary`:"Stop a client conferring a role",
-    `description`:"Removes one value from the role's `roleConferredBy` (#454). The client's tokens stop carrying the role at once at `/admin-api`, whose gate asks on every call, and at the next issuance everywhere else. Taking `sts-admin-console` off ADMIN_CONSOLE leaves the console unable to draw itself until it is put back.\n\n**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.",
+    `description`:"Removes one value from the role's `roleConferredBy` (#454). The client's tokens stop carrying the role at once at `/admin-api`, whose gate asks on every call, and at the next issuance everywhere else. Taking `sts-admin-console` off ADMIN_CONSOLE leaves the console unable to draw itself until it is put back.\n\n**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.",
     `tags`:#["Roles"],
     `responses`:#{
       `200`:#{
@@ -38037,7 +38169,7 @@ op `testRoleEligibility`(@js(#{`examples`:#["oncall-operator"]}) `parameters/0/s
   #{
     `operationId`:"addRoleOwner",
     `summary`:"Add one owner to a role",
-    `description`:"Adds a person or a group of this realm to the role's `owner` values and writes at once, keeping the other owners and everything else on the role. `owner` is a username, a DN or a `urn:uuid:` subject for a person, a `cn` or DN for a group.\n\nAn owner must name somebody: one that names no person and no group here is refused. A role names at most 25 owners. An owner already listed is `ok` with `changed: false`.\n\n**AN OWNER GRANTS NOTHING**: nothing in this service reads `owner` to decide anything; the user portal lists what a person owns.\n\n**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.",
+    `description`:"Adds a person or a group of this realm to the role's `owner` values and writes at once, keeping the other owners and everything else on the role. `owner` is a username, a DN or a `urn:uuid:` subject for a person, a `cn` or DN for a group.\n\nAn owner must name somebody: one that names no person and no group here is refused. A role names at most 25 owners. An owner already listed is `ok` with `changed: false`.\n\n**AN OWNER GRANTS NOTHING**: nothing in this service reads `owner` to decide anything; the user portal lists what a person owns.\n\n**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.",
     `tags`:#["Roles"],
     `responses`:#{
       `200`:#{
@@ -38070,7 +38202,7 @@ op `addRoleOwner`(@js(#{`examples`:#[#{`role`:"staff",`owner`:"alice"}]}) `reque
   #{
     `operationId`:"removeRoleOwner",
     `summary`:"Take one owner off a role",
-    `description`:"Takes one `owner` value off the role and writes at once (#604). `owner` is the DN the role lists; one it does not list is refused. The last owner may go: a role needs none.\n\n**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.",
+    `description`:"Takes one `owner` value off the role and writes at once (#604). `owner` is the DN the role lists; one it does not list is refused. The last owner may go: a role needs none.\n\n**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.",
     `tags`:#["Roles"],
     `responses`:#{
       `200`:#{
@@ -38191,6 +38323,39 @@ op `setOwnerProtected`(@js(#{`examples`:#[#{`kind`:"role",`name`:"staff",`protec
   },
   `responses/200/content/application~1json/schema`: `WithOkMessageErrors141`,
   `responses/400/content/application~1json/schema`: `WithOkMessageErrors141`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
+@endpoint("/admin-api/policies/new",
+  "get",
+  #{
+    `operationId`:"getNewPolicyForm",
+    `summary`:"The kinds a named policy may be made of, and which of a kind's fields a save requires",
+    `description`:"Every kind whose profiles may be named, in `kinds`, and — with `kind` — that kind's create fields in `createFields`, each with `required`: the name (`profile`, or `name` for the authentication policy) always, since a save with no name edits the DEFAULT policy; the precedence and the description never; and each of the kind's own fields unless the save keeps the value in force when it is left out. **It saves nothing**: a named policy is made by the kind's save act with a name the realm does not hold yet, `POST /admin-api/policies/save-<kind>-policy` (`save-named-authn-policy` for the authentication policy).\n\n**Mirrors** `GET /admin/policies/new` on the admin console.",
+    `tags`:#["Policies"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The kinds, and the asked kind's fields with which are required.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `parameters`:#[
+      #{
+        `name`:"kind",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The kind of policy to make, one of `kinds`. Without one, or with one no kind is, `createFields` is empty and `kind` null."
+      }
+    ],
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+  })
+op `getNewPolicyForm`(@js(#{`maxLength`:64,`examples`:#["passkey"]}) `parameters/0/schema`: string,
+  `responses/200/content/application~1json/schema`: `NewPolicyForm`,
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
@@ -44154,12 +44319,35 @@ op `getAttributeSources`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schem
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
+@endpoint("/admin-api/attribute-sources/new",
+  "get",
+  #{
+    `operationId`:"getNewAttributeSourceForm",
+    `summary`:"What an attribute source may be added with, and which of it is required",
+    `description`:"The create's fields in `createFields`, each with `required` — `id`, `host`, `database`, `user`, `table`, `keyColumn` and `columns` (at least one `column=attribute`) are refused when empty; every other field is optional, with the default the create applies when it is absent — plus the closed sets the form's choices come from and `attributeSources.hostPatterns`. **It adds nothing**: the create is `POST /admin-api/attribute-sources/add-source`.\n\n**Mirrors** `GET /admin/attribute-sources/new` on the admin console.",
+    `tags`:#["Directory"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The fields, which are required, and the choices.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+  })
+op `getNewAttributeSourceForm`(`responses/200/content/application~1json/schema`: `NewAttributeSourceForm`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
 @endpoint("/admin-api/attribute-sources/add-source",
   "post",
   #{
     `operationId`:"addAttributeSource",
     `summary`:"Add an attribute source",
-    `description`:"A database this realm reads people's attributes from. Refused for an attribute another source writes, one no outside source may write, a host attributeSources.hostPatterns does not allow, or a name that is not an identifier. Audited.\n\n**Mirrors** `POST /admin/attribute-sources` on the admin console.",
+    `description`:"A database this realm reads people's attributes from. Refused for an attribute another source writes, one no outside source may write, a host attributeSources.hostPatterns does not allow, or a name that is not an identifier. Audited.\n\n**Mirrors** `POST /admin/attribute-sources and POST /admin/attribute-sources/new` on the admin console.",
     `tags`:#["Directory"],
     `responses`:#{
       `200`:#{
@@ -44200,7 +44388,7 @@ op `addAttributeSource`(@js(#{
       `pattern`:"^[a-z0-9][a-z0-9-]{0,62}$",
       `description`:"The source's id in this realm."
     }) `id`: string;
-    @js(#{`description`:"PostgreSQL, or MySQL / MariaDB."}) `dialect`: "postgres" | "mysql";
+    @js(#{`description`:"PostgreSQL, or MySQL / MariaDB: `postgres` when absent. Sent empty, it is refused."}) `dialect`?: "postgres" | "mysql";
     @js(#{
       `maxLength`:253,
       `description`:"The database host; attributeSources.hostPatterns may narrow it."
@@ -44264,7 +44452,7 @@ op `addAttributeSource`(@js(#{
   #{
     `operationId`:"updateAttributeSource",
     `summary`:"Change an attribute source",
-    `description`:"The members given replace the source's; the rest are kept. Checked as add-source is. Audited.\n\n**Mirrors** `POST /admin/attribute-sources` on the admin console.",
+    `description`:"The members given replace the source's; the rest are kept. Checked as add-source is. Audited.\n\n**Mirrors** `POST /admin/attribute-sources and POST /admin/attribute-sources/new` on the admin console.",
     `tags`:#["Directory"],
     `responses`:#{
       `200`:#{
@@ -44352,7 +44540,7 @@ op `updateAttributeSource`(@js(#{`examples`:#[#{`id`:"hr-db",`onFailure`:"refuse
   #{
     `operationId`:"removeAttributeSource",
     `summary`:"Remove an attribute source",
-    `description`:"It leaves the register; what it wrote on people's entries stays. Audited.\n\n**Mirrors** `POST /admin/attribute-sources` on the admin console.",
+    `description`:"It leaves the register; what it wrote on people's entries stays. Audited.\n\n**Mirrors** `POST /admin/attribute-sources and POST /admin/attribute-sources/new` on the admin console.",
     `tags`:#["Directory"],
     `responses`:#{
       `200`:#{
@@ -44382,7 +44570,7 @@ op `removeAttributeSource`(@js(#{`examples`:#[#{`id`:"hr-db"}]}) `requestBody/co
   #{
     `operationId`:"testAttributeSource",
     `summary`:"Connect to a source and read one row, writing nothing",
-    `description`:"Reads the row for a person (by `username`, whose key attribute is used) or for a `key` given outright, and returns it. Nothing is written.\n\n**Mirrors** `POST /admin/attribute-sources` on the admin console.",
+    `description`:"Reads the row for a person (by `username`, whose key attribute is used) or for a `key` given outright, and returns it. Nothing is written.\n\n**Mirrors** `POST /admin/attribute-sources and POST /admin/attribute-sources/new` on the admin console.",
     `tags`:#["Directory"],
     `responses`:#{
       `200`:#{
@@ -44419,7 +44607,7 @@ op `testAttributeSource`(@js(#{`examples`:#[#{`id`:"hr-db",`username`:"alice"}]}
   #{
     `operationId`:"refreshAttributeSource",
     `summary`:"Read every person from a source now",
-    `description`:"Queues the scheduled refresh for this source, which reads the realm's people a page at a time. Audited.\n\n**Mirrors** `POST /admin/attribute-sources` on the admin console.",
+    `description`:"Queues the scheduled refresh for this source, which reads the realm's people a page at a time. Audited.\n\n**Mirrors** `POST /admin/attribute-sources and POST /admin/attribute-sources/new` on the admin console.",
     `tags`:#["Directory"],
     `responses`:#{
       `200`:#{
@@ -44449,7 +44637,7 @@ op `refreshAttributeSource`(@js(#{`examples`:#[#{`id`:"hr-db"}]}) `requestBody/c
   #{
     `operationId`:"refreshAttributeSourcePerson",
     `summary`:"Read one person from the sources now",
-    `description`:"From every source that allows on-demand, or the one named by `id`. Audited.\n\n**Mirrors** `POST /admin/attribute-sources` on the admin console.",
+    `description`:"From every source that allows on-demand, or the one named by `id`. Audited.\n\n**Mirrors** `POST /admin/attribute-sources and POST /admin/attribute-sources/new` on the admin console.",
     `tags`:#["Directory"],
     `responses`:#{
       `200`:#{
@@ -44549,12 +44737,35 @@ op `getSecretDestinations`(@js(#{`maxLength`:256,`examples`:#["vault"]}) `parame
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
+@endpoint("/admin-api/secret-destinations/new",
+  "get",
+  #{
+    `operationId`:"getNewSecretDestinationForm",
+    `summary`:"What a secret destination may be added with, and which of it is required",
+    `description`:"The create's fields in `createFields`, each with `required` — `identifier` and `provider` are refused when empty — and, for a field required for some providers only, `requiredWhen`: the write `credential` for every provider but `file`, AWS's `region`, Azure's and Vault's `endpoint`, the file provider's `directory`. Every other field is optional. Plus the closed sets the form's choices come from. **It adds nothing**: the create is `POST /admin-api/secret-destinations/add-destination`.\n\n**Mirrors** `GET /admin/secret-destinations/new` on the admin console.",
+    `tags`:#["Directory"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The fields, which are required, and the choices.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+  })
+op `getNewSecretDestinationForm`(`responses/200/content/application~1json/schema`: `NewSecretDestinationForm`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
 @endpoint("/admin-api/secret-destinations/add-destination",
   "post",
   #{
     `operationId`:"addSecretDestination",
     `summary`:"Add a secret push destination",
-    `description`:"Creates an application entry declared for the secret-destination family, with its location and its write credential (sealed, write-only). Refused for an unknown provider or payload, a missing location, a credential that is not its provider's shape, a plain http address, or a file in product mode. Audited, without the credential.\n\n**Mirrors** `POST /admin/secret-destinations` on the admin console.",
+    `description`:"Creates an application entry declared for the secret-destination family, with its location and its write credential (sealed, write-only). Refused for an unknown provider or payload, a missing location, a credential that is not its provider's shape, a plain http address, or a file in product mode. Audited, without the credential.\n\n**Mirrors** `POST /admin/secret-destinations and POST /admin/secret-destinations/new` on the admin console.",
     `tags`:#["Directory"],
     `responses`:#{
       `200`:#{
@@ -44598,14 +44809,14 @@ op `addSecretDestination`(@js(#{
     @js(#{
       `description`:"password (the bare password) or json ({username, password, realm, rotatedAt})."
     }) `payload`?: "password" | "json";
-    @js(#{`maxLength`:64,`description`:"aws: the region."}) `region`?: string;
+    @js(#{`maxLength`:64,`description`:"aws: the region. Required for aws."}) `region`?: string;
     @js(#{
       `maxLength`:128,
       `description`:"gcp: the project a short secret name is in."
     }) `project`?: string;
     @js(#{
       `maxLength`:2048,
-      `description`:"azure: the vault URL; vault: its address. https only."
+      `description`:"azure: the vault URL; vault: its address. https only. Required for azure and vault."
     }) `endpoint`?: string;
     @js(#{
       `maxLength`:256,
@@ -44617,7 +44828,7 @@ op `addSecretDestination`(@js(#{
     }) `field`?: string;
     @js(#{
       `maxLength`:1024,
-      `description`:"file: the absolute directory a secret name is a file in."
+      `description`:"file: the absolute directory a secret name is a file in. Required for file."
     }) `directory`?: string;
     @js(#{
       `maxLength`:65536,
@@ -44626,7 +44837,7 @@ op `addSecretDestination`(@js(#{
     @js(#{
       `maxLength`:16384,
       `writeOnly`:true,
-      `description`:"The WRITE credential, write-only: never returned, drawn or logged. aws: JSON {accessKeyId, secretAccessKey[, sessionToken]}; gcp: a service account key's JSON; azure: JSON {tenantId, clientId, clientSecret}; vault: a token. On a change, empty keeps the one set."
+      `description`:"The WRITE credential, write-only: never returned, drawn or logged. aws: JSON {accessKeyId, secretAccessKey[, sessionToken]}; gcp: a service account key's JSON; azure: JSON {tenantId, clientId, clientSecret}; vault: a token. Required for every provider but file. On a change, empty keeps the one set."
     }) `credential`?: string
   },
   `responses/200/content/application~1json/schema`: `WithOkMessageErrors177`,
@@ -44639,7 +44850,7 @@ op `addSecretDestination`(@js(#{
   #{
     `operationId`:"updateSecretDestination",
     `summary`:"Change a secret push destination",
-    `description`:"The members given replace the destination's; the rest are kept, the credential included when none is given. Checked as add-destination is. Audited, without the credential.\n\n**Mirrors** `POST /admin/secret-destinations` on the admin console.",
+    `description`:"The members given replace the destination's; the rest are kept, the credential included when none is given. Checked as add-destination is. Audited, without the credential.\n\n**Mirrors** `POST /admin/secret-destinations and POST /admin/secret-destinations/new` on the admin console.",
     `tags`:#["Directory"],
     `responses`:#{
       `200`:#{
@@ -44711,7 +44922,7 @@ op `updateSecretDestination`(@js(#{`examples`:#[#{`id`:"vault-prod",`payload`:"p
   #{
     `operationId`:"removeSecretDestination",
     `summary`:"Remove a secret push destination",
-    `description`:"Deletes its application entry, credential and all. Nothing at the secrets manager changes. Audited.\n\n**Mirrors** `POST /admin/secret-destinations` on the admin console.",
+    `description`:"Deletes its application entry, credential and all. Nothing at the secrets manager changes. Audited.\n\n**Mirrors** `POST /admin/secret-destinations and POST /admin/secret-destinations/new` on the admin console.",
     `tags`:#["Directory"],
     `responses`:#{
       `200`:#{
@@ -44746,7 +44957,7 @@ op `removeSecretDestination`(@js(#{`examples`:#[#{`id`:"vault-prod"}]}) `request
   #{
     `operationId`:"testSecretDestination",
     `summary`:"Write a canary version to a test secret",
-    `description`:"Writes a random password nobody uses, as the destination's payload, to `secretName` — which must already exist and must be kept for testing: a secret a service account's rotation writes is refused. Proves the credential, the address and the secret. Audited.\n\n**Mirrors** `POST /admin/secret-destinations` on the admin console.",
+    `description`:"Writes a random password nobody uses, as the destination's payload, to `secretName` — which must already exist and must be kept for testing: a secret a service account's rotation writes is refused. Proves the credential, the address and the secret. Audited.\n\n**Mirrors** `POST /admin/secret-destinations and POST /admin/secret-destinations/new` on the admin console.",
     `tags`:#["Directory"],
     `responses`:#{
       `200`:#{

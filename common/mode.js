@@ -3407,7 +3407,9 @@ const REQUIREMENTS = [
     what: 'The bootstrap password stays out of the log',
     development: 'The generated password is written to the service log.',
     product: 'It is written to a file only this service can read, and the ' +
-             'log says where, unless admin.logBootstrapPassword is on.',
+             'log says where, unless admin.logBootstrapPassword is on. A ' +
+             'later start deletes that file, once somebody already holds a ' +
+             'credential.',
     where: 'common/credentials.ts' },
   // #1495 (ASVS 5.0.0 10.4.6).
   { id: 'pkce-every-client',

@@ -462,7 +462,8 @@ docker compose up -d --wait
 * **Signing in.** The console's first account has a generated name and a
   password generated on the first start. Both are written, as `name:password`,
   to `data/bootstrap-admin-password`, which only the service can read; the log
-  names the account and says where. The password has to be changed at the
+  names the account and says where. The next start removes that file, so read
+  it before you restart. The password has to be changed at the
   first sign-in. To choose the password instead, put
   `STS_ADMIN_BOOTSTRAP_PASSWORD=...` in `.env` before the first start; the log
   then names the account, and no file is written.
@@ -768,8 +769,9 @@ Then:
    which you can change later under Directory → Policies.
 3. Enrol a second factor when asked: product mode requires one.
 
-The file is written once and never updated, so it holds the generated password
-even after you change it. Delete it once you have signed in.
+The next start removes the file, once anybody holds a credential, so read it
+before you restart. It is not updated when you change the password, and until
+that start it still holds the generated one.
 
 Four settings change this, and each must be set before the first start:
 

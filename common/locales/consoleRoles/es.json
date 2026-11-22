@@ -183,5 +183,7 @@
   "eligibility.yes": "{user} es elegible ({decision}).",
   "eligibility.no": "{user} no es elegible ({decision}).",
   "eligibility.missing": "Atributo ausente: {attribute}",
-  "eligibility.applicable": "Políticas aplicadas:"
+  "eligibility.applicable": "Políticas aplicadas:",
+  "newRole.button": "Nuevo rol",
+  "newRole.noStore": "Este proceso no tiene un directorio donde guardar un rol."
 }

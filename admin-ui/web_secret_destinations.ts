@@ -43,6 +43,11 @@ const esc = kit.esc;
 const PAGE = '/admin/secret-destinations';
 
 /**
+ * Directory → Secret destinations → Add a destination (#1132).
+ */
+const NEW = '/admin/secret-destinations/new';
+
+/**
  * Draws Directory → Secret destinations from the answer of
  * `GET /admin-api/secret-destinations`.
  *
@@ -203,6 +208,74 @@ class SecretDestinationsPage {
   }
 
   /**
+   * Draws Directory → Secret destinations → Add a destination (#1132) from
+   * the answer of `GET /admin-api/secret-destinations/new`: the one create
+   * form, its required fields called out as New user's are, and those a
+   * provider needs said beside each.
+   *
+   * @param json - the answer, with `state` after a refused create
+   * @param ctx - the render context
+   * @returns the HTML
+   */
+  static newBody(json: Json, ctx?: Json): string {
+    const c = ctx || kit.context();
+    const t = c.t;
+    const listed = function (values: string[]): Json[] {
+      return (values || []).map(function (one: string): Json {
+        return { value: one, label: one };
+      });
+    };
+    // Each label's key written out whole, so the catalog check can find it.
+    const field = function (key: string, example?: string): Json {
+      return { label: t.html(key), placeholder: example };
+    };
+    // The file provider is offered in development mode only, and its
+    // directory with it.
+    const served = (json.createFields || []).filter(function (one: Json) {
+      return one.name !== 'directory' || json.fileAllowed;
+    });
+    return kit.note(t.html('consoleSecretDestinations.body.lead')) +
+      (json.fileAllowed
+        ? kit.warn(t.html('consoleSecretDestinations.body.development'))
+        : '') +
+      kit.createForm(Object.assign({}, json, { createFields: served }), {
+        post: NEW, action: 'add-destination',
+        heading: t.html('consoleSecretDestinations.body.add'),
+        button: t.html('consoleSecretDestinations.body.addButton'),
+        words: {
+          identifier: {
+            label: t.html('consoleSecretDestinations.body.identifier'),
+            placeholder: 'vault-prod' },
+          name: { label: t.html('consoleSecretDestinations.row.name'),
+                  placeholder: 'Production Vault' },
+          provider: Object.assign(field(
+            'consoleSecretDestinations.fields.provider'), {
+            type: 'select', choices: listed(json.providers) }),
+          payload: Object.assign(field(
+            'consoleSecretDestinations.fields.payload'), {
+            type: 'select', choices: listed(json.payloads),
+            value: 'password' }),
+          region: field('consoleSecretDestinations.fields.region',
+                        'us-east-1'),
+          project: field('consoleSecretDestinations.fields.project',
+                         'my-project'),
+          endpoint: field('consoleSecretDestinations.fields.endpoint',
+                          'https://vault.example.com:8200'),
+          mount: field('consoleSecretDestinations.fields.mount', 'secret'),
+          field: field('consoleSecretDestinations.fields.field', 'value'),
+          directory: field('consoleSecretDestinations.fields.directory',
+                           '/run/sts-test-secrets'),
+          caCertificates: Object.assign(field(
+            'consoleSecretDestinations.fields.caCertificates',
+            '-----BEGIN CERTIFICATE-----'), { type: 'long' }),
+          credential: Object.assign(field(
+            'consoleSecretDestinations.fields.credential'), {
+            type: 'password', attrs: { autocomplete: 'off' } })
+        }
+      }, t);
+  }
+
+  /**
    * Draws the page body.
    *
    * @param json - the view `GET /admin-api/secret-destinations` answers
@@ -244,19 +317,13 @@ class SecretDestinationsPage {
       '<p class="sub">' + t.html('consoleSecretDestinations.body.testPush') +
       '</p>') +
       (c.write
+        // THE ADD TAB IS THE WAY TO THE CREATE PAGE (#1132): Add a
+        // destination draws the one create form, its required fields
+        // called out as New user's are.
         ? '<h3 id="add" data-tab="add">' +
           t.html('consoleSecretDestinations.body.add') +
-          '</h3>' + kit.frame('<form method="post" ' +
-          'action="' + PAGE + '"><input type="hidden" name="action" ' +
-          'value="add-destination"><div class="formrow">' +
-          this.text('identifier',
-                    t.text('consoleSecretDestinations.body.identifier'), '',
-                    'vault-prod') +
-          this.text('name', t.text('consoleSecretDestinations.row.name'), '',
-                    'Production Vault') + '</div>' +
-          this.fields(t, json, null) + '<button type="submit">' +
-          t.html('consoleSecretDestinations.body.addButton') + '</button>' +
-          '</form>')
+          '</h3>' + kit.frame(kit.createLink(NEW,
+            t.html('consoleSecretDestinations.newDestination.button')))
         : '') +
       '<p class="links" data-metadata>' +
       '<code>GET /admin-api/secret-destinations</code></p>';

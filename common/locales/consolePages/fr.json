@@ -149,5 +149,11 @@
   "title.worker-pools": "Pools de workers",
   "title.broadcast": "Diffuser une annonce",
   "title.sign-in-appearance": "Apparence de la connexion",
-  "title.post-login-activities": "Activités après connexion"
+  "title.post-login-activities": "Activités après connexion",
+  "title.groups-new": "Nouveau groupe",
+  "title.roles-new": "Nouveau rôle",
+  "title.devices-new": "Enregistrer un appareil",
+  "title.attribute-sources-new": "Ajouter une source d’attributs",
+  "title.secret-destinations-new": "Ajouter une destination de secret",
+  "title.policies-new": "Nouvelle politique"
 }

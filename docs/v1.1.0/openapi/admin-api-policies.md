@@ -1378,6 +1378,43 @@ Scope: `admin:write`.
 | `policy.secondFactors[]` | string |  |  |
 | `removed` | boolean |  |  |
 
+## GET /admin-api/policies/new
+
+`getNewPolicyForm`
+
+**The kinds a named policy may be made of, and which of a kind's fields a save requires**
+
+Every kind whose profiles may be named, in `kinds`, and — with `kind` — that kind's create fields in `createFields`, each with `required`: the name (`profile`, or `name` for the authentication policy) always, since a save with no name edits the DEFAULT policy; the precedence and the description never; and each of the kind's own fields unless the save keeps the value in force when it is left out. **It saves nothing**: a named policy is made by the kind's save act with a name the realm does not hold yet, `POST /admin-api/policies/save-<kind>-policy` (`save-named-authn-policy` for the authentication policy).
+
+**Mirrors** `GET /admin/policies/new` on the admin console.
+
+Scope: `admin:read`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `kind` | query | string |  | The kind of policy to make, one of `kinds`. Without one, or with one no kind is, `createFields` is empty and `kind` null. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**200**: The kinds, and the asked kind's fields with which are required.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `createFields` | list |  |  |
+| `createFields[]` | object |  | One field of a directory object's create (#1132): the name the create takes it under and whether the create refuses without it. A field is required exactly when the create refuses an empty or absent value; every other field is optional. |
+| `createFields[].name` | string | yes |  |
+| `createFields[].required` | boolean | yes |  |
+| `createFields[].requiredWhen` | object |  | A field required for some choices only: the create refuses without it when `field` holds one of `values`, and is otherwise indifferent. `required` is false for such a field. |
+| `createFields[].requiredWhen.field` | string | yes |  |
+| `createFields[].requiredWhen.values` | list | yes |  |
+| `createFields[].requiredWhen.values[]` | string |  |  |
+| `kind` | string, or null |  |  |
+| `kinds` | list |  |  |
+| `kinds[].id` | string |  |  |
+| `kinds[].label` | string |  |  |
+
 ## POST /admin-api/policies/remove-person-attribute
 
 `removePersonAttribute`

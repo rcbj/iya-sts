@@ -154,7 +154,7 @@
   "mode.requirements.session-key-defaults.product": "A session ends after 30 idle minutes and new RSA keys are 3072 bits, unless a setting says otherwise.",
   "mode.requirements.bootstrap-password-file.what": "The bootstrap password stays out of the log",
   "mode.requirements.bootstrap-password-file.development": "The generated password is written to the service log.",
-  "mode.requirements.bootstrap-password-file.product": "It is written to a file only this service can read, and the log says where, unless admin.logBootstrapPassword is on.",
+  "mode.requirements.bootstrap-password-file.product": "It is written to a file only this service can read, and the log says where, unless admin.logBootstrapPassword is on. A later start deletes that file, once somebody already holds a credential.",
   "mode.requirements.pkce-every-client.what": "Every client must use PKCE",
   "mode.requirements.pkce-every-client.development": "A confidential client that sends no code_challenge is only logged.",
   "mode.requirements.pkce-every-client.product": "It is refused unless oauth2.allowConfidentialWithoutPkce is on.",

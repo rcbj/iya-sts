@@ -1991,6 +1991,30 @@
     "en": "ee45e233f511ee47",
     "text": "NON-SPEC. LE CATALOGUE FERMÉ D’ATTRIBUTS QUE PREND UNE CRÉATION, en JSON : chaque attribut qui peut être attribué à une personne de cet annuaire, chacun nommant la revendication qu’il atteint dans un jeton ou un justificatif émis et le document dont provient son nom — ce qui importe, car cet annuaire n’a AUCUN SCHÉMA et n’en refuserait aucun nulle part — plus le conteneur ou=users dans lequel arriverait une nouvelle personne (CELUI DE CE DOMAINE, car l’annuaire est propre à chaque domaine) et les quatre façons de lui donner un moyen d’entrer. uid ne figure pas dans la liste car il EST le nom d’utilisateur, et userPassword non plus, car un mot de passe passe par l’option de justificatif afin d’être haché plutôt que consigné en clair. IL NE CRÉE PERSONNE : la création est POST /admin-api/users/create, et ceci est la liste par rapport à laquelle cet appel valide — un nom d’attribut absent de la liste est refusé et toute la création échoue ; un appelant qui lit ceci d’abord ne peut donc pas apprendre ensuite que la moitié de ce qu’il a envoyé a été ignorée. Reflète GET /admin/users/new."
   },
+  "stsmetadata.endpoints./admin-api/groups/new.what": {
+    "en": "4ed04fc8ef1be664",
+    "text": "HORS SPÉCIFICATION. Ce avec quoi un groupe peut être créé, en JSON : chaque champ de la création et si la création est refusée sans lui — le cn est obligatoire, la description, l’adresse et les membres ne le sont pas — ainsi que le conteneur ou=groups où un nouveau groupe arriverait, celui de CE DOMAINE. ELLE NE CRÉE RIEN : la création est POST /admin-api/groups/create. Reflète GET /admin/groups/new."
+  },
+  "stsmetadata.endpoints./admin-api/roles/new.what": {
+    "en": "3bf6af72cb520499",
+    "text": "HORS SPÉCIFICATION. Ce avec quoi un rôle peut être créé, en JSON : chaque champ de la création et si la création est refusée sans lui — le nom est obligatoire, le reste ne l’est pas — ainsi que le conteneur où les rôles sont stockés et les applications auxquelles un rôle peut être destiné. ELLE NE CRÉE RIEN : la création est POST /admin-api/roles/create-role. Reflète GET /admin/roles/new."
+  },
+  "stsmetadata.endpoints./admin-api/devices/new.what": {
+    "en": "97ebfb0c1410c335",
+    "text": "HORS SPÉCIFICATION. Ce avec quoi un appareil peut être enregistré, en JSON : chaque champ de la création et si la création est refusée sans lui — le propriétaire est obligatoire, le reste ne l’est pas — ainsi que les ensembles fermés d’où viennent ses choix. ELLE N’ENREGISTRE RIEN : la création est POST /admin-api/devices/create. Reflète GET /admin/devices/new."
+  },
+  "stsmetadata.endpoints./admin-api/attribute-sources/new.what": {
+    "en": "a0e98374461ed268",
+    "text": "HORS SPÉCIFICATION. Ce avec quoi une source d’attributs peut être ajoutée, en JSON : chaque champ de la création et si la création est refusée sans lui — l’identifiant, l’hôte, la base, l’utilisateur, la table, sa colonne clé et au moins une correspondance de colonne sont obligatoires, le reste a des valeurs par défaut — ainsi que les ensembles fermés d’où viennent ses choix. ELLE N’AJOUTE RIEN : la création est POST /admin-api/attribute-sources/add-source. Reflète GET /admin/attribute-sources/new."
+  },
+  "stsmetadata.endpoints./admin-api/secret-destinations/new.what": {
+    "en": "efff1aa20f1b29a1",
+    "text": "HORS SPÉCIFICATION. Ce avec quoi une destination de secrets peut être ajoutée, en JSON : chaque champ de la création et si la création est refusée sans lui — l’identifiant et le fournisseur toujours, et certains pour certains fournisseurs seulement (requiredWhen) : l’identifiant d’écriture pour tous sauf file, la région pour aws, le point de terminaison pour azure et vault, le répertoire pour file. ELLE N’AJOUTE RIEN : la création est POST /admin-api/secret-destinations/add-destination. Reflète GET /admin/secret-destinations/new."
+  },
+  "stsmetadata.endpoints./admin-api/policies/new.what": {
+    "en": "2c58d79f3a71506e",
+    "text": "HORS SPÉCIFICATION. Les types dont une politique nommée peut être faite et, pour le type demandé, chaque champ de son enregistrement et si l’enregistrement est refusé sans lui — toujours le nom, car un enregistrement sans nom modifie la politique par défaut, et chaque champ dont la valeur n’est pas conservée s’il est omis. ELLE N’ENREGISTRE RIEN : une politique nommée est l’enregistrement du type sous un nom que le domaine ne détient pas encore. Reflète GET /admin/policies/new."
+  },
   "stsmetadata.endpoints./admin-api/applications/new.what": {
     "en": "25bf3526e817e678",
     "text": "NON-SPEC. LES DEUX VOCABULAIRES FERMÉS QUE PREND UNE CRÉATION, en JSON : les huit types et les quatorze familles de protocoles pour lesquels une application peut être DÉCLARÉE, chacun avec sa signification, plus le conteneur ou=applications dans lequel arriverait une nouvelle entrée — CELUI DE CE DOMAINE, car l’annuaire est propre à chaque domaine — le nombre d’entrées qu’il contiendra, et les attributs qu’une création ne peut pas prendre mais que set/add/remove peuvent prendre. IL NE CRÉE RIEN : la création est POST /admin-api/applications/create, et ceci est la liste par rapport à laquelle cet appel valide, publiée afin qu’un appelant apprenne ce qu’il peut envoyer auprès du service plutôt que d’une copie dans un document. Déclarer une famille n’accorde ni ne refuse rien — aucun point de terminaison ne lit appAllowedProtocol. Reflète GET /admin/applications/new."

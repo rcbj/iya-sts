@@ -93,5 +93,8 @@
   "mail.link": "मेल",
   "mail.noneAfter": "), इसलिए {what} आपको आगे देने के लिए दिखाया जाता है।",
   "mail.box": "उनकी प्रविष्टि के पते पर {what} मेल करें, और मुझे न दिखाएँ",
-  "grid.required": " &middot; आवश्यक"
+  "grid.required": " &middot; आवश्यक",
+  "create.requiredFields": "आवश्यक: {list}। प्रत्येक लाल रंग से घिरा है और * से चिह्नित है; बाकी सभी फ़ील्ड वैकल्पिक हैं।",
+  "create.nothingRequired": "इस फ़ॉर्म में कुछ भी आवश्यक नहीं है।",
+  "create.requiredWhen": " &middot; आवश्यक जब {field} {values} हो"
 }

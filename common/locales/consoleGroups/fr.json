@@ -129,5 +129,10 @@
   "ownerProtection.save": "Enregistrer",
   "ownerProtection.closedAnyway": "Il est fermé à ses propriétaires quoi qu'indique la case :",
   "ownerProtection.isMarked": "Un administrateur l'a fermé à ses propriétaires.",
-  "ownerProtection.notMarked": "Aucun administrateur ne l'a fermé à ses propriétaires."
+  "ownerProtection.notMarked": "Aucun administrateur ne l'a fermé à ses propriétaires.",
+  "newGroup.button": "Nouveau groupe",
+  "newGroup.linkNote": "Le formulaire d’un nouveau groupe, son champ obligatoire entouré de rouge.",
+  "newGroup.noDirectory": "Ce processus n’a pas d’annuaire où créer un groupe.",
+  "newGroup.groupHint": "le nom du groupe, et son RDN",
+  "newGroup.membersHint": "un par ligne ou séparés par des virgules : un nom d’utilisateur ou un DN"
 }

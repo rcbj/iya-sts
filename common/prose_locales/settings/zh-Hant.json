@@ -232,8 +232,8 @@
     "text": "記錄產生的引導密碼"
   },
   "admin.logBootstrapPassword|description": {
-    "en": "577ec7c125546cdb",
-    "text": "僅限產品模式。預設關閉時，為首位管理員產生的密碼寫入 persistence.dataDir 中僅此服務可讀的 bootstrap-admin-password 檔案，日誌說明位置。開啟時寫入服務日誌。警告：開啟後不符合 ASVS 5.0.0 要求 16.2.5，因為憑證進入了日誌。"
+    "en": "856dddf1ed8c2407",
+    "text": "僅限產品模式。預設關閉時，為首位管理員產生的密碼寫入 persistence.dataDir 中僅此服務可讀的 bootstrap-admin-password 檔案，日誌說明位置。開啟時寫入服務日誌。警告：開啟後不符合 ASVS 5.0.0 要求 16.2.5，因為憑證進入了日誌。 之後的啟動會刪除該檔案，一旦已有人持有認證。"
   },
   "oauth2.allowConfidentialWithoutPkce|label": {
     "en": "c33a0a31a1d623b1",
@@ -424,8 +424,8 @@
     "text": "在產品模式下允許預設管理員名稱"
   },
   "admin.allowDefaultUsername|description": {
-    "en": "53da4f7ba4ff5dcc",
-    "text": "僅限產品模式。預設關閉時，名為 admin、root、sa 或 administrator 或沒有名稱的啟動管理員會取得一個無法預測的產生名稱，並在首次啟動時與其密碼一併寫入 persistence.dataDir 中的 bootstrap-admin-password 檔案（請參閱 admin.logBootstrapPassword）。開啟時按設定的名稱使用。警告：ASVS 5.0.0 要求 6.3.2 禁止預設帳戶名稱，因此除測試環境外請保持關閉。"
+    "en": "7375f4bf636f5366",
+    "text": "僅限產品模式。預設關閉時，名為 admin、root、sa 或 administrator 或沒有名稱的啟動管理員會取得一個無法預測的產生名稱，並在首次啟動時與其密碼一併寫入 persistence.dataDir 中的 bootstrap-admin-password 檔案（請參閱 admin.logBootstrapPassword）。開啟時按設定的名稱使用。警告：ASVS 5.0.0 要求 6.3.2 禁止預設帳戶名稱，因此除測試環境外請保持關閉。 之後的啟動會刪除該檔案，一旦已有人持有認證。"
   },
   "admin.allowDefaultUsername|restartReason": {
     "en": "0191948468332113",
@@ -436,8 +436,8 @@
     "text": "初始管理員帳戶"
   },
   "admin.bootstrapUsername|description": {
-    "en": "9b6fe650632ee79d",
-    "text": "初始管理員的使用者名稱（2026-09-13），存在於「預設」領域，並自 2026-09-14 起存在於每個信任領域，在該處只管理該領域：不存在時於啟動時建立，同時是兩種主控台角色的成員，首次登入時被強制變更密碼，且無法刪除或重新命名。在它首次登入 /admin 之前，每位已登入者都可使用主控台（admin.openWhenEmpty）。在開發模式中，如同所有人一樣，任何密碼都能讓它登入。在產品模式中，當本服務啟動而領域中「沒有任何人」持有認證時，它也是取得產生密碼的帳戶；名稱與該密碼只寫入一次，寫入 persistence.dataDir 中的 bootstrap-admin-password 檔案，該檔案僅本服務可讀取（記錄會說明其位置，只有在 admin.logBootstrapPassword 開啟時記錄本身才會包含它們），是進入全新產品部署的唯一途徑。在已有人持有認證時絕不寫入產生的密碼，因此它無法覆寫密碼。強制變更只適用於此步驟「建立」的帳戶——同名的既有帳戶保留其密碼，只會被賦予兩種角色。"
+    "en": "8b69eb9d4cb0b130",
+    "text": "初始管理員的使用者名稱（2026-09-13），存在於「預設」領域，並自 2026-09-14 起存在於每個信任領域，在該處只管理該領域：不存在時於啟動時建立，同時是兩種主控台角色的成員，首次登入時被強制變更密碼，且無法刪除或重新命名。在它首次登入 /admin 之前，每位已登入者都可使用主控台（admin.openWhenEmpty）。在開發模式中，如同所有人一樣，任何密碼都能讓它登入。在產品模式中，當本服務啟動而領域中「沒有任何人」持有認證時，它也是取得產生密碼的帳戶；名稱與該密碼只寫入一次，寫入 persistence.dataDir 中的 bootstrap-admin-password 檔案，該檔案僅本服務可讀取（記錄會說明其位置，只有在 admin.logBootstrapPassword 開啟時記錄本身才會包含它們），是進入全新產品部署的唯一途徑。在已有人持有認證時絕不寫入產生的密碼，因此它無法覆寫密碼。強制變更只適用於此步驟「建立」的帳戶——同名的既有帳戶保留其密碼，只會被賦予兩種角色。 之後的啟動會刪除該檔案，一旦已有人持有認證。"
   },
   "admin.bootstrapUsername|restartReason": {
     "en": "0191948468332113",
@@ -8330,6 +8330,54 @@
   "authzen.accessRequestMaxPending|description": {
     "en": "6b3f5e73f6fcafaf",
     "text": "一個領域最多可同時持有的待處理存取請求數；超過後，提交會以 503 被拒絕，直到其中一些被決定或過期。"
+  },
+  "authzen.externalPdp|label": {
+    "en": "8a0af08389fe6cda",
+    "text": "在權杖交換之前詢問外部 PDP。"
+  },
+  "authzen.externalPdp|description": {
+    "en": "378c7dcd21a960c7",
+    "text": "OAuth 2.0 權杖交換的 AuthZEN 繫結，方向 B：本授權伺服器在為 RFC 8693 交換簽發 OAuth 存取權杖之前，詢問 authzen.externalPdpUrl 所指定的外部 PDP。本機簽發原則仍然先決定，它所強制的拒絕不會送出。PDP 只能縮小範圍和存取權杖的存續期。關閉為預設，此時不會撥號。Kerberos 權杖不在此繫結之內，不會送出。沒有回應，或遭到拒絕，就沒有權杖。"
+  },
+  "authzen.externalPdpUrl|label": {
+    "en": "4702ceb3700a0831",
+    "text": "外部 AuthZEN PDP 位址。"
+  },
+  "authzen.externalPdpUrl|description": {
+    "en": "2d486c955985f5ac",
+    "text": "外部 PDP 的 POST /access/v1/evaluations 的絕對 https 位址。由管理員設定，要求不能指定它。它不含 userinfo、query 或 fragment。在 authzen.externalPdp 開啟時若為空，則拒絕該交換。即使 federation.outboundAllowHttp 開啟，也拒絕明文 http，因為要求攜帶權杖宣告和用戶端憑證。"
+  },
+  "authzen.externalPdpTimeoutMs|label": {
+    "en": "c40081858bffe671",
+    "text": "外部 PDP 逾時（毫秒）。"
+  },
+  "authzen.externalPdpTimeoutMs|description": {
+    "en": "1c73c2acfe98c703",
+    "text": "等待外部 PDP 的時間，以毫秒計。逾時則拒絕該交換。不會改發本機決定。"
+  },
+  "authzen.externalPdpClientCertFile|label": {
+    "en": "2da8c5ed72d965bb",
+    "text": "用於外部 PDP 的用戶端憑證。"
+  },
+  "authzen.externalPdpClientCertFile|description": {
+    "en": "cae054b4776151a0",
+    "text": "本授權伺服器向外部 PDP 出示的 PEM 檔案。雙向 TLS 是唯一模式，PDP 將該憑證接納為 AUTHZEN_PEPS 呼叫方。在產品模式下，該檔案必須位於 security.fileRoots 所列目錄之內。相對路徑是本處理程序的目前目錄。在 authzen.externalPdp 開啟時若為空或無法讀取，則拒絕該交換。"
+  },
+  "authzen.externalPdpClientKeyFile|label": {
+    "en": "8c2c725a67e09874",
+    "text": "用於外部 PDP 的用戶端金鑰。"
+  },
+  "authzen.externalPdpClientKeyFile|description": {
+    "en": "6509f61b7122be79",
+    "text": "用戶端憑證私密金鑰的 PEM 檔案。撥號 PDP 時讀取該檔案。金鑰位元組不是設定值，因此 GET /admin-api/config 傳回路徑而不是金鑰。在產品模式下，該檔案必須位於 security.fileRoots 所列目錄之內。相對路徑是本處理程序的目前目錄。在 authzen.externalPdp 開啟時若為空或無法讀取，則拒絕該交換。"
+  },
+  "authzen.externalPdpCaFile|label": {
+    "en": "6abdfbc262d71c16",
+    "text": "用於外部 PDP 的 CA 檔案。"
+  },
+  "authzen.externalPdpCaFile|description": {
+    "en": "d8328616a3f62cfa",
+    "text": "選擇性的 PEM 檔案，其中的 CA 憑證用來代替預設根憑證以驗證外部 PDP。為空則使用那些根憑證。已命名但無法讀取的檔案，或產品模式在 security.fileRoots 下不會讀取的檔案，會拒絕該交換。相對路徑是本處理程序的目前目錄。"
   },
   "uma.enabled|label": {
     "en": "2a3767bd4bc83294",

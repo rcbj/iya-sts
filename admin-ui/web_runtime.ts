@@ -1429,6 +1429,7 @@ class ConsoleRuntime extends SpaClient {
     this.wireOrderedChoices();
     this.wireCheckAll();
     this.wireChoicePanels();
+    this.wireConditionalRequirements();
     this.loadPageScripts();
     this.revealActiveNav();
   }
@@ -3443,6 +3444,64 @@ class ConsoleRuntime extends SpaClient {
         ConsoleRuntime.realmLinks(
         WebShell.accountItems(this.accounts, this.subject, this.t),
         this.prefix));
+    }
+  }
+
+  /**
+   * Outlines and enforces fields required only for a selected choice.
+   *
+   * @returns nothing
+   */
+  wireConditionalRequirements(): void {
+    const doc = this.env.document;
+    const forms = doc && doc.querySelectorAll
+      ? doc.querySelectorAll('form') : [];
+    for (let i = 0; i < forms.length; i++) {
+      const form = forms[i];
+      const cells = form.querySelectorAll(
+        '[data-required-when-field]');
+      if (!cells.length) {
+        continue;
+      }
+      const controllers: Json[] = [];
+      const refresh = function (): void {
+        for (let j = 0; j < cells.length; j++) {
+          const cell = cells[j];
+          const name = String(cell.getAttribute(
+            'data-required-when-field') || '');
+          const controller = form.elements.namedItem(name);
+          const value = controller ? String(controller.value || '') : '';
+          const values = String(cell.getAttribute(
+            'data-required-when-values') || '').split(/\s+/);
+          const controls = cell.querySelectorAll('input,select,textarea');
+          const checkboxesOnly = controls.length > 0 &&
+            Array.prototype.every.call(controls, function (control) {
+              return String(control.type || '').toLowerCase() === 'checkbox';
+            });
+          const required = values.indexOf(value) >= 0 && !checkboxesOnly;
+          if (required) {
+            cell.classList.add('fg-required');
+          } else {
+            cell.classList.remove('fg-required');
+          }
+          for (let k = 0; k < controls.length; k++) {
+            if (String(controls[k].type || '').toLowerCase() !==
+                'checkbox') {
+              controls[k].required = required;
+            }
+          }
+        }
+      };
+      for (let j = 0; j < cells.length; j++) {
+        const name = String(cells[j].getAttribute(
+          'data-required-when-field') || '');
+        const controller = form.elements.namedItem(name);
+        if (controller && controllers.indexOf(controller) < 0) {
+          controllers.push(controller);
+          controller.addEventListener('change', refresh);
+        }
+      }
+      refresh();
     }
   }
 

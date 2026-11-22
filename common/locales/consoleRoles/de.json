@@ -183,5 +183,7 @@
   "eligibility.yes": "{user} ist berechtigt ({decision}).",
   "eligibility.no": "{user} ist nicht berechtigt ({decision}).",
   "eligibility.missing": "Fehlendes Attribut: {attribute}",
-  "eligibility.applicable": "Angewendete Richtlinien:"
+  "eligibility.applicable": "Angewendete Richtlinien:",
+  "newRole.button": "Neue Rolle",
+  "newRole.noStore": "Dieser Prozess hat kein Verzeichnis, in dem eine Rolle gespeichert werden kann."
 }

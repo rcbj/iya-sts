@@ -147,7 +147,9 @@ before anything else. In development any password gets it to that screen; in
 product mode its password is `admin.bootstrapPassword`, or one generated at the
 first start. A generated one is written, with the name, to the file
 `bootstrap-admin-password` in `persistence.dataDir` as `name:password`, readable
-only by the service, and the log names the account and says where. `admin.logBootstrapPassword` writes
+only by the service, and the log names the account and says where. A later start
+deletes that file, once somebody already holds a credential, so read it before
+you restart. `admin.logBootstrapPassword` writes
 it to the log instead, which only a test stack should do. In product mode it
 must also set up a second factor at that first sign-in (see
 [Authentication](authentication.md#requiring-a-second-factor-of-everybody)). It cannot be deleted or renamed through the console,
@@ -814,6 +816,20 @@ policies** and **New policy**. A last tab, **All profiles**, lists every
 profile of every kind. The authentication policy's named profiles use
 `save-named-authn-policy` and `delete-named-authn-policy`.
 
+#### Creating a named policy — `/admin/policies/new`
+
+A kind's **New policy** sub-tab takes you to `/admin/policies/new?kind=<kind>`,
+the kind's create form. **The name is always required**, because a save with
+no name changes the *default* policy instead. It is outlined in red and marked
+*required*, as on `/admin/users/new`, and so is each of the kind's fields that
+the save refuses without; the note above the form names them. A field whose
+value is kept when it is left out (a password policy's hash costs, some of the
+passkey policy's) is optional, and so are the precedence (100 when empty) and
+the description. A checkbox is never marked: unticked means *no*. A refused
+save keeps every box as you typed it; a save lands you on the kind's *Named
+policies*. `GET /admin-api/policies/new?kind=<kind>` answers the same fields,
+each with `required`.
+
 **The password policy** is a minimum length (12), how many previous passwords
 may not be reused (5), a minimum number of symbols (1), and whether an uppercase
 letter and a number are required (both yes). It is the **default profile**,
@@ -977,14 +993,23 @@ issued. It lists every group with what it is made of, and `?group=<dn>` drills
 into one: every attribute the entry holds, operational ones included, and every
 member resolved to the entry it names.
 
-**Three controls.** **Create a group** is below the list's table: it puts a
-`groupOfNames` at `cn=<name>,ou=groups` and takes members one per line or
-comma-separated, each a user name or any DN (a group can hold another group,
-and no user name names one), and an optional **email address**, the group's
-own `mail` attribute. **Add a member** and **Email address** are on the
-drill-down; a create lands you on the group it just made.
-`POST /admin-api/groups/create`, `POST /admin-api/groups/add-member` and
-`POST /admin-api/groups/set-mail` are the same acts.
+**Three controls.** **New group**, on the list's *Create a group* tab, takes
+you to `/admin/groups/new` (below). **Add a member** and **Email address** are
+on the drill-down. `POST /admin-api/groups/create`,
+`POST /admin-api/groups/add-member` and `POST /admin-api/groups/set-mail` are
+the same acts.
+
+#### Creating a group — `/admin/groups/new`
+
+The form puts a `groupOfNames` at `cn=<name>,ou=groups` in the realm you are
+in. **The `cn` is the one required field**, outlined in red and marked
+*required* as on `/admin/users/new`; the note above the form names it. The
+rest are optional: a **description**, the group's own **email address** (its
+`mail` attribute) and its **members**, one per line or comma-separated, each a
+user name or any DN (a group can hold another group, and no user name names
+one). **A refused create keeps every box as you typed it**, with the reason in
+the banner at the top of the window; a create lands you on the group it made.
+`GET /admin-api/groups/new` answers the same fields, each with `required`.
 
 **The email address is where a report shared with the group is sent.** A
 report definition shared with the group (the reports application,
@@ -1140,9 +1165,8 @@ leave a relying party reading the first. The settings are on [LDAP](ldap.md).
 `/admin/roles` is the realm's role register. The page is tabs. **Metadata**
 lists the built-in roles and who holds each. **Roles** lists the roles that
 have been made, who holds each, and what each authorizes; a name opens
-`/admin/roles?role=<name>`. **Create** makes a role, optionally for one
-application, with a display name and who may hold it (people, applications, or
-both). **Members** adds a holder: a person, a group, or an application. A
+`/admin/roles?role=<name>`. **Create** takes you to `/admin/roles/new`
+(below). **Members** adds a holder: a person, a group, or an application. A
 person or a group need not exist yet. **Authorizes** names a permission the
 role grants. That is not Admin roles (`/admin/rbac`), which is who may use the
 console. **Requiring** lists the applications that require the role.
@@ -1153,6 +1177,17 @@ A role's own page has two tabs, **Role** and **Owners**. Role shows the role,
 its members, what it authorizes, and its directory entry. Owners finds a
 person or a group. A role can name at most 25 owners, and an owner grants
 nothing by being named.
+
+#### Creating a role — `/admin/roles/new`
+
+The form makes a role, optionally for one application, with a display name
+and who may hold it (people, applications, or both). **The name is the one
+required field**, outlined in red and marked *required* as on
+`/admin/users/new`; the rest are optional. A role for an application is
+registered as `<name>@<application>`, and the application must exist. A
+refused create keeps every box as you typed it; a create lands you on the
+role's page. `GET /admin-api/roles/new` answers the same fields, each with
+`required`.
 
 ### Applications — `/admin/applications`
 

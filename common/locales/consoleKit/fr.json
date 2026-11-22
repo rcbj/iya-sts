@@ -93,5 +93,8 @@
   "mail.link": "Courrier",
   "mail.noneAfter": ") : {what} vous est donc affiché pour que vous le transmettiez.",
   "mail.box": "envoyer {what} par e-mail à l’adresse de son entrée, sans me l’afficher",
-  "grid.required": " &middot; obligatoire"
+  "grid.required": " &middot; obligatoire",
+  "create.requiredFields": "Obligatoire : {list}. Chacun est entouré de rouge et marqué * ; tous les autres champs sont facultatifs.",
+  "create.nothingRequired": "Rien n’est obligatoire sur ce formulaire.",
+  "create.requiredWhen": " &middot; obligatoire quand {field} vaut {values}"
 }

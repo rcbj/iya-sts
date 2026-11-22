@@ -13197,7 +13197,12 @@ above the function named; what a maintainer needs before touching them:
   because a node whose seed committed after another node's password write
   replaced the entry with one holding none. The winner catches up, runs, waits
   for its commit and releases; a loser logs who holds it and prints nothing; a
-  store that cannot be asked runs nothing (`STS-AUTHN-0185`).
+  store that cannot be asked runs nothing (`STS-AUTHN-0185`). A start that
+  finds a credential already held removes
+  `persistence.dataDir/bootstrap-admin-password`. A start that wrote the file
+  itself does not, so a later realm in the same process still has the password,
+  and a node that loses the claim does not remove it (`STS-AUTHN-0567` when
+  the removal fails; the service still starts).
 * **`cert_enrollment.ts`**: `bindEabOnce()` claims the key id before the binding
   is written (the same account retrying at a second node before replication is
   refused once — the claim cannot say which account holds it);

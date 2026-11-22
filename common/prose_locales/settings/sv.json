@@ -232,8 +232,8 @@
     "text": "Logga det genererade startlösenordet"
   },
   "admin.logBootstrapPassword|description": {
-    "en": "577ec7c125546cdb",
-    "text": "Endast produktläge. Av, standardvärdet, skrivs lösenordet som genereras för den första administratören till filen bootstrap-admin-password i persistence.dataDir, som bara den här tjänsten kan läsa, och loggen säger var. På skrivs det till tjänstens logg. VARNING: på uppfylls inte krav 16.2.5 i ASVS 5.0.0, eftersom en autentiseringsuppgift hamnar i loggen."
+    "en": "856dddf1ed8c2407",
+    "text": "Endast produktläge. Av, standardvärdet, skrivs lösenordet som genereras för den första administratören till filen bootstrap-admin-password i persistence.dataDir, som bara den här tjänsten kan läsa, och loggen säger var. På skrivs det till tjänstens logg. VARNING: på uppfylls inte krav 16.2.5 i ASVS 5.0.0, eftersom en autentiseringsuppgift hamnar i loggen. En senare start tar bort den filen när någon redan har en autentiseringsuppgift."
   },
   "oauth2.allowConfidentialWithoutPkce|label": {
     "en": "c33a0a31a1d623b1",
@@ -424,8 +424,8 @@
     "text": "Tillåt ett administratörsnamn som är standard i produktläge"
   },
   "admin.allowDefaultUsername|description": {
-    "en": "53da4f7ba4ff5dcc",
-    "text": "Endast produktläge. Av, standardvärdet, får en startadministratör som heter admin, root, sa eller administrator, eller saknar namn, ett oförutsägbart genererat namn som skrivs med lösenordet till filen bootstrap-admin-password i persistence.dataDir vid första start (se admin.logBootstrapPassword). På används det konfigurerade namnet som det är. VARNING: krav 6.3.2 i ASVS 5.0.0 förbjuder ett kontonamn som är standard, så låt detta vara av utanför en testmiljö."
+    "en": "7375f4bf636f5366",
+    "text": "Endast produktläge. Av, standardvärdet, får en startadministratör som heter admin, root, sa eller administrator, eller saknar namn, ett oförutsägbart genererat namn som skrivs med lösenordet till filen bootstrap-admin-password i persistence.dataDir vid första start (se admin.logBootstrapPassword). På används det konfigurerade namnet som det är. VARNING: krav 6.3.2 i ASVS 5.0.0 förbjuder ett kontonamn som är standard, så låt detta vara av utanför en testmiljö. En senare start tar bort den filen när någon redan har en autentiseringsuppgift."
   },
   "admin.allowDefaultUsername|restartReason": {
     "en": "0191948468332113",
@@ -436,8 +436,8 @@
     "text": "Konto för initial administratör"
   },
   "admin.bootstrapUsername|description": {
-    "en": "9b6fe650632ee79d",
-    "text": "Den initiala administratörens användarnamn (2026-09-13), i STANDARDSFÄREN och, sedan 2026-09-14, i varje förtroendesfär, där kontot administrerar enbart den sfären: skapas vid start om det saknas, är medlem i båda konsolrollerna, tvingas byta lösenord vid sin första inloggning och kan inte tas bort eller byta namn. Tills det första gången loggar in i /admin får varje inloggad person använda konsolen (admin.openWhenEmpty). I utvecklingsläge loggar vilket lösenord som helst in det, som för alla. I PRODUKTIONSLÄGE är det också kontot som får ett genererat lösenord när tjänsten startar och INGEN i sfären har några inloggningsuppgifter; namnet och det lösenordet skrivs en gång till filen bootstrap-admin-password i persistence.dataDir, läsbar bara för tjänsten (loggen säger var, och innehåller dem själv bara med admin.logBootstrapPassword på), och är den enda vägen in i en ny produktionsdriftsättning. Det genererade lösenordet skrivs aldrig där någon redan har inloggningsuppgifter, så det kan inte skriva över ett lösenord. Det tvingade bytet gäller bara ett konto som detta steg SKAPADE — ett befintligt konto med det här namnet behåller sitt lösenord och får bara de två rollerna."
+    "en": "8b69eb9d4cb0b130",
+    "text": "Den initiala administratörens användarnamn (2026-09-13), i STANDARDSFÄREN och, sedan 2026-09-14, i varje förtroendesfär, där kontot administrerar enbart den sfären: skapas vid start om det saknas, är medlem i båda konsolrollerna, tvingas byta lösenord vid sin första inloggning och kan inte tas bort eller byta namn. Tills det första gången loggar in i /admin får varje inloggad person använda konsolen (admin.openWhenEmpty). I utvecklingsläge loggar vilket lösenord som helst in det, som för alla. I PRODUKTIONSLÄGE är det också kontot som får ett genererat lösenord när tjänsten startar och INGEN i sfären har några inloggningsuppgifter; namnet och det lösenordet skrivs en gång till filen bootstrap-admin-password i persistence.dataDir, läsbar bara för tjänsten (loggen säger var, och innehåller dem själv bara med admin.logBootstrapPassword på), och är den enda vägen in i en ny produktionsdriftsättning. Det genererade lösenordet skrivs aldrig där någon redan har inloggningsuppgifter, så det kan inte skriva över ett lösenord. Det tvingade bytet gäller bara ett konto som detta steg SKAPADE — ett befintligt konto med det här namnet behåller sitt lösenord och får bara de två rollerna. En senare start tar bort den filen när någon redan har en autentiseringsuppgift."
   },
   "admin.bootstrapUsername|restartReason": {
     "en": "0191948468332113",
@@ -8330,6 +8330,54 @@
   "authzen.accessRequestMaxPending|description": {
     "en": "6b3f5e73f6fcafaf",
     "text": "Det högsta antalet åtkomstbegäranden en sfär rymmer som väntande; efter det avvisas en inskickning med 503 tills några avgjorts eller gått ut."
+  },
+  "authzen.externalPdp|label": {
+    "en": "8a0af08389fe6cda",
+    "text": "Fråga en extern PDP före ett tokenutbyte."
+  },
+  "authzen.externalPdp|description": {
+    "en": "378c7dcd21a960c7",
+    "text": "AuthZEN-bindningen för OAuth 2.0-tokenutbyte, riktning B: innan den här auktoriseringsservern utfärdar en OAuth-åtkomsttoken för ett RFC 8693-utbyte frågar den den externa PDP som authzen.externalPdpUrl namnger. Den lokala utfärdandepolicyn avgör fortfarande först, och ett avslag den verkställer skickas inte vidare. PDP:n får bara snäva in omfånget och åtkomsttokenens livslängd. Av, standardvärdet, rings ingenting. En Kerberos-token ligger utanför bindningen och skickas inte. Inget svar, eller ett avslag, betyder ingen token."
+  },
+  "authzen.externalPdpUrl|label": {
+    "en": "4702ceb3700a0831",
+    "text": "Adress till den externa AuthZEN-PDP:n."
+  },
+  "authzen.externalPdpUrl|description": {
+    "en": "2d486c955985f5ac",
+    "text": "Den absoluta https-adressen till den externa PDP:ns POST /access/v1/evaluations. En administratör konfigurerar den, och en begäran kan inte namnge den. Den bär inget userinfo, query eller fragment. Tom medan authzen.externalPdp är på vägrar den utbytet. Vanlig http vägras även när federation.outboundAllowHttp är på, eftersom begäran bär tokenanspråk och ett klientcertifikat."
+  },
+  "authzen.externalPdpTimeoutMs|label": {
+    "en": "c40081858bffe671",
+    "text": "Tidsgräns för den externa PDP:n (millisekunder)."
+  },
+  "authzen.externalPdpTimeoutMs|description": {
+    "en": "1c73c2acfe98c703",
+    "text": "Hur länge den externa PDP:n inväntas, i millisekunder. En tidsgräns vägrar utbytet. Det lokala beslutet utfärdas inte i dess ställe."
+  },
+  "authzen.externalPdpClientCertFile|label": {
+    "en": "2da8c5ed72d965bb",
+    "text": "Klientcertifikat för den externa PDP:n."
+  },
+  "authzen.externalPdpClientCertFile|description": {
+    "en": "cae054b4776151a0",
+    "text": "PEM-filen den här auktoriseringsservern visar för den externa PDP:n. Ömsesidig TLS är det enda läget, och PDP:n släpper in certifikatet som en AUTHZEN_PEPS-anropare. I produktläge måste filen ligga i en katalog som security.fileRoots listar. En relativ sökväg är den här processens aktuella katalog. Tom eller oläsbar medan authzen.externalPdp är på vägrar den utbytet."
+  },
+  "authzen.externalPdpClientKeyFile|label": {
+    "en": "8c2c725a67e09874",
+    "text": "Klientnyckel för den externa PDP:n."
+  },
+  "authzen.externalPdpClientKeyFile|description": {
+    "en": "6509f61b7122be79",
+    "text": "PEM-filen med klientcertifikatets privata nyckel. Filen läses när PDP:n rings. Nyckelns byte är inget konfigurationsvärde, så GET /admin-api/config returnerar sökvägen och inte nyckeln. I produktläge måste filen ligga i en katalog som security.fileRoots listar. En relativ sökväg är den här processens aktuella katalog. Tom eller oläsbar medan authzen.externalPdp är på vägrar den utbytet."
+  },
+  "authzen.externalPdpCaFile|label": {
+    "en": "6abdfbc262d71c16",
+    "text": "CA-fil för den externa PDP:n."
+  },
+  "authzen.externalPdpCaFile|description": {
+    "en": "d8328616a3f62cfa",
+    "text": "En valfri PEM-fil med CA-certifikat som används i stället för standardrötterna för att verifiera den externa PDP:n. Tom använder de rötterna. En namngiven och oläsbar fil, eller en som produktläge inte läser under security.fileRoots, vägrar utbytet. En relativ sökväg är den här processens aktuella katalog."
   },
   "uma.enabled|label": {
     "en": "2a3767bd4bc83294",

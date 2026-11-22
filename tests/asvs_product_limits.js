@@ -510,6 +510,10 @@ function childMain() {
          fs.readFileSync(held, 'utf8') === 'first-admin:the-secret\n',
          'the bootstrap password goes to a file only this service can read',
          held);
+    const later = bootCreds.bootstrap();
+    note(later.ran === false && !fs.existsSync(held),
+         'a later start removes the bootstrap password file',
+         JSON.stringify({ ran: later.ran, why: later.why }));
     bootLog = true;
     note(bootCreds.writeBootstrapPassword('a', 'b') === '',
          'and the opt-out returns to the log');

@@ -230,5 +230,7 @@
   "transfer.view.trustedHeading": "Ibang mga realm na pinagkakatiwalaan ng realm na ito",
   "transfer.view.noneTrusted": "Walang pinagkakatiwalaang export ng patakaran mula sa ibang realm ang realm na ito.",
   "transfer.view.kind": "Uri",
-  "transfer.view.addedBy": "Idinagdag ni"
+  "transfer.view.addedBy": "Idinagdag ni",
+  "newPolicy.button": "Bagong patakaran",
+  "newPolicy.choose": "Piliin ang uri ng patakarang gagawin."
 }

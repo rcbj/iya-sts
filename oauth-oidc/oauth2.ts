@@ -19292,6 +19292,8 @@ class OAuth2Server {
       // the Kerberos Token Profile's six URIs is answered with that token in
       // `access_token` (RFC 8693 section 2.2.1), not an access token: see
       // kerberosExchangeToken(). No refresh token and no ID Token ride along.
+      // The external AuthZEN PDP is not asked (#1200): the binding's tuples
+      // name a registered OAuth token type, and a Kerberos token is not one.
       const kerberosAsked = krb5Tokens.isType(
         String(body.requested_token_type || ''));
       let kerberosMinted: Json = null;
@@ -19310,6 +19312,98 @@ class OAuth2Server {
         kerberosMinted = minted.token;
         exchanged = minted.response;
       } else {
+        // THE EXTERNAL AUTHZEN PDP (#1200), after the local policy has
+        // allowed the exchange and after the local scope narrowing. It may
+        // only narrow further. A Kerberos token never reaches this branch.
+        let issuedScope = exchangeScope !== null ? exchangeScope
+          : String(subject.scope || '');
+        let lifetimeCapS: number | null = null;
+        if (config.value('authzen.externalPdp') === true) {
+          const externalPdp = require('../authzen/authzen_external_pdp');
+          const subjectIsClient = /^urn:sts:client:/.test(subjectSub) ||
+            (!subject.username &&
+             (subjectSub === String(client.client_id || '') ||
+              subjectSub === String(subject.client_id || '')));
+          const exchangeSubject = {
+            type: subjectIsClient ? 'client' : 'user',
+            id: subjectName
+          };
+          const exchangeParty = {
+            type: actorClientId ? 'client' : 'user',
+            id: actorName
+          };
+          const sameParty = exchangeParty.type === exchangeSubject.type &&
+            exchangeParty.id === exchangeSubject.id;
+          const asked = await externalPdp.consult({
+            subject: exchangeSubject,
+            party: sameParty ? null : exchangeParty,
+            audiences: issuedAudiences.map(String),
+            scopes: String(issuedScope || '').split(/\s+/)
+              .filter(function (one: string) {
+                return !!one;
+              }),
+            clientId: String(client.client_id || ''),
+            subjectTokenType: subjectType,
+            actorTokenType: body.actor_token ? actorType : '',
+            subjectClaims: subject,
+            act: subject && subject.act,
+            mayAct: mayAct
+          });
+          if (!asked.ok) {
+            if (asked.code === 'STS-AUTHZEN-0125') {
+              delegation.record({
+                protocol: 'OAuth 2.0',
+                type: exchangeType,
+                outcome: 'refused',
+                initial: {
+                  presented: subject.username || subject.sub || '',
+                  what: 'the subject of the token presented'
+                },
+                intermediary: {
+                  presented: registerActor,
+                  application: client.client_id,
+                  what: actorClaims
+                    ? 'the actor named in the actor_token, exchanging ' +
+                      'through client ' + client.client_id
+                    : 'the client performing the exchange'
+                },
+                target: {
+                  application: firstTarget.application || firstTarget.asked,
+                  what: firstTarget.asked
+                    ? 'the audience or resource asked for, "' +
+                      firstTarget.asked + '"'
+                    : 'unstated — neither audience nor resource was sent'
+                },
+                authorizedBy: delegationPolicy.rowText(decision),
+                reason: String(asked.description || ''),
+                consumed: [OAuth2Server.consumedInput(
+                  'subject_token',
+                  subjectAssertion || (subjectKerberos
+                    ? { format: 'kerberos',
+                        shape: subjectKerberos.shape }
+                    : null),
+                  String(subject.jti || ''),
+                  subjectVerified)],
+                produced: [],
+                sessionId: ''
+              });
+            }
+            errorCodes.mark(res, String(asked.code || 'STS-AUTHZEN-0124'));
+            log.debug("Leaving OAuth2Server.tokenGrant(). The external " +
+                      "AuthZEN PDP refused the exchange.");
+            // error-code: none — asked.code was marked above
+            return self.oauthError(res, Number(asked.status) || 503,
+                                   String(asked.error ||
+                                          'temporarily_unavailable'),
+                                   String(asked.description || ''));
+          }
+          if (typeof asked.scope === 'string') {
+            issuedScope = asked.scope;
+          }
+          if (typeof asked.lifetimeCapS === 'number') {
+            lifetimeCapS = asked.lifetimeCapS;
+          }
+        }
         exchanged = await issue({
           jkt: dpopJkt,
           sub: subject.sub || 'urn:sts:exchanged',
@@ -19331,8 +19425,7 @@ class OAuth2Server {
           // (idTokenFollowsIssuedScope). A requested scope the policy narrowed
           // (#549) is the list that survived — empty included, so a dropped
           // permission never brings the subject's own scope back in its place.
-          scope: exchangeScope !== null ? exchangeScope
-            : String(subject.scope || ''),
+          scope: issuedScope,
           idTokenFollowsIssuedScope: true,
           audience: self.audienceClaim(issuedAudiences), act: act,
           // RFC 9396 on an exchange: the details asked for, as for a direct
@@ -19363,6 +19456,9 @@ class OAuth2Server {
           // `aud` on the token being minted is the union of both and the two
           // must not come to describe different resource servers.
           resources: wantsRefresh ? issuedAudiences : undefined,
+          // The PDP's token_lifetime, when it named one. null does not cap:
+          // Number(null) is 0, and the cap only shortens a positive life.
+          lifetimeCapS: lifetimeCapS,
           grant: 'token exchange'
         });
         // RFC 8693 section 2.2.1: `issued_token_type` describes THE TOKEN IN

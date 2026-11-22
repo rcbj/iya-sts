@@ -719,15 +719,16 @@ class UsersPage {
         'type="hidden" name="action" value="create">' +
         // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each `<h2>`
         // of the form is a frame inside it, the buttons in the last.
+        // THE USERNAME IS CALLED OUT AS EVERY REQUIRED FIELD IS (#1132): the
+        // directory create forms' cell (`kit.createFields()`), a red rule,
+        // an asterisk and "required", where it was a bare box whose being
+        // required was said only in the note under it.
         kit.frame('<h2>' +
-        t.html('consoleUsers.newUserBody.whoHeading') + '</h2><div ' +
-        'class="formrow"><label for="new-username">' +
-        t.html('consoleUsers.newUserBody.username') + '</label><input ' +
-        'type="text" id="new-username" name="username" size="28" ' +
-        'maxlength="256" required ' +
-        'value="' + kit.esc(username) + '" placeholder="' +
-        kit.esc(t.text('consoleUsers.newUserBody.usernameHint')) +
-        '"></div>' +
+        t.html('consoleUsers.newUserBody.whoHeading') + '</h2>' +
+        kit.createFields([{ name: 'username', required: true,
+          label: t.html('consoleUsers.newUserBody.username'),
+          placeholder: t.text('consoleUsers.newUserBody.usernameHint'),
+          attrs: { maxlength: 256 } }], { username: username }, t) +
         // NOT THE ONLY REQUIRED FIELD (#1066): the attribute policy requires
         // cn and sn as well, and the realm may add more, each outlined in
         // the grid below.
