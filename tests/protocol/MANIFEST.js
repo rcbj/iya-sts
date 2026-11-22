@@ -1408,6 +1408,11 @@ const JOBS = [
   // removed; no answer carries the secret, the key or an error code. What a
   // code does at a sign-in is tests/hotp.js and tests/oath_tokens.js.
   { file: 'sts_oath_tokens.js', browser: false, local: true },
+  // YUBIKEY OTP AND YK-VAL 2.0 OVER HTTP (#1955 P5): a CSV and a client
+  // made in the run, the verify endpoint's statuses and HMAC, and the
+  // three settings put back on the realm this job created. The policy
+  // row is tests/yubiotp.js, in process.
+  { file: 'sts_yubiotp.js', browser: false, local: true },
   // LINKING A WEBAUTHN PLATFORM CREDENTIAL ON /portal/devices, IN A REAL
   // BROWSER (#258, 2026-10-06): Chrome's virtual authenticators enrol a
   // roaming key and a platform key on /portal/keys; the roaming one is
