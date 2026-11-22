@@ -232,8 +232,8 @@
     "text": "Das erzeugte Bootstrap-Passwort protokollieren"
   },
   "admin.logBootstrapPassword|description": {
-    "en": "577ec7c125546cdb",
-    "text": "Nur im Produktmodus. Aus, der Standard, wird das für den ersten Administrator erzeugte Passwort in die Datei bootstrap-admin-password in persistence.dataDir geschrieben, lesbar nur für diesen Dienst, und das Protokoll nennt den Ort. An wird es stattdessen in das Dienstprotokoll geschrieben. WARNUNG: an ist ASVS 5.0.0 Anforderung 16.2.5 nicht erfüllt, weil Anmeldedaten das Protokoll erreichen."
+    "en": "856dddf1ed8c2407",
+    "text": "Nur im Produktmodus. Aus, der Standard, wird das für den ersten Administrator erzeugte Passwort in die Datei bootstrap-admin-password in persistence.dataDir geschrieben, lesbar nur für diesen Dienst, und das Protokoll nennt den Ort. An wird es stattdessen in das Dienstprotokoll geschrieben. WARNUNG: an ist ASVS 5.0.0 Anforderung 16.2.5 nicht erfüllt, weil Anmeldedaten das Protokoll erreichen. Ein späterer Start löscht diese Datei, sobald bereits jemand Zugangsdaten besitzt."
   },
   "oauth2.allowConfidentialWithoutPkce|label": {
     "en": "c33a0a31a1d623b1",
@@ -424,8 +424,8 @@
     "text": "Einen Standard-Administratornamen im Produkt erlauben"
   },
   "admin.allowDefaultUsername|description": {
-    "en": "53da4f7ba4ff5dcc",
-    "text": "Nur im Produktmodus. Aus, der Standard, erhält ein Bootstrap-Administrator mit dem Namen admin, root, sa oder administrator, oder ganz ohne Namen, einen nicht vorhersagbaren erzeugten Namen, der mit seinem Passwort beim ersten Start in die Datei bootstrap-admin-password in persistence.dataDir geschrieben wird (siehe admin.logBootstrapPassword). An wird der konfigurierte Name so verwendet, wie er ist. WARNUNG: ASVS 5.0.0 Anforderung 6.3.2 verbietet einen Standardnamen für ein Konto; lassen Sie dies daher außerhalb eines Teststapels aus."
+    "en": "7375f4bf636f5366",
+    "text": "Nur im Produktmodus. Aus, der Standard, erhält ein Bootstrap-Administrator mit dem Namen admin, root, sa oder administrator, oder ganz ohne Namen, einen nicht vorhersagbaren erzeugten Namen, der mit seinem Passwort beim ersten Start in die Datei bootstrap-admin-password in persistence.dataDir geschrieben wird (siehe admin.logBootstrapPassword). An wird der konfigurierte Name so verwendet, wie er ist. WARNUNG: ASVS 5.0.0 Anforderung 6.3.2 verbietet einen Standardnamen für ein Konto; lassen Sie dies daher außerhalb eines Teststapels aus. Ein späterer Start löscht diese Datei, sobald bereits jemand Zugangsdaten besitzt."
   },
   "admin.allowDefaultUsername|restartReason": {
     "en": "0191948468332113",
@@ -436,8 +436,8 @@
     "text": "Konto des Bootstrap-Administrators"
   },
   "admin.bootstrapUsername|description": {
-    "en": "9b6fe650632ee79d",
-    "text": "Der Benutzername des Bootstrap-Administrators (2026-09-13), im STANDARD-Vertrauensbereich und seit 2026-09-14 in jedem Vertrauensbereich, wo er nur diesen Vertrauensbereich verwaltet: beim Start angelegt, falls er fehlt, Mitglied beider Rollen der Konsole, bei der ersten Anmeldung zur Änderung seines Passworts gezwungen und unmöglich zu löschen oder umzubenennen. Bis zur ersten Anmeldung bei /admin darf jede angemeldete Person die Konsole verwenden (admin.openWhenEmpty). In der Entwicklung meldet jedes Passwort ihn an, wie bei allen anderen. IM PRODUKTMODUS ist er außerdem derjenige, der ein erzeugtes Passwort erhält, wenn dieser Dienst startet und NIEMAND im Vertrauensbereich Anmeldedaten besitzt; der Name und dieses Passwort werden einmal in die Datei bootstrap-admin-password in persistence.dataDir geschrieben, lesbar nur für diesen Dienst (das Protokoll nennt den Ort und trägt sie selbst nur, wenn admin.logBootstrapPassword an ist), und sie sind der einzige Weg in eine frische Produktbereitstellung. Das erzeugte Passwort wird niemals geschrieben, wo bereits jemand Anmeldedaten besitzt, sodass es kein Passwort überschreiben kann. Die erzwungene Änderung gilt nur für ein Konto, das dieser Schritt ANGELEGT hat — ein bestehendes Konto dieses Namens behält sein Passwort und erhält nur die beiden Rollen."
+    "en": "8b69eb9d4cb0b130",
+    "text": "Der Benutzername des Bootstrap-Administrators (2026-09-13), im STANDARD-Vertrauensbereich und seit 2026-09-14 in jedem Vertrauensbereich, wo er nur diesen Vertrauensbereich verwaltet: beim Start angelegt, falls er fehlt, Mitglied beider Rollen der Konsole, bei der ersten Anmeldung zur Änderung seines Passworts gezwungen und unmöglich zu löschen oder umzubenennen. Bis zur ersten Anmeldung bei /admin darf jede angemeldete Person die Konsole verwenden (admin.openWhenEmpty). In der Entwicklung meldet jedes Passwort ihn an, wie bei allen anderen. IM PRODUKTMODUS ist er außerdem derjenige, der ein erzeugtes Passwort erhält, wenn dieser Dienst startet und NIEMAND im Vertrauensbereich Anmeldedaten besitzt; der Name und dieses Passwort werden einmal in die Datei bootstrap-admin-password in persistence.dataDir geschrieben, lesbar nur für diesen Dienst (das Protokoll nennt den Ort und trägt sie selbst nur, wenn admin.logBootstrapPassword an ist), und sie sind der einzige Weg in eine frische Produktbereitstellung. Das erzeugte Passwort wird niemals geschrieben, wo bereits jemand Anmeldedaten besitzt, sodass es kein Passwort überschreiben kann. Die erzwungene Änderung gilt nur für ein Konto, das dieser Schritt ANGELEGT hat — ein bestehendes Konto dieses Namens behält sein Passwort und erhält nur die beiden Rollen. Ein späterer Start löscht diese Datei, sobald bereits jemand Zugangsdaten besitzt."
   },
   "admin.bootstrapUsername|restartReason": {
     "en": "0191948468332113",
@@ -1403,6 +1403,14 @@
     "en": "cba85726ee4e8673",
     "text": "Die Origins — Schema, Host und Port, kein Pfad —, von denen eine WebAuthn-Zeremonie angenommen wird, durch Kommas getrennt. **LEER, der Standard, leitet den einen Origin aus der Adresse ab, unter der dieser Dienst erreicht wurde**, was er schon immer getan hat und was global.publicBaseUrl bereits festlegt, wenn es gesetzt ist. Gesetzt ist es die ganze Liste: ein clientDataJSON, dessen Origin nicht darauf steht, wird abgelehnt, gleich welchen Host die Anfrage trug. Nennen Sie mehrere, wo dieselben Anmeldedaten von benachbarten Hosts unter einer gemeinsamen webauthn.rpId benutzt werden."
   },
+  "webauthn.u2fAppIds|label": {
+    "en": "b0b6d4158c6357e8",
+    "text": "Alte U2F-AppIDs"
+  },
+  "webauthn.u2fAppIds|description": {
+    "en": "05b1b01773d86d5d",
+    "text": "Die FIDO-U2F-AppIDs — die https-URLs, unter denen eine alte U2F-Relying-Party ihre Sicherheitsschlüssel registriert hat —, deren Anmeldedaten auf die Einträge von Personen importiert und hier zur Anmeldung verwendet werden dürfen, durch Kommas getrennt. **LEER, der Standard, heißt: die Funktion ist aus**: Nichts kann importiert werden, keine Zeremonie trägt die Erweiterung appid oder appidExclude (WebAuthn Level 3 Abschnitte 10.1.1 und 10.1.2), und ein importierter Schlüssel meldet niemanden an. Eine AppID wird nur bei einer RP-ID verwendet, zu der sie gehört: Ihr Host ist die RP-ID, oder das eine ist ein Suffix des anderen. Wo der Host von dem des Ursprungs abweicht, ruft der Browser die AppID-URL nach einer TrustedFacets-Liste ab, die diesen Ursprung nennt; der alte Dienst muss sie weiter bereitstellen. Ein importierter Schlüssel ist nur ein zweiter Faktor: Ein U2F-Schlüssel kann die Person nicht überprüfen."
+  },
   "webauthn.algorithms|label": {
     "en": "47c0895479d03828",
     "text": "Angebotene Algorithmen"
@@ -1900,8 +1908,8 @@
     "text": "Anbieter des Schlüsselverschlüsselungsschlüssels"
   },
   "keys.kekProvider|description": {
-    "en": "b48b052bc689c8e3",
-    "text": "Wo der Schlüsselverschlüsselungsschlüssel liegt, der jeden Datenverschlüsselungsschlüssel umhüllt. `file`, `aws`, `gcp`, `azure` und `vault` LESEN einen 32-Byte-Schlüssel in diesen Prozess aus einer eingebundenen Datei oder einem Geheimnisspeicher; `file` ist der Standard, weil es nichts braucht. `vault-transit` (Vault oder OpenBao Transit), `aws-kms`, `gcp-kms` (Cloud KMS) und `azure-keys` (ein Schlüssel von Key Vault oder Managed HSM; keys.kekVault ist sein Tresor) sind Schlüsselverwaltungsdienste: der Schlüssel verlässt sie NIE, keys.kekRef benennt ihn, und das KMS umhüllt und entpackt jeden Datenschlüssel — ein Aufruf je Datenschlüssel beim Start, keiner je Wert. Jeder Anbieter außer `file` verlangt sein offizielles SDK erst bei Bedarf, das bewusst KEINE Abhängigkeit dieses Dienstes ist; ein fehlendes wird mit dem zu installierenden Paketnamen gemeldet."
+    "en": "bf4e717bed6b7e03",
+    "text": "Wo der Schlüsselverschlüsselungsschlüssel liegt, der jeden Datenverschlüsselungsschlüssel umhüllt. `file`, `aws`, `gcp`, `azure` und `vault` LESEN einen 32-Byte-Schlüssel in diesen Prozess aus einer eingebundenen Datei oder einem Geheimnisspeicher; `file` ist der Standard, weil es nichts braucht. `vault-transit` (Vault oder OpenBao Transit), `aws-kms`, `gcp-kms` (Cloud KMS) und `azure-keys` (ein Schlüssel von Key Vault oder Managed HSM; keys.kekVault ist sein Tresor) sind Schlüsselverwaltungsdienste: der Schlüssel verlässt sie NIE, keys.kekRef benennt ihn, und das KMS umhüllt und entpackt jeden Datenschlüssel — ein Aufruf je Datenschlüssel beim Start, keiner je Wert. `pkcs11` ist dasselbe mit dem Schlüssel in einem Hardware-Sicherheitsmodul (ein YubiHSM 2, SoftHSM2 oder ein beliebiges PKCS#11-Modul, keys.pkcs11Module), keys.kekRef eine PKCS#11-URI. Jeder Anbieter außer `file` verlangt sein offizielles SDK erst bei Bedarf, das bewusst KEINE Abhängigkeit dieses Dienstes ist; ein fehlendes wird mit dem zu installierenden Paketnamen gemeldet."
   },
   "keys.kekProvider|restartReason": {
     "en": "0956d2f97d1df86a",
@@ -1948,8 +1956,8 @@
     "text": "Referenz des Schlüsselverschlüsselungsschlüssels"
   },
   "keys.kekRef|description": {
-    "en": "a5a5b6e7f2c06fdc",
-    "text": "Wonach die Cloud-Anbieter das Geheimnis benennen: ein Name oder ARN von AWS Secrets Manager, ein GCP-Ressourcenname (projects/<p>/secrets/<s>, wobei /versions/latest ergänzt wird, wenn keine Version angegeben ist), ein Geheimnisname von Azure Key Vault oder ein Lesepfad von HashiCorp Vault. Vom Anbieter `file` ungenutzt."
+    "en": "b28c82e37153639d",
+    "text": "Wonach die Cloud-Anbieter das Geheimnis benennen: ein Name oder ARN von AWS Secrets Manager, ein GCP-Ressourcenname (projects/<p>/secrets/<s>, wobei /versions/latest ergänzt wird, wenn keine Version angegeben ist), ein Geheimnisname von Azure Key Vault oder ein Lesepfad von HashiCorp Vault. Für `pkcs11` eine PKCS#11-URI nach RFC 7512, pkcs11:token=<token label>;object=<key label>. Vom Anbieter `file` ungenutzt."
   },
   "keys.kekRef|restartReason": {
     "en": "d51b3caaa6125e92",
@@ -2071,13 +2079,125 @@
     "en": "d51b3caaa6125e92",
     "text": "einmal beim Start gelesen"
   },
+  "keys.pkcs11Module|label": {
+    "en": "0fb904cb6844253b",
+    "text": "PKCS#11-Modul"
+  },
+  "keys.pkcs11Module|description": {
+    "en": "dd4fdc39cd1aed44",
+    "text": "Der Pfad des PKCS#11-Moduls, das der Anbieter `pkcs11` lädt: /usr/lib/x86_64-linux-gnu/pkcs11/yubihsm_pkcs11.so für ein YubiHSM 2 (mit laufendem yubihsm-connector und YUBIHSM_PKCS11_CONF, das auf dessen Konfiguration zeigt), /usr/lib/softhsm/libsofthsm2.so für SoftHSM2. Es braucht das Paket pkcs11js, das bewusst keine Abhängigkeit dieses Dienstes ist."
+  },
+  "keys.pkcs11Module|restartReason": {
+    "en": "34a60604acae5870",
+    "text": "das Modul wird einmal geladen, beim Start"
+  },
+  "keys.pkcs11Mechanism|label": {
+    "en": "f9f19afe01ab43ad",
+    "text": "Wie das HSM einen Datenschlüssel umhüllt"
+  },
+  "keys.pkcs11Mechanism|description": {
+    "en": "85ff0e656695f323",
+    "text": "Der Mechanismus, mit dem ein neuer Datenschlüssel im HSM umhüllt wird. `auto` nimmt CKM_AES_GCM, wo das Modul es anbietet (SoftHSM2 und die meisten Netzwerk-HSMs), dann CKM_AES_KEY_WRAP_PAD, dann das eigene CKM_YUBICO_AES_CCM_WRAP des YubiHSM 2 (seine Wrap-Key-Objekte). Ein vor einer Änderung umhüllter Datenschlüssel lässt sich weiterhin entpacken: die gespeicherte Form nennt ihren Mechanismus."
+  },
+  "keys.pkcs11Mechanism|restartReason": {
+    "en": "091df5146f3d6f79",
+    "text": "der Schlüsselverschlüsselungsschlüssel wird einmal erreicht, beim Start"
+  },
+  "keys.pkcs11GenerateKey|label": {
+    "en": "c9dac3afbed86d44",
+    "text": "Den HSM-Schlüssel bei der ersten Verwendung erzeugen"
+  },
+  "keys.pkcs11GenerateKey|description": {
+    "en": "82a5d89dd1a4c872",
+    "text": "Ein: Ein Schlüsselverschlüsselungsschlüssel, den die PKCS#11-URI nennt und den das Token nicht hält, wird dort erzeugt: AES-256, sensitiv und NICHT extrahierbar. Nur der Frontprozess erzeugt ihn; für einen Cluster erzeugen Sie den Schlüssel stattdessen mit dem eigenen Werkzeug des HSM, denn zwei gleichzeitig startende Knoten würden zwei erzeugen. Aus, der Standard: Ein fehlender Schlüssel verhindert den Start."
+  },
+  "keys.pkcs11GenerateKey|restartReason": {
+    "en": "091df5146f3d6f79",
+    "text": "der Schlüsselverschlüsselungsschlüssel wird einmal erreicht, beim Start"
+  },
+  "keys.pkcs11Sessions|label": {
+    "en": "4a2da0042402bee1",
+    "text": "PKCS#11-Sitzungen je Prozess"
+  },
+  "keys.pkcs11Sessions|description": {
+    "en": "f5b20f8d3e577d1a",
+    "text": "Wie viele Sitzungen jeder Prozess und jeder Anfrage-Worker höchstens auf einem Token offen hält, von denen jede eine HSM-Operation zur Zeit ausführt. Ein YubiHSM 2 hat insgesamt 16 Sitzungen, geteilt von jedem Prozess jedes Knotens: Halten Sie das Produkt aus diesem Wert, den Prozessen und den Knoten darunter."
+  },
+  "keys.pkcs11Sessions|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "das Token wird einmal geöffnet, beim Start"
+  },
+  "keys.pkcs11PinProvider|label": {
+    "en": "3e1d9c989bcacc3d",
+    "text": "Woher die PKCS#11-PIN gelesen wird"
+  },
+  "keys.pkcs11PinProvider|description": {
+    "en": "1c344b0b12c35ec4",
+    "text": "Der Geheimnisspeicher, aus dem die PIN des HSM-Tokens gelesen wird, nie der Wert einer Einstellung: eine eingebundene Datei, AWS Secrets Manager, Google Cloud Secret Manager, Azure Key Vault oder Vault/OpenBao, erreicht so, wie keys.kek* es angibt. Für ein YubiHSM 2 ist die PIN die ID des Authentifizierungsschlüssels in vier Hexziffern, gefolgt von seinem Passwort (0001password). Ein JSON-Objekt mit PINs je Token-Label bedient Tokens mit verschiedenen PINs. `none` meldet sich bei nichts an."
+  },
+  "keys.pkcs11PinProvider|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "die PIN wird einmal gelesen, wenn das Token geöffnet wird"
+  },
+  "keys.pkcs11PinRef|label": {
+    "en": "de50e9f1904c80fc",
+    "text": "Der Ort der PKCS#11-PIN"
+  },
+  "keys.pkcs11PinRef|description": {
+    "en": "dffce1d68f8495de",
+    "text": "Wo die PIN liegt, in dem Anbieter, den keys.pkcs11PinProvider nennt: ein Pfad, ein ARN, eine Ressource oder ein Vault-Lesepfad. Es gibt keinen Ausweichwert."
+  },
+  "keys.pkcs11PinRef|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "die PIN wird einmal gelesen, wenn das Token geöffnet wird"
+  },
+  "keys.pkcs11PinField|label": {
+    "en": "55008836b9ff61fe",
+    "text": "Das Feld, in dem die PKCS#11-PIN steht"
+  },
+  "keys.pkcs11PinField|description": {
+    "en": "f333042737800292",
+    "text": "Das Element eines JSON-Geheimnisses, das die PIN enthält. Leer nimmt den Wert als Ganzes."
+  },
+  "keys.pkcs11PinField|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "die PIN wird einmal gelesen, wenn das Token geöffnet wird"
+  },
+  "keys.signingKeyStore|label": {
+    "en": "e6e0b403d7b8a000",
+    "text": "Wo die Signaturschlüssel eines Vertrauensbereichs erzeugt werden"
+  },
+  "keys.signingKeyStore|description": {
+    "en": "5cc22ee909529ecc",
+    "text": "`software`, der Standard, erzeugt die Signaturschlüssel eines Vertrauensbereichs in diesem Prozess und hält sie versiegelt im Speicher. `pkcs11` erzeugt seine klassischen — den RS256-Schlüssel, den XML-Schlüssel und die P-256-, P-384-, P-521-, secp256k1- und Ed25519-Schlüssel, die das Modul erzeugen kann — in dem HSM, das keys.signingKeyToken nennt, nicht extrahierbar, und signiert dort; ein Schlüssel, den das Modul nicht erzeugen kann, und jeder Post-Quanten-Schlüssel bleibt in Software. Es gilt für einen Schlüsselsatz, der nach der Änderung erzeugt oder rotiert wird, braucht einen Schlüsselspeicher, der dauerhaft ist (Produktmodus), und jeder Prozess und Knoten braucht das Token. Je Vertrauensbereich setzbar."
+  },
+  "keys.signingKeyToken|label": {
+    "en": "a6e7fb05dd49b8a9",
+    "text": "Das HSM-Token, auf dem Signaturschlüssel erzeugt werden"
+  },
+  "keys.signingKeyToken|description": {
+    "en": "0bd2c707f6ff2e69",
+    "text": "Die PKCS#11-URI des Tokens, auf dem ein Vertrauensbereich mit keys.signingKeyStore `pkcs11` seine Signaturschlüssel erzeugt: pkcs11:token=<token label>, mit serial= oder slot-id=, wo zwei Tokens ein Label teilen. Das Modul, die PIN und die Sitzungen sind die Einstellungen keys.pkcs11*. Leer öffnet kein Token."
+  },
+  "keys.signingKeyToken|restartReason": {
+    "en": "1a04369397b30563",
+    "text": "das Token wird einmal geöffnet, beim Start, in jedem Prozess"
+  },
+  "keys.pkcs11SynchronousSign|label": {
+    "en": "c8e3fedf4601518d",
+    "text": "Synchrones PKCS#11-Signieren erlauben"
+  },
+  "keys.pkcs11SynchronousSign|description": {
+    "en": "1cb742f146d4c7c1",
+    "text": "Aus, der Standard: eine Signatur mit einem Schlüssel im HSM wird nur über das asynchrone `C_Sign` der Bindung erzeugt. Die synchronen Türen (ein JWS, eine XML-Signatur, eine SAML-Assertion) verweigern einen HSM-Schlüssel (`STS-KEYS-0209`), statt auf dem Ereignisloop auf das Token zu warten. Ein, rufen diese Türen `C_Sign` auf und der Ereignisloop wartet. Ein Modul ohne asynchrones Signieren kann nur signieren, solange dies eingeschaltet ist. Die Entschlüsselung ändert sich nicht. Je Vertrauensbereich setzbar."
+  },
   "keys.cellKekProvider|label": {
     "en": "9103eeef061197fd",
     "text": "Woher der Schlüsselverschlüsselungsschlüssel der Zelle gelesen wird"
   },
   "keys.cellKekProvider|description": {
-    "en": "f779ece8f10a07ec",
-    "text": "Der Anbieter des Schlüsselverschlüsselungsschlüssels DIESER ZELLE, der versiegelt, was die Zelle von sich selbst speichert (#98). Fünf Anbieter, wie `keys.kekProvider`. `none` versiegelt die Zellenebene unter dem Schlüsselverschlüsselungsschlüssel des Dienstes, was für den Einzelzellenmodus und für einen Test richtig ist; eine Mehrzellen-Bereitstellung im Produktmodus WEIGERT sich, damit zu starten, weil dann eine Kopie der Zeilen einer Zelle in jeder anderen aufginge."
+    "en": "73b7f0bab09392e8",
+    "text": "Der Anbieter des Schlüsselverschlüsselungsschlüssels DIESER ZELLE, der versiegelt, was die Zelle von sich selbst speichert (#98). Fünf Anbieter, wie `keys.kekProvider`, und `pkcs11`, das eigene HSM der Zelle. `none` versiegelt die Zellenebene unter dem Schlüsselverschlüsselungsschlüssel des Dienstes, was für den Einzelzellenmodus und für einen Test richtig ist; eine Mehrzellen-Bereitstellung im Produktmodus WEIGERT sich, damit zu starten, weil dann eine Kopie der Zeilen einer Zelle in jeder anderen aufginge."
   },
   "keys.cellKekProvider|restartReason": {
     "en": "bfe49ff259fac42d",
@@ -3171,13 +3291,53 @@
     "en": "e0341e4e47f3b2f8",
     "text": "Was einer PKINIT-Anmeldung erlaubt, einen hardwaregebundenen Schlüssel zu beanspruchen (der Indikator pkinit-hardware und amr hwk). `inference`, der Standard und das Verhalten vor #1955: ein Smartcard-Anmeldezertifikat, dessen Schlüssel dieser Dienst nicht erzeugt hat, oder ein erfasster Attestierungsnachweis. `evidence`: nur ein Schlüssel, den die Attestierung eines Hardware-Tokens abdeckt. Eine Zertifikatsanmeldung über TLS erhält hwk, und sc für einen Schlüssel auf einer Smartcard, in beiden Fällen nur aus einem Nachweis."
   },
-  "pskc.allowPlaintextImport|label": {
+"pskc.allowPlaintextImport|label": {
     "en": "a098f07c2a04a83b",
     "text": "PSKC-Seed-Dateien im Klartext im Produktmodus annehmen"
   },
-  "pskc.allowPlaintextImport|description": {
+"pskc.allowPlaintextImport|description": {
     "en": "7efe34e872e4772e",
     "text": "Ob ein Administrator im Produktmodus eine PSKC-Seed-Datei (RFC 6030) importieren darf, deren Token-Geheimnisse NICHT verschlüsselt sind. Standardmäßig aus: eine solche Datei war auf jeder Festplatte und in jedem Postfach, das sie durchlaufen hat, eine Liste funktionierender zweiter Faktoren, und ein Hersteller kann sie unter einem vorab geteilten Schlüssel oder einem Passwort verschlüsseln (Abschnitte 6.1 und 6.2). Der Entwicklungsmodus nimmt eine solche Datei in jedem Fall an."
+  },
+"openpgp.wkd|label": {
+    "en": "1f05a7518c3d2275",
+    "text": "Schlüssel im Web Key Directory veröffentlichen"
+  },
+"openpgp.wkd|description": {
+    "en": "7822103f89ac59b3",
+    "text": "Das Web Key Directory (draft-koch-openpgp-webkey-service) für die Mail-Domains dieses Vertrauensbereichs beantworten: /.well-known/openpgpkey/<domain>/hu/<hash> (die erweiterte Methode, auf openpgpkey.<domain>) und /.well-known/openpgpkey/hu/<hash> (die direkte Methode) sowie die jeweilige Richtliniendatei. Beantwortet wird nur der Schlüssel einer Person, die im Portal zugestimmt hat. Standardmäßig aus."
+  },
+"openpgp.wkdDomains|label": {
+    "en": "d1c4b728593ff000",
+    "text": "Vom Web Key Directory bediente Mail-Domains"
+  },
+"openpgp.wkdDomains|description": {
+    "en": "ad64f7216191123c",
+    "text": "Die Mail-Domains, für die das Web Key Directory dieses Vertrauensbereichs antwortet, durch Kommas getrennt. Leer, der Standard, bedeutet die eigene DNS-Domain des Vertrauensbereichs. Eine Anfrage ohne Vertrauensbereich im Pfad beantwortet der Vertrauensbereich, der ihre Domain bedient, zuerst der Standard-Vertrauensbereich."
+  },
+"openpgp.challengeLifetimeS|label": {
+    "en": "dbf558cf0b4b8f90",
+    "text": "Gültigkeitsdauer der Registrierungs-Challenge (Sekunden)"
+  },
+"openpgp.challengeLifetimeS|description": {
+    "en": "e9130c8e82368cc6",
+    "text": "Wie lange die Challenge gültig bleibt, die eine Person mit gpg --clearsign signiert, um einen OpenPGP-Schlüssel zu registrieren. Sie wird einmal verbraucht, und eine Person hat jeweils nur eine."
+  },
+"openpgp.signatureSkewS|label": {
+    "en": "d927cf1f04bd9d51",
+    "text": "Zulässige Uhrabweichung der Nachweissignatur (Sekunden)"
+  },
+"openpgp.signatureSkewS|description": {
+    "en": "2772763d3d363b6d",
+    "text": "Wie weit die Uhr des signierenden Computers von der dieses Dienstes abweichen darf: Ein Nachweis, der um mehr als diesen Wert vor Ausstellung der Challenge oder nach dem jetzigen Zeitpunkt signiert wurde, wird abgelehnt (STS-OPENPGP-0010)."
+  },
+"openpgp.minRsaBits|label": {
+    "en": "f3dc9f85de143630",
+    "text": "Kleinster RSA-OpenPGP-Schlüssel"
+  },
+"openpgp.minRsaBits|description": {
+    "en": "ad48516e31a7c45b",
+    "text": "Der kürzeste RSA-Schlüssel, Haupt- oder Unterschlüssel, den eine OpenPGP-Registrierung akzeptiert. Ed25519, Ed448, ECDSA und ECDH auf P-256, P-384 und P-521, X25519 und X448 werden akzeptiert; DSA, ElGamal und die Brainpool-Kurven nie (STS-OPENPGP-0004)."
   },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
@@ -8203,6 +8363,54 @@
     "en": "6b3f5e73f6fcafaf",
     "text": "Die meisten Zugriffsanfragen, die ein Vertrauensbereich gleichzeitig ausstehend hält; darüber wird eine Einreichung mit 503 abgelehnt, bis einige entschieden werden oder ablaufen."
   },
+  "authzen.externalPdp|label": {
+    "en": "8a0af08389fe6cda",
+    "text": "Vor einem Token-Austausch einen externen PDP fragen."
+  },
+  "authzen.externalPdp|description": {
+    "en": "378c7dcd21a960c7",
+    "text": "Die AuthZEN-Bindung für den OAuth-2.0-Token-Austausch, Richtung B: bevor dieser Autorisierungsserver ein OAuth-Zugriffstoken für einen RFC 8693-Austausch ausstellt, fragt er den externen PDP, den authzen.externalPdpUrl nennt. Die lokale Ausstellungsrichtlinie entscheidet weiterhin zuerst, und eine Ablehnung, die sie durchsetzt, wird nicht weitergesendet. Der PDP darf nur den Umfang und die Lebensdauer des Zugriffstokens einschränken. Aus, der Standard, wird nichts angerufen. Ein Kerberos-Token liegt außerhalb der Bindung und wird nicht gesendet. Keine Antwort oder eine Ablehnung bedeutet kein Token."
+  },
+  "authzen.externalPdpUrl|label": {
+    "en": "4702ceb3700a0831",
+    "text": "Adresse des externen AuthZEN-PDP."
+  },
+  "authzen.externalPdpUrl|description": {
+    "en": "2d486c955985f5ac",
+    "text": "Die absolute https-Adresse des POST /access/v1/evaluations des externen PDP. Ein Administrator konfiguriert sie, und eine Anfrage kann sie nicht nennen. Sie trägt kein userinfo, query oder fragment. Leer, während authzen.externalPdp an ist, lehnt sie den Austausch ab. Klares http wird auch dann abgelehnt, wenn federation.outboundAllowHttp an ist, weil die Anfrage Token-Claims und ein Clientzertifikat trägt."
+  },
+  "authzen.externalPdpTimeoutMs|label": {
+    "en": "c40081858bffe671",
+    "text": "Zeitlimit des externen PDP (Millisekunden)."
+  },
+  "authzen.externalPdpTimeoutMs|description": {
+    "en": "1c73c2acfe98c703",
+    "text": "Wie lange auf den externen PDP gewartet wird, in Millisekunden. Ein Zeitlimit lehnt den Austausch ab. Die lokale Entscheidung wird nicht an seiner Stelle ausgestellt."
+  },
+  "authzen.externalPdpClientCertFile|label": {
+    "en": "2da8c5ed72d965bb",
+    "text": "Clientzertifikat für den externen PDP."
+  },
+  "authzen.externalPdpClientCertFile|description": {
+    "en": "cae054b4776151a0",
+    "text": "Die PEM-Datei, die dieser Autorisierungsserver dem externen PDP vorlegt. Gegenseitiges TLS ist der einzige Modus, und der PDP lässt das Zertifikat als AUTHZEN_PEPS-Aufrufer zu. Im Produktmodus muss die Datei in einem Verzeichnis liegen, das security.fileRoots nennt. Ein relativer Pfad ist das aktuelle Verzeichnis dieses Prozesses. Leer oder unlesbar, während authzen.externalPdp an ist, lehnt sie den Austausch ab."
+  },
+  "authzen.externalPdpClientKeyFile|label": {
+    "en": "8c2c725a67e09874",
+    "text": "Clientschlüssel für den externen PDP."
+  },
+  "authzen.externalPdpClientKeyFile|description": {
+    "en": "6509f61b7122be79",
+    "text": "Die PEM-Datei des privaten Schlüssels des Clientzertifikats. Die Datei wird gelesen, wenn der PDP angerufen wird. Die Bytes des Schlüssels sind kein Konfigurationswert, daher gibt GET /admin-api/config den Pfad und nicht den Schlüssel zurück. Im Produktmodus muss die Datei in einem Verzeichnis liegen, das security.fileRoots nennt. Ein relativer Pfad ist das aktuelle Verzeichnis dieses Prozesses. Leer oder unlesbar, während authzen.externalPdp an ist, lehnt sie den Austausch ab."
+  },
+  "authzen.externalPdpCaFile|label": {
+    "en": "6abdfbc262d71c16",
+    "text": "CA-Datei für den externen PDP."
+  },
+  "authzen.externalPdpCaFile|description": {
+    "en": "d8328616a3f62cfa",
+    "text": "Eine optionale PEM-Datei von CA-Zertifikaten, die anstelle der Standardwurzeln zur Prüfung des externen PDP verwendet wird. Leer verwendet diese Wurzeln. Eine genannte und unlesbare Datei, oder eine, die der Produktmodus unter security.fileRoots nicht liest, lehnt den Austausch ab. Ein relativer Pfad ist das aktuelle Verzeichnis dieses Prozesses."
+  },
   "uma.enabled|label": {
     "en": "2a3767bd4bc83294",
     "text": "User-Managed Access aktiviert"
@@ -9414,6 +9622,14 @@
   "roles.claim|description": {
     "en": "05185a4a554d5f71",
     "text": "Wenn eingeschaltet, nennt jedes Zugriffstoken, jedes ID Token, jede SAML-2.0-Assertion und jede SAML-1.1-Assertion die Rollen, die sein Subject hält. Standardmäßig EIN, und es ändert für die meisten Aufrufer dennoch nichts, aus demselben Grund, aus dem der groups-Claim standardmäßig ein ist: der Claim wird für jeden, der keine KONFIGURIERTE Rolle hält, VOLLSTÄNDIG WEGGELASSEN, und die sechs eingebauten Rollen stehen nie darin — EVERYBODY und ALL_AUTHENTICATED_USERS treffen auf fast jedes Token hier zu, daher würde ihr Mitführen jedem Token, das jeder bestehende Client auswertet, zwei bedeutungslose Member hinzufügen und einer Relying Party nichts sagen, was sie nicht schon daraus wusste, dass sie das Token hält. Sie existieren, um ERFORDERLICH zu sein, nicht um mitgeführt zu werden."
+  },
+  "roles.dynamicSelection|label": {
+    "en": "86d2654ef3dec8fd",
+    "text": "Dynamische Rollen bei der Anmeldung anbieten"
+  },
+  "roles.dynamicSelection|description": {
+    "en": "68b1b4af3db5e6d8",
+    "text": "Ob eine Person bei der Anmeldung dynamisch auswählbare Rollen wählen darf (#1072): In einem Bereich mit mindestens einer dynamischen Rolle bietet die Anmeldeseite das Kästchen „Rollen für diese Anmeldung wählen“ an, und ein angekreuztes Kästchen zeigt die Rollen, die die Berechtigung der Person zulässt. Standardmäßig AN; appDynamicRoleSelection im Eintrag einer Anwendung überschreibt es für diese Anwendung. Aus wird kein Kästchen gezeigt, keine Rolle angeboten, keine erforderliche dynamische Rolle verlangt, und kein Token trägt eine dynamisch gewählte Rolle."
   },
   "roles.claimName|label": {
     "en": "d56be861543f5305",
@@ -11747,6 +11963,14 @@
     "en": "50195b20fe00e9fa",
     "text": "Ein Hinweis, der nennt, worum es geht (dieselbe Handlung an demselben Konto), wird in diesem Fenster einmal gesendet, wie viele Türen ihn auch gemeldet haben. 0 schaltet die Unterdrückung aus."
   },
+  "mail.encryptionRequired|label": {
+    "en": "81e5dc8eb5332f2b",
+    "text": "Nachrichten, die verschlüsselt werden müssen"
+  },
+  "mail.encryptionRequired|description": {
+    "en": "895bdb616e169134",
+    "text": "Die Nachrichten, nach Vorlagen-ID (password-reset, account-activation, sign-in-code, sign-in-link, credential-compromised und der Rest der Liste unter Monitoring → Mail), die nur verschlüsselt gesendet werden — PGP/MIME an den OpenPGP-Schlüssel der Person oder S/MIME an ihr Zertifikat, wie sie es im Portal gewählt hat. Einer Person, die keines von beiden gewählt hat, wird die Nachricht nicht gesendet (STS-MAIL-0240), und die anfordernde Verwendung meldet dies wie bei jeder nicht gesendeten Nachricht. Leer, der Standard, verlangt keine; die Wahl einer Person wird in jedem Fall beachtet."
+  },
   "mail.selfServiceReset|label": {
     "en": "8525111d1c0be58a",
     "text": "Selbstbedientes Zurücksetzen des Passworts"
@@ -12690,5 +12914,93 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "Für den Protokoll-Debugger-Listener allein: http.http2MaxConcurrentStreams. -1, der Standard, folgt http.http2MaxConcurrentStreams; jeder andere Wert gilt nur für diesen Listener. Wie viele Anfragen eine HTTP/2-Verbindung zugleich offen haben darf (SETTINGS_MAX_CONCURRENT_STREAMS); ein Stream darüber hinaus wird abgelehnt, bis einer endet. 100, der Standard, ist der kleinste Wert, den RFC 9113 empfiehlt; der eigene von node ist unbegrenzt, wodurch eine Verbindung die Arbeit von Tausenden tragen könnte. Er begrenzt die Arbeit auf einer Verbindung so, wie http.maxConnections die Verbindungen begrenzt. Eine neue Verbindung folgt einer Änderung sofort, und einer offenen wird der neue Wert gesendet."
+  },
+  "piv.attestationAnchors|label": {
+    "en": "ebc10f6a7dcbbf58",
+    "text": "PIV-Attestierungswurzeln (PEM)"
+  },
+  "piv.attestationAnchors|description": {
+    "en": "487e76edeb4446b9",
+    "text": "Die Wurzeln, zu denen eine YubiKey-PIV-Schlüsselattestierung eine Kette bilden muss, als PEM-Bündel. Leer verwendet die beiden, die Yubico veröffentlicht (Yubico PIV Root CA Serial 263751 und Yubico Attestation Root 1 für Firmware 5.7.4 und neuer), ausgeliefert in common/pki_piv_anchors.json und dort per SHA-256 fixiert, zusammen mit Yubicos PIV-Zwischenzertifikaten. Ein Zertifikat hier ersetzt die ausgelieferten Wurzeln."
+  },
+  "piv.requireAttestation|label": {
+    "en": "4e11b0db111faccf",
+    "text": "Eine PIV-Attestierung für die PIV-Profile verlangen"
+  },
+  "piv.requireAttestation|description": {
+    "en": "ef38975436c5ac4f",
+    "text": "Ein: Eine Anforderung eines piv-auth-, piv-sign-, piv-key-management- oder piv-card-auth-Zertifikats wird abgelehnt, sofern sie keine YubiKey-PIV-Attestierung trägt, die sich verifizieren lässt (STS-PIV-0010). Ein hinterlegter piv-key-management-Schlüssel aus EST /serverkeygen ist die Ausnahme: Diesen Schlüssel hat dieser Dienst erzeugt. Aus, die Voreinstellung: Eine solche Anforderung ohne Attestierung wird ohne Hardware-Nachweis ausgestellt; eine Anforderung mit einer Attestierung, die sich nicht verifizieren lässt, wird in beiden Fällen abgelehnt."
+  },
+  "piv.pinPolicy|label": {
+    "en": "0f683a0cb1db1988",
+    "text": "Schwächste PIN-Richtlinie, die ein attestierter PIV-Schlüssel haben darf"
+  },
+  "piv.pinPolicy|description": {
+    "en": "c3f9fcec406b9806",
+    "text": "Was die PIN-Richtlinie der Attestierung mindestens sein muss. `once`: die PIN einmal pro Sitzung (das match-once eines Bio-Schlüssels zählt); `always`: die PIN vor jeder Verwendung (match-always zählt). `any`, die Voreinstellung, verlangt keine PIN-Richtlinie. Ein Schlüssel, dessen Attestierung schwächer ist, wird abgelehnt (STS-PIV-0011)."
+  },
+  "piv.touchPolicy|label": {
+    "en": "a88f111c7b13657f",
+    "text": "Schwächste Berührungsrichtlinie, die ein attestierter PIV-Schlüssel haben darf"
+  },
+  "piv.touchPolicy|description": {
+    "en": "d78f0d5df0256787",
+    "text": "Was die Berührungsrichtlinie der Attestierung mindestens sein muss. `cached`: eine Berührung, 15 Sekunden lang gemerkt; `always`: eine Berührung bei jeder Verwendung. `any`, die Voreinstellung, verlangt keine. Ein Schlüssel, dessen Attestierung schwächer ist, wird abgelehnt (STS-PIV-0012)."
+  },
+  "piv.cardAuthSignIn|label": {
+    "en": "61b2226403ad5c61",
+    "text": "Anmeldung mit einem piv-card-auth-Zertifikat zulassen"
+  },
+  "piv.cardAuthSignIn|description": {
+    "en": "1852da24c3fbfade",
+    "text": "Ein piv-card-auth-Schlüssel (Slot 9e) funktioniert ohne PIN, für den physischen Zutritt; daher wird sein Zertifikat bei der TLS-Anmeldung und bei PKINIT abgelehnt (STS-PIV-0013), sofern dies nicht eingeschaltet ist."
+  },
+  "piv.keyEscrow|label": {
+    "en": "f2efc85c3d2bac38",
+    "text": "piv-key-management-Schlüssel hinterlegen"
+  },
+  "piv.keyEscrow|description": {
+    "en": "cf9618144b67dff3",
+    "text": "Ein: EST /serverkeygen für das Profil piv-key-management behält den erzeugten privaten Schlüssel, versiegelt unter dem Schlüsselverschlüsselungsschlüssel, sodass der Inhaber (im Portal, nach einer erneuten Anmeldung) oder ein Administrator mit der Rolle zur PIV-Schlüsselwiederherstellung ihn wiederherstellen und nach dem Verlust einer Karte alte E-Mails entschlüsseln kann. Abgelehnt, wo kein Schlüsselverschlüsselungsschlüssel vorhanden ist (STS-PIV-0020). Ein hinterlegter Schlüssel ist nie ein Hardware-Nachweis. Aus, die Voreinstellung: /serverkeygen lehnt das Profil piv-key-management ab (STS-PIV-0021), sodass ein 9d-Schlüssel auf der Karte erzeugt und nirgendwo sonst aufbewahrt wird."
+  },
+  "piv.externalIssuers|label": {
+    "en": "e96143ab9556db35",
+    "text": "Externe ausstellende PIV- oder CAC-CAs, zugeordnet über die Karten-UUID (PEM)"
+  },
+  "piv.externalIssuers|description": {
+    "en": "0fb91dba2cb957d3",
+    "text": "Die ausstellenden CAs, deren PIV- oder CAC-Kartenzertifikate eine Person über die FIPS-201-Karten-UUID anmelden: Ein Clientzertifikat, das eine von ihnen direkt ausgestellt hat, das eine Richtlinie aus piv.externalPolicyOids zusichert und genau einen urn:uuid-subjectAltName trägt, wird der einen Person zugeordnet, deren stsPivCardUuid diese UUID enthält. Nie über seinen Namen, und es wird kein Eintrag angelegt. Die CA muss außerdem in einem Client-Truststore sein, sonst lehnt der Handshake sie zuerst ab. Leer, die Voreinstellung, ordnet nichts zu."
+  },
+  "piv.externalPolicyOids|label": {
+    "en": "930c5800dfa36905",
+    "text": "PIV-Authentication-Richtlinien, die eine externe Karte zusichern muss"
+  },
+  "piv.externalPolicyOids|description": {
+    "en": "2398931e8d58f5c4",
+    "text": "Die Zertifikatsrichtlinien, von denen das Zertifikat einer externen Karte eine zusichern muss, um über ihre Karten-UUID zugeordnet zu werden: standardmäßig id-fpki-common-authentication (die PIV Authentication der Federal PKI Common Policy) und id-fpki-certpcy-pivi-hardware (PIV-I). Fügen Sie hier die eigenen Hardware-Richtlinien eines CAC-Ausstellers hinzu."
+  },
+  "pki.paranoidPivAttestation|label": {
+    "en": "e645d02c49d2f9bf",
+    "text": "Paranoid: eine Attestierungskette eines YubiKey-PIV-Schlüssels"
+  },
+  "pki.paranoidPivAttestation|description": {
+    "en": "fdb7c0eb631758ea",
+    "text": "Anwendungsfall `piv-attestation` (#1955): das Attestierungszertifikat des Slots und das f9-Attestierungszertifikat einer PIV-Registrierung. Paranoid prüft das Gültigkeitsfenster zum jetzigen Zeitpunkt, den Pfad zu piv.attestationAnchors und den Widerruf, wo die Kette eine Liste nennt. Aus: Nur dieser Anwendungsfall führt die Pfadprüfung ohne die Feldprüfungen aus, während jede andere Zeile und der Master unberührt bleiben; aus im Produktmodus wird dies einmal protokolliert (STS-PKI-0239) und auf /admin/pki/trust rot dargestellt."
+  },
+  "pki.paranoidPivCard|label": {
+    "en": "4078a93e7117d6f9",
+    "text": "Paranoid: eine externe PIV- oder CAC-Karte, zugeordnet über die Karten-UUID"
+  },
+  "pki.paranoidPivCard|description": {
+    "en": "d4d5fb070575e1c6",
+    "text": "Anwendungsfall `piv-card` (#1955): ein Clientzertifikat von einer ausstellenden CA in piv.externalIssuers, zugeordnet über seine Karten-UUID. Paranoid prüft keyUsage digitalSignature und das Gültigkeitsfenster des Endzertifikats neben der Prüfung des Ausstellers über einen Schritt. Aus: Nur dieser Anwendungsfall führt allein die Ausstellerprüfung aus, während jede andere Zeile und der Master unberührt bleiben; aus im Produktmodus wird dies einmal protokolliert (STS-PKI-0239) und auf /admin/pki/trust rot dargestellt."
+  },
+  "roles.pivKeyRecoveryGroup|label": {
+    "en": "2f231e1e99785dc6",
+    "text": "Gruppe, die die Rolle PIV_KEY_RECOVERY verleiht"
+  },
+  "roles.pivKeyRecoveryGroup|description": {
+    "en": "801616eea12559a5",
+    "text": "Die Verzeichnisgruppe, deren Mitglieder die eingebaute Rolle PIV_KEY_RECOVERY (#1955) innehaben, die die Zugriffskontrollrichtlinie neben Admin-Schreiben verlangt, um den hinterlegten piv-key-management-Schlüssel einer anderen Person wiederherzustellen (piv.keyEscrow). Dieser Schlüssel entschlüsselt die E-Mails der Person, daher hat niemand die Rolle, bis ein Administrator ihn der Gruppe hinzufügt. Leer erlaubt niemandem, den Schlüssel einer anderen Person wiederherzustellen; der Inhaber stellt seinen eigenen im Portal wieder her."
   }
 }

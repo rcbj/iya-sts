@@ -123,13 +123,16 @@
   },
   "categories": {
     "security": {
-      "reason": "ein Sicherheitshinweis zu Ihrem Konto, der nicht deaktiviert werden kann"
+      "reason": "ein Sicherheitshinweis zu Ihrem Konto, der nicht deaktiviert werden kann",
+      "encryptedSubject": "Ein Sicherheitshinweis von {{service}}"
     },
     "account": {
-      "reason": "etwas, worum Sie oder ein Administrator gebeten haben"
+      "reason": "etwas, worum Sie oder ein Administrator gebeten haben",
+      "encryptedSubject": "Eine Nachricht von {{service}}"
     },
     "notification": {
-      "reason": "eine Benachrichtigung, die Sie in Ihrem Portal deaktivieren können"
+      "reason": "eine Benachrichtigung, die Sie in Ihrem Portal deaktivieren können",
+      "encryptedSubject": "Eine Benachrichtigung von {{service}}"
     }
   }
 }

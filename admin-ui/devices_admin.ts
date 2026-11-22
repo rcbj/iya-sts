@@ -44,6 +44,7 @@
 
 import admin = require('./admin');
 import adminViews = require('../admin-core/admin_views');
+import CreateForms = require('../admin-core/create_forms');
 import helpers = require('../common/helpers');
 import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
@@ -355,6 +356,28 @@ class DevicesAdmin {
   // device's drill-down, with `found: false` rather than a 404 for an id the
   // realm does not hold (an answer, not a routing problem).
   // -------------------------------------------------------------------------
+  // DIRECTORY → DEVICES → REGISTER A DEVICE (#1132): what the create page
+  // draws — the closed sets its selects offer and the create's fields, the
+  // owner the one the create refuses without (`admin-core/create_forms.ts`).
+  /**
+   * Builds `GET /admin-api/devices/new`: the create's fields, which of them
+   * are required, and the vocabularies its choices are drawn from.
+   *
+   * @returns the JSON
+   */
+  newView(): Json {
+    const { log, devices } = this.deps;
+    log.debug("Entering DevicesAdmin.newView().");
+    const out = {
+      ownerKinds: devices.OWNER_KINDS.slice(0),
+      platforms: devices.PLATFORMS.slice(0),
+      keyKinds: ['x509', 'jwk', 'webauthn'],
+      createFields: CreateForms.fieldsOf('devices')
+    };
+    log.debug("Leaving DevicesAdmin.newView().");
+    return out;
+  }
+
   /**
    * Builds `/admin/devices`' view: the realm's devices, filtered and paged, or
    * one device's drill-down when the query names `device`.
@@ -936,6 +959,7 @@ export = {
   // For `mgmt-api/admin_api.ts` (rule 7).
   actorOf: slot.forward('actorOf'),
   listView: slot.forward('listView'),
+  newView: slot.forward('newView'),
   action: slot.forward('action'),
   mdmFeed: slot.forward('mdmFeed'),
   registrationView: slot.forward('registrationView'),

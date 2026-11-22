@@ -30,6 +30,9 @@
 // is the opposite: VC Data Model 2.0 and Data Integrity are DID-native.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+var urls = require("./url_match.js");
 var bunyan = require("bunyan");
 var log = bunyan.createLogger({
   name: "did",
@@ -1036,8 +1039,8 @@ function verifyDomainLinkage(entry, expectedOrigin, opts) {
   var contexts = [].concat(vc["@context"] || []);
   checks.push({
     name: "Credential @context",
-    ok: contexts.indexOf(VC_V1_CONTEXT) !== -1 &&
-                         contexts.indexOf(DID_CONFIGURATION_CONTEXT) !== -1,
+    ok: urls.holds(contexts, VC_V1_CONTEXT) &&
+                         urls.holds(contexts, DID_CONFIGURATION_CONTEXT),
     detail: "must contain both " + VC_V1_CONTEXT + " and " +
         DID_CONFIGURATION_CONTEXT +
             "; got " + (contexts.length ? contexts.join(", ") : "(none)") + "."

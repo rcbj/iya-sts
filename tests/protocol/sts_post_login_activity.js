@@ -24,6 +24,9 @@
 // OWNED HERE (local: true): this repository's own /authn and /admin-api.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
@@ -185,10 +188,10 @@ async function codeAfter(b, location) {
   log.debug("Entering codeAfter().");
   let r = await b.go(location);
   for (let hops = 0; hops < 5 && r.location &&
-       r.location.indexOf(REDIRECT) !== 0; hops += 1) {
+       !urls.isAt(r.location, REDIRECT); hops += 1) {
     r = await b.go(r.location);
   }
-  const code = r.location.indexOf(REDIRECT) === 0
+  const code = urls.isAt(r.location, REDIRECT)
     ? new URL(r.location).searchParams.get("code") : "";
   log.debug("Leaving codeAfter(). " + (code ? "A code." : "None."));
   return code || "";

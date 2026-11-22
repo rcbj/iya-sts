@@ -129,5 +129,10 @@
   "ownerProtection.save": "I-save",
   "ownerProtection.closedAnyway": "Nakasara ito sa mga may-ari nito anuman ang sabihin ng kahon:",
   "ownerProtection.isMarked": "Isinara ito ng isang administrator sa mga may-ari nito.",
-  "ownerProtection.notMarked": "Walang administrator na nagsara nito sa mga may-ari nito."
+  "ownerProtection.notMarked": "Walang administrator na nagsara nito sa mga may-ari nito.",
+  "newGroup.button": "Bagong grupo",
+  "newGroup.linkNote": "Ang form para sa bagong grupo, may pulang balangkas ang kailangang field.",
+  "newGroup.noDirectory": "Walang directory ang prosesong ito na mapaglalagyan ng grupo.",
+  "newGroup.groupHint": "ang pangalan ng grupo, at ang RDN nito",
+  "newGroup.membersHint": "isa bawat linya o pinaghihiwalay ng kuwit: user name o anumang DN"
 }

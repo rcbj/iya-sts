@@ -93,5 +93,8 @@
   "mail.link": "E-Mail",
   "mail.noneAfter": "), daher wird {what} Ihnen zum Weitergeben angezeigt.",
   "mail.box": "{what} an die Adresse im Eintrag der Person senden und mir nicht anzeigen",
-  "grid.required": " &middot; erforderlich"
+  "grid.required": " &middot; erforderlich",
+  "create.requiredFields": "Erforderlich: {list}. Jedes dieser Felder ist rot umrandet und mit * markiert; alle anderen Felder sind optional.",
+  "create.nothingRequired": "Auf diesem Formular ist nichts erforderlich.",
+  "create.requiredWhen": " &middot; erforderlich, wenn {field} {values} ist"
 }

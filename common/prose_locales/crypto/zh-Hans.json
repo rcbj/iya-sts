@@ -448,12 +448,20 @@
     "text": "一种公钥令牌，持有者可以像 macaroon 一样离线收窄它，但任何持有根公钥的人都能验证它。其授权逻辑是令牌内携带的 Datalog，因此验证方总是在时间和迭代次数的限制下运行。"
   },
   "crypto.standards.cms.coverage": {
-    "en": "abe1a25e47d96baf",
-    "text": "partial：带一个签名者和已签名属性的 SignedData，按接收到的属性字节验证，按 DER 排序写入；带 KeyTransRecipientInfo（RSA PKCS#1 v1.5 和 OAEP）和 AES-CBC 内容的 EnvelopedData；带证书和 CRL 的退化型仅证书 SignedData。没有 KeyAgreeRecipientInfo，没有认证数据或压缩数据，没有副署签名。"
+    "en": "d33248e25a15b5a7",
+    "text": "partial：带一个签名者和签名属性的 SignedData，按收到的属性字节验证，写入时按 DER 排序；带 KeyTransRecipientInfo（RSA PKCS#1 v1.5 和 OAEP）及 AES-CBC 内容的 EnvelopedData；包含证书和 CRL 的退化型仅证书 SignedData；用于 S/MIME 邮件（#1955）时，以 OAEP SHA-256 KeyTransRecipientInfo 或 ECDH KeyAgreeRecipientInfo 写入的 EnvelopedData。不支持认证数据或压缩数据，不支持副署签名。"
   },
   "crypto.standards.cms.what": {
-    "en": "0f35f026a507dc11",
-    "text": "SCEP（scep/scep_cms.ts）读写的封装：由请求方签名并加密给 RA 的请求，以及由 RA 签名、其中证书加密给请求方的 CertRep。"
+    "en": "e09c8508abab483b",
+    "text": "SCEP（scep/scep_cms.ts）读写的封装：由请求者签名并加密给 RA 的请求，以及由 RA 签名、其中证书加密给请求者的 CertRep。自 #1955 起，也用于加密邮件的 S/MIME EnvelopedData，为 EC 接收者增加 KeyAgreeRecipientInfo（dhSinglePass-stdDH-sha256kdf，AES-256 密钥封装），为 RSA 接收者增加 OAEP SHA-256 KeyTransRecipientInfo。"
+  },
+  "crypto.standards.openpgp.coverage": {
+    "en": "5d4c9889762ddbd2",
+    "text": "partial：读取 v4 和 v6 可传输公钥、验证明文签名、加密 PGP/MIME 邮件，均通过 openpgp.js 完成；Web 密钥目录（Web Key Directory）的高级与直接查找方式及策略文件。不支持签名、解密、Web Key Service 提交和密钥服务器。"
+  },
+  "crypto.standards.openpgp.what": {
+    "en": "039de4dd3b49b9ab",
+    "text": "个人自己的公钥，凭持有证明注册，并可按本人选择在 Web 密钥目录中发布；也是其邮件加密所用的密钥。"
   },
   "crypto.families.pki.signs": {
     "en": "fdcf723f4622f28f",
@@ -678,6 +686,78 @@
   "crypto.families.reporting.algorithms.3.how": {
     "en": "9d40176053fec31b",
     "text": "SHA-256，与制品一起保存，并在读取时检查"
+  },
+  "crypto.families.openpgp.signs": {
+    "en": "0f38445050f33bd1",
+    "text": "无。注册时的签名是本人的签名，加密邮件不签名（DKIM 对外层邮件签名，与对每封邮件的处理相同）。"
+  },
+  "crypto.families.openpgp.verifies": {
+    "en": "c3dbfb38087cb3de",
+    "text": "注册时的持有证明：一个明文签名（gpg --clearsign），签署的内容正是本服务向此人发出的质询，由所注册密钥中具备签名能力的密钥在质询发出后（openpgp.signatureSkewS）作出，且当时有效；密钥本身既未吊销也未过期，并带有包含该条目地址的有效用户 ID。支持 RFC 9580 v6 和 RFC 4880 v4 密钥，由 openpgp.js 读取。S/MIME 证书只检查有效性、密钥和用途，不检查证书链：它只用于选择邮件的加密对象。"
+  },
+  "crypto.families.openpgp.encrypts": {
+    "en": "1a05c1b540cd5082",
+    "text": "邮件，在本人选择或领域要求时（mail.encryptionRequired）：PGP/MIME（RFC 3156）加密至该密钥的加密密钥，由 openpgp.js 选择方式（v4 密钥用 SEIPD 加 AES，v6 密钥用 AEAD）；S/MIME（RFC 8551）作为 CMS EnvelopedData，内容加密使用 AES-256-CBC，内容密钥以 RSAES-OAEP（SHA-256）或 ECDH（dhSinglePass-stdDH-sha256kdf，AES-256 密钥封装）保护。"
+  },
+  "crypto.families.openpgp.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "无。"
+  },
+  "crypto.families.openpgp.hashes": {
+    "en": "c51e067261932787",
+    "text": "对小写化的本地部分计算 SHA-1，并以 z-base-32 编码，这是 Web 密钥目录为地址命名的方式（由草案规定的名称，从不用于保证完整性）。密钥指纹采用 RFC 9580 的定义（v6 为 SHA-256，v4 为 SHA-1）。"
+  },
+  "crypto.families.openpgp.keys": {
+    "en": "201cc09e750d0c79",
+    "text": "自身没有密钥。本人的公钥保存在其条目上（stsOpenPgpKey），从不保存私钥，注册时会拒绝私钥；YubiKey OpenPGP 卡上的密钥与文件中的密钥无法区分，因此不会将任何密钥记录为绑定硬件。"
+  },
+  "crypto.families.openpgp.algorithms.0.what": {
+    "en": "b7a04c64879be952",
+    "text": "已注册密钥，签名"
+  },
+  "crypto.families.openpgp.algorithms.0.how": {
+    "en": "91736ec1cb35b5f2",
+    "text": "Ed25519、Ed448、ECDSA P-256/P-384/P-521、长度为 openpgp.minRsaBits（至少 3072）的 RSA"
+  },
+  "crypto.families.openpgp.algorithms.1.what": {
+    "en": "9f7b65405a49bedd",
+    "text": "已注册密钥，加密"
+  },
+  "crypto.families.openpgp.algorithms.1.how": {
+    "en": "e28f57b2d61b83be",
+    "text": "X25519、X448、ECDH Curve25519 及 P-256/P-384/P-521、长度为 openpgp.minRsaBits 的 RSA"
+  },
+  "crypto.families.openpgp.algorithms.2.what": {
+    "en": "66b873543aebf01b",
+    "text": "拒绝"
+  },
+  "crypto.families.openpgp.algorithms.2.how": {
+    "en": "18369a474bec2b97",
+    "text": "DSA、ElGamal、Brainpool 曲线"
+  },
+  "crypto.families.openpgp.algorithms.3.what": {
+    "en": "429d783fabc235c9",
+    "text": "S/MIME 内容"
+  },
+  "crypto.families.openpgp.algorithms.3.how": {
+    "en": "8c2686ee3dd3948f",
+    "text": "AES-256-CBC（CMS EnvelopedData）"
+  },
+  "crypto.families.openpgp.algorithms.4.what": {
+    "en": "cc09e2a5306928f5",
+    "text": "S/MIME 密钥传输"
+  },
+  "crypto.families.openpgp.algorithms.4.how": {
+    "en": "acf5bad1301fd2cc",
+    "text": "RSAES-OAEP SHA-256；ECDH stdDH SHA-256 KDF，AES-256 封装"
+  },
+  "crypto.families.openpgp.algorithms.5.what": {
+    "en": "727e1a6e39e36a93",
+    "text": "Web 密钥目录名称"
+  },
+  "crypto.families.openpgp.algorithms.5.how": {
+    "en": "a2b773a0ce72bc44",
+    "text": "SHA-1，z-base-32"
   },
   "crypto.families.gnap.signs": {
     "en": "ad4b982edb070f2c",
@@ -1596,12 +1676,12 @@
     "text": "它发出的每一张证书，使用本领域的 EST 签发 CA 密钥，通过 common/pki.js 的 issueEnrolled() 签名——这里所有其他证书也出自同一个编码器。它返回的仅含证书的 CMS 消息是退化形式：带证书而无签名者的 SignedData，因此它们自身不带签名，其可信度来自其中的证书。"
   },
   "crypto.families.est.verifies": {
-    "en": "d40d37c4bd83de49",
-    "text": "PKCS#10 持有证明——请求用其自身公钥做出的签名，包括传统算法和后量子算法，在 common/cert_enrollment.ts 中验证——以及在证书身份验证时，客户端证书到本领域中间 CA 和服务根 CA 的路径，并查询吊销状态。/serverkeygen 模板不验证：其密钥会被替换。"
+    "en": "6b27c8877d509c46",
+    "text": "PKCS#10 持有证明——请求以其自身公钥所作的签名，经典与后量子均可，位于 common/cert_enrollment.ts——以及在证书身份验证时，客户端证书到本领域 Intermediate 和服务 Root 的路径，并查询吊销状态。/serverkeygen 模板不验证：其密钥会被替换。请求中的 YubiKey PIV 密钥证明（#1955，此处以及通过 ACME 和 SCEP）：f9 证书对插槽证书所作的 ECDSA 或 RSA 签名，以及 f9 证书到领域 PIV 证明信任锚的路径，均经由验证入口完成。"
   },
   "crypto.families.est.encrypts": {
-    "en": "2f48e10a9ad6494d",
-    "text": "服务器生成的密钥对的私钥，凡在密钥加密密钥比进程存活更久之处，都以 AES-256-GCM 在其下封存到条目上。它不会针对客户端加密（RFC 7030 section 4.4.1.2）：提出该要求的请求会被拒绝，密钥仅在 TLS 内传输。"
+    "en": "a18df4311029b728",
+    "text": "服务器生成的密钥对的私钥，在该密钥会比进程存活更久的情况下，以 AES-256-GCM 在密钥加密密钥下密封保存于条目上；托管的 piv-key-management 密钥（#1955）在每种模式下都如此，否则根本不生成。它“不会”为客户端加密（RFC 7030 第 4.4.1.2 节）：要求这样做的请求会被拒绝，密钥只在 TLS 内传输。"
   },
   "crypto.families.est.decrypts": {
     "en": "8d5c676935439726",
@@ -1906,5 +1986,9 @@
   "crypto.param.totp.encoding": {
     "en": "d9613131364834bc",
     "text": "RFC 4648 base32，无填充，符合 otpauth Key Uri Format 的要求。"
+  },
+  "crypto.families.est.algorithms.4.what": {
+    "en": "4dd4db2fd60c28f7",
+    "text": "已验证的 PIV 证明签名"
   }
 }

@@ -51,6 +51,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const zlib = require('zlib');
 const nodeCrypto = require('crypto');
 const kit = require('./tools/saml_signing_kit');
@@ -557,7 +560,7 @@ async function run(t) {
     const artifact = shib(rpArt);
     t.check(artifact.statusCode === 303 &&
             /SAMLart=/.test(artifact.location) &&
-            artifact.location.indexOf(rpArt) === 0,
+            urls.isAt(artifact.location, rpArt),
             'a shire registered on artifact-01 is answered on the ARTIFACT ' +
             'profile (#189)',
             artifact.statusCode + ' ' + artifact.location.slice(0, 120));

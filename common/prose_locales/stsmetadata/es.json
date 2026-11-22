@@ -520,8 +520,12 @@
     "text": "full, en todos los modos (#143, construido en #139): response_mode query.jwt, fragment.jwt, form_post.jwt y jwt (query para code, fragment en los demás casos); los parámetros de respuesta con iss, aud y exp (oauth2.jarmResponseLifetimeS) firmados con el authorization_signed_response_alg del cliente (RS256, o PS256 con FAPI 1.0 Advanced) y cifrados donde registró authorization_encrypted_response_alg; los errores respondidos del mismo modo; query.jwt rechazado con un token en claro (2.3.1); los miembros de metadatos y de registro de las secciones 3 y 4."
   },
   "stsmetadata.specs.webauthn.coverage": {
-    "en": "84ea7cdfbe803962",
-    "text": "partial, del lado de la parte que confía: se verifican el registro (sección 7.1) y la aserción (sección 7.2) — desafío, origen, hash del RP ID, indicadores de presencia y verificación del usuario, BE/BS, el alg de la credencial contra pubKeyCredParams, el id de credencial de 1023 bytes, el contador de firmas, y la firma sobre authenticatorData || SHA-256(clientDataJSON), para claves ES256/384/512, RS256/384/512, PS256/384/512, EdDSA y ML-DSA-44/65/87 (RFC 9964). Desde #105 la DECLARACIÓN DE ATESTACIÓN se verifica en los ocho formatos de la sección 8 (packed, tpm, android-key, android-safetynet, fido-u2f, none, apple, compound) según webauthn.attestationPolicy — by-mode es verify-if-present en modo producto y off en desarrollo — con su cadena contra las anclas configuradas y las raíces del FIDO Metadata Service, consultando su revocación y rechazando un modelo que MDS informe como comprometido. Desde #643 se pueden tener una llave de acceso clásica y una poscuántica (ML-DSA) a la vez (webauthn.pqcAlongsideClassical): cada vía tiene su propio identificador de usuario (sección 5.4.3), su lista de algoritmos y sus excludeCredentials, y la Signal API (sección 5.1.10) se envía una vez por vía. Falta: la atestación empresarial (sección 5.4.7) no tiene lista de RP ID permitidos, y las extensiones de autenticación no se procesan. Escrito de forma independiente del decodificador propio del depurador para que ambos puedan contrastarse (tests/webauthn_cross_impl.js)."
+    "en": "e293d58d8fdd5cd1",
+    "text": "partial, del lado de la parte que confía: se verifican el registro (sección 7.1) y la aserción (sección 7.2) — desafío, origen, hash del RP ID, indicadores de presencia y verificación del usuario, BE/BS, el alg de la credencial contra pubKeyCredParams, el id de credencial de 1023 bytes, el contador de firmas, y la firma sobre authenticatorData || SHA-256(clientDataJSON), para claves ES256/384/512, RS256/384/512, PS256/384/512, EdDSA y ML-DSA-44/65/87 (RFC 9964). Desde #105 la DECLARACIÓN DE ATESTACIÓN se verifica en los ocho formatos de la sección 8 (packed, tpm, android-key, android-safetynet, fido-u2f, none, apple, compound) según webauthn.attestationPolicy — by-mode es verify-if-present en modo producto y off en desarrollo — con su cadena contra las anclas configuradas y las raíces del FIDO Metadata Service, consultando su revocación y rechazando un modelo que MDS informe como comprometido. Desde #643 se pueden tener una llave de acceso clásica y una poscuántica (ML-DSA) a la vez (webauthn.pqcAlongsideClassical): cada vía tiene su propio identificador de usuario (sección 5.4.3), su lista de algoritmos y sus excludeCredentials, y la Signal API (sección 5.1.10) se envía una vez por vía. La atestación empresarial (sección 5.4.7) solo se pide para los RP ID que lista webauthn.attestationEnterpriseRpIds. El miembro hints (sección 5.4.8) se envía como dice la política de llaves de acceso. Extensiones (sección 10): credProps (10.1.3) se pide y se registra su rk; credProtect y minPinLength de CTAP 2.1 se piden como dice la política de llaves de acceso y sus salidas se leen de los datos del autenticador (véase CTAP 2.1); appid (10.1.1) y appidExclude (10.1.2) sirven a credenciales FIDO U2F heredadas que un administrador importó en la entrada de una persona, desactivadas hasta que webauthn.u2fAppIds nombre su AppID: el rpIdHash de una aserción se sujeta al SHA-256 del AppID solo cuando el cliente devolvió appid true, esa llave solo responde a un paso de segundo factor, y un registro pide appidExclude para que la misma llave no se registre dos veces. Falta: las demás extensiones registradas (largeBlob, prf y el resto) ni se piden ni se procesan, y un AppID solo se usa en un RP ID cuyo host comparte o del que es sufijo — la lista TrustedFacets de la FIDO AppID and Facet Specification no se obtiene ni se sirve aquí. Escrito de forma independiente del decodificador propio del depurador para que ambos puedan contrastarse (tests/webauthn_cross_impl.js)."
+  },
+  "stsmetadata.specs.ctap21.coverage": {
+    "en": "4cc6ee6c2a81e46e",
+    "text": "minimal: la mitad de la parte de confianza de dos extensiones, ya que este servicio no es ni cliente ni autenticador: credProtect (sección 12.1) — el credProtect de la política de llaves de acceso pide un nivel como credentialProtectionPolicy, enforceCredProtect envía enforceCredentialProtectionPolicy y rechaza un registro cuyos datos de autenticador informen un nivel inferior (no informar nada es el nivel 1), y el nivel se registra en la llave de acceso; y minPinLength (sección 12.4), pedido mientras la política de llaves de acceso impone una longitud de PIN y sujeto a su mínimo en el registro y en el inicio de sesión. Nada más de CTAP: la API del autenticador, los protocolos de PIN, los blobs grandes y la gestión de credenciales son de la plataforma."
   },
   "stsmetadata.specs.dbsc.coverage": {
     "en": "5eac46b3be2eaa5f",
@@ -700,8 +704,8 @@
     "text": "minimal: solo el tipo de identificador permanent-identifier, que aquí nombra la propia entrada de directorio de la cuenta y se convierte en su subjectAltName urn:sts:. El desafío device-attest-01 y la declaración de atestación de WebAuthn no están implementados."
   },
   "stsmetadata.specs.lamps-csr-attestation.coverage": {
-    "en": "727a26e021b5f20f",
-    "text": "partial: el atributo id-aa-attestation de una solicitud PKCS#10 (como máximo uno, exactamente un AttestationBundle, solo las opciones de certificado y otras) para el perfil de dispositivo sobre EST y SCEP; el único tipo de declaración que se verifica es tcg-attest-tpm-certify del TCG en la sintaxis del apéndice A.2.3 de la revisión 20, que ninguna revisión posterior ni documento del TCG reemplaza (#257). La extensión CRMF no se lee (aquí no hay CMP), y los demás tipos de declaración se registran, pero no se verifican. Frescura (sección 6.2) mediante draft-ietf-lamps-attestation-freshness sobre EST."
+    "en": "59b1734815ece664",
+    "text": "partial: el atributo id-aa-attestation de una solicitud PKCS#10 (como máximo uno, exactamente un AttestationBundle, solo el certificado y las demás opciones), mediante EST, SCEP y ACME. Se verifican dos tipos de declaración: el tcg-attest-tpm-certify del TCG en la sintaxis del apéndice A.2.3 de la revisión 20, para el perfil de dispositivo (#257), y una atestación PIV de YubiKey para cada perfil (#1955), bajo 1.3.6.1.4.1.41482.3.2, con el certificado de la ranura como stmt y el certificado f9 en certs, un tipo que eligió este servicio porque el borrador no define ninguno. La extensión CRMF no se lee (aquí no hay CMP), y los demás tipos de declaración se registran, no se verifican. Frescura (sección 6.2) mediante draft-ietf-lamps-attestation-freshness sobre EST, solo para declaraciones TPM: una atestación PIV no lleva ningún nonce."
   },
   "stsmetadata.specs.lamps-attestation-freshness.coverage": {
     "en": "555e31da7393d476",
@@ -746,6 +750,22 @@
   "stsmetadata.specs.rfc6376.coverage": {
     "en": "95d0cca14dac35d3",
     "text": "partial: firma, relaxed/relaxed, rsa-sha256 con una clave de al menos 2048 bits (RFC 8301), en common/crypto.js, sobre lo que envía el transporte SMTP cuando hay un dominio configurado. Ausentes: la canonicalización simple, l= y la verificación del correo que envía cualquier otro; este servicio no recibe ninguno. DKIM no tiene ningún algoritmo poscuántico registrado."
+  },
+  "stsmetadata.specs.rfc9580.coverage": {
+    "en": "086f96d364365827",
+    "text": "partial: lectura de una clave pública transferible, v6 y (RFC 4880) v4, verificación de una firma en texto claro por una de sus claves de firma y cifrado de un mensaje para su clave de cifrado, todo mediante openpgp.js (common/crypto.js, sección 19). Se aceptan Ed25519, Ed448, ECDSA y ECDH sobre las curvas NIST, X25519, X448 y RSA de openpgp.minRsaBits; se rechazan DSA, ElGamal y Brainpool. Falta: firma, descifrado, un llavero, un servidor de claves."
+  },
+  "stsmetadata.specs.rfc3156.coverage": {
+    "en": "aa799b14a54ace0f",
+    "text": "partial: multipart/encrypted con una parte de versión application/pgp-encrypted y el mensaje blindado, con las cabeceras reales protegidas dentro. Falta: multipart/signed — este servicio firma el correo con DKIM, no con OpenPGP."
+  },
+  "stsmetadata.specs.rfc8551.coverage": {
+    "en": "a07a1e013186f3d4",
+    "text": "partial: application/pkcs7-mime enveloped-data, un CMS EnvelopedData con cifrado del contenido AES-256-CBC y un destinatario RSAES-OAEP (SHA-256) o de acuerdo de claves ECDH, para el userSMIMECertificate de la persona. Falta: signed-data, AuthEnvelopedData (AES-GCM), descifrado."
+  },
+  "stsmetadata.specs.wkd.coverage": {
+    "en": "e1c6b9651ff1e58c",
+    "text": "partial: los métodos de búsqueda avanzado y directo (el SHA-1 en z-base-32 de la parte local en minúsculas, el parámetro l) y el archivo de política, respondidos para las personas que lo aceptaron, por dominio de confianza y desactivados de forma predeterminada. Falta: el Web Key Service (submission-address, el protocolo de envío); CORS sigue la lista de permitidos de este servicio en lugar del * del borrador."
   },
   "stsmetadata.specs.rfc8463.coverage": {
     "en": "d4ee4ea51927a6f7",
@@ -1210,6 +1230,22 @@
   "stsmetadata.endpoints./scim/v2/Me.what": {
     "en": "8899a7fad6b6b50c",
     "text": "El alias de la sección 3.11 para el sujeto con el que se autenticó la solicitud. GET, PUT, PATCH y DELETE resuelven la credencial a una entrada de directorio y delegan en los MISMOS manejadores de User que usa /Users/{id}, así que no hay una segunda ruta de lectura o escritura que mantener sincronizada. Antes respondía 501 en todos los métodos porque aquí nada autenticaba, y DOS DE ESOS 501 SIGUEN SIENDO CORRECTOS y se conservan: un llamador ANÓNIMO no tiene sujeto al que dar alias (el alias no está disponible, que no es lo mismo que que falte el recurso), y POST crearía un sujeto que por definición ya existe. Una credencial que nombra a alguien sin entrada (un token client_credentials, un certificado de cliente) recibe en cambio un 404."
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/:domain/hu/:hash.what": {
+    "en": "0955037976aef471",
+    "text": "draft-koch-openpgp-webkey-service sección 3.1, el método avanzado, consultado en openpgpkey.<domain>: la clave pública OpenPGP binaria de la persona cuya dirección da el hash :hash (z-base-32 del SHA-1 de la parte local en minúsculas, l= la parte local), application/octet-stream y Cache-Control: no-store. Solo se responde por una persona que lo aceptó en /portal/openpgp, y solo donde el dominio de confianza activó openpgp.wkd y sirve :domain; cualquier otra cosa es 404. Una ruta sin segmento de dominio de confianza la responde el dominio de confianza que sirve el dominio DNS."
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/:domain/policy.what": {
+    "en": "12d81a251721ac64",
+    "text": "El archivo de política del método avanzado: vacío, text/plain, 200 donde un dominio de confianza sirve :domain y 404 en caso contrario. Su presencia es lo que indica a un cliente que el directorio existe; no se ofrece ningún Web Key Service, así que no hay submission-address."
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/hu/:hash.what": {
+    "en": "ea1444452ebedcb6",
+    "text": "El método directo: como el avanzado, siendo el dominio el host al que se hizo la solicitud."
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/policy.what": {
+    "en": "701adaefad112fb7",
+    "text": "El archivo de política del método directo, para el host al que se hizo la solicitud."
   },
   "stsmetadata.endpoints./.well-known/hoba/register.what": {
     "en": "ea46481cdbde5a44",
@@ -1727,6 +1763,18 @@
     "en": "bcf806336009d1f4",
     "text": "encola un mensaje de prueba, o guarda o restablece el texto de un dominio"
   },
+  "stsmetadata.endpoints./admin-api/openpgp.what": {
+    "en": "5d484bf76979cdee",
+    "text": "NON-SPEC (#1955). Lo que muestra Directory → OpenPGP keys: con ?user=, la clave OpenPGP de esa persona, su desafío de registro pendiente, su publicación en el Web Key Directory, su certificado S/MIME y cómo se cifra su correo; y el interruptor y los dominios del Web Key Directory del dominio de confianza. Refleja GET /admin/openpgp."
+  },
+  "stsmetadata.endpoints./admin-api/openpgp/:action.what": {
+    "en": "b428c51bc9fdc3f1",
+    "text": "NON-SPEC (#1955). challenge, register (publicKey, signed: el desafío de la persona firmado con gpg --clearsign), remove, publish, withdraw, mail-encryption (choice) y smime (certificate), cada uno con { user }: lo que /portal/openpgp ofrece a la persona, en su nombre. Una clave solo se registra con la prueba de la propia persona."
+  },
+  "stsmetadata.endpoints./admin-api/openpgp/:action.effect": {
+    "en": "a4485fe850562aab",
+    "text": "emite un desafío, registra o elimina una clave OpenPGP, la publica, o establece el cifrado del correo o el certificado S/MIME de una persona"
+  },
   "stsmetadata.endpoints./admin-api/mail/outbox.what": {
     "en": "01316f4579428510",
     "text": "NO ESTÁNDAR (#63). Lo que dibuja GET /admin/mail/outbox: cada mensaje que encoló este dominio, para quién era y qué fue de él, paginado y filtrado por estado y búsqueda; nunca un cuerpo, salvo el de un mensaje capturado (modo desarrollo) mediante ?message=. Refleja GET /admin/mail/outbox."
@@ -1947,6 +1995,30 @@
     "en": "ee45e233f511ee47",
     "text": "NO ESTÁNDAR. EL CATÁLOGO CERRADO DE ATRIBUTOS QUE ADMITE UNA CREACIÓN, como JSON: cada atributo que se puede dar a una persona de este directorio, cada uno nombrando la notificación a la que llega en un token o credencial emitidos y el documento del que procede su nombre (lo cual importa porque este directorio NO TIENE ESQUEMA y no rechazaría ninguno en ningún lugar), más el contenedor ou=users en el que quedaría una persona nueva (EL DE ESTE DOMINIO, porque el directorio es por dominio) y las cuatro formas de darle acceso. uid no está en la lista porque ES el nombre de usuario, y userPassword tampoco porque una contraseña pasa por la opción de credencial para que se guarde con hash y no tal cual. NO CREA A NADIE: la creación es POST /admin-api/users/create, y esta es la lista contra la que valida esa llamada; un nombre de atributo que no está en ella se rechaza y toda la creación falla, así que a un llamador que lee esto primero no se le puede decir después que la mitad de lo que envió se ignoró. Refleja GET /admin/users/new."
   },
+  "stsmetadata.endpoints./admin-api/groups/new.what": {
+    "en": "4ed04fc8ef1be664",
+    "text": "FUERA DE ESPECIFICACIÓN. Con qué puede crearse un grupo, en JSON: cada campo de la creación y si la creación se rechaza sin él — el cn es obligatorio; la descripción, la dirección y los miembros no — además del contenedor ou=groups donde caería un grupo nuevo, el DE ESTE REINO. NO CREA NADA: la creación es POST /admin-api/groups/create. Refleja GET /admin/groups/new."
+  },
+  "stsmetadata.endpoints./admin-api/roles/new.what": {
+    "en": "3bf6af72cb520499",
+    "text": "FUERA DE ESPECIFICACIÓN. Con qué puede crearse un rol, en JSON: cada campo de la creación y si la creación se rechaza sin él — el nombre es obligatorio, el resto no — además del contenedor donde se guardan los roles y las aplicaciones para las que puede ser un rol. NO CREA NADA: la creación es POST /admin-api/roles/create-role. Refleja GET /admin/roles/new."
+  },
+  "stsmetadata.endpoints./admin-api/devices/new.what": {
+    "en": "97ebfb0c1410c335",
+    "text": "FUERA DE ESPECIFICACIÓN. Con qué puede registrarse un dispositivo, en JSON: cada campo de la creación y si la creación se rechaza sin él — el propietario es obligatorio, el resto no — además de los conjuntos cerrados de los que salen sus opciones. NO REGISTRA NADA: la creación es POST /admin-api/devices/create. Refleja GET /admin/devices/new."
+  },
+  "stsmetadata.endpoints./admin-api/attribute-sources/new.what": {
+    "en": "a0e98374461ed268",
+    "text": "FUERA DE ESPECIFICACIÓN. Con qué puede añadirse un origen de atributos, en JSON: cada campo de la creación y si la creación se rechaza sin él — el id, el host, la base de datos, el usuario, la tabla, su columna clave y al menos una asignación de columna son obligatorios; el resto tiene valores predeterminados — además de los conjuntos cerrados de los que salen sus opciones. NO AÑADE NADA: la creación es POST /admin-api/attribute-sources/add-source. Refleja GET /admin/attribute-sources/new."
+  },
+  "stsmetadata.endpoints./admin-api/secret-destinations/new.what": {
+    "en": "efff1aa20f1b29a1",
+    "text": "FUERA DE ESPECIFICACIÓN. Con qué puede añadirse un destino de secretos, en JSON: cada campo de la creación y si la creación se rechaza sin él — el identificador y el proveedor siempre, y algunos solo para algunos proveedores (requiredWhen): la credencial de escritura para todos salvo file, la región para aws, el endpoint para azure y vault, el directorio para file. NO AÑADE NADA: la creación es POST /admin-api/secret-destinations/add-destination. Refleja GET /admin/secret-destinations/new."
+  },
+  "stsmetadata.endpoints./admin-api/policies/new.what": {
+    "en": "2c58d79f3a71506e",
+    "text": "FUERA DE ESPECIFICACIÓN. Los tipos de los que puede hacerse una política con nombre y, para el tipo pedido, cada campo de su guardado y si el guardado se rechaza sin él — siempre el nombre, porque un guardado sin nombre cambia la política predeterminada, y cada campo cuyo valor no se conserva si se omite. NO GUARDA NADA: una política con nombre es el guardado del tipo con un nombre que el reino aún no tiene. Refleja GET /admin/policies/new."
+  },
   "stsmetadata.endpoints./admin-api/applications/new.what": {
     "en": "25bf3526e817e678",
     "text": "NO ESTÁNDAR. LOS DOS VOCABULARIOS CERRADOS QUE ADMITE UNA CREACIÓN, como JSON: los ocho tipos y las catorce familias de protocolos para las que se puede DECLARAR una aplicación, cada uno con lo que significa, más el contenedor ou=applications en el que quedaría una entrada nueva (EL DE ESTE DOMINIO, porque el directorio es por dominio), cuántas contendrá y los atributos que una creación no admite pero set/add/remove sí. NO CREA NADA: la creación es POST /admin-api/applications/create, y esta es la lista contra la que valida esa llamada, publicada para que un llamador aprenda qué puede enviar a partir del servicio y no de una copia en un documento. Declarar una familia no concede ni rechaza nada: ningún endpoint lee appAllowedProtocol. Refleja GET /admin/applications/new."
@@ -2140,12 +2212,12 @@
     "text": "NON-SPEC (#1955 P4). Los tokens HOTP y TOTP que los administradores importaron de los archivos de semillas PSKC de los proveedores, sin asignar, asignados o retirados, paginados y buscables por número de serie o persona. Nunca un secreto. Refleja GET /admin/hardware-tokens (su pestaña OATH)."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-    "en": "4309735f35f4550e",
-    "text": "NON-SPEC (#1955). lost, con { key }: el token se marca como perdido, se elimina cada llave de acceso que contiene, se revoca cada certificado por keyCompromise, se quita cada secreto OATH importado de la entrada de su titular, se envía un cambio de credencial CAEP por cada uno y se cierran las sesiones que iniciaron. Desde P4, import-pskc, con { pskc, preSharedKey or password }: las claves HOTP y TOTP de un archivo de semillas RFC 6030 se guardan sin asignar por número de serie, comprobando primero el MAC y sin guardar nunca la clave; assign-oath, con { key, username }; y remove-oath, con { key }, para un token sin asignar."
+"en": "0d649147af0cbe04",
+"text": "NON-SPEC (#1955). lost, con { key }: el token se marca como perdido, se elimina cada llave de acceso que contiene, se revoca cada certificado que contiene por keyCompromise, se envía un credential-change de CAEP por cada uno y se cierran las sesiones que iniciaron. enrol-piv, con { username, profile, csr, attestationCertificate?, attestationIssuer? }: un certificado de ranura PIV emitido para esa persona por la CA emisora de EST, verificada su atestación PIV de YubiKey y registrada la YubiKey. recover-key, con { username, serial }: la clave piv-key-management en custodia de esa persona, que la política de control de acceso solo permite a PIV_KEY_RECOVERY. Las tres acciones de la consola en esa página."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
-    "en": "dabee6463ad7ee17",
-    "text": "notifica la pérdida de un token de hardware y retira sus credenciales, o importa, asigna o quita tokens OATH"
+    "en": "b55c0cdd477d183e",
+"text": "notifica la pérdida de un token de hardware y retira sus credenciales, emite un certificado de ranura PIV o entrega una clave en custodia"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -2162,6 +2234,10 @@
   "stsmetadata.endpoints./admin-api/roles/preview.what": {
     "en": "efc872210c98747b",
     "text": "NO ESTÁNDAR. Una decisión de emisión, tomada y descartada: no se emite nada y no se registra nada. Pasa por la MISMA llamada que hacen los nueve puntos de emisión (issuance_gate.check(), el PEP integrado y el PDP contra la política que nombra xacml.issuancePolicy), de modo que es imposible una vista previa que coincida con la aplicación solo por casualidad, que es la única razón por la que existe. NO es POST /xacml/pdp, que pregunta al mismo motor sobre la RAÍZ del repositorio: ese documento responde preguntas sobre el límite de OTRO y este responde una pregunta sobre este servicio. `application` y `subject` son ambos obligatorios, porque una emisión sin ninguno de los dos se permite por definición y no por política. `kind` se convierte en el action-id de XACML, así que una política puede permitir un token de acceso y rechazar un token de actualización. `available: false` significa que el motor no está cargado aquí. Refleja la simulación de /admin/roles."
+  },
+  "stsmetadata.endpoints./admin-api/roles/eligibility.what": {
+    "en": "8d1e213c972caef4",
+    "text": "NO ESPECIFICADO (#1072). La política de elegibilidad XACML propia de un rol dinámico seleccionable, decidida por el PDP para una persona como la pediría un inicio de sesión en `application`, sin iniciar sesión: elegible o no, el código cuando no lo es, la decisión y el estado (un atributo ausente se nombra allí). Solo Permit hace elegible. No escribe nada salvo la fila de auditoría roles.eligibility y nunca muestra la política ni los atributos de la persona. Se necesitan `role` y `user`; si falta alguno responde `answered: false`. Refleja la prueba de la página /admin/roles de un rol dinámico."
   },
   "stsmetadata.endpoints./admin-api/roles/:action.what": {
     "en": "824b769ad7e2e401",
@@ -3047,6 +3123,14 @@
     "en": "9547cda6898c37a6",
     "text": "pide una llave de acceso poscuántica después de un inicio de sesión y luego establece la sesión de inicio de sesión que retenía"
   },
+  "stsmetadata.endpoints./authn/roles.what": {
+    "en": "88814e89f81f8d86",
+    "text": "ROLES DINÁMICOS SELECCIONABLES (#1072). Tras todos los factores, un inicio de sesión en una aplicación cuyo dominio define un rol dinámico (salvo que roles.dynamicSelection o appDynamicRoleSelection de la aplicación lo desactiven) queda RETENIDO mientras se decide para la persona la política de elegibilidad XACML de cada rol dinámico; solo Permit ofrece un rol. Si la persona marcó «Elegir roles para este inicio de sesión» o se ofrece un rol obligatorio, esta página enumera lo que puede elegirse; Continuar (/authn-api/mfa/{id}/roles) contrasta la elección con la oferta del paso y de nuevo con las políticas, y inicia la sesión con ella en el registro de sesión, nunca en el directorio. Un token para esa aplicación lleva entonces los roles elegidos, cada uno consultado de nuevo con su política en cada emisión. Necesita un identificador ?mfa= emitido por el inicio de sesión retenido; seguido sin él responde 400."
+  },
+  "stsmetadata.endpoints./authn/roles.effect": {
+    "en": "fc2116e31d3ead37",
+    "text": "pregunta qué roles dinámicos seleccionables usar en este inicio de sesión y luego establece la sesión retenida con esa elección"
+  },
   "stsmetadata.endpoints./authn/totp.what": {
     "en": "b62d7bad9442ea5c",
     "text": "EL SEGUNDO SEGUNDO FACTOR (2026-09-10). Un paso de contraseña que tuvo éxito para alguien con una aplicación de autenticación registrada llega aquí, y este endpoint pide los seis dígitos que muestra su aplicación. Si tiene éxito, la sesión registra amr [\"pwd\",\"otp\"] (el valor de RFC 8176, cuya entrada en el registro nombra RFC 4226 y RFC 6238) y acr \"mfa\", que es el único caso en que este servicio puede decir dos factores con honestidad. **EL CÓDIGO SE COMPRUEBA DE VERDAD EN AMBOS MODOS**, a diferencia de la contraseña que lo precede: un verificador de contraseñas de un solo uso que aceptara cualesquiera seis dígitos no sería permisivo, estaría roto, y es el argumento de SPNEGO leído por segunda vez. Con límite de frecuencia por identidad Y por dirección, porque seis dígitos son un millón de valores y este es el espacio de búsqueda más pequeño del servicio. EL GET ES EL ENLACE *usar un código en su lugar* de la pantalla de llave de seguridad y no crea nada: dibuja la página para un paso que ya existe, y la rechaza para alguien que no tiene ningún registro. **NO REGISTRA A NADIE**, que es toda la diferencia con /authn/webauthn a su lado: registrarse significa que se le muestre a uno un secreto compartido, así que ocurre en /portal/mfa o mientras se gasta un enlace de activación, y nunca en una pantalla de inicio de sesión. Una página de la superficie de inicio de sesión desde #572: el código va a /authn-api/mfa/{id}/totp."
@@ -3226,6 +3310,10 @@
   "stsmetadata.endpoints./authn-api/mfa/:id/post-login/skip.what": {
     "en": "b1be682232332278",
     "text": "NON-SPEC (#1096). Durante el snoozeDays del perfil; se rechaza una vez que ha pasado el plazo concedido. La sesión retenida se inicia."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/roles.what": {
+    "en": "26fc9f7a66659a20",
+    "text": "NO ESPECIFICADO (#1072). La elección del paso de roles, contrastada con la oferta del paso y con la política de elegibilidad de cada rol; la sesión retenida se inicia con ella."
   },
   "stsmetadata.endpoints./authn-api/mfa/:id/email/send.what": {
     "en": "7b9faf3a24fd710d",
@@ -3903,6 +3991,10 @@
     "en": "835d40e9ff6eaabb",
     "text": "NO ES UN PROTOCOLO, y tiene una tarjeta porque esta página informa de cualquier grupo de endpoints que ninguna tarjeta reclame, que es la regla que impide que una familia nueva llegue sin anunciarse, y merece la pena pagarla aquí en lugar de hacer la regla condicional. LA PRIMERA SUPERFICIE DE ESTE SERVICIO QUE PERTENECE A LA PERSONA QUE LA MIRA: todas las demás páginas de navegador de aquí son para otra persona: la pantalla de inicio de sesión es un paso en el flujo de otro protocolo, la pantalla de consentimiento hace una pregunta y se va, /admin es para un operador y está protegida por dos roles. Aquí es donde una persona ve lo que este proveedor de identidad sabe de ella y cambia cómo se autentica: su contraseña, sus llaves de seguridad y si cada una es una credencial principal o un segundo factor. Es una APLICACIÓN SEPARADA de la consola de administración y no comparte con ella nada más que la sesión de inicio de sesión en el servidor de autorización de este servicio: cada una es un cliente OAuth público (aquí sts-user-portal) que guarda en memoria su propio token vinculado a DPoP. /portal/activate es su mitad sin autenticación, donde alguien aprovisionado mediante /admin-api o SCIM gasta un enlace de activación de un solo uso y tiempo limitado para configurar una credencial: guardado con hash como una contraseña, con límite de frecuencia, gastado cuando termina la configuración y no cuando se abre el enlace, y sin iniciar nunca la sesión de nadie. DESDE #568 ES UNA APLICACIÓN ESTÁTICA sobre /account-api, el grupo Account API de más abajo: una operación por página y por formulario, siendo la persona siempre el sujeto del token, descrita por su propio documento OpenAPI."
   },
+  "stsmetadata.protocols.OpenPGP.what": {
+    "en": "f2e7f0580b98e867",
+    "text": "La clave OpenPGP de una persona (#1955), registrada en el portal o por un administrador con prueba de posesión — la persona firma un desafío con gpg --clearsign; en la tarjeta OpenPGP de una YubiKey firma la tarjeta — y guardada en su entrada; publicada en el Web Key Directory si ella lo elige y el dominio de confianza lo activó; y la clave para la que se cifra su correo (PGP/MIME), o su certificado S/MIME (S/MIME), según lo que eligió. Un dominio de confianza puede exigir cifrado para mensajes elegidos (mail.encryptionRequired), que entonces nunca se envían en claro. Nada se registra como vinculado al hardware: el servidor no puede ver una tarjeta. No existe el inicio de sesión con OpenPGP."
+  },
   "stsmetadata.protocols.Reporting.what": {
     "en": "66663fd63a35a287",
     "text": "NO ES UN PROTOCOLO. La aplicación de informes (#956): una página estática en /report sobre /report-api, el cliente público sts-report y un catálogo de los registros propios de este dominio. Inicia sesión en el navegador, conserva un token vinculado a DPoP y nunca acepta una cadena SQL. Una definición guardada pertenece a su propietario; compartirla con un grupo del directorio concede ejecutar y leer, no editar."
@@ -4074,5 +4166,17 @@
   "stsmetadata.param.aParameter": {
     "en": "24ece2f78749cf6a",
     "text": "un parámetro"
+  },
+  "stsmetadata.specs.yubico-piv-attestation.coverage": {
+    "en": "244659759ede3102",
+    "text": "partial: el certificado de atestación de la ranura se verifica, a través del certificado de atestación f9, hasta las raíces PIV de Yubico (Serial 263751, y Attestation Root 1 con sus intermedios PIV para el firmware 5.7.4 y posteriores, incluidas y fijadas) o las propias de un dominio; su clave se contrasta con la de la solicitud; se leen las extensiones de firmware, número de serie, política de PIN y de toque y factor de forma, y las políticas se contrastan con las del dominio. La tarjeta en sí nunca se gestiona: no se escribe PIN, PUK ni ranura."
+  },
+  "stsmetadata.specs.fips201.coverage": {
+    "en": "322d92ba9eb36fde",
+    "text": "minimal: las cuatro ranuras de clave como perfiles de certificado (PIV Authentication 9a, Digital Signature 9c, Key Management 9d, Card Authentication 9e, que de forma predeterminada no inicia la sesión de nadie), y una tarjeta PIV o CAC externa asociada por el UUID de tarjeta de su subjectAltName urn:uuid cuando declara una política PIV Authentication (desactivado de forma predeterminada). Sin FASC-N, CHUID, gestión de tarjetas ni biometría."
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/escrowed.what": {
+    "en": "1716521c9c5e119d",
+    "text": "NON-SPEC (#1955). Los certificados piv-key-management en custodia de una persona (piv.keyEscrow): número de serie, sujeto, validez y si cada uno fue revocado. Nunca una clave. Refleja GET /admin/hardware-tokens."
   }
 }

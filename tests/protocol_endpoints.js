@@ -49,6 +49,9 @@ const ROOT = path.join(__dirname, '..');
 function childMain() {
   /* eslint-disable no-console */
   const ROOT_DIR = process.env.PE_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT_DIR + '/tests/protocol/url_match.js');
   const OUT = process.env.PE_OUT;
   const http = require('http');
   const findings = [];
@@ -126,7 +129,7 @@ function childMain() {
         if (row.name === row.route) {
           undescribed.push(page + ' ' + row.route);
         }
-        if (row.url.indexOf(base + '/') !== 0 || /\/:/.test(row.url)) {
+        if (!urls.isUnder(row.url, base + '/') || /\/:/.test(row.url)) {
           notConcrete.push(page + ' ' + row.url);
         }
       });
@@ -175,7 +178,7 @@ function childMain() {
       const outside = [];
       table.pages().forEach(function (page) {
         table.forPage(fakeReq(page), page).forEach(function (row) {
-          if (row.route && row.url.indexOf(prefix) !== 0) {
+          if (row.route && !urls.isUnder(row.url, prefix)) {
             outside.push(page + ' ' + row.url);
           }
         });

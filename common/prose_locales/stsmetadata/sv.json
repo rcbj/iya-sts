@@ -520,8 +520,12 @@
     "text": "full, i varje läge (#143, byggd i #139): response_mode query.jwt, fragment.jwt, form_post.jwt och jwt (query för code, fragment annars); svarsparametrarna med iss, aud och exp (oauth2.jarmResponseLifetimeS) signerade med klientens authorization_signed_response_alg (RS256, eller PS256 under FAPI 1.0 Advanced) och krypterade där den registrerat authorization_encrypted_response_alg; fel besvarade på samma sätt; query.jwt nekad med en token i klartext (2.3.1); metadata- och registreringsmedlemmarna i avsnitt 3 och 4."
   },
   "stsmetadata.specs.webauthn.coverage": {
-    "en": "84ea7cdfbe803962",
-    "text": "partial, förlitande partens sida: registrering (avsnitt 7.1) och assertion (avsnitt 7.2) verifieras — utmaning, ursprung, RP ID-hash, flaggorna för användarnärvaro och verifiering, BE/BS, autentiseringsuppgiftens alg mot pubKeyCredParams, autentiseringsuppgiftens id på 1023 byte, signaturräknaren, och signaturen över authenticatorData || SHA-256(clientDataJSON), för nycklar av typen ES256/384/512, RS256/384/512, PS256/384/512, EdDSA och ML-DSA-44/65/87 (RFC 9964). Sedan #105 verifieras ATTESTERINGSINTYGET i alla åtta format i avsnitt 8 (packed, tpm, android-key, android-safetynet, fido-u2f, none, apple, compound) enligt webauthn.attestationPolicy — by-mode är verify-if-present i produktläge och off i utvecklingsläge — dess kedja mot konfigurerade ankare och FIDO Metadata Services rötter, dess återkallelse kontrollerad, och en modell som MDS rapporterar som komprometterad nekas. Sedan #643 kan en klassisk nyckel och en postkvantnyckel (ML-DSA) hållas sida vid sida (webauthn.pqcAlongsideClassical): varje spår har sitt eget användarhandtag (avsnitt 5.4.3), sin egen algoritmlista och sina egna excludeCredentials, och Signal API (avsnitt 5.1.10) skickas en gång per spår. Saknas: företagsattestering (avsnitt 5.4.7) har ingen tillåtelselista för RP ID, och autentiseringstilläggen bearbetas inte. Skriven oberoende av felsökarens egen avkodare så att de två kan kontrolleras mot varandra (tests/webauthn_cross_impl.js)."
+    "en": "e293d58d8fdd5cd1",
+    "text": "partial, förlitande partens sida: registrering (avsnitt 7.1) och assertion (avsnitt 7.2) verifieras — utmaning, ursprung, RP ID-hash, flaggorna för användarnärvaro och verifiering, BE/BS, autentiseringsuppgiftens alg mot pubKeyCredParams, autentiseringsuppgiftens id på 1023 byte, signaturräknaren, och signaturen över authenticatorData || SHA-256(clientDataJSON), för nycklar av typen ES256/384/512, RS256/384/512, PS256/384/512, EdDSA och ML-DSA-44/65/87 (RFC 9964). Sedan #105 verifieras ATTESTERINGSINTYGET i alla åtta format i avsnitt 8 (packed, tpm, android-key, android-safetynet, fido-u2f, none, apple, compound) enligt webauthn.attestationPolicy — by-mode är verify-if-present i produktläge och off i utvecklingsläge — dess kedja mot konfigurerade ankare och FIDO Metadata Services rötter, dess återkallelse kontrollerad, och en modell som MDS rapporterar som komprometterad nekas. Sedan #643 kan en klassisk nyckel och en postkvantnyckel (ML-DSA) hållas sida vid sida (webauthn.pqcAlongsideClassical): varje spår har sitt eget användarhandtag (avsnitt 5.4.3), sin egen algoritmlista och sina egna excludeCredentials, och Signal API (avsnitt 5.1.10) skickas en gång per spår. Företagsattestering (avsnitt 5.4.7) begärs bara för de RP ID som webauthn.attestationEnterpriseRpIds listar. Medlemmen hints (avsnitt 5.4.8) skickas som passkey-policyn säger. Tillägg (avsnitt 10): credProps (10.1.3) begärs och dess rk registreras; CTAP 2.1:s credProtect och minPinLength begärs som passkey-policyn säger och deras utdata läses ur autentiserardata (se CTAP 2.1); appid (10.1.1) och appidExclude (10.1.2) betjänar äldre FIDO U2F-autentiseringsuppgifter som en administratör importerat till en persons post, avstängda tills webauthn.u2fAppIds nämner deras AppID: en försäkrans rpIdHash hålls till SHA-256 av AppID:t bara när klienten returnerade appid true, en sådan nyckel besvarar bara ett steg med andra faktor, och en registrering begär appidExclude så att samma nyckel inte registreras två gånger. Saknas: övriga registrerade tillägg (largeBlob, prf och resten) varken begärs eller bearbetas, och ett AppID används bara vid ett RP ID vars värd det delar eller är ett suffix av — FIDO AppID and Facet Specifications TrustedFacets-lista varken hämtas eller tillhandahålls här. Skriven oberoende av felsökarens egen avkodare så att de två kan kontrolleras mot varandra (tests/webauthn_cross_impl.js)."
+  },
+  "stsmetadata.specs.ctap21.coverage": {
+    "en": "4cc6ee6c2a81e46e",
+    "text": "minimal: den förlitande partens halva av två tillägg, eftersom den här tjänsten varken är klient eller autentiserare: credProtect (avsnitt 12.1) — passkey-policyns credProtect begär en nivå som credentialProtectionPolicy, enforceCredProtect skickar enforceCredentialProtectionPolicy och avvisar en registrering vars autentiserardata rapporterar en lägre nivå (ingen rapport är nivå 1), och nivån registreras på nyckeln; och minPinLength (avsnitt 12.4), begärd medan passkey-policyn genomdriver en PIN-längd och hållen till dess minimum vid registrering och inloggning. Inget annat av CTAP: autentiserar-API:t, PIN-protokollen, stora blobbar och hantering av autentiseringsuppgifter är plattformens."
   },
   "stsmetadata.specs.dbsc.coverage": {
     "en": "5eac46b3be2eaa5f",
@@ -700,8 +704,8 @@
     "text": "minimal: endast identifierartypen permanent-identifier, som här namnger kontots egen katalogpost och blir dess urn:sts:-subjectAltName. Utmaningen device-attest-01 och WebAuthn-attesteringsutlåtandet är inte implementerade."
   },
   "stsmetadata.specs.lamps-csr-attestation.coverage": {
-    "en": "727a26e021b5f20f",
-    "text": "partial: attributet id-aa-attestation i en PKCS#10-begäran (högst ett, exakt ett AttestationBundle, endast certifikatet och övriga val) för enhetsprofilen över EST och SCEP; den enda utlåtandetyp som verifieras är TCG:s tcg-attest-tpm-certify i syntaxen från revision 20:s bilaga A.2.3, som ingen senare revision eller något TCG-dokument ersätter (#257). CRMF-tillägget läses inte (ingen CMP här), och andra utlåtandetyper registreras men verifieras inte. Färskhet (avsnitt 6.2) via draft-ietf-lamps-attestation-freshness över EST."
+    "en": "59b1734815ece664",
+    "text": "partial: attributet id-aa-attestation i en PKCS#10-begäran (högst ett, exakt ett AttestationBundle, endast certifikatet och övriga val), över EST, SCEP och ACME. Två satstyper verifieras: TCG:s tcg-attest-tpm-certify i syntaxen från revision 20:s bilaga A.2.3, för enhetsprofilen (#257), och en YubiKey-PIV-attestering för varje profil (#1955), under 1.3.6.1.4.1.41482.3.2 med platscertifikatet som stmt och f9-certifikatet i certs, en typ som den här tjänsten valde eftersom utkastet inte definierar någon. CRMF-tillägget läses inte (ingen CMP här), och andra satstyper registreras, verifieras inte. Färskhet (avsnitt 6.2) via draft-ietf-lamps-attestation-freshness över EST, endast för TPM-satser: en PIV-attestering bär ingen nonce."
   },
   "stsmetadata.specs.lamps-attestation-freshness.coverage": {
     "en": "555e31da7393d476",
@@ -746,6 +750,22 @@
   "stsmetadata.specs.rfc6376.coverage": {
     "en": "95d0cca14dac35d3",
     "text": "partial: signering, relaxed/relaxed, rsa-sha256 med en nyckel på minst 2048 bitar (RFC 8301), i common/crypto.js, på det som SMTP-transporten skickar när en domän är konfigurerad. Saknas: simple-kanonisering, l= och verifiering av e-post som någon annan skickat — den här tjänsten tar inte emot någon. DKIM har ingen postkvantalgoritm registrerad."
+  },
+  "stsmetadata.specs.rfc9580.coverage": {
+    "en": "086f96d364365827",
+    "text": "partial: läsning av en överförbar publik nyckel, v6 och (RFC 4880) v4, verifiering av en klartextsignatur gjord av en av dess signeringsnycklar och kryptering av ett meddelande till dess krypteringsnyckel, allt genom openpgp.js (common/crypto.js avsnitt 19). Ed25519, Ed448, ECDSA och ECDH på NIST-kurvorna, X25519, X448 och RSA med openpgp.minRsaBits accepteras; DSA, ElGamal och Brainpool avvisas. Saknas: signering, dekryptering, nyckelring, nyckelserver."
+  },
+  "stsmetadata.specs.rfc3156.coverage": {
+    "en": "aa799b14a54ace0f",
+    "text": "partial: multipart/encrypted med en versionsdel application/pgp-encrypted och det armerade meddelandet, med de verkliga rubrikerna skyddade inuti. Saknas: multipart/signed — tjänsten signerar e-post med DKIM, inte OpenPGP."
+  },
+  "stsmetadata.specs.rfc8551.coverage": {
+    "en": "a07a1e013186f3d4",
+    "text": "partial: application/pkcs7-mime enveloped-data, en CMS EnvelopedData med AES-256-CBC för innehållskryptering och en mottagare med RSAES-OAEP (SHA-256) eller ECDH-nyckelöverenskommelse, till personens userSMIMECertificate. Saknas: signed-data, AuthEnvelopedData (AES-GCM), dekryptering."
+  },
+  "stsmetadata.specs.wkd.coverage": {
+    "en": "e1c6b9651ff1e58c",
+    "text": "partial: den avancerade och den direkta uppslagsmetoden (z-base-32 av SHA-1 av den lokala delen i gemener, parametern l) och policyfilen, besvarade för personer som har valt att delta, per sfär och avstängt som standard. Saknas: Web Key Service (submission-address, inlämningsprotokollet); CORS följer tjänstens tillåtelselista snarare än utkastets *."
   },
   "stsmetadata.specs.rfc8463.coverage": {
     "en": "d4ee4ea51927a6f7",
@@ -1210,6 +1230,22 @@
   "stsmetadata.endpoints./scim/v2/Me.what": {
     "en": "8899a7fad6b6b50c",
     "text": "Alias enligt avsnitt 3.11 för det subjekt som begäran autentiserades som. GET, PUT, PATCH och DELETE löser upp inloggningsuppgiften till en katalogpost och delegerar till SAMMA User-hanterare som /Users/{id} använder, så det finns ingen andra läs- eller skrivväg att hålla i takt. Den brukade svara 501 på varje metod eftersom ingenting här autentiserade, och TVÅ AV DE 501:ORNA ÄR FORTFARANDE RÄTT och behålls: en ANONYM anropare har inget subjekt att skapa alias för (aliaset är otillgängligt, vilket inte är samma sak som att resursen saknas), och POST skulle skapa ett subjekt som per definition redan finns. En inloggningsuppgift som namnger någon utan post — en client_credentials-token, ett klientcertifikat — får 404 i stället."
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/:domain/hu/:hash.what": {
+    "en": "0955037976aef471",
+    "text": "draft-koch-openpgp-webkey-service avsnitt 3.1, den avancerade metoden, ställd till openpgpkey.<domain>: den binära publika OpenPGP-nyckeln för den person vars adress hashas till :hash (z-base-32 av SHA-1 av den lokala delen i gemener, l= den lokala delen), application/octet-stream och Cache-Control: no-store. Bara en person som har valt att delta på /portal/openpgp besvaras, och bara där sfären har slagit på openpgp.wkd och betjänar :domain; allt annat ger 404. En sökväg utan sfärsegment besvaras av den sfär som betjänar domänen."
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/:domain/policy.what": {
+    "en": "12d81a251721ac64",
+    "text": "Den avancerade metodens policyfil: tom, text/plain, 200 där en sfär betjänar :domain och annars 404. Dess förekomst är det som talar om för en klient att katalogen finns; ingen Web Key Service erbjuds, så det finns ingen submission-address."
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/hu/:hash.what": {
+    "en": "ea1444452ebedcb6",
+    "text": "Den direkta metoden: som den avancerade, där domänen är värden som begäran gjordes till."
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/policy.what": {
+    "en": "701adaefad112fb7",
+    "text": "Den direkta metodens policyfil, för värden som begäran gjordes till."
   },
   "stsmetadata.endpoints./.well-known/hoba/register.what": {
     "en": "ea46481cdbde5a44",
@@ -1727,6 +1763,18 @@
     "en": "bcf806336009d1f4",
     "text": "köar ett testmeddelande, eller sparar eller återställer en sfärs formulering"
   },
+  "stsmetadata.endpoints./admin-api/openpgp.what": {
+    "en": "5d484bf76979cdee",
+    "text": "NON-SPEC (#1955). Det som Katalog → OpenPGP-nycklar visar: med ?user=, personens OpenPGP-nyckel, personens utestående registreringsutmaning, publiceringen i Web Key Directory, S/MIME-certifikatet och hur personens e-post krypteras; samt sfärens brytare och domäner för Web Key Directory. Speglar GET /admin/openpgp."
+  },
+  "stsmetadata.endpoints./admin-api/openpgp/:action.what": {
+    "en": "b428c51bc9fdc3f1",
+    "text": "NON-SPEC (#1955). challenge, register (publicKey, signed: personens utmaning signerad med gpg --clearsign), remove, publish, withdraw, mail-encryption (choice) och smime (certificate), var och en med { user }: det som /portal/openpgp erbjuder personen, för personens räkning. En nyckel registreras bara på personens eget bevis."
+  },
+  "stsmetadata.endpoints./admin-api/openpgp/:action.effect": {
+    "en": "a4485fe850562aab",
+    "text": "utfärdar en utmaning, registrerar eller tar bort en OpenPGP-nyckel, publicerar den, eller anger en persons e-postkryptering eller S/MIME-certifikat"
+  },
   "stsmetadata.endpoints./admin-api/mail/outbox.what": {
     "en": "01316f4579428510",
     "text": "ICKE-SPEC (#63). Det som GET /admin/mail/outbox ritar: varje meddelande som den här sfären köat, vem det var till och vad som blev av det, sidindelat och filtrerat efter tillstånd och sökning — aldrig en kropp, utom för ett fångat meddelande (utvecklingsläge) via ?message=. Speglar GET /admin/mail/outbox."
@@ -1947,6 +1995,30 @@
     "en": "ee45e233f511ee47",
     "text": "ICKE-SPEC. DEN SLUTNA ATTRIBUTKATALOG SOM ETT SKAPANDE TAR, som JSON: varje attribut som en person i den här katalogen kan få, vart och ett med det anspråk det når i en utfärdad token eller ett utfärdat intyg och det dokument som dess namn kommer från — vilket spelar roll eftersom den här katalogen INTE HAR NÅGOT SCHEMA och inte skulle neka något av dem någonstans — plus den ou=users-behållare som en ny person skulle hamna i (DEN HÄR SFÄRENS, eftersom katalogen är per sfär) och de fyra sätten personen kan få en väg in. uid finns inte i listan eftersom det ÄR användarnamnet, och userPassword finns inte eftersom ett lösenord går via alternativet för inloggningsuppgift så att det hashas snarare än skrivs ner. DEN SKAPAR INGEN: skapandet är POST /admin-api/users/create, och detta är listan som det anropet validerar mot — ett attributnamn som inte finns på den nekas och hela skapandet misslyckas, så en anropare som läser detta först kan inte i efterhand få veta att hälften av det den skickade ignorerades. Speglar GET /admin/users/new."
   },
+  "stsmetadata.endpoints./admin-api/groups/new.what": {
+    "en": "4ed04fc8ef1be664",
+    "text": "UTANFÖR SPECIFIKATION. Vad en grupp kan skapas med, som JSON: varje fält i skapandet och om skapandet avvisas utan det — cn krävs, beskrivningen, adressen och medlemmarna gör det inte — plus behållaren ou=groups där en ny grupp skulle hamna, DENNA REALMS. DEN SKAPAR INGENTING: skapandet är POST /admin-api/groups/create. Speglar GET /admin/groups/new."
+  },
+  "stsmetadata.endpoints./admin-api/roles/new.what": {
+    "en": "3bf6af72cb520499",
+    "text": "UTANFÖR SPECIFIKATION. Vad en roll kan skapas med, som JSON: varje fält i skapandet och om skapandet avvisas utan det — namnet krävs, resten gör det inte — plus behållaren där roller lagras och de program en roll kan gälla. DEN SKAPAR INGENTING: skapandet är POST /admin-api/roles/create-role. Speglar GET /admin/roles/new."
+  },
+  "stsmetadata.endpoints./admin-api/devices/new.what": {
+    "en": "97ebfb0c1410c335",
+    "text": "UTANFÖR SPECIFIKATION. Vad en enhet kan registreras med, som JSON: varje fält i skapandet och om skapandet avvisas utan det — ägaren krävs, resten gör det inte — plus de slutna mängder dess val kommer från. DEN REGISTRERAR INGENTING: skapandet är POST /admin-api/devices/create. Speglar GET /admin/devices/new."
+  },
+  "stsmetadata.endpoints./admin-api/attribute-sources/new.what": {
+    "en": "a0e98374461ed268",
+    "text": "UTANFÖR SPECIFIKATION. Vad en attributkälla kan läggas till med, som JSON: varje fält i skapandet och om skapandet avvisas utan det — id, värd, databas, användare, tabell, dess nyckelkolumn och minst en kolumnmappning krävs, resten har standardvärden — plus de slutna mängder dess val kommer från. DEN LÄGGER INTE TILL NÅGOT: skapandet är POST /admin-api/attribute-sources/add-source. Speglar GET /admin/attribute-sources/new."
+  },
+  "stsmetadata.endpoints./admin-api/secret-destinations/new.what": {
+    "en": "efff1aa20f1b29a1",
+    "text": "UTANFÖR SPECIFIKATION. Vad ett mål för hemligheter kan läggas till med, som JSON: varje fält i skapandet och om skapandet avvisas utan det — identifieraren och leverantören alltid, och vissa bara för vissa leverantörer (requiredWhen): skrivuppgiften för alla utom file, regionen för aws, slutpunkten för azure och vault, katalogen för file. DEN LÄGGER INTE TILL NÅGOT: skapandet är POST /admin-api/secret-destinations/add-destination. Speglar GET /admin/secret-destinations/new."
+  },
+  "stsmetadata.endpoints./admin-api/policies/new.what": {
+    "en": "2c58d79f3a71506e",
+    "text": "UTANFÖR SPECIFIKATION. De sorter en namngiven policy kan göras av och, för den efterfrågade sorten, varje fält i dess sparande och om sparandet avvisas utan det — alltid namnet, eftersom ett sparande utan namn ändrar standardpolicyn, och varje fält vars värde inte behålls när det utelämnas. DEN SPARAR INGENTING: en namngiven policy är sortens sparande under ett namn som realmen ännu inte har. Speglar GET /admin/policies/new."
+  },
   "stsmetadata.endpoints./admin-api/applications/new.what": {
     "en": "25bf3526e817e678",
     "text": "ICKE-SPEC. DE TVÅ SLUTNA VOKABULÄRER SOM ETT SKAPANDE TAR, som JSON: de åtta slagen och de fjorton protokollfamiljer som en applikation kan DEKLARERAS för, var och en med vad den betyder, plus den ou=applications-behållare som en ny post skulle hamna i — DEN HÄR SFÄRENS, eftersom katalogen är per sfär — hur många den kommer att innehålla och de attribut som ett skapande inte kan ta men som set/add/remove kan. DEN SKAPAR INGENTING: skapandet är POST /admin-api/applications/create, och detta är listan som det anropet validerar mot, publicerad så att en anropare lär sig vad den får skicka från tjänsten snarare än från en kopia i ett dokument. Att deklarera en familj beviljar och nekar ingenting — ingen slutpunkt läser appAllowedProtocol. Speglar GET /admin/applications/new."
@@ -2140,12 +2212,12 @@
     "text": "NON-SPEC (#1955 P4). De HOTP- och TOTP-tokens som administratörer importerat från leverantörers PSKC-fröfiler, ej tilldelade, tilldelade eller avvecklade, sidindelade och sökbara på serienummer eller person. Aldrig en hemlighet. Speglar GET /admin/hardware-tokens (dess OATH-flik)."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-    "en": "4309735f35f4550e",
-    "text": "NON-SPEC (#1955). lost, med { key }: token markeras som förlorad, varje nyckel på den tas bort, varje certifikat på den återkallas för keyCompromise, varje importerad OATH-hemlighet tas bort från innehavarens post, en CAEP-ändring av inloggningsuppgift skickas för var och en och de sessioner de loggade in avslutas. Sedan P4 import-pskc, med { pskc, preSharedKey or password }: en RFC 6030-fröfils HOTP- och TOTP-nycklar förvaras ej tilldelade under serienummer, MAC kontrolleras först och nyckeln sparas aldrig; assign-oath, med { key, username }; och remove-oath, med { key }, för en ej tilldelad token."
+"en": "0d649147af0cbe04",
+"text": "NON-SPEC (#1955). lost, med { key }: token markeras som förlorad, varje nyckel på den tas bort, varje certifikat på den återkallas för keyCompromise, en CAEP credential-change skickas för var och en och de sessioner de loggade in avslutas. enrol-piv, med { username, profile, csr, attestationCertificate?, attestationIssuer? }: ett PIV-platscertifikat utfärdat till den personen via EST:s utfärdande CA, med dess YubiKey-PIV-attestering verifierad och YubiKey registrerad. recover-key, med { username, serial }: den personens deponerade piv-key-management-nyckel, som åtkomstkontrollpolicyn bara tillåter för PIV_KEY_RECOVERY. Konsolens tre åtgärder på den sidan."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
-    "en": "dabee6463ad7ee17",
-    "text": "anmäler en maskinvarutoken som förlorad och återkallar dess inloggningsuppgifter, eller importerar, tilldelar eller tar bort OATH-tokens"
+    "en": "b55c0cdd477d183e",
+"text": "anmäler en maskinvarutoken som förlorad och drar tillbaka dess inloggningsuppgifter, utfärdar ett PIV-platscertifikat eller lämnar över en deponerad nyckel"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -2162,6 +2234,10 @@
   "stsmetadata.endpoints./admin-api/roles/preview.what": {
     "en": "efc872210c98747b",
     "text": "ICKE-SPEC. Ett utfärdandebeslut, fattat och bortkastat: ingenting utfärdas och ingenting registreras. Det går genom SAMMA anrop som de nio utfärdandeställena gör — issuance_gate.check(), den inbäddade PEP:n och PDP:n mot den policy som xacml.issuancePolicy namnger — så en förhandsvisning som stämde med upprätthållandet bara av en slump är omöjlig, vilket är det enda skälet till att den finns. Det är INTE POST /xacml/pdp, som frågar samma motor om förrådets ROT: det dokumentet besvarar frågor om någon ANNANS gräns och det här besvarar en fråga om den här tjänsten. `application` och `subject` krävs båda, eftersom ett utfärdande som inte namnger något av dem är tillåtet per definition snarare än enligt policy. `kind` blir XACML-action-id, så en policy kan tillåta en åtkomsttoken och neka en uppdateringstoken. `available: false` betyder att motorn inte är laddad här. Speglar provkörningen på /admin/roles."
+  },
+  "stsmetadata.endpoints./admin-api/roles/eligibility.what": {
+    "en": "8d1e213c972caef4",
+    "text": "UTANFÖR SPECIFIKATION (#1072). En dynamiskt valbar rolls egen XACML-behörighetspolicy, beslutad av PDP:n för en person så som en inloggning till `application` skulle fråga, utan inloggning: behörig eller inte, koden om inte, beslutet och statusen (ett saknat attribut namnges där). Endast Permit ger behörighet. Inget skrivs utom granskningsraden roles.eligibility, och varken policyn eller personens attribut visas. Både `role` och `user` behövs; saknas något blir svaret `answered: false`. Motsvarar testet på en dynamisk rolls sida /admin/roles."
   },
   "stsmetadata.endpoints./admin-api/roles/:action.what": {
     "en": "824b769ad7e2e401",
@@ -3047,6 +3123,14 @@
     "en": "9547cda6898c37a6",
     "text": "ber om en postkvantnyckel efter en inloggning och etablerar sedan inloggningssessionen som den höll kvar"
   },
+  "stsmetadata.endpoints./authn/roles.what": {
+    "en": "88814e89f81f8d86",
+    "text": "DYNAMISKT VALBARA ROLLER (#1072). Efter alla faktorer HÅLLS en inloggning till ett program vars sfär definierar en dynamisk roll (om inte roles.dynamicSelection eller programmets appDynamicRoleSelection stänger av det) medan varje dynamisk rolls XACML-behörighetspolicy beslutas för personen; endast Permit erbjuder en roll. Om personen markerade ”Välj roller för den här inloggningen”, eller en obligatorisk roll erbjuds, visar sidan vad som kan väljas; Fortsätt (/authn-api/mfa/{id}/roles) prövar valet mot stegets erbjudande och åter mot policyerna, och startar sessionen med valet på sessionsposten, aldrig i katalogen. En token för programmet bär sedan de valda rollerna, var och en prövad mot sin policy vid varje utfärdande. Kräver ett ?mfa=-id från den hållna inloggningen; utan det blir svaret 400."
+  },
+  "stsmetadata.endpoints./authn/roles.effect": {
+    "en": "fc2116e31d3ead37",
+    "text": "frågar vilka dynamiskt valbara roller som ska användas för inloggningen och startar sedan den hållna sessionen med valet"
+  },
   "stsmetadata.endpoints./authn/totp.what": {
     "en": "b62d7bad9442ea5c",
     "text": "DEN ANDRA ANDRA FAKTORN (2026-09-10). Ett lösenordssteg som lyckades för någon som har en autentiseringsapp registrerad landar här, och den här slutpunkten ber om de sex siffror som deras app visar. Vid framgång registrerar sessionen amr [\"pwd\",\"otp\"] — RFC 8176:s värde, vars registerpost namnger RFC 4226 och RFC 6238 — och acr \"mfa\", vilket är det enda fall där den här tjänsten ärligt kan säga två faktorer. **KODEN KONTROLLERAS PÅ RIKTIGT I BÅDA LÄGENA**, till skillnad från lösenordet framför den: en verifierare av engångslösenord som godtog vilka sex siffror som helst vore inte tillåtande, den vore trasig, och det är SPNEGO-argumentet läst en andra gång. Hastighetsbegränsad per identitet OCH per adress, eftersom sex siffror är en miljon värden och detta är det minsta sökutrymmet i tjänsten. GET ÄR LÄNKEN *använd en kod i stället* från säkerhetsnyckelskärmen och skapar ingenting — den ritar sidan för ett steg som redan finns, och vägrar ett för någon som inte har någon registrering. **DEN REGISTRERAR INGEN**, vilket är hela skillnaden mot /authn/webauthn bredvid: att registrera innebär att få se en delad hemlighet, så det sker på /portal/mfa eller medan en aktiveringslänk förbrukas, och aldrig på en inloggningsskärm. En sida på inloggningsytan sedan #572: koden går till /authn-api/mfa/{id}/totp."
@@ -3226,6 +3310,10 @@
   "stsmetadata.endpoints./authn-api/mfa/:id/post-login/skip.what": {
     "en": "b1be682232332278",
     "text": "NON-SPEC (#1096). I profilens snoozeDays; nekas när den tilldelade tiden har gått. Den kvarhållna sessionen startar."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/roles.what": {
+    "en": "26fc9f7a66659a20",
+    "text": "UTANFÖR SPECIFIKATION (#1072). Rollstegets val, prövat mot stegets erbjudande och varje rolls behörighetspolicy; den hållna sessionen startar med det."
   },
   "stsmetadata.endpoints./authn-api/mfa/:id/email/send.what": {
     "en": "7b9faf3a24fd710d",
@@ -3903,6 +3991,10 @@
     "en": "835d40e9ff6eaabb",
     "text": "INTE ETT PROTOKOLL, och den har ett kort eftersom den här sidan rapporterar en slutpunktsgrupp som inget kort gör anspråk på — vilket är regeln som hindrar en ny familj från att dyka upp oanmäld, och det är värt att betala för det här snarare än att göra regeln villkorlig. DEN FÖRSTA YTAN I DEN HÄR TJÄNSTEN SOM TILLHÖR PERSONEN SOM TITTAR PÅ DEN: varje annan webbläsarsida här är till för någon annan — inloggningsskärmen är ett steg i ett annat protokolls flöde, samtyckesskärmen ställer en fråga och försvinner, /admin är till för en operatör och är grindad på två roller. Det är här en person ser vad den här identitetsleverantören vet om dem och ändrar hur de autentiserar sig: sitt lösenord, och sina säkerhetsnycklar och om var och en är en primär autentiseringsuppgift eller en andra faktor. Det är en SEPARAT APPLIKATION från administratörskonsolen och delar ingenting med den utom inloggningssessionen hos den här tjänstens auktoriseringsserver: var och en är en publik OAuth-klient (sts-user-portal här) som håller sin egen DPoP-bundna token i minnet. /portal/activate är dess oautentiserade halva, där någon som provisionerats via /admin-api eller SCIM förbrukar en tidsbegränsad aktiveringslänk för engångsbruk för att skapa en autentiseringsuppgift — hashad i vila som ett lösenord, hastighetsbegränsad, förbrukad när inställningen slutförs snarare än när länken öppnas, och loggar aldrig in någon. SEDAN #568 ÄR DET EN STATISK APPLIKATION ovanpå /account-api, gruppen Account API nedan: en operation per sida och per formulär, personen alltid tokenets subjekt, beskriven av sitt eget OpenAPI-dokument."
   },
+  "stsmetadata.protocols.OpenPGP.what": {
+    "en": "f2e7f0580b98e867",
+    "text": "En persons OpenPGP-nyckel (#1955), registrerad på portalen eller av en administratör på ett innehavsbevis — personen signerar en utmaning med gpg --clearsign, och på en YubiKeys OpenPGP-kort signerar kortet — och lagrad på personens post; publicerad i Web Key Directory om personen vill och sfären har slagit på det; och nyckeln som personens e-post krypteras till (PGP/MIME), eller personens S/MIME-certifikat (S/MIME), enligt personens val. En sfär kan kräva kryptering för utvalda meddelanden (mail.encryptionRequired), som då aldrig skickas okrypterade. Ingenting registreras som hårdvarubundet: servern kan inte se ett kort. Det finns ingen inloggning med OpenPGP."
+  },
   "stsmetadata.protocols.Reporting.what": {
     "en": "66663fd63a35a287",
     "text": "INTE ETT PROTOKOLL. Rapportapplikationen (#956): en statisk sida på /report över /report-api, den publika klienten sts-report, och en katalog över den här sfärens egna poster. Den loggar in i webbläsaren, håller en DPoP-bunden token och tar aldrig emot en SQL-sträng. En sparad definition tillhör sin ägare; en delning med en katalogrupp ger rätt att köra och läsa, inte att redigera."
@@ -4074,5 +4166,17 @@
   "stsmetadata.param.aParameter": {
     "en": "24ece2f78749cf6a",
     "text": "en parameter"
+  },
+  "stsmetadata.specs.yubico-piv-attestation.coverage": {
+    "en": "244659759ede3102",
+    "text": "partial: platsens attesteringscertifikat verifieras via f9-attesteringscertifikatet till Yubicos PIV-rötter (Serial 263751, och Attestation Root 1 med dess PIV-mellancertifikat för firmware 5.7.4 och senare, levererade och fästa) eller en sfärs egna; dess nyckel hålls mot begärans; tilläggen för firmware, serienummer, PIN- och beröringspolicy och formfaktor läses, och policyerna hålls mot sfärens. Själva kortet hanteras aldrig: ingen skrivning av PIN, PUK eller plats."
+  },
+  "stsmetadata.specs.fips201.coverage": {
+    "en": "322d92ba9eb36fde",
+    "text": "minimal: de fyra nyckelplatserna som certifikatprofiler (PIV Authentication 9a, Digital Signature 9c, Key Management 9d, Card Authentication 9e, som som standard inte loggar in någon), och ett externt PIV- eller CAC-kort som mappas via kort-UUID:t i dess urn:uuid-subjectAltName när det anger en PIV Authentication-policy (av som standard). Ingen FASC-N, CHUID, korthantering eller biometri."
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/escrowed.what": {
+    "en": "1716521c9c5e119d",
+    "text": "NON-SPEC (#1955). En persons deponerade piv-key-management-certifikat (piv.keyEscrow): serienummer, subjekt, giltighet och om vart och ett har återkallats. Aldrig en nyckel. Speglar GET /admin/hardware-tokens."
   }
 }

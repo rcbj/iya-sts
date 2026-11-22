@@ -24,6 +24,9 @@
 // OWNED HERE (local: true): this repository's own OpenID Provider.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
@@ -188,8 +191,8 @@ async function test() {
     // asked for and never the registered one (#1331).
     assert.ok(/not one this client registered, so it is not followed/
                 .test(r.raw), r.raw.slice(0, 300));
-    assert.ok(r.raw.indexOf(BACK) < 0, "the registered address is on the " +
-              "page");
+    assert.ok(!urls.namesAddress(r.raw, BACK),
+              "the registered address is on the page");
   });
 
   log.info("=== c. a client that registered none ===");

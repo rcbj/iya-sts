@@ -1139,6 +1139,34 @@
     "en": "ce6f4a649ea6af77",
     "text": "Hasta que la cadena caduca (su exp más temprano, 10.4), y como máximo oidfed.resolveCacheS."
   },
+  "caches.store.openpgp.challenges.title": {
+    "en": "c0c95c44e5f3835e",
+    "text": "Desafíos de registro OpenPGP"
+  },
+  "caches.store.openpgp.challenges.description": {
+    "en": "be9e39edb5fb9e44",
+    "text": "Un desafío por cada persona que registra una clave OpenPGP: el texto que firma con gpg --clearsign, su nonce y cuándo caduca. Se consume una sola vez, mediante una reclamación del nonce en todo el clúster."
+  },
+  "caches.store.openpgp.challenges.bound": {
+    "en": "70f8ecd02c4392d1",
+    "text": "Uno por persona (indexado por entryUUID), cada uno durante openpgp.challengeLifetimeS."
+  },
+  "caches.store.openpgp.wkd.title": {
+    "en": "dc47d455d5283de5",
+    "text": "Publicaciones del Web Key Directory"
+  },
+  "caches.store.openpgp.wkd.description": {
+    "en": "f79c85531015261b",
+    "text": "Qué clave OpenPGP devuelve el Web Key Directory para cada dirección con hash: el titular (un entryUUID) y la huella digital que publicó. Un puntero: la clave en sí se lee de la entrada. Nunca un secreto."
+  },
+  "caches.store.openpgp.wkd.bound": {
+    "en": "e8a7abbcc8bba7fc",
+    "text": "Las filas que mantiene un proceso son una caché de 5.000 por dominio de confianza; el registro mantiene una fila por cada persona que lo aceptó."
+  },
+  "caches.store.openpgp.wkd.lifetime": {
+    "en": "06861887c7e6c8f1",
+    "text": "Hasta que la persona deja de publicar o elimina la clave."
+  },
   "caches.store.passwords.breach-ranges.title": {
     "en": "5746db291bee19b3",
     "text": "Rangos de contraseñas filtradas"

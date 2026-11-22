@@ -54,6 +54,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const zlib = require('zlib');
 
 const log = require('bunyan').createLogger({ name: 'saml_request_signatures',
@@ -754,7 +757,7 @@ function run(t) {
           'as `<index> <isDefault> <binding> <location>`',
           JSON.stringify(fm.samlAcsEndpoint));
   t.check([base + '/acs0', base + '/acs1', base + '/ecp'].every(function (u) {
-    return [].concat(fm.samlAssertionConsumerService || []).indexOf(u) >= 0;
+    return urls.holds(fm.samlAssertionConsumerService, u);
   }), 'and their locations are REGISTERED return addresses',
           JSON.stringify(fm.samlAssertionConsumerService));
   t.check(applications.returnAddressesOf(fm, 'samlAssertionConsumerService')
@@ -764,11 +767,10 @@ function run(t) {
               fieldsOf(spM), 'samlAssertionConsumerService').unconfirmed;
           }).length === 0,
           'which product believes: none is marked observed');
-  t.check([].concat(fm.samlSloEndpoint || [])
-            .indexOf(B_REDIRECT + ' ' + base + '/slo ' + base +
-                     '/slo-response') >= 0 &&
-          [].concat(fm.samlSingleLogoutService || [])
-            .indexOf(base + '/slo-post') >= 0,
+  t.check(urls.holds(fm.samlSloEndpoint,
+                     B_REDIRECT + ' ' + base + '/slo ' + base +
+                     '/slo-response') &&
+          urls.holds(fm.samlSingleLogoutService, base + '/slo-post'),
           'the SingleLogoutService endpoints, with their ResponseLocation',
           JSON.stringify(fm.samlSloEndpoint));
   t.equal([].concat(fm.samlSpNameIdFormat || []).join(' '),
@@ -864,8 +866,8 @@ function run(t) {
   spMetadata.upload(spR, spMetadataDocument(spR, { acs: [
     { binding: B_POST, location: base + '/new', index: 0 }] }));
   const acsR = [].concat(fieldsOf(spR).samlAssertionConsumerService || []);
-  t.check(acsR.indexOf(base + '/old') < 0 && acsR.indexOf(base + '/new') >= 0 &&
-          acsR.indexOf(base + '/by-hand') >= 0,
+  t.check(!urls.holds(acsR, base + '/old') && urls.holds(acsR, base + '/new') &&
+          urls.holds(acsR, base + '/by-hand'),
           'a later document RETIRES the endpoint the earlier one registered, ' +
           'adds its own, and keeps the one added by hand',
           JSON.stringify(acsR));
@@ -885,7 +887,7 @@ function run(t) {
   };
   const byDefault = probe({ id: '_h1' });
   t.check(byDefault.statusCode === 303 &&
-          byDefault.location.indexOf(base + '/acs1?') === 0,
+          urls.isAt(byDefault.location, base + '/acs1'),
           'no ACS named: the DEFAULT endpoint (isDefault="true"), on its own ' +
           'Redirect binding', byDefault.statusCode + ' ' + byDefault.location);
   t.equal(codeOf(byDefault), 'STS-SAML-0071',
@@ -967,7 +969,7 @@ function run(t) {
                                      'lo', keyA.privateKeyPem);
   const okLogout = getSlo(signedLogout);
   t.check(okLogout.statusCode === 303 &&
-          okLogout.location.indexOf(base + '/slo-response?') === 0,
+          urls.isAt(okLogout.location, base + '/slo-response'),
           'a signed LogoutRequest is verified and answered at the consumed ' +
           'SingleLogoutService ResponseLocation, on the Redirect binding it ' +
           'arrived on', okLogout.statusCode + ' ' + okLogout.location);

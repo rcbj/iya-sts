@@ -448,12 +448,20 @@
     "text": "一種公開金鑰權杖，持有者可以像 macaroon 一樣「離線」縮限它，但任何持有根公開金鑰的人都能驗證。其授權邏輯是權杖內攜帶的 Datalog，因此驗證者「一律」在時間與迭代次數限制下執行。"
   },
   "crypto.standards.cms.coverage": {
-    "en": "abe1a25e47d96baf",
-    "text": "partial：具一個簽署者與簽署屬性的 SignedData，依收到的屬性位元組驗證，寫出時以 DER 排序；具 KeyTransRecipientInfo（RSA PKCS#1 v1.5 與 OAEP）與 AES-CBC 內容的 EnvelopedData；含憑證與 CRL 的退化式僅憑證 SignedData。沒有 KeyAgreeRecipientInfo、沒有已驗證或壓縮資料、沒有副署簽章。"
+    "en": "d33248e25a15b5a7",
+    "text": "partial：具一位簽署者與簽署屬性的 SignedData，依收到的屬性位元組驗證，寫入時依 DER 排序；具 KeyTransRecipientInfo（RSA PKCS#1 v1.5 與 OAEP）及 AES-CBC 內容的 EnvelopedData；含憑證與 CRL 的退化型僅憑證 SignedData；用於 S/MIME 郵件（#1955）時，以 OAEP SHA-256 KeyTransRecipientInfo 或 ECDH KeyAgreeRecipientInfo 寫入的 EnvelopedData。不支援驗證資料或壓縮資料，不支援副署簽章。"
   },
   "crypto.standards.cms.what": {
-    "en": "0f35f026a507dc11",
-    "text": "SCEP（scep/scep_cms.ts）讀寫的封套：由請求者簽署並加密給 RA 的請求，以及由 RA 簽署、其中憑證加密給請求者的 CertRep。"
+    "en": "e09c8508abab483b",
+    "text": "SCEP（scep/scep_cms.ts）讀寫的封套：由申請者簽署並加密給 RA 的請求，以及由 RA 簽署、其中憑證加密給申請者的 CertRep。自 #1955 起，也用於加密郵件的 S/MIME EnvelopedData，為 EC 收件者加入 KeyAgreeRecipientInfo（dhSinglePass-stdDH-sha256kdf，AES-256 金鑰包裝），為 RSA 收件者加入 OAEP SHA-256 KeyTransRecipientInfo。"
+  },
+  "crypto.standards.openpgp.coverage": {
+    "en": "5d4c9889762ddbd2",
+    "text": "partial：讀取 v4 與 v6 可傳輸公開金鑰、驗證明文簽章、加密 PGP/MIME 郵件，皆透過 openpgp.js 完成；Web 金鑰目錄（Web Key Directory）的進階與直接查詢方式及政策檔案。不支援簽署、解密、Web Key Service 提交與金鑰伺服器。"
+  },
+  "crypto.standards.openpgp.what": {
+    "en": "039de4dd3b49b9ab",
+    "text": "個人自己的公開金鑰，憑持有證明註冊，並可依本人選擇在 Web 金鑰目錄中發布；也是其郵件加密所用的金鑰。"
   },
   "crypto.families.pki.signs": {
     "en": "fdcf723f4622f28f",
@@ -678,6 +686,78 @@
   "crypto.families.reporting.algorithms.3.how": {
     "en": "9d40176053fec31b",
     "text": "SHA-256，與成品一併保存，並在讀取時檢查"
+  },
+  "crypto.families.openpgp.signs": {
+    "en": "0f38445050f33bd1",
+    "text": "無。註冊時的簽章是「本人」的簽章，加密郵件不簽署（DKIM 簽署外層郵件，如同簽署每一封郵件）。"
+  },
+  "crypto.families.openpgp.verifies": {
+    "en": "c3dbfb38087cb3de",
+    "text": "註冊時的「持有證明」：一個明文簽章（gpg --clearsign），簽署內容正是本服務發給此人的挑戰，由所註冊金鑰中具簽署能力的金鑰在挑戰發出後（openpgp.signatureSkewS）作出，且當時有效；金鑰本身未被撤銷也未過期，並帶有包含該項目地址的有效使用者 ID。支援 RFC 9580 v6 與 RFC 4880 v4 金鑰，由 openpgp.js 讀取。S/MIME 憑證只檢查有效性、金鑰與用途，不檢查憑證鏈：它只用來選擇郵件的加密對象。"
+  },
+  "crypto.families.openpgp.encrypts": {
+    "en": "1a05c1b540cd5082",
+    "text": "「郵件」，在本人選擇或領域要求時（mail.encryptionRequired）：PGP/MIME（RFC 3156）加密至該金鑰的加密金鑰，由 openpgp.js 選擇方式（v4 金鑰用 SEIPD 搭配 AES，v6 金鑰用 AEAD）；S/MIME（RFC 8551）以 CMS EnvelopedData 形式，內容加密使用 AES-256-CBC，內容金鑰以 RSAES-OAEP（SHA-256）或 ECDH（dhSinglePass-stdDH-sha256kdf，AES-256 金鑰包裝）保護。"
+  },
+  "crypto.families.openpgp.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "無。"
+  },
+  "crypto.families.openpgp.hashes": {
+    "en": "c51e067261932787",
+    "text": "對轉為小寫的本機部分計算 SHA-1，並以 z-base-32 編碼，這是 Web 金鑰目錄為地址命名的方式（由草案規定的名稱，絕不用於保證完整性）。金鑰指紋採 RFC 9580 的定義（v6 為 SHA-256，v4 為 SHA-1）。"
+  },
+  "crypto.families.openpgp.keys": {
+    "en": "201cc09e750d0c79",
+    "text": "本身沒有金鑰。本人的公開金鑰存放在其項目上（stsOpenPgpKey），絕不存放私密金鑰，註冊時會拒絕私密金鑰；YubiKey OpenPGP 卡上的金鑰與檔案中的金鑰無法區分，因此不會將任何金鑰記錄為綁定硬體。"
+  },
+  "crypto.families.openpgp.algorithms.0.what": {
+    "en": "b7a04c64879be952",
+    "text": "已註冊金鑰，簽署"
+  },
+  "crypto.families.openpgp.algorithms.0.how": {
+    "en": "91736ec1cb35b5f2",
+    "text": "Ed25519、Ed448、ECDSA P-256/P-384/P-521、長度為 openpgp.minRsaBits（至少 3072）的 RSA"
+  },
+  "crypto.families.openpgp.algorithms.1.what": {
+    "en": "9f7b65405a49bedd",
+    "text": "已註冊金鑰，加密"
+  },
+  "crypto.families.openpgp.algorithms.1.how": {
+    "en": "e28f57b2d61b83be",
+    "text": "X25519、X448、ECDH Curve25519 及 P-256/P-384/P-521、長度為 openpgp.minRsaBits 的 RSA"
+  },
+  "crypto.families.openpgp.algorithms.2.what": {
+    "en": "66b873543aebf01b",
+    "text": "拒絕"
+  },
+  "crypto.families.openpgp.algorithms.2.how": {
+    "en": "18369a474bec2b97",
+    "text": "DSA、ElGamal、Brainpool 曲線"
+  },
+  "crypto.families.openpgp.algorithms.3.what": {
+    "en": "429d783fabc235c9",
+    "text": "S/MIME 內容"
+  },
+  "crypto.families.openpgp.algorithms.3.how": {
+    "en": "8c2686ee3dd3948f",
+    "text": "AES-256-CBC（CMS EnvelopedData）"
+  },
+  "crypto.families.openpgp.algorithms.4.what": {
+    "en": "cc09e2a5306928f5",
+    "text": "S/MIME 金鑰傳輸"
+  },
+  "crypto.families.openpgp.algorithms.4.how": {
+    "en": "acf5bad1301fd2cc",
+    "text": "RSAES-OAEP SHA-256；ECDH stdDH SHA-256 KDF，AES-256 包裝"
+  },
+  "crypto.families.openpgp.algorithms.5.what": {
+    "en": "727e1a6e39e36a93",
+    "text": "Web 金鑰目錄名稱"
+  },
+  "crypto.families.openpgp.algorithms.5.how": {
+    "en": "a2b773a0ce72bc44",
+    "text": "SHA-1，z-base-32"
   },
   "crypto.families.gnap.signs": {
     "en": "ad4b982edb070f2c",
@@ -1596,12 +1676,12 @@
     "text": "它發出的每一張憑證，以此領域的 EST 簽發 CA 金鑰，透過 common/pki.js 的 issueEnrolled() 簽署——此處所有其他憑證也都出自同一個編碼器。它回傳的 certs-only CMS 訊息是「退化的」：一個含有憑證但沒有簽署者的 SignedData，因此本身不帶簽章，其可信度來自其中的憑證。"
   },
   "crypto.families.est.verifies": {
-    "en": "d40d37c4bd83de49",
-    "text": "PKCS#10 持有證明——以請求自身的公開金鑰驗證其簽章，傳統與後量子皆可，在 common/cert_enrollment.ts 中進行——以及在憑證驗證時，用戶端憑證到此領域中繼 CA 與服務根 CA 的路徑，並查詢撤銷狀態。/serverkeygen 範本不予驗證：其金鑰會被取代。"
+    "en": "6b27c8877d509c46",
+    "text": "PKCS#10 持有證明——要求以其自身公開金鑰所作的簽章，傳統與後量子皆可，位於 common/cert_enrollment.ts——以及在憑證驗證時，用戶端憑證到本領域 Intermediate 與服務 Root 的路徑，並查詢撤銷狀態。/serverkeygen 範本不驗證：其金鑰會被取代。要求中的 YubiKey PIV 金鑰證明（#1955，此處以及透過 ACME 與 SCEP）：f9 憑證對插槽憑證所作的 ECDSA 或 RSA 簽章，以及 f9 憑證到領域 PIV 證明信任錨點的路徑，皆經由驗證門完成。"
   },
   "crypto.families.est.encrypts": {
-    "en": "2f48e10a9ad6494d",
-    "text": "伺服器產生之金鑰組的私密金鑰，在該金鑰存續超過程序的情況下，以 AES-256-GCM 在金鑰加密金鑰下密封，存放於項目上。它「不會」針對用戶端加密（RFC 7030 section 4.4.1.2）：要求如此做的請求會被拒絕，金鑰只在 TLS 內傳送。"
+    "en": "a18df4311029b728",
+    "text": "伺服器產生之金鑰組的私密金鑰，在該金鑰會比程序存活更久的情況下，以 AES-256-GCM 在金鑰加密金鑰下密封保存於項目上；託管的 piv-key-management 金鑰（#1955）在每種模式下皆如此，否則根本不產生。它「不會」為用戶端加密（RFC 7030 第 4.4.1.2 節）：要求這麼做的要求會被拒絕，金鑰只在 TLS 內傳輸。"
   },
   "crypto.families.est.decrypts": {
     "en": "8d5c676935439726",
@@ -1906,5 +1986,9 @@
   "crypto.param.totp.encoding": {
     "en": "d9613131364834bc",
     "text": "RFC 4648 base32，不加填補，符合 otpauth Key Uri Format 的預期。"
+  },
+  "crypto.families.est.algorithms.4.what": {
+    "en": "4dd4db2fd60c28f7",
+    "text": "已驗證的 PIV 證明簽章"
   }
 }

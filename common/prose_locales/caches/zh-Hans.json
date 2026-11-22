@@ -1139,6 +1139,34 @@
     "en": "ce6f4a649ea6af77",
     "text": "直到该链过期（其最小的 exp，10.4），且最多 oidfed.resolveCacheS。"
   },
+  "caches.store.openpgp.challenges.title": {
+    "en": "c0c95c44e5f3835e",
+    "text": "OpenPGP 注册质询"
+  },
+  "caches.store.openpgp.challenges.description": {
+    "en": "be9e39edb5fb9e44",
+    "text": "每个正在注册 OpenPGP 密钥的人一个质询：其用 gpg --clearsign 签署的文本、其随机数（nonce）以及失效时间。只能使用一次，通过对该随机数的集群声明来实现。"
+  },
+  "caches.store.openpgp.challenges.bound": {
+    "en": "70f8ecd02c4392d1",
+    "text": "每人一个（以 entryUUID 为键），每个的有效期为 openpgp.challengeLifetimeS。"
+  },
+  "caches.store.openpgp.wkd.title": {
+    "en": "dc47d455d5283de5",
+    "text": "Web 密钥目录发布"
+  },
+  "caches.store.openpgp.wkd.description": {
+    "en": "f79c85531015261b",
+    "text": "Web 密钥目录对每个哈希地址返回哪一个 OpenPGP 密钥：持有者（一个 entryUUID）及其发布的指纹。这只是一个指针：密钥本身从条目中读取。从不是机密。"
+  },
+  "caches.store.openpgp.wkd.bound": {
+    "en": "e8a7abbcc8bba7fc",
+    "text": "进程持有的行是每个领域 5,000 条的缓存；登记表中每位已选择发布的人员一行。"
+  },
+  "caches.store.openpgp.wkd.lifetime": {
+    "en": "06861887c7e6c8f1",
+    "text": "直到此人停止发布或删除密钥。"
+  },
   "caches.store.passwords.breach-ranges.title": {
     "en": "5746db291bee19b3",
     "text": "泄露密码范围"

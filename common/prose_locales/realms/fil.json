@@ -23,6 +23,14 @@
     "en": "7e9175bdd8dd3808",
     "text": "Sariling entityID at providerID (sine-seed nang magkaiba kapag ginawa ang realm), sariling signing key, request state, mga artifact at per-service-provider metadata — kaya dala ng URL nito ang realm pati ang SP digest. Per realm ang mga SERVICE PROVIDER ENTRY, sa parehong dahilan ng mga OAuth client: mga application sila sa sariling directory ng realm."
   },
+  "realms.support.openpgp-and-the-web-key-directory.family": {
+    "en": "05e19f1c690a88a0",
+    "text": "OpenPGP at ang Web Key Directory"
+  },
+  "realms.support.openpgp-and-the-web-key-directory.note": {
+    "en": "400ad738502f9d1f",
+    "text": "Ang OpenPGP key ng isang tao ay nasa kanyang entry sa sariling directory ng realm, ang challenge sa pagrehistro nito ay sa realm, at sumasagot ang Web Key Directory para sa sariling mga mail domain ng realm (openpgp.wkdDomains, o ang DNS domain nito) gamit ang mga key ng sarili nitong mga tao. Alam ng WKD client ang isang domain pero hindi kailanman ang realm path, kaya ang request na walang realm segment ay sinasagot ng realm na nagseserbisyo sa domain nito, ang default realm muna."
+  },
   "realms.support.ws-trust.family": {
     "en": "3b83c15d86c7c8b4",
     "text": "WS-Trust"

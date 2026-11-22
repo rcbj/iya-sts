@@ -1267,6 +1267,22 @@
     "en": "5098a9645fefe2ff",
     "text": "預設關閉。開啟後，向此設定檔所涵蓋的應用程式核發時，會等到登入工作階段綁定到瀏覽器的金鑰；若瀏覽器略過該註冊，或等待結束仍未綁定，則拒絕核發。從未被提供註冊的工作階段不會被此列拒絕。在 authn.deviceBoundSessions 關閉時拒絕。"
   },
+  "passkey.FIELDS.credProtect.label": {
+    "en": "9a492f70e0e2aedd",
+    "text": "註冊時向安全金鑰要求的憑證保護"
+  },
+  "passkey.FIELDS.credProtect.what": {
+    "en": "64640106a92f3111",
+    "text": "預設為 `none`：註冊不要求任何憑證保護，其選項與以往相同。否則，註冊會請求驗證器（CTAP 2.1 第 12.1 節，credProtect 延伸）以該等級保護新憑證：`userVerificationOptional`（等級 1，沒有該延伸時憑證所具有的等級）、`userVerificationOptionalWithCredentialIDList`（等級 2：除非信賴方在 allowCredentials 中列出該憑證，否則金鑰在未經使用者驗證時既不透露也不使用它，因此持有金鑰的人無法在其上找到可探索的憑證）或 `userVerificationRequired`（等級 3：金鑰只有在 PIN 或生物辨識之後才使用該憑證）。金鑰回報的等級會記錄在通行金鑰上。大多數平台通行金鑰和同步通行金鑰不會回報任何內容。儲存時省略此項，則保留內建預設值。"
+  },
+  "passkey.FIELDS.enforceCredProtect.label": {
+    "en": "5cc78bfe52150545",
+    "text": "拒絕未套用該保護的金鑰"
+  },
+  "passkey.FIELDS.enforceCredProtect.what": {
+    "en": "52a07dbeabc876c9",
+    "text": "預設關閉。開啟後，會請求瀏覽器強制執行上一列（enforceCredentialProtectionPolicy），驗證器回報的等級低於上一列所要求等級的註冊會被拒絕；不回報任何內容的金鑰處於等級 1。需要將上一列設為 none 以外的等級。儲存時省略此項，則保留內建預設值。"
+  },
   "passkey.SCHEMA.objectClasses.stsPasskeyPolicy.what": {
     "en": "44bab556bd6240cc",
     "text": "本服務用於密碼金鑰原則的類別：密碼金鑰在此領域中的行為方式。項目以「設定檔」命名（`cn=default`）。"
@@ -1374,6 +1390,14 @@
   "passkey.SCHEMA.attributes.stsPasskeyDeviceBoundRequired.what": {
     "en": "5098a9645fefe2ff",
     "text": "預設關閉。開啟後，向此設定檔所涵蓋的應用程式核發時，會等到登入工作階段綁定到瀏覽器的金鑰；若瀏覽器略過該註冊，或等待結束仍未綁定，則拒絕核發。從未被提供註冊的工作階段不會被此列拒絕。在 authn.deviceBoundSessions 關閉時拒絕。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyCredProtect.what": {
+    "en": "64640106a92f3111",
+    "text": "預設為 `none`：註冊不要求任何憑證保護，其選項與以往相同。否則，註冊會請求驗證器（CTAP 2.1 第 12.1 節，credProtect 延伸）以該等級保護新憑證：`userVerificationOptional`（等級 1，沒有該延伸時憑證所具有的等級）、`userVerificationOptionalWithCredentialIDList`（等級 2：除非信賴方在 allowCredentials 中列出該憑證，否則金鑰在未經使用者驗證時既不透露也不使用它，因此持有金鑰的人無法在其上找到可探索的憑證）或 `userVerificationRequired`（等級 3：金鑰只有在 PIN 或生物辨識之後才使用該憑證）。金鑰回報的等級會記錄在通行金鑰上。大多數平台通行金鑰和同步通行金鑰不會回報任何內容。儲存時省略此項，則保留內建預設值。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyEnforceCredProtect.what": {
+    "en": "52a07dbeabc876c9",
+    "text": "預設關閉。開啟後，會請求瀏覽器強制執行上一列（enforceCredentialProtectionPolicy），驗證器回報的等級低於上一列所要求等級的註冊會被拒絕；不回報任何內容的金鑰處於等級 1。需要將上一列設為 none 以外的等級。儲存時省略此項，則保留內建預設值。"
   },
   "passkey.SCHEMA.attributes.stsPasskeyPrecedence.what": {
     "en": "cd02467de702ad24",

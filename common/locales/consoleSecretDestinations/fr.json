@@ -40,5 +40,6 @@
   "body.testPush": "Un <strong>envoi de test</strong> écrit un canari — un mot de passe aléatoire que personne n’utilise — dans un secret réservé aux tests ; le secret dans lequel un compte de service effectue sa rotation est refusé.",
   "body.add": "Ajouter une destination",
   "body.identifier": "Identifiant",
-  "body.addButton": "Ajouter"
+  "body.addButton": "Ajouter",
+  "newDestination.button": "Ajouter une destination"
 }

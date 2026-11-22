@@ -48,7 +48,6 @@
 
 const assert = require("assert");
 const http = require("http");
-const https = require("https");
 const nodeCrypto = require("crypto");
 const os = require("os");
 const { Command, Option } = require("commander");
@@ -484,49 +483,12 @@ function startCibaApprover() {
 // ---------------------------------------------------------------------------
 // THE SUITE'S API.
 // ---------------------------------------------------------------------------
-// THE SUITE'S CERTIFICATE IS NOT VERIFIED, AND ONLY THE SUITE'S. Its nginx
-// serves a self-signed certificate made when its image was built, for a name
-// that is an alias on this network; there is nothing to anchor it to. So the
-// suite's API is called through `https` with verification off for that one
-// agent, and every call to THIS service still goes through `fetch`, verified
-// against the stack's trust as in every other job.
-const SUITE_AGENT = new https.Agent({ rejectUnauthorized: false,
-                                      keepAlive: true });
-
-function suite(method, path, body) {
-  log.debug("Entering suite(). " + method + " " + path);
-  const payload = body ? JSON.stringify(body) : "";
-  return new Promise(function (resolve, reject) {
-    const req = https.request(new URL(SUITE + path), {
-      method: method, agent: SUITE_AGENT,
-      headers: body ? { "Content-Type": "application/json",
-                        "Content-Length": Buffer.byteLength(payload) } : {}
-    }, function (res) {
-      let raw = "";
-      res.setEncoding("utf8");
-      res.on("data", function (chunk) {
-        raw += chunk;
-      });
-      res.on("end", function () {
-        let parsed = null;
-        try {
-          parsed = JSON.parse(raw);
-        } catch (e) {
-          log.debug("Caught in suite(): " + ((e && e.message) || e));
-          // Not JSON; the caller reads `raw`.
-          parsed = null;
-        }
-        log.debug("Leaving suite(). " + res.statusCode);
-        resolve({ status: res.statusCode, body: parsed, raw: raw });
-      });
-    });
-    req.on("error", function (e) {
-      log.debug("Leaving suite(). " + ((e && e.message) || e));
-      reject(e);
-    });
-    req.end(payload);
-  });
-}
+// THE SUITE'S API IS conformance_suite.js's, VERIFIED (2026-11-20). This
+// driver had an agent of its own with verification off, from before
+// conformance-tls minted the suite's certificate for the suite's own name
+// (#187); the helper's agent verifies against that file, and this job's
+// suite() is the helper's, which takes the same arguments.
+const suite = oidf.suite;
 
 async function waitForSuite() {
   log.debug("Entering waitForSuite().");

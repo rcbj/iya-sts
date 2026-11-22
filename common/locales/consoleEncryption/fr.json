@@ -93,5 +93,10 @@
   "hKey": "La clé",
   "hAlgorithm": "L’algorithme",
   "hDataKeys": "Les clés de chiffrement de données",
-  "hCounting": "Le comptage"
+  "hCounting": "Le comptage",
+  "signingTitle": "Les clés de signature de ce royaume",
+  "signingStore": "Où elles sont créées",
+  "signingInHsm": "Dans le HSM",
+  "signingInSoftware": "En logiciel",
+  "signingRefused": "refusé : le HSM n'est pas utilisable ici (le journal dit pourquoi)"
 }

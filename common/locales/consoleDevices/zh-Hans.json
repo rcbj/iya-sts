@@ -187,5 +187,8 @@
   "monitorHtml.thRegistered": "已注册",
   "monitorHtml.thRemoved": "已移除",
   "monitorHtml.thEvicted": "已逐出",
-  "monitorHtml.thCompliance": "合规性：{source}"
+  "monitorHtml.thCompliance": "合规性：{source}",
+  "newDevice.button": "注册设备",
+  "newDevice.key": "第一个密钥",
+  "newDevice.keyHint": "仅在指定类型时记录"
 }

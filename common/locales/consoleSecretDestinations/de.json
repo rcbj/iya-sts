@@ -40,5 +40,6 @@
   "body.testPush": "Ein <strong>Test-Push</strong> schreibt einen Canary — ein zufälliges Passwort, das niemand verwendet — in ein für Tests vorgehaltenes Geheimnis; das Geheimnis, in das ein Dienstkonto rotiert, wird abgelehnt.",
   "body.add": "Ein Ziel hinzufügen",
   "body.identifier": "Kennung",
-  "body.addButton": "Hinzufügen"
+  "body.addButton": "Hinzufügen",
+  "newDestination.button": "Ziel hinzufügen"
 }

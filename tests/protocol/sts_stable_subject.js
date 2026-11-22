@@ -51,6 +51,9 @@
 // SCIM service and sign-in.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const nodeCrypto = require("crypto");
@@ -736,7 +739,7 @@ async function refusedSession() {
   await check("S-A4. and a person with an entry signs in from it and comes " +
               "back with a code — the pending sign-in was put back",
               async function () {
-    expect(landed && landed.location.indexOf(REDIRECT) === 0 &&
+    expect(landed && urls.isAt(landed.location, REDIRECT) &&
            /[?&]code=/.test(landed.location),
            after.status + " " + after.location + " " +
            (landed ? landed.status + " " + landed.location : ""));

@@ -43,6 +43,9 @@
 // OWNED HERE (local: true): this repository's own sessions.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const nodeCrypto = require("crypto");
@@ -391,7 +394,7 @@ function gotCode(r) {
   log.debug("Entering gotCode().");
   log.debug("Leaving gotCode().");
   return (r.status === 302 || r.status === 303) &&
-    r.location.indexOf(REDIRECT) === 0 && /[?&]code=/.test(r.location);
+    urls.isAt(r.location, REDIRECT) && /[?&]code=/.test(r.location);
 }
 
 // Signs `who` in in browser `b` (a fresh one when omitted): `{ b, ok,

@@ -150,6 +150,10 @@ const { AuthorizationRequest } = xacmlRequest;
 
 // The question an issuance site asks, through `common/issuance_gate.js`.
 interface IssuanceQuestion {
+  // (#1072) The sign-on session the issuance rests on, as
+  // `common/issuance_gate.js` documents `request.session`: its id is what
+  // reads the dynamic roles it chose.
+  session?: any;
   application?: any;
   kind?: string;
   subject?: any;
@@ -885,6 +889,25 @@ class XacmlRolePep {
       if (fact.source) {
         req.environment(HARDWARE_TOKEN.EVIDENCE, [String(fact.source)]);
       }
+      // The attestation's facts (#1955 P2, X4): the gate sends them only
+      // for an attested token whose evidence said them.
+      if (fact.pinPolicy) {
+        req.environment(HARDWARE_TOKEN.PIN_POLICY, [String(fact.pinPolicy)]);
+      }
+      if (fact.touchPolicy) {
+        req.environment(HARDWARE_TOKEN.TOUCH_POLICY,
+                        [String(fact.touchPolicy)]);
+      }
+      if (fact.firmware) {
+        req.environment(HARDWARE_TOKEN.FIRMWARE, [String(fact.firmware)]);
+      }
+      if (fact.formFactor) {
+        req.environment(HARDWARE_TOKEN.FORM_FACTOR,
+                        [String(fact.formFactor)]);
+      }
+      if (fact.fips === true) {
+        req.environment(HARDWARE_TOKEN.FIPS, [true], model.TYPE.BOOLEAN);
+      }
     }
     log.debug("Leaving XacmlRolePep.hardwareTokenAttributes(). " +
               (fact.key ? String(fact.key) : 'No token.'));
@@ -1186,8 +1209,13 @@ class XacmlRolePep {
     // and this application's own roles by their name inside it — which is
     // what its `appRequiredRole` names. Another application's role is not
     // held here, so it can never satisfy this one's requirement.
+    // AND THE SESSION'S CHOSEN DYNAMIC ROLES (#1072): a role chosen
+    // signing in to this application is held for it, as long as its own
+    // policy still permits the person (`authn/role_selection.ts`).
     const held = roles.rolesOf(Object.assign({}, subject,
-      { application: String(asked.application || '') }));
+      { application: String(asked.application || ''),
+        sessionId: String((asked.session && (asked.session.id ||
+                                             asked.session.sid)) || '') }));
     const fromToken = roles.rolesInClaims(asked.claims);
     const narrowed = applications.requiresNarrowedRoles(asked.application);
 

@@ -426,9 +426,11 @@ resource "aws_ecs_task_definition" "node" {
         # The secrets, from `local.node_secrets` below (the conversion task
         # takes the same list, conversion.tf).
         secrets = local.node_secrets
-        # The main port is HTTPS on a certificate the cluster issues itself, so
-        # the probe does not verify it; it asks whether the service answers.
-        # Loopback connections are served without the PROXY header.
+        # The main port is HTTPS on a certificate the cluster issues itself,
+        # and the probe VERIFIES it (2026-11-20): common/healthcheck_probe.js
+        # reads the service Root off the loopback revocation listener (8082)
+        # and checks the chain and the first of STS_TLS_HOSTNAMES. Loopback
+        # connections are served without the PROXY header, on both ports.
         #
         # startPeriod is 300 because that is as long as ECS allows one to be
         # (#330). Failures inside it do not count toward `retries`. A success
@@ -436,7 +438,7 @@ resource "aws_ecs_task_definition" "node" {
         # start — the service grace below is, and it keeps ignoring this
         # probe after the start period has closed.
         healthCheck = {
-          command     = ["CMD", "node", "-e", "require('https').get({host:'127.0.0.1',port:8081,path:'/healthcheck',rejectUnauthorized:false},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+          command     = ["CMD", "node", "/usr/src/sts/common/healthcheck_probe.js"]
           interval    = 15
           timeout     = 5
           retries     = 4

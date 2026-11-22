@@ -122,8 +122,17 @@
     "html": "<div>{{content}}</div><hr><p><small>{{service}} ({{realm}}). Recibe este mensaje porque es {{reason}}.</small></p>"
   },
   "categories": {
-    "security": { "reason": "un aviso de seguridad sobre su cuenta, que no se puede desactivar" },
-    "account": { "reason": "algo que usted o un administrador pidieron" },
-    "notification": { "reason": "una notificación, que puede desactivar en su portal" }
+    "security": {
+      "reason": "un aviso de seguridad sobre su cuenta, que no se puede desactivar",
+      "encryptedSubject": "Un aviso de seguridad de {{service}}"
+    },
+    "account": {
+      "reason": "algo que usted o un administrador pidieron",
+      "encryptedSubject": "Un mensaje de {{service}}"
+    },
+    "notification": {
+      "reason": "una notificación, que puede desactivar en su portal",
+      "encryptedSubject": "Una notificación de {{service}}"
+    }
   }
 }

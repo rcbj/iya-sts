@@ -49,6 +49,9 @@ const ROOT = path.join(__dirname, '..');
 function childMain() {
   /* eslint-disable no-console */
   const ROOT = process.env.SS_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT + '/tests/protocol/url_match.js');
   const OUT = process.env.SS_OUT;
   const http = require('http');
   const nodeCrypto = require('crypto');
@@ -478,7 +481,7 @@ function childMain() {
                       protocol: 'http' };
     const view = adminViews.applicationDetailJson(fakeReq, PUBLISHER);
     const section = view.json && view.json.softwareStatements;
-    note(section && section.declaredIssuers.indexOf(ISS) >= 0 &&
+    note(section && urls.holds(section.declaredIssuers, ISS) &&
          section.usableKeys === 1 && section.issued &&
          section.issued.verifies === true &&
          section.issued.statement === noExpiry.softwareStatement,

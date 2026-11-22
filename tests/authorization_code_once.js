@@ -54,6 +54,9 @@ const ROOT = path.join(__dirname, '..');
 function childMain() {
   /* eslint-disable no-console */
   const ROOT_DIR = process.env.AC_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT_DIR + '/tests/protocol/url_match.js');
   const OUT = process.env.AC_OUT;
   const http = require('http');
   const crypto = require('crypto');
@@ -156,7 +159,7 @@ function childMain() {
       }
       const loc = String(r.headers.location || '');
       const at = loc.indexOf('?');
-      return loc.indexOf(REDIRECT) === 0 && at > 0
+      return urls.isAt(loc, REDIRECT) && at > 0
         ? new URLSearchParams(loc.slice(at + 1)).get('code') || '' : '';
     };
     const redeem = function (code, opts) {

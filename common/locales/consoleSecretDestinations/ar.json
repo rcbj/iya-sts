@@ -40,5 +40,6 @@
   "body.testPush": "<strong>دفع اختباري</strong> يكتب قيمة اختبار — كلمة مرور عشوائية لا يستخدمها أحد — في سر محفوظ للاختبار؛ ويُرفض السر الذي يدوّر حساب الخدمة إليه.",
   "body.add": "إضافة وجهة",
   "body.identifier": "المعرّف",
-  "body.addButton": "إضافة"
+  "body.addButton": "إضافة",
+  "newDestination.button": "إضافة وجهة"
 }

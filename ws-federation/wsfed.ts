@@ -1692,7 +1692,13 @@ class WsFederation {
     }
 
     const session = sessionOf(req);
-    if (!session) {
+    // A LINK THAT ASKS FOR A FRESH SIGN-IN (#1072): `wfresh=0`, WS-Federation
+    // 1.2 section 13.2.1's "authenticate now", which the portal's "Sign in
+    // again" adds so a person may choose dynamic roles for this relying
+    // party. Not carried back (it is not in INITIATE_PARAMETERS), so the
+    // return lands here with the new sign-in and goes on.
+    const fresh = String(query.wfresh || '') === '0';
+    if (!session || fresh) {
       // TO THE SIGN-IN SCREEN AND BACK TO THIS LINK, which runs again from
       // the top with a session — the switch and the reply address are asked
       // again on the way back, so turning either off in between is honoured.
@@ -1702,6 +1708,8 @@ class WsFederation {
       const where = beginAuthentication({
         returnTo: returnTo,
         protocol: 'WS-Federation',
+        // A fresh sign-in asks for one account, not the browser's.
+        accountChoice: fresh ? 'never' : '',
         // The relying party, so an entry naming a federation relationship
         // sends the person to that partner, as at `/wsfed`.
         application: realm,

@@ -66,6 +66,7 @@
 
 const assert = require("assert");
 const ldapjs = require("ldapjs");
+const serviceTrust = require("../tools/service_trust.js");
 const names = require("./random_username.js");
 
 var appconfig;
@@ -259,7 +260,9 @@ function bound(dn, password) {
   log.debug("Entering bound().");
   return new Promise(function (resolve, reject) {
     const client = ldapjs.createClient({ url: ldapsUrl(),
-      tlsOptions: { rejectUnauthorized: false } });
+      // Verified against the service's chain (tools/service_trust.js):
+      // LDAPS presents the shared listener certificate.
+      tlsOptions: { ca: serviceTrust.trustedCa() } });
     client.on("error", function (e) {
       log.debug("Caught in bound(): " + ((e && e.message) || e));
       reject(e);

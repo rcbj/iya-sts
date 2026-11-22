@@ -42,6 +42,7 @@
 const assert = require("assert");
 const https = require("https");
 const tls = require("tls");
+const serviceTrust = require("../tools/service_trust.js");
 const net = require("net");
 const fs = require("fs");
 const os = require("os");
@@ -245,9 +246,9 @@ function pipelined(requests, options) {
       host: HOST, port: PORT, servername: net.isIP(HOST) ? undefined : HOST,
       cert: opts.certPem, key: opts.keyPem, session: opts.session,
       // What is asserted is the session and the client certificate; the
-      // server's certificate is not verified here, as in
-      // `sts_global_logout.js`.
-      rejectUnauthorized: false
+      // server's certificate is verified as well (tools/service_trust.js),
+      // as in `sts_global_logout.js`.
+      ca: serviceTrust.trustedCa()
     }, function () {
       reused = socket.isSessionReused();
       const text = requests.map(function (one, i) {

@@ -39,6 +39,9 @@
 // Federation, SPIFFE and KDC.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const names = require("./random_username.js");
 const ssfRoles = require("./ssf_roles.js");
@@ -225,7 +228,7 @@ async function test() {
       assert.strictEqual(created.status, 201, created.raw.slice(0, 400));
       const delivered = created.body.events_delivered || [];
       wanted.forEach(function (uri) {
-        assert.ok(delivered.indexOf(uri) >= 0, uri + " not in " +
+        assert.ok(urls.holds(delivered, uri), uri + " not in " +
                   JSON.stringify(delivered));
       });
     });

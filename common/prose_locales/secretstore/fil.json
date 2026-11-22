@@ -35,6 +35,10 @@
     "en": "20bde19870bf41f3",
     "text": "Azure Key Vault o Managed HSM key (hindi kailanman lumalabas dito ang key)"
   },
+  "secretstore.providers.pkcs11.label": {
+    "en": "b69f31334968d051",
+    "text": "Isang PKCS#11 hardware security module (hindi kailanman lumalabas dito ang key)"
+  },
   "secretstore.source.reportWhat": {
     "en": "22bc75be21c4a09a",
     "text": "Kung saan binabasa ng serbisyong ito ang mga primordial secret nito — ang key-encryption key na pinagse-seal-an ng lahat ng sine-seal nito, at ang database password — kung talagang nabasa nito ang mga ito, at kung ano ang ginagawa ng store sa kabilang dulo."
@@ -282,6 +286,10 @@
   "secretstore.probe.azure-keys/vault-key": {
     "en": "4c46af2b365b08fe",
     "text": "Ang sinasabi ng vault tungkol sa key na nagwa-wrap sa mga data key: ang type, laki, mga operasyon, bersyon at rotation nito."
+  },
+  "secretstore.probe.pkcs11/hsm-key": {
+    "en": "31b1bb76fbe8c7ce",
+    "text": "Ang sinasabi ng HSM token tungkol sa key na bumabalot sa mga data key: kung naroon ito, ang uri nito, at kung maaari itong umalis kailanman sa HSM."
   },
   "secretstore.probe.gcp/secret": {
     "en": "f7750717cdd5bfbc",

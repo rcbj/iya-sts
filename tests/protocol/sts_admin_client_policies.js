@@ -51,6 +51,9 @@
 // OWNED HERE (local: true).
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -417,10 +420,10 @@ async function signInToCode(realm, b, r) {
   assert.ok(r.answer.view, "the sign-in screen: " + r.answer.status + " " +
             JSON.stringify(r.answer.json));
   for (let hops = 0; hops < 6 && (r.status === 302 || r.status === 303) &&
-       String(r.location).indexOf(REDIRECT) !== 0; hops++) {
+       !urls.isAt(r.location, REDIRECT); hops++) {
     r = await b.go("GET", r.location);
   }
-  assert.ok(String(r.location).indexOf(REDIRECT) === 0,
+  assert.ok(urls.isAt(r.location, REDIRECT),
             "the flow should end at the client; it answered " + r.status +
             " " + r.location + " " + String(r.text).slice(0, 300));
   const code = returnedParams(r.location).get("code");
@@ -522,7 +525,7 @@ function authorizeTokenType(type) {
 
 function assertRefusalAtClient(location) {
   log.debug("Entering assertRefusalAtClient().");
-  assert.ok(location.indexOf(REDIRECT) === 0, location);
+  assert.ok(urls.isAt(location, REDIRECT), location);
   const back = returnedParams(location);
   assert.strictEqual(back.get("error"), "unsupported_response_type",
                      location);

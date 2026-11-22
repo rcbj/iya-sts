@@ -40,6 +40,9 @@
 
 "use strict";
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const fs = require("fs");
 const path = require("path");
 const { Command, Option } = require("commander");
@@ -319,7 +322,7 @@ async function signIn(w, b, username) {
     username: username === undefined ? w.person : username,
     password: PASSWORD, onPage: keycloakPage,
     stopBefore: function (u) {
-      return u.indexOf("http://done.invalid") === 0;
+      return urls.isUnder(u, "http://done.invalid");
     } });
   log.debug("Leaving signIn().");
   return walked;
@@ -506,7 +509,7 @@ async function singleLogout(w) {
                                    "http://done.invalid/out" }).toString(), {
       onPage: keycloakPage,
       stopBefore: function (u) {
-        return u.indexOf("http://done.invalid") === 0;
+        return urls.isUnder(u, "http://done.invalid");
       } });
     b.forget(KC);
     const still = await serviceHasSession(w, b);

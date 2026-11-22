@@ -1815,7 +1815,7 @@
    },
    "body": {
     "type": "urn:ietf:params:acme:error:invalidProfile",
-    "detail": "\"nope\" is not a certificate profile. The 9 issued over ACME are: tls-server, tls-client, tls-server-client, digital-signature, key-encipherment, code-signing, email, timestamping, smartcard-logon.",
+    "detail": "\"nope\" is not a certificate profile. The 13 issued over ACME are: tls-server, tls-client, tls-server-client, digital-signature, key-encipherment, code-signing, email, timestamping, smartcard-logon, piv-auth, piv-sign, piv-key-management, piv-card-auth.",
     "status": 400
    }
   },
@@ -3103,7 +3103,7 @@
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
    },
-   "body": "There is no EST label \"nope\" here. A label is a certificate profile, one of: tls-server, tls-client, tls-server-client, digital-signature, key-encipherment, code-signing, email, timestamping, smartcard-logon, device.\n"
+   "body": "There is no EST label \"nope\" here. A label is a certificate profile, one of: tls-server, tls-client, tls-server-client, digital-signature, key-encipherment, code-signing, email, timestamping, smartcard-logon, piv-auth, piv-sign, piv-key-management, piv-card-auth, device.\n"
   },
   {
    "family": "est",

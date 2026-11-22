@@ -50,6 +50,7 @@
 const http = require("http");
 const https = require("https");
 const { URL } = require("url");
+const serviceTrust = require("../tools/service_trust.js");
 
 const log = require("bunyan").createLogger({ name: "schemathesis_auth_proxy",
   level: process.env.STS_LOG_LEVEL || process.env.LOG_LEVEL || "info" });
@@ -345,17 +346,31 @@ const REALM_BASE = SERVICE_BASE + REALM_PREFIX;
 const SERVICE = new URL(SERVICE_BASE + "/");
 const UPSTREAM = SERVICE.protocol === "http:" ? http : https;
 
-// The proxy->service hop runs over the service's self-signed TLS on an
-// isolated network; this hop's certificate is not what the run verifies
-// (tlsfuzzer exercises the listener's TLS). The JOBS get a real anchor
-// elsewhere; here the question is only whether the service answers.
+// THE PROXY->SERVICE HOP IS VERIFIED (2026-11-20), against the chain the
+// runner fetched from the running service (tools/service_trust.js; the kit
+// hands this process its NODE_EXTRA_CA_CERTS, which the sign-in helpers'
+// fetch() already verified against). A PEP surface's listener presents the
+// certificate its realm issued it, under the same service Root. It was
+// unverified until then, on the argument that this hop's
+// certificate is not what the run tests (tlsfuzzer exercises the
+// listener's TLS) — true, and no reason for a proxy carrying an access
+// token to trust whoever answers.
 // THE AUTHZEN CALLER'S CERTIFICATE (`mtls`, the remote PEP's edge PDP): the
 // agent presents it on every connection, which is the whole of that door.
-const AGENT = SERVICE.protocol === "http:" ? undefined
-  : new https.Agent(Object.assign({ rejectUnauthorized: false },
-    AUTH === "mtls" ? {
+// Made at the first forward, not at load: the in-process tests require this
+// file for its gate and its guard, with no service and no truststore.
+let agent = null;
+
+function upstreamAgent() {
+  log.debug("Entering upstreamAgent().");
+  if (SERVICE.protocol !== "http:" && !agent) {
+    agent = new https.Agent(serviceTrust.tlsOptions(AUTH === "mtls" ? {
       cert: require("fs").readFileSync(CLIENT_CERT),
       key: require("fs").readFileSync(CLIENT_KEY) } : {}));
+  }
+  log.debug("Leaving upstreamAgent().");
+  return agent || undefined;
+}
 
 // The session established for a gated surface: a DPoP key, the current token,
 // a refresh(), the sign-in wrapper (its `token` getter is live, so a refresh
@@ -494,7 +509,7 @@ function forwardOnce(method, url, headers, body) {
     const target = new URL(url);
     const options = { method: method, hostname: target.hostname,
       port: target.port, path: target.pathname + target.search,
-      headers: headers, agent: AGENT };
+      headers: headers, agent: upstreamAgent() };
     const upstream = UPSTREAM.request(options, function (res) {
       const chunks = [];
       res.on("data", function (chunk) {

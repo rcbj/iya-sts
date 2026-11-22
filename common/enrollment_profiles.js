@@ -57,15 +57,20 @@
 // certificate is holding a power over everybody else in the realm. The `why`
 // of each is drawn on every protocol page and returned by every refusal.
 // ---------------------------------------------------------------------------
+// **THE FOUR PIV SLOT PROFILES (#1955 P2)** — `piv-auth` (slot 9a),
+// `piv-sign` (9c), `piv-key-management` (9d) and `piv-card-auth` (9e) — are
+// issued like the nine, but no family's default `allowedProfiles` lists
+// them, so a realm issues them only once an operator adds them.
 /**
- * The nine certificate profiles an enrollment protocol may issue.
+ * The thirteen certificate profiles an enrollment protocol may issue.
  *
  * @type {string[]}
  */
 const PROFILE_IDS = [
   'tls-server', 'tls-client', 'tls-server-client', 'digital-signature',
   'key-encipherment', 'code-signing', 'email', 'timestamping',
-  'smartcard-logon'];
+  'smartcard-logon', 'piv-auth', 'piv-sign', 'piv-key-management',
+  'piv-card-auth'];
 
 /**
  * The five profiles an enrollment protocol never issues, each with the

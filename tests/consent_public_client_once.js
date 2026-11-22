@@ -50,6 +50,9 @@ const ROOT = path.join(__dirname, '..');
  */
 function childMain() {
   const ROOT_DIR = process.env.CPO_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT_DIR + '/tests/protocol/url_match.js');
   const OUT = process.env.CPO_OUT;
   const http = require('http');
   const findings = [];
@@ -109,7 +112,7 @@ function childMain() {
     };
     const codeOf = function (r, state) {
       const at = where(r);
-      if (r.status !== 302 || at.indexOf(REDIRECT) !== 0) {
+      if (r.status !== 302 || !urls.isAt(at, REDIRECT)) {
         return '';
       }
       const q = new URL(at).searchParams;

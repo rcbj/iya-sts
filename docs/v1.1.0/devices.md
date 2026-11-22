@@ -69,6 +69,18 @@ says the same from the running build, and is the one to trust.
 
 A person sees their devices on `/portal/devices` and can remove one.
 
+### Registering a device — `/admin/devices/new`
+
+The **Register** tab on *Directory → Devices* takes you to the form. **The
+owner is the one required field** — a username, or with *owner kind*
+`application` an application's identifier — outlined in red and marked
+*required* as on `/admin/users/new`. The label, platform, model, OS, the
+applications that use it and a first key are optional; a first key is
+recorded only when both its kind and its value are given. A refused
+registration keeps every box as you typed it; a registration lands you on the
+device. `GET /admin-api/devices/new` answers the same fields, each with
+`required`.
+
 ### Proving a key on the portal
 
 1. The signed-in person asks for a **challenge** — the **Get a challenge**

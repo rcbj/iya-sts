@@ -435,7 +435,9 @@ async function issuerTokens(dev, prod, user) {
 async function didWeb(dev) {
   log.debug("Entering didWeb().");
   log.info("=== 7. did:web follows the realm ===");
-  const host = new URL(K.base).host.replace(":", "%3A");
+  // did:web percent-encodes EVERY colon of the host (a port's, an IPv6
+  // literal's), not the first one.
+  const host = new URL(K.base).host.replace(/:/g, "%3A");
   const plain = await K.send(K.base + "/.well-known/did.json");
   const realmDoc = await K.send(K.rb(dev) + "/.well-known/did.json");
   const pathForm = await K.send(K.rb(dev) + "/did.json");

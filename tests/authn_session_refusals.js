@@ -48,6 +48,9 @@ const ROOT = path.join(__dirname, '..');
 function childMain() {
   /* eslint-disable no-console */
   const ROOT = process.env.SR_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT + '/tests/protocol/url_match.js');
   const OUT = process.env.SR_OUT;
   const http = require('http');
   const findings = [];
@@ -192,14 +195,14 @@ function childMain() {
     let finished = after;
     const hops = [after.status + ' ' + String(after.headers.location || '')];
     for (let i = 0; i < 3 && finished.status >= 300 && finished.status < 400 &&
-         String(finished.headers.location || '').indexOf(REDIRECT) !== 0;
+         !urls.isAt(String(finished.headers.location || ''), REDIRECT);
          i++) {
       finished = await b.go('GET', String(finished.headers.location));
       hops.push(finished.status + ' ' +
                 String(finished.headers.location || ''));
     }
     const back = String(finished.headers.location || '');
-    note(back.indexOf(REDIRECT) === 0 && /[?&]code=/.test(back),
+    note(urls.isAt(back, REDIRECT) && /[?&]code=/.test(back),
          'A4. and a person can sign in from it — the pending sign-in was ' +
          'put back, so the redrawn form is not a dead end',
          hops.join(' -> '));
@@ -207,7 +210,7 @@ function childMain() {
 
     // --- C. what the event recorded about Bob's sign-in ----------------------
     let session = null;
-    if (back.indexOf(REDIRECT) === 0) {
+    if (urls.isAt(back, REDIRECT)) {
       const token = await redeem(b, back);
       const idToken = partOf((token.json && token.json.id_token) || '', 1);
       session = authn.sessionById(idToken.sid);

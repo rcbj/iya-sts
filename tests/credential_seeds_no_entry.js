@@ -65,11 +65,17 @@ function childMain() {
   const walletKit = require(ROOT + '/tests/wallet_kit');
 
   // GET /tls/sign-in over a real handshake, presenting `cert` and `key`.
+  // The listener is VERIFIED against the anchors this process gives a
+  // loopback caller (tls_server.js's trustAnchorPems()). It is the test's
+  // own client, not a dialer of the service's, so paranoid mode's outbound
+  // gate, in force while a case runs in product, is not its business.
   function signInWith(port, cert, key) {
+    const anchors = require(ROOT + '/tls/tls_server').trustAnchorPems();
     return new Promise(function (resolve) {
       const req = https.request({ host: '127.0.0.1', port: port,
         path: '/tls/sign-in', method: 'GET', cert: cert, key: key,
-        rejectUnauthorized: false, agent: false }, function (res) {
+        ca: anchors, stsOutboundGate: false, agent: false },
+      function (res) {
         let text = '';
         res.on('data', function (c) { text += c; });
         res.on('end', function () {
@@ -120,10 +126,10 @@ function childMain() {
     // truststore — which holds the foreign CA from here on.
     const serverCert = tls.serverCertificate();
     const listener = https.createServer(Object.assign({
-      cert: serverCert.certPem, key: serverCert.privateKeyPem,
-      ca: tls.clientTruststoreOptions().ca,
-      requestCert: true, rejectUnauthorized: false
-    }, tls.protocolOptions()), m.app);
+      cert: tls.presentedBundlePem(serverCert),
+      key: serverCert.privateKeyPem,
+      ca: tls.clientTruststoreOptions().ca
+    }, tls.clientAuthOptions('optional'), tls.protocolOptions()), m.app);
     tls.trustClientCertificatesOn(listener, 'the #414 test listener');
     await new Promise(function (r) { listener.listen(0, '127.0.0.1', r); });
     const tlsPort = listener.address().port;

@@ -41,6 +41,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const applications = require('../common/applications');
 require('../ldap/ldap_server');
 const adminActions = require('../admin-core/admin_actions');
@@ -130,8 +133,8 @@ function run(t) {
     action: 'add', application: ID, attribute: 'appCorsOrigin',
     value: 'HTTPS://Third.CorsField.example' });
   t.check(added && added.ok === true &&
-          applications.corsOriginsOf(applications.get(ID))
-            .indexOf('https://third.corsfield.example') >= 0,
+          urls.holds(applications.corsOriginsOf(applications.get(ID)),
+                     'https://third.corsfield.example'),
           '4a. the page\'s Add box adds one origin, normalised',
           JSON.stringify(added && (added.errors || added.ok)));
   const badAdd = adminActions.applicationsAction({
@@ -145,8 +148,8 @@ function run(t) {
     value: 'http://localhost:5173' });
   const after = applications.corsOriginsOf(applications.get(ID));
   t.check(removed && removed.ok === true &&
-          after.indexOf('http://localhost:5173') < 0 &&
-          after.indexOf('https://app.corsfield.example') >= 0,
+          !urls.holds(after, 'http://localhost:5173') &&
+          urls.holds(after, 'https://app.corsfield.example'),
           '4c. a row\'s Remove button takes that one origin off and leaves ' +
           'the others', JSON.stringify(after));
 
@@ -170,8 +173,8 @@ function run(t) {
                             'https://admin.corsfield.example:8443']),
           '5a. what common/cors.js reads for a request naming this client_id ' +
           'is exactly the list typed into the form', JSON.stringify(forClient));
-  t.check(applications.corsOriginsOfRealm()
-            .indexOf('https://spa.corsfield.example') >= 0,
+  t.check(urls.holds(applications.corsOriginsOfRealm(),
+                     'https://spa.corsfield.example'),
           '5b. and a request naming NO client — discovery, a JWKS, a ' +
           'preflight — is answered for it too, from the realm\'s union');
 

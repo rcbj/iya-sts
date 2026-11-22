@@ -129,5 +129,10 @@
   "ownerProtection.save": "Speichern",
   "ownerProtection.closedAnyway": "Sie ist für ihre Eigentümer geschlossen, was auch immer das Kontrollkästchen sagt:",
   "ownerProtection.isMarked": "Ein Administrator hat sie für ihre Eigentümer geschlossen.",
-  "ownerProtection.notMarked": "Kein Administrator hat sie für ihre Eigentümer geschlossen."
+  "ownerProtection.notMarked": "Kein Administrator hat sie für ihre Eigentümer geschlossen.",
+  "newGroup.button": "Neue Gruppe",
+  "newGroup.linkNote": "Das Formular für eine neue Gruppe; das Pflichtfeld ist rot umrandet.",
+  "newGroup.noDirectory": "Dieser Prozess hat kein Verzeichnis, in dem eine Gruppe angelegt werden kann.",
+  "newGroup.groupHint": "der Name der Gruppe und ihr RDN",
+  "newGroup.membersHint": "eins pro Zeile oder durch Kommas getrennt: ein Benutzername oder ein beliebiger DN"
 }

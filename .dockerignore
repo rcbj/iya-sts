@@ -74,6 +74,14 @@ clean.sh
 # is why nothing else noticed.
 .claude
 
+# A second checkout placed IN this repository, named `wt-iya-sts-*`, is the
+# same second service and is not under `.claude`, so the line above does not
+# cover it. On 2026-11-21 `docker compose build` reached the typescript stage
+# and stopped: `build-typescript.sh` requires a `.js` beside every `.ts` it
+# finds, the nested tree's 753 sources have none, and `tsconfig.build.json`'s
+# `*/*.ts` also names that tree's `sts_metadata.ts`, one directory down.
+wt-iya-sts-*
+
 # ---------------------------------------------------------------------------
 # THREE OF THEM CAME BACK ON 2026-09-09, AND THE REASON IS THE SAME ONE THE
 # BLOCK BELOW GIVES ABOUT `tests`: THIS FILE SERVES TWO IMAGES THAT WANT

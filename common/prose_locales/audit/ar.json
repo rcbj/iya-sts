@@ -527,21 +527,49 @@
     "en": "f7fb5461e2325e1e",
     "text": "أُبلغ عن فقد رمز مادي وأُبطلت بيانات اعتماده"
   },
-  "audit.actions.oath-token.import.label": {
+"audit.actions.oath-token.import.label": {
     "en": "4da380e22dff30ec",
     "text": "استُورد ملف بذور PSKC لمورّد، أو رُفض"
   },
-  "audit.actions.oath-token.assign.label": {
+"audit.actions.oath-token.assign.label": {
     "en": "19b678e9bbc10747",
     "text": "أُسند رمز OATH مستورد إلى شخص، أو طالب به شخص"
   },
-  "audit.actions.oath-token.claim.label": {
+"audit.actions.oath-token.claim.label": {
     "en": "5c54ac8752e21682",
     "text": "رُفضت مطالبة شخص برمز OATH مستورد"
   },
-  "audit.actions.oath-token.remove.label": {
+"audit.actions.oath-token.remove.label": {
     "en": "92d69a1a2d848892",
     "text": "أُزيل رمز OATH غير مُسنَد من المخزون"
+  },
+"audit.actions.openpgp.challenge.label": {
+    "en": "454a22b5bcd9d6a2",
+    "text": "صدر تحدٍّ لتسجيل مفتاح OpenPGP"
+  },
+"audit.actions.openpgp.key-registered.label": {
+    "en": "1ed8de1f8777a015",
+    "text": "سُجّل مفتاح OpenPGP بناءً على إثبات حيازة"
+  },
+"audit.actions.openpgp.key-refused.label": {
+    "en": "f1e7e3c6808ba33b",
+    "text": "لم يُسجَّل مفتاح OpenPGP"
+  },
+"audit.actions.openpgp.key-removed.label": {
+    "en": "89a284fa6508eae4",
+    "text": "أُزيل مفتاح OpenPGP"
+  },
+"audit.actions.openpgp.publication.label": {
+    "en": "f6d12f16eca6796a",
+    "text": "نُشر مفتاح OpenPGP في دليل مفاتيح الويب (Web Key Directory) أو سُحب منه"
+  },
+"audit.actions.openpgp.mail-encryption.label": {
+    "en": "ba0fb7a4133d94e2",
+    "text": "تغيّرت طريقة تشفير البريد المرسل إلى شخص"
+  },
+"audit.actions.openpgp.smime-certificate.label": {
+    "en": "663072a33ce1e178",
+    "text": "عُيّنت شهادة S/MIME لشخص أو أُزيلت"
   },
   "audit.actions.device.key-add.label": {
     "en": "6c1b2513c20532ef",
@@ -734,6 +762,10 @@
   "audit.actions.admin.mfa.key.renamed.label": {
     "en": "c179dbd3cb227763",
     "text": "أعاد مشغّل تسمية مفتاح المرور الخاص بأحدهم"
+  },
+  "audit.actions.admin.mfa.key.imported.label": {
+    "en": "134b88075c58eab3",
+    "text": "استورد مشغّل مفتاح أمان U2F لشخص ما"
   },
   "audit.actions.admin.password.reset.label": {
     "en": "079b0b2fbe1a3633",
@@ -1839,6 +1871,34 @@
     "en": "896007dff32a6824",
     "text": "عُيّن وصف دور أو اسم عرضه أو أنواع أعضائه"
   },
+  "audit.actions.roles.set-mode.label": {
+    "en": "b1e0f3b6e5738f21",
+    "text": "جُعل دور ثابتًا أو قابلاً للاختيار ديناميكيًا"
+  },
+  "audit.actions.roles.set-selection.label": {
+    "en": "0fbfbe0d177c5543",
+    "text": "حُددت طريقة اختيار دور ديناميكي عند تسجيل الدخول"
+  },
+  "audit.actions.roles.eligibility.label": {
+    "en": "28d96273b40dea3f",
+    "text": "تقرّرت أهلية شخص لدور ديناميكي"
+  },
+  "audit.actions.roles.selection.offered.label": {
+    "en": "dd135469babd9bdc",
+    "text": "عُرضت أدوار ديناميكية عند تسجيل دخول"
+  },
+  "audit.actions.roles.selection.chosen.label": {
+    "en": "2daaeb4ea81b1012",
+    "text": "اختيرت أدوار ديناميكية عند تسجيل دخول"
+  },
+  "audit.actions.roles.selection.refused.label": {
+    "en": "cbed03565474afc0",
+    "text": "رُفض اختيار الأدوار الديناميكية لتسجيل دخول"
+  },
+  "audit.actions.roles.selection.dropped.label": {
+    "en": "042b7f95a92cd6d2",
+    "text": "أُسقط دور ديناميكي مختار من رمز"
+  },
   "audit.actions.node-health.collect-garbage.label": {
     "en": "cb2531d8ee2f27ce",
     "text": "أُجري جمع قمامة كامل في عملية أو خيط عامل لعقدة"
@@ -2342,5 +2402,9 @@
   "audit.actions.xacml.pep.cluster.proxy.clear.label": {
     "en": "c2812e5d21fb6dd4",
     "text": "أُزيل إعداد الوكيل العكسي لعنقود PEP بعيد"
+  },
+  "audit.actions.piv-escrow.recover.label": {
+    "en": "0cad829ec7cafc72",
+    "text": "استُرد مفتاح مودَع لإدارة مفاتيح PIV"
   }
 }

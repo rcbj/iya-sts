@@ -100,6 +100,7 @@
 // drives all 273 operations and by nothing else.
 import helpers = require('../common/helpers');
 import configDump = require('./config_dump');
+import CreateForms = require('./create_forms');
 // The policy references a group may make (#1235, rule 3cx): a leaf.
 import PolicySelection = require('../common/policy_selection');
 import DomainClasses = require('../common/domain_classes');
@@ -8949,7 +8950,8 @@ class AdminViews {
              applicationCount: held,
             realm: { id: realms.currentId(), name: realm ? realm.name : '' },
             kinds: applications.KINDS, protocols: applications.PROTOCOLS,
-            declarations: applications.declarationAttributes() };
+            declarations: applications.declarationAttributes(),
+            createFields: CreateForms.fieldsOf('applications') };
     }
     log.debug("Leaving AdminViews.newApplicationJson().");
     return {
@@ -8958,6 +8960,9 @@ class AdminViews {
         max: max,
         applicationCount: held,
         realm: { id: realms.currentId(), name: realm ? realm.name : '' },
+        // THE FORM'S OWN REQUIRED FIELD (#1132): the identifier, which the
+        // create refuses without; the name is optional.
+        createFields: CreateForms.fieldsOf('applications'),
         // The two vocabularies this form is built from, published rather than
         // described: a caller of POST /admin-api/applications/create reads
         // these to learn what it may send, which is what stops a document and a
@@ -9169,6 +9174,7 @@ class AdminViews {
                 "write to.");
       return { directory: false, container: null,
           realm: { id: realms.currentId(), name: realm ? realm.name : '' },
+          createFields: CreateForms.fieldsOf('users'),
           fields: [], credentials: CREDENTIAL_CHOICES.map(function (one) {
             return { id: one.id, label: one.label };
           }) }
@@ -9178,6 +9184,9 @@ class AdminViews {
       directory: true,
       container: container,
       realm: { id: realms.currentId(), name: realm ? realm.name : '' },
+      // THE FORM'S OWN REQUIRED FIELD (#1132): the username, beside the
+      // grid's, which are the attribute policy's (`requiredAttributes`).
+      createFields: CreateForms.fieldsOf('users'),
       mode: mode.current(),
       // WHETHER THE BUTTON IS THERE, published rather than left to be inferred
       // from `mode`: a caller of GET /admin-api/users/new reading this document
@@ -11034,6 +11043,124 @@ class AdminViews {
     log.debug("Leaving AdminViews.groupsJson().");
     return wanted ? this.groupDetailJson(req, wanted).json :
            this.groupsListJson(req).json;
+  }
+
+  // DIRECTORY → POLICIES → NEW POLICY (#1132): which kinds a named policy
+  // may be made of, and for the kind asked, the create's fields and which
+  // of them the save refuses without. A named policy is a save under a name
+  // the realm does not hold yet, so its fields are the kind's own table
+  // (each module's FIELDS, its `optional` rows the ones a save keeps the
+  // value in force for), behind the name — refused when empty or not a
+  // policy name, where a save with no name at all edits the DEFAULT policy,
+  // which is why the page insists on one — and the precedence, which
+  // defaults to 100. Two kinds are their own: the authentication policy's
+  // named create takes `name`, its mechanisms optional (none allows every
+  // one), and the attribute policy's console form sends its list even when
+  // empty. A boolean is required of an API caller and is never empty on the
+  // console's form, where an unticked box is "no".
+  /**
+   * Builds `GET /admin-api/policies/new`: the kinds, and the asked kind's
+   * create fields with which of them are required.
+   *
+   * @param query - the query: `kind`
+   * @returns the JSON
+   */
+  newPolicyJson(query): IyaApi.AdminAnswer<'getNewPolicyForm'> {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.newPolicyJson().");
+    const wanted = String((query || {}).kind || '').trim();
+    const kinds = policyKinds.list().filter(function (kind) {
+      return kind.tabbed === true;
+    });
+    const kind = kinds.filter(function (one) {
+      return one.id === wanted;
+    })[0] || null;
+    const out: any = {
+      kinds: kinds.map(function (one) {
+        return { id: one.id, label: one.label };
+      }),
+      kind: kind ? kind.id : null,
+      createFields: []
+    };
+    if (!kind) {
+      log.debug("Leaving AdminViews.newPolicyJson(). No kind, or an " +
+                "unknown one: " + wanted);
+      return out;
+    }
+    if (kind.id === 'authn') {
+      out.createFields = [
+        { name: 'name', required: true },
+        { name: 'description', required: false },
+        { name: 'precedence', required: false },
+        { name: 'mechanisms', required: false },
+        { name: 'secondFactors', required: false }
+      ];
+    } else {
+      out.createFields = [
+        { name: 'profile', required: true },
+        { name: 'precedence', required: false },
+        { name: 'description', required: false }
+      ].concat((kind.module.FIELDS || []).map(function (field) {
+        return { name: String(field.key), required: !field.optional };
+      }));
+    }
+    log.debug("Leaving AdminViews.newPolicyJson(). kind=" + kind.id + ", " +
+              out.createFields.length + " field(s).");
+    return out;
+  }
+
+  // DIRECTORY → GROUPS → NEW GROUP (#1132): what the create page draws. No
+  // directory scan: the container is the realm's, asked of the directory,
+  // and the list of groups is the list page's business.
+  /**
+   * Builds `GET /admin-api/groups/new`: the create's fields, which of them
+   * are required, and where the group would land.
+   *
+   * @returns the JSON
+   */
+  newGroupJson(): IyaApi.AdminAnswer<'getNewGroupForm'> {
+    const { log, realms } = this.deps;
+    log.debug("Entering AdminViews.newGroupJson().");
+    const realm = realms.current();
+    const where = { id: realms.currentId(), name: realm ? realm.name : '' };
+    if (!groupReader || !groupWriter) {
+      log.debug("Leaving AdminViews.newGroupJson(). No directory.");
+      return { directory: false, canWrite: false, groupsDn: null,
+               realm: where, createFields: CreateForms.fieldsOf('groups') };
+    }
+    // Inside the function: `ldap/ldap_server.js` registers routes when it is
+    // required, and this file loads before it (rule 1); a request runs
+    // after the stack is up, so the require is a cache hit.
+    const ldapMod = require('../ldap/ldap_server');
+    log.debug("Leaving AdminViews.newGroupJson().");
+    return { directory: true, canWrite: true, groupsDn: ldapMod.groupsDn(),
+             realm: where, createFields: CreateForms.fieldsOf('groups') };
+  }
+
+  // DIRECTORY → ROLES → NEW ROLE (#1132): what the create page draws — the
+  // application menu the list page offers, and the store's container.
+  /**
+   * Builds `GET /admin-api/roles/new`: the create's fields, which of them
+   * are required, where a role is stored and the applications it may be
+   * for.
+   *
+   * @returns the JSON
+   */
+  newRoleJson(): IyaApi.AdminAnswer<'getNewRoleForm'> {
+    const { log, realms, applications } = this.deps;
+    log.debug("Entering AdminViews.newRoleJson().");
+    const realm = realms.current();
+    const storable = !!roles.directoryInstalled();
+    log.debug("Leaving AdminViews.newRoleJson(). storable=" + storable);
+    return {
+      canWrite: storable,
+      container: storable ? 'ou=roles' : '',
+      realm: { id: realms.currentId(), name: realm ? realm.name : '' },
+      applicationChoices: applications.list().map(function (row) {
+        return { identifier: row.identifier, name: row.name || '' };
+      }),
+      createFields: CreateForms.fieldsOf('roles')
+    };
   }
 
   /**
@@ -15984,6 +16111,13 @@ class AdminViews {
                  // (#532), or null.
                  deviceSerial: (one.attestation &&
                                 one.attestation.deviceSerial) || null,
+                 // ITS CREDPROTECT LEVEL (#1955 P7), 1 to 3 as the key
+                 // reported it at registration, or null; and the legacy U2F
+                 // AppID it was imported under, or null for a key
+                 // registered here.
+                 credProtect: typeof one.credProtect === 'number'
+                   ? one.credProtect : null,
+                 appid: credentials.appIdOf(one) || null,
                  // A LATER REGISTRATION MAY HAVE REPLACED IT ON ITS
                  // AUTHENTICATOR (#1101): the newer key's id and when, or
                  // null.
@@ -16016,7 +16150,10 @@ class AdminViews {
                 webauthnEnabled: keyLive.enabled,
                 primaryAllowed: keyLive.primaryAllowed,
                 mfaAllowed: keyLive.mfaAllowed,
-                maxKeysPerPerson: keyLive.maxKeysPerPerson }
+                maxKeysPerPerson: keyLive.maxKeysPerPerson,
+                // THE LEGACY U2F APPIDS THIS REALM PERMITS (#1955 P7): the
+                // page draws the import form only where there is one.
+                legacyAppIds: webauthnPolicy.legacyAppIds() }
     };
   }
 
@@ -16814,6 +16951,9 @@ export = {
   setGroupReader: slot.forward('setGroupReader'),
   setGroupWriter: slot.forward('setGroupWriter'),
   groupsListJson: slot.forward('groupsListJson'),
+  newGroupJson: slot.forward('newGroupJson'),
+  newPolicyJson: slot.forward('newPolicyJson'),
+  newRoleJson: slot.forward('newRoleJson'),
   asDriftRows: slot.forward('asDriftRows'),
   asTruthRequest: slot.forward('asTruthRequest'),
   asDetailJson: slot.forward('asDetailJson'),

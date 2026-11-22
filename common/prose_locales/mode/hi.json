@@ -632,8 +632,8 @@
     "text": "उत्पन्न पासवर्ड सेवा लॉग में लिखा जाता है।"
   },
   "mode.requirements.bootstrap-password-file.product": {
-    "en": "e12d4ddc2b4d4724",
-    "text": "यह ऐसी फ़ाइल में लिखा जाता है जिसे केवल यह सेवा पढ़ सकती है, और लॉग बताता है कि कहाँ, जब तक admin.logBootstrapPassword चालू न हो।"
+    "en": "aa423786d143e231",
+    "text": "यह ऐसी फ़ाइल में लिखा जाता है जिसे केवल यह सेवा पढ़ सकती है, और लॉग बताता है कि कहाँ, जब तक admin.logBootstrapPassword चालू न हो। बाद वाला प्रारंभ उस फ़ाइल को हटा देता है, जब किसी के पास पहले से क्रेडेंशियल हो।"
   },
   "mode.requirements.pkce-every-client.what": {
     "en": "7e2c6f1869e39287",

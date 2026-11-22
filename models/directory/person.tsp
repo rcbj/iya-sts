@@ -135,6 +135,8 @@ model Person {
   userPrincipalName?: string;
   @attr(#{kind: "multi", what: "The person's registered WebAuthn public keys, one JSON value per passkey or security key. Public by design. Written by registration on /portal and the sign-in steps."})
   stsWebauthnCredential?: (DirectoryJson)[];
+  @attr(#{kind: "multi", what: "The FIPS 201 card UUIDs of the person's outside PIV or CAC cards, one lower-case UUID per card (no urn:uuid: prefix). A card certificate from one of the realm's piv.externalIssuers that names one of these in its urn:uuid subjectAltName signs this person in (#1955). Written by an administrator; a reissued card has a new UUID."})
+  stsPivCardUuid?: (string)[];
   @attr(#{kind: "single", what: "The public half of the person's Kerberos keys, one JSON value: the key version number, the encryption types and when they were derived."})
   stsKrb5KeyInfo?: DirectoryJson;
   @attr(#{kind: "multi", what: "The person's RFC 7486 HOBA client public keys, one value per key as `<kid> <base64 DER>`, registered at /.well-known/hoba/register. Public."})
@@ -233,6 +235,14 @@ model Person {
   oauthConsentApplied?: (string)[];
   @attr(#{kind: "multi"})
   stsAndroidAttestedCredential?: (string)[];
+  @attr(#{kind: "single", what: "The person's OpenPGP public key, armored: one transferable public key (v4 or v6) whose user id names the entry's mail and which signed a registration challenge (#1955). Public. Written by /portal/openpgp and /admin-api/users/openpgp only."})
+  stsOpenPgpKey?: string;
+  @attr(#{kind: "single", what: "The fingerprint of stsOpenPgpKey, lower-case hex: 40 characters for a v4 key, 64 for a v6 one (#1955). Written with the key."})
+  stsOpenPgpFingerprint?: string;
+  @attr(#{kind: "single", what: "What the portal and console draw about stsOpenPgpKey, one JSON value: its version, algorithms, the user ids that matched, when it was registered and by whom, and whether the person publishes it in the Web Key Directory (#1955). Written with the key and by the publication choice."})
+  stsOpenPgpKeyInfo?: DirectoryJson;
+  @attr(#{kind: "single", what: "How mail to the person is encrypted: none, openpgp (PGP/MIME to stsOpenPgpKey) or smime (S/MIME to userSMIMECertificate), chosen on /portal/openpgp (#1955). Absent is none."})
+  stsMailEncryption?: string;
   @attr(#{kind: "single"})
   stsWebauthnUserHandle?: DirectoryBase64;
   @attr(#{kind: "single"})

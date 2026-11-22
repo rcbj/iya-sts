@@ -578,10 +578,15 @@ async function overTheSocket() {
                         cn: APP }).ok ];
     const ready = await ldap.listen().whenReady;
     const url = 'ldaps://127.0.0.1:' + ready.ldapsPort;
+    // The listener VERIFIED, against the anchors this process gives a
+    // loopback caller of its own listeners (tls_server.js's
+    // trustAnchorPems()): what every case asks is what the directory lets a
+    // bound name read, never whether its certificate could be trusted.
+    const anchors = require('../tls/tls_server').trustAnchorPems();
     const connect = function () {
       log.debug("Entering connect().");
       const client = ldapjs.createClient({ url: url, reconnect: false,
-        tlsOptions: { rejectUnauthorized: false } });
+        tlsOptions: { ca: anchors } });
       client.on('error', function (e) {
         // ldapjs emits on the client as well as calling back; the operation
         // in flight reports it.

@@ -289,9 +289,24 @@ RUN mkdir -p /opt/sts-sdk \
 #   non-2xx answer or a body with no certificate fails the build, as `curl -f`
 #   and the grep after it did.
 # ---------------------------------------------------------------------------
+#
+# * `pkcs11js` (#1955 P8) may be one of them, for keys.kekProvider=pkcs11 and
+#   HSM signing keys. It is a NATIVE addon, built with node-gyp, and this
+#   stage has no compiler — so when the list names it, python3, make and g++
+#   are installed here first, in this stage only: the final stage takes the
+#   built tree and none of the tools. The HSM's own PKCS#11 module
+#   (yubihsm_pkcs11.so, libsofthsm2.so) is the deployment's to add to a
+#   derived image; `docs/v1.1.0/hsm.md` shows one.
 ARG STS_CLOUD_SDKS=
 ARG STS_DATABASE_CA_URL=
-RUN if [ -n "${STS_CLOUD_SDKS}" ]; \
+RUN if printf '%s\n' ${STS_CLOUD_SDKS} | grep -q '^pkcs11js\(@.*\)\?$'; \
+    then \
+      apt-get update \
+      && DEBIAN_FRONTEND=noninteractive apt-get -y install \
+           --no-install-recommends python3 make g++ \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi \
+    && if [ -n "${STS_CLOUD_SDKS}" ]; \
     then \
       cd /opt/sts-sdk \
       && npm install --omit=dev ${STS_CLOUD_SDKS} \

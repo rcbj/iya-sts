@@ -2981,6 +2981,20 @@ the act's own code. `clear-hotp` is on `/admin-api/users` and
 `/admin-api/mfa` beside `clear-totp`, the same evidence rule, a recent
 sign-in (`REAUTHENTICATED_ACTIONS`), and its sessions ended.
 
+**#1955 P2 adds two acts and one read** (`common/piv_enrolment.ts` argues
+them): `enrol-piv` (`{ username, profile, csr, attestationCertificate?,
+attestationIssuer? }`, a PIV slot certificate for that person over the EST
+Issuing CA, refusals at the core's statuses held to 400/404/409/503),
+`recover-key` (`{ username, serial }`, the escrowed key, 403 STS-PIV-0023
+unless the access-control policy PERMITS it for PIV_KEY_RECOVERY, which is
+asked beside the API's own Admin Write — never instead of it), and `GET
+/admin-api/hardware-tokens/escrowed?username=` (a person's escrowed
+certificates, never a key). The page's view gains `piv` (the profiles EST
+may issue and the two switches) and `escrowed` (the person `q` names), which
+the console's Enrol PIV and Escrowed keys tabs draw. A recovered key is the
+one answer of this resource that carries a private key; `sendJson()` sends
+`no-store` on every answer.
+
 ## `/admin-api/post-login-activities` — DIRECTORY → POST-LOGIN ACTIVITIES (#1111, 2026-10-28; #1123)
 
 `mgmt-api/post_login_activities_api.ts`, spread into the table as the
@@ -3169,3 +3183,16 @@ at a management address is still told where the drawing is rather than called
 an unknown name. `tests/admin_api_request_names.js` holds the rules, the
 wrapper and every `x-sts-` name; `schemathesis_kit.js`'s
 `probeStrictRequests()` holds the running service.
+
+## `/admin-api/openpgp` — DIRECTORY → OpenPGP KEYS (#1955 P6, 2026-11-20)
+
+`mgmt-api/openpgp_api.ts`, spread into the table as the hardware tokens'
+are: `GET /admin-api/openpgp?user=` (one person's key, challenge, Web Key
+Directory publication, S/MIME certificate and mail choice, plus the realm's
+WKD switch and domains) and `POST /admin-api/openpgp/<action>` with `{ user,
+… }` for the portal's seven acts (`issueOpenPgpChallenge`,
+`registerOpenPgpKey`, `removeOpenPgpKey`, `publishOpenPgpKey`,
+`withdrawOpenPgpKey`, `setMailEncryption`, `setSmimeCertificate`). **A
+registration is still the person's proof**: the administrator issues the
+challenge and pastes back what the person signed. The actor is the token's
+subject (#1579). Not a security operation: no OpenPGP key is a way in.

@@ -419,6 +419,9 @@ const CELL_MINTED = [
   // described it (and, until it is assigned, held that secret sealed) stays
   // beside the entry.
   'oath_tokens.inventory',
+  // A person's OpenPGP registration challenge and their Web Key Directory
+  // publication (#1955 P6): somebody's, beside their entry in this cell.
+  'openpgp.challenges', 'openpgp.wkd',
   'gnap.approvers', 'gnap.continuations', 'gnap.grants', 'gnap.instances',
   'gnap.interactions', 'gnap.manageHandles', 'gnap.manageValues',
   'gnap.movedGrants', 'gnap_monitor.counters', 'gnap.spend', 'gnap.tokens',

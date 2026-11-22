@@ -25,8 +25,9 @@ rcbj's design is the comment of 2026-10-29 on #563; the phases are #1160
 container answers AuthZEN too since #1179**, as an edge PDP — *The edge PDP*
 below. Search (#1175), the Obligations Profile (#1177), Access Request and
 Approval (#1180, *Access requests* below) and the token-exchange binding
-(#1181, direction A — *The token-exchange binding* below) are tickets of
-their own, and each is advertised only while it is on.
+(#1181, direction A — *The token-exchange binding* below; #1200, direction B
+— *Asking an external PDP* below) are tickets of their own, and each is
+advertised only while it is on.
 
 | File | What it is |
 |---|---|
@@ -35,6 +36,7 @@ their own, and each is advertised only while it is on.
 | `authzen_caller.ts` | Who is asking (the realm's door), whether they may (AUTHZEN_PEPS on resource `authzen-api`), and about which application — and, asked ahead of any request, the callers a remote PEP's edge PDP admits (`edgeCallers()`, #1189). |
 | `authzen.ts` | The routes, registered at 23c-ii (`common/protocol_stack.ts`): `POST /access/v1/evaluation`, `POST /access/v1/evaluations`, and the metadata. Thin, as `xacml/xacml.ts` is. |
 | `authzen_exchange.ts` | The OAuth 2.0 Token Exchange Binding, direction A (#1181): which tuples are its gates and scopes, the FIXED conversion rules, and each tuple's answer from the questions a local RFC 8693 exchange asks. Built by `authzen.ts`'s `defaultDeps()` beside the caller and the search. |
+| `authzen_external_pdp.ts` | Direction B (#1200): this authorization server asks an external PDP before it issues an OAuth access token for an RFC 8693 exchange. A library, no route. `oauth2.ts`'s token grant requires it only while `authzen.externalPdp` is on, and only on the branch that mints an access token. |
 | `authzen_access_request.ts` | The Access Request and Approval Profile and its CALLBACK companion (#1180): the requestable denial and its `binding_token`, the submission, the per-realm task store and its index, the status and cancellation, `decide()` (the one door the portal and the console reach), the approval's verification at re-evaluation, the mail, the callback and the `authzen.access-requests` job. A library; `authzen.ts` registers its three routes. |
 | `authzen_model.ts` | **The AuthZEN model, as the endpoints read it (#1579).** Builds every request's shape pass from `models/generated/authzen.json`, answers the lists the code branches on, and holds every answer to its member set. A leaf. See *THE REQUEST SHAPES ARE THE MODEL'S*, below. |
 | `authzen_admin.ts` | What the AuthZEN tab of `/admin/xacml` shows and does: `view()` and `act()` (`set-attribute`, `remove-attribute`, `set-scope`), shared by the console and `mgmt-api/authzen_api.ts`'s `/admin-api/xacml/authzen` operations (rule 7). A library, built by the root beside the other API modules. |
@@ -441,8 +443,9 @@ type with no source answers empty results, never a 400.
 ## The token-exchange binding, direction A (#1181)
 
 **This service is the PDP an external authorization server asks** whether
-it may perform an RFC 8693 exchange (rcbj, 2026-10-30, decision 1);
-direction B — this AS consulting an external PDP — is not built. The
+it may perform an RFC 8693 exchange (rcbj, 2026-10-30, decision 1).
+Direction B — this authorization server consulting an external PDP — is
+*Asking an external PDP* below (#1200). The
 binding's draft and the Token Issuance Profile it builds on are on the
 ticket; `docs/v1.1.0/authzen.md` is the public statement, with the fixed-rule
 table (`authzen_exchange.ts`'s `FIXED_RULES`, which
@@ -509,9 +512,53 @@ table (`authzen_exchange.ts`'s `FIXED_RULES`, which
   built, owe the same per-detail question through `common/fga_gate.ts`**
   and the same bound, or an external AS gets a wider answer than this
   token endpoint would give.
-* **Not built:** direction B; authorization-detail tuples (RFC 9396 cells);
+* **Not built:** authorization-detail tuples (RFC 9396 cells);
   the edge PDP answering the binding (its port only refuses the catalogue
-  rows); the `claims` and `audience` shaping keys.
+  rows); the `claims` and `audience` shaping keys. Direction B is
+  *Asking an external PDP* below.
+
+## Asking an external PDP (#1200)
+
+**This authorization server asks a PDP an administrator configured**, before
+it issues an OAuth access token for an RFC 8693 exchange. It is the other
+direction of the same binding. `authzen_external_pdp.ts` builds the batch
+and reads the answer. `oauth-oidc/oauth2.ts`'s token grant calls it, lazily,
+only while `authzen.externalPdp` is on and only in the branch that mints an
+access token. A Kerberos `requested_token_type` is outside the binding and
+is not sent.
+
+* **IT SITS BESIDE THE ISSUANCE GATE.** `delegation_policy.decide()` and the
+  local scope narrowing have already run. A refusal that policy enforces is
+  not sent on. The PDP may only narrow: a false scope drops that scope,
+  `granted_scope` is intersected with the scopes the local endpoint would
+  already issue, and `token_lifetime` is a ceiling on the access token
+  (`lifetimeCapS`, which only shortens). Nothing here writes `sub`, `aud`,
+  `act`, `may_act` or a claim. The refresh token, when one is also issued,
+  keeps its own lifetime.
+* **FAIL CLOSED, IN EVERY MODE.** Development softens the local issuance
+  policy. It does not soften this. An unusable URL (`0123`), no answer
+  (`0124`: outbound off, unreachable, timeout, non-2xx, a throw), a body
+  that is not the batch's decision (`0126`, including an item whose
+  `context.error` says the PDP did not decide it), or a client certificate,
+  key or named CA file that cannot be read (`0127`) means no token. A
+  `decision: false` on a subject or requesting-party gate is `0125`, HTTP
+  400, and the client is told neither which gate nor the code. The other
+  four are HTTP 503.
+* **THE URL IS AN ADMINISTRATOR'S**, the twenty-seventh row of
+  `federation/CLAUDE.md`. Absolute https only, no userinfo, query or
+  fragment, through `federation_http.requestConfigured`. Mutual TLS is the
+  only mode. The PEM paths are settings, read at the dial and held to
+  `security.fileRoots` in product. The key's bytes are not a configuration
+  value. An empty audience is asked with a resource id of `''`; a PDP that
+  requires a non-empty id refuses the token, which is the same fail-closed
+  rule (`0126`, because this service's own model answers that shape as an
+  item error rather than a policy `false`).
+* **Off by default**, so a deployment that never turns it on dials nothing
+  and does not load the module on a token exchange. The settings are the
+  `AuthZEN` group's, on `/admin/xacml` and `GET /admin-api/config` (rule 7).
+  No new route.
+* `tests/authzen_external_pdp.js` holds the injected dial and a second realm
+  over mutual TLS.
 
 ## The console and the API (#1162)
 
@@ -892,4 +939,8 @@ token, 0115 the no-broadening check; 0116 an answer that is not its model's
 (#1827's follow-up): 0118 refused as a token, 0119 without
 `authzen:evaluate`, 0120 naming no entry or one outside REMOTE_PEPS, 0121
 `xacml.pepAuthentication` set to `certificate`; 0122 an access request
-submission whose `Content-Type` is not `application/json` (#936).
+submission whose `Content-Type` is not `application/json` (#936); 0123–0127
+direction B (#1200): 0123 an unusable PDP address, 0124 no answer, 0125 a
+subject or requesting-party gate refused, 0126 an answer that is not the
+batch's decision, 0127 a client certificate, key or named CA file that
+cannot be read.

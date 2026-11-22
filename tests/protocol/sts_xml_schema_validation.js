@@ -82,6 +82,9 @@
 
 "use strict";
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const fs = require("fs");
@@ -1561,7 +1564,7 @@ async function federation(idp) {
       .map(function (x) {
         return htmlDecode(x[1]);
       }).filter(function (u) {
-        return u.indexOf(idpSlo + "?") === 0;
+        return urls.isAt(u, idpSlo) && new URL(u).search !== "";
       })[0] || "";
     await check("federation " + binding + ": signing out offers the partner " +
                 "a LogoutRequest", async function () {

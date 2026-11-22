@@ -327,6 +327,9 @@ function library(t) {
 function childMain() {
   /* eslint-disable no-console */
   const ROOT = process.env.R96_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT + '/tests/protocol/url_match.js');
   const OUT = process.env.R96_OUT;
   const http = require('http');
   const crypto = require('crypto');
@@ -482,7 +485,7 @@ function childMain() {
         if (r.status !== 302 && r.status !== 303) {
           break;
         }
-        if (where.indexOf(REDIRECT) === 0) {
+        if (urls.isAt(where, REDIRECT)) {
           break;
         }
         if (/\/authn\/login/.test(where)) {

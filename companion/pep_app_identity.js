@@ -34,9 +34,28 @@
 //
 // **`POST /pep-app/saml/_setup` IS UNAUTHENTICATED**, like everything else
 // in this development-only container: `{ audience, metadataUrl?,
-// certificates?, jwksUrl? }`. The job calls it once it knows its realm,
-// because the realm does not exist when the stack starts and no environment
-// variable could name it.
+// certificates?, jwksUrl?, caPem? }`. The job calls it once it knows its
+// realm, because the realm does not exist when the stack starts and no
+// environment variable could name it.
+//
+// **WHAT THIS MODULE DIALS IS BOUNDED BY ITS CONFIGURATION, NOT BY THE
+// CALLER (2026-11-20, CodeQL js/request-forgery).** A metadata URL, a JWKS
+// URL and a token's own `iss` all arrive in a request, so each is dialled
+// only when its origin is EXACTLY one of the origins the companion was
+// started with (`COMPANION_STS_URL`, `COMPANION_STS_PUBLIC_URL`), and the
+// request is built on that configured origin rather than on the text it
+// was given. Anything else is refused before a socket is opened, and the
+// refusal says which origins are allowed.
+//
+// **AND IT NEVER DIALS WITHOUT VERIFYING THE CERTIFICATE (CodeQL
+// js/disabling-certificate-validation).** It used to follow
+// `COMPANION_STS_TLS_INSECURE`, the demonstrations' switch, and turn the
+// check off. Now the anchor is `COMPANION_STS_CA_FILE` when it is given,
+// else the `caPem` `_setup` was handed (the job's own anchor for this run's
+// service Root, which no image can hold), else node's own roots. A caller
+// naming an anchor is no wider than what `_setup` already is: the same
+// caller names the certificates the ACS trusts, and it cannot move the
+// dial to another origin.
 //
 // xml-crypto and @xmldom/xmldom, pinned in the companion's own lockfile at
 // the versions the service uses; required lazily. No timer: the JWKS cache
@@ -126,19 +145,46 @@ function verifierFor(alg) {
 }
 
 /**
+ * The origins a list of configured URLs names, each mapped to itself: the
+ * value is what a request is built on, so the host dialled is always a
+ * configured string. A URL that does not parse is left out.
+ *
+ * @param {string[]} [urls] - the configured URLs
+ * @returns {Map<string, string>} origin -> origin
+ */
+function originsOf(urls) {
+  log.debug("Entering originsOf().");
+  const out = new Map();
+  [].concat(urls || []).forEach(function (one) {
+    try {
+      const parsed = new URL(String(one || ""));
+      if (parsed.protocol === "https:" || parsed.protocol === "http:") {
+        out.set(parsed.origin, parsed.origin);
+      }
+    } catch (e) {
+      log.debug("Caught in originsOf(): " + ((e && e.message) || e));
+    }
+  });
+  log.debug("Leaving originsOf(). " + out.size);
+  return out;
+}
+
+/**
  * The identity half of `/pep-app`.
  */
 class PepAppIdentity {
   /**
-   * @param {object} [opts] - `caFile`, `insecure` (the companion's TLS
-   *   settings for dialling the service)
+   * @param {object} [opts] - `caFile` (the anchor for dialling the
+   *   service) and `origins` (the service URLs the companion was started
+   *   with; only their origins are ever dialled)
    */
   constructor(opts) {
     log.debug("Entering PepAppIdentity.constructor().");
     const o = opts || {};
     this.caFile = String(o.caFile || "");
-    this.insecure = !!o.insecure;
-    this.config = { audience: "", certificates: [], jwksUrl: "" };
+    this.origins = originsOf(o.origins);
+    this.config = { audience: "", certificates: [], jwksUrl: "",
+                    caPem: "" };
     this.jwks = new Map();
     this.sessions = new Map();
     log.debug("Leaving PepAppIdentity.constructor().");
@@ -152,14 +198,25 @@ class PepAppIdentity {
    */
   fetchText(url) {
     log.debug("Entering PepAppIdentity.fetchText(). " + url);
-    const target = new URL(url);
+    const why = this.refusalOf(url);
+    if (why) {
+      log.debug("Leaving PepAppIdentity.fetchText(). Refused.");
+      return Promise.reject(new Error(why));
+    }
+    const asked = new URL(url);
+    // Built on the CONFIGURED origin, never on the text the caller sent:
+    // the comparison above made them equal, and this keeps the host this
+    // dials one the companion was started with.
+    const base = this.origins.get(asked.origin);
+    const target = new URL(asked.pathname + asked.search, base);
     const secure = target.protocol === "https:";
     const options = { method: "GET", timeout: FETCH_TIMEOUT_MS };
     if (secure) {
+      // Verification stays on whatever is given; only the anchor varies.
       if (this.caFile) {
         options.ca = fs.readFileSync(this.caFile);
-      } else if (this.insecure) {
-        options.rejectUnauthorized = false;
+      } else if (this.config.caPem) {
+        options.ca = this.config.caPem;
       }
     }
     log.debug("Leaving PepAppIdentity.fetchText().");
@@ -193,6 +250,38 @@ class PepAppIdentity {
   }
 
   /**
+   * Why a URL may not be dialled, or '' when it may: it must parse, be
+   * http or https, and have EXACTLY one of the configured origins. A
+   * substring or prefix test would let `https://sts:8081.evil.test` or
+   * `https://evil.test/?https://sts:8081` through; `URL.origin` cannot.
+   *
+   * @param {string} url - the URL a caller named
+   * @returns {string} the refusal, or ''
+   */
+  refusalOf(url) {
+    log.debug("Entering PepAppIdentity.refusalOf().");
+    let parsed = null;
+    try {
+      parsed = new URL(String(url || ""));
+    } catch (e) {
+      log.debug("Caught in PepAppIdentity.refusalOf(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving PepAppIdentity.refusalOf(). Not a URL.");
+      return "not an absolute URL: " + String(url || "");
+    }
+    if ((parsed.protocol !== "https:" && parsed.protocol !== "http:") ||
+        !this.origins.has(parsed.origin)) {
+      log.debug("Leaving PepAppIdentity.refusalOf(). Not allowed.");
+      return "the companion dials only " +
+             (Array.from(this.origins.keys()).join(", ") || "nothing") +
+             " (COMPANION_STS_URL, COMPANION_STS_PUBLIC_URL), not " +
+             parsed.origin;
+    }
+    log.debug("Leaving PepAppIdentity.refusalOf(). Allowed.");
+    return "";
+  }
+
+  /**
    * `POST /pep-app/saml/_setup`: what the ACS and the JWT check trust.
    *
    * @param {object} body - `{ audience, metadataUrl?, certificates?,
@@ -204,6 +293,21 @@ class PepAppIdentity {
     const b = body || {};
     const certificates = [].concat(b.certificates || [])
       .map(String).filter(Boolean);
+    // Both URLs are checked before anything is dialled or kept, so a
+    // refused setup leaves the previous one in force.
+    const refused = [b.metadataUrl, b.jwksUrl].filter(Boolean)
+      .map((one) => this.refusalOf(String(one))).filter(Boolean)[0];
+    if (refused) {
+      log.debug("Leaving PepAppIdentity.setup(). Refused.");
+      return { ok: false, refused: true, why: refused };
+    }
+    const caPem = String(b.caPem || "");
+    if (caPem && caPem.indexOf("-----BEGIN CERTIFICATE-----") < 0) {
+      log.debug("Leaving PepAppIdentity.setup(). Not a PEM.");
+      return { ok: false, refused: true,
+               why: "caPem holds no PEM certificate" };
+    }
+    this.config.caPem = caPem;
     if (b.metadataUrl) {
       const xml = await this.fetchText(String(b.metadataUrl));
       const re = /<(?:[A-Za-z0-9_-]+:)?X509Certificate>([^<]+)</g;
@@ -217,7 +321,8 @@ class PepAppIdentity {
     }
     this.config = { audience: String(b.audience || ""),
                     certificates: certificates,
-                    jwksUrl: String(b.jwksUrl || "") };
+                    jwksUrl: String(b.jwksUrl || ""),
+                    caPem: caPem };
     this.jwks.clear();
     log.info("pep-app: the ACS trusts " + certificates.length +
              " signing certificate(s) for audience " +
@@ -281,6 +386,12 @@ class PepAppIdentity {
       log.debug("Leaving PepAppIdentity.bearerJwt(). " + out.why);
       return out;
     }
+    const refused = this.refusalOf(url);
+    if (refused) {
+      out.why = refused;
+      log.debug("Leaving PepAppIdentity.bearerJwt(). " + out.why);
+      return out;
+    }
     try {
       const keys = await this.keysAt(url);
       const key = keys.filter(function (one) {
@@ -306,7 +417,12 @@ class PepAppIdentity {
     } catch (e) {
       log.debug("Caught in PepAppIdentity.bearerJwt(): " +
                 ((e && e.message) || e));
-      out.why = "could not check it: " + ((e && e.message) || e);
+      // A fixed sentence: the echo is a response, and what the error says
+      // (and its stack) goes to the log, as everywhere in the companion.
+      log.warn("pep-app: the JWKS at " + url + " could not be read: " +
+               ((e && e.stack) || e));
+      out.why = "could not check it: the JWKS at " + url + " could not be " +
+                "read (the companion's log says why)";
     }
     log.debug("Leaving PepAppIdentity.bearerJwt(). " + out.verified);
     return out;

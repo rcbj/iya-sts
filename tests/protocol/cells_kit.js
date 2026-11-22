@@ -38,6 +38,9 @@
 // ===========================================================================
 "use strict";
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
@@ -361,7 +364,7 @@ async function drive(jar, url, clientRedirect) {
     hops.push({ url: at, status: r.status, location: r.location,
                 set: r.set });
     if (r.status >= 300 && r.status < 400 && r.location) {
-      if (r.location.indexOf(clientRedirect) === 0) {
+      if (urls.isAt(r.location, clientRedirect)) {
         const back = new URL(r.location);
         log.debug("Leaving drive(). Sent to the client.");
         return { code: back.searchParams.get("code") || "",

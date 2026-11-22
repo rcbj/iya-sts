@@ -328,6 +328,31 @@ class EncryptionPage {
       '</p>',
       t.html('consoleEncryption.keyTitle'));
 
+    // THIS REALM'S SIGNING KEYS, IN THE HSM OR IN SOFTWARE (#1955 P8): the
+    // algorithm names are data and drawn as they come; the sentence is the
+    // view's.
+    const sk = json.signingKeys || { inHsm: [], inSoftware: [] };
+    const names = function (list: any[]): string {
+      return (list || []).map(function (one) {
+        return '<code>' + kit.esc(String(one)) + '</code>';
+      }).join(', ') || '&mdash;';
+    };
+    const signingBlock = kit.note(
+      '<p>' + kit.esc(String(sk.note || '')) + '</p>' +
+      '<table class="grid"><tbody>' +
+      '<tr><th>' + t.html('consoleEncryption.signingStore') + '</th><td>' +
+      '<code>' + kit.esc(String(sk.store || 'software')) + '</code>' +
+      (sk.token ? ' &mdash; <code>' + kit.esc(String(sk.token)) +
+        '</code>' : '') +
+      (sk.refused ? ' &mdash; ' + t.html('consoleEncryption.signingRefused')
+                  : '') + '</td></tr>' +
+      '<tr><th>' + t.html('consoleEncryption.signingInHsm') + '</th><td>' +
+      names(sk.inHsm) + '</td></tr>' +
+      '<tr><th>' + t.html('consoleEncryption.signingInSoftware') +
+      '</th><td>' + names(sk.inSoftware) + '</td></tr>' +
+      '</tbody></table>',
+      t.html('consoleEncryption.signingTitle'));
+
     // **THE LIMITS, DRAWN AS A WARNING RATHER THAN A NOTE.** Everything else on
     // this page says what IS encrypted, and a reader who stops there comes away
     // believing more than is true — which is the shape of mistake this console
@@ -405,7 +430,7 @@ class EncryptionPage {
                             self.unclassifiedBlock(json, t)) +
                   kit.metadataFrame('<h3>' +
                     t.html('consoleEncryption.hKey') + '</h3>' +
-                    keyBlock + boundsBlock) +
+                    keyBlock + signingBlock + boundsBlock) +
                   kit.metadataFrame('<h3>' +
                     t.html('consoleEncryption.hAlgorithm') + '</h3>' +
                     algBlock) +

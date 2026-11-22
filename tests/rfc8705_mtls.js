@@ -185,6 +185,9 @@ function registry(t) {
 // ---------------------------------------------------------------------------
 function childMain() {
   const ROOT_DIR = process.env.M_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT_DIR + '/tests/protocol/url_match.js');
   const OUT = process.env.M_OUT;
   const M = JSON.parse(process.env.M_MATERIAL);
   const fsC = require('fs');
@@ -210,11 +213,22 @@ function childMain() {
     const tlsClient = require(ROOT_DIR + '/common/tls_client_certificates');
 
     await pki.ensureScope('');
+    // BUILT AS THE MAIN PORT IS (`server.js`): the listener certificate
+    // with its chain and the Root, and a client certificate asked for and
+    // not required at the handshake. RFC 8705 binds a token to the
+    // certificate the client PRESENTED — section 3 allows a self-signed
+    // one — so the service verifies a chain after the handshake
+    // (`trustClientCertificatesOn()`, `mtls.peerVerified`) rather than in
+    // it, and the cases below read that. Every request verifies the
+    // LISTENER against the anchor a loopback caller of this process pins
+    // (`trustAnchorPems()`), as an RFC 8705 client verifies its server.
     const serverCert = tlsServer.serverCertificate();
+    const anchors = tlsServer.trustAnchorPems();
     const server = https.createServer(Object.assign({
-      cert: serverCert.certPem, key: serverCert.privateKeyPem,
+      cert: tlsServer.presentedBundlePem(serverCert),
+      key: serverCert.privateKeyPem,
       ca: tlsServer.clientTruststoreOptions().ca,
-      requestCert: true, rejectUnauthorized: false
+      ...tlsServer.clientAuthOptions('optional')
     }, tlsServer.protocolOptions()), app);
     tlsServer.trustClientCertificatesOn(server, 'the RFC 8705 test listener');
     await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
@@ -243,7 +257,7 @@ function childMain() {
           path: urlPath, method: method, headers: headers,
           cert: o.tls ? o.tls.cert : undefined,
           key: o.tls ? o.tls.key : undefined,
-          rejectUnauthorized: false, agent: false }, function (res) {
+          ca: anchors, agent: false }, function (res) {
           let text = '';
           res.on('data', function (c) { text += c; });
           res.on('end', function () {
@@ -968,7 +982,7 @@ function childMain() {
     }
     const implicitAt = String((landed.headers && landed.headers.location) ||
                               '');
-    note(landed.status === 302 && implicitAt.indexOf(IMPLICIT_CB) === 0 &&
+    note(landed.status === 302 && urls.isAt(implicitAt, IMPLICIT_CB) &&
          /error=invalid_request/.test(implicitAt) &&
          !/access_token=/.test(implicitAt) &&
          (await codeCount('STS-OAUTH-0490')) > implicitBefore,

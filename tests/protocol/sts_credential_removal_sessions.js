@@ -38,6 +38,9 @@
 // OWNED HERE (local: true): this repository's own sign-in and portal.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const nodeCrypto = require("crypto");
@@ -472,7 +475,7 @@ async function signIn(who, how, given) {
         realmBase(REALM) + "/").toString());
     }
   }
-  must(final.location.indexOf(REDIRECT) === 0, who + " " + how +
+  must(urls.isAt(final.location, REDIRECT), who + " " + how +
        " did not come back with a code: " + answer.status + " " +
        answer.next + " " + JSON.stringify(answer.errors || []) + " " +
        final.status + " " + final.location);
@@ -492,7 +495,7 @@ async function signedIn(s) {
   log.debug("Entering signedIn().");
   const r = await s.b.go("GET", authorizeUrl(pkce()));
   log.debug("Leaving signedIn(). " + r.status);
-  return r.location.indexOf(REDIRECT) === 0 && /[?&]code=/.test(r.location);
+  return urls.isAt(r.location, REDIRECT) && /[?&]code=/.test(r.location);
 }
 
 async function refreshes(s) {

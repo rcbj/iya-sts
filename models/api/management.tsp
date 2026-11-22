@@ -2682,6 +2682,7 @@ namespace IyaSts.Api.Management {
     `fields`?: (WithAttributeLabelSchemaEtc5)[];
     `fieldGroups`?: (WithIdLabelWhatEtc4)[];
     `gridFields`?: (WithAttributeLabelGroupEtc8)[];
+    `createFields`?: (`CreateFormField`)[];
     `requiredAttributes`?: (string)[];
     `requiredEnforced`?: boolean;
     `credentials`?: (WithIdLabelWhat)[];
@@ -2697,12 +2698,71 @@ namespace IyaSts.Api.Management {
     `inventRefused`?: string
   }
 
+@js(#{
+    `description`:"What Directory → Groups → New group draws (#1132): the create's fields, which of them are required, and the container a group lands in."
+  }) @component model `NewGroupForm` {
+    `directory`?: boolean;
+    `canWrite`?: boolean;
+    `groupsDn`?: NullableString;
+    `realm`?: WithIdName;
+    `createFields`?: (`CreateFormField`)[]
+  }
+
+@js(#{
+    `description`:"What Directory → Roles → New role draws (#1132): the create's fields, which of them are required, the store's container and the applications a role may be for."
+  }) @component model `NewRoleForm` {
+    `canWrite`?: boolean;
+    `container`?: string;
+    `realm`?: WithIdName;
+    `applicationChoices`?: ({ `identifier`?: string; `name`?: string })[];
+    `createFields`?: (`CreateFormField`)[]
+  }
+
+@js(#{
+    `description`:"What Directory → Devices → Register a device draws (#1132): the create's fields, which of them are required, and the choices its selects offer."
+  }) @component model `NewDeviceForm` {
+    `ownerKinds`?: (string)[];
+    `platforms`?: (string)[];
+    `keyKinds`?: (string)[];
+    `createFields`?: (`CreateFormField`)[]
+  }
+
+@js(#{
+    `description`:"What Directory → Attribute sources → Add a source draws (#1132): the create's fields, which of them are required, and the choices its selects offer."
+  }) @component model `NewAttributeSourceForm` {
+    `dialects`?: (string)[];
+    `modes`?: (string)[];
+    `onFailure`?: (string)[];
+    `passwordProviders`?: (string)[];
+    `hostPatterns`?: string;
+    `createFields`?: (`CreateFormField`)[]
+  }
+
+@js(#{
+    `description`:"What Directory → Secret destinations → Add a destination draws (#1132): the create's fields, which of them are required, and the choices its selects offer."
+  }) @component model `NewSecretDestinationForm` {
+    `providers`?: (string)[];
+    `payloads`?: (string)[];
+    `credentialShapes`?: Record<string>;
+    `fileAllowed`?: boolean;
+    `createFields`?: (`CreateFormField`)[]
+  }
+
+@js(#{
+    `description`:"What Directory → Policies → New policy draws (#1132): the kinds a named policy may be made of, and the asked kind's create fields with which of them are required."
+  }) @component model `NewPolicyForm` {
+    `kinds`?: ({ `id`?: string; `label`?: string })[];
+    `kind`?: NullableString;
+    `createFields`?: (`CreateFormField`)[]
+  }
+
 @component model `NewApplicationForm` {
     `directory`?: boolean;
     `container`?: NullableString;
     `max`?: NullableNumber;
     `applicationCount`?: integer;
     `realm`?: WithIdName;
+    `createFields`?: (`CreateFormField`)[];
     `kinds`?: (WithKindLabelWhat)[];
     `protocols`?: (WithIdLabelKindEtc11)[];
     `declarations`?: (WithAttributeRoleKindEtc8)[];
@@ -5443,7 +5503,7 @@ namespace IyaSts.Api.Management {
     `challenge`?: string;
     `rpId`?: string;
     `allow`?: string;
-    `options`?: {`userVerification`?: string}
+    `options`?: {`userVerification`?: string; `appid`?: string}
   }
 
 @component model `WithOkMessageErrors49` {
@@ -5463,6 +5523,8 @@ namespace IyaSts.Api.Management {
     `authenticatorSelection`?: WithUserVerificationResidentKeyRequireResidentKeyEtc4;
     `credProps`?: boolean;
     `minPinLength`?: boolean;
+    `credProtect`?: {`credentialProtectionPolicy`?: string; `enforceCredentialProtectionPolicy`?: boolean};
+    `appidExclude`?: string;
     `hints`?: (string)[]
   }
 
@@ -9065,7 +9127,11 @@ namespace IyaSts.Api.Management {
     `applications`?: (string)[];
     `permissions`?: (string)[];
     `conferredBy`?: (string)[];
-    `ownerProtected`?: boolean
+    `ownerProtected`?: boolean;
+    `membershipMode`?: "static" | "dynamic-selectable";
+    `eligibilityPolicy`?: string;
+    `selection`?: "optional" | "required";
+    `exclusiveGroup`?: string
   }
 
 @component model `WithDescriptionOkMessage` is (`WithOwnersNameLocalName`)[];
@@ -9310,7 +9376,9 @@ namespace IyaSts.Api.Management {
     `recoveryAssurance`?: StringOrNumericOrBooleanEtc8;
     `attestationAlgorithms`?: StringOrNumericOrBooleanEtc8;
     `adminEnrolment`?: StringOrNumericOrBooleanEtc8;
-    `deviceBoundRequired`?: StringOrNumericOrBooleanEtc8
+    `deviceBoundRequired`?: StringOrNumericOrBooleanEtc8;
+    `credProtect`?: StringOrNumericOrBooleanEtc8;
+    `enforceCredProtect`?: StringOrNumericOrBooleanEtc8
   }
 
 @component model `WithNamePrecedenceStored6` {
@@ -10985,6 +11053,14 @@ op `getEncryption`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
       `note`?: string
     };
     `algorithmNote`?: string;
+    `signingKeys`?: {
+      `store`?: string;
+      `token`?: string;
+      `inHsm`?: (string)[];
+      `inSoftware`?: (string)[];
+      `refused`?: boolean;
+      `note`?: string
+    };
     `boundaries`?: {
       `perRealmKey`?: boolean;
       `perRealmDataKey`?: boolean;
@@ -13173,7 +13249,8 @@ op `getMail`(@js(#{`examples`:#["password-reset"]}) `parameters/0/schema`: "pass
       `label`?: string;
       `what`?: string;
       `optional`?: boolean;
-      `reason`?: string
+      `reason`?: string;
+      @js(#{`description`:"The Subject an ENCRYPTED message of this category goes out under (#1955), `{{service}}` filled in at send; the real subject is inside."}) `encryptedSubject`?: string
     })[];
     `selfServiceReset`?: boolean;
     `securityNotices`?: boolean;
@@ -13738,12 +13815,35 @@ op `getDevices`(`parameters/0/schema`: string,
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
+@endpoint("/admin-api/devices/new",
+  "get",
+  #{
+    `operationId`:"getNewDeviceForm",
+    `summary`:"What a device may be registered with, and which of it is required",
+    `description`:"The create's fields in `createFields`, each with `required` — `owner` is the one the create refuses without (STS-DEVICE-0001); the rest are optional, and a first key is recorded only when both `keyKind` and `key` are given — plus the closed sets the form's choices come from: `ownerKinds`, `platforms` and the `keyKinds` a first key may be. **It registers nothing**: the create is `POST /admin-api/devices/create`.\n\n**Mirrors** `GET /admin/devices/new` on the admin console.",
+    `tags`:#["Devices"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The fields, which are required, and the choices.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+  })
+op `getNewDeviceForm`(`responses/200/content/application~1json/schema`: `NewDeviceForm`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
 @endpoint("/admin-api/devices/create",
   "post",
   #{
     `operationId`:"createDevice",
     `summary`:"Register a device, owned by a person or an application",
-    `description`:"A device entry under `ou=devices` owned by `owner` — a username, or with `ownerKind` `application` an application's identifier — with an optional `label`, `platform`, `model`, `os`, the `applications` that use it, and its first keys, either `keys` (each `kind` and `value`: a PEM certificate, a public JWK or a security key's credential id the owner enrolled) or one as `keyKind` and `key`. Every key is recorded as proven by nobody and self-asserted. Refused for an owner the directory does not hold (STS-DEVICE-0001), an owner at its bound (STS-DEVICE-0002, STS-DEVICE-0003 — nothing is removed to make room), a key that is private, unreadable (STS-DEVICE-0004) or another device's (STS-DEVICE-0005).\n\n**Mirrors** `POST /admin/devices` on the admin console.",
+    `description`:"A device entry under `ou=devices` owned by `owner` — a username, or with `ownerKind` `application` an application's identifier — with an optional `label`, `platform`, `model`, `os`, the `applications` that use it, and its first keys, either `keys` (each `kind` and `value`: a PEM certificate, a public JWK or a security key's credential id the owner enrolled) or one as `keyKind` and `key`. Every key is recorded as proven by nobody and self-asserted. Refused for an owner the directory does not hold (STS-DEVICE-0001), an owner at its bound (STS-DEVICE-0002, STS-DEVICE-0003 — nothing is removed to make room), a key that is private, unreadable (STS-DEVICE-0004) or another device's (STS-DEVICE-0005).\n\n**Mirrors** `POST /admin/devices and POST /admin/devices/new` on the admin console.",
     `tags`:#["Devices"],
     `responses`:#{
       `200`:#{
@@ -13783,9 +13883,12 @@ op `createDevice`(@js(#{
     @js(#{
       `description`:"Client ids or application identifiers: an array, or one string, comma separated."
     }) `applications`?: unknown;
+    // kind and value stay optional here. The create already refuses a
+    // key without either (STS-DEVICE-0004). Marking them required is
+    // request-property-became-required, which the OpenAPI gate rejects.
     `keys`?: ({
-      `kind`?: "x509" | "jwk" | "webauthn";
-      @js(#{`description`:"PEM, JWK (object or JSON) or credential id."}) `value`?: unknown;
+      @js(#{`description`:"Required in each key: a key with no kind is refused (STS-DEVICE-0004)."}) `kind`?: "x509" | "jwk" | "webauthn";
+      @js(#{`description`:"PEM, JWK (object or JSON) or credential id. Required in each key: a key with nothing readable is refused (STS-DEVICE-0004)."}) `value`?: unknown;
       `label`?: string
     })[];
     `keyKind`?: "x509" | "jwk" | "webauthn";
@@ -13802,7 +13905,7 @@ op `createDevice`(@js(#{
   #{
     `operationId`:"updateDevice",
     `summary`:"Change a device's label, owner or description",
-    `description`:"Any of `label`, `platform`, `model`, `os`, `applications` (the whole list) and a new `owner` (with `ownerKind`). A new owner is held to its own bound and takes the device WITHOUT its Native SSO secret, which was bound to the old owner's session; its keys go with it. Refused for an unknown device (STS-DEVICE-0007).\n\n**Mirrors** `POST /admin/devices` on the admin console.",
+    `description`:"Any of `label`, `platform`, `model`, `os`, `applications` (the whole list) and a new `owner` (with `ownerKind`). A new owner is held to its own bound and takes the device WITHOUT its Native SSO secret, which was bound to the old owner's session; its keys go with it. Refused for an unknown device (STS-DEVICE-0007).\n\n**Mirrors** `POST /admin/devices and POST /admin/devices/new` on the admin console.",
     `tags`:#["Devices"],
     `responses`:#{
       `200`:#{
@@ -13841,7 +13944,7 @@ op `updateDevice`(@js(#{`examples`:#[#{`id`:"no-such-device",`label`:"Kitchen ta
   #{
     `operationId`:"removeDevice",
     `summary`:"Remove a device",
-    `description`:"Deletes the device entry, its keys and any Native SSO secret with it. Refused for an unknown device (STS-DEVICE-0007).\n\n**Mirrors** `POST /admin/devices` on the admin console.",
+    `description`:"Deletes the device entry, its keys and any Native SSO secret with it. Refused for an unknown device (STS-DEVICE-0007).\n\n**Mirrors** `POST /admin/devices and POST /admin/devices/new` on the admin console.",
     `tags`:#["Devices"],
     `responses`:#{
       `200`:#{
@@ -13871,7 +13974,7 @@ op `removeDevice`(@js(#{`examples`:#[#{`id`:"no-such-device"}]}) `requestBody/co
   #{
     `operationId`:"addDeviceKey",
     `summary`:"Add a key a device is recognised by",
-    `description`:"`kind` `x509` (a PEM certificate; its thumbprint is SHA-256 over the SubjectPublicKeyInfo), `jwk` (a PUBLIC JWK; RFC 7638, which is DPoP's jkt) or `webauthn` (the credential id of a security key the device's owner enrolled), in `value`. Recorded as proven by nobody and self-asserted. Refused for private material or an unreadable key (STS-DEVICE-0004), a key another device holds (STS-DEVICE-0005), or a device at devices.maxKeysPerDevice (STS-DEVICE-0006).\n\n**Mirrors** `POST /admin/devices` on the admin console.",
+    `description`:"`kind` `x509` (a PEM certificate; its thumbprint is SHA-256 over the SubjectPublicKeyInfo), `jwk` (a PUBLIC JWK; RFC 7638, which is DPoP's jkt) or `webauthn` (the credential id of a security key the device's owner enrolled), in `value`. Recorded as proven by nobody and self-asserted. Refused for private material or an unreadable key (STS-DEVICE-0004), a key another device holds (STS-DEVICE-0005), or a device at devices.maxKeysPerDevice (STS-DEVICE-0006).\n\n**Mirrors** `POST /admin/devices and POST /admin/devices/new` on the admin console.",
     `tags`:#["Devices"],
     `responses`:#{
       `200`:#{
@@ -13919,7 +14022,7 @@ op `addDeviceKey`(@js(#{
   #{
     `operationId`:"removeDeviceKey",
     `summary`:"Remove one of a device's keys",
-    `description`:"`key` is the key's id or its thumbprint. Refused for an unknown device (STS-DEVICE-0007) or a key it does not hold (STS-DEVICE-0008).\n\n**Mirrors** `POST /admin/devices` on the admin console.",
+    `description`:"`key` is the key's id or its thumbprint. Refused for an unknown device (STS-DEVICE-0007) or a key it does not hold (STS-DEVICE-0008).\n\n**Mirrors** `POST /admin/devices and POST /admin/devices/new` on the admin console.",
     `tags`:#["Devices"],
     `responses`:#{
       `200`:#{
@@ -13952,7 +14055,7 @@ op `removeDeviceKey`(@js(#{`examples`:#[#{`id`:"no-such-device",`key`:"k-none"}]
   #{
     `operationId`:"setDeviceCompliance",
     `summary`:"Set a device's compliance, as an administrator",
-    `description`:"`status` is `compliant`, `not-compliant` or `unknown` (withdrawing a vouch), with an optional `reason`. Recorded with source `admin`. When what a receiver can be told moved — CAEP knows compliant and not-compliant, and unknown is sent as not-compliant — a CAEP device-compliance-change goes out, its subject the device and its owner. An MDM feed reports through POST /admin-api/device-compliance instead, under its own scope. Refused for an unknown device (STS-DEVICE-0007) or status (STS-DEVICE-0011).\n\n**Mirrors** `POST /admin/devices` on the admin console.",
+    `description`:"`status` is `compliant`, `not-compliant` or `unknown` (withdrawing a vouch), with an optional `reason`. Recorded with source `admin`. When what a receiver can be told moved — CAEP knows compliant and not-compliant, and unknown is sent as not-compliant — a CAEP device-compliance-change goes out, its subject the device and its owner. An MDM feed reports through POST /admin-api/device-compliance instead, under its own scope. Refused for an unknown device (STS-DEVICE-0007) or status (STS-DEVICE-0011).\n\n**Mirrors** `POST /admin/devices and POST /admin/devices/new` on the admin console.",
     `tags`:#["Devices"],
     `responses`:#{
       `200`:#{
@@ -13994,7 +14097,7 @@ op `setDeviceCompliance`(@js(#{
   #{
     `operationId`:"setDeviceStatus",
     `summary`:"Mark a device compromised, or restore it",
-    `description`:"`status` `compromised`: every sign-on session one of its keys authenticated is ended, its Native SSO secret revoked, every certificate this service's EST or SCEP Issuing CA issued it revoked for keyCompromise, its risk level raised to HIGH (CAEP risk-level-change, principal DEVICE), and for a person's device RISC credential-compromise is sent naming the person and the device (and the deprecated sessions-revoked, where risc.autoEmitTypes names it). `active` restores it and puts back the risk level the compromise raised; nothing revoked comes back. Answers `sessionsEnded` and `certificatesRevoked`.\n\n**Mirrors** `POST /admin/devices` on the admin console.",
+    `description`:"`status` `compromised`: every sign-on session one of its keys authenticated is ended, its Native SSO secret revoked, every certificate this service's EST or SCEP Issuing CA issued it revoked for keyCompromise, its risk level raised to HIGH (CAEP risk-level-change, principal DEVICE), and for a person's device RISC credential-compromise is sent naming the person and the device (and the deprecated sessions-revoked, where risc.autoEmitTypes names it). `active` restores it and puts back the risk level the compromise raised; nothing revoked comes back. Answers `sessionsEnded` and `certificatesRevoked`.\n\n**Mirrors** `POST /admin/devices and POST /admin/devices/new` on the admin console.",
     `tags`:#["Devices"],
     `responses`:#{
       `200`:#{
@@ -18539,6 +18642,58 @@ op `renameUserPasskey`(@js(#{
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
+@endpoint("/admin-api/users/import-u2f-key",
+  "post",
+  #{
+    `operationId`:"importUserU2fKey",
+    `summary`:"Import a legacy FIDO U2F security key for somebody",
+    `description`:"Puts a credential a legacy FIDO U2F relying party registered onto the person's entry, from the four values that service kept: the key handle (the credential id), the P-256 public key as the uncompressed point (65 bytes starting 0x04), the signature counter and the AppID it was registered under. Both byte strings are base64 or base64url. Nothing is verified about where the values came from: the caller vouches for them, and the act is audited (`admin.mfa.key.imported`). Refused unless `webauthn.u2fAppIds` lists the AppID (STS-AUTHN-0561; empty, the default, refuses every import), and for a key handle that is not 1 to 255 bytes (STS-AUTHN-0562), a public key that is not a P-256 point (STS-AUTHN-0563) or a counter outside 0 to 4294967295 (STS-AUTHN-0564). Written through the same writer as every passkey, so the person's passkey policy's registration rules, the duplicate check and `webauthn.maxKeysPerPerson` hold. The key answers a second-factor step only, asserted with the `appid` extension (WebAuthn Level 3 section 10.1.1), because a U2F key cannot verify the person; registrations ask the browser for `appidExclude` (section 10.1.2) so the same key is not registered again.\n\n**Mirrors** `POST /admin/users, POST /admin/users/new, POST /admin/users/edit and POST /admin/users/service-account` on the admin console.",
+    `tags`:#["Users"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The key imported, or why it was not.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `importUserU2fKey`(@js(#{
+    `examples`:#[#{`user`:"alice",`appId`:"https://u2f.example.com/app-id.json",`keyHandle`:"q1w2e3r4t5y6u7i8o9p0",`publicKey`:"BASE64URL-OF-THE-65-BYTE-UNCOMPRESSED-POINT",`counter`:42,`label`:"Old office key"}]
+  }) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The person, as /admin-api/users names them."}) `user`: string;
+    @js(#{`description`:"Accepted for `user`."}) `username`?: string;
+    @js(#{
+      `maxLength`:2048,
+      `description`:"The AppID the key was registered under, an https URL `webauthn.u2fAppIds` lists."
+    }) `appId`: string;
+    @js(#{
+      `maxLength`:400,
+      `description`:"The U2F key handle, base64 or base64url of 1 to 255 bytes."
+    }) `keyHandle`: string;
+    @js(#{
+      `maxLength`:200,
+      `description`:"The P-256 public key as the uncompressed point, base64 or base64url of 65 bytes."
+    }) `publicKey`: string;
+    @js(#{`description`:"The signature counter the legacy service last recorded, 0 to 4294967295; 0 when left out."}) `counter`?: integer | string;
+    @js(#{
+      `maxLength`:200,
+      `description`:"A name for the key; empty gives it the default."
+    }) `label`?: string
+  },
+  `responses/200/content/application~1json/schema`: WithOkMessageErrorsEtc45,
+  `responses/400/content/application~1json/schema`: WithOkMessageErrorsEtc45,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
 @endpoint("/admin-api/users/begin-passkey-enrolment",
   "post",
   #{
@@ -19242,7 +19397,7 @@ op `getGroups`(`parameters/0/schema`: string,
   #{
     `operationId`:"createGroup",
     `summary`:"Put a group in the directory",
-    `description`:"An entry under `ou=groups`, as a `groupOfNames` — so it is counted as a group by BOTH of the rules /admin/groups applies, its placement and its object class, and stays one if a client moves it.\n\n**The name becomes the `cn` AND the RDN**, so it is refused if it carries a character RFC 4514 section 2.4 reserves in a DN (one of `, = + < > # ; \" \\`) — the same rule a username is refused by, and refused rather than escaped for the same reason: an `ldapadd` can still create such an entry with the escaping written out. A DN sent here is refused too, because what it would create is a group whose name is another group's DN.\n\n**A member that names nothing is WRITTEN, not refused.** This directory does no referential integrity in either direction — deleting a person leaves their DN in every group that listed them — so a create that refused a dangling member would make the state /admin/groups exists to report impossible to produce from this door. They come back in `dangling`.\n\n**An empty group is allowed and RFC 4519 says it should not be** (`member` is MUST on `groupOfNames`). SCIM already creates one; a management API stricter than SCIM about the same store would be two doors disagreeing about what this directory holds.\n\n**IT GRANTS NOTHING.** No endpoint here decides anything on a group. The two that do are `admin.readGroup` and `admin.writeGroup`, and they are granted at POST /admin-api/rbac rather than by creating a group with the right name — though creating one with the right name and adding somebody to it does the same thing, because those two ARE ordinary groups in this directory.\n\n**Mirrors** `POST /admin/groups and POST /admin/groups/owners` on the admin console.",
+    `description`:"An entry under `ou=groups`, as a `groupOfNames` — so it is counted as a group by BOTH of the rules /admin/groups applies, its placement and its object class, and stays one if a client moves it.\n\n**The name becomes the `cn` AND the RDN**, so it is refused if it carries a character RFC 4514 section 2.4 reserves in a DN (one of `, = + < > # ; \" \\`) — the same rule a username is refused by, and refused rather than escaped for the same reason: an `ldapadd` can still create such an entry with the escaping written out. A DN sent here is refused too, because what it would create is a group whose name is another group's DN.\n\n**A member that names nothing is WRITTEN, not refused.** This directory does no referential integrity in either direction — deleting a person leaves their DN in every group that listed them — so a create that refused a dangling member would make the state /admin/groups exists to report impossible to produce from this door. They come back in `dangling`.\n\n**An empty group is allowed and RFC 4519 says it should not be** (`member` is MUST on `groupOfNames`). SCIM already creates one; a management API stricter than SCIM about the same store would be two doors disagreeing about what this directory holds.\n\n**IT GRANTS NOTHING.** No endpoint here decides anything on a group. The two that do are `admin.readGroup` and `admin.writeGroup`, and they are granted at POST /admin-api/rbac rather than by creating a group with the right name — though creating one with the right name and adding somebody to it does the same thing, because those two ARE ordinary groups in this directory.\n\n**Mirrors** `POST /admin/groups, POST /admin/groups/new and POST /admin/groups/owners` on the admin console.",
     `tags`:#["Groups"],
     `responses`:#{
       `200`:#{
@@ -19287,12 +19442,35 @@ op `createGroup`(@js(#{
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
+@endpoint("/admin-api/groups/new",
+  "get",
+  #{
+    `operationId`:"getNewGroupForm",
+    `summary`:"What a group may be created with, and which of it is required",
+    `description`:"The create's fields in `createFields`, each with `required` — `group` (the `cn`) is the one the create refuses without; `note`, `mail` and `members` are optional — plus the container a group lands in, `groupsDn`, which is THIS REALM'S. **It creates nothing**: the create is `POST /admin-api/groups/create`. A process with no directory answers `directory: false`.\n\n**Mirrors** `GET /admin/groups/new` on the admin console.",
+    `tags`:#["Groups"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The fields, which are required, the container and the realm.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+  })
+op `getNewGroupForm`(`responses/200/content/application~1json/schema`: `NewGroupForm`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
 @endpoint("/admin-api/groups/add-member",
   "post",
   #{
     `operationId`:"addGroupMember",
     `summary`:"Put somebody in a group that already exists",
-    `description`:"One membership value onto one group. `group` is its `cn` or its whole DN; `member` is a user name or any DN.\n\n**IT IS IDEMPOTENT.** Adding somebody already listed answers `ok: true` with `changed: false` rather than an error, so a script that adds on every run does not fail on its second one. Membership is asked across `member`, `uniqueMember` and `memberUid` together, which is how /admin/groups and the groups claim ask it — an add that could not see a `memberUid` would write a second value for one membership.\n\n**It writes onto `member`** whatever else the entry carries, rather than extending whichever convention the group already uses: this service's groups claim, the console and RFC 4519 all read `member` first, and guessing which of three attributes was meant would be this operation deciding something the caller did not say.\n\n**It does not create the group as a side effect.** A typo in the name would then be a new group rather than an error. And it writes nothing onto the PERSON: `memberOf` is maintained by nothing here — it is not even a standard attribute — and a value written there is one no other door in this service can take away.\n\n**Removing one is not here.** It is an `ldapmodify` or a SCIM `PATCH`, and POST /admin-api/rbac for the two groups that grant the console.\n\n**Mirrors** `POST /admin/groups and POST /admin/groups/owners` on the admin console.",
+    `description`:"One membership value onto one group. `group` is its `cn` or its whole DN; `member` is a user name or any DN.\n\n**IT IS IDEMPOTENT.** Adding somebody already listed answers `ok: true` with `changed: false` rather than an error, so a script that adds on every run does not fail on its second one. Membership is asked across `member`, `uniqueMember` and `memberUid` together, which is how /admin/groups and the groups claim ask it — an add that could not see a `memberUid` would write a second value for one membership.\n\n**It writes onto `member`** whatever else the entry carries, rather than extending whichever convention the group already uses: this service's groups claim, the console and RFC 4519 all read `member` first, and guessing which of three attributes was meant would be this operation deciding something the caller did not say.\n\n**It does not create the group as a side effect.** A typo in the name would then be a new group rather than an error. And it writes nothing onto the PERSON: `memberOf` is maintained by nothing here — it is not even a standard attribute — and a value written there is one no other door in this service can take away.\n\n**Removing one is not here.** It is an `ldapmodify` or a SCIM `PATCH`, and POST /admin-api/rbac for the two groups that grant the console.\n\n**Mirrors** `POST /admin/groups, POST /admin/groups/new and POST /admin/groups/owners` on the admin console.",
     `tags`:#["Groups"],
     `responses`:#{
       `200`:#{
@@ -19327,7 +19505,7 @@ op `addGroupMember`(@js(#{`examples`:#[#{`group`:"developers",`member`:"alice"}]
   #{
     `operationId`:"setGroupMail",
     `summary`:"Set or clear a group's email address",
-    `description`:"Writes one `mail` value onto the group's own entry, or removes it when `mail` is empty. It is where a report definition shared with the group sends its result notices (the reports application, #989); a shared group with no address is written up as STS-REPORT-0037 when a notice is due. `group` is its `cn` or its whole DN. **Idempotent**: the same address again, or clearing one that is already absent, answers `ok: true` with `changed: false`. A value that is not an address (one local part, one `@`, a domain with a dot, no whitespace) is refused.\n\n**Mirrors** `POST /admin/groups and POST /admin/groups/owners` on the admin console.",
+    `description`:"Writes one `mail` value onto the group's own entry, or removes it when `mail` is empty. It is where a report definition shared with the group sends its result notices (the reports application, #989); a shared group with no address is written up as STS-REPORT-0037 when a notice is due. `group` is its `cn` or its whole DN. **Idempotent**: the same address again, or clearing one that is already absent, answers `ok: true` with `changed: false`. A value that is not an address (one local part, one `@`, a domain with a dot, no whitespace) is refused.\n\n**Mirrors** `POST /admin/groups, POST /admin/groups/new and POST /admin/groups/owners` on the admin console.",
     `tags`:#["Groups"],
     `responses`:#{
       `200`:#{
@@ -19360,7 +19538,7 @@ op `setGroupMail`(@js(#{`examples`:#[#{`group`:"developers",`mail`:"developers@e
   #{
     `operationId`:"setGroupPolicy",
     `summary`:"Set or clear the named policy a group names of one kind",
-    `description`:"Writes one value of `attribute` — the attribute by which a group names its policy of a kind, `stsPasskeyPolicy` for the passkey policy — onto the group's own entry, or removes it when `policy` is empty. `policy` is `default` or a named policy of that kind this realm holds (STS-LDAP-0195 otherwise); an attribute no kind declares is refused (STS-LDAP-0194). The policy a group names competes for each of its members on precedence with the policy the application names, the policy the person names and the policies their other groups name: the lowest applies, ties by name, else `default`. A named policy a group still names cannot be deleted. `GET /admin-api/groups?group=` lists the attributes and their choices as `policyReferences`. **Idempotent**: the value the group already names answers `changed: false`.\n\n**Mirrors** `POST /admin/groups and POST /admin/groups/owners` on the admin console.",
+    `description`:"Writes one value of `attribute` — the attribute by which a group names its policy of a kind, `stsPasskeyPolicy` for the passkey policy — onto the group's own entry, or removes it when `policy` is empty. `policy` is `default` or a named policy of that kind this realm holds (STS-LDAP-0195 otherwise); an attribute no kind declares is refused (STS-LDAP-0194). The policy a group names competes for each of its members on precedence with the policy the application names, the policy the person names and the policies their other groups name: the lowest applies, ties by name, else `default`. A named policy a group still names cannot be deleted. `GET /admin-api/groups?group=` lists the attributes and their choices as `policyReferences`. **Idempotent**: the value the group already names answers `changed: false`.\n\n**Mirrors** `POST /admin/groups, POST /admin/groups/new and POST /admin/groups/owners` on the admin console.",
     `tags`:#["Groups"],
     `responses`:#{
       `200`:#{
@@ -19406,7 +19584,7 @@ op `setGroupPolicy`(@js(#{
   #{
     `operationId`:"addGroupOwner",
     `summary`:"Add one owner to a group",
-    `description`:"Adds a person or a group of this realm to the group's `owner` values (RFC 4519 section 2.23) and writes at once, keeping the other owners. `owner` is a username, a DN or a `urn:uuid:` subject for a person, a `cn` or DN for a group.\n\n**Unlike a member, an owner must name somebody**: one that names no person and no group here is refused. A group may not own itself, and names at most 25 owners. An owner already listed is `ok` with `changed: false`.\n\n**AN OWNER GRANTS NOTHING**: nothing in this service reads `owner` to decide anything.\n\n**Mirrors** `POST /admin/groups and POST /admin/groups/owners` on the admin console.",
+    `description`:"Adds a person or a group of this realm to the group's `owner` values (RFC 4519 section 2.23) and writes at once, keeping the other owners. `owner` is a username, a DN or a `urn:uuid:` subject for a person, a `cn` or DN for a group.\n\n**Unlike a member, an owner must name somebody**: one that names no person and no group here is refused. A group may not own itself, and names at most 25 owners. An owner already listed is `ok` with `changed: false`.\n\n**AN OWNER GRANTS NOTHING**: nothing in this service reads `owner` to decide anything.\n\n**Mirrors** `POST /admin/groups, POST /admin/groups/new and POST /admin/groups/owners` on the admin console.",
     `tags`:#["Groups"],
     `responses`:#{
       `200`:#{
@@ -19439,7 +19617,7 @@ op `addGroupOwner`(@js(#{`examples`:#[#{`group`:"developers",`owner`:"alice"}]})
   #{
     `operationId`:"removeGroupOwner",
     `summary`:"Take one owner off a group",
-    `description`:"Takes one `owner` value off the group and writes at once (#603). `owner` is the DN the group lists; one it does not list is refused. The last owner may go: a group needs none.\n\n**Mirrors** `POST /admin/groups and POST /admin/groups/owners` on the admin console.",
+    `description`:"Takes one `owner` value off the group and writes at once (#603). `owner` is the DN the group lists; one it does not list is refused. The last owner may go: a group needs none.\n\n**Mirrors** `POST /admin/groups, POST /admin/groups/new and POST /admin/groups/owners` on the admin console.",
     `tags`:#["Groups"],
     `responses`:#{
       `200`:#{
@@ -26583,7 +26761,7 @@ op `setApplicationAttribute`(@js(#{
     @js(#{`description`:"The identifier, exactly as the registry holds it."}) `application`: string;
     @js(#{
       `description`:"One of the editable single-valued attributes. GET /admin/ldap/applications publishes the schema with an `editable` member on every row."
-    }) `attribute`: "appName" | "appHomePageUrl" | "appLaunchProtocol" | "description" | "oauthClientSecret" | "oauthFrontchannelLogoutUri" | "oauthFrontchannelLogoutSessionRequired" | "oauthBackchannelLogoutUri" | "oauthBackchannelLogoutSessionRequired" | "oauthPermissionBaseUri" | "oauthResourceMetadata" | "oauthResourceMetadataUrl" | "oauthNativeSso" | "oauthNativeSsoGroup" | "oauthBackchannelTokenDeliveryMode" | "oauthBackchannelClientNotificationEndpoint" | "oauthCommandEndpoint" | "oauthBackchannelAuthenticationRequestSigningAlg" | "oauthBackchannelUserCodeParameter" | "oauthSubjectType" | "oauthSectorIdentifierUri" | "oauthDidClaimWithPairwise" | "oauthTokenEndpointAuthSigningAlg" | "oauthJwks" | "oauthJwksUri" | "oauthIntrospectionSignedResponseAlg" | "oauthIntrospectionEncryptedResponseAlg" | "oauthIntrospectionEncryptedResponseEnc" | "oauthRequestObjectSigningAlg" | "oauthRequestObjectEncryptionAlg" | "oauthRequestObjectEncryptionEnc" | "oauthRequireSignedRequestObject" | "oauthRequirePushedAuthorizationRequests" | "oauthHttpSignedRequests" | "oauthStepUpAcrValues" | "oauthStepUpMaxAge" | "oauthIdTokenSignedResponseAlg" | "oauthIdTokenEncryptedResponseAlg" | "oauthIdTokenEncryptedResponseEnc" | "oauthUserinfoSignedResponseAlg" | "oauthUserinfoEncryptedResponseAlg" | "oauthUserinfoEncryptedResponseEnc" | "oauthAuthorizationSignedResponseAlg" | "oauthAuthorizationEncryptedResponseAlg" | "oauthAuthorizationEncryptedResponseEnc" | "oauthDefaultAcrValues" | "oauthDefaultMaxAge" | "oauthAssertionJwks" | "oauthAssertionCertificate" | "oauthAssertionCertificateChain" | "oauthAssertionPrivateKey" | "oauthAssertionKid" | "oauthAssertionExpiresAt" | "oauthAssertionKeySource" | "oauthSamlAssertionSigningCertificate" | "oauthSamlAssertionCertificate" | "oauthSamlAssertionCertificateChain" | "oauthSamlAssertionPrivateKey" | "oauthSamlAssertionThumbprint" | "oauthSamlAssertionExpiresAt" | "oauthSamlAssertionKeySource" | "oauthIssuedSoftwareStatement" | "oauthTlsClientAuthSubjectDn" | "oauthTlsClientAuthSanDns" | "oauthTlsClientAuthSanUri" | "oauthTlsClientAuthSanIp" | "oauthTlsClientAuthSanEmail" | "oauthTlsClientCertificateBoundAccessTokens" | "oauthTlsClientCertificateThumbprint" | "samlSpMetadataUrl" | "samlSpMetadata" | "samlEncryptionCertificate" | "samlSpMetadataSigningCertificate" | "saml2EncryptAssertion" | "saml2EncryptionAlgorithm" | "saml2KeyTransportAlgorithm" | "wstrustEncryptRequest" | "wstrustAcceptEncryptedElements" | "wstrustEncryptResponse" | "wstrustEncryptionAlgorithm" | "wstrustEncryptionCertificate" | "wstrustKeyTransportAlgorithm" | "wstrustResponseRecipientXPath" | "saml2EncryptLogoutNameId" | "oauthAccessTokenTtlS" | "oauthIdTokenTtlS" | "oauthRefreshTokenTtlS" | "oauthRefreshIdleSeconds" | "oauthMaxAuthAgeS" | "oauthClaimsAccessToken" | "oauthClaimsIdToken" | "oauthClaimsUserinfo" | "oauthClaimAttributesAccessToken" | "oauthClaimAttributesIdToken" | "oauthClaimAttributesUserinfo" | "oauthClaimsCombineAccessToken" | "oauthClaimsCombineIdToken" | "oauthClaimsCombineUserinfo" | "oauthPermissionClaims" | "oauthAccessTokenClaimsCombine" | "oauthRevokeRefreshOnLogout" | "oauthThirdPartyInitiatedLogin" | "oauthSpInitiatedSso" | "oauthInitiateLoginUri" | "oauthLogoUri" | "oauthPolicyUri" | "oauthTosUri" | "oauthTokenExchangeRefreshToken" | "appDefaultDelegationSemantics" | "appNotDelegated" | "appMayAct" | "appGroupsClaim" | "appGroupsClaimName" | "appGroupsClaimValue" | "appGroupsClaimFromMemberOf" | "wsfedAssertionLifetimeMin" | "saml2CustomAttributes" | "saml11CustomAttributes" | "saml2ClaimAttributes" | "saml11ClaimAttributes" | "saml2ClaimsCombine" | "saml11ClaimsCombine" | "vcCredentialClaimAttributes" | "saml2AssertionLifetimeMin" | "saml2SignAssertion" | "saml2SignResponse" | "saml2NameIdFormat" | "saml2ArtifactTtlS" | "saml11AssertionLifetimeMin" | "saml11SignAssertion" | "saml11SignResponse" | "saml11NameIdFormat" | "saml11ArtifactTtlS" | "saml2IdpInitiatedSso" | "saml2SpInitiatedSso" | "saml11IdpInitiatedSso" | "saml11SpInitiatedSso" | "wsfedIdpInitiatedSso" | "wsfedSpInitiatedSso" | "krb5ClaimsPac" | "gnapClaimsAccessToken" | "krb5TrustedForDelegation" | "krb5ForeignTgtDelegation" | "appRegistrationAccessToken" | "acmeDefaultProfile" | "acmeCertificateLifetimeDays" | "estDefaultProfile" | "estCertificateLifetimeDays" | "scepDefaultProfile" | "scepCertificateLifetimeDays" | "estBasicAuthentication" | "estCertificateAuthentication" | "estServerKeyGeneration" | "enrollMaxCertificates" | "didPrivateKeys" | "secretDestProvider" | "secretDestPayload" | "secretDestRegion" | "secretDestProject" | "secretDestEndpoint" | "secretDestMount" | "secretDestField" | "secretDestDirectory" | "secretDestCaCertificates" | "secretDestCredential" | "scimClientBaseUrl" | "scimClientEnabled" | "scimClientAuthMethod" | "scimClientUsername" | "scimClientPassword" | "scimClientTokenEndpoint" | "scimClientOAuthClientId" | "scimClientOAuthClientSecret" | "scimClientOAuthClientAuth" | "scimClientOAuthScope" | "scimClientOAuthResource" | "scimClientTlsSource" | "scimClientTlsCertificate" | "scimClientTlsPrivateKey" | "scimClientCaCertificates" | "scimClientScopeMode" | "scimClientScopeFilter" | "scimClientGroupMode" | "scimClientDeprovision" | "scimClientReconcileMinutes" | "scimClientJurisdiction" | "scimClientMaxRequestsPerSecond" | "ssfCaepIncludeReasons" | "ssfCaepReasonLanguage" | "ssfCaepOmitEventTimestamp" | "ssfRiscIncludeReasons" | "ssfRiscReasonLanguage" | "ssfRiscOmitEventTimestamp" | "ssfSigningAlgorithm" | "ssfMinVerificationInterval" | "ssfInactivityTimeoutS" | "ssfInactivityAction" | "ssfVerificationEveryS" | "ssfStreamStatusOnCreate" | "ssfMaxStreams" | "ssfMaxSubjectsPerStream" | "ssfMaxQueuedEvents" | "ssfPollMaxEvents" | "ssfDeadLetterMaxPerStream" | "ssfPushTimeoutMs" | "ssfPushRetries" | "ssfPushRetryDelayMs" | "gnapInstanceId" | "gnapKey" | "gnapKeyReference" | "gnapKeyProof" | "gnapMtlsTrust" | "gnapSymmetricKey" | "gnapSymmetricAlg" | "gnapClassId" | "gnapDisplayUri" | "gnapLogoUri" | "gnapBearerTokens" | "gnapSkipInteraction" | "gnapAccessTokenFormat" | "gnapAccessTokenLifetimeS" | "gnapOwnerLookupUri" | "gnapJweKey" | "gnapScopedSignals" | "appFederationAutoRedirect" | "appAuthnPolicy" | "appPasskeyPolicy" | "appLocalePolicy" | "appPasswordPolicy" | "appPostLoginPolicy" | "umaOwnsResources";
+    }) `attribute`: "appName" | "appHomePageUrl" | "appLaunchProtocol" | "description" | "oauthClientSecret" | "oauthFrontchannelLogoutUri" | "oauthFrontchannelLogoutSessionRequired" | "oauthBackchannelLogoutUri" | "oauthBackchannelLogoutSessionRequired" | "oauthPermissionBaseUri" | "oauthResourceMetadata" | "oauthResourceMetadataUrl" | "oauthNativeSso" | "oauthNativeSsoGroup" | "oauthBackchannelTokenDeliveryMode" | "oauthBackchannelClientNotificationEndpoint" | "oauthCommandEndpoint" | "oauthBackchannelAuthenticationRequestSigningAlg" | "oauthBackchannelUserCodeParameter" | "oauthSubjectType" | "oauthSectorIdentifierUri" | "oauthDidClaimWithPairwise" | "oauthTokenEndpointAuthSigningAlg" | "oauthJwks" | "oauthJwksUri" | "oauthIntrospectionSignedResponseAlg" | "oauthIntrospectionEncryptedResponseAlg" | "oauthIntrospectionEncryptedResponseEnc" | "oauthRequestObjectSigningAlg" | "oauthRequestObjectEncryptionAlg" | "oauthRequestObjectEncryptionEnc" | "oauthRequireSignedRequestObject" | "oauthRequirePushedAuthorizationRequests" | "oauthHttpSignedRequests" | "oauthStepUpAcrValues" | "oauthStepUpMaxAge" | "oauthIdTokenSignedResponseAlg" | "oauthIdTokenEncryptedResponseAlg" | "oauthIdTokenEncryptedResponseEnc" | "oauthUserinfoSignedResponseAlg" | "oauthUserinfoEncryptedResponseAlg" | "oauthUserinfoEncryptedResponseEnc" | "oauthAuthorizationSignedResponseAlg" | "oauthAuthorizationEncryptedResponseAlg" | "oauthAuthorizationEncryptedResponseEnc" | "oauthDefaultAcrValues" | "oauthDefaultMaxAge" | "oauthAssertionJwks" | "oauthAssertionCertificate" | "oauthAssertionCertificateChain" | "oauthAssertionPrivateKey" | "oauthAssertionKid" | "oauthAssertionExpiresAt" | "oauthAssertionKeySource" | "oauthSamlAssertionSigningCertificate" | "oauthSamlAssertionCertificate" | "oauthSamlAssertionCertificateChain" | "oauthSamlAssertionPrivateKey" | "oauthSamlAssertionThumbprint" | "oauthSamlAssertionExpiresAt" | "oauthSamlAssertionKeySource" | "oauthIssuedSoftwareStatement" | "oauthTlsClientAuthSubjectDn" | "oauthTlsClientAuthSanDns" | "oauthTlsClientAuthSanUri" | "oauthTlsClientAuthSanIp" | "oauthTlsClientAuthSanEmail" | "oauthTlsClientCertificateBoundAccessTokens" | "oauthTlsClientCertificateThumbprint" | "samlSpMetadataUrl" | "samlSpMetadata" | "samlEncryptionCertificate" | "samlSpMetadataSigningCertificate" | "saml2EncryptAssertion" | "saml2EncryptionAlgorithm" | "saml2KeyTransportAlgorithm" | "wstrustEncryptRequest" | "wstrustAcceptEncryptedElements" | "wstrustEncryptResponse" | "wstrustEncryptionAlgorithm" | "wstrustEncryptionCertificate" | "wstrustKeyTransportAlgorithm" | "wstrustResponseRecipientXPath" | "saml2EncryptLogoutNameId" | "oauthAccessTokenTtlS" | "oauthIdTokenTtlS" | "oauthRefreshTokenTtlS" | "oauthRefreshIdleSeconds" | "oauthMaxAuthAgeS" | "oauthClaimsAccessToken" | "oauthClaimsIdToken" | "oauthClaimsUserinfo" | "oauthClaimAttributesAccessToken" | "oauthClaimAttributesIdToken" | "oauthClaimAttributesUserinfo" | "oauthClaimsCombineAccessToken" | "oauthClaimsCombineIdToken" | "oauthClaimsCombineUserinfo" | "oauthPermissionClaims" | "oauthAccessTokenClaimsCombine" | "oauthRevokeRefreshOnLogout" | "oauthThirdPartyInitiatedLogin" | "oauthSpInitiatedSso" | "oauthInitiateLoginUri" | "oauthLogoUri" | "oauthPolicyUri" | "oauthTosUri" | "oauthTokenExchangeRefreshToken" | "appDefaultDelegationSemantics" | "appNotDelegated" | "appMayAct" | "appGroupsClaim" | "appGroupsClaimName" | "appGroupsClaimValue" | "appGroupsClaimFromMemberOf" | "wsfedAssertionLifetimeMin" | "saml2CustomAttributes" | "saml11CustomAttributes" | "saml2ClaimAttributes" | "saml11ClaimAttributes" | "saml2ClaimsCombine" | "saml11ClaimsCombine" | "vcCredentialClaimAttributes" | "saml2AssertionLifetimeMin" | "saml2SignAssertion" | "saml2SignResponse" | "saml2NameIdFormat" | "saml2ArtifactTtlS" | "saml11AssertionLifetimeMin" | "saml11SignAssertion" | "saml11SignResponse" | "saml11NameIdFormat" | "saml11ArtifactTtlS" | "saml2IdpInitiatedSso" | "saml2SpInitiatedSso" | "saml11IdpInitiatedSso" | "saml11SpInitiatedSso" | "wsfedIdpInitiatedSso" | "wsfedSpInitiatedSso" | "krb5ClaimsPac" | "gnapClaimsAccessToken" | "krb5TrustedForDelegation" | "krb5ForeignTgtDelegation" | "appRegistrationAccessToken" | "acmeDefaultProfile" | "acmeCertificateLifetimeDays" | "estDefaultProfile" | "estCertificateLifetimeDays" | "scepDefaultProfile" | "scepCertificateLifetimeDays" | "estBasicAuthentication" | "estCertificateAuthentication" | "estServerKeyGeneration" | "enrollMaxCertificates" | "didPrivateKeys" | "secretDestProvider" | "secretDestPayload" | "secretDestRegion" | "secretDestProject" | "secretDestEndpoint" | "secretDestMount" | "secretDestField" | "secretDestDirectory" | "secretDestCaCertificates" | "secretDestCredential" | "scimClientBaseUrl" | "scimClientEnabled" | "scimClientAuthMethod" | "scimClientUsername" | "scimClientPassword" | "scimClientTokenEndpoint" | "scimClientOAuthClientId" | "scimClientOAuthClientSecret" | "scimClientOAuthClientAuth" | "scimClientOAuthScope" | "scimClientOAuthResource" | "scimClientTlsSource" | "scimClientTlsCertificate" | "scimClientTlsPrivateKey" | "scimClientCaCertificates" | "scimClientScopeMode" | "scimClientScopeFilter" | "scimClientGroupMode" | "scimClientDeprovision" | "scimClientReconcileMinutes" | "scimClientJurisdiction" | "scimClientMaxRequestsPerSecond" | "ssfCaepIncludeReasons" | "ssfCaepReasonLanguage" | "ssfCaepOmitEventTimestamp" | "ssfRiscIncludeReasons" | "ssfRiscReasonLanguage" | "ssfRiscOmitEventTimestamp" | "ssfSigningAlgorithm" | "ssfMinVerificationInterval" | "ssfInactivityTimeoutS" | "ssfInactivityAction" | "ssfVerificationEveryS" | "ssfStreamStatusOnCreate" | "ssfMaxStreams" | "ssfMaxSubjectsPerStream" | "ssfMaxQueuedEvents" | "ssfPollMaxEvents" | "ssfDeadLetterMaxPerStream" | "ssfPushTimeoutMs" | "ssfPushRetries" | "ssfPushRetryDelayMs" | "gnapInstanceId" | "gnapKey" | "gnapKeyReference" | "gnapKeyProof" | "gnapMtlsTrust" | "gnapSymmetricKey" | "gnapSymmetricAlg" | "gnapClassId" | "gnapDisplayUri" | "gnapLogoUri" | "gnapBearerTokens" | "gnapSkipInteraction" | "gnapAccessTokenFormat" | "gnapAccessTokenLifetimeS" | "gnapOwnerLookupUri" | "gnapJweKey" | "gnapScopedSignals" | "appFederationAutoRedirect" | "appAuthnPolicy" | "appPasskeyPolicy" | "appLocalePolicy" | "appPasswordPolicy" | "appPostLoginPolicy" | "umaOwnsResources" | "appDynamicRoleSelection";
     @js(#{`description`:"The new value; empty clears the attribute. For the admin console, the user portal and the reports application, emptying oauthMaxAuthAgeS, oauthRefreshTokenTtlS or oauthRefreshIdleSeconds is refused."}) `value`?: string;
     @js(#{`description`:"Required when this write changes oauthMaxAuthAgeS, oauthRefreshTokenTtlS or oauthRefreshIdleSeconds on the admin console, the user portal or the reports application. true, \"true\", \"on\" or \"1\". An unchanged value does not need it (#825)."}) `confirm`?: string
   },
@@ -35736,7 +35914,7 @@ op `pairKerberosTrust`(@js(#{
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getAudit`(`parameters/0/schema`: "authentication" | "session" | "directory" | "admin" | "api" | "application" | "protocol" | "spiffe" | "signals" | "authorization" | "service" | "mail",
-  `parameters/1/schema`: "authentication" | "authentication.refused" | "portal.activate" | "portal.activate.refused" | "portal.password.changed" | "authn.password.changed" | "portal.password.refused" | "portal.password.csrf" | "portal.signout" | "portal.signout.csrf" | "portal.key.enrolled" | "portal.key.removed" | "portal.key.renamed" | "portal.tls-client.issued" | "portal.tls-client.revoked" | "activation.issued" | "portal.password-reset" | "portal.password-reset.refused" | "authn.mfa.enrolment.required" | "authn.mfa.enrolment.started" | "authn.mfa.enrolment.offered" | "authn.mfa.enrolment.declined" | "authn.second-factor.skipped" | "authn.mfa.enrolment.at-risk" | "authn.mfa.enrolled" | "authn.recovery.refused" | "authn.recovery.limited" | "authn.recovery.completed" | "authn.sign-in.started-over" | "portal.mfa.started" | "portal.mfa.enrolled" | "portal.mfa.refused" | "portal.mfa.removed" | "portal.mfa.csrf" | "portal.hotp.started" | "portal.hotp.enrolled" | "portal.hotp.refused" | "portal.hotp.removed" | "portal.hotp.resynced" | "portal.hotp.resync-refused" | "portal.activate.mfa.started" | "portal.activate.mfa.refused" | "portal.activate.key.started" | "portal.activate.key.enrolled" | "portal.activate.key.refused" | "session.start" | "session.end" | "session.renew" | "authn.session.bound" | "authn.session.refreshed" | "authn.session.binding-skipped" | "logout.global" | "logout.selective" | "logout.backchannel" | "mail.queued" | "mail.sent" | "mail.dead" | "mail.refused" | "mail.reset-requested" | "mail.retry" | "mail.template" | "branding.logo" | "mail.verified" | "mail.preferences" | "scheduler.run" | "scheduler.step-down" | "keys.rotate" | "keys.rotate.emergency" | "application.secret-expiring" | "application.secret-expired" | "keys.retire" | "keys.data-key-rotate" | "keys.data-key-reencrypt" | "keys.data-key-destroy" | "keys.kek-rotate" | "keys.pin" | "keys.unpin" | "oidfed.key-minted" | "oidfed.key-rotated" | "oidfed.key-revoked" | "oidfed.subordinate-set" | "oidfed.subordinate-removed" | "oidfed.anchor-set" | "oidfed.anchor-removed" | "oidfed.mark-type-set" | "oidfed.remove-mark-type" | "oidfed.mark-policy-set" | "oidfed.remove-mark-policy" | "oidfed.mark-issued" | "oidfed.mark-revoked" | "oidfed.held-mark-added" | "oidfed.held-mark-removed" | "oidfed.act-refused" | "oidfed.resolved" | "device.create" | "device.browser.remembered" | "device.update" | "device.delete" | "device.evict" | "device.attestation-revoked" | "webauthn.ceremony" | "webauthn.algorithm-mismatch" | "webauthn.client.learned" | "webauthn.attestation-revoked" | "hardware-token.create" | "hardware-token.credential-add" | "hardware-token.holder-change" | "hardware-token.lost" | "oath-token.import" | "oath-token.assign" | "oath-token.claim" | "oath-token.remove" | "device.key-add" | "device.key-remove" | "device.compliance" | "device.enrol.refused" | "user.create" | "user.delete" | "user.update" | "user.rename" | "user.export" | "user.import" | "cells.rehome" | "user.query" | "group.create" | "group.delete" | "group.update" | "group.rename" | "entry.create" | "entry.delete" | "entry.update" | "entry.rename" | "directory.search" | "directory.compare" | "directory.bind" | "application.create" | "application.secret-revealed" | "application.export" | "application.import" | "application.add-owner" | "application.remove-owner" | "application.update" | "consent.grant" | "consent.deny" | "consent.revoke" | "application.delete" | "oidfed.registered" | "oidfed.registration-refused" | "admin.view" | "admin.change" | "admin.config-dump" | "claims.change" | "admin.role.change" | "admin.console.bootstrap" | "admin.mail.set" | "admin.pseudonym.set" | "admin.mfa.totp.cleared" | "admin.mfa.hotp.cleared" | "admin.mfa.key.cleared" | "admin.mfa.key.renamed" | "admin.password.reset" | "admin.password.reset-link" | "admin.mfa.primary-keys.removed" | "admin.mfa.disabled" | "admin.mfa.required" | "admin.mfa.unrequired" | "admin.delegation.not-delegated" | "admin.delegation.may-act" | "admin.delegation.semantics" | "portal.delegation.may-act" | "portal.delegation.search" | "admin.password-policy.change" | "admin.policies.export" | "admin.policies.import" | "admin.policies.trust-signer" | "admin.authn-policy.change" | "admin.locale-policy.change" | "admin.post-login-policy.change" | "authn.post-login.asked" | "authn.post-login.skipped" | "authn.post-login.done" | "authn.post-login.held" | "admin.post-login-activity.change" | "authn.post-login.activity-run" | "authn.post-login.unsupported" | "webauthn.key.possibly-replaced" | "authn.mail-factor.change" | "authn.mail-factor.sent" | "authn.mail-factor.accepted" | "authn.mail-factor.refused" | "admin.truststore.change" | "admin.pki.trust.change" | "krb5.keys.derived" | "krb5.trust.sid-filtered" | "admin.krb5.keys.cleared" | "admin.krb5.service.created" | "admin.krb5.service.rotated" | "admin.krb5.service.deleted" | "admin.krb5.previous.dropped" | "api.read" | "api.change" | "protocol.call" | "oauth.token.revoke" | "protocol.failure" | "service.failure" | "spiffe.svid.issue" | "spiffe.svid.validate" | "spiffe.entry.create" | "spiffe.entry.update" | "spiffe.entry.delete" | "spiffe.agent.create" | "spiffe.agent.attest" | "spiffe.agent.ban" | "spiffe.agent.unban" | "spiffe.agent.delete" | "spiffe.bundle.read" | "spiffe.bundle.change" | "spiffe.call.refuse" | "xacml.decision" | "xacml.enforcement" | "authzen.decision" | "xacml.remote.enforcement" | "authzen.remote.decision" | "xacml.remote.proxy" | "authzen.search" | "fga.decision" | "admin.authzen.attribute.set" | "admin.authzen.attribute.removed" | "admin.authzen.scope.set" | "admin.authzen.pep.granted" | "admin.authzen.callbacks.set" | "authzen.access-request.submitted" | "authzen.access-request.approved" | "authzen.access-request.denied" | "authzen.access-request.expired" | "authzen.access-request.cancelled" | "authzen.access-request.revoked" | "authzen.access-request.approver-refused" | "authzen.access-request.callback" | "xacml.issuance.refused" | "xacml.access.refused" | "xacml.issuance.alarm" | "xacml.pep.register" | "xacml.pep.certificate" | "xacml.pep.credential" | "xacml.pip.query" | "saml2.request.signature" | "gnap.grant.request" | "gnap.grant.consent" | "gnap.grant.deny" | "gnap.grant.approve" | "gnap.grant.revoke" | "gnap.grant.owner-queued" | "gnap.grant.forward" | "uma.resource.register" | "uma.resource.update" | "uma.resource.delete" | "uma.permission.ticket" | "uma.decision" | "uma.grant" | "uma.pct.revoke" | "uma.approval.request" | "uma.approval.answer" | "uma.claims.gathered" | "uma.share.add" | "uma.share.remove" | "uma.policy.alfa" | "uma.resource-server.enable" | "uma.resource-server.disable" | "uma.owns-resources.set" | "uma.rpt.revoke" | "gnap.grant.finalize" | "gnap.token.issue" | "gnap.token.rotate" | "gnap.token.revoke" | "gnap.rs.introspect" | "gnap.rs.register" | "ssf.stream.create" | "ssf.stream.update" | "ssf.stream.delete" | "ssf.stream.status" | "ssf.subject.change" | "ssf.event.transmit" | "ssf.announcement.broadcast" | "ssf.event.refused" | "ssf.stream.dead" | "ssf.stream.revived" | "ssf.stream.delivery" | "ssf.deadletter.clear" | "ssf.event.receive" | "caep.event.auto" | "caep.event.emit" | "caep.session.reset" | "caep.session.clear" | "risc.event.auto" | "risc.event.emit" | "risc.account.reset" | "risc.account.clear" | "persistence.minted-drop" | "admin.aud-sub.set" | "admin.mfa.backup-codes.cleared" | "admin.password.reset-keytab" | "admin.user.attribute" | "admin.service-account.set" | "admin.service-account.cleared" | "admin.service-account.owner-added" | "admin.service-account.owner-removed" | "admin.service-account.destination-set" | "admin.service-account.rotate" | "admin.app-password.created" | "admin.app-password.revoked" | "admin.ciba.answered" | "admin.device.removed" | "admin.ida.recorded" | "admin.ida.removed" | "admin.siop.enrolled" | "admin.siop.removed" | "admin.siop.preferred" | "admin.passkey.enrolment-started" | "admin.passkey.enrolment-refused" | "admin.passkey.enrolled" | "admin.passkey.upgrade-started" | "admin.passkey.upgrade-refused" | "admin.passkey.upgrade-proved" | "admin.passkey.upgrade-cancelled" | "admin.passkey.upgraded" | "ssf.signals.discover" | "ssf.signals.stream" | "ssf.signals.unblock" | "ssf.signals.read-stream" | "ssf.signals.update-stream" | "ssf.signals.delete-stream" | "ssf.signals.set-status" | "ssf.signals.add-subject" | "ssf.signals.remove-subject" | "ssf.signals.verify" | "application.key-issued" | "enrollment.acme.account.create" | "enrollment.acme.account.deactivate" | "enrollment.acme.account.key-change" | "enrollment.eab.create" | "enrollment.eab.delete" | "enrollment.challenge.create" | "enrollment.challenge.delete" | "enrollment.issue" | "enrollment.issue.refused" | "enrollment.revoke" | "federation.signal-block" | "federation.signal-unblock" | "federation.signout" | "federation.signout-answered" | "federation.unlink" | "federation.connected" | "federation.provider-notification" | "federation.group-ignored" | "group.add-member" | "group.add-owner" | "group.remove-owner" | "group.owner-protected" | "group.set-mail" | "group.set-policy" | "krb5.keytab.person" | "logout.backchannel.retry" | "oauth.device-secret.revoke" | "oauth2.ciba.notify" | "oauth2.claim-source-linked" | "oauth2.claim-source-link-refused" | "oauth2.claims-providers.add-provider" | "oauth2.claims-providers.update-provider" | "oauth2.claims-providers.remove-provider" | "oauth2.claims-providers.revoke-link" | "oauth2.command" | "oauth2.command.tenant" | "oauth2.grant-revoked" | "oauth2.par.withdraw" | "password.set" | "service-account.rotated" | "service-account.rotation-failed" | "portal.app-password.created" | "portal.app-password.revoked" | "portal.app-password.csrf" | "portal.certificates.csrf" | "portal.device.remove" | "portal.device.remember-browser" | "portal.kerberos.keytab" | "portal.kerberos.refused" | "portal.kerberos.csrf" | "portal.key.started" | "portal.key.refused" | "portal.key.upgrade-started" | "portal.key.upgrade-refused" | "portal.key.upgraded" | "portal.mfa.backup-codes.generated" | "portal.mfa.backup-codes.confirmed" | "portal.mfa.backup-codes.discarded" | "portal.risc.optOutInitiated" | "portal.risc.optOutCancelled" | "portal.risc.optIn" | "portal.signing-key.issued" | "portal.signing-key.removed" | "portal.signing-key.csrf" | "portal.signing-key.revoked" | "did.person.published" | "did.person.version" | "did.person.authorized" | "did.person.deactivated" | "admin.did.deactivated" | "portal.siop.enrol" | "portal.siop.remove" | "portal.siop.prefer" | "portal.siop.view" | "portal.siop.did" | "siop.key.pinned" | "siop.key.refused" | "portal.vc.offer" | "portal.vc.remove" | "risk.feedback" | "risk.response" | "risk.terms.accept" | "attribute-sources.add" | "attribute-sources.update" | "attribute-sources.remove" | "attribute-sources.refresh" | "scim-client.change" | "scim-client.delivery" | "scim-client.reconcile" | "scim-client.queue" | "secret-destination.push" | "secret-destination.test-push" | "roles.add-owner" | "roles.remove-owner" | "roles.confer" | "roles.unconfer" | "roles.create" | "roles.delete" | "roles.describe" | "node-health.collect-garbage" | "saml2.authnrequest" | "saml2.artifact.resolve" | "saml2.attribute-query" | "saml2.metadata.mdq" | "saml2.metadata.refresh" | "account.add" | "account.select" | "account.switch" | "account.forget" | "account.ambiguous" | "session.reauthenticate" | "session.presented" | "session.refuse" | "session.refused" | "ssf.event.act" | "ssf.stream.swept" | "xacml.pep.enable" | "xacml.pep.disable" | "xacml.pep.forget" | "xacml.pep.proxy.set" | "xacml.pep.proxy.clear" | "xacml.pep.validate" | "xacml.pep.sync" | "xacml.pep.listener.certificate" | "xacml.pep.cluster.create" | "xacml.pep.cluster.delete" | "xacml.pep.cluster.member.add" | "xacml.pep.cluster.member.set" | "xacml.pep.cluster.member.remove" | "xacml.policy.write" | "xacml.policy.delete" | "report.definition.create" | "report.definition.update" | "report.definition.share" | "report.definition.delete" | "report.job.submit" | "report.job.start" | "report.job.complete" | "report.job.fail" | "report.job.cancel" | "report.notify" | "report.query" | "report.job.retrieve" | "admin.audit-export.add" | "admin.audit-export.update" | "admin.audit-export.remove" | "admin.audit-export.enable" | "admin.audit-export.disable" | "admin.audit-export.test" | "audit.export.test" | "certificate.stored" | "certificate.unstored" | "wstrust.decryption-key.issue" | "wstrust.decryption-key.upload" | "wstrust.decryption-key.remove" | "federation.link.add" | "federation.link.remove" | "roles.grant" | "roles.revoke" | "roles.authorize" | "roles.unauthorize" | "krb5.trust.add" | "krb5.trust.update" | "krb5.trust.enable" | "krb5.trust.disable" | "krb5.trust.rotate-key" | "krb5.trust.remove" | "krb5.trust.pair" | "admin.authn-policy.save-named" | "admin.authn-policy.delete-named" | "admin.service-account-policy.change" | "admin.passkey-policy.change" | "admin.passkey-client.clear" | "admin.attribute-policy.change" | "admin.attribute-policy.define" | "admin.attribute-policy.update" | "admin.attribute-policy.undefine" | "authn.session.registration.refused" | "authn.session.refresh.refused" | "account.disable" | "account.enable" | "enrollment.hostname.add" | "enrollment.hostname.remove" | "device.risk" | "federation.create" | "federation.update" | "federation.delete" | "federation.encryption-key" | "federation.client-certificate" | "federation.refused" | "krb5.krbtgt.created" | "krb5.krbtgt.rotated" | "krb5.krbtgt.invalidated" | "admin.krb5.krbtgt.created" | "admin.krb5.krbtgt.rotated" | "admin.krb5.krbtgt.invalidated" | "ciba.approved" | "ciba.denied" | "oidfed.subordinate-suspended" | "oidfed.subordinate-reinstated" | "oidfed.collection-crawled" | "portal.device.approve" | "portal.device.deny" | "portal.device.prove" | "portal.device.link" | "portal.vc.view" | "risk.dataset.import" | "risk.dataset.activate" | "risk.dataset.delete" | "ssf.signals.replace-stream" | "ssf.signals.read-status" | "xacml.pep.listener.set" | "xacml.pep.listener.remove" | "xacml.pep.listener.renew" | "xacml.pep.listener.environment" | "xacml.pep.settings.set" | "xacml.pep.settings.clear" | "xacml.pep.cluster.listener.set" | "xacml.pep.cluster.listener.remove" | "xacml.pep.cluster.listener.renew" | "xacml.pep.cluster.listener.environment" | "xacml.pep.cluster.settings.set" | "xacml.pep.cluster.settings.clear" | "xacml.pep.cluster.proxy.set" | "xacml.pep.cluster.proxy.clear",
+`parameters/1/schema`: "authentication" | "authentication.refused" | "portal.activate" | "portal.activate.refused" | "portal.password.changed" | "authn.password.changed" | "portal.password.refused" | "portal.password.csrf" | "portal.signout" | "portal.signout.csrf" | "portal.key.enrolled" | "portal.key.removed" | "portal.key.renamed" | "portal.tls-client.issued" | "portal.tls-client.revoked" | "activation.issued" | "portal.password-reset" | "portal.password-reset.refused" | "authn.mfa.enrolment.required" | "authn.mfa.enrolment.started" | "authn.mfa.enrolment.offered" | "authn.mfa.enrolment.declined" | "authn.second-factor.skipped" | "authn.mfa.enrolment.at-risk" | "authn.mfa.enrolled" | "authn.recovery.refused" | "authn.recovery.limited" | "authn.recovery.completed" | "authn.sign-in.started-over" | "portal.mfa.started" | "portal.mfa.enrolled" | "portal.mfa.refused" | "portal.mfa.removed" | "portal.mfa.csrf" | "portal.hotp.started" | "portal.hotp.enrolled" | "portal.hotp.refused" | "portal.hotp.removed" | "portal.hotp.resynced" | "portal.hotp.resync-refused" | "portal.activate.mfa.started" | "portal.activate.mfa.refused" | "portal.activate.key.started" | "portal.activate.key.enrolled" | "portal.activate.key.refused" | "session.start" | "session.end" | "session.renew" | "authn.session.bound" | "authn.session.refreshed" | "authn.session.binding-skipped" | "logout.global" | "logout.selective" | "logout.backchannel" | "mail.queued" | "mail.sent" | "mail.dead" | "mail.refused" | "mail.reset-requested" | "mail.retry" | "mail.template" | "branding.logo" | "mail.verified" | "mail.preferences" | "scheduler.run" | "scheduler.step-down" | "keys.rotate" | "keys.rotate.emergency" | "application.secret-expiring" | "application.secret-expired" | "keys.retire" | "keys.data-key-rotate" | "keys.data-key-reencrypt" | "keys.data-key-destroy" | "keys.kek-rotate" | "keys.pin" | "keys.unpin" | "oidfed.key-minted" | "oidfed.key-rotated" | "oidfed.key-revoked" | "oidfed.subordinate-set" | "oidfed.subordinate-removed" | "oidfed.anchor-set" | "oidfed.anchor-removed" | "oidfed.mark-type-set" | "oidfed.remove-mark-type" | "oidfed.mark-policy-set" | "oidfed.remove-mark-policy" | "oidfed.mark-issued" | "oidfed.mark-revoked" | "oidfed.held-mark-added" | "oidfed.held-mark-removed" | "oidfed.act-refused" | "oidfed.resolved" | "device.create" | "device.browser.remembered" | "device.update" | "device.delete" | "device.evict" | "device.attestation-revoked" | "webauthn.ceremony" | "webauthn.algorithm-mismatch" | "webauthn.client.learned" | "webauthn.attestation-revoked" | "hardware-token.create" | "hardware-token.credential-add" | "hardware-token.holder-change" | "hardware-token.lost" | "oath-token.import" | "oath-token.assign" | "oath-token.claim" | "oath-token.remove" | "admin.mfa.key.imported" | "roles.set-mode" | "roles.set-selection" | "roles.eligibility" | "roles.selection.offered" | "roles.selection.chosen" | "roles.selection.refused" | "roles.selection.dropped" | "piv-escrow.recover" | "openpgp.challenge" | "openpgp.key-registered" | "openpgp.key-refused" | "openpgp.key-removed" | "openpgp.publication" | "openpgp.mail-encryption" | "openpgp.smime-certificate" | "device.key-add" | "device.key-remove" | "device.compliance" | "device.enrol.refused" | "user.create" | "user.delete" | "user.update" | "user.rename" | "user.export" | "user.import" | "cells.rehome" | "user.query" | "group.create" | "group.delete" | "group.update" | "group.rename" | "entry.create" | "entry.delete" | "entry.update" | "entry.rename" | "directory.search" | "directory.compare" | "directory.bind" | "application.create" | "application.secret-revealed" | "application.export" | "application.import" | "application.add-owner" | "application.remove-owner" | "application.update" | "consent.grant" | "consent.deny" | "consent.revoke" | "application.delete" | "oidfed.registered" | "oidfed.registration-refused" | "admin.view" | "admin.change" | "admin.config-dump" | "claims.change" | "admin.role.change" | "admin.console.bootstrap" | "admin.mail.set" | "admin.pseudonym.set" | "admin.mfa.totp.cleared" | "admin.mfa.hotp.cleared" | "admin.mfa.key.cleared" | "admin.mfa.key.renamed" | "admin.password.reset" | "admin.password.reset-link" | "admin.mfa.primary-keys.removed" | "admin.mfa.disabled" | "admin.mfa.required" | "admin.mfa.unrequired" | "admin.delegation.not-delegated" | "admin.delegation.may-act" | "admin.delegation.semantics" | "portal.delegation.may-act" | "portal.delegation.search" | "admin.password-policy.change" | "admin.policies.export" | "admin.policies.import" | "admin.policies.trust-signer" | "admin.authn-policy.change" | "admin.locale-policy.change" | "admin.post-login-policy.change" | "authn.post-login.asked" | "authn.post-login.skipped" | "authn.post-login.done" | "authn.post-login.held" | "admin.post-login-activity.change" | "authn.post-login.activity-run" | "authn.post-login.unsupported" | "webauthn.key.possibly-replaced" | "authn.mail-factor.change" | "authn.mail-factor.sent" | "authn.mail-factor.accepted" | "authn.mail-factor.refused" | "admin.truststore.change" | "admin.pki.trust.change" | "krb5.keys.derived" | "krb5.trust.sid-filtered" | "admin.krb5.keys.cleared" | "admin.krb5.service.created" | "admin.krb5.service.rotated" | "admin.krb5.service.deleted" | "admin.krb5.previous.dropped" | "api.read" | "api.change" | "protocol.call" | "oauth.token.revoke" | "protocol.failure" | "service.failure" | "spiffe.svid.issue" | "spiffe.svid.validate" | "spiffe.entry.create" | "spiffe.entry.update" | "spiffe.entry.delete" | "spiffe.agent.create" | "spiffe.agent.attest" | "spiffe.agent.ban" | "spiffe.agent.unban" | "spiffe.agent.delete" | "spiffe.bundle.read" | "spiffe.bundle.change" | "spiffe.call.refuse" | "xacml.decision" | "xacml.enforcement" | "authzen.decision" | "xacml.remote.enforcement" | "authzen.remote.decision" | "xacml.remote.proxy" | "authzen.search" | "fga.decision" | "admin.authzen.attribute.set" | "admin.authzen.attribute.removed" | "admin.authzen.scope.set" | "admin.authzen.pep.granted" | "admin.authzen.callbacks.set" | "authzen.access-request.submitted" | "authzen.access-request.approved" | "authzen.access-request.denied" | "authzen.access-request.expired" | "authzen.access-request.cancelled" | "authzen.access-request.revoked" | "authzen.access-request.approver-refused" | "authzen.access-request.callback" | "xacml.issuance.refused" | "xacml.access.refused" | "xacml.issuance.alarm" | "xacml.pep.register" | "xacml.pep.certificate" | "xacml.pep.credential" | "xacml.pip.query" | "saml2.request.signature" | "gnap.grant.request" | "gnap.grant.consent" | "gnap.grant.deny" | "gnap.grant.approve" | "gnap.grant.revoke" | "gnap.grant.owner-queued" | "gnap.grant.forward" | "uma.resource.register" | "uma.resource.update" | "uma.resource.delete" | "uma.permission.ticket" | "uma.decision" | "uma.grant" | "uma.pct.revoke" | "uma.approval.request" | "uma.approval.answer" | "uma.claims.gathered" | "uma.share.add" | "uma.share.remove" | "uma.policy.alfa" | "uma.resource-server.enable" | "uma.resource-server.disable" | "uma.owns-resources.set" | "uma.rpt.revoke" | "gnap.grant.finalize" | "gnap.token.issue" | "gnap.token.rotate" | "gnap.token.revoke" | "gnap.rs.introspect" | "gnap.rs.register" | "ssf.stream.create" | "ssf.stream.update" | "ssf.stream.delete" | "ssf.stream.status" | "ssf.subject.change" | "ssf.event.transmit" | "ssf.announcement.broadcast" | "ssf.event.refused" | "ssf.stream.dead" | "ssf.stream.revived" | "ssf.stream.delivery" | "ssf.deadletter.clear" | "ssf.event.receive" | "caep.event.auto" | "caep.event.emit" | "caep.session.reset" | "caep.session.clear" | "risc.event.auto" | "risc.event.emit" | "risc.account.reset" | "risc.account.clear" | "persistence.minted-drop" | "admin.aud-sub.set" | "admin.mfa.backup-codes.cleared" | "admin.password.reset-keytab" | "admin.user.attribute" | "admin.service-account.set" | "admin.service-account.cleared" | "admin.service-account.owner-added" | "admin.service-account.owner-removed" | "admin.service-account.destination-set" | "admin.service-account.rotate" | "admin.app-password.created" | "admin.app-password.revoked" | "admin.ciba.answered" | "admin.device.removed" | "admin.ida.recorded" | "admin.ida.removed" | "admin.siop.enrolled" | "admin.siop.removed" | "admin.siop.preferred" | "admin.passkey.enrolment-started" | "admin.passkey.enrolment-refused" | "admin.passkey.enrolled" | "admin.passkey.upgrade-started" | "admin.passkey.upgrade-refused" | "admin.passkey.upgrade-proved" | "admin.passkey.upgrade-cancelled" | "admin.passkey.upgraded" | "ssf.signals.discover" | "ssf.signals.stream" | "ssf.signals.unblock" | "ssf.signals.read-stream" | "ssf.signals.update-stream" | "ssf.signals.delete-stream" | "ssf.signals.set-status" | "ssf.signals.add-subject" | "ssf.signals.remove-subject" | "ssf.signals.verify" | "application.key-issued" | "enrollment.acme.account.create" | "enrollment.acme.account.deactivate" | "enrollment.acme.account.key-change" | "enrollment.eab.create" | "enrollment.eab.delete" | "enrollment.challenge.create" | "enrollment.challenge.delete" | "enrollment.issue" | "enrollment.issue.refused" | "enrollment.revoke" | "federation.signal-block" | "federation.signal-unblock" | "federation.signout" | "federation.signout-answered" | "federation.unlink" | "federation.connected" | "federation.provider-notification" | "federation.group-ignored" | "group.add-member" | "group.add-owner" | "group.remove-owner" | "group.owner-protected" | "group.set-mail" | "group.set-policy" | "krb5.keytab.person" | "logout.backchannel.retry" | "oauth.device-secret.revoke" | "oauth2.ciba.notify" | "oauth2.claim-source-linked" | "oauth2.claim-source-link-refused" | "oauth2.claims-providers.add-provider" | "oauth2.claims-providers.update-provider" | "oauth2.claims-providers.remove-provider" | "oauth2.claims-providers.revoke-link" | "oauth2.command" | "oauth2.command.tenant" | "oauth2.grant-revoked" | "oauth2.par.withdraw" | "password.set" | "service-account.rotated" | "service-account.rotation-failed" | "portal.app-password.created" | "portal.app-password.revoked" | "portal.app-password.csrf" | "portal.certificates.csrf" | "portal.device.remove" | "portal.device.remember-browser" | "portal.kerberos.keytab" | "portal.kerberos.refused" | "portal.kerberos.csrf" | "portal.key.started" | "portal.key.refused" | "portal.key.upgrade-started" | "portal.key.upgrade-refused" | "portal.key.upgraded" | "portal.mfa.backup-codes.generated" | "portal.mfa.backup-codes.confirmed" | "portal.mfa.backup-codes.discarded" | "portal.risc.optOutInitiated" | "portal.risc.optOutCancelled" | "portal.risc.optIn" | "portal.signing-key.issued" | "portal.signing-key.removed" | "portal.signing-key.csrf" | "portal.signing-key.revoked" | "did.person.published" | "did.person.version" | "did.person.authorized" | "did.person.deactivated" | "admin.did.deactivated" | "portal.siop.enrol" | "portal.siop.remove" | "portal.siop.prefer" | "portal.siop.view" | "portal.siop.did" | "siop.key.pinned" | "siop.key.refused" | "portal.vc.offer" | "portal.vc.remove" | "risk.feedback" | "risk.response" | "risk.terms.accept" | "attribute-sources.add" | "attribute-sources.update" | "attribute-sources.remove" | "attribute-sources.refresh" | "scim-client.change" | "scim-client.delivery" | "scim-client.reconcile" | "scim-client.queue" | "secret-destination.push" | "secret-destination.test-push" | "roles.add-owner" | "roles.remove-owner" | "roles.confer" | "roles.unconfer" | "roles.create" | "roles.delete" | "roles.describe" | "node-health.collect-garbage" | "saml2.authnrequest" | "saml2.artifact.resolve" | "saml2.attribute-query" | "saml2.metadata.mdq" | "saml2.metadata.refresh" | "account.add" | "account.select" | "account.switch" | "account.forget" | "account.ambiguous" | "session.reauthenticate" | "session.presented" | "session.refuse" | "session.refused" | "ssf.event.act" | "ssf.stream.swept" | "xacml.pep.enable" | "xacml.pep.disable" | "xacml.pep.forget" | "xacml.pep.proxy.set" | "xacml.pep.proxy.clear" | "xacml.pep.validate" | "xacml.pep.sync" | "xacml.pep.listener.certificate" | "xacml.pep.cluster.create" | "xacml.pep.cluster.delete" | "xacml.pep.cluster.member.add" | "xacml.pep.cluster.member.set" | "xacml.pep.cluster.member.remove" | "xacml.policy.write" | "xacml.policy.delete" | "report.definition.create" | "report.definition.update" | "report.definition.share" | "report.definition.delete" | "report.job.submit" | "report.job.start" | "report.job.complete" | "report.job.fail" | "report.job.cancel" | "report.notify" | "report.query" | "report.job.retrieve" | "admin.audit-export.add" | "admin.audit-export.update" | "admin.audit-export.remove" | "admin.audit-export.enable" | "admin.audit-export.disable" | "admin.audit-export.test" | "audit.export.test" | "certificate.stored" | "certificate.unstored" | "wstrust.decryption-key.issue" | "wstrust.decryption-key.upload" | "wstrust.decryption-key.remove" | "federation.link.add" | "federation.link.remove" | "roles.grant" | "roles.revoke" | "roles.authorize" | "roles.unauthorize" | "krb5.trust.add" | "krb5.trust.update" | "krb5.trust.enable" | "krb5.trust.disable" | "krb5.trust.rotate-key" | "krb5.trust.remove" | "krb5.trust.pair" | "admin.authn-policy.save-named" | "admin.authn-policy.delete-named" | "admin.service-account-policy.change" | "admin.passkey-policy.change" | "admin.passkey-client.clear" | "admin.attribute-policy.change" | "admin.attribute-policy.define" | "admin.attribute-policy.update" | "admin.attribute-policy.undefine" | "authn.session.registration.refused" | "authn.session.refresh.refused" | "account.disable" | "account.enable" | "enrollment.hostname.add" | "enrollment.hostname.remove" | "device.risk" | "federation.create" | "federation.update" | "federation.delete" | "federation.encryption-key" | "federation.client-certificate" | "federation.refused" | "krb5.krbtgt.created" | "krb5.krbtgt.rotated" | "krb5.krbtgt.invalidated" | "admin.krb5.krbtgt.created" | "admin.krb5.krbtgt.rotated" | "admin.krb5.krbtgt.invalidated" | "ciba.approved" | "ciba.denied" | "oidfed.subordinate-suspended" | "oidfed.subordinate-reinstated" | "oidfed.collection-crawled" | "portal.device.approve" | "portal.device.deny" | "portal.device.prove" | "portal.device.link" | "portal.vc.view" | "risk.dataset.import" | "risk.dataset.activate" | "risk.dataset.delete" | "ssf.signals.replace-stream" | "ssf.signals.read-status" | "xacml.pep.listener.set" | "xacml.pep.listener.remove" | "xacml.pep.listener.renew" | "xacml.pep.listener.environment" | "xacml.pep.settings.set" | "xacml.pep.settings.clear" | "xacml.pep.cluster.listener.set" | "xacml.pep.cluster.listener.remove" | "xacml.pep.cluster.listener.renew" | "xacml.pep.cluster.listener.environment" | "xacml.pep.cluster.settings.set" | "xacml.pep.cluster.settings.clear" | "xacml.pep.cluster.proxy.set" | "xacml.pep.cluster.proxy.clear",
   `parameters/2/schema`: "success" | "refused" | "error",
   `parameters/3/schema`: string,
   `parameters/4/schema`: string,
@@ -37337,6 +37515,10 @@ op `getRoles`(`parameters/0/schema`: string,
       `permissions`?: (string)[];
       `conferredBy`?: (string)[];
       `ownerProtected`?: boolean;
+      `membershipMode`?: "static" | "dynamic-selectable";
+      `eligibilityPolicy`?: string;
+      `selection`?: "optional" | "required";
+      `exclusiveGroup`?: string;
       `found`?: boolean;
       `what`?: string;
       `owners`?: get_admin_api_roles_r200_application_json_role_owners_h2928;
@@ -37506,12 +37688,35 @@ op `previewRoleIssuance`(`parameters/0/schema`: string,
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
+@endpoint("/admin-api/roles/new",
+  "get",
+  #{
+    `operationId`:"getNewRoleForm",
+    `summary`:"What a role may be created with, and which of it is required",
+    `description`:"The create's fields in `createFields`, each with `required` — `role`, the name, is the one the create refuses without; `description`, `application`, `displayName` and `memberTypes` are optional — plus the container roles are stored in (empty when this process has no directory to store one in, when `canWrite` is false too) and the applications a role may be for. **It creates nothing**: the create is `POST /admin-api/roles/create-role`.\n\n**Mirrors** `GET /admin/roles/new` on the admin console.",
+    `tags`:#["Roles"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The fields, which are required, the container and the application choices.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+  })
+op `getNewRoleForm`(`responses/200/content/application~1json/schema`: `NewRoleForm`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
 @endpoint("/admin-api/roles/create-role",
   "post",
   #{
     `operationId`:"createRole",
     `summary`:"Make a role",
-    `description`:"Writes one entry under `ou=roles` with no members. Adding members is `add-member`; the two are separate because a role is worth creating before anybody holds it — an application can be narrowed to it first, and the register will then say so.\n\nThe name becomes an LDAP RDN and a value in a token claim, so it is up to 64 characters of letters, digits, and `. _ : @ -` or a space. **It may not be one of the six built-in roles**: those are computed and answered first, so a stored role of the same name could never be reached.\n\n**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.",
+    `description`:"Writes one entry under `ou=roles` with no members. Adding members is `add-member`; the two are separate because a role is worth creating before anybody holds it — an application can be narrowed to it first, and the register will then say so.\n\nThe name becomes an LDAP RDN and a value in a token claim, so it is up to 64 characters of letters, digits, and `. _ : @ -` or a space. **It may not be one of the six built-in roles**: those are computed and answered first, so a stored role of the same name could never be reached.\n\n**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.",
     `tags`:#["Roles"],
     `responses`:#{
       `200`:#{
@@ -37552,7 +37757,16 @@ op `createRole`(@js(#{
     }) `displayName`?: string;
     @js(#{
       `description`:"Who may hold it (#93): `user` (people, directly or through a group) and `application` (an application as itself). Empty is both. A member of an excluded kind is refused, already held or added later; the two console roles cannot be restricted. Omitted, both."
-    }) `memberTypes`?: ("user" | "application")[]
+    }) `memberTypes`?: ("user" | "application")[];
+    @js(#{
+      `description`:"How the role is held (#1072): `static`, the default, is membership as roles always had it; `dynamic-selectable` is a role with no members, offered at sign-in to each person its eligibility policy permits and held for that sign-in only if chosen. A console or native role cannot be dynamic."
+    }) `membershipMode`?: "static" | "dynamic-selectable";
+    @js(#{
+      `description`:"For a dynamic role (#1072): `optional`, the default, or `required`: a required role a person is eligible for is offered even when the sign-in page's box is unticked, and one must be chosen."
+    }) `selection`?: "optional" | "required";
+    @js(#{
+      `description`:"For a dynamic role (#1072): a name shared by roles of which a sign-in may choose at most one. Omitted, none."
+    }) `exclusiveGroup`?: string
   },
   `responses/200/content/application~1json/schema`: WithOkMessageErrorsEtc44,
   `responses/400/content/application~1json/schema`: WithOkMessageErrorsEtc44,
@@ -37564,7 +37778,7 @@ op `createRole`(@js(#{
   #{
     `operationId`:"deleteRole",
     `summary`:"Remove a role",
-    `description`:"Deletes the entry. **Applications that still REQUIRE it are named in the reply and the delete still happens**, which is deliberate: refusing would mean a role could not be removed until every application naming it had been edited, and those entries are usually the thing somebody is in the middle of changing. Each of them now requires a role NOBODY holds and is therefore issued nothing at all — so the consequence is said at the moment it is created rather than discovered later as a service that stopped working.\n\nNothing already ISSUED is touched. A token minted while somebody held the role is still valid and still carries it in the roles claim.\n\n**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.",
+    `description`:"Deletes the entry. **Applications that still REQUIRE it are named in the reply and the delete still happens**, which is deliberate: refusing would mean a role could not be removed until every application naming it had been edited, and those entries are usually the thing somebody is in the middle of changing. Each of them now requires a role NOBODY holds and is therefore issued nothing at all — so the consequence is said at the moment it is created rather than discovered later as a service that stopped working.\n\nNothing already ISSUED is touched. A token minted while somebody held the role is still valid and still carries it in the roles claim.\n\n**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.",
     `tags`:#["Roles"],
     `responses`:#{
       `200`:#{
@@ -37594,7 +37808,7 @@ op `deleteRole`(@js(#{`examples`:#[#{`role`:"staff"}]}) `requestBody/content/app
   #{
     `operationId`:"describeRole",
     `summary`:"Change what a role says it is for, and who may hold it",
-    `description`:"Replaces the `description` — and, where given, the `displayName` and `memberTypes` (#93) — and leaves the membership exactly as it was. It is an action of its own rather than a field on `create-role` because creating an existing role is refused: roles are edited in place.\n\n**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.",
+    `description`:"Replaces the `description` — and, where given, the `displayName` and `memberTypes` (#93) — and leaves the membership exactly as it was. It is an action of its own rather than a field on `create-role` because creating an existing role is refused: roles are edited in place.\n\n**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.",
     `tags`:#["Roles"],
     `responses`:#{
       `200`:#{
@@ -37635,7 +37849,7 @@ op `describeRole`(@js(#{
   #{
     `operationId`:"addRoleMember",
     `summary`:"Give somebody a role",
-    `description`:"Adds one value to the role entry. **Which of the three lists it goes in is `kind`, and the three are looked up in three different places**, so naming the wrong one succeeds and writes something that will never match:\n\n* `user` — a username. The person need not exist: this service creates a directory entry for any name on first sight, so a role can be granted before its holder has ever signed in.\n* `group` — a group in `ou=groups`. Every member holds the role, **resolved at DECISION TIME** rather than expanded on write, so an `ldapmodify` adding somebody to the group changes the very next token.\n* `application` — an application that holds the role AS ITSELF, which is what a `client_credentials` grant is decided on.\n\nIt is NOT the same relation as `appRequiredRole` on an application entry, which is what that application DEMANDS of others. An application appears in both and means opposite things in each.\n\nA BUILT-IN role is refused by name: those six are computed and have no membership to edit.\n\n**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.",
+    `description`:"Adds one value to the role entry. **Which of the three lists it goes in is `kind`, and the three are looked up in three different places**, so naming the wrong one succeeds and writes something that will never match:\n\n* `user` — a username. The person need not exist: this service creates a directory entry for any name on first sight, so a role can be granted before its holder has ever signed in.\n* `group` — a group in `ou=groups`. Every member holds the role, **resolved at DECISION TIME** rather than expanded on write, so an `ldapmodify` adding somebody to the group changes the very next token.\n* `application` — an application that holds the role AS ITSELF, which is what a `client_credentials` grant is decided on.\n\nIt is NOT the same relation as `appRequiredRole` on an application entry, which is what that application DEMANDS of others. An application appears in both and means opposite things in each.\n\nA BUILT-IN role is refused by name: those six are computed and have no membership to edit.\n\n**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.",
     `tags`:#["Roles"],
     `responses`:#{
       `200`:#{
@@ -37671,7 +37885,7 @@ op `addRoleMember`(@js(#{`examples`:#[#{`role`:"staff",`kind`:"user",`member`:"a
   #{
     `operationId`:"removeRoleMember",
     `summary`:"Take a role away",
-    `description`:"Removes one value from the role entry. Matched case-insensitively, for the reason the register gives: a username here arrives from a login form, a SAML subject, a Kerberos principal and a `client_id`, and this service has always treated those as one identity however they were typed.\n\n**Nothing already ISSUED is touched**, exactly as revoking a delegated permission does not re-judge a grant already made. The next issuance is decided without the role; a token minted a minute ago still carries it.\n\n**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.",
+    `description`:"Removes one value from the role entry. Matched case-insensitively, for the reason the register gives: a username here arrives from a login form, a SAML subject, a Kerberos principal and a `client_id`, and this service has always treated those as one identity however they were typed.\n\n**Nothing already ISSUED is touched**, exactly as revoking a delegated permission does not re-judge a grant already made. The next issuance is decided without the role; a token minted a minute ago still carries it.\n\n**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.",
     `tags`:#["Roles"],
     `responses`:#{
       `200`:#{
@@ -37705,7 +37919,7 @@ op `removeRoleMember`(@js(#{`examples`:#[#{`role`:"staff",`kind`:"user",`member`
   #{
     `operationId`:"addRolePermission",
     `summary`:"Let a role authorize a permission",
-    `description`:"Adds one value to the role's `rolePermission` (#303). **A scope is a request and a role is what authorizes it**: a permission its resource application GATES (`oauthRoleGatedPermission`) is issued only to a subject — a person, or an application on `client_credentials` — holding a role that names it, and left off the token otherwise.\n\n`permission` is the full identifier a client asks for: the resource's `oauthPermissionBaseUri` followed by the name. It must be DEFINED by an application in this realm first. `gated: false` in the reply means the resource does not gate it yet, so the role changes nothing until it does.\n\n**The native permissions `admin:read` and `admin:write` are refused**: they are authorized by the console roles ADMIN_READ and ADMIN_WRITE alone, whose permissions are fixed. Put an application in one of those with `add-member`.\n\n**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.",
+    `description`:"Adds one value to the role's `rolePermission` (#303). **A scope is a request and a role is what authorizes it**: a permission its resource application GATES (`oauthRoleGatedPermission`) is issued only to a subject — a person, or an application on `client_credentials` — holding a role that names it, and left off the token otherwise.\n\n`permission` is the full identifier a client asks for: the resource's `oauthPermissionBaseUri` followed by the name. It must be DEFINED by an application in this realm first. `gated: false` in the reply means the resource does not gate it yet, so the role changes nothing until it does.\n\n**The native permissions `admin:read` and `admin:write` are refused**: they are authorized by the console roles ADMIN_READ and ADMIN_WRITE alone, whose permissions are fixed. Put an application in one of those with `add-member`.\n\n**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.",
     `tags`:#["Roles"],
     `responses`:#{
       `200`:#{
@@ -37740,7 +37954,7 @@ op `addRolePermission`(@js(#{
   #{
     `operationId`:"removeRolePermission",
     `summary`:"Stop a role authorizing a permission",
-    `description`:"Removes one value from the role's `rolePermission` (#303). The next issuance is decided without it; a token already issued keeps what it carries, except at `/admin-api`, whose gate asks the roles again on every call.\n\n**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.",
+    `description`:"Removes one value from the role's `rolePermission` (#303). The next issuance is decided without it; a token already issued keeps what it carries, except at `/admin-api`, whose gate asks the roles again on every call.\n\n**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.",
     `tags`:#["Roles"],
     `responses`:#{
       `200`:#{
@@ -37775,7 +37989,7 @@ op `removeRolePermission`(@js(#{
   #{
     `operationId`:"addRoleConferringClient",
     `summary`:"Let a client confer a role on everybody signing in through it",
-    `description`:"Adds one value to the role's `roleConferredBy` (#454): every PERSON who signs in through that client holds the role on the access token the client is issued, beside the roles they hold themselves, and on no other token. It is how the console's client, `sts-admin-console`, gives everybody who signs in to the console ADMIN_CONSOLE. The client must be registered in this realm. A role only applications may hold, and the two console roles, cannot be conferred.\n\n**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.",
+    `description`:"Adds one value to the role's `roleConferredBy` (#454): every PERSON who signs in through that client holds the role on the access token the client is issued, beside the roles they hold themselves, and on no other token. It is how the console's client, `sts-admin-console`, gives everybody who signs in to the console ADMIN_CONSOLE. The client must be registered in this realm. A role only applications may hold, and the two console roles, cannot be conferred.\n\n**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.",
     `tags`:#["Roles"],
     `responses`:#{
       `200`:#{
@@ -37808,7 +38022,7 @@ op `addRoleConferringClient`(@js(#{`examples`:#[#{`role`:"ADMIN_CONSOLE",`client
   #{
     `operationId`:"removeRoleConferringClient",
     `summary`:"Stop a client conferring a role",
-    `description`:"Removes one value from the role's `roleConferredBy` (#454). The client's tokens stop carrying the role at once at `/admin-api`, whose gate asks on every call, and at the next issuance everywhere else. Taking `sts-admin-console` off ADMIN_CONSOLE leaves the console unable to draw itself until it is put back.\n\n**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.",
+    `description`:"Removes one value from the role's `roleConferredBy` (#454). The client's tokens stop carrying the role at once at `/admin-api`, whose gate asks on every call, and at the next issuance everywhere else. Taking `sts-admin-console` off ADMIN_CONSOLE leaves the console unable to draw itself until it is put back.\n\n**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.",
     `tags`:#["Roles"],
     `responses`:#{
       `200`:#{
@@ -37836,12 +38050,187 @@ op `removeRoleConferringClient`(@js(#{`examples`:#[#{`role`:"ADMIN_CONSOLE",`cli
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
+@endpoint("/admin-api/roles/set-membership-mode",
+  "post",
+  #{
+    `operationId`:"setRoleMembershipMode",
+    `summary`:"Make a role static or dynamic selectable",
+    `description`:"Sets how the role is held (#1072). `dynamic-selectable` makes it a role nobody holds, offered at sign-in to each person its eligibility policy permits; it is refused while the role has members or conferring clients, and for a console or native role. `static` makes it a role held by membership again; the eligibility policy it owns is kept, so switching back restores it. Neither direction adds or removes a member, a group or a permission.\n\n**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.",
+    `tags`:#["Roles"],
+    `responses`:#{
+      `200`:#{
+        `description`:"How the role is now held.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setRoleMembershipMode`(@js(#{`examples`:#[#{`role`:"oncall-operator",`mode`:"dynamic-selectable"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The role."}) `role`: string;
+    @js(#{`description`:"`static` or `dynamic-selectable`."}) `mode`: "static" | "dynamic-selectable"
+  },
+  `responses/200/content/application~1json/schema`: `RoleDynamicAnswer`,
+  `responses/400/content/application~1json/schema`: `RoleDynamicAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
+@endpoint("/admin-api/roles/set-selection",
+  "post",
+  #{
+    `operationId`:"setRoleSelection",
+    `summary`:"Set how a dynamic role is chosen",
+    `description`:"Sets a dynamic role's selection (#1072): `optional` or `required`, and its exclusive group, of whose roles a sign-in may choose at most one. A member that is omitted keeps its value; an empty `exclusiveGroup` clears it. Refused for a static role.\n\n**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.",
+    `tags`:#["Roles"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The role's selection as it now stands.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setRoleSelection`(@js(#{`examples`:#[#{`role`:"oncall-operator",`selection`:"optional",`exclusiveGroup`:"operations"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The role."}) `role`: string;
+    @js(#{`description`:"`optional` or `required`. Omitted, kept."}) `selection`?: "optional" | "required";
+    @js(#{`description`:"The exclusive group's name; empty clears it. Omitted, kept."}) `exclusiveGroup`?: string
+  },
+  `responses/200/content/application~1json/schema`: `RoleDynamicAnswer`,
+  `responses/400/content/application~1json/schema`: `RoleDynamicAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
+@endpoint("/admin-api/roles/set-eligibility-policy",
+  "post",
+  #{
+    `operationId`:"setRoleEligibilityPolicy",
+    `summary`:"Set a dynamic role's eligibility policy",
+    `description`:"Writes the XACML policy that decides who may be offered a dynamic selectable role at sign-in (#1072), from XACML 3.0 XML (`document`) or ALFA (`alfa`), exactly one. The policy is the role's own: it is stored in ou=policies with `xacmlRole`, decided ALONE by the PDP for one person, never the root, never referenced from it and never sent to a remote PEP. A role keeps one entry name across rewrites. Only Permit makes a person eligible; Deny, NotApplicable, Indeterminate and an obligation this PEP cannot discharge do not. Refused for a static role.\n\n**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.",
+    `tags`:#["Roles"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The policy entry that was written.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setRoleEligibilityPolicy`(@js(#{`examples`:#[#{`role`:"oncall-operator",`alfa`:"namespace oncall { policy eligible { apply firstApplicable rule { permit } } }"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The dynamic role."}) `role`: string;
+    @js(#{`description`:"The policy as XACML 3.0 XML."}) `document`?: string;
+    @js(#{`description`:"The policy as ALFA, compiled to XACML XML before it is stored."}) `alfa`?: string
+  },
+  `responses/200/content/application~1json/schema`: `RoleEligibilityPolicyAnswer`,
+  `responses/400/content/application~1json/schema`: `RoleEligibilityPolicyAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
+@component model `RoleEligibilityPolicyAnswer` {
+    `ok`: boolean;
+    `message`?: string;
+    `errors`?: (string)[];
+    `role`?: string;
+    `policy`?: string;
+    `created`?: boolean
+  }
+  
+
+@endpoint("/admin-api/roles/eligibility",
+  "get",
+  #{
+    `operationId`:"testRoleEligibility",
+    `summary`:"Is this person eligible for this dynamic role?",
+    `description`:"An administrator's dry run (#1072). **`role` and `user` are both needed and neither is declared required**: a read with no question in it answers 200 with `answered: false`, as the role preview does. The role's own eligibility policy decided by the PDP for one person, as a sign-in to `application` would ask it, without a sign-in. The answer says whether they are eligible, the code when they are not, the XACML decision and status (a missing attribute names itself there), and, where `xacml.returnPolicyIdList` allows, the policies that applied. It writes nothing but the `roles.eligibility` audit row every eligibility decision leaves; it never shows the policy's text or the person's attributes.\n\n**Mirrors** `GET /admin/roles` on the admin console.",
+    `tags`:#["Roles"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The eligibility decision.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `parameters`:#[
+      #{`name`:"role",`in`:"query",`required`:false,`schema`:null,`description`:"The dynamic selectable role."},
+      #{`name`:"user",`in`:"query",`required`:false,`schema`:null,`description`:"The person, by username."},
+      #{`name`:"application",`in`:"query",`required`:false,`schema`:null,`description`:"The application a sign-in would be for. A role that belongs to an application is offered only on a sign-in to it."},
+      #{`name`:"acr",`in`:"query",`required`:false,`schema`:null,`description`:"The authentication context class the sign-in would have met, as `urn:sts:xacml:acr`."},
+      #{`name`:"amr",`in`:"query",`required`:false,`schema`:null,`description`:"The sign-in's authentication methods (RFC 8176), separated by spaces, as `urn:sts:xacml:amr`."}
+    ],
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+  })
+op `testRoleEligibility`(@js(#{`examples`:#["oncall-operator"]}) `parameters/0/schema`: string,
+  @js(#{`examples`:#["alice"]}) `parameters/1/schema`: string,
+  @js(#{`examples`:#["payroll"]}) `parameters/2/schema`: string,
+  `parameters/3/schema`: string,
+  @js(#{`examples`:#["pwd otp"]}) `parameters/4/schema`: string,
+  `responses/200/content/application~1json/schema`: {
+    `ok`?: boolean;
+    `answered`?: boolean;
+    `role`?: string;
+    `username`?: string;
+    `application`?: NullableString;
+    `eligible`?: boolean;
+    `code`?: NullableString;
+    `why`?: string;
+    `decision`?: NullableString;
+    `policy`?: NullableString;
+    `policyId`?: NullableString;
+    @js(#{
+      `x-free-form`:"The XACML response's Status: its code and message, and the attribute a MustBePresent designator found missing, where there was one.",
+      `description`:"The XACML response's Status: its code and message, and the attribute a MustBePresent designator found missing, where there was one."
+    }) `status`?: unknown;
+    `applicable`?: (string)[];
+    `asked`?: { `stage`?: string; `acr`?: NullableString; `amr`?: (string)[] }
+  },
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
+@component model `RoleDynamicAnswer` {
+    `ok`: boolean;
+    `message`?: string;
+    `errors`?: (string)[];
+    `role`?: string;
+    `membershipMode`?: "static" | "dynamic-selectable";
+    `selection`?: "optional" | "required";
+    `exclusiveGroup`?: string
+  }
+  
+
 @endpoint("/admin-api/roles/add-owner",
   "post",
   #{
     `operationId`:"addRoleOwner",
     `summary`:"Add one owner to a role",
-    `description`:"Adds a person or a group of this realm to the role's `owner` values and writes at once, keeping the other owners and everything else on the role. `owner` is a username, a DN or a `urn:uuid:` subject for a person, a `cn` or DN for a group.\n\nAn owner must name somebody: one that names no person and no group here is refused. A role names at most 25 owners. An owner already listed is `ok` with `changed: false`.\n\n**AN OWNER GRANTS NOTHING**: nothing in this service reads `owner` to decide anything; the user portal lists what a person owns.\n\n**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.",
+    `description`:"Adds a person or a group of this realm to the role's `owner` values and writes at once, keeping the other owners and everything else on the role. `owner` is a username, a DN or a `urn:uuid:` subject for a person, a `cn` or DN for a group.\n\nAn owner must name somebody: one that names no person and no group here is refused. A role names at most 25 owners. An owner already listed is `ok` with `changed: false`.\n\n**AN OWNER GRANTS NOTHING**: nothing in this service reads `owner` to decide anything; the user portal lists what a person owns.\n\n**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.",
     `tags`:#["Roles"],
     `responses`:#{
       `200`:#{
@@ -37874,7 +38263,7 @@ op `addRoleOwner`(@js(#{`examples`:#[#{`role`:"staff",`owner`:"alice"}]}) `reque
   #{
     `operationId`:"removeRoleOwner",
     `summary`:"Take one owner off a role",
-    `description`:"Takes one `owner` value off the role and writes at once (#604). `owner` is the DN the role lists; one it does not list is refused. The last owner may go: a role needs none.\n\n**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.",
+    `description`:"Takes one `owner` value off the role and writes at once (#604). `owner` is the DN the role lists; one it does not list is refused. The last owner may go: a role needs none.\n\n**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.",
     `tags`:#["Roles"],
     `responses`:#{
       `200`:#{
@@ -37995,6 +38384,39 @@ op `setOwnerProtected`(@js(#{`examples`:#[#{`kind`:"role",`name`:"staff",`protec
   },
   `responses/200/content/application~1json/schema`: `WithOkMessageErrors141`,
   `responses/400/content/application~1json/schema`: `WithOkMessageErrors141`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
+@endpoint("/admin-api/policies/new",
+  "get",
+  #{
+    `operationId`:"getNewPolicyForm",
+    `summary`:"The kinds a named policy may be made of, and which of a kind's fields a save requires",
+    `description`:"Every kind whose profiles may be named, in `kinds`, and — with `kind` — that kind's create fields in `createFields`, each with `required`: the name (`profile`, or `name` for the authentication policy) always, since a save with no name edits the DEFAULT policy; the precedence and the description never; and each of the kind's own fields unless the save keeps the value in force when it is left out. **It saves nothing**: a named policy is made by the kind's save act with a name the realm does not hold yet, `POST /admin-api/policies/save-<kind>-policy` (`save-named-authn-policy` for the authentication policy).\n\n**Mirrors** `GET /admin/policies/new` on the admin console.",
+    `tags`:#["Policies"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The kinds, and the asked kind's fields with which are required.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `parameters`:#[
+      #{
+        `name`:"kind",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The kind of policy to make, one of `kinds`. Without one, or with one no kind is, `createFields` is empty and `kind` null."
+      }
+    ],
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+  })
+op `getNewPolicyForm`(@js(#{`maxLength`:64,`examples`:#["passkey"]}) `parameters/0/schema`: string,
+  `responses/200/content/application~1json/schema`: `NewPolicyForm`,
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
@@ -39230,12 +39652,17 @@ op `resetServiceAccountPolicy`(@js(#{`examples`:#[#{`profile`:"default"}]}) `req
     `$comb`:"oneOf"
   }) @hoisted union post_admin_api_policies_save_passkey_policy_b_application_json_deviceBoundRequired_h3037 {boolean, string}
 
+@js(#{
+    `description`:"OFF BY DEFAULT. On, the browser is asked to enforce the row above (enforceCredentialProtectionPolicy), and a registration whose authenticator reports a lower level than the row above asks for is refused; a key that reports nothing is at level 1. Needs the row above set to a level other than none. Left out of a save, the built-in default is kept. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default false.",
+    `$comb`:"oneOf"
+  }) @hoisted union post_admin_api_policies_save_passkey_policy_b_application_json_enforceCredProtect_h3038 {boolean, string}
+
 @endpoint("/admin-api/policies/save-passkey-policy",
   "post",
   #{
     `operationId`:"savePasskeyPolicy",
     `summary`:"Set the passkey policy profile",
-    `description`:"Writes `cn=default,ou=passkeyPolicies` in this realm's directory, REPLACING what is there; a realm with no entry of its own follows the default realm's. `allowUsernameless` (on by default) offers a passkey sign-in with no username. `requireUsernameless` (off, #608) makes it the only way in for an application whose named authentication policy (`appAuthnPolicy`) lists `webauthn` alone as its first factor: no username field, and a sign-in naming a person refused; it needs `allowUsernameless`, and the `default` profile never applies it to the admin console, the debugger or the user portal. While it is off, \"Use a security key\" asks the authenticator for a discoverable credential (`residentKey: required`), as \"Create a passkey\" always does; while it is on, it asks `securityKeyResidentKey` (`discouraged`, `preferred` or `required`, default `required`). `backupEligibility` (`allow` by default) set to `disallow` refuses a synced (backup-eligible) passkey at registration and at sign-in. `enforcePinLength` (off) asks a key for its minimum PIN length (CTAP 2.1 minPinLength) and holds it to `minPinLength` (4 to 63); `pinLengthOnlyIfSupported` (off) accepts a key that does not report. `enforceAttestationAtSignIn` (off) holds every passkey sign-in to the attestation rules in force. `passkeyHints`, `securityKeyHints` and `signInHints` are the WebAuthn hints each ceremony sends, in order, or `none`. `enterpriseSerialAttribute` (empty) names the attribute of a person's entry holding their security-key serials, which a registration's trusted enterprise attestation must name. `userDisplayName`, `rpNameExtras` and `credentialLabel` are the names a passkey prompt and a new key show. `aggregateDevices` (on) offers a person's passkeys as one sign-in choice; off, one per passkey. `postQuantumRequired` (`off`, #718) set to `sign-in` lets only a post-quantum (ML-DSA) passkey sign a person in, as the first credential or the second factor, and `registration-and-sign-in` refuses a classical one at registration too; refused while the realm offers no ML-DSA (STS-AUTHN-0357). `attestationAlgorithms` (`none`, #941, optional) lists the algorithms a passkey's ATTESTATION must be signed with, statement and every certificate leaf to anchor: `post-quantum`, `ml-dsa-44`, `ml-dsa-65`, `ml-dsa-87`, `slh-dsa`, `composite-ml-dsa`; set, it demands a trusted statement and refuses any other at registration (STS-AUTHN-0411), and at sign-in while `enforceAttestationAtSignIn` is on (STS-AUTHN-0412). `postQuantumAllowCredentials` (`realm`, #946; optional) chooses how the passkey step names the keys while one is required: `narrow` the post-quantum ones only, `list-and-refuse` every one, a classical assertion then refused after the ceremony with a page saying why, and `realm` the realm's webauthn.postQuantumAllowCredentials. `registrationAlgorithms` (`realm`, #940; optional) is the ordered list a registration offers this profile's people in place of the realm's webauthn.algorithms, and `registrationMode` (`realm`, #940; optional) is `pq-only` (ML-DSA only, no classical retry), `pq-first` (ML-DSA, then the classical algorithms, whatever the realm's pqcOnly), `classical-only` (no ML-DSA, no post-quantum lane) or `realm` (webauthn.pqcOnly and webauthn.pqcAlongsideClassical); a passkey outside what the profile offers is refused at registration (STS-AUTHN-0432). `clientRules` (empty, #1112; optional) names the clients — `<browser> on <system>`, each a family or `*` with an optional major-version range, `;` between rules — whose registrations offer the list less ML-DSA, where a classical passkey is allowed. Refused: `classical-only` with `postQuantumRequired` not `off` or with `attestationAlgorithms` set (STS-AUTHN-0430), and `pq-only` or `pq-first` where the list offered names no ML-DSA (STS-AUTHN-0431).\n\n**Every field is required** and one left out is refused by name rather than reset to a default, because a save that quietly loosened a rule nobody mentioned is the mistake nobody sees.\n\n**Mirrors** `POST /admin/policies` on the admin console.",
+    `description`:"Writes `cn=default,ou=passkeyPolicies` in this realm's directory, REPLACING what is there; a realm with no entry of its own follows the default realm's. `allowUsernameless` (on by default) offers a passkey sign-in with no username. `requireUsernameless` (off, #608) makes it the only way in for an application whose named authentication policy (`appAuthnPolicy`) lists `webauthn` alone as its first factor: no username field, and a sign-in naming a person refused; it needs `allowUsernameless`, and the `default` profile never applies it to the admin console, the debugger or the user portal. While it is off, \"Use a security key\" asks the authenticator for a discoverable credential (`residentKey: required`), as \"Create a passkey\" always does; while it is on, it asks `securityKeyResidentKey` (`discouraged`, `preferred` or `required`, default `required`). `backupEligibility` (`allow` by default) set to `disallow` refuses a synced (backup-eligible) passkey at registration and at sign-in. `enforcePinLength` (off) asks a key for its minimum PIN length (CTAP 2.1 minPinLength) and holds it to `minPinLength` (4 to 63); `pinLengthOnlyIfSupported` (off) accepts a key that does not report. `enforceAttestationAtSignIn` (off) holds every passkey sign-in to the attestation rules in force. `passkeyHints`, `securityKeyHints` and `signInHints` are the WebAuthn hints each ceremony sends, in order, or `none`. `enterpriseSerialAttribute` (empty) names the attribute of a person's entry holding their security-key serials, which a registration's trusted enterprise attestation must name. `userDisplayName`, `rpNameExtras` and `credentialLabel` are the names a passkey prompt and a new key show. `aggregateDevices` (on) offers a person's passkeys as one sign-in choice; off, one per passkey. `postQuantumRequired` (`off`, #718) set to `sign-in` lets only a post-quantum (ML-DSA) passkey sign a person in, as the first credential or the second factor, and `registration-and-sign-in` refuses a classical one at registration too; refused while the realm offers no ML-DSA (STS-AUTHN-0357). `attestationAlgorithms` (`none`, #941, optional) lists the algorithms a passkey's ATTESTATION must be signed with, statement and every certificate leaf to anchor: `post-quantum`, `ml-dsa-44`, `ml-dsa-65`, `ml-dsa-87`, `slh-dsa`, `composite-ml-dsa`; set, it demands a trusted statement and refuses any other at registration (STS-AUTHN-0411), and at sign-in while `enforceAttestationAtSignIn` is on (STS-AUTHN-0412). `postQuantumAllowCredentials` (`realm`, #946; optional) chooses how the passkey step names the keys while one is required: `narrow` the post-quantum ones only, `list-and-refuse` every one, a classical assertion then refused after the ceremony with a page saying why, and `realm` the realm's webauthn.postQuantumAllowCredentials. `registrationAlgorithms` (`realm`, #940; optional) is the ordered list a registration offers this profile's people in place of the realm's webauthn.algorithms, and `registrationMode` (`realm`, #940; optional) is `pq-only` (ML-DSA only, no classical retry), `pq-first` (ML-DSA, then the classical algorithms, whatever the realm's pqcOnly), `classical-only` (no ML-DSA, no post-quantum lane) or `realm` (webauthn.pqcOnly and webauthn.pqcAlongsideClassical); a passkey outside what the profile offers is refused at registration (STS-AUTHN-0432). `clientRules` (empty, #1112; optional) names the clients — `<browser> on <system>`, each a family or `*` with an optional major-version range, `;` between rules — whose registrations offer the list less ML-DSA, where a classical passkey is allowed. `credProtect` (`none`, #1955; optional) asks a registration's authenticator for CTAP 2.1 credential protection at `userVerificationOptional`, `userVerificationOptionalWithCredentialIDList` or `userVerificationRequired`, and records the level the key reports; `enforceCredProtect` (off; optional) asks the browser to enforce it and refuses a key reporting a lower level (STS-AUTHN-0559), and is refused on while `credProtect` is `none` (STS-AUTHN-0560). Refused: `classical-only` with `postQuantumRequired` not `off` or with `attestationAlgorithms` set (STS-AUTHN-0430), and `pq-only` or `pq-first` where the list offered names no ML-DSA (STS-AUTHN-0431).\n\n**Every field is required** and one left out is refused by name rather than reset to a default, because a save that quietly loosened a rule nobody mentioned is the mistake nobody sees.\n\n**Mirrors** `POST /admin/policies` on the admin console.",
     `tags`:#["Policies"],
     `responses`:#{
       `200`:#{
@@ -39283,7 +39710,9 @@ op `savePasskeyPolicy`(@js(#{
         `recoveryAssurance`:"any",
         `attestationAlgorithms`:"none",
         `adminEnrolment`:"off",
-        `deviceBoundRequired`:false
+        `deviceBoundRequired`:false,
+        `credProtect`:"none",
+        `enforceCredProtect`:false
       }
     ]
   }) `requestBody/content/application~1json/schema`: {
@@ -39354,7 +39783,11 @@ op `savePasskeyPolicy`(@js(#{
     @js(#{
       `description`:"`off` BY DEFAULT. `on` lets an administrator holding the Admin Write console role enrol a passkey for a person this profile applies to, from the person's page on the console or /admin-api: the registration ceremony runs in the administrator's own browser, against an authenticator they hold (a security key to be handed over, say), under the person's user handle, and is verified exactly as the person's own registration is — attestation, algorithms and this policy's registration rules. Nothing made elsewhere can be imported. The key records which administrator enrolled it and when, and the person is told. Left out of a save, the built-in default is kept. Default `off`."
     }) `adminEnrolment`?: "off" | "on";
-    `deviceBoundRequired`?: post_admin_api_policies_save_passkey_policy_b_application_json_deviceBoundRequired_h3037
+    `deviceBoundRequired`?: post_admin_api_policies_save_passkey_policy_b_application_json_deviceBoundRequired_h3037;
+    @js(#{
+      `description`:"`none` BY DEFAULT: a registration asks for no credential protection, and its options are what they always were. Otherwise a registration asks the authenticator (CTAP 2.1 section 12.1, the credProtect extension) to protect the new credential at that level: `userVerificationOptional` (level 1, what a credential has without the extension), `userVerificationOptionalWithCredentialIDList` (level 2: the key does not reveal or use the credential without user verification unless the relying party names it in allowCredentials, so nobody holding the key can find a discoverable credential on it) or `userVerificationRequired` (level 3: the key uses the credential only after a PIN or biometric). The level the key reports is recorded on the passkey. Most platform and synced passkeys report nothing. Left out of a save, the built-in default is kept. Default `none`."
+    }) `credProtect`?: "none" | "userVerificationOptional" | "userVerificationOptionalWithCredentialIDList" | "userVerificationRequired";
+    `enforceCredProtect`?: post_admin_api_policies_save_passkey_policy_b_application_json_enforceCredProtect_h3038
   },
   `responses/200/content/application~1json/schema`: `WithOkMessageErrors146`,
   `responses/400/content/application~1json/schema`: `WithOkMessageErrors146`,
@@ -43954,12 +44387,35 @@ op `getAttributeSources`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schem
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
+@endpoint("/admin-api/attribute-sources/new",
+  "get",
+  #{
+    `operationId`:"getNewAttributeSourceForm",
+    `summary`:"What an attribute source may be added with, and which of it is required",
+    `description`:"The create's fields in `createFields`, each with `required` — `id`, `host`, `database`, `user`, `table`, `keyColumn` and `columns` (at least one `column=attribute`) are refused when empty; every other field is optional, with the default the create applies when it is absent — plus the closed sets the form's choices come from and `attributeSources.hostPatterns`. **It adds nothing**: the create is `POST /admin-api/attribute-sources/add-source`.\n\n**Mirrors** `GET /admin/attribute-sources/new` on the admin console.",
+    `tags`:#["Directory"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The fields, which are required, and the choices.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+  })
+op `getNewAttributeSourceForm`(`responses/200/content/application~1json/schema`: `NewAttributeSourceForm`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
 @endpoint("/admin-api/attribute-sources/add-source",
   "post",
   #{
     `operationId`:"addAttributeSource",
     `summary`:"Add an attribute source",
-    `description`:"A database this realm reads people's attributes from. Refused for an attribute another source writes, one no outside source may write, a host attributeSources.hostPatterns does not allow, or a name that is not an identifier. Audited.\n\n**Mirrors** `POST /admin/attribute-sources` on the admin console.",
+    `description`:"A database this realm reads people's attributes from. Refused for an attribute another source writes, one no outside source may write, a host attributeSources.hostPatterns does not allow, or a name that is not an identifier. Audited.\n\n**Mirrors** `POST /admin/attribute-sources and POST /admin/attribute-sources/new` on the admin console.",
     `tags`:#["Directory"],
     `responses`:#{
       `200`:#{
@@ -44000,7 +44456,7 @@ op `addAttributeSource`(@js(#{
       `pattern`:"^[a-z0-9][a-z0-9-]{0,62}$",
       `description`:"The source's id in this realm."
     }) `id`: string;
-    @js(#{`description`:"PostgreSQL, or MySQL / MariaDB."}) `dialect`: "postgres" | "mysql";
+    @js(#{`description`:"PostgreSQL, or MySQL / MariaDB: `postgres` when absent. Sent empty, it is refused."}) `dialect`?: "postgres" | "mysql";
     @js(#{
       `maxLength`:253,
       `description`:"The database host; attributeSources.hostPatterns may narrow it."
@@ -44064,7 +44520,7 @@ op `addAttributeSource`(@js(#{
   #{
     `operationId`:"updateAttributeSource",
     `summary`:"Change an attribute source",
-    `description`:"The members given replace the source's; the rest are kept. Checked as add-source is. Audited.\n\n**Mirrors** `POST /admin/attribute-sources` on the admin console.",
+    `description`:"The members given replace the source's; the rest are kept. Checked as add-source is. Audited.\n\n**Mirrors** `POST /admin/attribute-sources and POST /admin/attribute-sources/new` on the admin console.",
     `tags`:#["Directory"],
     `responses`:#{
       `200`:#{
@@ -44152,7 +44608,7 @@ op `updateAttributeSource`(@js(#{`examples`:#[#{`id`:"hr-db",`onFailure`:"refuse
   #{
     `operationId`:"removeAttributeSource",
     `summary`:"Remove an attribute source",
-    `description`:"It leaves the register; what it wrote on people's entries stays. Audited.\n\n**Mirrors** `POST /admin/attribute-sources` on the admin console.",
+    `description`:"It leaves the register; what it wrote on people's entries stays. Audited.\n\n**Mirrors** `POST /admin/attribute-sources and POST /admin/attribute-sources/new` on the admin console.",
     `tags`:#["Directory"],
     `responses`:#{
       `200`:#{
@@ -44182,7 +44638,7 @@ op `removeAttributeSource`(@js(#{`examples`:#[#{`id`:"hr-db"}]}) `requestBody/co
   #{
     `operationId`:"testAttributeSource",
     `summary`:"Connect to a source and read one row, writing nothing",
-    `description`:"Reads the row for a person (by `username`, whose key attribute is used) or for a `key` given outright, and returns it. Nothing is written.\n\n**Mirrors** `POST /admin/attribute-sources` on the admin console.",
+    `description`:"Reads the row for a person (by `username`, whose key attribute is used) or for a `key` given outright, and returns it. Nothing is written.\n\n**Mirrors** `POST /admin/attribute-sources and POST /admin/attribute-sources/new` on the admin console.",
     `tags`:#["Directory"],
     `responses`:#{
       `200`:#{
@@ -44219,7 +44675,7 @@ op `testAttributeSource`(@js(#{`examples`:#[#{`id`:"hr-db",`username`:"alice"}]}
   #{
     `operationId`:"refreshAttributeSource",
     `summary`:"Read every person from a source now",
-    `description`:"Queues the scheduled refresh for this source, which reads the realm's people a page at a time. Audited.\n\n**Mirrors** `POST /admin/attribute-sources` on the admin console.",
+    `description`:"Queues the scheduled refresh for this source, which reads the realm's people a page at a time. Audited.\n\n**Mirrors** `POST /admin/attribute-sources and POST /admin/attribute-sources/new` on the admin console.",
     `tags`:#["Directory"],
     `responses`:#{
       `200`:#{
@@ -44249,7 +44705,7 @@ op `refreshAttributeSource`(@js(#{`examples`:#[#{`id`:"hr-db"}]}) `requestBody/c
   #{
     `operationId`:"refreshAttributeSourcePerson",
     `summary`:"Read one person from the sources now",
-    `description`:"From every source that allows on-demand, or the one named by `id`. Audited.\n\n**Mirrors** `POST /admin/attribute-sources` on the admin console.",
+    `description`:"From every source that allows on-demand, or the one named by `id`. Audited.\n\n**Mirrors** `POST /admin/attribute-sources and POST /admin/attribute-sources/new` on the admin console.",
     `tags`:#["Directory"],
     `responses`:#{
       `200`:#{
@@ -44349,12 +44805,35 @@ op `getSecretDestinations`(@js(#{`maxLength`:256,`examples`:#["vault"]}) `parame
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
+@endpoint("/admin-api/secret-destinations/new",
+  "get",
+  #{
+    `operationId`:"getNewSecretDestinationForm",
+    `summary`:"What a secret destination may be added with, and which of it is required",
+    `description`:"The create's fields in `createFields`, each with `required` — `identifier` and `provider` are refused when empty — and, for a field required for some providers only, `requiredWhen`: the write `credential` for every provider but `file`, AWS's `region`, Azure's and Vault's `endpoint`, the file provider's `directory`. Every other field is optional. Plus the closed sets the form's choices come from. **It adds nothing**: the create is `POST /admin-api/secret-destinations/add-destination`.\n\n**Mirrors** `GET /admin/secret-destinations/new` on the admin console.",
+    `tags`:#["Directory"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The fields, which are required, and the choices.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+  })
+op `getNewSecretDestinationForm`(`responses/200/content/application~1json/schema`: `NewSecretDestinationForm`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
 @endpoint("/admin-api/secret-destinations/add-destination",
   "post",
   #{
     `operationId`:"addSecretDestination",
     `summary`:"Add a secret push destination",
-    `description`:"Creates an application entry declared for the secret-destination family, with its location and its write credential (sealed, write-only). Refused for an unknown provider or payload, a missing location, a credential that is not its provider's shape, a plain http address, or a file in product mode. Audited, without the credential.\n\n**Mirrors** `POST /admin/secret-destinations` on the admin console.",
+    `description`:"Creates an application entry declared for the secret-destination family, with its location and its write credential (sealed, write-only). Refused for an unknown provider or payload, a missing location, a credential that is not its provider's shape, a plain http address, or a file in product mode. Audited, without the credential.\n\n**Mirrors** `POST /admin/secret-destinations and POST /admin/secret-destinations/new` on the admin console.",
     `tags`:#["Directory"],
     `responses`:#{
       `200`:#{
@@ -44398,14 +44877,14 @@ op `addSecretDestination`(@js(#{
     @js(#{
       `description`:"password (the bare password) or json ({username, password, realm, rotatedAt})."
     }) `payload`?: "password" | "json";
-    @js(#{`maxLength`:64,`description`:"aws: the region."}) `region`?: string;
+    @js(#{`maxLength`:64,`description`:"aws: the region. Required for aws."}) `region`?: string;
     @js(#{
       `maxLength`:128,
       `description`:"gcp: the project a short secret name is in."
     }) `project`?: string;
     @js(#{
       `maxLength`:2048,
-      `description`:"azure: the vault URL; vault: its address. https only."
+      `description`:"azure: the vault URL; vault: its address. https only. Required for azure and vault."
     }) `endpoint`?: string;
     @js(#{
       `maxLength`:256,
@@ -44417,7 +44896,7 @@ op `addSecretDestination`(@js(#{
     }) `field`?: string;
     @js(#{
       `maxLength`:1024,
-      `description`:"file: the absolute directory a secret name is a file in."
+      `description`:"file: the absolute directory a secret name is a file in. Required for file."
     }) `directory`?: string;
     @js(#{
       `maxLength`:65536,
@@ -44426,7 +44905,7 @@ op `addSecretDestination`(@js(#{
     @js(#{
       `maxLength`:16384,
       `writeOnly`:true,
-      `description`:"The WRITE credential, write-only: never returned, drawn or logged. aws: JSON {accessKeyId, secretAccessKey[, sessionToken]}; gcp: a service account key's JSON; azure: JSON {tenantId, clientId, clientSecret}; vault: a token. On a change, empty keeps the one set."
+      `description`:"The WRITE credential, write-only: never returned, drawn or logged. aws: JSON {accessKeyId, secretAccessKey[, sessionToken]}; gcp: a service account key's JSON; azure: JSON {tenantId, clientId, clientSecret}; vault: a token. Required for every provider but file. On a change, empty keeps the one set."
     }) `credential`?: string
   },
   `responses/200/content/application~1json/schema`: `WithOkMessageErrors177`,
@@ -44439,7 +44918,7 @@ op `addSecretDestination`(@js(#{
   #{
     `operationId`:"updateSecretDestination",
     `summary`:"Change a secret push destination",
-    `description`:"The members given replace the destination's; the rest are kept, the credential included when none is given. Checked as add-destination is. Audited, without the credential.\n\n**Mirrors** `POST /admin/secret-destinations` on the admin console.",
+    `description`:"The members given replace the destination's; the rest are kept, the credential included when none is given. Checked as add-destination is. Audited, without the credential.\n\n**Mirrors** `POST /admin/secret-destinations and POST /admin/secret-destinations/new` on the admin console.",
     `tags`:#["Directory"],
     `responses`:#{
       `200`:#{
@@ -44511,7 +44990,7 @@ op `updateSecretDestination`(@js(#{`examples`:#[#{`id`:"vault-prod",`payload`:"p
   #{
     `operationId`:"removeSecretDestination",
     `summary`:"Remove a secret push destination",
-    `description`:"Deletes its application entry, credential and all. Nothing at the secrets manager changes. Audited.\n\n**Mirrors** `POST /admin/secret-destinations` on the admin console.",
+    `description`:"Deletes its application entry, credential and all. Nothing at the secrets manager changes. Audited.\n\n**Mirrors** `POST /admin/secret-destinations and POST /admin/secret-destinations/new` on the admin console.",
     `tags`:#["Directory"],
     `responses`:#{
       `200`:#{
@@ -44546,7 +45025,7 @@ op `removeSecretDestination`(@js(#{`examples`:#[#{`id`:"vault-prod"}]}) `request
   #{
     `operationId`:"testSecretDestination",
     `summary`:"Write a canary version to a test secret",
-    `description`:"Writes a random password nobody uses, as the destination's payload, to `secretName` — which must already exist and must be kept for testing: a secret a service account's rotation writes is refused. Proves the credential, the address and the secret. Audited.\n\n**Mirrors** `POST /admin/secret-destinations` on the admin console.",
+    `description`:"Writes a random password nobody uses, as the destination's payload, to `secretName` — which must already exist and must be kept for testing: a secret a service account's rotation writes is refused. Proves the credential, the address and the secret. Audited.\n\n**Mirrors** `POST /admin/secret-destinations and POST /admin/secret-destinations/new` on the admin console.",
     `tags`:#["Directory"],
     `responses`:#{
       `200`:#{
@@ -46055,6 +46534,8 @@ op `getHardwareTokens`(@js(#{`maxLength`:256,`examples`:#["12345678"]}) `paramet
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
   @js(#{`minimum`:1,`maximum`:300,`examples`:#[50]}) `parameters/3/schema`: integer,
   `responses/200/content/application~1json/schema`: {
+    @js(#{`description`:"What the PIV enrolment form may issue here (#1955 P2)."}) `piv`: PivAdminRules;
+    @js(#{`description`:"The escrowed piv-key-management certificates of the person `q` names; empty for a serial, nobody, or no search."}) `escrowed`: (PivEscrowedAdminRow)[];
     `tokens`: (HardwareTokenAdminRow)[];
     `paging`: WithPagePagesPerPageEtc8;
     `capped`: boolean;
@@ -46312,6 +46793,517 @@ op `removeOathToken`(@js(#{`examples`:#[#{`key`:"manufacturer/987654321/12345678
   `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   `responses/404/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   `responses/409/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+
+// #1955 P6: DIRECTORY → OpenPGP KEYS (`mgmt-api/openpgp_api.ts`).
+@hoisted model OpenPgpAdminPerson {
+  `username`: string;
+  @js(#{`description`:"The address on the person's entry."}) `mail`: string;
+  `key`: OpenPgpKeyView | null;
+  `challenge`: OpenPgpChallengeView | null;
+  `wkd`: OpenPgpWkdView;
+  `mailEncryption`: OpenPgpMailView
+}
+
+@hoisted model OpenPgpAdminView {
+  @js(#{`description`:"The person asked about; empty for none."}) `user`: string;
+  @js(#{`description`:"Whether `user` names a person of this realm."}) `found`: boolean;
+  `person`: OpenPgpAdminPerson | null;
+  @js(#{`description`:"The realm's Web Key Directory: its switch and the domains it serves."}) `wkd`: { `enabled`: boolean; `domains`: (string)[] }
+}
+
+@hoisted model OpenPgpAdminAnswer {
+  `ok`: boolean;
+  `message`: string;
+  @js(#{`description`:"`challenge`: the text the person signs, and when it lapses; null for every other act."}) `challenge`: OpenPgpChallengeView | null;
+  `view`: OpenPgpAdminView
+}
+
+@endpoint("/admin-api/openpgp",
+  "get",
+  #{
+    `operationId`:"getOpenPgpKeys",
+    `summary`:"One person's OpenPGP key and mail encryption (#1955)",
+    `description`:"Everything Directory → OpenPGP keys draws: with `user`, that person's registered OpenPGP key, their outstanding registration challenge, their Web Key Directory publication, their S/MIME certificate and how mail to them is encrypted; and the realm's Web Key Directory switch and domains.\n\n**Mirrors** `GET /admin/openpgp` on the admin console.",
+    `tags`:#["Directory"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The view.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `parameters`:#[
+      #{`name`:"user",`in`:"query",`required`:false,`schema`:null,`description`:"The person whose OpenPGP key, publication and mail encryption to draw; empty for the realm's Web Key Directory alone."}
+    ],
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+  })
+op `getOpenPgpKeys`(@js(#{`maxLength`:256,`examples`:#["alice"]}) `parameters/0/schema`: string,
+  `responses/200/content/application~1json/schema`: OpenPgpAdminView,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+
+@endpoint("/admin-api/openpgp/challenge",
+  "post",
+  #{
+    `operationId`:"issueOpenPgpChallenge",
+    `summary`:"Issue a person an OpenPGP registration challenge (#1955)",
+    `description`:"A challenge for `user` to sign with `gpg --clearsign` (on a YubiKey OpenPGP card the card signs), replacing any earlier one, good for `openpgp.challengeLifetimeS`. Hand it to the person; their signature is what `registerOpenPgpKey` takes. Refused for a person with no mail address (STS-OPENPGP-0006).\n\n**Mirrors** `POST /admin/openpgp` on the admin console.",
+    `tags`:#["Directory"],
+    `responses`:#{
+      `200`:#{
+        `description`:"Done: the sentence, and the person as they now are.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `404`:#{
+        `description`:"No such person in this realm.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `500`:#{
+        `description`:"The act verified but could not be written, or threw.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `issueOpenPgpChallenge`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The person, by username.",`maxLength`:256}) `user`: string
+  },
+  `responses/200/content/application~1json/schema`: OpenPgpAdminAnswer,
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/404/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/500/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+
+@endpoint("/admin-api/openpgp/register",
+  "post",
+  #{
+    `operationId`:"registerOpenPgpKey",
+    `summary`:"Register a person's OpenPGP key on their proof (#1955)",
+    `description`:"`publicKey` (one armored public key) and `signed` (the person's outstanding challenge signed with `gpg --clearsign`): the key must be neither revoked nor expired, use an accepted algorithm (Ed25519, Ed448, ECDSA and ECDH on P-256 to P-521, X25519, X448, RSA of `openpgp.minRsaBits`), carry a valid user id with the entry's address, and have signed exactly the challenge since it was issued. It replaces any key the person had.\n\n**Mirrors** `POST /admin/openpgp` on the admin console.",
+    `tags`:#["Directory"],
+    `responses`:#{
+      `200`:#{
+        `description`:"Done: the sentence, and the person as they now are.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `404`:#{
+        `description`:"No such person in this realm.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `500`:#{
+        `description`:"The act verified but could not be written, or threw.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `registerOpenPgpKey`(@js(#{`examples`:#[#{`user`:"alice",`publicKey`:"-----BEGIN PGP PUBLIC KEY BLOCK-----",`signed`:"-----BEGIN PGP SIGNED MESSAGE-----"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The person, by username.",`maxLength`:256}) `user`: string;
+    @js(#{`description`:"The armored OpenPGP public key.",`maxLength`:65536}) `publicKey`: string;
+    @js(#{`description`:"The person's challenge, signed with gpg --clearsign.",`maxLength`:16384}) `signed`: string
+  },
+  `responses/200/content/application~1json/schema`: OpenPgpAdminAnswer,
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/404/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/500/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+
+@endpoint("/admin-api/openpgp/remove",
+  "post",
+  #{
+    `operationId`:"removeOpenPgpKey",
+    `summary`:"Remove a person's OpenPGP key (#1955)",
+    `description`:"Removes the key from `user`'s entry, and so from the Web Key Directory; a mail choice of `openpgp` becomes `none`.\n\n**Mirrors** `POST /admin/openpgp` on the admin console.",
+    `tags`:#["Directory"],
+    `responses`:#{
+      `200`:#{
+        `description`:"Done: the sentence, and the person as they now are.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `404`:#{
+        `description`:"No such person in this realm.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `500`:#{
+        `description`:"The act verified but could not be written, or threw.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `removeOpenPgpKey`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The person, by username.",`maxLength`:256}) `user`: string
+  },
+  `responses/200/content/application~1json/schema`: OpenPgpAdminAnswer,
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/404/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/500/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+
+@endpoint("/admin-api/openpgp/publish",
+  "post",
+  #{
+    `operationId`:"publishOpenPgpKey",
+    `summary`:"Publish a person's OpenPGP key in the Web Key Directory (#1955)",
+    `description`:"The person's choice, made for them: the Web Key Directory answers their key for their address, where the realm turned it on (`openpgp.wkd`) and serves the address's domain.\n\n**Mirrors** `POST /admin/openpgp` on the admin console.",
+    `tags`:#["Directory"],
+    `responses`:#{
+      `200`:#{
+        `description`:"Done: the sentence, and the person as they now are.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `404`:#{
+        `description`:"No such person in this realm.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `500`:#{
+        `description`:"The act verified but could not be written, or threw.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `publishOpenPgpKey`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The person, by username.",`maxLength`:256}) `user`: string
+  },
+  `responses/200/content/application~1json/schema`: OpenPgpAdminAnswer,
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/404/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/500/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+
+@endpoint("/admin-api/openpgp/withdraw",
+  "post",
+  #{
+    `operationId`:"withdrawOpenPgpKey",
+    `summary`:"Stop publishing a person's OpenPGP key (#1955)",
+    `description`:"The Web Key Directory answers nothing for the person's address.\n\n**Mirrors** `POST /admin/openpgp` on the admin console.",
+    `tags`:#["Directory"],
+    `responses`:#{
+      `200`:#{
+        `description`:"Done: the sentence, and the person as they now are.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `404`:#{
+        `description`:"No such person in this realm.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `500`:#{
+        `description`:"The act verified but could not be written, or threw.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `withdrawOpenPgpKey`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The person, by username.",`maxLength`:256}) `user`: string
+  },
+  `responses/200/content/application~1json/schema`: OpenPgpAdminAnswer,
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/404/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/500/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+
+@endpoint("/admin-api/openpgp/mail-encryption",
+  "post",
+  #{
+    `operationId`:"setMailEncryption",
+    `summary`:"Set how mail to a person is encrypted (#1955)",
+    `description`:"`choice`: `none`, `openpgp` (their key must have an encryption key valid now) or `smime` (their userSMIMECertificate must hold a certificate that can receive).\n\n**Mirrors** `POST /admin/openpgp` on the admin console.",
+    `tags`:#["Directory"],
+    `responses`:#{
+      `200`:#{
+        `description`:"Done: the sentence, and the person as they now are.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `404`:#{
+        `description`:"No such person in this realm.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `500`:#{
+        `description`:"The act verified but could not be written, or threw.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setMailEncryption`(@js(#{`examples`:#[#{`user`:"alice",`choice`:"openpgp"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The person, by username.",`maxLength`:256}) `user`: string;
+    @js(#{`description`:"`none`, `openpgp` or `smime`.",`maxLength`:16}) `choice`: string
+  },
+  `responses/200/content/application~1json/schema`: OpenPgpAdminAnswer,
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/404/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/500/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+
+@endpoint("/admin-api/openpgp/smime",
+  "post",
+  #{
+    `operationId`:"setSmimeCertificate",
+    `summary`:"Set a person's S/MIME certificate (#1955)",
+    `description`:"`certificate`: one PEM or base64 DER certificate that can receive S/MIME now and names the entry's address; empty removes it (and a mail choice of `smime` becomes `none`).\n\n**Mirrors** `POST /admin/openpgp` on the admin console.",
+    `tags`:#["Directory"],
+    `responses`:#{
+      `200`:#{
+        `description`:"Done: the sentence, and the person as they now are.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `404`:#{
+        `description`:"No such person in this realm.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `500`:#{
+        `description`:"The act verified but could not be written, or threw.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setSmimeCertificate`(@js(#{`examples`:#[#{`user`:"alice",`certificate`:""}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The person, by username.",`maxLength`:256}) `user`: string;
+    @js(#{`description`:"The certificate; empty removes it.",`maxLength`:16384}) `certificate`: string
+  },
+  `responses/200/content/application~1json/schema`: OpenPgpAdminAnswer,
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/404/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/500/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+
+// #1955 P2: THE PIV ENROLMENT FORM AND ESCROWED KEYS (`mgmt-api/hardware_tokens_api.ts`,
+// `common/piv_enrolment.ts`).
+@hoisted model PivAdminRules {
+  @js(#{`description`:"The PIV slot profiles this realm's EST may issue (est.allowedProfiles)."}) `profiles`: (string)[];
+  @js(#{`description`:"Whether a PIV profile needs a YubiKey PIV attestation (piv.requireAttestation)."}) `requireAttestation`: boolean;
+  @js(#{`description`:"Whether piv-key-management keys may be escrowed (piv.keyEscrow)."}) `keyEscrow`: boolean
+}
+
+@hoisted model PivEscrowedAdminRow {
+  @js(#{`description`:"The certificate's serial, lower-case hex: what `recoverEscrowedPivKey` names."}) `serialHex`: string;
+  `profile`: string;
+  `subject`: string;
+  `notAfter`: string;
+  `issuedAt`: string;
+  @js(#{`description`:"Whether the certificate was revoked; its escrowed key is still recoverable."}) `revoked`: boolean
+}
+
+@endpoint("/admin-api/hardware-tokens/enrol-piv",
+  "post",
+  #{
+    `operationId`:"enrolPivCertificate",
+    `summary`:"Issue a PIV slot certificate to a person (#1955)",
+    `description`:"The console's PIV enrolment form, for a machine: issues `username` a certificate under one of the four PIV slot profiles (`piv-auth` 9a, `piv-sign` 9c, `piv-key-management` 9d, `piv-card-auth` 9e) from a PKCS#10 request (`csr`, PEM) over the EST Issuing CA, held to `est.allowedProfiles`. With the key's YubiKey PIV attestation — the slot's attestation certificate (`attestationCertificate`) and the f9 attestation certificate (`attestationIssuer`), PEM — the attestation is verified against the realm's PIV attestation anchors and its PIN and touch policy, the YubiKey is recorded among the realm's hardware tokens, and the certificate earns hwk and sc at sign-in. An attestation that does not verify is refused. `piv.requireAttestation` refuses a request without one.\n\n**Mirrors** `POST /admin/hardware-tokens` on the admin console.",
+    `tags`:#["Directory"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The certificate issued.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The request, the profile or the attestation was refused; `errors` says why and nothing was issued.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `404`:#{
+        `description`:"No such person in this realm.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `409`:#{
+        `description`:"The person already holds as many enrolled certificates as the realm allows.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `503`:#{
+        `description`:"The certificate could not be issued or recorded.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `enrolPivCertificate`(@js(#{`examples`:#[#{`username`:"alice",`profile`:"piv-auth",`csr`:"-----BEGIN CERTIFICATE REQUEST-----\n...\n-----END CERTIFICATE REQUEST-----"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The person the certificate is for.",`maxLength`:256}) `username`: string;
+    @js(#{`description`:"piv-auth, piv-sign, piv-key-management or piv-card-auth.",`maxLength`:64}) `profile`: string;
+    @js(#{`description`:"The PKCS#10 certificate request, PEM.",`maxLength`:32768}) `csr`: string;
+    @js(#{`description`:"The slot's attestation certificate, PEM (ykman piv keys attest).",`maxLength`:32768}) `attestationCertificate`?: string;
+    @js(#{`description`:"The f9 attestation certificate, PEM (ykman piv certificates export f9), and any intermediate after it.",`maxLength`:32768}) `attestationIssuer`?: string
+  },
+  `responses/200/content/application~1json/schema`: {
+    `ok`: boolean;
+    `message`: string;
+    @js(#{`description`:"The issued certificate's serial, lower-case hex."}) `serialHex`: string;
+    `profile`: string;
+    `certificatePem`: string;
+    `chainPem`: (string)[];
+    @js(#{`description`:"Whether a YubiKey PIV attestation of the key verified."}) `attested`: boolean;
+    @js(#{`description`:"The hardware token the certificate was recorded on, or empty."}) `token`: string
+  },
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/404/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/409/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/503/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+
+@endpoint("/admin-api/hardware-tokens/recover-key",
+  "post",
+  #{
+    `operationId`:"recoverEscrowedPivKey",
+    `summary`:"Recover a person's escrowed PIV key-management key (#1955)",
+    `description`:"Answers the escrowed private key of `username`'s piv-key-management certificate `serial` (piv.keyEscrow), so mail encrypted to it can be decrypted after the card is lost. Admin Write is not enough: the access-control policy decides it (resource `piv-key-escrow`, action `recover-key`), and the built-in policy permits a caller holding PIV_KEY_RECOVERY, a member of the group roles.pivKeyRecoveryGroup names. Audited (`piv-escrow.recover`) and told to the person over CAEP. Sent with Cache-Control: no-store.\n\n**Mirrors** `POST /admin/hardware-tokens` on the admin console.",
+    `tags`:#["Directory"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The escrowed key and its certificate.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The request was refused.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"The access-control policy did not permit the recovery.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `404`:#{
+        `description`:"No escrowed key is held for that certificate of that person.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `503`:#{
+        `description`:"The escrowed key could not be opened.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `recoverEscrowedPivKey`(@js(#{`examples`:#[#{`username`:"alice",`serial`:"1a2b3c"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The person whose key it is.",`maxLength`:256}) `username`: string;
+    @js(#{`description`:"The escrowed certificate's serial, hex.",`maxLength`:64}) `serial`: string
+  },
+  `responses/200/content/application~1json/schema`: {
+    `ok`: boolean;
+    `message`: string;
+    `serialHex`: string;
+    @js(#{`description`:"The escrowed private key, PEM."}) `privateKeyPem`: string;
+    `certificatePem`: string;
+    `chainPem`: (string)[]
+  },
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/404/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/503/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+
+@endpoint("/admin-api/hardware-tokens/escrowed",
+  "get",
+  #{
+    `operationId`:"getEscrowedPivKeys",
+    `summary`:"A person's escrowed PIV key-management certificates (#1955)",
+    `description`:"The piv-key-management certificates of `username` whose keys this service generated and keeps in escrow (piv.keyEscrow): serial, subject, validity and whether each was revoked. Never a key; recovering one is `recoverEscrowedPivKey`.\n\n**Mirrors** `GET /admin/hardware-tokens` on the admin console.",
+    `tags`:#["Directory"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The escrowed certificates.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `parameters`:#[
+      #{`name`:"username",`in`:"query",`required`:true,`schema`:null,`description`:"The person whose escrowed certificates to list."}
+    ],
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+  })
+op `getEscrowedPivKeys`(@js(#{`maxLength`:256,`examples`:#["alice"]}) `parameters/0/schema`: string,
+  `responses/200/content/application~1json/schema`: {
+    `username`: string;
+    `escrowed`: (PivEscrowedAdminRow)[]
+  },
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
 
 

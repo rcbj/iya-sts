@@ -71,10 +71,14 @@
 
 "use strict";
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const https = require("https");
+const serviceTrust = require("../tools/service_trust.js");
 const { Command, Option } = require("commander");
 const { usernameFor, runStamp } = require("./random_username.js");
 const consoleSignIn = require("./console_signin.js");
@@ -436,9 +440,10 @@ function certificateRequest(pki, path, cookie) {
       host: url.hostname, port: Number(url.port || 443), path: path,
       method: "GET", cert: pki.certPem, key: pki.keyPem,
       headers: cookie ? { Cookie: cookie } : {},
-      // What is under test is the CLIENT certificate; the server's is not
-      // verified here, as in `sts_global_logout.js`.
-      rejectUnauthorized: false,
+      // What is under test is the CLIENT certificate; the server's is
+      // verified as well (tools/service_trust.js), as in
+      // `sts_global_logout.js`.
+      ca: serviceTrust.trustedCa(),
       // A full handshake every time, never a resumed session (2026-10-07).
       // The global agent caches TLS sessions, and since #406 a session
       // resumes on any node with the verdict of its first handshake. A first
@@ -875,7 +880,7 @@ async function signInThroughAnotherClient(realmBase, user, password,
   // this service's own (`/oauth2/consent`, #576): Allow, as a person would.
   let at = await hop(answered.location || authorize);
   for (let i = 0; i < 6 && (at.status === 302 || at.status === 303) &&
-       String(at.headers.get("location") || "").indexOf(callback) !== 0;
+       !urls.isAt(String(at.headers.get("location") || ""), callback);
        i++) {
     const next = new URL(at.headers.get("location"), base).toString();
     if (authnSignin.isConsent(next)) {

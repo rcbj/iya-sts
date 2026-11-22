@@ -117,6 +117,9 @@
 //
 // Needs the STS mock and nothing else — no browser, no Keycloak.
 // ---------------------------------------------------------------------------
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const common = require("./jwt_vc_json_common.js");
@@ -1355,8 +1358,8 @@ async function theApplicationsRegistryRoundTrips() {
       value: "https://two.example/cb" },
     "added a second value to " + multi.name);
   let values = fieldValues(await application(identifier), multi.name);
-  assert.ok(values.indexOf("https://one.example/cb") >= 0 &&
-            values.indexOf("https://two.example/cb") >= 0,
+  assert.ok(urls.holds(values, "https://one.example/cb") &&
+            urls.holds(values, "https://two.example/cb"),
     "`add` must ACCUMULATE on a multi-valued attribute rather than assign — " +
     "that is the whole difference between the two modes, and an `add` that " +
     "assigned would pass every single-value check in this file. " +
@@ -1367,8 +1370,8 @@ async function theApplicationsRegistryRoundTrips() {
       value: "https://one.example/cb" },
     "removed one value from " + multi.name);
   values = fieldValues(await application(identifier), multi.name);
-  assert.ok(values.indexOf("https://one.example/cb") < 0 &&
-            values.indexOf("https://two.example/cb") >= 0,
+  assert.ok(!urls.holds(values, "https://one.example/cb") &&
+            urls.holds(values, "https://two.example/cb"),
     "`remove` must take away the ONE value it was given and leave the rest; " +
     multi.name + " now holds " + JSON.stringify(values));
 
@@ -1701,7 +1704,7 @@ async function theObservedReturnAddressesAreDecided() {
                            async function () {
     const now = await observedOn();
     const values = now.rows.map(function (row) { return row.value; });
-    return { done: values.indexOf(ONE) >= 0 && values.indexOf(TWO) >= 0,
+    return { done: urls.holds(values, ONE) && urls.holds(values, TWO),
              detail: now.rows, now: now };
   });
   both.now.rows.forEach(function (row) {
@@ -1785,8 +1788,8 @@ async function theObservedReturnAddressesAreDecided() {
              detail: now.rows,
              now: now };
   });
-  assert.ok(fieldValues(afterConfirm.now.entry,
-                        "samlAssertionConsumerService").indexOf(ONE) >= 0,
+  assert.ok(urls.holds(fieldValues(afterConfirm.now.entry,
+                                   "samlAssertionConsumerService"), ONE),
     "CONFIRM takes the mark off and KEEPS the address; " + ONE + " is gone " +
         "from " +
     JSON.stringify(fieldValues(afterConfirm.now.entry,
@@ -1836,11 +1839,11 @@ async function theObservedReturnAddressesAreDecided() {
     const acs = fieldValues(now.entry, "samlAssertionConsumerService");
     return { done:
                now.rows.every(function (row) { return row.value !== TWO; }) &&
-                   acs.indexOf(TWO) < 0,
+                   !urls.holds(acs, TWO),
              detail: { rows: now.rows, acs: acs }, now: now };
   });
-  assert.ok(fieldValues(afterDiscard.now.entry,
-                        "samlAssertionConsumerService").indexOf(ONE) >= 0,
+  assert.ok(urls.holds(fieldValues(afterDiscard.now.entry,
+                                   "samlAssertionConsumerService"), ONE),
     "a discard takes only the address it named; the confirmed one must still " +
     "be there");
   await refused("/applications/discard-address",
@@ -1940,7 +1943,7 @@ async function theDeclaredFlowsAreEnforced() {
                 [])[1] || "";
   const target = location ||
     (asked.status === 400 ? link.replace(/&amp;/g, "&") : "");
-  assert.ok(target.indexOf(MINT_REDIRECT_URI) === 0 &&
+  assert.ok(urls.isAt(target, MINT_REDIRECT_URI) &&
             /[?&#]error=unauthorized_client/.test(target),
     "a response type the client did not declare should be sent back to its " +
     "redirect URI as unauthorized_client (RFC 6749 section 4.1.2.1), by a " +
@@ -2840,14 +2843,14 @@ async function theSamlRegistriesRoundTrip() {
   await ok("/saml2/set-logout-service",
     { sp: sp, value: "https://sp.example/slo" },
     "added a single logout service");
-  assert.ok(JSON.stringify(await serviceProvider(sp))
-                .indexOf("https://sp.example/slo") > 0,
+  assert.ok(urls.namesAddress(JSON.stringify(await serviceProvider(sp)),
+                              "https://sp.example/slo"),
     "the logout service should be readable back off the service provider.");
   await ok("/saml2/remove-logout-service",
     { sp: sp, value: "https://sp.example/slo" },
     "removed the single logout service");
-  assert.ok(JSON.stringify(await serviceProvider(sp))
-      .indexOf("https://sp.example/slo") < 0,
+  assert.ok(!urls.namesAddress(JSON.stringify(await serviceProvider(sp)),
+                               "https://sp.example/slo"),
     "and the logout service should be gone from the entry afterwards. A " +
     "SAML 2.0 SP that is still listed as having a SingleLogoutService it no " +
     "longer wants is sent a LogoutRequest it will refuse, which is a " +
@@ -5538,7 +5541,13 @@ const NOT_DRIVEN_HERE = {
     "it with the ML-DSA registration the prove offered",
   "POST /users/cancel-passkey-upgrade": "admin-ui/web_runtime.ts calls " +
     "it when the browser ceremony throws after begin; " +
-    "sts_passkey_dual_lane.js finishes the upgrade instead"
+    "sts_passkey_dual_lane.js finishes the upgrade instead",
+  // #1955 P7: a legacy U2F key imported by value. Refused by design in a
+  // realm whose webauthn.u2fAppIds is empty — every realm this walk drives
+  // — so the example can only be refused here; sts_webauthn_u2f_import.js
+  // lists an AppID, imports a key made at run time and signs in with it.
+  "POST /users/import-u2f-key": "sts_webauthn_u2f_import.js drives it in a " +
+    "realm that lists the AppID, and signs in with the key it imported"
 };
 
 function everyDocumentedOperationWasDriven(doc) {

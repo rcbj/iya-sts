@@ -63,6 +63,9 @@
 // it; it owns no plan.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urlMatch = require("./url_match.js");
 const fs = require("fs");
 const nodeCrypto = require("crypto");
 const bunyan = require("bunyan");
@@ -857,7 +860,7 @@ async function follow(o, driver, id, action, suiteBase) {
     const here = await currentUrl(driver);
     // CHROME'S OWN ERROR PAGE, for an address of this service: loaded again
     // (see `networkError()`), and the step counted against nothing.
-    const failed = here && here.indexOf(suiteBase) !== 0
+    const failed = here && !urlMatch.isUnder(here, suiteBase)
       ? await networkError(driver) : "";
     if (failed && reloads < NETWORK_RETRIES) {
       reloads += 1;
@@ -882,7 +885,7 @@ async function follow(o, driver, id, action, suiteBase) {
       // No address yet (a navigation in flight): taken as no page.
       path = "";
     }
-    if (here.indexOf(suiteBase) === 0) {
+    if (urlMatch.isUnder(here, suiteBase)) {
       // THE SUITE'S OWN PAGE: its callback reports to the suite once its
       // script has run (`submission_complete`); a check page (Session
       // Management's) moves on by itself, to a result page of the suite.

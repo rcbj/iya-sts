@@ -41,6 +41,9 @@
 // 1–3 SKIP and say so; section 0 runs everywhere.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
@@ -637,8 +640,8 @@ async function aLink() {
     // product (#1454, `mode.hidesStepIds()`).
     assert.ok(/^[?#]/.test(link.slice((base + "/realm/" + REALM +
               "/authn/email-link/open").length)) &&
-              link.indexOf(base + "/realm/" + REALM +
-                           "/authn/email-link/open") === 0, link);
+              urls.isAt(link, base + "/realm/" + REALM +
+                        "/authn/email-link/open"), link);
   });
   const other = browser("elsewhere");
   r = await openStep(other, link);

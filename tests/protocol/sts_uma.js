@@ -71,12 +71,16 @@
 // OWNED HERE (local: true): UMA exists in this repository and nowhere else.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const childProcess = require("child_process");
 const crypto = require("crypto");
 const fs = require("fs");
 const http = require("http");
 const https = require("https");
+const serviceTrust = require("../tools/service_trust.js");
 const os = require("os");
 const path = require("path");
 const { Command, Option } = require("commander");
@@ -384,7 +388,7 @@ function withCertificate(method, urlPath, identity, payload) {
     const request = https.request({
       host: target.hostname, port: target.port || 443,
       path: target.pathname + target.search, method: method,
-      rejectUnauthorized: false,
+      ca: serviceTrust.trustedCa(),
       cert: identity ? identity.certPem : undefined,
       key: identity ? identity.keyPem : undefined,
       headers: data ? { "Content-Type": "application/json",
@@ -879,7 +883,7 @@ async function test() {
                        walked.location);
     assert.ok(walked.ticket, walked.location);
     assert.strictEqual(walked.state, walked.sentState, walked.location);
-    assert.ok(walked.location.indexOf(CLAIMS_REDIRECT) === 0,
+    assert.ok(urls.isAt(walked.location, CLAIMS_REDIRECT),
               walked.location);
   });
   r = await token(CLIENT, { grant_type: GRANT, ticket: walked.ticket });

@@ -398,8 +398,14 @@ function refusedNew(t, drawn, names) {
           'Refused.',
           'E3. a refusal that names no error still says it was refused');
   const html = policies.body(kit.context(), again.json);
-  const at = html.indexOf('id="passkey-sub-new"');
-  const form = html.slice(at, html.indexOf('</form>', at));
+  // THE FORM IS NEW POLICY'S OWN PAGE SINCE #1132, drawn from the policies
+  // view (composed as `policies`) and the redraw's state; the tab links to
+  // it.
+  const page = policies.newPolicyBody(kit.context(),
+    { kind: 'passkey', kinds: [], createFields: [], policies: again.json,
+      state: kept });
+  // From the top of the page: the refusal is drawn above the form.
+  const form = page.slice(0, page.indexOf('</form>'));
   t.check(form.indexOf('name="newProfile" value="1"') >= 0 &&
           form.indexOf('value="' + names.group + '"') >= 0 &&
           /name="precedence" min="1" max="1000" value="9"/.test(form) &&

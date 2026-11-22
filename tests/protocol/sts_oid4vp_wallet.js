@@ -96,6 +96,9 @@
 // OWNED HERE (local: true): `/authn/wallet` is this repository's own door.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const crypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -653,7 +656,7 @@ async function startSignIn(who) {
 async function finishAuthorization(who, location, pair) {
   log.debug("Entering finishAuthorization().");
   let at = location;
-  for (let n = 0; n < 6 && at && at.indexOf(base) === 0 &&
+  for (let n = 0; n < 6 && at && urls.isUnder(at, base) &&
                   !consentScreen.isConsentScreen(at); n += 1) {
     const r = await hop(who, "GET", at);
     at = r.location;

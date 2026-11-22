@@ -93,5 +93,10 @@
   "hKey": "Der Schlüssel",
   "hAlgorithm": "Der Algorithmus",
   "hDataKeys": "Die Datenverschlüsselungsschlüssel",
-  "hCounting": "Die Zählung"
+  "hCounting": "Die Zählung",
+  "signingTitle": "Die Signaturschlüssel dieses Realms",
+  "signingStore": "Wo sie erzeugt werden",
+  "signingInHsm": "Im HSM",
+  "signingInSoftware": "In Software",
+  "signingRefused": "abgelehnt: das HSM ist hier nicht nutzbar (das Protokoll sagt, warum)"
 }

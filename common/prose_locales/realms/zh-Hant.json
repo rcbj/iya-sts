@@ -23,6 +23,14 @@
     "en": "7e9175bdd8dd3808",
     "text": "擁有自己的 entityID 與 providerID（建立領域時以不同值植入）、自己的簽署金鑰、請求狀態、artifact 以及個別服務提供者的中繼資料——因此其 URL 既帶有 SP 摘要也帶有領域。「服務提供者項目」依領域區分，理由與 OAuth 用戶端相同：它們是領域自身目錄中的應用程式。"
   },
+  "realms.support.openpgp-and-the-web-key-directory.family": {
+    "en": "05e19f1c690a88a0",
+    "text": "OpenPGP 與 Web 金鑰目錄"
+  },
+  "realms.support.openpgp-and-the-web-key-directory.note": {
+    "en": "400ad738502f9d1f",
+    "text": "個人的 OpenPGP 金鑰存放在領域自身目錄中的其項目上，其註冊挑戰屬於該領域，而 Web 金鑰目錄為該領域自己的郵件網域（openpgp.wkdDomains，或其 DNS 網域）回應其自己人員的金鑰。WKD 用戶端只知道網域，從不知道領域路徑，因此不含領域區段的請求由服務其網域的領域回應，預設領域優先。"
+  },
   "realms.support.ws-trust.family": {
     "en": "3b83c15d86c7c8b4",
     "text": "WS-Trust"

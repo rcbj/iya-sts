@@ -93,5 +93,10 @@
   "hKey": "密钥",
   "hAlgorithm": "算法",
   "hDataKeys": "数据加密密钥",
-  "hCounting": "统计"
+  "hCounting": "统计",
+  "signingTitle": "此领域的签名密钥",
+  "signingStore": "在何处生成",
+  "signingInHsm": "在 HSM 中",
+  "signingInSoftware": "在软件中",
+  "signingRefused": "已拒绝：此处无法使用 HSM（日志说明原因）"
 }

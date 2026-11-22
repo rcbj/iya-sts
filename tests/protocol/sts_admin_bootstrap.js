@@ -75,6 +75,7 @@
 const assert = require("assert");
 const crypto = require("crypto");
 const ldap = require("ldapjs");
+const serviceTrust = require("../tools/service_trust.js");
 const names = require("./random_username.js");
 const consoleSignIn = require("./console_signin.js");
 const authnSignin = require("./authn_signin.js");
@@ -310,7 +311,9 @@ function ldapsBind(dn, password) {
   return new Promise(function (resolve) {
     const client = ldap.createClient({
       url: LDAPS_URL,
-      tlsOptions: { rejectUnauthorized: false }, timeout: 10000,
+      // Verified against the service's chain (tools/service_trust.js):
+      // LDAPS presents the shared listener certificate.
+      tlsOptions: { ca: serviceTrust.trustedCa() }, timeout: 10000,
       connectTimeout: 10000 });
     client.on("error", function (e) {
       log.debug("Caught in ldapsBind(): " + ((e && e.message) || e));

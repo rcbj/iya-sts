@@ -1523,6 +1523,18 @@ const SECTIONS = [
                'serial is never recorded): its vendor, serial and model, ' +
                'who holds it, and the passkeys and certificates on it. ' +
                'Report one lost to retire every credential on it at once.' },
+      // OpenPGP KEYS (#1955 P6): a person's OpenPGP key, its Web Key
+      // Directory publication, their S/MIME certificate and their mail
+      // encryption — what /portal/openpgp shows the person, for an
+      // administrator. In Directory beside the tokens: it is somebody's.
+      // Drawn by `web_openpgp.ts` from `mgmt-api/openpgp_api.ts`.
+      { path: '/admin/openpgp', label: 'OpenPGP keys',
+        blurb: 'One person\'s OpenPGP key, registered by signing a ' +
+               'challenge with it (gpg --clearsign; on a YubiKey the card ' +
+               'signs), its publication in the Web Key Directory, their ' +
+               'S/MIME certificate and how their mail is encrypted. Issue ' +
+               'a challenge for them, register what they signed, or remove ' +
+               'the key.' },
       // ATTRIBUTE SOURCES (#94): in Directory because what they write is
       // on people's directory entries, and the register is `ou=
       // attributesources` in this realm's directory.
@@ -4524,7 +4536,16 @@ class AdminConsole {
       '.fg-cell.fg-required{border-color:#e8b4b0;border-left:4px solid ' +
       '#b00020;background:#fffafa}' +
       '.fg-required .fg-name::after{content:" *";color:#b00020}' +
+      // The same in a policy's table of fields (#1132), and a required
+      // cell drawn on its own above such a table.
+      '.fg-required-row>td:first-child{border-left:4px solid #b00020;' +
+      'background:#fffafa}' +
+      '.fg-required-row>td:first-child label::after{content:" *";' +
+      'color:#b00020}' +
+      '.fg-cell.fg-solo{max-width:28rem;margin:.4em 0 .8em}' +
+      // A directory create form's email and password boxes (#1132) too.
       '.fg-cell input[type=text],.fg-cell input[type=number],' +
+      '.fg-cell input[type=email],.fg-cell input[type=password],' +
       '.fg-cell select,.fg-cell textarea{width:100%;box-sizing:border-box;' +
       'min-height:0}' +
       '.fg-item{display:flex;gap:.3em;align-items:center;margin:.2em 0}' +
@@ -9281,6 +9302,8 @@ const SETTING_HOMES = [
   { group: 'Sign-in appearance', pages: ['/admin/sign-in-appearance'] },
   // What a person may set, so beside the people it is about (#719).
   { group: 'Profile photos', pages: ['/admin/users'] },
+  // A person's OpenPGP key and the Web Key Directory (#1955 P6).
+  { group: 'OpenPGP', pages: ['/admin/openpgp'] },
   // On Protocols → Delegation since 2026-10-01, with the register's controls:
   // Monitoring → Delegation changes nothing.
   { group: 'Delegation', pages: ['/admin/delegation-settings'] },

@@ -38,12 +38,12 @@ Every answer is checked against the model shown here before it is sent, and no a
 | [Custom SAML attributes](admin-api-custom-saml-attributes.html) | 9 | What to add to every SAML 2.0 and SAML 1.1 assertion issued from now on — WS-Trust's and WS-Federation's alike. The same store the custom claims are in, and the same two halves: a typed attribute and a directory one. |
 | [Custom claims](admin-api-custom-claims.html) | 9 | What to add to every access token and ID Token issued from now on. The assertions are next door, under Custom SAML attributes. |
 | [Delegation](admin-api-delegation.html) | 17 |  |
-| [Devices](admin-api-devices.html) | 11 |  |
-| [Directory](admin-api-directory.html) | 23 |  |
+| [Devices](admin-api-devices.html) | 12 |  |
+| [Directory](admin-api-directory.html) | 36 |  |
 | [EST](admin-api-est.html) | 6 |  |
 | [Federation](admin-api-federation.html) | 24 |  |
 | [GNAP](admin-api-gnap.html) | 4 | The Grant Negotiation and Authorization Protocol (RFC 9635) and its resource server connections (RFC 9767): the authorization server of this realm, what the applications using it have done, and the two things an operator does to its state by hand. |
-| [Groups](admin-api-groups.html) | 7 | The embedded LDAP directory's groups. A group here GRANTS NOTHING: no token, assertion, ticket or PAC carries one and no endpoint reads one. |
+| [Groups](admin-api-groups.html) | 8 | The embedded LDAP directory's groups. A group here GRANTS NOTHING: no token, assertion, ticket or PAC carries one and no endpoint reads one. |
 | [Kerberos](admin-api-kerberos.html) | 28 |  |
 | [LDAP](admin-api-ldap.html) | 10 |  |
 | [Metrics](admin-api-metrics.html) | 1 | What this service has done since it started. |
@@ -56,11 +56,11 @@ Every answer is checked against the model shown here before it is sent, and no a
 | [Ownership](admin-api-ownership.html) | 2 |  |
 | [PKI](admin-api-pki.html) | 26 |  |
 | [Persistence](admin-api-persistence.html) | 1 |  |
-| [Policies](admin-api-policies.html) | 26 | The rules this realm holds a credential to — the password policy first: its minimum length, how many previous passwords may not be reused, and the symbol, uppercase and digit rules, stored as `cn=default,ou=passwordPolicies` in the directory and ENFORCED IN PRODUCT MODE at every door that sets a password. Not the XACML policy repository, which is under XACML. |
+| [Policies](admin-api-policies.html) | 27 | The rules this realm holds a credential to — the password policy first: its minimum length, how many previous passwords may not be reused, and the symbol, uppercase and digit rules, stored as `cn=default,ou=passwordPolicies` in the directory and ENFORCED IN PRODUCT MODE at every door that sets a password. Not the XACML policy repository, which is under XACML. |
 | [RISC](admin-api-risc.html) | 5 |  |
 | [Recovery codes](admin-api-recovery-codes.html) | 1 |  |
 | [Risk](admin-api-risk.html) | 10 |  |
-| [Roles](admin-api-roles.html) | 13 | Who holds a role, and what requires one. A role is a name a person, a GROUP or an APPLICATION can be mapped into, and holding one is what an ISSUANCE is decided on — which is the whole difference from Groups above, where a group grants nothing. The decision is made by the XACML PDP against a policy, never by an `if` in an issuance site, so a refusal is a document somebody can read. It is not Admin roles either: those are two directory groups that grant the /admin console and nothing else. |
+| [Roles](admin-api-roles.html) | 18 | Who holds a role, and what requires one. A role is a name a person, a GROUP or an APPLICATION can be mapped into, and holding one is what an ISSUANCE is decided on — which is the whole difference from Groups above, where a group grants nothing. The decision is made by the XACML PDP against a policy, never by an `if` in an issuance site, so a refusal is a document somebody can read. It is not Admin roles either: those are two directory groups that grant the /admin console and nothing else. |
 | [SAML 1.1](admin-api-saml-1-1.html) | 2 |  |
 | [SAML 2.0](admin-api-saml-2-0.html) | 13 |  |
 | [SAML assertions](admin-api-saml-assertions.html) | 3 |  |
@@ -78,7 +78,7 @@ Every answer is checked against the model shown here before it is sent, and no a
 | [Trust realms](admin-api-trust-realms.html) | 6 |  |
 | [UMA](admin-api-uma.html) | 11 |  |
 | [UserInfo claims](admin-api-userinfo-claims.html) | 9 |  |
-| [Users](admin-api-users.html) | 68 | Who it has authenticated, and what each of them holds. |
+| [Users](admin-api-users.html) | 69 | Who it has authenticated, and what each of them holds. |
 | [Verifier request](admin-api-verifier-request.html) | 8 | What this realm's OID4VP Verifier asks a wallet for. |
 | [WS-Federation](admin-api-ws-federation.html) | 1 |  |
 | [WS-Trust](admin-api-ws-trust.html) | 1 |  |

@@ -140,6 +140,7 @@ protocol's section of the sidebar:
 [Devices](devices.md) ·
 [Hardware tokens](hardware-tokens.md) ·
 [One-time code tokens](one-time-code-tokens.md) ·
+[OpenPGP keys and encrypted mail](openpgp.md) ·
 [Mail](mail.md) ·
 [Reports](reporting.md) ·
 [Attribute sources](attribute-sources.md) ·
@@ -151,6 +152,7 @@ protocol's section of the sidebar:
 [Authorization overview](authorization.md) ·
 [XACML 3.0 and ALFA](xacml.md) ·
 [Fine-grained authorization](fga.md) ·
+[Dynamic selectable roles](dynamic-roles.md) ·
 [AuthZEN](authzen.md) ·
 [User-Managed Access](uma.md) ·
 [Remote PEP](remote-pep.md) ·

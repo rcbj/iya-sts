@@ -818,6 +818,43 @@ application enforces [fine-grained authorization](fga.md). A local token
 exchange asks that application's policy only about RFC 9396 authorization
 details, and the binding carries none.
 
+## Asking an external PDP
+
+Direction B is this authorization server asking a PDP you configure, before
+it issues an OAuth access token for an RFC 8693 exchange. It is off until
+`authzen.externalPdp` is on. The local issuance policy still decides first,
+and a refusal it enforces is not sent to the PDP. What comes back may only
+narrow the scope and the access-token lifetime. A wider scope, a longer
+life, and any other issuance member are ignored.
+
+The address is `authzen.externalPdpUrl`, an absolute `https` URL with no
+userinfo, query or fragment. A request cannot name it. Plain `http` is
+refused even when `federation.outboundAllowHttp` is on, because the body
+carries token claims and the call carries a client certificate. Mutual TLS
+is the only mode: this service presents the PEM files
+`authzen.externalPdpClientCertFile` and `authzen.externalPdpClientKeyFile`,
+and the PDP admits that certificate as an `AUTHZEN_PEPS` caller. The key's
+bytes are not a configuration value. `GET /admin-api/config` returns the
+path. In product each file must sit inside a directory `security.fileRoots`
+lists. A relative path is this process's current directory.
+`authzen.externalPdpCaFile`, when set, replaces the default roots used to
+verify the PDP.
+
+The batch is the one in the worked example above: the subject gate, the
+requesting-party gate when the two parties differ, and one scope tuple per
+scope, with `evaluations_semantic` `execute_all`. An exchange with no
+audience is still asked, with a resource id of an empty string. A PDP that
+requires a non-empty id then refuses the token.
+
+No answer means no token, in every mode: an unusable address, a certificate
+or key that cannot be read, `federation.outbound` off, a timeout, a non-2xx,
+or a body that is not the batch's decision. A `decision` of `false` on a
+subject or requesting-party gate refuses the whole exchange. The client is
+told neither which gate nor the code. A `false` scope drops that scope. An
+empty `granted_scope` grants nothing. `token_lifetime` is a ceiling on the
+access token only. A Kerberos `requested_token_type` is outside the binding
+and is not sent.
+
 ## Access requests and approvals
 
 This service implements the draft **AuthZEN Access Request and Approval
@@ -1053,6 +1090,12 @@ live source; this table is a copy.
 | `authzen.accessRequestEmergencyS` | `STS_AUTHZEN_ACCESS_REQUEST_EMERGENCY_S` | `3600` | The longest emergency access holds |
 | `authzen.accessRequestRetryAfterS` | `STS_AUTHZEN_ACCESS_REQUEST_RETRY_AFTER_S` | `30` | `Retry-After` on a pending task |
 | `authzen.accessRequestMaxPending` | `STS_AUTHZEN_ACCESS_REQUEST_MAX_PENDING` | `10000` | Pending requests a realm holds before a submission is refused 503 |
+| `authzen.externalPdp` | `STS_AUTHZEN_EXTERNAL_PDP` | `false` | Ask an external PDP before issuing an OAuth access token for a token exchange (see *Asking an external PDP*) |
+| `authzen.externalPdpUrl` | `STS_AUTHZEN_EXTERNAL_PDP_URL` | *(empty)* | The external PDP's `POST /access/v1/evaluations`, absolute https, no userinfo, query or fragment |
+| `authzen.externalPdpTimeoutMs` | `STS_AUTHZEN_EXTERNAL_PDP_TIMEOUT_MS` | `5000` | How long to wait for the external PDP, in milliseconds |
+| `authzen.externalPdpClientCertFile` | `STS_AUTHZEN_EXTERNAL_PDP_CLIENT_CERT_FILE` | *(empty)* | The PEM file presented to the external PDP |
+| `authzen.externalPdpClientKeyFile` | `STS_AUTHZEN_EXTERNAL_PDP_CLIENT_KEY_FILE` | *(empty)* | The PEM file of that certificate's private key. The configuration value is the path |
+| `authzen.externalPdpCaFile` | `STS_AUTHZEN_EXTERNAL_PDP_CA_FILE` | *(empty)* | An optional PEM file of CA certificates used instead of the default roots |
 | `roles.authzenPepGroup` | `STS_ROLES_AUTHZEN_PEP_GROUP` | `authzen-peps` | The group whose members hold `AUTHZEN_PEPS` |
 
 ## In the running service
@@ -1078,9 +1121,9 @@ None of these is advertised in the metadata:
 * Of the Access Request and Approval Profile: binding a denial by
   `evaluation_id` alone, `approval.state`, machine-readable forms, and the
   BULK, ACTOR and CATALOG companions.
-* Of the OAuth token exchange binding: this service's own authorization
-  server asking an external AuthZEN PDP (direction B), authorization-detail
-  tuples, and the `claims` and `audience` shaping keys.
+* Of the OAuth token exchange binding: authorization-detail tuples, and the
+  `claims` and `audience` shaping keys. Direction B, this authorization
+  server asking an external PDP, is built (see *Asking an external PDP*).
 * The [edge PDP](remote-pep.md#an-authzen-edge-pdp) answers evaluations and
   batches only: no searches, access requests, Obligations Profile, token
   exchange binding or `signed_metadata`.

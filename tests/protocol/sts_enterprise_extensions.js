@@ -26,6 +26,9 @@
 // OWNED HERE (local: true): this repository's authorization server and API.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
@@ -243,7 +246,7 @@ async function follow(who, first) {
       continue;
     }
     if (!(r.status === 302 || r.status === 303) ||
-        r.location.indexOf(root + "/") !== 0) {
+        !urls.isUnder(r.location, root + "/")) {
       break;
     }
     r = await hop(who, "GET", r.location);
@@ -363,10 +366,11 @@ async function test() {
   check("another realm's tenant is refused invalid_request at the client; " +
         "this realm's is accepted", function () {
     assert.ok(/error=invalid_request/.test(other.location) &&
-              other.location.indexOf(RP_REDIRECT) === 0,
+              urls.isAt(other.location, RP_REDIRECT),
               other.status + " " + other.location);
-    assert.ok(same.status === 302 && same.location.indexOf(RP_REDIRECT) !==
-              0, same.status + " " + same.location);
+    assert.ok(same.status === 302 &&
+              !urls.isAt(same.location, RP_REDIRECT),
+              same.status + " " + same.location);
   });
 
   log.info("=== 5. domain_hint ===");
@@ -396,8 +400,9 @@ async function test() {
     authorizeUrl(client, { domain_hint: "nowhere-" + TAG + ".example" }).url);
   check("a listed domain goes to that relationship's login; another goes " +
         "to the sign-in screen", function () {
-    assert.ok(hinted.location.indexOf(base + "/federation/login/" + fed) ===
-              0 || hinted.location.indexOf("/federation/login/" + fed) >= 0,
+    assert.ok(urls.isUnder(hinted.location,
+                           base + "/federation/login/" + fed) ||
+              hinted.location.indexOf("/federation/login/" + fed) >= 0,
               hinted.status + " " + hinted.location);
     assert.ok(/\/authn\/login/.test(elsewhere.location),
               elsewhere.status + " " + elsewhere.location);

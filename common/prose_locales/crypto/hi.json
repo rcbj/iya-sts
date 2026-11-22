@@ -448,12 +448,20 @@
     "text": "ऐसा सार्वजनिक-कुंजी टोकन जिसे धारक ऑफ़लाइन क्षीण कर सकता है, मैकरून की तरह, पर मूल सार्वजनिक कुंजी रखने वाला कोई भी उसका सत्यापन कर सकता है। उसका प्राधिकरण तर्क टोकन के भीतर का Datalog है, इसलिए सत्यापनकर्ता हमेशा समय और पुनरावृत्ति की सीमाओं के साथ चलता है।"
   },
   "crypto.standards.cms.coverage": {
-    "en": "abe1a25e47d96baf",
-    "text": "partial: एक हस्ताक्षरकर्ता और हस्ताक्षरित विशेषताओं वाला SignedData, प्राप्त विशेषता-बाइटों पर सत्यापित और DER-क्रमबद्ध लिखा गया; KeyTransRecipientInfo (RSA PKCS#1 v1.5 और OAEP) तथा AES-CBC सामग्री वाला EnvelopedData; प्रमाणपत्रों और CRL सहित केवल-प्रमाणपत्र डीजेनरेट SignedData। कोई KeyAgreeRecipientInfo नहीं, कोई प्रमाणित या संपीड़ित डेटा नहीं, कोई प्रतिहस्ताक्षर नहीं।"
+    "en": "d33248e25a15b5a7",
+    "text": "partial: एक हस्ताक्षरकर्ता और हस्ताक्षरित attributes के साथ SignedData, attribute bytes पर जैसे प्राप्त हुए वैसे सत्यापित और DER-क्रमबद्ध लिखे गए; KeyTransRecipientInfo (RSA PKCS#1 v1.5 और OAEP) और AES-CBC सामग्री के साथ EnvelopedData; प्रमाणपत्रों और CRL के साथ degenerate certs-only SignedData; S/MIME मेल (#1955) के लिए OAEP SHA-256 KeyTransRecipientInfo या ECDH KeyAgreeRecipientInfo के साथ लिखा गया EnvelopedData। कोई authenticated या compressed data नहीं, कोई countersignature नहीं।"
   },
   "crypto.standards.cms.what": {
-    "en": "0f35f026a507dc11",
-    "text": "वह आवरण जिसे SCEP (scep/scep_cms.ts) पढ़ता और लिखता है: अनुरोधकर्ता द्वारा हस्ताक्षरित और RA के लिए एन्क्रिप्ट किया गया अनुरोध, तथा RA द्वारा हस्ताक्षरित CertRep जिसका प्रमाणपत्र अनुरोधकर्ता के लिए एन्क्रिप्ट है।"
+    "en": "e09c8508abab483b",
+    "text": "वह लिफ़ाफ़ा जिसे SCEP (scep/scep_cms.ts) पढ़ता और लिखता है: अनुरोधकर्ता द्वारा हस्ताक्षरित और RA के लिए एन्क्रिप्ट किया गया अनुरोध, और RA द्वारा हस्ताक्षरित एक CertRep जिसका प्रमाणपत्र अनुरोधकर्ता के लिए एन्क्रिप्ट होता है। #1955 से वह S/MIME EnvelopedData भी जिसमें मेल एन्क्रिप्ट होती है, जो EC प्राप्तकर्ता के लिए KeyAgreeRecipientInfo (dhSinglePass-stdDH-sha256kdf, AES-256 key wrap) और RSA प्राप्तकर्ता के लिए OAEP SHA-256 KeyTransRecipientInfo जोड़ता है।"
+  },
+  "crypto.standards.openpgp.coverage": {
+    "en": "5d4c9889762ddbd2",
+    "text": "partial: v4 और v6 हस्तांतरणीय सार्वजनिक कुंजियाँ पढ़ना, cleartext हस्ताक्षर सत्यापित करना और PGP/MIME संदेश एन्क्रिप्ट करना, सब openpgp.js के ज़रिए; Web Key Directory की advanced और direct खोज विधियाँ और नीति फ़ाइल। कोई हस्ताक्षर नहीं, कोई डिक्रिप्शन नहीं, कोई Web Key Service सबमिशन नहीं, कोई keyserver नहीं।"
+  },
+  "crypto.standards.openpgp.what": {
+    "en": "039de4dd3b49b9ab",
+    "text": "किसी व्यक्ति की अपनी सार्वजनिक कुंजी, जो कब्ज़े के प्रमाण पर पंजीकृत होती है और उनकी पसंद पर Web Key Directory में प्रकाशित होती है; वही कुंजी जिसके लिए उनकी मेल एन्क्रिप्ट होती है।"
   },
   "crypto.families.pki.signs": {
     "en": "fdcf723f4622f28f",
@@ -678,6 +686,78 @@
   "crypto.families.reporting.algorithms.3.how": {
     "en": "9d40176053fec31b",
     "text": "SHA-256, आर्टिफ़ैक्ट के साथ रखा और पढ़ने पर जाँचा"
+  },
+  "crypto.families.openpgp.signs": {
+    "en": "0f38445050f33bd1",
+    "text": "कुछ नहीं। पंजीकरण व्यक्ति का अपना हस्ताक्षर है, और एन्क्रिप्टेड संदेश पर हस्ताक्षर नहीं होता (DKIM बाहरी संदेश पर हस्ताक्षर करता है, जैसे वह हर संदेश पर करता है)।"
+  },
+  "crypto.families.openpgp.verifies": {
+    "en": "c3dbfb38087cb3de",
+    "text": "पंजीकरण के समय कब्ज़े का प्रमाण: एक cleartext हस्ताक्षर (gpg --clearsign) ठीक उसी चुनौती पर जो इस सेवा ने व्यक्ति को जारी की, पंजीकृत की जा रही कुंजी की किसी हस्ताक्षर-सक्षम कुंजी द्वारा, चुनौती जारी होने के बाद किया गया (openpgp.signatureSkewS) और उस समय मान्य; कुंजी स्वयं न तो निरस्त हो और न समाप्त, और उसमें प्रविष्टि का पता रखने वाली एक मान्य उपयोगकर्ता ID हो। RFC 9580 v6 और RFC 4880 v4 कुंजियाँ, openpgp.js द्वारा पढ़ी जाती हैं। S/MIME प्रमाणपत्र की वैधता, कुंजी और उपयोग जाँचे जाते हैं, शृंखला नहीं: वह केवल यह चुनता है कि संदेश किसके लिए एन्क्रिप्ट हो।"
+  },
+  "crypto.families.openpgp.encrypts": {
+    "en": "1a05c1b540cd5082",
+    "text": "मेल, जहाँ व्यक्ति ने इसे चुना हो या realm इसकी माँग करे (mail.encryptionRequired): PGP/MIME (RFC 3156) कुंजी की एन्क्रिप्शन कुंजी के लिए, जैसा openpgp.js चुने (v4 कुंजी के लिए AES के साथ SEIPD, v6 के लिए AEAD); S/MIME (RFC 8551) एक CMS EnvelopedData के रूप में, AES-256-CBC सामग्री एन्क्रिप्शन, सामग्री कुंजी SHA-256 के साथ RSAES-OAEP या ECDH (dhSinglePass-stdDH-sha256kdf, AES-256 key wrap) के अंतर्गत।"
+  },
+  "crypto.families.openpgp.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "कुछ नहीं।"
+  },
+  "crypto.families.openpgp.hashes": {
+    "en": "c51e067261932787",
+    "text": "छोटे अक्षरों में बदले गए local part का SHA-1, z-base-32 में, जिस तरह Web Key Directory किसी पते का नाम रखती है (मसौदे द्वारा तय किया गया नाम, अखंडता के लिए कभी भरोसा नहीं किया जाता)। कुंजी का फ़िंगरप्रिंट RFC 9580 वाला है (v6 के लिए SHA-256, v4 के लिए SHA-1)।"
+  },
+  "crypto.families.openpgp.keys": {
+    "en": "201cc09e750d0c79",
+    "text": "इसकी अपनी कोई नहीं। व्यक्ति की सार्वजनिक कुंजी उनकी प्रविष्टि पर होती है (stsOpenPgpKey), कभी भी गुप्त कुंजी नहीं, जिसे पंजीकरण अस्वीकार करता है; YubiKey OpenPGP कार्ड पर रखी कुंजी को फ़ाइल वाली कुंजी से अलग नहीं पहचाना जा सकता, इसलिए कुछ भी हार्डवेयर-बद्ध के रूप में दर्ज नहीं किया जाता।"
+  },
+  "crypto.families.openpgp.algorithms.0.what": {
+    "en": "b7a04c64879be952",
+    "text": "पंजीकृत कुंजी, हस्ताक्षर"
+  },
+  "crypto.families.openpgp.algorithms.0.how": {
+    "en": "91736ec1cb35b5f2",
+    "text": "Ed25519, Ed448, ECDSA P-256/P-384/P-521, openpgp.minRsaBits (कम से कम 3072) का RSA"
+  },
+  "crypto.families.openpgp.algorithms.1.what": {
+    "en": "9f7b65405a49bedd",
+    "text": "पंजीकृत कुंजी, एन्क्रिप्शन"
+  },
+  "crypto.families.openpgp.algorithms.1.how": {
+    "en": "e28f57b2d61b83be",
+    "text": "X25519, X448, ECDH Curve25519 और P-256/P-384/P-521, openpgp.minRsaBits का RSA"
+  },
+  "crypto.families.openpgp.algorithms.2.what": {
+    "en": "66b873543aebf01b",
+    "text": "अस्वीकृत"
+  },
+  "crypto.families.openpgp.algorithms.2.how": {
+    "en": "18369a474bec2b97",
+    "text": "DSA, ElGamal, Brainpool वक्र"
+  },
+  "crypto.families.openpgp.algorithms.3.what": {
+    "en": "429d783fabc235c9",
+    "text": "S/MIME सामग्री"
+  },
+  "crypto.families.openpgp.algorithms.3.how": {
+    "en": "8c2686ee3dd3948f",
+    "text": "AES-256-CBC (CMS EnvelopedData)"
+  },
+  "crypto.families.openpgp.algorithms.4.what": {
+    "en": "cc09e2a5306928f5",
+    "text": "S/MIME कुंजी परिवहन"
+  },
+  "crypto.families.openpgp.algorithms.4.how": {
+    "en": "acf5bad1301fd2cc",
+    "text": "RSAES-OAEP SHA-256; ECDH stdDH SHA-256 KDF, AES-256 wrap"
+  },
+  "crypto.families.openpgp.algorithms.5.what": {
+    "en": "727e1a6e39e36a93",
+    "text": "Web Key Directory नाम"
+  },
+  "crypto.families.openpgp.algorithms.5.how": {
+    "en": "a2b773a0ce72bc44",
+    "text": "SHA-1, z-base-32"
   },
   "crypto.families.gnap.signs": {
     "en": "ad4b982edb070f2c",
@@ -1596,12 +1676,12 @@
     "text": "यह जो भी प्रमाणपत्र देता है, इस विश्वास क्षेत्र की EST Issuing CA कुंजी से, common/pki.js के issueEnrolled() के माध्यम से — वही एनकोडर जिससे यहाँ का प्रत्येक अन्य प्रमाणपत्र आता है। जो certs-only CMS संदेश यह लौटाता है वे डीजेनरेट हैं: प्रमाणपत्रों वाला और हस्ताक्षरकर्ता रहित SignedData, इसलिए वे अपना कोई हस्ताक्षर नहीं रखते और उनके भीतर के प्रमाणपत्रों के लिए विश्वसनीय माने जाते हैं।"
   },
   "crypto.families.est.verifies": {
-    "en": "d40d37c4bd83de49",
-    "text": "PKCS#10 कब्ज़े का प्रमाण — अनुरोध का अपनी सार्वजनिक कुंजी से हस्ताक्षर, शास्त्रीय और पोस्ट-क्वांटम, common/cert_enrollment.ts में — तथा, प्रमाणपत्र प्रमाणीकरण के लिए, क्लाइंट प्रमाणपत्र का इस विश्वास क्षेत्र के Intermediate और सेवा Root तक पथ, निरस्तीकरण देखकर। /serverkeygen टेम्पलेट सत्यापित नहीं होता: उसकी कुंजी बदल दी जाती है।"
+    "en": "6b27c8877d509c46",
+    "text": "PKCS#10 कब्ज़े का प्रमाण — अनुरोध का उसकी अपनी सार्वजनिक कुंजी से हस्ताक्षर, क्लासिकल और पोस्ट-क्वांटम, common/cert_enrollment.ts में — और, प्रमाणपत्र प्रमाणीकरण के लिए, क्लाइंट प्रमाणपत्र का इस विश्वास क्षेत्र के Intermediate और सेवा के Root तक का पथ, निरस्तीकरण देखते हुए। /serverkeygen टेम्पलेट सत्यापित नहीं होता: उसकी कुंजी बदल दी जाती है। अनुरोध में YubiKey PIV कुंजी अटेस्टेशन (#1955, यहाँ तथा ACME और SCEP पर): f9 प्रमाणपत्र द्वारा स्लॉट प्रमाणपत्र का ECDSA या RSA हस्ताक्षर, और f9 प्रमाणपत्र का विश्वास क्षेत्र के PIV अटेस्टेशन एंकरों तक का पथ, सत्यापन द्वार के माध्यम से।"
   },
   "crypto.families.est.encrypts": {
-    "en": "2f48e10a9ad6494d",
-    "text": "सर्वर द्वारा बनाए कुंजी युग्म की निजी कुंजी, AES-256-GCM से कुंजी-एन्क्रिप्शन कुंजी के अंतर्गत प्रविष्टि पर सील, जहाँ भी वह कुंजी प्रक्रिया से अधिक जीवित रहे। यह क्लाइंट के लिए एन्क्रिप्ट नहीं होती (RFC 7030 अनुभाग 4.4.1.2): जो अनुरोध उसकी माँग करे वह अस्वीकार होता है, और कुंजी केवल TLS के भीतर जाती है।"
+    "en": "a18df4311029b728",
+    "text": "सर्वर द्वारा बनाए गए कुंजी-युग्म की निजी कुंजी, AES-256-GCM से कुंजी-एन्क्रिप्शन कुंजी के अधीन प्रविष्टि पर सील की गई, जहाँ भी वह कुंजी प्रक्रिया से अधिक समय तक बनी रहती है; एस्क्रो की गई piv-key-management कुंजी (#1955) हर मोड में, अन्यथा वह बनाई ही नहीं जाती। यह क्लाइंट के लिए एन्क्रिप्ट नहीं की जाती (RFC 7030 खंड 4.4.1.2): ऐसा माँगने वाला अनुरोध अस्वीकार होता है, और कुंजी केवल TLS के भीतर जाती है।"
   },
   "crypto.families.est.decrypts": {
     "en": "8d5c676935439726",
@@ -1906,5 +1986,9 @@
   "crypto.param.totp.encoding": {
     "en": "d9613131364834bc",
     "text": "RFC 4648 base32, बिना पैड के, जैसा otpauth Key Uri Format अपेक्षा करता है।"
+  },
+  "crypto.families.est.algorithms.4.what": {
+    "en": "4dd4db2fd60c28f7",
+    "text": "सत्यापित PIV अटेस्टेशन हस्ताक्षर"
   }
 }

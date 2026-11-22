@@ -696,6 +696,14 @@ const JOBS = [
   // profile a group names (#1239), not deleted while named. `local: true`: this repository's own /authn
   // and /admin-api.
   { file: 'sts_post_login_activity.js', browser: false },
+  // DYNAMIC SELECTABLE ROLES (#1072): a dynamic role made and given its
+  // ALFA eligibility policy over /admin-api, the administrator's test, the
+  // sign-in screen's box, the role step (a fabricated role refused, the
+  // offered one chosen), the ID Token's roles claim carrying it only when
+  // chosen, a person the policy does not permit offered nothing, and the
+  // box turned off by appDynamicRoleSelection. `local: true`: this
+  // repository's own /authn, /oauth2 and /admin-api.
+  { file: 'sts_dynamic_roles.js', browser: false, local: true },
   // GOOGLE'S ANDROID ATTESTATION STATUS LIST (#256): a synthetic list
   // uploaded through POST /admin-api/risk/upload with no terms to accept,
   // active with a row per REVOKED or SUSPENDED entry, named by
@@ -1408,6 +1416,19 @@ const JOBS = [
   // removed; no answer carries the secret, the key or an error code. What a
   // code does at a sign-in is tests/hotp.js and tests/oath_tokens.js.
   { file: 'sts_oath_tokens.js', browser: false, local: true },
+  // A YUBIKEY PIV KEY ATTESTATION OVER EST (#1955 P2), in a throwaway realm:
+  // an attested request recorded as a hardware token, an attestation of
+  // another key and of another slot refused, enrol-piv on /admin-api, and
+  // escrow refused off, issued (or 503 without a key-encryption key) on,
+  // and not recovered without PIV_KEY_RECOVERY. Its Yubico-shaped chain is
+  // made at run time; the verifier's refusals in full are
+  // tests/piv_attestation.js, in process.
+  { file: 'sts_piv_attestation.js', browser: false, local: true },
+  // OpenPGP KEYS AND THE WEB KEY DIRECTORY OVER HTTP (#1955 P6): a key made
+  // here registered through /admin-api/openpgp on its proof, and the
+  // directory answering it on a domain only this job uses; the depth is
+  // tests/openpgp_keys.js, in process.
+  { file: 'sts_openpgp.js', browser: false, local: true },
   // LINKING A WEBAUTHN PLATFORM CREDENTIAL ON /portal/devices, IN A REAL
   // BROWSER (#258, 2026-10-06): Chrome's virtual authenticators enrol a
   // roaming key and a platform key on /portal/keys; the roaming one is
@@ -2461,6 +2482,11 @@ const JOBS = [
   // (passkey_policy, passkey_pin_length, passkey_require_usernameless).
   { file: 'sts_passkey_policy_profile.js', browser: false, local: true,
     optIn: '444' },
+  // #1955 P7: legacy U2F credentials imported and used with the appid
+  // extension (the AppID's hash only with appid true), appidExclude on a
+  // registration, and credProtect asked and enforced. Throwaway realms of
+  // its own; every key made when it runs.
+  { file: 'sts_webauthn_u2f_import.js', browser: false, local: true },
   // D12 (#444): appPasskeyPolicy and a group's stsPasskeyPolicy, their
   // refusals, which profile a sign-in gets by client_id and by group
   // precedence, the application read's card data, the delete refused while
@@ -3243,6 +3269,10 @@ const LOCAL_HELPERS = [
   // A GET sent as a browser's top-level navigation (#1443), which Node's
   // fetch cannot send: sts_backchannel_logout.js, sts_multi_account.js.
   'navigation.js',
+  // Whether a page, an answer or a token names an address, by parsing
+  // every URL in it rather than searching for a substring (CodeQL
+  // js/incomplete-url-substring-sanitization, 2026-11-20).
+  'url_match.js',
   // The sign-in screen over `/authn-api` (#571): the shell, the view and
   // the act, with the CSRF binding — what every job that signs somebody in
   // at /authn/login goes through since the screen became a static surface.

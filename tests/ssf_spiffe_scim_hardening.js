@@ -22,6 +22,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
@@ -366,7 +369,7 @@ function ssfIssuer(t) {
           origin);
   const noRequest = realms.run(realm,
                                function () { return transport.ownBaseUrl(); });
-  t.check(once(noRequest) && noRequest.indexOf(origin) === 0,
+  t.check(once(noRequest) && urls.isUnder(noRequest, origin),
           'with no request the base is the loopback origin in the ' +
           'listener\'s own scheme, prefixed once — it was http://localhost ' +
           'whatever global.https said', noRequest);
