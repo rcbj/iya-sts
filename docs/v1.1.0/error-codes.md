@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5875** of them, in **55** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5876** of them, in **55** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 48
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 445
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 446
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 760
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 83
@@ -1825,6 +1825,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0564` | A legacy U2F security key was not imported: its counter is not a whole number from 0 to 4294967295 (#1955). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-AUTHN-0565` | A sign-in step was answered by a legacy U2F security key that may not answer it: the step is passwordless (a U2F key cannot verify the person), or webauthn.u2fAppIds no longer permits its AppID at this RP ID (#1955). | HTTP 200 page naming the refusal |
 | `STS-AUTHN-0566` | A write of webauthn.u2fAppIds was refused: an entry is not a U2F AppID — an absolute https URL with a host, no user name or password and no fragment, at most 2048 characters (#1955). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-AUTHN-0567` | The bootstrap password file could not be removed on a start that found a credential already held. The plaintext is left on disk. | Log line; the service still starts, and the file is left |
 
 ## STS-OAUTH
 

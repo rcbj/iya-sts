@@ -67,7 +67,8 @@ run time.
 
 The generated password of the first administrator is written to the file
 `bootstrap-admin-password` in `persistence.dataDir`, not to the log, unless
-`admin.logBootstrapPassword` is on.
+`admin.logBootstrapPassword` is on. A later start deletes that file, once
+somebody already holds a credential.
 
 ## Where the service log goes
 

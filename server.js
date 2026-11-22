@@ -853,8 +853,10 @@ serviceState.start({
   // Before the listener binds, so that the service is reachable the moment it
   // answers rather than for however long it takes somebody to read the log.
   //
-  // It does nothing in development mode and nothing in a realm where somebody
-  // already holds a credential; see credentials.bootstrap().
+  // It does nothing in development mode. In a realm where somebody already
+  // holds a credential it removes the bootstrap password file a previous
+  // start left, unless this process wrote that file itself; see
+  // credentials.bootstrap().
   // THE BOOTSTRAP ADMINISTRATOR FIRST (2026-09-13): `admin.bootstrapUsername`
   // in the default realm, made if absent, in both console roles, and forced to
   // change its password at its first sign-in. `credentials.bootstrap()` below

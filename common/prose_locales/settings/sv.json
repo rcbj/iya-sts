@@ -232,8 +232,8 @@
     "text": "Logga det genererade startlösenordet"
   },
   "admin.logBootstrapPassword|description": {
-    "en": "577ec7c125546cdb",
-    "text": "Endast produktläge. Av, standardvärdet, skrivs lösenordet som genereras för den första administratören till filen bootstrap-admin-password i persistence.dataDir, som bara den här tjänsten kan läsa, och loggen säger var. På skrivs det till tjänstens logg. VARNING: på uppfylls inte krav 16.2.5 i ASVS 5.0.0, eftersom en autentiseringsuppgift hamnar i loggen."
+    "en": "856dddf1ed8c2407",
+    "text": "Endast produktläge. Av, standardvärdet, skrivs lösenordet som genereras för den första administratören till filen bootstrap-admin-password i persistence.dataDir, som bara den här tjänsten kan läsa, och loggen säger var. På skrivs det till tjänstens logg. VARNING: på uppfylls inte krav 16.2.5 i ASVS 5.0.0, eftersom en autentiseringsuppgift hamnar i loggen. En senare start tar bort den filen när någon redan har en autentiseringsuppgift."
   },
   "oauth2.allowConfidentialWithoutPkce|label": {
     "en": "c33a0a31a1d623b1",
@@ -424,8 +424,8 @@
     "text": "Tillåt ett administratörsnamn som är standard i produktläge"
   },
   "admin.allowDefaultUsername|description": {
-    "en": "53da4f7ba4ff5dcc",
-    "text": "Endast produktläge. Av, standardvärdet, får en startadministratör som heter admin, root, sa eller administrator, eller saknar namn, ett oförutsägbart genererat namn som skrivs med lösenordet till filen bootstrap-admin-password i persistence.dataDir vid första start (se admin.logBootstrapPassword). På används det konfigurerade namnet som det är. VARNING: krav 6.3.2 i ASVS 5.0.0 förbjuder ett kontonamn som är standard, så låt detta vara av utanför en testmiljö."
+    "en": "7375f4bf636f5366",
+    "text": "Endast produktläge. Av, standardvärdet, får en startadministratör som heter admin, root, sa eller administrator, eller saknar namn, ett oförutsägbart genererat namn som skrivs med lösenordet till filen bootstrap-admin-password i persistence.dataDir vid första start (se admin.logBootstrapPassword). På används det konfigurerade namnet som det är. VARNING: krav 6.3.2 i ASVS 5.0.0 förbjuder ett kontonamn som är standard, så låt detta vara av utanför en testmiljö. En senare start tar bort den filen när någon redan har en autentiseringsuppgift."
   },
   "admin.allowDefaultUsername|restartReason": {
     "en": "0191948468332113",
@@ -436,8 +436,8 @@
     "text": "Konto för initial administratör"
   },
   "admin.bootstrapUsername|description": {
-    "en": "9b6fe650632ee79d",
-    "text": "Den initiala administratörens användarnamn (2026-09-13), i STANDARDSFÄREN och, sedan 2026-09-14, i varje förtroendesfär, där kontot administrerar enbart den sfären: skapas vid start om det saknas, är medlem i båda konsolrollerna, tvingas byta lösenord vid sin första inloggning och kan inte tas bort eller byta namn. Tills det första gången loggar in i /admin får varje inloggad person använda konsolen (admin.openWhenEmpty). I utvecklingsläge loggar vilket lösenord som helst in det, som för alla. I PRODUKTIONSLÄGE är det också kontot som får ett genererat lösenord när tjänsten startar och INGEN i sfären har några inloggningsuppgifter; namnet och det lösenordet skrivs en gång till filen bootstrap-admin-password i persistence.dataDir, läsbar bara för tjänsten (loggen säger var, och innehåller dem själv bara med admin.logBootstrapPassword på), och är den enda vägen in i en ny produktionsdriftsättning. Det genererade lösenordet skrivs aldrig där någon redan har inloggningsuppgifter, så det kan inte skriva över ett lösenord. Det tvingade bytet gäller bara ett konto som detta steg SKAPADE — ett befintligt konto med det här namnet behåller sitt lösenord och får bara de två rollerna."
+    "en": "8b69eb9d4cb0b130",
+    "text": "Den initiala administratörens användarnamn (2026-09-13), i STANDARDSFÄREN och, sedan 2026-09-14, i varje förtroendesfär, där kontot administrerar enbart den sfären: skapas vid start om det saknas, är medlem i båda konsolrollerna, tvingas byta lösenord vid sin första inloggning och kan inte tas bort eller byta namn. Tills det första gången loggar in i /admin får varje inloggad person använda konsolen (admin.openWhenEmpty). I utvecklingsläge loggar vilket lösenord som helst in det, som för alla. I PRODUKTIONSLÄGE är det också kontot som får ett genererat lösenord när tjänsten startar och INGEN i sfären har några inloggningsuppgifter; namnet och det lösenordet skrivs en gång till filen bootstrap-admin-password i persistence.dataDir, läsbar bara för tjänsten (loggen säger var, och innehåller dem själv bara med admin.logBootstrapPassword på), och är den enda vägen in i en ny produktionsdriftsättning. Det genererade lösenordet skrivs aldrig där någon redan har inloggningsuppgifter, så det kan inte skriva över ett lösenord. Det tvingade bytet gäller bara ett konto som detta steg SKAPADE — ett befintligt konto med det här namnet behåller sitt lösenord och får bara de två rollerna. En senare start tar bort den filen när någon redan har en autentiseringsuppgift."
   },
   "admin.bootstrapUsername|restartReason": {
     "en": "0191948468332113",

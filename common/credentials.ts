@@ -1092,6 +1092,10 @@ class Credentials {
 
   private directory = null;
 
+  // Set when this process's bootstrap wrote the password file. A later
+  // realm in the same start must not delete the only copy of that password.
+  private bootstrapPasswordWritten = false;
+
   /**
    * Fills the directory slot. Refused whole unless it carries at least
    * `readPassword` and `writePassword`; every other hook is checked where it
@@ -2866,6 +2870,22 @@ class Credentials {
   }
 
   /**
+   * The path of the generated bootstrap password, under persistence.dataDir.
+   *
+   * @returns the file's path
+   */
+  private bootstrapPasswordFile(): string {
+    const { log, config } = this.deps;
+    log.debug("Entering Credentials.bootstrapPasswordFile().");
+    const nodePath = require('path');
+    const dir = nodePath.resolve(String(
+      config.value('persistence.dataDir')));
+    const file = nodePath.join(dir, 'bootstrap-admin-password');
+    log.debug("Leaving Credentials.bootstrapPasswordFile().");
+    return file;
+  }
+
+  /**
    * Writes a generated bootstrap password to a file only this user can read.
    *
    * @param username - the account
@@ -2881,8 +2901,8 @@ class Credentials {
     }
     const nodeFs = require('fs');
     const nodePath = require('path');
-    const dir = nodePath.resolve(String(config.value('persistence.dataDir')));
-    const file = nodePath.join(dir, 'bootstrap-admin-password');
+    const file = this.bootstrapPasswordFile();
+    const dir = nodePath.dirname(file);
     try {
       nodeFs.mkdirSync(dir, { recursive: true });
       nodeFs.writeFileSync(file, username + ':' + password + '\n',
@@ -2900,10 +2920,55 @@ class Credentials {
   }
 
   /**
+   * Removes the bootstrap password file a previous start left behind.
+   *
+   * A start that wrote the file itself does not: another realm in this
+   * process may still need that password. ENOENT is success. Any other
+   * failure is logged (STS-AUTHN-0567) and the start continues.
+   */
+  private removeLeftoverBootstrapPassword(): void {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering Credentials.removeLeftoverBootstrapPassword().");
+    if (this.bootstrapPasswordWritten) {
+      log.debug("Leaving Credentials.removeLeftoverBootstrapPassword(). " +
+                "Written this start.");
+      return;
+    }
+    const nodeFs = require('fs');
+    const file = this.bootstrapPasswordFile();
+    try {
+      nodeFs.unlinkSync(file);
+    } catch (e) {
+      if (e && e.code === 'ENOENT') {
+        log.debug("Caught in " +
+                  "Credentials.removeLeftoverBootstrapPassword(): " +
+                  "already absent.");
+        log.debug("Leaving Credentials.removeLeftoverBootstrapPassword()." +
+                  " Absent.");
+        return;
+      }
+      log.debug("Caught in " +
+                "Credentials.removeLeftoverBootstrapPassword(): " +
+                ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-AUTHN-0567') +
+                'credentials: the bootstrap password file ' + file +
+                ' could not be removed: ' + ((e && e.message) || e));
+      log.debug("Leaving Credentials.removeLeftoverBootstrapPassword()." +
+                " Not removed.");
+      return;
+    }
+    log.info('credentials: removed the bootstrap password file ' + file +
+             ' because somebody already holds a credential.');
+    log.debug("Leaving Credentials.removeLeftoverBootstrapPassword().");
+  }
+
+  /**
    * Creates the bootstrap administrator a fresh product-mode service is
    * reached through, with a generated password announced in the log.
    *
-   * It does not run in development mode.
+   * It does not run in development mode. A product start that finds a
+   * credential already held removes the password file a previous start
+   * wrote, unless this process wrote that file itself.
    * @param opts - `username`, `admin` by default; the password is
    *   `admin.bootstrapPassword` or a generated one
    * @returns `{ ran, username, … }`, or `{ ran: false, why }`
@@ -2941,6 +3006,12 @@ class Credentials {
       return { ran: false, why: 'the credential store could not be read' };
     }
     if (anybody) {
+      // A LATER START. The file from the start that generated the password
+      // is the plaintext, and this start did not generate one. A start that
+      // wrote the file itself leaves it, so another realm in this process
+      // still has the only copy. A node that lost bootstrapOnce() never
+      // reaches here, and so does not remove a file the winner just wrote.
+      this.removeLeftoverBootstrapPassword();
       log.debug('Leaving Credentials.bootstrap(). Somebody already holds a ' +
                 'credential.');
       return { ran: false, why: 'somebody already holds a credential, so ' +
@@ -3036,11 +3107,16 @@ class Credentials {
     // NOT IN THE LOG (#1493, ASVS 5.0.0 16.2.5): the password goes to a file only
     // this service's user can read, unless an operator asked for the old way.
     const held = this.writeBootstrapPassword(username, password);
+    if (held) {
+      // Another realm in this start still needs the only copy.
+      this.bootstrapPasswordWritten = true;
+    }
     log.warn('=======================================================\n' +
              'PRODUCT MODE BOOTSTRAP — THIS IS SHOWN ONCE AND NEVER AGAIN.\n' +
              '\n' +
              '  username: ' + username + '\n' +
-             (held ? '  password: in the file ' + held + '\n'
+             (held ? '  password: in the file ' + held + '\n' +
+                     '  A later start removes this file.\n'
                    : '  password: ' + password + '\n') +
              '\nNobody in this realm\'s ' +
              'directory held a credential, so this one was generated so that ' +
@@ -3077,7 +3153,10 @@ class Credentials {
   //
   // **WHAT A NODE THAT LOSES SEES**: one info line naming the node holding the
   // claim and when it took it, and NO password — it seeds nothing and writes
-  // nothing, and the password is in the winner's log alone. If the winner died
+  // nothing, and it does not remove the password file, which the winner may
+  // have just written on a data directory the nodes share. The password is in
+  // the winner's file, or its log when admin.logBootstrapPassword is on. If
+  // the winner died
   // before it wrote, the claim expires (`BOOTSTRAP_CLAIM_TTL_MS`) and the next
   // node to start runs the bootstrap; a service nobody can sign in to for that
   // long is the price of never printing a password that does not work.

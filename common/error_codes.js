@@ -8488,6 +8488,10 @@ const CODES = [
       'password and no fragment, at most 2048 characters (#1955).',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
+  { code: 'STS-AUTHN-0567',
+    summary: 'The bootstrap password file could not be removed on a start ' +
+      'that found a credential already held. The plaintext is left on disk.',
+    spec: 'Log line; the service still starts, and the file is left' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
