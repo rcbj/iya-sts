@@ -56,18 +56,39 @@
 //
 // **ID-JAG AND TXN-TOKEN ARE IN SCOPE** (decision 3): `id_jag` and
 // `txn_token` are registered token type short names here like the OAuth
-// ones, an ID-JAG's two-level evaluation needs nothing more (its gate tuples
-// name the peer authorization server and only its scope tuples name the
-// level-2 resources), and a Txn-Token's scope tuples for the requesting
-// party are decided as that party's.
+// ones, an ID-JAG's gate tuples name the peer authorization server and its
+// scope and authorization-detail tuples name the level-2 resources, and a
+// Txn-Token's scope tuples for the requesting party are decided as that
+// party's. A detail tuple is never added for that party: the binding's
+// requesting-party exception is scopes on a Txn-Token only.
+//
+// **AUTHORIZATION-DETAIL TUPLES ARE THE SUBJECT'S CELLS** (#1201). One
+// evaluation per RFC 9396 cell of a type this realm has declared. The
+// resource type is the detail type, the resource id one location, and the
+// action name an action, or `action:datatype` split on the LAST colon, or
+// the reserved name `authorization_detail` when the cell names neither.
+// `privileges` and `identifier` are not read. The cell is decided as a
+// local exchange decides a detail — covered by the subject token's own
+// `authorization_details` when the type's application enforces fine-grained
+// authorization (`exchangeBoundProblem`), then that application's policy
+// (`fineGrainedRefusal`) — and only for the exchange subject. The answer
+// never returns a rewritten `authorization_details` array: the
+// authorization server reassembles the cells it was permitted.
+// `classify()` stays a pure reading of audience and protected_resource, so
+// a type this realm has not declared, and a lone evaluation of one it has,
+// with no gate in the batch, is an ordinary question.
 //
 // **THE RESPONSE MAY ONLY NARROW.** `context.issuance` on the subject gate
 // carries `token_lifetime` (the subject token's remaining life and this
 // realm's access-token lifetime for the client, the lesser) and, for a
 // request naming no scope, `granted_scope` (the subject token's scope,
-// narrowed by the same per-scope questions). Never `sub`, `aud`, `act`,
-// `may_act` or any claim: the binding reserves them, and a PDP that wrote
-// `act` could fabricate a delegation history.
+// narrowed by the same per-scope questions). `audience` and `claims` may
+// narrow too, and nothing else: an audience is sent only by being this
+// gate's own resource id (an empty array withdraws the target), and a
+// claim only when the subject token already carries it and the value is
+// narrower. Never `sub`, `aud`, `act` or `may_act`, and never a claim the
+// profile reserves: a PDP that wrote `act` could fabricate a delegation
+// history.
 //
 // **DEVELOPMENT MODE ANSWERS AS THE LOCAL TOKEN ENDPOINT WOULD ISSUE.** The
 // issuance policy computes `enforced` from the mode, and a local exchange it
@@ -141,8 +162,17 @@ const SUBJECT_TOKEN_CLAIMS: Readonly<Record<string, string>> = Object.freeze({
   client_id: 'string',
   azp: 'string',
   scope: 'string',
-  exp: 'integer'
+  exp: 'integer',
+  // The bound a detail cell is held to. Read, never echoed.
+  authorization_details: 'objects'
 });
+
+// Claim names `context.issuance.claims` must not set (the Token Issuance
+// Profile). `aud` is this list; the shaping key is `audience`, a different
+// member, and it is not a claim.
+const RESERVED_CLAIMS = Object.freeze(['iss', 'iat', 'jti', 'sub', 'aud',
+  'exp', 'nbf', 'scope', 'client_id', 'cnf', 'act', 'authorization_details',
+  'may_act']);
 
 // The deepest `act` chain read; deeper is refused as malformed.
 const MAX_ACT_DEPTH = 32;
@@ -176,6 +206,15 @@ const FIXED_RULES = Object.freeze([
     rule: 'a SCOPE tuple: action.name is the scope, verbatim; decided only ' +
           'beside a token-exchange gate in the same batch, and only for the ' +
           'exchange subject (or, for txn_token, the requesting party)' },
+  { member: 'resource.type = a declared authorization_details type',
+    rule: 'an AUTHORIZATION-DETAIL tuple, one cell: decided only beside a ' +
+          'token-exchange gate in the same batch, and only for the ' +
+          'exchange subject. A type this realm has not declared, and ' +
+          'audience or protected_resource, is not this tuple' },
+  { member: 'action.name of an authorization-detail tuple',
+    rule: 'the cell\'s action, or action:datatype split on the last ' +
+          'colon; the reserved name authorization_detail means the cell ' +
+          'names neither. privileges and identifier are not read' },
   { member: '<type> of the gate action',
     rule: 'the token type short name: access_token, refresh_token, ' +
           'id_token, jwt, saml1, saml2, id_jag, txn_token; sent as ' +
@@ -210,11 +249,28 @@ const FIXED_RULES = Object.freeze([
           'granted_scope narrows when the request names no scope' },
   { member: 'context.subject_token.exp',
     rule: 'the ceiling on token_lifetime; none left is a false subject gate' },
+  { member: 'context.subject_token.authorization_details',
+    rule: 'the bound a detail cell of an enforcing type must be covered ' +
+          'by; absent, or a subject token not issued here, and the cell ' +
+          'is false. Never copied into the answer' },
+  { member: 'context.subject_token.iss',
+    rule: 'whether the subject token was issued here, which is what makes ' +
+          'its authorization_details a bound; compared with this realm\'s ' +
+          'issuer and not re-verified' },
   { member: 'context.client_id',
     rule: 'the client whose declared scopes a scope tuple is held to, and ' +
           'whose access-token lifetime bounds token_lifetime' },
   { member: 'context.cnf, .acr, .amr, .auth_time, .jti',
     rule: 'read for their type only; no rule decides on them' },
+  { member: 'context.issuance.audience',
+    rule: 'on the subject gate only, and only when every value is that ' +
+          'gate\'s resource.id, which does not narrow one target so it is ' +
+          'left out; any other value is not sent, and an empty array ' +
+          'withdraws the target' },
+  { member: 'context.issuance.claims',
+    rule: 'on the subject gate only, and only a claim the subject token ' +
+          'already carries, narrowed; a reserved name, a new claim or a ' +
+          'wider value is not sent' },
   { member: 'exchange_semantics',
     rule: 'not sent: the policy chooses by its precedence, as for a local ' +
           'exchange that named none' },
@@ -278,6 +334,11 @@ interface Answer {
   semantics: string;
   decidedBy: string;
   xacmlDecision: string;
+  // A fine-grained authorization fault is not a decision: the HTTP result
+  // is STS-AUTHZEN-0046 and the audit row carries the STS-FGA code.
+  fault: boolean;
+  status: number;
+  httpCode: string;
 }
 
 interface ExchangeDeps {
@@ -291,6 +352,10 @@ interface ExchangeDeps {
   scopePolicy: Json;
   rolePermissions: Json;
   loadOauth2(): Json;
+  loadAuthorizationDetails(): Json;
+  loadJwt(): Json;
+  loadListenerMap(): Json;
+  loadRealms(): Json;
   nowSec(): number;
 }
 
@@ -304,7 +369,9 @@ class AuthzenTokenExchange {
    *
    * @param deps - the logger, settings, mode, application registry, the
    *   delegation policy, the issuance gate, the scope verdicts, the scope
-   *   policy, the role permissions, the authorization server and the clock
+   *   policy, the role permissions, the authorization server, the
+   *   authorization details, the access-token issuer, the listener map,
+   *   the realms and the clock
    */
   constructor(private readonly deps: ExchangeDeps) {
     deps.log.debug("Entering AuthzenTokenExchange.constructor().");
@@ -334,6 +401,29 @@ class AuthzenTokenExchange {
         log.debug("Entering loadOauth2().");
         log.debug("Leaving loadOauth2().");
         return require('../oauth-oidc/oauth2');
+      },
+      // Lazy, and only from a detail cell or the issuer comparison: a
+      // require here at load would be a cycle through the token endpoint,
+      // and a batch that is not the binding's never loads them.
+      loadAuthorizationDetails: function (): Json {
+        log.debug("Entering loadAuthorizationDetails().");
+        log.debug("Leaving loadAuthorizationDetails().");
+        return require('../oauth-oidc/authorization_details');
+      },
+      loadJwt: function (): Json {
+        log.debug("Entering loadJwt().");
+        log.debug("Leaving loadJwt().");
+        return require('../oauth-oidc/jwt_access_token');
+      },
+      loadListenerMap: function (): Json {
+        log.debug("Entering loadListenerMap().");
+        log.debug("Leaving loadListenerMap().");
+        return require('../common/listener_map');
+      },
+      loadRealms: function (): Json {
+        log.debug("Entering loadRealms().");
+        log.debug("Leaving loadRealms().");
+        return require('../common/realms');
       },
       nowSec: helpers.nowSec
     };
@@ -401,6 +491,32 @@ class AuthzenTokenExchange {
                         exchangeSubject: null, txnParties: [],
                         scopeCache: {} };
     const on = self.enabled();
+    // One lookup for the batch. A throw is logged once and treated as no
+    // declarations: failing every ordinary evaluation would turn a registry
+    // problem into a 500 for questions that are not detail tuples.
+    let declared: Json | null = null;
+    let declaredFailed = false;
+    const declaredOf = function (): Json {
+      log.debug("Entering declaredOf().");
+      if (declared || declaredFailed) {
+        log.debug("Leaving declaredOf(). Kept.");
+        return declared || {};
+      }
+      try {
+        declared = self.deps.loadAuthorizationDetails().declaredTypes() ||
+          {};
+      } catch (e) {
+        log.debug("Caught in AuthzenTokenExchange.plan(): " +
+                  ((e && e.message) || e));
+        declaredFailed = true;
+        declared = {};
+        log.error(errorCodes.tag('STS-AUTHZEN-0131') + 'authzen: the ' +
+          'authorization-detail types could not be read while planning a ' +
+          'token-exchange batch, so no detail tuple is recognized.');
+      }
+      log.debug("Leaving declaredOf().");
+      return declared || {};
+    };
     const subjectOf = function (body: Json): { type: string; id: string } {
       log.debug("Entering subjectOf().");
       const s = body && body.subject && typeof body.subject === 'object'
@@ -408,11 +524,28 @@ class AuthzenTokenExchange {
       log.debug("Leaving subjectOf().");
       return { type: String(s.type || ''), id: String(s.id || '') };
     };
+    const resourceTypeOf = function (body: Json): string {
+      log.debug("Entering resourceTypeOf().");
+      const resource = body && body.resource &&
+        typeof body.resource === 'object' ? body.resource : {};
+      log.debug("Leaving resourceTypeOf().");
+      return typeof resource.type === 'string' ? resource.type : '';
+    };
     bodies.forEach(function (body: Json) {
       const kind = on ? AuthzenTokenExchange.classify(body)
                       : { kind: '', tokenType: '' };
       const entry: Entry = { kind: kind.kind, tokenType: kind.tokenType,
                              group: null };
+      // A declared type, and only then: audience and protected_resource
+      // stay gates and scopes even if a realm declared a type of that
+      // name, and classify() has already named those.
+      if (on && kind.kind === '') {
+        const type = resourceTypeOf(body);
+        if (type && type !== GATE_RESOURCE && type !== SCOPE_RESOURCE &&
+            ownMembers.has(declaredOf(), type)) {
+          entry.kind = 'detail';
+        }
+      }
       if (kind.kind === 'gate') {
         const audience = String(body.resource.id || '');
         const key = audience + '\u0000' + kind.tokenType;
@@ -450,23 +583,35 @@ class AuthzenTokenExchange {
       }
       out.entries.push(entry);
     });
-    // THE SCOPE TUPLES, once every gate is known: the exchange subject's,
-    // a Txn-Token requesting party's, a stranger's, or one with no gate.
+    // THE SCOPE AND DETAIL TUPLES, once every gate is known. A detail with
+    // no gate in the batch is an ordinary evaluation again (kind ''), so a
+    // binding member on it is still STS-AUTHZEN-0101. There is no
+    // party-detail: the requesting party is a scope exception, and only
+    // for a Txn-Token.
     out.entries.forEach(function (entry: Entry, i: number) {
-      if (entry.kind !== 'scope') {
-        return;
-      }
       const subject = subjectOf(bodies[i]);
-      if (!out.exchangeSubject) {
-        entry.kind = 'orphan-scope';
-      } else if (subject.id === out.exchangeSubject.id &&
-                 subject.type === out.exchangeSubject.type) {
-        entry.kind = 'subject-scope';
-      } else if (out.txnParties.indexOf(subject.type + '\u0000' +
-                                        subject.id) >= 0) {
-        entry.kind = 'party-scope';
-      } else {
-        entry.kind = 'stranger-scope';
+      const same = !!out.exchangeSubject &&
+        subject.id === out.exchangeSubject.id &&
+        subject.type === out.exchangeSubject.type;
+      if (entry.kind === 'scope') {
+        if (!out.exchangeSubject) {
+          entry.kind = 'orphan-scope';
+        } else if (same) {
+          entry.kind = 'subject-scope';
+        } else if (out.txnParties.indexOf(subject.type + '\u0000' +
+                                          subject.id) >= 0) {
+          entry.kind = 'party-scope';
+        } else {
+          entry.kind = 'stranger-scope';
+        }
+      } else if (entry.kind === 'detail') {
+        if (!out.exchangeSubject) {
+          entry.kind = '';
+        } else if (same) {
+          entry.kind = 'subject-detail';
+        } else {
+          entry.kind = 'stranger-detail';
+        }
       }
     });
     log.debug("Leaving AuthzenTokenExchange.plan(). " + out.groups.length +
@@ -496,8 +641,10 @@ class AuthzenTokenExchange {
     }
     log.debug("Leaving AuthzenTokenExchange.strayContext(). " + named);
     return 'context.' + named + ' is read by the OAuth token-exchange ' +
-      'binding\'s fixed rules, and only on its gate and scope tuples (' +
-      'resource.type audience or protected_resource)' +
+      'binding\'s fixed rules, and only on its gate, scope and ' +
+      'authorization-detail tuples (resource.type audience, ' +
+      'protected_resource, or a declared authorization_details type ' +
+      'beside a gate)' +
       (on ? '.' : '; the binding is off in this realm ' +
                   '(authzen.tokenExchange).');
   }
@@ -534,6 +681,11 @@ class AuthzenTokenExchange {
         ok = typed('string', value) || typed('strings', value);
       } else if (type === 'integer') {
         ok = typeof value === 'number' && Number.isSafeInteger(value);
+      } else if (type === 'objects') {
+        ok = Array.isArray(value) && value.length <= 64 &&
+          value.every(function (one: unknown) {
+            return isObject(one);
+          });
       } else {
         ok = isObject(value);
       }
@@ -573,10 +725,13 @@ class AuthzenTokenExchange {
           !typed(SUBJECT_TOKEN_CLAIMS[claim], token[claim])) {
         log.debug("Leaving AuthzenTokenExchange.readContext(). " +
                   "subject_token." + claim);
+        const claimType = SUBJECT_TOKEN_CLAIMS[claim];
+        const claimPhrase = claimType === 'integer' ? 'a whole number'
+          : (claimType === 'string' ? 'a string'
+            : (claimType === 'objects' ? 'an array of JSON objects'
+              : 'a string or an array of strings'));
         return { refusal: 'context.subject_token.' + claim + ' must be ' +
-          (SUBJECT_TOKEN_CLAIMS[claim] === 'integer' ? 'a whole number'
-            : (SUBJECT_TOKEN_CLAIMS[claim] === 'string' ? 'a string'
-              : 'a string or an array of strings')) + '.' };
+          claimPhrase + '.' };
       }
     }
     let depth = 0;
@@ -951,13 +1106,24 @@ class AuthzenTokenExchange {
     const { log } = this.deps;
     log.debug("Entering AuthzenTokenExchange.answer(). " + entry.kind);
     const out: Answer = { decision: false, code: '', why: '', issuance: null,
-                          semantics: '', decidedBy: '', xacmlDecision: '' };
+                          semantics: '', decidedBy: '', xacmlDecision: '',
+                          fault: false, status: 200, httpCode: '' };
     const fixedFalse = function (code: string, why: string): Answer {
       log.debug("Entering fixedFalse(). " + code);
       log.debug("Leaving fixedFalse().");
       return Object.assign(out, { code: code, why: why,
                                   decidedBy: 'fixed rule' });
     };
+    if (entry.kind === 'stranger-detail') {
+      log.debug("Leaving AuthzenTokenExchange.answer(). Another subject.");
+      return fixedFalse('STS-AUTHZEN-0128', 'An authorization-detail ' +
+        'tuple names the exchange subject; this one names somebody else.');
+    }
+    if (entry.kind === 'subject-detail') {
+      const detailed = self.detailVerdict(body, fixed);
+      log.debug("Leaving AuthzenTokenExchange.answer(). A detail.");
+      return Object.assign(out, detailed);
+    }
     if (entry.kind === 'other-gate') {
       log.debug("Leaving AuthzenTokenExchange.answer(). Another grant.");
       return fixedFalse('STS-AUTHZEN-0103', 'This PDP decides the ' +
@@ -1050,8 +1216,18 @@ class AuthzenTokenExchange {
           String(decision.authorizedBy || '');
       }
       if (entry.kind === 'subject-gate' && decided.issuance) {
-        out.issuance = AuthzenTokenExchange.narrowOnly(decided.issuance,
-          fixed);
+        const shaped = AuthzenTokenExchange.shape(decided.issuance, fixed,
+          group.audience);
+        if (shaped.deny) {
+          out.decision = false;
+          out.code = shaped.code;
+          out.why = 'context.issuance.audience is empty, which withdraws ' +
+            'this gate\'s target.';
+          out.xacmlDecision = 'Deny';
+          out.issuance = null;
+        } else {
+          out.issuance = shaped.issuance;
+        }
       }
     }
     log.debug("Leaving AuthzenTokenExchange.answer(). " + out.decision);
@@ -1104,26 +1280,392 @@ class AuthzenTokenExchange {
   }
 
   /**
-   * THE NO-BROADENING RULE, held at the last moment: only `token_lifetime`
-   * (a positive whole number) and `granted_scope` (a subset of the subject
-   * token's scope) may leave, whatever built them — never `sub`, `aud`,
-   * `act`, `may_act` or a claim.
+   * One authorization-detail cell, as the tuple's resource and action name
+   * it: type, one location when the tuple names an id, and an action or
+   * `action:datatype` split on the last colon. `authorization_detail`, and
+   * a missing name, name neither.
+   *
+   * @param body - the tuple
+   * @returns the cell
+   */
+  static detailCell(body: Json): Json {
+    log.debug("Entering AuthzenTokenExchange.detailCell().");
+    const resource = body && body.resource &&
+      typeof body.resource === 'object' ? body.resource : {};
+    const action = body && body.action && typeof body.action === 'object'
+      ? body.action : {};
+    const cell: Json = { type: String(resource.type || '') };
+    if (typeof resource.id === 'string' && resource.id.length) {
+      cell.locations = [resource.id];
+    }
+    const name = typeof action.name === 'string' ? action.name : '';
+    if (name && name !== 'authorization_detail') {
+      const at = name.lastIndexOf(':');
+      if (at >= 0) {
+        cell.actions = [name.slice(0, at)];
+        cell.datatypes = [name.slice(at + 1)];
+      } else {
+        cell.actions = [name];
+      }
+    }
+    log.debug("Leaving AuthzenTokenExchange.detailCell().");
+    return cell;
+  }
+
+  /**
+   * This realm's issuer identifier, the local substitute for "issued here":
+   * a pinned `oauth2.issuer` (https-upgraded when this port is HTTPS), else
+   * the authorization server's advertised base plus the realm prefix. The
+   * main listener has no advertised base of its own, and then nothing
+   * matches — the binding does not re-verify the token, and a request
+   * this path does not have cannot supply one.
+   *
+   * @returns the issuer, or ''
+   */
+  ownIssuer(): string {
+    const { log, config } = this.deps;
+    log.debug("Entering AuthzenTokenExchange.ownIssuer().");
+    if (config.value('oauth2.issuer')) {
+      const issuer = String(this.deps.loadJwt()
+        .issuerFor('https://issuer.invalid') || '');
+      log.debug("Leaving AuthzenTokenExchange.ownIssuer(). Pinned.");
+      return issuer;
+    }
+    const base = String(this.deps.loadListenerMap()
+      .advertisedBase('oauth-oidc') || '');
+    if (!base) {
+      log.debug("Leaving AuthzenTokenExchange.ownIssuer(). Main.");
+      return '';
+    }
+    const trimmed = base.replace(/\/+$/, '');
+    const prefix = String(this.deps.loadRealms().currentPrefix() || '');
+    log.debug("Leaving AuthzenTokenExchange.ownIssuer().");
+    return trimmed + prefix;
+  }
+
+  /**
+   * Whether `iss` is this realm's issuer. Empty on either side is not.
+   *
+   * @param iss - `context.subject_token.iss`
+   * @returns true when the two are the same non-empty string
+   */
+  issuedHere(iss: unknown): boolean {
+    const { log } = this.deps;
+    log.debug("Entering AuthzenTokenExchange.issuedHere().");
+    const own = this.ownIssuer();
+    const here = typeof iss === 'string' && iss.length > 0 &&
+      own.length > 0 && iss === own;
+    log.debug("Leaving AuthzenTokenExchange.issuedHere(). " + here);
+    return here;
+  }
+
+  /**
+   * The subject-detail decision: not covered (or not issued here) is
+   * false, then the same fine-grained question the token endpoint asks.
+   * A type that does not enforce is granted as asked, in every mode. A
+   * policy fault is not a false decision.
+   *
+   * @param body - the tuple
+   * @param fixed - the fixed context
+   * @returns the fields `answer()` copies onto its result
+   */
+  detailVerdict(body: Json, fixed: Fixed): Json {
+    const self = this;
+    const { log, applications, delegation } = this.deps;
+    log.debug("Entering AuthzenTokenExchange.detailVerdict().");
+    const cell = AuthzenTokenExchange.detailCell(body);
+    const details = self.deps.loadAuthorizationDetails();
+    let definition: Json = null;
+    try {
+      definition = ownMembers.read(details.declaredTypes(), cell.type) ||
+        null;
+    } catch (e) {
+      log.debug("Caught in AuthzenTokenExchange.detailVerdict(): " +
+                ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-AUTHZEN-0131') + 'authzen: the ' +
+        'authorization-detail types could not be read, so the cell is ' +
+        'not granted.');
+      log.debug("Leaving AuthzenTokenExchange.detailVerdict(). " +
+                "Unreadable.");
+      return { code: 'STS-AUTHZEN-0129', decidedBy: 'fixed rule',
+               xacmlDecision: 'Deny',
+               why: 'The authorization-detail types could not be read, ' +
+                    'so the cell is not granted.' };
+    }
+    if (!definition) {
+      log.debug("Leaving AuthzenTokenExchange.detailVerdict(). " +
+                "Undeclared.");
+      return { code: 'STS-AUTHZEN-0129', decidedBy: 'fixed rule',
+               xacmlDecision: 'Deny',
+               why: 'The type is not one this realm declares, so the ' +
+                    'cell is not granted.' };
+    }
+    const enforced = !!applications.fgaStateOf(
+      String(definition.identifier)).enforced;
+    const token = fixed.subjectToken || {};
+    // THE BOUND FIRST. A refusal here is not a policy question, and the
+    // decider is not asked: an empty slot would otherwise turn "not
+    // covered" into a fault.
+    if (enforced) {
+      const bound = details.exchangeBoundProblem([cell],
+        token.authorization_details, self.issuedHere(token.iss));
+      if (bound) {
+        log.debug("Leaving AuthzenTokenExchange.detailVerdict(). " +
+                  "Uncovered.");
+        return { code: 'STS-AUTHZEN-0129', decidedBy: 'fixed rule',
+                 xacmlDecision: 'Deny',
+                 why: 'The cell is not covered by the subject token\'s ' +
+                      'authorization_details, or the subject token was ' +
+                      'not issued here.' };
+      }
+    }
+    const party = body && body.subject && typeof body.subject === 'object'
+      ? body.subject : {};
+    const name = AuthzenTokenExchange.partyName(String(party.id || ''));
+    const facts = delegation.partyFacts(name) || {};
+    const refusal = details.fineGrainedRefusal([cell], {
+      stage: 'exchange',
+      clientId: fixed.clientId || '',
+      subject: { id: String(facts.id || name),
+                 kind: facts.kind === 'application' ? 'application'
+                                                    : 'user' },
+      // The token endpoint's words, not the grant-type URN.
+      grantType: 'token exchange'
+    });
+    if (!refusal) {
+      log.debug("Leaving AuthzenTokenExchange.detailVerdict(). Granted.");
+      return {
+        decision: true,
+        decidedBy: enforced ? 'fine-grained authorization' : 'fixed rule',
+        xacmlDecision: 'Permit',
+        why: enforced
+          ? 'The application\'s fine-grained authorization policy ' +
+            'permits the cell.'
+          : 'The type is declared and does not enforce fine-grained ' +
+            'authorization, so the cell is granted as asked.'
+      };
+    }
+    if (String(refusal.outcome || '') === 'deny') {
+      log.debug("Leaving AuthzenTokenExchange.detailVerdict(). Denied.");
+      return { code: 'STS-AUTHZEN-0130',
+               decidedBy: 'fine-grained authorization',
+               xacmlDecision: 'Deny',
+               why: 'The application\'s fine-grained authorization ' +
+                    'policy does not permit the cell.' };
+    }
+    const fga = errorCodes.codeOf(refusal) || 'STS-FGA-0015';
+    log.debug("Leaving AuthzenTokenExchange.detailVerdict(). A fault.");
+    return { fault: true, status: 500, httpCode: 'STS-AUTHZEN-0046',
+             code: fga, decidedBy: 'fine-grained authorization',
+             why: 'The application\'s fine-grained authorization policy ' +
+                  'cannot be used, so the request could not be evaluated.' };
+  }
+
+  /**
+   * Whether `value` is an array of strings, or null when it is not.
+   *
+   * @param value - the candidate
+   * @returns the array, or null
+   */
+  static stringsOf(value: unknown): string[] | null {
+    log.debug("Entering AuthzenTokenExchange.stringsOf().");
+    if (!Array.isArray(value) || !value.every(function (one: unknown) {
+      return typeof one === 'string';
+    })) {
+      log.debug("Leaving AuthzenTokenExchange.stringsOf(). No.");
+      return null;
+    }
+    log.debug("Leaving AuthzenTokenExchange.stringsOf().");
+    return value as string[];
+  }
+
+  /**
+   * Whether every element of `asked` occurs in `held`.
+   *
+   * @param asked - the candidate
+   * @param held - the set it must fit in
+   * @returns true when it is a subset
+   */
+  static stringSubset(asked: string[], held: string[]): boolean {
+    log.debug("Entering AuthzenTokenExchange.stringSubset().");
+    const ok = asked.every(function (one: string) {
+      return held.indexOf(one) >= 0;
+    });
+    log.debug("Leaving AuthzenTokenExchange.stringSubset().");
+    return ok;
+  }
+
+  /**
+   * A value with every object's members in sorted order, so two JSON
+   * documents that differ only in member order compare equal.
+   *
+   * @param value - the value
+   * @returns the canonical value
+   */
+  static canonical(value: Json): Json {
+    log.debug("Entering AuthzenTokenExchange.canonical().");
+    if (Array.isArray(value)) {
+      const listed = value.map(AuthzenTokenExchange.canonical);
+      log.debug("Leaving AuthzenTokenExchange.canonical(). An array.");
+      return listed;
+    }
+    if (value && typeof value === 'object') {
+      const sorted: Json = {};
+      Object.keys(value).sort().forEach(function (key: string) {
+        sorted[key] = AuthzenTokenExchange.canonical(value[key]);
+      });
+      log.debug("Leaving AuthzenTokenExchange.canonical(). An object.");
+      return sorted;
+    }
+    log.debug("Leaving AuthzenTokenExchange.canonical().");
+    return value;
+  }
+
+  /**
+   * Whether two JSON values are the same, member order aside.
+   *
+   * @param a - one value
+   * @param b - the other
+   * @returns true when they are equal
+   */
+  static sameValue(a: unknown, b: unknown): boolean {
+    log.debug("Entering AuthzenTokenExchange.sameValue().");
+    const same = JSON.stringify(AuthzenTokenExchange.canonical(a)) ===
+      JSON.stringify(AuthzenTokenExchange.canonical(b));
+    log.debug("Leaving AuthzenTokenExchange.sameValue().");
+    return same;
+  }
+
+  /**
+   * `context.issuance.audience` on one gate: an empty array withdraws the
+   * target, every element equal to this gate's resource id does not narrow
+   * it, and anything else is a broadening and is not sent.
+   *
+   * @param value - the audience as given
+   * @param gateAudience - this gate's resource id
+   * @returns `{ deny }` when the empty array withdraws the target
+   */
+  static audienceOf(value: unknown, gateAudience: string | undefined):
+      { deny: boolean } {
+    log.debug("Entering AuthzenTokenExchange.audienceOf().");
+    const strings = AuthzenTokenExchange.stringsOf(value);
+    if (!strings) {
+      log.error(errorCodes.tag('STS-AUTHZEN-0132') + 'authzen: an ' +
+        'issuance audience is not an array of strings, and is not sent.');
+      log.debug("Leaving AuthzenTokenExchange.audienceOf(). Not strings.");
+      return { deny: false };
+    }
+    if (!strings.length) {
+      log.debug("Leaving AuthzenTokenExchange.audienceOf(). Empty.");
+      return { deny: true };
+    }
+    const id = typeof gateAudience === 'string' ? gateAudience : '';
+    if (id && strings.every(function (one: string) {
+      return one === id;
+    })) {
+      log.debug("Leaving AuthzenTokenExchange.audienceOf(). This gate.");
+      return { deny: false };
+    }
+    log.error(errorCodes.tag('STS-AUTHZEN-0132') + 'authzen: an issuance ' +
+      'audience names something other than this gate\'s resource id, ' +
+      'and is not sent.');
+    log.debug("Leaving AuthzenTokenExchange.audienceOf(). Wider.");
+    return { deny: false };
+  }
+
+  /**
+   * `context.issuance.claims`, narrowing only. A reserved name, a claim
+   * the subject token does not carry, or a wider value is logged and
+   * dropped. An equal value does not narrow, so it is omitted without a
+   * log. A string array is kept when it is a proper subset; a smaller
+   * non-negative number is a ceiling; an object or a boolean has no
+   * subset, so only an equal one (omitted) is quiet.
+   *
+   * @param asked - the claims object as given
+   * @param token - the subject token
+   * @returns the claims that narrow, or null
+   */
+  static claimsOf(asked: unknown, token: Json): Json | null {
+    log.debug("Entering AuthzenTokenExchange.claimsOf().");
+    const bad = function (key: string): void {
+      log.debug("Entering bad(). " + key.slice(0, 80));
+      log.error(errorCodes.tag('STS-AUTHZEN-0133') + 'authzen: issuance ' +
+        'claim "' + key.slice(0, 80) + '" would broaden, is reserved, or ' +
+        'is not on the subject token, and is not sent.');
+      log.debug("Leaving bad().");
+    };
+    if (!asked || typeof asked !== 'object' || Array.isArray(asked)) {
+      log.error(errorCodes.tag('STS-AUTHZEN-0133') + 'authzen: issuance ' +
+        'claims is not an object, and is not sent.');
+      log.debug("Leaving AuthzenTokenExchange.claimsOf(). Not an object.");
+      return null;
+    }
+    const kept: Json = {};
+    Object.keys(asked as Json).forEach(function (key: string) {
+      if (RESERVED_CLAIMS.indexOf(key) >= 0 ||
+          (token as Json)[key] === undefined) {
+        bad(key);
+        return;
+      }
+      const have = (token as Json)[key];
+      const want = (asked as Json)[key];
+      const askedStrings = AuthzenTokenExchange.stringsOf(want);
+      const heldStrings = AuthzenTokenExchange.stringsOf(have);
+      if (askedStrings && heldStrings) {
+        if (!AuthzenTokenExchange.stringSubset(askedStrings, heldStrings)) {
+          bad(key);
+          return;
+        }
+        if (AuthzenTokenExchange.stringSubset(heldStrings, askedStrings)) {
+          return;
+        }
+        kept[key] = askedStrings.slice(0);
+        return;
+      }
+      if (typeof want === 'number' && typeof have === 'number') {
+        if (Number.isSafeInteger(want) && want >= 0 && want < have) {
+          kept[key] = want;
+          return;
+        }
+        if (want === have) {
+          return;
+        }
+        bad(key);
+        return;
+      }
+      if (AuthzenTokenExchange.sameValue(want, have)) {
+        return;
+      }
+      bad(key);
+    });
+    log.debug("Leaving AuthzenTokenExchange.claimsOf().");
+    return Object.keys(kept).length ? kept : null;
+  }
+
+  /**
+   * What of `context.issuance` may leave: `token_lifetime`, `granted_scope`,
+   * and a narrowing `claims`. `audience` never leaves on a single target —
+   * equal to the gate's id does not narrow, and anything else is dropped —
+   * except an empty array, which withdraws the target.
    *
    * @param issuance - what was built
    * @param fixed - the fixed context
-   * @returns the envelope, or null when nothing survives
+   * @param gateAudience - the subject gate's resource id
+   * @returns `{ issuance, deny, code }`; deny withdraws the gate
    */
-  static narrowOnly(issuance: Json, fixed: Fixed): Json {
-    log.debug("Entering AuthzenTokenExchange.narrowOnly().");
+  static shape(issuance: Json, fixed: Fixed, gateAudience?: string):
+      { issuance: Json | null; deny: boolean; code: string } {
+    log.debug("Entering AuthzenTokenExchange.shape().");
+    const given = issuance && typeof issuance === 'object' ? issuance : {};
     const out: Json = {};
-    if (Number.isSafeInteger(issuance.token_lifetime) &&
-        issuance.token_lifetime > 0) {
-      out.token_lifetime = issuance.token_lifetime;
+    if (Number.isSafeInteger(given.token_lifetime) &&
+        given.token_lifetime > 0) {
+      out.token_lifetime = given.token_lifetime;
     }
-    if (typeof issuance.granted_scope === 'string') {
+    if (typeof given.granted_scope === 'string') {
       const held = String((fixed.subjectToken || {}).scope || '')
         .split(/\s+/).filter(Boolean);
-      const granted = issuance.granted_scope.split(/\s+/).filter(Boolean);
+      const granted = given.granted_scope.split(/\s+/).filter(Boolean);
       if (granted.every(function (one: string) {
         return held.indexOf(one) >= 0;
       })) {
@@ -1134,8 +1676,44 @@ class AuthzenTokenExchange {
                   'and is not sent.');
       }
     }
+    if (Object.prototype.hasOwnProperty.call(given, 'audience')) {
+      const audience = AuthzenTokenExchange.audienceOf(given.audience,
+                                                       gateAudience);
+      if (audience.deny) {
+        log.debug("Leaving AuthzenTokenExchange.shape(). Withdrawn.");
+        return { issuance: null, deny: true, code: 'STS-AUTHZEN-0134' };
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(given, 'claims')) {
+      const claims = AuthzenTokenExchange.claimsOf(given.claims,
+        fixed.subjectToken || {});
+      if (claims) {
+        out.claims = claims;
+      }
+    }
+    log.debug("Leaving AuthzenTokenExchange.shape().");
+    return { issuance: Object.keys(out).length ? out : null, deny: false,
+             code: '' };
+  }
+
+  /**
+   * THE NO-BROADENING RULE, held at the last moment. `shape()` decides;
+   * this returns only the envelope, so a caller that does not ask about
+   * the withdrawal still sees what would have been sent.
+   *
+   * @param issuance - what was built
+   * @param fixed - the fixed context
+   * @param gateAudience - the subject gate's resource id, when there is one
+   * @returns the envelope, or null when nothing survives or the target is
+   *   withdrawn
+   */
+  static narrowOnly(issuance: Json, fixed: Fixed,
+                    gateAudience?: string): Json {
+    log.debug("Entering AuthzenTokenExchange.narrowOnly().");
+    const shaped = AuthzenTokenExchange.shape(issuance, fixed,
+                                              gateAudience);
     log.debug("Leaving AuthzenTokenExchange.narrowOnly().");
-    return Object.keys(out).length ? out : null;
+    return shaped.issuance;
   }
 
   /**
@@ -1180,5 +1758,7 @@ export = {
   classify: AuthzenTokenExchange.classify,
   readContext: AuthzenTokenExchange.readContext,
   strayContext: AuthzenTokenExchange.strayContext,
-  narrowOnly: AuthzenTokenExchange.narrowOnly
+  narrowOnly: AuthzenTokenExchange.narrowOnly,
+  shape: AuthzenTokenExchange.shape,
+  detailCell: AuthzenTokenExchange.detailCell
 };

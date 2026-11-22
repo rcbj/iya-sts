@@ -359,6 +359,7 @@ function childMain() {
          !/network_mode/.test(memberCompose) &&
          !/^  sts:/m.test(memberCompose) &&
          /external: true/.test(sharedCompose) &&
+         /"\.\/[^"]+:\/certs:ro"/.test(sharedCompose) &&
          /iya-sts_default/.test(sharedCompose) &&
          /haproxy:3\.2\.23-alpine/.test(sharedCompose) &&
          /\n  companion:\n/.test(sharedCompose) &&

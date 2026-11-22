@@ -2682,7 +2682,7 @@ this row is the one that changes how token exchanges are decided.
 
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
 |---|---|---|---|---|
-| `authzen.tokenExchange` | `STS_AUTHZEN_TOKEN_EXCHANGE` | `false` | yes | The AuthZEN Binding for OAuth 2.0 Token Exchange (a draft), with this service as the PDP another authorization server asks. When on, the binding's gate tuples (`audience`, `issue:<type>:token_exchange`) and scope tuples (`protected_resource`) are decided by fixed conversion rules from the same delegation settings and issuance policy as a local RFC 8693 exchange; the subject gate may carry `context.issuance`, which only narrows; and the metadata advertises the token issuance capability. Off, those tuples are ordinary questions for the root policy. |
+| `authzen.tokenExchange` | `STS_AUTHZEN_TOKEN_EXCHANGE` | `false` | yes | The AuthZEN Binding for OAuth 2.0 Token Exchange (a draft), with this service as the PDP another authorization server asks. When on, the binding's gate tuples (`audience`, `issue:<type>:token_exchange`), scope tuples (`protected_resource`) and authorization-detail tuples (one cell of a declared type, the exchange subject only) are decided by fixed conversion rules from the same delegation settings, issuance policy and, for a detail of an enforcing application, fine-grained authorization as a local RFC 8693 exchange; the subject gate may carry `context.issuance` (`token_lifetime`, `granted_scope`, and `audience` and `claims` only where they narrow); and the metadata advertises the token issuance capability. Off, those tuples are ordinary questions for the root policy. |
 
 ### User-Managed Access
 

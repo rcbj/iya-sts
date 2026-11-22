@@ -671,13 +671,20 @@ class AuthzenSurface {
       action: 'authzen.decision',
       actor: caller.name,
       protocol: 'AuthZEN',
+      // A detail-cell fault records the STS-FGA code. The HTTP result
+      // below is STS-AUTHZEN-0046, the same split as an unusable policy.
       errorCode: answer.code || undefined,
-      detail: where + ' decided ' + String(answer.decision) + ' for a ' +
+      detail: where + ' decided ' + (answer.fault ? 'nothing (a fault)'
+        : String(answer.decision)) + ' for a ' +
         evaluation.subject.type + ' to ' + evaluation.action.name + ' a ' +
         evaluation.resource.type + ', application "' + scoped.application +
         '"' + (batchId ? ', request ' + batchId : '') + '; ' +
         exchange.AuthzenTokenExchange.describe(entry, answer) + '.'
     });
+    if (answer.fault) {
+      log.debug("Leaving AuthzenSurface.evaluateBinding(). A fault.");
+      return failed(500, 'STS-AUTHZEN-0046', UNUSABLE_MESSAGE);
+    }
     self.deps.loadMonitor().record('authzen',
       { decision: answer.xacmlDecision || (answer.decision ? 'Permit'
                                                            : 'Deny') });
