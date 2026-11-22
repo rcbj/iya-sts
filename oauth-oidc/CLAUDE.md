@@ -3243,6 +3243,13 @@ application, always, and the actor named in the `actor_token` is the identity,
 which only a delegation has. An impersonation therefore draws a chain whose
 middle is an application and nobody, which is exactly what happened.
 
+When `authzen.externalPdp` is on, the non-Kerberos branch asks the external
+AuthZEN PDP after that local decision and the local scope narrowing, and
+before `issue()` (`authzen/authzen_external_pdp.ts`, #1200). The PDP may
+only narrow the scope and the access-token lifetime. A Kerberos
+`requested_token_type` is outside the binding and is not sent.
+`authzen/CLAUDE.md` argues it.
+
 **THE TARGET IS RESOLVED THROUGH THE APPLICATIONS REGISTRY, and it is the one
 place in this service that reads `oauthAudience`.** An `audience` names a
 RESOURCE — `https://esb1.example.com` — and that registry is keyed by the

@@ -8331,6 +8331,54 @@
     "en": "6b3f5e73f6fcafaf",
     "text": "Die meisten Zugriffsanfragen, die ein Vertrauensbereich gleichzeitig ausstehend hält; darüber wird eine Einreichung mit 503 abgelehnt, bis einige entschieden werden oder ablaufen."
   },
+  "authzen.externalPdp|label": {
+    "en": "8a0af08389fe6cda",
+    "text": "Vor einem Token-Austausch einen externen PDP fragen."
+  },
+  "authzen.externalPdp|description": {
+    "en": "378c7dcd21a960c7",
+    "text": "Die AuthZEN-Bindung für den OAuth-2.0-Token-Austausch, Richtung B: bevor dieser Autorisierungsserver ein OAuth-Zugriffstoken für einen RFC 8693-Austausch ausstellt, fragt er den externen PDP, den authzen.externalPdpUrl nennt. Die lokale Ausstellungsrichtlinie entscheidet weiterhin zuerst, und eine Ablehnung, die sie durchsetzt, wird nicht weitergesendet. Der PDP darf nur den Umfang und die Lebensdauer des Zugriffstokens einschränken. Aus, der Standard, wird nichts angerufen. Ein Kerberos-Token liegt außerhalb der Bindung und wird nicht gesendet. Keine Antwort oder eine Ablehnung bedeutet kein Token."
+  },
+  "authzen.externalPdpUrl|label": {
+    "en": "4702ceb3700a0831",
+    "text": "Adresse des externen AuthZEN-PDP."
+  },
+  "authzen.externalPdpUrl|description": {
+    "en": "2d486c955985f5ac",
+    "text": "Die absolute https-Adresse des POST /access/v1/evaluations des externen PDP. Ein Administrator konfiguriert sie, und eine Anfrage kann sie nicht nennen. Sie trägt kein userinfo, query oder fragment. Leer, während authzen.externalPdp an ist, lehnt sie den Austausch ab. Klares http wird auch dann abgelehnt, wenn federation.outboundAllowHttp an ist, weil die Anfrage Token-Claims und ein Clientzertifikat trägt."
+  },
+  "authzen.externalPdpTimeoutMs|label": {
+    "en": "c40081858bffe671",
+    "text": "Zeitlimit des externen PDP (Millisekunden)."
+  },
+  "authzen.externalPdpTimeoutMs|description": {
+    "en": "1c73c2acfe98c703",
+    "text": "Wie lange auf den externen PDP gewartet wird, in Millisekunden. Ein Zeitlimit lehnt den Austausch ab. Die lokale Entscheidung wird nicht an seiner Stelle ausgestellt."
+  },
+  "authzen.externalPdpClientCertFile|label": {
+    "en": "2da8c5ed72d965bb",
+    "text": "Clientzertifikat für den externen PDP."
+  },
+  "authzen.externalPdpClientCertFile|description": {
+    "en": "cae054b4776151a0",
+    "text": "Die PEM-Datei, die dieser Autorisierungsserver dem externen PDP vorlegt. Gegenseitiges TLS ist der einzige Modus, und der PDP lässt das Zertifikat als AUTHZEN_PEPS-Aufrufer zu. Im Produktmodus muss die Datei in einem Verzeichnis liegen, das security.fileRoots nennt. Ein relativer Pfad ist das aktuelle Verzeichnis dieses Prozesses. Leer oder unlesbar, während authzen.externalPdp an ist, lehnt sie den Austausch ab."
+  },
+  "authzen.externalPdpClientKeyFile|label": {
+    "en": "8c2c725a67e09874",
+    "text": "Clientschlüssel für den externen PDP."
+  },
+  "authzen.externalPdpClientKeyFile|description": {
+    "en": "6509f61b7122be79",
+    "text": "Die PEM-Datei des privaten Schlüssels des Clientzertifikats. Die Datei wird gelesen, wenn der PDP angerufen wird. Die Bytes des Schlüssels sind kein Konfigurationswert, daher gibt GET /admin-api/config den Pfad und nicht den Schlüssel zurück. Im Produktmodus muss die Datei in einem Verzeichnis liegen, das security.fileRoots nennt. Ein relativer Pfad ist das aktuelle Verzeichnis dieses Prozesses. Leer oder unlesbar, während authzen.externalPdp an ist, lehnt sie den Austausch ab."
+  },
+  "authzen.externalPdpCaFile|label": {
+    "en": "6abdfbc262d71c16",
+    "text": "CA-Datei für den externen PDP."
+  },
+  "authzen.externalPdpCaFile|description": {
+    "en": "d8328616a3f62cfa",
+    "text": "Eine optionale PEM-Datei von CA-Zertifikaten, die anstelle der Standardwurzeln zur Prüfung des externen PDP verwendet wird. Leer verwendet diese Wurzeln. Eine genannte und unlesbare Datei, oder eine, die der Produktmodus unter security.fileRoots nicht liest, lehnt den Austausch ab. Ein relativer Pfad ist das aktuelle Verzeichnis dieses Prozesses."
+  },
   "uma.enabled|label": {
     "en": "2a3767bd4bc83294",
     "text": "User-Managed Access aktiviert"

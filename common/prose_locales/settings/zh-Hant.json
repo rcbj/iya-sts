@@ -8331,6 +8331,54 @@
     "en": "6b3f5e73f6fcafaf",
     "text": "一個領域最多可同時持有的待處理存取請求數；超過後，提交會以 503 被拒絕，直到其中一些被決定或過期。"
   },
+  "authzen.externalPdp|label": {
+    "en": "8a0af08389fe6cda",
+    "text": "在權杖交換之前詢問外部 PDP。"
+  },
+  "authzen.externalPdp|description": {
+    "en": "378c7dcd21a960c7",
+    "text": "OAuth 2.0 權杖交換的 AuthZEN 繫結，方向 B：本授權伺服器在為 RFC 8693 交換簽發 OAuth 存取權杖之前，詢問 authzen.externalPdpUrl 所指定的外部 PDP。本機簽發原則仍然先決定，它所強制的拒絕不會送出。PDP 只能縮小範圍和存取權杖的存續期。關閉為預設，此時不會撥號。Kerberos 權杖不在此繫結之內，不會送出。沒有回應，或遭到拒絕，就沒有權杖。"
+  },
+  "authzen.externalPdpUrl|label": {
+    "en": "4702ceb3700a0831",
+    "text": "外部 AuthZEN PDP 位址。"
+  },
+  "authzen.externalPdpUrl|description": {
+    "en": "2d486c955985f5ac",
+    "text": "外部 PDP 的 POST /access/v1/evaluations 的絕對 https 位址。由管理員設定，要求不能指定它。它不含 userinfo、query 或 fragment。在 authzen.externalPdp 開啟時若為空，則拒絕該交換。即使 federation.outboundAllowHttp 開啟，也拒絕明文 http，因為要求攜帶權杖宣告和用戶端憑證。"
+  },
+  "authzen.externalPdpTimeoutMs|label": {
+    "en": "c40081858bffe671",
+    "text": "外部 PDP 逾時（毫秒）。"
+  },
+  "authzen.externalPdpTimeoutMs|description": {
+    "en": "1c73c2acfe98c703",
+    "text": "等待外部 PDP 的時間，以毫秒計。逾時則拒絕該交換。不會改發本機決定。"
+  },
+  "authzen.externalPdpClientCertFile|label": {
+    "en": "2da8c5ed72d965bb",
+    "text": "用於外部 PDP 的用戶端憑證。"
+  },
+  "authzen.externalPdpClientCertFile|description": {
+    "en": "cae054b4776151a0",
+    "text": "本授權伺服器向外部 PDP 出示的 PEM 檔案。雙向 TLS 是唯一模式，PDP 將該憑證接納為 AUTHZEN_PEPS 呼叫方。在產品模式下，該檔案必須位於 security.fileRoots 所列目錄之內。相對路徑是本處理程序的目前目錄。在 authzen.externalPdp 開啟時若為空或無法讀取，則拒絕該交換。"
+  },
+  "authzen.externalPdpClientKeyFile|label": {
+    "en": "8c2c725a67e09874",
+    "text": "用於外部 PDP 的用戶端金鑰。"
+  },
+  "authzen.externalPdpClientKeyFile|description": {
+    "en": "6509f61b7122be79",
+    "text": "用戶端憑證私密金鑰的 PEM 檔案。撥號 PDP 時讀取該檔案。金鑰位元組不是設定值，因此 GET /admin-api/config 傳回路徑而不是金鑰。在產品模式下，該檔案必須位於 security.fileRoots 所列目錄之內。相對路徑是本處理程序的目前目錄。在 authzen.externalPdp 開啟時若為空或無法讀取，則拒絕該交換。"
+  },
+  "authzen.externalPdpCaFile|label": {
+    "en": "6abdfbc262d71c16",
+    "text": "用於外部 PDP 的 CA 檔案。"
+  },
+  "authzen.externalPdpCaFile|description": {
+    "en": "d8328616a3f62cfa",
+    "text": "選擇性的 PEM 檔案，其中的 CA 憑證用來代替預設根憑證以驗證外部 PDP。為空則使用那些根憑證。已命名但無法讀取的檔案，或產品模式在 security.fileRoots 下不會讀取的檔案，會拒絕該交換。相對路徑是本處理程序的目前目錄。"
+  },
   "uma.enabled|label": {
     "en": "2a3767bd4bc83294",
     "text": "啟用 User-Managed Access"

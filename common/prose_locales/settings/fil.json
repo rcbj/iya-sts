@@ -8331,6 +8331,54 @@
     "en": "6b3f5e73f6fcafaf",
     "text": "Ang pinakamaraming access request na hawak ng isang realm bilang pending; lampas dito, tinatanggihan ang pagsumite nang may 503 hanggang may mapagpasyahan o mag-expire."
   },
+  "authzen.externalPdp|label": {
+    "en": "8a0af08389fe6cda",
+    "text": "Magtanong sa isang panlabas na PDP bago ang palitan ng token."
+  },
+  "authzen.externalPdp|description": {
+    "en": "378c7dcd21a960c7",
+    "text": "Ang AuthZEN Binding para sa OAuth 2.0 Token Exchange, direksyon B: bago maglabas ang awtorisasyong server na ito ng isang OAuth access token para sa isang palitang RFC 8693, tinatanong nito ang panlabas na PDP na pinangalanan ng authzen.externalPdpUrl. Ang lokal na patakaran sa paglabas ang unang magpapasya, at ang pagtangging ipinatutupad nito ay hindi ipinapasa. Maaari lamang paliitin ng PDP ang saklaw at ang buhay ng access token. Naka-off, ang default, walang tinatawagan. Ang token ng Kerberos ay nasa labas ng binding at hindi ipinapadala. Walang sagot, o isang pagtanggi, ay nangangahulugang walang token."
+  },
+  "authzen.externalPdpUrl|label": {
+    "en": "4702ceb3700a0831",
+    "text": "Address ng panlabas na AuthZEN PDP."
+  },
+  "authzen.externalPdpUrl|description": {
+    "en": "2d486c955985f5ac",
+    "text": "Ang absolutong https address ng POST /access/v1/evaluations ng panlabas na PDP. Isang administrador ang nagko-configure nito, at hindi ito mapapangalanan ng isang kahilingan. Walang userinfo, query o fragment. Walang laman habang naka-on ang authzen.externalPdp, tinatanggihan nito ang palitan. Ang plain http ay tinatanggihan kahit naka-on ang federation.outboundAllowHttp, dahil ang kahilingan ay may mga claim ng token at isang client certificate."
+  },
+  "authzen.externalPdpTimeoutMs|label": {
+    "en": "c40081858bffe671",
+    "text": "Timeout ng panlabas na PDP (milliseconds)."
+  },
+  "authzen.externalPdpTimeoutMs|description": {
+    "en": "1c73c2acfe98c703",
+    "text": "Gaano katagal maghihintay sa panlabas na PDP, sa milliseconds. Ang timeout ay tumatanggi sa palitan. Ang lokal na desisyon ay hindi inilalabas sa lugar nito."
+  },
+  "authzen.externalPdpClientCertFile|label": {
+    "en": "2da8c5ed72d965bb",
+    "text": "Client certificate para sa panlabas na PDP."
+  },
+  "authzen.externalPdpClientCertFile|description": {
+    "en": "cae054b4776151a0",
+    "text": "Ang PEM file na inihaharap ng awtorisasyong server na ito sa panlabas na PDP. Mutual TLS ang tanging mode, at tinatanggap ng PDP ang certificate bilang isang AUTHZEN_PEPS caller. Sa product, ang file ay dapat nasa isang directory na inililista ng security.fileRoots. Ang relative path ay ang kasalukuyang directory ng prosesong ito. Walang laman o hindi mabasa habang naka-on ang authzen.externalPdp, tinatanggihan nito ang palitan."
+  },
+  "authzen.externalPdpClientKeyFile|label": {
+    "en": "8c2c725a67e09874",
+    "text": "Client key para sa panlabas na PDP."
+  },
+  "authzen.externalPdpClientKeyFile|description": {
+    "en": "6509f61b7122be79",
+    "text": "Ang PEM file ng private key ng client certificate. Binabasa ang file kapag tinatawagan ang PDP. Ang mga byte ng key ay hindi isang configuration value, kaya ang GET /admin-api/config ay nagbabalik ng path at hindi ng key. Sa product, ang file ay dapat nasa isang directory na inililista ng security.fileRoots. Ang relative path ay ang kasalukuyang directory ng prosesong ito. Walang laman o hindi mabasa habang naka-on ang authzen.externalPdp, tinatanggihan nito ang palitan."
+  },
+  "authzen.externalPdpCaFile|label": {
+    "en": "6abdfbc262d71c16",
+    "text": "CA file para sa panlabas na PDP."
+  },
+  "authzen.externalPdpCaFile|description": {
+    "en": "d8328616a3f62cfa",
+    "text": "Isang opsyonal na PEM file ng mga CA certificate na ginagamit sa halip na ang default roots upang i-verify ang panlabas na PDP. Walang laman, ginagamit ang mga root na iyon. Ang file na pinangalanan at hindi mabasa, o hindi babasahin ng product mode sa ilalim ng security.fileRoots, ay tumatanggi sa palitan. Ang relative path ay ang kasalukuyang directory ng prosesong ito."
+  },
   "uma.enabled|label": {
     "en": "2a3767bd4bc83294",
     "text": "Naka-enable ang User-Managed Access"
