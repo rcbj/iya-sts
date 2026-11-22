@@ -551,6 +551,18 @@
     "en": "9dc455e8deb093a6",
     "text": "تستثني سجلات الطلب بيانات الاعتماد والمتون في كل مستوى، ويُسجَّل الرمز الموقَّع أو التأكيد بحجمه وتجزئته فقط، وتوقف كلمة مرور قاعدة البيانات الافتراضية الخدمة ما لم يكن persistence.allowDefaultDatabasePassword مفعّلًا."
   },
+  "mode.requirements.plaintext-seed-files.what": {
+    "en": "7dfdb35537e3d442",
+    "text": "يجب أن يكون ملف بذور الرموز من المورّد مشفّرًا"
+  },
+  "mode.requirements.plaintext-seed-files.development": {
+    "en": "406c007742c28ced",
+    "text": "يُستورد ملف بذور PSKC الذي أسرار رموزه نص صريح كما يُستورد الملف المشفّر."
+  },
+  "mode.requirements.plaintext-seed-files.product": {
+    "en": "e3eb9f2bcabf5eaa",
+    "text": "يُرفض ملف بذور PSKC الذي أسرار رموزه نص صريح ما لم يكن pskc.allowPlaintextImport مفعّلًا؛ ويُفتح الملف المشفّر بالمفتاح أو كلمة المرور المعطاة مع الرفع، والتي لا تُخزَّن أبدًا."
+  },
   "mode.requirements.sso-consent.what": {
     "en": "2b06d195aa0a395d",
     "text": "يسأل تسجيل الدخول الموحَّد قبل أن يسجّل دخول شخص إلى تطبيق"

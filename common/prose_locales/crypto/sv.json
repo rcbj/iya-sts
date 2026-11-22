@@ -1468,24 +1468,24 @@
     "text": "Ingenting som lämnar den här tjänsten. Ett HOTP-värde ÄR en trunkerad HMAC — RFC 4226 avsnitt 5.3 — så den här familjen beräknar en nycklad MAC och jämför den sedan, vilket är varför primitiven bor i common/crypto.js bredvid varje annan signatur här snarare än i modulen som avgör policyn."
   },
   "crypto.families.one-time-passwords-totp.verifies": {
-    "en": "071552dc11014cdd",
-    "text": "En uppvisad kod, genom att beräkna HMAC för varje tidssteg i avvikelsefönstret och jämföra i konstant tid. VARJE steg beräknas även efter en träff, med avsikt: att returnera tidigt skulle göra tidsåtgången beroende av VILKET steg som träffade, vilket är ett bättre orakel än sifferjämförelsen som detta mödar sig med att göra i konstant tid."
+    "en": "302891e951b96222",
+    "text": "En uppvisad kod, genom att beräkna HMAC för varje tidssteg i avvikelsefönstret och jämföra i konstant tid. VARJE steg beräknas även efter en träff, avsiktligt: att returnera tidigt skulle göra tidsåtgången beroende av VILKET steg som matchade, vilket är ett bättre orakel än sifferjämförelsen som här görs i konstant tid. En HOTP-kod (RFC 4226, #1955) på samma sätt över framförhållningsfönstret från dess räknare, som sedan flyttas fram med compare-and-set i lagret. En PSKC-fröfils ValueMAC (RFC 6030 avsnitt 6.1.1: HMAC-SHA1 eller en SHA-2-MAC över chiffertexten) innan dess hemlighet dekrypteras."
   },
   "crypto.families.one-time-passwords-totp.encrypts": {
     "en": "c18d0d11279cb6c0",
     "text": "Den delade hemligheten i vila, i PRODUKTläge — AES-256-GCM under samma nyckelkrypteringsnyckel som skyddar signeringsnycklarna, genom common/keystore.js. I UTVECKLINGSläge lagras den som base32, eftersom nyckelkrypteringsnyckeln där genereras per körning och försegling skulle innebära en autentiserare som tyst slutade fungera vid nästa omstart."
   },
   "crypto.families.one-time-passwords-totp.decrypts": {
-    "en": "d2cefc498eff5443",
-    "text": "Samma hemlighet, för att verifiera en kod. **DETTA ÄR DEN ENDA AUTENTISERINGSUPPGIFTEN I DEN HÄR TJÄNSTEN SOM KAN LÄSAS TILLBAKA** — ett lösenord är en scrypt-hash och kan bara jämföras mot, och att verifiera en engångskod innebär att BERÄKNA den. Det är ingen svaghet i RFC 6238; det är vad \"delad hemlighet\" betyder, och det är precis varför den här mekanismen är en ANDRA faktor här och aldrig kan göras till en första."
+    "en": "f197370676038df3",
+    "text": "En leverantörs PSKC-fröfil (RFC 6030): AES-CBC eller AES Key Wrap under den förutdelade nyckel som angavs vid uppladdningen, eller under en nyckel som PBKDF2 härleder ur dess lösenord; ingen av dem sparas. Samma hemlighet, för att verifiera en kod. **DETTA ÄR DEN ENDA INLOGGNINGSUPPGIFTEN I TJÄNSTEN SOM KAN LÄSAS TILLBAKA** — ett lösenord är en scrypt-hash och kan bara jämföras mot, och att verifiera en engångskod innebär att BERÄKNA den. Det är ingen svaghet i RFC 6238; det är vad ”delad hemlighet” betyder, och det är just därför mekanismen här är en ANDRA faktor och aldrig kan göras till en första."
   },
   "crypto.families.one-time-passwords-totp.hashes": {
     "en": "decb0b31d14255e5",
     "text": "SHA-1, SHA-256 eller SHA-512, inuti HMAC och ingen annanstans."
   },
   "crypto.families.one-time-passwords-totp.whatItDoesNot": {
-    "en": "512b47bf629fcfe5",
-    "text": "Den talar aldrig om för någon vad den aktuella koden är, och den registrerar aldrig någon vid en inloggningsskärm — registrering innebär att man visas en hemlighet, så det sker där personen redan är autentiserad eller har en aktiveringslänk. Det finns ingen räknarbaserad HOTP som autentiseringsmekanism, och inget protokoll för omsynkronisering: avvikelsefönstret är allt som erbjuds för en klocka som driver."
+    "en": "f38dd0b2f7ce307b",
+    "text": "Den talar aldrig om för någon vad den aktuella koden är, och den registrerar aldrig någon på en inloggningsskärm — att registrera sig innebär att få se en hemlighet, så det sker där personen redan är autentiserad eller har en aktiveringslänk. En TOTP-klocka som driver erbjuds avvikelsefönstret och inget annat. En räknarbaserad (HOTP-)token synkroniseras om från två på varandra följande koder, aldrig från en. Den sparar aldrig en fröfils nyckel eller lösenord, och öppnar aldrig en fil som är krypterad till ett certifikat."
   },
   "crypto.families.one-time-passwords-totp.algorithms.0.what": {
     "en": "0c410835b8ade404",

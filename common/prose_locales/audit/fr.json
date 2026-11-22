@@ -231,6 +231,30 @@
     "en": "228f7d738861aa3c",
     "text": "Une modification d’application d’authentification a été refusée pour un jeton CSRF invalide"
   },
+  "audit.actions.portal.hotp.started.label": {
+    "en": "62c42316ca23b77d",
+    "text": "Un nouveau secret de jeton de codes à usage unique a été montré à quelqu’un"
+  },
+  "audit.actions.portal.hotp.enrolled.label": {
+    "en": "075083e107878395",
+    "text": "Quelqu’un a configuré un jeton de codes à usage unique sur son propre compte"
+  },
+  "audit.actions.portal.hotp.refused.label": {
+    "en": "5b5a058daa2dcab7",
+    "text": "La configuration d’un jeton de codes à usage unique n’a pas été confirmée"
+  },
+  "audit.actions.portal.hotp.removed.label": {
+    "en": "133822944d90f1bf",
+    "text": "Quelqu’un a supprimé le jeton de codes à usage unique de son propre compte"
+  },
+  "audit.actions.portal.hotp.resynced.label": {
+    "en": "912cd583f7760c65",
+    "text": "Quelqu’un a resynchronisé son jeton de codes à usage unique"
+  },
+  "audit.actions.portal.hotp.resync-refused.label": {
+    "en": "01c45765b9c3cd87",
+    "text": "Un jeton de codes à usage unique n’a pas été resynchronisé"
+  },
   "audit.actions.portal.activate.mfa.started.label": {
     "en": "df561a24375c8165",
     "text": "Un secret d’application d’authentification a été affiché pendant l’utilisation d’un lien d’activation"
@@ -503,31 +527,47 @@
     "en": "f7fb5461e2325e1e",
     "text": "Un jeton matériel a été déclaré perdu et ses identifiants retirés"
   },
-  "audit.actions.openpgp.challenge.label": {
+"audit.actions.oath-token.import.label": {
+    "en": "4da380e22dff30ec",
+    "text": "Le fichier de semences PSKC d’un fournisseur a été importé, ou refusé"
+  },
+"audit.actions.oath-token.assign.label": {
+    "en": "19b678e9bbc10747",
+    "text": "Un jeton OATH importé a été attribué à une personne, ou réclamé par elle"
+  },
+"audit.actions.oath-token.claim.label": {
+    "en": "5c54ac8752e21682",
+    "text": "La réclamation d’un jeton OATH importé par une personne a été refusée"
+  },
+"audit.actions.oath-token.remove.label": {
+    "en": "92d69a1a2d848892",
+    "text": "Un jeton OATH non attribué a été supprimé de l’inventaire"
+  },
+"audit.actions.openpgp.challenge.label": {
     "en": "454a22b5bcd9d6a2",
     "text": "Un défi d'enregistrement de clé OpenPGP a été émis"
   },
-  "audit.actions.openpgp.key-registered.label": {
+"audit.actions.openpgp.key-registered.label": {
     "en": "1ed8de1f8777a015",
     "text": "Une clé OpenPGP a été enregistrée sur preuve de possession"
   },
-  "audit.actions.openpgp.key-refused.label": {
+"audit.actions.openpgp.key-refused.label": {
     "en": "f1e7e3c6808ba33b",
     "text": "Une clé OpenPGP n'a pas été enregistrée"
   },
-  "audit.actions.openpgp.key-removed.label": {
+"audit.actions.openpgp.key-removed.label": {
     "en": "89a284fa6508eae4",
     "text": "Une clé OpenPGP a été supprimée"
   },
-  "audit.actions.openpgp.publication.label": {
+"audit.actions.openpgp.publication.label": {
     "en": "f6d12f16eca6796a",
     "text": "Une clé OpenPGP a été publiée dans le Web Key Directory, ou en a été retirée"
   },
-  "audit.actions.openpgp.mail-encryption.label": {
+"audit.actions.openpgp.mail-encryption.label": {
     "en": "ba0fb7a4133d94e2",
     "text": "La façon dont les messages adressés à une personne sont chiffrés a été modifiée"
   },
-  "audit.actions.openpgp.smime-certificate.label": {
+"audit.actions.openpgp.smime-certificate.label": {
     "en": "663072a33ce1e178",
     "text": "Le certificat S/MIME d'une personne a été défini ou supprimé"
   },
@@ -710,6 +750,10 @@
   "audit.actions.admin.mfa.totp.cleared.label": {
     "en": "478c7ee15248637f",
     "text": "Un opérateur a effacé l’application d’authentification de quelqu’un"
+  },
+  "audit.actions.admin.mfa.hotp.cleared.label": {
+    "en": "027dab5576016e61",
+    "text": "Un opérateur a effacé le jeton de codes à usage unique de quelqu’un"
   },
   "audit.actions.admin.mfa.key.cleared.label": {
     "en": "d62700d9f7751e8b",

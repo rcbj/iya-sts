@@ -2967,6 +2967,20 @@ as a holder change (`admin:security`), the holder read from the register,
 never the body. 404 for no such token (STS-HWTOKEN-0005), 409 for one
 already lost (0006), 400 for an unknown action (0012).
 
+**#1955 P4 adds the imported OATH token inventory** on the same module:
+`GET /admin-api/hardware-tokens/oath` (the OATH tab's view, composed under
+`oq`, `ostatus`, `opage`) and three more actions on the same route,
+`import-pskc` (`{ pskc, preSharedKey | password }`), `assign-oath`
+(`{ key, username }`) and `remove-oath` (`{ key }`), all
+`common/oath_tokens.ts`'s. **THE SEED FILE'S KEY OR PASSWORD REACHES
+`pskc.open()` AND NOTHING ELSE**: no answer, audit row or log line names
+it. An import's `skipped` rows carry the reason in English and no code.
+404 for no such token (STS-OATH-0040), 409 for one already assigned or
+retired (0041) and for removing an assigned one (0049), 400 otherwise with
+the act's own code. `clear-hotp` is on `/admin-api/users` and
+`/admin-api/mfa` beside `clear-totp`, the same evidence rule, a recent
+sign-in (`REAUTHENTICATED_ACTIONS`), and its sessions ended.
+
 **#1955 P2 adds two acts and one read** (`common/piv_enrolment.ts` argues
 them): `enrol-piv` (`{ username, profile, csr, attestationCertificate?,
 attestationIssuer? }`, a PIV slot certificate for that person over the EST

@@ -532,8 +532,12 @@
     "text": "partial，每次单点登录一个限定于源的会话的服务器端：Secure-Session-Registration 提供 ES256 和 RS256，注册时的 dbsc+jwt 证明（检查其 jwk、typ、alg 和 jti 并验证签名）和刷新时的证明（用绑定密钥验证），带有一个绑定 cookie 的 JSON 会话指令，403 与 Secure-Session-Challenge 的交换，以及 Sec-Secure-Session-Id。每个质询在整个集群中只消耗一次。缺少：联合会话（provider_key、well-known 文档）、限定于站点的会话和范围规则、authorization 参数，以及读取 Secure-Session-Skipped。默认关闭（authn.deviceBoundSessions）。"
   },
   "stsmetadata.specs.rfc4226.coverage": {
-    "en": "ffd9d22cf4ecfd57",
-    "text": "full：覆盖 RFC 6238 对它的需求：第 5.3 节基于 HMAC-SHA-1、SHA-256 或 SHA-512 的动态截断，六到八位数字，计数器为八字节大端值。按规范自己附录 D 的测试向量进行断言（tests/totp.js），这正是自行实现而不使用库的意义所在：该截断的四个步骤中每一步都曾有人做错，而已公布的测试向量是唯一能发现这些错误的检查。未覆盖：作为身份验证机制的基于计数器的 HOTP——此处没有任何组件持有一个随使用而递增的计数器，因为唯一的调用方是下面基于时间的构造。"
+    "en": "5ab7b9d048e74e7e",
+    "text": "full：验证方一侧，仅作为第二因素（#1955 P4）：第 5.3 节基于 HMAC-SHA-1、SHA-256 或 SHA-512 的动态截断，六到八位数字，计数器为八字节大端值，已对照附录 D 自身的测试向量验证（tests/totp.js、tests/hotp.js）；每个凭据一个计数器，带第 7.4 节的前瞻（hotp.window，默认 10，0 合法）以及通过两个连续验证码重新同步（hotp.resyncWindow）；第 7.2 节的重放拒绝，计数器在存储中以 compare-and-set 推进，因此两个节点或 worker 绝不会接受同一个验证码；通过登录的验证码预算实现第 7.3 节的限流。YubiKey OTP 插槽通过门户的 otpauth://hotp 码或 ykman 命令编程；供应商的令牌通过导入（RFC 6030）。它获得 amr otp，仅导入的令牌获得 hwk。未涵盖：第 7.3 节的延迟方案本身（改由预算拒绝），以及 OCRA（RFC 6287）。"
+  },
+  "stsmetadata.specs.rfc6030.coverage": {
+    "en": "35ef81e9394eb5f5",
+    "text": "partial：作为接收方（#1955 P4）：版本 1.0 的 KeyContainer，包含 HOTP 和 TOTP 密钥，DeviceInfo 的 Manufacturer、SerialNo 和 Model，ResponseFormat（6 到 8 位十进制数字），普通 Counter、Time（仅 0）和 TimeInterval；明文（产品模式下拒绝，除非启用 pskc.allowPlaintextImport）、预共享密钥（第 6.1 节：AES-128/192/256-CBC 和 KW-AES）和口令（第 6.2 节：PBKDF2），并先校验第 6.1.1 节的 ValueMAC（HMAC-SHA1 和 SHA-2 MAC）。已对照 RFC 自身的 Figures 2 到 7 验证（tests/pskc.js）。未涵盖：为证书加密（6.3）、按引用提供的 MAC 密钥、Triple DES 和 Camellia、加密的计数器或时间、PIN 密钥和策略（跳过）、容器上的签名（第 7 节），以及生成此类文件。"
   },
   "stsmetadata.specs.bcp47.coverage": {
     "en": "d682d3dd451a019d",
@@ -2203,13 +2207,17 @@
     "en": "fe8d3ba310ad762b",
     "text": "NON-SPEC (#1955)。目录 → 硬件令牌所显示的内容：本领域记录的实体安全密钥和智能卡，每个都根据其自身证明记录，可分页并按序列号或人员搜索，并列出每个令牌上的通行密钥和证书。对应 GET /admin/hardware-tokens。"
   },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/oath.what": {
+    "en": "f149352fa2ac36d0",
+    "text": "NON-SPEC (#1955 P4)。管理员从供应商 PSKC 种子文件导入的 HOTP 和 TOTP 令牌，包括未分配、已分配或已停用的，可分页并按序列号或人员搜索。绝不包含密钥。对应 GET /admin/hardware-tokens（其 OATH 标签页）。"
+  },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-    "en": "0d649147af0cbe04",
-    "text": "NON-SPEC (#1955)。lost，带 { key }：将令牌标记为丢失，删除其上的每个通行密钥，以 keyCompromise 为由吊销其上的每个证书，为每一项发送 CAEP credential-change，并结束由它们登录的会话。enrol-piv，带 { username, profile, csr, attestationCertificate?, attestationIssuer? }：通过 EST 签发 CA 为此人签发 PIV 插槽证书，验证其 YubiKey PIV 证明并记录该 YubiKey。recover-key，带 { username, serial }：此人的托管 piv-key-management 密钥，访问控制策略仅允许 PIV_KEY_RECOVERY 执行。即控制台在该页面上的三项操作。"
+"en": "0d649147af0cbe04",
+"text": "NON-SPEC (#1955)。lost，带 { key }：将令牌标记为丢失，删除其上的每个通行密钥，以 keyCompromise 为由吊销其上的每个证书，为每一项发送 CAEP credential-change，并结束由它们登录的会话。enrol-piv，带 { username, profile, csr, attestationCertificate?, attestationIssuer? }：通过 EST 签发 CA 为此人签发 PIV 插槽证书，验证其 YubiKey PIV 证明并记录该 YubiKey。recover-key，带 { username, serial }：此人的托管 piv-key-management 密钥，访问控制策略仅允许 PIV_KEY_RECOVERY 执行。即控制台在该页面上的三项操作。"
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
     "en": "b55c0cdd477d183e",
-    "text": "报告硬件令牌丢失并停用其凭据、签发 PIV 插槽证书，或移交托管密钥"
+"text": "报告硬件令牌丢失并停用其凭据、签发 PIV 插槽证书，或移交托管密钥"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -4116,8 +4124,8 @@
     "text": "此处每个协议都会将人送往的登录界面上的第二因素：针对真实安全密钥的注册和断言仪式，证明和身份验证器数据都会被检查，而不仅仅是解析。"
   },
   "stsmetadata.protocols.One-time passwords (TOTP).what": {
-    "en": "20b73dffc821e4a2",
-    "text": "此处每个协议都会将人送往的登录界面上的另一种第二因素，也是本服务中除 Kerberos 票据外唯一真正检查的凭据：代码根据共享密钥和时钟计算并比较，在两种模式下都是如此，并强制执行 RFC 6238 section 5.2 的只接受一次规则。注册方式是本服务器绘制的二维码，在 /portal/mfa 上或使用激活链接时进行；运营人员在 /admin/users 上此人自己的行中清除它，/admin/totp 是配置该机制的地方。"
+    "en": "54893544268bf168",
+    "text": "此处每个协议都会把用户送往的登录界面上的另一种第二因素，也是除 Kerberos 票据外本服务唯一真正检查的凭据：验证码由共享密钥和时钟计算并比较，两种模式下都执行 RFC 6238 第 5.2 节的一次性接受规则。注册是本服务器绘制的二维码，在 /portal/mfa 或使用激活链接时完成；操作员在 /admin/users 上此人自己的那一行中清除它，/admin/totp 则是配置该机制的地方。自 #1955 P4 起还包括其基于计数器的同类：RFC 4226 HOTP 令牌（YubiKey OTP 插槽，在 /portal/mfa 注册；或供应商的令牌，在 目录 → 硬件令牌 从其 RFC 6030 种子文件导入，并按序列号分配或认领），其计数器以 compare-and-set 推进，在每个接受验证码的入口都被接受。"
   },
   "stsmetadata.protocols.Recovery codes.what": {
     "en": "b7c9347c7ac4a2b7",

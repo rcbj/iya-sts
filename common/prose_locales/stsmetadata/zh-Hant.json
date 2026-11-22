@@ -532,8 +532,12 @@
     "text": "partial，每次登入一個限定於來源的工作階段的伺服器端：Secure-Session-Registration 提供 ES256 與 RS256，註冊時的 dbsc+jwt 證明（檢查其 jwk、typ、alg 與 jti 並驗證簽章）與重新整理時的證明（以綁定金鑰驗證），帶有一個綁定 cookie 的 JSON 工作階段指示，403 與 Secure-Session-Challenge 的交換，以及 Sec-Secure-Session-Id。每個挑戰在整個叢集中只消耗一次。缺少：聯合工作階段（provider_key、well-known 文件）、限定於網站的工作階段與範圍規則、authorization 參數，以及讀取 Secure-Session-Skipped。預設關閉（authn.deviceBoundSessions）。"
   },
   "stsmetadata.specs.rfc4226.coverage": {
-    "en": "ffd9d22cf4ecfd57",
-    "text": "full——就 RFC 6238 對它的需求而言：第 5.3 節基於 HMAC-SHA-1、SHA-256 或 SHA-512 的動態截斷，六至八位數，計數器為八位元組 big-endian 值。依規格自己的附錄 D 測試向量驗證（tests/totp.js），這正是自行實作而不採用函式庫的意義所在：該截斷的四個步驟每一個都曾有人做錯，而公布的測試向量是唯一能抓出錯誤的檢查。「未」涵蓋：以計數器為基礎的 HOTP 作為驗證機制——此處沒有任何東西持有會隨使用而遞增的計數器，因為唯一的呼叫端是下方以時間為基礎的建構方式。"
+    "en": "5ab7b9d048e74e7e",
+    "text": "full，驗證者端，「僅作為第二因素」（#1955 P4）：第 5.3 節以 HMAC-SHA-1、SHA-256 或 SHA-512 進行的動態截斷，六到八位數字，計數器為八位元組大端值，已對照附錄 D 本身的測試向量驗證（tests/totp.js、tests/hotp.js）；每個憑證一個計數器，具第 7.4 節的前瞻（hotp.window，預設 10，0 合法）以及由兩個連續驗證碼重新同步（hotp.resyncWindow）；第 7.2 節的重送拒絕，計數器在儲存區以 compare-and-set 推進，因此兩個節點或 worker 絕不會接受同一個驗證碼；透過登入的驗證碼額度實現第 7.3 節的節流。YubiKey OTP 插槽由入口網站的 otpauth://hotp 碼或 ykman 指令編程；供應商的權杖則以匯入方式取得（RFC 6030）。它取得 amr otp，僅匯入的權杖取得 hwk。未涵蓋：第 7.3 節的延遲機制本身（改由額度拒絕），以及 OCRA（RFC 6287）。"
+  },
+  "stsmetadata.specs.rfc6030.coverage": {
+    "en": "35ef81e9394eb5f5",
+    "text": "partial，作為接收方（#1955 P4）：版本 1.0 的 KeyContainer，含 HOTP 與 TOTP 金鑰，DeviceInfo 的 Manufacturer、SerialNo 與 Model，ResponseFormat（6 到 8 位十進位數字），一般 Counter、Time（僅 0）與 TimeInterval；明文（產品模式下拒絕，除非啟用 pskc.allowPlaintextImport）、預先共用金鑰（第 6.1 節：AES-128/192/256-CBC 與 KW-AES）與通關密語（第 6.2 節：PBKDF2），並先核對第 6.1.1 節的 ValueMAC（HMAC-SHA1 與 SHA-2 MAC）。已對照 RFC 本身的 Figures 2 到 7 驗證（tests/pskc.js）。未涵蓋：為憑證加密（6.3）、以參照提供的 MAC 金鑰、Triple DES 與 Camellia、加密的計數器或時間、PIN 金鑰與原則（略過）、容器上的簽章（第 7 節），以及產生此類檔案。"
   },
   "stsmetadata.specs.bcp47.coverage": {
     "en": "d682d3dd451a019d",
@@ -2203,13 +2207,17 @@
     "en": "fe8d3ba310ad762b",
     "text": "NON-SPEC (#1955)。目錄 → 硬體權杖所顯示的內容：本領域記錄的實體安全金鑰與智慧卡，每個都依其本身的證明記錄，可分頁並依序號或人員搜尋，並列出每個權杖上的密碼金鑰與憑證。對應 GET /admin/hardware-tokens。"
   },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/oath.what": {
+    "en": "f149352fa2ac36d0",
+    "text": "NON-SPEC (#1955 P4)。管理員從供應商 PSKC 種子檔案匯入的 HOTP 與 TOTP 權杖，包括未指派、已指派或已停用者，可分頁並依序號或人員搜尋。絕不包含密鑰。對應 GET /admin/hardware-tokens（其 OATH 分頁）。"
+  },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-    "en": "0d649147af0cbe04",
-    "text": "NON-SPEC (#1955)。lost，帶 { key }：將權杖標記為遺失，移除其上的每個密碼金鑰，以 keyCompromise 為由撤銷其上的每張憑證，為每一項傳送 CAEP credential-change，並結束由它們登入的工作階段。enrol-piv，帶 { username, profile, csr, attestationCertificate?, attestationIssuer? }：透過 EST 簽發 CA 為此人簽發 PIV 插槽憑證，驗證其 YubiKey PIV 證明並記錄該 YubiKey。recover-key，帶 { username, serial }：此人的託管 piv-key-management 金鑰，存取控制原則僅允許 PIV_KEY_RECOVERY 執行。即主控台在該頁面上的三項動作。"
+"en": "0d649147af0cbe04",
+"text": "NON-SPEC (#1955)。lost，帶 { key }：將權杖標記為遺失，移除其上的每個密碼金鑰，以 keyCompromise 為由撤銷其上的每張憑證，為每一項傳送 CAEP credential-change，並結束由它們登入的工作階段。enrol-piv，帶 { username, profile, csr, attestationCertificate?, attestationIssuer? }：透過 EST 簽發 CA 為此人簽發 PIV 插槽憑證，驗證其 YubiKey PIV 證明並記錄該 YubiKey。recover-key，帶 { username, serial }：此人的託管 piv-key-management 金鑰，存取控制原則僅允許 PIV_KEY_RECOVERY 執行。即主控台在該頁面上的三項動作。"
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
     "en": "b55c0cdd477d183e",
-    "text": "回報硬體權杖遺失並停用其憑證、簽發 PIV 插槽憑證，或移交託管金鑰"
+"text": "回報硬體權杖遺失並停用其憑證、簽發 PIV 插槽憑證，或移交託管金鑰"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -4116,8 +4124,8 @@
     "text": "此處每個協定都會將人送往的登入畫面上的第二要素：以真實安全金鑰進行的註冊與判斷提示儀式，證明與驗證器資料都會經過檢查，而不只是剖析。"
   },
   "stsmetadata.protocols.One-time passwords (TOTP).what": {
-    "en": "20b73dffc821e4a2",
-    "text": "此處每個協定都會將人送往的登入畫面上的另一種第二要素，也是除 Kerberos 票證外，本服務唯一真正「檢查」的認證：代碼由共用密鑰與時鐘計算並比較，在兩種模式下皆然，並強制執行 RFC 6238 section 5.2 的只接受一次規則。註冊是本伺服器繪製的 QR code，於 /portal/mfa 或使用啟用連結時進行；營運者在 /admin/users 上該人自己的列中清除註冊，而 /admin/totp 是設定此機制的地方。"
+    "en": "54893544268bf168",
+    "text": "此處每個協定都會把使用者送往的登入畫面上的另一種第二因素，也是除 Kerberos 票證外本服務唯一真正檢查的憑證：驗證碼由共用密鑰與時鐘計算並比較，兩種模式下都執行 RFC 6238 第 5.2 節的僅接受一次規則。註冊是本伺服器繪製的 QR 碼，在 /portal/mfa 或使用啟用連結時進行；操作員在 /admin/users 上此人自己的那一列清除它，/admin/totp 則是設定此機制之處。自 #1955 P4 起還包括其以計數器為基礎的同類：RFC 4226 HOTP 權杖（YubiKey OTP 插槽，在 /portal/mfa 註冊；或供應商的權杖，在 目錄 → 硬體權杖 從其 RFC 6030 種子檔案匯入，並依序號指派或認領），其計數器以 compare-and-set 推進，在每個接受驗證碼的入口都會被接受。"
   },
   "stsmetadata.protocols.Recovery codes.what": {
     "en": "b7c9347c7ac4a2b7",

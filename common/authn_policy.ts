@@ -108,6 +108,9 @@ interface Mechanism {
   primary: boolean | null;       // the built-in default, or null: incapable
   secondFactor: boolean | null;
   email?: boolean;
+  // #1955 P4: a save that names no value keeps the built-in one (a
+  // mechanism added after API clients were written, so not refused).
+  optional?: boolean;
   // Written on the mechanism's attribute in the model; set below.
   what?: string;
 }
@@ -126,6 +129,7 @@ interface PolicyField {
   mechanism?: string;
   role?: Role;
   email?: boolean;
+  optional?: boolean;
   what: string;
 }
 
@@ -297,6 +301,7 @@ const FIELDS: PolicyField[] =
     const key = fieldKeyOf(m.id, role);
     out.push({ key: key, attribute: attributeOf(key), type: 'bool',
                dflt: dflt, mechanism: m.id, role: role, email: !!m.email,
+               optional: !!m.optional,
                label: m.label + (role === 'primary' ? ' — as a first factor'
                                    : ' — as a second factor'),
                what: TABLE_WHAT.get(attributeOf(key)) });
@@ -1437,6 +1442,12 @@ class AuthnPolicy {
           body.form === 'console') {
         raw = 'false';
       }
+      // A mechanism added since API clients were written (#1955 P4's
+      // `hotp`): a save that does not name it keeps its built-in value
+      // rather than being refused, so an older client still saves.
+      if (raw === undefined && field.optional) {
+        raw = String(field.dflt);
+      }
       if (raw === undefined) {
         problems.push('`' + field.key + '` (' + field.label + ') is ' +
                       'required. A save replaces the whole profile, so ' +
@@ -1496,7 +1507,20 @@ class AuthnPolicy {
       return errorCodes.mark({ ok: false, errors: [refused] },
                              'STS-AUTHN-0242');
     }
-    const checked = this.validate(given);
+    // A MECHANISM ADDED SINCE CLIENTS WERE WRITTEN (#1955 P4's `hotp`): a
+    // save that does not name it keeps the profile's CURRENT value, so a
+    // client written before it re-saves a profile without turning it back
+    // on or off (backwards compatibility). `validate()` alone would take the
+    // built-in default.
+    const current = this.read(String(name || DEFAULT_PROFILE));
+    const filled: Record<string, any> = Object.assign({}, given || {});
+    FIELDS.forEach(function (field) {
+      if (field.optional && filled[field.key] === undefined &&
+          filled.form !== 'console') {
+        filled[field.key] = String(current[field.key]);
+      }
+    });
+    const checked = this.validate(filled);
     if (checked.problems.length) {
       log.debug('Leaving AuthnPolicy.save(). The values were refused.');
       return errorCodes.mark({ ok: false, errors: checked.problems },

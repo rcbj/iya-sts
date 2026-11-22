@@ -5,8 +5,10 @@ title: Hardware tokens
 # Hardware tokens
 
 A **hardware token** is one physical security key or smart card, such as a
-YubiKey. One token can hold several credentials: passkeys, certificates, and
-in later releases one-time-password secrets and SSH and OpenPGP keys. Each
+YubiKey. One token can hold several credentials: passkeys, certificates,
+one-time code secrets imported from a vendor's seed file (see
+[One-time code tokens](one-time-code-tokens.md)), and in later releases SSH
+and OpenPGP keys. Each
 trust realm keeps a **register of its hardware tokens**. There is one record
 per physical token, keyed by its vendor and serial number. The record holds:
 
@@ -36,13 +38,20 @@ must have asked for enterprise attestation. When all of that holds, the
 service records a token at the moment it writes the passkey.
 
 A key registered without enterprise attestation still works as a passkey. It
-does not appear among the person's hardware tokens. A later release adds
-vendor seed-file imports.
+does not appear among the person's hardware tokens.
+
+A second source is **a vendor's PSKC seed file**: when an administrator
+assigns an imported one-time code token, or its holder claims it, the
+service records the token by the serial the file's `DeviceInfo` names, with
+evidence `pskc-import`. See [One-time code tokens](one-time-code-tokens.md).
+A YubiKey PIV key attestation records a smart-card certificate the same way,
+with evidence `piv-attestation`.
 
 | Evidence source | What records it |
 |---|---|
 | `fido-enterprise-attestation` | A passkey registration whose trusted enterprise attestation names a serial |
 | `piv-attestation` | A certificate issued from a verified YubiKey PIV key attestation |
+| `pskc-import` | The serial a vendor's PSKC seed file names, recorded when that token is assigned or claimed |
 | `vendor-import` | An administrator's import of a vendor's token file (a later release) |
 
 ## Seeing them
@@ -71,6 +80,9 @@ can report a token lost. The service then does all of the following at once:
    portal says so.
 3. Each **certificate** on it is revoked for `keyCompromise` through the
    ordinary revocation path, so the CRL and OCSP show it.
+   Each **one-time code secret** imported from a seed file is taken off its
+   holder's entry (where it is still that token's), and the token is marked
+   retired in the inventory, never to be assigned again.
 4. A CAEP **credential-change** is sent through Shared Signals for each
    credential, and the sign-on sessions those credentials started are ended.
 5. An audit row (`hardware-token.lost`) lists what was retired and what was
@@ -138,7 +150,7 @@ holds it. Policy can use that fact in two ways:
 | `urn:sts:xacml:hardware-token-key` | `<vendor>/<serial>` |
 | `urn:sts:xacml:hardware-token-vendor` | e.g. `yubico` |
 | `urn:sts:xacml:hardware-token-model` | e.g. `YubiKey 5 NFC` |
-| `urn:sts:xacml:hardware-token-evidence` | `fido-enterprise-attestation`, `piv-attestation` or `vendor-import` |
+| `urn:sts:xacml:hardware-token-evidence` | `fido-enterprise-attestation`, `piv-attestation`, `vendor-import` or `pskc-import` |
 | `urn:sts:xacml:hardware-token-smart-card` | boolean: the evidence says the key is on a smart card |
 | `urn:sts:xacml:hardware-token-holder-matches` | boolean: the subject is the token's recorded holder |
 | `urn:sts:xacml:hardware-token-status` | `active` or `lost` |

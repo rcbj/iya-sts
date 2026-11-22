@@ -1002,5 +1002,11 @@
   "mfaSection.pubDeactivate": "إلغاء التفعيل",
   "mfaSection.pubDeactivateTip": "يلغي تفعيل DID هذا نهائيًا: يجيب عنوانه بـ 410 Gone، ويبقى تاريخه قابلًا للحل، ولم يعد يسجّل دخول الشخص ولا يُطلَق في مطالبة did.",
   "mfaSection.pubNeedsWrite": "يتطلب إلغاء تفعيل واحد <strong>Admin Write</strong>.",
-  "keySource.issuedFromCsr": "اعتُمدت هنا من طلبهم الخاص &mdash; شهدت CA الإصدار في النطاق&rsquo; مفتاحًا ولّدوه. يحتفظون بالمفتاح الخاص؛ ولم يكن لدى هذه الخدمة قط."
+  "keySource.issuedFromCsr": "اعتُمدت هنا من طلبهم الخاص &mdash; شهدت CA الإصدار في النطاق&rsquo; مفتاحًا ولّدوه. يحتفظون بالمفتاح الخاص؛ ولم يكن لدى هذه الخدمة قط.",
+  "mfaSection.hotpHeading": "رمز الرموز لمرة واحدة (HOTP)",
+  "mfaSection.hotpSource": "مصدر التزويد",
+  "mfaSection.hotpImported": "مستورد من ملف بذور المورّد: {vendor}، الرقم التسلسلي {serial}",
+  "mfaSection.hotpEnrolled": "سجّله الشخص (رمز QR أو ykman)",
+  "mfaSection.hotpUnusable": "لا يمكن قراءة سرّه هنا، لذا تُرفض رموزه.",
+  "mfaSection.clearHotp": "مسح رمز الرموز لمرة واحدة"
 }

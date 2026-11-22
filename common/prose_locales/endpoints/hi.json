@@ -1259,9 +1259,13 @@
     "en": "386404ef0cf5e649",
     "text": "हार्डवेयर टोकन"
   },
+  "endpoints.route./admin-api/hardware-tokens/oath.name": {
+    "en": "009f323198517782",
+    "text": "आयात किए गए OATH टोकन"
+  },
   "endpoints.route./admin-api/hardware-tokens/:action.name": {
-    "en": "33209f967f070175",
-    "text": "हार्डवेयर टोकन क्रियाएँ"
+"en": "33209f967f070175",
+"text": "हार्डवेयर टोकन क्रियाएँ"
   },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",

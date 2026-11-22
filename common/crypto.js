@@ -9034,6 +9034,219 @@ function hotpCode(key, counter, opts) {
 }
 
 // ---------------------------------------------------------------------------
+// PSKC (RFC 6030) — THE CRYPTOGRAPHY OF A VENDOR'S SEED FILE (#1955 P4).
+//
+// A hardware OATH token's vendor ships its secrets in a Portable Symmetric
+// Key Container, encrypted under a key the buyer is given (section 6.1) or a
+// key derived from a password with PBKDF2 (section 6.2), and — because
+// AES-CBC carries no integrity — MACed under a key that travels inside the
+// file, encrypted under the same key (section 6.1.1). `common/pskc.ts` reads
+// the XML and decides; the three operations it needs on key material are
+// here, for the reason everything cryptographic is: one module chooses the
+// algorithms and does the comparison.
+//
+// **THE ALGORITHMS ARE A CLOSED LIST OF THE RFC'S URIS.** Section 6.1's
+// RECOMMENDED pair (AES-128-CBC, KW-AES128) and its optional AES-192/256 in
+// both modes; HMAC-SHA1 (RECOMMENDED, section 6.1.1) and the SHA-2 MACs.
+// Triple DES and Camellia are refused by name: neither is offered by every
+// OpenSSL build this service runs on, and a seed file made today uses AES.
+//
+// **CBC PADDING IS XML ENCRYPTION'S** (section 5.2 of XML Encryption 1.1:
+// the last octet counts the padding, the rest arbitrary), checked as
+// `openXmlContent()` checks it — the RFC's own Figure 6 is padded that way.
+// A bad count is a refusal here rather than a flag, because what is being
+// opened is a secret checked by its MAC FIRST: the MAC covers the
+// ciphertext, so a wrong key or an altered value is refused before any
+// padding is looked at, and there is no oracle left to protect.
+// ---------------------------------------------------------------------------
+const PSKC_CIPHERS = {
+  'http://www.w3.org/2001/04/xmlenc#aes128-cbc':
+    { mode: 'cbc', keyBytes: 16, name: 'AES-128-CBC' },
+  'http://www.w3.org/2001/04/xmlenc#aes192-cbc':
+    { mode: 'cbc', keyBytes: 24, name: 'AES-192-CBC' },
+  'http://www.w3.org/2001/04/xmlenc#aes256-cbc':
+    { mode: 'cbc', keyBytes: 32, name: 'AES-256-CBC' },
+  'http://www.w3.org/2001/04/xmlenc#kw-aes128':
+    { mode: 'kw', keyBytes: 16, name: 'KW-AES128' },
+  'http://www.w3.org/2001/04/xmlenc#kw-aes192':
+    { mode: 'kw', keyBytes: 24, name: 'KW-AES192' },
+  'http://www.w3.org/2001/04/xmlenc#kw-aes256':
+    { mode: 'kw', keyBytes: 32, name: 'KW-AES256' }
+};
+
+const PSKC_MACS = {
+  'http://www.w3.org/2000/09/xmldsig#hmac-sha1':
+    { hash: 'sha1', name: 'HMAC-SHA1' },
+  'http://www.w3.org/2001/04/xmldsig-more#hmac-sha224':
+    { hash: 'sha224', name: 'HMAC-SHA224' },
+  'http://www.w3.org/2001/04/xmldsig-more#hmac-sha256':
+    { hash: 'sha256', name: 'HMAC-SHA256' },
+  'http://www.w3.org/2001/04/xmldsig-more#hmac-sha384':
+    { hash: 'sha384', name: 'HMAC-SHA384' },
+  'http://www.w3.org/2001/04/xmldsig-more#hmac-sha512':
+    { hash: 'sha512', name: 'HMAC-SHA512' }
+};
+
+// PKCS #5's PRF URIs as XML Encryption 1.1 names them; an empty <PRF/> is
+// PBKDF2's default, HMAC-SHA1 (RFC 8018 appendix A.2), which is Figure 7's.
+const PSKC_PRFS = {
+  '': 'sha1',
+  'http://www.w3.org/2000/09/xmldsig#hmac-sha1': 'sha1',
+  'http://www.w3.org/2001/04/xmldsig-more#hmac-sha256': 'sha256',
+  'http://www.w3.org/2001/04/xmldsig-more#hmac-sha384': 'sha384',
+  'http://www.w3.org/2001/04/xmldsig-more#hmac-sha512': 'sha512'
+};
+
+// A sender's iteration count is bounded before anything is derived, for
+// PBES2's reason above: the file chooses it, and above this bound it is the
+// file choosing how much of libuv's pool an import spends.
+const PSKC_MAX_ITERATIONS = 2000000;
+
+/**
+ * Says what a PSKC algorithm URI is, or that it is not one this service
+ * opens.
+ *
+ * @param uri - an EncryptionMethod, MACMethod or PRF Algorithm
+ * @returns `{ kind: 'cipher' | 'mac' | 'prf', name }`, or null
+ */
+function pskcAlgorithm(uri) {
+  log.debug("Entering pskcAlgorithm().");
+  const u = String(uri || '');
+  let out = null;
+  if (PSKC_CIPHERS[u]) {
+    out = { kind: 'cipher', name: PSKC_CIPHERS[u].name,
+            keyBytes: PSKC_CIPHERS[u].keyBytes };
+  } else if (PSKC_MACS[u]) {
+    out = { kind: 'mac', name: PSKC_MACS[u].name };
+  }
+  log.debug("Leaving pskcAlgorithm().");
+  return out;
+}
+
+/**
+ * Decrypts one PSKC encrypted value (RFC 6030 section 6.1): IV-prefixed
+ * AES-CBC with XML Encryption's padding, or AES Key Wrap.
+ *
+ * @param algorithmUri - the EncryptionMethod's Algorithm
+ * @param key - the decryption key
+ * @param cipherValue - the CipherValue's bytes
+ * @returns the plaintext
+ * @throws Error naming what was wrong (never the key)
+ */
+function pskcDecrypt(algorithmUri, key, cipherValue) {
+  log.debug("Entering pskcDecrypt().");
+  const spec = PSKC_CIPHERS[String(algorithmUri || '')];
+  if (!spec) {
+    log.debug("Leaving pskcDecrypt(). Not an algorithm here.");
+    throw new Error('the encryption algorithm ' + String(algorithmUri) +
+                    ' is not one this service opens');
+  }
+  const k = Buffer.from(key || []);
+  if (k.length !== spec.keyBytes) {
+    log.debug("Leaving pskcDecrypt(). Wrong key length.");
+    throw new Error(spec.name + ' needs a ' + spec.keyBytes + '-octet key; ' +
+                    'the key given is ' + k.length + ' octets');
+  }
+  const raw = Buffer.from(cipherValue || []);
+  if (spec.mode === 'kw') {
+    const out = aesKeyUnwrap(k, raw);
+    log.debug("Leaving pskcDecrypt(). Unwrapped.");
+    return out;
+  }
+  const body = raw.subarray(16);
+  if (raw.length < 32 || body.length % 16) {
+    log.debug("Leaving pskcDecrypt(). Not whole blocks.");
+    throw new Error('the ' + spec.name + ' value is not an IV and whole ' +
+                    'blocks');
+  }
+  const cbc = nodeCrypto.createDecipheriv('aes-' + (k.length * 8) + '-cbc', k,
+                                          raw.subarray(0, 16));
+  cbc.setAutoPadding(false);
+  const padded = Buffer.concat([cbc.update(body), cbc.final()]);
+  const count = padded[padded.length - 1];
+  if (count < 1 || count > 16) {
+    log.debug("Leaving pskcDecrypt(). Bad padding.");
+    throw new Error('the ' + spec.name + ' value did not decrypt: the key ' +
+                    'is wrong or the value was altered');
+  }
+  log.debug("Leaving pskcDecrypt(). CBC.");
+  return padded.subarray(0, padded.length - count);
+}
+
+/**
+ * Checks a PSKC ValueMAC (RFC 6030 section 6.1.1): the keyed MAC over the
+ * encrypted value's bytes, compared in constant time.
+ *
+ * @param algorithmUri - the MACMethod's Algorithm
+ * @param macKey - the MAC key, already decrypted
+ * @param cipherValue - the encrypted value's bytes (IV included)
+ * @param presented - the ValueMAC's bytes
+ * @returns true when it verifies
+ * @throws Error for a MAC algorithm this service does not compute
+ */
+function pskcMacVerifies(algorithmUri, macKey, cipherValue, presented) {
+  log.debug("Entering pskcMacVerifies().");
+  const spec = PSKC_MACS[String(algorithmUri || '')];
+  if (!spec) {
+    log.debug("Leaving pskcMacVerifies(). Not an algorithm here.");
+    throw new Error('the MAC algorithm ' + String(algorithmUri) +
+                    ' is not one this service computes');
+  }
+  const mac = nodeCrypto.createHmac(spec.hash, Buffer.from(macKey || []))
+    .update(Buffer.from(cipherValue || [])).digest();
+  // As base64: constantTimeEquals() compares TEXT, and raw octets turned
+  // into a string would not survive the round trip.
+  const ok = constantTimeEquals(mac.toString('base64'),
+                                Buffer.from(presented || []).toString('base64'));
+  log.debug("Leaving pskcMacVerifies(). " + ok);
+  return ok;
+}
+
+/**
+ * Derives a PSKC passphrase key with PBKDF2 (RFC 6030 section 6.2, RFC
+ * 8018) on libuv's thread pool, the iteration count bounded first.
+ *
+ * @param password - the passphrase, as its UTF-8 octets
+ * @param salt - the salt's bytes
+ * @param iterations - the IterationCount
+ * @param keyLength - the KeyLength in octets
+ * @param prfUri - the PRF's Algorithm ('' for PBKDF2's default HMAC-SHA1)
+ * @returns a promise of the key
+ */
+function pskcDeriveKeyAsync(password, salt, iterations, keyLength, prfUri) {
+  log.debug("Entering pskcDeriveKeyAsync().");
+  const hash = PSKC_PRFS[String(prfUri || '')];
+  const n = Math.floor(Number(iterations));
+  const length = Math.floor(Number(keyLength));
+  if (!hash) {
+    log.debug("Leaving pskcDeriveKeyAsync(). Unknown PRF.");
+    return Promise.reject(new Error('the PBKDF2 PRF ' + String(prfUri) +
+                                    ' is not one this service computes'));
+  }
+  if (!(n >= 1 && n <= PSKC_MAX_ITERATIONS) ||
+      [16, 24, 32].indexOf(length) < 0) {
+    log.debug("Leaving pskcDeriveKeyAsync(). Out of bounds.");
+    return Promise.reject(new Error('PBKDF2 needs an iteration count from ' +
+      '1 to ' + PSKC_MAX_ITERATIONS + ' and a key length of 16, 24 or 32 ' +
+      'octets'));
+  }
+  log.debug("Leaving pskcDeriveKeyAsync(). Deriving.");
+  return new Promise(function (resolve, reject) {
+    nodeCrypto.pbkdf2(Buffer.from(String(password || ''), 'utf8'),
+                      Buffer.from(salt || []), n, length, hash,
+                      function (err, key) {
+                        if (err) {
+                          log.debug('Caught in pskcDeriveKeyAsync(): ' +
+                                    ((err && err.message) || err));
+                          reject(err);
+                          return;
+                        }
+                        resolve(key);
+                      });
+  });
+}
+
+// ---------------------------------------------------------------------------
 // PASSWORD AND CLIENT-SECRET HASHING (2026-09-06).
 //
 // **THIS SERVICE STORED NO SECRET IT COULD VERIFY UNTIL PRODUCT MODE ARRIVED,
@@ -20290,6 +20503,12 @@ module.exports = {
   HOTP_ALGS: HOTP_ALGS,
   hotpSpec: hotpSpec,
   hotpCode: hotpCode,
+  // #1955 P4: a PSKC seed file's decryption, MAC and PBKDF2.
+  pskcAlgorithm: pskcAlgorithm,
+  pskcDecrypt: pskcDecrypt,
+  pskcMacVerifies: pskcMacVerifies,
+  pskcDeriveKeyAsync: pskcDeriveKeyAsync,
+  PSKC_MAX_ITERATIONS: PSKC_MAX_ITERATIONS,
   hashSecret: hashSecret,
   // The cost a NEW hash is written under, for the console and the tests.
   scryptParameters: scryptParameters,

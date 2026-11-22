@@ -655,6 +655,16 @@ function refusesDefaultDatabasePassword() {
 }
 
 /**
+ * @returns true when a PSKC seed file carrying its secrets in plaintext is
+ *   refused (#1955 P4), unless pskc.allowPlaintextImport is on
+ */
+function refusesPlaintextSeedFiles() {
+  log.debug("Entering refusesPlaintextSeedFiles().");
+  log.debug("Leaving refusesPlaintextSeedFiles().");
+  return isProduct() && config.value('pskc.allowPlaintextImport') !== true;
+}
+
+/**
  * @returns true when the key-encryption keys and the database passwords must
  *   come from a secret store or a key management service, not from a file on
  *   the host or the connection string (ASVS 5.0.0 13.3.1)
@@ -3357,6 +3367,16 @@ const REQUIREMENTS = [
              'service unless persistence.allowDefaultDatabasePassword is ' +
              'on.',
     where: 'common/helpers.js, persistence/persistence.js' },
+  // #1955 P4: `refusesPlaintextSeedFiles()`.
+  { id: 'plaintext-seed-files',
+    what: 'A vendor\'s token seed file must be encrypted',
+    development: 'A PSKC seed file whose token secrets are in plaintext is ' +
+                 'imported like an encrypted one.',
+    product: 'A PSKC seed file whose token secrets are in plaintext is ' +
+             'refused unless pskc.allowPlaintextImport is on; an encrypted ' +
+             'one is opened with the key or password given with the upload, ' +
+             'which is never stored.',
+    where: 'common/pskc.ts, common/oath_tokens.ts' },
   // ASVS 5.0.0 13.3.1.
   // ASVS 5.0.0 7.6.2.
   { id: 'sso-consent',
@@ -5001,6 +5021,7 @@ module.exports = {
   omitsUnapprovedSigningCurves: omitsUnapprovedSigningCurves,
   refusesPlainSyslog: refusesPlainSyslog,
   refusesDefaultDatabasePassword: refusesDefaultDatabasePassword,
+  refusesPlaintextSeedFiles: refusesPlaintextSeedFiles,
   requiresSecretStore: requiresSecretStore,
   redactsRequestLog: redactsRequestLog,
   requiresTypedLogoutToken: requiresTypedLogoutToken,

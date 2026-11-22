@@ -315,6 +315,14 @@
     "en": "ea01b0588ad42047",
     "text": "En engångskod enligt RFC 6238. Aldrig en första faktor: den här tjänsten har samma delade hemlighet som appen. Avstängd här får ingen REGISTRERA en; en person som redan har en ombeds fortfarande om den, eftersom en avstängning som nedgraderade varje registrerat konto till enbart ett lösenord skulle göra något annat än den säger (den här raden ersatte totp.enabled och behåller dess kontrakt)."
   },
+  "authn.FIELDS.hotpSecondFactor.label": {
+    "en": "8884fbb478be14f1",
+    "text": "Engångskodstoken (HOTP) — som andra faktor"
+  },
+  "authn.FIELDS.hotpSecondFactor.what": {
+    "en": "608274a83bf567cd",
+    "text": "En engångskod enligt RFC 4226 från en räknarbaserad token (#1955): en YubiKeys OTP-plats, eller en leverantörs token som en administratör importerade från en PSKC-fröfil. Aldrig en första faktor. Är detta av här får ingen REGISTRERA eller göra anspråk på en; den som redan har en ombeds ändå ange den, precis som innehavaren av en autentiseringsapp."
+  },
   "authn.FIELDS.recoveryCodeSecondFactor.label": {
     "en": "ee9982b48a9c6a90",
     "text": "Återställningskod — som andra faktor"
@@ -495,6 +503,10 @@
     "en": "ea01b0588ad42047",
     "text": "En engångskod enligt RFC 6238. Aldrig en första faktor: den här tjänsten har samma delade hemlighet som appen. Avstängd här får ingen REGISTRERA en; en person som redan har en ombeds fortfarande om den, eftersom en avstängning som nedgraderade varje registrerat konto till enbart ett lösenord skulle göra något annat än den säger (den här raden ersatte totp.enabled och behåller dess kontrakt)."
   },
+  "authn.SCHEMA.attributes.stsAuthnHotpSecondFactor.what": {
+    "en": "608274a83bf567cd",
+    "text": "En engångskod enligt RFC 4226 från en räknarbaserad token (#1955): en YubiKeys OTP-plats, eller en leverantörs token som en administratör importerade från en PSKC-fröfil. Aldrig en första faktor. Är detta av här får ingen REGISTRERA eller göra anspråk på en; den som redan har en ombeds ändå ange den, precis som innehavaren av en autentiseringsapp."
+  },
   "authn.SCHEMA.attributes.stsAuthnRecoveryCodeSecondFactor.what": {
     "en": "e93ab2adc3e581bd",
     "text": "En engångskod ur en uppsättning som personen genererat. Avstängd här får ingen ny uppsättning genereras; en uppsättning som redan finns fungerar fortfarande (den här raden ersatte backupCodes.enabled och behåller dess kontrakt)."
@@ -568,8 +580,8 @@
     "text": "På en NAMNGIVEN autentiseringspolicy (#1148, #1237): en förstafaktormekanism som en inloggning den gäller för tillåter — när applikationen (appAuthnPolicy) eller en av personens grupper (stsAuthnPolicy) namnger den och dess prioritet är den lägsta av de namngivna — password, password-mfa, webauthn, attested-hardware (en nyckel eller ett certifikat på en maskinvarutoken bevisad genom attestering, #1955), spnego, wallet eller federation, ett värde var. Ingen tillåter alla som sfären tillåter."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicySecondFactor.what": {
-    "en": "7c8e4d8b4cce7c08",
-    "text": "På en NAMNGIVEN autentiseringspolicy (#1148, #1237): en andra faktor som en inloggning den gäller för tillåter — när applikationen (appAuthnPolicy) eller en av personens grupper (stsAuthnPolicy) namnger den och dess prioritet är den lägsta av de namngivna — password, securityKey, totp, recoveryCode, emailCode, emailLink eller wallet, ett värde var. Ingen lämnar sfärens autentiseringspolicy som den är."
+    "en": "e0ae8297bb01119f",
+    "text": "På en NAMNGIVEN autentiseringspolicy (#1148, #1237): en andra faktor som en inloggning den gäller för tillåter — där applikationen (appAuthnPolicy) eller en av personens grupper (stsAuthnPolicy) namnger den och dess prioritet är den lägsta namngivna — password, securityKey, totp, hotp, recoveryCode, emailCode, emailLink eller wallet, ett värde vardera. Inget värde lämnar sfärens autentiseringspolicy som den är."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicyPrecedence.what": {
     "en": "afff5dad656a9845",
@@ -614,6 +626,14 @@
   "authn.MECHANISMS.totp.what": {
     "en": "ea01b0588ad42047",
     "text": "En engångskod enligt RFC 6238. Aldrig en första faktor: den här tjänsten har samma delade hemlighet som appen. Avstängd här får ingen REGISTRERA en; en person som redan har en ombeds fortfarande om den, eftersom en avstängning som nedgraderade varje registrerat konto till enbart ett lösenord skulle göra något annat än den säger (den här raden ersatte totp.enabled och behåller dess kontrakt)."
+  },
+  "authn.MECHANISMS.hotp.label": {
+    "en": "f0e2ca73efb6f1c5",
+    "text": "Engångskodstoken (HOTP)"
+  },
+  "authn.MECHANISMS.hotp.what": {
+    "en": "608274a83bf567cd",
+    "text": "En engångskod enligt RFC 4226 från en räknarbaserad token (#1955): en YubiKeys OTP-plats, eller en leverantörs token som en administratör importerade från en PSKC-fröfil. Aldrig en första faktor. Är detta av här får ingen REGISTRERA eller göra anspråk på en; den som redan har en ombeds ändå ange den, precis som innehavaren av en autentiseringsapp."
   },
   "authn.MECHANISMS.recoveryCode.label": {
     "en": "5bda8302b5ecf4d3",

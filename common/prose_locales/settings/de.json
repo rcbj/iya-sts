@@ -1315,6 +1315,30 @@
     "en": "f034b2f597ec08a5",
     "text": "Wie lange ein Geheimnis verfügbar bleibt, das GEZEIGT, aber noch nicht mit einem Code bestätigt wurde. Es wird abseits gehalten — im Arbeitsspeicher oder versiegelt im Store, wo sich mehrere Prozesse einen teilen — und nie ins Verzeichnis geschrieben, bis ein Code beweist, dass die App es wirklich hat: ein unbestätigtes Geheimnis am Eintrag von jemandem wäre ein zweiter Faktor, den die Person nicht erzeugen kann, und das ist eine Aussperrung und keine Kontrolle. Zehn Minuten sind lang genug, um ein Telefon zu finden, und kurz genug, dass eine aufgegebene Einrichtung nicht liegen bleibt."
   },
+  "hotp.digits|label": {
+    "en": "e878ad21c60b7f59",
+    "text": "HOTP-Codelänge (Ziffern)"
+  },
+  "hotp.digits|description": {
+    "en": "a62b054d7e8d650e",
+    "text": "Wie viele Ziffern eine NEUE Einrichtung eines zählerbasierten Tokens (RFC 4226) erzeugt: ein aus dem Portal programmierter YubiKey-OTP-Slot nimmt 6 oder 8. Ein aus der PSKC-Datei seines Herstellers importiertes Token behält die Länge, die die Datei nennt."
+  },
+  "hotp.window|label": {
+    "en": "0b307d73f8b8efcb",
+    "text": "HOTP-Vorausschau (Codes)"
+  },
+  "hotp.window|description": {
+    "en": "b12c6aec525f377e",
+    "text": "Die Vorausschau aus RFC 4226 Abschnitt 7.4: wie viele Drücke eines zählerbasierten Tokens, die diesen Dienst nie erreicht haben, verziehen werden. Ein Code am gespeicherten Zähler oder bis zu so vielen danach wird angenommen, und der Zähler rückt darüber hinaus vor; ein Code davor nie. Null nimmt nur den nächsten Code an. Sofort wirksam, für jede Einrichtung."
+  },
+  "hotp.resyncWindow|label": {
+    "en": "15000f3de3322f0d",
+    "text": "HOTP-Neusynchronisierungsfenster (Codes)"
+  },
+  "hotp.resyncWindow|description": {
+    "en": "4bc7180cc29f1f53",
+    "text": "Wie weit voraus nach zwei AUFEINANDERFOLGENDEN Codes gesucht wird, wenn eine Person ein Token neu synchronisiert, das aus der Vorausschau gefallen ist (RFC 4226 Abschnitt 7.4). Zwei Codes hintereinander sind weit schwerer zu erraten als einer, und das macht die größere Suche sicher. Sofort wirksam."
+  },
   "backupCodes.count|label": {
     "en": "91b6e4a086244cce",
     "text": "Codes in einem Satz"
@@ -3267,43 +3291,51 @@
     "en": "e0341e4e47f3b2f8",
     "text": "Was einer PKINIT-Anmeldung erlaubt, einen hardwaregebundenen Schlüssel zu beanspruchen (der Indikator pkinit-hardware und amr hwk). `inference`, der Standard und das Verhalten vor #1955: ein Smartcard-Anmeldezertifikat, dessen Schlüssel dieser Dienst nicht erzeugt hat, oder ein erfasster Attestierungsnachweis. `evidence`: nur ein Schlüssel, den die Attestierung eines Hardware-Tokens abdeckt. Eine Zertifikatsanmeldung über TLS erhält hwk, und sc für einen Schlüssel auf einer Smartcard, in beiden Fällen nur aus einem Nachweis."
   },
-  "openpgp.wkd|label": {
+"pskc.allowPlaintextImport|label": {
+    "en": "a098f07c2a04a83b",
+    "text": "PSKC-Seed-Dateien im Klartext im Produktmodus annehmen"
+  },
+"pskc.allowPlaintextImport|description": {
+    "en": "7efe34e872e4772e",
+    "text": "Ob ein Administrator im Produktmodus eine PSKC-Seed-Datei (RFC 6030) importieren darf, deren Token-Geheimnisse NICHT verschlüsselt sind. Standardmäßig aus: eine solche Datei war auf jeder Festplatte und in jedem Postfach, das sie durchlaufen hat, eine Liste funktionierender zweiter Faktoren, und ein Hersteller kann sie unter einem vorab geteilten Schlüssel oder einem Passwort verschlüsseln (Abschnitte 6.1 und 6.2). Der Entwicklungsmodus nimmt eine solche Datei in jedem Fall an."
+  },
+"openpgp.wkd|label": {
     "en": "1f05a7518c3d2275",
     "text": "Schlüssel im Web Key Directory veröffentlichen"
   },
-  "openpgp.wkd|description": {
+"openpgp.wkd|description": {
     "en": "7822103f89ac59b3",
     "text": "Das Web Key Directory (draft-koch-openpgp-webkey-service) für die Mail-Domains dieses Vertrauensbereichs beantworten: /.well-known/openpgpkey/<domain>/hu/<hash> (die erweiterte Methode, auf openpgpkey.<domain>) und /.well-known/openpgpkey/hu/<hash> (die direkte Methode) sowie die jeweilige Richtliniendatei. Beantwortet wird nur der Schlüssel einer Person, die im Portal zugestimmt hat. Standardmäßig aus."
   },
-  "openpgp.wkdDomains|label": {
+"openpgp.wkdDomains|label": {
     "en": "d1c4b728593ff000",
     "text": "Vom Web Key Directory bediente Mail-Domains"
   },
-  "openpgp.wkdDomains|description": {
+"openpgp.wkdDomains|description": {
     "en": "ad64f7216191123c",
     "text": "Die Mail-Domains, für die das Web Key Directory dieses Vertrauensbereichs antwortet, durch Kommas getrennt. Leer, der Standard, bedeutet die eigene DNS-Domain des Vertrauensbereichs. Eine Anfrage ohne Vertrauensbereich im Pfad beantwortet der Vertrauensbereich, der ihre Domain bedient, zuerst der Standard-Vertrauensbereich."
   },
-  "openpgp.challengeLifetimeS|label": {
+"openpgp.challengeLifetimeS|label": {
     "en": "dbf558cf0b4b8f90",
     "text": "Gültigkeitsdauer der Registrierungs-Challenge (Sekunden)"
   },
-  "openpgp.challengeLifetimeS|description": {
+"openpgp.challengeLifetimeS|description": {
     "en": "e9130c8e82368cc6",
     "text": "Wie lange die Challenge gültig bleibt, die eine Person mit gpg --clearsign signiert, um einen OpenPGP-Schlüssel zu registrieren. Sie wird einmal verbraucht, und eine Person hat jeweils nur eine."
   },
-  "openpgp.signatureSkewS|label": {
+"openpgp.signatureSkewS|label": {
     "en": "d927cf1f04bd9d51",
     "text": "Zulässige Uhrabweichung der Nachweissignatur (Sekunden)"
   },
-  "openpgp.signatureSkewS|description": {
+"openpgp.signatureSkewS|description": {
     "en": "2772763d3d363b6d",
     "text": "Wie weit die Uhr des signierenden Computers von der dieses Dienstes abweichen darf: Ein Nachweis, der um mehr als diesen Wert vor Ausstellung der Challenge oder nach dem jetzigen Zeitpunkt signiert wurde, wird abgelehnt (STS-OPENPGP-0010)."
   },
-  "openpgp.minRsaBits|label": {
+"openpgp.minRsaBits|label": {
     "en": "f3dc9f85de143630",
     "text": "Kleinster RSA-OpenPGP-Schlüssel"
   },
-  "openpgp.minRsaBits|description": {
+"openpgp.minRsaBits|description": {
     "en": "ad48516e31a7c45b",
     "text": "Der kürzeste RSA-Schlüssel, Haupt- oder Unterschlüssel, den eine OpenPGP-Registrierung akzeptiert. Ed25519, Ed448, ECDSA und ECDH auf P-256, P-384 und P-521, X25519 und X448 werden akzeptiert; DSA, ElGamal und die Brainpool-Kurven nie (STS-OPENPGP-0004)."
   },

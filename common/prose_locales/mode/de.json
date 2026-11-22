@@ -551,6 +551,18 @@
     "en": "9dc455e8deb093a6",
     "text": "Anfrageprotokolle lassen auf jeder Ebene Anmeldedaten und Inhalte weg, ein signiertes Token oder eine signierte Assertion wird nur mit Größe und Digest protokolliert, und ein vorgegebenes Datenbankpasswort verhindert den Start des Dienstes, sofern persistence.allowDefaultDatabasePassword nicht on ist."
   },
+  "mode.requirements.plaintext-seed-files.what": {
+    "en": "7dfdb35537e3d442",
+    "text": "Die Token-Seed-Datei eines Herstellers muss verschlüsselt sein"
+  },
+  "mode.requirements.plaintext-seed-files.development": {
+    "en": "406c007742c28ced",
+    "text": "Eine PSKC-Seed-Datei, deren Token-Geheimnisse im Klartext vorliegen, wird wie eine verschlüsselte importiert."
+  },
+  "mode.requirements.plaintext-seed-files.product": {
+    "en": "e3eb9f2bcabf5eaa",
+    "text": "Eine PSKC-Seed-Datei, deren Token-Geheimnisse im Klartext vorliegen, wird abgelehnt, sofern pskc.allowPlaintextImport nicht eingeschaltet ist; eine verschlüsselte wird mit dem beim Upload angegebenen Schlüssel oder Passwort geöffnet, das nie gespeichert wird."
+  },
   "mode.requirements.sso-consent.what": {
     "en": "2b06d195aa0a395d",
     "text": "Single Sign-on fragt, bevor es eine Person bei einer Anwendung anmeldet"

@@ -166,6 +166,13 @@ class AccountSignals {
   static readonly EMAIL_OTP_CREDENTIAL_TYPE =
     'urn:iya:sts:credential-type:email-otp';
   /**
+   * This service's credential type for a one-time code token (RFC 4226
+   * HOTP, #1955 P4): a YubiKey's OTP slot or a vendor's token, which is
+   * not an `app`.
+   */
+  static readonly HOTP_CREDENTIAL_TYPE =
+    'urn:iya:sts:credential-type:hotp-token';
+  /**
    * This service's credential type for a SIOPv2 self-issued key.
    */
   static readonly SELF_ISSUED_KEY_CREDENTIAL_TYPE =
@@ -724,6 +731,7 @@ export = {
   keyCredentialType: AccountSignals.keyCredentialType,
   TOTP_CREDENTIAL_TYPE: AccountSignals.TOTP_CREDENTIAL_TYPE,
   EMAIL_OTP_CREDENTIAL_TYPE: AccountSignals.EMAIL_OTP_CREDENTIAL_TYPE,
+  HOTP_CREDENTIAL_TYPE: AccountSignals.HOTP_CREDENTIAL_TYPE,
   SELF_ISSUED_KEY_CREDENTIAL_TYPE:
     AccountSignals.SELF_ISSUED_KEY_CREDENTIAL_TYPE,
   ACME_EAB_KEY_CREDENTIAL_TYPE: AccountSignals.ACME_EAB_KEY_CREDENTIAL_TYPE,

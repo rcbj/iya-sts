@@ -1468,24 +1468,24 @@
     "text": "Rien qui quitte ce service. Une valeur HOTP EST un HMAC tronqué — RFC 4226 section 5.3 — de sorte que cette famille calcule un MAC à clé puis le compare, c’est pourquoi la primitive se trouve dans common/crypto.js à côté de toutes les autres signatures d’ici plutôt que dans le module qui décide de la politique."
   },
   "crypto.families.one-time-passwords-totp.verifies": {
-    "en": "071552dc11014cdd",
-    "text": "Un code présenté, en calculant le HMAC pour chaque pas de temps de la fenêtre de dérive et en comparant en temps constant. CHAQUE pas est calculé même après une correspondance, délibérément : retourner plus tôt ferait dépendre le temps écoulé de QUEL pas a correspondu, ce qui constitue un meilleur oracle que la comparaison des chiffres que l’on prend la peine de rendre constante en temps."
+    "en": "302891e951b96222",
+    "text": "Un code présenté, en calculant le HMAC pour chaque pas de temps de la fenêtre de décalage et en comparant en temps constant. CHAQUE pas est calculé même après une correspondance, délibérément : s’arrêter tôt ferait dépendre la durée de QUEL pas a correspondu, ce qui serait un meilleur oracle que la comparaison des chiffres qu’on prend soin de faire en temps constant. Un code HOTP (RFC 4226, #1955) de la même façon sur la fenêtre d’anticipation à partir de son compteur, qui est ensuite avancé par compare-and-set dans le stockage. Le ValueMAC d’un fichier de semences PSKC (RFC 6030 section 6.1.1 : HMAC-SHA1 ou un MAC SHA-2 sur le texte chiffré) avant que son secret ne soit déchiffré."
   },
   "crypto.families.one-time-passwords-totp.encrypts": {
     "en": "c18d0d11279cb6c0",
     "text": "Le secret partagé au repos, en mode PRODUIT — AES-256-GCM sous la même clé de chiffrement de clé que celle qui protège les clés de signature, via common/keystore.js. En mode DÉVELOPPEMENT, il est stocké en base32, car la clé de chiffrement de clé y est générée à chaque exécution, et le scellement signifierait un authentificateur cessant silencieusement de fonctionner au redémarrage suivant."
   },
   "crypto.families.one-time-passwords-totp.decrypts": {
-    "en": "d2cefc498eff5443",
-    "text": "Le même secret, pour vérifier un code. **C’EST LE SEUL JUSTIFICATIF DE CE SERVICE QUI PUISSE ÊTRE RELU** — un mot de passe est un hachage scrypt auquel on ne peut que comparer, et vérifier un code à usage unique implique de le CALCULER. Ce n’est pas une faiblesse de la RFC 6238 ; c’est ce que signifie « secret partagé », et c’est précisément pourquoi ce mécanisme est ici un SECOND facteur et ne peut jamais devenir un premier facteur."
+    "en": "f197370676038df3",
+    "text": "Le fichier de semences PSKC d’un fournisseur (RFC 6030) : AES-CBC ou AES Key Wrap sous la clé prépartagée fournie avec le téléversement, ou sous une clé que PBKDF2 dérive de son mot de passe, aucun des deux n’étant conservé. Le même secret, pour vérifier un code. **C’EST LE SEUL IDENTIFIANT DE CE SERVICE QUI PEUT ÊTRE RELU** — un mot de passe est un hachage scrypt et ne peut qu’être comparé, alors que vérifier un code à usage unique revient à le CALCULER. Ce n’est pas une faiblesse de RFC 6238 ; c’est ce que « secret partagé » veut dire, et c’est exactement pourquoi ce mécanisme est ici un DEUXIÈME facteur et ne peut jamais devenir un premier."
   },
   "crypto.families.one-time-passwords-totp.hashes": {
     "en": "decb0b31d14255e5",
     "text": "SHA-1, SHA-256 ou SHA-512, à l’intérieur du HMAC et nulle part ailleurs."
   },
   "crypto.families.one-time-passwords-totp.whatItDoesNot": {
-    "en": "512b47bf629fcfe5",
-    "text": "Il n’indique jamais à personne le code en cours, et n’enrôle jamais personne sur un écran de connexion — l’enrôlement implique de se voir montrer un secret, il a donc lieu là où la personne est déjà authentifiée ou détient un lien d’activation. Il n’existe pas de HOTP à compteur comme mécanisme d’authentification, ni de protocole de resynchronisation : la fenêtre de dérive est tout ce qui est proposé pour une horloge qui dérive."
+    "en": "f38dd0b2f7ce307b",
+    "text": "Il ne dit jamais à personne quel est le code actuel, et il n’enrôle jamais personne sur un écran de connexion — s’enrôler, c’est se voir montrer un secret, donc cela se fait là où la personne est déjà authentifiée ou détient un lien d’activation. À une horloge TOTP qui dérive, on offre la fenêtre de décalage et rien d’autre. Un jeton à compteur (HOTP) est resynchronisé à partir de deux codes consécutifs, jamais d’un seul. Il ne conserve jamais la clé ni le mot de passe d’un fichier de semences, et n’ouvre jamais un fichier chiffré pour un certificat."
   },
   "crypto.families.one-time-passwords-totp.algorithms.0.what": {
     "en": "0c410835b8ade404",

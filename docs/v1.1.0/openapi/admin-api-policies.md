@@ -326,6 +326,8 @@ Scope: `admin:read`.
 | `authn.profile.federationPrimary` | list, or string, or number, or boolean, or null |  |  |
 | `authn.profile.federationPrimary[]` | string, or number, or boolean, or null |  |  |
 | `authn.profile.from` | string |  |  |
+| `authn.profile.hotpSecondFactor` | list, or string, or number, or boolean, or null |  |  |
+| `authn.profile.hotpSecondFactor[]` | string, or number, or boolean, or null |  |  |
 | `authn.profile.inherited` | boolean |  |  |
 | `authn.profile.kerberosPrimary` | list, or string, or number, or boolean, or null |  |  |
 | `authn.profile.kerberosPrimary[]` | string, or number, or boolean, or null |  |  |
@@ -1633,6 +1635,8 @@ Scope: `admin:write`.
 | `profile.federationPrimary` | list, or string, or number, or boolean, or null |  |  |
 | `profile.federationPrimary[]` | string, or number, or boolean, or null |  |  |
 | `profile.from` | string |  |  |
+| `profile.hotpSecondFactor` | list, or string, or number, or boolean, or null |  |  |
+| `profile.hotpSecondFactor[]` | string, or number, or boolean, or null |  |  |
 | `profile.inherited` | boolean |  |  |
 | `profile.kerberosPrimary` | list, or string, or number, or boolean, or null |  |  |
 | `profile.kerberosPrimary[]` | string, or number, or boolean, or null |  |  |
@@ -1706,6 +1710,8 @@ Scope: `admin:write`.
 | `profile.federationPrimary` | list, or string, or number, or boolean, or null |  |  |
 | `profile.federationPrimary[]` | string, or number, or boolean, or null |  |  |
 | `profile.from` | string |  |  |
+| `profile.hotpSecondFactor` | list, or string, or number, or boolean, or null |  |  |
+| `profile.hotpSecondFactor[]` | string, or number, or boolean, or null |  |  |
 | `profile.inherited` | boolean |  |  |
 | `profile.kerberosPrimary` | list, or string, or number, or boolean, or null |  |  |
 | `profile.kerberosPrimary[]` | string, or number, or boolean, or null |  |  |
@@ -2532,6 +2538,7 @@ Scope: `admin:write`.
 | `emailLinkSecondFactor` | boolean, or string | yes | A single-use link mailed to the person's VERIFIED address, which completes the sign-in only in the browser that started it. NIST SP 800-63B-4 section 3.1.3.1: "Email SHALL NOT be used for out-of-band authentication", because a mailbox may be reached with a password alone, and mail may be read in transit or rerouted. Off by default for that reason; turn it on only where that is an accepted risk. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default false. |
 | `emailResendS` | integer, or string | yes | A new code or link replaces the last one, which stops working. At most three are sent for one sign-in step. Between 15 and 600. Default 60. |
 | `federationPrimary` | boolean, or string | yes | A sign-in asserted by a configured federation partner. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true. |
+| `hotpSecondFactor` | boolean, or string |  | An RFC 4226 one-time code from a counter-based token (#1955): a YubiKey's OTP slot, or a vendor's token an administrator imported from a PSKC seed file. Never a first factor. Off here, nobody may ENROL or claim one; a person who already holds one is still asked for it, as an authenticator app's holder is. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true; a save that leaves it out keeps the profile's current value, so a client written before it is not refused and changes nothing. |
 | `kerberosPrimary` | boolean, or string | yes | GET /authn/spnego with a Kerberos ticket. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true. |
 | `passkeyPrimary` | boolean, or string | yes | Any passkey (WebAuthn credential) the person holds, signing them in with no password. A passkey has no role: this row says, at each sign-in, whether any of them may be a first factor in this realm, unless the first factors of the authentication policy an application names (appAuthnPolicy) say otherwise. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true. |
 | `passwordPrimary` | boolean, or string | yes | A password on the sign-in screen. As a SECOND factor it is the password asked for after a wallet or other passwordless first factor. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true. |
@@ -2582,6 +2589,8 @@ Scope: `admin:write`.
 | `profile.federationPrimary` | list, or string, or number, or boolean, or null |  |  |
 | `profile.federationPrimary[]` | string, or number, or boolean, or null |  |  |
 | `profile.from` | string |  |  |
+| `profile.hotpSecondFactor` | list, or string, or number, or boolean, or null |  |  |
+| `profile.hotpSecondFactor[]` | string, or number, or boolean, or null |  |  |
 | `profile.inherited` | boolean |  |  |
 | `profile.kerberosPrimary` | list, or string, or number, or boolean, or null |  |  |
 | `profile.kerberosPrimary[]` | string, or number, or boolean, or null |  |  |
@@ -2655,6 +2664,8 @@ Scope: `admin:write`.
 | `profile.federationPrimary` | list, or string, or number, or boolean, or null |  |  |
 | `profile.federationPrimary[]` | string, or number, or boolean, or null |  |  |
 | `profile.from` | string |  |  |
+| `profile.hotpSecondFactor` | list, or string, or number, or boolean, or null |  |  |
+| `profile.hotpSecondFactor[]` | string, or number, or boolean, or null |  |  |
 | `profile.inherited` | boolean |  |  |
 | `profile.kerberosPrimary` | list, or string, or number, or boolean, or null |  |  |
 | `profile.kerberosPrimary[]` | string, or number, or boolean, or null |  |  |

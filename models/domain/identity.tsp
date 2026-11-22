@@ -171,6 +171,9 @@ model Credential {
   @fromAttr(#{attr: "stsTotpCredential", secret: true})
   authenticatorApp?: string;
 
+  @fromAttr(#{attr: "stsHotpCredential", secret: true})
+  hotpToken?: string;
+
   @fromAttr(#{attr: "stsWebauthnCredential"})
   passkeys?: string[];
 

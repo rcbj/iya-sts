@@ -719,6 +719,22 @@
     "en": "cdfb417042891812",
     "text": "一封因与 mail.dedupWindowS 内同一操作已入队的邮件重复而被抑制的邮件"
   },
+  "caches.store.oath_tokens.inventory.title": {
+    "en": "52f9d22caf2dc03d",
+    "text": "OATH 令牌清单"
+  },
+  "caches.store.oath_tokens.inventory.description": {
+    "en": "7e1f6a1cdbd27667",
+    "text": "管理员从供应商的 PSKC 种子文件（RFC 6030）导入的每个 HOTP 或 TOTP 密钥各占一行，按供应商、序列号和密钥 id 索引：未分配（其密钥已密封）、已分配给某人（密钥已删除，现位于其条目上）或已停用。"
+  },
+  "caches.store.oath_tokens.inventory.bound": {
+    "en": "cbe61377f99c025d",
+    "text": "进程持有的行是每个领域 5,000 条的缓存；清单的规模受管理员导入量限制，每个文件最多 2,000 个密钥。"
+  },
+  "caches.store.oath_tokens.inventory.lifetime": {
+    "en": "4f13467dac65d62f",
+    "text": "直到未分配的令牌被移除；已分配或已停用的令牌会被保留。"
+  },
   "caches.store.oauth2.access-token-status.title": {
     "en": "510d919c0bffd0a8",
     "text": "访问令牌状态条目"

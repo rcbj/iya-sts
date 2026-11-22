@@ -231,6 +231,30 @@
     "en": "228f7d738861aa3c",
     "text": "Se rechazó un cambio de aplicación de autenticación por un token CSRF incorrecto"
   },
+  "audit.actions.portal.hotp.started.label": {
+    "en": "62c42316ca23b77d",
+    "text": "Se mostró a alguien un nuevo secreto de token de códigos de un solo uso"
+  },
+  "audit.actions.portal.hotp.enrolled.label": {
+    "en": "075083e107878395",
+    "text": "Alguien configuró un token de códigos de un solo uso en su propia cuenta"
+  },
+  "audit.actions.portal.hotp.refused.label": {
+    "en": "5b5a058daa2dcab7",
+    "text": "No se confirmó la configuración de un token de códigos de un solo uso"
+  },
+  "audit.actions.portal.hotp.removed.label": {
+    "en": "133822944d90f1bf",
+    "text": "Alguien quitó el token de códigos de un solo uso de su propia cuenta"
+  },
+  "audit.actions.portal.hotp.resynced.label": {
+    "en": "912cd583f7760c65",
+    "text": "Alguien resincronizó su token de códigos de un solo uso"
+  },
+  "audit.actions.portal.hotp.resync-refused.label": {
+    "en": "01c45765b9c3cd87",
+    "text": "No se resincronizó un token de códigos de un solo uso"
+  },
   "audit.actions.portal.activate.mfa.started.label": {
     "en": "df561a24375c8165",
     "text": "Se mostró el secreto de una aplicación de autenticación mientras se usaba un enlace de activación"
@@ -503,31 +527,47 @@
     "en": "f7fb5461e2325e1e",
     "text": "Se notificó la pérdida de un token de hardware y se retiraron sus credenciales"
   },
-  "audit.actions.openpgp.challenge.label": {
+"audit.actions.oath-token.import.label": {
+    "en": "4da380e22dff30ec",
+    "text": "Se importó, o se rechazó, el archivo de semillas PSKC de un proveedor"
+  },
+"audit.actions.oath-token.assign.label": {
+    "en": "19b678e9bbc10747",
+    "text": "Se asignó un token OATH importado a una persona, o esta lo reclamó"
+  },
+"audit.actions.oath-token.claim.label": {
+    "en": "5c54ac8752e21682",
+    "text": "Se rechazó la reclamación de una persona de un token OATH importado"
+  },
+"audit.actions.oath-token.remove.label": {
+    "en": "92d69a1a2d848892",
+    "text": "Se quitó del inventario un token OATH sin asignar"
+  },
+"audit.actions.openpgp.challenge.label": {
     "en": "454a22b5bcd9d6a2",
     "text": "Se emitió un desafío de registro de clave OpenPGP"
   },
-  "audit.actions.openpgp.key-registered.label": {
+"audit.actions.openpgp.key-registered.label": {
     "en": "1ed8de1f8777a015",
     "text": "Se registró una clave OpenPGP con prueba de posesión"
   },
-  "audit.actions.openpgp.key-refused.label": {
+"audit.actions.openpgp.key-refused.label": {
     "en": "f1e7e3c6808ba33b",
     "text": "No se registró una clave OpenPGP"
   },
-  "audit.actions.openpgp.key-removed.label": {
+"audit.actions.openpgp.key-removed.label": {
     "en": "89a284fa6508eae4",
     "text": "Se eliminó una clave OpenPGP"
   },
-  "audit.actions.openpgp.publication.label": {
+"audit.actions.openpgp.publication.label": {
     "en": "f6d12f16eca6796a",
     "text": "Se publicó una clave OpenPGP en el Web Key Directory, o se retiró de él"
   },
-  "audit.actions.openpgp.mail-encryption.label": {
+"audit.actions.openpgp.mail-encryption.label": {
     "en": "ba0fb7a4133d94e2",
     "text": "Se cambió cómo se cifra el correo dirigido a una persona"
   },
-  "audit.actions.openpgp.smime-certificate.label": {
+"audit.actions.openpgp.smime-certificate.label": {
     "en": "663072a33ce1e178",
     "text": "Se estableció o eliminó el certificado S/MIME de una persona"
   },
@@ -710,6 +750,10 @@
   "audit.actions.admin.mfa.totp.cleared.label": {
     "en": "478c7ee15248637f",
     "text": "Un operador borró la aplicación de autenticación de alguien"
+  },
+  "audit.actions.admin.mfa.hotp.cleared.label": {
+    "en": "027dab5576016e61",
+    "text": "Un operador borró el token de códigos de un solo uso de alguien"
   },
   "audit.actions.admin.mfa.key.cleared.label": {
     "en": "d62700d9f7751e8b",
