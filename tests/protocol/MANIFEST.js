@@ -1410,6 +1410,12 @@ const JOBS = [
   // with real tokens is tests/hardware_tokens.js, in process: nothing over
   // HTTP can make a token, which is recorded only from attestation.
   { file: 'sts_hardware_tokens.js', browser: false, local: true },
+  // IMPORTED OATH TOKENS OVER HTTP (#1955 P4): a PSKC seed file made in the
+  // run imported under its pre-shared key (the wrong key refused), listed,
+  // assigned to a person, refused twice, retired by the lost-key act and
+  // removed; no answer carries the secret, the key or an error code. What a
+  // code does at a sign-in is tests/hotp.js and tests/oath_tokens.js.
+  { file: 'sts_oath_tokens.js', browser: false, local: true },
   // A YUBIKEY PIV KEY ATTESTATION OVER EST (#1955 P2), in a throwaway realm:
   // an attested request recorded as a hardware token, an attestation of
   // another key and of another slot refused, enrol-piv on /admin-api, and

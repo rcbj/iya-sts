@@ -135,6 +135,12 @@ const BUILT = {
   "authzen/authzen_access_request.ts|'authzen.access-request.' + status": {
     via: { call: 'self.finish', arg: 1, prefix: 'authzen.access-request.' } },
   // ---- common
+  // #1955: the register's and the OATH inventory's local recordAudit(),
+  // every caller a literal (or a ternary of literals).
+  'common/hardware_tokens.ts|action': {
+    via: { call: 'this.recordAudit', arg: 0 } },
+  'common/oath_tokens.ts|action': {
+    via: { call: 'this.recordAudit', arg: 0 } },
   // recordHttp(): httpActionFor()'s five answers.
   'common/audit.js|action': {
     values: ['api.change', 'api.read', 'admin.change', 'admin.view',

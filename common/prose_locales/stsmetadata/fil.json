@@ -532,8 +532,12 @@
     "text": "partial, ang panig ng server ng isang origin-scoped na session bawat sign-on: Secure-Session-Registration na nag-aalok ng ES256 at RS256, ang dbsc+jwt na proof sa registration (sinuri ang jwk, typ, alg at jti nito at vine-verify ang signature) at sa refresh (vine-verify gamit ang bound key), ang JSON na session instructions na may iisang bound cookie, ang palitan ng 403 at Secure-Session-Challenge, at Sec-Secure-Session-Id. Bawat challenge ay ginagastos nang isang beses para sa buong cluster. Kulang: mga federated session (provider_key, ang well-known na dokumento), mga site-scoped na session at scope rule, ang authorization na parameter, at ang pagbasa ng Secure-Session-Skipped. Naka-off bilang default (authn.deviceBoundSessions)."
   },
   "stsmetadata.specs.rfc4226.coverage": {
-    "en": "ffd9d22cf4ecfd57",
-    "text": "full para sa kailangan dito ng RFC 6238: ang dynamic truncation ng section 5.3 sa HMAC-SHA-1, SHA-256 o SHA-512, anim hanggang walong digit, na ang counter ay walong-byte na big-endian value. Sinusuri laban sa sariling mga test vector ng Appendix D ng specification (tests/totp.js), na siyang dahilan ng pagpapatupad nito sa halip na kumuha ng library: may nagkamali na sa bawat isa sa apat na hakbang ng truncation na iyon, at ang inilathalang vector lang ang check na nakakahuli nito. HINDI saklaw: ang counter-based HOTP bilang authentication mechanism — walang bahagi rito ang may hawak na counter na umuusad sa paggamit, dahil ang nag-iisang caller ay ang time-based na construction sa ibaba."
+    "en": "5ab7b9d048e74e7e",
+    "text": "full, sa panig ng verifier, bilang SECOND FACTOR LAMANG (#1955 P4): ang dynamic truncation ng section 5.3 sa HMAC-SHA-1, SHA-256 o SHA-512, anim hanggang walong digit, ang counter ay isang walong-byte na big-endian value, sinubok laban sa sariling mga test vector ng Appendix D (tests/totp.js, tests/hotp.js); isang counter bawat credential na may look-ahead ng section 7.4 (hotp.window, 10 bilang default, legal ang 0) at resynchronisation mula sa dalawang magkasunod na code (hotp.resyncWindow); ang replay refusal ng section 7.2, na isinusulong ang counter sa pamamagitan ng compare-and-set sa store para hindi kailanman tumanggap ng iisang code ang dalawang node o worker; ang throttling ng section 7.3 sa pamamagitan ng code budget ng sign-in. Pino-program ang YubiKey OTP slot mula sa otpauth://hotp code o ykman command ng portal; ini-import ang token ng vendor (RFC 6030). Nakakamit nito ang amr otp, at hwk para lamang sa na-import na token. HINDI sakop: ang delay scheme ng section 7.3 bilang ganoon (tumatanggi na lang ang budget), at OCRA (RFC 6287)."
+  },
+  "stsmetadata.specs.rfc6030.coverage": {
+    "en": "35ef81e9394eb5f5",
+    "text": "partial, bilang RECEIVER (#1955 P4): isang KeyContainer na bersyon 1.0 na may mga HOTP at TOTP key, ang Manufacturer, SerialNo at Model ng DeviceInfo, ang ResponseFormat (6 hanggang 8 decimal digit), isang plain na Counter, Time (0 lamang) at TimeInterval; plaintext (tinatanggihan sa product mode maliban kung may pskc.allowPlaintextImport), isang pre-shared key (section 6.1: AES-128/192/256-CBC at KW-AES) at isang passphrase (section 6.2: PBKDF2), na unang sinusuri ang ValueMAC ng section 6.1.1 (HMAC-SHA1 at ang mga SHA-2 MAC). Sinubok laban sa sariling Figures 2 hanggang 7 ng RFC (tests/pskc.js). HINDI sakop: encryption sa isang sertipiko (6.3), MAC key sa pamamagitan ng reference, Triple DES at Camellia, naka-encrypt na counter o time, mga PIN key at policy (nilalaktawan), mga signature sa container (section 7), at paggawa ng isa."
   },
   "stsmetadata.specs.bcp47.coverage": {
     "en": "d682d3dd451a019d",
@@ -2203,13 +2207,17 @@
     "en": "fe8d3ba310ad762b",
     "text": "NON-SPEC (#1955). Ang iginuguhit ng Directory → Mga hardware token: ang mga pisikal na security key at smart card na naitala ng realm na ito, bawat isa mula sa sarili nitong attestation, naka-page at mahahanap ayon sa serial o tao, kasama ang mga passkey at sertipiko sa bawat isa. Sinasalamin ang GET /admin/hardware-tokens."
   },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/oath.what": {
+    "en": "f149352fa2ac36d0",
+    "text": "NON-SPEC (#1955 P4). Ang mga HOTP at TOTP token na in-import ng mga administrator mula sa mga PSKC seed file ng mga vendor, hindi naka-assign, naka-assign o retirado, naka-page at hinahanap ayon sa serial o tao. Hindi kailanman secret. Kapareho ng GET /admin/hardware-tokens (ang OATH tab nito)."
+  },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-    "en": "0d649147af0cbe04",
-    "text": "NON-SPEC (#1955). lost, na may { key }: minamarkahang nawala ang token, inaalis ang bawat passkey dito, binabawi ang bawat sertipiko dito dahil sa keyCompromise, nagpapadala ng CAEP credential-change para sa bawat isa at tinatapos ang mga session na in-sign in ng mga ito. enrol-piv, na may { username, profile, csr, attestationCertificate?, attestationIssuer? }: isang PIV slot certificate na inilabas sa taong iyon sa pamamagitan ng EST Issuing CA, vine-verify ang YubiKey PIV attestation nito at itinatala ang YubiKey. recover-key, na may { username, serial }: ang naka-escrow na piv-key-management key ng taong iyon, na pinahihintulutan lamang ng access-control policy sa PIV_KEY_RECOVERY. Ang tatlong aksiyon ng console sa page na iyon."
+"en": "0d649147af0cbe04",
+"text": "NON-SPEC (#1955). lost, na may { key }: minamarkahang nawala ang token, inaalis ang bawat passkey dito, binabawi ang bawat sertipiko dito dahil sa keyCompromise, nagpapadala ng CAEP credential-change para sa bawat isa at tinatapos ang mga session na in-sign in ng mga ito. enrol-piv, na may { username, profile, csr, attestationCertificate?, attestationIssuer? }: isang PIV slot certificate na inilabas sa taong iyon sa pamamagitan ng EST Issuing CA, vine-verify ang YubiKey PIV attestation nito at itinatala ang YubiKey. recover-key, na may { username, serial }: ang naka-escrow na piv-key-management key ng taong iyon, na pinahihintulutan lamang ng access-control policy sa PIV_KEY_RECOVERY. Ang tatlong aksiyon ng console sa page na iyon."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
     "en": "b55c0cdd477d183e",
-    "text": "iniuulat na nawala ang isang hardware token at inaalis ang mga credential nito, naglalabas ng PIV slot certificate, o nag-aabot ng naka-escrow na key"
+"text": "iniuulat na nawala ang isang hardware token at inaalis ang mga credential nito, naglalabas ng PIV slot certificate, o nag-aabot ng naka-escrow na key"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -4116,8 +4124,8 @@
     "text": "Isang second factor sa sign-in screen na pinagpapadalhan ng bawat protocol dito ng tao: mga registration at assertion ceremony laban sa tunay na security key, na sinusuri ang attestation at ang authenticator data sa halip na i-parse lamang."
   },
   "stsmetadata.protocols.One-time passwords (TOTP).what": {
-    "en": "20b73dffc821e4a2",
-    "text": "Ang isa pang second factor sa sign-in screen na pinagpapadalhan ng bawat protocol dito ng tao, at ang tanging credential bukod sa Kerberos ticket na tunay na SINUSURI ng serbisyong ito: kinukuwenta ang code mula sa shared secret at sa orasan at ikinukumpara, sa parehong mode, na ipinapatupad ang accept-once rule ng RFC 6238 section 5.2. Ang enrolment ay isang QR code na iginuhit ng server na ito, sa /portal/mfa o habang ginagamit ang activation link; ang sariling row ng tao sa /admin/users ang lugar kung saan nili-clear ito ng operator, at ang /admin/totp ang lugar kung saan kino-configure ang mekanismo."
+    "en": "54893544268bf168",
+    "text": "Ang isa pang ikalawang factor sa sign-in screen na pinagpapadalhan ng bawat protocol dito sa isang tao, at ang tanging credential bukod sa Kerberos ticket na tunay na SINUSURI ng serbisyong ito: kinakalkula ang code mula sa shared secret at sa orasan at inihahambing, sa parehong mode, na ipinapatupad ang accept-once rule ng RFC 6238 section 5.2. Ang enrolment ay isang QR code na iginuhit ng server na ito, sa /portal/mfa o habang ginagamit ang activation link; ang sariling row ng tao sa /admin/users ang lugar kung saan ito ini-clear ng operator, at ang /admin/totp ang lugar kung saan kino-configure ang mekanismo. Mula #1955 P4, pati ang counter-based na kapatid nito: isang RFC 4226 HOTP token (isang YubiKey OTP slot, ini-enroll sa /portal/mfa, o token ng vendor na in-import mula sa RFC 6030 seed file nito sa Directory → Mga hardware token at in-assign o kinlaim ayon sa serial), na isinusulong ang counter sa pamamagitan ng compare-and-set, at tinatanggap sa bawat pinto na tumatanggap ng code."
   },
   "stsmetadata.protocols.Recovery codes.what": {
     "en": "b7c9347c7ac4a2b7",

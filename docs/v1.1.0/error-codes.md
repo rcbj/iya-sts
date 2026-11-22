@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5888** of them, in **55** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5923** of them, in **56** subsystems.
 
 ## Where a code appears
 
@@ -86,6 +86,7 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 53
 * [Hardware tokens (`STS-HWTOKEN`)](#sts-hwtoken) — 13
+* [OATH one-time code tokens (`STS-OATH`)](#sts-oath) — 35
 * [PIV key attestation (`STS-PIV`)](#sts-piv) — 26
 * [OpenPGP keys and mail encryption (`STS-OPENPGP`)](#sts-openpgp) — 25
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
@@ -4984,6 +4985,50 @@ Raised from: common/hardware_tokens.ts, mgmt-api/hardware_tokens_api.ts, portal/
 | `STS-HWTOKEN-0011` | A passkey was written and the hardware token register could not record the token its attestation named; the key stands, and the token is recorded when it is next registered (#1955). | — |
 | `STS-HWTOKEN-0012` | A hardware token act named an action that is not one of the page's (#1955). | HTTP 400 (the page with the sentence) |
 | `STS-HWTOKEN-0013` | The hardware token list or the lost-key act failed with an unexpected error at /admin-api; the log line has the stack (#1955). | HTTP 500 |
+
+## STS-OATH
+
+**OATH one-time code tokens.** Counter-based one-time codes (RFC 4226, #1955 P4): the look-ahead, resynchronisation and the counter spent by compare-and-set in the store; and vendor-provisioned tokens imported from a PSKC seed file (RFC 6030), kept unassigned by serial until an administrator assigns one or its holder claims it.
+
+Raised from: common/hotp.ts, common/credentials.ts, common/pskc.ts, common/oath_tokens.ts, mgmt-api/hardware_tokens_api.ts, portal/account_tokens.ts.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-OATH-0001` | An HOTP code (or a pair given to resynchronise) was not the token's number of digits; it was refused (#1955). | RFC 4226 section 5.3 |
+| `STS-OATH-0002` | A person's HOTP credential could not be read (not JSON this service wrote, or a secret sealed under another key-encryption key); its code was refused rather than the person let through on one factor (#1955). | — |
+| `STS-OATH-0003` | An HOTP code matched no counter in the look-ahead window; it was refused (#1955). | RFC 4226 section 7.4 |
+| `STS-OATH-0004` | Two codes given to resynchronise an HOTP token were not consecutive codes of it within the resync window; nothing was changed (#1955). | RFC 4226 section 7.4 |
+| `STS-OATH-0005` | An HOTP code matched a counter that had already been accepted, by another node, another worker or a request racing this one; it was refused as a replay (#1955). | RFC 4226 section 7.2 |
+| `STS-OATH-0006` | An HOTP code matched and could not be proved unspent, because the store could not be asked to advance its counter; it was refused (#1955). | — |
+| `STS-OATH-0007` | An HOTP code, a resynchronisation or a removal was asked of somebody who holds no HOTP credential (or not the token named) (#1955). | — |
+| `STS-OATH-0008` | An HOTP enrolment or a token claim was refused because the authentication policy has one-time code tokens (hotp) off (#1955). | — |
+| `STS-OATH-0009` | An HOTP enrolment was confirmed after it had expired, or none was pending (#1955). | — |
+| `STS-OATH-0010` | An HOTP secret could not be sealed under the key-encryption key, so it was not written (#1955). | — |
+| `STS-OATH-0011` | The credential store threw or refused while an HOTP credential was read or written (#1955). | — |
+| `STS-OATH-0012` | No credential store is installed, so an HOTP credential could not be enrolled or kept (#1955). | — |
+| `STS-OATH-0013` | An HOTP enrolment was asked for no name, or for a name holding a control character, which no person has (#1955). | — |
+| `STS-OATH-0014` | In product mode an HOTP enrolment was refused for a name with no directory entry (#1955). | — |
+| `STS-OATH-0020` | A PSKC seed file was not XML this service will parse (not well formed, a document type or entity declaration, or too large); nothing was imported (#1955). | RFC 6030 |
+| `STS-OATH-0021` | A PSKC seed file's document element was not a version 1.0 KeyContainer in the urn:ietf:params:xml:ns:keyprov:pskc namespace; nothing was imported (#1955). | RFC 6030 section 4 |
+| `STS-OATH-0022` | A key in a PSKC seed file names an algorithm that is not HOTP or TOTP, or a response format that is not 6 to 8 decimal digits, or a TOTP time origin other than 0; that key was skipped (#1955). | RFC 6030 section 4.3.4 |
+| `STS-OATH-0023` | A PSKC seed file names an encryption, MAC or key-derivation algorithm this service does not open (or an encryption key by a certificate, section 6.3); nothing was imported (#1955). | RFC 6030 section 6 |
+| `STS-OATH-0024` | A PSKC seed file carries its secrets in plaintext and product mode refuses that unless pskc.allowPlaintextImport is on; nothing was imported (#1955). | RFC 6030 section 6 |
+| `STS-OATH-0025` | A PSKC seed file is encrypted and the import supplied no pre-shared key (or no password, for a passphrase-based file), or a key of the wrong length; nothing was imported (#1955). | RFC 6030 section 6.1 |
+| `STS-OATH-0026` | A PSKC seed file's MAC did not verify: the key or password is wrong, or the file was altered; nothing was imported (#1955). | RFC 6030 section 6.1.1 |
+| `STS-OATH-0027` | A PSKC encrypted value did not decrypt (a key that is wrong, or a value that is not an IV and whole blocks), or carries no ValueMAC where its cipher has no integrity of its own; nothing was imported (#1955). | RFC 6030 section 6.1 |
+| `STS-OATH-0028` | A key package in a PSKC seed file names no device serial (DeviceInfo/SerialNo), which is what a token is kept and claimed by; that key was skipped (#1955). | RFC 6030 section 4.3.1 |
+| `STS-OATH-0029` | A PSKC seed file holds more key packages than one import takes, or none; nothing was imported (#1955). | — |
+| `STS-OATH-0030` | A key in a PSKC seed file is already in this realm's token inventory (the same vendor, serial and key id); it was skipped (#1955). | — |
+| `STS-OATH-0040` | No token in this realm's OATH inventory has that key (#1955). | — |
+| `STS-OATH-0041` | An OATH token was assigned or claimed that is already assigned to somebody (#1955). | — |
+| `STS-OATH-0042` | An OATH token was assigned to a name with no directory entry in this realm (#1955). | — |
+| `STS-OATH-0043` | A person's claim of an imported OATH token named a serial no unassigned token has, or a code none of that serial's tokens produced; nothing was assigned (#1955). | — |
+| `STS-OATH-0044` | An imported OATH token was assigned or claimed while the authentication policy has its kind (totp or hotp) off (#1955). | — |
+| `STS-OATH-0045` | The OATH token inventory could not be read or written (#1955). | HTTP 500 |
+| `STS-OATH-0046` | An imported token's secret could not be sealed under the key-encryption key, so the token was not kept (#1955). | — |
+| `STS-OATH-0047` | A lost hardware token's OATH credential could not be retired (#1955). | — |
+| `STS-OATH-0049` | An imported OATH token that is assigned was asked to be removed; it is retired by reporting the token lost instead (#1955). | — |
+| `STS-OATH-0050` | An Account API act on a one-time code token was refused: unknown, or too many attempts in the code budget (#1955). | HTTP 400 |
 
 ## STS-PIV
 

@@ -231,6 +231,30 @@
     "en": "228f7d738861aa3c",
     "text": "Eine Änderung der Authenticator-App wurde wegen eines ungültigen CSRF-Tokens abgelehnt"
   },
+  "audit.actions.portal.hotp.started.label": {
+    "en": "62c42316ca23b77d",
+    "text": "Jemandem wurde ein neues Einmalcode-Token-Geheimnis angezeigt"
+  },
+  "audit.actions.portal.hotp.enrolled.label": {
+    "en": "075083e107878395",
+    "text": "Jemand hat für das eigene Konto ein Einmalcode-Token eingerichtet"
+  },
+  "audit.actions.portal.hotp.refused.label": {
+    "en": "5b5a058daa2dcab7",
+    "text": "Die Einrichtung eines Einmalcode-Tokens wurde nicht bestätigt"
+  },
+  "audit.actions.portal.hotp.removed.label": {
+    "en": "133822944d90f1bf",
+    "text": "Jemand hat das Einmalcode-Token vom eigenen Konto entfernt"
+  },
+  "audit.actions.portal.hotp.resynced.label": {
+    "en": "912cd583f7760c65",
+    "text": "Jemand hat sein Einmalcode-Token neu synchronisiert"
+  },
+  "audit.actions.portal.hotp.resync-refused.label": {
+    "en": "01c45765b9c3cd87",
+    "text": "Ein Einmalcode-Token wurde nicht neu synchronisiert"
+  },
   "audit.actions.portal.activate.mfa.started.label": {
     "en": "df561a24375c8165",
     "text": "Ein Geheimnis einer Authenticator-App wurde angezeigt, während ein Aktivierungslink eingelöst wurde"
@@ -503,31 +527,47 @@
     "en": "f7fb5461e2325e1e",
     "text": "Ein Hardware-Token wurde als verloren gemeldet und seine Anmeldedaten zurückgezogen"
   },
-  "audit.actions.openpgp.challenge.label": {
+"audit.actions.oath-token.import.label": {
+    "en": "4da380e22dff30ec",
+    "text": "Die PSKC-Seed-Datei eines Herstellers wurde importiert oder abgelehnt"
+  },
+"audit.actions.oath-token.assign.label": {
+    "en": "19b678e9bbc10747",
+    "text": "Ein importiertes OATH-Token wurde einer Person zugewiesen oder von ihr beansprucht"
+  },
+"audit.actions.oath-token.claim.label": {
+    "en": "5c54ac8752e21682",
+    "text": "Der Anspruch einer Person auf ein importiertes OATH-Token wurde abgelehnt"
+  },
+"audit.actions.oath-token.remove.label": {
+    "en": "92d69a1a2d848892",
+    "text": "Ein nicht zugewiesenes OATH-Token wurde aus dem Bestand entfernt"
+  },
+"audit.actions.openpgp.challenge.label": {
     "en": "454a22b5bcd9d6a2",
     "text": "Eine Challenge zur Registrierung eines OpenPGP-Schlüssels wurde ausgestellt"
   },
-  "audit.actions.openpgp.key-registered.label": {
+"audit.actions.openpgp.key-registered.label": {
     "en": "1ed8de1f8777a015",
     "text": "Ein OpenPGP-Schlüssel wurde auf einen Besitznachweis hin registriert"
   },
-  "audit.actions.openpgp.key-refused.label": {
+"audit.actions.openpgp.key-refused.label": {
     "en": "f1e7e3c6808ba33b",
     "text": "Ein OpenPGP-Schlüssel wurde nicht registriert"
   },
-  "audit.actions.openpgp.key-removed.label": {
+"audit.actions.openpgp.key-removed.label": {
     "en": "89a284fa6508eae4",
     "text": "Ein OpenPGP-Schlüssel wurde entfernt"
   },
-  "audit.actions.openpgp.publication.label": {
+"audit.actions.openpgp.publication.label": {
     "en": "f6d12f16eca6796a",
     "text": "Ein OpenPGP-Schlüssel wurde im Web Key Directory veröffentlicht oder daraus zurückgezogen"
   },
-  "audit.actions.openpgp.mail-encryption.label": {
+"audit.actions.openpgp.mail-encryption.label": {
     "en": "ba0fb7a4133d94e2",
     "text": "Die Verschlüsselung der E-Mails an eine Person wurde geändert"
   },
-  "audit.actions.openpgp.smime-certificate.label": {
+"audit.actions.openpgp.smime-certificate.label": {
     "en": "663072a33ce1e178",
     "text": "Das S/MIME-Zertifikat einer Person wurde festgelegt oder entfernt"
   },
@@ -710,6 +750,10 @@
   "audit.actions.admin.mfa.totp.cleared.label": {
     "en": "478c7ee15248637f",
     "text": "Ein Operator hat die Authenticator-App von jemandem gelöscht"
+  },
+  "audit.actions.admin.mfa.hotp.cleared.label": {
+    "en": "027dab5576016e61",
+    "text": "Ein Betreiber hat das Einmalcode-Token einer Person gelöscht"
   },
   "audit.actions.admin.mfa.key.cleared.label": {
     "en": "d62700d9f7751e8b",

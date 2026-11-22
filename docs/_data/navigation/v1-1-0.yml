@@ -93,6 +93,7 @@
     - { title: Signing out, url: /signing-out.html }
     - { title: Risk scoring, url: /risk-scoring.html }
     - { title: Devices, url: /devices.html }
+    - { title: "One-time code tokens (HOTP, PSKC)", url: /one-time-code-tokens.html }
     - { title: "Mail: reset, verification, notices", url: /mail.html }
     - { title: Reports, url: /reporting.html }
     - { title: Attribute sources, url: /attribute-sources.html }

@@ -276,6 +276,9 @@ class ProtocolStack {
     // protocols that lean on it.
     require('../authn/authn');
     this.build('common/totp', require('./totp'), 'Totp');
+    // #1955 P4: counter-based codes (RFC 4226), `totp`'s sibling: a library
+    // over `totp`'s base32 and the authentication policy's `hotp` row.
+    this.build('common/hotp', require('./hotp'), 'Hotp');
     this.build('common/backup_codes', require('./backup_codes'), 'BackupCodes');
     // #101: app passwords, which `credentials.ts` keeps on the entry.
     this.build('common/app_passwords', require('./app_passwords'),
@@ -351,6 +354,12 @@ class ProtocolStack {
                'PivAttestation');
     this.build('common/piv_enrolment', require('./piv_enrolment'),
                'PivEnrolment');
+    // #1955 P4: a PSKC seed file's reader, and the OATH token inventory it
+    // fills. Two libraries (rule 3); the inventory installs the register's
+    // `hotp` and `totp` retirers when it is installed, so after it.
+    this.build('common/pskc', require('./pskc'), 'Pskc');
+    this.build('common/oath_tokens', require('./oath_tokens'), 'OathTokens');
+
     // #1955 P6: a person's OpenPGP key, its Web Key Directory publication
     // and their mail encryption choice. Built beside the token register,
     // whose `openpgp` retirer it installs when it is installed (so after

@@ -65,6 +65,10 @@ interface AccountTokensDeps {
   log: typeof helpers.log;
   hardwareTokens: typeof hardwareTokens;
   credentials: typeof credentials;
+  // #1955 P4: the imported OATH token inventory and the account signals,
+  // reached at a claim.
+  oathTokens(): Json;
+  accountSignals(): Json;
   pivEnrolment: typeof pivEnrolment;
   config: typeof config;
 }
@@ -97,7 +101,14 @@ class AccountTokens {
     helpers.log.debug("Entering AccountTokens.defaultDeps().");
     helpers.log.debug("Leaving AccountTokens.defaultDeps().");
     return { log: helpers.log, hardwareTokens: hardwareTokens,
-             credentials: credentials, pivEnrolment: pivEnrolment,
+             credentials: credentials,
+             oathTokens: function (): Json {
+               return require('../common/oath_tokens');
+             },
+             accountSignals: function (): Json {
+               return require('../ssf/account_signals');
+             },
+             pivEnrolment: pivEnrolment,
              config: config };
   }
 
@@ -197,11 +208,16 @@ class AccountTokens {
     const username = caller.username;
     const t = ctx.translatorFor(username);
     const action = String((body && body.action) || 'lost');
+    if (action === 'claim') {
+      log.debug("Leaving AccountTokens.act(). A claim.");
+      return this.claim(ctx, req, res, caller, body);
+    }
     if (ACTIONS.indexOf(action) < 0) {
       log.debug("Leaving AccountTokens.act(). Unknown action.");
       return ctx.refuse(res, 400, 'STS-HWTOKEN-0012',
                         'Unknown action "' + action + '". The actions ' +
-                        'are: ' + ACTIONS.join(', ') + '.',
+                        'are: lost, claim, ' +
+                        ACTIONS.slice(1).join(', ') + '.',
                         { view: await this.view(caller) });
     }
     if (action !== 'lost') {
@@ -245,6 +261,69 @@ class AccountTokens {
     // sentence, and the page as it now is.
     return ctx.json(res, 200, { ok: true, message: message,
                                 view: await this.view(caller) });
+  }
+
+  // -------------------------------------------------------------------------
+  // `claim` (#1955 P4): an OATH token an administrator imported from its
+  // vendor's PSKC file, taken by the serial printed on it and a code it
+  // shows now (`common/oath_tokens.ts`'s `claim()`). THE USERNAME IS THE
+  // TOKEN'S SUBJECT'S, NEVER THE BODY'S; the serial and the code are the
+  // only things taken from it. Behind the `mfa-code` budget, because it
+  // answers "is this a code of a token in stock".
+  // -------------------------------------------------------------------------
+  /**
+   * `claim`: the caller takes an imported OATH token.
+   *
+   * @param ctx - the account API's helpers
+   * @param req - the request
+   * @param res - the response
+   * @param caller - the signed-in person
+   * @param body - the checked body
+   * @returns nothing
+   */
+  async claim(ctx: AccountContext, req: Json, res: Json,
+              caller: AccountCaller, body: Json): Promise<unknown> {
+    const { log } = this.deps;
+    log.debug("Entering AccountTokens.claim().");
+    const username = caller.username;
+    const t = ctx.translatorFor(username);
+    const allowed = await ctx.websecurity.attemptShared('mfa-code', req,
+                                                        username);
+    if (!allowed.ok) {
+      log.debug("Leaving AccountTokens.claim(). Rate limited.");
+      return ctx.refuse(res, 429, 'STS-OATH-0050', allowed.detail,
+                        { view: await this.view(caller) });
+    }
+    const done: Json = await this.deps.oathTokens().claim({
+      username: username, serial: String((body && body.serial) || ''),
+      code: String((body && body.code) || '') });
+    if (!done.ok) {
+      log.debug("Leaving AccountTokens.claim(). Refused.");
+      return ctx.refuse(res, 400,
+                        ctx.errorCodes.codeOf(done) || 'STS-OATH-0043',
+                        (done.errors || [done.error])[0],
+                        { view: await this.view(caller) });
+    }
+    try {
+      await ctx.websecurity.succeededShared('mfa-code', req, username);
+    } catch (e) {
+      // The token is theirs; only the failure count was not cleared.
+      log.debug("Caught in AccountTokens.claim(): " +
+                ((e && e.message) || e));
+    }
+    const signals = this.deps.accountSignals();
+    signals.credentialChanged({ username: username,
+      credentialType: done.token.kind === 'totp'
+        ? signals.TOTP_CREDENTIAL_TYPE : signals.HOTP_CREDENTIAL_TYPE,
+      changeType: 'create', initiatingEntity: 'user', via: 'portal',
+      reasonAdmin: username + ' claimed one-time code token ' +
+                   done.token.serial + '.',
+      reasonUser: 'You claimed a one-time code token.' });
+    log.debug("Leaving AccountTokens.claim(). Claimed.");
+    return ctx.json(res, 200, { ok: true,
+      message: t.text('portalTokens.done.claimed',
+                      { serial: done.token.serial }),
+      view: await this.view(caller) });
   }
 
   // THE THREE PIV ACTS (header). Each is the caller's own: the target is

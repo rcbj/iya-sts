@@ -1315,6 +1315,30 @@
     "en": "f034b2f597ec08a5",
     "text": "Gaano katagal nananatiling available ang secret na IPINAKITA na pero hindi pa nakumpirma gamit ang isang code. Hiwalay itong hinahawakan — sa memory, o naka-seal sa store kung saan nagbabahagi ng isa ang ilang process — at hindi kailanman isinusulat sa directory hangga't hindi napapatunayan ng isang code na talagang hawak ito ng app: ang hindi nakumpirmang secret sa entry ng isang tao ay magiging second factor na hindi nila maipapakita, na isang lockout sa halip na control. Sapat ang sampung minuto para makahanap ng telepono at sapat na maikli para hindi magtagal ang inabandonang enrolment."
   },
+  "hotp.digits|label": {
+    "en": "e878ad21c60b7f59",
+    "text": "Haba ng HOTP code (digit)"
+  },
+  "hotp.digits|description": {
+    "en": "a62b054d7e8d650e",
+    "text": "Ilang digit ang nagagawa ng BAGONG enrolment ng counter-based na token (RFC 4226): ang YubiKey OTP slot na pino-program mula sa portal ay tumatanggap ng 6 o 8. Ang token na in-import mula sa PSKC file ng vendor nito ay nananatili sa habang nakasaad sa file."
+  },
+  "hotp.window|label": {
+    "en": "0b307d73f8b8efcb",
+    "text": "HOTP look-ahead (mga code)"
+  },
+  "hotp.window|description": {
+    "en": "b12c6aec525f377e",
+    "text": "Ang look-ahead ng RFC 4226 section 7.4: ilang pagpindot sa counter-based na token na hindi kailanman nakarating sa serbisyong ito ang pinapalampas. Tinatanggap ang code sa naka-store na counter o hanggang ganito karami pagkatapos nito, at lalampas dito ang counter; ang code bago nito ay hindi kailanman tinatanggap. Ang zero ay tumatanggap lamang ng susunod na code. LIVE, para sa bawat enrolment."
+  },
+  "hotp.resyncWindow|label": {
+    "en": "15000f3de3322f0d",
+    "text": "HOTP resynchronisation window (mga code)"
+  },
+  "hotp.resyncWindow|description": {
+    "en": "4bc7180cc29f1f53",
+    "text": "Gaano kalayo hinahanap ang dalawang MAGKASUNOD na code kapag nire-resynchronize ng isang tao ang token na lumabas sa look-ahead (RFC 4226 section 7.4). Mas mahirap hulaan ang dalawang magkasunod na code kaysa sa isa, kaya ligtas ang mas malaking paghahanap. LIVE."
+  },
   "backupCodes.count|label": {
     "en": "91b6e4a086244cce",
     "text": "Mga code sa isang set"
@@ -3267,43 +3291,51 @@
     "en": "e0341e4e47f3b2f8",
     "text": "Ano ang nagpapahintulot sa PKINIT sign-in na mag-claim ng key na nakatali sa hardware (ang pkinit-hardware indicator at amr hwk). `inference`, ang default at ang gawi bago ang #1955: isang smart-card logon certificate na ang key ay hindi ginawa ng serbisyong ito, o naitalang ebidensya ng attestation. `evidence`: tanging key na sakop ng attestation ng isang hardware token. Ang certificate sign-in sa TLS ay nakakakuha ng hwk, at sc para sa key na nasa smart card, mula lamang sa ebidensya sa alinmang kaso."
   },
-  "openpgp.wkd|label": {
+"pskc.allowPlaintextImport|label": {
+    "en": "a098f07c2a04a83b",
+    "text": "Tanggapin ang mga plaintext PSKC seed file sa product mode"
+  },
+"pskc.allowPlaintextImport|description": {
+    "en": "7efe34e872e4772e",
+    "text": "Kung maaaring mag-import ang isang administrator ng PSKC seed file (RFC 6030) na HINDI naka-encrypt ang mga token secret, sa product mode. Naka-off bilang default: ang ganitong file ay naging listahan ng gumaganang mga ikalawang factor sa bawat disk at mailbox na dinaanan nito, at kaya itong i-encrypt ng vendor sa ilalim ng pre-shared key o password (mga section 6.1 at 6.2). Tumatanggap nito ang development mode anuman ang mangyari."
+  },
+"openpgp.wkd|label": {
     "en": "1f05a7518c3d2275",
     "text": "Ilathala ang mga key sa Web Key Directory"
   },
-  "openpgp.wkd|description": {
+"openpgp.wkd|description": {
     "en": "7822103f89ac59b3",
     "text": "Sagutin ang Web Key Directory (draft-koch-openpgp-webkey-service) para sa mga mail domain ng realm na ito: /.well-known/openpgpkey/<domain>/hu/<hash> (ang advanced method, sa openpgpkey.<domain>) at /.well-known/openpgpkey/hu/<hash> (ang direct method), at ang policy file ng bawat isa. Ang key lang ng taong pumayag sa portal ang sinasagot. Naka-off bilang default."
   },
-  "openpgp.wkdDomains|label": {
+"openpgp.wkdDomains|label": {
     "en": "d1c4b728593ff000",
     "text": "Mga mail domain na sineserbisyuhan ng Web Key Directory"
   },
-  "openpgp.wkdDomains|description": {
+"openpgp.wkdDomains|description": {
     "en": "ad64f7216191123c",
     "text": "Ang mga mail domain na sinasagot ng Web Key Directory ng realm na ito, pinaghihiwalay ng kuwit. Kapag walang laman, ang default, ito ang sariling DNS domain ng realm. Ang request na walang realm sa path nito ay sinasagot ng realm na nagseserbisyo sa domain nito, ang default realm muna."
   },
-  "openpgp.challengeLifetimeS|label": {
+"openpgp.challengeLifetimeS|label": {
     "en": "dbf558cf0b4b8f90",
     "text": "Tagal ng challenge sa pagrehistro (segundo)"
   },
-  "openpgp.challengeLifetimeS|description": {
+"openpgp.challengeLifetimeS|description": {
     "en": "e9130c8e82368cc6",
     "text": "Gaano katagal valid ang challenge na pinipirmahan ng isang tao gamit ang gpg --clearsign para magrehistro ng OpenPGP key. Isang beses lang itong ginagamit, at isa lang ang hawak ng tao sa bawat pagkakataon."
   },
-  "openpgp.signatureSkewS|label": {
+"openpgp.signatureSkewS|label": {
     "en": "d927cf1f04bd9d51",
     "text": "Clock skew ng proof signature (segundo)"
   },
-  "openpgp.signatureSkewS|description": {
+"openpgp.signatureSkewS|description": {
     "en": "2772763d3d363b6d",
     "text": "Gaano kalayo ang orasan ng pumipirmang computer mula sa orasan ng serbisyong ito: ang proof na pinirmahan nang mas maaga kaysa sa pag-issue ng challenge, o mas huli kaysa ngayon, nang lampas dito ay tinatanggihan (STS-OPENPGP-0010)."
   },
-  "openpgp.minRsaBits|label": {
+"openpgp.minRsaBits|label": {
     "en": "f3dc9f85de143630",
     "text": "Pinakamaliit na RSA OpenPGP key"
   },
-  "openpgp.minRsaBits|description": {
+"openpgp.minRsaBits|description": {
     "en": "ad48516e31a7c45b",
     "text": "Ang pinakamaikling RSA key, primary man o subkey, na tinatanggap ng pagrehistro ng OpenPGP. Tinatanggap ang Ed25519, Ed448, ECDSA at ECDH sa P-256, P-384 at P-521, X25519 at X448; hindi kailanman tinatanggap ang DSA, ElGamal at ang mga Brainpool curve (STS-OPENPGP-0004)."
   },

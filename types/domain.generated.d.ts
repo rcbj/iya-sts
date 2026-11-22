@@ -160,6 +160,7 @@ declare namespace IyaDomain {
     passkeyPrimary?: boolean;
     securityKeySecondFactor?: boolean;
     totpSecondFactor?: boolean;
+    hotpSecondFactor?: boolean;
     recoveryCodeSecondFactor?: boolean;
     emailCodePrimary?: boolean;
     emailCodeSecondFactor?: boolean;
@@ -217,6 +218,7 @@ declare namespace IyaDomain {
   interface Credential {
     passwordHash?: string;
     authenticatorApp?: string;
+    hotpToken?: string;
     passkeys?: string[];
     recoveryCodes?: string;
     appPasswords?: string;

@@ -1315,6 +1315,30 @@
     "en": "f034b2f597ec08a5",
     "text": "Hur länge en hemlighet som har VISATS men ännu inte bekräftats med en kod förblir tillgänglig. Den hålls åtskild — i minnet, eller förseglad i lagret där flera processer delar ett — och skrivs aldrig till katalogen förrän en kod bevisar att appen verkligen har den: en obekräftad hemlighet på någons post vore en andra faktor som hen inte kan producera, vilket är en utelåsning snarare än en kontroll. Tio minuter är tillräckligt länge för att hitta en telefon och kort nog för att en övergiven registrering inte ska bli kvar."
   },
+  "hotp.digits|label": {
+    "en": "e878ad21c60b7f59",
+    "text": "HOTP-kodlängd (siffror)"
+  },
+  "hotp.digits|description": {
+    "en": "a62b054d7e8d650e",
+    "text": "Hur många siffror en NY registrering av en räknarbaserad token (RFC 4226) ger: en YubiKey-OTP-plats som programmeras från portalen tar 6 eller 8. En token som importerats från leverantörens PSKC-fil behåller den längd filen anger."
+  },
+  "hotp.window|label": {
+    "en": "0b307d73f8b8efcb",
+    "text": "HOTP-framförhållning (koder)"
+  },
+  "hotp.window|description": {
+    "en": "b12c6aec525f377e",
+    "text": "Framförhållningen i RFC 4226 avsnitt 7.4: hur många tryck på en räknarbaserad token som aldrig nådde den här tjänsten som förlåts. En kod vid den lagrade räknaren eller upp till så många efter den godtas, och räknaren flyttas förbi den; en kod före den godtas aldrig. Noll godtar bara nästa kod. Gäller direkt, för varje registrering."
+  },
+  "hotp.resyncWindow|label": {
+    "en": "15000f3de3322f0d",
+    "text": "HOTP-fönster för omsynkronisering (koder)"
+  },
+  "hotp.resyncWindow|description": {
+    "en": "4bc7180cc29f1f53",
+    "text": "Hur långt fram två PÅ VARANDRA FÖLJANDE koder söks när en person synkroniserar om en token som hamnat utanför framförhållningen (RFC 4226 avsnitt 7.4). Två koder i rad är mycket svårare att gissa än en, och det är det som gör den större sökningen säker. Gäller direkt."
+  },
   "backupCodes.count|label": {
     "en": "91b6e4a086244cce",
     "text": "Koder i en uppsättning"
@@ -3267,43 +3291,51 @@
     "en": "e0341e4e47f3b2f8",
     "text": "Vad som låter en PKINIT-inloggning göra anspråk på en maskinvarubunden nyckel (indikatorn pkinit-hardware och amr hwk). `inference`, standardvärdet och beteendet före #1955: ett certifikat för smartkortsinloggning vars nyckel den här tjänsten inte genererade, eller registrerat attesteringsbevis. `evidence`: endast en nyckel som en maskinvarutokens attestering täcker. En certifikatinloggning över TLS får hwk, och sc för en nyckel på ett smart kort, endast utifrån bevis i båda fallen."
   },
-  "openpgp.wkd|label": {
+"pskc.allowPlaintextImport|label": {
+    "en": "a098f07c2a04a83b",
+    "text": "Godta PSKC-fröfiler i klartext i produktläget"
+  },
+"pskc.allowPlaintextImport|description": {
+    "en": "7efe34e872e4772e",
+    "text": "Om en administratör i produktläget får importera en PSKC-fröfil (RFC 6030) vars tokenhemligheter INTE är krypterade. Av som standard: en sådan fil har varit en lista över fungerande andra faktorer på varje disk och i varje brevlåda den har passerat, och en leverantör kan kryptera den under en förutdelad nyckel eller ett lösenord (avsnitt 6.1 och 6.2). Utvecklingsläget godtar en oavsett."
+  },
+"openpgp.wkd|label": {
     "en": "1f05a7518c3d2275",
     "text": "Publicera nycklar i Web Key Directory"
   },
-  "openpgp.wkd|description": {
+"openpgp.wkd|description": {
     "en": "7822103f89ac59b3",
     "text": "Besvara Web Key Directory (draft-koch-openpgp-webkey-service) för den här sfärens e-postdomäner: /.well-known/openpgpkey/<domain>/hu/<hash> (den avancerade metoden, på openpgpkey.<domain>) och /.well-known/openpgpkey/hu/<hash> (den direkta metoden), och respektive policyfil. Bara nyckeln för en person som har valt att delta på portalen besvaras. Avstängt som standard."
   },
-  "openpgp.wkdDomains|label": {
+"openpgp.wkdDomains|label": {
     "en": "d1c4b728593ff000",
     "text": "E-postdomäner som Web Key Directory betjänar"
   },
-  "openpgp.wkdDomains|description": {
+"openpgp.wkdDomains|description": {
     "en": "ad64f7216191123c",
     "text": "E-postdomänerna som den här sfärens Web Key Directory svarar för, kommaseparerade. Tomt, standardvärdet, betyder sfärens egen DNS-domän. En begäran utan sfär i sökvägen besvaras av den sfär som betjänar dess domän, standardsfären först."
   },
-  "openpgp.challengeLifetimeS|label": {
+"openpgp.challengeLifetimeS|label": {
     "en": "dbf558cf0b4b8f90",
     "text": "Registreringsutmaningens livslängd (sekunder)"
   },
-  "openpgp.challengeLifetimeS|description": {
+"openpgp.challengeLifetimeS|description": {
     "en": "e9130c8e82368cc6",
     "text": "Hur länge den utmaning som en person signerar med gpg --clearsign för att registrera en OpenPGP-nyckel är giltig. Den förbrukas en gång, och en person har en åt gången."
   },
-  "openpgp.signatureSkewS|label": {
+"openpgp.signatureSkewS|label": {
     "en": "d927cf1f04bd9d51",
     "text": "Tillåten klockavvikelse för bevissignaturen (sekunder)"
   },
-  "openpgp.signatureSkewS|description": {
+"openpgp.signatureSkewS|description": {
     "en": "2772763d3d363b6d",
     "text": "Hur mycket den signerande datorns klocka får avvika från tjänstens: ett bevis signerat tidigare än utmaningen utfärdades, eller senare än nu, med mer än så avvisas (STS-OPENPGP-0010)."
   },
-  "openpgp.minRsaBits|label": {
+"openpgp.minRsaBits|label": {
     "en": "f3dc9f85de143630",
     "text": "Minsta RSA-nyckel för OpenPGP"
   },
-  "openpgp.minRsaBits|description": {
+"openpgp.minRsaBits|description": {
     "en": "ad48516e31a7c45b",
     "text": "Den kortaste RSA-nyckel, primärnyckel eller undernyckel, som en OpenPGP-registrering accepterar. Ed25519, Ed448, ECDSA och ECDH på P-256, P-384 och P-521, X25519 och X448 accepteras; DSA, ElGamal och Brainpool-kurvorna accepteras aldrig (STS-OPENPGP-0004)."
   },

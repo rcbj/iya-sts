@@ -6214,6 +6214,28 @@ Scope: `account:manage`.
 | `fresh.codes[]` | string |  |  |
 | `fresh.handle` | string |  |  |
 | `fresh.replacing` | boolean |  |  |
+| `hotp` | object |  |  |
+| `hotp.detail` | object |  |  |
+| `hotp.detail.digits` | number |  |  |
+| `hotp.detail.enrolledAt` | number |  |  |
+| `hotp.detail.lastUsedAt` | number |  |  |
+| `hotp.detail.model` | string |  |  |
+| `hotp.detail.serial` | string |  |  |
+| `hotp.detail.source` | string |  | `enrolled` (from the QR code or the ykman command) or `pskc-import` (a vendor-provisioned token an administrator imported). |
+| `hotp.detail.vendor` | string |  |  |
+| `hotp.digits` | integer |  | How many digits a new enrolment's codes have. |
+| `hotp.enrolled` | boolean |  | Whether you hold a one-time code token. |
+| `hotp.offered` | boolean |  | Whether the authentication policy offers new enrolments (hotp). |
+| `hotp.resyncWindow` | integer |  | How far ahead two consecutive codes are searched when you resynchronise (hotp.resyncWindow). |
+| `hotp.setup` | object |  | The enrolment in progress, or null. |
+| `hotp.setup.counter` | number |  |  |
+| `hotp.setup.digits` | number |  |  |
+| `hotp.setup.grouped` | string |  |  |
+| `hotp.setup.issuer` | string |  |  |
+| `hotp.setup.qr` | string |  | The otpauth://hotp URI as an SVG data URI, or empty when it could not be drawn. |
+| `hotp.setup.ykman` | string |  | The command that programs a YubiKey's second OTP slot with this secret. |
+| `hotp.usable` | boolean |  | Whether this service can check its codes. |
+| `hotp.window` | integer |  | How many presses that never reached this service are forgiven (hotp.window). |
 | `setup` | object |  |  |
 | `setup.algorithm` | string |  |  |
 | `setup.digits` | number |  |  |
@@ -6272,7 +6294,7 @@ Scope: `account:manage`.
 
 **Sets up, confirms or removes your second factors**
 
-`start` mints a secret and holds it (ask the view for the QR code); `confirm` checks a code from the app (rate limited) and enrols it; `remove` takes it off, and ends every session its codes signed in (`sessionsEnded`, #722). `generate-codes` answers a set of recovery codes ONCE, in `view.fresh`, and stores nothing; `confirm-codes` stores their hashes; `discard-codes` throws the pending set away. `email-factor-on` (with `kind`) and `email-factor-off` opt in and out of the emailed second factor. A refusal carries the page's `view`.
+`start` mints a secret and holds it (ask the view for the QR code); `confirm` checks a code from the app (rate limited) and enrols it; `remove` takes it off, and ends every session its codes signed in (`sessionsEnded`, #722). `hotp-start`, `hotp-confirm` and `hotp-remove` do the same for a counter-based one-time code token (RFC 4226, #1955) — the view's `hotp.setup` carries its otpauth://hotp QR code and the `ykman` command that programs a YubiKey's OTP slot — and `hotp-resync` brings back a token pressed too often from two consecutive codes (`code`, `code2`; rate limited). `generate-codes` answers a set of recovery codes ONCE, in `view.fresh`, and stores nothing; `confirm-codes` stores their hashes; `discard-codes` throws the pending set away. `email-factor-on` (with `kind`) and `email-factor-off` opt in and out of the emailed second factor. A refusal carries the page's `view`.
 
 The door of the portal's `POST /portal/mfa`.
 
@@ -6289,8 +6311,9 @@ Scope: `account:manage`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `action` | empty, or one of `start`, `confirm`, `remove`, `generate-codes`, `confirm-codes`, `discard-codes`, `email-factor-on`, `email-factor-off` |  | The step: `start` an authenticator app, `confirm` it with a code, `remove` it; `generate-codes`, `confirm-codes` or `discard-codes` a set of recovery codes; `email-factor-on` or `email-factor-off`. |
-| `code` | string |  | For `confirm`: the code the app shows. |
+| `action` | empty, or one of `start`, `confirm`, `remove`, `hotp-start`, `hotp-confirm`, `hotp-resync`, `hotp-remove`, `generate-codes`, `confirm-codes`, `discard-codes`, `email-factor-on`, `email-factor-off` |  | The step: `start` an authenticator app, `confirm` it with a code, `remove` it; `hotp-start`, `hotp-confirm`, `hotp-resync` (two consecutive codes) or `hotp-remove` a one-time code token (RFC 4226); `generate-codes`, `confirm-codes` or `discard-codes` a set of recovery codes; `email-factor-on` or `email-factor-off`. |
+| `code` | string |  | For `confirm` and `hotp-confirm`: the code the app or token shows; for `hotp-resync`, the first of two consecutive codes. |
+| `code2` | string |  | For `hotp-resync`: the code the token showed next. |
 | `handle` | string |  | For `confirm-codes` and `discard-codes`: the pending set's handle, from `generate-codes`'s answer. |
 | `kind` | empty, or one of `code`, `link` |  | For `email-factor-on`: a mailed `code` or a sign-in `link`. |
 
@@ -6341,6 +6364,28 @@ Scope: `account:manage`.
 | `view.fresh.codes[]` | string |  |  |
 | `view.fresh.handle` | string |  |  |
 | `view.fresh.replacing` | boolean |  |  |
+| `view.hotp` | object |  |  |
+| `view.hotp.detail` | object |  |  |
+| `view.hotp.detail.digits` | number |  |  |
+| `view.hotp.detail.enrolledAt` | number |  |  |
+| `view.hotp.detail.lastUsedAt` | number |  |  |
+| `view.hotp.detail.model` | string |  |  |
+| `view.hotp.detail.serial` | string |  |  |
+| `view.hotp.detail.source` | string |  | `enrolled` (from the QR code or the ykman command) or `pskc-import` (a vendor-provisioned token an administrator imported). |
+| `view.hotp.detail.vendor` | string |  |  |
+| `view.hotp.digits` | integer |  | How many digits a new enrolment's codes have. |
+| `view.hotp.enrolled` | boolean |  | Whether you hold a one-time code token. |
+| `view.hotp.offered` | boolean |  | Whether the authentication policy offers new enrolments (hotp). |
+| `view.hotp.resyncWindow` | integer |  | How far ahead two consecutive codes are searched when you resynchronise (hotp.resyncWindow). |
+| `view.hotp.setup` | object |  | The enrolment in progress, or null. |
+| `view.hotp.setup.counter` | number |  |  |
+| `view.hotp.setup.digits` | number |  |  |
+| `view.hotp.setup.grouped` | string |  |  |
+| `view.hotp.setup.issuer` | string |  |  |
+| `view.hotp.setup.qr` | string |  | The otpauth://hotp URI as an SVG data URI, or empty when it could not be drawn. |
+| `view.hotp.setup.ykman` | string |  | The command that programs a YubiKey's second OTP slot with this secret. |
+| `view.hotp.usable` | boolean |  | Whether this service can check its codes. |
+| `view.hotp.window` | integer |  | How many presses that never reached this service are forgiven (hotp.window). |
 | `view.setup` | object |  |  |
 | `view.setup.algorithm` | string |  |  |
 | `view.setup.digits` | number |  |  |
@@ -6406,6 +6451,28 @@ Scope: `account:manage`.
 | `view.fresh.codes[]` | string |  |  |
 | `view.fresh.handle` | string |  |  |
 | `view.fresh.replacing` | boolean |  |  |
+| `view.hotp` | object |  |  |
+| `view.hotp.detail` | object |  |  |
+| `view.hotp.detail.digits` | number |  |  |
+| `view.hotp.detail.enrolledAt` | number |  |  |
+| `view.hotp.detail.lastUsedAt` | number |  |  |
+| `view.hotp.detail.model` | string |  |  |
+| `view.hotp.detail.serial` | string |  |  |
+| `view.hotp.detail.source` | string |  | `enrolled` (from the QR code or the ykman command) or `pskc-import` (a vendor-provisioned token an administrator imported). |
+| `view.hotp.detail.vendor` | string |  |  |
+| `view.hotp.digits` | integer |  | How many digits a new enrolment's codes have. |
+| `view.hotp.enrolled` | boolean |  | Whether you hold a one-time code token. |
+| `view.hotp.offered` | boolean |  | Whether the authentication policy offers new enrolments (hotp). |
+| `view.hotp.resyncWindow` | integer |  | How far ahead two consecutive codes are searched when you resynchronise (hotp.resyncWindow). |
+| `view.hotp.setup` | object |  | The enrolment in progress, or null. |
+| `view.hotp.setup.counter` | number |  |  |
+| `view.hotp.setup.digits` | number |  |  |
+| `view.hotp.setup.grouped` | string |  |  |
+| `view.hotp.setup.issuer` | string |  |  |
+| `view.hotp.setup.qr` | string |  | The otpauth://hotp URI as an SVG data URI, or empty when it could not be drawn. |
+| `view.hotp.setup.ykman` | string |  | The command that programs a YubiKey's second OTP slot with this secret. |
+| `view.hotp.usable` | boolean |  | Whether this service can check its codes. |
+| `view.hotp.window` | integer |  | How many presses that never reached this service are forgiven (hotp.window). |
 | `view.setup` | object |  |  |
 | `view.setup.algorithm` | string |  |  |
 | `view.setup.digits` | number |  |  |
@@ -6491,6 +6558,28 @@ Scope: `account:manage`.
 | `view.fresh.codes[]` | string |  |  |
 | `view.fresh.handle` | string |  |  |
 | `view.fresh.replacing` | boolean |  |  |
+| `view.hotp` | object |  |  |
+| `view.hotp.detail` | object |  |  |
+| `view.hotp.detail.digits` | number |  |  |
+| `view.hotp.detail.enrolledAt` | number |  |  |
+| `view.hotp.detail.lastUsedAt` | number |  |  |
+| `view.hotp.detail.model` | string |  |  |
+| `view.hotp.detail.serial` | string |  |  |
+| `view.hotp.detail.source` | string |  | `enrolled` (from the QR code or the ykman command) or `pskc-import` (a vendor-provisioned token an administrator imported). |
+| `view.hotp.detail.vendor` | string |  |  |
+| `view.hotp.digits` | integer |  | How many digits a new enrolment's codes have. |
+| `view.hotp.enrolled` | boolean |  | Whether you hold a one-time code token. |
+| `view.hotp.offered` | boolean |  | Whether the authentication policy offers new enrolments (hotp). |
+| `view.hotp.resyncWindow` | integer |  | How far ahead two consecutive codes are searched when you resynchronise (hotp.resyncWindow). |
+| `view.hotp.setup` | object |  | The enrolment in progress, or null. |
+| `view.hotp.setup.counter` | number |  |  |
+| `view.hotp.setup.digits` | number |  |  |
+| `view.hotp.setup.grouped` | string |  |  |
+| `view.hotp.setup.issuer` | string |  |  |
+| `view.hotp.setup.qr` | string |  | The otpauth://hotp URI as an SVG data URI, or empty when it could not be drawn. |
+| `view.hotp.setup.ykman` | string |  | The command that programs a YubiKey's second OTP slot with this secret. |
+| `view.hotp.usable` | boolean |  | Whether this service can check its codes. |
+| `view.hotp.window` | integer |  | How many presses that never reached this service are forgiven (hotp.window). |
 | `view.setup` | object |  |  |
 | `view.setup.algorithm` | string |  |  |
 | `view.setup.digits` | number |  |  |
@@ -10124,7 +10213,7 @@ Scope: `account:manage`.
 | `tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
 | `tokens[].credentials` | list | yes | The caller's own credentials on it. |
 | `tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
-| `tokens[].credentials[].kind` | string | yes | The credential's kind: `fido` or `x509` (later `hotp`, `yubico-otp`, `ssh`, `openpgp`). |
+| `tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token; later `yubico-otp`, `ssh`, `openpgp`). |
 | `tokens[].credentials[].label` | string | yes | Its name, where it has one. |
 | `tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
 | `tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |
@@ -10170,9 +10259,9 @@ Scope: `account:manage`.
 
 `actOnTokens`
 
-**Reports one of your hardware tokens lost, enrols a PIV certificate, or recovers an escrowed key**
+**Reports one of your hardware tokens lost, claims an imported token, enrols a PIV certificate, or recovers an escrowed key**
 
-`lost` marks the token lost and retires every credential of yours on it: its passkeys are removed, its certificates revoked (keyCompromise), a CAEP credential-change is sent for each, and the sign-on sessions they signed in end. `enrol-piv` issues you a PIV slot certificate (`profile`) from a certificate request (`csr`) and, optionally, its YubiKey PIV attestation: the slot's attestation certificate (`attestationCertificate`) and the f9 attestation certificate (`attestationIssuer`). `recover-key` answers your escrowed piv-key-management key for certificate `serial`. `attach-key` notes which of your tokens (`key`) the escrowed key of certificate `serial` was loaded on, so reporting the token lost revokes it. Each asks for a recent sign-in. A refusal carries the page's `view`.
+`claim` (#1955 P4) takes a one-time code token an administrator imported from its vendor's PSKC file: give the `serial` printed on it and a `code` it shows now (rate limited, one refusal for a wrong serial and a wrong code alike), and it becomes your second factor with that code spent. `lost` marks the token lost and retires every credential of yours on it: its passkeys are removed, its certificates revoked (keyCompromise), a CAEP credential-change is sent for each, and the sign-on sessions they signed in end. `enrol-piv` issues you a PIV slot certificate (`profile`) from a certificate request (`csr`) and, optionally, its YubiKey PIV attestation: the slot's attestation certificate (`attestationCertificate`) and the f9 attestation certificate (`attestationIssuer`). `recover-key` answers your escrowed piv-key-management key for certificate `serial`. `attach-key` notes which of your tokens (`key`) the escrowed key of certificate `serial` was loaded on, so reporting the token lost revokes it. Each asks for a recent sign-in. A refusal carries the page's `view`.
 
 The door of the portal's `POST /portal/tokens`.
 
@@ -10189,13 +10278,14 @@ Scope: `account:manage`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `action` | empty, or one of `lost`, or one of `enrol-piv`, or one of `recover-key`, or one of `attach-key` |  | What to do; `lost` where none is named. |
+| `action` | empty, or one of `lost`, or one of `claim`, or one of `enrol-piv`, or one of `recover-key`, or one of `attach-key` |  | What to do; `lost` where none is named. `claim` (#1955 P4) takes an imported one-time code token by its serial and a code it shows now. |
 | `attestationCertificate` | string |  | `enrol-piv`: the slot's attestation certificate, PEM (ykman piv keys attest). |
 | `attestationIssuer` | string |  | `enrol-piv`: the f9 attestation certificate, PEM (ykman piv certificates export f9), and any intermediate after it. |
+| `code` | string |  | `claim`: a code the token shows now. |
 | `csr` | string |  | `enrol-piv`: the PKCS#10 certificate request, PEM. |
 | `key` | string |  | `lost` and `attach-key`: the token's key, `<vendor>/<serial>`. |
 | `profile` | string |  | `enrol-piv`: piv-auth, piv-sign, piv-key-management or piv-card-auth. |
-| `serial` | string |  | `recover-key` and `attach-key`: the escrowed certificate's serial, hex. |
+| `serial` | string |  | `claim`: the serial printed on the token. `recover-key` and `attach-key`: the escrowed certificate's serial, hex. |
 
 **200**: The answer.
 
@@ -10234,7 +10324,7 @@ Scope: `account:manage`.
 | `view.tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
 | `view.tokens[].credentials` | list | yes | The caller's own credentials on it. |
 | `view.tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
-| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido` or `x509` (later `hotp`, `yubico-otp`, `ssh`, `openpgp`). |
+| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token; later `yubico-otp`, `ssh`, `openpgp`). |
 | `view.tokens[].credentials[].label` | string | yes | Its name, where it has one. |
 | `view.tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
 | `view.tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |
@@ -10285,7 +10375,7 @@ Scope: `account:manage`.
 | `view.tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
 | `view.tokens[].credentials` | list | yes | The caller's own credentials on it. |
 | `view.tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
-| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido` or `x509` (later `hotp`, `yubico-otp`, `ssh`, `openpgp`). |
+| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token; later `yubico-otp`, `ssh`, `openpgp`). |
 | `view.tokens[].credentials[].label` | string | yes | Its name, where it has one. |
 | `view.tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
 | `view.tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |
@@ -10356,7 +10446,7 @@ Scope: `account:manage`.
 | `view.tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
 | `view.tokens[].credentials` | list | yes | The caller's own credentials on it. |
 | `view.tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
-| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido` or `x509` (later `hotp`, `yubico-otp`, `ssh`, `openpgp`). |
+| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token; later `yubico-otp`, `ssh`, `openpgp`). |
 | `view.tokens[].credentials[].label` | string | yes | Its name, where it has one. |
 | `view.tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
 | `view.tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |
@@ -10407,7 +10497,7 @@ Scope: `account:manage`.
 | `view.tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
 | `view.tokens[].credentials` | list | yes | The caller's own credentials on it. |
 | `view.tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
-| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido` or `x509` (later `hotp`, `yubico-otp`, `ssh`, `openpgp`). |
+| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token; later `yubico-otp`, `ssh`, `openpgp`). |
 | `view.tokens[].credentials[].label` | string | yes | Its name, where it has one. |
 | `view.tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
 | `view.tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |
@@ -10458,7 +10548,7 @@ Scope: `account:manage`.
 | `view.tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
 | `view.tokens[].credentials` | list | yes | The caller's own credentials on it. |
 | `view.tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
-| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido` or `x509` (later `hotp`, `yubico-otp`, `ssh`, `openpgp`). |
+| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token; later `yubico-otp`, `ssh`, `openpgp`). |
 | `view.tokens[].credentials[].label` | string | yes | Its name, where it has one. |
 | `view.tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
 | `view.tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |

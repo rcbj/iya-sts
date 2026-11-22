@@ -1259,9 +1259,13 @@
     "en": "386404ef0cf5e649",
     "text": "Tokens de hardware"
   },
+  "endpoints.route./admin-api/hardware-tokens/oath.name": {
+    "en": "009f323198517782",
+    "text": "Tokens OATH importados"
+  },
   "endpoints.route./admin-api/hardware-tokens/:action.name": {
-    "en": "33209f967f070175",
-    "text": "Acciones sobre tokens de hardware"
+"en": "33209f967f070175",
+"text": "Acciones sobre tokens de hardware"
   },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",

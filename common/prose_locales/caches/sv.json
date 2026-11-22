@@ -719,6 +719,22 @@
     "en": "cdfb417042891812",
     "text": "ett meddelande som undertrycktes som dubblett av ett som redan köats för samma handling inom mail.dedupWindowS"
   },
+  "caches.store.oath_tokens.inventory.title": {
+    "en": "52f9d22caf2dc03d",
+    "text": "Inventarie över OATH-tokens"
+  },
+  "caches.store.oath_tokens.inventory.description": {
+    "en": "7e1f6a1cdbd27667",
+    "text": "En rad per HOTP- eller TOTP-nyckel som en administratör importerade från en leverantörs PSKC-fröfil (RFC 6030), med leverantör, serienummer och nyckel-id som nyckel: ej tilldelad (hemligheten förseglad), tilldelad en person (hemligheten borttagen, nu på personens post) eller avvecklad."
+  },
+  "caches.store.oath_tokens.inventory.bound": {
+    "en": "cbe61377f99c025d",
+    "text": "Raderna en process har är en cache på 5 000 per sfär; inventariet begränsas av vad administratörer importerar, högst 2 000 nycklar per fil."
+  },
+  "caches.store.oath_tokens.inventory.lifetime": {
+    "en": "4f13467dac65d62f",
+    "text": "Tills en ej tilldelad token tas bort; en tilldelad eller avvecklad token behålls."
+  },
   "caches.store.oauth2.access-token-status.title": {
     "en": "510d919c0bffd0a8",
     "text": "Statusposter för åtkomsttoken"

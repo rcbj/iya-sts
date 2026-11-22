@@ -231,6 +231,30 @@
     "en": "228f7d738861aa3c",
     "text": "May pagbabago sa authenticator-app na tinanggihan dahil sa maling CSRF token"
   },
+  "audit.actions.portal.hotp.started.label": {
+    "en": "62c42316ca23b77d",
+    "text": "May pinakitaan ng bagong secret ng one-time code token"
+  },
+  "audit.actions.portal.hotp.enrolled.label": {
+    "en": "075083e107878395",
+    "text": "May nag-set up ng one-time code token sa sarili niyang account"
+  },
+  "audit.actions.portal.hotp.refused.label": {
+    "en": "5b5a058daa2dcab7",
+    "text": "Hindi nakumpirma ang pag-set up ng isang one-time code token"
+  },
+  "audit.actions.portal.hotp.removed.label": {
+    "en": "133822944d90f1bf",
+    "text": "May nag-alis ng one-time code token sa sarili niyang account"
+  },
+  "audit.actions.portal.hotp.resynced.label": {
+    "en": "912cd583f7760c65",
+    "text": "May nag-resynchronize ng kanyang one-time code token"
+  },
+  "audit.actions.portal.hotp.resync-refused.label": {
+    "en": "01c45765b9c3cd87",
+    "text": "Hindi na-resynchronize ang isang one-time code token"
+  },
   "audit.actions.portal.activate.mfa.started.label": {
     "en": "df561a24375c8165",
     "text": "May authenticator-app secret na ipinakita habang ginagamit ang isang activation link"
@@ -503,31 +527,47 @@
     "en": "f7fb5461e2325e1e",
     "text": "Iniulat na nawala ang isang hardware token at inalis ang mga credential nito"
   },
-  "audit.actions.openpgp.challenge.label": {
+"audit.actions.oath-token.import.label": {
+    "en": "4da380e22dff30ec",
+    "text": "Na-import, o tinanggihan, ang PSKC seed file ng isang vendor"
+  },
+"audit.actions.oath-token.assign.label": {
+    "en": "19b678e9bbc10747",
+    "text": "Na-assign sa isang tao, o na-claim niya, ang isang na-import na OATH token"
+  },
+"audit.actions.oath-token.claim.label": {
+    "en": "5c54ac8752e21682",
+    "text": "Tinanggihan ang pag-claim ng isang tao sa isang na-import na OATH token"
+  },
+"audit.actions.oath-token.remove.label": {
+    "en": "92d69a1a2d848892",
+    "text": "Inalis sa inventory ang isang hindi naka-assign na OATH token"
+  },
+"audit.actions.openpgp.challenge.label": {
     "en": "454a22b5bcd9d6a2",
     "text": "May na-issue na challenge para sa pagrehistro ng OpenPGP key"
   },
-  "audit.actions.openpgp.key-registered.label": {
+"audit.actions.openpgp.key-registered.label": {
     "en": "1ed8de1f8777a015",
     "text": "May OpenPGP key na nairehistro batay sa proof of possession"
   },
-  "audit.actions.openpgp.key-refused.label": {
+"audit.actions.openpgp.key-refused.label": {
     "en": "f1e7e3c6808ba33b",
     "text": "May OpenPGP key na hindi nairehistro"
   },
-  "audit.actions.openpgp.key-removed.label": {
+"audit.actions.openpgp.key-removed.label": {
     "en": "89a284fa6508eae4",
     "text": "May OpenPGP key na inalis"
   },
-  "audit.actions.openpgp.publication.label": {
+"audit.actions.openpgp.publication.label": {
     "en": "f6d12f16eca6796a",
     "text": "May OpenPGP key na inilathala sa, o binawi mula sa, Web Key Directory"
   },
-  "audit.actions.openpgp.mail-encryption.label": {
+"audit.actions.openpgp.mail-encryption.label": {
     "en": "ba0fb7a4133d94e2",
     "text": "Binago kung paano naka-encrypt ang mail para sa isang tao"
   },
-  "audit.actions.openpgp.smime-certificate.label": {
+"audit.actions.openpgp.smime-certificate.label": {
     "en": "663072a33ce1e178",
     "text": "Naitakda o naalis ang S/MIME certificate ng isang tao"
   },
@@ -710,6 +750,10 @@
   "audit.actions.admin.mfa.totp.cleared.label": {
     "en": "478c7ee15248637f",
     "text": "May operator na nag-clear ng authenticator app ng isang tao"
+  },
+  "audit.actions.admin.mfa.hotp.cleared.label": {
+    "en": "027dab5576016e61",
+    "text": "Ni-clear ng isang operator ang one-time code token ng isang tao"
   },
   "audit.actions.admin.mfa.key.cleared.label": {
     "en": "d62700d9f7751e8b",

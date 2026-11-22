@@ -1002,5 +1002,11 @@
   "mfaSection.pubDeactivate": "Deaktivieren",
   "mfaSection.pubDeactivateTip": "Deaktiviert dieses DID dauerhaft: seine Adresse antwortet mit 410 Gone, seine Historie bleibt auflösbar, und es meldet die Person nicht mehr an und wird nicht mehr im Claim did herausgegeben.",
   "mfaSection.pubNeedsWrite": "Zum Deaktivieren ist <strong>Admin Write</strong> nötig.",
-  "keySource.issuedFromCsr": "Hier aus der eigenen Anfrage zertifiziert &mdash; die Issuing CA dieses Bereichs hat einen Schlüssel zertifiziert, den sie erzeugt haben. Sie halten den privaten Schlüssel; dieser Dienst hatte ihn nie."
+  "keySource.issuedFromCsr": "Hier aus der eigenen Anfrage zertifiziert &mdash; die Issuing CA dieses Bereichs hat einen Schlüssel zertifiziert, den sie erzeugt haben. Sie halten den privaten Schlüssel; dieser Dienst hatte ihn nie.",
+  "mfaSection.hotpHeading": "Einmalcode-Token (HOTP)",
+  "mfaSection.hotpSource": "Bereitgestellt",
+  "mfaSection.hotpImported": "Aus der Seed-Datei des Herstellers importiert: {vendor}, Seriennummer {serial}",
+  "mfaSection.hotpEnrolled": "Von der Person eingerichtet (QR-Code oder ykman)",
+  "mfaSection.hotpUnusable": "Sein Geheimnis kann hier nicht gelesen werden, daher werden seine Codes abgelehnt.",
+  "mfaSection.clearHotp": "Einmalcode-Token löschen"
 }

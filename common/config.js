@@ -3175,6 +3175,39 @@ const SETTINGS = [
                  'minutes is long enough to find a phone and short enough ' +
                  'that an abandoned enrolment does not linger.' },
 
+  // #1955 P4: COUNTER-BASED CODES (RFC 4226), `common/hotp.ts`. The digits
+  // are copied onto an enrolment (the token's); the two windows are policy,
+  // read live, so changing them invalidates nothing anybody enrolled.
+  { key: 'hotp.digits', group: 'TOTP MFA',
+    label: 'HOTP code length (digits)', path: 'hotp.digits',
+    env: 'STS_HOTP_DIGITS', type: 'int', dflt: 6, runtime: true,
+    min: 6, max: 8,
+    description: 'How many digits a NEW counter-based token enrolment ' +
+                 '(RFC 4226) produces: a YubiKey OTP slot programmed from ' +
+                 'the portal takes 6 or 8. A token imported from its ' +
+                 'vendor\'s PSKC file keeps the length the file names.' },
+
+  { key: 'hotp.window', group: 'TOTP MFA',
+    label: 'HOTP look-ahead (codes)', path: 'hotp.window',
+    env: 'STS_HOTP_WINDOW', type: 'int', dflt: 10, runtime: true,
+    min: 0, max: 100,
+    description: 'RFC 4226 section 7.4\'s look-ahead: how many presses of ' +
+                 'a counter-based token that never reached this service ' +
+                 'are forgiven. A code at the stored counter or up to this ' +
+                 'many after it is accepted, and the counter moves past ' +
+                 'it; a code before it never is. Zero accepts only the ' +
+                 'next code. Live, for every enrolment.' },
+
+  { key: 'hotp.resyncWindow', group: 'TOTP MFA',
+    label: 'HOTP resynchronisation window (codes)',
+    path: 'hotp.resyncWindow', env: 'STS_HOTP_RESYNC_WINDOW', type: 'int',
+    dflt: 100, runtime: true, min: 2, max: 1000,
+    description: 'How far ahead two CONSECUTIVE codes are searched for ' +
+                 'when a person resynchronises a token that fell out of ' +
+                 'the look-ahead (RFC 4226 section 7.4). Two codes in a ' +
+                 'row are far harder to guess than one, which is what ' +
+                 'makes the larger search safe. Live.' },
+
   // ---------------------------------------------------------------------
   // RECOVERY CODES (2026-09-10). THE THIRD SECOND FACTOR, AND THE ONLY
   // MECHANISM IN THIS SERVICE THAT NO SPECIFICATION DEFINES.
@@ -7339,6 +7372,19 @@ const SETTINGS = [
                  'earns hwk, and sc for a key on a smart card, only from ' +
                  'evidence in either case.' },
 
+  // #1955 P4: a vendor's PSKC seed file (RFC 6030) with its secrets in
+  // the clear. `common/mode.js`'s `refusesPlaintextSeedFiles()` reads it.
+  { key: 'pskc.allowPlaintextImport', group: 'Devices',
+    label: 'Accept plaintext PSKC seed files in product mode',
+    env: 'STS_PSKC_ALLOW_PLAINTEXT_IMPORT', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Whether an administrator may import a PSKC seed file ' +
+                 '(RFC 6030) whose token secrets are NOT encrypted, in ' +
+                 'product mode. Off by default: such a file has been a ' +
+                 'list of working second factors on every disk and mailbox ' +
+                 'it passed through, and a vendor can encrypt it under a ' +
+                 'pre-shared key or a password (sections 6.1 and 6.2). ' +
+                 'Development mode accepts one regardless.' },
   // #1955 P2: YUBIKEY PIV KEY ATTESTATION, THE SLOT PROFILES' RULES, 9d KEY
   // ESCROW (D7) AND THE OUTSIDE PIV / CAC MAPPING (D8). Every one is off or
   // empty by default, so a realm behaves as it did before #1955 until an

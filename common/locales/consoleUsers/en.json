@@ -1002,5 +1002,11 @@
   "mfaSection.pubDeactivate": "Deactivate",
   "mfaSection.pubDeactivateTip": "Deactivates this DID for good: its address answers 410 Gone, its history stays resolvable, and it no longer signs the person in or is released in the did claim.",
   "mfaSection.pubNeedsWrite": "Deactivating one needs <strong>Admin Write</strong>.",
-  "keySource.issuedFromCsr": "Certified here from their own request &mdash; this realm&rsquo;s Issuing CA certified a key they generated. They hold the private key; this service never had it."
+  "keySource.issuedFromCsr": "Certified here from their own request &mdash; this realm&rsquo;s Issuing CA certified a key they generated. They hold the private key; this service never had it.",
+  "mfaSection.hotpHeading": "One-time code token (HOTP)",
+  "mfaSection.hotpSource": "Provisioned",
+  "mfaSection.hotpImported": "Imported from the vendor's seed file: {vendor} serial {serial}",
+  "mfaSection.hotpEnrolled": "Enrolled by the person (QR code or ykman)",
+  "mfaSection.hotpUnusable": "Its secret cannot be read here, so its codes are refused.",
+  "mfaSection.clearHotp": "Clear the one-time code token"
 }

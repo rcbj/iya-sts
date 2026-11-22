@@ -1021,13 +1021,13 @@ Scope: `admin:read`.
 | `tokens[].credentials` | list | yes |  |
 | `tokens[].credentials[].addedAt` | string | yes |  |
 | `tokens[].credentials[].holder` | string | yes | Who registered it, by username. |
-| `tokens[].credentials[].kind` | string | yes | `fido` or `x509` (later `hotp`, `yubico-otp`, `ssh`, `openpgp`). |
+| `tokens[].credentials[].kind` | string | yes | `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token; later `yubico-otp`, `ssh`, `openpgp`). |
 | `tokens[].credentials[].label` | string | yes |  |
-| `tokens[].credentials[].ref` | string | yes | The credential id, or the certificate's serial in lower-case hex. |
+| `tokens[].credentials[].ref` | string | yes | The credential id, the certificate's serial in lower-case hex, or an imported OATH token's inventory key. |
 | `tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
 | `tokens[].credentials[].smartCard` | boolean | yes | Whether the evidence says its key is on a smart card. |
 | `tokens[].credentials[].source` | string | yes | The evidence source it was recorded from. |
-| `tokens[].evidenceSources` | list | yes | Where its serial came from: `fido-enterprise-attestation`, `piv-attestation`, `vendor-import`. |
+| `tokens[].evidenceSources` | list | yes | Where its serial came from: `fido-enterprise-attestation`, `piv-attestation`, `vendor-import`, `pskc-import`, `ssh-security-key-attestation`. |
 | `tokens[].evidenceSources[]` | string |  |  |
 | `tokens[].firmware` | string | yes |  |
 | `tokens[].formFactor` | string | yes |  |
@@ -1041,6 +1041,88 @@ Scope: `admin:read`.
 | `tokens[].status` | string | yes | `active` or `lost`. |
 | `tokens[].updatedAt` | string | yes |  |
 | `tokens[].vendor` | string | yes |  |
+
+## POST /admin-api/hardware-tokens/assign-oath
+
+`assignOathToken`
+
+**Assign an imported OATH token to a person (#1955)**
+
+Gives an unassigned token to a named person: its secret becomes their credential of its kind (an HOTP token their one-time code token, a TOTP token their authenticator, replacing an app), the hardware token register records it with evidence `pskc-import`, so its codes earn amr `hwk` beside `otp` while the token is active, and the inventory drops its copy of the secret. 404 for no such token, 409 for one already assigned or retired, 400 for a name with no entry or a kind the authentication policy has off.
+
+**Mirrors** `POST /admin/hardware-tokens` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `key` | string | yes | The token, `<vendor>/<serial>/<key id>`. |
+| `username` | string | yes | The person it is given to. |
+
+**200**: The token is assigned.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `message` | string | yes |  |
+| `ok` | boolean | yes |  |
+| `token` | object | yes |  |
+| `token.algorithm` | string | yes | The HMAC: `SHA1`, `SHA256` or `SHA512`. |
+| `token.assignedAt` | string | yes |  |
+| `token.assignedVia` | string | yes | `api`, `console` or `claim` (the person took it on the portal). |
+| `token.digits` | integer | yes |  |
+| `token.holder` | string | yes | Who it is assigned to, by username; empty while unassigned. |
+| `token.importedAt` | string | yes |  |
+| `token.importedBy` | string | yes |  |
+| `token.issuer` | string | yes |  |
+| `token.key` | string | yes | `<vendor>/<serial>/<key id>`, what `assignOathToken` and `removeOathToken` name. |
+| `token.keyId` | string | yes | The key's Id in the seed file. |
+| `token.kind` | string | yes | `hotp` or `totp`. |
+| `token.model` | string | yes |  |
+| `token.period` | integer | yes | A TOTP token's time step in seconds; 0 for HOTP. |
+| `token.protection` | string | yes | How the seed file protected it: `none`, `pre-shared` or `pbe`. |
+| `token.retiredAt` | string | yes |  |
+| `token.serial` | string | yes | The device serial the seed file's DeviceInfo names: what is printed on the token, and what a person claims it by. |
+| `token.status` | string | yes | `unassigned`, `assigned` or `retired` (its hardware token was reported lost). |
+| `token.vendor` | string | yes |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**404**: No such token in this realm's inventory.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**409**: The token is already assigned or retired.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
 
 ## POST /admin-api/hardware-tokens/enrol-piv
 
@@ -1158,6 +1240,75 @@ Scope: `admin:read`.
 | `escrowed[].subject` | string | yes |  |
 | `username` | string | yes |  |
 
+## POST /admin-api/hardware-tokens/import-pskc
+
+`importPskcSeedFile`
+
+**Import a vendor's PSKC seed file (#1955)**
+
+Reads an RFC 6030 KeyContainer and keeps every HOTP and TOTP key in it as an UNASSIGNED token, keyed by vendor, serial and key id, its secret sealed under the key-encryption key. A file encrypted under a pre-shared key (section 6.1, AES-CBC or AES Key Wrap) is opened with `preSharedKey`, in hexadecimal or base64; one protected by a password (section 6.2, PBKDF2) with `password`. Its MAC is checked first (section 6.1.1), so a wrong key or an altered file imports nothing. Neither the key nor the password is ever stored, logged or answered. A plaintext file is refused in product mode unless pskc.allowPlaintextImport is on. A key that cannot be imported (a PIN key, no serial, already in the inventory) is in `skipped` with the reason; the rest are imported.
+
+**Mirrors** `POST /admin/hardware-tokens` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `password` | string |  | The password, for a file protected by one. |
+| `preSharedKey` | string |  | The pre-shared key (16, 24 or 32 octets), in hexadecimal or base64, for a file encrypted under one. |
+| `pskc` | string | yes | The seed file's XML text. |
+
+**200**: What was imported and what was skipped.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `imported` | list | yes |  |
+| `imported[].algorithm` | string | yes | The HMAC: `SHA1`, `SHA256` or `SHA512`. |
+| `imported[].assignedAt` | string | yes |  |
+| `imported[].assignedVia` | string | yes | `api`, `console` or `claim` (the person took it on the portal). |
+| `imported[].digits` | integer | yes |  |
+| `imported[].holder` | string | yes | Who it is assigned to, by username; empty while unassigned. |
+| `imported[].importedAt` | string | yes |  |
+| `imported[].importedBy` | string | yes |  |
+| `imported[].issuer` | string | yes |  |
+| `imported[].key` | string | yes | `<vendor>/<serial>/<key id>`, what `assignOathToken` and `removeOathToken` name. |
+| `imported[].keyId` | string | yes | The key's Id in the seed file. |
+| `imported[].kind` | string | yes | `hotp` or `totp`. |
+| `imported[].model` | string | yes |  |
+| `imported[].period` | integer | yes | A TOTP token's time step in seconds; 0 for HOTP. |
+| `imported[].protection` | string | yes | How the seed file protected it: `none`, `pre-shared` or `pbe`. |
+| `imported[].retiredAt` | string | yes |  |
+| `imported[].serial` | string | yes | The device serial the seed file's DeviceInfo names: what is printed on the token, and what a person claims it by. |
+| `imported[].status` | string | yes | `unassigned`, `assigned` or `retired` (its hardware token was reported lost). |
+| `imported[].vendor` | string | yes |  |
+| `message` | string | yes |  |
+| `ok` | boolean | yes |  |
+| `protection` | string | yes | `none`, `pre-shared` or `pbe`. |
+| `skipped` | list | yes |  |
+| `skipped[].index` | integer | yes | The key package's place in the file, from 0. |
+| `skipped[].keyId` | string | yes |  |
+| `skipped[].serial` | string | yes |  |
+| `skipped[].why` | string | yes | Why it was not imported, in English. |
+
+**400**: The file was refused whole; `errors` says why and nothing was imported.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
 ## POST /admin-api/hardware-tokens/lost
 
 `reportHardwareTokenLost`
@@ -1208,13 +1359,13 @@ Scope: `admin:write`.
 | `token.credentials` | list | yes |  |
 | `token.credentials[].addedAt` | string | yes |  |
 | `token.credentials[].holder` | string | yes | Who registered it, by username. |
-| `token.credentials[].kind` | string | yes | `fido` or `x509` (later `hotp`, `yubico-otp`, `ssh`, `openpgp`). |
+| `token.credentials[].kind` | string | yes | `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token; later `yubico-otp`, `ssh`, `openpgp`). |
 | `token.credentials[].label` | string | yes |  |
-| `token.credentials[].ref` | string | yes | The credential id, or the certificate's serial in lower-case hex. |
+| `token.credentials[].ref` | string | yes | The credential id, the certificate's serial in lower-case hex, or an imported OATH token's inventory key. |
 | `token.credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
 | `token.credentials[].smartCard` | boolean | yes | Whether the evidence says its key is on a smart card. |
 | `token.credentials[].source` | string | yes | The evidence source it was recorded from. |
-| `token.evidenceSources` | list | yes | Where its serial came from: `fido-enterprise-attestation`, `piv-attestation`, `vendor-import`. |
+| `token.evidenceSources` | list | yes | Where its serial came from: `fido-enterprise-attestation`, `piv-attestation`, `vendor-import`, `pskc-import`, `ssh-security-key-attestation`. |
 | `token.evidenceSources[]` | string |  |  |
 | `token.firmware` | string | yes |  |
 | `token.formFactor` | string | yes |  |
@@ -1258,6 +1409,65 @@ Scope: `admin:write`.
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
 | `ok` | boolean |  |  |
+
+## GET /admin-api/hardware-tokens/oath
+
+`getOathTokens`
+
+**The realm's imported OATH tokens (#1955)**
+
+Directory → Hardware tokens' OATH tab: `tokens`, one page of the HOTP and TOTP tokens administrators imported from vendors' PSKC seed files (RFC 6030) — vendor, serial, key id, kind, digits, status (`unassigned`, `assigned`, `retired`) and who holds it — newest first, with `paging`. `capped` as `getHardwareTokens` has it. No secret is ever in this answer.
+
+**Mirrors** `GET /admin/hardware-tokens` on the admin console.
+
+Scope: `admin:read`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `q` | query | string |  | A serial, matched exactly, or a username for the tokens assigned to that person; empty for every token. |
+| `status` | query | one of empty, `unassigned`, `assigned`, `retired` |  | `unassigned`, `assigned` or `retired`; empty for all three. |
+| `page` | query | integer |  | Which page; a page past the end answers the last one. |
+| `per` | query | integer |  | Rows per page, 50 by default and at most 300. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**200**: The page of tokens.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `capped` | boolean | yes |  |
+| `paging` | object | yes |  |
+| `paging.firstRow` | integer |  |  |
+| `paging.lastRow` | integer |  |  |
+| `paging.noun` | string |  |  |
+| `paging.page` | integer |  |  |
+| `paging.pages` | integer |  |  |
+| `paging.param` | string |  |  |
+| `paging.perPage` | integer |  |  |
+| `paging.total` | integer |  |  |
+| `q` | string | yes |  |
+| `status` | string | yes |  |
+| `tokens` | list | yes |  |
+| `tokens[].algorithm` | string | yes | The HMAC: `SHA1`, `SHA256` or `SHA512`. |
+| `tokens[].assignedAt` | string | yes |  |
+| `tokens[].assignedVia` | string | yes | `api`, `console` or `claim` (the person took it on the portal). |
+| `tokens[].digits` | integer | yes |  |
+| `tokens[].holder` | string | yes | Who it is assigned to, by username; empty while unassigned. |
+| `tokens[].importedAt` | string | yes |  |
+| `tokens[].importedBy` | string | yes |  |
+| `tokens[].issuer` | string | yes |  |
+| `tokens[].key` | string | yes | `<vendor>/<serial>/<key id>`, what `assignOathToken` and `removeOathToken` name. |
+| `tokens[].keyId` | string | yes | The key's Id in the seed file. |
+| `tokens[].kind` | string | yes | `hotp` or `totp`. |
+| `tokens[].model` | string | yes |  |
+| `tokens[].period` | integer | yes | A TOTP token's time step in seconds; 0 for HOTP. |
+| `tokens[].protection` | string | yes | How the seed file protected it: `none`, `pre-shared` or `pbe`. |
+| `tokens[].retiredAt` | string | yes |  |
+| `tokens[].serial` | string | yes | The device serial the seed file's DeviceInfo names: what is printed on the token, and what a person claims it by. |
+| `tokens[].status` | string | yes | `unassigned`, `assigned` or `retired` (its hardware token was reported lost). |
+| `tokens[].vendor` | string | yes |  |
 
 ## POST /admin-api/hardware-tokens/recover-key
 
@@ -1328,6 +1538,69 @@ Scope: `admin:write`.
 | `ok` | boolean |  |  |
 
 **503**: The escrowed key could not be opened.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+## POST /admin-api/hardware-tokens/remove-oath
+
+`removeOathToken`
+
+**Remove an unassigned OATH token from the inventory (#1955)**
+
+Removes a token imported by mistake, or a retired one. An assigned token is refused (409): it is retired by reporting its hardware token lost (`reportHardwareTokenLost`), which also takes the secret off its holder's entry. 404 for no such token.
+
+**Mirrors** `POST /admin/hardware-tokens` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `key` | string | yes | The token, `<vendor>/<serial>/<key id>`. |
+
+**200**: The token is removed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `key` | string | yes |  |
+| `message` | string | yes |  |
+| `ok` | boolean | yes |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**404**: No such token in this realm's inventory.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**409**: The token is assigned.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|

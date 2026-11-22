@@ -231,6 +231,30 @@
     "en": "228f7d738861aa3c",
     "text": "En ändring av autentiseringsappen avvisades på grund av en felaktig CSRF-token"
   },
+  "audit.actions.portal.hotp.started.label": {
+    "en": "62c42316ca23b77d",
+    "text": "Någon visades en ny hemlighet för en engångskodstoken"
+  },
+  "audit.actions.portal.hotp.enrolled.label": {
+    "en": "075083e107878395",
+    "text": "Någon konfigurerade en engångskodstoken på sitt eget konto"
+  },
+  "audit.actions.portal.hotp.refused.label": {
+    "en": "5b5a058daa2dcab7",
+    "text": "En konfiguration av en engångskodstoken bekräftades inte"
+  },
+  "audit.actions.portal.hotp.removed.label": {
+    "en": "133822944d90f1bf",
+    "text": "Någon tog bort engångskodstoken från sitt eget konto"
+  },
+  "audit.actions.portal.hotp.resynced.label": {
+    "en": "912cd583f7760c65",
+    "text": "Någon synkroniserade om sin engångskodstoken"
+  },
+  "audit.actions.portal.hotp.resync-refused.label": {
+    "en": "01c45765b9c3cd87",
+    "text": "En engångskodstoken synkroniserades inte om"
+  },
   "audit.actions.portal.activate.mfa.started.label": {
     "en": "df561a24375c8165",
     "text": "En hemlighet för en autentiseringsapp visades medan en aktiveringslänk användes"
@@ -503,31 +527,47 @@
     "en": "f7fb5461e2325e1e",
     "text": "En maskinvarutoken anmäldes förlorad och dess inloggningsuppgifter återkallades"
   },
-  "audit.actions.openpgp.challenge.label": {
+"audit.actions.oath-token.import.label": {
+    "en": "4da380e22dff30ec",
+    "text": "En leverantörs PSKC-fröfil importerades, eller avvisades"
+  },
+"audit.actions.oath-token.assign.label": {
+    "en": "19b678e9bbc10747",
+    "text": "En importerad OATH-token tilldelades en person, eller en person gjorde anspråk på den"
+  },
+"audit.actions.oath-token.claim.label": {
+    "en": "5c54ac8752e21682",
+    "text": "En persons anspråk på en importerad OATH-token avvisades"
+  },
+"audit.actions.oath-token.remove.label": {
+    "en": "92d69a1a2d848892",
+    "text": "En ej tilldelad OATH-token togs bort från inventariet"
+  },
+"audit.actions.openpgp.challenge.label": {
     "en": "454a22b5bcd9d6a2",
     "text": "En utmaning för registrering av OpenPGP-nyckel utfärdades"
   },
-  "audit.actions.openpgp.key-registered.label": {
+"audit.actions.openpgp.key-registered.label": {
     "en": "1ed8de1f8777a015",
     "text": "En OpenPGP-nyckel registrerades på ett innehavsbevis"
   },
-  "audit.actions.openpgp.key-refused.label": {
+"audit.actions.openpgp.key-refused.label": {
     "en": "f1e7e3c6808ba33b",
     "text": "En OpenPGP-nyckel registrerades inte"
   },
-  "audit.actions.openpgp.key-removed.label": {
+"audit.actions.openpgp.key-removed.label": {
     "en": "89a284fa6508eae4",
     "text": "En OpenPGP-nyckel togs bort"
   },
-  "audit.actions.openpgp.publication.label": {
+"audit.actions.openpgp.publication.label": {
     "en": "f6d12f16eca6796a",
     "text": "En OpenPGP-nyckel publicerades i, eller drogs tillbaka från, Web Key Directory"
   },
-  "audit.actions.openpgp.mail-encryption.label": {
+"audit.actions.openpgp.mail-encryption.label": {
     "en": "ba0fb7a4133d94e2",
     "text": "Hur e-post till en person krypteras ändrades"
   },
-  "audit.actions.openpgp.smime-certificate.label": {
+"audit.actions.openpgp.smime-certificate.label": {
     "en": "663072a33ce1e178",
     "text": "En persons S/MIME-certifikat angavs eller togs bort"
   },
@@ -710,6 +750,10 @@
   "audit.actions.admin.mfa.totp.cleared.label": {
     "en": "478c7ee15248637f",
     "text": "En operatör rensade någons autentiseringsapp"
+  },
+  "audit.actions.admin.mfa.hotp.cleared.label": {
+    "en": "027dab5576016e61",
+    "text": "En operatör rensade någons engångskodstoken"
   },
   "audit.actions.admin.mfa.key.cleared.label": {
     "en": "d62700d9f7751e8b",

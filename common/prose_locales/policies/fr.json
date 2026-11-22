@@ -315,6 +315,14 @@
     "en": "ea01b0588ad42047",
     "text": "Un code à usage unique RFC 6238. Jamais un premier facteur : ce service détient le même secret partagé que l’application. Désactivé ici, personne ne peut en ENREGISTRER un ; une personne qui en détient déjà un doit toujours le fournir, car un interrupteur qui ramènerait chaque compte enregistré à un simple mot de passe ferait autre chose que ce qu’il annonce (cette ligne a remplacé totp.enabled, et en conserve le contrat)."
   },
+  "authn.FIELDS.hotpSecondFactor.label": {
+    "en": "8884fbb478be14f1",
+    "text": "Jeton de codes à usage unique (HOTP) — comme deuxième facteur"
+  },
+  "authn.FIELDS.hotpSecondFactor.what": {
+    "en": "608274a83bf567cd",
+    "text": "Un code à usage unique RFC 4226 provenant d’un jeton à compteur (#1955) : l’emplacement OTP d’une YubiKey, ou le jeton d’un fournisseur qu’un administrateur a importé depuis un fichier de semences PSKC. Jamais un premier facteur. Désactivé ici, personne ne peut en ENRÔLER ni en réclamer un ; une personne qui en détient déjà un se le voit toujours demander, comme le détenteur d’une application d’authentification."
+  },
   "authn.FIELDS.recoveryCodeSecondFactor.label": {
     "en": "ee9982b48a9c6a90",
     "text": "Code de récupération — comme second facteur"
@@ -495,6 +503,10 @@
     "en": "ea01b0588ad42047",
     "text": "Un code à usage unique RFC 6238. Jamais un premier facteur : ce service détient le même secret partagé que l’application. Désactivé ici, personne ne peut en ENREGISTRER un ; une personne qui en détient déjà un doit toujours le fournir, car un interrupteur qui ramènerait chaque compte enregistré à un simple mot de passe ferait autre chose que ce qu’il annonce (cette ligne a remplacé totp.enabled, et en conserve le contrat)."
   },
+  "authn.SCHEMA.attributes.stsAuthnHotpSecondFactor.what": {
+    "en": "608274a83bf567cd",
+    "text": "Un code à usage unique RFC 4226 provenant d’un jeton à compteur (#1955) : l’emplacement OTP d’une YubiKey, ou le jeton d’un fournisseur qu’un administrateur a importé depuis un fichier de semences PSKC. Jamais un premier facteur. Désactivé ici, personne ne peut en ENRÔLER ni en réclamer un ; une personne qui en détient déjà un se le voit toujours demander, comme le détenteur d’une application d’authentification."
+  },
   "authn.SCHEMA.attributes.stsAuthnRecoveryCodeSecondFactor.what": {
     "en": "e93ab2adc3e581bd",
     "text": "Un code à usage unique tiré d’un jeu que la personne a généré. Désactivé ici, aucun nouveau jeu ne peut être généré ; un jeu déjà détenu fonctionne toujours (cette ligne a remplacé backupCodes.enabled, et en conserve le contrat)."
@@ -568,8 +580,8 @@
     "text": "Sur une politique d’authentification NOMMÉE (#1148, #1237) : un mécanisme de premier facteur qu’autorise une connexion à laquelle elle s’applique — lorsque l’application (appAuthnPolicy) ou l’un des groupes de la personne (stsAuthnPolicy) la nomme et que sa priorité est la plus faible de celles nommées — password, password-mfa, webauthn, attested-hardware (une clé d'accès ou un certificat sur un jeton matériel prouvé par attestation, #1955), spnego, wallet ou federation, une valeur chacun. Si aucun n’est indiqué, tous ceux qu’autorise le domaine le sont."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicySecondFactor.what": {
-    "en": "7c8e4d8b4cce7c08",
-    "text": "Sur une politique d’authentification NOMMÉE (#1148, #1237) : un second facteur qu’autorise une connexion à laquelle elle s’applique — lorsque l’application (appAuthnPolicy) ou l’un des groupes de la personne (stsAuthnPolicy) la nomme et que sa priorité est la plus faible de celles nommées — password, securityKey, totp, recoveryCode, emailCode, emailLink ou wallet, une valeur chacun. Si aucun n’est indiqué, la politique d’authentification du domaine reste telle quelle."
+    "en": "e0ae8297bb01119f",
+    "text": "Sur une politique d’authentification NOMMÉE (#1148, #1237) : un deuxième facteur qu’autorise une connexion à laquelle elle s’applique — là où l’application (appAuthnPolicy) ou l’un des groupes de la personne (stsAuthnPolicy) la nomme et où sa priorité est la plus basse nommée — password, securityKey, totp, hotp, recoveryCode, emailCode, emailLink ou wallet, une valeur chacun. Sans valeur, la politique d’authentification du domaine reste inchangée."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicyPrecedence.what": {
     "en": "afff5dad656a9845",
@@ -614,6 +626,14 @@
   "authn.MECHANISMS.totp.what": {
     "en": "ea01b0588ad42047",
     "text": "Un code à usage unique RFC 6238. Jamais un premier facteur : ce service détient le même secret partagé que l’application. Désactivé ici, personne ne peut en ENREGISTRER un ; une personne qui en détient déjà un doit toujours le fournir, car un interrupteur qui ramènerait chaque compte enregistré à un simple mot de passe ferait autre chose que ce qu’il annonce (cette ligne a remplacé totp.enabled, et en conserve le contrat)."
+  },
+  "authn.MECHANISMS.hotp.label": {
+    "en": "f0e2ca73efb6f1c5",
+    "text": "Jeton de codes à usage unique (HOTP)"
+  },
+  "authn.MECHANISMS.hotp.what": {
+    "en": "608274a83bf567cd",
+    "text": "Un code à usage unique RFC 4226 provenant d’un jeton à compteur (#1955) : l’emplacement OTP d’une YubiKey, ou le jeton d’un fournisseur qu’un administrateur a importé depuis un fichier de semences PSKC. Jamais un premier facteur. Désactivé ici, personne ne peut en ENRÔLER ni en réclamer un ; une personne qui en détient déjà un se le voit toujours demander, comme le détenteur d’une application d’authentification."
   },
   "authn.MECHANISMS.recoveryCode.label": {
     "en": "5bda8302b5ecf4d3",

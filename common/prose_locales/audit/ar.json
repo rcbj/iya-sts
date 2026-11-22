@@ -231,6 +231,30 @@
     "en": "228f7d738861aa3c",
     "text": "رُفض تغيير تطبيق المصادقة بسبب رمز CSRF غير صالح"
   },
+  "audit.actions.portal.hotp.started.label": {
+    "en": "62c42316ca23b77d",
+    "text": "عُرض على شخص ما سرّ جديد لرمز الرموز لمرة واحدة"
+  },
+  "audit.actions.portal.hotp.enrolled.label": {
+    "en": "075083e107878395",
+    "text": "أعدّ شخص ما رمزًا للرموز لمرة واحدة على حسابه"
+  },
+  "audit.actions.portal.hotp.refused.label": {
+    "en": "5b5a058daa2dcab7",
+    "text": "لم يُؤكَّد إعداد رمز للرموز لمرة واحدة"
+  },
+  "audit.actions.portal.hotp.removed.label": {
+    "en": "133822944d90f1bf",
+    "text": "أزال شخص ما رمز الرموز لمرة واحدة من حسابه"
+  },
+  "audit.actions.portal.hotp.resynced.label": {
+    "en": "912cd583f7760c65",
+    "text": "أعاد شخص ما مزامنة رمز الرموز لمرة واحدة الخاص به"
+  },
+  "audit.actions.portal.hotp.resync-refused.label": {
+    "en": "01c45765b9c3cd87",
+    "text": "لم تُعَد مزامنة رمز للرموز لمرة واحدة"
+  },
   "audit.actions.portal.activate.mfa.started.label": {
     "en": "df561a24375c8165",
     "text": "عُرض سر تطبيق مصادقة أثناء استهلاك رابط تفعيل"
@@ -503,31 +527,47 @@
     "en": "f7fb5461e2325e1e",
     "text": "أُبلغ عن فقد رمز مادي وأُبطلت بيانات اعتماده"
   },
-  "audit.actions.openpgp.challenge.label": {
+"audit.actions.oath-token.import.label": {
+    "en": "4da380e22dff30ec",
+    "text": "استُورد ملف بذور PSKC لمورّد، أو رُفض"
+  },
+"audit.actions.oath-token.assign.label": {
+    "en": "19b678e9bbc10747",
+    "text": "أُسند رمز OATH مستورد إلى شخص، أو طالب به شخص"
+  },
+"audit.actions.oath-token.claim.label": {
+    "en": "5c54ac8752e21682",
+    "text": "رُفضت مطالبة شخص برمز OATH مستورد"
+  },
+"audit.actions.oath-token.remove.label": {
+    "en": "92d69a1a2d848892",
+    "text": "أُزيل رمز OATH غير مُسنَد من المخزون"
+  },
+"audit.actions.openpgp.challenge.label": {
     "en": "454a22b5bcd9d6a2",
     "text": "صدر تحدٍّ لتسجيل مفتاح OpenPGP"
   },
-  "audit.actions.openpgp.key-registered.label": {
+"audit.actions.openpgp.key-registered.label": {
     "en": "1ed8de1f8777a015",
     "text": "سُجّل مفتاح OpenPGP بناءً على إثبات حيازة"
   },
-  "audit.actions.openpgp.key-refused.label": {
+"audit.actions.openpgp.key-refused.label": {
     "en": "f1e7e3c6808ba33b",
     "text": "لم يُسجَّل مفتاح OpenPGP"
   },
-  "audit.actions.openpgp.key-removed.label": {
+"audit.actions.openpgp.key-removed.label": {
     "en": "89a284fa6508eae4",
     "text": "أُزيل مفتاح OpenPGP"
   },
-  "audit.actions.openpgp.publication.label": {
+"audit.actions.openpgp.publication.label": {
     "en": "f6d12f16eca6796a",
     "text": "نُشر مفتاح OpenPGP في دليل مفاتيح الويب (Web Key Directory) أو سُحب منه"
   },
-  "audit.actions.openpgp.mail-encryption.label": {
+"audit.actions.openpgp.mail-encryption.label": {
     "en": "ba0fb7a4133d94e2",
     "text": "تغيّرت طريقة تشفير البريد المرسل إلى شخص"
   },
-  "audit.actions.openpgp.smime-certificate.label": {
+"audit.actions.openpgp.smime-certificate.label": {
     "en": "663072a33ce1e178",
     "text": "عُيّنت شهادة S/MIME لشخص أو أُزيلت"
   },
@@ -710,6 +750,10 @@
   "audit.actions.admin.mfa.totp.cleared.label": {
     "en": "478c7ee15248637f",
     "text": "أزال مشغّل تطبيق المصادقة الخاص بأحدهم"
+  },
+  "audit.actions.admin.mfa.hotp.cleared.label": {
+    "en": "027dab5576016e61",
+    "text": "مسح مشغّل رمز الرموز لمرة واحدة لشخص ما"
   },
   "audit.actions.admin.mfa.key.cleared.label": {
     "en": "d62700d9f7751e8b",

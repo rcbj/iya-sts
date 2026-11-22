@@ -551,6 +551,18 @@
     "en": "9dc455e8deb093a6",
     "text": "अनुरोध लॉग हर स्तर पर क्रेडेंशियल और मुख्य भाग छोड़ देते हैं, हस्ताक्षरित टोकन या अभिकथन केवल अपने आकार और डाइजेस्ट से लॉग होता है, और डिफ़ॉल्ट डेटाबेस पासवर्ड सेवा को रोक देता है जब तक persistence.allowDefaultDatabasePassword चालू न हो।"
   },
+  "mode.requirements.plaintext-seed-files.what": {
+    "en": "7dfdb35537e3d442",
+    "text": "विक्रेता की टोकन सीड फ़ाइल एन्क्रिप्ट होनी चाहिए"
+  },
+  "mode.requirements.plaintext-seed-files.development": {
+    "en": "406c007742c28ced",
+    "text": "जिस PSKC सीड फ़ाइल के टोकन सीक्रेट सादे पाठ में हैं, वह एन्क्रिप्ट की गई फ़ाइल की तरह आयात होती है।"
+  },
+  "mode.requirements.plaintext-seed-files.product": {
+    "en": "e3eb9f2bcabf5eaa",
+    "text": "जिस PSKC सीड फ़ाइल के टोकन सीक्रेट सादे पाठ में हैं, वह तब तक अस्वीकार की जाती है जब तक pskc.allowPlaintextImport चालू न हो; एन्क्रिप्ट की गई फ़ाइल अपलोड के साथ दी गई कुंजी या पासवर्ड से खोली जाती है, जो कभी संग्रहीत नहीं होता।"
+  },
   "mode.requirements.sso-consent.what": {
     "en": "2b06d195aa0a395d",
     "text": "एकल साइन-ऑन किसी व्यक्ति को अनुप्रयोग में साइन इन करने से पहले पूछता है"

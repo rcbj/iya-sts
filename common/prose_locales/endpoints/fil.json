@@ -1259,9 +1259,13 @@
     "en": "386404ef0cf5e649",
     "text": "Mga hardware token"
   },
+  "endpoints.route./admin-api/hardware-tokens/oath.name": {
+    "en": "009f323198517782",
+    "text": "Mga na-import na OATH token"
+  },
   "endpoints.route./admin-api/hardware-tokens/:action.name": {
-    "en": "33209f967f070175",
-    "text": "Mga aksiyon sa hardware token"
+"en": "33209f967f070175",
+"text": "Mga aksiyon sa hardware token"
   },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",

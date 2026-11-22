@@ -1315,6 +1315,30 @@
     "en": "f034b2f597ec08a5",
     "text": "Cuánto tiempo sigue disponible un secreto que se ha MOSTRADO pero aún no se ha confirmado con un código. Se guarda aparte — en memoria, o sellado en el almacén cuando varios procesos comparten uno — y nunca se escribe en el directorio hasta que un código demuestra que la aplicación lo tiene de verdad: un secreto sin confirmar en la entrada de alguien sería un segundo factor que no puede presentar, lo que es un bloqueo y no un control. Diez minutos es tiempo suficiente para encontrar un teléfono y lo bastante corto para que un registro abandonado no se quede ahí."
   },
+  "hotp.digits|label": {
+    "en": "e878ad21c60b7f59",
+    "text": "Longitud del código HOTP (dígitos)"
+  },
+  "hotp.digits|description": {
+    "en": "a62b054d7e8d650e",
+    "text": "Cuántos dígitos produce una NUEVA inscripción de token basado en contador (RFC 4226): una ranura OTP de YubiKey programada desde el portal admite 6 u 8. Un token importado del archivo PSKC de su proveedor conserva la longitud que indica el archivo."
+  },
+  "hotp.window|label": {
+    "en": "0b307d73f8b8efcb",
+    "text": "Anticipación HOTP (códigos)"
+  },
+  "hotp.window|description": {
+    "en": "b12c6aec525f377e",
+    "text": "La anticipación de la sección 7.4 de RFC 4226: cuántas pulsaciones de un token basado en contador que nunca llegaron a este servicio se perdonan. Se acepta un código en el contador guardado o hasta esa cantidad después, y el contador pasa más allá; un código anterior nunca. Cero acepta solo el siguiente código. En vivo, para cada inscripción."
+  },
+  "hotp.resyncWindow|label": {
+    "en": "15000f3de3322f0d",
+    "text": "Ventana de resincronización HOTP (códigos)"
+  },
+  "hotp.resyncWindow|description": {
+    "en": "4bc7180cc29f1f53",
+    "text": "Hasta dónde se buscan dos códigos CONSECUTIVOS cuando una persona resincroniza un token que se salió de la anticipación (RFC 4226 sección 7.4). Dos códigos seguidos son mucho más difíciles de adivinar que uno, y eso es lo que hace segura la búsqueda más amplia. En vivo."
+  },
   "backupCodes.count|label": {
     "en": "91b6e4a086244cce",
     "text": "Códigos por juego"
@@ -3267,43 +3291,51 @@
     "en": "e0341e4e47f3b2f8",
     "text": "Qué permite que un inicio de sesión PKINIT declare una clave vinculada al hardware (el indicador pkinit-hardware y amr hwk). `inference`, el valor predeterminado y el comportamiento anterior a #1955: un certificado de inicio de sesión con tarjeta inteligente cuya clave no generó este servicio, o una prueba de atestación registrada. `evidence`: solo una clave que cubre la atestación de un token de hardware. Un inicio de sesión con certificado sobre TLS obtiene hwk, y sc para una clave en una tarjeta inteligente, solo a partir de pruebas, en ambos casos."
   },
-  "openpgp.wkd|label": {
+"pskc.allowPlaintextImport|label": {
+    "en": "a098f07c2a04a83b",
+    "text": "Aceptar archivos de semillas PSKC sin cifrar en modo producto"
+  },
+"pskc.allowPlaintextImport|description": {
+    "en": "7efe34e872e4772e",
+    "text": "Si un administrador puede importar, en modo producto, un archivo de semillas PSKC (RFC 6030) cuyos secretos de token NO están cifrados. Desactivado de forma predeterminada: un archivo así ha sido una lista de segundos factores válidos en cada disco y buzón por el que pasó, y un proveedor puede cifrarlo con una clave precompartida o una contraseña (secciones 6.1 y 6.2). El modo desarrollo lo acepta en cualquier caso."
+  },
+"openpgp.wkd|label": {
     "en": "1f05a7518c3d2275",
     "text": "Publicar claves en el Web Key Directory"
   },
-  "openpgp.wkd|description": {
+"openpgp.wkd|description": {
     "en": "7822103f89ac59b3",
     "text": "Responder al Web Key Directory (draft-koch-openpgp-webkey-service) para los dominios de correo de este dominio de confianza: /.well-known/openpgpkey/<domain>/hu/<hash> (el método avanzado, en openpgpkey.<domain>) y /.well-known/openpgpkey/hu/<hash> (el método directo), además del archivo de política de cada uno. Solo se devuelve la clave de una persona que lo aceptó en el portal. Desactivado de forma predeterminada."
   },
-  "openpgp.wkdDomains|label": {
+"openpgp.wkdDomains|label": {
     "en": "d1c4b728593ff000",
     "text": "Dominios de correo que sirve el Web Key Directory"
   },
-  "openpgp.wkdDomains|description": {
+"openpgp.wkdDomains|description": {
     "en": "ad64f7216191123c",
     "text": "Los dominios de correo para los que responde el Web Key Directory de este dominio de confianza, separados por comas. Vacío, el valor predeterminado, significa el propio dominio DNS del dominio de confianza. Una solicitud sin dominio de confianza en su ruta la responde el dominio de confianza que sirve su dominio DNS, primero el predeterminado."
   },
-  "openpgp.challengeLifetimeS|label": {
+"openpgp.challengeLifetimeS|label": {
     "en": "dbf558cf0b4b8f90",
     "text": "Vigencia del desafío de registro (segundos)"
   },
-  "openpgp.challengeLifetimeS|description": {
+"openpgp.challengeLifetimeS|description": {
     "en": "e9130c8e82368cc6",
     "text": "Cuánto tiempo sigue siendo válido el desafío que una persona firma con gpg --clearsign para registrar una clave OpenPGP. Se consume una sola vez, y una persona tiene uno cada vez."
   },
-  "openpgp.signatureSkewS|label": {
+"openpgp.signatureSkewS|label": {
     "en": "d927cf1f04bd9d51",
     "text": "Desfase de reloj admitido en la firma de prueba (segundos)"
   },
-  "openpgp.signatureSkewS|description": {
+"openpgp.signatureSkewS|description": {
     "en": "2772763d3d363b6d",
     "text": "Cuánto puede diferir el reloj del equipo que firma del de este servicio: se rechaza una prueba firmada antes de la emisión del desafío, o después del momento actual, por más de este valor (STS-OPENPGP-0010)."
   },
-  "openpgp.minRsaBits|label": {
+"openpgp.minRsaBits|label": {
     "en": "f3dc9f85de143630",
     "text": "Clave OpenPGP RSA más pequeña"
   },
-  "openpgp.minRsaBits|description": {
+"openpgp.minRsaBits|description": {
     "en": "ad48516e31a7c45b",
     "text": "La clave RSA más corta, principal o subclave, que acepta un registro OpenPGP. Se aceptan Ed25519, Ed448, ECDSA y ECDH sobre P-256, P-384 y P-521, X25519 y X448; DSA, ElGamal y las curvas Brainpool nunca (STS-OPENPGP-0004)."
   },
