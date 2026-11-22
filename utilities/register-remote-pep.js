@@ -1868,6 +1868,11 @@ function yamlVolume(fromDir, source, target) {
     rel = '.';
   }
   rel = rel.split(path.sep).join('/');
+  // A source that does not start with "." or "/" is a named volume.
+  // "./pep-certs" is the bind mount of the directory beside the compose file.
+  if (rel.charAt(0) !== '.' && !path.isAbsolute(rel)) {
+    rel = './' + rel;
+  }
   const spec = rel + ':' + target;
   const quoted = '"' + spec.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
   log.debug("Leaving yamlVolume().");
