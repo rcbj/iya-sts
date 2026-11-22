@@ -16139,6 +16139,71 @@ const SETTINGS = [
     description: 'The most access requests one realm holds pending; past ' +
                  'it a submission is refused 503 until some are decided or ' +
                  'expire.' },
+  { key: 'authzen.externalPdp', group: 'AuthZEN',
+    label: 'Ask an external PDP before a token exchange.',
+    env: 'STS_AUTHZEN_EXTERNAL_PDP', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'The AuthZEN Binding for OAuth 2.0 Token Exchange, ' +
+                 'direction B: before this authorization server issues an ' +
+                 'OAuth access token for an RFC 8693 exchange, it asks the ' +
+                 'external PDP named by authzen.externalPdpUrl. The local ' +
+                 'issuance policy still decides first, and a refusal it ' +
+                 'enforces is not sent on. The PDP may only narrow the ' +
+                 'scope and the access-token lifetime. Off, the default, ' +
+                 'nothing is dialled. A Kerberos token is outside the ' +
+                 'binding and is not sent. No answer, or a refusal, means ' +
+                 'no token.' },
+  { key: 'authzen.externalPdpUrl', group: 'AuthZEN',
+    label: 'External AuthZEN PDP address.',
+    env: 'STS_AUTHZEN_EXTERNAL_PDP_URL', type: 'string', dflt: '',
+    runtime: true,
+    description: 'The absolute https address of the external PDP\'s POST ' +
+                 '/access/v1/evaluations. An administrator configures it, ' +
+                 'and a request cannot name it. It carries no userinfo, ' +
+                 'query or fragment. Empty while authzen.externalPdp is ' +
+                 'on refuses the exchange. Plain http is refused even when ' +
+                 'federation.outboundAllowHttp is on, because the request ' +
+                 'carries token claims and a client certificate.' },
+  { key: 'authzen.externalPdpTimeoutMs', group: 'AuthZEN',
+    label: 'External PDP timeout (milliseconds).',
+    env: 'STS_AUTHZEN_EXTERNAL_PDP_TIMEOUT_MS', type: 'int', dflt: 5000,
+    min: 100, max: 30000, runtime: true,
+    description: 'How long to wait for the external PDP, in milliseconds. ' +
+                 'A timeout refuses the exchange. The local decision is ' +
+                 'not issued in its place.' },
+  { key: 'authzen.externalPdpClientCertFile', group: 'AuthZEN',
+    label: 'Client certificate for the external PDP.',
+    env: 'STS_AUTHZEN_EXTERNAL_PDP_CLIENT_CERT_FILE', type: 'string',
+    dflt: '', runtime: true,
+    description: 'The PEM file this authorization server presents to the ' +
+                 'external PDP. Mutual TLS is the only mode, and the PDP ' +
+                 'admits the certificate as an AUTHZEN_PEPS caller. In ' +
+                 'product the file must sit inside a directory ' +
+                 'security.fileRoots lists. A relative path is this ' +
+                 'process\'s current directory. Empty or unreadable while ' +
+                 'authzen.externalPdp is on refuses the exchange.' },
+  { key: 'authzen.externalPdpClientKeyFile', group: 'AuthZEN',
+    label: 'Client key for the external PDP.',
+    env: 'STS_AUTHZEN_EXTERNAL_PDP_CLIENT_KEY_FILE', type: 'string',
+    dflt: '', runtime: true,
+    description: 'The PEM file of the client certificate\'s private key. ' +
+                 'The file is read when the PDP is dialled. The key\'s ' +
+                 'bytes are not a configuration value, so GET ' +
+                 '/admin-api/config returns the path and not the key. In ' +
+                 'product the file must sit inside a directory ' +
+                 'security.fileRoots lists. A relative path is this ' +
+                 'process\'s current directory. Empty or unreadable while ' +
+                 'authzen.externalPdp is on refuses the exchange.' },
+  { key: 'authzen.externalPdpCaFile', group: 'AuthZEN',
+    label: 'CA file for the external PDP.',
+    env: 'STS_AUTHZEN_EXTERNAL_PDP_CA_FILE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'An optional PEM file of CA certificates used instead of ' +
+                 'the default roots to verify the external PDP. Empty uses ' +
+                 'those roots. A file that is named and unreadable, or ' +
+                 'that product mode will not read under security.fileRoots, ' +
+                 'refuses the exchange. A relative path is this process\'s ' +
+                 'current directory.' },
 
   // --- User-Managed Access 2.0 (#1168) -------------------------------------
   //

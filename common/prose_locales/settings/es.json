@@ -8331,6 +8331,54 @@
     "en": "6b3f5e73f6fcafaf",
     "text": "El máximo de solicitudes de acceso que un dominio retiene pendientes; superado, un envío se rechaza con 503 hasta que algunas se decidan o venzan."
   },
+  "authzen.externalPdp|label": {
+    "en": "8a0af08389fe6cda",
+    "text": "Consultar un PDP externo antes de un intercambio de tokens."
+  },
+  "authzen.externalPdp|description": {
+    "en": "378c7dcd21a960c7",
+    "text": "El enlace AuthZEN para el intercambio de tokens de OAuth 2.0, dirección B: antes de que este servidor de autorización emita un token de acceso de OAuth para un intercambio RFC 8693, consulta el PDP externo nombrado por authzen.externalPdpUrl. La política de emisión local decide primero, y un rechazo que ella aplique no se envía. El PDP solo puede reducir el alcance y la vida del token de acceso. Desactivado, el valor predeterminado, no se llama a nada. Un token de Kerberos queda fuera del enlace y no se envía. Sin respuesta, o un rechazo, no hay token."
+  },
+  "authzen.externalPdpUrl|label": {
+    "en": "4702ceb3700a0831",
+    "text": "Dirección del PDP AuthZEN externo."
+  },
+  "authzen.externalPdpUrl|description": {
+    "en": "2d486c955985f5ac",
+    "text": "La dirección https absoluta del POST /access/v1/evaluations del PDP externo. Un administrador la configura, y una solicitud no puede nombrarla. No lleva userinfo, query ni fragment. Vacía mientras authzen.externalPdp está activado, rechaza el intercambio. El http en claro se rechaza incluso cuando federation.outboundAllowHttp está activado, porque la solicitud lleva reivindicaciones del token y un certificado de cliente."
+  },
+  "authzen.externalPdpTimeoutMs|label": {
+    "en": "c40081858bffe671",
+    "text": "Tiempo de espera del PDP externo (milisegundos)."
+  },
+  "authzen.externalPdpTimeoutMs|description": {
+    "en": "1c73c2acfe98c703",
+    "text": "Cuánto esperar al PDP externo, en milisegundos. Un tiempo agotado rechaza el intercambio. La decisión local no se emite en su lugar."
+  },
+  "authzen.externalPdpClientCertFile|label": {
+    "en": "2da8c5ed72d965bb",
+    "text": "Certificado de cliente para el PDP externo."
+  },
+  "authzen.externalPdpClientCertFile|description": {
+    "en": "cae054b4776151a0",
+    "text": "El archivo PEM que este servidor de autorización presenta al PDP externo. TLS mutuo es el único modo, y el PDP admite el certificado como un llamante AUTHZEN_PEPS. En producto, el archivo debe estar dentro de un directorio que security.fileRoots enumera. Una ruta relativa es el directorio actual de este proceso. Vacío o ilegible mientras authzen.externalPdp está activado, rechaza el intercambio."
+  },
+  "authzen.externalPdpClientKeyFile|label": {
+    "en": "8c2c725a67e09874",
+    "text": "Clave de cliente para el PDP externo."
+  },
+  "authzen.externalPdpClientKeyFile|description": {
+    "en": "6509f61b7122be79",
+    "text": "El archivo PEM de la clave privada del certificado de cliente. El archivo se lee cuando se llama al PDP. Los bytes de la clave no son un valor de configuración, así que GET /admin-api/config devuelve la ruta y no la clave. En producto, el archivo debe estar dentro de un directorio que security.fileRoots enumera. Una ruta relativa es el directorio actual de este proceso. Vacío o ilegible mientras authzen.externalPdp está activado, rechaza el intercambio."
+  },
+  "authzen.externalPdpCaFile|label": {
+    "en": "6abdfbc262d71c16",
+    "text": "Archivo de AC para el PDP externo."
+  },
+  "authzen.externalPdpCaFile|description": {
+    "en": "d8328616a3f62cfa",
+    "text": "Un archivo PEM opcional de certificados de AC usado en lugar de las raíces predeterminadas para verificar el PDP externo. Vacío, se usan esas raíces. Un archivo nombrado e ilegible, o que el modo producto no leerá bajo security.fileRoots, rechaza el intercambio. Una ruta relativa es el directorio actual de este proceso."
+  },
   "uma.enabled|label": {
     "en": "2a3767bd4bc83294",
     "text": "User-Managed Access activado"

@@ -26022,6 +26022,38 @@ const CODES = [
       'requires; refused before its body was read (#936).',
     spec: 'HTTP 415 Unsupported Media Type (RFC 9110 section 15.5.16), ' +
       'application/problem+json (RFC 9457)' },
+  { code: 'STS-AUTHZEN-0123',
+    summary: 'An RFC 8693 token exchange was not issued because ' +
+      'authzen.externalPdpUrl is empty, will not parse, is not absolute ' +
+      'https, or carries a userinfo, query or fragment. The external ' +
+      'AuthZEN PDP was not dialled (#1200).',
+    spec: 'HTTP 503 temporarily_unavailable (the client is not told the ' +
+      'code or the address)' },
+  { code: 'STS-AUTHZEN-0124',
+    summary: 'An RFC 8693 token exchange was not issued because the ' +
+      'external AuthZEN PDP gave no answer: federation.outbound is off, ' +
+      'the PDP was unreachable or timed out, the dial threw, or the PDP ' +
+      'answered a non-2xx. The local decision is not issued in its place ' +
+      '(#1200).',
+    spec: 'HTTP 503 temporarily_unavailable' },
+  { code: 'STS-AUTHZEN-0125',
+    summary: 'An RFC 8693 token exchange was not issued because the ' +
+      'external AuthZEN PDP refused a subject or requesting-party gate. ' +
+      'Which gate is not told to the client (#1200).',
+    spec: 'HTTP 400 invalid_request' },
+  { code: 'STS-AUTHZEN-0126',
+    summary: 'An RFC 8693 token exchange was not issued because the ' +
+      'external AuthZEN PDP answered 2xx with a body that is not the ' +
+      'batch\'s decision: not JSON, a missing or differently sized ' +
+      'evaluations array, an item that is not an object, a decision that ' +
+      'is not a boolean, or an item carrying context.error (#1200).',
+    spec: 'HTTP 503 temporarily_unavailable' },
+  { code: 'STS-AUTHZEN-0127',
+    summary: 'An RFC 8693 token exchange was not issued because the client ' +
+      'certificate or key for the external AuthZEN PDP is empty, ' +
+      'unreadable, outside security.fileRoots, or not a PEM, or a named ' +
+      'CA file is. The PDP was not dialled (#1200).',
+    spec: 'HTTP 503 temporarily_unavailable' },
   // ===== FGA ===============================================================
   { code: 'STS-FGA-0001',
     summary: 'A policy that belongs to an application (it carries ' +

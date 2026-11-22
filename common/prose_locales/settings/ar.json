@@ -8331,6 +8331,54 @@
     "en": "6b3f5e73f6fcafaf",
     "text": "أكثر طلبات الوصول التي يحملها نطاق ثقة واحد معلّقة؛ وبعده يُرفض التقديم بـ 503 حتى يُبتّ في بعضها أو تنتهي صلاحيته."
   },
+  "authzen.externalPdp|label": {
+    "en": "8a0af08389fe6cda",
+    "text": "اسأل PDP خارجيًا قبل تبادل الرموز."
+  },
+  "authzen.externalPdp|description": {
+    "en": "378c7dcd21a960c7",
+    "text": "ربط AuthZEN لتبادل رموز OAuth 2.0، الاتجاه B: قبل أن يُصدر خادم التفويض هذا رمز وصول OAuth لتبادل RFC 8693، يسأل PDP الخارجي الذي يسميه authzen.externalPdpUrl. تقرر سياسة الإصدار المحلية أولًا، والرفض الذي تفرضه لا يُرسَل. لا يجوز لـ PDP إلا تضييق النطاق وعمر رمز الوصول. عند الإيقاف، وهو الافتراضي، لا يُجرى أي اتصال. رمز Kerberos خارج الربط ولا يُرسَل. غياب الإجابة، أو الرفض، يعني عدم إصدار رمز."
+  },
+  "authzen.externalPdpUrl|label": {
+    "en": "4702ceb3700a0831",
+    "text": "عنوان PDP الخارجي لـ AuthZEN."
+  },
+  "authzen.externalPdpUrl|description": {
+    "en": "2d486c955985f5ac",
+    "text": "عنوان https المطلق لـ POST /access/v1/evaluations لدى PDP الخارجي. يضبطه مسؤول، ولا يستطيع طلب تسميته. لا يحمل userinfo أو query أو fragment. إذا كان فارغًا وauthzen.externalPdp قيد التشغيل، يُرفض التبادل. يُرفض http الصريح حتى عندما يكون federation.outboundAllowHttp قيد التشغيل، لأن الطلب يحمل مطالبات الرمز وشهادة عميل."
+  },
+  "authzen.externalPdpTimeoutMs|label": {
+    "en": "c40081858bffe671",
+    "text": "مهلة PDP الخارجي (بالملي ثانية)."
+  },
+  "authzen.externalPdpTimeoutMs|description": {
+    "en": "1c73c2acfe98c703",
+    "text": "مدة انتظار PDP الخارجي، بالملي ثانية. انتهاء المهلة يرفض التبادل. لا يُصدر القرار المحلي بدلًا منه."
+  },
+  "authzen.externalPdpClientCertFile|label": {
+    "en": "2da8c5ed72d965bb",
+    "text": "شهادة العميل لـ PDP الخارجي."
+  },
+  "authzen.externalPdpClientCertFile|description": {
+    "en": "cae054b4776151a0",
+    "text": "ملف PEM الذي يقدمه خادم التفويض هذا إلى PDP الخارجي. TLS المتبادل هو الوضع الوحيد، ويقبل PDP الشهادة كمتصل AUTHZEN_PEPS. في وضع المنتج يجب أن يقع الملف داخل دليل يسرده security.fileRoots. المسار النسبي هو الدليل الحالي لهذه العملية. إذا كان فارغًا أو غير قابل للقراءة وauthzen.externalPdp قيد التشغيل، يُرفض التبادل."
+  },
+  "authzen.externalPdpClientKeyFile|label": {
+    "en": "8c2c725a67e09874",
+    "text": "مفتاح العميل لـ PDP الخارجي."
+  },
+  "authzen.externalPdpClientKeyFile|description": {
+    "en": "6509f61b7122be79",
+    "text": "ملف PEM للمفتاح الخاص بشهادة العميل. يُقرأ الملف عند الاتصال بـ PDP. بايتات المفتاح ليست قيمة إعداد، لذا يعيد GET /admin-api/config المسار وليس المفتاح. في وضع المنتج يجب أن يقع الملف داخل دليل يسرده security.fileRoots. المسار النسبي هو الدليل الحالي لهذه العملية. إذا كان فارغًا أو غير قابل للقراءة وauthzen.externalPdp قيد التشغيل، يُرفض التبادل."
+  },
+  "authzen.externalPdpCaFile|label": {
+    "en": "6abdfbc262d71c16",
+    "text": "ملف CA لـ PDP الخارجي."
+  },
+  "authzen.externalPdpCaFile|description": {
+    "en": "d8328616a3f62cfa",
+    "text": "ملف PEM اختياري لشهادات CA يُستخدم بدل الجذور الافتراضية للتحقق من PDP الخارجي. الفارغ يستخدم تلك الجذور. الملف المسمى وغير القابل للقراءة، أو الذي لا يقرأه وضع المنتج تحت security.fileRoots، يرفض التبادل. المسار النسبي هو الدليل الحالي لهذه العملية."
+  },
   "uma.enabled|label": {
     "en": "2a3767bd4bc83294",
     "text": "الوصول المُدار من المستخدم مُفعّل"

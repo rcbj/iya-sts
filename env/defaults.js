@@ -806,7 +806,7 @@ var config = {
     hardwareClaims: "inference"  // What earns a hardware-key claim
   },
 
-  // --- PIV -------------------------------------------------------------
+  // --- Devices ---------------------------------------------------------
   piv: {
     attestationAnchors: "",                                                    // PIV attestation roots (PEM)
     requireAttestation: false,                                                 // Require a PIV attestation for the PIV profiles
@@ -1269,7 +1269,13 @@ var config = {
     accessRequestMaxApprovalS: 86400,  // The longest an approval holds (seconds)
     accessRequestEmergencyS: 3600,     // How long emergency access holds (seconds)
     accessRequestRetryAfterS: 30,      // Retry-After on a pending access request (seconds)
-    accessRequestMaxPending: 10000     // Pending access requests a realm holds
+    accessRequestMaxPending: 10000,    // Pending access requests a realm holds
+    externalPdp: false,                // Ask an external PDP before a token exchange.
+    externalPdpUrl: "",                // External AuthZEN PDP address.
+    externalPdpTimeoutMs: 5000,        // External PDP timeout (milliseconds).
+    externalPdpClientCertFile: "",     // Client certificate for the external PDP.
+    externalPdpClientKeyFile: "",      // Client key for the external PDP.
+    externalPdpCaFile: ""              // CA file for the external PDP.
   },
 
   // --- UMA -------------------------------------------------------------
@@ -1449,7 +1455,7 @@ var config = {
   // --- Roles -----------------------------------------------------------
   roles: {
     claim: true,                             // Carry a roles claim
-    dynamicSelection: true,                             // Offer dynamic roles at sign-in
+    dynamicSelection: true,                  // Offer dynamic roles at sign-in
     claimName: "roles",                      // Role claim name
     enforceIssuance: true,                   // Decide issuance on roles
     maxRoles: 200,                           // Maximum roles

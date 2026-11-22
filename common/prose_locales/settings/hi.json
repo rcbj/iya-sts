@@ -8331,6 +8331,54 @@
     "en": "6b3f5e73f6fcafaf",
     "text": "एक विश्वास क्षेत्र अधिकतम कितने पहुँच अनुरोध लंबित रखता है; इसके पार प्रस्तुति 503 से अस्वीकार होती है जब तक कुछ का निर्णय न हो जाए या वे समाप्त न हों।"
   },
+  "authzen.externalPdp|label": {
+    "en": "8a0af08389fe6cda",
+    "text": "टोकन विनिमय से पहले एक बाहरी PDP से पूछें."
+  },
+  "authzen.externalPdp|description": {
+    "en": "378c7dcd21a960c7",
+    "text": "OAuth 2.0 टोकन विनिमय के लिए AuthZEN बंधन, दिशा B: यह प्राधिकरण सर्वर RFC 8693 विनिमय के लिए OAuth पहुँच टोकन जारी करने से पहले authzen.externalPdpUrl द्वारा नामित बाहरी PDP से पूछता है। स्थानीय जारीकरण नीति पहले निर्णय करती है, और उसका लागू किया गया अस्वीकार आगे नहीं भेजा जाता। PDP केवल दायरा और पहुँच टोकन का जीवन छोटा कर सकता है। बंद, जो तयशुदा है, पर कुछ भी डायल नहीं होता। Kerberos टोकन इस बंधन के बाहर है और नहीं भेजा जाता। कोई उत्तर न होना, या अस्वीकार, का अर्थ है कोई टोकन नहीं।"
+  },
+  "authzen.externalPdpUrl|label": {
+    "en": "4702ceb3700a0831",
+    "text": "बाहरी AuthZEN PDP का पता."
+  },
+  "authzen.externalPdpUrl|description": {
+    "en": "2d486c955985f5ac",
+    "text": "बाहरी PDP के POST /access/v1/evaluations का निरपेक्ष https पता। एक प्रशासक इसे कॉन्फ़िगर करता है, और एक अनुरोध इसे नाम नहीं दे सकता। इसमें userinfo, query या fragment नहीं होता। authzen.externalPdp चालू होने पर खाली पता विनिमय को अस्वीकार करता है। federation.outboundAllowHttp चालू होने पर भी सादा http अस्वीकार होता है, क्योंकि अनुरोध टोकन दावे और एक क्लाइंट प्रमाणपत्र ले जाता है।"
+  },
+  "authzen.externalPdpTimeoutMs|label": {
+    "en": "c40081858bffe671",
+    "text": "बाहरी PDP की समय-सीमा (मिलीसेकंड)."
+  },
+  "authzen.externalPdpTimeoutMs|description": {
+    "en": "1c73c2acfe98c703",
+    "text": "बाहरी PDP की प्रतीक्षा कितनी देर, मिलीसेकंड में। समय-सीमा विनिमय को अस्वीकार करती है। स्थानीय निर्णय उसकी जगह जारी नहीं होता।"
+  },
+  "authzen.externalPdpClientCertFile|label": {
+    "en": "2da8c5ed72d965bb",
+    "text": "बाहरी PDP के लिए क्लाइंट प्रमाणपत्र."
+  },
+  "authzen.externalPdpClientCertFile|description": {
+    "en": "cae054b4776151a0",
+    "text": "वह PEM फ़ाइल जिसे यह प्राधिकरण सर्वर बाहरी PDP को प्रस्तुत करता है। पारस्परिक TLS ही एकमात्र मोड है, और PDP प्रमाणपत्र को AUTHZEN_PEPS कॉलर के रूप में स्वीकार करता है। उत्पाद मोड में फ़ाइल security.fileRoots द्वारा सूचीबद्ध निर्देशिका के अंदर होनी चाहिए। सापेक्ष पथ इस प्रक्रिया की वर्तमान निर्देशिका है। authzen.externalPdp चालू होने पर खाली या अपठनीय फ़ाइल विनिमय को अस्वीकार करती है।"
+  },
+  "authzen.externalPdpClientKeyFile|label": {
+    "en": "8c2c725a67e09874",
+    "text": "बाहरी PDP के लिए क्लाइंट कुंजी."
+  },
+  "authzen.externalPdpClientKeyFile|description": {
+    "en": "6509f61b7122be79",
+    "text": "क्लाइंट प्रमाणपत्र की निजी कुंजी की PEM फ़ाइल। PDP को डायल करते समय फ़ाइल पढ़ी जाती है। कुंजी के बाइट कॉन्फ़िगरेशन मान नहीं हैं, इसलिए GET /admin-api/config पथ लौटाता है, कुंजी नहीं। उत्पाद मोड में फ़ाइल security.fileRoots द्वारा सूचीबद्ध निर्देशिका के अंदर होनी चाहिए। सापेक्ष पथ इस प्रक्रिया की वर्तमान निर्देशिका है। authzen.externalPdp चालू होने पर खाली या अपठनीय फ़ाइल विनिमय को अस्वीकार करती है।"
+  },
+  "authzen.externalPdpCaFile|label": {
+    "en": "6abdfbc262d71c16",
+    "text": "बाहरी PDP के लिए CA फ़ाइल."
+  },
+  "authzen.externalPdpCaFile|description": {
+    "en": "d8328616a3f62cfa",
+    "text": "CA प्रमाणपत्रों की एक वैकल्पिक PEM फ़ाइल, जिसका उपयोग बाहरी PDP की जाँच के लिए तयशुदा मूलों के स्थान पर होता है। खाली होने पर वे मूल उपयोग होते हैं। नामित और अपठनीय फ़ाइल, या जिसे उत्पाद मोड security.fileRoots के अंतर्गत नहीं पढ़ेगा, विनिमय को अस्वीकार करती है। सापेक्ष पथ इस प्रक्रिया की वर्तमान निर्देशिका है."
+  },
   "uma.enabled|label": {
     "en": "2a3767bd4bc83294",
     "text": "User-Managed Access सक्षम"
