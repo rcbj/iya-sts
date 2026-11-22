@@ -232,8 +232,8 @@
     "text": "Journaliser le mot de passe d’amorçage généré"
   },
   "admin.logBootstrapPassword|description": {
-    "en": "577ec7c125546cdb",
-    "text": "Mode produit uniquement. Désactivé, par défaut, le mot de passe généré pour le premier administrateur est écrit dans le fichier bootstrap-admin-password de persistence.dataDir, lisible par ce seul service, et le journal indique où. Activé, il est écrit dans le journal du service. AVERTISSEMENT : activé, l’exigence 16.2.5 d’ASVS 5.0.0 n’est pas respectée, car un identifiant atteint le journal."
+    "en": "856dddf1ed8c2407",
+    "text": "Mode produit uniquement. Désactivé, par défaut, le mot de passe généré pour le premier administrateur est écrit dans le fichier bootstrap-admin-password de persistence.dataDir, lisible par ce seul service, et le journal indique où. Activé, il est écrit dans le journal du service. AVERTISSEMENT : activé, l’exigence 16.2.5 d’ASVS 5.0.0 n’est pas respectée, car un identifiant atteint le journal. Un démarrage ultérieur supprime ce fichier, dès que quelqu’un détient déjà un identifiant."
   },
   "oauth2.allowConfidentialWithoutPkce|label": {
     "en": "c33a0a31a1d623b1",
@@ -424,8 +424,8 @@
     "text": "Autoriser un nom d’administrateur par défaut en production"
   },
   "admin.allowDefaultUsername|description": {
-    "en": "53da4f7ba4ff5dcc",
-    "text": "Mode produit uniquement. Désactivé, par défaut, un administrateur d’amorçage nommé admin, root, sa ou administrator, ou sans nom, reçoit un nom généré imprévisible, écrit avec son mot de passe dans le fichier bootstrap-admin-password de persistence.dataDir au premier démarrage (voir admin.logBootstrapPassword). Activé, le nom configuré est utilisé tel quel. AVERTISSEMENT : l’exigence 6.3.2 d’ASVS 5.0.0 interdit un nom de compte par défaut ; laissez ce réglage désactivé hors d’une pile de test."
+    "en": "7375f4bf636f5366",
+    "text": "Mode produit uniquement. Désactivé, par défaut, un administrateur d’amorçage nommé admin, root, sa ou administrator, ou sans nom, reçoit un nom généré imprévisible, écrit avec son mot de passe dans le fichier bootstrap-admin-password de persistence.dataDir au premier démarrage (voir admin.logBootstrapPassword). Activé, le nom configuré est utilisé tel quel. AVERTISSEMENT : l’exigence 6.3.2 d’ASVS 5.0.0 interdit un nom de compte par défaut ; laissez ce réglage désactivé hors d’une pile de test. Un démarrage ultérieur supprime ce fichier, dès que quelqu’un détient déjà un identifiant."
   },
   "admin.allowDefaultUsername|restartReason": {
     "en": "0191948468332113",
@@ -436,8 +436,8 @@
     "text": "Compte administrateur d’amorçage"
   },
   "admin.bootstrapUsername|description": {
-    "en": "9b6fe650632ee79d",
-    "text": "Le nom d’utilisateur de l’administrateur d’amorçage (2026-09-13), dans le domaine PAR DÉFAUT et, depuis le 2026-09-14, dans chaque domaine de confiance, où il n’administre que ce domaine : créé au démarrage s’il est absent, membre des deux rôles de la console, obligé de changer son mot de passe à sa première connexion, et impossible à supprimer ou à renommer. Tant qu’il ne s’est pas connecté une première fois à /admin, toute personne connectée peut utiliser la console (admin.openWhenEmpty). En développement, n’importe quel mot de passe le connecte, comme pour tout le monde. EN MODE PRODUIT, c’est aussi lui qui reçoit un mot de passe généré lorsque ce service démarre et que PERSONNE dans le domaine ne détient d’identifiant ; le nom et ce mot de passe sont écrits une seule fois dans le fichier bootstrap-admin-password de persistence.dataDir, lisible uniquement par ce service (le journal indique où, et ne les contient lui-même qu’avec admin.logBootstrapPassword activé), et sont le seul moyen d’entrer dans un déploiement produit neuf. Le mot de passe généré n’est jamais écrit là où quelqu’un détient déjà un identifiant ; il ne peut donc écraser aucun mot de passe. Le changement obligatoire ne s’applique qu’à un compte que cette étape a CRÉÉ — un compte existant portant ce nom conserve son mot de passe et reçoit seulement les deux rôles."
+    "en": "8b69eb9d4cb0b130",
+    "text": "Le nom d’utilisateur de l’administrateur d’amorçage (2026-09-13), dans le domaine PAR DÉFAUT et, depuis le 2026-09-14, dans chaque domaine de confiance, où il n’administre que ce domaine : créé au démarrage s’il est absent, membre des deux rôles de la console, obligé de changer son mot de passe à sa première connexion, et impossible à supprimer ou à renommer. Tant qu’il ne s’est pas connecté une première fois à /admin, toute personne connectée peut utiliser la console (admin.openWhenEmpty). En développement, n’importe quel mot de passe le connecte, comme pour tout le monde. EN MODE PRODUIT, c’est aussi lui qui reçoit un mot de passe généré lorsque ce service démarre et que PERSONNE dans le domaine ne détient d’identifiant ; le nom et ce mot de passe sont écrits une seule fois dans le fichier bootstrap-admin-password de persistence.dataDir, lisible uniquement par ce service (le journal indique où, et ne les contient lui-même qu’avec admin.logBootstrapPassword activé), et sont le seul moyen d’entrer dans un déploiement produit neuf. Le mot de passe généré n’est jamais écrit là où quelqu’un détient déjà un identifiant ; il ne peut donc écraser aucun mot de passe. Le changement obligatoire ne s’applique qu’à un compte que cette étape a CRÉÉ — un compte existant portant ce nom conserve son mot de passe et reçoit seulement les deux rôles. Un démarrage ultérieur supprime ce fichier, dès que quelqu’un détient déjà un identifiant."
   },
   "admin.bootstrapUsername|restartReason": {
     "en": "0191948468332113",

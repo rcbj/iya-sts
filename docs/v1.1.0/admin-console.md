@@ -147,7 +147,9 @@ before anything else. In development any password gets it to that screen; in
 product mode its password is `admin.bootstrapPassword`, or one generated at the
 first start. A generated one is written, with the name, to the file
 `bootstrap-admin-password` in `persistence.dataDir` as `name:password`, readable
-only by the service, and the log names the account and says where. `admin.logBootstrapPassword` writes
+only by the service, and the log names the account and says where. A later start
+deletes that file, once somebody already holds a credential, so read it before
+you restart. `admin.logBootstrapPassword` writes
 it to the log instead, which only a test stack should do. In product mode it
 must also set up a second factor at that first sign-in (see
 [Authentication](authentication.md#requiring-a-second-factor-of-everybody)). It cannot be deleted or renamed through the console,

@@ -1308,8 +1308,8 @@
     "text": "生成的密码写入服务日志。"
   },
   "mode.requirements.bootstrap-password-file.product": {
-    "en": "e12d4ddc2b4d4724",
-    "text": "写入仅此服务可读的文件，日志说明位置，除非开启 admin.logBootstrapPassword。"
+    "en": "aa423786d143e231",
+    "text": "写入仅此服务可读的文件，日志说明位置，除非开启 admin.logBootstrapPassword。 之后的启动会删除该文件，一旦已有人持有凭据。"
   },
   "mode.requirements.pkce-every-client.what": {
     "en": "7e2c6f1869e39287",

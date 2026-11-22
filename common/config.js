@@ -1461,10 +1461,12 @@ const SETTINGS = [
     description: 'Product mode only. Off, the default, the password generated ' +
                  'for the first administrator is written to the file ' +
                  'bootstrap-admin-password in persistence.dataDir, readable ' +
-                 'only by this service, and the log says where. On, it is ' +
-                 'written to the service log instead. WARNING: on, ASVS 5.0.0 ' +
-                 'requirement 16.2.5 is not met, because a credential reaches ' +
-                 'the log.' },
+                 'only by this service, and the log says where. ' +
+                 'A later start deletes that file, once somebody already ' +
+                 'holds a credential. ' +
+                 'On, it is written to the service log instead. WARNING: on, ' +
+                 'ASVS 5.0.0 requirement 16.2.5 is not met, because a ' +
+                 'credential reaches the log.' },
 
   { key: 'oauth2.allowConfidentialWithoutPkce', group: 'Web security',
     label: 'Let a confidential client omit PKCE',
@@ -1714,7 +1716,10 @@ const SETTINGS = [
                  'with no name at all, is given an unpredictable generated ' +
                  'name, written with its password to the file ' +
                  'bootstrap-admin-password in persistence.dataDir at first ' +
-                 'start (see admin.logBootstrapPassword). On, the ' +
+                 'start (see admin.logBootstrapPassword). ' +
+                 'A later start deletes that file, once somebody already ' +
+                 'holds a credential. ' +
+                 'On, the ' +
                  'configured name is used as it is. WARNING: ASVS 5.0.0 ' +
                  'requirement 6.3.2 forbids a default account name, so leave ' +
                  'this off outside a test stack.' },
@@ -1740,12 +1745,14 @@ const SETTINGS = [
                  'it in, as for everybody. IN PRODUCT MODE it is also who ' +
                  'gets a generated password when this service starts and ' +
                  'NOBODY in the realm holds a credential; the name and that ' +
-                 'password are written once to the file ' +
+                 'password are written to the file ' +
                  'bootstrap-admin-password in persistence.dataDir, readable ' +
                  'only by this service (the log says where, and carries them ' +
                  'itself only with admin.logBootstrapPassword on), and are ' +
-                 'the only way into a fresh product deployment. The ' +
-                 'generated password is never ' +
+                 'the only way into a fresh product deployment. ' +
+                 'A later start deletes that file, once somebody already ' +
+                 'holds a credential. ' +
+                 'The generated password is never ' +
                  'written where somebody already holds a credential, so it ' +
                  'cannot overwrite a password. The forced change applies ' +
                  'only to an account this step CREATED — an existing ' +
