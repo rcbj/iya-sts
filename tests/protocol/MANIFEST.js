@@ -1423,6 +1423,11 @@ const JOBS = [
   // directory answering it on a domain only this job uses; the depth is
   // tests/openpgp_keys.js, in process.
   { file: 'sts_openpgp.js', browser: false, local: true },
+  // SSH USER CERTIFICATES OVER HTTP (#1955 P3): a key made here, issued
+  // and revoked through /account-api, checked as an OpenSSH certificate
+  // and a KRL without this service's own parser. The issuer's decisions
+  // are tests/ssh_user_ca.js, in process. This job is not opt-in.
+  { file: 'sts_ssh_user_ca.js', browser: false, local: true },
   // LINKING A WEBAUTHN PLATFORM CREDENTIAL ON /portal/devices, IN A REAL
   // BROWSER (#258, 2026-10-06): Chrome's virtual authenticators enrol a
   // roaming key and a platform key on /portal/keys; the roaming one is
