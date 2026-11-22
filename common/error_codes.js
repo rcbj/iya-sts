@@ -26054,6 +26054,45 @@ const CODES = [
       'unreadable, outside security.fileRoots, or not a PEM, or a named ' +
       'CA file is. The PDP was not dialled (#1200).',
     spec: 'HTTP 503 temporarily_unavailable' },
+  { code: 'STS-AUTHZEN-0128',
+    summary: 'An AuthZEN authorization-detail tuple named somebody other ' +
+      'than the exchange subject. The binding adds requesting-party ' +
+      'tuples for scopes on a Txn-Token only, so a cell for the party is ' +
+      'the same refusal; answered false (#1201).',
+    spec: 'decision: false' },
+  { code: 'STS-AUTHZEN-0129',
+    summary: 'An AuthZEN authorization-detail cell is not granted: its ' +
+      'type could not be read or is no longer declared, or, where the ' +
+      'type\'s application enforces fine-grained authorization, the cell ' +
+      'is not covered by the subject token\'s authorization_details or ' +
+      'the subject token was not issued here (#1201).',
+    spec: 'decision: false' },
+  { code: 'STS-AUTHZEN-0130',
+    summary: 'An application that enforces fine-grained authorization ' +
+      'refused an AuthZEN authorization-detail cell of one of its types; ' +
+      'answered false (#1201).',
+    spec: 'decision: false' },
+  { code: 'STS-AUTHZEN-0131',
+    summary: 'The authorization-detail types could not be read while an ' +
+      'AuthZEN token-exchange batch was planned or a cell was decided, so ' +
+      'no detail tuple is recognized from that read (#1201).',
+    spec: 'none — logged; a cell already recognized is answered false ' +
+      '(STS-AUTHZEN-0129)' },
+  { code: 'STS-AUTHZEN-0132',
+    summary: 'An AuthZEN token-exchange subject gate was given an ' +
+      'issuance audience that is not an array of that gate\'s resource ' +
+      'id. It would broaden the target, so it is not sent (#1201).',
+    spec: 'none — logged; the envelope is sent without it' },
+  { code: 'STS-AUTHZEN-0133',
+    summary: 'An AuthZEN token-exchange subject gate was given an ' +
+      'issuance claim that is reserved, is not on the subject token, or ' +
+      'is wider than the subject token\'s value. It is not sent (#1201).',
+    spec: 'none — logged; the envelope is sent without that claim' },
+  { code: 'STS-AUTHZEN-0134',
+    summary: 'An AuthZEN token-exchange subject gate was given an empty ' +
+      'issuance audience, which withdraws that gate\'s target; answered ' +
+      'false (#1201).',
+    spec: 'decision: false' },
   // ===== FGA ===============================================================
   { code: 'STS-FGA-0001',
     summary: 'A policy that belongs to an application (it carries ' +

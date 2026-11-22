@@ -489,9 +489,19 @@ table (`authzen_exchange.ts`'s `FIXED_RULES`, which
   binding is off, carrying one of them is 400 (`0101`).
 * **`context.issuance` only narrows**, on the subject gate only:
   `token_lifetime` (the subject token's remaining life, and the realm's
-  access-token lifetime for the client), and `granted_scope` for a request
-  naming no scope. `narrowOnly()` is the last check, and nothing else — no
-  `sub`, `aud`, `act`, `may_act`, no claim — can leave.
+  access-token lifetime for the client), `granted_scope` for a request
+  naming no scope, and (#1201) `audience` and `claims`. `audience` never
+  leaves on one target: every element equal to this gate's resource id
+  does not narrow it and is omitted, anything else is logged
+  (`STS-AUTHZEN-0132`) and dropped, and an empty array withdraws the
+  target (`0134`, the gate false). `claims` keeps a proper subset of a
+  string array the subject token already carries, and a smaller
+  non-negative integer ceiling; a reserved name (`sub`, `aud`, `act` and
+  `may_act` among them), a claim the token does not carry, or a wider
+  value is logged (`0133`) and dropped. An equal value is omitted
+  without a log. `shape()` is that check; `narrowOnly()` returns only
+  the envelope. The answer never writes `sub`, `aud`, `act` or
+  `may_act`, and never returns a rewritten `authorization_details`.
 * **`authzen.tokenExchange`, off by default**: it takes over two resource
   types (`audience`, `protected_resource`) that a realm may already use for
   its own AuthZEN questions, and it advertises a draft's capability
@@ -500,22 +510,40 @@ table (`authzen_exchange.ts`'s `FIXED_RULES`, which
   commits to.
 * **The parties are this realm's**: an external AS whose users and clients
   are not registered here gets an unregistered party's answer.
-* **NOT ROUTED BY #564, DELIBERATELY.** A binding tuple never reaches
-  `decideEvaluation()`, so an application that enforces fine-grained
-  authorization does not move it to that application's policy. The rule it
-  holds to is the local exchange's: there, an enforcing application's
-  policy is asked only about RFC 9396 details, and the subject token's
-  details bound the requested ones (#564 decision 6, `oauth-oidc/
-  CLAUDE.md`); the gate and the scopes stay the issuance policy's.
-  Routing the binding would make it disagree with the token endpoint, which
-  is the one thing #1181 must not do. **Authorization-detail tuples, when
-  built, owe the same per-detail question through `common/fga_gate.ts`**
-  and the same bound, or an external AS gets a wider answer than this
-  token endpoint would give.
-* **Not built:** authorization-detail tuples (RFC 9396 cells);
-  the edge PDP answering the binding (its port only refuses the catalogue
-  rows); the `claims` and `audience` shaping keys. Direction B is
-  *Asking an external PDP* below.
+* **NOT ROUTED BY #564, DELIBERATELY, EXCEPT A DETAIL TUPLE.** A gate or
+  a scope never reaches `decideEvaluation()`, so an application that
+  enforces fine-grained authorization does not move those to that
+  application's policy. The rule they hold to is the local exchange's:
+  there, an enforcing application's policy is asked only about RFC 9396
+  details, and the subject token's details bound the requested ones
+  (#564 decision 6, `oauth-oidc/CLAUDE.md`); the gate and the scopes stay
+  the issuance policy's. Routing those would make the binding disagree
+  with the token endpoint, which is the one thing #1181 must not do.
+  **An authorization-detail tuple (#1201) is that per-detail question.**
+  `classify()` stays a gate or a scope only; `plan()` marks a tuple
+  whose `resource.type` is a declared type, and only while the binding
+  is on, and never `audience` or `protected_resource`. With no exchange
+  subject in the batch it is an ordinary evaluation again (a binding
+  member on it is still `0101`). The exchange subject's cell is decided
+  by `detailVerdict()`: a cell naming anybody else, a Txn-Token's
+  requesting party included, is false (`0128`) in every mode. The cell
+  is the type, one location when the tuple names an id, and an action
+  or `action:datatype` split on the last colon; `authorization_detail`
+  names neither. An enforcing type is held to `exchangeBoundProblem()`
+  against `subject_token.authorization_details` and "issued here"
+  (`subject_token.iss` equal to this realm's issuer, not a
+  re-verification) before `fineGrainedRefusal()` at stage `exchange`;
+  not covered is false (`0129`) and the decider is not asked. A permit
+  is true. A deny is false (`0130`). A fault is `STS-AUTHZEN-0046`
+  (HTTP 500) with the STS-FGA code on the audit row, and is not counted.
+  A type that does not enforce skips the bound and is granted as asked,
+  in every mode. `declaredTypes()` throwing while planning is logged
+  (`0131`) and no detail is recognized; throwing while answering a cell
+  already recognized is the same log and false (`0129`). The answer
+  does not carry the cell back.
+* **Not built:** the edge PDP answering the binding (its port only
+  refuses the catalogue rows). Direction B is *Asking an external PDP*
+  below.
 
 ## Asking an external PDP (#1200)
 
@@ -943,4 +971,11 @@ submission whose `Content-Type` is not `application/json` (#936); 0123–0127
 direction B (#1200): 0123 an unusable PDP address, 0124 no answer, 0125 a
 subject or requesting-party gate refused, 0126 an answer that is not the
 batch's decision, 0127 a client certificate, key or named CA file that
-cannot be read.
+cannot be read; 0128–0134 the binding's authorization-detail tuples and
+the issuance envelope's audience and claims (#1201): 0128 a cell naming
+somebody other than the exchange subject, 0129 a cell not covered, not
+issued here, or whose type can no longer be read, 0130 the application's
+policy denying the cell, 0131 the type list unreadable (logged), 0132 an
+audience that would broaden (logged and dropped), 0133 a claim that
+would broaden, is reserved, or is not on the subject token (logged and
+dropped), 0134 an empty audience withdrawing the target.
