@@ -686,6 +686,8 @@ is refused.
 | `resource.type = audience, action.name = issue:<type>:token_exchange` | a GATE tuple. The first one for a target is the subject gate; one naming another subject for the same target and type is the requesting party gate; a third subject is refused |
 | `resource.type = audience, action.name = issue:<type>:<grant>` | any other grant, or a token type not registered: decided false (this PDP decides the token-exchange gate only) |
 | `resource.type = protected_resource` | a SCOPE tuple: action.name is the scope, verbatim; decided only beside a token-exchange gate in the same batch, and only for the exchange subject (or, for txn_token, the requesting party) |
+| `resource.type = a declared authorization_details type` | an AUTHORIZATION-DETAIL tuple, one cell: decided only beside a token-exchange gate in the same batch, and only for the exchange subject. A type this realm has not declared, and audience or protected_resource, is not this tuple |
+| `action.name of an authorization-detail tuple` | the cell's action, or action:datatype split on the last colon; the reserved name authorization_detail means the cell names neither. privileges and identifier are not read |
 | `<type> of the gate action` | the token type short name: access_token, refresh_token, id_token, jwt, saml1, saml2, id_jag, txn_token; sent as urn:sts:xacml:authzen:token-type |
 | `subject (subject gate)` | the exchange subject: the access-subject of the exchange question, a person by name or urn:uuid subject, an application by identifier or client_id (urn:sts:client:<id> is <id>) |
 | `subject (requesting party gate)` | the actor: the intermediary-subject of the exchange question; with no requesting party gate, the subject itself (the gates coincide) |
@@ -697,8 +699,12 @@ is refused.
 | `context.subject_token_type, context.actor_token_type` | verbatim, as urn:sts:xacml:authzen:subject-token-type and ...:actor-token-type |
 | `context.subject_token.scope` | what a scope tuple may not widen (exchange stage), and the set granted_scope narrows when the request names no scope |
 | `context.subject_token.exp` | the ceiling on token_lifetime; none left is a false subject gate |
+| `context.subject_token.authorization_details` | the bound a detail cell of an enforcing type must be covered by; absent, or a subject token not issued here, and the cell is false. Never copied into the answer |
+| `context.subject_token.iss` | whether the subject token was issued here, which is what makes its authorization_details a bound; compared with this realm's issuer and not re-verified |
 | `context.client_id` | the client whose declared scopes a scope tuple is held to, and whose access-token lifetime bounds token_lifetime |
 | `context.cnf, .acr, .amr, .auth_time, .jti` | read for their type only; no rule decides on them |
+| `context.issuance.audience` | on the subject gate only, and only when every value is that gate's resource.id, which does not narrow one target so it is left out; any other value is not sent, and an empty array withdraws the target |
+| `context.issuance.claims` | on the subject gate only, and only a claim the subject token already carries, narrowed; a reserved name, a new claim or a wider value is not sent |
 | `exchange_semantics` | not sent: the policy chooses by its precedence, as for a local exchange that named none |
 | `urn:sts:xacml:protocol` | OAuth 2.0, the act's protocol, so one policy decides both; the trusted urn:sts:xacml:authzen:caller tells this one apart |
 
@@ -719,11 +725,23 @@ It only ever narrows what the authorization server would otherwise issue:
 * `granted_scope`: only when the request names no scope. It is the subject
   token's scope (`context.subject_token.scope`), narrowed by the same three
   checks as a scope tuple. Without a subject token scope it is left out, and
-  the authorization server uses its own defaults.
+  the authorization server uses its own defaults;
+* `audience`: only this gate's own resource id. One gate has one target, so
+  a list of that id does not narrow and is left out. Any other value would
+  broaden the target and is not sent. An empty array withdraws the target,
+  and the subject gate is `false`;
+* `claims`: a claim the subject token already carries, and only a narrower
+  value (a string array that is a proper subset, or a smaller non-negative
+  number). A value equal to the subject token's does not narrow and is left
+  out. A reserved name (`iss`, `iat`, `jti`, `sub`, `aud`, `exp`, `nbf`,
+  `scope`, `client_id`, `cnf`, `act`, `authorization_details`, `may_act`),
+  a claim the subject token does not carry, or a wider value is not sent.
 
-The answer never sets `sub`, `aud`, `act`, `may_act` or any other claim. The
-binding reserves them: a PDP that could write `act` could invent a
-delegation history. `context.issuance` is sent whatever
+The answer never sets `sub`, `aud`, `act` or `may_act`. The binding reserves
+them: a PDP that could write `act` could invent a delegation history. It
+also never returns a rewritten `authorization_details` array; each cell is
+its own tuple, and the authorization server reassembles the ones that were
+permitted. `context.issuance` is sent whatever
 `authzen.returnReasons` says; with that setting on, each item also carries
 `xacml_decision`, `reason_admin` and, for a gate, `exchange_semantics` (the
 delegation or impersonation the policy chose).
@@ -739,12 +757,16 @@ exchange gate only.
 * **ID-JAG.** The gates name the resource authorization server that will
   redeem the grant (level 1), and are decided by whether the identity
   provider's client may delegate to it. Scope tuples may name the resources
-  behind it (level 2); they are decided as any scope tuple.
+  behind it (level 2); they are decided as any scope tuple. An
+  authorization-detail tuple is a level-2 cell of the subject's access,
+  decided as any detail tuple.
 * **Txn-Token.** The requesting party is a workload. The authorization server
   sends scope tuples for the workload as well as for the subject, and the
   workload's are decided as the workload's own (its declared scopes and
   roles). Outside a Txn-Token, a scope tuple for the requesting party is
-  `false`: scope is the subject's authority.
+  `false`: scope is the subject's authority. A detail tuple for the
+  requesting party is `false` in either token type: the party's exception
+  is scopes on a Txn-Token only.
 
 ### A worked example
 
@@ -813,10 +835,15 @@ authorization server cannot disagree. If a rule must apply only to exchanges
 asked over AuthZEN, test `urn:sts:xacml:authzen:caller` in the issuance
 policy's exchange rules.
 
-The binding is decided by the issuance policy even when the caller's
-application enforces [fine-grained authorization](fga.md). A local token
-exchange asks that application's policy only about RFC 9396 authorization
-details, and the binding carries none.
+The binding's gates and scopes are decided by the issuance policy even when
+the caller's application enforces [fine-grained authorization](fga.md). A
+local token exchange asks that application's policy only about RFC 9396
+authorization details, and an authorization-detail tuple does the same: one
+cell, covered by `context.subject_token.authorization_details` when the
+type's application enforces it and the subject token was issued here
+(`context.subject_token.iss`), then that application's policy. A type that
+does not enforce is granted as asked. A cell the policy cannot decide is an
+error, not `false`. The answer does not carry the cell back.
 
 ## Asking an external PDP
 
@@ -1121,9 +1148,8 @@ None of these is advertised in the metadata:
 * Of the Access Request and Approval Profile: binding a denial by
   `evaluation_id` alone, `approval.state`, machine-readable forms, and the
   BULK, ACTOR and CATALOG companions.
-* Of the OAuth token exchange binding: authorization-detail tuples, and the
-  `claims` and `audience` shaping keys. Direction B, this authorization
-  server asking an external PDP, is built (see *Asking an external PDP*).
+* Direction B, this authorization server asking an external PDP, is built
+  (see *Asking an external PDP*). The edge PDP does not answer the binding.
 * The [edge PDP](remote-pep.md#an-authzen-edge-pdp) answers evaluations and
   batches only: no searches, access requests, Obligations Profile, token
   exchange binding or `signed_metadata`.

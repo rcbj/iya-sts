@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5923** of them, in **56** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5930** of them, in **56** subsystems.
 
 ## Where a code appears
 
@@ -92,7 +92,7 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 252
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 137
-* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 104
+* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 111
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 301
@@ -5671,6 +5671,13 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0125` | An RFC 8693 token exchange was not issued because the external AuthZEN PDP refused a subject or requesting-party gate. Which gate is not told to the client (#1200). | HTTP 400 invalid_request |
 | `STS-AUTHZEN-0126` | An RFC 8693 token exchange was not issued because the external AuthZEN PDP answered 2xx with a body that is not the batch's decision: not JSON, a missing or differently sized evaluations array, an item that is not an object, a decision that is not a boolean, or an item carrying context.error (#1200). | HTTP 503 temporarily_unavailable |
 | `STS-AUTHZEN-0127` | An RFC 8693 token exchange was not issued because the client certificate or key for the external AuthZEN PDP is empty, unreadable, outside security.fileRoots, or not a PEM, or a named CA file is. The PDP was not dialled (#1200). | HTTP 503 temporarily_unavailable |
+| `STS-AUTHZEN-0128` | An AuthZEN authorization-detail tuple named somebody other than the exchange subject. The binding adds requesting-party tuples for scopes on a Txn-Token only, so a cell for the party is the same refusal; answered false (#1201). | decision: false |
+| `STS-AUTHZEN-0129` | An AuthZEN authorization-detail cell is not granted: its type could not be read or is no longer declared, or, where the type's application enforces fine-grained authorization, the cell is not covered by the subject token's authorization_details or the subject token was not issued here (#1201). | decision: false |
+| `STS-AUTHZEN-0130` | An application that enforces fine-grained authorization refused an AuthZEN authorization-detail cell of one of its types; answered false (#1201). | decision: false |
+| `STS-AUTHZEN-0131` | The authorization-detail types could not be read while an AuthZEN token-exchange batch was planned or a cell was decided, so no detail tuple is recognized from that read (#1201). | none — logged; a cell already recognized is answered false (STS-AUTHZEN-0129) |
+| `STS-AUTHZEN-0132` | An AuthZEN token-exchange subject gate was given an issuance audience that is not an array of that gate's resource id. It would broaden the target, so it is not sent (#1201). | none — logged; the envelope is sent without it |
+| `STS-AUTHZEN-0133` | An AuthZEN token-exchange subject gate was given an issuance claim that is reserved, is not on the subject token, or is wider than the subject token's value. It is not sent (#1201). | none — logged; the envelope is sent without that claim |
+| `STS-AUTHZEN-0134` | An AuthZEN token-exchange subject gate was given an empty issuance audience, which withdraws that gate's target; answered false (#1201). | decision: false |
 
 ## STS-FGA
 
