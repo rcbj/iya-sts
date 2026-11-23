@@ -65,7 +65,7 @@ use sts_xacml::pdp::{AttributeResolver, EvaluationOptions};
 use sts_xacml::request::{Response, Status};
 
 use crate::audit::{self, Record};
-use crate::authzen_catalogue::BINDING_CONTEXT;
+use crate::authzen_binding::{self, Classified};
 use crate::authzen_map::{self, Trusted};
 use crate::enforce::Enforcer;
 use crate::listener::Transport;
@@ -280,101 +280,6 @@ pub fn head_is_absent(path: &str) -> bool {
     ["GET", "POST", "DELETE"]
         .iter()
         .any(|method| refusal_of(method, path).is_some())
-}
-
-fn entity_str<'a>(body: &'a Value, entity: &str, member: &str) -> &'a str {
-    body.get(entity)
-        .and_then(Value::as_object)
-        .and_then(|object| object.get(member))
-        .and_then(Value::as_str)
-        .unwrap_or("")
-}
-
-/// `issue:<token type>:<grant>`, each segment `[a-z][a-z0-9_]{0,20}`. Any
-/// grant, including one this edge has never heard of: it does not hold the
-/// grant registry, and a gate is still the service's.
-fn is_gate_action(name: &str) -> bool {
-    let mut parts = name.split(':');
-    if parts.next() != Some("issue") {
-        return false;
-    }
-    let Some(grant) = parts.next() else {
-        return false;
-    };
-    let Some(kind) = parts.next() else {
-        return false;
-    };
-    if parts.next().is_some() {
-        return false;
-    }
-    gate_segment(grant) && gate_segment(kind)
-}
-
-fn gate_segment(text: &str) -> bool {
-    let mut chars = text.chars();
-    if !matches!(chars.next(), Some(c) if c.is_ascii_lowercase()) {
-        return false;
-    }
-    let mut rest = 0usize;
-    for c in chars {
-        if !(c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_') {
-            return false;
-        }
-        rest += 1;
-        if rest > 20 {
-            return false;
-        }
-    }
-    true
-}
-
-/// An audience resource whose action is a gate.
-pub(crate) fn is_gate(body: &Value) -> bool {
-    entity_str(body, "resource", "type") == "audience"
-        && is_gate_action(entity_str(body, "action", "name"))
-}
-
-fn has_binding_context(body: &Value) -> bool {
-    let Some(context) = body.get("context").and_then(Value::as_object) else {
-        return false;
-    };
-    BINDING_CONTEXT
-        .iter()
-        .any(|name| context.contains_key(*name))
-}
-
-/// Why this body is a token-exchange tuple, if it is. Order: a gate, then
-/// a binding context member, then a scope beside a gate, then any other
-/// non-audience resource type beside a gate. A lone scope or detail, and
-/// an audience whose action is not a gate, are ordinary evaluations.
-fn binding_why(body: &Value, beside_gate: bool) -> Option<&'static str> {
-    if is_gate(body) {
-        return Some("a gate");
-    }
-    if has_binding_context(body) {
-        return Some("a context member");
-    }
-    if !beside_gate {
-        return None;
-    }
-    let resource_type = entity_str(body, "resource", "type");
-    if resource_type == "protected_resource" {
-        return Some("a scope");
-    }
-    if !resource_type.is_empty() && resource_type != "audience" {
-        return Some("a detail");
-    }
-    None
-}
-
-fn binding_message(body: &Value, beside_gate: bool) -> Option<String> {
-    let why = binding_why(body, beside_gate)?;
-    Some(format!(
-        "The OAuth token-exchange binding is answered by the service, \
-         which holds delegation and the directory. This edge PDP does not \
-         answer its tuples ({}).",
-        why
-    ))
 }
 
 /// WHO IS ASKING, by the one door: a certificate presented on the HTTPS
@@ -953,6 +858,9 @@ impl Pep {
             );
         };
         let parsed = body_of(&bytes);
+        let class =
+            authzen_binding::classify(&[Some(&parsed)], &catalogue.settings)
+                .remove(0);
         let item = self
             .evaluate_one(
                 &parsed,
@@ -960,7 +868,7 @@ impl Pep {
                 &catalogue,
                 id,
                 EVALUATION_PATH,
-                is_gate(&parsed),
+                class,
             )
             .await;
         reply_of(item)
@@ -1052,6 +960,11 @@ impl Pep {
         // NO ITEMS IS ONE EVALUATION, answered as the single endpoint would.
         if items.is_empty() {
             let single = merged(given, &json!({})).unwrap_or(Value::Null);
+            let class = authzen_binding::classify(
+                &[Some(&single)],
+                &catalogue.settings,
+            )
+            .remove(0);
             let one = self
                 .evaluate_one(
                     &single,
@@ -1059,7 +972,7 @@ impl Pep {
                     catalogue,
                     id,
                     EVALUATIONS_PATH,
-                    is_gate(&single),
+                    class,
                 )
                 .await;
             return reply_of(one);
@@ -1080,15 +993,19 @@ impl Pep {
         } else {
             id.to_string()
         };
-        // A gate anywhere in the batch makes every item stand beside one,
-        // classified on the merged item, as the service classifies.
+        // THE WHOLE BATCH IS CLASSIFIED AT ONCE, on the merged items, as
+        // the service plans it: a token-exchange gate anywhere in it makes
+        // a declared detail type beside it the binding's.
         let prepared: Vec<Option<Value>> =
             items.iter().map(|item| merged(given, item)).collect();
-        let beside_gate = prepared
-            .iter()
-            .any(|item| item.as_ref().is_some_and(is_gate));
+        let classes = authzen_binding::classify(
+            &prepared.iter().map(Option::as_ref).collect::<Vec<_>>(),
+            &catalogue.settings,
+        );
         let mut out = Vec::new();
-        for (i, request) in prepared.into_iter().enumerate() {
+        for (i, (request, class)) in
+            prepared.into_iter().zip(classes).enumerate()
+        {
             let one = match request {
                 None => ItemResult::failed(
                     400,
@@ -1102,7 +1019,7 @@ impl Pep {
                         catalogue,
                         &format!("{}#{}", batch_id, i),
                         EVALUATIONS_PATH,
-                        beside_gate,
+                        class,
                     )
                     .await
                 }
@@ -1129,6 +1046,67 @@ impl Pep {
         Reply::decision(json!({ "evaluations": out }))
     }
 
+    /// A binding tuple's 501 (`STS-XPEP-0140`), logged and RECORDED as every
+    /// answer this edge gives is (#1827): a row in the service's audit log,
+    /// `authzen.remote.decision`, deciding nothing. The record carries what
+    /// any AuthZEN record carries, each type and name cut to the length a
+    /// read would have allowed, since this body was not read; no
+    /// application, which a read would have checked first.
+    fn refuse_binding(
+        &self,
+        body: &Value,
+        caller: &Caller,
+        batch_id: &str,
+        endpoint: &str,
+        why: &'static str,
+    ) -> ItemResult {
+        let text = |entity: &str, member: &str| {
+            let said = body
+                .get(entity)
+                .and_then(Value::as_object)
+                .and_then(|object| object.get(member))
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            crate::authzen_catalogue::js_slice(said, authzen_map::MAX_TEXT)
+        };
+        let message = authzen_binding::binding_message(why);
+        tracing::info!(
+            "{}xacml-pep: authzen: {} refused {} for a {} to {} a {}, caller \
+             \"{}\"{}: {}",
+            tag("STS-XPEP-0140"),
+            endpoint,
+            why,
+            text("subject", "type"),
+            text("action", "name"),
+            text("resource", "type"),
+            caller.name,
+            if batch_id.is_empty() {
+                String::new()
+            } else {
+                format!(", request {}", batch_id)
+            },
+            message
+        );
+        self.audit.record(Record {
+            at: sts_core::time::iso_now(),
+            kind: "authzen".into(),
+            decision: String::new(),
+            allowed: false,
+            fault: false,
+            code: "STS-XPEP-0140".into(),
+            resource: text("resource", "type"),
+            action: text("action", "name"),
+            bias: Bias::DenyBiased.as_str().to_string(),
+            why: message.clone(),
+            caller: caller.name.clone(),
+            subject_type: text("subject", "type"),
+            endpoint: endpoint.to_string(),
+            request_id: batch_id.to_string(),
+            ..Record::default()
+        });
+        ItemResult::failed(501, "STS-XPEP-0140", message)
+    }
+
     /// Decides one evaluation for an admitted caller, and records it — a
     /// log line, and (unless it was FORWARDED, which the service recorded
     /// itself) a decision record sent to the service's audit log (#1827).
@@ -1139,20 +1117,25 @@ impl Pep {
         catalogue: &Catalogue,
         batch_id: &str,
         endpoint: &str,
-        beside_gate: bool,
+        class: Classified,
     ) -> ItemResult {
-        // BEFORE THE READ (#1181, #1205). A binding tuple is the service's:
-        // this edge holds neither delegation nor the directory. Logged
-        // here, and the single-response path does not log it again.
-        // `may_act` with no catalogue row is still 0004 when this is not a
-        // binding tuple — the shared table's V30.
-        if let Some(message) = binding_message(body, beside_gate) {
-            tracing::info!(
-                "{}xacml-pep: authzen: {}",
-                tag("STS-XPEP-0140"),
-                message
-            );
-            return ItemResult::failed(501, "STS-XPEP-0140", message);
+        // BEFORE THE READ (#1181, #1205), classified as the service
+        // classifies (`authzen_binding.rs`). A binding tuple is the
+        // service's: this edge holds neither delegation nor the directory.
+        // It is logged and recorded here, and the single-response path
+        // does not log it again.
+        match class {
+            Classified::Binding(why) => {
+                return self
+                    .refuse_binding(body, caller, batch_id, endpoint, why);
+            }
+            // A binding member on a tuple that is not the binding's is the
+            // service's 400, not an undeclared property (0004): the
+            // service refuses it before it reads the request.
+            Classified::Stray(message) => {
+                return ItemResult::failed(400, "STS-AUTHZEN-0101", message);
+            }
+            Classified::Ordinary => {}
         }
         let evaluation = match authzen_map::read(body, &catalogue.rows) {
             Ok(evaluation) => evaluation,
@@ -1436,6 +1419,21 @@ impl Pep {
                 "obligations".into(),
                 Value::Array(outcome.obligations.clone()),
             );
+            context = Some(Value::Object(map));
+        }
+        // A PRESENTED APPROVAL (#1180) is the service's re-evaluation
+        // context, whatever the decision: this edge cannot verify one, so
+        // it says what the service says of an approval it cannot verify
+        // (`AccessRequests.reevaluation()`), and that no request follows —
+        // the edge serves no access-request endpoint.
+        if evaluation.approval_present {
+            let mut map = context
+                .as_ref()
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_default();
+            map.insert("reason".into(), json!("approval_unverifiable"));
+            map.insert("next_action".into(), json!("none"));
             context = Some(Value::Object(map));
         }
         ItemResult {
@@ -2103,7 +2101,7 @@ mod tests {
                 &catalogue,
                 "r-1",
                 EVALUATION_PATH,
-                false,
+                Classified::Ordinary,
             )
             .await;
         assert!(forwarded.error.is_none() && forwarded.decision);
@@ -2115,7 +2113,7 @@ mod tests {
                 &catalogue,
                 "r-2",
                 EVALUATION_PATH,
-                false,
+                Classified::Ordinary,
             )
             .await;
         assert!(here.error.is_none() && !here.decision);
@@ -2177,18 +2175,43 @@ mod tests {
         )
     }
 
-    /// A binding tuple is 501 before it is read or forwarded. A lone scope,
-    /// and an audience whose action is not a gate, stay ordinary. An
-    /// approval is decided, and recorded as presented and not used.
-    #[tokio::test]
-    async fn a_binding_tuple_is_refused_before_it_is_read() {
-        let pep = edge_pep();
-        let audit = pep.audit.clone();
-        let catalogue = Catalogue::default();
+    /// One request's items classified as the service classifies them, then
+    /// evaluated: a binding tuple is 501 before it is read or forwarded and
+    /// is recorded for the service's audit log; with the binding off the
+    /// same tuples are ordinary and a binding member is 0101.
+    async fn decide(
+        pep: &crate::service::Pep,
+        catalogue: &Catalogue,
+        bodies: &[Value],
+    ) -> Vec<ItemResult> {
         let caller = Caller {
             name: "edge-caller".into(),
             applications: vec!["todo-app".into()],
         };
+        let items: Vec<Option<&Value>> = bodies.iter().map(Some).collect();
+        let classes =
+            crate::authzen_binding::classify(&items, &catalogue.settings);
+        let mut out = Vec::new();
+        for (body, class) in bodies.iter().zip(classes) {
+            out.push(
+                pep.evaluate_one(
+                    body,
+                    &caller,
+                    catalogue,
+                    "b-1",
+                    EVALUATIONS_PATH,
+                    class,
+                )
+                .await,
+            );
+        }
+        out
+    }
+
+    #[tokio::test]
+    async fn a_binding_tuple_is_classified_as_the_service_classifies_it() {
+        let pep = edge_pep();
+        let audit = pep.audit.clone();
         let person = || json!({ "type": "user", "id": "alice" });
         let gate = json!({
             "subject": person(),
@@ -2196,113 +2219,97 @@ mod tests {
             "resource": { "type": "audience", "id": "https://api.example" },
             "context": { "application": "todo-app", "may_act": { "sub": "g" } }
         });
-        let one = pep
-            .evaluate_one(
-                &gate,
-                &caller,
-                &catalogue,
-                "b-1",
-                EVALUATION_PATH,
-                true,
-            )
-            .await;
-        assert_eq!(one.code, "STS-XPEP-0140");
-        assert_eq!(one.error.as_ref().unwrap().0, 501);
-        assert!(one.error.unwrap().1.contains("(a gate)"));
-        assert_eq!(audit.overview()["queued"], 0);
-        let act = json!({ "context": { "act": { "sub": "gateway" } } });
-        let one = pep
-            .evaluate_one(&act, &caller, &catalogue, "", EVALUATION_PATH, false)
-            .await;
-        assert_eq!(one.code, "STS-XPEP-0140");
-        assert!(one.error.unwrap().1.contains("(a context member)"));
         let scope = json!({
             "subject": person(),
             "action": { "name": "read" },
             "resource": { "type": "protected_resource", "id": "documents.read" }
         });
-        let beside = pep
-            .evaluate_one(
-                &scope,
-                &caller,
-                &catalogue,
-                "",
-                EVALUATION_PATH,
-                true,
-            )
-            .await;
-        assert!(beside.error.unwrap().1.contains("(a scope)"));
-        let alone = pep
-            .evaluate_one(
-                &scope,
-                &caller,
-                &catalogue,
-                "",
-                EVALUATION_PATH,
-                false,
-            )
-            .await;
-        assert_ne!(alone.code, "STS-XPEP-0140");
-        assert!(alone.error.is_none());
-        let audience = json!({
+        let act = json!({
             "subject": person(),
             "action": { "name": "read" },
-            "resource": { "type": "audience", "id": "https://api.example" }
+            "resource": { "type": "document", "id": "d1" },
+            "context": { "act": { "sub": "gateway" } }
         });
-        let ordinary = pep
-            .evaluate_one(
-                &audience,
-                &caller,
-                &catalogue,
-                "",
-                EVALUATION_PATH,
-                true,
-            )
-            .await;
-        assert_ne!(ordinary.code, "STS-XPEP-0140");
-        let detail = json!({
-            "subject": person(),
-            "action": { "name": "read" },
-            "resource": { "type": "document", "id": "d1" }
-        });
-        let detail = pep
-            .evaluate_one(
-                &detail,
-                &caller,
-                &catalogue,
-                "",
-                EVALUATION_PATH,
-                true,
-            )
-            .await;
-        assert!(detail.error.unwrap().1.contains("(a detail)"));
-        let other_grant = json!({
-            "subject": person(),
-            "action": { "name": "issue:access_token:other_grant" },
-            "resource": { "type": "audience", "id": "https://api.example" }
-        });
-        assert!(is_gate(&other_grant));
-        assert!(!is_gate(&json!({
-            "action": { "name": "issue:access-token:token_exchange" },
-            "resource": { "type": "audience", "id": "https://api.example" }
-        })));
+        let mut on = Catalogue::default();
+        on.settings.token_exchange = true;
+        on.settings.detail_types = Some(vec!["document".into()]);
+        on.settings.token_types = Some(vec!["access_token".into()]);
+        // ON: the gate and a LONE scope are 501 — the service answers a
+        // lone scope a fixed false (STS-AUTHZEN-0105), which an ordinary
+        // evaluation here could widen — and the binding member on a tuple
+        // that is not the binding's is 0101.
+        let lone = decide(&pep, &on, std::slice::from_ref(&scope)).await;
+        assert_eq!(lone[0].code, "STS-XPEP-0140");
+        assert!(lone[0].error.as_ref().unwrap().1.contains("(a scope)"));
+        let alone = decide(&pep, &on, std::slice::from_ref(&act)).await;
+        assert_eq!(alone[0].code, "STS-AUTHZEN-0101");
+        assert_eq!(alone[0].error.as_ref().unwrap().0, 400);
+        let batch = decide(&pep, &on, &[gate.clone(), act.clone()]).await;
+        assert_eq!(batch[0].code, "STS-XPEP-0140");
+        assert_eq!(batch[0].error.as_ref().unwrap().0, 501);
+        assert!(batch[0].error.as_ref().unwrap().1.contains("(a gate)"));
+        assert!(batch[1].error.as_ref().unwrap().1.contains("(a detail)"));
+        // EVERY 501 IS RECORDED (#1827), deciding nothing.
+        let queued = audit.queued_for_test();
+        let refused: Vec<_> = queued
+            .iter()
+            .filter(|one| one.code == "STS-XPEP-0140")
+            .collect();
+        assert_eq!(refused.len(), 3);
+        assert!(refused.iter().all(|one| one.kind == "authzen"
+            && one.decision.is_empty()
+            && !one.allowed
+            && !one.fault
+            && one.caller == "edge-caller"
+            && one.request_id == "b-1"));
+        assert_eq!(refused[0].resource, "protected_resource");
+        assert_eq!(refused[1].action, "issue:access_token:token_exchange");
+        // OFF: the same gate and scope are ordinary evaluations (no
+        // catalogue row names may_act, so the gate's member is 0101 first),
+        // and the binding member says the binding is off.
+        let mut off = Catalogue::default();
+        off.settings.token_exchange = false;
+        let plain = decide(&pep, &off, &[gate, scope, act]).await;
+        assert_eq!(plain[0].code, "STS-AUTHZEN-0101");
+        assert!(plain[1].error.is_none() && !plain[1].decision);
+        assert_eq!(plain[2].code, "STS-AUTHZEN-0101");
+        assert!(plain[2].error.as_ref().unwrap().1.ends_with(
+            "the binding is off in this realm (authzen.tokenExchange)."
+        ));
+        assert_eq!(
+            audit
+                .queued_for_test()
+                .iter()
+                .filter(|one| one.code == "STS-XPEP-0140")
+                .count(),
+            3,
+            "nothing more is refused with the binding off"
+        );
+    }
+
+    /// An approval is decided without being used, recorded as presented
+    /// and not used, and answered with the service's context for an
+    /// approval it cannot verify.
+    #[tokio::test]
+    async fn an_approval_is_answered_as_unverifiable() {
+        let pep = edge_pep();
+        let audit = pep.audit.clone();
+        let mut catalogue = Catalogue::default();
+        catalogue.settings.token_exchange = false;
         let approval = json!({
-            "subject": person(),
+            "subject": { "type": "user", "id": "alice" },
             "action": { "name": "read" },
             "resource": { "type": "document", "id": "d1" },
             "context": { "approval": { "id": "t1", "state": "signed" } }
         });
-        let decided = pep
-            .evaluate_one(
-                &approval,
-                &caller,
-                &catalogue,
-                "b-2",
-                EVALUATION_PATH,
-                false,
-            )
-            .await;
-        assert!(decided.error.is_none() && !decided.decision);
+        let decided = decide(&pep, &catalogue, &[approval]).await;
+        let one = &decided[0];
+        assert!(one.error.is_none() && !one.decision);
+        assert_eq!(
+            one.context,
+            Some(json!({ "reason": "approval_unverifiable",
+                         "next_action": "none" }))
+        );
         let queued = audit.queued_for_test();
         assert_eq!(queued.last().unwrap().code, "STS-AUTHZEN-0084");
     }

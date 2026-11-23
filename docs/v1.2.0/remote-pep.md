@@ -1338,8 +1338,34 @@ and the Access Request profile (`POST /access/v1/access-requests`, its schema,
 a task, and cancel) answer `501`. The service holds the directory and the
 approval store; this edge does not. Those answers use the evaluation error
 object, require no admission, and are not named in the metadata. A method the
-profile does not define, and `HEAD` of any of them, stays `404`. A
-token-exchange binding tuple on an evaluation is `501` for that item.
+profile does not define, and `HEAD` of any of them, stays `404`.
+
+**The OAuth token-exchange binding is classified as the service classifies
+it**, from the realm's `authzen.tokenExchange` and the lists the pull
+carries:
+
+* **The binding on**: every gate (resource type `audience`, action
+  `issue:<token type>:<grant>`, any grant) and every scope tuple (resource
+  type `protected_resource`), alone or in a batch, is `501` for that item
+  (`STS-XPEP-0140`). So is a tuple whose resource type the realm declares as
+  an `authorization_details` type, when the same request carries a
+  token-exchange gate (`issue:<registered token type>:token_exchange`). The
+  service answers these by the binding's fixed rules, which need delegation
+  and the directory; a lone scope, for instance, is always `false` there,
+  and the edge does not evaluate it as an ordinary question that could
+  answer `true`.
+* **The binding off**: none of these is special. Each is an ordinary
+  evaluation, here and at the service.
+* **Either way**, a context member the binding reads (`client_id`, `acr`,
+  `amr`, `auth_time`, `cnf`, `jti`, `subject_token_type`,
+  `actor_token_type`, `subject_token`, `act`, `may_act`) on a tuple that is
+  not the binding's is `400` (`STS-AUTHZEN-0101`).
+
+A service too old to send `tokenExchange` is read as having it **on**, and a
+missing list of declared types or token types counts every type: the edge
+answers `501` rather than risk a wider answer than the service would give.
+Each `501` is recorded in the service's audit log as an
+`authzen.remote.decision` row with the code, deciding nothing.
 
 **A request is mapped exactly as the service maps it.** What a property of a
 request means is the realm's AuthZEN attribute catalogue, and the container
@@ -1349,15 +1375,20 @@ same poll, with its own sync token — the same credential and the same
 AuthZEN settings that change the mapping or the answer
 (`authzen.enabled`, `authzen.resolveSubjectTypes`, `authzen.batchEnabled`,
 `authzen.maxEvaluations`, `authzen.maxBodyBytes`, `authzen.returnReasons`,
-`authzen.obligationsProfile`), so switching one on the service switches it
-here at the next poll. The identifiers, the value rules, the refusals and
+`authzen.obligationsProfile`, `authzen.tokenExchange`, and the token types
+and declared `authorization_details` types the binding classifies with), so
+switching one on the service switches it here at the next poll. A service
+too old to send `obligationsProfile` is read as having the profile **off**,
+so the edge hands no obligation it was not told it may. The identifiers, the value rules, the refusals and
 their statuses, the batch's three semantics and bounds, `X-Request-ID` and
 the fail-closed result are the service's: `true` only on a Permit carrying
 nothing it cannot discharge, or a Permit whose obligations were handed
 because the caller declared every type in `context.supported_obligations`
 and the realm's obligations profile is on (`urn:sts:xacml:obligation:log` is
 the one the PDP discharges itself), whatever `PEP_BIAS` says.
-`context.approval` is recognized and not used.
+`context.approval` is recognized and not used: the answer's context says
+`reason: approval_unverifiable` and `next_action: none`, as the service
+says of an approval it cannot verify (`STS-AUTHZEN-0084`).
 It decides against the root policy it pulled, and asks the service's PIP
 (`POST /xacml/pip`) about a subject whose type the realm resolves, as
 `/protected` does.
@@ -1577,8 +1608,8 @@ them.
 | `reason_admin` is the service's sentence | It is this container's; the decision and the code are the same |
 | The three Search APIs (`/access/v1/search/*`) | `501`. The metadata does not list them. The service holds the directory and the catalogues |
 | The Obligations Profile: an obligation is handed in `context.obligations` when the PEP declares its type in `context.supported_obligations` | Handed the same way, while `authzen.obligationsProfile` is on. The metadata then lists `supported_obligations`. Without the declaration a Permit that carries any other obligation answers `false` |
-| `context.approval` on an evaluation | Recognized and not used. The decision is made without it. The access-request endpoints are `501`; the edge holds no approval store |
-| The OAuth token-exchange binding's tuples | `501` for that evaluation, or for that batch item. A lone scope or an audience whose action is not a gate stays an ordinary evaluation. Not advertised |
+| `context.approval` on an evaluation | Recognized and not used. The decision is made without it, and the context says `reason: approval_unverifiable`, `next_action: none`. The access-request endpoints are `501`; the edge holds no approval store |
+| The OAuth token-exchange binding's tuples, answered by its fixed rules while `authzen.tokenExchange` is on | `501` for that evaluation, or for that batch item, while it is on (or the service did not say); recorded in the audit log. While it is off, ordinary evaluations, as at the service. Not advertised |
 | `signed_metadata` in the metadata document | Omitted. The edge holds no signing key of the realm's, and republishing the service's JWT would name the wrong issuer |
 | An evaluation about an application that enforces [fine-grained authorization](fga.md) is decided against that application's own policy ([AuthZEN](authzen.md#applications-with-their-own-policy)) | Not decided here: forwarded to the service, which decides it ([above](#applications-that-enforce-fine-grained-authorization-forwarded)). It costs a round trip, needs the PEP's entry to hold `AUTHZEN_PEPS` with the application in its scope, and follows a switch of enforcement from the next poll |
 

@@ -374,6 +374,14 @@ interface XacmlSurfaceDeps {
   loadAuthzenCatalogue(): { rowsOf(values: unknown):
                               { rows: any[]; problems: string[] };
                             valueOf(row: any): string };
+  // Required when a remote PEP pulls the AuthZEN catalogue (#1205): the
+  // token-exchange binding's token-type registry, and the
+  // `authorization_details` types the realm declares, which together with
+  // `authzen.tokenExchange` decide which tuples the service answers by the
+  // binding's fixed rules.
+  loadAuthzenExchange(): { TOKEN_TYPES: Record<string, string> };
+  loadAuthorizationDetails(): { declaredTypes(): Record<string, unknown> |
+                                                 null };
   sha256Base64(text: string): string;
   // `xacml/pep_token.ts`, the one reading of a remote PEP's access token
   // (#1827's follow-up), built when a token first arrives.
@@ -559,6 +567,16 @@ class XacmlSurface {
         helpers.log.debug("Entering loadAuthzenCatalogue().");
         helpers.log.debug("Leaving loadAuthzenCatalogue().");
         return require('../authzen/authzen_catalogue');
+      },
+      loadAuthzenExchange: function (): any {
+        helpers.log.debug("Entering loadAuthzenExchange().");
+        helpers.log.debug("Leaving loadAuthzenExchange().");
+        return require('../authzen/authzen_exchange');
+      },
+      loadAuthorizationDetails: function (): any {
+        helpers.log.debug("Entering loadAuthorizationDetails().");
+        helpers.log.debug("Leaving loadAuthorizationDetails().");
+        return require('../oauth-oidc/authorization_details');
       },
       sha256Base64: function (text: string): string {
         helpers.log.debug("Entering sha256Base64().");
@@ -955,6 +973,18 @@ class XacmlSurface {
   // the container's answer follows the realm's switches rather than a
   // second copy of them.
   //
+  // **AND WHAT CLASSIFIES A TOKEN-EXCHANGE TUPLE (#1205).** The service
+  // answers the binding's gate, scope and detail tuples by its fixed rules
+  // while `authzen.tokenExchange` is on, and evaluates them as any other
+  // while it is off (`authzen_exchange.ts`'s `plan()`). The edge answers
+  // the first 501 and must evaluate the second, so it is sent the switch,
+  // the token types a token-exchange gate may name, and the
+  // `authorization_details` types the realm declares. An edge reads each
+  // ABSENT one in the closed direction (the binding on; every type beside
+  // a gate a detail), so a list that cannot be read is sent as null
+  // (STS-AUTHZEN-0145) rather than as an empty list, which would be the
+  // open one.
+  //
   // **ITS OWN SYNC TOKEN, NOT THE POLICIES'.** A digest of exactly what is
   // sent, so a catalogue change and a policy change are two different
   // events, and `/xacml/pep/policies`' token — which heartbeats compare — is
@@ -976,6 +1006,35 @@ class XacmlSurface {
   // enforcing application to the root): the whole catalogue is refused with
   // a 500 (`STS-FGA-0108`), and the edge keeps the one it holds.
   // ===========================================================================
+  /**
+   * The `authorization_details` types this realm's applications declare,
+   * sorted, for the catalogue a remote PEP pulls (#1205) — or null when
+   * they cannot be read, which the edge reads closed.
+   *
+   * @returns the type names, or null
+   */
+  declaredDetailTypes(): string[] | null {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering XacmlSurface.declaredDetailTypes().');
+    try {
+      const types = this.deps.loadAuthorizationDetails().declaredTypes() ||
+        {};
+      log.debug('Leaving XacmlSurface.declaredDetailTypes().');
+      return Object.keys(types).sort();
+    } catch (e) {
+      log.debug('Caught in XacmlSurface.declaredDetailTypes(): ' +
+                ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-AUTHZEN-0145') + 'xacml: the ' +
+                'authorization-detail types could not be read for the ' +
+                'AuthZEN catalogue a remote PEP pulled, so it is sent ' +
+                'none (null), and the edge treats every other resource ' +
+                'type beside a token-exchange gate as a detail tuple: ' +
+                ((e && e.message) || e));
+      log.debug('Leaving XacmlSurface.declaredDetailTypes(). Unreadable.');
+      return null;
+    }
+  }
+
   /**
    * The AuthZEN catalogue a remote PEP pulls, and its sync token, for the
    * realm the request is answered in.
@@ -1022,11 +1081,18 @@ class XacmlSurface {
       maxEvaluations: Number(config.value('authzen.maxEvaluations')),
       maxBodyBytes: Number(config.value('authzen.maxBodyBytes')),
       returnReasons: config.value('authzen.returnReasons') === true,
-      // Absent on an older catalogue is on, which is the setting's own
-      // default: an edge that handed obligations while the realm had
-      // turned the profile off would be wider than the service (#1205).
+      // Always sent. An edge reads it ABSENT as OFF (#1205), although the
+      // setting's own default is on: a catalogue that does not say cannot
+      // tell the edge to hand obligations, and handing them while the
+      // realm had turned the profile off would be wider than this service.
       obligationsProfile:
-        config.value('authzen.obligationsProfile') !== false
+        config.value('authzen.obligationsProfile') === true,
+      // An edge reads it absent as ON: a 501 decides nothing, while an
+      // ordinary evaluation of a tuple this service keeps could widen.
+      tokenExchange: config.value('authzen.tokenExchange') === true,
+      tokenExchangeDetailTypes: this.declaredDetailTypes(),
+      tokenExchangeTokenTypes: Object.keys(
+        this.deps.loadAuthzenExchange().TOKEN_TYPES).sort()
     };
     let fgaApplications: string[] = [];
     try {
@@ -1059,7 +1125,8 @@ class XacmlSurface {
       note: 'The AuthZEN attribute catalogue of this realm: the rows of ' +
             'authzenAttribute on sts-authzen-api, read as this service ' +
             'reads them for POST /access/v1/evaluation, and the settings ' +
-            'that change the mapping or the answer. An edge PDP maps a ' +
+            'that change the mapping or the answer, including which ' +
+            'tuples the token-exchange binding answers. An edge PDP maps a ' +
             'request with exactly these, or not at all. fgaApplications ' +
             'names the applications that enforce fine-grained ' +
             'authorization: an evaluation about one of them is decided by ' +

@@ -1152,7 +1152,8 @@ mod tests {
         sync.load_for_test(&json!({ "syncToken": "p1", "policies": [] }));
         sync.load_catalogue_for_test(&json!({
             "syncToken": "c1", "realm": "", "apiObject": "sts-authzen-api",
-            "rows": [], "settings": { "enabled": true, "batchEnabled": true }
+            "rows": [], "settings": { "enabled": true, "batchEnabled": true,
+                                      "obligationsProfile": true }
         }));
         Arc::new(Pep::new(
             options.clone(),

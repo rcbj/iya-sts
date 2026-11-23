@@ -74,10 +74,24 @@ pub mod components {
         pub max_body_bytes: i64,
         #[serde(rename = "returnReasons")]
         pub return_reasons: bool,
-        /// The realm's authzen.obligationsProfile, as pulled. The default, and an
-        /// absent member, is on.
+        /// The realm's authzen.obligationsProfile, as pulled. Before a pull, and
+        /// when the catalogue did not send it, off.
         #[serde(rename = "obligationsProfile")]
         pub obligations_profile: bool,
+        /// The realm's authzen.tokenExchange, as pulled. Before a pull, and when
+        /// the catalogue did not send it, on: the binding's tuples are answered
+        /// 501.
+        #[serde(rename = "tokenExchange")]
+        pub token_exchange: bool,
+        /// The declared authorization_details types, as pulled; null before a pull,
+        /// when the catalogue did not send them, or when the service could not read
+        /// them.
+        #[serde(rename = "tokenExchangeDetailTypes")]
+        pub token_exchange_detail_types: Option<Vec<String>>,
+        /// The registered token types, as pulled; null before a pull or when the
+        /// catalogue did not send them.
+        #[serde(rename = "tokenExchangeTokenTypes")]
+        pub token_exchange_token_types: Option<Vec<String>>,
     }
 
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
