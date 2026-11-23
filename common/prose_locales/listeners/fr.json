@@ -312,8 +312,8 @@
     "text": "Autorité de certification"
   },
   "listeners.applications.pki.what": {
-    "en": "8b280b2baedbdfe6",
-    "text": "Les CRL, OCSP, les certificats et chaînes des AC, et les documents de métadonnées cryptographiques."
+    "en": "227bec56922b2292",
+    "text": "Les CRL, OCSP, les certificats et chaînes de l’AC, les documents de métadonnées cryptographiques et les clés OpenPGP du Web Key Directory."
   },
   "listeners.applications.kerberos.label": {
     "en": "43c19a093b34b581",

@@ -88,8 +88,11 @@ const APPLICATIONS = [
     // sends the browser on to the protocol's own endpoint, so it is the
     // sign-in service's. The links to it are built for this application
     // (`LaunchLinks.launchUrl()`), wherever the page drawing them is.
+    // `/wsapi/2.0/verify` is YK-VAL's (#1955 P5, `authn/ykval.ts`): it
+    // checks a YubiKey OTP, one of the second factors this service signs
+    // people in with, against the same inventory and counter.
     prefixes: ['/authn', '/authn-api', '/logout', '/launch',
-               '/.well-known/hoba'],
+               '/.well-known/hoba', '/wsapi'],
     exact: ['/tls/sign-in'] },
   // `/account-api` IS THE PORTAL'S (#568): the portal is a static
   // application that draws every page from it, so the two are one
@@ -194,10 +197,14 @@ const APPLICATIONS = [
     prefixes: ['/.well-known/est'], exact: [] },
   { id: 'scep', label: 'SCEP', what: 'Certificate enrollment by SCEP.',
     prefixes: ['/enroll/scep'], exact: [] },
+  // The Web Key Directory (#1955 P6, `common/openpgp_keys.ts`) publishes
+  // the OpenPGP keys people registered here: public keys, beside the
+  // certificates this application already publishes.
   { id: 'pki', label: 'Certificate authority',
-    what: 'CRLs, OCSP, the CA certificates and chains, and the ' +
-          'cryptographic metadata documents.',
-    prefixes: ['/pki', '/crypto'], exact: [] },
+    what: 'CRLs, OCSP, the CA certificates and chains, the ' +
+          'cryptographic metadata documents and the Web Key Directory\'s ' +
+          'OpenPGP keys.',
+    prefixes: ['/pki', '/crypto', '/.well-known/openpgpkey'], exact: [] },
   // MS-KKDCP alone since #595: `/krb5/principals` was deleted and
   // `/krb5/service`, `/spnego` and `/spnego/protected` are the development
   // companion's.

@@ -108,7 +108,7 @@ async function slotKey(dev, o) {
   log.debug("Entering slotKey().");
   const opts = o || {};
   const slot = opts.slot || '9a';
-  const serial = opts.serial || 10000000 + Math.floor(Math.random() * 8e7);
+  const serial = opts.serial || 10000000 + nodeCrypto.randomInt(8e7);
   const pair = await kit.keyPair('ec');
   const attested = opts.attestOther ? await kit.keyPair('ec') : pair;
   const fw = opts.firmware || [5, 4, 3];

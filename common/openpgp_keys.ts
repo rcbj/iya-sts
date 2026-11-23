@@ -141,12 +141,20 @@ const CHALLENGE_TITLE = 'iya-sts OpenPGP key registration';
 // register's.
 const PUBLISHED_MAX = 5000;
 
+// The challenges a process holds per realm (a cache over the store, which
+// holds one per person registering).
+const CHALLENGES_MAX = 5000;
+
 // ---------------------------------------------------------------------------
 // THE CHALLENGES, per realm at the declaration (header). `expiresAt` in
-// milliseconds, so the minted store drops a spent one by itself.
+// milliseconds, so the minted store drops a spent one by itself. On demand,
+// as the publication register is, so what a process holds is bounded: one
+// challenge per person is a store as large as the directory, and is read
+// by its holder's key.
 // ---------------------------------------------------------------------------
 const challenges = realms.map({
   persist: 'openpgp.challenges',
+  onDemand: { maxEntries: CHALLENGES_MAX },
   tombstone: true,
   expiresAt: realms.expiryField('expiresAt', 1)
 });
@@ -175,9 +183,11 @@ cacheRegistry.register({
   persisted: true,
   settings: ['openpgp.challengeLifetimeS'],
   maxEntries: function (): number {
-    return 0;
+    return CHALLENGES_MAX;
   },
-  bound: 'One per person (keyed by entryUUID), each for ' +
+  bound: 'Enforced: the challenges a process holds are a cache of 5,000 per ' +
+    'realm, the oldest dropped and read from the store again when next ' +
+    'asked; the store holds one per person (keyed by entryUUID), each for ' +
     'openpgp.challengeLifetimeS.',
   lifetime: function (): string {
     return String(config.value('openpgp.challengeLifetimeS')) +
@@ -207,8 +217,9 @@ cacheRegistry.register({
   maxEntries: function (): number {
     return PUBLISHED_MAX;
   },
-  bound: 'The rows a process holds are a cache of 5,000 per realm; the ' +
-    'register holds one row per person who opted in.',
+  bound: 'Enforced: the rows a process holds are a cache of 5,000 per ' +
+    'realm, the oldest dropped and read from the store again when next ' +
+    'asked; the register holds one row per person who opted in.',
   lifetime: function (): string {
     return 'Until the person stops publishing or removes the key.';
   },

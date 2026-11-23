@@ -226,8 +226,9 @@ cacheRegistry.register({
   maxEntries: function (): number {
     return 5000;
   },
-  bound: 'The rows a process holds are a cache of 5,000 per realm; the ' +
-    'register itself is bounded by the credentials it lists ' +
+  bound: 'Enforced: the rows a process holds are a cache of 5,000 per ' +
+    'realm, the oldest dropped and read from the store again when next ' +
+    'asked; the register itself is bounded by the credentials it lists ' +
     '(webauthn.maxKeysPerPerson for FIDO).',
   lifetime: function (): string {
     return 'Until the token is removed; a lost token is kept, marked lost.';
