@@ -100,8 +100,8 @@
     "text": "partial: ang Access Evaluation API (section 6), pinagpapasyahan ng XACML engine laban sa root policy ng realm sa pamamagitan ng per-realm na attribute catalogue, na may X-Request-ID at ang section 11.3 challenge, ang Access Evaluations API (section 7) na may tatlong semantics nito, at ang PDP metadata (section 9) sa dalawang anyo nito, kasama ang signed_metadata, at ang Obligations Profile draft para sa PEP na nagdedeklara ng mga type, at ang tatlong Search API (section 8) sa mga tao, application, API, delegation relationship at policy action ng serbisyong ito, may paging at hindi transitive. Kulang: per-result na obligation sa isang search, at ang OAuth profile, na draft pa rin."
   },
   "stsmetadata.specs.authzen-arap.coverage": {
-    "en": "e785acbe5ead52ad",
-    "text": "partial: ang requestable na denial (context.access_request, evaluation_id, evaluated_at, reason) kung saan minamarkahan ng policy ng realm ang isang Deny ng access-request advice, naka-bind ayon sa value sa pamamagitan ng binding_token na pinipirmahan ng realm na ito (ang mga inline claim); ang pagsumite na may Idempotency-Key, 201 o 202 at isang Task Handle; ang task status endpoint na may Retry-After; pagkansela sa pamamagitan ng POST o DELETE; ang anim na status; ang reevaluate completion mode, ang approval.id na nireresolba sa trusted state at ang approval na umaabot sa policy bilang trusted facts; next_action at ang limang reason; bawat problem type; ang metadata member, jwks_uri at capability. Kulang: evaluation_id bilang binding ayon sa reference, approval.state, ang hashed na binding form, mga machine-readable na anyo (form_url, request_schema_url), display, at ang mga companion na BULK, ACTOR at CATALOG."
+    "en": "6be544a62f94329b",
+    "text": "partial: ang requestable na denial (context.access_request, evaluation_id, evaluated_at, reason) kung saan minamarkahan ng policy ng realm ang isang Deny ng access-request advice, naka-bind ayon sa value sa pamamagitan ng binding_token na pinipirmahan ng realm na ito (ang mga inline claim at binding_hash) at ayon sa reference mula sa record ng denial; ang pagsumite na may Idempotency-Key, 201 o 202 at isang Task Handle; ang task status endpoint na may Retry-After; pagkansela sa pamamagitan ng POST o DELETE; ang anim na status; ang reevaluate completion mode, ang approval.id na nireresolba sa trusted state, ang approval.state na inilalabas at bine-verify na kailangan pa rin ang lookup, at ang approval na umaabot sa policy bilang trusted facts; next_action at ang limang reason; bawat problem type; ang metadata member, jwks_uri at capability; request_schema_url sa isang requestable na denial, ang JSON Schema mula sa parehong origin ng mga opsyonal na augmentation ng pagsumite. Kulang: isang naka-host na form (form_url) at display, at ang mga companion na BULK, ACTOR at CATALOG."
   },
   "stsmetadata.specs.authzen-arap-callback.coverage": {
     "en": "ca5109eae0e95b17",
@@ -715,6 +715,14 @@
     "en": "59b1734815ece664",
     "text": "partial: ang id-aa-attestation attribute ng isang PKCS#10 na kahilingan (hindi hihigit sa isa, eksaktong isang AttestationBundle, ang certificate at iba pang choice lamang), sa EST, SCEP at ACME. Dalawang uri ng statement ang nave-verify: ang tcg-attest-tpm-certify ng TCG sa syntax ng appendix A.2.3 ng revision 20, para sa device profile (#257), at isang YubiKey PIV attestation para sa bawat profile (#1955), sa ilalim ng 1.3.6.1.4.1.41482.3.2 na ang slot certificate ang stmt at ang f9 certificate ay nasa certs, isang uri na pinili ng serbisyong ito dahil walang itinatakda ang draft. Hindi binabasa ang CRMF extension (walang CMP dito), at ang ibang uri ng statement ay itinatala, hindi nave-verify. Freshness (section 6.2) sa pamamagitan ng draft-ietf-lamps-attestation-freshness sa EST, para sa mga TPM statement lamang: walang dalang nonce ang PIV attestation."
   },
+  "stsmetadata.specs.yubico-piv-attestation.coverage": {
+    "en": "244659759ede3102",
+    "text": "partial: ang attestation na sertipiko ng slot ay vine-verify sa pamamagitan ng f9 attestation na sertipiko hanggang sa mga PIV root ng Yubico (Serial 263751, at Attestation Root 1 kasama ang mga PIV intermediate nito para sa firmware 5.7.4 pataas, kasama at naka-pin) o sa sariling root ng isang realm; ang key nito ay itinutugma sa key ng kahilingan; binabasa ang mga extension ng firmware, serial, PIN at touch policy at form factor, at itinutugma ang mga policy sa policy ng realm. Hindi kailanman pinamamahalaan ang mismong card: walang pagsulat ng PIN, PUK o slot."
+  },
+  "stsmetadata.specs.fips201.coverage": {
+    "en": "322d92ba9eb36fde",
+    "text": "minimal: ang apat na key slot bilang mga certificate profile (PIV Authentication 9a, Digital Signature 9c, Key Management 9d, Card Authentication 9e, na bilang default ay walang sina-sign in), at isang panlabas na PIV o CAC card na itinutugma ayon sa card UUID sa urn:uuid subjectAltName nito kapag nagsasaad ito ng PIV Authentication policy (naka-off bilang default). Walang FASC-N, CHUID, pamamahala ng card o biometrics."
+  },
   "stsmetadata.specs.lamps-attestation-freshness.coverage": {
     "en": "555e31da7393d476",
     "text": "partial: EST sa HTTPS (section 5.1) — /nonce sa GET at sa POST na may application/est-attestation-freshness+json, iginagalang ang len sa loob ng 8..64 (itinataas sa 16 octet), expiry, ang walang lamang nonce kapag walang kailangang proof, 400 at 503, authenticated, at nakabuklod sa CSR sa pamamagitan ng cookie at ng principal. Ang nonce ay ang qualifyingData ng TPM2_Certify, sinusuri bilang extraData ng TPMS_ATTEST at ginagamit nang isang beses lang. Wala: walang nakatakdang reqTypeInfo type (503), at ang CMP (section 4), EST sa CoAP (5.2) at CMC (6), na hindi sinasalita ng serbisyong ito."
@@ -762,6 +770,10 @@
   "stsmetadata.specs.rfc9580.coverage": {
     "en": "a2930bdb8ffe747d",
     "text": "partial: pagbasa ng transferable public key, v6 at (RFC 4880) v4, pag-verify ng cleartext signature ng isang signing key nito, at pag-encrypt ng mensahe sa encryption key nito, Ang mga classical na algorithm ay dumadaan sa openpgp.js. Ang mga composite ng RFC 9980 ay binabasa rito (tingnan ang rfc9980). Tinatanggap ang Ed25519, Ed448, ECDSA at ECDH sa mga NIST curve, X25519, X448 at RSA na openpgp.minRsaBits; tinatanggihan ang DSA, ElGamal at Brainpool. Kulang: pagpirma, decryption, keyring, keyserver."
+  },
+  "stsmetadata.specs.rfc9980.coverage": {
+    "en": "5feb46765c8bc465",
+    "text": "partial: mga pirma ng ML-DSA-65+Ed25519 at ML-DSA-87+Ed448, at pag-encrypt ng ML-KEM-768+X25519 at ML-KEM-1024+X448, sa pagrehistro at kapag ginamit ang isang nakaimbak na key. Ang composite ay post-quantum. Nililimitahan ng openpgp.pqcOnly ang pagrehistro lamang. Ang parehong hati ng isang pirma ay sine-verify ng common/crypto_impl/openpgp_pqc.js. Kulang: SLH-DSA (mga algorithm id 32-34), at hindi bumubuo ang serbisyong ito ng key na RFC 9980. Hindi binibigyang-kahulugan ng openpgp.js ang mga key na ito."
   },
   "stsmetadata.specs.rfc3156.coverage": {
     "en": "aa799b14a54ace0f",
@@ -878,6 +890,10 @@
   "stsmetadata.endpoints./access/v1/access-requests.what": {
     "en": "15c0d860d27c7cbe",
     "text": "I-POST ang subject, resource, action at context ng isang tinanggihang evaluation kasama ang denial na natanggap nito (ang binding_token at expires_at nito, ibinabalik nang hindi binabago); makakuha ng 202 at isang Task Handle, o 201 na may resulta kapag agad itong napagpasyahan (emergency access na pinapayagan ng policy). Tanging ang Deny na minarkahan ng policy ng realm ng advice na urn:sts:xacml:advice:access-request ang requestable. Parehong caller door at AUTHZEN_PEPS gaya ng isang evaluation; iginagalang ang Idempotency-Key bawat caller; callback lang sa URL na nakarehistro para sa caller. Bawat pagtanggi ay problem+json."
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/schema.what": {
+    "en": "ec6a3b36123f646a",
+    "text": "GET ng JSON Schema (draft 2020-12) ng mga augmentation na maaaring idagdag ng isang submission: context.business_justification, at requested_access.requested_until at emergency, ang huli ay nangangailangan ng justification. Pampubliko, kaparehong origin ng access_request_endpoint; pinapangalanan ito ng request_schema_url ng isang requestable na denial. Walang naka-host na form, kaya walang denial na may form_url. Sumasagot ng 501 habang naka-off ang API o ang profile. Nakarehistro bago ang task-status path, na kung hindi ay babasahin ang \"schema\" bilang id."
   },
   "stsmetadata.endpoints./access/v1/access-requests/:id.what": {
     "en": "264083b977756230",
@@ -1074,6 +1090,14 @@
   "stsmetadata.endpoints./pki/revocation.what": {
     "en": "6e82cd30ac736775",
     "text": "NON-SPEC, at sadyang narito pa rin: kailangang malaman ng taong nagtuturo ng client sa mga endpoint na ito kung ANO ang mga address, at ang pagbasa sa mga ito mula sa certificate gamit ang `openssl x509 -text` ay mahinang unang hakbang. Isang row bawat authority na may subject nito, kung ilang certificate na ang na-revoke nito, at ang CRL nito sa parehong scheme (http, ldap) katabi ng mga OCSP at caIssuers address nito. WALANG SERIAL NUMBER DITO — ang listahan ng mga na-revoke ay ang CRL, at ang JSON na kopya sa tabi nito ay magiging ikalawang sagot sa parehong tanong: ang nagiging luma, at ang walang pumirma. Malinaw nitong sinasabi na NAGLALATHALA ng revocation ang serbisyong ito at hindi nito mapipilit ang sinuman na kumonsulta rito, na totoo sa bawat certificate authority at siyang dahilan kung bakit ituturo rito ng isang client author ang stack niya. Walang gate, dahil lahat ng nasa loob nito ay nasa bawat certificate na ibinibigay ng serbisyong ito."
+  },
+  "stsmetadata.endpoints./pki/ssh-user-ca/:scope.what": {
+    "en": "c8819f794e61f398",
+    "text": "NON-SPEC (#1955 P3): ang key ng OpenSSH user CA na saklaw ng realm, inilathala bilang authorized-key line para pagkatiwalaan ng mga SSH server. Walang gate at `no-store`; hindi kailanman umaalis sa serbisyong ito ang katumbas na private key ng CA."
+  },
+  "stsmetadata.endpoints./pki/ssh-user-krl/:scope.what": {
+    "en": "ed928008015e78a8",
+    "text": "NON-SPEC (#1955 P3): ang OpenSSH KRL na saklaw ng realm, ina-update kapag binawi ng isang caller ang certificate o iniulat na nawala ang hardware token. Walang gate at `no-store`; kailangang i-configure ang mga SSH server para konsultahin ito dahil hindi mapipilit ng serbisyong ito ang relying party na gawin iyon."
   },
   "stsmetadata.endpoints./admin-api/xacml.what": {
     "en": "2efd1b442d450758",
@@ -2220,12 +2244,16 @@
     "text": "NON-SPEC (#1955 P4). Ang mga HOTP at TOTP token na in-import ng mga administrator mula sa mga PSKC seed file ng mga vendor, hindi naka-assign, naka-assign o retirado, naka-page at hinahanap ayon sa serial o tao. Hindi kailanman secret. Kapareho ng GET /admin/hardware-tokens (ang OATH tab nito)."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-"en": "0d649147af0cbe04",
-"text": "NON-SPEC (#1955). lost, na may { key }: minamarkahang nawala ang token, inaalis ang bawat passkey dito, binabawi ang bawat sertipiko dito dahil sa keyCompromise, nagpapadala ng CAEP credential-change para sa bawat isa at tinatapos ang mga session na in-sign in ng mga ito. enrol-piv, na may { username, profile, csr, attestationCertificate?, attestationIssuer? }: isang PIV slot certificate na inilabas sa taong iyon sa pamamagitan ng EST Issuing CA, vine-verify ang YubiKey PIV attestation nito at itinatala ang YubiKey. recover-key, na may { username, serial }: ang naka-escrow na piv-key-management key ng taong iyon, na pinahihintulutan lamang ng access-control policy sa PIV_KEY_RECOVERY. Ang tatlong aksiyon ng console sa page na iyon."
+    "en": "0d649147af0cbe04",
+    "text": "NON-SPEC (#1955). lost, na may { key }: minamarkahang nawala ang token, inaalis ang bawat passkey dito, binabawi ang bawat sertipiko dito dahil sa keyCompromise, nagpapadala ng CAEP credential-change para sa bawat isa at tinatapos ang mga session na in-sign in ng mga ito. enrol-piv, na may { username, profile, csr, attestationCertificate?, attestationIssuer? }: isang PIV slot certificate na inilabas sa taong iyon sa pamamagitan ng EST Issuing CA, vine-verify ang YubiKey PIV attestation nito at itinatala ang YubiKey. recover-key, na may { username, serial }: ang naka-escrow na piv-key-management key ng taong iyon, na pinahihintulutan lamang ng access-control policy sa PIV_KEY_RECOVERY. Ang tatlong aksiyon ng console sa page na iyon."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
     "en": "b55c0cdd477d183e",
-"text": "iniuulat na nawala ang isang hardware token at inaalis ang mga credential nito, naglalabas ng PIV slot certificate, o nag-aabot ng naka-escrow na key"
+    "text": "iniuulat na nawala ang isang hardware token at inaalis ang mga credential nito, naglalabas ng PIV slot certificate, o nag-aabot ng naka-escrow na key"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/escrowed.what": {
+    "en": "1716521c9c5e119d",
+    "text": "NON-SPEC (#1955). Ang mga naka-escrow na piv-key-management certificate ng isang tao (piv.keyEscrow): serial, subject, validity at kung binawi ang bawat isa. Hindi kailanman isang key. Katapat ng GET /admin/hardware-tokens."
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -3131,19 +3159,19 @@
     "en": "9547cda6898c37a6",
     "text": "humihingi ng post-quantum na passkey pagkatapos ng sign-in, saka itinatatag ang sign-on session na pinigil nito"
   },
-"stsmetadata.endpoints./wsapi/2.0/verify.what": {
+  "stsmetadata.endpoints./wsapi/2.0/verify.what": {
     "en": "ff0550a4318594c6",
     "text": "VALIDATION PROTOCOL 2.0 NG YUBICO (#1955 P5). GET o POST ng id, otp, nonce at h. Naka-off bilang default: sumasagot ang route ng OPERATION_NOT_ALLOWED at walang nilalagda. Kapag naka-on, sinusuri ang client id at ang HMAC-SHA1 sa bawat mode, kasama ang development; naaalala ang nonce nang limang minuto; ginagastos ang tumugmang OTP. Cache-Control: no-store. Walang ipinapadala sa YubiCloud."
   },
-"stsmetadata.endpoints./wsapi/2.0/verify.effect": {
+  "stsmetadata.endpoints./wsapi/2.0/verify.effect": {
     "en": "bb2bc4011c8240ac",
     "text": "sinusuri ang isang YubiKey OTP para sa client na lumagda sa request, o sumasagot ng OPERATION_NOT_ALLOWED habang naka-off ang yubiotp.ykval"
   },
-"stsmetadata.endpoints./authn/roles.what": {
+  "stsmetadata.endpoints./authn/roles.what": {
     "en": "88814e89f81f8d86",
     "text": "MGA DYNAMIC NA MAPIPILING TUNGKULIN (#1072). Pagkatapos ng lahat ng factor, ang pag-sign in sa application na ang realm ay may dynamic na tungkulin (maliban kung pinapatay ito ng roles.dynamicSelection o ng appDynamicRoleSelection ng application) ay PINAPAHINTO habang pinagpapasyahan para sa tao ang patakarang XACML ng bawat dynamic na tungkulin; Permit lang ang nag-aalok ng tungkulin. Kapag tinsek ng tao ang \"Pumili ng mga tungkulin para sa pag-sign in na ito\", o may iniaalok na kailangang tungkulin, inililista ng pahinang ito ang mapipili; ang Magpatuloy (/authn-api/mfa/{id}/roles) ay sinusuri ang pinili laban sa alok ng hakbang at muli sa mga patakaran, at sinisimulan ang session na nakatala ang pinili sa session record, hindi kailanman sa directory. Dadalhin ng token para sa application na iyon ang mga piniling tungkulin, bawat isa ay muling sinusuri sa patakaran nito sa bawat pag-isyu. Kailangan ng ?mfa= id mula sa pinahintong pag-sign in; kapag wala, 400 ang sagot."
   },
-"stsmetadata.endpoints./authn/roles.effect": {
+  "stsmetadata.endpoints./authn/roles.effect": {
     "en": "fc2116e31d3ead37",
     "text": "nagtatanong kung aling mga dynamic na mapipiling tungkulin ang gagamitin sa pag-sign in na ito, saka sinisimulan ang pinahintong session kasama ang pinili"
   },
@@ -4186,21 +4214,5 @@
   "stsmetadata.param.aParameter": {
     "en": "24ece2f78749cf6a",
     "text": "isang parameter"
-  },
-  "stsmetadata.specs.yubico-piv-attestation.coverage": {
-    "en": "244659759ede3102",
-    "text": "partial: ang attestation na sertipiko ng slot ay vine-verify sa pamamagitan ng f9 attestation na sertipiko hanggang sa mga PIV root ng Yubico (Serial 263751, at Attestation Root 1 kasama ang mga PIV intermediate nito para sa firmware 5.7.4 pataas, kasama at naka-pin) o sa sariling root ng isang realm; ang key nito ay itinutugma sa key ng kahilingan; binabasa ang mga extension ng firmware, serial, PIN at touch policy at form factor, at itinutugma ang mga policy sa policy ng realm. Hindi kailanman pinamamahalaan ang mismong card: walang pagsulat ng PIN, PUK o slot."
-  },
-  "stsmetadata.specs.fips201.coverage": {
-    "en": "322d92ba9eb36fde",
-    "text": "minimal: ang apat na key slot bilang mga certificate profile (PIV Authentication 9a, Digital Signature 9c, Key Management 9d, Card Authentication 9e, na bilang default ay walang sina-sign in), at isang panlabas na PIV o CAC card na itinutugma ayon sa card UUID sa urn:uuid subjectAltName nito kapag nagsasaad ito ng PIV Authentication policy (naka-off bilang default). Walang FASC-N, CHUID, pamamahala ng card o biometrics."
-  },
-  "stsmetadata.endpoints./admin-api/hardware-tokens/escrowed.what": {
-    "en": "1716521c9c5e119d",
-    "text": "NON-SPEC (#1955). Ang mga naka-escrow na piv-key-management certificate ng isang tao (piv.keyEscrow): serial, subject, validity at kung binawi ang bawat isa. Hindi kailanman isang key. Katapat ng GET /admin/hardware-tokens."
-  },
-  "stsmetadata.specs.rfc9980.coverage": {
-    "en": "5feb46765c8bc465",
-    "text": "partial: mga pirma ng ML-DSA-65+Ed25519 at ML-DSA-87+Ed448, at pag-encrypt ng ML-KEM-768+X25519 at ML-KEM-1024+X448, sa pagrehistro at kapag ginamit ang isang nakaimbak na key. Ang composite ay post-quantum. Nililimitahan ng openpgp.pqcOnly ang pagrehistro lamang. Ang parehong hati ng isang pirma ay sine-verify ng common/crypto_impl/openpgp_pqc.js. Kulang: SLH-DSA (mga algorithm id 32-34), at hindi bumubuo ang serbisyong ito ng key na RFC 9980. Hindi binibigyang-kahulugan ng openpgp.js ang mga key na ito."
   }
 }

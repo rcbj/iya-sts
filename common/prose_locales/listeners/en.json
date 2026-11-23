@@ -77,7 +77,7 @@
   "listeners.applications.scep.label": "SCEP",
   "listeners.applications.scep.what": "Certificate enrollment by SCEP.",
   "listeners.applications.pki.label": "Certificate authority",
-  "listeners.applications.pki.what": "CRLs, OCSP, the CA certificates and chains, and the cryptographic metadata documents.",
+  "listeners.applications.pki.what": "CRLs, OCSP, the CA certificates and chains, the cryptographic metadata documents and the Web Key Directory's OpenPGP keys.",
   "listeners.applications.kerberos.label": "Kerberos",
   "listeners.applications.kerberos.what": "MS-KKDCP, the Kerberos KDC over HTTPS.",
   "listeners.applications.spiffe.label": "SPIFFE",

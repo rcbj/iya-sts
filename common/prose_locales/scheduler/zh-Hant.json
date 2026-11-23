@@ -36,8 +36,8 @@
     "text": "AuthZEN 存取請求到期"
   },
   "sched.jobs.authzen.access-requests.describe": {
-    "en": "f219a842a3345525",
-    "text": "將每個已超過 expires_at 的待處理 AuthZEN 存取請求（#1180）移為 expired——寫入其稽核列並傳送其回呼——在已完成一天之後，或其核准失效之後（以較晚者為準）將其移除，並重試因網路錯誤或 HTTP 5xx 而失敗的回呼投遞，直至嘗試上限（#1202）。讀取時會自行套用截止時間，因此這裡只是記錄與清理，從不負責決定。"
+    "en": "fae6b34a12fb0695",
+    "text": "將每個已超過 expires_at 的待處理 AuthZEN 存取請求（#1180）移為 expired——寫入其稽核列並傳送其回呼——在已完成一天之後，或其核准失效之後（以較晚者為準）將其移除，在可請求的拒絕的時間窗結束一天後將其移除，並重試因網路錯誤或 HTTP 5xx 而失敗的回呼投遞，直至嘗試上限（#1202）。讀取時會自行套用截止時間，因此這裡只是記錄與清理，從不負責決定。"
   },
   "sched.jobs.caches.eject-expired.title": {
     "en": "0cd05b8d7db4c75b",
@@ -654,6 +654,14 @@
   "sched.jobs.ssf.stream-maintenance.describe": {
     "en": "bd4794eda9c5d2d2",
     "text": "暫停、停用或刪除接收者已閒置 ssf.inactivityTimeoutS 的串流（SSF 1.0 section 8.1.1），暫停或停用前會先以 stream-updated 事件通告；並對已有 ssf.verificationEveryS 未從此傳送者收到驗證事件的每個已啟用串流送出驗證事件（section 8.1.4）。"
+  },
+  "sched.jobs.ssh-user-ca.krl.title": {
+    "en": "9694f71884ac8e1b",
+    "text": "SSH 使用者 CA 撤銷清單"
+  },
+  "sched.jobs.ssh-user-ca.krl.describe": {
+    "en": "c84b42d3aab3bdde",
+    "text": "在已簽發憑證被撤銷後重新整理每個領域的 OpenSSH 使用者 CA KRL，並移除已過期的撤銷。"
   },
   "sched.jobs.tls.ticket-key-rotate.title": {
     "en": "8bb62416b0f1932c",
