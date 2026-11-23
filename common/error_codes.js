@@ -26155,28 +26155,30 @@ const CODES = [
       'a requestable denial.',
     spec: 'HTTP 400, urn:openid:authzen:access-request:error:not_requestable' },
   { code: 'STS-AUTHZEN-0073',
-    summary: 'An AuthZEN access request\'s denial carried no binding_token ' +
-      '(this PDP keeps no record to resolve an evaluation_id ' +
-      'against), or one that did not verify as this realm\'s, for ' +
-      'this endpoint.',
+    summary: 'An AuthZEN access request named an evaluation_id this realm ' +
+      'has no requestable denial for, or a binding_token that did not ' +
+      'verify as this realm\'s, for this endpoint.',
     spec: 'HTTP 400, urn:openid:authzen:access-request:error:' +
       'invalid_denial_binding' },
   { code: 'STS-AUTHZEN-0074',
     summary: 'An AuthZEN access request did not match the denial its ' +
-      'binding_token names: another caller, a different subject, ' +
-      'resource, action or authorization-relevant context member, or ' +
-      'a denial.expires_at not echoed unchanged.',
+      'binding_token or evaluation_id names: another caller, a ' +
+      'different subject, resource, action or authorization-relevant ' +
+      'context member, a binding_hash that does not match, an ' +
+      'evaluation_id that is not the binding_token\'s, or a ' +
+      'denial.expires_at not echoed unchanged.',
     spec: 'HTTP 400, urn:openid:authzen:access-request:error:' +
       'invalid_denial_binding' },
   { code: 'STS-AUTHZEN-0075',
-    summary: 'An AuthZEN access request arrived after its requestable denial ' +
-      'expired (the earlier of the binding_token\'s exp and ' +
-      'denial.expires_at, with 30 seconds of skew).',
+    summary: 'An AuthZEN access request arrived after its requestable ' +
+      'denial expired (the earlier of the denial\'s exp and ' +
+      'denial.expires_at, the recorded values when named by ' +
+      'evaluation_id, with 30 seconds of skew).',
     spec: 'HTTP 410, urn:openid:authzen:access-request:error:expired_denial' },
   { code: 'STS-AUTHZEN-0076',
     summary: 'An AuthZEN access request reused an Idempotency-Key, or a ' +
-      'binding_token, already used by the same caller for a request ' +
-      'whose body differs.',
+      'denial (its binding_token or its evaluation_id), already used ' +
+      'by the same caller for a request whose body differs.',
     spec: 'HTTP 409, urn:openid:authzen:access-request:error:' +
       'duplicate_request' },
   { code: 'STS-AUTHZEN-0077',
@@ -26215,9 +26217,10 @@ const CODES = [
       'context.business_justification.',
     spec: 'HTTP 400, application/problem+json' },
   { code: 'STS-AUTHZEN-0084',
-    summary: 'An AuthZEN evaluation presented a context.approval this realm ' +
-      'cannot resolve, or one issued to another caller; it was not ' +
-      'used and the evaluation was decided as not approved.',
+    summary: 'An AuthZEN evaluation presented a context.approval this ' +
+      'realm cannot resolve, one issued to another caller, or an ' +
+      'approval.state whose signature or approval id does not verify; ' +
+      'it was not used and the evaluation was decided as not approved.',
     spec: 'context.reason approval_unverifiable, next_action none' },
   { code: 'STS-AUTHZEN-0085',
     summary: 'An AuthZEN evaluation presented a context.approval that was ' +
@@ -26229,9 +26232,9 @@ const CODES = [
       'used.',
     spec: 'context.reason out_of_scope' },
   { code: 'STS-AUTHZEN-0087',
-    summary: 'A requestable AuthZEN denial\'s binding_token could not be ' +
-      'signed, so the denial was answered as an ordinary false with ' +
-      'no access_request.',
+    summary: 'A requestable AuthZEN denial\'s binding_token or ' +
+      'binding_hash could not be made, so the denial was answered as ' +
+      'an ordinary false with no access_request.',
     spec: 'none — logged; decision: false' },
   { code: 'STS-AUTHZEN-0088',
     summary: 'The access-control policy (action approve-access-request on ' +
@@ -26497,6 +26500,15 @@ const CODES = [
     summary: 'The requester of a revoked AuthZEN access approval could ' +
       'not be mailed; the revocation stands (#1203).',
     spec: 'none — logged' },
+  { code: 'STS-AUTHZEN-0139',
+    summary: 'A requestable AuthZEN denial could not be recorded. The ' +
+      'binding_token is still issued; an evaluation_id-only ' +
+      'submission of that denial cannot be resolved (#1204).',
+    spec: 'none — logged; the denial is still requestable by its token' },
+  { code: 'STS-AUTHZEN-0140',
+    summary: 'An AuthZEN approval\'s state could not be signed. The ' +
+      'approval stands by id, and the task result omits state (#1204).',
+    spec: 'none — logged; the approval is still looked up by id' },
   // ===== FGA ===============================================================
   { code: 'STS-FGA-0001',
     summary: 'A policy that belongs to an application (it carries ' +

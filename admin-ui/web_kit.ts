@@ -1053,7 +1053,9 @@ class WebKit {
   /**
    * Draws a stand-alone rows-per-table form for a drill-down page.
    *
-   * Submitting it resets every table's page to the first.
+   * Submitting it resets every table's page to the first. A path may end
+   * in a fragment: `esc` leaves `#` alone, and a GET on a later tab of a
+   * tabbed page needs one, or the reload shows the first panel.
    *
    * @param path - the page the form submits to
    * @param key - the name of the hidden parameter that selects the drill-down,
@@ -2453,15 +2455,108 @@ class WebKit {
   // `required`, so a page cannot outline a field its create accepts
   // without, nor miss one it refuses without. The page supplies only the
   // words (`label`, `hint`) and the control's shape.
+  //
+  // A field the create needs only for some choices (`requiredWhen`, a
+  // secret destination's region) is marked the same way while that choice
+  // is selected — the outline, the asterisk, the word "required", the
+  // browser's `required` and the note above the form — and says which
+  // choices need it while it is not. Changing the choice moves the mark.
+
+  // What each field is drawn as holding. An empty select, or a value it
+  // does not offer, follows its first choice: that is the option the
+  // browser shows before anyone changes it, and the mark has to agree.
+  /**
+   * The value each field is drawn as holding, selects included.
+   *
+   * @param rows - the form's fields, as `createFields()` takes them
+   * @param held - what a refused create posted, by name
+   * @returns each field's value, by name
+   */
+  static chosenOf(rows, held) {
+    const values = held || {};
+    const chosen = {};
+    (rows || []).forEach(function (row) {
+      const raw = values[row.name] !== undefined ? values[row.name]
+                                                  : row.value;
+      let value = Array.isArray(raw) ? (raw.length ? String(raw[0]) : '')
+        : raw === undefined || raw === null ? '' : String(raw);
+      if (row.type === 'select') {
+        const choices = row.choices || [];
+        const known = choices.some(function (one) {
+          return String(one.value) === value;
+        });
+        if ((value === '' || !known) && choices.length &&
+            String(choices[0].value) !== '') {
+          value = String(choices[0].value);
+        }
+      }
+      chosen[row.name] = value;
+    });
+    return chosen;
+  }
+
+  /**
+   * Whether a field is required for the values the form holds.
+   *
+   * A yes/no pair is never required: No is checked when the answer is no.
+   * A field that is always required stays required. A field required for
+   * some choices is required only while the choice it names is selected.
+   *
+   * @param row - one field, as `createFields()` takes it
+   * @param chosen - each field's value, as `chosenOf()` returns it
+   * @returns true when the field is required for those values
+   */
+  static requiredNow(row, chosen) {
+    if (!row || row.type === 'checkbox' || row.type === 'checks') {
+      return false;
+    }
+    if (row.required) {
+      return true;
+    }
+    const when = row.requiredWhen;
+    if (!when) {
+      return false;
+    }
+    const current = String((chosen && chosen[when.field]) || '');
+    return (when.values || []).map(String).indexOf(current) >= 0;
+  }
+
+  /**
+   * The words under a field's name: "required", or which choices need it.
+   *
+   * Both are drawn for a conditional field, and the one that does not
+   * apply is hidden, so changing the choice shows the other without
+   * rebuilding the form. The classes are not `fg-required`: that class is
+   * the cell's outline.
+   *
+   * @param active - the field is required for the choice selected now
+   * @param when - `requiredWhen`, or nothing when the field is not
+   *   conditional
+   * @param t - the translator
+   * @returns the words as HTML
+   */
+  static requirementWords(active, when, t) {
+    if (!when) {
+      return active ? t.html('consoleKit.grid.required') : '';
+    }
+    return '<span class="fg-req-word"' + (active ? '' : ' hidden') + '>' +
+      t.html('consoleKit.grid.required') + '</span>' +
+      '<span class="fg-req-when"' + (active ? ' hidden' : '') + '>' +
+      t.html('consoleKit.create.requiredWhen', {
+        field: String(when.field),
+        values: (when.values || []).join(', ')
+      }) + '</span>';
+  }
 
   /**
    * Draws the fields of a directory object's create form as a field grid.
    *
    * @param rows - each field: `name` (the posted name), `label` (HTML),
    *   `hint` (HTML, optional), `type` (`text`, `email`, `number`,
-   *   `password`, `long` for a text area, `select`, `checkbox` for one
-   *   box, `checks` for a box per choice), `choices` for a select or boxes
-   *   (`value`, `label`), `checkedValue` and `boxLabel` for one box,
+   *   `password`, `long` for a text area, `select`, `checkbox` for a
+   *   yes/no pair, `checks` for a box per choice), `choices` for a select
+   *   or boxes (`value`, `label`), `checkedValue`, `uncheckedValue`,
+   *   `boxLabel` and `uncheckedLabel` for the pair,
    *   `value` (what it starts with), `required`, `placeholder`, and `attrs`
    *   (more attributes of the control, by name: `maxlength`, `pattern`, …)
    * @param values - optional; what each field holds, by name (a refused
@@ -2472,15 +2567,19 @@ class WebKit {
   static createFields(rows, values?,
                       t = webMessages.WebTranslator.fallback()) {
     const held = values || {};
+    const chosen = WebKit.chosenOf(rows, held);
     return '<div class="fg">' + rows.map(function (row) {
       const id = 'new-' + String(row.name).replace(/[^A-Za-z0-9_-]/g, '-');
-      const required = !!row.required &&
-        row.type !== 'checkbox' && row.type !== 'checks';
+      const active = WebKit.requiredNow(row, chosen);
       // What a refused create posted, else the field's own starting value
-      // (`value`, the create's default where it has one to show).
+      // (`value`, the create's default where it has one to show). A select
+      // shows the choice `chosenOf()` settled on, so the outline and the
+      // selected option are the same choice.
       const raw = held[row.name] !== undefined ? held[row.name] : row.value;
       const value = Array.isArray(raw) ? raw.join('\n')
         : raw === undefined || raw === null ? '' : String(raw);
+      const shown = row.type === 'select' ? String(chosen[row.name] || '')
+                                           : value;
       const ticked = [].concat(raw === undefined || raw === null ? [] : raw)
         .map(String);
       const attrs = Object.keys(row.attrs || {}).map(function (name) {
@@ -2489,14 +2588,34 @@ class WebKit {
       }).join('') +
         (row.placeholder
           ? ' placeholder="' + WebKit.esc(row.placeholder) + '"' : '') +
-        (required ? ' required aria-required="true"' : '');
+        (active ? ' required aria-required="true"' : '');
       let control;
-      if (row.type === 'checkbox' || row.type === 'checks') {
-        // ONE BOX, or A BOX PER CHOICE: what a form posts for a ticked box,
-        // and nothing for an unticked one, so neither is ever required.
-        const boxes = row.type === 'checkbox'
-          ? [{ value: row.checkedValue || 'true', label: row.boxLabel || '' }]
-          : row.choices || [];
+      if (row.type === 'checkbox') {
+        // A YES AND A NO (#1132). One checkbox whose unticked state meant
+        // "no" reads as nothing chosen. No is checked unless the field
+        // holds the yes value, so the pair always posts an answer and is
+        // not marked required.
+        const yesValue = String(row.checkedValue || 'true');
+        const noValue = row.uncheckedValue === undefined ? 'false'
+          : String(row.uncheckedValue);
+        const yesLabel = row.boxLabel || t.text('consoleKit.create.yes');
+        const noLabel = row.uncheckedLabel ||
+          t.text('consoleKit.create.no');
+        const yes = ticked.indexOf(yesValue) >= 0;
+        const radio = function (value, label, checked) {
+          return '<label class="fg-radio"><input type="radio" name="' +
+            WebKit.esc(row.name) + '" value="' + WebKit.esc(value) + '"' +
+            (checked ? ' checked' : '') + '> ' + WebKit.esc(label) +
+            '</label>';
+        };
+        control = '<div class="fg-checks" role="radiogroup" ' +
+          'aria-labelledby="' + WebKit.esc(id) + '-name">' +
+          radio(yesValue, yesLabel, yes) +
+          radio(noValue, noLabel, !yes) + '</div>';
+      } else if (row.type === 'checks') {
+        // A BOX PER CHOICE: a ticked box posts its value and an unticked
+        // one posts nothing, so the group is never marked required.
+        const boxes = row.choices || [];
         control = '<div class="fg-checks" role="group" aria-labelledby="' +
           WebKit.esc(id) + '-name">' + boxes.map(function (one) {
             return '<label class="fg-radio"><input type="checkbox" name="' +
@@ -2510,7 +2629,7 @@ class WebKit {
           WebKit.esc(row.name) + '"' + attrs + '>' +
           (row.choices || []).map(function (one) {
             return '<option value="' + WebKit.esc(one.value) + '"' +
-              (String(one.value) === value ? ' selected' : '') + '>' +
+              (String(one.value) === shown ? ' selected' : '') + '>' +
               WebKit.esc(one.label) + '</option>';
           }).join('') + '</select>';
       } else if (row.type === 'long') {
@@ -2536,23 +2655,17 @@ class WebKit {
           '" data-required-when-values="' +
           WebKit.esc((when.values || []).join(' ')) + '"'
         : '';
+      const labelText = WebKit.unescapeText(WebKit.plainTextOf(row.label));
       return '<div id="fgc-' + WebKit.esc(id) + '" class="fg-cell' +
-        (required ? ' fg-required' : '') + '"' + whenAttrs + '>' +
+        (active ? ' fg-required' : '') + '" data-label="' +
+        WebKit.esc(labelText) + '"' + whenAttrs + '>' +
         (grouped
           ? '<span class="fg-name" id="' + WebKit.esc(id) + '-name">' +
             row.label + '</span>'
           : '<label class="fg-name" for="' + WebKit.esc(id) + '">' +
             row.label + '</label>') +
         '<span class="fg-for">' + (row.hint || '') +
-        (required ? t.html('consoleKit.grid.required') : '') +
-        // REQUIRED ONLY FOR SOME CHOICES (a secret destination's region is
-        // AWS's): said in words, and outlined only while that choice is
-        // selected.
-        (!required && when
-          ? t.html('consoleKit.create.requiredWhen',
-                   { field: String(when.field),
-                     values: (when.values || []).join(', ') })
-          : '') +
+        WebKit.requirementWords(active, when, t) +
         '</span>' + control + '</div>';
     }).join('') + '</div>';
   }
@@ -2562,20 +2675,42 @@ class WebKit {
    *
    * @param rows - the form's fields, as `createFields()` takes them
    * @param t - optional; the translator (#539), the default when left out
+   * @param values - optional; what the form holds, as `createFields()`
+   *   takes it, so a field required for the selected choice is named too
    * @returns the note as HTML
    */
-  static requiredNote(rows, t = webMessages.WebTranslator.fallback()) {
-    const named = rows.filter(function (row) {
-      return row.required && row.type !== 'checkbox' &&
-        row.type !== 'checks';
+  static requiredNote(rows, t = webMessages.WebTranslator.fallback(),
+                      values?) {
+    const chosen = WebKit.chosenOf(rows, values || {});
+    const named = (rows || []).filter(function (row) {
+      return WebKit.requiredNow(row, chosen);
     }).map(function (row) {
       // A parameter is text, escaped by the translator: the label's words.
       return WebKit.unescapeText(WebKit.plainTextOf(row.label));
     });
-    return WebKit.note(named.length
-      ? t.html('consoleKit.create.requiredFields',
-               { list: named.join(', ') })
-      : t.html('consoleKit.create.nothingRequired'));
+    if (!named.length) {
+      return WebKit.note(t.html('consoleKit.create.nothingRequired'));
+    }
+    // A private-use token, so the list can be wrapped after translation.
+    // The translator escapes `'` as `&#39;` and `WebKit.esc` as `&apos;`,
+    // and finding the list by escaping it again would miss a label that
+    // contains one. No catalog holds this token.
+    const token = '\uE000';
+    const formatted = t.html('consoleKit.create.requiredFields',
+                             { list: token });
+    const list = named.join(', ');
+    const html = formatted.indexOf(token) >= 0
+      ? formatted.split(token).join('<span data-required-list>' +
+          webMessages.WebMessages.esc(list) + '</span>')
+      : t.html('consoleKit.create.requiredFields', { list: list });
+    const conditional = (rows || []).some(function (row) {
+      return row.requiredWhen;
+    });
+    // A folded note lifts its opening sentence into the summary as text,
+    // and the list would stop being a node the browser can rewrite when
+    // the choice changes. A form with such a field keeps the paragraph.
+    return conditional ? '<p class="note">' + html + '</p>'
+                       : WebKit.note(html);
   }
 
   /**
@@ -2631,7 +2766,7 @@ class WebKit {
           '" value="' + WebKit.esc(String(hidden[name])) + '">';
       }).join('') +
       WebKit.frame('<h2>' + spec.heading + '</h2>' +
-        WebKit.requiredNote(rows, t) + (spec.before || '') +
+        WebKit.requiredNote(rows, t, state.draft) + (spec.before || '') +
         WebKit.createFields(rows, state.draft, t) +
         '<div class="formrow"><button type="submit">' + spec.button +
         '</button></div>' + (spec.after || '')) +

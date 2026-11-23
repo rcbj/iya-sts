@@ -22,7 +22,9 @@
 //   B. A secret destination's provider-specific fields (`requiredWhen`):
 //      an aws destination without its region, and without its credential,
 //      is refused; the same fields are not required of a vault one where
-//      the table says so.
+//      the table says so. The drawn form marks each the way it marks an
+//      always-required field while the selected provider needs it, and
+//      not while another is selected.
 //   C. Each create page's answer carries the table's fields: New group,
 //      New role and Register a device from their views.
 //   D. A named policy (#1132's sixth object): `GET /admin-api/policies/new`
@@ -34,7 +36,8 @@
 //      without writing the default.
 //   E. The drawn pages: a required field is outlined, starred and says
 //      "required" (`fg-required`), an optional one is not, and the HTML
-//      `required` attribute is on exactly the required fields.
+//      `required` attribute is on exactly the required fields. A field
+//      required for the selected choice is one of those.
 //
 // IN A THROWAWAY REALM, removed at the end.
 // ===========================================================================
@@ -201,19 +204,74 @@ async function requiredWhen(t) {
   t.check(noRegion.ok === false && noCredential.ok === false,
           'B2. aws refuses a destination without its region, and without ' +
           'its credential');
-  const conditional = SecretDestinationsPage.newBody({
-    providers: ['aws', 'gcp', 'azure', 'vault'],
-    payloads: ['password'], fileAllowed: true,
-    createFields: rows
-  }, kit.context());
-  const regionStart = conditional.indexOf('id="fgc-new-region"');
-  const regionEnd = conditional.indexOf('</div>', regionStart);
-  const regionCell = conditional.slice(regionStart, regionEnd);
-  t.check(regionCell.indexOf('data-required-when-field="provider"') >= 0 &&
-          regionCell.indexOf('data-required-when-values="aws"') >= 0 &&
-          regionCell.indexOf('fg-required') < 0,
-          'B3. conditional fields carry their rule without an always-on ' +
-          'required mark');
+  const drawn = function (draft) {
+    return SecretDestinationsPage.newBody({
+      providers: ['aws', 'gcp', 'azure', 'vault', 'file'],
+      payloads: ['password'], fileAllowed: true,
+      createFields: rows,
+      state: draft ? { draft: draft } : undefined
+    }, kit.context());
+  };
+  const cellOf = function (html, name) {
+    const at = html.indexOf('id="fgc-new-' + name + '"');
+    return at < 0 ? '' : html.slice(at, html.indexOf('</div>', at));
+  };
+  const marked = function (cell) {
+    return /class="fg-cell fg-required"/.test(cell);
+  };
+  const labelOf = function (cell) {
+    const found = /data-label="([^"]*)"/.exec(cell);
+    return found ? found[1] : '';
+  };
+  const listed = function (html) {
+    const found = /data-required-list>([^<]*)</.exec(html);
+    return found ? found[1] : '';
+  };
+  const saysWhen = function (cell, values) {
+    return cell.indexOf('data-required-when-field="provider"') >= 0 &&
+      cell.indexOf('data-required-when-values="' + values + '"') >= 0;
+  };
+  const awsPage = drawn();
+  const regionCell = cellOf(awsPage, 'region');
+  const endpointCell = cellOf(awsPage, 'endpoint');
+  const directoryCell = cellOf(awsPage, 'directory');
+  const credentialCell = cellOf(awsPage, 'credential');
+  const awsList = listed(awsPage);
+  t.check(saysWhen(regionCell, 'aws') && marked(regionCell) &&
+          regionCell.indexOf('class="fg-req-word"') >= 0 &&
+          regionCell.indexOf('class="fg-req-word" hidden') < 0 &&
+          saysWhen(endpointCell, 'azure vault') && !marked(endpointCell) &&
+          endpointCell.indexOf('fg-required') < 0 &&
+          endpointCell.indexOf('class="fg-req-when"') >= 0 &&
+          endpointCell.indexOf('class="fg-req-when" hidden') < 0 &&
+          saysWhen(directoryCell, 'file') && !marked(directoryCell) &&
+          saysWhen(credentialCell, 'aws gcp azure vault') &&
+          marked(credentialCell) &&
+          awsList.indexOf(labelOf(regionCell)) >= 0 &&
+          awsList.indexOf(labelOf(credentialCell)) >= 0 &&
+          awsList.indexOf(labelOf(endpointCell)) < 0 &&
+          awsList.indexOf(labelOf(directoryCell)) < 0,
+          'B3. aws outlines its region and write credential, and the ' +
+          'others say which provider needs them');
+  const vaultPage = drawn({ provider: 'vault' });
+  const vaultList = listed(vaultPage);
+  t.check(marked(cellOf(vaultPage, 'endpoint')) &&
+          marked(cellOf(vaultPage, 'credential')) &&
+          !marked(cellOf(vaultPage, 'region')) &&
+          !marked(cellOf(vaultPage, 'directory')) &&
+          vaultList.indexOf(labelOf(cellOf(vaultPage, 'endpoint'))) >= 0 &&
+          vaultList.indexOf(labelOf(cellOf(vaultPage, 'region'))) < 0,
+          'B3. a refused vault create outlines its endpoint instead');
+  const filePage = drawn({ provider: 'file' });
+  const fileList = listed(filePage);
+  t.check(marked(cellOf(filePage, 'directory')) &&
+          !marked(cellOf(filePage, 'credential')) &&
+          !marked(cellOf(filePage, 'region')) &&
+          !marked(cellOf(filePage, 'endpoint')) &&
+          fileList.indexOf(labelOf(cellOf(filePage, 'directory'))) >= 0 &&
+          fileList.indexOf(labelOf(cellOf(filePage, 'credential'))) < 0,
+          'B3. a file destination outlines its directory and not a ' +
+          'credential');
   const provider = {
     value: 'aws',
     addEventListener: function (name, handler) {
@@ -221,25 +279,81 @@ async function requiredWhen(t) {
     }
   };
   const classes = {};
-  const regionInput = { type: 'text', required: false };
-  const endpointInput = { type: 'text', required: false };
-  const requiredCell = function (values, input) {
+  const regionInput = { type: 'text', required: false, attrs: {} };
+  const endpointInput = { type: 'text', required: false, attrs: {} };
+  [regionInput, endpointInput].forEach(function (input) {
+    input.setAttribute = function (name, value) {
+      input.attrs[name] = value;
+    };
+    input.removeAttribute = function (name) { delete input.attrs[name]; };
+  });
+  const requiredCell = function (values, input, label) {
+    const names = {};
+    const word = { hidden: null, classList: { contains: function (name) {
+      return name === 'fg-req-word';
+    } } };
+    const when = { hidden: null, classList: { contains: function (name) {
+      return name === 'fg-req-when';
+    } } };
     return {
+      word: word, when: when,
       getAttribute: function (name) {
-        return name === 'data-required-when-field' ? 'provider' : values;
+        if (name === 'data-required-when-field') {
+          return 'provider';
+        }
+        if (name === 'data-required-when-values') {
+          return values;
+        }
+        if (name === 'data-label') {
+          return label;
+        }
+        return '';
       },
       classList: {
-        add: function (name) { classes[values + name] = true; },
-        remove: function (name) { delete classes[values + name]; }
+        add: function (name) {
+          classes[values + name] = true;
+          names[name] = true;
+        },
+        remove: function (name) {
+          delete classes[values + name];
+          delete names[name];
+        },
+        contains: function (name) { return !!names[name]; }
       },
-      querySelectorAll: function () { return [input]; }
+      querySelectorAll: function (selector) {
+        const asked = String(selector || '');
+        if (asked.indexOf('fg-req-word') >= 0) {
+          return [word];
+        }
+        if (asked.indexOf('fg-req-when') >= 0) {
+          return [when];
+        }
+        if (asked.indexOf('input') >= 0) {
+          return [input];
+        }
+        return [];
+      }
     };
   };
-  const cells = [requiredCell('aws', regionInput),
-                 requiredCell('azure vault', endpointInput)];
+  const region = requiredCell('aws', regionInput, 'Region (aws)');
+  const endpoint = requiredCell('azure vault', endpointInput,
+                                'Vault URL (azure, vault)');
+  const cells = [region, endpoint];
+  const listNode = { textContent: '' };
   const form = {
     elements: { namedItem: function () { return provider; } },
-    querySelectorAll: function () { return cells; }
+    querySelector: function (selector) {
+      return String(selector).indexOf('data-required-list') >= 0
+        ? listNode : null;
+    },
+    querySelectorAll: function (selector) {
+      if (String(selector).indexOf('fg-cell') >= 0) {
+        return cells.filter(function (cell) {
+          return cell.classList.contains('fg-required');
+        });
+      }
+      return cells;
+    }
   };
   const runtime = new ConsoleRuntime({
     location: { pathname: '/admin' },
@@ -247,13 +361,68 @@ async function requiredWhen(t) {
   });
   runtime.wireConditionalRequirements();
   const awsOutlined = classes['awsfg-required'] && regionInput.required &&
-    !classes['azure vaultfg-required'] && !endpointInput.required;
+    !classes['azure vaultfg-required'] && !endpointInput.required &&
+    region.word.hidden === false && region.when.hidden === true &&
+    endpoint.word.hidden === true && endpoint.when.hidden === false &&
+    listNode.textContent === 'Region (aws)' &&
+    regionInput.attrs['aria-required'] === 'true' &&
+    !endpointInput.attrs['aria-required'];
   provider.value = 'vault';
   provider.changed();
-  t.check(awsOutlined && !classes['awsfg-required'] && !regionInput.required &&
-          classes['azure vaultfg-required'] && endpointInput.required,
+  t.check(awsOutlined && !classes['awsfg-required'] &&
+          !regionInput.required &&
+          classes['azure vaultfg-required'] && endpointInput.required &&
+          region.word.hidden === true && endpoint.word.hidden === false &&
+          listNode.textContent === 'Vault URL (azure, vault)' &&
+          endpointInput.attrs['aria-required'] === 'true' &&
+          !regionInput.attrs['aria-required'],
           'B4. the browser marks only fields required for the selected ' +
-          'provider');
+          'provider, including the word and the note');
+  provider.value = '';
+  provider.options = [{ value: 'aws' }, { value: 'vault' }];
+  provider.changed();
+  t.check(!!classes['awsfg-required'] && !classes['azure vaultfg-required'],
+          'B4. an unset provider select follows its first choice');
+  const editJson = {
+    providers: ['aws', 'gcp', 'azure', 'vault', 'file'],
+    payloads: ['password'], fileAllowed: true, credentialShapes: {}
+  };
+  const edit = function (over) {
+    return SecretDestinationsPage.row(kit.context().t, editJson,
+      Object.assign({
+        id: 'dest-1', name: 'Prod', identifier: 'dest-1',
+        provider: 'aws', payload: 'password',
+        location: { region: 'us-east-1' },
+        credentialSet: true, usable: true, problems: []
+      }, over), { write: true });
+  };
+  const editCell = function (html, name) {
+    const at = html.indexOf('id="fgc-dest-1-' + name + '"');
+    return at < 0 ? '' : html.slice(at, html.indexOf('</div>', at));
+  };
+  const credTag = function (html) {
+    const found = /<input[^>]*name="credential"[^>]*>/.exec(html);
+    return found ? found[0] : '';
+  };
+  const kept = edit({});
+  t.check(marked(editCell(kept, 'region')) &&
+          !marked(editCell(kept, 'endpoint')) &&
+          editCell(kept, 'directory') !== '' &&
+          !marked(editCell(kept, 'directory')) &&
+          credTag(kept).indexOf('required') < 0,
+          'B5. an aws edit outlines its region, and a credential already ' +
+          'set stays optional');
+  const open = edit({ credentialSet: false });
+  t.check(marked(editCell(open, 'credential')) &&
+          / required[ >]/.test(credTag(open)),
+          'B5. a missing write credential is required for aws');
+  const fileRow = edit({ credentialSet: false, provider: 'file',
+                         location: { directory: '/tmp/secrets' } });
+  t.check(marked(editCell(fileRow, 'directory')) &&
+          !marked(editCell(fileRow, 'region')) &&
+          !marked(editCell(fileRow, 'credential')) &&
+          !/ required[ >]/.test(credTag(fileRow)),
+          'B5. a file edit requires its directory and not a credential');
   log.debug("Leaving requiredWhen().");
 }
 
@@ -463,12 +632,21 @@ function drawn(t) {
            !/ required[ >]/.test(cell(name));
   }), 'E2. its optional fields are drawn and not marked');
   const box = { name: 'enabled', label: 'Enabled', type: 'checkbox',
-                required: true, checkedValue: 'yes', boxLabel: 'Enabled' };
+                required: true, checkedValue: 'yes', boxLabel: 'yes',
+                uncheckedValue: 'no', uncheckedLabel: 'no' };
   const boxHtml = kit.createFields([box], {}, kit.context().t);
   t.check(boxHtml.indexOf('fg-required') < 0 &&
           !/ required(?:[ >]|=)/.test(boxHtml) &&
-          kit.requiredNote([box], kit.context().t).indexOf('Enabled') < 0,
-          'E3. an unchecked box is never marked required');
+          kit.requiredNote([box], kit.context().t).indexOf('Enabled') < 0 &&
+          /name="enabled"[^>]*value="no" checked/.test(boxHtml) &&
+          !/name="enabled"[^>]*value="yes" checked/.test(boxHtml),
+          'E3. a yes/no pair checks No when nothing was chosen, and is ' +
+          'never marked required');
+  const yesHtml = kit.createFields([box], { enabled: 'yes' },
+                                    kit.context().t);
+  t.check(/name="enabled"[^>]*value="yes" checked/.test(yesHtml) &&
+          !/name="enabled"[^>]*value="no" checked/.test(yesHtml),
+          'E3b. a yes value checks Yes');
   log.debug("Leaving drawn().");
 }
 

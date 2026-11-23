@@ -47,10 +47,13 @@
 // that has one. Both go to the same address.
 //
 // **WHERE THE READER WAS IS KEPT.** A link that opens a dialog carries a `from`
-// naming the page section it was pressed in, and closing returns to that
-// fragment, so closing a certificate forty rows down a tree does not land at
-// the top of the page. `from` is an element id and is refused unless it looks
-// like one: it is written into an `href`.
+// naming the page section it was pressed in, and the link's own fragment is
+// that same id, so opening stays on the tab that holds the section. Closing
+// returns to that fragment, so closing a certificate forty rows down a tree
+// does not land at the top of the page. A Protocols page with no fragment
+// shows Metadata, which is where a link that only changed the query went.
+// `from` is an element id and is refused unless it looks like one: it is
+// written into an `href`.
 //
 // A LIBRARY: it registers no route. It requires `admin-ui/admin.ts` for the
 // escaper and `admin-ui/pqc_badge.ts` for the post-quantum icon, and nothing

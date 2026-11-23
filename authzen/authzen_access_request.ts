@@ -64,20 +64,45 @@
 // (the profile's structural comparison). A policy that ignores those facts
 // denies exactly as it did; a policy that requires them permits only an
 // approved tuple. The values a PEP sends in `context.approval` beside the
-// id are never believed.
+// id are never believed, except `state` (#1204): a signed approval is
+// verified, and a bad signature is not an approval, but the store still
+// decides revocation and expiry. A state with no row is not an approval.
 //
 // THE BINDING. A requestable denial carries a `binding_token`: a JWS this
 // realm signs (`oauth2.ts`'s `signPublishedDocument()`, the one signer of a
 // published document) over the denied tuple — subject, resource and action
 // whole (less `subject.properties.act`, the profile's exclusion), the
 // context members the advice named, the caller, the application and the
-// advice's approval terms — audienced to this realm's access request
-// endpoint and expiring with the denial. So a submission needs no state from
-// the denial: it is verified offline, which is the by-value form the profile
-// requires of an independent service and allows a same-service one, and
-// nothing is written per denial. The approval is the other way round: the
-// task is a store row and the PDP looks `approval.id` up in it (the
-// profile's by-reference form), so revoking one is a write, not a wait.
+// advice's approval terms — and `binding_hash`, the base64url SHA-256 of
+// the RFC 8785 canonical JSON of `{ subject, resource, action, context }`
+// (`stsCrypto.jcsCanonicalJson`). Inline claims stay, which is the form
+// the profile recommends; the hash is what a verifier may check instead,
+// including a token that carries the hash and omits the inline tuple. The
+// token is audienced to this realm's access request endpoint and expires
+// with the denial. It is the by-value form an independent service requires
+// and a same-service one may still issue.
+//
+// THE SAME DENIAL IS ALSO A ROW (#1204), keyed by `evaluation_id`, in
+// `authzen.accessRequestDenials`. This process is the PDP and the access
+// request service together, so a submission may name the denial by
+// `evaluation_id` and the echoed `expires_at` and omit the token. When the
+// token is present it is authoritative and the id is only checked against
+// it. The row outlives the denial by the skew and a day, so an expired
+// denial is still told from one this realm never issued. The approval is
+// by reference and by value: the task is a store row, looked up by
+// `approval.id`, and `approve()` also signs `approval.state`. Revoking one
+// is still a write.
+//
+// THE SUBMISSION SCHEMA (#1204). A requestable denial carries
+// `request_schema_url`, the same origin as its `endpoint`
+// (`GET /access/v1/access-requests/schema`). The document is JSON
+// Schema draft 2020-12 and describes the augmentations
+// `requestedAccess()` accepts: `context.business_justification`,
+// `requested_access.requested_until` and
+// `requested_access.emergency`, and that emergency requires the
+// justification. None of them is required on an ordinary submission,
+// and the schema is not a second validator. This service hosts no
+// form, so `form_url` is never issued. `display` is still not built.
 //
 // THE TASK is a row of the per-realm store `authzen.accessRequests`:
 // `pending`, then exactly once one of `approved`, `denied`, `expired`,
@@ -94,7 +119,7 @@
 // TYPESCRIPT, AS A CLASS (#50): `AccessRequests` takes what it uses through
 // its constructor; the stores are declared at module scope, because a store
 // becomes per realm at its declaration (`tests/realm_isolation.js`). A
-// LIBRARY: it registers no route — `authzen.ts` carries the three — and its
+// LIBRARY: it registers no route — `authzen.ts` carries the four — and its
 // job is registered when the composition root installs the instance.
 // ===========================================================================
 
@@ -120,8 +145,11 @@ const ADVICE_PREFIX = ADVICE_ID + ':';
 // The capability the metadata names while this is on.
 const CAPABILITY = 'urn:openid:authzen:capability:access-request';
 
-// The request endpoint, under the realm's prefix.
+// The request endpoint, under the realm's prefix, and the submission
+// schema beside it. The schema path is registered before `/:id`, or
+// Express would read "schema" as a task id.
 const REQUESTS_PATH = '/access/v1/access-requests';
+const SCHEMA_PATH = REQUESTS_PATH + '/schema';
 
 // The access-control question (`common/access_gate.ts`).
 const GATE_RESOURCE = 'authzen-access-request';
@@ -183,6 +211,17 @@ const tasks = realms.map({
 });
 const index = realms.map({ persist: 'authzen.accessRequestIndex',
                            expiresAt: realms.expiryField('until', 1000) });
+// A requestable denial, keyed by evaluation_id (#1204). It outlives the
+// denial (keepUntil is the deadline, the skew and a day) so a submission
+// after the window is expired rather than unknown. A hot path of a flush,
+// the same as `tasks`: no Entering/Leaving pair.
+const denials = realms.map({
+  persist: 'authzen.accessRequestDenials',
+  expiresAt: function (row: Json): number | null {
+    const until = row && typeof row === 'object' ? Number(row.keepUntil) : 0;
+    return until > 0 ? until * 1000 : null;
+  }
+});
 
 // The parts of a `realms.map()` store this module uses.
 interface Store {
@@ -230,6 +269,7 @@ interface AccessRequestDeps {
   helpers: any;
   tasks: Store;
   index: Store;
+  denials: Store;
   now: () => number;
   // Loaded when used, never at load: each is far up a chain this library
   // must not load early.
@@ -278,7 +318,7 @@ class AccessRequests {
    * Builds the module over its dependencies.
    *
    * @param deps - the logger, settings, audit log, error codes, realms,
-   *   helpers, the two stores, a clock, and lazy loaders
+   *   helpers, the three stores, a clock, and lazy loaders
    */
   constructor(private readonly deps: AccessRequestDeps) {
     deps.log.debug("Entering AccessRequests.constructor().");
@@ -311,6 +351,7 @@ class AccessRequests {
       helpers: helpers,
       tasks: tasks,
       index: index,
+      denials: denials,
       // A hot path (every read of a task asks the clock): no
       // Entering/Leaving pair.
       now: function (): number {
@@ -453,6 +494,60 @@ class AccessRequests {
   }
 
   /**
+   * The profile's hashed binding: base64url (no padding) SHA-256 of the
+   * RFC 8785 canonical JSON of `{ subject, resource, action, context }`.
+   * The subject is already bound (`bound()`), and the context is the set
+   * `binding_context_members` names, which may be empty.
+   *
+   * @param subject - the bound subject
+   * @param resource - the bound resource
+   * @param action - the bound action
+   * @param context - the bound context
+   * @returns the hash
+   */
+  static bindingHash(subject: Json, resource: Json, action: Json,
+                     context: Json): string {
+    log.debug("Entering AccessRequests.bindingHash().");
+    const jcs = stsCrypto.jcsCanonicalJson({
+      subject: subject === undefined ? null : subject,
+      resource: resource === undefined ? null : resource,
+      action: action === undefined ? null : action,
+      context: isObject(context) ? context : {}
+    });
+    const out = String(stsCrypto.digest('sha256', jcs, 'base64url'));
+    log.debug("Leaving AccessRequests.bindingHash().");
+    return out;
+  }
+
+  /**
+   * Whether a request's tuple is the stored one: subject, resource and
+   * action bound the same way, and the named context members.
+   *
+   * @param stored - the denial or the approval, already bound
+   * @param given - the request
+   * @param members - the context members that bind
+   * @returns true when they match
+   */
+  private static sameTuple(stored: Json, given: Json,
+                           members: string[]): boolean {
+    log.debug("Entering AccessRequests.sameTuple().");
+    let same = true;
+    ['subject', 'resource', 'action'].forEach(function (name: string) {
+      if (same && AccessRequests.canonical(AccessRequests.bound(name,
+            given[name])) !== AccessRequests.canonical(stored[name])) {
+        same = false;
+      }
+    });
+    if (same && AccessRequests.canonical(AccessRequests.relevant(
+          given.context, members || [])) !==
+        AccessRequests.canonical(stored.context || {})) {
+      same = false;
+    }
+    log.debug("Leaving AccessRequests.sameTuple(). " + same);
+    return same;
+  }
+
+  /**
    * Reads the access-request advice of a PDP answer into approval terms,
    * or null when the answer carries none.
    *
@@ -540,11 +635,12 @@ class AccessRequests {
   /**
    * The Decision Context members that make a denial requestable:
    * `evaluation_id`, `evaluated_at`, `reason` and `access_request`, with a
-   * `binding_token` this realm signed over the denied tuple. Null when the
-   * profile is off, the answer carries no access-request advice, or the
-   * token could not be signed — in each case the denial stays an ordinary
-   * `false` (the profile: no `access_request` without verifiable binding
-   * material).
+   * `binding_token` this realm signed over the denied tuple, a record
+   * of that denial keyed by `evaluation_id`, and `request_schema_url`.
+   * Null when the profile is off,
+   * the answer carries no access-request advice, or the token could not be
+   * signed — in each case the denial stays an ordinary `false` (the
+   * profile: no `access_request` without verifiable binding material).
    *
    * @param req - the request, for the base
    * @param body - the evaluation request as the caller sent it
@@ -574,26 +670,69 @@ class AccessRequests {
     const expiresAt = instant((now + lifetime) * 1000);
     const evaluationId = 'eval_' + helpers.randomId(18);
     const given: Json = isObject(body) ? body : {};
+    const subject = AccessRequests.bound('subject', given.subject);
+    const resource = AccessRequests.bound('resource', given.resource);
+    const action = AccessRequests.bound('action', given.action);
+    const context = AccessRequests.relevant(given.context,
+                                             terms.contextMembers);
+    let hash = '';
+    try {
+      hash = AccessRequests.bindingHash(subject, resource, action, context);
+    } catch (e) {
+      // No verifiable binding without the hash the token claims. The
+      // denial stays an ordinary false, the same as a signature that
+      // could not be made.
+      log.debug("Caught in AccessRequests.requestableDenial(): " +
+                ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-AUTHZEN-0087') + 'authzen: a ' +
+                'requestable denial\'s binding_hash could not be made, so ' +
+                'the denial is answered as an ordinary false: ' +
+                ((e && e.message) || e));
+      log.debug("Leaving AccessRequests.requestableDenial(). No hash.");
+      return null;
+    }
+    const jti = helpers.randomId(18);
     const claims: Json = {
       aud: base + REQUESTS_PATH,
       sub: String((given.subject || {}).id || ''),
-      jti: helpers.randomId(18),
+      jti: jti,
       typ: 'authzen-access-request-denial',
       denial_expires_at: expiresAt,
       evaluation_id: evaluationId,
-      subject: AccessRequests.bound('subject', given.subject),
-      resource: AccessRequests.bound('resource', given.resource),
-      action: AccessRequests.bound('action', given.action),
-      context: AccessRequests.relevant(given.context, terms.contextMembers),
+      subject: subject,
+      resource: resource,
+      action: action,
+      context: context,
       binding_context_members: terms.contextMembers.slice(0),
+      binding_hash: hash,
       caller: caller,
       application: application,
       terms: terms
     };
+    const record: Json = {
+      evaluationId: evaluationId,
+      jti: jti,
+      subject: subject,
+      resource: resource,
+      action: action,
+      context: context,
+      bindingContextMembers: terms.contextMembers.slice(0),
+      bindingHash: hash,
+      caller: caller,
+      application: application,
+      terms: terms,
+      denialExpiresAt: expiresAt,
+      base: base,
+      evaluatedAt: instant(now * 1000),
+      reason: terms.reason || 'approval_required',
+      template: terms.template || ''
+    };
     let token = '';
     if (deferred) {
       const pending: Json = { claims: claims, base: base,
-                              lifetime: lifetime, denial: null };
+                              lifetime: lifetime, denial: null,
+                              record: record, now: now,
+                              expiresAt: expiresAt };
       deferred.push(pending);
       const later = self.denialFrom(evaluationId, now, expiresAt, base,
                                     terms, '');
@@ -616,8 +755,42 @@ class AccessRequests {
       log.debug("Leaving AccessRequests.requestableDenial(). Not signed.");
       return null;
     }
+    self.recordSigned(record, token, now, lifetime, expiresAt);
     log.debug("Leaving AccessRequests.requestableDenial().");
     return self.denialFrom(evaluationId, now, expiresAt, base, terms, token);
+  }
+
+  // Records a requestable denial once its binding token is signed, with the
+  // expiry the token itself carries (the lifetime asked of the signer when
+  // it cannot be read back). Shared by the synchronous door and by
+  // `signDeferredDenials()` (#1955 P8 follow-up), so a deferred denial is
+  // recorded exactly as one signed in place.
+  private recordSigned(record: Json, token: string, now: number,
+                       lifetime: number, expiresAt: string): void {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.recordSigned().");
+    let exp = now + lifetime;
+    try {
+      const part = token.split('.')[1] || '';
+      const payload = JSON.parse(Buffer.from(part, 'base64url')
+        .toString('utf8'));
+      if (payload && Number(payload.exp) > 0) {
+        exp = Number(payload.exp);
+      }
+    } catch (e) {
+      // The lifetime asked of the signer is the expiry the record keeps.
+      log.debug("Caught in AccessRequests.recordSigned(): " +
+                ((e && e.message) || e));
+    }
+    const deadline = Math.min(exp,
+      Math.floor(Date.parse(expiresAt) / 1000) || exp);
+    const full: Json = Object.assign({}, record, {
+      exp: exp,
+      keepUntil: deadline + SKEW_S + RETENTION_S
+    });
+    self.recordDenial(full);
+    log.debug("Leaving AccessRequests.recordSigned().");
   }
 
   // The context members of a requestable denial, around its binding token.
@@ -627,6 +800,7 @@ class AccessRequests {
     log.debug("Entering AccessRequests.denialFrom().");
     const accessRequest: Json = { expires_at: expiresAt,
                                   endpoint: base + REQUESTS_PATH,
+                                  request_schema_url: base + SCHEMA_PATH,
                                   binding_token: token };
     if (terms.template) {
       accessRequest.template = terms.template;
@@ -671,6 +845,8 @@ class AccessRequests {
       }
       if (token) {
         one.denial.access_request.binding_token = token;
+        self.recordSigned(one.record, token, one.now, one.lifetime,
+                          one.expiresAt);
       } else {
         unsigned.push(String(one.denial.evaluation_id));
       }
@@ -957,12 +1133,15 @@ class AccessRequests {
     log.debug("Entering AccessRequests.bodyOf().");
     const out: Json = { task: self.handleOf(task) };
     if (task.status === 'approved' && task.approval) {
-      out.result = { mode: 'reevaluate',
-                     approval: { id: task.approval.id,
-                                 approved_at: instant(
-                                   task.approval.approvedAt * 1000),
-                                 approved_until: instant(
-                                   task.approval.approvedUntil * 1000) } };
+      const approval: Json = { id: task.approval.id,
+                               approved_at: instant(
+                                 task.approval.approvedAt * 1000),
+                               approved_until: instant(
+                                 task.approval.approvedUntil * 1000) };
+      if (task.approval.state) {
+        approval.state = task.approval.state;
+      }
+      out.result = { mode: 'reevaluate', approval: approval };
     }
     // Every answer this body is sent in is held to the model's Task
     // response (#1579): a gap is recorded, the answer is unchanged.
@@ -1016,6 +1195,57 @@ class AccessRequests {
     return true;
   }
 
+  // Writes the denial record. A failure leaves the token issued: the
+  // by-value form still verifies, and an evaluation_id of this denial is
+  // then unknown (0073).
+  private recordDenial(record: Json): void {
+    const { log, errorCodes, denials } = this.deps;
+    log.debug("Entering AccessRequests.recordDenial().");
+    try {
+      denials.set(String(record.evaluationId), record);
+    } catch (e) {
+      log.debug("Caught in AccessRequests.recordDenial(): " +
+                ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-AUTHZEN-0139') + 'authzen: the ' +
+                'requestable denial ' + record.evaluationId + ' could not ' +
+                'be recorded, so an evaluation_id-only submission of it ' +
+                'cannot be resolved; the binding_token is still issued: ' +
+                ((e && e.message) || e));
+    }
+    log.debug("Leaving AccessRequests.recordDenial().");
+  }
+
+  // The denial named by an evaluation_id, in the shape `submit()` reads off
+  // a binding token, or null when this realm has none for this base that
+  // it still keeps.
+  private denialByEvaluation(evaluationId: string, base: string): Json | null {
+    const { log, denials } = this.deps;
+    log.debug("Entering AccessRequests.denialByEvaluation().");
+    const id = String(evaluationId || '').slice(0, MAX_ID);
+    const row = id ? denials.get(id) : null;
+    let bound: Json = null;
+    if (row && row.base === base && Number(row.keepUntil) > this.nowS()) {
+      bound = {
+        jti: row.jti,
+        typ: 'authzen-access-request-denial',
+        denial_expires_at: row.denialExpiresAt,
+        evaluation_id: row.evaluationId,
+        subject: row.subject,
+        resource: row.resource,
+        action: row.action,
+        context: row.context || {},
+        binding_context_members: row.bindingContextMembers || [],
+        binding_hash: row.bindingHash,
+        caller: row.caller,
+        application: row.application,
+        terms: row.terms,
+        exp: row.exp
+      };
+    }
+    log.debug("Leaving AccessRequests.denialByEvaluation(). " + !!bound);
+    return bound;
+  }
+
   // -------------------------------------------------------------------------
   // THE SUBMISSION (the profile's section on it).
   // -------------------------------------------------------------------------
@@ -1054,25 +1284,38 @@ class AccessRequests {
       log.debug("Leaving AccessRequests.submit(). No denial.");
       return;
     }
-    if (!denial.binding_token) {
-      // THE BY-REFERENCE FORM IS NOT KEPT HERE: this service records
-      // nothing per denial (the header), so an evaluation_id alone names
-      // nothing it can resolve.
-      self.problem(res, 400, 'invalid_denial_binding', 'STS-AUTHZEN-0073',
-                   'denial.binding_token is required here: this PDP binds ' +
-                   'a denial by value and keeps no record of evaluations ' +
-                   'to resolve an evaluation_id against.');
-      log.debug("Leaving AccessRequests.submit(). No token.");
-      return;
-    }
     const base = self.baseOf(req);
-    const bound = self.verifyBinding(String(denial.binding_token), base);
-    if (!bound) {
-      self.problem(res, 400, 'invalid_denial_binding', 'STS-AUTHZEN-0073',
-                   'denial.binding_token is not one this realm issued for ' +
-                   'this endpoint.');
-      log.debug("Leaving AccessRequests.submit(). Did not verify.");
-      return;
+    // THE TOKEN IS AUTHORITATIVE WHEN IT IS PRESENT. evaluation_id is a
+    // binding only with no token, resolved from the denial record. Either
+    // way the echo and the freshness below run before anything is consumed.
+    let bound: Json = null;
+    if (denial.binding_token) {
+      bound = self.verifyBinding(String(denial.binding_token), base);
+      if (!bound) {
+        self.problem(res, 400, 'invalid_denial_binding', 'STS-AUTHZEN-0073',
+                     'denial.binding_token is not one this realm issued ' +
+                     'for this endpoint.');
+        log.debug("Leaving AccessRequests.submit(). Did not verify.");
+        return;
+      }
+      if (denial.evaluation_id !== undefined &&
+          String(denial.evaluation_id) !== String(bound.evaluation_id || '')) {
+        self.problem(res, 400, 'invalid_denial_binding', 'STS-AUTHZEN-0074',
+                     'denial.evaluation_id is not the evaluation the ' +
+                     'binding_token names.');
+        log.debug("Leaving AccessRequests.submit(). evaluation_id differs.");
+        return;
+      }
+    } else {
+      bound = self.denialByEvaluation(String(denial.evaluation_id || ''),
+                                      base);
+      if (!bound) {
+        self.problem(res, 400, 'invalid_denial_binding', 'STS-AUTHZEN-0073',
+                     'denial.evaluation_id names no requestable denial this ' +
+                     'realm issued for this endpoint.');
+        log.debug("Leaving AccessRequests.submit(). No such denial.");
+        return;
+      }
     }
     const now = self.nowS();
     const echoed = Date.parse(String(denial.expires_at || ''));
@@ -1100,6 +1343,16 @@ class AccessRequests {
                    mismatch + '.');
       log.debug("Leaving AccessRequests.submit(). " + mismatch);
       return;
+    }
+    // A token that proved the tuple by hash and carried no inline claims:
+    // the task's tuple is the submission's, now that the hash matched.
+    if (!isObject(bound.subject)) {
+      const members = bound.binding_context_members;
+      bound.subject = AccessRequests.bound('subject', given.subject);
+      bound.resource = AccessRequests.bound('resource', given.resource);
+      bound.action = AccessRequests.bound('action', given.action);
+      bound.context = Array.isArray(members)
+        ? AccessRequests.relevant(given.context, members) : {};
     }
     // THE APPLICATION IS STILL THE CALLER'S: a scope taken away between
     // the denial and the submission ends the request here.
@@ -1274,20 +1527,131 @@ class AccessRequests {
     if (String(bound.caller) !== String(callerName)) {
       out = 'the denial was answered to another caller';
     }
-    ['subject', 'resource', 'action'].forEach(function (name: string) {
-      if (!out && AccessRequests.canonical(AccessRequests.bound(name,
-            given[name])) !== AccessRequests.canonical(bound[name])) {
-        out = name + ' differs from the denied ' + name;
+    const hash = typeof bound.binding_hash === 'string'
+      ? bound.binding_hash : '';
+    if (!out && hash) {
+      let computed = '';
+      try {
+        const members = bound.binding_context_members;
+        computed = AccessRequests.bindingHash(
+          AccessRequests.bound('subject', given.subject),
+          AccessRequests.bound('resource', given.resource),
+          AccessRequests.bound('action', given.action),
+          Array.isArray(members)
+            ? AccessRequests.relevant(given.context, members) : {});
+      } catch (e) {
+        // A tuple JCS cannot hold is not the denied one.
+        log.debug("Caught in AccessRequests.bindingMismatch(): " +
+                  ((e && e.message) || e));
+        computed = '';
       }
-    });
-    if (!out && AccessRequests.canonical(AccessRequests.relevant(
-          given.context, bound.binding_context_members || [])) !==
-        AccessRequests.canonical(bound.context || {})) {
-      out = 'an authorization-relevant context member (' +
-            (bound.binding_context_members || []).join(', ') +
-            ') differs from the denied evaluation\'s';
+      if (computed !== hash) {
+        out = 'binding_hash does not match the denied tuple';
+      }
+    }
+    if (!out && isObject(bound.subject)) {
+      ['subject', 'resource', 'action'].forEach(function (name: string) {
+        if (!out && AccessRequests.canonical(AccessRequests.bound(name,
+              given[name])) !== AccessRequests.canonical(bound[name])) {
+          out = name + ' differs from the denied ' + name;
+        }
+      });
+      if (!out && AccessRequests.canonical(AccessRequests.relevant(
+            given.context, bound.binding_context_members || [])) !==
+          AccessRequests.canonical(bound.context || {})) {
+        out = 'an authorization-relevant context member (' +
+              (bound.binding_context_members || []).join(', ') +
+              ') differs from the denied evaluation\'s';
+      }
+    } else if (!out && !hash) {
+      out = 'the binding token carries no denied tuple';
     }
     log.debug("Leaving AccessRequests.bindingMismatch(). " + (out || 'ok'));
+    return out;
+  }
+
+  /**
+   * The JSON Schema (draft 2020-12) of the augmentations a submission
+   * may add (#1204). `$id` is the URL the document is served at.
+   * `requestedAccess()` remains the reader: this document is what an
+   * autonomous PEP is told to add, and a submission is not checked
+   * against it. Other members of a submission, and other members of
+   * `context`, stay allowed — the schema does not set
+   * `additionalProperties` to false.
+   *
+   * @param id - the document's own URL
+   * @returns the schema
+   */
+  static submissionSchema(id: string): Json {
+    log.debug("Entering AccessRequests.submissionSchema().");
+    const justification: Json = {
+      type: 'string',
+      minLength: 1,
+      maxLength: MAX_TEXT,
+      description: 'A business justification. It is trimmed, and at ' +
+                   'most ' + MAX_TEXT + ' characters are kept. Required ' +
+                   'when requested_access.emergency is true.'
+    };
+    const out: Json = {
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      $id: id,
+      title: 'Access request augmentations',
+      description: 'What this realm accepts added to an access request ' +
+                   'submission. Other members of the submission are the ' +
+                   'profile\'s and are not described here. None of these ' +
+                   'is required unless requested_access.emergency is true.',
+      type: 'object',
+      properties: {
+        context: {
+          type: 'object',
+          properties: { business_justification: justification }
+        },
+        requested_access: {
+          type: 'object',
+          properties: {
+            requested_until: {
+              type: 'string',
+              format: 'date-time',
+              description: 'An RFC 3339 instant in the future. It ' +
+                           'shortens the approval. Omitted, the ' +
+                           'approval holds for the policy\'s maximum.'
+            },
+            emergency: {
+              type: 'boolean',
+              description: 'True asks for emergency access. The ' +
+                           'denial\'s policy must allow it, which this ' +
+                           'document cannot say. False and omitted are ' +
+                           'an ordinary submission.'
+            }
+          }
+        }
+      },
+      allOf: [{
+        if: {
+          type: 'object',
+          properties: {
+            requested_access: {
+              type: 'object',
+              properties: { emergency: { const: true } },
+              required: ['emergency']
+            }
+          },
+          required: ['requested_access']
+        },
+        then: {
+          type: 'object',
+          properties: {
+            context: {
+              type: 'object',
+              properties: { business_justification: justification },
+              required: ['business_justification']
+            }
+          },
+          required: ['context']
+        }
+      }]
+    };
+    log.debug("Leaving AccessRequests.submissionSchema().");
     return out;
   }
 
@@ -2059,6 +2423,85 @@ class AccessRequests {
             : String((answer || {}).why || '') };
   }
 
+  /**
+   * Signs `approval.state`: a JWS of the approved tuple, the approval id
+   * and its window. A failure is logged and the approval still stands by
+   * id — a same-service PEP looks the row up, and a state that could not
+   * be signed is simply absent.
+   *
+   * @param task - the row, still pending
+   * @param approval - the approval about to be stored
+   * @returns the compact JWS, or '' when it could not be signed
+   */
+  private approvalState(task: Json, approval: Json): string {
+    const self = this;
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AccessRequests.approvalState(). " + task.id);
+    const now = self.nowS();
+    const until = Number(approval.approvedUntil);
+    const claims: Json = {
+      aud: task.base,
+      typ: 'authzen-access-request-approval',
+      id: approval.id,
+      task_id: task.id,
+      subject: task.subject,
+      resource: task.resource,
+      action: task.action,
+      context: task.context || {},
+      binding_context_members: task.contextMembers || [],
+      approved_at: instant(Number(approval.approvedAt) * 1000),
+      approved_until: instant(until * 1000),
+      approver: approval.approver,
+      caller: task.requester,
+      application: task.application
+    };
+    let token = '';
+    try {
+      token = String(self.deps.loadOauth2().signPublishedDocument(
+        claims, task.base, Math.max(1, until - now),
+        'oauth-signed-metadata') || '');
+    } catch (e) {
+      // The approval stands by id. A PEP that cannot be shown a state
+      // still resolves the row.
+      log.debug("Caught in AccessRequests.approvalState(): " +
+                ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-AUTHZEN-0140') + 'authzen: an ' +
+                'approval\'s state could not be signed, so the approval ' +
+                'stands by id: ' + ((e && e.message) || e));
+      token = '';
+    }
+    log.debug("Leaving AccessRequests.approvalState(). " + !!token);
+    return token;
+  }
+
+  /**
+   * Verifies a presented `approval.state` as this realm's JWS of that typ.
+   * Expiry is the store's `approvedUntil`, so the token's `exp` is not a
+   * second clock.
+   *
+   * @param token - the compact JWS
+   * @returns the claims, or null
+   */
+  private verifyApprovalState(token: string): Json | null {
+    const { log, helpers } = this.deps;
+    log.debug("Entering AccessRequests.verifyApprovalState().");
+    let claims: Json = null;
+    try {
+      claims = helpers.verifyOwnJws(token, { ignoreExpiration: true });
+    } catch (e) {
+      log.debug("Caught in AccessRequests.verifyApprovalState(): " +
+                ((e && e.message) || e));
+      claims = null;
+    }
+    if (!claims || claims.typ !== 'authzen-access-request-approval') {
+      log.debug("Leaving AccessRequests.verifyApprovalState(). " +
+                "Unverifiable.");
+      return null;
+    }
+    log.debug("Leaving AccessRequests.verifyApprovalState(). Verified.");
+    return claims;
+  }
+
   // Marks a task approved: the approval, its lifetime and its index row.
   private approve(task: Json, approver: Approver, why: string): void {
     const self = this;
@@ -2076,10 +2519,15 @@ class AccessRequests {
     if (approver.door === 'emergency') {
       limits.push(now + self.seconds('authzen.accessRequestEmergencyS'));
     }
-    const approval = { id: 'apr_' + helpers.randomId(24), approvedAt: now,
-                       approvedUntil: Math.min.apply(null, limits),
-                       approver: approver.username || approver.door,
-                       door: approver.door, revokedAt: 0 };
+    const approval: Json = { id: 'apr_' + helpers.randomId(24),
+                             approvedAt: now,
+                             approvedUntil: Math.min.apply(null, limits),
+                             approver: approver.username || approver.door,
+                             door: approver.door, revokedAt: 0 };
+    const state = self.approvalState(task, approval);
+    if (state) {
+      approval.state = state;
+    }
     task.approval = approval;
     task.decidedBy = approval.approver;
     self.finish(task, 'approved', { actor: approval.approver, why: why });
@@ -2514,8 +2962,11 @@ class AccessRequests {
    * Verifies a presented `context.approval` against the store: the id
    * names an approved task of this realm, presented by the caller it was
    * issued to, for the same application, not revoked, inside its
-   * `approved_until`, and the tuple an exact match. Only `id` is read off
-   * the request; the timestamps beside it are never believed.
+   * `approved_until`, and the tuple an exact match. A presented `state`
+   * is verified first and must name that same approval and tuple; a bad
+   * signature is not an approval even when the row would be. The
+   * timestamps beside the id are never believed, and a state with no row
+   * is not an approval: revocation stays a write.
    *
    * @param approval - `context.approval` as sent
    * @param body - the evaluation request
@@ -2530,6 +2981,18 @@ class AccessRequests {
     log.debug("Entering AccessRequests.verify().");
     const id = isObject(approval) && typeof approval.id === 'string'
       ? approval.id.slice(0, MAX_ID) : '';
+    const given: Json = isObject(body) ? body : {};
+    const stateToken = isObject(approval) && typeof approval.state === 'string'
+      ? approval.state : '';
+    const stateClaims = stateToken ? self.verifyApprovalState(stateToken)
+                                   : null;
+    if (stateToken && (!stateClaims || String(stateClaims.id || '') !== id ||
+        !AccessRequests.sameTuple(stateClaims, given,
+          stateClaims.binding_context_members || []))) {
+      log.debug("Leaving AccessRequests.verify(). The state does not " +
+                "verify.");
+      return { ok: false, reason: 'approval_unverifiable' };
+    }
     const held = self.recalled('approval', id);
     const task = held ? self.task(String(held.task)) : null;
     if (!task || !task.approval || task.approval.id !== id ||
@@ -2537,20 +3000,21 @@ class AccessRequests {
       log.debug("Leaving AccessRequests.verify(). Unverifiable.");
       return { ok: false, reason: 'approval_unverifiable' };
     }
+    if (stateClaims) {
+      const audiences = [].concat(stateClaims.aud || []);
+      if (stateClaims.iss !== task.base || audiences.indexOf(task.base) < 0) {
+        log.debug("Leaving AccessRequests.verify(). The state is not " +
+                  "this realm's.");
+        return { ok: false, reason: 'approval_unverifiable' };
+      }
+    }
     if (task.approval.revokedAt ||
         Number(task.approval.approvedUntil) <= self.nowS()) {
       log.debug("Leaving AccessRequests.verify(). Expired or revoked.");
       return { ok: false, reason: 'approval_expired', task: task };
     }
-    const given: Json = isObject(body) ? body : {};
     const same = task.application === application &&
-      ['subject', 'resource', 'action'].every(function (name: string) {
-        return AccessRequests.canonical(AccessRequests.bound(name,
-          given[name])) === AccessRequests.canonical(task[name]);
-      }) &&
-      AccessRequests.canonical(AccessRequests.relevant(given.context,
-        task.contextMembers || [])) ===
-      AccessRequests.canonical(task.context || {});
+      AccessRequests.sameTuple(task, given, task.contextMembers || []);
     if (!same) {
       log.debug("Leaving AccessRequests.verify(). Out of scope.");
       return { ok: false, reason: 'out_of_scope', task: task };
@@ -2636,20 +3100,22 @@ class AccessRequests {
   /**
    * One run in the ambient realm: every pending task past its deadline
    * moved to `expired` (its callback sent), every finished one past its
-   * retention removed with its index rows, and every callback delivery
-   * that is due sent again.
+   * retention removed with its index rows, every denial record past its
+   * `keepUntil` removed, and every callback delivery that is due sent
+   * again.
    *
    * @param ctx - the scheduler's run context
    * @returns `{ summary }`
    */
   sweep(ctx?: Json): Json {
     const self = this;
-    const { log, tasks, index, errorCodes } = this.deps;
+    const { log, tasks, index, denials, errorCodes } = this.deps;
     log.debug("Entering AccessRequests.sweep().");
     const now = self.nowS();
     let expired = 0;
     let removed = 0;
     let retried = 0;
+    let dropped = 0;
     try {
       const rows: Json[] = [];
       tasks.forEach(function (row: Json) {
@@ -2698,6 +3164,16 @@ class AccessRequests {
       stale.forEach(function (key: string) {
         index.delete(key);
       });
+      const gone: string[] = [];
+      denials.forEach(function (row: Json, key: string) {
+        if (!row || Number(row.keepUntil) <= now) {
+          gone.push(key);
+        }
+      });
+      gone.forEach(function (key: string) {
+        denials.delete(key);
+        dropped += 1;
+      });
     } catch (e) {
       log.error(errorCodes.tag('STS-AUTHZEN-0092') + 'authzen: the access ' +
                 'request sweep failed: ' + ((e && e.message) || e));
@@ -2710,6 +3186,9 @@ class AccessRequests {
     }
     if (retried) {
       parts.push(retried + ' callback(s) retried.');
+    }
+    if (dropped) {
+      parts.push(dropped + ' denial record(s) removed.');
     }
     const summary = parts.join(' ');
     log.debug("Leaving AccessRequests.sweep(). " + (summary || 'Nothing.'));
@@ -2737,7 +3216,8 @@ class AccessRequests {
                 'its expires_at to expired — writing its audit row and ' +
                 'sending its callback — removes a finished one a day ' +
                 'after it finished, or once its approval ran out if that ' +
-                'is later, and retries a callback delivery that failed ' +
+                'is later, removes a requestable denial a day after its ' +
+                'window, and retries a callback delivery that failed ' +
                 'with a network error or an HTTP 5xx, up to the attempt ' +
                 'bound (#1202). A read applies the deadline itself, so ' +
                 'this is the record and the clean-up, never what decides.',
@@ -2766,7 +3246,7 @@ class AccessRequests {
    * Forgets every task of the ambient realm. For a test.
    */
   resetForTests(): void {
-    const { log, tasks, index } = this.deps;
+    const { log, tasks, index, denials } = this.deps;
     log.debug("Entering AccessRequests.resetForTests().");
     const keys: string[] = [];
     tasks.forEach(function (value: Json, key: string) {
@@ -2781,6 +3261,13 @@ class AccessRequests {
     });
     indexKeys.forEach(function (key: string) {
       index.delete(key);
+    });
+    const denialKeys: string[] = [];
+    denials.forEach(function (value: Json, key: string) {
+      denialKeys.push(key);
+    });
+    denialKeys.forEach(function (key: string) {
+      denials.delete(key);
     });
     flights.clear();
     log.debug("Leaving AccessRequests.resetForTests().");
@@ -2838,6 +3325,8 @@ export = {
   ADVICE_PREFIX: ADVICE_PREFIX,
   CAPABILITY: CAPABILITY,
   REQUESTS_PATH: REQUESTS_PATH,
+  SCHEMA_PATH: SCHEMA_PATH,
+  submissionSchema: AccessRequests.submissionSchema,
   GATE_RESOURCE: GATE_RESOURCE,
   GATE_ACTION: GATE_ACTION,
   STATES: STATES,
@@ -2847,10 +3336,12 @@ export = {
   canonical: AccessRequests.canonical,
   bound: AccessRequests.bound,
   relevant: AccessRequests.relevant,
+  bindingHash: AccessRequests.bindingHash,
   termsOf: AccessRequests.termsOf,
   factsOf: AccessRequests.factsOf,
   reevaluation: AccessRequests.reevaluation,
   enabled: slot.forward('enabled'),
+  baseOf: slot.forward('baseOf'),
   requestableDenial: slot.forward('requestableDenial'),
   signDeferredDenials: slot.forward('signDeferredDenials'),
   submit: slot.forward('submit'),

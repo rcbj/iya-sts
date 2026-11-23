@@ -941,6 +941,7 @@ A requestable denial answers `false` with:
     "access_request": {
       "expires_at": "2026-10-30T09:10:00Z",
       "endpoint": "https://sts.example.com/realm/acme/access/v1/access-requests",
+      "request_schema_url": "https://sts.example.com/realm/acme/access/v1/access-requests/schema",
       "binding_token": "eyJ…"
     }
   }
@@ -948,8 +949,21 @@ A requestable denial answers `false` with:
 ```
 
 The `binding_token` is a JWS the realm signs over the denied subject,
-resource, action, the bound context members, the caller and the application.
-It expires with the denial (`authzen.accessRequestDenialLifetimeS`).
+resource, action, the bound context members, the caller and the application,
+and it carries `binding_hash`, the base64url SHA-256 of the canonical form
+of that tuple. The same denial is kept, keyed by `evaluation_id`, so a
+submission may name it by that id and the echoed `expires_at` instead of
+the token. When the token is present it is what is verified. It expires
+with the denial (`authzen.accessRequestDenialLifetimeS`).
+
+A requestable denial also carries `request_schema_url`, the same origin
+as `endpoint`: `GET /access/v1/access-requests/schema`. That document is
+a JSON Schema of the optional augmentations a submission may add —
+`context.business_justification`, and `requested_access.requested_until`
+and `requested_access.emergency`. Emergency access requires the
+justification. An ordinary submission sends none of them, and the
+service does not check a submission against the schema. There is no
+hosted form, so a denial does not carry `form_url`.
 
 ### Submitting, polling and cancelling
 
@@ -957,8 +971,9 @@ The same caller door and the `AUTHZEN_PEPS` role as an evaluation apply.
 
 | Request | Answer |
 |---|---|
-| `POST /access/v1/access-requests` | the denied `subject`, `resource`, `action` and `context`, and `denial` with the `binding_token` and `expires_at` echoed unchanged. `202` with a `task`, or `201` with the result when it was decided at once. `Idempotency-Key` is honoured per caller. |
-| `GET /access/v1/access-requests/<id>` | the task. `Retry-After` while it is `pending`; once `approved`, `result` with `mode: "reevaluate"` and the `approval` |
+| `GET /access/v1/access-requests/schema` | the JSON Schema of those augmentations. Public. `501` while access requests are off |
+| `POST /access/v1/access-requests` | the denied `subject`, `resource`, `action` and `context`, and `denial` with either the `binding_token` or the `evaluation_id` plus `expires_at` echoed unchanged. `202` with a `task`, or `201` with the result when it was decided at once. `Idempotency-Key` is honoured per caller. |
+| `GET /access/v1/access-requests/<id>` | the task. `Retry-After` while it is `pending`; once `approved`, `result` with `mode: "reevaluate"` and the `approval`, which may include `state` |
 | `POST` or `DELETE /access/v1/access-requests/<id>/cancel` | cancels a pending task; `409` once it has finished |
 
 A task is `pending`, then exactly one of `approved`, `denied`, `expired` or
@@ -1175,9 +1190,11 @@ live source; this table is a copy.
 
 None of these is advertised in the metadata:
 
-* Of the Access Request and Approval Profile: binding a denial by
-  `evaluation_id` alone, `approval.state`, machine-readable forms, and the
-  BULK, ACTOR and CATALOG companions.
+* Of the Access Request and Approval Profile: a hosted form (`form_url`)
+  and `display`, and the BULK, ACTOR and CATALOG companions. A denial
+  carries `request_schema_url`, may be submitted by `evaluation_id` or
+  by `binding_token` (which also carries `binding_hash`), and an
+  approval may carry `state`.
 * Of the Callback Notifications Profile: the `partial` event and
   deployment-level event subscriptions. Retrying a notification that failed
   with a network error or an HTTP 5xx is built; see

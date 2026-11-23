@@ -711,8 +711,8 @@ one, owes a row here, and that test fails otherwise.
   build the body from `createFields`.
 * **`requiredWhen`** is a field required for some choices only (a secret
   destination's region is AWS's). It remains `required: false`; the console
-  outlines it and makes it required in the browser only while that choice is
-  selected.
+  outlines it, says required, names it in the note and makes it required in
+  the browser only while that choice is selected.
 * **The policies are not in the table.** A named policy is a save under a new
   name, and its fields are the kind's own (each module's `FIELDS`, its
   `optional` rows the ones a save keeps in force), so `newPolicyJson()` in

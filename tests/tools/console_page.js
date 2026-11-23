@@ -165,12 +165,12 @@ function consolePage(root) {
           return call('GET', one.operation, one.params);
         }));
         answers.forEach(function (one, index) {
-          if (one.status !== 200 || !one.json ||
-              typeof one.json !== 'object') {
+          if (!WebPages.composeKept(page, asked[index].member, one)) {
             throw new Error(asked[index].operation + ' answered ' +
                             one.status);
           }
-          json[asked[index].member] = JSON.parse(JSON.stringify(one.json));
+          const body = one.json != null ? one.json : one.body;
+          json[asked[index].member] = JSON.parse(JSON.stringify(body));
         });
       }
       const html = json

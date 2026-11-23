@@ -664,18 +664,20 @@ const SPECS: Spec[] = [
     coverage: 'partial: the requestable denial (context.access_request, ' +
               'evaluation_id, evaluated_at, reason) where the realm\'s ' +
               'policy marks a Deny with the access-request advice, bound by ' +
-              'value with a binding_token this realm signs (the inline ' +
-              'claims); the submission with Idempotency-Key, 201 or 202 and ' +
-              'a Task Handle; the task status endpoint with Retry-After; ' +
+              'value with a binding_token this realm signs (inline claims ' +
+              'and binding_hash) and by reference from the denial record; ' +
+              'the submission with Idempotency-Key, 201 or 202 and a Task ' +
+              'Handle; the task status endpoint with Retry-After; ' +
               'cancellation by POST or DELETE; the six statuses; the ' +
               'reevaluate completion mode, approval.id resolved in trusted ' +
-              'state and the approval reaching the policy as trusted facts; ' +
-              'next_action and the five reasons; every problem type; the ' +
-              'metadata member, jwks_uri and capability. Missing: ' +
-              'evaluation_id as a binding by reference, approval.state, the ' +
-              'hashed binding form, machine-readable forms (form_url, ' +
-              'request_schema_url), display, and the BULK, ACTOR and ' +
-              'CATALOG companions.' },
+              'state, approval.state issued and verified with the lookup ' +
+              'still required, and the approval reaching the policy as ' +
+              'trusted facts; next_action and the five reasons; every ' +
+              'problem type; the metadata member, jwks_uri and capability; ' +
+              'request_schema_url on a requestable denial, the same ' +
+              'origin\'s JSON Schema of the submission\'s optional ' +
+              'augmentations. Missing: a hosted form (form_url) and ' +
+              'display, and the BULK, ACTOR and CATALOG companions.' },
   { id: 'authzen-arap-callback',
     name: 'AuthZEN Callback Notifications Profile 1.0 (draft)',
     where: 'OpenID Foundation AuthZEN WG',
@@ -4123,6 +4125,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'The same caller door and AUTHZEN_PEPS as an evaluation; ' +
           'Idempotency-Key honoured per caller; a callback only to a URL ' +
           'registered for the caller. Every refusal is problem+json.' },
+  { path: '/access/v1/access-requests/schema', group: 'AuthZEN',
+    name: 'An access request\'s submission schema',
+    specs: ['authzen-arap'],
+    what: 'GET the JSON Schema (draft 2020-12) of the augmentations a ' +
+          'submission may add: context.business_justification, and ' +
+          'requested_access.requested_until and emergency, the last ' +
+          'requiring the justification. Public, the same origin as ' +
+          'access_request_endpoint; a requestable denial\'s ' +
+          'request_schema_url names it. No form is hosted, so no denial ' +
+          'carries form_url. Answers 501 while the API or the profile ' +
+          'is off. Registered before the task-status path, which would ' +
+          'otherwise read "schema" as an id.' },
   { path: '/access/v1/access-requests/:id', group: 'AuthZEN',
     name: 'An access request\'s task status', specs: ['authzen-arap'],
     what: 'GET the task: its status (pending, approved, denied, expired, ' +

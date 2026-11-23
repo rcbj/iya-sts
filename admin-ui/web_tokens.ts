@@ -244,7 +244,10 @@ class TokensPage {
       // old page number over would land somebody on page 6 of a two-page
       // result, and the clamp in pagingOf() would then quietly move them
       // again.
-      kit.frame('<form method="get" action="/admin/tokens">' +
+      // The fragment is the Issued tab. A GET with none reloads onto
+      // Metadata, and the filtered table stays on this panel.
+      kit.frame('<form method="get" ' +
+        'action="/admin/tokens#tokens-tab-issued">' +
         '<div class="formrow">' +
         '<label for="family">' + t.html('consoleTokens.labelFamily') +
         '</label><select id="family" ' +
@@ -272,7 +275,8 @@ class TokensPage {
         '<button class="secondary">' + t.html('consoleTokens.filter') +
         '</button>' +
         (wantedFamily || wantedKind || wantedState || wantedSession
-          ? ' <a href="/admin/tokens">' + t.html('consoleTokens.clear') +
+          ? ' <a href="/admin/tokens#tokens-tab-issued">' +
+            t.html('consoleTokens.clear') +
             '</a>' : '') +
       '</div></form>' +
       (wantedSession
@@ -283,7 +287,8 @@ class TokensPage {
           t.html('consoleTokens.sessionAfter') + '<a href="' +
           kit.esc('/admin/tokens' +
             kit.queryWith({ family: wantedFamily, kind: wantedKind,
-                        state: wantedState }, {})) +
+                        state: wantedState }, {}) +
+            '#tokens-tab-issued') +
           '">' + t.html('consoleTokens.everySession') + '</a>.')
         : '') +
       // Family and Kind are ANDed, like any two filters, so a contradictory
@@ -804,7 +809,10 @@ class TokensPage {
     const t = ctx.t;
     const set = json.set;
     const listView = kit.listViewOf('/admin/tokens', ctx.query);
-    const upHref = '/admin/tokens' + kit.queryWith(listView, {});
+    // The issued table is that tab. A return with no fragment opens
+    // Metadata.
+    const upHref = '/admin/tokens' + kit.queryWith(listView, {}) +
+      '#tokens-tab-issued';
     const back = kit.note('<a class="btn" href="' + kit.esc(upHref) +
       '">' + t.html('consoleTokens.backToTable') + '</a>');
 
@@ -884,7 +892,8 @@ class TokensPage {
       '</td></tr><tr><th>' + t.html('consoleTokens.rowSession') +
       '</th><td>' + (set.sessionId
         ? '<a href="' + kit.esc('/admin/tokens' +
-            kit.queryWith({ session: set.sessionId }, {})) + '"><code>' +
+            kit.queryWith({ session: set.sessionId }, {}) +
+            '#tokens-tab-issued') + '"><code>' +
           kit.esc(set.sessionId) + '</code></a>' +
           (set.sessionAuthenticated ? ''
             : ' <span class="state-revoked">' +

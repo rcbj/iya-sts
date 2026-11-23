@@ -1219,7 +1219,12 @@ create page, and each calls out its required fields the way New user does.
   the field grid's `fg-required` — a red rule, an asterisk, "required" in
   words — and the browser's `required`, with a note above the form naming
   what is required. A policy's field table marks its rows the same way
-  (`fg-required-row`); a checkbox is never marked, having no empty state.
+  (`fg-required-row`); a yes/no pair is never marked: No is checked when
+  the answer is no, so the field has no empty state. A field required
+  only for some choices (`requiredWhen`; a secret destination's region)
+  is marked the same way while that choice is selected — the outline,
+  the asterisk, the word required, the browser's `required` and the
+  note — and not while it is not. Changing the choice moves the mark.
 * **A REFUSED CREATE KEEPS WHAT WAS TYPED** (`WebAnswers` `CREATE_PAGES`):
   each page posts to itself, its action resolved through the object's
   `mirrors`, so a refusal redraws it with `state.draft` and the reasons in
@@ -6946,9 +6951,9 @@ its trust chain. `certificate_dialog.ts` is the ONE renderer both pages call;
 
 **IT HAS NO SCRIPT, AND THE ROOT CLAUDE.md'S TEST FOR ONE WAS PASSED RATHER
 THAN ARGUED AROUND.** A dialog is the thing a reader most expects a script
-behind, and this one needs none: the link adds `?certificate=<SHA-256>&from=<section>`
-to the page it is on, the route resolves that certificate and draws the page
-with the dialog over it, and the X and the Close button both go back to the page
+behind, and this one needs none: the link adds `?certificate=<SHA-256>&from=<section>#<section>`
+to the page it is on, the console draws that page with the dialog over it,
+and the X and the Close button both go back to the page
 without the parameter, at the section the link was pressed in. So both pages are
 still `script-src 'none'` (until #446, 2026-10-05), the URL is the open dialog (bookmarkable, reloadable,
 closed by Back), and only the certificate asked for is parsed. **The CSS
@@ -6965,10 +6970,14 @@ And the dialog is drawn at the foot of the page's own body, after every form, so
 it cannot be adopted into an open `<form>` by the parser — `--dump-dom` is the
 check, and `formsInDialog` is one.
 
-**`renderPki()` TAKES A SIXTH ARGUMENT** — the resolved view — and
-`/admin/crypto-metadata`'s route does the same inline. Both put the answer on
-their JSON as `certificateDetails`, so `?format=json&certificate=` answers for a
-page exactly as `GET /admin-api/certificates?certificate=` does. The crypto
+**THE STATIC CONSOLE COMPOSES IT** (#446). `GET /admin-api/pki` and
+`GET /admin-api/crypto` do not carry one certificate's details. That answer
+is `GET /admin-api/certificates?certificate=`, and both page rows compose it
+into `certificateDetails` when the query names `certificate`. `composeKeep`
+draws the body of a refusal too, so a refused open still opens the dialog
+and says why. The opening link's fragment is the section id `from` names: a
+Protocols page with no fragment shows Metadata, which is where View details
+on the Hierarchy tab landed until the fragment was on the link. The crypto
 report grew `certificateFingerprint` on the signing key, every curve key and
 every post-quantum key, `tls.certificates[]` and `spiffe.authorityFingerprint`;
 the signing key's `certificate` string had said *self-signed, SHA-256, serial 02,

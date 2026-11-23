@@ -275,7 +275,8 @@ class CachesPage {
     if (!json.found) {
       return kit.warn('There is no cache called <code>' +
         kit.esc(json.cache) + '</code> in this process. <a href="' +
-        PAGE + '">Every cache</a> is listed on the Caches page.');
+        PAGE + '#caches-tab-caches">Every cache</a> is listed on the ' +
+        'Caches page.');
     }
     const c = json.summary;
     const tiles = '<div class="tiles">' +
@@ -352,7 +353,8 @@ class CachesPage {
     // One store's page draws its entries as the tab after Metadata.
     const table = '<h3 data-tab="entries">' +
       t.html('consoleCaches.headEntries') + '</h3>' +
-      kit.frame(kit.perPageForm(PAGE, 'cache', c.name,
+      kit.frame(kit.perPageForm(PAGE + '#caches-tab-entries', 'cache',
+                                c.name,
                                 json.entriesPaging.perPage,
                                 t.html('consoleCaches.entriesOrder')) +
       nav.head +

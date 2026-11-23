@@ -202,7 +202,10 @@ class ApplicationsPage {
       // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each
       // tab's content is one frame. The `data-tab` headings stay outside
       // it, at the top level, where the splitter makes them the tab labels.
-      kit.frame('<form method="get" action="/admin/applications"><div ' +
+      // The fragment is the Applications tab. A GET with none reloads
+      // onto Metadata, and the filtered list stays on this panel.
+      kit.frame('<form method="get" ' +
+        'action="/admin/applications#applications-tab-applications"><div ' +
       'class="formrow"><label for="q">' +
       t.html('consoleApplications.a1.filterApplication') +
       '</label><input type="text" ' +
@@ -220,7 +223,7 @@ class ApplicationsPage {
       'type="submit">' + t.html('consoleApplications.a1.filter') +
       '</button>' +
       ((wantedText || wantedKind)
-        ? ' <a href="/admin/applications">' +
+        ? ' <a href="/admin/applications#applications-tab-applications">' +
           t.html('consoleApplications.a1.clear') + '</a>' : '') +
       '</div></form>' +
       nav.head +
@@ -1183,7 +1186,7 @@ class ApplicationsPage {
   static newApplicationNotes(store, t) {
     return (
       kit.note(t.html('consoleApplications.a1.declaringA') +
-      '<a href="/admin/applications">' +
+      '<a href="/admin/applications#applications-tab-applications">' +
       t.html('consoleApplications.a1.applicationsLink') + '</a>' +
       t.html('consoleApplications.a1.declaringB')) +
       kit.note(t.html('consoleApplications.a1.declaredVsHappened')) +
@@ -1681,7 +1684,7 @@ class ApplicationsPage {
         '<p class="sub"><a href="' +
         kit.esc('/admin/applications' +
                  kit.queryWith(kit.listViewOf('/admin/applications', ctx.query),
-                           {})) +
+                           {}) + '#applications-tab-applications') +
         '">' + t.html('consoleApplications.a2.backToList') + '</a> &middot; ' +
         '<a href="/admin/ldap/applications">' +
         t.html('consoleApplications.a2.registryAsDirectory') + '</a></p>';
